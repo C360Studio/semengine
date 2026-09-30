@@ -14,20 +14,52 @@ explicitly; give any temporary bridge a removal condition. Consumer adaptation b
 a new module path is a contract migration, not simply a `go.mod` version bump.
 
 Acceptance: SemSource's retained workload runs on SemEngine, and a developer can understand and change that behavior
-using its own code, tests, and current docs. Reconsider a boundary that requires most of SemStreams' machinery.
+using its own code, tests, and current docs. Reconsider a boundary that exceeds the measured closure ceiling below.
 
 ## Evidence baseline
 
-The audit inspected these live main source revisions and existing tests on 2026-09-30; it ran no suites or services:
+The audit inspected these snapshots and existing tests on 2026-09-30; it ran no suites or services.
+SETUP 03A records the exact pins. A pin changes only by owner ruling.
 
-- SemStreams: [`5457b345`][semstreams], the source reference for tooling and graph extraction.
+- Extraction source: the newest SemStreams main commit when SETUP 03A runs, or the `v1.0.0-beta.163` tag if it has
+  landed by then (owner ruling, 2026-09-30, superseding a same-day beta.161 ruling). 03A records the exact SHA.
+- SemStreams main: [`5457b345`][semstreams], the audit snapshot. It is 216 commits past `v1.0.0-beta.161`. Of the
+  185 non-merge commits, 66 touch the port set, 27 of them breaking, and ADRs 094–107 were all written in that
+  window. That is the lifecycle, identity, and authority campaign the admission gates require; a beta.161 pin would
+  forfeit it, and cherry-picking it is not viable because it is interleaved with agentic breaking changes.
 - SemSource: [`34bda640`][semsource], the consumer reference for the initial contract and qualification workload.
-- SemSource pins SemStreams `v1.0.0-beta.161`. That pin and SemStreams' newer main require separate qualification;
-  a successful run against one does not establish compatibility with the other.
+  It pins SemStreams `v1.0.0-beta.161`.
 - SemConnect: [`d0d06e00`][semconnect], an independent domain reference, pins SemStreams `v1.0.0-beta.160`.
-  Its consumer behavior is a separate baseline, not evidence for compatibility with the selected extraction revision.
+  Its consumer behavior is a separate baseline, not evidence for compatibility with the extraction pin.
+- Provider references: semembed [`7ceb5281`][semembed] and seminstruct [`7f9135a9`][seminstruct]. These audit snapshots
+  do not pin a served build or model; record and qualify those identities separately in SETUP 03B.
 
-Select source revisions explicitly and preserve existing MIT notices, including Copyright (c) 2025 C360.
+Preserve existing MIT notices, including Copyright (c) 2025 C360.
+
+### Measured dependency closure
+
+`go list -deps ./...` at the SemSource reference, resolved against `v1.0.0-beta.161`, gives SemSource's compile-time
+closure. Line counts are raw non-test `.go` lines per package directory.
+
+| Scope | Packages | Non-test lines | Share of module |
+| --- | --- | --- | --- |
+| SemStreams at beta.161, whole module | 171 | 273K | 100% |
+| SemSource's closure today | 97 | 204K | 74% |
+| Direct imports without the two registries | 46 | 82K | 30% |
+| Port set: the row above plus the graph processors and gateway SemSource composes | 63 | 127K | 46% |
+| `graph/` alone | 9 | 23K | 8% |
+
+SemSource imports 25 SemStreams packages directly. Two of them, imported only by `cmd/semsource/run.go`, register
+every component and payload. The graph processors SemSource composes (`graph-ingest`, `graph-index`, `graph-query`,
+`graph-embedding`) and `graph-gateway` reach it only through that registry. `graph/` is a small part of what
+SemSource needs. Most of the port set is component, service, config, message, NATS, storage, fusion, and processor
+code.
+
+The registration cut is therefore the first boundary decision: SemSource registers the components and payloads it
+uses instead of importing the full registries. The port set row is the closure ceiling. It still reaches `agentic`,
+`agentic/agentrun`, `pkg/rulepack`, `vocabulary/agentic`, `flowstore`, and `engine` through `service`, `config`, and
+`component`; SETUP 03B decides whether each is separated or admitted. Growth beyond the ceiling needs architect
+approval.
 
 ## Earned design baseline
 
@@ -45,12 +77,16 @@ and neural retrieval does not imply generation.
 | Separately admitted generation | Independent optional capability | 2: neural plus instruct |
 
 Record the crosswalk against selected configs before migration; do not equate numbers or rename sister-repo files.
-SemSource's numbered configs use `bm25`/`http`/`http`; instruct is not a supported default and disables clustering.
+For example, SemEngine qualification slice 1 maps to SemSource's `configs/tiers/tier0-statistical.json`.
+SemSource's numbered examples use `bm25`/`http`/`http`; `tier2-semantic-instruct.json` leaves clustering off.
+`tier2-compose-dev.json` plus its opt-in dev overlay enables clustering and LLM; the shipped MVP uses semembed only.
 Generative answers/community enrichment require separate admission. Locate traversal, clustering, and rules by
 consumer need and dependencies, not old tier names. New tiers preserve identity, authority, and graph correctness.
 
-Before settling tier names, SETUP 03 must include a compact graph capability matrix: each added behavior, its
+Before settling tier names, SETUP 03B must include a compact graph capability matrix: each added behavior, its
 dependencies, and proving evidence. Define what each profile gives the graph beyond naming a search mechanism.
+"Tier" already names SemStreams search tiers, ADR-106 API-surface tiers, NATS storage tiers, and SemSource config
+tiers. SETUP 03B settles SemEngine's term; "profile" is the candidate, so that a fifth numbering is not added.
 
 Keep discovery and ranking signals distinct from materialized or inferred facts and edges. Relevance does not
 automatically become an asserted graph fact. Any such write needs an explicit mutation, provenance, and authority
@@ -64,6 +100,36 @@ compliance. Preserve internal predicate conventions and external IRI mappings wi
 Component and service contracts remain the composition baseline: declared dependencies and ports, typed operations,
 readiness, and explicit lifecycle ownership. Preserve their behavior while auditing implementations independently.
 Domain vocabularies and adapters stay consumer-owned; generic registration and export mechanisms belong in the engine.
+
+### Capability and service qualification
+
+This initial service matrix preserves the shared graph and separates embedding from instruction/generation.
+SETUP 03B refines the added behaviors and proving evidence; these service choices do not settle the tier taxonomy.
+
+| Profile | Graph capability in this slice | Embedding dependency | Generation dependency |
+| --- | --- | --- | --- |
+| 0 | Ingestion, mutation, graph queries | None | Not admitted here |
+| 1 | Text relevance and similarity | In-process BM25 | Optional; separate admission |
+| 2 | Learned similarity beyond shared terms | Qualified embedding provider | Optional; separate admission |
+
+semembed is the reference tier 2 embedding service; seminstruct is the reference optional generation service.
+Generation at tier 1 or 2 requires its own consumer contract and qualification; this is not a claim that SemSource
+ships a supported BM25-plus-generation profile. Neither generation nor seminstruct is mandatory for tier 2.
+Provider deployment stays outside the engine; SemEngine owns typed callers, context, freshness, and failure behavior.
+Prompts and generation policy remain product-owned.
+
+Equivalent providers are eligible only after qualifying the exact adapter contract; an "OpenAI-compatible" label
+does not establish interchangeability. The audited semembed serves a boot-selected local model, while seminstruct
+runs a llama.cpp server with a baked GGUF model. Pin service build/image, served model/artifact/version, vector
+dimensions, query prefixes/preprocessing, and any prompt/output contract. Request model labels alone are insufficient.
+Record cache/index identity and the rebuild or invalidation rule when those inputs change.
+The audited [semembed serving code][embed-serving] ignores request model selection; unknown configured names can
+serve a fallback while echoing the configured name. Qualify actual served artifacts/dimensions, not HTTP success alone.
+
+Real-provider tests apply to each admitted provider-backed capability. Check request/response semantics, readiness,
+context propagation, deadlines, cancellation, and recovery using the exact selected configuration. A configured but
+missing provider is unavailable evidence, never a passing or silently skipped gate. Report capability availability
+truthfully while retaining usable lower-profile graph operations; do not turn provider failures into absence findings.
 
 ### SemConnect reference fixtures
 
@@ -89,7 +155,7 @@ budget, provenance, and partial results. SemSource owns code/docs lenses, domain
 and MCP/HTTP adapters. Retain its lens-driven `Engine.Fuse` path first; qualify other generic entry paths by need.
 Initially exclude the other paths' research and agentic consumers.
 
-Before selecting the extraction revision or port set, map both families to current behavior, relevant defects, and
+Before selecting the port set, map both families to current behavior at the pin, relevant defects, and
 owner-approved shared contracts. Record keep, change, or defer with test implications. The `beta.161` baseline is
 evidence of current behavior, not a mandate for the future API.
 
@@ -105,11 +171,13 @@ mutable state, and helpers with many callers. Reuse a shared helper's review onl
 unchanged required guarantees. Missing evidence first requires targeted qualification, not presumed code repair.
 
 Use one ledger row per retained package: source path/full SHA, consumer purpose, destination, contract, dependencies
-and side effects, known risks, proving tests, owner, and disposition. Choose one of four outcomes:
+and side effects, known risks, proving tests, owner, and disposition. Seed the ledger from the measured closure and
+cross-check it against SemStreams' [sister-import list][sister-imports]. Choose one of four outcomes:
 
 - **Carry:** behavior and implementation satisfy the admitted contract; preserve code and relevant tests.
 - **Adapt:** change packaging or a bounded seam with explicit behavior differences and regression evidence.
-- **Repair before port:** qualification finds a broken required guarantee; prove the repair before admission.
+- **Repair before port:** qualification finds a broken required guarantee; prove the repair in SemEngine, behind a
+  failing-first test, before the package is admitted.
 - **Defer/exclude:** no retained consumer need, or narrow the contract explicitly instead of importing the obligation.
 
 Integrity, silent-loss prevention, context ownership, completed joins, authority/readiness, acknowledged durability,
@@ -118,6 +186,19 @@ cannot waive them. Noncritical duplication, naming, or optimization may have an 
 and due milestone. Unproven guarantees hold admission until qualification passes; elapsed time is not a pass.
 Avoid opportunistic refactors. Changed behavior needs failing-first tests; unchanged extraction retains earned tests
 and adds only missing boundary evidence. Independent reviewer approval is required before each slice integrates.
+
+The pin is frozen (owner ruling, 2026-09-30). Repairs land in SemEngine behind failing-first tests and are not
+round-tripped through SemStreams. A SemStreams change made after the pin enters only as its own ledger row, with the
+source commit and a proving test. Nothing syncs automatically in either direction.
+
+SemStreams' lifecycle campaign is not finished: at the audit, [epic 1147][ss-1147] and issues 1145, 1411, 1415, 1417,
+and 1218–1220 were open. Whatever is still open against a port-set package at pin time becomes that package's
+repair-before-port row (owner ruling, 2026-09-30). SemStreams decides separately for its remaining surface.
+
+The context and lifecycle rules below bind new and changed code. Carried code is triaged in the ledger instead of
+being rewritten wholesale: the 46-package row has about 66 non-test `context.Background()` and `context.TODO()`
+call sites (a grep count, not an audit). Record each as a legitimate root with its reason, or as a defect. A root
+that breaks an admission gate is a repair; the others are carried unchanged.
 
 ## Proposed foundation
 
@@ -141,9 +222,10 @@ Use one Task entrypoint for local verification and CI, with the same underlying 
 - Pin `revive` and `govulncheck`; review vulnerability findings against reachable behavior and the selected toolchain.
   Go's [security guidance][go-security] describes the role of `govulncheck`.
 
-Order checks from cheap to expensive. Define critical packages when the extraction boundary is approved, and retain
-their 80% coverage minimum alongside lifecycle, concurrency, integration, and regression evidence. Measure gate
-durations before setting enforceable budgets.
+Order checks from cheap to expensive. Define critical packages when the extraction boundary is approved, and enforce
+an 80% coverage minimum for them alongside lifecycle, concurrency, integration, and regression evidence. SemStreams
+states 80% as guidance in its testing docs and the audit found no CI enforcement, so treat this as a new gate.
+Measure gate durations before setting enforceable budgets.
 
 GitHub Actions should cancel superseded PR runs, apply explicit timeouts, use minimal token permissions, and pin
 third-party actions to full commit SHAs with an update policy. See [GitHub's security guidance][actions-security].
@@ -167,7 +249,9 @@ identities before cleanup on success, failure, cancellation, or partial startup.
 An interrupted run must leave unrelated worktrees and persistent development services intact.
 
 For paid or prolonged runs, poll concrete state every 30–60 seconds and validate log filters against real output.
-Compare timestamps with expected duration and stop provably wedged work. Qualification requires no paid LLM calls.
+Compare timestamps with expected duration and stop provably wedged work. Default qualification requires no metered
+hosted API; self-hosted compute, memory, storage, and wall time still have real costs. Hosted runs require deliberate
+selection and bounded time, request/token, and cost policies. Never silently fall back to a hosted provider.
 
 ### Day-one helpers and lifecycle ownership
 
@@ -257,29 +341,47 @@ coordinate admission across the repos sharing the daemon. Prove lifecycle owners
 
 Pass evidence: two worktrees run without resource collisions; interrupting one leaves the other intact; a forced
 startup failure captures evidence and cleans partially created resources. Prove that persistent development data and
-unrelated containers survive cleanup. Reviewer sign-off unlocks consumer baseline work.
+unrelated containers survive cleanup. Reviewer sign-off unlocks SETUP 03B.
 
-### SETUP 03 Pinned consumer baseline and contract
+### SETUP 03A Pinned consumer baseline
 
-Owner: architect for contract approval, Go developer for fixtures, independent Go reviewer for evidence, technical
-writer for the contract. Dependency: SETUP 02 sign-off and a recorded SemSource revision.
+Owner: SemSource owner for the migration, Go developer for fixtures and measurement, independent Go reviewer for
+evidence. Dependency: agreement on this plan. It runs on SemStreams, so it may proceed alongside SETUP 01 and 02.
 
-Qualify SemSource against `beta.161`, then resolve the fusion and graph tool boundary before choosing the port set and
-source revision. Inventory retained dependencies outside `graph/`; separately qualify the chosen revision. Agree on
-entity identity, update and deletion semantics, provenance, content access, query behavior, and acknowledged writes.
+Record the exact pin. Build the known-answer corpus and run it on SemSource as it is today, under each SemSource
+config that a SemEngine tier will be compared against. Then migrate SemSource to the pin on SemStreams and run the
+corpus again. The port set carries at least 27 breaking changes since beta.161 that SemSource must absorb regardless,
+and the later module-path swap is mechanical. Differences between the two runs are upstream behavior changes,
+explained by ADRs 094–107 or filed as defects. Re-measure the dependency closure at the pin, including test-only
+dependencies. Every later comparison then has two points: SemSource on SemStreams at the pin, and the same workload
+on SemEngine.
+
+Pass evidence: the known-answer workload below has recorded expectations and results on both SemStreams revisions
+for each compared config; every difference between them is attributed; the closure measurement is recorded with its
+commands. The reviewer approves the baseline evidence.
+
+### SETUP 03B Contract and boundary
+
+Owner: architect for contract approval, independent Go reviewer for evidence, technical writer for the contract.
+Dependency: SETUP 02 and SETUP 03A sign-off.
+
+Decide the registration cut and resolve the fusion and graph tool boundary, then choose the port set within the
+closure ceiling. Inventory retained dependencies outside `graph/`. Agree on entity identity, update and deletion
+semantics, provenance, content access, query behavior, and acknowledged writes.
 Required deliverable: a retained-contract matrix mapping observed `beta.161` behavior to intended SemEngine behavior,
 keep/change/defer, owner, and proving test. Include tiers, Graphable/vocabulary, statement metadata, content,
-component/service seams, context/stop/join/durability invariants, and the crosswalk, with SemConnect reference cases.
+component/service seams, provider/model identity, context/stop/join/durability invariants, and the crosswalk.
+Include SemConnect reference cases.
+Explicitly record fusion and graph-tool keep/change/defer decisions, owners, and proving tests in that matrix.
 Evaluate find/anchor/ask as cases, not an already agreed mode API.
 
-Pass evidence: the known-answer workload below has recorded expectations and results on the pinned baseline; selected
-revision differences and reproducible defects are explicit. The architect approves the contract and critical package
-list; the reviewer approves the baseline evidence before extraction begins.
+Pass evidence: the matrix is complete against the 03A baseline, and the open owner ruling under deferred work is
+recorded. The architect approves the contract, port set, and critical package list before extraction begins.
 
 ### SETUP 04 Sequential extraction and tier releases
 
 Owner: Go developer for extraction and consumer integration, independent Go reviewer for release evidence, architect
-for contract changes, technical writer for current docs and extraction ledger. Dependency: SETUP 03 sign-off.
+for contract changes, technical writer for current docs and extraction ledger. Dependency: SETUP 03B sign-off.
 
 Port small slices using the admission heuristic, mapping each dependency closure to the contract and ledger.
 Shared contract planning may look ahead; do not port the next tier until the current tier passes its architect and
@@ -288,32 +390,41 @@ Keep the accepted lower profile deployable and retain every promised lower-profi
 including after model/provider changes. Test profiles independently: this does not require identical rankings or
 simultaneous BM25/neural operation. Hybrid retrieval needs separate design. Measure budgets with real workloads.
 
+Qualify each tier on a SemSource integration branch built wholly on SemEngine; the SemSource owner owns that branch
+and its per-tier compositions. No binary imports both modules: their Go types are distinct, and both would claim
+`GRAPH`, `ENTITY_STATES`, `graph.ingest.>`, and `graph.mutation.>`. SemSource's shipped MVP uses semembed, so its
+mainline stays on SemStreams until tier 2 passes. Tiers 0 and 1 are usable lower profiles, not its migration point.
+
 #### SETUP 04A Tier 0: Graph foundation (provisional slice)
 
 Qualify Graphable ingestion, typed identities/triples, metadata, vocabulary, mutations, indexed exact queries,
 references/body retrieval, and minimal deterministic fusion, including SemConnect and context/lifecycle/restart cases.
 SemSource currently always configures graph-embedding: prove a true no-embedder composition and explicitly admitted
-graph-only interfaces, not unsupported NL verbs. NATS remains required; no model service is needed. Compile-time
-clustering/LLM imports may need a minimal reviewed separation; any dormant bridge needs an owner and exit condition,
-not implicit higher-tier admission. Architect contract approval and independent evidence review unlock tier 1.
+graph-only interfaces, not unsupported NL verbs. The SemSource owner builds that composition on the integration
+branch. SemSource has no no-embedder config, so the baseline is its structural tools' behavior under
+`tier0-statistical.json` at the pin. NATS remains required; no model service is needed. Compile-time imports beyond
+the admitted port set, including clustering, LLM, agentic, and rule packages, need a reviewed separation; any
+dormant bridge needs an owner and exit condition, not implicit higher-tier admission. Architect contract approval
+and independent evidence review unlock tier 1.
 
 #### SETUP 04B Tier 1: Lexical retrieval (provisional slice)
 
 Add BM25 with known-answer retrieval and ranking cases, scope-before-limit behavior, result caps, stale/update
-semantics, index rebuild, and restart. Qualify the retained SemSource lexical paths with no model service, retaining
+semantics, index rebuild, and restart. Qualify the base SemSource lexical paths without a model service, retaining
 all tier 0 guarantees. Architect and reviewer acceptance unlock tier 2 extraction.
 
 #### SETUP 04C Tier 2: Neural retrieval (provisional slice)
 
-Add qualified real embeddings with recorded model/configuration identity, paraphrase cases, mixed code/docs scope,
+Add real embeddings from semembed or a qualified equivalent with pinned identity, paraphrase cases, mixed code/docs,
 warm/cold paths, deadlines, provider unavailability, and recovery. Specify and test fallback or explicit `Deferred`
 outcomes without weakening tiers 0 and 1. Only this stage qualifies the selected full SemSource neural/default
 workload; generator-backed answers or community enrichment still need separate admission.
 
 Pass evidence: the declared tier's workload and SemEngine dogfooding pass through admitted SemSource human/agent
 interfaces; current docs/tests explain the behavior. Release claims name the tier and tag the exact tested commit and
-consumer baseline. Tier 0/1 releases need no semembed run; tier 2 releases and embedding integration changes require
-bounded real-semembed qualification. Release checks must verify applicable evidence, never bypass it during tagging.
+consumer baseline. Tier 0/1 base profiles need no embedding-service run. Tier 2 releases and embedding changes require
+bounded real-provider qualification; separately admitted generation requires its own real-provider evidence at any
+admitted profile. Release checks must verify applicable evidence, never bypass it during tagging.
 
 ## Consumer qualification evidence
 
@@ -337,8 +448,9 @@ an accepted publish alone must not be treated as proof that data survives broker
 where it is durable, and whether recovery depends on replay or re-ingestion, then test that promise.
 
 Verification follows the admitted tier: deterministic graph checks start at tier 0, lexical checks at tier 1, and
-real-semembed qualification at tier 2. Model services must not block tier 0 or 1 admission or release. All previously
-promised lower-tier suites remain required. No benchmark targets or latency promises are assumed before measurement.
+real embedding-provider qualification at tier 2. Models do not block tier 0/1 base profiles; optional generation
+is verified only where admitted, and becomes required evidence there. All promised lower-tier suites remain required.
+No benchmark targets or latency promises are assumed before measurement.
 Cover duplicate-name anchor selection and mixed code/docs scoped before limiting where each capability is admitted;
 tier 2 adds actual warm/cold embedding paths with recorded model/configuration identity and stable acceptance criteria.
 Missing bodies, partial hydration, stale readiness, or transport faults must not become confident not-found answers.
@@ -348,8 +460,10 @@ Distinguish healthy lag with freshness information from `Deferred`: no usable an
 
 - SemSource's current smoke checks establish startup and route reachability, not complete semantic correctness.
   The known-answer workload must supply the missing evidence.
-- SemStreams [RPC stream collision issue 1143][rpc-issue] is open. Reproduce it against the chosen revision and assess
+- SemStreams [RPC stream collision issue 1143][rpc-issue] is open. Reproduce it against the pin and assess
   whether the retained request paths need the fix before treating it as a current SemEngine defect.
+- SemSource [issue 178][semsource-178] reports that beta.161 fails the OSH corpus tail against the GRAPH 256MiB
+  ceiling that beta.159/160 absorbed. The 03A baseline must record this and check whether the pin resolves it.
 - SemSource [physical deletion issue 210][delete-issue] is open. Physical removal differs from retained stale history;
   require hard removal only if admitted by the consumer contract, and reproduce the relevant behavior.
 - Fusion risks include [truncation nondeterminism 621][fusion-truncation] and
@@ -363,9 +477,22 @@ Defer cloud infrastructure, Kubernetes, Terraform, fleet management, agentic run
 matrices, and extra domain skills or approval layers until the retained workload demonstrates a concrete need.
 Keep SemStreams as reference until the workload qualifies and remaining ownership resolves; defer SemTeams migration.
 
+Open owner ruling: how SemEngine relates to SemStreams [ADR-106][adr-106], which freezes the packages its sisters
+import on the way to 1.0. Decide whether that freeze proceeds unchanged alongside SemEngine or whether extracted
+packages leave the frozen surface. The ruling is due with SETUP 03B approval.
+
+[ss-1147]: https://github.com/C360Studio/semstreams/issues/1147
+[semsource-178]: https://github.com/C360Studio/semsource/issues/178
+[sister-imports]:
+  https://github.com/C360Studio/semstreams/blob/5457b3458936f668b71d2fea061f67f8d7d01e67/release/tier1-packages.txt
+[adr-106]: https://github.com/C360Studio/semstreams/tree/5457b3458936f668b71d2fea061f67f8d7d01e67/docs/adr
 [semstreams]: https://github.com/C360Studio/semstreams/tree/5457b3458936f668b71d2fea061f67f8d7d01e67
 [semsource]: https://github.com/C360Studio/semsource/tree/34bda6406fb06fd723a040988647b204204a1583
 [semconnect]: https://github.com/C360Studio/semconnect/tree/d0d06e00bf05a545f30ceea798db1c2b1ee47d4f
+[semembed]: https://github.com/C360Studio/semembed/tree/7ceb5281c96b3664321f3f28c9d7f96acbb41843
+[embed-serving]:
+  https://github.com/C360Studio/semembed/blob/7ceb5281c96b3664321f3f28c9d7f96acbb41843/src/main.rs#L162-L188
+[seminstruct]: https://github.com/C360Studio/seminstruct/tree/7f9135a99cd27a6c63a2a60db5daeee9f5622be4
 [actions-security]: https://docs.github.com/en/actions/reference/security/secure-use
 [go-security]: https://go.dev/doc/security/
 [go-context]: https://pkg.go.dev/context

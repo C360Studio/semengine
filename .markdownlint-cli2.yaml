@@ -1,0 +1,4 @@
+# Files markdownlint-cli2 must not lint: dependencies and generated tool output.
+ignores:
+  - node_modules/**
+  - "**/node_modules/**"

@@ -1,0 +1,83 @@
+version: '3'
+
+# One entrypoint for local verification and CI; both run these same commands.
+# Tool pins live in one place each: Go in go.mod, Node in .nvmrc, Task in
+# .task-version, OpenSpec and markdownlint in package.json, revive and
+# govulncheck in go.mod tool directives.
+
+tasks:
+  default:
+    desc: List tasks
+    cmds:
+      - task --list
+
+  doctor:
+    desc: Report tool versions and Docker reachability against their pins; starts no workloads
+    cmds:
+      - scripts/doctor.sh
+
+  fmt:
+    desc: Format Go sources (changes files)
+    cmds:
+      - 'echo "gofmt: $(find . -name ''*.go'' -not -path ''./node_modules/*'' | wc -l | tr -d '' '') Go file(s)"'
+      - gofmt -w .
+
+  fmt:check:
+    desc: Fail if any Go source needs formatting (no writes)
+    cmds:
+      - 'echo "gofmt: $(find . -name ''*.go'' -not -path ''./node_modules/*'' | wc -l | tr -d '' '') Go file(s)"'
+      - |
+        drift=$(gofmt -l .)
+        if [ -n "$drift" ]; then echo "gofmt drift:"; echo "$drift"; exit 1; fi
+
+  tidy:check:
+    desc: Fail if go.mod or go.sum is not tidy
+    cmds:
+      - go mod tidy -diff
+
+  build:
+    desc: Build all packages
+    cmds:
+      - scripts/gopkgs.sh go build ./...
+
+  vet:
+    desc: Run go vet
+    cmds:
+      - scripts/gopkgs.sh go vet ./...
+
+  lint:
+    desc: Run the pinned revive with revive.toml
+    cmds:
+      - scripts/gopkgs.sh go tool revive -config revive.toml -formatter friendly ./...
+
+  vuln:
+    desc: Run the pinned govulncheck over all packages
+    cmds:
+      - scripts/gopkgs.sh go tool govulncheck ./...
+
+  test:unit:
+    desc: Run unit tests with the race detector
+    cmds:
+      - scripts/gopkgs.sh go test -race -count=1 ./...
+
+  # test:integration goes here once integration packages and a workload exist.
+
+  spec:check:
+    desc: Validate all OpenSpec changes and specs strictly
+    cmds:
+      - npx --no-install openspec validate --all --strict --no-interactive
+
+  spec:queue:
+    desc: Show each in-flight OpenSpec change with its holds and blocking conditions
+    cmds:
+      - scripts/openspec-queue.sh
+
+  docs:check:
+    desc: Lint Markdown with markdownlint-cli2
+    cmds:
+      - npx --no-install markdownlint-cli2 "**/*.md"
+
+  verify:
+    desc: Run every gate cheapest first with per-step timings; fail if tracked files change
+    cmds:
+      - scripts/verify.sh

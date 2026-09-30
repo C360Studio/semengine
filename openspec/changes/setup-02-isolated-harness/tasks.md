@@ -29,11 +29,11 @@ directories attached as artifacts, not committed.
 
 ## 3. Runner
 
-- [ ] 3.1 `scripts/test-integration.sh` implements the byte-compatible lock, reads only `SEMENGINE_*` env, owns the
+- [x] 3.1 `scripts/test-integration.sh` implements the byte-compatible lock, reads only `SEMENGINE_*` env, owns the
       process group with signal forwarding, runs preflight, writes the evidence dir, uses the canonical argv, checks
       the image cache by digest with a bounded pull, checks leaks by session (IDs only), and releases the lock only
       with a matching token
-- [ ] 3.2 `internal/harness/runner` tests R1–R4 run with a fake toolchain and temp lock dir, are shown failing first,
+- [x] 3.2 `internal/harness/runner` tests R1–R4 run with a fake toolchain and temp lock dir, are shown failing first,
       then pass; R4 pins the six owner keys against the recorded SemStreams format
 
 ## 4. NATS fixture (integration lane)

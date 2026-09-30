@@ -73,7 +73,15 @@ tasks:
     cmds:
       - scripts/gopkgs.sh go test -race -count=1 ./...
 
-  # test:integration goes here once integration packages and a workload exist.
+  test:integration:
+    desc: Run Docker-backed tests through the admitted runner (host lock, process group, leak check); -- <pkgs> to focus
+    cmds:
+      - scripts/test-integration.sh {{.CLI_ARGS}}
+
+  cover:check:
+    desc: Fail below 80% coverage on natsfixture (last integration run) and lifecycletest, probe (unit run)
+    cmds:
+      - scripts/cover-check.sh
 
   spec:check:
     desc: Validate all OpenSpec changes and specs strictly

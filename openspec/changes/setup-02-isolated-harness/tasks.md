@@ -47,9 +47,9 @@ directories attached as artifacts, not committed.
 
 ## 5. Gates
 
-- [ ] 5.1 `task test:integration` exists; `scripts/verify.sh` runs it after `test:unit`; the CI workflow uploads
+- [x] 5.1 `task test:integration` exists; `scripts/verify.sh` runs it after `test:unit`; the CI workflow uploads
       `.evidence` as an artifact with a retention period
-- [ ] 5.2 `task cover:check` fails below 80% on `natsfixture` (integration profile), `lifecycletest`, and `probe`
+- [x] 5.2 `task cover:check` fails below 80% on `natsfixture` (integration profile), `lifecycletest`, and `probe`
       (unit profile), and passes on the branch
 - [ ] 5.3 Local and CI `task verify` durations with the new steps (E2) and the observed dynamic host-port range (E4)
       are recorded on PR #13

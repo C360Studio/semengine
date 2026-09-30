@@ -89,7 +89,7 @@ record command "$owner_command"
 record lock_dir "$lock_dir"
 record packages "${packages[*]}"
 record git_head "$(git rev-parse HEAD 2>/dev/null || echo unknown)"
-record git_dirty_sha "$(git status --porcelain 2>/dev/null | shasum | cut -c1-12)"
+record tree_state "$(scripts/tree-state.sh 2>/dev/null || echo unknown)"
 
 lock_held=false
 pull_pid=""

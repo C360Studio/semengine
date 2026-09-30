@@ -1,0 +1,65 @@
+# Shared work protocol (Claude and Codex)
+
+Canonical. `CLAUDE.md` and `AGENTS.md` point to this file and carry the three gates (claim, merge, close) inline; edit
+the protocol here only. Read it before taking, landing, or closing work; the pickup and handoff skills read it.
+
+State that both agents must see lives in the repository's tools, never in a prose document or either agent's private
+memory. Each question has one home, and each home is a `gh` or `task` query. There is no `/tickets` state.
+
+- **What is wanted, what kind, is it decided:** a GitHub issue with labels `type:epic`, `status:needs-decision`,
+  `status:blocked`. `status:needs-decision` is the owner's docket; a ruling is posted as an issue comment and the
+  label removed. `status:blocked` names its blocker in a comment.
+- **An epic:** a tracking issue labeled `type:epic` whose body carries a task list of `#n` children. GitHub renders
+  the progress; there is no separate epic document.
+- **What gates a release:** a GitHub milestone. Setup work (SETUP 01 to 03B) shares one milestone; each provisional
+  tier release (SETUP 04A, 04B, 04C) has its own. An epic sits in exactly one milestone.
+- **Who has claimed what:** a **draft PR** opened at the start of the work, with `Closes #n` for a leaf issue or
+  `Addresses #n` for an epic. No draft PR, no claim. Design-phase work claims the same way; the OpenSpec change is its
+  first content commit. A stop-point goes in the PR description.
+- **Target state, task truth, holds:** the OpenSpec change inside that PR; `task spec:queue` reads its holds. The
+  archive (`openspec archive <id>` + spec sync) is the landing PR's last commit, reviewed with the code. No task may
+  assert a post-merge fact ("CI green", "merge-ready"): such a task strands the change.
+- **Why:** an ADR, or the owner's ruling comment on the issue. Owner rulings of 2026-09-30 on the plan are recorded
+  on PR #1.
+
+## Work lifecycle
+
+- **Start:** `gh issue list --state open` · `gh pr list` (drafts are claims; skip them) · `task spec:queue` ·
+  `gh run list --branch main --limit 3` · `gh issue list --label status:needs-decision`.
+- **Take work:** an unclaimed issue, then a dedicated worktree on its own branch, then push, then a draft PR with
+  `Closes #n` or `Addresses #n`, then work. One claimed PR owns one worktree. When multiple agents share a host, the
+  primary checkout is discovery-only and no agent commits from it. Immediately before every commit and push, verify
+  that the worktree's current branch is the draft PR head; a mismatch stops the operation. A matching branch name or
+  agent name never shows that a worktree is idle.
+- **Bootstrap exception:** while the repository has no base protocol, SETUP 01 (epic #5, claim PR #12) is claimed
+  under the plan's bounded exception. The exception ends when that PR merges; every later claim follows the rules
+  above.
+- **Worktree hygiene:** the claim's worktree lives at a durable sibling path
+  (`git worktree add ../semengine-wt/<branch> -b <branch> origin/main`), never under `/private/tmp`, which a reboot
+  purges; `git worktree remove` it when the PR merges. Heavy local gates run one agent at a time on a shared host:
+  worktrees fix the git collision, not the CPU one. CI is the arbiter; a local red under contention is not a finding.
+- **File:** before opening an issue, route the finding. A residual of a decision this change just made deliberately
+  belongs in a doc comment at the line or in the change's `design.md`. A consequence an owner ruling already states
+  needs nothing; the ruling is the record. An unmeasured cost becomes a *Declared cost* section in the design. Only an
+  architectural finding (it crosses files, would need its evidence re-collected to re-derive, or changes what someone
+  should not do next) becomes an issue. Ask the owner before filing when placement is a genuine scheduling call.
+- **Land:** implementation review, then the owner-run cross-agent round where the owner asks for it, then fixes and
+  re-review, then archive as the final content commit, then a narrow reviewer check of the archive/spec sync, then
+  undraft, then CI green with **no known unfixed flake in a required job** (a fresh green over a known flake is
+  rerun-to-green: fix it, or file it and obtain an explicit owner waiver recorded as a PR comment), then squash
+  merge. A correction after archive re-enters reconciliation and final review; no later content commit bypasses the
+  archive/spec-sync check. State `implemented-by: <model or persona>` in the PR body.
+- **Close:** the squash merge of a PR that declared `Closes #n` at review time closes that issue; the merge is the
+  authorization. The declaration must predate the review rounds that cover it. A PR that only `Addresses` an epic
+  closes nothing. A close with no merged PR behind it (duplicate, stale, fixed elsewhere) takes the owner's word on
+  the issue itself; an approval of adjacent work (a PR, a review round, a design, a waiver) never widens into a
+  close, and a bare "approved" closes nothing.
+
+## Verification
+
+CI has two jobs: `verify`, which runs `task verify`, and `required`, which fails if `verify` failed, is missing, or was
+skipped or cancelled. A local `task verify` and the CI job run the same commands. Gate selection and evidence
+recording are in [semengine-preflight](skills/semengine-preflight/SKILL.md).
+
+There is no program baton document. Agents mutate only this repository: SemStreams and other sister repositories are
+read-only inventory.

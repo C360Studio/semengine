@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # .task-version is the single pin; task doctor compares against the same file.
+      - name: Read Task version pin
+        id: task-version
+        run: echo "version=$(tr -d '[:space:]' < .task-version)" >> "$GITHUB_OUTPUT"
+
+      - uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
+        with:
+          version: ${{ steps.task-version.outputs.version }}
+
+      - run: task doctor
+
+      - run: task verify
+
+  # Single required status check: anything other than success in a needed job
+  # (failure, cancelled, skipped, or a job that never ran) fails the aggregate.
+  required:
+    name: Required
+    needs: [verify]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every needed job to succeed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "needed job results: ${RESULTS:-<none>}"
+          if [ -z "$RESULTS" ]; then echo "no needed jobs reported"; exit 1; fi
+          for r in $RESULTS; do
+            if [ "$r" != "success" ]; then echo "required check did not succeed: $r"; exit 1; fi
+          done

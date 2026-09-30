@@ -6,16 +6,15 @@ not a task tracker and not a description of the tree.
 
 ## Not yet present
 
-- **No Go packages.** There are no `.go` files; `go.mod` declares the module and its pinned tools only.
-- **No test harness.** The helper kit, owned NATS fixtures, and lifecycle tests are SETUP 02 (issue #6).
+- **No product Go packages.** The only Go code is the test harness under `internal/harness/`.
 - **No consumer.** SemSource does not build against SemEngine; no consumer API, registration cut, or contract exists.
   The consumer baseline and contract are SETUP 03A and 03B (issues #7, #8).
-- **No ported code.** No SemStreams code has been ported. The admission ledger exists (see "Present") with twelve
-  entries for the SemStreams files SETUP 02 adapts, carries, or excludes; package rows are seeded in SETUP 03 and 04.
-  Its schema check, `task ledger:check`, is not built yet (SETUP 02 task 1.3).
+- **No ported SemStreams package.** SETUP 02 carried two scripts and adapted patterns; package rows are seeded in the
+  admission ledger during SETUP 03 and 04.
 - **No runtime binary, no release, no tag.**
-- **No integration or consumer lanes** in the gate graph; they join `task verify` when their workload exists.
-- **No ADRs and no OpenSpec specs.** `openspec/specs/` is empty; the one active change is listed under "Present".
+- **No consumer lane** in the gate graph; it joins `task verify` when its workload exists.
+- **No ADRs and no OpenSpec specs.** `openspec/specs/` is empty until the SETUP 02 change is archived; the one active
+  change is listed under "Present".
 
 ## Present
 
@@ -29,12 +28,21 @@ not a task tracker and not a description of the tree.
 | `.claude/`, `.codex/` | Thin platform adapters that point into `.agents/` |
 | `go.mod`, `go.sum`, `revive.toml` | Module `github.com/c360studio/semengine`; `revive` and `govulncheck` as tools |
 | `Taskfile.yml`, `scripts/` | The one Task entrypoint for local verification and CI |
+| `internal/harness/natsfixture/` | Owned NATS fixture: admission-gated start, ordered `Stop`, `Name`, evidence |
+| `internal/harness/lifecycletest/` | Owner-first lifecycle checks (`Run`) for stateful components |
+| `internal/harness/probe/` | Callback, observed-context, and bounded-polling test probes |
+| `internal/harness/contract/` | Repository contract tests T-B1 to T-B7, including `task ledger:check` |
+| `internal/harness/runner/` | Tests of the integration runner script |
+| `scripts/test-integration.sh` | `task test:integration`: host lock, image preflight, signal forwarding, leak check |
+| `scripts/cover-check.sh` | `task cover:check`: 80% statements on `natsfixture`, `lifecycletest`, `probe` |
+| `.nats-image` | The pinned NATS image digest every fixture starts |
+| `.evidence/` (ignored) | Per-run integration evidence; CI uploads it as an artifact |
 | `.github/` | CI workflow (jobs `verify` and `required`) and Dependabot configuration |
 | `package.json`, `.nvmrc`, `.task-version` | Pins for the Node-based OpenSpec and markdownlint tools and Task |
 | `.markdownlint.yaml`, `.markdownlint-cli2.yaml` | Markdown lint configuration behind `task docs:check` |
 | `openspec/` | OpenSpec configuration; `specs/` is empty |
 | `openspec/changes/setup-02-isolated-harness/` | The one active change: SETUP 02 (draft PR #13, epic #6) |
-| `docs/admission-ledger.yaml` | The admission ledger: twelve entries at full SemStreams SHAs; nothing ported yet |
+| `docs/admission-ledger.yaml` | The admission ledger: twelve entries at full SemStreams SHAs, checked by `task ledger:check` |
 | `LICENSE` | MIT, Copyright (c) 2025 C360 |
 | `package-lock.json`, `.gitignore` | npm lockfile for the pinned tools; ignore rules for Go, Node, editors, coverage |
 

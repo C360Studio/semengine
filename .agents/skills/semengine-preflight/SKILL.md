@@ -37,7 +37,7 @@ with current CI.
 | `task lint` | Pinned `revive` |
 | `task vuln` | Pinned `govulncheck`; review findings against reachable behavior |
 | `task test:unit` | Unit tests with the race detector |
-| `task verify` | The checks above except `doctor`, `fmt`, `spec:queue`, cheapest first; fails if tracked files changed |
+| `task verify` | The checks above except `doctor`, `fmt`, `spec:queue`, cheapest first; fails on tracked-file change |
 
 CI has two jobs: `verify` runs `task verify`, and `required` fails if `verify` failed, is missing, or was skipped or
 cancelled. Integration and consumer lanes join `task verify` when their packages and workload exist; until then no

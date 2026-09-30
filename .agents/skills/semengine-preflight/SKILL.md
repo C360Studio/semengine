@@ -36,12 +36,17 @@ with current CI.
 | `task vet` | `go vet` |
 | `task lint` | Pinned `revive` |
 | `task vuln` | Pinned `govulncheck`; review findings against reachable behavior |
+| `task cleanup-roots:check` | Fails if a test stops, closes, or terminates under `context.Background()` or `TODO()` |
+| `task ledger:check` | Validates `docs/admission-ledger.yaml` against its schema |
 | `task test:unit` | Unit tests with the race detector |
+| `task test:integration` | Docker-backed tests through the admitted runner (host lock, process group, leak check) |
+| `task cover:check` | Fails below 80% coverage on `natsfixture`, `lifecycletest`, `probe` |
 | `task verify` | The checks above except `doctor`, `fmt`, `spec:queue`, cheapest first; fails on tracked-file change |
 
 CI has two jobs: `verify` runs `task verify`, and `required` fails if `verify` failed, is missing, or was skipped or
-cancelled. Integration and consumer lanes join `task verify` when their packages and workload exist; until then no
-task for them exists, and a missing lane is not a passing one.
+cancelled. `task verify` needs a reachable Docker daemon for `test:integration`; a daemon that is not reachable is a
+failing gate, never a skipped one. A consumer lane joins `task verify` when its workload exists; until then no task
+for it exists, and a missing lane is not a passing one.
 
 Select by what the diff changes:
 
@@ -49,6 +54,10 @@ Select by what the diff changes:
   `task spec:check` when `openspec/` changed.
 - **An OpenSpec change:** `task spec:check`, then read `task spec:queue` in this worktree.
 - **Go behavior:** `task test:unit`, `task vet`, `task lint`, `task build`; focused tests first during iteration.
+- **Docker-backed behavior (`internal/harness/natsfixture`, `scripts/test-integration.sh`):**
+  `task test:integration -- <pkgs>` to focus, then `task cover:check`; never `go test` directly, since the fixture
+  refuses to start without the runner's admission token.
+- **`docs/admission-ledger.yaml`:** `task ledger:check`.
 - **Dependencies or `go.mod`:** `task tidy:check` and `task vuln` in addition to the Go gates.
 - **Before any implementation push:** `task verify`.
 

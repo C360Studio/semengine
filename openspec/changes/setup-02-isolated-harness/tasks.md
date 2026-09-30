@@ -8,7 +8,7 @@ directories attached as artifacts, not committed.
 - [x] 1.1 `.nats-image` holds the one digest pin with the tag as a comment; `task doctor` reports, read-only, whether
       the NATS image is cached by digest, whether the ryuk image is cached, the lock owner, the effective Docker host
       and context, the Ryuk env, and whether `~/.testcontainers.properties` is present
-- [ ] 1.2 `go.mod` requires `nats.go`, `testcontainers-go`, and `gopkg.in/yaml.v3`; `task tidy:check` and `task vuln`
+- [x] 1.2 `go.mod` requires `nats.go`, `testcontainers-go`, and `gopkg.in/yaml.v3`; `task tidy:check` and `task vuln`
       pass; govulncheck findings are recorded on PR #13
 - [x] 1.3 `docs/admission-ledger.yaml` holds the 12 drafted entries; the T-B7 schema test is shown failing first
       against a short-SHA fixture and then passes against the ledger; `task ledger:check` runs it
@@ -51,18 +51,18 @@ directories attached as artifacts, not committed.
       `.evidence` as an artifact with a retention period
 - [x] 5.2 `task cover:check` fails below 80% on `natsfixture` (integration profile), `lifecycletest`, and `probe`
       (unit profile), and passes on the branch
-- [ ] 5.3 Local and CI `task verify` durations with the new steps (E2) and the observed dynamic host-port range (E4)
+- [x] 5.3 Local and CI `task verify` durations with the new steps (E2) and the observed dynamic host-port range (E4)
       are recorded on PR #13
 
 ## 6. Pass evidence (recorded on PR #13, artifacts attached)
 
-- [ ] 6.1 Two-worktree run with a wait budget: both green, the second waited on the first's owner line, identities
+- [x] 6.1 Two-worktree run with a wait budget: both green, the second waited on the first's owner line, identities
       disjoint
-- [ ] 6.2 Interrupt protocol: signal and group timings recorded, before/after listings identical outside the
+- [x] 6.2 Interrupt protocol: signal and group timings recorded, before/after listings identical outside the
       interrupted run's session label, the other worktree completes
-- [ ] 6.3 Forced failure at script and Go level: bounded pull failure, lock released, nothing left by session, phase
+- [x] 6.3 Forced failure at script and Go level: bounded pull failure, lock released, nothing left by session, phase
       records and logs captured
-- [ ] 6.4 Persistent data survives, both directions: KV entries round-trip unchanged, and a read-only evaluation of
+- [x] 6.4 Persistent data survives, both directions: KV entries round-trip unchanged, and a read-only evaluation of
       every SemStreams destroyer filter lists no SemEngine resource
 - [ ] 6.5 `docs/repository-map.md`, the `docs/provenance.md` status, and the preflight skill gate table describe the
       implemented harness; the change is archived with its specs synced in the last commit

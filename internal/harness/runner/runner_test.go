@@ -56,7 +56,7 @@ printf '%s\n' "$@" > "$FAKE_DIR/go.argv"
   echo "SEMENGINE_EVIDENCE_DIR=${SEMENGINE_EVIDENCE_DIR:-}"
 } > "$FAKE_DIR/go.env"
 cp "$SEMENGINE_DOCKER_ADMISSION_LOCK_DIR/owner" "$FAKE_DIR/go.owner"
-echo fake-session >> "$SEMENGINE_EVIDENCE_DIR/testcontainers-session"
+echo org.testcontainers.sessionId=fake-session >> "$SEMENGINE_EVIDENCE_DIR/testcontainers-session"
 if [ "${FAKE_GO_MODE:-ok}" = hang ]; then
   lock="$SEMENGINE_DOCKER_ADMISSION_LOCK_DIR"
   on_term() {
@@ -500,7 +500,7 @@ func TestLeakCheckBySession(t *testing.T) {
 		if !strings.Contains(log, "rm -f c0ffee00c0ffee00") {
 			t.Errorf("survivor not removed by id:\n%s", log)
 		}
-		if !strings.Contains(log, "ps -aq --no-trunc --filter label=org.testcontainers.golang.sessionId=fake-session") {
+		if !strings.Contains(log, "ps -aq --no-trunc --filter label=org.testcontainers.sessionId=fake-session") {
 			t.Errorf("leak listing was not by the session label:\n%s", log)
 		}
 		if strings.Contains(log, "name=") {

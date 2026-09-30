@@ -29,7 +29,8 @@
     {attempt, phase, container id, parent state, cause, cleanup}; terminate a container returned with
     an error; Stop once, replayed
   dependencies_and_side_effects: >-
-    testcontainers-go v0.40.0, nats.go; creates a container per fixture; writes evidence files
+    testcontainers-go v0.44.0 (upstream pins v0.40.0, whose docker/docker client carries two unfixed
+    advisories) and nats.go v1.54.0; creates a container per fixture; writes evidence files
   known_risks: >-
     production package imported testing/testcontainers upstream (not carried); mutable tag pin upstream
     (replaced by digest); eleven caller knobs upstream (dropped)

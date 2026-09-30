@@ -23,7 +23,7 @@ func TestNoBroadDockerCleanup(t *testing.T) {
 func TestNoBroadDockerCleanupSensitivity(t *testing.T) {
 	clean := map[string]string{
 		"scripts/ok.sh": "# a comment may say docker system prune without running it\n" +
-			"docker ps -aq --filter label=org.testcontainers.golang.sessionId=\"$sid\"\n" +
+			"docker ps -aq --filter label=org.testcontainers.sessionId=\"$sid\"\n" +
 			"docker rm -f \"$id\"\n" +
 			"docker compose -p semengine-lane-1 down -v\n",
 		"Taskfile.yml": "tasks:\n  x:\n    cmds:\n      - docker image inspect \"$img\"\n",

@@ -117,10 +117,15 @@ reinforced by P13), a TestMain constructor, fixture knobs, the embedded server, 
   `SEMENGINE_DOCKER_ADMISSION_LOCK_DIR` in the environment and requires `token=<value>` to be present in
   `<lockdir>/owner`; otherwise it returns `ErrNotAdmitted` naming `task test:integration -- <pkg>`, with zero Docker
   calls. The environment variable alone is never trusted.
-- **Run identity and leak check.** The fixture writes `testcontainers.SessionID()` to
-  `$SEMENGINE_EVIDENCE_DIR/testcontainers-session`. After reaping the child group the runner lists `docker ps
-  -aq --filter label=org.testcontainers.golang.sessionId=<sid>`, waits at most 15s for it to be empty (Ryuk's grace is
-  10s), removes survivors **by ID**, records them, and fails the run. No name filters anywhere; no second label.
+- **Run identity and leak check.** The fixture writes its testcontainers session label, as `key=value`, to
+  `$SEMENGINE_EVIDENCE_DIR/testcontainers-session`, taking the key from `testcontainers.GenericLabels()` (the entry
+  whose value is `testcontainers.SessionID()`). After reaping the child group the runner lists `docker ps -aq
+  --filter label=<that line>`, waits at most 15s for it to be empty (Ryuk's grace is 10s), removes survivors **by
+  ID**, records them, and fails the run. No name filters anywhere; no second label. Implementation correction: this
+  design first named the key `org.testcontainers.golang.sessionId`, which testcontainers-go v0.40.0 keeps only as a
+  deprecated constant; it labels containers `org.testcontainers.sessionId` (`internal/core/labels.go:27`), and a
+  filter on the old key matched nothing, so the leak check passed while Ryuk was still running. The key is now
+  observed, not spelled, and an integration test requires the recorded label to select the fixture's container.
 - **Interruption.** `go test` runs in its own process group; INT and TERM are forwarded to the group; after a 20s
   grace the group is killed, reaped, leak-checked, and the lock released; the runner exits 130 or 143. If the runner
   itself is SIGKILLed, the dead-pid lock is quarantined by the next same-host acquirer (either repository) and Ryuk

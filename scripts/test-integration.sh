@@ -398,27 +398,36 @@ kill -0 -- "-$child" 2>/dev/null || record group_reaped_ms "$(now_ms)"
 grep -E '^(ok|FAIL|---)[[:space:]]' "$evidence_dir/go-test.log" > "$evidence_dir/per-package.txt" 2>/dev/null || true
 
 # Leak check by session: the fixture wrote each test process's testcontainers session
-# id. Ryuk removes a finished session's containers after its 10s grace; wait for that,
-# then remove any survivor by ID and fail the run. No name filter, no prune.
+# label as key=value, read from the labels testcontainers applies. Ryuk removes a
+# finished session's containers after its 10s grace; wait for that, then remove any
+# survivor by ID and fail the run. No name filter, no prune.
 leak_check() {
-  local sessions id survivors deadline
+  local labels label survivors deadline
   if [ ! -s "$evidence_dir/testcontainers-session" ]; then
     record leak_check "clean (no session recorded: no fixture started)"
     return 0
   fi
-  sessions=$(sort -u "$evidence_dir/testcontainers-session")
-  record session_ids "$(echo $sessions)"
+  labels=$(sort -u "$evidence_dir/testcontainers-session")
+  for label in $labels; do
+    if [[ ! "$label" =~ ^[A-Za-z0-9._-]+=[A-Za-z0-9._-]+$ ]]; then
+      echo "[INTEGRATION] malformed session label '$label'; cannot leak-check this run" >&2
+      record leak_check "failed (malformed session label)"
+      return 1
+    fi
+  done
+  record session_labels "$(echo $labels)"
   deadline=$(($(date +%s) + leak_wait_seconds))
   while true; do
     survivors=""
-    for s in $sessions; do
-      survivors="$survivors $(docker ps -aq --no-trunc --filter "label=org.testcontainers.golang.sessionId=$s")"
+    for label in $labels; do
+      survivors="$survivors $(docker ps -aq --no-trunc --filter "label=$label")"
     done
     survivors=$(echo $survivors)
     [ -z "$survivors" ] && break
     (($(date +%s) >= deadline)) && break
     sleep 0.5
   done
+  record leak_wait_s "$((leak_wait_seconds - (deadline - $(date +%s))))"
   if [ -z "$survivors" ]; then
     record leak_check clean
     return 0

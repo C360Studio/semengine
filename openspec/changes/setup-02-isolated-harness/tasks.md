@@ -5,7 +5,7 @@ directories attached as artifacts, not committed.
 
 ## 1. Pins, ledger, boundaries
 
-- [ ] 1.1 `.nats-image` holds the one digest pin with the tag as a comment; `task doctor` reports, read-only, whether
+- [x] 1.1 `.nats-image` holds the one digest pin with the tag as a comment; `task doctor` reports, read-only, whether
       the NATS image is cached by digest, whether the ryuk image is cached, the lock owner, the effective Docker host
       and context, the Ryuk env, and whether `~/.testcontainers.properties` is present
 - [ ] 1.2 `go.mod` requires `nats.go`, `testcontainers-go`, and `gopkg.in/yaml.v3`; `task tidy:check` and `task vuln`
@@ -38,11 +38,11 @@ directories attached as artifacts, not committed.
 
 ## 4. NATS fixture (integration lane)
 
-- [ ] 4.1 `natsfixture` implements the admission check (S1-9 written and passing first), the start phases, the typed
+- [x] 4.1 `natsfixture` implements the admission check (S1-9 written and passing first), the start phases, the typed
       error, evidence records, and the `deps` seam
-- [ ] 4.2 `Name()` applies the `semengine-` prefix, sanitizer, and hex suffix; the fixture records owned resources;
+- [x] 4.2 `Name()` applies the `semengine-` prefix, sanitizer, and hex suffix; the fixture records owned resources;
       `CreateStream` and `CreateKeyValue` set the bounds; unit tests cover each
-- [ ] 4.3 Checked `Stop` is implemented; owner tests S1-1..S1-8 pass under `-race`; `lifecycletest.Run` passes over
+- [x] 4.3 Checked `Stop` is implemented; owner tests S1-1..S1-8 pass under `-race`; `lifecycletest.Run` passes over
       the fixture adapter with `Promise{Restart:false}`
 
 ## 5. Gates

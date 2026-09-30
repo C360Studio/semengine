@@ -12,6 +12,9 @@ coverage.*
 *.coverprofile
 *.prof
 
+# Integration-run evidence (scripts/test-integration.sh); CI uploads it as an artifact
+.evidence/
+
 # Node
 node_modules/
 

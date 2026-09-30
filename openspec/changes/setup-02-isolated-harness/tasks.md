@@ -10,14 +10,14 @@ directories attached as artifacts, not committed.
       and context, the Ryuk env, and whether `~/.testcontainers.properties` is present
 - [ ] 1.2 `go.mod` requires `nats.go`, `testcontainers-go`, and `gopkg.in/yaml.v3`; `task tidy:check` and `task vuln`
       pass; govulncheck findings are recorded on PR #13
-- [ ] 1.3 `docs/admission-ledger.yaml` holds the 12 drafted entries; the T-B7 schema test is shown failing first
+- [x] 1.3 `docs/admission-ledger.yaml` holds the 12 drafted entries; the T-B7 schema test is shown failing first
       against a short-SHA fixture and then passes against the ledger; `task ledger:check` runs it
-- [ ] 1.4 Contract tests T-B1..T-B6 are shown failing first, then pass; T-B5 includes the adversarial `Name()` test
+- [x] 1.4 Contract tests T-B1..T-B6 are shown failing first, then pass; T-B5 includes the adversarial `Name()` test
       and fails on a destroyer substring inside a longer word (`stops`, `loops`), not only on a whole segment; T-B6
       runs `scripts/lint-test-ports.sh`
-- [ ] 1.5 `scripts/lint-test-ports.sh` and its fixture test are carried byte-identical to the pinned SHA; `task lint`
+- [x] 1.5 `scripts/lint-test-ports.sh` and its fixture test are carried byte-identical to the pinned SHA; `task lint`
       and CI run both and pass
-- [ ] 1.6 `scripts/cleanup-roots-check.sh` runs as a `task verify` step and fails on a seeded `defer
+- [x] 1.6 `scripts/cleanup-roots-check.sh` runs as a `task verify` step and fails on a seeded `defer
       o.Stop(context.Background())`; `.gitignore` ignores `.evidence/`
 
 ## 2. Probes and suite (unit lane)

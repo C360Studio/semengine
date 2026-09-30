@@ -13,9 +13,9 @@
 #   owner                         who answers for the entry
 #   disposition                   one of carry | adapt | repair-before-port | defer-exclude
 #
-# `task ledger:check`, run inside `task verify`, enforces this schema. The check is built by task 1.3 of
-# openspec/changes/setup-02-isolated-harness and does not exist before that task lands. Every entry below
-# is re-checked at SETUP 03A. No SemStreams code has been ported yet.
+# `task ledger:check` (contract test T-B7, internal/harness/contract/ledger_test.go), run inside
+# `task verify`, enforces this schema. Every entry below is re-checked at SETUP 03A. No SemStreams
+# package has been ported; the SETUP 02 rows record patterns adapted, two scripts carried, and exclusions.
 
 - source_path: natsclient/test_client.go
   source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67

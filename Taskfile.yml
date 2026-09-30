@@ -46,9 +46,22 @@ tasks:
       - scripts/gopkgs.sh go vet ./...
 
   lint:
-    desc: Run the pinned revive with revive.toml
+    desc: Run the pinned revive, then the carried fixed-port guard and its fixture test
     cmds:
       - scripts/gopkgs.sh go tool revive -config revive.toml -formatter friendly ./...
+      # Carried byte-identical from SemStreams (ledger rows L9, L10); tests may not bind fixed ports.
+      - scripts/lint-test-ports.sh
+      - scripts/lint-test-ports_fixture_test.sh
+
+  cleanup-roots:check:
+    desc: Fail if a test stops, closes, or terminates under an unbounded context.Background/TODO
+    cmds:
+      - scripts/cleanup-roots-check.sh
+
+  ledger:check:
+    desc: Validate docs/admission-ledger.yaml against its schema (contract test T-B7)
+    cmds:
+      - go test -count=1 -run '^TestAdmissionLedger' ./internal/harness/contract/
 
   vuln:
     desc: Run the pinned govulncheck over all packages

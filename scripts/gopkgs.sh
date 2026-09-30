@@ -4,7 +4,8 @@
 # instead of letting go vet/test/govulncheck fail on an unmatched ./... pattern
 # or silently passing. Usage: gopkgs.sh <command> [args...]
 set -euo pipefail
-n=$(go list ./... 2>/dev/null | wc -l | tr -d ' ')
+# stderr is kept: a broken go.mod must say so, not exit 1 in silence.
+n=$(go list ./... | wc -l | tr -d ' ')
 echo "go: $n package(s) found in module $(go list -m)"
 if [ "$n" -eq 0 ]; then
   echo "go: nothing to run for: $*"

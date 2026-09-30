@@ -3,12 +3,14 @@ name: CI
 on:
   push:
     branches: [main]
+  # Every PR gets CI whatever its base, so stacked PRs are covered too.
   pull_request:
-    branches: [main]
 
+# Superseded PR runs are cancelled; pushes to main are not, so two quick merges
+# never leave a cancelled Required on a commit that was never broken.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

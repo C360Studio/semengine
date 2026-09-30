@@ -28,7 +28,8 @@ task vet          # go vet
 task lint         # pinned revive
 task vuln         # pinned govulncheck
 task test:unit    # unit tests
-task verify       # all of the above, cheapest first; fails if tracked files changed
+task verify       # spec:check docs:check fmt:check tidy:check build vet lint vuln test:unit, cheapest first;
+                  # fails if tracked files changed. Not included: doctor, fmt, spec:queue
 ```
 
 Run `task verify` before every implementation push; CI runs the same commands in two jobs, `verify` and `required`.

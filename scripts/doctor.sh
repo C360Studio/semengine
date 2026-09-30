@@ -37,6 +37,10 @@ else bad node "not found"; fi
 
 if command -v npm >/dev/null; then ok npm "$(npm --version)"; else bad npm "not found"; fi
 
+# python3: no pin; scripts/openspec-queue.sh parses JSON and timestamps with it.
+if command -v python3 >/dev/null; then ok python3 "$(python3 --version 2>&1 | sed 's/^Python //')"
+else bad python3 "not found (task spec:queue needs it)"; fi
+
 # npm-installed tools resolve from node_modules, pinned in package.json.
 check_npm_tool() { # name bin
   local want have

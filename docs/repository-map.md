@@ -32,6 +32,7 @@ not a task tracker and not a description of the tree.
 | `.markdownlint.yaml`, `.markdownlint-cli2.yaml` | Markdown lint configuration behind `task docs:check` |
 | `openspec/` | OpenSpec configuration with empty `specs/` and `changes/` |
 | `LICENSE` | MIT, Copyright (c) 2025 C360 |
+| `package-lock.json`, `.gitignore` | npm lockfile for the pinned tools; ignore rules for Go, Node, editors, coverage |
 
 ## Where state lives
 

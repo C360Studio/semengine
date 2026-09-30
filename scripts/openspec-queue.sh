@@ -70,7 +70,7 @@ CHANGES_DIR="openspec/changes"
 #
 # Word-boundary matching, NOT substring. The first draft used a bare
 # `*fail*` glob and classified "converts a posture into a boot failure"
-# as RED — the fixture test caught it. Over-broad matching is not a
+# as RED — SemStreams' fixture test caught it (not ported yet). Over-broad matching is not a
 # harmless surplus here: a report that cries wolf on ordinary prose stops
 # being read, which returns us to the invisible-caveat state this script
 # exists to fix. "failure" as a noun in prose is not a red gate; "FAILED"
@@ -92,24 +92,35 @@ change_count=0
 printf '\n%s\n' "openspec queue — why each in-flight change is still open"
 printf '%s\n\n' "-------------------------------------------------------"
 
-json=$(openspec list --json 2>/dev/null)
+# An unavailable read is unavailable, never an empty queue: a failing CLI,
+# non-JSON output, or a missing parser exits 2 with the cause on stderr.
+# "(queue is empty)" is printed only after the JSON parsed and `changes` is [].
+if json=$(openspec list --json 2>&1); then status=0; else status=$?; fi
+if [ "$status" -ne 0 ]; then
+  printf 'queue unavailable: openspec list --json exited %s\n%s\n' "$status" "$json" >&2
+  exit 2
+fi
 
-# Parse with python3 (already a hard dependency of the repo's tooling) so
-# a missing jq does not silently degrade this to nothing.
-rows=$(printf '%s' "$json" | python3 -c '
+# Parse with python3 (also used below for timestamps; task doctor checks it is
+# present) so a missing jq does not silently degrade this to nothing.
+if rows=$(printf '%s' "$json" | python3 -c '
 import json,sys
 try:
     d = json.load(sys.stdin)
-except Exception:
-    sys.exit(0)
-for c in d.get("changes", []):
+except Exception as e:
+    print("queue unavailable: openspec output is not JSON: %s" % e, file=sys.stderr)
+    sys.exit(2)
+if not isinstance(d.get("changes"), list):
+    print("queue unavailable: openspec output has no \"changes\" list", file=sys.stderr)
+    sys.exit(2)
+for c in d["changes"]:
     print("\t".join([
         str(c.get("name","")),
         str(c.get("completedTasks","?")),
         str(c.get("totalTasks","?")),
         str(c.get("lastModified","")),
     ]))
-' 2>/dev/null)
+'); then :; else exit 2; fi
 
 if [ -z "$rows" ]; then
   printf '  (queue is empty)\n\n'

@@ -32,7 +32,8 @@ SETUP 03A records the exact pins. A pin changes only by owner ruling.
 - SemConnect: [`d0d06e00`][semconnect], an independent domain reference, pins SemStreams `v1.0.0-beta.160`.
   Its consumer behavior is a separate baseline, not evidence for compatibility with the extraction pin.
 - Provider references: semembed [`7ceb5281`][semembed] and seminstruct [`7f9135a9`][seminstruct]. These audit snapshots
-  do not pin a served build or model; record and qualify those identities separately in SETUP 03B.
+  do not pin a served build or model. SETUP 03A records the served identities its baseline runs use and holds them
+  constant; SETUP 03B approves the provider contract and qualifies the capability.
 
 Preserve existing MIT notices, including Copyright (c) 2025 C360.
 
@@ -356,9 +357,15 @@ explained by ADRs 094–107 or filed as defects. Re-measure the dependency closu
 dependencies. Every later comparison then has two points: SemSource on SemStreams at the pin, and the same workload
 on SemEngine.
 
+For provider-backed configs, record the service image or build, served model artifact and version, vector
+dimensions, and query preprocessing before the first run, and hold them constant across both runs. semembed selects
+its model from `SEMEMBED_MODEL` at startup, so an unchanged SemSource config does not prove an unchanged model. Carry
+those identities into every later comparison. Graph-only and BM25 baselines need no provider record.
+
 Pass evidence: the known-answer workload below has recorded expectations and results on both SemStreams revisions
-for each compared config; every difference between them is attributed; the closure measurement is recorded with its
-commands. The reviewer approves the baseline evidence.
+for each compared config; provider identities are recorded and unchanged across the runs; every difference between
+them is attributed; the closure measurement is recorded with its commands. The reviewer approves the baseline
+evidence.
 
 ### SETUP 03B Contract and boundary
 

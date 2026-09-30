@@ -40,8 +40,8 @@ to satisfy handoff wording. If publication is blocked, preserve local work and r
 why, and where it lives. The receiver must verify access before relying on a local-only checkpoint.
 
 For a transfer, identify the writer relinquishing ownership and the intended receiver. A draft PR identifies the
-effort; a matching agent name does not show that its worktree is idle. The receiver may inspect but must not edit
-until the old writer has stopped or released ownership.
+effort and its branch prefix (`claude/`, `codex/`) names the claimant; neither shows that the claimant's worktree is
+idle. The receiver may inspect but must not edit until the old writer has stopped or released ownership.
 
 ## Return the pickup prompt
 
@@ -66,6 +66,8 @@ Shared records are authoritative: a private memory file is optional and cannot b
 In Codex, invoke `$semengine-handoff` or ask to checkpoint the effort. In Claude, use the repository's
 `semengine-handoff` adapter. The names deliberately differ from personal `handoff` and `pickup` skills.
 
-Keep auto-compaction enabled if that is the user's preference. Checkpoint after material decisions, review rounds,
-or verified work slices. Do not impose context-size thresholds, require a fresh task at every compaction, or promise
-an automatic pre-compaction hook. A checkpoint need not end the task; continue unless a transfer or real hold applies.
+Checkpoint after material decisions, review rounds, or verified work slices. Target a handoff at about 400K tokens
+of context (owner ruling, 2026-09-30): finish the current step, run this skill, and start a fresh session, so that
+auto-compaction (set at 500K in the owner's Claude settings) is not reached. Ride past 400K only when staying on the
+same plan in the same context is worth more than a clean pickup, and say so in the checkpoint. A checkpoint need not
+end the task; continue unless a transfer, the threshold, or a real hold applies.

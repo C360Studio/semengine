@@ -13,8 +13,9 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
   the progress; there is no separate epic document.
 - **What gates a release:** a GitHub milestone. Setup work (SETUP 01 to 03B) shares one milestone; each provisional
   tier release (SETUP 04A, 04B, 04C) has its own. An epic sits in exactly one milestone.
-- **Who has claimed what:** a **draft PR** opened at the start of the work, with `Closes #n` for a leaf issue or
-  `Addresses #n` for an epic. No draft PR, no claim. Design-phase work claims the same way; the OpenSpec change is its
+- **Who has claimed what:** a **draft PR** on an agent-prefixed branch (`claude/…`, `codex/…`) opened at the start
+  of the work, with `Closes #n` for a leaf issue or `Addresses #n` for an epic. No draft PR, no claim. Design-phase
+  work claims the same way; the OpenSpec change is its
   first content commit. A stop-point goes in the PR description.
 - **Target state, task truth, holds:** the OpenSpec change inside that PR; `task spec:queue` reads its holds. The
   archive (`openspec archive <id>` + spec sync) is the landing PR's last commit, reviewed with the code. No task may
@@ -26,14 +27,15 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
 
 - **Start:** `gh issue list --state open` · `gh pr list` (drafts are claims; skip them) · `task spec:queue` ·
   `gh run list --branch main --limit 3` · `gh issue list --label status:needs-decision`.
-- **Take work:** an unclaimed issue, then a dedicated worktree on its own branch, then push, then a draft PR with
-  `Closes #n` or `Addresses #n`, then work. One claimed PR owns one worktree. When multiple agents share a host, the
-  primary checkout is discovery-only and no agent commits from it. Immediately before every commit and push, verify
-  that the worktree's current branch is the draft PR head; a mismatch stops the operation. A matching branch name or
-  agent name never shows that a worktree is idle.
-- **Bootstrap exception:** while the repository has no base protocol, SETUP 01 (epic #5, claim PR #12) is claimed
-  under the plan's bounded exception. The exception ends when that PR merges; every later claim follows the rules
-  above.
+- **Take work:** an unclaimed issue, then a dedicated worktree on an agent-prefixed branch (`claude/<topic>`,
+  `codex/<topic>`; the prefix names who claimed it), then push, then a draft PR with `Closes #n` or `Addresses #n`,
+  then work. One claimed PR owns one worktree. When multiple agents share a host, the primary checkout is
+  discovery-only and no agent commits from it. Immediately before every commit and push, verify that the worktree's
+  current branch is the draft PR head; a mismatch stops the operation. The prefix says who claimed the work, never
+  whether that agent's worktree is idle.
+- **Bootstrap exception:** while the repository has no base protocol, SETUP 01 (epic #5, claim PR #12, branch
+  `setup-01-foundation`, unprefixed) is claimed under the plan's bounded exception. The exception ends when that PR
+  merges; every later claim follows the rules above.
 - **Worktree hygiene:** the claim's worktree lives at a durable sibling path
   (`git worktree add ../semengine-wt/<branch> -b <branch> origin/main`), never under `/private/tmp`, which a reboot
   purges; `git worktree remove` it when the PR merges. Heavy local gates run one agent at a time on a shared host:

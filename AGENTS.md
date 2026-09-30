@@ -52,8 +52,9 @@ There is no `/tickets` state and no handoff document. Non-trivial work starts wi
 The shared protocol is `.agents/protocol.md`. Read it before filing, taking, landing, or closing work. Three gates
 never become a pointer:
 
-- **Claim:** a draft PR opened before the work, in its own worktree
-  (`git worktree add ../semengine-wt/<branch> -b <branch> origin/main`). No draft PR, no claim.
+- **Claim:** a draft PR opened before the work, in its own worktree on an agent-prefixed branch
+  (`git worktree add ../semengine-wt/claude/<topic> -b claude/<topic> origin/main`; Codex uses `codex/`). No draft
+  PR, no claim.
 - **Merge:** CI green with no known unfixed flake in a required job; `implemented-by: <model or persona>` in the PR
   body; the archive/spec sync is the last content commit; squash merge.
 - **Close:** the squash merge of a PR that declared `Closes #n` is the authorization. A close with no merged PR behind

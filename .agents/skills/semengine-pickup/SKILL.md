@@ -40,7 +40,7 @@ rebase, stash, reset, clean, cherry-pick, or create a competing claim to make re
 
 ## Establish write ownership
 
-A PR claim, matching agent name, or quiet terminal does not show that another session has stopped writing.
+A PR claim, an agent-prefixed branch, or a quiet terminal does not show that another session has stopped writing.
 The previous writer must stop or release ownership before pickup edits begin: follow a recorded or explicit transfer
 and verify the intended worktree and the release by the previous writer.
 If ownership is uncertain, continue read-only investigation and resolve it before editing. Do not seize an active

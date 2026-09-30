@@ -22,9 +22,9 @@ directories attached as artifacts, not committed.
 
 ## 2. Probes and suite (unit lane)
 
-- [ ] 2.1 `internal/harness/probe` provides `Callback`, `ObservedContext`, and `Await`; a test shows `Await`'s failure
+- [x] 2.1 `internal/harness/probe` provides `Callback`, `ObservedContext`, and `Await`; a test shows `Await`'s failure
       message carries the last observation and error
-- [ ] 2.2 `internal/harness/lifecycletest` provides the checks, `Run`, and the `refowner` failpoint double; one
+- [x] 2.2 `internal/harness/lifecycletest` provides the checks, `Run`, and the `refowner` failpoint double; one
       sensitivity test per failpoint trips exactly its check, and every check passes against the clean double
 
 ## 3. Runner

@@ -1,0 +1,16 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+  # revive and govulncheck are pinned as go.mod tool directives.
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+  # No update path for .task-version or .nvmrc: bump them by hand with task doctor.

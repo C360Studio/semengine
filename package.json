@@ -1,0 +1,10 @@
+{
+  "name": "semengine-tooling",
+  "private": true,
+  "description": "Pinned repository tooling for SemEngine (not a published package)",
+  "engines": { "node": ">=22 <23" },
+  "devDependencies": {
+    "@fission-ai/openspec": "1.7.0",
+    "markdownlint-cli2": "0.23.3"
+  }
+}

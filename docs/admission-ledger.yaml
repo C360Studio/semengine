@@ -1,0 +1,188 @@
+# Admission ledger: one entry per SemStreams source path reused, adapted, or read and excluded in this
+# repository. Rules: docs/provenance.md. Location and format: owner ruling 2026-09-30 on PR #13.
+#
+# Schema: a YAML list; every entry has these ten fields, all non-empty:
+#   source_path                   SemStreams path, unique across entries
+#   source_sha                    full 40-character lowercase commit SHA the file was read at
+#   consumer_purpose              what SemEngine consumer needs it, or why none does
+#   destination                   SemEngine path it lands in, or none
+#   contract                      behavior the destination must keep
+#   dependencies_and_side_effects imports, tools, and effects it brings
+#   known_risks                   upstream defects and what is not carried
+#   proving_tests                 tests that prove the destination
+#   owner                         who answers for the entry
+#   disposition                   one of carry | adapt | repair-before-port | defer-exclude
+#
+# `task ledger:check`, run inside `task verify`, enforces this schema. The check is built by task 1.3 of
+# openspec/changes/setup-02-isolated-harness and does not exist before that task lands. Every entry below
+# is re-checked at SETUP 03A. No SemStreams code has been ported yet.
+
+- source_path: natsclient/test_client.go
+  source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67
+  consumer_purpose: >-
+    pattern for the owned disposable NATS fixture (phased setup, typed failure, one mapped-port
+    replacement, fresh per-operation cleanup deadlines, bounded test streams)
+  destination: >-
+    internal/harness/natsfixture (reimplemented over nats.go and testcontainers-go; no natsclient.Client)
+  contract: >-
+    Start phases image→create→ready log→host→mapped 4222→connect→JetStream ready; failure record
+    {attempt, phase, container id, parent state, cause, cleanup}; terminate a container returned with
+    an error; Stop once, replayed
+  dependencies_and_side_effects: >-
+    testcontainers-go v0.40.0, nats.go; creates a container per fixture; writes evidence files
+  known_risks: >-
+    production package imported testing/testcontainers upstream (not carried); mutable tag pin upstream
+    (replaced by digest); eleven caller knobs upstream (dropped)
+  proving_tests: >-
+    natsfixture owner tests S1-1..S1-9; lifecycletest.Run over the fixture adapter; T-B1, T-B2, T-B3
+  owner: setup-02 developer
+  disposition: adapt
+
+- source_path: natsclient/test_options.go
+  source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67
+  consumer_purpose: none; read to confirm the knob surface that the fixture deliberately omits
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: knobs make callers predict Docker latency and name uniqueness
+  proving_tests: n/a
+  owner: setup-02 developer
+  disposition: defer-exclude
+
+- source_path: internal/lifecyclecleanup/lifecyclecleanup.go
+  source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67
+  consumer_purpose: >-
+    failed-Start rollback under context.WithTimeout(context.WithoutCancel(parent), budget) joining
+    ctx.Err()
+  destination: internal/harness/natsfixture (unexported helper)
+  contract: >-
+    rollback runs synchronously with parent values but not parent cancellation; bounded; nil parent is
+    an error
+  dependencies_and_side_effects: stdlib only
+  known_risks: none known; production home deferred until a production consumer exists (04A)
+  proving_tests: S1-1, S1-2 (partial startup, cancellation during start)
+  owner: setup-02 developer
+  disposition: adapt
+
+- source_path: component/lifecycle_test_suite.go
+  source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67
+  consumer_purpose: >-
+    portable lifecycle floor semantics (controlled Stop under live Start authority, abort preserves
+    cause, repeated Stop no-op, nil and pre-cancelled contexts refused, Stop before Start safe)
+  destination: >-
+    internal/harness/lifecycletest (error-returning checks over Owner{Start,Stop}; stdlib testing)
+  contract: as consumer_purpose; second Start refused unless restart promised, then a full second cycle
+  dependencies_and_side_effects: stdlib only
+  known_risks: >-
+    upstream lives in a production package with testify; upstream NoLeaks uses aggregate goroutine
+    counts (dropped); ErrorInjectingComponent, ParallelFreshInstances, Initialize/Discoverable dropped
+  proving_tests: sensitivity tests against the failpoint double; Run over natsfixture
+  owner: setup-02 developer
+  disposition: adapt
+
+- source_path: processor/graph-query/lifecycle_owner_test.go
+  source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67
+  consumer_purpose: >-
+    owner-proof probe shapes: observed context, entered/release callback, retained-state assertions
+    after failed rollback and expired Stop
+  destination: internal/harness/probe; test shapes reused in natsfixture owner tests
+  contract: >-
+    ObservedContext signals first Done() observation and may hold; Callback exposes
+    entered/release/joined
+  dependencies_and_side_effects: stdlib only
+  known_risks: >-
+    upstream copies 26 (observed context) and 9 (entered/release) times with no home; upstream
+    embedded-server helper has unjoined Shutdown and unbounded Close (not carried)
+  proving_tests: probe unit tests; S1-3, S1-5
+  owner: setup-02 developer
+  disposition: adapt
+
+- source_path: scripts/run-integration-tests.sh
+  source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67
+  consumer_purpose: >-
+    host lock protocol (path, owner keys, stale rule, quarantine, token-checked release), Docker
+    preflight, cached-or-bounded image pull, canonical go test flags
+  destination: scripts/test-integration.sh
+  contract: >-
+    byte-compatible lock protocol at /tmp/semstreams-integration.lock;
+    -race -failfast -tags=integration -count=1 -p 2
+  dependencies_and_side_effects: >-
+    bash, ps, mkdir, docker CLI; creates the lock dir; may quarantine stale dirs; pulls images
+  known_risks: >-
+    upstream traps do not forward INT/TERM to go test (repaired: process group); -p 2 inherited
+    unmeasured; upstream reads SEMSTREAMS_* env (not carried; SEMENGINE_* namespace)
+  proving_tests: runner contract tests R1–R4; pass-evidence items 1–3
+  owner: setup-02 developer
+  disposition: adapt
+
+- source_path: test/contract/context_ownership_contract_test.go
+  source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67
+  consumer_purpose: type-checked guard that no production struct retains a context.Context
+  destination: internal/harness/contract (T-B2)
+  contract: >-
+    rejects stored contexts including embedded, aliased, container, and provider-result forms;
+    CancelFunc allowed
+  dependencies_and_side_effects: golang.org/x/tools/go/packages (already indirect)
+  known_risks: module path and scan roots differ (adapted)
+  proving_tests: fixture-module test with a violating struct
+  owner: setup-02 developer
+  disposition: adapt
+
+- source_path: test/testinfra/integration_runner_contract_test.go
+  source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67
+  consumer_purpose: pattern only — fake-toolchain runner tests
+  destination: internal/harness/runner (four focused tests written fresh)
+  contract: n/a (no code carried)
+  dependencies_and_side_effects: n/a
+  known_risks: 1566 lines upstream; not carried
+  proving_tests: R1–R4
+  owner: setup-02 developer
+  disposition: defer-exclude
+
+- source_path: scripts/lint-test-ports.sh
+  source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67
+  consumer_purpose: refuse fixed net.Listen ports in *_test.go
+  destination: scripts/lint-test-ports.sh (unchanged)
+  contract: exits 1 on a literal fixed port in net.Listen("tcp[46]?", ...)
+  dependencies_and_side_effects: bash, grep
+  known_risks: >-
+    documented false-negative shapes (tcp6 variants, multi-line, concatenation, non-net.Listen APIs);
+    fixed dial literals not covered (T-B6 covers)
+  proving_tests: scripts/lint-test-ports_fixture_test.sh
+  owner: setup-02 developer
+  disposition: carry
+
+- source_path: scripts/lint-test-ports_fixture_test.sh
+  source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67
+  consumer_purpose: proves lint-test-ports.sh detects and accepts the documented shapes
+  destination: scripts/lint-test-ports_fixture_test.sh (unchanged)
+  contract: fixture cases pass/fail as documented
+  dependencies_and_side_effects: bash
+  known_risks: none known
+  proving_tests: self
+  owner: setup-02 developer
+  disposition: carry
+
+- source_path: testutil/nats.go
+  source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67
+  consumer_purpose: none; synchronous fakes cannot prove asynchronous NATS behavior
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: n/a
+  proving_tests: n/a
+  owner: setup-02 developer
+  disposition: defer-exclude
+
+- source_path: test/testinfra/cleanup_guard_test.go
+  source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67
+  consumer_purpose: >-
+    none now; replaced by scripts/cleanup-roots-check.sh (grep guard with zero baseline); revisit at
+    04A
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: 4,000 lines with a legacy baseline upstream
+  proving_tests: n/a
+  owner: setup-02 developer
+  disposition: defer-exclude

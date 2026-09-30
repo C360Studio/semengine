@@ -10,10 +10,12 @@ not a task tracker and not a description of the tree.
 - **No test harness.** The helper kit, owned NATS fixtures, and lifecycle tests are SETUP 02 (issue #6).
 - **No consumer.** SemSource does not build against SemEngine; no consumer API, registration cut, or contract exists.
   The consumer baseline and contract are SETUP 03A and 03B (issues #7, #8).
-- **No admission ledger.** No SemStreams package has been admitted; the ledger is seeded in SETUP 03 and 04.
+- **No ported code.** No SemStreams code has been ported. The admission ledger exists (see "Present") with twelve
+  entries for the SemStreams files SETUP 02 adapts, carries, or excludes; package rows are seeded in SETUP 03 and 04.
+  Its schema check, `task ledger:check`, is not built yet (SETUP 02 task 1.3).
 - **No runtime binary, no release, no tag.**
 - **No integration or consumer lanes** in the gate graph; they join `task verify` when their workload exists.
-- **No ADRs, no OpenSpec specs, no active OpenSpec changes.** `openspec/` is initialized and empty.
+- **No ADRs and no OpenSpec specs.** `openspec/specs/` is empty; the one active change is listed under "Present".
 
 ## Present
 
@@ -30,7 +32,9 @@ not a task tracker and not a description of the tree.
 | `.github/` | CI workflow (jobs `verify` and `required`) and Dependabot configuration |
 | `package.json`, `.nvmrc`, `.task-version` | Pins for the Node-based OpenSpec and markdownlint tools and Task |
 | `.markdownlint.yaml`, `.markdownlint-cli2.yaml` | Markdown lint configuration behind `task docs:check` |
-| `openspec/` | OpenSpec configuration with empty `specs/` and `changes/` |
+| `openspec/` | OpenSpec configuration; `specs/` is empty |
+| `openspec/changes/setup-02-isolated-harness/` | The one active change: SETUP 02 (draft PR #13, epic #6) |
+| `docs/admission-ledger.yaml` | The admission ledger: twelve entries at full SemStreams SHAs; nothing ported yet |
 | `LICENSE` | MIT, Copyright (c) 2025 C360 |
 | `package-lock.json`, `.gitignore` | npm lockfile for the pinned tools; ignore rules for Go, Node, editors, coverage |
 
@@ -55,7 +59,9 @@ There is no `/tickets` state and no handoff document; each question has one home
   and boundary, #9 Tier 0 graph foundation, #10 Tier 1 lexical retrieval, #11 Tier 2 neural retrieval.
 - Milestones: `Setup: foundation through contract` (#2 to #8), `Tier 0: graph foundation (provisional)` (#9),
   `Tier 1: lexical retrieval (provisional)` (#10), `Tier 2: neural retrieval (provisional)` (#11).
-- Draft PR #12 claims #5 (`Addresses #5`).
+- PR #12 (SETUP 01) merged as `819c461`; #5 stays open for the Codex-to-Claude pickup demonstration.
+- Draft PR #13 claims #6 (`Addresses #6`) on `claude/setup-02-harness`; its SETUP 02 rulings are on
+  [issue #6](https://github.com/C360Studio/semengine/issues/6#issuecomment-5921046663).
 - Owner rulings of 2026-09-30 on the plan are recorded at
   [PR #1 comment 5917717356](https://github.com/C360Studio/semengine/pull/1#issuecomment-5917717356).
 

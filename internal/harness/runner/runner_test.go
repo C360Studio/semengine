@@ -87,14 +87,22 @@ if [ "${FAKE_GO_MODE:-ok}" = ignore-term ]; then
 fi
 if [ "${FAKE_GO_MODE:-ok}" = interrupt-output ]; then
   # go test prints its failure summary after the interrupt; that output must reach the log.
+  # The sleep is an & job, so it ignores INT; the handler ends it, as go test ends its binaries.
   on_int() {
     echo "--- FAIL: shutdown summary written after the interrupt"
+    kill "$sleeper" 2>/dev/null
     exit 130
   }
   trap on_int INT
-  touch "$FAKE_DIR/go.ready"
   sleep 300 &
+  sleeper=$!
+  touch "$FAKE_DIR/go.ready"
   wait
+fi
+if [ "${FAKE_GO_MODE:-ok}" = escape ]; then
+  # A process that leaves go test's process group but keeps its stdout, the log's FIFO.
+  python3 -c 'import os, time; os.setpgrp(); time.sleep(60)' &
+  echo "$!" > "$FAKE_DIR/escaped.pid"
 fi
 if [ "${FAKE_GO_MODE:-ok}" = steal ]; then
   sed -i.bak 's/^token=.*/token=someone-else/' "$SEMENGINE_DOCKER_ADMISSION_LOCK_DIR/owner"
@@ -750,5 +758,72 @@ func TestImageOverrideNeedsAReason(t *testing.T) {
 	}
 	if !strings.Contains(h.read(t, "go.env"), "SEMENGINE_NATS_IMAGE="+other) {
 		t.Error("go test did not receive the override")
+	}
+}
+
+// R1 (round 2): a writer that left the go test process group keeps the log's FIFO open, so the
+// tee never sees EOF. The runner bounds its wait for tee, kills it, records the log as
+// incomplete, and still releases the shared lock promptly.
+func TestEscapedWriterDoesNotHoldTheLock(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, "FAKE_GO_MODE=escape")
+	cmd := h.command(t.Context(), "./internal/harness/natsfixture/")
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waited := make(chan error, 1)
+	go func() { waited <- cmd.Wait() }()
+	t.Cleanup(func() {
+		if pid, err := strconv.Atoi(strings.TrimSpace(h.read(t, "escaped.pid"))); err == nil {
+			_ = syscall.Kill(pid, syscall.SIGKILL)
+		}
+	})
+	// A watchdog for the failure, not a synchronisation: the escaped writer lives 60s, and a
+	// runner that waits for it would hold the lock that long.
+	watchdog := time.NewTimer(20 * time.Second)
+	defer watchdog.Stop()
+	select {
+	case err := <-waited:
+		if code := exitCode(err); code != 0 {
+			t.Fatalf("runner exit %d\nstdout:\n%s\nstderr:\n%s", code, stdout.String(), stderr.String())
+		}
+	case <-watchdog.C:
+		_ = cmd.Process.Kill()
+		t.Fatal("runner still waiting for its log 20s after go test exited; the lock is held by an escaped writer")
+	}
+	if _, err := os.Stat(h.lock); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("lock not released: %v", err)
+	}
+	if rec := h.evidenceFile(t, "runner.env"); !strings.Contains(rec, "log_incomplete=yes") {
+		t.Fatalf("runner.env does not record the incomplete log:\n%s", rec)
+	}
+	if !strings.Contains(stderr.String(), "WARN") {
+		t.Errorf("no warning that the log is incomplete:\n%s", stderr.String())
+	}
+}
+
+// The grace knob is reserved for the contract tests: a real run, on the shared lock, refuses it
+// before taking the lock, so a stale export cannot shorten a real run's shutdown grace.
+func TestSignalGraceKnobRefusedOutsideContractTests(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, "SEMENGINE_TEST_SIGNAL_GRACE_SECONDS=1")
+	var env []string
+	for _, kv := range h.env {
+		if !strings.HasPrefix(kv, "SEMENGINE_DOCKER_ADMISSION_LOCK_DIR=") {
+			env = append(env, kv)
+		}
+	}
+	h.env = env
+	r := h.run(t, "./internal/harness/natsfixture/")
+	if r.status != 2 || !strings.Contains(r.stderr, "SEMENGINE_TEST_SIGNAL_GRACE_SECONDS") {
+		t.Fatalf("grace knob on the shared lock: status %d, want 2\n%s", r.status, r.stderr)
+	}
+	if h.read(t, "docker.log") != "" || h.read(t, "go.argv") != "" {
+		t.Fatal("a refused run reached Docker or go test")
+	}
+	if !strings.Contains(r.stderr, "contract tests") {
+		t.Errorf("refusal does not say what the knob is for:\n%s", r.stderr)
 	}
 }

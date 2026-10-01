@@ -33,8 +33,15 @@ if [[ ! "$signal_grace_seconds" =~ ^[0-9]+$ ]] || ((signal_grace_seconds < 1 || 
   echo "[INTEGRATION] invalid SEMENGINE_TEST_SIGNAL_GRACE_SECONDS=$signal_grace_seconds (expected 1-20)" >&2
   exit 2
 fi
+# Its signature is a test's own lock directory: on the shared lock it is a stale export.
+if [ -n "${SEMENGINE_TEST_SIGNAL_GRACE_SECONDS:-}" ] &&
+  [ "${SEMENGINE_DOCKER_ADMISSION_LOCK_DIR:-$admission_lock_default}" = "$admission_lock_default" ]; then
+  echo "[INTEGRATION] SEMENGINE_TEST_SIGNAL_GRACE_SECONDS is for the runner contract tests only; refusing it on the shared lock" >&2
+  exit 2
+fi
 readonly signal_grace_seconds
 readonly leak_wait_seconds=15    # Ryuk reaps a dead session's containers after 10s
+readonly tee_wait_seconds=5      # the log's tee, after the go test group is gone
 
 # Only SEMENGINE_* variables are read, so a shell tuned for SemStreams cannot change
 # a SemEngine run. The lock-dir override exists for the runner contract tests.
@@ -287,9 +294,13 @@ on_signal() {
 }
 trap 'on_signal INT' INT
 trap 'on_signal TERM' TERM
-# A signal ignored on entry cannot be trapped (POSIX), and bash then leaves the trap
-# unset; trap -p is the only portable way to see it under bash 3.2.
-if [ -z "$(trap -p INT)" ]; then
+# A signal ignored on entry cannot be trapped (POSIX). How the trap table then looks
+# differs between bash 3.2 and 5, so the disposition itself is probed: a child shell
+# inherits an ignored SIGINT (an exec keeps SIG_IGN), cannot trap it, and so survives
+# signalling itself; with SIGINT deliverable its trap fires and it exits 42.
+int_probe_status=0
+sh -c 'trap "exit 42" INT; kill -INT $$; sleep 1; exit 0' 2>/dev/null || int_probe_status=$?
+if [ "$int_probe_status" -ne 42 ]; then
   record int_ignored_on_entry yes
   echo "[INTEGRATION] WARN: SIGINT was ignored when this runner started (an & job of a non-interactive shell?); it cannot be interrupted with SIGINT, send SIGTERM" >&2
 else
@@ -445,7 +456,19 @@ while kill -0 -- "-$child" 2>/dev/null; do
   sleep 0.1
 done
 kill -0 -- "-$child" 2>/dev/null || record group_reaped_ms "$(now_ms)"
-# The group is gone, so no writer holds the FIFO and tee reaches EOF.
+# With the group gone tee normally reaches EOF at once. A process that left the group
+# (setpgid, setsid) but kept its stdout still holds the FIFO open, and an unbounded
+# wait here would hold the shared lock for as long as it lives: bound it, then kill
+# tee and say the log may be incomplete.
+tee_deadline=$(($(date +%s) + tee_wait_seconds))
+while job_running "$tee_pid" && (($(date +%s) < tee_deadline)); do sleep 0.1; done
+if job_running "$tee_pid"; then
+  kill -KILL "$tee_pid" 2>/dev/null
+  record log_incomplete yes
+  echo "[INTEGRATION] WARN: a process outside the go test group still holds the test output open after ${tee_wait_seconds}s; go-test.log may be incomplete" >&2
+else
+  record log_incomplete no
+fi
 wait "$tee_pid" 2>/dev/null
 tee_pid=""
 rm -f "$fifo"

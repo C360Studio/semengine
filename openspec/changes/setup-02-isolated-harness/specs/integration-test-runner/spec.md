@@ -35,7 +35,9 @@ release only while the owner token still matches; and SHALL read no SEMSTREAMS_*
 The runner SHALL start `go test` in its own process group, forward INT and TERM to that group, escalate to KILL after
 a bounded grace, reap the group before the leak check and the lock release, and record the signal and timings. A
 signal received during the bounded image pull SHALL kill and reap the pull before the lock is released. The log's
-writer SHALL survive a terminal interrupt, so output `go test` writes while shutting down reaches the evidence. A
+writer SHALL survive a terminal interrupt, so output `go test` writes while shutting down reaches the evidence; the
+runner SHALL wait for the log writer only boundedly after the group is reaped, recording `log_incomplete=yes` when a
+process outside the group still holds the output open, so no escaped writer holds the lock. A
 runner started with SIGINT ignored SHALL warn and record `int_ignored_on_entry=yes`; SIGTERM is the scripted
 interrupt. SEMENGINE_TEST_SIGNAL_GRACE_SECONDS (1–20) shortens the grace for the runner's own contract tests only.
 

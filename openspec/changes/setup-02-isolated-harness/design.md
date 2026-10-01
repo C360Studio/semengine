@@ -363,6 +363,12 @@ committed; item 3's Go-level half, S1-8, S1-9, and the runner tests are permanen
   later cache miss is slower, not incorrect.
 - Embedded `nats-server` v2.12.4 (SemStreams `go.mod`) and the 2.14 image may differ behaviourally; recorded as drift,
   not tested.
+- A Start cancelled during `connect` returns at once, but `nats.Connect` takes no context, so its dial goroutine runs
+  on for up to `dialTimeout` (5 s) and closes any connection it then gets. Bounded, not joined: the goroutine can
+  outlive the Start, and the test, by that long.
+- A log writer that leaves the `go test` process group (`setpgid`, `setsid`) while keeping its stdout holds the log
+  FIFO open; the runner waits at most 5 s for the log after the group is gone, then kills its tee and records
+  `log_incomplete=yes`, so the log may lack that writer's later output.
 
 ## Provenance
 

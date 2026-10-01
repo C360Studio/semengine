@@ -4,16 +4,15 @@ Each task names the outcome that proves it. An unchecked task that says "hold" i
 blocked until the named review or ruling exists. "This pull request" is PR #44. Evidence is recorded there as a
 comment unless a task says otherwise. Every outcome below is reached before this pull request merges.
 
-The tasks are done in the order written, from top to bottom. Five notes on that order:
+The tasks are done in the order written, from top to bottom. Four notes on that order:
 
 - **Written first.** Where a task says a test is written first, the test is run locally and seen to fail, and that
   output is recorded. The test is pushed together with the change that makes it pass, so no push is red for that
   reason. Task 6.1 is the one case that spans two tasks: it is pushed with task 6.2.
 - **GitHub state before the push that needs it.** Task 7.4's push starts the first run of the `merge-check` job. The
   job needs the label (task 7.1) and the strict setting (task 7.3), so both come first, and task 7.5 reads that run.
-- **One run is red on purpose:** the first run of the drill in task 7.6.
-- **One task finishes on the next task's push:** the last result of task 7.6 is read from the run that task 8.1's push
-  starts.
+- **One run is red on purpose:** the first run that has the `merge-check` job. It meets the open flake #49 before
+  this pull request's description closes it (task 7.6).
 - **Before the first ported code.** By the owner's direction (2026-10-01, #42 comment 5938232045) this change lands
   before PR #48, the first slice that ports code. Tasks 5.1, 5.2 and 6.2 are written against a
   tree with no ported packages. If PR #48 lands first, those tasks do not repair ported files, because each slice
@@ -39,6 +38,9 @@ The tasks are done in the order written, from top to bottom. Five notes on that 
 - [x] 2.4 Hold: check of the ruling pass. The reviewer's verdict on the third revision of `design.md`, the spec
       changes and this file, confined to the diff from `bba268a`, is a pass, recorded on PR #44 with the checked
       files' checksums.
+- [ ] 2.5 Hold: check of the implementation pass. The reviewer's verdict on `design.md`, the `lifecycle-suite` and
+      `merge-gate` spec changes and this file, confined to the diff from `8e1e750`, is a pass, recorded on PR #44 with
+      the checked files' checksums.
 
 ## 3. Spec changes
 
@@ -58,6 +60,14 @@ The tasks are done in the order written, from top to bottom. Five notes on that 
 - [x] 4.4 A contract test runs a copy of `scripts/cover-check.sh` in a throwaway root with a fake `go` that prints a
       `--- FAIL` line and exits 1. It is written first and fails on the current script, which prints nothing;
       then the script prints the test output and the test passes.
+- [ ] 4.5 Flake #49: `TestAwaitReportsLastObservation` in `internal/harness/probe` no longer depends on how many
+      observations fit in a stretch of wall-clock time. A reproduction that fails on demand, not by repetition, is
+      written first and fails on the tree as it is; then the fix, with no retry, sleep, skip or loosened assertion.
+      The search for the same shape in the package's tests is recorded with what it found. This pull request's
+      description says `Closes #49` (added at task 7.6 b).
+- [ ] 4.6 A test that always runs holds `finalize`'s order: with a signalled worker held before its exit, `finalize`
+      reports the worker and returns only after the worker has exited. It is written first and fails against a copy
+      of `finalize` with the assertion moved after the last join, and against one with the last join removed.
 
 ## 5. Text checks with no accepted exceptions
 
@@ -102,28 +112,31 @@ The tasks are done in the order written, from top to bottom. Five notes on that 
       difference is put back and reported. The same comment lists every open pull request with its number of commits
       behind `main`, and what `gh pr view --json mergeStateStatus` reports for PR #14 and PR #39: `BEHIND`, or the
       differing result recorded against assumption A1.
-- [x] 7.4 The workflow has the job `merge-check` with its three read permissions, and `required` needs `verify` and
+- [ ] 7.4 The workflow has the job `merge-check` with its three read permissions, and `required` needs `verify` and
       `merge-check`. A contract test of `ci.yml`, written first, rejects four planted workflows: `required` needing
       only `verify`; a job with a write permission; `merge-check` with a fourth permission; `verify` with a limit
       other than 15 minutes. This task is pushed only after tasks 7.1 and 7.3 are done: without the label or the
-      strict setting, the job's first run stops on those and shows nothing else.
+      strict setting, the job's first run stops on those and shows nothing else. Open again after implementation
+      (`design.md`, "After implementation"; the first half is done at `8e1e750`): the same test also requires
+      `if: always()` on `required`, requires that its step takes its results from `needs.*.result`, and runs that
+      step's script as the workflow writes it, which exits 0 only when every result is `success`. It rejects three
+      more planted workflows: `required` without `if: always()`; a step that exits 0 for a `skipped` result; a step
+      that reads the result of `verify` alone. The three are written first and fail against the test as it stands
+      at `8e1e750`, which names none of them.
 - [ ] 7.5 After task 7.3: the first CI run of this pull request that has the `merge-check` job is the run that task
       7.4's push starts. Its log names the run as a pull-request run, shows the label, issue, pull request,
       branch-rules and ruleset reads succeeding, and prints the five fields of `design.md` D9 as the job's token sees
-      them. `merge-check` and `Required` pass on that run; a different result is recorded against the assumption it
-      contradicts and is put right before task 7.6. The results for assumptions A2, A3 and A17 are recorded on #42.
-- [ ] 7.6 Hold: the owner's word for the drill issue, recorded on #42 and quoted in the drill issue's body. The drill
-      files an issue under `class:flake` that is no flake and closes it with no merged fix, and neither ruling of task
-      2.3 names it. Once the word is recorded, the drill issue is opened; its body says it is a drill. Four results
-      are recorded with their run links, each against the assumption it measures when it differs from what `design.md`
-      expects. (a) The next push after the issue is opened starts a run that is red on purpose: `merge-check` and
-      `Required` fail and name the drill issue. The commit that checks tasks 7.1 to 7.5 in this file serves as that
-      push. (b) `Closes #<drill>` is added to this pull request's description, and the run list before and after shows
-      whether the edit started a run (A11). (c) The failed run is re-run once: the record shows its `run_attempt`,
-      whether `merge-check` passed, the exemption line, and whether the warning shows on the run (A4, A5, A12). (d)
-      The line is removed from the description and the drill issue is closed. Task 8.1's push then starts a run that
-      passes with no exemption printed, and this task is checked when that run is recorded. If the owner declines the
-      drill, this task is rewritten to say so and assumptions A4, A5, A11 and A12 are restated as open under task 8.2.
+      them. The up-to-date half passes. A different result is recorded against the assumption it contradicts and is
+      put right before task 7.6. The results for assumptions A2, A3 and A17 are recorded on #42.
+- [ ] 7.6 The red path and the exemption are exercised against the real flake #49, which takes the place of the drill
+      issue first planned here; no issue is filed for the purpose. Three results are recorded with their run links,
+      each against the assumption it measures when it differs from what `design.md` expects. (a) The run of task 7.5
+      starts while #49 is open and this pull request's description does not yet close it: `merge-check` and `Required`
+      fail and name #49. That run is red on purpose. (b) `Closes #49` is added to this pull request's description, and
+      the run list before and after shows whether the edit started a run (A11). (c) The failed run is re-run once: the
+      record shows its `run_attempt`, whether `merge-check` passed, the exemption line, and whether the warning shows
+      on the run (A4, A5, A12). A run that passes with no exemption printed is not seen in this change, because #49
+      stays open until this pull request merges; task 8.2 restates that as open.
 
 ## 8. Documents and landing
 
@@ -131,8 +144,11 @@ The tasks are done in the order written, from top to bottom. Five notes on that 
       preflight skill's gate table and its rule for an unexplained failure say what `design.md` D10 lists, as ruled:
       the waiver sentence is gone from the Land step, a network fetch that did not answer is not a `class:flake`, and
       the exemption needs every open flake. `git grep -n -i waiver -- .agents AGENTS.md` then finds no sentence that
-      offers a way past a flake; the two lines D10 names remain. `docs/repository-map.md` lists the new job and
-      script; `task docs:check` passes.
+      offers a way past a flake; the two lines D10 names remain. The three sentences that say CI has two jobs
+      (`.agents/protocol.md`, `AGENTS.md`, the preflight skill) name `verify`, `merge-check` and `required`, and say
+      `required` fails if either of the other two failed, is missing, or was skipped or cancelled;
+      `git grep -n 'two jobs' -- .agents AGENTS.md` then finds nothing. `docs/repository-map.md` lists the new job
+      and script; `task docs:check` passes.
 - [ ] 8.2 Each assumption A1 to A17 in `design.md` has its result, or is restated as open, in one comment on #42.
 - [ ] 8.3 The change is archived and its specs are synced as the last content commit; `task spec:check` passes on
       that commit.

@@ -15,6 +15,10 @@ How it got here:
   D.
 - The owner then ruled twice on #42: on questions Q1 to Q5 (comment 5937751262), and to strike the slice 04A
   measurement (comment 5937807011).
+- Implementation then found two places where a requirement's wording and the check written for it disagreed: the
+  order inside `finalize` (D4), and what the workflow test holds `required` to (D8). "After implementation", under
+  "Corrections after design review", answers both. That pass changes nothing the owner ruled. It needs a check
+  confined to its own diff (task 2.5), and nothing in this file says that check has passed.
 
 This revision records the two rulings and applies findings A to D. It decides nothing new. "The owner's ruling" is the
 last section. "Corrections after design review", before it, lists each finding and where it was answered. The revision
@@ -22,7 +26,7 @@ still needs a check confined to its own diff (task 2.4), and nothing in this fil
 
 Line pins are at `0f30b12`, which contains `main` at `9286055`. Every pin was read again there for the second
 revision. This revision was written at `bba268a`. Between the two commits only this change's own files differ (`git
-diff --stat 0f30b12 bba268a`), so the pins hold. Measurements carry one of three marks:
+diff --stat 0f30b12 bba268a`), so the pins hold. Measurements carry one of four marks:
 
 - **Measured for this design:** taken on 2026-10-01 at `6c56846`, on a scratch copy outside the repository, on a
   12-CPU host shared with other sessions (load average 1.5 to 3.1).
@@ -30,6 +34,10 @@ diff --stat 0f30b12 bba268a`), so the pins hold. Measurements carry one of three
   this mark the second revision also carried counts and two test runs taken over a copy of the SemStreams pin
   snapshot. The owner struck them, and none remains in this file (see "Effects on slice 04A").
 - **Measured for the ruling pass:** taken on 2026-10-01 at `bba268a`. These are reads of GitHub with `gh`.
+- **Measured for the implementation pass:** taken on 2026-10-01 at `8e1e750`, where the `lifecycletest` code is that
+  of `73373a9`. The test runs are on a scratch copy outside the repository, on the same host: one test, 20
+  executions per setting, at four settings (`-cpu 1`; `-race -cpu 1`; `-cpu 4`; `-race` on every CPU). The rest are
+  reads of GitHub with `gh`, and one read of GitHub's documentation.
 
 Words used below:
 
@@ -196,12 +204,41 @@ A new test in `internal/harness/contract` parses `Taskfile.yml` and `scripts/ver
   of 100 at `-cpu 1`, and `TestAbortStopThenFinishJoinsWorker` failed on the first run.
 - `finalize` joins the worker of `stopReturnsNilWithWorkerRunning` before it returns, and its "still holds"
   assertion loses the exemption at `refowner_test.go:198`. Today it cancels at `:204` and returns.
+- The order inside `finalize` is part of this decision. The requirement's first wording had it wrong (see "After
+  implementation"). Below, a worker is signalled when a Stop has told it to exit. `finalize` makes the terminal Stop
+  as `Run` does. A worker that no Stop has signalled is then ended through its Start context and joined; only
+  `stopReturnsNilWithWorkerRunning` leaves one, and this is the join of the bullet above. Then the assertion runs,
+  for every failpoint. Last, every worker is joined before `finalize` returns (`refowner_test.go:207-227` at
+  `73373a9`).
+- Premise: the assertion must come before the wait for a signalled worker. It is the only place in the matrix that
+  sees a Stop that signalled its worker and returned nil before the worker had exited, which is the #40 defect. An
+  assertion that follows a join of every worker can never fail. Measured for the implementation pass, defect
+  restored as in task 6.3: the matrix failed 20 of 20 at `-cpu 1`, 2 of 20 at `-race -cpu 1`, and 0 of 20 at
+  `-cpu 4` and at `-race`. With every worker joined before the assertion it failed 0 of 20 at all four.
+- Premise: for a double without that defect, the assertion reads nothing that depends on timing, inside a bubble or
+  outside one. A Stop that signals its worker returns nil only after it has received from the worker's done channel
+  (`refowner_test.go:139-150` at `73373a9`), and a worker that was never signalled is joined by `finalize` before
+  the read. The read that failed in #40 came after a Stop that had not waited. Measured for the implementation
+  pass: the matrix, `TestAbortStopThenFinishJoinsWorker` and `TestChecksPassAgainstCleanDouble`, which runs outside
+  a bubble, each failed 0 of 20 at all four settings.
+- A limit. The first join is chosen by "no Stop signalled this worker", not by the failpoint's name, so `finalize`
+  ends and joins such a worker whichever failpoint the double has. The matrix therefore does not see a Stop that
+  marks the owner stopped and returns nil without signalling. Measured for the implementation pass, with that
+  defect planted in the `abortStopDropsCause` branch: the matrix failed 0 of 20 at all four settings, and
+  `TestAbortStopThenFinishJoinsWorker` failed 20 of 20 at all four. On the controlled path
+  `CheckControlledStopUnderLiveStartAuthority` reads the owner before `finalize` runs (`lifecycletest.go:165-171`).
+  Choosing by name would see it in the matrix (20 of 20 at `-cpu 1`, 0 of 20 at the other three) and would bring
+  the exemption of `:198` back one statement earlier; it is not chosen.
 - The ten failpoints (`:16-27`), the matrix table (`:233-241`) and the list in the forced-interleaving test
   (`:269-272`) become one table. Both tests take their cases from it, and a declared failpoint with no expected
   check fails a test.
 - Check: the lifecycle suite's own tests. Shown able to fail: the completeness check is a function over the table,
   tested with a planted table that has a hole; the join is shown by the assertion that no longer exempts the
-  failpoint.
+  failpoint. Measured for the implementation pass, with the first join removed: the matrix failed 20 of 20 at
+  `-cpu 1` and at `-cpu 4`, 15 of 20 at `-race -cpu 1` and 2 of 20 at `-race`. The place of the assertion is shown
+  once, by task 6.3.
+- Review only: no test that always runs fails when the assertion is moved after the last join, or when the last
+  join is removed. Measured for the implementation pass: 0 of 20 at all four settings for each.
 
 ### D5 `cover:check` prints the output of its test run
 
@@ -406,12 +443,22 @@ its cases:
 - `GITHUB_EVENT_NAME=push` outside Actions, with a number and an open flake the pull request does not close (exit 1,
   the issue named: the event was not believed).
 
-A second pinned-file test reads `.github/workflows/ci.yml` and requires four things: `required` needs both jobs;
-the `merge-check` job's permissions are exactly the three reads; no job is granted a write; and the `verify` job's
-limit is 15 minutes (see "Not now"). Today nothing tests the workflow's permissions or its limit
-(`git grep -n 'ci.yml' -- internal`: one hit, `docker_test.go:42`). The red path and the exemption are each
-exercised once against real GitHub before the change lands, with a drill issue that is opened and closed for the
-purpose (task 7.6).
+A second pinned-file test reads `.github/workflows/ci.yml` and requires five things: `required` needs both jobs;
+`required` runs whatever their results and fails unless each is `success`; the `merge-check` job's permissions are
+exactly the three reads; no job is granted a write; and the `verify` job's limit is 15 minutes (see "Not now").
+Today nothing tests the workflow's permissions or its limit (`git grep -n 'ci.yml' -- internal`: one hit,
+`docker_test.go:42`). The red path and the exemption are each exercised once against real GitHub before the change
+lands, against a real flake, #49, filed while this change was being implemented (task 7.6). The drill issue first
+planned for this is not opened.
+
+The second of the five was added after implementation (see "After implementation"). GitHub skips a job when a job it
+needs did not succeed, unless the job's own condition says otherwise, and it documents that a skipped job reports
+success to a required check (A18). So without `if: always()` on `required` (`ci.yml:93` at `8e1e750`), a red `verify`
+or `merge-check` would leave `Required` skipped and the pull request free to merge. The 15-minute stop of "Not now"
+depends on the same line. The test requires that condition, requires that the step takes its results from
+`needs.*.result`, and runs the step's script as the workflow writes it with each result planted: it must exit 0 only
+when every result is `success`. It is shown able to fail by three more planted workflows: the condition removed; a
+step that exits 0 for `skipped`; a step that reads the result of `verify` alone. No test starts a workflow run.
 
 ### D9 The up-to-date rule is a ruleset setting that every run reads back
 
@@ -491,7 +538,10 @@ ruled:
 - a `class:flake` issue is closed, or its label removed or renamed, only by a merged fix or on the owner's word;
 - a red you cannot explain is filed before the next push;
 - the head must be up to date;
-- run `task merge:check -- <n>` immediately before merging, in a shell where `GITHUB_ACTIONS` is not set.
+- run `task merge:check -- <n>` immediately before merging, in a shell where `GITHUB_ACTIONS` is not set;
+- CI has three jobs, and `required` fails if `verify` or `merge-check` failed, is missing, or was skipped or
+  cancelled. Three sentences say "two jobs" today, two of them with that rule for `verify` alone
+  (`.agents/protocol.md:62-63`, `semengine-preflight/SKILL.md:46-47`, `AGENTS.md:47`).
 
 The waiver sentence leaves the Land step (Q1b). Today the step says of a known flake: "fix it, or file it and obtain
 an explicit owner waiver recorded as a PR comment" (`.agents/protocol.md:51`). Everything after "fix it" goes. The
@@ -625,11 +675,12 @@ Every rule either names the check that fails when it is broken, or is marked rev
 | No build tag on a test other than `integration` | `contract` test (D6) | planted file named |
 | A ported test file meets the same three checks before it lands; there is no list of accepted files (ruled, Q5) | the three `contract` tests of D6, which scan every `*_test.go` file | the same planted files |
 | No fixed port, no exemption marker, a message that names nothing outside this repository | `scripts/lint-test-ports.sh` with its fixture test and a `contract` test (D7) | planted marked line; fixture case flipped to `match` |
-| Every failpoint is in the matrix; `finalize` joins every worker | `lifecycletest` tests (D4) | planted table with a hole; assertion without the exemption |
+| Every failpoint is in the matrix. `finalize` joins a worker that no Stop signalled, then requires that the double holds nothing | `lifecycletest` tests (D4) | planted table with a hole; assertion without the exemption, which fails when that join is removed |
+| `finalize` makes that requirement before it waits for a worker a Stop signalled, and joins every worker before it returns | review only | one-time evidence for the first half, with the #40 defect restored (task 6.3); no test that always runs fails for either half (D4) |
 | No merge while a known flake is open, unless the pull request closes every open one (ruled, Q4). There is no waiver (ruled, Q1b): the job reads no comment and no label on the pull request | CI job `merge-check`, needed by `Required` (D8) | fake-`gh` cases; one real red and one real exemption before landing (task 7.6) |
 | The kind of run comes from the event, and the event is believed only inside Actions; a pull-request run with no number fails; an unknown event fails | `scripts/merge-check.sh` (D8) | fake-`gh` cases, one of them a `push` event named outside Actions |
 | The label and every read must be there; a list that may be cut short fails | `scripts/merge-check.sh` (D8) | fake-`gh` cases: missing label, failing read, 100 issues |
-| `Required` needs `verify` and `merge-check`; the job holds three read permissions; no job can write; `verify` is limited to 15 minutes | `contract` pin test of `ci.yml` (D8) | planted workflows: job dropped, a write permission, a fourth permission, another limit |
+| `Required` needs `verify` and `merge-check`, runs whatever their results and fails unless each is `success`; the job holds three read permissions; no job can write; `verify` is limited to 15 minutes | `contract` pin test of `ci.yml` (D8) | planted workflows: job dropped, `if: always()` removed, a step that passes `skipped`, a step that reads one job's result, a write permission, a fourth permission, another limit |
 | A head behind `main` cannot merge | GitHub's ruleset (D9) | observed when the setting is made (task 7.3) |
 | The rules in force on `main` require `Required` with the strict setting, from an active ruleset | CI job `merge-check` (D9) | fake-`gh` cases: setting off, no such rule, ruleset not active, extra field |
 | A pull request that closes a `class:flake` issue shows the reproduction before and after the fix | review only | no command can tell a fix from a declaration; the job's warning makes each use visible |
@@ -701,11 +752,11 @@ The first group is every place where the design relies on the shape or behaviour
 | A1 With the strict setting on, GitHub refuses to merge a head behind `main` | yes (D9) | a pull request behind `main` reports a merge state other than `BEHIND` | task 7.3, on PR #14 and PR #39 at the moment the setting is made |
 | A2 In CI, `gh` and `jq` are present, and a job with `issues: read` and `pull-requests: read` can search labels, list labelled issues and read closing references | yes (D8) | the job fails with "command not found" or "Resource not accessible by integration" | the first CI run with the job (task 7.5); task 7.6 for the failing path |
 | A3 The job's token can read the rules in force on `main` and the ruleset's `enforcement` | yes (D9) | a read fails, or a field of D9's table is absent | task 7.5 prints the five fields the job sees. Both reads answer an unauthenticated request today |
-| A4 Closing references reflect the pull request's description at the moment they are read | yes (the fix must be able to land) | after `Closes #<drill>` is added, the re-run still fails | task 7.6 |
+| A4 Closing references reflect the pull request's description at the moment they are read | yes (the fix must be able to land) | after `Closes #49` is added, the re-run still fails | task 7.6 |
 | A5 A re-run keeps the run id, raises `run_attempt`, replaces the check result and reads live state again (one of the owner's three) | only for "or until its failed run is re-run" in D8; a re-run is otherwise left unguarded | the re-run in task 7.6 behaves otherwise | task 7.6, one deliberate re-run |
 | A10 Closing references are filled only when the base is the default branch; a link made by hand in the side panel fills them too | yes, for the stacked-pull-request limit. The hand-made link is one more way to make the same declaration, and gets the same warning | a pull request on another base with `Closes #n` shows a closing reference | not planned: no stacked pull request exists. Stays open |
 | A11 Editing a pull request's description or base starts no run | yes (D8, two limits) | a run starts when the description is edited | task 7.6, for the description: the run list before and after the edit. The base is not measured and stays open |
-| A12 A `::warning::` line shows on the run and on the pull request's checks | only for how visible the exemption is; the log line stands without it | no warning appears on the drill's exempt run | task 7.6 |
+| A12 A `::warning::` line shows on the run and on the pull request's checks | only for how visible the exemption is; the log line stands without it | no warning appears on the exempt run | task 7.6 |
 | A13 `gh` exits non-zero when a read fails | yes ("a failed read never passes") | a run during a GitHub incident passes with empty lists | modelled by the fake `gh`; the script also refuses an answer that is not the list it asked for. Not exercised against a real outage. Stays open |
 | A14 The ruleset `PUT` replaces the rules list whole and accepts the body as it was read | only for how the edit of D9 is made | the read-back differs from the read before it in more than the one value | task 7.3; any other difference is put back and reported |
 | A15 GitHub refuses to merge a pull request while it is a draft | yes: it is what bounds the exemption a claim gets on its first run (D8) | a draft is merged | not planned: the only test is an attempted merge. Measured for the ruling pass: PR #44, a draft with a green `Required`, reports `isDraft: true` and `mergeStateStatus: CLEAN`, so the merge state alone does not show the refusal. Stays open |
@@ -720,6 +771,7 @@ The second group is the rest.
 | A8 Every hosted run gets 4 CPUs | only for the time estimates; `-cpu 1` fixes the setting itself | the repeat step's time in `verify`'s step timings is far from 5 x `runner` | every CI log already prints step timings |
 | A9 Dependabot brings its own pull requests up to date, and stops doing so once anyone else pushes to its branch | no | PR #14 stays behind with no update | observed on PR #14 after task 7.3. If it stays behind, the update is asked for with a `@dependabot rebase` comment and not by a push, so that Dependabot keeps maintaining the branch |
 | A16 The rules in force on `main`, as GitHub lists them, come only from active rulesets | no: the script reads `enforcement` itself (D9) | not applicable | not planned: measuring it means switching the live ruleset off |
+| A18 GitHub skips a job when a job it needs did not succeed, unless the job's own condition says otherwise, and a skipped job reports success to a required check. GitHub's documentation, read on 2026-10-01: "A job that is skipped will report its status as "Success". It will not prevent a pull request from merging, even if it is a required check." | no: `required` runs under `if: always()` and fails by its own step, and the workflow test holds it to both (D8). Without that test the gate would rest on this behaviour being otherwise | not applicable | not planned: measuring it means letting `Required` skip on a real pull request. Measured for the implementation pass, with the condition in place: `Required` ran and failed when `Verify` failed (runs 36913744883 and 36878923325) and when `Verify` was cancelled (runs 36909268877 and 36871295554). A needed job with the result `skipped` has not been seen: neither needed job has a condition |
 
 ## Declared costs
 
@@ -816,7 +868,8 @@ second review passed them.
 12. The up-to-date rule is read back from GitHub on every run (D9). The direction asked for the rule, not for a
     check that it stays on.
 13. The workflow test pins the job's permissions and the `verify` job's 15-minute limit as well as what `Required`
-    needs (D8, "Not now"). The limit is pinned so that raising it is a decision and not an edit.
+    needs (D8, "Not now"). The limit is pinned so that raising it is a decision and not an edit. After
+    implementation it also pins the condition `Required` runs under and what its step does with each result.
 14. The command list in `AGENTS.md` is brought up to date (D10). The inventory found it four steps behind; the
     direction did not mention it.
 15. The repair of ported tests was put to the owner again (Q5), although the direction already accepted guards with no
@@ -897,6 +950,47 @@ made by the orchestrating session.
 | HIGH: if PR #48 lands first, tasks 5.1, 5.2 and 6.2 cannot pass, or pull the repair of ported code into this change | "Effects on slice 04A", **Order**; `tasks.md`, the fifth note on order; the note on PR #48 (comment 5938176347) |
 | MEDIUM: references to PR #47 are stale; overlaps with PR #48 are not named | "Effects on slice 04A" now names PR #48 and has "Where the two changes meet"; "Adjacent claims" and the Q5 record point at PR #48. Measurements that name PR #47 as it was when measured are left as measured |
 | NIT: task 7.6 does not say what happens if the owner declines the drill | Task 7.6's last sentence |
+
+### After implementation
+
+Two findings came from the developer during tasks 4.2, 6.3 and 7.4. Each is a place where a requirement's wording and
+the check written for it disagreed. The architect read the code at `8e1e750` and measured both; the numbers are in D4
+and A18. Nothing here changes what the owner ruled. The changed text needs its own check (task 2.5).
+
+| Finding | Answer | Where |
+|---|---|---|
+| The `lifecycle-suite` requirement said the helper "SHALL join every worker the double started before it returns, for every failpoint, and SHALL then require that the double holds nothing". Built in that order (`8ef3758`), the assertion can never fail, and the matrix no longer sees the #40 defect, which D4's second premise and task 6.3 both need it to see | The requirement's wording was wrong, not D4. D4 asked for the join of one failpoint's worker and for the assertion to lose its exemption; the requirement turned that into a join of every worker ahead of the assertion. The developer's corrected order (`73373a9`) is the one D4 means, and the requirement now states it: a worker that no Stop signalled is ended and joined; then the assertion, for every failpoint; then every worker is joined. No code changes | D4; rules table; spec `lifecycle-suite`, "Complete sensitivity matrix" and its scenario "Stop returned ahead of its worker's exit" |
+| The workflow test of task 7.4 holds `required` to the jobs it needs, and not to `if: always()` or to its step. Without the condition, a failed or cancelled needed job leaves `Required` skipped, and GitHub documents that a skipped job reports success to a required check | The behaviour was already required ("SHALL fail unless both succeeded"). The check for it was not: D8 and task 7.4 listed four things for the test and left this one out, and the test was built to that list. The requirement now names the condition and the step, D8 lists five things, and task 7.4 has three more planted workflows and is open again | D8 "Check"; A18; rules table; departures, item 13; spec `merge-gate`, "Required needs both jobs" and three scenarios; `tasks.md` 7.4 |
+
+Found during this pass:
+
+- No test that always runs fails when `finalize`'s assertion is moved after its last join, or when the last join is
+  removed. The order of `8ef3758` passes every test; only the one-time run of task 6.3 showed it. D4 and the rules
+  table mark both review only. A test that holds a signalled worker before its exit, and requires `finalize` to
+  report it and to return only after the worker has exited, would hold both. This pass does not add it; it is put to
+  the session that holds the change. The session added it as task 4.6; when it lands, task 8.1 changes the two
+  "review only" marks in D4 and the rules table to name the test.
+- Three sentences say CI has two jobs (`.agents/protocol.md:62-63`, `semengine-preflight/SKILL.md:46-47`,
+  `AGENTS.md:47`). D10 and task 8.1 now name them.
+- The same `merge-gate` requirement says the `merge-check` job runs the script and passes the pull request's number,
+  and the workflow test does not hold the job to that either. It stays under the review-only rule for changes to the
+  `merge-check` and `required` jobs. The two cases differ: a missing number fails the script, and removing the call
+  shows in the diff, where removing `if: always()` changes nothing until a needed job is red. The requirement's last
+  sentence now lists what the test holds, so the difference is stated and not implied.
+
+Found in CI during implementation, recorded by the orchestrating session:
+
+- **A second flake, #49.** `TestAwaitReportsLastObservation` in `internal/harness/probe` failed run 36913744883 on
+  this pull request (`297c012`, a head that changed only two ticks in `tasks.md`; the head before it passed) and run
+  36917193756 on PR #48. The test gives `Await` a 200 ms deadline and expects the last observation to be an
+  even-numbered call; with 11 observations in the window it is not. It has not changed since #13. It was filed under
+  `class:flake` before the next push and is fixed in this change (task 4.5), as "Declared costs" says of a failure
+  this change surfaces; this pull request closes #49.
+- **#49 takes the drill's place.** Task 7.6 exercised the red path and the exemption with an issue filed for the
+  purpose. With #49 open, the first run of the `merge-check` job meets a real open flake, and the exemption is
+  exercised by this pull request's own closing line. Tasks 7.5 and 7.6 are rewritten for that. One result the drill
+  would have shown is not seen before the merge: a run that passes with no exemption printed, because #49 stays open
+  until this pull request merges. Task 8.2 restates it as open.
 
 ## The owner's ruling
 
@@ -1065,9 +1159,7 @@ that document states. "Corrections after design review" lists what was removed.
 
 - What happens when the `verify` job outgrows its 15 minutes. "Not now" says what fails, who decides and which options
   are open when it comes.
-- The owner's word for the drill issue of task 7.6. The drill files an issue under `class:flake` that is no flake and
-  closes it with no merged fix. Under the Close step, a close with no merged pull request behind it takes the owner's
-  word on the issue itself, and the approval of a design never widens into a close (`.agents/protocol.md:56-58`).
-  Neither ruling names the drill, so this design does not read that word into them, and task 7.6 carries a hold until
-  it is recorded. Until this change merges only PR #44 runs the `merge-check` job, so the drill stops no other pull
-  request.
+- The drill issue of task 7.6. It would have filed an issue under `class:flake` that is no flake and closed it with no
+  merged fix, which takes the owner's word (`.agents/protocol.md:56-58`); the owner was asked and had not answered.
+  It is not opened and the word is not needed: a real flake, #49, was filed during implementation and takes its
+  place ("After implementation"). #49 is a flake, and it closes by this pull request's merge.

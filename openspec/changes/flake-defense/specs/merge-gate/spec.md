@@ -203,8 +203,12 @@ reports `enforcement` as `active`. No other field of those answers SHALL change 
 The CI workflow SHALL run `scripts/merge-check.sh` in a job `merge-check`, passing the pull request's number on a
 pull-request run, under a token limited to `contents: read`, `issues: read` and `pull-requests: read`. No job in
 the workflow SHALL be granted a write permission. The job `verify` SHALL have a limit of 15 minutes. The job
-`required` SHALL need `verify` and `merge-check` and SHALL fail unless both succeeded. A contract test SHALL fail
-when the workflow differs from this requirement in any of those four ways.
+`required` SHALL need `verify` and `merge-check` and SHALL fail unless both succeeded. For that it SHALL run whatever
+the results of the jobs it needs (`if: always()`), and its step SHALL read the result of every job it needs and exit
+non-zero unless each is `success`: a needed job that failed, was cancelled or was skipped fails `Required`, and so
+does an empty list of results. A contract test SHALL fail when the workflow differs from this requirement in any of
+these ways: the permissions of `merge-check`, a write permission on any job, the limit of `verify`, the jobs
+`required` needs, the condition `required` runs under, or what its step does with the results.
 
 #### Scenario: Job dropped from Required
 
@@ -215,6 +219,23 @@ when the workflow differs from this requirement in any of those four ways.
 
 - **WHEN** the `merge-check` job fails on a pull-request run
 - **THEN** `Required` fails on that head
+
+#### Scenario: Needed job cancelled or skipped
+
+- **WHEN** the step of `required`, as the workflow writes it, is given `success` for one job it needs and `failure`,
+  `cancelled` or `skipped` for the other, or no result at all
+- **THEN** the step exits non-zero
+
+#### Scenario: Required can be skipped
+
+- **WHEN** `required` in `.github/workflows/ci.yml` has no `if: always()`
+- **THEN** the contract test fails naming the job and the missing condition
+
+#### Scenario: Step passes a result other than success
+
+- **WHEN** the step of `required` in `.github/workflows/ci.yml` exits zero for a needed job whose result is
+  `skipped`, or takes its results from `verify` alone
+- **THEN** the contract test fails naming the job and what its step let through
 
 #### Scenario: Write permission added
 

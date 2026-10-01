@@ -125,3 +125,45 @@ func requireNoViolations(t *testing.T, what string, violations []string) {
 		t.Fatalf("%s violations:\n  %s", what, strings.Join(violations, "\n  "))
 	}
 }
+
+// fakeBin writes executable scripts named by tools into a fresh directory and returns an
+// environment whose PATH starts with it, so a script under test runs the fakes instead of the
+// real tools. Tests here never invoke the real go or gh.
+func fakeBin(t *testing.T, tools map[string]string, extra ...string) []string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range tools {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var env []string
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "PATH=") {
+			kv = "PATH=" + dir + ":" + strings.TrimPrefix(kv, "PATH=")
+		}
+		env = append(env, kv)
+	}
+	return append(env, extra...)
+}
+
+// copyScript copies scripts/<name> from the repository into scripts/ under a fresh throwaway
+// root and returns that root.
+func copyScript(t *testing.T, name string) string {
+	t.Helper()
+	src, err := os.ReadFile(filepath.Join(repoRoot(t), "scripts", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "scripts", name), src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}

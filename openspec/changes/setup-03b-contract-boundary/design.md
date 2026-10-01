@@ -185,7 +185,9 @@ boundary exists only where a dependency can be lost at runtime."
 
 Milestones and epics #9–#11 are **slices**, not tiers (the same ruling supersedes "keep their names" above): Slice
 04A, tier-0 graph foundation (#9); Slice 04B, tier-0 lexical — BM25 completes tier 0 (#10); Slice 04C, tier-1 neural —
-embedding provider (#11). Their milestones carry those titles.
+embedding provider (#11). Their milestones carry those titles. This ruling supersedes the approved plan's tier and
+slice text (`docs/setup-plan.md`: the baseline and slice table, the capability table, the SETUP 04 slice sections and
+the verification paragraph); the plan is amended in place, each passage marked "Amended 2026-10-01 per #8".
 
 **Glossary note.** In this change, "tier N" is a SemEngine capability level as ruled above, and "slice" is an
 extraction step. The crosswalk table in the matrix carries SemSource's config file names verbatim
@@ -217,7 +219,7 @@ provider**: the agentic domain and the gateways stay separated; the graph librar
 | `graph/inference` (5,338) + `graph/structural` (883) | `processor/graph-ingest/component.go:19` (hierarchy, construction-guarded `:735-741`) | carry; seam; defer | **Admit at tier 0** (pass3 §1). Hierarchy (`hierarchy.go`, 540 lines, no `llm` reference) is provider-free and SemConnect turns it on (`enable_hierarchy: true`, `deploy/semstreams.json:46` at `dff12657`); the first-pass premise "not in the retained workload" is false for SemConnect. `graph/structural` imports `graph` and `pkg/errs` only. The compile edge into `graph/llm` (`config.go:12,123`; `review_worker.go:17`, nil-guarded `:386`) is cut by the seam. |
 | `pkg/graphview` (1,193) | `processor/graph-query` (2 files); semboids (5 files) | carry dormant; seam | **Admit at tier 0** (pass3 §1): imports `nats.go/jetstream` only. The view layer of change observation (D14). |
 | `graph/llm` (842) + `model/wire` (1,182) | `processor/graph-query/answer.go:11`, `component.go:18,434,467`; `graph/query/classifier_llm_adapter.go:9`; `graph/clustering`, `graph/inference`, `processor/graph-clustering` | carry; seam | **Behind the seam, tier 2** (provider clients; the tier-2 slot is empty at MVP). `graph/llm/openai_client.go` imports `go-openai` (`:12`); `model/wire` is an OpenAI-compatible HTTP client (`client.go:32,84,121,148`). Split shape of `graph/llm` is a design option (below). |
-| `graph/embedding` (3,302) + `processor/graph-embedding` (3,253) | `graph/query/classifier_embedding.go`; `processor/graph-embedding/{component,query,readiness}.go` | carry; seam | **Admit at tier 0 (BM25 half; 5932313950, option (a) of change review round 1's H1).** The BM25 embedder (`bm25_embedder.go`, A3.2) runs in process with no provider. The package's one provider file, `graph/embedding/http_embedder.go` (220 non-test lines; the only file importing `go-openai`), moves behind the tier-1 seam as a file-level split, the same shape as `graph/clustering`'s summarizer; its only code caller is `processor/graph-embedding/component.go:944` (`embedding.NewHTTPEmbedder`). Slice 04B completes tier 0 with BM25; Slice 04C adds the tier-1 embedding provider. The option not taken (BM25 at tier 1, set I, 62 / 134,356) stays in the delta table for the record. |
+| `graph/embedding` (3,302) + `processor/graph-embedding` (3,253) | `graph/query/classifier_embedding.go`; `processor/graph-embedding/{component,query,readiness}.go` | carry; seam | **Admit at tier 0 (BM25 half; 5932313950, option (a) of change review round 1's H1).** The BM25 embedder (`bm25_embedder.go`, A3.2) runs in process with no provider. The package's one provider file, `graph/embedding/http_embedder.go` (220 non-test lines; the only file importing `go-openai`), moves behind the tier-1 seam as a file-level split, the same shape as `graph/clustering`'s summarizer; its only code caller is `processor/graph-embedding/component.go:931,944` (`embedding.HTTPConfig`, `embedding.NewHTTPEmbedder`). The package's doc comments that name `HTTPEmbedder` (`doc.go:19,42,75,155`, `embedder.go:36`, `worker.go:598`, `dedup.go:69,105`) move or are reworded with the split. Slice 04B completes tier 0 with BM25; Slice 04C adds the tier-1 embedding provider. The option not taken (BM25 at tier 1, set I, 62 / 134,356) stays in the delta table for the record. |
 | `gateway/graph-gateway` (2,676) + `gateway` (319) | composed by SemSource (`run.go:852`), not exercised (A3.3); requires `agentic_queries` with no responder; drags `agentic`, `graph/inference` | carry; adapt (drop the agentic port and trajectory decode — a port-contract break); defer-exclude | **Separate (defer-exclude at tier 0)**: layer 4 of D5 is consumer-owned (SemSource's `mcp-gateway`, SemConnect's `cs-api`). Re-admission requires a consumer assertion through its HTTP surface. SemConnect's `cs-api` imports `gateway` only for `var _ gateway.Gateway = (*Component)(nil)` (`gateway/cs-api/component.go:198` at `dff12657`); SemStreams mounts HTTP handlers through an anonymous `RegisterHTTPHandlers` interface (`service/service_manager.go:1550-1555`), so the assertion is compile-time only and dropping it is SemConnect work. Shipping the 319-line base (pass3 set J, 65 / 141,230) is not taken. |
 | `processor/rule` (15,826) + `processor/rule/expression` (1,417) | outside the 65; semboids composes it (`componentregistry/register.go:12,23`) | admit as rule core | **Admit at tier 0 as the rule core (Q15; D12)**, full lines counted; edits E1–E4. |
 | `internal/maxdelivery` (309) | started only by `internal/boot/run.go:184` | port; leave | **Admit at tier 0 (Q18; D13)**: the parked-input observer; re-homed under SemEngine's `internal/`. |
@@ -288,13 +290,13 @@ stays: `graph/embedding` is tier 0, and its provider half is the file split at
 `processor/graph-embedding/component.go:944` (D4a).
 
 **Ruled (Q4): separations ordered; port refactors tracked.** The agentic-domain and gateway cuts land first. The
-behind-the-seam code (`graph/llm`, `model/wire`, and `graph/embedding/http_embedder.go`) is carried dormant through
-the first green tier-0 extraction (Slice 04A), so the 03A attribution of that extraction is not muddied by a
-refactor made blind at the pin. The capability seam (in `processor/graph-query`, `graph/query`, `graph/clustering`,
-`graph/inference`, `processor/graph-clustering`, and the `http_embedder.go` split with its caller in
-`processor/graph-embedding`) is the **last task of 04A**, with exit condition "tier 0 compiles
-without the behind-the-seam packages". The dormant bridge is bounded to that one change, not deferred to Slice 04B. Q4's
-original set of six libraries is superseded by the provider test: four of the six are now tier 0.
+behind-the-seam code (`graph/llm`, `model/wire`, and `graph/embedding/http_embedder.go`) is carried dormant through the
+first green tier-0 extraction (Slice 04A), so the 03A attribution of that extraction is not muddied by a refactor made
+blind at the pin. The capability seam (in `processor/graph-query`, `graph/query`, `graph/clustering`, `graph/inference`,
+`processor/graph-clustering`, and the `http_embedder.go` split with its caller in `processor/graph-embedding`) is the
+**last task of 04A**, with exit condition "tier 0 compiles without the behind-the-seam packages and files". The dormant
+bridge is bounded to that one change, not deferred to Slice 04B. Q4's original set of six libraries is superseded by the
+provider test: four of the six are now tier 0.
 
 #### D4a. Port refactors are a tracked risk class
 
@@ -324,7 +326,7 @@ Known port refactors at tier 0:
 - the D1 adopter-path text (D1);
 - the `output/websocket` port change, from a NATS-subject input to applied state (D14);
 - the `graph/embedding` file-level split: `http_embedder.go` behind the tier-1 seam, with its caller at
-  `processor/graph-embedding/component.go:944` (D4);
+  `processor/graph-embedding/component.go:931,944` and the package doc comments that name `HTTPEmbedder` (D4);
 - the re-home of `internal/maxdelivery` and the way a consumer composes it (D13).
 
 The technical-writer files one `class:port-refactor` issue per item before any 04A change claims it (task 7.2).
@@ -466,10 +468,10 @@ tlsutil,acme}`, `fusionvocab`. Baseline coverage at the pin is **not established
 `graph/inference`, `graph/structural`, `graph/embedding` (its BM25 half; `http_embedder.go` is tier 1; already on the Q9
 list), and `composition/cli`. The gate applies to a package when it is admitted at its tier; code carried dormant is not
 gated until it is admitted. The `task cover:check` targets for these packages are set by the 04A change that ports each
-(no Taskfile change here). Whether `processor/rule/expression` is gated with the rule core is read here from "rule
-core"; the reviewer confirms. ADR-102 d5 is enforced in `processor/graph-ingest` (`authority_gate.go`,
-`mutation_runtime.go` emit `authority_foreign`; change review round 1, N5), which is on the list: the confirmation Q9
-asks for.
+(no Taskfile change here). `processor/rule/expression` is gated with the rule core: D12 counts it in the core, and it
+evaluates every rule condition (change review re-check). ADR-102 d5 is enforced in `processor/graph-ingest`
+(`authority_gate.go`, `mutation_runtime.go` emit `authority_foreign`; change review round 1, N5), which is on the list:
+the confirmation Q9 asks for.
 
 ### D11. Repair-before-port rows and the tier-0 admission gate (Slice 04A, #9)
 
@@ -485,7 +487,7 @@ asks for.
 | SS#1415 | `config` | component/service seams → Stop authority | `Manager.Stop(ctx)` | lifecycle-suite; no timeout parameter remains |
 | SS#1218 | `service`, `pkg/errs` | component/service seams → shutdown sentinel | one `ErrAlreadyStopped` | unit test, written by the developer in the 04A change that ports `service`: a stopped service and a stopped component both return the one `ErrAlreadyStopped` under `errors.Is` |
 | SS#1220 | `service` | component/service seams → registry after failed start | spec statement of the mode-independent clear (option 1 or 2 of the issue) | spec scenario |
-| SS#1417 | ported tests in the 8 packages with 105 entries (68 in the tier-0 set, binding per Q12) | test debt | ported tests must pass `scripts/cleanup-roots-check.sh` (already a `task verify` step) | the guard |
+| SS#1417 | ported tests in the 8 packages with 105 entries (69 entries / 6 copies bind at tier 0, D11 recompute) | test debt | ported tests must pass `scripts/cleanup-roots-check.sh` (already a `task verify` step) | the guard |
 | SS#1145/#1147 | all | restart behavior | recorded as the lifecycle-suite floor plus per-package restart promises; no new recovery subsystem | lifecycle-suite `Promise{Restart}` per component |
 
 Each is a `repair-before-port` ledger row; none is waivable by budget or coverage. **Ruled (Q12):** the mapping is
@@ -748,7 +750,7 @@ row's behavior is admitted; "all" for a rule that holds at every tier. A row wit
 8. Tier 0 is 65 / 140,842 under the ruled scope — pass3 §2.2 set H (reviewed: "all deltas recompute") less
    `graph/embedding/http_embedder.go` (220) plus `composition/cli` (151), measured by the writer (D4).
 9. Of the six first-pass "higher-tier" libraries, four are provider-free at runtime and two are provider clients;
-   `graph/embedding` imports `go-openai` — pass3 §1.
+   in `graph/embedding` one file, `http_embedder.go`, imports `go-openai` — pass3 §1, D4.
 10. Two D4 edits break `processor/rule` at compile time (`factory.go:148`, `:160-161`) and the `rule_pack_bind.go`
     non-port strands `ProjectionBindings()` — scope Q1.5.
 11. graph-ingest acknowledges only after the durable write on every path that intends one — scope Q4.1.
@@ -846,7 +848,8 @@ and the extended critical list (D10).
   file-level subtraction by the writer, not a `go list -deps` on a seamed tree; the architect confirms it at Slice 04A's
   first `go list`.
 - The Q12 gate figures are recomputed from A5 (69 / 6); the ten entering packages are not measured.
-- The critical list grows by ten packages (`graph/embedding` was already on it) with no coverage baseline at the pin.
+- The critical list grows by eleven packages (ten named in the ruling plus `processor/rule/expression` with the rule
+  core; `graph/embedding` was already on it) with no coverage baseline at the pin.
 - The process-kill, broker-restart and failpoint proving tests need harness capability SETUP 02 does not have
   (`natsfixture` has `Stop` only); the extension is the first task of the first 04A change (task 7.1).
 - SemConnect's second matrix column is partly filled; the cells marked `pending #74` wait on task 3.3, which reads

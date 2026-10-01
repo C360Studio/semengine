@@ -65,7 +65,7 @@ PR #21.
       ceiling 65 / 140,842) is recorded with the reproduction commands (pass3 §2.5 and D4's block) the developer
       re-runs as `go list -deps` once the seam exists. Role: technical-writer. Gate: reviewer verdict.
 - [ ] 2.4 Follows rulings Q9 and 5932313950 (critical list extended). D10 records the Q9 list plus `processor/rule`,
-      `pkg/lifecycle`, `graph/clustering`, `processor/graph-clustering`, `pkg/graphview`, `output/websocket`,
+      `processor/rule/expression`, `pkg/lifecycle`, `graph/clustering`, `processor/graph-clustering`, `pkg/graphview`, `output/websocket`,
       `internal/maxdelivery`, `graph/inference`, `graph/structural`, `graph/embedding` (BM25 half) and
       `composition/cli`, and the preflight skill's gate table names the list as the scope of `task cover:check`; the
       `cover:check` targets themselves are set by the 04A change that ports each package (no Taskfile change here), and
@@ -85,7 +85,7 @@ PR #21.
       assertion (`gateway/cs-api/component.go:198` at `dff12657`) as consumer work. The behind-the-seam rows record
       the dormant carry of `graph/llm`, `model/wire` and `graph/embedding/http_embedder.go` through Slice 04A's first
       green extraction and the capability seam as the last task of 04A, exit condition "tier 0 compiles without the
-      behind-the-seam code". Role: technical-writer.
+      behind-the-seam packages and files". Role: technical-writer.
       Gate: `task ledger:check` and reviewer verdict.
 - [ ] 2.8 Follows ruling Q15. The agentic-domain separations carry rows naming their re-admission condition: not
       porting `service/milestone_service.go`, dropping the agentic label predicates from `graph-query`, and the

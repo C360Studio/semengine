@@ -2,7 +2,12 @@
 
 Status: draft for discussion, 2026-09-30. This proposes the setup sequence; it does not authorize implementation.
 
-SemSource is SemEngine's first consumer and the workload that should establish its value. SemEngine remains a
+*Amended 2026-10-01 per #8 ([comment
+5932313950](https://github.com/C360Studio/semengine/issues/8#issuecomment-5932313950)): starter consumers and admission
+by mandate added below; tiers are capability levels and 04A–04C are slices.*
+
+SemSource is SemEngine's first consumer and the workload that should establish its value. The starter consumers are
+semsource, semconnect, semboids and semteams; semembed and seminstruct are support services. SemEngine remains a
 graph framework. Its first boundary should emerge from SemSource's ingestion, updates, deletions, queries,
 provenance, content retrieval, and restart behavior. Dogfooding should help humans and agents work on these repos.
 
@@ -64,30 +69,39 @@ approval.
 
 ## Earned design baseline
 
-Every tier runs the same graph model and contracts. Tiers are capability profiles of that graph; the graph carries
-semantics at every tier. Qualify migration in order: 0, then 1, then 2, keeping each lower profile independently useful
-and deployable. The labels below provisionally describe qualification slices, not a settled or exhaustive taxonomy.
-BM25 and neural name mechanisms that can support several graph capabilities; retrieval does not exhaust their role,
-and neural retrieval does not imply generation.
+*Amended 2026-10-01 per #8: the tier model below replaces the provisional slice labels and the open term question.*
 
-| Provisional SemEngine qualification slice | SemStreams source tier | SemSource profile in `configs/tiers` |
-| --- | --- | --- |
-| 0: Graph foundation | 0: no embedding | Structural, unnumbered |
-| 1: Lexical retrieval | 1: BM25 | 0: BM25 |
-| 2: Neural retrieval | 2: neural | 1: neural |
-| Separately admitted generation | Independent optional capability | 2: neural plus instruct |
+Every tier runs the same graph model and contracts. A tier is a capability level with graceful fallback, and a tier
+boundary exists only where a dependency can be lost at runtime. A deployment runs at the highest tier whose providers
+are available and degrades to the next lower tier when one is lost.
 
-Record the crosswalk against selected configs before migration; do not equate numbers or rename sister-repo files.
-For example, SemEngine qualification slice 1 maps to SemSource's `configs/tiers/tier0-statistical.json`.
-SemSource's numbered examples use `bm25`/`http`/`http`; `tier2-semantic-instruct.json` leaves clustering off.
-`tier2-compose-dev.json` plus its opt-in dev overlay enables clustering and LLM; the shipped MVP uses semembed only.
-Generative answers/community enrichment require separate admission. Locate traversal, clustering, and rules by
-consumer need and dependencies, not old tier names. New tiers preserve identity, authority, and graph correctness.
+- **Tier 0: no external provider.** Graph foundation, rules, entity workflows, settlement, clustering on explicit
+  edges, hierarchy inference, lexical BM25 (in process), change observation, and the operator surface.
+- **Tier 1: an embedding provider is present.** Neural retrieval; losing the provider degrades to tier 0 with search
+  intact.
+- **Tier 2: an LLM provider is present.** The slot is defined and empty at the MVP: clustering summaries, the
+  inference review worker, the query classifier, and the agentic domain when SemTeams brings it.
 
-Before settling tier names, SETUP 03B must include a compact graph capability matrix: each added behavior, its
-dependencies, and proving evidence. Define what each profile gives the graph beyond naming a search mechanism.
-"Tier" already names SemStreams search tiers, ADR-106 API-surface tiers, NATS storage tiers, and SemSource config
-tiers. SETUP 03B settles SemEngine's term; "profile" is the candidate, so that a fifth numbering is not added.
+Extraction proceeds in **slices**, which are steps, not tiers. Qualify the slices in order, keeping each lower tier
+independently useful and deployable. BM25 and neural name mechanisms that can support several
+graph capabilities; retrieval does not exhaust their role, and neural retrieval does not imply generation.
+
+| SemEngine slice | SemEngine tier | SemStreams source tier | SemSource profile in `configs/tiers` |
+| --- | --- | --- | --- |
+| 04A: Graph foundation | 0 | 0: no embedding | Structural, unnumbered |
+| 04B: Lexical retrieval (BM25 completes tier 0) | 0 | 1: BM25 | 0: BM25 |
+| 04C: Neural retrieval | 1 | 2: neural | 1: neural |
+| Separately admitted generation | 2 (slot, empty at the MVP) | Independent optional capability | 2: neural plus instruct |
+
+Record the crosswalk against selected configs before migration; do not equate numbers across repositories or rename
+sister-repo files. SemEngine tier 0 maps to SemSource's `configs/tiers/tier0-statistical.json` and tier 1 to
+`tier1-semantic.json`. SemSource's numbered examples use `bm25`/`http`/`http`; `tier2-semantic-instruct.json` leaves
+clustering off. `tier2-compose-dev.json` plus its opt-in dev overlay enables clustering and LLM; the shipped MVP uses
+semembed only. Generative answers/community enrichment require separate admission. New tiers preserve identity,
+authority, and graph correctness. The word is "tier"
+([#4](https://github.com/C360Studio/semengine/issues/4#issuecomment-5929716018)); the capability matrix, with each
+behavior's tier and proving evidence, is in the SETUP 03B change
+(`openspec/changes/setup-03b-contract-boundary/design.md`).
 
 Keep discovery and ranking signals distinct from materialized or inferred facts and edges. Relevance does not
 automatically become an asserted graph fact. Any such write needs an explicit mutation, provenance, and authority
@@ -104,18 +118,19 @@ Domain vocabularies and adapters stay consumer-owned; generic registration and e
 
 ### Capability and service qualification
 
-This initial service matrix preserves the shared graph and separates embedding from instruction/generation.
-SETUP 03B refines the added behaviors and proving evidence; these service choices do not settle the tier taxonomy.
+*Amended 2026-10-01 per #8: rows renumbered to the tier model.*
 
-| Profile | Graph capability in this slice | Embedding dependency | Generation dependency |
+This service matrix preserves the shared graph and separates embedding from instruction/generation.
+
+| Tier | Graph capability | Embedding dependency | Generation dependency |
 | --- | --- | --- | --- |
-| 0 | Ingestion, mutation, graph queries | None | Not admitted here |
-| 1 | Text relevance and similarity | In-process BM25 | Optional; separate admission |
-| 2 | Learned similarity beyond shared terms | Qualified embedding provider | Optional; separate admission |
+| 0 | Ingestion, mutation, graph queries; text relevance by BM25 | None (BM25 is in process) | Not admitted |
+| 1 | Learned similarity beyond shared terms | Qualified embedding provider | Not admitted |
+| 2 | LLM-backed features (slot, empty at the MVP) | As tier 1 | LLM provider; separate admission |
 
-semembed is the reference tier 2 embedding service; seminstruct is the reference optional generation service.
-Generation at tier 1 or 2 requires its own consumer contract and qualification; this is not a claim that SemSource
-ships a supported BM25-plus-generation profile. Neither generation nor seminstruct is mandatory for tier 2.
+semembed is the reference tier 1 embedding service; seminstruct is the reference optional generation service.
+Generation requires its own consumer contract and qualification; this is not a claim that SemSource ships a supported
+BM25-plus-generation profile. Neither generation nor seminstruct is mandatory for tier 1.
 Provider deployment stays outside the engine; SemEngine owns typed callers, context, freshness, and failure behavior.
 Prompts and generation policy remain product-owned.
 
@@ -166,6 +181,12 @@ with that consumer. Toolchain, coordination, and isolated harness setup can proc
 
 ## Package admission heuristic
 
+*Amended 2026-10-01 per #8 (Q14): admission by owner mandate added beside consumer need.*
+
+A capability is engine-owned when it belongs to either half of SemEngine (the live semantic knowledge graph, or
+durable execution) and runs at tier 0 without an external provider; it is admitted by owner mandate at a named tier
+with a named qualifying workload, and consumer need decides order, never membership (`AGENTS.md`; epic #8, Q14).
+
 Review each consumer-visible slice and its retained dependency closure, not every package in SemStreams. Every
 retained package gets a short admission review. Go deeper for asynchronous work, persistence, wire formats, shared
 mutable state, and helpers with many callers. Reuse a shared helper's review only at the same revision and with
@@ -179,7 +200,8 @@ cross-check it against SemStreams' [sister-import list][sister-imports]. Choose 
 - **Adapt:** change packaging or a bounded seam with explicit behavior differences and regression evidence.
 - **Repair before port:** qualification finds a broken required guarantee; prove the repair in SemEngine, behind a
   failing-first test, before the package is admitted.
-- **Defer/exclude:** no retained consumer need, or narrow the contract explicitly instead of importing the obligation.
+- **Defer/exclude:** no retained consumer need and no owner mandate, or narrow the contract explicitly instead of
+  importing the obligation.
 
 Integrity, silent-loss prevention, context ownership, completed joins, authority/readiness, acknowledged durability,
 and metadata/content preservation are admission gates. An issue, elapsed audit budget, or passing coverage number
@@ -385,24 +407,27 @@ Evaluate find/anchor/ask as cases, not an already agreed mode API.
 Pass evidence: the matrix is complete against the 03A baseline, and the open owner ruling under deferred work is
 recorded. The architect approves the contract, port set, and critical package list before extraction begins.
 
-### SETUP 04 Sequential extraction and tier releases
+### SETUP 04 Sequential extraction and slice releases
+
+*Amended 2026-10-01 per #8: slices 04A–04C are named by tier; tier 0 is complete after 04B.*
 
 Owner: Go developer for extraction and consumer integration, independent Go reviewer for release evidence, architect
 for contract changes, technical writer for current docs and extraction ledger. Dependency: SETUP 03B sign-off.
 
 Port small slices using the admission heuristic, mapping each dependency closure to the contract and ledger.
-Shared contract planning may look ahead; do not port the next tier until the current tier passes its architect and
+Shared contract planning may look ahead; do not port the next slice until the current slice passes its architect and
 independent reviewer gates. Record the exact qualified engine commit, SemSource SHA, configuration, and admitted tier.
 Keep the accepted lower profile deployable and retain every promised lower-profile regression suite at each stage,
 including after model/provider changes. Test profiles independently: this does not require identical rankings or
 simultaneous BM25/neural operation. Hybrid retrieval needs separate design. Measure budgets with real workloads.
 
-Qualify each tier on a SemSource integration branch built wholly on SemEngine; the SemSource owner owns that branch
+Qualify each slice on a SemSource integration branch built wholly on SemEngine; the SemSource owner owns that branch
 and its per-tier compositions. No binary imports both modules: their Go types are distinct, and both would claim
 `GRAPH`, `ENTITY_STATES`, `graph.ingest.>`, and `graph.mutation.>`. SemSource's shipped MVP uses semembed, so its
-mainline stays on SemStreams until tier 2 passes. Tiers 0 and 1 are usable lower profiles, not its migration point.
+mainline stays on SemStreams until tier 1 (slice 04C) passes. Tier 0 is a usable lower profile, not its migration
+point.
 
-#### SETUP 04A Tier 0: Graph foundation (provisional slice)
+#### Slice 04A: tier-0 graph foundation (provisional)
 
 Qualify Graphable ingestion, typed identities/triples, metadata, vocabulary, mutations, indexed exact queries,
 references/body retrieval, and minimal deterministic fusion, including SemConnect and context/lifecycle/restart cases.
@@ -412,24 +437,26 @@ branch. SemSource has no no-embedder config, so the baseline is its structural t
 `tier0-statistical.json` at the pin. NATS remains required; no model service is needed. Compile-time imports beyond
 the admitted port set, including clustering, LLM, agentic, and rule packages, need a reviewed separation; any
 dormant bridge needs an owner and exit condition, not implicit higher-tier admission. Architect contract approval
-and independent evidence review unlock tier 1.
+and independent evidence review unlock slice 04B. (Under the ruled scope, rules, entity workflows and clustering on
+explicit edges are tier 0; the SETUP 03B change records their rows.)
 
-#### SETUP 04B Tier 1: Lexical retrieval (provisional slice)
+#### Slice 04B: tier-0 lexical — BM25 completes tier 0 (provisional)
 
 Add BM25 with known-answer retrieval and ranking cases, scope-before-limit behavior, result caps, stale/update
 semantics, index rebuild, and restart. Qualify the base SemSource lexical paths without a model service, retaining
-all tier 0 guarantees. Architect and reviewer acceptance unlock tier 2 extraction.
+all tier 0 guarantees. Architect and reviewer acceptance unlock slice 04C.
 
-#### SETUP 04C Tier 2: Neural retrieval (provisional slice)
+#### Slice 04C: tier-1 neural — embedding provider (provisional)
 
 Add real embeddings from semembed or a qualified equivalent with pinned identity, paraphrase cases, mixed code/docs,
 warm/cold paths, deadlines, provider unavailability, and recovery. Specify and test fallback or explicit `Deferred`
-outcomes without weakening tiers 0 and 1. Only this stage qualifies the selected full SemSource neural/default
-workload; generator-backed answers or community enrichment still need separate admission.
+outcomes without weakening tier 0; losing the provider degrades to tier 0 with search intact. Only this stage qualifies
+the selected full SemSource neural/default workload; generator-backed answers or community enrichment still need
+separate admission.
 
 Pass evidence: the declared tier's workload and SemEngine dogfooding pass through admitted SemSource human/agent
 interfaces; current docs/tests explain the behavior. Release claims name the tier and tag the exact tested commit and
-consumer baseline. Tier 0/1 base profiles need no embedding-service run. Tier 2 releases and embedding changes require
+consumer baseline. Tier 0 needs no embedding-service run. Tier 1 releases and embedding changes require
 bounded real-provider qualification; separately admitted generation requires its own real-provider evidence at any
 admitted profile. Release checks must verify applicable evidence, never bypass it during tagging.
 
@@ -454,14 +481,14 @@ Acknowledged-write durability needs an explicit decision. The source GRAPH trans
 an accepted publish alone must not be treated as proof that data survives broker restart. Specify what is acknowledged,
 where it is durable, and whether recovery depends on replay or re-ingestion, then test that promise.
 
-Verification follows the admitted tier: deterministic graph checks start at tier 0, lexical checks at tier 1, and
-real embedding-provider qualification at tier 2. Models do not block tier 0/1 base profiles; optional generation
-is verified only where admitted, and becomes required evidence there. All promised lower-tier suites remain required.
-No benchmark targets or latency promises are assumed before measurement.
-Cover duplicate-name anchor selection and mixed code/docs scoped before limiting where each capability is admitted;
-tier 2 adds actual warm/cold embedding paths with recorded model/configuration identity and stable acceptance criteria.
-Missing bodies, partial hydration, stale readiness, or transport faults must not become confident not-found answers.
-Distinguish healthy lag with freshness information from `Deferred`: no usable answer, rather than an absence finding.
+*Amended 2026-10-01 per #8: tiers renumbered.* Verification follows the admitted tier: deterministic graph and lexical
+checks at tier 0 (slices 04A and 04B), and real embedding-provider qualification at tier 1 (slice 04C). Models do not
+block tier 0; optional generation is verified only where admitted, and becomes required evidence there. All promised
+lower-tier suites remain required. No benchmark targets or latency promises are assumed before measurement. Cover
+duplicate-name anchor selection and mixed code/docs scoped before limiting where each capability is admitted; tier 1
+adds actual warm/cold embedding paths with recorded model/configuration identity and stable acceptance criteria. Missing
+bodies, partial hydration, stale readiness, or transport faults must not become confident not-found answers. Distinguish
+healthy lag with freshness information from `Deferred`: no usable answer, rather than an absence finding.
 
 ## Known risks and what to carry forward
 

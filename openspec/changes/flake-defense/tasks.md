@@ -61,7 +61,7 @@ The tasks are done in the order written, from top to bottom. Five notes on that 
 
 ## 5. Text checks with no accepted exceptions
 
-- [ ] 5.1 The sleep check and its sensitivity test are in `internal/harness/contract`. The sensitivity test is
+- [x] 5.1 The sleep check and its sensitivity test are in `internal/harness/contract`. The sensitivity test is
       written first and fails, then passes: a planted `time.Sleep` in a test file, and one in a harness file that
       is not a test, are each named by file and line, and a tree with no test file is rejected.
 - [ ] 5.2 The skip check and the build-tag check, with their sensitivity tests, are in `internal/harness/contract`.

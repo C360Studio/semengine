@@ -142,7 +142,7 @@ The tasks are done in the order written, from top to bottom. Four notes on that 
 
 ## 8. Documents and landing
 
-- [ ] 8.1 The Land and Close steps in `.agents/protocol.md`, the merge rule and command list in `AGENTS.md`, and the
+- [x] 8.1 The Land and Close steps in `.agents/protocol.md`, the merge rule and command list in `AGENTS.md`, and the
       preflight skill's gate table and its rule for an unexplained failure say what `design.md` D10 lists, as ruled:
       the waiver sentence is gone from the Land step, a network fetch that did not answer is not a `class:flake`, and
       the exemption needs every open flake. `git grep -n -i waiver -- .agents AGENTS.md` then finds no sentence that

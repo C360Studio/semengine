@@ -9,8 +9,9 @@ not a task tracker and not a description of the tree.
 - **No product Go packages.** The only Go code is the test harness under `internal/harness/`.
 - **No consumer.** SemSource does not build against SemEngine. The contract that slice 04A implements is written down
   (`docs/contract.md`) and approved in SETUP 03B (issue #8), but no code implements it yet.
-- **No ported SemStreams package.** SETUP 02 carried two scripts and adapted patterns; package rows are seeded in the
-  admission ledger during SETUP 03 and 04.
+- **No ported SemStreams package.** SETUP 02 adapted patterns and carried two scripts unchanged (the port
+  guard `scripts/lint-test-ports.sh` and its fixture test); change `flake-defense` has since adapted those two
+  scripts. Package rows are seeded in the admission ledger during SETUP 03 and 04.
 - **No runtime binary, no release, no tag.**
 - **No consumer lane** in the gate graph; it joins `task verify` when its workload exists.
 - **No ADRs and no active OpenSpec change.** SETUP 02, SETUP 03B and the Slice 04A design are archived; SETUP 02's
@@ -39,9 +40,10 @@ not a task tracker and not a description of the tree.
 | `internal/harness/runner/` | Tests of the integration runner script |
 | `scripts/test-integration.sh` | `task test:integration`: host lock, image preflight, signal forwarding, leak check |
 | `scripts/cover-check.sh` | `task cover:check`: 80% statements on `natsfixture`, `lifecycletest`, `probe` |
+| `scripts/merge-check.sh` | `task merge:check` and the CI job `merge-check`: fails while an open `class:flake` issue is not closed by the pull request, or while the rules on `main` do not require an up-to-date head. Reads GitHub, so not part of `task verify` |
 | `.nats-image` | The pinned NATS image digest every fixture starts |
 | `.evidence/` (ignored) | Per-run integration evidence; CI uploads it as an artifact |
-| `.github/` | CI workflow (jobs `verify` and `required`) and Dependabot configuration |
+| `.github/` | CI workflow (jobs `verify`, `merge-check` and `required`) and Dependabot configuration |
 | `package.json`, `.nvmrc`, `.task-version` | Pins for the Node-based OpenSpec and markdownlint tools and Task |
 | `.markdownlint.yaml`, `.markdownlint-cli2.yaml` | Markdown lint configuration behind `task docs:check` |
 | `openspec/specs/{integration-test-runner,nats-fixture,lifecycle-suite,harness-boundaries}/` | Current truth, synced by the SETUP 02 archive |

@@ -47,21 +47,35 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
   should not do next) becomes an issue. Ask the owner before filing when placement is a genuine scheduling call.
 - **Land:** implementation review, then the owner-run cross-agent round where the owner asks for it, then fixes and
   re-review, then archive as the final content commit, then a narrow reviewer check of the archive/spec sync, then
-  undraft, then CI green with **no known unfixed flake in a required job** (a fresh green over a known flake is
-  rerun-to-green: fix it, or file it and obtain an explicit owner waiver recorded as a PR comment), then squash
-  merge. A correction after archive re-enters reconciliation and final review; no later content commit bypasses the
-  archive/spec-sync check. State `implemented-by: <model or persona>` in the PR body.
+  undraft, then CI green on a head that is up to date with `main` and with **no known flake open** (next item), then
+  `task merge:check -- <n>` immediately before merging, in a shell where `GITHUB_ACTIONS` is not set, then squash
+  merge. A green run while a known flake is open is not a fix: a re-run or a new push only rolls the dice again. Fix
+  the flake; there is no other way past it. A correction after archive re-enters reconciliation and final review; no
+  later content commit bypasses the archive/spec-sync check. State `implemented-by: <model or persona>` in the PR
+  body.
+- **Known flakes:** a known flake is an open issue labelled `class:flake`. The label is for a failure that a pull
+  request in this repository can end: a test or check that passes and fails on the same tree. A network fetch that
+  did not answer is not one. Record it as a comment on the pull request it hit, with the run's link, and re-run when
+  the remote answers; the second failure of the same fetch gets an ordinary issue, without the label. A red you
+  cannot explain by your diff is filed before the next push. While a known flake is open, CI's `merge-check` job,
+  and `Required` with it, fails on every pull request except one whose description closes every open flake
+  (`Closes #n` for each). No comment or label on a pull request exempts it. A pull request that closes a flake shows
+  the reproduction: the command, and how often it failed before the fix and after. A flake that comes back after its
+  fix reopens its issue.
 - **Close:** the squash merge of a PR that declared `Closes #n` at review time closes that issue; the merge is the
   authorization. The declaration must predate the review rounds that cover it. A PR that only `Addresses` an epic
   closes nothing. A close with no merged PR behind it (duplicate, stale, fixed elsewhere) takes the owner's word on
   the issue itself; an approval of adjacent work (a PR, a review round, a design, a waiver) never widens into a
-  close, and a bare "approved" closes nothing.
+  close, and a bare "approved" closes nothing. A `class:flake` issue is closed, or its label removed or renamed, only
+  by a merged fix or on the owner's word: any of the three lifts the `merge-check` stop for every pull request.
 
 ## Verification
 
-CI has two jobs: `verify`, which runs `task verify`, and `required`, which fails if `verify` failed, is missing, or was
-skipped or cancelled. A local `task verify` and the CI job run the same commands. Gate selection and evidence
-recording are in [semengine-preflight](skills/semengine-preflight/SKILL.md).
+CI has three jobs. `verify` runs `task verify`, the same commands as a local run. `merge-check` runs
+`scripts/merge-check.sh`: it fails while a known flake is open that the pull request does not close, and fails unless
+the rules on `main` require an up-to-date head. It reads GitHub, so it is not part of `task verify`. `required` fails
+if `verify` or `merge-check` failed, is missing, or was skipped or cancelled; it is the check the ruleset on `main`
+requires. Gate selection and evidence recording are in [semengine-preflight](skills/semengine-preflight/SKILL.md).
 
 There is no program baton document. Agents mutate only this repository: SemStreams and other sister repositories are
 read-only inventory.

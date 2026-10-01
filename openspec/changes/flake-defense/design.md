@@ -237,8 +237,9 @@ A new test in `internal/harness/contract` parses `Taskfile.yml` and `scripts/ver
   failpoint. Measured for the implementation pass, with the first join removed: the matrix failed 20 of 20 at
   `-cpu 1` and at `-cpu 4`, 15 of 20 at `-race -cpu 1` and 2 of 20 at `-race`. The place of the assertion is shown
   once, by task 6.3.
-- Review only: no test that always runs fails when the assertion is moved after the last join, or when the last
-  join is removed. Measured for the implementation pass: 0 of 20 at all four settings for each.
+- Check: `TestFinalizeReportsWorkerHeldAfterSignal` (task 4.6, `78e62b0`) fails when the assertion is moved after the
+  last join, and when the last join is removed. Before it, no test that always runs failed for either: measured for
+  the implementation pass, 0 of 20 at all four settings for each.
 
 ### D5 `cover:check` prints the output of its test run
 
@@ -676,7 +677,7 @@ Every rule either names the check that fails when it is broken, or is marked rev
 | A ported test file meets the same three checks before it lands; there is no list of accepted files (ruled, Q5) | the three `contract` tests of D6, which scan every `*_test.go` file | the same planted files |
 | No fixed port, no exemption marker, a message that names nothing outside this repository | `scripts/lint-test-ports.sh` with its fixture test and a `contract` test (D7) | planted marked line; fixture case flipped to `match` |
 | Every failpoint is in the matrix. `finalize` joins a worker that no Stop signalled, then requires that the double holds nothing | `lifecycletest` tests (D4) | planted table with a hole; assertion without the exemption, which fails when that join is removed |
-| `finalize` makes that requirement before it waits for a worker a Stop signalled, and joins every worker before it returns | review only | one-time evidence for the first half, with the #40 defect restored (task 6.3); no test that always runs fails for either half (D4) |
+| `finalize` makes that requirement before it waits for a worker a Stop signalled, and joins every worker before it returns | `lifecycletest` test `TestFinalizeReportsWorkerHeldAfterSignal` (D4, task 4.6) | written first; fails against a copy of `finalize` with the assertion moved after the last join, and against one with the last join removed; one-time evidence for the first half, with the #40 defect restored (task 6.3) |
 | No merge while a known flake is open, unless the pull request closes every open one (ruled, Q4). There is no waiver (ruled, Q1b): the job reads no comment and no label on the pull request | CI job `merge-check`, needed by `Required` (D8) | fake-`gh` cases; one real red and one real exemption before landing (task 7.6) |
 | The kind of run comes from the event, and the event is believed only inside Actions; a pull-request run with no number fails; an unknown event fails | `scripts/merge-check.sh` (D8) | fake-`gh` cases, one of them a `push` event named outside Actions |
 | The label and every read must be there; a list that may be cut short fails | `scripts/merge-check.sh` (D8) | fake-`gh` cases: missing label, failing read, 100 issues |

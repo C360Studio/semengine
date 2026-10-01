@@ -4,15 +4,19 @@
   `origin/main` `d303c51addc9d11030cb08431ce8b9acfa9ac406` only by the four files under
   `openspec/changes/flake-defense/`)
 - first written at base `97e53e630c56bb8f68cac188c045f6899f9cfd20` (commit `4d4d893`, sha256
-  `2da7edb5d0907a85fc5397c26271acaa365b2fd143c7c4521df56da910f19502`); this revision corrects it after the
-  independent inventory review recorded on PR #44 (comment 5934062218, INVENTORY CHANGES REQUESTED)
+  `2da7edb5d0907a85fc5397c26271acaa365b2fd143c7c4521df56da910f19502`); the second revision (commit `8fce688`, sha256
+  `565e2d38f7b11e90f7ceea3bea882a1977398ca33fb9b38648ae75fcedfe1aa4`) corrected it after the independent inventory
+  review recorded on PR #44 (comment 5934062218, INVENTORY CHANGES REQUESTED)
+- this file is the third revision. It answers the bounded re-check of the second, recorded on PR #44 (comment
+  5935166945, INVENTORY CHANGES REQUESTED, one blocking finding). Commit `8fce688` changed only files under
+  `openspec/changes/flake-defense/`, so the base and every pin into other files stand
 - semstreams (code facts only): `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`, read through `gh api ... ?ref=`
 - unmerged branch read: `origin/claude/harness-lessons` at `74db5cc9a64d82237a7405a48a9cebc9611e2a2b` (PR #39)
 - measured: 2026-10-01; issue #42, claim PR #44
 
 This is the architect's inventory-only deliverable (contract step 2). It contains no target state, options or
-recommendation. The corrected file has not yet had its re-check by the independent reviewer. Section 12 maps each
-review finding to the place that answers it.
+recommendation. The third revision has not yet had its re-check, which is confined to what section 12.1 lists.
+Section 12 maps each review finding to the place that answers it.
 
 Between the two bases one Go file changed: PR #43 merged as `d303c51` and closed #40 by changing
 `internal/harness/lifecycletest/refowner_test.go` (+52/-2). Every pin into that file is re-pinned at `4d96860`.
@@ -32,7 +36,7 @@ that label (#199, #209, #220, #750, #1283, #1414, #1417) were read by title, sta
 labelled issues and this repository's carried scripts cite them. No other sister repository was read. No git command
 ran in a sister checkout.
 
-Added in this revision, all prompted by the review's findings:
+Added in the second revision, all prompted by the review's findings:
 
 - SemStreams code at the pin: `test/testinfra/policy_guard_test.go`, `test/testinfra/policy_baseline.json`,
   `test/testinfra/cleanup_baseline.json` (counts only), `service/service_manager_health_listener_test.go`,
@@ -41,8 +45,9 @@ Added in this revision, all prompted by the review's findings:
 - SemStreams' record of owner waivers. The review cites two waiver comments that are not on a `class:flake` issue
   (PR #1373, PR #1322). To see how each waiver was carried out, `gh search prs --repo C360Studio/semstreams "owner
   waiver"` was run against comments (21 hits) and bodies (11 hits), and only the paragraphs naming a waiver were
-  read. This goes one step past the pull requests that closed a labelled issue; it is reported here so the owner can
-  confirm or strike it.
+  read. This goes one step past the pull requests that closed a labelled issue. The owner has ruled on it
+  (2026-10-01, on #42, comment 5935179232, posted by the Claude session on the owner's word): "if the owner waivers
+  help we can keep them but i likely waived too much and for too long". The material stays (section 7.6.4).
 
 Pins are `path:line` with the line's text, at the base unless a row says otherwise. GitHub facts carry the `gh`
 query that produced them. Statements about GitHub or Go behavior that were not exercised here are marked
@@ -287,7 +292,8 @@ above; it is asserted at `internal/harness/runner/runner_test.go:420` and record
 `docs/admission-ledger.yaml:109`.
 
 No invocation sets `-count` above 1, `-cpu`, `GOMAXPROCS`, or `-shuffle`. `git grep -n -E
-'GOMAXPROCS|-cpu[ =]|goleak|GOFLAGS'` has 0 hits. `synctest` now has four, all in
+'GOMAXPROCS|-cpu[ =]|goleak|GOFLAGS' -- . ':!openspec/changes/flake-defense'` has 0 hits; the pathspec leaves out
+this change's own files, which quote those words. `synctest` now has four, all in
 `internal/harness/lifecycletest/refowner_test.go` (`:8`, `:264`, `:274`, `:283`), added by PR #43.
 
 ### 3.2 Where and on what
@@ -316,7 +322,7 @@ hosted runner, for each head pushed; a tagged integration test runs once. After 
 ### 3.3 The required job and the ruleset
 
 `gh api repos/C360Studio/semengine/rulesets/24272345` (`main-required-checks`, enforcement `active`, target
-`~DEFAULT_BRANCH`), re-read for this revision and unchanged; it is the only ruleset, and `main` has no classic
+`~DEFAULT_BRANCH`), re-read for the second revision and unchanged; it is the only ruleset, and `main` has no classic
 branch protection (`gh api .../branches/main/protection`: 404 "Branch not protected"):
 
 | Rule | Value |
@@ -344,9 +350,10 @@ branch protection (`gh api .../branches/main/protection`: 404 "Branch not protec
 
 ### 3.4 Reruns and re-rolls
 
-- `gh api 'repos/C360Studio/semengine/actions/runs?per_page=100'`: 45 runs in the repository's life (42 `CI`, 3
-  `Dependabot Updates`). `CI`: 33 success, 7 failure, 2 cancelled. Maximum `run_attempt`: 1. No run has ever been
-  re-run here.
+- `gh api 'repos/C360Studio/semengine/actions/runs?per_page=100'` at 2026-10-01T15:57Z: 46 runs in the
+  repository's life (43 `CI`, 3 `Dependabot Updates`). `CI`: 34 success, 7 failure, 2 cancelled. Maximum
+  `run_attempt`: 1. No run has ever been re-run here. The count was 45 when the second revision was written; the
+  46th is run 36887266668, the push of that revision (`8fce688`), green.
 - The seven failures:
   - `docs:check` on `f6ceab4` (PR #12).
   - `TestIgnoredInterruptIsDetected` on `ec8e685` (PR #13, failed in both the unit and integration steps of one
@@ -416,9 +423,11 @@ branch protection (`gh api .../branches/main/protection`: 404 "Branch not protec
   tests, counts skips, or lists build tags. A test file under a tag
   no gate passes is compiled by nothing and noticed by nothing. `task cover:check` would notice a skip only if it
   took `natsfixture`, `lifecycletest` or `probe` below 80% (`scripts/cover-check.sh:14`). Measured here in a
-  scratch module (`go1.26.4`, one skipping test and one passing test): plain `go test -count=1 ./...` prints one
-  `ok` line and nothing about the skip; `go test -json` emits one `"Action":"skip"` record. Every invocation in
-  section 3.1 runs without `-v` and without `-json`, so a CI log cannot show whether `runner_test.go:264` fired.
+  scratch module (one skipping test and one passing test) on `go1.26.6`, the host's version and `go.mod:3`'s:
+  plain `go test -count=1 ./...` prints one `ok` line and nothing about the skip; `go test -count=1 -json` emits
+  one `"Action":"skip"` record. The second revision measured this on `go1.26.4` with the same result. Every
+  invocation in section 3.1 runs without `-v` and without `-json`, so a CI log cannot show whether
+  `runner_test.go:264` fired.
 - **Masking.** Two mechanisms hide a failure's name:
   - `-failfast` (`scripts/test-integration.sh:402`) stops a package at its first failure, so a second flaky test
     behind the first is not reported in that run. `scripts/verify.sh:24` keeps going across steps.
@@ -594,7 +603,7 @@ eight flakes of which five are marked "unfiled".
 | #1397 | predicted budget (four 3 s pipe waits); same test as #1061, same class as #1290 | local gate | fix to the test: causal signals under one 35 s budget (PR #1408); an owner waiver for PR #1388 | 1 of 5, then 5 of 5 passed |
 | #1421 | not recorded ("Historical causation remains unproven"): a KV listing exceeded the framework's 5 s deadline | PR run, then a `main` run | closed on the owner's direction with the cause unproven, after partial repairs (PRs #1432, #1435) and waivers for four merges, the last recorded as "my last waiver on 1421" | not reproduced |
 
-The #1175 row is corrected in this revision. The first version classed it as a port collision closed by a fix to
+The #1175 row was corrected in the second revision. The first version classed it as a port collision closed by a fix to
 its guard; the issue's own closing comment does not claim the failure was fixed or its cause found.
 
 ### 6.2 Counts by root-cause shape
@@ -864,14 +873,35 @@ version had one table, for the first class only, and it missed owners in all thr
 | Dimension | Existing owners and evidence |
 |---|---|
 | Semantic class | "No known unfixed flake in a required job"; a green over one is rerun-to-green; fix, or file and obtain a waiver (`.agents/protocol.md:50-51`). More generally: the durable record that something may not proceed until a named condition holds, and who may lift it. |
-| Owners | (1) The protocol's Land step, restated at `AGENTS.md:70` and `semengine-preflight/SKILL.md:82-83`; no code owner. (2) The `required` job (`ci.yml:67-82`) and ruleset 24272345, which own the only enforced merge condition. (3) OpenSpec holds: unchecked task lines read by `scripts/openspec-queue.sh:82` — `printf '%s' "$t" \| grep -qiE '\bhold\b\|\bblocked\b\|\bblocking\b'    && { echo "BLOCKED"; return; }`; `.agents/protocol.md:20` names them as the home of holds. (4) Labels `status:blocked` and `status:needs-decision` (`protocol.md:9-11`). (5) Milestones as release gates (`protocol.md:14-15`). (6) The admission-gate rule: `docs/setup-plan.md:185-187` says certain gates cannot be waived by "An issue, elapsed audit budget, or passing coverage number", and that a noncritical exception "may have an owner, bounded scope, proving test, and due milestone". (7) Exceptions that a command admits: the image override with a required reason (`scripts/test-integration.sh:67-69`), and the fixed-port marker with none (`scripts/lint-test-ports.sh:41`). (8) This change's own `.openspec.yaml:5` — `skip_specs: true`, with its reason at `:3-4` and its removal condition in `tasks.md` 3.1. (9) The owner, for rulings and waivers. |
-| Catalogs | GitHub issues and their comments; PR comments; the Actions run and attempt history; artifact `integration-evidence-<run_id>-<run_attempt>` (`ci.yml:59`); `openspec/changes/<id>/tasks.md`; `runner.env` (`image_override`); the label list (15 labels); four milestones. |
-| Status | The `Required` check on a head. `task spec:queue`: at `4d96860` it prints four `BLOCKED` lines for this change and exits 0; `scripts/openspec-queue.sh --strict` exits 1 on the same input (both run here). `status:blocked` is on nine open issues; `status:needs-decision` on none. Pickup reads "failures or waivers" (`.agents/skills/semengine-pickup/SKILL.md:22`). |
-| Lifecycle | A waiver is per merge and lives in a PR comment (`protocol.md:51`). A hold lives until its task line is checked; the change is archived in the landing PR (`protocol.md:20-22`). An issue closes by a merged PR that declared `Closes #n`, or by hand on the owner's word (`protocol.md:54-58`). A `Required` result belongs to one head and does not expire when `main` moves (section 3.3). Artifacts expire at 14 days (`ci.yml:63`). |
-| Ownership | Rulings are the owner's, on the issue (`AGENTS.md`, Roles). "an approval of adjacent work (a PR, a review round, a design, a waiver) never widens into a close" (`protocol.md:57-58`). One GitHub login for owner and agents. `bypass_actors: []`. |
-| Readers | Agents at pickup (`protocol.md:28-29`, which includes `task spec:queue`); reviewers; the owner. `scripts/openspec-queue.sh` reads `tasks.md`. `scripts/cover-check.sh:29` and `:34` read `runner.env`. `required` reads `needs.*.result`. No workflow reads issues, comments, labels or milestones. Nothing calls `--strict`: `Taskfile.yml:94` runs the script with no argument, `task verify` leaves `spec:queue` out (`AGENTS.md:44`), and its header says the flag is "for CI or a pre-archive hook" (`scripts/openspec-queue.sh:33-34`). |
-| Writers | Agents and the owner through `gh`, by hand, for issues, comments, labels and milestones. Commits, for `tasks.md`. The workflow writes only check results and artifacts (`ci.yml:15-16`). |
-| Recovery | None for the flake record. A flake whose issue is closed without a fix has no record (SemStreams #750, then #1284). The queue script has no test here: `scripts/openspec-queue.sh:73` says SemStreams' fixture test for it is "not ported yet". A green produced before a fix stays green (PR #39). |
+| Owners | (1) The protocol's Land step, restated at `AGENTS.md:70` and `semengine-preflight/SKILL.md:82-83`; no code owner. (2) The `required` job (`ci.yml:67-82`) and ruleset 24272345, which own the only enforced merge condition. (3) OpenSpec holds: unchecked task lines read by `scripts/openspec-queue.sh:82` — `printf '%s' "$t" \| grep -qiE '\bhold\b\|\bblocked\b\|\bblocking\b'    && { echo "BLOCKED"; return; }`; `.agents/protocol.md:20` names them as the home of holds. (4) Labels `status:blocked` and `status:needs-decision` (`protocol.md:9-11`). (5) Milestones as release gates (`protocol.md:14-15`). (6) The admission-gate rule: `docs/setup-plan.md:185-187` says certain gates cannot be waived by "An issue, elapsed audit budget, or passing coverage number", and that a noncritical exception "may have an owner, bounded scope, proving test, and due milestone". (7) Exceptions that a command admits: the image override with a required reason (`scripts/test-integration.sh:67-69`), and the fixed-port marker with none (`scripts/lint-test-ports.sh:41`). (8) This change's own `.openspec.yaml:5` — `skip_specs: true`, with its reason at `:3-4` and its removal condition in `tasks.md` 3.1. (9) The owner, for rulings and waivers. (10) The admission ledger, `docs/admission-ledger.yaml`: one entry per SemStreams source path, ten required fields (`:4-14`). Three of them record an exception: `:11` — `#   known_risks                   upstream defects and what is not carried`; `:13` — `#   owner                         who answers for the entry`; and `disposition`, whose four values are at `internal/harness/contract/ledger_test.go:109` — `dispositions = map[string]bool{"carry": true, "adapt": true, "repair-before-port": true, "defer-exclude": true}`. `repair-before-port` is the blocking value: `docs/setup-plan.md:180-181` says to "prove the repair in SemEngine, behind a failing-first test, before the package is admitted", and `:196-197` makes whatever is still open against a port-set package at pin time "that package's repair-before-port row (owner ruling, 2026-09-30)". A missing entry is blocking by prose only: `docs/provenance.md:14` — `3. **No ledger row, no port.** Code without a row does not land. The row also records the consumer purpose,`. The code owner is contract test T-B7 (`ledger_test.go:17`, `:115`) behind `task ledger:check` (`Taskfile.yml:61-64`); the requirement is `openspec/specs/harness-boundaries/spec.md:106-111`. (11) Two more exceptions that a command admits, each with its reason beside it: the context-retention exemption, one type by exact name (`internal/harness/contract/context_test.go:215-217`; the list is the spec's, `harness-boundaries/spec.md:22-24`, and `context_test.go:211` says "a new entry needs a spec change first"); and markdownlint's `ignores` (`.markdownlint-cli2.yaml:4-7`, reason at `:1-3`) with one rule switched off (`.markdownlint.yaml:38` — `MD060: false`, reason at `:37`). (12) Draft state on a pull request: it is the claim (`protocol.md:16-17`), and the Land step lifts it ("then undraft", `protocol.md:49-50`). That GitHub refuses to merge a draft is **documented, not measured**. |
+| Catalogs | GitHub issues and their comments; PR comments; the Actions run and attempt history; artifact `integration-evidence-<run_id>-<run_attempt>` (`ci.yml:59`); `openspec/changes/<id>/tasks.md`; `runner.env` (`image_override`); the label list (15 labels); four milestones. The admission ledger: twelve entries (`docs/admission-ledger.yaml:20` to `:190`), all read at one `source_sha`. `disposition` is `adapt` in six, `defer-exclude` in four, `carry` in two and `repair-before-port` in none. `owner` is `setup-02 developer` in all twelve, a role and not a login. `known_risks` is `none known` or `n/a` in two (`:163`, `:174`). Entries have no identifier: comments in code cite them as "ledger row L1" to "L10" (`git grep -n -E 'ledger (rows? )?L[0-9]+' -- . ':!openspec' ':!*.md'`: 9 hits, and `internal/harness/natsfixture/rollback.go:16-17`, where the label wraps), and the file holds no such label (`grep -c -E '\bL[0-9]+\b' docs/admission-ledger.yaml`: 0), so a label is a position in the list. The spec's list of exempt types (one entry). The two markdownlint configuration files. The pull-request list: three of the four open pull requests are drafts (`gh pr list --json number,isDraft`). |
+| Status | The `Required` check on a head. `task spec:queue`: at `4d96860` it prints four `BLOCKED` lines for this change and exits 0; `scripts/openspec-queue.sh --strict` exits 1 on the same input (both run here). `status:blocked` is on nine open issues; `status:needs-decision` on none. Pickup reads "failures or waivers" (`.agents/skills/semengine-pickup/SKILL.md:22`). The admission ledger has no status key. Its machine state is `ledger:check` passing or failing, the tenth of thirteen steps in `task verify` (`scripts/verify.sh:10` — `steps=(spec:check docs:check fmt:check tidy:check cleanup-roots:check build vet lint vuln ledger:check test:unit`); run here at `8fce688` on go1.26.6, both tests pass. Its header holds one pending condition as prose that nothing reads: "Every entry below is re-checked at SETUP 03A" (`docs/admission-ledger.yaml:17`). |
+| Lifecycle | A waiver is per merge and lives in a PR comment (`protocol.md:51`). A hold lives until its task line is checked; the change is archived in the landing PR (`protocol.md:20-22`). An issue closes by a merged PR that declared `Closes #n`, or by hand on the owner's word (`protocol.md:54-58`). A `Required` result belongs to one head and does not expire when `main` moves (section 3.3). Artifacts expire at 14 days (`ci.yml:63`). A ledger entry is to exist before the code it covers lands (`docs/provenance.md:14`). No rule removes one, and a SemStreams change made after the pin "enters only as its own ledger row" (`docs/provenance.md:19-20`). The file has one commit behind it, `34c9dc6` (PR #13). |
+| Ownership | Rulings are the owner's, on the issue (`AGENTS.md`, Roles). "an approval of adjacent work (a PR, a review round, a design, a waiver) never widens into a close" (`protocol.md:57-58`). One GitHub login for owner and agents. `bypass_actors: []`. Each ledger entry names an `owner`; the check asks only that the value be a non-empty scalar (`ledger_test.go:152-156`, `:165-169`). The ledger's location and format are an owner ruling, whose home is given as PR #13 at `docs/admission-ledger.yaml:2` and as issue #6 at `docs/provenance.md:33-34`. |
+| Readers | Agents at pickup (`protocol.md:28-29`, which includes `task spec:queue`); reviewers; the owner. `scripts/openspec-queue.sh` reads `tasks.md`. `scripts/cover-check.sh:29` and `:34` read `runner.env`. `required` reads `needs.*.result`. No workflow reads issues, comments, labels or milestones. Nothing calls `--strict`: `Taskfile.yml:94` runs the script with no argument, `task verify` leaves `spec:queue` out (`AGENTS.md:44`), and its header says the flag is "for CI or a pre-archive hook" (`scripts/openspec-queue.sh:33-34`). The admission ledger has one program reader, `TestAdmissionLedger` (`ledger_test.go:17`), which opens that one file (`:19`) and reports every violation. It runs three times in `task verify`: alone in the `ledger:check` step, then inside `test:unit` and `test:integration` (section 3.1). It requires the ten keys and no others, each a non-empty scalar; a 40-character lowercase `source_sha`; a `disposition` among the four; a unique `source_path`; and at least one entry (`ledger_test.go:102-110`, `:115-178`; eleven planted violations at `:74-92`). Nothing acts on a `disposition` value: `git grep -n -i -E 'repair[- ]before[- ]port' -- . ':!openspec/changes'` has 8 hits, two of them code (`ledger_test.go:109` and `:174`, the membership test and its message). People: the contracts tell the architect to name the row, the developer to find it and the reviewer to confirm it (`semengine-architect.md:47`, `semengine-developer.md:36-37`, `semengine-reviewer.md:107-108`); preflight selects `task ledger:check` when the file changes (`semengine-preflight/SKILL.md:61`). `TestNoRetainedContext` (`context_test.go:22`) reads the exemption list at `:263`. `task docs:check` (`Taskfile.yml:99`) reads the two markdownlint files. |
+| Writers | Agents and the owner through `gh`, by hand, for issues, comments, labels and milestones. Commits, for `tasks.md`. The workflow writes only check results and artifacts (`ci.yml:15-16`). Ledger entries are written by hand in a commit; no command creates or amends one. All twelve arrived with the test in `34c9dc6` (PR #13; `git log -- docs/admission-ledger.yaml`: one commit). The contracts name a writer for two parts of the ledger: the developer records context roots in it (`semengine-developer.md:153-154`), and the technical writer owns "the admission ledger's prose" (`semengine-technical-writer.md:5-6`). None says which role adds a row (`git grep -n -i ledger -- .agents/contracts`: 10 hits, all read). |
+| Recovery | None for the flake record. A flake whose issue is closed without a fix has no record (SemStreams #750, then #1284). The queue script has no test here: `scripts/openspec-queue.sh:73` says SemStreams' fixture test for it is "not ported yet". A green produced before a fix stays green (PR #39). A malformed ledger entry fails `ledger:check`, which names the entry by `source_path` and line (`ledger_test.go:139-144`); `verify` runs its remaining steps and exits 1 (`scripts/verify.sh:24`, `:40-43`), and `Required` is red until a commit repairs the file. A missing file, unparseable YAML and an empty list fail too (`ledger_test.go:20-22`, `:117-129`). A missing entry does not fail: the test opens no other file, and two tracked files that state a SemStreams source have no entry while `ledger:check` passes. They are `revive.toml:1` — `# Revive configuration, adapted from SemStreams at 5457b345.` and `scripts/openspec-queue.sh:2` — `# Ported from SemStreams 5457b345; uses the repo-pinned OpenSpec CLI from node_modules.` (`grep -c -i revive docs/admission-ledger.yaml` and `grep -c -i openspec-queue docs/admission-ledger.yaml`: 0 and 0; both files arrived in `819c461`, PR #12, the merge before the one that added the ledger). The check also cannot see a `destination` or `proving_tests` value that names nothing, a `source_sha` that is not a SemStreams commit, an `owner` value that names no one, or a `repair-before-port` row whose repair has not landed. Those rest on the reviewer's contract (`semengine-reviewer.md:107-111`). |
+
+Owners (10) to (12) were added in the third revision; the re-check on PR #44 found the ledger missing. The search
+for any further owner whose record a command reads went as follows. All 106 tracked files were listed (`git ls-tree
+-r --name-only 4d96860`) and every configuration file among them was read. Then two searches ran over everything
+but Markdown, the ledger and the two lock files (65 and 63 hits):
+
+```bash
+git grep -n -i -E 'allowlist|allow-list|allowed|baseline|exempt|waiv|exception|nolint|revive:disable|lint:ignore|//go:build|OVERRIDE|quarantine|skip_specs|legitimate root' \
+  -- . ':!*.md' ':!docs/admission-ledger.yaml' ':!package-lock.json' ':!go.sum'
+git grep -n -i -E 'ignore|exclude|\bskip|disable|suppress|tolerat|permitted' \
+  -- . ':!*.md' ':!docs/admission-ledger.yaml' ':!package-lock.json' ':!go.sum'
+```
+
+Hits that the table did not already hold: the exemption list and the two markdownlint files (owner 11). Hits
+recorded elsewhere: the `integration` build tag (section 4) and `scripts/cleanup-roots-check.sh:7`, which states a
+zero baseline (section 8). The rest are hits on rows the tables already have (the image override, the fixed-port
+marker, `skip_specs`, the stale-lock quarantine), test doubles and planted violations, the runner's signal handling
+and Ryuk setting, `task doctor`'s warnings, and `scripts/verify.sh:38`, which reports untracked files and allows
+them. Closed empty, each by a search that returned 0 hits: `.github/dependabot.yml` has no `ignore` key, `go.mod`
+no `exclude` or `replace`, `package.json` no `overrides`, `revive.toml` no exclusion, and no Go file a `nolint` or
+`revive:disable` directive. Draft state (owner 12) came from re-reading `.agents/protocol.md`, not from a search.
 
 #### 7.6.2 A record written by automation, and how a duplicate is recognised
 
@@ -879,7 +909,7 @@ version had one table, for the first class only, and it missed owners in all thr
 |---|---|
 | Semantic class | A durable GitHub record that a program, not a person, creates in response to an event, with its labels, its evidence, and the rule that keeps one event from producing two records. |
 | Owners | (1) Dependabot: `.github/dependabot.yml:3-15`, three ecosystems; it wrote PR #14 and applied the labels `dependencies` and `javascript` (issue timeline: `labeled` by `dependabot[bot]`). (2) The CI workflow, which writes check runs and one artifact per attempt (`ci.yml:55-63`) and nothing else. (3) The integration runner, which writes the evidence directory the artifact carries (`scripts/test-integration.sh:338`, `:475`, `:528`). (4) Hand filing under the File routing rule (`protocol.md:43-47`). (5) The duplicate rule: "A close with no merged PR behind it (duplicate, stale, fixed elsewhere) takes the owner's word on the issue itself" (`protocol.md:56-57`). (6) GitHub's vulnerability alerts, enabled (`gh api .../vulnerability-alerts`: 204); automated security fixes are disabled. |
-| Catalogs | The label list: a `class:` namespace with one member, `class:port-refactor` (12 issues, #25 to #36); `bug` (5 issues, among them #40 and #41); the default `duplicate` label (0 issues); no `class:flake`. The `flake(<package>):` title prefix (2 of 2 flake issues). The artifact list (32 artifacts). The pull-request list, where a non-draft PR is not a claim (`protocol.md:28`). |
+| Catalogs | The label list: a `class:` namespace with one member, `class:port-refactor` (12 issues, #25 to #36); `bug` (5 issues, among them #40 and #41); the default `duplicate` label (0 issues); no `class:flake`. The `flake(<package>):` title prefix (2 of 2 flake issues). The artifact list (33 artifacts at 2026-10-01T15:57Z; the second revision counted 32). The pull-request list, where a non-draft PR is not a claim (`protocol.md:28`). |
 | Status | Issue state and reason: #40 `completed`; #41 `not_planned`. #41's timeline has no `marked_as_duplicate` event and no `duplicate` label; its one comment says "Duplicate of #40". Milestone: #41 is in "Setup: foundation through contract"; #40 and #42 are in none. |
 | Lifecycle | Dependabot runs weekly; PR #14 has been open since 2026-09-30 with a green that predates every test in the tree (section 3.3). An issue closes by a merged PR or by hand. Artifacts expire at 14 days, so an issue that cites one outlives its evidence. |
 | Ownership | Two writers of record: the login `cglusky` (owner and all agents) and `app/dependabot`. Rulings are the owner's. |
@@ -893,7 +923,7 @@ version had one table, for the first class only, and it missed owners in all thr
 |---|---|
 | Semantic class | When the required suite runs, how many times, and what keeps two runs from colliding or one from being lost. |
 | Owners | (1) The workflow triggers (`ci.yml:3-7`): `push` to `main`, and `pull_request`. (2) The concurrency group (`ci.yml:11-13` — `group: ci-${{ github.workflow }}-${{ github.ref }}` at `:12`), with the comment at `:9-10`: "Superseded PR runs are cancelled; pushes to main are not, so two quick merges never leave a cancelled Required on a commit that was never broken." (3) Dependabot's weekly schedule (`dependabot.yml:5-6`, `:9-10`, `:14-15`) and the `Dependabot Updates` workflow GitHub runs for it. (4) The invocations that fix each test's count and flags (section 3.1) and the step order (`scripts/verify.sh:10-11`). (5) The host admission lock (`scripts/admission-lock.sh:7`; wait bound `scripts/test-integration.sh:26`), shared byte-compatibly with SemStreams on one host. (6) Prose: "Heavy local gates run one agent at a time on a shared host" (`protocol.md:41`). (7) Bounds: `-p 2` and `-timeout 10m` (`scripts/test-integration.sh:402`); job timeouts (`ci.yml:22`, `:72`). |
-| Catalogs | The Actions run list (45 runs) and workflow list (`CI`; `Dependabot Updates`, path `dynamic/dependabot/dependabot-updates`). `.evidence/<run>` per integration run, with `.evidence/last-run` pointing at the latest (`scripts/test-integration.sh:528`). Step timings in each log (`scripts/verify.sh:29-30`). |
+| Catalogs | The Actions run list (46 runs, section 3.4) and workflow list (`CI`; `Dependabot Updates`, path `dynamic/dependabot/dependabot-updates`). `.evidence/<run>` per integration run, with `.evidence/last-run` pointing at the latest (`scripts/test-integration.sh:528`). Step timings in each log (`scripts/verify.sh:29-30`). |
 | Status | A run's conclusion; `Required` on a head; `task doctor`'s admission line (it reports the lock `free` in every CI log read). |
 | Lifecycle | A superseded pull-request run is cancelled: two observed (section 3.4). A push run on `main` is never cancelled in progress. Nothing starts a run on a clock except Dependabot, which has run once. Nothing can start one by hand: there is no `workflow_dispatch`, so the only manual path is a re-run, never used. Replacement of a pending run in a busy group, and disabling of schedules after 60 days of inactivity, are **documented, not measured**. |
 | Ownership | The group key is workflow plus ref: every push run on `main` shares `ci-CI-refs/heads/main`, and each pull request has its own. The host lock is exclusive per host; on a hosted runner it is always free. |
@@ -912,10 +942,13 @@ read.
 |---|---|---|
 | #1322 (merged 2026-09-18) | Waiver comment 5729152733. Body: "GitHub rejected an admin merge because the required aggregate check is red and the ruleset does not permit that bypass. One rerun of the cancelled Test job and its dependent status check was then started on the identical head"; attempt 2 passed. | same-head re-run |
 | #1373 (merged 2026-09-25) | Waiver comment 5828024246, then comment 5828257046: "the repository ruleset allows no admin bypass of `CI Status Check`, so the owner chose to re-run the failed Test job once, knowing #1375 is a filed, waived flake." | same-head re-run |
-| #1109 (merged 2026-08-27) | Comment 5441559001: the red was on intermediate head `19b0f386`; the job "has been green on `2f56384f`, `386cd8c2`, `f59a492f`, `b18fd518`, and every head since". | green on a later head |
 | #1404 (merged 2026-09-29) | Body: `Test` failed on `49a540d6`, "Not re-run"; #1421 waived "this merge only"; the stop point is at a later head, `dbcfc295`. | green on a later head |
 | #1379, #1429, #1435 | A known flake (#1375, #1421) waived for the merge while the merging head's own checks were green ("first attempt"; "Merge still requires current-head CI green"; "passed without a rerun"). | no red on the merging head |
 | #1388 (merged 2026-09-27) | #1397 waived; the red was a local gate, and "Hosted CI is green on this head". | no red on the merging head |
+
+The second revision's row for SemStreams #1109 is dropped, because the re-check found that its waived red was the
+`e2e statistical` job of SemStreams' `E2E Ladder` workflow and whether that job was a required check is not
+established (the re-check's reading; **not re-measured**).
 
 In those records no waived merge landed while its required check was red. Each landed on a green: twice from a
 re-run of the same head, otherwise from a later or untouched head. This repository's ruleset has the same property
@@ -939,8 +972,9 @@ re-run of the same head, otherwise from a later or untouched head. This reposito
    - What `verify` runs: `scripts/verify.sh:10-11`; a stale list at `AGENTS.md:43`;
      `semengine-developer.md:189-192`, which lists the older gate set and says no integration gate exists yet; and
      `semengine-preflight/SKILL.md:44`.
-   - The record of a blocking condition: OpenSpec holds, two `status:` labels, milestones, the waiver comment, and
-     the two command-admitted exceptions (section 7.6.1).
+   - The record of a blocking condition: OpenSpec holds, two `status:` labels, milestones, the waiver comment, the
+     admission ledger with `task ledger:check`, draft state on a pull request, and the four command-admitted
+     exceptions (section 7.6.1).
    - The set of failpoints: three hand-kept lists in one file (section 5.4).
 3. **Adjacent claims.**
    - PR #43, merged as `d303c51`: the fix for #40, with three inputs routed to #42 (section 5.4). #40 is closed.
@@ -974,6 +1008,9 @@ re-run of the same head, otherwise from a later or untouched head. This reposito
      -m)"`. The opposite case is `scripts/cover-check.sh:22`, which discards the output that would name a failure.
    - Admit or refuse at a seam: `natsfixture` admission (`nats-fixture/spec.md:9-12`).
    - Record a blocking condition and report it on demand: `scripts/openspec-queue.sh` (section 7.6.1).
+   - Require every entry of a durable list to carry its risk, its owner and its disposition, and fail `verify` on
+     an entry that does not: `docs/admission-ledger.yaml` with `internal/harness/contract/ledger_test.go:17`
+     (section 7.6.1). The check covers an entry's form, not whether an entry exists.
    - Force an interleaving instead of waiting for the scheduler to produce it:
      `refowner_test.go:268` (`TestAbortStopThenFinishJoinsWorker`), built on `probe.Callback` and `synctest`; the
      plan names "explicit callback-entered/release/join probes" as part of the helper kit
@@ -1040,7 +1077,7 @@ issues (#1284, #1290, #1397) each record a predicted number sitting below a boun
   from the PR body; no comment on #736 records a fix or a decision to close.
 - Whether any SemStreams flake other than #1063 concerned a test whose sleeps were in the policy guard's baseline.
 - Where SemStreams #1059 was first detected.
-- How each SemStreams waiver was carried out beyond the eight pull requests in section 7.6.4: only the paragraphs
+- How each SemStreams waiver was carried out beyond the seven pull requests in section 7.6.4: only the paragraphs
   naming a waiver were read, in the pull requests one search returned.
 - GitHub behaviors marked "documented, not measured". None was exercised, because each needs a re-run or a
   workflow change in this repository:
@@ -1050,7 +1087,11 @@ issues (#1284, #1290, #1397) each record a predicted number sitting below a boun
   - disabling of scheduled workflows after 60 days, the ref a scheduled run carries, and replacement of a pending
     run in a concurrency group on `main`;
   - what a job with `contents: read` can read of issues and earlier attempts;
-  - Dependabot's cadence beyond its first run, and how it avoids opening a second pull request for one update.
+  - Dependabot's cadence beyond its first run, and how it avoids opening a second pull request for one update;
+  - that a draft pull request cannot be merged (section 7.6.1, owner 12).
+- Whether `e2e statistical` was a required check in SemStreams when its PR #1109 merged (section 7.6.4). SemStreams
+  was not read further to settle it.
+- Which role adds an admission-ledger row: no contract says (section 7.6.1, Writers).
 - The "about 100 minutes per CPU setting" figure on #42, and whether running the 2 s subtest inside a `synctest`
   bubble removes the wait.
 - Whether `govulncheck`'s database fetch and `actions/setup-go`'s module cache behave as documented.
@@ -1062,7 +1103,35 @@ Settled since the first version: the root cause of #40 (PR #43, reviewed); the r
 `test/testinfra/policy_baseline.json` (section 6.5); skip visibility without `-v` (measured, section 4);
 `testing/synctest` on Go 1.26.6 (used in the tree and green in CI).
 
-## 12. Corrections in this revision
+## 12. Corrections
+
+### 12.1 Third revision: the bounded re-check
+
+The re-check of the second revision is PR #44 comment 5935166945. Line numbers in this table are the second
+revision's. Each finding and where it is answered:
+
+| Finding | Answer |
+|---|---|
+| BLOCKING (`:867-873`): the admission ledger is missing from the table in 7.6.1 | section 7.6.1, owner (10), in all eight cells below the semantic class; section 8 items 2 and 5 follow it |
+| Asked with that correction: any other same-class owner that a command enforces | section 7.6.1, owners (11) and (12), and the searches under the table |
+| MEDIUM (`:915`): the SemStreams #1109 row | row dropped from section 7.6.4, with the reason under the table; section 11 now counts seven pull requests and lists the open fact |
+| NIT (`:289-290`): the grep has no scope | section 3.1: pathspec added; 0 hits |
+| NIT (`:419`): skip visibility was measured on go1.26.4 | section 4: re-run on go1.26.6, same result |
+| NIT (`:347`): "45 runs" drifted | sections 3.4 and 7.6.3: 46 runs at 2026-10-01T15:57Z; section 7.6.2: 33 artifacts at the same time |
+| For the owner: the `gh search prs "owner waiver"` reading | section 0 records the ruling of 2026-10-01 (#42, comment 5935179232); the material stays |
+
+Facts the third revision adds that the re-check did not name:
+
+- two tracked files state a SemStreams source and have no ledger entry, and `ledger:check` passes (section 7.6.1,
+  Recovery);
+- no contract says which role adds a ledger row (section 7.6.1, Writers);
+- ledger entries have no identifier, and code cites them by position (section 7.6.1, Catalogs);
+- the ledger ruling's home is given as PR #13 in one file and issue #6 in another (section 7.6.1, Ownership).
+
+Nothing else changed. Pins outside the places listed here were not re-read for the third revision. "This revision"
+in sections 0, 3.3 and 6.1 now reads "the second revision".
+
+### 12.2 Second revision: the first review
 
 The independent review of the first version is PR #44 comment 5934062218. Each finding and where it is answered:
 
@@ -1089,7 +1158,7 @@ The independent review of the first version is PR #44 comment 5934062218. Each f
 | To measure 4: the runner's CPU count | measured from two artifacts: 4 (section 3.2) |
 | To measure 5: skip visibility | measured (section 4) |
 
-Surfaces this revision adds that the review did not name:
+Surfaces the second revision added that the review did not name:
 
 - network fetches inside the required job (section 2.5);
 - four test watchdogs and three script budgets among the time budgets (section 2.3);

@@ -45,10 +45,13 @@ type Fixture struct {
 	errorf   func(format string, args ...any)
 	deps     deps
 
-	op sync.Mutex // serialises Start and Stop
+	// op is a one-slot semaphore serialising Start, Stop, and resource creation. It is a channel,
+	// not a mutex, so a caller waiting for it still answers to its own context.
+	op chan struct{}
 	mu sync.Mutex // guards everything below; never held across a Docker or NATS call
 
 	used        bool
+	stopping    bool // set when Stop begins on owned resources; creation is refused from then on
 	adm         admission
 	container   testcontainers.Container
 	containerID string
@@ -88,8 +91,10 @@ func (f *Fixture) Start(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	f.op.Lock()
-	defer f.op.Unlock()
+	if err := f.acquire(ctx); err != nil {
+		return err
+	}
+	defer f.release()
 	f.mu.Lock()
 	used := f.used
 	f.mu.Unlock()
@@ -134,6 +139,24 @@ func (f *Fixture) Start(ctx context.Context) error {
 	}
 	return errors.Join(failures...)
 }
+
+// acquire takes the operation slot, or returns ctx's error if ctx ends first.
+func (f *Fixture) acquire(ctx context.Context) error {
+	f.mu.Lock()
+	if f.op == nil {
+		f.op = make(chan struct{}, 1)
+	}
+	op := f.op
+	f.mu.Unlock()
+	select {
+	case op <- struct{}{}:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func (f *Fixture) release() { <-f.op }
 
 // attempt runs the Start phases once. On failure it rolls back what it created and returns *Error.
 func (f *Fixture) attempt(ctx context.Context, n int) error {
@@ -322,15 +345,9 @@ func (f *Fixture) URL() string {
 	return f.url
 }
 
-// Conn is the fixture's own connection; Stop drains and closes it. Tests needing a second
-// connection dial URL and close it themselves.
-func (f *Fixture) Conn() *nats.Conn {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.nc
-}
-
-// JetStream is the JetStream context on Conn. Stop waits for its in-flight async publishes.
+// JetStream is the JetStream context on the fixture's own connection, which Stop drains and
+// closes; there is deliberately no accessor for that connection. Tests needing a connection of
+// their own dial URL and close it themselves. Stop waits for in-flight async publishes.
 func (f *Fixture) JetStream() jetstream.JetStream {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -340,10 +357,34 @@ func (f *Fixture) JetStream() jetstream.JetStream {
 func (f *Fixture) started() (jetstream.JetStream, string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.stopping {
+		return nil, "", errStopping
+	}
 	if f.js == nil {
 		return nil, "", errors.New("natsfixture: fixture not started")
 	}
 	return f.js, f.containerID, nil
+}
+
+var errStopping = errors.New("natsfixture: Stop has begun; the fixture creates nothing more")
+
+// beginCreate admits one resource creation: refused at once once Stop has begun, otherwise it
+// holds the operation slot so Stop cannot snapshot ownership while a creation is in flight. A
+// handler that creates while Stop waits to join it is refused, not deadlocked. The caller releases
+// the slot.
+func (f *Fixture) beginCreate(ctx context.Context) (jetstream.JetStream, string, error) {
+	if _, _, err := f.started(); err != nil {
+		return nil, "", err
+	}
+	if err := f.acquire(ctx); err != nil {
+		return nil, "", err
+	}
+	js, id, err := f.started() // Stop may have begun and ended while this waited
+	if err != nil {
+		f.release()
+		return nil, "", err
+	}
+	return js, id, nil
 }
 
 // CreateStream creates a stream the fixture owns, with the fixture's MaxAge, MaxBytes, and
@@ -352,10 +393,11 @@ func (f *Fixture) CreateStream(ctx context.Context, name string, subjects ...str
 	if ctx == nil {
 		return nil, errors.New("natsfixture: CreateStream with a nil context")
 	}
-	js, id, err := f.started()
+	js, id, err := f.beginCreate(ctx)
 	if err != nil {
 		return nil, err
 	}
+	defer f.release()
 	// Owned before the call: a create that times out may still have happened, and Stop treats a
 	// stream that turns out not to exist as absent.
 	f.own(&f.streams, name, "stream "+name)
@@ -374,10 +416,11 @@ func (f *Fixture) CreateKeyValue(ctx context.Context, bucket string) (jetstream.
 	if ctx == nil {
 		return nil, errors.New("natsfixture: CreateKeyValue with a nil context")
 	}
-	js, id, err := f.started()
+	js, id, err := f.beginCreate(ctx)
 	if err != nil {
 		return nil, err
 	}
+	defer f.release()
 	f.own(&f.buckets, bucket, "bucket "+bucket)
 	kv, err := f.deps.createKV(ctx, js, jetstream.KeyValueConfig{Bucket: bucket, TTL: resourceMaxAge, MaxBytes: resourceMaxBytes})
 	f.count("createKV")
@@ -395,10 +438,11 @@ func (f *Fixture) Consume(ctx context.Context, stream, base string, handler func
 	if ctx == nil || handler == nil {
 		return nil, errors.New("natsfixture: Consume needs a context and a handler")
 	}
-	js, id, err := f.started()
+	js, id, err := f.beginCreate(ctx)
 	if err != nil {
 		return nil, err
 	}
+	defer f.release()
 	c := &consumer{stream: stream, name: f.Name(base), idle: make(chan struct{})}
 	f.mu.Lock()
 	f.consumers = append(f.consumers, c)

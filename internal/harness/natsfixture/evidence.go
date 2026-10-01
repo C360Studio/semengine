@@ -58,9 +58,9 @@ func since(start time.Time) int64 { return time.Since(start).Milliseconds() }
 
 // recordSession appends this process's testcontainers session label, as key=value, before the
 // first container exists. The runner's leak check selects containers by exactly these lines. The
-// key is read from the labels testcontainers applies rather than spelled here: v0.40 labels
-// containers org.testcontainers.sessionId, while its deprecated exported constant still says
-// org.testcontainers.golang.sessionId, and a leak check on the wrong key passes silently. Every
+// key is read from the labels testcontainers applies rather than spelled here: the pinned v0.44
+// labels containers org.testcontainers.sessionId, while its deprecated exported constant still
+// says org.testcontainers.golang.sessionId, and a leak check on the wrong key passes silently. Every
 // package's test binary may carry its own session, so the file is a set of lines, not a value.
 func recordSession(dir string) (string, error) {
 	sid := testcontainers.SessionID()

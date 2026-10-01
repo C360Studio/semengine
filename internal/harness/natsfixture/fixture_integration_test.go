@@ -77,6 +77,14 @@ func readRecord(t *testing.T, f *Fixture) record {
 	return r
 }
 
+// conn is the fixture's own connection, read in-package: the fixture exports no accessor for it,
+// because Stop closes it.
+func conn(f *Fixture) *nats.Conn {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.nc
+}
+
 func closed(ch <-chan struct{}) bool {
 	select {
 	case <-ch:
@@ -91,8 +99,8 @@ func closed(ch <-chan struct{}) bool {
 func TestFixtureRoundTrip(t *testing.T) {
 	f := startFixture(t)
 	ctx := t.Context()
-	if !strings.HasPrefix(f.URL(), "nats://") || f.Conn().Status() != nats.CONNECTED {
-		t.Fatalf("URL %q status %v", f.URL(), f.Conn().Status())
+	if !strings.HasPrefix(f.URL(), "nats://") || conn(f).Status() != nats.CONNECTED {
+		t.Fatalf("URL %q status %v", f.URL(), conn(f).Status())
 	}
 	requireLeakCheckSees(t, f)
 	stream := f.Name("orders")
@@ -384,7 +392,7 @@ func awaitDeliveryStopped(t *testing.T, f *Fixture) {
 // before Stop returns, and only then are consumer, stream, connection, and container removed.
 func TestS1_3BlockedCallbackDelaysFinalisation(t *testing.T) {
 	f, cb, jc, _ := consumeBlocked(t)
-	id, nc := f.containerID, f.Conn()
+	id, nc := f.containerID, conn(f)
 	stopCtx, cancel := context.WithTimeout(t.Context(), stopBound)
 	defer cancel()
 	result := make(chan error, 1)
@@ -504,7 +512,7 @@ func TestS1_7Restart(t *testing.T) {
 	if err := f.Start(t.Context()); !errors.Is(err, ErrAlreadyUsed) {
 		t.Fatalf("second Start = %v, want ErrAlreadyUsed", err)
 	}
-	if !slices.Equal(before, f.remaining()) || !maps(calls, f.callCounts()) || f.Conn().Status() != nats.CONNECTED {
+	if !slices.Equal(before, f.remaining()) || !maps(calls, f.callCounts()) || conn(f).Status() != nats.CONNECTED {
 		t.Fatal("refused second Start changed the fixture")
 	}
 	t.Run("lifecycletest", func(t *testing.T) {
@@ -543,4 +551,117 @@ func TestS1_8Isolation(t *testing.T) {
 		t.Fatalf("the other fixture stopped answering: %v", err)
 	}
 	t.Logf("isolated: %s at %s and %s at %s", shortID(a.rec.Container), a.rec.MappedPort, shortID(bID), b.rec.MappedPort)
+}
+
+// stopRunning starts Stop in the background and returns its result channel once Stop has stopped
+// the consumer's delivery, or fails if Stop returns first: a Stop that never reaches the join
+// cannot be observed waiting on it.
+func stopRunning(t *testing.T, f *Fixture) <-chan error {
+	t.Helper()
+	stopCtx, cancel := context.WithTimeout(t.Context(), stopBound)
+	t.Cleanup(cancel)
+	result := make(chan error, 1)
+	go func() { result <- f.Stop(stopCtx) }()
+	stopping := make(chan struct{})
+	go func() {
+		_, _ = probe.Await(stopCtx, func(context.Context) (bool, error) {
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			if len(f.consumers) == 0 {
+				return false, nil
+			}
+			c := f.consumers[0]
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			return c.stopping, nil
+		}, func(stopping bool) bool { return stopping })
+		close(stopping)
+	}()
+	select {
+	case err := <-result:
+		t.Fatalf("Stop returned %v without stopping the consumer's delivery while its handler was blocked", err)
+	case <-stopping:
+	}
+	return result
+}
+
+// H1: with the connection already closed (the broker went away; the fixture connects with
+// MaxReconnects(0)), Stop still stops delivery, joins the running handler, and only then cancels
+// its context. Only the server-side deletes are skipped: the container's removal takes them.
+func TestStopJoinsHandlersOnAClosedConnection(t *testing.T) {
+	f := startFixture(t)
+	cb := probe.NewCallback()
+	t.Cleanup(cb.Release)
+	stream := f.Name("work")
+	if _, err := f.CreateStream(t.Context(), stream, stream+".>"); err != nil {
+		t.Fatal(err)
+	}
+	handlerCtx := make(chan context.Context, 1)
+	if _, err := f.Consume(t.Context(), stream, "worker", func(ctx context.Context, msg jetstream.Msg) {
+		handlerCtx <- ctx
+		cb.Block(ctx)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.JetStream().Publish(t.Context(), stream+".1", []byte("job")); err != nil {
+		t.Fatal(err)
+	}
+	<-cb.Entered()
+	hctx := <-handlerCtx
+	id := f.containerID
+	conn(f).Close()
+
+	result := stopRunning(t, f)
+	select {
+	case err := <-result:
+		t.Fatalf("Stop returned %v while the handler was still running", err)
+	default:
+	}
+	if err := hctx.Err(); err != nil {
+		t.Fatalf("handler context ended before its handler returned: %v", err)
+	}
+	cb.Release()
+	err := <-result
+	joined := closed(cb.Joined())
+	if err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if !joined {
+		t.Fatal("Stop returned before the handler had joined")
+	}
+	if cbErr := cb.ContextErrAtRelease(); cbErr != nil {
+		t.Fatalf("handler context ended before its release: %v", cbErr)
+	}
+	if hctx.Err() == nil {
+		t.Fatal("Stop returned nil with the joined handler's context still live")
+	}
+	if rem := f.remaining(); len(rem) != 0 || containerExists(t, id) {
+		t.Fatalf("after Stop: remaining %v", rem)
+	}
+}
+
+// M1: once Stop has begun, the fixture refuses to create anything; a resource created behind
+// Stop's back would be owned by nobody when Stop returned nil.
+func TestNoCreationOnceStopBegins(t *testing.T) {
+	f, cb, _, _ := consumeBlocked(t)
+	result := stopRunning(t, f)
+	late := f.Name("late")
+	// Refused at once, not queued behind Stop: Stop is parked on a handler only the test releases.
+	_, err := f.CreateStream(t.Context(), late, late+".>")
+	cb.Release()
+	if stopErr := <-result; stopErr != nil {
+		t.Fatalf("Stop: %v", stopErr)
+	}
+	if err == nil {
+		t.Fatal("CreateStream succeeded after Stop began")
+	}
+	if rem := f.remaining(); len(rem) != 0 {
+		t.Fatalf("Stop returned nil while still owning %v", rem)
+	}
+	if _, err := f.CreateKeyValue(t.Context(), f.Name("after")); err == nil {
+		t.Fatal("CreateKeyValue succeeded after Stop")
+	}
+	if rem := f.remaining(); len(rem) != 0 {
+		t.Fatalf("a refused creation is owned: %v", rem)
+	}
 }

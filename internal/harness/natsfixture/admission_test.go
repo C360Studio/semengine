@@ -1,7 +1,14 @@
 package natsfixture
 
 import (
+	"context"
 	"errors"
+	"fmt"
+	"os/exec"
+	"strconv"
+	"time"
+
+	"github.com/testcontainers/testcontainers-go"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,7 +28,13 @@ func plantLock(t *testing.T, ownerToken, envToken string) {
 	if err := os.Mkdir(lock, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	owner := "host=h\npid=1\nstarted=1\nidentity=x\ntoken=" + ownerToken + "\ncommand=semengine /x/scripts/test-integration.sh\n"
+	// The owner is this test process on this host: live, as the runner is while its tests run.
+	host, err := os.Hostname()
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := fmt.Sprintf("host=%s\npid=%d\nstarted=1\nidentity=x\ntoken=%s\ncommand=semengine /x/scripts/test-integration.sh\n",
+		host, os.Getpid(), ownerToken)
 	if err := os.WriteFile(filepath.Join(lock, "owner"), []byte(owner), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -85,5 +98,111 @@ func TestS1_9AdmissionRefusal(t *testing.T) {
 				t.Errorf("Stop after refusal = %v", err)
 			}
 		})
+	}
+}
+
+// noDocker replaces every dependency with one that fails the test: these tests prove what the
+// fixture does before, or instead of, touching Docker.
+func noDocker(t *testing.T, f *Fixture) {
+	t.Helper()
+	f.deps.start = func(context.Context, testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
+		t.Error("unexpected Docker start")
+		return nil, errors.New("unexpected Docker start")
+	}
+}
+
+// deadPID returns the pid of a process that has exited and been reaped.
+func deadPID(t *testing.T) int {
+	t.Helper()
+	cmd := exec.Command("true")
+	if err := cmd.Run(); err != nil {
+		t.Fatal(err)
+	}
+	return cmd.Process.Pid
+}
+
+// The token must be in a live owner's file: an owner file the runner left behind when it died (a
+// SIGKILL skips its EXIT trap) admits nothing, because the lock it records is no longer held.
+func TestAdmissionRequiresALiveOwner(t *testing.T) {
+	host, err := os.Hostname()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name, host, pid, want string
+	}{
+		{"owner process has exited", host, strconv.Itoa(deadPID(t)), "not live"},
+		{"owner on another host", host + "-elsewhere", strconv.Itoa(os.Getpid()), "another host"},
+		{"owner pid unreadable", host, "x", "pid"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			plantLock(t, "tok", "tok")
+			owner := fmt.Sprintf("host=%s\npid=%s\nstarted=1\nidentity=x\ntoken=tok\ncommand=semengine /x/scripts/test-integration.sh\n", tc.host, tc.pid)
+			if err := os.WriteFile(filepath.Join(os.Getenv("SEMENGINE_DOCKER_ADMISSION_LOCK_DIR"), "owner"), []byte(owner), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			f := New(t)
+			noDocker(t, f)
+			err := f.Start(t.Context())
+			if !errors.Is(err, ErrNotAdmitted) || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("Start = %v, want ErrNotAdmitted naming %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// M2: Stop waits for the fixture's operation slot under its own context. A Start parked in a
+// Docker call does not make a bounded Stop unbounded.
+func TestStopHonoursItsContextWhileStartHoldsTheFixture(t *testing.T) {
+	plantLock(t, "tok", "tok")
+	f := New(t)
+	entered, release := make(chan struct{}), make(chan struct{})
+	f.deps.start = func(context.Context, testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
+		close(entered)
+		<-release
+		return nil, errors.New("start released by the test")
+	}
+	started := make(chan error, 1)
+	go func() { started <- f.Start(t.Context()) }()
+	<-entered
+	defer func() {
+		close(release)
+		<-started
+	}()
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	stopped := make(chan error, 1)
+	go func() { stopped <- f.Stop(ctx) }()
+	// The bound below is a watchdog for the failure, not a synchronisation: a correct Stop returns
+	// as soon as its 100ms context ends.
+	watchdog := time.NewTimer(10 * time.Second)
+	defer watchdog.Stop()
+	select {
+	case err := <-stopped:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("Stop = %v, want context.DeadlineExceeded", err)
+		}
+	case <-watchdog.C:
+		t.Fatal("Stop ignored its context while Start held the fixture")
+	}
+}
+
+// M5: a Start whose context is cancelled while a dependency fails for its own reason still
+// reports the cancellation to errors.Is: a caller asking "was I cancelled?" gets the truth.
+func TestCancelledStartIsRecognisable(t *testing.T) {
+	plantLock(t, "tok", "tok")
+	f := New(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	f.deps.start = func(context.Context, testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
+		cancel()
+		return nil, errors.New("daemon: request aborted")
+	}
+	err := f.Start(ctx)
+	var fe *Error
+	if !errors.As(err, &fe) || fe.Phase != PhaseStart {
+		t.Fatalf("Start = %v, want a start-phase *Error", err)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("errors.Is(%v, context.Canceled) = false", err)
 	}
 }

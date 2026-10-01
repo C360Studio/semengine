@@ -13,7 +13,12 @@ import (
 // publishes; for each consumer stop delivery, join its running handlers, then cancel their context
 // and delete it; record each stream's message count, then delete streams and buckets; drain and
 // close the connection; terminate the container. Each resource leaves the fixture's ownership only
-// once observed absent, so a nil return means everything is gone.
+// once observed absent, so a nil return means everything is gone. Once Stop begins, the fixture
+// refuses to create anything more.
+//
+// When the connection is already closed (the broker went away), the handler joins and cancels
+// still happen; only the server-side deletes are skipped, and the consumers, streams, and buckets
+// are released with the container that held them.
 //
 // If ctx ends first, Stop returns an error wrapping ctx.Err() and keeps every unresolved handle; a
 // later Stop retries them. The fixture never substitutes its own timeout for ctx. Stop on a fixture
@@ -23,14 +28,19 @@ func (f *Fixture) Stop(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("natsfixture: Stop with a nil context")
 	}
-	f.op.Lock()
-	defer f.op.Unlock()
+	if err := f.acquire(ctx); err != nil {
+		return fmt.Errorf("natsfixture: stop not begun: waiting for a Start or Stop in progress: %w", err)
+	}
+	defer f.release()
 	if len(f.remaining()) == 0 {
 		return nil
 	}
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("natsfixture: stop not begun: %w", err)
 	}
+	f.mu.Lock()
+	f.stopping = true
+	f.mu.Unlock()
 	sr := stopRecord{}
 	err := f.stop(ctx, &sr)
 	sr.Result = "ok"
@@ -63,6 +73,7 @@ func (f *Fixture) stop(ctx context.Context, sr *stopRecord) error {
 
 	// A connection that is already closed (the broker died) cannot delete anything; the
 	// container's removal is then what removes the NATS resources, and they are released with it.
+	// Handlers run in this process either way, so every consumer is still stopped and joined.
 	natsUsable := js != nil && nc != nil && !nc.IsClosed()
 	if natsUsable {
 		if err := step("publish-complete", func() error {
@@ -75,11 +86,13 @@ func (f *Fixture) stop(ctx context.Context, sr *stopRecord) error {
 		}); err != nil {
 			return err
 		}
-		for _, c := range consumers {
-			if err := step("consumer "+c.stream+"/"+c.name, func() error { return f.stopConsumer(ctx, js, c) }); err != nil {
-				return err
-			}
+	}
+	for _, c := range consumers {
+		if err := step("consumer "+c.stream+"/"+c.name, func() error { return f.stopConsumer(ctx, js, c, natsUsable) }); err != nil {
+			return err
 		}
+	}
+	if natsUsable {
 		for _, name := range streams {
 			if err := step("stream "+name, func() error { return f.deleteStream(ctx, js, name) }); err != nil {
 				return err
@@ -128,11 +141,18 @@ func (f *Fixture) stop(ctx context.Context, sr *stopRecord) error {
 		}
 		f.mu.Unlock()
 	}
+	// Nothing may be created once Stop begins, so this holds by construction; it is checked
+	// anyway, because a nil return is the caller's only evidence that nothing is left.
+	if rem := f.remaining(); len(rem) > 0 {
+		return fmt.Errorf("natsfixture: stop finished its steps but still owns %v", rem)
+	}
 	return nil
 }
 
-// stopConsumer joins a consumer's handlers before ending their context and deleting it.
-func (f *Fixture) stopConsumer(ctx context.Context, js jetstream.JetStream, c *consumer) error {
+// stopConsumer joins a consumer's handlers before ending their context and, when the broker can
+// still be reached, deleting it. Without a usable connection the consumer stays owned until the
+// container that holds it is observed absent.
+func (f *Fixture) stopConsumer(ctx context.Context, js jetstream.JetStream, c *consumer, natsUsable bool) error {
 	c.stopDelivery()
 	select {
 	case <-c.idle:
@@ -151,6 +171,9 @@ func (f *Fixture) stopConsumer(ctx context.Context, js jetstream.JetStream, c *c
 	}
 	if cancel != nil {
 		cancel()
+	}
+	if !natsUsable {
+		return nil
 	}
 	s, err := js.Stream(ctx, c.stream)
 	switch {

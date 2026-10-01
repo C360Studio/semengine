@@ -62,11 +62,17 @@ func (e *Error) Error() string {
 	return b.String()
 }
 
-// Unwrap exposes the cause and the cleanup error to errors.Is and errors.As.
+// Unwrap exposes the cause, the parent context's error, and the cleanup error to errors.Is and
+// errors.As. The parent's error is included because a dependency interrupted by cancellation often
+// reports something else (an aborted request, a closed socket), and a caller asking
+// errors.Is(err, context.Canceled) must still learn that it cancelled the Start.
 func (e *Error) Unwrap() []error {
 	var errs []error
 	if e.Cause != nil {
 		errs = append(errs, e.Cause)
+	}
+	if e.ParentErr != nil {
+		errs = append(errs, e.ParentErr)
 	}
 	if e.Cleanup != nil {
 		errs = append(errs, e.Cleanup)

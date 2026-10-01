@@ -48,10 +48,7 @@ func defaultDeps() deps {
 			p, err := c.MappedPort(ctx, clientPort)
 			return p.Port(), err
 		},
-		connect: func(_ context.Context, url string) (*nats.Conn, error) {
-			// No reconnects: a test broker that goes away is a failure to report, not to hide.
-			return nats.Connect(url, nats.Timeout(dialTimeout), nats.MaxReconnects(0))
-		},
+		connect: connect,
 		jsReady: func(ctx context.Context, js jetstream.JetStream) error {
 			_, err := js.AccountInfo(ctx)
 			return err
@@ -73,6 +70,33 @@ func defaultDeps() deps {
 			return io.ReadAll(io.LimitReader(rc, maxLogBytes))
 		},
 		absent: containerAbsent,
+	}
+}
+
+// connect dials the broker under the caller's context. nats.Connect takes no context, so the dial
+// runs in its own goroutine, bounded by dialTimeout; when the context ends first, connect returns its
+// error at once and the goroutine closes whatever connection it later gets. No reconnects: a test
+// broker that goes away is a failure to report, not to hide.
+func connect(ctx context.Context, url string) (*nats.Conn, error) {
+	type dialed struct {
+		nc  *nats.Conn
+		err error
+	}
+	done := make(chan dialed, 1)
+	go func() {
+		nc, err := nats.Connect(url, nats.Timeout(dialTimeout), nats.MaxReconnects(0))
+		done <- dialed{nc, err}
+	}()
+	select {
+	case d := <-done:
+		return d.nc, d.err
+	case <-ctx.Done():
+		go func() {
+			if d := <-done; d.nc != nil {
+				d.nc.Close()
+			}
+		}()
+		return nil, ctx.Err()
 	}
 }
 

@@ -3,6 +3,7 @@ package natsfixture
 import (
 	"context"
 	"errors"
+	"net"
 	"strings"
 	"testing"
 	"time"
@@ -118,8 +119,8 @@ func TestErrorReportsEveryField(t *testing.T) {
 			t.Errorf("%q lacks %q", msg, want)
 		}
 	}
-	if !errors.Is(e, cause) || !errors.Is(e, cleanup) {
-		t.Error("Unwrap hides the cause or the cleanup error")
+	if !errors.Is(e, cause) || !errors.Is(e, cleanup) || !errors.Is(e, context.Canceled) {
+		t.Error("Unwrap hides the cause, the cleanup error, or the parent context's error")
 	}
 	live := (&Error{Attempt: 1, Phase: PhaseStart, Cause: cause}).Error()
 	if !strings.Contains(live, "parent context live") || strings.Contains(live, "container") {
@@ -145,5 +146,37 @@ func TestRollbackIgnoresParentCancellationButStaysBounded(t *testing.T) {
 	}
 	if sawErr != nil || !sawDeadline {
 		t.Fatalf("rollback context: err %v deadline %t; want live and bounded after parent cancellation", sawErr, sawDeadline)
+	}
+}
+
+// M5: the connect dependency honours its context. A broker that accepts the TCP connection and
+// never speaks would otherwise hold Start for the whole dial timeout after the caller gave up.
+func TestConnectHonoursItsContext(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			defer func() { _ = c.Close() }() // held open, silent, until the listener closes
+		}
+	}()
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	began := time.Now()
+	nc, err := defaultDeps().connect(ctx, "nats://"+ln.Addr().String())
+	if nc != nil {
+		nc.Close()
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("connect = %v after %s, want context.DeadlineExceeded", err, time.Since(began))
+	}
+	if elapsed := time.Since(began); elapsed > dialTimeout/2 {
+		t.Fatalf("connect returned after %s; its context ended at 100ms", elapsed)
 	}
 }

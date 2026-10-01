@@ -86,12 +86,12 @@ The tasks are done in the order written, from top to bottom. Five notes on that 
 - [x] 6.3 On a scratch copy of the branch with the #40 defect restored (`o.finishLocked()` back in the
       `abortStopDropsCause` branch of `Stop`), `task test:repeat` exits non-zero naming
       `TestEachFailpointTripsExactlyItsCheck/abortStopDropsCause`. The output is recorded.
-- [ ] 6.4 The step timings printed by a CI run of this pull request that includes `test:repeat` are recorded, with
+- [x] 6.4 The step timings printed by a CI run of this pull request that includes `test:repeat` are recorded, with
       the run's URL, beside the 61 s of run 36883858915.
 
 ## 7. Merge check
 
-- [ ] 7.1 The label `class:flake` exists. Its description says it is for a test or check that passes and fails on the
+- [x] 7.1 The label `class:flake` exists. Its description says it is for a test or check that passes and fails on the
       same tree, and not for a network fetch that did not answer. `gh label list` output is recorded.
 - [x] 7.2 A contract test runs a copy of `scripts/merge-check.sh` in a throwaway root with a fake `gh`. It is
       written first, so it fails until the script exists. Its cases are the scenarios of the `merge-gate`

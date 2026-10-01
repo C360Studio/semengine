@@ -35,8 +35,9 @@ it did not.
 
 #### Scenario: Paused process does not progress
 
-- **WHEN** the test pauses the helper and waits for its next checkpoint
-- **THEN** the wait ends with the context error, and after resume the checkpoint arrives
+- **WHEN** the test pauses the helper
+- **THEN** the process is observed stopped (process state `T`), the helper's checkpoint count read while it is
+  stopped does not change after the test sends its next request, and after resume the next checkpoint arrives
 
 ### Requirement: No orphan survives the test
 

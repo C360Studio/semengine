@@ -51,12 +51,17 @@ and no temporary stub exists. Lines are non-test lines at the pin; "tests" are f
 | 4 | `payloadregistry` | 508 / 2 | 2 / 831 | 0 | `pkg/errs`, `pkg/projection/contract`, `pkg/types`, `vocabulary` | — |
 | 5 | `message` | 2,186 / 16 | 9 / 2,209 | 0 | `payloadregistry`, `pkg/errs`, `pkg/platform`, `pkg/timestamp`, `pkg/types` | `google/uuid` |
 | 5 | `pkg/cache` | 2,449 / 11 | 6 / 2,369 | 1 | `metric`, `pkg/errs` | prometheus |
-| 6 | `natsclient` | 12,377 / 29 | 78 / 21,656 (29 integration; 69 `NewTestClient`) | 9 | `metric`, `pkg/cache`, `pkg/errs`, `pkg/resource`, `pkg/retry` | nats.go, jetstream, prometheus; testcontainers ×2 and `docker/go-connections/nat` in `test_client.go` only |
+| 6 | `natsclient` | 12,377 / 29 | 74 / 20,263 (28 integration; 56 `NewTestClient`) | 9 | `metric`, `pkg/cache`, `pkg/errs`, `pkg/resource`, `pkg/retry` | nats.go, jetstream, prometheus; testcontainers ×2 and `docker/go-connections/nat` in `test_client.go` only |
 
-Totals: 16 / 25,758; 127 / 34,887; 14 roots; 31 integration-tagged test files. `pkg/platform` and `pkg/security` have
-no tests at the pin; none are invented — their rows say so and D10 does not gate them. Ported files keep their pin
-paths under the SemEngine module; `test_client.go` and `test_options.go` are not ported (their ledger rows:
-`adapt → natsfixture`, `defer-exclude`).
+Totals: 16 / 25,758; 123 / 33,494 at the pin, before the D8 repairs; 14 roots; 30 integration-tagged test files.
+`pkg/platform` and `pkg/security` have no tests at the pin; none are invented — their rows say so and D10 does not
+gate them. Ported files keep their pin paths under the SemEngine module. Not ported: `test_client.go`
+(`adapt → natsfixture`) and `test_options.go` (`defer-exclude`); by owner ruling (#9, comment 5941920346, Q3), the
+three test files that exercise them — `test_client_factory_test.go`, `test_client_integration_test.go` and
+`test_client_readiness_test.go` (`defer-exclude`). `monitoring_consumers_test.go` is also `defer-exclude`, an
+exclusion forced by Q3 and not an owner ruling: it walks the SemStreams tree for `NewTestClient(…, WithMonitoring())`
+callers (`:13-27, :83, :111-115`), `WithMonitoring` is declared at `test_client.go:448`, which is not ported, and
+the files it names lie outside the set (`processor/graph-index/…`), so it has nothing left to check.
 
 ### D2. Harness API shapes (foundation D4, made concrete)
 
@@ -93,7 +98,11 @@ paths under the SemEngine module; `test_client.go` and `test_options.go` are not
   stdout/stderr captured to the evidence directory. `Process` offers `Signal(os.Signal)`, `Pause()`/`Resume()`
   (SIGSTOP/SIGCONT), `Kill()`, `Wait(ctx) (ExitStatus, error)`, `Alive() bool`. `t.Cleanup` kills the group and
   waits under a fresh bounded context, so no helper survives its test. Reused from `runner_test.go`: the
-  `exec.CommandContext` start, SIGTERM and `Process.Kill` paths, `Setpgid` and group signalling, `pidAlive`.
+  `exec.CommandContext` start, SIGTERM and `Process.Kill` paths, `Setpgid` and group signalling. "No pid behind"
+  uses the start-identity check of `runner_test.go` (`psStartIdentity` `:255`, `deadPID` `:293`), so a reused pid
+  cannot pass as the helper; `pidAlive` (`:327`) alone is not enough. Pause is proven from observed state — `ps`
+  reports the process stopped (state `T`) — never by waiting for a checkpoint that does not come; `prochost`'s
+  non-test files are under the sleep check (`testtext_test.go:54-56`).
 - **`lifecycletest.Run(t *testing.T, factory Factory, mustFail StartFailure, promise Promise)`**. `StartFailure` is
   a struct with an unexported `kind` field and an unexported factory field; its only constructors are
   `MustFail(f Factory) StartFailure` (kind "must fail"; `f` returns a fresh owner whose `Start(ctx)` must return a
@@ -104,8 +113,9 @@ paths under the SemEngine module; `test_client.go` and `test_options.go` are not
   as the exemption; a `Factory` cannot be passed where a `StartFailure` is expected, so omission or a bare function
   is a compile error. New check `CheckFailedStartHoldsNothing(ctx, o Owner) error`: `Start` returns non-nil;
   `Observe().Unresolved` is empty; `Stop(ctx)` returns nil; `Observe().Calls` is unchanged by the `Stop`. The two
-  callers on the base change: `refowner_test.go:303-304`
-  (the `refowner` double gains a `startFails` failpoint) and `natsfixture/fixture_integration_test.go:519`
+  callers on the base change: `refowner_test.go:491-492`
+  (the `refowner` double gains a must-fail construction mode and a `startFailsButHolds` failpoint, D8 note) and
+  `natsfixture/fixture_integration_test.go:519`
   (`TestS1_7Restart`; the must-fail factory is a `Fixture` whose `deps.start` hook returns an error, so `Start`
   returns a `FixtureError` and `Observe` reports nothing held). No readiness accessor is added to `Owner` (#38).
 - **Rehomed helpers**. `internal/harness/semantictest` keeps `EntityID(…)` and `Predicate(t testing.TB, …)` as at the
@@ -174,8 +184,10 @@ pin at all); the later callers of `CoalescingSet.Close` (`processor/graph-embedd
   sets (pass3 §2.1) say otherwise, recorded per row —
   `proving_tests` naming the carried tests and the suite run, `known_risks` carrying the context-root triage (a
   legitimate root with its reason, or a defect) and the nats.go v1.52→v1.54 pin difference for `natsclient`.
-  Dispositions: `adapt` for `natsclient` (`NewTestClient` sites, `test_client.go`), `payloadregistry` (`testing.go`
-  rehomed), `pkg/cache` and `pkg/resource` (SS#1415-class enders); `carry` for the other twelve.
+  Dispositions, by owner ruling (#9, comment 5941920346, Q1: a repaired test file makes the row `adapt`): `adapt` for
+  `natsclient` (`NewTestClient` sites, `test_client.go`, the D8 repairs), `payloadregistry` (`testing.go` rehomed),
+  `pkg/cache` and `pkg/resource` (SS#1415-class enders, the D8 repairs), `pkg/retry` (D8 repair) and `pkg/acme`
+  (D8 repair); `carry` for the other ten.
 - Existing file rows updated: `natsclient/test_client.go` (`adapt`, now with `evidence`), `natsclient/test_options.go`
   (`defer-exclude`, honoured); a new file row for `payloadregistry/testing.go` is not needed — the package row
   records the rehoming (T-B7 keeps `source_path` unique; the package row's path is the directory).
@@ -195,9 +207,9 @@ alongside the T-B8 aggregator rule with a tree-shape sensitivity test like `Test
 lint is already on (revive `package-comments`, `revive.toml:22`) and now covers eight public packages; every package
 in the set has a package comment at the pin (§3.3), so the task is a sensitivity check, not an enablement. The
 compiled example consumer (D16's other gate) composes `service` and is change 3's; it will import at least these
-eight. `AGENTS.md:43-44` is corrected to `scripts/verify.sh:10-11`'s list. No context-root guard is added (D9).
+eight. No context-root guard is added (D9).
 
-### D7. Owner question: the must-fail factory where a start cannot fail
+### D7. The must-fail factory where a start cannot fail (ruled)
 
 Ruling #38 and the `lifecycle-suite` delta require every `Run` call to pass a factory whose owner's `Start` returns an
 error. Three of this change's five owners have no start that can fail from any caller input (D3):
@@ -206,17 +218,20 @@ error. Three of this change's five owners have no start that can fail from any c
 adapter would prove nothing about the owner — the shape #38 exists to prevent. Options, with the assumed answer
 marked:
 
-1. **Typed "no fallible start" value (assumed).** `Run` keeps the required parameter; an owner without a fallible
-   start passes `lifecycletest.NoFallibleStart()`, a value of the `StartFailure` type (D2) whose other constructor is
-   `MustFail(f Factory)` (which panics on a nil factory at the call site): the start-failure subtest records "no
-   fallible start" in its output instead of passing
-   silently, and the owner's ledger row says the same. A `Factory` is a function value and compares only to nil,
-   so a nil sentinel would turn any accidental nil into the exemption — hence the struct type with an unexported
-   kind, whose zero value `Run` rejects at run time. Omission is still a compile error; the exemption is visible in
-   the test and in the row; the owner is
-   still proven by the floor's other checks (Stop before Start holds nothing; controlled Stop joins; repeated Stop
-   is a no-op). Cost: a reviewer must confirm the exemption is true for the owner (a checklist item), because a
-   misuse on an owner that does have a fallible start is the silent-skip shape.
+1. **Typed "no fallible start" value (ruled, task 1.4; refined by task 1.5).** `Run` keeps the required parameter;
+   an owner without a fallible start passes `lifecycletest.NoFallibleStart()`, a value of the `StartFailure` type
+   (D2) whose other constructor is `MustFail(f Factory)` (which panics on a nil factory at the call site). A
+   `Factory` is a function value and compares only to nil, so a nil sentinel would turn any accidental nil into the
+   exemption — hence the struct type with an unexported kind, whose zero value `Run` rejects at run time. Omission is
+   still a compile error. The exemption is reported through a pinned owner list, not through test output: a contract
+   test pins every call of `NoFallibleStart()` by package, enclosing function (with its receiver type), factory
+   expression and promise expression, and a new one fails that test until the list changes in the same diff, where
+   review sees it (`lifecycle-suite` delta, "Pinned owners without a fallible start"). `Run` given
+   `NoFallibleStart()` runs no failed-start subtest and neither skips nor logs in its place. The skip check would not
+   catch a skip here anyway:
+   it reads only `*_test.go` files (`testtext_test.go:126`) and `lifecycletest.go` is not one. The owner is still
+   proven by the floor's other checks (Stop before Start holds nothing; controlled Stop joins; repeated Stop is a
+   no-op), and its ledger row records the exemption.
 2. **Give the owner a fallible start under an `adapt` row.** `NewCoalescingSet` returns an error for a window ≤ 0
    (today it silently substitutes a minimum), `StartBackgroundCheck` returns an error for a nil check function or
    a second start, `NewTemporalResolver` validates its bucket. Cost: invented contracts no consumer asked for,
@@ -227,7 +242,80 @@ marked:
 
 Owners this touches in later changes, from the 42-owner scan: every other owner has `Start(ctx) error` or a
 constructor returning an error, so the question recurs only if a later port finds such a start unreachable by any
-input; the ruling is asked once and applied per owner at port time, recorded on the row. Hold: task 1.4.
+input; the ruling is applied per owner at port time, recorded on the row and in the pinned list. Ruled: tasks 1.4,
+1.5.
+
+### D8. Ported tests land repaired
+
+Every ported `_test.go` file lands meeting the `harness-boundaries` requirements "No sleeps in tests" and "No skipped
+or hidden tests", and the `merge-gate` requirement "Varied and repeated unit runs". There is no list of accepted
+files. A row with a repaired test file is `adapt` (Q1 ruling), and the row's `evidence` names each repair as
+pin `file:line` → SemEngine `file:line`. The repairs at the pin (P18, P19) fall into four classes:
+
+- **R1. Sleep → wait on a signal.** Timers in a repaired file fall into three classes:
+  - **R1a. Fake clock.** Code whose timing comes from its own timers (`CoalescingSet`, the `pkg/cache` TTL caches,
+    `resource.Watcher`, `retry`, and `natsclient` unit tests that make no network call) runs inside `synctest.Test`,
+    as `refowner_test.go:385` does. Inside the bubble, timers are admitted without restriction. With sleeps banned,
+    `<-time.After(d)` is how a test moves the fake clock (for example the TTL test at `cache_test.go:286-298`), and
+    `synctest.Wait` settles the bubble before an assertion. The 30 `t.Parallel()` calls in `pkg/cache` tests are
+    removed, because `t.Parallel` cannot be called inside a bubble.
+  - **R1b. Real clock, event exists.** Tests against a real broker wait on a channel or callback, or on
+    `probe.Await` (`internal/harness/probe/await.go:20`) over observed state. A real-clock timer is admitted only
+    as the failure bound of a `select` or context that waits on that signal. A failure bound is not a pacing
+    device. It never decides the outcome of a correct run, and it is never sized tight: it comes from the test's
+    context deadline or is at least 10 s, because the lanes run under `-race -cpu 1`, and a sub-second literal
+    such as 100 ms is not a failure bound.
+  - **R1c. Real clock, behaviour interval.** A real-clock interval that the behaviour under test is defined over
+    (AckWait, a TTL, a drain window) is admitted only when its expiry can never fail a correct implementation: a
+    slow host can only make the check miss a defect. The interval is written from the configured value, not a
+    fresh literal. An R1c timer used as pacing — the 50 ms steps at `delivery_settlement_integration_test.go:102-106`
+    — is admissible only because the table below lists it; an unlisted pacing timer is banned.
+  - **Ban.** Any other real-clock wait is banned, including a sleep swapped for a `time.After`, `time.NewTimer` or
+    `time.Tick` whose expiry stands in for the event. The text check cannot see timers (`testtext_test.go:10-13`),
+    so task 3.10 checks each real-clock timer in a repaired file against this table. Those not listed are R1b
+    failure bounds.
+
+  | Site at the pin | What it waits for | Disposition |
+  |---|---|---|
+  | `natsclient/subscription_integration_test.go:115-119` | 200 ms in which a correct `Drain` must not return while its callback runs | R1c, kept: expiry only misses a defect (its own comment, `:113-115`) |
+  | `natsclient/delivery_settlement_integration_test.go:102-106` | 50 ms polling steps across the AckWait renewal window | R1c, kept: the window is AckWait's, and each step ends on `ctx.Done` or a redelivery check, never failing a correct renewal |
+  | `natsclient/integration_test.go:262` | 200 ms for the first health change, then passes silently either way | Repaired to R1b: the receive stays — `Connect` reports `true` synchronously (`client.go:569-572`) into the buffered `healthChanges` (`:249-250`), and it must be drained here or the later unhealthy select reads it — and the 200 ms branch becomes a failure bound of at least 10 s that fails the test |
+  | `natsclient/integration_test.go:278` | 500 ms failure bound for the unhealthy change | Resized under R1b to at least 10 s |
+  | `pkg/cache/coalescing_set_test.go:92` | 10 ms in which the callback must not fire | R1a: inside the bubble, after `synctest.Wait`, the callback has not fired before the window |
+  | `pkg/cache/cache_test.go:294` (TTL, `:286-298`) | 150 ms past a 100 ms TTL | R1a: `<-time.After` inside the bubble moves the fake clock |
+  | `natsclient/kv_error_integration_test.go:440` | 6 s sleep for the 5 s resolver cache TTL | R1c with an observed end: the cache exposes no expiry signal, so `probe.Await` repeats the cleanup-triggering `GetAtTimestamp` and reads `GetStats().CurrentSize()` until it is below `statsAfter.CurrentSize()` (the pin asserted only `LessOrEqual`, `:448`), bounded by the TTL plus an R1b failure bound |
+
+- **R2. Skip.** A skip is removed. Where the skip meant only "needs a broker", the test moves into an
+  `//go:build integration` file and runs with no skip call. The one skip at the pin,
+  `TestIntegration_Reconnection` (`natsclient/integration_test.go:63`), is skipped because the mapped port changes
+  on restart. By owner ruling (Q2) it is rewritten on `natsfixture.Restart`, and it proves that a client dialled
+  from the new `URL()` reaches the restarted broker (re-dial). It does not prove nats.go's automatic reconnect, and
+  its name and comment say so.
+- **R3. Build tag.** The legacy `// +build integration` line (`pkg/acme/integration_test.go:2`) is deleted; the
+  `//go:build integration` line stays.
+- **R4. Repeat failures.** A ported test that fails `task test:repeat` is repaired in the porting pull request. It
+  is never deferred and never filed `class:flake`. The failures measured at the pin are intermittent and
+  order-dependent (P19), so one green run proves nothing. The repair removes the cause (R1), and the package then
+  passes `test:repeat` several times on recorded seeds, task 3.6. Integration-tagged tests are not repeated
+  (`merge-gate`, "Varied and repeated unit runs"), so a ported integration test has no repeat evidence. Its only
+  evidence is its one run in the integration lane.
+
+Doc-comment sleeps in ported non-test files (`pkg/errs/doc.go:48,111,288`, `metric/doc.go:386`,
+`natsclient/doc.go:209,536,541`) are carried as they are (Q4). They are outside both checks' scope.
+
+Note on the `refowner` double (task 2.5): `TestEachFailpointTripsExactlyItsCheck` (`refowner_test.go:382-401`) runs
+every check against each failpoint's double. A failpoint that makes Start fail would trip every check that starts
+the owner, so "Start fails" is a construction mode of the double, like `restartable`, and not a failpoint.
+
+- In must-fail mode, Start returns its error after `o.startAttempted = true` (`:72`), so `stopBeforeStartPanics`
+  does not trip the new check.
+- `startFailsButHolds` is a table row whose expected check is `FailedStartHoldsNothing`. It acts only in must-fail
+  mode, where Start starts a worker under its context and then fails. The worker is ended through Start authority,
+  so `finalize` holds with no exemption (`lifecycle-suite`, "Complete sensitivity matrix").
+- In normal mode the row is inert. So `TestAbortStopThenFinishJoinsWorker` (`:414-418`), which takes every row except
+  `ControlledStopUnderLiveStartAuthority`'s, runs it as a clean double.
+- The `checks` entry for the new check is marked must-fail. Every test that iterates `checks` builds the must-fail
+  double for that entry, including `TestChecksPassAgainstCleanDouble` (`:239-249`).
 
 ## Premises (each with its measurement)
 
@@ -263,21 +351,37 @@ input; the ruling is asked once and applied per owner at port time, recorded on 
 - P16. SemSource at `e4febc0d` imports eight of the 16 directly: `natsclient`, `metric`, `payloadregistry`,
   `message` (28 files), `vocabulary` (20), `pkg/types` (5), `pkg/retry` (4), `pkg/errs` (3). — foundation §5.1.
 - P17. Whether the pin's five owners pass the suite's seven existing checks is not measured; task 2.0 measures it.
+- P18. In the 123 test files ported (pin, after the Q3 exclusions) there are 70 `time.Sleep` calls (`pkg/resource`
+  6, `pkg/retry` 1, `pkg/cache` 26, `natsclient` 37), one skip call and one `// +build` line; 22 files use
+  `time.After(` or `time.NewTimer(`; `pkg/cache` tests call `t.Parallel()` 30 times. — text scan of the pin tarball
+  with the contract tests' rules (`testtext_test.go:58,96,180`); hit list attached to the pull request.
+- P19. Under `go test -count=5 -cpu 1 -shuffle=on`, `pkg/cache` fails intermittently at the pin:
+  `TestCoalescingSet_EntityUpdateScenario`, `TestAttack_ConcurrentAddRemove` and
+  `TestCoalescingSet_ContextCancellation` each failed in some runs, and some runs were green. Over four full runs of
+  the 14 tested packages, no other package failed. Under `-race -count=1 -cpu 1` all 14 passed once. —
+  eleven `pkg/cache` runs with their seeds (architect four, reviewer seven); task 2.0b records them on the pull
+  request.
+- P20. The CI job `verify` has a 15-minute limit (`merge-gate` "Required needs both jobs";
+  `.github/workflows/ci.yml:22`) and runs `task verify`, which runs the integration lane (`ci.yml:48-50`) under
+  `-race -count=1 -p 2 -timeout 10m` (`scripts/test-integration.sh:402`). The wall time with the port added is not
+  measured; task 3.11 measures it.
 
 ## Declared costs
 
 - Nothing boots. The change's green is substrate, harness and five owners.
 - `go-acme/lego/v4` (six paths) enters the module for `pkg/acme` (543 lines); `task vuln` scans it from now on.
-- Thirty-one integration-tagged test files (29 in `natsclient`) run only under `task test:integration` and the host
-  lock; the unit lane does not prove them.
+- Thirty integration-tagged test files (28 in `natsclient`) run only under `task test:integration` and the host
+  lock; the unit lane does not prove them, and `test:repeat` does not repeat them.
+- Ported tests are repaired (D8), so carried tests differ from the pin's text; every difference is on a row.
+- The 15-minute `verify` limit is spec; if the port pushes the job past it, the change holds for the owner (task
+  3.11), and the design does not predict the number.
 - The `Run` signature change touches both existing callers and every future owner test; that is the point.
 - Five adapters read unexported fields; a reviewer re-checks each against the owner's retained kinds.
 - `URL()` changes after `Restart`; a test that forgets to re-dial fails loudly, not silently.
-- If a critical package measures below 80% at landing, the change holds for the owner (task 3.6); the design does not
+- If a critical package measures below 80% at landing, the change holds for the owner (task 3.8); the design does not
   predict the number.
 - The nats.go version differs from the pin (v1.54.0 vs v1.52.0); regression evidence is the carried `natsclient`
   tests passing, nothing more.
 - `Close(nil)`/`Connect(nil)` refusal is changed behaviour in `natsclient`; it is recorded as such, not as carried.
-- Until the owner rules D7, three of the five owners cannot run `Run` as the delta is drafted; the hold is task 1.4
-  and the port tasks for those owners (3.1, 3.6, 3.7) depend on it.
+- Three of the five owners pass `NoFallibleStart()` (D7, ruled); each is a pinned-list entry added in its port task.
 - The pre-port probe (task 2.0) may find more floor failures than P13; each becomes an adapt item and the row grows.

@@ -15,21 +15,27 @@ can and cannot host today, what the records already hold, and what each starter 
 
 ## What Changes
 
-Nothing yet. This change is in its inventory phase. `inventory.md` records those facts at the pin and at the current
-consumer heads: the dependency structure of the tier-0 set (acyclic; 14 leaves, 16 roots; the closure of each named
-root set), the ceiling reproduced at the pin (65 / 140,842), the harness surface and its collisions with what the
-ported tests already own, the records to extend, and the adopter seams reached from SemSource, SemConnect and
-semboids. It deliberately holds no options, recommendation, or slice order.
+The design is accepted (owner rulings on #9, 2026-10-01; `design.md`, "Owner rulings"). It cuts the tier-0 set into
+seven changes by root-set closure, each admitting its packages with their tests, ledger rows and repair proofs green,
+and fixes the first change's scope: the transport and message floor plus the harness extension. This change itself
+ports nothing and adds no spec delta; it records the inventory, the design and the rulings, and archives as
+design-only.
 
-The next steps, in order, are: options with their costs for cutting the set into changes; an independent design
-review; the owner's acceptance; then the first change's spec deltas, tasks and holds, with implementation following
-the developer, reviewer and writer loop under the admission heuristic.
+`inventory.md` records the facts the design rests on, at the pin and at the current consumer heads: the dependency
+structure of the tier-0 set (acyclic; 14 leaves, 16 roots; the closure of each named root set), the ceiling reproduced
+at the pin (65 / 140,842), the harness surface and its collisions with what the ported tests already own, the records
+to extend, and the adopter seams reached from SemSource, SemConnect and semboids. Both files passed independent
+review before the owner read them (record on PR #47).
+
+What follows this change: `setup-04a-01-floor`, then the six changes named in `design.md` D2, each with its own spec
+deltas, tasks and holds, and the developer, reviewer and writer loop under the admission heuristic.
 
 ## Capabilities
 
-None yet. `.openspec.yaml` sets `skip_specs: true` only because no ruled design exists to write a spec change from.
-The design removes that setting when it adds its spec changes.
+None. `.openspec.yaml` keeps `skip_specs: true`: this change is design-only, and the spec deltas it names (D10) are
+drafted in each of the seven changes' own OpenSpec change.
 
 ## Impact
 
-Documents only in this phase: this folder. No Go code, no ledger row, no ported package.
+Documents only: this folder, and `docs/repository-map.md` at archive time. No Go code, no ledger row, no ported
+package.

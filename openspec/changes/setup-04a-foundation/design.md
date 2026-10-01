@@ -706,6 +706,27 @@ then need their own rows or a carried-root reason; (4) add `Stop(ctx)`/`Close(ct
 compatibility shim) so later callers port unchanged and the shim is removed with the last caller in change 7 — two
 enders per type for up to five changes.
 
+## Owner rulings (2026-10-01, on #9)
+
+Each question above was ruled on #9 (comment of 2026-10-01) with the design's assumed answer, so the chain and the
+first change's scope stand as written:
+
+- **Chain accepted**: seven changes by root-set closure, D2's order, each admitting its packages with their tests,
+  ledger rows and repair proofs green.
+- **(a)** #24 re-scoped to the pin's composition points: `pkg/lifecycle` + `pkg/projection` are the primitive; the
+  input is `internal/boot/run.go`'s composition points, not a consumer's code. Recorded on #24.
+- **(b)** Tests travel with their packages; testify becomes a direct test dependency; only `NewTestClient` sites and
+  T-B1 collisions move. The cluster test carries embedded `nats-server` for that one file under an `adapt` row.
+- **(c)** Changes 4–7 in D2's order: SemSource composable after change 5, semboids after change 7.
+- **(d)** #24's "first green extraction" is change 2.
+- **(f)** Q4's "that one change" is Slice 04A as a whole; the seam is change 7's last task.
+- **(g)** Q12 is read per package for multi-package repair rows; the row names the later change for the rest.
+- **(h)** Non-context enders get SS#1415-class `adapt` rows, proven in the change that ports the type; the eight
+  later cross-package callers are `class:port-refactor` rows in changes 5, 6 and 7.
+
+Consequence for this change: it archives as design-only. Each of the seven changes carries its own spec deltas (D10),
+tasks and holds in its own OpenSpec change and claim PR, `setup-04a-01-floor` first.
+
 ## Declared costs
 
 - Seven changes, seven reviews, seven ledger extensions; the largest review is change 4 (8 packages, 148 test files,

@@ -18,10 +18,14 @@ comment unless a task says otherwise.
       measurement, and names one recommendation.
 - [x] 2.2 Independent design review: `DESIGN PASS` on re-check 3 (BLOCKING → CHANGES REQUESTED ×2 → PASS), recorded
       on PR #47 with the reviewed file's checksum.
-- [ ] 2.3 Hold: owner acceptance on #9. The owner's acceptance of the slicing and the first change's scope is posted
-      on #9 and recorded in `design.md`.
+- [x] 2.3 Owner acceptance on #9 (2026-10-01): the chain and rulings (a)–(d), (f)–(h) are posted on #9 and recorded
+      in `design.md`, "Owner rulings".
 
-## 3. Specs and the first change
+## 3. Landing
 
-- [ ] 3.1 Hold: task 2.3. The spec changes for the first change are under `specs/`, `.openspec.yaml` no longer sets
-      `skip_specs`, and `task spec:check` passes.
+- [x] 3.1 This change is design-only (owner ruling on #9): the spec deltas named in D10 are drafted in each of the seven
+      changes' own OpenSpec change, `setup-04a-01-floor` first, so `.openspec.yaml` keeps `skip_specs: true` and no
+      `specs/` folder exists here.
+- [ ] 3.2 `openspec archive setup-04a-foundation` is this pull request's last content commit; `docs/repository-map.md`
+      names the archived change and the seven planned changes; a bounded reviewer check of the archive commit is
+      recorded on PR #47.

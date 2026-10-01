@@ -5,8 +5,9 @@
 ### Requirement: No sleeps in tests
 
 No `*_test.go` file and no Go file under `internal/harness/` SHALL contain `time.Sleep`. The check SHALL have no
-baseline, no allowlist and no inline exemption, and SHALL fail when it scanned no test file. The check matches the
-text `time.Sleep`: a renamed `time` import and a wait built from `time.After` or a timer are outside its scope by
+baseline, no allowlist and no inline exemption, and SHALL fail when it scanned no test file. A test file ported from
+SemStreams SHALL meet the check before it lands; there is no list of accepted files. The check matches the text
+`time.Sleep`: a renamed `time` import and a wait built from `time.After` or a timer are outside its scope by
 construction.
 
 #### Scenario: Sleep added to a test
@@ -27,9 +28,11 @@ construction.
 ### Requirement: No skipped or hidden tests
 
 No `*_test.go` file SHALL call `Skip`, `Skipf` or `SkipNow`, and no `*_test.go` file SHALL carry a build constraint
-other than `//go:build integration`. The check SHALL have no baseline, no allowlist and no inline exemption, and
-SHALL fail when it scanned no test file. The check matches text: a skip reached through a helper and a platform
-suffix in a file name are outside its scope by construction.
+other than `//go:build integration`. The check SHALL have no baseline, no allowlist and no inline exemption, and SHALL
+fail when it scanned no test file. A test file ported from SemStreams SHALL meet the check before it lands; there is
+no list of accepted files. A test that needs a real broker MAY be moved into a file tagged `integration`, and it still
+calls no skip. The check matches text: a skip reached through a helper and a platform suffix in a file name are
+outside its scope by construction.
 
 #### Scenario: Skip added to a test
 
@@ -40,6 +43,12 @@ suffix in a file name are outside its scope by construction.
 
 - **WHEN** a test file begins with `//go:build flaky`
 - **THEN** the contract test fails naming the file and the constraint
+
+#### Scenario: Skipped test moved behind the integration tag
+
+- **WHEN** a test that was skipped for want of a real broker is moved into a file whose first line is
+  `//go:build integration`, and its skip call is removed
+- **THEN** the contract test passes
 
 ## MODIFIED Requirements
 

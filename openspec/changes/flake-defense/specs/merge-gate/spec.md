@@ -15,8 +15,9 @@ produced on the current `main`.
 `scripts/gopkgs.sh go test -count=5 -cpu 1 -shuffle=on` over `./...`, or over the packages given after `--`.
 `scripts/verify.sh` SHALL run both, with `test:repeat` as its last step. Together with the integration runner's
 invocation, every test without a build tag then runs once under the race detector at one CPU, once under the race
-detector on every CPU, and five times without the race detector at one CPU in shuffled order. A contract test SHALL
-fail when either command line, or the step list, differs from this requirement.
+detector on every CPU, and five times without the race detector at one CPU in shuffled order. Tests tagged
+`integration` SHALL NOT be repeated: they stay at the one execution the `integration-test-runner` capability fixes. A
+contract test SHALL fail when either command line, or the step list, differs from this requirement.
 
 #### Scenario: Count lowered
 
@@ -55,17 +56,30 @@ failing in that run is named in the output of `task cover:check`.
 
 ### Requirement: Known-flake check
 
-A known flake is an open GitHub issue labelled `class:flake`. `scripts/merge-check.sh` SHALL take the kind of run
-from `GITHUB_EVENT_NAME`: `pull_request` and an unset value are pull-request runs, which need a pull request number
-and SHALL exit non-zero without one; `push` is a push run; any other value SHALL make the script exit non-zero
-naming the event. On a pull-request run the script SHALL exit non-zero naming every open `class:flake` issue that
-is not among the pull request's closing references. When every open `class:flake` issue is among them it SHALL
-exit zero, print each exempting issue, and print a `::warning::` line naming them. Issues SHALL be compared by URL.
-The script SHALL exit non-zero when the label `class:flake` does not exist, when any read from GitHub fails or
-returns something other than the list asked for, naming the read, and when the issue list reaches the number asked
-for; none of these is ever treated as no known flake. The base branch of the pull request SHALL NOT change any of
-this. On a push run the script SHALL NOT apply this check and SHALL say so. No comment, no label on the pull
-request and no environment variable SHALL exempt a pull request.
+A known flake is an open GitHub issue labelled `class:flake`. While one is open, `scripts/merge-check.sh` SHALL fail
+every pull-request run except that of a pull request whose closing references include every open one. There SHALL be
+no waiver: no comment and no label on the pull request SHALL exempt it, and no environment variable SHALL change which
+checks apply, other than the two that select the kind of run as stated below.
+
+The label is for a failure that a pull request in this repository can end: a test or check that passes and fails on
+the same tree. A failed network fetch SHALL NOT be filed under it. No command sorts the two, so this part of the rule
+is checked in review only.
+
+The script SHALL take the kind of run from `GITHUB_EVENT_NAME` only when `GITHUB_ACTIONS` is `true`. There,
+`pull_request` is a pull-request run and `push` is a push run; any other value, or none, SHALL make the script exit
+non-zero naming the event. When `GITHUB_ACTIONS` is not `true` the script SHALL NOT read `GITHUB_EVENT_NAME`, and the
+run is a pull-request run. A pull-request run needs a pull request number and SHALL exit non-zero without one. The
+script SHALL print the kind of run and, on a pull-request run, the number it checks. The two variables select the kind
+of run and do nothing else. A local run with both set by hand takes the push path, and no command can tell that from a
+real push run, so the rule that a local run is made with `GITHUB_ACTIONS` unset is checked in review only.
+
+On a pull-request run the script SHALL exit non-zero naming every open `class:flake` issue that is not among the pull
+request's closing references. When every open `class:flake` issue is among them it SHALL exit zero, print each
+exempting issue, and print a `::warning::` line naming them. Issues SHALL be compared by URL. The script SHALL exit
+non-zero when the label `class:flake` does not exist, when any read from GitHub fails or returns something other than
+the list asked for, naming the read, and when the issue list reaches the number asked for; none of these is ever
+treated as no known flake. The base branch of the pull request SHALL NOT change any of this. On a push run the script
+SHALL NOT apply this check and SHALL say so.
 
 #### Scenario: Open flake and an unrelated pull request
 
@@ -125,23 +139,34 @@ request and no environment variable SHALL exempt a pull request.
 
 #### Scenario: Push run
 
-- **WHEN** `GITHUB_EVENT_NAME` is `push`
+- **WHEN** `GITHUB_ACTIONS` is `true` and `GITHUB_EVENT_NAME` is `push`
 - **THEN** the script says the known-flake check does not apply and checks the up-to-date rule only
+
+#### Scenario: Push event named outside Actions
+
+- **WHEN** `GITHUB_ACTIONS` is not `true`, `GITHUB_EVENT_NAME` is `push`, a pull request number is given, and issue 40
+  is open with the label `class:flake` and is not among that pull request's closing references
+- **THEN** the script says it is a pull-request run, exits non-zero and names issue 40
 
 #### Scenario: Pull-request run without a number
 
-- **WHEN** `GITHUB_EVENT_NAME` is `pull_request` and no pull request number is given
+- **WHEN** `GITHUB_ACTIONS` is `true`, `GITHUB_EVENT_NAME` is `pull_request` and no pull request number is given
 - **THEN** the script exits non-zero saying a pull request number is required
 
 #### Scenario: Local run without a number
 
-- **WHEN** `GITHUB_EVENT_NAME` is not set and no pull request number is given
+- **WHEN** `GITHUB_ACTIONS` is not `true` and no pull request number is given
 - **THEN** the script exits non-zero saying a pull request number is required
 
 #### Scenario: Event with no rule
 
-- **WHEN** `GITHUB_EVENT_NAME` is `merge_group`
+- **WHEN** `GITHUB_ACTIONS` is `true` and `GITHUB_EVENT_NAME` is `merge_group`
 - **THEN** the script exits non-zero naming the event
+
+#### Scenario: No event inside Actions
+
+- **WHEN** `GITHUB_ACTIONS` is `true` and `GITHUB_EVENT_NAME` is not set
+- **THEN** the script exits non-zero saying the event is missing
 
 ### Requirement: Up-to-date rule
 

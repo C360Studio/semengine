@@ -17,8 +17,8 @@ merging past a known flake is read by no command.
 
 ## What Changes
 
-The design is in `design.md`, second revision. It is a draft until the design review and the owner's ruling
-(tasks 2.2 and 2.3).
+The design is in `design.md`, third revision. It passed independent design review (task 2.2), and the owner ruled on
+its questions (task 2.3). The third revision records the ruling and waits for a check of that diff (task 2.4).
 
 - **Varied, repeated unit runs.** `task test:unit` runs under the race detector at one CPU. A new step,
   `task test:repeat`, runs the unit suite five times without the race detector at one CPU, in shuffled order. On
@@ -26,18 +26,22 @@ The design is in `design.md`, second revision. It is a draft until the design re
 - **Harness tests made cheap and complete.** The lifecycle suite's matrix test stops waiting 2 s of real time per
   execution, its cleanup helper joins every worker, and its three hand-kept failpoint lists become one table.
 - **A failing gate names the test.** `scripts/cover-check.sh` stops discarding test output.
-- **Three text checks with no accepted exceptions:** no `time.Sleep` in tests or harness code, no skip calls, and
-  no build tag on a test other than `integration`. The one existing skip becomes a failure with its reason.
+- **Three text checks with no accepted exceptions:** no `time.Sleep` in tests or harness code, no skip calls, and no
+  build tag on a test other than `integration`. The one existing skip becomes a failure with its reason. Test files
+  ported later are held to the same checks and land repaired.
 - **The carried port guard** stops recommending a pattern SemStreams removed as a race, and loses its inline
   exemption marker. Its two ledger rows change from `carry` to `adapt`.
-- **A known flake stops merges.** A known flake is an open issue labelled `class:flake`. A new CI job,
-  `merge-check`, fails while one is open unless the pull request closes every open one. `Required` needs it.
+- **A known flake stops merges.** A known flake is an open issue labelled `class:flake`: a test or check that passes
+  and fails on the same tree. A failed network fetch is not one. A new CI job, `merge-check`, fails while a known
+  flake is open unless the pull request closes every open one. `Required` needs it. There is no waiver.
 - **A pull request must be up to date with `main`.** The ruleset's strict setting is turned on, and every CI run
   asks GitHub which rules are in force on `main` and fails unless they still require it.
-- **The merge rule's text** in `.agents/protocol.md`, `AGENTS.md` and the preflight skill names these commands.
+- **The merge rule's text** in `.agents/protocol.md`, `AGENTS.md` and the preflight skill names these commands, and
+  the owner-waiver sentence leaves the protocol's Land step.
 
-Not in this change: a scheduled run, issues filed by automation, a guard on re-runs, quarantine or retries, any
-change to the Docker-backed invocation, and the network fetches in CI. `design.md` says why for each.
+Not in this change: a scheduled run, issues filed by automation, a guard on re-runs, quarantine or retries, any change
+to the Docker-backed invocation (those tests stay at one execution), and the network fetches in CI. `design.md` says
+why for each.
 
 ## Capabilities
 
@@ -67,6 +71,6 @@ change to the Docker-backed invocation, and the network fetches in CI. `design.m
   `AGENTS.md`, the preflight skill: text.
 - GitHub: one new label, and one ruleset setting. After it, every merge puts every other open pull request behind
   `main`, and each needs one more CI run before it can merge.
-- Slice 04A (PR #47): measured at the pin, 98 of the port set's 774 test files hold a sleep, a skip or another
-  build tag and cannot land until repaired; the repeat step is projected at 2.5 to 5 minutes for the full port
-  set. `design.md`, "Effects on slice 04A".
+- Slice 04A (PR #47): ported test files land repaired; the text checks and the repeat step apply to ported packages as
+  they arrive; the up-to-date rule applies from the moment it is made. The size of that bill is not measured in this
+  change. `design.md`, "Effects on slice 04A".

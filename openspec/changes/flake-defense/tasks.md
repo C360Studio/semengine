@@ -5,7 +5,7 @@ blocked until the named review or ruling exists.
 
 ## 1. Inventory
 
-- [x] 1.1 `inventory.md` records the architect's inventory at base `97e53e6`, with every entry pinned and no options
+- [x] 1.1 `inventory.md` records the architect's inventory at base `4d96860`, with every entry pinned and no options
       or design.
 - [ ] 1.2 Hold: independent inventory review. The reviewer's verdict on `inventory.md` is `INVENTORY PASS`, recorded
       on PR #44 with the reviewed file's checksum.

@@ -15,7 +15,7 @@ comment unless a task says otherwise. Every outcome below is reached before this
 
 - [x] 2.1 `design.md` frames the options with their costs, including doing nothing and extending an existing guard,
       and names one recommendation.
-- [ ] 2.2 Hold: independent design review. The reviewer's verdict on `design.md` and the spec changes is a pass,
+- [x] 2.2 Hold: independent design review. The reviewer's verdict on `design.md` and the spec changes is a pass,
       recorded on PR #44 with the reviewed files' checksums. The first review asked for changes (comment
       5936056866); the second revision of `design.md` lists its answers under "Corrections after design review".
 - [ ] 2.3 Hold: owner ruling on #42. The owner's ruling on the options and on questions Q1 to Q5 is posted on #42

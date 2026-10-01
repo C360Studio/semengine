@@ -71,6 +71,6 @@ why for each.
   `AGENTS.md`, the preflight skill: text.
 - GitHub: one new label, and one ruleset setting. After it, every merge puts every other open pull request behind
   `main`, and each needs one more CI run before it can merge.
-- Slice 04A (PR #47): ported test files land repaired; the text checks and the repeat step apply to ported packages as
+- Slice 04A (PR #48): ported test files land repaired; the text checks and the repeat step apply to ported packages as
   they arrive; the up-to-date rule applies from the moment it is made. The size of that bill is not measured in this
   change. `design.md`, "Effects on slice 04A".

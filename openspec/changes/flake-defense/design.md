@@ -503,11 +503,14 @@ the approvals that never widen into a close (`.agents/protocol.md:57`), and the 
 The command list at `AGENTS.md:43`, which is four steps behind `scripts/verify.sh:10-11` (inventory 1), is brought up
 to date, and it and the preflight table gain the new step.
 
-## Effects on slice 04A (PR #47)
+## Effects on slice 04A (PR #48)
 
-PR #47 is the sister session's claim on slice 04A, the first ported code. It holds no code yet. Its description sizes
-the port set at 65 packages and 140,842 lines at the pin `8b99efe9`; the archived SETUP 03B design (D4) gives that
-figure as non-test lines. This design changes none of PR #47's files, but its decisions reach it.
+Slice 04A is the sister session's port of the first code. Its design merged in PR #47 (`8e0aabc`), which sizes the
+port set at 65 packages and 140,842 lines at the pin `8b99efe9`; the archived SETUP 03B design (D4) gives that figure
+as non-test lines. That design does not mention this change. The first code slice is draft PR #48
+(`setup-04a-01-floor`): by its description, 16 packages with their tests and a harness extension under
+`internal/harness`. It held no files when this was written (2026-10-01). This design changes none of PR #48's files,
+but its decisions reach it, and the two changes meet in the same files ("Where the two changes meet", below).
 
 **The bill for slice 04A is not measured in this design.** The bill is three things: how many ported test files the
 checks of D6 refuse, how long the repeat step takes over the ported packages, and whether any ported test fails it.
@@ -519,12 +522,11 @@ scope that document states. The owner struck it on 2026-10-01 (#42, comment 5937
 them". Every number and fact that came from the copy is removed from this change. Sizing the repair is left to slice
 04A's own inventory, inside that scope.
 
-What reaches PR #47 follows from this repository's own tree and settings:
+What reaches PR #48, and each slice after it, follows from this repository's own tree and settings:
 
 1. **The strict setting, from the moment it is made (task 7.3), which is before this change merges.** No pull request
-   then merges unless its head contains the tip of `main`. PR #47 was level with `main` when the correction pass
-   measured it. Every later merge, this change's included, puts it behind, and it pays one update and one full run
-   each time it is ready to land.
+   then merges unless its head contains the tip of `main`. Every later merge, this change's included, puts an open
+   slice behind, and it pays one update and one full run each time it is ready to land.
 2. **The text checks of D6, in the slice that ports each file.** They scan every `*_test.go` file in the tree. A
    ported test file that holds a sleep, a skip call or a build tag other than `integration` cannot land as it is. The
    setup plan says "unchanged extraction retains earned tests and adds only missing boundary evidence"
@@ -538,10 +540,29 @@ What reaches PR #47 follows from this repository's own tree and settings:
    under its own 10-minute timeout (`scripts/test-integration.sh:402`), and the repeat step. This design makes no
    projection of how those steps grow with ported code. What happens when the job outgrows its limit is under "Not
    now".
-5. **The known-flake check, after this change merges.** PR #47 gets the `merge-check` job when it next takes `main`
+5. **The known-flake check, after this change merges.** PR #48 gets the `merge-check` job when it next takes `main`
    in, which item 1 forces. From then on any open `class:flake` issue anywhere in the repository makes it red. A flaky
    test that a slice brings in is, before it merges, that pull request's own failure. After it merges it is a known
    flake that stops every pull request, the next slice's included.
+
+**Where the two changes meet.** From PR #48's description; it held no files when this was written.
+
+- `internal/harness/lifecycletest`: PR #48 adds a failed-start check to `lifecycletest.Run` (#38). D4 puts every
+  failpoint in one table with a completeness check. Whichever lands second fits the other: a check PR #48 adds joins
+  that table.
+- `internal/harness/runner/runner_test.go`: D6 changes `deadPID` at `:264`; PR #48 builds a process host from this
+  file.
+- `scripts/verify.sh` and `Taskfile.yml`: D3 pins the step list and `test:repeat` runs last. A step PR #48 adds comes
+  before `test:repeat`, and the pin changes in the same pull request.
+- `scripts/cover-check.sh` (D5) and `docs/admission-ledger.yaml` (D7's two rows): PR #48 adds cover targets and one
+  ledger row per ported package.
+
+**Order.** The owner's direction to this session on 2026-10-01: "43 and then 44 need to be merged by us on ci green.
+then our sister can pick up up with tests tthat dont suck". So this change lands before the first ported code. Tasks
+5.1, 5.2 and 6.2 are written against a tree with no ported packages. If PR #48 lands first, those tasks do not repair
+ported files, because each slice repairs the files it ports (Q5): work on them stops and the conflict goes to the
+owner on #42 (`tasks.md`, the fifth note on order). A note on PR #48 (comment 5938176347) states the rules that reach
+it and the files above.
 
 ## Not now, and what would reopen it
 
@@ -759,9 +780,10 @@ to cover; `TestNoRetainedContext` keeps covering the harness. Each new surface h
   rule and command list in `AGENTS.md`, the Land and Close steps in `.agents/protocol.md`, and the preflight
   skill. Whichever lands second takes the other's text in; with D9 that update is forced. If PR #39's rules table
   is on `main` by then, the review-only rows above are added to it.
-- PR #39 and PR #14 are behind `main` (two and four commits); PR #44 and PR #47 are level. Task 7.3 makes that
-  visible: PR #14 and PR #39 are the two it reads.
-- PR #47 claims slice 04A. Every effect on it is in "Effects on slice 04A".
+- PR #39 and PR #14 were two and four commits behind `main` when the correction pass measured it, and `main` has
+  moved since. Task 7.3 makes that visible: PR #14 and PR #39 are the two it reads.
+- PR #48 claims the first code slice of slice 04A; the slice's design merged in PR #47. Every effect on it, and where
+  the two changes meet, is in "Effects on slice 04A".
 - The owner's global instructions describe the merge gate with a waiver for all repositories. This design changes only
   this repository's files. After the ruling on Q1b the two differ: a waiver given under those instructions passes
   nothing here, because no command reads it.
@@ -861,7 +883,19 @@ Found during the ruling pass, not in either review:
 - Findings B and D bring two assumptions the table did not have: what the runner sets (A17) and what GitHub's list of
   rules contains (A16).
 - The second revision's recommendation on Q5 ended "with these numbers handed to PR #47". The numbers are struck, so
-  nothing is handed over and no task posts on PR #47.
+  none is handed over. A note on PR #48, the first code slice (comment 5938176347), states the rules that reach it,
+  without numbers.
+
+### After the check of the ruling pass
+
+The check of the third revision (recorded on PR #44) found the ruling recorded correctly and asked for three changes,
+made by the orchestrating session.
+
+| Finding | Answer |
+|---|---|
+| HIGH: if PR #48 lands first, tasks 5.1, 5.2 and 6.2 cannot pass, or pull the repair of ported code into this change | "Effects on slice 04A", **Order**; `tasks.md`, the fifth note on order; the note on PR #48 (comment 5938176347) |
+| MEDIUM: references to PR #47 are stale; overlaps with PR #48 are not named | "Effects on slice 04A" now names PR #48 and has "Where the two changes meet"; "Adjacent claims" and the Q5 record point at PR #48. Measurements that name PR #47 as it was when measured are left as measured |
+| NIT: task 7.6 does not say what happens if the owner declines the drill | Task 7.6's last sentence |
 
 ## The owner's ruling
 
@@ -997,7 +1031,7 @@ Each slice repairs the test files it ports, as D6 and D2 require. There is no li
 - a ported test that fails `test:repeat` is repaired in the slice, or its package gets a `repair-before-port` row.
 
 The setup plan's "unchanged extraction retains earned tests" (`docs/setup-plan.md:210-211`) is read as "retained, and
-repaired where a gate requires it". The work falls in slice 04A (PR #47). This change edits none of PR #47's files.
+repaired where a gate requires it". The work falls in slice 04A (PR #48 first). This change edits none of its files.
 
 The cost of this ruling for slice 04A is not measured in this design. The question was put with numbers from the
 measurement that the owner then struck (next heading). The ruling on Q5 stands without them (comment 5937807011).
@@ -1023,7 +1057,7 @@ word). The owner's words:
 
 What that changes here: every number and fact that came from the copy is removed from this file and from
 `proposal.md`, the only two files of this change that held them. The ruling on Q5 stands. Its cost for slice 04A is
-not measured in this change, and sizing it is left to slice 04A's own inventory (PR #47), inside the reading scope
+not measured in this change, and sizing it is left to slice 04A's own inventory (PR #48), inside the reading scope
 that document states. "Corrections after design review" lists what was removed.
 
 ### Not put to the owner

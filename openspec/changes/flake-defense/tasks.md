@@ -4,7 +4,7 @@ Each task names the outcome that proves it. An unchecked task that says "hold" i
 blocked until the named review or ruling exists. "This pull request" is PR #44. Evidence is recorded there as a
 comment unless a task says otherwise. Every outcome below is reached before this pull request merges.
 
-The tasks are done in the order written, from top to bottom. Four notes on that order:
+The tasks are done in the order written, from top to bottom. Five notes on that order:
 
 - **Written first.** Where a task says a test is written first, the test is run locally and seen to fail, and that
   output is recorded. The test is pushed together with the change that makes it pass, so no push is red for that
@@ -14,6 +14,10 @@ The tasks are done in the order written, from top to bottom. Four notes on that 
 - **One run is red on purpose:** the first run of the drill in task 7.6.
 - **One task finishes on the next task's push:** the last result of task 7.6 is read from the run that task 8.1's push
   starts.
+- **Before the first ported code.** By the owner's direction (2026-10-01, quoted in `design.md`, "Effects on slice
+  04A") this change lands before PR #48, the first slice that ports code. Tasks 5.1, 5.2 and 6.2 are written against a
+  tree with no ported packages. If PR #48 lands first, those tasks do not repair ported files, because each slice
+  repairs the files it ports (ruling Q5): work on them stops and the conflict is put to the owner on #42.
 
 ## 1. Inventory
 
@@ -118,7 +122,8 @@ The tasks are done in the order written, from top to bottom. Four notes on that 
       whether the edit started a run (A11). (c) The failed run is re-run once: the record shows its `run_attempt`,
       whether `merge-check` passed, the exemption line, and whether the warning shows on the run (A4, A5, A12). (d)
       The line is removed from the description and the drill issue is closed. Task 8.1's push then starts a run that
-      passes with no exemption printed, and this task is checked when that run is recorded.
+      passes with no exemption printed, and this task is checked when that run is recorded. If the owner declines the
+      drill, this task is rewritten to say so and assumptions A4, A5, A11 and A12 are restated as open under task 8.2.
 
 ## 8. Documents and landing
 

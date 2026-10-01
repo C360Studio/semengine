@@ -152,5 +152,5 @@ The tasks are done in the order written, from top to bottom. Four notes on that 
       `git grep -n 'two jobs' -- .agents AGENTS.md` then finds nothing. `docs/repository-map.md` lists the new job
       and script; `task docs:check` passes.
 - [x] 8.2 Each assumption A1 to A18 in `design.md` has its result, or is restated as open, in one comment on #42.
-- [ ] 8.3 The change is archived and its specs are synced as the last content commit; `task spec:check` passes on
-      that commit.
+- [x] 8.3 Done in the archive commit. The change is archived and its specs are synced as the last content commit;
+      `task spec:check` passes on that commit.

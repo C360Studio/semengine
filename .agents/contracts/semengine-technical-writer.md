@@ -30,6 +30,10 @@ writer records what they established and does not decide, implement, or approve.
 7. Go doc comments start with the name (`// Name does ...`).
 8. Do not create report, summary, or handoff documents; shared state lives in the protocol's homes. Do not run a git
    command that discards working-tree state (`checkout --`, `restore`, `stash`, `clean`, `reset --hard`).
+9. The owner's documentation rule (2026-10-01): "ensure any docs we write are human dev friendly and not techno jargon
+   or marketing." Test a page by reading its opening paragraph as a developer who just cloned the repository and has
+   read no plan or issue: every coined term is defined in one line at first use, nouns are concrete, there is no
+   marketing register, and coordination vocabulary (holds, rulings, ledger rows) appears only where defined.
 
 ## Handoff
 

@@ -252,18 +252,31 @@ func startIdentity(t *testing.T, pid int) string {
 	return strings.TrimLeft(strings.TrimSuffix(string(out), "\n"), " \t")
 }
 
-// deadPID returns the pid of a process that has exited and been reaped.
+// deadPIDAttempts bounds how many fresh children deadPID starts before it gives up. A reaped pid
+// is reused only when the host cycles through its pid space between the child's exit and the
+// check, so one retry is almost always enough; the bound keeps a pathological host from looping.
+const deadPIDAttempts = 5
+
+// deadPID returns the pid of a process that has exited and been reaped. If every pid it got was
+// already reused by another process, it fails the test with the pids it saw: a reused pid is
+// reported, never hidden.
 func deadPID(t *testing.T) int {
 	t.Helper()
-	cmd := exec.Command("true")
-	if err := cmd.Run(); err != nil {
-		t.Fatal(err)
+	var reused []int
+	for range deadPIDAttempts {
+		cmd := exec.Command("true")
+		if err := cmd.Run(); err != nil {
+			t.Fatal(err)
+		}
+		pid := cmd.Process.Pid
+		// ESRCH is "no such process"; any other answer, EPERM included, means the pid is in use.
+		if err := syscall.Kill(pid, 0); errors.Is(err, syscall.ESRCH) {
+			return pid
+		}
+		reused = append(reused, pid)
 	}
-	pid := cmd.Process.Pid
-	if err := syscall.Kill(pid, 0); err == nil {
-		t.Skipf("pid %d was reused before the test could use it", pid)
-	}
-	return pid
+	t.Fatalf("deadPID: each of %d reaped children's pids was reused before the test could use it: %v", deadPIDAttempts, reused)
+	return 0
 }
 
 func pidAlive(pid int) bool { return syscall.Kill(pid, 0) == nil }

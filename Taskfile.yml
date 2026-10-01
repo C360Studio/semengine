@@ -49,7 +49,7 @@ tasks:
     desc: Run the pinned revive, then the carried fixed-port guard and its fixture test
     cmds:
       - scripts/gopkgs.sh go tool revive -config revive.toml -formatter friendly ./...
-      # Carried byte-identical from SemStreams (ledger rows L9, L10); tests may not bind fixed ports.
+      # Adapted from SemStreams (ledger rows L9, L10; no exemption marker); tests may not bind fixed ports.
       - scripts/lint-test-ports.sh
       - scripts/lint-test-ports_fixture_test.sh
 

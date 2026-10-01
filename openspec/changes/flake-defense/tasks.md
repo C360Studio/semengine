@@ -68,7 +68,7 @@ The tasks are done in the order written, from top to bottom. Five notes on that 
       The skip check is written first and fails on the tree as it is, naming `runner_test.go:264`. Then `deadPID`
       retries with a fresh child a bounded number of times and fails with the reason, no skip call remains, and
       the check passes.
-- [ ] 5.3 A contract test plants a fixed port on a line carrying `// gh#220:allow-fixed-port`. It is written first
+- [x] 5.3 A contract test plants a fixed port on a line carrying `// gh#220:allow-fixed-port`. It is written first
       and fails on the current `scripts/lint-test-ports.sh`. Then the script honours no marker and its message
       says to bind port 0 and keep the listener; the fixture test's marker case expects a match; `task lint`
       passes; the two ledger rows read `adapt` and say what differs from the pin; `Taskfile.yml`'s comment and

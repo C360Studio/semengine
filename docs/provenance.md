@@ -36,9 +36,11 @@ carrying the fields of rule 3 under the names given in the file's header comment
 SemStreams files SETUP 02 adapts, carries, or reads and excludes; package rows are seeded from the measured dependency
 closure during SETUP 03 and 04. SETUP 03B (change `setup-03b-contract-boundary`, PR #21) approved the tier-0 port set
 (65 packages at the pin, its `design.md` D4); each Slice 04A change adds the rows for the packages it ports. No
-SemStreams package has been ported: SETUP 02 carried two scripts byte-identical
-(`scripts/lint-test-ports.sh` and its fixture test), adapted six patterns into `internal/harness/` and
-`scripts/test-integration.sh`, and recorded four exclusions. `task ledger:check` (contract test T-B7,
-`internal/harness/contract/ledger_test.go`) machine-checks the schema inside `task verify`.
+SemStreams package has been ported. SETUP 02 adapted six patterns into `internal/harness/` and
+`scripts/test-integration.sh`, recorded four exclusions, and carried two scripts byte-identical
+(`scripts/lint-test-ports.sh` and its fixture test). Change `flake-defense` then adapted those two scripts: the
+inline exemption marker is gone and the guidance names no SemStreams file, so both rows read `adapt`. `task
+ledger:check` (contract test T-B7, `internal/harness/contract/ledger_test.go`) machine-checks the schema inside
+`task verify`.
 
 [setup-02-rulings]: https://github.com/C360Studio/semengine/issues/6#issuecomment-5921046663

@@ -1,8 +1,11 @@
 package contract
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -75,4 +78,43 @@ func runLintTestPorts(root string) ([]byte, error) {
 	cmd := exec.Command("bash", "scripts/lint-test-ports.sh")
 	cmd.Dir = root
 	return cmd.CombinedOutput()
+}
+
+// TestLintTestPortsHonoursNoMarker (harness-boundaries › "Marked fixed port", "Guidance keeps the
+// listener"): a fixed port on a line carrying the old inline marker still fails the guard, the
+// line is named, and the guidance says to bind port 0 and hand the listener on, naming no file.
+// The planted line is assembled at run time so this file does not trip the guard itself.
+func TestLintTestPortsHonoursNoMarker(t *testing.T) {
+	root := copyScript(t, "lint-test-ports.sh")
+	planted := "func f() { net." + "Listen(\"tcp\", \"127.0.0.1:18082\") } // gh#220:allow-fixed-port"
+	if err := os.MkdirAll(filepath.Join(root, "x"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "x", "x_test.go"), []byte("package x\n\n"+planted+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runLintTestPorts(root)
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 1 {
+		t.Fatalf("a marked fixed port: err=%v, want exit 1\n%s", err, out)
+	}
+	text := string(out)
+	if !strings.Contains(text, "x/x_test.go:3:") {
+		t.Errorf("output does not name the marked line x/x_test.go:3:\n%s", text)
+	}
+	var guidance []string
+	for _, line := range strings.Split(text, "\n") {
+		if !strings.Contains(line, "x_test.go:3:") {
+			guidance = append(guidance, line)
+		}
+	}
+	g := strings.Join(guidance, "\n")
+	for _, want := range []string{"port 0", "listener"} {
+		if !strings.Contains(g, want) {
+			t.Errorf("guidance does not mention %q:\n%s", want, g)
+		}
+	}
+	if strings.Contains(g, ".go") {
+		t.Errorf("guidance names a Go file:\n%s", g)
+	}
 }

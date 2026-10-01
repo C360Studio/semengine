@@ -13,11 +13,11 @@ comment unless a task says otherwise.
 
 ## 2. Options and design
 
-- [ ] 2.1 Hold: task 1.2. `design.md` frames the options for cutting the tier-0 set into changes with their costs,
+- [x] 2.1 `design.md` frames the options for cutting the tier-0 set into changes with their costs,
       including doing nothing (one change) and extending an existing surface, states every premise with its
       measurement, and names one recommendation.
-- [ ] 2.2 Hold: independent design review. The reviewer's verdict on `design.md` is a pass, recorded on PR #47 with
-      the reviewed file's checksum.
+- [x] 2.2 Independent design review: `DESIGN PASS` on re-check 3 (BLOCKING → CHANGES REQUESTED ×2 → PASS), recorded
+      on PR #47 with the reviewed file's checksum.
 - [ ] 2.3 Hold: owner acceptance on #9. The owner's acceptance of the slicing and the first change's scope is posted
       on #9 and recorded in `design.md`.
 

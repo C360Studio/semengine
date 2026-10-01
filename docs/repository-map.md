@@ -7,8 +7,8 @@ not a task tracker and not a description of the tree.
 ## Not yet present
 
 - **No product Go packages.** The only Go code is the test harness under `internal/harness/`.
-- **No consumer.** SemSource does not build against SemEngine; no consumer API, registration cut, or contract exists.
-  The consumer baseline and contract are SETUP 03A and 03B (issues #7, #8).
+- **No consumer.** SemSource does not build against SemEngine. The contract that slice 04A implements is written down
+  (`docs/contract.md`) and approved in SETUP 03B (issue #8), but no code implements it yet.
 - **No ported SemStreams package.** SETUP 02 carried two scripts and adapted patterns; package rows are seeded in the
   admission ledger during SETUP 03 and 04.
 - **No runtime binary, no release, no tag.**
@@ -76,6 +76,9 @@ There is no `/tickets` state and no handoff document; each question has one home
 - PR #13 (SETUP 02) merged as `34c9dc6` and #6 is closed; its SETUP 02 rulings are on
   [issue #6](https://github.com/C360Studio/semengine/issues/6#issuecomment-5921046663).
 - Draft PR #21 claims #8 (`Addresses #8`) on `claude/setup-03b-contract`; its change is committed from `a120165`.
+  The approved boundary it records: tier 0 is 65 packages / 140,842 non-test lines at the pin (`design.md` D4); the
+  critical coverage list is `design.md` D10 (task `cover:check` scope as each package is ported); the twelve port
+  refactors are issues #25–#36 (label `class:port-refactor`, milestone Slice 04A).
 - Owner rulings of 2026-09-30 on the plan are recorded at
   [PR #1 comment 5917717356](https://github.com/C360Studio/semengine/pull/1#issuecomment-5917717356).
 

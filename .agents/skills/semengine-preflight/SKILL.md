@@ -40,7 +40,7 @@ with current CI.
 | `task ledger:check` | Validates `docs/admission-ledger.yaml` against its schema |
 | `task test:unit` | Unit tests with the race detector |
 | `task test:integration` | Docker-backed tests through the admitted runner (host lock, process group, leak check) |
-| `task cover:check` | Fails below 80% coverage on `natsfixture`, `lifecycletest`, `probe` |
+| `task cover:check` | Fails below 80% coverage on `natsfixture`, `lifecycletest`, `probe`; each package on the SETUP 03B critical list (`setup-03b-contract-boundary` `design.md` D10) joins when it is ported |
 | `task verify` | The checks above except `doctor`, `fmt`, `spec:queue`, cheapest first; fails on tracked-file change |
 
 CI has two jobs: `verify` runs `task verify`, and `required` fails if `verify` failed, is missing, or was skipped or

@@ -53,8 +53,11 @@ change records the rulings and turns them into rows and tasks.
 - Repair-before-port rows for #15, #16, #17, #19, #20, settlement, and the ruling-4 lifecycle debt (SS#1411, #1415,
   #1218, #1220, #1417, #1145/#1147), each with its tier-0 (#9) gate evidence (D11).
 - The critical package list for the 80% coverage gate (D10).
-- `docs/admission-ledger.yaml` seeded with one row per package in the tier-0 set and one per separated package,
-  dispositions per D4.
+- `docs/admission-ledger.yaml` gains a header note on the port-refactor convention; its package rows (one per tier-0
+  and separated package, dispositions per D4) are added by the Slice 04A changes as they port each package (epic #9,
+  "Carried to 04A"). The twelve port refactors are issues #25–#36.
+- `docs/contract.md`, "What SemEngine guarantees": the contract written for a developer new to the repository.
+- `docs/setup-plan.md` amended in place for the tier model and admission by mandate.
 - Spec deltas for the new contract invariants are **drafted in `design.md`** and carried by the SETUP 04A extraction
   changes, because `openspec/specs/` is current truth verified against code; this change sets `skip_specs: true`.
 
@@ -105,7 +108,9 @@ and the no-SemStreams-import requirement (I8).
 ## Impact
 
 `openspec/changes/setup-03b-contract-boundary/{proposal,design,tasks}.md` and its three inventory passes
-(`inventory.md`, `inventory-2-scope.md`, `inventory-3-pass3.md`); `docs/admission-ledger.yaml` (new rows and a header
-note on port refactors); `docs/repository-map.md` (boundary and port set recorded); `docs/provenance.md` status; the
-placement of the I8 boundary test (task 2.6). No product Go code, no Taskfile change. Owner rulings are posted as
-comments on #2, #3, #4, #18, #19, #20 and #8; this change records them.
+(`inventory.md`, `inventory-2-scope.md`, `inventory-3-pass3.md`); `docs/admission-ledger.yaml` (a header note on port
+refactors); `docs/contract.md` (new); `docs/setup-plan.md` (amended); `docs/repository-map.md` (boundary and port set
+recorded); `docs/provenance.md` status; `.agents/contracts/` (the owner's documentation rule); the preflight skill's
+`cover:check` row; issues #25–#36 and the "Carried to 04A" list on #9; the placement of the I8 boundary test (task 2.6).
+No product Go code, no Taskfile change. Owner rulings are posted as comments on #2, #3, #4, #18, #19, #20 and #8; this
+change records them.

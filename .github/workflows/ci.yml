@@ -45,7 +45,22 @@ jobs:
 
       - run: task doctor
 
+      # verify includes test:integration, which needs the runner's Docker daemon and
+      # takes the host lock at /tmp/semstreams-integration.lock.
       - run: task verify
+
+      # Integration evidence (preflight, listings, fixture phase records, container
+      # logs, coverage) is kept as an artifact, never committed. .evidence is a hidden
+      # directory, which upload-artifact skips unless told otherwise.
+      - name: Upload integration evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: integration-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .evidence/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
 
   # Single required status check: anything other than success in a needed job
   # (failure, cancelled, skipped, or a job that never ran) fails the aggregate.

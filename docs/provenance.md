@@ -7,9 +7,10 @@ of ported code traceable to its origin and keep the license obligations intact. 
 
 1. **The MIT notice stays.** `LICENSE` keeps "Copyright (c) 2025 C360", the holder named in SemStreams' license. A
    port never removes or rewrites that notice, and a file ported verbatim keeps any notice it carries.
-2. **Every ported package is traceable.** Each retained package has one row in the admission ledger recording its
-   SemStreams source path and the full 40-character commit SHA it was taken from. An abbreviated SHA or a branch name
-   is not provenance: it can move or become ambiguous.
+2. **Every ported unit is traceable.** Each retained unit has one entry in the admission ledger recording its
+   SemStreams source path and the full 40-character commit SHA it was taken from. The unit is a package when the
+   package is ported, or a single source file when only that file's pattern is taken, as the SETUP 02 harness does.
+   An abbreviated SHA or a branch name is not provenance: it can move or become ambiguous.
 3. **No ledger row, no port.** Code without a row does not land. The row also records the consumer purpose,
    destination, contract, dependencies and side effects, known risks, proving tests, owner, and disposition (carry,
    adapt, repair before port, or defer/exclude), as `docs/setup-plan.md` specifies under "Package admission
@@ -29,6 +30,13 @@ which fix belongs to which side, and an upstream change can enter unreviewed.
 
 ## Status
 
-The admission ledger does not exist yet; it is seeded from the measured dependency closure during SETUP 03 and
-04 (see `docs/repository-map.md`). Until it exists, nothing has been ported, and these rules are the requirement the
-ledger must meet. Its location and format are not decided here.
+The admission ledger is `docs/admission-ledger.yaml` (owner ruling of 2026-09-30, recorded on
+[issue #6][setup-02-rulings]): a YAML list with one entry per SemStreams source path,
+carrying the fields of rule 3 under the names given in the file's header comment. Its first entries record the
+SemStreams files SETUP 02 adapts, carries, or reads and excludes; package rows are seeded from the measured dependency
+closure during SETUP 03 and 04. No SemStreams package has been ported: SETUP 02 carried two scripts byte-identical
+(`scripts/lint-test-ports.sh` and its fixture test), adapted six patterns into `internal/harness/` and
+`scripts/test-integration.sh`, and recorded four exclusions. `task ledger:check` (contract test T-B7,
+`internal/harness/contract/ledger_test.go`) machine-checks the schema inside `task verify`.
+
+[setup-02-rulings]: https://github.com/C360Studio/semengine/issues/6#issuecomment-5921046663

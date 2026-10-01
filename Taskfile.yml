@@ -46,9 +46,22 @@ tasks:
       - scripts/gopkgs.sh go vet ./...
 
   lint:
-    desc: Run the pinned revive with revive.toml
+    desc: Run the pinned revive, then the carried fixed-port guard and its fixture test
     cmds:
       - scripts/gopkgs.sh go tool revive -config revive.toml -formatter friendly ./...
+      # Carried byte-identical from SemStreams (ledger rows L9, L10); tests may not bind fixed ports.
+      - scripts/lint-test-ports.sh
+      - scripts/lint-test-ports_fixture_test.sh
+
+  cleanup-roots:check:
+    desc: Fail if a test stops, closes, or terminates under an unbounded context.Background/TODO
+    cmds:
+      - scripts/cleanup-roots-check.sh
+
+  ledger:check:
+    desc: Validate docs/admission-ledger.yaml against its schema (contract test T-B7)
+    cmds:
+      - go test -count=1 -run '^TestAdmissionLedger' ./internal/harness/contract/
 
   vuln:
     desc: Run the pinned govulncheck over all packages
@@ -60,7 +73,15 @@ tasks:
     cmds:
       - scripts/gopkgs.sh go test -race -count=1 ./...
 
-  # test:integration goes here once integration packages and a workload exist.
+  test:integration:
+    desc: Run Docker-backed tests through the admitted runner (host lock, process group, leak check); -- <pkgs> to focus
+    cmds:
+      - scripts/test-integration.sh {{.CLI_ARGS}}
+
+  cover:check:
+    desc: Fail below 80% coverage on natsfixture (last integration run) and lifecycletest, probe (unit run)
+    cmds:
+      - scripts/cover-check.sh
 
   spec:check:
     desc: Validate all OpenSpec changes and specs strictly

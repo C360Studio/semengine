@@ -1,0 +1,5 @@
+# The one spelling of the NATS image for SemEngine integration tests (owner ruling Q6, 2026-09-30).
+# Tag: nats:2.14.7-alpine (NATS_SERVER=2.14.7). The digest is the multi-arch index, so the pull is
+# content-addressed and a re-pointed tag cannot change what runs. scripts/test-integration.sh exports
+# the line below as SEMENGINE_NATS_IMAGE; nothing else may spell it (contract test T-B3).
+nats:2.14.7-alpine@sha256:4063edae0717ba5f7501bfde75f97fd9b57f5b93597b92c70b6a6fbbf6a74e06

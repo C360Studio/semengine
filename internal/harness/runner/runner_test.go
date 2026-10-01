@@ -27,6 +27,7 @@ var semstreamsOwnerKeys = []string{"host", "pid", "started", "identity", "token"
 // fakeDocker records every invocation and answers the handful of subcommands the runner uses.
 // FAKE_IMAGE_CACHED=0 makes the image absent, FAKE_PULL_FAILS=1 fails the pull, and
 // FAKE_PS_SURVIVORS=N makes `docker ps` report one container for the first N calls.
+// FAKE_PULL_MODE=hang makes the pull record its pid and block, as a slow registry does.
 const fakeDocker = `#!/usr/bin/env bash
 echo "$*" >> "$FAKE_DIR/docker.log"
 case "$1 ${2:-}" in
@@ -35,7 +36,9 @@ case "$1 ${2:-}" in
   "context show") echo fake-context ;;
   "context inspect") echo unix:///fake.sock ;;
   "image inspect") [ "${FAKE_IMAGE_CACHED:-1}" = 1 ] || exit 1 ;;
-  "pull "*) [ "${FAKE_PULL_FAILS:-0}" = 1 ] && { echo "fake pull: manifest unknown" >&2; exit 1; } ;;
+  "pull "*)
+    [ "${FAKE_PULL_FAILS:-0}" = 1 ] && { echo "fake pull: manifest unknown" >&2; exit 1; }
+    if [ "${FAKE_PULL_MODE:-}" = hang ]; then echo "$$" > "$FAKE_DIR/pull.pid"; exec sleep 30; fi ;;
   "ps "*)
     n=$(cat "$FAKE_DIR/ps.count" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$FAKE_DIR/ps.count"
     [ "$n" -le "${FAKE_PS_SURVIVORS:-0}" ] && echo "c0ffee00c0ffee00" ;;
@@ -72,6 +75,25 @@ if [ "${FAKE_GO_MODE:-ok}" = hang ]; then
   bash -c 'trap "echo grandchild-term >> \"$FAKE_DIR/go.signals\"; exit 143" TERM; sleep 300 & wait' &
   echo "$!" > "$FAKE_DIR/grandchild.pid"
   touch "$FAKE_DIR/go.ready"
+  wait
+fi
+if [ "${FAKE_GO_MODE:-ok}" = ignore-term ]; then
+  # A test binary that ignores TERM: only the runner's KILL escalation ends it.
+  trap '' TERM
+  bash -c 'trap "" TERM; sleep 300 & wait' &
+  echo "$!" > "$FAKE_DIR/grandchild.pid"
+  touch "$FAKE_DIR/go.ready"
+  wait
+fi
+if [ "${FAKE_GO_MODE:-ok}" = interrupt-output ]; then
+  # go test prints its failure summary after the interrupt; that output must reach the log.
+  on_int() {
+    echo "--- FAIL: shutdown summary written after the interrupt"
+    exit 130
+  }
+  trap on_int INT
+  touch "$FAKE_DIR/go.ready"
+  sleep 300 &
   wait
 fi
 if [ "${FAKE_GO_MODE:-ok}" = steal ]; then
@@ -525,4 +547,208 @@ func readPin(t *testing.T, root string) string {
 	}
 	t.Fatal(".nats-image holds no pin")
 	return ""
+}
+
+// startRunner starts the runner and waits until fake go reports ready (the file named) or the
+// runner exits first, which fails the test.
+func (h *harness) startRunner(t *testing.T, cmd *exec.Cmd, readyFile string) (<-chan error, *bytes.Buffer, *bytes.Buffer) {
+	t.Helper()
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	waited := make(chan error, 1)
+	go func() { waited <- cmd.Wait() }()
+	ready := filepath.Join(h.fake, readyFile)
+	state, err := probe.Await(t.Context(), func(context.Context) (string, error) {
+		select {
+		case err := <-waited:
+			waited <- err
+			return "runner exited", nil
+		default:
+		}
+		if _, err := os.Stat(ready); err != nil {
+			return "waiting", err
+		}
+		return "ready", nil
+	}, func(s string) bool { return s != "waiting" })
+	if err != nil || state != "ready" {
+		_ = cmd.Process.Kill()
+		t.Fatalf("%s never appeared (%s): %v\nstderr:\n%s", readyFile, state, err, stderr.String())
+	}
+	return waited, &stdout, &stderr
+}
+
+func exitCode(err error) int {
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return exitErr.ExitCode()
+	}
+	if err != nil {
+		return -1
+	}
+	return 0
+}
+
+// H2: a signal during the bounded image pull kills and reaps the pull before the lock is
+// released. A pull left running would hold registry and daemon work after the run that owned
+// it has gone.
+func TestSignalDuringPullReapsThePull(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, "FAKE_IMAGE_CACHED=0", "FAKE_PULL_MODE=hang")
+	cmd := h.command(t.Context(), "./internal/harness/natsfixture/")
+	waited, stdout, stderr := h.startRunner(t, cmd, "pull.pid")
+	pull, err := strconv.Atoi(strings.TrimSpace(h.read(t, "pull.pid")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = syscall.Kill(pull, syscall.SIGKILL) })
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	if code := exitCode(<-waited); code != 143 {
+		t.Fatalf("runner exit %d, want 143\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	}
+	if pidAlive(pull) {
+		t.Fatalf("docker pull (pid %d) still running after the runner exited", pull)
+	}
+	if _, err := os.Stat(h.lock); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("lock not released: %v", err)
+	}
+	if h.read(t, "go.argv") != "" {
+		t.Fatal("go test ran after the pull was interrupted")
+	}
+}
+
+// M3: a terminal Ctrl-C reaches the runner's whole foreground process group, the log's tee
+// included. Output go test writes after the interrupt (its failure summary) still lands in
+// go-test.log and per-package.txt.
+func TestTerminalInterruptKeepsTheLog(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, "FAKE_GO_MODE=interrupt-output")
+	cmd := h.command(t.Context(), "./internal/harness/natsfixture/")
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // a terminal's foreground group
+	waited, stdout, stderr := h.startRunner(t, cmd, "go.ready")
+	if err := syscall.Kill(-cmd.Process.Pid, syscall.SIGINT); err != nil {
+		t.Fatal(err)
+	}
+	if code := exitCode(<-waited); code != 130 {
+		t.Fatalf("runner exit %d, want 130\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+	}
+	const line = "--- FAIL: shutdown summary written after the interrupt"
+	if log := h.evidenceFile(t, "go-test.log"); !strings.Contains(log, line) {
+		t.Fatalf("go-test.log lost the output written after the interrupt:\n%s", log)
+	}
+	if per := h.evidenceFile(t, "per-package.txt"); !strings.Contains(per, line) {
+		t.Fatalf("per-package.txt lost the summary:\n%s", per)
+	}
+}
+
+// M4: a runner launched with SIGINT ignored (an `&` job of a non-interactive shell) cannot trap
+// it. It says so, records it, and still runs; TERM remains the scripted interrupt.
+func TestIgnoredInterruptIsDetected(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	script := filepath.Join(h.root, "scripts", "test-integration.sh")
+	cmd := exec.CommandContext(t.Context(), "bash", "-c", `trap '' INT; exec bash "$0" "$@"`, script, "./internal/harness/natsfixture/")
+	cmd.Env, cmd.Dir = h.env, h.root
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if code := exitCode(cmd.Run()); code != 0 {
+		t.Fatalf("runner exit %d\nstderr:\n%s", code, stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "WARN") || !strings.Contains(stderr.String(), "SIGINT") {
+		t.Errorf("no warning that SIGINT is ignored:\n%s", stderr.String())
+	}
+	if rec := h.evidenceFile(t, "runner.env"); !strings.Contains(rec, "int_ignored_on_entry=yes") {
+		t.Errorf("runner.env does not record the ignored SIGINT:\n%s", rec)
+	}
+	// The ordinary launch records the opposite, so the field is evidence either way.
+	plain := newHarness(t)
+	if r := plain.run(t, "./internal/harness/natsfixture/"); r.status != 0 || strings.Contains(r.stderr, "WARN") {
+		t.Fatalf("plain run: status %d\n%s", r.status, r.stderr)
+	}
+	if rec := plain.evidenceFile(t, "runner.env"); !strings.Contains(rec, "int_ignored_on_entry=no") {
+		t.Errorf("runner.env lacks int_ignored_on_entry=no:\n%s", rec)
+	}
+}
+
+// M10: a go test group that ignores TERM is killed once the grace passes, and the run still
+// reaps it, leak-checks, and releases the lock. SEMENGINE_TEST_SIGNAL_GRACE_SECONDS exists only
+// so this test need not wait out the production 20s.
+func TestKillEscalationEndsAGroupThatIgnoresTerm(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t, "FAKE_GO_MODE=ignore-term", "SEMENGINE_TEST_SIGNAL_GRACE_SECONDS=1")
+	cmd := h.command(t.Context(), "./internal/harness/natsfixture/")
+	waited, stdout, stderr := h.startRunner(t, cmd, "go.ready")
+	grandchild, err := strconv.Atoi(strings.TrimSpace(h.read(t, "grandchild.pid")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = syscall.Kill(grandchild, syscall.SIGKILL) })
+	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	// A watchdog for the failure, not a synchronisation: with a 1s grace the runner exits within
+	// a few seconds; without the knob it would take the production 20s.
+	watchdog := time.NewTimer(10 * time.Second)
+	defer watchdog.Stop()
+	select {
+	case err := <-waited:
+		if code := exitCode(err); code != 143 {
+			t.Fatalf("runner exit %d, want 143\nstdout:\n%s\nstderr:\n%s", code, stdout, stderr)
+		}
+	case <-watchdog.C:
+		_ = cmd.Process.Kill()
+		t.Fatal("runner still waiting on a TERM-ignoring group 10s after a 1s grace")
+	}
+	if pidAlive(grandchild) {
+		t.Fatalf("grandchild %d survived the KILL escalation", grandchild)
+	}
+	rec := h.evidenceFile(t, "runner.env")
+	for _, want := range []string{"signal=TERM", "group_killed_ms=", "group_reaped_ms=", "leak_check=clean", "signal_grace_s=1"} {
+		if !strings.Contains(rec, want) {
+			t.Errorf("runner.env lacks %q:\n%s", want, rec)
+		}
+	}
+	if _, err := os.Stat(h.lock); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("lock not released: %v", err)
+	}
+}
+
+// A4: SEMENGINE_NATS_IMAGE replaces the pin only with a stated reason. A stale export in a
+// developer's shell is refused before the lock, not silently run.
+func TestImageOverrideNeedsAReason(t *testing.T) {
+	t.Parallel()
+	other := "nats" + "@sha256:" + strings.Repeat("0", 64) // assembled: T-B3 keeps image literals in .nats-image
+	refused := newHarness(t, "SEMENGINE_NATS_IMAGE="+other)
+	r := refused.run(t, "./internal/harness/natsfixture/")
+	if r.status == 0 || !strings.Contains(r.stderr, "SEMENGINE_NATS_IMAGE_OVERRIDE_REASON") {
+		t.Fatalf("override without a reason: status %d\n%s", r.status, r.stderr)
+	}
+	if refused.read(t, "docker.log") != "" {
+		t.Fatal("a refused override reached Docker")
+	}
+	if _, err := os.Stat(refused.lock); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("a refused override took the lock")
+	}
+
+	h := newHarness(t, "SEMENGINE_NATS_IMAGE="+other, "SEMENGINE_NATS_IMAGE_OVERRIDE_REASON=forced-failure protocol item 3")
+	r = h.run(t, "./internal/harness/natsfixture/")
+	if r.status != 0 {
+		t.Fatalf("override with a reason: status %d\n%s", r.status, r.stderr)
+	}
+	if !strings.Contains(r.stderr, "WARN") || !strings.Contains(r.stderr, other) {
+		t.Errorf("no WARN naming the override:\n%s", r.stderr)
+	}
+	rec := h.evidenceFile(t, "runner.env")
+	for _, want := range []string{"image_override=" + other, "image_override_reason=forced-failure protocol item 3"} {
+		if !strings.Contains(rec, want) {
+			t.Errorf("runner.env lacks %q:\n%s", want, rec)
+		}
+	}
+	if !strings.Contains(h.read(t, "go.env"), "SEMENGINE_NATS_IMAGE="+other) {
+		t.Error("go test did not receive the override")
+	}
 }

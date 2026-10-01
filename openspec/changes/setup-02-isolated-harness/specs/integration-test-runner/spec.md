@@ -33,12 +33,31 @@ release only while the owner token still matches; and SHALL read no SEMSTREAMS_*
 ### Requirement: Process group ownership
 
 The runner SHALL start `go test` in its own process group, forward INT and TERM to that group, escalate to KILL after
-a bounded grace, reap the group before the leak check and the lock release, and record the signal and timings.
+a bounded grace, reap the group before the leak check and the lock release, and record the signal and timings. A
+signal received during the bounded image pull SHALL kill and reap the pull before the lock is released. The log's
+writer SHALL survive a terminal interrupt, so output `go test` writes while shutting down reaches the evidence. A
+runner started with SIGINT ignored SHALL warn and record `int_ignored_on_entry=yes`; SIGTERM is the scripted
+interrupt. SEMENGINE_TEST_SIGNAL_GRACE_SECONDS (1–20) shortens the grace for the runner's own contract tests only.
 
 #### Scenario: TERM reaches the test binaries
 
 - **WHEN** the runner receives SIGTERM while `go test` and a test binary run
 - **THEN** both receive SIGTERM and are reaped, the leak check runs, the lock is released, the exit status is 143
+
+#### Scenario: A group that ignores TERM is killed
+
+- **WHEN** `go test` and a test binary ignore SIGTERM past the grace
+- **THEN** the runner sends KILL to the group, records it, reaps the group, and releases the lock
+
+#### Scenario: Signal during the image pull
+
+- **WHEN** the runner receives a signal while the image pull runs
+- **THEN** the pull is killed and reaped before the lock is released, and no `go test` runs
+
+#### Scenario: Terminal interrupt keeps the log
+
+- **WHEN** a terminal Ctrl-C reaches the runner's foreground process group
+- **THEN** output `go test` writes after the interrupt is in `go-test.log` and the per-package summary
 
 ### Requirement: Leak check by session
 
@@ -55,9 +74,13 @@ and SHALL NOT run Compose `down` for a project it did not create.
 
 ### Requirement: Canonical invocation, pins, and environment
 
-The runner SHALL run `go test -race -failfast -tags=integration -count=1 -p 2 -timeout 10m <packages>`; SHALL export
-TESTCONTAINERS_RYUK_DISABLED=false, SEMENGINE_DOCKER_ADMISSION_TOKEN, SEMENGINE_DOCKER_ADMISSION_LOCK_DIR,
-SEMENGINE_EVIDENCE_DIR, and SEMENGINE_NATS_IMAGE read from `.nats-image`; SHALL check the image cache by digest and
+The runner SHALL run `go test -race -failfast -tags=integration -count=1 -p 2 -timeout 10m
+-coverprofile=<evidence dir>/integration.coverprofile <packages>` (the profile is what the 80% coverage gate on
+`natsfixture` reads); SHALL export TESTCONTAINERS_RYUK_DISABLED=false, SEMENGINE_DOCKER_ADMISSION_TOKEN,
+SEMENGINE_DOCKER_ADMISSION_LOCK_DIR, SEMENGINE_EVIDENCE_DIR, and SEMENGINE_NATS_IMAGE read from `.nats-image`. The
+runner SHALL accept SEMENGINE_NATS_IMAGE from its caller as a replacement digest reference only together with a
+non-empty SEMENGINE_NATS_IMAGE_OVERRIDE_REASON, refusing before the lock otherwise, and SHALL print a WARN line and
+record `image_override=<ref>` and the reason in `runner.env`. It SHALL check the image cache by digest and
 pull under the lock with a bounded budget when absent; and SHALL record per-package wall time, Docker preflight
 latency, effective Docker host and context, and Ryuk settings.
 
@@ -65,6 +88,11 @@ latency, effective Docker host and context, and Ryuk settings.
 
 - **WHEN** `task test:integration` runs locally or in CI
 - **THEN** the same script, flags, and environment are used
+
+#### Scenario: Image override needs a reason
+
+- **WHEN** SEMENGINE_NATS_IMAGE is set without SEMENGINE_NATS_IMAGE_OVERRIDE_REASON
+- **THEN** the runner exits non-zero before taking the lock or calling Docker
 
 #### Scenario: Digest pin ignores tag movement
 

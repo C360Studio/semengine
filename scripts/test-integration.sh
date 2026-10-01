@@ -11,6 +11,11 @@
 #   - evidence for every run lands in one directory.
 # Usage: scripts/test-integration.sh [packages...]   (default ./...)
 # Must stay bash 3.2 compatible: it is macOS's /bin/bash.
+#
+# Interrupting a run: Ctrl-C at a terminal, or SIGTERM from a script. A script that
+# starts the runner as an `&` job of a non-interactive shell starts it with SIGINT
+# ignored, and no shell can trap a signal ignored on entry; such a runner warns,
+# records int_ignored_on_entry=yes, and answers only to SIGTERM.
 set -uo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
@@ -20,7 +25,15 @@ cd "$root"
 
 readonly max_wait_seconds=3600
 readonly pull_budget_seconds=300 # a ceiling on registry latency, not a delay
-readonly signal_grace_seconds=20 # TERM to KILL for the go test process group
+# TERM to KILL for the go test process group. SEMENGINE_TEST_SIGNAL_GRACE_SECONDS is
+# reserved for the runner contract tests, so the escalation is proven without waiting
+# out the production grace.
+signal_grace_seconds="${SEMENGINE_TEST_SIGNAL_GRACE_SECONDS:-20}"
+if [[ ! "$signal_grace_seconds" =~ ^[0-9]+$ ]] || ((signal_grace_seconds < 1 || signal_grace_seconds > 20)); then
+  echo "[INTEGRATION] invalid SEMENGINE_TEST_SIGNAL_GRACE_SECONDS=$signal_grace_seconds (expected 1-20)" >&2
+  exit 2
+fi
+readonly signal_grace_seconds
 readonly leak_wait_seconds=15    # Ryuk reaps a dead session's containers after 10s
 
 # Only SEMENGINE_* variables are read, so a shell tuned for SemStreams cannot change
@@ -36,19 +49,29 @@ packages=("$@")
 ((${#packages[@]} > 0)) || packages=(./...)
 
 # The image is spelled once, in .nats-image. SEMENGINE_NATS_IMAGE may replace it for
-# one run (the forced-failure protocol), but only with another digest reference, and
-# the override is announced and recorded.
+# one run (the forced-failure protocol), but only with another digest reference and a
+# stated SEMENGINE_NATS_IMAGE_OVERRIDE_REASON, so a stale export in a shell fails
+# loudly instead of silently running another image. The override is warned and recorded.
 pin=$(grep -v '^[[:space:]]*#' .nats-image | grep -v '^[[:space:]]*$')
-image="${SEMENGINE_NATS_IMAGE:-$pin}"
+image=$pin
+image_override=none
+image_override_reason=""
+if [ -n "${SEMENGINE_NATS_IMAGE:-}" ]; then
+  if [ -z "${SEMENGINE_NATS_IMAGE_OVERRIDE_REASON:-}" ]; then
+    echo "[INTEGRATION] SEMENGINE_NATS_IMAGE is set without SEMENGINE_NATS_IMAGE_OVERRIDE_REASON; refusing to replace the pin $pin" >&2
+    exit 2
+  fi
+  image=$SEMENGINE_NATS_IMAGE
+  image_override=$image
+  image_override_reason=$SEMENGINE_NATS_IMAGE_OVERRIDE_REASON
+fi
 if [[ ! "$image" =~ ^nats(:[A-Za-z0-9][A-Za-z0-9._-]*)?@(sha256:[0-9a-f]{64})$ ]]; then
   echo "[INTEGRATION] NATS image '$image' is not a digest reference (nats[:tag]@sha256:<64 hex>)" >&2
   exit 2
 fi
 digest=${BASH_REMATCH[2]}
-image_override=no
-if [ "$image" != "$pin" ]; then
-  image_override=yes
-  echo "[INTEGRATION] SEMENGINE_NATS_IMAGE overrides the pin for this run: $image (pin: $pin)"
+if [ "$image_override" != none ]; then
+  echo "[INTEGRATION] WARN: SEMENGINE_NATS_IMAGE replaces the pin for this run: $image (pin: $pin; reason: $image_override_reason)" >&2
 fi
 
 # Clock: bash 5's EPOCHREALTIME, GNU date's %3N, python3, else whole seconds.
@@ -90,9 +113,11 @@ record lock_dir "$lock_dir"
 record packages "${packages[*]}"
 record git_head "$(git rev-parse HEAD 2>/dev/null || echo unknown)"
 record tree_state "$(scripts/tree-state.sh 2>/dev/null || echo unknown)"
+record signal_grace_s "$signal_grace_seconds"
 
 lock_held=false
 pull_pid=""
+tee_pid=""
 child=""
 received=""
 signalled_at_ms=""
@@ -262,9 +287,20 @@ on_signal() {
 }
 trap 'on_signal INT' INT
 trap 'on_signal TERM' TERM
+# A signal ignored on entry cannot be trapped (POSIX), and bash then leaves the trap
+# unset; trap -p is the only portable way to see it under bash 3.2.
+if [ -z "$(trap -p INT)" ]; then
+  record int_ignored_on_entry yes
+  echo "[INTEGRATION] WARN: SIGINT was ignored when this runner started (an & job of a non-interactive shell?); it cannot be interrupted with SIGINT, send SIGTERM" >&2
+else
+  record int_ignored_on_entry no
+fi
 
 finish() {
   terminate_pull
+  # Normally already waited for; on an early exit it may still be blocked opening the
+  # FIFO, and it ignores TERM.
+  if [ -n "$tee_pid" ] && job_running "$tee_pid"; then kill -KILL "$tee_pid" 2>/dev/null; fi
   release_lock
 }
 trap finish EXIT
@@ -302,7 +338,8 @@ record docker_host_env "${DOCKER_HOST:-unset}"
 record ryuk_env "TESTCONTAINERS_RYUK_DISABLED=false (exported)"
 record tc_properties "$([ -f "$HOME/.testcontainers.properties" ] && echo present || echo absent)"
 record nats_image "$image"
-record nats_image_override "$image_override"
+record image_override "$image_override"
+[ "$image_override" = none ] || record image_override_reason "$image_override_reason"
 echo "[INTEGRATION] docker info latency: $(sed -n 's/^docker_info_ms=//p' "$evidence_dir/runner.env")ms"
 
 # The cache is checked by digest, so another repository re-pulling a mutable tag
@@ -319,8 +356,12 @@ else
   pull_status=$?
   record pull_ms "$(($(now_ms) - started_ms))"
   record pull_status "$pull_status"
-  if ((pull_status == 124)); then
+  # 124 is the budget, 125 a signal: either way the pull is still running, and it is
+  # killed and reaped here, before the lock can be released. pull_pid is cleared only
+  # by terminate_pull or after a pull wait_job has reaped.
+  if ((pull_status == 124 || pull_status == 125)); then
     terminate_pull
+    exit_for_signal
     echo "[INTEGRATION] $image pull timed out after ${pull_budget_seconds}s" >&2
     exit 1
   fi
@@ -354,10 +395,19 @@ echo "[INTEGRATION] running Docker-backed tests (-race, integration tag, at most
 
 # -p 2 is inherited from SemStreams gh#736 (container starts queue behind each other
 # when every package boots its own); unmeasured here, so per-package wall time is kept.
-# set -m gives the background job its own process group, whose id is its pid.
+# The log's tee ignores INT and TERM: a terminal Ctrl-C reaches the runner's whole
+# foreground group, and a tee that died first would SIGPIPE the output go test writes
+# while shutting down. It is a job reading a FIFO, not a process substitution, so it
+# can be waited for and the log is complete before it is read.
+# set -m gives go test its own process group, whose id is its pid.
+fifo="$evidence_dir/.go-test.fifo"
+rm -f "$fifo"
+mkfifo "$fifo"
+(trap '' INT TERM; exec tee "$evidence_dir/go-test.log") < "$fifo" &
+tee_pid=$!
 started_ms=$(now_ms)
 set -m
-go "${argv[@]}" > >(tee "$evidence_dir/go-test.log") 2>&1 &
+go "${argv[@]}" > "$fifo" 2>&1 &
 child=$!
 set +m
 record go_test_pgid "$child"
@@ -395,6 +445,10 @@ while kill -0 -- "-$child" 2>/dev/null; do
   sleep 0.1
 done
 kill -0 -- "-$child" 2>/dev/null || record group_reaped_ms "$(now_ms)"
+# The group is gone, so no writer holds the FIFO and tee reaches EOF.
+wait "$tee_pid" 2>/dev/null
+tee_pid=""
+rm -f "$fifo"
 grep -E '^(ok|FAIL|---)[[:space:]]' "$evidence_dir/go-test.log" > "$evidence_dir/per-package.txt" 2>/dev/null || true
 
 # Leak check by session: the fixture wrote each test process's testcontainers session

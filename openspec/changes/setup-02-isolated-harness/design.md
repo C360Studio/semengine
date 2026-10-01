@@ -132,8 +132,12 @@ reinforced by P13), a TestMain constructor, fixture knobs, the embedded server, 
   reaps the containers. A different host's stale lock is a manual recovery, surfaced by `doctor`.
 - **In-run bound.** `-p 2` is inherited from SemStreams gh#736 and unmeasured here; the runner records per-package
   wall time and container-start phase latency so the bound can be measured.
-- **Environment namespace (M2).** SemEngine reads only `SEMENGINE_DOCKER_ADMISSION_LOCK_DIR` (tests) and
-  `SEMENGINE_DOCKER_ADMISSION_WAIT_SECONDS` (0–3600, default 0), and exports to Go `SEMENGINE_DOCKER_ADMISSION_TOKEN`,
+- **Environment namespace (M2).** SemEngine reads only `SEMENGINE_DOCKER_ADMISSION_LOCK_DIR` (tests),
+  `SEMENGINE_DOCKER_ADMISSION_WAIT_SECONDS` (0–3600, default 0), `SEMENGINE_EVIDENCE_DIR`, `SEMENGINE_NATS_IMAGE`
+  together with a non-empty `SEMENGINE_NATS_IMAGE_OVERRIDE_REASON` (a digest-reference replacement for one run, for
+  the forced-failure protocol; warned and recorded as `image_override` and `image_override_reason`; refused without
+  the reason, ruling A4), and `SEMENGINE_TEST_SIGNAL_GRACE_SECONDS` (1–20, the runner contract tests only), and
+  exports to Go `SEMENGINE_DOCKER_ADMISSION_TOKEN`,
   `SEMENGINE_DOCKER_ADMISSION_LOCK_DIR`, `SEMENGINE_EVIDENCE_DIR`, and `SEMENGINE_NATS_IMAGE`; it sets
   `TESTCONTAINERS_RYUK_DISABLED=false` unconditionally. It never reads `SEMSTREAMS_*` or `GRAPH_INDEX_LATENCY_LOG`.
   There is no refresh knob: the digest pin makes tag re-pointing irrelevant, and the cache is checked with `docker
@@ -227,8 +231,11 @@ the unexported `deps` seam (`start`, `host`, `mappedPort`, `connect`, `jsReady`,
 lock: exit 1, owner line printed, fake docker never invoked. R2 a dead-pid lock is quarantined; a live-pid lock is
 not. R3 SIGTERM to the runner: the fake `go`, which spawns a grandchild, receives TERM in its group, the grandchild is
 reaped, the lock is released only after the reap, exit status 143, evidence records the signal. R4 argv and env pinned
-(`-race -failfast -tags=integration -count=1 -p 2`, `TESTCONTAINERS_RYUK_DISABLED=false`, `SEMENGINE_NATS_IMAGE` from
-`.nats-image`), and the owner-file key set equals the recorded SemStreams format.
+(`-race -failfast -tags=integration -count=1 -p 2 -timeout 10m -coverprofile=<evidence>/integration.coverprofile`,
+ruling A5; `TESTCONTAINERS_RYUK_DISABLED=false`, `SEMENGINE_NATS_IMAGE` from `.nats-image`), and the owner-file key set
+equals the recorded SemStreams format. Added after review: a signal during the pull reaps the pull (H2); a terminal
+interrupt keeps the log (M3); SIGINT ignored on entry is detected and recorded (M4); a TERM-ignoring group is killed
+after the grace (M10); an image override without a reason is refused (A4).
 
 **Contract tests** (`internal/harness/contract`).
 
@@ -265,9 +272,10 @@ committed; item 3's Go-level half, S1-8, S1-9, and the runner tests are permanen
    `docker ps -a`, `docker volume ls`, and `docker network ls`. Recorded: A's signal, group TERM/KILL timings, leak
    check, and token-checked release; B completes; listings identical for every row not carrying A's session label
    (`semsource-setup03a-embed` and any `semstreams-nats` included).
-3. **Forced startup failure.** `SEMENGINE_NATS_IMAGE=nats@sha256:<64 zeros> task test:integration --
-   ./internal/harness/natsfixture/`; S1-1 and S1-2. Recorded: bounded pull failure, lock released, nothing left by
-   session; per-test phase records, container logs, and `docker inspect` not-found assertions.
+3. **Forced startup failure.** `SEMENGINE_NATS_IMAGE=nats@sha256:<64 zeros>
+   SEMENGINE_NATS_IMAGE_OVERRIDE_REASON=<why> task test:integration -- ./internal/harness/natsfixture/`; S1-1 and
+   S1-2. Recorded: bounded pull failure, lock released, nothing left by session; per-test phase records, container
+   logs, and `docker inspect` not-found assertions.
 4. **Persistent data and unrelated containers survive, both directions.** Forward: with `semsource-setup03a-embed`
    running, SemStreams' `task dev:nats:start` broker holding a KV entry, and a sentinel `docker run -d --name
    semengine-evidence-sentinel -v semengine-evidence-sentinel-data:/data <pinned nats> -js -sd /data` holding a KV

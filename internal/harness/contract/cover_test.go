@@ -79,3 +79,50 @@ func TestCoverCheckSensitivity(t *testing.T) {
 		t.Fatalf("duplicate blocks not merged: %v\n%s", err, out)
 	}
 }
+
+// TestTreeStateSeesUntrackedContent: cover:check refuses a profile measured on another tree by
+// comparing scripts/tree-state.sh fingerprints, so editing a new, untracked test file must change
+// the fingerprint, not only adding or removing it.
+func TestTreeStateSeesUntrackedContent(t *testing.T) {
+	dir := t.TempDir()
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-c", "user.name=t", "-c", "user.email=t@example.invalid"}, args...)...)
+		cmd.Dir = dir
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "scripts"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	src, err := os.ReadFile(filepath.Join(repoRoot(t), "scripts", "tree-state.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "scripts", "tree-state.sh"), src, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git("init", "-q")
+	git("add", ".")
+	git("commit", "-q", "-m", "init")
+	state := func() string {
+		t.Helper()
+		out, err := exec.Command("bash", filepath.Join(dir, "scripts", "tree-state.sh")).Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	untracked := filepath.Join(dir, "new_test.go")
+	if err := os.WriteFile(untracked, []byte("package x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := state()
+	if err := os.WriteFile(untracked, []byte("package x\n\nfunc TestMore() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if after := state(); after == before {
+		t.Fatalf("editing an untracked file left the fingerprint at %s", before)
+	}
+}

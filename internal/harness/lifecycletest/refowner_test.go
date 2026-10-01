@@ -5,6 +5,9 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"testing/synctest"
+
+	"github.com/c360studio/semengine/internal/harness/probe"
 )
 
 // failpoint names one lifecycle defect the refowner double can exhibit (design S3).
@@ -33,6 +36,9 @@ type refowner struct {
 	fp          failpoint
 	restartable bool
 	hang        <-chan struct{} // closed by the test's cleanup; only stopIgnoresCallerDeadline waits on it
+	// workerExit, when set, holds the worker after it has been signalled and before it closes
+	// workerDone, so a test can force the interleaving where a Stop returns ahead of the worker's exit.
+	workerExit *probe.Callback
 
 	mu             sync.Mutex
 	startAttempted bool
@@ -72,12 +78,15 @@ func (o *refowner) Start(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	o.used, o.running, o.stopped = true, true, false
 	o.cancel, o.stopCh, o.stopOnce, o.workerDone = cancel, make(chan struct{}), &sync.Once{}, make(chan struct{})
-	stopCh, done := o.stopCh, o.workerDone
+	stopCh, done, exit := o.stopCh, o.workerDone, o.workerExit
 	go func() {
 		defer close(done)
 		select {
 		case <-runCtx.Done():
 		case <-stopCh:
+		}
+		if exit != nil {
+			exit.Block(runCtx)
 		}
 	}()
 	return nil
@@ -106,7 +115,9 @@ func (o *refowner) Stop(ctx context.Context) error {
 			<-o.hang
 			return nil
 		case abortStopDropsCause:
-			o.finishLocked()
+			// The defect under test is only the dropped cause. Keep the worker for a later Stop, as
+			// the clean path does: marking the owner stopped here without joining would also let the
+			// next Stop return nil ahead of the worker's exit (issue #40).
 			o.mu.Unlock()
 			return nil
 		}
@@ -244,6 +255,45 @@ func TestEachFailpointTripsExactlyItsCheck(t *testing.T) {
 				}
 				finalize(t, o)
 			}
+		})
+	}
+}
+
+// TestAbortStopThenFinishJoinsWorker forces issue #40's interleaving instead of waiting for the
+// scheduler to produce it: after CheckAbortStopPreservesCause, the worker has been signalled but is
+// held before it closes workerDone, and finalize's Stop runs. In a synctest bubble, Wait returns only
+// once every goroutine is durably blocked, so whether that Stop has returned is decided by the
+// double's code, not by timing: a Stop that returned while the worker is still held claimed a join
+// it never made. stopReturnsNilWithWorkerRunning is excluded because that is its declared defect.
+func TestAbortStopThenFinishJoinsWorker(t *testing.T) {
+	for _, fp := range []failpoint{
+		clean, acceptNilCtx, ignorePreCancelled, startTwiceAllowed, stopBeforeStartPanics,
+		stopIgnoresCallerDeadline, secondStopReruns, restartPromisedButRefused, abortStopDropsCause,
+	} {
+		t.Run("fp="+string(fp), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				o := newRefowner(t, fp, false)
+				o.workerExit = probe.NewCallback()
+				defer o.workerExit.Release()
+				_ = CheckAbortStopPreservesCause(t.Context(), o) // its verdict is the matrix's concern
+				<-o.workerExit.Entered()
+
+				finished := make(chan error, 1)
+				go func() { finished <- finish(t.Context(), o) }()
+				synctest.Wait()
+				select {
+				case <-finished:
+					if obs := o.Observe(); len(obs.Unresolved) > 0 {
+						t.Fatalf("finalize's Stop returned while the owner still holds %v", obs.Unresolved)
+					}
+				default: // blocked on the worker's join, as it must be
+				}
+				o.workerExit.Release()
+				<-finished
+				if obs := o.Observe(); len(obs.Unresolved) > 0 {
+					t.Errorf("after the worker exited, the owner still holds %v", obs.Unresolved)
+				}
+			})
 		})
 	}
 }

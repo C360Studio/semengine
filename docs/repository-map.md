@@ -13,8 +13,10 @@ not a task tracker and not a description of the tree.
   admission ledger during SETUP 03 and 04.
 - **No runtime binary, no release, no tag.**
 - **No consumer lane** in the gate graph; it joins `task verify` when its workload exists.
-- **No ADRs and no active OpenSpec change.** SETUP 02 and SETUP 03B are archived; SETUP 02's four capability specs
-  are the current truth under `openspec/specs/`, and `docs/contract.md` states the tier-0 contract 03B approved.
+- **No ADRs and no active OpenSpec change.** SETUP 02, SETUP 03B and the Slice 04A design are archived; SETUP 02's
+  four capability specs are the current truth under `openspec/specs/`, and `docs/contract.md` states the tier-0
+  contract 03B approved. The Slice 04A design names seven implementation changes (`setup-04a-01-floor` to
+  `setup-04a-07-substrate-seam`); none is open yet.
 
 ## Present
 
@@ -45,6 +47,7 @@ not a task tracker and not a description of the tree.
 | `openspec/specs/{integration-test-runner,nats-fixture,lifecycle-suite,harness-boundaries}/` | Current truth, synced by the SETUP 02 archive |
 | `openspec/changes/archive/2026-09-30-setup-02-isolated-harness/` | The archived SETUP 02 change (PR #13, epic #6) |
 | `openspec/changes/archive/2026-10-01-setup-03b-contract-boundary/` | The archived SETUP 03B change (PR #21, epic #8), with its three inventory passes (`inventory.md`, `inventory-2-scope.md`, `inventory-3-pass3.md`) |
+| `openspec/changes/archive/2026-10-01-setup-04a-foundation/` | The archived Slice 04A design (PR #47, epic #9): the inventory, the seven-change cut (`design.md` D2), the harness extension for change 1 (D3–D5) and the owner's rulings |
 | `docs/admission-ledger.yaml` | The admission ledger: twelve entries at full SemStreams SHAs, checked by `task ledger:check` |
 | `LICENSE` | MIT, Copyright (c) 2025 C360 |
 | `package-lock.json`, `.gitignore` | npm lockfile for the pinned tools; ignore rules for Go, Node, editors, coverage |
@@ -75,10 +78,14 @@ There is no `/tickets` state and no handoff document; each question has one home
 - PR #12 (SETUP 01) merged as `819c461`; #5 stays open for the Codex-to-Claude pickup demonstration.
 - PR #13 (SETUP 02) merged as `34c9dc6` and #6 is closed; its SETUP 02 rulings are on
   [issue #6](https://github.com/C360Studio/semengine/issues/6#issuecomment-5921046663).
-- Draft PR #21 claims #8 (`Addresses #8`) on `claude/setup-03b-contract`; its change is committed from `a120165`.
-  The approved boundary it records: tier 0 is 65 packages / 140,842 non-test lines at the pin (`design.md` D4); the
+- PR #21 (SETUP 03B) merged as `9286055` and #8 is closed; its rulings are on #8. The approved boundary it records:
+  tier 0 is 65 packages / 140,842 non-test lines at the pin (`design.md` D4); the
   critical coverage list is `design.md` D10 (task `cover:check` scope as each package is ported); the twelve port
   refactors are issues #25–#36 (label `class:port-refactor`, milestone Slice 04A).
+- The Slice 04A design (PR #47) is accepted: owner rulings of 2026-10-01 on #9 fix the seven-change chain, the
+  rule that each package lands with its tests, ledger rows and repair proofs green, and #24's re-scope to the pin's
+  composition points. The first implementation change is `setup-04a-01-floor` (16 packages, the transport and
+  message floor plus the harness extension), claimed on its own draft PR when it starts.
 - Owner rulings of 2026-09-30 on the plan are recorded at
   [PR #1 comment 5917717356](https://github.com/C360Studio/semengine/pull/1#issuecomment-5917717356).
 

@@ -53,7 +53,8 @@ directories attached as artifacts, not committed.
       (unit profile), and passes on the branch
 - [x] 5.3 Local and CI `task verify` durations with the new steps (E2) and the observed dynamic host-port range (E4)
       are recorded on PR #13 (local `test:integration` 23–33 s, `task verify` about 60 s; CI `test:integration`
-      39 s on run 36793773808)
+      39 s on run 36793773808; dynamic host ports 55001–55307 on this macOS host and 32769–32790 on
+      `ubuntu-latest`, the Linux default range, adjacent to SemStreams' 34xxx e2e bands)
 
 ## 6. Pass evidence (recorded on PR #13, artifacts attached)
 

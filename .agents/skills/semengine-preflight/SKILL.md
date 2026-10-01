@@ -56,7 +56,8 @@ Select by what the diff changes:
 - **Go behavior:** `task test:unit`, `task vet`, `task lint`, `task build`; focused tests first during iteration.
 - **Docker-backed behavior (`internal/harness/natsfixture`, `scripts/test-integration.sh`):**
   `task test:integration -- <pkgs>` to focus, then `task cover:check`; never `go test` directly, since the fixture
-  refuses to start without the runner's admission token.
+  refuses to start without the runner's admission token. `SEMENGINE_NATS_IMAGE` is accepted only with a non-empty
+  `SEMENGINE_NATS_IMAGE_OVERRIDE_REASON` and is recorded in the run's evidence.
 - **`docs/admission-ledger.yaml`:** `task ledger:check`.
 - **Dependencies or `go.mod`:** `task tidy:check` and `task vuln` in addition to the Go gates.
 - **Before any implementation push:** `task verify`.

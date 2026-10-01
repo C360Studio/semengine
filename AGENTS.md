@@ -69,7 +69,7 @@ turn a "review only" row into a failing command should.
 | No new surface without a present consumer; unused surface is left behind when porting | developer contract § Before adding anything new; architect contract § Extraction slices | review only |
 | A change that establishes a reusable primitive lists who should adopt it | architect contract § The adoption sweep | review only |
 | A boundary change is checked against the stated purpose | architect contract § Intent check | review only |
-| Tests use an independent oracle and are shown able to fail | `docs/testing.md`; developer and reviewer contracts, test fidelity | each structural guard has a paired `...Sensitivity` test; elsewhere review only |
+| Tests use an independent oracle and are shown able to fail | `docs/testing.md`; developer and reviewer contracts, test fidelity | the structural guards carry paired sensitivity tests (`internal/harness/contract`); elsewhere review only |
 | Sister repositories are read-only and inventoried only as scoped | `docs/inventory-scope.md` | review only |
 
 ## Where state lives

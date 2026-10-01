@@ -28,7 +28,7 @@ func (f *Fixture) Stop(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("natsfixture: Stop with a nil context")
 	}
-	if err := f.acquire(ctx); err != nil {
+	if err := f.acquire(ctx, "stop"); err != nil {
 		return fmt.Errorf("natsfixture: stop not begun: waiting for a Start or Stop in progress: %w", err)
 	}
 	defer f.release()
@@ -38,9 +38,7 @@ func (f *Fixture) Stop(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return fmt.Errorf("natsfixture: stop not begun: %w", err)
 	}
-	f.mu.Lock()
-	f.stopping = true
-	f.mu.Unlock()
+	f.beginStop()
 	sr := stopRecord{}
 	err := f.stop(ctx, &sr)
 	sr.Result = "ok"

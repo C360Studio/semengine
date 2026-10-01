@@ -84,7 +84,8 @@ and consumer. Start, Stop, and resource creation SHALL wait for one another only
 
 #### Scenario: No creation once Stop begins
 
-- **WHEN** CreateStream, CreateKeyValue, or Consume is called after Stop has begun
+- **WHEN** CreateStream, CreateKeyValue, or Consume is called after Stop has begun, or is already waiting for the
+  fixture when Stop begins
 - **THEN** it returns an error at once, creates nothing, and Stop's nil return still means nothing is owned
 
 #### Scenario: Stop waits for a running Start only under its own context

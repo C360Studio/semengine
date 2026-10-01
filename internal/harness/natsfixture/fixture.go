@@ -51,7 +51,8 @@ type Fixture struct {
 	mu sync.Mutex // guards everything below; never held across a Docker or NATS call
 
 	used        bool
-	stopping    bool // set when Stop begins on owned resources; creation is refused from then on
+	stopping    bool          // set when Stop begins on owned resources; creation is refused from then on
+	stopBegun   chan struct{} // closed with stopping set, so a creation queued for the slot is refused too
 	adm         admission
 	container   testcontainers.Container
 	containerID string
@@ -62,6 +63,7 @@ type Fixture struct {
 	streams     []string
 	buckets     []string
 	calls       map[string]int
+	slotWaits   map[string]int // operations that found the slot taken, by kind; read by tests
 	rec         record
 }
 
@@ -91,7 +93,7 @@ func (f *Fixture) Start(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := f.acquire(ctx); err != nil {
+	if err := f.acquire(ctx, "start"); err != nil {
 		return err
 	}
 	defer f.release()
@@ -140,20 +142,57 @@ func (f *Fixture) Start(ctx context.Context) error {
 	return errors.Join(failures...)
 }
 
-// acquire takes the operation slot, or returns ctx's error if ctx ends first.
-func (f *Fixture) acquire(ctx context.Context) error {
+// acquire takes the operation slot for an operation of kind who, or returns ctx's error if ctx
+// ends first. A creation also gives up when Stop begins: it may be queued behind Stop, and Stop may
+// be waiting to join the very handler that is creating.
+func (f *Fixture) acquire(ctx context.Context, who string) error {
 	f.mu.Lock()
 	if f.op == nil {
 		f.op = make(chan struct{}, 1)
 	}
+	if f.stopBegun == nil {
+		f.stopBegun = make(chan struct{})
+	}
 	op := f.op
+	var stopBegun <-chan struct{} // nil, never ready, except for creations
+	if who == "create" {
+		stopBegun = f.stopBegun
+	}
+	f.mu.Unlock()
+	select {
+	case op <- struct{}{}:
+		return nil
+	default:
+	}
+	f.mu.Lock()
+	if f.slotWaits == nil {
+		f.slotWaits = map[string]int{}
+	}
+	f.slotWaits[who]++
 	f.mu.Unlock()
 	select {
 	case op <- struct{}{}:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
+	case <-stopBegun:
+		return errStopping
 	}
+}
+
+// beginStop marks the fixture stopping and wakes every creation queued for the slot. The caller
+// holds the slot.
+func (f *Fixture) beginStop() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.stopping {
+		return
+	}
+	f.stopping = true
+	if f.stopBegun == nil {
+		f.stopBegun = make(chan struct{})
+	}
+	close(f.stopBegun)
 }
 
 func (f *Fixture) release() { <-f.op }
@@ -376,7 +415,7 @@ func (f *Fixture) beginCreate(ctx context.Context) (jetstream.JetStream, string,
 	if _, _, err := f.started(); err != nil {
 		return nil, "", err
 	}
-	if err := f.acquire(ctx); err != nil {
+	if err := f.acquire(ctx, "create"); err != nil {
 		return nil, "", err
 	}
 	js, id, err := f.started() // Stop may have begun and ended while this waited

@@ -8,7 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/testcontainers/testcontainers-go"
 )
 
 // startedWith returns a fixture that looks started to its resource methods, with dependency
@@ -178,5 +180,79 @@ func TestConnectHonoursItsContext(t *testing.T) {
 	}
 	if elapsed := time.Since(began); elapsed > dialTimeout/2 {
 		t.Fatalf("connect returned after %s; its context ended at 100ms", elapsed)
+	}
+}
+
+// R2 (round 2): a creation already queued for the operation slot when Stop takes it is refused
+// as soon as Stop begins, not after Stop finishes. A handler creating while Stop waits to join it
+// would otherwise wait for the slot Stop holds, until Stop's context ends.
+//
+// Order is made deterministic: a first creation holds the slot; Stop queues for it; a second
+// creation, which passes the not-stopping check because Stop has not begun, queues behind Stop.
+// Stop then takes the slot and parks in container termination; the second creation must return
+// while Stop is still parked.
+func TestQueuedCreationRefusedWhenStopBegins(t *testing.T) {
+	f := startedWith(t)
+	f.container = struct{ testcontainers.Container }{}
+	firstIn, firstOut := make(chan struct{}), make(chan struct{})
+	f.deps.createStream = func(context.Context, jetstream.JetStream, jetstream.StreamConfig) (jetstream.Stream, error) {
+		close(firstIn)
+		<-firstOut
+		return nil, nil
+	}
+	stopParked, stopGo := make(chan struct{}), make(chan struct{})
+	f.deps.terminate = func(context.Context, testcontainers.Container) error {
+		close(stopParked)
+		<-stopGo
+		return nil
+	}
+	f.deps.absent = func(context.Context, string) (bool, error) { return true, nil }
+
+	first := make(chan error, 1)
+	go func() { _, err := f.CreateStream(t.Context(), "first"); first <- err }()
+	<-firstIn
+	stopped := make(chan error, 1)
+	go func() { stopped <- f.Stop(t.Context()) }()
+	awaitWaiting(t, f, "stop")
+	second := make(chan error, 1)
+	go func() { _, err := f.CreateStream(t.Context(), "second"); second <- err }()
+	awaitWaiting(t, f, "create")
+	close(firstOut)
+	if err := <-first; err != nil {
+		t.Fatalf("first CreateStream: %v", err)
+	}
+	<-stopParked
+
+	// A watchdog for the failure, not a synchronisation.
+	watchdog := time.NewTimer(5 * time.Second)
+	defer watchdog.Stop()
+	select {
+	case err := <-second:
+		if err == nil {
+			t.Fatal("a creation queued behind Stop succeeded")
+		}
+	case <-watchdog.C:
+		t.Fatal("a creation queued behind Stop was not refused while Stop ran")
+	}
+	close(stopGo)
+	if err := <-stopped; err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if rem := f.remaining(); len(rem) != 0 {
+		t.Fatalf("remaining after Stop: %v", rem)
+	}
+}
+
+// awaitWaiting waits until an operation of kind who is queued for the operation slot.
+func awaitWaiting(t *testing.T, f *Fixture, who string) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if _, err := probe.Await(ctx, func(context.Context) (int, error) {
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		return f.slotWaits[who], nil
+	}, func(n int) bool { return n > 0 }); err != nil {
+		t.Fatalf("no %s queued for the operation slot: %v", who, err)
 	}
 }

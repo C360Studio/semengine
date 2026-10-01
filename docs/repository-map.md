@@ -56,7 +56,7 @@ There is no `/tickets` state and no handoff document; each question has one home
 | Question | Home |
 | --- | --- |
 | What is wanted, is it decided | GitHub issues; rulings are issue comments |
-| What gates a release | A GitHub milestone: `Setup: foundation through contract`, then one per provisional tier |
+| What gates a release | A GitHub milestone: `Setup: foundation through contract`, then one per provisional slice |
 | Who has claimed it | A draft PR: `Closes #n` for a leaf issue, `Addresses #n` for an epic |
 | Target state, tasks, holds | The OpenSpec change inside that PR; `task spec:queue` reads the holds |
 | What is true now | `openspec/specs/`, verified against code |
@@ -66,9 +66,11 @@ There is no `/tickets` state and no handoff document; each question has one home
 
 - Issues #2 and #3 (ADR-106 relationship, registration cut) are ruled, as Q2 and Q1 on #8; #4 is closed, ruled "tier".
 - Issues #5 to #11 are the SETUP epics: #5 Foundation, #6 Isolated harness, #7 Pinned consumer baseline, #8 Contract
-  and boundary, #9 Tier 0 graph foundation, #10 Tier 1 lexical retrieval, #11 Tier 2 neural retrieval.
-- Milestones: `Setup: foundation through contract` (#2 to #8), `Tier 0: graph foundation (provisional)` (#9),
-  `Tier 1: lexical retrieval (provisional)` (#10), `Tier 2: neural retrieval (provisional)` (#11).
+  and boundary, #9 Slice 04A tier-0 graph foundation, #10 Slice 04B tier-0 lexical (BM25 completes tier 0), #11 Slice
+  04C tier-1 neural (embedding provider).
+- Milestones: `Setup: foundation through contract` (#2 to #8), `Slice 04A: tier-0 graph foundation (provisional)` (#9),
+  `Slice 04B: tier-0 lexical — BM25 completes tier 0 (provisional)` (#10), `Slice 04C: tier-1 neural — embedding
+  provider (provisional)` (#11).
 - PR #12 (SETUP 01) merged as `819c461`; #5 stays open for the Codex-to-Claude pickup demonstration.
 - PR #13 (SETUP 02) merged as `34c9dc6` and #6 is closed; its SETUP 02 rulings are on
   [issue #6](https://github.com/C360Studio/semengine/issues/6#issuecomment-5921046663).

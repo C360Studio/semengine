@@ -1,12 +1,13 @@
 # Tasks: setup-03b-contract-boundary
 
 Each task names the outcome that proves it, its role (architect, developer, reviewer, technical-writer, owner) and its
-gate. The owner ruled Q1–Q13 on #8 (comment 5929656835), the level name on #4 (comment 5929716018), Q14–Q18
-(comment 5929902986), the tier-0 scope for both halves (proposal 5930855353, approved by 5930898291; it releases the
-Q14–Q18 holds and re-rules Q11) and the operator surface (5931143569), all on 2026-10-01. Each task that waited on a
-ruling states the ruling it follows. An unchecked task that says "hold" is one `task spec:queue` reports as blocked:
-1.7, 2.3 and 2.11 (H1, BM25's tier), 2.13 (M1, `composition/cli`) and 4.9 (unknown action types). No task asserts a
-post-merge fact. "Reviewer verdict" means the independent reviewer's verdict on this change recorded on PR #21.
+gate. The owner ruled Q1–Q13 on #8 (comment 5929656835), the level name on #4 (comment 5929716018), Q14–Q18 (comment
+5929902986), the tier-0 scope for both halves (proposal 5930855353, approved by 5930898291; it releases the Q14–Q18
+holds and re-rules Q11), the operator surface (5931143569), and BM25's tier, `composition/cli`, the tier model and the
+extended critical list (5932313950), all on 2026-10-01. Each task that waited on a ruling states the ruling it follows.
+An unchecked task that says "hold" is one `task spec:queue` reports as blocked: 4.9 (unknown action types). No task
+asserts a post-merge fact. "Reviewer verdict" means the independent reviewer's verdict on this change recorded on
+PR #21.
 
 ## 1. Rulings recorded
 
@@ -31,12 +32,11 @@ post-merge fact. "Reviewer verdict" means the independent reviewer's verdict on 
 - [ ] 1.6 Follows ruling Q8 (#8): SemConnect is a first-wave tier-0 consumer. D9 records the ruling and the matrix
       carries the ADR-102 d5 and ADR-104 identity rows as Keep with harness proving tests, plus the spatial,
       temporal and hierarchy rows SemConnect exercises. Role: technical-writer. Gate: reviewer verdict.
-- [ ] 1.7 Hold: held on #8 — BM25 at tier 0 (set H minus the openai embedder file) vs
-      tier 1 (set I, 62 / 134,356) (owner).
-      Otherwise follows the Q8 re-measure (pass3 §2): D4 and D9 record the ruled tier-0 ceiling in place of
-      67 / 129,063, with the delta table against 65 / 126,926 and 67 / 129,063 and the eight kept packages that still
-      reach a cut package; the SemConnect ledger rows follow it. Role: owner (ruling), technical-writer (record).
-      Gate: reviewer verdict.
+- [ ] 1.7 Follows ruling 5932313950 (BM25 at tier 0) and the Q8 re-measure (pass3 §2): D4 and D9 record tier 0 as
+      65 / 140,842 (pass3 set H less `graph/embedding/http_embedder.go`, plus `composition/cli`; measured by the
+      writer, confirmed by the architect at Slice 04A's first `go list`) in place of 67 / 129,063, with the command, the
+      delta table against 65 / 126,926 and 67 / 129,063, and the kept packages that still reach a cut package; the
+      SemConnect ledger rows follow it. Role: technical-writer (record), architect (confirm). Gate: reviewer verdict.
 - [ ] 1.8 Follows ruling Q14 (5929902986): admission by owner mandate. `design.md` opens with the owner's statement
       of purpose and the two-halves admission rule as `AGENTS.md` on `main` states it, and every matrix row names its
       half, its tier and its qualifying consumer. Role: technical-writer. Gate: reviewer verdict.
@@ -61,14 +61,16 @@ post-merge fact. "Reviewer verdict" means the independent reviewer's verdict on 
       tier-0 set and recorded in `design.md` with each Tier-1-only package's disposition; the 39 / 23 / 26 figures
       were measured on the first-pass 65 (A7). Role: architect (measure), technical-writer (record).
       Gate: reviewer verdict.
-- [ ] 2.3 Hold: held on #8 — BM25 at tier 0 (set H minus the openai embedder file) vs
-      tier 1 (set I, 62 / 134,356) (owner).
-      Otherwise follows rulings Q14 and the Q8 re-measure: the tier-0 definition (D4) is recorded with the
-      reproduction commands (pass3 §2.5) the developer re-runs as `go list -deps` once the seam exists.
-      Role: owner (ruling), technical-writer (record). Gate: reviewer verdict.
-- [ ] 2.4 Follows #8 ruling Q9. The critical package list (D10) is recorded in the preflight skill's gate table as the
-      scope of `task cover:check` once those packages exist; no placeholder package is added to satisfy the gate.
-      Role: technical-writer. Gate: `task docs:check` and reviewer verdict.
+- [ ] 2.3 Follows rulings Q14, 5932313950 (tier model) and the Q8 re-measure: the tier-0 definition (D3 tier model, D4
+      ceiling 65 / 140,842) is recorded with the reproduction commands (pass3 §2.5 and D4's block) the developer
+      re-runs as `go list -deps` once the seam exists. Role: technical-writer. Gate: reviewer verdict.
+- [ ] 2.4 Follows rulings Q9 and 5932313950 (critical list extended). D10 records the Q9 list plus `processor/rule`,
+      `pkg/lifecycle`, `graph/clustering`, `processor/graph-clustering`, `pkg/graphview`, `output/websocket`,
+      `internal/maxdelivery`, `graph/inference`, `graph/structural`, `graph/embedding` (BM25 half) and
+      `composition/cli`, and the preflight skill's gate table names the list as the scope of `task cover:check`; the
+      `cover:check` targets themselves are set by the 04A change that ports each package (no Taskfile change here), and
+      no placeholder package is added. Role: technical-writer (record), developer (targets, in 04A). Gate: `task
+      docs:check` and reviewer verdict here; `task cover:check` in each 04A change.
 - [ ] 2.5 Follows #8 ruling Q4 (port-refactor tracking). The `docs/admission-ledger.yaml` header documents the
       `class:port-refactor` convention (D4a): an `adapt` row whose `contract` cites its matrix row, whose
       `proving_tests` names the proving test, and whose `known_risks` names the class, within the ten fields T-B7
@@ -81,8 +83,9 @@ post-merge fact. "Reviewer verdict" means the independent reviewer's verdict on 
 - [ ] 2.7 Follows rulings Q4 and Q11 (re-ruled) and the provider re-partition. `gateway/graph-gateway` and `gateway`
       carry `defer-exclude` rows naming their re-admission condition and SemConnect's compile-only `gateway.Gateway`
       assertion (`gateway/cs-api/component.go:198` at `dff12657`) as consumer work. The behind-the-seam rows record
-      the dormant carry through the first green tier-0 extraction and the capability seam as the last task of 04A,
-      exit condition "tier 0 compiles without the behind-the-seam packages". Role: technical-writer.
+      the dormant carry of `graph/llm`, `model/wire` and `graph/embedding/http_embedder.go` through Slice 04A's first
+      green extraction and the capability seam as the last task of 04A, exit condition "tier 0 compiles without the
+      behind-the-seam code". Role: technical-writer.
       Gate: `task ledger:check` and reviewer verdict.
 - [ ] 2.8 Follows ruling Q15. The agentic-domain separations carry rows naming their re-admission condition: not
       porting `service/milestone_service.go`, dropping the agentic label predicates from `graph-query`, and the
@@ -96,19 +99,17 @@ post-merge fact. "Reviewer verdict" means the independent reviewer's verdict on 
       `processor/graph-ingest/component.go:739` and the five doc-comment sites, each with the per-package call it
       should name, and its proving test (the refusal text names a symbol that exists in the SemEngine tree).
       Role: technical-writer. Gate: `task ledger:check` and reviewer verdict.
-- [ ] 2.11 Hold: held on #8 — BM25 at tier 0 (set H minus the openai embedder file) vs
-      tier 1 (set I, 62 / 134,356) (owner).
-      Otherwise follows the provider re-partition: the `graph/embedding` and `processor/graph-embedding` rows record
-      the ruled tier and the seam position of the OpenAI client file. Role: owner (ruling), technical-writer (rows).
-      Gate: `task ledger:check` and reviewer verdict.
+- [ ] 2.11 Follows ruling 5932313950 (BM25 at tier 0). The `graph/embedding` and `processor/graph-embedding` rows
+      record tier 0 for the BM25 half and the file-level split of `http_embedder.go` (220 lines, the only `go-openai`
+      importer; caller `processor/graph-embedding/component.go:944`) behind the tier-1 seam as a `class:port-refactor`.
+      Role: technical-writer. Gate: `task ledger:check` and reviewer verdict.
 - [ ] 2.12 Follows ruling Q17 (5929902986). D16 records internal-by-default, the measured consumer import sets
       (semteams' unmeasured), and the three DX gates (compiled example consumer in CI, package-doc lint on exported
       packages, the metric-name drift test), each named against the 04A change that first exports a package.
       Role: technical-writer. Gate: reviewer verdict.
-- [ ] 2.13 Hold: held on #8 — admit composition/cli at tier 0 (+1 pkg, +151 lines) vs defer the CLI row (owner).
-      Then the operator-surface composition row, D4 and D15 record the ruling, and `composition/cli` has a ledger
-      row if admitted. Role: owner (ruling), technical-writer (record). Gate: `task ledger:check` and reviewer
-      verdict.
+- [ ] 2.13 Follows ruling 5932313950 (`composition/cli` admitted at tier 0). `docs/admission-ledger.yaml` carries a
+      `composition/cli` row (151 lines, imports `component`, `composition`, `config`) with the operator-surface
+      composition row as its contract. Role: technical-writer. Gate: `task ledger:check` and reviewer verdict.
 - [x] 2.14 Follows #8 ruling Q9 (confirmation). The package that enforces ADR-102 d5 at the pin is named and is on the
       critical list: `processor/graph-ingest` (`authority_gate.go`, `mutation_runtime.go` emit `authority_foreign`).
       Evidence: change review round 1 on PR #21, finding N5; recorded in D10. Role: reviewer (evidence),
@@ -184,8 +185,8 @@ post-merge fact. "Reviewer verdict" means the independent reviewer's verdict on 
 - [ ] 4.5 Follows #8 ruling Q12. Ruling-4 lifecycle debt: SS#1411 (`component`), SS#1415 (`config`), SS#1218
       (`service`, `pkg/errs`), SS#1220 (`service`), SS#1417 (ported tests), SS#1145/#1147 (lifecycle-suite floor)
       each appear in the relevant ledger row's `known_risks` with the repair shape from D11; the tier-0 gate binds
-      the figures D11 recomputes from A5 (56 entries / 5 copies under H1 option (b), 69 / 6 under option (a)), and
-      the nine entering packages' figures are recorded as unmeasured. Role: technical-writer.
+      the figures D11 recomputes from A5 (69 entries / 6 copies), and the ten entering packages' figures are recorded
+      as unmeasured. Role: technical-writer.
       Gate: `task ledger:check` and reviewer verdict.
 - [ ] 4.6 Follows rulings Q13 and Q18. With the graph-ingest repair rows (#15, #20, settlement), SemStreams PR #1437's
       `processor/graph-ingest` half is recorded as a ledger-row candidate citing the PR head SHA and its proving test;
@@ -226,11 +227,11 @@ post-merge fact. "Reviewer verdict" means the independent reviewer's verdict on 
 
 ## 7. Bound for SETUP 04A (recorded here, performed before or by the 04A changes)
 
-- [ ] 7.1 SETUP 02 harness extension: failpoint injection and a subprocess host for the process-kill and
-      broker-restart proving tests (`natsfixture` has `Stop` only). `design.md` records it as the first task of the
-      first 04A change, which owns it, and the matrix rows that need it (Recovery · file stream, Settlement, Entity
-      workflows) and the D11 settlement row reference it. Role: architect (scope here), developer (in 04A).
-      Gate: reviewer verdict here; `task test:integration` in 04A.
+- [ ] 7.1 SETUP 02 harness extension: failpoint injection and a subprocess host for the process-kill and broker-restart
+      proving tests (`natsfixture` has `Stop` only). `design.md` records it as the first task of the first Slice 04A
+      change, which owns it, and the matrix rows that need it (Recovery · file stream, Settlement, Entity workflows) and
+      the D11 settlement row reference it. Role: architect (scope here), developer (in 04A). Gate: reviewer verdict
+      here; `task test:integration` in 04A.
 - [ ] 7.2 File the `class:port-refactor` issues from D4a, one per known port refactor, each citing its matrix row and
       proving test, before any 04A change claims the work. Role: technical-writer. Gate: `gh issue list --label
       class:port-refactor` lists one issue per D4a item.

@@ -66,5 +66,5 @@ directories attached as artifacts, not committed.
       records and logs captured
 - [x] 6.4 Persistent data survives, both directions: KV entries round-trip unchanged, and a read-only evaluation of
       every SemStreams destroyer filter lists no SemEngine resource
-- [ ] 6.5 `docs/repository-map.md`, the `docs/provenance.md` status, and the preflight skill gate table describe the
+- [x] 6.5 `docs/repository-map.md`, the `docs/provenance.md` status, and the preflight skill gate table describe the
       implemented harness; the change is archived with its specs synced in the last commit

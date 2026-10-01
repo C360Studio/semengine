@@ -13,8 +13,8 @@ not a task tracker and not a description of the tree.
   admission ledger during SETUP 03 and 04.
 - **No runtime binary, no release, no tag.**
 - **No consumer lane** in the gate graph; it joins `task verify` when its workload exists.
-- **No ADRs and no OpenSpec specs.** `openspec/specs/` is empty until the SETUP 02 change is archived; the one active
-  change is listed under "Present".
+- **No ADRs and no active OpenSpec change.** The SETUP 02 change is archived; its four capability specs are the
+  current truth under `openspec/specs/`.
 
 ## Present
 
@@ -40,8 +40,8 @@ not a task tracker and not a description of the tree.
 | `.github/` | CI workflow (jobs `verify` and `required`) and Dependabot configuration |
 | `package.json`, `.nvmrc`, `.task-version` | Pins for the Node-based OpenSpec and markdownlint tools and Task |
 | `.markdownlint.yaml`, `.markdownlint-cli2.yaml` | Markdown lint configuration behind `task docs:check` |
-| `openspec/` | OpenSpec configuration; `specs/` is empty |
-| `openspec/changes/setup-02-isolated-harness/` | The one active change: SETUP 02 (draft PR #13, epic #6) |
+| `openspec/specs/{integration-test-runner,nats-fixture,lifecycle-suite,harness-boundaries}/` | Current truth, synced by the SETUP 02 archive |
+| `openspec/changes/archive/2026-09-30-setup-02-isolated-harness/` | The archived SETUP 02 change (PR #13, epic #6) |
 | `docs/admission-ledger.yaml` | The admission ledger: twelve entries at full SemStreams SHAs, checked by `task ledger:check` |
 | `LICENSE` | MIT, Copyright (c) 2025 C360 |
 | `package-lock.json`, `.gitignore` | npm lockfile for the pinned tools; ignore rules for Go, Node, editors, coverage |
@@ -57,7 +57,7 @@ There is no `/tickets` state and no handoff document; each question has one home
 | What gates a release | A GitHub milestone: `Setup: foundation through contract`, then one per provisional tier |
 | Who has claimed it | A draft PR: `Closes #n` for a leaf issue, `Addresses #n` for an epic |
 | Target state, tasks, holds | The OpenSpec change inside that PR; `task spec:queue` reads the holds |
-| What is true now | `openspec/specs/` (none yet), verified against code |
+| What is true now | `openspec/specs/`, verified against code |
 | Why | ADRs, or the owner's ruling comment |
 
 ## Current GitHub state

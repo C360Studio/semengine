@@ -55,7 +55,7 @@ The tasks are done in the order written, from top to bottom. Five notes on that 
       assertion passes.
 - [x] 4.3 Each failpoint's subtest of the matrix runs inside `synctest.Test`. The output of
       `go test -race -count=20 ./internal/harness/lifecycletest/` is recorded and shows under 5 s (41.5 s before).
-- [ ] 4.4 A contract test runs a copy of `scripts/cover-check.sh` in a throwaway root with a fake `go` that prints a
+- [x] 4.4 A contract test runs a copy of `scripts/cover-check.sh` in a throwaway root with a fake `go` that prints a
       `--- FAIL` line and exits 1. It is written first and fails on the current script, which prints nothing;
       then the script prints the test output and the test passes.
 

@@ -69,9 +69,16 @@ tasks:
       - scripts/gopkgs.sh go tool govulncheck ./...
 
   test:unit:
-    desc: Run unit tests with the race detector
+    desc: Run unit tests once with the race detector at one CPU (the integration run covers every CPU)
     cmds:
-      - scripts/gopkgs.sh go test -race -count=1 ./...
+      - scripts/gopkgs.sh go test -race -count=1 -cpu 1 ./...
+
+  test:repeat:
+    desc: Run unit tests five times at one CPU without the race detector, shuffled; -- <pkgs> to focus
+    cmds:
+      # The count, the CPU setting and the absence of -race are pinned by the merge-gate spec
+      # (contract test TestUnitInvocationsPinned); one CPU without -race is the setting that found #40.
+      - 'scripts/gopkgs.sh go test -count=5 -cpu 1 -shuffle=on {{.CLI_ARGS | default "./..."}}'
 
   test:integration:
     desc: Run Docker-backed tests through the admitted runner (host lock, process group, leak check); -- <pkgs> to focus

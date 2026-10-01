@@ -80,7 +80,7 @@ The tasks are done in the order written, from top to bottom. Five notes on that 
       it is. Its sensitivity test names a lowered count, a missing `-cpu 1`, `-race` added to the repeat step, a
       missing step, and a step placed after `test:repeat`. Its output on the tree as it is, run locally, is recorded.
       It is pushed with task 6.2 and not before.
-- [ ] 6.2 `test:unit` and `test:repeat` carry the command lines of the `merge-gate` spec, `scripts/verify.sh` runs
+- [x] 6.2 `test:unit` and `test:repeat` carry the command lines of the `merge-gate` spec, `scripts/verify.sh` runs
       `test:repeat` last, and the test of 6.1 passes. Any existing test the new step breaks is fixed in this
       change; `task verify` passes on the branch and its step timings are recorded.
 - [ ] 6.3 On a scratch copy of the branch with the #40 defect restored (`o.finishLocked()` back in the

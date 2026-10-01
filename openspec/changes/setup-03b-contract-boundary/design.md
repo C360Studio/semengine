@@ -395,6 +395,13 @@ observed one (boot refusal; owner-side fence and classification; owner-side tomb
 from compile-time-silent to compile-time-explicit under D1. Seam 2 (Lens SPI) and seam 6 (durability) stay as
 documented contracts with their invariants in spec (I7).
 
+## Open questions
+
+- Unruled, from the step-back review on #8
+  ([comment 5929756463](https://github.com/C360Studio/semengine/issues/8#issuecomment-5929756463)): **Q14** (are
+  rules and business workflows engine-owned capabilities, at which tier, qualified by what workload) holds tasks 2.1
+  and 2.3; **Q15** (SemConnect's delta re-measured at the semconnect#74 head) holds tasks 1.7 and 2.1.
+
 ## Declared costs
 
 - D4(ii) is a refactor of two 5–7K-line processors to introduce an optional-capability seam; it is the single

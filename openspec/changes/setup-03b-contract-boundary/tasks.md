@@ -22,22 +22,26 @@ An unchecked task that says "hold" is one `task spec:queue` reports as blocked. 
       `ExpectedRevision` through the typed client with a loud `revision-conflict`; the narrow commit-classification
       repair with lookup and fence deferred; SemConnect's move to the typed client and its classifier mapping on its
       ledger row.
-- [ ] 1.6 Follows ruling Q8 (#8): SemConnect is a first-wave tier-0 consumer. D9 records the re-measured ceiling
-      (67 / 129,063) and the matrix carries the ADR-102 d5 and ADR-104 identity rows as Keep with harness proving
-      tests.
+- [ ] 1.6 Follows ruling Q8 (#8): SemConnect is a first-wave tier-0 consumer. D9 records the ruling and the matrix
+      carries the ADR-102 d5 and ADR-104 identity rows as Keep with harness proving tests.
+- [ ] 1.7 Hold: held on #8 Q15. SemConnect's import delta is re-measured at the semconnect#74 head (the branch also
+      imports `processor/graph-index-spatial` and `processor/graph-index-temporal`); D9 records the resulting
+      ceiling in place of 67 / 129,063, and the SemConnect ledger rows follow it.
 
 ## 2. Boundary and port set
 
-- [ ] 2.1 Follows #8 rulings Q4 and Q11. `docs/admission-ledger.yaml` holds one row per package in the ruled port set,
+- [ ] 2.1 Hold: held on #8 Q14 and Q15 (dispositions of the agentic-group, `pkg/lifecycle`, `component`, `service`,
+      and SemConnect rows); otherwise follows rulings Q4 and Q11. `docs/admission-ledger.yaml` holds one row per
+      package in the ruled port set,
       each with the full pin SHA `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`, disposition per D4, and the proving test
       from the matrix; `task ledger:check` passes.
 - [ ] 2.2 Follows #8 ruling Q2. The ledger cross-check against `release/tier1-packages.txt` is recorded in `design.md`
       (39 overlap, 23 Tier-1-only, 26 set-only at the pin) with each Tier-1-only package's disposition.
-- [ ] 2.3 Follows #8 ruling Q4. The tier-0 closure target (D4, about 49 packages) is recorded with the command the
-      developer re-runs after the file-level adapts, and the sixteen separated packages carry `defer-exclude` rows
-      naming their re-admission condition. The six higher-tier graph libraries' rows record the dormant carry through
-      the first green tier-0 extraction and the capability seam as the last task of 04A, exit condition "tier 0
-      compiles without the six libraries".
+- [ ] 2.3 Hold: held on #8 Q14. The tier-0 closure target (D4, about 49 packages) is recorded with the command the
+      developer re-runs after the file-level adapts, and the agentic-group and `pkg/lifecycle` separations (dropping
+      `component.Dependencies.ToolRegistry`, not porting `service/rule_pack_bind.go` or
+      `service/milestone_service.go`, removing the `LifecycleManager` field and calls) carry rows naming their
+      re-admission condition.
 - [ ] 2.4 Follows #8 ruling Q9. The critical package list (D10) is recorded in `design.md` and in the preflight skill's
       gate table as the scope of `task cover:check` once those packages exist; no placeholder package is added to
       satisfy the gate. The package that enforces ADR-102 d5 at the pin is named, with its file and line, and is
@@ -51,6 +55,10 @@ An unchecked task that says "hold" is one `task spec:queue` reports as blocked. 
       any Go file in the module that imports `github.com/c360studio/semstreams` or a path under it, naming the file
       and the import; it is shown rejecting a fixture file with that import before it passes on the tree, and it
       runs in `task verify`.
+- [ ] 2.7 Follows #8 rulings Q4 and Q11. `gateway/graph-gateway` and `gateway` carry `defer-exclude` rows naming
+      their re-admission condition. The six higher-tier graph libraries' rows record the dormant carry through the
+      first green tier-0 extraction and the capability seam as the last task of 04A, exit condition "tier 0 compiles
+      without the six libraries".
 
 ## 3. Retained-contract matrix
 

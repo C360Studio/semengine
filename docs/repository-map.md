@@ -20,7 +20,8 @@ not a task tracker and not a description of the tree.
 
 | Path | What it is |
 | --- | --- |
-| `docs/setup-plan.md` | The approved plan (merged in PR #1, commit 3ae51c5) |
+| `docs/setup-plan.md` | The approved plan (merged in PR #1, commit 3ae51c5), amended in place for the tier model (#8) |
+| `docs/contract.md` | What SemEngine guarantees: the contract slice 04A implements, written for a new developer |
 | `docs/repository-map.md` | This file |
 | `docs/provenance.md` | License and provenance requirements for ported code |
 | `docs/inventory-scope.md` | Which repositories agents may read, for what question; starter consumer set (ruled on #22) |

@@ -85,6 +85,11 @@ tasks:
     cmds:
       - scripts/test-integration.sh {{.CLI_ARGS}}
 
+  merge:check:
+    desc: Fail while a class:flake issue is open that PR <n> does not close, or main's rules lack the up-to-date setting; -- <n>. Reads GitHub, so not in verify
+    cmds:
+      - scripts/merge-check.sh {{.CLI_ARGS}}
+
   cover:check:
     desc: Fail below 80% coverage on natsfixture (last integration run) and lifecycletest, probe (unit run)
     cmds:

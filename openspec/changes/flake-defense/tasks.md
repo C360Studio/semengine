@@ -93,7 +93,7 @@ The tasks are done in the order written, from top to bottom. Five notes on that 
 
 - [ ] 7.1 The label `class:flake` exists. Its description says it is for a test or check that passes and fails on the
       same tree, and not for a network fetch that did not answer. `gh label list` output is recorded.
-- [ ] 7.2 A contract test runs a copy of `scripts/merge-check.sh` in a throwaway root with a fake `gh`. It is
+- [x] 7.2 A contract test runs a copy of `scripts/merge-check.sh` in a throwaway root with a fake `gh`. It is
       written first, so it fails until the script exists. Its cases are the scenarios of the `merge-gate`
       requirements "Known-flake check" and "Up-to-date rule", one case each. Then the script and
       `task merge:check` exist and the test passes.

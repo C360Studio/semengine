@@ -60,7 +60,7 @@ The tasks are done in the order written, from top to bottom. Four notes on that 
 - [x] 4.4 A contract test runs a copy of `scripts/cover-check.sh` in a throwaway root with a fake `go` that prints a
       `--- FAIL` line and exits 1. It is written first and fails on the current script, which prints nothing;
       then the script prints the test output and the test passes.
-- [ ] 4.5 Flake #49: `TestAwaitReportsLastObservation` in `internal/harness/probe` no longer depends on how many
+- [x] 4.5 Flake #49: `TestAwaitReportsLastObservation` in `internal/harness/probe` no longer depends on how many
       observations fit in a stretch of wall-clock time. A reproduction that fails on demand, not by repetition, is
       written first and fails on the tree as it is; then the fix, with no retry, sleep, skip or loosened assertion.
       The search for the same shape in the package's tests is recorded with what it found. This pull request's

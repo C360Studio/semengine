@@ -83,7 +83,7 @@ The tasks are done in the order written, from top to bottom. Five notes on that 
 - [x] 6.2 `test:unit` and `test:repeat` carry the command lines of the `merge-gate` spec, `scripts/verify.sh` runs
       `test:repeat` last, and the test of 6.1 passes. Any existing test the new step breaks is fixed in this
       change; `task verify` passes on the branch and its step timings are recorded.
-- [ ] 6.3 On a scratch copy of the branch with the #40 defect restored (`o.finishLocked()` back in the
+- [x] 6.3 On a scratch copy of the branch with the #40 defect restored (`o.finishLocked()` back in the
       `abortStopDropsCause` branch of `Stop`), `task test:repeat` exits non-zero naming
       `TestEachFailpointTripsExactlyItsCheck/abortStopDropsCause`. The output is recorded.
 - [ ] 6.4 The step timings printed by a CI run of this pull request that includes `test:repeat` are recorded, with

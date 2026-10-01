@@ -1,8 +1,6 @@
 module github.com/c360studio/semengine
 
-go 1.26.3
-
-toolchain go1.26.6
+go 1.26.6
 
 tool (
 	github.com/mgechev/revive

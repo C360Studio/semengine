@@ -77,6 +77,29 @@ Revision 1's options stand as the record; the owner or orchestrator ruled each.
 All Go code lives under `internal/harness/`. "Test-only" means imported only from `_test.go` files or other
 `internal/harness/*` packages, enforced by T-B1. `go.mod` gains `github.com/nats-io/nats.go`,
 `github.com/testcontainers/testcontainers-go`, and `gopkg.in/yaml.v3` (ledger check). No testify, no nats-server.
+As built: nats.go v1.54.0; testcontainers-go v0.44.0, not the planned v0.40.0, whose docker/docker dependency carries
+reachable advisories (accepted on review); `golang.org/x/tools` becomes direct for T-B2. The single Go pin moves from
+`go 1.26.3` to `go 1.26.6` with no `toolchain` line (ruling A6): no dependency's `go` directive needs more than 1.26.0,
+but under 1.26.3 `task vuln` reports seven reachable standard-library vulnerabilities (net/url, crypto/tls,
+encoding/asn1, net/textproto, crypto/x509, net/http) fixed by 1.26.6, and CI's `setup-go` reads the version from
+`go.mod`.
+
+Admitted exported surface (ruling A1; all test-only by T-B1, consumed at birth by the harness's own tests and T-B5;
+none of it is consumer-facing engine API, which is reviewed at 03B):
+
+- `natsfixture.New`, `Start`, `Stop`, `Name`: the fixture lifecycle and run-unique names.
+- `natsfixture.URL`: the client URL on a Docker-assigned port, for tests that dial a connection of their own.
+- `natsfixture.JetStream`: JetStream on the fixture's connection; there is no accessor for the connection itself,
+  which `Stop` closes.
+- `natsfixture.CreateStream`, `CreateKeyValue`, `Consume`: owned, bounded resources that `Stop` removes, and a
+  consumer whose handlers `Stop` joins before cancelling them.
+- `natsfixture.Error`, `Phase*`: the typed failure of a phase or resource operation.
+- `natsfixture.ErrNotAdmitted`, `ErrAlreadyUsed`: refusal before Docker, and a second `Start`.
+- `natsfixture.CheckName`: the one name rule, shared with contract test T-B5.
+- `lifecycletest.Owner`, `Observer`, `Observation`: the owner contract, with `Observe` required at compile time.
+- `lifecycletest.Run`, `Factory`, `Promise`, `Check*`: the floor checks and their driver.
+- `probe.Callback` (`NewCallback`), `ObservedContext` (`Observe`, `ObserveAndHold`), `Await`: join and context probes,
+  and the bounded poll.
 
 - **`internal/harness/natsfixture`** (test-only; ledger L1 adapt, L2 defer-exclude for the knobs, L3 adapt for the
   unexported rollback helper). One disposable NATS container per test: admission check, phased start, run-unique

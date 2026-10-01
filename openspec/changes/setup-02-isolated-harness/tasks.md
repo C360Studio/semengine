@@ -52,7 +52,8 @@ directories attached as artifacts, not committed.
 - [x] 5.2 `task cover:check` fails below 80% on `natsfixture` (integration profile), `lifecycletest`, and `probe`
       (unit profile), and passes on the branch
 - [x] 5.3 Local and CI `task verify` durations with the new steps (E2) and the observed dynamic host-port range (E4)
-      are recorded on PR #13
+      are recorded on PR #13 (local `test:integration` 23–33 s, `task verify` about 60 s; CI `test:integration`
+      39 s on run 36793773808)
 
 ## 6. Pass evidence (recorded on PR #13, artifacts attached)
 

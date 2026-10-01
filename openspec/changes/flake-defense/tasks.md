@@ -76,7 +76,7 @@ The tasks are done in the order written, from top to bottom. Five notes on that 
 
 ## 6. Varied and repeated unit runs
 
-- [ ] 6.1 A contract test that reads `Taskfile.yml` and `scripts/verify.sh` is written first and fails on the tree as
+- [x] 6.1 A contract test that reads `Taskfile.yml` and `scripts/verify.sh` is written first and fails on the tree as
       it is. Its sensitivity test names a lowered count, a missing `-cpu 1`, `-race` added to the repeat step, a
       missing step, and a step placed after `test:repeat`. Its output on the tree as it is, run locally, is recorded.
       It is pushed with task 6.2 and not before.

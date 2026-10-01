@@ -47,7 +47,7 @@ The tasks are done in the order written, from top to bottom. Five notes on that 
 
 ## 4. Harness tests made cheap and complete
 
-- [ ] 4.1 The failpoint table's completeness check, written first, rejects a planted table with a hole. Then one
+- [x] 4.1 The failpoint table's completeness check, written first, rejects a planted table with a hole. Then one
       table in `refowner_test.go` declares every failpoint with its expected check, and both
       `TestEachFailpointTripsExactlyItsCheck` and `TestAbortStopThenFinishJoinsWorker` take their cases from it.
 - [ ] 4.2 `finalize` asserts "nothing unresolved" for every failpoint, with no exemption. The assertion is written

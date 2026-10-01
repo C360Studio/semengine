@@ -3,6 +3,13 @@ package lifecycletest
 import (
 	"context"
 	"errors"
+	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -221,25 +228,136 @@ func TestChecksPassAgainstCleanDouble(t *testing.T) {
 	}
 }
 
+// failpointCase declares one failpoint with the check that must detect it and the promise the
+// double is built under. failpointTable is the one list every sensitivity test reads.
+type failpointCase struct {
+	fp      failpoint
+	want    string // the name of the entry in checks that must return an error
+	promise Promise
+}
+
+var failpointTable = []failpointCase{
+	{acceptNilCtx, "NilContextsRefused", Promise{}},
+	{ignorePreCancelled, "PreCancelledStartRefused", Promise{}},
+	{stopBeforeStartPanics, "StopBeforeStartSafe", Promise{}},
+	{stopReturnsNilWithWorkerRunning, "ControlledStopUnderLiveStartAuthority", Promise{}},
+	{stopIgnoresCallerDeadline, "AbortStopPreservesCause", Promise{}},
+	{abortStopDropsCause, "AbortStopPreservesCause", Promise{}},
+	{secondStopReruns, "RepeatedStopIsNoOp", Promise{}},
+	{startTwiceAllowed, "SecondStartRefusedOrRestartCycle", Promise{}},
+	{restartPromisedButRefused, "SecondStartRefusedOrRestartCycle", Promise{Restart: true}},
+}
+
+// failpointGaps reports every declared failpoint that the table does not map to exactly one check
+// named in cs.
+func failpointGaps(declared []failpoint, table []failpointCase, cs []check) []string {
+	rows := map[failpoint]int{}
+	var gaps []string
+	for _, tc := range table {
+		rows[tc.fp]++
+		switch {
+		case !slices.Contains(declared, tc.fp):
+			gaps = append(gaps, fmt.Sprintf("%s: in the table but not declared", tc.fp))
+		case tc.want == "":
+			gaps = append(gaps, fmt.Sprintf("%s: no expected check", tc.fp))
+		case !slices.ContainsFunc(cs, func(c check) bool { return c.name == tc.want }):
+			gaps = append(gaps, fmt.Sprintf("%s: expected check %q is not in checks", tc.fp, tc.want))
+		}
+	}
+	for _, fp := range declared {
+		switch rows[fp] {
+		case 0:
+			gaps = append(gaps, fmt.Sprintf("%s: declared with no table row", fp))
+		case 1:
+		default:
+			gaps = append(gaps, fmt.Sprintf("%s: %d table rows", fp, rows[fp]))
+		}
+	}
+	return gaps
+}
+
+// declaredFailpoints reads the failpoint constants from this file's source, so a constant added
+// without a table row is seen. The clean value ("") is not a failpoint.
+func declaredFailpoints(t *testing.T) []failpoint {
+	t.Helper()
+	f, err := parser.ParseFile(token.NewFileSet(), "refowner_test.go", nil, 0)
+	if err != nil {
+		t.Fatalf("parse refowner_test.go: %v", err)
+	}
+	var out []failpoint
+	for _, decl := range f.Decls {
+		gd, ok := decl.(*ast.GenDecl)
+		if !ok || gd.Tok != token.CONST {
+			continue
+		}
+		for _, spec := range gd.Specs {
+			vs := spec.(*ast.ValueSpec)
+			if id, ok := vs.Type.(*ast.Ident); !ok || id.Name != "failpoint" {
+				continue
+			}
+			for i, name := range vs.Names {
+				lit, ok := vs.Values[i].(*ast.BasicLit)
+				if !ok {
+					t.Fatalf("failpoint %s: value is not a string literal", name.Name)
+				}
+				v, err := strconv.Unquote(lit.Value)
+				if err != nil {
+					t.Fatalf("failpoint %s: %v", name.Name, err)
+				}
+				if v != "" {
+					out = append(out, failpoint(v))
+				}
+			}
+		}
+	}
+	if len(out) == 0 {
+		t.Fatal("refowner_test.go declares no failpoint constant")
+	}
+	return out
+}
+
+// TestFailpointTableComplete requires every declared failpoint to map to one check, and shows the
+// requirement can fail: each planted table has one hole and the hole's failpoint must be named.
+func TestFailpointTableComplete(t *testing.T) {
+	declared := declaredFailpoints(t)
+	if gaps := failpointGaps(declared, failpointTable, checks); len(gaps) > 0 {
+		t.Errorf("failpoint table has gaps: %v", gaps)
+	}
+
+	without := func(fp failpoint) []failpointCase {
+		var out []failpointCase
+		for _, tc := range failpointTable {
+			if tc.fp != fp {
+				out = append(out, tc)
+			}
+		}
+		return out
+	}
+	with := func(row failpointCase) []failpointCase {
+		return append(without(row.fp), row)
+	}
+	for name, planted := range map[string]struct {
+		table []failpointCase
+		hole  failpoint
+	}{
+		"row missing":        {without(secondStopReruns), secondStopReruns},
+		"no expected check":  {with(failpointCase{fp: abortStopDropsCause}), abortStopDropsCause},
+		"unknown check":      {with(failpointCase{fp: acceptNilCtx, want: "NoSuchCheck"}), acceptNilCtx},
+		"declared twice":     {append(slices.Clone(failpointTable), failpointCase{fp: ignorePreCancelled, want: "NilContextsRefused"}), ignorePreCancelled},
+		"row never declared": {append(slices.Clone(failpointTable), failpointCase{fp: "undeclared", want: "NilContextsRefused"}), "undeclared"},
+	} {
+		gaps := failpointGaps(declared, planted.table, checks)
+		if !slices.ContainsFunc(gaps, func(g string) bool { return strings.Contains(g, string(planted.hole)) }) {
+			t.Errorf("planted table (%s): gaps %v do not name %s", name, gaps, planted.hole)
+		}
+	}
+}
+
 // TestEachFailpointTripsExactlyItsCheck is the sensitivity matrix (lifecycle-suite › "Suite detects
 // each violation"): with one failpoint enabled, the mapped check returns an error and every other
 // check returns nil.
 func TestEachFailpointTripsExactlyItsCheck(t *testing.T) {
-	for _, tc := range []struct {
-		fp      failpoint
-		want    string
-		promise Promise
-	}{
-		{acceptNilCtx, "NilContextsRefused", Promise{}},
-		{ignorePreCancelled, "PreCancelledStartRefused", Promise{}},
-		{stopBeforeStartPanics, "StopBeforeStartSafe", Promise{}},
-		{stopReturnsNilWithWorkerRunning, "ControlledStopUnderLiveStartAuthority", Promise{}},
-		{stopIgnoresCallerDeadline, "AbortStopPreservesCause", Promise{}},
-		{abortStopDropsCause, "AbortStopPreservesCause", Promise{}},
-		{secondStopReruns, "RepeatedStopIsNoOp", Promise{}},
-		{startTwiceAllowed, "SecondStartRefusedOrRestartCycle", Promise{}},
-		{restartPromisedButRefused, "SecondStartRefusedOrRestartCycle", Promise{Restart: true}},
-	} {
+	for _, tc := range failpointTable {
 		t.Run(string(tc.fp), func(t *testing.T) {
 			for _, c := range checks {
 				// The double is as restartable as the promise says; only a failpoint may break it.
@@ -264,12 +382,17 @@ func TestEachFailpointTripsExactlyItsCheck(t *testing.T) {
 // held before it closes workerDone, and finalize's Stop runs. In a synctest bubble, Wait returns only
 // once every goroutine is durably blocked, so whether that Stop has returned is decided by the
 // double's code, not by timing: a Stop that returned while the worker is still held claimed a join
-// it never made. stopReturnsNilWithWorkerRunning is excluded because that is its declared defect.
+// it never made. The cases are the clean double and every row of failpointTable except those whose
+// expected check is ControlledStopUnderLiveStartAuthority: a Stop that returns nil ahead of its join
+// is that failpoint's declared defect.
 func TestAbortStopThenFinishJoinsWorker(t *testing.T) {
-	for _, fp := range []failpoint{
-		clean, acceptNilCtx, ignorePreCancelled, startTwiceAllowed, stopBeforeStartPanics,
-		stopIgnoresCallerDeadline, secondStopReruns, restartPromisedButRefused, abortStopDropsCause,
-	} {
+	fps := []failpoint{clean}
+	for _, tc := range failpointTable {
+		if tc.want != "ControlledStopUnderLiveStartAuthority" {
+			fps = append(fps, tc.fp)
+		}
+	}
+	for _, fp := range fps {
 		t.Run("fp="+string(fp), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				o := newRefowner(t, fp, false)

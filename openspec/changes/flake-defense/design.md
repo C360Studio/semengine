@@ -557,8 +557,9 @@ What reaches PR #48, and each slice after it, follows from this repository's own
 - `scripts/cover-check.sh` (D5) and `docs/admission-ledger.yaml` (D7's two rows): PR #48 adds cover targets and one
   ledger row per ported package.
 
-**Order.** The owner's direction to this session on 2026-10-01: "43 and then 44 need to be merged by us on ci green.
-then our sister can pick up up with tests tthat dont suck". So this change lands before the first ported code. Tasks
+**Order.** The owner's direction to this session on 2026-10-01, recorded on #42 (comment 5938232045): "43 and then 44
+need to be merged by us on ci green. then our sister can pick up up with tests tthat dont suck". So this change lands
+before the first ported code. Tasks
 5.1, 5.2 and 6.2 are written against a tree with no ported packages. If PR #48 lands first, those tasks do not repair
 ported files, because each slice repairs the files it ports (Q5): work on them stops and the conflict goes to the
 owner on #42 (`tasks.md`, the fifth note on order). A note on PR #48 (comment 5938176347) states the rules that reach

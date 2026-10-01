@@ -14,8 +14,8 @@ The tasks are done in the order written, from top to bottom. Five notes on that 
 - **One run is red on purpose:** the first run of the drill in task 7.6.
 - **One task finishes on the next task's push:** the last result of task 7.6 is read from the run that task 8.1's push
   starts.
-- **Before the first ported code.** By the owner's direction (2026-10-01, quoted in `design.md`, "Effects on slice
-  04A") this change lands before PR #48, the first slice that ports code. Tasks 5.1, 5.2 and 6.2 are written against a
+- **Before the first ported code.** By the owner's direction (2026-10-01, #42 comment 5938232045) this change lands
+  before PR #48, the first slice that ports code. Tasks 5.1, 5.2 and 6.2 are written against a
   tree with no ported packages. If PR #48 lands first, those tasks do not repair ported files, because each slice
   repairs the files it ports (ruling Q5): work on them stops and the conflict is put to the owner on #42.
 
@@ -36,13 +36,13 @@ The tasks are done in the order written, from top to bottom. Five notes on that 
 - [x] 2.3 Hold: owner ruling on #42. The owner ruled on questions Q1 to Q5 (comment 5937751262: Q1a (b), Q1b (a), Q2
       (a), Q3 (a), Q4 (a), Q5 (a)) and struck the slice 04A measurement (comment 5937807011). Both rulings are
       recorded in `design.md`, "The owner's ruling".
-- [ ] 2.4 Hold: check of the ruling pass. The reviewer's verdict on the third revision of `design.md`, the spec
+- [x] 2.4 Hold: check of the ruling pass. The reviewer's verdict on the third revision of `design.md`, the spec
       changes and this file, confined to the diff from `bba268a`, is a pass, recorded on PR #44 with the checked
       files' checksums.
 
 ## 3. Spec changes
 
-- [ ] 3.1 The spec changes under `specs/` say what was ruled (task 2.3) and have passed the check of task 2.4;
+- [x] 3.1 The spec changes under `specs/` say what was ruled (task 2.3) and have passed the check of task 2.4;
       `.openspec.yaml` does not set `skip_specs`; `task spec:check` passes.
 
 ## 4. Harness tests made cheap and complete

@@ -26,8 +26,9 @@ The expected value in an assertion must come from a source independent of the co
 external specification, or a small model written in the test. If the test computes its expectation with the same
 algorithm as the implementation, it repeats the implementation's mistakes and cannot fail.
 
-`FuzzCheckName` in `internal/harness/natsfixture/names_test.go` shows the pattern. Its oracle is a regular expression
-and a list of forbidden substrings declared in the test file, and it fails whenever `CheckName` disagrees with them.
+`FuzzCheckName` in `internal/harness/natsfixture/names_test.go` shows the pattern. Its oracle (the independent source
+of the expected answer) is a regular expression and a list of forbidden substrings declared in the test file, and it
+fails whenever `CheckName` disagrees with them.
 
 ## Pick the lowest level that can show it
 
@@ -74,8 +75,8 @@ The packages under `internal/harness/` are test-only; a contract test refuses an
   `Start(ctx)` returns only once JetStream answers. `Name(base)` produces run-unique resource names, and the fixture
   creates streams, buckets and consumers for you and records each one. `Stop` returns nil only after it has seen every
   owned resource, the connection and the container gone.
-- `probe` lets a test observe what a component did instead of guessing from timing. `Callback` exposes entered,
-  release and joined channels for a blocked callback; `ObservedContext` signals when code first checks
+- `probe` lets a test observe what a component did instead of guessing from timing. `Callback` exposes entered and
+  joined channels and a `Release` method for a blocked callback; `ObservedContext` signals when code first checks
   `ctx.Done()`; `Await` polls under your context and, on timeout, reports the last value and last error it saw.
 - `lifecycletest` is a minimum set of checks for anything with `Start(ctx)` and `Stop(ctx)`: nil contexts refused,
   cancelled start refused, stop before start safe, repeated stop is a no-op, and so on. `Run(t, factory, promise)`
@@ -89,8 +90,9 @@ The requirements behind each package are in `openspec/specs/nats-fixture/`, `lif
 
 `internal/harness/contract/` holds tests that scan the whole repository for rules such as: no production import of
 test helpers, no struct holding a `context.Context`, one pinned NATS image, no fixed broker addresses in tests, no
-broad Docker cleanup, and a valid admission ledger. Two more guards are shell scripts run by `task verify`:
-`task cleanup-roots:check` and `task cover:check`.
+broad Docker cleanup, and a well-formed admission ledger (`docs/admission-ledger.yaml`, the list of packages ported
+from SemStreams). Three more guards are shell scripts: `task cleanup-roots:check` and `task cover:check`, which
+`task verify` runs as their own steps, and the fixed-port guard `scripts/lint-test-ports.sh`, which `task lint` runs.
 
 ## Show that the test can fail
 
@@ -111,6 +113,8 @@ Do this when the change:
 
 - enforces a rule whose violation would silently lose or corrupt data, allow something forbidden, or leave work
   running after shutdown;
+- emits a signal (a log line and a metric) for a skip, drop or degraded path: remove the emit, and the test must
+  fail;
 - fixes a bug that the existing tests let through; or
 - has a specific wrong behavior that someone suspects the tests would miss.
 
@@ -119,11 +123,12 @@ what risk remains; the reviewer accepts or rejects that.
 
 The repository's own checks follow the same pattern, built into the tests:
 
-- Each Go guard in `internal/harness/contract/` has a paired `...Sensitivity` test (for example
+- The Go guards in `internal/harness/contract/` have paired `...Sensitivity` tests (for example
   `TestNoFixedAddressesInTests` and `TestNoFixedAddressesInTestsSensitivity`). The sensitivity test plants the
-  violation in a temporary tree and requires the guard to name the planted file and line, so a guard that fires for
-  the wrong reason, or matches nothing, fails. The two script guards are covered the same way by
-  `TestCleanupRootsCheckSensitivity` and `TestCoverCheckSensitivity`.
+  violation in a temporary tree and requires the guard to name the planted file and what it violates, so a guard that
+  fires for the wrong reason, or matches nothing, fails. Two script guards are covered the same way by
+  `TestCleanupRootsCheckSensitivity` and `TestCoverCheckSensitivity`; the fixed-port script has its own fixture test,
+  `scripts/lint-test-ports_fixture_test.sh`.
 - `TestEachFailpointTripsExactlyItsCheck` in `internal/harness/lifecycletest/` runs every lifecycle check against a
   reference component with one defect switched on at a time, and requires exactly the matching check to fail.
 
@@ -174,7 +179,8 @@ What the repository enforces today:
 - `task verify` prints the wall time of each step.
 
 When a test waits on asynchronous or external state and fails, its message should name the condition, the elapsed
-time, the attempts, the last value seen and the last error. `probe.Await` produces that message for you. The NATS
+time, the attempts, the last value seen and the last error. `probe.Await` reports all of those except the condition;
+name the condition yourself when you report its error. The NATS
 fixture writes a record of each start phase, the container logs on failure, and what it still held after `Stop` to
 the run's evidence directory (`.evidence/` by default). A test that uses randomness prints its seed.
 

@@ -195,9 +195,9 @@ The reasoning behind these rules, and the mutation procedure step by step, is in
 - Use ephemeral ports, explicit synchronization instead of sleeps, and no `t.Parallel()` around process-global state
   such as `slog.SetDefault`. Explain wall-clock assertions and give them realistic tolerance.
 - Run gates through the Task entrypoint: focused tests during iteration, then `task verify` before an implementation
-  push (`task test:unit`, `task vet`, `task lint`, `task build`, `task vuln`, `task tidy:check`, `task fmt:check`,
-  `task spec:check`). Integration and consumer lanes are added to the gate graph when their packages and workload
-  exist; until then there is no such gate to claim.
+  push; `scripts/verify.sh` lists the gates it runs, including `task test:integration` and `task cover:check`.
+  Consumer lanes are added to the gate graph when their packages and workload exist; until then there is no such
+  gate to claim.
 - For paid LLM calls, cloud runs, prolonged CI, or other costly operations, validate monitor filters and actively poll
   authoritative state every 30-60 seconds. Compare progress timestamps and abort promptly when a wedge is proven.
 

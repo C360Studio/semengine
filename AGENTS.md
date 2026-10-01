@@ -37,11 +37,12 @@ task docs:check   # markdownlint
 task tidy:check   # go.mod / go.sum tidy
 task build        # build
 task vet          # go vet
-task lint         # pinned revive
+task lint         # pinned revive, plus the fixed-port guard for tests
 task vuln         # pinned govulncheck
 task test:unit    # unit tests
-task verify       # spec:check docs:check fmt:check tidy:check build vet lint vuln test:unit, cheapest first;
-                  # fails if tracked files changed. Not included: doctor, fmt, spec:queue
+task verify       # spec:check docs:check fmt:check tidy:check cleanup-roots:check build vet lint vuln
+                  # ledger:check test:unit test:integration cover:check, cheapest first; fails if tracked
+                  # files changed. Not included: doctor, fmt, spec:queue
 ```
 
 Run `task verify` before every implementation push; CI runs the same commands in two jobs, `verify` and `required`.
@@ -51,17 +52,18 @@ Gate selection per diff: `.agents/skills/semengine-preflight/SKILL.md`.
 
 The linked file is the rule; this table is only its index. "Review only" means no command fails when the rule is
 broken. In SemStreams' record those are the rules that drifted: the defect class with a command behind it closed, and
-the classes policed by review prose stayed open. A change that adds a rule adds its row here, and a change that can
-turn a "review only" row into a failing command should.
+the classes policed by review prose stayed open. A change that adds a repository-wide rule or a rule of agent conduct
+(in a contract, the protocol, `.agents/README.md`, or this file) adds its row here; a capability spec's requirements
+are indexed by that spec, not here. A change that can turn a "review only" row into a failing command should.
 
 | Rule | Canonical home | Enforced by |
 | --- | --- | --- |
 | Production structs never retain `context.Context` | `.agents/contracts/semengine-developer.md` § Context ownership; `openspec/specs/harness-boundaries/spec.md` | `TestNoRetainedContext` (`task test:unit`) for struct fields; invented roots and nil defaults are review only |
-| Test cleanup never stops, closes or terminates under an unbounded context | `harness-boundaries` spec, "Bounded cleanup roots" | `task cleanup-roots:check` |
+| Test cleanup never stops, closes or terminates under an unbounded context | `harness-boundaries` spec, "Bounded cleanup roots" | `task cleanup-roots:check` for the call and the unbounded root on one line; other unbounded roots are review only |
 | Tests bind no fixed address or port | `harness-boundaries` spec, "No fixed addresses in tests" | `TestNoFixedAddressesInTests`; `scripts/lint-test-ports.sh` (`task lint`) |
 | Production code imports no test library and nothing under `internal/harness` | `harness-boundaries` spec, "Import graph" | `TestImportGraph` |
 | One NATS image pin; Docker cleanup touches only SemEngine-assigned names | `harness-boundaries` spec | `TestOneImagePin`, `TestSemEngineAssignedNames`, `TestNoBroadDockerCleanup` |
-| A ported package has an admission-ledger row | `.agents/contracts/semengine-architect.md` § Extraction slices; `docs/admission-ledger.yaml` | `task ledger:check` for the row and its schema; the row's content is review only |
+| A ported package has an admission-ledger row | `.agents/contracts/semengine-architect.md` § Extraction slices; `docs/admission-ledger.yaml` | `task ledger:check` for the schema of the rows present; that a ported package has a row, and what the row says, are review only |
 | Critical packages hold their coverage floor | `.agents/skills/semengine-preflight/SKILL.md` | `task cover:check` |
 | OpenSpec changes and specs are well formed | "Where state lives" below | `task spec:check` for document shape; truth against code is review only |
 | A merge needs CI green | `.agents/protocol.md` § Work lifecycle | CI job `required`; claim before work and close by merged PR are review only |
@@ -69,6 +71,9 @@ turn a "review only" row into a failing command should.
 | No new surface without a present consumer; unused surface is left behind when porting | developer contract § Before adding anything new; architect contract § Extraction slices | review only |
 | A change that establishes a reusable primitive lists who should adopt it | architect contract § The adoption sweep | review only |
 | A boundary change is checked against the stated purpose | architect contract § Intent check | review only |
+| A ported package brings its SemStreams guidance (contract sections and skills) with it | architect contract § Extraction slices | review only |
+| A new rule names what enforces it and adds its row to this table | reviewer contract § Port-time and pattern review | review only |
+| A brief to a role agent carries the owner's intent and the artifact itself, not a paraphrase | `.agents/README.md` § Orchestrating role agents | review only |
 | Tests use an independent oracle and are shown able to fail | `docs/testing.md`; developer and reviewer contracts, test fidelity | the structural guards carry paired sensitivity tests (`internal/harness/contract`); elsewhere review only |
 | Sister repositories are read-only and inventoried only as scoped | `docs/inventory-scope.md` | review only |
 

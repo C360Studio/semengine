@@ -55,11 +55,11 @@ Two obligations ride on every slice design in addition to its ledger row:
   list (a) exported symbols with no caller inside SemEngine and no symbol-level use by a consumer
   `docs/inventory-scope.md` names; (b) config fields that are parsed or validated but read by no behavior, and
   unknown keys that are accepted silently; (c) behavior a doc comment, README, or schema describes that no code
-  implements. Each item is dropped, moved under `internal/`, or kept with its reason on the ledger row. A config
-  field that stays has a test that fails when the field is ignored. A capability admitted by owner mandate is wanted
-  even before it has a caller: "no caller" answers whether something is wired, never whether it is wanted. These
-  were SemStreams' largest open defect classes on 2026-10-01: about 70 label hits across advertised-absent,
-  silent-noop-surface, phantom-config, and dead-surface, about 57 of them still open.
+  implements. Each item is dropped, moved under `internal/`, or kept with its reason stated in the slice design. A
+  config field that stays has a test that fails when the field is ignored. A capability admitted by owner mandate is
+  wanted even before it has a caller: "no caller" answers whether something is wired, never whether it is wanted.
+  These were SemStreams' largest open defect classes on 2026-10-01: 57 distinct issues labelled advertised-absent,
+  silent-noop-surface, phantom-config, or dead-surface, 45 of them still open.
 - **Guidance returns with the package.** SemStreams' developer and reviewer contracts carry package-specific
   sections (semantic identity and graph, storage and retention, NATS RPC, payload registry, state ownership and
   component wiring, orchestration) and skills (`entity-or-bucket`, `kv-or-stream`, `new-payload`,
@@ -117,7 +117,7 @@ it, and at the pin `processor/graph-ingest` still settles deliveries by hand.
 ### Intent check
 
 A boundary derived only from what the current consumers import can drop a capability the product exists for; the
-first SETUP 03B draft excluded the rule engine because neither first-wave consumer imports it. Whenever a design sets
+first SETUP 03B draft excluded the rule engine because neither SemSource nor SemConnect imports it. Whenever a design sets
 or moves a boundary (the port set, tier membership, a package exclusion, a capability deferral), the inventory
 carries one table: every capability `AGENTS.md` "What this is for" names, marked **admitted**, **deferred**, or
 **excluded**, each with the owner ruling that says so (issue and comment) or the words "no ruling". A deferred or

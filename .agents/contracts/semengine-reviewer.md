@@ -236,9 +236,10 @@ Runtime implementation and spec promotion remain blocked until the owner explici
 - **Check a boundary change against the stated purpose.** A design that sets or moves a boundary carries the intent
   table (architect contract, Intent check). A capability `AGENTS.md` names that is deferred or excluded with no
   owner ruling cited is `BLOCKING` at inventory review.
-- **A new rule names what enforces it.** A change that adds a rule to a contract, `AGENTS.md`, or a spec states the
-  command or test that fails when the rule is broken, or says "review only", and updates the `AGENTS.md` rule index
-  in the same change.
+- **A new rule names what enforces it.** A change that adds a repository-wide rule or a rule of agent conduct (in a
+  contract, the protocol, `.agents/README.md`, or `AGENTS.md`) states the command or test that fails when the rule is
+  broken, or says "review only", and adds its row to the `AGENTS.md` rule index in the same change. A capability
+  spec's requirements are indexed by that spec.
 
 ## Coverage review
 

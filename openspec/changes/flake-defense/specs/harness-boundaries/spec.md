@@ -14,6 +14,11 @@ construction.
 - **WHEN** a test file gains `time.Sleep(10 * time.Millisecond)`
 - **THEN** the contract test fails naming the file and line
 
+#### Scenario: Sleep added to harness code
+
+- **WHEN** a Go file under `internal/harness/` that is not a test file gains `time.Sleep(time.Second)`
+- **THEN** the contract test fails naming the file and line
+
 #### Scenario: Nothing scanned
 
 - **WHEN** the check is given a tree with no `*_test.go` file

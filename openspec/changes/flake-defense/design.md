@@ -1,18 +1,24 @@
 # Design: flake-defense
 
-This is the architect's design for issue #42, written after `inventory.md` in this folder (third revision, base
-`4d96860`, sha256 `a632315a30abec4cb56a32c86a7986d34e5d5ceb8352d640db8db6d389eba7b4`) received `INVENTORY PASS` on
-PR #44 (comment 5935397241). "Inventory 3.3" and similar point into that file, which is the evidence base and is not
-repeated here. Measurements marked "measured for this design" were taken on 2026-10-01 at `6c56846`, on a scratch
-copy outside the repository, on a 12-CPU host shared with other sessions (load average 1.5 to 3.1).
+This is the architect's design for issue #42, second revision. It was written after `inventory.md` in this folder
+(third revision, base `4d96860`, sha256 `a632315a30abec4cb56a32c86a7986d34e5d5ceb8352d640db8db6d389eba7b4`) received
+`INVENTORY PASS` on PR #44 (comment 5935397241). "Inventory 3.3" and similar point into that file, which is the
+evidence base and is not repeated here.
 
-This is a draft for independent design review and then the owner's ruling. Nothing in it is approved.
+The first revision (at `0f30b12`, sha256 `14ccfa9efae6b3debcb336209c494e499dabbb98a7786ba7dd49e4d5c41f26c1`) went to
+independent design review, which returned DESIGN CHANGES REQUESTED on PR #44 (comment 5936056866): two HIGH, eight
+MEDIUM and two NIT findings. This revision answers them. "Corrections after design review", near the end, lists
+each finding and where it was answered. The questions for the owner are the last section.
 
-Line pins are at `6c56846`. While this was written `main` moved to `9286055` (PR #21, merged 2026-10-01T16:22Z).
-That merge changed no script, workflow, Taskfile, Go file or spec. It moved lines in four files this design cites:
-the two ledger rows of D7 are at `docs/admission-ledger.yaml:149-171` on `main`, the sentence in
-`docs/provenance.md` at `:39-40`, the "repair before port" rule in `docs/setup-plan.md` at `:201-202`, and one row
-of the preflight table changed. No premise below changes; the pins are re-read when the branch takes `main` in.
+This is a draft for a re-check of those corrections and then the owner's ruling. Nothing in it is approved.
+
+Line pins are at `0f30b12`, which contains `main` at `9286055`. Every pin in this file was read again there for
+this revision. Measurements carry one of two marks:
+
+- **Measured for this design:** taken on 2026-10-01 at `6c56846`, on a scratch copy outside the repository, on a
+  12-CPU host shared with other sessions (load average 1.5 to 3.1).
+- **Measured for the correction pass:** taken on 2026-10-01 at `0f30b12`. These are reads of GitHub with `gh`, and
+  two test runs over a scratch copy of the SemStreams pin snapshot (see "Effects on slice 04A").
 
 Words used below:
 
@@ -20,6 +26,10 @@ Words used below:
 - **Re-roll:** getting a green after a red without fixing the cause, by re-running the same commit or by pushing
   another one.
 - **Known flake:** from this design on, an open GitHub issue labelled `class:flake`.
+- **Closing reference:** an issue GitHub will close when a pull request merges. It comes from a line such as
+  `Closes #40` in the pull request's description, or from a link made by hand in the pull request's side panel.
+- **Exemption:** what a pull request gets from the known-flake check by closing every open flake (D8).
+- **Exception:** a way past an open flake without a fix, granted by the owner (Q1b). The design recommends none.
 - **One-CPU run:** `go test -cpu 1`. The test binary gets one scheduler thread, so a goroutine that was just started
   does not run until the test's own goroutine blocks or yields.
 - **Bubble:** `testing/synctest` runs a function in an isolated group of goroutines with a fake clock. The clock jumps
@@ -69,9 +79,8 @@ Outside the five: fix `cover-check.sh`; network fetches in the required job are 
 **3. The session's reading of those words.** It is the session's, not a ruling: any waiver kept is narrow and has an
 end, and the default is no waiver; the unmeasured behaviours do not block the design and are stated as assumptions.
 
-This design needs one thing that only the reading supplies. The owner's words allow waivers to stay "if they help".
-The recommendation below keeps none. That goes further than the owner's words, so it is question Q1 and not a
-decision.
+The owner's words allow waivers to stay "if they help". The recommendation below keeps none. That goes further than
+the owner's words, so it is question Q1 and not a decision.
 
 ## Goals and non-goals
 
@@ -93,8 +102,8 @@ a baseline of accepted debt; changes to the Docker-backed invocation; fixing net
 | O0 Do nothing | nothing | every stage above; the #40 path repeats | none now; SemStreams' record is the later cost |
 | O1 Extend existing guards only | sleep, skip and build-tag checks beside the existing ones; `cover-check.sh` names failures; the port guard's message; the matrix test made instant | #40's shape has no text to match (inventory 7.4), so birth is unchanged for the largest class; a stale green and a merge past a known flake stay possible | three small tests, no CI time |
 | O2 O1 plus varied, repeated runs and the up-to-date rule | one-CPU runs with and without `-race`, five repetitions without it; the ruleset refuses a head behind `main` | the known-flake rule stays prose | about 90 s per run (measured); one more CI run per pull request for each merge that lands ahead of it |
-| O3 O2 plus a known-flake check in CI (recommended) | a CI job that fails while a `class:flake` issue is open, unless the pull request closes one; the ruleset compared with a record in the tree | a red that nobody files; re-rolls before filing; one already-green pull request per filing (see D8) | a second CI job that reads GitHub; a repository-wide stop while a flake is open |
-| O4 O3 with a merge queue in place of the up-to-date rule | checks run again at merge time on the merged result, so no pull request updates by hand and no already-green head slips past a new flake issue | nothing more than O3 | a `merge_group` trigger, a queue to operate, and more GitHub behaviour that nothing here has measured |
+| O3 O2 plus a known-flake check in CI (recommended) | a CI job that fails while a `class:flake` issue is open, unless the pull request closes every open one; the up-to-date rule read back from GitHub on every run | a red that nobody files; re-rolls before filing; a fix that is declared and not real; what changes after a run (see D8) | a second CI job that reads GitHub; a repository-wide stop while a flake is open |
+| O4 O3 with a merge queue in place of the up-to-date rule | checks run again at merge time on the merged result, so no pull request updates by hand and nothing that changed after the last run slips past | nothing more than O3 | a `merge_group` trigger, a queue to operate, and more GitHub behaviour that nothing here has measured |
 | O5 The five candidates as first filed in #42 | per-diff stress, a nightly run that files issues, a guard on re-runs with a waiver, a guard with accepted exceptions | see the direction above: a re-run guard would have seen nothing (no run was ever re-run); a baseline accepted the sleeps of a test that later flaked | a schedule the owner's SemStreams ruling reserves for security scanning; an automated writer; a waiver path |
 
 **Recommendation: O3.** It is the accepted direction with the mechanism for (b) filled in. O1 alone does not reach
@@ -135,7 +144,7 @@ dependence, which has no check today (inventory 2.2), a failing command for one 
   `-race` run at one CPU would double the step's cost for a setting that finds this class about one time in sixteen.
 - Premise, cost: measured for this design, the exact command on a scratch copy passes in 90.8 s; `runner` is 90.3 s
   of that (5 x 18.1 s) and the other four packages finish in under 14 s. `task verify` takes 61 s of steps in CI
-  today (run 36883858915).
+  today (run 36883858915). The projection for the ported code is in "Effects on slice 04A".
 - The count is one number in one place. Five is a cost choice, not a derived one: for a flake that fails a one-CPU
   execution with probability p, five executions catch it with probability 1 - (1 - p)^5, which is 97% at p = 0.5,
   67% at p = 0.2 and 23% at p = 0.05. The number rises when `runner`'s tests get cheaper; it is never lowered to buy
@@ -148,13 +157,15 @@ After D1 and D2, a test without a build tag runs seven times per `task verify` u
 ### D3 The invocations are pinned by a contract test
 
 A new test in `internal/harness/contract` parses `Taskfile.yml` and `scripts/verify.sh` and fails unless
-`test:unit` and `test:repeat` hold exactly the command lines of the spec and `verify.sh` lists both steps. This is
-the shape the integration argv already has (`runner_test.go:420` behind `integration-test-runner/spec.md:76`).
+`test:unit` and `test:repeat` hold exactly the command lines of the spec and `verify.sh` lists both steps with
+`test:repeat` last. This is the shape the integration argv already has (`runner_test.go:420` behind
+`integration-test-runner/spec.md:76`).
 
 - Premise: nothing pins the unit invocation today. `git grep -n -E 'count=1|"-race"' -- '*_test.go'` finds one
   line, `runner_test.go:420`, which is the integration argv.
 - Shown able to fail: its sensitivity test plants a Taskfile with the count lowered, one without `-cpu 1`, one with
-  `-race` added to the repeat step, and a `verify.sh` without the step, and requires each to be named.
+  `-race` added to the repeat step, a `verify.sh` without the step, and a `verify.sh` with the step not last, and
+  requires each to be named.
 - No test invokes the real `go` tool. SemStreams #1340 was a test that shelled out to the toolchain and blocked on
   its lock (inventory 6.1); the tests here read files or put a fake `go` or `gh` first on `PATH`, as the runner's
   contract tests do.
@@ -198,8 +209,8 @@ test and each failing when it scanned no test file:
 
 There is no baseline file, no allowlist and no inline marker. Premises: the tree has 0 sleeps, 1 skip
 (`runner_test.go:264`) and 1 build tag (`fixture_integration_test.go:1`), all measured for this design with
-`git grep`. The one skip is replaced: `deadPID` tries again with a fresh child a bounded number of times and then
-fails with the reason, so a pid that was reused is reported instead of hidden.
+`git grep` and read again at `0f30b12`. The one skip is replaced: `deadPID` tries again with a fresh child a bounded
+number of times and then fails with the reason, so a pid that was reused is reported instead of hidden.
 
 These are Go tests and not new scripts because the existing owner of "refuse a text shape in test files, proved by
 a planted violation" is the contract package; a new script would need a Taskfile step and a `verify.sh` entry for
@@ -209,7 +220,8 @@ shape, which has no text; D1 and D2 carry that.
 
 Ported SemStreams tests arrive later with their sleeps. With no exception list, such a file cannot land until it
 is repaired, which is what a `repair-before-port` row in the admission ledger already says in prose
-(`docs/setup-plan.md:180-181`).
+(`docs/setup-plan.md:201-202`). How many files that is, measured at the pin, is in "Effects on slice 04A", and
+whether the rule stands for them as written is Q5.
 
 ### D7 The port guard stops pointing at a race and loses its exemption marker
 
@@ -218,10 +230,11 @@ in a SemStreams file. SemStreams deleted that helper as a race in its #1120 (inv
 replaced by one that says to bind `127.0.0.1:0` and hand the listener itself to the code under test. The inline
 marker at `:41`, which exempts a line with no recorded reason and has no uses, is removed with its fixture case.
 
-- The two scripts stop being byte-identical to the pin. Their ledger rows (`docs/admission-ledger.yaml:144-166`)
-  change from `carry` to `adapt` and say what differs; `Taskfile.yml:52` and `docs/provenance.md:37-38` follow.
-  PR #21 added a rule to the ledger's header for port refactors that have a tracking issue. These two rows are a
-  repair of a carried script and have none; the developer writes them against the header as it stands on `main`.
+- The two scripts stop being byte-identical to the pin. Their ledger rows (`docs/admission-ledger.yaml:149-160`
+  and `:162-171`) change from `carry` to `adapt` and say what differs; `Taskfile.yml:52` and
+  `docs/provenance.md:39-40` follow. The ledger's header has a rule for port refactors that have a tracking issue
+  (`:20-23`). These two rows are a repair of a carried script and have none; the developer writes them against the
+  header as it stands.
 - Bind-then-close-then-bind stays a false negative of the guard and is added to its header list.
 - Check: a contract test plants a fixed port carrying the old marker and requires exit 1, the line named, and the
   new guidance. Shown able to fail: it is written first and fails on the current script, which exits 0 for a marked
@@ -233,27 +246,93 @@ The rule exists today as prose: "no known unfixed flake in a required job" (`.ag
 record it points to is a GitHub issue ("file it"). The design keeps that record and adds the reader it lacks.
 
 A new script, `scripts/merge-check.sh`, runs as a new CI job `merge-check` that `required` needs beside `verify`.
-On a pull-request run it:
 
-1. fails if the label `class:flake` does not exist (a filter that can match nothing is a broken filter);
-2. lists the open issues carrying it;
-3. passes if there are none;
-4. otherwise reads the pull request's closing references and passes, saying so, if it closes at least one of them;
-5. otherwise fails, naming each open flake issue.
+**Which run it is.** The script takes this from `GITHUB_EVENT_NAME`, never from whether a number was given.
 
-A read that fails ends the script with an error naming the read. It is never taken as "no known flake"; that is the
-rule `scripts/openspec-queue.sh:95-99` applies to its own reads. On a push to `main` the known-flake part does not
-run. The job is granted `issues: read` and `pull-requests: read`, and nothing else beyond `contents: read`.
+| `GITHUB_EVENT_NAME` | What the script does |
+|---|---|
+| `pull_request` | needs the pull request's number, which the workflow passes; with no number it exits non-zero |
+| `push` | says the known-flake part does not apply and checks only D9; pushes run for `main` alone (`ci.yml:4-5`) |
+| not set: someone runs `task merge:check -- <n>` | needs a number; with none it exits non-zero |
+| anything else | exits non-zero naming the event; a new trigger such as `merge_group` adds its rule here first |
+
+**What it does for pull request `n`.** Only the number comes from the event. Everything else is read from GitHub
+when the script runs, so a re-run sees the state of that moment.
+
+1. It fails if the label `class:flake` does not exist. Measured for the correction pass: with no such label,
+   `gh issue list --label class:flake --state open` prints `[]` and exits 0, so a deleted label would otherwise
+   read as "no known flake".
+2. It lists the open issues carrying the label. It asks for up to 100 and fails if it gets 100, because the list
+   may then be cut short.
+3. It passes if there are none.
+4. Otherwise it reads the pull request's closing references.
+5. It passes if **every** open flake issue is among them. Issues are compared by URL, so an issue with the same
+   number in another repository does not count. It prints one line per issue and raises a warning on the run (a
+   `::warning::` line), so the exemption shows on the pull request's checks without opening the log.
+6. Otherwise it fails, naming each open flake issue the pull request does not close.
+
+A read that fails, or an answer that is not the JSON list the script asked for, ends the script with an error
+naming the read. It is never taken as "no known flake"; that is the rule `scripts/openspec-queue.sh:95-99` applies
+to its own reads. The job is granted `issues: read` and `pull-requests: read`, and nothing else beyond
+`contents: read`.
+
+**What the exemption is.** A closing line is also how work is claimed here: a draft pull request with `Closes #n`,
+opened before the work (`.agents/protocol.md:16-17`). So the pull request that claims a flake is exempt from its
+first run, before it holds a fix; a draft cannot merge (documented, not measured; inventory 7.6.1). The check
+cannot tell a fix from a declaration, and no command can. When the pull request merges, GitHub closes the issues it
+names and the stop lifts for everyone. That is the Close step working as written (`.agents/protocol.md:54-55`), and
+it is also the way a closing line with no real fix behind it would lift the stop. The warning in step 5 makes every
+use visible. Two rules cover the rest, and both are review only:
+
+- A pull request that closes a `class:flake` issue shows the reproduction: the command, how often it failed before
+  the fix and how often after (the shape of task 6.3). The reviewer confirms it before the Land step.
+- A flake that comes back after its fix reopens the same issue, which puts the stop back.
+
+**Two flakes open at once.** A pull request that fixes one of them is red, and the job names the other. The two
+fixes land in one pull request, and the head that merges has run with both in place. The first revision exempted a
+pull request that closed "at least one". Under that rule a fix for one flake merged on a green that the other
+flake could have produced by chance, which is the re-roll this rule exists to stop, and retrying such a run was
+stopped by nothing. Whether "every" is right, given what it costs, is Q4.
+
+**When the check runs, and what it does not see.**
+
+- **Editing the description starts no run.** `ci.yml:7` names no event types, so GitHub's defaults apply: a run
+  starts when a pull request is opened, reopened or pushed to (documented, not measured; A11). A pull request whose
+  description gains the closing line stays red until its next push, or until its failed run is re-run.
+- **A result is a snapshot** of three things: the head, the issue list and the pull request's description. Two
+  changes after a green leave that green standing. A flake filed afterwards: with D9, and given A1, at most one
+  already-green, up-to-date pull request can merge per filing, because its merge puts every other pull request
+  behind `main`. A closing line removed afterwards: that pull request merges without closing the flake, the issue
+  stays open, and every pull request after it is stopped. Running `task merge:check -- <n>` immediately before
+  merging covers both; that rule is review only. O4 would close both.
+- **Pull requests on another base.** `ci.yml:6-7` runs CI whatever the base. GitHub fills closing references only
+  when the base is the default branch (documented, not measured; A10). So while a flake is open every stacked pull
+  request is red, and a flake fix cannot be delivered as a stacked pull request. The check is deliberately not
+  limited to pull requests whose base is `main`. Changing a pull request's base is an edit, which starts no run, so
+  a green earned on another base without the check would still stand after the pull request was pointed at
+  `main`. All four open pull requests have `main` as their base (measured for the correction pass).
+- **It acts only on a filed, labelled flake.** #40 was filed 24 minutes and three green heads after its first red
+  (inventory 3.4). Before filing, a re-roll by push or by re-run is stopped by nothing. The rule "a red you cannot
+  explain by your diff is filed before the next push" stays review only.
+- **One login.** Owner and agents share `cglusky` (inventory 4), so no command can tell who closed or unlabelled an
+  issue. Closing a flake issue without a merged fix already takes the owner's word on the issue
+  (`.agents/protocol.md:56-57`); that stays review only. GitHub's issue timeline records the event.
+- **A pull request runs its own copy** of the script, the workflow and their tests, so it can change them in its
+  own diff. That holds for every gate in `task verify` too. A change to `scripts/merge-check.sh`, to the
+  `merge-check` or `required` job, or to their tests is reviewed as a change to the merge gate; that rule is review
+  only. The same property is how a fix lands if GitHub changes the shape of an answer the script reads.
+- **The result depends on GitHub's state as well as the tree.** `merge:check` is therefore not part of
+  `task verify`, which stays a function of the tree and runs locally while a flake is being fixed.
 
 Why a reader of issues and not a record in the tree. The mechanisms considered:
 
 | Mechanism | Where the record lives | What it would take | Why it is not chosen |
 |---|---|---|---|
 | M0 Prose only | the issue | nothing | PR #39 was green and mergeable while #40 was open |
-| M1 An OpenSpec hold read by `spec:queue --strict` | `tasks.md` of an active change | an active change on `main`; a new marker class; the script's test, which was never ported | a hold stops its own change from landing; it is never on `main`, where another pull request could see it (`git ls-tree --name-only origin/main openspec/changes/`: `.gitkeep` and `archive`). `--strict` fails on any hold, including this change's own four |
+| M1 An OpenSpec hold read by `spec:queue --strict` | `tasks.md` of an active change | an active change on `main`; a new marker class; the script's test, which was never ported | a hold stops its own change from landing; it is never on `main`, where another pull request could see it (`git ls-tree --name-only origin/main openspec/changes/`: `.gitkeep` and `archive`). `--strict` fails on any hold, including this change's own |
 | M2 A `repair-before-port` row in the admission ledger | `docs/admission-ledger.yaml` | a row with no SemStreams source | the schema is provenance: every row needs a SemStreams `source_path` and `source_sha` (`ledger_test.go:102-110`), and nothing acts on a disposition (inventory 7.6.1). It stays the record for flakes inherited with ported code |
 | M3 A new file of known flakes read by `task verify` | a tracked file | a new record, a step, and a rule for the pull request that adds an entry | a second home for a fact whose home is an issue; the entry reaches other pull requests only after its own pull request passes CI on the flaky tree; that pull request is red by its own entry unless the check compares with the base |
-| M4 An issue label read by a CI job (chosen) | the issue | one label, one script, one job, two read permissions | see the limits below |
+| M4 An issue label read by a CI job (chosen) | the issue | one label, one script, one job, two read permissions | see the limits above |
 | M5 A second required check that nothing reports | the ruleset | a settings change per flake | it also blocks the fix; lifting it lets everything through; it leaves no reviewed record |
 | M6 M4 inside a merge queue | the issue | O4 | not now (see O4) |
 
@@ -262,53 +341,76 @@ Inventory 7.3 calls an OpenSpec hold "the closest existing durable record" of "t
 Neither can carry a flake in this repository's own tests without becoming a different thing, and the issue already
 is the record the rule names.
 
-Premises, measured for this design: no `class:flake` label exists (`gh label list`); nothing in `.github`,
+Premises. Measured for this design: no `class:flake` label exists (`gh label list`); nothing in `.github`,
 `scripts` or `Taskfile.yml` reads an issue or a pull request (`git grep -n -E 'issues:|pull-requests:|gh
-(issue|pr|api)'`: 0 hits); the issue list and the ruleset answer an unauthenticated read with HTTP 200, so the data
-is public; `gh pr view 44 --json closingIssuesReferences` returns `[42]` and PR #43 returns `[40]`.
+(issue|pr|api)'`: 0 hits); the issue list answers an unauthenticated read with HTTP 200, so the data is public.
+Measured for the correction pass: `gh pr view --json closingIssuesReferences` returns `[42]` for PR #44, `[37]`
+for PR #39 and `[]` for PR #47, whose description says "Addresses #9"; each entry carries `number`, `url` and
+`repository`.
 
-Limits of the mechanism, stated plainly:
+Check: a contract test runs the script from a throwaway root with a fake `gh` on `PATH`. Shown able to fail, by
+its cases:
 
-- **It acts only on a filed, labelled flake.** #40 was filed 24 minutes and three green heads after its first red
-  (inventory 3.4). Before filing, a re-roll by push or by re-run is stopped by nothing. The rule "a red you cannot
-  explain by your diff is filed before the next push" stays review only.
-- **A result belongs to a head.** A pull request that was green and up to date when the flake was filed keeps its
-  green. With D9, and given assumption A1, at most one such pull request can merge per filing: its merge moves
-  `main`, every other pull request is then behind, and their next run meets the check. Running
-  `task merge:check -- <n>` immediately before merging covers that one; that rule is review only.
-- **One login.** Owner and agents share `cglusky` (inventory 4), so no command can tell who closed or unlabelled an
-  issue. Closing a flake issue without a merged fix already takes the owner's word on the issue
-  (`.agents/protocol.md:56-57`); that stays review only. GitHub's issue timeline records the event.
-- **The result depends on GitHub's state as well as the tree.** `merge:check` is therefore not part of
-  `task verify`, which stays a function of the tree and runs locally while a flake is being fixed.
-- **Two flakes open at once.** Each fix's run can be hit by the other flake. Retrying that run is a re-roll past a
-  known flake, which no command stops. The fixes can share one pull request.
+- one open flake and a pull request that closes none (exit 1, the issue named);
+- the same with a closing pull request (exit 0, the exemption and the warning line printed);
+- two open flakes and a pull request that closes one (exit 1, the other named);
+- two open flakes and a pull request that closes both (exit 0);
+- a closing reference to the same number in another repository (exit 1);
+- no open flake (exit 0); a missing label (non-zero); a failing `gh` (non-zero, "unavailable"); a list of 100
+  (non-zero);
+- a `pull_request` event with no number, no event with no number, and an unknown event (each non-zero);
+- a `push` event (the known-flake part not applied).
 
-Check: a contract test runs the script from a throwaway root with a fake `gh` on `PATH`. Shown able to fail: its
-cases are an open flake and an unrelated pull request (exit 1, the issue named), the same with a closing pull
-request (exit 0, the exemption printed), no open flake (exit 0), a missing label (non-zero), a failing `gh` (non-zero,
-"unavailable"), and a push run (the known-flake part not applied). A second pinned-file test requires `required` to
-need both jobs in `.github/workflows/ci.yml`. The red path is exercised once against real GitHub before the change
-lands (task 7.6).
+A second pinned-file test reads `.github/workflows/ci.yml` and requires four things: `required` needs both jobs;
+the `merge-check` job's permissions are exactly the three reads; no job is granted a write; and the `verify` job's
+limit is 15 minutes (see "Not now"). Today nothing tests the workflow's permissions or its limit
+(`git grep -n 'ci.yml' -- internal`: one hit, `docker_test.go:42`). The red path and the exemption are each
+exercised once against real GitHub before the change lands, with a drill issue that is opened and closed for the
+purpose (task 7.6).
 
-### D9 The up-to-date rule is a ruleset setting with a record in the tree
+### D9 The up-to-date rule is a ruleset setting that every run reads back
 
 - **Made.** One API call sets `strict_required_status_checks_policy` to `true` on ruleset 24272345. The call is a
-  `PUT` whose body carries all four existing rules, because GitHub documents that the rules list is replaced whole
-  (documented, not measured; the ruleset is read back after the call). Who makes it is Q3.
-- **Recorded.** `.github/rulesets/main-required-checks.json` holds the ruleset's `id`, `name`, `enforcement`,
-  `conditions` and `rules`. The why is the owner's ruling on #42.
-- **Kept from drifting.** `scripts/merge-check.sh` reads the live ruleset on every run, pull request and push, and
-  fails when `enforcement`, `conditions` or `rules` differ from the record, printing both. It also fails if the
-  record itself does not require `Required` with the strict setting on. Turning the setting off then takes a
-  reviewed change to the record as well as a settings change, and either one alone turns every run red. This is
-  the pin shape `task doctor` applies to tool versions: one file holds the value and a command compares the live
-  value with it.
+  `PUT` whose body is the ruleset as just read with that one value changed, because GitHub documents that the
+  rules list is replaced whole (documented, not measured). The ruleset is read back and compared with the read
+  before it; any other difference is put back and reported. Who makes the call, and when, is Q3.
+- **Checked.** On every run, pull request and push, `scripts/merge-check.sh` asks GitHub which rules are in force
+  on `main` and fails unless they require `Required` with the strict setting on. Turning the setting off in
+  GitHub then turns every run red, and the script's expectation changes only by a reviewed change to the script
+  and to the spec requirement that states it.
 
-Premises, measured for this design: the ruleset reads `strict_required_status_checks_policy: false` and
-`bypass_actors: []`; an unauthenticated read returns `enforcement`, `conditions` and `rules` but not
-`bypass_actors`; PR #39's head was one commit behind `main` and GitHub reported it `CLEAN`. Since PR #21 merged,
-the compare API reports PR #44 one commit behind, PR #39 two and PR #14 four.
+The first revision recorded the whole ruleset in a file and compared the live `enforcement`, `conditions` and
+`rules` with it exactly. The live answer carries fields GitHub fills in itself (`do_not_enforce_on_create`,
+`integration_id`, `required_reviewers`, `require_extra_approval_for_unattributed_changes`,
+`allowed_merge_methods`, `dismissal_restriction`). One more such field would have turned every pull-request run
+and every push to `main` red with no change in the tree. The script now reads only the fields that carry the
+decision:
+
+| Read | Field | Why it carries the decision |
+|---|---|---|
+| the rules in force on `main` (`rules/branches/main`) | `type` is `required_status_checks` | finds the rule. GitHub answers "which rules apply to `main`", so the script does not work that out from `conditions.ref_name` |
+| the same answer | `parameters.required_status_checks[].context` includes `Required` | which check must pass |
+| the same answer | `parameters.strict_required_status_checks_policy` is `true` | the up-to-date rule itself |
+| the same answer | `ruleset_id` | says which ruleset to read next; it is not compared with a number in the tree |
+| that ruleset (`rulesets/<id>`) | `enforcement` is `active` | a ruleset set to `evaluate` or `disabled` enforces nothing |
+
+Everything else in the answers is ignored: the other three rules (`deletion`, `non_fast_forward`,
+`pull_request`), every other parameter, `integration_id`, names, ids and dates. They are settings this change does
+not decide. With nothing else compared, the record file of the first revision held no value the script did not
+already demand, so it is dropped: the expected values are the two in the table, stated in the spec. The whole
+ruleset as read before and after the edit is posted on #42 (task 7.3); that comment is what a restore would use.
+
+The review proposed comparing `enforcement`, `conditions.ref_name`, the check names and the strict setting with a
+record. This design covers the same four facts with one difference: it asks GitHub which rules apply to `main`
+instead of comparing `conditions.ref_name` with a stored copy, so a ruleset that is replaced, split in two or
+given a new id is still read correctly, and one fewer field's shape is assumed.
+
+Premises. Measured for this design: the ruleset reads `strict_required_status_checks_policy: false` and
+`bypass_actors: []`; PR #39's head was one commit behind `main` and GitHub reported it `CLEAN`. Measured for the
+correction pass: `gh api repos/C360Studio/semengine/rules/branches/main` returns the four rules of ruleset
+24272345, each with its `ruleset_id`, to a signed-in and to an unauthenticated read (HTTP 200); the unauthenticated
+read of the ruleset returns `enforcement` and not `bypass_actors`; the compare API reports PR #44 and PR #47 level
+with `main`, PR #39 two commits behind and PR #14 four.
 
 Cost with several open pull requests: every merge puts every other open pull request behind `main`. Each must take
 `main` in and pass a full run before it can merge, about three minutes with D2. A draft pays that once, when it is
@@ -316,78 +418,174 @@ ready to land. When two are ready together, the one that loses the race updates 
 with the number of pull requests landing in the same hour, not with the number open. `allow_update_branch` stays
 off; an agent updates in its own worktree. O4 removes this cost and is the next step if it is felt.
 
-Check: the `merge-check` contract test includes a live ruleset with the setting off (exit 1, the field printed) and
-a record with it off (exit 1). The setting's effect is observed when it is made (task 7.3).
+Check: the `merge-check` contract test includes these cases: the strict setting off (exit 1, the field printed);
+no rule on `main` that requires `Required` (exit 1); the ruleset not `active` (exit 1); and an answer with an
+extra field the script does not name (exit 0). The setting's effect is observed when it is made (task 7.3).
 
 ### D10 The protocol's merge rule names the commands
 
-`.agents/protocol.md`, `AGENTS.md` and the preflight skill restate the merge gate in three places (inventory 3.3).
-Their text changes to say: a known flake is an open `class:flake` issue; `Required` fails while one is open unless
-the pull request closes one; a red you cannot explain is filed before the next push; the head must be up to date;
-run `task merge:check -- <n>` immediately before merging. The waiver clause follows Q1. The command list at
-`AGENTS.md:43`, which is four steps behind `scripts/verify.sh:10-11` (inventory 1), is brought up to date, and it
-and the preflight table gain the new step.
+`.agents/protocol.md`, `AGENTS.md` and the preflight skill restate the merge gate in three places (inventory 3.3:
+`.agents/protocol.md:50-51`, `AGENTS.md:70`, `semengine-preflight/SKILL.md:82`). Their text changes to say:
+
+- a known flake is an open `class:flake` issue, and what is filed under that label (as Q1a is ruled);
+- `Required` fails while one is open unless the pull request closes every open one (as Q4 is ruled);
+- a pull request that closes a `class:flake` issue shows the reproduction before and after the fix, and a flake
+  that comes back reopens its issue;
+- a red you cannot explain is filed before the next push;
+- the head must be up to date;
+- run `task merge:check -- <n>` immediately before merging.
+
+The waiver clause follows Q1b. The command list at `AGENTS.md:43`, which is four steps behind
+`scripts/verify.sh:10-11` (inventory 1), is brought up to date, and it and the preflight table gain the new step.
+
+## Effects on slice 04A (PR #47)
+
+PR #47 is the sister session's claim on slice 04A, the first ported code. It holds no code yet. Its description
+sizes the port set at 65 packages and 140,842 lines at the pin `8b99efe9`; the archived SETUP 03B design (D4)
+gives that figure as non-test lines. This design changes none of PR #47's files, but four of its decisions reach
+it.
+
+Measured for the correction pass, on a scratch copy of the pin snapshot (the 65 packages of the archived SETUP 03B
+design, D4; the copy counts 141,062 non-test lines, which is 140,842 plus the 220-line provider file that design
+moves out). The host has 12 CPUs and was shared (load average 1.3 to 2.2), with `go1.26.4`; the runs used four
+packages at a time to match the hosted runner's four CPUs.
+
+| Fact at the pin, for the 65 packages | Value |
+|---|---|
+| Test files | 774: 608 without a build tag, 166 with one (165 `integration`, 1 `live_llm`) |
+| Top-level tests | 4,202 without a tag, in 61 packages; 563 with one |
+| Files the text checks of D6 would refuse | 98, in 26 of the 65 packages |
+| of which hold `time.Sleep` | 88 files, 294 lines |
+| of which hold a skip call | 21 files, 70 lines; 36 of the lines are one sentence, "requires real NATS connection - move to integration tests" |
+| One execution, `go test -count=1 -cpu 1`, tests without a tag | 61 of 61 packages pass; 39 s wall including the build; package times add up to 94.5 s |
+| The repeat command, `go test -count=5 -cpu 1 -shuffle=on`, one run | 102 s wall; package times add up to 362 s; the longest package, `natsclient`, takes 70 s; 60 packages pass and 1 fails |
+| The failure | `pkg/cache`, `TestCoalescingSet_EntityUpdateScenario`, at `coalescing_set_test.go:534`. The test waits with `time.Sleep` (`:516`, `:522`, `:527`) inside a 100 ms window (`:507`). One run; no rate was measured |
+
+What reaches PR #47, and when:
+
+1. **The strict setting, from the moment it is made (task 7.3), which is before this change merges.** No pull
+   request then merges unless its head contains the tip of `main`. PR #47 is level with `main` today. Every later
+   merge, this change's included, puts it behind, and it pays one update and one full run each time it is ready to
+   land.
+2. **The repeat step's cost, as ported packages arrive.** Measured basis: 102 s on this host for the whole port
+   set, four packages at a time. The harness's own `runner` package (90 s, bound by real waits) runs beside the
+   ported packages and does not add to the wall time. Estimated: a hosted runner's speed on tests that are bound by
+   the CPU has not been measured; the only comparison is `runner`, which takes 19 s there and 20.8 s here because
+   it waits on timers. Taking the runner as 1.5 to 3 times slower, the repeat step at the full port set is **about
+   2.5 to 5 minutes** of a 15-minute job. Not in the projection: ported tests land repaired (item 4), which changes
+   their time by an unknown amount.
+3. **The other steps grow more.** `test:unit` runs the same 4,202 tests under the race detector, and
+   `test:integration` runs all 4,765 under it, two packages at a time, with its own 10-minute timeout
+   (`scripts/test-integration.sh:402`) and a container for each tagged test. Neither was measured: it needs Docker
+   and a long run on a shared host. The 15 minutes of `ci.yml:22` are one budget for every step. What happens when
+   the job outgrows it is under "Not now".
+4. **D6, in the slice that ports each file.** 98 test files cannot land as they are. The setup plan says "unchanged
+   extraction retains earned tests and adds only missing boundary evidence" (`docs/setup-plan.md:210-211`). D6
+   changes some of those earned tests before they land. That is a cost the accepted direction did not show, so it
+   is Q5.
+5. **D2, at run time.** One ported test already fails the repeat command as it stands at the pin. A ported test
+   that fails `test:repeat` is a failure in the pull request that ports it and is repaired there.
+6. **The known-flake check, after this change merges.** PR #47 gets the `merge-check` job when it next takes `main`
+   in, which item 1 forces. From then on any open `class:flake` issue anywhere in the repository makes it red. A
+   flaky test that a slice brings in is, before it merges, that pull request's own failure. After it merges it is
+   a known flake that stops every pull request, the next slice's included.
 
 ## Not now, and what would reopen it
 
-- **A scheduled run of the suite.** With D1 and D2 every head runs every untagged test seven times, which is also
-  what finds a flake already on `main`. The question reopens the first time the repeat
-  count would have to be lowered to keep the job inside its 15-minute limit; lowering it is the owner's ruling, not
-  a tuning change.
+- **A scheduled run of the suite, and what happens when the job outgrows its limit.** With D1 and D2 every head
+  runs every untagged test seven times, which is also what finds a flake already on `main`. The direction says a
+  schedule is revisited when the suite outgrows the pull-request budget. This design gives that moment a failing
+  check and a decider:
+  - The hard stop is the `verify` job's limit of 15 minutes (`ci.yml:22`). A run that is killed there fails
+    `Required`.
+  - Neither the repeat count (D3) nor that limit (D8's workflow test) can change without failing a contract test
+    and changing the spec requirement that states it. A spec change is accepted by the owner, so the decision is
+    the owner's, on the change that proposes it.
+  - The early signal is review only: every run prints its step timings, and the first pull request whose `Verify`
+    job runs longer than 10 minutes in CI says so in its description and takes it to the owner before it merges.
+  - The options at that point, none chosen now: a CI job of its own for `test:repeat`, also needed by `Required`
+    (the same repetitions in parallel, for more runner minutes); repeating only the packages a diff changes and
+    the ones that import them (the mapping the direction left out when the module had five packages); a lower
+    count; a scheduled run.
+
+  By the projection above, the repeat step alone does not bring that moment in slice 04A. The race runs may.
 - **Issues filed by automation.** Unchanged from the direction.
-- **A guard on re-runs.** No run has been re-run (maximum `run_attempt` 1 across every run, measured for this
-  design). Refusing a second attempt would not close re-rolls, because a push does the same job; it would turn a
-  retry after a failed network fetch into an empty commit. Left out, with that maximum as the number to watch.
+- **A guard on re-runs.** No run has been re-run (maximum `run_attempt` 1 across all 52 runs, measured for the
+  correction pass). Refusing a second attempt would not close re-rolls, because a push does the same job; it would
+  turn a retry after a failed network fetch into an empty commit. Left out, with that maximum as the number to
+  watch. Task 7.6 makes one deliberate re-run and records its run id, so the number to watch after it is "no
+  attempt above 1 on any other run".
+- **A run when a pull request's description is edited.** Adding `edited` to the workflow's trigger would close
+  the two snapshot limits of D8 that concern the description and the base. Cost: a full run for every edit of a
+  description, which cancels the run in progress. Measured for the correction pass: the descriptions of PR #21,
+  PR #44, PR #43, PR #39 and PR #13 were edited 11, 6, 4, 4 and 2 times. Left out; reopens if a pull request ever
+  merges past a flake by one of those two routes.
 - **A merge queue.** O4.
 
 ## Where the evidence supports the direction and where it does not
 
 | Direction | Supported by | Not supported, or thinner than it reads |
 |---|---|---|
-| 1 Vary the scheduling, repeat the whole suite | 100 of 100 at one CPU without `-race` against 0 of 300 under `-race` at the default (inventory 5.3; re-measured here inside a bubble). SemStreams #1059: 0 of 100 at the default, 100 of 100 at one CPU (inventory 6.1) | two flakes are the whole sample for one CPU. Eleven SemStreams flakes did not reproduce when re-run alone at default settings (inventory 6.3); of the three that then did reproduce, one needed concurrent load and one a forced delay, which this step does not apply. "With `-race` at one CPU" is the weak half: 6 of 100. "The whole suite" is read here as the 70 untagged tests (Q2) |
+| 1 Vary the scheduling, repeat the whole suite | 100 of 100 at one CPU without `-race` against 0 of 300 under `-race` at the default (inventory 5.3; re-measured here inside a bubble). SemStreams #1059: 0 of 100 at the default, 100 of 100 at one CPU (inventory 6.1). One sleep-timed test of the port set failed the first run of the repeat command | two flakes are the whole sample for one CPU. Eleven SemStreams flakes did not reproduce when re-run alone at default settings (inventory 6.3); of the three that then did reproduce, one needed concurrent load and one a forced delay, which this step does not apply. "With `-race` at one CPU" is the weak half: 6 of 100. "The whole suite" is read here as the 70 untagged tests (Q2). The premise "the module has five packages" ends with slice 04A |
 | 2 No schedule | SemStreams found no flake by a scheduled run and its owner ruling reserves schedules for security scanning (inventory 6.3) | nothing here measures how a schedule would behave; the design does not rest on it |
 | 3a Up to date with `main` | PR #14 and PR #39 hold greens older than `main` (inventory 3.3) | the setting's behaviour is documented, not measured, until task 7.3 |
-| 3b `Required` fails while a flake issue is open | PR #39 during #40 (inventory 3.4); six SemStreams merges past a flake (inventory 6.3) | it acts only after filing; 14 of 23 SemStreams flakes were filed after the same rule existed in prose (inventory 6.4). One already-green pull request per filing can still merge |
+| 3b `Required` fails while a flake issue is open | PR #39 during #40 (inventory 3.4); six SemStreams merges past a flake (inventory 6.3) | it acts only after filing; 14 of 23 SemStreams flakes were filed after the same rule existed in prose (inventory 6.4). One already-green pull request per filing can still merge. A fix that is declared and not real passes |
 | 3 Rerun guard replaced | no run has ever been re-run (inventory 3.4) | that is a fact about the past. A re-run stays an open way to re-roll before a flake is filed |
-| 4 Guards with no accepted exceptions | 254 accepted sleeps and a flake among them (inventory 6.5); 0 sleeps here | the sleep check cannot match #40's shape or the line that failed in #1063, which was an elapsed-time assertion. Whether sleeps were involved in SemStreams' other flakes was not measured (inventory 6.5) |
+| 4 Guards with no accepted exceptions | 254 accepted sleeps and a flake among them (inventory 6.5); 0 sleeps here | the sleep check cannot match #40's shape or the line that failed in #1063, which was an elapsed-time assertion. Whether sleeps were involved in SemStreams' other flakes was not measured (inventory 6.5). The direction was accepted before the port set's bill was measured: 98 files (Q5) |
 | 5 No quarantine as a check | a skip is invisible in today's logs (inventory 4); SemStreams closed no flake by a skip | whether `runner_test.go:264` ever fired is not established |
 
 ## Rules and the checks that fail
 
+Every rule either names the check that fails when it is broken, or is marked review only.
+
 | Rule | Failing check | How the check is shown able to fail |
 |---|---|---|
 | Unit run: `-race`, one CPU | `contract` pin test (D3) | planted Taskfile without `-cpu 1` |
-| Repeat run: five times, one CPU, no `-race`, shuffled, last in `verify` | `contract` pin test (D3) | planted Taskfile with the count lowered or `-race` added; planted `verify.sh` without the step |
+| Repeat run: five times, one CPU, no `-race`, shuffled, last in `verify` | `contract` pin test (D3) | planted Taskfile with the count lowered or `-race` added; planted `verify.sh` without the step or with it not last |
 | A scheduling-dependent test fails before merge | `task test:repeat` | one-time evidence on the old #40 code (task 6.3); in general this is a probability, not a guarantee |
 | A failing gate names the test | `contract` test of `cover-check.sh` with a fake `go` (D5) | written first; fails on the current script |
-| No `time.Sleep` in tests or harness code | `contract` test (D6) | planted file, line named |
+| No `time.Sleep` in tests or harness code | `contract` test (D6) | planted test file and planted harness file, line named |
 | No skip call in tests | `contract` test (D6) | planted file, line named |
 | No build tag on a test other than `integration` | `contract` test (D6) | planted file named |
 | No fixed port, no exemption marker, a message that names nothing outside this repository | `scripts/lint-test-ports.sh` with its fixture test and a `contract` test (D7) | planted marked line; fixture case flipped to `match` |
 | Every failpoint is in the matrix; `finalize` joins every worker | `lifecycletest` tests (D4) | planted table with a hole; assertion without the exemption |
-| No merge while a known flake is open, unless the pull request closes one | CI job `merge-check`, needed by `Required` (D8) | fake-`gh` cases; one real red before landing (task 7.6) |
-| The label and every read must be there | `scripts/merge-check.sh` (D8) | fake-`gh` cases: missing label, failing read |
-| `Required` needs `verify` and `merge-check` | `contract` pin test of `ci.yml` (D8) | planted workflow without the job |
+| No merge while a known flake is open, unless the pull request closes every open one | CI job `merge-check`, needed by `Required` (D8) | fake-`gh` cases; one real red and one real exemption before landing (task 7.6) |
+| The kind of run comes from the event; a pull-request run with no number fails; an unknown event fails | `scripts/merge-check.sh` (D8) | fake-`gh` cases |
+| The label and every read must be there; a list that may be cut short fails | `scripts/merge-check.sh` (D8) | fake-`gh` cases: missing label, failing read, 100 issues |
+| `Required` needs `verify` and `merge-check`; the job holds three read permissions; no job can write; `verify` is limited to 15 minutes | `contract` pin test of `ci.yml` (D8) | planted workflows: job dropped, a write permission, a fourth permission, another limit |
 | A head behind `main` cannot merge | GitHub's ruleset (D9) | observed when the setting is made (task 7.3) |
-| The ruleset matches its record | CI job `merge-check` (D9) | fake-`gh` cases: live setting off, record setting off |
+| The rules in force on `main` require `Required` with the strict setting, from an active ruleset | CI job `merge-check` (D9) | fake-`gh` cases: setting off, no such rule, ruleset not active, extra field |
+| A pull request that closes a `class:flake` issue shows the reproduction before and after the fix | review only | no command can tell a fix from a declaration; the job's warning makes each use visible |
+| A flake that comes back after its fix reopens its issue | review only | no command can tell a recurrence from a new failure |
 | A red you cannot explain is filed before the next push | review only | no command can tell an unexplained red from a real one |
-| `task merge:check -- <n>` is run immediately before merging | review only | covers the one already-green pull request |
+| What is filed under `class:flake`, and when a re-run is allowed (as Q1a is ruled) | review only | the class of a failure is read from its log by a person |
+| `task merge:check -- <n>` is run immediately before merging | review only | covers a flake filed, or a closing line removed, after the last run |
 | A flake issue is closed only by a merged fix or on the owner's word | review only | one login; the issue timeline is the record |
-| The ruleset has no bypass actors | review only, unless task 7.5 shows the job can read them | the field is absent from an unauthenticated read |
+| A change to `scripts/merge-check.sh`, to the `merge-check` or `required` job, or to their tests is reviewed as a change to the merge gate | review only | a pull request runs its own copy |
+| The ruleset has no bypass actors | review only | the field is absent from the reads the job makes; it is read back with the owner's login in task 7.3 |
+| The first pull request whose `Verify` job passes 10 minutes takes it to the owner | review only | the failing check behind it is the job's 15-minute limit |
 | Unsynchronised observation, wall-clock budgets, `t.Parallel` over shared state, sleeps and skips by another spelling | review only | no text to match; D1 and D2 exercise the first three |
 
 ## Invariants and their spec homes
 
 `scripts/merge-check.sh` is the one new surface with a decision table. For every combination of inputs:
 
-- On a pull-request run it exits 0 exactly when the ruleset matches its record, the label exists, and either no
-  `class:flake` issue is open or the pull request closes at least one. Spec: `merge-gate`, "Known-flake check" and
-  "Ruleset record".
-- On a push run it exits 0 exactly when the ruleset matches its record. Spec: `merge-gate`, "Known-flake check",
-  scenario "Push run"; "Ruleset record".
-- A failed read never produces exit 0. Spec: `merge-gate`, "Known-flake check", scenario "A read fails".
+- On a `pull_request` event, or with no event and a number, it exits 0 exactly when all of these hold: the rules
+  in force on `main` require `Required` with the strict setting from an active ruleset; the label exists; the list
+  of open `class:flake` issues is complete; and every issue in that list is among the pull request's closing
+  references. The last holds trivially when the list is empty. Spec: `merge-gate`, "Known-flake check" and
+  "Up-to-date rule".
+- On a `push` event it exits 0 exactly when the rules in force on `main` require `Required` with the strict
+  setting from an active ruleset. Spec: `merge-gate`, "Known-flake check", scenario "Push run"; "Up-to-date rule".
+- On any other event, and whenever a number is needed and missing, it never exits 0. Spec: `merge-gate`,
+  "Known-flake check", scenarios "Pull-request run without a number", "Local run without a number" and "Event with
+  no rule".
+- A failed read, an answer of the wrong shape, or a list that may be cut short never produces exit 0. Spec:
+  `merge-gate`, "Known-flake check", scenarios "A read fails" and "List may be cut short".
+- A field the script does not name never changes its result. Spec: `merge-gate`, "Up-to-date rule", scenario
+  "Field the script does not read".
 
-A property or fuzz test of the script takes these three statements as its source, not the script.
+A property or fuzz test of the script takes these five statements as its source, not the script.
 
 ## What a test author has to know after this change
 
@@ -398,38 +596,57 @@ Inventory 9 lists thirteen facts a test author must hold today, ten of them foun
 - Found out from a failing command that names the test: a result that depends on the scheduler, for the shapes the
   one-CPU runs reach; a unit test that fails in the coverage run.
 - Found out from GitHub: the pull request is behind `main`.
-- Found out from a failing job that names the issue: a known flake is open.
-- Still a document: file a red you cannot explain; wall-clock budgets; `t.Parallel` over shared state;
-  `lifecycletest.Run`'s 2 s grace for an adopter's real owner.
+- Found out from a failing job that names the issue: a known flake is open, and which ones this pull request does
+  not close.
+- Still a document: file a red you cannot explain; show the reproduction when closing a flake; wall-clock
+  budgets; `t.Parallel` over shared state; `lifecycletest.Run`'s 2 s grace for an adopter's real owner.
 
-Nothing new asks the author to predict a value. The known-flake check reads the state when the job runs, and the
-up-to-date rule is GitHub's own answer at merge time.
+Nothing new asks the author to predict a value. The known-flake check reads the state when the job runs, the
+up-to-date rule is GitHub's own answer at merge time, and the script asks GitHub which rules apply to `main`
+instead of working it out.
 
 ## Assumptions that are documented and not yet measured
 
 The owner's words: "start with best practices, lessons learned and solid policy and measure as we go while not
 allowing debt to be ignored". Each row stays open until the place named in the last column has produced a result;
-a row is closed by recording the result on #42, never by dropping it.
+a row is closed by recording the result on #42, never by dropping it. Every place named is before this change
+merges, except where the row says it stays open.
+
+The first group is every place where the design relies on the shape or behaviour of a GitHub answer.
 
 | Behaviour | Does the design rest on it | What would show it wrong | Where it gets measured |
 |---|---|---|---|
 | A1 With the strict setting on, GitHub refuses to merge a head behind `main` | yes (D9) | a pull request behind `main` reports a merge state other than `BEHIND` | task 7.3, on PR #14 and PR #39 at the moment the setting is made |
-| A2 A job with `issues: read` and `pull-requests: read` can list labelled issues and read closing references through `gh` | yes (D8) | the job fails with "Resource not accessible by integration" | the first CI run of the implementing pull request (pass path); task 7.6 (fail path) |
-| A3 The job's token can read the ruleset, and what it sees of `bypass_actors` | yes for `rules`; no for `bypass_actors` | the read fails, or the keys differ from the unauthenticated read | task 7.5 prints the keys the job sees |
-| A4 Closing references reflect the pull request's body at run time | yes (the fix must be able to land) | a pull request with `Closes #n` for an open flake is refused | fake `gh` in tests; live at the first real flake's fix. Open until then |
-| A5 Re-run semantics: a re-run keeps the run id, raises `run_attempt`, replaces the check result (one of the owner's three) | no. A re-run is left unguarded, and would re-evaluate `merge-check` against the issue state of that moment | a run with `run_attempt` above 1 behaving otherwise | the first re-run anyone makes; `gh api repos/C360Studio/semengine/actions/runs --jq '[.workflow_runs[].run_attempt] \| max'` reads 1 today |
+| A2 In CI, `gh` and `jq` are present, and a job with `issues: read` and `pull-requests: read` can search labels, list labelled issues and read closing references | yes (D8) | the job fails with "command not found" or "Resource not accessible by integration" | the first CI run with the job (task 7.5); task 7.6 for the failing path |
+| A3 The job's token can read the rules in force on `main` and the ruleset's `enforcement` | yes (D9) | a read fails, or a field of D9's table is absent | task 7.5 prints the five fields the job sees. Both reads answer an unauthenticated request today |
+| A4 Closing references reflect the pull request's description at the moment they are read | yes (the fix must be able to land) | after `Closes #<drill>` is added, the re-run still fails | task 7.6 |
+| A5 A re-run keeps the run id, raises `run_attempt`, replaces the check result and reads live state again (one of the owner's three) | only for "or until its failed run is re-run" in D8; a re-run is otherwise left unguarded | the re-run in task 7.6 behaves otherwise | task 7.6, one deliberate re-run |
+| A10 Closing references are filled only when the base is the default branch; a link made by hand in the side panel fills them too | yes, for the stacked-pull-request limit. The hand-made link is one more way to make the same declaration, and gets the same warning | a pull request on another base with `Closes #n` shows a closing reference | not planned: no stacked pull request exists. Stays open |
+| A11 Editing a pull request's description or base starts no run | yes (D8, two limits) | a run starts when the description is edited | task 7.6, for the description: the run list before and after the edit. The base is not measured and stays open |
+| A12 A `::warning::` line shows on the run and on the pull request's checks | only for how visible the exemption is; the log line stands without it | no warning appears on the drill's exempt run | task 7.6 |
+| A13 `gh` exits non-zero when a read fails | yes ("a failed read never passes") | a run during a GitHub incident passes with empty lists | modelled by the fake `gh`; the script also refuses an answer that is not the list it asked for. Not exercised against a real outage. Stays open |
+| A14 The ruleset `PUT` replaces the rules list whole and accepts the body as it was read | only for how the edit of D9 is made | the read-back differs from the read before it in more than the one value | task 7.3; any other difference is put back and reported |
+
+The second group is the rest.
+
+| Behaviour | Does the design rest on it | What would show it wrong | Where it gets measured |
+|---|---|---|---|
 | A6 Whether re-runs can be forbidden (one of the owner's three) | no | not applicable | not planned; reopens with "A guard on re-runs" above |
 | A7 Scheduled runs, their ref, and a pending run in a busy concurrency group on `main` (one of the owner's three) | no; there is no schedule | not applicable | reopens with "A scheduled run of the suite" above |
-| A8 Every hosted run gets 4 CPUs | only for the time estimate; `-cpu 1` fixes the setting itself | the repeat step's time in `verify`'s step timings is far from 5 x `runner` | every CI log already prints step timings |
-| A9 Dependabot brings its own pull requests up to date | no | PR #14 stays behind with no update | observed on PR #14 after task 7.3 |
+| A8 Every hosted run gets 4 CPUs | only for the time estimates; `-cpu 1` fixes the setting itself | the repeat step's time in `verify`'s step timings is far from 5 x `runner` | every CI log already prints step timings |
+| A9 Dependabot brings its own pull requests up to date, and stops doing so once anyone else pushes to its branch | no | PR #14 stays behind with no update | observed on PR #14 after task 7.3. If it stays behind, the update is asked for with a `@dependabot rebase` comment and not by a push, so that Dependabot keeps maintaining the branch |
 
 ## Declared costs
 
-- About 90 s more per `task verify`, locally and in CI, of which `runner`'s tests are all but a few seconds. CI
-  goes from about 100 s to about 190 s a run.
+- About 90 s more per `task verify`, locally and in CI, of which `runner`'s tests are all but a few seconds. The
+  `Verify` job goes from 86 s (run 36883858915) to about three minutes.
+- For slice 04A: the repeat step is projected at 2.5 to 5 minutes at the full port set (estimated from a measured
+  102 s), and 98 test files need repair before they can land (Q5).
 - One more CI run per pull request for each merge that lands ahead of it (D9).
-- While a flake is open, every pull request is red except one that closes a flake issue. This is the intended stop.
-- Three GitHub API reads per run inside a job `Required` needs. A GitHub API failure fails the job and says so.
+- While a flake is open, every pull request is red except one that closes every open flake issue. This is the
+  intended stop. With two flakes open, neither fix can land alone (Q4).
+- Five GitHub reads per pull-request run and two per push, inside a job `Required` needs. A GitHub failure fails
+  the job and says so.
 - The Docker-backed tests still run once per verification (Q2).
 - `-failfast` still hides a second failure behind the first in the Docker-backed step
   (`integration-test-runner/spec.md:76`); unchanged.
@@ -440,9 +657,9 @@ a row is closed by recording the result on #42, never by dropping it.
 
 - **Network fetches in the required job** (inventory 2.5): out of scope. None of the seven CI failures to date was
   a failed fetch (inventory 3.4), and removing the fetches is infrastructure work (caches, mirrors, pre-pulled
-  images) with no evidence yet of which one matters. A red from a failed fetch is still a red nobody can explain
-  by their diff, so it is filed as `class:flake` like any other; SemStreams #1358 was handled that way.
-  `merge-check` adds API reads to the same class and reports a failed read as such.
+  images) with no evidence yet of which one matters. How a red from a failed fetch is recorded, and whether it
+  counts as a known flake, is Q1a; the first revision stated one answer as settled. `merge-check` adds GitHub reads
+  to the same class and reports a failed read as such.
 - **Repeating the Docker-backed tests:** Q2.
 - **Runtime skip counting** (`go test -json`): the static check holds the count at zero, and counting at run time
   would change every invocation's output, including the argv a spec fixes.
@@ -454,6 +671,7 @@ a row is closed by recording the result on #42, never by dropping it.
 - **Wall-clock budgets** (inventory 2.3): no text separates a budget that is a contract from a predicted one.
 - **The unported fixture test for `scripts/openspec-queue.sh` and the two files with no ledger row** (inventory
   7.6.1): real, and not part of how a flake is born, merged or survives.
+- **A record of the whole ruleset in the tree:** dropped in this revision (D9).
 
 ## New surfaces and who uses them
 
@@ -462,66 +680,223 @@ to cover; `TestNoRetainedContext` keeps covering the harness. Each new surface h
 
 - `task test:repeat`: `scripts/verify.sh`, and so CI and every local `task verify`.
 - `scripts/merge-check.sh` and `task merge:check`: the `merge-check` CI job, and the agent about to merge.
-- The label `class:flake` and `.github/rulesets/main-required-checks.json`: `scripts/merge-check.sh`.
+- The label `class:flake`: `scripts/merge-check.sh`.
 - The new contract tests: `task test:unit` and the two steps that run the same packages again.
 
 ## Adjacent claims
 
 - PR #39 (issue #37) edits `AGENTS.md`, the role contracts and adds `docs/testing.md`. This change edits the merge
-  rule and command list in `AGENTS.md`, the Land step in `.agents/protocol.md`, and the preflight skill. Whichever
-  lands second takes the other's text in; with D9 that update is forced. If PR #39's rules table is on `main` by
-  then, the review-only rows above are added to it.
-- Every open pull request, this one included, is behind `main` since PR #21 merged. Task 7.3 makes that visible:
-  PR #14 and PR #39 are the two it reads.
-- PR #47 claims slice 04A, the first ported code. It is the first change that will meet D6's checks with ported
-  tests: a ported test file with a sleep, a skip or another build tag cannot land until it is repaired.
+  rule and command list in `AGENTS.md`, the Land and Close steps in `.agents/protocol.md`, and the preflight
+  skill. Whichever lands second takes the other's text in; with D9 that update is forced. If PR #39's rules table
+  is on `main` by then, the review-only rows above are added to it.
+- PR #39 and PR #14 are behind `main` (two and four commits); PR #44 and PR #47 are level. Task 7.3 makes that
+  visible: PR #14 and PR #39 are the two it reads.
+- PR #47 claims slice 04A. Every effect on it is in "Effects on slice 04A".
 - The owner's global instructions describe the merge gate with a waiver for all repositories. This design changes
   only this repository's files.
 
+## Where this design goes beyond or departs from the direction
+
+1. It recommends no way past an open flake other than a fix (Q1b); the owner's words allow waivers to stay.
+2. It asks what is filed as a known flake at all (Q1a). The direction said only that no candidate covers network
+   fetches.
+3. "With `-race` at one CPU" is done by changing the existing unit run, not by a repeated run; only the run without
+   `-race` is repeated (D1, D2).
+4. The Docker-backed tests are not repeated (Q2).
+5. `-shuffle=on` is added (D2).
+6. A contract test pins the two command lines and the step order (D3). The direction said the repetition lives in a
+   task; it did not ask for a pin.
+7. The single failpoint table and the join in `finalize` (D4) come from the review of PR #43, routed to #42
+   (inventory 5.4). They are not among the five recommendations; the direction named only making the matrix test
+   instant.
+8. A build-tag check is added beside the skip check, and the existing skip becomes a failure (D6).
+9. The port guard's exemption marker is removed; the direction named only its pointer (D7).
+10. A pull request that closes every open flake issue is exempt from the known-flake check; without that the fix
+    could not land (D8, Q4).
+11. The known-flake check does not reach a red that nobody files, a fix that is declared and not real, or what
+    changes after a run (D8). The direction's wording does not carry those limits.
+12. The up-to-date rule is read back from GitHub on every run (D9). The direction asked for the rule, not for a
+    check that it stays on.
+13. The workflow test pins the job's permissions and the `verify` job's 15-minute limit as well as what `Required`
+    needs (D8, "Not now"). The limit is pinned so that raising it is a decision and not an edit.
+14. The command list in `AGENTS.md` is brought up to date (D10). The inventory found it four steps behind; the
+    direction did not mention it.
+15. The repair of ported tests is put to the owner again with its measured size (Q5), although the direction
+    already accepted guards with no exceptions.
+
+## Corrections after design review
+
+The review is comment 5936056866 on PR #44. Each finding, what was done, and where. "Disputed" means the design
+keeps a position the review questioned and gives its evidence.
+
+| Finding | Answer | Where |
+|---|---|---|
+| HIGH 1: the exemption lets a pull request merge past a flake it does not fix; a closing line is an unremarked way through | Fixed. Exempt only when every open flake is among the closing references, compared by URL. Each use raises a warning on the run. The reproduction rule and the reopen rule are added as review only. Any-versus-all goes to the owner | D8 "What the exemption is", "Two flakes open at once"; rules table; spec "Known-flake check"; Q4 |
+| HIGH 2: exact comparison of the ruleset makes `Required` depend on the shape of GitHub's answer | Fixed, with a different read from the one proposed. Five fields are read and nothing else; the record file is dropped. Every other reliance on a GitHub answer is listed as an assumption with what would show it wrong | D9 and its table; assumptions A1 to A5 and A10 to A14; spec "Up-to-date rule" |
+| MEDIUM 3: A4 is measured only at the first real fix; a description edit starts no run | Fixed. The drill adds the closing line to PR #44 and records the exemption passing; D8 says the pull request stays red until pushed or re-run, and the drill measures both halves | D8 "When the check runs"; A4, A5, A11; task 7.6 |
+| MEDIUM 4: the known-flake check is skipped whenever no number is given | Fixed. The kind of run comes from `GITHUB_EVENT_NAME`; a pull-request run or a local run without a number fails; an unknown event fails | D8 "Which run it is"; spec scenarios; task 7.2 |
+| MEDIUM 5: stacked pull requests get no exemption and are red while a flake is open | Said so, as the review's first alternative. Its second alternative, applying the check only when the base is `main`, is disputed: changing the base starts no run, so a green earned without the check would stand on `main` | D8 "Pull requests on another base"; A10; spec scenario "Pull request on another base" |
+| MEDIUM 6: Q1 is not framed fairly | Fixed. The two existing exception shapes are weighed before any new one; the cost of none is given in full; what is filed as a flake is a question of its own | Q1a, Q1b |
+| MEDIUM 7: the effect on PR #47 is understated | Fixed. All four effects are stated with numbers measured at the pin, the repeat step's cost is projected with its basis, and the moment the job outgrows its limit has a failing check and a decider | "Effects on slice 04A"; "Not now"; Q3; Q5 |
+| MEDIUM 8: stale line pins | Fixed. Every pin was read again at `0f30b12`. Changed: `setup-plan.md:201-202`, the ledger rows `:149-160` and `:162-171`, `provenance.md:39-40`, and the counts of commits behind `main` | header; D6; D7; D9 |
+| MEDIUM 9: the list of departures is incomplete | Fixed. D4's table and join, D10's command list and five more are added | "Where this design goes beyond or departs from the direction", items 2, 6, 7, 12 to 15 |
+| MEDIUM 10: review-only rules not labelled so | Fixed, one each way. "A pull request runs its own copy" is labelled review only. The job's permissions are pinned by the workflow test | D8 limits and "Check"; rules table; spec "Required needs both jobs" |
+| NIT: spec scenarios omit cases D3 claims | Fixed. Three scenarios added | spec `merge-gate` "Race detector added to the repeat step", "Repeat step not last"; spec `harness-boundaries` "Sleep added to harness code" |
+| NIT: A9 and pushing to the Dependabot branch | Fixed | A9 |
+
+Found during this pass, not in the review:
+
+- A closing line removed after a green leaves the green standing (D8, "A result is a snapshot"). Bounded: the flake
+  stays open and stops everything after that one merge. Review only.
+- A closing reference to an issue of the same number in another repository would have matched. Issues are now
+  compared by URL (D8 step 5).
+- The closing line is the protocol's claim, so a claim on a flake is exempt from its first run (D8).
+- With no `class:flake` label, the issue list reads as empty with exit 0 (D8 step 1). This is the measurement
+  behind the label check.
+- The port set at the pin holds 98 test files that D6 refuses, and one of its tests fails the first run of the
+  repeat command ("Effects on slice 04A").
+
 ## Questions for the owner
 
-**Q1. Does the design keep a waiver?** A waived merge can only land on a green (inventory 7.6.4), and with D8 the
-`merge-check` job is part of that green, so a waiver that no command reads would no longer let anything through.
+Five questions, to be ruled on in one pass. The owner saw a preview of Q1 to Q3 from the first revision; each says
+what changed since. Q4 and Q5 are new.
 
-- (a) No waiver. The one way past an open flake is a pull request that closes a flake issue. The waiver clause
-  leaves the protocol's Land step. Cost: a flake nobody can diagnose stops every merge until it is fixed, its test
-  is removed by the owner's ruling (SemStreams #1284), or the owner closes the issue unfixed, which is the state
-  SemStreams #750 left behind. With two flakes open, see D8's last limit.
-- (b) A narrow waiver the check reads: one comment on the flake issue naming one pull request, which exempts that
-  pull request from that flake and is printed in the job's output. Cost: more script and more cases; no command can
-  tell the owner's comment from an agent's; SemStreams used the same valve for at least seven merges (inventory
+**Q1. What counts as a known flake, and is there any way past one without fixing it?**
+
+Changed since the preview: the preview asked "keep a waiver or not", offered one new waiver shape, and treated
+"a failed fetch is filed as a flake" as settled. Both parts are now questions, the exception shapes this
+repository already has are weighed before any new one, and the cost of having none is given in full.
+
+Why it has to be ruled: a waived merge can only land on a green (inventory 7.6.4), and with D8 the `merge-check`
+job is part of that green. The protocol's sentence "obtain an explicit owner waiver recorded as a PR comment"
+(`.agents/protocol.md:51`) would let nothing through once D8 lands, because no command reads it. Either the check
+reads an exception, or the sentence goes.
+
+*Q1a. What is filed under `class:flake`?*
+
+- (a) Every red on unchanged code, whatever the cause. This is what the first revision assumed. Cost: a failed
+  network fetch stops every merge. Some have a fix a pull request can make: SemStreams #1358 was closed by pinning
+  an install through the module proxy (inventory 6.1). An outage of a host the job cannot avoid has none: the npm
+  registry on a cold cache, the vulnerability database, or GitHub's own API, which D8 adds. That issue is still
+  open when the outage is over, and the stop then waits for the owner to close it unfixed, each time.
+- (b) Only a failure that a pull request in this repository can end: a test or check that passes and fails on the
+  same tree. A failed fetch is told apart by its log, which names the remote and no test; with D5 every failing
+  test is named. It is recorded as a comment on the pull request it hit, with the run's link, and the run is
+  re-run when the remote answers again. The second failure of the same fetch gets an ordinary issue against that
+  fetch, without the label. Cost: the sorting is review only, so a test flake misread as a network failure is not
+  stopped. Fetch failures never stop anything, however often they come; the issue at the second one is the only
+  pressure. A re-run becomes legitimate in one named case, and no command tells that case from a re-roll.
+- (c) As (b), but the second failure of the same fetch is labelled `class:flake`. Cost: where a pull request can
+  remove the fetch this forces the fix, as #1358's did; for a host the job cannot avoid it is the dead end of (a),
+  one failure later.
+- Recommendation: (b). The stop is then always something a pull request can end.
+
+*Q1b. Is there a way past an open flake without a fix?*
+
+- (a) None. The only way past is a pull request that closes the open flakes (Q4). The waiver sentence leaves the
+  protocol. The cost, in full:
+  - A test flake nobody can diagnose stops every merge until it is fixed, or the failing assertion is removed by a
+    pull request on the owner's ruling (SemStreams #1284), or the owner closes the issue unfixed.
+  - Closing unfixed then becomes the real exception, and it is the widest one there is: it covers every pull
+    request, has no end and names no test that would prove the flake gone. SemStreams #750 was closed without a
+    fix and came back as #1284.
+  - If Q1a is ruled (a), all of this applies to every failed fetch as well, including an outage no pull request
+    can fix.
+  - Under Q4's recommendation, a flake that cannot be fixed yet also holds back the fix of every other flake.
+  - Adding an exception later would be done while merges are stopped. The pull request that adds it can pass only
+    because a pull request runs its own copy of the check (D8).
+- (b) The exception shape the setup plan already has: "an owner, bounded scope, proving test, and due milestone"
+  (`docs/setup-plan.md:208-209`). Applied here: the owner's comment on the flake issue states the four, and the
+  issue gets a second label and is put in the due milestone. The check then leaves that issue out and prints the
+  exception and its milestone on every run. It reads two structured fields and parses no text. Cost: about ten
+  lines of script and two test cases. It exempts every pull request until the milestone, which is wide. Its end is
+  only as firm as the milestone: nothing fails when a milestone passes. No command can tell the owner's label from
+  an agent's. And the plan offers this shape for "noncritical duplication, naming, or optimization" only; of the
+  gates beside it, completed joins among them, it says "An issue, elapsed audit budget, or passing coverage number
+  cannot waive them" (`:206-208`). A flake that is not yet diagnosed cannot be shown to be noncritical: #40 was a
+  join that was never made. So by the plan's own terms the shape fits a flake that is diagnosed and judged
+  noncritical, and such a flake can usually just be fixed.
+- (c) The override that must carry a reason (`scripts/test-integration.sh:58-70`: replacing the pinned image is
+  refused without a stated reason, and the reason is recorded with the run). Applied here: the owner's comment on
+  the flake issue names one pull request and a reason; the check exempts that pull request from that flake and
+  prints it. This is option (b) of the preview. Cost: the check reads and parses comment text. With one login the
+  valve is in practice in the author's hands, which is what the review objected to in the closing line. It ends
+  with that one merge, which is narrow; SemStreams used the same valve for at least seven merges (inventory
   7.6.4).
-- Recommendation: (a). No waiver has been issued here and the one ruling on a flake refused one. (b) can be added
-  by a spec change the first time a real case needs it, with that case as its evidence.
+- Recommendation: (a), together with Q1a (b), so that every known flake is one a pull request can end. No waiver
+  has been issued in this repository, and the record of the ruling on #40 (comment 5933434399, posted by the
+  session on the owner's word) reads "no waiver". If the owner wants an exception to exist, (b) is the one to
+  take: its end is an object that already exists, nothing is parsed, and the plan already limits who may use it.
 
-**Q2. Does "repeat the whole suite" include the 11 Docker-backed tests?** The design repeats the 70 untagged tests
-and leaves the Docker-backed invocation as the spec fixes it.
+**Q2. Does "repeat the whole suite" include the Docker-backed tests?**
+
+Changed since the preview: nothing in the options. One fact is added: the port set brings 563 more tagged tests,
+so the price of (b) grows with slice 04A.
+
+The design repeats the 70 untagged tests and leaves the 11 Docker-backed tests at one execution, as the spec fixes
+their invocation.
 
 - (a) Leave it at one execution. SemStreams' broker-timing flakes were not found by repetition: #1069 never
   reproduced in 60 runs, #1375 passed 50 of 50 (inventory 6.1).
-- (b) Repeat it. Cost: about 33 s per extra execution, a container start per test each time, and a change to a
-  spec requirement, its test and a ledger row.
+- (b) Repeat it. Cost: about 33 s per extra execution today, a container start per test each time, and a change to
+  a spec requirement, its test and a ledger row.
 - Recommendation: (a), declared as a cost.
 
-**Q3. Who makes the ruleset edit?** The direction accepted the up-to-date rule. The edit is a repository setting,
-made outside any pull request.
+**Q3. Who makes the ruleset edit, and when?**
 
-- (a) The session makes it with `gh api` after the ruling, and posts the ruleset before and after on #42.
-- (b) The owner makes it in GitHub's settings.
-- Recommendation: (a), on the owner's word in the ruling. Either way the record file and the comparison in D9 land
-  with the change.
+Changed since the preview: "when" is new, and so is what the edit does to the pull requests open at that moment.
 
-## Where this design goes beyond or departs from the direction
+The direction accepted the up-to-date rule. The edit is a repository setting made outside any pull request. It has
+to be in force before this change's own `merge-check` job can pass, so it is made during implementation (task
+7.3), before this change merges. From that moment no pull request merges unless its head contains the tip of
+`main`. Today PR #39 is two commits behind and PR #14 four; PR #44 and PR #47 are level.
 
-1. It recommends no waiver at all (Q1); the owner's words allow one.
-2. "With `-race` at one CPU" is done by changing the existing unit run, not by a repeated run; only the run without
-   `-race` is repeated (D1, D2).
-3. The Docker-backed tests are not repeated (Q2).
-4. `-shuffle=on` is added (D2).
-5. A build-tag check is added beside the skip check, and the existing skip becomes a failure (D6).
-6. The port guard's exemption marker is removed; the direction named only its pointer (D7).
-7. The ruleset gets a record file and a comparison on every run (D9).
-8. A pull request that closes a flake issue is exempt from the known-flake check; without that the fix could not
-   land (D8).
-9. The known-flake check does not reach a red that nobody files, and one already-green pull request can still
-   merge after each filing (D8). The direction's wording does not carry those limits.
+- (a) The session makes it with `gh api` at task 7.3, and posts the ruleset before and after on #42. The call
+  replaces the rules list whole, so the session sends back what it read with one value changed and compares the
+  read-back (D9).
+- (b) The owner makes it in GitHub's settings, at a time the owner picks; the session then posts the read-back.
+  This avoids building the request by hand.
+- Recommendation: (a), on the owner's word in the ruling. Either way the check of D9 lands with the change.
+
+**Q4. Must a flake fix close every open flake, or any one of them?**
+
+New; from the review's first HIGH finding. The first revision said "at least one" without asking.
+
+- (a) Every one. A pull request is exempt only when every open `class:flake` issue is among its closing
+  references. The head that merges has then run with every known fix in place. Cost: with two flakes open, neither
+  fix can land alone. They share one pull request, which under the claim rules means one branch takes the other's
+  commits and one of the two claims is closed. A flake that cannot be fixed yet holds back the fix of every other
+  one. Nothing else could merge in that time under either option, so what (a) adds is the wait on the fix that is
+  ready.
+- (b) Any one. Fixes land one at a time, as SemStreams' did (inventory 6.3). Cost: the fix for one flake merges on
+  a green that the other could have produced by chance, and retrying that run is a re-roll nothing stops. One
+  closing line passes the job whichever flake is open.
+- Under both, a closing line with no real fix behind it passes. What stands against that is the warning on the run
+  and the two review-only rules of D8.
+- Recommendation: (a). The spec differs by one word between the two.
+
+**Q5. Do ported tests land repaired, as D6 and D2 require?**
+
+New; from the review's seventh finding. The direction accepted guards "with no list of accepted exceptions" before
+anyone had measured what that asks of the port set. It asks this: 98 of 774 test files, in 26 of the 65 packages,
+hold a sleep, a skip or another build tag, and one test fails the repeat command on its first run ("Effects on
+slice 04A"). The setup plan says "unchanged extraction retains earned tests" (`docs/setup-plan.md:210-211`); D6
+changes some of those tests before they can land.
+
+- (a) As accepted. Each slice repairs the test files it ports: a sleep becomes a wait on a signal, a skip is
+  removed or its test is deleted on a ruling, and the `live_llm` file stays behind. A ported test that fails
+  `test:repeat` is repaired in the slice, or its package gets a `repair-before-port` row. Cost: repair work in 26
+  packages, paid inside slice 04A; the plan's sentence is read as "retained, and repaired where a gate requires
+  it".
+- (b) A list of accepted files for ported code, which shrinks as they are repaired. Cost: this is the baseline the
+  direction refused. SemStreams' list held 254 entries, and a test that later flaked was among them.
+- (c) The three checks cover `internal/harness` and new files only. Cost: the largest body of test code is outside
+  the rule, and 294 sleeps arrive on `main`.
+- (d) A test that fails the checks is not ported, and its coverage is earned again later. Cost: it drops evidence
+  the plan says to keep.
+- Recommendation: (a), with these numbers handed to PR #47 so its slicing can budget the repair. This change edits
+  none of PR #47's files.
+
+One thing in this area is not put as a question: what happens when the `verify` job outgrows its 15 minutes. By
+the projection the repeat step alone does not cause that in slice 04A, and "Not now" says what fails, who decides
+and which options are open when it comes.

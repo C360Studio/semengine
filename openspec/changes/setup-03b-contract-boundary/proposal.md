@@ -7,10 +7,11 @@ capabilities and no graph capability). SETUP 03B (epic #8) must approve the reta
 port set before SETUP 04A extracts anything. SemEngine is a live semantic knowledge graph with durable execution, two
 halves admitted by owner mandate at a named tier with a named qualifying workload (`AGENTS.md`; #8 Q14). The first
 inventory pass measured 65 packages / 126,926 non-test lines at the frozen pin `8b99efe9` (`inventory.md` A1). Under the
-ruled tier-0 scope for both halves, with four starter consumers (semsource, semconnect, semboids, semteams), tier 0
-is 62 packages / 134,356 lines (`inventory-3-pass3.md` §2.2). Three reproduced substrate defects (#15, #16, #17),
-three contract requests (#18, #19, #20), graph-ingest's settlement under process replacement, and the operator
-surface had no SemEngine contract. The owner ruled every question this change raised on 2026-10-01 except one; this
+ruled tier-0 scope for both halves, with four starter consumers (semsource, semconnect, semboids, semteams), tier 0 is
+62 packages / 134,356 lines if BM25 is tier 1, or about 64 / 140,911 less one file if BM25 is tier 0
+(`inventory-3-pass3.md` §2.2); the owner decides which (H1). Three reproduced substrate defects (#15, #16, #17), three
+contract requests (#18, #19, #20), graph-ingest's settlement under process replacement, and the operator surface had no
+SemEngine contract. The owner ruled the questions this change raised on 2026-10-01 except three, which hold tasks; this
 change records the rulings and turns them into rows and tasks.
 
 ## What Changes
@@ -23,8 +24,9 @@ change records the rulings and turns them into rows and tasks.
   aggregator; the pin's error text and doc comments that name `payloadbuiltins.Register` become D1 ledger items (D1).
 - The port set, re-partitioned by "needs an external provider" (D4): the agentic domain and the gateways separated;
   `graph/clustering`, `processor/graph-clustering`, `graph/inference` (hierarchy), `graph/structural` and
-  `pkg/graphview` at tier 0; `graph/llm`, `model/wire`, `graph/embedding` and `processor/graph-embedding` behind the
-  capability seam, which is the last task of 04A. Tier 0 = 62 / 134,356, replacing 67 / 129,063.
+  `pkg/graphview` at tier 0; `graph/llm` and `model/wire` behind the capability seam, which is the last task of 04A.
+  The embedding family (BM25 and an OpenAI client) is tier 0 or tier 1 by the owner's decision (H1); the ceiling
+  replacing 67 / 129,063 follows it.
 - A rule core at tier 0 (D12): `processor/rule` minus the `publish_agent` and `deny`/`approve` families, by four
   `class:port-refactor` edits (E1–E4); `pkg/rulepack` and `service/rule_pack_bind.go` carried.
 - The durable-execution floor at tier 0 (D13): entity workflows (`pkg/lifecycle` kept), settlement (graph-ingest's
@@ -32,9 +34,10 @@ change records the rulings and turns them into rows and tasks.
   observer, and recovery stated per storage class (memory stream, file stream, no stream) in place of I7. The
   primitive itself is epic #24.
 - Change observation (D14): the applied-state KV watch as the primitive, `pkg/graphview` as the view layer, and
-  `output/websocket` as a tier-0 transport over applied state.
+  `output/websocket` as a tier-0 consumer transport over applied state (a port change).
 - The operator surface (D15): health, service, OpenAPI, component, flowgraph, message-trace, storage, metrics and
-  composition-Mermaid rows; metric names and the flowgraph response as tested contracts; no `semengine-ui`.
+  composition-Mermaid rows; the service's SSE KV watch as the operator transport of change observation; metric names and
+  the flowgraph response as tested contracts; no `semengine-ui`.
 - The exported surface (D16): internal by default, public only where a starter consumer imports, with three DX gates.
 - Port refactors (seams, file-level adapts, dropped fields) are tracked as the risk class `class:port-refactor`:
   each is an `adapt` ledger row citing its matrix row and proving test (D4a).
@@ -60,16 +63,20 @@ All on 2026-10-01:
   (questions in [comment 5929442167](https://github.com/C360Studio/semengine/issues/8#issuecomment-5929442167)),
   copied to issues #2, #3, #18, #19, and #20. The word "tier" was ruled on
   [#4](https://github.com/C360Studio/semengine/issues/4#issuecomment-5929716018).
-- Q14–Q18 (questions in [comment 5929815222](https://github.com/C360Studio/semengine/issues/8#issuecomment-5929815222))
-  and the Q11 re-ruling: the tier-0 scope proposal for both halves,
-  [comment 5930855353](https://github.com/C360Studio/semengine/issues/8#issuecomment-5930855353), approved as written
-  including sequencing by [comment 5930898291](https://github.com/C360Studio/semengine/issues/8#issuecomment-5930898291).
+- Q14–Q18: questions in [comment 5929815222](https://github.com/C360Studio/semengine/issues/8#issuecomment-5929815222),
+  ruled with the owner's words in [comment
+  5929902986](https://github.com/C360Studio/semengine/issues/8#issuecomment-5929902986).
+- The Q14–Q18 releases and the Q11 re-ruling: the tier-0 scope proposal for both halves, [comment
+  5930855353](https://github.com/C360Studio/semengine/issues/8#issuecomment-5930855353), approved as written including
+  sequencing by [comment 5930898291](https://github.com/C360Studio/semengine/issues/8#issuecomment-5930898291).
 - The operator surface: [comment 5931143569](https://github.com/C360Studio/semengine/issues/8#issuecomment-5931143569),
   adopting the review in [comment 5931117077](https://github.com/C360Studio/semengine/issues/8#issuecomment-5931117077).
 
-Each decision in `design.md` states its ruling. One question is open: whether the rule core refuses an unknown action
-type at load or fails at fire time (D12); it holds task 4.9. The architect's unruled forks (E1 registration shape, E2
-field shape, `graph/llm` split shape) are design options for the 04A changes, not holds.
+Each decision in `design.md` states its ruling. Three questions are open, each holding tasks: BM25 at tier 0 or tier 1
+(H1, D4; tasks 1.7, 2.3, 2.11); admitting `composition/cli` at tier 0 or deferring the CLI row (M1, D15; task 2.13); and
+whether the rule core refuses an unknown action type at load or fails at fire time (D12; task 4.9). The architect's
+unruled forks (E1 registration shape, E2 field shape, `graph/llm` split shape) are design options for the 04A changes,
+not holds.
 
 ## Non-goals
 

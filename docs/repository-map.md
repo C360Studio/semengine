@@ -64,7 +64,7 @@ There is no `/tickets` state and no handoff document; each question has one home
 
 ## Current GitHub state
 
-- Issues #2 and #3 are open owner decisions (ADR-106 relationship, registration cut); #4 is closed, ruled "tier".
+- Issues #2 and #3 (ADR-106 relationship, registration cut) are ruled, as Q2 and Q1 on #8; #4 is closed, ruled "tier".
 - Issues #5 to #11 are the SETUP epics: #5 Foundation, #6 Isolated harness, #7 Pinned consumer baseline, #8 Contract
   and boundary, #9 Tier 0 graph foundation, #10 Tier 1 lexical retrieval, #11 Tier 2 neural retrieval.
 - Milestones: `Setup: foundation through contract` (#2 to #8), `Tier 0: graph foundation (provisional)` (#9),

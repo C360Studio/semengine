@@ -80,8 +80,9 @@ All on 2026-10-01:
 - The operator surface: [comment 5931143569](https://github.com/C360Studio/semengine/issues/8#issuecomment-5931143569),
   adopting the review in [comment 5931117077](https://github.com/C360Studio/semengine/issues/8#issuecomment-5931117077).
 
-Each decision in `design.md` states its ruling. One question is open: whether the rule core refuses an unknown action
-type at load or fails at fire time (D12; task 4.9). The architect's unruled forks (E1 registration shape, E2 field
+Each decision in `design.md` states its ruling; the last open question, unknown action types, was ruled in
+[comment 5932719893](https://github.com/C360Studio/semengine/issues/8#issuecomment-5932719893): refused at load (D12;
+task 4.9). The architect's unruled forks (E1 registration shape, E2 field
 shape, `graph/llm` split shape) are design options for the 04A changes, not holds.
 
 ## Non-goals

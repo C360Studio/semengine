@@ -10,8 +10,8 @@ No task asserts a post-merge fact.
 Every task ends in one of three states: done, with its evidence; moved to its home, ticked, with a pointer
 ("moved to #9, Carried to 04A, item n" names a numbered item in epic #9's body); or a deliberate not-done (`[~]`) with
 its reason. "Reviewer re-check" is the independent reviewer's APPROVE of `03e22f1` (change review re-check), whose
-R1–R5 corrections landed in `a4465c0`. An unchecked task that says "hold" is one `task spec:queue` reports as blocked:
-4.9 (unknown action types).
+R1–R5 corrections landed in `a4465c0`. No task is held; the last hold, 4.9 (unknown action types), was ruled and
+released.
 
 ## 1. Rulings recorded
 
@@ -221,10 +221,11 @@ R1–R5 corrections landed in `a4465c0`. An unchecked task that says "hold" is o
 - [x] 4.8 Follows ruling Q18. The `internal/maxdelivery` row (port, re-home under SemEngine's `internal/`, and the
       composition question D13 leaves to the 04A change that ports it): moved to #9 (Carried to 04A, item 1); the
       edit is issue #36.
-- [ ] 4.9 Hold: held on #8 — refuse unknown action types at load vs fail at fire time (owner). The E1 Rules row and
-      D12 record the ruled behavior for an action whose type is neither core nor registered, with its proving test and
-      the consequence for semteams' five `replace_owned` files; issue #25 carries the edit. Role: owner (ruling),
-      technical-writer (record). Gate: reviewer verdict.
+- [x] 4.9 Follows ruling [5932719893](https://github.com/C360Studio/semengine/issues/8#issuecomment-5932719893):
+      unknown action types are refused at load. The E1 Rules row and D12 record the ruled behavior for an action
+      whose type is neither core nor registered, with its proving test and the consequence for semteams' five
+      `replace_owned` files; issue #25 carries the edit. Role: owner (ruling), technical-writer (record). Gate:
+      reviewer verdict. Evidence: D12; the Rules row; the owner's ruling.
 
 ## 5. Fusion and graph-tool boundary
 

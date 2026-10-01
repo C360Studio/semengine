@@ -549,11 +549,14 @@ Consumer debt recorded, not engine work: semteams' 9 `replace_owned` actions (5 
 `reconcile_predicates` per `docs/operations/36-graph-foundation-breaking-cutover.md:43,97`). They already fail at fire
 time on the pin; semteams owes that migration independently of the seam.
 
-**Open (held, owner):** whether an action whose `type` is neither core nor registered is refused when the rule pack
-loads or fails when the rule fires. Today it passes config validation and fails at fire time (`actions.go:943`; no
-type check in `config_validation.go`). Refusing at load turns an adopter's log line into a boot error, but is a
-behavior change from the pin; on the semteams corpus it would reject the five `replace_owned` files at boot even with
-the agentic family registered (pass3 §3.3). Task 4.9 carries the hold.
+**Ruled (unknown action types, [comment
+5932719893](https://github.com/C360Studio/semengine/issues/8#issuecomment-5932719893)): refused at load.** A rule pack
+that names an action whose `type` is neither core nor registered fails at boot, with the type and the file named; it
+never reaches fire time. At the pin it passes config validation and fails at fire time (`actions.go:943`; no type check
+in `config_validation.go`), so this is a behavior change from the pin, made in E1 (issue #25). Proving test: a pack
+naming an unregistered action type fails at load with the type and file named. Consequence, accepted: on the semteams
+corpus the five `dev-via-test` files with retired `replace_owned` actions are refused at boot, even with the agentic
+family registered (pass3 §3.3), until semteams migrates them to `reconcile_predicates`, which the pin already requires.
 
 Where the core's `ProjectionBindings` get bound in a SemEngine composition is not established: at the pin
 `service.ConfigureRulePackMutations` is called only from `internal/boot/run.go:330` (scope Q1.4), which is not ported.
@@ -706,7 +709,7 @@ row's behavior is admitted; "all" for a rule that holds at every tier. A row wit
 | Settlement | durable-consumer settlement order and heartbeat (Q18) | apply → durable guard → ack (`keyed_ingest.go:144-229`) on a memory stream | n/a (no stream) | file stream at about 200 entity msgs/s; settlement symbols 0 | settlement symbols 0 | order kept; graph-ingest calls `natsclient` settlement (#759); `InProgress` heartbeat for long applies | Change | owner (Q18) | harness: process kill mid-apply on a file stream (D11); needs the SETUP 02 harness extension (task 7.1) | semboids, semsource | durable execution | 0 |
 | Parked input | message parked after `MaxDeliver` (default 3) is visible | `MAX_DELIVERY_EVENTS` provisioned by `EnsureStreams` (`run.go:256`); no observer | provisioned (`cs-graph-backend/main.go:224`); no observer | provisioned (`main.go:138`); no observer | provisioned (`main.go:705`); no observer | `internal/maxdelivery` observer ported as a tier-0 component reading `MAX_DELIVERY_EVENTS` | Change | owner (Q18) | harness: a message that exhausts `MaxDeliver` produces a visible parked occurrence (record and metric) | all four | durable execution | 0 |
 | Rules | action dispatch is open to registered families; core families enumerated (E1) | no rule processor composed | no rule processor composed | 7 actions, all core (`publish` ×6, `lifecycle_transition` ×1) | 119 actions; 70 core | closed switch (`actions.go:916-945`) gains a family registry | Change | architect | a fake family registered on a test executor is dispatched and validated; a core-only pack loads and fires with no family registered (semboids corpus) | semboids | durable execution | 0 |
-| Rules | an action type that is neither core nor registered (E1) | n/a | n/a | none | 40 `publish_agent` without the family; 9 `replace_owned` (not a type at the pin) | refused at load or fails at fire time — owner ruling pending (D12) | pending | owner (#8) | named by the ruling: a definition with an unregistered type is rejected at load with the type named, or fails at fire time as at the pin | semboids, semteams | durable execution | 0 |
+| Rules | an action type that is neither core nor registered (E1) | n/a | n/a | none | 40 `publish_agent` without the family; 9 `replace_owned` (not a type at the pin) | refused at load, with the type and file named (D12; ruled 5932719893) | Change | owner (#8) | a pack naming an unregistered action type fails at load with type and file named | semboids, semteams | durable execution | 0 |
 | Rules | rule JSON decodes unchanged for every consumer corpus (E2) | n/a | n/a | 7/7 | 119/119 (`tool_choice` in 31 files; `response_format` in 0) | `response_format`/`tool_choice` held as raw JSON in the core; the family decodes them | Change | architect | golden round-trip of the semteams (119) and semboids (7) corpora through the core decoder; property: core decode then family decode of `tool_choice` equals direct `agentic.ToolChoice` decode | semboids, semteams | durable execution | 0 |
 | Rules | the core compiles with no agentic import; `publish_agent` is a registered family (E3) | n/a | n/a | 0 `publish_agent` | 40 `publish_agent` | `processor/rule` imports no `agentic*`, `vocabulary/agentic` or `governance` | Change | architect | import guard: `go list -deps ./processor/rule` ∩ {`agentic*`, `vocabulary/agentic`, `governance`} = ∅; semteams 40/40 dispatched with the family registered | semboids | durable execution | 0 |
 | Rules | `deny` is terminal: a `*DenyVerdict` stops the chain and is never retried (E4) | n/a | n/a | 0 `deny`/`approve` | 0 `deny`/`approve` | `deny.go` stays in the core; `deny`/`approve` executors and `VerdictAuditor` move to the governance tier | Change | architect | `deny_integration_test.go` and the deny arm of `stateful_evaluator_test.go` move with the family; a core test of the short-circuit on a `*DenyVerdict` (the 04A rule-core change adds it) | none; removal row | durable execution | 0 |
@@ -790,13 +793,13 @@ row's behavior is admitted; "all" for a rule that holds at every tier. A row wit
 
 ## Adopter seam findings (the gaps are the design work)
 
-From A12: seams 3 (stream subjects), 4 (projection client), and 5 (desired-config removal) are at "found out
-nowhere" or "next boot" today; D11 #16, D7/D8, and D11 #17 are their fixes, each converting a predicted value into an
-observed one (boot refusal; owner-side fence and classification; owner-side tombstone). Seam 1 (registration) moves
-from compile-time-silent to compile-time-explicit under D1, and the D1 adopter-path items stop the one boot error that
-would name a missing symbol. Seam 2 (Lens SPI) and seam 6 (durability) stay as documented contracts with their
-invariants in spec (I7). Two new seams enter with the scope ruling: the rule core's action-type refusal (D12; held) and
-the operator surface's metric names (D15; a drift test).
+From A12: seams 3 (stream subjects), 4 (projection client), and 5 (desired-config removal) are at "found out nowhere" or
+"next boot" today; D11 #16, D7/D8, and D11 #17 are their fixes, each converting a predicted value into an observed one
+(boot refusal; owner-side fence and classification; owner-side tombstone). Seam 1 (registration) moves from
+compile-time-silent to compile-time-explicit under D1, and the D1 adopter-path items stop the one boot error that would
+name a missing symbol. Seam 2 (Lens SPI) and seam 6 (durability) stay as documented contracts with their invariants in
+spec (I7). Two new seams enter with the scope ruling: the rule core's action-type refusal (D12; refused at load) and the
+operator surface's metric names (D15; a drift test).
 
 ## Design options (not holds)
 
@@ -823,10 +826,8 @@ reviewer; none blocks a task here.
 
 ## Open questions
 
-One question is open, and it holds one task. Owner, on #8.
-
-- **Unknown action types** (D12): refuse an action whose type is neither core nor registered at rule-pack load, or
-  keep the pin's fire-time failure. Holds task 4.9.
+None. The last one, unknown action types (D12, task 4.9), was ruled in [comment
+5932719893](https://github.com/C360Studio/semengine/issues/8#issuecomment-5932719893): refused at load.
 
 Ruled since the step-back review and released (each task's first line names its ruling): Q14 (admission by owner
 mandate, yes), Q15 (rule core at tier 0, D12), Q16 (`pkg/lifecycle` kept, D13), Q17 (exported surface, D16), Q18

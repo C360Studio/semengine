@@ -92,7 +92,8 @@ to be skipped.
 - **Rules:** a rule watches for entity changes that match a condition and then runs actions. The actions are
   `publish`, `add_triple`, `remove_triple`, `update_triple`, `reconcile_predicates` and `update_kv`, plus the three
   workflow actions below. Rules are loaded from JSON files called rule packs, and a pack's ID is validated when it is
-  loaded.
+  loaded. A pack that names an action type the engine does not know stops the program at startup, with the type and
+  the file named, rather than failing later when the rule fires.
 - **Entity workflows:** an entity can follow a declared set of phases, for example `active → culled | expired`.
   - The engine checks each move against the allowed transitions and stores the phase as facts on the entity itself,
     so a workflow survives a restart because the entity does.
@@ -103,8 +104,6 @@ to be skipped.
     stops an outside call from running twice after a restart, typed reasons an attempt is blocked and may be
     retried, and replay of unfinished work at startup. They are planned as their own piece of work
     ([#24](https://github.com/C360Studio/semengine/issues/24)).
-  - a decided behavior for an unknown action type. Today it fails when the rule fires; whether to refuse it when the
-    pack loads is still to be decided.
 
 ### Observing changes
 

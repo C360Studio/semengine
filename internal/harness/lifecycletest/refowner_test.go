@@ -196,25 +196,34 @@ func newRefowner(t *testing.T, fp failpoint, restartable bool) *refowner {
 	return &refowner{fp: fp, restartable: restartable, hang: hang}
 }
 
-// finalize stops a double the check may have left running, as Run does after each check, then
-// ends its worker through Start authority and joins it, and requires that the double holds nothing.
-// A failpoint double may refuse, panic or return early in that Stop (stopReturnsNilWithWorkerRunning
-// never stops its own worker); the join is what keeps anything it started from outliving the test.
+// finalize stops a double the check may have left running, as Run does after each check, requires
+// that the double then holds nothing, and joins every worker the double started before it returns.
+//
+// A Stop that signalled its worker and returned nil claims a join: the requirement is checked
+// before finalize waits, so a Stop that returned ahead of its worker's exit (issue #40) is reported,
+// not rescued. A double whose Stop never signalled its worker (stopReturnsNilWithWorkerRunning's
+// declared defect) has that worker ended through Start authority and joined first; the assertion
+// then holds for it too, with no exemption.
 func finalize(t *testing.T, o *refowner) {
 	t.Helper()
 	_ = finish(t.Context(), o)
 	o.mu.Lock()
-	cancel, done := o.cancel, o.workerDone
+	cancel, stopCh, done := o.cancel, o.stopCh, o.workerDone
 	o.mu.Unlock()
-	if cancel != nil {
-		cancel()
+	if done == nil {
+		return // never started: nothing to join
 	}
-	if done != nil {
-		<-done // the worker selects on its Start context, so cancel ends it
+	select {
+	case <-stopCh:
+	default: // Stop never signalled the worker: end it through Start authority and join it
+		cancel()
+		<-done
 	}
 	if obs := o.Observe(); len(obs.Unresolved) > 0 {
 		t.Errorf("finalize refowner (%s): still holds %v", o.fp, obs.Unresolved)
 	}
+	cancel()
+	<-done // the worker selects on its Start context, so cancel ends it
 }
 
 // TestChecksPassAgainstCleanDouble: every check returns nil for a clean owner, with and without a

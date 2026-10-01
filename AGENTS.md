@@ -47,6 +47,31 @@ task verify       # spec:check docs:check fmt:check tidy:check build vet lint vu
 Run `task verify` before every implementation push; CI runs the same commands in two jobs, `verify` and `required`.
 Gate selection per diff: `.agents/skills/semengine-preflight/SKILL.md`.
 
+## Rules and what enforces them
+
+The linked file is the rule; this table is only its index. "Review only" means no command fails when the rule is
+broken. In SemStreams' record those are the rules that drifted: the defect class with a command behind it closed, and
+the classes policed by review prose stayed open. A change that adds a rule adds its row here, and a change that can
+turn a "review only" row into a failing command should.
+
+| Rule | Canonical home | Enforced by |
+| --- | --- | --- |
+| Production structs never retain `context.Context` | `.agents/contracts/semengine-developer.md` § Context ownership; `openspec/specs/harness-boundaries/spec.md` | `TestNoRetainedContext` (`task test:unit`) for struct fields; invented roots and nil defaults are review only |
+| Test cleanup never stops, closes or terminates under an unbounded context | `harness-boundaries` spec, "Bounded cleanup roots" | `task cleanup-roots:check` |
+| Tests bind no fixed address or port | `harness-boundaries` spec, "No fixed addresses in tests" | `TestNoFixedAddressesInTests`; `scripts/lint-test-ports.sh` (`task lint`) |
+| Production code imports no test library and nothing under `internal/harness` | `harness-boundaries` spec, "Import graph" | `TestImportGraph` |
+| One NATS image pin; Docker cleanup touches only SemEngine-assigned names | `harness-boundaries` spec | `TestOneImagePin`, `TestSemEngineAssignedNames`, `TestNoBroadDockerCleanup` |
+| A ported package has an admission-ledger row | `.agents/contracts/semengine-architect.md` § Extraction slices; `docs/admission-ledger.yaml` | `task ledger:check` for the row and its schema; the row's content is review only |
+| Critical packages hold their coverage floor | `.agents/skills/semengine-preflight/SKILL.md` | `task cover:check` |
+| OpenSpec changes and specs are well formed | "Where state lives" below | `task spec:check` for document shape; truth against code is review only |
+| A merge needs CI green | `.agents/protocol.md` § Work lifecycle | CI job `required`; claim before work and close by merged PR are review only |
+| A failure path fails closed; a skip, drop or degrade is declared | developer contract § Guarantee, signal, and revision contracts | review only |
+| No new surface without a present consumer; unused surface is left behind when porting | developer contract § Before adding anything new; architect contract § Extraction slices | review only |
+| A change that establishes a reusable primitive lists who should adopt it | architect contract § The adoption sweep | review only |
+| A boundary change is checked against the stated purpose | architect contract § Intent check | review only |
+| Tests use an independent oracle and are shown able to fail | `docs/testing.md`; developer and reviewer contracts, test fidelity | each structural guard has a paired `...Sensitivity` test; elsewhere review only |
+| Sister repositories are read-only and inventoried only as scoped | `docs/inventory-scope.md` | review only |
+
 ## Where state lives
 
 - **GitHub issues:** what is wanted and decided; rulings as issue comments; labels `type:epic`,

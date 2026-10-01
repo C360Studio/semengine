@@ -96,6 +96,10 @@ into the handoff:
 The architect's surface and adopter seam inventories answer these at design time. This check is the
 implementation-time re-run, scoped to the slice you touch: slices grow symbols the design never named.
 
+If question 1 finds no owner and what you are adding is meant for reuse across packages, you are establishing a
+pattern. List in the handoff every other package or seam that should adopt it, each at `file:line`. Listing is the
+whole obligation; migrating them is not part of this slice (architect contract, the adoption sweep).
+
 ## Exported-surface contracts
 
 These bind every NEW exported symbol. A new exported surface also needs the architect-approved consumer contract
@@ -171,11 +175,15 @@ BEFORE implementation.
 
 ## Test and operational fidelity
 
+The reasoning behind these rules, and the mutation procedure step by step, is in `docs/testing.md`.
+
 - Test behavior and outcomes through production constructors, codecs, and wire formats. Helper-only tests do not
   prove the assembled system. Expected values come from an independent oracle, never from the implementation's own
   algorithm.
 - Extraction retains the source package's relevant tests and adds missing boundary tests; changed behavior is proven
   by a failing-first test.
+- Extraction applies the slice design's surface audit (architect contract, Extraction slices). What the design marks
+  dropped is not carried "for now", and a config field that stays gets the test that fails when it is ignored.
 - Any new exported surface that parses, decodes, or validates external bytes or strings (subjects, keys, entity IDs,
   payload envelopes, config) ships with a native `Fuzz*` target and a seed corpus covering each grammar class it
   accepts AND each it must reject, asserting an invariant (never panics; round-trips; rejection is a typed error).

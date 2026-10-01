@@ -49,7 +49,7 @@ tasks:
     desc: Run the pinned revive, then the carried fixed-port guard and its fixture test
     cmds:
       - scripts/gopkgs.sh go tool revive -config revive.toml -formatter friendly ./...
-      # Carried byte-identical from SemStreams (ledger rows L9, L10); tests may not bind fixed ports.
+      # Adapted from SemStreams (ledger rows L9, L10; no exemption marker); tests may not bind fixed ports.
       - scripts/lint-test-ports.sh
       - scripts/lint-test-ports_fixture_test.sh
 
@@ -69,14 +69,26 @@ tasks:
       - scripts/gopkgs.sh go tool govulncheck ./...
 
   test:unit:
-    desc: Run unit tests with the race detector
+    desc: Run unit tests once with the race detector at one CPU (the integration run covers every CPU)
     cmds:
-      - scripts/gopkgs.sh go test -race -count=1 ./...
+      - scripts/gopkgs.sh go test -race -count=1 -cpu 1 ./...
+
+  test:repeat:
+    desc: Run unit tests five times at one CPU without the race detector, shuffled; -- <pkgs> to focus
+    cmds:
+      # The count, the CPU setting and the absence of -race are pinned by the merge-gate spec
+      # (contract test TestUnitInvocationsPinned); one CPU without -race is the setting that found #40.
+      - 'scripts/gopkgs.sh go test -count=5 -cpu 1 -shuffle=on {{.CLI_ARGS | default "./..."}}'
 
   test:integration:
     desc: Run Docker-backed tests through the admitted runner (host lock, process group, leak check); -- <pkgs> to focus
     cmds:
       - scripts/test-integration.sh {{.CLI_ARGS}}
+
+  merge:check:
+    desc: Fail while a class:flake issue is open that PR <n> does not close, or main's rules lack the up-to-date setting; -- <n>. Reads GitHub, so not in verify
+    cmds:
+      - scripts/merge-check.sh {{.CLI_ARGS}}
 
   cover:check:
     desc: Fail below 80% coverage on natsfixture (last integration run) and lifecycletest, probe (unit run)

@@ -3,8 +3,10 @@ package probe
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -137,37 +139,84 @@ func TestAwaitReturnsWhenConditionHolds(t *testing.T) {
 }
 
 // TestAwaitReportsLastObservation is the spec scenario: the condition never holds, and the
-// failure carries the last value and the last error rather than only "timed out".
+// failure carries the last value and the last error rather than only "timed out". Every observation
+// returns its own value and its own error, and the expectation is whatever the observer returned
+// last, so the result does not depend on how many observations fit before the deadline (flake #49:
+// the earlier version alternated errors and passed only when that count was even). The bubble's
+// clock makes the wait instant.
 func TestAwaitReportsLastObservation(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
-	defer cancel()
-	sentinel := errors.New("inspect: container restarting")
-	calls := 0
-	got, err := Await(ctx, func(context.Context) (string, error) {
-		calls++
-		if calls%2 == 0 {
-			return "state=restarting", sentinel
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+		defer cancel()
+		var (
+			calls             int
+			firstErr, lastErr error
+			lastValue         string
+		)
+		got, err := Await(ctx, func(context.Context) (string, error) {
+			calls++
+			lastValue = fmt.Sprintf("state=restarting#%d", calls)
+			lastErr = fmt.Errorf("inspect: container restarting (call %d)", calls)
+			if calls == 1 {
+				firstErr = lastErr
+			}
+			return lastValue, lastErr
+		}, func(string) bool { return false })
+		if err == nil {
+			t.Fatal("Await returned nil for a condition that never held")
 		}
-		return "state=restarting", nil
-	}, func(string) bool { return false })
-	if err == nil {
-		t.Fatal("Await returned nil for a condition that never held")
-	}
-	t.Logf("Await failure message: %v", err)
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Errorf("err = %v, want it to wrap context.DeadlineExceeded", err)
-	}
-	if !errors.Is(err, sentinel) {
-		t.Errorf("err = %v, want it to wrap the last observation error", err)
-	}
-	for _, want := range []string{"state=restarting", "inspect: container restarting", "observation"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("err = %q, want it to mention %q", err, want)
+		t.Logf("Await failure message after %d call(s): %v", calls, err)
+		if calls < 2 {
+			t.Fatalf("observer called %d time(s), want at least 2 so that last differs from first", calls)
 		}
-	}
-	if got != "state=restarting" {
-		t.Errorf("returned value = %q, want the last observation", got)
-	}
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("err = %v, want it to wrap context.DeadlineExceeded", err)
+		}
+		if !errors.Is(err, lastErr) {
+			t.Errorf("err = %v, want it to wrap the last observation error %q", err, lastErr)
+		}
+		if errors.Is(err, firstErr) {
+			t.Errorf("err = %v, wraps the first observation error %q, want only the last", err, firstErr)
+		}
+		for _, want := range []string{lastValue, lastErr.Error(), "observation"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("err = %q, want it to mention %q", err, want)
+			}
+		}
+		if got != lastValue {
+			t.Errorf("returned value = %q, want the last observation %q", got, lastValue)
+		}
+	})
+}
+
+// TestAwaitReportsLastObservationWithoutError covers the other branch of the failure message: no
+// observation ever failed, so the message says so and wraps only the context's error.
+func TestAwaitReportsLastObservationWithoutError(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+		defer cancel()
+		calls := 0
+		var lastValue string
+		got, err := Await(ctx, func(context.Context) (string, error) {
+			calls++
+			lastValue = fmt.Sprintf("state=starting#%d", calls)
+			return lastValue, nil
+		}, func(string) bool { return false })
+		if err == nil {
+			t.Fatal("Await returned nil for a condition that never held")
+		}
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Errorf("err = %v, want it to wrap context.DeadlineExceeded", err)
+		}
+		for _, want := range []string{lastValue, "(no error)"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("err = %q, want it to mention %q", err, want)
+			}
+		}
+		if got != lastValue {
+			t.Errorf("returned value = %q, want the last observation %q", got, lastValue)
+		}
+	})
 }
 
 func TestAwaitRefusesNilContext(t *testing.T) {

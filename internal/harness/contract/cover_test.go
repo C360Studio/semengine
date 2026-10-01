@@ -126,3 +126,22 @@ func TestTreeStateSeesUntrackedContent(t *testing.T) {
 		t.Fatalf("editing an untracked file left the fingerprint at %s", before)
 	}
 }
+
+// TestCoverCheckPrintsFailingTest (merge-gate › "Coverage gate names a failing test"): in its
+// no-argument mode scripts/cover-check.sh runs go test itself, and a test that fails there must
+// be named in its output. A copy of the script runs in a throwaway root against a fake go that
+// prints a --- FAIL line and exits 1.
+func TestCoverCheckPrintsFailingTest(t *testing.T) {
+	root := copyScript(t, "cover-check.sh")
+	env := fakeBin(t, map[string]string{"go": "#!/bin/sh\necho '--- FAIL: TestPlanted (0.00s)'\necho FAIL\nexit 1\n"})
+	cmd := exec.Command("bash", filepath.Join(root, "scripts", "cover-check.sh"))
+	cmd.Dir = root
+	cmd.Env = env
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("cover-check.sh exited 0 after its go test failed:\n%s", out)
+	}
+	if !strings.Contains(string(out), "--- FAIL: TestPlanted") {
+		t.Fatalf("cover-check.sh output does not name the failing test (err=%v):\n%s", err, out)
+	}
+}

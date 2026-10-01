@@ -245,25 +245,83 @@ func hostname(t *testing.T) string {
 // and they are part of the recorded value, so they are kept here too.
 func startIdentity(t *testing.T, pid int) string {
 	t.Helper()
-	out, err := exec.Command("ps", "-o", "lstart=", "-p", strconv.Itoa(pid)).Output()
+	identity, err := psStartIdentity(pid)
 	if err != nil {
-		t.Fatalf("ps lstart %d: %v", pid, err)
-	}
-	return strings.TrimLeft(strings.TrimSuffix(string(out), "\n"), " \t")
-}
-
-// deadPID returns the pid of a process that has exited and been reaped.
-func deadPID(t *testing.T) int {
-	t.Helper()
-	cmd := exec.Command("true")
-	if err := cmd.Run(); err != nil {
 		t.Fatal(err)
 	}
-	pid := cmd.Process.Pid
-	if err := syscall.Kill(pid, 0); err == nil {
-		t.Skipf("pid %d was reused before the test could use it", pid)
+	return identity
+}
+
+func psStartIdentity(pid int) (string, error) {
+	out, err := exec.Command("ps", "-o", "lstart=", "-p", strconv.Itoa(pid)).Output()
+	if err != nil {
+		return "", fmt.Errorf("ps lstart %d: %w", pid, err)
 	}
-	return pid
+	return trimIdentity(out), nil
+}
+
+func trimIdentity(psOut []byte) string {
+	return strings.TrimLeft(strings.TrimSuffix(string(psOut), "\n"), " \t")
+}
+
+// awaitLaterStartIdentity returns once a process started now gets a start identity other than
+// identity. ps reports start times to the second, so this takes at most about a second; start
+// times only move forward, so every process started afterwards differs from identity too. The
+// budget only bounds a host whose ps never moves on.
+func awaitLaterStartIdentity(ctx context.Context, identity string) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	_, err := probe.Await(ctx, func(ctx context.Context) (string, error) {
+		// The shell asks ps about itself, so the identity is that of a process started just now.
+		out, err := exec.CommandContext(ctx, "sh", "-c", "ps -o lstart= -p $$").Output()
+		return trimIdentity(out), err
+	}, func(now string) bool { return now != "" && now != identity })
+	return err
+}
+
+// deadPIDAttempts bounds how many fresh children deadPID starts before it gives up. A reaped pid
+// is reused only when the host cycles through its pid space between the child's exit and the
+// check, so one retry is almost always enough; the bound keeps a pathological host from looping.
+const deadPIDAttempts = 5
+
+// deadPID returns the pid of a process that has exited and been reaped, and the start identity
+// the runner would have recorded for it, read while it ran. The child is kept running until a
+// process started now would get a different identity, so if the pid is reused after this check
+// the new process's identity cannot equal the returned one, and the runner quarantines the owner
+// on the identity mismatch instead of respecting it as live. If every pid it got was already
+// reused, it fails the test with the pids it saw: a reused pid is reported, never hidden.
+func deadPID(t *testing.T) (int, string) {
+	t.Helper()
+	var reused []int
+	for range deadPIDAttempts {
+		cmd := exec.Command("cat") // runs until its stdin closes
+		stdin, err := cmd.StdinPipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		pid := cmd.Process.Pid
+		identity, err := psStartIdentity(pid)
+		if err == nil {
+			err = awaitLaterStartIdentity(t.Context(), identity)
+		}
+		_ = stdin.Close()
+		if waitErr := cmd.Wait(); err == nil {
+			err = waitErr
+		}
+		if err != nil {
+			t.Fatalf("deadPID: child %d: %v", pid, err)
+		}
+		// ESRCH is "no such process"; any other answer, EPERM included, means the pid is in use.
+		if err := syscall.Kill(pid, 0); errors.Is(err, syscall.ESRCH) {
+			return pid, identity
+		}
+		reused = append(reused, pid)
+	}
+	t.Fatalf("deadPID: each of %d reaped children's pids was reused before the test could use it: %v", deadPIDAttempts, reused)
+	return 0, ""
 }
 
 func pidAlive(pid int) bool { return syscall.Kill(pid, 0) == nil }
@@ -298,7 +356,8 @@ func TestR1BusyLockRefusesBeforeDocker(t *testing.T) {
 func TestR1ForeignHostOwnerIsRespected(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	h.writeOwner(t, "some-other-host.invalid", deadPID(t), "unknown")
+	pid, identity := deadPID(t)
+	h.writeOwner(t, "some-other-host.invalid", pid, identity)
 	r := h.run(t, "./internal/harness/natsfixture/")
 	if r.status != 1 || !strings.Contains(r.stderr, "host=some-other-host.invalid") {
 		t.Fatalf("status %d, want 1 naming the foreign owner\nstderr:\n%s", r.status, r.stderr)
@@ -312,14 +371,21 @@ func TestR1ForeignHostOwnerIsRespected(t *testing.T) {
 // quarantined and removed; the run then acquires, completes, and releases.
 func TestR2StaleLockIsQuarantined(t *testing.T) {
 	t.Parallel()
-	for name, plant := range map[string]func(h *harness){
-		"dead pid":         func(h *harness) { h.writeOwner(t, hostname(t), deadPID(t), "unknown") },
-		"changed identity": func(h *harness) { h.writeOwner(t, hostname(t), os.Getpid(), "Mon Jan  1 00:00:00 1990") },
+	// plant takes the subtest's t: it runs inside a parallel subtest, where a failure reported
+	// against the parent is a panic, not a failed subtest.
+	for name, plant := range map[string]func(t *testing.T, h *harness){
+		"dead pid": func(t *testing.T, h *harness) {
+			pid, identity := deadPID(t)
+			h.writeOwner(t, hostname(t), pid, identity)
+		},
+		"changed identity": func(t *testing.T, h *harness) {
+			h.writeOwner(t, hostname(t), os.Getpid(), "Mon Jan  1 00:00:00 1990")
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			h := newHarness(t)
-			plant(h)
+			plant(t, h)
 			r := h.run(t, "./internal/harness/natsfixture/")
 			if r.status != 0 {
 				t.Fatalf("status %d, want 0\nstdout:\n%s\nstderr:\n%s", r.status, r.stdout, r.stderr)

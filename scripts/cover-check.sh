@@ -19,7 +19,8 @@ if [ $# -eq 2 ]; then
 else
   mkdir -p coverage
   unit=coverage/unit.coverprofile
-  go test -count=1 -coverprofile="$unit" "./internal/harness/lifecycletest/" "./internal/harness/probe/" > /dev/null
+  # Its output is printed: a test that fails here must be named, not discarded.
+  go test -count=1 -coverprofile="$unit" "./internal/harness/lifecycletest/" "./internal/harness/probe/"
   if [ ! -f .evidence/last-run ]; then
     echo "cover: no integration run recorded in this worktree; run task test:integration first" >&2
     exit 1

@@ -26,6 +26,6 @@ comment unless a task says otherwise.
 - [x] 3.1 This change is design-only (owner ruling on #9): the spec deltas named in D10 are drafted in each of the seven
       changes' own OpenSpec change, `setup-04a-01-floor` first, so `.openspec.yaml` keeps `skip_specs: true` and no
       `specs/` folder exists here.
-- [ ] 3.2 `openspec archive setup-04a-foundation` is this pull request's last content commit; `docs/repository-map.md`
+- [x] 3.2 `openspec archive setup-04a-foundation` is this pull request's last content commit; `docs/repository-map.md`
       names the archived change and the seven planned changes; a bounded reviewer check of the archive commit is
       recorded on PR #47.

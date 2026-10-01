@@ -1,11 +1,12 @@
 # Design: setup-04a — the cut into OpenSpec changes
 
-The cut of the tier-0 port set into OpenSpec changes; architect draft.
+The cut of the tier-0 port set into OpenSpec changes.
 
-Status: architect draft, corrected after the pre-owner design review (`design-review.md`, verdict BLOCKING); for
-re-check, then owner acceptance. Nothing here is a ruling. Spec deltas and tasks are named, not drafted; they follow
-acceptance. Inventory citations are to `openspec/changes/setup-04a-foundation/inventory.md` at `13b5fee` by section
-(§n), never by line. The inventory that passed review is `564bc5e9…`; the committed copy `c6dbfe3a…` differs by
+Status: accepted by the owner on #9 (2026-10-01; "Owner rulings" below). The architect's draft passed the independent
+pre-owner design review on its fourth round (`DESIGN PASS`; record on PR #47). Spec deltas and tasks are named, not
+drafted; each of the seven changes drafts its own. Inventory citations are to `inventory.md` in this archive folder
+(committed at `13b5fee`) by section (§n), never by line. The inventory that passed review is `564bc5e9…`; the
+committed copy `c6dbfe3a…` differs by
 markdownlint formatting only (both checksums are recorded on PR #47).
 
 ## Purpose and admission
@@ -642,7 +643,7 @@ admitted with its proof in the same change, the largest change is 30,613 product
 recovery proofs come second rather than third, and the first-wave consumer's branch can start two changes before
 the end. Its cost against D-ii is one more change and one more review.
 
-## Open questions for the owner (questions with options; none are decided here)
+## Open questions for the owner (as posed; ruled in "Owner rulings" below)
 
 (a) **D13 / epic #24 after SemSource PR #223.** #24's body (lines 11, 16) still names `internal/sourcelifecycle` and
 `internal/sourceintent`, which PR #223 deleted at `e4febc0d` ("removes 3,426 net production Go lines"; "SemEngine
@@ -732,7 +733,7 @@ tasks and holds in its own OpenSpec change and claim PR, `setup-04a-01-floor` fi
 - Seven changes, seven reviews, seven ledger extensions; the largest review is change 4 (8 packages, 148 test files,
   six owners of which three need a new `Stop(ctx)`).
 - Change 1 boots nothing: its value is the harness, the port mechanics, and one owner (`metric.Server`) under the
-  suite. If the owner answers (d) with "change 1", green means less than #24 may have intended.
+  suite. The owner ruled (d) as change 2, so #24's "after" clause does not rest on change 1's green.
 - Change 2 proves the first component without a boot path; the first operator-visible process is change 3.
 - `go-openai` is a direct dependency for six changes (2–7) because of dormant `graph/llm`; `task vuln` scans it.
 - After `Restart`, `URL()` changes; every restart-shaped test stops its owner before and starts it after. A

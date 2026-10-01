@@ -1,9 +1,11 @@
 package contract
 
 import (
+	"errors"
 	"fmt"
 	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -110,10 +112,13 @@ func unitInvocationViolations(taskfile, verify []byte) []string {
 	return violations
 }
 
-// merge-gate › "Required needs both jobs": .github/workflows/ci.yml held to four facts. The job
+// merge-gate › "Required needs both jobs": .github/workflows/ci.yml held to five facts. The job
 // merge-check runs under exactly three read permissions; no permission anywhere in the workflow is
-// a write; required needs verify and merge-check; verify's limit is 15 minutes. As above, the
-// expected values are constants here, never read from the file under test.
+// a write; required needs verify and merge-check; verify's limit is 15 minutes; required runs under
+// if: always(), and its step, which takes its results from needs.*.result, exits 0 only when every
+// needed job succeeded. The last is shown by running the step's script as the workflow writes it,
+// with each set of results planted. As above, the expected values are constants here, never read
+// from the file under test.
 var (
 	requiredNeeds         = []string{"verify", "merge-check"}
 	mergeCheckPermissions = map[string]string{"contents": "read", "issues": "read", "pull-requests": "read"}
@@ -147,7 +152,16 @@ jobs:
   required:
     needs: [verify, merge-check]
     if: always()
-    steps: [{run: "true"}]
+    steps:
+      - name: Require every needed job to succeed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "needed job results: ${RESULTS:-<none>}"
+          if [ -z "$RESULTS" ]; then echo "no needed jobs reported"; exit 1; fi
+          for r in $RESULTS; do
+            if [ "$r" != "success" ]; then echo "required check did not succeed: $r"; exit 1; fi
+          done
 `
 	requireNoViolations(t, "clean fixture", ciWorkflowViolations([]byte(good)))
 
@@ -186,6 +200,31 @@ jobs:
 			[]string{"job verify", "15 minutes"}},
 		{"merge-check job removed", "  merge-check:\n", "  merge-chek:\n",
 			[]string{"no job merge-check"}},
+		// The three planted workflows added to tasks.md 7.4 after implementation: required must run
+		// whatever its needed jobs did, and its step must fail on anything but success from all of them.
+		{"required without if: always()", "    if: always()\n", "",
+			[]string{"job required", "if: always()"}},
+		{"step exits 0 for skipped", `if [ "$r" != "success" ]`, `if [ "$r" != "success" ] && [ "$r" != "skipped" ]`,
+			[]string{"job required", "exits 0", "skipped"}},
+		{"step reads verify alone", "${{ join(needs.*.result, ' ') }}", "${{ needs.verify.result }}",
+			[]string{"job required", "exits 0", "merge-check=failure"}},
+		{"step reads verify alone, by its source", "${{ join(needs.*.result, ' ') }}", "${{ needs.verify.result }}",
+			[]string{"job required", "does not take its results from needs.*.result"}},
+		// The same holes by other spellings.
+		{"required runs on success only", "    if: always()\n", "    if: success()\n",
+			[]string{"job required", "if: always()", "success()"}},
+		{"step has a condition", "      - name: Require every needed job to succeed\n", "      - name: Require every needed job to succeed\n        if: false\n",
+			[]string{"job required", "condition"}},
+		{"step allowed to fail", "      - name: Require every needed job to succeed\n", "      - name: Require every needed job to succeed\n        continue-on-error: true\n",
+			[]string{"job required", "continue-on-error"}},
+		{"step passes an empty list", `if [ -z "$RESULTS" ]; then echo "no needed jobs reported"; exit 1; fi`, "",
+			[]string{"job required", "exits 0", "no results"}},
+		{"step reads an expression the test cannot evaluate", "${{ join(needs.*.result, ' ') }}", "${{ toJSON(needs) }}",
+			[]string{"job required", "toJSON(needs)"}},
+		{"required's steps run under another shell", "    if: always()\n", "    if: always()\n    defaults:\n      run:\n        shell: sh\n",
+			[]string{"job required", "defaults.run.shell", "sh"}},
+		{"step always fails", "        run: |\n", "        run: |\n          exit 1\n",
+			[]string{"job required", "every needed job succeeded"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			requireViolation(t, ciWorkflowViolations(plant(t, tc.old, tc.repl)), tc.wants...)
@@ -194,15 +233,37 @@ jobs:
 }
 
 type ciJob struct {
-	Needs          any `yaml:"needs"`
-	Permissions    any `yaml:"permissions"`
-	TimeoutMinutes any `yaml:"timeout-minutes"`
+	Needs           any            `yaml:"needs"`
+	If              any            `yaml:"if"`
+	ContinueOnError any            `yaml:"continue-on-error"`
+	Permissions     any            `yaml:"permissions"`
+	TimeoutMinutes  any            `yaml:"timeout-minutes"`
+	Env             map[string]any `yaml:"env"`
+	Defaults        ciDefaults     `yaml:"defaults"`
+	Steps           []ciStep       `yaml:"steps"`
+}
+
+type ciDefaults struct {
+	Run struct {
+		Shell string `yaml:"shell"`
+	} `yaml:"run"`
+}
+
+type ciStep struct {
+	Name            string         `yaml:"name"`
+	If              any            `yaml:"if"`
+	ContinueOnError any            `yaml:"continue-on-error"`
+	Uses            string         `yaml:"uses"`
+	Shell           string         `yaml:"shell"`
+	Env             map[string]any `yaml:"env"`
+	Run             string         `yaml:"run"`
 }
 
 // ciWorkflowViolations checks a GitHub Actions workflow against the merge-gate spec.
 func ciWorkflowViolations(data []byte) []string {
 	var wf struct {
 		Permissions any              `yaml:"permissions"`
+		Defaults    ciDefaults       `yaml:"defaults"`
 		Jobs        map[string]ciJob `yaml:"jobs"`
 	}
 	if err := yaml.Unmarshal(data, &wf); err != nil {
@@ -244,6 +305,12 @@ func ciWorkflowViolations(data []byte) []string {
 				violations = append(violations, fmt.Sprintf("ci.yml: job required needs %v; %s is missing, and the merge-gate spec requires it to need %v", needs, want, requiredNeeds))
 			}
 		}
+		for _, d := range []struct{ where, shell string }{{"workflow", wf.Defaults.Run.Shell}, {"job required", req.Defaults.Run.Shell}} {
+			if d.shell != "" && d.shell != "bash" {
+				violations = append(violations, fmt.Sprintf("ci.yml: %s sets defaults.run.shell %q; the test runs required's step as GitHub runs bash", d.where, d.shell))
+			}
+		}
+		violations = append(violations, requiredStepViolations(req, needs)...)
 	}
 
 	if v, ok := wf.Jobs["verify"]; !ok {
@@ -293,4 +360,165 @@ func mergeCheckPermissionViolations(perms any) []string {
 		}
 	}
 	return out
+}
+
+// requiredResultSets are the results planted for the step of required, one set per run, keyed by
+// needed job. Only the first, every job a success, may exit 0; nil is a run with no results at all.
+func requiredResultSets() []map[string]string {
+	sets := []map[string]string{{}}
+	for _, j := range requiredNeeds {
+		sets[0][j] = "success"
+	}
+	for _, bad := range []string{"failure", "cancelled", "skipped"} {
+		for _, j := range requiredNeeds {
+			set := maps.Clone(sets[0])
+			set[j] = bad
+			sets = append(sets, set)
+		}
+	}
+	return append(sets, nil)
+}
+
+var ghExpression = regexp.MustCompile(`\$\{\{\s*(.*?)\s*\}\}`)
+
+var (
+	joinNeedsResults = regexp.MustCompile(`^join\(\s*needs\.\*\.result\s*(?:,\s*'([^']*)'\s*)?\)$`)
+	oneNeedResult    = regexp.MustCompile(`^needs\.([A-Za-z0-9_-]+)\.result$`)
+)
+
+// evalNeedsExpression evaluates the two expressions a step may use to read its needed jobs'
+// results: join(needs.*.result, 'sep') over the jobs in needs order, and needs.<job>.result. Any
+// other expression is refused, so a step the test cannot run as written fails rather than passes.
+func evalNeedsExpression(expr string, needs []string, results map[string]string) (string, bool) {
+	if m := joinNeedsResults.FindStringSubmatch(expr); m != nil {
+		sep := ","
+		if strings.Contains(expr, "'") {
+			sep = m[1]
+		}
+		var rs []string
+		for _, j := range needs {
+			if r, ok := results[j]; ok {
+				rs = append(rs, r)
+			}
+		}
+		return strings.Join(rs, sep), true
+	}
+	if m := oneNeedResult.FindStringSubmatch(expr); m != nil {
+		return results[m[1]], true
+	}
+	return "", false
+}
+
+// requiredStepViolations holds the job required to run whatever its needed jobs did and to fail by
+// its own step unless each of them succeeded. The condition is read; the step is run.
+func requiredStepViolations(req ciJob, needs []string) []string {
+	var out []string
+	if cond := strings.TrimSpace(fmt.Sprint(req.If)); req.If == nil || (cond != "always()" && cond != "${{ always() }}") {
+		out = append(out, fmt.Sprintf("ci.yml: job required runs under if: %v; the merge-gate spec requires if: always(), or a failed or cancelled needed job leaves Required skipped, which GitHub reports as success", req.If))
+	}
+	if req.ContinueOnError != nil {
+		out = append(out, fmt.Sprintf("ci.yml: job required sets continue-on-error: %v; the merge-gate spec requires it to fail", req.ContinueOnError))
+	}
+	if len(req.Steps) == 0 {
+		return append(out, "ci.yml: job required has no steps; the merge-gate spec requires a step that reads the results of its needed jobs")
+	}
+
+	// Every expression the job's steps carry, in their env and their scripts, must be one the test
+	// can evaluate, and at least one must read needs.*.result.
+	var texts []string
+	for _, v := range req.Env {
+		texts = append(texts, fmt.Sprint(v))
+	}
+	runnable := true
+	for i, st := range req.Steps {
+		where := fmt.Sprintf("ci.yml: job required, step %d (%s)", i+1, st.Name)
+		switch {
+		case st.If != nil:
+			out = append(out, fmt.Sprintf("%s has the condition %v; the merge-gate spec requires the step to run on every result", where, st.If))
+		case st.ContinueOnError != nil:
+			out = append(out, fmt.Sprintf("%s sets continue-on-error: %v; the merge-gate spec requires the step's failure to fail Required", where, st.ContinueOnError))
+		case st.Uses != "" || st.Run == "":
+			out = append(out, fmt.Sprintf("%s is not a run step (uses %q); the test runs the step's script as the workflow writes it", where, st.Uses))
+			runnable = false
+		case st.Shell != "" && st.Shell != "bash":
+			out = append(out, fmt.Sprintf("%s runs under shell %q; the test runs it as GitHub runs bash", where, st.Shell))
+			runnable = false
+		}
+		texts = append(texts, st.Run)
+		for _, v := range st.Env {
+			texts = append(texts, fmt.Sprint(v))
+		}
+	}
+	readsAll := false
+	for _, text := range texts {
+		for _, m := range ghExpression.FindAllStringSubmatch(text, -1) {
+			if joinNeedsResults.MatchString(m[1]) {
+				readsAll = true
+			}
+			if _, ok := evalNeedsExpression(m[1], needs, nil); !ok {
+				out = append(out, fmt.Sprintf("ci.yml: job required carries the expression ${{ %s }}, which the test cannot evaluate; the merge-gate spec requires its step to read join(needs.*.result, ...)", m[1]))
+				runnable = false
+			}
+		}
+	}
+	if !readsAll {
+		out = append(out, "ci.yml: job required: its step does not take its results from needs.*.result; the merge-gate spec requires it to read the result of every job it needs")
+	}
+	if !runnable {
+		return out
+	}
+
+	for _, results := range requiredResultSets() {
+		label := "no results"
+		if results != nil {
+			var parts []string
+			for _, j := range requiredNeeds {
+				parts = append(parts, j+"="+results[j])
+			}
+			label = strings.Join(parts, " ")
+		}
+		subst := func(text string) string {
+			return ghExpression.ReplaceAllStringFunc(text, func(e string) string {
+				v, _ := evalNeedsExpression(ghExpression.FindStringSubmatch(e)[1], needs, results)
+				return v
+			})
+		}
+		ok, output, err := runRequiredSteps(req, subst)
+		if err != nil {
+			return append(out, fmt.Sprintf("ci.yml: job required: running its step for %s: %v", label, err))
+		}
+		allSuccess := results != nil && !slices.ContainsFunc(requiredNeeds, func(j string) bool { return results[j] != "success" })
+		switch {
+		case allSuccess && !ok:
+			out = append(out, fmt.Sprintf("ci.yml: job required: its step exits non-zero when every needed job succeeded (%s): %s", label, output))
+		case !allSuccess && ok:
+			out = append(out, fmt.Sprintf("ci.yml: job required: its step exits 0 for %s; the merge-gate spec requires it to fail unless every needed job succeeded", label))
+		}
+	}
+	return out
+}
+
+// runRequiredSteps runs the job's steps in order as GitHub runs a bash step (bash -e), with the
+// expressions in their env and scripts already substituted, and an environment of PATH and the
+// job's and step's env alone. It reports whether every step exited 0, as GitHub would.
+func runRequiredSteps(req ciJob, subst func(string) string) (bool, string, error) {
+	for _, st := range req.Steps {
+		env := []string{"PATH=" + os.Getenv("PATH")}
+		for _, m := range []map[string]any{req.Env, st.Env} {
+			for _, k := range slices.Sorted(maps.Keys(m)) {
+				env = append(env, k+"="+subst(fmt.Sprint(m[k])))
+			}
+		}
+		cmd := exec.Command("bash", "--noprofile", "--norc", "-e", "-c", subst(st.Run))
+		cmd.Env = env
+		output, err := cmd.CombinedOutput()
+		var exit *exec.ExitError
+		switch {
+		case errors.As(err, &exit):
+			return false, strings.TrimSpace(string(output)), nil
+		case err != nil:
+			return false, "", err
+		}
+	}
+	return true, "", nil
 }

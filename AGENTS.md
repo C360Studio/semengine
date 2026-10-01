@@ -73,7 +73,7 @@ are indexed by that spec, not here. A change that can turn a "review only" row i
 | A boundary change is checked against the stated purpose | architect contract § Intent check | review only |
 | A ported package brings its SemStreams guidance (contract sections and skills) with it | architect contract § Extraction slices | review only |
 | A new rule names what enforces it and adds its row to this table | reviewer contract § Port-time and pattern review | review only |
-| A brief to a role agent carries the owner's intent and the artifact itself, not a paraphrase | `.agents/README.md` § Orchestrating role agents | review only |
+| A brief to a role agent carries the owner's intent and the artifact itself, not a paraphrase; resume an agent for continuity, start a fresh one for mechanics | `.agents/README.md` § Orchestrating role agents | review only |
 | Tests use an independent oracle and are shown able to fail | `docs/testing.md`; developer and reviewer contracts, test fidelity | the structural guards carry paired sensitivity tests (`internal/harness/contract`); elsewhere review only |
 | Sister repositories are read-only and inventoried only as scoped | `docs/inventory-scope.md` | review only |
 

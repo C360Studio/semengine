@@ -58,8 +58,9 @@ Two obligations ride on every slice design in addition to its ledger row:
   implements. Each item is dropped, moved under `internal/`, or kept with its reason stated in the slice design. A
   config field that stays has a test that fails when the field is ignored. A capability admitted by owner mandate is
   wanted even before it has a caller: "no caller" answers whether something is wired, never whether it is wanted.
-  These were SemStreams' largest open defect classes on 2026-10-01: 57 distinct issues labelled advertised-absent,
-  silent-noop-surface, phantom-config, or dead-surface, 45 of them still open.
+  These were SemStreams' largest open defect classes on 2026-10-01: 57 distinct issues labelled
+  `class:advertised-absent`, `class:silent-noop-surface`, `class:phantom-config`, or `class:dead-surface`, 45 of
+  them still open.
 - **Guidance returns with the package.** SemStreams' developer and reviewer contracts carry package-specific
   sections (semantic identity and graph, storage and retention, NATS RPC, payload registry, state ownership and
   component wiring, orchestration) and skills (`entity-or-bucket`, `kv-or-stream`, `new-payload`,

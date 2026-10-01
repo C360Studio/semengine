@@ -180,9 +180,9 @@ What the repository enforces today:
 
 When a test waits on asynchronous or external state and fails, its message should name the condition, the elapsed
 time, the attempts, the last value seen and the last error. `probe.Await` reports all of those except the condition;
-name the condition yourself when you report its error. The NATS
-fixture writes a record of each start phase, the container logs on failure, and what it still held after `Stop` to
-the run's evidence directory (`.evidence/` by default). A test that uses randomness prints its seed.
+name the condition yourself when you report its error. The NATS fixture writes a record of each start phase, the
+container logs on failure, and what it still held after `Stop` to the run's evidence directory (`.evidence/` by
+default). A test that uses randomness prints its seed.
 
 ## What a reviewer will ask
 

@@ -13,8 +13,8 @@ not a task tracker and not a description of the tree.
   admission ledger during SETUP 03 and 04.
 - **No runtime binary, no release, no tag.**
 - **No consumer lane** in the gate graph; it joins `task verify` when its workload exists.
-- **No ADRs and no active OpenSpec change.** The SETUP 02 change is archived; its four capability specs are the
-  current truth under `openspec/specs/`.
+- **No ADRs.** The SETUP 02 change is archived; its four capability specs are the current truth under
+  `openspec/specs/`. The one active change is listed under "Present".
 
 ## Present
 
@@ -43,6 +43,7 @@ not a task tracker and not a description of the tree.
 | `.markdownlint.yaml`, `.markdownlint-cli2.yaml` | Markdown lint configuration behind `task docs:check` |
 | `openspec/specs/{integration-test-runner,nats-fixture,lifecycle-suite,harness-boundaries}/` | Current truth, synced by the SETUP 02 archive |
 | `openspec/changes/archive/2026-09-30-setup-02-isolated-harness/` | The archived SETUP 02 change (PR #13, epic #6) |
+| `openspec/changes/setup-03b-contract-boundary/` | The one active change: SETUP 03B (draft PR #21, epic #8) |
 | `docs/admission-ledger.yaml` | The admission ledger: twelve entries at full SemStreams SHAs, checked by `task ledger:check` |
 | `LICENSE` | MIT, Copyright (c) 2025 C360 |
 | `package-lock.json`, `.gitignore` | npm lockfile for the pinned tools; ignore rules for Go, Node, editors, coverage |

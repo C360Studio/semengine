@@ -122,12 +122,12 @@ The tasks are done in the order written, from top to bottom. Four notes on that 
       more planted workflows: `required` without `if: always()`; a step that exits 0 for a `skipped` result; a step
       that reads the result of `verify` alone. The three are written first and fail against the test as it stands
       at `8e1e750`, which names none of them.
-- [ ] 7.5 After task 7.3: the first CI run of this pull request that has the `merge-check` job is the run that task
+- [x] 7.5 After task 7.3: the first CI run of this pull request that has the `merge-check` job is the run that task
       7.4's push starts. Its log names the run as a pull-request run, shows the label, issue, pull request,
       branch-rules and ruleset reads succeeding, and prints the five fields of `design.md` D9 as the job's token sees
       them. The up-to-date half passes. A different result is recorded against the assumption it contradicts and is
       put right before task 7.6. The results for assumptions A2, A3 and A17 are recorded on #42.
-- [ ] 7.6 The red path and the exemption are exercised against the real flake #49, which takes the place of the drill
+- [x] 7.6 The red path and the exemption are exercised against the real flake #49, which takes the place of the drill
       issue first planned here; no issue is filed for the purpose. Three results are recorded with their run links,
       each against the assumption it measures when it differs from what `design.md` expects. (a) The run of task 7.5
       starts while #49 is open and this pull request's description does not yet close it: `merge-check` and `Required`

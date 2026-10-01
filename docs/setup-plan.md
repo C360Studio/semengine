@@ -130,7 +130,7 @@ This service matrix preserves the shared graph and separates embedding from inst
 
 semembed is the reference tier 1 embedding service; seminstruct is the reference optional generation service.
 Generation requires its own consumer contract and qualification; this is not a claim that SemSource ships a supported
-BM25-plus-generation profile. Neither generation nor seminstruct is mandatory for tier 1.
+BM25-plus-generation configuration. Neither generation nor seminstruct is mandatory for tier 1.
 Provider deployment stays outside the engine; SemEngine owns typed callers, context, freshness, and failure behavior.
 Prompts and generation policy remain product-owned.
 
@@ -145,7 +145,7 @@ serve a fallback while echoing the configured name. Qualify actual served artifa
 Real-provider tests apply to each admitted provider-backed capability. Check request/response semantics, readiness,
 context propagation, deadlines, cancellation, and recovery using the exact selected configuration. A configured but
 missing provider is unavailable evidence, never a passing or silently skipped gate. Report capability availability
-truthfully while retaining usable lower-profile graph operations; do not turn provider failures into absence findings.
+truthfully while retaining usable lower-tier graph operations; do not turn provider failures into absence findings.
 
 ### SemConnect reference fixtures
 
@@ -417,14 +417,14 @@ for contract changes, technical writer for current docs and extraction ledger. D
 Port small slices using the admission heuristic, mapping each dependency closure to the contract and ledger.
 Shared contract planning may look ahead; do not port the next slice until the current slice passes its architect and
 independent reviewer gates. Record the exact qualified engine commit, SemSource SHA, configuration, and admitted tier.
-Keep the accepted lower profile deployable and retain every promised lower-profile regression suite at each stage,
-including after model/provider changes. Test profiles independently: this does not require identical rankings or
+Keep the accepted lower tier deployable and retain every promised lower-tier regression suite at each stage,
+including after model/provider changes. Test tiers independently: this does not require identical rankings or
 simultaneous BM25/neural operation. Hybrid retrieval needs separate design. Measure budgets with real workloads.
 
 Qualify each slice on a SemSource integration branch built wholly on SemEngine; the SemSource owner owns that branch
 and its per-tier compositions. No binary imports both modules: their Go types are distinct, and both would claim
 `GRAPH`, `ENTITY_STATES`, `graph.ingest.>`, and `graph.mutation.>`. SemSource's shipped MVP uses semembed, so its
-mainline stays on SemStreams until tier 1 (slice 04C) passes. Tier 0 is a usable lower profile, not its migration
+mainline stays on SemStreams until tier 1 (slice 04C) passes. Tier 0 is a usable lower tier, not its migration
 point.
 
 #### Slice 04A: tier-0 graph foundation (provisional)
@@ -458,7 +458,7 @@ Pass evidence: the declared tier's workload and SemEngine dogfooding pass throug
 interfaces; current docs/tests explain the behavior. Release claims name the tier and tag the exact tested commit and
 consumer baseline. Tier 0 needs no embedding-service run. Tier 1 releases and embedding changes require
 bounded real-provider qualification; separately admitted generation requires its own real-provider evidence at any
-admitted profile. Release checks must verify applicable evidence, never bypass it during tagging.
+admitted tier. Release checks must verify applicable evidence, never bypass it during tagging.
 
 ## Consumer qualification evidence
 

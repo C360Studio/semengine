@@ -1,10 +1,14 @@
 # What SemEngine guarantees
 
-SemEngine is a Go framework for building applications around a knowledge graph that lives on NATS: you send it facts
-about things, it stores and indexes them, answers queries, and runs rules and step-by-step workflows over them. It is
-meant to work offline and on small edge machines, with no outside service required for its core. The owner's short
-version: "TrustGraph and Temporal had a tiny baby — a pragmatic, Go-idiomatic, NATS-based, offline-first and
-edge-capable baby."
+SemEngine is a Go framework for building applications around a knowledge graph stored in NATS: you send it facts
+about things, it stores and indexes them, answers queries, and runs rules and step-by-step workflows over them. Its
+core needs no outside service, so it runs offline and on small edge machines. The owner describes it as "TrustGraph
+and Temporal had a tiny baby — a pragmatic, Go-idiomatic, NATS-based, offline-first and edge-capable baby."
+
+This page lists what the engine promises at its base level (tier 0, explained below): how writes report their
+outcome, what survives a restart, how undeliverable messages stay visible, how rules and workflows behave, and how you
+watch changes and operate it. It also says what is left to your application. The reasoning and the test for each
+promise are in the [design record for this contract](../openspec/changes/setup-03b-contract-boundary/design.md).
 
 **Status:** no engine code is in this repository yet. This page states what the first code release (called slice 04A)
 must implement; each promise below becomes a test when that code lands. Until then, the code it describes lives in
@@ -78,7 +82,8 @@ to be skipped.
 - The ingest component acknowledges a message only after its effect is stored and its duplicate-detection mark is
   saved. A message being processed for a long time signals progress, so the broker does not hand it out again.
 - A message that cannot be decoded is acknowledged, dropped and counted, so that it does not block the queue.
-- After 3 failed deliveries (the NATS `MaxDeliver` default), the broker stops retrying. The engine records each such
+- After 3 failed deliveries, the broker stops retrying. Three is the engine's own default for a JetStream input
+  (`MaxDeliver`); a plain NATS consumer retries without limit unless you set it. The engine records each such
   **parked** message in the `MAX_DELIVERY_EVENTS` stream (kept on disk for 7 days). It reports each one as a record
   and as a metric, so a parked message is visible rather than silently gone.
 
@@ -94,8 +99,10 @@ to be skipped.
   - Updates are checked against the entity's revision, so two concurrent moves cannot both win.
   - Rules move entities between phases with `lifecycle_transition`, `lifecycle_complete` and `lifecycle_fail`.
 - Not in this release:
-  - timers, a step journal, and "this external call happened exactly once" protection. They are planned as their
-    own piece of work ([#24](https://github.com/C360Studio/semengine/issues/24)).
+  - durable execution beyond phases: a record of each attempt with one owner for its final outcome, a guard that
+    stops an outside call from running twice after a restart, typed reasons an attempt is blocked and may be
+    retried, and replay of unfinished work at startup. They are planned as their own piece of work
+    ([#24](https://github.com/C360Studio/semengine/issues/24)).
   - a decided behavior for an unknown action type. Today it fails when the rule fires; whether to refuse it when the
     pack loads is still to be decided.
 
@@ -105,35 +112,37 @@ to be skipped.
   changes, watch those buckets. A watcher started later first receives every current value, then each change.
 - The engine provides a view helper (`pkg/graphview`) that gives you a snapshot followed by a stream of changes.
 - For browsers and other remote clients, the websocket output component streams changes to stored state. It does
-  not relay raw input; at the pin it reads a NATS subject, and porting it changes that.
+  not relay raw input. In SemStreams (commit `8b99efe9`) it reads a NATS subject; copying it into SemEngine changes
+  that.
 - For operators, the service's HTTP endpoint `GET {prefix}kv/{bucket}/watch` streams the same changes as server-sent
   events.
 
 ### Operator endpoints and metrics
 
-Each running engine serves:
+Each running engine serves the following. `{prefix}` is the path the component manager is mounted under.
 
 | What | Where |
 | --- | --- |
-| liveness and readiness | `/health`, `/healthz`, `/readyz` (ready only once the composed components are ready) |
+| liveness and readiness | `/health`, `/healthz`, `/readyz` (ready only once every component the program started is ready) |
 | services and their health | `/services`, `/services/health` |
 | API description | `/openapi.json`, with a browsable version at `/docs` |
-| component list, types, status, config | the component manager's HTTP endpoints |
-| the running composition as a graph | the `flowgraph`, `validate` and `paths` endpoints |
+| component health, list, types, status, config | `{prefix}health`, `{prefix}list`, `{prefix}types` and `{prefix}types/{id}`, `{prefix}status/{name}`, `{prefix}config/{name}` |
+| how the running components are wired, as a graph | `{prefix}flowgraph`, `{prefix}validate`, `{prefix}paths` |
 | message trace by ID, KV query and watch | the message logger's HTTP endpoints |
 | storage report | the storage observability endpoint |
 | metrics | a Prometheus endpoint |
 
-The `flowgraph` response and the metric names are part of the contract. A dashboard definition checked into this
-repository uses the metric names, and a test fails if one disappears. To see a composition without any UI, render it
-as a Mermaid diagram with the composition command-line tool (`composition/cli`).
+The `flowgraph` response and the metric names are part of the contract. Slice 04A will check in a dashboard
+definition that uses the metric names, and a test that fails if one disappears. To see how a program's components are
+wired without any UI, render it as a Mermaid diagram with the composition command-line tool (`composition/cli`).
 
 ## What is your job as a consumer
 
-- **Register what you use.** The engine has no list of "all components". Your `main` registers each component and
-  each payload type you compose, so your program builds only what it names. The sketch below is illustrative: the
-  package paths and signatures are SemStreams' at the pin (with the module path swapped, it compiles there), and
-  SemEngine's are fixed when each package is copied over in slice 04A.
+- **Register what you use.** The engine has no list of "all components". Your `main` registers each component it
+  wires into the program's startup, and each payload type it uses (a payload type is the Go type of a message body,
+  which the engine looks up by name to decode), so your program builds only what it names. The sketch below is
+  illustrative: the package paths and signatures are SemStreams' at commit `8b99efe9` (with the module path swapped,
+  it compiles there), and SemEngine's are fixed when each package is copied over in slice 04A.
 
 ```go
 package main
@@ -176,10 +185,11 @@ func main() {
 }
 ```
 
-- **Own your public interfaces.** HTTP APIs, MCP tools and any other front door are yours (semsource's MCP gateway,
-  semconnect's `cs-api`).
+- **Own your public interfaces.** HTTP APIs, MCP (Model Context Protocol) tools for AI agents, and any other front door
+  are yours (semsource's MCP gateway, semconnect's `cs-api`).
 - **Own your UI.** UI work for SemEngine-based apps lives in `semteams/ui`, using only the documented endpoints above.
-- **Own your domain.** Vocabularies, query lenses, prompts and policy for your field stay in your repository.
+- **Own your domain.** Vocabularies, query lenses (how a search in your field is resolved and ranked), prompts and
+  policy for your field stay in your repository.
 
 ## What is deliberately not in the engine
 
@@ -192,8 +202,8 @@ func main() {
 
 ## Where to look
 
-- The full contract, with each promise's test and the reasoning behind it: the SETUP 03B change,
-  [`openspec/changes/setup-03b-contract-boundary/`](../openspec/changes/setup-03b-contract-boundary/design.md).
+- The full contract, with each promise's test and the reasoning behind it: the
+  [design record for this contract](../openspec/changes/setup-03b-contract-boundary/design.md).
 - Which SemStreams package is copied, adapted or left out, and why: the
   [admission ledger](admission-ledger.yaml).
 - Which other repositories may be read, and for what: [inventory scope](inventory-scope.md).

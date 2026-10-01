@@ -6,10 +6,22 @@ carries the facts an agent cannot derive from the tree and names where each rule
 
 ## What this is for
 
-SemEngine is a Go graph framework whose first consumer is SemSource. It owns primitives and contracts, never a
-consumer's domain semantics. It is being built by extracting admitted packages from SemStreams at a frozen pin. Read
-`docs/setup-plan.md` (the approved plan) and `docs/repository-map.md` (what exists today) before scoping work. Nothing
-in this tree is a Go package yet; do not describe planned code as present.
+SemEngine is a live semantic knowledge-graph framework with durable execution. In the owner's words (2026-10-01):
+"TrustGraph and Temporal had a tiny baby — a pragmatic, Go-idiomatic, NATS-based, offline-first and edge-capable
+baby." It has two halves. The **live semantic knowledge graph**: ingest, index, query, vocabulary, provenance,
+fusion, and a tier ladder that degrades gracefully; tier 0 needs no external provider. **Durable execution**:
+workflows that survive restarts, replay, settlement, retries with known outcomes, and the rules that drive them.
+A capability is engine-owned when it belongs to either half and runs at tier 0 without an external provider; it is
+admitted by owner mandate at a named tier with a named qualifying workload, and consumer need decides order, never
+membership (epic #8, Q14). Everything outside both halves is a consumer adapter. SemEngine owns primitives and
+contracts, never a consumer's domain semantics.
+
+It is built by extracting admitted packages from SemStreams at the frozen pin `8b99efe9` (epic #7). Starter
+consumers: semsource, semconnect, semteams, semboids; semembed and seminstruct are support services.
+`docs/inventory-scope.md` says which repositories an agent may read and for what question — read it before any
+inventory. Read `docs/setup-plan.md` (the approved plan) and `docs/repository-map.md` (what exists today) before
+scoping work. The only Go code in the tree is the test harness under `internal/harness`; do not describe planned
+code as present.
 
 ## Commands
 

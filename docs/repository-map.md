@@ -23,6 +23,7 @@ not a task tracker and not a description of the tree.
 | `docs/setup-plan.md` | The approved plan (merged in PR #1, commit 3ae51c5) |
 | `docs/repository-map.md` | This file |
 | `docs/provenance.md` | License and provenance requirements for ported code |
+| `docs/inventory-scope.md` | Which repositories agents may read, for what question; starter consumer set (ruled on #22) |
 | `AGENTS.md`, `CLAUDE.md` | Agent entry point; `CLAUDE.md` imports `AGENTS.md` |
 | `.agents/` | The shared protocol, role contracts, and skills: the one home of the rules |
 | `.claude/`, `.codex/` | Thin platform adapters that point into `.agents/` |

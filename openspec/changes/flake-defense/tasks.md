@@ -102,7 +102,7 @@ The tasks are done in the order written, from top to bottom. Five notes on that 
       difference is put back and reported. The same comment lists every open pull request with its number of commits
       behind `main`, and what `gh pr view --json mergeStateStatus` reports for PR #14 and PR #39: `BEHIND`, or the
       differing result recorded against assumption A1.
-- [ ] 7.4 The workflow has the job `merge-check` with its three read permissions, and `required` needs `verify` and
+- [x] 7.4 The workflow has the job `merge-check` with its three read permissions, and `required` needs `verify` and
       `merge-check`. A contract test of `ci.yml`, written first, rejects four planted workflows: `required` needing
       only `verify`; a job with a write permission; `merge-check` with a fourth permission; `verify` with a limit
       other than 15 minutes. This task is pushed only after tasks 7.1 and 7.3 are done: without the label or the

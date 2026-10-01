@@ -133,10 +133,17 @@ fi
 
 read_gh "pull request #${pr}" '(.closingIssuesReferences | type == "array") and all(.closingIssuesReferences[]; (.url | type) == "string")' \
   gh pr view "$pr" --json closingIssuesReferences
-closing=$(printf '%s' "$answer" | jq -c '[.closingIssuesReferences[].url]')
+# A failed jq leaves an empty result, which would read as "every flake is closed".
+if ! closing=$(printf '%s' "$answer" | jq -c '[.closingIssuesReferences[].url]'); then
+  echo "merge-check: unavailable: jq failed reading the closing references of pull request #${pr}" >&2
+  exit 2
+fi
 
 # Compared by URL, so the same number in another repository does not count.
-open_not_closed=$(printf '%s' "$issues" | jq -r --argjson c "$closing" '.[] | select(.url as $u | $c | index($u) | not) | "#\(.number) \(.url) \(.title)"')
+if ! open_not_closed=$(printf '%s' "$issues" | jq -r --argjson c "$closing" '.[] | select(.url as $u | $c | index($u) | not) | "#\(.number) \(.url) \(.title)"'); then
+  echo "merge-check: unavailable: jq failed comparing the open ${label} issues with the closing references of pull request #${pr}" >&2
+  exit 2
+fi
 if [ -n "$open_not_closed" ]; then
   echo "merge-check: FAIL: known flakes are open and not closed by this pull request:"
   printf '%s\n' "$open_not_closed" | sed 's/^/  /'

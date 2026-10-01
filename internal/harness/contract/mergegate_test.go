@@ -131,7 +131,7 @@ func TestCIWorkflowPinned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	requireNoViolations(t, "ci.yml", ciWorkflowViolations(data))
+	requireNoViolations(t, "ci.yml", ciWorkflowViolations(t, data))
 }
 
 func TestCIWorkflowPinnedSensitivity(t *testing.T) {
@@ -163,7 +163,7 @@ jobs:
             if [ "$r" != "success" ]; then echo "required check did not succeed: $r"; exit 1; fi
           done
 `
-	requireNoViolations(t, "clean fixture", ciWorkflowViolations([]byte(good)))
+	requireNoViolations(t, "clean fixture", ciWorkflowViolations(t, []byte(good)))
 
 	plant := func(t *testing.T, old, repl string) []byte {
 		t.Helper()
@@ -227,7 +227,7 @@ jobs:
 			[]string{"job required", "every needed job succeeded"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			requireViolation(t, ciWorkflowViolations(plant(t, tc.old, tc.repl)), tc.wants...)
+			requireViolation(t, ciWorkflowViolations(t, plant(t, tc.old, tc.repl)), tc.wants...)
 		})
 	}
 }
@@ -260,7 +260,7 @@ type ciStep struct {
 }
 
 // ciWorkflowViolations checks a GitHub Actions workflow against the merge-gate spec.
-func ciWorkflowViolations(data []byte) []string {
+func ciWorkflowViolations(t *testing.T, data []byte) []string {
 	var wf struct {
 		Permissions any              `yaml:"permissions"`
 		Defaults    ciDefaults       `yaml:"defaults"`
@@ -310,7 +310,7 @@ func ciWorkflowViolations(data []byte) []string {
 				violations = append(violations, fmt.Sprintf("ci.yml: %s sets defaults.run.shell %q; the test runs required's step as GitHub runs bash", d.where, d.shell))
 			}
 		}
-		violations = append(violations, requiredStepViolations(req, needs)...)
+		violations = append(violations, requiredStepViolations(t, req, needs)...)
 	}
 
 	if v, ok := wf.Jobs["verify"]; !ok {
@@ -411,7 +411,7 @@ func evalNeedsExpression(expr string, needs []string, results map[string]string)
 
 // requiredStepViolations holds the job required to run whatever its needed jobs did and to fail by
 // its own step unless each of them succeeded. The condition is read; the step is run.
-func requiredStepViolations(req ciJob, needs []string) []string {
+func requiredStepViolations(t *testing.T, req ciJob, needs []string) []string {
 	var out []string
 	if cond := strings.TrimSpace(fmt.Sprint(req.If)); req.If == nil || (cond != "always()" && cond != "${{ always() }}") {
 		out = append(out, fmt.Sprintf("ci.yml: job required runs under if: %v; the merge-gate spec requires if: always(), or a failed or cancelled needed job leaves Required skipped, which GitHub reports as success", req.If))
@@ -483,7 +483,7 @@ func requiredStepViolations(req ciJob, needs []string) []string {
 				return v
 			})
 		}
-		ok, output, err := runRequiredSteps(req, subst)
+		ok, output, err := runRequiredSteps(t, req, subst)
 		if err != nil {
 			return append(out, fmt.Sprintf("ci.yml: job required: running its step for %s: %v", label, err))
 		}
@@ -500,8 +500,9 @@ func requiredStepViolations(req ciJob, needs []string) []string {
 
 // runRequiredSteps runs the job's steps in order as GitHub runs a bash step (bash -e), with the
 // expressions in their env and scripts already substituted, and an environment of PATH and the
-// job's and step's env alone. It reports whether every step exited 0, as GitHub would.
-func runRequiredSteps(req ciJob, subst func(string) string) (bool, string, error) {
+// job's and step's env alone, in a fresh directory so a step cannot touch the source tree. It
+// reports whether every step exited 0, as GitHub would.
+func runRequiredSteps(t *testing.T, req ciJob, subst func(string) string) (bool, string, error) {
 	for _, st := range req.Steps {
 		env := []string{"PATH=" + os.Getenv("PATH")}
 		for _, m := range []map[string]any{req.Env, st.Env} {
@@ -511,6 +512,7 @@ func runRequiredSteps(req ciJob, subst func(string) string) (bool, string, error
 		}
 		cmd := exec.Command("bash", "--noprofile", "--norc", "-e", "-c", subst(st.Run))
 		cmd.Env = env
+		cmd.Dir = t.TempDir()
 		output, err := cmd.CombinedOutput()
 		var exit *exec.ExitError
 		switch {

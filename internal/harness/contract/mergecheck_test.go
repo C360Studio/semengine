@@ -61,7 +61,15 @@ func list(items ...string) string { return "[" + strings.Join(items, ",") + "]" 
 type ghState struct {
 	labels, issues, pr, rules, ruleset string
 	fail                               []string // keys whose read exits non-zero
+	// jqFail, when set, puts a jq first on PATH that exits non-zero on any call whose arguments
+	// contain it and passes every other call to the real jq.
+	jqFail string
 }
+
+const fakeJQ = `#!/bin/sh
+case "$*" in *"$FAKE_JQ_FAIL"*) echo "jq: error (fake)" >&2; exit 5 ;; esac
+exec "$REAL_JQ" "$@"
+`
 
 const (
 	requiredRule = `{"type":"required_status_checks","ruleset_id":24272345,"ruleset_source":"C360Studio/semengine",` +
@@ -102,8 +110,18 @@ func runMergeCheck(t *testing.T, st ghState, pr string, actionsEnv ...string) me
 			t.Fatal(err)
 		}
 	}
+	tools := map[string]string{"gh": fakeGH}
+	extra := []string{"FAKE_GH_DIR=" + dir, "FAKE_GH_PR=" + pr}
+	if st.jqFail != "" {
+		realJQ, err := exec.LookPath("jq")
+		if err != nil {
+			t.Fatalf("jq is needed to run merge-check.sh: %v", err)
+		}
+		tools["jq"] = fakeJQ
+		extra = append(extra, "REAL_JQ="+realJQ, "FAKE_JQ_FAIL="+st.jqFail)
+	}
 	var env []string
-	for _, kv := range fakeBin(t, map[string]string{"gh": fakeGH}, "FAKE_GH_DIR="+dir, "FAKE_GH_PR="+pr) {
+	for _, kv := range fakeBin(t, tools, extra...) {
 		if strings.HasPrefix(kv, "GITHUB_ACTIONS=") || strings.HasPrefix(kv, "GITHUB_EVENT_NAME=") {
 			continue
 		}
@@ -178,7 +196,8 @@ func TestMergeCheckKnownFlake(t *testing.T) {
 	t.Run("two open flakes and a pull request that closes one", func(t *testing.T) {
 		r := runMergeCheck(t, closes(open40And52, refJSON(flakeRepo, 40)), "12")
 		r.requireFail(t, "#52")
-		if strings.Contains(r.out, "not closed by this pull request: #40") {
+		// The script lists each flake not closed on its own line as "  #<n> <url> <title>".
+		if strings.Contains(r.out, "\n  #40 ") {
 			t.Errorf("#40 is closed by the pull request but reported as not closed:\n%s", r.out)
 		}
 	})
@@ -228,6 +247,24 @@ func TestMergeCheckKnownFlake(t *testing.T) {
 				if strings.Contains(r.out, "no open class:flake issue") {
 					t.Errorf("%s %s: reported no known flake:\n%s", tc.read, how, r.out)
 				}
+			}
+		}
+	})
+	t.Run("jq fails comparing the flakes with the closing references", func(t *testing.T) {
+		// An empty result from a failed jq would read as "every open flake is closed".
+		for _, tc := range []struct{ name, args, says string }{
+			{"closing references", ".closingIssuesReferences[].url", "jq failed reading the closing references"},
+			{"flakes not closed", "--argjson c", "jq failed comparing the open class:flake issues"},
+		} {
+			st := closes(open40, refJSON(flakeRepo, 7))
+			st.jqFail = tc.args
+			r := runMergeCheck(t, st, "12")
+			if r.status != 2 {
+				t.Errorf("%s: exit %d, want 2\n%s", tc.name, r.status, r.out)
+			}
+			r.requireOutput(t, "unavailable", tc.says)
+			if strings.Contains(r.out, "exempts") || strings.Contains(r.out, "merge-check: ok") {
+				t.Errorf("%s: a failed jq exempted the pull request:\n%s", tc.name, r.out)
 			}
 		}
 	})

@@ -38,7 +38,7 @@ The tasks are done in the order written, from top to bottom. Four notes on that 
 - [x] 2.4 Hold: check of the ruling pass. The reviewer's verdict on the third revision of `design.md`, the spec
       changes and this file, confined to the diff from `bba268a`, is a pass, recorded on PR #44 with the checked
       files' checksums.
-- [ ] 2.5 Hold: check of the implementation pass. The reviewer's verdict on `design.md`, the `lifecycle-suite` and
+- [x] 2.5 Hold: check of the implementation pass. The reviewer's verdict on `design.md`, the `lifecycle-suite` and
       `merge-gate` spec changes and this file, confined to the diff from `8e1e750`, is a pass, recorded on PR #44 with
       the checked files' checksums.
 
@@ -63,8 +63,7 @@ The tasks are done in the order written, from top to bottom. Four notes on that 
 - [x] 4.5 Flake #49: `TestAwaitReportsLastObservation` in `internal/harness/probe` no longer depends on how many
       observations fit in a stretch of wall-clock time. A reproduction that fails on demand, not by repetition, is
       written first and fails on the tree as it is; then the fix, with no retry, sleep, skip or loosened assertion.
-      The search for the same shape in the package's tests is recorded with what it found. This pull request's
-      description says `Closes #49` (added at task 7.6 b).
+      The search for the same shape in the package's tests is recorded with what it found.
 - [x] 4.6 A test that always runs holds `finalize`'s order: with a signalled worker held before its exit, `finalize`
       reports the worker and returns only after the worker has exited. It is written first and fails against a copy
       of `finalize` with the assertion moved after the last join, and against one with the last join removed.
@@ -107,7 +106,7 @@ The tasks are done in the order written, from top to bottom. Four notes on that 
       written first, so it fails until the script exists. Its cases are the scenarios of the `merge-gate`
       requirements "Known-flake check" and "Up-to-date rule", one case each. Then the script and
       `task merge:check` exist and the test passes.
-- [ ] 7.3 The session turns the ruleset's strict setting on with `gh api`, as ruled on Q3, before task 7.4 is pushed.
+- [x] 7.3 The session turns the ruleset's strict setting on with `gh api`, as ruled on Q3, before task 7.4 is pushed.
       The ruleset as read before and after the edit is posted on #42, and the two differ in that one value; any other
       difference is put back and reported. The same comment lists every open pull request with its number of commits
       behind `main`, and what `gh pr view --json mergeStateStatus` reports for PR #14 and PR #39: `BEHIND`, or the
@@ -132,11 +131,14 @@ The tasks are done in the order written, from top to bottom. Four notes on that 
       issue first planned here; no issue is filed for the purpose. Three results are recorded with their run links,
       each against the assumption it measures when it differs from what `design.md` expects. (a) The run of task 7.5
       starts while #49 is open and this pull request's description does not yet close it: `merge-check` and `Required`
-      fail and name #49. That run is red on purpose. (b) `Closes #49` is added to this pull request's description, and
-      the run list before and after shows whether the edit started a run (A11). (c) The failed run is re-run once: the
-      record shows its `run_attempt`, whether `merge-check` passed, the exemption line, and whether the warning shows
-      on the run (A4, A5, A12). A run that passes with no exemption printed is not seen in this change, because #49
-      stays open until this pull request merges; task 8.2 restates that as open.
+      fail and name #49. That run is red on purpose. (b) `Closes #49` is added to this pull request's description, before
+      the implementation review, and the run list before and after shows whether the edit started a run (A11). (c)
+      Only if `Verify` passed in run (a): the failed `merge-check` and `required` jobs of that run are re-run once,
+      and no other job. The record shows the `run_attempt`, whether `merge-check` passed, the exemption line, and
+      whether the warning shows on the run (A4, A5, A12). If `Verify` failed in run (a), nothing is re-run: a re-run
+      would re-roll `Verify` past an open flake, so the cause is fixed and a new head is pushed instead. A run that
+      passes with no exemption printed is not seen in this change, because #49 stays open until this pull request
+      merges; task 8.2 restates that as open.
 
 ## 8. Documents and landing
 
@@ -149,6 +151,6 @@ The tasks are done in the order written, from top to bottom. Four notes on that 
       `required` fails if either of the other two failed, is missing, or was skipped or cancelled;
       `git grep -n 'two jobs' -- .agents AGENTS.md` then finds nothing. `docs/repository-map.md` lists the new job
       and script; `task docs:check` passes.
-- [ ] 8.2 Each assumption A1 to A17 in `design.md` has its result, or is restated as open, in one comment on #42.
+- [ ] 8.2 Each assumption A1 to A18 in `design.md` has its result, or is restated as open, in one comment on #42.
 - [ ] 8.3 The change is archived and its specs are synced as the last content commit; `task spec:check` passes on
       that commit.

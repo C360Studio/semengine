@@ -8,7 +8,7 @@ and Temporal had a tiny baby — a pragmatic, Go-idiomatic, NATS-based, offline-
 This page lists what the engine promises at its base level (tier 0, explained below): how writes report their
 outcome, what survives a restart, how undeliverable messages stay visible, how rules and workflows behave, and how you
 watch changes and operate it. It also says what is left to your application. The reasoning and the test for each
-promise are in the [design record for this contract](../openspec/changes/setup-03b-contract-boundary/design.md).
+promise are in the [design record for this contract](../openspec/changes/archive/2026-10-01-setup-03b-contract-boundary/design.md).
 
 **Status:** no engine code is in this repository yet. This page states what the first code release (called slice 04A)
 must implement; each promise below becomes a test when that code lands. Until then, the code it describes lives in
@@ -202,7 +202,7 @@ func main() {
 ## Where to look
 
 - The full contract, with each promise's test and the reasoning behind it: the
-  [design record for this contract](../openspec/changes/setup-03b-contract-boundary/design.md).
+  [design record for this contract](../openspec/changes/archive/2026-10-01-setup-03b-contract-boundary/design.md).
 - Which SemStreams package is copied, adapted or left out, and why: the
   [admission ledger](admission-ledger.yaml).
 - Which other repositories may be read, and for what: [inventory scope](inventory-scope.md).

@@ -101,7 +101,7 @@ semembed only. Generative answers/community enrichment require separate admissio
 authority, and graph correctness. The word is "tier"
 ([#4](https://github.com/C360Studio/semengine/issues/4#issuecomment-5929716018)); the capability matrix, with each
 behavior's tier and proving evidence, is in the SETUP 03B change
-(`openspec/changes/setup-03b-contract-boundary/design.md`).
+(`openspec/changes/archive/2026-10-01-setup-03b-contract-boundary/design.md`).
 
 Keep discovery and ranking signals distinct from materialized or inferred facts and edges. Relevance does not
 automatically become an asserted graph fact. Any such write needs an explicit mutation, provenance, and authority

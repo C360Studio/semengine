@@ -244,10 +244,12 @@ released.
       port-refactor issues; `docs/provenance.md` status names this change; the contract document is
       `docs/contract.md` and the plan is amended for the tier model. Role: technical-writer. Gate: `task docs:check`
       and `task spec:check`. Evidence: those files; both gates pass.
-- [ ] 6.2 The independent pre-owner design review's findings are addressed or recorded as declared costs, and the
+- [x] 6.2 Done: Re-check 2 APPROVE at `8a4c2b8` (review record on PR #21); S1–S6 applied in `61fcfbe`. The independent
+      pre-owner design review's findings are addressed or recorded as declared costs, and the
       reviewer confirms the R1–R5 corrections (`a4465c0`) and reads `docs/contract.md`. Role: technical-writer (apply),
       reviewer (re-check). Gate: reviewer verdict.
-- [ ] 6.3 The change is archived as the last content commit of PR #21 with `skip_specs: true` (no spec sync), after
+- [x] 6.3 Done in the archive commit (4.9 ruled 2026-10-01). The change is archived as the last content commit of PR
+      #21 with `skip_specs: true` (no spec sync), after
       the owner rules 4.9; the archive commit also updates links that point into this change's directory
       (`docs/contract.md`, `docs/setup-plan.md`, `docs/repository-map.md`, `docs/provenance.md`, the preflight skill,
       the ledger header). Role: technical-writer. Gate: reviewer check of the archive commit.

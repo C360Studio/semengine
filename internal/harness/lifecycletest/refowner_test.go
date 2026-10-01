@@ -196,21 +196,24 @@ func newRefowner(t *testing.T, fp failpoint, restartable bool) *refowner {
 	return &refowner{fp: fp, restartable: restartable, hang: hang}
 }
 
-// finalize stops a double the check may have left running, as Run does after each check, and
-// requires the worker gone. A failpoint double may refuse or panic in that Stop too; what matters
-// here is only that nothing it started outlives the test.
+// finalize stops a double the check may have left running, as Run does after each check, then
+// ends its worker through Start authority and joins it, and requires that the double holds nothing.
+// A failpoint double may refuse, panic or return early in that Stop (stopReturnsNilWithWorkerRunning
+// never stops its own worker); the join is what keeps anything it started from outliving the test.
 func finalize(t *testing.T, o *refowner) {
 	t.Helper()
 	_ = finish(t.Context(), o)
-	if obs := o.Observe(); len(obs.Unresolved) > 0 && o.fp != stopReturnsNilWithWorkerRunning {
-		t.Errorf("finalize refowner (%s): still holds %v", o.fp, obs.Unresolved)
+	o.mu.Lock()
+	cancel, done := o.cancel, o.workerDone
+	o.mu.Unlock()
+	if cancel != nil {
+		cancel()
 	}
-	if o.fp == stopReturnsNilWithWorkerRunning {
-		o.mu.Lock()
-		if o.cancel != nil {
-			o.cancel() // this double never stops its own worker; end it through Start authority
-		}
-		o.mu.Unlock()
+	if done != nil {
+		<-done // the worker selects on its Start context, so cancel ends it
+	}
+	if obs := o.Observe(); len(obs.Unresolved) > 0 {
+		t.Errorf("finalize refowner (%s): still holds %v", o.fp, obs.Unresolved)
 	}
 }
 

@@ -5,7 +5,12 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"time"
 )
+
+// finalizeJoinBound is how long finalize waits for a double's worker to exit once its stop channel
+// is closed and its run context cancelled; a worker still running after it is a defect in the double.
+const finalizeJoinBound = 5 * time.Second
 
 // failpoint names one lifecycle defect the refowner double can exhibit (design S3).
 type failpoint string
@@ -181,9 +186,28 @@ func newRefowner(t *testing.T, fp failpoint, restartable bool) *refowner {
 // finalize stops a double the check may have left running, as Run does after each check, and
 // requires the worker gone. A failpoint double may refuse or panic in that Stop too; what matters
 // here is only that nothing it started outlives the test.
+//
+// A failpoint whose Stop drops the join (abortStopDropsCause) still closes the stop channel and
+// cancels the run context, so its worker is bound to exit; it just may not have been scheduled yet
+// when Observe looks (#41). finalize therefore joins the worker itself, within a bound, before
+// asserting: detecting the dropped join is the check's job, not this cleanup's. The bound is a
+// failure deadline on a real event, not a sleep; t.Context() alone would not do, since it is
+// cancelled only after the test body returns.
 func finalize(t *testing.T, o *refowner) {
 	t.Helper()
 	_ = finish(t.Context(), o)
+	o.mu.Lock()
+	done := o.workerDone
+	o.mu.Unlock()
+	if done != nil && o.fp != stopReturnsNilWithWorkerRunning {
+		joinCtx, cancel := context.WithTimeout(t.Context(), finalizeJoinBound)
+		defer cancel()
+		select {
+		case <-done:
+		case <-joinCtx.Done():
+			t.Errorf("finalize refowner (%s): worker still running after %s", o.fp, finalizeJoinBound)
+		}
+	}
 	if obs := o.Observe(); len(obs.Unresolved) > 0 && o.fp != stopReturnsNilWithWorkerRunning {
 		t.Errorf("finalize refowner (%s): still holds %v", o.fp, obs.Unresolved)
 	}

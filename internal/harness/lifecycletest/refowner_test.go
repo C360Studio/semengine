@@ -358,24 +358,27 @@ func TestFailpointTableComplete(t *testing.T) {
 
 // TestEachFailpointTripsExactlyItsCheck is the sensitivity matrix (lifecycle-suite › "Suite detects
 // each violation"): with one failpoint enabled, the mapped check returns an error and every other
-// check returns nil.
+// check returns nil. Each subtest runs in a synctest bubble, so the checks' bound-plus-grace timers
+// fire on the bubble's fake clock once every goroutine is blocked, instead of costing real seconds.
 func TestEachFailpointTripsExactlyItsCheck(t *testing.T) {
 	for _, tc := range failpointTable {
 		t.Run(string(tc.fp), func(t *testing.T) {
-			for _, c := range checks {
-				// The double is as restartable as the promise says; only a failpoint may break it.
-				o := newRefowner(t, tc.fp, tc.promise.Restart)
-				err := c.run(t.Context(), o, tc.promise)
-				switch {
-				case c.name == tc.want && err == nil:
-					t.Errorf("%s did not detect %s", c.name, tc.fp)
-				case c.name == tc.want:
-					t.Logf("%s detected %s: %v", c.name, tc.fp, err)
-				case err != nil:
-					t.Errorf("%s tripped on %s, which is not its failpoint: %v", c.name, tc.fp, err)
+			synctest.Test(t, func(t *testing.T) {
+				for _, c := range checks {
+					// The double is as restartable as the promise says; only a failpoint may break it.
+					o := newRefowner(t, tc.fp, tc.promise.Restart)
+					err := c.run(t.Context(), o, tc.promise)
+					switch {
+					case c.name == tc.want && err == nil:
+						t.Errorf("%s did not detect %s", c.name, tc.fp)
+					case c.name == tc.want:
+						t.Logf("%s detected %s: %v", c.name, tc.fp, err)
+					case err != nil:
+						t.Errorf("%s tripped on %s, which is not its failpoint: %v", c.name, tc.fp, err)
+					}
+					finalize(t, o)
 				}
-				finalize(t, o)
-			}
+			})
 		})
 	}
 }

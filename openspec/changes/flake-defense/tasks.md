@@ -53,7 +53,7 @@ The tasks are done in the order written, from top to bottom. Five notes on that 
 - [x] 4.2 `finalize` asserts "nothing unresolved" for every failpoint, with no exemption. The assertion is written
       first and fails for `stopReturnsNilWithWorkerRunning`; then `finalize` joins that double's worker and the
       assertion passes.
-- [ ] 4.3 Each failpoint's subtest of the matrix runs inside `synctest.Test`. The output of
+- [x] 4.3 Each failpoint's subtest of the matrix runs inside `synctest.Test`. The output of
       `go test -race -count=20 ./internal/harness/lifecycletest/` is recorded and shows under 5 s (41.5 s before).
 - [ ] 4.4 A contract test runs a copy of `scripts/cover-check.sh` in a throwaway root with a fake `go` that prints a
       `--- FAIL` line and exits 1. It is written first and fails on the current script, which prints nothing;

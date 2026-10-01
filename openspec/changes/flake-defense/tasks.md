@@ -65,7 +65,7 @@ The tasks are done in the order written, from top to bottom. Four notes on that 
       written first and fails on the tree as it is; then the fix, with no retry, sleep, skip or loosened assertion.
       The search for the same shape in the package's tests is recorded with what it found. This pull request's
       description says `Closes #49` (added at task 7.6 b).
-- [ ] 4.6 A test that always runs holds `finalize`'s order: with a signalled worker held before its exit, `finalize`
+- [x] 4.6 A test that always runs holds `finalize`'s order: with a signalled worker held before its exit, `finalize`
       reports the worker and returns only after the worker has exited. It is written first and fails against a copy
       of `finalize` with the assertion moved after the last join, and against one with the last join removed.
 

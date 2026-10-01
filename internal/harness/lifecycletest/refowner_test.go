@@ -206,12 +206,20 @@ func newRefowner(t *testing.T, fp failpoint, restartable bool) *refowner {
 // then holds for it too, with no exemption.
 func finalize(t *testing.T, o *refowner) {
 	t.Helper()
-	_ = finish(t.Context(), o)
+	if err := finalizeVerdict(t.Context(), o); err != nil {
+		t.Error(err)
+	}
+}
+
+// finalizeVerdict is finalize's body, returning its verdict instead of reporting it, so that
+// TestFinalizeReportsWorkerHeldAfterSignal can hold its order.
+func finalizeVerdict(ctx context.Context, o *refowner) error {
+	_ = finish(ctx, o)
 	o.mu.Lock()
 	cancel, stopCh, done := o.cancel, o.stopCh, o.workerDone
 	o.mu.Unlock()
 	if done == nil {
-		return // never started: nothing to join
+		return nil // never started: nothing to join
 	}
 	select {
 	case <-stopCh:
@@ -219,11 +227,13 @@ func finalize(t *testing.T, o *refowner) {
 		cancel()
 		<-done
 	}
+	var verdict error
 	if obs := o.Observe(); len(obs.Unresolved) > 0 {
-		t.Errorf("finalize refowner (%s): still holds %v", o.fp, obs.Unresolved)
+		verdict = fmt.Errorf("finalize refowner (%s): still holds %v", o.fp, obs.Unresolved)
 	}
 	cancel()
 	<-done // the worker selects on its Start context, so cancel ends it
+	return verdict
 }
 
 // TestChecksPassAgainstCleanDouble: every check returns nil for a clean owner, with and without a
@@ -434,6 +444,46 @@ func TestAbortStopThenFinishJoinsWorker(t *testing.T) {
 			})
 		})
 	}
+}
+
+// TestFinalizeReportsWorkerHeldAfterSignal holds finalize's order. The double is left as issue
+// #40's Stop leaves it: the worker has been signalled and the owner marked stopped, but the worker
+// is held before it closes workerDone. finalize must report that worker, which it can only do if
+// its assertion comes before its last join, and must not return while the worker is held, which it
+// can only do if that join is there. In the bubble, Wait returns once every goroutine is durably
+// blocked, so whether the verdict has returned is decided by finalize's code, not by timing.
+func TestFinalizeReportsWorkerHeldAfterSignal(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		o := newRefowner(t, clean, false)
+		o.workerExit = probe.NewCallback()
+		defer o.workerExit.Release()
+		if err := o.Start(t.Context()); err != nil {
+			t.Fatalf("Start = %v", err)
+		}
+		// What #40's Stop did: signal the worker and mark the owner stopped without the join.
+		o.mu.Lock()
+		o.stopOnce.Do(func() { close(o.stopCh) })
+		o.running, o.stopped = false, true
+		o.mu.Unlock()
+		<-o.workerExit.Entered()
+
+		verdict := make(chan error, 1)
+		go func() { verdict <- finalizeVerdict(t.Context(), o) }()
+		synctest.Wait()
+		select {
+		case err := <-verdict:
+			t.Fatalf("finalize returned while the signalled worker was held (verdict %v)", err)
+		default: // blocked on the worker's join, as it must be
+		}
+		o.workerExit.Release()
+		err := <-verdict
+		if err == nil || !strings.Contains(err.Error(), "worker") {
+			t.Errorf("finalize's verdict = %v, want it to report the worker that was held after its signal", err)
+		}
+		if obs := o.Observe(); len(obs.Unresolved) > 0 {
+			t.Errorf("after finalize returned, the owner still holds %v", obs.Unresolved)
+		}
+	})
 }
 
 // TestRunOverCleanDouble drives Run itself, as an adopter would.

@@ -37,7 +37,8 @@ Options:
   consumer's closure (the shape that produced 94- and 41-package pulls, A12.1); SemConnect, which composes no
   SemStreams component today, would import components it does not run.
 - **(c) Keep importing `componentregistry`/`payloadbuiltins`.** Not available: both pull packages that will not exist
-  in SemEngine (agentic, rule, research, governance, gated-dag; A2.1).
+  in SemEngine (agentic, rule, research, governance, gated-dag; A2.1). Held: whether `rule` and `pkg/lifecycle` stay
+  out is open on #8 Q15 and Q16 (see "Open after step-back review").
 
 **Ruled (Q1, #3): (a)** — explicit per-package registration in each consumer's composition root; no aggregator, no
 engine-side registry. The owner's quality bar: "simple yet detailed is always the preference but it better be solid,
@@ -150,8 +151,8 @@ The ledger schema is closed: T-B7 (`internal/harness/contract/ledger_test.go`, `
 outside the ten fields, and `harness-boundaries` › "Admission ledger" states the same schema. The class is therefore
 recorded in existing fields (matrix row in `contract`, test in `proving_tests`, `class:port-refactor` in
 `known_risks`) and the ledger header documents that convention (task 2.5). A dedicated field would need a T-B7 code
-change and a `harness-boundaries` spec delta; it is not part of this change. The label does not exist in the
-repository at this change's base (`gh label list`, 2026-10-01); task 2.5 creates it.
+change and a `harness-boundaries` spec delta; it is not part of this change. The label `class:port-refactor`
+exists in the repository (created 2026-10-01, after this change's base).
 
 Known port refactors at tier 0: the `component` adapt (drop `Dependencies.ToolRegistry`,
 `ToolRegistryReader`, and the `LifecycleManager` field), the `service` adapts (`milestone_service.go`,
@@ -385,7 +386,8 @@ semconnect#74's recorded qualification evidence (head `dff12657`) by task 3.3.
   Home: `graph-ingest-recovery`.
 - **I8 (fork boundary, Q2):** no SemEngine file imports `github.com/c360studio/semstreams` or any path under it; this
   is ADR-106's sister-import freeze enforced from SemEngine's side. Home: `harness-boundaries` spec, the same
-  modified requirement as I1; guard: a SemEngine boundary test (task 2.6).
+  modified requirement as I1; guard: a SemEngine boundary test that lands with the first 04A change carrying the
+  `harness-boundaries` delta, so the spec never lags the test (task 2.6).
 
 ## Adopter seam findings (the gaps are the design work)
 
@@ -397,10 +399,22 @@ documented contracts with their invariants in spec (I7).
 
 ## Open questions
 
-- Unruled, from the step-back review on #8
-  ([comment 5929756463](https://github.com/C360Studio/semengine/issues/8#issuecomment-5929756463)): **Q14** (are
-  rules and business workflows engine-owned capabilities, at which tier, qualified by what workload) holds tasks 2.1
-  and 2.3; **Q15** (SemConnect's delta re-measured at the semconnect#74 head) holds tasks 1.7 and 2.1.
+### Open after step-back review
+
+Raised by the step-back review
+([#8 comment 5929756463](https://github.com/C360Studio/semengine/issues/8#issuecomment-5929756463)) and posted as
+questions in [#8 comment 5929815222](https://github.com/C360Studio/semengine/issues/8#issuecomment-5929815222); none
+is ruled. Each holds the tasks named.
+
+- **Q14:** may an engine-owned capability be admitted by owner mandate (named tier, named qualifying workload)
+  alongside consumer need? Holds 2.1, 2.3.
+- **Q15:** does tier 0 include a rule core, and what must D4's agentic edits leave for it? Holds 2.8.
+- **Q16:** are business workflows (`pkg/lifecycle`) engine-owned at a later wave, or not engine? Holds 2.9.
+- **Q17:** what is SemEngine's exported surface, and which DX gates go with it? Holds 2.1.
+- **Q18:** how is graph-ingest's durable-consumer settlement proven under process replacement, and which rows join
+  it? Holds 4.1, 4.2, 4.6.
+- **Q8-remeasure:** SemConnect's delta at the semconnect#74 head (`graph-index-spatial`, `graph-index-temporal`
+  now imported). Holds 1.7; Q8's first-wave ruling stands.
 
 ## Declared costs
 

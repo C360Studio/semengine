@@ -25,7 +25,8 @@ change records those rulings and turns them into rows and tasks.
 - Port refactors (seams, file-level adapts, dropped fields) are tracked as the risk class `class:port-refactor`:
   each is an `adapt` ledger row citing its matrix row and proving test (D4a).
 - The capability-level word is "tier", with the fallback ladder as a contract element (D3, #4).
-- A SemEngine boundary test that no file imports `github.com/c360studio/semstreams` (D2, I8).
+- A SemEngine boundary test that no file imports `github.com/c360studio/semstreams` (D2, I8), placed in the first
+  04A change that carries the `harness-boundaries` delta.
 - The fusion and graph-tool boundary: four layers mapped to code; `Engine.Fuse` lens path kept, package-level
   `fusion.Fuse` deferred, `searchGraph` kept under its degraded contract with community/LLM behind a seam;
   find/anchor/ask recorded as cases (D5).
@@ -70,6 +71,6 @@ and the no-SemStreams-import requirement (I8).
 
 `openspec/changes/setup-03b-contract-boundary/{proposal,design,tasks,inventory}.md`; `docs/admission-ledger.yaml`
 (new rows and a header note on port refactors); `docs/repository-map.md` (boundary and port set recorded);
-`docs/provenance.md` status; one SemEngine boundary test (task 2.6); the `class:port-refactor` label (task 2.5). No
+`docs/provenance.md` status; the placement of the I8 boundary test (task 2.6). No
 product Go code, no Taskfile change. Owner rulings are posted on #2, #3, #4, #18, #19, #20 and #8 as comments; this
 change records them.

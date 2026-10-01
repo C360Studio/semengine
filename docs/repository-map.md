@@ -64,14 +64,15 @@ There is no `/tickets` state and no handoff document; each question has one home
 
 ## Current GitHub state
 
-- Issues #2, #3, #4 are open owner decisions (ADR-106 relationship, registration cut, capability-level name).
+- Issues #2 and #3 are open owner decisions (ADR-106 relationship, registration cut); #4 is closed, ruled "tier".
 - Issues #5 to #11 are the SETUP epics: #5 Foundation, #6 Isolated harness, #7 Pinned consumer baseline, #8 Contract
   and boundary, #9 Tier 0 graph foundation, #10 Tier 1 lexical retrieval, #11 Tier 2 neural retrieval.
 - Milestones: `Setup: foundation through contract` (#2 to #8), `Tier 0: graph foundation (provisional)` (#9),
   `Tier 1: lexical retrieval (provisional)` (#10), `Tier 2: neural retrieval (provisional)` (#11).
 - PR #12 (SETUP 01) merged as `819c461`; #5 stays open for the Codex-to-Claude pickup demonstration.
-- Draft PR #13 claims #6 (`Addresses #6`) on `claude/setup-02-harness`; its SETUP 02 rulings are on
+- PR #13 (SETUP 02) merged as `34c9dc6` and #6 is closed; its SETUP 02 rulings are on
   [issue #6](https://github.com/C360Studio/semengine/issues/6#issuecomment-5921046663).
+- Draft PR #21 claims #8 (`Addresses #8`) on `claude/setup-03b-contract`; its change is committed from `a120165`.
 - Owner rulings of 2026-09-30 on the plan are recorded at
   [PR #1 comment 5917717356](https://github.com/C360Studio/semengine/pull/1#issuecomment-5917717356).
 

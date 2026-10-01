@@ -16,6 +16,11 @@
 # `task ledger:check` (contract test T-B7, internal/harness/contract/ledger_test.go), run inside
 # `task verify`, enforces this schema. Every entry below is re-checked at SETUP 03A. No SemStreams
 # package has been ported; the SETUP 02 rows record patterns adapted, two scripts carried, and exclusions.
+#
+# Port refactors (owner ruling on #8, Q4; SETUP 03B design.md D4a): restructuring ported code away from
+# the pin's shape (a seam, a file-level adapt, a dropped field or method) is disposition `adapt`, with
+# `contract` citing its retained-contract-matrix row, `proving_tests` naming the test that proves the
+# retained behavior, and `known_risks` naming `class:port-refactor` and its tracking issue (#25-#36).
 
 - source_path: natsclient/test_client.go
   source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67

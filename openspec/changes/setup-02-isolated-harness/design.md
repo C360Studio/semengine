@@ -53,9 +53,11 @@ Revision 1's options stand as the record; the owner or orchestrator ruled each.
   Rejected: (b) a Go tool (`exec.Cmd` with `Setpgid`, `Cancel`, `WaitDelay`) — cleaner signals but a second language
   for one protocol and a compiled tool in the gate path.
 - **O4 Unbounded-cleanup guard — ruled (b) grep guard.** A `git grep` guard in `verify` for the exact #1417 shape
-  (`Stop`, `Close`, `Terminate` with `context.Background()` or `context.TODO()` in `*_test.go`) with a two-file
-  allowlist (the fixture's and the suite's sanctioned cleanup roots): cheap, zero baseline. Rejected: (a) SemStreams'
-  4,000-line AST guard (revisit at 04A when ported tests arrive); (c) review only.
+  (`Stop`, `Close`, `Terminate` with `context.Background()` or `context.TODO()` in `*_test.go`): cheap, zero
+  baseline. No allowlist: the sanctioned cleanup roots (`natsfixture.New`'s bounded cleanup Stop and the rollback
+  helper) live in non-test files the guard does not scan, so an allowlist would have no entry (corrected after
+  implementation; accepted on review of PR #13). Rejected: (a) SemStreams' 4,000-line AST guard (revisit at 04A when
+  ported tests arrive); (c) review only.
 - **O5 Assertion library — ruled stdlib `testing`.** testify becomes a 04A ledger question when ported tests carry it.
 - **O6 Image pin — ruled digest.** `nats:2.14.<x>-alpine@sha256:<digest>` in `.nats-image`, tag kept as a comment; the
   runner exports it and Go reads the env, so the pin is spelled once. A `TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX` mirror
@@ -241,11 +243,14 @@ after the grace (M10); an image override without a reason is refused (A4).
 
 - T-B1 import graph: no non-`_test.go` file outside `internal/harness/` imports `internal/harness/...`,
   `testcontainers-go`, `testing`, or `gopkg.in/yaml.v3`.
-- T-B2 no retained `context.Context` in any non-test struct (direct, embedded, aliased, in a container, or as a
-  provider result).
-- T-B3 a `nats:` image literal appears only in `.nats-image`.
-- T-B4 scripts and Taskfile contain no `docker … prune`, no `docker volume ls … --filter name=`, no `xargs … docker
-  volume rm`, no `down -v` on a project not created by the same task, and no `docker ps … --filter name=`.
+- T-B2 no retained `context.Context` in any non-test struct (direct, embedded, aliased, in a container, as a generic
+  type argument, or as a provider result); `probe.ObservedContext` is the spec's one exemption by exact name (ruling
+  A2); untyped holders and closures are out of a static check's reach.
+- T-B3 a `nats:` image literal (variable tags included) appears only in `.nats-image`, across every tracked file that
+  configures or runs Docker; Markdown may cite the tag (ruling A3).
+- T-B4 scripts and Taskfile contain no `docker … prune`, no `docker volume ls … --filter name=` (or `-f`), no `xargs …
+  docker volume rm`, no Compose invocation without `-p semengine-<project>`, and no `docker ps … --filter name=`;
+  backslash-continued commands are checked whole.
 - T-B5 every literal Docker name in `scripts/*.sh`, `Taskfile.yml`, and `docker/**/*.yml` (`--name`,
   `container_name:`, `name:`, `-p`/`--project-name`, `COMPOSE_PROJECT_NAME`, volume and network names) starts with
   `semengine-` and contains none of

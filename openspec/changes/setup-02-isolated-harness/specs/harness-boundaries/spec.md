@@ -20,22 +20,34 @@ or `gopkg.in/yaml.v3`.
 
 ### Requirement: No retained context
 
-No struct type in a non-test file SHALL hold a context.Context directly, embedded, aliased, in a container, or as a
-provider result; context.CancelFunc fields are permitted.
+No struct type in a non-test file SHALL hold a context.Context directly, embedded, aliased, in a container, as a
+type argument of a generic holder (`atomic.Pointer[context.Context]`), or as a provider result; unexported
+context.CancelFunc fields are permitted, exported ones are rejected. The one exception, listed by exact type name in
+this requirement and nowhere else, is `github.com/c360studio/semengine/internal/harness/probe.ObservedContext`: it is
+itself a context.Context implementation and holds its parent the way the standard library's derived contexts do.
+The check is static: a context stored in an untyped holder (`any`, `interface{}`, `atomic.Value`) or captured by a
+closure is invisible to it, and those shapes are out of its scope by construction.
 
 #### Scenario: Fixture struct is checked
 
 - **WHEN** natsfixture.Fixture declares a context.Context field
 - **THEN** the contract test fails
 
+#### Scenario: Generic holder is checked
+
+- **WHEN** a non-test struct declares an `atomic.Pointer[context.Context]` field
+- **THEN** the contract test fails
+
 ### Requirement: One image pin
 
 The NATS image SHALL be spelled only in `.nats-image` as `nats:<tag>@sha256:<digest>`; scripts and Go SHALL receive it
-through SEMENGINE_NATS_IMAGE.
+through SEMENGINE_NATS_IMAGE. The check covers every tracked file that configures or runs Docker (`*.go`, `*.sh`,
+`Taskfile.yml`, `*.yaml`/`*.yml`, Dockerfiles, CI workflows), including variable tags such as `nats:${TAG}`; Markdown
+and other prose may cite the tag.
 
 #### Scenario: Literal elsewhere
 
-- **WHEN** any tracked file other than .nats-image contains a `nats:` image literal
+- **WHEN** a tracked file that configures or runs Docker, other than .nats-image, contains a `nats:` image literal
 - **THEN** the contract test fails
 
 ### Requirement: SemEngine-assigned names
@@ -73,8 +85,10 @@ No `*_test.go` file SHALL contain a fixed broker address (`nats://localhost:`, `
 
 ### Requirement: Bounded cleanup roots
 
-`task verify` SHALL fail when a `*_test.go` file outside the two sanctioned harness cleanup roots calls Stop, Close,
-or Terminate with context.Background() or context.TODO().
+`task verify` SHALL fail when any `*_test.go` file calls Stop, Close, or Terminate with context.Background() or
+context.TODO(). The sanctioned harness cleanup roots (`natsfixture.New`'s cleanup Stop under a fresh bounded
+context, and the rollback helper's bounded `WithoutCancel` context) live in non-test files, so the check has no
+allowlist.
 
 #### Scenario: Unbounded defer
 
@@ -83,8 +97,9 @@ or Terminate with context.Background() or context.TODO().
 
 ### Requirement: No broad Docker cleanup
 
-No script or task SHALL invoke `docker … prune`, `docker volume ls … --filter name=`, `docker ps … --filter name=`,
-`xargs … docker volume rm`, or Compose `down` for a project it did not create.
+No script or task SHALL invoke `docker … prune`, `docker volume ls … --filter name=`, `docker ps … --filter name=`
+(the short `-f` included), `xargs … docker volume rm`, or any Compose subcommand without an explicit `semengine-`
+project name. A backslash-continued command is checked as one command.
 
 #### Scenario: Substring removal added
 

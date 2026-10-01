@@ -2,6 +2,7 @@ package contract
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -20,6 +21,7 @@ func TestOneImagePinSensitivity(t *testing.T) {
 		".nats-image":     "# comment naming " + img(":2.14.7-alpine") + " is fine here\n" + pin + "\n",
 		"scripts/run.sh":  "url=nats://host:4222\nimage=\"$SEMENGINE_NATS_IMAGE\"\n",
 		"docs/design.md":  "Prose may cite " + img(":2.14-alpine") + " when explaining the pin.\n",
+		"docs/notes.txt":  "Not a Docker configuration file: " + img(":2.14-alpine") + "\n",
 		"compose/app.yml": "services:\n  nats:\n    image: ${SEMENGINE_NATS_IMAGE}\n",
 	}
 	root, files := writeTree(t, clean)
@@ -38,6 +40,12 @@ func TestOneImagePinSensitivity(t *testing.T) {
 			[]string{"docker/a.yml:3", img(":latest")}},
 		{"registry-qualified", map[string]string{"Taskfile.yml": "cmd: docker run docker.io/library/" + img(":2.14") + "\n"},
 			[]string{"Taskfile.yml:1", img(":2.14")}},
+		{"shell-variable tag", map[string]string{"scripts/x.sh": "docker pull " + img(":${TAG}") + "\n"},
+			[]string{"scripts/x.sh:1", img(":${TAG}")}},
+		{"bare variable tag", map[string]string{"Taskfile.yml": "cmd: docker run " + img(":$TAG") + "\n"},
+			[]string{"Taskfile.yml:1", img(":$TAG")}},
+		{"Dockerfile", map[string]string{"docker/broker/Dockerfile": "FROM " + img(":2.14-alpine") + "\n"},
+			[]string{"docker/broker/Dockerfile:1", img(":2.14-alpine")}},
 		{"pin not digest-addressed", map[string]string{".nats-image": img(":2.14.7-alpine") + "\n"},
 			[]string{".nats-image", "digest"}},
 		{"pin file with two images", map[string]string{".nats-image": pin + "\n" + pin + "\n"},
@@ -66,13 +74,29 @@ var (
 	// imageLiteral matches a NATS image reference: the repository name followed by a tag or a
 	// sha256 digest, optionally registry-qualified. `nats://` URLs and a YAML key followed by a space
 	// do not match.
-	imageLiteral = regexp.MustCompile(`(^|[^A-Za-z0-9_.-])nats(:[A-Za-z0-9][A-Za-z0-9._-]*|@sha256:)`)
+	// A tag may be a shell or Compose variable (`:${TAG}`, `:$TAG`).
+	imageLiteral = regexp.MustCompile(`(^|[^A-Za-z0-9_.-])nats(:([A-Za-z0-9]|\$\{?[A-Za-z_])[A-Za-z0-9._${}-]*|@sha256:)`)
 	// pinShape is the one accepted form of the pin: a tag for humans, a digest for Docker.
 	pinShape = regexp.MustCompile(`^nats:[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$`)
 )
 
-// imagePinViolations is the T-B3 check. Markdown is exempt: design documents and specs must be able
-// to cite the pin and the upstream tag in prose, and no tool reads an image from them.
+// configuresDocker reports whether a file can name an image Docker runs (ruling A3): Go, shell,
+// the Taskfile, YAML (Compose, CI workflows), and Dockerfiles. Markdown and other prose may cite the
+// pin and the upstream tag; no tool reads an image from them.
+func configuresDocker(name string) bool {
+	base := filepath.Base(name)
+	switch {
+	case strings.HasSuffix(name, ".go"), strings.HasSuffix(name, ".sh"):
+		return true
+	case strings.HasSuffix(name, ".yml"), strings.HasSuffix(name, ".yaml"):
+		return true
+	case base == "Dockerfile", strings.HasPrefix(base, "Dockerfile."), strings.HasSuffix(base, ".dockerfile"):
+		return true
+	}
+	return false
+}
+
+// imagePinViolations is the T-B3 check over every tracked file that configures or runs Docker.
 func imagePinViolations(t *testing.T, root string, files []string) []string {
 	t.Helper()
 	var violations []string
@@ -91,7 +115,7 @@ func imagePinViolations(t *testing.T, root string, files []string) []string {
 			}
 			continue
 		}
-		if strings.HasSuffix(name, ".md") {
+		if !configuresDocker(name) {
 			continue
 		}
 		for i, line := range readLines(t, root, name) {

@@ -121,9 +121,10 @@
   consumer_purpose: type-checked guard that no production struct retains a context.Context
   destination: internal/harness/contract (T-B2)
   contract: >-
-    rejects stored contexts including embedded, aliased, container, and provider-result forms;
-    CancelFunc allowed
-  dependencies_and_side_effects: golang.org/x/tools/go/packages (already indirect)
+    rejects stored contexts including embedded, aliased, container, generic type-argument, and
+    provider-result forms; unexported CancelFunc fields allowed, exported ones rejected; the
+    spec's one exemption is probe.ObservedContext by exact type name
+  dependencies_and_side_effects: golang.org/x/tools/go/packages (direct, for the type-checked scan)
   known_risks: module path and scan roots differ (adapted)
   proving_tests: fixture-module test with a violating struct
   owner: setup-02 developer

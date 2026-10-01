@@ -32,6 +32,7 @@ func TestNoRetainedContextSensitivity(t *testing.T) {
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 )
 
 type Fixture struct {
@@ -51,9 +52,17 @@ type Provider struct{ authority func() context.Context }
 
 type Exported struct{ Cancel context.CancelFunc }
 
+type Atomic struct{ slot atomic.Pointer[context.Context] }
+
 type Allowed struct {
 	cancel   context.CancelFunc
 	callback func(context.Context) error
+}
+
+// Out of scope by design: an untyped holder's content is a run-time fact.
+type OutOfScope struct {
+	box atomic.Value
+	any any
 }
 `,
 		"fixture/fixture_test.go": `package fixture
@@ -69,13 +78,15 @@ type testOnly struct{ ctx context.Context }
 	requireViolation(t, v, "fixture/fixture.go", "field held", "stores context.Context")
 	requireViolation(t, v, "fixture/fixture.go", "field authority", "provides context.Context")
 	requireViolation(t, v, "fixture/fixture.go", "field Cancel", "exports context.CancelFunc")
+	requireViolation(t, v, "fixture/fixture.go", "field slot", "stores context.Context")
 	for _, line := range v {
-		if strings.Contains(line, "fixture_test.go") || strings.Contains(line, "field cancel ") || strings.Contains(line, "field callback") {
-			t.Errorf("violation reported for an allowed form: %s", line)
+		if strings.Contains(line, "fixture_test.go") || strings.Contains(line, "field cancel ") || strings.Contains(line, "field callback") ||
+			strings.Contains(line, "field box") || strings.Contains(line, "field any") {
+			t.Errorf("violation reported for an allowed or out-of-scope form: %s", line)
 		}
 	}
-	if len(v) != 6 {
-		t.Errorf("want exactly 6 violations (ctx, Context, 2x held, authority, Cancel), got %d:\n  %v", len(v), v)
+	if len(v) != 7 {
+		t.Errorf("want exactly 7 violations (ctx, Context, 2x held, authority, Cancel, slot), got %d:\n  %v", len(v), v)
 	}
 }
 
@@ -122,6 +133,18 @@ func TestContextFieldDetectorMatrix(t *testing.T) {
 		[]*types.Var{types.NewVar(token.NoPos, fixturePkg, "ctx", contextAlias)}, nil,
 	))
 	contextProviderResult := named("ContextProviderResult", contextType.Underlying())
+	atomicPkg, err := importer.Default().Import("sync/atomic")
+	if err != nil {
+		t.Fatalf("import sync/atomic: %v", err)
+	}
+	// A foreign generic struct is opaque except for its type arguments: atomic.Pointer[T] holds a *T.
+	instantiate := func(arg types.Type) types.Type {
+		typ, err := types.Instantiate(nil, atomicPkg.Scope().Lookup("Pointer").Type(), []types.Type{arg}, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return typ
+	}
 	for _, test := range []struct {
 		name string
 		typ  types.Type
@@ -139,6 +162,9 @@ func TestContextFieldDetectorMatrix(t *testing.T) {
 		{name: "interface provider named result", typ: providerInterface("ContextProvider", contextProviderResult), want: true},
 		{name: "input callback", typ: callback(contextType), want: false},
 		{name: "input interface", typ: callbackInterface("ContextCallback", contextType), want: false},
+		{name: "generic type argument", typ: instantiate(contextType), want: true},
+		{name: "generic type argument alias", typ: instantiate(contextAlias), want: true},
+		{name: "generic without context", typ: instantiate(types.Typ[types.Int]), want: false},
 	} {
 		t.Run("context/"+test.name, func(t *testing.T) {
 			got := detector.contextReason(test.typ, make(map[types.Type]bool)) != ""
@@ -170,6 +196,7 @@ func TestContextFieldDetectorMatrix(t *testing.T) {
 		{name: "input callback", typ: callback(cancelType), want: false},
 		{name: "input interface", typ: callbackInterface("CancelCallback", cancelType), want: false},
 		{name: "ordinary no-argument callback", typ: types.NewSignatureType(nil, nil, nil, nil, nil, false), want: false},
+		{name: "generic type argument", typ: instantiate(cancelType), want: true},
 	} {
 		t.Run("cancel/"+test.name, func(t *testing.T) {
 			got := detector.isCancelFunc(test.typ)
@@ -180,9 +207,11 @@ func TestContextFieldDetectorMatrix(t *testing.T) {
 	}
 }
 
-// contextExemptTypes are context implementations, not owners: a type that is itself a
-// context.Context must hold its parent, exactly as the standard library's derived contexts do.
-// Exemption is by exact type name so an owner cannot gain it by embedding context.Context.
+// contextExemptTypes mirrors the exception the harness-boundaries spec ("No retained context")
+// lists by exact type name; the list is the spec's, and a new entry needs a spec change first. Each
+// is a context implementation, not an owner: a type that is itself a context.Context holds its
+// parent exactly as the standard library's derived contexts do. Exemption is by exact name so an
+// owner cannot gain it by embedding context.Context.
 var contextExemptTypes = map[string]string{
 	"github.com/c360studio/semengine/internal/harness/probe.ObservedContext": "a derived Context that signals its first Done() observation (lifecycle-suite › Probes)",
 }
@@ -326,6 +355,13 @@ func (d contextFieldDetector) contextReason(typ types.Type, seen map[types.Type]
 	case *types.Pointer:
 		return d.contextReason(c.Elem(), seen)
 	case *types.Named:
+		// Type arguments are inspected even when the struct is opaque: atomic.Pointer[T] and
+		// similar holders store a T, and their type argument is the only visible sign of it.
+		for i := 0; i < c.TypeArgs().Len(); i++ {
+			if r := d.contextReason(c.TypeArgs().At(i), seen); r != "" {
+				return r
+			}
+		}
 		if d.descend(c) {
 			return d.contextReason(c.Underlying(), seen)
 		}
@@ -379,6 +415,11 @@ func (d contextFieldDetector) containsCancelFunc(typ types.Type, seen map[types.
 	case *types.Pointer:
 		return d.containsCancelFunc(c.Elem(), seen)
 	case *types.Named:
+		for i := 0; i < c.TypeArgs().Len(); i++ {
+			if d.containsCancelFunc(c.TypeArgs().At(i), seen) {
+				return true
+			}
+		}
 		if d.descend(c) {
 			return d.containsCancelFunc(c.Underlying(), seen)
 		}

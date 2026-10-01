@@ -24,8 +24,11 @@ func TestNoBroadDockerCleanupSensitivity(t *testing.T) {
 	clean := map[string]string{
 		"scripts/ok.sh": "# a comment may say docker system prune without running it\n" +
 			"docker ps -aq --filter label=org.testcontainers.sessionId=\"$sid\"\n" +
+			"docker ps -aq -f label=x=y\n" +
 			"docker rm -f \"$id\"\n" +
-			"docker compose -p semengine-lane-1 down -v\n",
+			"docker compose -p semengine-lane-1 down -v\n" +
+			"docker compose \\\n  -p semengine-lane-1 \\\n  -f docker/a.yml up -d\n" +
+			"cp docker-compose.yml /tmp/x\n",
 		"Taskfile.yml": "tasks:\n  x:\n    cmds:\n      - docker image inspect \"$img\"\n",
 	}
 	root, files := writeTree(t, clean)
@@ -42,8 +45,14 @@ func TestNoBroadDockerCleanupSensitivity(t *testing.T) {
 		{"xargs volume rm", "scripts/x.sh", "cat ids | xargs -r docker volume rm", "xargs"},
 		{"ps name filter", "scripts/x.sh", "docker ps -aq --filter name=semengine", "--filter name="},
 		{"container ls name filter", "scripts/x.sh", "docker container ls -aq --filter \"name=nats\"", "--filter name="},
-		{"compose down on a foreign project", "scripts/x.sh", "docker compose -p semstreams down -v", "compose down"},
-		{"compose down with no -p", "scripts/x.sh", "docker compose -f docker/a.yml down", "compose down"},
+		{"compose down on a foreign project", "scripts/x.sh", "docker compose -p semstreams down -v", "compose"},
+		{"compose down with no -p", "scripts/x.sh", "docker compose -f docker/a.yml down", "compose"},
+		{"short -f name filter", "scripts/x.sh", "docker ps -aq -f name=semengine", "--filter name="},
+		{"short -f= name filter", "scripts/x.sh", "docker volume ls -q -f=name=semengine", "--filter name="},
+		{"name filter after a continuation", "scripts/x.sh", "docker volume ls -q \\\n  --filter name=semengine", "--filter name="},
+		{"compose up with no -p", "scripts/x.sh", "docker compose -f docker/a.yml up -d", "compose"},
+		{"compose run with a foreign -p", "Taskfile.yml", "      - docker compose -p semstreams run --rm x", "compose"},
+		{"docker-compose binary with no -p", "scripts/x.sh", "docker-compose -f a.yml up", "compose"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			files := map[string]string{}
@@ -111,6 +120,10 @@ func TestSemEngineAssignedNamesSensitivity(t *testing.T) {
 			[]string{"scripts/x.sh:1", "ops"}},
 		{"variable-only name", "scripts/x.sh", "docker run --name \"$name\" img\n",
 			[]string{"scripts/x.sh:1", "$name", "literal"}},
+		{"name after a continuation", "scripts/x.sh", "docker run -d \\\n  --name ops-x \\\n  img\n",
+			[]string{"scripts/x.sh:1", "ops-x", "ops"}},
+		{"volume after a continuation", "scripts/x.sh", "docker run \\\n  -v semengine-stops:/d img\n",
+			[]string{"scripts/x.sh:1", "semengine-stops", "ops"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			files := map[string]string{}
@@ -142,34 +155,45 @@ func dockerScriptFile(name string) bool {
 }
 
 // scriptLines yields a Docker-capable file's lines with comment lines blanked (so a comment may
-// name a forbidden command) and quotes removed (so `--filter "name=x"` and `--filter name=x` are
-// one shape). Line numbers are preserved.
+// name a forbidden command), backslash-continued lines joined onto the line that starts the command
+// (so a flag on the next line is still the command's), and quotes removed and `=` flag forms spread
+// (so `--filter "name=x"`, `--filter=name=x`, and `-f=name=x` are one shape). Line numbers are
+// preserved: a joined command is reported at its first line, and its continuation lines are blank.
 func scriptLines(t *testing.T, root, name string) []string {
 	t.Helper()
 	lines := readLines(t, root, name)
-	for i, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		trimmed = strings.TrimPrefix(trimmed, "- ")
+	normalise := strings.NewReplacer(`"`, "", `'`, "", "--filter=", "--filter ", " -f=", " -f ")
+	for i := 0; i < len(lines); i++ {
+		trimmed := strings.TrimPrefix(strings.TrimSpace(lines[i]), "- ")
 		if strings.HasPrefix(trimmed, "#") {
 			lines[i] = ""
 			continue
 		}
-		lines[i] = strings.NewReplacer(`"`, "", `'`, "", "--filter=", "--filter ").Replace(line)
+		start := i
+		for strings.HasSuffix(lines[i], `\`) && i+1 < len(lines) {
+			lines[start] = strings.TrimSuffix(lines[start], `\`) + " " + lines[i+1]
+			i++
+			lines[i] = ""
+		}
+		lines[start] = normalise.Replace(lines[start])
 	}
 	return lines
 }
 
 var (
 	prunePattern      = regexp.MustCompile(`\bdocker\b.*\bprune\b`)
-	nameFilterPattern = regexp.MustCompile(`\bdocker\s+(volume\s+ls|ps|container\s+ls|network\s+ls|image\s+ls|images)\b.*--filter\s+name=`)
+	nameFilterPattern = regexp.MustCompile(`\bdocker\s+(volume\s+ls|ps|container\s+ls|network\s+ls|image\s+ls|images)\b.*(-f|--filter)\s+name=`)
 	xargsRmPattern    = regexp.MustCompile(`\bxargs\b.*\bdocker\s+volume\s+rm\b`)
-	composeDown       = regexp.MustCompile(`\bcompose\b.*\sdown\b`)
-	ownProject        = regexp.MustCompile(`(^|\s)(-p|--project-name)[= ]+semengine-`)
+	// composeCall is any Compose invocation, plugin or standalone binary; `docker-compose.yml` as
+	// a file name is not one.
+	composeCall = regexp.MustCompile(`\bdocker(\s+compose|-compose)(\s|$)`)
+	ownProject  = regexp.MustCompile(`(^|\s)(-p|--project-name)[= ]+semengine-`)
 )
 
 // broadCleanupViolations is the T-B4 check. Removal is only ever by observed ID or exact label;
-// Compose `down` must name the SemEngine project it acts on, since an unnamed project defaults to
-// the directory name and can be another repository's stack (inventory A6, "Compose project name").
+// every Compose invocation must name the SemEngine project it acts on, since an unnamed project
+// defaults to the directory name and can be another repository's stack (inventory A6, "Compose
+// project name"): `up` would join it and `down` would remove it.
 func broadCleanupViolations(t *testing.T, root string, files []string) []string {
 	t.Helper()
 	var violations []string
@@ -188,8 +212,8 @@ func broadCleanupViolations(t *testing.T, root string, files []string) []string 
 			if xargsRmPattern.MatchString(line) {
 				violations = append(violations, at+": xargs into docker volume rm removes whatever a listing matched")
 			}
-			if composeDown.MatchString(line) && !ownProject.MatchString(line) {
-				violations = append(violations, at+": compose down without -p semengine-<project>")
+			if composeCall.MatchString(line) && !ownProject.MatchString(line) {
+				violations = append(violations, at+": compose invocation without -p semengine-<project>")
 			}
 		}
 	}
@@ -238,7 +262,10 @@ func dockerNameViolations(t *testing.T, root string, files []string) []string {
 			continue
 		}
 		if strings.HasPrefix(name, "docker/") {
-			violations = append(violations, composeNameViolations(t, root, name, check)...)
+			// A statement of its own: check appends to violations, and Go leaves unspecified
+			// whether append's first operand is read before or after a call among its arguments.
+			parseErrors := composeNameViolations(t, root, name, check)
+			violations = append(violations, parseErrors...)
 		}
 		for i, line := range scriptLines(t, root, name) {
 			at := fmt.Sprintf("%s:%d", name, i+1)

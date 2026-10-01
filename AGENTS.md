@@ -39,7 +39,7 @@ task build        # build
 task vet          # go vet
 task lint         # pinned revive
 task vuln         # pinned govulncheck
-task test:unit    # unit tests
+task test:unit    # unit tests once, under the race detector, at one CPU
 task test:repeat  # unit tests five times at one CPU, without the race detector, shuffled
 task merge:check  # -- <n>: fail while a known flake is open that PR n does not close; reads GitHub
 task verify       # spec:check docs:check fmt:check tidy:check cleanup-roots:check build vet lint vuln

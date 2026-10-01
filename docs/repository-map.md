@@ -36,7 +36,7 @@ not a task tracker and not a description of the tree.
 | `internal/harness/natsfixture/` | Owned NATS fixture: admission-gated start, ordered `Stop`, `Name`, evidence |
 | `internal/harness/lifecycletest/` | Owner-first lifecycle checks (`Run`) for stateful components |
 | `internal/harness/probe/` | Callback, observed-context, and bounded-polling test probes |
-| `internal/harness/contract/` | Repository contract tests T-B1 to T-B7, including `task ledger:check` |
+| `internal/harness/contract/` | Tests of repository-wide rules: no fixed network addresses, no stored contexts, no broad Docker cleanup, Docker names SemStreams' cleanup cannot match, the import graph, one NATS image pin, the admission ledger (`task ledger:check`), no sleeps or skipped or hidden tests; and tests that the cover, cleanup-roots, tree-state and merge-check scripts, the `test:unit` and `test:repeat` commands, and the CI workflow do what the merge gate requires |
 | `internal/harness/runner/` | Tests of the integration runner script |
 | `scripts/test-integration.sh` | `task test:integration`: host lock, image preflight, signal forwarding, leak check |
 | `scripts/cover-check.sh` | `task cover:check`: 80% statements on `natsfixture`, `lifecycletest`, `probe` |

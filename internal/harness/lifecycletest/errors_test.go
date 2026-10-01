@@ -3,6 +3,7 @@ package lifecycletest
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -36,27 +37,6 @@ type observedScripted struct {
 }
 
 func (o *observedScripted) Observe() Observation { return o.obs }
-
-// TestChecksFailClosedWithoutObserver: an owner that cannot report its retained state does not
-// pass a completion check on its return values alone.
-func TestChecksFailClosedWithoutObserver(t *testing.T) {
-	for name, check := range map[string]func(context.Context, Owner) error{
-		"NilContextsRefused":                    CheckNilContextsRefused,
-		"PreCancelledStartRefused":              CheckPreCancelledStartRefused,
-		"StopBeforeStartSafe":                   CheckStopBeforeStartSafe,
-		"ControlledStopUnderLiveStartAuthority": CheckControlledStopUnderLiveStartAuthority,
-		"RepeatedStopIsNoOp":                    CheckRepeatedStopIsNoOp,
-	} {
-		err := check(t.Context(), &scripted{})
-		if err == nil || !strings.Contains(err.Error(), "does not implement lifecycletest.Observer") {
-			t.Errorf("%s over an unobservable owner = %v, want a fail-closed error", name, err)
-		}
-	}
-	err := CheckSecondStartRefusedOrRestartCycle(t.Context(), &scripted{}, Promise{})
-	if err == nil || !strings.Contains(err.Error(), "does not implement lifecycletest.Observer") {
-		t.Errorf("SecondStart over an unobservable owner = %v, want a fail-closed error", err)
-	}
-}
 
 // TestChecksPropagateOwnerFailures: a Start or Stop error is reported with the step that failed.
 func TestChecksPropagateOwnerFailures(t *testing.T) {
@@ -102,9 +82,19 @@ func TestRetainedStateIsReported(t *testing.T) {
 	}
 }
 
+// A1: retained state is a compile-time requirement of every owner the checks accept. An optional
+// interface discovered at run time is the silent-skip shape: an owner without it would compile and
+// fail every completion check on a technicality, or worse, be skipped.
+func TestOwnerRequiresObserve(t *testing.T) {
+	owner := reflect.TypeOf((*Owner)(nil)).Elem()
+	if _, ok := owner.MethodByName("Observe"); !ok {
+		t.Fatal("lifecycletest.Owner does not require Observe; an unobservable owner compiles")
+	}
+}
+
 func TestIsNil(t *testing.T) {
 	var typed *refowner
-	if !isNil(nil) || !isNil(typed) || isNil(&scripted{}) {
+	if !isNil(nil) || !isNil(typed) || isNil(&observedScripted{}) {
 		t.Fatal("isNil misclassifies an owner")
 	}
 }

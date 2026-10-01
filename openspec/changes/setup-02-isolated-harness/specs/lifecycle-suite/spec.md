@@ -9,7 +9,9 @@ that let a test observe joins and retained state instead of inferring them from 
 
 ### Requirement: Portable floor
 
-`lifecycletest` SHALL provide error-returning checks over `Owner{Start(ctx) error; Stop(ctx) error}` for: nil Start
+`lifecycletest` SHALL provide error-returning checks over `Owner{Start(ctx) error; Stop(ctx) error; Observe()
+Observation}`, where Observe, reporting the owner's unresolved resources and per-operation call counts, is required at
+compile time so that no completion check can be skipped or fail on an owner that cannot report its state, for: nil Start
 and Stop contexts refused; pre-cancelled and pre-expired Start refused with the matching context error; Stop before
 Start safe; controlled Stop completing under live Start authority with fresh finite cleanup authority; abort Stop
 preserving the caller's context cause; repeated Stop as a no-op within its bound; second Start refused unless the

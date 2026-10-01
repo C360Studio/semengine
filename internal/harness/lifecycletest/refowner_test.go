@@ -65,7 +65,8 @@ func (o *refowner) Start(ctx context.Context) error {
 		}
 		return errRefownerUsed
 	}
-	if o.used && !o.restartable && o.fp != startTwiceAllowed {
+	// restartPromisedButRefused is a restartable owner whose second Start refuses anyway.
+	if o.used && (!o.restartable || o.fp == restartPromisedButRefused) && o.fp != startTwiceAllowed {
 		return errRefownerUsed
 	}
 	runCtx, cancel := context.WithCancel(ctx)
@@ -230,7 +231,8 @@ func TestEachFailpointTripsExactlyItsCheck(t *testing.T) {
 	} {
 		t.Run(string(tc.fp), func(t *testing.T) {
 			for _, c := range checks {
-				o := newRefowner(t, tc.fp, false)
+				// The double is as restartable as the promise says; only a failpoint may break it.
+				o := newRefowner(t, tc.fp, tc.promise.Restart)
 				err := c.run(t.Context(), o, tc.promise)
 				switch {
 				case c.name == tc.want && err == nil:

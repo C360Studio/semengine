@@ -28,16 +28,18 @@ const (
 	grace      = 2 * time.Second
 )
 
-// Owner is anything with a Start/Stop lifecycle.
+// Owner is anything with a Start/Stop lifecycle whose retained state the checks can read. Observe
+// is required at compile time: the checks that judge completion (a nil Stop released everything; a
+// repeated Stop changed nothing; a refused call acquired nothing) need it, because a returned error
+// alone is not evidence of a join, and an optional interface found missing at run time is the
+// silent-skip shape the floor exists to prevent.
 type Owner interface {
 	Start(ctx context.Context) error
 	Stop(ctx context.Context) error
+	Observer
 }
 
-// Observer is implemented by owners whose retained state the checks can read. Checks that judge
-// completion (a nil Stop released everything; a repeated Stop changed nothing; a refused call
-// acquired nothing) fail closed when the owner does not implement it: a returned error alone is not
-// evidence of a join.
+// Observer reports an owner's retained state.
 type Observer interface {
 	Observe() Observation
 }
@@ -205,17 +207,11 @@ func CheckRepeatedStopIsNoOp(ctx context.Context, o Owner) error {
 	if err := finish(ctx, o); err != nil {
 		return fmt.Errorf("first Stop: %w", err)
 	}
-	before, err := observe(o)
-	if err != nil {
-		return err
-	}
+	before := o.Observe()
 	if err := finish(ctx, o); err != nil {
 		return fmt.Errorf("repeated Stop: %w", err)
 	}
-	after, err := observe(o)
-	if err != nil {
-		return err
-	}
+	after := o.Observe()
 	if !reflect.DeepEqual(before, after) {
 		return fmt.Errorf("repeated Stop was not a no-op: state before %+v, after %+v", before, after)
 	}
@@ -242,19 +238,13 @@ func CheckSecondStartRefusedOrRestartCycle(ctx context.Context, o Owner, promise
 		}
 		return nil
 	}
-	before, err := observe(o)
-	if err != nil {
-		return err
-	}
+	before := o.Observe()
 	if err := call(ctx, o, "Start", startBound, func() error { return o.Start(startCtx) }); err == nil {
 		return errors.New("second Start returned nil without a restart promise; want a refusal")
 	} else if isBoundErr(err) {
 		return err
 	}
-	after, err := observe(o)
-	if err != nil {
-		return err
-	}
+	after := o.Observe()
 	if !reflect.DeepEqual(before, after) {
 		return fmt.Errorf("refused second Start changed state: before %+v, after %+v", before, after)
 	}
@@ -320,31 +310,17 @@ func call(ctx context.Context, o Owner, op string, bound time.Duration, fn func(
 	}
 }
 
-func observe(o Owner) (Observation, error) {
-	obs, ok := o.(Observer)
-	if !ok {
-		return Observation{}, fmt.Errorf("%T does not implement lifecycletest.Observer; its retained state is unobservable", o)
-	}
-	return obs.Observe(), nil
-}
-
 func requireNothingRetained(o Owner, when string) error {
-	obs, err := observe(o)
-	if err != nil {
-		return err
-	}
+	obs := o.Observe()
 	if len(obs.Unresolved) > 0 {
 		return fmt.Errorf("%s the owner still holds %s", when, slices.Clone(obs.Unresolved))
 	}
 	return nil
 }
 
-// describe renders retained state for a failure message, or says it is unobservable.
+// describe renders retained state for a failure message.
 func describe(o Owner) string {
-	obs, err := observe(o)
-	if err != nil {
-		return err.Error()
-	}
+	obs := o.Observe()
 	return fmt.Sprintf("unresolved %v, calls %v", obs.Unresolved, obs.Calls)
 }
 

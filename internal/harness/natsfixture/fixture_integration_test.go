@@ -531,10 +531,15 @@ var errStartRefused = errors.New("injected: container start refused")
 func mustFailFixture(t *testing.T) lifecycletest.Factory {
 	return func() lifecycletest.Owner {
 		f := New(t)
-		real := f.deps.start
+		realStart := f.deps.start
 		f.deps.start = func(ctx context.Context, req testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
-			c, _ := real(ctx, req)
-			return c, errStartRefused
+			c, err := realStart(ctx, req)
+			if c == nil {
+				// No container means no rollback to judge: the check would pass on a start that
+				// never reached Docker.
+				t.Errorf("must-fail factory: the real start created no container: %v", err)
+			}
+			return c, errors.Join(err, errStartRefused)
 		}
 		return owner{f}
 	}

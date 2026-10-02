@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 )
 
@@ -73,9 +74,9 @@ func fetchPins(ctx context.Context, remote string, bound time.Duration, tmp stri
 	return store, problems
 }
 
-// fetch runs one shallow fetch. git's standard error goes to a file, not a pipe: a transport
-// helper git started can outlive git when the bound kills it, and a pipe would hold Wait open
-// until that helper exits.
+// fetch runs one shallow fetch. git runs in a process group of its own, and the whole group is
+// killed when the bound cuts the fetch off and again once git has exited: a transport helper git
+// started (git-remote-https) does not die with git and would otherwise outlive the program.
 func (p pinStore) fetch(ctx context.Context, remote, sha, tmp string) error {
 	errFile, err := os.CreateTemp(tmp, "fetch-*.err")
 	if err != nil {
@@ -85,7 +86,14 @@ func (p pinStore) fetch(ctx context.Context, remote, sha, tmp string) error {
 	cmd := exec.CommandContext(ctx, "git", "-C", p.dir, "fetch", "--quiet", "--no-tags", "--depth", "1", "--end-of-options", remote, sha)
 	cmd.Env = gitEnv()
 	cmd.Stderr = errFile
-	if err := cmd.Run(); err != nil {
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
+	err = cmd.Run()
+	if cmd.Process != nil {
+		// The group is git's pid; ESRCH means nothing in it is left.
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+	}
+	if err != nil {
 		msg, _ := os.ReadFile(errFile.Name())
 		return fmt.Errorf("git fetch %s %s: %w: %s", remote, sha, err, strings.TrimSpace(string(msg)))
 	}

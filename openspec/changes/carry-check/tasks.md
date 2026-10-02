@@ -12,11 +12,11 @@ test (`design.md`, "Tests").
 
 ## 1. Design
 
-- [ ] 1.1 Hold: independent review of `inventory.md`, `design.md` and the `harness-boundaries` delta. The verdict
-      is a pass recorded on this pull request with the reviewed commit. There are at most three rounds; a finding
-      still open after the third goes to the owner on #52 with the choice stated.
-- [ ] 1.2 Hold: owner acceptance of the reviewed design on #52. Design question Q1 (the fetch inside `task verify`)
-      is answered: fetch, #52 comment 5951926749.
+- [x] 1.1 Independent review of `inventory.md`, `design.md` and the `harness-boundaries` delta: DESIGN PASS in
+      round 2 of at most three, recorded on this pull request (comment 5952034096) with the reviewed and committed
+      checksums.
+- [x] 1.2 Owner acceptance of the reviewed design: #52 comment 5952476906. Design question Q1 (the fetch inside
+      `task verify`) is answered: fetch, #52 comment 5951926749.
 
 ## 2. The comparison
 

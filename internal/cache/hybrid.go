@@ -34,7 +34,6 @@ type hybridCache[V any] struct {
 	order           *list.List               // doubly-linked list for LRU ordering
 	stats           *Statistics              // ALWAYS initialized
 	metrics         *cacheMetrics            // Optional, if metrics enabled
-	evictFn         EvictCallback[V]         // Optional callback
 	statsInterval   time.Duration            // Stats update interval
 
 	// Background cleanup coordination
@@ -69,7 +68,6 @@ func newHybridCache[V any](
 		order:           list.New(),
 		stats:           stats,   // ALWAYS present
 		metrics:         metrics, // Optional
-		evictFn:         opts.evictCallback,
 		statsInterval:   opts.statsInterval,
 		shutdown:        make(chan struct{}),
 		done:            make(chan struct{}),
@@ -219,14 +217,6 @@ func (c *hybridCache[V]) Clear() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.evictFn != nil {
-		// Call OnEvict for all items
-		for element := c.order.Back(); element != nil; element = element.Prev() {
-			entry := element.Value.(*hybridEntry[V])
-			c.evictFn(entry.key, entry.value)
-		}
-	}
-
 	c.items = make(map[string]*list.Element)
 	c.order.Init()
 
@@ -312,11 +302,6 @@ func (c *hybridCache[V]) removeElement(element *list.Element) {
 	entry := element.Value.(*hybridEntry[V])
 	delete(c.items, entry.key)
 	c.order.Remove(element)
-
-	if c.evictFn != nil {
-		// Call OnEvict callback outside of critical section
-		defer c.evictFn(entry.key, entry.value)
-	}
 }
 
 // cleanup runs in a background goroutine and periodically removes expired entries.
@@ -341,7 +326,7 @@ func (c *hybridCache[V]) cleanup(ctx context.Context) {
 // removeExpired removes all expired entries from the cache.
 func (c *hybridCache[V]) removeExpired() {
 	now := time.Now()
-	var expiredElements []*list.Element
+	expired := 0
 
 	c.mu.Lock()
 
@@ -351,7 +336,7 @@ func (c *hybridCache[V]) removeExpired() {
 		entry := element.Value.(*hybridEntry[V])
 
 		if now.After(entry.expiresAt) {
-			expiredElements = append(expiredElements, element)
+			expired++
 			delete(c.items, entry.key)
 			c.order.Remove(element)
 		}
@@ -362,24 +347,16 @@ func (c *hybridCache[V]) removeExpired() {
 	size := len(c.items)
 	c.mu.Unlock()
 
-	// Call OnEvict callbacks outside the lock
-	if c.evictFn != nil {
-		for _, element := range expiredElements {
-			entry := element.Value.(*hybridEntry[V])
-			c.evictFn(entry.key, entry.value)
-		}
-	}
-
 	// Update statistics
-	if len(expiredElements) > 0 {
+	if expired > 0 {
 		// ALWAYS track evictions in stats
-		for range expiredElements {
+		for range expired {
 			c.stats.Eviction()
 		}
 		c.stats.UpdateSize(int64(size))
 		// ALSO track in metrics if enabled
 		if c.metrics != nil {
-			for range expiredElements {
+			for range expired {
 				c.metrics.recordEviction()
 			}
 			c.metrics.updateSize(size)

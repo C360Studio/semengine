@@ -20,9 +20,6 @@ type cacheOptions[V any] struct {
 	// metricsPrefix is used as the component label for Prometheus metrics
 	metricsPrefix string
 
-	// evictCallback is called when items are evicted from the cache
-	evictCallback EvictCallback[V]
-
 	// statsInterval is how often to update aggregate statistics (for TTL/Hybrid caches)
 	statsInterval time.Duration
 }
@@ -36,14 +33,6 @@ func WithMetrics[V any](registry *metric.MetricsRegistry, prefix string) Option[
 			opts.metricsReg = registry
 			opts.metricsPrefix = prefix
 		}
-	}
-}
-
-// WithEvictionCallback sets a callback function that is called when items are evicted.
-// The callback receives the key and value of the evicted entry.
-func WithEvictionCallback[V any](callback EvictCallback[V]) Option[V] {
-	return func(opts *cacheOptions[V]) {
-		opts.evictCallback = callback
 	}
 }
 

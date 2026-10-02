@@ -22,7 +22,6 @@ type lruCache[V any] struct {
 	order   *list.List               // doubly-linked list for LRU ordering
 	stats   *Statistics              // ALWAYS initialized
 	metrics *cacheMetrics            // Optional, if metrics enabled
-	evictFn EvictCallback[V]         // Optional callback
 }
 
 // newLRUCache creates a new LRU cache with the specified maximum size.
@@ -48,7 +47,6 @@ func newLRUCache[V any](maxSize int, opts *cacheOptions[V]) (*lruCache[V], error
 		order:   list.New(),
 		stats:   stats,   // ALWAYS present
 		metrics: metrics, // Optional
-		evictFn: opts.evictCallback,
 	}, nil
 }
 
@@ -138,23 +136,11 @@ func (c *lruCache[V]) Delete(key string) (bool, error) {
 		return false, err
 	}
 
-	var evictKey string
-	var evictValue V
-	var shouldEvict bool
-
 	c.mu.Lock()
 	element, exists := c.items[key]
 	if !exists {
 		c.mu.Unlock()
 		return false, nil
-	}
-
-	// Capture eviction data before removing
-	if c.evictFn != nil {
-		entry := element.Value.(*lruEntry[V])
-		evictKey = entry.key
-		evictValue = entry.value
-		shouldEvict = true
 	}
 
 	c.removeElementUnsafe(element)
@@ -171,28 +157,12 @@ func (c *lruCache[V]) Delete(key string) (bool, error) {
 
 	c.mu.Unlock()
 
-	// Call eviction callback outside lock to prevent deadlock
-	if shouldEvict {
-		c.evictFn(evictKey, evictValue)
-	}
-
 	return true, nil
 }
 
 // Clear removes all entries from the cache.
 func (c *lruCache[V]) Clear() error {
-	// Collect items to evict before releasing lock
-	var evictItems []lruEntry[V]
-
 	c.mu.Lock()
-	if c.evictFn != nil {
-		evictItems = make([]lruEntry[V], 0, len(c.items))
-		for element := c.order.Back(); element != nil; element = element.Prev() {
-			entry := element.Value.(*lruEntry[V])
-			evictItems = append(evictItems, *entry)
-		}
-	}
-
 	c.items = make(map[string]*list.Element)
 	c.order.Init()
 
@@ -204,13 +174,6 @@ func (c *lruCache[V]) Clear() error {
 		c.metrics.updateSize(0)
 	}
 	c.mu.Unlock()
-
-	// Call eviction callbacks outside lock to prevent deadlock
-	if c.evictFn != nil {
-		for _, entry := range evictItems {
-			c.evictFn(entry.key, entry.value)
-		}
-	}
 
 	return nil
 }
@@ -256,18 +219,6 @@ func (c *lruCache[V]) evictLRU() {
 		return
 	}
 
-	// Capture eviction data before removing
-	var evictKey string
-	var evictValue V
-	var shouldEvict bool
-
-	if c.evictFn != nil {
-		entry := element.Value.(*lruEntry[V])
-		evictKey = entry.key
-		evictValue = entry.value
-		shouldEvict = true
-	}
-
 	c.removeElementUnsafe(element)
 
 	// ALWAYS track eviction in stats (observability is not optional)
@@ -276,17 +227,10 @@ func (c *lruCache[V]) evictLRU() {
 	if c.metrics != nil {
 		c.metrics.recordEviction()
 	}
-
-	// Temporarily release lock to call eviction callback
-	c.mu.Unlock()
-	if shouldEvict {
-		c.evictFn(evictKey, evictValue)
-	}
-	c.mu.Lock()
 }
 
 // removeElementUnsafe removes an element from both the list and map.
-// Must be called with mutex held. Does NOT call eviction callback - caller is responsible.
+// Must be called with mutex held.
 func (c *lruCache[V]) removeElementUnsafe(element *list.Element) {
 	entry := element.Value.(*lruEntry[V])
 	delete(c.items, entry.key)

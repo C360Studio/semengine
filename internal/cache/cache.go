@@ -48,10 +48,6 @@ type Cache[V any] interface {
 	Close() error
 }
 
-// EvictCallback is called when an entry is evicted from the cache.
-// It receives the key and value of the evicted entry.
-type EvictCallback[V any] func(key string, value V)
-
 // Entry represents an entry in the cache with metadata.
 type Entry[V any] struct {
 	Key        string

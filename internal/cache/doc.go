@@ -36,9 +36,6 @@
 //
 //	cache, err := cache.NewHybrid[[]byte](ctx, 5000, 10*time.Minute, 1*time.Minute,
 //		cache.WithMetrics[[]byte](registry, "api_cache"),
-//		cache.WithEvictionCallback[[]byte](func(key string, value []byte) {
-//			log.Printf("Evicted: %s", key)
-//		}),
 //	)
 //
 // # Cache Types and Eviction Policies
@@ -154,12 +151,10 @@
 //
 //	cache, err := cache.NewLRU[V](capacity,
 //		cache.WithMetrics[V](registry, "component"),
-//		cache.WithEvictionCallback[V](callback),
 //	)
 //
 // Available options:
 //   - WithMetrics: Enable Prometheus metrics export
-//   - WithEvictionCallback: Get notified when items are evicted
 //   - WithStatsInterval: Set stats aggregation interval (TTL/Hybrid only)
 //
 // This pattern provides:
@@ -176,7 +171,6 @@
 //   - Statistics use atomic operations (lock-free)
 //   - Metrics use Prometheus atomic types
 //   - TTL cleanup runs in background goroutine
-//   - Eviction callbacks are called outside locks to prevent deadlocks
 //
 // # Performance Characteristics
 //
@@ -230,11 +224,7 @@
 //
 // Session Storage:
 //
-//	cache, _ := cache.NewTTL[*Session](ctx, 2*time.Hour, 10*time.Minute,
-//		cache.WithEvictionCallback[*Session](func(key string, session *Session) {
-//			session.PersistToDB() // Save to persistent storage on eviction
-//		}),
-//	)
+//	cache, _ := cache.NewTTL[*Session](ctx, 2*time.Hour, 10*time.Minute)
 //
 // Entity Caching (Two-Level):
 //

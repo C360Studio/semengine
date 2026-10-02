@@ -28,10 +28,9 @@ type ttlCache[V any] struct {
 	ttl             time.Duration
 	cleanupInterval time.Duration
 	items           map[string]*ttlEntry[V]
-	stats           *Statistics      // ALWAYS initialized
-	metrics         *cacheMetrics    // Optional, if metrics enabled
-	evictFn         EvictCallback[V] // Optional callback
-	statsInterval   time.Duration    // Stats update interval
+	stats           *Statistics   // ALWAYS initialized
+	metrics         *cacheMetrics // Optional, if metrics enabled
+	statsInterval   time.Duration // Stats update interval
 
 	// Background cleanup coordination
 	shutdown chan struct{}
@@ -63,7 +62,6 @@ func newTTLCache[V any](
 		items:           make(map[string]*ttlEntry[V]),
 		stats:           stats,   // ALWAYS present
 		metrics:         metrics, // Optional
-		evictFn:         opts.evictCallback,
 		statsInterval:   opts.statsInterval,
 		shutdown:        make(chan struct{}),
 		done:            make(chan struct{}),
@@ -99,9 +97,6 @@ func (c *ttlCache[V]) Get(key string) (V, bool) {
 		// Double-check it's still there and still expired
 		if currentEntry, stillExists := c.items[key]; stillExists && currentEntry.isExpired() {
 			delete(c.items, key)
-			if c.evictFn != nil {
-				defer c.evictFn(key, currentEntry.value)
-			}
 			// ALWAYS track eviction in stats (observability is not optional)
 			c.stats.Eviction()
 			c.stats.UpdateSize(int64(len(c.items)))
@@ -170,12 +165,9 @@ func (c *ttlCache[V]) Delete(key string) (bool, error) {
 		return false, err
 	}
 	c.mu.Lock()
-	entry, exists := c.items[key]
+	_, exists := c.items[key]
 	if exists {
 		delete(c.items, key)
-		if c.evictFn != nil {
-			defer c.evictFn(key, entry.value)
-		}
 	}
 	size := len(c.items)
 	c.mu.Unlock()
@@ -197,12 +189,6 @@ func (c *ttlCache[V]) Delete(key string) (bool, error) {
 // Clear removes all entries from the cache.
 func (c *ttlCache[V]) Clear() error {
 	c.mu.Lock()
-	if c.evictFn != nil {
-		// Call OnEvict for all items
-		for _, entry := range c.items {
-			c.evictFn(entry.key, entry.value)
-		}
-	}
 	c.items = make(map[string]*ttlEntry[V])
 	c.mu.Unlock()
 
@@ -286,35 +272,28 @@ func (c *ttlCache[V]) cleanup(ctx context.Context) {
 // removeExpired removes all expired entries from the cache.
 func (c *ttlCache[V]) removeExpired() {
 	now := time.Now()
-	var expiredEntries []*ttlEntry[V]
+	expired := 0
 
 	c.mu.Lock()
 	for key, entry := range c.items {
 		if now.After(entry.expiresAt) {
-			expiredEntries = append(expiredEntries, entry)
+			expired++
 			delete(c.items, key)
 		}
 	}
 	size := len(c.items)
 	c.mu.Unlock()
 
-	// Call OnEvict callbacks outside the lock
-	if c.evictFn != nil {
-		for _, entry := range expiredEntries {
-			c.evictFn(entry.key, entry.value)
-		}
-	}
-
 	// Update statistics
-	if len(expiredEntries) > 0 {
+	if expired > 0 {
 		// ALWAYS track evictions in stats
-		for range expiredEntries {
+		for range expired {
 			c.stats.Eviction()
 		}
 		c.stats.UpdateSize(int64(size))
 		// ALSO track in metrics if enabled
 		if c.metrics != nil {
-			for range expiredEntries {
+			for range expired {
 				c.metrics.recordEviction()
 			}
 			c.metrics.updateSize(size)

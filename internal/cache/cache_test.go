@@ -441,67 +441,6 @@ func TestConcurrency(t *testing.T) {
 	}
 }
 
-// TestEvictCallback tests the eviction callback functionality.
-func TestEvictCallback(t *testing.T) {
-	t.Run("LRUEvictCallback", func(t *testing.T) {
-		var evictedKeys []string
-		var mu sync.Mutex
-
-		cache, err := NewLRU[string](2, WithEvictionCallback[string](func(key string, _ string) {
-			mu.Lock()
-			evictedKeys = append(evictedKeys, key)
-			mu.Unlock()
-		}))
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer cache.Close()
-
-		_, _ = cache.Set("key1", "value1")
-		_, _ = cache.Set("key2", "value2")
-		_, _ = cache.Set("key3", "value3") // Should evict key1
-
-		time.Sleep(10 * time.Millisecond) // Allow callback to execute
-
-		mu.Lock()
-		if len(evictedKeys) != 1 || evictedKeys[0] != "key1" {
-			t.Errorf("Expected evicted keys [key1], got %v", evictedKeys)
-		}
-		mu.Unlock()
-	})
-
-	t.Run("TTLEvictCallback", func(t *testing.T) {
-		var evictedKeys []string
-		var mu sync.Mutex
-
-		cache, err := NewTTL[string](
-			context.Background(),
-			50*time.Millisecond,
-			25*time.Millisecond,
-			WithEvictionCallback[string](func(key string, _ string) {
-				mu.Lock()
-				evictedKeys = append(evictedKeys, key)
-				mu.Unlock()
-			}),
-		)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer cache.Close()
-
-		_, _ = cache.Set("key1", "value1")
-
-		// Wait for expiration and cleanup
-		time.Sleep(100 * time.Millisecond)
-
-		mu.Lock()
-		if len(evictedKeys) != 1 || evictedKeys[0] != "key1" {
-			t.Errorf("Expected evicted keys [key1], got %v", evictedKeys)
-		}
-		mu.Unlock()
-	})
-}
-
 // TestStatistics tests the statistics functionality.
 func TestStatistics(t *testing.T) {
 	// Note: Stats are always enabled now

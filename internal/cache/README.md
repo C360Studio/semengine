@@ -61,9 +61,6 @@ c := cache.NewLRU[*Entity](1000,
 // Compose multiple functional options
 c := cache.NewTTL[*Document](ctx, 10*time.Minute, 1*time.Minute,
     cache.WithMetrics[*Document](registry, "document_cache"),
-    cache.WithEvictionCallback[*Document](func(key string, value *Document) {
-        log.Printf("Evicted document: %s", key)
-    }),
     cache.WithStatsInterval[*Document](30*time.Second),
 )
 ```
@@ -112,16 +109,6 @@ Enable Prometheus metrics export:
 
 ```go
 cache.WithMetrics[V](registry, "component_name")
-```
-
-### WithEvictionCallback
-
-Set a callback for when items are evicted:
-
-```go
-cache.WithEvictionCallback[V](func(key string, value V) {
-    // Handle evicted item
-})
 ```
 
 ### WithStatsInterval
@@ -197,9 +184,6 @@ config := cache.Config{
 // Create cache from config with optional functional options
 c, err := cache.NewFromConfig[V](ctx, config,
     cache.WithMetrics[V](registry, "component_name"),
-    cache.WithEvictionCallback[V](func(key string, value V) {
-        log.Printf("Evicted: %s", key)
-    }),
 )
 ```
 
@@ -407,9 +391,6 @@ func setupProductionCache(ctx context.Context, registry *metric.MetricsRegistry)
         30*time.Minute,       // 30 min TTL
         5*time.Minute,        // Cleanup every 5 min
         cache.WithMetrics[*User](registry, "user_cache"),
-        cache.WithEvictionCallback[*User](func(key string, user *User) {
-            log.Printf("Evicted user from cache: %s", user.ID)
-        }),
     )
 }
 ```

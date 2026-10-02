@@ -11,9 +11,8 @@ import (
 type simpleCache[V any] struct {
 	mu      sync.RWMutex
 	items   map[string]V
-	stats   *Statistics      // ALWAYS initialized
-	metrics *cacheMetrics    // Optional, if metrics enabled
-	evictFn EvictCallback[V] // Optional callback
+	stats   *Statistics   // ALWAYS initialized
+	metrics *cacheMetrics // Optional, if metrics enabled
 }
 
 // newSimpleCache creates a new simple cache instance.
@@ -37,7 +36,6 @@ func newSimpleCache[V any](opts *cacheOptions[V]) (*simpleCache[V], error) {
 		items:   make(map[string]V),
 		stats:   stats,   // ALWAYS present
 		metrics: metrics, // Optional
-		evictFn: opts.evictCallback,
 	}, nil
 }
 
@@ -97,13 +95,9 @@ func (c *simpleCache[V]) Delete(key string) (bool, error) {
 		return false, err
 	}
 	c.mu.Lock()
-	value, exists := c.items[key]
+	_, exists := c.items[key]
 	if exists {
 		delete(c.items, key)
-		if c.evictFn != nil {
-			// Call eviction callback with the actual value that was stored
-			defer c.evictFn(key, value)
-		}
 	}
 	size := len(c.items)
 	c.mu.Unlock()
@@ -126,12 +120,6 @@ func (c *simpleCache[V]) Delete(key string) (bool, error) {
 // Clear removes all entries from the cache.
 func (c *simpleCache[V]) Clear() error {
 	c.mu.Lock()
-	if c.evictFn != nil {
-		// Call eviction callback for all items before clearing
-		for key, value := range c.items {
-			c.evictFn(key, value)
-		}
-	}
 	c.items = make(map[string]V)
 	c.mu.Unlock()
 

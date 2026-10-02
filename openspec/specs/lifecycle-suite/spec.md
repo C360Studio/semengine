@@ -3,7 +3,9 @@
 ## Purpose
 The lifecycle suite is the portable owner-lifecycle floor every SemEngine owner is tested against, plus the probes
 that let a test observe joins and retained state instead of inferring them from timing or goroutine counts.
+
 ## Requirements
+
 ### Requirement: Portable floor
 
 `lifecycletest` SHALL provide error-returning checks over `Owner{Start(ctx) error; Stop(ctx) error; Observe()
@@ -34,12 +36,13 @@ missing, and SHALL NOT invent a second Stop or a replacement context.
 
 `probe.Callback` SHALL expose entered, release, and joined channels; `probe.ObservedContext` SHALL signal the first
 Done() observation and optionally hold it; `probe.Await` SHALL poll under the caller's context and return the last
-observation and error on failure.
+observation's value and its error, if it had one, on failure.
 
 #### Scenario: Await reports the last observation
 
 - **WHEN** the observed condition never holds
-- **THEN** Await returns after the context ends with the last observed value and last error in the message
+- **THEN** Await returns after the context ends with the last observation's value and its error, if it had one,
+  in the message
 
 ### Requirement: Complete sensitivity matrix
 
@@ -70,4 +73,3 @@ before it returns, whether or not the requirement held.
 - **WHEN** the helper ends a double whose Stop signalled its worker and returned nil, and the worker has not exited
 - **THEN** the helper fails the test naming what the double still holds, and the worker has exited before the helper
   returns
-

@@ -49,7 +49,20 @@ frozen: a SemStreams change after the pin is its own ledger row, never an implie
 prevention, context ownership, completed joins, authority and readiness, acknowledged durability, and
 metadata/content preservation are admission gates that an issue, an elapsed budget, or a coverage number cannot waive.
 
-Two obligations ride on every slice design in addition to its ledger row:
+Three obligations ride on every slice design in addition to its ledger row:
+
+- **Probe the pin before designing its port.** A pin probe is a run of this repository's checks against a copy of
+  the SemStreams pin, before any code is ported (not to be confused with the `internal/harness/probe` test package).
+  The inventory for a porting change includes three runs on that copy: the lifecycle suite against each service the
+  change ports; the unit tests five times at one CPU in shuffled order and once under the race detector (the runs
+  `task test:repeat` and `task test:unit` make); and the list of lines the test-text rules reject (`time.Sleep`,
+  skips, build tags other than `integration`). Every design statement about how the pin behaves cites a probe result,
+  as step 5 of the workflow above requires of any premise. PR #48's tasks 2.0 and 2.0b are the worked example: run
+  after the design had passed review, the probe contradicted two of its decisions.
+
+  This rule, the open-pull-request listing in inventory category 3, and "Specify behaviour, not mechanism" under
+  Design discipline come from PR #48's design review (issue #53). They bind changes 2 to 7 of Slice 04A and later
+  work; they are not applied backwards to PR #48.
 
 - **Surface audit.** Porting is the cheapest moment to leave unused surface behind. For the package being ported,
   list (a) exported symbols with no caller inside SemEngine and no symbol-level use by a consumer
@@ -85,8 +98,10 @@ each either cited at `file:line` or closed with the exact searches that came up 
    persisted. More than one home is a defect to consolidate toward ONE shared primitive, never a pattern to extend. A
    design that adds another spelling is wrong at birth.
 3. **Adjacent claims on the territory.** Current specs, ADRs, active changes, filed issues, admission-ledger rows,
-   and consumer asks that already cover or constrain the touched surface. Name overlaps and conflicts explicitly
-   rather than designing around them silently.
+   open pull requests (drafts included: a draft is a claim), and consumer asks that already cover or constrain the
+   touched surface. List every open pull request whose changed files or OpenSpec capabilities overlap the planned
+   change, from `gh pr list --state open --json number,title,files`. Name overlaps and conflicts explicitly rather
+   than designing around them silently; the design then states, for each overlap, which merges first.
 4. **The consumer at birth.** For every new exported symbol, port, subject, bucket, or config field the design
    introduces: name its present consumer. Zero present consumers removes it from the design; "for observability"
    and "for future use" are the phantom-surface shape.
@@ -213,6 +228,11 @@ yes, the framework absorbing the failure IS the design, and the adopter-facing k
   only when all tasks join.
 - **Cancellation authority stays private.** A lifecycle owner may retain only a private, correctly synchronized
   `context.CancelFunc`; it may not retain the context itself. Design exported `context.CancelFunc` hits out.
+- **Specify behaviour, not mechanism.** For concurrent and lifecycle work the design states what a caller can
+  observe (what each call returns, which errors, what is still held or running afterwards) and names the test that
+  proves each. It does not choose the mutex, the wait group or the order of joins; the developer does, settled by a
+  failing-first test under `-race`. The context rules above are prohibitions on what code may hold, not mechanism
+  choices, and still bind the design.
 - Extend the model, never build a channel beside it. A parallel declaration buys a resolution layer whose whole job
   is re-deriving a linkage the model already had. The tell: a design note admitting the linkage rests on a naming
   coincidence.

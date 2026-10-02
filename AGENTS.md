@@ -79,6 +79,9 @@ indexed by their spec. A change that can turn a "review only" row into a failing
 | A failure path fails closed; a skip, drop or degrade is declared | developer contract § Guarantee, signal, and revision contracts | review only |
 | No new surface without a present consumer; unused surface is left behind when porting | developer contract § Before adding anything new; architect contract § Extraction slices | review only |
 | A change that establishes a reusable primitive lists who should adopt it | architect contract § The adoption sweep | review only |
+| A porting design cites a pin probe (this repository's checks run on a copy of the SemStreams pin) for every statement about how the pin behaves | architect contract § Extraction slices; reviewer contract § Pre-owner design review | review only |
+| A design states what a caller can observe and the test that proves it, not the lock, wait group or join order; after three review rounds, open findings go to the owner | architect contract § Design discipline; `.agents/README.md` § Orchestrating role agents | review only |
+| An inventory lists every open pull request, drafts included, that overlaps the change; the design says which merges first | architect contract § The surface inventory, category 3; reviewer contract § Inventory review | review only; if missed once, the overlap listing (`gh pr list` filtered by path) is the first thing to script |
 | A boundary change is checked against the stated purpose | architect contract § Intent check | review only |
 | A ported package brings its SemStreams guidance (contract sections and skills) with it | architect contract § Extraction slices | review only |
 | A new rule names what enforces it and adds its row to this table | reviewer contract § Port-time and pattern review | review only |

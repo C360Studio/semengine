@@ -18,41 +18,40 @@ starts, `task merge:check -- 67` and the merge are recorded on this pull request
 - [x] 1.1 The independent review of `inventory.md`: `INVENTORY PASS` in round 2 of at most three, recorded on this
       pull request (round 1: comment 5956546196; round 2: comment 5956907408). The file reviewed and the file committed
       are the same, sha256 `725b11e7…8fbe8f`.
-- [ ] 1.2 Hold: 1.1, then the independent pre-owner review of `design.md`, `proposal.md`, this file and the
-      `merge-gate` delta. Outcome: `DESIGN REVIEW PASS` within three rounds, recorded on this pull request with the
-      reviewed checksums.
-- [ ] 1.3 Hold: the owner's ruling on #66. Outcome: his acceptance of the reviewed design and his answers to Q1 to
-      Q7 of `design.md`, recorded on #66. An answer that differs from the recommendation is worked into the design,
-      the delta and these tasks, and re-checked by the reviewer, before any code.
+- [x] 1.2 The independent pre-owner review of `design.md`, `proposal.md`, this file and the `merge-gate` delta:
+      `DESIGN REVIEW PASS` in round 2 of at most three, recorded on this pull request (round 1: comment 5957401025;
+      round 2: comment 5957614491). The three corrections the pass asked for, with the reviewed and the committed
+      checksums, are in comment 5957642045.
+- [ ] 1.3 Hold: the owner's ruling on #66. Outcome: his acceptance of the reviewed design and his answers to Q1, Q2
+      and Q3 of `design.md`, recorded on #66. An answer that differs from the recommendation is worked into the
+      design, the delta and these tasks, and re-checked by the reviewer, before any code.
 
 ## 2. The script and its test
 
-- [ ] 2.1 (D) The fake `gh` answers four more reads (the pull request, its files, its comments, a comparison of two
-      commits) and still refuses any other call. The shared healthy state is a documents-only pull request. Written
-      first: one assertion in `TestMergeCheckKnownFlake` and one in `TestMergeCheckUpToDateRule` that the pull
-      request and its files were read. Every existing case passes with its expectation unchanged.
-      Gate: `task test:unit`.
+- [ ] 2.1 (D) The fake `gh` answers two more reads (the pull request and its files) and still refuses any other
+      call. The shared healthy state is a documents-only pull request. Written first: in one pull-request-run case
+      of `TestMergeCheckKnownFlake` and one of `TestMergeCheckUpToDateRule`, an assertion that the pull request and
+      its files were read; in a push-run case, an assertion that neither was. Every existing case passes with its
+      expectation unchanged. Gate: `task test:unit`.
 - [ ] 2.2 (D) `TestMergeCheckReview`, written first, the cases for which pull requests are covered: the scenarios
-      "Documents only" to "No changed file" of the delta, and the 101-file list served both as one list and as two
-      lists back to back. Gate: `task test:unit`.
-- [ ] 2.3 (D) `TestMergeCheckReview`, written first, the cases for the two lines: the scenarios "No reviewed-by
-      line" to "Carriage returns". Gate: `task test:unit`.
-- [ ] 2.4 (D) `TestMergeCheckReview`, written first, the cases for the record and for carrying it over: the
-      scenarios "Record names the head" to "More files than GitHub lists, record names an earlier commit". The fake
-      answers a comparison only for the pair of commits the case expects. Gate: `task test:unit`.
-- [ ] 2.5 (D) `TestMergeCheckReview`, written first, the remaining scenarios of the delta, from "Draft" to "Push
-      run": the two draft scenarios; each of the four reads, both when it errors and when its answer has the wrong
-      shape; a recorded commit GitHub does not have; a sorting or comparing step that errors; an open flake together
-      with a missing review; another base; a push run. Gate: `task test:unit`.
-- [ ] 2.6 (D) The time of `go test -count=1 -run '^TestMergeCheck' ./internal/harness/contract/` before and after is
-      recorded on this pull request, and the figure under "Declared costs" in `design.md` is replaced by the
-      measured one. Gate: `task verify`, whose step timings are recorded with it.
+      "Documents only" to "No changed file" of the delta. Gate: `task test:unit`.
+- [ ] 2.3 (D) `TestMergeCheckReview`, written first, the cases for the two lines: the scenarios "The other agent is
+      named" to "Carriage returns". Gate: `task test:unit`.
+- [ ] 2.4 (D) `TestMergeCheckReview`, written first, the remaining scenarios, "Draft" to "Push run and the review
+      check". Gate: `task test:unit`.
+- [ ] 2.5 (D) The time the `contract` package takes in the `test:unit`, `test:integration` and `test:repeat` steps
+      of this pull request's CI run is recorded on this pull request beside the same three figures for `main` (21.0
+      s, 14.1 s and 31.5 s in run 37028259077). The design proposes a budget of 30 s more for the three together;
+      nothing in the tree sets one. Over it, the cases are run side by side and the figures taken again. Outcome,
+      either way: the estimate under "Declared costs" in `design.md` is replaced by the measured figure; a figure
+      still over the proposed budget is also stated in this pull request's description for the owner, and no case
+      is removed to meet it. Gate: `task verify`.
 
 ## 3. The workflow
 
-- [ ] 3.1 (D) `TestCIWorkflowPinnedSensitivity`, written first, gains one planted workflow for each scenario of "A
-      run when a pull request is marked ready", and its clean fixture gains the trigger. How the YAML library decodes
-      the key `on` is measured first and recorded on this pull request. Gate: `task test:unit`.
+- [ ] 3.1 (D) `TestCIWorkflowPinnedSensitivity`, written first, gains one planted workflow for each case of the
+      scenarios "Ready type missing" and "A default type missing", and its clean fixture gains the trigger.
+      Gate: `task test:unit`.
 - [ ] 3.2 (D) `.github/workflows/ci.yml` lists `opened`, `synchronize`, `reopened` and `ready_for_review` under
       `pull_request`; the job's comment and its step's name say what the script now checks. `TestCIWorkflowPinned`
       passes, and the job's three permissions are unchanged. Gate: `task test:unit`.
@@ -60,54 +59,52 @@ starts, `task merge:check -- 67` and the merge are recorded on this pull request
 ## 4. Against real GitHub
 
 - [ ] 4.1 (D) The script is run locally, with `GITHUB_ACTIONS` unset, against #65, #63, #14, #48 and #67. Each
-      output is recorded on this pull request beside the result worked out by hand from the pull request's page:
-      #65 documents only; #63 a code pull request with no `reviewed-by:` line; #14 a code pull request by a bot; #48
-      a draft code pull request whose findings are printed and not failed; #67 as it then stands. A result that
-      differs is a defect fixed before 7.1.
+      output is recorded on this pull request beside the result worked out by hand, beforehand, from the pull
+      request's page: #65 documents only; #63 a code pull request with no `reviewed-by:` line; #14 a code pull
+      request by a bot with no `reviewed-by:` line; #48 a draft code pull request whose findings are printed and
+      not failed; #67 as it then stands. A result that differs is a defect fixed before 7.1.
 - [ ] 4.2 (D) The first CI run of this pull request with the new script: the `Merge check` log shows the pull
-      request, its files and its comments read under the job's token, and the findings printed and not failed for a
-      draft. The run's link and the assumptions it settles (A2, A3) are recorded on this pull request.
-- [ ] 4.3 (D) Before any review record exists, this pull request is marked ready once. The run that starts fails
-      `Merge check` and names what is missing. The pull request is returned to draft, and both run links are
-      recorded (A1). If no run starts, that is recorded against A1 and decision D5 goes back to design review.
-- [ ] 4.4 (D) Hold: 7.1. Outcome: in the first CI run after the record of 7.1 exists and a later commit has been
-      pushed, the `Merge check` log shows the comparison read under the job's token and what the script made of it.
-      The run's link is recorded (A2).
+      request and its files read under the job's token, and the findings printed and not failed for a draft. The
+      run's link and what it settles (assumption A2 of `design.md`, and A3 for one page) are recorded on this pull
+      request.
+- [ ] 4.3 Hold: the owner's word, given in the session that marks it ready and recorded on this pull request, to
+      mark PR #67 ready once before any review record exists. Outcome (D): the run that starts fails `Merge check`
+      and names what is missing; the pull request is returned to draft; both run links are recorded (assumption
+      A1). If no run starts, that is recorded against A1 and decision D3 goes back to design review.
 
 ## 5. Documents
 
-- [ ] 5.1 (W) `.agents/protocol.md`, "Cross-agent review" and "Verification": the words `claude` and `codex` in the
-      two lines; the heading and two lines of a review record; what the script checks and what stays review only;
-      that a comment or an edited description starts no run. Gate: `task docs:check`.
-- [ ] 5.2 (W) `.agents/contracts/semengine-reviewer.md` says a review record on a code pull request carries the
-      heading and the two lines; `.agents/contracts/semengine-developer.md`, step 6, names the two description
-      lines and the full commit id in the request. Gate: `task docs:check`.
-- [ ] 5.3 (W) `AGENTS.md`: the rule's row names the script, `TestMergeCheckReview` and `TestCIWorkflowPinned` under
+- [ ] 5.1 (W) `.agents/protocol.md` says what `design.md` D7 lists. "Land" (`:59`): the `implemented-by:` line
+      names the implementing agent with the word `claude` or `codex`, beside the model or persona. "Cross-agent
+      review": the `reviewed-by:` line names the reviewing agent with the same words and is written once that
+      agent's newest review record approves; what the script checks and what stays review only; that marking ready
+      starts the run that applies the check and an edit or a comment starts none. "Verification": what
+      `merge-check` now fails on. Gate: `task docs:check`.
+- [ ] 5.2 (W) `AGENTS.md`: the rule's row names the script, `TestMergeCheckReview` and `TestCIWorkflowPinned` under
       "Enforced by" and lists what stays review only, from `design.md`, "What the check does not see"; the command
-      comment and the Merge gate follow. Gate: `task docs:check`.
-- [ ] 5.4 (W) One line each in `.agents/skills/semengine-preflight/SKILL.md`, `docs/repository-map.md`,
+      comment, the CI paragraph and the Merge bullet follow. Gate: `task docs:check`.
+- [ ] 5.3 (W) One line each in `.agents/skills/semengine-preflight/SKILL.md`, `docs/repository-map.md`,
       `docs/testing.md`, the description of `merge:check` in `Taskfile.yml`, and the header of
       `scripts/merge-check.sh`. Gate: `task docs:check` and `task test:unit`.
-- [ ] 5.5 (W) A note on PR #48, marked as coordination and not a review, gives the two words, the two lines of a
-      record, and what #48's description and its open `Review request` need before it is marked ready. Its link is
-      recorded on this pull request.
+- [ ] 5.4 (W) A note on PR #48, marked as coordination and not a review, says what its description needs before it
+      is marked ready: `claude` in its `implemented-by:` line. It also repeats the protocol's sentence from 5.1 on
+      when the `reviewed-by:` line is written. Its link is recorded on this pull request.
 
 ## 6. Shown able to fail
 
-- [ ] 6.1 (D) The experiment of `docs/testing.md`, "Show that the test can fail", is run for each wrong change listed
-      in `design.md`, D9. For each, the change and the baseline, wrong-change and restored runs are recorded on this
-      pull request. A wrong change the tests let through is reported as a survivor and closed with a new case, or
-      listed under what is not covered.
+- [ ] 6.1 (D) The experiment of `docs/testing.md`, "Show that the test can fail", is run for each of the seven wrong
+      changes listed in `design.md`, D6. For each, the change and the baseline, wrong-change and restored runs are
+      recorded on this pull request. A wrong change the tests let through is reported as a survivor and closed with
+      a new case, or listed under what is not covered.
 
 ## 7. Review
 
-- [ ] 7.1 Hold: Codex's implementation review, which the owner starts. Outcome: a comment on this pull request
-      headed `Review record`, by Codex's `semengine-reviewer`, with the lines `reviewed-by: codex` and `commit:`
-      naming the commit read. The `Review request` gives that commit by its 40 characters and the two lines.
-- [ ] 7.2 Hold: 7.1. Outcome: every finding of 7.1 is fixed, and a review record by Codex names the commit that
-      holds the last fix. With no finding this is ticked with 7.1.
-- [ ] 7.3 Hold: 7.1. Outcome: this pull request's description has one line `implemented-by:` that names `claude`
-      and one line `reviewed-by:` that names `codex`.
+- [ ] 7.1 Hold: Codex's implementation review of PR #67, which the owner starts. Outcome: a review record by Codex's
+      `semengine-reviewer` on this pull request that names the commit it read; every finding fixed; and, where
+      there were findings, a record by Codex that names the commit holding the last fix.
+- [ ] 7.2 Hold: 7.1 on PR #67. Outcome: this pull request's description has one line `implemented-by:` that names
+      `claude`, and one line `reviewed-by:` that names `codex`, written once Codex's newest review record approves,
+      as the protocol's sentence from 5.1 says.
 
 ## 8. In the archive commit
 

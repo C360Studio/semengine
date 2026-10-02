@@ -1,7 +1,7 @@
 # review-gate-check
 
-Status: draft. It rests on `inventory.md`, which has not had its independent review, and on `design.md`, which has
-not been reviewed or accepted.
+Status: draft, revision 3. It rests on `inventory.md`, which has `INVENTORY PASS`, and on `design.md`, which has had
+one review round and has not been accepted.
 
 ## Why
 
@@ -14,25 +14,23 @@ for a documents-only pull request. In SemStreams the rules that drifted were the
 
 - **`scripts/merge-check.sh` gains a review check** on every pull-request run, in CI's `merge-check` job and in
   `task merge:check -- <n>`. A pull request whose changed files are all Markdown or under `openspec/`, with none
-  under `.claude/agents/`, passes as documents only. Any other pull request is a code pull request and needs three
-  things.
-  - Its description has one line `implemented-by:` and one line `reviewed-by:`. Each names the agent with the word
-    `claude` or `codex`, and the reviewer is not the implementer.
-  - A comment headed `Review record` carries the lines `reviewed-by:` (the same agent) and `commit:` (a full commit
-    id).
-  - That commit is the head, or no file the pull request changes differs between it and the head.
+  under `.claude/agents/`, passes as documents only. Any other pull request is a code pull request, and its
+  description must say two things.
+  - Who implemented it: one line `implemented-by:` that names the agent with the word `claude` or `codex`.
+  - Who reviewed it: one line `reviewed-by:` that names the other agent.
 - **A draft is told and not failed.** The same findings are printed. The workflow starts a run when a draft is
   marked ready for review, and that run applies the check.
 - **Every read fails closed.** A read that fails, is cut short or has the wrong shape never counts as documents
-  only or as reviewed. The output says what to add.
+  only or as reviewed. The output says what to write.
 - **No waiver, no new permission, no new job.** A push to `main` is not checked and the script says so.
-- **Documents.** The protocol, the reviewer and developer contracts, `AGENTS.md` (the rule's row and the Merge
-  gate), the preflight skill, `docs/repository-map.md` and `docs/testing.md` name the check and the two fixed lines
-  of a review record.
+- **Documents.** The protocol, `AGENTS.md` (the rule's row and the Merge bullet), the preflight skill,
+  `docs/repository-map.md` and `docs/testing.md` name the check, what the two lines carry, and what stays checked
+  in review only.
 
-Not in this change: proof of who wrote a comment or a commit (the owner and both agents share one GitHub login);
-the verdict or the kind of a review; a waiver; any change to the known-flake check or the up-to-date rule; a review
-of PR #48.
+Not in this change: proof of who wrote anything (the owner and both agents share one GitHub login); any check of
+which commit the review read, of its verdict, or of a review record; a waiver; any change to GitHub's own
+`pull_request` rule on `main`, to the known-flake check or to the up-to-date rule; a review of PR #48. `design.md`
+gives the commit and the verdict as options O4 and O5, with what each stops and costs, for the owner to choose.
 
 ## Capabilities
 
@@ -45,12 +43,20 @@ of PR #48.
 ## Impact
 
 - `scripts/merge-check.sh`; `internal/harness/contract/mergecheck_test.go` (a new test, `TestMergeCheckReview`, and
-  four more answers from the fake `gh`); `internal/harness/contract/mergegate_test.go` (the workflow's trigger);
+  two more answers from the fake `gh`); `internal/harness/contract/mergegate_test.go` (the workflow's trigger);
   `.github/workflows/ci.yml` (the trigger's activity types); `Taskfile.yml` (one description).
-- Three more GitHub reads per pull-request run, and one more when a review record names an earlier commit.
+- Two more GitHub reads per pull-request run.
 - One more CI run each time a pull request is marked ready.
-- Every code pull request already open is covered once it is marked ready. PR #48 needs its `implemented-by:` line
-  reworded and a record by Codex. This pull request is itself a code pull request and is checked by its own script.
-- Each Dependabot pull request waits for a recorded review.
-- `design.md` lists seven questions for the owner, the costs, and the parts of the rule a script cannot check.
-- PR #48 changes four documents this change also edits. This change merges first.
+- Test time: an estimated 14 to 41 s more for each `task verify`, which takes 160 s on CI today; measured in task
+  2.5. The design proposes a budget of 30 s; nothing in the tree sets one.
+- Every code pull request already open is covered once it is marked ready. PR #48 needs `claude` in its
+  `implemented-by:` line. This pull request is itself a code pull request and is checked by its own script.
+- Each Dependabot pull request, weekly for three ecosystems, is red on `Merge check` until an agent has reviewed
+  it, a session has added the `reviewed-by:` line and the job has been run again.
+- The owner's own instructions for Claude sessions ask for `implemented-by: sonnet|opus|fable`, which names no
+  agent; a session that follows only them writes a line the check fails.
+- A code pull request written by hand, by neither agent and not by a bot, cannot pass as designed (`design.md`, Q3).
+- PR #48 changes three documents this change also edits. This change merges first if it is ready first; neither
+  waits for the other.
+- `design.md` gives the options, three questions for the owner, the costs, and the parts of the rule a script
+  cannot check.

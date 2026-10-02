@@ -3,6 +3,7 @@ package cache
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -112,6 +113,9 @@ func (c Config) Validate() error {
 // Returns a disabled cache (NoopCache) if config.Enabled is false.
 // Additional functional options can be passed to configure metrics, callbacks, etc.
 func NewFromConfig[V any](ctx context.Context, config Config, options ...Option[V]) (Cache[V], error) {
+	if ctx == nil {
+		return nil, errs.WrapInvalid(errors.New("nil context"), "cache", "NewFromConfig", "context is required")
+	}
 	if err := config.Validate(); err != nil {
 		return nil, errs.WrapInvalid(err, "cache", "NewFromConfig", "config validation failed")
 	}
@@ -156,7 +160,12 @@ func NewLRU[V any](maxSize int, options ...Option[V]) (Cache[V], error) {
 // Stats are always enabled for observability. Use WithMetrics() to also export as Prometheus metrics.
 func NewTTL[V any](ctx context.Context, ttl, cleanupInterval time.Duration, options ...Option[V]) (Cache[V], error) {
 	opts := applyOptions(options...)
-	return newTTLCache[V](ctx, ttl, cleanupInterval, opts)
+	c, err := newTTLCache[V](ctx, ttl, cleanupInterval, opts)
+	if err != nil {
+		// A nil *ttlCache returned as Cache[V] would be a non-nil interface.
+		return nil, err
+	}
+	return c, nil
 }
 
 // newHybrid creates a new Hybrid cache combining LRU and TTL eviction.
@@ -167,7 +176,12 @@ func newHybrid[V any](
 	options ...Option[V],
 ) (Cache[V], error) {
 	opts := applyOptions(options...)
-	return newHybridCache[V](ctx, maxSize, ttl, cleanupInterval, opts)
+	c, err := newHybridCache[V](ctx, maxSize, ttl, cleanupInterval, opts)
+	if err != nil {
+		// A nil *hybridCache returned as Cache[V] would be a non-nil interface.
+		return nil, err
+	}
+	return c, nil
 }
 
 // NewSimple creates a new Simple cache with no eviction policy.

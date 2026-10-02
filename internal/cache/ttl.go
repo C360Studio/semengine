@@ -2,7 +2,7 @@ package cache
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"sync"
 	"time"
 
@@ -42,6 +42,10 @@ type ttlCache[V any] struct {
 func newTTLCache[V any](
 	ctx context.Context, ttl, cleanupInterval time.Duration, opts *cacheOptions[V],
 ) (*ttlCache[V], error) {
+	if ctx == nil {
+		return nil, errs.WrapInvalid(errors.New("nil context"), "cache", "newTTLCache", "context is required")
+	}
+
 	// Stats are ALWAYS initialized - observability is not optional
 	stats := NewStatistics()
 
@@ -241,13 +245,10 @@ func (c *ttlCache[V]) Close() error {
 		close(c.shutdown)
 	}
 
-	// Wait for cleanup goroutine to finish with timeout
-	select {
-	case <-c.done:
-		return nil
-	case <-time.After(5 * time.Second):
-		return fmt.Errorf("timeout waiting for cleanup goroutine to finish")
-	}
+	// Wait for the cleanup goroutine to exit. It waits only on its ticker, this shutdown signal
+	// and its context, so the join needs no bound (background-work shape 2).
+	<-c.done
+	return nil
 }
 
 // cleanup runs in a background goroutine and periodically removes expired entries.

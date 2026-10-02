@@ -3,7 +3,7 @@ package cache
 import (
 	"container/list"
 	"context"
-	"fmt"
+	"errors"
 	"sync"
 	"time"
 
@@ -46,6 +46,10 @@ type hybridCache[V any] struct {
 func newHybridCache[V any](
 	ctx context.Context, maxSize int, ttl, cleanupInterval time.Duration, opts *cacheOptions[V],
 ) (*hybridCache[V], error) {
+	if ctx == nil {
+		return nil, errs.WrapInvalid(errors.New("nil context"), "cache", "newHybridCache", "context is required")
+	}
+
 	// Stats are ALWAYS initialized - observability is not optional
 	stats := NewStatistics()
 
@@ -272,13 +276,10 @@ func (c *hybridCache[V]) Close() error {
 		close(c.shutdown)
 	}
 
-	// Wait for cleanup goroutine to finish with timeout
-	select {
-	case <-c.done:
-		return nil
-	case <-time.After(5 * time.Second):
-		return fmt.Errorf("timeout waiting for cleanup goroutine to finish")
-	}
+	// Wait for the cleanup goroutine to exit. It waits only on its ticker, this shutdown signal
+	// and its context, so the join needs no bound (background-work shape 2).
+	<-c.done
+	return nil
 }
 
 // evictLRU removes the least recently used item from the cache.

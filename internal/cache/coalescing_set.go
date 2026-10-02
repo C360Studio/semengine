@@ -2,14 +2,18 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/c360studio/semengine/pkg/errs"
 )
 
 // CoalescingSet collects keys over a time window and fires a callback with the batch.
 // It deduplicates keys automatically using a map-based set structure.
-// Follows the ticker-based background goroutine pattern from ttl.go.
+// Its background goroutine runs the caller's callback, so it stops through Shutdown(ctx), which
+// bounds the wait for that callback by the caller's context (background-work shape 3).
 type CoalescingSet struct {
 	pending   map[string]struct{}
 	mu        sync.Mutex
@@ -23,8 +27,11 @@ type CoalescingSet struct {
 
 // NewCoalescingSet creates a new CoalescingSet that fires the callback every window duration
 // with the collected (deduplicated) keys. The background goroutine stops when ctx is cancelled
-// or when Close() is called.
+// or when Shutdown is called. A nil ctx panics here, before any goroutine starts.
 func NewCoalescingSet(ctx context.Context, window time.Duration, callback func([]string)) *CoalescingSet {
+	if ctx == nil {
+		panic("cache: NewCoalescingSet called with a nil context")
+	}
 	c := &CoalescingSet{
 		pending:  make(map[string]struct{}),
 		window:   window,
@@ -98,7 +105,7 @@ func (c *CoalescingSet) PendingCount() int {
 }
 
 // Drain removes and returns every pending key without invoking the callback.
-// Callers use this after Close when queued work owns external resources that
+// Callers use this after Shutdown when queued work owns external resources that
 // must be released during shutdown.
 func (c *CoalescingSet) Drain() []string {
 	c.mu.Lock()
@@ -111,18 +118,31 @@ func (c *CoalescingSet) Drain() []string {
 	return keys
 }
 
-// Close stops the background ticker and waits for cleanup to complete.
-// It is idempotent - multiple calls are safe.
-func (c *CoalescingSet) Close() error {
-	// Use sync.Once to make Close() safe for concurrent calls
+// Shutdown stops the background goroutine and waits for it to exit, including a callback it is
+// running. It returns nil once the goroutine has exited, and ctx.Err() if ctx ends first: the
+// goroutine then exits when the callback returns, and a later Shutdown returns nil. It is safe to
+// call more than once and from several goroutines. A nil ctx is refused with an error; the
+// goroutine is not stopped.
+func (c *CoalescingSet) Shutdown(ctx context.Context) error {
+	if ctx == nil {
+		return errs.WrapInvalid(errors.New("nil context"), "CoalescingSet", "Shutdown", "context is required")
+	}
 	c.closeOnce.Do(func() {
 		close(c.shutdown)
 	})
 
-	// Wait for background goroutine to finish
-	<-c.done
-
-	return nil
+	// The goroutine having exited is the answer even when ctx has also ended.
+	select {
+	case <-c.done:
+		return nil
+	default:
+	}
+	select {
+	case <-c.done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // run is the background goroutine that fires the callback on each tick.

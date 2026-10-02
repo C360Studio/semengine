@@ -26,7 +26,7 @@ func TestCoalescingSet_AddCollectsKeys(t *testing.T) {
 		set := NewCoalescingSet(ctx, 100*time.Millisecond, func(keys []string) {
 			callbackFired.Store(true)
 		})
-		defer set.Close()
+		defer set.Shutdown(t.Context())
 
 		// Add multiple keys
 		set.Add("entity-1")
@@ -46,7 +46,7 @@ func TestCoalescingSet_DeduplicatesKeys(t *testing.T) {
 		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(keys []string) {
 			callbackCh <- keys
 		})
-		defer set.Close()
+		defer set.Shutdown(t.Context())
 
 		// Add the same key multiple times
 		set.Add("entity-1")
@@ -81,7 +81,7 @@ func TestCoalescingSet_CallbackFiresAfterWindow(t *testing.T) {
 		set := NewCoalescingSet(ctx, windowDuration, func(keys []string) {
 			callbackCh <- keys
 		})
-		defer set.Close()
+		defer set.Shutdown(t.Context())
 
 		// Add keys
 		set.Add("entity-1")
@@ -131,7 +131,7 @@ func TestCoalescingSet_BatchCleared(t *testing.T) {
 				secondBatch = keys
 			}
 		})
-		defer set.Close()
+		defer set.Shutdown(t.Context())
 
 		// First window - add keys
 		set.Add("entity-1")
@@ -173,7 +173,7 @@ func TestCoalescingSet_RemoveExcludesFromBatch(t *testing.T) {
 		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(keys []string) {
 			callbackCh <- keys
 		})
-		defer set.Close()
+		defer set.Shutdown(t.Context())
 
 		// Add keys
 		set.Add("entity-1")
@@ -209,7 +209,7 @@ func TestCoalescingSet_RemovePrefixExcludesMatchingKeys(t *testing.T) {
 		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(keys []string) {
 			received <- keys
 		})
-		defer func() { require.NoError(t, set.Close()) }()
+		defer func() { require.NoError(t, set.Shutdown(t.Context())) }()
 
 		set.Add("entity-1\x00watch-a\x001")
 		set.Add("entity-1\x00watch-b\x002")
@@ -233,7 +233,7 @@ func TestCoalescingSet_DrainReturnsAndClearsPendingKeys(t *testing.T) {
 		require.ElementsMatch(t, []string{"entity-1", "entity-2"}, set.Drain())
 		require.Zero(t, set.PendingCount())
 		require.Empty(t, set.Drain())
-		require.NoError(t, set.Close())
+		require.NoError(t, set.Shutdown(t.Context()))
 	})
 }
 
@@ -248,7 +248,7 @@ func TestCoalescingSet_MutationResultsTrackPendingOwnership(t *testing.T) {
 		require.True(t, set.Add("entity-1\x00watch-b"))
 		require.Equal(t, 2, set.RemovePrefix("entity-1\x00"))
 		require.Zero(t, set.PendingCount())
-		require.NoError(t, set.Close())
+		require.NoError(t, set.Shutdown(t.Context()))
 	})
 }
 
@@ -263,7 +263,7 @@ func TestCoalescingSet_EmptyBatchNoCallback(t *testing.T) {
 			callbackFired.Store(true)
 			callbackCh <- keys
 		})
-		defer set.Close()
+		defer set.Shutdown(t.Context())
 
 		// Don't add any keys, just wait for multiple windows
 		<-time.After(150 * time.Millisecond)
@@ -291,7 +291,7 @@ func TestCoalescingSet_ZeroWindow(t *testing.T) {
 		set := NewCoalescingSet(ctx, 0, func(keys []string) {
 			callbackCh <- keys
 		})
-		defer set.Close()
+		defer set.Shutdown(t.Context())
 
 		set.Add("entity-1")
 
@@ -306,7 +306,7 @@ func TestCoalescingSet_ZeroWindow(t *testing.T) {
 	})
 }
 
-// TestCoalescingSet_CloseStopsCallback verifies after Close(), no more callbacks fire.
+// TestCoalescingSet_CloseStopsCallback verifies after Shutdown(), no more callbacks fire.
 func TestCoalescingSet_CloseStopsCallback(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := context.Background()
@@ -325,7 +325,7 @@ func TestCoalescingSet_CloseStopsCallback(t *testing.T) {
 		require.Greater(t, initialCount, int32(0), "should have at least one callback before close")
 
 		// Close the set
-		err := set.Close()
+		err := set.Shutdown(t.Context())
 		require.NoError(t, err, "Close should not error")
 
 		// Wait and verify no more callbacks
@@ -334,7 +334,7 @@ func TestCoalescingSet_CloseStopsCallback(t *testing.T) {
 		finalCount := callCount.Load()
 
 		// Count should not increase after Close
-		assert.Equal(t, initialCount, finalCount, "no new callbacks should fire after Close()")
+		assert.Equal(t, initialCount, finalCount, "no new callbacks should fire after Shutdown()")
 	})
 }
 
@@ -347,7 +347,7 @@ func TestCoalescingSet_ContextCancellation(t *testing.T) {
 		set := NewCoalescingSet(ctx, 30*time.Millisecond, func(keys []string) {
 			callCount.Add(1)
 		})
-		defer set.Close()
+		defer set.Shutdown(t.Context())
 
 		// Add keys and wait for first callback
 		set.Add("entity-1")
@@ -382,7 +382,7 @@ func TestCoalescingSet_ConcurrentAdds(t *testing.T) {
 			receivedKeys.Store(keys)
 			close(doneCh)
 		})
-		defer set.Close()
+		defer set.Shutdown(t.Context())
 
 		// Many goroutines adding keys concurrently
 		const numGoroutines = 50
@@ -448,7 +448,7 @@ func TestCoalescingSet_AddDuringCallback(t *testing.T) {
 			}
 			mu.Unlock()
 		})
-		defer set.Close()
+		defer set.Shutdown(t.Context())
 
 		// First window
 		set.Add("entity-1")
@@ -489,7 +489,7 @@ func TestCoalescingSet_RapidUpdates(t *testing.T) {
 		set := NewCoalescingSet(ctx, 100*time.Millisecond, func(keys []string) {
 			callbackCh <- keys
 		})
-		defer set.Close()
+		defer set.Shutdown(t.Context())
 
 		// Rapidly add the same keys many times
 		const iterations = 1000
@@ -526,7 +526,7 @@ func TestCoalescingSet_EntityUpdateScenario(t *testing.T) {
 		set := NewCoalescingSet(ctx, 100*time.Millisecond, func(keys []string) {
 			callbackCh <- keys
 		})
-		defer set.Close()
+		defer set.Shutdown(t.Context())
 
 		// Simulate real-world entity update patterns
 		// Entity A updated 5 times rapidly
@@ -564,22 +564,22 @@ func TestCoalescingSet_EntityUpdateScenario(t *testing.T) {
 	})
 }
 
-// TestCoalescingSet_MultipleCloseCalls verifies Close() is idempotent.
+// TestCoalescingSet_MultipleCloseCalls verifies Shutdown() is idempotent.
 func TestCoalescingSet_MultipleCloseCalls(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := context.Background()
 		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(keys []string) {})
 
 		// First close
-		err := set.Close()
+		err := set.Shutdown(t.Context())
 		require.NoError(t, err)
 
 		// Second close should not panic or error
-		err = set.Close()
+		err = set.Shutdown(t.Context())
 		require.NoError(t, err)
 
 		// Third close
-		err = set.Close()
+		err = set.Shutdown(t.Context())
 		require.NoError(t, err)
 	})
 }
@@ -596,7 +596,7 @@ func TestCoalescingSet_CallbackPanic(t *testing.T) {
 				panic("intentional panic in callback")
 			}
 		})
-		defer set.Close()
+		defer set.Shutdown(t.Context())
 
 		// Add keys to trigger first callback (which panics)
 		set.Add("entity-1")
@@ -627,7 +627,7 @@ func TestCoalescingSet_NilCallback(t *testing.T) {
 		// Should not panic with nil callback
 		require.NotPanics(t, func() {
 			set := NewCoalescingSet(ctx, 50*time.Millisecond, nil)
-			defer set.Close()
+			defer set.Shutdown(t.Context())
 
 			set.Add("entity-1")
 			<-time.After(100 * time.Millisecond)
@@ -644,7 +644,7 @@ func TestCoalescingSet_RemoveNonexistentKey(t *testing.T) {
 		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(keys []string) {
 			callbackCh <- keys
 		})
-		defer set.Close()
+		defer set.Shutdown(t.Context())
 
 		// Add keys
 		set.Add("entity-1")
@@ -678,7 +678,7 @@ func TestCoalescingSet_EmptyKeyString(t *testing.T) {
 		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(keys []string) {
 			callbackCh <- keys
 		})
-		defer set.Close()
+		defer set.Shutdown(t.Context())
 
 		// Add empty string key (implementation-defined behavior)
 		set.Add("")

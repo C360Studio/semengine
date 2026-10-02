@@ -28,7 +28,7 @@ func TestAttack_RapidAddRemoveSameEntity(t *testing.T) {
 		set := NewCoalescingSet(ctx, 100*time.Millisecond, func(keys []string) {
 			callbackCh <- keys
 		})
-		defer set.Close()
+		defer set.Shutdown(t.Context())
 
 		// Rapidly add and remove same entity multiple times
 		const iterations = 100
@@ -65,7 +65,7 @@ func TestAttack_HighVolumeBatching(t *testing.T) {
 		set := NewCoalescingSet(ctx, 200*time.Millisecond, func(keys []string) {
 			callbackCh <- keys
 		})
-		defer set.Close()
+		defer set.Shutdown(t.Context())
 
 		// Add 10K unique entities
 		const entityCount = 10000
@@ -113,7 +113,7 @@ func TestAttack_CallbackLatency(t *testing.T) {
 			close(callbackFinished)
 		}
 	})
-	defer set.Close()
+	defer set.Shutdown(t.Context())
 
 	// Trigger first callback
 	set.Add("entity-1")
@@ -168,7 +168,7 @@ func TestAttack_ContextCancellationDuringCallback(t *testing.T) {
 			// Simulate some work
 			_ = len(keys)
 		})
-		defer set.Close()
+		defer set.Shutdown(t.Context())
 
 		// Add entity to trigger callback
 		set.Add("entity-1")
@@ -202,7 +202,7 @@ func TestAttack_ConcurrentAddRemove(t *testing.T) {
 		set := NewCoalescingSet(ctx, 100*time.Millisecond, func(keys []string) {
 			callbackCount.Add(1)
 		})
-		defer set.Close()
+		defer set.Shutdown(t.Context())
 
 		// Run concurrent add/remove operations
 		const numGoroutines = 50
@@ -248,7 +248,7 @@ func TestAttack_ConcurrentAddRemove(t *testing.T) {
 	})
 }
 
-// TestAttack_CloseWhileCallbackRunning verifies Close() waits for callback to complete
+// TestAttack_CloseWhileCallbackRunning verifies Shutdown() waits for callback to complete
 func TestAttack_CloseWhileCallbackRunning(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := context.Background()
@@ -271,7 +271,7 @@ func TestAttack_CloseWhileCallbackRunning(t *testing.T) {
 		// Close while callback is running
 		closeDone := make(chan struct{})
 		go func() {
-			require.NoError(t, set.Close())
+			require.NoError(t, set.Shutdown(t.Context()))
 			close(closeDone)
 		}()
 
@@ -283,10 +283,10 @@ func TestAttack_CloseWhileCallbackRunning(t *testing.T) {
 			case <-callbackFinished:
 				// Good - callback completed before Close returned
 			default:
-				t.Fatal("Close() returned before callback finished")
+				t.Fatal("Shutdown() returned before callback finished")
 			}
 		case <-time.After(1 * time.Second):
-			t.Fatal("Close() hung waiting for callback")
+			t.Fatal("Shutdown() hung waiting for callback")
 		}
 	})
 }
@@ -311,7 +311,7 @@ func TestAttack_ZeroWindowRaceCondition(t *testing.T) {
 			default:
 			}
 		})
-		defer set.Close()
+		defer set.Shutdown(t.Context())
 
 		// Add same entity multiple times rapidly with zero window
 		const iterations = 100
@@ -346,7 +346,7 @@ func TestAttack_ZeroWindowRaceCondition(t *testing.T) {
 	})
 }
 
-// TestAttack_ConcurrentClose verifies multiple goroutines calling Close() simultaneously
+// TestAttack_ConcurrentClose verifies multiple goroutines calling Shutdown() simultaneously
 func TestAttack_ConcurrentClose(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := context.Background()
@@ -355,7 +355,7 @@ func TestAttack_ConcurrentClose(t *testing.T) {
 		// Add some keys
 		set.Add("entity-1")
 
-		// Multiple goroutines call Close() simultaneously
+		// Multiple goroutines call Shutdown() simultaneously
 		const numClosers = 20
 		var wg sync.WaitGroup
 		wg.Add(numClosers)
@@ -365,7 +365,7 @@ func TestAttack_ConcurrentClose(t *testing.T) {
 		for i := 0; i < numClosers; i++ {
 			go func() {
 				defer wg.Done()
-				err := set.Close()
+				err := set.Shutdown(t.Context())
 				errors <- err
 			}()
 		}
@@ -373,21 +373,21 @@ func TestAttack_ConcurrentClose(t *testing.T) {
 		wg.Wait()
 		close(errors)
 
-		// All Close() calls should succeed (idempotent)
+		// All Shutdown() calls should succeed (idempotent)
 		for err := range errors {
-			require.NoError(t, err, "Close() should be idempotent")
+			require.NoError(t, err, "Shutdown() should be idempotent")
 		}
 	})
 }
 
-// TestAttack_AddAfterClose verifies Add() after Close() doesn't panic or hang
+// TestAttack_AddAfterClose verifies Add() after Shutdown() doesn't panic or hang
 func TestAttack_AddAfterClose(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := context.Background()
 		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(keys []string) {})
 
 		// Close immediately
-		require.NoError(t, set.Close())
+		require.NoError(t, set.Shutdown(t.Context()))
 
 		// Try to add after close - should not panic
 		require.NotPanics(t, func() {
@@ -405,7 +405,7 @@ func TestAttack_AddAfterClose(t *testing.T) {
 		case <-done:
 			// Good - Add returned
 		case <-time.After(1 * time.Second):
-			t.Fatal("Add() hung after Close()")
+			t.Fatal("Add() hung after Shutdown()")
 		}
 	})
 }
@@ -419,7 +419,7 @@ func TestAttack_LargeKeyNames(t *testing.T) {
 		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(keys []string) {
 			callbackCh <- keys
 		})
-		defer set.Close()
+		defer set.Shutdown(t.Context())
 
 		// Create very large key (1MB)
 		largeKey := generateLargeString(1024 * 1024)

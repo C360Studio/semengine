@@ -248,7 +248,15 @@
 //	cache, _ := cache.NewTTL[V](ctx, ttl, cleanupInterval)
 //	// Cleanup goroutine stops when ctx is canceled
 //
+// Close also stops the cleanup goroutine, and returns once it has exited. NewTTL and
+// NewFromConfig refuse a nil context with an error.
+//
 // For Simple and LRU caches, no background goroutines are created.
+//
+// CoalescingSet's goroutine runs the caller's callback, so it stops through Shutdown(ctx):
+// Shutdown returns once the goroutine has exited, or ctx.Err() if ctx ends while the callback is
+// still running; the goroutine then exits when the callback returns. NewCoalescingSet panics on a
+// nil context before it starts the goroutine.
 //
 // # Testing
 //

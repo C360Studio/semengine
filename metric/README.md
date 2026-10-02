@@ -117,17 +117,19 @@ queueGauge := prometheus.NewGauge(prometheus.GaugeOpts{
     Help:      "Current GPS processing queue size",
 })
 
-// Register custom metrics with the registry
-registrar := registry
-if err := registrar.RegisterCounter("gps-service", "coordinates_processed", messageCounter); err != nil {
+// Register custom metrics with the registry, keeping the collectors it returns
+messageCounter, err := metric.RegisterOrGet(registry, "gps-service", "coordinates_processed", messageCounter)
+if err != nil {
     log.Printf("Failed to register counter: %v", err)
 }
 
-if err := registrar.RegisterHistogram("gps-service", "processing_duration", latencyHistogram); err != nil {
+latencyHistogram, err = metric.RegisterOrGet(registry, "gps-service", "processing_duration", latencyHistogram)
+if err != nil {
     log.Printf("Failed to register histogram: %v", err)
 }
 
-if err := registrar.RegisterGauge("gps-service", "queue_size", queueGauge); err != nil {
+queueGauge, err = metric.RegisterOrGet(registry, "gps-service", "queue_size", queueGauge)
+if err != nil {
     log.Printf("Failed to register gauge: %v", err)
 }
 
@@ -162,10 +164,8 @@ func NewMetricsRegistry() *MetricsRegistry                 // Create new registr
 func (r *MetricsRegistry) PrometheusRegistry() *prometheus.Registry  // Get Prometheus registry
 func (r *MetricsRegistry) CoreMetrics() *CoreMetrics      // Get core platform metrics
 
-// Service metric registration (implements MetricsRegistrar)
-func (r *MetricsRegistry) RegisterCounter(serviceName, metricName string, counter prometheus.Counter) error
-func (r *MetricsRegistry) RegisterGauge(serviceName, metricName string, gauge prometheus.Gauge) error
-func (r *MetricsRegistry) RegisterHistogram(serviceName, metricName string, histogram prometheus.Histogram) error
+// Service metric registration: one collector per service/metric key
+func RegisterOrGet[C prometheus.Collector](r *MetricsRegistry, serviceName, metricName string, candidate C) (C, error)
 func (r *MetricsRegistry) Unregister(serviceName, metricName string) bool  // Remove metric
 ```
 
@@ -220,22 +220,16 @@ func (s *Server) Stop(context.Context) error  // Caller-bounded graceful attempt
 func (s *Server) Address() string              // Get server address
 ```
 
-### Interfaces
-
-#### `MetricsRegistrar`
-
-Interface for registering service-specific metrics.
-
-```go
-type MetricsRegistrar interface {
-    RegisterCounter(serviceName, metricName string, counter prometheus.Counter) error
-    RegisterGauge(serviceName, metricName string, gauge prometheus.Gauge) error
-    RegisterHistogram(serviceName, metricName string, histogram prometheus.Histogram) error
-    Unregister(serviceName, metricName string) bool
-}
-```
-
 ### Functions
+
+#### `RegisterOrGet`
+
+`RegisterOrGet[C prometheus.Collector](r *MetricsRegistry, serviceName, metricName string, candidate C) (C, error)`
+
+Registers `candidate` under the key `serviceName.metricName`, or returns the collector already registered under that
+key when it has the same concrete type and descriptors. Use the returned collector, never your own candidate. A nil
+candidate, a type or descriptor mismatch, and a descriptor another key already owns are refused with a fatal error,
+and nothing is stored.
 
 #### `NewMetricsRegistry() *MetricsRegistry`
 
@@ -310,15 +304,12 @@ services:
 ### Metric Registration Errors
 
 ```go
-// Handle duplicate metric registration
-err := registry.RegisterCounter("service", "metric", counter)
+// Registering the same key again with an identical collector returns the
+// registered collector; a conflicting registration is a fatal error
+counter, err := metric.RegisterOrGet(registry, "service", "metric", counter)
 if err != nil {
-    if strings.Contains(err.Error(), "already registered") {
-        log.Printf("Metric already registered, skipping: %v", err)
-    } else {
-        log.Printf("Failed to register metric: %v", err)
-        return err
-    }
+    log.Printf("Failed to register metric: %v", err)
+    return err
 }
 
 // Safe metric unregistration
@@ -359,8 +350,9 @@ counter := prometheus.NewCounter(prometheus.CounterOpts{
     Help:      "Total operations processed",
 })
 
-// DO: Handle registration errors
-if err := registry.RegisterCounter("service", "operations", counter); err != nil {
+// DO: Handle registration errors and keep the returned collector
+counter, err := metric.RegisterOrGet(registry, "service", "operations", counter)
+if err != nil {
     return fmt.Errorf("metric registration failed: %w", err)
 }
 
@@ -369,8 +361,8 @@ counter.Inc()                          // For monotonically increasing values
 gauge.Set(42)                         // For values that can go up and down
 histogram.Observe(duration.Seconds()) // For distributions and timings
 
-// DON'T: Ignore registration errors
-registry.RegisterCounter("service", "metric", counter) // Missing error check
+// DON'T: Ignore registration errors or the returned collector
+metric.RegisterOrGet(registry, "service", "metric", counter) // Missing error check; writes to counter may be lost
 
 // DON'T: Use inconsistent naming
 prometheus.NewCounter(prometheus.CounterOpts{
@@ -393,12 +385,13 @@ func TestMetricsRegistry(t *testing.T) {
         Help: "Test counter",
     })
 
-    err := registry.RegisterCounter("test-service", "test_counter", counter)
+    registered, err := metric.RegisterOrGet(registry, "test-service", "test_counter", counter)
     assert.NoError(t, err)
 
-    // Test duplicate registration
-    err = registry.RegisterCounter("test-service", "test_counter", counter)
-    assert.Error(t, err)
+    // Registering the same key again returns the registered collector
+    again, err := metric.RegisterOrGet(registry, "test-service", "test_counter", counter)
+    assert.NoError(t, err)
+    assert.Same(t, registered, again)
 
     // Test unregistration
     success := registry.Unregister("test-service", "test_counter")
@@ -490,16 +483,22 @@ func NewGPSService(registry *metric.MetricsRegistry) (*GPSService, error) {
         Help:      "Current GPS processing queue size",
     })
 
-    // Register custom metrics
-    if err := registry.RegisterCounter("gps-service", "coordinates_processed", service.coordinatesProcessed); err != nil {
+    // Register custom metrics, keeping the collectors the registry returns
+    var err error
+    service.coordinatesProcessed, err = metric.RegisterOrGet(registry, "gps-service", "coordinates_processed",
+        service.coordinatesProcessed)
+    if err != nil {
         return nil, err
     }
 
-    if err := registry.RegisterHistogram("gps-service", "processing_latency", service.processingLatency); err != nil {
+    service.processingLatency, err = metric.RegisterOrGet(registry, "gps-service", "processing_latency",
+        service.processingLatency)
+    if err != nil {
         return nil, err
     }
 
-    if err := registry.RegisterGauge("gps-service", "queue_size", service.queueSize); err != nil {
+    service.queueSize, err = metric.RegisterOrGet(registry, "gps-service", "queue_size", service.queueSize)
+    if err != nil {
         return nil, err
     }
 
@@ -679,20 +678,21 @@ func NewMonitoredService(name string, registry *metric.MetricsRegistry) (*Monito
         Help:      fmt.Sprintf("Total errors for %s", name),
     })
 
-    // Register metrics
-    if err := registry.RegisterCounter(name, "requests", service.requestCounter); err != nil {
+    // Register metrics, keeping the collectors the registry returns
+    var err error
+    if service.requestCounter, err = metric.RegisterOrGet(registry, name, "requests", service.requestCounter); err != nil {
         return nil, fmt.Errorf("failed to register request counter: %w", err)
     }
 
-    if err := registry.RegisterHistogram(name, "response_time", service.responseTime); err != nil {
+    if service.responseTime, err = metric.RegisterOrGet(registry, name, "response_time", service.responseTime); err != nil {
         return nil, fmt.Errorf("failed to register response time histogram: %w", err)
     }
 
-    if err := registry.RegisterGauge(name, "active_users", service.activeUsers); err != nil {
+    if service.activeUsers, err = metric.RegisterOrGet(registry, name, "active_users", service.activeUsers); err != nil {
         return nil, fmt.Errorf("failed to register active users gauge: %w", err)
     }
 
-    if err := registry.RegisterCounter(name, "errors", service.errorRate); err != nil {
+    if service.errorRate, err = metric.RegisterOrGet(registry, name, "errors", service.errorRate); err != nil {
         return nil, fmt.Errorf("failed to register error counter: %w", err)
     }
 

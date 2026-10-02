@@ -459,21 +459,43 @@
     handler returns; Stop waits for it within ctx after the serve join, returns ctx's error and
     leaves it pending when ctx ends first, and a repeated Stop waits again and returns nil only once
     it has finished; at the pin the forced path cleared its state after the serve join and the
-    repeated Stop returned nil at once (pin handler.go:202-206)
+    repeated Stop returned nil at once (pin handler.go:202-206). Changed behavior (design D9; Codex
+    review finding 4, PR #48 comment 5956732582; owner-accepted 2026-10-02), written first:
+    RegisterOrGet[C] keeps one canonical collector per logical key, of the exact concrete type and
+    descriptors; a nil candidate, a type or descriptor mismatch, and a cross-key alias are refused
+    with a fatal error and nothing stored. A caller uses the returned collector, never its own
+    candidate (AGENTS.md rule index, review only)
   dependencies_and_side_effects: >-
     pkg/errs, pkg/security, internal/tlsutil (in-set); prometheus/client_golang v1.23.2 (the pin's
-    version, now a direct requirement); binds a TCP listener and runs one serve goroutine per started
+    version, now a direct requirement); prometheus/client_model v0.6.2 direct, for the D9 tests that
+    read gathered values (direct at the pin too, pin go.mod:14); binds a TCP listener and runs one serve goroutine per started
     Server, joined by Stop; registry.go:76 starts a Describe goroutine drained by the range at :79-81
     before the call returns (not background work, design D3)
   known_risks: >-
     Context roots, the two D1 counts: both are example code inside doc comments (doc.go:357, :362),
     not executable; the package has no production root. Doc-comment sleep (doc.go:386) carried as it
-    is (owner ruling Q4, task 1.5). Adapt items besides the behavior changes above: doc.go:331-333
+    is (owner ruling Q4, task 1.5). Registration adapt items (design D9), pin lines: registry.go:16-25
+    (MetricsRegistrar) removed; :27-60 (RegisterOrGetGaugeVec) generalised into RegisterOrGet;
+    :127-278 (RegisterCounter, RegisterGauge, RegisterHistogram, RegisterCounterVec,
+    RegisterGaugeVec, RegisterHistogramVec) removed, with :246, where RegisterGaugeVec threw away the
+    canonical collector; Unregister unchanged. doc.go:14, :75-97, :111, :125, :136, :196-209 and
+    :236-253 (the design's :245, widened: the error list beside it described the removed duplicate
+    handling) and :372-377 (the design's :373-378) restated for RegisterOrGet. Consumer impact:
+    semsource internal/entitypub/metrics.go:99-106 and semboids (internal/boidgraph/metrics.go,
+    internal/sim/lifecycle.go, internal/api/graphstream_metrics.go) stop compiling on their next pin
+    bump, and the semsource comment at :99-101 has to be rewritten. At run time, a consumer that
+    registers one descriptor under two keys now gets a fatal error at startup instead of silent
+    success; the pin's registry_test.go:254-275 encoded that pattern for "component recreation from
+    stale KV data". Later in-change callers adopt it in tasks 3.6 (pkg/cache) and 3.7 (natsclient).
+    Adapt items besides the behavior changes above: doc.go:331-333
     restates Stop's forced join, admitted-request wait and context error in place of the one-second
     bound. README behavior edits (owner ruling, #9 comment 5957221949: a passage describing behavior
     the ported code no longer has is corrected, listed by line): pin README.md:318-320 (tree
     :345-349), the Stop paragraph, rewritten for the graceful attempt within shutdownCtx, the forced
-    join without a timer, the wait for admitted requests and the context error. README lint fixes
+    join without a timer, the wait for admitted requests and the context error; the registration
+    passages rewritten for RegisterOrGet (design D9): pin README.md:107-119, :151-154, :207-218 (the
+    MetricsRegistrar section, replaced by a RegisterOrGet entry under Functions), :286-293, :333-336,
+    :343-344, :367-372, :464-475 and :653-668. README lint fixes
     (#9 comment 5957221949): lines 7, 9, 11, 27, 30, 33, 40,
     233, 237 and 241 wrapped at 120 columns (MD013); a blank line after the headings at :26, :29,
     :32, :39, :139, :158, :193, :209, :223 and :226 (MD022) and before the lists at :234, :238 and
@@ -502,7 +524,28 @@
     an ended context, then a repeat, both context.Canceled; the adapter reports the admitted
     request; a live Stop returns nil only after the collection exited); handler_test.go's
     TestServerStopIsCallerBounded asserted the pin's nil repeat before the release (pin
-    handler_test.go:461) and now asserts context.Canceled, with the nil Stop after the release
+    handler_test.go:461) and now asserts context.Canceled, with the nil Stop after the release;
+    in metric/registerorget_test.go, design D9 tests 1-8, written first and failing against the
+    pin's registration methods behind the new signature (a temporary shim, removed): same key over
+    Counter, Gauge, Histogram, CounterVec, GaugeVec and HistogramVec gathered as 2
+    (TestRegisterOrGetSameKeyReturnsCanonicalCollector; at the pin all six gathered 1);
+    TestRegisterOrGetRefusesSameKeyOfAnotherType, ...SameKeyWithDifferentHelp, ...NilCandidates,
+    ...CrossKeyAlias, ...CoreMetricCollision, ...DirectRegistrationCollision and
+    TestRegisterOrGetConcurrentCallersShareOneCollector, each asserting gathered values; guard
+    mutations each fail a named test (type check, descriptors, the alias branch storing; removing
+    the nil guard panics). Tests replaced, pin registry_test.go: TestMetricsRegistrar_Interface
+    (:360) and TestMetricsRegistry_IdempotentDuplicateRegistration (:254-275) deleted;
+    RegisterCounter (:22), RegisterGauge (:50) and RegisterHistogram (:225) replaced by test 1's
+    Counter, Gauge and Histogram cases; RegisterOrGetGaugeVecReturnsCanonicalCollector (:78) by test
+    1's GaugeVec case; ...RejectsIncompatibleCollector (:107) by test 2;
+    ...RejectsSameKeyDifferentDescriptor (:124) by test 3; ...RejectsCrossKeyDescriptorAlias (:140)
+    by test 5; GaugeVecAPIsShareCanonicalOwnership (:154, the legacy API) by tests 1 and 5;
+    ...ConcurrentCompatibleIdentity (:188) by test 8; UnregisterMetric (:277) and ThreadSafety
+    (:320) rewritten on RegisterOrGet. Pin integration_test.go: MockService.RegisterMetrics
+    (:29-52) takes *MetricsRegistry and keeps the returned collectors;
+    IdempotentRegistration (:90) and MultipleServicesSameNames (:210) now assert the summed
+    gathered value; MultipleServicesWithUniqueMetrics (:193) asserted the alias succeeded and now
+    asserts the fatal refusal
   owner: setup-04a-01-floor developer
   disposition: adapt
 

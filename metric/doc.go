@@ -11,7 +11,7 @@
 // The package follows a three-layer design:
 //
 //  1. Core Metrics: Platform-level metrics automatically registered (Metrics type)
-//  2. Service Registry: Extensible registration for service-specific metrics (MetricsRegistrar interface)
+//  2. Service Registry: Extensible registration for service-specific metrics (RegisterOrGet)
 //  3. HTTP Server: Metrics endpoint with health checks (Server type)
 //
 // This architecture separates infrastructure concerns (core metrics) from
@@ -72,29 +72,31 @@
 //
 // # Service-Specific Metrics
 //
-// Services can register custom metrics through the registry:
+// Services register custom metrics with RegisterOrGet. There is one collector
+// per service/metric key: RegisterOrGet returns it, and the caller uses the
+// returned collector, never its own candidate.
 //
 //	// Register a counter
-//	requestCounter := prometheus.NewCounter(prometheus.CounterOpts{
-//	    Name: "api_requests_total",
-//	    Help: "Total number of API requests",
-//	})
-//	err := registry.RegisterCounter("api-service", "api_requests_total", requestCounter)
+//	requestCounter, err := metric.RegisterOrGet(registry, "api-service", "api_requests_total",
+//	    prometheus.NewCounter(prometheus.CounterOpts{
+//	        Name: "api_requests_total",
+//	        Help: "Total number of API requests",
+//	    }))
 //
 //	// Register a gauge
-//	activeConnections := prometheus.NewGauge(prometheus.GaugeOpts{
-//	    Name: "active_connections",
-//	    Help: "Number of active client connections",
-//	})
-//	err = registry.RegisterGauge("websocket-service", "active_connections", activeConnections)
+//	activeConnections, err := metric.RegisterOrGet(registry, "websocket-service", "active_connections",
+//	    prometheus.NewGauge(prometheus.GaugeOpts{
+//	        Name: "active_connections",
+//	        Help: "Number of active client connections",
+//	    }))
 //
 //	// Register a histogram
-//	queryDuration := prometheus.NewHistogram(prometheus.HistogramOpts{
-//	    Name:    "query_duration_seconds",
-//	    Help:    "Time spent executing queries",
-//	    Buckets: prometheus.DefBuckets,
-//	})
-//	err = registry.RegisterHistogram("database-service", "query_duration_seconds", queryDuration)
+//	queryDuration, err := metric.RegisterOrGet(registry, "database-service", "query_duration_seconds",
+//	    prometheus.NewHistogram(prometheus.HistogramOpts{
+//	        Name:    "query_duration_seconds",
+//	        Help:    "Time spent executing queries",
+//	        Buckets: prometheus.DefBuckets,
+//	    }))
 //
 // # Vector Metrics with Labels
 //
@@ -108,7 +110,7 @@
 //	    },
 //	    []string{"status", "method"},
 //	)
-//	err := registry.RegisterCounterVec("api-service", "http_requests_total", httpRequestsVec)
+//	httpRequestsVec, err := metric.RegisterOrGet(registry, "api-service", "http_requests_total", httpRequestsVec)
 //
 //	// Use the metric with specific label values
 //	httpRequestsVec.WithLabelValues("200", "GET").Inc()
@@ -122,7 +124,7 @@
 //	    },
 //	    []string{"cache_type"},
 //	)
-//	err = registry.RegisterGaugeVec("cache-service", "cache_items", cacheItemsVec)
+//	cacheItemsVec, err = metric.RegisterOrGet(registry, "cache-service", "cache_items", cacheItemsVec)
 //
 //	// Histogram with labels
 //	requestDurationVec := prometheus.NewHistogramVec(
@@ -133,7 +135,8 @@
 //	    },
 //	    []string{"endpoint"},
 //	)
-//	err = registry.RegisterHistogramVec("api-service", "request_duration_seconds", requestDurationVec)
+//	requestDurationVec, err = metric.RegisterOrGet(registry, "api-service", "request_duration_seconds",
+//	    requestDurationVec)
 //
 // # HTTP Server
 //
@@ -193,22 +196,26 @@
 // CoreMetrics recording API and is absent from a standalone registry until the
 // Manager claims it for a boot.
 //
-// # MetricsRegistrar Interface
+// # Registering From a Service
 //
-// Services implement the MetricsRegistrar interface for dependency injection:
+// A service receives the *MetricsRegistry and keeps the collectors
+// RegisterOrGet returns. A recreated service registering the same keys gets the
+// same collectors back, so its writes are gathered:
 //
 //	type MyService struct {
-//	    metrics metric.MetricsRegistrar
+//	    operations prometheus.Counter
 //	}
 //
-//	func NewMyService(metrics metric.MetricsRegistrar) *MyService {
-//	    counter := prometheus.NewCounter(prometheus.CounterOpts{
-//	        Name: "operations_total",
-//	        Help: "Total operations",
-//	    })
-//	    metrics.RegisterCounter("my-service", "operations_total", counter)
-//
-//	    return &MyService{metrics: metrics}
+//	func NewMyService(registry *metric.MetricsRegistry) (*MyService, error) {
+//	    operations, err := metric.RegisterOrGet(registry, "my-service", "operations_total",
+//	        prometheus.NewCounter(prometheus.CounterOpts{
+//	            Name: "operations_total",
+//	            Help: "Total operations",
+//	        }))
+//	    if err != nil {
+//	        return nil, err
+//	    }
+//	    return &MyService{operations: operations}, nil
 //	}
 //
 // This enables testing with mock registrars and provides loose coupling.
@@ -233,24 +240,25 @@
 //
 // # Error Handling
 //
-// Registration methods return errors for:
+// RegisterOrGet returns a fatal error, stores nothing and leaves the canonical
+// collector untouched for:
 //
-//   - Duplicate registration: attempting to register same metric name twice
-//   - Prometheus conflicts: internal Prometheus registration failures
-//   - Validation errors: nil metrics or invalid parameters
+//   - A nil or typed-nil candidate
+//   - A key already registered with another concrete type, help text or labels
+//   - A descriptor another key, a core metric or a directly registered collector
+//     already owns
+//
+// Registering the same key again with an identical collector is not an error:
+// it returns the collector already registered.
 //
 // Example error handling:
 //
-//	counter := prometheus.NewCounter(prometheus.CounterOpts{Name: "test"})
-//	err := registry.RegisterCounter("service", "test", counter)
+//	counter, err := metric.RegisterOrGet(registry, "service", "test",
+//	    prometheus.NewCounter(prometheus.CounterOpts{Name: "test", Help: "Test counter"}))
 //	if err != nil {
-//	    // Check for duplicate registration
-//	    if strings.Contains(err.Error(), "already registered") {
-//	        log.Printf("Metric already registered, skipping")
-//	    } else {
-//	        log.Fatalf("Failed to register metric: %v", err)
-//	    }
+//	    log.Fatalf("Failed to register metric: %v", err)
 //	}
+//	counter.Inc()
 //
 // The Server.Start(ctx) method returns errors for:
 //
@@ -372,11 +380,14 @@
 //	    coreMetrics := registry.CoreMetrics()
 //
 //	    // Register service-specific metric
-//	    operationCounter := prometheus.NewCounter(prometheus.CounterOpts{
-//	        Name: "operations_total",
-//	        Help: "Total operations performed",
-//	    })
-//	    registry.RegisterCounter("my-service", "operations_total", operationCounter)
+//	    operationCounter, err := metric.RegisterOrGet(registry, "my-service", "operations_total",
+//	        prometheus.NewCounter(prometheus.CounterOpts{
+//	            Name: "operations_total",
+//	            Help: "Total operations performed",
+//	        }))
+//	    if err != nil {
+//	        log.Fatal(err)
+//	    }
 //
 //	    // Record service status
 //	    coreMetrics.RecordServiceStatus("my-service", 2) // running

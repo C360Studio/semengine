@@ -3,6 +3,7 @@ package metric
 import (
 	"testing"
 
+	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -25,30 +26,35 @@ func (m *MockService) Name() string {
 	return m.name
 }
 
-// RegisterMetrics registers domain-specific metrics for the mock service
-func (m *MockService) RegisterMetrics(registrar MetricsRegistrar) error {
+// RegisterMetrics registers domain-specific metrics for the mock service and keeps the collectors
+// RegisterOrGet returns, which are the canonical ones when the key is already registered.
+func (m *MockService) RegisterMetrics(registry *MetricsRegistry) error {
 	// Register a custom counter
-	m.metrics.dataProcessed = prometheus.NewCounter(prometheus.CounterOpts{
-		Namespace: "semstreams",
-		Subsystem: "mock_service",
-		Name:      "data_processed_total",
-		Help:      "Total number of data items processed",
-	})
-
-	err := registrar.RegisterCounter(m.name, "data_processed_total", m.metrics.dataProcessed)
+	dataProcessed, err := RegisterOrGet(registry, m.name, "data_processed_total",
+		prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "semstreams",
+			Subsystem: "mock_service",
+			Name:      "data_processed_total",
+			Help:      "Total number of data items processed",
+		}))
 	if err != nil {
 		return err
 	}
+	m.metrics.dataProcessed = dataProcessed
 
 	// Register a custom gauge
-	m.metrics.queueDepth = prometheus.NewGauge(prometheus.GaugeOpts{
-		Namespace: "semstreams",
-		Subsystem: "mock_service",
-		Name:      "queue_depth",
-		Help:      "Current depth of processing queue",
-	})
-
-	return registrar.RegisterGauge(m.name, "queue_depth", m.metrics.queueDepth)
+	queueDepth, err := RegisterOrGet(registry, m.name, "queue_depth",
+		prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: "semstreams",
+			Subsystem: "mock_service",
+			Name:      "queue_depth",
+			Help:      "Current depth of processing queue",
+		}))
+	if err != nil {
+		return err
+	}
+	m.metrics.queueDepth = queueDepth
+	return nil
 }
 
 // ProcessData simulates data processing and updates metrics
@@ -98,10 +104,13 @@ func TestMetricsIntegration_IdempotentRegistration(t *testing.T) {
 	err := service1.RegisterMetrics(registry)
 	require.NoError(t, err)
 
-	// Register second service's metrics - should succeed (idempotent)
-	// This is the expected behavior when components are recreated from stale KV data
+	// Register second service's metrics under the same keys: it receives the canonical collectors,
+	// so a recreated component's writes are gathered.
 	err = service2.RegisterMetrics(registry)
-	assert.NoError(t, err, "duplicate registration should be idempotent")
+	require.NoError(t, err, "same-key registration returns the canonical collectors")
+	service1.ProcessData(1, 0)
+	service2.ProcessData(2, 0)
+	assert.Equal(t, []float64{3}, gatheredSeries(t, registry, "semstreams_mock_service_data_processed_total"))
 }
 
 func TestMetricsIntegration_CoreAndServiceMetricsSeparate(t *testing.T) {
@@ -201,10 +210,12 @@ func TestMetricsIntegration_MultipleServicesWithUniqueMetrics(t *testing.T) {
 	err := service1.RegisterMetrics(registry)
 	require.NoError(t, err)
 
-	// The second service will succeed due to idempotent registration
-	// This is necessary for component recreation from stale KV data
+	// The second service's keys differ but its descriptors are the first's: a cross-key alias is
+	// refused (design D9). At the pin it succeeded and stored a collector Prometheus never gathered.
 	err = service2.RegisterMetrics(registry)
-	assert.NoError(t, err, "Second service should succeed due to idempotent Prometheus registration")
+	require.Error(t, err, "the same descriptor under another service's key must be refused")
+	assert.True(t, errs.IsFatal(err))
+	assert.False(t, registry.Unregister("data-processor", "data_processed_total"))
 }
 
 func TestMetricsIntegration_MultipleServicesSameNames(t *testing.T) {
@@ -219,8 +230,10 @@ func TestMetricsIntegration_MultipleServicesSameNames(t *testing.T) {
 	err := service1.RegisterMetrics(registry)
 	require.NoError(t, err)
 
-	// Second service with same name should succeed due to idempotent registration
-	// This is the expected behavior when components are recreated
+	// Second service with same name receives the canonical collectors; both write to one series.
 	err = service2.RegisterMetrics(registry)
-	assert.NoError(t, err, "Second registration should succeed (idempotent)")
+	require.NoError(t, err, "same-key registration returns the canonical collectors")
+	service1.ProcessData(0, 4)
+	service2.ProcessData(0, 7)
+	assert.Equal(t, []float64{7}, gatheredSeries(t, registry, "semstreams_mock_service_queue_depth"))
 }

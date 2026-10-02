@@ -127,6 +127,14 @@ the files it names lie outside the set (`processor/graph-index/…`), so it has 
   cannot pass as the helper; `pidAlive` (`:327`) alone is not enough. Pause is proven from observed state — `ps`
   reports the process stopped (state `T`) — never by waiting for a checkpoint that does not come; `prochost`'s
   non-test files are under the sleep check (`testtext_test.go:54-56`).
+
+  Surface as built in task 2.4 (detail this text did not record; no behaviour change). `Start` takes
+  `t testing.TB`. `Signal`, `Pause`, `Resume` and `Kill` return `error`. Once the helper has been reaped, `Kill`
+  returns nil and the other three return an error; none sends a signal, because a reaped helper's process group id
+  can be reused by another process. `ExitStatus` is `{Code int; Signal syscall.Signal}`; `Code` is -1 when a signal
+  ended the process (and when the wait returned no process state). Output goes to
+  `<SEMENGINE_EVIDENCE_DIR or t.TempDir()>/prochost/<test>-<name>-*.stdout` and a matching `.stderr`, with `/` and
+  spaces in the test name replaced by `_`. There is no `Pid()` export.
 - **`lifecycletest.Run(t *testing.T, factory Factory, mustFail Factory, promise Promise)`**. `mustFail` returns a
   fresh owner whose `Start(ctx)` must return a non-nil error; `Run` fails before any check, naming the argument, when
   `mustFail` is nil. New check `CheckFailedStartHoldsNothing(ctx, o Owner) error`: `Start` returns non-nil;

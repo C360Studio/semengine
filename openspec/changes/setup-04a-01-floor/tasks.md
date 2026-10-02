@@ -164,8 +164,12 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       comment 5954727965.
 - [x] 3.2 (D) `pkg/errs`, `vocabulary` (level 1): rows `carry`; `pkg/errs`'s row names `ErrAlreadyStopped`
       (`errs.go:47`) as the one sentinel and change 3 as the SS#1218 proof's home; the two `pkg/errs` context roots
-      are triaged. Done in 4555515; evidence PR #48 comment 5954727965.
-- [x] 3.3 (D) `pkg/types` (level 2): row `carry`. Done in dcdf6dd; evidence PR #48 comment 5954727965.
+      are triaged. Done in 4555515; evidence PR #48 comment 5954727965. Corrected in 358a01e: `vocabulary`'s row is
+      `adapt`, because its `README.md` is ported with markdownlint fixes (owner ruling, #9 comment 5955265930), and
+      `task ledger:check` does not compare READMEs; `pkg/errs` stays `carry`.
+- [x] 3.3 (D) `pkg/types` (level 2): row `carry`. Done in dcdf6dd; evidence PR #48 comment 5954727965. Corrected in
+      358a01e: the row is `adapt`, because its `README.md` is ported with markdownlint fixes (owner ruling, #9
+      comment 5955265930).
 - [x] 3.4 (D) `pkg/projection/contract`, `pkg/tlsutil` (level 3): `pkg/projection/contract` row `carry`, destination
       `pkg/projection/contract` (public: SemConnect imports it; #9 comment 5953295358); `pkg/tlsutil` row `adapt`,
       destination `internal/tlsutil` (design D5; #9 comment 5952661571): ported without

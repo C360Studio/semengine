@@ -310,7 +310,10 @@ states the `Client` nil-context requirement; the row records each item as change
   `natsclient` (`NewTestClient` sites, `test_client.go`, the D3 and D7 items, the D8 repairs, `GetStats` unexported
   as `cacheStats` above), `metric` (D3 items), `payloadregistry` (`testing.go` rehomed), `pkg/cache` and
   `pkg/resource` (the D7 items, the D8 repairs), `pkg/tlsutil` (the ACME loaders cut, D1) and `pkg/retry` (D8
-  repair); `carry` for the other eight.
+  repair); and, by owner ruling (#9, comment 5955265930: a ported `README.md` takes only the edits markdownlint
+  requires, recorded as an `adapt` item), `vocabulary` and `pkg/types`, whose READMEs need those edits (358a01e);
+  `carry` for the other six: `pkg/platform`, `pkg/security`, `pkg/timestamp`, `pkg/errs`, `pkg/projection/contract`
+  and `message`. `message` has a `README.md` at the pin, so its row stays `carry` only if that file needs no edit.
 - Existing file rows updated: `natsclient/test_client.go` (`adapt`, now with its evidence in `proving_tests`), `natsclient/test_options.go`
   (`defer-exclude`, honoured); a new file row for `payloadregistry/testing.go` is not needed — the package row
   records the rehoming (T-B7 keeps `source_path` unique; the package row's path is the directory).

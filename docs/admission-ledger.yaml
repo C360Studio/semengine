@@ -303,3 +303,40 @@
   proving_tests: internal/timestamp/timestamp_test.go, internal/timestamp/example_test.go
   owner: setup-04a-01-floor developer
   disposition: carry
+
+- source_path: pkg/errs
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    error classification (transient, fatal, invalid), lifecycle sentinels and the shutdown error
+    type; SemSource imports it (3 files, design P16)
+  destination: pkg/errs
+  contract: >-
+    classification, wrapping and errors.Is/As behavior as at the pin; ErrAlreadyStopped
+    (errs.go:47) is the one already-stopped sentinel (SS#1218)
+  dependencies_and_side_effects: pkg/retry (in-set); stdlib; no goroutine, no I/O
+  known_risks: >-
+    SS#1218: the duplicate service.ErrAlreadyStopped (pin service/base.go:28) is removed in change 3,
+    where its proof lives (design D4). Context roots, the two D1 counts: both are example code inside
+    doc comments (doc.go:173, :297), not executable; the package has no production root. Doc-comment
+    sleeps (doc.go:48, :111, :288) carried as they are (owner ruling Q4, task 1.5)
+  proving_tests: >-
+    pkg/errs/errs_test.go, pkg/errs/classified_is_test.go, pkg/errs/shutdown_test.go
+  owner: setup-04a-01-floor developer
+  disposition: carry
+
+- source_path: vocabulary
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    predicate vocabulary, registry, IRI mapping and namespace authority; SemSource imports it (20
+    files, design P16). Only the package directory is ported; its sub-packages (agentic, bfo,
+    builtins, cco, examples, export, governance, rulepacks) are not in the floor
+  destination: vocabulary
+  contract: >-
+    predicate registration and lookup, dotted-name validation, IRI construction and namespace
+    authority as at the pin
+  dependencies_and_side_effects: >-
+    pkg/platform (in-set); stdlib; a process-global predicate registry mutated at registration
+  known_risks: no context roots; SemStreams IRI base strings carried unchanged (iris.go:14)
+  proving_tests: the 11 test files in vocabulary/ at the pin
+  owner: setup-04a-01-floor developer
+  disposition: carry

@@ -135,6 +135,6 @@
 // # See Also
 //
 // Related packages:
-//   - [github.com/c360studio/semengine/pkg/tlsutil]: Build tls.Config from these types
+//   - [github.com/c360studio/semengine/internal/tlsutil]: Build tls.Config from these types
 //   - [github.com/c360studio/semengine/pkg/acme]: ACME client implementation
 package security

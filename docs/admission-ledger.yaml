@@ -396,3 +396,40 @@
   proving_tests: pkg/projection/contract/contract_test.go
   owner: setup-04a-01-floor developer
   disposition: carry
+
+- source_path: pkg/tlsutil
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    builds tls.Config for servers and clients, with mTLS, from pkg/security types; imported by metric
+    (handler.go); no consumer imports it and no public signature names its types (design D5, P21, P22)
+  destination: internal/tlsutil
+  contract: >-
+    LoadServerTLSConfig, LoadClientTLSConfig, LoadServerTLSConfigWithMTLS and
+    LoadClientTLSConfigWithMTLS as at the pin: disabled config returns nil, the TLS version parse
+    defaults to 1.2, client CA pools and the CN whitelist are enforced, file and PEM failures are
+    errs fatal errors. Changed (owner ruling, #9 comment 5950752741; design D1): the ACME loaders
+    are not ported
+  dependencies_and_side_effects: >-
+    pkg/errs, pkg/security (in-set); stdlib; reads certificate and key files; no goroutine. The pin's
+    pkg/acme and go-acme/lego/v4 dependencies leave with the ACME loaders
+  known_risks: >-
+    no context roots; import path differs from the pin (pkg/ → internal/, design D5), so pin
+    pkg/security/doc.go:138 links internal/tlsutil here. Adapt items, all removals: tlsutil.go:186-365
+    (LoadServerTLSConfigWithACME, LoadClientTLSConfigWithACME, initACMEClient) and the context, time
+    and pkg/acme imports only they use (:5, :10, :12); in doc.go the ACME clauses of :7 and :10, and
+    lines :13-14, :27, :93-126, :151-154 (the transient-error bullet and ACME fallback paragraph, with
+    the blank line between them), :160 and :166. No tlsutil test calls the cut functions (pin grep of
+    WithACME and initACMEClient over pkg/tlsutil: tlsutil.go and doc.go only). Deferred to change 5
+    (setup-04a-05-first-consumer, which ports output/websocket, the first caller in the chain; #9
+    comment 5950752741 and its clarification; design D1, D7): the loaders, pkg/acme, go-acme/lego/v4
+    and two defects at the pin: the renewal goroutines' stop (tlsutil.go:253, :331) can block inside
+    legoClient.Certificate.Renew, which takes no context (pkg/acme/client.go:352), so it needs
+    Shutdown(ctx) and a renewal test seam; and the renewal callback writes tlsConfig.Certificates
+    while the config may be serving handshakes (tlsutil.go:258, :336), a data race.
+    input/websocket and output/httppost also call the loaders and are in no change of the chain
+  proving_tests: >-
+    internal/tlsutil/tlsutil_test.go (unit lane); internal/tlsutil/mtls_integration_test.go
+    (integration-tagged, run by task test:integration: real TLS handshakes over httptest servers for
+    required, optional and whitelisted client certificates)
+  owner: setup-04a-01-floor developer
+  disposition: adapt

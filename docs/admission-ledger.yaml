@@ -5,7 +5,8 @@
 #   source_path                   SemStreams path, unique across entries
 #   source_sha                    full 40-character lowercase commit SHA the file was read at
 #   consumer_purpose              what SemEngine consumer needs it, or why none does
-#   destination                   SemEngine path it lands in, or none
+#   destination                   path it lands in, relative to the repository root and inside it,
+#                                 optionally followed by a note; or none
 #   contract                      behavior the destination must keep
 #   dependencies_and_side_effects imports, tools, and effects it brings
 #   known_risks                   upstream defects and what is not carried
@@ -14,9 +15,13 @@
 #   disposition                   one of carry | adapt | repair-before-port | defer-exclude
 #
 # `task ledger:check` (contract test T-B7, internal/harness/contract/ledger_test.go), run inside
-# `task verify`, enforces this schema. Every entry below is re-checked at SETUP 03A. No SemStreams
-# package has been ported; the SETUP 02 rows record patterns adapted, two scripts carried and later adapted
-# (flake-defense), and exclusions.
+# `task verify`, enforces this schema. It then compares every `carry` entry with the pin (SemStreams at
+# the entry's source_sha, fetched from GitHub; docs/provenance.md rule 5). The tree side is the
+# destination path: the leading run of letters, digits, `/`, `.`, `_` and `-` in `destination`;
+# anything after it is a note. `task ledger:diff -- <source_path>` prints the differences of any entry;
+# `adapt` entries are printed there and never failed. Every entry below is re-checked at SETUP 03A.
+# No SemStreams package has been ported; the SETUP 02 rows record patterns adapted, two scripts carried
+# and later adapted (flake-defense), and exclusions.
 #
 # Port refactors (owner ruling on #8, Q4; SETUP 03B design.md D4a): restructuring ported code away from
 # the pin's shape (a seam, a file-level adapt, a dropped field or method) is disposition `adapt`, with

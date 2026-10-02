@@ -59,9 +59,16 @@ tasks:
       - scripts/cleanup-roots-check.sh
 
   ledger:check:
-    desc: Validate docs/admission-ledger.yaml against its schema (contract test T-B7)
+    desc: Validate docs/admission-ledger.yaml against its schema (T-B7), then fail if a carry entry differs from its SemStreams pin; fetches the pin from GitHub when a carry entry exists
     cmds:
+      # Order and exit status are pinned by contract test TestLedgerCheckWiring.
       - go test -count=1 -run '^TestAdmissionLedger' ./internal/harness/contract/
+      - go run ./internal/harness/pindiff check
+
+  ledger:diff:
+    desc: Print how carry and adapt entries differ from their SemStreams pin; -- <source_path>... to name entries. Fetches the pin from GitHub
+    cmds:
+      - 'go run ./internal/harness/pindiff diff {{.CLI_ARGS}}'
 
   vuln:
     desc: Run the pinned govulncheck over all packages

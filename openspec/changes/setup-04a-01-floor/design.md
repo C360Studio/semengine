@@ -79,7 +79,7 @@ the files it names lie outside the set (`processor/graph-index/…`), so it has 
 
 - **`Fixture.Restart(ctx) error`** (`natsfixture`). Takes the one-slot semaphore like `Start`/`Stop`; drains the
   fixture's own connection (dialled with `nats.MaxReconnects(0)`, so it is dead after a restart); runs two new
-  phases, `PhaseStopContainer = "stop-container"` (`Container.Stop(ctx, &timeout)`) and `PhaseStartContainer =
+  phases, `PhaseStopContainer = "stop-container"` (`Container.Stop(ctx, nil)`) and `PhaseStartContainer =
   "start-container"` (`Container.Start(ctx)`), on the same container; then re-runs `PhaseMappedPort`, `PhaseConnect`,
   `PhaseJetStream` and replaces `url`, `nc`, `js` and the evidence record's mapped port. Contract: `URL()` and
   `JetStream()` are valid until the next `Restart`; a caller stops its owner before and starts it after with the new
@@ -97,10 +97,22 @@ the files it names lie outside the set (`processor/graph-index/…`), so it has 
   (`fixture.go:431-446`) and memory storage; a test never creates a stream through `JetStream()` directly, so the
   ownership record and the bounds rule hold for both storage classes. The durability premise (P3) is this change's
   proof, not an assumption.
+  - Why the stop passes a nil timeout (`deps.go:68-70`): Docker's default stop grace and kill escalation apply. The
+    call returns only after the container has stopped, so the grace period is Docker's wait before it escalates to a
+    kill, not a timeout standing in for a join. A fixture constant there would be a hard-coded shutdown timeout,
+    which the background-work rule forbids (#9 comment 5950482163).
+  - Why readiness after a restart counts lines: testcontainers counts "Server is ready" lines across the container's
+    whole log, every boot included (testcontainers `wait/log.go:210`). So `Restart` counts the ready lines before the
+    start and waits for one more.
 - **`natsfixture.FaultKV`**. `NewFaultKV(real jetstream.KeyValue) *FaultKV` embeds the real bucket and overrides
-  `Put`, `Create`, `Update`, `Delete`. `FailBefore(op KVOp, err error)` returns `err` without calling the real
+  `Put`, `Create`, `Update`, `Delete`; the matching `KVOp` values are `KVPut`, `KVCreate`, `KVUpdate` and `KVDelete`.
+  `FailBefore(op KVOp, err error)` returns `err` without calling the real
   method; `FailAfter(op KVOp, err error)` calls the real method, discards its result, and returns `err` — the
-  "server applied it, client saw an error" shape of #20. `Calls() map[KVOp]int` reports real calls made. It is typed
+  "server applied it, client saw an error" shape of #20. A fault is sticky: it applies to every call of that
+  operation until cleared by passing a nil error. `PutString` goes through `Put`, so a `KVPut` fault covers it;
+  `Purge` is never faulted. Change 2 extends `FaultKV` with a one-shot (or n-shot) fault if it needs "applied once,
+  then the retry sees the result" for the `KVStore` compare-and-swap retry loop (pin `natsclient/kv.go:370-394`,
+  #20); it is not built in this change. `Calls() map[KVOp]int` reports real calls made. It is typed
   on `jetstream.KeyValue`, never on `natsclient.KVStore`, so `natsfixture` keeps importing no ported package (P4).
   Its consumer in change 2 wraps it in `natsclient.NewKVStore` through an in-package test setter.
 - **`internal/harness/prochost`**. `prochost.Helper(name string, fn func())` is called from the test binary's

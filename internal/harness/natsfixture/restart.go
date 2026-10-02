@@ -130,6 +130,7 @@ func (f *Fixture) restart(ctx context.Context, c testcontainers.Container, id st
 		if err != nil {
 			return err
 		}
+		// If Docker log rotation drops old lines the count can fall; the wait then runs until ctx ends (loud, not silent).
 		_, err = probe.Await(ctx, func(ctx context.Context) (int, error) { return f.readyLines(ctx, c) },
 			func(n int) bool { return n > before })
 		return err

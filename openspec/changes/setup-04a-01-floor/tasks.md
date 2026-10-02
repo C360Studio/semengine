@@ -55,6 +55,9 @@ this pull request as a comment unless a task says otherwise. No task asserts a f
       afterwards; a fourth asserts `Restart` before `Start` returns an error with no Docker call. Gate: `task
       test:integration -- ./internal/harness/natsfixture`. The durability premise (design P3) is proven here, not
       assumed.
+      - Note: the fixture's `connect` was fixed first to wait for its dial to finish before returning (commit
+        f1b046d). The pin's dial goroutine outlived the call, which the background-work rule forbids, and `Restart`
+        re-runs `connect`.
 - [x] 2.2 (D) Restart fault matrix: with the `stopContainer` and `startContainer` hooks made to return an error in turn,
       `Restart`
       returns a `FixtureError` naming the phase, no second container exists, and `Stop` observes the container gone;

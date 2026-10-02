@@ -147,10 +147,10 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
 `task verify` passes; `task test:repeat -- ./<destination>` passes; the carried tests pass in their lane; the row's
 `proving_tests` names them; context roots in the package are triaged in `known_risks`.
 
-- [ ] 3.0 Hold: section 3 waits for #52 (PR #54) to merge, per the owner's placement on #52 ("Scope and placement",
-      2026-10-02); section 2 is not held, except task 2.8, which needs section 3's packages. The #52 command's
-      output, each package's difference from the pin read through its row's `source_path` → `destination` (design
-      D5), is task 7.1's review input.
+- [x] 3.0 Hold: section 3 waits for #52 (PR #54) to merge, per the owner's placement on #52 ("Scope and placement",
+      2026-10-02). Lifted: #54 merged as `39badc4` (2026-10-02). Section 2 is not held, except task 2.8, which needs
+      section 3's packages. The #52 command's output, each package's difference from the pin read through its
+      row's `source_path` → `destination` (design D5), is task 7.1's review input.
 
 - [ ] 3.1 (D) `pkg/platform`, `pkg/resource`, `pkg/retry`, `pkg/security`, `pkg/timestamp` (level 0): rows `carry`
       except `pkg/resource` (`adapt`, SS#1415-class ender and D8 repairs) and `pkg/retry` (`adapt`, D8 repair:

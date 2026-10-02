@@ -165,11 +165,12 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
 - [x] 3.2 (D) `pkg/errs`, `vocabulary` (level 1): rows `carry`; `pkg/errs`'s row names `ErrAlreadyStopped`
       (`errs.go:47`) as the one sentinel and change 3 as the SS#1218 proof's home; the two `pkg/errs` context roots
       are triaged. Done in 4555515; evidence PR #48 comment 5954727965. Corrected in 358a01e: `vocabulary`'s row is
-      `adapt`, because its `README.md` is ported with markdownlint fixes (owner ruling, #9 comment 5955265930), and
-      `task ledger:check` does not compare READMEs; `pkg/errs` stays `carry`.
+      `adapt`, because its `README.md` is ported with markdownlint fixes (owner ruling, #9 comment 5955265930, since
+      replaced by 5957221949, which still allows them), and `task ledger:check` does not compare READMEs; `pkg/errs`
+      stays `carry`.
 - [x] 3.3 (D) `pkg/types` (level 2): row `carry`. Done in dcdf6dd; evidence PR #48 comment 5954727965. Corrected in
       358a01e: the row is `adapt`, because its `README.md` is ported with markdownlint fixes (owner ruling, #9
-      comment 5955265930).
+      comment 5955265930, since replaced by 5957221949, which still allows them).
 - [x] 3.4 (D) `pkg/projection/contract`, `pkg/tlsutil` (level 3): `pkg/projection/contract` row `carry`, destination
       `pkg/projection/contract` (public: SemConnect imports it; #9 comment 5953295358); `pkg/tlsutil` row `adapt`,
       destination `internal/tlsutil` (design D5; #9 comment 5952661571): ported without
@@ -183,7 +184,8 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       integration lane. Done in 0031f26 and f1cc210; `task verify` ok on f1cc210.
 - [x] 3.5 (D) `metric`, `payloadregistry` (level 4), both at their pin paths (public: SemSource imports both; design
       D5, #9 comment 5953295358): `metric` row `adapt` with its two roots triaged; `metric.Server`
-      adapter lists the listener, the `http.Server` and the serve goroutine; the suite runs with the bound-port
+      adapter lists the listener, the `http.Server`, the serve goroutine and, since aa94acf, the requests its handler
+      admitted and has not returned from (`Stop` waits for them within its context); the suite runs with the bound-port
       must-fail factory (#38's first real service). Two items (design D3), each written first:
       `metric-abort-stop-reports-context` — an in-package test starts a server, replaces `s.serveDone` with a
       buffered channel already holding a value, and calls `Stop` with an ended context, so both cases of the

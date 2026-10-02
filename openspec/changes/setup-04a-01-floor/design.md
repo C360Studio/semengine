@@ -194,7 +194,7 @@ pending.
 
 | Service | Start / end at the pin | `Unresolved` lists | Failing factory |
 |---|---|---|---|
-| `metric.Server` | `Start(ctx)` `handler.go:59`, `Stop(ctx)` `:192` | the listener, the `http.Server`, the serve goroutine | a server configured on a port the test already holds with `net.Listen`; `Start` binds synchronously (`:55-110`) and returns the bind error |
+| `metric.Server` | `Start(ctx)` `handler.go:59`, `Stop(ctx)` `:192` | the listener, the `http.Server`, the serve goroutine, the requests its handler admitted and has not returned from (since aa94acf; `Stop` waits for them within its context) | a server configured on a port the test already holds with `net.Listen`; `Start` binds synchronously (`:55-110`) and returns the bind error |
 | `natsclient.Client` | `Connect(ctx)` `client.go:471`, `Close(ctx)` `:578` | the `nats.Conn`, JetStream handle, subscriptions, internal consumer claims, the health monitor, the metrics poller, callback goroutines and claim-release goroutines | a client whose URL is a refused local port (its own `Connect` returns the dial error) |
 
 The task 2.0 probe (PR #48 comment 5942307713) and a read of every `go` statement in both packages give these
@@ -310,8 +310,10 @@ states the `Client` nil-context requirement; the row records each item as change
   `natsclient` (`NewTestClient` sites, `test_client.go`, the D3 and D7 items, the D8 repairs, `GetStats` unexported
   as `cacheStats` above), `metric` (D3 items), `payloadregistry` (`testing.go` rehomed), `pkg/cache` and
   `pkg/resource` (the D7 items, the D8 repairs), `pkg/tlsutil` (the ACME loaders cut, D1) and `pkg/retry` (D8
-  repair); and, by owner ruling (#9, comment 5955265930: a ported `README.md` takes only the edits markdownlint
-  requires, recorded as an `adapt` item), `vocabulary` and `pkg/types`, whose READMEs need those edits (358a01e);
+  repair); and, by owner ruling (#9, comment 5957221949, which replaced comment 5955265930: a ported `README.md`
+  keeps the pin's text except for the edits markdownlint requires and edits to passages that describe behavior the
+  ported code no longer has, each behavior edit listed by README line as an `adapt` item), `vocabulary` and
+  `pkg/types`, whose READMEs need lint fixes (358a01e);
   `carry` for the other six: `pkg/platform`, `pkg/security`, `pkg/timestamp`, `pkg/errs`, `pkg/projection/contract`
   and `message`. `message` has a `README.md` at the pin, so its row stays `carry` only if that file needs no edit.
 - Existing file rows updated: `natsclient/test_client.go` (`adapt`, now with its evidence in `proving_tests`), `natsclient/test_options.go`

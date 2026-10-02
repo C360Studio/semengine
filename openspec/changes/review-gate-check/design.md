@@ -1,12 +1,13 @@
 # Design: review-gate-check
 
-Status: **draft, revision 3; one review round answered; not approved.** Revision 2 had `DESIGN CHANGES REQUESTED` in
-round 1 of three (PR #67, comment 5957401025); this revision answers its eight findings, and its recommendation is
-smaller than revision 2's. It rests on `inventory.md` in this directory: revision 2, which has `INVENTORY PASS`
-(PR #67, comment 5956907408), sha256 `725b11e7a060092d72c73b5fc98216f85f826f0764d5531053497993fa8fbe8f`, committed at
-`5861fa5`. That file is the accepted inventory and is not repeated here; "inventory 2.3" is its section 2.3 and
-`inventory.md:212` is one of its lines. Nothing here stands until this design has passed pre-owner review and the
-owner has accepted it and answered the three questions at the end.
+Status: **revision 3; `DESIGN REVIEW PASS` in round 2 of three (PR #67, comment 5957614491); accepted by the owner
+(#66, comment 5959125319), who answered the three questions at the end with the recommendation each time.**
+Revision 2 had `DESIGN CHANGES REQUESTED` in round 1 (PR #67, comment 5957401025); this revision answers its eight
+findings, and its recommendation is smaller than revision 2's. It rests on `inventory.md` in this directory:
+revision 2, which has `INVENTORY PASS` (PR #67, comment 5956907408), sha256
+`725b11e7a060092d72c73b5fc98216f85f826f0764d5531053497993fa8fbe8f`, committed at `5861fa5`. That file is the
+accepted inventory and is not repeated here; "inventory 2.3" is its section 2.3 and `inventory.md:212` is one of its
+lines.
 
 ## Context
 

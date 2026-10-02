@@ -123,8 +123,8 @@ reviewing agent.
 #### Scenario: Pull request by a bot
 
 - **WHEN** a code pull request whose author GitHub reports as a bot has no `implemented-by:` line and has the line
-  `reviewed-by: codex`
-- **THEN** the script exits zero
+  `reviewed-by: codex`, or has the lines `implemented-by: codex` and `reviewed-by: codex`
+- **THEN** the script exits zero in both cases
 
 #### Scenario: Line not written once at the start of a line
 

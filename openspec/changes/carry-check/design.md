@@ -21,9 +21,9 @@ The program runs `git fetch --depth 1` of each distinct `source_sha` it needs fr
 `https://github.com/c360studio/semstreams.git` into a temporary directory outside the repository, and removes it.
 SemStreams is public and the fetch needs no credentials (M1); it took 2.4 s and 17 MB (M2). Git names every object by
 the hash of its content, so the 40-character `source_sha` the schema already requires (`ledger_test.go:170`) is a
-recorded hash of every file at the pin, and git checks it on each fetch; nothing else is recorded or needs verifying.
-With no `carry` entry nothing is fetched, so `main` today stays offline (G4). All the fetches of one run share one bound
-of two minutes, not two minutes each; past it the pin counts as unreadable.
+recorded hash of every file at the pin, and git checks it on each fetch; nothing else needs recording. With no `carry`
+entry nothing is fetched, so `main` today stays offline (G4). All the fetches of one run share one bound of two minutes,
+not two minutes each; past it the pin is unreadable and every process a fetch started (git's helper too) is killed.
 
 ### D2. The unit is the ledger entry; test files are covered (questions 2 and 3)
 
@@ -55,9 +55,9 @@ Everything else is a difference, a comment that renames SemStreams included (M11
 ### D4. `task ledger:diff -- [<source_path>...]`
 
 - Arguments: ledger `source_path` values; with none, every `carry` and `adapt` entry, in ledger order.
-- Standard output: a unified diff per differing covered file, from the rewritten pin text (`--- pin/<pin path>`) to
-  the tree file (`+++ <tree path>`); `only at the pin: <path>` or `only in the tree: <path>` for a file on one side.
-  An equal file prints nothing. The rewrite keeps line numbers, apart from re-sorted import lines.
+- Standard output: a unified diff per differing covered file, from the rewritten pin text (`--- pin/<pin path>`) to the
+  tree file (`+++ <tree path>`); `only at the pin: pin/<pin path>` or `only in the tree: <tree path>` for a one-sided
+  file. An equal file prints nothing. The rewrite keeps line numbers, apart from re-sorted import lines.
 - Standard error: one line per entry, `<source_path> (<disposition>): N files, K differ, A only at the pin, B only
   in the tree`, N counting covered files on both sides, or `…: not compared: <reason>` (D2's reasons).
 - The program exits 0 when it ran, differences or not; 2 when an argument names no entry, a named entry was not

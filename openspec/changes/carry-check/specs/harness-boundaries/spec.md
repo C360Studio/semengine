@@ -99,17 +99,18 @@ a directory entry that covers no file at the pin and none in the tree.
 
 ### Requirement: Carried entries match the pin
 
-After the schema check, `task ledger:check` SHALL run a program that compares every entry whose disposition is
-`carry`, test files included. The program SHALL exit 1 when a covered file differs from the pin, exists only at the
-pin, or exists only in the tree, or when a `carry` entry cannot be compared. Each failure SHALL name the entry's
-`source_path`, the file, and which of those four it is. The output SHALL say that `task ledger:diff --
-<source_path>` prints the lines, and that a package that differs is `adapt` (`docs/provenance.md` rule 5). Entries
-with any other disposition SHALL NOT be compared by the check. With no `carry` entry the program SHALL exit 0
-without contacting SemStreams. When SemStreams cannot be read within the fetch bound, which is two minutes for all
-the fetches of one run together, the program SHALL exit 2 with a message that says the pin could not be read and
-that no entry was checked. The program SHALL write nothing inside the repository. `task ledger:check` SHALL fail
-whenever the program exits non-zero; `task` and `go run` replace the program's exit status with their own, so
-through `task` only pass or fail and the message are promised.
+After the schema check, `task ledger:check` SHALL run a program that compares every entry whose disposition is `carry`,
+test files included. The program SHALL exit 1 when a covered file differs from the pin, exists only at the pin, or
+exists only in the tree, or when a `carry` entry cannot be compared. Each failure SHALL name the entry's `source_path`,
+the file, and which of those four it is. The output SHALL say that `task ledger:diff -- <source_path>` prints the lines,
+and that a package that differs is `adapt` (`docs/provenance.md` rule 5). Entries with any other disposition SHALL NOT
+be compared by the check. With no `carry` entry the program SHALL exit 0 without contacting SemStreams. When SemStreams
+cannot be read within the fetch bound, which is two minutes for all the fetches of one run together, the program SHALL
+exit 2 with a message that says the pin could not be read and that no entry was checked. When the program exits, no
+process it started for a fetch SHALL still be running, whether the fetch finished, failed or was cut off at the bound.
+The program SHALL write nothing inside the repository. `task ledger:check` SHALL fail whenever the program exits
+non-zero; `task` and `go run` replace the program's exit status with their own, so through `task` only pass or fail and
+the message are promised.
 
 #### Scenario: Carried package unchanged
 
@@ -151,6 +152,12 @@ through `task` only pass or fail and the message are promised.
 - **WHEN** the ledger has no `carry` entry and SemStreams cannot be reached
 - **THEN** ledger:check passes
 
+#### Scenario: Fetch cut off at the bound
+
+- **WHEN** a fetch still waiting on SemStreams is cut off, by the fetch bound or by an interrupt
+- **THEN** the program exits 2, and no process it started for the fetch, git's transport helper included, is still
+  running when it returns
+
 #### Scenario: Pin cannot be read
 
 - **WHEN** the ledger has a `carry` entry and SemStreams cannot be reached
@@ -162,7 +169,7 @@ through `task` only pass or fail and the message are promised.
 every entry whose disposition is `carry` or `adapt`, in ledger order. For each covered file that differs it SHALL
 print on standard output a unified diff from the rewritten pin text, labelled `pin/` followed by the file's
 SemStreams path, to the tree file, labelled with its path. For a file on one side only it SHALL print
-`only at the pin: <path>` or `only in the tree: <path>`. An equal file prints nothing, so standard output is empty
+`only at the pin: pin/<path>` or `only in the tree: <path>`. An equal file prints nothing, so standard output is empty
 when nothing differs. On standard error it SHALL print one line per entry: the `source_path`, the disposition, and
 either the number of files compared (covered files present on both sides), differing, only at the pin and only
 in the tree, or `not compared` with the reason.

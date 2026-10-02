@@ -60,6 +60,11 @@ test (`design.md`, "Tests").
 - [x] 3.8 (D) `TestWritesNothingInTree` runs `check` and `diff` (passing, violated, pin unreadable) in a read-only
       tree and finds its files and hashes unchanged; shown to fail with the fetch directory made inside the tree.
       Gate: `task test:unit`.
+- [x] 3.9 (D) The printed diff is guarded: `TestUnifiedDiff` (hunks six lines apart merge, seven do not; empty-range
+      headers; no final newline) with texts written by hand, and `FuzzUnifiedDiffApplies`, whose test-owned applier
+      turns the pin text into the tree text; the two mutants that survived review are detected. Gate: `task test:unit`.
+- [x] 3.10 (D) `TestFetchLeavesNoProcess`, written first: a fetch cut off at the bound leaves no process running
+      when the program returns (git runs in its own process group, which is killed). Gate: `task test:unit`.
 
 ## 4. Evidence against the real pin
 

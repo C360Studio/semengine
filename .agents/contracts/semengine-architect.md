@@ -49,6 +49,25 @@ frozen: a SemStreams change after the pin is its own ledger row, never an implie
 prevention, context ownership, completed joins, authority and readiness, acknowledged durability, and
 metadata/content preservation are admission gates that an issue, an elapsed budget, or a coverage number cannot waive.
 
+Two obligations ride on every slice design in addition to its ledger row:
+
+- **Surface audit.** Porting is the cheapest moment to leave unused surface behind. For the package being ported,
+  list (a) exported symbols with no caller inside SemEngine and no symbol-level use by a consumer
+  `docs/inventory-scope.md` names; (b) config fields that are parsed or validated but read by no behavior, and
+  unknown keys that are accepted silently; (c) behavior a doc comment, README, or schema describes that no code
+  implements. Each item is dropped, moved under `internal/`, or kept with its reason stated in the slice design. A
+  config field that stays has a test that fails when the field is ignored. A capability admitted by owner mandate is
+  wanted even before it has a caller: "no caller" answers whether something is wired, never whether it is wanted.
+  These were SemStreams' largest open defect classes on 2026-10-01: 57 distinct issues labelled
+  `class:advertised-absent`, `class:silent-noop-surface`, `class:phantom-config`, or `class:dead-surface`, 45 of
+  them still open.
+- **Guidance returns with the package.** SemStreams' developer and reviewer contracts carry package-specific
+  sections (semantic identity and graph, storage and retention, NATS RPC, payload registry, state ownership and
+  component wiring, orchestration) and skills (`entity-or-bucket`, `kv-or-stream`, `new-payload`,
+  `orchestration-check`, `query-pattern`). They were left out of this repository until the code they govern exists.
+  The slice design names which of those sections and skills apply to the package, read at the pin, and carries the
+  adapted text as part of the change. A package that lands without its guidance has lost the lessons learned on it.
+
 ## The surface inventory (mandatory first deliverable)
 
 The inventory is a file, `openspec/changes/<id>/inventory.md`, with a `base: <sha>` header and every entry pinned as
@@ -79,6 +98,32 @@ each either cited at `file:line` or closed with the exact searches that came up 
 
 An inventory that is genuinely empty in a category says so with the searches that prove it; that is a real and useful
 result, not a formality to skip.
+
+### The adoption sweep (the establishing side)
+
+Category 5 asks whether a pattern for this shape already exists. When its answer is "no existing instance", the
+design is establishing one and owes the other direction: who else should adopt it. A change establishes a pattern
+when it introduces a named primitive meant for reuse across packages (a validator, gate, authority, classified-error
+family, dispatcher, settlement or lifecycle shape) rather than solving one local problem. Every repair-before-port
+row that introduces such a primitive is an establishing change.
+
+The deliverable is an enumeration: one line per package or seam that should adopt the primitive, each pinned at
+`file:line`, carried in the design and filed as one tracking issue. It is never a migration obligation. The
+establishing change fixes none of them, and the number found does not block it; without that bound, an author under
+time pressure keeps the improvement local and never names it a pattern, which is worse. Run it when in doubt: a sweep
+on a non-pattern costs a paragraph, and a pattern that lands without one is rediscovered package by package.
+SemStreams' delivery-settlement contract is the worked case: it landed in `natsclient`, the agentic packages adopted
+it, and at the pin `processor/graph-ingest` still settles deliveries by hand.
+
+### Intent check
+
+A boundary derived only from what the current consumers import can drop a capability the product exists for; the
+first SETUP 03B draft excluded the rule engine because neither SemSource nor SemConnect imports it. Whenever a design sets
+or moves a boundary (the port set, tier membership, a package exclusion, a capability deferral), the inventory
+carries one table: every capability `AGENTS.md` "What this is for" names, marked **admitted**, **deferred**, or
+**excluded**, each with the owner ruling that says so (issue and comment) or the words "no ruling". A deferred or
+excluded capability with no ruling is an owner question raised in the handoff, never a default. Consumer need decides
+order, never membership.
 
 ### Inventory mechanics
 

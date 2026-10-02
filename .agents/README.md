@@ -42,6 +42,25 @@ developer.
 SemStreams has no technical-writer adapter; the writer follows the developer's routing because it edits files under
 the parent workspace permissions. This is a SemEngine choice, open to owner override.
 
+## Orchestrating role agents
+
+These rules bind the session that spawns and briefs role agents. They come from the SETUP 03B orchestrating
+session's own account of where its cost went (2026-10-01), relayed by the owner and recorded on issue #37; its
+figures were not re-measured. By that account every review round found something real, so the review loop is not
+where to cut, and the avoidable cost was in the briefs.
+
+- **A brief carries the owner's intent, not only the approved document.** State what the product is for
+  (`AGENTS.md`, "What this is for") and any owner statement that bears on the question. An architect briefed with the
+  plan's admission heuristic alone drew a boundary that left out the rule engine (issue #8), and correcting it took
+  another inventory pass and its review.
+- **An orchestrator's paraphrase is an unreviewed claim.** Hand an agent the artifact itself (a path, an issue
+  comment URL, a `file:line`), not a summary of it. Where a summary is unavoidable, mark it as the orchestrator's so
+  the reviewer checks it like any other claim.
+- **Resume for continuity, start fresh for mechanics.** A resumed agent re-reads its own transcript on every resume.
+  For a mechanical follow-up, a fresh agent with a precise brief costs less.
+- **Scope an inventory before it starts.** `docs/inventory-scope.md` says which repositories may be read and for what
+  question. An inventory names its question and its repositories first.
+
 ## Shared work protocol
 
 `.agents/protocol.md` is the canonical shared work protocol (state homes, rituals, worktree hygiene). `CLAUDE.md` and

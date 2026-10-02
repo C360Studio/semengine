@@ -166,6 +166,8 @@ Runtime implementation and spec promotion remain blocked until the owner explici
 
 ### Test fidelity
 
+- `docs/testing.md` is the developer-facing long form of these checks. A diff that contradicts it is a finding
+  against one of the two.
 - Tests drive production constructors, codecs, and wire formats rather than only helpers. Expected values come from
   an independent oracle; a test that recomputes the expected value with the implementation's own algorithm cannot
   fail and is a finding.
@@ -218,6 +220,28 @@ Runtime implementation and spec promotion remain blocked until the owner explici
   fallback, drops an element, or runs with less than was asked either refuses loudly or emits BOTH a log line and a
   metric naming what was skipped and why continuing is safe, with the choice stated at the site. An emitted signal no
   test observes is the same finding: an unobserved signal rots.
+
+## Port-time and pattern review
+
+- **A diff that establishes a reusable primitive without an adoption enumeration is a finding.** This is the
+  complement of the problem-shape check: when the nearest existing instance is "none" and the primitive is meant for
+  reuse, require the list of packages and seams that should adopt it, each at `file:line`, and its tracking issue.
+  Do not require the migrations.
+- **Check the surface audit on every extraction slice.** Run the three searches yourself on the ported package:
+  exported symbols with no caller here and no symbol-level use by a consumer `docs/inventory-scope.md` names; config
+  fields with no behavioral reader, and whether an unknown key is refused; described behavior with no
+  implementation. An item the slice design did not list is a finding. A kept config field without a test that fails
+  when the field is ignored is a finding.
+- **Check that the package's guidance came with it.** The slice names the SemStreams contract sections and skills
+  that apply to the package and carries the adapted text. A ported package whose known footguns are documented only
+  in SemStreams is a finding.
+- **Check a boundary change against the stated purpose.** A design that sets or moves a boundary carries the intent
+  table (architect contract, Intent check). A capability `AGENTS.md` names that is deferred or excluded with no
+  owner ruling cited is `BLOCKING` at inventory review.
+- **A new rule names what enforces it.** A change that adds a repository-wide rule or a rule of agent conduct (in a
+  contract, the protocol, `.agents/README.md`, or `AGENTS.md`) states the command or test that fails when the rule is
+  broken, or says "review only", and adds its row to the `AGENTS.md` rule index in the same change. A capability
+  spec's requirements are indexed by that spec.
 
 ## Coverage review
 

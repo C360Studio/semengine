@@ -61,7 +61,9 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
   and `Required` with it, fails on every pull request except one whose description closes every open flake
   (`Closes #n` for each). No comment or label on a pull request exempts it. A pull request that closes a flake shows
   the reproduction: the command, and how often it failed before the fix and after. A flake that comes back after its
-  fix reopens its issue.
+  fix reopens its issue. A property-based test that fails on one run and passes on the next is a known flake too: the
+  issue records the seed, and the fix keeps the failing input as a named test (`docs/testing.md`, "Running and
+  replaying a Rapid test").
 - **Close:** the squash merge of a PR that declared `Closes #n` at review time closes that issue; the merge is the
   authorization. The declaration must predate the review rounds that cover it. A PR that only `Addresses` an epic
   closes nothing. A close with no merged PR behind it (duplicate, stale, fixed elsewhere) takes the owner's word on

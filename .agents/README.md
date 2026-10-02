@@ -42,6 +42,10 @@ developer.
 SemStreams has no technical-writer adapter; the writer follows the developer's routing because it edits files under
 the parent workspace permissions. This is a SemEngine choice, open to owner override.
 
+Across agents the pairing is the owner's decision, since nothing here ranks one vendor's model against another's: for
+a change to production code, the reviewer of record is the other agent's reviewer from the table above (owner ruling
+of 2026-10-02, issue #64; `.agents/protocol.md`, "Cross-agent review").
+
 ## Orchestrating role agents
 
 These rules bind the session that spawns and briefs role agents. They come from the SETUP 03B orchestrating

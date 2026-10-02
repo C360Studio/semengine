@@ -24,6 +24,9 @@ Do not turn a reviewer recommendation or inferred decision into an owner ruling.
 handoff document competing with those homes.
 
 Keep test evidence attached to the revision it tested: command, result, timestamp or run link, and artifact path.
+Cite evidence a reader on another machine can open: output pasted into the PR, or a CI run. A path git ignores
+(`.evidence/`, `coverage/`) exists only on the host that wrote it; when one is cited, say it is local only, and never
+make it a task's only proof.
 Identify tests on a dirty tree and the snapshot or diff needed to reproduce them. Distinguish failed, skipped, and
 unrun checks. Historical green does not prove later edits. Run inexpensive state checks now; do not repeat expensive
 suites solely to write a handoff or describe a previous result as freshly verified.

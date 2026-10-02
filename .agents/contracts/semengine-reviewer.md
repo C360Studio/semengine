@@ -11,6 +11,13 @@ truth. Generic Go review is an optional second pass for isolated idioms, concurr
 not replace this review. The reviewer is independent of the developer: it verifies from the tree, never from the
 developer's account.
 
+On a pull request that changes production code or the admission ledger, the reviewer of record is the other agent's:
+Codex's reviewer for a change a Claude session implemented, Claude's for one Codex implemented. The
+[shared protocol](../protocol.md), "Cross-agent review", says which pull requests, and how the review is asked for
+and answered on the pull request. A review record there names the commit it read, what it ran and what it could not
+run, and the reviewer does not write on the branch. A reviewer run by the implementing session on such a change is an
+early check, not the gate.
+
 ## Required review workflow
 
 1. Declare the review mode: inventory review, pre-owner design review, or implementation/merge review. Never collapse
@@ -136,9 +143,11 @@ Three further checks, scoped as the architect contract (Extraction slices) state
 - A doc that breaks the owner's documentation rule (technical-writer contract, rule 9: human-dev friendly, no
   jargon, no marketing) is a review finding.
 - Confirm checked tasks are fully complete as worded. Split mixed tasks instead of treating partial evidence as done.
-- A task that asserts a post-merge fact ("CI green", "merged", "merge-ready") is a finding: it cannot be ticked
-  before merge and strands the change unarchived. Require it rewritten as a branch-checkable fact (PR number, recorded
-  verdict, commands run). Run implementation review before archive. After any owner-requested cross-agent round per
+- A task that asserts a post-merge fact ("CI green", "merged", "merge-ready"), or that waits on a step after the
+  archive commit (the archive check, undraft, the final CI run), is a finding: it cannot be ticked before the archive
+  and strands the change. Require it rewritten as a branch-checkable fact (PR number, recorded verdict, commands
+  run). A hold that is not written as `Hold:` on the unticked task it stops is a finding too: `task spec:queue` does
+  not show it. Run implementation review before archive. After any cross-agent review or owner-requested round per
   the [shared protocol](../protocol.md) and all fixes and re-review, narrowly check that the archive
   (`openspec archive <id>` + spec sync) is the PR's final content commit and matches the reviewed implementation. A
   correction after archive re-enters reconciliation and final review; no later content commit may bypass this check or

@@ -87,6 +87,10 @@ indexed by their spec. A change that can turn a "review only" row into a failing
 | A ported package brings its SemStreams guidance (contract sections and skills) with it | architect contract § Extraction slices | review only |
 | A new rule names what enforces it and adds its row to this table | reviewer contract § Port-time and pattern review | review only |
 | A brief to a role agent carries the owner's intent and the artifact itself, not a paraphrase; resume an agent for continuity, start a fresh one for mechanics | `.agents/README.md` § Orchestrating role agents | review only |
+| A pull request that changes production code (a `.go` file outside `internal/harness`) or the admission ledger is reviewed by the agent that did not implement it; the request and the record are PR comments that name the commit, and the PR body carries `reviewed-by:` | `.agents/protocol.md` § Work lifecycle, "Cross-agent review"; reviewer contract § Purpose and authority | review only; a check of the PR body for `reviewed-by:` in `scripts/merge-check.sh` is the first thing to script |
+| Every OpenSpec task can be ticked in or before the archive commit; a hold is written as `Hold:` on the unticked task it stops | `.agents/protocol.md`, "Target state, task truth, holds"; reviewer contract § Contract and task-truth review | `task spec:queue` shows a `Hold:` on an unticked task; that every task can be ticked, and that a hold is written there at all, are review only |
+| A pushed claim branch is brought up to date by merging `origin/main`, never by a rebase or a force-push | `.agents/protocol.md` § Work lifecycle, "Land" | review only |
+| Evidence cited in a pull request or a task can be opened on another machine; a path git ignores is named as local only | `.agents/skills/semengine-handoff/SKILL.md`, "Reconcile the checkpoint" | review only |
 | Tests use an independent oracle and are shown able to fail | `docs/testing.md`; developer and reviewer contracts, test fidelity | the structural guards carry paired sensitivity tests (`internal/harness/contract`); elsewhere review only |
 | A change with interacting input cases, a stated law, or an order-dependent history records whether it uses generated checks or why examples suffice | `docs/testing.md`, "Decide whether generated checks are needed"; developer and reviewer contracts, test fidelity | review only |
 | A generated run records its seed, the checks completed and a replayable failure; each assertion is shown to run; a history is checked against a test-owned reference model | `docs/testing.md`, "Fuzz targets and property-based tests"; developer and reviewer contracts, test fidelity | review only |
@@ -118,7 +122,9 @@ never become a pointer:
   check that passes and fails on the same tree, never a network fetch that did not answer) unless the PR closes every
   open one, and nothing else gets past it; `task merge:check -- <n>` immediately before merging, with
   `GITHUB_ACTIONS` unset; `implemented-by: <model or persona>` in the PR body; the archive/spec sync is the last
-  content commit; squash merge.
+  content commit; squash merge. A pull request that changes production code (a `.go` file outside `internal/harness`)
+  or `docs/admission-ledger.yaml` also needs the other agent's review recorded on it (Codex reviews what Claude
+  implemented, and the reverse) and `reviewed-by:` in the PR body.
 - **Close:** the squash merge of a PR that declared `Closes #n` is the authorization. A close with no merged PR behind
   it takes the owner's word on the issue.
 
@@ -130,7 +136,8 @@ Role agents are the default path for nontrivial work. Contracts: `.agents/contra
 
 - `semengine-architect` designs, inventory first; read-only.
 - `semengine-developer` implements: failing test, implementation, evidence.
-- `semengine-reviewer` reviews every nontrivial change independently before integration; read-only.
+- `semengine-reviewer` reviews every nontrivial change independently before integration; read-only. For a change to
+  production code the review of record is the other agent's (`.agents/protocol.md`, "Cross-agent review").
 - `semengine-technical-writer` updates current docs and task truth with the approved code.
 
 Binding rulings stay with the owner, on the issue. Provenance and license rules for ported code: `docs/provenance.md`.

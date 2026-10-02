@@ -134,13 +134,21 @@ func (p *Process) reap(cmd *exec.Cmd) {
 	}
 }
 
-// Signal sends sig, which must be a syscall.Signal, to the helper's process group.
+// signalGroup signals the process group pgid. It is a variable so a test can count the calls.
+var signalGroup = func(pgid int, sig syscall.Signal) error { return syscall.Kill(-pgid, sig) }
+
+// Signal sends sig, which must be a syscall.Signal, to the helper's process group. Once the
+// helper has been reaped it sends nothing and returns an error, as Pause and Resume do.
 func (p *Process) Signal(sig os.Signal) error {
+	if !p.Alive() {
+		// Reaped: the group id may now name another process's group.
+		return fmt.Errorf("prochost: helper %s (pid %d) has exited; no signal sent", p.name, p.pid)
+	}
 	s, ok := sig.(syscall.Signal)
 	if !ok {
 		return fmt.Errorf("prochost: signal %v is not a syscall.Signal", sig)
 	}
-	if err := syscall.Kill(-p.pid, s); err != nil {
+	if err := signalGroup(p.pid, s); err != nil {
 		return fmt.Errorf("prochost: signal %v to helper %s (group %d): %w", sig, p.name, p.pid, err)
 	}
 	return nil
@@ -152,9 +160,13 @@ func (p *Process) Pause() error { return p.Signal(syscall.SIGSTOP) }
 // Resume continues the helper's process group (SIGCONT).
 func (p *Process) Resume() error { return p.Signal(syscall.SIGCONT) }
 
-// Kill kills the helper's process group (SIGKILL). A group already gone is not an error.
+// Kill kills the helper's process group (SIGKILL). Once the helper has been reaped it sends
+// nothing and returns nil; a group already gone is not an error.
 func (p *Process) Kill() error {
-	if err := syscall.Kill(-p.pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+	if !p.Alive() {
+		return nil // reaped: the group id may now name another process's group
+	}
+	if err := signalGroup(p.pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
 		return fmt.Errorf("prochost: kill helper %s (group %d): %w", p.name, p.pid, err)
 	}
 	return nil

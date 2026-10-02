@@ -186,6 +186,35 @@ func TestKillBetweenCheckpoints(t *testing.T) {
 	}
 }
 
+// Once the child is reaped its group id may belong to another process, so no signal is sent:
+// Kill is a no-op and Signal, Pause and Resume refuse.
+func TestNoSignalAfterReap(t *testing.T) {
+	s := startCheckpoints(t)
+	if err := s.p.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), failureBound)
+	defer cancel()
+	if _, err := s.p.Wait(ctx); err != nil {
+		t.Fatal(err)
+	}
+	orig := signalGroup
+	calls := 0
+	signalGroup = func(pgid int, sig syscall.Signal) error { calls++; return orig(pgid, sig) }
+	t.Cleanup(func() { signalGroup = orig })
+	if err := s.p.Kill(); err != nil {
+		t.Fatalf("Kill after reap = %v, want nil", err)
+	}
+	for name, err := range map[string]error{"Signal": s.p.Signal(syscall.SIGTERM), "Pause": s.p.Pause(), "Resume": s.p.Resume()} {
+		if err == nil {
+			t.Errorf("%s after reap returned nil", name)
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("%d signal(s) sent to a reaped helper's group", calls)
+	}
+}
+
 // Wait whose context ends first returns the context's error and says what it last observed.
 func TestWaitBoundedByItsContext(t *testing.T) {
 	s := startCheckpoints(t)

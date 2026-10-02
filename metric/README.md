@@ -342,10 +342,11 @@ if err := server.Stop(shutdownCtx); err != nil {
 }
 ```
 
-`Stop` uses `shutdownCtx` only for the graceful HTTP shutdown attempt. If that attempt fails or its budget expires,
+`Stop` first attempts a graceful HTTP shutdown within `shutdownCtx`. If that attempt fails or its budget expires,
 the server and listener are force-closed and `Stop` waits for its exact serving goroutine, which returns once its
-listener is closed. `Stop` returns the context's error whenever `shutdownCtx` has ended. The instance is terminal
-after that attempt; a completed repeated `Stop` returns nil.
+listener is closed, and for every request the server admitted, including the metrics collection it runs. `Stop`
+returns the context's error whenever `shutdownCtx` has ended, and a later `Stop` waits again for what is still
+running. The instance is terminal after that attempt; a completed repeated `Stop` returns nil.
 
 ### Best Practices
 

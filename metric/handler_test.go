@@ -458,10 +458,12 @@ func TestServerStopIsCallerBounded(t *testing.T) {
 	if connection != nil {
 		_ = connection.Close()
 	}
-	require.NoError(t, server.Stop(t.Context()), "terminal repeat must not replay the deadline error")
+	require.ErrorIs(t, server.Stop(stopCtx), context.Canceled,
+		"a repeat while the admitted collection still runs must not report completion")
 
 	releaseCollector()
 	<-requestDone // Force-close may surface EOF; the admitted request must terminate.
+	require.NoError(t, server.Stop(t.Context()), "terminal repeat after the admitted request finished")
 }
 
 func TestServerServesHealthOverRealHTTP(t *testing.T) {

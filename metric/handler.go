@@ -26,6 +26,7 @@ type Server struct {
 	server    *http.Server
 	listener  net.Listener
 	serveDone chan error
+	requests  *admittedRequests
 	registry  *MetricsRegistry
 	security  security.Config
 	mu        sync.Mutex // serializes server lifecycle fields
@@ -146,9 +147,10 @@ func (s *Server) start(ctx context.Context, supplied net.Listener, provided bool
 	})
 
 	// Create the server
+	s.requests = &admittedRequests{}
 	s.server = &http.Server{
 		Addr:        fmt.Sprintf(":%d", s.port),
-		Handler:     mux,
+		Handler:     s.requests.wrap(mux),
 		BaseContext: func(net.Listener) context.Context { return ctx },
 	}
 
@@ -192,8 +194,11 @@ func (s *Server) start(ctx context.Context, supplied net.Listener, provided bool
 // shutdown fails, Stop force-closes the server and listener and then waits for
 // the exact serving goroutine, which returns once its listener is closed. Stop
 // returns ctx's error whenever ctx has ended, even if shutdown completed. A
-// completed repeat is a nil no-op. Concurrent Stop is unsupported and returns a
-// typed transient error.
+// request the server admitted, with the metrics collection it runs, is the
+// server's work until its handler returns: Stop returns nil only after every
+// such request has finished, and when ctx ends first it returns ctx's error and
+// a later Stop waits again. A completed repeat is a nil no-op. Concurrent Stop
+// is unsupported and returns a typed transient error.
 func (s *Server) Stop(ctx context.Context) error {
 	if ctx == nil {
 		return errs.WrapInvalid(errs.ErrInvalidData, "Server", "Stop", "nil context")
@@ -206,13 +211,25 @@ func (s *Server) Stop(ctx context.Context) error {
 	}
 	if s.server == nil {
 		s.used = true
+		requests := s.requests
+		if requests == nil || requests.pending() == 0 {
+			s.mu.Unlock()
+			return nil
+		}
+		// An earlier Stop's context ended while admitted requests still ran.
+		s.stopping = true
 		s.mu.Unlock()
-		return nil
+		err := requests.wait(ctx)
+		s.mu.Lock()
+		s.stopping = false
+		s.mu.Unlock()
+		return err
 	}
 
 	httpServer := s.server
 	listener := s.listener
 	serveDone := s.serveDone
+	requests := s.requests
 	s.stopping = true
 	s.mu.Unlock()
 
@@ -255,6 +272,14 @@ func (s *Server) Stop(ctx context.Context) error {
 		stopErr = errors.Join(stopErr, classifyServeError(<-serveDone))
 	}
 
+	// Serve has returned, but a force-closed connection does not stop a handler that is
+	// still collecting; Stop waits for admitted requests within ctx.
+	if requests != nil {
+		if err := requests.wait(ctx); err != nil && !errors.Is(stopErr, err) {
+			stopErr = errors.Join(stopErr, err)
+		}
+	}
+
 	s.mu.Lock()
 	s.server = nil
 	s.listener = nil
@@ -295,4 +320,63 @@ func (s *Server) Address() string {
 		scheme = "https"
 	}
 	return (&url.URL{Scheme: scheme, Host: net.JoinHostPort(host, strconv.Itoa(port)), Path: s.path}).String()
+}
+
+// admittedRequests counts the requests a Server's handler has admitted and not yet
+// returned from, so Stop can wait for them after a forced close.
+type admittedRequests struct {
+	mu     sync.Mutex
+	active int
+	idle   chan struct{} // closed when active returns to zero; nil while none run
+}
+
+func (r *admittedRequests) wrap(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		r.begin()
+		defer r.end()
+		next.ServeHTTP(w, req)
+	})
+}
+
+func (r *admittedRequests) begin() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.active == 0 {
+		r.idle = make(chan struct{})
+	}
+	r.active++
+}
+
+func (r *admittedRequests) end() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.active--
+	if r.active == 0 {
+		close(r.idle)
+		r.idle = nil
+	}
+}
+
+func (r *admittedRequests) pending() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.active
+}
+
+// wait returns nil once no admitted request is running, or ctx's error if ctx
+// ends first.
+func (r *admittedRequests) wait(ctx context.Context) error {
+	for {
+		r.mu.Lock()
+		idle := r.idle
+		r.mu.Unlock()
+		if idle == nil {
+			return nil
+		}
+		select {
+		case <-idle:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }

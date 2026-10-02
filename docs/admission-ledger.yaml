@@ -454,7 +454,12 @@
     RequireClientCert refuses a client with no certificate; at the pin Start called
     LoadServerTLSConfig (pin handler.go:154) and no metric file names MTLS (pin grep), so the policy
     was dropped; Start refuses mTLS enabled with server TLS disabled (ErrInvalidConfig) instead of
-    serving plain HTTP
+    serving plain HTTP. Changed behavior (PR #48 review finding, owner-approved), written first: a
+    request the handler admitted, with the collection it runs, is the Server's work until the
+    handler returns; Stop waits for it within ctx after the serve join, returns ctx's error and
+    leaves it pending when ctx ends first, and a repeated Stop waits again and returns nil only once
+    it has finished; at the pin the forced path cleared its state after the serve join and the
+    repeated Stop returned nil at once (pin handler.go:202-206)
   dependencies_and_side_effects: >-
     pkg/errs, pkg/security, internal/tlsutil (in-set); prometheus/client_golang v1.23.2 (the pin's
     version, now a direct requirement); binds a TCP listener and runs one serve goroutine per started
@@ -463,9 +468,13 @@
   known_risks: >-
     Context roots, the two D1 counts: both are example code inside doc comments (doc.go:357, :362),
     not executable; the package has no production root. Doc-comment sleep (doc.go:386) carried as it
-    is (owner ruling Q4, task 1.5). Adapt items besides the two D3 fixes: doc.go:331-333 and
-    README.md (pin :319-320) restate Stop's forced join and context error in place of the one-second
-    bound. README lint fixes (owner ruling, #9 comment 5955265930): lines 7, 9, 11, 27, 30, 33, 40,
+    is (owner ruling Q4, task 1.5). Adapt items besides the behavior changes above: doc.go:331-333
+    restates Stop's forced join, admitted-request wait and context error in place of the one-second
+    bound. README behavior edits (owner ruling, #9 comment 5957221949: a passage describing behavior
+    the ported code no longer has is corrected, listed by line): pin README.md:318-320 (tree
+    :345-349), the Stop paragraph, rewritten for the graceful attempt within shutdownCtx, the forced
+    join without a timer, the wait for admitted requests and the context error. README lint fixes
+    (#9 comment 5957221949): lines 7, 9, 11, 27, 30, 33, 40,
     233, 237 and 241 wrapped at 120 columns (MD013); a blank line after the headings at :26, :29,
     :32, :39, :139, :158, :193, :209, :223 and :226 (MD022) and before the lists at :234, :238 and
     :242 (MD032); the heading at :226, longer than 80 columns (MD013), becomes `NewServer` with the
@@ -482,7 +491,14 @@
     the test holds, so Start returns the bind error; in metric/tls_test.go, written first and failing
     at the pin's Start ("An error is expected but got nil"): TestServerRequiredMTLSRejectsClientWithoutCertificate
     (through StartWithListener, temporary certificates, an ephemeral listener: no client
-    certificate refused, a certificate the client CA signed served) and TestServerRefusesMTLSWithoutTLS
+    certificate refused, a certificate the client CA signed served) and TestServerRefusesMTLSWithoutTLS;
+    in metric/lifecycle_test.go, written first and failing at the pre-fix Stop (the repeated Stop returned
+    nil where context.Canceled was expected):
+    TestServerRepeatedStopWaitsForAdmittedRequest (a real request whose collector blocks; Stop with
+    an ended context, then a repeat, both context.Canceled; the adapter reports the admitted
+    request; a live Stop returns nil only after the collection exited); handler_test.go's
+    TestServerStopIsCallerBounded asserted the pin's nil repeat before the release (pin
+    handler_test.go:461) and now asserts context.Canceled, with the nil Stop after the release
   owner: setup-04a-01-floor developer
   disposition: adapt
 

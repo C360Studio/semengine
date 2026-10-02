@@ -329,8 +329,9 @@
 // Synchronous Bind in Server.Start(ctx): Start reports listener ownership or bind
 // failure before returning. Server instances are one-shot. Stop(ctx) attempts
 // graceful shutdown within the caller's budget; failure or expiry triggers a
-// force-close, after which Stop waits for the exact serving goroutine, and it
-// returns the context's error whenever its context has ended. Restart uses a
+// force-close, after which Stop waits for the exact serving goroutine and for
+// every request the server admitted, and it returns the context's error
+// whenever its context has ended; a later Stop then waits again. Restart uses a
 // freshly constructed Server.
 //
 // # Examples

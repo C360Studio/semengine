@@ -208,3 +208,98 @@
   proving_tests: n/a
   owner: setup-02 developer
   disposition: defer-exclude
+
+# Change setup-04a-01-floor (PR #48, epic #9), section 3: the floor's 15 package rows, in design D1's
+# import order. Destinations follow design D5 (owner rulings #9 comments 5952661571, 5953295358).
+
+- source_path: pkg/platform
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    platform identity (platform.Config) named by public signatures of message (seven symbols) and
+    vocabulary.EntityIRI; public by the signature rule (design D5, P22)
+  destination: pkg/platform
+  contract: Config carries the platform identity fields as at the pin; no behavior beyond the type
+  dependencies_and_side_effects: stdlib only; no goroutine, no I/O
+  known_risks: no tests at the pin, none invented (design D1); no context roots
+  proving_tests: none at the pin; compiled through vocabulary and message tests that use Config
+  owner: setup-04a-01-floor developer
+  disposition: carry
+
+- source_path: pkg/resource
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    resource.Watcher, bounded startup wait and periodic availability check for KV buckets and
+    streams; imported by natsclient (client.go WaitForStartup); no consumer imports it (design P21)
+  destination: internal/resource
+  contract: >-
+    WaitForStartup retries up to StartupAttempts at StartupInterval and stops on ctx; IsAvailable,
+    Name and the Config defaults as at the pin. Changed behavior (design D7, background-work shape
+    1): Run(ctx) error replaces StartBackgroundCheck and Stop; Run checks on each tick
+    (HealthInterval while available, else RecheckInterval), runs OnAvailable and OnLost on the
+    caller's goroutine, returns ctx.Err() when ctx ends, refuses a nil context with an error before
+    any check, and refuses a second Run while one is in progress (the pin's StartBackgroundCheck
+    "already running" guard); the cancel and wg fields and the doc references to the removed
+    methods (pin watcher.go:108, :138-140; doc.go:14, :21, :57, :66, :85, :149, :151, :159) are gone
+  dependencies_and_side_effects: stdlib only; Run blocks its caller's goroutine and starts none
+  known_risks: >-
+    no context roots. StartBackgroundCheck and Stop have no caller outside their own tests at the
+    pin (design P10); the WaitForStartup callers the later changes port are unaffected (design D5).
+    Deleted with the removed methods: TestWatcher_BackgroundCheck_Idempotent (pin
+    watcher_test.go:222-242, replaced by TestWatcher_Run_SecondRunRefused) and
+    TestWatcher_Stop_Idempotent (:244-261; Run has no Stop to repeat)
+  proving_tests: >-
+    internal/resource/watcher_test.go, every test inside synctest.Test except Name, ConfigDefaults
+    and ImmediateSuccess; new, written first: TestWatcher_Run_ReturnsOnCancelAndLeavesNothing,
+    TestWatcher_Run_NilContextRefused, TestWatcher_Run_SecondRunRefused. D8 repairs (R1a, sleep to
+    the bubble's clock): pin watcher_test.go:151 → watcher_test.go:175-176; :208 → :229-230; :324 →
+    :352; :333 → :363; :335 → :365; :363 → :395-396; the real-clock 500 ms elapsed bound (:104) →
+    an exact 100 ms on the bubble's clock (:115); the unjoined toggler goroutine (:330) joins (:357)
+  owner: setup-04a-01-floor developer
+  disposition: adapt
+
+- source_path: pkg/retry
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: bounded retry with backoff; SemSource imports it (4 files, design P16)
+  destination: pkg/retry
+  contract: >-
+    Do and DoWithResult retry up to MaxAttempts with exponential backoff capped at MaxDelay,
+    optional jitter, stop on ctx and on NonRetryable; DefaultConfig, Quick, Persistent as at the pin
+  dependencies_and_side_effects: stdlib only; process-global jitter source seeded at init
+  known_risks: >-
+    no context roots; production code unchanged from the pin. The pin's timing tests asserted
+    real-clock elapsed bounds (< 150 ms) that a slow host can fail on a correct implementation
+  proving_tests: >-
+    pkg/retry/retry_test.go, the six timer-driven tests inside synctest.Test. D8 repair (R1a): pin
+    retry_test.go:68 (time.Sleep 50 ms) → retry_test.go:74 (<-time.After on the bubble's clock);
+    Success, AllAttemptsFail, ContextCancellation, BackoffTiming, MaxDelay and WithResult wrapped in
+    synctest.Test, so their delays and elapsed bounds run on the fake clock
+  owner: setup-04a-01-floor developer
+  disposition: adapt
+
+- source_path: pkg/security
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    TLS and ACME configuration types; security.Config is named by metric.NewServer, so public by
+    the signature rule (design D5, P22)
+  destination: pkg/security
+  contract: configuration types and their field semantics as at the pin; no behavior beyond the types
+  dependencies_and_side_effects: stdlib only; no goroutine, no I/O
+  known_risks: >-
+    no tests at the pin, none invented (design D1); no context roots. doc.go's See Also names
+    pkg/tlsutil and pkg/acme by module path; pkg/acme is not ported (change 5) and pkg/tlsutil moves
+    to internal/tlsutil (task 3.4), after which the ledger check expects that comment rewritten
+  proving_tests: none at the pin; compiled through metric's tests (task 3.5)
+  owner: setup-04a-01-floor developer
+  disposition: carry
+
+- source_path: pkg/timestamp
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    int64 millisecond timestamp helpers; imported by message; no consumer imports it (design P21)
+  destination: internal/timestamp
+  contract: conversion, parsing and formatting of millisecond timestamps as at the pin
+  dependencies_and_side_effects: stdlib only; no goroutine, no I/O
+  known_risks: no context roots; import path differs from the pin (pkg/ → internal/, design D5)
+  proving_tests: internal/timestamp/timestamp_test.go, internal/timestamp/example_test.go
+  owner: setup-04a-01-floor developer
+  disposition: carry

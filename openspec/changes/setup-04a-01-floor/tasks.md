@@ -108,7 +108,7 @@ this pull request as a comment unless a task says otherwise. No task asserts a f
       Lands after tasks 3.3 (`pkg/types`), 3.2 (`vocabulary`) and 3.5 (`payloadregistry`): at the pin
       `internal/semantictest/fixtures.go:13-14` imports `pkg/types` and `vocabulary`, and
       `payloadregistry/testing.go:6` imports `pkg/types`. It is therefore held by task 3.0 like section 3.
-- [ ] 2.9 (R) Harness review of tasks 2.1–2.7 and 2.10: the additions against the deltas, the fault matrices'
+- [x] 2.9 (R) Harness review of tasks 2.1–2.7 and 2.10: the additions against the deltas, the fault matrices'
       completeness, and the `natsfixture` import list. Verdict recorded on this pull request before any ported
       package lands. Task 2.8 is not in this review; it is reviewed with section 3's port review (task 3.10).
 - [x] 2.10 (D) Public-signature contract test (owner ruling, #9 comment 5953477174; `harness-boundaries` › "Public

@@ -183,14 +183,21 @@ Three further checks, scoped as the architect contract (Extraction slices) state
   an independent oracle; a test that recomputes the expected value with the implementation's own algorithm cannot
   fail and is a finding.
 - Verify controlled mutation evidence where a guarantee rests on a refusal or signal: baseline, valid mutant, intended
-  assertion, and restored baseline. A completion checkbox is not evidence.
+  assertion, and restored baseline. A completion checkbox is not evidence. A survivor or inconclusive run claimed as
+  a detection, a generated failure not replayed with the same input against both versions, or an unresolved survivor
+  missing from the handoff is a finding.
 - Network listeners use ephemeral ports. Tests mutating global state such as `slog.SetDefault` are not parallel.
 - Wall-clock assertions have a rationale and realistic tolerance; concurrent tests use explicit synchronization.
 - A new **exported** parse/decode/validate surface without a fuzz target and seed corpus is a finding; check the
-  harness asserts an invariant, not a table of expected outputs replayed through `f.Add`.
+  harness asserts an invariant, not a table of expected outputs replayed through `f.Add`. Seed replay reported as
+  fuzz exploration is a finding.
+- Where `docs/testing.md` "Decide whether generated checks are needed" applies, a missing decision, or a rationale
+  that is a test count or "existing tests pass", is a finding.
 - A property-based test is reviewed against the design's cited invariant, not the diff. A property that mirrors the
   implementation's branching is the test-that-reconstructs finding at property scale. Verify the generator reaches
-  every boundary the clause names; a bound the generator cannot hit is unguarded.
+  every boundary the clause names; a bound the generator cannot hit is unguarded. Check separately what makes each
+  assertion run (an always-empty loop checks nothing), that a history's reference model is not filled from production
+  code, and that the run's seed, completed check count and replay command are recorded.
 - Paid or prolonged operations use validated monitors plus active polling of authoritative state every 30-60 seconds.
 
 ## Adopter seam review

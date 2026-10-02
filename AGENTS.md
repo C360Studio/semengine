@@ -87,6 +87,9 @@ indexed by their spec. A change that can turn a "review only" row into a failing
 | A new rule names what enforces it and adds its row to this table | reviewer contract § Port-time and pattern review | review only |
 | A brief to a role agent carries the owner's intent and the artifact itself, not a paraphrase; resume an agent for continuity, start a fresh one for mechanics | `.agents/README.md` § Orchestrating role agents | review only |
 | Tests use an independent oracle and are shown able to fail | `docs/testing.md`; developer and reviewer contracts, test fidelity | the structural guards carry paired sensitivity tests (`internal/harness/contract`); elsewhere review only |
+| A change with interacting input cases, a stated law, or an order-dependent history records whether it uses generated checks or why examples suffice | `docs/testing.md`, "Decide whether generated checks are needed"; developer and reviewer contracts, test fidelity | review only |
+| A generated run records its seed, the checks completed and a replayable failure; each assertion is shown to run; a history is checked against a test-owned reference model | `docs/testing.md`, "Fuzz targets and property-based tests"; developer and reviewer contracts, test fidelity | review only |
+| A mutation check reports survivors and inconclusive runs as such, never as detections; fuzz seed replay and exploration are reported apart; the pull request records what was not covered | `docs/testing.md`, "Show that the test can fail" and "What the pull request records"; developer contract § Handoff | review only |
 | Sister repositories are read-only and inventoried only as scoped | `docs/inventory-scope.md` | review only |
 | Docs are written for a working developer: coined terms defined at first use, no jargon, no marketing | technical-writer contract, rule 9; reviewer contract § Contract and task-truth review | review only |
 

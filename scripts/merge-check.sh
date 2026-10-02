@@ -131,25 +131,28 @@ case "$entries:$reported:$draft" in
   [0-9]*:[0-9]*:true | [0-9]*:[0-9]*:false) ;;
   *) echo "merge-check: unavailable: jq failed reading the file count or draft flag of pull request #${pr}" >&2; exit 2 ;;
 esac
-if [ "$entries" -ne "$reported" ]; then
+# Compared in jq: a shell test on a count that is not an integer errors, and an
+# error would read as "the counts match".
+if ! printf '%s' "$pull" | jq -e --argjson n "$entries" '.changed_files == $n' >/dev/null; then
   echo "merge-check: unavailable: the file list of pull request #${pr} is incomplete: it has ${entries} of ${reported} files" >&2
   exit 2
 fi
 # A document name ends in .md or starts with openspec/, and is not under
 # .claude/agents/; every other name is a code name. A renamed file's previous
 # name counts too. A failed jq leaves an empty list, which would read as
-# documents only.
-if ! code=$(printf '%s' "$files" | jq -r '[.[] | .filename, (.previous_filename // empty)]
+# documents only. The names stay a JSON list: printed one per line, a name that
+# is empty or only line feeds would vanish.
+if ! code=$(printf '%s' "$files" | jq -c '[.[] | .filename, (.previous_filename // empty)]
   | map(select(((endswith(".md") or startswith("openspec/")) and (startswith(".claude/agents/") | not)) | not))
-  | unique | .[]'); then
+  | unique'); then
   echo "merge-check: unavailable: jq failed sorting the changed files of pull request #${pr} into code names" >&2
   exit 2
 fi
-if [ -z "$code" ]; then
+if [ "$code" = "[]" ]; then
   echo "merge-check: pull request #${pr} is documents only (${reported} changed files); the review check passes"
 else
-  echo "merge-check: pull request #${pr} is a code pull request; its code files ($(printf '%s\n' "$code" | wc -l | tr -d ' '), up to ten shown):"
-  printf '%s\n' "$code" | head -n 10 | sed 's/^/merge-check: code file: /'
+  echo "merge-check: pull request #${pr} is a code pull request; its code files ($(printf '%s' "$code" | jq length), up to ten shown):"
+  printf '%s' "$code" | jq -r '.[:10][] | "merge-check: code file: \(.)"'
   # The two lines: each starts in the first column; a carriage return before the
   # line feed is dropped. An agent name is claude or codex in any letter case,
   # with no letter or digit directly before or after it. Nothing else is read.

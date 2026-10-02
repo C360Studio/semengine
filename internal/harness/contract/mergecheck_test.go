@@ -615,6 +615,24 @@ func TestMergeCheckReview(t *testing.T) {
 		r.requireFail(t, "unavailable", "sorting the changed files")
 		r.requireNotInOutput(t, "documents only", "merge-check: ok")
 	})
+	t.Run("a name or count that is never documents only", func(t *testing.T) {
+		// "Reads": none of these is ever treated as documents only or as a pass. GitHub does not send
+		// them; a name made only of a line feed is a legal git path.
+		for _, tc := range []struct{ name, pull, files string }{
+			{"empty file name", pullJSON(false, "User", "", 1), `[{"filename":"","status":"added"}]`},
+			{"file name that is a line feed", pullJSON(false, "User", "", 1), `[{"filename":"\n","status":"added"}]`},
+			{"file count that is not an integer", strings.Replace(pullJSON(false, "User", "", 1), `"changed_files":1`, `"changed_files":1.5`, 1),
+				filesJSON("docs/a.md")},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				st := healthy()
+				st.pull, st.files = tc.pull, tc.files
+				r := runMergeCheck(t, st, "12")
+				r.requireFail(t)
+				r.requireNotInOutput(t, "documents only", "merge-check: ok")
+			})
+		}
+	})
 	t.Run("push run and the review check", func(t *testing.T) {
 		// A code pull request with neither line, so a check applied here would fail.
 		r := runMergeCheck(t, review(false, "User", "", "scripts/x.sh"), "", "GITHUB_ACTIONS=true", "GITHUB_EVENT_NAME=push")

@@ -109,12 +109,12 @@ func CheckNilContextsRefused(ctx context.Context, o Owner) error {
 	var nilCtx context.Context
 	if err := call(ctx, o, "Start(nil)", startBound, func() error { return o.Start(nilCtx) }); err == nil {
 		return errors.New("Start(nil) returned nil; want an error")
-	} else if isBoundErr(err) {
+	} else if notARefusal(err) {
 		return err
 	}
 	if err := call(ctx, o, "Stop(nil)", stopBound, func() error { return o.Stop(nilCtx) }); err == nil {
 		return errors.New("Stop(nil) returned nil; want an error")
-	} else if isBoundErr(err) {
+	} else if notARefusal(err) {
 		return err
 	}
 	return requireNothingRetained(o, "after refusing nil contexts")
@@ -241,7 +241,7 @@ func CheckSecondStartRefusedOrRestartCycle(ctx context.Context, o Owner, promise
 	before := o.Observe()
 	if err := call(ctx, o, "Start", startBound, func() error { return o.Start(startCtx) }); err == nil {
 		return errors.New("second Start returned nil without a restart promise; want a refusal")
-	} else if isBoundErr(err) {
+	} else if notARefusal(err) {
 		return err
 	}
 	after := o.Observe()
@@ -287,13 +287,31 @@ func isBoundErr(err error) bool {
 	return errors.As(err, &b)
 }
 
-// call runs one owner operation, converting a panic into an error and a hang into a boundError.
+// panicError reports an owner call that panicked. A panic is never a refusal: an owner that
+// panics on a nil context refuses nothing, it crashes its caller.
+type panicError struct {
+	op    string
+	value any
+}
+
+func (e *panicError) Error() string {
+	return fmt.Sprintf("%s panicked: %v; a panic is not a refusal", e.op, e.value)
+}
+
+// notARefusal reports whether err, returned where the check expects a refusal, is instead a call
+// that hung or panicked.
+func notARefusal(err error) bool {
+	var p *panicError
+	return isBoundErr(err) || errors.As(err, &p)
+}
+
+// call runs one owner operation, converting a panic into a panicError and a hang into a boundError.
 func call(ctx context.Context, o Owner, op string, bound time.Duration, fn func() error) error {
 	result := make(chan error, 1)
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				result <- fmt.Errorf("%s panicked: %v", op, r)
+				result <- &panicError{op: op, value: r}
 			}
 		}()
 		result <- fn()

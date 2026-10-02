@@ -31,6 +31,7 @@ const (
 	secondStopReruns                failpoint = "secondStopReruns"
 	restartPromisedButRefused       failpoint = "restartPromisedButRefused"
 	abortStopDropsCause             failpoint = "abortStopDropsCause"
+	nilStartPanics                  failpoint = "nilStartPanics"
 )
 
 var errRefownerUsed = errors.New("refowner: already used")
@@ -61,6 +62,9 @@ type refowner struct {
 
 func (o *refowner) Start(ctx context.Context) error {
 	if ctx == nil {
+		if o.fp == nilStartPanics {
+			_ = ctx.Err() // the defect under test: Start dereferences the nil context
+		}
 		if o.fp != acceptNilCtx {
 			return errors.New("refowner: nil Start context")
 		}
@@ -268,6 +272,7 @@ var failpointTable = []failpointCase{
 	{secondStopReruns, "RepeatedStopIsNoOp", Promise{}},
 	{startTwiceAllowed, "SecondStartRefusedOrRestartCycle", Promise{}},
 	{restartPromisedButRefused, "SecondStartRefusedOrRestartCycle", Promise{Restart: true}},
+	{nilStartPanics, "NilContextsRefused", Promise{}},
 }
 
 // failpointGaps reports every declared failpoint that the table does not map to exactly one check

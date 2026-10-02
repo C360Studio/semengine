@@ -73,13 +73,13 @@ test (`design.md`, "Tests").
 
 ## 5. Documents
 
-- [ ] 5.1 (W) `docs/provenance.md`: rule 5 names `task ledger:check` as what holds a `carry` row to the pin; a
+- [x] 5.1 (W) `docs/provenance.md`: rule 5 names `task ledger:check` as what holds a `carry` row to the pin; a
       paragraph says how a port is reviewed with `task ledger:diff` and what the verdict records (design D7); the
       Status paragraph is current. Gate: `task docs:check`.
-- [ ] 5.2 (W) The header comment of `docs/admission-ledger.yaml` says a `carry` row is compared with the pin, and
+- [x] 5.2 (W) The header comment of `docs/admission-ledger.yaml` says a `carry` row is compared with the pin, and
       that `destination` starts with a path inside the repository and may carry a note after it. Gate: `task
       ledger:check`.
-- [ ] 5.3 (W) Written on top of PR #56 once it has merged: `docs/testing.md` (structural guards and helper
+- [x] 5.3 (W) Written on top of PR #56 once it has merged: `docs/testing.md` (structural guards and helper
       packages), `docs/repository-map.md` and the `AGENTS.md` rule index (the ledger row, and `task ledger:diff` in
       the command list) name the check and say it fetches the pin. Gate: `task docs:check`.
 

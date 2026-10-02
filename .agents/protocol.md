@@ -49,8 +49,8 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
   needs nothing; the ruling is the record. An unmeasured cost becomes a *Declared cost* section in the design. Only an
   architectural finding (it crosses files, would need its evidence re-collected to re-derive, or changes what someone
   should not do next) becomes an issue. Ask the owner before filing when placement is a genuine scheduling call.
-- **Land:** implementation review (the other agent's for Go code outside the harness: "Cross-agent review" below),
-  then, for any other change, the owner-run cross-agent round where the owner asks for it, then fixes and
+- **Land:** implementation review (the other agent's for a code pull request: "Cross-agent review" below), then,
+  for a documents-only change, the owner-run cross-agent round where the owner asks for it, then fixes and
   re-review, then archive as the final content commit, then a narrow reviewer check of the archive/spec sync, then
   undraft, then CI green on a head that is up to date with `main` and with **no known flake open** ("Known flakes"
   below), then `task merge:check -- <n>` immediately before merging, in a shell where `GITHUB_ACTIONS` is not set,
@@ -60,16 +60,19 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
   the PR body. Bring a pushed branch up to date by merging `origin/main` into it; do not rebase or force-push it. A
   review record names the commit it read, and a rebase leaves that record pointing at a commit the branch no longer
   has. The squash merge keeps `main` linear either way.
-- **Cross-agent review:** on a pull request that changes a `.go` file outside `internal/harness`, or
-  `docs/admission-ledger.yaml`, the reviews in "Land" (the implementation review, the re-review of fixes, the check
-  of the archive/spec sync) are done by the agent that wrote none of the commits under review. The owner ruled on
-  2026-10-02 (issue #64) that Codex's `semengine-reviewer` reviews what Claude sessions implement "as we port code".
-  Two things here are this repository's reading of that ruling, not the owner's words: the scope above, and the
-  reverse direction, Claude's reviewer for what Codex implements. If both agents wrote commits, the owner names the
-  reviewer on the issue. For such a change this replaces the owner-run round; the owner need not ask. It applies to
-  every pull request not yet merged, one already open included. The implementing session may run its own reviewer as
-  it works; those reviews, past or future, find defects early and are not the gate. Neither agent can start the
-  other, so the pull request carries both halves:
+- **Cross-agent review:** on a code pull request the reviews in "Land" (the implementation review, the re-review of
+  fixes, the check of the archive/spec sync) are done by the agent that wrote none of the commits under review, as
+  the pull request's `implemented-by:` line records. The owner ruled on 2026-10-02 (issue #64) that Codex's
+  `semengine-reviewer` reviews what Claude sessions implement, and that the rule is enforced for code and waived for
+  a documents-only pull request. Two things here are this repository's reading of those rulings, not the owner's
+  words. First, what "documents only" means: every file the pull request changes is a Markdown file or is under
+  `openspec/`. Any other changed file makes it a code pull request: a `.go` file, the harness included; `go.mod`; a
+  script; `Taskfile.yml`; the CI workflow; `docs/admission-ledger.yaml`. Second, the reverse direction: Claude's
+  reviewer for what Codex implements. If both agents wrote commits, the owner names the reviewer on the issue. For a
+  code pull request this replaces the owner-run round; the owner need not ask. A documents-only pull request keeps
+  SemEngine's own reviewer. The rule applies to every pull request not yet merged, one already open included. The
+  implementing session may run its own reviewer as it works; those reviews, past or future, find defects early and
+  are not the gate. Neither agent can start the other, so the pull request carries both halves:
   - The implementer asks with a PR comment headed `Review request`. It names the kind of review, the commit to read,
     the diff range, that commit's CI run, and the issue or ruling the change answers. It does not say what the
     reviewer should conclude.
@@ -80,9 +83,9 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
     recorded as not run; output the implementer supplies for it is recorded as reported by the implementer, never as
     passed.
   - A record covers the commit it names. A later content commit, one that changes the pull request's own diff against
-    `main`, needs a re-review, and the archive commit needs the archive check. A merge of `origin/main` that
-    conflicts with nothing the pull request changed is not a content commit: the record carries over, and CI on the
-    merged head is the check.
+    `main`, needs a re-review, and the archive commit needs the archive check. A merge of `origin/main` is not a
+    content commit when `main` changed no file the pull request changes: the record carries over, and CI on the
+    merged head is the check. When `main` changed a file the pull request also changes, that file needs a re-review.
   - The reviewer does not write on the branch. Findings go back to the implementer, who keeps write ownership. If
     the two agents disagree on a finding, it goes to the owner on the issue, labelled `status:needs-decision`.
   - The implementer writes `reviewed-by: <model or persona>` in the PR body beside `implemented-by:`, taken from the

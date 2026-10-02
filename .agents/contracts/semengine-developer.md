@@ -42,9 +42,9 @@ or runtime mechanics; they do not replace this project-specific role.
 4. Trace the complete path from the consumer-visible contract to storage and back when applicable.
 5. Report exact commands and outcomes. Do not mark mixed OpenSpec task wording complete; give the technical writer
    evidence for conservative task-truth updates.
-6. Complete the implementation review the [shared protocol](../protocol.md) requires: the other agent's for Go code
-   outside `internal/harness` or the admission ledger ("Cross-agent review"), otherwise SemEngine's reviewer and any
-   cross-agent round the owner asks for. Resolve findings and obtain any required re-review before archiving. Then
+6. Complete the implementation review the [shared protocol](../protocol.md) requires: the other agent's for a code
+   pull request ("Cross-agent review"), and for a documents-only one SemEngine's reviewer and any cross-agent round
+   the owner asks for. Resolve findings and obtain any required re-review before archiving. Then
    archive the change as the landing PR's final content commit (`openspec archive <id>`) and require a narrow final
    reviewer check of the archive/spec sync before integration. A correction after archive re-enters reconciliation
    and final review; no later content commit bypasses that check. The merge is the CI-green proof. Never write or

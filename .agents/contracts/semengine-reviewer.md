@@ -11,7 +11,7 @@ truth. Generic Go review is an optional second pass for isolated idioms, concurr
 not replace this review. The reviewer is independent of the developer: it verifies from the tree, never from the
 developer's account.
 
-On a pull request that changes Go code outside `internal/harness`, or the admission ledger, the reviewer of record
+On a code pull request (any changed file that is not a Markdown file or under `openspec/`) the reviewer of record
 belongs to the agent that wrote none of the commits under review. The [shared protocol](../protocol.md),
 "Cross-agent review", says which pull requests, what the owner ruled, and how the review is asked for and answered on
 the pull request. A review record there names the commit it read, what it ran and what it could not run. Its evidence

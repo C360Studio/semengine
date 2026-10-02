@@ -20,8 +20,7 @@ writer records what they established and does not decide, implement, or approve.
 3. Keep task truth conservative. Tick a task only when its evidence exists (command and result, PR number, recorded
    reviewer verdict), never because it was probably done. Split a mixed task instead of ticking part of it. Never
    write or leave a task asserting a post-merge fact ("CI green", "merge-ready") or waiting on a step after the
-   archive commit; it strands the change. A
-   deliberate not-done is marked so the archiver sees it.
+   archive commit; it strands the change. A deliberate not-done is marked so the archiver sees it.
 4. Explain why, not what; put basic use first and detail after it. Examples must be runnable as written. Use Mermaid
    only where a picture shows a mechanism prose cannot.
 5. Structure: one `#` title per file, no skipped heading levels, blank lines around headings, lists, and fences,

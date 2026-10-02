@@ -15,7 +15,13 @@
 #
 # `task ledger:check` (contract test T-B7, internal/harness/contract/ledger_test.go), run inside
 # `task verify`, enforces this schema. Every entry below is re-checked at SETUP 03A. No SemStreams
-# package has been ported; the SETUP 02 rows record patterns adapted, two scripts carried, and exclusions.
+# package has been ported; the SETUP 02 rows record patterns adapted, two scripts carried and later adapted
+# (flake-defense), and exclusions.
+#
+# Port refactors (owner ruling on #8, Q4; SETUP 03B design.md D4a): restructuring ported code away from
+# the pin's shape (a seam, a file-level adapt, a dropped field or method) is disposition `adapt`, with
+# `contract` citing its retained-contract-matrix row, `proving_tests` naming the test that proves the
+# retained behavior, and `known_risks` naming `class:port-refactor` and its tracking issue (#25-#36).
 
 - source_path: natsclient/test_client.go
   source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67
@@ -144,26 +150,35 @@
 - source_path: scripts/lint-test-ports.sh
   source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67
   consumer_purpose: refuse fixed net.Listen ports in *_test.go
-  destination: scripts/lint-test-ports.sh (unchanged)
-  contract: exits 1 on a literal fixed port in net.Listen("tcp[46]?", ...)
+  destination: >-
+    scripts/lint-test-ports.sh (adapted by openspec change flake-defense, design D7: the inline marker
+    `// gh#220:allow-fixed-port` exempts nothing; the failure message says to bind port 0 and hand the
+    listener to the code under test, where the pin named SemStreams' freePort helper, which SemStreams
+    removed as a race in its #1120; the header lists bind-then-close-then-bind as a false negative)
+  contract: exits 1 on a literal fixed port in net.Listen("tcp[46]?", ...), on every line, with no exemption
   dependencies_and_side_effects: bash, grep
   known_risks: >-
-    documented false-negative shapes (tcp6 variants, multi-line, concatenation, non-net.Listen APIs);
-    fixed dial literals not covered (T-B6 covers)
-  proving_tests: scripts/lint-test-ports_fixture_test.sh
+    documented false-negative shapes (tcp6 variants, multi-line, concatenation, non-net.Listen APIs,
+    bind-then-close-then-bind); fixed dial literals not covered (T-B6 covers)
+  proving_tests: >-
+    scripts/lint-test-ports_fixture_test.sh; TestLintTestPortsHonoursNoMarker and TestLintTestPortsPasses
+    (internal/harness/contract/addresses_test.go)
   owner: setup-02 developer
-  disposition: carry
+  disposition: adapt
 
 - source_path: scripts/lint-test-ports_fixture_test.sh
   source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67
   consumer_purpose: proves lint-test-ports.sh detects and accepts the documented shapes
-  destination: scripts/lint-test-ports_fixture_test.sh (unchanged)
+  destination: >-
+    scripts/lint-test-ports_fixture_test.sh (adapted by openspec change flake-defense, design D7: the
+    pin's "suppressed violation" case expected no match for a marked line; it is now "marked violation"
+    and expects a match)
   contract: fixture cases pass/fail as documented
   dependencies_and_side_effects: bash
   known_risks: none known
   proving_tests: self
   owner: setup-02 developer
-  disposition: carry
+  disposition: adapt
 
 - source_path: testutil/nats.go
   source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67

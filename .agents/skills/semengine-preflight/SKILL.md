@@ -38,15 +38,18 @@ with current CI.
 | `task vuln` | Pinned `govulncheck`; review findings against reachable behavior |
 | `task cleanup-roots:check` | Fails if a test stops, closes, or terminates under `context.Background()` or `TODO()` |
 | `task ledger:check` | Validates `docs/admission-ledger.yaml` against its schema |
-| `task test:unit` | Unit tests with the race detector |
+| `task test:unit` | Unit tests once with the race detector at one CPU |
 | `task test:integration` | Docker-backed tests through the admitted runner (host lock, process group, leak check) |
-| `task cover:check` | Fails below 80% coverage on `natsfixture`, `lifecycletest`, `probe` |
-| `task verify` | The checks above except `doctor`, `fmt`, `spec:queue`, cheapest first; fails on tracked-file change |
+| `task cover:check` | Fails below 80% coverage on `natsfixture`, `lifecycletest`, `probe`; each package on the SETUP 03B critical list (`setup-03b-contract-boundary` `design.md` D10) joins when it is ported |
+| `task test:repeat` | Unit tests five times at one CPU without the race detector, in shuffled order; `-- <pkgs>` to focus |
+| `task merge:check -- <n>` | Fails while an open `class:flake` issue is not closed by PR `n`, or while the rules on `main` do not require an up-to-date head; reads GitHub |
+| `task verify` | The checks above except `doctor`, `fmt`, `spec:queue`, `merge:check`, cheapest first with `test:repeat` last; prints each step's time; fails on tracked-file change |
 
-CI has two jobs: `verify` runs `task verify`, and `required` fails if `verify` failed, is missing, or was skipped or
-cancelled. `task verify` needs a reachable Docker daemon for `test:integration`; a daemon that is not reachable is a
-failing gate, never a skipped one. A consumer lane joins `task verify` when its workload exists; until then no task
-for it exists, and a missing lane is not a passing one.
+CI has three jobs: `verify` runs `task verify`; `merge-check` runs `scripts/merge-check.sh` for the pull request (on a
+push to `main`, only its up-to-date half); `required` fails if `verify` or `merge-check` failed, is missing, or was
+skipped or cancelled. `task verify` needs a reachable Docker daemon for `test:integration`; a daemon that is not
+reachable is a failing gate, never a skipped one. A consumer lane joins `task verify` when its workload exists; until
+then no task for it exists, and a missing lane is not a passing one.
 
 Select by what the diff changes:
 
@@ -61,6 +64,8 @@ Select by what the diff changes:
 - **`docs/admission-ledger.yaml`:** `task ledger:check`.
 - **Dependencies or `go.mod`:** `task tidy:check` and `task vuln` in addition to the Go gates.
 - **Before any implementation push:** `task verify`.
+- **Immediately before merging:** `task merge:check -- <n>`, in a shell where `GITHUB_ACTIONS` is not set. It sees a
+  flake filed, or a closing line removed, since the pull request's last CI run.
 
 Do not hand-run a narrower command in place of a gate CI runs: the task owns flags and pins.
 
@@ -79,8 +84,11 @@ and log/artifact location. Separate failure, skip, no selected tests and compila
 implementation changes, older green results remain evidence for the older revision. Preserve the command's
 failure status when filtering output; do not infer success from a quiet log.
 
-Resolve failures from evidence; an isolated successful rerun is not a fix for a known required-job flake.
-Apply the protocol's fix-or-recorded-waiver rule. Long or paid runs need the role contract's active progress
+Resolve failures from evidence; a successful re-run is not a fix for a flake. A red that your diff does not explain
+is filed as an issue before the next push, labelled `class:flake` when it is a test or check that passes and fails
+on the same tree. A network fetch that did not answer is not a flake: follow the protocol's "Known flakes" item. An
+open flake is fixed; nothing else gets a pull request past it, and `merge-check` fails every pull request that does
+not close it. Long or paid runs need the role contract's active progress
 checks and bounded stopping behavior.
 
 After local verification, assess the PR's current-head hosted checks and the protocol's review/archive gates.

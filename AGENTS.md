@@ -39,13 +39,17 @@ task build        # build
 task vet          # go vet
 task lint         # pinned revive, plus the fixed-port guard for tests
 task vuln         # pinned govulncheck
-task test:unit    # unit tests
+task test:unit    # unit tests once, under the race detector, at one CPU
+task test:repeat  # unit tests five times at one CPU, without the race detector, shuffled
+task merge:check  # -- <n>: fail while a known flake is open that PR n does not close; reads GitHub
 task verify       # spec:check docs:check fmt:check tidy:check cleanup-roots:check build vet lint vuln
-                  # ledger:check test:unit test:integration cover:check, cheapest first; fails if tracked
-                  # files changed. Not included: doctor, fmt, spec:queue
+                  # ledger:check test:unit test:integration cover:check test:repeat, cheapest first; fails if
+                  # tracked files changed. Not included: doctor, fmt, spec:queue, merge:check
 ```
 
-Run `task verify` before every implementation push; CI runs the same commands in two jobs, `verify` and `required`.
+Run `task verify` before every implementation push. CI has three jobs: `verify` runs the same commands;
+`merge-check` runs `scripts/merge-check.sh`, the script behind `task merge:check`; `required` fails if either of them
+failed, is missing, or was skipped or cancelled.
 Gate selection per diff: `.agents/skills/semengine-preflight/SKILL.md`.
 
 ## Rules and what enforces them
@@ -97,8 +101,11 @@ never become a pointer:
 - **Claim:** a draft PR opened before the work, in its own worktree on an agent-prefixed branch
   (`git worktree add ../semengine-wt/claude/<topic> -b claude/<topic> origin/main`; Codex uses `codex/`). No draft
   PR, no claim.
-- **Merge:** CI green with no known unfixed flake in a required job; `implemented-by: <model or persona>` in the PR
-  body; the archive/spec sync is the last content commit; squash merge.
+- **Merge:** CI green on a head up to date with `main`; no known flake open (an open `class:flake` issue: a test or
+  check that passes and fails on the same tree, never a network fetch that did not answer) unless the PR closes every
+  open one, and nothing else gets past it; `task merge:check -- <n>` immediately before merging, with
+  `GITHUB_ACTIONS` unset; `implemented-by: <model or persona>` in the PR body; the archive/spec sync is the last
+  content commit; squash merge.
 - **Close:** the squash merge of a PR that declared `Closes #n` is the authorization. A close with no merged PR behind
   it takes the owner's word on the issue.
 

@@ -122,6 +122,8 @@ Runtime implementation and spec promotion remain blocked until the owner explici
   subjects, buckets, config keys): run the owner-exists search yourself. An addition beside an existing owner of
   the same responsibility is a finding even when the design's inventory missed it; the fix is consolidation into
   one home, never a sibling.
+- A doc that breaks the owner's documentation rule (technical-writer contract, rule 9: human-dev friendly, no
+  jargon, no marketing) is a review finding.
 - Confirm checked tasks are fully complete as worded. Split mixed tasks instead of treating partial evidence as done.
 - A task that asserts a post-merge fact ("CI green", "merged", "merge-ready") is a finding: it cannot be ticked
   before merge and strands the change unarchived. Require it rewritten as a branch-checkable fact (PR number, recorded

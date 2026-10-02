@@ -7,8 +7,10 @@ cd "$(dirname "$0")/.."
 
 # Order is the contract: cheapest first. test:integration needs a reachable Docker
 # daemon and takes the shared host lock; cover:check reads the profile it just wrote.
+# test:repeat is the most expensive step and runs last (merge-gate spec, pinned by
+# contract test TestUnitInvocationsPinned).
 steps=(spec:check docs:check fmt:check tidy:check cleanup-roots:check build vet lint vuln ledger:check test:unit
-  test:integration cover:check)
+  test:integration cover:check test:repeat)
 
 # Tracked-file state before the run. Comparing before/after (not just "is dirty")
 # keeps verify usable on a working tree with edits in progress; on a clean

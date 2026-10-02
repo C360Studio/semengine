@@ -62,11 +62,34 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  # Known-flake check and up-to-date rule (scripts/merge-check.sh). It reads
+  # GitHub, so it is a job of its own and not part of task verify. The token gets
+  # these three reads and nothing else; a pull request from a fork or Dependabot
+  # gets a read-only token, which is all the job needs. On a push to main the
+  # number is empty and the script takes its push path.
+  merge-check:
+    name: Merge check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check known flakes and the up-to-date rule
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: scripts/merge-check.sh "$PR_NUMBER"
+
   # Single required status check: anything other than success in a needed job
   # (failure, cancelled, skipped, or a job that never ran) fails the aggregate.
   required:
     name: Required
-    needs: [verify]
+    needs: [verify, merge-check]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

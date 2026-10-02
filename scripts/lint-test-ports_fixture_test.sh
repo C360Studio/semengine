@@ -61,8 +61,8 @@ check 'ephemeral bare'                 nomatch 'func f() { net.Listen("tcp", ":0
 check 'ephemeral localhost'            nomatch 'func f() { net.Listen("tcp", "127.0.0.1:0") }'
 check 'ephemeral 0.0.0.0'              nomatch 'func f() { net.Listen("tcp", "0.0.0.0:0") }'
 
-# Suppression marker — violation shape with allow-comment must PASS.
-check 'suppressed violation'           nomatch 'import "fmt"; func f() { net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port)) // gh#220:allow-fixed-port
+# The old suppression marker exempts nothing (adapted in SemEngine, flake-defense D7).
+check 'marked violation'               match   'import "fmt"; func f() { net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port)) // gh#220:allow-fixed-port
 }'
 
 # Empty file — must PASS.

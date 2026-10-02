@@ -434,6 +434,49 @@
   owner: setup-04a-01-floor developer
   disposition: adapt
 
+- source_path: metric
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    Prometheus metrics registry, core platform metrics and the metrics HTTP server; SemSource imports
+    it (design P16)
+  destination: metric
+  contract: >-
+    MetricsRegistry registration and conflict detection, CoreMetrics, and Server as at the pin: Start
+    and StartWithListener bind synchronously and refuse a nil or ended context, a used instance and
+    a nil registry; Address; a repeated completed Stop is a nil no-op; concurrent Stop is a typed
+    transient error. Changed behavior (design D3), each written first: Stop returns its context's
+    error whenever that context has ended, including after an idle server's Shutdown returned nil
+    (metric-abort-stop-reports-context, pin handler.go:222-228); after a forced close Stop waits on
+    the serve goroutine with no timer (metric-forced-join-without-timer: forcedServeJoinTimeout, pin
+    :23, :243-249, removed)
+  dependencies_and_side_effects: >-
+    pkg/errs, pkg/security, internal/tlsutil (in-set); prometheus/client_golang v1.23.2 (the pin's
+    version, now a direct requirement); binds a TCP listener and runs one serve goroutine per started
+    Server, joined by Stop; registry.go:76 starts a Describe goroutine drained by the range at :79-81
+    before the call returns (not background work, design D3)
+  known_risks: >-
+    Context roots, the two D1 counts: both are example code inside doc comments (doc.go:357, :362),
+    not executable; the package has no production root. Doc-comment sleep (doc.go:386) carried as it
+    is (owner ruling Q4, task 1.5). Adapt items besides the two D3 fixes: doc.go:331-333 and
+    README.md (pin :319-320) restate Stop's forced join and context error in place of the one-second
+    bound. README lint fixes (owner ruling, #9 comment 5955265930): lines 7, 9, 11, 27, 30, 33, 40,
+    233, 237 and 241 wrapped at 120 columns (MD013); a blank line after the headings at :26, :29,
+    :32, :39, :139, :158, :193, :209, :223 and :226 (MD022) and before the lists at :234, :238 and
+    :242 (MD032); the heading at :226, longer than 80 columns (MD013), becomes `NewServer` with the
+    signature on the line below it; no other wording changed
+  proving_tests: >-
+    the 3 test files in metric/ at the pin (handler_test.go, integration_test.go, registry_test.go);
+    new, written first, in metric/lifecycle_test.go: TestServerAbortStopReportsContext (30 servers
+    whose serveDone already holds a result, Stop with an ended context; at the pin 13, 12, 11 and 16
+    of 30 returned nil over four runs) and TestServerForcedStopJoinsServeWithoutTimer (inside
+    synctest.Test the serve result is withheld for an hour of the bubble's clock; at the pin Stop
+    returned "wait for forced metrics serve completion: context deadline exceeded");
+    TestServerLifecycleSuite runs lifecycletest.Run with an adapter listing the listener, the
+    http.Server and the serve goroutine, and a must-fail factory whose Server is configured on a port
+    the test holds, so Start returns the bind error
+  owner: setup-04a-01-floor developer
+  disposition: adapt
+
 - source_path: payloadregistry
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-

@@ -57,8 +57,9 @@ Gate selection per diff: `.agents/skills/semengine-preflight/SKILL.md`.
 The linked file is the rule; this table is only its index. "Review only" means no command fails when the rule is
 broken. In SemStreams' record those are the rules that drifted: the defect class with a command behind it closed, and
 the classes policed by review prose stayed open. A change that adds a repository-wide rule or a rule of agent conduct
-(in a contract, the protocol, `.agents/README.md`, or this file) adds its row here; a capability spec's requirements
-are indexed by that spec, not here. A change that can turn a "review only" row into a failing command should.
+(in a contract, the protocol, `.agents/README.md`, or this file) adds its row here. A capability spec's requirement
+gets a row only when it binds every change in the repository, as the test-text and merge rules do; the rest are
+indexed by their spec. A change that can turn a "review only" row into a failing command should.
 
 | Rule | Canonical home | Enforced by |
 | --- | --- | --- |

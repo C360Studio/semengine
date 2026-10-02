@@ -39,6 +39,7 @@ being protected.
 | Level | Command | What it can show |
 |---|---|---|
 | Unit | `task test:unit` | One function or in-process behavior. Runs every package with `-race`; no Docker, no network. |
+| Unit, repeated | `task test:repeat` | A test that depends on run order, on state left by another test, or on timing. Runs the unit tests five times at one CPU in shuffled order, without `-race`. |
 | Integration | `task test:integration` | Behavior that depends on a real NATS server: JetStream delivery, key-value buckets, consumers. |
 | Structural guards | `task test:unit`, `task verify` | Repository-wide rules, checked by tests in `internal/harness/contract/`. |
 

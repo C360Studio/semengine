@@ -599,3 +599,25 @@
   proving_tests: payloadregistry/registry_test.go, payloadregistry/attributes_test.go
   owner: setup-04a-01-floor developer
   disposition: adapt
+
+- source_path: pkg/cache
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    generic caches (simple, LRU, TTL, hybrid) and CoalescingSet; imported by natsclient
+    (TemporalResolver); no consumer imports it and no public signature names its types once
+    natsclient's GetStats is unexported (design D5, P21, P22)
+  destination: internal/cache
+  contract: >-
+    Cache[V] get, set, delete, clear, size, keys, statistics and close as at the pin; LRU size
+    eviction, TTL expiry on read and in the background cleanup; NewFromConfig validation; WithMetrics
+    exports the statistics as Prometheus collectors. Changed behavior (design D9), written first:
+    newCacheMetrics registers its six collectors through metric.RegisterOrGet and keeps the
+    collectors it returns
+  dependencies_and_side_effects: >-
+    metric, pkg/errs (in-set); prometheus/client_golang; stdlib
+  known_risks: >-
+    in progress (task 3.6)
+  proving_tests: >-
+    internal/cache tests; in progress (task 3.6)
+  owner: setup-04a-01-floor developer
+  disposition: adapt

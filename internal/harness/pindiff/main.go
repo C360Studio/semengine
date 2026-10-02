@@ -31,8 +31,9 @@ const (
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	run(ctx, ".", os.Args[1:], os.Getenv, os.Stdout, os.Stderr)
+	code := run(ctx, ".", os.Args[1:], os.Getenv, os.Stdout, os.Stderr)
 	stop()
+	os.Exit(code)
 }
 
 type config struct {
@@ -80,8 +81,63 @@ func run(ctx context.Context, root string, args []string, getenv func(string) st
 	return runDiff(ctx, root, cfg, entries, args[1:], stdout, stderr)
 }
 
-func runCheck(context.Context, string, config, []entry, io.Writer) int {
-	return 0
+// runCheck compares every carry entry with the pin (harness-boundaries › "Carried entries match
+// the pin"). Other dispositions are not compared. All its output goes to standard error.
+func runCheck(ctx context.Context, root string, cfg config, entries []entry, stderr io.Writer) int {
+	var carried []entry
+	for _, e := range entries {
+		if e.Disposition == "carry" {
+			carried = append(carried, e)
+		}
+	}
+	if len(carried) == 0 {
+		fmt.Fprintln(stderr, "ledger:check: no carry entry; the pin was not fetched")
+		return 0
+	}
+	results, problems := compareAll(ctx, root, cfg, entries, carried)
+	if len(problems) > 0 {
+		for _, p := range problems {
+			fmt.Fprintln(stderr, "ledger:check: the pin could not be read: "+p)
+		}
+		fmt.Fprintln(stderr, "ledger:check: no entry was checked")
+		return 2
+	}
+	var failed []string
+	for _, r := range results {
+		fmt.Fprintln(stderr, summary(r))
+		label := "carry entry " + r.entry.SourcePath + ": "
+		failures := 0
+		if r.notCompared != "" {
+			fmt.Fprintln(stderr, label+"not compared: "+r.notCompared)
+			failures++
+		}
+		for _, f := range r.files {
+			switch f.outcome {
+			case fileDiffers:
+				fmt.Fprintln(stderr, label+f.treePath+": differs from the pin")
+			case fileOnlyAtPin:
+				fmt.Fprintln(stderr, label+"pin/"+f.pinPath+": only at the pin")
+			case fileOnlyInTree:
+				fmt.Fprintln(stderr, label+f.treePath+": only in the tree")
+			default:
+				continue
+			}
+			failures++
+		}
+		if failures > 0 {
+			failed = append(failed, r.entry.SourcePath)
+		}
+	}
+	if len(failed) == 0 {
+		fmt.Fprintf(stderr, "ledger:check: %d carry entries match the pin\n", len(carried))
+		return 0
+	}
+	fmt.Fprintf(stderr, "ledger:check: %d of %d carry entries do not match the pin\n", len(failed), len(carried))
+	for _, p := range failed {
+		fmt.Fprintf(stderr, "ledger:check: `task ledger:diff -- %s` prints the lines\n", p)
+	}
+	fmt.Fprintln(stderr, "ledger:check: a package that differs from the pin is adapt, not carry (docs/provenance.md rule 5)")
+	return 1
 }
 
 func runDiff(ctx context.Context, root string, cfg config, entries []entry, names []string, stdout, stderr io.Writer) int {

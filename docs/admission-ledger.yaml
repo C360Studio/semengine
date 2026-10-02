@@ -610,14 +610,86 @@
   contract: >-
     Cache[V] get, set, delete, clear, size, keys, statistics and close as at the pin; LRU size
     eviction, TTL expiry on read and in the background cleanup; NewFromConfig validation; WithMetrics
-    exports the statistics as Prometheus collectors. Changed behavior (design D9), written first:
-    newCacheMetrics registers its six collectors through metric.RegisterOrGet and keeps the
-    collectors it returns
+    exports the statistics as Prometheus collectors; CoalescingSet add, remove, prefix removal,
+    drain and one deduplicated batch per window as at the pin. Changed behavior, each written
+    first. Design D9: newCacheMetrics registers its six collectors through metric.RegisterOrGet and
+    keeps the collectors it returns, so caches sharing a prefix on one registry share one collector
+    per metric (the collectors are interface-typed; RegisterOrGet compares the concrete type).
+    Design D7, background-work shape 3: CoalescingSet.Shutdown(ctx) replaces Close(); it returns nil
+    once the goroutine has exited, ctx.Err() if ctx ends while the caller's callback still runs, and
+    nil on a later call once the callback has returned; Shutdown(nil) is refused with an error;
+    NewCoalescingSet panics on a nil context before it starts the goroutine. Design D7, shape 2: the
+    TTL and hybrid Close signal the cleanup goroutine and wait for it with no fixed bound; NewTTL and
+    NewFromConfig refuse a nil context with an error, for every strategy, and NewTTL and the hybrid
+    constructor return a nil Cache on error. Owner ruling (#9 comment 5950725772): no eviction
+    callback
   dependencies_and_side_effects: >-
-    metric, pkg/errs (in-set); prometheus/client_golang; stdlib
+    metric, pkg/errs (in-set); prometheus/client_golang; stdlib; pgregory.net/rapid in tests only.
+    The TTL and hybrid caches run one cleanup goroutine each, joined by Close; CoalescingSet runs
+    one goroutine that calls the caller's callback, joined by Shutdown within its context
   known_risks: >-
-    in progress (task 3.6)
+    Context roots, the one D1 count: example code inside a doc comment (pin doc.go:255), not
+    executable; the package has no production root. Port-refactor rows for later callers (design
+    D5): CoalescingSet.Close becomes Shutdown(ctx) (pin processor/graph-embedding/component.go:875,
+    processor/rule/entity_watcher.go:980); WithEvictionCallback is deleted (pin
+    processor/rule/expression/regex_cache.go:21, a no-op callback; natsclient/kv_temporal.go:27, :59,
+    task 3.7). Shared collectors: two caches under one prefix share the size gauge, which shows
+    whichever cache wrote last, not a sum (at the pin the second cache's gauge was not gathered at
+    all). NewLRU and NewSimple still return a nil pointer inside a non-nil Cache when metrics
+    registration fails, as at the pin; not changed here. Removed with the eviction callback (owner
+    ruling, #9 comment 5950725772; design D7): WithEvictionCallback (pin options.go:42-48, with the
+    evictCallback field :23-24), EvictCallback (cache.go:51-53), and the evictFn plumbing in
+    simple.go, lru.go, ttl.go and hybrid.go; TestEvictCallback (cache_test.go:444-503, 60 lines, two
+    subtests, two of the package's 26 sleeps) is deleted with it (design D8). Removed by shape 3:
+    CoalescingSet.Close (coalescing_set.go:114-126). Removed by shape 2: the fixed 5 s wait in the
+    TTL and hybrid Close (ttl.go:258-264, hybrid.go:285-291). doc.go adapt items, pin lines: the
+    eviction examples and prose at :39-41, :157, :162, :179 and :234-236 removed; the "Context and
+    Cleanup" section (:250-261) gains Close's join, the nil-context refusals and CoalescingSet's
+    Shutdown. README behavior edits (owner ruling, #9 comment 5957221949), pin lines: the eviction
+    callback examples at :64-66, :200-202 and :410-412 and the WithEvictionCallback section
+    :117-125 removed. README import paths (not a behavior edit, as on the metric row): :17 and :41
+    changed to github.com/c360studio/semengine/internal/cache and /metric. README lint fix: line 3
+    wrapped at 120 columns (MD013); no other wording changed
   proving_tests: >-
-    internal/cache tests; in progress (task 3.6)
+    the 6 test files in pkg/cache/ at the pin, carried to internal/cache/ and repaired.
+    New, written first, in internal/cache/metrics_test.go: TestCacheMetricsTwoCachesOnePrefixGatherTheSum
+    (two LRU caches under one prefix on one registry; oracle: the operations the test performs,
+    counted by hand, each gathered on one series; at the pin the second cache's writes were not
+    gathered, implementer-reported). In internal/cache/background_test.go, each run inside
+    synctest.Test: TestCoalescingSetShutdownLeavesNothingRunning, TestTTLCacheCloseLeavesNothingRunning
+    and TestHybridCacheCloseLeavesNothingRunning (start, use, stop; oracle: the stop returns nil
+    within an hour of the bubble's clock with the goroutine's done channel already closed, and the
+    bubble returns; at the pin's behavior the TTL and hybrid tests pass, because the fixed wait shows
+    only when the goroutine does not exit), TestCoalescingSetNilContextPanicsAtTheCall and
+    TestCacheConstructorsRefuseNilContext (at the pin the goroutine panicked: coalescing_set.go:136,
+    ttl.go:276), TestCoalescingSetShutdownUnderABlockedCallback (oracle: context.DeadlineExceeded
+    while the callback is held, nil after it returns; at the pin's Close the bubble deadlocked) and
+    TestCoalescingSetShutdownRefusesNilContext; TestCacheCloseAfterContextEndAndAgain (a Close after
+    the context ended the goroutine, then a second Close, both nil; not a changed behavior, it
+    passes at the pin's behavior too). Generated check, in
+    internal/cache/coalescing_set_prop_test.go: TestPropCoalescingSetHistory, a Rapid history of
+    Add, Remove, RemovePrefix, Drain, window ticks and Shutdown, each run in its own bubble and
+    compared after every step with a test-owned model; it logs how often each assertion ran; and
+    TestCoalescingSetRemovePrefixMatchesOnlyAtTheStart, the boundary the generator reaches only by
+    chance. D8 repairs (R1a, sleep to the bubble's clock, unless named), pin → SemEngine:
+    coalescing_set_test.go:137 → :141; :148 → :156; :257 → :269; :308 → :321; :318 → :332; :339 →
+    :354; :348 → :364; :428 → :445; :446 → :463; :516 → :535; :522 → :541; :527 → :546; :586 → :605;
+    :592 → :612; :611 → :633; the 10 ms not-yet window (:89-94) → :92-98, after synctest.Wait;
+    coalescing_set_attack_test.go:105 → :112 (R1b: the callback is held on a channel the test
+    releases; the test stays on the real clock, because an Add blocked on the set's mutex would
+    stall a bubble instead of failing it; 10 s failure bound at :136); :177 → :191; :223 → :236-247
+    (a sentinel key: the pin asserted a callback after a fixed 300 ms, which failed whenever the
+    removers had emptied the set; now one window, one callback, nothing pending); :241 → :261; :298
+    → :325-326 (wait for the first delivery: a zero window ticks every nanosecond of the bubble's
+    clock); cache_test.go:294 → :306; :317 → :332; :368 → :388; benchmark_test.go:183 → :183-191
+    (R1b: probe.Await until no key is live, 10 s failure bound). The 30 t.Parallel calls
+    (coalescing_set_test.go 20, coalescing_set_attack_test.go 10) are removed: t.Parallel cannot be
+    called in a bubble. Other test edits: TestCoalescingSet_CallbackPanic asserted nothing and now
+    asserts the batch after the panic is delivered; BatchCleared and AddDuringCallback assert after
+    releasing the test's mutex (at the pin a failed require held it and the deferred Close waited
+    forever); the carried CoalescingSet tests call Shutdown(t.Context()) for Close(); the two test
+    files' "Code generated ... DO NOT EDIT" headers, which made tools treat them as generated, are
+    replaced by a note of their origin. Repeat runs (D8 R4; implementer-reported, PR #48): see task
+    3.6
   owner: setup-04a-01-floor developer
   disposition: adapt

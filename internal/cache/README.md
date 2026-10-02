@@ -1,6 +1,7 @@
 # Cache Package
 
-A high-performance, thread-safe caching library for Go with multiple eviction policies, built-in statistics, and optional Prometheus metrics integration.
+A high-performance, thread-safe caching library for Go with multiple eviction policies, built-in statistics, and
+optional Prometheus metrics integration.
 
 ## Features
 
@@ -14,7 +15,7 @@ A high-performance, thread-safe caching library for Go with multiple eviction po
 ## Installation
 
 ```go
-import "github.com/c360/semstreams/pkg/cache"
+import "github.com/c360studio/semengine/internal/cache"
 ```
 
 ## Quick Start
@@ -38,7 +39,7 @@ c := cache.NewHybrid[string](ctx, 1000, 5*time.Minute, 1*time.Minute)
 ### With Prometheus Metrics
 
 ```go
-import "github.com/c360/semstreams/pkg/metric"
+import "github.com/c360studio/semengine/metric"
 
 // Create metrics registry
 registry := metric.NewMetricsRegistry()

@@ -214,7 +214,10 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       cases were accepted; the typed-nil `*GaugeVec` and the core collision were already refused at the pin (test 6
       failed only on the returned candidate). The generated check and the corrected evidence landed with the third
       review's fixes (PR #48 comment 5959412053, findings 2 and 4). `task verify` ok on e78d0ce.
-- [ ] 3.6 (D) `message`, `pkg/cache` (level 5): `message` row `carry` (`google/uuid` direct; its two tests that used
+- [ ] 3.6 (D) `message`, `pkg/cache` (level 5), destinations by design D5 (#9 comment 5953295358, refining
+      5952661571): `message` stays public at `message` (SemSource imports it), `pkg/cache` moves to `internal/cache`.
+      `message` row `adapt`, not `carry`: its `README.md` needs a lint fix at the pin (line 7, MD013; #9 comment
+      5957221949) (`google/uuid` direct; its two tests that used
       `internal/semantictest` import the harness copy); `pkg/cache` row `adapt`: its 26 sleeps are repaired under
       `synctest` with its 30 `t.Parallel()` calls removed (D8 R1); `TestCoalescingSet_EntityUpdateScenario`,
       `TestAttack_ConcurrentAddRemove` and `TestCoalescingSet_ContextCancellation` are shown failing first under a
@@ -235,6 +238,19 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       callers (design D5) as port-refactor rows; the one `pkg/cache` root is triaged. `pkg/cache` adapt (design D9):
       `metrics.go:69-84` registers its six collectors through `RegisterOrGet` and keeps the returned collectors; a
       test with two caches under one prefix on one registry asserts the gathered sum.
+      - `pkg/cache` done in 70fe194 (port, `RegisterOrGet`), b137ab3 (eviction callback removed), 5fc2b63 (sleep
+        repair), c6d7108 (shapes 2 and 3), 420063f (generated check) and the ledger, design and task-text commit
+        that follows them. Two of the 26 sleeps went with `TestEvictCallback`; the other 24 are repaired, each on
+        the row. The generated-check decision is in design D7. Failing first, implementer-reported, on a copy of
+        the pin (PR #48): under seed `1790895004660367000`, 48 of 48 runs of `-count=5 -cpu 1` with 24 in
+        parallel failed `TestCoalescingSet_EntityUpdateScenario`, and 11 of them hung in `BatchCleared`'s deferred
+        `Close`; under seed `1790895074311951000`, 6 of 48 failed `TestAttack_ConcurrentAddRemove` (and 9
+        `TestCoalescingSet_CallbackFiresAfterWindow`). `TestCoalescingSet_ContextCancellation` did not fail in
+        those 96 runs nor in 2,400 runs of it alone at 12 in parallel: not reproduced. After the repair, `task
+        test:repeat -- ./internal/cache` passed on both seeds and on `1790972252212655000`,
+        `1790972253482840000` and `1790972254702897000`, and 96 of 96 runs of the seeds at 24 in parallel passed.
+      - Hold: `message` waits for task 2.8. Its tests import `internal/semantictest`
+        (`payload_test.go:10`, `triple_helpers_test.go:9` at the pin), and the harness copy is task 2.8's.
 - [ ] 3.7 (D) `natsclient` (level 6): row `adapt`; `test_client.go` and `test_options.go` are not ported and their
       file rows are updated (`proving_tests` on the `adapt` row); four test files are not ported and get `defer-exclude`
       file rows with design D1's reasons: `test_client_factory_test.go`, `test_client_integration_test.go` and

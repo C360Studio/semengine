@@ -384,6 +384,19 @@ Why these shapes, at the pin:
 - **`Watcher` takes shape 1.** Its loop calls a caller's check function, and its start and stop have no caller to
   keep. `Run(ctx)` removes the goroutine, the cancel and the wait group from the type.
 
+**Generated checks for `pkg/cache` (task 3.6; `docs/testing.md`, "Decide whether generated checks are needed").**
+`CoalescingSet` has an order-dependent history: what a window delivers depends on every `Add`, `Remove`,
+`RemovePrefix` and `Drain` before it and on whether `Shutdown` came first. Examples cover a few orders, so it gets a
+generated check: `TestPropCoalescingSetHistory` (`internal/cache/coalescing_set_prop_test.go`) draws a history with
+Rapid and runs it in its own `synctest` bubble (Rapid calls `t.Deadline`, which a bubble refuses), comparing each step
+with a test-owned model: each method's answer, `PendingCount`, one batch per window holding exactly the pending keys,
+nothing delivered after `Shutdown`. Examples still own a blocked or panicking callback, `Shutdown` under an ended
+context, concurrent callers (the model is sequential), the zero window, the nil refusals, and a key holding the prefix
+past its start (`TestCoalescingSetRemovePrefixMatchesOnlyAtTheStart`), which the generator reaches only by chance at
+100 checks. The TTL and hybrid caches' close is not a history worth generating: `Close` signals one goroutine and
+waits for it, and its cases (first close, repeated close, close after the goroutine ended through its context) are
+named examples; the carried cache semantics do not change in this change.
+
 The ACME loaders' renewal goroutines (`tlsutil.go:253, :331`) are not in this change (D1): their stop can wait inside
 `legoClient.Certificate.Renew`, which takes no context (`pkg/acme/client.go:352`), and their renewal callback writes
 `tlsConfig.Certificates` while the config may be serving handshakes (`tlsutil.go:258, :336`). Both defects travel with

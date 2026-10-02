@@ -508,12 +508,51 @@ What a caller observes:
 | A cross-key alias, including a core metric or a collector registered directly through `PrometheusRegistry()` (`:118`) | a fatal error, nothing stored; `Unregister` of the second key returns false |
 
 A caller uses the collector `RegisterOrGet` returns, never its own candidate; this is review only (AGENTS.md rule
-index). Tests, each written first and each asserting gathered values: same key over Counter, Gauge, Histogram,
-CounterVec, GaugeVec and HistogramVec (two writes through the returned handle gathered as 2); a Gauge then
-`RegisterOrGet[prometheus.Counter]` with the same name and help; same key with a different help; a typed nil
-`*GaugeVec` and a nil `Counter`; a cross-key alias (`Unregister` false, one series of value 1 after `a.Inc()`); a
-collision with a core metric; a collision with a collector registered directly; and the concurrent test
-(`registry_test.go:188`) generalised under `-race`.
+index). Eight example tests, each written first, with the oracle each one asserts:
+
+1. Same key over Counter, Gauge, Histogram, CounterVec, GaugeVec and HistogramVec: no error, and two writes through
+   the returned handles gathered as 2.
+2. A Gauge, then `RegisterOrGet[prometheus.Counter]` with the same name and help: a fatal error, the zero
+   collector, and the gauge's gathered value unchanged.
+3. Same key with a different help: a fatal error, the zero collector, the first counter's gathered value.
+4. A typed nil `*GaugeVec` and a nil `Counter`: a fatal error, the zero collector, no panic, and `Unregister` of
+   the key false (nothing in the key map). No gathered value: nothing was registered to gather.
+5. A cross-key alias: a fatal error, the zero collector, `Unregister` of the second key false, and one series of
+   value 1 after `a.Inc()`.
+6. A collision with a core metric: a fatal error, the zero collector, `Unregister` false, the core gauge's
+   gathered value.
+7. A collision with a collector registered directly: as test 6, for the direct collector.
+8. The concurrent test (`registry_test.go:188`) generalised under `-race`: no error, one identity, and the
+   workers' writes gathered as their count.
+
+Failing first, implementer-reported (the run was a temporary shim that sent the new signature to the pin's
+`Register*` methods): test 1 gathered 1 for all six kinds; tests 2, 3, 5 and 7 were accepted; in test 4 the nil
+`Counter` was accepted, while the typed-nil `*GaugeVec` was already refused at the pin (`RegisterOrGetGaugeVec`'s
+nil check); test 6's collision was already refused at the pin by `RegisterGaugeVec`, and the test failed only on
+the shim returning the candidate instead of the zero collector; test 8 returned different collectors. Guard
+mutations, also implementer-reported: removing the type check fails test 2, the descriptor check test 3, and
+storing the candidate in the alias branch tests 5, 6 and 7. Removing the nil guard is a different result: no
+assertion fails; the run crashes with a nil-pointer panic inside Prometheus' `Register`.
+
+**Generated check (`docs/testing.md`, "Decide whether generated checks are needed").** D9 states an idempotence law
+(registering a key again returns the same collector) over an order-dependent history (registration, refusal,
+unregistration, re-registration, and writes through handles returned at different times), so examples alone do not
+cover it. `TestPropRegisterOrGetHistory` (`metric/registerorget_prop_test.go`) is a Rapid state machine over three
+keys, two metric names, two help texts and five candidate kinds (counter; gauge; a gauge registered as
+`prometheus.Counter`; a counter vector; a gauge vector with the core `semstreams_service_status` descriptor), with
+actions `RegisterOrGet`, `RegisterSame` (a held key's own spec, so the same-key success path runs in most
+histories), `RegisterNil` (typed and interface nil), `Unregister` and `Write`. A reference model owned by the test
+holds key → (concrete type, descriptor), the names registered on the Prometheus registry including the core
+metric, and each name's first help and label names, which Prometheus keeps for the registry's lifetime even after
+`Unregister` (client_golang `registry.go`, `Unregister`: "dimHashesByName is left untouched"). After every step the
+test asserts, against the model: a same-key success returns the canonical collector; every refusal the model
+predicts is a fatal error with the zero collector and nothing stored; `Unregister` returns what the model holds; and
+through `Gather`, each held key's series carries exactly the model's writes and no generated name the model does
+not hold is gathered. It logs how often each assertion ran. History classes it covers: same-key retries of the same
+and of another type or descriptor, cross-key aliases, core-name collisions, unregister then re-register under
+the same or another key, inconsistent help after unregister, and writes through handles from earlier and later
+registrations. The eight examples still own: the six collector kinds one by one (the generator uses four), a
+collector registered directly on `PrometheusRegistry()`, and concurrent callers (the model is sequential).
 
 Consumer impact, recorded on the `metric` row: semsource `internal/entitypub/metrics.go:99-106` and semboids
 (`internal/boidgraph/metrics.go`, `internal/sim/lifecycle.go`, `internal/api/graphstream_metrics.go`) stop

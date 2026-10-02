@@ -75,8 +75,10 @@ scripts: the inline exemption marker is gone and the guidance names no SemStream
 `task verify`, then compares every `carry` row with the pin (rule 5). Five of the twelve ported packages are `carry`
 rows (`pkg/platform`, `pkg/security`, `pkg/timestamp`, `pkg/errs`, `pkg/projection/contract`), so the check fetches
 the pin. The other seven are `adapt`; `vocabulary` and `pkg/types` are among them only because their `README.md`
-files include markdownlint fixes (owner ruling, [#9 comment 5955265930][readme-ruling]), and the check compares `.go`
-and `testdata` files, not READMEs.
+files include markdownlint fixes, and the check compares `.go` and `testdata` files, not READMEs. A ported README
+keeps the pin's text except for two kinds of edit: the fixes markdownlint requires, and changes to passages that
+describe behavior the ported code no longer has, each listed by README line as an `adapt` item on the package's row
+(owner ruling, [#9 comment 5957221949][readme-ruling], which replaced the lint-only rule of comment 5955265930).
 
 [setup-02-rulings]: https://github.com/C360Studio/semengine/issues/6#issuecomment-5921046663
-[readme-ruling]: https://github.com/C360Studio/semengine/issues/9#issuecomment-5955265930
+[readme-ruling]: https://github.com/C360Studio/semengine/issues/9#issuecomment-5957221949

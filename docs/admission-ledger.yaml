@@ -268,7 +268,7 @@
   known_risks: >-
     no context roots; production code unchanged from the pin. The pin's timing tests asserted
     real-clock elapsed bounds (< 150 ms) that a slow host can fail on a correct implementation.
-    README lint fixes (owner ruling, #9 comment 5955265930): pkg/retry/README.md is ported with only the edits
+    README lint fixes (owner ruling, #9 comment 5957221949): pkg/retry/README.md is ported with only the edits
     markdownlint requires: line 7 wrapped at 120 columns (MD013), a blank line before the lists at
     :115, :123, :130 (MD032), the trailing newline (MD047); no wording changed
   proving_tests: >-
@@ -347,7 +347,7 @@
     pkg/platform (in-set); stdlib; a process-global predicate registry mutated at registration
   known_risks: >-
     no context roots; SemStreams IRI base strings carried unchanged (iris.go:14).
-    README lint fixes (owner ruling, #9 comment 5955265930): vocabulary/README.md is ported with only the edits
+    README lint fixes (owner ruling, #9 comment 5957221949): vocabulary/README.md is ported with only the edits
     markdownlint requires: lines 7, 224, 263, 441, 582, 586, 671, 673 and 688 wrapped at 120 columns
     (MD013); no wording changed
   proving_tests: the 11 test files in vocabulary/ at the pin
@@ -370,7 +370,7 @@
     no context roots. testdata/rapid carries the pin's curated seed for TestPropEntityIDByteBound
     (a mutation-kill witness registered in testdata/rapid/README.md); any other .fail file Rapid
     writes there is local debris and shows in task ledger:diff as "only in the tree".
-    README lint fixes (owner ruling, #9 comment 5955265930): pkg/types/README.md is ported with only the edits
+    README lint fixes (owner ruling, #9 comment 5957221949): pkg/types/README.md is ported with only the edits
     markdownlint requires: lines 7 and 83 wrapped at 120 columns (MD013), the fence at :90 given the
     language text (MD040); no wording changed
   proving_tests: >-

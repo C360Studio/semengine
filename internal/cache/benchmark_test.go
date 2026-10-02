@@ -6,6 +6,8 @@ import (
 	"math/rand"
 	"testing"
 	"time"
+
+	"github.com/c360studio/semengine/internal/harness/probe"
 )
 
 // Helper function to create caches with error handling
@@ -179,8 +181,15 @@ func BenchmarkTTLCleanup(b *testing.B) {
 		_, _ = cache.Set(fmt.Sprintf("key%d", i), fmt.Sprintf("value%d", i))
 	}
 
-	// Wait for items to expire
-	time.Sleep(20 * time.Millisecond)
+	// Wait for items to expire: observe that no key is live any more, instead of sleeping past
+	// the TTL (design D8, R1b; the bound is a failure bound only).
+	ctx, cancel := context.WithTimeout(b.Context(), 10*time.Second)
+	defer cancel()
+	if _, err := probe.Await(ctx, func(context.Context) (int, error) {
+		return len(cache.Keys()), nil
+	}, func(live int) bool { return live == 0 }); err != nil {
+		b.Fatalf("waiting for every entry to expire: %v", err)
+	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

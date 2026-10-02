@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 )
 
@@ -123,30 +124,40 @@ func testClearOperation(t *testing.T, cache Cache[string]) {
 	}
 }
 
-// testSuite runs common cache tests across all implementations.
+// testSuite runs common cache tests across all implementations. Each subtest builds its cache
+// inside a synctest bubble, so a TTL or hybrid cache's cleanup goroutine runs on the bubble's fake
+// clock and must be ended by Close before the bubble returns (design D8, R1a).
 func testSuite(t *testing.T, createCache func() Cache[string]) {
 	t.Run("BasicOperations", func(t *testing.T) {
-		cache := createCache()
-		defer cache.Close()
-		testBasicOperations(t, cache)
+		synctest.Test(t, func(t *testing.T) {
+			cache := createCache()
+			defer cache.Close()
+			testBasicOperations(t, cache)
+		})
 	})
 
 	t.Run("Size", func(t *testing.T) {
-		cache := createCache()
-		defer cache.Close()
-		testSizeOperations(t, cache)
+		synctest.Test(t, func(t *testing.T) {
+			cache := createCache()
+			defer cache.Close()
+			testSizeOperations(t, cache)
+		})
 	})
 
 	t.Run("Keys", func(t *testing.T) {
-		cache := createCache()
-		defer cache.Close()
-		testKeysOperation(t, cache)
+		synctest.Test(t, func(t *testing.T) {
+			cache := createCache()
+			defer cache.Close()
+			testKeysOperation(t, cache)
+		})
 	})
 
 	t.Run("Clear", func(t *testing.T) {
-		cache := createCache()
-		defer cache.Close()
-		testClearOperation(t, cache)
+		synctest.Test(t, func(t *testing.T) {
+			cache := createCache()
+			defer cache.Close()
+			testClearOperation(t, cache)
+		})
 	})
 }
 
@@ -277,49 +288,55 @@ func TestTTLCache(t *testing.T) {
 	})
 
 	t.Run("TTLExpiration", func(t *testing.T) {
-		cache, err := NewTTL[string](context.Background(), 100*time.Millisecond, 50*time.Millisecond)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer cache.Close()
+		synctest.Test(t, func(t *testing.T) {
+			cache, err := NewTTL[string](context.Background(), 100*time.Millisecond, 50*time.Millisecond)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer cache.Close()
 
-		_, _ = cache.Set("key1", "value1")
+			_, _ = cache.Set("key1", "value1")
 
-		// Should exist immediately
-		if value, exists := cache.Get("key1"); !exists || value != "value1" {
-			t.Error("Expected key1 to exist immediately after set")
-		}
+			// Should exist immediately
+			if value, exists := cache.Get("key1"); !exists || value != "value1" {
+				t.Error("Expected key1 to exist immediately after set")
+			}
 
-		// Wait for expiration
-		time.Sleep(150 * time.Millisecond)
+			// Wait for expiration
+			<-time.After(150 * time.Millisecond)
+			synctest.Wait()
 
-		// Should be expired
-		if _, exists := cache.Get("key1"); exists {
-			t.Error("Expected key1 to be expired")
-		}
+			// Should be expired
+			if _, exists := cache.Get("key1"); exists {
+				t.Error("Expected key1 to be expired")
+			}
+		})
 	})
 
 	t.Run("BackgroundCleanup", func(t *testing.T) {
-		cache, err := NewTTL[string](context.Background(), 50*time.Millisecond, 25*time.Millisecond)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer cache.Close()
+		synctest.Test(t, func(t *testing.T) {
+			cache, err := NewTTL[string](context.Background(), 50*time.Millisecond, 25*time.Millisecond)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer cache.Close()
 
-		_, _ = cache.Set("key1", "value1")
-		_, _ = cache.Set("key2", "value2")
+			_, _ = cache.Set("key1", "value1")
+			_, _ = cache.Set("key2", "value2")
 
-		if cache.Size() != 2 {
-			t.Errorf("Expected size 2, got %d", cache.Size())
-		}
+			if cache.Size() != 2 {
+				t.Errorf("Expected size 2, got %d", cache.Size())
+			}
 
-		// Wait for background cleanup
-		time.Sleep(100 * time.Millisecond)
+			// Wait for background cleanup
+			<-time.After(100 * time.Millisecond)
+			synctest.Wait()
 
-		// Items should be cleaned up
-		if cache.Size() != 0 {
-			t.Errorf("Expected size 0 after cleanup, got %d", cache.Size())
-		}
+			// Items should be cleaned up
+			if cache.Size() != 0 {
+				t.Errorf("Expected size 0 after cleanup, got %d", cache.Size())
+			}
+		})
 	})
 }
 
@@ -334,42 +351,47 @@ func TestHybridCache(t *testing.T) {
 	})
 
 	t.Run("HybridEviction", func(t *testing.T) {
-		cache, err := newHybrid[string](context.Background(), 2, 1*time.Second, 500*time.Millisecond)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer cache.Close()
+		synctest.Test(t, func(t *testing.T) {
+			cache, err := newHybrid[string](context.Background(), 2, 1*time.Second, 500*time.Millisecond)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer cache.Close()
 
-		_, _ = cache.Set("key1", "value1")
-		_, _ = cache.Set("key2", "value2")
+			_, _ = cache.Set("key1", "value1")
+			_, _ = cache.Set("key2", "value2")
 
-		// Should trigger LRU eviction of key1
-		_, _ = cache.Set("key3", "value3")
+			// Should trigger LRU eviction of key1
+			_, _ = cache.Set("key3", "value3")
 
-		if cache.Size() != 2 {
-			t.Errorf("Expected size 2, got %d", cache.Size())
-		}
+			if cache.Size() != 2 {
+				t.Errorf("Expected size 2, got %d", cache.Size())
+			}
 
-		if _, exists := cache.Get("key1"); exists {
-			t.Error("Expected key1 to be evicted by LRU")
-		}
+			if _, exists := cache.Get("key1"); exists {
+				t.Error("Expected key1 to be evicted by LRU")
+			}
+		})
 	})
 
 	t.Run("TTLInHybrid", func(t *testing.T) {
-		cache, err := newHybrid[string](context.Background(), 10, 100*time.Millisecond, 50*time.Millisecond)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer cache.Close()
+		synctest.Test(t, func(t *testing.T) {
+			cache, err := newHybrid[string](context.Background(), 10, 100*time.Millisecond, 50*time.Millisecond)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer cache.Close()
 
-		_, _ = cache.Set("key1", "value1")
+			_, _ = cache.Set("key1", "value1")
 
-		// Wait for TTL expiration
-		time.Sleep(150 * time.Millisecond)
+			// Wait for TTL expiration
+			<-time.After(150 * time.Millisecond)
+			synctest.Wait()
 
-		if _, exists := cache.Get("key1"); exists {
-			t.Error("Expected key1 to be expired by TTL")
-		}
+			if _, exists := cache.Get("key1"); exists {
+				t.Error("Expected key1 to be expired by TTL")
+			}
+		})
 	})
 }
 

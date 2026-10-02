@@ -18,7 +18,7 @@ Leg-1 evidence: test commit `ca3eaf46d9068b0d9794e33aae80ac0165be2695`; focused 
 baseline, mutation and restored exits 0/1/0; `task verify` exit 0 on that clean commit, including five
 shuffled unit runs. Draft PR #59 records the commands, full focused outputs, runtime-file checksum,
 verification limits and pickup fields, and CI run 37009998371 passed on the published head `2365c45`.
-The local logs were under `.evidence/await-last-error/` in the claim's worktree, which git ignores; they
+The local logs are under `.evidence/await-last-error/` in the claim's worktree, which git ignores; they
 are not part of the repository. The coordinator publishes this task update and releases write ownership
 in the PR description after publication.
 
@@ -32,7 +32,8 @@ something that happens after the last content commit.
 - [x] 2.1 Picked up with semengine-pickup at `2365c45`: worktree, branch, upstream, CI and the stop point
       verified, and Codex's release of write ownership read from PR #59. `main` (`39badc4`) merged in as
       `f39ead2`.
-- [ ] 2.2 Independent implementation review, and its re-check of the fixes, both recorded on PR #59.
+- [x] 2.2 Independent implementation review at `f39ead2` (changes requested, nothing blocking), and its re-check
+      of the fixes at `474aa38` (approve), both recorded on PR #59.
 - [ ] 2.3 Hold: known flake #62 is fixed on `main` first (PR #63). Then `task verify` passes on the branch's
       last commit before the archive commit, with the branch up to date with `main`.
 - [ ] 2.4 The change is archived and `openspec/specs/lifecycle-suite/spec.md` synced as the last content

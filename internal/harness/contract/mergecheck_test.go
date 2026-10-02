@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -383,5 +384,123 @@ func TestMergeCheckUpToDateRule(t *testing.T) {
 		r := runMergeCheck(t, st, "12")
 		r.requirePass(t, "enforcement=active")
 		r.requireReadPullAndFiles(t)
+	})
+}
+
+// merge-gate › "Cross-agent review check": one case per scenario. Each case writes GitHub's answers
+// by hand; the expected exit and words come from the scenario, never from running the script.
+
+// review is healthy() with the pull request and its files replaced: changed_files is the number of
+// entries unless a case sets it.
+func review(draft bool, author, body string, files ...string) ghState {
+	st := healthy()
+	st.pull = pullJSON(draft, author, body, len(files))
+	st.files = filesJSON(files...)
+	return st
+}
+
+const codeFilePrefix = "merge-check: code file: "
+
+// requireCodeNames fails unless the code names the script prints are exactly want, in any order.
+func (r mergeRun) requireCodeNames(t *testing.T, want ...string) {
+	t.Helper()
+	var got []string
+	for _, line := range strings.Split(r.out, "\n") {
+		if name, ok := strings.CutPrefix(line, codeFilePrefix); ok {
+			got = append(got, name)
+		}
+	}
+	slices.Sort(got)
+	want = slices.Clone(want)
+	slices.Sort(want)
+	if !slices.Equal(got, want) {
+		t.Errorf("code names printed %q, want %q\n%s", got, want, r.out)
+	}
+}
+
+func (r mergeRun) requireNotInOutput(t *testing.T, fragments ...string) {
+	t.Helper()
+	for _, f := range fragments {
+		if strings.Contains(r.out, f) {
+			t.Errorf("output contains %q:\n%s", f, r.out)
+		}
+	}
+}
+
+func TestMergeCheckReview(t *testing.T) {
+	const implClaude = "Summary.\n\nimplemented-by: claude (opus)\n"
+
+	// Which pull requests are covered (task 2.2).
+	t.Run("documents only", func(t *testing.T) {
+		r := runMergeCheck(t, review(false, "User", "", "docs/a.md", "openspec/config.yaml"), "12")
+		r.requirePass(t, "documents only")
+		r.requireCodeNames(t)
+	})
+	t.Run("one code file among documents", func(t *testing.T) {
+		r := runMergeCheck(t, review(false, "User", implClaude, "docs/a.md", "scripts/x.sh"), "12")
+		r.requireFail(t, "is a code pull request", "no line starts reviewed-by:")
+		r.requireCodeNames(t, "scripts/x.sh")
+	})
+	t.Run("names near the rule", func(t *testing.T) {
+		docs := []string{"AGENTS.md", ".claude/skills/preflight/SKILL.md", "x/.claude/agents/a.md",
+			"openspec/changes/x/.openspec.yaml", "openspec/x.sh"}
+		first := runMergeCheck(t, review(false, "User", "", docs...), "12")
+		first.requirePass(t, "documents only")
+		first.requireCodeNames(t)
+
+		code := []string{"README.MD", "docs/a.md.txt", "openspecs/a.yaml", "docs/openspec/a.yaml", "Taskfile.yml",
+			"docs/admission-ledger.yaml", ".claude/agents/semengine-reviewer.md", ".codex/agents/semengine-reviewer.toml"}
+		st := review(false, "User", "", append(slices.Clone(docs), code...)...)
+		entries := strings.TrimSuffix(st.files, "]") + `,{"filename":"scripts/x.sh","status":"removed","additions":0,"deletions":9}]`
+		st.files = entries
+		st.pull = pullJSON(false, "User", "", len(docs)+len(code)+1)
+		second := runMergeCheck(t, st, "12")
+		second.requireFail(t, "is a code pull request")
+		second.requireNotInOutput(t, "documents only")
+		second.requireCodeNames(t, append(code, "scripts/x.sh")...)
+	})
+	t.Run("renamed file", func(t *testing.T) {
+		st := review(false, "User", "")
+		st.pull = pullJSON(false, "User", "", 1)
+		st.files = `[{"filename":"docs/x.md","previous_filename":"scripts/x.sh","status":"renamed","additions":0,"deletions":0}]`
+		r := runMergeCheck(t, st, "12")
+		r.requireFail(t, "is a code pull request")
+		r.requireCodeNames(t, "scripts/x.sh")
+	})
+	t.Run("code file on the second page", func(t *testing.T) {
+		var md []string
+		for n := range 100 {
+			md = append(md, fmt.Sprintf("docs/n%03d.md", n))
+		}
+		for _, pages := range []struct{ how, files string }{
+			{"joined", filesJSON(append(slices.Clone(md), "go.mod")...)},
+			{"one after the other", filesJSON(md...) + filesJSON("go.mod")},
+		} {
+			st := review(false, "User", "")
+			st.pull = pullJSON(false, "User", "", 101)
+			st.files = pages.files
+			r := runMergeCheck(t, st, "12")
+			if r.status == 0 {
+				t.Errorf("%s: exit 0, want non-zero\n%s", pages.how, r.out)
+			}
+			r.requireOutput(t, "is a code pull request")
+			r.requireCodeNames(t, "go.mod")
+		}
+	})
+	t.Run("file list incomplete", func(t *testing.T) {
+		var md []string
+		for n := range 100 {
+			md = append(md, fmt.Sprintf("docs/n%03d.md", n))
+		}
+		st := review(false, "User", "", md...)
+		st.pull = pullJSON(false, "User", "", 101)
+		r := runMergeCheck(t, st, "12")
+		r.requireFail(t, "incomplete", "100 of 101 files")
+		r.requireNotInOutput(t, "documents only")
+	})
+	t.Run("no changed file", func(t *testing.T) {
+		r := runMergeCheck(t, review(false, "User", ""), "12")
+		r.requirePass(t, "documents only")
+		r.requireCodeNames(t)
 	})
 }

@@ -116,6 +116,32 @@ if ! files=$(printf '%s' "$answer" | jq -c -s 'if all(.[]; type == "array" and a
   echo "merge-check: unavailable: the read of the files of pull request #${pr} returned something other than what was asked for: ${answer}" >&2
   exit 2
 fi
+reported=$(printf '%s' "$pull" | jq '.changed_files')
+entries=$(printf '%s' "$files" | jq 'length')
+if [ "$entries" -ne "$reported" ]; then
+  echo "merge-check: unavailable: the file list of pull request #${pr} is incomplete: it has ${entries} of ${reported} files" >&2
+  exit 2
+fi
+# A document name ends in .md or starts with openspec/, and is not under
+# .claude/agents/; every other name is a code name. A renamed file's previous
+# name counts too. A failed jq leaves an empty list, which would read as
+# documents only.
+if ! code=$(printf '%s' "$files" | jq -r '[.[] | .filename, (.previous_filename // empty)]
+  | map(select(((endswith(".md") or startswith("openspec/")) and (startswith(".claude/agents/") | not)) | not))
+  | unique | .[]'); then
+  echo "merge-check: unavailable: jq failed sorting the changed files of pull request #${pr} into code names" >&2
+  exit 2
+fi
+if [ -z "$code" ]; then
+  echo "merge-check: pull request #${pr} is documents only (${reported} changed files); the review check passes"
+else
+  echo "merge-check: pull request #${pr} is a code pull request; its code files ($(printf '%s\n' "$code" | wc -l | tr -d ' '), up to ten shown):"
+  printf '%s\n' "$code" | head -n 10 | sed 's/^/merge-check: code file: /'
+  if ! printf '%s' "$pull" | jq -e '(.body // "") | split("\n") | any(startswith("reviewed-by:"))' >/dev/null; then
+    echo "merge-check: FAIL: no line starts reviewed-by:"
+    failed=1
+  fi
+fi
 
 # 2. Known-flake check.
 # The whole label list, not a search: gh 2.97 prints nothing at all, not [], for

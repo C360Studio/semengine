@@ -176,6 +176,8 @@ the files it names lie outside the set (`processor/graph-index/…`), so it has 
     packages, the stricter reading: two packages of one family aggregated outside `main` fail.
   - (b) A package that calls `alpha.NewFactory()` and adds the results to a registry, without referring to
     `Register`, is not caught.
+  - A dot import (`import . "…/alpha"`) followed by a bare `Register` is not matched by T-B8, but `task lint` fails
+    it first: the pinned `revive.toml` enables `dot-imports`.
 
 ### D3. The two services and their failing factories (foundation D5, D6)
 

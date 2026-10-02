@@ -42,8 +42,9 @@ task vuln         # pinned govulncheck
 task test:unit    # unit tests once, under the race detector, at one CPU
 task test:repeat  # unit tests five times at one CPU, without the race detector, shuffled
 task ledger:diff  # -- <source_path>...: print how ledger entries differ from the SemStreams pin; fetches it
-task merge:check  # -- <n>: fail while a known flake is open that PR n does not close, or while PR n is a code PR,
-                  # not a draft, whose implemented-by:/reviewed-by: lines do not name the two agents; reads GitHub
+task merge:check  # -- <n>: fail while a known flake is open that PR n does not close, main's rules lack the
+                  # up-to-date setting, or PR n is a code PR, not a draft, whose implemented-by:/reviewed-by:
+                  # lines do not name the two agents; reads GitHub
 task verify       # spec:check docs:check fmt:check tidy:check cleanup-roots:check build vet lint vuln
                   # ledger:check test:unit test:integration cover:check test:repeat, cheapest first; fails if
                   # tracked files changed. Not included: doctor, fmt, spec:queue, merge:check

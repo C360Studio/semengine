@@ -28,17 +28,24 @@ starts, `task merge:check -- 67` and the merge are recorded on this pull request
 
 ## 2. The script and its test
 
-- [ ] 2.1 (D) The fake `gh` answers two more reads (the pull request and its files) and still refuses any other
+- [x] 2.1 (D) The fake `gh` answers two more reads (the pull request and its files) and still refuses any other
       call. The shared healthy state is a documents-only pull request. Written first: in one pull-request-run case
       of `TestMergeCheckKnownFlake` and one of `TestMergeCheckUpToDateRule`, an assertion that the pull request and
       its files were read; in a push-run case, an assertion that neither was. Every existing case passes with its
       expectation unchanged. Gate: `task test:unit`.
-- [ ] 2.2 (D) `TestMergeCheckReview`, written first, the cases for which pull requests are covered: the scenarios
+      Done: `3320a92`; seen to fail first (comment 5959591439).
+- [x] 2.2 (D) `TestMergeCheckReview`, written first, the cases for which pull requests are covered: the scenarios
       "Documents only" to "No changed file" of the delta. Gate: `task test:unit`.
-- [ ] 2.3 (D) `TestMergeCheckReview`, written first, the cases for the two lines: the scenarios "The other agent is
+      Done: `b05a668`; seen to fail first (comment 5959591439). Two inputs that read as documents only were found by
+      Claude's early review and fixed with a case each (`cd0de2e`; comments 5959710617, 5959820887).
+- [x] 2.3 (D) `TestMergeCheckReview`, written first, the cases for the two lines: the scenarios "The other agent is
       named" to "Carriage returns". Gate: `task test:unit`.
-- [ ] 2.4 (D) `TestMergeCheckReview`, written first, the remaining scenarios, "Draft" to "Push run and the review
+      Done: `15c8093`; seen to fail first (comment 5959591439). The bot case its scenario gained is `a40d300`
+      (comment 5959865644).
+- [x] 2.4 (D) `TestMergeCheckReview`, written first, the remaining scenarios, "Draft" to "Push run and the review
       check". Gate: `task test:unit`.
+      Done: `ed93d5b` (comment 5959591439). Eight of its cases passed when written, because 2.1 and 2.2 had
+      added the reads; they were seen to fail against the script at `6486db7` instead.
 - [x] 2.5 The time the `contract` package takes in the `test:unit`, `test:integration` and `test:repeat` steps:
       21.0 s, 14.1 s and 31.5 s on `main` (run 37028259077); 24.5 s, 18.4 s and 48.6 s at `69443ed` (run
       37052400417). That is 24.9 s more for the three together, under the 30 s the design proposed, so the cases
@@ -47,20 +54,24 @@ starts, `task merge:check -- 67` and the merge are recorded on this pull request
 
 ## 3. The workflow
 
-- [ ] 3.1 (D) `TestCIWorkflowPinnedSensitivity`, written first, gains one planted workflow for each case of the
+- [x] 3.1 (D) `TestCIWorkflowPinnedSensitivity`, written first, gains one planted workflow for each case of the
       scenarios "Ready type missing" and "A default type missing", and its clean fixture gains the trigger.
       Gate: `task test:unit`.
-- [ ] 3.2 (D) `.github/workflows/ci.yml` lists `opened`, `synchronize`, `reopened` and `ready_for_review` under
+      Done: `69443ed` (comment 5959591439).
+- [x] 3.2 (D) `.github/workflows/ci.yml` lists `opened`, `synchronize`, `reopened` and `ready_for_review` under
       `pull_request`; the job's comment and its step's name say what the script now checks. `TestCIWorkflowPinned`
       passes, and the job's three permissions are unchanged. Gate: `task test:unit`.
+      Done: `69443ed`, in one commit with 3.1 so that no commit is red (comment 5959591439).
 
 ## 4. Against real GitHub
 
-- [ ] 4.1 (D) The script is run locally, with `GITHUB_ACTIONS` unset, against #65, #63, #14, #48 and #67. Each
+- [x] 4.1 (D) The script is run locally, with `GITHUB_ACTIONS` unset, against #65, #63, #14, #48 and #67. Each
       output is recorded on this pull request beside the result worked out by hand, beforehand, from the pull
       request's page: #65 documents only; #63 a code pull request with no `reviewed-by:` line; #14 a code pull
       request by a bot with no `reviewed-by:` line; #48 a draft code pull request whose findings are printed and
       not failed; #67 as it then stands. A result that differs is a defect fixed before 7.1.
+      Done: all five matched the result worked out beforehand; #48 was read at `4d048ee`, 116 files over two
+      pages (comment 5959591439).
 - [x] 4.2 The first CI run of this pull request with the new script (run 37052400417, `69443ed`): the `Merge
       check` log shows the pull request and its files read under the job's token, and two findings printed and not
       failed for a draft. It settles assumption A2 of `design.md`, and A3 for one page only. Recorded on this pull
@@ -72,28 +83,37 @@ starts, `task merge:check -- 67` and the merge are recorded on this pull request
 
 ## 5. Documents
 
-- [ ] 5.1 (W) `.agents/protocol.md` says what `design.md` D7 lists. "Land" (`:59`): the `implemented-by:` line
+- [x] 5.1 (W) `.agents/protocol.md` says what `design.md` D7 lists. "Land" (`:59`): the `implemented-by:` line
       names the implementing agent with the word `claude` or `codex`, beside the model or persona. "Cross-agent
       review": the `reviewed-by:` line names the reviewing agent with the same words and is written once that
       agent's newest review record approves; what the script checks and what stays review only; that marking ready
       starts the run that applies the check and an edit or a comment starts none. "Verification": what
       `merge-check` now fails on. Gate: `task docs:check`.
-- [ ] 5.2 (W) `AGENTS.md`: the rule's row names the script, `TestMergeCheckReview` and `TestCIWorkflowPinned` under
+      Done: `6236331`; read by Claude's early review (comment 5959955610).
+- [x] 5.2 (W) `AGENTS.md`: the rule's row names the script, `TestMergeCheckReview` and `TestCIWorkflowPinned` under
       "Enforced by" and lists what stays review only, from `design.md`, "What the check does not see"; the command
       comment, the CI paragraph and the Merge bullet follow. Gate: `task docs:check`.
-- [ ] 5.3 (W) One line each in `.agents/skills/semengine-preflight/SKILL.md`, `docs/repository-map.md`,
+      Done: `6236331`; read by Claude's early review (comment 5959955610), whose nit on the command comment is
+      fixed in the commit that ticks this.
+- [x] 5.3 (W) One line each in `.agents/skills/semengine-preflight/SKILL.md`, `docs/repository-map.md`,
       `docs/testing.md`, the description of `merge:check` in `Taskfile.yml`, and the header of
       `scripts/merge-check.sh`. Gate: `task docs:check` and `task test:unit`.
-- [ ] 5.4 (W) A note on PR #48, marked as coordination and not a review, says what its description needs before it
+      Done: `6236331`; read by Claude's early review (comment 5959955610), whose nit on the preflight line is
+      fixed in the commit that ticks this.
+- [x] 5.4 (W) A note on PR #48, marked as coordination and not a review, says what its description needs before it
       is marked ready: `claude` in its `implemented-by:` line. It also repeats the protocol's sentence from 5.1 on
       when the `reviewed-by:` line is written. Its link is recorded on this pull request.
+      Done: PR #48 comment 5959963712, written at its head `832bc55`.
 
 ## 6. Shown able to fail
 
-- [ ] 6.1 (D) The experiment of `docs/testing.md`, "Show that the test can fail", is run for each of the seven wrong
+- [x] 6.1 (D) The experiment of `docs/testing.md`, "Show that the test can fail", is run for each of the seven wrong
       changes listed in `design.md`, D6. For each, the change and the baseline, wrong-change and restored runs are
       recorded on this pull request. A wrong change the tests let through is reported as a survivor and closed with
       a new case, or listed under what is not covered.
+      Done: all seven detected, no survivor among them (comment 5959591439). Claude's early review found an
+      eighth wrong change that survived, the bot guard; it is closed by the case in `a40d300` (comments
+      5959710617, 5959865644). Not covered: listed in comment 5959591439.
 
 ## 7. Review
 

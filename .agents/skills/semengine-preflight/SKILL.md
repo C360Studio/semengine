@@ -65,7 +65,7 @@ Select by what the diff changes:
 - **Dependencies or `go.mod`:** `task tidy:check` and `task vuln` in addition to the Go gates.
 - **Before any implementation push:** `task verify`.
 - **Immediately before merging:** `task merge:check -- <n>`, in a shell where `GITHUB_ACTIONS` is not set. It sees a
-  flake filed, or a closing line removed, since the pull request's last CI run.
+  flake filed, a closing line removed, or a `reviewed-by:` line added, since the pull request's last CI run.
 
 Do not hand-run a narrower command in place of a gate CI runs: the task owns flags and pins.
 

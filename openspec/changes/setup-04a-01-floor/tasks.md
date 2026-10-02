@@ -247,7 +247,9 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       remains (`background-work` delta); rows validate, no file beyond the pin's was added except adapters and the
       rewritten `NewTestClient` sites, and every D8 repair is on its row; every real-clock timer in a repaired file
       is either an R1b failure bound sized per D8 or a site in D8's disposition table with that disposition (a review
-      check the text check cannot make). Verdict on this pull request.
+      check the text check cannot make); `go test -v -run TestPublicSignatures ./internal/harness/contract` shows
+      "public packages checked: 11" and passes, and a run with `TemporalResolver.GetStats` re-exported fails naming
+      it (design D5, task 2.10). Verdict on this pull request.
 - [ ] 3.11 (D) CI time: the wall time of `task verify` per step (`scripts/verify.sh` prints it) and of the CI `verify`
       job with every package ported are recorded on this pull request, with the integration lane's time against its
       `-timeout 10m` (`scripts/test-integration.sh:402`). If the job exceeds its 15-minute limit (`merge-gate`

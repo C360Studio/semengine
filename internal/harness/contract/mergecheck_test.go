@@ -548,8 +548,16 @@ func TestMergeCheckReview(t *testing.T) {
 			requirePass(t, "reviewing agent: claude")
 	})
 	t.Run("pull request by a bot", func(t *testing.T) {
-		runMergeCheck(t, code("Bot", "Bumps x from 1 to 2.\n\nreviewed-by: codex\n"), "12").
-			requirePass(t, "reviewing agent: codex")
+		// The implemented-by: line of a bot's pull request is not read, so codex may review even
+		// where that line names codex.
+		for _, body := range []string{
+			"Bumps x from 1 to 2.\n\nreviewed-by: codex\n",
+			"Bumps x from 1 to 2.\n\nimplemented-by: codex\nreviewed-by: codex\n",
+		} {
+			t.Run(strings.Fields(strings.SplitN(body, "\n\n", 2)[1])[0], func(t *testing.T) {
+				runMergeCheck(t, code("Bot", body), "12").requirePass(t, "reviewing agent: codex")
+			})
+		}
 	})
 	t.Run("line not written once at the start of a line", func(t *testing.T) {
 		for _, tc := range []struct{ body, says string }{

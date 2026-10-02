@@ -15,18 +15,32 @@
       in draft PR #59, with these tasks reconciled to the recorded evidence.
 
 Leg-1 evidence: test commit `ca3eaf46d9068b0d9794e33aae80ac0165be2695`; focused race-test
-baseline, mutation and restored exits 0/1/0 in `.evidence/await-last-error/`; `task verify` exit 0 on
-that clean commit, including five shuffled unit runs. Draft PR #59 records the commands, full focused
-outputs, runtime-file checksum, verification limits and pickup fields. The coordinator publishes this
-task update and releases write ownership in the PR description after publication.
+baseline, mutation and restored exits 0/1/0; `task verify` exit 0 on that clean commit, including five
+shuffled unit runs. Draft PR #59 records the commands, full focused outputs, runtime-file checksum,
+verification limits and pickup fields, and CI run 37009998371 passed on the published head `2365c45`.
+The local logs were under `.evidence/await-last-error/` in the claim's worktree, which git ignores; they
+are not part of the repository. The coordinator publishes this task update and releases write ownership
+in the PR description after publication.
 
-## 2. Hold: fresh Claude pickup for leg 2
+## 2. Leg 2: Claude
 
 The owner assigns the remaining steps to a fresh Claude session taking the draft PR alone.
-Codex stops after section 1.
+Codex stops after section 1. What follows the archive (the check of the archive and spec sync, undraft,
+CI, `task merge:check` and the merge) is recorded on PR #59, not here: a task cannot be ticked for
+something that happens after the last content commit.
 
-- [ ] 2.1 Hold: fresh Claude leg-2 pickup. Use semengine-pickup to verify the worktree, branch, CI,
-      evidence and stop point.
-- [ ] 2.2 Obtain independent implementation review and resolve its findings.
-- [ ] 2.3 Archive and synchronize the current spec as the final content commit; obtain the archive/spec-sync check.
-- [ ] 2.4 Continue the owner's leg-2 landing instructions through the repository merge gates.
+- [x] 2.1 Picked up with semengine-pickup at `2365c45`: worktree, branch, upstream, CI and the stop point
+      verified, and Codex's release of write ownership read from PR #59. `main` (`39badc4`) merged in as
+      `f39ead2`.
+- [ ] 2.2 Independent implementation review, and its re-check of the fixes, both recorded on PR #59.
+- [ ] 2.3 Hold: known flake #62 is fixed on `main` first (PR #63). Then `task verify` passes on the branch's
+      last commit before the archive commit, with the branch up to date with `main`.
+- [ ] 2.4 The change is archived and `openspec/specs/lifecycle-suite/spec.md` synced as the last content
+      commit; `task spec:check` passes and `task spec:queue` shows no open hold.
+
+Leg-2 evidence so far: the implementation review at `f39ead2` found the test and the delta correct,
+reproduced the mutation check (three mutants, all detected) and asked for three changes, made in the
+commit after it: tasks 2.3 and 2.4 as first written could not be ticked before the archive; the doc
+comment on `Await` kept the phrase the ruling resolved; and the leg-1 evidence pointed at local files.
+`task verify` on `f39ead2` failed in `test:repeat` on `TestSignalDuringPullReapsThePull`, a runner test
+this change does not touch. That is known flake #62, claimed by PR #63, and this change waits for it.

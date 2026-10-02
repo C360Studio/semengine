@@ -8,7 +8,8 @@ No sister repository or new external adopter surface is involved.
 
 - Owner and current spellings: `internal/harness/probe/await.go:29` replaces value and error together;
   lines 37–42 report that error or "(no error)". The ambiguity is in the lifecycle-suite requirement
-  "Probes retain observable state", lines 33–42. The existing doc comment describes the final error.
+  "Probes retain observable state", lines 33–42. The doc comment's "the last observation error" could
+  be read both ways as well; leg 2 reworded it after review.
 - Missing evidence: `TestAwaitReportsLastObservation` at `probe_test.go:147` checks distinct non-nil
   errors; `TestAwaitReportsLastObservationWithoutError` at `:194` checks always-clean observations.
   Neither covers an earlier error followed by a clean observation. The archived flake-defense change

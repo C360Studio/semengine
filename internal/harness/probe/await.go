@@ -14,9 +14,10 @@ const pollInterval = 20 * time.Millisecond
 
 // Await polls observe under the caller's context until done accepts an observation, and returns
 // that observation. When the context ends first it returns the last observation and an error that
-// wraps the context's error and the last observation error, and names the last value, so a failed
-// wait says what was seen rather than only that time ran out. An observation error does not end the
-// wait: the thing observed may not exist yet.
+// wraps the context's error and that observation's own error, if it had one, and names the last
+// value, so a failed wait says what was seen rather than only that time ran out. An error from an
+// earlier observation is not reported once a later one returns without error. An observation error
+// does not end the wait: the thing observed may not exist yet.
 func Await[T any](ctx context.Context, observe func(context.Context) (T, error), done func(T) bool) (T, error) {
 	var last T
 	if ctx == nil {

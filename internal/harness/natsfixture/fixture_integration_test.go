@@ -823,6 +823,96 @@ func TestRestartEndsConsumers(t *testing.T) {
 	}
 }
 
+// sessionContainersLike lists the containers of this run's testcontainers session whose name
+// shares the fixture container's name up to its random suffix: every container this fixture could
+// have created, read from Docker rather than from the fixture.
+func sessionContainersLike(t *testing.T, f *Fixture, id string) []string {
+	t.Helper()
+	out, err := exec.Command("docker", "inspect", "--format", "{{.Name}}", id).Output()
+	if err != nil {
+		t.Fatalf("docker inspect %s: %v", id, err)
+	}
+	name := strings.TrimPrefix(strings.TrimSpace(string(out)), "/")
+	prefix := name[:strings.LastIndex(name, "-")+1]
+	data, err := os.ReadFile(filepath.Join(f.adm.evidenceDir, "testcontainers-session"))
+	if err != nil {
+		t.Fatalf("session labels: %v", err)
+	}
+	var ids []string
+	for _, label := range strings.Fields(string(data)) {
+		out, err := exec.Command("docker", "ps", "-a", "--no-trunc", "--filter", "label="+label, "--format", "{{.ID}} {{.Names}}").Output()
+		if err != nil {
+			t.Fatalf("docker ps --filter label=%s: %v", label, err)
+		}
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			if fields := strings.Fields(line); len(fields) == 2 && strings.HasPrefix(fields[1], prefix) && !slices.Contains(ids, fields[0]) {
+				ids = append(ids, fields[0])
+			}
+		}
+	}
+	return ids
+}
+
+// Restart fault matrix (task 2.2): each container hook fails in turn, before and after its real
+// call. Restart returns an *Error naming exactly that phase, runs no later phase, creates no second
+// container, and Stop still removes the one container and observes it gone.
+func TestRestartFaultMatrix(t *testing.T) {
+	injected := errors.New("injected failure")
+	hook := func(real func(context.Context, testcontainers.Container) error, after bool) func(context.Context, testcontainers.Container) error {
+		return func(ctx context.Context, c testcontainers.Container) error {
+			if after {
+				_ = real(ctx, c)
+			}
+			return injected
+		}
+	}
+	for _, tc := range []struct {
+		name  string
+		phase Phase
+		set   func(d *deps)
+		// later is the dependency count that must not move: the next phase never ran.
+		later string
+	}{
+		{"stop-container before", PhaseStopContainer, func(d *deps) { d.stopContainer = hook(d.stopContainer, false) }, "startContainer"},
+		{"stop-container after", PhaseStopContainer, func(d *deps) { d.stopContainer = hook(d.stopContainer, true) }, "startContainer"},
+		{"start-container before", PhaseStartContainer, func(d *deps) { d.startContainer = hook(d.startContainer, false) }, "mappedPort"},
+		{"start-container after", PhaseStartContainer, func(d *deps) { d.startContainer = hook(d.startContainer, true) }, "mappedPort"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := startFixture(t)
+			id := f.containerID
+			tc.set(&f.deps)
+			before := f.callCounts()
+			ctx, cancel := context.WithTimeout(t.Context(), stopBound)
+			defer cancel()
+			err := f.Restart(ctx)
+			var fe *Error
+			if !errors.As(err, &fe) || fe.Phase != tc.phase || !errors.Is(err, injected) || fe.ContainerID != id || fe.ParentErr != nil {
+				t.Fatalf("Restart = %v, want an *Error at phase %s on container %s wrapping the injected cause", err, tc.phase, shortID(id))
+			}
+			calls := f.callCounts()
+			if calls[tc.later] != before[tc.later] {
+				t.Fatalf("a phase after %s ran: %s calls %d -> %d", tc.phase, tc.later, before[tc.later], calls[tc.later])
+			}
+			if calls["start"] != 1 {
+				t.Fatalf("start called %d times; Restart must not replace the container", calls["start"])
+			}
+			if got := sessionContainersLike(t, f, id); len(got) != 1 || got[0] != id {
+				t.Fatalf("containers of this fixture after a failed Restart: %v, want only %s", got, id)
+			}
+			if err := f.Restart(ctx); !errors.Is(err, errNotStarted) {
+				t.Fatalf("Restart after a failed Restart = %v, want the not-started refusal", err)
+			}
+			if err := stop(t, f); err != nil {
+				t.Fatalf("Stop after a failed Restart: %v", err)
+			}
+			if rem := f.remaining(); len(rem) != 0 || containerExists(t, id) {
+				t.Fatalf("after Stop: remaining %v, container exists %t", rem, containerExists(t, id))
+			}
+		})
+	}
+}
+
 // M1: once Stop has begun, the fixture refuses to create anything; a resource created behind
 // Stop's back would be owned by nobody when Stop returned nil.
 func TestNoCreationOnceStopBegins(t *testing.T) {

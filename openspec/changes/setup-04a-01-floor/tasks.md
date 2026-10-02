@@ -55,7 +55,7 @@ this pull request as a comment unless a task says otherwise. No task asserts a f
       afterwards; a fourth asserts `Restart` before `Start` returns an error with no Docker call. Gate: `task
       test:integration -- ./internal/harness/natsfixture`. The durability premise (design P3) is proven here, not
       assumed.
-- [ ] 2.2 (D) Restart fault matrix: with the `stopContainer` and `startContainer` hooks made to return an error in turn,
+- [x] 2.2 (D) Restart fault matrix: with the `stopContainer` and `startContainer` hooks made to return an error in turn,
       `Restart`
       returns a `FixtureError` naming the phase, no second container exists, and `Stop` observes the container gone;
       the sensitivity test trips exactly its phase. The one-replacement rule is unchanged (`maxAttempts` untouched).

@@ -433,3 +433,26 @@
     required, optional and whitelisted client certificates)
   owner: setup-04a-01-floor developer
   disposition: adapt
+
+- source_path: payloadregistry
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the binary's single payload type authority (registration, factories, indexing-profile floor,
+    projection contracts); SemSource imports it (run.go, design P16); imported by message
+  destination: payloadregistry
+  contract: >-
+    New, Register, lookups and the registration validation (projection contracts through
+    pkg/projection/contract) as at the pin
+  dependencies_and_side_effects: >-
+    pkg/errs, pkg/projection/contract, pkg/types, vocabulary (in-set); stdlib; no goroutine, no I/O
+  known_risks: >-
+    no context roots. Adapt item: testing.go (NewForTest, NewWithSubset, RegisterTestType) is not
+    ported into the package; it is a non-test file importing testing, which TestImportGraph refuses
+    in production code, and no payloadregistry test calls it (pin grep). Task 2.8 rehomes it to
+    internal/harness/payloadfixture; its qualifications of New, Registry and Registration as
+    payloadregistry.X are recorded on this row when task 2.8 lands. The package doc names ADR-103,
+    ADR-054, ADR-029, component.Dependencies and agentic, which do not exist here; left as the pin's
+    text
+  proving_tests: payloadregistry/registry_test.go, payloadregistry/attributes_test.go
+  owner: setup-04a-01-floor developer
+  disposition: adapt

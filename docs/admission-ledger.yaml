@@ -459,7 +459,11 @@
     handler returns; Stop waits for it within ctx after the serve join, returns ctx's error and
     leaves it pending when ctx ends first, and a repeated Stop waits again and returns nil only once
     it has finished; at the pin the forced path cleared its state after the serve join and the
-    repeated Stop returned nil at once (pin handler.go:202-206). Changed behavior (design D9; Codex
+    repeated Stop returned nil at once (pin handler.go:202-206). Changed behavior (Codex review of
+    PR #48, comment 5959412053, finding 1), written first: Stop closes admission before it shuts
+    down, so a request that reaches the handler after Stop has begun is refused with 503 and its
+    handler never runs; admission closed and no request running are observed under one lock, so a
+    nil Stop is final. Changed behavior (design D9; Codex
     review finding 4, PR #48 comment 5956732582; owner-accepted 2026-10-02), written first:
     RegisterOrGet[C] keeps one canonical collector per logical key, of the exact concrete type and
     descriptors; a nil candidate, a type or descriptor mismatch, and a cross-key alias are refused
@@ -491,8 +495,9 @@
     restates Stop's forced join, admitted-request wait and context error in place of the one-second
     bound. README behavior edits (owner ruling, #9 comment 5957221949: a passage describing behavior
     the ported code no longer has is corrected, listed by line): pin README.md:318-320 (tree
-    :345-349), the Stop paragraph, rewritten for the graceful attempt within shutdownCtx, the forced
-    join without a timer, the wait for admitted requests and the context error; the registration
+    :335-340), the Stop paragraph, rewritten for the graceful attempt within shutdownCtx, the forced
+    join without a timer, the wait for admitted requests, the context error and the 503 refusal once
+    Stop has begun; the registration
     passages rewritten for RegisterOrGet (design D9): pin README.md:107-119, :151-154, :207-218 (the
     MetricsRegistrar section, replaced by a RegisterOrGet entry under Functions), :286-293, :333-336,
     :343-344, :367-372, :464-475 and :653-668. README lint fixes
@@ -523,6 +528,12 @@
     TestServerRepeatedStopWaitsForAdmittedRequest (a real request whose collector blocks; Stop with
     an ended context, then a repeat, both context.Canceled; the adapter reports the admitted
     request; a live Stop returns nil only after the collection exited); handler_test.go's
+    in metric/admission_test.go: TestServerRefusesRequestAfterStopReportedCompletion (implementer-
+    reported failing first: "a request reached collection after Stop had reported completion"; a
+    real ephemeral listener whose connection pauses at net/http's second SetReadDeadline, after the
+    shutdown check and before the handler, while Stop with an ended context and a repeated Stop
+    run; on release the collector never starts) and TestAdmittedRequestsRefuseAfterClose (503, the
+    handler not run); handler_test.go's
     TestServerStopIsCallerBounded asserted the pin's nil repeat before the release (pin
     handler_test.go:461) and now asserts context.Canceled, with the nil Stop after the release;
     in metric/registerorget_test.go, design D9 tests 1-8, written first and failing against the

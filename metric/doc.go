@@ -339,7 +339,8 @@
 // graceful shutdown within the caller's budget; failure or expiry triggers a
 // force-close, after which Stop waits for the exact serving goroutine and for
 // every request the server admitted, and it returns the context's error
-// whenever its context has ended; a later Stop then waits again. Restart uses a
+// whenever its context has ended; a later Stop then waits again. A request that
+// reaches the handler after Stop has begun is refused with 503. Restart uses a
 // freshly constructed Server.
 //
 // # Examples

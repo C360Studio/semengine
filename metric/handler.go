@@ -203,7 +203,8 @@ func (s *Server) start(ctx context.Context, supplied net.Listener, provided bool
 // request the server admitted, with the metrics collection it runs, is the
 // server's work until its handler returns: Stop returns nil only after every
 // such request has finished, and when ctx ends first it returns ctx's error and
-// a later Stop waits again. A completed repeat is a nil no-op. Concurrent Stop
+// a later Stop waits again. Once Stop has begun, a request that reaches the
+// handler is refused with 503 Service Unavailable and its handler never runs. A completed repeat is a nil no-op. Concurrent Stop
 // is unsupported and returns a typed transient error.
 func (s *Server) Stop(ctx context.Context) error {
 	if ctx == nil {
@@ -238,6 +239,9 @@ func (s *Server) Stop(ctx context.Context) error {
 	requests := s.requests
 	s.stopping = true
 	s.mu.Unlock()
+	if requests != nil {
+		requests.closeAdmission()
+	}
 
 	var stopErr error
 	s.recordOp("shutdown")
@@ -338,28 +342,50 @@ func (s *Server) recordOp(op string) {
 }
 
 // admittedRequests counts the requests a Server's handler has admitted and not yet
-// returned from, so Stop can wait for them after a forced close.
+// returned from, so Stop can wait for them after a forced close. Stop closes
+// admission first: a request that reaches the handler afterwards is refused, so
+// once admission is closed and nothing runs, which wait observes under the same
+// lock, no request can start collection.
 type admittedRequests struct {
 	mu     sync.Mutex
 	active int
+	closed bool          // admission closed by Stop
 	idle   chan struct{} // closed when active returns to zero; nil while none run
 }
 
 func (r *admittedRequests) wrap(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		r.begin()
+		if !r.begin() {
+			// Stop has begun: the request is refused rather than started, because a
+			// Stop may already have reported that no request runs.
+			w.Header().Set("Connection", "close")
+			http.Error(w, "metrics server is stopping", http.StatusServiceUnavailable)
+			return
+		}
 		defer r.end()
 		next.ServeHTTP(w, req)
 	})
 }
 
-func (r *admittedRequests) begin() {
+// begin admits a request, or reports false once admission is closed.
+func (r *admittedRequests) begin() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	if r.closed {
+		return false
+	}
 	if r.active == 0 {
 		r.idle = make(chan struct{})
 	}
 	r.active++
+	return true
+}
+
+// closeAdmission refuses every later request; requests already admitted run on.
+func (r *admittedRequests) closeAdmission() {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.closed = true
 }
 
 func (r *admittedRequests) end() {

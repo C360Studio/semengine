@@ -337,7 +337,8 @@ if err := server.Stop(shutdownCtx); err != nil {
 the server and listener are force-closed and `Stop` waits for its exact serving goroutine, which returns once its
 listener is closed, and for every request the server admitted, including the metrics collection it runs. `Stop`
 returns the context's error whenever `shutdownCtx` has ended, and a later `Stop` waits again for what is still
-running. The instance is terminal after that attempt; a completed repeated `Stop` returns nil.
+running. Once `Stop` has begun, a request that reaches the handler is refused with 503 Service Unavailable. The
+instance is terminal after that attempt; a completed repeated `Stop` returns nil.
 
 ### Best Practices
 

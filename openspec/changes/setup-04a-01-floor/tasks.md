@@ -294,8 +294,8 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       verified against the code as landed; `task spec:check` passes.
 - [ ] 6.4 (W) `.agents/contracts/semengine-developer.md` and `.agents/contracts/semengine-reviewer.md` gain the
       "Background work" subsection after "Context ownership", and their detach bullets the no-join-by-timer clause,
-      as drafted on this pull request; `AGENTS.md`'s "Rules and what enforces them" table gains the background-work
-      row drafted on this pull request, in the commit of task 6.3's spec sync or later; `task docs:check` passes.
+      as drafted on this pull request; `AGENTS.md`'s "Rules and what enforces them" table carries the background-work
+      row, added in commit b09374a; `task docs:check` passes.
 
 ## 7. Review and archive
 

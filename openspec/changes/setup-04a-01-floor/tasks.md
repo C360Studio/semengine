@@ -104,16 +104,33 @@ this pull request as a comment unless a task says otherwise. No task asserts a f
       lists only pure-library packages of the set, and no test in those packages imports the helper (design P5).
 - [ ] 2.9 (R) Harness review: the five additions against the deltas, the fault matrices' completeness, and the
       `natsfixture` import list. Verdict recorded on this pull request before any ported package lands.
+- [ ] 2.10 (D) Public-signature contract test (owner ruling, #9 comment 5953477174; `harness-boundaries` › "Public
+      signatures name no internal type"): `TestPublicSignatures` in `internal/harness/contract` loads the module's
+      non-test packages with `golang.org/x/tools/go/packages` (already direct, as in `TestNoRetainedContext`,
+      `context_test.go:224`; no new dependency, no ledger row) and walks with `go/types` from each exported
+      identifier of every public package, modelled on the design review's `go/types` walk of design D5 (attached to
+      this pull request). `TestPublicSignaturesSensitivity`, written first and shown failing against a check that
+      reports nothing, plants a fixture module (`writeTree`, as `TestNoRetainedContextSensitivity` does) with one
+      violation per reach: a direct result, an exported method, an embedded field, an interface method set, a type
+      argument, a generic constraint and an alias. Each is reported naming the identifier and the internal type; a
+      clean package that uses the internal type only in unexported identifiers and bodies reports nothing. The real
+      tree passes; it has no public package until section 3, whose `task verify` runs then hold each ported package
+      to it. Gate: `task test:unit`. Not gated by #52 (task 3.0).
 
 ## 3. Port mechanics, per package in design D1's order
 
-For each of the 15 packages (one task line per package below): the ledger row is written first and `task
-ledger:check` passes; the package and its `_test.go` files are copied from the pin at
-`8b99efe9c66a4faa4fa509f9f62cc6bad8392128` with the module path rewritten and the design D8 repairs applied, each
-repair written so it fails first where the pin's test fails (P19) and listed on the row's `evidence` as pin
-`file:line` → SemEngine `file:line`; a row with any repaired test file is `adapt` (task 1.5, Q1); `task verify`
-passes; `task test:repeat -- ./<pkg>` passes; the carried tests pass in their lane; the row's `proving_tests` names
-them; context roots in the package are triaged in `known_risks`.
+For each of the 15 packages (one task line per package below, named by its pin path): the ledger row is written
+first and `task ledger:check` passes; the package and its `_test.go` files are copied from the pin at
+`8b99efe9c66a4faa4fa509f9f62cc6bad8392128` to the row's `destination` (design D5: eleven keep their pin paths, four
+move from `pkg/<name>` to `internal/<name>`), with every pin import path rewritten to its destination and the design
+D8 repairs applied, each repair written so it fails first where the pin's test fails (P19) and listed on the row's
+`evidence` as pin `file:line` → SemEngine `file:line`; a row with any repaired test file is `adapt` (task 1.5, Q1);
+`task verify` passes; `task test:repeat -- ./<destination>` passes; the carried tests pass in their lane; the row's
+`proving_tests` names them; context roots in the package are triaged in `known_risks`.
+
+- [ ] 3.0 Hold: section 3 waits for #52 (PR #54) to merge, per the owner's placement on #52 ("Scope and placement",
+      2026-10-02); section 2 is not held. The #52 command's output, each package's difference from the pin read
+      through its row's `source_path` → `destination` (design D5), is task 7.1's review input.
 
 - [ ] 3.1 (D) `pkg/platform`, `pkg/resource`, `pkg/retry`, `pkg/security`, `pkg/timestamp` (level 0): rows `carry`
       except `pkg/resource` (`adapt`, SS#1415-class ender and D8 repairs) and `pkg/retry` (`adapt`, D8 repair:
@@ -148,7 +165,7 @@ them; context roots in the package are triaged in `known_risks`.
       `internal/semantictest` import the harness copy); `pkg/cache` row `adapt`: its 26 sleeps are repaired under
       `synctest` with its 30 `t.Parallel()` calls removed (D8 R1); `TestCoalescingSet_EntityUpdateScenario`,
       `TestAttack_ConcurrentAddRemove` and `TestCoalescingSet_ContextCancellation` are shown failing first under a
-      recorded `test:repeat` seed from task 2.0b, and after the repair `task test:repeat -- ./pkg/cache` passes on
+      recorded `test:repeat` seed from task 2.0b, and after the repair `task test:repeat -- ./internal/cache` passes on
       that seed and on three further runs whose seeds are recorded; per design D7, each test written first:
       `CoalescingSet` takes shape 3 — inside `synctest.Test` it is constructed, used and shut down with nothing left
       running; `NewCoalescingSet(nil, …)` panics at the call with no goroutine started (today it panics in the
@@ -195,14 +212,19 @@ them; context roots in the package are triaged in `known_risks`.
       helper). `TemporalResolver` takes shape 2 by
       delegation (design D7): constructed and closed inside `synctest.Test` with no broker and nothing left running,
       and `NewTemporalResolver(nil, …)` and `NewTemporalResolverWithCache(nil, …)` return an error, each test
-      written first; its empty eviction callbacks (`kv_temporal.go:27,59`) go with `WithEvictionCallback`. Each item is
-      recorded on the row as changed behaviour (`adapt`).
+      written first; its empty eviction callbacks (`kv_temporal.go:27,59`) go with `WithEvictionCallback`.
+      `TemporalResolver.GetStats` (`kv_temporal.go:221`), which returns the internal `*cache.Statistics`, becomes
+      the unexported `cacheStats` (design D5; owner ruling, #9 comment 5953295358); its only callers,
+      `kv_error_integration_test.go:421, :436, :447`, are in the package and call `cacheStats`, including the
+      repaired wait at `:440` (design D8). Each item is recorded on the row as changed behaviour (`adapt`).
 - [ ] 3.8 (D) `task cover:check` targets `natsclient`, `message`, `payloadregistry` at 80%: the first measurement
       of each is recorded on this pull request (design P8: the pin baseline is unmeasured). If any of the three
       measures below 80%, a new task asking the owner to rule on that package's coverage is added to this file at
       that moment, written so `task spec:queue` reads it, and the gate stays unwaived (plan `:206-209`); nothing in
       this file waits on the owner until the measurement exists.
-- [ ] 3.9 (D) `stretchr/testify` is a direct requirement; `task tidy:check` passes; the ported test-file count is 121
+- [ ] 3.9 (D) `stretchr/testify` and `pgregory.net/rapid` v1.3.0 are direct requirements (design D1; Rapid by owner
+      ruling, PR #48 comment 5951926492), and `pkg/types/entity_id_prop_test.go`, the floor's one Rapid file
+      (design P23), is ported with its property test; `task tidy:check` passes; the ported test-file count is 121
       (127 at the pin less the four excluded files and `pkg/acme`'s two) and the line count after repair is recorded
       with `wc` next to the pin's 33,279 less the 60 lines of `TestEvictCallback` (design D8), with a diff stat
       against the pin per package.
@@ -247,7 +269,7 @@ them; context roots in the package are triaged in `known_risks`.
       ledger as an inventory with its command and result; it changes no row.
 - [ ] 5.3 (D) Package-doc lint sensitivity: `package-comments` is already on (`revive.toml:22`); `task lint` passes
       over the ported tree (every package in the set has a package comment at the pin, inventory §3.3), and a run
-      with one public package's comment removed fails naming it; the eight public destinations (design D5) are the
+      with one public package's comment removed fails naming it; the eleven public destinations (design D5) are the
       ones the check protects.
 - [ ] 5.4 (D) `scripts/cover-check.sh` reads its targets from a list that this and later changes extend, adding
       `natsclient`, `message` and `payloadregistry`, which lie outside the `internal/harness` base the script
@@ -268,7 +290,8 @@ them; context roots in the package are triaged in `known_risks`.
       verified against the code as landed; `task spec:check` passes.
 - [ ] 6.4 (W) `.agents/contracts/semengine-developer.md` and `.agents/contracts/semengine-reviewer.md` gain the
       "Background work" subsection after "Context ownership", and their detach bullets the no-join-by-timer clause,
-      as drafted on this pull request; `task docs:check` passes.
+      as drafted on this pull request; `AGENTS.md`'s "Rules and what enforces them" table gains the background-work
+      row drafted on this pull request, in the commit of task 6.3's spec sync or later; `task docs:check` passes.
 
 ## 7. Review and archive
 
@@ -278,4 +301,7 @@ them; context roots in the package are triaged in `known_risks`.
 - [ ] 7.2 (D) `task verify` green on the final commit; the integration lane green under the host lock, evidence
       directory attached to this pull request; `implemented-by:` in the pull request body.
 - [ ] 7.3 (W) The change archived under `openspec/changes/archive/` as the last content commit before squash merge;
+      in that commit `openspec/specs/background-work/spec.md`, `process-host/spec.md` and `transport-client/spec.md`
+      each carry a real `## Purpose` in place of the placeholder `openspec archive` writes, which OpenSpec 1.13.2's
+      strict validation rejects (PR #48 comment 5951371629, item 2); `task spec:check` passes on that commit;
       `task spec:queue` shows no open hold.

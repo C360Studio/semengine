@@ -67,13 +67,17 @@ closure(message) less `pkg/acme`: 15 packages. The loaders, `pkg/acme`, `go-acme
 (D7) move to change 5, which ports `output/websocket` (foundation D2 row 5); `input/websocket` and
 `output/httppost` call them too and are in no change of the chain, so the change that ports them inherits the row.
 `pkg/platform` and `pkg/security` have no tests at the pin; none are invented — their rows say so and D10 does not
-gate them. Ported files keep their pin paths under the SemEngine module. Not ported: `test_client.go`
+gate them. Ported files land at their row's `destination` (D5). Not ported: `test_client.go`
 (`adapt → natsfixture`) and `test_options.go` (`defer-exclude`); by owner ruling (#9, comment 5941920346, Q3), the
 three test files that exercise them — `test_client_factory_test.go`, `test_client_integration_test.go` and
 `test_client_readiness_test.go` (`defer-exclude`). `monitoring_consumers_test.go` is also `defer-exclude`, an
 exclusion forced by Q3 and not an owner ruling: it walks the SemStreams tree for `NewTestClient(…, WithMonitoring())`
 callers (`:13-27, :83, :111-115`), `WithMonitoring` is declared at `test_client.go:448`, which is not ported, and
 the files it names lie outside the set (`processor/graph-index/…`), so it has nothing left to check.
+
+Two test libraries become direct test requirements: `stretchr/testify` (ruling b) and `pgregory.net/rapid` v1.3.0
+(the pin's `go.mod:25`; owner ruling, PR #48 comment 5951926492). In the 15 packages only
+`pkg/types/entity_id_prop_test.go` imports Rapid, and it is ported with its property test (P23).
 
 ### D2. Harness API shapes (foundation D4, made concrete)
 
@@ -261,16 +265,52 @@ states the `Client` nil-context requirement; the row records each item as change
 ### D5. Ledger rows (foundation D7, D9, D4a)
 
 - Fifteen package rows, `source_path` = package directory, `source_sha` = `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`,
-  `destination` per D16 — public for the eight packages SemSource imports directly at `e4febc0d` (§5.1):
-  `natsclient`, `metric`, `payloadregistry` (`run.go`), `message` (28 files), `vocabulary` (20), `pkg/types`
-  (5), `pkg/retry` (4), `pkg/errs` (3); internal for the other eight unless SemConnect's or semboids' measured
-  sets (pass3 §2.1) say otherwise, recorded per row —
-  `proving_tests` naming the carried tests and the suite run, `known_risks` carrying the context-root triage (a
-  legitimate root with its reason, or a defect) and the nats.go v1.52→v1.54 pin difference for `natsclient`.
+  `destination` from the table below, `proving_tests` naming the carried tests and the suite run, `known_risks`
+  carrying the context-root triage (a legitimate root with its reason, or a defect) and the nats.go v1.52→v1.54 pin
+  difference for `natsclient`.
+
+  Destinations. The standing rule (owner ruling, #9 comment 5953295358, refining 5952661571): a ported package is
+  public if a starter consumer imports it, or if an exported signature in a public package names one of its types;
+  a public API never names a type that a caller outside the module cannot construct. `TestPublicSignatures`
+  enforces it (owner ruling, #9 comment 5953477174; D6, task 2.10). Public packages keep their pin paths. Every
+  other package moves from `pkg/<name>` to `internal/<name>`, with no exception. The compiler then forbids imports
+  of it from outside the module. No package name changes, so a port rewrites import paths only. A `file:line`
+  cite elsewhere in this design is a pin path; the row's `source_path` → `destination` maps it, and #52's command
+  reads that map.
+
+  Applied to the floor: eleven public, four internal. The eight SemSource imports directly at `e4febc0d` (§5.1,
+  P16) and `pkg/projection/contract`, which SemConnect imports (P21), are public by import; `pkg/platform` and
+  `pkg/security` are public because public signatures name their `Config` types (P22). `pkg/cache` stays internal
+  and the one public symbol that named its type, `natsclient.TemporalResolver.GetStats` (`kv_temporal.go:221`,
+  `*cache.Statistics`), becomes the unexported `cacheStats`, an `adapt` item on the `natsclient` row (task 3.7).
+  After that no exported symbol of the eleven names a type from the four (P22).
+
+  | Pin path (`source_path`) | `destination` | Why |
+  |---|---|---|
+  | `natsclient` | `natsclient` | public: SemSource imports it |
+  | `metric` | `metric` | public: SemSource imports it |
+  | `payloadregistry` | `payloadregistry` | public: SemSource imports it (`run.go`) |
+  | `message` | `message` | public: SemSource imports it (28 files) |
+  | `vocabulary` | `vocabulary` | public: SemSource imports it (20 files) |
+  | `pkg/types` | `pkg/types` | public: SemSource imports it (5 files) |
+  | `pkg/retry` | `pkg/retry` | public: SemSource imports it (4 files) |
+  | `pkg/errs` | `pkg/errs` | public: SemSource imports it (3 files) |
+  | `pkg/projection/contract` | `pkg/projection/contract` | public: SemConnect imports it (`gateway/cs-api/payloads.go:11`) |
+  | `pkg/platform` | `pkg/platform` | public: `platform.Config` is named by seven `message` symbols and `vocabulary.EntityIRI` |
+  | `pkg/security` | `pkg/security` | public: `security.Config` is named by `metric.NewServer` |
+  | `pkg/resource` | `internal/resource` | no consumer import; no public signature names its types |
+  | `pkg/timestamp` | `internal/timestamp` | no consumer import; no public signature names its types |
+  | `pkg/tlsutil` | `internal/tlsutil` | no consumer import; no public signature names its types |
+  | `pkg/cache` | `internal/cache` | no consumer import; `GetStats`, the one public signature naming its type, is unexported |
+
+  Every importer of the four is inside the module (P22): `internal/resource` ← `natsclient`; `internal/cache` ←
+  `natsclient`; `internal/tlsutil` ← `metric`; `internal/timestamp` ← `message`. The harness helpers (D2) import
+  public packages only.
   Dispositions, by owner ruling (#9, comment 5941920346, Q1: a repaired test file makes the row `adapt`): `adapt` for
-  `natsclient` (`NewTestClient` sites, `test_client.go`, the D3 and D7 items, the D8 repairs), `metric` (D3 items),
-  `payloadregistry` (`testing.go` rehomed), `pkg/cache` and `pkg/resource` (the D7 items, the D8 repairs),
-  `pkg/tlsutil` (the ACME loaders cut, D1) and `pkg/retry` (D8 repair); `carry` for the other eight.
+  `natsclient` (`NewTestClient` sites, `test_client.go`, the D3 and D7 items, the D8 repairs, `GetStats` unexported
+  as `cacheStats` above), `metric` (D3 items), `payloadregistry` (`testing.go` rehomed), `pkg/cache` and
+  `pkg/resource` (the D7 items, the D8 repairs), `pkg/tlsutil` (the ACME loaders cut, D1) and `pkg/retry` (D8
+  repair); `carry` for the other eight.
 - Existing file rows updated: `natsclient/test_client.go` (`adapt`, now with `evidence`), `natsclient/test_options.go`
   (`defer-exclude`, honoured); a new file row for `payloadregistry/testing.go` is not needed — the package row
   records the rehoming (T-B7 keeps `source_path` unique; the package row's path is the directory).
@@ -293,11 +333,14 @@ states the `Client` nil-context requirement; the row records each item as change
 
 `scripts/cover-check.sh` gains targets `natsclient`, `message`, `payloadregistry` at 80% (D10; baseline unmeasured —
 the first measurement is taken when the package lands, P8). The I8 test lands in `internal/harness/contract`
-alongside the T-B8 aggregator rule with a tree-shape sensitivity test like `TestImportGraphSensitivity`. Package-doc
-lint is already on (revive `package-comments`, `revive.toml:22`) and now covers eight public packages; every package
+alongside the T-B8 aggregator rule with a tree-shape sensitivity test like `TestImportGraphSensitivity`. D5's
+public-signature rule is enforced by `TestPublicSignatures` in the same package (task 2.10; `harness-boundaries` ›
+"Public signatures name no internal type"), which loads the module with `golang.org/x/tools/go/packages` as
+`TestNoRetainedContext` already does, so no dependency is added. Package-doc
+lint is already on (revive `package-comments`, `revive.toml:22`) and now covers eleven public packages; every package
 in the set has a package comment at the pin (§3.3), so the task is a sensitivity check, not an enablement. The
-compiled example consumer (D16's other gate) composes `service` and is change 3's; it will import at least these
-eight. No context-root guard is added (D9).
+compiled example consumer (D16's other gate) composes `service` and is change 3's; it will import at least the
+eight that SemSource imports. No context-root guard is added (D9).
 
 ### D7. Background work outside services takes one of three shapes
 
@@ -379,7 +422,7 @@ pin `file:line` → SemEngine `file:line`. The repairs at the pin (P18, P19) fal
   | `natsclient/integration_test.go:278` | 500 ms failure bound for the unhealthy change | Resized under R1b to at least 10 s |
   | `pkg/cache/coalescing_set_test.go:92` | 10 ms in which the callback must not fire | R1a: inside the bubble, after `synctest.Wait`, the callback has not fired before the window |
   | `pkg/cache/cache_test.go:294` (TTL, `:286-298`) | 150 ms past a 100 ms TTL | R1a: `<-time.After` inside the bubble moves the fake clock |
-  | `natsclient/kv_error_integration_test.go:440` | 6 s sleep for the 5 s resolver cache TTL | R1c with an observed end: the cache exposes no expiry signal, so `probe.Await` repeats the cleanup-triggering `GetAtTimestamp` and reads `GetStats().CurrentSize()` until it is below `statsAfter.CurrentSize()` (the pin asserted only `LessOrEqual`, `:448`), bounded by the TTL plus an R1b failure bound |
+  | `natsclient/kv_error_integration_test.go:440` | 6 s sleep for the 5 s resolver cache TTL | R1c with an observed end: the cache exposes no expiry signal, so `probe.Await` repeats the cleanup-triggering `GetAtTimestamp` and reads `cacheStats().CurrentSize()` (the pin's `GetStats`, unexported by D5) until it is below `statsAfter.CurrentSize()` (the pin asserted only `LessOrEqual`, `:448`), bounded by the TTL plus an R1b failure bound |
 
 - **R2. Skip.** A skip is removed. Where the skip meant only "needs a broker", the test moves into an
   `//go:build integration` file and runs with no skip call. The one skip at the pin,
@@ -469,6 +512,25 @@ the owner, so "Start fails" is a construction mode of the double, like `restarta
   `.github/workflows/ci.yml:22`) and runs `task verify`, which runs the integration lane (`ci.yml:48-50`) under
   `-race -count=1 -p 2 -timeout 10m` (`scripts/test-integration.sh:402`). The wall time with the port added is not
   measured; task 3.11 measures it.
+- P21. SemConnect at `dff12657` imports `pkg/projection/contract` (`gateway/cs-api/payloads.go:11`) and fills
+  `payloadregistry.Registration.Contracts` with it (`:85`); no starter consumer imports `pkg/platform`,
+  `pkg/security`, `pkg/resource`, `pkg/timestamp`, `pkg/tlsutil` or `pkg/cache`. — pass3 §2.1 (SemConnect's 26);
+  `git grep -lE 'semstreams/pkg/(platform|resource|security|timestamp|projection/contract|tlsutil|cache)"' --
+  '*.go'` in semsource `4093d3c`, semconnect `dff1265`, semteams `ce22c961`, semboids `37dbdb0`: one hit,
+  semconnect `gateway/cs-api/payloads.go`.
+- P22. Public signatures at the pin name `platform.Config` in eight exported symbols and `security.Config` in one,
+  and once `GetStats` is unexported no exported symbol of the eleven public packages names a type from the four internal
+  ones, which only floor packages import. — A `go/parser` walk of the eleven packages' 80 non-test files (exported
+  funcs and methods on exported types with their type parameters, exported and embedded struct fields, interface
+  methods, other exported type definitions, exported vars and consts with type and value) finds one hit for the
+  four: `natsclient/kv_temporal.go:221`. The same walk with `pkg/platform` and `pkg/security` counted as internal
+  finds `metric/handler.go:40`; `message/base_message.go:81, :91`; `message/federation.go:31, :50, :62, :78, :95`;
+  `vocabulary/iris.go:85`. Importers of the four: `natsclient/client.go:18`, `natsclient/kv_temporal.go:8`,
+  `metric/handler.go:20`, `message/base_message.go:13`, `message/meta_default.go:6`. `GetStats` has three callers,
+  all in-package tests: `natsclient/kv_error_integration_test.go:421, :436, :447`.
+- P23. In the 15 packages at the pin only `pkg/types/entity_id_prop_test.go` imports `pgregory.net/rapid`. — `git
+  grep -ln pgregory.net/rapid 8b99efe9` over the 15 directories finds that file and
+  `vocabulary/export/datatype_prop_test.go`, which lies in `vocabulary/export`, a package outside the 15.
 
 ## Declared costs
 
@@ -485,6 +547,9 @@ the owner, so "Start fails" is a construction mode of the double, like `restarta
 - `Client.Close` now joins eleven sites it only signalled at the pin (D3); it can wait on a caller's callback, bounded
   by its context, and work arriving once it is closing is dropped.
 - `URL()` changes after `Restart`; a test that forgets to re-dial fails loudly, not silently.
+- Four packages' import paths differ from the pin (`pkg/<name>` → `internal/<name>`, D5); each row's `source_path`
+  → `destination` records the difference. `TemporalResolver.GetStats` is unexported (D5), a surface change on the
+  `natsclient` row.
 - If a critical package measures below 80% at landing, the change holds for the owner (task 3.8); the design does not
   predict the number.
 - The nats.go version differs from the pin (v1.54.0 vs v1.52.0); regression evidence is the carried `natsclient`

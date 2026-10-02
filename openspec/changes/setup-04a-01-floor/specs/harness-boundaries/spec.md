@@ -38,3 +38,33 @@ closure imports the helper.
 
 - **WHEN** a file under `internal/harness/natsfixture` imports `natsclient`
 - **THEN** the contract test fails naming the file
+
+## ADDED Requirements
+
+### Requirement: Public signatures name no internal type
+
+A public package is a non-test, non-`main` package of this module whose import path has no `internal` element. No
+exported identifier of a public package SHALL name a type declared in a package of this module under `internal/`,
+directly or through what a caller outside the module reaches from it: the exported methods of a type it names, its
+exported and embedded struct fields, an interface's method set (embedded interfaces included), type arguments,
+generic constraints, and alias targets. A type an exported identifier reaches is followed whether it is exported or
+not. Function bodies and unexported identifiers are not checked; a caller outside the module cannot reach them.
+
+#### Scenario: A planted violation fails
+
+- **WHEN** a fixture module's public package declares an exported identifier that names a type declared under its
+  `internal/` directly, or only through an exported method, an embedded field, an interface method set, a type
+  argument, a generic constraint or an alias
+- **THEN** the contract test fails naming each identifier and the internal type it reaches
+
+#### Scenario: A clean tree passes
+
+- **WHEN** a fixture module's public package uses a type declared under its `internal/` only in unexported
+  identifiers and function bodies
+- **THEN** the contract test reports nothing for that package
+
+#### Scenario: The floor passes
+
+- **WHEN** the contract test runs over this module with the floor's eleven public packages ported
+- **THEN** it passes, `natsclient.TemporalResolver`'s cache statistics being reached only through the unexported
+  `cacheStats`

@@ -66,13 +66,16 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
   `semengine-reviewer` reviews what Claude sessions implement, and that the rule is enforced for code and waived for
   a documents-only pull request. Two things here are this repository's reading of those rulings, not the owner's
   words. First, what "documents only" means: every file the pull request changes is a Markdown file or is under
-  `openspec/`. Any other changed file makes it a code pull request: a `.go` file, the harness included; `go.mod`; a
-  script; `Taskfile.yml`; the CI workflow; `docs/admission-ledger.yaml`. Second, the reverse direction: Claude's
-  reviewer for what Codex implements. If both agents wrote commits, the owner names the reviewer on the issue. For a
-  code pull request this replaces the owner-run round; the owner need not ask. A documents-only pull request keeps
-  SemEngine's own reviewer. The rule applies to every pull request not yet merged, one already open included. The
-  implementing session may run its own reviewer as it works; those reviews, past or future, find defects early and
-  are not the gate. Neither agent can start the other, so the pull request carries both halves:
+  `openspec/`, and none is a role adapter under `.claude/agents/` (Markdown that sets a role's model and tools, as
+  the `.toml` files under `.codex/agents/` do). Any other changed file makes it a code pull request: a `.go` file,
+  the harness included; `go.mod`; a script; `Taskfile.yml`; the CI workflow; `docs/admission-ledger.yaml`. Second,
+  the reverse direction: Claude's reviewer for what Codex implements. If both agents wrote commits, the owner names
+  the reviewer on the issue. A pull request neither agent wrote (a dependency bot's) is reviewed by either agent's
+  reviewer, and the record names which. For a code pull request this replaces the owner-run round; the owner need
+  not ask. A documents-only pull request keeps SemEngine's own reviewer. The rule applies to every pull request not
+  yet merged, one already open included. The implementing session may run its own reviewer as it works; those
+  reviews, past or future, find defects early and are not the gate. Neither agent can start the other, so the pull
+  request carries both halves:
   - The implementer asks with a PR comment headed `Review request`. It names the kind of review, the commit to read,
     the diff range, that commit's CI run, and the issue or ruling the change answers. It does not say what the
     reviewer should conclude.

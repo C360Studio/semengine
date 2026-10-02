@@ -239,16 +239,17 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       `metrics.go:69-84` registers its six collectors through `RegisterOrGet` and keeps the returned collectors; a
       test with two caches under one prefix on one registry asserts the gathered sum.
       - `pkg/cache` done in 70fe194 (port, `RegisterOrGet`), b137ab3 (eviction callback removed), 5fc2b63 (sleep
-        repair), c6d7108 (shapes 2 and 3), 420063f (generated check) and the ledger, design and task-text commit
-        that follows them. Two of the 26 sleeps went with `TestEvictCallback`; the other 24 are repaired, each on
-        the row. The generated-check decision is in design D7. Failing first, implementer-reported, on a copy of
-        the pin (PR #48): under seed `1790895004660367000`, 48 of 48 runs of `-count=5 -cpu 1` with 24 in
-        parallel failed `TestCoalescingSet_EntityUpdateScenario`, and 11 of them hung in `BatchCleared`'s deferred
-        `Close`; under seed `1790895074311951000`, 6 of 48 failed `TestAttack_ConcurrentAddRemove` (and 9
-        `TestCoalescingSet_CallbackFiresAfterWindow`). `TestCoalescingSet_ContextCancellation` did not fail in
-        those 96 runs nor in 2,400 runs of it alone at 12 in parallel: not reproduced. After the repair, `task
-        test:repeat -- ./internal/cache` passed on both seeds and on `1790972252212655000`,
-        `1790972253482840000` and `1790972254702897000`, and 96 of 96 runs of the seeds at 24 in parallel passed.
+        repair), c6d7108 (shapes 2 and 3), 420063f (generated check), ed40a15 (close-ordering example), e7cd3ae (ledger,
+        design and task record) and the lint fix after it. Two of the 26 sleeps went with `TestEvictCallback`; the other
+        24 are repaired, each on the row. The generated-check decision is in design D7. Failing first,
+        implementer-reported, on a copy of the pin (PR #48): under seed `1790895004660367000`, 48 of 48 runs of
+        `-count=5 -cpu 1` with 24 in parallel failed `TestCoalescingSet_EntityUpdateScenario`, and 11 of them hung in
+        `BatchCleared`'s deferred `Close`; under seed `1790895074311951000`, 6 of 48 failed
+        `TestAttack_ConcurrentAddRemove` (and 9 `TestCoalescingSet_CallbackFiresAfterWindow`).
+        `TestCoalescingSet_ContextCancellation` did not fail in those 96 runs nor in 2,400 runs of it alone at 12 in
+        parallel: not reproduced. After the repair, `task test:repeat -- ./internal/cache` passed on both seeds and on
+        `1790972252212655000`, `1790972253482840000` and `1790972254702897000`, and 96 of 96 runs of the seeds at 24 in
+        parallel passed.
       - Hold: `message` waits for task 2.8. Its tests import `internal/semantictest`
         (`payload_test.go:10`, `triple_helpers_test.go:9` at the pin), and the harness copy is task 2.8's.
 - [ ] 3.7 (D) `natsclient` (level 6): row `adapt`; `test_client.go` and `test_options.go` are not ported and their

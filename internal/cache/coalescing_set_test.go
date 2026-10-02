@@ -23,7 +23,7 @@ func TestCoalescingSet_AddCollectsKeys(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := context.Background()
 		var callbackFired atomic.Bool
-		set := NewCoalescingSet(ctx, 100*time.Millisecond, func(keys []string) {
+		set := NewCoalescingSet(ctx, 100*time.Millisecond, func(_ []string) {
 			callbackFired.Store(true)
 		})
 		defer set.Shutdown(t.Context())
@@ -312,7 +312,7 @@ func TestCoalescingSet_CloseStopsCallback(t *testing.T) {
 		ctx := context.Background()
 		var callCount atomic.Int32
 
-		set := NewCoalescingSet(ctx, 30*time.Millisecond, func(keys []string) {
+		set := NewCoalescingSet(ctx, 30*time.Millisecond, func(_ []string) {
 			callCount.Add(1)
 		})
 
@@ -344,7 +344,7 @@ func TestCoalescingSet_ContextCancellation(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		var callCount atomic.Int32
 
-		set := NewCoalescingSet(ctx, 30*time.Millisecond, func(keys []string) {
+		set := NewCoalescingSet(ctx, 30*time.Millisecond, func(_ []string) {
 			callCount.Add(1)
 		})
 		defer set.Shutdown(t.Context())
@@ -392,7 +392,7 @@ func TestCoalescingSet_ConcurrentAdds(t *testing.T) {
 		wg.Add(numGoroutines)
 
 		for i := 0; i < numGoroutines; i++ {
-			go func(id int) {
+			go func(_ int) {
 				defer wg.Done()
 				for j := 0; j < keysPerGoroutine; j++ {
 					// Each goroutine adds some unique and some duplicate keys
@@ -568,7 +568,7 @@ func TestCoalescingSet_EntityUpdateScenario(t *testing.T) {
 func TestCoalescingSet_MultipleCloseCalls(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := context.Background()
-		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(keys []string) {})
+		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(_ []string) {})
 
 		// First close
 		err := set.Shutdown(t.Context())
@@ -590,7 +590,7 @@ func TestCoalescingSet_CallbackPanic(t *testing.T) {
 		ctx := context.Background()
 		var callCount atomic.Int32
 
-		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(keys []string) {
+		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(_ []string) {
 			count := callCount.Add(1)
 			if count == 1 {
 				panic("intentional panic in callback")

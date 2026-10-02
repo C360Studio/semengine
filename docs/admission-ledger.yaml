@@ -689,7 +689,8 @@
     releasing the test's mutex (at the pin a failed require held it and the deferred Close waited
     forever); the carried CoalescingSet tests call Shutdown(t.Context()) for Close(); the two test
     files' "Code generated ... DO NOT EDIT" headers, which made tools treat them as generated, are
-    replaced by a note of their origin. Repeat runs (D8 R4; implementer-reported, PR #48): see task
+    replaced by a note of their origin, and the 11 unused parameters revive then reports are named _
+    (coalescing_set_test.go 6, coalescing_set_attack_test.go 5). Repeat runs (D8 R4; implementer-reported, PR #48): see task
     3.6
   owner: setup-04a-01-floor developer
   disposition: adapt

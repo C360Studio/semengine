@@ -463,6 +463,63 @@ the owner, so "Start fails" is a construction mode of the double, like `restarta
 - The `checks` entry for the new check is marked must-fail. Every test that iterates `checks` builds the must-fail
   double for that entry, including `TestChecksPassAgainstCleanDouble` (`:239-249`).
 
+### D9. One canonical collector per metric key
+
+Codex's review of PR #48 (comment 5956732582, finding 4) found that `MetricsRegistry` reports success for a
+registration it did not perform. The owner accepted this design on 2026-10-02, after an architect draft and a
+reviewer pass in round 2. The architect's pin probe measured three silent losses at the pin:
+
+- Same key, second collector: `RegisterCounter` (`registry.go:136`) returns nil and keeps the first collector, so
+  writes to the second are gathered as 0.
+- Cross-key alias: the `AlreadyRegisteredError` branch (`:143-146`) stores, under a second key, a candidate that
+  Prometheus did not register; `Unregister` of the second key then removes the first key's series.
+- `RegisterGaugeVec` (`:246`) calls `RegisterOrGetGaugeVec` and throws away the canonical collector it returns.
+
+The idempotent behaviour entered SemStreams in `3e37d387` ("make metric registration idempotent to prevent nil
+component panic").
+
+The registration surface becomes one generic function. Every guard runs under `r.mu`:
+
+```go
+func RegisterOrGet[C prometheus.Collector](r *MetricsRegistry, serviceName, metricName string, candidate C) (C, error)
+```
+
+- **G1, nil.** The candidate is refused when `reflect.ValueOf(any(candidate))` is invalid, or when its kind is
+  Pointer, Interface, Map, Slice, Func or Chan and `IsNil()` is true.
+- **G2, same key.** The existing collector is returned only when `existing.(C)` succeeds, when
+  `reflect.TypeOf(existing) == reflect.TypeOf(candidate)` (the exact concrete type: `NewCounter`, `NewGauge` and
+  `NewHistogram` return interfaces, and a gauge satisfies `prometheus.Counter`), and when `sameCollectorDescriptors`
+  (`:66-85`) holds.
+- **G3, new key.** `prometheus.Register(candidate)`. Any error, `AlreadyRegisteredError` included, is refused and
+  nothing is stored; otherwise the candidate is stored and returned.
+
+`MetricsRegistrar` (`:16-25`) and the six `Register*` methods (`:127-278`) are removed; `RegisterOrGetGaugeVec`
+(`:27-60`) is generalised into `RegisterOrGet`. `Unregister` is unchanged.
+
+What a caller observes:
+
+| Case | Result |
+|---|---|
+| Same key, same concrete type, same descriptors | the canonical collector and nil; its writes are gathered |
+| Same key, a type, help or label mismatch | a zero `C` and an `errs` fatal error; the canonical collector is untouched |
+| A nil or typed-nil candidate | a zero `C` and a fatal error, no panic |
+| A cross-key alias, including a core metric or a collector registered directly through `PrometheusRegistry()` (`:118`) | a fatal error, nothing stored; `Unregister` of the second key returns false |
+
+A caller uses the collector `RegisterOrGet` returns, never its own candidate; this is review only (AGENTS.md rule
+index). Tests, each written first and each asserting gathered values: same key over Counter, Gauge, Histogram,
+CounterVec, GaugeVec and HistogramVec (two writes through the returned handle gathered as 2); a Gauge then
+`RegisterOrGet[prometheus.Counter]` with the same name and help; same key with a different help; a typed nil
+`*GaugeVec` and a nil `Counter`; a cross-key alias (`Unregister` false, one series of value 1 after `a.Inc()`); a
+collision with a core metric; a collision with a collector registered directly; and the concurrent test
+(`registry_test.go:188`) generalised under `-race`.
+
+Consumer impact, recorded on the `metric` row: semsource `internal/entitypub/metrics.go:99-106` and semboids
+(`internal/boidgraph/metrics.go`, `internal/sim/lifecycle.go`, `internal/api/graphstream_metrics.go`) stop
+compiling on their next pin bump, and the semsource comment at `:99-101` has to be rewritten. At run time, a
+consumer that registers one descriptor under two keys now gets a fatal error at startup instead of silent success;
+the pin's `registry_test.go:254-275` encoded that pattern for "component recreation from stale KV data". The later
+callers in this change adopt it in tasks 3.6 (`pkg/cache`) and 3.7 (`natsclient`).
+
 ## Premises (each with its measurement)
 
 - P1. The 15 packages are closure(natsclient) ∪ closure(message) less `pkg/acme`, closed under in-set imports once the

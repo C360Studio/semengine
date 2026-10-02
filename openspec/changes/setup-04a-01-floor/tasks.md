@@ -197,6 +197,12 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       2.8 lands) and 41e1d86 (`metric`; at the pin 13, 12, 11 and 16 of 30 `Stop`s returned nil, and the forced join
       gave up on its timer; both green after the fix; `README.md` lint fixes recorded on the row); `task verify` ok
       on 41e1d86.
+- [ ] 3.5a (D) `metric` registration, design D9 (Codex review finding 4, PR #48 comment 5956732582; owner-accepted
+      2026-10-02): `RegisterOrGet[C]` replaces `MetricsRegistrar`, `RegisterOrGetGaugeVec` and the six `Register*`
+      methods; tests 1-8 of D9 written first and shown failing, each asserting gathered values; the `metric` row
+      records the contract sentence, the adapt items (`registry.go:16-25, :27-60, :127-278, :246`; `doc.go:14,
+      :77-136, :196-209, :245, :373-378`; the README registration examples under #9 comment 5957221949), the tests
+      replaced, and the consumer impact.
 - [ ] 3.6 (D) `message`, `pkg/cache` (level 5): `message` row `carry` (`google/uuid` direct; its two tests that used
       `internal/semantictest` import the harness copy); `pkg/cache` row `adapt`: its 26 sleeps are repaired under
       `synctest` with its 30 `t.Parallel()` calls removed (D8 R1); `TestCoalescingSet_EntityUpdateScenario`,
@@ -215,7 +221,9 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       (`options.go:44`), `EvictCallback` (`cache.go:51-53`) and the eviction plumbing in the simple, LRU, TTL and
       hybrid caches are removed, with `TestEvictCallback` (`cache_test.go:444-503`, design D8) and the examples in
       `doc.go:39, :157, :162, :234` and `README.md:64, :117-125, :200, :410`. The row's `known_risks` names the later
-      callers (design D5) as port-refactor rows; the one `pkg/cache` root is triaged.
+      callers (design D5) as port-refactor rows; the one `pkg/cache` root is triaged. `pkg/cache` adapt (design D9):
+      `metrics.go:69-84` registers its six collectors through `RegisterOrGet` and keeps the returned collectors; a
+      test with two caches under one prefix on one registry asserts the gathered sum.
 - [ ] 3.7 (D) `natsclient` (level 6): row `adapt`; `test_client.go` and `test_options.go` are not ported and their
       file rows are updated (`proving_tests` on the `adapt` row); four test files are not ported and get `defer-exclude`
       file rows with design D1's reasons: `test_client_factory_test.go`, `test_client_integration_test.go` and
@@ -253,6 +261,10 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       the unexported `cacheStats` (design D5; owner ruling, #9 comment 5953295358); its only callers,
       `kv_error_integration_test.go:421, :436, :447`, are in the package and call `cacheStats`, including the
       repaired wait at `:440` (design D8). Each item is recorded on the row as changed behaviour (`adapt`).
+      `natsclient` adapt (design D9): `jetstream_metrics.go:128-161`, all 11 registrations through `RegisterOrGet`,
+      the returned collectors kept (fixes the 7 that orphan when two clients share a registry, `options.go:215`);
+      `jetstream_metrics_test.go:16` extended to every collector. Open question for the owner, measured in 3.7: which
+      of the 11 collectors are per-client, and whether those need a client label.
 - [ ] 3.8 (D) `task cover:check` targets `natsclient`, `message`, `payloadregistry` at 80%: the first measurement
       of each is recorded on this pull request (design P8: the pin baseline is unmeasured). If any of the three
       measures below 80%, a new task asking the owner to rule on that package's coverage is added to this file at

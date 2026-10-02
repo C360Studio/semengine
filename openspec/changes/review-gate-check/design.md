@@ -420,21 +420,17 @@ The four questions of the adopter seam inventory, for the people of inventory 7.
 - Each Dependabot pull request, weekly for three ecosystems, is red until an agent has reviewed it, a session has
   edited its description and the job has been run again. If Dependabot rewrites its description, the line is added
   again (inventory 9, N7).
-- **Test time: an estimate.** The new test makes about 29 runs of the script in each execution of the unit tests
-  (the cases of the 20 scenarios), and `task verify` executes them seven times (`test:unit`, `test:integration` and
-  five times in `test:repeat`).
-  - Measured on CI (run 37028259077, `main` at `94ccedd`): `task verify` takes 160 s, of which the `contract`
-    package, with its 29 existing runs of the script, takes 21.0 s, 14.1 s and 31.5 s in those three steps.
-  - Measured on this host, a macOS machine and not the CI runner: 30 runs of the script's longest existing path
-    against a fake `gh` took 2.18 s, so 0.07 s a run for the script alone, outside `go test`.
-  - Not measured: a case's cost inside `go test`, which was not run for this design because another session is
-    porting on the host. Revision 1 of this design gives 0.2 s a case, unmeasured here.
-  - So the estimate is 0.07 to 0.2 s a run, 2 to 6 s an execution, and 14 to 41 s more for each `task verify`.
-  - A budget of 30 s for each `task verify` on CI is the architect's proposal; nothing in the tree sets one. Task
-    2.5 measures the cost. Over the proposed budget, the developer runs the cases side by side, which they allow
-    because they share no state, and measures again. If it is still over, the figure is recorded here and in the
-    pull request's description for the owner, and the task ends there: the design does not cut cases to meet its
-    own figure.
+- **Test time: measured.** The new test runs the script for each of its cases in every execution of the unit
+  tests, and `task verify` executes them seven times (`test:unit`, `test:integration` and five times in
+  `test:repeat`).
+  - On CI the `contract` package took 21.0 s, 14.1 s and 31.5 s in those three steps on `main` (run 37028259077,
+    `94ccedd`), and 24.5 s, 18.4 s and 48.6 s with this change (run 37052400417, `69443ed`): 24.9 s more for the
+    three together. The three steps took 9 s more and the `Verify` job 7 s more (197 s, then 204 s), because other
+    packages run beside this one.
+  - One run on each side. Variation between runners is not measured.
+  - Before the code existed this design estimated 14 to 41 s and proposed a budget of 30 s for the three together
+    (the architect's figure; nothing in the tree sets one). The measured cost is under it, so the cases are not
+    run side by side and none is removed. The record is PR #67 comment 5959662131 (task 2.5).
 
 ## New surfaces and who uses them
 

@@ -39,13 +39,11 @@ starts, `task merge:check -- 67` and the merge are recorded on this pull request
       named" to "Carriage returns". Gate: `task test:unit`.
 - [ ] 2.4 (D) `TestMergeCheckReview`, written first, the remaining scenarios, "Draft" to "Push run and the review
       check". Gate: `task test:unit`.
-- [ ] 2.5 (D) The time the `contract` package takes in the `test:unit`, `test:integration` and `test:repeat` steps
-      of this pull request's CI run is recorded on this pull request beside the same three figures for `main` (21.0
-      s, 14.1 s and 31.5 s in run 37028259077). The design proposes a budget of 30 s more for the three together;
-      nothing in the tree sets one. Over it, the cases are run side by side and the figures taken again. Outcome,
-      either way: the estimate under "Declared costs" in `design.md` is replaced by the measured figure; a figure
-      still over the proposed budget is also stated in this pull request's description for the owner, and no case
-      is removed to meet it. Gate: `task verify`.
+- [x] 2.5 The time the `contract` package takes in the `test:unit`, `test:integration` and `test:repeat` steps:
+      21.0 s, 14.1 s and 31.5 s on `main` (run 37028259077); 24.5 s, 18.4 s and 48.6 s at `69443ed` (run
+      37052400417). That is 24.9 s more for the three together, under the 30 s the design proposed, so the cases
+      are not run side by side and none is removed. Recorded on this pull request (comment 5959662131) and under
+      "Declared costs" in `design.md`.
 
 ## 3. The workflow
 
@@ -63,10 +61,10 @@ starts, `task merge:check -- 67` and the merge are recorded on this pull request
       request's page: #65 documents only; #63 a code pull request with no `reviewed-by:` line; #14 a code pull
       request by a bot with no `reviewed-by:` line; #48 a draft code pull request whose findings are printed and
       not failed; #67 as it then stands. A result that differs is a defect fixed before 7.1.
-- [ ] 4.2 (D) The first CI run of this pull request with the new script: the `Merge check` log shows the pull
-      request and its files read under the job's token, and the findings printed and not failed for a draft. The
-      run's link and what it settles (assumption A2 of `design.md`, and A3 for one page) are recorded on this pull
-      request.
+- [x] 4.2 The first CI run of this pull request with the new script (run 37052400417, `69443ed`): the `Merge
+      check` log shows the pull request and its files read under the job's token, and two findings printed and not
+      failed for a draft. It settles assumption A2 of `design.md`, and A3 for one page only. Recorded on this pull
+      request (comment 5959662131).
 - [ ] 4.3 Hold: the owner's word, given in the session that marks it ready and recorded on this pull request, to
       mark PR #67 ready once before any review record exists. Outcome (D): the run that starts fails `Merge check`
       and names what is missing; the pull request is returned to draft; both run links are recorded (assumption

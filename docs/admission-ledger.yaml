@@ -291,8 +291,9 @@
     no tests at the pin, none invented (design D1); no context roots. doc.go's See Also names
     pkg/tlsutil and pkg/acme by module path; pkg/acme is not ported (change 5), so the doc.go:139 link
     points at a package that does not exist here, left as the pin's text because changing it would
-    break this row's carry check; pkg/tlsutil moves to internal/tlsutil (task 3.4), after which the
-    ledger check expects the doc.go:138 comment rewritten
+    break this row's carry check; pkg/tlsutil moved to internal/tlsutil (task 3.4, f1cc210), which
+    rewrote the doc.go:138 link to internal/tlsutil, as the ledger check expects once the pkg/tlsutil
+    row maps the move
   proving_tests: none at the pin; compiled through metric's tests (task 3.5)
   owner: setup-04a-01-floor developer
   disposition: carry

@@ -8,6 +8,12 @@
 #   2. On a pull-request run: while an issue labelled class:flake is open, fail
 #      unless this pull request's closing references include every open one.
 #      There is no waiver: no comment, label or variable exempts a pull request.
+#   3. On a pull-request run, before rule 2 (openspec change review-gate-check;
+#      spec merge-gate, "Cross-agent review check"): a code pull request that is
+#      not a draft fails unless its description has one implemented-by: line
+#      naming claude or codex (not read for a bot's) and one reviewed-by: line
+#      naming the other (either one for a bot's, or when both are named); a
+#      draft's findings are printed and fail nothing.
 #
 # Usage: merge-check.sh <pr-number>
 #   The kind of run comes from GITHUB_EVENT_NAME only when GITHUB_ACTIONS is

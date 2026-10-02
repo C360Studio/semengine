@@ -42,15 +42,16 @@ task vuln         # pinned govulncheck
 task test:unit    # unit tests once, under the race detector, at one CPU
 task test:repeat  # unit tests five times at one CPU, without the race detector, shuffled
 task ledger:diff  # -- <source_path>...: print how ledger entries differ from the SemStreams pin; fetches it
-task merge:check  # -- <n>: fail while a known flake is open that PR n does not close; reads GitHub
+task merge:check  # -- <n>: fail while a known flake is open that PR n does not close, or while PR n is a code PR,
+                  # not a draft, whose implemented-by:/reviewed-by: lines do not name the two agents; reads GitHub
 task verify       # spec:check docs:check fmt:check tidy:check cleanup-roots:check build vet lint vuln
                   # ledger:check test:unit test:integration cover:check test:repeat, cheapest first; fails if
                   # tracked files changed. Not included: doctor, fmt, spec:queue, merge:check
 ```
 
 Run `task verify` before every implementation push. CI has three jobs: `verify` runs the same commands;
-`merge-check` runs `scripts/merge-check.sh`, the script behind `task merge:check`; `required` fails if either of them
-failed, is missing, or was skipped or cancelled.
+`merge-check` runs `scripts/merge-check.sh`, the script behind `task merge:check` (known flakes, the up-to-date rule,
+and the cross-agent review lines); `required` fails if either of them failed, is missing, or was skipped or cancelled.
 Gate selection per diff: `.agents/skills/semengine-preflight/SKILL.md`.
 
 ## Rules and what enforces them
@@ -87,7 +88,7 @@ indexed by their spec. A change that can turn a "review only" row into a failing
 | A ported package brings its SemStreams guidance (contract sections and skills) with it | architect contract § Extraction slices | review only |
 | A new rule names what enforces it and adds its row to this table | reviewer contract § Port-time and pattern review | review only |
 | A brief to a role agent carries the owner's intent and the artifact itself, not a paraphrase; resume an agent for continuity, start a fresh one for mechanics | `.agents/README.md` § Orchestrating role agents | review only |
-| A code pull request (any changed file that is not Markdown or under `openspec/`, or that is a role adapter under `.claude/agents/`) is reviewed by the agent that wrote none of its commits; the rule covers pull requests already open; the request and the record are PR comments that name the commit, a merge of `main` that touches none of the pull request's files keeps the record, a disagreement goes to the owner, and the PR body carries `reviewed-by:` | `.agents/protocol.md` § Work lifecycle, "Cross-agent review"; reviewer contract § Purpose and authority | review only until issue #66 puts a check in `scripts/merge-check.sh` (owner ruling of 2026-10-02: enforce it for code) |
+| A code pull request (any changed file that is not Markdown or under `openspec/`, or that is a role adapter under `.claude/agents/`) is reviewed by the agent that wrote none of its commits; the rule covers pull requests already open; the request and the record are PR comments that name the commit, a merge of `main` that touches none of the pull request's files keeps the record, a disagreement goes to the owner, and the PR body's `implemented-by:` and `reviewed-by:` lines name the two agents with the words `claude` and `codex` | `.agents/protocol.md` § Work lifecycle, "Cross-agent review"; reviewer contract § Purpose and authority; `merge-gate` spec, "Cross-agent review check" | `scripts/merge-check.sh`, run by CI job `merge-check` (which `required` needs) and by `task merge:check -- <n>` before merging, for a code pull request that is not a draft: one `implemented-by:` line naming an agent (not read for a bot's pull request) and one `reviewed-by:` line naming the other; `TestMergeCheckReview` and `TestCIWorkflowPinned` hold the script and the `ready_for_review` trigger. Review only: whether the lines are true (one GitHub login for the owner and both agents); that a review record exists, the commit it read, and the re-review after a later content commit; the record's verdict, scope and content; the request comment; that the owner named the reviewer when both agents wrote commits; a disagreement going to the owner; a pull request that changes the check, which runs its own copy; the moment after marking ready before the new run registers; a code pull request written by hand, which the check does not provide for |
 | Every OpenSpec task can be ticked in or before the archive commit; a hold is written as `Hold:` on the unticked task it stops | `.agents/protocol.md`, "Target state, task truth, holds"; reviewer contract § Contract and task-truth review | review only; `task spec:queue`, run in the claim's worktree, displays a hold written this way and fails nothing |
 | A pushed claim branch is brought up to date by merging `origin/main`, never by a rebase or a force-push | `.agents/protocol.md` § Work lifecycle, "Land" | review only |
 | Evidence cited in a pull request or a task can be opened on another machine; a path git ignores is named as local only | `.agents/skills/semengine-handoff/SKILL.md`, "Reconcile the checkpoint"; `.agents/skills/semengine-preflight/SKILL.md`, "Report evidence and remaining gates" | review only |
@@ -121,11 +122,12 @@ never become a pointer:
 - **Merge:** CI green on a head up to date with `main`; no known flake open (an open `class:flake` issue: a test or
   check that passes and fails on the same tree, never a network fetch that did not answer) unless the PR closes every
   open one, and nothing else gets past it; `task merge:check -- <n>` immediately before merging, with
-  `GITHUB_ACTIONS` unset; `implemented-by: <model or persona>` in the PR body; the archive/spec sync is the last
-  content commit; squash merge. A code pull request (any changed file that is not a Markdown file or under
-  `openspec/`, or that is a role adapter under `.claude/agents/`) also needs the other agent's review recorded on it
-  (Codex reviews what Claude implemented, and the reverse) and `reviewed-by:` in the PR body; a documents-only pull
-  request does not.
+  `GITHUB_ACTIONS` unset; `implemented-by:` in the PR body, naming `claude` or `codex` beside the model or persona;
+  the archive/spec sync is the last content commit; squash merge. A code pull request (any changed file that is not a
+  Markdown file or under `openspec/`, or that is a role adapter under `.claude/agents/`) also needs the other agent's
+  review recorded on it (Codex reviews what Claude implemented, and the reverse) and `reviewed-by:` in the PR body
+  naming that agent, without which `merge-check` fails it once it is not a draft; a documents-only pull request does
+  not.
 - **Close:** the squash merge of a PR that declared `Closes #n` is the authorization. A close with no merged PR behind
   it takes the owner's word on the issue.
 

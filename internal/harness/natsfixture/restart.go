@@ -33,6 +33,10 @@ var errNotStarted = errors.New("natsfixture: Restart needs a fixture whose Start
 // failure in a phase returns an *Error naming it; no replacement container is created, the fixture
 // can no longer be restarted, and Stop removes what it still owns. Do not call Restart from a
 // Consume handler: it waits for that handler to return.
+//
+// The caller must bound ctx. Readiness after the start is one more ready line in the container's
+// log than before it; if Docker log rotation drops earlier lines the count can fall, and the wait
+// then runs until ctx ends and fails at the start-container phase.
 func (f *Fixture) Restart(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("natsfixture: Restart with a nil context")

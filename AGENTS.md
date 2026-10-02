@@ -65,12 +65,16 @@ are indexed by that spec, not here. A change that can turn a "review only" row i
 | Production structs never retain `context.Context` | `.agents/contracts/semengine-developer.md` § Context ownership; `openspec/specs/harness-boundaries/spec.md` | `TestNoRetainedContext` (`task test:unit`) for struct fields; invented roots and nil defaults are review only |
 | Test cleanup never stops, closes or terminates under an unbounded context | `harness-boundaries` spec, "Bounded cleanup roots" | `task cleanup-roots:check` for the call and the unbounded root on one line; other unbounded roots are review only |
 | Tests bind no fixed address or port | `harness-boundaries` spec, "No fixed addresses in tests" | `TestNoFixedAddressesInTests`; `scripts/lint-test-ports.sh` (`task lint`) |
+| No `time.Sleep` in a test file or in any Go file under `internal/harness/` | `harness-boundaries` spec, "No sleeps in tests" | `TestNoSleepsInTests` (`task test:unit`) for the literal text `time.Sleep`; a renamed import or a wait built from a timer is review only |
+| No test calls `Skip`, `Skipf` or `SkipNow`; no test file carries a build tag other than `integration` | `harness-boundaries` spec, "No skipped or hidden tests" | `TestNoSkippedTests` and `TestNoHiddenTests` (`task test:unit`); a skip reached through a helper is review only |
+| Unit tests also run five times at one CPU, without the race detector, in shuffled order | `merge-gate` spec, "Varied and repeated unit runs" | `task test:repeat`, the last step of `task verify`; `TestUnitInvocationsPinned` fails if that command line or the step list changes |
 | Production code imports no test library and nothing under `internal/harness` | `harness-boundaries` spec, "Import graph" | `TestImportGraph` |
 | One NATS image pin; Docker cleanup touches only SemEngine-assigned names | `harness-boundaries` spec | `TestOneImagePin`, `TestSemEngineAssignedNames`, `TestNoBroadDockerCleanup` |
 | A ported package has an admission-ledger row | `.agents/contracts/semengine-architect.md` § Extraction slices; `docs/admission-ledger.yaml` | `task ledger:check` for the schema of the rows present; that a ported package has a row, and what the row says, are review only |
 | Critical packages hold their coverage floor | `.agents/skills/semengine-preflight/SKILL.md` | `task cover:check` |
 | OpenSpec changes and specs are well formed | "Where state lives" below | `task spec:check` for document shape; truth against code is review only |
 | A merge needs CI green | `.agents/protocol.md` § Work lifecycle | CI job `required`; claim before work and close by merged PR are review only |
+| No merge while a known flake (an open `class:flake` issue) is open, unless the PR closes every open one | `.agents/protocol.md` § Work lifecycle, "Known flakes"; `merge-gate` spec, "Known-flake check" | `scripts/merge-check.sh`, run by CI job `merge-check` (which `required` needs) and by `task merge:check -- <n>` before merging; `TestMergeCheckKnownFlake` and `TestCIWorkflowPinned` hold the script and the job wiring. Filing and labelling a flake are review only |
 | A failure path fails closed; a skip, drop or degrade is declared | developer contract § Guarantee, signal, and revision contracts | review only |
 | No new surface without a present consumer; unused surface is left behind when porting | developer contract § Before adding anything new; architect contract § Extraction slices | review only |
 | A change that establishes a reusable primitive lists who should adopt it | architect contract § The adoption sweep | review only |
@@ -80,6 +84,7 @@ are indexed by that spec, not here. A change that can turn a "review only" row i
 | A brief to a role agent carries the owner's intent and the artifact itself, not a paraphrase; resume an agent for continuity, start a fresh one for mechanics | `.agents/README.md` § Orchestrating role agents | review only |
 | Tests use an independent oracle and are shown able to fail | `docs/testing.md`; developer and reviewer contracts, test fidelity | the structural guards carry paired sensitivity tests (`internal/harness/contract`); elsewhere review only |
 | Sister repositories are read-only and inventoried only as scoped | `docs/inventory-scope.md` | review only |
+| Docs are written for a working developer: coined terms defined at first use, no jargon, no marketing | technical-writer contract, rule 9; reviewer contract § Contract and task-truth review | review only |
 
 ## Where state lives
 

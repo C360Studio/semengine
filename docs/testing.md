@@ -91,8 +91,9 @@ The requirements behind each package are in `openspec/specs/nats-fixture/`, `lif
 `internal/harness/contract/` holds tests that scan the whole repository for rules such as: no production import of
 test helpers, no struct holding a `context.Context`, one pinned NATS image, no fixed broker addresses in tests, no
 broad Docker cleanup, and a well-formed admission ledger (`docs/admission-ledger.yaml`, the list of packages ported
-from SemStreams). Three more guards are shell scripts: `task cleanup-roots:check` and `task cover:check`, which
-`task verify` runs as their own steps, and the fixed-port guard `scripts/lint-test-ports.sh`, which `task lint` runs.
+from SemStreams). Four more guards are shell scripts: `task cleanup-roots:check` and `task cover:check`, which
+`task verify` runs as their own steps; the fixed-port guard `scripts/lint-test-ports.sh`, which `task lint` runs; and
+`scripts/merge-check.sh`, which CI's `merge-check` job runs and `task verify` does not, because it reads GitHub.
 
 ## Show that the test can fail
 
@@ -128,7 +129,8 @@ The repository's own checks follow the same pattern, built into the tests:
   violation in a temporary tree and requires the guard to name the planted file and what it violates, so a guard that
   fires for the wrong reason, or matches nothing, fails. Two script guards are covered the same way by
   `TestCleanupRootsCheckSensitivity` and `TestCoverCheckSensitivity`; the fixed-port script has its own fixture test,
-  `scripts/lint-test-ports_fixture_test.sh`.
+  `scripts/lint-test-ports_fixture_test.sh`; and `TestMergeCheckKnownFlake` runs the merge check against canned
+  GitHub answers.
 - `TestEachFailpointTripsExactlyItsCheck` in `internal/harness/lifecycletest/` runs every lifecycle check against a
   reference component with one defect switched on at a time, and requires exactly the matching check to fail.
 

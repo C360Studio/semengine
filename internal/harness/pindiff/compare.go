@@ -102,6 +102,11 @@ func compareEntry(ctx context.Context, root string, store pinStore, e entry, mov
 			rels = append(rels, rel)
 		}
 	}
+	if len(rels) == 0 {
+		// An entry that compared nothing has not been shown to match.
+		result.notCompared = "no covered file at the pin or in the tree"
+		return result, nil
+	}
 	slices.Sort(rels)
 	for _, rel := range rels {
 		f, err := compareFile(ctx, store, side, rel, pinFiles, treeFiles, moved)

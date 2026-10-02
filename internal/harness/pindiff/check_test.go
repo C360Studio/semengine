@@ -20,6 +20,9 @@ var checkPin = map[string]string{
 	"pkg/a/a_test.go":       "package a\n\nimport \"testing\"\n\nfunc TestA(t *testing.T) {}\n",
 	"pkg/a/testdata/in.txt": "input\n",
 	"pkg/old/o.go":          "package old\n\nvar X int\n",
+	// A directory with nothing the comparison covers: a README and a sub-package only.
+	"pkg/docs/README.md": "# docs\n",
+	"pkg/docs/sub/s.go":  "package sub\n",
 }
 
 // checkTree is the tree that carries pkg/a unchanged: the module path rewritten in the import and
@@ -109,6 +112,18 @@ func TestCheckSensitivity(t *testing.T) {
 			requireLine(t, got.stderr, "differs from the pin is adapt", "docs/provenance.md rule 5")
 		})
 	}
+
+	// A carry entry that compared nothing does not pass.
+	t.Run("no covered file at the pin or in the tree", func(t *testing.T) {
+		files := maps.Clone(checkTree)
+		files["internal/docs/README.md"] = "# docs\n"
+		root := tree(t, ledgerOf(row{"pkg/docs", shas[0], "internal/docs", "carry"}), files)
+		got := runIn(t, root, remoteEnv(remote), "check")
+		if got.code != 1 {
+			t.Fatalf("got:\n%s\nwant exit 1", got)
+		}
+		requireLine(t, got.stderr, "carry entry pkg/docs:", "not compared", "no covered file at the pin or in the tree")
+	})
 }
 
 // Only carry entries are checked: a carried entry passes, an adapt entry is never failed, and with

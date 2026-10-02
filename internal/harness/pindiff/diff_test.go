@@ -20,12 +20,14 @@ func TestCoveredFiles(t *testing.T) {
 		"pkg/a/testdata/deep/x.go": "not go at all\n",
 		"scripts/x.sh":             "echo x\n",
 		"pkg/d/d.go":               "package d\n",
+		"pkg/docs/README.md":       "# docs\n",
 	}
 	remote, shas := pinRepo(t, pin)
 	ledger := ledgerOf(
 		row{"pkg/a", shas[0], "internal/a (moved here by change x)", "carry"},
 		row{"scripts/x.sh", shas[0], "scripts/x.sh", "adapt"},
 		row{"pkg/d", shas[0], "pkg/d.go", "adapt"},
+		row{"pkg/docs", shas[0], "internal/docs", "carry"},
 	)
 	clean := map[string]string{
 		"internal/a/a.go":               "package a\n",
@@ -38,6 +40,7 @@ func TestCoveredFiles(t *testing.T) {
 		"internal/a/testdata/deep/x.go": "not go at all\n",
 		"scripts/x.sh/inside":           "a directory where the pin has a file\n",
 		"pkg/d.go":                      "package d\n",
+		"internal/docs/README.md":       "# docs\n",
 	}
 	with := func(changes map[string]string) map[string]string {
 		files := maps.Clone(clean)
@@ -67,6 +70,8 @@ func TestCoveredFiles(t *testing.T) {
 			"scripts/x.sh (adapt): not compared: source_path is a file at the pin and the destination path is a directory"},
 		{"directory at the pin, file in the tree", clean, "pkg/d", 2, "",
 			"pkg/d (adapt): not compared: source_path is a directory at the pin and the destination path is a file"},
+		{"no covered file at the pin or in the tree", clean, "pkg/docs", 2, "",
+			"pkg/docs (carry): not compared: no covered file at the pin or in the tree"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := runIn(t, tree(t, ledger, tc.files), remoteEnv(remote), "diff", tc.arg)

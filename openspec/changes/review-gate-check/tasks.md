@@ -22,9 +22,9 @@ starts, `task merge:check -- 67` and the merge are recorded on this pull request
       `DESIGN REVIEW PASS` in round 2 of at most three, recorded on this pull request (round 1: comment 5957401025;
       round 2: comment 5957614491). The three corrections the pass asked for, with the reviewed and the committed
       checksums, are in comment 5957642045.
-- [ ] 1.3 Hold: the owner's ruling on #66. Outcome: his acceptance of the reviewed design and his answers to Q1, Q2
-      and Q3 of `design.md`, recorded on #66. An answer that differs from the recommendation is worked into the
-      design, the delta and these tasks, and re-checked by the reviewer, before any code.
+- [x] 1.3 The owner's ruling on #66 (comment 5959125319, 2026-10-02): the reviewed design is accepted; Q1 is (b), Q2
+      is this change first if it is ready first and neither waits, Q3 is not now. Every answer is the design's
+      recommendation, so the design, the delta and these tasks are unchanged.
 
 ## 2. The script and its test
 

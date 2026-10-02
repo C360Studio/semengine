@@ -46,6 +46,7 @@ if [ "$kind" = pull-request ]; then
   case "$pr" in *[!0-9]* | 0*) die "pull request number '$pr' is not a positive integer" ;; esac
 else
   echo "merge-check: push run (${how}); the known-flake check does not apply, the up-to-date rule is checked"
+  echo "merge-check: the review check does not apply to a push run; no pull request is read"
 fi
 
 # read NAME SHAPE CMD...: run a gh read and keep its stdout in $answer when it
@@ -117,7 +118,13 @@ if ! files=$(printf '%s' "$answer" | jq -c -s 'if all(.[]; type == "array" and a
   exit 2
 fi
 reported=$(printf '%s' "$pull" | jq '.changed_files')
+draft=$(printf '%s' "$pull" | jq '.draft')
 entries=$(printf '%s' "$files" | jq 'length')
+# A failed jq leaves an empty number, which a test would not compare.
+case "$entries:$reported:$draft" in
+  [0-9]*:[0-9]*:true | [0-9]*:[0-9]*:false) ;;
+  *) echo "merge-check: unavailable: jq failed reading the file count or draft flag of pull request #${pr}" >&2; exit 2 ;;
+esac
 if [ "$entries" -ne "$reported" ]; then
   echo "merge-check: unavailable: the file list of pull request #${pr} is incomplete: it has ${entries} of ${reported} files" >&2
   exit 2
@@ -151,7 +158,9 @@ else
     exit 2
   fi
   IFS='|' read -r author icount iagents rcount ragents <<<"$lines"
-  case "$icount:$rcount" in *[!0-9:]* | :* | *:) die "the description of pull request #${pr} was read as '${lines}'" ;; esac
+  case "$icount:$rcount" in
+    *[!0-9:]* | :* | *:) echo "merge-check: unavailable: the description of pull request #${pr} was read as '${lines}'" >&2; exit 2 ;;
+  esac
 
   # The reviewer the implemented-by: line calls for; empty when either agent may
   # review: a bot's pull request, both agents named, or no valid line.
@@ -183,6 +192,8 @@ else
   fi
   if [ "$findings" -eq 0 ]; then
     echo "merge-check: the review check passes; reviewing agent: ${ragents}"
+  elif [ "$draft" = true ]; then
+    echo "merge-check: pull request #${pr} is a draft: a review finding does not fail a draft (${findings} above)"
   else
     echo "merge-check: FAIL: the review check has ${findings} finding(s); editing the description starts no run, so run the merge-check job again after the edit"
     failed=1

@@ -566,4 +566,61 @@ func TestMergeCheckReview(t *testing.T) {
 		body := strings.ReplaceAll("Summary.\n\nimplemented-by: claude (opus)\nreviewed-by: codex\n", "\n", "\r\n")
 		runMergeCheck(t, code("User", body), "12").requirePass(t, "reviewing agent: codex")
 	})
+
+	// Drafts, reads and the push run (task 2.4).
+	t.Run("draft", func(t *testing.T) {
+		runMergeCheck(t, review(true, "User", implClaude, "docs/a.md", "scripts/x.sh"), "12").
+			requirePass(t, "no line starts reviewed-by:", "does not fail a draft")
+	})
+	t.Run("a read for the review check fails", func(t *testing.T) {
+		// Every planted state is documents only, so a failure read as a pass would say so.
+		const notFound = `{"message":"Not Found","status":"404"}`
+		for _, tc := range []struct {
+			name, read string
+			edit       func(*ghState)
+		}{
+			{"pull request read fails", "pull request #12 for the review check",
+				func(st *ghState) { st.fail = []string{"pull"} }},
+			{"pull request read returns an error object", "pull request #12 for the review check",
+				func(st *ghState) { st.pull = notFound }},
+			{"draft whose file count is not a number", "pull request #12 for the review check",
+				func(st *ghState) {
+					st.pull = strings.Replace(pullJSON(true, "User", "", 1), `"changed_files":1`, `"changed_files":"1"`, 1)
+				}},
+			{"files read fails", "the files of pull request #12",
+				func(st *ghState) { st.fail = []string{"files"} }},
+			{"files read fails on a draft", "the files of pull request #12",
+				func(st *ghState) { st.pull = pullJSON(true, "User", "", 1); st.fail = []string{"files"} }},
+			{"files read returns an error object on a draft", "the files of pull request #12",
+				func(st *ghState) { st.pull = pullJSON(true, "User", "", 1); st.files = notFound }},
+			{"second page of files is not a list of files", "the files of pull request #12",
+				func(st *ghState) {
+					st.pull = pullJSON(false, "User", "", 2)
+					st.files = filesJSON("docs/a.md") + list(notFound)
+				}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				st := healthy()
+				tc.edit(&st)
+				r := runMergeCheck(t, st, "12")
+				r.requireFail(t, "unavailable", tc.read)
+				r.requireNotInOutput(t, "documents only", "merge-check: ok")
+			})
+		}
+	})
+	t.Run("sorting names fails", func(t *testing.T) {
+		st := healthy()
+		st.jqFail = `startswith(".claude/agents/")`
+		r := runMergeCheck(t, st, "12")
+		r.requireFail(t, "unavailable", "sorting the changed files")
+		r.requireNotInOutput(t, "documents only", "merge-check: ok")
+	})
+	t.Run("push run and the review check", func(t *testing.T) {
+		// A code pull request with neither line, so a check applied here would fail.
+		r := runMergeCheck(t, review(false, "User", "", "scripts/x.sh"), "", "GITHUB_ACTIONS=true", "GITHUB_EVENT_NAME=push")
+		r.requirePass(t, "the review check does not apply")
+		if strings.Contains(r.argv, "/pulls/") {
+			t.Errorf("a push run read a pull request or its files:\n%s", r.argv)
+		}
+	})
 }

@@ -53,8 +53,9 @@ not. Function bodies and unexported identifiers are not checked; a caller outsid
 #### Scenario: A planted violation fails
 
 - **WHEN** a fixture module's public package declares an exported identifier that names a type declared under its
-  `internal/` directly, or only through an exported method, an embedded field, an interface method set, a type
-  argument, a generic constraint or an alias
+  `internal/` directly (a function result, an exported variable or constant, an exported struct field), or only
+  through an exported method, an embedded field, an interface method set, a type argument, a generic constraint on a
+  function or a type, an alias, or an unexported type that an exported function returns
 - **THEN** the contract test fails naming each identifier and the internal type it reaches
 
 #### Scenario: A clean tree passes

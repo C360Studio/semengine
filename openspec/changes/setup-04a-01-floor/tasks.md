@@ -104,16 +104,20 @@ this pull request as a comment unless a task says otherwise. No task asserts a f
       lists only pure-library packages of the set, and no test in those packages imports the helper (design P5).
 - [ ] 2.9 (R) Harness review: the five additions against the deltas, the fault matrices' completeness, and the
       `natsfixture` import list. Verdict recorded on this pull request before any ported package lands.
-- [ ] 2.10 (D) Public-signature contract test (owner ruling, #9 comment 5953477174; `harness-boundaries` › "Public
+- [x] 2.10 (D) Public-signature contract test (owner ruling, #9 comment 5953477174; `harness-boundaries` › "Public
       signatures name no internal type"): `TestPublicSignatures` in `internal/harness/contract` loads the module's
       non-test packages with `golang.org/x/tools/go/packages` (already direct, as in `TestNoRetainedContext`,
       `context_test.go:224`; no new dependency, no ledger row) and walks with `go/types` from each exported
       identifier of every public package, modelled on the design review's `go/types` walk of design D5 (attached to
       this pull request). `TestPublicSignaturesSensitivity`, written first and shown failing against a check that
       reports nothing, plants a fixture module (`writeTree`, as `TestNoRetainedContextSensitivity` does) with one
-      violation per reach: a direct result, an exported method, an embedded field, an interface method set, a type
-      argument, a generic constraint and an alias. Each is reported naming the identifier and the internal type; a
-      clean package that uses the internal type only in unexported identifiers and bodies reports nothing. The real
+      violation per reach: a direct result, an exported method, an embedded field (an internal type, and an
+      unexported type whose exported method is promoted), an exported non-embedded struct field, an interface method
+      set, a type argument, a generic constraint on a function and on a type, an alias, an exported variable and
+      constant, an exported function returning an unexported type whose exported method names the internal type,
+      and an internal package nested below a public one. Each is reported naming the identifier and the internal
+      type; a mutation that skips unexported named types fails the unexported-type plant; a clean package that uses
+      the internal type only in unexported identifiers and bodies reports nothing. The real
       tree passes; it has no public package until section 3, whose `task verify` runs then hold each ported package
       to it. Gate: `task test:unit`. Not gated by #52 (task 3.0).
 

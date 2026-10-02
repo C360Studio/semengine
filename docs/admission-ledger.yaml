@@ -289,8 +289,10 @@
   dependencies_and_side_effects: stdlib only; no goroutine, no I/O
   known_risks: >-
     no tests at the pin, none invented (design D1); no context roots. doc.go's See Also names
-    pkg/tlsutil and pkg/acme by module path; pkg/acme is not ported (change 5) and pkg/tlsutil moves
-    to internal/tlsutil (task 3.4), after which the ledger check expects that comment rewritten
+    pkg/tlsutil and pkg/acme by module path; pkg/acme is not ported (change 5), so the doc.go:139 link
+    points at a package that does not exist here, left as the pin's text because changing it would
+    break this row's carry check; pkg/tlsutil moves to internal/tlsutil (task 3.4), after which the
+    ledger check expects the doc.go:138 comment rewritten
   proving_tests: none at the pin; compiled through metric's tests (task 3.5)
   owner: setup-04a-01-floor developer
   disposition: carry
@@ -302,7 +304,10 @@
   destination: internal/timestamp
   contract: conversion, parsing and formatting of millisecond timestamps as at the pin
   dependencies_and_side_effects: stdlib only; no goroutine, no I/O
-  known_risks: no context roots; import path differs from the pin (pkg/ → internal/, design D5)
+  known_risks: >-
+    no context roots; import path differs from the pin (pkg/ → internal/, design D5). doc.go:127 links
+    github.com/c360studio/semengine/graph, which does not exist here; left as the pin's text, because
+    changing it would break this row's carry check
   proving_tests: internal/timestamp/timestamp_test.go, internal/timestamp/example_test.go
   owner: setup-04a-01-floor developer
   disposition: carry

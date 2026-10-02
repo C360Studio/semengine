@@ -163,6 +163,62 @@ func TestRestartConnectsOnlyAfterANewReadyLine(t *testing.T) {
 	}
 }
 
+// The Restart fault matrix's later phases (task 2.2; TestRestartFaultMatrix covers the container
+// hooks against Docker): a failure re-reading the mapped port or waiting for JetStream returns an
+// *Error naming that phase and wrapping the cause, runs no later phase, publishes no new binding,
+// replaces no container, and leaves the fixture refusing a further Restart.
+func TestRestartLaterPhaseFailuresAreNamed(t *testing.T) {
+	injected := errors.New("injected failure")
+	for _, tc := range []struct {
+		phase Phase
+		set   func(d *deps)
+		// later is the dependency count that must stay zero: the next phase never ran.
+		later string
+	}{
+		{PhaseMappedPort, func(d *deps) {
+			d.mappedPort = func(context.Context, testcontainers.Container) (string, error) { return "", injected }
+		}, "connect"},
+		{PhaseJetStream, func(d *deps) {
+			d.jsReady = func(context.Context, jetstream.JetStream) error { return injected }
+		}, ""},
+	} {
+		t.Run(string(tc.phase), func(t *testing.T) {
+			f := startedWith(t)
+			f.container, f.nc, f.url = struct{ testcontainers.Container }{}, &nats.Conn{}, "nats://fixture-host:1"
+			boots := 1
+			f.deps.drain = func(context.Context, *nats.Conn) error { return nil }
+			f.deps.stopContainer = func(context.Context, testcontainers.Container) error { return nil }
+			f.deps.startContainer = func(context.Context, testcontainers.Container) error { boots++; return nil }
+			f.deps.logs = func(context.Context, testcontainers.Container) ([]byte, error) {
+				return []byte(strings.Repeat(readyLog+"\n", boots)), nil
+			}
+			f.deps.mappedPort = func(context.Context, testcontainers.Container) (string, error) { return "2", nil }
+			f.deps.connect = func(context.Context, string) (*nats.Conn, error) { return &nats.Conn{}, nil }
+			f.deps.jsReady = func(context.Context, jetstream.JetStream) error { return nil }
+			tc.set(&f.deps)
+
+			err := f.Restart(t.Context())
+			var fe *Error
+			if !errors.As(err, &fe) || fe.Phase != tc.phase || !errors.Is(err, injected) || fe.ContainerID != "c0ffee" || fe.ParentErr != nil {
+				t.Fatalf("Restart = %v, want an *Error at phase %s wrapping the injected cause", err, tc.phase)
+			}
+			calls := f.callCounts()
+			if tc.later != "" && calls[tc.later] != 0 {
+				t.Fatalf("a phase after %s ran: %s called %d times", tc.phase, tc.later, calls[tc.later])
+			}
+			if calls["start"] != 0 || calls["terminate"] != 0 || calls["restart"] != 1 {
+				t.Fatalf("calls %v: a failed Restart replaced or removed the container", calls)
+			}
+			if f.URL() != "" || f.JetStream() != nil {
+				t.Fatalf("after a failed Restart: URL %q, JetStream %v; want no binding published", f.URL(), f.JetStream())
+			}
+			if err := f.Restart(t.Context()); !errors.Is(err, errNotStarted) {
+				t.Fatalf("Restart after a failed Restart = %v, want the not-started refusal", err)
+			}
+		})
+	}
+}
+
 // A create that fails is still owned: it may have happened on the broker, and Stop treats a
 // resource that turns out not to exist as absent.
 func TestFailedCreateIsOwnedAndTyped(t *testing.T) {

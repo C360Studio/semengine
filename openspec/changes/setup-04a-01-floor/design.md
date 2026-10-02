@@ -153,6 +153,29 @@ the files it names lie outside the set (`processor/graph-index/…`), so it has 
   for harness imports (foundation D4, N1): `natsfixture` imports no ported package; other harness packages may
   import ported packages that are pure libraries under the owner definition, after a cycle check over the helper's
   full dependency closure (P5).
+- **The aggregator rule (T-B8) as implemented** (`harness-boundaries` › "Import graph";
+  `internal/harness/contract/boundaries_test.go`, `aggregatorViolations`). Working definition:
+  - A *component package* is a package of this module, outside `internal/harness/`, whose non-test files declare a
+    top-level `func Register` or `func RegisterPayloads`. A `Register` from outside the module
+    (`prometheus.Register`) does not count.
+  - A non-main package outside `internal/harness/` whose non-test files refer to the `Register` or
+    `RegisterPayloads` of two or more component packages is an *aggregator*, and the test fails naming it. "Refer"
+    means a call or a use as a value (`var _ = alpha.Register` counts), not only a call.
+  - A `package main` is the *composition root* (the consumer's `main`, where components are wired together) and is
+    exempt. Aggregation inside `_test.go` files is allowed.
+
+  Why `RegisterPayloads` counts: the requirement keeps both factories and payload registrations in the composition
+  root only. At the pin, `payloadbuiltins.Register` chained `message.RegisterPayloads` and
+  `objectstore.RegisterPayloads`, which is the shape the 03B Q1 ruling forbids ("explicit per-package registration in
+  each consumer's composition root; no aggregator, no engine-side registry";
+  `openspec/changes/archive/2026-10-01-setup-03b-contract-boundary/design.md`, D1, "Ruled (Q1, #3)"). The
+  sensitivity test plants that shape and the rule rejects it.
+
+  Open for change 3, to settle before the first component port:
+  - (a) The requirement says "component family"; the scenario says "two component packages". The test uses
+    packages, the stricter reading: two packages of one family aggregated outside `main` fail.
+  - (b) A package that calls `alpha.NewFactory()` and adds the results to a registry, without referring to
+    `Register`, is not caught.
 
 ### D3. The two services and their failing factories (foundation D5, D6)
 

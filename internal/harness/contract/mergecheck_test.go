@@ -503,4 +503,67 @@ func TestMergeCheckReview(t *testing.T) {
 		r.requirePass(t, "documents only")
 		r.requireCodeNames(t)
 	})
+
+	// The two lines (task 2.3). Each is a code pull request that is not a draft.
+	code := func(author, body string) ghState { return review(false, author, body, "docs/a.md", "scripts/x.sh") }
+	const (
+		noRun      = "editing the description starts no run"
+		mustName   = "the implemented-by: line must name claude or codex"
+		exactlyOne = "the reviewed-by: line must name exactly one of claude and codex"
+	)
+	t.Run("the other agent is named", func(t *testing.T) {
+		r := runMergeCheck(t, code("User", implClaude+"reviewed-by: codex semengine-reviewer — targeted (3.1–3.3 fixes) APPROVE at 0a86a9a; full-diff review pending.\n"), "12")
+		r.requirePass(t, "reviewing agent: codex")
+		r.requireNotInOutput(t, noRun)
+	})
+	t.Run("no reviewed-by line", func(t *testing.T) {
+		runMergeCheck(t, code("User", implClaude), "12").
+			requireFail(t, "no line starts reviewed-by:", "the line to write: reviewed-by: codex", noRun)
+	})
+	t.Run("implementer line missing or naming no agent", func(t *testing.T) {
+		for _, body := range []string{
+			"reviewed-by: codex\n",
+			"implemented-by: opus (semengine-developer); fable (orchestrating session)\nreviewed-by: codex\n",
+		} {
+			t.Run(strings.SplitN(body, "\n", 2)[0], func(t *testing.T) {
+				runMergeCheck(t, code("User", body), "12").requireFail(t, mustName, noRun)
+			})
+		}
+	})
+	t.Run("same agent implements and reviews", func(t *testing.T) {
+		runMergeCheck(t, code("User", "implemented-by: claude-fable-5-1\nreviewed-by: Claude (opus)\n"), "12").
+			requireFail(t, "the other agent, codex, reviews")
+	})
+	t.Run("reviewer line names no agent, both, or a longer word", func(t *testing.T) {
+		for _, reviewer := range []string{"gpt-6-astra", "codex, then claude", "codex2"} {
+			t.Run(reviewer, func(t *testing.T) {
+				r := runMergeCheck(t, code("User", "implemented-by: claude\nreviewed-by: "+reviewer+"\n"), "12")
+				r.requireFail(t, exactlyOne)
+				r.requireNotInOutput(t, "reviewing agent:")
+			})
+		}
+	})
+	t.Run("both agents implemented", func(t *testing.T) {
+		runMergeCheck(t, code("User", "implemented-by: codex (gpt-6-sol); claude (review fixes)\nreviewed-by: claude\n"), "12").
+			requirePass(t, "reviewing agent: claude")
+	})
+	t.Run("pull request by a bot", func(t *testing.T) {
+		runMergeCheck(t, code("Bot", "Bumps x from 1 to 2.\n\nreviewed-by: codex\n"), "12").
+			requirePass(t, "reviewing agent: codex")
+	})
+	t.Run("line not written once at the start of a line", func(t *testing.T) {
+		for _, tc := range []struct{ body, says string }{
+			{implClaude + "reviewed-by: codex\nreviewed-by: codex (again)\n", "2 lines start reviewed-by:"},
+			{implClaude + "- reviewed-by: codex\n", "no line starts reviewed-by:"},
+			{implClaude + "implemented-by: claude (fable)\nreviewed-by: codex\n", "2 lines start implemented-by:"},
+		} {
+			t.Run(tc.says, func(t *testing.T) {
+				runMergeCheck(t, code("User", tc.body), "12").requireFail(t, tc.says)
+			})
+		}
+	})
+	t.Run("carriage returns", func(t *testing.T) {
+		body := strings.ReplaceAll("Summary.\n\nimplemented-by: claude (opus)\nreviewed-by: codex\n", "\n", "\r\n")
+		runMergeCheck(t, code("User", body), "12").requirePass(t, "reviewing agent: codex")
+	})
 }

@@ -137,8 +137,54 @@ if [ -z "$code" ]; then
 else
   echo "merge-check: pull request #${pr} is a code pull request; its code files ($(printf '%s\n' "$code" | wc -l | tr -d ' '), up to ten shown):"
   printf '%s\n' "$code" | head -n 10 | sed 's/^/merge-check: code file: /'
-  if ! printf '%s' "$pull" | jq -e '(.body // "") | split("\n") | any(startswith("reviewed-by:"))' >/dev/null; then
-    echo "merge-check: FAIL: no line starts reviewed-by:"
+  # The two lines: each starts in the first column; a carriage return before the
+  # line feed is dropped. An agent name is claude or codex in any letter case,
+  # with no letter or digit directly before or after it. Nothing else is read.
+  if ! lines=$(printf '%s' "$pull" | jq -r '
+    def agents: [scan("(?i)(?:^|[^\\p{L}\\p{N}])(claude|codex)(?=[^\\p{L}\\p{N}]|$)") | .[0] | ascii_downcase] | unique | join(" ");
+    [(.body // "") | split("\n")[] | rtrimstr("\r")] as $l
+    | ($l | map(select(startswith("implemented-by:")))) as $i
+    | ($l | map(select(startswith("reviewed-by:")))) as $r
+    | [.user.type, ($i | length), ($i[0] // "" | ltrimstr("implemented-by:") | agents),
+       ($r | length), ($r[0] // "" | ltrimstr("reviewed-by:") | agents)] | map(tostring) | join("|")'); then
+    echo "merge-check: unavailable: jq failed reading the description of pull request #${pr}" >&2
+    exit 2
+  fi
+  IFS='|' read -r author icount iagents rcount ragents <<<"$lines"
+  case "$icount:$rcount" in *[!0-9:]* | :* | *:) die "the description of pull request #${pr} was read as '${lines}'" ;; esac
+
+  # The reviewer the implemented-by: line calls for; empty when either agent may
+  # review: a bot's pull request, both agents named, or no valid line.
+  want=
+  if [ "$author" != Bot ] && [ "$icount" -eq 1 ]; then
+    case "$iagents" in claude) want=codex ;; codex) want=claude ;; esac
+  fi
+  if [ -n "$want" ]; then wantline="reviewed-by: ${want}"; else wantline="reviewed-by: claude, or reviewed-by: codex"; fi
+  implline="implemented-by: claude (<model or persona>), or implemented-by: codex (<model or persona>)"
+  findings=0
+  finding() { echo "merge-check: review finding: $1; the line to write: $2"; findings=$((findings + 1)); }
+  if [ "$author" != Bot ]; then
+    if [ "$icount" -eq 0 ]; then
+      finding "no line starts implemented-by:, and the implemented-by: line must name claude or codex, the agent that wrote the commits" "$implline"
+    elif [ "$icount" -gt 1 ]; then
+      finding "${icount} lines start implemented-by:, and exactly one may" "$implline"
+    elif [ -z "$iagents" ]; then
+      finding "the implemented-by: line must name claude or codex, the agent that wrote the commits" "$implline"
+    fi
+  fi
+  if [ "$rcount" -eq 0 ]; then
+    finding "no line starts reviewed-by:" "$wantline"
+  elif [ "$rcount" -gt 1 ]; then
+    finding "${rcount} lines start reviewed-by:, and exactly one may" "$wantline"
+  elif [ "$ragents" != claude ] && [ "$ragents" != codex ]; then
+    finding "the reviewed-by: line must name exactly one of claude and codex" "$wantline"
+  elif [ -n "$want" ] && [ "$ragents" != "$want" ]; then
+    finding "the reviewed-by: line names ${ragents}, which the implemented-by: line names; the other agent, ${want}, reviews" "$wantline"
+  fi
+  if [ "$findings" -eq 0 ]; then
+    echo "merge-check: the review check passes; reviewing agent: ${ragents}"
+  else
+    echo "merge-check: FAIL: the review check has ${findings} finding(s); editing the description starts no run, so run the merge-check job again after the edit"
     failed=1
   fi
 fi

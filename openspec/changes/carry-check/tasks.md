@@ -20,14 +20,14 @@ test (`design.md`, "Tests").
 
 ## 2. The comparison
 
-- [ ] 2.1 (D) `TestRewriteModulePath` and `TestRewriteMovedPackage`, written first, show the module path rewritten
+- [x] 2.1 (D) `TestRewriteModulePath` and `TestRewriteMovedPackage`, written first, show the module path rewritten
       in an import and a comment and left alone in a string literal; a package path in a doc link ending at `]`; a
       moved package's import path taken from a `carry` or `adapt` directory entry at the same pin; and re-sorted
       imports equal. Gate: `task test:unit`.
-- [ ] 2.2 (D) `TestCoveredFiles`, written first, shows `README.md` and a sub-directory left out, `testdata` taken
+- [x] 2.2 (D) `TestCoveredFiles`, written first, shows `README.md` and a sub-directory left out, `testdata` taken
       in, a note after the destination path ignored, and a file-against-directory entry reported as not compared.
       Gate: `task test:unit`.
-- [ ] 2.3 (D) `TestDiffOutput` and `TestDiffExitCodes`, written first, show the outputs and exit codes of design D4:
+- [x] 2.3 (D) `TestDiffOutput` and `TestDiffExitCodes`, written first, show the outputs and exit codes of design D4:
       nothing for an unchanged file, a unified diff for a changed line, the two one-sided lines, the per-entry lines,
       exit 2 for an unknown argument and for a named entry not compared. Gate: `task test:unit`.
 

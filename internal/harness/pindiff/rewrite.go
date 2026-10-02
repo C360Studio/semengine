@@ -52,8 +52,12 @@ func rewrite(src []byte, moved map[string]string) []byte {
 	return formatted
 }
 
-// gofmt formats a tree .go file, or returns it as it stands when gofmt cannot parse it.
+// gofmt formats a tree .go file, or returns it as it stands when it is not a whole Go file:
+// format.Source alone would also format a list of declarations, which rewrite leaves as it stands.
 func gofmt(src []byte) []byte {
+	if _, err := parser.ParseFile(token.NewFileSet(), "", src, parser.ParseComments); err != nil {
+		return src
+	}
 	formatted, err := format.Source(src)
 	if err != nil {
 		return src

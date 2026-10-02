@@ -17,6 +17,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"slices"
 	"syscall"
 	"time"
 )
@@ -222,7 +223,7 @@ func summary(r entryResult) string {
 func compareAll(ctx context.Context, root string, cfg config, entries, selected []entry) ([]entryResult, []string) {
 	var shas []string
 	for _, e := range selected {
-		if !contains(shas, e.SourceSHA) {
+		if !slices.Contains(shas, e.SourceSHA) {
 			shas = append(shas, e.SourceSHA)
 		}
 	}
@@ -256,13 +257,4 @@ func compareAll(ctx context.Context, root string, cfg config, entries, selected 
 		results = append(results, r)
 	}
 	return results, nil
-}
-
-func contains(list []string, s string) bool {
-	for _, x := range list {
-		if x == s {
-			return true
-		}
-	}
-	return false
 }

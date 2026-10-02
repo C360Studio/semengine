@@ -63,6 +63,14 @@ func TestRewriteModulePath(t *testing.T) {
 			}
 		})
 	}
+
+	// The tree side gets the same rule: a .go file that is not a whole Go file stands as it is,
+	// though gofmt's library would format it as a list of declarations.
+	t.Run("tree side, not a whole Go file", func(t *testing.T) {
+		if got := string(gofmt([]byte("var  X  int\n"))); got != "var  X  int\n" {
+			t.Fatalf("gofmt: got %q, want it as it stands", got)
+		}
+	})
 }
 
 // A moved package is a carry or adapt directory entry at the same source_sha whose destination

@@ -180,3 +180,24 @@ func TestCacheConstructorsRefuseNilContext(t *testing.T) {
 		// Had a cleanup goroutine started, the bubble would not return.
 	})
 }
+
+// TestCacheCloseAfterContextEndAndAgain: the cleanup goroutine also ends with its context; a Close
+// after that, and a second Close, return nil at once.
+func TestCacheCloseAfterContextEndAndAgain(t *testing.T) {
+	for _, strategy := range []Strategy{StrategyTTL, StrategyHybrid} {
+		t.Run(string(strategy), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(context.Background())
+				c, err := NewFromConfig[string](ctx, Config{
+					Enabled: true, Strategy: strategy, MaxSize: 10,
+					TTL: time.Minute, CleanupInterval: time.Second,
+				})
+				require.NoError(t, err)
+				cancel()
+				synctest.Wait()
+				require.NoError(t, c.Close(), "Close after the context ended")
+				require.NoError(t, c.Close(), "a second Close")
+			})
+		})
+	}
+}

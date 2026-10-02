@@ -155,14 +155,25 @@ Runtime implementation and spec promotion remain blocked until the owner explici
   helpers rely on that invariant. Any nil-to-`context.Background` default is `BLOCKING`.
 - Detachment is allowed only for terminal cleanup or finalization, or an already-accepted durability operation whose
   invariant requires bounded completion after owner cancellation. Require `context.WithTimeout` as the immediate
-  boundary. With a parent, require `context.WithTimeout(context.WithoutCancel(parent), budget)`. A timeout-only `Stop`
-  or equivalent finalizer with no parent contract may use `context.WithTimeout(context.Background(), budget)`. Work
-  must complete synchronously or join before return and never feed `Start`, `Run`, `Watch`, or continuing work.
+  boundary. With a parent, require `context.WithTimeout(context.WithoutCancel(parent), budget)`. A finalizer with no
+  caller context, such as a test cleanup (`natsfixture/fixture.go:75-81`), may use
+  `context.WithTimeout(context.Background(), budget)`. The budget bounds the work through its context and never
+  replaces a join: work must complete synchronously or join before return, with no timer in place of the join, and
+  never feed `Start`, `Run`, `Watch`, or continuing work.
 - Direct use or any unbounded descendant of `context.WithoutCancel` is `BLOCKING`. Nested child cancellation is
   allowed beneath the bounded context only when all tasks join before the terminal operation returns.
 - An exported lifecycle record exposing `context.CancelFunc` is `BLOCKING`.
 - A `Stop` that replaces the caller's finite context with its own timeout, or that treats timeout or cancellation as
   proof of completed callback or worker joins, is a finding.
+
+### Background work
+
+Check every goroutine that outlives its call, outside a service, against `openspec/specs/background-work/spec.md`.
+Each is `BLOCKING`:
+
+- Not in one of the three shapes, or `Close()` on a goroutine that runs a caller's callback or network I/O.
+- A fixed duration in place of a join.
+- No `synctest` test proving nothing is left behind, or a nil context that reaches a background goroutine.
 
 ### Test fidelity
 

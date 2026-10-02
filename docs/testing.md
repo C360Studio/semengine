@@ -235,6 +235,11 @@ every run. The five runs of `task test:repeat` therefore try different inputs, a
 run and pass the next on the same tree. That is a failing input Rapid found, not noise: replay it with the seed it
 printed before doing anything else.
 
+A test that passes and fails on the same tree is also a known flake (`.agents/protocol.md`, "Known flakes"), and a
+Rapid failure that comes and goes is treated as one. File it with the `class:flake` label and the seed Rapid printed;
+merges stop until it is fixed. The fix replays that seed, corrects the code or the rule, and keeps the failing input
+as a named, deterministic test.
+
 When a check fails, Rapid prints the seed to replay it with and writes the shrunk failing case to a `.fail` file under
 the package's `testdata/rapid/<TestName>/`. Replay with the printed seed, or with `-rapid.failfile=<path>`. If that
 file is missing or no longer matches the generator, Rapid can log a diagnostic and fall through to fresh checks, so a

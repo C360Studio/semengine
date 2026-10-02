@@ -185,7 +185,10 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
 - [x] 3.5 (D) `metric`, `payloadregistry` (level 4), both at their pin paths (public: SemSource imports both; design
       D5, #9 comment 5953295358): `metric` row `adapt` with its two roots triaged; `metric.Server`
       adapter lists the listener, the `http.Server`, the serve goroutine and, since aa94acf, the requests its handler
-      admitted and has not returned from (`Stop` waits for them within its context); the suite runs with the bound-port
+      admitted and has not returned from (`Stop` waits for them within its context). Since a19f393 (Codex review,
+      PR #48 comment 5959412053, finding 1), `Stop` closes admission before `Shutdown`: a request that reaches the
+      handler afterwards gets 503 with `Connection: close` and its handler never runs, and the closed flag and the
+      running count share one mutex, so a nil `Stop` is final (`metric/admission_test.go`); the suite runs with the bound-port
       must-fail factory (#38's first real service). Two items (design D3), each written first:
       `metric-abort-stop-reports-context` — an in-package test starts a server, replaces `s.serveDone` with a
       buffered channel already holding a value, and calls `Stop` with an ended context, so both cases of the

@@ -194,7 +194,7 @@ pending.
 
 | Service | Start / end at the pin | `Unresolved` lists | Failing factory |
 |---|---|---|---|
-| `metric.Server` | `Start(ctx)` `handler.go:59`, `Stop(ctx)` `:192` | the listener, the `http.Server`, the serve goroutine, the requests its handler admitted and has not returned from (since aa94acf; `Stop` waits for them within its context) | a server configured on a port the test already holds with `net.Listen`; `Start` binds synchronously (`:55-110`) and returns the bind error |
+| `metric.Server` | `Start(ctx)` `handler.go:59`, `Stop(ctx)` `:192` | the listener, the `http.Server`, the serve goroutine, the requests its handler admitted and has not returned from (since aa94acf; `Stop` waits for them within its context). Since a19f393 (Codex, PR #48 comment 5959412053, finding 1) `Stop` closes admission before `Shutdown`; a later request gets 503 with `Connection: close` and its handler never runs, and the closed flag shares the count's mutex, so a nil `Stop` is final (`metric/admission_test.go`) | a server configured on a port the test already holds with `net.Listen`; `Start` binds synchronously (`:55-110`) and returns the bind error |
 | `natsclient.Client` | `Connect(ctx)` `client.go:471`, `Close(ctx)` `:578` | the `nats.Conn`, JetStream handle, subscriptions, internal consumer claims, the health monitor, the metrics poller, callback goroutines and claim-release goroutines | a client whose URL is a refused local port (its own `Connect` returns the dial error) |
 
 The task 2.0 probe (PR #48 comment 5942307713) and a read of every `go` statement in both packages give these

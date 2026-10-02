@@ -20,8 +20,9 @@ It is built by extracting admitted packages from SemStreams at the frozen pin `8
 consumers: semsource, semconnect, semteams, semboids; semembed and seminstruct are support services.
 `docs/inventory-scope.md` says which repositories an agent may read and for what question — read it before any
 inventory. Read `docs/setup-plan.md` (the approved plan) and `docs/repository-map.md` (what exists today) before
-scoping work. The only Go code in the tree is the test harness under `internal/harness`; do not describe planned
-code as present.
+scoping work. The Go code in the tree is the test harness under `internal/harness` and the first ported packages
+(`pkg/`, `internal/resource`, `internal/timestamp`, `vocabulary`; `docs/admission-ledger.yaml` lists each); do not
+describe planned code as present.
 
 ## Commands
 
@@ -68,6 +69,7 @@ indexed by their spec. A change that can turn a "review only" row into a failing
 | Background work outside a service takes one of three shapes (`Run(ctx)`, a `Close()` that joins, `Shutdown(ctx)`), with no fixed shutdown timeout and a nil context refused at the call | `openspec/specs/background-work/spec.md`; developer and reviewer contracts § Background work | each site's `synctest` test (`task test:unit`) for that site; that a new goroutine takes a shape, and that no shutdown timer is left, are review only |
 | A public package's exported identifiers never name a type declared under `internal/`, directly or through exported methods, embedded fields, interface method sets, type arguments or generic constraints | `harness-boundaries` spec, "Public signatures name no internal type" | `TestPublicSignatures` and `TestPublicSignaturesSensitivity` (`task test:unit`); which packages are public (a consumer imports them, design D5's rule) is review only |
 | Test cleanup never stops, closes or terminates under an unbounded context | `harness-boundaries` spec, "Bounded cleanup roots" | `task cleanup-roots:check` for the call and the unbounded root on one line; other unbounded roots are review only |
+| No bare `select {}` | `harness-boundaries` spec (this change's delta), "No bare select" | `TestNoBareSelect` and `TestNoBareSelectSensitivity` (`task test:unit`) |
 | Tests bind no fixed address or port | `harness-boundaries` spec, "No fixed addresses in tests" | `TestNoFixedAddressesInTests`; `scripts/lint-test-ports.sh` (`task lint`) |
 | No `time.Sleep` in a test file or in any Go file under `internal/harness/` | `harness-boundaries` spec, "No sleeps in tests" | `TestNoSleepsInTests` (`task test:unit`) for the literal text `time.Sleep`; a renamed import or a wait built from a timer is review only |
 | No test calls `Skip`, `Skipf` or `SkipNow`; no test file carries a build tag other than `integration` | `harness-boundaries` spec, "No skipped or hidden tests" | `TestNoSkippedTests` and `TestNoHiddenTests` (`task test:unit`); a skip reached through a helper is review only |
@@ -77,6 +79,7 @@ indexed by their spec. A change that can turn a "review only" row into a failing
 | A ported package has an admission-ledger row; a `carry` row matches the pin (SemStreams at its `source_sha`) | `.agents/contracts/semengine-architect.md` § Extraction slices; `docs/provenance.md` rule 5; `docs/admission-ledger.yaml` | `task ledger:check` (in `task verify`) for the schema of the rows present and, fetching the pin, for each `carry` row's `.go` and `testdata` files; `TestCheckSensitivity`, `TestCommandExitStatus` and `TestLedgerCheckWiring` hold it. That a ported package has a row, its `README.md`, a new sub-package under a carried destination, and `adapt` rows (printed by `task ledger:diff`) are review only |
 | Critical packages hold their coverage floor | `.agents/skills/semengine-preflight/SKILL.md` | `task cover:check` |
 | OpenSpec changes and specs are well formed | "Where state lives" below | `task spec:check` for document shape; truth against code is review only |
+| A step is done only when its pushed commit's CI run has passed, and a reviewer's PASS names that run and commit | developer contract § Handoff; reviewer contract § Finding and verdict format | CI job `required`; naming the run in a verdict is checked in review only |
 | A merge needs CI green | `.agents/protocol.md` § Work lifecycle | CI job `required`; claim before work and close by merged PR are review only |
 | No merge while a known flake (an open `class:flake` issue) is open, unless the PR closes every open one | `.agents/protocol.md` § Work lifecycle, "Known flakes"; `merge-gate` spec, "Known-flake check" | `scripts/merge-check.sh`, run by CI job `merge-check` (which `required` needs) and by `task merge:check -- <n>` before merging; `TestMergeCheckKnownFlake` and `TestCIWorkflowPinned` hold the script and the job wiring. Filing and labelling a flake are review only |
 | A failure path fails closed; a skip, drop or degrade is declared | developer contract § Guarantee, signal, and revision contracts | review only |

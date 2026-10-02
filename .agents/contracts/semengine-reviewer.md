@@ -300,3 +300,7 @@ Use `BLOCKING` for silent corruption, data loss, invalid readiness, contract bre
 a likely functional defect or known project discipline failure, `MEDIUM` for a non-blocking correction, and `NIT` for
 style only. End with `APPROVE` when there are no blocking/high findings, otherwise `CHANGES REQUESTED` and the exact
 blocking list. State explicitly when evidence was unavailable rather than guessing.
+
+A PASS or `APPROVE` names the CI run and the commit it rests on: a step is done only when the CI run for its pushed
+commit has passed. A local `task verify` is evidence, not the gate. A cancelled or superseded run is unverified, never
+green.

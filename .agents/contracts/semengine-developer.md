@@ -226,3 +226,6 @@ Summarize the implemented task slice, semantic blast radius, tests and exact res
 "What the pull request records", including what was not covered and unresolved survivors), unresolved gates, and any
 follow-up owned by the architect, reviewer, or technical writer. Name every issue the slice filed (protocol **File**
 ritual); a filing the ritual would not admit is an unresolved gate. Do not claim completion from compilation alone.
+
+A step is done only when the CI run for its pushed commit has passed. A local `task verify` is evidence, not the gate.
+A cancelled or superseded run is unverified, never green.

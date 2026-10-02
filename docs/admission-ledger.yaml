@@ -449,7 +449,12 @@
     error whenever that context has ended, including after an idle server's Shutdown returned nil
     (metric-abort-stop-reports-context, pin handler.go:222-228); after a forced close Stop waits on
     the serve goroutine with no timer (metric-forced-join-without-timer: forcedServeJoinTimeout, pin
-    :23, :243-249, removed)
+    :23, :243-249, removed). Changed behavior (PR #48 review finding, owner-approved), written first:
+    Start applies the server mTLS configuration through tlsutil.LoadServerTLSConfigWithMTLS, so
+    RequireClientCert refuses a client with no certificate; at the pin Start called
+    LoadServerTLSConfig (pin handler.go:154) and no metric file names MTLS (pin grep), so the policy
+    was dropped; Start refuses mTLS enabled with server TLS disabled (ErrInvalidConfig) instead of
+    serving plain HTTP
   dependencies_and_side_effects: >-
     pkg/errs, pkg/security, internal/tlsutil (in-set); prometheus/client_golang v1.23.2 (the pin's
     version, now a direct requirement); binds a TCP listener and runs one serve goroutine per started
@@ -474,7 +479,10 @@
     returned "wait for forced metrics serve completion: context deadline exceeded");
     TestServerLifecycleSuite runs lifecycletest.Run with an adapter listing the listener, the
     http.Server and the serve goroutine, and a must-fail factory whose Server is configured on a port
-    the test holds, so Start returns the bind error
+    the test holds, so Start returns the bind error; in metric/tls_test.go, written first and failing
+    at the pin's Start ("An error is expected but got nil"): TestServerRequiredMTLSRejectsClientWithoutCertificate
+    (through StartWithListener, temporary certificates, an ephemeral listener: no client
+    certificate refused, a certificate the client CA signed served) and TestServerRefusesMTLSWithoutTLS
   owner: setup-04a-01-floor developer
   disposition: adapt
 

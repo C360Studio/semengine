@@ -106,6 +106,12 @@ func (s *Server) start(ctx context.Context, supplied net.Listener, provided bool
 			fmt.Errorf("nil registry"),
 			"Server", operation, "metrics registry not provided")
 	}
+	// Client certificates are only verified over TLS; serving plain HTTP would drop the
+	// configured client authentication without a word, so the policy is refused instead.
+	if !s.security.TLS.Server.Enabled && s.security.TLS.Server.MTLS.Enabled {
+		return errs.WrapInvalid(errs.ErrInvalidConfig, "Server", operation,
+			"mTLS is enabled but server TLS is not")
+	}
 
 	mux := http.NewServeMux()
 
@@ -148,7 +154,7 @@ func (s *Server) start(ctx context.Context, supplied net.Listener, provided bool
 
 	// Configure TLS if enabled at platform level
 	if s.security.TLS.Server.Enabled {
-		tlsConfig, err := tlsutil.LoadServerTLSConfig(s.security.TLS.Server)
+		tlsConfig, err := tlsutil.LoadServerTLSConfigWithMTLS(s.security.TLS.Server, s.security.TLS.Server.MTLS)
 		if err != nil {
 			s.server = nil
 			return errs.WrapFatal(err, "Server", operation, "load TLS config")

@@ -913,6 +913,44 @@ func TestRestartFaultMatrix(t *testing.T) {
 	}
 }
 
+// FaultKV over a real bucket (nats-fixture › "Fault-injecting key-value double"): a fail-after
+// Update stands on the broker at the next revision; a fail-before Create leaves no key.
+func TestFaultKVOverARealBucket(t *testing.T) {
+	f := startFixture(t)
+	ctx := t.Context()
+	bucket, err := f.CreateKeyValue(ctx, f.Name("faults"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	kv := NewFaultKV(bucket)
+	rev, err := kv.Create(ctx, "k", []byte("v1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	injected := errors.New("injected")
+	kv.FailAfter(KVUpdate, injected)
+	if _, err := kv.Update(ctx, "k", []byte("v2"), rev); !errors.Is(err, injected) {
+		t.Fatalf("Update = %v, want the injected error", err)
+	}
+	fresh, err := f.JetStream().KeyValue(ctx, bucket.Bucket())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e, err := fresh.Get(ctx, "k"); err != nil || string(e.Value()) != "v2" || e.Revision() != rev+1 {
+		t.Fatalf("fresh read after a fail-after Update: %v %v, want v2 at revision %d", e, err, rev+1)
+	}
+	kv.FailBefore(KVCreate, injected)
+	if _, err := kv.Create(ctx, "absent", []byte("v")); !errors.Is(err, injected) {
+		t.Fatalf("Create = %v, want the injected error", err)
+	}
+	if _, err := fresh.Get(ctx, "absent"); !errors.Is(err, jetstream.ErrKeyNotFound) {
+		t.Fatalf("key after a fail-before Create: %v, want ErrKeyNotFound", err)
+	}
+	if calls := kv.Calls(); calls[KVUpdate] != 1 || calls[KVCreate] != 1 {
+		t.Fatalf("Calls() = %v, want one bucket Update and one bucket Create (the first)", calls)
+	}
+}
+
 // M1: once Stop has begun, the fixture refuses to create anything; a resource created behind
 // Stop's back would be owned by nobody when Stop returned nil.
 func TestNoCreationOnceStopBegins(t *testing.T) {

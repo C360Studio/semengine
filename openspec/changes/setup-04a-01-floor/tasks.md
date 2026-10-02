@@ -59,7 +59,7 @@ this pull request as a comment unless a task says otherwise. No task asserts a f
       `Restart`
       returns a `FixtureError` naming the phase, no second container exists, and `Stop` observes the container gone;
       the sensitivity test trips exactly its phase. The one-replacement rule is unchanged (`maxAttempts` untouched).
-- [ ] 2.3 (D) `FaultKV`: unit tests written first show `FailAfter(Update)` returns the injected error while a fresh
+- [x] 2.3 (D) `FaultKV`: unit tests written first show `FailAfter(Update)` returns the injected error while a fresh
       read sees the new revision and `Calls()[Update] == 1`, and `FailBefore(Create)` leaves the key absent with
       count zero; `go vet` confirms the wrapper satisfies `jetstream.KeyValue`; `go list -deps
       ./internal/harness/natsfixture` shows no package of this module outside `internal/harness/`.

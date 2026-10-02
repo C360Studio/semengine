@@ -99,11 +99,18 @@ this pull request as a comment unless a task says otherwise. No task asserts a f
       shows the aggregator rule rejecting a package importing `Register` from two component packages and the
       SemStreams rule rejecting a planted import; both pass on the real tree. Gate: `task test:unit`.
 - [ ] 2.8 (D) `internal/harness/semantictest` and `internal/harness/payloadfixture` carry the pin's helpers
-      byte-for-byte except package path and import rewrites; T-B1 passes with them in the harness and a sensitivity
-      case shows it rejecting the same files planted outside `internal/harness/`; `go list -deps` of each helper
-      lists only pure-library packages of the set, and no test in those packages imports the helper (design P5).
-- [ ] 2.9 (R) Harness review: the five additions against the deltas, the fault matrices' completeness, and the
-      `natsfixture` import list. Verdict recorded on this pull request before any ported package lands.
+      byte-for-byte except package path and import rewrites and, in `payloadfixture`, the `payloadregistry.New`,
+      `payloadregistry.Registry` and `payloadregistry.Registration` qualifications the move out of `package
+      payloadregistry` requires (recorded as `adapt` items on the `payloadregistry` row, task 3.5); T-B1 passes
+      with them in the harness and a sensitivity case shows it rejecting the same files planted outside
+      `internal/harness/`; `go list -deps` of each helper lists only pure-library packages of the set, and no test
+      in those packages imports the helper (design P5).
+      Lands after tasks 3.3 (`pkg/types`), 3.2 (`vocabulary`) and 3.5 (`payloadregistry`): at the pin
+      `internal/semantictest/fixtures.go:13-14` imports `pkg/types` and `vocabulary`, and
+      `payloadregistry/testing.go:6` imports `pkg/types`. It is therefore held by task 3.0 like section 3.
+- [ ] 2.9 (R) Harness review of tasks 2.1–2.7 and 2.10: the additions against the deltas, the fault matrices'
+      completeness, and the `natsfixture` import list. Verdict recorded on this pull request before any ported
+      package lands. Task 2.8 is not in this review; it is reviewed with section 3's port review (task 3.10).
 - [x] 2.10 (D) Public-signature contract test (owner ruling, #9 comment 5953477174; `harness-boundaries` › "Public
       signatures name no internal type"): `TestPublicSignatures` in `internal/harness/contract` loads the module's
       non-test packages with `golang.org/x/tools/go/packages` (already direct, as in `TestNoRetainedContext`,
@@ -133,8 +140,9 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
 `proving_tests` names them; context roots in the package are triaged in `known_risks`.
 
 - [ ] 3.0 Hold: section 3 waits for #52 (PR #54) to merge, per the owner's placement on #52 ("Scope and placement",
-      2026-10-02); section 2 is not held. The #52 command's output, each package's difference from the pin read
-      through its row's `source_path` → `destination` (design D5), is task 7.1's review input.
+      2026-10-02); section 2 is not held, except task 2.8, which needs section 3's packages. The #52 command's
+      output, each package's difference from the pin read through its row's `source_path` → `destination` (design
+      D5), is task 7.1's review input.
 
 - [ ] 3.1 (D) `pkg/platform`, `pkg/resource`, `pkg/retry`, `pkg/security`, `pkg/timestamp` (level 0): rows `carry`
       except `pkg/resource` (`adapt`, SS#1415-class ender and D8 repairs) and `pkg/retry` (`adapt`, D8 repair:
@@ -163,7 +171,8 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       `select` at `handler.go:222-228` are ready before it runs; over 30 such servers the pin's `Stop` returns nil
       for at least one (each run is a fair coin), and after the fix every `Stop` returns the context's error;
       `metric-forced-join-without-timer` — `forcedServeJoinTimeout` (`:23, :243-249`) is removed and the forced path
-      waits on `serveDone`. `payloadregistry` row `adapt` (`testing.go` rehomed, task 2.8);
+      waits on `serveDone`. `payloadregistry` row `adapt` (`testing.go` rehomed, task 2.8; `adapt` items for its
+      unqualified `New`, `Registry` and `Registration` written as `payloadregistry.X` in `payloadfixture`);
       `prometheus/client_golang` becomes direct.
 - [ ] 3.6 (D) `message`, `pkg/cache` (level 5): `message` row `carry` (`google/uuid` direct; its two tests that used
       `internal/semantictest` import the harness copy); `pkg/cache` row `adapt`: its 26 sleeps are repaired under
@@ -232,13 +241,13 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       (127 at the pin less the four excluded files and `pkg/acme`'s two) and the line count after repair is recorded
       with `wc` next to the pin's 33,279 less the 60 lines of `TestEvictCallback` (design D8), with a diff stat
       against the pin per package.
-- [ ] 3.10 (R) Port review per package group (3.1–3.7): the two service adapters list every retained kind (the review
-      checklist of the `lifecycle-suite` delta); each helper has the shape design D7 gives it, its `synctest` test and
-      its nil-context refusal, and no fixed shutdown timeout remains (`background-work` delta); rows validate, no
-      file beyond the pin's was added except adapters and the rewritten `NewTestClient` sites, and every D8 repair is
-      on its row; every real-clock timer in a repaired file is either an R1b failure bound sized per D8 or a site in
-      D8's disposition table with that disposition (a review check the text check cannot make). Verdict on this pull
-      request.
+- [ ] 3.10 (R) Port review per package group (3.1–3.7) and of task 2.8's rehomed helpers: the two service
+      adapters list every retained kind (the review checklist of the `lifecycle-suite` delta); each helper has the
+      shape design D7 gives it, its `synctest` test and its nil-context refusal, and no fixed shutdown timeout
+      remains (`background-work` delta); rows validate, no file beyond the pin's was added except adapters and the
+      rewritten `NewTestClient` sites, and every D8 repair is on its row; every real-clock timer in a repaired file
+      is either an R1b failure bound sized per D8 or a site in D8's disposition table with that disposition (a review
+      check the text check cannot make). Verdict on this pull request.
 - [ ] 3.11 (D) CI time: the wall time of `task verify` per step (`scripts/verify.sh` prints it) and of the CI `verify`
       job with every package ported are recorded on this pull request, with the integration lane's time against its
       `-timeout 10m` (`scripts/test-integration.sh:402`). If the job exceeds its 15-minute limit (`merge-gate`

@@ -23,12 +23,17 @@ of ported code traceable to its origin and keep the license obligations intact. 
    difference and the regression evidence. Do not leave a ported file that silently differs from its recorded source.
    `task ledger:check`, part of `task verify`, holds every `carry` row to the pin: each `.go` file directly in the
    package, test files included, and every file under its `testdata` directory must match the pin. The only
-   differences allowed are the module path in import paths and comments (`semstreams` becomes `semengine`, and a
-   package that a `carry` or `adapt` row places at a new destination takes that path) and gofmt formatting, such as
-   re-sorted imports. A string that holds the module path is not rewritten, so changing it is a difference.
-   `README.md` and sub-directories are not compared. A package with any other difference is `adapt`. When the check
-   fails, run `task ledger:diff -- <source_path>` to see the lines, then either restore the file or change the row to
-   `adapt` and name the behavior that changed.
+   differences allowed are the module path in import paths and comments (`semstreams` becomes `semengine`) and gofmt
+   formatting, such as re-sorted imports. An import of another ported package is also rewritten to that package's
+   destination, but only when that package has a `carry` or `adapt` row at the same `source_sha` whose source path is
+   a directory at the pin and whose destination is a different directory in the tree; any other import of it is a
+   difference. A string that holds the module path is not rewritten, so changing it is a difference. `README.md` and
+   sub-directories are not compared. A package with any other difference is `adapt`. When the check fails, run
+   `task ledger:diff -- <source_path>` to see the lines, then either restore the file or change the row to `adapt`
+   and name the behavior that changed. The check reads the working tree, untracked files included, so a stray file
+   inside a carried package fails it as `carry entry <source_path>: <path>: only in the tree`. The likely one is a
+   `.fail` file Rapid writes under the package's `testdata/rapid/` after a failing property test (`docs/testing.md`,
+   "Running and replaying a Rapid test"): delete it, or move the case into a named test.
 
 ## Reviewing a port
 

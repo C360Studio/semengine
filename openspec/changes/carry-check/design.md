@@ -106,6 +106,9 @@ produced by the code under test (`docs/testing.md:23-27`).
 | Pin unreadable exits 2; a fetch that never answers ends at a bound under a second | `TestCheckPinUnreadable` |
 | `check` and `diff`, passing, violated and pin unreadable, in a read-only tree: its files and hashes unchanged | `TestWritesNothingInTree` |
 | The program, run as a separate process the way `task ledger:check` runs it, in a temporary tree with a planted `carry` violation, exits non-zero and prints the violation; with no `carry` entry it exits 0 | `TestCommandExitStatus` |
+| The printed diff, applied to the pin text, gives the tree text; changes six unchanged lines apart share a hunk and seven apart do not; an empty range is named by the line before it; a last line without a newline is marked | `TestUnifiedDiff` and `FuzzUnifiedDiffApplies` |
+| After a fetch is cut off, no process the fetch started, git's transport helper included, is still running | `TestFetchLeavesNoProcess` |
+| A changed middle too large to match line by line is printed as one removal and one addition, announced on standard error naming the file, and the diff still applies | `TestDiffLargeFileFallback` |
 | `ledger:check` in `Taskfile.yml` runs the schema tests, then that program, with nothing that discards its exit status; a planted removal fails | `TestLedgerCheckWiring` and its `Sensitivity` pair, in `contract` |
 
 ## Options considered

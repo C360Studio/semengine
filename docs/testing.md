@@ -105,7 +105,9 @@ ported unchanged) with the pin (SemStreams at the row's `source_sha`) and fails 
 row it fetches nothing, as today; once one exists, `task verify` and CI make one unauthenticated fetch from
 `github.com` per distinct `source_sha` (about 3.6 s for the whole `task ledger:check` in the one measured run). A
 fetch that does not answer (two minutes for all the fetches of a run) fails the check with a message that says no
-entry was checked. That is a red run to re-run, not a known flake (`.agents/protocol.md`, "Known flakes").
+entry was checked. That is a red run to re-run, not a known flake (`.agents/protocol.md`, "Known flakes"). When a
+fetch is cut off, by that bound or by an interrupt, the program kills the processes it started for the fetch, git's
+transport helper included, so none is left running when it returns.
 
 ## Show that the test can fail
 

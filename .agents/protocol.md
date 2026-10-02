@@ -17,13 +17,13 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
   of the work, with `Closes #n` for a leaf issue or `Addresses #n` for an epic. No draft PR, no claim. Design-phase
   work claims the same way; the OpenSpec change is its
   first content commit. A stop-point goes in the PR description.
-- **Target state, task truth, holds:** the OpenSpec change inside that PR; `task spec:queue` reads its holds. The
-  archive (`openspec archive <id>` + spec sync) is the landing PR's last commit, reviewed with the code. Every task
-  can be ticked in or before the archive commit. No task may assert a post-merge fact ("CI green", "merge-ready") or
-  wait on a step that follows the archive (the check of the archive, undraft, the final CI run, the merge): such a
-  task strands the change, and those steps are recorded on the PR. A hold is written on the unticked task it stops,
-  as `Hold:` followed by what it waits for (an issue or PR number, or the owner's ruling). `task spec:queue` reads
-  unticked task lines only: a hold in a heading or a paragraph does not show.
+- **Target state, task truth, holds:** the OpenSpec change inside that PR; `task spec:queue`, run in the claim's
+  worktree, shows its holds. The archive (`openspec archive <id>` + spec sync) is the landing PR's last commit,
+  reviewed with the code. Every task can be ticked in or before the archive commit. No task may assert a post-merge
+  fact ("CI green", "merge-ready") or wait on a step that follows the archive (the check of the archive, undraft, the
+  final CI run, the merge): such a task strands the change, and those steps are recorded on the PR. A hold is written
+  on the unticked task it stops, as `Hold:` followed by what it waits for (an issue or PR number, or the owner's
+  ruling). The queue reads unticked task lines only: a hold in a heading or a paragraph does not show.
 - **Why:** an ADR, or the owner's ruling comment on the issue. Owner rulings of 2026-09-30 on the plan are recorded
   on PR #1.
 
@@ -49,7 +49,8 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
   needs nothing; the ruling is the record. An unmeasured cost becomes a *Declared cost* section in the design. Only an
   architectural finding (it crosses files, would need its evidence re-collected to re-derive, or changes what someone
   should not do next) becomes an issue. Ask the owner before filing when placement is a genuine scheduling call.
-- **Land:** implementation review, then the owner-run cross-agent round where the owner asks for it, then fixes and
+- **Land:** implementation review (the other agent's for Go code outside the harness: "Cross-agent review" below),
+  then, for any other change, the owner-run cross-agent round where the owner asks for it, then fixes and
   re-review, then archive as the final content commit, then a narrow reviewer check of the archive/spec sync, then
   undraft, then CI green on a head that is up to date with `main` and with **no known flake open** ("Known flakes"
   below), then `task merge:check -- <n>` immediately before merging, in a shell where `GITHUB_ACTIONS` is not set,
@@ -59,24 +60,33 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
   the PR body. Bring a pushed branch up to date by merging `origin/main` into it; do not rebase or force-push it. A
   review record names the commit it read, and a rebase leaves that record pointing at a commit the branch no longer
   has. The squash merge keeps `main` linear either way.
-- **Cross-agent review:** on a pull request that changes production code (a `.go` file outside `internal/harness`)
-  or `docs/admission-ledger.yaml`, the reviews in "Land" (the implementation review, the re-review of fixes, the
-  check of the archive/spec sync) are done by the other agent: Codex's `semengine-reviewer` when a Claude session
-  implemented the change, Claude's when Codex did (owner ruling of 2026-10-02, issue #64). It replaces the
-  owner-run round for such a change; the owner need not ask. The implementing session may still run its own reviewer
-  as it works. Those reviews find defects early and are not the gate. Neither agent can start the other, so the
-  pull request carries both halves:
+- **Cross-agent review:** on a pull request that changes a `.go` file outside `internal/harness`, or
+  `docs/admission-ledger.yaml`, the reviews in "Land" (the implementation review, the re-review of fixes, the check
+  of the archive/spec sync) are done by the agent that wrote none of the commits under review. The owner ruled on
+  2026-10-02 (issue #64) that Codex's `semengine-reviewer` reviews what Claude sessions implement "as we port code".
+  Two things here are this repository's reading of that ruling, not the owner's words: the scope above, and the
+  reverse direction, Claude's reviewer for what Codex implements. If both agents wrote commits, the owner names the
+  reviewer on the issue. For such a change this replaces the owner-run round; the owner need not ask. It applies to
+  every pull request not yet merged, one already open included. The implementing session may run its own reviewer as
+  it works; those reviews, past or future, find defects early and are not the gate. Neither agent can start the
+  other, so the pull request carries both halves:
   - The implementer asks with a PR comment headed `Review request`. It names the kind of review, the commit to read,
     the diff range, that commit's CI run, and the issue or ruling the change answers. It does not say what the
     reviewer should conclude.
-  - The reviewer answers with a PR comment headed `Review record`, in the reviewer contract's format. It names the
-    commit it read, what it ran, and what it could not run. A check the reviewer cannot run where it works is
-    reported as not run: the reviewer asks the implementer for the output and verifies it, and never passes a check
-    it did not see.
-  - A record covers the commit it names and nothing after it. A later content commit needs a re-review; the archive
-    commit needs the archive check.
-  - The reviewer does not write on the branch. Findings go back to the implementer, who keeps write ownership.
-  - The PR body names both: `implemented-by:` and `reviewed-by: <model or persona>`.
+  - The reviewing session answers with a PR comment headed `Review record`: its reviewer's report as written, in the
+    reviewer contract's format, not a summary. It names the commit read, what was run, and what could not be run.
+  - Evidence comes from the tree and from CI, not from the implementer's account. For anything `task verify` runs,
+    the CI run of the named commit is the evidence. A check the reviewer could not run and CI does not run is
+    recorded as not run; output the implementer supplies for it is recorded as reported by the implementer, never as
+    passed.
+  - A record covers the commit it names. A later content commit, one that changes the pull request's own diff against
+    `main`, needs a re-review, and the archive commit needs the archive check. A merge of `origin/main` that
+    conflicts with nothing the pull request changed is not a content commit: the record carries over, and CI on the
+    merged head is the check.
+  - The reviewer does not write on the branch. Findings go back to the implementer, who keeps write ownership. If
+    the two agents disagree on a finding, it goes to the owner on the issue, labelled `status:needs-decision`.
+  - The implementer writes `reviewed-by: <model or persona>` in the PR body beside `implemented-by:`, taken from the
+    record.
 - **Known flakes:** a known flake is an open issue labelled `class:flake`. The label is for a failure that a pull
   request in this repository can end: a test or check that passes and fails on the same tree. A network fetch that
   did not answer is not one. Record it as a comment on the pull request it hit, with the run's link, and re-run when

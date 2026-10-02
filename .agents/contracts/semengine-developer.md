@@ -42,14 +42,15 @@ or runtime mechanics; they do not replace this project-specific role.
 4. Trace the complete path from the consumer-visible contract to storage and back when applicable.
 5. Report exact commands and outcomes. Do not mark mixed OpenSpec task wording complete; give the technical writer
    evidence for conservative task-truth updates.
-6. Complete SemEngine implementation review and any owner-requested cross-agent round per the
-   [shared protocol](../protocol.md). Resolve findings and obtain any required re-review before archiving. Then
+6. Complete the implementation review the [shared protocol](../protocol.md) requires: the other agent's for Go code
+   outside `internal/harness` or the admission ledger ("Cross-agent review"), otherwise SemEngine's reviewer and any
+   cross-agent round the owner asks for. Resolve findings and obtain any required re-review before archiving. Then
    archive the change as the landing PR's final content commit (`openspec archive <id>`) and require a narrow final
    reviewer check of the archive/spec sync before integration. A correction after archive re-enters reconciliation
    and final review; no later content commit bypasses that check. The merge is the CI-green proof. Never write or
-   leave a task that asserts a post-merge fact ("CI green", "merge-ready"): it cannot be ticked before merge and
-   strands the change unarchived. Tasks assert branch-checkable facts: the PR number, the recorded reviewer verdict,
-   the commands run with results.
+   leave a task that asserts a post-merge fact ("CI green", "merge-ready") or waits on a step after the archive
+   commit: it cannot be ticked before the archive and strands the change unarchived. Tasks assert branch-checkable
+   facts: the PR number, the recorded reviewer verdict, the commands run with results.
 7. **Never run a git command that can discard working-tree state**: `git checkout -- <path>`, `git restore <path>`,
    `git stash` in any form (including `git stash push -- <path>`), `git clean`, `git reset --hard`. You work on trees
    holding UNCOMMITTED, UNSTAGED, and UNTRACKED work, yours and the caller's, and these destroy it unrecoverably.

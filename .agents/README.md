@@ -42,9 +42,10 @@ developer.
 SemStreams has no technical-writer adapter; the writer follows the developer's routing because it edits files under
 the parent workspace permissions. This is a SemEngine choice, open to owner override.
 
-Across agents the pairing is the owner's decision, since nothing here ranks one vendor's model against another's: for
-a change to production code, the reviewer of record is the other agent's reviewer from the table above (owner ruling
-of 2026-10-02, issue #64; `.agents/protocol.md`, "Cross-agent review").
+The table does not rank Claude's models against Codex's; across agents the pairing is the owner's decision. For a
+change to Go code outside `internal/harness`, or to the admission ledger, the reviewer of record is the other agent's
+reviewer from the table above (owner ruling of 2026-10-02 on issue #64, and this repository's reading of it:
+`.agents/protocol.md`, "Cross-agent review").
 
 ## Orchestrating role agents
 

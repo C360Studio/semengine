@@ -19,20 +19,20 @@ caller can observe and names the test for each behaviour; locks, types and file 
 
 The program runs `git fetch --depth 1` of each distinct `source_sha` it needs from
 `https://github.com/c360studio/semstreams.git` into a temporary directory outside the repository, and removes it.
-SemStreams is public and the fetch needs no credentials (M1); it took 2.4 s and 17 MB (M2). Git names every object
-by the hash of its content, so the 40-character `source_sha` the schema already requires (`ledger_test.go:170`) is a
-recorded hash of every file at the pin, and git checks it on each fetch; nothing else is recorded or needs
-verifying. With no `carry` entry nothing is fetched, so `main` today stays offline (G4). All the fetches of one run
-share one bound of two minutes, not two minutes each; past it the pin counts as unreadable.
+SemStreams is public and the fetch needs no credentials (M1); it took 2.4 s and 17 MB (M2). Git names every object by
+the hash of its content, so the 40-character `source_sha` the schema already requires (`ledger_test.go:170`) is a
+recorded hash of every file at the pin, and git checks it on each fetch; nothing else is recorded or needs verifying.
+With no `carry` entry nothing is fetched, so `main` today stays offline (G4). All the fetches of one run share one bound
+of two minutes, not two minutes each; past it the pin counts as unreadable.
 
 ### D2. The unit is the ledger entry; test files are covered (questions 2 and 3)
 
-The check works on whatever `source_path` is at the pin, read from the pin and not declared: a file or a directory.
-A directory entry covers the `.go` files directly in it and every file under its `testdata` directory. Test files
-are covered: the owner ruled that a package with a repaired test is `adapt` (A2), and `task ledger:diff` then shows
-the repair. A sub-directory is another package (`vocabulary` has eight, M3). `README.md` is not covered: three
-planned `carry` packages have one that fails `task docs:check` as it stands at the pin (M9). A `carry` entry must
-have every covered pin file in the tree and no covered file the pin lacks.
+The check works on whatever `source_path` is at the pin, read there and not declared: a file or a directory. A directory
+entry covers the `.go` files directly in it and every file under its `testdata` directory. Test files are covered: the
+owner ruled that a package with a repaired test is `adapt` (A2), and `task ledger:diff` then shows the repair. A
+sub-directory is another package (`vocabulary` has eight, M3). `README.md` is not covered: three planned `carry`
+packages have one that fails `task docs:check` as it stands at the pin (M9). A `carry` entry must have every covered pin
+file in the tree and no covered file the pin lacks; one that covers no file on either side is not compared.
 
 ### D3. What is not a difference
 
@@ -59,18 +59,17 @@ Everything else is a difference, a comment that renames SemStreams included (M11
   the tree file (`+++ <tree path>`); `only at the pin: <path>` or `only in the tree: <path>` for a file on one side.
   An equal file prints nothing. The rewrite keeps line numbers, apart from re-sorted import lines.
 - Standard error: one line per entry, `<source_path> (<disposition>): N files, K differ, A only at the pin, B only
-  in the tree`, or `…: not compared: <reason>` (D2's file-or-directory mismatch, or a path that does not exist).
+  in the tree`, N counting covered files on both sides, or `…: not compared: <reason>` (D2's reasons).
 - The program exits 0 when it ran, differences or not; 2 when an argument names no entry, a named entry was not
   compared, or the ledger or the pin could not be read.
 
 ### D5. `task ledger:check`
 
-Runs the schema tests as now, then the program over every `carry` entry, with D4's comparison: a file prints
-nothing there exactly when it passes here. The program exits 1 on a covered file that differs, is only at the pin or
-is only in the tree, and on a `carry` entry that cannot be compared. Each line names the entry, the file and the
-kind; the closing lines say `task ledger:diff -- <source_path>` prints the lines and that a package that differs is
-`adapt` (`docs/provenance.md` rule 5). `adapt` entries are never failed. If the pin cannot be read the program exits
-2, says so, and says no entry was checked.
+Runs the schema tests as now, then the program over every `carry` entry, with D4's comparison: a file prints nothing
+there exactly when it passes here. The program exits 1 on a covered file that differs or is on one side only, and on a
+`carry` entry that cannot be compared. Each line names the entry, the file and the kind; the closing lines say
+`task ledger:diff -- <source_path>` prints the lines and that a package that differs is `adapt` (`docs/provenance.md`
+rule 5). `adapt` entries are never failed. An unreadable pin exits 2, saying so and that no entry was checked.
 
 ### D6. Home and constraints
 
@@ -102,9 +101,10 @@ produced by the code under test (`docs/testing.md:23-27`).
 | README and sub-directory out, `testdata` in, note after the path ignored | `TestCoveredFiles` |
 | Unchanged prints nothing; a changed line, a one-sided file and the per-entry lines are printed | `TestDiffOutput` |
 | Exit 2 for an unknown argument and a named entry not compared; exit 0 otherwise | `TestDiffExitCodes` |
-| Each planted violation exits 1 naming entry, file and kind: a one-line edit in a non-test file, a test file and a `testdata` file; a file removed; a file added; a changed string literal that holds the module path; an import redirected to the destination of a `defer-exclude` entry; a destination that does not exist, starts with `/` or has `..` | `TestCheckSensitivity` |
+| Each planted violation exits 1 naming entry, file and kind: a `carry` directory entry covering nothing; a one-line edit in a non-test file, a test file and a `testdata` file; a file removed; a file added; a changed string literal that holds the module path; an import redirected to the destination of a `defer-exclude` entry; a destination that does not exist, starts with `/` or has `..` | `TestCheckSensitivity` |
 | A carried entry passes; an `adapt` entry is never failed; no `carry` entry passes with an unreachable remote | `TestCheckScope` |
 | Pin unreadable exits 2; a fetch that never answers ends at a bound under a second | `TestCheckPinUnreadable` |
+| `check` and `diff`, passing, violated and pin unreadable, in a read-only tree: its files and hashes unchanged | `TestWritesNothingInTree` |
 | The program, run as a separate process the way `task ledger:check` runs it, in a temporary tree with a planted `carry` violation, exits non-zero and prints the violation; with no `carry` entry it exits 0 | `TestCommandExitStatus` |
 | `ledger:check` in `Taskfile.yml` runs the schema tests, then that program, with nothing that discards its exit status; a planted removal fails | `TestLedgerCheckWiring` and its `Sensitivity` pair, in `contract` |
 

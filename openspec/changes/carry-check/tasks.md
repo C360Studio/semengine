@@ -55,6 +55,11 @@ test (`design.md`, "Tests").
       anything that discards its exit status. Gates: `task ledger:check` and `task test:unit`.
 - [x] 3.6 (D) The new package passes `task test:repeat -- ./internal/harness/pindiff`, `task lint`, `task vuln` and
       `task tidy:check`, the last with no new module in `go.mod`.
+- [x] 3.7 (D) A directory entry that covers no file at the pin or in the tree is not compared: `TestCheckSensitivity`
+      (a `carry` entry exits 1) and `TestCoveredFiles` (a named entry exits 2), written first. Gate: `task test:unit`.
+- [x] 3.8 (D) `TestWritesNothingInTree` runs `check` and `diff` (passing, violated, pin unreadable) in a read-only
+      tree and finds its files and hashes unchanged; shown to fail with the fetch directory made inside the tree.
+      Gate: `task test:unit`.
 
 ## 4. Evidence against the real pin
 

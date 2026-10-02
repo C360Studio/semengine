@@ -28,7 +28,8 @@ gofmt. A `.go` file gofmt cannot parse, and every other covered file, is compare
 when the results are byte-identical.
 
 An entry SHALL be reported as not compared, with the reason, when its destination path does not exist in the tree,
-when `source_path` does not exist at `source_sha`, or when one side is a file and the other a directory.
+when `source_path` does not exist at `source_sha`, when one side is a file and the other a directory, or when it is
+a directory entry that covers no file at the pin and none in the tree.
 
 #### Scenario: Module path in an import and a comment
 
@@ -89,6 +90,12 @@ when `source_path` does not exist at `source_sha`, or when one side is a file an
 
 - **WHEN** `source_path` is a file at the pin and the destination path is a directory
 - **THEN** the entry is reported as not compared, with that reason
+
+#### Scenario: Directory entry with nothing covered
+
+- **WHEN** `source_path` is a directory at the pin that holds only `README.md` and a sub-directory, and the
+  destination directory holds only `README.md`
+- **THEN** the entry is reported as not compared, because no file is covered at the pin or in the tree
 
 ### Requirement: Carried entries match the pin
 
@@ -157,8 +164,9 @@ print on standard output a unified diff from the rewritten pin text, labelled `p
 SemStreams path, to the tree file, labelled with its path. For a file on one side only it SHALL print
 `only at the pin: <path>` or `only in the tree: <path>`. An equal file prints nothing, so standard output is empty
 when nothing differs. On standard error it SHALL print one line per entry: the `source_path`, the disposition, and
-either the number of files compared, differing, only at the pin and only in the tree, or `not compared` with the
-reason. The program SHALL exit 0 when it ran, whether or not files differ, and 2 when an argument names no entry,
+either the number of files compared (covered files present on both sides), differing, only at the pin and only
+in the tree, or `not compared` with the reason.
+The program SHALL exit 0 when it ran, whether or not files differ, and 2 when an argument names no entry,
 when a named entry could not be compared, or when the ledger or the pin could not be read; through `task` only pass
 or fail and the message are promised. It SHALL write nothing inside the repository.
 

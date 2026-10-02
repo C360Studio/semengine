@@ -27,7 +27,8 @@ var semstreamsOwnerKeys = []string{"host", "pid", "started", "identity", "token"
 // fakeDocker records every invocation and answers the handful of subcommands the runner uses.
 // FAKE_IMAGE_CACHED=0 makes the image absent, FAKE_PULL_FAILS=1 fails the pull, and
 // FAKE_PS_SURVIVORS=N makes `docker ps` report one container for the first N calls.
-// FAKE_PULL_MODE=hang makes the pull record its pid and block, as a slow registry does.
+// FAKE_PULL_MODE=hang makes the pull record its pid and block, as a slow registry does; pull.pid
+// appears only once it holds the pid.
 const fakeDocker = `#!/usr/bin/env bash
 echo "$*" >> "$FAKE_DIR/docker.log"
 case "$1 ${2:-}" in
@@ -38,7 +39,12 @@ case "$1 ${2:-}" in
   "image inspect") [ "${FAKE_IMAGE_CACHED:-1}" = 1 ] || exit 1 ;;
   "pull "*)
     [ "${FAKE_PULL_FAILS:-0}" = 1 ] && { echo "fake pull: manifest unknown" >&2; exit 1; }
-    if [ "${FAKE_PULL_MODE:-}" = hang ]; then echo "$$" > "$FAKE_DIR/pull.pid"; exec sleep 30; fi ;;
+    # The shell creates a redirect's file before it writes to it, and the test reads pull.pid as
+    # soon as it exists; writing a temporary name and renaming means pull.pid never exists empty.
+    if [ "${FAKE_PULL_MODE:-}" = hang ]; then
+      echo "$$" > "$FAKE_DIR/pull.pid.tmp" && mv "$FAKE_DIR/pull.pid.tmp" "$FAKE_DIR/pull.pid"
+      exec sleep 30
+    fi ;;
   "ps "*)
     n=$(cat "$FAKE_DIR/ps.count" 2>/dev/null || echo 0); n=$((n + 1)); echo "$n" > "$FAKE_DIR/ps.count"
     [ "$n" -le "${FAKE_PS_SURVIVORS:-0}" ] && echo "c0ffee00c0ffee00" ;;

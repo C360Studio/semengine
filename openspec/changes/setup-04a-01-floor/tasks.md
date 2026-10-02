@@ -166,12 +166,17 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       (`errs.go:47`) as the one sentinel and change 3 as the SS#1218 proof's home; the two `pkg/errs` context roots
       are triaged. Done in 4555515; evidence PR #48 comment 5954727965.
 - [x] 3.3 (D) `pkg/types` (level 2): row `carry`. Done in dcdf6dd; evidence PR #48 comment 5954727965.
-- [ ] 3.4 (D) `pkg/projection/contract`, `pkg/tlsutil` (level 3): `pkg/projection/contract` row `carry`; `pkg/tlsutil`
-      row `adapt`: ported without `LoadServerTLSConfigWithACME`, `LoadClientTLSConfigWithACME` and `initACMEClient`
-      (`tlsutil.go:186-365`), the `context`, `time` and `pkg/acme` imports only they use (`:5, :10, :12`), and the
-      ACME parts of `doc.go` (`:7, :10, :13-14, :27, :93-126, :151, :153-154, :160, :166`); no tlsutil test calls
-      them (pin grep, design D1). The row's `known_risks` records the deferral to change 5 with both defects
-      (design D7). `pkg/tlsutil`'s integration-tagged test runs in the integration lane.
+- [x] 3.4 (D) `pkg/projection/contract`, `pkg/tlsutil` (level 3): `pkg/projection/contract` row `carry`, destination
+      `pkg/projection/contract` (public: SemConnect imports it; #9 comment 5953295358); `pkg/tlsutil` row `adapt`,
+      destination `internal/tlsutil` (design D5; #9 comment 5952661571): ported without
+      `LoadServerTLSConfigWithACME`, `LoadClientTLSConfigWithACME` and `initACMEClient` (`tlsutil.go:186-365`), the
+      `context`, `time` and `pkg/acme` imports only they use (`:5, :10, :12`), and the ACME parts of `doc.go` (the
+      ACME clauses of `:7` and `:10`; `:13-14, :27, :93-126, :151-154, :160, :166`, where `:152` is the blank line
+      between the two ACME error-handling parts); no tlsutil test calls them (pin grep, design D1). The row's
+      `known_risks` records the deferral to change 5 with both defects (design D7). Pin `pkg/security/doc.go:138`
+      links `internal/tlsutil` (the `pkg/security` carry check expects it once the `pkg/tlsutil` row maps the move).
+      Neither package has a `README.md` at the pin. `internal/tlsutil`'s integration-tagged test runs in the
+      integration lane. Done in 0031f26 and f1cc210; `task verify` ok on f1cc210.
 - [ ] 3.5 (D) `metric`, `payloadregistry` (level 4): `metric` row `adapt` with its two roots triaged; `metric.Server`
       adapter lists the listener, the `http.Server` and the serve goroutine; the suite runs with the bound-port
       must-fail factory (#38's first real service). Two items (design D3), each written first:

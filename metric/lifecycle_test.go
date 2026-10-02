@@ -21,12 +21,37 @@ import (
 // started Server retains: the listener, the http.Server, the serve goroutine, which Server holds
 // through the serveDone channel until Stop has consumed its result, and the requests its handler
 // admitted and has not returned from, with the metrics collection each one runs.
-type serverOwner struct{ s *Server }
+//
+// Calls counts the external operations the Server itself performs, reported through its opHook
+// seam at each call site: the bind, the serve goroutine, Shutdown, and the force-closes of the
+// http.Server and listener. A Stop that repeats one of them is visible to the suite's no-op
+// checks.
+type serverOwner struct {
+	s     *Server
+	mu    sync.Mutex
+	calls map[string]int
+}
 
-func (o serverOwner) Start(ctx context.Context) error { return o.s.Start(ctx) }
-func (o serverOwner) Stop(ctx context.Context) error  { return o.s.Stop(ctx) }
+func newServerOwner(s *Server) *serverOwner {
+	o := &serverOwner{s: s, calls: map[string]int{}}
+	s.opHook = func(op string) {
+		o.mu.Lock()
+		defer o.mu.Unlock()
+		o.calls[op]++
+	}
+	return o
+}
 
-func (o serverOwner) Observe() lifecycletest.Observation {
+func (o *serverOwner) Start(ctx context.Context) error { return o.s.Start(ctx) }
+func (o *serverOwner) Stop(ctx context.Context) error  { return o.s.Stop(ctx) }
+
+func (o *serverOwner) Observe() lifecycletest.Observation {
+	o.mu.Lock()
+	calls := make(map[string]int, len(o.calls))
+	for op, n := range o.calls {
+		calls[op] = n
+	}
+	o.mu.Unlock()
 	o.s.mu.Lock()
 	defer o.s.mu.Unlock()
 	var held []string
@@ -42,7 +67,7 @@ func (o serverOwner) Observe() lifecycletest.Observation {
 	if o.s.requests != nil && o.s.requests.pending() > 0 {
 		held = append(held, "admitted request")
 	}
-	return lifecycletest.Observation{Unresolved: held}
+	return lifecycletest.Observation{Unresolved: held, Calls: calls}
 }
 
 // newEphemeralServer returns a Server whose Start binds an ephemeral port. NewServer maps port 0 to
@@ -63,9 +88,9 @@ func TestServerLifecycleSuite(t *testing.T) {
 	t.Cleanup(func() { _ = held.Close() })
 	heldPort := held.Addr().(*net.TCPAddr).Port
 	mustFail := func() lifecycletest.Owner {
-		return serverOwner{NewServer(heldPort, "/metrics", NewMetricsRegistry(), security.Config{})}
+		return newServerOwner(NewServer(heldPort, "/metrics", NewMetricsRegistry(), security.Config{}))
 	}
-	lifecycletest.Run(t, func() lifecycletest.Owner { return serverOwner{newEphemeralServer()} }, mustFail,
+	lifecycletest.Run(t, func() lifecycletest.Owner { return newServerOwner(newEphemeralServer()) }, mustFail,
 		lifecycletest.Promise{})
 }
 
@@ -184,7 +209,7 @@ func TestServerRepeatedStopWaitsForAdmittedRequest(t *testing.T) {
 	collector := newExitingCollector()
 	registry.PrometheusRegistry().MustRegister(collector)
 	server := NewServer(9090, "/metrics", registry, security.Config{})
-	owner := serverOwner{server}
+	owner := newServerOwner(server)
 	require.NoError(t, server.StartWithListener(t.Context(), boundServerListener(t)))
 	var release sync.Once
 	t.Cleanup(func() { release.Do(func() { close(collector.release) }) })
@@ -204,7 +229,10 @@ func TestServerRepeatedStopWaitsForAdmittedRequest(t *testing.T) {
 	require.ErrorIs(t, server.Stop(ended), context.Canceled, "first Stop with an ended context")
 	require.ErrorIs(t, server.Stop(ended), context.Canceled,
 		"a repeated Stop must not report completion while the admitted request's collection runs")
-	require.Equal(t, []string{"admitted request"}, owner.Observe().Unresolved)
+	observed := owner.Observe()
+	require.Equal(t, []string{"admitted request"}, observed.Unresolved)
+	require.Equal(t, map[string]int{"serve": 1, "shutdown": 1, "close server": 1, "close listener": 1}, observed.Calls,
+		"one forced Stop's operations; the repeat performed none")
 
 	stopped := make(chan error, 1)
 	go func() { stopped <- server.Stop(t.Context()) }()

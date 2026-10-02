@@ -487,8 +487,12 @@
     synctest.Test the serve result is withheld for an hour of the bubble's clock; at the pin Stop
     returned "wait for forced metrics serve completion: context deadline exceeded");
     TestServerLifecycleSuite runs lifecycletest.Run with an adapter listing the listener, the
-    http.Server and the serve goroutine, and a must-fail factory whose Server is configured on a port
-    the test holds, so Start returns the bind error; in metric/tls_test.go, written first and failing
+    http.Server, the serve goroutine and admitted requests, and counting in Calls the Server's own
+    external operations (listen, serve, shutdown, close server, close listener) through the
+    unexported opHook seam at each call site, and a must-fail factory whose Server is configured on a
+    port the test holds, so Start returns the bind error; an extra close on Stop's no-op path fails
+    RepeatedStopIsNoOp and FailedStartHoldsNothing, and passes both with Calls left nil (PR #48
+    review finding); in metric/tls_test.go, written first and failing
     at the pin's Start ("An error is expected but got nil"): TestServerRequiredMTLSRejectsClientWithoutCertificate
     (through StartWithListener, temporary certificates, an ephemeral listener: no client
     certificate refused, a certificate the client CA signed served) and TestServerRefusesMTLSWithoutTLS;

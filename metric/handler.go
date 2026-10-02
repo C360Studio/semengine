@@ -27,11 +27,15 @@ type Server struct {
 	listener  net.Listener
 	serveDone chan error
 	requests  *admittedRequests
-	registry  *MetricsRegistry
-	security  security.Config
-	mu        sync.Mutex // serializes server lifecycle fields
-	used      bool
-	stopping  bool
+	// opHook, when set before Start, is told each external operation the Server
+	// performs (a bind, the serve goroutine, a shutdown or close); a test seam,
+	// nil in production.
+	opHook   func(op string)
+	registry *MetricsRegistry
+	security security.Config
+	mu       sync.Mutex // serializes server lifecycle fields
+	used     bool
+	stopping bool
 }
 
 // NewServer creates a new metrics server with the provided registry
@@ -168,6 +172,7 @@ func (s *Server) start(ctx context.Context, supplied net.Listener, provided bool
 	listener := supplied
 	if !provided {
 		var err error
+		s.recordOp("listen")
 		listener, err = net.Listen("tcp", httpServer.Addr)
 		if err != nil {
 			s.server = nil
@@ -182,6 +187,7 @@ func (s *Server) start(ctx context.Context, supplied net.Listener, provided bool
 	serveDone := make(chan error, 1)
 	s.listener = listener
 	s.serveDone = serveDone
+	s.recordOp("serve")
 	go func() {
 		serveDone <- httpServer.Serve(listener)
 		close(serveDone)
@@ -234,6 +240,7 @@ func (s *Server) Stop(ctx context.Context) error {
 	s.mu.Unlock()
 
 	var stopErr error
+	s.recordOp("shutdown")
 	shutdownErr := httpServer.Shutdown(ctx)
 	if shutdownErr != nil {
 		stopErr = errors.Join(stopErr, errs.WrapTransient(shutdownErr, "Server", "Stop",
@@ -256,11 +263,13 @@ func (s *Server) Stop(ctx context.Context) error {
 	}
 
 	if shutdownErr != nil || !completed {
+		s.recordOp("close server")
 		if err := httpServer.Close(); err != nil && !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
 			stopErr = errors.Join(stopErr, errs.WrapTransient(err, "Server", "Stop",
 				"force close metrics HTTP server"))
 		}
 		if listener != nil {
+			s.recordOp("close listener")
 			if err := listener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
 				stopErr = errors.Join(stopErr, errs.WrapTransient(err, "Server", "Stop",
 					"force close metrics listener"))
@@ -320,6 +329,12 @@ func (s *Server) Address() string {
 		scheme = "https"
 	}
 	return (&url.URL{Scheme: scheme, Host: net.JoinHostPort(host, strconv.Itoa(port)), Path: s.path}).String()
+}
+
+func (s *Server) recordOp(op string) {
+	if s.opHook != nil {
+		s.opHook(op)
+	}
 }
 
 // admittedRequests counts the requests a Server's handler has admitted and not yet

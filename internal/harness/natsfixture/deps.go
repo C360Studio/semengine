@@ -35,9 +35,12 @@ type deps struct {
 	createStream func(context.Context, jetstream.JetStream, jetstream.StreamConfig) (jetstream.Stream, error)
 	createKV     func(context.Context, jetstream.JetStream, jetstream.KeyValueConfig) (jetstream.KeyValue, error)
 	terminate    func(context.Context, testcontainers.Container) error
-	drain        func(context.Context, *nats.Conn) error
-	logs         func(context.Context, testcontainers.Container) ([]byte, error)
-	absent       func(context.Context, string) (bool, error)
+	// stopContainer and startContainer stop and start the same container, for Restart.
+	stopContainer  func(context.Context, testcontainers.Container) error
+	startContainer func(context.Context, testcontainers.Container) error
+	drain          func(context.Context, *nats.Conn) error
+	logs           func(context.Context, testcontainers.Container) ([]byte, error)
+	absent         func(context.Context, string) (bool, error)
 }
 
 func defaultDeps() deps {
@@ -62,7 +65,11 @@ func defaultDeps() deps {
 			return js.CreateKeyValue(ctx, cfg)
 		},
 		terminate: func(ctx context.Context, c testcontainers.Container) error { return c.Terminate(ctx) },
-		drain:     drainAndObserveClosed,
+		// A nil timeout leaves the stop grace period to Docker (the container's StopTimeout, else
+		// the engine default); ctx bounds the call.
+		stopContainer:  func(ctx context.Context, c testcontainers.Container) error { return c.Stop(ctx, nil) },
+		startContainer: func(ctx context.Context, c testcontainers.Container) error { return c.Start(ctx) },
+		drain:          drainAndObserveClosed,
 		logs: func(ctx context.Context, c testcontainers.Container) ([]byte, error) {
 			rc, err := c.Logs(ctx)
 			if err != nil {

@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -634,6 +635,188 @@ func TestStopJoinsHandlersOnAClosedConnection(t *testing.T) {
 	}
 	if hctx.Err() == nil {
 		t.Fatal("Stop returned nil with the joined handler's context still live")
+	}
+	if rem := f.remaining(); len(rem) != 0 || containerExists(t, id) {
+		t.Fatalf("after Stop: remaining %v", rem)
+	}
+}
+
+// restart restarts the fixture under a bounded context and fails the test on error.
+func restart(t *testing.T, f *Fixture) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), stopBound)
+	defer cancel()
+	if err := f.Restart(ctx); err != nil {
+		t.Fatalf("Restart: %v", err)
+	}
+}
+
+// Restart keeps the container's writable layer: a message acknowledged on a file-backed stream is
+// readable at its sequence afterwards, one on a memory-backed stream is not (design P3, proven
+// here). Stop then removes both streams and the container.
+func TestRestartKeepsFileStreamLosesMemoryStream(t *testing.T) {
+	f := startFixture(t)
+	ctx := t.Context()
+	file, mem := f.Name("file"), f.Name("mem")
+	if _, err := f.CreateStream(ctx, file, file+".>"); err != nil {
+		t.Fatal(err)
+	}
+	ms, err := f.CreateMemoryStream(ctx, mem, mem+".>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info, err := ms.Info(ctx); err != nil || info.Config.Storage != jetstream.MemoryStorage ||
+		info.Config.MaxAge != time.Hour || info.Config.MaxBytes != 64<<20 || info.Config.Discard != jetstream.DiscardOld {
+		t.Fatalf("memory stream as the broker reports it: %+v %v", info, err)
+	}
+	fileAck, err := f.JetStream().Publish(ctx, file+".1", []byte("kept"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	memAck, err := f.JetStream().Publish(ctx, mem+".1", []byte("lost"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := f.containerID
+
+	restart(t, f)
+
+	if f.containerID != id || f.callCounts()["start"] != 1 {
+		t.Fatalf("Restart replaced the container: %s -> %s, start calls %d", id, f.containerID, f.callCounts()["start"])
+	}
+	js := f.JetStream()
+	fs, err := js.Stream(ctx, file)
+	if err != nil {
+		t.Fatalf("file stream after restart: %v", err)
+	}
+	msg, err := fs.GetMsg(ctx, fileAck.Sequence)
+	if err != nil || string(msg.Data) != "kept" {
+		t.Fatalf("file-backed message at sequence %d after restart: %v %v", fileAck.Sequence, msg, err)
+	}
+	switch s, err := js.Stream(ctx, mem); {
+	case errors.Is(err, jetstream.ErrStreamNotFound):
+	case err != nil:
+		t.Fatalf("memory stream after restart: %v", err)
+	default:
+		if _, err := s.GetMsg(ctx, memAck.Sequence); !errors.Is(err, jetstream.ErrMsgNotFound) {
+			t.Fatalf("memory-backed message at sequence %d after restart: %v, want ErrMsgNotFound", memAck.Sequence, err)
+		}
+	}
+	if err := stop(t, f); err != nil {
+		t.Fatalf("Stop after Restart: %v", err)
+	}
+	if rem := f.remaining(); len(rem) != 0 || containerExists(t, id) {
+		t.Fatalf("after Stop: remaining %v", rem)
+	}
+}
+
+// After Restart, URL() is the container's current binding, read from Docker independently of the
+// fixture, and a fresh dial to it reaches the restarted broker.
+func TestRestartURLDials(t *testing.T) {
+	f := startFixture(t)
+	old := f.URL()
+	restart(t, f)
+	out, err := exec.Command("docker", "port", f.containerID, clientPort).Output()
+	if err != nil {
+		t.Fatalf("docker port: %v", err)
+	}
+	var ports []string
+	for _, line := range strings.Fields(string(out)) {
+		if i := strings.LastIndex(line, ":"); i >= 0 {
+			ports = append(ports, line[i+1:])
+		}
+	}
+	if !slices.ContainsFunc(ports, func(p string) bool { return strings.HasSuffix(f.URL(), ":"+p) }) {
+		t.Fatalf("URL %q is not the container's current binding %v", f.URL(), ports)
+	}
+	t.Logf("binding %s -> %s", old, f.URL())
+	nc, err := nats.Connect(f.URL(), nats.MaxReconnects(0))
+	if err != nil {
+		t.Fatalf("dial %s after restart: %v", f.URL(), err)
+	}
+	defer nc.Close()
+	flushCtx, cancel := context.WithTimeout(t.Context(), stopBound) // nats.go demands a deadline here
+	defer cancel()
+	if err := nc.FlushWithContext(flushCtx); err != nil {
+		t.Fatalf("round trip on the new binding: %v", err)
+	}
+	if conn(f).Status() != nats.CONNECTED {
+		t.Fatalf("fixture connection %v after restart", conn(f).Status())
+	}
+}
+
+// A consumer whose handler is running is ended before Restart returns: Restart waits for the
+// handler, no handler of that consumer runs afterwards, and only a new Consume delivers again.
+// Stop still succeeds and removes the consumer.
+func TestRestartEndsConsumers(t *testing.T) {
+	f := startFixture(t)
+	cb := probe.NewCallback()
+	t.Cleanup(cb.Release)
+	stream := f.Name("work")
+	if _, err := f.CreateStream(t.Context(), stream, stream+".>"); err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	if _, err := f.Consume(t.Context(), stream, "worker", func(ctx context.Context, msg jetstream.Msg) {
+		calls.Add(1)
+		cb.Block(ctx)
+		_ = msg.Ack()
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.JetStream().Publish(t.Context(), stream+".1", []byte("job")); err != nil {
+		t.Fatal(err)
+	}
+	<-cb.Entered()
+
+	ctx, cancel := context.WithTimeout(t.Context(), stopBound)
+	defer cancel()
+	result := make(chan error, 1)
+	go func() { result <- f.Restart(ctx) }()
+	awaitDeliveryStopped(t, f)
+	select {
+	case err := <-result:
+		t.Fatalf("Restart returned %v while the handler was running", err)
+	default:
+	}
+	cb.Release()
+	err := <-result
+	joined := closed(cb.Joined())
+	if err != nil {
+		t.Fatalf("Restart: %v", err)
+	}
+	if !joined {
+		t.Fatal("Restart returned before the handler had joined")
+	}
+
+	// A fresh consumer receiving a message published after the restart is the positive control:
+	// once it has, the ended consumer has had every chance to run its handler too.
+	fresh := make(chan struct{}, 1)
+	if _, err := f.Consume(t.Context(), stream, "fresh", func(_ context.Context, msg jetstream.Msg) {
+		if string(msg.Data()) == "after" {
+			select {
+			case fresh <- struct{}{}:
+			default:
+			}
+		}
+		_ = msg.Ack()
+	}); err != nil {
+		t.Fatalf("Consume after restart: %v", err)
+	}
+	if _, err := f.JetStream().Publish(t.Context(), stream+".2", []byte("after")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-fresh:
+	case <-t.Context().Done():
+		t.Fatal("the new consumer never received the message published after the restart")
+	}
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("the ended consumer's handler ran %d times, want 1 (before the restart only)", n)
+	}
+	id := f.containerID
+	if err := stop(t, f); err != nil {
+		t.Fatalf("Stop after Restart: %v", err)
 	}
 	if rem := f.remaining(); len(rem) != 0 || containerExists(t, id) {
 		t.Fatalf("after Stop: remaining %v", rem)

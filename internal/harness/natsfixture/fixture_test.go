@@ -62,6 +62,107 @@ func TestCreateKeyValueDeclaresBounds(t *testing.T) {
 	}
 }
 
+// A memory-backed stream is owned and bounded like a file-backed one (nats-fixture › "Memory-backed
+// owned stream"); only the storage differs.
+func TestCreateMemoryStreamDeclaresBoundsAndMemoryStorage(t *testing.T) {
+	f := startedWith(t)
+	var got jetstream.StreamConfig
+	f.deps.createStream = func(_ context.Context, _ jetstream.JetStream, cfg jetstream.StreamConfig) (jetstream.Stream, error) {
+		got = cfg
+		return nil, nil
+	}
+	if _, err := f.CreateMemoryStream(t.Context(), "scratch", "scratch.>"); err != nil {
+		t.Fatal(err)
+	}
+	if got.Name != "scratch" || len(got.Subjects) != 1 || got.MaxAge != time.Hour || got.MaxBytes != 64<<20 ||
+		got.Discard != jetstream.DiscardOld || got.Storage != jetstream.MemoryStorage {
+		t.Fatalf("stream config %+v lacks memory storage or the declared bounds", got)
+	}
+	if rem := f.remaining(); len(rem) != 1 || rem[0] != "stream scratch" {
+		t.Fatalf("created memory stream not owned: %v", rem)
+	}
+	var nilCtx context.Context
+	if _, err := f.CreateMemoryStream(nilCtx, "s"); err == nil {
+		t.Fatal("CreateMemoryStream accepted a nil context")
+	}
+}
+
+// Restart refuses before a successful Start and once Stop has begun, with no Docker call
+// (nats-fixture › "Restart before Start").
+func TestRestartRefusesWithoutDockerCall(t *testing.T) {
+	var nilCtx context.Context
+	t.Run("before Start", func(t *testing.T) {
+		f := New(t)
+		if err := f.Restart(t.Context()); err == nil {
+			t.Fatal("Restart before Start returned nil")
+		}
+		if err := f.Restart(nilCtx); err == nil {
+			t.Fatal("Restart with a nil context returned nil")
+		}
+		if f.totalCalls() != 0 {
+			t.Fatalf("refused Restart made calls: %v", f.callCounts())
+		}
+	})
+	t.Run("once Stop has begun", func(t *testing.T) {
+		f := startedWith(t)
+		f.beginStop()
+		if err := f.Restart(t.Context()); !errors.Is(err, errStopping) {
+			t.Fatalf("Restart after Stop began = %v, want the stopping refusal", err)
+		}
+		if f.totalCalls() != 0 {
+			t.Fatalf("refused Restart made calls: %v", f.callCounts())
+		}
+	})
+}
+
+// The container's log keeps every boot's lines, and testcontainers' own wait counts them all
+// (wait/log.go:210), so it passes at once on a restart. Restart connects only after the restarted
+// server has logged one more ready line than before, and reports a later phase's failure by name
+// without replacing the container.
+func TestRestartConnectsOnlyAfterANewReadyLine(t *testing.T) {
+	f := startedWith(t)
+	f.container, f.nc, f.url = struct{ testcontainers.Container }{}, &nats.Conn{}, "nats://fixture-host:1"
+	boots, booting, reads := 1, false, 0
+	f.deps.drain = func(context.Context, *nats.Conn) error { return nil }
+	f.deps.stopContainer = func(context.Context, testcontainers.Container) error { return nil }
+	f.deps.startContainer = func(context.Context, testcontainers.Container) error {
+		booting = true // started, but not yet ready: the line comes on the third read
+		return nil
+	}
+	f.deps.logs = func(context.Context, testcontainers.Container) ([]byte, error) {
+		if booting {
+			if reads++; reads == 3 {
+				boots, booting = boots+1, false
+			}
+		}
+		return []byte(strings.Repeat(readyLog+"\n", boots)), nil
+	}
+	f.deps.mappedPort = func(context.Context, testcontainers.Container) (string, error) { return "2", nil }
+	refused := errors.New("connection refused")
+	bootsAtConnect, dialled := 0, ""
+	f.deps.connect = func(_ context.Context, url string) (*nats.Conn, error) {
+		bootsAtConnect, dialled = boots, url
+		return nil, refused
+	}
+	err := f.Restart(t.Context())
+	var fe *Error
+	if !errors.As(err, &fe) || fe.Phase != PhaseConnect || !errors.Is(err, refused) || fe.ContainerID != "c0ffee" {
+		t.Fatalf("Restart = %v, want an *Error at phase %s wrapping the cause", err, PhaseConnect)
+	}
+	if bootsAtConnect != 2 {
+		t.Fatalf("connect ran with %d ready line(s) in the log; want 2, the restarted server's included", bootsAtConnect)
+	}
+	if dialled != "nats://fixture-host:2" {
+		t.Fatalf("dialled %q, want the re-read mapped port on the same host", dialled)
+	}
+	if calls := f.callCounts(); calls["start"] != 0 || calls["terminate"] != 0 || calls["restart"] != 1 {
+		t.Fatalf("calls %v: a failed Restart replaced or removed the container", calls)
+	}
+	if err := f.Restart(t.Context()); !errors.Is(err, errNotStarted) {
+		t.Fatalf("Restart after a failed Restart = %v, want the not-started refusal", err)
+	}
+}
+
 // A create that fails is still owned: it may have happened on the broker, and Stop treats a
 // resource that turns out not to exist as absent.
 func TestFailedCreateIsOwnedAndTyped(t *testing.T) {

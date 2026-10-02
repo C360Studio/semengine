@@ -46,7 +46,7 @@ this pull request as a comment unless a task says otherwise. No task asserts a f
       the seeds of the two green runs and the design D8 hit list (P18). The three known `pkg/cache` failures
       (`TestCoalescingSet_EntityUpdateScenario`, `TestAttack_ConcurrentAddRemove`,
       `TestCoalescingSet_ContextCancellation`; design P19) are repair items on task 3.6.
-- [ ] 2.1 (D) `Fixture.Restart` and `CreateMemoryStream`: an integration test, written first and shown to fail on the
+- [x] 2.1 (D) `Fixture.Restart` and `CreateMemoryStream`: an integration test, written first and shown to fail on the
       base
       (no `Restart` method), creates one file-backed stream with `CreateStream` and one memory-backed stream with
       `CreateMemoryStream`, publishes one message to each, restarts, and asserts the file-backed message is readable

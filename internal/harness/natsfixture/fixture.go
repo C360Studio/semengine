@@ -35,6 +35,8 @@ const (
 	// test fails on a ceiling instead of filling the broker (SemStreams test_client.go:911-927).
 	resourceMaxAge   = time.Hour
 	resourceMaxBytes = 64 << 20
+	// readyLog is the line nats-server logs once per boot when it accepts clients.
+	readyLog = "Server is ready"
 )
 
 // Fixture is one test's NATS server and the resources it creates on it. It holds no
@@ -143,8 +145,8 @@ func (f *Fixture) Start(ctx context.Context) error {
 }
 
 // acquire takes the operation slot for an operation of kind who, or returns ctx's error if ctx
-// ends first. A creation also gives up when Stop begins: it may be queued behind Stop, and Stop may
-// be waiting to join the very handler that is creating.
+// ends first. A creation or a restart also gives up when Stop begins: it may be queued behind Stop,
+// and Stop may be waiting to join the very handler that called it.
 func (f *Fixture) acquire(ctx context.Context, who string) error {
 	f.mu.Lock()
 	if f.op == nil {
@@ -154,8 +156,8 @@ func (f *Fixture) acquire(ctx context.Context, who string) error {
 		f.stopBegun = make(chan struct{})
 	}
 	op := f.op
-	var stopBegun <-chan struct{} // nil, never ready, except for creations
-	if who == "create" {
+	var stopBegun <-chan struct{} // nil, never ready, except for creations and restarts
+	if who == "create" || who == "restart" {
 		stopBegun = f.stopBegun
 	}
 	f.mu.Unlock()
@@ -426,12 +428,26 @@ func (f *Fixture) beginCreate(ctx context.Context) (jetstream.JetStream, string,
 	return js, id, nil
 }
 
-// CreateStream creates a stream the fixture owns, with the fixture's MaxAge, MaxBytes, and
-// DiscardOld bounds. Stop deletes it and observes it absent.
+// CreateStream creates a file-backed stream the fixture owns, with the fixture's MaxAge, MaxBytes,
+// and DiscardOld bounds. Its messages survive Restart. Stop deletes it and observes it absent.
 func (f *Fixture) CreateStream(ctx context.Context, name string, subjects ...string) (jetstream.Stream, error) {
 	if ctx == nil {
 		return nil, errors.New("natsfixture: CreateStream with a nil context")
 	}
+	return f.createStream(ctx, jetstream.FileStorage, name, subjects)
+}
+
+// CreateMemoryStream creates a memory-backed stream the fixture owns, with the same bounds as
+// CreateStream. Its messages do not survive Restart; Stop deletes it, or observes it absent when
+// the restart took it.
+func (f *Fixture) CreateMemoryStream(ctx context.Context, name string, subjects ...string) (jetstream.Stream, error) {
+	if ctx == nil {
+		return nil, errors.New("natsfixture: CreateMemoryStream with a nil context")
+	}
+	return f.createStream(ctx, jetstream.MemoryStorage, name, subjects)
+}
+
+func (f *Fixture) createStream(ctx context.Context, storage jetstream.StorageType, name string, subjects []string) (jetstream.Stream, error) {
 	js, id, err := f.beginCreate(ctx)
 	if err != nil {
 		return nil, err
@@ -441,7 +457,8 @@ func (f *Fixture) CreateStream(ctx context.Context, name string, subjects ...str
 	// stream that turns out not to exist as absent.
 	f.own(&f.streams, name, "stream "+name)
 	s, err := f.deps.createStream(ctx, js, jetstream.StreamConfig{
-		Name: name, Subjects: subjects, MaxAge: resourceMaxAge, MaxBytes: resourceMaxBytes, Discard: jetstream.DiscardOld,
+		Name: name, Subjects: subjects, Storage: storage,
+		MaxAge: resourceMaxAge, MaxBytes: resourceMaxBytes, Discard: jetstream.DiscardOld,
 	})
 	f.count("createStream")
 	if err != nil {

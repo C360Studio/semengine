@@ -10,24 +10,28 @@ import (
 // Docker work on the shared daemon is admitted only through the host lock it holds.
 var ErrNotAdmitted = errors.New("natsfixture: not admitted to Docker; run it through `task test:integration -- <package>`")
 
-// ErrAlreadyUsed is returned by a second Start. A fixture is one container's lifetime; restart is
-// not promised.
-var ErrAlreadyUsed = errors.New("natsfixture: fixture already started; restart is not promised")
+// ErrAlreadyUsed is returned by a second Start. A fixture is one container's lifetime: Restart
+// stops and starts that same container, and a second Start never creates another.
+var ErrAlreadyUsed = errors.New("natsfixture: fixture already started; use Restart to restart its container")
 
 // Phase names one step of Start, in order, or a resource operation after it.
 type Phase string
 
 // Start runs these phases in this order; CreateStream and CreateKeyValue report their own.
+// Restart runs PhaseStopContainer and PhaseStartContainer, then PhaseMappedPort, PhaseConnect and
+// PhaseJetStream again.
 const (
-	PhaseImage        Phase = "image"
-	PhaseStart        Phase = "start" // create and start the container, then wait for its ready log
-	PhaseHost         Phase = "host"
-	PhaseMappedPort   Phase = "mapped-port"
-	PhaseConnect      Phase = "connect"
-	PhaseJetStream    Phase = "jetstream-ready"
-	PhaseCreateStream Phase = "create-stream"
-	PhaseCreateKV     Phase = "create-kv"
-	PhaseConsume      Phase = "consume"
+	PhaseImage          Phase = "image"
+	PhaseStart          Phase = "start" // create and start the container, then wait for its ready log
+	PhaseHost           Phase = "host"
+	PhaseMappedPort     Phase = "mapped-port"
+	PhaseConnect        Phase = "connect"
+	PhaseJetStream      Phase = "jetstream-ready"
+	PhaseCreateStream   Phase = "create-stream"
+	PhaseCreateKV       Phase = "create-kv"
+	PhaseConsume        Phase = "consume"
+	PhaseStopContainer  Phase = "stop-container"
+	PhaseStartContainer Phase = "start-container" // start the same container, then wait for a new ready log
 )
 
 // Error is a failed Start attempt or resource operation, carrying what a reader needs to tell a

@@ -39,7 +39,7 @@ this pull request as a comment unless a task says otherwise. No task asserts a f
       every failure becomes a named, `adapt` item with a test written first on the owner's row before its port task
       runs; the probe's source is attached to the comment on this pull request, not committed. Known before the
       probe: `Client.Close(nil)` panics and `Connect(nil)` is unchecked (design P13).
-- [ ] 2.0b (D) Pre-port repeat probe: against the pin snapshot (not committed), `go test -race -count=1 -cpu 1` and
+- [x] 2.0b (D) Pre-port repeat probe: against the pin snapshot (not committed), `go test -race -count=1 -cpu 1` and
       at least three runs of `go test -count=5 -cpu 1 -shuffle=on` over the 14 tested packages, each run's seed and
       failing tests recorded on this pull request. Recorded in PR #48 comment 5942307713 (race 14/14; four shuffle
       runs, two failing in `pkg/cache` with seeds `1790895004660367000` and `1790895074311951000`). Still to post:

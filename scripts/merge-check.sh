@@ -102,6 +102,21 @@ if [ "$kind" = push ]; then
   exit 0
 fi
 
+# Review check (spec merge-gate, "Cross-agent review check"). The pull request,
+# then every page of its changed files: gh prints the pages joined into one list
+# or as lists one after the other, and both are read the same way.
+read_gh "pull request #${pr} for the review check" \
+  'type == "object" and (.draft | type) == "boolean" and (.changed_files | type) == "number" and (.body == null or (.body | type) == "string") and (.user.type | type) == "string"' \
+  gh api "repos/{owner}/{repo}/pulls/${pr}"
+pull=$answer
+read_gh "the files of pull request #${pr}" 'type == "array"' \
+  gh api --paginate "repos/{owner}/{repo}/pulls/${pr}/files?per_page=100"
+# The shape check above sees only the last page; every page is checked here.
+if ! files=$(printf '%s' "$answer" | jq -c -s 'if all(.[]; type == "array" and all(.[]; type == "object" and (.filename | type) == "string" and (.previous_filename == null or (.previous_filename | type) == "string"))) then add // [] else error("not pages of files") end'); then
+  echo "merge-check: unavailable: the read of the files of pull request #${pr} returned something other than what was asked for: ${answer}" >&2
+  exit 2
+fi
+
 # 2. Known-flake check.
 # The whole label list, not a search: gh 2.97 prints nothing at all, not [], for
 # a search that matches no label, which would read as a failed read.

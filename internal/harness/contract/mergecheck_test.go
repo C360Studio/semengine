@@ -1,6 +1,7 @@
 package contract
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -31,9 +32,12 @@ case "$1 $2" in
     [ "$3" = "$FAKE_GH_PR" ] || { echo "fake gh: pr view of '$3', want '$FAKE_GH_PR'" >&2; exit 3; }
     need "--json closingIssuesReferences" ;;
   *)
-    case "$1 $2" in
+    case "$*" in
       "api repos/{owner}/{repo}/rules/branches/main") key=rules ;;
       "api repos/{owner}/{repo}/rulesets/"*) key=ruleset ;;
+      "api repos/{owner}/{repo}/pulls/$FAKE_GH_PR") key=pull ;;
+      # Without --paginate gh returns the first page only.
+      "api --paginate repos/{owner}/{repo}/pulls/$FAKE_GH_PR/files?per_page=100") key=files ;;
       *) echo "fake gh: unexpected call: $*" >&2; exit 3 ;;
     esac ;;
 esac
@@ -60,7 +64,10 @@ func list(items ...string) string { return "[" + strings.Join(items, ",") + "]" 
 // answer of the wrong shape.
 type ghState struct {
 	labels, issues, pr, rules, ruleset string
-	fail                               []string // keys whose read exits non-zero
+	// pull is the pull request as the REST API returns it; files is the paged list of its changed
+	// files exactly as gh prints it, so a case can plant two pages one after the other.
+	pull, files string
+	fail        []string // keys whose read exits non-zero
 	// jqFail, when set, puts a jq first on PATH that exits non-zero on any call whose arguments
 	// contain it and passes every other call to the real jq.
 	jqFail string
@@ -85,7 +92,29 @@ func healthy() ghState {
 		pr:      `{"closingIssuesReferences":[]}`,
 		rules:   list(otherRules, requiredRule),
 		ruleset: `{"id":24272345,"name":"main","enforcement":"active"}`,
+		pull:    pullJSON(false, "User", "", 1),
+		files:   filesJSON("docs/a.md"),
 	}
+}
+
+// pullJSON is the part of GET /repos/{owner}/{repo}/pulls/{n} the review check reads, with fields
+// it does not read beside them, as measured on #48 and #14 (inventory 2.4).
+func pullJSON(draft bool, userType, body string, changedFiles int) string {
+	b, err := json.Marshal(body)
+	if err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf(`{"number":12,"state":"open","draft":%t,"user":{"login":"x","type":%q},"body":%s,"changed_files":%d,"base":{"ref":"main"}}`,
+		draft, userType, b, changedFiles)
+}
+
+// filesJSON is one page of GET /repos/{owner}/{repo}/pulls/{n}/files, each name modified.
+func filesJSON(names ...string) string {
+	entries := make([]string, len(names))
+	for i, n := range names {
+		entries[i] = fmt.Sprintf(`{"filename":%q,"status":"modified","additions":1,"deletions":0}`, n)
+	}
+	return list(entries...)
 }
 
 type mergeRun struct {
@@ -100,7 +129,7 @@ func runMergeCheck(t *testing.T, st ghState, pr string, actionsEnv ...string) me
 	t.Helper()
 	root := copyScript(t, "merge-check.sh")
 	dir := t.TempDir()
-	for key, body := range map[string]string{"labels": st.labels, "issues": st.issues, "pr": st.pr, "rules": st.rules, "ruleset": st.ruleset} {
+	for key, body := range map[string]string{"labels": st.labels, "issues": st.issues, "pr": st.pr, "rules": st.rules, "ruleset": st.ruleset, "pull": st.pull, "files": st.files} {
 		if err := os.WriteFile(filepath.Join(dir, key+".json"), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -173,6 +202,19 @@ func (r mergeRun) requireOutput(t *testing.T, fragments ...string) {
 	}
 }
 
+// requireReadPullAndFiles fails unless the run read pull request 12 and every page of its files.
+func (r mergeRun) requireReadPullAndFiles(t *testing.T) {
+	t.Helper()
+	for _, call := range []string{
+		"api repos/{owner}/{repo}/pulls/12\n",
+		"api --paginate repos/{owner}/{repo}/pulls/12/files?per_page=100\n",
+	} {
+		if !strings.Contains(r.argv, call) {
+			t.Errorf("the run did not call gh %q:\n%s", strings.TrimSpace(call), r.argv)
+		}
+	}
+}
+
 func TestMergeCheckKnownFlake(t *testing.T) {
 	open40 := healthy()
 	open40.issues = list(issueJSON(40))
@@ -214,7 +256,9 @@ func TestMergeCheckKnownFlake(t *testing.T) {
 		runMergeCheck(t, st, "12").requireFail(t, "#40")
 	})
 	t.Run("no open flake", func(t *testing.T) {
-		runMergeCheck(t, healthy(), "12").requirePass(t, "no open class:flake issue")
+		r := runMergeCheck(t, healthy(), "12")
+		r.requirePass(t, "no open class:flake issue")
+		r.requireReadPullAndFiles(t)
 	})
 	t.Run("label missing", func(t *testing.T) {
 		st := open40
@@ -280,8 +324,8 @@ func TestMergeCheckKnownFlake(t *testing.T) {
 	t.Run("push run", func(t *testing.T) {
 		r := runMergeCheck(t, open40, "", "GITHUB_ACTIONS=true", "GITHUB_EVENT_NAME=push")
 		r.requirePass(t, "push run", "known-flake check does not apply")
-		if strings.Contains(r.argv, "issue list") || strings.Contains(r.argv, "pr view") {
-			t.Errorf("a push run read issues or a pull request:\n%s", r.argv)
+		if strings.Contains(r.argv, "issue list") || strings.Contains(r.argv, "pr view") || strings.Contains(r.argv, "/pulls/") {
+			t.Errorf("a push run read issues, a pull request or its files:\n%s", r.argv)
 		}
 		if !strings.Contains(r.argv, "rules/branches/main") {
 			t.Errorf("a push run did not read the rules in force on main:\n%s", r.argv)
@@ -336,6 +380,8 @@ func TestMergeCheckUpToDateRule(t *testing.T) {
 		st := healthy()
 		st.rules = list(otherRules, strings.Replace(requiredRule, `"parameters":{`, `"surprise":{"new":1},"parameters":{"another_new_field":[1,2],`, 1))
 		st.ruleset = `{"id":24272345,"enforcement":"active","bypass_actors":[{"actor_id":1}],"new_field":"x"}`
-		runMergeCheck(t, st, "12").requirePass(t, "enforcement=active")
+		r := runMergeCheck(t, st, "12")
+		r.requirePass(t, "enforcement=active")
+		r.requireReadPullAndFiles(t)
 	})
 }

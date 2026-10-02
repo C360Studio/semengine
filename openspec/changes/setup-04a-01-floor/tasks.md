@@ -152,7 +152,7 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       section 3's packages. The #52 command's output, each package's difference from the pin read through its
       row's `source_path` → `destination` (design D5), is task 7.1's review input.
 
-- [ ] 3.1 (D) `pkg/platform`, `pkg/resource`, `pkg/retry`, `pkg/security`, `pkg/timestamp` (level 0): rows `carry`
+- [x] 3.1 (D) `pkg/platform`, `pkg/resource`, `pkg/retry`, `pkg/security`, `pkg/timestamp` (level 0): rows `carry`
       except `pkg/resource` (`adapt`, SS#1415-class ender and D8 repairs) and `pkg/retry` (`adapt`, D8 repair:
       `retry_test.go:68`); `pkg/resource`'s six sleeps (`watcher_test.go:151,208,324,333,335,363`) are repaired
       under `synctest` (D8 R1); `pkg/platform` and `pkg/security` rows record "no tests
@@ -160,11 +160,12 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       `Stop`, behind tests written first — (1) `Run` inside `synctest.Test` returns `ctx.Err()` once its context is
       cancelled, with the check called on each tick and nothing left running; (2) `Run(nil)` returns an error and
       calls no check; the `cancel` and `wg` fields and the doc references to the removed methods (`watcher.go:108,
-      :138-140`; `doc.go:21, :57, :66, :85, :149, :151, :159`) go with them.
-- [ ] 3.2 (D) `pkg/errs`, `vocabulary` (level 1): rows `carry`; `pkg/errs`'s row names `ErrAlreadyStopped`
+      :138-140`; `doc.go:21, :57, :66, :85, :149, :151, :159`) go with them. Done in 084935e; evidence PR #48
+      comment 5954727965.
+- [x] 3.2 (D) `pkg/errs`, `vocabulary` (level 1): rows `carry`; `pkg/errs`'s row names `ErrAlreadyStopped`
       (`errs.go:47`) as the one sentinel and change 3 as the SS#1218 proof's home; the two `pkg/errs` context roots
-      are triaged.
-- [ ] 3.3 (D) `pkg/types` (level 2): row `carry`.
+      are triaged. Done in 4555515; evidence PR #48 comment 5954727965.
+- [x] 3.3 (D) `pkg/types` (level 2): row `carry`. Done in dcdf6dd; evidence PR #48 comment 5954727965.
 - [ ] 3.4 (D) `pkg/projection/contract`, `pkg/tlsutil` (level 3): `pkg/projection/contract` row `carry`; `pkg/tlsutil`
       row `adapt`: ported without `LoadServerTLSConfigWithACME`, `LoadClientTLSConfigWithACME` and `initACMEClient`
       (`tlsutil.go:186-365`), the `context`, `time` and `pkg/acme` imports only they use (`:5, :10, :12`), and the

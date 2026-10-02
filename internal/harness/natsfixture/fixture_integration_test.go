@@ -517,8 +517,23 @@ func TestS1_7Restart(t *testing.T) {
 		t.Fatal("refused second Start changed the fixture")
 	}
 	t.Run("lifecycletest", func(t *testing.T) {
-		lifecycletest.Run(t, func() lifecycletest.Owner { return owner{New(t)} }, lifecycletest.Promise{Restart: false})
+		lifecycletest.Run(t, func() lifecycletest.Owner { return owner{New(t)} }, mustFailFixture(t), lifecycletest.Promise{Restart: false})
 	})
+}
+
+// errStartRefused is the start hook's injected failure in the fixture's must-fail factory.
+var errStartRefused = errors.New("injected: container start refused")
+
+// mustFailFixture is the fixture's must-fail factory: a fixture whose start hook returns an error,
+// so Start fails at PhaseStart having created no container.
+func mustFailFixture(t *testing.T) lifecycletest.Factory {
+	return func() lifecycletest.Owner {
+		f := New(t)
+		f.deps.start = func(context.Context, testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
+			return nil, errStartRefused
+		}
+		return owner{f}
+	}
 }
 
 // owner adapts a fixture to the lifecycle floor, reporting its retained state.

@@ -76,7 +76,7 @@ this pull request as a comment unless a task says otherwise. No task asserts a f
       goes under `SEMENGINE_EVIDENCE_DIR` when set and under `t.TempDir()` otherwise, and (b) asserts the fallback;
       no file in the package contains a sleep (`TestNoSleepsInTests` scans its non-test files). Gate: `task
       test:unit` and `task test:repeat -- ./internal/harness/prochost` (no Docker needed).
-- [ ] 2.5 (D) `lifecycletest.Run(t, factory, mustFail, promise)` and `CheckFailedStartHoldsNothing`: a test written
+- [x] 2.5 (D) `lifecycletest.Run(t, factory, mustFail, promise)` and `CheckFailedStartHoldsNothing`: a test written
       first shows `Run` failing before any check, naming the argument, when `mustFail` is nil. The `refowner` double
       gains a must-fail construction mode (design D8 note): Start returns its error after `o.startAttempted = true`
       (`refowner_test.go:72`); the `checks` entry for the new check is marked must-fail and every test iterating

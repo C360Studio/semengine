@@ -61,28 +61,56 @@ type Promise struct {
 // Factory returns a fresh, unstarted owner. Run calls it once per check.
 type Factory func() Owner
 
+// runT is what Run needs of its test; *testing.T satisfies it.
+type runT interface {
+	Helper()
+	Fatalf(format string, args ...any)
+	Run(name string, f func(*testing.T)) bool
+}
+
 var errAbortCause = errors.New("lifecycletest: abort")
 
 // Run drives every check as a subtest against a fresh owner, then stops that owner under a fresh
-// bound derived from the test's context so a check that left it running leaks nothing.
-func Run(t *testing.T, factory Factory, promise Promise) {
+// bound derived from the test's context so a check that left it running leaks nothing. mustFail is
+// required: it returns a fresh owner whose Start must fail, and the failed-start check is run on it.
+// Run fails before any check when factory or mustFail is nil.
+func Run(t *testing.T, factory Factory, mustFail Factory, promise Promise) {
 	t.Helper()
+	run(t, factory, mustFail, promise)
+}
+
+func run(t runT, factory Factory, mustFail Factory, promise Promise) {
+	t.Helper()
+	if factory == nil {
+		t.Fatalf("lifecycletest.Run: factory is nil")
+		return
+	}
+	if mustFail == nil {
+		t.Fatalf("lifecycletest.Run: mustFail is nil; pass a factory whose owner's Start returns an error")
+		return
+	}
 	for _, c := range []struct {
 		name  string
 		check func(context.Context, Owner) error
+		make  Factory // nil: factory
 	}{
-		{"NilContextsRefused", CheckNilContextsRefused},
-		{"PreCancelledStartRefused", CheckPreCancelledStartRefused},
-		{"StopBeforeStartSafe", CheckStopBeforeStartSafe},
-		{"ControlledStopUnderLiveStartAuthority", CheckControlledStopUnderLiveStartAuthority},
-		{"AbortStopPreservesCause", CheckAbortStopPreservesCause},
-		{"RepeatedStopIsNoOp", CheckRepeatedStopIsNoOp},
+		{"NilContextsRefused", CheckNilContextsRefused, nil},
+		{"PreCancelledStartRefused", CheckPreCancelledStartRefused, nil},
+		{"StopBeforeStartSafe", CheckStopBeforeStartSafe, nil},
+		{"ControlledStopUnderLiveStartAuthority", CheckControlledStopUnderLiveStartAuthority, nil},
+		{"AbortStopPreservesCause", CheckAbortStopPreservesCause, nil},
+		{"RepeatedStopIsNoOp", CheckRepeatedStopIsNoOp, nil},
 		{"SecondStartRefusedOrRestartCycle", func(ctx context.Context, o Owner) error {
 			return CheckSecondStartRefusedOrRestartCycle(ctx, o, promise)
-		}},
+		}, nil},
+		{"FailedStartHoldsNothing", CheckFailedStartHoldsNothing, mustFail},
 	} {
+		newOwner := factory
+		if c.make != nil {
+			newOwner = c.make
+		}
 		t.Run(c.name, func(t *testing.T) {
-			o := factory()
+			o := newOwner()
 			if isNil(o) {
 				t.Fatal("factory returned a nil owner")
 			}
@@ -247,6 +275,33 @@ func CheckSecondStartRefusedOrRestartCycle(ctx context.Context, o Owner, promise
 	after := o.Observe()
 	if !reflect.DeepEqual(before, after) {
 		return fmt.Errorf("refused second Start changed state: before %+v, after %+v", before, after)
+	}
+	return nil
+}
+
+// CheckFailedStartHoldsNothing checks an owner whose Start must fail: Start returns an error (a
+// panic or a hang is not one), the owner then holds nothing, and a following Stop returns nil and
+// changes no call count. A failed Start that keeps a goroutine or handle has leaked it to a caller
+// who was told nothing started.
+func CheckFailedStartHoldsNothing(ctx context.Context, o Owner) error {
+	startCtx, cancelStart := context.WithCancel(ctx)
+	defer cancelStart()
+	err := call(ctx, o, "Start", startBound, func() error { return o.Start(startCtx) })
+	switch {
+	case err == nil:
+		return errors.New("the mustFail factory's owner started: Start returned nil, so the factory did not fail")
+	case notARefusal(err):
+		return err
+	}
+	if err := requireNothingRetained(o, "after a failed Start"); err != nil {
+		return err
+	}
+	before := o.Observe()
+	if err := finish(ctx, o); err != nil {
+		return fmt.Errorf("Stop after a failed Start: %w", err)
+	}
+	if after := o.Observe(); !reflect.DeepEqual(before.Calls, after.Calls) {
+		return fmt.Errorf("Stop after a failed Start made a call: calls before %v, after %v", before.Calls, after.Calls)
 	}
 	return nil
 }

@@ -32,9 +32,13 @@ const (
 	restartPromisedButRefused       failpoint = "restartPromisedButRefused"
 	abortStopDropsCause             failpoint = "abortStopDropsCause"
 	nilStartPanics                  failpoint = "nilStartPanics"
+	startFailsButHolds              failpoint = "startFailsButHolds"
 )
 
-var errRefownerUsed = errors.New("refowner: already used")
+var (
+	errRefownerUsed     = errors.New("refowner: already used")
+	errRefownerMustFail = errors.New("refowner: must-fail Start")
+)
 
 // refowner is a reference owner with one worker goroutine derived from Start authority. Clean, it
 // satisfies the floor; each failpoint breaks exactly one rule. Its retained state (workerDone,
@@ -43,7 +47,10 @@ var errRefownerUsed = errors.New("refowner: already used")
 type refowner struct {
 	fp          failpoint
 	restartable bool
-	hang        <-chan struct{} // closed by the test's cleanup; only stopIgnoresCallerDeadline waits on it
+	// mustFail is the construction mode the failed-start check is given: Start fails once it has
+	// been attempted. Only startFailsButHolds acts in this mode; every other failpoint is inert.
+	mustFail bool
+	hang     <-chan struct{} // closed by the test's cleanup; only stopIgnoresCallerDeadline waits on it
 	// workerExit, when set, holds the worker after it has been signalled and before it closes
 	// workerDone, so a test can force the interleaving where a Stop returns ahead of the worker's exit.
 	workerExit *probe.Callback
@@ -73,6 +80,20 @@ func (o *refowner) Start(ctx context.Context) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.startAttempted = true
+	if o.mustFail {
+		if o.fp == startFailsButHolds {
+			// The defect under test: Start fails but leaves the worker it started running. The worker
+			// selects on Start authority, so finalize ends it through that, with no exemption.
+			runCtx, cancel := context.WithCancel(ctx)
+			o.cancel, o.stopCh, o.stopOnce, o.workerDone = cancel, make(chan struct{}), &sync.Once{}, make(chan struct{})
+			done := o.workerDone
+			go func() {
+				defer close(done)
+				<-runCtx.Done()
+			}()
+		}
+		return errRefownerMustFail
+	}
 	if err := ctx.Err(); err != nil && o.fp != ignorePreCancelled {
 		return err
 	}
@@ -190,6 +211,19 @@ var checks = []check{
 	{"AbortStopPreservesCause", func(ctx context.Context, o Owner, _ Promise) error { return CheckAbortStopPreservesCause(ctx, o) }},
 	{"RepeatedStopIsNoOp", func(ctx context.Context, o Owner, _ Promise) error { return CheckRepeatedStopIsNoOp(ctx, o) }},
 	{"SecondStartRefusedOrRestartCycle", CheckSecondStartRefusedOrRestartCycle},
+	{"FailedStartHoldsNothing", func(ctx context.Context, o Owner, _ Promise) error { return CheckFailedStartHoldsNothing(ctx, o) }},
+}
+
+// mustFail reports whether the check is given the double in its must-fail construction mode, as
+// Run gives it the mustFail factory's owner.
+func (c check) mustFail() bool { return c.name == "FailedStartHoldsNothing" }
+
+// doubleFor builds the double a check is given: in must-fail mode for the failed-start check, in
+// the normal mode for every other.
+func doubleFor(t *testing.T, c check, fp failpoint, restartable bool) *refowner {
+	o := newRefowner(t, fp, restartable)
+	o.mustFail = c.mustFail()
+	return o
 }
 
 // newRefowner builds a double whose hang channel is released when the test ends, so a failpoint
@@ -245,7 +279,7 @@ func finalizeVerdict(ctx context.Context, o *refowner) error {
 func TestChecksPassAgainstCleanDouble(t *testing.T) {
 	for _, promise := range []Promise{{Restart: false}, {Restart: true}} {
 		for _, c := range checks {
-			o := newRefowner(t, clean, promise.Restart)
+			o := doubleFor(t, c, clean, promise.Restart)
 			if err := c.run(t.Context(), o, promise); err != nil {
 				t.Errorf("%s (restart=%t) on the clean double: %v", c.name, promise.Restart, err)
 			}
@@ -273,6 +307,7 @@ var failpointTable = []failpointCase{
 	{startTwiceAllowed, "SecondStartRefusedOrRestartCycle", Promise{}},
 	{restartPromisedButRefused, "SecondStartRefusedOrRestartCycle", Promise{Restart: true}},
 	{nilStartPanics, "NilContextsRefused", Promise{}},
+	{startFailsButHolds, "FailedStartHoldsNothing", Promise{}},
 }
 
 // failpointGaps reports every declared failpoint that the table does not map to exactly one check
@@ -390,7 +425,7 @@ func TestEachFailpointTripsExactlyItsCheck(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				for _, c := range checks {
 					// The double is as restartable as the promise says; only a failpoint may break it.
-					o := newRefowner(t, tc.fp, tc.promise.Restart)
+					o := doubleFor(t, c, tc.fp, tc.promise.Restart)
 					err := c.run(t.Context(), o, tc.promise)
 					switch {
 					case c.name == tc.want && err == nil:
@@ -493,6 +528,78 @@ func TestFinalizeReportsWorkerHeldAfterSignal(t *testing.T) {
 
 // TestRunOverCleanDouble drives Run itself, as an adopter would.
 func TestRunOverCleanDouble(t *testing.T) {
-	Run(t, func() Owner { return newRefowner(t, clean, false) }, Promise{})
-	Run(t, func() Owner { return newRefowner(t, clean, true) }, Promise{Restart: true})
+	mustFail := func() Owner {
+		o := newRefowner(t, clean, false)
+		o.mustFail = true
+		return o
+	}
+	Run(t, func() Owner { return newRefowner(t, clean, false) }, mustFail, Promise{})
+	Run(t, func() Owner { return newRefowner(t, clean, true) }, mustFail, Promise{Restart: true})
+}
+
+// fakeT records what Run asks of its test without running anything.
+type fakeT struct {
+	fatal string
+	runs  []string
+}
+
+func (f *fakeT) Helper() {}
+func (f *fakeT) Fatalf(format string, args ...any) {
+	if f.fatal == "" {
+		f.fatal = fmt.Sprintf(format, args...)
+	}
+}
+func (f *fakeT) Run(name string, _ func(*testing.T)) bool {
+	f.runs = append(f.runs, name)
+	return true
+}
+
+// Run fails before any check, naming the argument, when mustFail (or factory) is nil
+// (lifecycle-suite › "Nil mustFail factory").
+func TestRunRefusesANilFactory(t *testing.T) {
+	owner := func() Owner { return newRefowner(t, clean, false) }
+	for arg, args := range map[string][2]Factory{"mustFail": {owner, nil}, "factory": {nil, owner}} {
+		ft := &fakeT{}
+		run(ft, args[0], args[1], Promise{})
+		if !strings.Contains(ft.fatal, arg) || len(ft.runs) != 0 {
+			t.Errorf("nil %s: fatal %q after running %v; want a failure naming %s before any check", arg, ft.fatal, ft.runs, arg)
+		}
+	}
+	ft := &fakeT{}
+	run(ft, owner, owner, Promise{})
+	if ft.fatal != "" || len(ft.runs) != len(checks) {
+		t.Errorf("valid arguments: fatal %q, ran %v; want every check", ft.fatal, ft.runs)
+	}
+}
+
+// The failed-start check on owners outside the matrix: a must-fail factory whose Start succeeds
+// (lifecycle-suite › "mustFail factory whose Start succeeds"), and a failed Start whose Stop still
+// performs an operation.
+func TestFailedStartCheckRejects(t *testing.T) {
+	succeeds := newRefowner(t, clean, false) // normal mode: Start succeeds
+	err := CheckFailedStartHoldsNothing(t.Context(), succeeds)
+	if err == nil || !strings.Contains(err.Error(), "did not fail") {
+		t.Errorf("must-fail owner whose Start succeeded: %v, want a failure saying the factory did not fail", err)
+	}
+	finalize(t, succeeds)
+
+	counting := &stopCounts{observedScripted: observedScripted{scripted: scripted{startErr: errors.New("refused")}}}
+	if err := CheckFailedStartHoldsNothing(t.Context(), counting); err == nil || !strings.Contains(err.Error(), "call") {
+		t.Errorf("Stop after a failed Start made a call: %v, want a failure", err)
+	}
+}
+
+// stopCounts counts every Stop as an operation, as an owner that tears down what it never built.
+type stopCounts struct {
+	observedScripted
+	stops int
+}
+
+func (s *stopCounts) Stop(ctx context.Context) error {
+	s.stops++
+	return s.scripted.Stop(ctx)
+}
+
+func (s *stopCounts) Observe() Observation {
+	return Observation{Calls: map[string]int{"teardown": s.stops}}
 }

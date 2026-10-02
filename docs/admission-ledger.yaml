@@ -20,8 +20,8 @@
 # destination path: the leading run of letters, digits, `/`, `.`, `_` and `-` in `destination`;
 # anything after it is a note. `task ledger:diff -- <source_path>` prints the differences of any entry;
 # `adapt` entries are printed there and never failed. Every entry below is re-checked at SETUP 03A.
-# No SemStreams package has been ported; the SETUP 02 rows record patterns adapted, two scripts carried
-# and later adapted (flake-defense), and exclusions.
+# The SETUP 02 rows record patterns adapted, two scripts carried and later adapted (flake-defense), and
+# exclusions; the package rows of change setup-04a-01-floor follow them.
 #
 # Port refactors (owner ruling on #8, Q4; SETUP 03B design.md D4a): restructuring ported code away from
 # the pin's shape (a seam, a file-level adapt, a dropped field or method) is disposition `adapt`, with
@@ -338,5 +338,28 @@
     pkg/platform (in-set); stdlib; a process-global predicate registry mutated at registration
   known_risks: no context roots; SemStreams IRI base strings carried unchanged (iris.go:14)
   proving_tests: the 11 test files in vocabulary/ at the pin
+  owner: setup-04a-01-floor developer
+  disposition: carry
+
+- source_path: pkg/types
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    entity ID, entity type and domain authority types and their validation; SemSource imports it (5
+    files, design P16)
+  destination: pkg/types
+  contract: >-
+    entity ID parsing, the 256-byte bound (MaxEntityIDBytes), pattern matching, type and domain
+    authority validation as at the pin
+  dependencies_and_side_effects: >-
+    pkg/errs (in-set); stdlib; pgregory.net/rapid v1.3.0 in tests only (owner ruling, PR #48 comment
+    5951926492); no goroutine, no I/O
+  known_risks: >-
+    no context roots. testdata/rapid carries the pin's curated seed for TestPropEntityIDByteBound
+    (a mutation-kill witness registered in testdata/rapid/README.md); any other .fail file Rapid
+    writes there is local debris and fails this row's carry check as "only in the tree"
+  proving_tests: >-
+    the 6 test files in pkg/types/ at the pin, including entity_id_prop_test.go (Rapid properties
+    TestPropEntityIDRoundTrip, TestPropEntityIDByteBound, TestPropEntityIDPatternMatch; design P23)
+    and its testdata/rapid seed
   owner: setup-04a-01-floor developer
   disposition: carry

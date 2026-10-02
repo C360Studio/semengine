@@ -95,7 +95,7 @@ func runCheck(ctx context.Context, root string, cfg config, entries []entry, std
 		fmt.Fprintln(stderr, "ledger:check: no carry entry; the pin was not fetched")
 		return 0
 	}
-	results, problems := compareAll(ctx, root, cfg, entries, carried)
+	results, problems := compareAll(ctx, root, cfg, entries, carried, stderr, "ledger:check: ")
 	if len(problems) > 0 {
 		for _, p := range problems {
 			fmt.Fprintln(stderr, "ledger:check: the pin could not be read: "+p)
@@ -167,7 +167,7 @@ func runDiff(ctx context.Context, root string, cfg config, entries []entry, name
 		fmt.Fprintln(stderr, "ledger:diff: no carry or adapt entry; nothing was compared")
 		return 0
 	}
-	results, problems := compareAll(ctx, root, cfg, entries, selected)
+	results, problems := compareAll(ctx, root, cfg, entries, selected, stderr, "ledger:diff: ")
 	if len(problems) > 0 {
 		for _, p := range problems {
 			fmt.Fprintln(stderr, "ledger:diff: the pin could not be read: "+p)
@@ -224,7 +224,7 @@ func summary(r entryResult) string {
 
 // compareAll fetches the pins the selected entries need and compares each entry. Problems mean
 // the pin could not be read, and then no result is returned.
-func compareAll(ctx context.Context, root string, cfg config, entries, selected []entry) ([]entryResult, []string) {
+func compareAll(ctx context.Context, root string, cfg config, entries, selected []entry, stderr io.Writer, prefix string) ([]entryResult, []string) {
 	var shas []string
 	for _, e := range selected {
 		if !slices.Contains(shas, e.SourceSHA) {
@@ -235,7 +235,12 @@ func compareAll(ctx context.Context, root string, cfg config, entries, selected 
 	if err != nil {
 		return nil, []string{err.Error()}
 	}
-	defer os.RemoveAll(tmp)
+	defer func() {
+		// Reported, not failed: the comparison is done, and the directory is outside the repository.
+		if err := os.RemoveAll(tmp); err != nil {
+			fmt.Fprintf(stderr, "%sthe temporary directory %s could not be removed: %v\n", prefix, tmp, err)
+		}
+	}()
 	store, problems := fetchPins(ctx, cfg.remote, cfg.bound, tmp, shas)
 	if len(problems) > 0 {
 		return nil, problems

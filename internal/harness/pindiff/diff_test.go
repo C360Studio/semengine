@@ -29,6 +29,7 @@ func TestCoveredFiles(t *testing.T) {
 		row{"scripts/x.sh", shas[0], "scripts/x.sh", "adapt"},
 		row{"pkg/d", shas[0], "pkg/d.go", "adapt"},
 		row{"pkg/docs", shas[0], "internal/docs", "carry"},
+		row{"pkg/nope", shas[0], "internal/a", "adapt"},
 	)
 	clean := map[string]string{
 		"internal/a/a.go":               "package a\n",
@@ -71,6 +72,8 @@ func TestCoveredFiles(t *testing.T) {
 			"scripts/x.sh (adapt): not compared: source_path is a file at the pin and the destination path is a directory"},
 		{"directory at the pin, file in the tree", clean, "pkg/d", 2, "",
 			"pkg/d (adapt): not compared: source_path is a directory at the pin and the destination path is a file"},
+		{"source_path that does not exist at source_sha", clean, "pkg/nope", 2, "",
+			"pkg/nope (adapt): not compared: source_path does not exist at " + shas[0]},
 		{"no covered file at the pin or in the tree", clean, "pkg/docs", 2, "",
 			"pkg/docs (carry): not compared: no covered file at the pin or in the tree"},
 	} {
@@ -168,10 +171,11 @@ func TestDiffLargeFileFallback(t *testing.T) {
 // exit 2 for an argument that names no entry, a named entry not compared, or a ledger that cannot
 // be read.
 func TestDiffExitCodes(t *testing.T) {
-	remote, shas := pinRepo(t, map[string]string{"pkg/a/a.go": "package a\n", "pkg/b/b.go": "package b\n"})
+	remote, shas := pinRepo(t, map[string]string{"pkg/a/a.go": "package a\n", "pkg/b/b.go": "package b\n", "scripts/x.sh": "echo x\n"})
 	ledger := ledgerOf(
 		row{"pkg/a", shas[0], "internal/a", "carry"},
 		row{"pkg/b", shas[0], "internal/missing", "adapt"},
+		row{"scripts/x.sh", shas[0], "internal/a", "adapt"},
 	)
 	root := tree(t, ledger, map[string]string{"internal/a/a.go": "package a // changed\n"})
 
@@ -185,6 +189,8 @@ func TestDiffExitCodes(t *testing.T) {
 		{"a differing entry", root, []string{"diff", "pkg/a"}, 0, []string{"pkg/a (carry): 1 files, 1 differ"}},
 		{"no argument, an adapt entry not compared", root, []string{"diff"}, 0,
 			[]string{"pkg/b (adapt): not compared:", "internal/missing", "does not exist"}},
+		{"no argument, a file at the pin and a directory in the tree", root, []string{"diff"}, 0,
+			[]string{"scripts/x.sh (adapt): not compared: source_path is a file at the pin and the destination path is a directory"}},
 		{"an argument that names no entry", root, []string{"diff", "pkg/a", "pkg/nope"}, 2, []string{"pkg/nope", "no ledger entry"}},
 		{"a named entry not compared", root, []string{"diff", "pkg/b"}, 2, []string{"pkg/b (adapt): not compared:"}},
 		{"no ledger", t.TempDir(), []string{"diff"}, 2, []string{"docs/admission-ledger.yaml", "could not be read"}},

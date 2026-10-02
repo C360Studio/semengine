@@ -3,6 +3,7 @@ package main
 import (
 	"maps"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -112,6 +113,28 @@ func TestCheckSensitivity(t *testing.T) {
 			requireLine(t, got.stderr, "differs from the pin is adapt", "docs/provenance.md rule 5")
 		})
 	}
+
+	// A destination that is a symlink to a directory outside the repository is not a path in it,
+	// though the files there match.
+	t.Run("destination symlink resolving outside the repository", func(t *testing.T) {
+		outside := t.TempDir()
+		files := map[string]string{}
+		for name, content := range checkTree {
+			if rel, ok := strings.CutPrefix(name, "internal/a/"); ok {
+				files[rel] = content
+			}
+		}
+		writeFiles(t, outside, files)
+		root := tree(t, ledger("internal/link"), checkTree)
+		if err := os.Symlink(outside, filepath.Join(root, "internal", "link")); err != nil {
+			t.Fatal(err)
+		}
+		got := runIn(t, root, remoteEnv(remote), "check")
+		if got.code != 1 {
+			t.Fatalf("got:\n%s\nwant exit 1", got)
+		}
+		requireLine(t, got.stderr, "carry entry pkg/a:", "not compared", `"internal/link" resolves outside this repository`)
+	})
 
 	// A carry entry that compared nothing does not pass.
 	t.Run("no covered file at the pin or in the tree", func(t *testing.T) {

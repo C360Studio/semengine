@@ -143,7 +143,7 @@ first and `task ledger:check` passes; the package and its `_test.go` files are c
 `8b99efe9c66a4faa4fa509f9f62cc6bad8392128` to the row's `destination` (design D5: eleven keep their pin paths, four
 move from `pkg/<name>` to `internal/<name>`), with every pin import path rewritten to its destination and the design
 D8 repairs applied, each repair written so it fails first where the pin's test fails (P19) and listed on the row's
-`evidence` as pin `file:line` → SemEngine `file:line`; a row with any repaired test file is `adapt` (task 1.5, Q1);
+`proving_tests` as pin `file:line` → SemEngine `file:line`; a row with any repaired test file is `adapt` (task 1.5, Q1);
 `task verify` passes; `task test:repeat -- ./<destination>` passes; the carried tests pass in their lane; the row's
 `proving_tests` names them; context roots in the package are triaged in `known_risks`.
 
@@ -203,7 +203,7 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       `doc.go:39, :157, :162, :234` and `README.md:64, :117-125, :200, :410`. The row's `known_risks` names the later
       callers (design D5) as port-refactor rows; the one `pkg/cache` root is triaged.
 - [ ] 3.7 (D) `natsclient` (level 6): row `adapt`; `test_client.go` and `test_options.go` are not ported and their
-      file rows are updated (`evidence` on the `adapt` row); four test files are not ported and get `defer-exclude`
+      file rows are updated (`proving_tests` on the `adapt` row); four test files are not ported and get `defer-exclude`
       file rows with design D1's reasons: `test_client_factory_test.go`, `test_client_integration_test.go` and
       `test_client_readiness_test.go` by owner ruling (task 1.5, Q3), and `monitoring_consumers_test.go` as forced by
       Q3 (`WithMonitoring` is at `test_client.go:448`, not ported; not an owner ruling); the 56

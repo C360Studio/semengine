@@ -311,7 +311,7 @@ states the `Client` nil-context requirement; the row records each item as change
   as `cacheStats` above), `metric` (D3 items), `payloadregistry` (`testing.go` rehomed), `pkg/cache` and
   `pkg/resource` (the D7 items, the D8 repairs), `pkg/tlsutil` (the ACME loaders cut, D1) and `pkg/retry` (D8
   repair); `carry` for the other eight.
-- Existing file rows updated: `natsclient/test_client.go` (`adapt`, now with `evidence`), `natsclient/test_options.go`
+- Existing file rows updated: `natsclient/test_client.go` (`adapt`, now with its evidence in `proving_tests`), `natsclient/test_options.go`
   (`defer-exclude`, honoured); a new file row for `payloadregistry/testing.go` is not needed — the package row
   records the rehoming (T-B7 keeps `source_path` unique; the package row's path is the directory).
 - Eight `defer-exclude` rows for the D4 ten-out packages that are never carried: `agentic`, `agentic/agentrun`,
@@ -388,7 +388,7 @@ the loaders to change 5 and are recorded on the `pkg/tlsutil` row.
 
 Every ported `_test.go` file lands meeting the `harness-boundaries` requirements "No sleeps in tests" and "No skipped
 or hidden tests", and the `merge-gate` requirement "Varied and repeated unit runs". There is no list of accepted
-files. A row with a repaired test file is `adapt` (Q1 ruling), and the row's `evidence` names each repair as
+files. A row with a repaired test file is `adapt` (Q1 ruling), and the row's `proving_tests` names each repair as
 pin `file:line` → SemEngine `file:line`. The repairs at the pin (P18, P19) fall into four classes:
 
 - **R1. Sleep → wait on a signal.** Timers in a repaired file fall into three classes:

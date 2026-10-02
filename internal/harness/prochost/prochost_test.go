@@ -269,7 +269,9 @@ func awaitState(t *testing.T, p *Process, done func(string) bool) {
 }
 
 // startIdentity is ps's start time for pid, the identity runner_test.go records (psStartIdentity,
-// runner_test.go:255): a pid reused by a later process has another.
+// runner_test.go:255): a pid reused by a later process has another. lstart has one-second
+// resolution, so a pid reused within the same second reads as the same identity; that makes the
+// check fail loudly, never pass wrongly, as in runner_test.go.
 func startIdentity(pid int) (string, error) {
 	out, err := exec.Command("ps", "-o", "lstart=", "-p", strconv.Itoa(pid)).Output()
 	return strings.TrimLeft(strings.TrimSuffix(string(out), "\n"), " \t"), err

@@ -41,6 +41,26 @@ closure imports the helper.
 
 ## ADDED Requirements
 
+### Requirement: No bare select
+
+No Go file in the module, test or non-test, `package main` included, SHALL contain a `select` statement with no
+cases. A goroutine parked on one has no way out, and in a re-executed test binary, which runs with no test-timeout
+timer, Go's deadlock detector kills the process once every goroutine blocks. Code parks on `ctx.Done()`, a channel or
+`signal.Notify`; a `main` uses `signal.NotifyContext`. The check parses each file, so it matches code only: a comment
+or a string that mentions the pattern does not trip it, and every spelling of an empty `select` (spacing, newlines,
+a comment inside) does. A file that does not parse fails the check. It sits beside "No sleeps in tests" and has, like
+it, no baseline, no allowlist and no inline exemption.
+
+#### Scenario: A bare select is added
+
+- **WHEN** a test file, a non-test file or a `package main` file contains `select {}`, in any spacing
+- **THEN** the contract test fails naming the file and line
+
+#### Scenario: A select with cases or a comment
+
+- **WHEN** a file contains a `select` with at least one case, or mentions `select {}` only in a comment or a string
+- **THEN** the contract test reports nothing for that file
+
 ### Requirement: Public signatures name no internal type
 
 A public package is a non-test, non-`main` package of this module whose import path has no `internal` element. No

@@ -127,6 +127,14 @@ this pull request as a comment unless a task says otherwise. No task asserts a f
       the internal type only in unexported identifiers and bodies reports nothing. The real
       tree passes; it has no public package until section 3, whose `task verify` runs then hold each ported package
       to it. Gate: `task test:unit`. Not gated by #52 (task 3.0).
+- [x] 2.11 (D) No bare select (owner-approved on this pull request; `harness-boundaries` › "No bare select"):
+      `TestNoBareSelect` in `internal/harness/contract/testtext_test.go` parses every Go file in the module, test
+      and non-test, `package main` included, and fails on a `select` with no cases, naming the file and line; a file
+      that does not parse fails it. `TestNoBareSelectSensitivity`, written first and shown failing against a check
+      that reports nothing, plants a bare `select` in a test file, a non-test file and a `main`, in four spellings
+      (no space, spaces inside, across lines, a comment inside) and inside a goroutine, and shows a `select` with
+      cases and mentions in comments and strings passing. Reverting the prochost helper to a bare `select` fails
+      the real-tree test. Gate: `task test:unit`.
 
 ## 3. Port mechanics, per package in design D1's order
 

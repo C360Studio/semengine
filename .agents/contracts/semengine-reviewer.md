@@ -75,9 +75,9 @@ prompted mechanism, proposed symbol, issue claim, prior design, and briefing ass
    the same semantic class. Verify the collision table covers catalogs, status, lifecycle, ownership, readers, writers,
    and recovery even when the existing owners use different names.
 4. Attempt to refute both claimed gaps and claimed completeness with code, configuration, generated artifacts, tests,
-   current specs, ADRs, and active changes. Run `gh pr list --state open --json number,title,files` yourself: an
-   open pull request, draft or not, whose changed files or OpenSpec capabilities overlap the change and that the
-   inventory does not list is a finding.
+   current specs, ADRs, and active changes. Run the open-pull-request listing yourself, as the architect contract's
+   inventory category 3 gives it (including its 100-file limit): an open pull request, draft or not, whose changed
+   files or OpenSpec capabilities overlap the change and that the inventory does not list is a finding.
 5. Return `INVENTORY PASS` only when the inventory is sufficiently complete to begin design. Any missing same-class
    owner or incomplete triggered collision table is `BLOCKING`; return `INVENTORY CHANGES REQUESTED` and do not review
    or suggest a target state.

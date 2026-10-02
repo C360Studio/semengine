@@ -100,8 +100,11 @@ each either cited at `file:line` or closed with the exact searches that came up 
 3. **Adjacent claims on the territory.** Current specs, ADRs, active changes, filed issues, admission-ledger rows,
    open pull requests (drafts included: a draft is a claim), and consumer asks that already cover or constrain the
    touched surface. List every open pull request whose changed files or OpenSpec capabilities overlap the planned
-   change, from `gh pr list --state open --json number,title,files`. Name overlaps and conflicts explicitly rather
-   than designing around them silently; the design then states, for each overlap, which merges first.
+   change, from `gh pr list --state open --json number,title,changedFiles,files`. That listing stops at 100 files
+   for each pull request and says nothing when it does: where `changedFiles` is over 100, read the whole list with
+   `gh api --paginate repos/C360Studio/semengine/pulls/<n>/files --jq '.[].filename'`. A capability overlap shows in
+   the file list as a delta under `openspec/changes/<id>/specs/<capability>/`. Name overlaps and conflicts explicitly
+   rather than designing around them silently; the design then states, for each overlap, which merges first.
 4. **The consumer at birth.** For every new exported symbol, port, subject, bucket, or config field the design
    introduces: name its present consumer. Zero present consumers removes it from the design; "for observability"
    and "for future use" are the phantom-surface shape.

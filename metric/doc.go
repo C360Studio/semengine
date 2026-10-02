@@ -218,7 +218,8 @@
 //	    return &MyService{operations: operations}, nil
 //	}
 //
-// This enables testing with mock registrars and provides loose coupling.
+// A test gives the service its own registry from NewMetricsRegistry and reads
+// what the service recorded through PrometheusRegistry().Gather().
 //
 // # Thread Safety
 //

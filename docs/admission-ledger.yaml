@@ -500,7 +500,12 @@
     Stop has begun; the registration
     passages rewritten for RegisterOrGet (design D9): pin README.md:107-119, :151-154, :207-218 (the
     MetricsRegistrar section, replaced by a RegisterOrGet entry under Functions), :286-293, :333-336,
-    :343-344, :367-372, :464-475 and :653-668. README lint fixes
+    :343-344, :367-372, :464-475 and :653-668. README import paths (#9 comment 5957221949; not a
+    behavior edit): pin README.md:19-20, :51, :419 and :596, import path changed to the SemEngine
+    module (github.com/c360/semstreams/metric and /pkg/security to
+    github.com/c360studio/semengine/metric and /pkg/security). doc.go:214, "testing with mock
+    registrars", which the removed MetricsRegistrar provided, rewritten to the actual test seam: a
+    registry from NewMetricsRegistry, read through PrometheusRegistry().Gather(). README lint fixes
     (#9 comment 5957221949): lines 7, 9, 11, 27, 30, 33, 40,
     233, 237 and 241 wrapped at 120 columns (MD013); a blank line after the headings at :26, :29,
     :32, :39, :139, :158, :193, :209, :223 and :226 (MD022) and before the lists at :234, :238 and

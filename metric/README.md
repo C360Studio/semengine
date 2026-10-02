@@ -21,8 +21,8 @@ histograms) to provide comprehensive operational visibility into the SemStreams 
 import (
     "log"
 
-    "github.com/c360/semstreams/metric"
-    "github.com/c360/semstreams/pkg/security"
+    "github.com/c360studio/semengine/metric"
+    "github.com/c360studio/semengine/pkg/security"
 )
 ```
 
@@ -61,7 +61,7 @@ import (
     "context"
     "time"
 
-    "github.com/c360/semstreams/metric"
+    "github.com/c360studio/semengine/metric"
 )
 
 // Create metrics registry with core platform metrics
@@ -439,7 +439,7 @@ import (
     "math/rand"
     "time"
 
-    "github.com/c360/semstreams/metric"
+    "github.com/c360studio/semengine/metric"
     "github.com/prometheus/client_golang/prometheus"
 )
 
@@ -622,7 +622,7 @@ import (
     "sync"
     "time"
 
-    "github.com/c360/semstreams/metric"
+    "github.com/c360studio/semengine/metric"
     "github.com/prometheus/client_golang/prometheus"
 )
 

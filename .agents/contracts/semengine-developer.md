@@ -188,11 +188,20 @@ The reasoning behind these rules, and the mutation procedure step by step, is in
 - Any new exported surface that parses, decodes, or validates external bytes or strings (subjects, keys, entity IDs,
   payload envelopes, config) ships with a native `Fuzz*` target and a seed corpus covering each grammar class it
   accepts AND each it must reject, asserting an invariant (never panics; round-trips; rejection is a typed error).
-  Where fuzzing is genuinely inapplicable, say why; silence is the finding, not the exemption.
+  Where fuzzing is genuinely inapplicable, say why; silence is the finding, not the exemption. Report seed replay and
+  any exploratory `-fuzz` run separately.
+- For an input format with interacting cases, a transformation with a stated law, or an order-dependent history,
+  record before writing tests whether the change uses generated checks or why named examples suffice; a test count or
+  "existing tests pass" is not a reason (`docs/testing.md`, "Decide whether generated checks are needed").
 - A property-based test encodes an invariant the design cited, never one inferred from the implementation. The
   generator must provably reach every boundary the cited clause names, by construction or by a committed shrunk
   counterexample from a mutation kill; a wide range that merely strides a bound catches an off-by-one only
-  probabilistically.
+  probabilistically. Reaching an input is not running the assertion: state what makes each assertion run. A history
+  is compared against a test-owned reference model filled from the requirement, never from production code. A run
+  records its seed, the checks completed (read from the output, not the budget requested), and a replayable failure.
+- A mutation check reports only its observed outcome. A survivor or an inconclusive run is recorded as such and is
+  never a detection; a generated failure is replayed with the same input or seed against the wrong change and the
+  original (`docs/testing.md`, "Show that the test can fail").
 - Use ephemeral ports, explicit synchronization instead of sleeps, and no `t.Parallel()` around process-global state
   such as `slog.SetDefault`. Explain wall-clock assertions and give them realistic tolerance.
 - Run gates through the Task entrypoint: focused tests during iteration, then `task verify` before an implementation
@@ -204,6 +213,7 @@ The reasoning behind these rules, and the mutation procedure step by step, is in
 
 ## Handoff
 
-Summarize the implemented task slice, semantic blast radius, tests and exact results, unresolved gates, and any
+Summarize the implemented task slice, semantic blast radius, tests and exact results (the record in `docs/testing.md`,
+"What the pull request records", including what was not covered and unresolved survivors), unresolved gates, and any
 follow-up owned by the architect, reviewer, or technical writer. Name every issue the slice filed (protocol **File**
 ritual); a filing the ritual would not admit is an unresolved gate. Do not claim completion from compilation alone.

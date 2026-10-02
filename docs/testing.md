@@ -1,8 +1,8 @@
 # Testing in SemEngine
 
-This page is for a developer about to write or review a test here. It covers three questions: what the test has to
-tell apart, which level to run it at, and how to show it can fail. Today the only Go code in the repository is the
-test harness under `internal/harness/`, so the examples point at it.
+This page is for a developer about to write or review a test here. It covers what the test has to tell apart, which
+level to run it at, how to show it can fail, and what to record in the pull request. Today the only Go code in the
+repository is the test harness under `internal/harness/`, so the examples point at it.
 
 ## Start with the wrong behavior
 
@@ -98,7 +98,8 @@ from SemStreams). Four more guards are shell scripts: `task cleanup-roots:check`
 
 ## Show that the test can fail
 
-A green test tells you nothing until you have seen it go red for the right reason. The procedure:
+A green test tells you nothing until you have seen it go red for the right reason. A mutation check makes one
+deliberate wrong change to the code and confirms the test fails because of it. The procedure:
 
 1. Run the selected test on the unmodified code. It passes, and it actually ran (use `-v` and check the name).
 2. Make one deliberate, plausible wrong change to the implementation, the one the test is meant to catch. Leave the
@@ -110,6 +111,19 @@ A green test tells you nothing until you have seen it go red for the right reaso
 Keep a copy of every file before you change it (`cp`) and restore from that copy. Do not use `git checkout --`,
 `git restore`, `git stash` or `git reset --hard`; they can discard other work in the tree. Record the change you made,
 the commands, and the output of all three runs in the pull request.
+
+Only step 3 going red as expected counts as a detection. Record any other outcome under its own name:
+
+- **Survivor:** the wrong change compiled and the test ran, but the test still passed. Look for the missing input,
+  assertion or scope, and report the survivor until it is resolved. If you change the test as a result, start again
+  from step 1 with the new test.
+- **Inconclusive:** the run ended without the intended assertion failing: an error, a timeout of the whole run, a
+  different or unrelated failure, or a `-run` pattern that did not select the test. A failing exit code alone is not a
+  detection. Fix the cause and run the check again; never skip or weaken a test to get past it.
+
+If the test generates its inputs, replay the same input or seed against the wrong change and against the original
+code. Two different random samples differ for reasons unrelated to the change; if the same input cannot be replayed,
+the outcome is inconclusive.
 
 Do this when the change:
 
@@ -146,15 +160,62 @@ strings. Seed it with examples of every input class it must accept and every cla
 go test -run '^$' -fuzz '^FuzzCheckName$' -fuzztime 30s ./internal/harness/natsfixture/
 ```
 
-A property-based test generates structured inputs or sequences of operations and checks a rule that holds for all of
-them. It is the right tool for an input format with many interacting valid and invalid cases, a transformation with a
-stated law (round-trip, idempotence, normalization), or behavior that depends on the order of operations. The rule
-must come from the requirement, not from reading the implementation. No property-testing library is in `go.mod`
-today; adding one is a dependency change of its own.
+In the pull request, report the two kinds of run separately: the seed replay that `task test:unit` did, and any
+exploratory `-fuzz` run with its exact command, its `-fuzztime`, and what it found. A green `task test:unit` is not
+evidence of fuzz exploration.
+
+A property-based test generates many inputs or sequences of operations and checks a rule that must hold for all of
+them. The rule must come from the requirement, not from reading the implementation. No property-testing library is in
+`go.mod` today, and adding one is a dependency change of its own. SemStreams' property tests use `pgregory.net/rapid`;
+this page will name a library when one is admitted. A native fuzz target that checks a rule can serve as a property
+test.
 
 For both tools, the generator must be able to reach the boundary the rule is about. A wide random range that only
 occasionally lands on a limit catches an off-by-one by luck. Being reachable is not the same as being exercised in a
 given run, so keep explicit examples for any boundary you claim the test covers.
+
+### Decide whether generated checks are needed
+
+Before you write the tests, decide whether the change needs generated checks, and record the decision in the change's
+design or the pull request. The decision is needed when the change touches any of:
+
+- an input format with many interacting valid and invalid cases, or limits on size or count;
+- a transformation with a stated law: round-trip, idempotence, normalization, every item lands in exactly one part;
+- a history, where the outcome depends on the order of operations, on replacement or deletion, on retry or replay, or
+  on shutdown.
+
+Then either write a generated check for the rule, or name the example tests that cover it and explain why they cover
+the combinations, repetitions and orderings that matter. "The existing tests pass" or a count of tests is not a
+reason. There is no quota of property tests per pull request.
+
+### Show that each assertion runs
+
+Assertion activation is the condition under which an assertion actually executes. Check it separately from whether
+the generator can reach an input. A loop over a result set that is always empty passes without checking anything; so
+does an assertion behind a guard, an early return, or an operation that no generated sequence ever performs. For
+every rule you claim, say what makes its assertion run and how the test gets there. If a case must run, set it up
+deterministically (a fixed prefix of operations or a named example) rather than hoping a random run hits it. Do not
+require a random run to reach a rare state a minimum number of times; that makes the test flaky.
+
+### Check a history against a reference model
+
+A reference model is a small, simplified version of the expected behavior that the test itself owns, such as a map
+from each generated key to its latest value. For a history, update the model from the generated operations
+according to the requirement, run the same operations against the real code, and compare what the real code shows
+with the model, including effects that must not happen. Never fill the model by calling the production code, and do
+not copy its decisions: the model is useful only if it can disagree with a plausible bug. A sequential model does not
+test concurrent interleavings, process crashes, or broker recovery; those need their own tests at the right level.
+
+### What a generated run leaves behind
+
+A zero exit, or the number of checks you asked for, does not show that the checks ran. Run with `-count=1 -v` and
+read the number of checks actually completed from the tool's output. Record:
+
+- the seed of the run, so it can be repeated (a fixed seed repeats the same inputs only for the same test code and
+  library version; it does not control scheduling, clocks or external state);
+- the number of checks completed;
+- for a failure, the failing input or operation sequence and the command that replays it. Keep an important failure
+  as a named, deterministic test, because a change to the generator can change what an old seed produces.
 
 ## Concurrency and cleanup
 
@@ -187,13 +248,33 @@ name the condition yourself when you report its error. The NATS fixture writes a
 container logs on failure, and what it still held after `Stop` to the run's evidence directory (`.evidence/` by
 default). A test that uses randomness prints its seed.
 
+## What the pull request records
+
+The pull request (or the change's design, linked from it) says what was expected, what was run, and what was not
+covered. Fill in the first part before writing the tests and the rest after running them; leave anything not run
+marked as not run.
+
+```text
+Decision:     generated check, examples enough, or not applicable, with the reason for this failure
+Rule:         the requirement it checks, and where the expected result comes from
+Inputs:       generated input or operation classes; fixed examples; what makes each assertion run
+Run:          commit, exact command, seed, checks completed, result; seed replay and -fuzz exploration apart
+Mutation:     the wrong change, and the baseline, wrong-change and restored runs with their outcome
+Not covered:  rules not exercised, unresolved survivors, deferred checks and the reason for each
+```
+
 ## What a reviewer will ask
 
 - What wrong behavior does this test catch, and could an implementation pass it while still being wrong?
 - Where does the expected value come from, and is it independent of the code under test?
 - Is this the lowest level that can show the behavior?
-- If the change met one of the criteria above, where are the baseline, wrong-change, and restored runs?
-- Does the generator or seed corpus reach the boundary the rule is about?
+- If the change met one of the criteria above, where are the baseline, wrong-change, and restored runs? Is any
+  survivor or inconclusive run reported as such, not as a detection?
+- Was the decision on generated checks recorded, with a reason that addresses the failure, not a test count?
+- Does the generator or seed corpus reach the boundary the rule is about, and what makes each assertion run?
+- Does a history test compare against a model the test owns, filled from the requirement and not from the code?
+- Do the seed, the number of checks completed and a replay command appear, with seed replay and fuzz exploration
+  reported apart?
 - Does anything wait on a sleep, use an unbounded cleanup context, or bind a fixed port?
 - What does the test not cover?
 

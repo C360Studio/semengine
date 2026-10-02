@@ -90,10 +90,10 @@ test (`design.md`, "Tests").
 
 ## 6. Review and landing
 
-- [ ] 6.1 Hold: independent change review. The verdict on the full diff is a pass recorded on this pull request with
-      the reviewed commit.
-- [ ] 6.2 (D) `task verify` passes on the branch's last commit before the archive commit, with the branch up to
-      date with `main`; its step timings are recorded on this pull request, and the body of this pull request
-      carries `implemented-by:`.
-- [ ] 6.3 (W) The change is archived and `openspec/specs/harness-boundaries/spec.md` synced as the last content
+- [x] 6.1 Independent change review: APPROVE at `9655843`, and APPROVE again on the bounded re-check of the fixes at
+      `b4a2fad`, both recorded on this pull request (comments 5953432754 and 5954108417).
+- [x] 6.2 (D) `task verify` passed on `80d3e17`, the branch's last commit before the archive commit, with the branch
+      up to date with `main`; its step timings are on this pull request (comment 5954177467), and the body of this pull
+      request carries `implemented-by:`.
+- [x] 6.3 (W) The change is archived and `openspec/specs/harness-boundaries/spec.md` synced as the last content
       commit; `task spec:check` passes and `task spec:queue` shows no open hold.

@@ -177,7 +177,8 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       links `internal/tlsutil` (the `pkg/security` carry check expects it once the `pkg/tlsutil` row maps the move).
       Neither package has a `README.md` at the pin. `internal/tlsutil`'s integration-tagged test runs in the
       integration lane. Done in 0031f26 and f1cc210; `task verify` ok on f1cc210.
-- [ ] 3.5 (D) `metric`, `payloadregistry` (level 4): `metric` row `adapt` with its two roots triaged; `metric.Server`
+- [x] 3.5 (D) `metric`, `payloadregistry` (level 4), both at their pin paths (public: SemSource imports both; design
+      D5, #9 comment 5953295358): `metric` row `adapt` with its two roots triaged; `metric.Server`
       adapter lists the listener, the `http.Server` and the serve goroutine; the suite runs with the bound-port
       must-fail factory (#38's first real service). Two items (design D3), each written first:
       `metric-abort-stop-reports-context` — an in-package test starts a server, replaces `s.serveDone` with a
@@ -187,7 +188,11 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       `metric-forced-join-without-timer` — `forcedServeJoinTimeout` (`:23, :243-249`) is removed and the forced path
       waits on `serveDone`. `payloadregistry` row `adapt` (`testing.go` rehomed, task 2.8; `adapt` items for its
       unqualified `New`, `Registry` and `Registration` written as `payloadregistry.X` in `payloadfixture`);
-      `prometheus/client_golang` becomes direct.
+      `prometheus/client_golang` becomes direct. Done in ea46a68 (`payloadregistry`, without `testing.go`, which no
+      package test uses; the row records the rehome and gains the `payloadfixture` qualification items when task
+      2.8 lands) and 41e1d86 (`metric`; at the pin 13, 12, 11 and 16 of 30 `Stop`s returned nil, and the forced join
+      gave up on its timer; both green after the fix; `README.md` lint fixes recorded on the row); `task verify` ok
+      on 41e1d86.
 - [ ] 3.6 (D) `message`, `pkg/cache` (level 5): `message` row `carry` (`google/uuid` direct; its two tests that used
       `internal/semantictest` import the harness copy); `pkg/cache` row `adapt`: its 26 sleeps are repaired under
       `synctest` with its 30 `t.Parallel()` calls removed (D8 R1); `TestCoalescingSet_EntityUpdateScenario`,

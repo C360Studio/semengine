@@ -75,8 +75,10 @@ func fetchPins(ctx context.Context, remote string, bound time.Duration, tmp stri
 }
 
 // fetch runs one shallow fetch. git runs in a process group of its own, and the whole group is
-// killed when the bound cuts the fetch off and again once git has exited: a transport helper git
-// started (git-remote-https) does not die with git and would otherwise outlive the program.
+// killed when the fetch is cut off and again when git has exited with an error: a transport helper
+// git started (git-remote-https) does not die with git and would otherwise outlive the program.
+// After a fetch that succeeded git has already waited for its helper, so the group is empty and is
+// not signalled: its number is free to be reused by a process this program did not start.
 func (p pinStore) fetch(ctx context.Context, remote, sha, tmp string) error {
 	errFile, err := os.CreateTemp(tmp, "fetch-*.err")
 	if err != nil {
@@ -89,11 +91,11 @@ func (p pinStore) fetch(ctx context.Context, remote, sha, tmp string) error {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	err = cmd.Run()
-	if cmd.Process != nil {
-		// The group is git's pid; ESRCH means nothing in it is left.
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-	}
 	if err != nil {
+		if cmd.Process != nil {
+			// The group is git's pid; ESRCH means nothing in it is left.
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		}
 		msg, _ := os.ReadFile(errFile.Name())
 		return fmt.Errorf("git fetch %s %s: %w: %s", remote, sha, err, strings.TrimSpace(string(msg)))
 	}

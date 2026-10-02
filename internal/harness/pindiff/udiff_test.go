@@ -65,11 +65,12 @@ func fuzzText(data []byte, trim bool) string {
 func FuzzUnifiedDiffApplies(f *testing.F) {
 	f.Add([]byte{0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1}, []byte{0, 4, 2, 3, 4, 0, 1, 2, 2, 4, 0, 1}, false, false) // one merged hunk
 	f.Add([]byte{0, 1, 2, 3, 4, 0, 1, 2, 3, 4, 0, 1, 2}, []byte{0, 4, 2, 3, 4, 0, 1, 2, 3, 0, 0, 1, 2}, false, false)
-	f.Add([]byte{}, []byte{1, 2}, false, false)           // empty old range
-	f.Add([]byte{1, 2}, []byte{}, false, false)           // empty new range
-	f.Add([]byte{0, 1}, []byte{3, 1}, true, true)         // no final newline on either side
-	f.Add([]byte{0, 1}, []byte{0, 1}, false, true)        // only the final newline differs
-	f.Add([]byte{0, 1, 2}, []byte{0, 1, 2}, false, false) // equal: no hunk at all
+	f.Add([]byte{0, 1, 2, 3, 4, 0, 1, 2}, []byte{0, 4, 2, 3, 0, 0, 1, 2}, false, false) // two changes three lines apart
+	f.Add([]byte{}, []byte{1, 2}, false, false)                                         // empty old range
+	f.Add([]byte{1, 2}, []byte{}, false, false)                                         // empty new range
+	f.Add([]byte{0, 1}, []byte{3, 1}, true, true)                                       // no final newline on either side
+	f.Add([]byte{0, 1}, []byte{0, 1}, false, true)                                      // only the final newline differs
+	f.Add([]byte{0, 1, 2}, []byte{0, 1, 2}, false, false)                               // equal: no hunk at all
 	f.Fuzz(func(t *testing.T, a, b []byte, trimA, trimB bool) {
 		oldText, newText := fuzzText(a, trimA), fuzzText(b, trimB)
 		diff, _ := unifiedDiff("old", "new", []byte(oldText), []byte(newText))

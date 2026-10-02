@@ -106,8 +106,9 @@ the file, and which of those four it is. The output SHALL say that `task ledger:
 and that a package that differs is `adapt` (`docs/provenance.md` rule 5). Entries with any other disposition SHALL NOT
 be compared by the check. With no `carry` entry the program SHALL exit 0 without contacting SemStreams. When SemStreams
 cannot be read within the fetch bound, which is two minutes for all the fetches of one run together, the program SHALL
-exit 2 with a message that says the pin could not be read and that no entry was checked. When the program exits, no
-process it started for a fetch SHALL still be running, whether the fetch finished, failed or was cut off at the bound.
+exit 2 with a message that says the pin could not be read and that no entry was checked. When a fetch fails or is cut
+off, by the fetch bound or by an interrupt, no process the program started for it SHALL still be running when the
+program exits.
 The program SHALL write nothing inside the repository. `task ledger:check` SHALL fail whenever the program exits
 non-zero; `task` and `go run` replace the program's exit status with their own, so through `task` only pass or fail and
 the message are promised.

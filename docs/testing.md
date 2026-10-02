@@ -227,8 +227,13 @@ go test ./pkg/example -run '^TestPropName$' -count=1 -race -v -rapid.checks=100 
 ```
 
 `-rapid.checks` sets how many cases to try (default 100) and `-rapid.seed` fixes the seed; `-rapid.seed=0` asks for a
-fresh one. With `-v`, Rapid prints a summary of the checks it actually completed; that line, not the flag, is the
-count to record. `task test:unit` and `task test:repeat` pass no Rapid flags, so they run the defaults.
+fresh one. With `-v`, Rapid prints a summary of the checks it actually completed (`[rapid] OK, passed 100 tests`);
+that line, not the flag, is the count to record.
+
+`task test:unit` and `task test:repeat` pass no Rapid flags, so they run the defaults: 100 checks and a fresh seed on
+every run. The five runs of `task test:repeat` therefore try different inputs, and a rare failing input can fail one
+run and pass the next on the same tree. That is a failing input Rapid found, not noise: replay it with the seed it
+printed before doing anything else.
 
 When a check fails, Rapid prints the seed to replay it with and writes the shrunk failing case to a `.fail` file under
 the package's `testdata/rapid/<TestName>/`. Replay with the printed seed, or with `-rapid.failfile=<path>`. If that
@@ -240,8 +245,9 @@ A `.fail` file is untracked and is not covered by `.gitignore`. `task verify` re
 on them, so check `git status` after a red run. Do not commit `.fail` files as they appear: record the seed and input
 in the pull request, and keep a case that matters as a named, deterministic test.
 
-Write generators that produce only valid inputs. `TestNoSkippedTests` matches any `.Skip(`, `.Skipf(` or `.SkipNow(`
-call in a test file, including one on Rapid's `*rapid.T`.
+Write generators that produce only valid inputs. Rapid's `*rapid.T` has `Skip`, `Skipf` and `SkipNow`, which discard
+the current case, and `TestNoSkippedTests` matches any `.Skip(`, `.Skipf(` or `.SkipNow(` call in a test file,
+including those.
 
 ## Concurrency and cleanup
 

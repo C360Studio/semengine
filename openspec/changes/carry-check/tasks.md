@@ -33,27 +33,27 @@ test (`design.md`, "Tests").
 
 ## 3. The check
 
-- [ ] 3.1 (D) `TestCheckSensitivity`, written first, plants each violation in a temporary tree and requires exit 1
+- [x] 3.1 (D) `TestCheckSensitivity`, written first, plants each violation in a temporary tree and requires exit 1
       with the entry, the file and the kind named: a one-line edit in a non-test file, in a test file and in a
       `testdata` file; a file removed; a file added; a changed string literal that holds the module path; an import
       redirected to the destination of a `defer-exclude` entry; a destination that does not exist, one that starts
       with `/` and one with a `..` segment. `TestCheckScope` shows a carried entry passing, an `adapt` entry never
       failed, and a ledger with no `carry` entry passing with an unreachable remote. Gate: `task test:unit`.
-- [ ] 3.2 (D) The experiment of `docs/testing.md`, "Show that the test can fail", is run once on the comparison:
+- [x] 3.2 (D) The experiment of `docs/testing.md`, "Show that the test can fail", is run once on the comparison:
       with test files left out of the covered files, `TestCheckSensitivity` fails on its test-file case. The change
       and the three outputs are recorded on this pull request.
-- [ ] 3.3 (D) `TestCheckPinUnreadable`, written first, shows exit 2 and the message of design D5 for a remote that
+- [x] 3.3 (D) `TestCheckPinUnreadable`, written first, shows exit 2 and the message of design D5 for a remote that
       refuses, and for a remote that never answers with the fetch bound set under a second. The bound is one for
       the whole run, not one per SHA. Gate: `task test:unit`; the test's time in `task test:repeat` is recorded.
-- [ ] 3.4 (D) `TestCommandExitStatus`, written first, runs the program as a separate process, the way
+- [x] 3.4 (D) `TestCommandExitStatus`, written first, runs the program as a separate process, the way
       `task ledger:check` runs it, in a temporary tree with a planted `carry` violation and a local repository as
       the remote: it requires a non-zero exit and the violation's message, and exit 0 for the same tree with no
       `carry` entry. Shown to fail with the program's exit status dropped. Gate: `task test:unit`.
-- [ ] 3.5 (D) `task ledger:check` runs the schema tests and then the program; `task ledger:diff` exists and its
+- [x] 3.5 (D) `task ledger:check` runs the schema tests and then the program; `task ledger:diff` exists and its
       description says it reads GitHub. `TestLedgerCheckWiring` and its `Sensitivity` pair in
       `internal/harness/contract`, written first, fail when `Taskfile.yml` drops the program's command or adds
       anything that discards its exit status. Gates: `task ledger:check` and `task test:unit`.
-- [ ] 3.6 (D) The new package passes `task test:repeat -- ./internal/harness/pindiff`, `task lint`, `task vuln` and
+- [x] 3.6 (D) The new package passes `task test:repeat -- ./internal/harness/pindiff`, `task lint`, `task vuln` and
       `task tidy:check`, the last with no new module in `go.mod`.
 
 ## 4. Evidence against the real pin

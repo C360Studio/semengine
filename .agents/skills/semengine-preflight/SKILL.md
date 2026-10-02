@@ -80,8 +80,9 @@ preflight steps.
 ## Report evidence and remaining gates
 
 Record the tested HEAD (or dirty snapshot), exact command, exit status, assertions/tests actually exercised,
-and log/artifact location. Separate failure, skip, no selected tests and compilation-only results. When the
-implementation changes, older green results remain evidence for the older revision. Preserve the command's
+and log/artifact location. A log under a path git ignores (`.evidence/`, `coverage/`) is on this host only: say so,
+and put the output a reader needs in the PR. Separate failure, skip, no selected tests and compilation-only results.
+When the implementation changes, older green results remain evidence for the older revision. Preserve the command's
 failure status when filtering output; do not infer success from a quiet log.
 
 Resolve failures from evidence; a successful re-run is not a fix for a flake. A red that your diff does not explain

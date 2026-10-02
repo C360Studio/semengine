@@ -536,15 +536,27 @@
     handler not run); handler_test.go's
     TestServerStopIsCallerBounded asserted the pin's nil repeat before the release (pin
     handler_test.go:461) and now asserts context.Canceled, with the nil Stop after the release;
-    in metric/registerorget_test.go, design D9 tests 1-8, written first and failing against the
-    pin's registration methods behind the new signature (a temporary shim, removed): same key over
-    Counter, Gauge, Histogram, CounterVec, GaugeVec and HistogramVec gathered as 2
-    (TestRegisterOrGetSameKeyReturnsCanonicalCollector; at the pin all six gathered 1);
-    TestRegisterOrGetRefusesSameKeyOfAnotherType, ...SameKeyWithDifferentHelp, ...NilCandidates,
-    ...CrossKeyAlias, ...CoreMetricCollision, ...DirectRegistrationCollision and
-    TestRegisterOrGetConcurrentCallersShareOneCollector, each asserting gathered values; guard
-    mutations each fail a named test (type check, descriptors, the alias branch storing; removing
-    the nil guard panics). Tests replaced, pin registry_test.go: TestMetricsRegistrar_Interface
+    in metric/registerorget_test.go, design D9 tests 1-8, each written first, with the oracle D9
+    lists: TestRegisterOrGetSameKeyReturnsCanonicalCollector (gathered 2 over six kinds),
+    ...RefusesSameKeyOfAnotherType, ...SameKeyWithDifferentHelp, ...CrossKeyAlias,
+    ...CoreMetricCollision and ...DirectRegistrationCollision (fatal error, zero collector and the
+    gathered value of the collector already registered), ...RefusesNilCandidates (fatal error, zero
+    collector, no panic, nothing in the key map; no gathered value) and
+    TestRegisterOrGetConcurrentCallersShareOneCollector (one identity, gathered as the worker count).
+    Failing first, implementer-reported, against the pin's registration methods behind the new
+    signature (a temporary shim, removed): all six same-key kinds gathered 1; the type, help,
+    nil-Counter, alias and direct-collision cases were accepted; the typed-nil *GaugeVec and the
+    core collision were already refused at the pin, the core test failing only on the returned
+    candidate; the concurrent callers got different collectors. Guard mutations, implementer-
+    reported: the type check, the descriptor check and the alias branch storing each fail a named
+    test; removing the nil guard fails no assertion but crashes the run with a nil-pointer panic
+    inside Prometheus' Register. In metric/registerorget_prop_test.go, D9's generated check
+    TestPropRegisterOrGetHistory: a Rapid state machine over RegisterOrGet, Unregister and writes
+    through returned handles, compared after every step with a test-owned reference model and
+    through Gather; it logs how often each assertion ran; implementer-reported, a planted removal of
+    the type check is found after 3 tests (seed 1320 run, shrunk to two registrations of k0: a
+    gauge, then a counter of the same name and help, accepted) and storing in the alias branch
+    after 0 tests (a gauge vector with the core status descriptor under a free key, accepted). Tests replaced, pin registry_test.go: TestMetricsRegistrar_Interface
     (:360) and TestMetricsRegistry_IdempotentDuplicateRegistration (:254-275) deleted;
     RegisterCounter (:22), RegisterGauge (:50) and RegisterHistogram (:225) replaced by test 1's
     Counter, Gauge and Histogram cases; RegisterOrGetGaugeVecReturnsCanonicalCollector (:78) by test

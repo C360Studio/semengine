@@ -201,12 +201,16 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       on 41e1d86.
 - [x] 3.5a (D) `metric` registration, design D9 (Codex review finding 4, PR #48 comment 5956732582; owner-accepted
       2026-10-02): `RegisterOrGet[C]` replaces `MetricsRegistrar`, `RegisterOrGetGaugeVec` and the six `Register*`
-      methods; tests 1-8 of D9 written first and shown failing, each asserting gathered values; the `metric` row
+      methods; tests 1-8 of D9 written first, each with the oracle D9 names (test 4 asserts errors, zero returns and
+      the key map, not gathered values), plus D9's generated check `TestPropRegisterOrGetHistory`; the `metric` row
       records the contract sentence, the adapt items (`registry.go:16-25, :27-60, :127-278, :246`; `doc.go:14,
       :75-97, :111, :125, :136, :196-209, :236-253, :372-377`, the design's `:245` widened to the error list beside
       it; the README registration examples under #9 comment 5957221949), the tests replaced, and the consumer
-      impact. Done in e78d0ce: at the pin's methods behind the new signature every same-key case gathered 1 where 2
-      was written and every refusal case was accepted; `task verify` ok on e78d0ce.
+      impact. Done in e78d0ce. Failing first, implementer-reported, at the pin's methods behind the new signature:
+      every same-key case gathered 1 where 2 was written; the type, help, nil-`Counter`, alias and direct-collision
+      cases were accepted; the typed-nil `*GaugeVec` and the core collision were already refused at the pin (test 6
+      failed only on the returned candidate). The generated check and the corrected evidence landed with the third
+      review's fixes (PR #48 comment 5959412053, findings 2 and 4). `task verify` ok on e78d0ce.
 - [ ] 3.6 (D) `message`, `pkg/cache` (level 5): `message` row `carry` (`google/uuid` direct; its two tests that used
       `internal/semantictest` import the harness copy); `pkg/cache` row `adapt`: its 26 sleeps are repaired under
       `synctest` with its 30 `t.Parallel()` calls removed (D8 R1); `TestCoalescingSet_EntityUpdateScenario`,

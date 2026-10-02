@@ -37,7 +37,8 @@ or runtime mechanics; they do not replace this project-specific role.
    contract, proving tests, disposition) and stay inside it; changed behavior needs a failing-first test, unchanged
    extraction retains the earned tests and adds only missing boundary evidence. Avoid opportunistic refactors.
 3. Use TDD: add a behavior-level failing test, observe the intended failure, implement the minimum complete change,
-   then run focused tests before broader gates.
+   then run focused tests before broader gates. A design states concurrent behaviour, not the mechanism: the mutex,
+   wait group and join order are yours to choose, settled by a failing-first test under `-race`.
 4. Trace the complete path from the consumer-visible contract to storage and back when applicable.
 5. Report exact commands and outcomes. Do not mark mixed OpenSpec task wording complete; give the technical writer
    evidence for conservative task-truth updates.
@@ -95,6 +96,10 @@ into the handoff:
 
 The architect's surface and adopter seam inventories answer these at design time. This check is the
 implementation-time re-run, scoped to the slice you touch: slices grow symbols the design never named.
+
+If question 1 finds no owner and what you are adding is meant for reuse across packages, you are establishing a
+pattern. List in the handoff every other package or seam that should adopt it, each at `file:line`. Listing is the
+whole obligation; migrating them is not part of this slice (architect contract, the adoption sweep).
 
 ## Exported-surface contracts
 
@@ -171,30 +176,44 @@ BEFORE implementation.
 
 ## Test and operational fidelity
 
+The reasoning behind these rules, and the mutation procedure step by step, is in `docs/testing.md`.
+
 - Test behavior and outcomes through production constructors, codecs, and wire formats. Helper-only tests do not
   prove the assembled system. Expected values come from an independent oracle, never from the implementation's own
   algorithm.
 - Extraction retains the source package's relevant tests and adds missing boundary tests; changed behavior is proven
   by a failing-first test.
+- Extraction applies the slice design's surface audit (architect contract, Extraction slices). What the design marks
+  dropped is not carried "for now", and a config field that stays gets the test that fails when it is ignored.
 - Any new exported surface that parses, decodes, or validates external bytes or strings (subjects, keys, entity IDs,
   payload envelopes, config) ships with a native `Fuzz*` target and a seed corpus covering each grammar class it
   accepts AND each it must reject, asserting an invariant (never panics; round-trips; rejection is a typed error).
-  Where fuzzing is genuinely inapplicable, say why; silence is the finding, not the exemption.
+  Where fuzzing is genuinely inapplicable, say why; silence is the finding, not the exemption. Report seed replay and
+  any exploratory `-fuzz` run separately.
+- For an input format with interacting cases, a transformation with a stated law, or an order-dependent history,
+  record before writing tests whether the change uses generated checks or why named examples suffice; a test count or
+  "existing tests pass" is not a reason (`docs/testing.md`, "Decide whether generated checks are needed").
 - A property-based test encodes an invariant the design cited, never one inferred from the implementation. The
   generator must provably reach every boundary the cited clause names, by construction or by a committed shrunk
   counterexample from a mutation kill; a wide range that merely strides a bound catches an off-by-one only
-  probabilistically.
+  probabilistically. Reaching an input is not running the assertion: state what makes each assertion run. A history
+  is compared against a test-owned reference model filled from the requirement, never from production code. A run
+  records its seed, the checks completed (read from the output, not the budget requested), and a replayable failure.
+- A mutation check reports only its observed outcome. A survivor or an inconclusive run is recorded as such and is
+  never a detection; a generated failure is replayed with the same input or seed against the wrong change and the
+  original (`docs/testing.md`, "Show that the test can fail").
 - Use ephemeral ports, explicit synchronization instead of sleeps, and no `t.Parallel()` around process-global state
   such as `slog.SetDefault`. Explain wall-clock assertions and give them realistic tolerance.
 - Run gates through the Task entrypoint: focused tests during iteration, then `task verify` before an implementation
-  push (`task test:unit`, `task vet`, `task lint`, `task build`, `task vuln`, `task tidy:check`, `task fmt:check`,
-  `task spec:check`). Integration and consumer lanes are added to the gate graph when their packages and workload
-  exist; until then there is no such gate to claim.
+  push; `scripts/verify.sh` lists the gates it runs, including `task test:integration` and `task cover:check`.
+  Consumer lanes are added to the gate graph when their packages and workload exist; until then there is no such
+  gate to claim.
 - For paid LLM calls, cloud runs, prolonged CI, or other costly operations, validate monitor filters and actively poll
   authoritative state every 30-60 seconds. Compare progress timestamps and abort promptly when a wedge is proven.
 
 ## Handoff
 
-Summarize the implemented task slice, semantic blast radius, tests and exact results, unresolved gates, and any
+Summarize the implemented task slice, semantic blast radius, tests and exact results (the record in `docs/testing.md`,
+"What the pull request records", including what was not covered and unresolved survivors), unresolved gates, and any
 follow-up owned by the architect, reviewer, or technical writer. Name every issue the slice filed (protocol **File**
 ritual); a filing the ritual would not admit is an unresolved gate. Do not claim completion from compilation alone.

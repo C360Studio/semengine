@@ -75,7 +75,9 @@ prompted mechanism, proposed symbol, issue claim, prior design, and briefing ass
    the same semantic class. Verify the collision table covers catalogs, status, lifecycle, ownership, readers, writers,
    and recovery even when the existing owners use different names.
 4. Attempt to refute both claimed gaps and claimed completeness with code, configuration, generated artifacts, tests,
-   current specs, ADRs, and active changes.
+   current specs, ADRs, and active changes. Run the open-pull-request listing yourself, as the architect contract's
+   inventory category 3 gives it (including its 100-file limit): an open pull request, draft or not, whose changed
+   files or OpenSpec capabilities overlap the change and that the inventory does not list is a finding.
 5. Return `INVENTORY PASS` only when the inventory is sufficiently complete to begin design. Any missing same-class
    owner or incomplete triggered collision table is `BLOCKING`; return `INVENTORY CHANGES REQUESTED` and do not review
    or suggest a target state.
@@ -87,6 +89,15 @@ dropping collisions, frames genuine options including do nothing and extension o
 premise, and introduces no phantom consumer or unreviewed surface. Independently try to falsify the recommendation and
 its claimed costs. Return `DESIGN REVIEW PASS` or `DESIGN CHANGES REQUESTED`; neither verdict is owner approval.
 Runtime implementation and spec promotion remain blocked until the owner explicitly accepts the reviewed design.
+
+Three further checks, scoped as the architect contract (Extraction slices) states:
+
+- A design statement about how the SemStreams pin behaves, with no pin-probe result behind it, is a finding.
+- A design that does not state, for each overlapping open pull request in its inventory, which merges first is a
+  finding.
+- A finding about a lock, a join or a race between two calls is resolved by removing the mechanism from the design
+  and adding the behaviour's failing-first test to `tasks.md`, not by another design round. A design gets three
+  review rounds (`.agents/README.md`, Orchestrating role agents).
 
 ## Contract and task-truth review
 
@@ -166,18 +177,27 @@ Runtime implementation and spec promotion remain blocked until the owner explici
 
 ### Test fidelity
 
+- `docs/testing.md` is the developer-facing long form of these checks. A diff that contradicts it is a finding
+  against one of the two.
 - Tests drive production constructors, codecs, and wire formats rather than only helpers. Expected values come from
   an independent oracle; a test that recomputes the expected value with the implementation's own algorithm cannot
   fail and is a finding.
 - Verify controlled mutation evidence where a guarantee rests on a refusal or signal: baseline, valid mutant, intended
-  assertion, and restored baseline. A completion checkbox is not evidence.
+  assertion, and restored baseline. A completion checkbox is not evidence. A survivor or inconclusive run claimed as
+  a detection, a generated failure not replayed with the same input against both versions, or an unresolved survivor
+  missing from the handoff is a finding.
 - Network listeners use ephemeral ports. Tests mutating global state such as `slog.SetDefault` are not parallel.
 - Wall-clock assertions have a rationale and realistic tolerance; concurrent tests use explicit synchronization.
 - A new **exported** parse/decode/validate surface without a fuzz target and seed corpus is a finding; check the
-  harness asserts an invariant, not a table of expected outputs replayed through `f.Add`.
+  harness asserts an invariant, not a table of expected outputs replayed through `f.Add`. Seed replay reported as
+  fuzz exploration is a finding.
+- Where `docs/testing.md` "Decide whether generated checks are needed" applies, a missing decision, or a rationale
+  that is a test count or "existing tests pass", is a finding.
 - A property-based test is reviewed against the design's cited invariant, not the diff. A property that mirrors the
   implementation's branching is the test-that-reconstructs finding at property scale. Verify the generator reaches
-  every boundary the clause names; a bound the generator cannot hit is unguarded.
+  every boundary the clause names; a bound the generator cannot hit is unguarded. Check separately what makes each
+  assertion run (an always-empty loop checks nothing), that a history's reference model is not filled from production
+  code, and that the run's seed, completed check count and replay command are recorded.
 - Paid or prolonged operations use validated monitors plus active polling of authoritative state every 30-60 seconds.
 
 ## Adopter seam review
@@ -218,6 +238,28 @@ Runtime implementation and spec promotion remain blocked until the owner explici
   fallback, drops an element, or runs with less than was asked either refuses loudly or emits BOTH a log line and a
   metric naming what was skipped and why continuing is safe, with the choice stated at the site. An emitted signal no
   test observes is the same finding: an unobserved signal rots.
+
+## Port-time and pattern review
+
+- **A diff that establishes a reusable primitive without an adoption enumeration is a finding.** This is the
+  complement of the problem-shape check: when the nearest existing instance is "none" and the primitive is meant for
+  reuse, require the list of packages and seams that should adopt it, each at `file:line`, and its tracking issue.
+  Do not require the migrations.
+- **Check the surface audit on every extraction slice.** Run the three searches yourself on the ported package:
+  exported symbols with no caller here and no symbol-level use by a consumer `docs/inventory-scope.md` names; config
+  fields with no behavioral reader, and whether an unknown key is refused; described behavior with no
+  implementation. An item the slice design did not list is a finding. A kept config field without a test that fails
+  when the field is ignored is a finding.
+- **Check that the package's guidance came with it.** The slice names the SemStreams contract sections and skills
+  that apply to the package and carries the adapted text. A ported package whose known footguns are documented only
+  in SemStreams is a finding.
+- **Check a boundary change against the stated purpose.** A design that sets or moves a boundary carries the intent
+  table (architect contract, Intent check). A capability `AGENTS.md` names that is deferred or excluded with no
+  owner ruling cited is `BLOCKING` at inventory review.
+- **A new rule names what enforces it.** A change that adds a repository-wide rule or a rule of agent conduct (in a
+  contract, the protocol, `.agents/README.md`, or `AGENTS.md`) states the command or test that fails when the rule is
+  broken, or says "review only", and adds its row to the `AGENTS.md` rule index in the same change. A capability
+  spec's requirements are indexed by that spec.
 
 ## Coverage review
 

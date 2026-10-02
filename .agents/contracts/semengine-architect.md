@@ -49,6 +49,38 @@ frozen: a SemStreams change after the pin is its own ledger row, never an implie
 prevention, context ownership, completed joins, authority and readiness, acknowledged durability, and
 metadata/content preservation are admission gates that an issue, an elapsed budget, or a coverage number cannot waive.
 
+Three obligations ride on every slice design in addition to its ledger row:
+
+- **Probe the pin before designing its port.** A pin probe is a run of this repository's checks against a copy of
+  the SemStreams pin, before any code is ported (not to be confused with the `internal/harness/probe` test package).
+  The inventory for a porting change includes three runs on that copy: the lifecycle suite against each service the
+  change ports; the unit tests five times at one CPU in shuffled order and once under the race detector (the runs
+  `task test:repeat` and `task test:unit` make); and the list of lines the test-text rules reject (`time.Sleep`,
+  skips, build tags other than `integration`). Every design statement about how the pin behaves cites a probe result,
+  as step 5 of the workflow above requires of any premise. PR #48's tasks 2.0 and 2.0b are the worked example: run
+  after the design had passed review, the probe contradicted two of its decisions.
+
+  This rule, the open-pull-request listing in inventory category 3, and "Specify behaviour, not mechanism" under
+  Design discipline come from PR #48's design review (issue #53). They bind changes 2 to 7 of Slice 04A and later
+  work; they are not applied backwards to PR #48.
+
+- **Surface audit.** Porting is the cheapest moment to leave unused surface behind. For the package being ported,
+  list (a) exported symbols with no caller inside SemEngine and no symbol-level use by a consumer
+  `docs/inventory-scope.md` names; (b) config fields that are parsed or validated but read by no behavior, and
+  unknown keys that are accepted silently; (c) behavior a doc comment, README, or schema describes that no code
+  implements. Each item is dropped, moved under `internal/`, or kept with its reason stated in the slice design. A
+  config field that stays has a test that fails when the field is ignored. A capability admitted by owner mandate is
+  wanted even before it has a caller: "no caller" answers whether something is wired, never whether it is wanted.
+  These were SemStreams' largest open defect classes on 2026-10-01: 57 distinct issues labelled
+  `class:advertised-absent`, `class:silent-noop-surface`, `class:phantom-config`, or `class:dead-surface`, 45 of
+  them still open.
+- **Guidance returns with the package.** SemStreams' developer and reviewer contracts carry package-specific
+  sections (semantic identity and graph, storage and retention, NATS RPC, payload registry, state ownership and
+  component wiring, orchestration) and skills (`entity-or-bucket`, `kv-or-stream`, `new-payload`,
+  `orchestration-check`, `query-pattern`). They were left out of this repository until the code they govern exists.
+  The slice design names which of those sections and skills apply to the package, read at the pin, and carries the
+  adapted text as part of the change. A package that lands without its guidance has lost the lessons learned on it.
+
 ## The surface inventory (mandatory first deliverable)
 
 The inventory is a file, `openspec/changes/<id>/inventory.md`, with a `base: <sha>` header and every entry pinned as
@@ -66,8 +98,13 @@ each either cited at `file:line` or closed with the exact searches that came up 
    persisted. More than one home is a defect to consolidate toward ONE shared primitive, never a pattern to extend. A
    design that adds another spelling is wrong at birth.
 3. **Adjacent claims on the territory.** Current specs, ADRs, active changes, filed issues, admission-ledger rows,
-   and consumer asks that already cover or constrain the touched surface. Name overlaps and conflicts explicitly
-   rather than designing around them silently.
+   open pull requests (drafts included: a draft is a claim), and consumer asks that already cover or constrain the
+   touched surface. List every open pull request whose changed files or OpenSpec capabilities overlap the planned
+   change, from `gh pr list --state open --json number,title,changedFiles,files`. That listing stops at 100 files
+   for each pull request and says nothing when it does: where `changedFiles` is over 100, read the whole list with
+   `gh api --paginate repos/C360Studio/semengine/pulls/<n>/files --jq '.[].filename'`. A capability overlap shows in
+   the file list as a delta under `openspec/changes/<id>/specs/<capability>/`. Name overlaps and conflicts explicitly
+   rather than designing around them silently; the design then states, for each overlap, which merges first.
 4. **The consumer at birth.** For every new exported symbol, port, subject, bucket, or config field the design
    introduces: name its present consumer. Zero present consumers removes it from the design; "for observability"
    and "for future use" are the phantom-surface shape.
@@ -79,6 +116,32 @@ each either cited at `file:line` or closed with the exact searches that came up 
 
 An inventory that is genuinely empty in a category says so with the searches that prove it; that is a real and useful
 result, not a formality to skip.
+
+### The adoption sweep (the establishing side)
+
+Category 5 asks whether a pattern for this shape already exists. When its answer is "no existing instance", the
+design is establishing one and owes the other direction: who else should adopt it. A change establishes a pattern
+when it introduces a named primitive meant for reuse across packages (a validator, gate, authority, classified-error
+family, dispatcher, settlement or lifecycle shape) rather than solving one local problem. Every repair-before-port
+row that introduces such a primitive is an establishing change.
+
+The deliverable is an enumeration: one line per package or seam that should adopt the primitive, each pinned at
+`file:line`, carried in the design and filed as one tracking issue. It is never a migration obligation. The
+establishing change fixes none of them, and the number found does not block it; without that bound, an author under
+time pressure keeps the improvement local and never names it a pattern, which is worse. Run it when in doubt: a sweep
+on a non-pattern costs a paragraph, and a pattern that lands without one is rediscovered package by package.
+SemStreams' delivery-settlement contract is the worked case: it landed in `natsclient`, the agentic packages adopted
+it, and at the pin `processor/graph-ingest` still settles deliveries by hand.
+
+### Intent check
+
+A boundary derived only from what the current consumers import can drop a capability the product exists for; the
+first SETUP 03B draft excluded the rule engine because neither SemSource nor SemConnect imports it. Whenever a design sets
+or moves a boundary (the port set, tier membership, a package exclusion, a capability deferral), the inventory
+carries one table: every capability `AGENTS.md` "What this is for" names, marked **admitted**, **deferred**, or
+**excluded**, each with the owner ruling that says so (issue and comment) or the words "no ruling". A deferred or
+excluded capability with no ruling is an owner question raised in the handoff, never a default. Consumer need decides
+order, never membership.
 
 ### Inventory mechanics
 
@@ -168,6 +231,11 @@ yes, the framework absorbing the failure IS the design, and the adopter-facing k
   only when all tasks join.
 - **Cancellation authority stays private.** A lifecycle owner may retain only a private, correctly synchronized
   `context.CancelFunc`; it may not retain the context itself. Design exported `context.CancelFunc` hits out.
+- **Specify behaviour, not mechanism.** For concurrent and lifecycle work the design states what a caller can
+  observe (what each call returns, which errors, what is still held or running afterwards) and names the test that
+  proves each. It does not choose the mutex, the wait group or the order of joins; the developer does, settled by a
+  failing-first test under `-race`. The context rules above are prohibitions on what code may hold, not mechanism
+  choices, and still bind the design.
 - Extend the model, never build a channel beside it. A parallel declaration buys a resolution layer whose whole job
   is re-deriving a linkage the model already had. The tell: a design note admitting the linkage rests on a naming
   coincidence.

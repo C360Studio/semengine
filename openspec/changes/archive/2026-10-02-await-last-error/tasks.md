@@ -34,14 +34,16 @@ something that happens after the last content commit.
       `f39ead2`.
 - [x] 2.2 Independent implementation review at `f39ead2` (changes requested, nothing blocking), and its re-check
       of the fixes at `474aa38` (approve), both recorded on PR #59.
-- [ ] 2.3 Hold: known flake #62 is fixed on `main` first (PR #63). Then `task verify` passes on the branch's
-      last commit before the archive commit, with the branch up to date with `main`.
-- [ ] 2.4 The change is archived and `openspec/specs/lifecycle-suite/spec.md` synced as the last content
+- [x] 2.3 Known flake #62 was fixed on `main` by PR #63 (`e69b59a`), and `main` merged in as `8e38e89`.
+      `task verify` passed on `8e38e89`, the branch's last commit before the archive commit, with the branch
+      up to date with `main`.
+- [x] 2.4 The change is archived and `openspec/specs/lifecycle-suite/spec.md` synced as the last content
       commit; `task spec:check` passes and `task spec:queue` shows no open hold.
 
-Leg-2 evidence so far: the implementation review at `f39ead2` found the test and the delta correct,
+Leg-2 evidence: the implementation review at `f39ead2` found the test and the delta correct,
 reproduced the mutation check (three mutants, all detected) and asked for three changes, made in the
 commit after it: tasks 2.3 and 2.4 as first written could not be ticked before the archive; the doc
 comment on `Await` kept the phrase the ruling resolved; and the leg-1 evidence pointed at local files.
 `task verify` on `f39ead2` failed in `test:repeat` on `TestSignalDuringPullReapsThePull`, a runner test
-this change does not touch. That is known flake #62, claimed by PR #63, and this change waits for it.
+this change does not touch. That was known flake #62; PR #63 fixed it. The run on `8e38e89` started
+2026-10-02T15:06:29Z and exited 0, every step passing, `test:repeat` included.

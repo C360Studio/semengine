@@ -107,10 +107,8 @@ func TestRetry_BackoffTiming(t *testing.T) {
 
 		elapsed := time.Since(start)
 
-		// Should have delays: 10ms + 20ms + 40ms = 70ms minimum
-		assert.GreaterOrEqual(t, elapsed, 70*time.Millisecond)
-		// Should not exceed 10ms + 20ms + 40ms + some overhead
-		assert.Less(t, elapsed, 150*time.Millisecond)
+		// Delays: 10ms + 20ms + 40ms; on the bubble's clock there is no overhead
+		assert.Equal(t, 70*time.Millisecond, elapsed)
 		assert.Equal(t, 4, attempts)
 	})
 }
@@ -134,10 +132,8 @@ func TestRetry_MaxDelay(t *testing.T) {
 
 		elapsed := time.Since(start)
 
-		// Should have delays: 10ms + 25ms (capped) + 25ms (capped) = 60ms minimum
-		assert.GreaterOrEqual(t, elapsed, 60*time.Millisecond)
-		// Should not exceed reasonable overhead
-		assert.Less(t, elapsed, 150*time.Millisecond)
+		// Delays: 10ms + 25ms (capped) + 25ms (capped); on the bubble's clock there is no overhead
+		assert.Equal(t, 60*time.Millisecond, elapsed)
 	})
 }
 

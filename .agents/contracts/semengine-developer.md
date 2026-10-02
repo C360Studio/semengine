@@ -37,7 +37,8 @@ or runtime mechanics; they do not replace this project-specific role.
    contract, proving tests, disposition) and stay inside it; changed behavior needs a failing-first test, unchanged
    extraction retains the earned tests and adds only missing boundary evidence. Avoid opportunistic refactors.
 3. Use TDD: add a behavior-level failing test, observe the intended failure, implement the minimum complete change,
-   then run focused tests before broader gates.
+   then run focused tests before broader gates. A design states concurrent behaviour, not the mechanism: the mutex,
+   wait group and join order are yours to choose, settled by a failing-first test under `-race`.
 4. Trace the complete path from the consumer-visible contract to storage and back when applicable.
 5. Report exact commands and outcomes. Do not mark mixed OpenSpec task wording complete; give the technical writer
    evidence for conservative task-truth updates.

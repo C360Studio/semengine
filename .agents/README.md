@@ -58,6 +58,10 @@ where to cut, and the avoidable cost was in the briefs.
   the reviewer checks it like any other claim.
 - **Resume for continuity, start fresh for mechanics.** A resumed agent re-reads its own transcript on every resume.
   For a mechanical follow-up, a fresh agent with a precise brief costs less.
+- **A design gets three review rounds.** Findings still open after the third go to the owner on the issue, with the
+  choice stated, instead of a fourth round. This does not cut review short; it moves the choice to the person who
+  can make it. PR #48's design took at least eleven rounds before any code (issue #53). The architect contract's
+  rules on pin probes, open pull requests and behaviour-not-mechanism remove the causes of most of them.
 - **Scope an inventory before it starts.** `docs/inventory-scope.md` says which repositories may be read and for what
   question. An inventory names its question and its repositories first.
 

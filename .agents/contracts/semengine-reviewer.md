@@ -75,7 +75,9 @@ prompted mechanism, proposed symbol, issue claim, prior design, and briefing ass
    the same semantic class. Verify the collision table covers catalogs, status, lifecycle, ownership, readers, writers,
    and recovery even when the existing owners use different names.
 4. Attempt to refute both claimed gaps and claimed completeness with code, configuration, generated artifacts, tests,
-   current specs, ADRs, and active changes.
+   current specs, ADRs, and active changes. Run the open-pull-request listing yourself, as the architect contract's
+   inventory category 3 gives it (including its 100-file limit): an open pull request, draft or not, whose changed
+   files or OpenSpec capabilities overlap the change and that the inventory does not list is a finding.
 5. Return `INVENTORY PASS` only when the inventory is sufficiently complete to begin design. Any missing same-class
    owner or incomplete triggered collision table is `BLOCKING`; return `INVENTORY CHANGES REQUESTED` and do not review
    or suggest a target state.
@@ -87,6 +89,15 @@ dropping collisions, frames genuine options including do nothing and extension o
 premise, and introduces no phantom consumer or unreviewed surface. Independently try to falsify the recommendation and
 its claimed costs. Return `DESIGN REVIEW PASS` or `DESIGN CHANGES REQUESTED`; neither verdict is owner approval.
 Runtime implementation and spec promotion remain blocked until the owner explicitly accepts the reviewed design.
+
+Three further checks, scoped as the architect contract (Extraction slices) states:
+
+- A design statement about how the SemStreams pin behaves, with no pin-probe result behind it, is a finding.
+- A design that does not state, for each overlapping open pull request in its inventory, which merges first is a
+  finding.
+- A finding about a lock, a join or a race between two calls is resolved by removing the mechanism from the design
+  and adding the behaviour's failing-first test to `tasks.md`, not by another design round. A design gets three
+  review rounds (`.agents/README.md`, Orchestrating role agents).
 
 ## Contract and task-truth review
 

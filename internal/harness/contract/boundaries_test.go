@@ -56,18 +56,26 @@ func TestBoundarySensitivity(t *testing.T) {
 	root, files := writeTree(t, map[string]string{
 		"go.mod": "module " + mod + "\n\nrequire (\n\tgithub.com/nats-io/nats.go v1.54.0\n\tgithub.com/c360studio/semstreams v1.0.0\n)\n",
 		// I8: a non-test file, a test file behind the integration tag, and an aliased import.
-		"pkg/a/a.go":                             "package a\n\nimport \"github.com/c360studio/semstreams/natsclient\"\n\nvar _ = natsclient.New\n",
-		"pkg/a/a_integration_test.go":            "//go:build integration\n\npackage a\n\nimport ss \"github.com/c360studio/semstreams\"\n\nvar _ = ss.X\n",
-		"pkg/a/near.go":                          "package a\n\nimport _ \"github.com/c360studio/semstreamsish\"\n",
-		"internal/harness/h/h_test.go":           "package h\n\nimport _ \"github.com/c360studio/semstreams/message\"\n",
-		"component/alpha/alpha.go":               "package alpha\n\n// Register adds alpha's factory.\nfunc Register(r any) error { return nil }\n",
-		"component/beta/beta.go":                 "package beta\n\nfunc Register(r any) error { return nil }\n",
-		"component/gamma/gamma.go":               "package gamma\n\nfunc New() {}\n",
-		"metricish/metricish.go":                 "package metricish\n\nimport \"github.com/prometheus/client_golang/prometheus\"\n\nvar _ = prometheus.Register\n",
-		"pkg/agg/one.go":                         "package agg\n\nimport \"" + mod + "/component/alpha\"\n\nvar _ = alpha.Register\n",
-		"pkg/agg/two.go":                         "package agg\n\nimport b \"" + mod + "/component/beta\"\n\nfunc init() { _ = b.Register(nil) }\n",
-		"pkg/single/single.go":                   "package single\n\nimport (\n\t\"" + mod + "/component/alpha\"\n\t\"" + mod + "/component/gamma\"\n)\n\nvar _, _ = alpha.Register, gamma.New\n",
-		"pkg/testagg/testagg_test.go":            "package testagg\n\nimport (\n\t\"" + mod + "/component/alpha\"\n\t\"" + mod + "/component/beta\"\n)\n\nvar _, _ = alpha.Register, beta.Register\n",
+		"pkg/a/a.go":                   "package a\n\nimport \"github.com/c360studio/semstreams/natsclient\"\n\nvar _ = natsclient.New\n",
+		"pkg/a/a_integration_test.go":  "//go:build integration\n\npackage a\n\nimport ss \"github.com/c360studio/semstreams\"\n\nvar _ = ss.X\n",
+		"pkg/a/near.go":                "package a\n\nimport _ \"github.com/c360studio/semstreamsish\"\n",
+		"internal/harness/h/h_test.go": "package h\n\nimport _ \"github.com/c360studio/semstreams/message\"\n",
+		"component/alpha/alpha.go":     "package alpha\n\n// Register adds alpha's factory.\nfunc Register(r any) error { return nil }\n",
+		"component/beta/beta.go":       "package beta\n\nfunc Register(r any) error { return nil }\n",
+		"component/gamma/gamma.go":     "package gamma\n\nfunc New() {}\n",
+		"metricish/metricish.go":       "package metricish\n\nimport \"github.com/prometheus/client_golang/prometheus\"\n\nvar _ = prometheus.Register\n",
+		"pkg/agg/one.go":               "package agg\n\nimport \"" + mod + "/component/alpha\"\n\nvar _ = alpha.Register\n",
+		"pkg/agg/two.go":               "package agg\n\nimport b \"" + mod + "/component/beta\"\n\nfunc init() { _ = b.Register(nil) }\n",
+		"pkg/single/single.go":         "package single\n\nimport (\n\t\"" + mod + "/component/alpha\"\n\t\"" + mod + "/component/gamma\"\n)\n\nvar _, _ = alpha.Register, gamma.New\n",
+		"pkg/testagg/testagg_test.go":  "package testagg\n\nimport (\n\t\"" + mod + "/component/alpha\"\n\t\"" + mod + "/component/beta\"\n)\n\nvar _, _ = alpha.Register, beta.Register\n",
+		// The pin's payloadbuiltins shape: one Register chaining two packages' RegisterPayloads.
+		"message/message.go":                 "package message\n\nfunc RegisterPayloads(r any) error { return nil }\n",
+		"storage/objectstore/objectstore.go": "package objectstore\n\nfunc RegisterPayloads(r any) error { return nil }\n",
+		"payloadbuiltins/builtins.go": "package payloadbuiltins\n\nimport (\n\t\"" + mod + "/message\"\n\t\"" + mod + "/storage/objectstore\"\n)\n\n" +
+			"func Register(r any) error {\n\tif err := message.RegisterPayloads(r); err != nil {\n\t\treturn err\n\t}\n\treturn objectstore.RegisterPayloads(r)\n}\n",
+		// A composition root is a main package: it may aggregate.
+		"cmd/consumer/main.go": "package main\n\nimport (\n\t\"" + mod + "/component/alpha\"\n\t\"" + mod + "/component/beta\"\n\t\"" + mod + "/message\"\n)\n\n" +
+			"func main() { _, _, _ = alpha.Register(nil), beta.Register(nil), message.RegisterPayloads(nil) }\n",
 		"internal/harness/natsfixture/f.go":      "package natsfixture\n\nimport _ \"" + mod + "/natsclient\"\n",
 		"internal/harness/natsfixture/ok.go":     "package natsfixture\n\nimport _ \"" + mod + "/internal/harness/probe\"\n",
 		"internal/harness/natsfixture/x_test.go": "package natsfixture\n\nimport _ \"" + mod + "/message\"\n",
@@ -83,7 +91,8 @@ func TestBoundarySensitivity(t *testing.T) {
 
 	agg := aggregatorViolations(t, root, files)
 	requireViolation(t, agg, "pkg/agg", "component/alpha", "component/beta")
-	for _, allowed := range []string{"pkg/single", "pkg/testagg", "metricish"} {
+	requireViolation(t, agg, "payloadbuiltins", "message", "storage/objectstore")
+	for _, allowed := range []string{"pkg/single", "pkg/testagg", "metricish", "cmd/consumer"} {
 		requireNotReported(t, agg, allowed)
 	}
 
@@ -228,10 +237,15 @@ func productionFilesByDir(files []string) map[string][]string {
 	return dirs
 }
 
-// aggregatorViolations is T-B8: a component package is a package of this module that declares a
-// top-level func Register; a production package (non-test files outside internal/harness/) that
-// refers to the Register of two or more of them is an aggregator. Register functions outside the
-// module (prometheus.Register) are not component factories.
+// registrations are the functions through which a package registers its factories or payloads.
+var registrations = []string{"Register", "RegisterPayloads"}
+
+// aggregatorViolations is T-B8: a registering package is a package of this module that declares a
+// top-level Register or RegisterPayloads; a production package (non-test files outside
+// internal/harness/, other than a main package) that refers to the registration of two or more of
+// them is an aggregator, as the pin's payloadbuiltins.Register was. A composition root is a main
+// package, and it is the one place that aggregates. Register functions outside the module
+// (prometheus.Register) are not counted.
 func aggregatorViolations(t *testing.T, root string, files []string) []string {
 	t.Helper()
 	mod := modulePath(t, root)
@@ -246,21 +260,23 @@ func aggregatorViolations(t *testing.T, root string, files []string) []string {
 		parsed[name] = f
 		return f, err
 	}
-	// componentName returns the package name of the module package at importPath when it declares
-	// a top-level func Register, and "" otherwise.
-	componentName := func(importPath string) string {
+	// registering returns the package name of the module package at importPath and the
+	// registration functions it declares at top level; none means it is not a registering package.
+	registering := func(importPath string) (string, []string) {
+		pkgName, declared := "", []string(nil)
 		for _, name := range byDir[strings.TrimPrefix(importPath, mod+"/")] {
 			f, err := parse(name)
 			if err != nil {
 				continue
 			}
+			pkgName = f.Name.Name
 			for _, d := range f.Decls {
-				if fn, ok := d.(*ast.FuncDecl); ok && fn.Recv == nil && fn.Name.Name == "Register" {
-					return f.Name.Name
+				if fn, ok := d.(*ast.FuncDecl); ok && fn.Recv == nil && slices.Contains(registrations, fn.Name.Name) {
+					declared = append(declared, fn.Name.Name)
 				}
 			}
 		}
-		return ""
+		return pkgName, declared
 	}
 	var violations []string
 	dirs := make([]string, 0, len(byDir))
@@ -270,43 +286,52 @@ func aggregatorViolations(t *testing.T, root string, files []string) []string {
 	slices.Sort(dirs)
 	for _, dir := range dirs {
 		var used []string
+		root := false
 		for _, name := range byDir[dir] {
 			f, err := parse(name)
 			if err != nil {
 				violations = append(violations, fmt.Sprintf("%s: parse: %v", name, err))
 				continue
 			}
-			local := map[string]string{} // name in this file -> component import path
+			if f.Name.Name == "main" {
+				root = true // a composition root
+				break
+			}
+			type registered struct {
+				path     string
+				declared []string
+			}
+			local := map[string]registered{} // name in this file -> registering package
 			for _, imp := range f.Imports {
 				p, _ := strconv.Unquote(imp.Path.Value)
 				if !strings.HasPrefix(p, mod+"/") {
 					continue
 				}
-				pkgName := componentName(p)
-				if pkgName == "" {
+				pkgName, declared := registering(p)
+				if len(declared) == 0 {
 					continue
 				}
 				if imp.Name != nil {
 					pkgName = imp.Name.Name
 				}
-				local[pkgName] = p
+				local[pkgName] = registered{p, declared}
 			}
 			ast.Inspect(f, func(n ast.Node) bool {
 				sel, ok := n.(*ast.SelectorExpr)
-				if !ok || sel.Sel.Name != "Register" {
+				if !ok {
 					return true
 				}
 				if id, ok := sel.X.(*ast.Ident); ok {
-					if p, ok := local[id.Name]; ok && !slices.Contains(used, p) {
-						used = append(used, p)
+					if r, ok := local[id.Name]; ok && slices.Contains(r.declared, sel.Sel.Name) && !slices.Contains(used, r.path) {
+						used = append(used, r.path)
 					}
 				}
 				return true
 			})
 		}
-		if len(used) >= 2 {
+		if !root && len(used) >= 2 {
 			slices.Sort(used)
-			violations = append(violations, fmt.Sprintf("%s: production package refers to Register of %d component packages %v; "+
+			violations = append(violations, fmt.Sprintf("%s: production package refers to the Register or RegisterPayloads of %d packages %v; "+
 				"only a consumer's composition root aggregates registrations", dir, len(used), used))
 		}
 	}

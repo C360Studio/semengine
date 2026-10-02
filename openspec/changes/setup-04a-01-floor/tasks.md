@@ -66,7 +66,7 @@ this pull request as a comment unless a task says otherwise. No task asserts a f
       read sees the new revision and `Calls()[Update] == 1`, and `FailBefore(Create)` leaves the key absent with
       count zero; `go vet` confirms the wrapper satisfies `jetstream.KeyValue`; `go list -deps
       ./internal/harness/natsfixture` shows no package of this module outside `internal/harness/`.
-- [ ] 2.4 (D) `internal/harness/prochost`: tests written first show (a) the helper test is a no-op without the
+- [x] 2.4 (D) `internal/harness/prochost`: tests written first show (a) the helper test is a no-op without the
       marker, (b) a started helper is in its own process group with output under the evidence directory, (c) a kill
       between two checkpoints leaves the first checkpoint's file and not the second's and `Wait` returns the killed
       status within its bound, (d) after `Pause` the process is observed stopped (`ps` state `T`, read through

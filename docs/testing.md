@@ -255,7 +255,7 @@ covered. Fill in the first part before writing the tests and the rest after runn
 marked as not run.
 
 ```text
-Decision:     generated check, examples enough, or not applicable, with the reason for this failure
+Decision:     generated check, examples enough, or not applicable; the reason says what could go wrong
 Rule:         the requirement it checks, and where the expected result comes from
 Inputs:       generated input or operation classes; fixed examples; what makes each assertion run
 Run:          commit, exact command, seed, checks completed, result; seed replay and -fuzz exploration apart
@@ -270,7 +270,8 @@ Not covered:  rules not exercised, unresolved survivors, deferred checks and the
 - Is this the lowest level that can show the behavior?
 - If the change met one of the criteria above, where are the baseline, wrong-change, and restored runs? Is any
   survivor or inconclusive run reported as such, not as a detection?
-- Was the decision on generated checks recorded, with a reason that addresses the failure, not a test count?
+- Was the decision on generated checks recorded, with a reason that says what could go wrong and why these tests
+  would catch it, not a test count?
 - Does the generator or seed corpus reach the boundary the rule is about, and what makes each assertion run?
 - Does a history test compare against a model the test owns, filled from the requirement and not from the code?
 - Do the seed, the number of checks completed and a replay command appear, with seed replay and fuzz exploration

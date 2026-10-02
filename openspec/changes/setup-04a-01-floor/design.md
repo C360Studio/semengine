@@ -122,7 +122,8 @@ the files it names lie outside the set (`processor/graph-index/…`), so it has 
   stdout/stderr captured to the evidence directory. `Process` offers `Signal(os.Signal)`, `Pause()`/`Resume()`
   (SIGSTOP/SIGCONT), `Kill()`, `Wait(ctx) (ExitStatus, error)`, `Alive() bool`. `t.Cleanup` kills the group and
   waits under a fresh bounded context, so no helper survives its test. Reused from `runner_test.go`: the
-  `exec.CommandContext` start, SIGTERM and `Process.Kill` paths, `Setpgid` and group signalling. "No pid behind"
+  `exec.Command` start (not `CommandContext`: the helper outlives `Start`), SIGTERM and `Process.Kill` paths,
+  `Setpgid` and group signalling. "No pid behind"
   uses the start-identity check of `runner_test.go` (`psStartIdentity` `:255`, `deadPID` `:293`), so a reused pid
   cannot pass as the helper; `pidAlive` (`:327`) alone is not enough. Pause is proven from observed state — `ps`
   reports the process stopped (state `T`) — never by waiting for a checkpoint that does not come; `prochost`'s

@@ -139,6 +139,11 @@ var signalGroup = func(pgid int, sig syscall.Signal) error { return syscall.Kill
 
 // Signal sends sig, which must be a syscall.Signal, to the helper's process group. Once the
 // helper has been reaped it sends nothing and returns an error, as Pause and Resume do.
+//
+// A reap that lands between the Alive check and the signal is not prevented: the kernel frees
+// the pid inside the reaper's blocking wait, so no lock can sit between them, and closing the
+// window needs a per-platform waitid(WNOWAIT) reaper. Reuse inside that window needs the pid
+// space to wrap within microseconds; for a test harness that residual is accepted.
 func (p *Process) Signal(sig os.Signal) error {
 	if !p.Alive() {
 		// Reaped: the group id may now name another process's group.

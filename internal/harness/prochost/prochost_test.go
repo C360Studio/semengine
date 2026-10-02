@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -24,14 +25,29 @@ const failureBound = 10 * time.Second
 func TestHelperProcess(_ *testing.T) {
 	Helper("checkpoints", checkpoints)
 	Helper("hello", func() {
+		terminated := parkUntilSIGTERM()
 		fmt.Println("hello from the helper")
 		fmt.Fprintln(os.Stderr, "hello on stderr")
-		block()
+		<-terminated
+		fmt.Println(helloTerminated)
 	})
 }
 
-// block parks the helper until it is signalled.
-func block() { select {} }
+// helloTerminated is what the hello helper prints once SIGTERM ends its park; only a helper that
+// stayed parked until the test signalled it can print it.
+const helloTerminated = "hello helper received SIGTERM"
+
+// parkUntilSIGTERM returns a channel that receives on SIGTERM, registered before it returns. A
+// helper parks on it, never on a bare select{}: the child runs with no test timeout, so a process
+// whose every goroutine blocks is killed by the runtime ("all goroutines are asleep", exit 2).
+func parkUntilSIGTERM() <-chan os.Signal {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, syscall.SIGTERM)
+	return c
+}
+
+// block parks the helper until SIGTERM, or until a signal it does not catch ends it.
+func block() { <-parkUntilSIGTERM() }
 
 // checkpoints reads one request per line from the FIFO named by HELPER_REQUESTS and, for request
 // n, writes checkpoint file n into HELPER_DIR; it blocks reading, so it makes progress only when the
@@ -133,6 +149,10 @@ func TestStartedHelperHasItsOwnGroupAndCapturedOutput(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if !p.Alive() {
+				stderr, _ := os.ReadFile(p.stderr)
+				t.Fatalf("helper %d exited before its group was read; stderr:\n%s", p.pid, stderr)
+			}
 			out, err := exec.Command("ps", "-o", "pgid=", "-p", strconv.Itoa(p.pid)).Output()
 			if err != nil {
 				t.Fatalf("ps pgid: %v", err)
@@ -153,6 +173,22 @@ func TestStartedHelperHasItsOwnGroupAndCapturedOutput(t *testing.T) {
 				if err != nil {
 					t.Fatalf("%q never reached %s: %v", stream, file, err)
 				}
+			}
+			// The helper stayed parked until now: it ends on SIGTERM, cleanly, and says so.
+			if err := p.Signal(syscall.SIGTERM); err != nil {
+				t.Fatalf("SIGTERM: %v", err)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), failureBound)
+			defer cancel()
+			status, err := p.Wait(ctx)
+			if err != nil {
+				t.Fatalf("wait after SIGTERM: %v", err)
+			}
+			data, _ := os.ReadFile(p.stdout)
+			if status != (ExitStatus{}) || !strings.Contains(string(data), helloTerminated) {
+				stderr, _ := os.ReadFile(p.stderr)
+				t.Fatalf("helper status %+v, stdout %q, stderr %q: want exit 0 after printing %q",
+					status, data, stderr, helloTerminated)
 			}
 		})
 	}

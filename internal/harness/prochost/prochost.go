@@ -6,6 +6,10 @@
 // cleanup that kills the group and joins the child. The start, group and signal paths are
 // generalised from internal/harness/runner/runner_test.go. Test-only: contract test T-B1 refuses
 // any production import.
+//
+// A helper that must stay up parks on a signal (signal.Notify for SIGTERM, then receive), never on
+// a bare select{}. The child runs with only -test.run, so no test-timeout timer keeps the runtime
+// waiting: once every goroutine blocks, Go kills it with "all goroutines are asleep" and exit 2.
 package prochost
 
 import (

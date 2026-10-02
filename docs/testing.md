@@ -165,10 +165,10 @@ exploratory `-fuzz` run with its exact command, its `-fuzztime`, and what it fou
 evidence of fuzz exploration.
 
 A property-based test generates many inputs or sequences of operations and checks a rule that must hold for all of
-them. The rule must come from the requirement, not from reading the implementation. No property-testing library is in
-`go.mod` today, and adding one is a dependency change of its own. SemStreams' property tests use `pgregory.net/rapid`;
-this page will name a library when one is admitted. A native fuzz target that checks a rule can serve as a property
-test.
+them. The rule must come from the requirement, not from reading the implementation. The property-testing library is
+Rapid, `pgregory.net/rapid` (admitted by the owner on 2026-10-02; SemStreams uses `v1.3.0`). It is not in `go.mod`
+yet: it enters with the first test that imports it, and no test in this repository uses it today. A native fuzz
+target that checks a rule can serve as a property test.
 
 For both tools, the generator must be able to reach the boundary the rule is about. A wide random range that only
 occasionally lands on a limit catches an off-by-one by luck. Being reachable is not the same as being exercised in a
@@ -216,6 +216,32 @@ read the number of checks actually completed from the tool's output. Record:
 - the number of checks completed;
 - for a failure, the failing input or operation sequence and the command that replays it. Keep an important failure
   as a named, deterministic test, because a change to the generator can change what an old seed produces.
+
+### Running and replaying a Rapid test
+
+Rapid's flags exist only in a package that imports Rapid, so name that package rather than `./...`.
+No package here uses Rapid yet; substitute your own package and test name:
+
+```bash
+go test ./pkg/example -run '^TestPropName$' -count=1 -race -v -rapid.checks=100 -rapid.seed=1320
+```
+
+`-rapid.checks` sets how many cases to try (default 100) and `-rapid.seed` fixes the seed; `-rapid.seed=0` asks for a
+fresh one. With `-v`, Rapid prints a summary of the checks it actually completed; that line, not the flag, is the
+count to record. `task test:unit` and `task test:repeat` pass no Rapid flags, so they run the defaults.
+
+When a check fails, Rapid prints the seed to replay it with and writes the shrunk failing case to a `.fail` file under
+the package's `testdata/rapid/<TestName>/`. Replay with the printed seed, or with `-rapid.failfile=<path>`. If that
+file is missing or no longer matches the generator, Rapid can log a diagnostic and fall through to fresh checks, so a
+green run is not proof the failure was replayed; read the `-v` output. Pass `-rapid.nofailfile` during a mutation
+check so the wrong change leaves no file behind.
+
+A `.fail` file is untracked and is not covered by `.gitignore`. `task verify` reports untracked files but does not fail
+on them, so check `git status` after a red run. Do not commit `.fail` files as they appear: record the seed and input
+in the pull request, and keep a case that matters as a named, deterministic test.
+
+Write generators that produce only valid inputs. `TestNoSkippedTests` matches any `.Skip(`, `.Skipf(` or `.SkipNow(`
+call in a test file, including one on Rapid's `*rapid.T`.
 
 ## Concurrency and cleanup
 

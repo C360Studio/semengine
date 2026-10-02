@@ -58,9 +58,9 @@ test (`design.md`, "Tests").
 
 ## 4. Evidence against the real pin
 
-- [ ] 4.1 (D) `task ledger:diff` with no argument, run on this branch against the twelve rows on `main`: standard
+- [x] 4.1 (D) `task ledger:diff` with no argument, run on this branch against the twelve rows on `main`: standard
       output's SHA-256 and the per-entry lines are recorded on this pull request.
-- [ ] 4.2 (D) In a scratch copy of this branch that is not committed, `pkg/timestamp` is copied from the pin with the
+- [x] 4.2 (D) In a scratch copy of this branch that is not committed, `pkg/timestamp` is copied from the pin with the
       rewrite and given a `carry` row. `task ledger:check` passes; with one line of `timestamp.go` edited it fails
       naming the entry and the file; `task ledger:diff -- pkg/timestamp` prints that line. The three outputs are
       recorded on this pull request, with the wall time of the passing run: it is the one run here that fetches the

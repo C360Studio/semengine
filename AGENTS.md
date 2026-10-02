@@ -41,6 +41,7 @@ task lint         # pinned revive, plus the fixed-port guard for tests
 task vuln         # pinned govulncheck
 task test:unit    # unit tests once, under the race detector, at one CPU
 task test:repeat  # unit tests five times at one CPU, without the race detector, shuffled
+task ledger:diff  # -- <source_path>...: print how ledger entries differ from the SemStreams pin; fetches it
 task merge:check  # -- <n>: fail while a known flake is open that PR n does not close; reads GitHub
 task verify       # spec:check docs:check fmt:check tidy:check cleanup-roots:check build vet lint vuln
                   # ledger:check test:unit test:integration cover:check test:repeat, cheapest first; fails if
@@ -73,7 +74,7 @@ indexed by their spec. A change that can turn a "review only" row into a failing
 | Unit tests also run five times at one CPU, without the race detector, in shuffled order | `merge-gate` spec, "Varied and repeated unit runs" | `task test:repeat`, the last step of `task verify`; `TestUnitInvocationsPinned` fails if that command line or the step list changes |
 | Production code imports no test library and nothing under `internal/harness` | `harness-boundaries` spec, "Import graph" | `TestImportGraph` |
 | One NATS image pin; Docker cleanup touches only SemEngine-assigned names | `harness-boundaries` spec | `TestOneImagePin`, `TestSemEngineAssignedNames`, `TestNoBroadDockerCleanup` |
-| A ported package has an admission-ledger row | `.agents/contracts/semengine-architect.md` § Extraction slices; `docs/admission-ledger.yaml` | `task ledger:check` for the schema of the rows present; that a ported package has a row, and what the row says, are review only |
+| A ported package has an admission-ledger row; a `carry` row matches the pin (SemStreams at its `source_sha`) | `.agents/contracts/semengine-architect.md` § Extraction slices; `docs/provenance.md` rule 5; `docs/admission-ledger.yaml` | `task ledger:check` (in `task verify`) for the schema of the rows present and, fetching the pin, for each `carry` row's `.go` and `testdata` files; `TestCheckSensitivity`, `TestCommandExitStatus` and `TestLedgerCheckWiring` hold it. That a ported package has a row, its `README.md`, a new sub-package under a carried destination, and `adapt` rows (printed by `task ledger:diff`) are review only |
 | Critical packages hold their coverage floor | `.agents/skills/semengine-preflight/SKILL.md` | `task cover:check` |
 | OpenSpec changes and specs are well formed | "Where state lives" below | `task spec:check` for document shape; truth against code is review only |
 | A merge needs CI green | `.agents/protocol.md` § Work lifecycle | CI job `required`; claim before work and close by merged PR are review only |

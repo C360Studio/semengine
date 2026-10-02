@@ -83,6 +83,8 @@ The packages under `internal/harness/` are test-only; a contract test refuses an
   cancelled start refused, stop before start safe, repeated stop is a no-op, and so on. `Run(t, factory, promise)`
   runs them as subtests. Passing these checks does not prove a component drains and joins its own workers; that still
   needs focused tests.
+- `pindiff` is not a test helper: it is the program behind `task ledger:check` and `task ledger:diff`, described
+  under "Structural guards" below.
 
 The requirements behind each package are in `openspec/specs/nats-fixture/`, `lifecycle-suite/`,
 `integration-test-runner/` and `harness-boundaries/`.
@@ -94,7 +96,18 @@ test helpers, no struct holding a `context.Context`, one pinned NATS image, no f
 broad Docker cleanup, and a well-formed admission ledger (`docs/admission-ledger.yaml`, the list of packages ported
 from SemStreams). Four more guards are shell scripts: `task cleanup-roots:check` and `task cover:check`, which
 `task verify` runs as their own steps; the fixed-port guard `scripts/lint-test-ports.sh`, which `task lint` runs; and
-`scripts/merge-check.sh`, which CI's `merge-check` job runs and `task verify` does not, because it reads GitHub.
+`scripts/merge-check.sh`, which CI's `merge-check` job runs and `task verify` does not, because it reads GitHub
+state that changes from one run to the next.
+
+`task ledger:check` also runs `internal/harness/pindiff`, which compares every `carry` row of the ledger (a package
+ported unchanged) with the pin (SemStreams at the row's `source_sha`) and fails on any difference;
+`docs/provenance.md` rule 5 says what may differ and what to do when it fails. It fetches the pin. With no `carry`
+row it fetches nothing, as today; once one exists, `task verify` and CI make one unauthenticated fetch from
+`github.com` per distinct `source_sha` (about 3.6 s for the whole `task ledger:check` in the one measured run). A
+fetch that does not answer (two minutes for all the fetches of a run) fails the check with a message that says no
+entry was checked. That is a red run to re-run, not a known flake (`.agents/protocol.md`, "Known flakes"). When a
+fetch is cut off, by that bound or by an interrupt, the program kills the processes it started for the fetch, git's
+transport helper included, so none is left running when it returns.
 
 ## Show that the test can fail
 
@@ -234,6 +247,11 @@ that line, not the flag, is the count to record.
 every run. The five runs of `task test:repeat` therefore try different inputs, and a rare failing input can fail one
 run and pass the next on the same tree. That is a failing input Rapid found, not noise: replay it with the seed it
 printed before doing anything else.
+
+A test that passes and fails on the same tree is also a known flake (`.agents/protocol.md`, "Known flakes"), and a
+Rapid failure that comes and goes is treated as one. File it with the `class:flake` label and the seed Rapid printed;
+merges stop until it is fixed. The fix replays that seed, corrects the code or the rule, and keeps the failing input
+as a named, deterministic test.
 
 When a check fails, Rapid prints the seed to replay it with and writes the shrunk failing case to a `.fail` file under
 the package's `testdata/rapid/<TestName>/`. Replay with the printed seed, or with `-rapid.failfile=<path>`. If that

@@ -40,6 +40,7 @@ not a task tracker and not a description of the tree.
 | `internal/harness/probe/` | Callback, observed-context, and bounded-polling test probes |
 | `internal/harness/contract/` | Tests of repository-wide rules: no fixed network addresses, no stored contexts, no broad Docker cleanup, Docker names SemStreams' cleanup cannot match, the import graph, one NATS image pin, the admission ledger (`task ledger:check`), no sleeps or skipped or hidden tests; and tests that the cover, cleanup-roots, tree-state and merge-check scripts, the `test:unit` and `test:repeat` commands, and the CI workflow do what the merge gate requires |
 | `internal/harness/runner/` | Tests of the integration runner script |
+| `internal/harness/pindiff/` | The program behind `task ledger:check` and `task ledger:diff`: compares ledger entries with the pin (SemStreams at each entry's `source_sha`), which it fetches from GitHub when an entry needs it |
 | `scripts/test-integration.sh` | `task test:integration`: host lock, image preflight, signal forwarding, leak check |
 | `scripts/cover-check.sh` | `task cover:check`: 80% statements on `natsfixture`, `lifecycletest`, `probe` |
 | `scripts/merge-check.sh` | `task merge:check` and the CI job `merge-check`: fails while an open `class:flake` issue is not closed by the pull request, or while the rules on `main` do not require an up-to-date head. Reads GitHub, so not part of `task verify` |
@@ -54,7 +55,7 @@ not a task tracker and not a description of the tree.
 | `openspec/changes/archive/2026-10-01-setup-03b-contract-boundary/` | The archived SETUP 03B change (PR #21, epic #8), with its three inventory passes (`inventory.md`, `inventory-2-scope.md`, `inventory-3-pass3.md`) |
 | `openspec/changes/archive/2026-10-01-setup-04a-foundation/` | The archived Slice 04A design (PR #47, epic #9): the inventory, the seven-change cut (`design.md` D2), the harness extension for change 1 (D3–D5) and the owner's rulings |
 | `openspec/changes/archive/2026-10-01-flake-defense/` | The archived `flake-defense` change (PR #44, issue #42): repeated and shuffled unit runs, the known-flake merge check, and the no-sleep and no-skip test rules |
-| `docs/admission-ledger.yaml` | The admission ledger: twelve entries at full SemStreams SHAs, checked by `task ledger:check` |
+| `docs/admission-ledger.yaml` | The admission ledger: twelve entries at full SemStreams SHAs, checked by `task ledger:check`, which also fails a `carry` entry that differs from the pin; none is `carry` yet |
 | `LICENSE` | MIT, Copyright (c) 2025 C360 |
 | `package-lock.json`, `.gitignore` | npm lockfile for the pinned tools; ignore rules for Go, Node, editors, coverage |
 

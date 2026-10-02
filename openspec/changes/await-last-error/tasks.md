@@ -2,7 +2,7 @@
 
 ## 1. Leg 1: Codex
 
-- [ ] 1.1 Commit this OpenSpec change first, including the complete MODIFIED requirement; install the pinned
+- [x] 1.1 Commit this OpenSpec change first, including the complete MODIFIED requirement; install the pinned
       dependencies with `npm ci` and run `task spec:check`.
 - [ ] 1.2 Add one deterministic error-then-clean observation test beside `TestAwaitReportsLastObservation`;
       end the wait through test-owned cancellation and keep Await unchanged.
@@ -19,7 +19,8 @@
 The owner assigns the remaining steps to a fresh Claude session taking the draft PR alone.
 Codex stops after section 1.
 
-- [ ] 2.1 Use semengine-pickup to verify the worktree, branch, CI, evidence and stop point.
+- [ ] 2.1 Hold: fresh Claude leg-2 pickup. Use semengine-pickup to verify the worktree, branch, CI,
+      evidence and stop point.
 - [ ] 2.2 Obtain independent implementation review and resolve its findings.
 - [ ] 2.3 Archive and synchronize the current spec as the final content commit; obtain the archive/spec-sync check.
 - [ ] 2.4 Continue the owner's leg-2 landing instructions through the repository merge gates.

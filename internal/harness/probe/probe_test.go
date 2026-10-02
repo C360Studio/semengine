@@ -189,6 +189,53 @@ func TestAwaitReportsLastObservation(t *testing.T) {
 	})
 }
 
+// TestAwaitClearsEarlierObservationError pins the ruled mixed history: a clean final
+// observation clears the earlier error even though the condition never holds.
+func TestAwaitClearsEarlierObservationError(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		earlierErr := errors.New("first observation failed")
+		const finalValue = "state=ready"
+		calls := 0
+		got, err := Await(ctx, func(context.Context) (string, error) {
+			calls++
+			switch calls {
+			case 1:
+				return "state=failed", earlierErr
+			case 2:
+				cancel()
+				return finalValue, nil
+			default:
+				return "unexpected extra observation", nil
+			}
+		}, func(string) bool { return false })
+		if calls != 2 {
+			t.Errorf("observer called %d times, want exactly 2", calls)
+		}
+		if got != finalValue {
+			t.Errorf("returned value = %q, want final observation %q", got, finalValue)
+		}
+		if err == nil {
+			t.Fatal("Await returned nil for a condition that never held")
+		}
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("err = %v, want it to wrap context.Canceled", err)
+		}
+		for _, want := range []string{finalValue, "(no error)"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("err = %q, want it to mention %q", err, want)
+			}
+		}
+		if strings.Contains(err.Error(), earlierErr.Error()) {
+			t.Errorf("err = %q, want no earlier observation error text", err)
+		}
+		if errors.Is(err, earlierErr) {
+			t.Errorf("err = %v, want no earlier observation error wrapping", err)
+		}
+	})
+}
+
 // TestAwaitReportsLastObservationWithoutError covers the other branch of the failure message: no
 // observation ever failed, so the message says so and wraps only the context's error.
 func TestAwaitReportsLastObservationWithoutError(t *testing.T) {

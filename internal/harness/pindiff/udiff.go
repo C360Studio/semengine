@@ -19,9 +19,10 @@ type diffLine struct {
 
 // unifiedDiff renders the difference from a to b in unified format with the given labels. Lines
 // keep their newline, so a last line without one differs from the same text with one and is
-// marked as `diff -u` marks it.
-func unifiedDiff(fromLabel, toLabel string, a, b []byte) string {
-	ops := editScript(splitLines(string(a)), splitLines(string(b)))
+// marked as `diff -u` marks it. approximate reports that the changed middle was too large to match
+// line by line and is printed as one removal and one addition.
+func unifiedDiff(fromLabel, toLabel string, a, b []byte) (text string, approximate bool) {
+	ops, approximate := editScript(splitLines(string(a)), splitLines(string(b)))
 	var out strings.Builder
 	fmt.Fprintf(&out, "--- %s\n+++ %s\n", fromLabel, toLabel)
 
@@ -70,7 +71,7 @@ func unifiedDiff(fromLabel, toLabel string, a, b []byte) string {
 		}
 		i = end
 	}
-	return out.String()
+	return out.String(), approximate
 }
 
 // hunkRange prints a hunk's line range as `diff -u` does: the count is left out when it is one,
@@ -96,7 +97,7 @@ func splitLines(s string) []string {
 
 // editScript matches the lines of a and b: common prefix and suffix first, then a longest common
 // subsequence of the middle.
-func editScript(a, b []string) []diffLine {
+func editScript(a, b []string) ([]diffLine, bool) {
 	p := 0
 	for p < len(a) && p < len(b) && a[p] == b[p] {
 		p++
@@ -109,14 +110,15 @@ func editScript(a, b []string) []diffLine {
 	for _, l := range a[:p] {
 		ops = append(ops, diffLine{' ', l})
 	}
-	ops = append(ops, matchMiddle(a[p:len(a)-s], b[p:len(b)-s])...)
+	middle, approximate := matchMiddle(a[p:len(a)-s], b[p:len(b)-s])
+	ops = append(ops, middle...)
 	for _, l := range a[len(a)-s:] {
 		ops = append(ops, diffLine{' ', l})
 	}
-	return ops
+	return ops, approximate
 }
 
-func matchMiddle(a, b []string) []diffLine {
+func matchMiddle(a, b []string) ([]diffLine, bool) {
 	var ops []diffLine
 	n, m := len(a), len(b)
 	if (n+1)*(m+1) > maxLCSCells {
@@ -126,7 +128,7 @@ func matchMiddle(a, b []string) []diffLine {
 		for _, l := range b {
 			ops = append(ops, diffLine{'+', l})
 		}
-		return ops
+		return ops, true
 	}
 	// lcs[i*(m+1)+j] is the length of a longest common subsequence of a[i:] and b[j:].
 	lcs := make([]int32, (n+1)*(m+1))
@@ -154,5 +156,5 @@ func matchMiddle(a, b []string) []diffLine {
 			j++
 		}
 	}
-	return ops
+	return ops, false
 }

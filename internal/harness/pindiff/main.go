@@ -180,7 +180,11 @@ func runDiff(ctx context.Context, root string, cfg config, entries []entry, name
 		for _, f := range r.files {
 			switch f.outcome {
 			case fileDiffers:
-				fmt.Fprint(stdout, unifiedDiff("pin/"+f.pinPath, f.treePath, f.pinText, f.treeText))
+				text, approximate := unifiedDiff("pin/"+f.pinPath, f.treePath, f.pinText, f.treeText)
+				fmt.Fprint(stdout, text)
+				if approximate {
+					fmt.Fprintf(stderr, "ledger:diff: %s: too many changed lines to match one by one; printed as one removal and one addition\n", f.treePath)
+				}
 			case fileOnlyAtPin:
 				fmt.Fprintln(stdout, "only at the pin: pin/"+f.pinPath)
 			case fileOnlyInTree:

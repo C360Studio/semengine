@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"maps"
 	"strings"
 	"testing"
@@ -140,6 +141,27 @@ func TestDiffOutput(t *testing.T) {
 			t.Fatalf("got:\n%s", got)
 		}
 	})
+}
+
+// Past the matching table's size the changed middle is printed as one removal and one addition;
+// the program says so on standard error, naming the file, and the diff still applies.
+func TestDiffLargeFileFallback(t *testing.T) {
+	var pin, tree0 strings.Builder
+	for i := 0; i < 2100; i++ {
+		fmt.Fprintf(&pin, "pin %d\n", i)
+		fmt.Fprintf(&tree0, "tree %d\n", i)
+	}
+	remote, shas := pinRepo(t, map[string]string{"docs/big.txt": pin.String()})
+	root := tree(t, ledgerOf(row{"docs/big.txt", shas[0], "docs/big.txt", "adapt"}), map[string]string{"docs/big.txt": tree0.String()})
+	got := runIn(t, root, remoteEnv(remote), "diff")
+	if got.code != 0 {
+		t.Fatalf("got exit %d\n%s", got.code, got.stderr)
+	}
+	requireLine(t, got.stderr, "docs/big.txt", "printed as one removal and one addition")
+	applied, err := applyUnified(pin.String(), got.stdout)
+	if err != nil || applied != tree0.String() {
+		t.Fatalf("the printed diff does not turn the pin into the tree: %v", err)
+	}
 }
 
 // harness-boundaries › "Pin difference command": exit 0 when the program ran, differences or not;

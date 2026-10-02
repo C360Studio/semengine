@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"net"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/c360studio/semengine/internal/harness/probe"
+	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/testcontainers/testcontainers-go"
 )
@@ -180,6 +182,64 @@ func TestConnectHonoursItsContext(t *testing.T) {
 	}
 	if elapsed := time.Since(began); elapsed > dialTimeout/2 {
 		t.Fatalf("connect returned after %s; its context ended at 100ms", elapsed)
+	}
+}
+
+// connect leaves nothing behind (background-work rule): once it has returned, its dial has
+// ended. The broker accepts and stays silent until connect has given up, then speaks; a dial still
+// running would answer with CONNECT, an ended one has closed the connection.
+func TestConnectJoinsItsDial(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			close(accepted)
+			return
+		}
+		accepted <- c
+	}()
+	ctx, cancel := context.WithCancel(t.Context())
+	type result struct {
+		nc  *nats.Conn
+		err error
+	}
+	done := make(chan result, 1)
+	go func() {
+		nc, err := defaultDeps().connect(ctx, "nats://"+ln.Addr().String())
+		done <- result{nc, err}
+	}()
+	srv, ok := <-accepted
+	if !ok {
+		t.Fatal("connect never dialled")
+	}
+	defer func() { _ = srv.Close() }()
+	cancel()
+	r := <-done
+	if r.nc != nil {
+		r.nc.Close()
+	}
+	if !errors.Is(r.err, context.Canceled) {
+		t.Fatalf("connect = %v, want context.Canceled", r.err)
+	}
+	// A failure bound, not pacing: a closed connection answers the read at once.
+	if err := srv.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := srv.Write([]byte(`INFO {"server_id":"x","version":"2.14.0","proto":1,"max_payload":1048576}` + "\r\n")); err != nil {
+		return // the client side is closed: nothing is dialling
+	}
+	buf := make([]byte, 64)
+	n, err := srv.Read(buf)
+	if err == nil {
+		t.Fatalf("connect returned but its dial is still running: the client answered %q", buf[:n])
+	}
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Fatal("the client neither answered nor closed within the failure bound")
 	}
 }
 

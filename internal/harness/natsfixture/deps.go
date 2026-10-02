@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
+	neturl "net/url"
 	"strings"
 	"time"
 
@@ -73,32 +75,49 @@ func defaultDeps() deps {
 	}
 }
 
-// connect dials the broker under the caller's context. nats.Connect takes no context, so the dial
-// runs in its own goroutine, bounded by dialTimeout; when the context ends first, connect returns its
-// error at once and the goroutine closes whatever connection it later gets. No reconnects: a test
-// broker that goes away is a failure to report, not to hide.
+// connect dials the broker under the caller's context and leaves nothing running when it returns.
+// nats.Connect takes no context, so connect dials the TCP connection itself under ctx and hands it
+// to nats.Connect; when ctx ends during the handshake that connection is closed, which ends the
+// handshake, and connect returns ctx's error. dialTimeout still bounds a handshake the broker never
+// answers. No reconnects: a test broker that goes away is a failure to report, not to hide.
 func connect(ctx context.Context, url string) (*nats.Conn, error) {
-	type dialed struct {
-		nc  *nats.Conn
-		err error
+	u, err := neturl.Parse(url)
+	if err != nil {
+		return nil, err
 	}
-	done := make(chan dialed, 1)
-	go func() {
-		nc, err := nats.Connect(url, nats.Timeout(dialTimeout), nats.MaxReconnects(0))
-		done <- dialed{nc, err}
-	}()
-	select {
-	case d := <-done:
-		return d.nc, d.err
-	case <-ctx.Done():
-		go func() {
-			if d := <-done; d.nc != nil {
-				d.nc.Close()
-			}
-		}()
-		return nil, ctx.Err()
+	d := net.Dialer{Timeout: dialTimeout}
+	raw, err := d.DialContext(ctx, "tcp", u.Host)
+	if err != nil {
+		return nil, err
 	}
+	closed := make(chan struct{})
+	stop := context.AfterFunc(ctx, func() {
+		_ = raw.Close()
+		close(closed)
+	})
+	nc, err := nats.Connect(url, nats.Timeout(dialTimeout), nats.MaxReconnects(0), nats.SetCustomDialer(dialled{raw}))
+	if !stop() {
+		<-closed // the close already began; join it
+	}
+	if cerr := ctx.Err(); cerr != nil {
+		if nc != nil {
+			nc.Close()
+		}
+		_ = raw.Close()
+		return nil, cerr
+	}
+	if err != nil {
+		_ = raw.Close()
+		return nil, err
+	}
+	return nc, nil
 }
+
+// dialled hands nats.Connect the connection connect already dialled. With MaxReconnects(0)
+// nats.go dials once, so the one connection is all it is ever asked for.
+type dialled struct{ conn net.Conn }
+
+func (d dialled) Dial(string, string) (net.Conn, error) { return d.conn, nil }
 
 // drainAndObserveClosed drains the connection and returns only once it is observed closed, or
 // with the caller's context error while it is still draining.

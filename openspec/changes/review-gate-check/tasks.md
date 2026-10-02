@@ -15,8 +15,9 @@ starts, `task merge:check -- 67` and the merge are recorded on this pull request
 
 ## 1. Design
 
-- [ ] 1.1 Hold: the independent review of `inventory.md`. Outcome: `INVENTORY PASS`, recorded on this pull request
-      with the checksum of the file reviewed.
+- [x] 1.1 The independent review of `inventory.md`: `INVENTORY PASS` in round 2 of at most three, recorded on this
+      pull request (round 1: comment 5956546196; round 2: comment 5956907408). The file reviewed and the file committed
+      are the same, sha256 `725b11e7…8fbe8f`.
 - [ ] 1.2 Hold: 1.1, then the independent pre-owner review of `design.md`, `proposal.md`, this file and the
       `merge-gate` delta. Outcome: `DESIGN REVIEW PASS` within three rounds, recorded on this pull request with the
       reviewed checksums.

@@ -524,15 +524,41 @@ func TestS1_7Restart(t *testing.T) {
 // errStartRefused is the start hook's injected failure in the fixture's must-fail factory.
 var errStartRefused = errors.New("injected: container start refused")
 
-// mustFailFixture is the fixture's must-fail factory: a fixture whose start hook returns an error,
-// so Start fails at PhaseStart having created no container.
+// mustFailFixture is the fixture's must-fail factory: a fixture whose start hook creates the real
+// container and then returns an error, as GenericContainer can (generic.go:89,94). Start must fail
+// at PhaseStart and roll the container back, so the failed-start check judges that rollback, not a
+// start that never reached Docker.
 func mustFailFixture(t *testing.T) lifecycletest.Factory {
 	return func() lifecycletest.Owner {
 		f := New(t)
-		f.deps.start = func(context.Context, testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
-			return nil, errStartRefused
+		real := f.deps.start
+		f.deps.start = func(ctx context.Context, req testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
+			c, _ := real(ctx, req)
+			return c, errStartRefused
 		}
 		return owner{f}
+	}
+}
+
+// nats-fixture › "Start hook fails": Start returns an *Error at PhaseStart naming the container it
+// rolled back, the fixture reports nothing unresolved, and a following Stop returns nil with no
+// call.
+func TestMustFailFixture(t *testing.T) {
+	o := mustFailFixture(t)().(owner)
+	err := o.f.Start(t.Context())
+	var fe *Error
+	if !errors.As(err, &fe) || fe.Phase != PhaseStart || !errors.Is(err, errStartRefused) || fe.ContainerID == "" || fe.Cleanup != nil {
+		t.Fatalf("Start = %v, want an *Error at phase %s with a clean rollback", err, PhaseStart)
+	}
+	if containerExists(t, fe.ContainerID) {
+		t.Fatalf("container %s survives the failed Start", fe.ContainerID)
+	}
+	if rem := o.f.remaining(); len(rem) != 0 {
+		t.Fatalf("failed Start holds %v", rem)
+	}
+	calls := o.f.callCounts()
+	if err := stop(t, o.f); err != nil || !maps(calls, o.f.callCounts()) {
+		t.Fatalf("Stop after the failed Start = %v, calls %v -> %v; want nil with no call", err, calls, o.f.callCounts())
 	}
 }
 

@@ -91,7 +91,7 @@ this pull request as a comment unless a task says otherwise. No task asserts a f
       a refusal. Both existing callers (`refowner_test.go:491-492`, `natsfixture/fixture_integration_test.go:519`)
       compile against the new signature. Gate: `task test:unit`; `task test:repeat -- ./internal/harness/lifecycletest`;
       `task cover:check` keeps `lifecycletest` at 80%.
-- [ ] 2.6 (D) The fixture's own must-fail factory: `TestS1_7Restart` passes `Run` a fixture whose `deps.start` fails;
+- [x] 2.6 (D) The fixture's own must-fail factory: `TestS1_7Restart` passes `Run` a fixture whose `deps.start` fails;
       the start-failure check passes (nothing unresolved, Stop nil, no Docker call counted). Gate: `task
       test:integration -- ./internal/harness/natsfixture`.
 - [ ] 2.7 (D) I8 and T-B8 in `internal/harness/contract`: a test over `go list -deps ./...` and `go.mod` fails on

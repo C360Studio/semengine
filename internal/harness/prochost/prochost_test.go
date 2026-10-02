@@ -159,11 +159,17 @@ func TestStartedHelperHasItsOwnGroupAndCapturedOutput(t *testing.T) {
 }
 
 // (c) A kill between two checkpoints leaves the first checkpoint's file and not the second's, and
-// Wait returns the killed status within its bound.
+// Wait returns the killed status within its bound. The second request is already queued when the
+// kill lands: the helper is paused, so only the kill decides that checkpoint 2 never happens.
 func TestKillBetweenCheckpoints(t *testing.T) {
 	s := startCheckpoints(t)
 	s.request(t, 1)
 	s.awaitCount(t, 1)
+	if err := s.p.Pause(); err != nil {
+		t.Fatal(err)
+	}
+	awaitState(t, s.p, func(st string) bool { return strings.HasPrefix(st, "T") })
+	s.request(t, 2)
 	if err := s.p.Kill(); err != nil {
 		t.Fatal(err)
 	}

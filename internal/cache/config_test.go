@@ -21,8 +21,7 @@ func TestConfig_UnmarshalJSON_DurationStrings(t *testing.T) {
 				"strategy": "hybrid",
 				"max_size": 1000,
 				"ttl": "1h",
-				"cleanup_interval": "5m",
-				"stats_interval": "30s"
+				"cleanup_interval": "5m"
 			}`,
 			want: Config{
 				Enabled:         true,
@@ -30,7 +29,6 @@ func TestConfig_UnmarshalJSON_DurationStrings(t *testing.T) {
 				MaxSize:         1000,
 				TTL:             1 * time.Hour,
 				CleanupInterval: 5 * time.Minute,
-				StatsInterval:   30 * time.Second,
 			},
 			wantErr: false,
 		},
@@ -57,8 +55,7 @@ func TestConfig_UnmarshalJSON_DurationStrings(t *testing.T) {
 				"strategy": "hybrid",
 				"max_size": 500,
 				"ttl": "2h30m",
-				"cleanup_interval": 60000000000,
-				"stats_interval": "1m"
+				"cleanup_interval": 60000000000
 			}`,
 			want: Config{
 				Enabled:         true,
@@ -66,7 +63,6 @@ func TestConfig_UnmarshalJSON_DurationStrings(t *testing.T) {
 				MaxSize:         500,
 				TTL:             2*time.Hour + 30*time.Minute,
 				CleanupInterval: 1 * time.Minute,
-				StatsInterval:   1 * time.Minute,
 			},
 			wantErr: false,
 		},
@@ -116,9 +112,6 @@ func TestConfig_UnmarshalJSON_DurationStrings(t *testing.T) {
 				if got.CleanupInterval != tt.want.CleanupInterval {
 					t.Errorf("CleanupInterval = %v, want %v", got.CleanupInterval, tt.want.CleanupInterval)
 				}
-				if got.StatsInterval != tt.want.StatsInterval {
-					t.Errorf("StatsInterval = %v, want %v", got.StatsInterval, tt.want.StatsInterval)
-				}
 			}
 		})
 	}
@@ -166,5 +159,16 @@ func TestConfig_UnmarshalJSON_RefusesUnknownKeys(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "unknown field") {
 			t.Errorf("Unmarshal(%s) error = %v, want an unknown-field error", data, err)
 		}
+	}
+}
+
+// TestConfig_UnmarshalJSON_RefusesStatsInterval: stats_interval was parsed, defaulted and
+// validated but read by no behaviour, so it is removed (owner ruling, #9 comment 5968830525;
+// Codex F4), and a configuration that still sets it fails loudly instead of being ignored.
+func TestConfig_UnmarshalJSON_RefusesStatsInterval(t *testing.T) {
+	var cfg Config
+	err := json.Unmarshal([]byte(`{"enabled": true, "strategy": "lru", "max_size": 10, "stats_interval": "30s"}`), &cfg)
+	if err == nil || !strings.Contains(err.Error(), `"stats_interval"`) {
+		t.Fatalf("error = %v, want an unknown-field error naming stats_interval", err)
 	}
 }

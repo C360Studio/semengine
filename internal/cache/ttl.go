@@ -30,7 +30,6 @@ type ttlCache[V any] struct {
 	items           map[string]*ttlEntry[V]
 	stats           *Statistics   // ALWAYS initialized
 	metrics         *cacheMetrics // Optional, if metrics enabled
-	statsInterval   time.Duration // Stats update interval
 
 	// Background cleanup coordination
 	shutdown  chan struct{}
@@ -67,7 +66,6 @@ func newTTLCache[V any](
 		items:           make(map[string]*ttlEntry[V]),
 		stats:           stats,   // ALWAYS present
 		metrics:         metrics, // Optional
-		statsInterval:   opts.statsInterval,
 		shutdown:        make(chan struct{}),
 		done:            make(chan struct{}),
 	}

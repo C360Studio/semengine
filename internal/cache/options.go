@@ -1,8 +1,6 @@
 package cache
 
 import (
-	"time"
-
 	"github.com/c360studio/semengine/metric"
 )
 
@@ -19,9 +17,6 @@ type cacheOptions[V any] struct {
 
 	// metricsPrefix is used as the component label for Prometheus metrics
 	metricsPrefix string
-
-	// statsInterval is how often to update aggregate statistics (for TTL/Hybrid caches)
-	statsInterval time.Duration
 }
 
 // WithMetrics enables Prometheus metrics export for cache statistics.
@@ -36,24 +31,10 @@ func WithMetrics[V any](registry *metric.MetricsRegistry, prefix string) Option[
 	}
 }
 
-// WithStatsInterval sets how often aggregate statistics are updated.
-// This is only relevant for TTL and Hybrid caches with background cleanup.
-// If interval is <= 0, this option is ignored.
-func WithStatsInterval[V any](interval time.Duration) Option[V] {
-	return func(opts *cacheOptions[V]) {
-		if interval > 0 {
-			opts.statsInterval = interval
-		}
-	}
-}
-
 // applyOptions applies functional options to create final cache configuration.
 // This is an internal helper used by cache constructors.
 func applyOptions[V any](options ...Option[V]) *cacheOptions[V] {
-	opts := &cacheOptions[V]{
-		// Default values
-		statsInterval: 30 * time.Second,
-	}
+	opts := &cacheOptions[V]{}
 
 	for _, opt := range options {
 		if opt != nil {

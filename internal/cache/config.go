@@ -44,9 +44,6 @@ type Config struct {
 
 	// CleanupInterval is how often to run background cleanup (for TTL and Hybrid caches).
 	CleanupInterval time.Duration `json:"cleanup_interval" schema:"editable,type:string,description:How often to run background cleanup (for TTL and Hybrid)"`
-
-	// StatsInterval is how often to update aggregate statistics.
-	StatsInterval time.Duration `json:"stats_interval" schema:"editable,type:string,description:How often to update aggregate statistics"`
 }
 
 // DefaultConfig returns a default cache configuration.
@@ -57,7 +54,6 @@ func DefaultConfig() Config {
 		MaxSize:         1000,
 		TTL:             5 * time.Minute,
 		CleanupInterval: 1 * time.Minute,
-		StatsInterval:   30 * time.Second,
 	}
 }
 
@@ -102,11 +98,6 @@ func (c Config) Validate() error {
 			fmt.Sprintf("unknown cache strategy: %s", c.Strategy))
 	}
 
-	if c.StatsInterval <= 0 && c.StatsInterval != 0 {
-		return errs.WrapInvalid(errs.ErrInvalidData, "cache", "Validate",
-			fmt.Sprintf("stats_interval must be positive when specified, got %v", c.StatsInterval))
-	}
-
 	return nil
 }
 
@@ -123,11 +114,6 @@ func NewFromConfig[V any](ctx context.Context, config Config, options ...Option[
 
 	if !config.Enabled {
 		return NewNoop[V](), nil
-	}
-
-	// Apply stats interval from config if specified
-	if config.StatsInterval > 0 {
-		options = append(options, WithStatsInterval[V](config.StatsInterval))
 	}
 
 	switch config.Strategy {
@@ -265,7 +251,6 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 	aux := &struct {
 		TTL             json.RawMessage `json:"ttl,omitempty"`
 		CleanupInterval json.RawMessage `json:"cleanup_interval,omitempty"`
-		StatsInterval   json.RawMessage `json:"stats_interval,omitempty"`
 		*Alias
 	}{
 		Alias: (*Alias)(c),
@@ -295,15 +280,6 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 			return err
 		}
 		c.CleanupInterval = interval
-	}
-
-	// Parse StatsInterval
-	if len(aux.StatsInterval) > 0 {
-		interval, err := parseDurationField(aux.StatsInterval, "stats_interval")
-		if err != nil {
-			return err
-		}
-		c.StatsInterval = interval
 	}
 
 	return nil

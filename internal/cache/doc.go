@@ -155,7 +155,6 @@
 //
 // Available options:
 //   - WithMetrics: Enable Prometheus metrics export
-//   - WithStatsInterval: Set stats aggregation interval (TTL/Hybrid only)
 //
 // This pattern provides:
 //   - Clear intent with named functions

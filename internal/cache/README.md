@@ -62,7 +62,6 @@ c := cache.NewLRU[*Entity](1000,
 // Compose multiple functional options
 c := cache.NewTTL[*Document](ctx, 10*time.Minute, 1*time.Minute,
     cache.WithMetrics[*Document](registry, "document_cache"),
-    cache.WithStatsInterval[*Document](30*time.Second),
 )
 ```
 
@@ -110,14 +109,6 @@ Enable Prometheus metrics export:
 
 ```go
 cache.WithMetrics[V](registry, "component_name")
-```
-
-### WithStatsInterval
-
-Set statistics aggregation interval (TTL/Hybrid caches only):
-
-```go
-cache.WithStatsInterval[V](30*time.Second)
 ```
 
 ## API Reference
@@ -179,7 +170,6 @@ config := cache.Config{
     MaxSize:         1000,
     TTL:             5 * time.Minute,
     CleanupInterval: 1 * time.Minute,
-    StatsInterval:   30 * time.Second,
 }
 
 // Create cache from config with optional functional options

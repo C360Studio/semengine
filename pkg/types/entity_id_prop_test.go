@@ -43,7 +43,7 @@ import (
 // byte alphanumeric, remaining bytes alphanumeric, '_', or '-'. Length is
 // capped at 39 bytes so six segments plus five dots (max 239) stay under the
 // 256-byte bound; the bound itself is exercised by TestPropEntityIDByteBound.
-// spec: entity-id-contract / Every entity ID has one canonical six-segment ASCII form
+// spec: docs/specs/entity-id-contract.md / Every entity ID has one canonical six-segment ASCII form
 var entityIDSegment = rapid.StringMatching(`[a-zA-Z0-9][a-zA-Z0-9_-]{0,38}`)
 
 func drawEntityIDSegments(t *rapid.T) []string {
@@ -57,8 +57,8 @@ func drawEntityIDSegments(t *rapid.T) []string {
 // TestPropEntityIDRoundTrip: every grammatically canonical six-segment string
 // validates, parses with each segment landing in its named position, and
 // re-serializes byte-identically.
-// spec: entity-id-contract / Every entity ID has one canonical six-segment ASCII form
-// spec: entity-id-contract / Each entity-ID position has one defined meaning and one owner
+// spec: docs/specs/entity-id-contract.md / Every entity ID has one canonical six-segment ASCII form
+// spec: docs/specs/entity-id-contract.md / Each entity-ID position has one defined meaning and one owner
 func TestPropEntityIDRoundTrip(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		segments := drawEntityIDSegments(t)
@@ -85,7 +85,7 @@ func TestPropEntityIDRoundTrip(t *testing.T) {
 
 // TestPropEntityIDByteBound: acceptance of an otherwise-canonical ID flips
 // exactly at MaxEntityIDBytes — no off-by-one on either side.
-// spec: entity-id-contract / Every entity ID has one canonical six-segment ASCII form
+// spec: docs/specs/entity-id-contract.md / Every entity ID has one canonical six-segment ASCII form
 func TestPropEntityIDByteBound(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		// Half the draws hug the spec boundary: rapid biases toward the
@@ -110,7 +110,7 @@ func TestPropEntityIDByteBound(t *testing.T) {
 // TestPropEntityIDPatternMatch: a pattern derived from an ID by wildcarding
 // any subset of positions matches that ID, and substituting a different
 // literal at any non-wildcard position stops the match without an error.
-// spec: entity-id-contract / Entity-ID patterns are separate exact-arity wildcard values
+// spec: docs/specs/entity-id-contract.md / Entity-ID patterns are separate exact-arity wildcard values
 func TestPropEntityIDPatternMatch(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		segments := drawEntityIDSegments(t)
@@ -142,7 +142,7 @@ func TestPropEntityIDPatternMatch(t *testing.T) {
 		// Half the draws are NEAR misses. An independent draw from the ~62^n
 		// segment space is a foreign literal by brute distance, so it cannot
 		// distinguish "compares bytes" from "compares case-insensitively" —
-		// and the spec forbids case-folding by name (entity-id-contract: MUST
+		// and the spec forbids case-folding by name (docs/specs/entity-id-contract.md: MUST
 		// NOT trim, case-fold, Unicode-normalize, escape, encode, replace).
 		// Measured: an EqualFold mutation of MatchEntityIDPattern survived the
 		// independent draw at the default budget on six fresh seeds, and needed

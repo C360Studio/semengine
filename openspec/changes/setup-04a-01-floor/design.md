@@ -60,7 +60,11 @@ and no temporary stub exists. Lines are non-test lines at the pin; "tests" are f
 
 Totals: 15 / 25,215 at the pin, of which 180 lines of `pkg/tlsutil` are not ported; 121 / 33,279 at the pin under the
 four Q3 exclusions (measured before the rulings of 2026-10-03; the ported count is recorded in task 3.9); 7 live roots
-(natsclient's nine re-measured as two live, task 3.7); 28 integration-tagged test files. `pkg/acme` and the two ACME
+(natsclient's nine re-measured as two live, task 3.7); 30 integration-tagged test files at the pin
+(`natsclient` 29, `pkg/tlsutil` 1), 29 under the Q3 exclusions, 28 ported (`natsclient` 27 after
+`kv_temporal_integration_test.go` leaves with dropped surface, `pkg/tlsutil` 1), measured over the pin tarball with
+`grep -l '^//go:build.*integration' <package>/*_test.go` for each of the 15 package directories (`pkg/acme`, not
+ported, has one more). `pkg/acme` and the two ACME
 loaders are not ported (owner ruling, #9 comment 5950752741). In the floor only `pkg/tlsutil/tlsutil.go` imports
 `pkg/acme` (`:12`), and only `LoadServerTLSConfigWithACME`, `LoadClientTLSConfigWithACME` and their helper
 `initACMEClient` use it (`:186-365`); no other floor package imports it or calls them, and no `pkg/tlsutil` test does

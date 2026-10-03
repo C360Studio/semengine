@@ -513,7 +513,10 @@
     requires: lines 7 and 83 wrapped at 120 columns (MD013), the fence at :90 given the language text
     (MD040); no wording changed. README import paths (owner ruling, #9 comment 5968665464), each an
     adapt item "import path changed to the SemEngine module", pin lines: :74 pkg/types and :77 message,
-    from github.com/c360studio/semstreams to github.com/c360studio/semengine
+    from github.com/c360studio/semstreams to github.com/c360studio/semengine. Comment edit: the
+    requirement citations in entity_id_prop_test.go (:46, :60, :61, :88, :113, :145) name
+    docs/specs/entity-id-contract.md, where the pin's entity-id-contract capability now lives (#72,
+    comment 5970020197); no code changed
   proving_tests: >-
     the 6 test files in pkg/types/ at the pin, including entity_id_prop_test.go (Rapid properties
     TestPropEntityIDRoundTrip, TestPropEntityIDByteBound, TestPropEntityIDPatternMatch; design P23)

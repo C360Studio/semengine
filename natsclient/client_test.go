@@ -27,65 +27,80 @@ func TestNewClient(t *testing.T) {
 
 // Test circuit breaker opens after failures
 func TestCircuitBreaker_OpensAfterFailures(t *testing.T) {
-	manager, err := NewClient("nats://unused")
-	assert.NoError(t, err)
+	// R1a: opening the circuit arms recordFailure's time.AfterFunc(backoff, testCircuit), which
+	// moves the status off StatusCircuitOpen. On the bubble's clock it cannot fire before the
+	// assertions below, however slowly the host runs them.
+	synctest.Test(t, func(t *testing.T) {
+		manager, err := NewClient("nats://unused")
+		assert.NoError(t, err)
 
-	// Record 14 failures - should not open
-	for i := 0; i < 14; i++ {
+		// Record 14 failures - should not open
+		for i := 0; i < 14; i++ {
+			manager.recordFailure()
+		}
+		assert.NotEqual(t, StatusCircuitOpen, manager.Status())
+
+		// 15th failure should open circuit
 		manager.recordFailure()
-	}
-	assert.NotEqual(t, StatusCircuitOpen, manager.Status())
-
-	// 15th failure should open circuit
-	manager.recordFailure()
-	assert.Equal(t, StatusCircuitOpen, manager.Status())
-	assert.Equal(t, int32(15), manager.Failures())
+		assert.Equal(t, StatusCircuitOpen, manager.Status())
+		assert.Equal(t, int32(15), manager.Failures())
+	})
 }
 
 // Test circuit breaker reset
 func TestCircuitBreaker_Reset(t *testing.T) {
-	manager, err := NewClient("nats://unused")
-	assert.NoError(t, err)
+	// R1a: opening the circuit arms recordFailure's time.AfterFunc(backoff, testCircuit), which
+	// moves the status off StatusCircuitOpen. On the bubble's clock it cannot fire before the
+	// assertions below, however slowly the host runs them.
+	synctest.Test(t, func(t *testing.T) {
+		manager, err := NewClient("nats://unused")
+		assert.NoError(t, err)
 
-	// Record failures to open circuit (threshold is 15)
-	for i := 0; i < 15; i++ {
-		manager.recordFailure()
-	}
-	assert.Equal(t, StatusCircuitOpen, manager.Status())
+		// Record failures to open circuit (threshold is 15)
+		for i := 0; i < 15; i++ {
+			manager.recordFailure()
+		}
+		assert.Equal(t, StatusCircuitOpen, manager.Status())
 
-	// Reset circuit
-	manager.resetCircuit()
-	assert.Equal(t, int32(0), manager.Failures())
-	assert.NotEqual(t, StatusCircuitOpen, manager.Status())
+		// Reset circuit
+		manager.resetCircuit()
+		assert.Equal(t, int32(0), manager.Failures())
+		assert.NotEqual(t, StatusCircuitOpen, manager.Status())
+	})
 }
 
 // Test exponential backoff
 func TestCircuitBreaker_ExponentialBackoff(t *testing.T) {
-	manager, err := NewClient("nats://unused")
-	assert.NoError(t, err)
+	// R1a: opening the circuit arms recordFailure's time.AfterFunc(backoff, testCircuit), which
+	// moves the status off StatusCircuitOpen. On the bubble's clock it cannot fire before the
+	// assertions below, however slowly the host runs them.
+	synctest.Test(t, func(t *testing.T) {
+		manager, err := NewClient("nats://unused")
+		assert.NoError(t, err)
 
-	// Initial backoff should be 1 second
-	assert.Equal(t, time.Second, manager.Backoff())
+		// Initial backoff should be 1 second
+		assert.Equal(t, time.Second, manager.Backoff())
 
-	// Record failures and check backoff increases (threshold is 15)
-	for i := 0; i < 15; i++ {
-		manager.recordFailure()
-	}
-	assert.Equal(t, 2*time.Second, manager.Backoff())
-
-	// Another round of failures
-	for i := 0; i < 15; i++ {
-		manager.recordFailure()
-	}
-	assert.Equal(t, 4*time.Second, manager.Backoff())
-
-	// Backoff should cap at max (1 minute)
-	for i := 0; i < 20; i++ {
-		for j := 0; j < 15; j++ {
+		// Record failures and check backoff increases (threshold is 15)
+		for i := 0; i < 15; i++ {
 			manager.recordFailure()
 		}
-	}
-	assert.LessOrEqual(t, manager.Backoff(), time.Minute)
+		assert.Equal(t, 2*time.Second, manager.Backoff())
+
+		// Another round of failures
+		for i := 0; i < 15; i++ {
+			manager.recordFailure()
+		}
+		assert.Equal(t, 4*time.Second, manager.Backoff())
+
+		// Backoff should cap at max (1 minute)
+		for i := 0; i < 20; i++ {
+			for j := 0; j < 15; j++ {
+				manager.recordFailure()
+			}
+		}
+		assert.LessOrEqual(t, manager.Backoff(), time.Minute)
+	})
 }
 
 // Test status transitions
@@ -134,13 +149,18 @@ func TestStatus_Transitions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			manager, err := NewClient("nats://unused")
-			assert.NoError(t, err)
-			manager.setStatus(tt.initialStatus)
+			// R1a: the circuit-open row arms recordFailure's time.AfterFunc(backoff, testCircuit),
+			// which moves the status off StatusCircuitOpen. On the bubble's clock it cannot fire
+			// before the assertion below, however slowly the host runs it.
+			synctest.Test(t, func(t *testing.T) {
+				manager, err := NewClient("nats://unused")
+				assert.NoError(t, err)
+				manager.setStatus(tt.initialStatus)
 
-			tt.action(manager)
+				tt.action(manager)
 
-			assert.Equal(t, tt.expectedStatus, manager.Status())
+				assert.Equal(t, tt.expectedStatus, manager.Status())
+			})
 		})
 	}
 }
@@ -311,29 +331,34 @@ func TestKeyValueBuckets(t *testing.T) {
 	})
 
 	t.Run("operations return error when circuit open", func(t *testing.T) {
-		client, err := NewClient("nats://unused")
-		assert.NoError(t, err)
+		// R1a: opening the circuit arms recordFailure's time.AfterFunc(backoff, testCircuit),
+		// which moves the status off StatusCircuitOpen. On the bubble's clock it cannot fire
+		// before the calls below, however slowly the host runs them.
+		synctest.Test(t, func(t *testing.T) {
+			client, err := NewClient("nats://unused")
+			assert.NoError(t, err)
 
-		// Open circuit (threshold is 15)
-		for i := 0; i < 15; i++ {
-			client.recordFailure()
-		}
-		assert.Equal(t, StatusCircuitOpen, client.Status())
+			// Open circuit (threshold is 15)
+			for i := 0; i < 15; i++ {
+				client.recordFailure()
+			}
+			assert.Equal(t, StatusCircuitOpen, client.Status())
 
-		ctx := context.Background()
-		cfg := jetstream.KeyValueConfig{Bucket: "test"}
+			ctx := context.Background()
+			cfg := jetstream.KeyValueConfig{Bucket: "test"}
 
-		_, err = client.CreateKeyValueBucket(ctx, cfg)
-		assert.Equal(t, ErrCircuitOpen, err)
+			_, err = client.CreateKeyValueBucket(ctx, cfg)
+			assert.Equal(t, ErrCircuitOpen, err)
 
-		_, err = client.GetKeyValueBucket(ctx, "test")
-		assert.Equal(t, ErrCircuitOpen, err)
+			_, err = client.GetKeyValueBucket(ctx, "test")
+			assert.Equal(t, ErrCircuitOpen, err)
 
-		err = client.DeleteKeyValueBucket(ctx, "test")
-		assert.Equal(t, ErrCircuitOpen, err)
+			err = client.DeleteKeyValueBucket(ctx, "test")
+			assert.Equal(t, ErrCircuitOpen, err)
 
-		_, err = client.ListKeyValueBuckets(ctx)
-		assert.Equal(t, ErrCircuitOpen, err)
+			_, err = client.ListKeyValueBuckets(ctx)
+			assert.Equal(t, ErrCircuitOpen, err)
+		})
 	})
 }
 

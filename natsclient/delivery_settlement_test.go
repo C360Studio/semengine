@@ -651,46 +651,54 @@ func TestSettleDeliveryInvalidTuplesAndNilMessageFailClosed(t *testing.T) {
 }
 
 func TestConsumeDeliveryWithHeartbeatControlLossPreservesJoinedMeaning(t *testing.T) {
-	controlErr := errors.New("heartbeat transport")
-	cause := errors.New("retry after cleanup")
-	msg := &mockMsg{subject: "typed", inProgressErr: controlErr}
-	policy, err := ValidateHeartbeatDeliveryPolicy(t.Context(), StreamConsumerConfig{}, time.Millisecond,
-		ImmediateDeliveryRetry(), func(ctx context.Context, _ []byte) (DeliveryDecision, error) {
-			<-ctx.Done()
-			return DeliveryDecisionRetry, cause
-		})
-	require.NoError(t, err)
+	// R1a: the 1 ms heartbeat ticker runs on the bubble's clock. The renewal failure it
+	// delivers is the only thing that ends this work, so the tick must fire for the call to return.
+	synctest.Test(t, func(t *testing.T) {
+		controlErr := errors.New("heartbeat transport")
+		cause := errors.New("retry after cleanup")
+		msg := &mockMsg{subject: "typed", inProgressErr: controlErr}
+		policy, err := ValidateHeartbeatDeliveryPolicy(t.Context(), StreamConsumerConfig{}, time.Millisecond,
+			ImmediateDeliveryRetry(), func(ctx context.Context, _ []byte) (DeliveryDecision, error) {
+				<-ctx.Done()
+				return DeliveryDecisionRetry, cause
+			})
+		require.NoError(t, err)
 
-	result := ConsumeDeliveryWithHeartbeat(t.Context(), msg, policy)
-	require.Equal(t, DeliveryDecisionRetry, result.Decision())
-	require.ErrorIs(t, result.Cause(), cause)
-	require.ErrorIs(t, result.controlErr, controlErr)
-	require.True(t, result.OwnerStopRequired())
-	require.False(t, result.settlementTried)
-	require.Zero(t, msg.ackCount.Load()+msg.nakCount.Load()+msg.termCount.Load())
-	require.Equal(t, int32(1), msg.dataCount.Load())
+		result := ConsumeDeliveryWithHeartbeat(t.Context(), msg, policy)
+		require.Equal(t, DeliveryDecisionRetry, result.Decision())
+		require.ErrorIs(t, result.Cause(), cause)
+		require.ErrorIs(t, result.controlErr, controlErr)
+		require.True(t, result.OwnerStopRequired())
+		require.False(t, result.settlementTried)
+		require.Zero(t, msg.ackCount.Load()+msg.nakCount.Load()+msg.termCount.Load())
+		require.Equal(t, int32(1), msg.dataCount.Load())
+	})
 }
 
 // The caller reads a lost lease through Err(), the result's one aggregate, not through the
 // unexported field: work that ends cleanly after the renewal failed must still report the
 // heartbeat failure and its transport cause there.
 func TestConsumeDeliveryWithHeartbeatErrCarriesControlLoss(t *testing.T) {
-	transportErr := errors.New("heartbeat transport")
-	msg := &mockMsg{subject: "clean-after-loss", inProgressErr: transportErr}
-	policy, err := ValidateHeartbeatDeliveryPolicy(t.Context(), StreamConsumerConfig{}, time.Millisecond,
-		ImmediateDeliveryRetry(), func(ctx context.Context, _ []byte) (DeliveryDecision, error) {
-			<-ctx.Done()
-			return DeliveryDecisionAck, nil
-		})
-	require.NoError(t, err)
+	// R1a: the 1 ms heartbeat ticker runs on the bubble's clock. The renewal failure it
+	// delivers is the only thing that ends this work, so the tick must fire for the call to return.
+	synctest.Test(t, func(t *testing.T) {
+		transportErr := errors.New("heartbeat transport")
+		msg := &mockMsg{subject: "clean-after-loss", inProgressErr: transportErr}
+		policy, err := ValidateHeartbeatDeliveryPolicy(t.Context(), StreamConsumerConfig{}, time.Millisecond,
+			ImmediateDeliveryRetry(), func(ctx context.Context, _ []byte) (DeliveryDecision, error) {
+				<-ctx.Done()
+				return DeliveryDecisionAck, nil
+			})
+		require.NoError(t, err)
 
-	result := ConsumeDeliveryWithHeartbeat(t.Context(), msg, policy)
-	require.Equal(t, DeliveryDecisionAck, result.Decision())
-	require.NoError(t, result.Cause(), "the work itself succeeded; only the lease was lost")
-	require.ErrorIs(t, result.Err(), ErrHeartbeatFailed)
-	require.ErrorIs(t, result.Err(), transportErr)
-	require.True(t, result.OwnerStopRequired())
-	require.Zero(t, msg.ackCount.Load()+msg.nakCount.Load()+msg.termCount.Load())
+		result := ConsumeDeliveryWithHeartbeat(t.Context(), msg, policy)
+		require.Equal(t, DeliveryDecisionAck, result.Decision())
+		require.NoError(t, result.Cause(), "the work itself succeeded; only the lease was lost")
+		require.ErrorIs(t, result.Err(), ErrHeartbeatFailed)
+		require.ErrorIs(t, result.Err(), transportErr)
+		require.True(t, result.OwnerStopRequired())
+		require.Zero(t, msg.ackCount.Load()+msg.nakCount.Load()+msg.termCount.Load())
+	})
 }
 
 func TestConsumeDeliveryWithHeartbeatOwnerCancellationJoinsThenSettles(t *testing.T) {
@@ -747,18 +755,22 @@ func TestConsumeDeliveryWithHeartbeatControlLossNormalizesInvalidAndPanic(t *tes
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			msg := &mockMsg{subject: tt.name, data: []byte("body"), inProgressErr: controlErr}
-			policy, err := ValidateHeartbeatDeliveryPolicy(t.Context(), StreamConsumerConfig{}, time.Millisecond,
-				ImmediateDeliveryRetry(), tt.work)
-			require.NoError(t, err)
-			result := ConsumeDeliveryWithHeartbeat(t.Context(), msg, policy)
-			require.Equal(t, tt.wantDecision, result.Decision())
-			tt.assertCause(t, result.Cause())
-			require.ErrorIs(t, result.controlErr, controlErr)
-			require.True(t, result.Quarantined())
-			require.True(t, result.OwnerStopRequired())
-			require.False(t, result.settlementTried)
-			require.Equal(t, int32(1), msg.dataCount.Load())
+			// R1a: the 1 ms heartbeat ticker runs on the bubble's clock. The renewal failure it
+			// delivers is the only thing that ends this work, so the tick must fire for the call to return.
+			synctest.Test(t, func(t *testing.T) {
+				msg := &mockMsg{subject: tt.name, data: []byte("body"), inProgressErr: controlErr}
+				policy, err := ValidateHeartbeatDeliveryPolicy(t.Context(), StreamConsumerConfig{}, time.Millisecond,
+					ImmediateDeliveryRetry(), tt.work)
+				require.NoError(t, err)
+				result := ConsumeDeliveryWithHeartbeat(t.Context(), msg, policy)
+				require.Equal(t, tt.wantDecision, result.Decision())
+				tt.assertCause(t, result.Cause())
+				require.ErrorIs(t, result.controlErr, controlErr)
+				require.True(t, result.Quarantined())
+				require.True(t, result.OwnerStopRequired())
+				require.False(t, result.settlementTried)
+				require.Equal(t, int32(1), msg.dataCount.Load())
+			})
 		})
 	}
 }

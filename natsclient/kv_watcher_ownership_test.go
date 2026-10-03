@@ -115,110 +115,116 @@ type ownershipEntry struct {
 func (e ownershipEntry) Key() string { return e.key }
 
 func TestKVStoreFilteredCancellationFinishesNativeDelivery(t *testing.T) {
-	bucket := newOwnershipBucket()
-	ctx, cancel := context.WithCancel(t.Context())
-	callDone := make(chan struct{})
-	result := make(chan struct {
-		keys []string
-		err  error
-	}, 1)
-	var releaseOnce sync.Once
-	release := func() { releaseOnce.Do(func() { close(bucket.release) }) }
-	defer func() {
-		// Recovery is test-owned and occurs only after a terminal assertion or
-		// failure; it cannot make the production result pass.
-		cancel()
-		release()
-		_ = bucket.watcher.Stop()
-		select {
-		case <-bucket.watcher.done:
-		default:
-			rescueLimit := time.NewTimer(10 * time.Second)
-		rescue:
-			for {
-				select {
-				case _, ok := <-bucket.watcher.Updates():
-					if !ok {
-						break rescue
-					}
-				case <-rescueLimit.C:
-					t.Error("test-owned Updates rescue did not finish")
-					break rescue
-				}
-			}
-			rescueLimit.Stop()
-		}
-		select {
-		case <-bucket.watcher.done:
-		case <-time.After(10 * time.Second):
-			t.Error("test-owned producer did not join")
-		}
-		select {
-		case <-callDone:
-		case <-time.After(10 * time.Second):
-			t.Error("public listing task did not join")
-		}
-	}()
-
-	go func() {
-		defer close(callDone)
-		keys, err := (&Client{}).NewKVStore(bucket).KeysByFilter(ctx, "diag.>")
-		result <- struct {
+	// R1a: KeysByFilter arms the store's 5 s operation deadline (DefaultKVOptions) and the 5 s
+	// terminal drain window (filteredWatcherDrainTimeout), and the joins below carry 10 s limits.
+	// On the bubble's clock none of them can expire unless every goroutine is blocked, so a slow
+	// host cannot turn a correct listing into a timeout.
+	synctest.Test(t, func(t *testing.T) {
+		bucket := newOwnershipBucket()
+		ctx, cancel := context.WithCancel(t.Context())
+		callDone := make(chan struct{})
+		result := make(chan struct {
 			keys []string
 			err  error
-		}{keys, err}
-	}()
-	select {
-	case <-bucket.entered:
-	case <-time.After(10 * time.Second):
-		t.Fatal("filtered constructor was not entered")
-	}
-	select {
-	case <-bucket.attempted:
-	case <-time.After(10 * time.Second):
-		t.Fatal("native Updates send was not attempted")
-	}
-	cancel()
-	release()
-	var got struct {
-		keys []string
-		err  error
-	}
-	select {
-	case got = <-result:
-	case <-time.After(10 * time.Second):
-		t.Fatal("public listing did not return after cancellation")
-	}
-	require.ErrorIs(t, got.err, context.Canceled)
-	assert.Nil(t, got.keys)
-	assert.EqualValues(t, 1, bucket.watcher.calls.Load(), "production must invoke native Stop once before public return")
-	// The public contract is Updates closure, not the producer goroutine's
-	// later epilogue. Probe immediately, before any test-owned rescue.
-	deliveryClosed := false
-	select {
-	case _, ok := <-bucket.watcher.Updates():
-		if ok {
-			t.Error("public listing returned with native Updates delivery pending")
-		} else {
-			deliveryClosed = true
-		}
-	default:
-		t.Error("public listing returned before native Updates closed")
-	}
-	if deliveryClosed {
-		// The second delivery is causally after Stop and must be exercised
-		// on a passing path. A failing path uses deferred rescue/join.
+		}, 1)
+		var releaseOnce sync.Once
+		release := func() { releaseOnce.Do(func() { close(bucket.release) }) }
+		defer func() {
+			// Recovery is test-owned and occurs only after a terminal assertion or
+			// failure; it cannot make the production result pass.
+			cancel()
+			release()
+			_ = bucket.watcher.Stop()
+			select {
+			case <-bucket.watcher.done:
+			default:
+				rescueLimit := time.NewTimer(10 * time.Second)
+			rescue:
+				for {
+					select {
+					case _, ok := <-bucket.watcher.Updates():
+						if !ok {
+							break rescue
+						}
+					case <-rescueLimit.C:
+						t.Error("test-owned Updates rescue did not finish")
+						break rescue
+					}
+				}
+				rescueLimit.Stop()
+			}
+			select {
+			case <-bucket.watcher.done:
+			case <-time.After(10 * time.Second):
+				t.Error("test-owned producer did not join")
+			}
+			select {
+			case <-callDone:
+			case <-time.After(10 * time.Second):
+				t.Error("public listing task did not join")
+			}
+		}()
+
+		go func() {
+			defer close(callDone)
+			keys, err := (&Client{}).NewKVStore(bucket).KeysByFilter(ctx, "diag.>")
+			result <- struct {
+				keys []string
+				err  error
+			}{keys, err}
+		}()
 		select {
-		case <-bucket.watcher.postStopAttempted:
-		default:
-			t.Error("post-Stop delivery boundary was not exercised")
-		}
-		select {
-		case <-bucket.watcher.done:
+		case <-bucket.entered:
 		case <-time.After(10 * time.Second):
-			t.Error("test-owned producer did not finish after delivery closure")
+			t.Fatal("filtered constructor was not entered")
 		}
-	}
+		select {
+		case <-bucket.attempted:
+		case <-time.After(10 * time.Second):
+			t.Fatal("native Updates send was not attempted")
+		}
+		cancel()
+		release()
+		var got struct {
+			keys []string
+			err  error
+		}
+		select {
+		case got = <-result:
+		case <-time.After(10 * time.Second):
+			t.Fatal("public listing did not return after cancellation")
+		}
+		require.ErrorIs(t, got.err, context.Canceled)
+		assert.Nil(t, got.keys)
+		assert.EqualValues(t, 1, bucket.watcher.calls.Load(), "production must invoke native Stop once before public return")
+		// The public contract is Updates closure, not the producer goroutine's
+		// later epilogue. Probe immediately, before any test-owned rescue.
+		deliveryClosed := false
+		select {
+		case _, ok := <-bucket.watcher.Updates():
+			if ok {
+				t.Error("public listing returned with native Updates delivery pending")
+			} else {
+				deliveryClosed = true
+			}
+		default:
+			t.Error("public listing returned before native Updates closed")
+		}
+		if deliveryClosed {
+			// The second delivery is causally after Stop and must be exercised
+			// on a passing path. A failing path uses deferred rescue/join.
+			select {
+			case <-bucket.watcher.postStopAttempted:
+			default:
+				t.Error("post-Stop delivery boundary was not exercised")
+			}
+			select {
+			case <-bucket.watcher.done:
+			case <-time.After(10 * time.Second):
+				t.Error("test-owned producer did not finish after delivery closure")
+			}
+		}
+	})
 }
 
 // scriptedWatchBucket drives the full NewKVStore path without a NATS server.
@@ -259,50 +265,66 @@ func closedOnStopWatcher(entries ...jetstream.KeyValueEntry) *scriptedWatcher {
 // spec: nats-kv-keys / Filtered KVStore listings finalize native watcher delivery
 func TestKVStoreFilteredWatcherSnapshotAndStopErrors(t *testing.T) {
 	t.Run("snapshot_success_discards_post_marker", func(t *testing.T) {
-		watcher := closedOnStopWatcher(ownershipEntry{key: "diag.one"}, nil, ownershipEntry{key: "diag.later"})
-		bucket := scriptedWatchBucket{watch: func(_ context.Context, filters []string) (jetstream.KeyWatcher, error) {
-			assert.Equal(t, []string{"diag.>"}, filters)
-			return watcher, nil
-		}}
-		keys, err := (&Client{}).NewKVStore(bucket).KeysByFilter(t.Context(), "diag.>")
-		require.NoError(t, err)
-		assert.Equal(t, []string{"diag.one"}, keys)
-		assert.EqualValues(t, 1, watcher.calls.Load())
+		// R1a: KeysByFilter arms the store's 5 s operation deadline and the 5 s terminal drain window.
+		// On the bubble's clock neither can expire before this case's assertions, however slow the host.
+		synctest.Test(t, func(t *testing.T) {
+			watcher := closedOnStopWatcher(ownershipEntry{key: "diag.one"}, nil, ownershipEntry{key: "diag.later"})
+			bucket := scriptedWatchBucket{watch: func(_ context.Context, filters []string) (jetstream.KeyWatcher, error) {
+				assert.Equal(t, []string{"diag.>"}, filters)
+				return watcher, nil
+			}}
+			keys, err := (&Client{}).NewKVStore(bucket).KeysByFilter(t.Context(), "diag.>")
+			require.NoError(t, err)
+			assert.Equal(t, []string{"diag.one"}, keys)
+			assert.EqualValues(t, 1, watcher.calls.Load())
+		})
 	})
 	t.Run("premature_close", func(t *testing.T) {
-		watcher := closedOnStopWatcher(ownershipEntry{key: "partial"})
-		close(watcher.updates)
-		watcher.stopFn = func() error { return nil }
-		bucket := scriptedWatchBucket{watch: func(context.Context, []string) (jetstream.KeyWatcher, error) {
-			return watcher, nil
-		}}
-		keys, err := (&Client{}).NewKVStore(bucket).KeysByFilter(t.Context(), "diag.>")
-		assert.Nil(t, keys)
-		assert.ErrorIs(t, err, errFilteredWatcherSnapshotIncomplete)
-		assert.EqualValues(t, 1, watcher.calls.Load())
+		// R1a: KeysByFilter arms the store's 5 s operation deadline and the 5 s terminal drain window.
+		// On the bubble's clock neither can expire before this case's assertions, however slow the host.
+		synctest.Test(t, func(t *testing.T) {
+			watcher := closedOnStopWatcher(ownershipEntry{key: "partial"})
+			close(watcher.updates)
+			watcher.stopFn = func() error { return nil }
+			bucket := scriptedWatchBucket{watch: func(context.Context, []string) (jetstream.KeyWatcher, error) {
+				return watcher, nil
+			}}
+			keys, err := (&Client{}).NewKVStore(bucket).KeysByFilter(t.Context(), "diag.>")
+			assert.Nil(t, keys)
+			assert.ErrorIs(t, err, errFilteredWatcherSnapshotIncomplete)
+			assert.EqualValues(t, 1, watcher.calls.Load())
+		})
 	})
 	t.Run("nonbenign_stop_after_closure", func(t *testing.T) {
-		stopFailure := errors.New("native unsubscribe failed")
-		watcher := closedOnStopWatcher(nil)
-		watcher.stopFn = func() error { close(watcher.updates); return stopFailure }
-		bucket := scriptedWatchBucket{watch: func(context.Context, []string) (jetstream.KeyWatcher, error) {
-			return watcher, nil
-		}}
-		keys, err := (&Client{}).NewKVStore(bucket).KeysByFilter(t.Context(), "diag.>")
-		assert.Nil(t, keys)
-		assert.ErrorIs(t, err, stopFailure)
-		assert.EqualValues(t, 1, watcher.calls.Load())
+		// R1a: KeysByFilter arms the store's 5 s operation deadline and the 5 s terminal drain window.
+		// On the bubble's clock neither can expire before this case's assertions, however slow the host.
+		synctest.Test(t, func(t *testing.T) {
+			stopFailure := errors.New("native unsubscribe failed")
+			watcher := closedOnStopWatcher(nil)
+			watcher.stopFn = func() error { close(watcher.updates); return stopFailure }
+			bucket := scriptedWatchBucket{watch: func(context.Context, []string) (jetstream.KeyWatcher, error) {
+				return watcher, nil
+			}}
+			keys, err := (&Client{}).NewKVStore(bucket).KeysByFilter(t.Context(), "diag.>")
+			assert.Nil(t, keys)
+			assert.ErrorIs(t, err, stopFailure)
+			assert.EqualValues(t, 1, watcher.calls.Load())
+		})
 	})
 	t.Run("already_terminal_stop_requires_closure", func(t *testing.T) {
-		watcher := closedOnStopWatcher(nil)
-		watcher.stopFn = func() error { close(watcher.updates); return nats.ErrBadSubscription }
-		bucket := scriptedWatchBucket{watch: func(context.Context, []string) (jetstream.KeyWatcher, error) {
-			return watcher, nil
-		}}
-		keys, err := (&Client{}).NewKVStore(bucket).KeysByFilter(t.Context(), "diag.>")
-		require.NoError(t, err)
-		assert.Nil(t, keys)
-		assert.EqualValues(t, 1, watcher.calls.Load())
+		// R1a: KeysByFilter arms the store's 5 s operation deadline and the 5 s terminal drain window.
+		// On the bubble's clock neither can expire before this case's assertions, however slow the host.
+		synctest.Test(t, func(t *testing.T) {
+			watcher := closedOnStopWatcher(nil)
+			watcher.stopFn = func() error { close(watcher.updates); return nats.ErrBadSubscription }
+			bucket := scriptedWatchBucket{watch: func(context.Context, []string) (jetstream.KeyWatcher, error) {
+				return watcher, nil
+			}}
+			keys, err := (&Client{}).NewKVStore(bucket).KeysByFilter(t.Context(), "diag.>")
+			require.NoError(t, err)
+			assert.Nil(t, keys)
+			assert.EqualValues(t, 1, watcher.calls.Load())
+		})
 	})
 }
 
@@ -333,28 +355,33 @@ func TestKVStoreFilteredNoWatcherPrecedence(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx, cancel := context.WithCancel(t.Context())
-			defer cancel()
-			if tt.name == "expired_direct_no_keys" {
-				cancel()
-				ctx, cancel = context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+			// R1a: KeysByFilter arms the store's 5 s operation deadline, and with no watcher it reads
+			// ctx.Err() first. On the bubble's clock that deadline cannot expire before this case's
+			// assertions, however slow the host.
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(t.Context())
 				defer cancel()
-			}
-			bucket := scriptedWatchBucket{watch: func(ctx context.Context, _ []string) (jetstream.KeyWatcher, error) {
-				if tt.name == "canceled_direct_no_keys" {
+				if tt.name == "expired_direct_no_keys" {
 					cancel()
+					ctx, cancel = context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
+					defer cancel()
 				}
-				return tt.watch(ctx)
-			}}
-			keys, err := (&Client{}).NewKVStore(bucket).KeysByFilter(ctx, "diag.>")
-			assert.Nil(t, keys)
-			if tt.wantOK {
-				require.NoError(t, err)
-			} else if tt.wantErr != nil {
-				assert.ErrorIs(t, err, tt.wantErr)
-			} else {
-				assert.Error(t, err)
-			}
+				bucket := scriptedWatchBucket{watch: func(ctx context.Context, _ []string) (jetstream.KeyWatcher, error) {
+					if tt.name == "canceled_direct_no_keys" {
+						cancel()
+					}
+					return tt.watch(ctx)
+				}}
+				keys, err := (&Client{}).NewKVStore(bucket).KeysByFilter(ctx, "diag.>")
+				assert.Nil(t, keys)
+				if tt.wantOK {
+					require.NoError(t, err)
+				} else if tt.wantErr != nil {
+					assert.ErrorIs(t, err, tt.wantErr)
+				} else {
+					assert.Error(t, err)
+				}
+			})
 		})
 	}
 	t.Run("nil_context", func(t *testing.T) {

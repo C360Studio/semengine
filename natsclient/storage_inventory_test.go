@@ -230,16 +230,23 @@ func TestStorageInventory_Attribution(t *testing.T) {
 		"FOO":           "over-stripped-owner",
 	}
 
-	c := newTestCollector(t, listerOf(
-		streamInfo(KVStreamPrefix+"ENTITY_STATES", jetstream.FileStorage, 0, 10),
-		streamInfo(KVStreamPrefix+"SEMSOURCE_DOCUMENTS", jetstream.FileStorage, 0, 20),
-		streamInfo(KVStreamPrefix+KVStreamPrefix+"FOO", jetstream.FileStorage, 0, 30),
-		streamInfo(ObjectStoreStreamPrefix+"MESSAGES", jetstream.FileStorage, 0, 40),
-		streamInfo("LOGS", jetstream.FileStorage, 0, 50),
-	), resolverFrom(catalog))
+	var inv StorageInventory
+	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
+	// correct collection.
+	synctest.Test(t, func(t *testing.T) {
+		c := newTestCollector(t, listerOf(
+			streamInfo(KVStreamPrefix+"ENTITY_STATES", jetstream.FileStorage, 0, 10),
+			streamInfo(KVStreamPrefix+"SEMSOURCE_DOCUMENTS", jetstream.FileStorage, 0, 20),
+			streamInfo(KVStreamPrefix+KVStreamPrefix+"FOO", jetstream.FileStorage, 0, 30),
+			streamInfo(ObjectStoreStreamPrefix+"MESSAGES", jetstream.FileStorage, 0, 40),
+			streamInfo("LOGS", jetstream.FileStorage, 0, 50),
+		), resolverFrom(catalog))
 
-	inv, err := c.Collect(context.Background())
-	require.NoError(t, err)
+		var err error
+		inv, err = c.Collect(context.Background())
+		require.NoError(t, err)
+	})
 	got := byName(t, inv)
 	require.Len(t, got, 5, "every account resource appears, attributed or not")
 
@@ -280,15 +287,22 @@ func TestStorageInventory_Attribution(t *testing.T) {
 // and only the first is a finding, so an operator filtering for escaped buckets
 // must not have to wade through every ordinary stream in the account.
 func TestStorageInventory_AttributionStatesNeverCollapse(t *testing.T) {
-	c := newTestCollector(t, listerOf(
-		streamInfo(KVStreamPrefix+"ENTITY_STATES", jetstream.FileStorage, 0, 1),
-		streamInfo(KVStreamPrefix+"ESCAPED_BUCKET", jetstream.FileStorage, 0, 1),
-		streamInfo(ObjectStoreStreamPrefix+"CONTENT", jetstream.FileStorage, 0, 1),
-		streamInfo("LOGS", jetstream.FileStorage, 0, 1),
-	), resolverFrom(map[string]string{"ENTITY_STATES": "graph-ingest"}))
+	var inv StorageInventory
+	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
+	// correct collection.
+	synctest.Test(t, func(t *testing.T) {
+		c := newTestCollector(t, listerOf(
+			streamInfo(KVStreamPrefix+"ENTITY_STATES", jetstream.FileStorage, 0, 1),
+			streamInfo(KVStreamPrefix+"ESCAPED_BUCKET", jetstream.FileStorage, 0, 1),
+			streamInfo(ObjectStoreStreamPrefix+"CONTENT", jetstream.FileStorage, 0, 1),
+			streamInfo("LOGS", jetstream.FileStorage, 0, 1),
+		), resolverFrom(map[string]string{"ENTITY_STATES": "graph-ingest"}))
 
-	inv, err := c.Collect(context.Background())
-	require.NoError(t, err)
+		var err error
+		inv, err = c.Collect(context.Background())
+		require.NoError(t, err)
+	})
 	got := byName(t, inv)
 
 	attributed := got[KVStreamPrefix+"ENTITY_STATES"]
@@ -333,26 +347,31 @@ func TestStorageInventory_AttributionStatesNeverCollapse(t *testing.T) {
 // that exists to catch a retained bucket-to-owner map: remove a bucket from the
 // catalog and the NEXT collection must report it unattributed.
 func TestStorageInventory_AttributionFollowsCatalogNotACopy(t *testing.T) {
-	catalog := map[string]string{"ENTITY_STATES": "graph-ingest"}
-	c := newTestCollector(t, listerOf(
-		streamInfo(KVStreamPrefix+"ENTITY_STATES", jetstream.FileStorage, 0, 10),
-	), resolverFrom(catalog))
+	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
+	// correct collection.
+	synctest.Test(t, func(t *testing.T) {
+		catalog := map[string]string{"ENTITY_STATES": "graph-ingest"}
+		c := newTestCollector(t, listerOf(
+			streamInfo(KVStreamPrefix+"ENTITY_STATES", jetstream.FileStorage, 0, 10),
+		), resolverFrom(catalog))
 
-	first, err := c.Collect(context.Background())
-	require.NoError(t, err)
-	require.Equal(t, "graph-ingest", byName(t, first)[KVStreamPrefix+"ENTITY_STATES"].Owner)
+		first, err := c.Collect(context.Background())
+		require.NoError(t, err)
+		require.Equal(t, "graph-ingest", byName(t, first)[KVStreamPrefix+"ENTITY_STATES"].Owner)
 
-	delete(catalog, "ENTITY_STATES")
+		delete(catalog, "ENTITY_STATES")
 
-	second, err := c.Collect(context.Background())
-	require.NoError(t, err)
-	res := byName(t, second)[KVStreamPrefix+"ENTITY_STATES"]
-	assert.Equal(t, AttributionUnattributed, res.Attribution,
-		"attribution must re-read the catalog, not a copy of it")
-	assert.Equal(t, "", res.Owner)
-	assert.False(t, res.Attributed())
-	assert.Equal(t, res, byName(t, c.Latest())[KVStreamPrefix+"ENTITY_STATES"],
-		"the published inventory must carry the same unattributed result")
+		second, err := c.Collect(context.Background())
+		require.NoError(t, err)
+		res := byName(t, second)[KVStreamPrefix+"ENTITY_STATES"]
+		assert.Equal(t, AttributionUnattributed, res.Attribution,
+			"attribution must re-read the catalog, not a copy of it")
+		assert.Equal(t, "", res.Owner)
+		assert.False(t, res.Attributed())
+		assert.Equal(t, res, byName(t, c.Latest())[KVStreamPrefix+"ENTITY_STATES"],
+			"the published inventory must carry the same unattributed result")
+	})
 }
 
 // TestNewStorageInventoryCollector_RequiresOwnerResolver fails closed on the
@@ -450,17 +469,22 @@ func TestNewCapacity_ThreeStatesNeverCollapse(t *testing.T) {
 // the account-limit comparison later depends on: memory and file are separate
 // tiers and must never be conflated.
 func TestStorageInventory_StorageTierIsReadNotGuessed(t *testing.T) {
-	c := newTestCollector(t, listerOf(
-		streamInfo("HEALTH", jetstream.MemoryStorage, 0, 1),
-		streamInfo("LOGS", jetstream.FileStorage, 0, 1),
-	), resolverFrom(nil))
+	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
+	// correct collection.
+	synctest.Test(t, func(t *testing.T) {
+		c := newTestCollector(t, listerOf(
+			streamInfo("HEALTH", jetstream.MemoryStorage, 0, 1),
+			streamInfo("LOGS", jetstream.FileStorage, 0, 1),
+		), resolverFrom(nil))
 
-	inv, err := c.Collect(context.Background())
-	require.NoError(t, err)
-	got := byName(t, inv)
-	assert.Equal(t, TierMemory, got["HEALTH"].Tier)
-	assert.Equal(t, TierFile, got["LOGS"].Tier)
-	assert.False(t, unknownOnEveryAxis(got["LOGS"]), "a described resource is not an undescribable one")
+		inv, err := c.Collect(context.Background())
+		require.NoError(t, err)
+		got := byName(t, inv)
+		assert.Equal(t, TierMemory, got["HEALTH"].Tier)
+		assert.Equal(t, TierFile, got["LOGS"].Tier)
+		assert.False(t, unknownOnEveryAxis(got["LOGS"]), "a described resource is not an undescribable one")
+	})
 }
 
 // --- 2.7 reconciling the info listing against the name listing ---------------
@@ -474,16 +498,23 @@ func TestStorageInventory_StorageTierIsReadNotGuessed(t *testing.T) {
 // single-server deploy after a NATS image rollback, which is precisely when an
 // operator needs the storage view most.
 func TestStorageInventory_UndescribableResourceIsNamedNotOmitted(t *testing.T) {
-	lister := accountWithUndescribable(
-		[]string{"OFFLINE_EVENTS", KVStreamPrefix + "ENTITY_STATES"},
-		streamInfo("LOGS", jetstream.FileStorage, 4096, 100),
-		streamInfo(ObjectStoreStreamPrefix+"CONTENT", jetstream.FileStorage, 0, 5),
-	)
-	c := newTestCollector(t, lister.source(),
-		resolverFrom(map[string]string{"ENTITY_STATES": "graph-ingest"}))
+	var inv StorageInventory
+	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
+	// correct collection.
+	synctest.Test(t, func(t *testing.T) {
+		lister := accountWithUndescribable(
+			[]string{"OFFLINE_EVENTS", KVStreamPrefix + "ENTITY_STATES"},
+			streamInfo("LOGS", jetstream.FileStorage, 4096, 100),
+			streamInfo(ObjectStoreStreamPrefix+"CONTENT", jetstream.FileStorage, 0, 5),
+		)
+		c := newTestCollector(t, lister.source(),
+			resolverFrom(map[string]string{"ENTITY_STATES": "graph-ingest"}))
 
-	inv, err := c.Collect(context.Background())
-	require.NoError(t, err)
+		var err error
+		inv, err = c.Collect(context.Background())
+		require.NoError(t, err)
+	})
 	got := byName(t, inv)
 	require.Len(t, got, 4, "the inventory must not report itself complete while omitting the unreadable")
 
@@ -527,21 +558,26 @@ func TestStorageInventory_UndescribableResourceIsNamedNotOmitted(t *testing.T) {
 // complete. The name listing carries a resource the info listing does not, and
 // the inventory must be strictly larger than the info listing alone.
 func TestStorageInventory_InfoListingOnlyWouldOmitTheUnreadable(t *testing.T) {
-	described := []*jetstream.StreamInfo{
-		streamInfo("LOGS", jetstream.FileStorage, 0, 1),
-	}
-	lister := accountWithUndescribable([]string{"ONLY_IN_THE_NAME_LISTING"}, described...)
-	c := newTestCollector(t, lister.source(), resolverFrom(nil))
+	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
+	// correct collection.
+	synctest.Test(t, func(t *testing.T) {
+		described := []*jetstream.StreamInfo{
+			streamInfo("LOGS", jetstream.FileStorage, 0, 1),
+		}
+		lister := accountWithUndescribable([]string{"ONLY_IN_THE_NAME_LISTING"}, described...)
+		c := newTestCollector(t, lister.source(), resolverFrom(nil))
 
-	inv, err := c.Collect(context.Background())
-	require.NoError(t, err)
+		inv, err := c.Collect(context.Background())
+		require.NoError(t, err)
 
-	assert.Len(t, inv.Resources, len(described)+1,
-		"the inventory must exceed the info listing by exactly the undescribable resources")
-	got := byName(t, inv)
-	require.Contains(t, got, "ONLY_IN_THE_NAME_LISTING",
-		"a collector reading only ListStreams would silently omit this resource")
-	assert.True(t, unknownOnEveryAxis(got["ONLY_IN_THE_NAME_LISTING"]))
+		assert.Len(t, inv.Resources, len(described)+1,
+			"the inventory must exceed the info listing by exactly the undescribable resources")
+		got := byName(t, inv)
+		require.Contains(t, got, "ONLY_IN_THE_NAME_LISTING",
+			"a collector reading only ListStreams would silently omit this resource")
+		assert.True(t, unknownOnEveryAxis(got["ONLY_IN_THE_NAME_LISTING"]))
+	})
 }
 
 // TestStorageInventory_DeduplicatesOverlappingPages covers the second-order
@@ -550,25 +586,30 @@ func TestStorageInventory_InfoListingOnlyWouldOmitTheUnreadable(t *testing.T) {
 // for being offline. An account past one page with an offline stream therefore
 // serves OVERLAPPING pages, and the same resource arrives twice.
 func TestStorageInventory_DeduplicatesOverlappingPages(t *testing.T) {
-	// The same stream twice, as two overlapping pages would deliver it, with
-	// different observed usage so a last-wins merge is visible.
-	lister := accountWithUndescribable(nil,
-		streamInfo("PAGED", jetstream.FileStorage, 4096, 100),
-		streamInfo("OTHER", jetstream.FileStorage, 0, 1),
-		streamInfo("PAGED", jetstream.FileStorage, 4096, 200),
-	)
-	c := newTestCollector(t, lister.source(), resolverFrom(nil))
+	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
+	// correct collection.
+	synctest.Test(t, func(t *testing.T) {
+		// The same stream twice, as two overlapping pages would deliver it, with
+		// different observed usage so a last-wins merge is visible.
+		lister := accountWithUndescribable(nil,
+			streamInfo("PAGED", jetstream.FileStorage, 4096, 100),
+			streamInfo("OTHER", jetstream.FileStorage, 0, 1),
+			streamInfo("PAGED", jetstream.FileStorage, 4096, 200),
+		)
+		c := newTestCollector(t, lister.source(), resolverFrom(nil))
 
-	inv, err := c.Collect(context.Background())
-	require.NoError(t, err)
+		inv, err := c.Collect(context.Background())
+		require.NoError(t, err)
 
-	// byName itself fails on a duplicate; the length check states the intent.
-	got := byName(t, inv)
-	assert.Len(t, inv.Resources, 2, "an overlapping page must not produce a duplicate row")
-	require.Contains(t, got, "PAGED")
-	used, ok := got["PAGED"].Bytes.Usage()
-	require.True(t, ok)
-	assert.Equal(t, int64(200), used, "the later observation of a duplicated resource wins")
+		// byName itself fails on a duplicate; the length check states the intent.
+		got := byName(t, inv)
+		assert.Len(t, inv.Resources, 2, "an overlapping page must not produce a duplicate row")
+		require.Contains(t, got, "PAGED")
+		used, ok := got["PAGED"].Bytes.Usage()
+		require.True(t, ok)
+		assert.Equal(t, int64(200), used, "the later observation of a duplicated resource wins")
+	})
 }
 
 // TestStorageInventory_TransientPhantomResolvesOnNextCollection covers the trade
@@ -577,37 +618,42 @@ func TestStorageInventory_DeduplicatesOverlappingPages(t *testing.T) {
 // resolves is strictly better than a silent omission that never does — but it
 // must actually resolve.
 func TestStorageInventory_TransientPhantomResolvesOnNextCollection(t *testing.T) {
-	survivor := streamInfo("SURVIVOR", jetstream.FileStorage, 0, 1)
-	deletedBetweenListings := true
-	lister := &fakeLister{
-		nextInfos: func() *fakeStreamInfoLister {
-			return &fakeStreamInfoLister{infos: []*jetstream.StreamInfo{survivor}}
-		},
-		nextNames: func() *fakeStreamNameLister {
-			names := []string{"SURVIVOR"}
-			if deletedBetweenListings {
-				// Named by the first listing, gone by the time the info listing
-				// ran.
-				names = append(names, "DELETED_MID_COLLECTION")
-			}
-			return &fakeStreamNameLister{names: names}
-		},
-	}
-	c := newTestCollector(t, lister.source(), resolverFrom(nil))
+	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
+	// correct collection.
+	synctest.Test(t, func(t *testing.T) {
+		survivor := streamInfo("SURVIVOR", jetstream.FileStorage, 0, 1)
+		deletedBetweenListings := true
+		lister := &fakeLister{
+			nextInfos: func() *fakeStreamInfoLister {
+				return &fakeStreamInfoLister{infos: []*jetstream.StreamInfo{survivor}}
+			},
+			nextNames: func() *fakeStreamNameLister {
+				names := []string{"SURVIVOR"}
+				if deletedBetweenListings {
+					// Named by the first listing, gone by the time the info listing
+					// ran.
+					names = append(names, "DELETED_MID_COLLECTION")
+				}
+				return &fakeStreamNameLister{names: names}
+			},
+		}
+		c := newTestCollector(t, lister.source(), resolverFrom(nil))
 
-	first, err := c.Collect(context.Background())
-	require.NoError(t, err)
-	phantom, ok := byName(t, first)["DELETED_MID_COLLECTION"]
-	require.True(t, ok, "the skew is reported as unknown rather than dropped")
-	assert.True(t, unknownOnEveryAxis(phantom))
+		first, err := c.Collect(context.Background())
+		require.NoError(t, err)
+		phantom, ok := byName(t, first)["DELETED_MID_COLLECTION"]
+		require.True(t, ok, "the skew is reported as unknown rather than dropped")
+		assert.True(t, unknownOnEveryAxis(phantom))
 
-	deletedBetweenListings = false
+		deletedBetweenListings = false
 
-	second, err := c.Collect(context.Background())
-	require.NoError(t, err)
-	assert.NotContains(t, byName(t, second), "DELETED_MID_COLLECTION",
-		"a transient phantom MUST resolve on a later collection")
-	assert.Len(t, second.Resources, 1)
+		second, err := c.Collect(context.Background())
+		require.NoError(t, err)
+		assert.NotContains(t, byName(t, second), "DELETED_MID_COLLECTION",
+			"a transient phantom MUST resolve on a later collection")
+		assert.Len(t, second.Resources, 1)
+	})
 }
 
 // TestStorageInventory_NameListingFailureFailsTheCollection keeps the second
@@ -615,32 +661,37 @@ func TestStorageInventory_TransientPhantomResolvesOnNextCollection(t *testing.T)
 // inventory cannot claim completeness, so the collection degrades to last-good
 // exactly as an info-listing failure does.
 func TestStorageInventory_NameListingFailureFailsTheCollection(t *testing.T) {
-	namesBroken := errors.New("name listing unavailable")
-	failing := false
-	lister := &fakeLister{
-		nextInfos: func() *fakeStreamInfoLister {
-			return &fakeStreamInfoLister{infos: []*jetstream.StreamInfo{
-				streamInfo("LOGS", jetstream.FileStorage, 0, 1),
-			}}
-		},
-		nextNames: func() *fakeStreamNameLister {
-			if failing {
-				return &fakeStreamNameLister{failWith: namesBroken}
-			}
-			return &fakeStreamNameLister{names: []string{"LOGS"}}
-		},
-	}
-	c := newTestCollector(t, lister.source(), resolverFrom(nil))
+	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
+	// correct collection.
+	synctest.Test(t, func(t *testing.T) {
+		namesBroken := errors.New("name listing unavailable")
+		failing := false
+		lister := &fakeLister{
+			nextInfos: func() *fakeStreamInfoLister {
+				return &fakeStreamInfoLister{infos: []*jetstream.StreamInfo{
+					streamInfo("LOGS", jetstream.FileStorage, 0, 1),
+				}}
+			},
+			nextNames: func() *fakeStreamNameLister {
+				if failing {
+					return &fakeStreamNameLister{failWith: namesBroken}
+				}
+				return &fakeStreamNameLister{names: []string{"LOGS"}}
+			},
+		}
+		c := newTestCollector(t, lister.source(), resolverFrom(nil))
 
-	good, err := c.Collect(context.Background())
-	require.NoError(t, err)
-	require.Len(t, good.Resources, 1)
+		good, err := c.Collect(context.Background())
+		require.NoError(t, err)
+		require.Len(t, good.Resources, 1)
 
-	failing = true
-	_, err = c.Collect(context.Background())
-	require.ErrorIs(t, err, namesBroken)
-	assert.Len(t, c.Latest().Resources, 1, "last-good survives a name-listing failure")
-	assert.True(t, c.Latest().Stale)
+		failing = true
+		_, err = c.Collect(context.Background())
+		require.ErrorIs(t, err, namesBroken)
+		assert.Len(t, c.Latest().Resources, 1, "last-good survives a name-listing failure")
+		assert.True(t, c.Latest().Stale)
+	})
 }
 
 // --- a nameless listing entry fails the collection ---------------------------
@@ -660,40 +711,45 @@ func TestStorageInventory_NamelessEntryFailsTheCollection(t *testing.T) {
 		{"entry with an empty name", streamInfo("", jetstream.FileStorage, 0, 0)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			healthy := true
-			lister := &fakeLister{
-				nextInfos: func() *fakeStreamInfoLister {
-					infos := []*jetstream.StreamInfo{streamInfo("LOGS", jetstream.FileStorage, 4096, 100)}
-					if !healthy {
-						// Last, so the fake's walk goroutine finishes rather
-						// than blocking on an abandoned send.
-						infos = append(infos, tc.bad)
-					}
-					return &fakeStreamInfoLister{infos: infos}
-				},
-				nextNames: func() *fakeStreamNameLister {
-					return &fakeStreamNameLister{names: []string{"LOGS"}}
-				},
-			}
-			c := newTestCollector(t, lister.source(), resolverFrom(nil))
+			// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+			// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
+			// correct collection.
+			synctest.Test(t, func(t *testing.T) {
+				healthy := true
+				lister := &fakeLister{
+					nextInfos: func() *fakeStreamInfoLister {
+						infos := []*jetstream.StreamInfo{streamInfo("LOGS", jetstream.FileStorage, 4096, 100)}
+						if !healthy {
+							// Last, so the fake's walk goroutine finishes rather
+							// than blocking on an abandoned send.
+							infos = append(infos, tc.bad)
+						}
+						return &fakeStreamInfoLister{infos: infos}
+					},
+					nextNames: func() *fakeStreamNameLister {
+						return &fakeStreamNameLister{names: []string{"LOGS"}}
+					},
+				}
+				c := newTestCollector(t, lister.source(), resolverFrom(nil))
 
-			good, err := c.Collect(context.Background())
-			require.NoError(t, err)
-			require.Len(t, good.Resources, 1)
+				good, err := c.Collect(context.Background())
+				require.NoError(t, err)
+				require.Len(t, good.Resources, 1)
 
-			healthy = false
-			_, err = c.Collect(context.Background())
-			require.Error(t, err, "a malformed listing entry must fail the collection")
-			assert.Contains(t, err.Error(), "no stream name",
-				"the reason must name the malformed listing")
+				healthy = false
+				_, err = c.Collect(context.Background())
+				require.Error(t, err, "a malformed listing entry must fail the collection")
+				assert.Contains(t, err.Error(), "no stream name",
+					"the reason must name the malformed listing")
 
-			degraded := c.Latest()
-			assert.True(t, degraded.Stale)
-			assert.Contains(t, degraded.StaleReason, "no stream name")
-			assert.Len(t, degraded.Resources, 1, "last-good survives")
-			for _, res := range degraded.Resources {
-				assert.NotEmpty(t, res.Name, "no unlookupable ghost row is ever published")
-			}
+				degraded := c.Latest()
+				assert.True(t, degraded.Stale)
+				assert.Contains(t, degraded.StaleReason, "no stream name")
+				assert.Len(t, degraded.Resources, 1, "last-good survives")
+				for _, res := range degraded.Resources {
+					assert.NotEmpty(t, res.Name, "no unlookupable ghost row is ever published")
+				}
+			})
 		})
 	}
 }
@@ -726,30 +782,35 @@ func TestStorageInventory_LatestBeforeFirstCollectionIsNotHealthy(t *testing.T) 
 // masks the aliasing. Reintroducing spare capacity would make the append
 // dangerous too, but the element write catches the aliasing either way.
 func TestStorageInventory_LatestReturnsAnIndependentSlice(t *testing.T) {
-	c := newTestCollector(t, listerOf(
-		streamInfo("LOGS", jetstream.FileStorage, 0, 1),
-		streamInfo("METRICS", jetstream.MemoryStorage, 0, 1),
-	), resolverFrom(nil))
-	_, err := c.Collect(context.Background())
-	require.NoError(t, err)
+	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
+	// correct collection.
+	synctest.Test(t, func(t *testing.T) {
+		c := newTestCollector(t, listerOf(
+			streamInfo("LOGS", jetstream.FileStorage, 0, 1),
+			streamInfo("METRICS", jetstream.MemoryStorage, 0, 1),
+		), resolverFrom(nil))
+		_, err := c.Collect(context.Background())
+		require.NoError(t, err)
 
-	first := c.Latest()
-	second := c.Latest()
-	require.Len(t, first.Resources, 2)
-	require.Len(t, second.Resources, 2)
+		first := c.Latest()
+		second := c.Latest()
+		require.Len(t, first.Resources, 2)
+		require.Len(t, second.Resources, 2)
 
-	first.Resources[0].Name = "MUTATED"
-	first.Resources[0].Owner = "IMPERSONATED"
+		first.Resources[0].Name = "MUTATED"
+		first.Resources[0].Owner = "IMPERSONATED"
 
-	assert.Equal(t, "LOGS", second.Resources[0].Name,
-		"one reader must not mutate another reader's row")
-	assert.Equal(t, "LOGS", c.Latest().Resources[0].Name,
-		"a reader must not be able to corrupt published inventory state")
-	assert.Empty(t, c.Latest().Resources[0].Owner)
+		assert.Equal(t, "LOGS", second.Resources[0].Name,
+			"one reader must not mutate another reader's row")
+		assert.Equal(t, "LOGS", c.Latest().Resources[0].Name,
+			"a reader must not be able to corrupt published inventory state")
+		assert.Empty(t, c.Latest().Resources[0].Owner)
 
-	first.Resources = append(first.Resources, StorageResource{Name: "INJECTED"})
-	assert.Len(t, second.Resources, 2, "a second reader must not see the first reader's append")
-	assert.Len(t, c.Latest().Resources, 2)
+		first.Resources = append(first.Resources, StorageResource{Name: "INJECTED"})
+		assert.Len(t, second.Resources, 2, "a second reader must not see the first reader's append")
+		assert.Len(t, c.Latest().Resources, 2)
+	})
 }
 
 // TestStorageInventory_DegradesToLastGoodWithTimestamp is the spec's
@@ -757,50 +818,55 @@ func TestStorageInventory_LatestReturnsAnIndependentSlice(t *testing.T) {
 // truncate the inventory, and the reported timestamp must stay the one the good
 // data was actually collected at.
 func TestStorageInventory_DegradesToLastGoodWithTimestamp(t *testing.T) {
-	failing := errors.New("account listing unavailable")
-	broken := false
-	lister := &fakeLister{
-		nextInfos: func() *fakeStreamInfoLister {
-			if broken {
-				return &fakeStreamInfoLister{failWith: failing}
-			}
-			return &fakeStreamInfoLister{infos: []*jetstream.StreamInfo{
-				streamInfo("LOGS", jetstream.FileStorage, 4096, 100),
-			}}
-		},
-		nextNames: func() *fakeStreamNameLister {
-			return &fakeStreamNameLister{names: []string{"LOGS"}}
-		},
-	}
-	c := newTestCollector(t, lister.source(), resolverFrom(nil))
+	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
+	// correct collection.
+	synctest.Test(t, func(t *testing.T) {
+		failing := errors.New("account listing unavailable")
+		broken := false
+		lister := &fakeLister{
+			nextInfos: func() *fakeStreamInfoLister {
+				if broken {
+					return &fakeStreamInfoLister{failWith: failing}
+				}
+				return &fakeStreamInfoLister{infos: []*jetstream.StreamInfo{
+					streamInfo("LOGS", jetstream.FileStorage, 4096, 100),
+				}}
+			},
+			nextNames: func() *fakeStreamNameLister {
+				return &fakeStreamNameLister{names: []string{"LOGS"}}
+			},
+		}
+		c := newTestCollector(t, lister.source(), resolverFrom(nil))
 
-	good, err := c.Collect(context.Background())
-	require.NoError(t, err)
-	require.Len(t, good.Resources, 1)
-	require.False(t, good.Stale)
-	collectedAt := good.CollectedAt
-	require.False(t, collectedAt.IsZero())
+		good, err := c.Collect(context.Background())
+		require.NoError(t, err)
+		require.Len(t, good.Resources, 1)
+		require.False(t, good.Stale)
+		collectedAt := good.CollectedAt
+		require.False(t, collectedAt.IsZero())
 
-	broken = true
-	_, err = c.Collect(context.Background())
-	require.ErrorIs(t, err, failing)
+		broken = true
+		_, err = c.Collect(context.Background())
+		require.ErrorIs(t, err, failing)
 
-	degraded := c.Latest()
-	assert.Len(t, degraded.Resources, 1, "a failed collection must not blank the inventory")
-	assert.Equal(t, collectedAt, degraded.CollectedAt, "the timestamp stays the one the data was collected at")
-	assert.True(t, degraded.Stale)
-	assert.Contains(t, degraded.StaleReason, failing.Error())
-	require.NotNil(t, degraded.StaleSince, "a stale inventory carries the moment it went stale")
-	assert.False(t, degraded.StaleSince.IsZero(), "the failure has its own timestamp")
-	assert.Equal(t, "unit-test", degraded.ProducedBy)
+		degraded := c.Latest()
+		assert.Len(t, degraded.Resources, 1, "a failed collection must not blank the inventory")
+		assert.Equal(t, collectedAt, degraded.CollectedAt, "the timestamp stays the one the data was collected at")
+		assert.True(t, degraded.Stale)
+		assert.Contains(t, degraded.StaleReason, failing.Error())
+		require.NotNil(t, degraded.StaleSince, "a stale inventory carries the moment it went stale")
+		assert.False(t, degraded.StaleSince.IsZero(), "the failure has its own timestamp")
+		assert.Equal(t, "unit-test", degraded.ProducedBy)
 
-	// A recovered collection clears the degradation rather than latching it.
-	broken = false
-	fresh, err := c.Collect(context.Background())
-	require.NoError(t, err)
-	assert.False(t, fresh.Stale)
-	assert.Empty(t, fresh.StaleReason)
-	assert.False(t, fresh.CollectedAt.Before(collectedAt))
+		// A recovered collection clears the degradation rather than latching it.
+		broken = false
+		fresh, err := c.Collect(context.Background())
+		require.NoError(t, err)
+		assert.False(t, fresh.Stale)
+		assert.Empty(t, fresh.StaleReason)
+		assert.False(t, fresh.CollectedAt.Before(collectedAt))
+	})
 }
 
 // TestStorageInventory_ShutdownDoesNotStampTheLastGoodResult keeps a graceful
@@ -808,60 +874,70 @@ func TestStorageInventory_DegradesToLastGoodWithTimestamp(t *testing.T) {
 // the process is stopping is not evidence about storage, so it must not stamp
 // "context canceled" onto an otherwise good inventory.
 func TestStorageInventory_ShutdownDoesNotStampTheLastGoodResult(t *testing.T) {
-	c := newTestCollector(t, listerOf(
-		streamInfo("LOGS", jetstream.FileStorage, 0, 1),
-	), resolverFrom(nil))
+	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
+	// correct collection.
+	synctest.Test(t, func(t *testing.T) {
+		c := newTestCollector(t, listerOf(
+			streamInfo("LOGS", jetstream.FileStorage, 0, 1),
+		), resolverFrom(nil))
 
-	good, err := c.Collect(context.Background())
-	require.NoError(t, err)
-	require.False(t, good.Stale)
+		good, err := c.Collect(context.Background())
+		require.NoError(t, err)
+		require.False(t, good.Stale)
 
-	shuttingDown, cancel := context.WithCancel(context.Background())
-	cancel()
-	_, err = c.Collect(shuttingDown)
-	require.Error(t, err)
+		shuttingDown, cancel := context.WithCancel(context.Background())
+		cancel()
+		_, err = c.Collect(shuttingDown)
+		require.Error(t, err)
 
-	after := c.Latest()
-	assert.False(t, after.Stale, "a shutdown-cancelled collection is not a storage finding")
-	assert.Empty(t, after.StaleReason)
-	assert.Equal(t, good.CollectedAt, after.CollectedAt)
+		after := c.Latest()
+		assert.False(t, after.Stale, "a shutdown-cancelled collection is not a storage finding")
+		assert.Empty(t, after.StaleReason)
+		assert.Equal(t, good.CollectedAt, after.CollectedAt)
+	})
 }
 
 // TestStorageInventory_PartialListingIsNeverPublished guards the silent-omission
 // hazard: a listing that errors PART WAY through has already yielded rows, and
 // publishing them would report a subset of the account as if it were all of it.
 func TestStorageInventory_PartialListingIsNeverPublished(t *testing.T) {
-	truncated := errors.New("listing truncated")
-	broken := false
-	lister := &fakeLister{
-		nextInfos: func() *fakeStreamInfoLister {
-			if broken {
-				return &fakeStreamInfoLister{
-					infos:    []*jetstream.StreamInfo{streamInfo("A", jetstream.FileStorage, 0, 1)},
-					failWith: truncated,
+	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
+	// correct collection.
+	synctest.Test(t, func(t *testing.T) {
+		truncated := errors.New("listing truncated")
+		broken := false
+		lister := &fakeLister{
+			nextInfos: func() *fakeStreamInfoLister {
+				if broken {
+					return &fakeStreamInfoLister{
+						infos:    []*jetstream.StreamInfo{streamInfo("A", jetstream.FileStorage, 0, 1)},
+						failWith: truncated,
+					}
 				}
-			}
-			return &fakeStreamInfoLister{infos: []*jetstream.StreamInfo{
-				streamInfo("A", jetstream.FileStorage, 0, 1),
-				streamInfo("B", jetstream.FileStorage, 0, 1),
-				streamInfo("C", jetstream.FileStorage, 0, 1),
-			}}
-		},
-		nextNames: func() *fakeStreamNameLister {
-			return &fakeStreamNameLister{names: []string{"A", "B", "C"}}
-		},
-	}
-	c := newTestCollector(t, lister.source(), resolverFrom(nil))
+				return &fakeStreamInfoLister{infos: []*jetstream.StreamInfo{
+					streamInfo("A", jetstream.FileStorage, 0, 1),
+					streamInfo("B", jetstream.FileStorage, 0, 1),
+					streamInfo("C", jetstream.FileStorage, 0, 1),
+				}}
+			},
+			nextNames: func() *fakeStreamNameLister {
+				return &fakeStreamNameLister{names: []string{"A", "B", "C"}}
+			},
+		}
+		c := newTestCollector(t, lister.source(), resolverFrom(nil))
 
-	full, err := c.Collect(context.Background())
-	require.NoError(t, err)
-	require.Len(t, full.Resources, 3)
+		full, err := c.Collect(context.Background())
+		require.NoError(t, err)
+		require.Len(t, full.Resources, 3)
 
-	broken = true
-	_, err = c.Collect(context.Background())
-	require.ErrorIs(t, err, truncated)
-	assert.Len(t, c.Latest().Resources, 3,
-		"a truncated listing must not replace the inventory with its partial rows")
+		broken = true
+		_, err = c.Collect(context.Background())
+		require.ErrorIs(t, err, truncated)
+		assert.Len(t, c.Latest().Resources, 3,
+			"a truncated listing must not replace the inventory with its partial rows")
+	})
 }
 
 // TestStorageInventory_CollectionIsBoundedByTimeout proves the collection cannot
@@ -966,31 +1042,36 @@ func TestStorageInventory_LatestNeverWaitsOnCollection(t *testing.T) {
 // finishing last would publish the older reading and walk CollectedAt backwards,
 // so a report could get LESS fresh over time.
 func TestStorageInventory_ConcurrentCollectionsPublishInOrder(t *testing.T) {
-	c := newTestCollector(t, listerOf(
-		streamInfo("LOGS", jetstream.FileStorage, 0, 1),
-		streamInfo("METRICS", jetstream.MemoryStorage, 0, 1),
-	), resolverFrom(nil))
+	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
+	// correct collection.
+	synctest.Test(t, func(t *testing.T) {
+		c := newTestCollector(t, listerOf(
+			streamInfo("LOGS", jetstream.FileStorage, 0, 1),
+			streamInfo("METRICS", jetstream.MemoryStorage, 0, 1),
+		), resolverFrom(nil))
 
-	const collectors = 8
-	stamps := make([]time.Time, collectors)
-	var wg sync.WaitGroup
-	for i := range collectors {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			inv, err := c.Collect(context.Background())
-			assert.NoError(t, err)
-			stamps[i] = inv.CollectedAt
-		}()
-	}
-	wg.Wait()
+		const collectors = 8
+		stamps := make([]time.Time, collectors)
+		var wg sync.WaitGroup
+		for i := range collectors {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				inv, err := c.Collect(context.Background())
+				assert.NoError(t, err)
+				stamps[i] = inv.CollectedAt
+			}()
+		}
+		wg.Wait()
 
-	latest := c.Latest()
-	require.Len(t, latest.Resources, 2, "concurrent collections must not corrupt the published set")
-	for i, stamp := range stamps {
-		assert.False(t, latest.CollectedAt.Before(stamp),
-			"the published timestamp must not predate collection %d's own result", i)
-	}
+		latest := c.Latest()
+		require.Len(t, latest.Resources, 2, "concurrent collections must not corrupt the published set")
+		for i, stamp := range stamps {
+			assert.False(t, latest.CollectedAt.Before(stamp),
+				"the published timestamp must not predate collection %d's own result", i)
+		}
+	})
 }
 
 // TestStorageInventory_RunCollectsOnItsInterval proves collection is
@@ -1034,65 +1115,80 @@ func TestStorageInventory_RunCollectsOnItsInterval(t *testing.T) {
 // report that does not say who produced it cannot be reconciled across a fleet,
 // so the field is never empty.
 func TestStorageInventory_NamesTheProducingProcess(t *testing.T) {
-	explicit := newTestCollector(t, listerOf(), resolverFrom(nil))
-	inv, err := explicit.Collect(context.Background())
-	require.NoError(t, err)
-	assert.Equal(t, "unit-test", inv.ProducedBy)
+	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
+	// correct collection.
+	synctest.Test(t, func(t *testing.T) {
+		explicit := newTestCollector(t, listerOf(), resolverFrom(nil))
+		inv, err := explicit.Collect(context.Background())
+		require.NoError(t, err)
+		assert.Equal(t, "unit-test", inv.ProducedBy)
 
-	defaulted, err := NewStorageInventoryCollector(listerOf(),
-		StorageInventoryConfig{OwnerResolver: resolverFrom(nil)})
-	require.NoError(t, err)
-	inv, err = defaulted.Collect(context.Background())
-	require.NoError(t, err)
-	assert.NotEmpty(t, inv.ProducedBy, "an anonymous report cannot be reconciled across a fleet")
+		defaulted, err := NewStorageInventoryCollector(listerOf(),
+			StorageInventoryConfig{OwnerResolver: resolverFrom(nil)})
+		require.NoError(t, err)
+		inv, err = defaulted.Collect(context.Background())
+		require.NoError(t, err)
+		assert.NotEmpty(t, inv.ProducedBy, "an anonymous report cannot be reconciled across a fleet")
+	})
 }
 
 // TestStorageInventory_ResourcesAreDeterministicallyOrdered keeps the report
 // diffable across collections: neither listing's page order is a contract, and
 // the reconciliation walks a map.
 func TestStorageInventory_ResourcesAreDeterministicallyOrdered(t *testing.T) {
-	lister := accountWithUndescribable([]string{"BRAVO"},
-		streamInfo("ZULU", jetstream.FileStorage, 0, 1),
-		streamInfo(KVStreamPrefix+"ALPHA", jetstream.FileStorage, 0, 1),
-		streamInfo("MIKE", jetstream.FileStorage, 0, 1),
-	)
-	c := newTestCollector(t, lister.source(), resolverFrom(nil))
+	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
+	// correct collection.
+	synctest.Test(t, func(t *testing.T) {
+		lister := accountWithUndescribable([]string{"BRAVO"},
+			streamInfo("ZULU", jetstream.FileStorage, 0, 1),
+			streamInfo(KVStreamPrefix+"ALPHA", jetstream.FileStorage, 0, 1),
+			streamInfo("MIKE", jetstream.FileStorage, 0, 1),
+		)
+		c := newTestCollector(t, lister.source(), resolverFrom(nil))
 
-	want := []string{"BRAVO", KVStreamPrefix + "ALPHA", "MIKE", "ZULU"}
-	for range 3 {
-		inv, err := c.Collect(context.Background())
-		require.NoError(t, err)
-		names := make([]string, 0, len(inv.Resources))
-		for _, r := range inv.Resources {
-			names = append(names, r.Name)
+		want := []string{"BRAVO", KVStreamPrefix + "ALPHA", "MIKE", "ZULU"}
+		for range 3 {
+			inv, err := c.Collect(context.Background())
+			require.NoError(t, err)
+			names := make([]string, 0, len(inv.Resources))
+			for _, r := range inv.Resources {
+				names = append(names, r.Name)
+			}
+			assert.Equal(t, want, names)
 		}
-		assert.Equal(t, want, names)
-	}
+	})
 }
 
 // TestStorageInventory_ListerSourceResolvedPerCollection proves the collector
 // does not capture a JetStream context at construction: a collector built before
 // the client connects must start working once it does.
 func TestStorageInventory_ListerSourceResolvedPerCollection(t *testing.T) {
-	notReady := errors.New("JetStream not initialized")
-	ready := false
-	lister := consistentAccount(streamInfo("LOGS", jetstream.FileStorage, 0, 1))
-	c := newTestCollector(t, func() (StreamLister, error) {
-		if !ready {
-			return nil, notReady
-		}
-		return lister, nil
-	}, resolverFrom(nil))
+	// R1a: Collect arms the collector's own timeout, and the fake walk stops when it expires. On
+	// the bubble's clock it cannot expire while the walk is runnable, so a slow host cannot fail a
+	// correct collection.
+	synctest.Test(t, func(t *testing.T) {
+		notReady := errors.New("JetStream not initialized")
+		ready := false
+		lister := consistentAccount(streamInfo("LOGS", jetstream.FileStorage, 0, 1))
+		c := newTestCollector(t, func() (StreamLister, error) {
+			if !ready {
+				return nil, notReady
+			}
+			return lister, nil
+		}, resolverFrom(nil))
 
-	_, err := c.Collect(context.Background())
-	require.ErrorIs(t, err, notReady)
-	assert.True(t, c.Latest().Stale)
+		_, err := c.Collect(context.Background())
+		require.ErrorIs(t, err, notReady)
+		assert.True(t, c.Latest().Stale)
 
-	ready = true
-	inv, err := c.Collect(context.Background())
-	require.NoError(t, err)
-	assert.Len(t, inv.Resources, 1)
-	assert.False(t, inv.Stale)
+		ready = true
+		inv, err := c.Collect(context.Background())
+		require.NoError(t, err)
+		assert.Len(t, inv.Resources, 1)
+		assert.False(t, inv.Stale)
+	})
 }
 
 // --- name classification -----------------------------------------------------

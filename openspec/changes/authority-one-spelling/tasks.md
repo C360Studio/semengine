@@ -42,8 +42,10 @@ pull request closes #72 (`Closes #72` in its body).
       P1). Gate: `task test:unit`.
 - [ ] 2.3 (D) Shown able to fail (`docs/testing.md`, "Show that the test can fail"): each wrong change in turn —
       drop the exported-only test (lowercase `org` then fails: the sensitivity test must catch the false positive);
-      drop the carrier-type exception (the alias case fails); drop the `CallerContext.Org` exception; match `Org`
-      only; skip anonymous structs; skip `main` packages — with the baseline, wrong-change and restored runs recorded
+      drop one exact-field exception (`component.Dependencies.Platform` then fails); except by type instead of by
+      field (the fixture's second `Platform types.PlatformMeta` field then passes and the sensitivity test must
+      catch it); drop the `CallerContext.Org` exception; match `Org` only; skip anonymous structs; skip `main`
+      packages — with the baseline, wrong-change and restored runs recorded
       on this pull request. A wrong change the sensitivity test lets through is a survivor, closed with a case or
       listed under what is not covered.
 - [ ] 2.4 (D) The `contract` package's time in the `test:unit`, `test:integration` and `test:repeat` steps on

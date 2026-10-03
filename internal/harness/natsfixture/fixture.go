@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -37,6 +38,8 @@ const (
 	resourceMaxBytes = 64 << 20
 	// readyLog is the line nats-server logs once per boot when it accepts clients.
 	readyLog = "Server is ready"
+	// maxPayloadConfig is where WithMaxPayload's config file lands in the container.
+	maxPayloadConfig = "/etc/nats/semengine-fixture.conf"
 )
 
 // Fixture is one test's NATS server and the resources it creates on it. It holds no
@@ -52,28 +55,43 @@ type Fixture struct {
 	op chan struct{}
 	mu sync.Mutex // guards everything below; never held across a Docker or NATS call
 
-	used        bool
-	stopping    bool          // set when Stop begins on owned resources; creation is refused from then on
-	stopBegun   chan struct{} // closed with stopping set, so a creation queued for the slot is refused too
-	adm         admission
-	container   testcontainers.Container
-	containerID string
-	url         string
-	nc          *nats.Conn
-	js          jetstream.JetStream
-	consumers   []*consumer
-	streams     []string
-	buckets     []string
-	calls       map[string]int
-	slotWaits   map[string]int // operations that found the slot taken, by kind; read by tests
-	rec         record
+	used          bool
+	stopping      bool          // set when Stop begins on owned resources; creation is refused from then on
+	stopBegun     chan struct{} // closed with stopping set, so a creation queued for the slot is refused too
+	adm           admission
+	container     testcontainers.Container
+	containerID   string
+	url           string
+	nc            *nats.Conn
+	js            jetstream.JetStream
+	consumers     []*consumer
+	streams       []string
+	buckets       []string
+	calls         map[string]int
+	slotWaits     map[string]int // operations that found the slot taken, by kind; read by tests
+	rec           record
+	maxPayload    int // broker max_payload in bytes; 0 leaves the broker default (WithMaxPayload)
+	maxPayloadSet bool
+}
+
+// Option configures a fixture's broker; New applies it before any Docker call.
+type Option func(*Fixture)
+
+// WithMaxPayload starts the broker with max_payload set to n bytes, so a test can reach a payload
+// bound without building a megabyte message. Without it the broker's own default applies. Start
+// refuses an n below 1 before any Docker call.
+func WithMaxPayload(n int) Option {
+	return func(f *Fixture) { f.maxPayload, f.maxPayloadSet = n, true }
 }
 
 // New binds a fixture to its test and registers a Stop, under fresh bounded authority, as the
 // test's cleanup. It makes no Docker call.
-func New(t testing.TB) *Fixture {
+func New(t testing.TB, opts ...Option) *Fixture {
 	t.Helper()
 	f := &Fixture{testName: t.Name(), errorf: t.Errorf, deps: defaultDeps(), calls: map[string]int{}}
+	for _, opt := range opts {
+		opt(f)
+	}
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), cleanupBudget)
 		defer cancel()
@@ -94,6 +112,9 @@ func (f *Fixture) Start(ctx context.Context) error {
 	// Refusals before any action consume nothing: the fixture can still be started.
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if f.maxPayloadSet && f.maxPayload < 1 {
+		return fmt.Errorf("natsfixture: max payload %d bytes: the broker needs at least 1", f.maxPayload)
 	}
 	if err := f.acquire(ctx, "start"); err != nil {
 		return err
@@ -246,15 +267,29 @@ func (f *Fixture) attempt(ctx context.Context, n int) error {
 		return err
 	}
 
+	// The image's entrypoint prefixes nats-server to flag arguments. JetStream stores in the
+	// container's own filesystem: the fixture creates no volume.
+	cmd := []string{"--port", "4222", "--js"}
+	var files []testcontainers.ContainerFile
+	if f.maxPayloadSet {
+		// nats-server has no command-line flag for max_payload, so it goes in a config file
+		// copied in before the container starts; the flags above still apply over it. The file
+		// is in the container's writable layer, so a Restart keeps the limit.
+		cmd = append(cmd, "--config", maxPayloadConfig)
+		files = append(files, testcontainers.ContainerFile{
+			Reader:            strings.NewReader(fmt.Sprintf("max_payload: %d\n", f.maxPayload)),
+			ContainerFilePath: maxPayloadConfig,
+			FileMode:          0o644,
+		})
+	}
 	req := testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        image,
 			Name:         f.Name("nats"),
 			ExposedPorts: []string{clientPort},
-			// The image's entrypoint prefixes nats-server to flag arguments. JetStream stores in
-			// the container's own filesystem: the fixture creates no volume.
-			Cmd:        []string{"--port", "4222", "--js"},
-			WaitingFor: wait.ForLog("Server is ready"),
+			Cmd:          cmd,
+			Files:        files,
+			WaitingFor:   wait.ForLog("Server is ready"),
 		},
 		Started: true,
 	}

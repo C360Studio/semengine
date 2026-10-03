@@ -1022,3 +1022,55 @@ func TestNoCreationOnceStopBegins(t *testing.T) {
 		t.Fatalf("a refused creation is owned: %v", rem)
 	}
 }
+
+// nats-fixture › "Broker max payload is settable". The oracle is the broker: the limit it announces
+// to a client dialled from URL, and what it delivers. nats.go refuses a publish above the announced
+// limit before writing it, so the larger publish is refused on the broker's own figure.
+func TestMaxPayloadIsSettable(t *testing.T) {
+	const limit = 4096
+	f := New(t, WithMaxPayload(limit))
+	if err := f.Start(t.Context()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	nc, err := nats.Connect(f.URL(), nats.MaxReconnects(0))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer nc.Close()
+	if got := nc.MaxPayload(); got != limit {
+		t.Fatalf("broker announces max_payload %d, want %d", got, limit)
+	}
+	sub, err := nc.SubscribeSync("payload.bound")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := nc.Publish("payload.bound", make([]byte, limit)); err != nil {
+		t.Fatalf("publish of exactly %d bytes: %v", limit, err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), stopBound) // a failure bound, never reached when delivered
+	defer cancel()
+	msg, err := sub.NextMsgWithContext(ctx)
+	if err != nil {
+		t.Fatalf("the %d-byte message was not delivered: %v", limit, err)
+	}
+	if len(msg.Data) != limit {
+		t.Fatalf("delivered %d bytes, want %d", len(msg.Data), limit)
+	}
+	if err := nc.Publish("payload.bound", make([]byte, limit+1)); !errors.Is(err, nats.ErrMaxPayload) {
+		t.Fatalf("publish of %d bytes = %v, want nats.ErrMaxPayload", limit+1, err)
+	}
+}
+
+// With no option the broker keeps its own default (1 MiB for nats-server), so the option is the
+// only thing that moves it.
+func TestMaxPayloadDefaultsToTheBroker(t *testing.T) {
+	f := startFixture(t)
+	nc, err := nats.Connect(f.URL(), nats.MaxReconnects(0))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer nc.Close()
+	if got := nc.MaxPayload(); got != 1<<20 {
+		t.Fatalf("broker announces max_payload %d with no option, want the nats-server default %d", got, 1<<20)
+	}
+}

@@ -29,7 +29,7 @@
 # retained behavior, and `known_risks` naming `class:port-refactor` and its tracking issue (#25-#36).
 
 - source_path: natsclient/test_client.go
-  source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
     pattern for the owned disposable NATS fixture (phased setup, typed failure, one mapped-port
     replacement, fresh per-operation cleanup deadlines, bounded test streams)
@@ -46,12 +46,18 @@
     production package imported testing/testcontainers upstream (not carried); mutable tag pin upstream
     (replaced by digest); eleven caller knobs upstream (dropped)
   proving_tests: >-
-    natsfixture owner tests S1-1..S1-9; lifecycletest.Run over the fixture adapter; T-B1, T-B2, T-B3
+    natsfixture owner tests S1-1..S1-9; lifecycletest.Run over the fixture adapter; T-B1, T-B2, T-B3.
+    Not ported with the natsclient package (task 3.7; source_sha moved to the package's pin, where the
+    file is 987 lines): the two declarations a ported unit test reads, testStreamMaxAge and
+    testStreamMaxBytes (pin test_client.go:912-913, read at client_test.go:373-374), are defined in
+    natsclient/test_helpers_test.go, the one test-side helper file that replaces it; no ported unit
+    test reads anything else from it (go vet ./natsclient/ compiles the 43 unit files without it).
+    Its other callers are the 27 integration-tagged files, rewritten onto natsfixture in task 3.7b
   owner: setup-02 developer
   disposition: adapt
 
 - source_path: natsclient/test_options.go
-  source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: none; read to confirm the knob surface that the fixture deliberately omits
   destination: none
   contract: n/a
@@ -59,6 +65,78 @@
   known_risks: knobs make callers predict Docker latency and name uniqueness
   proving_tests: n/a
   owner: setup-02 developer
+  disposition: defer-exclude
+
+- source_path: natsclient/test_client_factory_test.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: none; read to confirm it tests only what is not ported
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    tests NewTestClient, the factory in natsclient/test_client.go, which is not ported (owner ruling, #9 comment 5941920346, Q3; design D1)
+  proving_tests: n/a
+  owner: setup-04a-01-floor developer
+  disposition: defer-exclude
+
+- source_path: natsclient/test_client_integration_test.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: none; read to confirm it tests only what is not ported
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    integration-tagged tests of natsclient/test_client.go, which is not ported (owner ruling, #9 comment 5941920346, Q3; design D1)
+  proving_tests: n/a
+  owner: setup-04a-01-floor developer
+  disposition: defer-exclude
+
+- source_path: natsclient/test_client_readiness_test.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: none; read to confirm it tests only what is not ported
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    tests the readiness phases of natsclient/test_client.go, which is not ported (owner ruling, #9 comment 5941920346, Q3; design D1); natsfixture owns readiness (S1-1..S1-9)
+  proving_tests: n/a
+  owner: setup-04a-01-floor developer
+  disposition: defer-exclude
+
+- source_path: natsclient/monitoring_consumers_test.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: none; read to confirm it tests only what is not ported
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    walks the SemStreams tree for NewTestClient(..., WithMonitoring()) callers (:13-27, :83, :111-115); WithMonitoring is declared at test_client.go:448, which is not ported, and the files it names lie outside the ported set (processor/graph-index/...), so it has nothing left to check. Forced by Q3, not an owner ruling (design D1)
+  proving_tests: n/a
+  owner: setup-04a-01-floor developer
+  disposition: defer-exclude
+
+- source_path: natsclient/test_options_test.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: none; read to confirm it tests only what is not ported
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    tests natsclient/test_options.go, which is not ported. Forced by Q3, not an owner ruling (design D1)
+  proving_tests: n/a
+  owner: setup-04a-01-floor developer
+  disposition: defer-exclude
+
+- source_path: natsclient/mapped_port_retry_test.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: none; read to confirm it tests only what is not ported
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    tests natsclient/test_client.go internals (the mapped-port retry), which are not ported; natsfixture owns the one mapped-port replacement. Forced by Q3, not an owner ruling (design D1)
+  proving_tests: n/a
+  owner: setup-04a-01-floor developer
   disposition: defer-exclude
 
 - source_path: internal/lifecyclecleanup/lifecyclecleanup.go
@@ -856,9 +934,11 @@
 - source_path: pkg/cache
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    generic caches (simple, LRU, TTL, hybrid) and CoalescingSet; imported by natsclient
-    (TemporalResolver); no consumer imports it and no public signature names its types once
-    natsclient's GetStats is unexported (design D5, P21, P22)
+    generic caches (simple, LRU, TTL, hybrid) and CoalescingSet; admitted whole because six
+    admitted packages import it at the pin (design D1); nothing in this change imports it, since
+    natsclient's one importer, TemporalResolver, is dropped as dead surface (owner ruling, #9
+    comment 5969522395, item 1); no consumer imports it and no public signature names its types
+    (design D5, P21, P22)
   destination: internal/cache
   contract: >-
     Cache[V] get, set, delete, clear, size, keys, statistics and close as at the pin; LRU size
@@ -898,8 +978,8 @@
     executable; the package has no production root. Port-refactor rows for later callers (design
     D5): CoalescingSet.Close becomes Shutdown(ctx) (pin processor/graph-embedding/component.go:875,
     processor/rule/entity_watcher.go:980); WithEvictionCallback is deleted (pin
-    processor/rule/expression/regex_cache.go:21, a no-op callback; natsclient/kv_temporal.go:27, :59,
-    task 3.7). Shared collectors: two caches under one prefix share the size gauge, which shows
+    processor/rule/expression/regex_cache.go:21, a no-op callback; the pin's natsclient/kv_temporal.go:27,
+    :59 leave with TemporalResolver, task 3.7). Shared collectors: two caches under one prefix share the size gauge, which shows
     whichever cache wrote last, not a sum (at the pin the second cache's gauge was not gathered at
     all). Removed with the eviction callback (owner
     ruling, #9 comment 5950725772; design D7): WithEvictionCallback (pin options.go:42-48, with the
@@ -993,5 +1073,59 @@
     (no panic; only Config's keys; each duration from time.ParseDuration or the integer; a Marshal round
     trip). TestAttack_CallbackLatency releases its callback and joins its adds on every exit path (F6).
     Repeat runs (D8 R4; implementer-reported, PR #48): see task 3.6
+  owner: setup-04a-01-floor developer
+  disposition: adapt
+
+- source_path: natsclient
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the NATS and JetStream client: connection lifecycle with circuit breaker and health status,
+    streams, consumers with delivery settlement, KV buckets and watchers, request/reply, storage
+    inventory, pressure and reports, and JetStream metrics; SemSource imports it, so it stays public
+    at its pin path (design D5)
+  destination: natsclient
+  contract: >-
+    Client, its options and every exported operation as at the pin, less the surface named under
+    known_risks as dropped. Changed behavior, design D9 (task 3.7): newJetStreamMetrics registers
+    all 11 collectors through metric.RegisterOrGet and keeps the collector each call returns
+    (jetstream_metrics.go:128-161 at the pin, where 8 went through the removed Register* methods,
+    task 3.5a), so a second client on the same registry writes to the canonical collector. Metric
+    names, types and the semstreams namespace are unchanged (#69); the consumer counters' change to
+    gauges is task 3.7d
+  dependencies_and_side_effects: >-
+    metric, pkg/errs, pkg/retry, internal/resource (in-set); github.com/nats-io/nats.go v1.54.0
+    and nats.go/jetstream; prometheus/client_golang; stdlib. Test-only:
+    github.com/nats-io/nats-server/v2 v2.14.7 (embedded broker, client_connect_test.go:104),
+    stretchr/testify, prometheus client_model and testutil. Dials NATS; runs the health monitor, the
+    metrics poller, claim-release goroutines and two timers (design D3; joins are task 3.7c)
+  known_risks: >-
+    Import paths differ from the pin: pkg/resource is internal/resource (design D5); the doc.go
+    import path at :512 is task 3.7e. Pin differences carried with the carried tests as the only
+    regression evidence: nats.go v1.52.0 at the pin (go.mod:12) is v1.54.0 here; the embedded test
+    broker nats-server/v2 v2.12.4 at the pin (go.mod:11) is v2.14.7 here, the .nats-image line
+    (owner ruling, #9 comment 5969776736); T-B3 cannot see an embedded server, so one broker
+    version across both lanes is review only. Context roots (design D1 re-measured: the pin's nine
+    are two live production roots, the rest are doc.go comments at :35, :151, :245, :524 or
+    test_client.go): client.go:566, the metrics poller started under context.Background(), a defect
+    triaged in task 3.7c; trace.go:56, DetachContextWithTrace, leaves with that function in task
+    3.7a. kv.go:600 is a bounded terminal drain, context.WithTimeout(context.WithoutCancel(ctx),
+    filteredWatcherDrainTimeout), the developer contract's admitted shape, not a root. Dropped
+    surface, not ported (design D8, "A test of a removed feature"): kv_temporal.go
+    (TemporalResolver, 228 lines) with kv_temporal_integration_test.go and
+    TestTemporalResolver_ErrorBoundaries (kv_error_integration_test.go:353-450, removed when task
+    3.7b ports that file) (owner ruling, #9 comment 5969522395, item 1); typed.go (117 lines) with
+    typed_test.go (item 2). Not ported, with file rows: test_client.go, test_options.go and six test
+    files (test_client_factory_test.go, test_client_integration_test.go,
+    test_client_readiness_test.go, monitoring_consumers_test.go, test_options_test.go,
+    mapped_port_retry_test.go). The 27 integration-tagged test files are task 3.7b and are not in
+    the tree at task 3.7. The surface audit's drops are task 3.7a; until then the symbols it names
+    are carried as at the pin
+  proving_tests: >-
+    the 43 unit test files of natsclient at the pin, carried, with
+    natsclient/test_helpers_test.go (testStreamMaxAge and testStreamMaxBytes, pin
+    test_client.go:912-913) in place of test_client.go. jetstream_metrics_test.go:16 proves the
+    canonical collector for the three policy gauges only, as at the pin; the test that two clients
+    on one registry share all 11 collectors, failing at the pin for the 8 that went through
+    Register*, is task 3.7d's test (2)
   owner: setup-04a-01-floor developer
   disposition: adapt

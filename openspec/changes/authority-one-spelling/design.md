@@ -255,6 +255,10 @@ the exclusions; adding it would be a change to this requirement.
 ## Declared costs
 
 - Two more module loads per unit run; budget D6.
+- Measured (task 2.4, the field check only): the `contract` package's time in `test:unit` + `test:integration` +
+  `test:repeat` was 24.614 + 19.482 + 47.322 = 91.4 s on `main` `2ec3bcf` (CI run 37121703748) and 19.556 + 14.228 +
+  35.894 = 69.7 s on the branch at `d79c2bd` (CI run 37127911664): no measurable growth, within D6's 15 s. One run
+  each; the 22 s difference is runner variance, not a saving. The name check (task 3.1) is not in either figure.
 - Change 2 meets C-2 on two types it ports (P3); its design pays for the shape.
 - C-1's value is nil until #48 merges; the hold is visible in `task spec:queue`.
 - A name-based check: the next copy under a different name is review-only until someone adds a word to the

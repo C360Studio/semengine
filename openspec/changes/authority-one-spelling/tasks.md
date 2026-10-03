@@ -50,7 +50,7 @@ pull request closes #72 (`Closes #72` in its body).
       on this pull request. A wrong change the sensitivity test lets through is a survivor, closed with a case or
       listed under what is not covered. Recorded: PR #73 comment 5969839223 (six listed changes detected, and the
       case-insensitive variant of the first; dropping the exported-only test alone is an equivalent survivor, not covered).
-- [ ] 2.4 (D) The `contract` package's time in the `test:unit`, `test:integration` and `test:repeat` steps on
+- [x] 2.4 (D) The `contract` package's time in the `test:unit`, `test:integration` and `test:repeat` steps on
       `main` and on the branch, from the CI logs of two runs, recorded on this pull request and under "Declared
       costs" in `design.md`; over D6's 15 s budget, the two checks share one load before anything is removed.
 

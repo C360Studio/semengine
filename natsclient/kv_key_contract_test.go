@@ -27,7 +27,11 @@ import (
 // so the mirrored patterns are unchanged and this is a pin move, not a grammar
 // change. Re-do this comparison on the next bump; a version bump without it
 // turns a contract guard into a version-number formality.
-const pinnedNATSGoContractVersion = "v1.52.0"
+//
+// v1.52.0 -> v1.54.0 (SemEngine, task 3.7b; go.mod requires v1.54.0):
+// re-verified against jetstream/kv.go:504-506 at v1.54.0. The three patterns
+// are byte-identical to v1.52.0's above.
+const pinnedNATSGoContractVersion = "v1.54.0"
 
 var (
 	pinnedLegacyKVKeyPattern     = regexp.MustCompile(`^[-/_=\.a-zA-Z0-9]+$`)

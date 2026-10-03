@@ -21,7 +21,8 @@ pull request closes #72 (`Closes #72` in its body).
 - [ ] 1.2 The independent pre-owner review of `design.md`, `proposal.md`, this file and the `harness-boundaries`
       delta: `DESIGN REVIEW PASS` in at most three rounds, recorded on this pull request with the reviewed and the
       committed checksums.
-- [ ] 1.3 The owner's acceptance of the reviewed design, recorded on #72 or on this pull request. Q1 (the carrier
+- [x] 1.3 The owner's acceptance of the reviewed design, recorded on this pull request (2026-10-03, after the
+      review record at `f67f835`). Q1 (the carrier
       exception) is already ruled, form (ii) by exact field (#72 comment 5969757891), and the delta, D3 and the
       fixture of 2.1 carry it. The one consequence `design.md` records for change 2 (`HierarchyConfig` meets C-2)
       is relayed to epic #9 as a note, not a ruling.

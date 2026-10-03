@@ -496,8 +496,9 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       as waiting for nothing; the old Reconnection test's 3 went with its rewrite); fixed addresses 8 → 0; 31 failure
       bounds under 10 s widened to 10 s and six hand-made polls moved to `probe.Await`. Beyond the listed scope: about
       56 deferred `Close` calls go through a bounded `closeClient`; the refusal test's 150 ms request timeout became an
-      event-driven wait, so it asserts `context.Canceled` where the pin asserted a timeout; two late-responder tests raise
-      `MaxRetries` 5 → 10; the `publish_msgid` test is split into a dedup proof that finishes inside a 60 s window and a separate 250 ms expiry
+      event-driven wait, so it asserts `context.Canceled` where the pin asserted a timeout, after an observer on
+      `_INBOX.>` shows no reply was published (review F19); two late-responder tests raise `MaxRetries` 5 → 10; the
+      `publish_msgid` test is split into a dedup proof that finishes inside a 60 s window and a separate 250 ms expiry
       check (review F18; the first repair widened the window to 2 s).
       `TestIntegration_ReconnectionIsRedial` fails on a mutant that removes the loss-timer arming. Added from the 3.7a
       survivor: `TestConsumeDeliveryWithHeartbeatErrCarriesControlLoss` fails on the mutant that drops `controlErr` from

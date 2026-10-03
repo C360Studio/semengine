@@ -220,11 +220,18 @@ func TestIntegration_SubscribeForRequestsLogsResponseLimitRefusalPublishFailure(
 		return []byte(strings.Repeat("x", int(tinyMaxPayload+1))), nil
 	})
 	require.NoError(t, err)
-	require.NoError(t, client.GetConnection().Flush())
+	flushCtx, cancelFlush := context.WithTimeout(ctx, failureBound)
+	defer cancelFlush()
+	require.NoError(t, client.GetConnection().FlushWithContext(flushCtx))
 
-	// The responder logs the failed refusal publish and sends nothing after it, so once the
-	// record is there no reply can arrive: the request is then ended by the test, and it must
-	// end by that cancellation, not by a reply. The pin waited for a 150 ms request timeout.
+	// An observer on its own connection sees every reply to any inbox, the requester's
+	// included, so it can show that none was published without relying on the request's
+	// own outcome. Its subscription is registered at the broker before the request is sent.
+	observer := dial(t, testClient.URL)
+	replies, err := observer.SubscribeSync("_INBOX.>")
+	require.NoError(t, err)
+	require.NoError(t, observer.FlushWithContext(flushCtx))
+
 	reqCtx, cancelRequest := context.WithCancel(ctx)
 	defer cancelRequest()
 	requestResult := make(chan error, 1)
@@ -238,10 +245,23 @@ func TestIntegration_SubscribeForRequestsLogsResponseLimitRefusalPublishFailure(
 		return recorder.containsError("failed to publish response-too-large reply", "maximum payload exceeded"), nil
 	}, func(logged bool) bool { return logged })
 	require.NoError(t, err, "the refusal publish failure was not logged")
+
+	// The record is written after the responder's last publish attempt. Flushing the
+	// responder's connection makes the broker process everything it had published before
+	// the record; flushing the observer's then delivers, ahead of its PONG, any reply the
+	// broker routed to it. An empty pending queue after both is the observed absence of a
+	// reply, made before the request is cancelled. The pin waited for a 150 ms request
+	// timeout instead.
+	require.NoError(t, client.GetConnection().FlushWithContext(flushCtx))
+	require.NoError(t, observer.FlushWithContext(flushCtx))
+	pending, _, err := replies.Pending()
+	require.NoError(t, err)
+	require.Zero(t, pending, "the responder must publish no reply after its refusal publish failed")
+
 	cancelRequest()
 	select {
 	case requestErr := <-requestResult:
-		require.ErrorIs(t, requestErr, context.Canceled, "no reply may reach the requester")
+		require.ErrorIs(t, requestErr, context.Canceled, "with no reply published, only the cancellation ends the request")
 	case <-time.After(failureBound):
 		t.Fatal("request did not end after its context was cancelled")
 	}

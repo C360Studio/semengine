@@ -1530,8 +1530,15 @@
     child's own context; internal_consumer_lifecycle's two runtime.Gosched spins with no bound
     (:173-189, :191-207) → :165-176, :178-189 under failureBound. A request timeout that is the
     expected outcome becomes an event: request_response_bounds :223 (150 ms, nats.ErrTimeout) →
-    :225-247, wait for the responder's logged refusal-publish failure, then cancel the request,
-    which must end by context.Canceled. Kept as R1c, its expiry only able to miss a defect:
+    :223-267: an observer connection subscribed to _INBOX.> and flushed before the request is sent
+    (:230-233); the responder's logged refusal-publish failure awaited (:243-247); the responder's
+    connection then the observer's flushed, and the observer's pending queue must be empty
+    (:255-259), an absence observed independently of the request, before the request is cancelled
+    and must end by context.Canceled (:261-267). Review F19 (Codex, PR #48) found the first form,
+    which cancelled straight after the log, could hide a reply arriving with the cancellation.
+    Mutation (implementer-reported, PR #48), restored by checksum: the responder sending a short
+    reply before its refusal fails the test at the pending check (:259, "Should be zero, but was
+    1"). Kept as R1c, its expiry only able to miss a defect:
     subscription :115-119 → :95-99 and delivery_settlement :91-107 → :91-107 (D8's table);
     client_close :77 → :77 (250 ms in which a correct Close must not return; its comment
     :74-76 says so; not in D8's table, which lists the analogous subscription row); publish_msgid's 250 ms

@@ -27,7 +27,8 @@ passed inventory; this design cites it by entry number and re-states none of it.
 
 Goals: the rule as a spec requirement with scenarios; two checks that fail with the file, the line and the rule;
 a sensitivity test for each; the `AGENTS.md` row. Non-goals: consolidating any copy; a check on lowercase fields; a
-check inside function bodies; anything in changes 2–7 beyond recording what they will meet.
+check on values re-joined inside function bodies (a struct declared inside a function body is checked, D3, and gets no
+exception: the exceptions name package-scope types); anything in changes 2–7 beyond recording what they will meet.
 
 ## Options
 
@@ -134,7 +135,8 @@ string}` beside a second type in the same package with `Org string` that must fa
 and a `_test.go` with `Org`; and, to fail, `types.Other{Org string}` in the top-level `types` package and a
 `Dependencies{Platform types.PlatformMeta}` and a `CallerContext{Org string}` outside the excepted packages (review F2
 and F3 at `beb3c3e`, so neither a whole-package `types` exception nor an exception matched without its package
-passes). It
+passes); and a function-local `Dependencies` with a `Platform` field in `component`, which must fail (Codex F1 at
+`8f27b19`: an exception names a package-scope type). It
 requires each failing field by file, line and type, requires silence for each passing one, and requires the exact
 count.
 
@@ -245,15 +247,18 @@ the exclusions; adding it would be a change to this requirement.
   `message/federation.go:22, :36, :50, :60`, `message/base_message.go:81, :91`, `vocabulary/iris.go:85` — seven,
   all ruled removed in #48 (#72 comment 5969505488, items "Ruling 1" and "Ruling 1 extended"). The worktree has
   already dropped `message/federation.go` unpushed. C-1 holds on #48.
-- P3. At the pin, port-set fields C-2 fails: `graph/inference/hierarchy.go:100-101` (`Org`/`Platform string`,
-  change 2) and `graph/llm/prompt_types.go:14-15` (change 2, dormant). Port-set fields named `Platform` that pass by
-  type: `component/dependencies.go:73` (`PlatformMeta`, alias of `types.PlatformMeta` at `:21`),
-  `service/dependencies.go:31`, `processor/rule/rule_factory.go:101`. Excluded by package: `config/config.go:49`,
-  `config/minimal_config.go:12`, `config/manager.go:96`, `types/component.go:135-136`, `pkg/types/entity_id.go:92-93`,
-  `pkg/platform/platform.go:30`; by field: `processor/rule/caller_substitution.go:51`. Outside the port set:
-  `agentic/*` ten fields, `cmd/e2e-semstreams/mission/command.go:53`, `test/e2e/*` four,
-  `processor/agentic-tools/executors/register.go:48` (carrier-typed). Search: `grep -rn --include='*.go' -E
-  '^\s+(Org|Platform)\s+[A-Za-z\[\]\*\.]+' . | grep -v _test.go` over the pin snapshot.
+- P3. At the pin, port-set fields C-2 fails: `graph/inference/hierarchy.go:100-101` (`Org`/`Platform string`, change
+  2) and `graph/llm/prompt_types.go:14-15` (change 2, dormant). Excluded by package (`pkg/types`, `pkg/platform`,
+  `config` only): `config/config.go:49`, `config/minimal_config.go:12`, `config/manager.go:96`,
+  `pkg/types/entity_id.go:92-93`, `pkg/platform/platform.go:30`. Excluded by exact field (Q1, ruled (ii)):
+  `types/component.go:135-136` (`types.PlatformMeta.Org`/`Platform`); the three carrier fields
+  `component/dependencies.go:73` (`component.Dependencies.Platform`, of the alias `PlatformMeta` at `:21`),
+  `service/dependencies.go:31` (`service.Dependencies.Platform`) and `processor/rule/rule_factory.go:101`
+  (`rule.Dependencies.Platform`); and `processor/rule/caller_substitution.go:51` (`rule.CallerContext.Org`). Outside
+  the port set: `agentic/*` ten fields, `cmd/e2e-semstreams/mission/command.go:53`, `test/e2e/*` four,
+  `processor/agentic-tools/executors/register.go:48` (of the carrier's type, not a listed field, so it would fail).
+  Search: `grep -rn --include='*.go' -E '^\s+(Org|Platform)\s+[A-Za-z\[\]\*\.]+' . | grep -v _test.go` over the pin
+  snapshot.
 - P4. `signatures_test.go` exists in #48 only: `ls internal/harness/contract` on `main` lists fourteen files, none
   of that name; the worktree has it (`internal/harness/contract/signatures_test.go:17`).
 - P5. The sensitivity pattern this design adopts: `context_test.go:27-91`, `signatures_test.go:150-192`,

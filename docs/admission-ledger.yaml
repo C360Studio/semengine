@@ -253,7 +253,11 @@
     comment 5969505488): pin platform/platform.go:27-28 said Config "round-trips cleanly through
     config files and embedded message metadata"; the second half described message.FederationMeta,
     which never round-tripped (BaseMessage.MarshalJSON never wrote it) and is removed, so the
-    sentence now stops at config files. No code changed
+    sentence now stops at config files. Adapt item, package comment corrected (#72 ruling D, relayed
+    in PR #48 comment 5969508639): pin platform/platform.go:1-4 said the package serves "leaf
+    packages (message, vocabulary)" that reference platform identity, false once the federation
+    family and vocabulary.EntityIRI were removed (task 3.6b); it now names config as the reader and
+    says positions 1-2 of an entity ID are the only carrier (ADR-102, ADR-104). No code changed
   proving_tests: >-
     none at the pin and none in this change: no test in the module names platform.Config once
     vocabulary.EntityIRI's tests are removed (task 3.6b); go build and go vet type-check the package,
@@ -437,6 +441,91 @@
     TestPropEntityIDRoundTrip, TestPropEntityIDByteBound, TestPropEntityIDPatternMatch; design P23)
     and its testdata/rapid seed
   owner: setup-04a-01-floor developer
+  disposition: adapt
+
+- source_path: docs/adr/102-entity-id-segment-semantics.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the decision record that defines the six entity-ID positions pkg/types/entity_id.go implements;
+    ported with pkg/types (#72 ruling D, comment 5969505488)
+  destination: docs/adr/102-entity-id-segment-semantics.md
+  contract: the decision text as at the pin
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    lint fixes only: the title is shortened to fit MD013's 80-column heading limit (the pin's full
+    title is quoted in the port note) and pin lines 58 and 77-79 are rewrapped at 120 columns; no
+    decision wording changed. Port note added under the title: SemStreams issue numbers, and records,
+    specs and packages it names that are not yet ported
+  proving_tests: n/a (task docs:check lints it)
+  owner: setup-04a-01-floor technical writer
+  disposition: adapt
+
+- source_path: docs/adr/104-unique-platform-authority.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the decision record for the minted platform.id suffix that positions 1-2 of an entity ID carry;
+    ported with pkg/types and pkg/platform (#72 ruling D, comment 5969505488)
+  destination: docs/adr/104-unique-platform-authority.md
+  contract: decisions 1-6 as at the pin; decision 7 kept as history and marked superseded
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    corrections, each marked in the document with the pin line it supersedes: :94-100 decision 7 (the
+    (org, id, environment) guard) superseded, citing SemStreams #1188, the ADR's own :127-128 and pin
+    openspec/specs/component-runtime-config/spec.md:369-371 (environment separates nothing; a pin
+    probe finds no environment read in config/manager*.go); the restatements of decision 7 at :115-118
+    (consequence), :123 ("lost environment claim") and :145 ("one environment per bucket") marked
+    superseded with it. Lint fixes: pin lines 5 and 91 rewrapped at 120 columns. Port note added: issue
+    numbers are SemStreams'; config.Manager.Start, the component-runtime-config and
+    framework-bucket-catalog specs and the proposals inventory are not yet ported
+  proving_tests: n/a (task docs:check lints it)
+  owner: setup-04a-01-floor technical writer
+  disposition: adapt
+
+- source_path: docs/concepts/16-federation.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the concept page for entity-ID positions and the authority check (pkg/types
+    ValidateEntityIDAuthority); ported with pkg/types (#72 ruling D, comment 5969505488)
+  destination: docs/concepts/16-federation.md
+  contract: the page as at the pin except the corrections below
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    corrections, each marked in the page with the pin line it supersedes: :56-58 (nothing coordinates
+    the authority pair; same pair mints colliding identities) rewritten to ADR-104 decisions 1 and 4,
+    the minted suffix; :60-64 (the boundary enforces only the lexical contract; a foreign authority is
+    accepted as local truth) rewritten to the pin's authority gate, authorizeSubject
+    (processor/graph-ingest/authority_gate.go:51-52) at ten call sites (canonical_mutations.go:244,
+    :307, :383, :474; component.go:1743, :2065, :2224, :2306, :2449, :2591). Product name (#9 comment
+    5968665464): :3, :190 and :194 say SemEngine for SemStreams. :190 link to 15-payload-registry.md
+    (not ported) reworded to the payloadregistry package. Port note added: graph, graph-ingest, the
+    WebSocket input, flow configuration and config.Manager.Start are not yet ported
+  proving_tests: n/a (task docs:check lints it)
+  owner: setup-04a-01-floor technical writer
+  disposition: adapt
+
+- source_path: openspec/specs/entity-id-contract/spec.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the capability spec for entity identity that pkg/types implements; ported with pkg/types (#72
+    ruling D, comment 5969505488). :490 keeps DeploymentPrefix as MUST export (its in-package caller
+    is SourcePrefix)
+  destination: openspec/specs/entity-id-contract/spec.md
+  contract: the requirements and scenarios as at the pin
+  dependencies_and_side_effects: none; a document, validated by task spec:check
+  known_risks: >-
+    :211 "SemStreams MUST NOT" reads "SemEngine MUST NOT" (#9 comment 5968665464). A port note in
+    Purpose names the seven pkg/types tests the spec cites that exist and pass here, the packages and
+    tests it names that are not yet ported (graph-ingest, graph-index, ObjectStore, config, agentic and
+    its processors, the example processors, the research pipeline, internal/entityidaudit), and three
+    test names (TestNewConversationMintsCanonicalUUID, TestCanonicalReplyToPassesFormCheck,
+    TestUnmintedCanonicalReplyToIsRefusedAsNotFound) that name no test function at the pin either.
+    Most requirements describe code not yet ported, so the spec is not yet current truth for them
+  proving_tests: >-
+    pkg/types: TestEntityIDKeyOrderIsSystemBeforeDomain, TestFrameworkEntityDomainsIsTheClosedReservedSet,
+    TestEntityDomainDelegationIsADeclarationNotAPolicy, TestAuthorityRejectionIsCodedAndIdentityFree,
+    TestAuthorityRejectionLocalClaimOnImportLane, TestPrefixLevelsAreNamed,
+    TestTaxonomyAcrossSourcesIsPatternNotPrefix
+  owner: setup-04a-01-floor technical writer
   disposition: adapt
 
 - source_path: pkg/projection/contract

@@ -14,7 +14,7 @@ not a task tracker and not a description of the tree.
   scripts. Package rows are seeded in the admission ledger during SETUP 03 and 04.
 - **No runtime binary, no release, no tag.**
 - **No consumer lane** in the gate graph; it joins `task verify` when its workload exists.
-- **No ADRs and no active OpenSpec change.** SETUP 02, SETUP 03B, the Slice 04A design and `flake-defense` are
+- **No active OpenSpec change.** SETUP 02, SETUP 03B, the Slice 04A design and `flake-defense` are
   archived; SETUP 02's four capability specs, as amended by `flake-defense`, and the `merge-gate` spec it added are
   the current truth under `openspec/specs/`, and `docs/contract.md` states the tier-0 contract 03B approved. The
   Slice 04A design names seven implementation changes (`setup-04a-01-floor` to `setup-04a-07-substrate-seam`); none
@@ -30,6 +30,8 @@ not a task tracker and not a description of the tree.
 | `docs/repository-map.md` | This file |
 | `docs/provenance.md` | License and provenance requirements for ported code |
 | `docs/inventory-scope.md` | Which repositories agents may read, for what question; starter consumer set (ruled on #22) |
+| `docs/adr/` | Architecture decision records. ADR-102 (what each entity-ID position means) and ADR-104 (the minted `platform.id` suffix), ported from SemStreams with `pkg/types` |
+| `docs/concepts/16-federation.md` | How entity-ID positions and the authority check separate sources and deployments; ported from SemStreams with `pkg/types` |
 | `AGENTS.md`, `CLAUDE.md` | Agent entry point; `CLAUDE.md` imports `AGENTS.md` |
 | `.agents/` | The shared protocol, role contracts, and skills: the one home of the rules |
 | `.claude/`, `.codex/` | Thin platform adapters that point into `.agents/` |
@@ -50,6 +52,7 @@ not a task tracker and not a description of the tree.
 | `package.json`, `.nvmrc`, `.task-version` | Pins for the Node-based OpenSpec and markdownlint tools and Task |
 | `.markdownlint.yaml`, `.markdownlint-cli2.yaml` | Markdown lint configuration behind `task docs:check` |
 | `openspec/specs/{integration-test-runner,nats-fixture,lifecycle-suite,harness-boundaries}/` | Current truth, synced by the SETUP 02 archive; `lifecycle-suite` and `harness-boundaries` amended by the `flake-defense` archive |
+| `openspec/specs/entity-id-contract/` | The entity-ID capability spec, ported from SemStreams with `pkg/types`; its Purpose names the packages and tests it cites that are not yet ported |
 | `openspec/specs/merge-gate/` | Current truth for the merge gate's flake defenses, synced by the `flake-defense` archive |
 | `openspec/changes/archive/2026-09-30-setup-02-isolated-harness/` | The archived SETUP 02 change (PR #13, epic #6) |
 | `openspec/changes/archive/2026-10-01-setup-03b-contract-boundary/` | The archived SETUP 03B change (PR #21, epic #8), with its three inventory passes (`inventory.md`, `inventory-2-scope.md`, `inventory-3-pass3.md`) |

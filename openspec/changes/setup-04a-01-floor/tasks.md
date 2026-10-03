@@ -181,6 +181,22 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
 - [x] 3.3 (D) `pkg/types` (level 2): row `carry`. Done in dcdf6dd; evidence PR #48 comment 5954727965. Corrected in
       358a01e: the row is `adapt`, because its `README.md` is ported with markdownlint fixes (owner ruling, #9
       comment 5955265930, since replaced by 5957221949, which still allows them).
+- [x] 3.3a (W) The identity documents ride with `pkg/types` (#72 ruling D, comment 5969505488; relayed in PR #48
+      comments 5969296459 §2 and 5969508639 §2), ported from the pin at
+      `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`, each with an `adapt` ledger row naming its corrections and a port
+      note naming what SemEngine has not yet ported: `docs/adr/102-entity-id-segment-semantics.md` (lint fixes
+      only), `docs/adr/104-unique-platform-authority.md`, `docs/concepts/16-federation.md` and
+      `openspec/specs/entity-id-contract/spec.md` (`:490` keeps `DeploymentPrefix` as `MUST export`). Corrections,
+      each cited in the document to the pin line it supersedes: ADR-104 decision 7 (`:94-100`) kept as history and
+      marked superseded (SemStreams #1188; the ADR's own `:127-128`; pin
+      `openspec/specs/component-runtime-config/spec.md:369-371`), with its restatements at `:115-118`, `:123` and
+      `:145`; `16-federation.md:56-58` rewritten to ADR-104 decisions 1 and 4 (the minted suffix) and `:60-64` to
+      the pin's authority gate (`processor/graph-ingest/authority_gate.go:51-52` and its ten call sites); "SemStreams"
+      to "SemEngine" at `16-federation.md:3, :190, :194` and `spec.md:211`; the `16-federation.md:190` link to an
+      unported concept page reworded; `pkg/platform/platform.go:1-4` (the package comment named `message` and
+      `vocabulary` as readers) now names `config` and positions 1-2 of the ID, an `adapt` item on the `pkg/platform`
+      row beside `:27-28`. `docs/repository-map.md` lists `docs/adr/`, the concept page and the spec. Gates:
+      `task docs:check`, `task spec:check`, `task ledger:check`, `task verify`.
 - [x] 3.4 (D) `pkg/projection/contract`, `pkg/tlsutil` (level 3): `pkg/projection/contract` row `carry`, destination
       `pkg/projection/contract` (public: SemConnect imports it; #9 comment 5953295358); `pkg/tlsutil` row `adapt`,
       destination `internal/tlsutil` (design D5; #9 comment 5952661571): ported without

@@ -1,7 +1,7 @@
-// Package platform holds the platform-identity struct used across the
-// SemStreams codebase. It lives at pkg/ so leaf packages (message,
-// vocabulary) can reference platform identity without dragging in the
-// full config tree.
+// Package platform holds the platform-identity struct, Config. Its reader is
+// package config, whose exported Config names it. No message or vocabulary
+// symbol carries platform identity: a deployment's org and platform reach an
+// entity only as positions 1-2 of its ID (ADR-102 and ADR-104, docs/adr/).
 //
 // Historically PlatformConfig lived in package config. That created a
 // transitive import cycle: any message package that wanted to label messages

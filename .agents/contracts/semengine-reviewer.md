@@ -12,7 +12,8 @@ not replace this review. The reviewer is independent of the developer: it verifi
 developer's account.
 
 On a code pull request (any changed file that is not a Markdown file or under `openspec/`, or that is a role adapter
-under `.claude/agents/`) the reviewer of record belongs to the agent that wrote none of the commits under review. The
+under `.claude/agents/`) the reviewer of record belongs to the agent that wrote none of the commits under review; a
+fix that changes documents only, and the archive/spec sync, take either agent's reviewer (owner, 2026-10-03). The
 [shared protocol](../protocol.md), "Cross-agent review", says which pull requests, what the owner ruled, and how the
 review is asked for and answered on the pull request. A review record there names the commit it read, what it ran and
 what it could not run. Its evidence comes from the tree and from CI, never from the implementer's account, and the

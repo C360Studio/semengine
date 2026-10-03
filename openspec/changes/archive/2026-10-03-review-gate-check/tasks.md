@@ -120,8 +120,8 @@ starts, `task merge:check -- 67` and the merge are recorded on this pull request
 - [x] 7.1 Codex's implementation review of PR #67: `Review record`, APPROVE at `0ea9363` (comment 5968479191), no
       BLOCKING or HIGH finding, two MEDIUM document corrections, fixed in `da371c4`. Under the owner's ruling of
       2026-10-03 (#66, comment 5968737070: cross-agent review is for code), the re-check of those documents-only
-      fixes, of `f52990c` and of this archive commit is either agent's reviewer's; Claude's `semengine-reviewer`
-      does it, and its record on this pull request names the commits it read.
+      fixes, of `f52990c` and of the archive is either agent's reviewer's. It is the protocol's archive check,
+      assigned to Claude's `semengine-reviewer` and recorded on this pull request, not a task.
 - [x] 7.2 The description has one line `implemented-by:` that names `claude` and one line `reviewed-by:` that names
       `codex`, written on 2026-10-03 once Codex's newest review record (comment 5968479191) approved.
 

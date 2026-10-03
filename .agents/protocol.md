@@ -49,39 +49,38 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
   needs nothing; the ruling is the record. An unmeasured cost becomes a *Declared cost* section in the design. Only an
   architectural finding (it crosses files, would need its evidence re-collected to re-derive, or changes what someone
   should not do next) becomes an issue. Ask the owner before filing when placement is a genuine scheduling call.
-- **Land:** implementation review (the other agent's for a code pull request: "Cross-agent review" below), then,
-  for a documents-only change, the owner-run cross-agent round where the owner asks for it, then fixes and
-  re-review, then archive as the final content commit, then a narrow reviewer check of the archive/spec sync (either
-  agent's reviewer), then undraft, then CI green on a head that is up to date with `main` and with **no known flake
-  open** ("Known flakes"
-  below), then `task merge:check -- <n>` immediately before merging, in a shell where `GITHUB_ACTIONS` is not set,
-  then squash merge. A green run while a known flake is open is not a fix: a re-run or a new push only rolls the dice
-  again. Fix the flake; there is no other way past it. A correction after archive re-enters reconciliation and final
-  review; no later content commit bypasses the archive/spec-sync check. State `implemented-by:` in the PR body, naming
-  the implementing agent with the word `claude` or `codex` beside the model or persona
-  (`implemented-by: claude (opus semengine-developer)`). Bring a pushed branch up to date by merging `origin/main`
-  into it; do not rebase or force-push it. A review record names the commit it read, and a rebase leaves that record
-  pointing at a commit the branch no longer has. The squash merge keeps `main` linear either way.
-- **Cross-agent review:** on a code pull request the reviews in "Land" (the implementation review, the re-review of
-  fixes, the check of the archive/spec sync) are done by the agent that wrote none of the commits under review, as
-  the pull request's `implemented-by:` line records. The owner ruled on 2026-10-02 (issue #64) that Codex's
-  `semengine-reviewer` reviews what Claude sessions implement, that it works both ways (Claude's reviewer for what
-  Codex implements), and that the rule is enforced for code and waived for a documents-only pull request. What
-  "documents only" means is this repository's reading of that ruling, not the owner's words: every file the pull
-  request changes is a Markdown file or is under `openspec/`, and none is a role adapter under `.claude/agents/`
-  (Markdown that sets a role's model and tools, as the `.toml` files under `.codex/agents/` do). Any other changed
-  file makes it a code pull request: a `.go` file, the harness included; `go.mod`; a script; `Taskfile.yml`; the CI
-  workflow; `docs/admission-ledger.yaml`. If both agents wrote commits, the owner names the reviewer on the issue. A
-  pull request neither agent wrote (a dependency bot's) is reviewed by either agent's reviewer, and the record names
-  which. The check below provides for this only when GitHub reports the author as a bot. A code change the owner
-  would write by hand is given to an agent session to make: the commits are then that agent's, `implemented-by:`
-  names it truthfully, and the other agent reviews. A code pull request by a user with no `implemented-by:` line
-  naming an agent fails the check once it is not a draft; the ruleset on `main` lets nobody merge past the failed
-  check, and editing the ruleset is a waiver this rule does not give. For a code pull request this replaces the
-  owner-run round; the owner need not ask. A documents-only pull request keeps SemEngine's own reviewer. The rule
-  applies to every pull request not yet merged, one already open included. The implementing session may run its own
-  reviewer as it works; those reviews, past or future, find defects early and are not the gate. Neither agent can
-  start the other, so the pull request carries both halves:
+- **Land:** implementation review (the other agent's for a code pull request: "Cross-agent review" below), then, for a
+  documents-only change, the owner-run cross-agent round where the owner asks for it, then fixes and re-review, then
+  archive as the final content commit, then a narrow reviewer check of the archive/spec sync (either agent's reviewer),
+  then undraft, then CI green on a head that is up to date with `main` and with **no known flake open** ("Known flakes"
+  below), then `task merge:check -- <n>` immediately before merging, in a shell where `GITHUB_ACTIONS` is not set, then
+  squash merge. A green run while a known flake is open is not a fix: a re-run or a new push only rolls the dice again.
+  Fix the flake; there is no other way past it. A correction after archive re-enters reconciliation and final review; no
+  later content commit bypasses the archive/spec-sync check. State `implemented-by:` in the PR body, naming the
+  implementing agent with the word `claude` or `codex` beside the model or persona (`implemented-by: claude (opus
+  semengine-developer)`). Bring a pushed branch up to date by merging `origin/main` into it; do not rebase or force-push
+  it. A review record names the commit it read, and a rebase leaves that record pointing at a commit the branch no
+  longer has. The squash merge keeps `main` linear either way.
+- **Cross-agent review:** on a code pull request the implementation review, and the re-review of a fix that changes
+  code, are done by the agent that wrote none of the commits under review, as the pull request's `implemented-by:` line
+  records; the re-review of a fix that changes documents only, and the check of the archive/spec sync, are either
+  agent's reviewer's (the bullet "A record covers the commit it names" below). The owner ruled on 2026-10-02 (issue #64)
+  that Codex's `semengine-reviewer` reviews what Claude sessions implement, that it works both ways (Claude's reviewer
+  for what Codex implements), and that the rule is enforced for code and waived for a documents-only pull request. What
+  "documents only" means is this repository's reading of that ruling, not the owner's words: every file the pull request
+  changes is a Markdown file or is under `openspec/`, and none is a role adapter under `.claude/agents/` (Markdown that
+  sets a role's model and tools, as the `.toml` files under `.codex/agents/` do). Any other changed file makes it a code
+  pull request: a `.go` file, the harness included; `go.mod`; a script; `Taskfile.yml`; the CI workflow;
+  `docs/admission-ledger.yaml`. If both agents wrote commits, the owner names the reviewer on the issue. A pull request
+  neither agent wrote (a dependency bot's) is reviewed by either agent's reviewer, and the record names which. The check
+  below provides for this only when GitHub reports the author as a bot. A code change the owner would write by hand is
+  given to an agent session to make: the commits are then that agent's, `implemented-by:` names it truthfully, and the
+  other agent reviews. A code pull request by a user with no `implemented-by:` line naming an agent fails the check once
+  it is not a draft; the ruleset on `main` lets nobody merge past the failed check, and editing the ruleset is a waiver
+  this rule does not give. For a code pull request this replaces the owner-run round; the owner need not ask. A
+  documents-only pull request keeps SemEngine's own reviewer. The rule applies to every pull request not yet merged, one
+  already open included. The implementing session may run its own reviewer as it works; those reviews, past or future,
+  find defects early and are not the gate. Neither agent can start the other, so the pull request carries both halves:
   - The implementer asks with a PR comment headed `Review request`. It names the kind of review, the commit to read,
     the diff range, that commit's CI run, and the issue or ruling the change answers. It does not say what the
     reviewer should conclude.

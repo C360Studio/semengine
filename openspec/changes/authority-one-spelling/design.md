@@ -97,9 +97,14 @@ Adopted from PR #48 (`bb004ef`): C-1 is `TestNoDeploymentAuthorityNames` with it
 `TestNoDeploymentAuthorityNamesSensitivity` in `internal/harness/contract/signatures_test.go`, not written here; task
 3.1 verifies at #48's merged head that its predicate and fixture match this paragraph and scenarios 1–2. What a
 caller observes: `TestNoDeploymentAuthorityNames` fails with one such line per identifier, sorted; passes on a
-tree with none. Proof: `TestNoDeploymentAuthorityNamesSensitivity` plants the seven names of the first scenario across a
-public, an internal and a `main` package of a fixture module and the four non-matches of the second, requires each
-of the seven by file and name, requires none of the four, and requires exactly seven.
+tree with none. Proof: `TestNoDeploymentAuthorityNamesSensitivity` plants #48's fixture (`authorityFixture`, read
+at #48's head `71cfc89`), ten names across a public package `pub`, an internal package `internal/inner` and a `main`
+package `cmd/tool` — a type, a function, a variable, a constant, a struct field, a method, an exported method of an
+unexported type and an interface method in `pub`, and one function in each of the other two — beside non-matches
+(unexported `federationMeta` and `entityIRI`, a lowercase `globalID` field, an unexported method, and a `_test.go`
+`FederationTestHelper`), and requires exactly those ten. Task 3.1 checks this fixture against scenarios 1–2 at the
+merged head; at `71cfc89` it has no comment or string-literal non-match, and its lines name the qualified identifier
+without file, line or rule.
 
 ### D3 C-2: exported `Org`/`Platform` fields outside the owners
 
@@ -126,7 +131,10 @@ with `Platform string`; and, to pass: `pkg/types.EntityID{Org, Platform}`, `pkg/
 with `PlatformMeta = types.PlatformMeta` aliased, a second `Platform types.PlatformMeta` field on another type in
 that package that must fail (the ruled form is by exact field, not by type), `processor/rule.CallerContext{Org
 string}` beside a second type in the same package with `Org string` that must fail, `org`/`platform` lowercase fields,
-and a `_test.go` with `Org`. It
+and a `_test.go` with `Org`; and, to fail, `types.Other{Org string}` in the top-level `types` package and a
+`Dependencies{Platform types.PlatformMeta}` and a `CallerContext{Org string}` outside the excepted packages (review F2
+and F3 at `beb3c3e`, so neither a whole-package `types` exception nor an exception matched without its package
+passes). It
 requires each failing field by file, line and type, requires silence for each passing one, and requires the exact
 count.
 

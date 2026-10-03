@@ -49,7 +49,10 @@ pull request closes #72 (`Closes #72` in its body).
       packages — with the baseline, wrong-change and restored runs recorded
       on this pull request. A wrong change the sensitivity test lets through is a survivor, closed with a case or
       listed under what is not covered. Recorded: PR #73 comment 5969839223 (six listed changes detected, and the
-      case-insensitive variant of the first; dropping the exported-only test alone is an equivalent survivor, not covered).
+      case-insensitive variant of the first; dropping the exported-only test alone is an equivalent survivor, not
+      covered). Two further wrong changes from the review at `beb3c3e` (exceptions matched without the package;
+      the whole `types` package excepted) survived the first fixture and are detected after `81ae1ca`: PR #73
+      comment recorded with that commit.
 - [x] 2.4 (D) The `contract` package's time in the `test:unit`, `test:integration` and `test:repeat` steps on
       `main` and on the branch, from the CI logs of two runs, recorded on this pull request and under "Declared
       costs" in `design.md`; over D6's 15 s budget, the two checks share one load before anything is removed.
@@ -70,7 +73,9 @@ pull request closes #72 (`Closes #72` in its body).
 
 - [x] 4.1 (W) `AGENTS.md`: the rule's row as `design.md` D7 words it, naming both tests under "Enforced by" and what
       stays review only. Gate: `task docs:check`.
-- [ ] 4.2 (W) `docs/testing.md`, the list at `:155-161`: the two sensitivity pairs; `docs/repository-map.md:41`: the
+- [ ] 4.2 Hold: until PR #48 merges — the name check's sensitivity pair arrives with it (task 3.1); the field
+      check's pair and the `docs/repository-map.md` clause are already in place.
+      (W) `docs/testing.md`, the list at `:155-161`: the two sensitivity pairs; `docs/repository-map.md:41`: the
       contract package's clause names the deployment-authority spelling. Gate: `task docs:check`.
 
 ## 5. Review

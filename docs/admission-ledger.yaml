@@ -1119,13 +1119,31 @@
     test_client_readiness_test.go, monitoring_consumers_test.go, test_options_test.go,
     mapped_port_retry_test.go). The 27 integration-tagged test files are task 3.7b and are not in
     the tree at task 3.7. The surface audit's drops are task 3.7a; until then the symbols it names
-    are carried as at the pin
+    are carried as at the pin. Census maps (owner ruling, #9 comment 5969522395, item 3): the
+    expected maps in consumer_policy_callsite_test.go hold SemEngine's production callers as
+    measured at task 3.7, so each later port that adds a caller of ConsumeInternalStreamWithConfig,
+    ConsumeStreamWithConfig, ConsumeStreamWithConfigContexts or GetConsumerConfig, or a direct
+    CreateOrUpdateConsumer, CreateConsumer or OrderedConsumer call, updates them in that port
   proving_tests: >-
     the 43 unit test files of natsclient at the pin, carried, with
     natsclient/test_helpers_test.go (testStreamMaxAge and testStreamMaxBytes, pin
     test_client.go:912-913) in place of test_client.go. jetstream_metrics_test.go:16 proves the
     canonical collector for the three policy gauges only, as at the pin; the test that two clients
     on one registry share all 11 collectors, failing at the pin for the 8 that went through
-    Register*, is task 3.7d's test (2)
+    Register*, is task 3.7d's test (2). Adapt item, the census tests rewritten for SemEngine
+    (owner ruling, #9 comment 5969522395, item 3), pin → SemEngine:
+    TestConsumerPolicyProductionCallsiteCensus consumer_policy_callsite_test.go:217-292 → :222-229
+    with the check in consumerPolicyCallsiteCensusViolations :279-336 (the pin expected 2 internal,
+    15 port and 1 split-context SemStreams callers and 17 GetConsumerConfig files; SemEngine has
+    none of them); TestConsumerPolicyDirectCreationCallCensus :588-618 → :635-642 with the check in
+    directConsumerCreationCensusViolations :669-700 (the pin's output/otel and test/e2e entries are
+    replaced by internal/harness/natsfixture/fixture.go:CreateConsumer/args=2; natsclient/stream.go's
+    two stay). New, each adding a caller written in a t.TempDir() tree to the measured tree:
+    TestConsumerPolicyProductionCallsiteCensusRejectsPlantedCaller :231-277 (one caller per entry
+    point; each names planted.go) and TestConsumerPolicyDirectCreationCallCensusRejectsPlantedCaller
+    :644-667 (one per creation method). Mutation (implementer-reported, PR #48): both check
+    functions made to return nil: all seven planted subtests fail; restored, they pass. The module
+    path in the test's import strings (:200, :409, :415, :421, :427, :485, :541) is
+    github.com/c360studio/semengine/natsclient, so the retirement guards match SemEngine's imports
   owner: setup-04a-01-floor developer
   disposition: adapt

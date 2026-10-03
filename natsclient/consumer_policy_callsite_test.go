@@ -2,6 +2,7 @@ package natsclient
 
 import (
 	"bytes"
+	"fmt"
 	"go/ast"
 	"go/format"
 	"go/parser"
@@ -196,7 +197,7 @@ func natsclientImportBindings(file *ast.File) (map[string]struct{}, bool) {
 	dotImport := false
 	for _, imported := range file.Imports {
 		importPath, err := strconv.Unquote(imported.Path.Value)
-		if err != nil || importPath != "github.com/c360studio/semstreams/natsclient" {
+		if err != nil || importPath != "github.com/c360studio/semengine/natsclient" {
 			continue
 		}
 		if imported.Name == nil {
@@ -214,8 +215,68 @@ func natsclientImportBindings(file *ast.File) (map[string]struct{}, bool) {
 	return aliases, dotImport
 }
 
+// TestConsumerPolicyProductionCallsiteCensus pins every production caller of the consumer-policy
+// entry points in SemEngine's tree. The expected maps hold what this repository has, measured when
+// natsclient was ported (task 3.7), not the pin's SemStreams callers: each later port that adds a
+// caller updates them (admission ledger row natsclient, known_risks).
 func TestConsumerPolicyProductionCallsiteCensus(t *testing.T) {
 	files := parseProductionGoFiles(t, filepath.Clean(".."))
+	if violations := consumerPolicyCallsiteCensusViolations(files); len(violations) != 0 {
+		t.Fatalf("consumer-policy call-site census:\n%s", strings.Join(violations, "\n"))
+	}
+}
+
+// TestConsumerPolicyProductionCallsiteCensusRejectsPlantedCaller adds one planted caller per entry
+// point, written in a t.TempDir() tree, to the measured tree and requires the census to name it.
+func TestConsumerPolicyProductionCallsiteCensusRejectsPlantedCaller(t *testing.T) {
+	tree := parseProductionGoFiles(t, filepath.Clean(".."))
+	tests := []struct {
+		name   string
+		source string
+		want   string
+	}{
+		{
+			name: "internal consumer",
+			source: "package planted\nimport nc \"github.com/c360studio/semengine/natsclient\"\n" +
+				"func f(c *nc.Client) { _, _ = c.ConsumeInternalStreamWithConfig(nil, nc.StreamConsumerConfig{}, nil) }\n",
+			want: "internal consumer census",
+		},
+		{
+			name: "canonical port consumer",
+			source: "package planted\nimport nc \"github.com/c360studio/semengine/natsclient\"\n" +
+				"func f(c *nc.Client) { _, _ = c.ConsumeStreamWithConfig(nil, nil, nc.StreamConsumerConfig{}, nil) }\n",
+			want: "canonical port consumer census",
+		},
+		{
+			name: "split-context port consumer",
+			source: "package planted\nimport nc \"github.com/c360studio/semengine/natsclient\"\n" +
+				"func f(c *nc.Client) { _, _ = c.ConsumeStreamWithConfigContexts(nil, nil, nil, nc.StreamConsumerConfig{}, nil) }\n",
+			want: "split-context canonical port census",
+		},
+		{
+			name:   "port consumer config reader",
+			source: "package planted\nfunc f(p interface{ GetConsumerConfig() any }) { _ = p.GetConsumerConfig() }\n",
+			want:   "GetConsumerConfig production files",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			if err := os.WriteFile(filepath.Join(root, "planted.go"), []byte(tt.source), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			planted := parseProductionGoFiles(t, root)
+			violations := consumerPolicyCallsiteCensusViolations(append(append([]productionGoFile{}, tree...), planted...))
+			joined := strings.Join(violations, "\n")
+			if !strings.Contains(joined, tt.want) || !strings.Contains(joined, "planted.go") {
+				t.Fatalf("census accepted a planted caller: violations = %q, want %q naming planted.go", joined, tt.want)
+			}
+			t.Logf("planted caller rejected: %s", joined)
+		})
+	}
+}
+
+func consumerPolicyCallsiteCensusViolations(files []productionGoFile) []string {
 	internalCallers := map[string]int{}
 	portCallers := map[string]int{}
 	contextsPortCallers := map[string]int{}
@@ -250,45 +311,28 @@ func TestConsumerPolicyProductionCallsiteCensus(t *testing.T) {
 		}
 	}
 
-	wantInternal := map[string]int{
-		"agentic/agentrun/agentrun.go":     2,
-		"internal/maxdelivery/observer.go": 1,
-	}
+	// SemEngine's tree at task 3.7: no production package outside natsclient consumes a stream
+	// yet, and natsclient calls none of the four through a selector.
+	var violations []string
+	wantInternal := map[string]int{}
 	if !reflect.DeepEqual(internalCallers, wantInternal) {
-		t.Fatalf("internal consumer census = %#v, want %#v", internalCallers, wantInternal)
+		violations = append(violations, fmt.Sprintf("internal consumer census = %#v, want %#v", internalCallers, wantInternal))
 	}
-	wantPort := map[string]int{
-		"examples/processors/document/component.go":   1,
-		"examples/processors/iot_sensor/component.go": 1,
-		"output/file/file.go":                         1,
-		"output/httppost/httppost.go":                 1,
-		"output/websocket/websocket.go":               1,
-		"processor/agentic-dispatch/component.go":     1,
-		"processor/agentic-governance/component.go":   1,
-		"processor/agentic-model/component.go":        1,
-		"processor/agentic-tools/component.go":        1,
-		"processor/graph-ingest/component.go":         1,
-		"processor/json_filter/json_filter.go":        1,
-		"processor/json_generic/json_generic.go":      1,
-		"processor/json_map/json_map.go":              1,
-		"processor/rule/processor.go":                 1,
-		"storage/objectstore/component.go":            1,
-	}
+	wantPort := map[string]int{}
 	if !reflect.DeepEqual(portCallers, wantPort) {
-		t.Fatalf("canonical port consumer census = %#v, want %#v", portCallers, wantPort)
+		violations = append(violations, fmt.Sprintf("canonical port consumer census = %#v, want %#v", portCallers, wantPort))
 	}
-	wantContextsPort := map[string]int{
-		"processor/agentic-loop/component.go": 1,
-	}
+	wantContextsPort := map[string]int{}
 	if !reflect.DeepEqual(contextsPortCallers, wantContextsPort) {
-		t.Fatalf("split-context canonical port census = %#v, want %#v", contextsPortCallers, wantContextsPort)
+		violations = append(violations, fmt.Sprintf("split-context canonical port census = %#v, want %#v", contextsPortCallers, wantContextsPort))
 	}
-	if len(portConfigCallers) != 17 {
-		t.Fatalf("GetConsumerConfig production files = %d, want 17: %#v", len(portConfigCallers), portConfigCallers)
+	if len(portConfigCallers) != 0 {
+		violations = append(violations, fmt.Sprintf("GetConsumerConfig production files = %d, want 0: %#v", len(portConfigCallers), portConfigCallers))
 	}
 	if len(portBackedInternalCallers) != 0 {
-		t.Fatalf("port-backed files use internal consumer path: %#v", portBackedInternalCallers)
+		violations = append(violations, fmt.Sprintf("port-backed files use internal consumer path: %#v", portBackedInternalCallers))
 	}
+	return violations
 }
 
 func TestParseProductionGoFilesIgnoresClaudeWorktrees(t *testing.T) {
@@ -362,25 +406,25 @@ func TestNewDurableHandlerRetirementRejectsAliasAndReceiverBypasses(t *testing.T
 		{
 			name: "external qualified call",
 			source: "package fixture\n" +
-				"import nc \"github.com/c360studio/semstreams/natsclient\"\n" +
+				"import nc \"github.com/c360studio/semengine/natsclient\"\n" +
 				"func callRetired() { nc.NewDurableHandler() }\n",
 		},
 		{
 			name: "external default-import symbol",
 			source: "package fixture\n" +
-				"import \"github.com/c360studio/semstreams/natsclient\"\n" +
+				"import \"github.com/c360studio/semengine/natsclient\"\n" +
 				"var retired = natsclient.NewDurableHandler\n",
 		},
 		{
 			name: "external symbol taking",
 			source: "package fixture\n" +
-				"import nc \"github.com/c360studio/semstreams/natsclient\"\n" +
+				"import nc \"github.com/c360studio/semengine/natsclient\"\n" +
 				"var retired = nc.NewDurableHandler\n",
 		},
 		{
 			name: "external dot-import call",
 			source: "package fixture\n" +
-				"import . \"github.com/c360studio/semstreams/natsclient\"\n" +
+				"import . \"github.com/c360studio/semengine/natsclient\"\n" +
 				"func callRetired() { NewDurableHandler() }\n",
 		},
 		{
@@ -438,7 +482,7 @@ func TestConsumeWithHeartbeatHasNoDeclarationOrProductionCalls(t *testing.T) {
 func TestLegacyHeartbeatGuardRejectsTakingOrAliasingSymbol(t *testing.T) {
 	root := t.TempDir()
 	source := "package fixture\n" +
-		"import nc \"github.com/c360studio/semstreams/natsclient\"\n" +
+		"import nc \"github.com/c360studio/semengine/natsclient\"\n" +
 		"var ExportedLegacyHeartbeat = nc.ConsumeWithHeartbeat\n" +
 		"func callIndirect() { legacy := nc.ConsumeWithHeartbeat; _ = legacy(nil, nil, 0, nil) }\n"
 	if err := os.WriteFile(filepath.Join(root, "indirect.go"), []byte(source), 0o600); err != nil {
@@ -494,7 +538,7 @@ func TestLegacyHeartbeatGuardRejectsAlternateExportedSurface(t *testing.T) {
 func TestLegacyHeartbeatGuardCountsDotImportAsDirectCall(t *testing.T) {
 	root := t.TempDir()
 	source := "package fixture\n" +
-		"import . \"github.com/c360studio/semstreams/natsclient\"\n" +
+		"import . \"github.com/c360studio/semengine/natsclient\"\n" +
 		"func callLegacy() { _ = ConsumeWithHeartbeat(nil, nil, 0, nil) }\n"
 	if err := os.WriteFile(filepath.Join(root, "dot.go"), []byte(source), 0o600); err != nil {
 		t.Fatal(err)
@@ -585,8 +629,44 @@ func TestClientHasNoChildLifecycleSurfaceOrCatalog(t *testing.T) {
 	}
 }
 
+// TestConsumerPolicyDirectCreationCallCensus pins every production call that creates a consumer
+// directly, outside the policy entry points, in SemEngine's tree. Measured at task 3.7; each later
+// port that adds such a call updates the map (admission ledger row natsclient, known_risks).
 func TestConsumerPolicyDirectCreationCallCensus(t *testing.T) {
 	files := parseProductionGoFiles(t, filepath.Clean(".."))
+	if violations := directConsumerCreationCensusViolations(files); len(violations) != 0 {
+		t.Fatalf("%s", strings.Join(violations, "\n"))
+	}
+}
+
+// TestConsumerPolicyDirectCreationCallCensusRejectsPlantedCaller adds one planted direct creation
+// per method, written in a t.TempDir() tree, to the measured tree and requires the census to name it.
+func TestConsumerPolicyDirectCreationCallCensusRejectsPlantedCaller(t *testing.T) {
+	tree := parseProductionGoFiles(t, filepath.Clean(".."))
+	for _, method := range []string{"CreateOrUpdateConsumer", "CreateConsumer", "OrderedConsumer"} {
+		t.Run(method, func(t *testing.T) {
+			root := t.TempDir()
+			source := "package planted\nimport \"github.com/nats-io/nats.go/jetstream\"\n" +
+				"func f(s jetstream.Stream) { _, _ = s." + method + "(nil, jetstream.ConsumerConfig{}) }\n"
+			if method == "OrderedConsumer" {
+				source = "package planted\nimport \"github.com/nats-io/nats.go/jetstream\"\n" +
+					"func f(s jetstream.Stream) { _, _ = s.OrderedConsumer(nil, jetstream.OrderedConsumerConfig{}) }\n"
+			}
+			if err := os.WriteFile(filepath.Join(root, "planted.go"), []byte(source), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			planted := parseProductionGoFiles(t, root)
+			violations := directConsumerCreationCensusViolations(append(append([]productionGoFile{}, tree...), planted...))
+			joined := strings.Join(violations, "\n")
+			if !strings.Contains(joined, "planted.go:"+method+"/args=2") {
+				t.Fatalf("direct creation census accepted a planted %s: violations = %q", method, joined)
+			}
+			t.Logf("planted caller rejected: %s", joined)
+		})
+	}
+}
+
+func directConsumerCreationCensusViolations(files []productionGoFile) []string {
 	got := map[string]int{}
 	for _, parsed := range files {
 		ast.Inspect(parsed.file, func(node ast.Node) bool {
@@ -607,14 +687,16 @@ func TestConsumerPolicyDirectCreationCallCensus(t *testing.T) {
 		})
 	}
 
+	// SemEngine's tree at task 3.7: natsclient's two policy-checked creations, and the test
+	// fixture's probe consumer (internal/harness/natsfixture/fixture.go, a non-test file).
 	want := map[string]int{
-		"natsclient/stream.go:CreateOrUpdateConsumer/args=2":                       2,
-		"output/otel/component.go:CreateOrUpdateConsumer/args=3":                   1,
-		"test/e2e/scenarios/core_objectstore_raw.go:CreateOrUpdateConsumer/args=2": 1,
+		"internal/harness/natsfixture/fixture.go:CreateConsumer/args=2": 1,
+		"natsclient/stream.go:CreateOrUpdateConsumer/args=2":            2,
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("direct consumer creation census = %#v, want %#v", got, want)
+		return []string{fmt.Sprintf("direct consumer creation census = %#v, want %#v", got, want)}
 	}
+	return nil
 }
 
 func parseProductionGoFiles(t *testing.T, root string) []productionGoFile {

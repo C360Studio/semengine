@@ -6,6 +6,8 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/c360studio/semengine/metric"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -200,4 +202,44 @@ func TestCacheCloseAfterContextEndAndAgain(t *testing.T) {
 			})
 		})
 	}
+}
+
+// TestCacheConstructorsReturnNilCacheOnError: every constructor that returns Cache[V] and an error
+// returns a nil Cache with the error, never a nil pointer inside a non-nil interface, which a
+// caller checking c != nil would take for a cache. The error is a metrics registration refusal:
+// the registry already holds a collector named semstreams_cache_hits_total with another help.
+func TestCacheConstructorsReturnNilCacheOnError(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		registry := metric.NewMetricsRegistry()
+		require.NoError(t, registry.PrometheusRegistry().Register(prometheus.NewCounter(prometheus.CounterOpts{
+			Namespace: "semstreams", Subsystem: "cache", Name: "hits_total",
+			ConstLabels: prometheus.Labels{"component": "taken"}, Help: "another help",
+		})))
+		opt := WithMetrics[string](registry, "taken")
+		ctx := context.Background()
+
+		constructors := map[string]func() (Cache[string], error){
+			"NewSimple": func() (Cache[string], error) { return NewSimple[string](opt) },
+			"NewLRU":    func() (Cache[string], error) { return NewLRU[string](10, opt) },
+			"NewTTL":    func() (Cache[string], error) { return NewTTL[string](ctx, time.Minute, time.Second, opt) },
+			"newHybrid": func() (Cache[string], error) {
+				return newHybrid[string](ctx, 10, time.Minute, time.Second, opt)
+			},
+		}
+		for _, cfg := range []Config{
+			{Enabled: true, Strategy: StrategySimple},
+			{Enabled: true, Strategy: StrategyLRU, MaxSize: 10},
+			{Enabled: true, Strategy: StrategyTTL, TTL: time.Minute, CleanupInterval: time.Second},
+			{Enabled: true, Strategy: StrategyHybrid, MaxSize: 10, TTL: time.Minute, CleanupInterval: time.Second},
+		} {
+			constructors["NewFromConfig/"+string(cfg.Strategy)] = func() (Cache[string], error) {
+				return NewFromConfig[string](ctx, cfg, opt)
+			}
+		}
+		for name, construct := range constructors {
+			c, err := construct()
+			assert.Error(t, err, name)
+			assert.True(t, c == nil, "%s returns a nil Cache with its error, got %#v", name, c)
+		}
+	})
 }

@@ -66,14 +66,14 @@ is source x taxonomy, so they land in distinct communities. That is what gives t
 two products meaning different things by one token is a vocabulary problem — someone picked the wrong token — and
 detecting it at composition time would be the wrong layer.
 
-The **product** that produced an entity (semsource, semmem, …) is provenance — `Triple.Source` and the envelope
-`source` — and is never a position of the ID. Isolation between sources of one deployment comes from `system`;
-isolation between deployments comes from `org.platform`. The framework keeps that pair unique: on a deployment's
-first boot it appends a suffix to `platform.id` (`-` and six random bytes as hex, from `crypto/rand`), records the
-result once, and reuses it on every later boot (ADR-104 decision 1, `docs/adr/104-unique-platform-authority.md`). Two
-deployments started from copies of one configuration file therefore mint under different pairs. An operator who
-needs an unsuffixed `platform.id` creates the identity record before first boot and takes on keeping it unique
-(ADR-104 decision 4).
+The **product** that produced an entity (semsource, semmem, …) is provenance — `Triple.Source` and the envelope `source`
+— and is never a position of the ID. Isolation between sources of one deployment comes from `system`; isolation between
+deployments comes from `org.platform`. The framework keeps that pair unique: on a deployment's first boot it appends a
+suffix to `platform.id` (`-` and six hexadecimal characters: three random bytes from `crypto/rand`, hex-encoded),
+records the result once, and reuses it on every later boot (ADR-104 decision 1,
+`docs/adr/104-unique-platform-authority.md`). Two deployments started from copies of one configuration file therefore
+mint under different pairs. An operator who needs an unsuffixed `platform.id` creates the identity record before first
+boot and takes on keeping it unique (ADR-104 decision 4).
 
 > **Correction (SemEngine port):** supersedes pin `docs/concepts/16-federation.md:56-58`, which said nothing
 > coordinates the pair and two deployments choosing the same `platform.org` / `platform.id` mint colliding

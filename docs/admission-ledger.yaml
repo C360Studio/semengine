@@ -212,6 +212,27 @@
 # Change setup-04a-01-floor (PR #48, epic #9), section 3: the floor's 15 package rows, in design D1's
 # import order. Destinations follow design D5 (owner rulings #9 comments 5952661571, 5953295358).
 
+- source_path: internal/semantictest
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    grammar-only fixtures (EntityID, Predicate) for message's tests (payload_test.go,
+    triple_helpers_test.go at the pin); a test helper, so it lives in the harness (design D2,
+    "Rehomed helpers"; task 2.8)
+  destination: internal/harness/semantictest
+  contract: >-
+    EntityID joins six positions and Predicate three without rewriting a byte, and each returns the
+    value only when pkg/types or vocabulary accepts it, failing the test otherwise, as at the pin
+  dependencies_and_side_effects: >-
+    pkg/types, vocabulary (in-set; their closure adds pkg/errs, pkg/retry, pkg/platform, none of
+    which starts a goroutine); testing; no goroutine, no I/O
+  known_risks: >-
+    no context roots. Imports testing from a non-test file, which T-B1 admits only under
+    internal/harness/ (TestImportGraphRejectsHarnessHelpersOutsideTheHarness). No test of a package
+    in its closure imports it (design P5; go list, task 2.8)
+  proving_tests: internal/harness/semantictest/fixtures_test.go
+  owner: setup-04a-01-floor developer
+  disposition: carry
+
 - source_path: pkg/platform
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
@@ -591,9 +612,13 @@
   known_risks: >-
     no context roots. Adapt item: testing.go (NewForTest, NewWithSubset, RegisterTestType) is not
     ported into the package; it is a non-test file importing testing, which TestImportGraph refuses
-    in production code, and no payloadregistry test calls it (pin grep). Task 2.8 rehomes it to
-    internal/harness/payloadfixture; its qualifications of New, Registry and Registration as
-    payloadregistry.X are recorded on this row when task 2.8 lands. The package doc names ADR-103,
+    in production code, and no payloadregistry test calls it (pin grep). Task 2.8 rehomed it to
+    internal/harness/payloadfixture/testing.go, the pin's text except these adapt items, by pin
+    testing.go line: :1 package payloadregistry → payloadfixture; :6 the pkg/types import path
+    rewritten, with an import of payloadregistry added beside it; New qualified as
+    payloadregistry.New at :20 and :34; Registry as payloadregistry.Registry at :18, :32 (twice) and
+    :53; Registration as payloadregistry.Registration at :55. T-B1 admits the file only under
+    internal/harness/ (TestImportGraphRejectsHarnessHelpersOutsideTheHarness). The package doc names ADR-103,
     ADR-054, ADR-029, component.Dependencies and agentic, which do not exist here; left as the pin's
     text
   proving_tests: payloadregistry/registry_test.go, payloadregistry/attributes_test.go

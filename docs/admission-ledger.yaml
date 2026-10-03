@@ -873,9 +873,13 @@
     Changed behavior (owner ruling 2, #9 comment 5969776736): BaseMessage.MarshalJSON refuses a
     meta source that is not valid UTF-8 with an invalid-data error. Changed behavior (owner ruling,
     #9 comment 5970334875, extending ruling 2): BaseMessage.MarshalJSON refuses a message type
-    whose domain, category or version is not valid UTF-8, and GenericJSONPayload.MarshalJSON
-    refuses a string, map key or string value anywhere in Data that is not valid UTF-8, each with
-    an invalid-data error; message.Type.Validate (pkg/types row) refuses such a component. No other
+    whose domain, category or version is not valid UTF-8, with an invalid-data error;
+    message.Type.Validate (pkg/types row) refuses such a component. Changed behavior (owner
+    rulings, #9 comments 5972117486 and 5972208367): GenericJSONPayload.Data holds JSON-shaped
+    values only (map[string]any, []any, string, a Go number, json.Number, bool, nil, nested);
+    MarshalJSON refuses any other value, time.Time included, with an invalid-data error naming its
+    type and path (data.a[2].b), as well as a string or map key that is not valid UTF-8 and a map or
+    list that contains itself. No other
     behavior changed
   dependencies_and_side_effects: >-
     payloadregistry, pkg/errs, pkg/types, internal/timestamp (in-set);
@@ -939,12 +943,26 @@
     type component or in any string of Data reached the wire as U+FFFD with no error, and
     Type.Validate accepted such a component. BaseMessage.MarshalJSON now refuses a type component
     that is not valid UTF-8 (BaseMessage.Validate checks only that each component is non-empty, so
-    the check is at encoding, beside the source's); GenericJSONPayload.MarshalJSON walks Data by
-    encoding/json's rules (map keys, strings, TextMarshaler text, a pointer-receiver method on an
-    addressable value included, struct fields it writes, flattened embedded structs; not []byte,
-    fields tagged "-", unexported fields or a json.Marshaler's value) and refuses the first string that is not valid UTF-8, and refuses
-    encoded text that is not valid UTF-8 (a json.Marshaler's output is copied unchecked). A cycle
-    in Data stops the walk; json.Marshal reports it. Hash() ignores a payload marshal error, as at
+    the check is at encoding, beside the source's). Behaviour change, generic payload shapes (owner
+    rulings, #9 comments 5972117486 and 5972208367; Codex F15 and F16, PR #48 comment 5970889953):
+    the pin's GenericJSONPayload.MarshalJSON passed Data to encoding/json, which accepts any Go
+    value and runs its custom methods, so a check copying encoding/json's dispatch kept missing
+    cases (a named key type, a byte-element or changing TextMarshaler, shadowed and ambiguous
+    struct fields, a self-embedding struct that recursed without end). MarshalJSON now checks Data
+    before encoding over the ruled kinds alone, by exact type, so no custom method runs and no
+    struct is walked: a value of any other type, typed maps and slices and named types included, is
+    refused with its type and path; a string, json.Number or key that is not valid UTF-8 is refused
+    with its path; a map[string]any or []any that contains itself is refused. A NaN or an infinity
+    passes the check and json.Marshal refuses it, as at the pin. The check is at encoding only:
+    NewGenericJSON and Data are unchanged, so a message held and evaluated in memory is unaffected.
+    Measured callers (2026-10-03, tarballs; NewGenericJSON calls and Data writes): the pin has 28
+    calls, 6 in production and 22 in tests, and one production site stores a value outside the
+    ruled kinds, processor/rule/message_handler.go:376-384 (entityStateToMinimalMessage: time.Time
+    in "timestamp" and "updated_at"), named on #9 (comment 5972208367) for the rule port; every
+    other site stores what json.Unmarshal produced or map[string]any literals of strings, numbers,
+    bools and nested maps and lists. semboids (8c03cc53) has 2 production sites
+    (internal/sim/component.go:653, :696; strings, uint32, uint64); semsource (e4febc0d),
+    semconnect (d0d06e00) and semteams (d5ee6325) have none. Hash() ignores a payload marshal error, as at
     the pin, so a payload refused here hashes as its type alone; tracked by #78.
   proving_tests: >-
     the 9 test files in message/ at the pin, carried unchanged except import paths; payload_test.go
@@ -960,10 +978,16 @@
     eight marshals succeeded with U+FFFD on the wire); decoder_fuzz_test.go (Codex F8, design
     D7): FuzzDecoderDecode, FuzzDecoderRoundTrip and FuzzGenericJSONPayloadUnmarshalJSON, through NewDecoder with a real
     registry, against a standard-library oracle that predicts acceptance and refusal.
-    TestBaseMessageRefusesTypeThatIsNotUTF8 and TestGenericJSONRefusesStringsThatAreNotUTF8 (owner
-    ruling, #9 comment 5970334875; failed first: all three invalid types and all fifteen
-    invalid Data shapes of the first version marshalled with U+FFFD on the wire; the cycle,
-    embedded-struct and json.Marshaler cases came after, with the walk's field rules), and
+    TestBaseMessageRefusesTypeThatIsNotUTF8 (owner ruling, #9 comment 5970334875; failed first:
+    all three invalid types marshalled with U+FFFD on the wire); generic_json_shape_test.go (owner
+    rulings, #9 comments 5972117486 and 5972208367, replacing the walk's
+    TestGenericJSONRefusesStringsThatAreNotUTF8): TestGenericJSONRefusesValuesThatAreNotJSONShaped
+    (a refusal per other kind, time.Time with its path, and Codex's F15 and F16 probes),
+    TestGenericJSONRefusesInvalidUTF8AtDepth, TestGenericJSONRefusesCycles (in a child process
+    under a stack cap and a 10 s deadline) and TestGenericJSONAcceptsJSONShapedValues (every ruled
+    kind, against the standard library's encoding); generic_json_fuzz_test.go,
+    FuzzGenericJSONShapes (nested maps and lists of every ruled kind and three refused ones,
+    asserting refusal or a round trip equal at each number's literal); and
     FuzzDecoderStrings, which generates the
     three type components and a generic key and value and asserts refusal or full equality through
     NewDecoder, with seeds holding an invalid byte in each of the five positions

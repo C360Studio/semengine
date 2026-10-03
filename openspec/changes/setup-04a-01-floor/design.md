@@ -451,7 +451,11 @@ where `encoding/json` would write each invalid byte as U+FFFD (owner ruling 2, #
 asserts that refusal, judged by `unicode/utf8`, and the full equality for every valid source, with no exception. The
 owner extended that ruling to every string `message` encodes (#9 comment 5970334875): `Type.Validate` and
 `MarshalJSON` refuse a type component that is not valid UTF-8, and `GenericJSONPayload.MarshalJSON` such a string, key
-or value at any depth. `FuzzDecoderStrings` generates the three type components and a generic key and value and asserts,
+or value at any depth. `GenericJSONPayload.Data` holds JSON-shaped values only (#9 comments 5972117486 and
+5972208367): `MarshalJSON` checks `Data` by exact type before encoding and refuses any other value with its type and
+path, and a map or list that contains itself. `FuzzGenericJSONShapes` builds nested maps and lists of every ruled kind
+and three refused ones, and asserts refusal, judged from what the generator built, or a round trip equal at each
+number's literal. `FuzzDecoderStrings` generates the three type components and a generic key and value and asserts,
 judged by `unicode/utf8` and `strings`, that `Type.Validate`, the envelope and the payload refuse exactly those inputs,
 and that every accepted one survives `NewDecoder` equal in full; a type registered per input carries the generated
 components through the registry, and its seeds hold an invalid byte in each of the five positions.

@@ -2,12 +2,11 @@
 package message
 
 import (
-	"encoding"
 	"encoding/json"
-	"errors"
 	"fmt"
+	"maps"
 	"reflect"
-	"strings"
+	"slices"
 	"unicode/utf8"
 
 	"github.com/c360studio/semengine/payloadregistry"
@@ -109,170 +108,123 @@ func (g *GenericJSONPayload) Validate() error {
 
 // MarshalJSON serializes the GenericJSON payload to JSON format.
 // The output format matches the input structure with a "data" wrapper.
-// A string, map key or string value anywhere in Data that is not valid UTF-8
-// is refused with an invalid-data error rather than written with its invalid
-// bytes replaced.
+//
+// Data must be JSON-shaped: map[string]any, []any, string, a Go number (int,
+// int8 to int64, uint, uint8 to uint64, uintptr, float32, float64),
+// json.Number, bool or nil, nested to any depth. Any other value (a struct,
+// time.Time, a pointer, a named type, a typed map or slice such as
+// map[string]string or []string) is refused with an invalid-data error that
+// names its type and its path, such as data.a[2].b; so is a string or map key
+// that is not valid UTF-8, and a map or list that contains itself.
 func (g *GenericJSONPayload) MarshalJSON() ([]byte, error) {
-	// encoding/json writes each invalid byte of a string as U+FFFD, so the data on the wire would
-	// differ from Data with no error; refuse it (owner ruling, PR #48 comment 5970334875).
-	if problem, bad := invalidUTF8(reflect.ValueOf(g.Data), "data"); bad {
-		return nil, errs.WrapInvalid(errors.New(problem),
-			"GenericJSONPayload", "MarshalJSON", "data")
+	// Only the ruled kinds are accepted (#9 comments 5972117486 and 5972208367), so encoding/json
+	// runs no custom method and writes every string as it is; invalid UTF-8 is refused rather than
+	// written as U+FFFD (#9 comment 5970334875).
+	if err := (shapeCheck{onPath: map[shapeKey]bool{}}).check(g.Data, "data"); err != nil {
+		return nil, errs.WrapInvalid(err, "GenericJSONPayload", "MarshalJSON", "data")
 	}
 	// Use alias to avoid infinite recursion
 	type Alias GenericJSONPayload
-	data, err := json.Marshal((*Alias)(g))
-	if err != nil {
-		return nil, err
-	}
-	// A json.Marshaler's output is copied as it is, invalid bytes included, which the walk above
-	// does not see.
-	if !utf8.Valid(data) {
-		return nil, errs.WrapInvalid(fmt.Errorf("data encodes to text that is not valid UTF-8"),
-			"GenericJSONPayload", "MarshalJSON", "data")
-	}
-	return data, nil
+	return json.Marshal((*Alias)(g))
 }
 
-var (
-	jsonMarshalerType = reflect.TypeFor[json.Marshaler]()
-	textMarshalerType = reflect.TypeFor[encoding.TextMarshaler]()
-)
-
-// invalidUTF8 describes the first string encoding/json would write from v that is not valid
-// UTF-8: a string, a map key, or the text of a TextMarshaler, at any depth. A json.Marshaler is
-// not descended into (its output is checked whole), nor are []byte (written as base64),
-// unexported struct fields and fields tagged "-" (not written). An embedded struct with no JSON
-// name is walked field by field, as encoding/json flattens it into its parent.
-func invalidUTF8(v reflect.Value, at string) (string, bool) {
-	return utf8Walker{onPath: map[walkKey]bool{}}.walk(v, at)
-}
-
-// walkKey names a pointer, map or slice on the path being walked, by address, type and length,
-// so a cycle stops the walk (json.Marshal then reports it) instead of recursing without end.
-type walkKey struct {
+// shapeKey names a map or list on the path being checked, by address and length, so a map or
+// list that contains itself is refused instead of checked without end.
+type shapeKey struct {
 	ptr uintptr
-	typ reflect.Type
 	n   int
 }
 
-type utf8Walker struct{ onPath map[walkKey]bool }
+type shapeCheck struct{ onPath map[shapeKey]bool }
 
-func (w utf8Walker) walk(v reflect.Value, at string) (string, bool) {
-	if !v.IsValid() {
-		return "", false
+func (c shapeCheck) check(v any, at string) error {
+	switch v := v.(type) {
+	case nil, bool,
+		int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64, uintptr,
+		float32, float64:
+		return nil
+	case string:
+		return validString(v, at)
+	case json.Number:
+		return validString(string(v), at)
+	case map[string]any:
+		return c.object(v, at)
+	case []any:
+		return c.list(v, at)
+	default:
+		return fmt.Errorf("%s: %T is not JSON-shaped (want map[string]any, []any, string, a Go number, "+
+			"json.Number, bool or nil)", at, v)
 	}
-	switch v.Kind() {
-	case reflect.Pointer, reflect.Interface, reflect.Map, reflect.Slice:
-		if v.IsNil() {
-			return "", false
-		}
-	}
-	if _, ok := marshaler(v, jsonMarshalerType); ok {
-		return "", false
-	}
-	if m, ok := marshaler(v, textMarshalerType); ok {
-		text, err := m.Interface().(encoding.TextMarshaler).MarshalText()
-		// An error is json.Marshal's to report.
-		return at + " is not valid UTF-8", err == nil && !utf8.Valid(text)
-	}
-	switch v.Kind() {
-	case reflect.Pointer, reflect.Map, reflect.Slice:
-		key := walkKey{ptr: v.Pointer(), typ: v.Type()}
-		if v.Kind() == reflect.Slice {
-			key.n = v.Len()
-		}
-		if w.onPath[key] {
-			return "", false
-		}
-		w.onPath[key] = true
-		defer delete(w.onPath, key)
-	}
-	switch v.Kind() {
-	case reflect.String:
-		return at + " is not valid UTF-8", !utf8.ValidString(v.String())
-	case reflect.Pointer, reflect.Interface:
-		return w.walk(v.Elem(), at)
-	case reflect.Map:
-		iter := v.MapRange()
-		for iter.Next() {
-			key := fmt.Sprintf("%s[%q]", at, fmt.Sprint(iter.Key()))
-			if path, bad := w.walk(iter.Key(), key+" (key)"); bad {
-				return path, true
-			}
-			if path, bad := w.walk(iter.Value(), key); bad {
-				return path, true
-			}
-		}
-	case reflect.Slice, reflect.Array:
-		if v.Type().Elem().Kind() == reflect.Uint8 {
-			return "", false
-		}
-		for i := 0; i < v.Len(); i++ {
-			if path, bad := w.walk(v.Index(i), fmt.Sprintf("%s[%d]", at, i)); bad {
-				return path, true
-			}
-		}
-	case reflect.Struct:
-		return w.fields(v, at)
-	}
-	return "", false
 }
 
-// marshaler returns the value whose method encoding/json calls when v implements iface, or when
-// v is addressable and its pointer does.
-func marshaler(v reflect.Value, iface reflect.Type) (reflect.Value, bool) {
-	if v.Type().Implements(iface) {
-		return v, true
+func validString(s, at string) error {
+	if !utf8.ValidString(s) {
+		return fmt.Errorf("%s is not valid UTF-8", at)
 	}
-	if v.Kind() != reflect.Pointer && v.CanAddr() && reflect.PointerTo(v.Type()).Implements(iface) {
-		return v.Addr(), true
-	}
-	return reflect.Value{}, false
+	return nil
 }
 
-// fields walks the fields encoding/json writes from struct v, by its rules: a field tagged "-" is
-// not written; an embedded struct (or pointer to one) with no JSON name is flattened, its own
-// Marshaler methods not called and its fields written in its parent's place; an embedded struct
-// with a JSON name is written as a field even when unexported; any other unexported field is not
-// written.
-func (w utf8Walker) fields(v reflect.Value, at string) (string, bool) {
-	for i := 0; i < v.NumField(); i++ {
-		field := v.Type().Field(i)
-		tag := field.Tag.Get("json")
-		if tag == "-" {
-			continue
+func (c shapeCheck) enter(v any, n int, at string) (func(), error) {
+	key := shapeKey{ptr: reflect.ValueOf(v).Pointer(), n: n}
+	if c.onPath[key] {
+		return nil, fmt.Errorf("%s: %T contains itself", at, v)
+	}
+	c.onPath[key] = true
+	return func() { delete(c.onPath, key) }, nil
+}
+
+func (c shapeCheck) object(m map[string]any, at string) error {
+	if len(m) == 0 {
+		return nil
+	}
+	leave, err := c.enter(m, 0, at)
+	if err != nil {
+		return err
+	}
+	defer leave()
+	// Sorted, as encoding/json writes them, so the refusal names the same key every time.
+	for _, k := range slices.Sorted(maps.Keys(m)) {
+		if !utf8.ValidString(k) {
+			return fmt.Errorf("%s: key %q is not valid UTF-8", at, k)
 		}
-		value := v.Field(i)
-		if field.Anonymous {
-			embedded := field.Type
-			if embedded.Kind() == reflect.Pointer {
-				embedded = embedded.Elem()
-			}
-			if embedded.Kind() != reflect.Struct {
-				if !field.IsExported() {
-					continue
-				}
-			} else if strings.Split(tag, ",")[0] == "" {
-				if value.Kind() == reflect.Pointer {
-					if value.IsNil() {
-						continue
-					}
-					value = value.Elem()
-				}
-				if path, bad := w.fields(value, at+"."+field.Name); bad {
-					return path, true
-				}
-				continue
-			}
-		} else if !field.IsExported() {
-			continue
-		}
-		if path, bad := w.walk(value, at+"."+field.Name); bad {
-			return path, true
+		if err := c.check(m[k], member(at, k)); err != nil {
+			return err
 		}
 	}
-	return "", false
+	return nil
+}
+
+func (c shapeCheck) list(l []any, at string) error {
+	if len(l) == 0 {
+		return nil
+	}
+	leave, err := c.enter(l, len(l), at)
+	if err != nil {
+		return err
+	}
+	defer leave()
+	for i, e := range l {
+		if err := c.check(e, fmt.Sprintf("%s[%d]", at, i)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// member writes the path to key k of the map at at: data.k for a plain name, data["a b"] otherwise.
+func member(at, k string) string {
+	plain := k != ""
+	for _, r := range k {
+		if !(r == '_' || r == '-' || '0' <= r && r <= '9' || 'a' <= r && r <= 'z' || 'A' <= r && r <= 'Z') {
+			plain = false
+			break
+		}
+	}
+	if plain {
+		return at + "." + k
+	}
+	return fmt.Sprintf("%s[%q]", at, k)
 }
 
 // UnmarshalJSON deserializes JSON data into the GenericJSON payload.

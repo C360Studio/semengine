@@ -350,6 +350,22 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       survived was removed: its only reachable input makes `encoding/json` panic too. Exploration, separate from replay,
       implementer-reported (log local only): `-fuzz '^FuzzDecoderStrings$' -fuzztime 30s` ran 320,542 executions with no
       failing input on the final code (2,453,552 on an earlier revision of the walk). Rows: `pkg/types`, `message`.
+      The owner's rulings of 2026-10-03 (#9 comments 5972117486 and 5972208367; Codex F15 and F16, PR #48 comment
+      5970889953): `GenericJSONPayload.Data` holds JSON-shaped values only, and `time.Time` is refused. Measured first
+      (tarballs): 28 `NewGenericJSON` calls at the pin, 6 in production, one storing `time.Time`
+      (`processor/rule/message_handler.go:376-384`, left to the `rule` port); semboids 2, JSON-shaped; semsource,
+      semconnect and semteams none. The walk is replaced by a check over the ruled kinds by exact type, run before
+      encoding. `TestGenericJSONRefusesValuesThatAreNotJSONShaped` failed first: all 23 subtests (17 accepted, 4
+      refused by `encoding/json` without an invalid-data error, the two F16 cases refused at a field path);
+      `TestGenericJSONRefusesInvalidUTF8AtDepth` failed first on the path in all six; `TestGenericJSONRefusesCycles`
+      failed first (a self-referencing map gave `encoding/json`'s cycle error, not invalid data; the F16
+      self-embedding case alone overflowed the stack); `TestGenericJSONAcceptsJSONShapedValues` is a control and
+      passed before and after. `FuzzGenericJSONShapes` (30 seeds: one per generator kind, invalid UTF-8 in a key and
+      at depth, refused kinds at depth, a NaN, empty containers; on replay 19 accepted, 10 refused as invalid data, 1
+      refused for the NaN). Mutants on the final code, each detected: no refusal of another kind (shape test, cycle
+      test, fuzz replay), no key UTF-8 check and no string UTF-8 check (UTF-8 test, both fuzz targets), no cycle
+      guard (the cycle test's child overflowed its stack). Exploration, separate from replay (log local only):
+      `-fuzz '^FuzzGenericJSONShapes$' -fuzztime 30s` ran 3,401,171 executions with no failing input. Row: `message`.
 - [x] 3.7 (D) `natsclient` (level 6), port and unit lane: row `adapt`, its `source_sha` and the existing file rows'
       at the pin. Not ported, with file rows: `test_client.go` (`adapt → natsfixture`, evidence in `proving_tests`)
       and `test_options.go` (`defer-exclude`); six test files `defer-exclude` with design D1's reasons —

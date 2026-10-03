@@ -625,6 +625,32 @@
   owner: setup-04a-01-floor developer
   disposition: adapt
 
+- source_path: message
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the message envelope, payload behaviors, triples, entity-ID parsing and metadata; SemSource
+    imports it (28 files, design P16), so it stays public at its pin path (design D5)
+  destination: message
+  contract: >-
+    BaseMessage, the payload and behavior interfaces, the JSON codecs, triple construction and
+    identity, entity-ID parsing and Meta as at the pin; no behavior changed
+  dependencies_and_side_effects: >-
+    payloadregistry, pkg/errs, pkg/platform, pkg/types, internal/timestamp (in-set);
+    github.com/google/uuid v1.6.0 (the pin's version, now a direct requirement); stdlib; no
+    goroutine, no I/O
+  known_risks: >-
+    no context roots. Import paths differ from the pin: pkg/timestamp is internal/timestamp (design
+    D5), and the tests' internal/semantictest is internal/harness/semantictest (task 2.8). Adapt item
+    (owner ruling, #9 comment 5957221949): message/README.md is ported with only the edit
+    markdownlint requires: line 7 wrapped at 120 columns (MD013); no wording changed. The README's
+    import examples still name github.com/c360/semstreams paths (:20, :203-204, :466), left as the
+    pin's text
+  proving_tests: >-
+    the 9 test files in message/ at the pin, carried unchanged except import paths; payload_test.go
+    and triple_helpers_test.go use internal/harness/semantictest
+  owner: setup-04a-01-floor developer
+  disposition: adapt
+
 - source_path: pkg/cache
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-

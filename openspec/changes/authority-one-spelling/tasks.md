@@ -9,8 +9,9 @@ branch, in or before the archive commit. (D) is the developer, (W) the technical
 and that output is recorded on this pull request. The two checks' expected failure lines are written out in their
 sensitivity tests, from the scenarios of the `harness-boundaries` delta.
 
-What follows the archive is not a task: the check of the archive, marking the pull request ready, the CI run that
-starts, Codex's review record, `task merge:check -- <n>` and the merge are recorded on this pull request. This
+What follows the archive is not a task: the check of the archive, the re-review of the archive commit if any,
+marking the pull request ready, the CI run that starts, `task merge:check -- <n>` and the merge are recorded on this
+pull request. This
 pull request closes #72 (`Closes #72` in its body).
 
 ## 1. Design
@@ -20,9 +21,10 @@ pull request closes #72 (`Closes #72` in its body).
 - [ ] 1.2 The independent pre-owner review of `design.md`, `proposal.md`, this file and the `harness-boundaries`
       delta: `DESIGN REVIEW PASS` in at most three rounds, recorded on this pull request with the reviewed and the
       committed checksums.
-- [ ] 1.3 The owner's acceptance of the reviewed design, recorded on #72 or on this pull request. The one
-      consequence `design.md` records for change 2 (`HierarchyConfig` meets C-2) is relayed to epic #9 as a note,
-      not a ruling.
+- [ ] 1.3 The owner's acceptance of the reviewed design, recorded on #72 or on this pull request, with the answer
+      to `design.md` Q1 (the carrier: by type, or by exact field); the delta's exclusion paragraph and the fixture
+      of 2.1 take that form and lose their "pending" mark. The one consequence `design.md` records for change 2
+      (`HierarchyConfig` meets C-2) is relayed to epic #9 as a note, not a ruling.
 
 ## 2. C-2: the field check
 
@@ -50,15 +52,17 @@ pull request closes #72 (`Closes #72` in its body).
 
 ## 3. C-1: the name check
 
-- [ ] 3.1 Hold: until PR #48 merges — it carries `signatures_test.go`, and at its pushed head `c64ac338` the
-      check names seven identifiers #48 is ruled to remove (design P2). (D)
-      `TestNoSecondAuthorityNameSensitivity`, written first, in `authority_test.go`: the fixture of
+- [ ] 3.1 (D) `TestNoSecondAuthorityNameSensitivity`, written first, in `authority_test.go`: the fixture of
       `design.md` D2 (the seven matching names across a public, an internal and a `main` package; the four
       non-matches: an unexported `federationMeta`, lowercase `federation`, a `_test.go` `TestFederation`, a comment
       and a string literal saying `BuildGlobalID`). Seen to fail first. Then `TestNoSecondAuthorityName` over the
       repository, as a second predicate over the public-signature loader (`signatures_test.go:212-258`): every
       exported object of every loaded module package — package scope, methods of named types, struct fields — whose
       name contains `Federation`, `GlobalID` or `EntityIRI`, with D2's failure line. Gate: `task test:unit`.
+      Hold: until PR #48 merges — it carries `signatures_test.go`, and at its pushed head `c64ac338` the check names
+      seven identifiers #48 is ruled to remove (design P2). When the hold lifts, the `signatures_test.go` lines this
+      file and `design.md` cite (`:212-258` at `c64ac338`) are re-cited at #48's merged head, where the load has
+      moved into `loadModuleTypes`.
 - [ ] 3.2 (D) Shown able to fail, as 2.3: drop the internal-package scope; drop methods; drop struct fields; match
       `federation` case-insensitively (the lowercase case must catch it); check test files. Recorded on this pull
       request.

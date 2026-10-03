@@ -58,9 +58,17 @@ the developer's (D6 states the budget).
 
 **O3 — C-2's predicate.** (a) Any field named `Org`/`Platform` outside the three packages, exact case; (b) also
 lowercase `org`/`platform`; (c) also any field whose type is `types.PlatformMeta` or `platform.Config`. (b) and (c)
-fail the carrier copies the owner left alone (#22–#25, #42) and the carrier itself (`component/dependencies.go:73`,
-`service/dependencies.go:31`, `processor/rule/rule_factory.go:101` at the pin, all `Platform` of type
-`types.PlatformMeta`). Chosen: (a), with the carrier-typed field passing by type (D3).
+fail the carrier copies the owner left alone (#22–#25, #42). Chosen: (a).
+
+**O4 — the carrier under (a).** Read literally, ruling C excludes `types.PlatformMeta`'s own two fields and nothing
+else, so (a) fails the carrier that ruling A names ("carried to components once as `deps.Platform`"): at the pin,
+`component/dependencies.go:73` (`Platform        PlatformMeta`, on `component.Dependencies`),
+`service/dependencies.go:31` (`Platform          types.PlatformMeta`, on `service.Dependencies`) and
+`processor/rule/rule_factory.go:101` (`Platform types.PlatformMeta`, on `rule.Dependencies`). Two ways to except
+it, neither in the ruling's text, so this is owner question Q1: (i) **by type** — any field whose type unaliases
+to `types.PlatformMeta` passes, under any name in any package; (ii) **by exact field**, in the requirement's own
+style, as `CallerContext.Org` is named — those three fields listed by package, type and name. Costs in Q1. The
+spec's exclusion paragraph carries both, marked pending, until the owner answers.
 
 ## Decisions
 
@@ -75,8 +83,12 @@ names, and what is outside the check by construction. Six scenarios, each observ
 Scope: every package of the module (`./...` with the `integration` tag, as `publicSignatureViolations` loads them,
 `signatures_test.go:215-219` in #48), including internal and `main` packages — the ruling says "anywhere" — and in
 each, every exported object: package-scope names, exported methods of named types, exported struct fields. Match:
-`strings.Contains` on the identifier, case-sensitive, for the three words. Not checked: unexported names, test
-files, comments and literals. Failure line: `<path>:<line>: exported <kind> <Name> contains <word> — a second spelling
+`strings.Contains` on the identifier, case-sensitive, for the three words. Not checked: unexported names, comments and
+literals; and
+test files, which every guard in `internal/harness/contract` leaves out (`context_test.go:221-229` loads non-test
+packages; `testtext_test.go` is the one that reads test files, for text rules) because a test file exports nothing a
+consumer imports — a narrowing the ruling's "anywhere" does not state, so Q1 names it in one line. Failure line:
+`<path>:<line>: exported <kind> <Name> contains <word> — a second spelling
 of the deployment authority (harness-boundaries › One spelling of the deployment authority)`.
 
 What a caller observes: `TestNoSecondAuthorityName` fails with one such line per identifier, sorted; passes on a
@@ -88,10 +100,13 @@ of the seven by file and name, requires none of the four, and requires exactly s
 
 Scope: every `*ast.StructType` in every non-test file of every module package, as `contextViolations` walks them
 (`context_test.go:256-285`). Match: `field.Exported()` and `field.Name()` is `Org` or `Platform`. Excluded, by exact
-spelling: the package paths `<module>/pkg/types`, `<module>/pkg/platform`, `<module>/config`; the named type
-`<module>/types.PlatformMeta` (its own fields) and any field whose type, after `types.Unalias`, is that named type
-(the carrier under any field name — `component.PlatformMeta` is an alias of it, `component/dependencies.go:21`);
-the field `<module>/processor/rule.CallerContext.Org`. The paths are the 04A design's destinations (D2,
+spelling: the package paths `<module>/pkg/types`, `<module>/pkg/platform`, `<module>/config`; the two fields of the
+type `PlatformMeta` in the top-level package `types` (import path `<module>/types`; not `pkg/types`, not Go's
+`go/types`); the field `<module>/processor/rule.CallerContext.Org`; and the carrier, by whichever of Q1's two forms
+the owner rules — (i) any field whose type, after `types.Unalias`, is `<module>/types.PlatformMeta`
+(`component.PlatformMeta` is an alias of it, `component/dependencies.go:21`), or (ii) the fields
+`<module>/component.Dependencies.Platform`, `<module>/service.Dependencies.Platform` and
+`<module>/processor/rule.Dependencies.Platform` by name. The paths are the 04A design's destinations (D2,
 `openspec/changes/archive/2026-10-01-setup-04a-foundation/design.md:155-178`); none but `pkg/types` and
 `pkg/platform` exists at `c64ac338`, and a listed exception that does not exist excludes nothing. Failure line:
 `<path>:<line>: field <Name> on <pkg>.<Type> spells the deployment authority outside its owners
@@ -103,8 +118,10 @@ What a caller observes: `TestNoSecondAuthorityField` fails with one line per fie
 Platform string}` as at the pin, an anonymous struct with `Org string`, an internal package and a `main` package each
 with `Platform string`; and, to pass: `pkg/types.EntityID{Org, Platform}`, `pkg/platform.Config{Org}`,
 `config.Config{Platform}`, `types.PlatformMeta{Org, Platform}`, `component.Dependencies{Platform types.PlatformMeta}`
-with `PlatformMeta = types.PlatformMeta` aliased, `processor/rule.CallerContext{Org string}` beside a second type in
-the same package with `Org string` that must fail, `org`/`platform` lowercase fields, and a `_test.go` with `Org`. It
+with `PlatformMeta = types.PlatformMeta` aliased (and a second `Platform types.PlatformMeta` field on another type
+in that package, which under Q1 form (ii) must fail and under form (i) must pass — the fixture carries it and the
+assertion follows the ruling), `processor/rule.CallerContext{Org string}` beside a second type in the same package
+with `Org string` that must fail, `org`/`platform` lowercase fields, and a `_test.go` with `Org`. It
 requires each failing field by file, line and type, requires silence for each passing one, and requires the exact
 count.
 
@@ -152,8 +169,8 @@ list. `docs/repository-map.md:41`: "the deployment-authority spelling" in the co
 - Lowercase `org`/`platform` fields: the carrier copies, by the owner's scope. Review only.
 - A pair re-joined inside a function body: `graph/clustering/summarizer.go:728` (#44). Review only; change 4's port
   of that file is where it is met.
-- A `types.PlatformMeta` field held somewhere it should not be: the carrier passes by type, so a second carrier is
-  invisible. Review only.
+- Under Q1 form (i), a `types.PlatformMeta` field held somewhere it should not be: a second carrier is invisible
+  to the check. Review only. Under form (ii) it fails, and a legitimate new holder is a spec edit.
 - Whether the pair a component holds is the effective one (ruling B, change 3).
 - Comments and documents that teach a second meaning (ruling D).
 
@@ -193,9 +210,26 @@ second predicate over the signature loader. It establishes no new pattern, so no
 
 ## Questions for the owner
 
-None required. One consequence to confirm by reading, not a ruling: C-2 as the owner worded it (its exclusion list)
-fails `graph/inference.HierarchyConfig.Org/Platform` when change 2 ports it (premise P3). This design records it for
-the change-2 architect and does not add the type to the exclusions; adding it would be a change to this requirement.
+**Q1 — how C-2 excepts the carrier.** Ruling C's exclusion list, read literally, passes only `types.PlatformMeta`'s
+own two fields; it fails the carrier ruling A names, which at the pin is a field named `Platform` of type
+`types.PlatformMeta` in three packages (O4). Which form?
+
+- **(ii) By exact field — recommended.** The requirement lists `component.Dependencies.Platform`,
+  `service.Dependencies.Platform` and `processor/rule.Dependencies.Platform` (`rule_factory.go:101` at the pin:
+  `Platform types.PlatformMeta`) by package, type and name, as it lists `CallerContext.Org`. Why: it is the
+  requirement's own style ("exact package path, exact type name and exact field name"), it keeps A's "carried once"
+  checkable — a fourth holder fails — and a new holder becomes a spec edit, which is a decision made in the open.
+  Cost: three names in the spec now; each later legitimate holder is a spec edit; the change-6 port of
+  `rule_factory.go:101` fails unless the name is listed, so it is listed now.
+- **(i) By type.** Any field whose type unaliases to `types.PlatformMeta` passes, under any name, in any package.
+  Why one might: no list to maintain; the carrier type is the signal. Cost: a second carrier of that type anywhere is
+  invisible to the check (§"What the checks do not see"), so "carried once" is review only.
+- One line either way: C-1 and C-2 read non-test files only, as every guard in the package does; the ruling's
+  "anywhere" does not say so. If the owner wants test files in C-1's scope, D2 drops the exclusion.
+
+One consequence to confirm by reading, not a ruling: C-2 as worded fails `graph/inference.HierarchyConfig.Org/Platform`
+when change 2 ports it (premise P3). This design records it for the change-2 architect and does not add the type to
+the exclusions; adding it would be a change to this requirement.
 
 ## Premises
 

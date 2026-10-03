@@ -19,9 +19,12 @@ this requirement. Unexported identifiers, test files, comments and string litera
 
 **Fields.** No exported struct field named `Org` or `Platform` SHALL be declared in a non-test file of a package of
 this module, in a named or an anonymous struct, except: any field in the packages `pkg/types`, `pkg/platform` and
-`config` (the source and its validators); the fields of `types.PlatformMeta` and any field whose type is
-`types.PlatformMeta` (the carrier, under whatever field name); and `processor/rule.CallerContext.Org` (a caller's
-organization claim, which is not the deployment authority). The exceptions are listed by exact package path, exact
+`config` (the source and its validators); the two fields of the type `PlatformMeta` in the top-level package `types`
+(import path `<module>/types` — not `pkg/types`, and not Go's `go/types`); `processor/rule.CallerContext.Org` (a
+caller's organization claim, which is not the deployment authority); and the carrier `deps.Platform`, in one of two
+forms pending the owner's answer to design question Q1 — either any field whose type is `types.PlatformMeta`, under
+whatever field name, or exactly the fields `component.Dependencies.Platform`, `service.Dependencies.Platform` and
+`processor/rule.Dependencies.Platform`. The exceptions are listed by exact package path, exact
 type name and exact field name in this requirement and nowhere else; a new exception is a change to this
 requirement. The failure SHALL name the file, the line, the struct type, the field and this requirement. The check is
 static and by name: a field named otherwise (`OrgID`, `PlatformID`, `org`, `platform`), a copy held in an untyped
@@ -50,9 +53,10 @@ holder, and a value re-joined inside a function body are outside its scope by co
 #### Scenario: The owners, the carrier and the caller's claim pass
 
 - **WHEN** a fixture module declares `Org` and `Platform` fields in its `pkg/types`, `pkg/platform` and `config`
-  packages; a type `types.PlatformMeta` with fields `Org` and `Platform`; a field `Platform` of type
-  `types.PlatformMeta` on a struct in any other package; a field `Org` on `processor/rule.CallerContext`; and
-  unexported fields `org` and `platform` of type `string` anywhere
+  packages; a type `PlatformMeta` in its top-level `types` package with fields `Org` and `Platform`; the carrier
+  field `Platform` of that type on `component.Dependencies` (and, pending Q1, either any other field of that type
+  or only the two further named fields); a field `Org` on `processor/rule.CallerContext`; and unexported fields
+  `org` and `platform` of type `string` anywhere
 - **THEN** the contract test reports nothing for any of them
 
 #### Scenario: A test file is not checked
@@ -63,6 +67,4 @@ holder, and a value re-joined inside a function body are outside its scope by co
 #### Scenario: This module passes
 
 - **WHEN** both contract tests run over this module
-- **THEN** they pass; on `main` at `2ec3bcf` the only Go is the harness, which declares no such name and no such
-  field, and after PR #48 the floor's packages declare `Org` and `Platform` only in `pkg/types` and `pkg/platform`
-  and no identifier the name check matches
+- **THEN** they pass, each reporting the number of packages it checked

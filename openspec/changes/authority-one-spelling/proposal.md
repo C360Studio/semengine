@@ -8,10 +8,11 @@ awaits independent pre-owner design review and then the owner's acceptance.
 
 The deployment's authority pair (`platform.org`, `platform.id`) is spelled 41 times in the tier-0 port set at the
 SemStreams pin `8b99efe9`: one source, one establishing step, one carrier, one composer, and beside them four second
-spellings that only a shape-based search found — `message.FederationMeta`, `vocabulary.EntityIRI`, `graph/llm`'s
-`EntityParts`, and a hand-built `org.platform` in `graph/clustering`. The owner ruled the rule's wording (A) and its
-enforcer (C). Without a command behind it the rule is a review-only row, and SemStreams' record is that review-only
-rows drift: round 1 of this inventory missed all four copies.
+spellings — `message.FederationMeta`, `vocabulary.EntityIRI`, `graph/llm`'s `EntityParts`, and a hand-built
+`org.platform` in `graph/clustering`. Round 1 of the inventory listed the first two; the last two, the composers and
+the rule engine's run mint were found only by the review's shape-based search (inventory §0, B1–B3). The owner ruled
+the rule's wording (A) and its enforcer (C). Without a command behind it the rule is a review-only row, and
+SemStreams' record is that review-only rows drift.
 
 ## What Changes
 
@@ -24,9 +25,10 @@ rows drift: round 1 of this inventory missed all four copies.
   `Federation`, `GlobalID` or `EntityIRI` fails the test, which names the file, the line, the identifier and the rule.
   It lands after PR #48, which carries the contract it extends; the task says so with `Hold:`.
 - **Check C-2, fields.** A new contract test fails on an exported struct field named `Org` or `Platform` in a non-test
-  file, unless the field is in `pkg/types`, `pkg/platform` or `config`, is a field of `types.PlatformMeta` or a
-  field whose type is `types.PlatformMeta` (the carrier), or is `processor/rule.CallerContext.Org` (a caller's claim,
-  a different fact). It starts green on `main` and at PR #48's head and lands first.
+  file, unless the field is in `pkg/types`, `pkg/platform` or `config`, is a field of `PlatformMeta` in the
+  top-level package `types`, is `processor/rule.CallerContext.Org` (a caller's claim, a different fact), or is the
+  carrier `deps.Platform` — excepted by type or by exact field, an open owner question (`design.md`, Q1). It starts
+  green on `main` and at PR #48's head and lands first.
 - **Each check carries a paired sensitivity test** that plants the pin's real shapes (`HierarchyConfig.Org`,
   `EntityParts.Platform`, `WithFederation`, `EntityIRI`, `BuildGlobalID`) in a temporary module and requires the check
   to name each, and to stay silent on the owners, the carrier and `CallerContext.Org`.

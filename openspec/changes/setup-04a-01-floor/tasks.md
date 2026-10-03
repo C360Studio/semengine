@@ -395,7 +395,7 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         (4 production files; 5 excluded unit files and `typed_test.go`; 29 integration-tagged files: task
         3.7b's 27, `test_client_integration_test.go` and `kv_temporal_integration_test.go`), 1 only in the tree
         (`test_helpers_test.go`). `doc.go:512`'s import path is the one `doc.go` difference (task 3.7e).
-- [ ] 3.7a (D) `natsclient` surface audit (#9 comment 5968830525; owner rulings, #9 comment 5969522395, items 1–2),
+- [x] 3.7a (D) `natsclient` surface audit (#9 comment 5968830525; owner rulings, #9 comment 5969522395, items 1–2),
       each drop an `adapt` item on the row: `options.go` `WithPingInterval`, `WithRequestHandlerTimeout`,
       `WithDisconnectCallback`, `WithReconnectCallback`, `WithHealthChangeCallback`, `WithCircuitBreakerThreshold`,
       `WithMaxBackoff`, `WithToken`, `WithTLS`, `WithDrainTimeout`, `WithCompression`; `client.go` `OnHealthChange`,
@@ -430,6 +430,20 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       typed-subject cases at `subscription_integration_test.go:54, :62`; `TestIntegration_HealthMonitoring`,
       `integration_test.go:236-285`, which retires design D8's rows `:262` and `:278`). The row lists each as pin
       `file:line` → SemEngine `file:line` or "deleted".
+      - Done in d6f6d18, unit lane (implementer-reported, PR #48): the 30 listed symbols, the nine fields and the
+        listed lines dropped, with `lastHealthy` (`client.go:1630, :1663`), which only the monitor's health callback
+        read and the compiler refuses once nothing reads it. Retargeted: `TestPublishToStreamAsync_NotConnected`,
+        `_CancelledContext`, `_CircuitOpen` (`publishToStreamAsync`); the 18 `DeliveryResult` getter calls in
+        `delivery_settlement_test.go` (the fields); the 7 `Undescribable()` calls in `storage_inventory_test.go`
+        (the three unknown states); `TestConnectionOptions` (the reconnect and ping fields: its subject is kept
+        options, so the retarget rule wins over its place in the deletion list); and
+        `TestClientHandleErrorDoesNotMutateRuntimeStateOrCallbacks`, which planted the three dropped callback
+        fields and is not in the list. Deleted: `TestRequestHandlerTimeout_Option`, `_OptionBeatsEnv`,
+        `TestReplyError_NilErr_NoOp`, `_EmptyReplyTo_NoOp`, `TestPublishAsyncComplete_JetStreamUnavailable`. Each
+        retarget fails on a mutant of the behaviour it covers; `Err()` without `controlErr` in its join survives,
+        as at the pin. `requestMsgReady` has no unit test; a scratch test over the embedded broker, not committed,
+        caught two mutants. The integration-file retargets and deletions this task names carry to 3.7b, listed on
+        the row. `task verify` passes. Every pin `file:line` → SemEngine `file:line` is on the row.
 - [ ] 3.7b (D) `natsclient` integration lane: the 27 integration-tagged files land on `natsfixture`, 3.7a's rule
       applied to their dropped-symbol uses. The 51 `NewTestClient` sites (56 at the pin less five in tests removed by
       3.7 and 3.7a) are rewritten (51 before, 0 after), with the other `test_client.go` and `test_options.go` uses:

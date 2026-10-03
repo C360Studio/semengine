@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/nats-io/nats.go"
 )
@@ -46,22 +45,6 @@ func TraceContextFromContext(ctx context.Context) (*TraceContext, bool) {
 // ContextWithTrace returns a context with trace information
 func ContextWithTrace(ctx context.Context, tc *TraceContext) context.Context {
 	return context.WithValue(ctx, traceContextKey{}, tc)
-}
-
-// DetachContextWithTrace creates a new context that preserves trace context
-// but resets deadline/cancellation. This is useful for publishing error responses
-// when the original context has expired but trace continuity is still needed.
-func DetachContextWithTrace(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
-	// Start with background context (no deadline, not cancelled)
-	ctx := context.Background()
-
-	// Preserve trace context if present
-	if tc, ok := TraceContextFromContext(parent); ok {
-		ctx = ContextWithTrace(ctx, tc)
-	}
-
-	// Apply timeout for the operation
-	return context.WithTimeout(ctx, timeout)
 }
 
 // NewTraceContext creates a new trace context with generated IDs

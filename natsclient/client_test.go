@@ -393,23 +393,19 @@ func TestJetStreamMethods(t *testing.T) {
 	})
 }
 
-// Test connection options
+// Test connection options: the reconnect options set the client's fields, and
+// the ping interval keeps its default, which no option sets.
 func TestConnectionOptions(t *testing.T) {
 	manager, err := NewClient("nats://unused",
 		WithMaxReconnects(10),
 		WithReconnectWait(5*time.Second),
-		WithPingInterval(30*time.Second),
 	)
 	assert.NoError(t, err)
 
-	// Should have default options
-	opts := manager.ConnectionOptions()
-	assert.NotNil(t, opts)
-
 	// Verify options were set
-	assert.Equal(t, 10, manager.MaxReconnects())
-	assert.Equal(t, 5*time.Second, manager.ReconnectWait())
-	assert.Equal(t, 30*time.Second, manager.PingInterval())
+	assert.Equal(t, 10, manager.maxReconnects)
+	assert.Equal(t, 5*time.Second, manager.reconnectWait)
+	assert.Equal(t, 30*time.Second, manager.pingInterval)
 }
 
 // Test metrics collection

@@ -17,7 +17,7 @@ func TestPublishToStreamAsync_NotConnected(t *testing.T) {
 	client, err := NewClient("nats://unused")
 	require.NoError(t, err)
 
-	future, err := client.PublishToStreamAsync(context.Background(), "test.subject", []byte("data"))
+	future, err := client.publishToStreamAsync(context.Background(), "test.subject", []byte("data"))
 	assert.Equal(t, ErrNotConnected, err)
 	assert.Nil(t, future)
 }
@@ -35,7 +35,7 @@ func TestPublishToStreamAsync_CancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	future, err := client.PublishToStreamAsync(ctx, "test.subject", []byte("data"))
+	future, err := client.publishToStreamAsync(ctx, "test.subject", []byte("data"))
 	assert.ErrorIs(t, err, context.Canceled)
 	assert.Nil(t, future)
 	// A cancelled ctx is caller intent, not a connection fault: no failure recorded.
@@ -54,7 +54,7 @@ func TestPublishToStreamAsync_CircuitOpen(t *testing.T) {
 	}
 	require.Equal(t, StatusCircuitOpen, client.Status())
 
-	future, err := client.PublishToStreamAsync(context.Background(), "test.subject", []byte("data"))
+	future, err := client.publishToStreamAsync(context.Background(), "test.subject", []byte("data"))
 	assert.Equal(t, ErrCircuitOpen, err)
 	assert.Nil(t, future)
 }
@@ -90,23 +90,6 @@ func TestAsyncPublishErrHandler_NilMsg(t *testing.T) {
 		client.asyncPublishErrHandler(nil, nil, errors.New("ack failed"))
 	})
 	assert.Equal(t, int32(1), client.Failures())
-}
-
-// TestPublishAsyncComplete_JetStreamUnavailable verifies the drain accessor
-// returns an already-closed channel (not a blocking one) when JetStream is
-// unavailable, so a drain loop does not hang.
-func TestPublishAsyncComplete_JetStreamUnavailable(t *testing.T) {
-	client, err := NewClient("nats://unused")
-	require.NoError(t, err)
-
-	select {
-	case <-client.PublishAsyncComplete():
-		// closed immediately — correct
-	default:
-		t.Fatal("PublishAsyncComplete must return a closed channel when JetStream is unavailable")
-	}
-
-	assert.Equal(t, 0, client.PublishAsyncPending())
 }
 
 // TestPublishBatchToStream_Empty verifies an empty batch is a no-op returning nil

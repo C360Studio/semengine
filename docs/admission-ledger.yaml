@@ -939,7 +939,7 @@
     fields tagged "-", unexported fields or a json.Marshaler's value) and refuses the first string that is not valid UTF-8, and refuses
     encoded text that is not valid UTF-8 (a json.Marshaler's output is copied unchecked). A cycle
     in Data stops the walk; json.Marshal reports it. Hash() ignores a payload marshal error, as at
-    the pin, so a payload refused here hashes as its type alone.
+    the pin, so a payload refused here hashes as its type alone; tracked by #78.
   proving_tests: >-
     the 9 test files in message/ at the pin, carried unchanged except import paths; payload_test.go
     and triple_helpers_test.go use internal/harness/semantictest. Added (task 3.6b):
@@ -1124,7 +1124,12 @@
     (jetstream_metrics.go:128-161 at the pin, where 8 went through the removed Register* methods,
     task 3.5a), so a second client on the same registry writes to the canonical collector. Metric
     names, types and the semstreams namespace are unchanged (#69); the consumer counters' change to
-    gauges is task 3.7d
+    gauges is task 3.7d. Changed surface, task 3.7a: the surface audit's drops listed under
+    known_risks are gone, and with them the token, TLS and compression connection options and the
+    disconnect, reconnect and health-change callbacks; pingInterval (30 s), drainTimeout (30 s),
+    circuitThreshold (15) and maxBackoff (one minute) keep their defaults (client.go:161-166 at
+    the pin → :149-154) with no setter, and requestHandlerTimeout is set only from
+    SEMSTREAMS_NATS_REQUEST_HANDLER_TIMEOUT (request.go:37-55, name unchanged, #69)
   dependencies_and_side_effects: >-
     metric, pkg/errs, pkg/retry, internal/resource (in-set); github.com/nats-io/nats.go v1.54.0
     and nats.go/jetstream; prometheus/client_golang; stdlib. Test-only:
@@ -1140,7 +1145,7 @@
     version across both lanes is review only. Context roots (design D1 re-measured: the pin's nine
     are two live production roots, the rest are doc.go comments at :35, :151, :245, :524 or
     test_client.go): client.go:566, the metrics poller started under context.Background(), a defect
-    triaged in task 3.7c; trace.go:56, DetachContextWithTrace, leaves with that function in task
+    triaged in task 3.7c; trace.go:56, DetachContextWithTrace, left with that function in task
     3.7a. kv.go:600 is a bounded terminal drain, context.WithTimeout(context.WithoutCancel(ctx),
     filteredWatcherDrainTimeout), the developer contract's admitted shape, not a root. Dropped
     surface, not ported (design D8, "A test of a removed feature"): kv_temporal.go
@@ -1151,8 +1156,37 @@
     files (test_client_factory_test.go, test_client_integration_test.go,
     test_client_readiness_test.go, monitoring_consumers_test.go, test_options_test.go,
     mapped_port_retry_test.go). The 27 integration-tagged test files are task 3.7b and are not in
-    the tree at task 3.7. The surface audit's drops are task 3.7a; until then the symbols it names
-    are carried as at the pin. Census maps (owner ruling, #9 comment 5969522395, item 3): the
+    the tree at task 3.7. Dropped as dead surface by the surface audit, task 3.7a (#9 comment
+    5968830525; owner rulings, #9 comment 5969522395, items 1-2), each an adapt item, pin →
+    deleted: options.go WithPingInterval :29-35, WithRequestHandlerTimeout :37-50,
+    WithDisconnectCallback :72-79, WithReconnectCallback :81-88, WithHealthChangeCallback :90-96,
+    WithCircuitBreakerThreshold :125-134, WithMaxBackoff :136-145, WithToken :156-162, WithTLS
+    :164-173, WithDrainTimeout :191-197, WithCompression :199-205; client.go ErrConnectionTimeout
+    :55, MaxReconnects :379-384, ReconnectWait :386-391, PingInterval :393-398, ConnectionOptions
+    :400-403, PublishToStreamAsync :1031-1048, PublishToStreamAsyncWithMsgID :1050-1058,
+    PublishAsyncComplete :1125-1137, PublishAsyncPending :1139-1147, OnHealthChange :1482-1487,
+    WithHealthCheck :1489-1494; request.go RequestReady :81-97; errors.go ReplyError :190-208 and
+    the RespondError doc paragraph that pointed to it :158-164; delivery_settlement.go
+    DeliveryResult.ControlError :240-241, SettlementError :243-244, SettlementAttempted :246-247,
+    SettlementMethodSucceeded :249-252; storage_resource.go StorageResource.Undescribable
+    :195-206; trace.go DetachContextWithTrace :51-65 with its context.Background root at :56.
+    PublishBatchToStream stays (semboids boidgraph/publisher.go:32). State the drops left written
+    by nothing, deleted: the client.go fields token :107, tlsEnabled, tlsCertFile, tlsKeyFile and
+    tlsCAFile :110-113, compression :117, onDisconnect, onReconnect and onHealthChange :125-127;
+    lines :423-425 (token option), :427-435 (TLS options), :442-445 (compression), :569-572
+    (health change on connect), :615 (token clear), :1500-1510 (disconnect and health callbacks),
+    :1520-1530 (reconnect and health callbacks), :1585-1591 (health callback on close),
+    :1658-1661 (the monitor's health callback), and lastHealthy :1630, :1663, which only that
+    callback read (the compiler refuses a variable assigned and never read); publishToStreamAsync's
+    msgID parameter (:1064 → :982) and its stamp :1098-1104 (only PublishToStreamAsyncWithMsgID
+    passed one; PublishBatchToStream passed "" at :1177 → :1064). publishToStreamAsync's doc
+    comment :1060-1063 → :968-981 carries the enqueue contract from PublishToStreamAsync's. Kept:
+    the clientName option :437-440 → :385-388, armConnectionLossTimer :1512 → :1373, the reconnect
+    path's status, circuit reset and timer cancel :1516-1518 → :1377-1379, each handler's
+    setStatus. Audit item (c): testCircuit's comment (:349, :352-358 → :337-339) promised a
+    reconnect; it now says the function only moves the status from open to disconnected. Comments
+    and examples that still name a dropped symbol are task 3.7e: client.go:98, :157 and
+    request.go:29 (the request-handler-timeout option), and doc.go. Census maps (owner ruling, #9 comment 5969522395, item 3): the
     expected maps in consumer_policy_callsite_test.go hold SemEngine's production callers as
     measured at task 3.7, so each later port that adds a caller of ConsumeInternalStreamWithConfig,
     ConsumeStreamWithConfig, ConsumeStreamWithConfigContexts or GetConsumerConfig, or a direct
@@ -1181,11 +1215,11 @@
     D8 repairs, pin → SemEngine. R1a, the 8 sleeps in client_test.go, each test or subtest run
     inside synctest.Test with the sleep replaced by <-time.After on the bubble's clock, and
     synctest.Wait before each "did not fire" assertion: :267 → :270 (TestWaitForConnection
-    "returns when becomes connected", bubble :264); :502 → :506 (TestManagerScenarios, every
-    scenario in a bubble at :519); :594 → :602 and :598 → :606 (CancelledByReconnect, bubble
-    :590); :627 → :640 (RepeatDisconnectKeepsOriginalDeadline, bubble :625; inside the bubble the
-    measured elapsed time is exact); :660 → :675 (DisabledByDefault, :664); :677 → :695
-    (NoCallbackNoFire, :688); :702 → :725 (CloseCancels, :708). Mutation (implementer-reported, PR
+    "returns when becomes connected", bubble :264); :502 → :502 (TestManagerScenarios, every
+    scenario in a bubble at :515); :594 → :598 and :598 → :602 (CancelledByReconnect, bubble
+    :586); :627 → :636 (RepeatDisconnectKeepsOriginalDeadline, bubble :621; inside the bubble the
+    measured elapsed time is exact); :660 → :671 (DisabledByDefault, :660); :677 → :691
+    (NoCallbackNoFire, :684); :702 → :721 (CloseCancels, :704). Mutation (implementer-reported, PR
     #48), each on client.go with the tests unchanged: a second disconnect that restarts the
     watchdog fails RepeatDisconnectKeepsOriginalDeadline ("300ms" is not less than or equal to
     "275ms"); handleReconnect without cancelConnectionLossTimer fails CancelledByReconnect
@@ -1197,16 +1231,59 @@
     port 0 and released: client_async_error_test.go :114, :144; client_test.go :18 → :19, :22 →
     :23, :29 → :30, :46 → :47, :63 → :64, :136 → :137, :149 → :150, :223 → :224, :234 → :235, :246
     → :247, :262 → :265, :283 → :287, :303 → :307, :332 → :336 (refusedNATSURL), :359 → :363, :394
-    → :398, :413 → :417, :515 → :520, :556 → :562, :585 → :593, :614 → :627, :652 → :667, :671 →
-    :689, :690 → :711; getstream_circuit_breaker_test.go :255; kvspec_test.go :46, :64, :87, :199;
-    max_payload_test.go :10; publish_async_test.go :17, :29, :48, :67, :86, :99, :115, :124;
-    request_handler_timeout_test.go :15, :28, :39, :50, :63; stream_capacity_circuit_test.go :49,
-    :74 (lines unchanged outside client_test.go). stream_visibility_test.go:82 is an error string
+    → :399, :413 → :413, :515 → :516, :556 → :558, :585 → :589, :614 → :623, :652 → :663, :671 →
+    :685, :690 → :707; getstream_circuit_breaker_test.go :255; kvspec_test.go :46, :64, :87, :199;
+    max_payload_test.go :10; publish_async_test.go :17, :29, :48, :67, :86, :115 → :98, :124 →
+    :107 (:99 deleted with its test, task 3.7a); request_handler_timeout_test.go :15, :39 → :29, :50
+    → :40 (:28 and :63 deleted with their tests, task 3.7a); stream_capacity_circuit_test.go :49,
+    :74 (other lines unchanged outside client_test.go). stream_visibility_test.go:82 is an error string
     the guard does not match and stays. Bounded cleanup (harness-boundaries, "Bounded cleanup
     roots"; not named in task 3.7's list, required by task verify): the three Close calls under
     context.Background() take context.WithTimeout(context.Background(), closeBudget), 10 s:
-    client_connect_test.go:70 → :70-72, :98 → :100-102, client_test.go:700 → :721-723. The new
+    client_connect_test.go:70 → :70-72, :98 → :100-102, client_test.go:700 → :717-719. The new
     helpers testStreamMaxAge, testStreamMaxBytes, closeBudget and refusedNATSURL are in
-    natsclient/test_helpers_test.go. test:repeat -- ./natsclient passes (implementer-reported, PR #48)
+    natsclient/test_helpers_test.go. test:repeat -- ./natsclient passes (implementer-reported, PR #48).
+    Surface audit, task 3.7a, unit lane. Retargeted to the kept behaviour a dropped symbol reached,
+    pin → SemEngine: publish_async_test.go TestPublishToStreamAsync_NotConnected :20,
+    _CancelledContext :38, _CircuitOpen :57 → the same lines, calling publishToStreamAsync as
+    PublishBatchToStream does; client_test.go TestConnectionOptions :392-409 → :396-409 reads the
+    maxReconnects, reconnectWait and pingInterval fields the dropped getters returned (pingInterval
+    at its default; ConnectionOptions() and WithPingInterval go); delivery_settlement_test.go reads
+    controlErr, settlementErr and settlementTried for ControlError(), SettlementError() and
+    SettlementAttempted(), and settlementTried && settlementErr == nil for
+    SettlementMethodSucceeded(), at :309, :378-380, :382, :427, :472-473, :517, :569-570, :613,
+    :640, :643, :662, :664, :730, :733 (18 calls, lines unchanged); storage_inventory_test.go reads
+    the three unknown states through unknownOnEveryAxis (new, :139-144) at :436 → :443, :472 → :479,
+    :484 → :491, :492-493 → :499-500, :517 → :524, :575 → :582;
+    client_async_error_test.go TestClientHandleErrorDoesNotMutateRuntimeStateOrCallbacks plants
+    only onConnectionLost (:155-158 → :155; the three dropped callback fields go). Deleted, their
+    only subject dropped: client_test.go none (TestConnectionOptions is retargeted, above);
+    request_handler_timeout_test.go TestRequestHandlerTimeout_Option :27-35 and _OptionBeatsEnv
+    :59-70; errors_test.go TestReplyError_NilErr_NoOp :211-219 and _EmptyReplyTo_NoOp :221-227;
+    publish_async_test.go TestPublishAsyncComplete_JetStreamUnavailable :95-110. Mutation
+    (implementer-reported, PR #48), production file changed, tests unchanged, restored by checksum:
+    publishToStreamAsync without its context check fails _CancelledContext, without its circuit
+    gate fails _CircuitOpen; Err() without settlementErr in its join fails
+    TestImmediateDeliveryRetryUsesPlainNak and the truth table; controlErr never recorded,
+    settlementTried never set, or settlementErr discarded each fail the delivery tests reading the
+    field; Err() without controlErr in its join is a survivor, as at the pin: no test asserts that
+    Err() carries the control error, only the field; an undescribable row whose message capacity
+    is unbounded fails TestStorageInventory_UndescribableResourceIsNamedNotOmitted through
+    unknownOnEveryAxis; WithMaxReconnects or WithReconnectWait ignored, or pingInterval's default
+    changed, fails TestConnectionOptions; handleError calling onConnectionLost fails
+    TestClientHandleErrorDoesNotMutateRuntimeStateOrCallbacks. requestMsgReady has no unit test
+    (its retarget is in readiness_integration_test.go, task 3.7b): a scratch test, not committed,
+    calling it over the embedded broker caught a reply dropped on success and the transport cause
+    lost from the budget error. Carried to task 3.7b, in the integration files it ports: retarget
+    publish_async_integration_test.go :23, :80, :221, :321 and the trace half of :263 to
+    publishToStreamAsync and the JetStream handle's PublishAsyncComplete/PublishAsyncPending;
+    stream_capacity_circuit_integration_test.go :70, :82 likewise; readiness_integration_test.go
+    :46, :62, :84 to requestMsgReady; delivery_settlement_integration_test.go :205, :268 to the
+    fields; storage_inventory_integration_test.go :173 to the three unknown states;
+    request_integration_test.go :261 to the environment variable; delete
+    TestIntegration_PublishToStreamAsyncWithMsgID_Dedup :151, the message-ID half of
+    TestIntegration_PublishToStreamAsync_StampsTraceAndMsgID :263, the typed-subject cases at
+    subscription_integration_test.go:54, :62, and TestIntegration_HealthMonitoring
+    integration_test.go:236-285 (design D8 rows :262, :278 retire with it)
   owner: setup-04a-01-floor developer
   disposition: adapt

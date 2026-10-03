@@ -208,24 +208,6 @@ func TestRespondError_MissingReply_ReturnsSentinel(t *testing.T) {
 	}
 }
 
-func TestReplyError_NilErr_NoOp(t *testing.T) {
-	t.Parallel()
-	// Method receiver with nil client is fine because we short-circuit
-	// before touching c — no panic.
-	var c *Client
-	if err := c.ReplyError(nil, "any", nil); err != nil { //nolint:staticcheck // deliberately nil receiver
-		t.Fatalf("ReplyError(_, _, nil) = %v, want nil no-op", err)
-	}
-}
-
-func TestReplyError_EmptyReplyTo_NoOp(t *testing.T) {
-	t.Parallel()
-	var c *Client
-	if err := c.ReplyError(nil, "", errors.New("ignored")); err != nil { //nolint:staticcheck
-		t.Fatalf("ReplyError(_, \"\", _) = %v, want nil no-op", err)
-	}
-}
-
 // TestRespondError_RoundTrip pins the ADR-060 wire contract end-to-end: the
 // body RespondError marshals is the {message, detail} envelope that
 // ClassifyReply reconstructs into a *errs.ClassifiedError carrying the message,

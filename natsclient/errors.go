@@ -155,14 +155,6 @@ var errMissingReplySubject = errors.New("natsclient: message has no reply subjec
 // Used by SubscribeForRequests internally + by direct-msg.Respond
 // handlers that opt in to the convention.
 //
-// When to reach for RespondError vs (*Client).ReplyError:
-//   - Handler has *nats.Msg in scope (most common — direct Subscribe
-//     callback): use RespondError(msg, err). Free function; reads
-//     the reply subject off msg.
-//   - Handler has only a reply subject + *Client (e.g. deferred-reply
-//     forwarder): use c.ReplyError(ctx, replyTo, err). Method;
-//     publishes via the client connection.
-//
 // Returns nil + no-op when err is nil (treat as success — caller
 // should have used msg.Respond with success data). Returns
 // errMissingReplySubject when the inbound message had no reply
@@ -187,26 +179,6 @@ func RespondError(msg *nats.Msg, err error) error {
 	return msg.RespondMsg(reply)
 }
 
-// ReplyError sends a header-classified error reply via the
-// client's Publish path. Companion to Reply / ReplyWithHeaders for
-// handlers that don't have the inbound *nats.Msg in scope.
-//
-// Returns nil + no-op when err is nil OR replyTo is empty.
-func (c *Client) ReplyError(ctx context.Context, replyTo string, err error) error {
-	if err == nil || replyTo == "" {
-		return nil
-	}
-
-	headers := map[string]string{
-		HeaderStatus:     HeaderStatusError,
-		HeaderErrorClass: classForHeader(err),
-	}
-	if code := codeForHeader(err); code != "" {
-		headers[HeaderErrorCode] = code
-	}
-	return c.ReplyWithHeaders(ctx, replyTo, marshalErrorBody(err), headers)
-}
-
 // ClassifyReply inspects a reply message and returns either the
 // success body (when no error signal is present) or a classified
 // error suitable for branching with errs.IsInvalid / IsTransient /
@@ -217,7 +189,7 @@ func (c *Client) ReplyError(ctx context.Context, replyTo string, err error) erro
 // X-Error-Class / X-Error-Code headers reconstruct a *errs.ClassifiedError so
 // errors.As(err, &ce) reaches ce.Code/ce.Detail and errors.Is(err,
 // errs.ErrRevisionMismatch) round-trips. The legacy "error: " body fallback is
-// gone (every producer header-stamps via RespondError/ReplyError).
+// gone (every producer header-stamps via RespondError).
 func ClassifyReply(msg *nats.Msg) ([]byte, error) {
 	if msg == nil {
 		return nil, nil
@@ -301,8 +273,8 @@ func (c *Client) RequestWithRetryClassified(
 	return ClassifyReply(msg)
 }
 
-// RequestReadyClassified is the classified sibling of RequestReady (the
-// readiness-gated read — the third bucket of the request doctrine). It runs the
+// RequestReadyClassified is the readiness-gated read (the third bucket of the
+// request doctrine). It runs the
 // short-timeout, budget-bounded readiness loop, then runs the final reply
 // through ClassifyReply so transport failures (no-responders / probe timeout,
 // retried until the budget) and handler failures (X-Error-Class/Code headers)
@@ -351,7 +323,7 @@ func classForHeader(err error) string {
 
 // codeForHeader extracts the ADR-060 stable machine Code from err when
 // it carries (or wraps) a *errs.ClassifiedError with a non-empty Code;
-// "" otherwise. Returning "" means RespondError / ReplyError stamp no
+// "" otherwise. Returning "" means RespondError stamps no
 // X-Error-Code header, so uncoded handler errors are unchanged on the wire.
 func codeForHeader(err error) string {
 	var ce *errs.ClassifiedError

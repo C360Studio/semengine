@@ -78,28 +78,10 @@ const (
 	readinessMaxBackoff     = 1 * time.Second
 )
 
-// RequestReady performs a readiness-gated read: a QUERY that tolerates a
-// not-yet-subscribed responder at cold start / after reconnect. It retries with
-// probeTimeout per attempt up to a total budget, returning the first reply's
-// data. Zero probeTimeout/budget use the Default* values above.
-//
-// Use for the FIRST read on boot / initial reconcile / after a reconnect, where
-// "no responder" means "not ready yet." For steady-state reads use Request
-// (timeout = real signal). See docs/operations/07-nats-request-retry.md.
-func (c *Client) RequestReady(
-	ctx context.Context, subject string, data []byte, probeTimeout, budget time.Duration,
-) ([]byte, error) {
-	msg, err := c.requestMsgReady(ctx, subject, data, probeTimeout, budget)
-	if err != nil {
-		return nil, err
-	}
-	return msg.Data, nil
-}
-
-// requestMsgReady is the shared readiness-retry loop. Returns the raw *nats.Msg
-// so callers extract .Data (RequestReady) or run ClassifyReply
-// (RequestReadyClassified in errors.go) — kept in lockstep with the other
-// request families so a future tweak doesn't drift between them.
+// requestMsgReady is the readiness-retry loop behind RequestReadyClassified
+// (errors.go), which runs ClassifyReply on the raw *nats.Msg it returns. It
+// retries with probeTimeout per attempt up to a total budget; zero
+// probeTimeout/budget use the Default* values above.
 //
 // It retries only on TRANSPORT failure (no reply received: no-responders or
 // probe timeout). Any received reply — including a handler-error reply — stops
@@ -154,7 +136,7 @@ func (c *Client) requestMsgReady(
 		// Deliberately do NOT recordFailure() here. A readiness miss (no-responder
 		// / probe timeout) is the EXPECTED condition this primitive tolerates — the
 		// responder isn't up yet, not a connection fault. Counting it would let a
-		// single boot-time RequestReady burst (against briefly-absent responders)
+		// single boot-time readiness-gated read burst (against briefly-absent responders)
 		// trip the shared per-client circuit breaker and fast-fail UNRELATED calls
 		// with ErrCircuitOpen. Genuine connection loss still surfaces via the
 		// up-front IsConnected check and per-attempt errors, and stays bounded by

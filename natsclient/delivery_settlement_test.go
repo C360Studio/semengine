@@ -306,7 +306,7 @@ func TestConsumeDeliveryWithHeartbeatMetadataFailureFailsClosedBeforeWork(t *tes
 			require.Equal(t, DeliveryDecisionQuarantine, result.Decision())
 			require.True(t, result.Quarantined())
 			require.True(t, result.OwnerStopRequired())
-			require.False(t, result.SettlementAttempted())
+			require.False(t, result.settlementTried)
 			require.Equal(t, int32(1), msg.metadataCount.Load())
 			require.Zero(t, msg.dataCount.Load())
 			require.Zero(t, workCalls.Load())
@@ -375,11 +375,11 @@ func TestConsumeDeliveryWithHeartbeatInProgressFailureRequiresOwnerStop(t *testi
 
 	require.True(t, result.OwnerStopRequired(),
 		"a lane whose lease renewal failed may already have lost the delivery")
-	require.ErrorIs(t, result.ControlError(), ErrHeartbeatFailed)
-	require.ErrorContains(t, result.ControlError(), "failed to send InProgress")
-	require.ErrorIs(t, result.ControlError(), renewalErr)
+	require.ErrorIs(t, result.controlErr, ErrHeartbeatFailed)
+	require.ErrorContains(t, result.controlErr, "failed to send InProgress")
+	require.ErrorIs(t, result.controlErr, renewalErr)
 	require.ErrorIs(t, result.Err(), cleanupErr, "the work's cleanup error survives the control loss")
-	require.False(t, result.SettlementAttempted(),
+	require.False(t, result.settlementTried,
 		"settling would race the redelivery the server is free to make")
 	require.Zero(t, msg.ackCount.Load()+msg.nakCount.Load()+msg.termCount.Load())
 }
@@ -424,7 +424,7 @@ func TestImmediateDeliveryRetryUsesPlainNak(t *testing.T) {
 	failed := &mockMsg{subject: "immediate-failed", nakErr: settlementErr}
 	failedResult := ConsumeDeliveryWithHeartbeat(t.Context(), failed, policy)
 	require.True(t, failedResult.SettlementMethodFailed())
-	require.ErrorIs(t, failedResult.SettlementError(), settlementErr)
+	require.ErrorIs(t, failedResult.settlementErr, settlementErr)
 	require.ErrorIs(t, failedResult.Err(), cause)
 	require.ErrorIs(t, failedResult.Err(), settlementErr)
 	require.False(t, failedResult.OwnerStopRequired())
@@ -469,8 +469,8 @@ func TestConsumeDeliveryWithHeartbeatValidDecisionTruthTable(t *testing.T) {
 			if tt.cause != nil {
 				require.ErrorIs(t, result.Cause(), tt.cause)
 			}
-			require.Equal(t, tt.attempted, result.SettlementAttempted())
-			require.Equal(t, tt.succeeded, result.SettlementMethodSucceeded())
+			require.Equal(t, tt.attempted, result.settlementTried)
+			require.Equal(t, tt.succeeded, result.settlementTried && result.settlementErr == nil)
 			require.Equal(t, tt.failed, result.SettlementMethodFailed())
 			require.Equal(t, tt.quarantine, result.Quarantined())
 			require.Equal(t, tt.stop, result.OwnerStopRequired())
@@ -514,7 +514,7 @@ func TestConsumeDeliveryWithHeartbeatInvalidDecisionTuplesFailClosed(t *testing.
 			}
 			require.True(t, result.Quarantined())
 			require.True(t, result.OwnerStopRequired())
-			require.False(t, result.SettlementAttempted())
+			require.False(t, result.settlementTried)
 			require.Zero(t, msg.ackCount.Load()+msg.nakCount.Load()+msg.termCount.Load())
 		})
 	}
@@ -566,8 +566,8 @@ func TestSettleDeliveryDecisionTruthTable(t *testing.T) {
 			require.Zero(t, msg.dataCount.Load())
 			require.Zero(t, msg.metadataCount.Load())
 			require.Zero(t, msg.inProgressCount.Load())
-			require.Equal(t, tt.attempted, result.SettlementAttempted())
-			require.Equal(t, tt.succeeded, result.SettlementMethodSucceeded())
+			require.Equal(t, tt.attempted, result.settlementTried)
+			require.Equal(t, tt.succeeded, result.settlementTried && result.settlementErr == nil)
 			require.Equal(t, tt.failed, result.SettlementMethodFailed())
 			require.Equal(t, tt.quarantine, result.Quarantined())
 			require.Equal(t, tt.ownerStop, result.OwnerStopRequired())
@@ -610,7 +610,7 @@ func TestSettleDeliveryInvalidTuplesAndNilMessageFailClosed(t *testing.T) {
 			}
 			require.True(t, result.Quarantined())
 			require.True(t, result.OwnerStopRequired())
-			require.False(t, result.SettlementAttempted())
+			require.False(t, result.settlementTried)
 			require.Zero(t, msg.ackCount.Load()+msg.nakCount.Load()+msg.termCount.Load())
 			require.Zero(t, msg.dataCount.Load())
 			require.Zero(t, msg.metadataCount.Load())
@@ -637,10 +637,10 @@ func TestSettleDeliveryInvalidTuplesAndNilMessageFailClosed(t *testing.T) {
 			if tt.cause != nil {
 				require.ErrorIs(t, result.Cause(), tt.cause)
 			}
-			require.NoError(t, result.ControlError())
+			require.NoError(t, result.controlErr)
 			require.True(t, result.Quarantined())
 			require.True(t, result.OwnerStopRequired())
-			require.False(t, result.SettlementAttempted())
+			require.False(t, result.settlementTried)
 		})
 	}
 }
@@ -659,9 +659,9 @@ func TestConsumeDeliveryWithHeartbeatControlLossPreservesJoinedMeaning(t *testin
 	result := ConsumeDeliveryWithHeartbeat(t.Context(), msg, policy)
 	require.Equal(t, DeliveryDecisionRetry, result.Decision())
 	require.ErrorIs(t, result.Cause(), cause)
-	require.ErrorIs(t, result.ControlError(), controlErr)
+	require.ErrorIs(t, result.controlErr, controlErr)
 	require.True(t, result.OwnerStopRequired())
-	require.False(t, result.SettlementAttempted())
+	require.False(t, result.settlementTried)
 	require.Zero(t, msg.ackCount.Load()+msg.nakCount.Load()+msg.termCount.Load())
 	require.Equal(t, int32(1), msg.dataCount.Load())
 }
@@ -727,10 +727,10 @@ func TestConsumeDeliveryWithHeartbeatControlLossNormalizesInvalidAndPanic(t *tes
 			result := ConsumeDeliveryWithHeartbeat(t.Context(), msg, policy)
 			require.Equal(t, tt.wantDecision, result.Decision())
 			tt.assertCause(t, result.Cause())
-			require.ErrorIs(t, result.ControlError(), controlErr)
+			require.ErrorIs(t, result.controlErr, controlErr)
 			require.True(t, result.Quarantined())
 			require.True(t, result.OwnerStopRequired())
-			require.False(t, result.SettlementAttempted())
+			require.False(t, result.settlementTried)
 			require.Equal(t, int32(1), msg.dataCount.Load())
 		})
 	}

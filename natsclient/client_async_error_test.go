@@ -152,9 +152,6 @@ func TestClientHandleErrorDoesNotMutateRuntimeStateOrCallbacks(t *testing.T) {
 	client.backoff.Store(4 * time.Second)
 
 	var callbackCalls atomic.Int32
-	client.onDisconnect = func(error) { callbackCalls.Add(1) }
-	client.onReconnect = func() { callbackCalls.Add(1) }
-	client.onHealthChange = func(bool) { callbackCalls.Add(1) }
 	client.onConnectionLost = func(error) { callbackCalls.Add(1) }
 
 	wantStatus := client.Status()

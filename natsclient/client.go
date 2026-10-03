@@ -50,9 +50,8 @@ func (s ConnectionStatus) String() string {
 
 // Error messages
 var (
-	ErrNotConnected      = stderrors.New("not connected to NATS")
-	ErrCircuitOpen       = stderrors.New("circuit breaker is open")
-	ErrConnectionTimeout = stderrors.New("connection timeout")
+	ErrNotConnected = stderrors.New("not connected to NATS")
+	ErrCircuitOpen  = stderrors.New("circuit breaker is open")
 )
 
 // Status holds runtime status information for the NATS manager
@@ -104,17 +103,9 @@ type Client struct {
 	// Authentication - sensitive fields cleared on close
 	username string
 	password string // WARNING: Consider using JWT/NKey authentication instead
-	token    string // WARNING: Sensitive - cleared on close
-
-	// TLS
-	tlsEnabled  bool
-	tlsCertFile string
-	tlsKeyFile  string
-	tlsCAFile   string
 
 	// Client identification
-	clientName  string
-	compression bool
+	clientName string
 
 	// Metrics
 	jsMetrics       *jetstreamMetrics
@@ -122,9 +113,6 @@ type Client struct {
 	metricsInterval time.Duration
 
 	// Callbacks
-	onDisconnect     func(error) // Changed to accept error
-	onReconnect      func()
-	onHealthChange   func(bool)
 	onConnectionLost func(error)
 
 	// Connection-loss watchdog: when set, onConnectionLost fires once the
@@ -346,16 +334,15 @@ func (m *Client) resetCircuit() {
 	}
 }
 
-// testCircuit attempts to close the circuit breaker
+// testCircuit runs when the circuit breaker's backoff expires. It only moves the
+// status from open to disconnected; it does not reconnect. The status returns to
+// connected through handleReconnect or the health monitor.
 func (m *Client) testCircuit() {
 	m.logger.Debug("Testing circuit breaker - attempting to close circuit")
 
-	// This will be implemented when we add actual connection logic
-	// For now, just try to reconnect
 	if m.Status() == StatusCircuitOpen {
 		m.logger.Debug("Circuit breaker test: moving from open to disconnected")
 		m.setStatus(StatusDisconnected)
-		// In real implementation, this would trigger reconnection
 	}
 }
 
@@ -376,32 +363,6 @@ func (m *Client) WaitForConnection(ctx context.Context) error {
 	}
 }
 
-// MaxReconnects returns the maximum number of reconnection attempts
-func (m *Client) MaxReconnects() int {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.maxReconnects
-}
-
-// ReconnectWait returns the wait duration between reconnection attempts
-func (m *Client) ReconnectWait() time.Duration {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.reconnectWait
-}
-
-// PingInterval returns the interval for health checks
-func (m *Client) PingInterval() time.Duration {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return m.pingInterval
-}
-
-// ConnectionOptions returns the NATS connection options
-func (m *Client) ConnectionOptions() []nats.Option {
-	return m.buildConnectionOptions()
-}
-
 // buildConnectionOptions builds NATS connection options from client configuration
 func (m *Client) buildConnectionOptions() []nats.Option {
 	opts := []nats.Option{
@@ -420,28 +381,10 @@ func (m *Client) buildConnectionOptions() []nats.Option {
 	if m.username != "" && m.password != "" {
 		opts = append(opts, nats.UserInfo(m.username, m.password))
 	}
-	if m.token != "" {
-		opts = append(opts, nats.Token(m.token))
-	}
-
-	// Add TLS if configured
-	if m.tlsEnabled {
-		if m.tlsCertFile != "" && m.tlsKeyFile != "" {
-			opts = append(opts, nats.ClientCert(m.tlsCertFile, m.tlsKeyFile))
-		}
-		if m.tlsCAFile != "" {
-			opts = append(opts, nats.RootCAs(m.tlsCAFile))
-		}
-	}
 
 	// Add client name if configured
 	if m.clientName != "" {
 		opts = append(opts, nats.Name(m.clientName))
-	}
-
-	// Add compression if enabled
-	if m.compression {
-		opts = append(opts, nats.Compression(true))
 	}
 
 	return opts
@@ -521,7 +464,7 @@ func (m *Client) connectWith(
 	// Initialize JetStream with new API. The async publish error handler
 	// bridges failed async acks into the circuit breaker so a broken ack
 	// path opens the breaker exactly as a failed synchronous publish does
-	// (see PublishToStreamAsync). Keep both candidates local until admission.
+	// (see publishToStreamAsync). Keep both candidates local until admission.
 	js, _ := jetstream.New(conn, jetstream.WithPublishAsyncErrHandler(m.asyncPublishErrHandler))
 
 	// Close owns terminal admission. Once Close sets closed, no native
@@ -566,11 +509,6 @@ func (m *Client) connectWith(
 		m.metricsCancel = m.jsMetrics.startPoller(context.Background(), m.metricsInterval)
 	}
 
-	// Notify health change
-	if m.onHealthChange != nil {
-		m.onHealthChange(true)
-	}
-
 	return nil
 }
 
@@ -612,7 +550,6 @@ func (m *Client) Close(ctx context.Context) error {
 	// Clear sensitive credentials from memory
 	m.username = ""
 	m.password = ""
-	m.token = ""
 	m.mu.Unlock()
 
 	m.setStatus(StatusDisconnected)
@@ -1028,40 +965,21 @@ func (m *Client) asyncPublishErrHandler(_ jetstream.JetStream, msg *nats.Msg, er
 	)
 }
 
-// PublishToStreamAsync publishes to a JetStream stream WITHOUT blocking on the
-// PubAck, returning a jetstream.PubAckFuture the caller inspects (Ok()/Err()) for
-// the eventual server acknowledgement. A single producer goroutine can pipeline
-// many of these past the synchronous ack-RTT ceiling (gh#470).
+// publishToStreamAsync is the async publish path behind PublishBatchToStream.
+// It publishes to a JetStream stream WITHOUT blocking on the PubAck, returning a
+// jetstream.PubAckFuture whose Ok()/Err() carry the eventual server
+// acknowledgement. It mirrors publishToStream's pre-checks and trace stamping,
+// then enqueues via PublishMsgAsync.
 //
 // The enqueue itself is synchronous: an open circuit returns ErrCircuitOpen, a
-// disconnected client returns ErrNotConnected, and a full in-flight window past
-// the stall wait returns jetstream's ErrTooManyStalledMsgs — in all of which the
-// returned future is nil. Trace context injection is preserved. Failed acks are
-// delivered on the future's Err() channel and accounted by the connection-level
-// async error handler; only the exact classified capacity set is circuit-neutral.
-//
-// Ordering: jetstream-go preserves per-subject order per connection, so a single
-// caller publishing to one subject gets in-order storage. Cross-goroutine ordering
-// is the caller's responsibility (as with the synchronous path).
-func (m *Client) PublishToStreamAsync(ctx context.Context, subject string, data []byte) (jetstream.PubAckFuture, error) {
-	return m.publishToStreamAsync(ctx, subject, data, "")
-}
-
-// PublishToStreamAsyncWithMsgID is PublishToStreamAsync stamping the Nats-Msg-Id
-// header for server-side duplicate detection. It carries the same ADR-055 T1
-// idempotency contract as the synchronous PublishToStreamWithMsgID: pass a
-// DETERMINISTIC msgID per logical event so a retry/redelivery carries the same ID;
-// dedup holds only within the stream's configured Duplicates window. An empty
-// msgID is equivalent to PublishToStreamAsync (no dedup).
-func (m *Client) PublishToStreamAsyncWithMsgID(ctx context.Context, subject string, data []byte, msgID string) (jetstream.PubAckFuture, error) {
-	return m.publishToStreamAsync(ctx, subject, data, msgID)
-}
-
-// publishToStreamAsync is the shared async publish path. It mirrors
-// publishToStream's pre-checks and header stamping, then enqueues via
-// PublishMsgAsync. A successful enqueue resets the circuit breaker (the
-// connection-health signal); an enqueue error records a failure.
-func (m *Client) publishToStreamAsync(ctx context.Context, subject string, data []byte, msgID string) (jetstream.PubAckFuture, error) {
+// disconnected client returns ErrNotConnected, a cancelled context returns its
+// error, and a full in-flight window past the stall wait returns jetstream's
+// ErrTooManyStalledMsgs — in all of which the returned future is nil. A
+// successful enqueue resets the circuit breaker (the connection-health signal);
+// an enqueue error records a failure. Failed acks are delivered on the future's
+// Err() channel and accounted by the connection-level async error handler; only
+// the exact classified capacity set is circuit-neutral.
+func (m *Client) publishToStreamAsync(ctx context.Context, subject string, data []byte) (jetstream.PubAckFuture, error) {
 	// Check circuit breaker first (the breaker is the outermost gate, as on the
 	// sync path).
 	if m.Status() == StatusCircuitOpen {
@@ -1095,13 +1013,6 @@ func (m *Client) publishToStreamAsync(ctx context.Context, subject string, data 
 		Subject: subject,
 		Data:    data,
 	}
-	if msgID != "" {
-		// Initialize the header here (rather than relying on InjectTrace,
-		// which early-returns when no trace context is present) so the
-		// dedup ID is always carried.
-		msg.Header = make(nats.Header)
-		msg.Header.Set(nats.MsgIdHdr, msgID)
-	}
 	InjectTrace(ctx, msg)
 
 	future, err := js.PublishMsgAsync(msg)
@@ -1122,30 +1033,6 @@ func (m *Client) publishToStreamAsync(ctx context.Context, subject string, data 
 	return future, nil
 }
 
-// PublishAsyncComplete returns a channel that closes when every outstanding async
-// publish has been acknowledged by the server. A producer waits on it to drain
-// before shutdown. When JetStream is unavailable it returns an already-closed
-// channel so a drain loop does not block forever.
-func (m *Client) PublishAsyncComplete() <-chan struct{} {
-	js, err := m.JetStream()
-	if err != nil {
-		ch := make(chan struct{})
-		close(ch)
-		return ch
-	}
-	return js.PublishAsyncComplete()
-}
-
-// PublishAsyncPending returns the number of async publishes enqueued but not yet
-// acknowledged. Returns 0 when JetStream is unavailable.
-func (m *Client) PublishAsyncPending() int {
-	js, err := m.JetStream()
-	if err != nil {
-		return 0
-	}
-	return js.PublishAsyncPending()
-}
-
 // PublishBatchToStream publishes every message in msgs to one subject via the
 // async path, waits for all acks (bounded by ctx), and returns a single aggregate
 // error. Per-subject ordering from this single calling goroutine is preserved
@@ -1153,8 +1040,8 @@ func (m *Client) PublishAsyncPending() int {
 // see design.md §1). It is the convenience path for bursty producers that do not
 // need per-message futures (gh#470).
 //
-// The drain waits on THIS batch's own futures, not the connection-global
-// PublishAsyncComplete, so a concurrent async producer on the same Client cannot
+// The drain waits on THIS batch's own futures, not the JetStream context's
+// connection-global PublishAsyncComplete, so a concurrent async producer on the same Client cannot
 // make this batch over-wait. If ctx is cancelled before all acks arrive, it
 // returns the context error rather than hanging; the already-enqueued publishes
 // still resolve in the background (and feed the circuit breaker via the async
@@ -1174,7 +1061,7 @@ func (m *Client) PublishBatchToStream(ctx context.Context, subject string, msgs 
 	futures := make([]jetstream.PubAckFuture, 0, len(msgs))
 	var enqueueErr error
 	for _, data := range msgs {
-		future, err := m.publishToStreamAsync(ctx, subject, data, "")
+		future, err := m.publishToStreamAsync(ctx, subject, data)
 		if err != nil {
 			enqueueErr = err
 			break
@@ -1479,35 +1366,9 @@ func (m *Client) ListKeyValueBuckets(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 
-// OnHealthChange sets a callback for health status changes
-func (m *Client) OnHealthChange(fn func(bool)) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.onHealthChange = fn
-}
-
-// WithHealthCheck enables health monitoring with a specified interval
-func (m *Client) WithHealthCheck(interval time.Duration) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.healthInterval = interval
-}
-
 // Event handlers for NATS connection
 func (m *Client) handleDisconnect(_ *nats.Conn, err error) {
 	m.setStatus(StatusReconnecting)
-
-	m.mu.RLock()
-	onDisconnect := m.onDisconnect
-	onHealthChange := m.onHealthChange
-	m.mu.RUnlock()
-
-	if onDisconnect != nil {
-		go onDisconnect(err)
-	}
-	if onHealthChange != nil {
-		go onHealthChange(false)
-	}
 
 	m.armConnectionLossTimer(err)
 }
@@ -1516,18 +1377,6 @@ func (m *Client) handleReconnect(_ *nats.Conn) {
 	m.setStatus(StatusConnected)
 	m.resetCircuit()
 	m.cancelConnectionLossTimer()
-
-	m.mu.RLock()
-	onReconnect := m.onReconnect
-	onHealthChange := m.onHealthChange
-	m.mu.RUnlock()
-
-	if onReconnect != nil {
-		go onReconnect()
-	}
-	if onHealthChange != nil {
-		go onHealthChange(true)
-	}
 }
 
 // armConnectionLossTimer starts the connection-loss watchdog if it is
@@ -1581,14 +1430,6 @@ func (m *Client) cancelConnectionLossTimer() {
 
 func (m *Client) handleClosed(_ *nats.Conn) {
 	m.setStatus(StatusDisconnected)
-
-	m.mu.RLock()
-	onHealthChange := m.onHealthChange
-	m.mu.RUnlock()
-
-	if onHealthChange != nil {
-		go onHealthChange(false)
-	}
 }
 
 func (m *Client) handleError(_ *nats.Conn, sub *nats.Subscription, err error) {
@@ -1627,7 +1468,6 @@ func (m *Client) startHealthMonitoring() {
 
 	go func() {
 		defer ticker.Stop() // Ensure ticker is stopped when goroutine exits
-		lastHealthy := m.IsHealthy()
 
 		for {
 			select {
@@ -1654,13 +1494,6 @@ func (m *Client) startHealthMonitoring() {
 				} else if !healthy && m.Status() == StatusConnected {
 					m.setStatus(StatusReconnecting)
 				}
-
-				// Notify on change
-				if healthy != lastHealthy && m.onHealthChange != nil {
-					m.onHealthChange(healthy)
-				}
-
-				lastHealthy = healthy
 			}
 		}
 	}()

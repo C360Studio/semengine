@@ -237,20 +237,6 @@ func (r DeliveryResult) Decision() DeliveryDecision { return r.decision }
 // Cause returns the semantic or decision-validation cause.
 func (r DeliveryResult) Cause() error { return r.cause }
 
-// ControlError returns heartbeat-control loss observed while work was pending.
-func (r DeliveryResult) ControlError() error { return r.controlErr }
-
-// SettlementError returns the local terminal-method error, if any.
-func (r DeliveryResult) SettlementError() error { return r.settlementErr }
-
-// SettlementAttempted reports whether one local terminal method was called.
-func (r DeliveryResult) SettlementAttempted() bool { return r.settlementTried }
-
-// SettlementMethodSucceeded reports local method return success only.
-func (r DeliveryResult) SettlementMethodSucceeded() bool {
-	return r.settlementTried && r.settlementErr == nil
-}
-
 // SettlementMethodFailed reports local method return failure only.
 func (r DeliveryResult) SettlementMethodFailed() bool {
 	return r.settlementTried && r.settlementErr != nil

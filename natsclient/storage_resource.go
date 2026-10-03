@@ -192,19 +192,6 @@ type StorageResource struct {
 // not-applicable resource is never mistaken for an escaped bucket.
 func (r StorageResource) Attributed() bool { return r.Attribution == AttributionAttributed }
 
-// Undescribable reports whether the server declined to describe this resource —
-// it appeared in the account's name listing but the info listing omitted it,
-// which the server does for any stream carrying an offline reason.
-//
-// Derived rather than stored so a hand-built row cannot claim otherwise: such a
-// resource is exactly the one with no readable tier and no readable capacity on
-// either axis.
-func (r StorageResource) Undescribable() bool {
-	return r.Tier == TierUnknown &&
-		r.Bytes.State == CapacityUnknown &&
-		r.Messages.State == CapacityUnknown
-}
-
 // StorageInventory is one account-wide collection result.
 //
 // CollectedAt is when the RESOURCES were read, not when the report was

@@ -136,6 +136,13 @@ func listerOf(infos ...*jetstream.StreamInfo) StreamListerSource {
 	return consistentAccount(infos...).source()
 }
 
+// unknownOnEveryAxis reports the three unknown states that mark a resource the
+// server declined to describe: no readable tier and no readable capacity on
+// either axis.
+func unknownOnEveryAxis(r StorageResource) bool {
+	return r.Tier == TierUnknown && r.Bytes.State == CapacityUnknown && r.Messages.State == CapacityUnknown
+}
+
 // accountWithUndescribable builds the offline case: the name listing reports
 // every resource, the info listing omits the ones the server declines to
 // describe.
@@ -433,7 +440,7 @@ func TestStorageInventory_StorageTierIsReadNotGuessed(t *testing.T) {
 	got := byName(t, inv)
 	assert.Equal(t, TierMemory, got["HEALTH"].Tier)
 	assert.Equal(t, TierFile, got["LOGS"].Tier)
-	assert.False(t, got["LOGS"].Undescribable(), "a described resource is not an undescribable one")
+	assert.False(t, unknownOnEveryAxis(got["LOGS"]), "a described resource is not an undescribable one")
 }
 
 // --- 2.7 reconciling the info listing against the name listing ---------------
@@ -469,7 +476,7 @@ func TestStorageInventory_UndescribableResourceIsNamedNotOmitted(t *testing.T) {
 		assert.Equal(t, CapacityUnknown, res.Bytes.State)
 		assert.Equal(t, CapacityUnknown, res.Messages.State)
 		assert.False(t, res.Bytes.Bounded(), "no projection is fabricated for it")
-		assert.True(t, res.Undescribable())
+		assert.True(t, unknownOnEveryAxis(res))
 		assert.Equal(t, AttributionNotApplicable, res.Attribution)
 	})
 
@@ -481,7 +488,7 @@ func TestStorageInventory_UndescribableResourceIsNamedNotOmitted(t *testing.T) {
 		assert.Equal(t, AttributionAttributed, res.Attribution,
 			"attribution is a catalog read, so it survives the server declining to describe")
 		assert.Equal(t, "graph-ingest", res.Owner)
-		assert.True(t, res.Undescribable())
+		assert.True(t, unknownOnEveryAxis(res))
 		assert.Equal(t, TierUnknown, res.Tier)
 	})
 
@@ -489,8 +496,8 @@ func TestStorageInventory_UndescribableResourceIsNamedNotOmitted(t *testing.T) {
 		logs := got["LOGS"]
 		assert.Equal(t, CapacityBounded, logs.Bytes.State)
 		assert.Equal(t, TierFile, logs.Tier)
-		assert.False(t, logs.Undescribable())
-		assert.False(t, got[ObjectStoreStreamPrefix+"CONTENT"].Undescribable())
+		assert.False(t, unknownOnEveryAxis(logs))
+		assert.False(t, unknownOnEveryAxis(got[ObjectStoreStreamPrefix+"CONTENT"]))
 	})
 }
 
@@ -514,7 +521,7 @@ func TestStorageInventory_InfoListingOnlyWouldOmitTheUnreadable(t *testing.T) {
 	got := byName(t, inv)
 	require.Contains(t, got, "ONLY_IN_THE_NAME_LISTING",
 		"a collector reading only ListStreams would silently omit this resource")
-	assert.True(t, got["ONLY_IN_THE_NAME_LISTING"].Undescribable())
+	assert.True(t, unknownOnEveryAxis(got["ONLY_IN_THE_NAME_LISTING"]))
 }
 
 // TestStorageInventory_DeduplicatesOverlappingPages covers the second-order
@@ -572,7 +579,7 @@ func TestStorageInventory_TransientPhantomResolvesOnNextCollection(t *testing.T)
 	require.NoError(t, err)
 	phantom, ok := byName(t, first)["DELETED_MID_COLLECTION"]
 	require.True(t, ok, "the skew is reported as unknown rather than dropped")
-	assert.True(t, phantom.Undescribable())
+	assert.True(t, unknownOnEveryAxis(phantom))
 
 	deletedBetweenListings = false
 

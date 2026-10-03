@@ -97,7 +97,7 @@ func TestClassifyReply_NoCodeHeader_UncodedUnchanged(t *testing.T) {
 }
 
 // codeForHeader extracts the Code only when err carries a *ClassifiedError
-// with a non-empty Code, so RespondError/ReplyError stamp X-Error-Code
+// with a non-empty Code, so RespondError stamps X-Error-Code
 // only then (uncoded errors stay byte-for-byte unchanged on the wire).
 func TestCodeForHeader(t *testing.T) {
 	t.Parallel()

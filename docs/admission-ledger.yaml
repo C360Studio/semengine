@@ -1317,13 +1317,27 @@
     its lock-held mutant is caught only by the go test timeout, because a goroutine blocked on a
     sync.Mutex is not durably blocked, so the bubble's fake clock does not advance to the 3 s
     limit.
-    R1a, review F17's second round (Codex, PR #48): a sweep by mechanism (Heartbeat, NewTicker,
-    AfterFunc, time.After, NewTimer, WithTimeout, WithDeadline) over the unit files and over every
-    production timer they reach (delivery_settlement.go:353; client.go:277, :351, :644, :1404, :1463;
-    kv.go:71, :600; storage_inventory.go:269, :298; storage_report_consumer.go:195; stream.go:352, :762;
-    jetstream_metrics.go:348; request.go, reached by no unit test) moved into synctest.Test every unit
-    test that does not dial and whose correct result a production timer can decide, assertions
-    unchanged, pin → SemEngine: delivery_settlement_test.go
+    R1a, review F17's second and third rounds (Codex, PR #48), closed by call graph. The 24 production
+    sites in natsclient's non-test files that arm a timer or ticker or set a deadline: client.go:277
+    (recordFailure's AfterFunc), :351 (WaitForConnection's ticker), :644 (drainAndCloseConnection's
+    timer), :773 (Subscribe's handler deadline), :1404 (armConnectionLossTimer's AfterFunc), :1463
+    (startHealthMonitoring's ticker); delivery_settlement.go:353 (the heartbeat ticker);
+    jetstream_metrics.go:348 (startPoller's ticker); kv.go:71 (applyTimeout), :600 (KeysByFilter's drain
+    window); request.go:118, :124, :151, :195, :248, :352, :498, :530; storage_inventory.go:269
+    (Collect), :298 (Run's ticker); storage_report_consumer.go:195 (Run's retry backoff); stream.go:352,
+    :365 (awaitStreamVisible's ticker and probe deadline), :762 (messageHandlerContext). From each
+    site's enclosing function, gopls call_hierarchy was followed through incoming calls, function values
+    included, to every unit test that reaches it: 116 tests; no unit test reaches a request.go site. An
+    instrumented unit run (a print at each site, removed and restored by checksum) found no test arming
+    a site outside that list. Each of the 116 is in one class. Inside a bubble (58): the moves below,
+    those recorded above (client_test.go TestWaitForConnection, TestManagerScenarios, the six
+    TestConnectionLossTimeout_* tests; delivery_settlement_test.go _InProgressFailureRequiresOwnerStop;
+    kv_watcher_ownership_test.go _TerminalWindowUsesVirtualClock and _StopIsSynchronous;
+    storage_inventory_test.go _CollectionIsBoundedByTimeout, _LatestNeverWaitsOnCollection,
+    _RunCollectsOnItsInterval; storage_report_test.go's three Run tests; storage_report_consumer_test.go
+    _ReestablishesADroppedWatch and _RetriesWhenTheWatchCannotBeEstablished; stream_visibility_test.go
+    _CancelledWaitCarriesNoAbsenceEvidence and _DoesNotReclassifyALaterProbeFailureAsAbsence). Moved,
+    pin → SemEngine: delivery_settlement_test.go
     TestConsumeDeliveryWithHeartbeatControlLossPreservesJoinedMeaning :648 → bubble :656,
     _ControlLossNormalizesInvalidAndPanic :690 → each subtest in a bubble at :760, and
     _ErrCarriesControlLoss (new at task 3.7b) → bubble :684, where the 1 ms heartbeat's tick is what
@@ -1347,33 +1361,78 @@
     :732 → :824, _ShutdownDoesNotStampTheLastGoodResult :783 → :880, _PartialListingIsNeverPublished
     :806 → :908, _ConcurrentCollectionsPublishInOrder :930 → :1048, _NamesTheProducingProcess :991 →
     :1121, _ResourcesAreDeterministicallyOrdered :1008 → :1143 and _ListerSourceResolvedPerCollection
-    :1031 → :1171. Checked and left on the real clock: the delivery tests whose heartbeat is 1 s and
-    whose work returns at once (policy, truth-table, nil-payload, panic and owner-cancellation tests; a
-    tick only calls the mock's InProgress, which succeeds, and none asserts it was not called) and the
-    metadata-failure and zero-policy tests, which return before the ticker is made;
-    TestConcurrentSafety, whose assertion admits every status; TestMetrics, TestGetKeyValueBucket_* and
-    TestGetStream_* (on a correct run the circuit never opens, so the AfterFunc is never armed);
-    TestMessageHandlerContext_* (the 1 s deadline is read, never awaited); kv_delete_revision_test.go
-    (its fake ignores the context); storage_inventory_account_test.go (the 15 s default timeout, above
-    the 10 s floor); TestNewStorageInventoryCollector_RequiresOwnerResolver and
-    _LatestBeforeFirstCollectionIsNotHealthy (no collection); subscription_test.go and the eight
-    storage_report_consumer tests that reach no retry (no production timer; test-owned 10 s bounds);
-    client_connect_test.go and TestContextAwareMethods, which dial (an in-process server; a refused
-    port). Mutation (implementer-reported, PR #48), production file changed, tests unchanged, restored
-    by checksum: the failed-InProgress path not recording controlErr fails all three delivery tests;
-    testCircuit run at once instead of after its backoff fails _OpensAfterFailures, _Reset, the
-    circuit-open row and subtest; the open-circuit branch without its backoff cap fails
-    _ExponentialBackoff; no terminal drain after Stop fails CancellationFinishesNativeDelivery; a
-    premature Updates close read as success fails premature_close; the Stop error dropped fails
-    nonbenign_stop_after_closure; the nil marker not ending collection fails snapshot_success (a nil
-    dereference); ErrBadSubscription not benign after closure fails
-    already_terminal_stop_requires_closure; cancellation losing precedence over no-keys fails
-    canceled_direct_no_keys and expired_direct_no_keys; Collect publishing half the walked resources
-    fails every collecting inventory test but _ShutdownDoesNotStampTheLastGoodResult and
+    :1031 → :1171. Moved at the third round, pin → SemEngine: publish_async_test.go
+    TestPublishToStreamAsync_CircuitOpen :47 → bubble :52 and TestAsyncPublishErrHandler_RecordsFailure
+    :66 → :76 (15 failures arm client.go:277); storage_inventory_account_test.go
+    TestCollect_ComparesDeclaredBoundsAgainstTheAccountLimitPerTier :78 → :83,
+    _UnboundedAccountLimitIsNotApplicable :112 → :122, _AccountLimitsAreOptionalEnrichment :134 → :149,
+    _AccountInfoFailureReportsUnknownAndKeepsTheInventory :151 → :171 and
+    _AccountLimitsAreReadOncePerCollection :210 → :235 (Collect arms the 15 s default,
+    storage_inventory.go:69, :215-216, :269; R1b's 10 s floor sizes a failure bound and exempts no
+    timer-decided test); stream_visibility_test.go TestConsumerSetupDoesNotMintTheSentinelForALostReply
+    :266 → each subtest in a bubble at :281, whose outcome is the 5 s streamVisibilityBudget expiring
+    (it also no longer spends 5 s of wall time per entry point). Dials a broker (4):
+    client_connect_test.go TestConnectRejectsCandidateWhenContextCanceledDuringDial,
+    _RejectsCandidateWhenCloseWinsAdmission and _CommitsCandidateWhenAdmissionRemainsOpen (an in-process
+    nats-server, newConnectCandidate :106-125); client_test.go TestContextAwareMethods (a refused
+    loopback port). Never arms the site on a correct run (33; the instrumented run agrees): every call
+    returns at a validation, connection, bounds or owner check before the site, and where recordFailure
+    runs it runs fewer than 15 times, so its AfterFunc is not armed: backing_stream_prefix_test.go
+    TestCreateStream_ and TestEnsureStream_RefusesBackingStreamName; client_test.go
+    TestJetStreamMethods, TestMetrics; consumer_policy_test.go
+    TestPortBackedConsumerOperationsRejectMissingOwnerBeforeIO,
+    TestPortConsumerInitialInfoFailureIsTransientAndPreventsDelivery,
+    TestPortConsumerObservesBeforeDeliveryAndLogsOnce; delivery_settlement_test.go
+    _MetadataFailureFailsClosedBeforeWork (returns before the ticker is made); the three
+    TestGetKeyValueBucket_* and three TestGetStream_* tests; kv_delete_revision_test.go
+    _RejectsInvalidInputBeforeIO; kvspec_test.go TestEnsureFrameworkBucket_ReaderPostureRejected,
+    _RequiresOwnerCreatesExactly, _UnknownKindFailsClosed,
+    TestOpenFrameworkBucket_UnknownKindFailsClosed;
+    TestMessageHandlerContext_DisabledUsesLifecycleContext; publish_async_test.go
+    TestAsyncPublishErrHandler_NilMsg, TestPublishBatchToStream_Empty, _NotConnected,
+    TestPublishToStreamAsync_CancelledContext, _NotConnected; stream_bounds_test.go
+    TestBothProvisioningSeams_EnforceTheSameRequirement,
+    TestCreateStream_RefusesUnboundedBeforeTheConnectionCheck,
+    TestEnsureStream_BoundsCheckDoesNotPrecedeTheConnectionCheck; stream_capacity_circuit_test.go
+    TestAsyncPublishErrHandlerCapacityNackIsCircuitNeutral,
+    TestTypedNilAPIErrorIsNotNeutralAndDoesNotPanic; stream_handle_test.go
+    TestConsumeStreamWithConfigContextsRejectsInvalidContextsBeforeSetup,
+    TestPortConsumerCommitIgnoresCancellationAfterNativeConsumeBegins; stream_visibility_test.go
+    TestAbsentClassificationFromConsumerSeamsCarriesNoSentinel. Arms the site, outcome independent of it
+    (21): client_test.go TestConcurrentSafety (its assertion admits every status); the nine
+    delivery_settlement_test.go tests whose heartbeat is 1 s and whose work returns at once
+    (_InvalidDecisionTuplesFailClosed, _OwnerCancellationJoinsThenSettles,
+    _PanicAndZeroPolicyFailClosed, _PassesNilPayloadOnce, _ValidDecisionTruthTable,
+    _ValidatesMetadataBeforePayloadAndWork, TestHeartbeatDeliveryPolicyDefensivelyCopiesBackOff,
+    _ReusesWorkWithCurrentPayload, TestImmediateDeliveryRetryUsesPlainNak: a tick only calls the mock's
+    InProgress, which succeeds, and none asserts it was not called); kv_delete_revision_test.go
+    _MapsTypedErrors (the fake's Delete ignores the 5 s deadline);
+    TestMessageHandlerContext_PositiveRetainsWorkDeadline (the deadline is read, never awaited); the
+    eight other storage_report_consumer_test.go tests (the retry backoff is armed only after a watch
+    ends, which on a correct run is the test's own cancellation at cleanup, and both branches of that
+    select then return); stream_visibility_test.go
+    TestConsumerSetupReturnsNonAbsentStreamFailureWithoutProbingAgain (the fake's Stream ignores the
+    probe deadline and the first answer returns before the ticker is read). Mutation
+    (implementer-reported, PR #48), production file changed, tests unchanged, restored by checksum: the
+    failed-InProgress path not recording controlErr fails all three delivery tests; testCircuit run at
+    once instead of after its backoff fails _OpensAfterFailures, _Reset, the circuit-open row and
+    subtest; the open-circuit branch without its backoff cap fails _ExponentialBackoff; no terminal
+    drain after Stop fails CancellationFinishesNativeDelivery; a premature Updates close read as success
+    fails premature_close; the Stop error dropped fails nonbenign_stop_after_closure; the nil marker not
+    ending collection fails snapshot_success (a nil dereference); ErrBadSubscription not benign after
+    closure fails already_terminal_stop_requires_closure; cancellation losing precedence over no-keys
+    fails canceled_direct_no_keys and expired_direct_no_keys; Collect publishing half the walked
+    resources fails every collecting inventory test but _ShutdownDoesNotStampTheLastGoodResult and
     _NamesTheProducingProcess, which fail when a shutdown-cancelled Collect marks the result stale and
     when Collect does not stamp its producer. A failed InProgress ignored is inconclusive, not a
     detection: the live ticker keeps the bubble's clock moving, so the bubble never deadlocks, and the
-    run was stopped by hand.
+    run was stopped by hand. Third round, each on the newly moved tests, restored by checksum:
+    testCircuit run at once instead of after its backoff fails both publish_async tests; Collect
+    publishing half the walked resources fails _ComparesDeclaredBounds, _OptionalEnrichment and
+    _AccountInfoFailure; an unbounded (negative) account limit read as unknown
+    (storage_account.go:320-321) fails _UnboundedAccountLimitIsNotApplicable; a second
+    readAccountTierLimits per collection fails _ReadOncePerCollection; a failed probe after an absence
+    answered with the sentinel (stream.go, the default branch) fails both lost-reply subtests.
     R1b, the real-clock failure bounds left in the event-driven unit tests (no production
     timer, no dial) widened to 10 s, test logic and assertions unchanged, lines unchanged from the
     pin: kv_watcher_ownership_test.go :136 (rescue limit), :153, :158, :173, :178, :189, :218, 2 s
@@ -1394,8 +1453,8 @@
     → :273, :262 → :292, :283 → :314, :303 → :338, :332 → :368 (refusedNATSURL), :359 → :395, :394
     → :431, :413 → :445, :515 → :548, :556 → :593, :585 → :625, :614 → :659, :652 → :699, :671 →
     :721, :690 → :743; getstream_circuit_breaker_test.go :255; kvspec_test.go :46, :64, :87, :199;
-    max_payload_test.go :10; publish_async_test.go :17, :29, :48, :67, :86, :115 → :98, :124 →
-    :107 (:99 deleted with its test, task 3.7a); request_handler_timeout_test.go :15, :39 → :29, :50
+    max_payload_test.go :10; publish_async_test.go :17 → :18, :29 → :30, :48 → :53, :67 → :77, :86 → :97, :115 →
+    :109, :124 → :118 (:99 deleted with its test, task 3.7a); request_handler_timeout_test.go :15, :39 → :29, :50
     → :40 (:28 and :63 deleted with their tests, task 3.7a); stream_capacity_circuit_test.go :49,
     :74 (other lines unchanged outside client_test.go). stream_visibility_test.go:82 (:83 in the tree) is an
     error string the guard does not match and stays. Bounded cleanup (harness-boundaries, "Bounded cleanup
@@ -1406,7 +1465,7 @@
     natsclient/test_helpers_test.go. test:repeat -- ./natsclient passes (implementer-reported, PR #48).
     Surface audit, task 3.7a, unit lane. Retargeted to the kept behaviour a dropped symbol reached,
     pin → SemEngine: publish_async_test.go TestPublishToStreamAsync_NotConnected :20,
-    _CancelledContext :38, _CircuitOpen :57 → the same lines, calling publishToStreamAsync as
+    _CancelledContext :38, _CircuitOpen :57 → :21, :39, :62, calling publishToStreamAsync as
     PublishBatchToStream does; client_test.go TestConnectionOptions :392-409 → :428-441 reads the
     maxReconnects, reconnectWait and pingInterval fields the dropped getters returned (pingInterval
     at its default; ConnectionOptions() and WithPingInterval go); delivery_settlement_test.go reads

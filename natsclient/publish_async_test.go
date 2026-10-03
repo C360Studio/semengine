@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"testing/synctest"
 
 	"github.com/nats-io/nats.go"
 	"github.com/stretchr/testify/assert"
@@ -45,18 +46,23 @@ func TestPublishToStreamAsync_CancelledContext(t *testing.T) {
 // TestPublishToStreamAsync_CircuitOpen verifies an open circuit rejects the async
 // enqueue with ErrCircuitOpen and a nil future (no publish).
 func TestPublishToStreamAsync_CircuitOpen(t *testing.T) {
-	client, err := NewClient("nats://unused")
-	require.NoError(t, err)
+	// R1a: reaching the threshold arms recordFailure's time.AfterFunc(backoff, testCircuit)
+	// (client.go:277), which moves the status off StatusCircuitOpen. On the bubble's clock it
+	// cannot fire before the assertions below, however slowly the host runs them.
+	synctest.Test(t, func(t *testing.T) {
+		client, err := NewClient("nats://unused")
+		require.NoError(t, err)
 
-	// Drive the breaker open (threshold is 15).
-	for i := 0; i < 15; i++ {
-		client.recordFailure()
-	}
-	require.Equal(t, StatusCircuitOpen, client.Status())
+		// Drive the breaker open (threshold is 15).
+		for i := 0; i < 15; i++ {
+			client.recordFailure()
+		}
+		require.Equal(t, StatusCircuitOpen, client.Status())
 
-	future, err := client.publishToStreamAsync(context.Background(), "test.subject", []byte("data"))
-	assert.Equal(t, ErrCircuitOpen, err)
-	assert.Nil(t, future)
+		future, err := client.publishToStreamAsync(context.Background(), "test.subject", []byte("data"))
+		assert.Equal(t, ErrCircuitOpen, err)
+		assert.Nil(t, future)
+	})
 }
 
 // TestAsyncPublishErrHandler_RecordsFailure verifies the connection-level async
@@ -64,19 +70,24 @@ func TestPublishToStreamAsync_CircuitOpen(t *testing.T) {
 // failures through the handler open the breaker exactly as failed sync publishes
 // would. This is the ack-failure → breaker path (gh#470 design §4).
 func TestAsyncPublishErrHandler_RecordsFailure(t *testing.T) {
-	client, err := NewClient("nats://unused")
-	require.NoError(t, err)
+	// R1a: reaching the threshold arms recordFailure's time.AfterFunc(backoff, testCircuit)
+	// (client.go:277), which moves the status off StatusCircuitOpen. On the bubble's clock it
+	// cannot fire before the assertions below, however slowly the host runs them.
+	synctest.Test(t, func(t *testing.T) {
+		client, err := NewClient("nats://unused")
+		require.NoError(t, err)
 
-	msg := &nats.Msg{Subject: "test.subject"}
-	// One handler call short of the threshold: not yet open.
-	for i := 0; i < 14; i++ {
+		msg := &nats.Msg{Subject: "test.subject"}
+		// One handler call short of the threshold: not yet open.
+		for i := 0; i < 14; i++ {
+			client.asyncPublishErrHandler(nil, msg, errors.New("ack failed"))
+		}
+		assert.NotEqual(t, StatusCircuitOpen, client.Status())
+
+		// The 15th failed ack opens the breaker.
 		client.asyncPublishErrHandler(nil, msg, errors.New("ack failed"))
-	}
-	assert.NotEqual(t, StatusCircuitOpen, client.Status())
-
-	// The 15th failed ack opens the breaker.
-	client.asyncPublishErrHandler(nil, msg, errors.New("ack failed"))
-	assert.Equal(t, StatusCircuitOpen, client.Status())
+		assert.Equal(t, StatusCircuitOpen, client.Status())
+	})
 }
 
 // TestAsyncPublishErrHandler_NilMsg verifies the handler's defensive nil-guard on

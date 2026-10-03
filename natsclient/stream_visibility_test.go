@@ -275,31 +275,36 @@ func (f *absentThenLostReply) Stream(ctx context.Context, _ string) (jetstream.S
 func TestConsumerSetupDoesNotMintTheSentinelForALostReply(t *testing.T) {
 	for _, entry := range consumeEntryPoints() {
 		t.Run(entry.name, func(t *testing.T) {
-			fake := &absentThenLostReply{fakeJetStream: &fakeJetStream{}}
-			client := newConnectedClientWithFakeJS(t, fake)
+			// R1a: the wait ends on streamVisibilityBudget (5 s), paced by its 50 ms probe ticker; both run
+			// on the bubble's clock, so the budget's expiry, which this test needs, takes no wall time and a
+			// slow host cannot reorder it.
+			synctest.Test(t, func(t *testing.T) {
+				fake := &absentThenLostReply{fakeJetStream: &fakeJetStream{}}
+				client := newConnectedClientWithFakeJS(t, fake)
 
-			// The caller's context is deliberately NOT bounded here, so the probe
-			// ends on the BUDGET while the caller is still alive. That is the only
-			// arrangement in which the two endings are distinguishable: bound the
-			// caller instead and its cancellation ends both at once, which any
-			// implementation reports identically. The cost is one budget per entry
-			// point, and it buys the only assertion that can fail if the sentinel
-			// is minted from an unfinished probe.
-			handle, err := entry.consume(t.Context(), client, StreamConsumerConfig{
-				StreamName:    "LOST_REPLY",
-				ConsumerName:  "lost-reply",
-				FilterSubject: "lost.reply.>",
-				AckPolicy:     "explicit",
-				DeliverPolicy: "all",
-			}, func(context.Context, jetstream.Msg) {})
+				// The caller's context is deliberately NOT bounded here, so the probe
+				// ends on the BUDGET while the caller is still alive. That is the only
+				// arrangement in which the two endings are distinguishable: bound the
+				// caller instead and its cancellation ends both at once, which any
+				// implementation reports identically. Waiting out the budget buys the
+				// only assertion that can fail if the sentinel is minted from an
+				// unfinished probe; on the bubble's clock it costs no wall time.
+				handle, err := entry.consume(t.Context(), client, StreamConsumerConfig{
+					StreamName:    "LOST_REPLY",
+					ConsumerName:  "lost-reply",
+					FilterSubject: "lost.reply.>",
+					AckPolicy:     "explicit",
+					DeliverPolicy: "all",
+				}, func(context.Context, jetstream.Msg) {})
 
-			require.Nil(t, handle)
-			require.ErrorIs(t, err, context.DeadlineExceeded,
-				"the probe ended on its own context, and that is the answer")
-			require.ErrorIs(t, err, jetstream.ErrStreamNotFound,
-				"the last completed observation stays reachable for classification")
-			require.NotErrorIs(t, err, ErrStreamNotVisible,
-				"a probe that observed nothing cannot be evidence of absence")
+				require.Nil(t, handle)
+				require.ErrorIs(t, err, context.DeadlineExceeded,
+					"the probe ended on its own context, and that is the answer")
+				require.ErrorIs(t, err, jetstream.ErrStreamNotFound,
+					"the last completed observation stays reachable for classification")
+				require.NotErrorIs(t, err, ErrStreamNotVisible,
+					"a probe that observed nothing cannot be evidence of absence")
+			})
 		})
 	}
 }

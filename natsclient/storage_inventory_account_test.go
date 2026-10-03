@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"testing/synctest"
 
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/assert"
@@ -76,55 +77,65 @@ func listerFor(infos ...*jetstream.StreamInfo) *fakeLister {
 // through the collector: the comparison is derived from the same collection
 // that produced the rows, so no operator surface has to recompute it.
 func TestCollect_ComparesDeclaredBoundsAgainstTheAccountLimitPerTier(t *testing.T) {
-	lister := &accountAwareLister{
-		fakeLister: listerFor(
-			fileStream("LOGS", 900<<20),
-			fileStream("AUDIT", 900<<20),
-			memoryStream("HEALTH", 64<<20),
-		),
-		info: &jetstream.AccountInfo{
-			Tier: jetstream.Tier{
-				Memory: 1 << 20,
-				Store:  2 << 20,
-				Limits: jetstream.AccountLimits{MaxMemory: 8 << 30, MaxStore: 1 << 30},
+	// R1a: Collect arms the collector's default 15 s timeout (storage_inventory.go:269), and the
+	// listings stop when it expires. On the bubble's clock it cannot expire while the walk is
+	// runnable, so a slow host cannot fail a correct collection.
+	synctest.Test(t, func(t *testing.T) {
+		lister := &accountAwareLister{
+			fakeLister: listerFor(
+				fileStream("LOGS", 900<<20),
+				fileStream("AUDIT", 900<<20),
+				memoryStream("HEALTH", 64<<20),
+			),
+			info: &jetstream.AccountInfo{
+				Tier: jetstream.Tier{
+					Memory: 1 << 20,
+					Store:  2 << 20,
+					Limits: jetstream.AccountLimits{MaxMemory: 8 << 30, MaxStore: 1 << 30},
+				},
 			},
-		},
-	}
+		}
 
-	inventory, err := accountTestCollector(t, lister.source()).Collect(context.Background())
-	require.NoError(t, err)
-	require.Len(t, inventory.Resources, 3)
+		inventory, err := accountTestCollector(t, lister.source()).Collect(context.Background())
+		require.NoError(t, err)
+		require.Len(t, inventory.Resources, 3)
 
-	file, ok := inventory.Account.TierFor(TierFile)
-	require.True(t, ok)
-	assert.Equal(t, OvercommitmentOver, file.State)
-	assert.Equal(t, int64(1800<<20), file.DeclaredBytes)
+		file, ok := inventory.Account.TierFor(TierFile)
+		require.True(t, ok)
+		assert.Equal(t, OvercommitmentOver, file.State)
+		assert.Equal(t, int64(1800<<20), file.DeclaredBytes)
 
-	memory, ok := inventory.Account.TierFor(TierMemory)
-	require.True(t, ok)
-	assert.Equal(t, OvercommitmentWithin, memory.State)
-	assert.Equal(t, int64(64<<20), memory.DeclaredBytes,
-		"the memory tier's sum contains only memory-backed resources")
+		memory, ok := inventory.Account.TierFor(TierMemory)
+		require.True(t, ok)
+		assert.Equal(t, OvercommitmentWithin, memory.State)
+		assert.Equal(t, int64(64<<20), memory.DeclaredBytes,
+			"the memory tier's sum contains only memory-backed resources")
+	})
 }
 
 // TestCollect_UnboundedAccountLimitIsNotApplicable is task 4.6 through the
 // collector, on the path a stock server and testcontainers actually take.
 func TestCollect_UnboundedAccountLimitIsNotApplicable(t *testing.T) {
-	lister := &accountAwareLister{
-		fakeLister: listerFor(fileStream("LOGS", 1<<40)),
-		info: &jetstream.AccountInfo{
-			Tier: jetstream.Tier{Limits: jetstream.AccountLimits{MaxMemory: -1, MaxStore: -1}},
-		},
-	}
+	// R1a: Collect arms the collector's default 15 s timeout (storage_inventory.go:269), and the
+	// listings stop when it expires. On the bubble's clock it cannot expire while the walk is
+	// runnable, so a slow host cannot fail a correct collection.
+	synctest.Test(t, func(t *testing.T) {
+		lister := &accountAwareLister{
+			fakeLister: listerFor(fileStream("LOGS", 1<<40)),
+			info: &jetstream.AccountInfo{
+				Tier: jetstream.Tier{Limits: jetstream.AccountLimits{MaxMemory: -1, MaxStore: -1}},
+			},
+		}
 
-	inventory, err := accountTestCollector(t, lister.source()).Collect(context.Background())
-	require.NoError(t, err)
+		inventory, err := accountTestCollector(t, lister.source()).Collect(context.Background())
+		require.NoError(t, err)
 
-	file, ok := inventory.Account.TierFor(TierFile)
-	require.True(t, ok)
-	assert.Equal(t, CapacityUnbounded, file.Limit.State)
-	assert.Equal(t, OvercommitmentNotApplicable, file.State)
-	assert.NotEqual(t, OvercommitmentWithin, file.State)
+		file, ok := inventory.Account.TierFor(TierFile)
+		require.True(t, ok)
+		assert.Equal(t, CapacityUnbounded, file.Limit.State)
+		assert.Equal(t, OvercommitmentNotApplicable, file.State)
+		assert.NotEqual(t, OvercommitmentWithin, file.State)
+	})
 }
 
 // TestCollect_AccountLimitsAreOptionalEnrichment proves the bridge fails soft.
@@ -132,38 +143,48 @@ func TestCollect_UnboundedAccountLimitIsNotApplicable(t *testing.T) {
 // else: the resource inventory, which is the larger and more actionable half,
 // is still complete.
 func TestCollect_AccountLimitsAreOptionalEnrichment(t *testing.T) {
-	plain := listerFor(fileStream("LOGS", 1<<30), memoryStream("HEALTH", 0))
+	// R1a: Collect arms the collector's default 15 s timeout (storage_inventory.go:269), and the
+	// listings stop when it expires. On the bubble's clock it cannot expire while the walk is
+	// runnable, so a slow host cannot fail a correct collection.
+	synctest.Test(t, func(t *testing.T) {
+		plain := listerFor(fileStream("LOGS", 1<<30), memoryStream("HEALTH", 0))
 
-	inventory, err := accountTestCollector(t, plain.source()).Collect(context.Background())
-	require.NoError(t, err, "an unreadable account limit must not fail the collection")
-	assert.Len(t, inventory.Resources, 2)
-	assert.False(t, inventory.Stale)
+		inventory, err := accountTestCollector(t, plain.source()).Collect(context.Background())
+		require.NoError(t, err, "an unreadable account limit must not fail the collection")
+		assert.Len(t, inventory.Resources, 2)
+		assert.False(t, inventory.Stale)
 
-	assert.NotEmpty(t, inventory.Account.LimitsUnavailable)
-	for _, comparison := range inventory.Account.Tiers {
-		assert.Equal(t, CapacityUnknown, comparison.Limit.State, comparison.Tier)
-		assert.Equal(t, OvercommitmentNotApplicable, comparison.State, comparison.Tier)
-	}
+		assert.NotEmpty(t, inventory.Account.LimitsUnavailable)
+		for _, comparison := range inventory.Account.Tiers {
+			assert.Equal(t, CapacityUnknown, comparison.Limit.State, comparison.Tier)
+			assert.Equal(t, OvercommitmentNotApplicable, comparison.State, comparison.Tier)
+		}
+	})
 }
 
 // TestCollect_AccountInfoFailureReportsUnknownAndKeepsTheInventory is the same
 // soft failure through a real error rather than a missing method.
 func TestCollect_AccountInfoFailureReportsUnknownAndKeepsTheInventory(t *testing.T) {
-	lister := &accountAwareLister{
-		fakeLister: listerFor(fileStream("LOGS", 1<<30)),
-		err:        errors.New("connection refused"),
-	}
+	// R1a: Collect arms the collector's default 15 s timeout (storage_inventory.go:269), and the
+	// listings stop when it expires. On the bubble's clock it cannot expire while the walk is
+	// runnable, so a slow host cannot fail a correct collection.
+	synctest.Test(t, func(t *testing.T) {
+		lister := &accountAwareLister{
+			fakeLister: listerFor(fileStream("LOGS", 1<<30)),
+			err:        errors.New("connection refused"),
+		}
 
-	inventory, err := accountTestCollector(t, lister.source()).Collect(context.Background())
-	require.NoError(t, err)
-	require.Len(t, inventory.Resources, 1)
-	assert.False(t, inventory.Stale)
-	assert.Contains(t, inventory.Account.LimitsUnavailable, "connection refused")
+		inventory, err := accountTestCollector(t, lister.source()).Collect(context.Background())
+		require.NoError(t, err)
+		require.Len(t, inventory.Resources, 1)
+		assert.False(t, inventory.Stale)
+		assert.Contains(t, inventory.Account.LimitsUnavailable, "connection refused")
 
-	file, ok := inventory.Account.TierFor(TierFile)
-	require.True(t, ok)
-	assert.Equal(t, CapacityUnknown, file.Limit.State,
-		"a failed read is unknown, never unbounded")
+		file, ok := inventory.Account.TierFor(TierFile)
+		require.True(t, ok)
+		assert.Equal(t, CapacityUnknown, file.Limit.State,
+			"a failed read is unknown, never unbounded")
+	})
 }
 
 // TestReadAccountTierLimits_UnreadableIsNotKnown pins the flag the whole
@@ -208,17 +229,22 @@ func TestReadAccountTierLimits_UnreadableIsNotKnown(t *testing.T) {
 // the cost bound the inventory is built to respect: one account call per
 // collection, never one per resource.
 func TestCollect_AccountLimitsAreReadOncePerCollection(t *testing.T) {
-	lister := &accountAwareLister{
-		fakeLister: listerFor(fileStream("A", 1<<30), fileStream("B", 1<<30), fileStream("C", 1<<30)),
-		info:       &jetstream.AccountInfo{Tier: jetstream.Tier{Limits: jetstream.AccountLimits{MaxStore: 1 << 40}}},
-	}
-	collector := accountTestCollector(t, lister.source())
+	// R1a: Collect arms the collector's default 15 s timeout (storage_inventory.go:269), and the
+	// listings stop when it expires. On the bubble's clock it cannot expire while the walk is
+	// runnable, so a slow host cannot fail a correct collection.
+	synctest.Test(t, func(t *testing.T) {
+		lister := &accountAwareLister{
+			fakeLister: listerFor(fileStream("A", 1<<30), fileStream("B", 1<<30), fileStream("C", 1<<30)),
+			info:       &jetstream.AccountInfo{Tier: jetstream.Tier{Limits: jetstream.AccountLimits{MaxStore: 1 << 40}}},
+		}
+		collector := accountTestCollector(t, lister.source())
 
-	_, err := collector.Collect(context.Background())
-	require.NoError(t, err)
-	assert.Equal(t, 1, lister.calls)
+		_, err := collector.Collect(context.Background())
+		require.NoError(t, err)
+		assert.Equal(t, 1, lister.calls)
 
-	_, err = collector.Collect(context.Background())
-	require.NoError(t, err)
-	assert.Equal(t, 2, lister.calls, "one call per collection, not per resource")
+		_, err = collector.Collect(context.Background())
+		require.NoError(t, err)
+		assert.Equal(t, 2, lister.calls, "one call per collection, not per resource")
+	})
 }

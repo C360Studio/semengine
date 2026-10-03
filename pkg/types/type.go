@@ -3,6 +3,7 @@ package types
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 )
 
 // Type provides structured type information for messages.
@@ -51,8 +52,10 @@ func (mt Type) IsValid() bool {
 	return mt.Domain != "" && mt.Category != "" && mt.Version != ""
 }
 
-// Validate reports whether the Type can round-trip through Key(): every
-// component must be non-empty and free of the "." separator. It is the one
+// Validate reports whether the Type can round-trip through Key() and JSON:
+// every component must be non-empty, free of the "." separator, and valid
+// UTF-8 (encoding/json would write each invalid byte as U+FFFD, a different
+// type on the wire; owner ruling, semengine PR #48 comment 5970334875). It is the one
 // owner of message-type component grammar — the payload registry refuses a
 // registration that fails it and a projection contract refuses a bound type
 // that fails it, so nothing downstream ever needs to parse a key back into
@@ -63,6 +66,9 @@ func (mt Type) Validate() error {
 	} {
 		if component.value == "" {
 			return fmt.Errorf("message type %s must not be empty", component.name)
+		}
+		if !utf8.ValidString(component.value) {
+			return fmt.Errorf("message type %s %q is not valid UTF-8", component.name, component.value)
 		}
 		if strings.Contains(component.value, ".") {
 			return fmt.Errorf("message type %s %q must not contain %q (the key separator)", component.name, component.value, ".")

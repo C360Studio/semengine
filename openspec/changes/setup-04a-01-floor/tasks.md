@@ -335,7 +335,21 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       the pin's `timestamp.Parse` heuristic restored. Exploration, separate from replay, implementer-reported (logs
       local only): `go test -run '^$' -fuzz '^<target>$' -fuzztime 60s ./message` ran 1,970,895, 1,121,935 and
       10,033,878 executions with no failing input, all run before 1ee70d0. Rows: `vocabulary`, `pkg/platform`,
-      `message`, `internal/semantictest`.
+      `message`, `internal/semantictest`. The owner's ruling of 2026-10-03 (PR #48 comment 5970334875, extending ruling
+      2; Codex F12, comment 5970321028): invalid UTF-8 is refused wherever `message` encodes a string. `Type.Validate`
+      refuses a component that is not valid UTF-8 (`TestTypeValidateRefusesInvalidUTF8` failed first: all four
+      accepted); `BaseMessage.MarshalJSON` refuses such a type, and `GenericJSONPayload.MarshalJSON` such a string, key
+      or value at any depth of `Data` (`TestBaseMessageRefusesTypeThatIsNotUTF8` and
+      `TestGenericJSONRefusesStringsThatAreNotUTF8` failed first: 3 and 15 marshals succeeded with U+FFFD on the wire;
+      Codex's `TestReviewerRetainedUTF8Loss` probe, run unchanged and not committed, observed both losses before the fix
+      and fails on the refusal after). `FuzzDecoderStrings` (10 seeds, an invalid byte in each of the five positions)
+      generates the three type components and a generic key and value, asserting refusal or full equality through
+      `NewDecoder`. Mutants on the final code, implementer-reported: 14, of which 13 detected (the cycle guard's by the
+      test process being killed after unbounded recursion, the rest by named assertions) and 1 survived: removing the
+      `[]byte` skip, equivalent because byte elements hold no string. A reflect `CanInterface` guard whose mutant
+      survived was removed: its only reachable input makes `encoding/json` panic too. Exploration, separate from replay,
+      implementer-reported (log local only): `-fuzz '^FuzzDecoderStrings$' -fuzztime 30s` ran 320,542 executions with no
+      failing input on the final code (2,453,552 on an earlier revision of the walk). Rows: `pkg/types`, `message`.
 - [x] 3.7 (D) `natsclient` (level 6), port and unit lane: row `adapt`, its `source_sha` and the existing file rows'
       at the pin. Not ported, with file rows: `test_client.go` (`adapt → natsfixture`, evidence in `proving_tests`)
       and `test_options.go` (`defer-exclude`); six test files `defer-exclude` with design D1's reasons —

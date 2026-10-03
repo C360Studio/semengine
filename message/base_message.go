@@ -186,8 +186,8 @@ type wireFormat struct {
 //
 // Validation is performed before serialization to ensure invalid
 // messages cannot be serialized and published to the message bus.
-// A meta source that is not valid UTF-8 is refused with an invalid-data
-// error rather than written with its invalid bytes replaced.
+// A meta source or a type component that is not valid UTF-8 is refused with
+// an invalid-data error rather than written with its invalid bytes replaced.
 func (m *BaseMessage) MarshalJSON() ([]byte, error) {
 	// Validate before serializing - invalid messages cannot be published
 	if err := m.Validate(); err != nil {
@@ -208,6 +208,16 @@ func (m *BaseMessage) MarshalJSON() ([]byte, error) {
 		return nil, errs.WrapInvalid(
 			fmt.Errorf("meta source %q is not valid UTF-8", source),
 			"BaseMessage", "MarshalJSON", "source")
+	}
+
+	// The type is refused for the same reason (owner ruling, PR #48 comment 5970334875). Validate
+	// above checks only that each component is non-empty.
+	for _, component := range []string{m.msgType.Domain, m.msgType.Category, m.msgType.Version} {
+		if !utf8.ValidString(component) {
+			return nil, errs.WrapInvalid(
+				fmt.Errorf("message type %q is not valid UTF-8", m.msgType.String()),
+				"BaseMessage", "MarshalJSON", "type")
+		}
 	}
 
 	// Create metadata map with int64 timestamps for consistency

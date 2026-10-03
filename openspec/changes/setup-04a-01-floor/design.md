@@ -441,14 +441,19 @@ second `Decode` equal in full (ID, type, payload, source, both timestamps). `Fuz
 through `NewBaseMessage` and `NewDefaultMetaWithReceivedAt` from a fuzzed source, two `int64` millisecond timestamps
 and a count, and asserts `decode(marshal(m)) == m` in full; its seeds sit on 0, ±1, 10^12 − 1 and 10^12 (the
 seconds/milliseconds switch of the pin's `timestamp.Parse`), pre-1970 instants and both ends of `int64`, so every
-boundary is reached by construction. `MarshalJSON` refuses a source that is not valid UTF-8 with an invalid-data
-error, where `encoding/json` would write each invalid byte as U+FFFD (owner ruling 2, #9 comment 5969776736); the
-target asserts that refusal, judged by `unicode/utf8`, and the full equality for every valid source, with no
-exception. `GenericJSONPayload.UnmarshalJSON` gets `FuzzGenericJSONPayloadUnmarshalJSON`, checked
-against the standard library's decode of `{"data": …}`. Named examples own the four ruled instants
-(`TestBaseMessageTimestampsAreMilliseconds`) and the refused timestamp forms
-(`TestBaseMessageRefusesTimestampsThatAreNotMilliseconds`). The entity-ID helpers keep the qualification of their
-canonical authority in `pkg/types`.
+boundary is reached by construction. `MarshalJSON` refuses a source that is not valid UTF-8 with an invalid-data error,
+where `encoding/json` would write each invalid byte as U+FFFD (owner ruling 2, #9 comment 5969776736); the target
+asserts that refusal, judged by `unicode/utf8`, and the full equality for every valid source, with no exception. The
+owner extended that ruling to every string `message` encodes (PR #48 comment 5970334875): `Type.Validate` and
+`MarshalJSON` refuse a type component that is not valid UTF-8, and `GenericJSONPayload.MarshalJSON` such a string, key
+or value at any depth. `FuzzDecoderStrings` generates the three type components and a generic key and value and asserts,
+judged by `unicode/utf8` and `strings`, that `Type.Validate`, the envelope and the payload refuse exactly those inputs,
+and that every accepted one survives `NewDecoder` equal in full; a type registered per input carries the generated
+components through the registry, and its seeds hold an invalid byte in each of the five positions.
+`GenericJSONPayload.UnmarshalJSON` gets `FuzzGenericJSONPayloadUnmarshalJSON`, checked against the standard library's
+decode of `{"data": …}`. Named examples own the four ruled instants (`TestBaseMessageTimestampsAreMilliseconds`) and the
+refused timestamp forms (`TestBaseMessageRefusesTimestampsThatAreNotMilliseconds`). The entity-ID helpers keep the
+qualification of their canonical authority in `pkg/types`.
 
 The ACME loaders' renewal goroutines (`tlsutil.go:253, :331`) are not in this change (D1): their stop can wait inside
 `legoClient.Certificate.Renew`, which takes no context (`pkg/acme/client.go:352`), and their renewal callback writes

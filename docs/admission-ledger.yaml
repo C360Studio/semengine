@@ -501,7 +501,8 @@
   destination: pkg/types
   contract: >-
     entity ID parsing, the 256-byte bound (MaxEntityIDBytes), pattern matching, type and domain
-    authority validation as at the pin
+    authority validation as at the pin; Type.Validate also refuses a component that is not valid
+    UTF-8 (known_risks)
   dependencies_and_side_effects: >-
     pkg/errs (in-set); stdlib; pgregory.net/rapid v1.3.0 in tests only (owner ruling, PR #48 comment
     5951926492); no goroutine, no I/O
@@ -516,11 +517,15 @@
     from github.com/c360studio/semstreams to github.com/c360studio/semengine. Comment edit: the
     requirement citations in entity_id_prop_test.go (:46, :60, :61, :88, :113, :145) name
     docs/specs/entity-id-contract.md, where the pin's entity-id-contract capability now lives (#72,
-    comment 5970020197); no code changed
+    comment 5970020197); no code changed. Behaviour change (owner ruling, PR #48 comment
+    5970334875, extending ruling 2 of #9 comment 5969776736): Type.Validate (type.go) refuses a
+    domain, category or version that is not valid UTF-8, so the payload registry and a projection
+    contract refuse such a type too; recorded with its encoding refusals on the message row
   proving_tests: >-
     the 6 test files in pkg/types/ at the pin, including entity_id_prop_test.go (Rapid properties
     TestPropEntityIDRoundTrip, TestPropEntityIDByteBound, TestPropEntityIDPatternMatch; design P23)
-    and its testdata/rapid seed
+    and its testdata/rapid seed. Added: TestTypeValidateRefusesInvalidUTF8 in type_validate_test.go
+    (failed first: all four invalid components accepted)
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -860,7 +865,12 @@
     writes; absent, null or 0 is the zero time; any other value (a string, a fraction, an exponent
     form, a bool, an object, an integer outside int64) is refused with an invalid-data error.
     Changed behavior (owner ruling 2, #9 comment 5969776736): BaseMessage.MarshalJSON refuses a
-    meta source that is not valid UTF-8 with an invalid-data error. No other behavior changed
+    meta source that is not valid UTF-8 with an invalid-data error. Changed behavior (owner ruling,
+    PR #48 comment 5970334875, extending ruling 2): BaseMessage.MarshalJSON refuses a message type
+    whose domain, category or version is not valid UTF-8, and GenericJSONPayload.MarshalJSON
+    refuses a string, map key or string value anywhere in Data that is not valid UTF-8, each with
+    an invalid-data error; message.Type.Validate (pkg/types row) refuses such a component. No other
+    behavior changed
   dependencies_and_side_effects: >-
     payloadregistry, pkg/errs, pkg/types, internal/timestamp (in-set);
     github.com/google/uuid v1.6.0 (the pin's version, now a direct requirement); stdlib; no
@@ -916,7 +926,20 @@
     is not valid UTF-8 with U+FFFD, so the wire carried a different source and nothing said so.
     MarshalJSON now refuses such a source with an invalid-data error, checked at encoding because
     NewBaseMessage returns no error and WithMeta accepts any Meta. Decoding is unchanged: JSON
-    text is UTF-8, so a decoded source is always valid.
+    text is UTF-8, so a decoded source is always valid. Behaviour change, type and generic payload
+    encoding (owner ruling, PR #48 comment 5970334875, extending ruling 2; Codex F12, comment
+    5970321028): the pin wrote the message type (base_message.go wireFormat.Type) and core.json.v1's
+    Data (generic_json.go MarshalJSON) through encoding/json in the same way, so an invalid byte in a
+    type component or in any string of Data reached the wire as U+FFFD with no error, and
+    Type.Validate accepted such a component. BaseMessage.MarshalJSON now refuses a type component
+    that is not valid UTF-8 (BaseMessage.Validate checks only that each component is non-empty, so
+    the check is at encoding, beside the source's); GenericJSONPayload.MarshalJSON walks Data by
+    encoding/json's rules (map keys, strings, TextMarshaler text, a pointer-receiver method on an
+    addressable value included, struct fields it writes, flattened embedded structs; not []byte,
+    fields tagged "-", unexported fields or a json.Marshaler's value) and refuses the first string that is not valid UTF-8, and refuses
+    encoded text that is not valid UTF-8 (a json.Marshaler's output is copied unchecked). A cycle
+    in Data stops the walk; json.Marshal reports it. Hash() ignores a payload marshal error, as at
+    the pin, so a payload refused here hashes as its type alone.
   proving_tests: >-
     the 9 test files in message/ at the pin, carried unchanged except import paths; payload_test.go
     and triple_helpers_test.go use internal/harness/semantictest. Added (task 3.6b):
@@ -930,7 +953,14 @@
     NewBaseMessage and WithMeta refused, five valid ones kept across the wire; failed first: all
     eight marshals succeeded with U+FFFD on the wire); decoder_fuzz_test.go (Codex F8, design
     D7): FuzzDecoderDecode, FuzzDecoderRoundTrip and FuzzGenericJSONPayloadUnmarshalJSON, through NewDecoder with a real
-    registry, against a standard-library oracle that predicts acceptance and refusal
+    registry, against a standard-library oracle that predicts acceptance and refusal.
+    TestBaseMessageRefusesTypeThatIsNotUTF8 and TestGenericJSONRefusesStringsThatAreNotUTF8 (owner
+    ruling, PR #48 comment 5970334875; failed first: all three invalid types and all fifteen
+    invalid Data shapes of the first version marshalled with U+FFFD on the wire; the cycle,
+    embedded-struct and json.Marshaler cases came after, with the walk's field rules), and
+    FuzzDecoderStrings, which generates the
+    three type components and a generic key and value and asserts refusal or full equality through
+    NewDecoder, with seeds holding an invalid byte in each of the five positions
   owner: setup-04a-01-floor developer
   disposition: adapt
 

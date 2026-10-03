@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"reflect"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -229,6 +230,137 @@ func FuzzDecoderRoundTrip(f *testing.F) {
 			t.Fatalf("Decode(%s): %v", encoded, err)
 		}
 		requireSameMessage(t, encoded, built, got)
+	})
+}
+
+// anyTypePayload is a payload whose type is chosen per input, so FuzzDecoderStrings can register
+// and decode a message of any type that Type.Validate accepts.
+type anyTypePayload struct {
+	typ   message.Type
+	Count int64 `json:"count"`
+}
+
+func (p *anyTypePayload) Schema() message.Type { return p.typ }
+
+func (p *anyTypePayload) Validate() error { return nil }
+
+func (p *anyTypePayload) MarshalJSON() ([]byte, error) {
+	type alias anyTypePayload
+	return json.Marshal((*alias)(p))
+}
+
+func (p *anyTypePayload) UnmarshalJSON(data []byte) error {
+	type alias anyTypePayload
+	return json.Unmarshal(data, (*alias)(p))
+}
+
+// FuzzDecoderStrings: every string message encodes either reaches the wire unchanged or is
+// refused, never rewritten (owner ruling, PR #48 comment 5970334875, extending ruling 2 of #9
+// comment 5969776736). The expected outcomes come from the standard library's utf8 and strings
+// packages and the documented grammar, never from the message package:
+//
+//   - Type.Validate accepts a type exactly when each component is non-empty, holds no "." and is
+//     valid UTF-8;
+//   - marshalling a message of that type is refused, with an invalid-data error, exactly when a
+//     component is empty or not valid UTF-8 (BaseMessage.Validate does not check the "."). An
+//     encoded type that Validate accepts is registered and decoded, giving the same message in
+//     full; one it refuses for its "." is read back with the standard library, unchanged;
+//   - a core.json.v1 payload holding the generated key and value at the top level, in a nested
+//     map and in a list is refused, alone and in its envelope, exactly when the key or the value
+//     is not valid UTF-8; otherwise decoding the envelope gives the same message in full.
+//
+// Seeds hold an invalid byte in each of the five positions, U+FFFD itself (valid), a "." and an
+// empty component.
+func FuzzDecoderStrings(f *testing.F) {
+	for _, seed := range [][5]string{
+		{"core", "json", "v1", "k", "v"},
+		{"\uFFFD", "温度", "v1", "\uFFFD", "温度 \uFFFD"},
+		{"\xff", "json", "v1", "k", "v"},
+		{"core", "js\xfeon", "v1", "k", "v"},
+		{"core", "json", "v\xe2\x82", "k", "v"},
+		{"core", "json", "v1", "k\xc0\xaf", "v"},
+		{"core", "json", "v1", "k", "\xff\xfe"},
+		{"a.b", "json", "v1", "list", "nested"},
+		{"", "json", "v1", "", ""},
+		{"d", "c", "", "nested", "\x00"},
+	} {
+		f.Add(seed[0], seed[1], seed[2], seed[3], seed[4])
+	}
+	genericDecoder := message.NewDecoder(fuzzRegistry(f))
+	f.Fuzz(func(t *testing.T, domain, category, version, key, value string) {
+		mt := message.Type{Domain: domain, Category: category, Version: version}
+		components := []string{domain, category, version}
+		wantValid, wantMarshal := true, true
+		for _, c := range components {
+			if c == "" || !utf8.ValidString(c) {
+				wantValid, wantMarshal = false, false
+			}
+			if strings.Contains(c, ".") {
+				wantValid = false
+			}
+		}
+		if err := mt.Validate(); (err == nil) != wantValid {
+			t.Fatalf("Type%+q.Validate() = %v, want accepted = %t", components, err, wantValid)
+		}
+
+		built := message.NewBaseMessage(mt, &anyTypePayload{typ: mt, Count: 7}, "gw")
+		encoded, err := json.Marshal(built)
+		if (err == nil) != wantMarshal {
+			t.Fatalf("marshal of type %+q: %s, %v; want accepted = %t", components, encoded, err, wantMarshal)
+		}
+		switch {
+		case err != nil:
+			if !errs.IsInvalid(err) {
+				t.Fatalf("marshal of type %+q: %v, want an invalid-data error", components, err)
+			}
+		case wantValid:
+			reg := payloadregistry.New()
+			if err := reg.Register(&payloadregistry.Registration{
+				Domain: domain, Category: category, Version: version, Description: "fuzz type",
+				Factory: func() any { return &anyTypePayload{typ: mt} },
+			}); err != nil {
+				t.Fatalf("register %+q: %v", components, err)
+			}
+			got, err := message.NewDecoder(reg).Decode(encoded)
+			if err != nil {
+				t.Fatalf("Decode(%s): %v", encoded, err)
+			}
+			requireSameMessage(t, encoded, built, got)
+		default:
+			var env oracleEnvelope
+			if err := json.Unmarshal(encoded, &env); err != nil {
+				t.Fatalf("standard library decode of %s: %v", encoded, err)
+			}
+			if got := (message.Type{Domain: env.Type.Domain, Category: env.Type.Category, Version: env.Type.Version}); got != mt {
+				t.Fatalf("type on the wire %+v, want %+v", got, mt)
+			}
+		}
+
+		data := map[string]any{
+			"list":   []any{value, nil, true},
+			"nested": map[string]any{key: value},
+		}
+		data[key] = value
+		wantRefused := !utf8.ValidString(key) || !utf8.ValidString(value)
+		payload := message.NewGenericJSON(data)
+		if raw, err := payload.MarshalJSON(); (err != nil) != wantRefused || (err != nil && !errs.IsInvalid(err)) {
+			t.Fatalf("payload MarshalJSON with key %q value %q: %s, %v; want refused = %t (invalid data)",
+				key, value, raw, err, wantRefused)
+		}
+		envelope := message.NewBaseMessage(payload.Schema(), payload, "gw")
+		encoded, err = json.Marshal(envelope)
+		if (err != nil) != wantRefused || (err != nil && !errs.IsInvalid(err)) {
+			t.Fatalf("envelope marshal with key %q value %q: %s, %v; want refused = %t (invalid data)",
+				key, value, encoded, err, wantRefused)
+		}
+		if err != nil {
+			return
+		}
+		got, err := genericDecoder.Decode(encoded)
+		if err != nil {
+			t.Fatalf("Decode(%s): %v", encoded, err)
+		}
+		requireSameMessage(t, encoded, envelope, got)
 	})
 }
 

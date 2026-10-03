@@ -76,10 +76,10 @@ starts, `task merge:check -- 67` and the merge are recorded on this pull request
       check` log shows the pull request and its files read under the job's token, and two findings printed and not
       failed for a draft. It settles assumption A2 of `design.md`, and A3 for one page only. Recorded on this pull
       request (comment 5959662131).
-- [ ] 4.3 Hold: the owner's word, given in the session that marks it ready and recorded on this pull request, to
-      mark PR #67 ready once before any review record exists. Outcome (D): the run that starts fails `Merge check`
-      and names what is missing; the pull request is returned to draft; both run links are recorded (assumption
-      A1). If no run starts, that is recorded against A1 and decision D3 goes back to design review.
+- [x] 4.3 On the owner's word (2026-10-03, in the session that did it), PR #67 was marked ready once at `bc90b7e`,
+      before any review record by Codex existed. A `pull_request` run started three seconds later with no push (run
+      37116863153); `Merge check` failed with "no line starts reviewed-by:" and `Required` failed with it; the pull
+      request was returned to draft. Assumption A1 holds. Both run links and the log are in comment 5968370227.
 
 ## 5. Documents
 

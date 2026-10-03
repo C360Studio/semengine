@@ -88,8 +88,9 @@ identifiers are not checked; a caller outside the module cannot reach them.
 #### Scenario: The floor passes
 
 - **WHEN** the contract test runs over this module with the floor's eleven public packages ported
-- **THEN** it passes, `natsclient.TemporalResolver`'s cache statistics being reached only through the unexported
-  `cacheStats`
+- **THEN** it passes: no exported identifier names a type under `internal/` (the pin's one,
+  `natsclient.TemporalResolver.GetStats`, is dropped with `TemporalResolver`; owner ruling, #9 comment 5969522395,
+  item 1)
 
 ### Requirement: No second spelling of deployment authority
 

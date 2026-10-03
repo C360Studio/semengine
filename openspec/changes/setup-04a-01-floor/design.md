@@ -311,7 +311,7 @@ states the `Client` nil-context requirement; the row records each item as change
   | `pkg/retry` | `pkg/retry` | public: SemSource imports it (4 files) |
   | `pkg/errs` | `pkg/errs` | public: SemSource imports it (3 files) |
   | `pkg/projection/contract` | `pkg/projection/contract` | public: SemConnect imports it (`gateway/cs-api/payloads.go:11`) |
-  | `pkg/platform` | `pkg/platform` | public: nothing in this change reads it once task 3.6b removes the seven `message` federation symbols and `vocabulary.EntityIRI`; its reader is `config` (change 3: `config/config.go:29`, `:49`, `:226-244`; `manager.go:88-101`), surface whose caller is ported later |
+  | `pkg/platform` | `pkg/platform` | public: nothing in this change reads it, since task 3.6b removed the seven `message` federation symbols and `vocabulary.EntityIRI`; its reader is `config` (change 3: `config/config.go:29`, `:49`, `:226-244`; `manager.go:88-101`), surface whose caller is ported later |
   | `pkg/security` | `pkg/security` | public: `security.Config` is named by `metric.NewServer` |
   | `pkg/resource` | `internal/resource` | no consumer import; no public signature names its types |
   | `pkg/timestamp` | `internal/timestamp` | no consumer import; no public signature names its types |
@@ -691,25 +691,28 @@ defects (`:278`, `:232-243`) are one shared-series ownership issue, #75, tracked
   `git grep -lE 'semstreams/pkg/(platform|resource|security|timestamp|projection/contract|tlsutil|cache)"' --
   '*.go'` in semsource `4093d3c`, semconnect `dff1265`, semteams `ce22c961`, semboids `37dbdb0`: one hit,
   semconnect `gateway/cs-api/payloads.go`.
-- P22. Public signatures at the pin name `platform.Config` in eight exported symbols and `security.Config` in one, and
-  once `GetStats` is unexported no exported symbol of the eleven public packages names a type from the four internal
-  ones, which only floor packages import. — A `go/parser` walk of the eleven packages' 80 non-test files (exported funcs
-  and methods on exported types with their type parameters, exported and embedded struct fields, interface methods,
-  other exported type definitions, exported vars and consts with type and value) finds one hit for the four:
-  `natsclient/kv_temporal.go:221` (dropped with `TemporalResolver`; afterwards no importer of `internal/cache` exists in
-  the module). The same walk with `pkg/platform` and `pkg/security` counted as internal finds `metric/handler.go:40`;
-  `message/base_message.go:81, :91`; `message/federation.go:31, :50, :62, :78, :95`; `vocabulary/iris.go:85`. Importers
-  of the four: `natsclient/client.go:18`, `natsclient/kv_temporal.go:8`, `metric/handler.go:20`,
-  `message/base_message.go:13`, `message/meta_default.go:6`. `GetStats` has three callers, all in-package tests:
-  `natsclient/kv_error_integration_test.go:421, :436, :447`.
+- P22. Public signatures at the pin name `platform.Config` in eight exported symbols and `security.Config` in one. Of
+  the eleven public packages, one exported symbol at the pin names a type from the four internal ones,
+  `natsclient.TemporalResolver.GetStats`; it is dropped with `TemporalResolver` (owner ruling, #9 comment 5969522395,
+  item 1), so in this change none does, and only floor packages import the four. — A `go/parser` walk of the eleven
+  packages' 80 non-test files (exported funcs and methods on exported types with their type parameters, exported and
+  embedded struct fields, interface methods, other exported type definitions, exported vars and consts with type and
+  value) finds one hit for the four: `natsclient/kv_temporal.go:221` (dropped with `TemporalResolver`; afterwards no
+  importer of `internal/cache` exists in the module). The same walk with `pkg/platform` and `pkg/security` counted as
+  internal finds `metric/handler.go:40`; `message/base_message.go:81, :91`; `message/federation.go:31, :50, :62, :78,
+  :95`; `vocabulary/iris.go:85`. Importers of the four: `natsclient/client.go:18`, `natsclient/kv_temporal.go:8`,
+  `metric/handler.go:20`, `message/base_message.go:13`, `message/meta_default.go:6`. `GetStats`'s three callers at the
+  pin (`natsclient/kv_error_integration_test.go:421, :436, :447`) lie in `TestTemporalResolver_ErrorBoundaries`, which
+  leaves with it (D1).
 - P23. In the 15 packages at the pin only `pkg/types/entity_id_prop_test.go` imports `pgregory.net/rapid`. — `git
   grep -ln pgregory.net/rapid 8b99efe9` over the 15 directories finds that file and
   `vocabulary/export/datatype_prop_test.go`, which lies in `vocabulary/export`, a package outside the 15.
 
 ## Declared costs
 
-- Nothing boots. The change's green is substrate, harness, two services and five helpers.
-- Twenty-nine integration-tagged test files (28 in `natsclient`) run only under `task test:integration` and the host
+- Nothing boots. The change's green is substrate, harness, two services and four sites of background work (P2).
+- Twenty-eight integration-tagged test files in the ported packages (27 in `natsclient`, D1; one in
+  `internal/tlsutil`), and the harness's own `natsfixture` one, run only under `task test:integration` and the host
   lock; the unit lane does not prove them, and `test:repeat` does not repeat them.
 - Ported tests are repaired (D8), so carried tests differ from the pin's text; every difference is on a row.
 - The 15-minute `verify` limit is spec; if the port pushes the job past it, the change holds for the owner (task

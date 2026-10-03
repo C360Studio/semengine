@@ -309,27 +309,33 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       3.6 is done) and is gone. README import paths (3485af3) in `message`, `pkg/retry`, `pkg/types` and `vocabulary`,
       each an `adapt` item on its row. Rows: `pkg/cache` (contract, `known_risks`, `proving_tests`), `message`,
       `pkg/retry`, `pkg/types`, `vocabulary`.
-- [x] 3.6b (D) Codex's sixth record (PR #48 comment 5969256728, at `c64ac33`: F8–F10), #72 ruling 1 (comment
-      5969293525) as extended to `vocabulary.EntityIRI` (comment 5969505488, relayed in PR #48 comment 5969508639)
-      with ruling D's `pkg/platform` comment, and #9 ruling 7 (comment 5969522395). Each with a test written first,
-      failing first implementer-reported. Federation family removed (b9e216c): `TestMetaCarriesOnlyWhatTheWireCarries`
-      failed first naming `DefaultFederationMeta` and `FederationMeta`. F9 and F10 (0aefed9): the `message` decode
-      examples call `NewDecoder(reg).Decode`; the `pkg/cache` row drops the recovered-panic claim. `EntityIRI` removed
-      (bb004ef) with its doc example and test lines; `TestNoDeploymentAuthorityNames` (`internal/harness/contract`)
-      fails on an exported name matching `Federation|GlobalID|EntityIRI` in any production package and failed first
-      naming `vocabulary.EntityIRI`; its sensitivity test failed against a check that reports nothing, and a mutation
-      skipping methods fails it. Nothing in this change imports `pkg/platform` now; its reader is `config` (change 3),
-      so it stays public; its row is `adapt` for `platform.go:27-28`. Ruling 7 (5e31950): `BaseMessage` decodes both
-      timestamps strictly as integer milliseconds and refuses any other form;
-      `TestBaseMessageTimestampsAreMilliseconds` failed first (1999-01-01 decoded as year 30969, 1960-01-01 as -8032)
-      and `TestBaseMessageRefusesTimestampsThatAreNotMilliseconds` failed first (all eight forms accepted). F8
-      (dbe98c5): `FuzzDecoderDecode` (25 seeds, 8 accepted), `FuzzDecoderRoundTrip` (8) and
+- [x] 3.6b (D) Codex's sixth record (PR #48 comment 5969256728, at `c64ac33`: F8–F10), #72 ruling 1 (comment 5969293525)
+      as extended to `vocabulary.EntityIRI` (comment 5969505488, relayed in PR #48 comment 5969508639) with ruling D's
+      `pkg/platform` comment, and #9 ruling 7 (comment 5969522395). Each with a test written first, failing first
+      implementer-reported. Federation family removed (b9e216c): `TestMetaCarriesOnlyWhatTheWireCarries` failed first
+      naming `DefaultFederationMeta` and `FederationMeta`. F9 and F10 (0aefed9): the `message` decode examples call
+      `NewDecoder(reg).Decode`; the `pkg/cache` row drops the recovered-panic claim. `EntityIRI` removed (bb004ef) with
+      its doc example and test lines; `TestNoDeploymentAuthorityNames` (`internal/harness/contract`) fails on an
+      exported name matching `Federation|GlobalID|EntityIRI` in any production package and failed first naming
+      `vocabulary.EntityIRI`; its sensitivity test failed against a check that reports nothing, and a mutation skipping
+      methods fails it. Nothing in this change imports `pkg/platform` now; its reader is `config` (change 3), so it
+      stays public; its row is `adapt` for `platform.go:27-28`. Ruling 7 (5e31950): `BaseMessage` decodes both
+      timestamps strictly as integer milliseconds and refuses any other form; `TestBaseMessageTimestampsAreMilliseconds`
+      failed first (1999-01-01 decoded as year 30969, 1960-01-01 as -8032) and
+      `TestBaseMessageRefusesTimestampsThatAreNotMilliseconds` failed first (all eight forms accepted). The owner's
+      rulings of 2026-10-03 (#9 comment 5969776736): item 1 confirms that refusal, the RFC 3339 and number-in-a-string
+      forms the pin accepted included, with a missing value, `null` or 0 giving the zero time, which 5e31950 already
+      does (no further change); item 2, `BaseMessage` encoding refuses a `source` that is not valid UTF-8 instead of
+      writing U+FFFD in its place (1ee70d0): `TestBaseMessageRefusesSourceThatIsNotUTF8` failed first (all eight
+      marshals succeeded), and `FuzzDecoderRoundTrip` drops its U+FFFD exception, asserting refusal for an invalid
+      source and full equality otherwise. F8 (dbe98c5, seeds as of 1ee70d0): `FuzzDecoderDecode` (25 seeds, 8 accepted),
+      `FuzzDecoderRoundTrip` (9, one added in 1ee70d0: a valid source holding U+FFFD itself) and
       `FuzzGenericJSONPayloadUnmarshalJSON` (13), with no timestamp carve-out; the generated-check decision is in design
       D7. Mutants, implementer-reported, each detected on seed replay: decoder always refuses, decoder drops `source`,
       the pin's `timestamp.Parse` heuristic restored. Exploration, separate from replay, implementer-reported (logs
       local only): `go test -run '^$' -fuzz '^<target>$' -fuzztime 60s ./message` ran 1,970,895, 1,121,935 and
-      10,033,878 executions with no failing input. Rows: `vocabulary`, `pkg/platform`, `message`,
-      `internal/semantictest`.
+      10,033,878 executions with no failing input, all run before 1ee70d0. Rows: `vocabulary`, `pkg/platform`,
+      `message`, `internal/semantictest`.
 - [ ] 3.7 (D) `natsclient` (level 6), port and unit lane: row `adapt`, its `source_sha` and the existing file rows'
       at the pin. Not ported, with file rows: `test_client.go` (`adapt → natsfixture`, evidence in `proving_tests`)
       and `test_options.go` (`defer-exclude`); six test files `defer-exclude` with design D1's reasons —

@@ -7,7 +7,7 @@ import (
 )
 
 func TestClientMaxPayloadRequiresActiveConnection(t *testing.T) {
-	client, err := NewClient("nats://localhost:4222")
+	client, err := NewClient("nats://unused")
 	require.NoError(t, err)
 
 	maxPayload, err := client.MaxPayload()

@@ -12,7 +12,7 @@ import (
 // stays 30s (unchanged for CI), an option and an env var can raise it.
 
 func TestRequestHandlerTimeout_DefaultIs30s(t *testing.T) {
-	c, err := NewClient("nats://localhost:4222")
+	c, err := NewClient("nats://unused")
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
@@ -25,7 +25,7 @@ func TestRequestHandlerTimeout_DefaultIs30s(t *testing.T) {
 }
 
 func TestRequestHandlerTimeout_Option(t *testing.T) {
-	c, err := NewClient("nats://localhost:4222", WithRequestHandlerTimeout(90*time.Second))
+	c, err := NewClient("nats://unused", WithRequestHandlerTimeout(90*time.Second))
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
@@ -36,7 +36,7 @@ func TestRequestHandlerTimeout_Option(t *testing.T) {
 
 func TestRequestHandlerTimeout_EnvOverride(t *testing.T) {
 	t.Setenv("SEMSTREAMS_NATS_REQUEST_HANDLER_TIMEOUT", "150s")
-	c, err := NewClient("nats://localhost:4222")
+	c, err := NewClient("nats://unused")
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestRequestHandlerTimeout_EnvOverride(t *testing.T) {
 
 func TestRequestHandlerTimeout_EnvInvalidFallsBackToDefault(t *testing.T) {
 	t.Setenv("SEMSTREAMS_NATS_REQUEST_HANDLER_TIMEOUT", "not-a-duration")
-	c, err := NewClient("nats://localhost:4222")
+	c, err := NewClient("nats://unused")
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
@@ -60,7 +60,7 @@ func TestRequestHandlerTimeout_EnvInvalidFallsBackToDefault(t *testing.T) {
 // authority; env is the deployment default.
 func TestRequestHandlerTimeout_OptionBeatsEnv(t *testing.T) {
 	t.Setenv("SEMSTREAMS_NATS_REQUEST_HANDLER_TIMEOUT", "150s")
-	c, err := NewClient("nats://localhost:4222", WithRequestHandlerTimeout(42*time.Second))
+	c, err := NewClient("nats://unused", WithRequestHandlerTimeout(42*time.Second))
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}

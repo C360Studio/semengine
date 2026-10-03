@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/nats-io/nats.go"
@@ -15,18 +16,18 @@ import (
 
 // Test basic manager creation
 func TestNewClient(t *testing.T) {
-	manager, err := NewClient("nats://localhost:4222")
+	manager, err := NewClient("nats://unused")
 	assert.NoError(t, err)
 
 	assert.NotNil(t, manager)
-	assert.Equal(t, "nats://localhost:4222", manager.URLs())
+	assert.Equal(t, "nats://unused", manager.URLs())
 	assert.Equal(t, StatusDisconnected, manager.Status())
 	assert.False(t, manager.IsHealthy())
 }
 
 // Test circuit breaker opens after failures
 func TestCircuitBreaker_OpensAfterFailures(t *testing.T) {
-	manager, err := NewClient("nats://invalid:4222")
+	manager, err := NewClient("nats://unused")
 	assert.NoError(t, err)
 
 	// Record 14 failures - should not open
@@ -43,7 +44,7 @@ func TestCircuitBreaker_OpensAfterFailures(t *testing.T) {
 
 // Test circuit breaker reset
 func TestCircuitBreaker_Reset(t *testing.T) {
-	manager, err := NewClient("nats://localhost:4222")
+	manager, err := NewClient("nats://unused")
 	assert.NoError(t, err)
 
 	// Record failures to open circuit (threshold is 15)
@@ -60,7 +61,7 @@ func TestCircuitBreaker_Reset(t *testing.T) {
 
 // Test exponential backoff
 func TestCircuitBreaker_ExponentialBackoff(t *testing.T) {
-	manager, err := NewClient("nats://localhost:4222")
+	manager, err := NewClient("nats://unused")
 	assert.NoError(t, err)
 
 	// Initial backoff should be 1 second
@@ -133,7 +134,7 @@ func TestStatus_Transitions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			manager, err := NewClient("nats://localhost:4222")
+			manager, err := NewClient("nats://unused")
 			assert.NoError(t, err)
 			manager.setStatus(tt.initialStatus)
 
@@ -146,7 +147,7 @@ func TestStatus_Transitions(t *testing.T) {
 
 // Test concurrent safety
 func TestConcurrentSafety(t *testing.T) {
-	manager, err := NewClient("nats://localhost:4222")
+	manager, err := NewClient("nats://unused")
 	assert.NoError(t, err)
 
 	var wg sync.WaitGroup
@@ -220,7 +221,7 @@ func TestIsHealthy(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			manager, err := NewClient("nats://localhost:4222")
+			manager, err := NewClient("nats://unused")
 			assert.NoError(t, err)
 			manager.setStatus(tt.status)
 			assert.Equal(t, tt.expected, manager.IsHealthy())
@@ -231,7 +232,7 @@ func TestIsHealthy(t *testing.T) {
 // Test WaitForConnection with timeout
 func TestWaitForConnection(t *testing.T) {
 	t.Run("times out when not connected", func(t *testing.T) {
-		manager, err := NewClient("nats://localhost:4222")
+		manager, err := NewClient("nats://unused")
 		assert.NoError(t, err)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
@@ -243,7 +244,7 @@ func TestWaitForConnection(t *testing.T) {
 	})
 
 	t.Run("returns immediately when connected", func(t *testing.T) {
-		manager, err := NewClient("nats://localhost:4222")
+		manager, err := NewClient("nats://unused")
 		assert.NoError(t, err)
 		manager.setStatus(StatusConnected)
 
@@ -259,28 +260,31 @@ func TestWaitForConnection(t *testing.T) {
 	})
 
 	t.Run("returns when becomes connected", func(t *testing.T) {
-		manager, err := NewClient("nats://localhost:4222")
-		assert.NoError(t, err)
+		// R1a: the delay, WaitForConnection's ticker and the deadline all run on the bubble's clock.
+		synctest.Test(t, func(t *testing.T) {
+			manager, err := NewClient("nats://unused")
+			assert.NoError(t, err)
 
-		// Simulate connection after delay
-		go func() {
-			time.Sleep(50 * time.Millisecond)
-			manager.setStatus(StatusConnected)
-		}()
+			// Simulate connection after delay
+			go func() {
+				<-time.After(50 * time.Millisecond)
+				manager.setStatus(StatusConnected)
+			}()
 
-		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-		defer cancel()
+			ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+			defer cancel()
 
-		err = manager.WaitForConnection(ctx)
-		assert.NoError(t, err)
-		assert.Equal(t, StatusConnected, manager.Status())
+			err = manager.WaitForConnection(ctx)
+			assert.NoError(t, err)
+			assert.Equal(t, StatusConnected, manager.Status())
+		})
 	})
 }
 
 // Test new KeyValue bucket operations
 func TestKeyValueBuckets(t *testing.T) {
 	t.Run("operations return error when not connected", func(t *testing.T) {
-		client, err := NewClient("nats://localhost:4222")
+		client, err := NewClient("nats://unused")
 		assert.NoError(t, err)
 		ctx := context.Background()
 
@@ -300,7 +304,7 @@ func TestKeyValueBuckets(t *testing.T) {
 	})
 
 	t.Run("operations return error when circuit open", func(t *testing.T) {
-		client, err := NewClient("nats://localhost:4222")
+		client, err := NewClient("nats://unused")
 		assert.NoError(t, err)
 
 		// Open circuit (threshold is 15)
@@ -329,7 +333,7 @@ func TestKeyValueBuckets(t *testing.T) {
 // Test context-aware methods
 func TestContextAwareMethods(t *testing.T) {
 	t.Run("with invalid host", func(t *testing.T) {
-		client, err := NewClient("nats://invalid-host:4222")
+		client, err := NewClient(refusedNATSURL(t))
 		assert.NoError(t, err)
 
 		// Test Connect with context
@@ -356,7 +360,7 @@ func TestContextAwareMethods(t *testing.T) {
 // Test JetStream methods with context
 func TestJetStreamMethods(t *testing.T) {
 	t.Run("when not connected", func(t *testing.T) {
-		client, err := NewClient("nats://localhost:4222")
+		client, err := NewClient("nats://unused")
 		assert.NoError(t, err)
 		ctx := context.Background()
 
@@ -391,7 +395,7 @@ func TestJetStreamMethods(t *testing.T) {
 
 // Test connection options
 func TestConnectionOptions(t *testing.T) {
-	manager, err := NewClient("nats://localhost:4222",
+	manager, err := NewClient("nats://unused",
 		WithMaxReconnects(10),
 		WithReconnectWait(5*time.Second),
 		WithPingInterval(30*time.Second),
@@ -410,7 +414,7 @@ func TestConnectionOptions(t *testing.T) {
 
 // Test metrics collection
 func TestMetrics(t *testing.T) {
-	manager, err := NewClient("nats://localhost:4222")
+	manager, err := NewClient("nats://unused")
 	assert.NoError(t, err)
 
 	// Record some failures
@@ -499,7 +503,7 @@ func TestManagerScenarios(t *testing.T) {
 			},
 			action: func(m *Client) {
 				m.setStatus(StatusReconnecting)
-				time.Sleep(10 * time.Millisecond)
+				<-time.After(10 * time.Millisecond) // the bubble's clock (R1a)
 				m.setStatus(StatusConnected)
 				m.resetCircuit()
 			},
@@ -512,12 +516,14 @@ func TestManagerScenarios(t *testing.T) {
 
 	for _, scenario := range scenarios {
 		t.Run(scenario.name, func(t *testing.T) {
-			manager, err := NewClient("nats://localhost:4222")
-			assert.NoError(t, err)
+			synctest.Test(t, func(t *testing.T) {
+				manager, err := NewClient("nats://unused")
+				assert.NoError(t, err)
 
-			scenario.setup(manager)
-			scenario.action(manager)
-			scenario.validate(t, manager)
+				scenario.setup(manager)
+				scenario.action(manager)
+				scenario.validate(t, manager)
+			})
 		})
 	}
 }
@@ -553,7 +559,7 @@ func TestConnectionLossTimeout_FiresAfterGrace(t *testing.T) {
 	var fired atomic.Int32
 	gotErr := make(chan error, 1)
 
-	manager, err := NewClient("nats://localhost:4222",
+	manager, err := NewClient("nats://unused",
 		WithConnectionLossTimeout(50*time.Millisecond),
 		WithConnectionLostCallback(func(e error) {
 			fired.Add(1)
@@ -580,23 +586,27 @@ func TestConnectionLossTimeout_FiresAfterGrace(t *testing.T) {
 // TestConnectionLossTimeout_CancelledByReconnect verifies that a reconnect
 // arriving before grace expires cancels the watchdog.
 func TestConnectionLossTimeout_CancelledByReconnect(t *testing.T) {
-	var fired atomic.Int32
+	// R1a: the watchdog is a time.AfterFunc, so the bubble's clock drives it.
+	synctest.Test(t, func(t *testing.T) {
+		var fired atomic.Int32
 
-	manager, err := NewClient("nats://localhost:4222",
-		WithConnectionLossTimeout(200*time.Millisecond),
-		WithConnectionLostCallback(func(_ error) {
-			fired.Add(1)
-		}),
-	)
-	assert.NoError(t, err)
+		manager, err := NewClient("nats://unused",
+			WithConnectionLossTimeout(200*time.Millisecond),
+			WithConnectionLostCallback(func(_ error) {
+				fired.Add(1)
+			}),
+		)
+		assert.NoError(t, err)
 
-	manager.handleDisconnect(nil, errors.New("blip"))
-	time.Sleep(50 * time.Millisecond)
-	manager.handleReconnect(nil)
+		manager.handleDisconnect(nil, errors.New("blip"))
+		<-time.After(50 * time.Millisecond)
+		manager.handleReconnect(nil)
 
-	// Wait past the original grace window — callback must not fire.
-	time.Sleep(300 * time.Millisecond)
-	assert.Equal(t, int32(0), fired.Load())
+		// Wait past the original grace window — callback must not fire.
+		<-time.After(300 * time.Millisecond)
+		synctest.Wait()
+		assert.Equal(t, int32(0), fired.Load())
+	})
 }
 
 // TestConnectionLossTimeout_RepeatDisconnectKeepsOriginalDeadline verifies
@@ -610,95 +620,110 @@ func TestConnectionLossTimeout_RepeatDisconnectKeepsOriginalDeadline(t *testing.
 	const midGrace = 100 * time.Millisecond
 	const slack = 75 * time.Millisecond // < midGrace so a buggy reset (fire ~midGrace+grace) lies outside grace+slack
 
-	firedAt := make(chan time.Time, 1)
-	manager, err := NewClient("nats://localhost:4222",
-		WithConnectionLossTimeout(grace),
-		WithConnectionLostCallback(func(_ error) {
-			select {
-			case firedAt <- time.Now():
-			default:
-			}
-		}),
-	)
-	assert.NoError(t, err)
+	// R1a: inside the bubble time.Now and the watchdog's timer share the fake clock, so the
+	// elapsed time is exact and the slack only keeps the pin's bounds.
+	synctest.Test(t, func(t *testing.T) {
+		firedAt := make(chan time.Time, 1)
+		manager, err := NewClient("nats://unused",
+			WithConnectionLossTimeout(grace),
+			WithConnectionLostCallback(func(_ error) {
+				select {
+				case firedAt <- time.Now():
+				default:
+				}
+			}),
+		)
+		assert.NoError(t, err)
 
-	start := time.Now()
-	manager.handleDisconnect(nil, errors.New("first"))
-	time.Sleep(midGrace)
-	// Second disconnect mid-grace must NOT extend the deadline.
-	manager.handleDisconnect(nil, errors.New("second"))
+		start := time.Now()
+		manager.handleDisconnect(nil, errors.New("first"))
+		<-time.After(midGrace)
+		// Second disconnect mid-grace must NOT extend the deadline.
+		manager.handleDisconnect(nil, errors.New("second"))
 
-	select {
-	case fireTime := <-firedAt:
-		elapsed := fireTime.Sub(start)
-		// Deadline is `grace` from the first disconnect. A buggy reset
-		// would put fire at ~midGrace + grace = 225ms; correct behavior
-		// is ~grace = 150ms. Cap at grace + slack to catch the bug.
-		assert.LessOrEqual(t, elapsed, grace+slack,
-			"watchdog fired %v after first disconnect — deadline appears to have been extended", elapsed)
-		assert.GreaterOrEqual(t, elapsed, grace-slack,
-			"watchdog fired too early (%v before grace=%v)", elapsed, grace)
-	case <-time.After(500 * time.Millisecond):
-		t.Fatal("watchdog did not fire within 500ms")
-	}
+		select {
+		case fireTime := <-firedAt:
+			elapsed := fireTime.Sub(start)
+			// Deadline is `grace` from the first disconnect. A buggy reset
+			// would put fire at ~midGrace + grace = 225ms; correct behavior
+			// is ~grace = 150ms. Cap at grace + slack to catch the bug.
+			assert.LessOrEqual(t, elapsed, grace+slack,
+				"watchdog fired %v after first disconnect — deadline appears to have been extended", elapsed)
+			assert.GreaterOrEqual(t, elapsed, grace-slack,
+				"watchdog fired too early (%v before grace=%v)", elapsed, grace)
+		case <-time.After(500 * time.Millisecond):
+			t.Fatal("watchdog did not fire within 500ms")
+		}
+	})
 }
 
 // TestConnectionLossTimeout_DisabledByDefault verifies the legacy behavior:
 // without WithConnectionLossTimeout, onConnectionLost never fires
 // automatically on disconnect.
 func TestConnectionLossTimeout_DisabledByDefault(t *testing.T) {
-	var fired atomic.Int32
+	synctest.Test(t, func(t *testing.T) {
+		var fired atomic.Int32
 
-	manager, err := NewClient("nats://localhost:4222",
-		WithConnectionLostCallback(func(_ error) {
-			fired.Add(1)
-		}),
-	)
-	assert.NoError(t, err)
+		manager, err := NewClient("nats://unused",
+			WithConnectionLostCallback(func(_ error) {
+				fired.Add(1)
+			}),
+		)
+		assert.NoError(t, err)
 
-	manager.handleDisconnect(nil, errors.New("boom"))
-	time.Sleep(100 * time.Millisecond)
-	assert.Equal(t, int32(0), fired.Load())
-	// Structural check: no timer should have armed at all.
-	manager.lossTimerMu.Lock()
-	assert.Nil(t, manager.lossTimer)
-	manager.lossTimerMu.Unlock()
+		manager.handleDisconnect(nil, errors.New("boom"))
+		<-time.After(100 * time.Millisecond) // the bubble's clock (R1a)
+		synctest.Wait()
+		assert.Equal(t, int32(0), fired.Load())
+		// Structural check: no timer should have armed at all.
+		manager.lossTimerMu.Lock()
+		assert.Nil(t, manager.lossTimer)
+		manager.lossTimerMu.Unlock()
+	})
 }
 
 // TestConnectionLossTimeout_NoCallbackNoFire verifies the watchdog stays
 // idle when only the timeout is configured but no callback is registered.
 func TestConnectionLossTimeout_NoCallbackNoFire(t *testing.T) {
-	manager, err := NewClient("nats://localhost:4222",
-		WithConnectionLossTimeout(20*time.Millisecond),
-	)
-	assert.NoError(t, err)
+	synctest.Test(t, func(t *testing.T) {
+		manager, err := NewClient("nats://unused",
+			WithConnectionLossTimeout(20*time.Millisecond),
+		)
+		assert.NoError(t, err)
 
-	manager.handleDisconnect(nil, errors.New("boom"))
-	time.Sleep(100 * time.Millisecond)
-	// Mostly we're confirming this doesn't panic; the timer should not have
-	// armed at all since onConnectionLost is nil.
-	manager.lossTimerMu.Lock()
-	assert.Nil(t, manager.lossTimer)
-	manager.lossTimerMu.Unlock()
+		manager.handleDisconnect(nil, errors.New("boom"))
+		<-time.After(100 * time.Millisecond) // the bubble's clock (R1a)
+		synctest.Wait()
+		// Mostly we're confirming this doesn't panic; the timer should not have
+		// armed at all since onConnectionLost is nil.
+		manager.lossTimerMu.Lock()
+		assert.Nil(t, manager.lossTimer)
+		manager.lossTimerMu.Unlock()
+	})
 }
 
 // TestConnectionLossTimeout_CloseCancels verifies that closing the client
 // cancels a pending watchdog so the callback never fires after Close.
 func TestConnectionLossTimeout_CloseCancels(t *testing.T) {
-	var fired atomic.Int32
+	synctest.Test(t, func(t *testing.T) {
+		var fired atomic.Int32
 
-	manager, err := NewClient("nats://localhost:4222",
-		WithConnectionLossTimeout(100*time.Millisecond),
-		WithConnectionLostCallback(func(_ error) {
-			fired.Add(1)
-		}),
-	)
-	assert.NoError(t, err)
+		manager, err := NewClient("nats://unused",
+			WithConnectionLossTimeout(100*time.Millisecond),
+			WithConnectionLostCallback(func(_ error) {
+				fired.Add(1)
+			}),
+		)
+		assert.NoError(t, err)
 
-	manager.handleDisconnect(nil, errors.New("gone"))
-	// Close before the grace window expires.
-	_ = manager.Close(context.Background())
+		manager.handleDisconnect(nil, errors.New("gone"))
+		// Close before the grace window expires.
+		closeCtx, cancelClose := context.WithTimeout(context.Background(), closeBudget)
+		defer cancelClose()
+		_ = manager.Close(closeCtx)
 
-	time.Sleep(200 * time.Millisecond)
-	assert.Equal(t, int32(0), fired.Load())
+		<-time.After(200 * time.Millisecond) // the bubble's clock (R1a)
+		synctest.Wait()
+		assert.Equal(t, int32(0), fired.Load())
+	})
 }

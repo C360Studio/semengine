@@ -14,7 +14,7 @@ import (
 // same connection guard as the synchronous path: a disconnected client returns
 // ErrNotConnected and a nil future, without touching JetStream.
 func TestPublishToStreamAsync_NotConnected(t *testing.T) {
-	client, err := NewClient("nats://localhost:4222")
+	client, err := NewClient("nats://unused")
 	require.NoError(t, err)
 
 	future, err := client.PublishToStreamAsync(context.Background(), "test.subject", []byte("data"))
@@ -26,7 +26,7 @@ func TestPublishToStreamAsync_NotConnected(t *testing.T) {
 // honored before enqueue (PublishMsgAsync takes no ctx), returning the context
 // error and a nil future. The breaker gate still takes precedence over ctx.
 func TestPublishToStreamAsync_CancelledContext(t *testing.T) {
-	client, err := NewClient("nats://localhost:4222")
+	client, err := NewClient("nats://unused")
 	require.NoError(t, err)
 	// Force Connected so the ctx check (which sits after the connection gate) is
 	// the one that fires, not ErrNotConnected.
@@ -45,7 +45,7 @@ func TestPublishToStreamAsync_CancelledContext(t *testing.T) {
 // TestPublishToStreamAsync_CircuitOpen verifies an open circuit rejects the async
 // enqueue with ErrCircuitOpen and a nil future (no publish).
 func TestPublishToStreamAsync_CircuitOpen(t *testing.T) {
-	client, err := NewClient("nats://localhost:4222")
+	client, err := NewClient("nats://unused")
 	require.NoError(t, err)
 
 	// Drive the breaker open (threshold is 15).
@@ -64,7 +64,7 @@ func TestPublishToStreamAsync_CircuitOpen(t *testing.T) {
 // failures through the handler open the breaker exactly as failed sync publishes
 // would. This is the ack-failure → breaker path (gh#470 design §4).
 func TestAsyncPublishErrHandler_RecordsFailure(t *testing.T) {
-	client, err := NewClient("nats://localhost:4222")
+	client, err := NewClient("nats://unused")
 	require.NoError(t, err)
 
 	msg := &nats.Msg{Subject: "test.subject"}
@@ -83,7 +83,7 @@ func TestAsyncPublishErrHandler_RecordsFailure(t *testing.T) {
 // the message argument. jetstream-go currently always passes a non-nil paf.msg,
 // but the handler must not panic if that ever changes.
 func TestAsyncPublishErrHandler_NilMsg(t *testing.T) {
-	client, err := NewClient("nats://localhost:4222")
+	client, err := NewClient("nats://unused")
 	require.NoError(t, err)
 
 	assert.NotPanics(t, func() {
@@ -96,7 +96,7 @@ func TestAsyncPublishErrHandler_NilMsg(t *testing.T) {
 // returns an already-closed channel (not a blocking one) when JetStream is
 // unavailable, so a drain loop does not hang.
 func TestPublishAsyncComplete_JetStreamUnavailable(t *testing.T) {
-	client, err := NewClient("nats://localhost:4222")
+	client, err := NewClient("nats://unused")
 	require.NoError(t, err)
 
 	select {
@@ -112,7 +112,7 @@ func TestPublishAsyncComplete_JetStreamUnavailable(t *testing.T) {
 // TestPublishBatchToStream_Empty verifies an empty batch is a no-op returning nil
 // without touching the connection.
 func TestPublishBatchToStream_Empty(t *testing.T) {
-	client, err := NewClient("nats://localhost:4222")
+	client, err := NewClient("nats://unused")
 	require.NoError(t, err)
 
 	assert.NoError(t, client.PublishBatchToStream(context.Background(), "test.subject", nil))
@@ -121,7 +121,7 @@ func TestPublishBatchToStream_Empty(t *testing.T) {
 // TestPublishBatchToStream_NotConnected verifies a non-empty batch on a
 // disconnected client surfaces the enqueue guard error.
 func TestPublishBatchToStream_NotConnected(t *testing.T) {
-	client, err := NewClient("nats://localhost:4222")
+	client, err := NewClient("nats://unused")
 	require.NoError(t, err)
 
 	err = client.PublishBatchToStream(context.Background(), "test.subject", [][]byte{[]byte("a")})

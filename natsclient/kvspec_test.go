@@ -43,7 +43,7 @@ func TestBucketSpec_Validate_UnknownKindFailsClosed(t *testing.T) {
 // refuses an unknown Kind before touching NATS: acquisition with an
 // unenforceable policy must error, not create-then-skip-reconcile.
 func TestEnsureFrameworkBucket_UnknownKindFailsClosed(t *testing.T) {
-	client, err := NewClient("nats://127.0.0.1:4222") // never connected; must not be reached
+	client, err := NewClient("nats://unused") // never connected; must not be reached
 	require.NoError(t, err)
 	spec := validNoLifecycleSpec()
 	spec.Retention.Kind = RetentionKind("discard-new-ceiling")
@@ -61,7 +61,7 @@ func TestEnsureFrameworkBucket_UnknownKindFailsClosed(t *testing.T) {
 // demands Posture == owner-creates by EXACT match — reader-must-exist is
 // rejected, and (belt, unreachable past Validate) so would any future arm.
 func TestEnsureFrameworkBucket_RequiresOwnerCreatesExactly(t *testing.T) {
-	client, err := NewClient("nats://127.0.0.1:4222") // never connected; must not be reached
+	client, err := NewClient("nats://unused") // never connected; must not be reached
 	require.NoError(t, err)
 	spec := validNoLifecycleSpec()
 	spec.Posture = PostureReaderMustExist
@@ -84,7 +84,7 @@ func TestEnsureFrameworkBucket_RequiresOwnerCreatesExactly(t *testing.T) {
 }
 
 func TestOpenFrameworkBucket_UnknownKindFailsClosed(t *testing.T) {
-	client, err := NewClient("nats://127.0.0.1:4222")
+	client, err := NewClient("nats://unused")
 	require.NoError(t, err)
 	spec := validNoLifecycleSpec()
 	spec.Retention.Kind = RetentionKind("discard-new-ceiling")
@@ -196,7 +196,7 @@ func TestBucketSpec_Validate(t *testing.T) {
 // seam (its binders go through OpenFrameworkBucket, which cannot create). This
 // is the field's consumer; without it Posture would be a phantom.
 func TestEnsureFrameworkBucket_ReaderPostureRejected(t *testing.T) {
-	client, err := NewClient("nats://127.0.0.1:4222") // never connected; must not be reached
+	client, err := NewClient("nats://unused") // never connected; must not be reached
 	require.NoError(t, err)
 	spec := validNoLifecycleSpec()
 	spec.Posture = PostureReaderMustExist

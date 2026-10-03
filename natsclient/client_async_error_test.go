@@ -111,7 +111,7 @@ func TestClientHandleErrorAttributesSubscription(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			handler := newAsyncErrorLogHandler()
-			client, err := NewClient("nats://localhost:4222", WithLogger(slog.New(handler)))
+			client, err := NewClient("nats://unused", WithLogger(slog.New(handler)))
 			require.NoError(t, err)
 
 			client.handleError(nil, tt.sub, tt.err)
@@ -141,7 +141,7 @@ func TestClientHandleErrorAttributesSubscription(t *testing.T) {
 
 func TestClientHandleErrorDoesNotMutateRuntimeStateOrCallbacks(t *testing.T) {
 	handler := newAsyncErrorLogHandler()
-	client, err := NewClient("nats://localhost:4222", WithLogger(slog.New(handler)))
+	client, err := NewClient("nats://unused", WithLogger(slog.New(handler)))
 	require.NoError(t, err)
 
 	client.setStatus(StatusConnected)

@@ -46,7 +46,7 @@ func TestIsCircuitNeutralStreamCapacityError(t *testing.T) {
 func TestAsyncPublishErrHandlerCapacityNackIsCircuitNeutral(t *testing.T) {
 	t.Parallel()
 
-	client, err := NewClient("nats://localhost:4222")
+	client, err := NewClient("nats://unused")
 	require.NoError(t, err)
 	client.setStatus(StatusConnected)
 	for range 14 {
@@ -71,7 +71,7 @@ func TestTypedNilAPIErrorIsNotNeutralAndDoesNotPanic(t *testing.T) {
 		require.False(t, isCircuitNeutralStreamCapacityError(err))
 	})
 
-	client, clientErr := NewClient("nats://localhost:4222")
+	client, clientErr := NewClient("nats://unused")
 	require.NoError(t, clientErr)
 	client.setStatus(StatusConnected)
 	require.NotPanics(t, func() { client.recordStreamPublishFailure(err) })

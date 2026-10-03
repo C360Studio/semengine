@@ -67,7 +67,9 @@ func TestConnectRejectsCandidateWhenCloseWinsAdmission(t *testing.T) {
 	}()
 
 	<-dialEntered
-	require.NoError(t, client.Close(context.Background()))
+	closeCtx, cancelClose := context.WithTimeout(context.Background(), closeBudget)
+	defer cancelClose()
+	require.NoError(t, client.Close(closeCtx))
 	close(releaseDial)
 	err = <-connectErr
 	connectWG.Wait()
@@ -95,7 +97,9 @@ func TestConnectCommitsCandidateWhenAdmissionRemainsOpen(t *testing.T) {
 	require.False(t, candidate.IsClosed())
 	require.Equal(t, StatusConnected, client.Status())
 
-	require.NoError(t, client.Close(context.Background()))
+	closeCtx, cancelClose := context.WithTimeout(context.Background(), closeBudget)
+	defer cancelClose()
+	require.NoError(t, client.Close(closeCtx))
 }
 
 func newConnectCandidate(t *testing.T) *nats.Conn {

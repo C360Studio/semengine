@@ -1144,6 +1144,36 @@
     :644-667 (one per creation method). Mutation (implementer-reported, PR #48): both check
     functions made to return nil: all seven planted subtests fail; restored, they pass. The module
     path in the test's import strings (:200, :409, :415, :421, :427, :485, :541) is
-    github.com/c360studio/semengine/natsclient, so the retirement guards match SemEngine's imports
+    github.com/c360studio/semengine/natsclient, so the retirement guards match SemEngine's imports.
+    D8 repairs, pin → SemEngine. R1a, the 8 sleeps in client_test.go, each test or subtest run
+    inside synctest.Test with the sleep replaced by <-time.After on the bubble's clock, and
+    synctest.Wait before each "did not fire" assertion: :267 → :270 (TestWaitForConnection
+    "returns when becomes connected", bubble :264); :502 → :506 (TestManagerScenarios, every
+    scenario in a bubble at :519); :594 → :602 and :598 → :606 (CancelledByReconnect, bubble
+    :590); :627 → :640 (RepeatDisconnectKeepsOriginalDeadline, bubble :625; inside the bubble the
+    measured elapsed time is exact); :660 → :675 (DisabledByDefault, :664); :677 → :695
+    (NoCallbackNoFire, :688); :702 → :725 (CloseCancels, :708). Mutation (implementer-reported, PR
+    #48), each on client.go with the tests unchanged: a second disconnect that restarts the
+    watchdog fails RepeatDisconnectKeepsOriginalDeadline ("300ms" is not less than or equal to
+    "275ms"); handleReconnect without cancelConnectionLossTimer fails CancelledByReconnect
+    (expected 0, actual 1); Close without cancelConnectionLossTimer (:592) is a survivor, because
+    the watchdog body's !m.closed.Load() check (:1564) also stops the callback. R5, the 47
+    fixed-address lines in 8 unit files: a client that never dials gets "nats://unused", the pin's
+    own spelling (client_connect_test.go:14); the one that dials, TestContextAwareMethods (pin
+    nats://invalid-host:4222, a DNS lookup), gets refusedNATSURL(t), a loopback port bound with
+    port 0 and released: client_async_error_test.go :114, :144; client_test.go :18 → :19, :22 →
+    :23, :29 → :30, :46 → :47, :63 → :64, :136 → :137, :149 → :150, :223 → :224, :234 → :235, :246
+    → :247, :262 → :265, :283 → :287, :303 → :307, :332 → :336 (refusedNATSURL), :359 → :363, :394
+    → :398, :413 → :417, :515 → :520, :556 → :562, :585 → :593, :614 → :627, :652 → :667, :671 →
+    :689, :690 → :711; getstream_circuit_breaker_test.go :255; kvspec_test.go :46, :64, :87, :199;
+    max_payload_test.go :10; publish_async_test.go :17, :29, :48, :67, :86, :99, :115, :124;
+    request_handler_timeout_test.go :15, :28, :39, :50, :63; stream_capacity_circuit_test.go :49,
+    :74 (lines unchanged outside client_test.go). stream_visibility_test.go:82 is an error string
+    the guard does not match and stays. Bounded cleanup (harness-boundaries, "Bounded cleanup
+    roots"; not named in task 3.7's list, required by task verify): the three Close calls under
+    context.Background() take context.WithTimeout(context.Background(), closeBudget), 10 s:
+    client_connect_test.go:70 → :70-72, :98 → :100-102, client_test.go:700 → :721-723. The new
+    helpers testStreamMaxAge, testStreamMaxBytes, closeBudget and refusedNATSURL are in
+    natsclient/test_helpers_test.go. test:repeat -- ./natsclient passes (implementer-reported, PR #48)
   owner: setup-04a-01-floor developer
   disposition: adapt

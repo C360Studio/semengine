@@ -252,7 +252,7 @@ var _ jetstream.JetStream = (*fakeJetStream)(nil)
 // the provided fakeJetStream injected, bypassing the NATS dial.
 func newConnectedClientWithFakeJS(t *testing.T, fakeJS jetstream.JetStream) *Client {
 	t.Helper()
-	client, err := NewClient("nats://localhost:4222")
+	client, err := NewClient("nats://unused")
 	require.NoError(t, err)
 
 	// Inject the fake JetStream and set connected status.

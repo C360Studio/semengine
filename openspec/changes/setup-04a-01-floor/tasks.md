@@ -444,9 +444,9 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         as at the pin. `requestMsgReady` has no unit test; a scratch test over the embedded broker, not committed,
         caught two mutants. The integration-file retargets and deletions this task names carry to 3.7b, listed on
         the row. `task verify` passes. Every pin `file:line` → SemEngine `file:line` is on the row.
-- [x] 3.7b (D) `natsclient` integration lane: the 27 integration-tagged files land on `natsfixture`, 3.7a's rule
-      applied to their dropped-symbol uses. The 51 `NewTestClient` sites (56 at the pin less five in tests removed by
-      3.7 and 3.7a) are rewritten (51 before, 0 after), with the other `test_client.go` and `test_options.go` uses:
+- [x] 3.7b (D) `natsclient` integration lane: the 27 integration-tagged files land on `natsfixture`, 3.7a's rule applied
+      to their dropped-symbol uses. The 51 `NewTestClient` sites (56 at the pin less five in tests removed by 3.7 and
+      3.7a) are rewritten (51 before, 0 after), with the other `test_client.go` and `test_options.go` uses:
       `TestStreamConfig` and `WithStreams`, `WithKV`, `WithJetStream`, `WithFileStorage`, `WithTestTimeout`,
       `WithNATSVersion`; `WithMinimalFeatures` (`test_options.go:55-61`; called at
       `client_close_integration_test.go:16`, `client_async_error_integration_test.go:28`,
@@ -454,37 +454,38 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       none of the three asserted JetStream's absence; `TestClient.Terminate()` (4 files at the pin, 3 after the drops)
       and the `.Terminate(` calls through the container wrappers (14 files, 13 after the drops; 40 of the calls through
       `integration_test.go:286-296` and 3 through `client_integration_test.go:197-200`) → `Fixture.Stop`;
-      `GetNativeConnection()` (3) → a connection dialled from `URL()` in `stream_visibility` and
-      `kv_watcher_ownership`, and `client.GetConnection()` (what the pin's helper returned) at
-      `subscription_integration_test.go:98, :106`, which closes the connection its own subscription is on; and the testcontainers imports and `testClient.container` uses (`client_integration_test.go:14,
-      :190-200`; `integration_test.go:18, :24-34, :70, :240, :286-296`). Afterwards no `natsclient` test imports
-      testcontainers. `natsfixture` gains one option that sets the broker's `max_payload` (item 5), its consumer the four
-      `WithTestMaxPayload` tests in `request_response_bounds_integration_test.go`, with a fixture test written first (a
-      publish above the set limit is refused, one at or below it accepted) and the `nats-fixture` delta's requirement
-      "Broker max payload is settable". The 8 fixed-address lines in 4 integration files are repaired (D8 R5). The 23
-      integration sleeps (29 at the pin less six in the removed `TemporalResolver` tests) are repaired per D8 R1, and
-      the lane's real-clock timers are re-counted after the deletions and each checked against D8's table.
-      `TestIntegration_Reconnection` (`integration_test.go:62`) is rewritten on `natsfixture.Restart` with no skip call
-      (D8 R2; item 2): the loss is observed through `WithConnectionLostCallback` and the client's `Status` through
-      `probe.Await`, and a client dialled from the new `URL()` is observed healthy; its name and comment say it proves
-      re-dial, not nats.go's automatic reconnect. The two tests that pin NATS 2.14.4
-      (`kv_key_contract_integration_test.go:38-39`, `kv_watcher_ownership_integration_test.go:48`) run on `.nats-image`
-      (2.14.7) with the version override dropped and the log line corrected (item 6); T-B3 (`imagepin_test.go:78`)
-      cannot see a version and digest held in separate constants, so this is review only. `kv_key_contract_test.go:30`'s
-      v1.52.0 constant becomes v1.54.0 and its comment cites `kv.go:504-506` (the three regexes are byte-identical).
-      `task test:integration -- ./natsclient` passes. Done in `edfd431`, `9637826`, `8177a64`, `ce528b4`; CI run
-      37138705673 green at `ce528b4`. The 27 files are ported; `NewTestClient` sites 51 → 0; `go list` test imports show
-      no testcontainers. `TestMaxPayloadIsSettable` failed first ("broker announces max_payload 1048576, want 4096");
-      the option writes a config file and passes `--config`, since nats-server has no flag for it. Sleeps 23 → 0 (10
-      flushes, waits on observed events or counts, one removed as waiting for nothing; the old Reconnection test's 3 went
-      with its rewrite); fixed addresses 8 → 0; 31 failure bounds under 10 s widened to 10 s and six hand-made polls
-      moved to `probe.Await`. Beyond the listed scope: about 56 deferred `Close` calls go through a bounded `closeClient`;
-      the refusal test's 150 ms request timeout became an event-driven wait, so it asserts `context.Canceled` where the
-      pin asserted a timeout; two late-responder tests raise `MaxRetries` 5 → 10; the `publish_msgid` duplicate window
-      250 ms → 2 s. `TestIntegration_ReconnectionIsRedial` fails on a mutant that removes the loss-timer arming. Added
-      from the 3.7a survivor: `TestConsumeDeliveryWithHeartbeatErrCarriesControlLoss` fails on the mutant that drops
-      `controlErr` from `Err()`'s join. Census maps unchanged. Text corrected after the fact: the `Terminate` and
-      `GetNativeConnection` mappings above, and D8's new row for `client_close_integration_test.go:77`.
+      `GetNativeConnection()` (3) → a connection dialled from `URL()` in `stream_visibility` and `kv_watcher_ownership`,
+      and `client.GetConnection()` (what the pin's helper returned) at `subscription_integration_test.go:98, :106`,
+      which closes the connection its own subscription is on; and the testcontainers imports and `testClient.container`
+      uses (`client_integration_test.go:14, :190-200`; `integration_test.go:18, :24-34, :70, :240, :286-296`).
+      Afterwards no `natsclient` test imports testcontainers. `natsfixture` gains one option that sets the broker's
+      `max_payload` (item 5), its consumer the four `WithTestMaxPayload` tests in
+      `request_response_bounds_integration_test.go`, with a fixture test written first (a publish above the set limit is
+      refused, one at or below it accepted) and the `nats-fixture` delta's requirement "Broker max payload is settable".
+      The 8 fixed-address lines in 4 integration files are repaired (D8 R5). The 23 integration sleeps (29 at the pin
+      less six in the removed `TemporalResolver` tests) are repaired per D8 R1, and the lane's real-clock timers are
+      re-counted after the deletions and each checked against D8's table. `TestIntegration_Reconnection`
+      (`integration_test.go:62`) is rewritten on `natsfixture.Restart` with no skip call (D8 R2; item 2): the loss is
+      observed through `WithConnectionLostCallback` and the client's `Status` through `probe.Await`, and a client
+      dialled from the new `URL()` is observed healthy; its name and comment say it proves re-dial, not nats.go's
+      automatic reconnect. The two tests that pin NATS 2.14.4 (`kv_key_contract_integration_test.go:38-39`,
+      `kv_watcher_ownership_integration_test.go:48`) run on `.nats-image` (2.14.7) with the version override dropped and
+      the log line corrected (item 6); T-B3 (`imagepin_test.go:78`) cannot see a version and digest held in separate
+      constants, so this is review only. `kv_key_contract_test.go:30`'s v1.52.0 constant becomes v1.54.0 and its comment
+      cites `kv.go:504-506` (the three regexes are byte-identical). `task test:integration -- ./natsclient` passes. Done
+      in `edfd431`, `9637826`, `8177a64`, `ce528b4`; CI run 37138705673 green at `ce528b4`. The 27 files are ported;
+      `NewTestClient` sites 51 → 0; `go list` test imports show no testcontainers. `TestMaxPayloadIsSettable` failed
+      first ("broker announces max_payload 1048576, want 4096"); the option writes a config file and passes `--config`,
+      since nats-server has no flag for it. Sleeps 23 → 0 (10 flushes, waits on observed events or counts, one removed
+      as waiting for nothing; the old Reconnection test's 3 went with its rewrite); fixed addresses 8 → 0; 31 failure
+      bounds under 10 s widened to 10 s and six hand-made polls moved to `probe.Await`. Beyond the listed scope: about
+      56 deferred `Close` calls go through a bounded `closeClient`; the refusal test's 150 ms request timeout became an
+      event-driven wait, so it asserts `context.Canceled` where the pin asserted a timeout; two late-responder tests
+      raise `MaxRetries` 5 → 10; the `publish_msgid` duplicate window 250 ms → 2 s.
+      `TestIntegration_ReconnectionIsRedial` fails on a mutant that removes the loss-timer arming. Added from the 3.7a
+      survivor: `TestConsumeDeliveryWithHeartbeatErrCarriesControlLoss` fails on the mutant that drops `controlErr` from
+      `Err()`'s join. Census maps unchanged. Text corrected after the fact: the `Terminate` and `GetNativeConnection`
+      mappings above, and D8's new row for `client_close_integration_test.go:77`.
 - [ ] 3.7c (D) Hold: Codex's checkpoint review of 3.7–3.7b, recorded on this pull request with the commit it read.
       `Client` lifecycle (design D3): the test-side adapter lists the `nats.Conn`, JetStream handle, subscriptions,
       internal consumer claims, the health monitor, the metrics poller, the claim-release goroutines and the two timers,

@@ -291,7 +291,10 @@
     real-clock elapsed bounds (< 150 ms) that a slow host can fail on a correct implementation.
     README lint fixes (owner ruling, #9 comment 5957221949): pkg/retry/README.md is ported with only the edits
     markdownlint requires: line 7 wrapped at 120 columns (MD013), a blank line before the lists at
-    :115, :123, :130 (MD032), the trailing newline (MD047); no wording changed
+    :115, :123, :130 (MD032), the trailing newline (MD047); no wording changed. README import path
+    (owner ruling, #9 comment 5968665464), an adapt item "import path changed to the SemEngine
+    module": pin README.md:12, github.com/c360/semstreams/pkg/retry →
+    github.com/c360studio/semengine/pkg/retry
   proving_tests: >-
     pkg/retry/retry_test.go, the six timer-driven tests inside synctest.Test. D8 repair (R1a): pin
     retry_test.go:68 (time.Sleep 50 ms) → retry_test.go:74 (<-time.After on the bubble's clock);
@@ -367,10 +370,14 @@
   dependencies_and_side_effects: >-
     pkg/platform (in-set); stdlib; a process-global predicate registry mutated at registration
   known_risks: >-
-    no context roots; SemStreams IRI base strings carried unchanged (iris.go:14).
-    README lint fixes (owner ruling, #9 comment 5957221949): vocabulary/README.md is ported with only the edits
+    no context roots; SemStreams IRI base strings carried unchanged (iris.go:14). README lint fixes
+    (owner ruling, #9 comment 5957221949): vocabulary/README.md is ported with only the edits
     markdownlint requires: lines 7, 224, 263, 441, 582, 586, 671, 673 and 688 wrapped at 120 columns
-    (MD013); no wording changed
+    (MD013); no wording changed. README import paths (owner ruling, #9 comment 5968665464), each an
+    adapt item "import path changed to the SemEngine module", pin lines: :111, :444 and :515
+    vocabulary/export; :390 vocabulary/bfo; :407 vocabulary/cco; :424 vocabulary/agentic; :645
+    vocabulary; from github.com/c360studio/semstreams to github.com/c360studio/semengine. The four
+    sub-packages are not ported yet (this row ports the package directory only)
   proving_tests: the 11 test files in vocabulary/ at the pin
   owner: setup-04a-01-floor developer
   disposition: adapt
@@ -388,12 +395,14 @@
     pkg/errs (in-set); stdlib; pgregory.net/rapid v1.3.0 in tests only (owner ruling, PR #48 comment
     5951926492); no goroutine, no I/O
   known_risks: >-
-    no context roots. testdata/rapid carries the pin's curated seed for TestPropEntityIDByteBound
-    (a mutation-kill witness registered in testdata/rapid/README.md); any other .fail file Rapid
-    writes there is local debris and shows in task ledger:diff as "only in the tree".
-    README lint fixes (owner ruling, #9 comment 5957221949): pkg/types/README.md is ported with only the edits
-    markdownlint requires: lines 7 and 83 wrapped at 120 columns (MD013), the fence at :90 given the
-    language text (MD040); no wording changed
+    no context roots. testdata/rapid carries the pin's curated seed for TestPropEntityIDByteBound (a
+    mutation-kill witness registered in testdata/rapid/README.md); any other .fail file Rapid writes
+    there is local debris and shows in task ledger:diff as "only in the tree". README lint fixes (owner
+    ruling, #9 comment 5957221949): pkg/types/README.md is ported with only the edits markdownlint
+    requires: lines 7 and 83 wrapped at 120 columns (MD013), the fence at :90 given the language text
+    (MD040); no wording changed. README import paths (owner ruling, #9 comment 5968665464), each an
+    adapt item "import path changed to the SemEngine module", pin lines: :74 pkg/types and :77 message,
+    from github.com/c360studio/semstreams to github.com/c360studio/semengine
   proving_tests: >-
     the 6 test files in pkg/types/ at the pin, including entity_id_prop_test.go (Rapid properties
     TestPropEntityIDRoundTrip, TestPropEntityIDByteBound, TestPropEntityIDPatternMatch; design P23)
@@ -640,12 +649,16 @@
     github.com/google/uuid v1.6.0 (the pin's version, now a direct requirement); stdlib; no
     goroutine, no I/O
   known_risks: >-
-    no context roots. Import paths differ from the pin: pkg/timestamp is internal/timestamp (design
-    D5; gofmt then moves its import line in base_message.go into sorted order), and the tests' internal/semantictest is internal/harness/semantictest (task 2.8). Adapt item
-    (owner ruling, #9 comment 5957221949): message/README.md is ported with only the edit
-    markdownlint requires: line 7 wrapped at 120 columns (MD013); no wording changed. The README's
-    import examples still name github.com/c360/semstreams paths (:20, :203-204, :466), left as the
-    pin's text
+    no context roots. Import paths differ from the pin: pkg/timestamp is internal/timestamp (design D5;
+    gofmt then moves its import line in base_message.go into sorted order), and the tests'
+    internal/semantictest is internal/harness/semantictest (task 2.8). Adapt item (owner ruling, #9
+    comment 5957221949): message/README.md is ported with only the edit markdownlint requires: line 7
+    wrapped at 120 columns (MD013); no wording changed. README import paths (owner ruling, #9 comment
+    5968665464), each an adapt item "import path changed to the SemEngine module", pin lines: :20 and
+    :204 message → github.com/c360studio/semengine/message; :203 component →
+    github.com/c360studio/semengine/component, a package not ported yet; :466 errors →
+    github.com/c360studio/semengine/pkg/errs (the example's errors. identifiers are left as the pin's
+    text: the ruling covers import paths only)
   proving_tests: >-
     the 9 test files in message/ at the pin, carried unchanged except import paths; payload_test.go
     and triple_helpers_test.go use internal/harness/semantictest
@@ -676,7 +689,18 @@
     returns Cache[V] with an error (NewSimple, NewLRU, NewTTL, the hybrid constructor, and
     NewFromConfig through them) returns a nil Cache on error; at the pin each returned its nil
     pointer inside a non-nil Cache (pin config.go:152, :159, :170, :177). Owner ruling (#9 comment 5950725772): no eviction
-    callback
+    callback. Changed behavior, task 3.6a (Codex review, PR #48 comment 5968489295; owner rulings,
+    #9 comments 5968830525 and 5968665464), each written first: a CoalescingSet callback panic is
+    not recovered and ends the process, and a nil callback panics at the call before the goroutine
+    starts (F1); concurrent Close calls on the TTL and hybrid caches are safe and each returns only
+    once the cleanup goroutine has exited (F2); NewLRU, NewTTL and the hybrid constructor refuse a
+    zero or negative size, TTL or cleanup interval with a classified invalid error, a nil Cache and
+    no goroutine started, as Config.Validate already did for NewFromConfig (F3); Config's JSON
+    decoder refuses unknown keys, stats_interval included, and treats a JSON null as a no-op (F4,
+    F5). Removed as dead surface (owner ruling #9 comment 5968830525, after a pin-wide reference
+    search): Config.StatsInterval and WithStatsInterval, Entry with IsExpired and Touch, WithStats,
+    StatsFromContext, ContextKeyStats, and Statistics.MemoryUsage, UpdateMemoryUsage and
+    StatsSummary.MemoryUsage
   dependencies_and_side_effects: >-
     metric, pkg/errs (in-set); prometheus/client_golang; stdlib; pgregory.net/rapid in tests only.
     The TTL and hybrid caches run one cleanup goroutine each, joined by Close; CoalescingSet runs
@@ -702,52 +726,83 @@
     callback examples at :64-66, :200-202 and :410-412 and the WithEvictionCallback section
     :117-125 removed. README import paths (not a behavior edit, as on the metric row): :17 and :41
     changed to github.com/c360studio/semengine/internal/cache and /metric. README lint fix: line 3
-    wrapped at 120 columns (MD013); no other wording changed
+    wrapped at 120 columns (MD013); no other wording changed. Task 3.6a (Codex PR #48 comment 5968489295; owner
+    rulings #9 comments 5968830525, 5968665464): a panic in a CoalescingSet callback ends the
+    process (owner ruling on F1); a caller that needs to survive one recovers inside its own
+    callback. Removed, pin lines: the recover in fireBatch (coalescing_set.go:167-180); the
+    check-then-close in the TTL and hybrid Close (ttl.go:251-256, hybrid.go:278-283), replaced by a
+    sync.Once; StatsInterval (config.go:46-47, :58, :103-106, :123-126, :232, :260-267; options.go:26-27,
+    :50-59, :66; ttl.go:34, :67; hybrid.go:38, :73; doc.go:163; README.md:67, :127-133, :194); Entry,
+    IsExpired, Touch, contextKey, ContextKeyStats, WithStats and StatsFromContext (cache.go:55-94);
+    memoryUsage, UpdateMemoryUsage, MemoryUsage and StatsSummary.MemoryUsage (stats.go:23, :68-72,
+    :114-119, :172, :185, :202). Pin-wide reference search (the pin and the four consumers named in
+    docs/inventory-scope.md): none of the removed symbols has a reader outside pkg/cache; the one
+    other reference is a setter, processor/rule/config.go:245 (StatsInterval: 30s), with
+    processor/rule/docs/configuration.md:219, :231 documenting stats_interval: a port-refactor item
+    for processor/rule, whose stats_interval key now fails to decode. Config.UnmarshalJSON decoded
+    into &aux (config.go:238), so a JSON null set aux to nil and panicked; it now decodes into aux.
+    doc.go behavior edits (rule 2(c)), pin lines: cache.NewHybrid, which the package does not have,
+    replaced by NewFromConfig with StrategyHybrid at :37-39, :72, :216 and :227-229; :267 and :271
+    name ./internal/cache; :286 no longer points at a nonexistent examples_test.go. README behavior
+    edits: cache.NewHybrid replaced the same way at :35, :102 and :403-411
   proving_tests: >-
-    the 6 test files in pkg/cache/ at the pin, carried to internal/cache/ and repaired.
-    New, written first, in internal/cache/metrics_test.go: TestCacheMetricsTwoCachesOnePrefixGatherTheSum
-    (two LRU caches under one prefix on one registry; oracle: the operations the test performs,
-    counted by hand, each gathered on one series; at the pin the second cache's writes were not
-    gathered, implementer-reported). In internal/cache/background_test.go, each run inside
-    synctest.Test: TestCoalescingSetShutdownLeavesNothingRunning, TestTTLCacheCloseLeavesNothingRunning
-    and TestHybridCacheCloseLeavesNothingRunning (start, use, stop; oracle: the stop returns nil
-    within an hour of the bubble's clock with the goroutine's done channel already closed, and the
-    bubble returns; at the pin's behavior the TTL and hybrid tests pass, because the fixed wait shows
-    only when the goroutine does not exit), TestCoalescingSetNilContextPanicsAtTheCall and
+    the 6 test files in pkg/cache/ at the pin, carried to internal/cache/ and repaired. New, written
+    first, in internal/cache/metrics_test.go: TestCacheMetricsTwoCachesOnePrefixGatherTheSum (two LRU
+    caches under one prefix on one registry; oracle: the operations the test performs, counted by hand,
+    each gathered on one series; at the pin the second cache's writes were not gathered,
+    implementer-reported). In internal/cache/background_test.go, each run inside synctest.Test:
+    TestCoalescingSetShutdownLeavesNothingRunning, TestTTLCacheCloseLeavesNothingRunning and
+    TestHybridCacheCloseLeavesNothingRunning (start, use, stop; oracle: the stop returns nil within an
+    hour of the bubble's clock with the goroutine's done channel already closed, and the bubble returns;
+    at the pin's behavior the TTL and hybrid tests pass, because the fixed wait shows only when the
+    goroutine does not exit), TestCoalescingSetNilContextPanicsAtTheCall and
     TestCacheConstructorsRefuseNilContext (at the pin the goroutine panicked: coalescing_set.go:136,
-    ttl.go:276), TestCoalescingSetShutdownUnderABlockedCallback (oracle: context.DeadlineExceeded
-    while the callback is held, nil after it returns; at the pin's Close the bubble deadlocked) and
-    TestCoalescingSetShutdownRefusesNilContext; TestCacheCloseAfterContextEndAndAgain (a Close after
-    the context ended the goroutine, then a second Close, both nil; not a changed behavior, it
-    passes at the pin's behavior too); TestCacheConstructorsReturnNilCacheOnError (each constructor
-    above, NewFromConfig for every strategy, refused by a metrics registration collision; oracle:
-    err != nil and the returned Cache == nil; implementer-reported, it failed first for NewSimple,
-    NewLRU and NewFromConfig's simple and lru paths with a nil *simpleCache or *lruCache inside the
-    Cache). Generated check, in
-    internal/cache/coalescing_set_prop_test.go: TestPropCoalescingSetHistory, a Rapid history of
-    Add, Remove, RemovePrefix, Drain, window ticks and Shutdown, each run in its own bubble and
-    compared after every step with a test-owned model; it logs how often each assertion ran; and
-    TestCoalescingSetRemovePrefixMatchesOnlyAtTheStart, the boundary the generator reaches only by
+    ttl.go:276), TestCoalescingSetShutdownUnderABlockedCallback (oracle: context.DeadlineExceeded while
+    the callback is held, nil after it returns; at the pin's Close the bubble deadlocked) and
+    TestCoalescingSetShutdownRefusesNilContext; TestCacheCloseAfterContextEndAndAgain (a Close after the
+    context ended the goroutine, then a second Close, both nil; not a changed behavior, it passes at the
+    pin's behavior too); TestCacheConstructorsReturnNilCacheOnError (each constructor above,
+    NewFromConfig for every strategy, refused by a metrics registration collision; oracle: err != nil
+    and the returned Cache == nil; implementer-reported, it failed first for NewSimple, NewLRU and
+    NewFromConfig's simple and lru paths with a nil *simpleCache or *lruCache inside the Cache).
+    Generated check, in internal/cache/coalescing_set_prop_test.go: TestPropCoalescingSetHistory, a
+    Rapid history of Add, Remove, RemovePrefix, Drain, window ticks and Shutdown, each run in its own
+    bubble and compared after every step with a test-owned model; it logs how often each assertion ran;
+    and TestCoalescingSetRemovePrefixMatchesOnlyAtTheStart, the boundary the generator reaches only by
     chance. D8 repairs (R1a, sleep to the bubble's clock, unless named), pin → SemEngine:
-    coalescing_set_test.go:137 → :141; :148 → :156; :257 → :269; :308 → :321; :318 → :332; :339 →
-    :354; :348 → :364; :428 → :445; :446 → :463; :516 → :535; :522 → :541; :527 → :546; :586 → :605;
-    :592 → :612; :611 → :633; the 10 ms not-yet window (:89-94) → :92-98, after synctest.Wait;
-    coalescing_set_attack_test.go:105 → :112 (R1b: the callback is held on a channel the test
-    releases; the test stays on the real clock, because an Add blocked on the set's mutex would
-    stall a bubble instead of failing it; 10 s failure bound at :136); :177 → :191; :223 → :236-247
-    (a sentinel key: the pin asserted a callback after a fixed 300 ms, which failed whenever the
-    removers had emptied the set; now one window, one callback, nothing pending); :241 → :261; :298
-    → :325-326 (wait for the first delivery: a zero window ticks every nanosecond of the bubble's
-    clock); cache_test.go:294 → :306; :317 → :332; :368 → :388; benchmark_test.go:183 → :183-191
-    (R1b: probe.Await until no key is live, 10 s failure bound). The 30 t.Parallel calls
-    (coalescing_set_test.go 20, coalescing_set_attack_test.go 10) are removed: t.Parallel cannot be
-    called in a bubble. Other test edits: TestCoalescingSet_CallbackPanic asserted nothing and now
-    asserts the batch after the panic is delivered; BatchCleared and AddDuringCallback assert after
-    releasing the test's mutex (at the pin a failed require held it and the deferred Close waited
-    forever); the carried CoalescingSet tests call Shutdown(t.Context()) for Close(); the two test
-    files' "Code generated ... DO NOT EDIT" headers, which made tools treat them as generated, are
-    replaced by a note of their origin, and the 11 unused parameters revive then reports are named _
-    (coalescing_set_test.go 6, coalescing_set_attack_test.go 5). Repeat runs (D8 R4; implementer-reported, PR #48): see task
-    3.6
+    coalescing_set_test.go:137 → :143; :148 → :158; :257 → :271; :308 → :323; :318 → :334; :339 → :356;
+    :348 → :366; :428 → :447; :446 → :465; :516 → :537; :522 → :543; :527 → :548; the 10 ms not-yet
+    window (:89-94) → :94-100, after synctest.Wait; :586, :592 and :611 went with
+    TestCoalescingSet_CallbackPanic and TestCoalescingSet_NilCallback, replaced in task 3.6a;
+    coalescing_set_attack_test.go:105 → :114 (R1b: the callback is held on a channel the test releases;
+    the test stays on the real clock, because an Add blocked on the set's mutex would stall a bubble
+    instead of failing it; 10 s failure bound at :142); :177 → :200; :223 → :245-256 (a sentinel key:
+    the pin asserted a callback after a fixed 300 ms, which failed whenever the removers had emptied the
+    set; now one window, one callback, nothing pending); :241 → :270; :298 → :334-335 (wait for the
+    first delivery: a zero window ticks every nanosecond of the bubble's clock); cache_test.go:294 →
+    :306; :317 → :332; :368 → :388; benchmark_test.go:183 → :183-191 (R1b: probe.Await until no key is
+    live, 10 s failure bound). The 30 t.Parallel calls (coalescing_set_test.go 20,
+    coalescing_set_attack_test.go 10) are removed: t.Parallel cannot be called in a bubble. Other test
+    edits: TestCoalescingSet_CallbackPanic asserted nothing and now asserts the batch after the panic is
+    delivered; BatchCleared and AddDuringCallback assert after releasing the test's mutex (at the pin a
+    failed require held it and the deferred Close waited forever); the carried CoalescingSet tests call
+    Shutdown(t.Context()) for Close(); the two test files' "Code generated ... DO NOT EDIT" headers,
+    which made tools treat them as generated, are replaced by a note of their origin, and the 11 unused
+    parameters revive then reports are named _ (coalescing_set_test.go 6, coalescing_set_attack_test.go
+    5). Task 3.6a, each written first (implementer-reported failing first): in coalescing_set_test.go,
+    TestCoalescingSet_CallbackPanicEndsTheProcess replaces TestCoalescingSet_CallbackPanic (a prochost
+    helper; oracle: exit code 2, and the panic value and the fireBatch frame on its stderr) and
+    TestCoalescingSet_NilCallbackPanicsAtTheCall replaces TestCoalescingSet_NilCallback (the panic, and
+    no run goroutine in the bubble's stack dump); the tests that passed a nil callback pass a no-op one.
+    In background_test.go, TestCacheConcurrentCloseJoinsEveryCaller (2,000 rounds of 32 Close calls per
+    strategy; each returns nil with the goroutine's done channel closed) and
+    TestCacheConstructorsRefuseInvalidDimensions (errs.IsInvalid, a nil Cache, no cleanup goroutine in
+    the bubble's stack dump). In config_test.go, TestConfig_UnmarshalJSON_RefusesUnknownKeys,
+    TestConfig_UnmarshalJSON_RefusesStatsInterval and TestConfig_UnmarshalJSON_NullIsANoOp; the
+    duration-string table no longer sets stats_interval. In config_fuzz_test.go,
+    FuzzConfigUnmarshalJSON, a native fuzz target whose invariants are derived with the standard library
+    (no panic; only Config's keys; each duration from time.ParseDuration or the integer; a Marshal round
+    trip). TestAttack_CallbackLatency releases its callback and joins its adds on every exit path (F6).
+    Repeat runs (D8 R4; implementer-reported, PR #48): see task 3.6
   owner: setup-04a-01-floor developer
   disposition: adapt

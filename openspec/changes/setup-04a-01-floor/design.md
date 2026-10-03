@@ -396,6 +396,12 @@ past its start (`TestCoalescingSetRemovePrefixMatchesOnlyAtTheStart`), which the
 100 checks. The TTL and hybrid caches' close is not a history worth generating: `Close` signals one goroutine and
 waits for it, and its cases (first close, repeated close, close after the goroutine ended through its context) are
 named examples; the carried cache semantics do not change in this change.
+`Config.UnmarshalJSON` decodes outside bytes (task 3.6a, Codex F5), so it gets a native fuzz target,
+`FuzzConfigUnmarshalJSON` (`internal/cache/config_fuzz_test.go`): no panic; an accepted document holds only `Config`'s
+keys; each duration equals what the test derives with the standard library (`time.ParseDuration` of a string,
+`time.Duration` of an integer, zero when absent); an accepted `Config` survives `json.Marshal` and a second decode.
+Its seeds cover each accepted and refused form, and its JSON `null` seed found a pin panic. Named examples own the
+unknown-key and `stats_interval` refusals and the `null` case.
 
 The ACME loaders' renewal goroutines (`tlsutil.go:253, :331`) are not in this change (D1): their stop can wait inside
 `legoClient.Certificate.Renew`, which takes no context (`pkg/acme/client.go:352`), and their renewal callback writes

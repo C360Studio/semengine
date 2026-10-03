@@ -270,6 +270,23 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         match the pin apart from import paths (`task ledger:diff -- message`: 25 files, 0 differ); its two tests that
         used `internal/semantictest` import `internal/harness/semantictest`; `google/uuid` v1.6.0, the pin's version, is
         direct; the row is `adapt` for the README line 7 wrap.
+- [x] 3.6a (D) Codex's review of the cache half (PR #48 comment 5968489295, at `a7dbf9d`) and the owner rulings of
+      2026-10-03 (#9 comment 5968830525: an admitted package is ported whole, and only dead surface is removed; #9
+      comment 5968665464: ported docs name SemEngine paths). Each finding with a test written first, failing first
+      implementer-reported: F1 (18424c3) a `CoalescingSet` callback panic ends the process and a nil callback panics at
+      the call; `prochost` gains `Process.StderrPath` with a `process-host` scenario; the pin's `CallbackPanic` and
+      `NilCallback` tests are replaced, and their three sleeps with them: of the pin's 26 sleeps, 21 remain, repaired
+      (two went with `TestEvictCallback`). F2 (5647994) concurrent `Close` of the TTL and hybrid caches. F3 (68f10f9)
+      the direct constructors refuse invalid dimensions; task 3.7 notes the effect on `NewTemporalResolverWithCache`. F4
+      (2e2060a) `StatsInterval` removed, with the dead surface the pin-wide search found (f56fcf6: `Entry`, `IsExpired`,
+      `Touch`, `WithStats`, `StatsFromContext`, `ContextKeyStats`, `Statistics.MemoryUsage`); the one outside reference,
+      `processor/rule/config.go:245` and its docs, is a port-refactor item on the row. F5 (65d9740, d62fdd9) unknown
+      keys refused; `FuzzConfigUnmarshalJSON`, whose `null` seed found a pin panic, now fixed; the generated-check
+      decision is in design D7. F6 (4fcfc46) `TestAttack_CallbackLatency` fails and ends when an `Add` blocks. F7
+      (58ffe7b) `doc.go` and `README.md` name `./internal/cache` and drop `cache.NewHybrid`, which does not exist; the
+      `message` hold no longer applies (task 3.6 is done) and is gone. README import paths (3485af3) in `message`,
+      `pkg/retry`, `pkg/types` and `vocabulary`, each an `adapt` item on its row. Rows: `pkg/cache` (contract,
+      `known_risks`, `proving_tests`), `message`, `pkg/retry`, `pkg/types`, `vocabulary`.
 - [ ] 3.7 (D) `natsclient` (level 6): row `adapt`; `test_client.go` and `test_options.go` are not ported and their
       file rows are updated (`proving_tests` on the `adapt` row); four test files are not ported and get `defer-exclude`
       file rows with design D1's reasons: `test_client_factory_test.go`, `test_client_integration_test.go` and

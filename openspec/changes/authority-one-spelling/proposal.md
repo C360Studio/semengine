@@ -27,8 +27,9 @@ SemStreams' record is that review-only rows drift.
 - **Check C-2, fields.** A new contract test fails on an exported struct field named `Org` or `Platform` in a non-test
   file, unless the field is in `pkg/types`, `pkg/platform` or `config`, is a field of `PlatformMeta` in the
   top-level package `types`, is `processor/rule.CallerContext.Org` (a caller's claim, a different fact), or is the
-  carrier `deps.Platform` — excepted by type or by exact field, an open owner question (`design.md`, Q1). It starts
-  green on `main` and at PR #48's head and lands first.
+  carrier `deps.Platform`, excepted by exact field — `component.Dependencies.Platform`,
+  `service.Dependencies.Platform`, `processor/rule.Dependencies.Platform` (owner ruling, #72 comment 5969757891). It
+  starts green on `main` and at PR #48's head and lands first.
 - **Each check carries a paired sensitivity test** that plants the pin's real shapes (`HierarchyConfig.Org`,
   `EntityParts.Platform`, `WithFederation`, `EntityIRI`, `BuildGlobalID`) in a temporary module and requires the check
   to name each, and to stay silent on the owners, the carrier and `CallerContext.Org`.

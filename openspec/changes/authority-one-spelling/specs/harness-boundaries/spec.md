@@ -21,10 +21,10 @@ this requirement. Unexported identifiers, test files, comments and string litera
 this module, in a named or an anonymous struct, except: any field in the packages `pkg/types`, `pkg/platform` and
 `config` (the source and its validators); the two fields of the type `PlatformMeta` in the top-level package `types`
 (import path `<module>/types` — not `pkg/types`, and not Go's `go/types`); `processor/rule.CallerContext.Org` (a
-caller's organization claim, which is not the deployment authority); and the carrier `deps.Platform`, in one of two
-forms pending the owner's answer to design question Q1 — either any field whose type is `types.PlatformMeta`, under
-whatever field name, or exactly the fields `component.Dependencies.Platform`, `service.Dependencies.Platform` and
-`processor/rule.Dependencies.Platform`. The exceptions are listed by exact package path, exact
+caller's organization claim, which is not the deployment authority); and the carrier `deps.Platform`, by exact field:
+`component.Dependencies.Platform`, `service.Dependencies.Platform` and `processor/rule.Dependencies.Platform`. A
+field's type is not an exception: a further field of type `types.PlatformMeta` named `Org` or `Platform` fails
+until this list names it. The exceptions are listed by exact package path, exact
 type name and exact field name in this requirement and nowhere else; a new exception is a change to this
 requirement. The failure SHALL name the file, the line, the struct type, the field and this requirement. The check is
 static and by name: a field named otherwise (`OrgID`, `PlatformID`, `org`, `platform`), a copy held in an untyped
@@ -47,16 +47,17 @@ holder, and a value re-joined inside a function body are outside its scope by co
 
 - **WHEN** a non-test file of a fixture module declares, outside the excepted packages, an exported struct field
   `Org` or `Platform` of type `string` on a named struct (the shape of `graph/inference.HierarchyConfig` and
-  `graph/llm.EntityParts` at the pin), on an anonymous struct, or on a struct in an internal or a `main` package
+  `graph/llm.EntityParts` at the pin), on an anonymous struct, or on a struct in an internal or a `main` package;
+  or a field `Platform` of type `types.PlatformMeta` on a struct other than the three the exception names
 - **THEN** the contract test fails naming each field with its file, line and struct type
 
 #### Scenario: The owners, the carrier and the caller's claim pass
 
 - **WHEN** a fixture module declares `Org` and `Platform` fields in its `pkg/types`, `pkg/platform` and `config`
   packages; a type `PlatformMeta` in its top-level `types` package with fields `Org` and `Platform`; the carrier
-  field `Platform` of that type on `component.Dependencies` (and, pending Q1, either any other field of that type
-  or only the two further named fields); a field `Org` on `processor/rule.CallerContext`; and unexported fields
-  `org` and `platform` of type `string` anywhere
+  field `Platform` of that type on `component.Dependencies`, `service.Dependencies` and
+  `processor/rule.Dependencies`; a field `Org` on `processor/rule.CallerContext`; and unexported fields `org` and
+  `platform` of type `string` anywhere
 - **THEN** the contract test reports nothing for any of them
 
 #### Scenario: A test file is not checked

@@ -18,9 +18,9 @@ pull request closes #72 (`Closes #72` in its body).
 
 - [x] 1.1 The independent review of `inventory.md`: `INVENTORY PASS` in round 2 of at most three (issue #72; the
       round-2 review's findings B1–B4 and F5 are folded into the file carried here).
-- [ ] 1.2 The independent pre-owner review of `design.md`, `proposal.md`, this file and the `harness-boundaries`
+- [x] 1.2 The independent pre-owner review of `design.md`, `proposal.md`, this file and the `harness-boundaries`
       delta: `DESIGN REVIEW PASS` in at most three rounds, recorded on this pull request with the reviewed and the
-      committed checksums.
+      committed checksums. PASS at `f67f835` in round 3 (record: PR #73 comment 5969786253).
 - [x] 1.3 The owner's acceptance of the reviewed design, recorded on this pull request (2026-10-03, after the
       review record at `f67f835`). Q1 (the carrier
       exception) is already ruled, form (ii) by exact field (#72 comment 5969757891), and the delta, D3 and the

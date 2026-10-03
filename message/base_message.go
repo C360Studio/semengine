@@ -1,10 +1,12 @@
 package message
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/c360studio/semengine/internal/timestamp"
@@ -213,6 +215,29 @@ func (m *BaseMessage) MarshalJSON() ([]byte, error) {
 	return json.Marshal(wire)
 }
 
+// wireMillis reads meta[key] as integer Unix milliseconds: absent, null or 0 is the zero time (0 is
+// how MarshalJSON writes the zero time), and any other value that is not an integer in int64's range
+// is refused.
+func wireMillis(meta map[string]any, key string) (time.Time, error) {
+	raw, present := meta[key]
+	if !present || raw == nil {
+		return time.Time{}, nil
+	}
+	number, ok := raw.(json.Number)
+	if !ok {
+		return time.Time{}, errs.WrapInvalid(
+			fmt.Errorf("meta.%s is a JSON %T, not integer milliseconds", key, raw),
+			"BaseMessage", "UnmarshalJSON", "timestamp")
+	}
+	ms, err := strconv.ParseInt(number.String(), 10, 64)
+	if err != nil {
+		return time.Time{}, errs.WrapInvalid(
+			fmt.Errorf("meta.%s %s is not integer milliseconds: %w", key, number, err),
+			"BaseMessage", "UnmarshalJSON", "timestamp")
+	}
+	return timestamp.ToTime(ms), nil
+}
+
 // UnmarshalJSON implements json.Unmarshaler for BaseMessage.
 //
 // Resolves the payload type discriminator against m.registry, which
@@ -224,7 +249,11 @@ func (m *BaseMessage) MarshalJSON() ([]byte, error) {
 // pattern.
 func (m *BaseMessage) UnmarshalJSON(data []byte) error {
 	var wire wireFormat
-	if err := json.Unmarshal(data, &wire); err != nil {
+	// UseNumber keeps each meta number's literal, so a timestamp is read as the exact integer
+	// MarshalJSON wrote rather than through float64.
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&wire); err != nil {
 		return errs.WrapInvalid(err, "BaseMessage", "UnmarshalJSON", "failed to unmarshal wire format")
 	}
 
@@ -232,19 +261,17 @@ func (m *BaseMessage) UnmarshalJSON(data []byte) error {
 	m.id = wire.ID
 	m.msgType = wire.Type
 
-	// Unmarshal metadata - create a DefaultMeta from the wire format
-	// Use timestamp.Parse to handle both int64 and string formats
-	var createdAt, receivedAt time.Time
+	// Unmarshal metadata - create a DefaultMeta from the wire format.
+	// Timestamps are read strictly as the integer milliseconds MarshalJSON writes (owner ruling 7,
+	// semengine #9): no seconds heuristic, no other forms.
 	var source string
-
-	createdAtMs := timestamp.Parse(wire.Meta["created_at"])
-	if createdAtMs != 0 {
-		createdAt = timestamp.ToTime(createdAtMs)
+	createdAt, err := wireMillis(wire.Meta, "created_at")
+	if err != nil {
+		return err
 	}
-
-	receivedAtMs := timestamp.Parse(wire.Meta["received_at"])
-	if receivedAtMs != 0 {
-		receivedAt = timestamp.ToTime(receivedAtMs)
+	receivedAt, err := wireMillis(wire.Meta, "received_at")
+	if err != nil {
+		return err
 	}
 
 	if sourceStr, ok := wire.Meta["source"].(string); ok {

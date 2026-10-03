@@ -673,7 +673,11 @@
   contract: >-
     BaseMessage, the payload and behavior interfaces, the JSON codecs, triple construction and
     identity, entity-ID parsing and Meta as at the pin, less the federation family (dead surface,
-    known_risks); no other behavior changed
+    known_risks). Changed behavior (owner ruling 7, #9 comment 5969522395): BaseMessage decodes
+    meta.created_at and meta.received_at strictly as the integer Unix milliseconds MarshalJSON
+    writes; absent, null or 0 is the zero time; any other value (a string, a fraction, an exponent
+    form, a bool, an object, an integer outside int64) is refused with an invalid-data error. No
+    other behavior changed
   dependencies_and_side_effects: >-
     payloadregistry, pkg/errs, pkg/types, internal/timestamp (in-set);
     github.com/google/uuid v1.6.0 (the pin's version, now a direct requirement); stdlib; no
@@ -716,12 +720,24 @@
     :600-612 (troubleshooting: the error text is "unregistered payload type"); :640; :687. doc.go
     :366-367, :375-377 (serialization and the global-registry note); :407-408 (handler example).
     README :329's NewBaseMessage(payload) call is left as the pin's text (not on the decode path).
+    Behaviour change, timestamp decode (owner ruling 7, #9 comment 5969522395): the pin decoded both
+    timestamps through timestamp.Parse (base_message.go:272-284), which reads a number up to 10^12 as
+    seconds and also accepts RFC 3339 and numeric strings, so every instant before 2001-09-09, which
+    MarshalJSON writes as fewer than 10^12 milliseconds, decoded wrong (1999-01-01 as year 30969, any
+    pre-1970 instant thousands of years earlier), and an unreadable value silently became the zero
+    time. Replaced by wireMillis: the wire is decoded with json.Decoder.UseNumber (pin :263's
+    json.Unmarshal) so the literal is read exactly, and anything but an integer in int64's range is
+    refused. internal/timestamp is unchanged; timestamp.Parse has no caller left in the module.
   proving_tests: >-
     the 9 test files in message/ at the pin, carried unchanged except import paths; payload_test.go
     and triple_helpers_test.go use internal/harness/semantictest. Added (task 3.6b):
     meta_wire_test.go, TestMetaCarriesOnlyWhatTheWireCarries (every exported type implementing Meta
     has only Meta's exported methods; failed first on the tree before the removal, naming
-    DefaultFederationMeta and FederationMeta) and TestBaseMessageMetaSurvivesTheWire
+    DefaultFederationMeta and FederationMeta) and TestBaseMessageMetaSurvivesTheWire;
+    TestBaseMessageTimestampsAreMilliseconds (1999-01-01, 1960-01-01, the epoch and a 2024 instant
+    round-trip at millisecond precision; failed first: 1999 decoded as year 30969, 1960 as -8032) and
+    TestBaseMessageRefusesTimestampsThatAreNotMilliseconds (failed first: all eight non-millisecond
+    forms accepted)
   owner: setup-04a-01-floor developer
   disposition: adapt
 

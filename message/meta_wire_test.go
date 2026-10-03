@@ -94,6 +94,98 @@ func TestBaseMessageMetaSurvivesTheWire(t *testing.T) {
 	}
 }
 
+// TestBaseMessageTimestampsAreMilliseconds: MarshalJSON writes created_at and received_at as
+// integer Unix milliseconds, and Decode reads them back as exactly that (owner ruling 7, #9 comment
+// 5969522395). At the pin decode went through timestamp.Parse, which reads a number up to 10^12 as
+// seconds, so any instant before 2001-09-09 came back wrong (1999-01-01 as year 30969). The
+// expected instants are written out with time.Date, and the wire is read with the standard
+// library, so neither side of the check uses the package's conversion. The epoch is 0 ms, which
+// DefaultMeta already holds as "no time" (the zero time.Time) before encoding; it must come back
+// as the same.
+func TestBaseMessageTimestampsAreMilliseconds(t *testing.T) {
+	dec := message.NewDecoder(payloadfixture.NewWithSubset(t, message.RegisterPayloads))
+	for name, at := range map[string]time.Time{
+		"1999-01-01": time.Date(1999, 1, 1, 0, 0, 0, 123_000_000, time.UTC),
+		"1960-01-01": time.Date(1960, 1, 1, 0, 0, 0, 456_000_000, time.UTC),
+		"epoch":      time.Unix(0, 0),
+		"2024":       time.Date(2024, 6, 1, 12, 34, 56, 789_000_000, time.UTC),
+	} {
+		t.Run(name, func(t *testing.T) {
+			received := at.Add(250 * time.Millisecond)
+			payload := message.NewGenericJSON(map[string]any{"k": "v"})
+			built := message.NewBaseMessage(payload.Schema(), payload, "sensor-gw",
+				message.WithMeta(message.NewDefaultMetaWithReceivedAt(at, received, "sensor-gw")))
+			data, err := json.Marshal(built)
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			var wire struct {
+				Meta struct {
+					CreatedAt  int64 `json:"created_at"`
+					ReceivedAt int64 `json:"received_at"`
+				} `json:"meta"`
+			}
+			if err := json.Unmarshal(data, &wire); err != nil {
+				t.Fatalf("read the wire %s: %v", data, err)
+			}
+			if wire.Meta.CreatedAt != at.UnixMilli() || wire.Meta.ReceivedAt != received.UnixMilli() {
+				t.Fatalf("wire %s: want created_at %d, received_at %d", data, at.UnixMilli(), received.UnixMilli())
+			}
+			got, err := dec.Decode(data)
+			if err != nil {
+				t.Fatalf("decode %s: %v", data, err)
+			}
+			wantCreated := at
+			if at.UnixMilli() == 0 {
+				wantCreated = time.Time{}
+			}
+			if c := got.Meta().CreatedAt(); !c.Equal(wantCreated) || !c.Equal(built.Meta().CreatedAt()) {
+				t.Errorf("created_at after the wire: %v, want %v (built %v)", c, wantCreated, built.Meta().CreatedAt())
+			}
+			if r := got.Meta().ReceivedAt(); !r.Equal(received) || !r.Equal(built.Meta().ReceivedAt()) {
+				t.Errorf("received_at after the wire: %v, want %v (built %v)", r, received, built.Meta().ReceivedAt())
+			}
+		})
+	}
+}
+
+// TestBaseMessageRefusesTimestampsThatAreNotMilliseconds: a timestamp is an integer number of
+// milliseconds, or absent or null for none. Anything else is refused rather than read as some
+// other unit or dropped to the zero time (owner ruling 7, #9 comment 5969522395).
+func TestBaseMessageRefusesTimestampsThatAreNotMilliseconds(t *testing.T) {
+	dec := message.NewDecoder(payloadfixture.NewWithSubset(t, message.RegisterPayloads))
+	envelope := func(meta string) []byte {
+		return []byte(`{"id":"m","type":{"domain":"core","category":"json","version":"v1"},` +
+			`"payload":{"data":{}},"meta":{` + meta + `}}`)
+	}
+	for _, meta := range []string{
+		`"created_at":"2024-06-01T12:34:56Z"`,
+		`"created_at":"1717245296789"`,
+		`"created_at":1717245296789.5`,
+		`"created_at":1.717245296789e12`,
+		`"created_at":true`,
+		`"created_at":{}`,
+		`"received_at":"1717245296789"`,
+		`"received_at":99999999999999999999`,
+	} {
+		if msg, err := dec.Decode(envelope(meta)); err == nil {
+			t.Errorf("Decode accepted meta {%s}: created %v, received %v", meta,
+				msg.Meta().CreatedAt(), msg.Meta().ReceivedAt())
+		}
+	}
+	for _, meta := range []string{``, `"created_at":null,"received_at":null`, `"created_at":0`} {
+		msg, err := dec.Decode(envelope(meta))
+		if err != nil {
+			t.Errorf("Decode refused meta {%s}: %v", meta, err)
+			continue
+		}
+		if !msg.Meta().CreatedAt().IsZero() || !msg.Meta().ReceivedAt().IsZero() {
+			t.Errorf("meta {%s}: created %v, received %v, want the zero time for both", meta,
+				msg.Meta().CreatedAt(), msg.Meta().ReceivedAt())
+		}
+	}
+}
+
 func exportedMethods(typ types.Type) []string {
 	set := types.NewMethodSet(typ)
 	var names []string

@@ -336,7 +336,7 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       local only): `go test -run '^$' -fuzz '^<target>$' -fuzztime 60s ./message` ran 1,970,895, 1,121,935 and
       10,033,878 executions with no failing input, all run before 1ee70d0. Rows: `vocabulary`, `pkg/platform`,
       `message`, `internal/semantictest`.
-- [ ] 3.7 (D) `natsclient` (level 6), port and unit lane: row `adapt`, its `source_sha` and the existing file rows'
+- [x] 3.7 (D) `natsclient` (level 6), port and unit lane: row `adapt`, its `source_sha` and the existing file rows'
       at the pin. Not ported, with file rows: `test_client.go` (`adapt → natsfixture`, evidence in `proving_tests`)
       and `test_options.go` (`defer-exclude`); six test files `defer-exclude` with design D1's reasons —
       `test_client_factory_test.go`, `test_client_integration_test.go`, `test_client_readiness_test.go` (owner
@@ -365,6 +365,22 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       regression evidence. Context roots: the pin's two live production roots are `client.go:566` (the metrics poller,
       triaged in 3.7c) and `trace.go:56` (leaves with `DetachContextWithTrace`, 3.7a); the rest of the "nine" are
       comments or `test_client.go`.
+      - Done in 9cda760 (port: 25 production files, 10,986 lines, and the 43 unit files, imports rewritten;
+        `RegisterOrGet` for the 11 collectors; `nats-server/v2` v2.14.7 direct; ledger rows), 369d21e (census),
+        e5a5f0e (D8 repairs) and eb03773. The work is split into commits for review: 9cda760 compiles and passes
+        `go vet`, and its census tests, sleep guard, fixed-address guard and `cleanup-roots:check` fail until
+        369d21e and e5a5f0e. `task verify` passes at eb03773 (implementer-reported, PR #48), with
+        `task test:repeat -- ./natsclient` and `task tidy:check`. Census maps measured on SemEngine's tree: no
+        caller of the four entry points; direct creations `natsclient/stream.go` ×2 and
+        `internal/harness/natsfixture/fixture.go` ×1. The two planted-caller tests name `planted.go` in all seven
+        subtests, and all seven fail when the checks return nil. Sleeps 8 → 0 (R1a, `synctest`); fixed-address
+        lines 47 → 0 (`"nats://unused"` for clients that never dial, `refusedNATSURL` for the one that dials).
+        Also repaired, though the list above does not name it: three `Close(context.Background())` calls that
+        `cleanup-roots:check` rejects (`client_connect_test.go:70, :98`, `client_test.go:700`) now run under a
+        10 s `WithTimeout`. `task ledger:diff -- natsclient`: 68 files compared, 12 differ, 39 only at the pin
+        (4 production files; 5 excluded unit files and `typed_test.go`; 29 integration-tagged files: task 3.7b's
+        27, `test_client_integration_test.go` and `kv_temporal_integration_test.go`), 1 only in the tree (`test_helpers_test.go`). `doc.go:512`'s import path is the one `doc.go`
+        difference (task 3.7e).
 - [ ] 3.7a (D) `natsclient` surface audit (#9 comment 5968830525; owner rulings, #9 comment 5969522395, items 1–2),
       each drop an `adapt` item on the row: `options.go` `WithPingInterval`, `WithRequestHandlerTimeout`,
       `WithDisconnectCallback`, `WithReconnectCallback`, `WithHealthChangeCallback`, `WithCircuitBreakerThreshold`,

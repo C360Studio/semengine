@@ -765,8 +765,9 @@
     known_risks). Changed behavior (owner ruling 7, #9 comment 5969522395): BaseMessage decodes
     meta.created_at and meta.received_at strictly as the integer Unix milliseconds MarshalJSON
     writes; absent, null or 0 is the zero time; any other value (a string, a fraction, an exponent
-    form, a bool, an object, an integer outside int64) is refused with an invalid-data error. No
-    other behavior changed
+    form, a bool, an object, an integer outside int64) is refused with an invalid-data error.
+    Changed behavior (owner ruling 2, #9 comment 5969776736): BaseMessage.MarshalJSON refuses a
+    meta source that is not valid UTF-8 with an invalid-data error. No other behavior changed
   dependencies_and_side_effects: >-
     payloadregistry, pkg/errs, pkg/types, internal/timestamp (in-set);
     github.com/google/uuid v1.6.0 (the pin's version, now a direct requirement); stdlib; no
@@ -817,6 +818,12 @@
     time. Replaced by wireMillis: the wire is decoded with json.Decoder.UseNumber (pin :263's
     json.Unmarshal) so the literal is read exactly, and anything but an integer in int64's range is
     refused. internal/timestamp is unchanged; timestamp.Parse has no caller left in the module.
+    Behaviour change, source encoding (owner ruling 2, #9 comment 5969776736): the pin's
+    MarshalJSON wrote meta.source through encoding/json, which replaces each byte of a string that
+    is not valid UTF-8 with U+FFFD, so the wire carried a different source and nothing said so.
+    MarshalJSON now refuses such a source with an invalid-data error, checked at encoding because
+    NewBaseMessage returns no error and WithMeta accepts any Meta. Decoding is unchanged: JSON
+    text is UTF-8, so a decoded source is always valid.
   proving_tests: >-
     the 9 test files in message/ at the pin, carried unchanged except import paths; payload_test.go
     and triple_helpers_test.go use internal/harness/semantictest. Added (task 3.6b):
@@ -826,8 +833,10 @@
     TestBaseMessageTimestampsAreMilliseconds (1999-01-01, 1960-01-01, the epoch and a 2024 instant
     round-trip at millisecond precision; failed first: 1999 decoded as year 30969, 1960 as -8032) and
     TestBaseMessageRefusesTimestampsThatAreNotMilliseconds (failed first: all eight non-millisecond
-    forms accepted); decoder_fuzz_test.go (Codex F8, design D7): FuzzDecoderDecode,
-    FuzzDecoderRoundTrip and FuzzGenericJSONPayloadUnmarshalJSON, through NewDecoder with a real
+    forms accepted); TestBaseMessageRefusesSourceThatIsNotUTF8 (four invalid sources through
+    NewBaseMessage and WithMeta refused, five valid ones kept across the wire; failed first: all
+    eight marshals succeeded with U+FFFD on the wire); decoder_fuzz_test.go (Codex F8, design
+    D7): FuzzDecoderDecode, FuzzDecoderRoundTrip and FuzzGenericJSONPayloadUnmarshalJSON, through NewDecoder with a real
     registry, against a standard-library oracle that predicts acceptance and refusal
   owner: setup-04a-01-floor developer
   disposition: adapt

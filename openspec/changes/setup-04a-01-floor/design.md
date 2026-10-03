@@ -423,9 +423,10 @@ second `Decode` equal in full (ID, type, payload, source, both timestamps). `Fuz
 through `NewBaseMessage` and `NewDefaultMetaWithReceivedAt` from a fuzzed source, two `int64` millisecond timestamps
 and a count, and asserts `decode(marshal(m)) == m` in full; its seeds sit on 0, ±1, 10^12 − 1 and 10^12 (the
 seconds/milliseconds switch of the pin's `timestamp.Parse`), pre-1970 instants and both ends of `int64`, so every
-boundary is reached by construction. A source that is not valid UTF-8 comes back with each invalid byte replaced by
-U+FFFD, which `encoding/json` documents for `Marshal`; the target asserts exactly that replacement, and the full
-equality for every valid source. `GenericJSONPayload.UnmarshalJSON` gets `FuzzGenericJSONPayloadUnmarshalJSON`, checked
+boundary is reached by construction. `MarshalJSON` refuses a source that is not valid UTF-8 with an invalid-data
+error, where `encoding/json` would write each invalid byte as U+FFFD (owner ruling 2, #9 comment 5969776736); the
+target asserts that refusal, judged by `unicode/utf8`, and the full equality for every valid source, with no
+exception. `GenericJSONPayload.UnmarshalJSON` gets `FuzzGenericJSONPayloadUnmarshalJSON`, checked
 against the standard library's decode of `{"data": …}`. Named examples own the four ruled instants
 (`TestBaseMessageTimestampsAreMilliseconds`) and the refused timestamp forms
 (`TestBaseMessageRefusesTimestampsThatAreNotMilliseconds`). The entity-ID helpers keep the qualification of their

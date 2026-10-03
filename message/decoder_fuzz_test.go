@@ -8,10 +8,12 @@ import (
 	"regexp"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/c360studio/semengine/internal/harness/payloadfixture"
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/payloadregistry"
+	"github.com/c360studio/semengine/pkg/errs"
 )
 
 // countPayload is a consumer-style payload with a typed field, so the fuzz registry holds a type
@@ -164,11 +166,13 @@ func FuzzDecoderDecode(f *testing.F) {
 	})
 }
 
-// FuzzDecoderRoundTrip: decode(marshal(m)) == m for a message built through the package's own
-// constructors, with every int64 timestamp reachable by construction (owner ruling 7: the wire
-// is milliseconds both ways). Seeds sit on each boundary the old heuristic and the
-// representation have: 0 (the zero time), ±1, 10^12 - 1 and 10^12 (the old seconds/milliseconds
-// switch), pre-1970, and both ends of int64.
+// FuzzDecoderRoundTrip: decode(marshal(m)) == m in full for a message built through the package's
+// own constructors, with every int64 timestamp reachable by construction (owner ruling 7: the wire
+// is milliseconds both ways); marshal refuses a source that is not valid UTF-8 (owner ruling 2,
+// #9 comment 5969776736). Seeds sit on each boundary the old heuristic and the representation
+// have: 0 (the zero time), ±1, 10^12 - 1 and 10^12 (the old seconds/milliseconds switch),
+// pre-1970, and both ends of int64; of the last two sources, U+FFFD itself is valid UTF-8 and
+// \xff\xfe is not.
 func FuzzDecoderRoundTrip(f *testing.F) {
 	for _, seed := range []struct {
 		source            string
@@ -182,6 +186,7 @@ func FuzzDecoderRoundTrip(f *testing.F) {
 		{"c", 915_148_800_123, -315_619_199_544, 1 << 53},
 		{"d", math.MinInt64, math.MaxInt64, math.MinInt64},
 		{"e", -62_135_596_800_000, 253_402_300_799_999, math.MaxInt64},
+		{"\uFFFD 温度", 4, 5, 6},
 		{"\xff\xfe source", 1, 2, 3},
 	} {
 		f.Add(seed.source, seed.created, seed.received, seed.count)
@@ -205,6 +210,17 @@ func FuzzDecoderRoundTrip(f *testing.F) {
 			}
 		}
 		encoded, err := json.Marshal(built)
+		// JSON text is UTF-8, so a source that is not is refused, never written altered (owner
+		// ruling 2, #9 comment 5969776736). The oracle is the standard library's utf8 package.
+		if !utf8.ValidString(source) {
+			if err == nil {
+				t.Fatalf("marshal of source %q succeeded: %s", source, encoded)
+			}
+			if !errs.IsInvalid(err) {
+				t.Fatalf("marshal of source %q: %v, want an invalid-data error", source, err)
+			}
+			return
+		}
 		if err != nil {
 			t.Fatalf("marshal: %v", err)
 		}
@@ -212,15 +228,7 @@ func FuzzDecoderRoundTrip(f *testing.F) {
 		if err != nil {
 			t.Fatalf("Decode(%s): %v", encoded, err)
 		}
-		// JSON text is UTF-8: encoding/json documents that Marshal replaces each invalid byte of a
-		// string with U+FFFD, and so does converting the string to runes. Source is otherwise kept
-		// exactly.
-		if want := string([]rune(source)); got.Meta().Source() != want {
-			t.Fatalf("source after the wire %q, want %q (built %q)", got.Meta().Source(), want, source)
-		}
-		if source == string([]rune(source)) {
-			requireSameMessage(t, encoded, built, got)
-		}
+		requireSameMessage(t, encoded, built, got)
 	})
 }
 

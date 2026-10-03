@@ -11,6 +11,7 @@ import (
 
 	"github.com/c360studio/semengine/internal/harness/payloadfixture"
 	"github.com/c360studio/semengine/message"
+	"github.com/c360studio/semengine/pkg/errs"
 )
 
 // TestMetaCarriesOnlyWhatTheWireCarries: BaseMessage.MarshalJSON writes created_at, received_at
@@ -182,6 +183,49 @@ func TestBaseMessageRefusesTimestampsThatAreNotMilliseconds(t *testing.T) {
 		if !msg.Meta().CreatedAt().IsZero() || !msg.Meta().ReceivedAt().IsZero() {
 			t.Errorf("meta {%s}: created %v, received %v, want the zero time for both", meta,
 				msg.Meta().CreatedAt(), msg.Meta().ReceivedAt())
+		}
+	}
+}
+
+// TestBaseMessageRefusesSourceThatIsNotUTF8: JSON text is UTF-8, and encoding/json documents that
+// Marshal replaces each invalid byte of a string with U+FFFD, so a source that is not valid UTF-8
+// would reach the wire as a different source with no error. Encoding refuses it instead (owner
+// ruling 2, #9 comment 5969776736), whether the source came through NewBaseMessage or a Meta
+// given with WithMeta; a valid source, U+FFFD itself included, encodes and decodes unchanged.
+func TestBaseMessageRefusesSourceThatIsNotUTF8(t *testing.T) {
+	coreJSON := message.Type{Domain: "core", Category: "json", Version: "v1"}
+	payload := func() message.Payload { return message.NewGenericJSON(map[string]any{"k": "v"}) }
+	for _, source := range []string{"\xff", "gw-\xfe", "\xe2\x82", "ok\xc0\xafok"} {
+		for name, msg := range map[string]*message.BaseMessage{
+			"NewBaseMessage": message.NewBaseMessage(coreJSON, payload(), source),
+			"WithMeta": message.NewBaseMessage(coreJSON, payload(), "valid",
+				message.WithMeta(message.NewDefaultMeta(time.UnixMilli(1), source))),
+		} {
+			encoded, err := json.Marshal(msg)
+			if err == nil {
+				t.Errorf("%s: marshal of source %q succeeded: %s", name, source, encoded)
+				continue
+			}
+			if !errs.IsInvalid(err) {
+				t.Errorf("%s: marshal of source %q: %v, want an invalid-data error", name, source, err)
+			}
+		}
+	}
+
+	dec := message.NewDecoder(payloadfixture.NewWithSubset(t, message.RegisterPayloads))
+	for _, source := range []string{"", "sensor-gw", "温度-センサー", "�", "a b"} {
+		encoded, err := json.Marshal(message.NewBaseMessage(coreJSON, payload(), source))
+		if err != nil {
+			t.Errorf("marshal of source %q: %v", source, err)
+			continue
+		}
+		got, err := dec.Decode(encoded)
+		if err != nil {
+			t.Errorf("decode of %s: %v", encoded, err)
+			continue
+		}
+		if got.Meta().Source() != source {
+			t.Errorf("source after the wire %q, want %q", got.Meta().Source(), source)
 		}
 	}
 }

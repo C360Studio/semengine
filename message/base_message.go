@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strconv"
 	"time"
+	"unicode/utf8"
 
 	"github.com/c360studio/semengine/internal/timestamp"
 	"github.com/c360studio/semengine/payloadregistry"
@@ -185,6 +186,8 @@ type wireFormat struct {
 //
 // Validation is performed before serialization to ensure invalid
 // messages cannot be serialized and published to the message bus.
+// A meta source that is not valid UTF-8 is refused with an invalid-data
+// error rather than written with its invalid bytes replaced.
 func (m *BaseMessage) MarshalJSON() ([]byte, error) {
 	// Validate before serializing - invalid messages cannot be published
 	if err := m.Validate(); err != nil {
@@ -197,11 +200,21 @@ func (m *BaseMessage) MarshalJSON() ([]byte, error) {
 		return nil, errs.WrapInvalid(err, "BaseMessage", "MarshalJSON", "failed to marshal payload")
 	}
 
+	// encoding/json would write each invalid byte as U+FFFD, putting a different source on the wire
+	// with no error; refuse it (owner ruling 2, semengine #9). Checked here, not at construction,
+	// because NewBaseMessage returns no error and WithMeta accepts any Meta.
+	source := m.meta.Source()
+	if !utf8.ValidString(source) {
+		return nil, errs.WrapInvalid(
+			fmt.Errorf("meta source %q is not valid UTF-8", source),
+			"BaseMessage", "MarshalJSON", "source")
+	}
+
 	// Create metadata map with int64 timestamps for consistency
 	metaMap := map[string]interface{}{
 		"created_at":  timestamp.ToUnixMs(m.meta.CreatedAt()),
 		"received_at": timestamp.ToUnixMs(m.meta.ReceivedAt()),
-		"source":      m.meta.Source(),
+		"source":      source,
 	}
 
 	// Create the wire format

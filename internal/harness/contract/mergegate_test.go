@@ -112,16 +112,18 @@ func unitInvocationViolations(taskfile, verify []byte) []string {
 	return violations
 }
 
-// merge-gate › "Required needs both jobs": .github/workflows/ci.yml held to five facts. The job
-// merge-check runs under exactly three read permissions; no permission anywhere in the workflow is
-// a write; required needs verify and merge-check; verify's limit is 15 minutes; required runs under
-// if: always(), and its step, which takes its results from needs.*.result, exits 0 only when every
-// needed job succeeded. The last is shown by running the step's script as the workflow writes it,
-// with each set of results planted. As above, the expected values are constants here, never read
-// from the file under test.
+// merge-gate › "Required needs both jobs" and "A run when a pull request is marked ready":
+// .github/workflows/ci.yml held to six facts. The job merge-check runs under exactly three read
+// permissions; no permission anywhere in the workflow is a write; required needs verify and
+// merge-check; verify's limit is 15 minutes; required runs under if: always(), and its step, which
+// takes its results from needs.*.result, exits 0 only when every needed job succeeded; the
+// pull_request trigger lists four activity types. The step is shown by running its script as the
+// workflow writes it, with each set of results planted. As above, the expected values are constants
+// here, never read from the file under test.
 var (
 	requiredNeeds         = []string{"verify", "merge-check"}
 	mergeCheckPermissions = map[string]string{"contents": "read", "issues": "read", "pull-requests": "read"}
+	pullRequestTypes      = []string{"opened", "synchronize", "reopened", "ready_for_review"}
 )
 
 const verifyTimeoutMinutes = 15
@@ -135,7 +137,11 @@ func TestCIWorkflowPinned(t *testing.T) {
 }
 
 func TestCIWorkflowPinnedSensitivity(t *testing.T) {
-	const good = `on: [push]
+	const good = `on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 permissions:
   contents: read
 jobs:
@@ -225,6 +231,16 @@ jobs:
 			[]string{"job required", "defaults.run.shell", "sh"}},
 		{"step always fails", "        run: |\n", "        run: |\n          exit 1\n",
 			[]string{"job required", "every needed job succeeded"}},
+		// "A run when a pull request is marked ready": the scenarios "Ready type missing" (three
+		// workflows) and "A default type missing".
+		{"ready type missing", "types: [opened, synchronize, reopened, ready_for_review]", "types: [opened, synchronize, reopened]",
+			[]string{"pull_request", "ready_for_review"}},
+		{"no activity types", "  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review]\n", "  pull_request:\n",
+			[]string{"pull_request", "ready_for_review"}},
+		{"no pull_request trigger", "  pull_request:\n    types: [opened, synchronize, reopened, ready_for_review]\n", "",
+			[]string{"pull_request", "ready_for_review"}},
+		{"default type missing", "types: [opened, synchronize, reopened, ready_for_review]", "types: [opened, reopened, ready_for_review]",
+			[]string{"pull_request", "synchronize"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			requireViolation(t, ciWorkflowViolations(t, plant(t, tc.old, tc.repl)), tc.wants...)
@@ -262,6 +278,7 @@ type ciStep struct {
 // ciWorkflowViolations checks a GitHub Actions workflow against the merge-gate spec.
 func ciWorkflowViolations(t *testing.T, data []byte) []string {
 	var wf struct {
+		On          any              `yaml:"on"`
 		Permissions any              `yaml:"permissions"`
 		Defaults    ciDefaults       `yaml:"defaults"`
 		Jobs        map[string]ciJob `yaml:"jobs"`
@@ -269,7 +286,7 @@ func ciWorkflowViolations(t *testing.T, data []byte) []string {
 	if err := yaml.Unmarshal(data, &wf); err != nil {
 		return []string{fmt.Sprintf("ci.yml: %v", err)}
 	}
-	var violations []string
+	violations := pullRequestTriggerViolations(wf.On)
 
 	// No write anywhere: the workflow's default and every job's own grant.
 	violations = append(violations, writeGrants("workflow", wf.Permissions)...)
@@ -317,6 +334,42 @@ func ciWorkflowViolations(t *testing.T, data []byte) []string {
 		violations = append(violations, "ci.yml: no job verify; the merge-gate spec requires it")
 	} else if limit, ok := v.TimeoutMinutes.(int); !ok || limit != verifyTimeoutMinutes {
 		violations = append(violations, fmt.Sprintf("ci.yml: job verify has timeout-minutes %v; the merge-gate spec requires %d minutes", v.TimeoutMinutes, verifyTimeoutMinutes))
+	}
+	return violations
+}
+
+// pullRequestTriggerViolations names each activity type the workflow's pull_request trigger does
+// not list. A trigger with no types list starts on GitHub's defaults, which lack ready_for_review.
+func pullRequestTriggerViolations(on any) []string {
+	var trigger any
+	found := false
+	switch o := on.(type) {
+	case string:
+		found = o == "pull_request"
+	case []any:
+		found = slices.Contains(o, any("pull_request"))
+	case map[string]any:
+		trigger, found = o["pull_request"]
+	}
+	if !found {
+		return []string{fmt.Sprintf("ci.yml: no pull_request trigger; the merge-gate spec requires one listing the activity types %v", pullRequestTypes)}
+	}
+	var types []string
+	if m, ok := trigger.(map[string]any); ok {
+		switch ty := m["types"].(type) {
+		case string:
+			types = []string{ty}
+		case []any:
+			for _, v := range ty {
+				types = append(types, fmt.Sprint(v))
+			}
+		}
+	}
+	var violations []string
+	for _, want := range pullRequestTypes {
+		if !slices.Contains(types, want) {
+			violations = append(violations, fmt.Sprintf("ci.yml: the pull_request trigger lists activity types %v; %s is missing, and the merge-gate spec requires %v", types, want, pullRequestTypes))
+		}
 	}
 	return violations
 }

@@ -13,8 +13,9 @@ How external graph sources (like semsource) send entities into a SemEngine knowl
 > input, flow configuration, and `config.Manager.Start`, which mints the platform suffix. Issue numbers (`#1095`) are SemStreams'.
 >
 > The pin's text is kept apart from the product name (SemStreams becomes SemEngine), one link to a concept page
-> that is not ported, and two passages corrected to what the pin's code does, each marked
-> **Correction (SemEngine port)** with the pin line it supersedes.
+> that is not ported, the path of the entity-ID contract (the pin's `openspec/specs/entity-id-contract/spec.md` is
+> `docs/specs/entity-id-contract.md` here, #72 ruling of 2026-10-03), and two passages corrected to what the pin's
+> code does, each marked **Correction (SemEngine port)** with the pin line it supersedes.
 
 ## The Core Idea
 
@@ -38,7 +39,7 @@ separate federation pipeline.
 ## Entity ID Namespacing
 
 External entities use the same six-part canonical ID as internal ones — the lexical contract
-(`openspec/specs/entity-id-contract/spec.md`: exactly six positions, ASCII alphabet, 256 bytes) is enforced at
+([entity-ID contract](../specs/entity-id-contract.md): exactly six positions, ASCII alphabet, 256 bytes) is enforced at
 every graph boundary today:
 
 ```text

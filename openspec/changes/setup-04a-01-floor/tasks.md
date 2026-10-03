@@ -185,8 +185,13 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       comments 5969296459 §2 and 5969508639 §2), ported from the pin at
       `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`, each with an `adapt` ledger row naming its corrections and a port
       note naming what SemEngine has not yet ported: `docs/adr/102-entity-id-segment-semantics.md` (lint fixes
-      only), `docs/adr/104-unique-platform-authority.md`, `docs/concepts/16-federation.md` and
-      `openspec/specs/entity-id-contract/spec.md` (`:490` keeps `DeploymentPrefix` as `MUST export`). Corrections,
+      only), `docs/adr/104-unique-platform-authority.md`, `docs/concepts/16-federation.md` and the pin's
+      `openspec/specs/entity-id-contract/spec.md` (`:490` keeps `DeploymentPrefix` as `MUST export`). The spec is
+      ported to `docs/specs/entity-id-contract.md` as a reference contract, not to `openspec/specs/`, which holds
+      only current truth verified against code: most of its requirements describe packages not yet ported, and each
+      moves into an `openspec/specs/` capability when its code is (#72 ruling of 2026-10-03, comment
+      5970020197). Its opening note says so; its lint fixes and the path notes in ADR-102, ADR-104 and
+      `16-federation.md` (pin `:26`) are on their ledger rows. Corrections,
       each cited in the document to the pin line it supersedes: ADR-104 decision 7 (`:94-100`) kept as history and
       marked superseded (SemStreams #1188; the ADR's own `:127-128`; pin
       `openspec/specs/component-runtime-config/spec.md:369-371`), with its restatements at `:115-118`, `:123` and
@@ -195,7 +200,7 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       to "SemEngine" at `16-federation.md:3, :190, :194` and `spec.md:211`; the `16-federation.md:190` link to an
       unported concept page reworded; `pkg/platform/platform.go:1-4` (the package comment named `message` and
       `vocabulary` as readers) now names `config` and positions 1-2 of the ID, an `adapt` item on the `pkg/platform`
-      row beside `:27-28`. `docs/repository-map.md` lists `docs/adr/`, the concept page and the spec. Gates:
+      row beside `:27-28`. `docs/repository-map.md` lists `docs/adr/`, the concept page and `docs/specs/`. Gates:
       `task docs:check`, `task spec:check`, `task ledger:check`, `task verify`.
 - [x] 3.4 (D) `pkg/projection/contract`, `pkg/tlsutil` (level 3): `pkg/projection/contract` row `carry`, destination
       `pkg/projection/contract` (public: SemConnect imports it; #9 comment 5953295358); `pkg/tlsutil` row `adapt`,

@@ -29,6 +29,7 @@ not a task tracker and not a description of the tree.
 | `docs/provenance.md` | License and provenance requirements for ported code |
 | `docs/inventory-scope.md` | Which repositories agents may read, for what question; starter consumer set (ruled on #22) |
 | `docs/adr/` | Architecture decision records. ADR-102 (what each entity-ID position means) and ADR-104 (the minted `platform.id` suffix), ported from SemStreams with `pkg/types` |
+| `docs/specs/entity-id-contract.md` | The entity-ID reference contract, ported from SemStreams with `pkg/types`: the requirements for entity identity as the pin states them, not a statement of current code. Each requirement moves into a capability spec under `openspec/specs/` when the code it describes is ported (#72 ruling, 2026-10-03) |
 | `docs/concepts/16-federation.md` | How entity-ID positions and the authority check separate sources and deployments; ported from SemStreams with `pkg/types` |
 | `AGENTS.md`, `CLAUDE.md` | Agent entry point; `CLAUDE.md` imports `AGENTS.md` |
 | `.agents/` | The shared protocol, role contracts, and skills: the one home of the rules |
@@ -39,6 +40,9 @@ not a task tracker and not a description of the tree.
 | `internal/harness/lifecycletest/` | Owner-first lifecycle checks (`Run`) for stateful components |
 | `internal/harness/probe/` | Callback, observed-context, and bounded-polling test probes |
 | `internal/harness/contract/` | Tests of repository-wide rules: no fixed network addresses, no stored contexts, no broad Docker cleanup, Docker names SemStreams' cleanup cannot match, the import graph, one NATS image pin, the admission ledger (`task ledger:check`), no sleeps or skipped or hidden tests; and tests that the cover, cleanup-roots, tree-state and merge-check scripts, the `test:unit` and `test:repeat` commands, and the CI workflow do what the merge gate requires |
+| `internal/harness/prochost/` | Runs a helper function from the test binary as a child process in its own process group, so a test can signal, pause, kill and wait for it; used by tests that prove behavior when a process dies |
+| `internal/harness/payloadfixture/` | Payload-registry fixtures for tests (an empty registry, one built from chosen registrations, a stub type); the pin's `payloadregistry/testing.go`, moved here because it imports `testing` |
+| `internal/harness/semantictest/` | Helpers that build well-formed entity IDs and predicates for test fixtures; the pin's `internal/semantictest` |
 | `internal/harness/runner/` | Tests of the integration runner script |
 | `internal/harness/pindiff/` | The program behind `task ledger:check` and `task ledger:diff`: compares ledger entries with the pin (SemStreams at each entry's `source_sha`), which it fetches from GitHub when an entry needs it |
 | `scripts/test-integration.sh` | `task test:integration`: host lock, image preflight, signal forwarding, leak check |
@@ -50,7 +54,6 @@ not a task tracker and not a description of the tree.
 | `package.json`, `.nvmrc`, `.task-version` | Pins for the Node-based OpenSpec and markdownlint tools and Task |
 | `.markdownlint.yaml`, `.markdownlint-cli2.yaml` | Markdown lint configuration behind `task docs:check` |
 | `openspec/specs/{integration-test-runner,nats-fixture,lifecycle-suite,harness-boundaries}/` | Current truth, synced by the SETUP 02 archive; `lifecycle-suite` and `harness-boundaries` amended by the `flake-defense` archive |
-| `openspec/specs/entity-id-contract/` | The entity-ID capability spec, ported from SemStreams with `pkg/types`; its Purpose names the packages and tests it cites that are not yet ported |
 | `openspec/changes/setup-04a-01-floor/` | The open change (draft PR #48, epic #9): the floor's 15 packages, the harness extension, and their tasks and holds |
 | `message/`, `metric/`, `payloadregistry/`, `vocabulary/`, `pkg/{errs,platform,projection/contract,retry,security,types}/`, `internal/{cache,resource,timestamp,tlsutil}/` | SemStreams packages ported by `setup-04a-01-floor`; each has an admission-ledger row naming its pin path and destination |
 | `openspec/specs/merge-gate/` | Current truth for the merge gate's flake defenses, synced by the `flake-defense` archive |

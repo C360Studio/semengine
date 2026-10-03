@@ -455,7 +455,9 @@
     lint fixes only: the title is shortened to fit MD013's 80-column heading limit (the pin's full
     title is quoted in the port note) and pin lines 58 and 77-79 are rewrapped at 120 columns; no
     decision wording changed. Port note added under the title: SemStreams issue numbers, and records,
-    specs and packages it names that are not yet ported
+    specs and packages it names that are not yet ported; it also says the entity-ID spec, named in the
+    text by its pin path, is docs/specs/entity-id-contract.md here (#72 ruling of 2026-10-03, comment
+    5970020197)
   proving_tests: n/a (task docs:check lints it)
   owner: setup-04a-01-floor technical writer
   disposition: adapt
@@ -476,7 +478,9 @@
     (consequence), :123 ("lost environment claim") and :145 ("one environment per bucket") marked
     superseded with it. Lint fixes: pin lines 5 and 91 rewrapped at 120 columns. Port note added: issue
     numbers are SemStreams'; config.Manager.Start, the component-runtime-config and
-    framework-bucket-catalog specs and the proposals inventory are not yet ported
+    framework-bucket-catalog specs and the proposals inventory are not yet ported; it also says the
+    entity-id-contract spec the text calls a capability spec is the reference contract
+    docs/specs/entity-id-contract.md here (#72 ruling of 2026-10-03, comment 5970020197)
   proving_tests: n/a (task docs:check lints it)
   owner: setup-04a-01-floor technical writer
   disposition: adapt
@@ -498,7 +502,9 @@
     :307, :383, :474; component.go:1743, :2065, :2224, :2306, :2449, :2591). Product name (#9 comment
     5968665464): :3, :190 and :194 say SemEngine for SemStreams. :190 link to 15-payload-registry.md
     (not ported) reworded to the payloadregistry package. Port note added: graph, graph-ingest, the
-    WebSocket input, flow configuration and config.Manager.Start are not yet ported
+    WebSocket input, flow configuration and config.Manager.Start are not yet ported. :26 links the
+    entity-ID spec at its SemEngine path, docs/specs/entity-id-contract.md, in place of the pin's
+    openspec/specs/entity-id-contract/spec.md (#72 ruling of 2026-10-03, comment 5970020197)
   proving_tests: n/a (task docs:check lints it)
   owner: setup-04a-01-floor technical writer
   disposition: adapt
@@ -506,12 +512,12 @@
 - source_path: openspec/specs/entity-id-contract/spec.md
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    the capability spec for entity identity that pkg/types implements; ported with pkg/types (#72
+    the reference contract for entity identity that pkg/types implements; ported with pkg/types (#72
     ruling D, comment 5969505488). :490 keeps DeploymentPrefix as MUST export (its in-package caller
     is SourcePrefix)
-  destination: openspec/specs/entity-id-contract/spec.md
+  destination: docs/specs/entity-id-contract.md
   contract: the requirements and scenarios as at the pin
-  dependencies_and_side_effects: none; a document, validated by task spec:check
+  dependencies_and_side_effects: none; a document, linted by task docs:check
   known_risks: >-
     :211 "SemStreams MUST NOT" reads "SemEngine MUST NOT" (#9 comment 5968665464). A port note in
     Purpose names the seven pkg/types tests the spec cites that exist and pass here, the packages and
@@ -519,7 +525,13 @@
     its processors, the example processors, the research pipeline, internal/entityidaudit), and three
     test names (TestNewConversationMintsCanonicalUUID, TestCanonicalReplyToPassesFormCheck,
     TestUnmintedCanonicalReplyToIsRefusedAsNotFound) that name no test function at the pin either.
-    Most requirements describe code not yet ported, so the spec is not yet current truth for them
+    Most requirements describe code not yet ported, so it is a reference contract, not current truth:
+    it lives at docs/specs/, not openspec/specs/, and each requirement moves into an openspec/specs/
+    capability when the code it describes is ported (#72 ruling of 2026-10-03, comment 5970020197). Its title
+    (:1) is "Entity-ID contract (reference)" with an opening note saying so. Lint fixes, now that
+    task docs:check lints it: blank lines around :20 "## Requirements"; :412, :592, :639 and :643
+    rewrapped at 120 columns; the trailing blank line :785 dropped; the file raises MD013's heading
+    limit to 120 so the requirement headings tests cite stay word for word
   proving_tests: >-
     pkg/types: TestEntityIDKeyOrderIsSystemBeforeDomain, TestFrameworkEntityDomainsIsTheClosedReservedSet,
     TestEntityDomainDelegationIsADeclarationNotAPolicy, TestAuthorityRejectionIsCodedAndIdentityFree,

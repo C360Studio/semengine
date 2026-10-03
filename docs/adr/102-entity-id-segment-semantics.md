@@ -9,8 +9,10 @@
 > - Issue and pull request numbers (`#1095`, `gh#459`, `semmem PR #2`) are SemStreams' or a sister repository's,
 >   not SemEngine's.
 > - Of the records and specs named here, only ADR-104 (`docs/adr/104-unique-platform-authority.md`) and
->   `openspec/specs/entity-id-contract/spec.md` are ported. ADR-032, ADR-065, ADR-068, ADR-072, ADR-076, ADR-078,
->   ADR-087 and ADR-099, the `graph-ingest` spec, and the `docs/proposals/` inventories are not yet ported.
+>   the entity-ID spec are ported. The spec is the reference contract `docs/specs/entity-id-contract.md` here; the
+>   pin's path for it, `openspec/specs/entity-id-contract/spec.md`, is kept in the text below (#72 ruling,
+>   2026-10-03). ADR-032, ADR-065, ADR-068, ADR-072, ADR-076, ADR-078, ADR-087 and ADR-099, the `graph-ingest`
+>   spec, and the `docs/proposals/` inventories are not yet ported.
 > - Of the code named here, `pkg/types` and `vocabulary` are ported. The rule engine, graph-ingest, hierarchy
 >   inference, `graph.NewAlertEvent`, `vocabulary/export`, the GraphQL surface and the `entity-id-audit` tool are not
 >   yet ported.

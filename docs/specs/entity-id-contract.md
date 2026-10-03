@@ -1,4 +1,19 @@
-# entity-id-contract Specification
+# Entity-ID contract (reference)
+
+This file is a **reference contract**: the requirements for entity identity as SemStreams states them, ported
+unchanged from the SemStreams commit SemEngine is extracted from (`8b99efe9`, called "the pin" below). It is not a
+statement of what SemEngine's code does today. Most requirements describe packages SemEngine has not ported yet.
+When the code a requirement describes is ported, that requirement moves into a capability spec under
+`openspec/specs/`, which holds only requirements checked against the code in this repository (owner ruling on
+[#72](https://github.com/C360Studio/semengine/issues/72), 2026-10-03). Until then, read it as the target the ported
+code must meet.
+
+The requirement headings are kept word for word because tests cite them; some are longer than the heading length the
+repository's lint allows, so this file raises that limit for itself.
+
+<!-- markdownlint-configure-file
+{ "MD013": { "line_length": 120, "heading_line_length": 120, "code_blocks": false, "tables": false } }
+-->
 
 ## Purpose
 
@@ -18,22 +33,24 @@ ObjectStore validates identity before doing entity-derived object I/O.
 and how it merges belongs to `graph-ingest`; index key encoding belongs to `nats-kv-keys`. This
 capability answers one question — is this a legal entity ID, and who says so.
 
-**Ported from SemStreams.** This spec is `openspec/specs/entity-id-contract/spec.md` at SemStreams commit
-`8b99efe9c66a4faa4fa509f9f62cc6bad8392128`, ported with `pkg/types` (admission-ledger row
-`openspec/specs/entity-id-contract/spec.md`). Its requirements are the pin's; the only text change is "SemStreams" to
-"SemEngine" in the requirement on unconditional enforcement. What holds in this repository today: `pkg/types`, and
-the `message` delegators it names, are ported, and the tests named for them pass under `task test:unit`
-(`TestEntityIDKeyOrderIsSystemBeforeDomain`, `TestFrameworkEntityDomainsIsTheClosedReservedSet`,
+**Where it came from, and what holds today.** This is `openspec/specs/entity-id-contract/spec.md` at SemStreams
+commit `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`, ported with `pkg/types` (the provenance record for the port is the
+row for that source path in `docs/admission-ledger.yaml`). Its requirements are the pin's; the only text change is
+"SemStreams" to "SemEngine" in the requirement on unconditional enforcement. What holds in this repository today:
+`pkg/types`, and the `message` delegators it names, are ported, and the tests named for them pass under
+`task test:unit` (`TestEntityIDKeyOrderIsSystemBeforeDomain`, `TestFrameworkEntityDomainsIsTheClosedReservedSet`,
 `TestEntityDomainDelegationIsADeclarationNotAPolicy`, `TestAuthorityRejectionIsCodedAndIdentityFree`,
 `TestAuthorityRejectionLocalClaimOnImportLane`, `TestPrefixLevelsAreNamed`,
-`TestTaxonomyAcrossSourcesIsPatternNotPrefix`). Every other package and test named below is not yet ported: graph-ingest,
-graph-index, ObjectStore, `config` and its identity record, `agentic` and the agentic dispatch and loop processors,
-the example processors, the research pipeline, and the entity-ID corpus audit (`internal/entityidaudit`, `task
-entity-id:audit`). `tasks.md` 7.1, issue numbers, ADR numbers other than 102 and 104, and data values such as
+`TestTaxonomyAcrossSourcesIsPatternNotPrefix`). Every other package and test named below is not yet ported:
+graph-ingest, graph-index, ObjectStore, `config` and its identity record, `agentic` and the agentic dispatch and loop
+processors, the example processors, the research pipeline, and the entity-ID corpus audit (`internal/entityidaudit`,
+`task entity-id:audit`). `tasks.md` 7.1, issue numbers, ADR numbers other than 102 and 104, and data values such as
 `semstreams.framework`, `semstreams-e2e-structural` and `semstreams_config_*` are the pin's. Three test names in the
 loop-token requirement (`TestNewConversationMintsCanonicalUUID`, `TestCanonicalReplyToPassesFormCheck`,
 `TestUnmintedCanonicalReplyToIsRefusedAsNotFound`) name no test function at the pin either.
+
 ## Requirements
+
 ### Requirement: Every entity ID has one canonical six-segment ASCII form
 
 An entity ID MUST contain exactly six non-empty dot-separated segments in
@@ -425,7 +442,8 @@ deployment's own `org.platform`; a fixed framework literal in positions 1–2 is
 #### Scenario: a framework builder mints under the deployment's own authority
 
 - **GIVEN** a deployment whose `deps.Platform` is `acme`/`dep1`
-- **WHEN** a loop execution, chain execution, lesson, web observation, diagnosis, rule alert, or rule trigger entity is minted
+- **WHEN** a loop execution, chain execution, lesson, web observation, diagnosis, rule alert, or rule trigger entity is
+  minted
 - **THEN** positions 1–2 of the minted ID are `acme.dep1`
 - **AND** position 3 names the minting framework component and position 4 a framework-reserved domain
 - **AND** the test that verifies this is `agentic/entity_ids_semantics_test.go`
@@ -605,7 +623,8 @@ non-wildcard, non-template value in positions 1–2 of a production builder, dec
 and `domain_unregistered` for any literal position-4 value in production Go that is outside the framework-reserved
 set and not a registered delegation. To see builders the audit MUST add two surfaces it lacks today:
 `go-format-prefix` (a `fmt.Sprintf` format string whose dot-separated tokens are read as positions, with `%s` as a
-template position) and `go-dotted-constant` (a string constant of two or more dotted tokens ending in `.`). The tracked corpus MUST have zero unclassified findings, and the audit MUST run in
+template position) and `go-dotted-constant` (a string constant of two or more dotted tokens ending in `.`). The tracked
+corpus MUST have zero unclassified findings, and the audit MUST run in
 the CI lint job. The container padding tokens `group`, `container`, and `level` MUST be exported as reserved
 instance tokens; a production instance value equal to one of them MUST be a finding.
 
@@ -652,14 +671,16 @@ per-deployment by construction and cannot be cloned through a template.
 
 - **GIVEN** two deployments whose configuration files are byte-identical copies of one template with `platform.id` `dep`
 - **WHEN** each boots for the first time against its own NATS server
-- **THEN** the `org.platform` pair each mints under differs from the other's and each `platform` position is `dep-` followed by six hex bytes
+- **THEN** the `org.platform` pair each mints under differs from the other's and each `platform` position is `dep-`
+  followed by six hex bytes
 - **AND** each deployment's pair is stable across its own later restarts
 - **AND** the test that verifies this is `TestFirstBootMintsDistinctSuffixesPerDeployment`
 
 #### Scenario: an operator-provisioned identity record is adopted unsuffixed
 
 - **GIVEN** a configuration declaring `platform.id` `field-ops-7`
-- **AND** an operator who created `semstreams_config_acme_field-ops-7/platform_identity` as `{"org":"acme","stem":"field-ops-7","id":"field-ops-7"}` before the deployment's first boot
+- **AND** an operator who created `semstreams_config_acme_field-ops-7/platform_identity` as
+  `{"org":"acme","stem":"field-ops-7","id":"field-ops-7"}` before the deployment's first boot
 - **WHEN** the deployment boots
 - **THEN** its effective `platform` position is exactly `field-ops-7` and no suffix is minted
 - **AND** the test that verifies this is `TestPreCreatedIdentityRecordIsAdoptedUnsuffixed`
@@ -798,4 +819,3 @@ sites, not at the accepting seams.
 - **THEN** each answers with a bad-request refusal naming the token form, not a not-found answer, and no
   approval is published
 - **AND** the test that verifies this is `TestLoopEndpointsRefuseNonCanonicalPathToken`
-

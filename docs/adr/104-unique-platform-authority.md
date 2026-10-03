@@ -13,7 +13,9 @@
 >   `config`). Bucket and key names such as `semstreams_config` and `platform_identity` are the pin's.
 > - ADR-102 (`docs/adr/102-entity-id-segment-semantics.md`) and the `entity-id-contract` spec are ported; the
 >   `component-runtime-config` and `framework-bucket-catalog` specs and the `docs/proposals/` inventory are not yet
->   ported.
+>   ported. Where the text below calls `entity-id-contract` a capability spec, it is the pin's; here it is the
+>   reference contract `docs/specs/entity-id-contract.md`, and its requirements become a capability spec as the code
+>   they describe is ported (#72 ruling, 2026-10-03).
 
 ## Status
 

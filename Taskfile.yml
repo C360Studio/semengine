@@ -93,7 +93,7 @@ tasks:
       - scripts/test-integration.sh {{.CLI_ARGS}}
 
   merge:check:
-    desc: Fail while a class:flake issue is open that PR <n> does not close, or main's rules lack the up-to-date setting; -- <n>. Reads GitHub, so not in verify
+    desc: Fail while a class:flake issue is open that PR <n> does not close, main's rules lack the up-to-date setting, or PR <n> is a code PR, not a draft, without implemented-by and reviewed-by lines naming the two agents; -- <n>. Reads GitHub, so not in verify
     cmds:
       - scripts/merge-check.sh {{.CLI_ARGS}}
 

@@ -8,6 +8,12 @@
 #   2. On a pull-request run: while an issue labelled class:flake is open, fail
 #      unless this pull request's closing references include every open one.
 #      There is no waiver: no comment, label or variable exempts a pull request.
+#   3. On a pull-request run, before rule 2 (openspec change review-gate-check;
+#      spec merge-gate, "Cross-agent review check"): a code pull request that is
+#      not a draft fails unless its description has one implemented-by: line
+#      naming claude or codex (not read for a bot's) and one reviewed-by: line
+#      naming the other (either one for a bot's, or when both are named); a
+#      draft's findings are printed and fail nothing.
 #
 # Usage: merge-check.sh <pr-number>
 #   The kind of run comes from GITHUB_EVENT_NAME only when GITHUB_ACTIONS is
@@ -46,6 +52,7 @@ if [ "$kind" = pull-request ]; then
   case "$pr" in *[!0-9]* | 0*) die "pull request number '$pr' is not a positive integer" ;; esac
 else
   echo "merge-check: push run (${how}); the known-flake check does not apply, the up-to-date rule is checked"
+  echo "merge-check: the review check does not apply to a push run; no pull request is read"
 fi
 
 # read NAME SHAPE CMD...: run a gh read and keep its stdout in $answer when it
@@ -100,6 +107,106 @@ if [ "$kind" = push ]; then
   [ "$failed" -eq 0 ] || { echo "merge-check: FAILED"; exit 1; }
   echo "merge-check: ok"
   exit 0
+fi
+
+# Review check (spec merge-gate, "Cross-agent review check"). The pull request,
+# then every page of its changed files: gh prints the pages joined into one list
+# or as lists one after the other, and both are read the same way.
+read_gh "pull request #${pr} for the review check" \
+  'type == "object" and (.draft | type) == "boolean" and (.changed_files | type) == "number" and (.body == null or (.body | type) == "string") and (.user.type | type) == "string"' \
+  gh api "repos/{owner}/{repo}/pulls/${pr}"
+pull=$answer
+read_gh "the files of pull request #${pr}" 'type == "array"' \
+  gh api --paginate "repos/{owner}/{repo}/pulls/${pr}/files?per_page=100"
+# The shape check above sees only the last page; every page is checked here.
+if ! files=$(printf '%s' "$answer" | jq -c -s 'if all(.[]; type == "array" and all(.[]; type == "object" and (.filename | type) == "string" and (.previous_filename == null or (.previous_filename | type) == "string"))) then add // [] else error("not pages of files") end'); then
+  echo "merge-check: unavailable: the read of the files of pull request #${pr} returned something other than what was asked for: ${answer}" >&2
+  exit 2
+fi
+reported=$(printf '%s' "$pull" | jq '.changed_files')
+draft=$(printf '%s' "$pull" | jq '.draft')
+entries=$(printf '%s' "$files" | jq 'length')
+# A failed jq leaves an empty number, which a test would not compare.
+case "$entries:$reported:$draft" in
+  [0-9]*:[0-9]*:true | [0-9]*:[0-9]*:false) ;;
+  *) echo "merge-check: unavailable: jq failed reading the file count or draft flag of pull request #${pr}" >&2; exit 2 ;;
+esac
+# Compared in jq: a shell test on a count that is not an integer errors, and an
+# error would read as "the counts match".
+if ! printf '%s' "$pull" | jq -e --argjson n "$entries" '.changed_files == $n' >/dev/null; then
+  echo "merge-check: unavailable: the file list of pull request #${pr} is incomplete: it has ${entries} of ${reported} files" >&2
+  exit 2
+fi
+# A document name ends in .md or starts with openspec/, and is not under
+# .claude/agents/; every other name is a code name. A renamed file's previous
+# name counts too. A failed jq leaves an empty list, which would read as
+# documents only. The names stay a JSON list: printed one per line, a name that
+# is empty or only line feeds would vanish.
+if ! code=$(printf '%s' "$files" | jq -c '[.[] | .filename, (.previous_filename // empty)]
+  | map(select(((endswith(".md") or startswith("openspec/")) and (startswith(".claude/agents/") | not)) | not))
+  | unique'); then
+  echo "merge-check: unavailable: jq failed sorting the changed files of pull request #${pr} into code names" >&2
+  exit 2
+fi
+if [ "$code" = "[]" ]; then
+  echo "merge-check: pull request #${pr} is documents only (${reported} changed files); the review check passes"
+else
+  echo "merge-check: pull request #${pr} is a code pull request; its code files ($(printf '%s' "$code" | jq length), up to ten shown):"
+  printf '%s' "$code" | jq -r '.[:10][] | "merge-check: code file: \(.)"'
+  # The two lines: each starts in the first column; a carriage return before the
+  # line feed is dropped. An agent name is claude or codex in any letter case,
+  # with no letter or digit directly before or after it. Nothing else is read.
+  if ! lines=$(printf '%s' "$pull" | jq -r '
+    def agents: [scan("(?i)(?:^|[^\\p{L}\\p{N}])(claude|codex)(?=[^\\p{L}\\p{N}]|$)") | .[0] | ascii_downcase] | unique | join(" ");
+    [(.body // "") | split("\n")[] | rtrimstr("\r")] as $l
+    | ($l | map(select(startswith("implemented-by:")))) as $i
+    | ($l | map(select(startswith("reviewed-by:")))) as $r
+    | [.user.type, ($i | length), ($i[0] // "" | ltrimstr("implemented-by:") | agents),
+       ($r | length), ($r[0] // "" | ltrimstr("reviewed-by:") | agents)] | map(tostring) | join("|")'); then
+    echo "merge-check: unavailable: jq failed reading the description of pull request #${pr}" >&2
+    exit 2
+  fi
+  IFS='|' read -r author icount iagents rcount ragents <<<"$lines"
+  case "$icount:$rcount" in
+    *[!0-9:]* | :* | *:) echo "merge-check: unavailable: the description of pull request #${pr} was read as '${lines}'" >&2; exit 2 ;;
+  esac
+
+  # The reviewer the implemented-by: line calls for; empty when either agent may
+  # review: a bot's pull request, both agents named, or no valid line.
+  want=
+  if [ "$author" != Bot ] && [ "$icount" -eq 1 ]; then
+    case "$iagents" in claude) want=codex ;; codex) want=claude ;; esac
+  fi
+  if [ -n "$want" ]; then wantline="reviewed-by: ${want}"; else wantline="reviewed-by: claude, or reviewed-by: codex"; fi
+  implline="implemented-by: claude (<model or persona>), or implemented-by: codex (<model or persona>)"
+  findings=0
+  finding() { echo "merge-check: review finding: $1; the line to write: $2"; findings=$((findings + 1)); }
+  if [ "$author" != Bot ]; then
+    if [ "$icount" -eq 0 ]; then
+      finding "no line starts implemented-by:, and the implemented-by: line must name claude or codex, the agent that wrote the commits" "$implline"
+    elif [ "$icount" -gt 1 ]; then
+      finding "${icount} lines start implemented-by:, and exactly one may" "$implline"
+    elif [ -z "$iagents" ]; then
+      finding "the implemented-by: line must name claude or codex, the agent that wrote the commits" "$implline"
+    fi
+  fi
+  if [ "$rcount" -eq 0 ]; then
+    finding "no line starts reviewed-by:" "$wantline"
+  elif [ "$rcount" -gt 1 ]; then
+    finding "${rcount} lines start reviewed-by:, and exactly one may" "$wantline"
+  elif [ "$ragents" != claude ] && [ "$ragents" != codex ]; then
+    finding "the reviewed-by: line must name exactly one of claude and codex" "$wantline"
+  elif [ -n "$want" ] && [ "$ragents" != "$want" ]; then
+    finding "the reviewed-by: line names ${ragents}, which the implemented-by: line names; the other agent, ${want}, reviews" "$wantline"
+  fi
+  if [ "$findings" -eq 0 ]; then
+    echo "merge-check: the review check passes; reviewing agent: ${ragents}"
+  elif [ "$draft" = true ]; then
+    echo "merge-check: pull request #${pr} is a draft: a review finding does not fail a draft (${findings} above)"
+  else
+    echo "merge-check: FAIL: the review check has ${findings} finding(s); editing the description starts no run, so run the merge-check job again after the edit"
+    failed=1
+  fi
 fi
 
 # 2. Known-flake check.

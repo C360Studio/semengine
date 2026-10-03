@@ -64,16 +64,26 @@ Three obligations ride on every slice design in addition to its ledger row:
   Design discipline come from PR #48's design review (issue #53). They bind changes 2 to 7 of Slice 04A and later
   work; they are not applied backwards to PR #48.
 
-- **Surface audit.** Porting is the cheapest moment to leave unused surface behind. For the package being ported,
-  list (a) exported symbols with no caller inside SemEngine and no symbol-level use by a consumer
-  `docs/inventory-scope.md` names; (b) config fields that are parsed or validated but read by no behavior, and
-  unknown keys that are accepted silently; (c) behavior a doc comment, README, or schema describes that no code
-  implements. Each item is dropped, moved under `internal/`, or kept with its reason stated in the slice design. A
-  config field that stays has a test that fails when the field is ignored. A capability admitted by owner mandate is
-  wanted even before it has a caller: "no caller" answers whether something is wired, never whether it is wanted.
-  These were SemStreams' largest open defect classes on 2026-10-01: 57 distinct issues labelled
-  `class:advertised-absent`, `class:silent-noop-surface`, `class:phantom-config`, or `class:dead-surface`, 45 of
-  them still open.
+- **Surface audit.** Admission is per package: an admitted package is ported whole, and whether a symbol is wanted
+  is settled by the package's admission, not by whether its caller is in the same change. The audit removes only
+  dead surface, meaning surface that nothing reads. For the package being ported, list (a) exported symbols that
+  nothing reads: no caller in SemEngine, in any package of the pin's admitted set, or, at symbol level, in a consumer
+  `docs/inventory-scope.md` names; a caller in an admitted package that is not ported yet counts as a caller, so one
+  pin-wide search settles each symbol; (b) config fields that are parsed, defaulted, or validated but read by no
+  behavior, and unknown keys that are accepted silently; (c) behavior a doc comment, README, or schema describes that
+  no code implements. Each item is dropped, moved under `internal/`, or kept with its reason stated in the slice
+  design. A config field that stays has a test that fails when the field is ignored. These were SemStreams' largest
+  open defect classes on 2026-10-01: 57 distinct issues labelled `class:advertised-absent`,
+  `class:silent-noop-surface`, `class:phantom-config`, or `class:dead-surface`, 45 of them still open.
+
+  A capability admitted by owner mandate is wanted even before it has a caller: "no caller" answers whether
+  something is wired, never whether it is wanted. An owner ruling can still remove admitted surface by name; the
+  eviction callbacks are the example (#9 comment 5950725772). Defects found in ported surface are fixed in the port
+  or tracked as an issue, never carried silently: porting a package whole does not admit its defects. Surface that
+  SemEngine adds and the pin does not have still needs a present consumer (inventory category 4 below). Source: owner
+  ruling 2026-10-03, #9 comment 5968830525. It replaced a reading that judged each symbol by whether its caller was
+  in the same change; on PR #48 that reading cascaded through most of `internal/cache`, and each round cost an
+  inventory pass, a review, and an owner decision.
 - **Guidance returns with the package.** SemStreams' developer and reviewer contracts carry package-specific
   sections (semantic identity and graph, storage and retention, NATS RPC, payload registry, state ownership and
   component wiring, orchestration) and skills (`entity-or-bucket`, `kv-or-stream`, `new-payload`,
@@ -107,7 +117,8 @@ each either cited at `file:line` or closed with the exact searches that came up 
    rather than designing around them silently; the design then states, for each overlap, which merges first.
 4. **The consumer at birth.** For every new exported symbol, port, subject, bucket, or config field the design
    introduces: name its present consumer. Zero present consumers removes it from the design; "for observability"
-   and "for future use" are the phantom-surface shape.
+   and "for future use" are the phantom-surface shape. New means the pin does not have it; surface ported from an
+   admitted package goes through the surface audit under Extraction slices instead.
 5. **The problem shape.** Categories 1-4 all scope to *the fact being modeled*. A pattern is not a fact; it is a
    problem shape, so no question above reaches it. Independently of the fact, name the shape of what this design
    does: admit-or-refuse at a seam, create-vs-exists, read-through over a cache, classified refusal plus observed

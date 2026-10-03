@@ -12,7 +12,8 @@ not replace this review. The reviewer is independent of the developer: it verifi
 developer's account.
 
 On a code pull request (any changed file that is not a Markdown file or under `openspec/`, or that is a role adapter
-under `.claude/agents/`) the reviewer of record belongs to the agent that wrote none of the commits under review. The
+under `.claude/agents/`) the reviewer of record belongs to the agent that wrote none of the commits under review; a
+fix that changes documents only, and the archive/spec sync, take either agent's reviewer (owner, 2026-10-03). The
 [shared protocol](../protocol.md), "Cross-agent review", says which pull requests, what the owner ruled, and how the
 review is asked for and answered on the pull request. A review record there names the commit it read, what it ran and
 what it could not run. Its evidence comes from the tree and from CI, never from the implementer's account, and the
@@ -237,6 +238,8 @@ Each is `BLOCKING`:
 ## Exported-surface review
 
 - For every NEW exported symbol: name its present consumer. Zero present consumers is a finding (phantom surface).
+  NEW means the SemStreams pin does not have it; surface ported from an admitted package is checked by the surface
+  audit under Port-time and pattern review instead.
 - A return whose doc comment warns against part of its own affordance, or a capability return (handle, connection,
   map, internal context) where callers need a value, is a finding; require the collapsed signature.
 - Three or more correlated non-error returns without a named struct is a finding.
@@ -267,9 +270,12 @@ Each is `BLOCKING`:
   reuse, require the list of packages and seams that should adopt it, each at `file:line`, and its tracking issue.
   Do not require the migrations.
 - **Check the surface audit on every extraction slice.** Run the three searches yourself on the ported package:
-  exported symbols with no caller here and no symbol-level use by a consumer `docs/inventory-scope.md` names; config
-  fields with no behavioral reader, and whether an unknown key is refused; described behavior with no
-  implementation. An item the slice design did not list is a finding. A kept config field without a test that fails
+  exported symbols that nothing reads, searched pin-wide (no caller in SemEngine, in any package of the pin's
+  admitted set, ported or not, or, at symbol level, in a consumer `docs/inventory-scope.md` names); config fields
+  with no behavioral reader, and whether an unknown key is refused; described behavior with no implementation. An
+  admitted package is ported whole: a symbol whose only caller is in an admitted package not ported yet is not dead
+  surface, and keeping it is not a finding. A defect found in ported surface that is neither fixed nor tracked as an
+  issue is a finding. An item the slice design did not list is a finding. A kept config field without a test that fails
   when the field is ignored is a finding.
 - **Check that the package's guidance came with it.** The slice names the SemStreams contract sections and skills
   that apply to the package and carries the adapted text. A ported package whose known footguns are documented only

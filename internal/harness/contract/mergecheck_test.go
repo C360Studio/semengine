@@ -1,11 +1,13 @@
 package contract
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -31,9 +33,12 @@ case "$1 $2" in
     [ "$3" = "$FAKE_GH_PR" ] || { echo "fake gh: pr view of '$3', want '$FAKE_GH_PR'" >&2; exit 3; }
     need "--json closingIssuesReferences" ;;
   *)
-    case "$1 $2" in
+    case "$*" in
       "api repos/{owner}/{repo}/rules/branches/main") key=rules ;;
       "api repos/{owner}/{repo}/rulesets/"*) key=ruleset ;;
+      "api repos/{owner}/{repo}/pulls/$FAKE_GH_PR") key=pull ;;
+      # Without --paginate gh returns the first page only.
+      "api --paginate repos/{owner}/{repo}/pulls/$FAKE_GH_PR/files?per_page=100") key=files ;;
       *) echo "fake gh: unexpected call: $*" >&2; exit 3 ;;
     esac ;;
 esac
@@ -60,7 +65,10 @@ func list(items ...string) string { return "[" + strings.Join(items, ",") + "]" 
 // answer of the wrong shape.
 type ghState struct {
 	labels, issues, pr, rules, ruleset string
-	fail                               []string // keys whose read exits non-zero
+	// pull is the pull request as the REST API returns it; files is the paged list of its changed
+	// files exactly as gh prints it, so a case can plant two pages one after the other.
+	pull, files string
+	fail        []string // keys whose read exits non-zero
 	// jqFail, when set, puts a jq first on PATH that exits non-zero on any call whose arguments
 	// contain it and passes every other call to the real jq.
 	jqFail string
@@ -85,7 +93,29 @@ func healthy() ghState {
 		pr:      `{"closingIssuesReferences":[]}`,
 		rules:   list(otherRules, requiredRule),
 		ruleset: `{"id":24272345,"name":"main","enforcement":"active"}`,
+		pull:    pullJSON(false, "User", "", 1),
+		files:   filesJSON("docs/a.md"),
 	}
+}
+
+// pullJSON is the part of GET /repos/{owner}/{repo}/pulls/{n} the review check reads, with fields
+// it does not read beside them, as measured on #48 and #14 (inventory 2.4).
+func pullJSON(draft bool, userType, body string, changedFiles int) string {
+	b, err := json.Marshal(body)
+	if err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf(`{"number":12,"state":"open","draft":%t,"user":{"login":"x","type":%q},"body":%s,"changed_files":%d,"base":{"ref":"main"}}`,
+		draft, userType, b, changedFiles)
+}
+
+// filesJSON is one page of GET /repos/{owner}/{repo}/pulls/{n}/files, each name modified.
+func filesJSON(names ...string) string {
+	entries := make([]string, len(names))
+	for i, n := range names {
+		entries[i] = fmt.Sprintf(`{"filename":%q,"status":"modified","additions":1,"deletions":0}`, n)
+	}
+	return list(entries...)
 }
 
 type mergeRun struct {
@@ -100,7 +130,7 @@ func runMergeCheck(t *testing.T, st ghState, pr string, actionsEnv ...string) me
 	t.Helper()
 	root := copyScript(t, "merge-check.sh")
 	dir := t.TempDir()
-	for key, body := range map[string]string{"labels": st.labels, "issues": st.issues, "pr": st.pr, "rules": st.rules, "ruleset": st.ruleset} {
+	for key, body := range map[string]string{"labels": st.labels, "issues": st.issues, "pr": st.pr, "rules": st.rules, "ruleset": st.ruleset, "pull": st.pull, "files": st.files} {
 		if err := os.WriteFile(filepath.Join(dir, key+".json"), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -173,6 +203,19 @@ func (r mergeRun) requireOutput(t *testing.T, fragments ...string) {
 	}
 }
 
+// requireReadPullAndFiles fails unless the run read pull request 12 and every page of its files.
+func (r mergeRun) requireReadPullAndFiles(t *testing.T) {
+	t.Helper()
+	for _, call := range []string{
+		"api repos/{owner}/{repo}/pulls/12\n",
+		"api --paginate repos/{owner}/{repo}/pulls/12/files?per_page=100\n",
+	} {
+		if !strings.Contains(r.argv, call) {
+			t.Errorf("the run did not call gh %q:\n%s", strings.TrimSpace(call), r.argv)
+		}
+	}
+}
+
 func TestMergeCheckKnownFlake(t *testing.T) {
 	open40 := healthy()
 	open40.issues = list(issueJSON(40))
@@ -214,7 +257,9 @@ func TestMergeCheckKnownFlake(t *testing.T) {
 		runMergeCheck(t, st, "12").requireFail(t, "#40")
 	})
 	t.Run("no open flake", func(t *testing.T) {
-		runMergeCheck(t, healthy(), "12").requirePass(t, "no open class:flake issue")
+		r := runMergeCheck(t, healthy(), "12")
+		r.requirePass(t, "no open class:flake issue")
+		r.requireReadPullAndFiles(t)
 	})
 	t.Run("label missing", func(t *testing.T) {
 		st := open40
@@ -280,8 +325,8 @@ func TestMergeCheckKnownFlake(t *testing.T) {
 	t.Run("push run", func(t *testing.T) {
 		r := runMergeCheck(t, open40, "", "GITHUB_ACTIONS=true", "GITHUB_EVENT_NAME=push")
 		r.requirePass(t, "push run", "known-flake check does not apply")
-		if strings.Contains(r.argv, "issue list") || strings.Contains(r.argv, "pr view") {
-			t.Errorf("a push run read issues or a pull request:\n%s", r.argv)
+		if strings.Contains(r.argv, "issue list") || strings.Contains(r.argv, "pr view") || strings.Contains(r.argv, "/pulls/") {
+			t.Errorf("a push run read issues, a pull request or its files:\n%s", r.argv)
 		}
 		if !strings.Contains(r.argv, "rules/branches/main") {
 			t.Errorf("a push run did not read the rules in force on main:\n%s", r.argv)
@@ -336,6 +381,272 @@ func TestMergeCheckUpToDateRule(t *testing.T) {
 		st := healthy()
 		st.rules = list(otherRules, strings.Replace(requiredRule, `"parameters":{`, `"surprise":{"new":1},"parameters":{"another_new_field":[1,2],`, 1))
 		st.ruleset = `{"id":24272345,"enforcement":"active","bypass_actors":[{"actor_id":1}],"new_field":"x"}`
-		runMergeCheck(t, st, "12").requirePass(t, "enforcement=active")
+		r := runMergeCheck(t, st, "12")
+		r.requirePass(t, "enforcement=active")
+		r.requireReadPullAndFiles(t)
+	})
+}
+
+// merge-gate › "Cross-agent review check": one case per scenario. Each case writes GitHub's answers
+// by hand; the expected exit and words come from the scenario, never from running the script.
+
+// review is healthy() with the pull request and its files replaced: changed_files is the number of
+// entries unless a case sets it.
+func review(draft bool, author, body string, files ...string) ghState {
+	st := healthy()
+	st.pull = pullJSON(draft, author, body, len(files))
+	st.files = filesJSON(files...)
+	return st
+}
+
+const codeFilePrefix = "merge-check: code file: "
+
+// requireCodeNames fails unless the code names the script prints are exactly want, in any order.
+func (r mergeRun) requireCodeNames(t *testing.T, want ...string) {
+	t.Helper()
+	var got []string
+	for _, line := range strings.Split(r.out, "\n") {
+		if name, ok := strings.CutPrefix(line, codeFilePrefix); ok {
+			got = append(got, name)
+		}
+	}
+	slices.Sort(got)
+	want = slices.Clone(want)
+	slices.Sort(want)
+	if !slices.Equal(got, want) {
+		t.Errorf("code names printed %q, want %q\n%s", got, want, r.out)
+	}
+}
+
+func (r mergeRun) requireNotInOutput(t *testing.T, fragments ...string) {
+	t.Helper()
+	for _, f := range fragments {
+		if strings.Contains(r.out, f) {
+			t.Errorf("output contains %q:\n%s", f, r.out)
+		}
+	}
+}
+
+func TestMergeCheckReview(t *testing.T) {
+	const implClaude = "Summary.\n\nimplemented-by: claude (opus)\n"
+
+	// Which pull requests are covered (task 2.2).
+	t.Run("documents only", func(t *testing.T) {
+		r := runMergeCheck(t, review(false, "User", "", "docs/a.md", "openspec/config.yaml"), "12")
+		r.requirePass(t, "documents only")
+		r.requireCodeNames(t)
+	})
+	t.Run("one code file among documents", func(t *testing.T) {
+		r := runMergeCheck(t, review(false, "User", implClaude, "docs/a.md", "scripts/x.sh"), "12")
+		r.requireFail(t, "is a code pull request", "no line starts reviewed-by:")
+		r.requireCodeNames(t, "scripts/x.sh")
+	})
+	t.Run("names near the rule", func(t *testing.T) {
+		docs := []string{"AGENTS.md", ".claude/skills/preflight/SKILL.md", "x/.claude/agents/a.md",
+			"openspec/changes/x/.openspec.yaml", "openspec/x.sh"}
+		first := runMergeCheck(t, review(false, "User", "", docs...), "12")
+		first.requirePass(t, "documents only")
+		first.requireCodeNames(t)
+
+		code := []string{"README.MD", "docs/a.md.txt", "openspecs/a.yaml", "docs/openspec/a.yaml", "Taskfile.yml",
+			"docs/admission-ledger.yaml", ".claude/agents/semengine-reviewer.md", ".codex/agents/semengine-reviewer.toml"}
+		st := review(false, "User", "", append(slices.Clone(docs), code...)...)
+		entries := strings.TrimSuffix(st.files, "]") + `,{"filename":"scripts/x.sh","status":"removed","additions":0,"deletions":9}]`
+		st.files = entries
+		st.pull = pullJSON(false, "User", "", len(docs)+len(code)+1)
+		second := runMergeCheck(t, st, "12")
+		second.requireFail(t, "is a code pull request")
+		second.requireNotInOutput(t, "documents only")
+		second.requireCodeNames(t, append(code, "scripts/x.sh")...)
+	})
+	t.Run("renamed file", func(t *testing.T) {
+		st := review(false, "User", "")
+		st.pull = pullJSON(false, "User", "", 1)
+		st.files = `[{"filename":"docs/x.md","previous_filename":"scripts/x.sh","status":"renamed","additions":0,"deletions":0}]`
+		r := runMergeCheck(t, st, "12")
+		r.requireFail(t, "is a code pull request")
+		r.requireCodeNames(t, "scripts/x.sh")
+	})
+	t.Run("code file on the second page", func(t *testing.T) {
+		var md []string
+		for n := range 100 {
+			md = append(md, fmt.Sprintf("docs/n%03d.md", n))
+		}
+		for _, pages := range []struct{ how, files string }{
+			{"joined", filesJSON(append(slices.Clone(md), "go.mod")...)},
+			{"one after the other", filesJSON(md...) + filesJSON("go.mod")},
+		} {
+			st := review(false, "User", "")
+			st.pull = pullJSON(false, "User", "", 101)
+			st.files = pages.files
+			r := runMergeCheck(t, st, "12")
+			if r.status == 0 {
+				t.Errorf("%s: exit 0, want non-zero\n%s", pages.how, r.out)
+			}
+			r.requireOutput(t, "is a code pull request")
+			r.requireCodeNames(t, "go.mod")
+		}
+	})
+	t.Run("file list incomplete", func(t *testing.T) {
+		var md []string
+		for n := range 100 {
+			md = append(md, fmt.Sprintf("docs/n%03d.md", n))
+		}
+		st := review(false, "User", "", md...)
+		st.pull = pullJSON(false, "User", "", 101)
+		r := runMergeCheck(t, st, "12")
+		r.requireFail(t, "incomplete", "100 of 101 files")
+		r.requireNotInOutput(t, "documents only")
+	})
+	t.Run("no changed file", func(t *testing.T) {
+		r := runMergeCheck(t, review(false, "User", ""), "12")
+		r.requirePass(t, "documents only")
+		r.requireCodeNames(t)
+	})
+
+	// The two lines (task 2.3). Each is a code pull request that is not a draft.
+	code := func(author, body string) ghState { return review(false, author, body, "docs/a.md", "scripts/x.sh") }
+	const (
+		noRun      = "editing the description starts no run"
+		mustName   = "the implemented-by: line must name claude or codex"
+		exactlyOne = "the reviewed-by: line must name exactly one of claude and codex"
+	)
+	t.Run("the other agent is named", func(t *testing.T) {
+		r := runMergeCheck(t, code("User", implClaude+"reviewed-by: codex semengine-reviewer — targeted (3.1–3.3 fixes) APPROVE at 0a86a9a; full-diff review pending.\n"), "12")
+		r.requirePass(t, "reviewing agent: codex")
+		r.requireNotInOutput(t, noRun)
+	})
+	t.Run("no reviewed-by line", func(t *testing.T) {
+		runMergeCheck(t, code("User", implClaude), "12").
+			requireFail(t, "no line starts reviewed-by:", "the line to write: reviewed-by: codex", noRun)
+	})
+	t.Run("implementer line missing or naming no agent", func(t *testing.T) {
+		for _, body := range []string{
+			"reviewed-by: codex\n",
+			"implemented-by: opus (semengine-developer); fable (orchestrating session)\nreviewed-by: codex\n",
+		} {
+			t.Run(strings.SplitN(body, "\n", 2)[0], func(t *testing.T) {
+				runMergeCheck(t, code("User", body), "12").requireFail(t, mustName, noRun)
+			})
+		}
+	})
+	t.Run("same agent implements and reviews", func(t *testing.T) {
+		runMergeCheck(t, code("User", "implemented-by: claude-fable-5-1\nreviewed-by: Claude (opus)\n"), "12").
+			requireFail(t, "the other agent, codex, reviews")
+	})
+	t.Run("reviewer line names no agent, both, or a longer word", func(t *testing.T) {
+		for _, reviewer := range []string{"gpt-6-astra", "codex, then claude", "codex2"} {
+			t.Run(reviewer, func(t *testing.T) {
+				r := runMergeCheck(t, code("User", "implemented-by: claude\nreviewed-by: "+reviewer+"\n"), "12")
+				r.requireFail(t, exactlyOne)
+				r.requireNotInOutput(t, "reviewing agent:")
+			})
+		}
+	})
+	t.Run("both agents implemented", func(t *testing.T) {
+		runMergeCheck(t, code("User", "implemented-by: codex (gpt-6-sol); claude (review fixes)\nreviewed-by: claude\n"), "12").
+			requirePass(t, "reviewing agent: claude")
+	})
+	t.Run("pull request by a bot", func(t *testing.T) {
+		// The implemented-by: line of a bot's pull request is not read, so codex may review even
+		// where that line names codex.
+		for _, body := range []string{
+			"Bumps x from 1 to 2.\n\nreviewed-by: codex\n",
+			"Bumps x from 1 to 2.\n\nimplemented-by: codex\nreviewed-by: codex\n",
+		} {
+			t.Run(strings.Fields(strings.SplitN(body, "\n\n", 2)[1])[0], func(t *testing.T) {
+				runMergeCheck(t, code("Bot", body), "12").requirePass(t, "reviewing agent: codex")
+			})
+		}
+	})
+	t.Run("line not written once at the start of a line", func(t *testing.T) {
+		for _, tc := range []struct{ body, says string }{
+			{implClaude + "reviewed-by: codex\nreviewed-by: codex (again)\n", "2 lines start reviewed-by:"},
+			{implClaude + "- reviewed-by: codex\n", "no line starts reviewed-by:"},
+			{implClaude + "implemented-by: claude (fable)\nreviewed-by: codex\n", "2 lines start implemented-by:"},
+		} {
+			t.Run(tc.says, func(t *testing.T) {
+				runMergeCheck(t, code("User", tc.body), "12").requireFail(t, tc.says)
+			})
+		}
+	})
+	t.Run("carriage returns", func(t *testing.T) {
+		body := strings.ReplaceAll("Summary.\n\nimplemented-by: claude (opus)\nreviewed-by: codex\n", "\n", "\r\n")
+		runMergeCheck(t, code("User", body), "12").requirePass(t, "reviewing agent: codex")
+	})
+
+	// Drafts, reads and the push run (task 2.4).
+	t.Run("draft", func(t *testing.T) {
+		runMergeCheck(t, review(true, "User", implClaude, "docs/a.md", "scripts/x.sh"), "12").
+			requirePass(t, "no line starts reviewed-by:", "does not fail a draft")
+	})
+	t.Run("a read for the review check fails", func(t *testing.T) {
+		// Every planted state is documents only, so a failure read as a pass would say so.
+		const notFound = `{"message":"Not Found","status":"404"}`
+		for _, tc := range []struct {
+			name, read string
+			edit       func(*ghState)
+		}{
+			{"pull request read fails", "pull request #12 for the review check",
+				func(st *ghState) { st.fail = []string{"pull"} }},
+			{"pull request read returns an error object", "pull request #12 for the review check",
+				func(st *ghState) { st.pull = notFound }},
+			{"draft whose file count is not a number", "pull request #12 for the review check",
+				func(st *ghState) {
+					st.pull = strings.Replace(pullJSON(true, "User", "", 1), `"changed_files":1`, `"changed_files":"1"`, 1)
+				}},
+			{"files read fails", "the files of pull request #12",
+				func(st *ghState) { st.fail = []string{"files"} }},
+			{"files read fails on a draft", "the files of pull request #12",
+				func(st *ghState) { st.pull = pullJSON(true, "User", "", 1); st.fail = []string{"files"} }},
+			{"files read returns an error object on a draft", "the files of pull request #12",
+				func(st *ghState) { st.pull = pullJSON(true, "User", "", 1); st.files = notFound }},
+			{"second page of files is not a list of files", "the files of pull request #12",
+				func(st *ghState) {
+					st.pull = pullJSON(false, "User", "", 2)
+					st.files = filesJSON("docs/a.md") + list(notFound)
+				}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				st := healthy()
+				tc.edit(&st)
+				r := runMergeCheck(t, st, "12")
+				r.requireFail(t, "unavailable", tc.read)
+				r.requireNotInOutput(t, "documents only", "merge-check: ok")
+			})
+		}
+	})
+	t.Run("sorting names fails", func(t *testing.T) {
+		st := healthy()
+		st.jqFail = `startswith(".claude/agents/")`
+		r := runMergeCheck(t, st, "12")
+		r.requireFail(t, "unavailable", "sorting the changed files")
+		r.requireNotInOutput(t, "documents only", "merge-check: ok")
+	})
+	t.Run("a name or count that is never documents only", func(t *testing.T) {
+		// "Reads": none of these is ever treated as documents only or as a pass. GitHub does not send
+		// them; a name made only of a line feed is a legal git path.
+		for _, tc := range []struct{ name, pull, files string }{
+			{"empty file name", pullJSON(false, "User", "", 1), `[{"filename":"","status":"added"}]`},
+			{"file name that is a line feed", pullJSON(false, "User", "", 1), `[{"filename":"\n","status":"added"}]`},
+			{"file count that is not an integer", strings.Replace(pullJSON(false, "User", "", 1), `"changed_files":1`, `"changed_files":1.5`, 1),
+				filesJSON("docs/a.md")},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				st := healthy()
+				st.pull, st.files = tc.pull, tc.files
+				r := runMergeCheck(t, st, "12")
+				r.requireFail(t)
+				r.requireNotInOutput(t, "documents only", "merge-check: ok")
+			})
+		}
+	})
+	t.Run("push run and the review check", func(t *testing.T) {
+		// A code pull request with neither line, so a check applied here would fail.
+		r := runMergeCheck(t, review(false, "User", "", "scripts/x.sh"), "", "GITHUB_ACTIONS=true", "GITHUB_EVENT_NAME=push")
+		r.requirePass(t, "the review check does not apply")
+		if strings.Contains(r.argv, "/pulls/") {
+			t.Errorf("a push run read a pull request or its files:\n%s", r.argv)
+		}
 	})
 }

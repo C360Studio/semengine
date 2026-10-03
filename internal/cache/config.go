@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -270,7 +271,11 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 		Alias: (*Alias)(c),
 	}
 
-	if err := json.Unmarshal(data, &aux); err != nil {
+	// A key Config does not have is refused, never silently ignored (owner ruling, #9 comment
+	// 5968830525).
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&aux); err != nil {
 		return err
 	}
 

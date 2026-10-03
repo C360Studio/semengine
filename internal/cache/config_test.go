@@ -2,6 +2,7 @@ package cache
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -149,5 +150,21 @@ func TestConfig_UnmarshalJSON_RealWorldExample(t *testing.T) {
 	// Verify it validates correctly
 	if err := cfg.Validate(); err != nil {
 		t.Errorf("Validate() failed: %v", err)
+	}
+}
+
+// TestConfig_UnmarshalJSON_RefusesUnknownKeys: a key Config does not have is an error, never
+// silently ignored (owner ruling, #9 comment 5968830525, rule 2(b); Codex F5). The oracle is the
+// error and its naming the key.
+func TestConfig_UnmarshalJSON_RefusesUnknownKeys(t *testing.T) {
+	for _, data := range []string{
+		`{"enabled": true, "strategy": "lru", "max_size": 10, "max_entries": 10}`,
+		`{"enabled": true, "strategy": "ttl", "ttl": "1m", "cleanup_interval": "1s", "TTL_typo": "1m"}`,
+	} {
+		var cfg Config
+		err := json.Unmarshal([]byte(data), &cfg)
+		if err == nil || !strings.Contains(err.Error(), "unknown field") {
+			t.Errorf("Unmarshal(%s) error = %v, want an unknown-field error", data, err)
+		}
 	}
 }

@@ -130,6 +130,16 @@ type Registry struct {
 	Platform types.PlatformMeta
 }
 `,
+		// A function-local type of the carrier's name is a different type: it gets no exception.
+		"component/local.go": `package component
+
+func clone() {
+	type Dependencies struct {
+		Platform PlatformMeta
+	}
+	_ = Dependencies{}
+}
+`,
 		"service/dependencies.go": `package service
 
 import "example.com/fixture/types"
@@ -170,6 +180,7 @@ type Claim struct {
 		{"types/component.go:9: field Org on example.com/fixture/types.Other "},
 		{"graph/inference/deps.go:6: field Platform on example.com/fixture/graph/inference.Dependencies "},
 		{"graph/llm/caller.go:4: field Org on example.com/fixture/graph/llm.CallerContext "},
+		{"component/local.go:5: field Platform on example.com/fixture/component.Dependencies "},
 	}
 	for _, want := range failing {
 		requireViolation(t, v, append(want, "spells the deployment authority outside its owners", authorityRule)...)
@@ -263,6 +274,22 @@ func authorityFieldViolations(t *testing.T, root string) ([]string, int) {
 		}
 		for _, file := range pkg.Syntax {
 			named := map[*ast.StructType]string{}
+			// Only a package-scope declaration is the type an exception names; a type of the same name
+			// declared inside a function body is a different type and gets no exception.
+			packageScope := map[*ast.StructType]bool{}
+			for _, decl := range file.Decls {
+				gen, ok := decl.(*ast.GenDecl)
+				if !ok {
+					continue
+				}
+				for _, spec := range gen.Specs {
+					if typeSpec, ok := spec.(*ast.TypeSpec); ok {
+						if structNode, ok := typeSpec.Type.(*ast.StructType); ok {
+							packageScope[structNode] = true
+						}
+					}
+				}
+			}
 			ast.Inspect(file, func(node ast.Node) bool {
 				if spec, ok := node.(*ast.TypeSpec); ok {
 					if structNode, ok := spec.Type.(*ast.StructType); ok {
@@ -287,7 +314,7 @@ func authorityFieldViolations(t *testing.T, root string) ([]string, int) {
 					if !field.Exported() || (field.Name() != "Org" && field.Name() != "Platform") {
 						continue
 					}
-					if isNamed && authorityOwnerFields[rel+"."+typeName+"."+field.Name()] != "" {
+					if packageScope[structNode] && authorityOwnerFields[rel+"."+typeName+"."+field.Name()] != "" {
 						continue
 					}
 					violations = append(violations, formatField(root, pkg, field,

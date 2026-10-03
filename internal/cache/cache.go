@@ -11,9 +11,6 @@
 package cache
 
 import (
-	"context"
-	"time"
-
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
@@ -46,47 +43,6 @@ type Cache[V any] interface {
 
 	// Close shuts down the cache and releases any resources (e.g., background goroutines).
 	Close() error
-}
-
-// Entry represents an entry in the cache with metadata.
-type Entry[V any] struct {
-	Key        string
-	Value      V // Stored value
-	CreatedAt  time.Time
-	ExpiresAt  *time.Time // nil means no expiration
-	AccessedAt time.Time
-}
-
-// IsExpired checks if the entry has expired based on the current time.
-func (e *Entry[V]) IsExpired() bool {
-	if e.ExpiresAt == nil {
-		return false
-	}
-	return time.Now().After(*e.ExpiresAt)
-}
-
-// Touch updates the last accessed time of the entry.
-func (e *Entry[V]) Touch() {
-	e.AccessedAt = time.Now()
-}
-
-// contextKey is used for context values in this package.
-type contextKey string
-
-const (
-	// ContextKeyStats can be used to pass statistics through context.
-	ContextKeyStats contextKey = "cache-stats"
-)
-
-// WithStats adds statistics to the context.
-func WithStats(ctx context.Context, stats *Statistics) context.Context {
-	return context.WithValue(ctx, ContextKeyStats, stats)
-}
-
-// StatsFromContext retrieves statistics from the context.
-func StatsFromContext(ctx context.Context) (*Statistics, bool) {
-	stats, ok := ctx.Value(ContextKeyStats).(*Statistics)
-	return stats, ok
 }
 
 // validateKey validates a cache key for basic requirements.

@@ -20,7 +20,6 @@ type Statistics struct {
 	startTime   time.Time
 	currentSize int64
 	maxSize     int64
-	memoryUsage int64 // Estimated memory usage in bytes
 }
 
 // NewStatistics creates a new statistics tracker.
@@ -65,13 +64,6 @@ func (s *Statistics) UpdateSize(size int64) {
 	s.mu.Unlock()
 }
 
-// UpdateMemoryUsage updates the estimated memory usage.
-func (s *Statistics) UpdateMemoryUsage(usage int64) {
-	s.mu.Lock()
-	s.memoryUsage = usage
-	s.mu.Unlock()
-}
-
 // Hits returns the total number of cache hits.
 func (s *Statistics) Hits() int64 {
 	return atomic.LoadInt64(&s.hits)
@@ -109,13 +101,6 @@ func (s *Statistics) MaxSize() int64 {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.maxSize
-}
-
-// MemoryUsage returns the estimated memory usage in bytes.
-func (s *Statistics) MemoryUsage() int64 {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.memoryUsage
 }
 
 // HitRatio returns the cache hit ratio as a percentage (0.0 to 1.0).
@@ -169,7 +154,6 @@ func (s *Statistics) Reset() {
 	s.startTime = time.Now()
 	s.currentSize = 0
 	s.maxSize = 0
-	s.memoryUsage = 0
 	s.mu.Unlock()
 }
 
@@ -182,7 +166,6 @@ type StatsSummary struct {
 	Evictions         int64         `json:"evictions"`
 	CurrentSize       int64         `json:"current_size"`
 	MaxSize           int64         `json:"max_size"`
-	MemoryUsage       int64         `json:"memory_usage"`
 	HitRatio          float64       `json:"hit_ratio"`
 	MissRatio         float64       `json:"miss_ratio"`
 	RequestsPerSecond float64       `json:"requests_per_second"`
@@ -199,7 +182,6 @@ func (s *Statistics) Summary() StatsSummary {
 		Evictions:         s.Evictions(),
 		CurrentSize:       s.CurrentSize(),
 		MaxSize:           s.MaxSize(),
-		MemoryUsage:       s.MemoryUsage(),
 		HitRatio:          s.HitRatio(),
 		MissRatio:         s.MissRatio(),
 		RequestsPerSecond: s.RequestsPerSecond(),

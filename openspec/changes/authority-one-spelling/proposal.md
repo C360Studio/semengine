@@ -52,9 +52,11 @@ and `platform` fields, which are those copies.
 
 ## Impact
 
-- `internal/harness/contract/authority_test.go` (new: `TestNoSecondAuthorityField`, `TestNoSecondAuthorityName`
-  and their `…Sensitivity` pairs); `internal/harness/contract/signatures_test.go` (the loader C-1 shares, after PR #48
-  merges); `AGENTS.md` (one row); `docs/testing.md` (one line); `docs/repository-map.md` (one clause).
+- `internal/harness/contract/authority_test.go` (new: `TestNoSecondAuthorityField` and its `…Sensitivity` pair);
+  `internal/harness/contract/signatures_test.go` (C-1, `TestNoDeploymentAuthorityNames` and its `…Sensitivity` pair,
+  adopted from PR #48 (`bb004ef`), not written here); `AGENTS.md` (one row); `docs/testing.md` (one line);
+  `docs/repository-map.md` (one clause).
+
 - Test time: two more `go/packages` loads of the module in the `contract` package per `task test:unit`, and five
   more per `task test:repeat`; budget 15 s over the three steps together, measured in task 2.4.
 - At PR #48's head `c64ac338` C-1 names seven identifiers (`message/federation.go`, `message/base_message.go`,

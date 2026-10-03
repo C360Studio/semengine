@@ -20,7 +20,7 @@ passed inventory; this design cites it by entry number and re-states none of it.
 - The carrier copies (#22–#25, #42): lowercase `org`/`platform` fields and `types.PlatformMeta`-typed fields. The
   owner did not ask for their consolidation; C-2's predicate is drawn so none of them fails (D3).
 - `CallerContext.Org` (#47): the one named exclusion, by exact field name (D3).
-- Open pull requests overlapping (inventory §4): #48 only. It carries the contract C-1 extends and the names C-1
+- Open pull requests overlapping (inventory §4): #48 only. It carries C-1 itself (adopted here, D2) and the names C-1
   fails on; it merges first (D5).
 
 ## Goals and non-goals
@@ -52,9 +52,10 @@ deployment authority: the composition root's `platform.id`, carried to component
 the requirement; no edit to that spec is in scope.
 
 **O2 — how C-1 relates to the public-signature contract.** (a) A second pass inside `TestPublicSignatures`; (b) a
-sibling test `TestNoSecondAuthorityName` over the same `go/packages` load. Chosen: (b), so the `AGENTS.md` row and
-the sensitivity pair have one name each and a failure says which rule it is; whether the two tests share one load is
-the developer's (D6 states the budget).
+sibling test over the same `go/packages` load. Chosen: (b), so the `AGENTS.md` row and the sensitivity pair have one
+name each and a failure says which rule it is. PR #48 already carries that sibling as `TestNoDeploymentAuthorityNames`
+(`signatures_test.go`, commit `bb004ef`); this change adopts it from PR #48 at its merged head rather than writing its
+own (D2).
 
 **O3 — C-2's predicate.** (a) Any field named `Org`/`Platform` outside the three packages, exact case; (b) also
 lowercase `org`/`platform`; (c) also any field whose type is `types.PlatformMeta` or `platform.Config`. (b) and (c)
@@ -92,8 +93,11 @@ consumer imports — the harness norm, confirmed with Q1 (#72 comment 5969757891
 `<path>:<line>: exported <kind> <Name> contains <word> — a second spelling
 of the deployment authority (harness-boundaries › One spelling of the deployment authority)`.
 
-What a caller observes: `TestNoSecondAuthorityName` fails with one such line per identifier, sorted; passes on a
-tree with none. Proof: `TestNoSecondAuthorityNameSensitivity` plants the seven names of the first scenario across a
+Adopted from PR #48 (`bb004ef`): C-1 is `TestNoDeploymentAuthorityNames` with its pair
+`TestNoDeploymentAuthorityNamesSensitivity` in `internal/harness/contract/signatures_test.go`, not written here; task
+3.1 verifies at #48's merged head that its predicate and fixture match this paragraph and scenarios 1–2. What a
+caller observes: `TestNoDeploymentAuthorityNames` fails with one such line per identifier, sorted; passes on a
+tree with none. Proof: `TestNoDeploymentAuthorityNamesSensitivity` plants the seven names of the first scenario across a
 public, an internal and a `main` package of a fixture module and the four non-matches of the second, requires each
 of the seven by file and name, requires none of the four, and requires exactly seven.
 
@@ -135,7 +139,7 @@ SemEngine's is.
 
 ### D5 Order against PR #48
 
-PR #48 merges first. C-1 extends the loader #48 adds (`signatures_test.go`), and at `c64ac338` C-1 names seven
+PR #48 merges first. C-1 is #48's own test (`signatures_test.go`, adopted from `bb004ef`), and at `c64ac338` C-1 names seven
 identifiers #48 is ruled to remove (premise P2); task 3.1 carries `Hold: until PR #48 merges`. C-2, the requirement,
 the row and the sensitivity tests do not wait. Both changes add requirements to `harness-boundaries` under distinct
 names; the archive of whichever lands second applies cleanly. If #48 were to land after this change's archive, task
@@ -150,13 +154,14 @@ share one load (the developer's mechanism) before anything is removed.
 
 ### D7 Documents changed with the code
 
-`AGENTS.md` rules table, one row: rule "A deployment's authority is spelled once: established by `config.Manager.Start`,
-carried as `deps.Platform`, composed only by `FrameworkIdentityFamily.EntityID`; no second name, field or envelope
-copy" | canonical home `harness-boundaries` spec, "One spelling of the deployment authority"; ADR-102, ADR-104 |
-enforced by `TestNoSecondAuthorityName` and `TestNoSecondAuthorityField` (`task test:unit`); lowercase and
-differently named copies, values re-joined in a function body, the extract-after-`Start` ordering (ruling B), and
-the composer being the only composer are review only. `docs/testing.md:155-161`: the two sensitivity pairs in the
-list. `docs/repository-map.md:41`: "the deployment-authority spelling" in the contract package's clause.
+`AGENTS.md` rules table, one row: rule "A deployment's authority is spelled once: established by
+`config.Manager.Start`, carried as `deps.Platform`, composed only by `FrameworkIdentityFamily.EntityID`; no second
+name, field or envelope copy" | canonical home `harness-boundaries` spec, "One spelling of the deployment
+authority"; ADR-102, ADR-104 | enforced by `TestNoDeploymentAuthorityNames` (adopted from PR #48) and
+`TestNoSecondAuthorityField` (`task test:unit`); lowercase and differently named copies, values re-joined in a
+function body, the extract-after-`Start` ordering (ruling B), and the composer being the only composer are review
+only. `docs/testing.md:155-161`: the two sensitivity pairs in the list. `docs/repository-map.md:41`: "the
+deployment-authority spelling" in the contract package's clause.
 
 ## PR #48 and the other open pull requests
 
@@ -206,8 +211,8 @@ exact-name exceptions held in the spec and a planted-violation sensitivity test"
 `TestNoRetainedContext` (`internal/harness/contract/context_test.go:22-25`, walk `:221-289`, exceptions `:215-217`,
 sensitivity `:27-91`) and, in #48, `TestPublicSignatures` (`signatures_test.go:17-24`, loader `:212-258`,
 sensitivity `:150-192`), on the helpers `writeTree`, `requireViolation`, `requireNoViolations`
-(`repo_test.go:65-81, 104-127`). This design adopts them: C-2 is the context walk with a different predicate, C-1 a
-second predicate over the signature loader. It establishes no new pattern, so no sweep is owed.
+(`repo_test.go:65-81, 104-127`). This design adopts them: C-2 is the context walk with a different predicate, C-1 (as #48
+wrote it) a second predicate over the signature loader. It establishes no new pattern, so no sweep is owed.
 
 ## Questions for the owner
 

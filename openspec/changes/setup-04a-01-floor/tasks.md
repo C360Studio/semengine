@@ -293,16 +293,17 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       the call; `prochost` gains `Process.StderrPath` with a `process-host` scenario; the pin's `CallbackPanic` and
       `NilCallback` tests are replaced, and their three sleeps with them: of the pin's 26 sleeps, 21 remain, repaired
       (two went with `TestEvictCallback`). F2 (5647994) concurrent `Close` of the TTL and hybrid caches. F3 (68f10f9)
-      the direct constructors refuse invalid dimensions; task 3.7 notes the effect on `NewTemporalResolverWithCache`. F4
-      (2e2060a) `StatsInterval` removed, with the dead surface the pin-wide search found (f56fcf6: `Entry`, `IsExpired`,
-      `Touch`, `WithStats`, `StatsFromContext`, `ContextKeyStats`, `Statistics.MemoryUsage`); the one outside reference,
-      `processor/rule/config.go:245` and its docs, is a port-refactor item on the row. F5 (65d9740, d62fdd9) unknown
-      keys refused; `FuzzConfigUnmarshalJSON`, whose `null` seed found a pin panic, now fixed; the generated-check
-      decision is in design D7. F6 (4fcfc46) `TestAttack_CallbackLatency` fails and ends when an `Add` blocks. F7
-      (58ffe7b) `doc.go` and `README.md` name `./internal/cache` and drop `cache.NewHybrid`, which does not exist; the
-      `message` hold no longer applies (task 3.6 is done) and is gone. README import paths (3485af3) in `message`,
-      `pkg/retry`, `pkg/types` and `vocabulary`, each an `adapt` item on its row. Rows: `pkg/cache` (contract,
-      `known_risks`, `proving_tests`), `message`, `pkg/retry`, `pkg/types`, `vocabulary`.
+      the direct constructors refuse invalid dimensions; `NewTemporalResolverWithCache`, its one `natsclient` caller, is
+      dropped with `TemporalResolver` (task 3.7). F4 (2e2060a) `StatsInterval` removed, with the dead surface the
+      pin-wide search found (f56fcf6: `Entry`, `IsExpired`, `Touch`, `WithStats`, `StatsFromContext`, `ContextKeyStats`,
+      `Statistics.MemoryUsage`); the one outside reference, `processor/rule/config.go:245` and its docs, is a
+      port-refactor item on the row. F5 (65d9740, d62fdd9) unknown keys refused; `FuzzConfigUnmarshalJSON`, whose `null`
+      seed found a pin panic, now fixed; the generated-check decision is in design D7. F6 (4fcfc46)
+      `TestAttack_CallbackLatency` fails and ends when an `Add` blocks. F7 (58ffe7b) `doc.go` and `README.md` name
+      `./internal/cache` and drop `cache.NewHybrid`, which does not exist; the `message` hold no longer applies (task
+      3.6 is done) and is gone. README import paths (3485af3) in `message`, `pkg/retry`, `pkg/types` and `vocabulary`,
+      each an `adapt` item on its row. Rows: `pkg/cache` (contract, `known_risks`, `proving_tests`), `message`,
+      `pkg/retry`, `pkg/types`, `vocabulary`.
 - [x] 3.6b (D) Codex's sixth record (PR #48 comment 5969256728, at `c64ac33`: F8–F10), #72 ruling 1 (comment
       5969293525) as extended to `vocabulary.EntityIRI` (comment 5969505488, relayed in PR #48 comment 5969508639)
       with ruling D's `pkg/platform` comment, and #9 ruling 7 (comment 5969522395). Each with a test written first,
@@ -324,70 +325,171 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       local only): `go test -run '^$' -fuzz '^<target>$' -fuzztime 60s ./message` ran 1,970,895, 1,121,935 and
       10,033,878 executions with no failing input. Rows: `vocabulary`, `pkg/platform`, `message`,
       `internal/semantictest`.
-- [ ] 3.7 (D) `natsclient` (level 6): row `adapt`; `test_client.go` and `test_options.go` are not ported and their
-      file rows are updated (`proving_tests` on the `adapt` row); four test files are not ported and get `defer-exclude`
-      file rows with design D1's reasons: `test_client_factory_test.go`, `test_client_integration_test.go` and
-      `test_client_readiness_test.go` by owner ruling (task 1.5, Q3), and `monitoring_consumers_test.go` as forced by
-      Q3 (`WithMonitoring` is at `test_client.go:448`, not ported; not an owner ruling); the 56
-      `NewTestClient` sites in the ported files are rewritten to `natsfixture` (count recorded: 56 before, 0 after);
-      the 37 sleeps (8 unit in `client_test.go`, 29 integration) are repaired per design D8 R1;
-      `TestIntegration_Reconnection` (`integration_test.go:63`) is rewritten on `natsfixture.Restart` with no skip
-      call: the disconnect callback is observed through a channel, the client is observed unhealthy through
-      `probe.Await`, and a client dialled from the new `URL()` is observed healthy; its name and comment say it
-      proves re-dial, not nats.go's automatic reconnect (D8 R2); the nine roots are triaged; the nats.go v1.52→v1.54
-      difference is recorded in `known_risks` with the carried tests as the only regression evidence; the 46 unit
-      test files pass under `task test:unit` and `task test:repeat -- ./natsclient`, and the 28 integration-tagged
-      files under `task test:integration -- ./natsclient`; the `Client` adapter (lists conn, JetStream handle,
-      subscriptions, consumer claims, the health monitor, the metrics poller, callback and claim-release goroutines)
-      passes the suite with a refused-URL must-fail factory after three items (design D3), each written first and
-      shown to fail on the pin: `natsclient-nil-context-refused` (`Close(nil)` panics at `client.go:685`;
-      `Connect(nil)` dials at `:494`, panics at `:495` and leaks the connection — both refuse with an error before
-      acting); `natsclient-connect-refuses-second-start` (`:547` overwrites the connection, `:566` starts a second
-      poller); `natsclient-close-joins-its-goroutines`, in-package tests: (a) `handleDisconnect` (`:1496`) with a
-      planted `onDisconnect` that blocks until released: the pin's `Close` returns nil while the callback runs; after
-      the fix `Close` under an ended context returns `ctx.Err()`, a second `Close` with a live context does not
-      return until the callback is released and then returns nil (the pin's second `Close` returns nil at once,
-      `:583-585`); (b) a callback delivered after `Close` has begun (`handleClosed` and `handleDisconnect` called
-      once the closing flag is set) and a connection-loss timer that fires after `Close` start nothing and are not
-      counted, `go test -race` passes, and the drop is logged at debug level; (c) two concurrent `Close` calls while
-      the planted callback blocks: the one whose context ends returns `ctx.Err()` while the other is still waiting,
-      and the other returns nil once the callback is released; (d) `Close` with a bounded context called from inside
-      `onDisconnect` returns `ctx.Err()`; the review checks that all eleven sites of design D3 go through the one
-      helper). `TemporalResolver` takes shape 2 by
-      delegation (design D7): constructed and closed inside `synctest.Test` with no broker and nothing left running,
-      and `NewTemporalResolver(nil, …)` and `NewTemporalResolverWithCache(nil, …)` return an error, each test
-      written first; its empty eviction callbacks (`kv_temporal.go:27,59`) go with `WithEvictionCallback`.
-      `NewTemporalResolverWithCache` (`kv_temporal.go:44-60`) passes `cacheTTL` to `cache.NewTTL`, which now refuses
-      a zero or negative TTL (task 3.6a, Codex F3): a `cacheTTL` ≤ 0 is an error, where at the pin it built a cache
-      whose entries expire at once.
-      `TemporalResolver.GetStats` (`kv_temporal.go:221`), which returns the internal `*cache.Statistics`, becomes
-      the unexported `cacheStats` (design D5; owner ruling, #9 comment 5953295358); its only callers,
-      `kv_error_integration_test.go:421, :436, :447`, are in the package and call `cacheStats`, including the
-      repaired wait at `:440` (design D8). Each item is recorded on the row as changed behaviour (`adapt`).
-      `natsclient` adapt (design D9): `jetstream_metrics.go:128-161`, all 11 registrations through `RegisterOrGet`,
-      the returned collectors kept (fixes the 7 that orphan when two clients share a registry, `options.go:215`);
-      `jetstream_metrics_test.go:16` extended to every collector. Open question for the owner, measured in 3.7: which
-      of the 11 collectors are per-client, and whether those need a client label.
+- [ ] 3.7 (D) `natsclient` (level 6), port and unit lane: row `adapt`, its `source_sha` and the existing file rows'
+      at the pin. Not ported, with file rows: `test_client.go` (`adapt → natsfixture`, evidence in `proving_tests`)
+      and `test_options.go` (`defer-exclude`); six test files `defer-exclude` with design D1's reasons —
+      `test_client_factory_test.go`, `test_client_integration_test.go`, `test_client_readiness_test.go` (owner
+      ruling, task 1.5, Q3), and, forced by Q3 and not owner rulings, `monitoring_consumers_test.go` (`WithMonitoring`,
+      `test_client.go:448`), `test_options_test.go` (tests `test_options.go`) and `mapped_port_retry_test.go` (tests
+      `test_client.go` internals). Not ported as dropped surface, recorded on the package row (design D8, "A test of
+      a removed feature"): `kv_temporal.go` with `kv_temporal_integration_test.go` and
+      `TestTemporalResolver_ErrorBoundaries` (`kv_error_integration_test.go:353-450`) (owner ruling, PR #48 comment
+      5969522395, item 1); `typed.go` with `typed_test.go` (item 2). This commit compiles and `task verify` passes on
+      it: the production files with imports rewritten; `jetstream_metrics.go:128-161` registers all 11 collectors
+      through `RegisterOrGet` and keeps the returned collectors (design D9; the pin's `Register*` calls no longer
+      exist, task 3.5a); `github.com/nats-io/nats-server/v2` becomes a direct test requirement at v2.14.7, the
+      `.nats-image` line (the pin requires v2.12.4, `go.mod:11`), for the embedded broker at
+      `client_connect_test.go:104`, recorded in the row's `known_risks` as a pin difference with the carried tests as
+      the only regression evidence (T-B3 cannot see an embedded server, so one broker version across both lanes is
+      review only); and the 43 unit test files, of which: the census tests in `consumer_policy_callsite_test.go`
+      (`TestConsumerPolicyProductionCallsiteCensus` `:217`, `TestConsumerPolicyDirectCreationCallCensus` `:588`) are
+      rewritten for SemEngine as an `adapt` item (item 3) — their expected maps hold what SemEngine's tree has at this
+      commit, measured and not copied, a caller planted in a `t.TempDir()` tree is shown to fail each, and the row's
+      `known_risks` says each later port that adds a caller updates the maps; the 8 sleeps in `client_test.go` are
+      repaired under design D8 R1a; the 47 fixed-address lines in 8 unit files are repaired (D8 R5;
+      `stream_visibility_test.go:82` is an error string the guard does not match and stays); `testStreamMaxAge` and
+      `testStreamMaxBytes` (`test_client.go:912-913`, read at `client_test.go:373-374`) are defined in the one test-side
+      helper file that replaces `test_client.go`. `task test:unit`, `task test:repeat -- ./natsclient` and
+      `task tidy:check` pass. The nats.go v1.52→v1.54 difference is in `known_risks` with the carried tests as the only
+      regression evidence. Context roots: the pin's two live production roots are `client.go:566` (the metrics poller,
+      triaged in 3.7c) and `trace.go:56` (leaves with `DetachContextWithTrace`, 3.7a); the rest of the "nine" are
+      comments or `test_client.go`.
+- [ ] 3.7a (D) `natsclient` surface audit (#9 comment 5968830525; owner rulings, #9 comment 5969522395, items 1–2),
+      each drop an `adapt` item on the row: `options.go` `WithPingInterval`, `WithRequestHandlerTimeout`,
+      `WithDisconnectCallback`, `WithReconnectCallback`, `WithHealthChangeCallback`, `WithCircuitBreakerThreshold`,
+      `WithMaxBackoff`, `WithToken`, `WithTLS`, `WithDrainTimeout`, `WithCompression`; `client.go` `OnHealthChange`,
+      `WithHealthCheck`, `ErrConnectionTimeout`, `ConnectionOptions`, `PublishToStreamAsync`,
+      `PublishToStreamAsyncWithMsgID`, `PublishAsyncComplete`, `PublishAsyncPending`, `MaxReconnects()`,
+      `ReconnectWait()`, `PingInterval()`; `request.go` `RequestReady`; `errors.go` `ReplyError`; `DeliveryResult`'s
+      `ControlError`, `SettlementError`, `SettlementAttempted`, `SettlementMethodSucceeded`;
+      `StorageResource.Undescribable`; `trace.go` `DetachContextWithTrace` with its root at `:56`.
+      `PublishBatchToStream` stays (semboids `boidgraph/publisher.go:32`). State that the drops leave written by
+      nothing goes with them, so no branch remains that no input reaches: the `token`, `tlsCertFile`, `tlsKeyFile`,
+      `tlsCAFile`, `tlsEnabled`, `compression`, `onDisconnect`, `onReconnect` and `onHealthChange` fields, and exactly
+      these lines — `client.go:423-425` (token option), `:427-435` (TLS options), `:442-445` (compression), `:569-572`
+      (health change on connect), `:615` (token clear), `:1500-1510` (disconnect and health callbacks), `:1520-1530`
+      (reconnect and health callbacks), `:1585-1591` (health callback on close), `:1658-1661` (the monitor's health
+      callback). Kept: the `clientName` option (`:437-440`), `armConnectionLossTimer` (`:1512`), the reconnect path's
+      status, circuit reset and timer cancel (`:1516-1518`), and each handler's `setStatus`. `publishToStreamAsync`'s
+      `msgID` parameter and its stamp go too (only `PublishToStreamAsyncWithMsgID` passed one; `PublishBatchToStream`
+      passes "" at `:1177`). Fields still read by behaviour keep their defaults with no setter (`pingInterval`,
+      `drainTimeout`, `circuitThreshold` 15, `maxBackoff` one minute; `requestHandlerTimeout` from the environment
+      variable, `request.go:37-55`, whose name is unchanged here, #69). Audit item (c): `testCircuit`'s comment
+      (`client.go:352-358`) promises a reconnect; the function only moves the status from open to disconnected, and
+      the comment is corrected to say so. Tests, in the unit files here and in the integration files as 3.7b lands
+      them: a test that reaches kept behaviour through a dropped symbol is retargeted, not deleted — it calls the
+      unexported path the symbol wrapped (`publishToStreamAsync`, as `PublishBatchToStream` does at `:1177`;
+      `requestMsgReady`, as `RequestReadyClassified` does at `errors.go:318`), reads the fields a dropped getter
+      returned (`DeliveryResult`'s `controlErr`, `settlementErr`, `settlementTried`; `StorageResource`'s three unknown
+      states; the client's reconnect and ping fields), uses the JetStream handle a dropped accessor forwarded, or sets
+      the request-handler timeout through the environment variable; a test whose only subject is dropped behaviour is
+      deleted (`TestConnectionOptions`, `client_test.go:393`; `TestRequestHandlerTimeout_Option` and `_OptionBeatsEnv`;
+      `TestReplyError_*`, `errors_test.go:211, :221`; `TestPublishAsyncComplete_JetStreamUnavailable`;
+      `TestIntegration_PublishToStreamAsyncWithMsgID_Dedup` and the message-ID half of `_StampsTraceAndMsgID`; the
+      typed-subject cases at `subscription_integration_test.go:54, :62`; `TestIntegration_HealthMonitoring`,
+      `integration_test.go:236-285`, which retires design D8's rows `:262` and `:278`). The row lists each as pin
+      `file:line` → SemEngine `file:line` or "deleted".
+- [ ] 3.7b (D) `natsclient` integration lane: the 27 integration-tagged files land on `natsfixture`, 3.7a's rule
+      applied to their dropped-symbol uses. The 51 `NewTestClient` sites (56 at the pin less five in tests removed by
+      3.7 and 3.7a) are rewritten (51 before, 0 after), with the other `test_client.go` and `test_options.go` uses:
+      `TestStreamConfig` and `WithStreams`, `WithKV`, `WithJetStream`, `WithFileStorage`, `WithTestTimeout`,
+      `WithNATSVersion`; `WithMinimalFeatures` (`test_options.go:55-61`; called at
+      `client_close_integration_test.go:16`, `client_async_error_integration_test.go:28`,
+      `subscription_integration_test.go:84`) → a plain fixture, which always runs JetStream, and the review checks that
+      none of the three asserted JetStream's absence; `TestClient.Terminate()` (4 files at the pin, 3 after the drops)
+      and the `.Terminate(` calls through the container wrappers (14 files, 13 after the drops; 43 of the calls through
+      `client_integration_test.go:190-200`) → `Fixture.Stop`; `GetNativeConnection()` (3) → a connection dialled from
+      `URL()`; and the testcontainers imports and `testClient.container` uses (`client_integration_test.go:14,
+      :190-200`; `integration_test.go:18, :24-34, :70, :240, :286-296`). Afterwards no `natsclient` test imports
+      testcontainers. `natsfixture` gains one option that sets the broker's `max_payload` (item 5), its consumer the four
+      `WithTestMaxPayload` tests in `request_response_bounds_integration_test.go`, with a fixture test written first (a
+      publish above the set limit is refused, one at or below it accepted) and the `nats-fixture` delta's requirement
+      "Broker max payload is settable". The 8 fixed-address lines in 4 integration files are repaired (D8 R5). The 23
+      integration sleeps (29 at the pin less six in the removed `TemporalResolver` tests) are repaired per D8 R1, and
+      the lane's real-clock timers are re-counted after the deletions and each checked against D8's table.
+      `TestIntegration_Reconnection` (`integration_test.go:62`) is rewritten on `natsfixture.Restart` with no skip call
+      (D8 R2; item 2): the loss is observed through `WithConnectionLostCallback` and the client's `Status` through
+      `probe.Await`, and a client dialled from the new `URL()` is observed healthy; its name and comment say it proves
+      re-dial, not nats.go's automatic reconnect. The two tests that pin NATS 2.14.4
+      (`kv_key_contract_integration_test.go:38-39`, `kv_watcher_ownership_integration_test.go:48`) run on `.nats-image`
+      (2.14.7) with the version override dropped and the log line corrected (item 6); T-B3 (`imagepin_test.go:78`)
+      cannot see a version and digest held in separate constants, so this is review only. `kv_key_contract_test.go:30`'s
+      v1.52.0 constant becomes v1.54.0 and its comment cites `kv.go:504-506` (the three regexes are byte-identical).
+      `task test:integration -- ./natsclient` passes.
+- [ ] 3.7c (D) Hold: Codex's checkpoint review of 3.7–3.7b, recorded on this pull request with the commit it read.
+      `Client` lifecycle (design D3): the test-side adapter lists the `nats.Conn`, JetStream handle, subscriptions,
+      internal consumer claims, the health monitor, the metrics poller, the claim-release goroutines and the two timers,
+      and the client passes the suite with a refused-URL must-fail factory after these items, each test written first
+      and shown to fail on the code as 3.7b leaves it: `natsclient-nil-context-refused` (`Close(nil)` panics at
+      `client.go:685`; `Connect(nil)` dials at `:494`, panics at `:495` and leaks the connection — both refuse with an
+      error before acting); `natsclient-connect-refuses-second-start` (`:547` overwrites the connection, `:566` starts a
+      second poller); `natsclient-close-joins-its-goroutines`, in-package tests, each registering the planted
+      callback's release in `t.Cleanup` before planting it and bounding every wait: (a) a connection-loss timer armed
+      by `handleDisconnect` (`:1512`) fires a planted `onConnectionLost` that blocks until released: the pin's `Close`
+      returns nil while it runs; after the fix `Close` under an ended context returns `ctx.Err()`, and a second `Close`
+      with a live context does not return until the callback is released and then returns nil (the pin's second
+      `Close` returns nil at once, `:583-585`); (b) a disconnect delivered once `Close` has begun and a loss timer that
+      fires after it start nothing and are not counted, `go test -race` passes, and the drop is logged at debug level;
+      (c) two concurrent `Close` calls while the planted callback blocks: the one whose context ends returns
+      `ctx.Err()` while the other still waits, and the other returns nil once the callback is released; (d) `Close`
+      with a bounded context called from inside `onConnectionLost` returns `ctx.Err()`; (e) the Close/Connect race,
+      made deterministic: `Connect` is given, through `WithLogger`, a handler that blocks on the "Successfully
+      connected to NATS" record (`:555`) until released, which holds `Connect` open after it releases `closeMu`
+      (`:553`) and before it starts the monitor (`:560`) and the poller (`:566`); `Close` runs and returns while
+      `Connect` is held, the handler is released, and once both have returned neither the monitor nor the poller runs
+      and the adapter lists nothing (the pin starts both, and writes `metricsCancel` with no lock that `Close` reads at
+      `:595`). The review checks that all six sites of design D3 go through the one helper. `jetstream.New`'s error
+      (`:525`, dropped at the pin) is returned by `Connect` with the dialled connection closed; no failing-first test
+      exists, because nats.go v1.54.0 `jetstream.New` fails only when an option does and
+      `WithPublishAsyncErrHandler` never does (`jetstream/jetstream.go:471-492`, `jetstream_options.go:41-46`), and the
+      row says so. The root at `client.go:566` is triaged on the row: `Close` cancels the poller's in-flight work and
+      joins it. Each item is changed behaviour on the row.
+- [ ] 3.7d (D) Hold: Codex's checkpoint review of 3.7c (concurrency), recorded on this pull request. `natsclient`
+      metrics (design D9; item 4): the three consumer collectors that `Add` cumulative server values on every poll
+      (`jetstream_metrics.go:305-307`) become gauges `Set` from server state — `consumer_delivered_total` →
+      `consumer_delivered_stream_sequence` (`Delivered.Stream`), `consumer_acked_total` →
+      `consumer_ack_floor_stream_sequence` (`AckFloor.Stream`), `consumer_redelivered_total` →
+      `consumer_redelivered_messages` (`NumRedelivered`) — with namespace and subsystem unchanged pending #69; the name
+      and type changes are consumer impact on the row. No client label. Tests written first: (1) two polls of an
+      unchanged consumer leave each of the three gathered values equal to the server's (the pin doubles them); (2) two
+      clients on one registry: each of the 11 collectors is the canonical one, and a value written through the second
+      client is gathered (fails at the pin for the 8 registered through `Register*`, `:128-146, :158-160`);
+      `jetstream_metrics_test.go:16` covers all 11. The shared-series ownership defects (`stream_state` set to 0 by one
+      client's failed `Info`, `:278`; `forgetConsumer` deleting series another client still writes, `:232-243`) are
+      tracked by #75, named on the row's `known_risks` (#9 comment 5968830525, rule 4; owner ruling #9 comment
+      5969776736, item 5), not fixed here.
+- [ ] 3.7e (D) `natsclient` `README.md` (375 lines at the pin) and `doc.go`: import paths at `README.md:14, :312`
+      and `doc.go:512` name the SemEngine module, each its own `adapt` item (#9 comment 5968665464); the lint fixes
+      (12 × MD013, 1 × MD032); behaviour edits by line (#9 comment 5957221949): `NewTestClient` (`README.md:277-281`,
+      `doc.go:352-354`) → `natsfixture`; `WithClosedCallback` (`README.md:231`), which does not exist; the defaults at
+      `README.md:213, :216`; `doc.go:339` (`WithTLS(true)`) and `doc.go:252` (a method shown as an option); every
+      passage that shows a 3.7a drop; `Close` and `Connect` as 3.7c leaves them; the request-handler-timeout comments
+      that name the dropped option (`client.go:100, :168`, `request.go:29`). `task docs:check` passes.
 - [ ] 3.8 (D) `task cover:check` targets `natsclient`, `message`, `payloadregistry` at 80%: the first measurement
       of each is recorded on this pull request (design P8: the pin baseline is unmeasured). If any of the three
       measures below 80%, a new task asking the owner to rule on that package's coverage is added to this file at
       that moment, written so `task spec:queue` reads it, and the gate stays unwaived (plan `:206-209`); nothing in
       this file waits on the owner until the measurement exists.
 - [ ] 3.9 (D) `stretchr/testify` and `pgregory.net/rapid` v1.3.0 are direct requirements (design D1; Rapid by owner
-      ruling, PR #48 comment 5951926492), and `pkg/types/entity_id_prop_test.go`, the floor's one Rapid file
-      (design P23), is ported with its property test; `task tidy:check` passes; the ported test-file count is 121
-      (127 at the pin less the four excluded files and `pkg/acme`'s two) and the line count after repair is recorded
-      with `wc` next to the pin's 33,279 less the 60 lines of `TestEvictCallback` (design D8), with a diff stat
+      ruling, PR #48 comment 5951926492), with `github.com/nats-io/nats-server/v2` v2.14.7 (design D1; task 3.7), and
+      `pkg/types/entity_id_prop_test.go`, the floor's one Rapid file (design P23), is ported with its property test;
+      `task tidy:check` passes; the ported test-file count is recorded with its arithmetic: the pin's 127, less the six
+      excluded `natsclient` files, `pkg/acme`'s two, and the files removed with dropped surface (`typed_test.go`,
+      `kv_temporal_integration_test.go`, and any the other surface audits name on their rows), plus files this change
+      adds (each on its row, e.g. `message/meta_wire_test.go`, `message/decoder_fuzz_test.go`). The line count after
+      repair is recorded with `wc` against the pin's 33,279, less each deleted test the rows list, with a diff stat
       against the pin per package.
-- [ ] 3.10 (R) Port review per package group (3.1–3.7) and of task 2.8's rehomed helpers: the two service
-      adapters list every retained kind (the review checklist of the `lifecycle-suite` delta); each helper has the
-      shape design D7 gives it, its `synctest` test and its nil-context refusal, and no fixed shutdown timeout
-      remains (`background-work` delta); rows validate, no file beyond the pin's was added except adapters and the
-      rewritten `NewTestClient` sites, and every D8 repair is on its row; every real-clock timer in a repaired file
-      is either an R1b failure bound sized per D8 or a site in D8's disposition table with that disposition (a review
-      check the text check cannot make); `go test -v -run TestPublicSignatures ./internal/harness/contract` shows
-      "public packages checked: 11" and passes, and a run with `TemporalResolver.GetStats` re-exported fails naming
-      it (design D5, task 2.10). Verdict on this pull request.
+- [ ] 3.10 (R) Port review per package group (3.1–3.7e) and of task 2.8's rehomed helpers: the two service adapters list
+      every retained kind (the review checklist of the `lifecycle-suite` delta); each helper has the shape design D7
+      gives it, its `synctest` test and its nil-context refusal, and no fixed shutdown timeout remains
+      (`background-work` delta); rows validate, no file beyond the pin's was added except the two adapters, the
+      test-side helper file that replaces `test_client.go`, the `natsfixture` max-payload option and its test, and the
+      rewritten `NewTestClient` sites; the census tests' expected maps match the tree; and every D8 repair is on its
+      row; every real-clock timer in a repaired file is either an R1b failure bound sized per D8 or a site in D8's
+      disposition table with that disposition (a review check the text check cannot make);
+      `go test -v -run TestPublicSignatures ./internal/harness/contract` shows "public packages checked: 11" and passes,
+      and a run with a temporary exported `natsclient` function returning `*resource.Watcher` (from `internal/resource`,
+      used at `client.go:1394`) fails naming it (design D5, task 2.10). Verdict on this pull request.
 - [ ] 3.11 (D) CI time: the wall time of `task verify` per step (`scripts/verify.sh` prints it) and of the CI `verify`
       job with every package ported are recorded on this pull request, with the integration lane's time against its
       `-timeout 10m` (`scripts/test-integration.sh:402`). If the job exceeds its 15-minute limit (`merge-gate`
@@ -397,21 +499,21 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
 
 ## 4. Repair evidence this change can produce (ruling g)
 
-- [ ] 4.1 (D) Settlement, `natsclient` half: the 18 unit and 3 integration settlement tests pass against
-      `natsfixture`; the `transport-client` "Settlement follows the decision" scenarios map to named tests (long work
-      with heartbeat → `TestIntegrationConsumeDeliveryWithHeartbeatHealthyRenewalPreventsOverlap`; semantic retry →
+- [ ] 4.1 (D) Settlement, `natsclient` half: the 18 unit and 3 integration settlement tests pass against `natsfixture`;
+      the `transport-client` "Settlement follows the decision" scenarios map to named tests (long work with heartbeat →
+      `TestIntegrationConsumeDeliveryWithHeartbeatHealthyRenewalPreventsOverlap`; semantic retry →
       `TestIntegrationSemanticRetryProducesDurableRedelivery`; work panics →
       `TestConsumeDeliveryWithHeartbeatControlLossNormalizesInvalidAndPanic` and
       `TestConsumeDeliveryWithHeartbeatPanicAndZeroPolicyFailClosed`, `delivery_settlement_test.go:690,739`); the row
-      names change 2 for the graph-ingest half.
+      names change 2 for the graph-ingest half. The tests that read `DeliveryResult`'s dropped getters read its
+      unexported fields instead, with the same assertions (task 3.7a).
 - [ ] 4.2 (D) Acknowledged is not durable, `natsclient` half: an integration test publishes through the ported client
       to a memory-backed and a file-backed stream, restarts the fixture (task 2.1's primitive), and asserts absence
       and presence respectively; the `natsclient` row names it and change 2 for the graph-ingest scenarios.
-- [ ] 4.3 (D) `Close`/`Drain` bounded: tests show `Drain(nil)` refused without a server call (carried), `Close(nil)`
-      and `Connect(nil)` refused with the connection untouched (new, test written first, task 3.7), `Close` under a
-      short
-      deadline returning within it with the connection closed, and a second `Close` returning nil (carried where
-      the pin has them; new ones where the row records a gap).
+- [ ] 4.3 (D) `Close`/`Drain` bounded: tests show `Drain(nil)` refused without a server call (carried), `Close(nil)` and
+      `Connect(nil)` refused with the connection untouched (new, test written first, task 3.7c), `Close` under a short
+      deadline returning within it with the connection closed, and a second `Close` returning nil (carried where the pin
+      has them; new ones where the row records a gap).
 
 ## 5. Ledger items that need no port, and boundary gates
 
@@ -442,9 +544,14 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       `lifecycle-suite` and the three new capabilities (`process-host`, `transport-client`, `background-work`),
       verified against the code as landed; `task spec:check` passes.
 - [ ] 6.4 (W) `.agents/contracts/semengine-developer.md` and `.agents/contracts/semengine-reviewer.md` gain the
-      "Background work" subsection after "Context ownership", and their detach bullets the no-join-by-timer clause,
-      as drafted on this pull request; `AGENTS.md`'s "Rules and what enforces them" table carries the background-work
-      row, added in commit b09374a; `task docs:check` passes.
+      "Background work" subsection after "Context ownership", and their detach bullets the no-join-by-timer clause, as
+      drafted on this pull request; `AGENTS.md`'s "Rules and what enforces them" table carries the background-work row,
+      added in commit b09374a; `task docs:check` passes; and, because guidance returns with the package (architect
+      contract § Extraction slices): the pin's `.agents/contracts/semstreams-developer.md` "NATS RPC" (`:226-233`) and
+      "Storage and retention contracts" (`:176-193`), `.agents/contracts/semstreams-reviewer.md` "NATS RPC error
+      contract" (`:217-226`) and "Storage, retention, and cutover review" (`:170-186`), and
+      `.agents/skills/kv-or-stream`. Each is read at the pin and carried in adapted form, or named as not applying with
+      its reason.
 
 ## 7. Review and archive
 

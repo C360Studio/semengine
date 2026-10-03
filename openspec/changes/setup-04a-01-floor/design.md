@@ -28,6 +28,9 @@ rows validated by `task ledger:check`.
   `metric/handler.go`; `pkg/resource/watcher.go`; `pkg/cache/coalescing_set.go`; `pkg/errs/errs.go`.
 - Per-package measurement: `scratchpad/04a/chain4.py` output for C1 and the per-package table reproduced in D1 (lines,
   files, tests, integration-tagged tests, `NewTestClient` sites, context roots, in-set imports, third-party imports).
+- Overlap: draft PR #73 (`claude/authority-one-spelling`) adds checks to `internal/harness/contract`; #48 merges first,
+  as #73 says. The pin's `natsclient` has no exported `Federation|GlobalID|EntityIRI` name and no `Org`/`Platform`
+  field, so nothing ported in 3.7 trips them.
 
 ## Decisions
 
@@ -53,31 +56,40 @@ and no temporary stub exists. Lines are non-test lines at the pin; "tests" are f
 | 4 | `payloadregistry` | 508 / 2 | 2 / 831 | 0 | `pkg/errs`, `pkg/projection/contract`, `pkg/types`, `vocabulary` | — |
 | 5 | `message` | 2,186 / 16 | 9 / 2,209 | 0 | `payloadregistry`, `pkg/errs`, `pkg/platform`, `pkg/timestamp`, `pkg/types` | `google/uuid` |
 | 5 | `pkg/cache` | 2,449 / 11 | 6 / 2,369 | 1 | `metric`, `pkg/errs` | prometheus |
-| 6 | `natsclient` | 12,377 / 29 | 74 / 20,263 (28 integration; 56 `NewTestClient`) | 9 | `metric`, `pkg/cache`, `pkg/errs`, `pkg/resource`, `pkg/retry` | nats.go, jetstream, prometheus; testcontainers ×2 and `docker/go-connections/nat` in `test_client.go` only |
+| 6 | `natsclient` | 12,377 / 29 | 78 / 21,656 at the pin; 70 ported (43 unit, 27 integration) after six exclusions and two files removed with dropped surface; 51 `NewTestClient` sites | 2 live (`client.go:566`; `trace.go:56`, dropped) | `metric`, `pkg/errs`, `pkg/resource`, `pkg/retry` | nats.go, jetstream, prometheus; test-only: `nats-server/v2` (embedded broker, `client_connect_test.go:104`; v2.12.4 at the pin, v2.14.7 here). At the pin also testcontainers and `docker/go-connections/nat` in `test_client.go`, and testcontainers in `client_integration_test.go:14` and `integration_test.go:18`; none after task 3.7b |
 
-Totals: 15 / 25,215 at the pin, of which 180 lines of `pkg/tlsutil` are not ported; 121 / 33,279 at the pin, before the
-D8 repairs; 14 roots; 29 integration-tagged test files. `pkg/acme` and the two ACME loaders are not ported (owner
-ruling, #9 comment 5950752741). In the floor only `pkg/tlsutil/tlsutil.go` imports `pkg/acme` (`:12`), and only
-`LoadServerTLSConfigWithACME`, `LoadClientTLSConfigWithACME` and their helper `initACMEClient` use it
-(`:186-365`); no other floor package imports it or calls them, and no `pkg/tlsutil` test does (pin grep of the
-import path over the 16 package directories: `tlsutil.go` only; of `WithACME` outside `pkg/tlsutil`:
+Totals: 15 / 25,215 at the pin, of which 180 lines of `pkg/tlsutil` are not ported; 121 / 33,279 at the pin under the
+four Q3 exclusions (measured before the rulings of 2026-10-03; the ported count is recorded in task 3.9); 7 live roots
+(natsclient's nine re-measured as two live, task 3.7); 28 integration-tagged test files. `pkg/acme` and the two ACME
+loaders are not ported (owner ruling, #9 comment 5950752741). In the floor only `pkg/tlsutil/tlsutil.go` imports
+`pkg/acme` (`:12`), and only `LoadServerTLSConfigWithACME`, `LoadClientTLSConfigWithACME` and their helper
+`initACMEClient` use it (`:186-365`); no other floor package imports it or calls them, and no `pkg/tlsutil` test does
+(pin grep of the import path over the 16 package directories: `tlsutil.go` only; of `WithACME` outside `pkg/tlsutil`:
 `input/websocket/websocket_input.go:821,1088`, `output/websocket/websocket.go:762`, `output/httppost/httppost.go:307`).
-Cutting the loaders removes the floor's only edge to `pkg/acme`, so the floor is closure(natsclient) ∪
-closure(message) less `pkg/acme`: 15 packages. The loaders, `pkg/acme`, `go-acme/lego/v4` and their two defects
-(D7) move to change 5, which ports `output/websocket` (foundation D2 row 5); `input/websocket` and
+Cutting the loaders removes the floor's only edge to `pkg/acme`, so the floor is closure(natsclient) ∪ closure(message)
+less `pkg/acme`: 15 packages. `pkg/cache` is in that closure only through `natsclient/kv_temporal.go:8`.
+`TemporalResolver` is dropped as dead surface (owner ruling, #9 comment 5969522395, item 1); `internal/cache` stays
+in the floor whole because it is admitted: six admitted packages import it at the pin (`component`,
+`processor/graph-ingest`, `processor/graph-embedding`, `processor/rule`, `processor/rule/expression`,
+`storage/objectstore`). In this change nothing imports it. The loaders, `pkg/acme`, `go-acme/lego/v4` and their two
+defects (D7) move to change 5, which ports `output/websocket` (foundation D2 row 5); `input/websocket` and
 `output/httppost` call them too and are in no change of the chain, so the change that ports them inherits the row.
-`pkg/platform` and `pkg/security` have no tests at the pin; none are invented — their rows say so and D10 does not
-gate them. Ported files land at their row's `destination` (D5). Not ported: `test_client.go`
-(`adapt → natsfixture`) and `test_options.go` (`defer-exclude`); by owner ruling (#9, comment 5941920346, Q3), the
-three test files that exercise them — `test_client_factory_test.go`, `test_client_integration_test.go` and
-`test_client_readiness_test.go` (`defer-exclude`). `monitoring_consumers_test.go` is also `defer-exclude`, an
-exclusion forced by Q3 and not an owner ruling: it walks the SemStreams tree for `NewTestClient(…, WithMonitoring())`
-callers (`:13-27, :83, :111-115`), `WithMonitoring` is declared at `test_client.go:448`, which is not ported, and
-the files it names lie outside the set (`processor/graph-index/…`), so it has nothing left to check.
+`pkg/platform` and `pkg/security` have no tests at the pin; none are invented — their rows say so and D10 does not gate
+them. Ported files land at their row's `destination` (D5). Not ported: `test_client.go` (`adapt → natsfixture`) and
+`test_options.go` (`defer-exclude`); by owner ruling (#9, comment 5941920346, Q3), the three test files that exercise
+them — `test_client_factory_test.go`, `test_client_integration_test.go` and `test_client_readiness_test.go`
+(`defer-exclude`). `monitoring_consumers_test.go` is also `defer-exclude`, an exclusion forced by Q3 and not an owner
+ruling: it walks the SemStreams tree for `NewTestClient(…, WithMonitoring())` callers (`:13-27, :83, :111-115`),
+`WithMonitoring` is declared at `test_client.go:448`, which is not ported, and the files it names lie outside the set
+(`processor/graph-index/…`), so it has nothing left to check. `test_options_test.go` and `mapped_port_retry_test.go` are
+also `defer-exclude`, forced by Q3: they test `test_options.go` and `test_client.go` internals. `typed_test.go`,
+`kv_temporal_integration_test.go` and `TestTemporalResolver_ErrorBoundaries` leave with the surface they test (D8).
 
-Two test libraries become direct test requirements: `stretchr/testify` (ruling b) and `pgregory.net/rapid` v1.3.0
-(the pin's `go.mod:25`; owner ruling, PR #48 comment 5951926492). In the 15 packages only
-`pkg/types/entity_id_prop_test.go` imports Rapid, and it is ported with its property test (P23).
+Three modules become direct test requirements: `stretchr/testify` (ruling b), `pgregory.net/rapid` v1.3.0 (the pin's
+`go.mod:25`; owner ruling, PR #48 comment 5951926492), and `github.com/nats-io/nats-server/v2` at v2.14.7, the
+`.nats-image` line (the pin requires v2.12.4, `go.mod:11`), imported only by `natsclient/client_connect_test.go`; its
+indirect requirements match versions already in `go.mod`. In the 15 packages only `pkg/types/entity_id_prop_test.go`
+imports Rapid, and it is ported with its property test (P23).
 
 ### D2. Harness API shapes (foundation D4, made concrete)
 
@@ -195,7 +207,7 @@ pending.
 | Service | Start / end at the pin | `Unresolved` lists | Failing factory |
 |---|---|---|---|
 | `metric.Server` | `Start(ctx)` `handler.go:59`, `Stop(ctx)` `:192` | the listener, the `http.Server`, the serve goroutine, the requests its handler admitted and has not returned from (since aa94acf; `Stop` waits for them within its context). Since a19f393 (Codex, PR #48 comment 5959412053, finding 1) `Stop` closes admission before `Shutdown`; a later request gets 503 with `Connection: close` and its handler never runs, and the closed flag shares the count's mutex, so a nil `Stop` is final (`metric/admission_test.go`) | a server configured on a port the test already holds with `net.Listen`; `Start` binds synchronously (`:55-110`) and returns the bind error |
-| `natsclient.Client` | `Connect(ctx)` `client.go:471`, `Close(ctx)` `:578` | the `nats.Conn`, JetStream handle, subscriptions, internal consumer claims, the health monitor, the metrics poller, callback goroutines and claim-release goroutines | a client whose URL is a refused local port (its own `Connect` returns the dial error) |
+| `natsclient.Client` | `Connect(ctx)` `client.go:471`, `Close(ctx)` `:578` | the `nats.Conn`, JetStream handle, subscriptions, internal consumer claims, the health monitor, the metrics poller, claim-release goroutines, and the connection-loss and circuit-test timers | a client whose URL is a refused local port (its own `Connect` returns the dial error) |
 
 The task 2.0 probe (PR #48 comment 5942307713) and a read of every `go` statement in both packages give these
 failing-first `adapt` items:
@@ -207,25 +219,27 @@ failing-first `adapt` items:
 - **`natsclient-connect-refuses-second-start`.** `connectWith` has no already-connected guard. It overwrites `m.conn`
   at `:547` without closing it, and starts a second metrics poller at `:566`. A second `Connect` on a connected
   client returns an error and changes nothing.
-- **`natsclient-close-joins-its-goroutines`.** `Close` signals but never joins eleven sites where the client runs
-  work on another goroutine: the metrics poller (`jetstream_metrics.go:345`, cancelled at `client.go:595-596`); the
-  health monitor (`:1628`, whose `done` is closed at `:1678-1680` with no wait, and which runs `conn.RTT` and the
-  caller's `onHealthChange`); the caller's callbacks launched per connection event (`:1506, :1509, :1526, :1529,
-  :1590`); the claim releases that wait on a consumer's `Closed()` (`stream.go:547, :646`); and two
-  `time.AfterFunc` timers, the connection-loss watchdog (`client.go:1555-1567`, which runs `onConnectionLost`;
-  `cancelConnectionLossTimer` at `:1572-1579` does not wait for a timer that has already fired) and the circuit test
-  (`:289`, never stopped). The fix, in one place:
-  - Every site starts through one helper that, under `m.mu`, refuses once a `closing` flag is set and
-    otherwise adds to one `sync.WaitGroup` before the goroutine starts. The two timer bodies enter through the same
-    check before doing anything. No `Add` can then happen once `Close` has begun waiting, so a callback, disconnect
-    or timer that nats.go or the runtime delivers while `Close` runs (`handleClosed` is registered at `:415` and
-    fires on the connection's close, `:1582-1590`) cannot race the wait.
-  - Work refused because the client is closing is dropped, not run inline, and no `onHealthChange(false)` is sent in
-    its place: it would report on a connection the caller is closing, and running it on nats.go's callback goroutine
-    would block that goroutine's close sequence. The pin already drops the watchdog's callback after close (`:1564`,
-    `!m.closed.Load()`), and no production consumer of these callbacks exists at the pin. The drop site logs at debug
-    level what it dropped (the contract's silent-drop rule), and both it and `Close`'s doc comment say that no
-    callback runs once `Close` has begun. The row records this as changed behaviour.
+- **`natsclient-close-joins-its-goroutines`.** `Close` signals but never joins six sites where the client runs work on
+  another goroutine, once task 3.7a has dropped the disconnect, reconnect and health-change callbacks with their launch
+  sites: the metrics poller (`jetstream_metrics.go:345`, cancelled at `client.go:595-596`); the health monitor (`:1628`,
+  whose `done` is closed at `:1678-1680` with no wait, and which runs `conn.RTT` and sets the status); the claim
+  releases that wait on a consumer's `Closed()` (`stream.go:547, :646`); and two `time.AfterFunc` timers, the
+  connection-loss watchdog (`client.go:1555-1567`, which runs `onConnectionLost`; `cancelConnectionLossTimer` at
+  `:1572-1579` does not wait for a timer that has already fired) and the circuit test (`:289`, never stopped). `Connect`
+  also races `Close`: it releases `closeMu` at `:553`, starts the monitor (`:560`) and the poller (`:566`), and writes
+  `metricsCancel` with no lock that `Close` reads at `:595`. The fix, in one place:
+  - Every site starts through one helper that, under `m.mu`, refuses once a `closing` flag is set and otherwise adds to
+    one `sync.WaitGroup` before the goroutine starts. The two timer bodies enter through the same check before doing
+    anything. No `Add` can then happen once `Close` has begun waiting, so a callback, disconnect or timer that nats.go
+    or the runtime delivers while `Close` runs (`handleDisconnect` arms the watchdog, `:1512`) cannot race the wait.
+    `Connect` admits and starts the monitor and poller through the same helper, so a `Close` that has begun refuses
+    them.
+  - **`jetstream.New`'s error.** It is dropped at `:525`. `Connect` returns it and closes the dialled connection. No
+    failing test exists (nats.go v1.54.0 `jetstream.go:471-492`), and the row records that.
+  - Work refused because the client is closing is dropped, not run inline. The pin already drops the watchdog's callback
+    after close (`:1564`, `!m.closed.Load()`). The drop site logs at debug level what it dropped (the contract's
+    silent-drop rule), and both it and `Close`'s doc comment say that no callback runs once `Close` has begun. The row
+    records this as changed behaviour.
   - Only the first `Close` runs the setup, once, under `closeMu` (held for the whole body at the pin, `:580-581`, and
     now for the setup alone): set `closing` under `m.mu`, the lock the helper checks; close the connection and the
     timers; start the single goroutine that runs `wg.Wait` and then closes `joined`, so `joined` is closed exactly
@@ -278,14 +292,13 @@ states the `Client` nil-context requirement; the row records each item as change
   cite elsewhere in this design is a pin path; the row's `source_path` → `destination` maps it, and #52's command
   reads that map.
 
-  Applied to the floor: eleven public, four internal. The eight SemSource imports directly at `e4febc0d` (§5.1,
-  P16) and `pkg/projection/contract`, which SemConnect imports (P21), are public by import; `pkg/security` is public
-  because a public signature names its `Config` type (P22), and `pkg/platform` because `config`'s exported `Config`
-  names its `Config` (change 3), a caller ported later: the signatures that named it in this change are removed (task
-  3.6b). `pkg/cache` stays internal
-  and the one public symbol that named its type, `natsclient.TemporalResolver.GetStats` (`kv_temporal.go:221`,
-  `*cache.Statistics`), becomes the unexported `cacheStats`, an `adapt` item on the `natsclient` row (task 3.7).
-  After that no exported symbol of the eleven names a type from the four (P22).
+  Applied to the floor: eleven public, four internal. The eight SemSource imports directly at `e4febc0d` (§5.1, P16) and
+  `pkg/projection/contract`, which SemConnect imports (P21), are public by import; `pkg/security` is public because a
+  public signature names its `Config` type (P22), and `pkg/platform` because `config`'s exported `Config` names its
+  `Config` (change 3), a caller ported later: the signatures that named it in this change are removed (task 3.6b).
+  `pkg/cache` stays internal. The one public symbol that named its type at the pin,
+  `natsclient.TemporalResolver.GetStats` (`kv_temporal.go:221`), leaves with `TemporalResolver`, which is dropped as
+  dead surface (task 3.7). After that no exported symbol of the eleven names a type from the four (P22).
 
   | Pin path (`source_path`) | `destination` | Why |
   |---|---|---|
@@ -303,24 +316,26 @@ states the `Client` nil-context requirement; the row records each item as change
   | `pkg/resource` | `internal/resource` | no consumer import; no public signature names its types |
   | `pkg/timestamp` | `internal/timestamp` | no consumer import; no public signature names its types |
   | `pkg/tlsutil` | `internal/tlsutil` | no consumer import; no public signature names its types |
-  | `pkg/cache` | `internal/cache` | no consumer import; `GetStats`, the one public signature naming its type, is unexported |
+  | `pkg/cache` | `internal/cache` | no consumer import; no public signature names its types (the pin's one, `TemporalResolver.GetStats`, is dropped with its type) |
 
-  Every importer of the four is inside the module (P22): `internal/resource` ← `natsclient`; `internal/cache` ←
-  `natsclient`; `internal/tlsutil` ← `metric`; `internal/timestamp` ← `message`. The harness helpers (D2) import
-  public packages only.
-  Dispositions, by owner ruling (#9, comment 5941920346, Q1: a repaired test file makes the row `adapt`): `adapt` for
-  `natsclient` (`NewTestClient` sites, `test_client.go`, the D3 and D7 items, the D8 repairs, `GetStats` unexported
-  as `cacheStats` above), `metric` (D3 items), `payloadregistry` (`testing.go` rehomed), `pkg/cache` and
-  `pkg/resource` (the D7 items, the D8 repairs), `pkg/tlsutil` (the ACME loaders cut, D1) and `pkg/retry` (D8
-  repair); and, by owner ruling (#9, comment 5957221949, which replaced comment 5955265930: a ported `README.md`
-  keeps the pin's text except for the edits markdownlint requires and edits to passages that describe behavior the
-  ported code no longer has, each behavior edit listed by README line as an `adapt` item), `vocabulary` and
-  `pkg/types`, whose READMEs need lint fixes (358a01e); `pkg/platform` (a doc comment corrected, #72 ruling D, task
-  3.6b); `carry` for the other five: `pkg/security`, `pkg/timestamp`, `pkg/errs`, `pkg/projection/contract` and
-  `message`. `message` has a `README.md` at the pin, so its row stays `carry` only if that file needs no edit.
-- Existing file rows updated: `natsclient/test_client.go` (`adapt`, now with its evidence in `proving_tests`), `natsclient/test_options.go`
-  (`defer-exclude`, honoured); a new file row for `payloadregistry/testing.go` is not needed — the package row
-  records the rehoming (T-B7 keeps `source_path` unique; the package row's path is the directory).
+  Every importer of the four is inside the module (P22): `internal/resource` ← `natsclient`; `internal/cache` — none in
+  this change (its pin importers arrive with change 2 and later); `internal/tlsutil` ← `metric`; `internal/timestamp` ←
+  `message`. The harness helpers (D2) import public packages only. Dispositions, by owner ruling (#9, comment
+  5941920346, Q1: a repaired test file makes the row `adapt`): `adapt` for `natsclient` (the `NewTestClient` sites,
+  `test_client.go`, the D3 items, the D8 repairs, the surface audit's drops, the census rewrite, the D9 gauges),
+  `metric` (D3 items), `payloadregistry` (`testing.go` rehomed), `pkg/cache` and `pkg/resource` (the D7 items, the D8
+  repairs), `pkg/tlsutil` (the ACME loaders cut, D1) and `pkg/retry` (D8 repair); and, by owner ruling (#9, comment
+  5957221949, which replaced comment 5955265930: a ported `README.md` keeps the pin's text except for the edits
+  markdownlint requires and edits to passages that describe behavior the ported code no longer has, each behavior edit
+  listed by README line as an `adapt` item), `vocabulary` and `pkg/types`, whose READMEs need lint fixes (358a01e);
+  `pkg/platform` (a doc comment corrected, #72 ruling D, task 3.6b); `carry` for the other five: `pkg/security`,
+  `pkg/timestamp`, `pkg/errs`, `pkg/projection/contract` and `message`. `message` has a `README.md` at the pin, so its
+  row stays `carry` only if that file needs no edit.
+- Existing file rows updated: `natsclient/test_client.go` (`adapt`, now with its evidence in `proving_tests`),
+  `natsclient/test_options.go` (`defer-exclude`, honoured); new `defer-exclude` file rows
+  `natsclient/test_options_test.go` and `natsclient/mapped_port_retry_test.go` (forced by Q3); a new file row for
+  `payloadregistry/testing.go` is not needed — the package row records the rehoming (T-B7 keeps `source_path` unique;
+  the package row's path is the directory).
 - Eight `defer-exclude` rows for the D4 ten-out packages that are never carried: `agentic`, `agentic/agentrun`,
   `gateway`, `gateway/graph-gateway`, `internal/agentterminal`, `internal/deliverylane`, `internal/looptoken`,
   `vocabulary/agentic`. `graph/llm` and `model/wire` get carried-dormant rows in change 2.
@@ -366,7 +381,6 @@ Every `go` statement in the 15 packages at the pin outside the two services (the
 | `pkg/resource.Watcher` | `StartBackgroundCheck(ctx)` (`watcher.go:141-154`) starts `go w.backgroundLoop(ctx)` (`:153`); `Stop()` waits on `wg.Wait()` with no bound (`:218-227`); the loop calls the caller's check function (`:183`) | Shape 1: `Run(ctx) error` is the loop itself, returns when `ctx` ends, refuses nil with an error, and refuses a second `Run` while one is in progress with an error at the call (carried from the pin's "already running" guard, `watcher.go:145-147`). `StartBackgroundCheck`, `Stop`, and the `cancel` and `wg` fields are removed, with their doc references (`watcher.go:108, :138-140`; `doc.go:21, :57, :66, :85, :149, :151, :159`) |
 | TTL cache | `go c.cleanup(ctx)` (`ttl.go:73`); `Close()` (`:249-263`) waits on `c.done` or a fixed `time.After(5 * time.Second)` (`:258-262`); a nil context panics in the goroutine (`:276`) | Shape 2: `Close() error` closes `shutdown` and waits on `c.done`, with the fixed wait removed; `cache.NewTTL` refuses nil with an error |
 | Hybrid cache | `go c.cleanup(ctx)` (`hybrid.go:79`); `Close()` (`:276-292`) has the same fixed 5 s wait (`:289`) | Shape 2, as the TTL cache; `cache.NewFromConfig` refuses nil with an error |
-| `natsclient.TemporalResolver` | no goroutine of its own; `Close()` delegates to its TTL cache (`kv_temporal.go:226-228`); neither constructor reads its bucket (`:20-41`, `:44-70`) | Shape 2 by delegation; `Close() error` unchanged; `NewTemporalResolver` and `NewTemporalResolverWithCache` refuse nil with an error |
 | `pkg/cache.CoalescingSet` | `go c.run(ctx)` (`coalescing_set.go:45`); each tick calls `fireBatch` (`:142`), which calls the caller's callback outside the lock (`:163-175`); `Close()` waits on `<-c.done` with no bound (`:116-126`); a nil context panics in the goroutine (`:136`) | Shape 3: `Shutdown(ctx) error` replaces `Close()`; `NewCoalescingSet` panics at the call on nil |
 
 Why these shapes, at the pin:
@@ -471,18 +485,19 @@ pin `file:line` → SemEngine `file:line`. The repairs at the pin (P18, P19) fal
   |---|---|---|
   | `natsclient/subscription_integration_test.go:115-119` | 200 ms in which a correct `Drain` must not return while its callback runs | R1c, kept: expiry only misses a defect (its own comment, `:113-115`) |
   | `natsclient/delivery_settlement_integration_test.go:102-106` | 50 ms polling steps across the AckWait renewal window | R1c, kept: the window is AckWait's, and each step ends on `ctx.Done` or a redelivery check, never failing a correct renewal |
-  | `natsclient/integration_test.go:262` | 200 ms for the first health change, then passes silently either way | Repaired to R1b: the receive stays — `Connect` reports `true` synchronously (`client.go:569-572`) into the buffered `healthChanges` (`:249-250`), and it must be drained here or the later unhealthy select reads it — and the 200 ms branch becomes a failure bound of at least 10 s that fails the test |
-  | `natsclient/integration_test.go:278` | 500 ms failure bound for the unhealthy change | Resized under R1b to at least 10 s |
   | `pkg/cache/coalescing_set_test.go:92` | 10 ms in which the callback must not fire | R1a: inside the bubble, after `synctest.Wait`, the callback has not fired before the window |
   | `pkg/cache/cache_test.go:294` (TTL, `:286-298`) | 150 ms past a 100 ms TTL | R1a: `<-time.After` inside the bubble moves the fake clock |
-  | `natsclient/kv_error_integration_test.go:440` | 6 s sleep for the 5 s resolver cache TTL | R1c with an observed end: the cache exposes no expiry signal, so `probe.Await` repeats the cleanup-triggering `GetAtTimestamp` and reads `cacheStats().CurrentSize()` (the pin's `GetStats`, unexported by D5) until it is below `statsAfter.CurrentSize()` (the pin asserted only `LessOrEqual`, `:448`), bounded by the TTL plus an R1b failure bound |
+
+  Three pin rows retired with their tests: `integration_test.go:262, :278` with `TestIntegration_HealthMonitoring`
+  (owner ruling, #9 comment 5969522395, item 2), and `kv_error_integration_test.go:440` with
+  `TestTemporalResolver_ErrorBoundaries` (item 1).
 
 - **R2. Skip.** A skip is removed. Where the skip meant only "needs a broker", the test moves into an
-  `//go:build integration` file and runs with no skip call. The one skip at the pin,
-  `TestIntegration_Reconnection` (`natsclient/integration_test.go:63`), is skipped because the mapped port changes
-  on restart. By owner ruling (Q2) it is rewritten on `natsfixture.Restart`, and it proves that a client dialled
-  from the new `URL()` reaches the restarted broker (re-dial). It does not prove nats.go's automatic reconnect, and
-  its name and comment say so.
+  `//go:build integration` file and runs with no skip call. The one skip at the pin, `TestIntegration_Reconnection`
+  (`natsclient/integration_test.go:63`), is skipped because the mapped port changes on restart. By owner ruling (Q2) it
+  is rewritten on `natsfixture.Restart`. The loss is observed through `WithConnectionLostCallback` and `Status` through
+  `probe.Await` (item 2), and it proves that a client dialled from the new `URL()` reaches the restarted broker
+  (re-dial). It does not prove nats.go's automatic reconnect, and its name and comment say so.
 - **R3. Build tag.** A `// +build` line is deleted and the `//go:build integration` line stays. None remains in the 15
   packages: the one at the pin (`pkg/acme/integration_test.go:2`) leaves with `pkg/acme` (D1).
 - **R4. Repeat failures.** A ported test that fails `task test:repeat` is repaired in the porting pull request. It
@@ -491,13 +506,17 @@ pin `file:line` → SemEngine `file:line`. The repairs at the pin (P18, P19) fal
   passes `test:repeat` several times on recorded seeds, task 3.6. Integration-tagged tests are not repeated
   (`merge-gate`, "Varied and repeated unit runs"), so a ported integration test has no repeat evidence. Its only
   evidence is its one run in the integration lane.
+- **R5. Fixed address.** A ported test binds or names no fixed address (`harness-boundaries`, "No fixed addresses in
+  tests"). In `natsclient`, 55 lines in 12 files match the guard at the pin: 47 in 8 unit files and 8 in 4 integration
+  files. `stream_visibility_test.go:82` is an error string the guard does not match. `t.Parallel()` (41 calls in 6
+  `natsclient` unit files) stays unless its test moves into a `synctest` bubble.
 
 Doc-comment sleeps in ported non-test files (`pkg/errs/doc.go:48,111,288`, `metric/doc.go:386`,
 `natsclient/doc.go:209,536,541`) are carried as they are (Q4). They are outside both checks' scope.
 
 A test of a removed feature is deleted with it, and the deletion is recorded on the row like a repair:
-`TestEvictCallback` (`pkg/cache/cache_test.go:444-503`, 60 lines, two subtests) goes with `WithEvictionCallback`
-(D7).
+`TestEvictCallback` (`pkg/cache/cache_test.go:444-503`, 60 lines, two subtests) goes with `WithEvictionCallback` (D7).
+In `natsclient`, the files and tests that tasks 3.7 and 3.7a name as removed with dropped surface.
 
 Note on the `refowner` double (task 2.5): `TestEachFailpointTripsExactlyItsCheck` (`refowner_test.go:382-401`) runs
 every check against each failpoint's double. A failpoint that makes Start fail would trip every check that starts
@@ -603,21 +622,26 @@ registrations. The eight examples still own: the six collector kinds one by one 
 collector registered directly on `PrometheusRegistry()`, and concurrent callers (the model is sequential).
 
 Consumer impact, recorded on the `metric` row: semsource `internal/entitypub/metrics.go:99-106` and semboids
-(`internal/boidgraph/metrics.go`, `internal/sim/lifecycle.go`, `internal/api/graphstream_metrics.go`) stop
-compiling on their next pin bump, and the semsource comment at `:99-101` has to be rewritten. At run time, a
-consumer that registers one descriptor under two keys now gets a fatal error at startup instead of silent success;
-the pin's `registry_test.go:254-275` encoded that pattern for "component recreation from stale KV data". The later
-callers in this change adopt it in tasks 3.6 (`pkg/cache`) and 3.7 (`natsclient`).
+(`internal/boidgraph/metrics.go`, `internal/sim/lifecycle.go`, `internal/api/graphstream_metrics.go`) stop compiling on
+their next pin bump, and the semsource comment at `:99-101` has to be rewritten. At run time, a consumer that registers
+one descriptor under two keys now gets a fatal error at startup instead of silent success; the pin's
+`registry_test.go:254-275` encoded that pattern for "component recreation from stale KV data". The later callers in this
+change adopt it in tasks 3.6 (`pkg/cache`), 3.7 (`natsclient` registration, `jetstream_metrics.go:128-161`) and 3.7d. In
+`natsclient`, 8 of the 11 collectors orphan when two clients share a registry (`:128-146, :158-160`). Three counters
+`Add` cumulative server values on every poll (`:305-307`); they become gauges set from server state, with new names
+(owner ruling, #9 comment 5969522395, item 4). No client label. The `stream_state` and `forgetConsumer` sharing
+defects (`:278`, `:232-243`) are one shared-series ownership issue, #75, tracked, not fixed here.
 
 ## Premises (each with its measurement)
 
 - P1. The 15 packages are closure(natsclient) ∪ closure(message) less `pkg/acme`, closed under in-set imports once the
   ACME loaders are cut, with no out-of-set edge. — foundation P2; D1's in-set column (`inset-edges.json`); D1 grep.
-- P2. The set has two services (`metric.Server`, `natsclient.Client`) and five sites of background work outside them
-  (`Watcher`, the TTL and hybrid caches, `TemporalResolver` by delegation, `CoalescingSet`), and no
-  `Start`/`Stop` component; its other two `go` statements end before their call returns. — foundation P22;
-  `owners-scan.txt`; D3, D7; pin grep over the 15 packages of `go` statements (16 sites, after the ACME cut) and of
-  `time.AfterFunc` (2 sites, both in `natsclient/client.go`, `:289` and `:1555`).
+  `pkg/cache` enters only through `kv_temporal.go:8` and stays by admission (D1).
+- P2. The set has two services (`metric.Server`, `natsclient.Client`) and four sites (`Watcher`, the TTL and hybrid
+  caches, `CoalescingSet`; `TemporalResolver` is dropped) of background work outside them, and no `Start`/`Stop`
+  component; its other two `go` statements end before their call returns. — foundation P22; `owners-scan.txt`; D3, D7;
+  pin grep over the 15 packages of `go` statements (16 sites, after the ACME cut) and of `time.AfterFunc` (2 sites, both
+  in `natsclient/client.go`, `:289` and `:1555`).
 - P3. The fixture's JetStream store lives in the container's writable layer (`--js`, no `-sd`, no volume,
   `fixture.go:251-254`), which `Stop`/`Start` preserves. — read from the fixture; proven by this change's restart
   test, not assumed.
@@ -639,18 +663,18 @@ callers in this change adopt it in tasks 3.6 (`pkg/cache`) and 3.7 (`natsclient`
 - P13. `Client.Close(ctx)` has no nil-context check and panics on `Close(nil)` at `:685` with a live connection;
   `Connect(nil)` dials at `:494` and panics at `:495`, leaking the connection; `Subscription.Drain` refuses nil. —
   `natsclient/client.go:578, :685, :494-495, :796-799`; probe, PR #48 comment 5942307713.
-- P14. `NewTemporalResolver` never reads its bucket and its only goroutine is the TTL cache's cleanup;
-  `NewCoalescingSet` returns no error; `StartBackgroundCheck` returns nothing. — `natsclient/kv_temporal.go:20-41`,
-  `pkg/cache/ttl.go:73`, `pkg/cache/coalescing_set.go:27`, `pkg/resource/watcher.go:141`.
+- P14. `NewCoalescingSet` returns no error; `StartBackgroundCheck` returns nothing. — `pkg/cache/coalescing_set.go:27`,
+  `pkg/resource/watcher.go:141`.
 - P15. `CreateStream` always creates a file-backed stream with the fixture's bounds. — `natsfixture/fixture.go:431-446`.
 - P16. SemSource at `e4febc0d` imports eight of the 15 directly: `natsclient`, `metric`, `payloadregistry`,
   `message` (28 files), `vocabulary` (20), `pkg/types` (5), `pkg/retry` (4), `pkg/errs` (3). — foundation §5.1.
 - P17. At the pin, `metric.Server` fails AbortStop once in 1,000 runs and `Client` fails NilContexts and SecondStart;
   every other check passes on both. — task 2.0 probe, PR #48 comment 5942307713.
-- P18. In the 121 test files ported (pin, after the Q3 exclusions and without `pkg/acme`) there are 70 `time.Sleep`
-  calls (`pkg/resource` 6, `pkg/retry` 1, `pkg/cache` 26, `natsclient` 37), one skip call and no `// +build` line;
-  22 files use `time.After(` or `time.NewTimer(`; `pkg/cache` tests call `t.Parallel()` 30 times. — text scan of the
-  pin tarball with the contract tests' rules (`testtext_test.go:58,96,180`); hit list attached to the pull request.
+- P18. Measured before the rulings of 2026-10-03: in the 121 test files ported (pin, after the Q3 exclusions and without
+  `pkg/acme`) there are 70 `time.Sleep` calls (`pkg/resource` 6, `pkg/retry` 1, `pkg/cache` 26, `natsclient` 37), one
+  skip call and no `// +build` line; 22 files use `time.After(` or `time.NewTimer(`; `pkg/cache` tests call
+  `t.Parallel()` 30 times. — text scan of the pin tarball with the contract tests' rules (`testtext_test.go:58,96,180`);
+  hit list attached to the pull request. After them, `natsclient` keeps 31 sleeps (8 unit, 23 integration).
 - P19. Under `go test -count=5 -cpu 1 -shuffle=on`, `pkg/cache` fails intermittently at the pin:
   `TestCoalescingSet_EntityUpdateScenario`, `TestAttack_ConcurrentAddRemove` and
   `TestCoalescingSet_ContextCancellation` each failed in some runs, and some runs were green. Over four full runs of
@@ -667,16 +691,17 @@ callers in this change adopt it in tasks 3.6 (`pkg/cache`) and 3.7 (`natsclient`
   `git grep -lE 'semstreams/pkg/(platform|resource|security|timestamp|projection/contract|tlsutil|cache)"' --
   '*.go'` in semsource `4093d3c`, semconnect `dff1265`, semteams `ce22c961`, semboids `37dbdb0`: one hit,
   semconnect `gateway/cs-api/payloads.go`.
-- P22. Public signatures at the pin name `platform.Config` in eight exported symbols and `security.Config` in one,
-  and once `GetStats` is unexported no exported symbol of the eleven public packages names a type from the four internal
-  ones, which only floor packages import. — A `go/parser` walk of the eleven packages' 80 non-test files (exported
-  funcs and methods on exported types with their type parameters, exported and embedded struct fields, interface
-  methods, other exported type definitions, exported vars and consts with type and value) finds one hit for the
-  four: `natsclient/kv_temporal.go:221`. The same walk with `pkg/platform` and `pkg/security` counted as internal
-  finds `metric/handler.go:40`; `message/base_message.go:81, :91`; `message/federation.go:31, :50, :62, :78, :95`;
-  `vocabulary/iris.go:85`. Importers of the four: `natsclient/client.go:18`, `natsclient/kv_temporal.go:8`,
-  `metric/handler.go:20`, `message/base_message.go:13`, `message/meta_default.go:6`. `GetStats` has three callers,
-  all in-package tests: `natsclient/kv_error_integration_test.go:421, :436, :447`.
+- P22. Public signatures at the pin name `platform.Config` in eight exported symbols and `security.Config` in one, and
+  once `GetStats` is unexported no exported symbol of the eleven public packages names a type from the four internal
+  ones, which only floor packages import. — A `go/parser` walk of the eleven packages' 80 non-test files (exported funcs
+  and methods on exported types with their type parameters, exported and embedded struct fields, interface methods,
+  other exported type definitions, exported vars and consts with type and value) finds one hit for the four:
+  `natsclient/kv_temporal.go:221` (dropped with `TemporalResolver`; afterwards no importer of `internal/cache` exists in
+  the module). The same walk with `pkg/platform` and `pkg/security` counted as internal finds `metric/handler.go:40`;
+  `message/base_message.go:81, :91`; `message/federation.go:31, :50, :62, :78, :95`; `vocabulary/iris.go:85`. Importers
+  of the four: `natsclient/client.go:18`, `natsclient/kv_temporal.go:8`, `metric/handler.go:20`,
+  `message/base_message.go:13`, `message/meta_default.go:6`. `GetStats` has three callers, all in-package tests:
+  `natsclient/kv_error_integration_test.go:421, :436, :447`.
 - P23. In the 15 packages at the pin only `pkg/types/entity_id_prop_test.go` imports `pgregory.net/rapid`. — `git
   grep -ln pgregory.net/rapid 8b99efe9` over the 15 directories finds that file and
   `vocabulary/export/datatype_prop_test.go`, which lies in `vocabulary/export`, a package outside the 15.
@@ -693,15 +718,24 @@ callers in this change adopt it in tasks 3.6 (`pkg/cache`) and 3.7 (`natsclient`
 - Two adapters read unexported fields; a reviewer re-checks each against the service's retained kinds.
 - `CoalescingSet.Close` becomes `Shutdown(ctx)` and `cache.WithEvictionCallback` is deleted; three later callers
   become port-refactor rows (D5).
-- `Client.Close` now joins eleven sites it only signalled at the pin (D3); it can wait on a caller's callback, bounded
-  by its context, and work arriving once it is closing is dropped.
+- `Client.Close` now joins six sites, and the Close/Connect race, it only signalled at the pin (D3); it can wait on a
+  caller's callback, bounded by its context, and work arriving once it is closing is dropped.
 - `URL()` changes after `Restart`; a test that forgets to re-dial fails loudly, not silently.
-- Four packages' import paths differ from the pin (`pkg/<name>` → `internal/<name>`, D5); each row's `source_path`
-  → `destination` records the difference. `TemporalResolver.GetStats` is unexported (D5), a surface change on the
-  `natsclient` row.
+- Four packages' import paths differ from the pin (`pkg/<name>` → `internal/<name>`, D5); each row's `source_path` →
+  `destination` records the difference. The 3.7a list is dropped, including `WithTLS`, `WithToken` and
+  `WithCompression`. `WithCredentials` remains the only auth option. This makes a defect at the pin plain without making
+  it worse: `config` parses the NATS `Username`, `Password`, `Token` and `TLS`
+  (`config/config.go:175-188, :761-768, :1051-1054`), but boot builds the client from URLs only
+  (`internal/boot/run.go:425-436` → `internal/bootstrapobservability/bootstrap.go:123`). So an operator who configures
+  TLS, a token or credentials gets a plaintext connection with no auth, and nothing says so. It is tracked by #74
+  against the `config`/`boot` port (#9 comment 5968830525, rule 4); that change wires what it admits and refuses what it
+  cannot honour. A consumer that needs an option back adds it as new surface with a present consumer. Three JetStream
+  consumer metrics change name and type (3.7d).
 - If a critical package measures below 80% at landing, the change holds for the owner (task 3.8); the design does not
   predict the number.
 - The nats.go version differs from the pin (v1.54.0 vs v1.52.0); regression evidence is the carried `natsclient`
   tests passing, nothing more.
+- The unit lane embeds `nats-server` v2.14.7, where the pin used v2.12.4. One broker version across both lanes is review
+  only, because T-B3 cannot see an embedded server.
 - `Close(nil)`/`Connect(nil)` refusal, the second-`Connect` refusal and `metric.Server`'s abort cause are changed
   behaviour; each is recorded as such on its row, not as carried.

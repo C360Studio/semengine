@@ -20,12 +20,12 @@ the import-graph test that keeps test libraries out of production files.
 ## What Changes
 
 - Port 15 packages (25,215 non-test lines at the pin, less the two ACME loaders in `pkg/tlsutil`) with their 121 test
-  files (33,279 lines), repaired where the flake-defense rules require (design D8), in import order (design D1).
-  Eleven are public and keep their pin paths; four move from `pkg/<name>` to `internal/<name>` (#9 comments
-  5952661571, 5953295358; design D5). Tests travel with their packages; `stretchr/testify` (ruling b) and
-  `pgregory.net/rapid` (owner ruling, PR #48 comment 5951926492) become direct test dependencies. `natsclient`'s 56
-  `NewTestClient` call sites move to `natsfixture`; the two T-B1 collisions in this set
-  (`natsclient/test_client.go`, `payloadregistry/testing.go`) are adapted, not ported.
+  files (33,279 lines), repaired where the flake-defense rules require (design D8), in import order (design D1). Eleven
+  are public and keep their pin paths; four move from `pkg/<name>` to `internal/<name>` (#9 comments 5952661571,
+  5953295358; design D5). Tests travel with their packages; `stretchr/testify` (ruling b) and `pgregory.net/rapid`
+  (owner ruling, PR #48 comment 5951926492) become direct test dependencies. `natsclient`'s 51 (56 at the pin, five in
+  tests removed with dropped surface) `NewTestClient` call sites move to `natsfixture`; the two T-B1 collisions in this
+  set (`natsclient/test_client.go`, `payloadregistry/testing.go`) are adapted, not ported.
 - Two cross-package test helpers typed on `testing.TB` are rehomed into the harness, the only place T-B1 allows them:
   `internal/semantictest` → `internal/harness/semantictest`; `payloadregistry/testing.go` →
   `internal/harness/payloadfixture` (foundation D4 "Fixture homes").
@@ -35,14 +35,13 @@ the import-graph test that keeps test libraries out of production files.
   process and can signal, pause and kill it; the no-SemStreams-import test (I8).
 - `lifecycletest.Run` takes a second, required factory whose owner's `Start` must fail; the check proves a failed
   start holds nothing (#38). Both existing callers are updated and the fixture gains a failing factory of its own.
-- The two services in this set run under the suite with test-side `Observe` adapters: `metric.Server` (#38's first
-  real target: a listener port already bound) and `natsclient.Client`. The pre-port probe and a read of every `go`
-  statement found five defects in them (on `Client`, a nil context, a second `Connect`, and goroutines `Close` never
-  joins; on `metric.Server`, a dropped abort cause and a fixed join timeout); each is a failing-first `adapt` item.
-  The helpers that run background work — `pkg/resource.Watcher`, the TTL and hybrid
-  caches, `natsclient.TemporalResolver`, `pkg/cache.CoalescingSet` — each take one of three shapes, ruled as the
-  engine's standing rule (#9 comments 5950234192, 5950482163): `Run(ctx)`, a `Close()` that joins, or
-  `Shutdown(ctx)`, with no fixed shutdown timeout and a `synctest` test proving nothing is left behind.
+- The two services in this set run under the suite with test-side `Observe` adapters: `metric.Server` (#38's first real
+  target: a listener port already bound) and `natsclient.Client`. The pre-port probe and a read of every `go` statement
+  found five defects in them (on `Client`, a nil context, a second `Connect`, and goroutines `Close` never joins; on
+  `metric.Server`, a dropped abort cause and a fixed join timeout); each is a failing-first `adapt` item. The helpers
+  that run background work — `pkg/resource.Watcher`, the TTL and hybrid caches, `pkg/cache.CoalescingSet` — each take
+  one of three shapes, ruled as the engine's standing rule (#9 comments 5950234192, 5950482163): `Run(ctx)`, a `Close()`
+  that joins, or `Shutdown(ctx)`, with no fixed shutdown timeout and a `synctest` test proving nothing is left behind.
 - Ledger: 15 package rows at the full pin SHA (foundation D9), eight rows for the packages D4 separated and never
   carries, the Tier-1 cross-check re-measured on the ruled set (#9 item 1), and the triage of this set's 14
   production `context.Background()`/`TODO()` sites (foundation D9).

@@ -82,3 +82,14 @@ hook returns an error.
 - **WHEN** the suite starts a fixture whose start hook returns an error
 - **THEN** Start returns a `FixtureError`, the fixture reports nothing unresolved, and a following Stop returns nil
   without a Docker call
+
+### Requirement: Broker max payload is settable
+
+A test SHALL be able to start the fixture with a broker `max_payload` it chooses; with none set, the broker default
+SHALL apply.
+
+#### Scenario: Publish above the set limit
+
+- **GIVEN** a fixture started with max payload N
+- **WHEN** a client publishes more than N bytes
+- **THEN** the broker refuses it, and a message of at most N bytes is accepted

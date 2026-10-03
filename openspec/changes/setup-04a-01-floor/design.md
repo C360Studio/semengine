@@ -91,9 +91,12 @@ also `defer-exclude`, forced by Q3: they test `test_options.go` and `test_client
 
 Three modules become direct test requirements: `stretchr/testify` (ruling b), `pgregory.net/rapid` v1.3.0 (the pin's
 `go.mod:25`; owner ruling, PR #48 comment 5951926492), and `github.com/nats-io/nats-server/v2` at v2.14.7, the
-`.nats-image` line (the pin requires v2.12.4, `go.mod:11`), imported only by `natsclient/client_connect_test.go`; its
-indirect requirements match versions already in `go.mod`. In the 15 packages only `pkg/types/entity_id_prop_test.go`
-imports Rapid, and it is ported with its property test (P23).
+`.nats-image` line (the pin requires v2.12.4, `go.mod:11`), imported only by `natsclient/client_connect_test.go`; where
+its indirect requirements name a module `go.mod` already lists, the versions match, and `go mod tidy` adds six indirect
+requirements `go.mod` did not list: `google/go-tpm` v0.9.8, `minio/highwayhash` v1.0.4, `nats-io/jwt/v2` v2.8.2,
+`golang.org/x/time` v0.16.0, `antithesishq/antithesis-sdk-go` v0.8.0-default-no-op and `kylelemons/godebug` v1.1.0, and
+drops `kr/text` (9cda760). In the 15 packages only `pkg/types/entity_id_prop_test.go` imports Rapid, and it is ported
+with its property test (P23).
 
 ### D2. Harness API shapes (foundation D4, made concrete)
 

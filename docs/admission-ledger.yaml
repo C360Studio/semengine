@@ -643,9 +643,10 @@
   destination: message
   contract: >-
     BaseMessage, the payload and behavior interfaces, the JSON codecs, triple construction and
-    identity, entity-ID parsing and Meta as at the pin; no behavior changed
+    identity, entity-ID parsing and Meta as at the pin, less the federation family (dead surface,
+    known_risks); no other behavior changed
   dependencies_and_side_effects: >-
-    payloadregistry, pkg/errs, pkg/platform, pkg/types, internal/timestamp (in-set);
+    payloadregistry, pkg/errs, pkg/types, internal/timestamp (in-set);
     github.com/google/uuid v1.6.0 (the pin's version, now a direct requirement); stdlib; no
     goroutine, no I/O
   known_risks: >-
@@ -658,10 +659,26 @@
     :204 message → github.com/c360studio/semengine/message; :203 component →
     github.com/c360studio/semengine/component, a package not ported yet; :466 errors →
     github.com/c360studio/semengine/pkg/errs (the example's errors. identifiers are left as the pin's
-    text: the ruling covers import paths only)
+    text: the ruling covers import paths only). Adapt item, dead surface removed (owner ruling, #72
+    comment 5969293525, under #9 comment 5968830525; evidence SemStreams #1187, class:dead-surface,
+    and the pin's docs/proposals/gh1168-federation-identity-inventory.md:307-312, seam S8): the
+    message-level federation family, which no caller at the pin or in any sister uses and whose
+    origin fields BaseMessage.MarshalJSON never writes (pin base_message.go:233-238), so a decoded
+    message lost them. Removed, pin lines: message/federation.go whole (110 lines): FederationMeta
+    :22, DefaultFederationMeta :36 with its UID :73 and Platform :78, NewFederationMeta :50,
+    NewFederationMetaWithTime :60, GetPlatform :95, GetUID :105, and the BuildGlobalID example
+    :88-94 (a function that exists nowhere); base_message.go WithFederation :79-88 and
+    WithFederationAndTime :90-97, the pkg/platform import :12, and the examples that advertise them
+    :35-41 and :115-120; doc.go the federated-message example :330-332, and :463's WithFederation()
+    is now WithMeta(). The pin's message tests named none of these, so no carried test is removed.
+    Entity-ID federation prose (doc.go, storable.go, triple.go, types.go; pkg/types/entity_id.go,
+    ADR-102) stays. pkg/platform remains in-set for vocabulary.
   proving_tests: >-
     the 9 test files in message/ at the pin, carried unchanged except import paths; payload_test.go
-    and triple_helpers_test.go use internal/harness/semantictest
+    and triple_helpers_test.go use internal/harness/semantictest. Added (task 3.6b):
+    meta_wire_test.go, TestMetaCarriesOnlyWhatTheWireCarries (every exported type implementing Meta
+    has only Meta's exported methods; failed first on the tree before the removal, naming
+    DefaultFederationMeta and FederationMeta) and TestBaseMessageMetaSurvivesTheWire
   owner: setup-04a-01-floor developer
   disposition: adapt
 

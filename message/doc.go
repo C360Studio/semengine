@@ -327,10 +327,6 @@
 //	msg := NewBaseMessage(payload.Schema(), payload, "my-service",
 //	    WithTime(historicalTime))
 //
-//	// Federated message for multi-platform deployment
-//	msg := NewBaseMessage(payload.Schema(), payload, "my-service",
-//	    WithFederation(platformConfig))
-//
 // Messages are immutable after creation - all fields are set during construction
 // and cannot be modified. This ensures message integrity throughout processing.
 //
@@ -460,7 +456,7 @@
 //
 // 1. Use Functional Options for Configuration
 //   - Start with simple NewBaseMessage(type, payload, source)
-//   - Add options only when needed: WithTime(), WithFederation()
+//   - Add options only when needed: WithTime(), WithMeta()
 //   - Don't create custom constructors - use options instead
 //
 // 2. Set Source Meaningfully

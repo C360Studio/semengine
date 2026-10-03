@@ -10,7 +10,6 @@ import (
 	"github.com/c360studio/semengine/internal/timestamp"
 	"github.com/c360studio/semengine/payloadregistry"
 	"github.com/c360studio/semengine/pkg/errs"
-	"github.com/c360studio/semengine/pkg/platform"
 	"github.com/google/uuid"
 )
 
@@ -31,14 +30,6 @@ import (
 //
 //	// With specific timestamp (testing/historical data)
 //	msg := NewBaseMessage(msgType, payload, "my-service", WithTime(pastTime))
-//
-//	// With federation support (multi-platform)
-//	msg := NewBaseMessage(msgType, payload, "my-service", WithFederation(platform))
-//
-//	// Composable options
-//	msg := NewBaseMessage(msgType, payload, "my-service",
-//	    WithFederation(platform),
-//	    WithTime(pastTime))
 type BaseMessage struct {
 	id      string
 	msgType Type
@@ -76,26 +67,6 @@ func WithMeta(meta Meta) Option {
 	}
 }
 
-// WithFederation enables federation support by using FederationMeta.
-// This adds global UIDs for cross-platform message correlation.
-func WithFederation(pcfg platform.Config) Option {
-	return func(m *BaseMessage) {
-		// Replace default meta with federation meta
-		if defaultMeta, ok := m.meta.(*DefaultMeta); ok {
-			m.meta = NewFederationMeta(defaultMeta.Source(), pcfg)
-		}
-	}
-}
-
-// WithFederationAndTime combines federation support with a specific timestamp.
-func WithFederationAndTime(pcfg platform.Config, createdAt time.Time) Option {
-	return func(m *BaseMessage) {
-		if defaultMeta, ok := m.meta.(*DefaultMeta); ok {
-			m.meta = NewFederationMetaWithTime(defaultMeta.Source(), pcfg, createdAt)
-		}
-	}
-}
-
 // NewBaseMessage creates a new BaseMessage with optional configuration.
 //
 // Parameters:
@@ -111,13 +82,6 @@ func WithFederationAndTime(pcfg platform.Config, createdAt time.Time) Option {
 //
 //	// Message with specific timestamp (for historical data)
 //	msg := NewBaseMessage(msgType, payload, "my-service", WithTime(pastTime))
-//
-//	// Federated message for multi-platform deployment
-//	msg := NewBaseMessage(msgType, payload, "my-service", WithFederation(platform))
-//
-//	// Federated message with specific timestamp
-//	msg := NewBaseMessage(msgType, payload, "my-service",
-//	    WithFederationAndTime(platform, pastTime))
 func NewBaseMessage(msgType Type, payload Payload, source string, opts ...Option) *BaseMessage {
 	// Create message with defaults
 	m := &BaseMessage{

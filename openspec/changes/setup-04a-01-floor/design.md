@@ -296,7 +296,7 @@ states the `Client` nil-context requirement; the row records each item as change
   | `pkg/retry` | `pkg/retry` | public: SemSource imports it (4 files) |
   | `pkg/errs` | `pkg/errs` | public: SemSource imports it (3 files) |
   | `pkg/projection/contract` | `pkg/projection/contract` | public: SemConnect imports it (`gateway/cs-api/payloads.go:11`) |
-  | `pkg/platform` | `pkg/platform` | public: `platform.Config` is named by seven `message` symbols and `vocabulary.EntityIRI` |
+  | `pkg/platform` | `pkg/platform` | public: `platform.Config` is named by `vocabulary.EntityIRI` (and at the pin by seven `message` symbols, the federation family task 3.6b removes) |
   | `pkg/security` | `pkg/security` | public: `security.Config` is named by `metric.NewServer` |
   | `pkg/resource` | `internal/resource` | no consumer import; no public signature names its types |
   | `pkg/timestamp` | `internal/timestamp` | no consumer import; no public signature names its types |

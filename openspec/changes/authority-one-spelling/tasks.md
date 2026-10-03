@@ -52,17 +52,16 @@ pull request closes #72 (`Closes #72` in its body).
 
 ## 3. C-1: the name check
 
-- [ ] 3.1 (D) `TestNoSecondAuthorityNameSensitivity`, written first, in `authority_test.go`: the fixture of
+- [ ] 3.1 Hold: until PR #48 merges — it carries `signatures_test.go`, and at its pushed head `c64ac338` the
+      check names seven identifiers #48 is ruled to remove (design P2); those lines are re-cited at #48's merged
+      head, where the load moved into `loadModuleTypes`.
+      (D) `TestNoSecondAuthorityNameSensitivity`, written first, in `authority_test.go`: the fixture of
       `design.md` D2 (the seven matching names across a public, an internal and a `main` package; the four
       non-matches: an unexported `federationMeta`, lowercase `federation`, a `_test.go` `TestFederation`, a comment
       and a string literal saying `BuildGlobalID`). Seen to fail first. Then `TestNoSecondAuthorityName` over the
       repository, as a second predicate over the public-signature loader (`signatures_test.go:212-258`): every
       exported object of every loaded module package — package scope, methods of named types, struct fields — whose
       name contains `Federation`, `GlobalID` or `EntityIRI`, with D2's failure line. Gate: `task test:unit`.
-      Hold: until PR #48 merges — it carries `signatures_test.go`, and at its pushed head `c64ac338` the check names
-      seven identifiers #48 is ruled to remove (design P2). When the hold lifts, the `signatures_test.go` lines this
-      file and `design.md` cite (`:212-258` at `c64ac338`) are re-cited at #48's merged head, where the load has
-      moved into `loadModuleTypes`.
 - [ ] 3.2 (D) Shown able to fail, as 2.3: drop the internal-package scope; drop methods; drop struct fields; match
       `federation` case-insensitively (the lowercase case must catch it); check test files. Recorded on this pull
       request.

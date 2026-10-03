@@ -223,8 +223,9 @@
     EntityID joins six positions and Predicate three without rewriting a byte, and each returns the
     value only when pkg/types or vocabulary accepts it, failing the test otherwise, as at the pin
   dependencies_and_side_effects: >-
-    pkg/types, vocabulary (in-set; their closure adds pkg/errs, pkg/retry, pkg/platform, none of
-    which starts a goroutine); testing; no goroutine, no I/O
+    pkg/types, vocabulary (in-set; their closure adds pkg/errs and pkg/retry, neither of which
+    starts a goroutine; pkg/platform left it when vocabulary.EntityIRI was removed, task 3.6b);
+    testing; no goroutine, no I/O
   known_risks: >-
     no context roots. Imports testing from a non-test file, which T-B1 admits only under
     internal/harness/ (TestImportGraphRejectsHarnessHelpersOutsideTheHarness). No test of a package
@@ -236,15 +237,30 @@
 - source_path: pkg/platform
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    platform identity (platform.Config) named by public signatures of message (seven symbols) and
-    vocabulary.EntityIRI; public by the signature rule (design D5, P22)
+    platform identity (platform.Config). At the pin seven message symbols (the federation family)
+    and vocabulary.EntityIRI named it; the surface audit removed both (task 3.6b: #72 comment
+    5969293525, and ruling 1 as extended, #72 comment 5969505488), so nothing in this change
+    imports it. Its reader in the port set is config (change 3): pin config/config.go:29 (the
+    PlatformConfig alias), :49 (Config.Platform), :226-244 (the org and id validators) and
+    config/manager.go:88-101 (the platform_identity record). Surface whose caller is ported later:
+    it stays public at pkg/platform, because config's exported Config names it (design D5)
   destination: pkg/platform
   contract: Config carries the platform identity fields as at the pin; no behavior beyond the type
   dependencies_and_side_effects: stdlib only; no goroutine, no I/O
-  known_risks: no tests at the pin, none invented (design D1); no context roots
-  proving_tests: none at the pin; compiled through vocabulary and message tests that use Config
+  known_risks: >-
+    no tests at the pin, none invented (design D1); no context roots. No package in the module
+    imports it until config is ported (change 3). Adapt item, doc comment corrected (#72 ruling D,
+    comment 5969505488): pin platform/platform.go:27-28 said Config "round-trips cleanly through
+    config files and embedded message metadata"; the second half described message.FederationMeta,
+    which never round-tripped (BaseMessage.MarshalJSON never wrote it) and is removed, so the
+    sentence now stops at config files. No code changed
+  proving_tests: >-
+    none at the pin and none in this change: no test in the module names platform.Config once
+    vocabulary.EntityIRI's tests are removed (task 3.6b); go build and go vet type-check the package,
+    and TestPublicSignatures and TestNoDeploymentAuthorityNames (internal/harness/contract) load it.
+    config's tests are its proving tests when config is ported (change 3)
   owner: setup-04a-01-floor developer
-  disposition: carry
+  disposition: adapt
 
 - source_path: pkg/resource
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
@@ -368,7 +384,8 @@
     predicate registration and lookup, dotted-name validation, IRI construction and namespace
     authority as at the pin
   dependencies_and_side_effects: >-
-    pkg/platform (in-set); stdlib; a process-global predicate registry mutated at registration
+    stdlib; a process-global predicate registry mutated at registration (pkg/platform was imported
+    only by vocabulary.EntityIRI, removed below)
   known_risks: >-
     no context roots; SemStreams IRI base strings carried unchanged (iris.go:14). README lint fixes
     (owner ruling, #9 comment 5957221949): vocabulary/README.md is ported with only the edits
@@ -377,8 +394,20 @@
     adapt item "import path changed to the SemEngine module", pin lines: :111, :444 and :515
     vocabulary/export; :390 vocabulary/bfo; :407 vocabulary/cco; :424 vocabulary/agentic; :645
     vocabulary; from github.com/c360studio/semstreams to github.com/c360studio/semengine. The four
-    sub-packages are not ported yet (this row ports the package directory only)
-  proving_tests: the 11 test files in vocabulary/ at the pin
+    sub-packages are not ported yet (this row ports the package directory only). Adapt item, dead
+    surface removed (#72 ruling 1 as extended, comment 5969505488, under #9 comment 5968830525):
+    vocabulary.EntityIRI, a second IRI grammar for an entity built from platform.Config (it carries
+    platform.ID and Region and drops Org) with no production caller at the pin or in the four
+    starter consumers; the export IRI built from the entity ID (pin vocabulary/export/export.go:127-130,
+    change 7) is the one that stays. Removed, pin lines: vocabulary/iris.go:66-84 (its doc comment,
+    with the {platform_id}[/{region}]/{domain}/{type}/{local_id} grammar at :70 and the doc example
+    at :80-84), :85-111 (the function) and the pkg/platform import :9; vocabulary/iris_test.go
+    TestEntityIRI :76-142 (the call at :138), BenchmarkEntityIRI :291-300 (the call at :298) and
+    the pkg/platform import :7. TestNoDeploymentAuthorityNames (internal/harness/contract) failed
+    first naming vocabulary.EntityIRI and now holds the name out of every production package
+  proving_tests: >-
+    the 11 test files in vocabulary/ at the pin, less TestEntityIRI and BenchmarkEntityIRI (removed
+    with EntityIRI, above)
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -673,7 +702,7 @@
     :35-41 and :115-120; doc.go the federated-message example :330-332, and :463's WithFederation()
     is now WithMeta(). The pin's message tests named none of these, so no carried test is removed.
     Entity-ID federation prose (doc.go, storable.go, triple.go, types.go; pkg/types/entity_id.go,
-    ADR-102) stays. pkg/platform remains in-set for vocabulary. Adapt item, documented decode path
+    ADR-102) stays. pkg/platform stays in the port set for config (its row). Adapt item, documented decode path
     corrected (Codex F9, PR #48 comment 5969256728; owner ruling #9 comment 5968665464): the pin's
     examples decode with json.Unmarshal into a zero-value BaseMessage, which always refuses (no
     registry: BaseMessage.UnmarshalJSON's missing-registry error), and describe a global payload registry and a package-level

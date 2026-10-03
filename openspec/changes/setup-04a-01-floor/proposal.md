@@ -49,9 +49,9 @@ the import-graph test that keeps test libraries out of production files.
 - Gates: `task cover:check` targets for `natsclient`, `message`, `payloadregistry` (the D10 critical-list members in
   this set); the package-doc lint already on in `revive.toml` now covers the eleven packages this change makes
   public (design D5: `natsclient`, `metric`, `payloadregistry`, `message`, `vocabulary`, `pkg/types`, `pkg/retry`,
-  `pkg/errs`, which SemSource imports directly; `pkg/projection/contract`, which SemConnect imports; `pkg/platform`
-  and `pkg/security`, whose types public signatures name); `AGENTS.md`'s verify list brought back in line with
-  `scripts/verify.sh`.
+  `pkg/errs`, which SemSource imports directly; `pkg/projection/contract`, which SemConnect imports; `pkg/security`,
+  whose type a public signature names; `pkg/platform`, whose type `config` names, change 3); `AGENTS.md`'s verify
+  list brought back in line with `scripts/verify.sh`.
 
 ## Capabilities
 

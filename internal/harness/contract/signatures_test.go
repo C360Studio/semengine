@@ -2,7 +2,9 @@ package contract
 
 import (
 	"fmt"
+	"go/token"
 	"go/types"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -212,24 +214,7 @@ func hasViolation(violations []string, fragments ...string) bool {
 func publicSignatureViolations(t *testing.T, root string) ([]string, int) {
 	t.Helper()
 	modulePath := modulePathOf(t, root)
-	loaded, err := packages.Load(&packages.Config{
-		Dir:        root,
-		BuildFlags: []string{"-tags=integration"},
-		Mode:       packages.NeedName | packages.NeedFiles | packages.NeedImports | packages.NeedDeps | packages.NeedTypes,
-	}, "./...")
-	if err != nil {
-		t.Fatalf("load packages: %v", err)
-	}
-	var loadErrs []string
-	packages.Visit(loaded, nil, func(pkg *packages.Package) {
-		for _, e := range pkg.Errors {
-			loadErrs = append(loadErrs, e.Error())
-		}
-	})
-	if len(loadErrs) > 0 {
-		sort.Strings(loadErrs)
-		t.Fatalf("type-check packages:\n  %s", strings.Join(loadErrs, "\n  "))
-	}
+	loaded := loadModuleTypes(t, root)
 
 	inModule := func(path string) bool { return path == modulePath || strings.HasPrefix(path, modulePath+"/") }
 	var violations []string
@@ -255,6 +240,31 @@ func publicSignatureViolations(t *testing.T, root string) ([]string, int) {
 	}
 	sort.Strings(violations)
 	return violations, public
+}
+
+// loadModuleTypes loads and type-checks the non-test packages of the module at root, integration
+// files included, and fails the test on any load or type error.
+func loadModuleTypes(t *testing.T, root string) []*packages.Package {
+	t.Helper()
+	loaded, err := packages.Load(&packages.Config{
+		Dir:        root,
+		BuildFlags: []string{"-tags=integration"},
+		Mode:       packages.NeedName | packages.NeedFiles | packages.NeedImports | packages.NeedDeps | packages.NeedTypes,
+	}, "./...")
+	if err != nil {
+		t.Fatalf("load packages: %v", err)
+	}
+	var loadErrs []string
+	packages.Visit(loaded, nil, func(pkg *packages.Package) {
+		for _, e := range pkg.Errors {
+			loadErrs = append(loadErrs, e.Error())
+		}
+	})
+	if len(loadErrs) > 0 {
+		sort.Strings(loadErrs)
+		t.Fatalf("type-check packages:\n  %s", strings.Join(loadErrs, "\n  "))
+	}
+	return loaded
 }
 
 func hasInternalElement(path string) bool {
@@ -386,4 +396,130 @@ func (w *signatureWalker) walk(typ types.Type, trail string) {
 	default:
 		panic(fmt.Sprintf("signatureWalker: unhandled type %T", typ))
 	}
+}
+
+// The deployment-authority rule (#72 ruling A, comment 5969505488; check C1 of that ruling, placed
+// here as the failing-first proof for PR #48's surface audit): a deployment's org and platform
+// become an identity's first two positions only through the entity-ID family, so no production
+// package exports a second spelling of that authority. FederationMeta and its family, GlobalID and
+// vocabulary.EntityIRI were such spellings at the pin; an exported name containing one of these
+// words, in any non-test package of the module, internal and main packages included, fails.
+var authorityNames = regexp.MustCompile(`Federation|GlobalID|EntityIRI`)
+
+func TestNoDeploymentAuthorityNames(t *testing.T) {
+	requireNoViolations(t, "deployment-authority name", authorityNameViolations(t, repoRoot(t)))
+}
+
+// authorityFixture plants a matching exported name at each place an exported name can be declared,
+// in a public, an internal and a main package, and the same words where the rule does not apply.
+var authorityFixture = map[string]string{
+	"go.mod": "module example.com/fixture\n\ngo 1.26\n",
+	"pub/pub.go": `package pub
+
+type FederationMeta interface{ Platform() string }
+
+func BuildGlobalID() string { return "" }
+
+var DefaultFederation = 1
+
+const EntityIRIBase = "x"
+
+type Message struct {
+	FederationOrigin string
+	clean            string
+}
+
+func (Message) WithFederation() Message { return Message{} }
+
+type hidden struct{}
+
+func (hidden) GlobalID() string { return "" }
+
+type Meta interface{ EntityIRI() string }
+
+// Not exported, or not the word: none is reported.
+type federationMeta struct{}
+
+func entityIRI() string { return "" }
+
+type Federated struct{ globalID string }
+
+func (Federated) entityIRI() string { return "" }
+`,
+	"pub/pub_test.go": `package pub
+
+func FederationTestHelper() {}
+`,
+	"internal/inner/inner.go": "package inner\n\nfunc NewFederationMeta() {}\n",
+	"cmd/tool/main.go":        "package main\n\nfunc EntityIRI() {}\n\nfunc main() {}\n",
+}
+
+func TestNoDeploymentAuthorityNamesSensitivity(t *testing.T) {
+	root, _ := writeTree(t, authorityFixture)
+	violations := authorityNameViolations(t, root)
+	t.Logf("violations:\n  %s", strings.Join(violations, "\n  "))
+	want := []string{
+		"example.com/fixture/cmd/tool.EntityIRI",
+		"example.com/fixture/internal/inner.NewFederationMeta",
+		"example.com/fixture/pub.BuildGlobalID",
+		"example.com/fixture/pub.DefaultFederation",
+		"example.com/fixture/pub.EntityIRIBase",
+		"example.com/fixture/pub.FederationMeta",
+		"example.com/fixture/pub.Message.FederationOrigin",
+		"example.com/fixture/pub.Message.WithFederation",
+		"example.com/fixture/pub.Meta.EntityIRI",
+		"example.com/fixture/pub.hidden.GlobalID",
+	}
+	if strings.Join(violations, "\n") != strings.Join(want, "\n") {
+		t.Errorf("violations:\n  %s\nwant exactly:\n  %s", strings.Join(violations, "\n  "), strings.Join(want, "\n  "))
+	}
+}
+
+// authorityNameViolations reports every exported name matching authorityNames in the non-test
+// packages of the module at root: package-level identifiers, and the exported methods, struct
+// fields and interface methods of package-level types, exported or not (an exported method of an
+// unexported type is still callable through an exported function that returns it).
+func authorityNameViolations(t *testing.T, root string) []string {
+	t.Helper()
+	modulePath := modulePathOf(t, root)
+	var violations []string
+	report := func(qualified, name string) {
+		if token.IsExported(name) && authorityNames.MatchString(name) {
+			violations = append(violations, qualified)
+		}
+	}
+	for _, pkg := range loadModuleTypes(t, root) {
+		if pkg.Types == nil || (pkg.PkgPath != modulePath && !strings.HasPrefix(pkg.PkgPath, modulePath+"/")) {
+			continue
+		}
+		scope := pkg.Types.Scope()
+		for _, name := range scope.Names() {
+			obj := scope.Lookup(name)
+			qualified := pkg.PkgPath + "." + name
+			report(qualified, name)
+			tn, ok := obj.(*types.TypeName)
+			if !ok || tn.IsAlias() {
+				continue
+			}
+			named, ok := tn.Type().(*types.Named)
+			if !ok {
+				continue
+			}
+			for i := 0; i < named.NumMethods(); i++ {
+				report(qualified+"."+named.Method(i).Name(), named.Method(i).Name())
+			}
+			switch u := named.Underlying().(type) {
+			case *types.Struct:
+				for i := 0; i < u.NumFields(); i++ {
+					report(qualified+"."+u.Field(i).Name(), u.Field(i).Name())
+				}
+			case *types.Interface:
+				for i := 0; i < u.NumExplicitMethods(); i++ {
+					report(qualified+"."+u.ExplicitMethod(i).Name(), u.ExplicitMethod(i).Name())
+				}
+			}
+		}
+	}
+	sort.Strings(violations)
+	return violations
 }

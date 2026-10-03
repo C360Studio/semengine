@@ -279,8 +279,10 @@ states the `Client` nil-context requirement; the row records each item as change
   reads that map.
 
   Applied to the floor: eleven public, four internal. The eight SemSource imports directly at `e4febc0d` (§5.1,
-  P16) and `pkg/projection/contract`, which SemConnect imports (P21), are public by import; `pkg/platform` and
-  `pkg/security` are public because public signatures name their `Config` types (P22). `pkg/cache` stays internal
+  P16) and `pkg/projection/contract`, which SemConnect imports (P21), are public by import; `pkg/security` is public
+  because a public signature names its `Config` type (P22), and `pkg/platform` because `config`'s exported `Config`
+  names its `Config` (change 3), a caller ported later: the signatures that named it in this change are removed (task
+  3.6b). `pkg/cache` stays internal
   and the one public symbol that named its type, `natsclient.TemporalResolver.GetStats` (`kv_temporal.go:221`,
   `*cache.Statistics`), becomes the unexported `cacheStats`, an `adapt` item on the `natsclient` row (task 3.7).
   After that no exported symbol of the eleven names a type from the four (P22).
@@ -296,7 +298,7 @@ states the `Client` nil-context requirement; the row records each item as change
   | `pkg/retry` | `pkg/retry` | public: SemSource imports it (4 files) |
   | `pkg/errs` | `pkg/errs` | public: SemSource imports it (3 files) |
   | `pkg/projection/contract` | `pkg/projection/contract` | public: SemConnect imports it (`gateway/cs-api/payloads.go:11`) |
-  | `pkg/platform` | `pkg/platform` | public: `platform.Config` is named by `vocabulary.EntityIRI` (and at the pin by seven `message` symbols, the federation family task 3.6b removes) |
+  | `pkg/platform` | `pkg/platform` | public: nothing in this change reads it once task 3.6b removes the seven `message` federation symbols and `vocabulary.EntityIRI`; its reader is `config` (change 3: `config/config.go:29`, `:49`, `:226-244`; `manager.go:88-101`), surface whose caller is ported later |
   | `pkg/security` | `pkg/security` | public: `security.Config` is named by `metric.NewServer` |
   | `pkg/resource` | `internal/resource` | no consumer import; no public signature names its types |
   | `pkg/timestamp` | `internal/timestamp` | no consumer import; no public signature names its types |
@@ -313,9 +315,9 @@ states the `Client` nil-context requirement; the row records each item as change
   repair); and, by owner ruling (#9, comment 5957221949, which replaced comment 5955265930: a ported `README.md`
   keeps the pin's text except for the edits markdownlint requires and edits to passages that describe behavior the
   ported code no longer has, each behavior edit listed by README line as an `adapt` item), `vocabulary` and
-  `pkg/types`, whose READMEs need lint fixes (358a01e);
-  `carry` for the other six: `pkg/platform`, `pkg/security`, `pkg/timestamp`, `pkg/errs`, `pkg/projection/contract`
-  and `message`. `message` has a `README.md` at the pin, so its row stays `carry` only if that file needs no edit.
+  `pkg/types`, whose READMEs need lint fixes (358a01e); `pkg/platform` (a doc comment corrected, #72 ruling D, task
+  3.6b); `carry` for the other five: `pkg/security`, `pkg/timestamp`, `pkg/errs`, `pkg/projection/contract` and
+  `message`. `message` has a `README.md` at the pin, so its row stays `carry` only if that file needs no edit.
 - Existing file rows updated: `natsclient/test_client.go` (`adapt`, now with its evidence in `proving_tests`), `natsclient/test_options.go`
   (`defer-exclude`, honoured); a new file row for `payloadregistry/testing.go` is not needed — the package row
   records the rehoming (T-B7 keeps `source_path` unique; the package row's path is the directory).

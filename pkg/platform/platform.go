@@ -24,8 +24,7 @@ package platform
 // positions 1-2 of every identity this deployment mints
 // (org.platform.system.domain.type.instance, ADR-102), so ID is the
 // minting deployment authority and nothing else names it. The struct
-// is JSON-shaped so it round-trips cleanly through config files and
-// embedded message metadata.
+// is JSON-shaped so it round-trips cleanly through config files.
 type Config struct {
 	Org          string   `json:"org"`                    // Organization namespace (e.g., "c360", "noaa")
 	ID           string   `json:"id"`                     // Platform identifier (e.g., "platform1")

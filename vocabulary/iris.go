@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-
-	"github.com/c360studio/semengine/pkg/platform"
 )
 
 // Base IRI constants for the SemStreams vocabulary
@@ -61,53 +59,6 @@ func EntityTypeIRI(dottedType string) string {
 	}
 
 	return fmt.Sprintf("%s/%s#%s", SemStreamsBase, domain, entityType)
-}
-
-// EntityIRI generates an IRI for a specific entity instance for RDF export.
-// This creates a unique identifier for entities in federated scenarios.
-//
-// Input format: "domain.type" using EntityType.Key() (e.g., "robotics.drone")
-// Output format: "https://semstreams.semanticstream.ing/entities/{platform_id}[/{region}]/{domain}/{type}/{local_id}"
-//
-// This function is intended for RDF/Turtle export at API boundaries only.
-// Internal code should always use EntityID.Key() for dotted notation.
-//
-// Examples:
-//   - With region: "https://semstreams.semanticstream.ing/entities/us-west-prod/gulf_mexico/robotics/drone/drone_1"
-//   - Without region: "https://semstreams.semanticstream.ing/entities/standalone/robotics/battery/battery_main"
-//
-// Returns empty string if platform.ID, localID is empty, or dottedType is invalid.
-//
-// Example:
-//
-//	entityType := message.EntityType{Domain: "robotics", Type: "drone"}
-//	iri := EntityIRI(entityType.Key(), platform, "drone_001")
-func EntityIRI(dottedType string, pcfg platform.Config, localID string) string {
-	if pcfg.ID == "" || localID == "" {
-		return ""
-	}
-
-	// Parse and validate domain type (dotted notation)
-	parts := strings.Split(dottedType, ".")
-	if len(parts) != 2 {
-		return ""
-	}
-
-	domain := strings.TrimSpace(parts[0])
-	entityType := strings.TrimSpace(parts[1])
-
-	if domain == "" || entityType == "" {
-		return ""
-	}
-
-	// Build the IRI path (lowercase for consistency)
-	if pcfg.Region != "" {
-		return fmt.Sprintf("%s/entities/%s/%s/%s/%s/%s",
-			SemStreamsBase, pcfg.ID, pcfg.Region, domain, entityType, localID)
-	}
-
-	return fmt.Sprintf("%s/entities/%s/%s/%s/%s",
-		SemStreamsBase, pcfg.ID, domain, entityType, localID)
 }
 
 // RelationshipIRI converts relationship types to IRI format.

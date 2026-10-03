@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/c360studio/semengine/pkg/platform"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -68,74 +67,6 @@ func TestEntityTypeIRI(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result := EntityTypeIRI(tt.domainType)
-			assert.Equal(t, tt.expected, result)
-		})
-	}
-}
-
-func TestEntityIRI(t *testing.T) {
-	tests := []struct {
-		name        string
-		domainType  string
-		platform    platform.Config
-		localID     string
-		expected    string
-		expectError bool
-	}{
-		{
-			name:       "valid device entity with region",
-			domainType: "system.device", // INPUT: Dotted notation
-			platform: platform.Config{
-				ID:     "us-west-prod",
-				Region: "gulf_mexico",
-			},
-			localID:  "device_1",
-			expected: "https://semstreams.semanticstream.ing/entities/us-west-prod/gulf_mexico/system/device/device_1",
-		},
-		{
-			name:       "valid entity without region",
-			domainType: "system.component",
-			platform: platform.Config{
-				ID: "standalone",
-			},
-			localID:  "component_main",
-			expected: "https://semstreams.semanticstream.ing/entities/standalone/system/component/component_main",
-		},
-		{
-			name:       "empty platform ID returns empty",
-			domainType: "system.device",
-			platform: platform.Config{
-				ID:     "",
-				Region: "gulf_mexico",
-			},
-			localID:  "device_1",
-			expected: "",
-		},
-		{
-			name:       "empty local ID returns empty",
-			domainType: "system.device",
-			platform: platform.Config{
-				ID:     "us-west-prod",
-				Region: "gulf_mexico",
-			},
-			localID:  "",
-			expected: "",
-		},
-		{
-			name:       "invalid domain type returns empty",
-			domainType: "invalid",
-			platform: platform.Config{
-				ID:     "us-west-prod",
-				Region: "gulf_mexico",
-			},
-			localID:  "entity_1",
-			expected: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := EntityIRI(tt.domainType, tt.platform, tt.localID)
 			assert.Equal(t, tt.expected, result)
 		})
 	}
@@ -285,17 +216,6 @@ func TestIRIGenerationEdgeCases(t *testing.T) {
 func BenchmarkEntityTypeIRI(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		EntityTypeIRI("system.device")
-	}
-}
-
-func BenchmarkEntityIRI(b *testing.B) {
-	platform := platform.Config{
-		ID:     "us-west-prod",
-		Region: "gulf_mexico",
-	}
-
-	for i := 0; i < b.N; i++ {
-		EntityIRI("system.device", platform, "device_1")
 	}
 }
 

@@ -109,7 +109,7 @@ nc.Subscribe("robotics.battery.*", handler)  // All battery predicates
 ### 4. Export to RDF (Optional)
 
 ```go
-import "github.com/c360studio/semstreams/vocabulary/export"
+import "github.com/c360studio/semengine/vocabulary/export"
 
 // Serialize triples to Turtle
 err := export.Serialize(os.Stdout, triples, export.Turtle)
@@ -390,7 +390,7 @@ The vocabulary package includes ontology subpackages that provide IRI constants 
 Upper-level ontology (ISO 21838-2) providing domain-neutral categories for all entities.
 
 ```go
-import "github.com/c360studio/semstreams/vocabulary/bfo"
+import "github.com/c360studio/semengine/vocabulary/bfo"
 
 // Classify a physical asset
 triple := message.Triple{
@@ -407,7 +407,7 @@ Key concepts: `Entity`, `Continuant`, `Occurrent`, `Object`, `Process`, `Role`, 
 Mid-level ontology built on BFO for modeling agents, actions, information entities, and artifacts.
 
 ```go
-import "github.com/c360studio/semstreams/vocabulary/cco"
+import "github.com/c360studio/semengine/vocabulary/cco"
 
 // Classify a software agent
 triple := message.Triple{
@@ -424,7 +424,7 @@ Key concepts: `InformationContentEntity`, `Agent`, `IntentionalAct`, `PlanSpecif
 AI agent interoperability predicates aligned with the W3C Semantic Agent Communication ontology.
 
 ```go
-import "github.com/c360studio/semstreams/vocabulary/agentic"
+import "github.com/c360studio/semengine/vocabulary/agentic"
 
 // Express an agent's intent
 triple := message.Triple{
@@ -445,7 +445,7 @@ Serializes `[]message.Triple` to standard RDF formats (Turtle, N-Triples, JSON-L
 resolution.
 
 ```go
-import "github.com/c360studio/semstreams/vocabulary/export"
+import "github.com/c360studio/semengine/vocabulary/export"
 
 output, err := export.SerializeToString(triples, export.Turtle)
 ```
@@ -516,7 +516,7 @@ entityState.SetProperty("geo.location.latitude", 37.7749)
 The `export` package handles dotted-to-IRI translation automatically:
 
 ```go
-import "github.com/c360studio/semstreams/vocabulary/export"
+import "github.com/c360studio/semengine/vocabulary/export"
 
 // Serialize to Turtle — registered predicates map to standard IRIs,
 // unregistered predicates generate SemStreams predicate IRIs.
@@ -648,7 +648,7 @@ vocabulary.GraphRelCommunicates // Communication/interaction
 ### Usage Example
 
 ```go
-import "github.com/c360studio/semstreams/vocabulary"
+import "github.com/c360studio/semengine/vocabulary"
 
 // Create relationship between specification and implementation
 triple := message.Triple{

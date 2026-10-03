@@ -72,10 +72,10 @@ The `message/` package re-exports these types as aliases for backwards compatibi
 
 ```go
 // These are equivalent:
-import "github.com/c360studio/semstreams/pkg/types"
+import "github.com/c360studio/semengine/pkg/types"
 var t types.Type
 
-import "github.com/c360studio/semstreams/message"
+import "github.com/c360studio/semengine/message"
 var t message.Type  // Alias to types.Type
 ```
 

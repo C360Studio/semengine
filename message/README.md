@@ -19,7 +19,7 @@ Key design principles:
 ## Installation
 
 ```go
-import "github.com/c360/semstreams/message"
+import "github.com/c360studio/semengine/message"
 ```
 
 ## Core Concepts
@@ -202,8 +202,8 @@ package myapp
 
 import (
     "time"
-    "github.com/c360/semstreams/component"
-    "github.com/c360/semstreams/message"
+    "github.com/c360studio/semengine/component"
+    "github.com/c360studio/semengine/message"
 )
 
 // Define your payload
@@ -465,7 +465,7 @@ BenchmarkTypedPayload_Unmarshal    1500000    900 ns/op
 Uses SemStreams error classification:
 
 ```go
-import "github.com/c360/semstreams/errors"
+import "github.com/c360studio/semengine/pkg/errs"
 
 // Invalid input (malformed JSON, unknown type)
 errors.WrapInvalid(err, "BaseMessage", "UnmarshalJSON", "validate type format")

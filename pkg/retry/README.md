@@ -10,7 +10,7 @@ actually used throughout the framework.
 ## Quick Start
 
 ```go
-import "github.com/c360/semstreams/pkg/retry"
+import "github.com/c360studio/semengine/pkg/retry"
 
 // Use defaults (3 attempts, 100ms initial delay)
 err := retry.Do(ctx, retry.DefaultConfig(), func() error {

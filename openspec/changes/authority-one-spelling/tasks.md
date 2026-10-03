@@ -29,7 +29,7 @@ pull request closes #72 (`Closes #72` in its body).
 
 ## 2. C-2: the field check
 
-- [ ] 2.1 (D) `TestNoSecondAuthorityFieldSensitivity`, written first, in a new
+- [x] 2.1 (D) `TestNoSecondAuthorityFieldSensitivity`, written first, in a new
       `internal/harness/contract/authority_test.go`: the fixture module of `design.md` D3 (the pin's
       `HierarchyConfig` and `EntityParts` shapes, an anonymous struct, an internal and a `main` package; and, to pass,
       the three owner packages, `types.PlatformMeta`, a `Platform types.PlatformMeta` carrier through the
@@ -37,7 +37,7 @@ pull request closes #72 (`Closes #72` in its body).
       package, lowercase `org`/`platform`, and a `_test.go` file). It requires each failing field by file, line and
       struct type, silence for every passing one, and the exact count. Seen to fail first because the check does not
       exist. Gate: `task test:unit`.
-- [ ] 2.2 (D) `TestNoSecondAuthorityField` over the repository, on the `contextViolations` walk
+- [x] 2.2 (D) `TestNoSecondAuthorityField` over the repository, on the `contextViolations` walk
       (`context_test.go:221-289`) with D3's predicate and exceptions held in one map mirroring the requirement's
       list by exact string (D4). Its failure line is D3's. 2.1 passes; the repository test passes on `main` (design
       P1). Gate: `task test:unit`.

@@ -498,6 +498,7 @@ pin `file:line` → SemEngine `file:line`. The repairs at the pin (P18, P19) fal
   | Site at the pin | What it waits for | Disposition |
   |---|---|---|
   | `natsclient/subscription_integration_test.go:115-119` | 200 ms in which a correct `Drain` must not return while its callback runs | R1c, kept: expiry only misses a defect (its own comment, `:113-115`) |
+  | `natsclient/client_close_integration_test.go:77` | 250 ms in which a correct `Close` must not return | R1c, kept: expiry only misses a defect (added at task 3.7b; the pin row was missing) |
   | `natsclient/delivery_settlement_integration_test.go:102-106` | 50 ms polling steps across the AckWait renewal window | R1c, kept: the window is AckWait's, and each step ends on `ctx.Done` or a redelivery check, never failing a correct renewal |
   | `pkg/cache/coalescing_set_test.go:92` | 10 ms in which the callback must not fire | R1a: inside the bubble, after `synctest.Wait`, the callback has not fired before the window |
   | `pkg/cache/cache_test.go:294` (TTL, `:286-298`) | 150 ms past a 100 ms TTL | R1a: `<-time.After` inside the bubble moves the fake clock |

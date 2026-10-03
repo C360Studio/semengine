@@ -70,8 +70,8 @@ type Fixture struct {
 	calls         map[string]int
 	slotWaits     map[string]int // operations that found the slot taken, by kind; read by tests
 	rec           record
-	maxPayload    int // broker max_payload in bytes; 0 leaves the broker default (WithMaxPayload)
-	maxPayloadSet bool
+	maxPayload    int64 // broker max_payload in bytes, from WithMaxPayload
+	maxPayloadSet bool  // unset leaves the broker default
 }
 
 // Option configures a fixture's broker; New applies it before any Docker call.
@@ -80,7 +80,7 @@ type Option func(*Fixture)
 // WithMaxPayload starts the broker with max_payload set to n bytes, so a test can reach a payload
 // bound without building a megabyte message. Without it the broker's own default applies. Start
 // refuses an n below 1 before any Docker call.
-func WithMaxPayload(n int) Option {
+func WithMaxPayload(n int64) Option {
 	return func(f *Fixture) { f.maxPayload, f.maxPayloadSet = n, true }
 }
 

@@ -477,7 +477,7 @@ func awaitWaiting(t *testing.T, f *Fixture, who string) {
 // A max payload the broker cannot honour is refused by Start before any Docker call, not silently
 // replaced by the broker default.
 func TestNonPositiveMaxPayloadIsRefused(t *testing.T) {
-	for _, n := range []int{0, -1} {
+	for _, n := range []int64{0, -1} {
 		f := New(t, WithMaxPayload(n))
 		// Outside the integration runner admission refuses too, so the refusal must name its cause.
 		if err := f.Start(t.Context()); err == nil || !strings.Contains(err.Error(), "max payload") {

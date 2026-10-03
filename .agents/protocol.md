@@ -51,8 +51,9 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
   should not do next) becomes an issue. Ask the owner before filing when placement is a genuine scheduling call.
 - **Land:** implementation review (the other agent's for a code pull request: "Cross-agent review" below), then,
   for a documents-only change, the owner-run cross-agent round where the owner asks for it, then fixes and
-  re-review, then archive as the final content commit, then a narrow reviewer check of the archive/spec sync, then
-  undraft, then CI green on a head that is up to date with `main` and with **no known flake open** ("Known flakes"
+  re-review, then archive as the final content commit, then a narrow reviewer check of the archive/spec sync (either
+  agent's reviewer), then undraft, then CI green on a head that is up to date with `main` and with **no known flake
+  open** ("Known flakes"
   below), then `task merge:check -- <n>` immediately before merging, in a shell where `GITHUB_ACTIONS` is not set,
   then squash merge. A green run while a known flake is open is not a fix: a re-run or a new push only rolls the dice
   again. Fix the flake; there is no other way past it. A correction after archive re-enters reconciliation and final
@@ -91,9 +92,14 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
     recorded as not run; output the implementer supplies for it is recorded as reported by the implementer, never as
     passed.
   - A record covers the commit it names. A later content commit, one that changes the pull request's own diff against
-    `main`, needs a re-review, and the archive commit needs the archive check. A merge of `origin/main` is not a
-    content commit when `main` changed no file the pull request changes: the record carries over, and CI on the
-    merged head is the check. When `main` changed a file the pull request also changes, that file needs a re-review.
+    `main`, needs a re-review, and the archive commit needs the archive check. The other agent's review covers code:
+    a later commit that changes code (any file that is not Markdown or under `openspec/`, or a role adapter under
+    `.claude/agents/`) goes back to the other agent for re-review. A later commit that changes documents only, and
+    the check of the archive/spec sync, are reviewed by either agent's reviewer; the record names which (owner
+    ruling of 2026-10-03, #66 comment 5968737070: cross-agent review is for code, not for process). A merge of
+    `origin/main` is not a content commit when `main` changed no file the pull request changes: the record carries
+    over, and CI on the merged head is the check. When `main` changed a file the pull request also changes, that
+    file needs a re-review.
   - The reviewer does not write on the branch. Findings go back to the implementer, who keeps write ownership. If
     the two agents disagree on a finding, it goes to the owner on the issue, labelled `status:needs-decision`.
   - The implementer writes one `reviewed-by:` line in the PR body, beside `implemented-by:`, once the reviewing

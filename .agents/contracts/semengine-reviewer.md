@@ -280,6 +280,11 @@ Each is `BLOCKING`:
 - **Check that the package's guidance came with it.** The slice names the SemStreams contract sections and skills
   that apply to the package and carries the adapted text. A ported package whose known footguns are documented only
   in SemStreams is a finding.
+- **Check that a known shape left the generic payload.** For every `NewGenericJSON` call in the ported package
+  that builds its map from fields the code knows, the ledger row carries an `adapt` item that moves the site to a
+  registered payload or states why the shape is open (architect contract, Extraction slices). A known-shape site
+  with neither is a finding. Until the structural caller check arrives with the first ported production caller,
+  this search is yours to run.
 - **Check a boundary change against the stated purpose.** A design that sets or moves a boundary carries the intent
   table (architect contract, Intent check). A capability `AGENTS.md` names that is deferred or excluded with no
   owner ruling cited is `BLOCKING` at inventory review.

@@ -1541,7 +1541,7 @@
     1"). Kept as R1c, its expiry only able to miss a defect:
     subscription :115-119 → :95-99 and delivery_settlement :91-107 → :91-107 (D8's table);
     client_close :77 → :77 (250 ms in which a correct Close must not return; its comment
-    :74-76 says so; not in D8's table, which lists the analogous subscription row); publish_msgid's 250 ms
+    :74-76 says so; D8's table lists it, the row added at task 3.7b); publish_msgid's 250 ms
     duplicate window (:22), split at review F18 (Codex, PR #48) into two proofs: the dedup, distinct
     and empty-ID assertions (TestIntegration_PublishToStreamWithMsgID_Dedup, :22-71) run under a
     context ending failureBound after it starts (:48), on a stream whose window is six times that

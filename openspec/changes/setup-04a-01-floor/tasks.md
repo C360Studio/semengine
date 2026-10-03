@@ -98,7 +98,7 @@ this pull request as a comment unless a task says otherwise. No task asserts a f
       any `github.com/c360studio/semstreams` path; a tree-shape sensitivity test (like `TestImportGraphSensitivity`)
       shows the aggregator rule rejecting a package importing `Register` from two component packages and the
       SemStreams rule rejecting a planted import; both pass on the real tree. Gate: `task test:unit`.
-- [ ] 2.8 (D) `internal/harness/semantictest` and `internal/harness/payloadfixture` carry the pin's helpers
+- [x] 2.8 (D) `internal/harness/semantictest` and `internal/harness/payloadfixture` carry the pin's helpers
       byte-for-byte except package path and import rewrites and, in `payloadfixture`, the `payloadregistry.New`,
       `payloadregistry.Registry` and `payloadregistry.Registration` qualifications the move out of `package
       payloadregistry` requires (recorded as `adapt` items on the `payloadregistry` row, task 3.5); T-B1 passes
@@ -108,6 +108,15 @@ this pull request as a comment unless a task says otherwise. No task asserts a f
       Lands after tasks 3.3 (`pkg/types`), 3.2 (`vocabulary`) and 3.5 (`payloadregistry`): at the pin
       `internal/semantictest/fixtures.go:13-14` imports `pkg/types` and `vocabulary`, and
       `payloadregistry/testing.go:6` imports `pkg/types`. It is therefore held by task 3.0 like section 3.
+      Done in 62d9f47: `semantictest` is a `carry` row (`internal/semantictest` → `internal/harness/semantictest`,
+      matched to the pin by `task ledger:check`); `payloadfixture/testing.go`'s qualifications are on the
+      `payloadregistry` row by pin line. `TestImportGraphRejectsHarnessHelpersOutsideTheHarness` plants both files
+      at their pin paths and in the harness: T-B1 refuses the first and admits the second (implementer-reported: it
+      failed first with the helpers absent, and with `testing` dropped from the forbidden list it failed naming
+      `internal/semantictest/fixtures.go`). `go list -deps`, implementer-reported: `semantictest` reaches
+      `pkg/retry`, `pkg/errs`, `pkg/types`, `pkg/platform`, `vocabulary`; `payloadfixture` those and
+      `pkg/projection/contract`, `payloadregistry`; none has a `go` statement in a non-test file, and no test of
+      any of them imports either helper (their `TestImports` and `XTestImports`), as P5 says of the pin.
 - [x] 2.9 (R) Harness review of tasks 2.1–2.7 and 2.10: the additions against the deltas, the fault matrices'
       completeness, and the `natsfixture` import list. Verdict recorded on this pull request before any ported
       package lands. Task 2.8 is not in this review; it is reviewed with section 3's port review (task 3.10).
@@ -214,7 +223,7 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       cases were accepted; the typed-nil `*GaugeVec` and the core collision were already refused at the pin (test 6
       failed only on the returned candidate). The generated check and the corrected evidence landed with the third
       review's fixes (PR #48 comment 5959412053, findings 2 and 4). `task verify` ok on e78d0ce.
-- [ ] 3.6 (D) `message`, `pkg/cache` (level 5), destinations by design D5 (#9 comment 5953295358, refining
+- [x] 3.6 (D) `message`, `pkg/cache` (level 5), destinations by design D5 (#9 comment 5953295358, refining
       5952661571): `message` stays public at `message` (SemSource imports it), `pkg/cache` moves to `internal/cache`.
       `message` row `adapt`, not `carry`: its `README.md` needs a lint fix at the pin (line 7, MD013; #9 comment
       5957221949) (`google/uuid` direct; its two tests that used
@@ -255,8 +264,11 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         inside a non-nil interface (`TestCacheConstructorsReturnNilCacheOnError`). Implementer-reported: it failed
         first for `NewSimple`, `NewLRU` and `NewFromConfig`'s simple and lru paths; the TTL and hybrid ones were
         fixed in c6d7108.
-      - Hold: `message` waits for task 2.8. Its tests import `internal/semantictest`
-        (`payload_test.go:10`, `triple_helpers_test.go:9` at the pin), and the harness copy is task 2.8's.
+      - Also 479ce24 and a7dbf9d (`NewSimple` and `NewLRU` return a nil `Cache` on error, above).
+      - `message` done in c08b5c7, after task 2.8 (62d9f47): its `.go` files match the pin apart from import paths
+        (`task ledger:diff -- message`: 25 files, 0 differ); its two tests that used `internal/semantictest`
+        import `internal/harness/semantictest`; `google/uuid` v1.6.0, the pin's version, is direct; the row is
+        `adapt` for the README line 7 wrap.
 - [ ] 3.7 (D) `natsclient` (level 6): row `adapt`; `test_client.go` and `test_options.go` are not ported and their
       file rows are updated (`proving_tests` on the `adapt` row); four test files are not ported and get `defer-exclude`
       file rows with design D1's reasons: `test_client_factory_test.go`, `test_client_integration_test.go` and

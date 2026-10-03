@@ -94,6 +94,26 @@ type PlatformMeta struct {
 	Org      string
 	Platform string
 }
+
+type Other struct {
+	Org string
+}
+`,
+		// The carrier's and the caller claim's type names outside their packages: the exceptions are by
+		// package, type and field, so these fail.
+		"graph/inference/deps.go": `package inference
+
+import "example.com/fixture/types"
+
+type Dependencies struct {
+	Platform types.PlatformMeta
+}
+`,
+		"graph/llm/caller.go": `package llm
+
+type CallerContext struct {
+	Org string
+}
 `,
 		// The carrier through the alias passes; a second field of the carrier's type fails.
 		"component/dependencies.go": `package component
@@ -147,13 +167,16 @@ type Claim struct {
 		{"cmd/tool/main.go:4: field Platform on example.com/fixture/cmd/tool.options "},
 		{"component/dependencies.go:12: field Platform on example.com/fixture/component.Registry "},
 		{"processor/rule/rule.go:14: field Org on example.com/fixture/processor/rule.Claim "},
+		{"types/component.go:9: field Org on example.com/fixture/types.Other "},
+		{"graph/inference/deps.go:6: field Platform on example.com/fixture/graph/inference.Dependencies "},
+		{"graph/llm/caller.go:4: field Org on example.com/fixture/graph/llm.CallerContext "},
 	}
 	for _, want := range failing {
 		requireViolation(t, v, append(want, "spells the deployment authority outside its owners", authorityRule)...)
 	}
 	silent := []string{
 		"graph/inference/hierarchy.go:9:", "graph/inference/hierarchy.go:10:", "hierarchy_test.go",
-		"pkg/types/", "pkg/platform/", "config/", "types/component.go",
+		"pkg/types/", "pkg/platform/", "config/", "types/component.go:4:", "types/component.go:5:",
 		"component/dependencies.go:8:", "service/", "processor/rule/rule.go:6:", "processor/rule/rule.go:10:",
 	}
 	for _, line := range v {

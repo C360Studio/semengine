@@ -3,11 +3,14 @@ package cache
 import (
 	"context"
 	"fmt"
+	"runtime"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
 
 	"github.com/c360studio/semengine/metric"
+	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -291,4 +294,60 @@ func TestCacheConcurrentCloseJoinsEveryCaller(t *testing.T) {
 			}
 		})
 	}
+}
+
+// bubbleCleanupGoroutines counts goroutines in a synctest bubble that are running a TTL or
+// hybrid cleanup loop, read from the runtime's own stack dump.
+func bubbleCleanupGoroutines() int {
+	buf := make([]byte, 1<<20)
+	buf = buf[:runtime.Stack(buf, true)]
+	n := 0
+	for _, g := range strings.Split(string(buf), "\n\n") {
+		if strings.Contains(g, "synctest bubble") &&
+			(strings.Contains(g, "(*ttlCache[...]).cleanup") || strings.Contains(g, "(*hybridCache[...]).cleanup")) {
+			n++
+		}
+	}
+	return n
+}
+
+// TestCacheConstructorsRefuseInvalidDimensions: NewLRU, NewTTL and the hybrid constructor apply
+// the dimension checks Config.Validate makes for NewFromConfig, before constructing anything: a
+// zero or negative size, TTL or cleanup interval returns a classified invalid error, a nil Cache,
+// and starts no cleanup goroutine (read from the runtime's stack dump inside the bubble).
+func TestCacheConstructorsRefuseInvalidDimensions(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		cases := map[string]func() (Cache[int], error){}
+		for _, bad := range []int{0, -1} {
+			d := time.Duration(bad) * time.Second
+			cases[fmt.Sprintf("NewLRU size %d", bad)] = func() (Cache[int], error) { return NewLRU[int](bad) }
+			cases[fmt.Sprintf("NewTTL ttl %v", d)] = func() (Cache[int], error) { return NewTTL[int](ctx, d, time.Second) }
+			cases[fmt.Sprintf("NewTTL cleanup %v", d)] = func() (Cache[int], error) { return NewTTL[int](ctx, time.Minute, d) }
+			cases[fmt.Sprintf("hybrid size %d", bad)] = func() (Cache[int], error) {
+				return newHybrid[int](ctx, bad, time.Minute, time.Second)
+			}
+			cases[fmt.Sprintf("hybrid ttl %v", d)] = func() (Cache[int], error) {
+				return newHybrid[int](ctx, 10, d, time.Second)
+			}
+			cases[fmt.Sprintf("hybrid cleanup %v", d)] = func() (Cache[int], error) {
+				return newHybrid[int](ctx, 10, time.Minute, d)
+			}
+		}
+		var accepted []Cache[int]
+		for name, construct := range cases {
+			c, err := construct()
+			assert.True(t, errs.IsInvalid(err), "%s: want a classified invalid error, got %v", name, err)
+			assert.True(t, c == nil, "%s: want a nil Cache, got %T", name, c)
+			if c != nil {
+				accepted = append(accepted, c)
+			}
+		}
+		synctest.Wait()
+		assert.Zero(t, bubbleCleanupGoroutines(), "a refused constructor started a cleanup goroutine")
+		for _, c := range accepted {
+			_ = c.Close()
+		}
+	})
 }

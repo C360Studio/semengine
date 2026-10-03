@@ -303,6 +303,9 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       delegation (design D7): constructed and closed inside `synctest.Test` with no broker and nothing left running,
       and `NewTemporalResolver(nil, …)` and `NewTemporalResolverWithCache(nil, …)` return an error, each test
       written first; its empty eviction callbacks (`kv_temporal.go:27,59`) go with `WithEvictionCallback`.
+      `NewTemporalResolverWithCache` (`kv_temporal.go:44-60`) passes `cacheTTL` to `cache.NewTTL`, which now refuses
+      a zero or negative TTL (task 3.6a, Codex F3): a `cacheTTL` ≤ 0 is an error, where at the pin it built a cache
+      whose entries expire at once.
       `TemporalResolver.GetStats` (`kv_temporal.go:221`), which returns the internal `*cache.Statistics`, becomes
       the unexported `cacheStats` (design D5; owner ruling, #9 comment 5953295358); its only callers,
       `kv_error_integration_test.go:421, :436, :447`, are in the package and call `cacheStats`, including the

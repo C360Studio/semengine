@@ -152,6 +152,9 @@ func NewFromConfig[V any](ctx context.Context, config Config, options ...Option[
 // NewLRU creates a new LRU cache with the specified maximum size.
 // Stats are always enabled for observability. Use WithMetrics() to also export as Prometheus metrics.
 func NewLRU[V any](maxSize int, options ...Option[V]) (Cache[V], error) {
+	if err := (Config{Enabled: true, Strategy: StrategyLRU, MaxSize: maxSize}).Validate(); err != nil {
+		return nil, err
+	}
 	opts := applyOptions(options...)
 	c, err := newLRUCache[V](maxSize, opts)
 	if err != nil {
@@ -164,6 +167,10 @@ func NewLRU[V any](maxSize int, options ...Option[V]) (Cache[V], error) {
 // NewTTL creates a new TTL cache with the specified TTL and cleanup interval.
 // Stats are always enabled for observability. Use WithMetrics() to also export as Prometheus metrics.
 func NewTTL[V any](ctx context.Context, ttl, cleanupInterval time.Duration, options ...Option[V]) (Cache[V], error) {
+	cfg := Config{Enabled: true, Strategy: StrategyTTL, TTL: ttl, CleanupInterval: cleanupInterval}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	opts := applyOptions(options...)
 	c, err := newTTLCache[V](ctx, ttl, cleanupInterval, opts)
 	if err != nil {
@@ -180,6 +187,10 @@ func newHybrid[V any](
 	ctx context.Context, maxSize int, ttl, cleanupInterval time.Duration,
 	options ...Option[V],
 ) (Cache[V], error) {
+	cfg := Config{Enabled: true, Strategy: StrategyHybrid, MaxSize: maxSize, TTL: ttl, CleanupInterval: cleanupInterval}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
 	opts := applyOptions(options...)
 	c, err := newHybridCache[V](ctx, maxSize, ttl, cleanupInterval, opts)
 	if err != nil {

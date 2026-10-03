@@ -6,6 +6,7 @@ import (
 	"errors"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -289,38 +290,46 @@ func TestReportConsumer_UndecodableRowIsSkippedNotFatal(t *testing.T) {
 // surface silent with it, and the silence looks exactly like an account with
 // nothing in it.
 func TestReportConsumer_ReestablishesADroppedWatch(t *testing.T) {
-	store := &fakeWatchStore{}
-	consumer := runConsumer(t, store, nil)
+	// R1a: the consumer's retry backoff, the Eventually polls and runConsumer's stop limit run
+	// on the bubble's clock, so a limit expires only when the watch is never re-established.
+	synctest.Test(t, func(t *testing.T) {
+		store := &fakeWatchStore{}
+		consumer := runConsumer(t, store, nil)
 
-	eventually(t, func() bool { return store.watchCount() == 1 }, "the first watch is established")
-	close(store.watchers[0].updates)
+		eventually(t, func() bool { return store.watchCount() == 1 }, "the first watch is established")
+		close(store.watchers[0].updates)
 
-	eventually(t, func() bool { return store.watchCount() >= 2 }, "a dropped watch is re-established")
+		eventually(t, func() bool { return store.watchCount() >= 2 }, "a dropped watch is re-established")
 
-	store.mu.Lock()
-	second := store.watchers[1]
-	store.mu.Unlock()
-	second.put("LOGS", reportRow("LOGS", TierFile, PressureNormal))
-	second.synced()
+		store.mu.Lock()
+		second := store.watchers[1]
+		store.mu.Unlock()
+		second.put("LOGS", reportRow("LOGS", TierFile, PressureNormal))
+		second.synced()
 
-	eventually(t, func() bool { return len(consumer.Snapshot().Resources) == 1 },
-		"the re-established watch repopulates the snapshot")
+		eventually(t, func() bool { return len(consumer.Snapshot().Resources) == 1 },
+			"the re-established watch repopulates the snapshot")
+	})
 }
 
 // TestReportConsumer_RetriesWhenTheWatchCannotBeEstablished covers the cold
 // start where the bucket is not reachable yet.
 func TestReportConsumer_RetriesWhenTheWatchCannotBeEstablished(t *testing.T) {
-	store := &fakeWatchStore{err: errors.New("bucket not found")}
-	consumer := runConsumer(t, store, nil)
+	// R1a: the consumer's retry backoff, the Eventually polls and runConsumer's stop limit run
+	// on the bubble's clock, so a limit expires only when the retry never succeeds.
+	synctest.Test(t, func(t *testing.T) {
+		store := &fakeWatchStore{err: errors.New("bucket not found")}
+		consumer := runConsumer(t, store, nil)
 
-	eventually(t, func() bool { return store.watchCount() == 0 && consumer.Snapshot().Synced == false },
-		"nothing is claimed while the watch cannot be established")
+		eventually(t, func() bool { return store.watchCount() == 0 && consumer.Snapshot().Synced == false },
+			"nothing is claimed while the watch cannot be established")
 
-	store.mu.Lock()
-	store.err = nil
-	store.mu.Unlock()
+		store.mu.Lock()
+		store.err = nil
+		store.mu.Unlock()
 
-	eventually(t, func() bool { return store.watchCount() >= 1 }, "the retry succeeds once the bucket exists")
+		eventually(t, func() bool { return store.watchCount() >= 1 }, "the retry succeeds once the bucket exists")
+	})
 }
 
 // TestReportConsumer_SnapshotIsACopy stops a caller ranging the snapshot from

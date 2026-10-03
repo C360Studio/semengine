@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -799,35 +800,43 @@ func (p *recordingPublisher) count() int {
 // advances at the cadence the operator configured and there is no second timer
 // that could drift from it.
 func TestStorageInventory_RunPublishesEveryCollection(t *testing.T) {
-	publisher := &recordingPublisher{}
-	lister := consistentAccount(streamInfo("LOGS", jetstream.FileStorage, 0, 1))
-	collector, err := NewStorageInventoryCollector(lister.source(), StorageInventoryConfig{
-		OwnerResolver: resolverFrom(nil),
-		Interval:      20 * time.Millisecond,
-		Timeout:       time.Second,
-		Publisher:     publisher,
+	// R1a: Run's ticker, the Eventually poll and the limits run on the bubble's clock, so a
+	// limit expires only when Run never publishes or never returns.
+	synctest.Test(t, func(t *testing.T) {
+		publisher := &recordingPublisher{}
+		lister := consistentAccount(streamInfo("LOGS", jetstream.FileStorage, 0, 1))
+		collector, err := NewStorageInventoryCollector(lister.source(), StorageInventoryConfig{
+			OwnerResolver: resolverFrom(nil),
+			Interval:      20 * time.Millisecond,
+			Timeout:       time.Second,
+			Publisher:     publisher,
+		})
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		// A failed assertion ends this goroutine before the cancel below; the deferred
+		// cancel still stops Run, so the bubble reports the failure, not a deadlock.
+		defer cancel()
+		stopped := make(chan struct{})
+		go func() { defer close(stopped); collector.Run(ctx) }()
+
+		// 3s on the bubble's clock for two 20ms ticks: only a loop that never
+		// publishes reaches it.
+		require.Eventually(t, func() bool { return publisher.count() >= 2 }, 3*time.Second, 5*time.Millisecond,
+			"every collection must publish the report")
+
+		cancel()
+		select {
+		case <-stopped:
+		case <-time.After(3 * time.Second):
+			t.Fatal("Run did not return when its context was cancelled")
+		}
+
+		publisher.mu.Lock()
+		defer publisher.mu.Unlock()
+		assert.False(t, publisher.last.Stale, "only a successful collection is published")
+		assert.NotEmpty(t, publisher.last.Resources)
 	})
-	require.NoError(t, err)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	stopped := make(chan struct{})
-	go func() { defer close(stopped); collector.Run(ctx) }()
-
-	// 3s budget for two 20ms ticks: only a loop that never publishes fails.
-	require.Eventually(t, func() bool { return publisher.count() >= 2 }, 3*time.Second, 5*time.Millisecond,
-		"every collection must publish the report")
-
-	cancel()
-	select {
-	case <-stopped:
-	case <-time.After(3 * time.Second):
-		t.Fatal("Run did not return when its context was cancelled")
-	}
-
-	publisher.mu.Lock()
-	defer publisher.mu.Unlock()
-	assert.False(t, publisher.last.Stale, "only a successful collection is published")
-	assert.NotEmpty(t, publisher.last.Resources)
 }
 
 // TestStorageInventory_PublicationFailureDoesNotStopCollection: the report is
@@ -835,30 +844,37 @@ func TestStorageInventory_RunPublishesEveryCollection(t *testing.T) {
 // loop down with it — the next tick is the recovery, and the in-process
 // last-good inventory stays readable throughout.
 func TestStorageInventory_PublicationFailureDoesNotStopCollection(t *testing.T) {
-	publisher := &recordingPublisher{err: errors.New("nats: no responders")}
-	lister := consistentAccount(streamInfo("LOGS", jetstream.FileStorage, 0, 1))
-	collector, err := NewStorageInventoryCollector(lister.source(), StorageInventoryConfig{
-		OwnerResolver: resolverFrom(nil),
-		Interval:      20 * time.Millisecond,
-		Timeout:       time.Second,
-		Publisher:     publisher,
+	// R1a: Run's ticker, the Eventually poll and the limits run on the bubble's clock, so a
+	// limit expires only when the loop stops after a failed publication or never returns.
+	synctest.Test(t, func(t *testing.T) {
+		publisher := &recordingPublisher{err: errors.New("nats: no responders")}
+		lister := consistentAccount(streamInfo("LOGS", jetstream.FileStorage, 0, 1))
+		collector, err := NewStorageInventoryCollector(lister.source(), StorageInventoryConfig{
+			OwnerResolver: resolverFrom(nil),
+			Interval:      20 * time.Millisecond,
+			Timeout:       time.Second,
+			Publisher:     publisher,
+		})
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		// A failed assertion ends this goroutine before the cancel below; the deferred
+		// cancel still stops Run, so the bubble reports the failure, not a deadlock.
+		defer cancel()
+		stopped := make(chan struct{})
+		go func() { defer close(stopped); collector.Run(ctx) }()
+
+		require.Eventually(t, func() bool { return publisher.count() >= 2 }, 3*time.Second, 5*time.Millisecond,
+			"a failed publication must not stop the loop")
+		assert.NotEmpty(t, collector.Latest().Resources, "the in-process inventory stays readable")
+
+		cancel()
+		select {
+		case <-stopped:
+		case <-time.After(3 * time.Second):
+			t.Fatal("Run did not return when its context was cancelled")
+		}
 	})
-	require.NoError(t, err)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	stopped := make(chan struct{})
-	go func() { defer close(stopped); collector.Run(ctx) }()
-
-	require.Eventually(t, func() bool { return publisher.count() >= 2 }, 3*time.Second, 5*time.Millisecond,
-		"a failed publication must not stop the loop")
-	assert.NotEmpty(t, collector.Latest().Resources, "the in-process inventory stays readable")
-
-	cancel()
-	select {
-	case <-stopped:
-	case <-time.After(3 * time.Second):
-		t.Fatal("Run did not return when its context was cancelled")
-	}
 }
 
 // TestStorageInventory_FailedCollectionPublishesNothing: a failed collection
@@ -867,48 +883,55 @@ func TestStorageInventory_PublicationFailureDoesNotStopCollection(t *testing.T) 
 // but a call per tick would log the same failure twice and make a failing
 // server look like a failing report.
 func TestStorageInventory_FailedCollectionPublishesNothing(t *testing.T) {
-	publisher := &recordingPublisher{}
-	broken := errors.New("name listing unavailable")
-	// Counted here rather than through fakeLister.calls: the collector lists
-	// NAMES first and never reaches the info listing when that fails, so the
-	// info-call counter would stay at zero and the assertion below would pass
-	// against a loop that never ran.
-	var attempts atomic.Int64
-	lister := &fakeLister{
-		nextInfos: func() *fakeStreamInfoLister {
-			return &fakeStreamInfoLister{infos: []*jetstream.StreamInfo{
-				streamInfo("LOGS", jetstream.FileStorage, 0, 1),
-			}}
-		},
-		nextNames: func() *fakeStreamNameLister {
-			attempts.Add(1)
-			return &fakeStreamNameLister{failWith: broken}
-		},
-	}
-	collector, err := NewStorageInventoryCollector(lister.source(), StorageInventoryConfig{
-		OwnerResolver: resolverFrom(nil),
-		Interval:      20 * time.Millisecond,
-		Timeout:       time.Second,
-		Publisher:     publisher,
+	// R1a: Run's ticker, the Eventually poll and the limits run on the bubble's clock, so a
+	// limit expires only when the loop stops attempting or never returns.
+	synctest.Test(t, func(t *testing.T) {
+		publisher := &recordingPublisher{}
+		broken := errors.New("name listing unavailable")
+		// Counted here rather than through fakeLister.calls: the collector lists
+		// NAMES first and never reaches the info listing when that fails, so the
+		// info-call counter would stay at zero and the assertion below would pass
+		// against a loop that never ran.
+		var attempts atomic.Int64
+		lister := &fakeLister{
+			nextInfos: func() *fakeStreamInfoLister {
+				return &fakeStreamInfoLister{infos: []*jetstream.StreamInfo{
+					streamInfo("LOGS", jetstream.FileStorage, 0, 1),
+				}}
+			},
+			nextNames: func() *fakeStreamNameLister {
+				attempts.Add(1)
+				return &fakeStreamNameLister{failWith: broken}
+			},
+		}
+		collector, err := NewStorageInventoryCollector(lister.source(), StorageInventoryConfig{
+			OwnerResolver: resolverFrom(nil),
+			Interval:      20 * time.Millisecond,
+			Timeout:       time.Second,
+			Publisher:     publisher,
+		})
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		// A failed assertion ends this goroutine before the cancel below; the deferred
+		// cancel still stops Run, so the bubble reports the failure, not a deadlock.
+		defer cancel()
+		stopped := make(chan struct{})
+		go func() { defer close(stopped); collector.Run(ctx) }()
+
+		// Wait for real collection ATTEMPTS, so "nothing published" cannot pass by
+		// the loop simply never having run.
+		require.Eventually(t, func() bool { return attempts.Load() >= 2 }, 3*time.Second, 5*time.Millisecond,
+			"the loop must keep attempting collections")
+		assert.Zero(t, publisher.count(), "a failed collection is not an observation")
+
+		cancel()
+		select {
+		case <-stopped:
+		case <-time.After(3 * time.Second):
+			t.Fatal("Run did not return when its context was cancelled")
+		}
 	})
-	require.NoError(t, err)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	stopped := make(chan struct{})
-	go func() { defer close(stopped); collector.Run(ctx) }()
-
-	// Wait for real collection ATTEMPTS, so "nothing published" cannot pass by
-	// the loop simply never having run.
-	require.Eventually(t, func() bool { return attempts.Load() >= 2 }, 3*time.Second, 5*time.Millisecond,
-		"the loop must keep attempting collections")
-	assert.Zero(t, publisher.count(), "a failed collection is not an observation")
-
-	cancel()
-	select {
-	case <-stopped:
-	case <-time.After(3 * time.Second):
-		t.Fatal("Run did not return when its context was cancelled")
-	}
 }
 
 // TestStorageReportPublisher_ReclamationFailureIsReportedNotSwallowed: a

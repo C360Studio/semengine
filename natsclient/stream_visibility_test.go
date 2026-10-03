@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -126,25 +127,29 @@ func TestStreamNotVisibleSeparatesASpentBudgetFromACancelledWait(t *testing.T) {
 func TestConsumerSetupCancelledWaitCarriesNoAbsenceEvidence(t *testing.T) {
 	for _, entry := range consumeEntryPoints() {
 		t.Run(entry.name, func(t *testing.T) {
-			fake := &fakeJetStream{streamErr: jetstream.ErrStreamNotFound}
-			client := newConnectedClientWithFakeJS(t, fake)
-			// The caller's deadline ends the wait long before the budget does.
-			ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
-			defer cancel()
+			// R1a: the caller's deadline, the probe ticker and the visibility budget run on the bubble's
+			// clock, so the deadline always ends the wait before the 5s budget does.
+			synctest.Test(t, func(t *testing.T) {
+				fake := &fakeJetStream{streamErr: jetstream.ErrStreamNotFound}
+				client := newConnectedClientWithFakeJS(t, fake)
+				// The caller's deadline ends the wait long before the budget does.
+				ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+				defer cancel()
 
-			handle, err := entry.consume(ctx, client, StreamConsumerConfig{
-				StreamName:    "CANCELLED_WAIT",
-				ConsumerName:  "cancelled-wait",
-				FilterSubject: "cancelled.wait.>",
-				AckPolicy:     "explicit",
-				DeliverPolicy: "all",
-			}, func(context.Context, jetstream.Msg) {})
+				handle, err := entry.consume(ctx, client, StreamConsumerConfig{
+					StreamName:    "CANCELLED_WAIT",
+					ConsumerName:  "cancelled-wait",
+					FilterSubject: "cancelled.wait.>",
+					AckPolicy:     "explicit",
+					DeliverPolicy: "all",
+				}, func(context.Context, jetstream.Msg) {})
 
-			require.Nil(t, handle)
-			require.ErrorIs(t, err, context.DeadlineExceeded)
-			require.ErrorIs(t, err, jetstream.ErrStreamNotFound)
-			require.NotErrorIs(t, err, ErrStreamNotVisible,
-				"the budget was never spent, so nothing durable was measured")
+				require.Nil(t, handle)
+				require.ErrorIs(t, err, context.DeadlineExceeded)
+				require.ErrorIs(t, err, jetstream.ErrStreamNotFound)
+				require.NotErrorIs(t, err, ErrStreamNotVisible,
+					"the budget was never spent, so nothing durable was measured")
+			})
 		})
 	}
 }
@@ -211,29 +216,33 @@ func (f *absentThenBlockedTransport) Stream(ctx context.Context, _ string) (jets
 func TestConsumerSetupDoesNotReclassifyALaterProbeFailureAsAbsence(t *testing.T) {
 	for _, entry := range consumeEntryPoints() {
 		t.Run(entry.name, func(t *testing.T) {
-			fake := &absentThenBlockedTransport{
-				fakeJetStream: &fakeJetStream{},
-				transport:     errProbeTransport,
-			}
-			client := newConnectedClientWithFakeJS(t, fake)
-			// The caller's deadline ends the wait. The budget is a constant, and
-			// which bound ends it is not what this test is about.
-			ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
-			defer cancel()
+			// R1a: the caller's deadline, the probe ticker and the visibility budget run on the bubble's
+			// clock, so the deadline always ends the wait before the 5s budget does.
+			synctest.Test(t, func(t *testing.T) {
+				fake := &absentThenBlockedTransport{
+					fakeJetStream: &fakeJetStream{},
+					transport:     errProbeTransport,
+				}
+				client := newConnectedClientWithFakeJS(t, fake)
+				// The caller's deadline ends the wait. The budget is a constant, and
+				// which bound ends it is not what this test is about.
+				ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+				defer cancel()
 
-			handle, err := entry.consume(ctx, client, StreamConsumerConfig{
-				StreamName:    "LATE_PROBE_FAULT",
-				ConsumerName:  "late-probe-fault",
-				FilterSubject: "late.probe.fault.>",
-				AckPolicy:     "explicit",
-				DeliverPolicy: "all",
-			}, func(context.Context, jetstream.Msg) {})
+				handle, err := entry.consume(ctx, client, StreamConsumerConfig{
+					StreamName:    "LATE_PROBE_FAULT",
+					ConsumerName:  "late-probe-fault",
+					FilterSubject: "late.probe.fault.>",
+					AckPolicy:     "explicit",
+					DeliverPolicy: "all",
+				}, func(context.Context, jetstream.Msg) {})
 
-			require.Nil(t, handle)
-			require.ErrorIs(t, err, errProbeTransport,
-				"the failure this probe actually returned is the answer")
-			require.NotErrorIs(t, err, ErrStreamNotVisible,
-				"a probe that failed for its own reason measured no absence")
+				require.Nil(t, handle)
+				require.ErrorIs(t, err, errProbeTransport,
+					"the failure this probe actually returned is the answer")
+				require.NotErrorIs(t, err, ErrStreamNotVisible,
+					"a probe that failed for its own reason measured no absence")
+			})
 		})
 	}
 }

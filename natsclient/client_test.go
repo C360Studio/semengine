@@ -232,31 +232,38 @@ func TestIsHealthy(t *testing.T) {
 // Test WaitForConnection with timeout
 func TestWaitForConnection(t *testing.T) {
 	t.Run("times out when not connected", func(t *testing.T) {
-		manager, err := NewClient("nats://unused")
-		assert.NoError(t, err)
+		// R1a: the deadline and WaitForConnection's ticker run on the bubble's clock.
+		synctest.Test(t, func(t *testing.T) {
+			manager, err := NewClient("nats://unused")
+			assert.NoError(t, err)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-		defer cancel()
+			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			defer cancel()
 
-		err = manager.WaitForConnection(ctx)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "timeout")
+			err = manager.WaitForConnection(ctx)
+			assert.Error(t, err)
+			assert.Contains(t, err.Error(), "timeout")
+		})
 	})
 
 	t.Run("returns immediately when connected", func(t *testing.T) {
-		manager, err := NewClient("nats://unused")
-		assert.NoError(t, err)
-		manager.setStatus(StatusConnected)
+		// R1a: inside the bubble time.Now and WaitForConnection's ticker share the fake clock, so
+		// the elapsed time is exact (one 10ms tick) and a wait that ran to the deadline reads 1s.
+		synctest.Test(t, func(t *testing.T) {
+			manager, err := NewClient("nats://unused")
+			assert.NoError(t, err)
+			manager.setStatus(StatusConnected)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-		defer cancel()
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
 
-		start := time.Now()
-		err = manager.WaitForConnection(ctx)
-		elapsed := time.Since(start)
+			start := time.Now()
+			err = manager.WaitForConnection(ctx)
+			elapsed := time.Since(start)
 
-		assert.NoError(t, err)
-		assert.Less(t, elapsed, 100*time.Millisecond)
+			assert.NoError(t, err)
+			assert.Less(t, elapsed, 100*time.Millisecond)
+		})
 	})
 
 	t.Run("returns when becomes connected", func(t *testing.T) {
@@ -552,31 +559,35 @@ func TestCreateKeyValueBucket_AlreadyExists(t *testing.T) {
 // TestConnectionLossTimeout_FiresAfterGrace verifies the watchdog fires
 // onConnectionLost once the broker has been continuously absent for grace.
 func TestConnectionLossTimeout_FiresAfterGrace(t *testing.T) {
-	var fired atomic.Int32
-	gotErr := make(chan error, 1)
+	// R1a: the watchdog is a time.AfterFunc, so the bubble's clock drives it and the 1s limit
+	// below expires only when the watchdog never fires.
+	synctest.Test(t, func(t *testing.T) {
+		var fired atomic.Int32
+		gotErr := make(chan error, 1)
 
-	manager, err := NewClient("nats://unused",
-		WithConnectionLossTimeout(50*time.Millisecond),
-		WithConnectionLostCallback(func(e error) {
-			fired.Add(1)
-			select {
-			case gotErr <- e:
-			default:
-			}
-		}),
-	)
-	assert.NoError(t, err)
+		manager, err := NewClient("nats://unused",
+			WithConnectionLossTimeout(50*time.Millisecond),
+			WithConnectionLostCallback(func(e error) {
+				fired.Add(1)
+				select {
+				case gotErr <- e:
+				default:
+				}
+			}),
+		)
+		assert.NoError(t, err)
 
-	disconnectErr := errors.New("broker gone")
-	manager.handleDisconnect(nil, disconnectErr)
+		disconnectErr := errors.New("broker gone")
+		manager.handleDisconnect(nil, disconnectErr)
 
-	select {
-	case e := <-gotErr:
-		assert.Equal(t, disconnectErr, e)
-	case <-time.After(time.Second):
-		t.Fatal("connection-loss callback did not fire within 1s")
-	}
-	assert.Equal(t, int32(1), fired.Load())
+		select {
+		case e := <-gotErr:
+			assert.Equal(t, disconnectErr, e)
+		case <-time.After(time.Second):
+			t.Fatal("connection-loss callback did not fire within 1s")
+		}
+		assert.Equal(t, int32(1), fired.Load())
+	})
 }
 
 // TestConnectionLossTimeout_CancelledByReconnect verifies that a reconnect

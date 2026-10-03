@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -339,49 +340,53 @@ func TestConsumeDeliveryWithHeartbeatMetadataFailureFailsClosedBeforeWork(t *tes
 // before return, ErrHeartbeatFailed joined, cleanup error retained — are kept
 // together because each alone permits the defect the other two catch.
 func TestConsumeDeliveryWithHeartbeatInProgressFailureRequiresOwnerStop(t *testing.T) {
-	renewalErr := errors.New("connection lost")
-	cleanupErr := errors.New("cleanup failed")
-	msg := &mockMsg{subject: "renewal", inProgressErr: renewalErr}
+	// R1a: the heartbeat ticker and the limit below run on the bubble's clock, so the limit
+	// expires only when ConsumeDeliveryWithHeartbeat never returns after the work's cleanup.
+	synctest.Test(t, func(t *testing.T) {
+		renewalErr := errors.New("connection lost")
+		cleanupErr := errors.New("cleanup failed")
+		msg := &mockMsg{subject: "renewal", inProgressErr: renewalErr}
 
-	workStarted := make(chan struct{})
-	workCancelled := make(chan struct{})
-	releaseCleanup := make(chan struct{})
-	returned := make(chan DeliveryResult, 1)
+		workStarted := make(chan struct{})
+		workCancelled := make(chan struct{})
+		releaseCleanup := make(chan struct{})
+		returned := make(chan DeliveryResult, 1)
 
-	policy, err := ValidateHeartbeatDeliveryPolicy(t.Context(), StreamConsumerConfig{}, time.Millisecond,
-		ImmediateDeliveryRetry(), func(workCtx context.Context, _ []byte) (DeliveryDecision, error) {
-			close(workStarted)
-			<-workCtx.Done()
-			close(workCancelled)
-			<-releaseCleanup
-			return DeliveryDecisionRetry, errors.Join(workCtx.Err(), cleanupErr)
-		})
-	require.NoError(t, err)
+		policy, err := ValidateHeartbeatDeliveryPolicy(t.Context(), StreamConsumerConfig{}, time.Millisecond,
+			ImmediateDeliveryRetry(), func(workCtx context.Context, _ []byte) (DeliveryDecision, error) {
+				close(workStarted)
+				<-workCtx.Done()
+				close(workCancelled)
+				<-releaseCleanup
+				return DeliveryDecisionRetry, errors.Join(workCtx.Err(), cleanupErr)
+			})
+		require.NoError(t, err)
 
-	go func() { returned <- ConsumeDeliveryWithHeartbeat(t.Context(), msg, policy) }()
+		go func() { returned <- ConsumeDeliveryWithHeartbeat(t.Context(), msg, policy) }()
 
-	<-workStarted
-	// The renewal failure, not the owner's context, is what ends the work:
-	// nothing here cancels t.Context().
-	<-workCancelled
-	close(releaseCleanup)
+		<-workStarted
+		// The renewal failure, not the owner's context, is what ends the work:
+		// nothing here cancels t.Context().
+		<-workCancelled
+		close(releaseCleanup)
 
-	var result DeliveryResult
-	select {
-	case result = <-returned:
-	case <-time.After(5 * time.Second):
-		require.FailNow(t, "ConsumeDeliveryWithHeartbeat did not return after work cleanup")
-	}
+		var result DeliveryResult
+		select {
+		case result = <-returned:
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "ConsumeDeliveryWithHeartbeat did not return after work cleanup")
+		}
 
-	require.True(t, result.OwnerStopRequired(),
-		"a lane whose lease renewal failed may already have lost the delivery")
-	require.ErrorIs(t, result.controlErr, ErrHeartbeatFailed)
-	require.ErrorContains(t, result.controlErr, "failed to send InProgress")
-	require.ErrorIs(t, result.controlErr, renewalErr)
-	require.ErrorIs(t, result.Err(), cleanupErr, "the work's cleanup error survives the control loss")
-	require.False(t, result.settlementTried,
-		"settling would race the redelivery the server is free to make")
-	require.Zero(t, msg.ackCount.Load()+msg.nakCount.Load()+msg.termCount.Load())
+		require.True(t, result.OwnerStopRequired(),
+			"a lane whose lease renewal failed may already have lost the delivery")
+		require.ErrorIs(t, result.controlErr, ErrHeartbeatFailed)
+		require.ErrorContains(t, result.controlErr, "failed to send InProgress")
+		require.ErrorIs(t, result.controlErr, renewalErr)
+		require.ErrorIs(t, result.Err(), cleanupErr, "the work's cleanup error survives the control loss")
+		require.False(t, result.settlementTried,
+			"settling would race the redelivery the server is free to make")
+		require.Zero(t, msg.ackCount.Load()+msg.nakCount.Load()+msg.termCount.Load())
+	})
 }
 
 func TestConsumeDeliveryWithHeartbeatPassesNilPayloadOnce(t *testing.T) {

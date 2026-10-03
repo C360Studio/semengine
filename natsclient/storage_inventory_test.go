@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -33,6 +34,10 @@ type fakeStreamInfoLister struct {
 	// collection timeout binds and that Latest() never waits behind a
 	// collection.
 	hold <-chan struct{}
+	// ctx is the listing's context, set by fakeLister. As nats.go's lister does, the walk
+	// stops when it ends, so a collection that gives up does not leave the walk blocked on
+	// a send nobody receives (inside a synctest bubble that is a deadlock).
+	ctx context.Context
 
 	once sync.Once
 	ch   chan *jetstream.StreamInfo
@@ -48,7 +53,12 @@ func (f *fakeStreamInfoLister) Info() <-chan *jetstream.StreamInfo {
 				<-f.hold
 			}
 			for _, info := range f.infos {
-				f.ch <- info
+				select {
+				case f.ch <- info:
+				case <-f.ctx.Done():
+					f.err = f.ctx.Err()
+					return
+				}
 			}
 			// Written before close: the close is the happens-before edge, as in
 			// nats.go's streamLister.
@@ -66,6 +76,7 @@ type fakeStreamNameLister struct {
 	names    []string
 	failWith error
 	hold     <-chan struct{}
+	ctx      context.Context // as fakeStreamInfoLister.ctx
 
 	once sync.Once
 	ch   chan string
@@ -81,7 +92,12 @@ func (f *fakeStreamNameLister) Name() <-chan string {
 				<-f.hold
 			}
 			for _, name := range f.names {
-				f.ch <- name
+				select {
+				case f.ch <- name:
+				case <-f.ctx.Done():
+					f.err = f.ctx.Err()
+					return
+				}
 			}
 			f.err = f.failWith
 		}()
@@ -99,13 +115,17 @@ type fakeLister struct {
 	calls     atomic.Int64
 }
 
-func (f *fakeLister) ListStreams(_ context.Context, _ ...jetstream.StreamListOpt) jetstream.StreamInfoLister {
+func (f *fakeLister) ListStreams(ctx context.Context, _ ...jetstream.StreamListOpt) jetstream.StreamInfoLister {
 	f.calls.Add(1)
-	return f.nextInfos()
+	lister := f.nextInfos()
+	lister.ctx = ctx
+	return lister
 }
 
-func (f *fakeLister) StreamNames(_ context.Context, _ ...jetstream.StreamListOpt) jetstream.StreamNameLister {
-	return f.nextNames()
+func (f *fakeLister) StreamNames(ctx context.Context, _ ...jetstream.StreamListOpt) jetstream.StreamNameLister {
+	lister := f.nextNames()
+	lister.ctx = ctx
+	return lister
 }
 
 func (f *fakeLister) source() StreamListerSource {
@@ -849,32 +869,36 @@ func TestStorageInventory_PartialListingIsNeverPublished(t *testing.T) {
 // collector's own configured timeout, not the caller's context, so an unbounded
 // caller context cannot make collection unbounded.
 func TestStorageInventory_CollectionIsBoundedByTimeout(t *testing.T) {
-	hold := make(chan struct{})
-	t.Cleanup(func() { close(hold) })
+	// R1a: the collection timeout and the limit below run on the bubble's clock, so the limit
+	// expires only when the configured timeout does not bound the collection.
+	synctest.Test(t, func(t *testing.T) {
+		hold := make(chan struct{})
+		t.Cleanup(func() { close(hold) })
 
-	lister := &fakeLister{
-		nextInfos: func() *fakeStreamInfoLister { return &fakeStreamInfoLister{hold: hold} },
-		nextNames: func() *fakeStreamNameLister { return &fakeStreamNameLister{hold: hold} },
-	}
-	c, err := NewStorageInventoryCollector(lister.source(),
-		StorageInventoryConfig{OwnerResolver: resolverFrom(nil), Timeout: 100 * time.Millisecond})
-	require.NoError(t, err)
+		lister := &fakeLister{
+			nextInfos: func() *fakeStreamInfoLister { return &fakeStreamInfoLister{hold: hold} },
+			nextNames: func() *fakeStreamNameLister { return &fakeStreamNameLister{hold: hold} },
+		}
+		c, err := NewStorageInventoryCollector(lister.source(),
+			StorageInventoryConfig{OwnerResolver: resolverFrom(nil), Timeout: 100 * time.Millisecond})
+		require.NoError(t, err)
 
-	done := make(chan error, 1)
-	go func() {
-		_, collectErr := c.Collect(context.Background())
-		done <- collectErr
-	}()
+		done := make(chan error, 1)
+		go func() {
+			_, collectErr := c.Collect(context.Background())
+			done <- collectErr
+		}()
 
-	select {
-	case collectErr := <-done:
-		require.Error(t, collectErr)
-		assert.ErrorIs(t, collectErr, context.DeadlineExceeded)
-	// 5s is ~50x the configured 100ms timeout: generous enough that a loaded CI
-	// host cannot flake it, tight enough that an unbounded collection fails.
-	case <-time.After(5 * time.Second):
-		t.Fatal("collection was not bounded by its configured timeout")
-	}
+		select {
+		case collectErr := <-done:
+			require.Error(t, collectErr)
+			assert.ErrorIs(t, collectErr, context.DeadlineExceeded)
+		// 5s on the bubble's clock is past the configured 100ms timeout, so only an
+		// unbounded collection reaches it.
+		case <-time.After(5 * time.Second):
+			t.Fatal("collection was not bounded by its configured timeout")
+		}
+	})
 }
 
 // TestStorageInventory_LatestNeverWaitsOnCollection is the "never blocks start or
@@ -882,52 +906,59 @@ func TestStorageInventory_CollectionIsBoundedByTimeout(t *testing.T) {
 // a worse bug than the blindness it fixes, so the read path must never sit behind
 // the collection's I/O.
 func TestStorageInventory_LatestNeverWaitsOnCollection(t *testing.T) {
-	hold := make(chan struct{})
-	blocked := false
-	lister := &fakeLister{
-		nextInfos: func() *fakeStreamInfoLister {
-			if blocked {
-				return &fakeStreamInfoLister{hold: hold}
-			}
-			return &fakeStreamInfoLister{infos: []*jetstream.StreamInfo{
-				streamInfo("LOGS", jetstream.FileStorage, 0, 7),
-			}}
-		},
-		nextNames: func() *fakeStreamNameLister {
-			return &fakeStreamNameLister{names: []string{"LOGS"}}
-		},
-	}
-	c, err := NewStorageInventoryCollector(lister.source(), StorageInventoryConfig{
-		OwnerResolver: resolverFrom(nil), Timeout: 10 * time.Second, ProducedBy: "unit-test",
+	// R1a: the collection timeout and the limit below run on the bubble's clock, so the limit
+	// expires only when Latest() waits on the held collection. A Latest() that waits on a
+	// sync.Mutex is not durably blocked, so the bubble's clock cannot reach the limit and that
+	// defect fails the test at the go test timeout instead.
+	synctest.Test(t, func(t *testing.T) {
+		hold := make(chan struct{})
+		inFlight := make(chan struct{})
+		blocked := false
+		lister := &fakeLister{
+			nextInfos: func() *fakeStreamInfoLister {
+				if blocked {
+					// Called inside Collect, under its lock: the collection is in flight.
+					close(inFlight)
+					return &fakeStreamInfoLister{hold: hold}
+				}
+				return &fakeStreamInfoLister{infos: []*jetstream.StreamInfo{
+					streamInfo("LOGS", jetstream.FileStorage, 0, 7),
+				}}
+			},
+			nextNames: func() *fakeStreamNameLister {
+				return &fakeStreamNameLister{names: []string{"LOGS"}}
+			},
+		}
+		c, err := NewStorageInventoryCollector(lister.source(), StorageInventoryConfig{
+			OwnerResolver: resolverFrom(nil), Timeout: 10 * time.Second, ProducedBy: "unit-test",
+		})
+		require.NoError(t, err)
+
+		good, err := c.Collect(context.Background())
+		require.NoError(t, err)
+		require.Len(t, good.Resources, 1)
+
+		blocked = true
+		go func() {
+			_, _ = c.Collect(context.Background())
+		}()
+		<-inFlight
+
+		read := make(chan StorageInventory, 1)
+		go func() { read <- c.Latest() }()
+
+		select {
+		case inv := <-read:
+			assert.Len(t, inv.Resources, 1, "the read path returns last-good while a collection is in flight")
+			assert.Equal(t, good.CollectedAt, inv.CollectedAt)
+		// 3s on the bubble's clock is short of the 10s collection timeout, so only a
+		// read that waits on the collection reaches it.
+		case <-time.After(3 * time.Second):
+			t.Fatal("Latest() blocked behind an in-flight collection")
+		}
+
+		close(hold)
 	})
-	require.NoError(t, err)
-
-	good, err := c.Collect(context.Background())
-	require.NoError(t, err)
-	require.Len(t, good.Resources, 1)
-
-	blocked = true
-	collecting := make(chan struct{})
-	go func() {
-		close(collecting)
-		_, _ = c.Collect(context.Background())
-	}()
-	<-collecting
-
-	read := make(chan StorageInventory, 1)
-	go func() { read <- c.Latest() }()
-
-	select {
-	case inv := <-read:
-		assert.Len(t, inv.Resources, 1, "the read path returns last-good while a collection is in flight")
-		assert.Equal(t, good.CollectedAt, inv.CollectedAt)
-	// 3s is far longer than a mutex read needs and far shorter than the 10s
-	// collection timeout, so only a read that waits on the collection fails.
-	case <-time.After(3 * time.Second):
-		t.Fatal("Latest() blocked behind an in-flight collection")
-	}
-
-	close(hold)
 }
 
 // TestStorageInventory_ConcurrentCollectionsPublishInOrder covers the ordering
@@ -965,30 +996,37 @@ func TestStorageInventory_ConcurrentCollectionsPublishInOrder(t *testing.T) {
 // TestStorageInventory_RunCollectsOnItsInterval proves collection is
 // interval-driven and that the first sample does not wait a full interval.
 func TestStorageInventory_RunCollectsOnItsInterval(t *testing.T) {
-	lister := consistentAccount(streamInfo("LOGS", jetstream.FileStorage, 0, 1))
-	c, err := NewStorageInventoryCollector(lister.source(), StorageInventoryConfig{
-		OwnerResolver: resolverFrom(nil),
-		Interval:      20 * time.Millisecond,
-		Timeout:       time.Second,
+	// R1a: Run's ticker, the Eventually poll and the limits run on the bubble's clock, so a
+	// limit expires only when Run never ticks or never returns.
+	synctest.Test(t, func(t *testing.T) {
+		lister := consistentAccount(streamInfo("LOGS", jetstream.FileStorage, 0, 1))
+		c, err := NewStorageInventoryCollector(lister.source(), StorageInventoryConfig{
+			OwnerResolver: resolverFrom(nil),
+			Interval:      20 * time.Millisecond,
+			Timeout:       time.Second,
+		})
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		// A failed assertion ends this goroutine before the cancel below; the deferred
+		// cancel still stops Run, so the bubble reports the failure, not a deadlock.
+		defer cancel()
+		stopped := make(chan struct{})
+		go func() { defer close(stopped); c.Run(ctx) }()
+
+		// 3s on the bubble's clock for at least two 20ms ticks: only a loop that
+		// never ticks reaches it.
+		require.Eventually(t, func() bool {
+			return c.Latest().Resources != nil && lister.calls.Load() >= 2
+		}, 3*time.Second, 5*time.Millisecond, "Run must collect on its interval")
+
+		cancel()
+		select {
+		case <-stopped:
+		case <-time.After(3 * time.Second):
+			t.Fatal("Run did not return when its context was cancelled")
+		}
 	})
-	require.NoError(t, err)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	stopped := make(chan struct{})
-	go func() { defer close(stopped); c.Run(ctx) }()
-
-	// 3s budget for at least two 20ms ticks: 150x the nominal wait, so only a
-	// loop that never ticks fails.
-	require.Eventually(t, func() bool {
-		return c.Latest().Resources != nil && lister.calls.Load() >= 2
-	}, 3*time.Second, 5*time.Millisecond, "Run must collect on its interval")
-
-	cancel()
-	select {
-	case <-stopped:
-	case <-time.After(3 * time.Second):
-		t.Fatal("Run did not return when its context was cancelled")
-	}
 }
 
 // TestStorageInventory_NamesTheProducingProcess covers the design's "every

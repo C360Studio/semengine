@@ -2,6 +2,7 @@ package cache
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -242,4 +243,52 @@ func TestCacheConstructorsReturnNilCacheOnError(t *testing.T) {
 			assert.True(t, c == nil, "%s returns a nil Cache with its error, got %#v", name, c)
 		}
 	})
+}
+
+// TestCacheConcurrentCloseJoinsEveryCaller: Close is safe from many goroutines at once (cache.go
+// promises thread safety), and every call returns only once the cleanup goroutine has exited.
+// The oracle is the goroutine's own done channel, read the moment each Close returns; a close of
+// an already closed channel panics and fails the run. Rounds repeat because the race between the
+// callers' check and close is narrow (Codex's probe: 73 TTL and 85 hybrid panics in 2,000 rounds
+// of 32 callers at a7dbf9d).
+func TestCacheConcurrentCloseJoinsEveryCaller(t *testing.T) {
+	const rounds, callers = 2000, 32
+	for _, strategy := range []Strategy{StrategyTTL, StrategyHybrid} {
+		t.Run(string(strategy), func(t *testing.T) {
+			for range rounds {
+				c, err := NewFromConfig[int](context.Background(), Config{
+					Enabled: true, Strategy: strategy, MaxSize: 10,
+					TTL: time.Minute, CleanupInterval: time.Second,
+				})
+				require.NoError(t, err)
+				var done <-chan struct{}
+				switch cc := c.(type) {
+				case *ttlCache[int]:
+					done = cc.done
+				case *hybridCache[int]:
+					done = cc.done
+				}
+				start := make(chan struct{})
+				results := make(chan string, callers)
+				for range callers {
+					go func() {
+						<-start
+						err := c.Close()
+						select {
+						case <-done:
+							results <- fmt.Sprint(err)
+						default:
+							results <- "returned before the cleanup goroutine exited"
+						}
+					}()
+				}
+				close(start)
+				for range callers {
+					if r := <-results; r != "<nil>" {
+						t.Fatalf("Close: %s", r)
+					}
+				}
+			}
+		})
+	}
 }

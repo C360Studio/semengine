@@ -37,8 +37,9 @@ type hybridCache[V any] struct {
 	statsInterval   time.Duration            // Stats update interval
 
 	// Background cleanup coordination
-	shutdown chan struct{}
-	done     chan struct{}
+	shutdown  chan struct{}
+	closeOnce sync.Once
+	done      chan struct{}
 }
 
 // newHybridCache creates a new hybrid cache with LRU and TTL policies.
@@ -268,13 +269,8 @@ func (c *hybridCache[V]) Stats() *Statistics {
 
 // Close shuts down the cache and stops the background cleanup goroutine.
 func (c *hybridCache[V]) Close() error {
-	// Signal shutdown via channel
-	select {
-	case <-c.shutdown:
-		// Already shutting down
-	default:
-		close(c.shutdown)
-	}
+	// Signal shutdown once, however many goroutines call Close at the same time.
+	c.closeOnce.Do(func() { close(c.shutdown) })
 
 	// Wait for the cleanup goroutine to exit. It waits only on its ticker, this shutdown signal
 	// and its context, so the join needs no bound (background-work shape 2).

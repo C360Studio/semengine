@@ -1,7 +1,8 @@
 # review-gate-check
 
-Status: draft, revision 3. It rests on `inventory.md`, which has `INVENTORY PASS`, and on `design.md`, which has had
-one review round and has not been accepted.
+Status: revision 3, accepted. It rests on `inventory.md`, which has `INVENTORY PASS` (PR #67, comment 5956907408),
+and on `design.md`, which has `DESIGN REVIEW PASS` in round 2 of three (PR #67, comment 5957614491) and was accepted
+by the owner, with its three questions answered as recommended (#66, comment 5959125319).
 
 ## Why
 

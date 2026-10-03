@@ -532,6 +532,20 @@ propose it. Adding the third word later is a design change, an implementation an
   What that costs is in Q1.
 - Pull requests already open: `.agents/protocol.md:75-76`. #48 is checked once it is marked ready.
 
+## The owner's rulings and where each is implemented
+
+Each ruling the change answers, and the line at head that carries it. Written after Codex's review of record asked
+for it (PR #67, comment 5968479191); no deviation from any ruling was found or is claimed.
+
+| Ruling | Source | Implemented at |
+| --- | --- | --- |
+| Enforce the cross-agent review rule for code; waive it for documents only | #64, comment 5955654584 | `scripts/merge-check.sh:146` sorts the changed files (Markdown and `openspec/`, except `.claude/agents/`, are documents; every other name is code); `:152-154` passes a documents-only pull request and goes on for a code one; spec delta `specs/merge-gate/spec.md:14-20` |
+| It works both ways: Codex reviews what Claude implemented, Claude what Codex implemented | #64, comment 5955732453 | `scripts/merge-check.sh:177-178` derives the wanted reviewer from the implementer, `claude` for `codex` and the reverse; `.agents/protocol.md:67-68` |
+| Q1 (b): the description names the other agent; no commit id, no verdict word | #66, comment 5959125319 | `scripts/merge-check.sh:160` (an agent name is the word `claude` or `codex`), `:177-190` (the two lines and what each must name); spec delta `:22-29`; nothing in the script reads a commit, a comparison or a verdict ("What the check does not see") |
+| Q2: this change merges first if it is ready first; neither pull request waits | #66, comment 5959125319 | "PR #48 and the other open pull requests" below; the coordination note on PR #48 (comment 5959963712, task 5.4) |
+| Q3: not now; a code pull request the owner writes by hand is not provided for | #66, comment 5959125319 | `scripts/merge-check.sh:184-190` reads the implementer line of every pull request whose author is not a bot; `.agents/protocol.md:74-78` says what the owner does meanwhile |
+| A draft is told, not failed; marking it ready starts the run that enforces (D3, accepted with the design) | #66, comment 5959125319 | `scripts/merge-check.sh:205` (a draft's findings are printed and fail nothing); `.github/workflows/ci.yml:11`; measured in PR #67 comment 5968370227 |
+
 ## Premises
 
 | Premise | Measurement |

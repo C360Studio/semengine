@@ -10,9 +10,10 @@ behavioral interfaces for specialized processing.
 
 Key design principles:
 
-- **Polymorphic by default**: Messages deserialize to correct concrete types automatically
+- **Polymorphic by default**: A `Decoder` deserializes messages to the concrete payload types its registry holds
 - **Behavior-based processing**: Type-assert to capabilities (Locatable, Timeable, etc.) not concrete types
-- **Registry-driven**: Global payload registry enables extensibility without code changes
+- **Registry-driven**: A payload registry, created by the application and passed to `message.NewDecoder`, adds
+  payload types without changing this package
 - **Type-safe**: Compile-time type checking with runtime polymorphism
 - **Immutable**: Messages are read-only after creation (safe for concurrent access)
 
@@ -83,21 +84,34 @@ payload := message.NewGenericJSON(map[string]any{
     "unit": "celsius",
 })
 
-// Wrap in BaseMessage
-msg := message.NewBaseMessage(payload)
+// Wrap in BaseMessage: type, payload, source
+msg := message.NewBaseMessage(payload.Schema(), payload, "temperature-monitor")
 
 // Serialize to JSON
 data, err := json.Marshal(msg)
-// Result: {"type":"core.json.v1","payload":{"data":{"sensor_id":"temp-001"...}}}
+// Result: {"id":"…","type":{"domain":"core","category":"json","version":"v1"},
+//          "payload":{"data":{"sensor_id":"temp-001"…}},
+//          "meta":{"created_at":…,"received_at":…,"source":"temperature-monitor"}}
 ```
 
 ### Deserializing Messages
 
 ```go
-// Automatic polymorphic reconstruction
-var msg message.BaseMessage
-err := json.Unmarshal(data, &msg)
-// Payload automatically created based on "type" field
+// A Decoder resolves the "type" field against the registry it was built
+// with; there is no global registry. Build the registry once at startup.
+reg := payloadregistry.New()
+if err := message.RegisterPayloads(reg); err != nil { // core.json.v1
+    return err
+}
+decoder := message.NewDecoder(reg)
+
+msg, err := decoder.Decode(data)
+if err != nil {
+    return err // malformed JSON, unregistered type, or a payload that does not fit it
+}
+
+// json.Unmarshal into a zero-value message.BaseMessage always fails: it has
+// no registry to resolve the payload type.
 
 // Access the payload
 payload := msg.Payload()
@@ -158,7 +172,9 @@ Each component:
 
 ### Payload Registry
 
-The global payload registry maps type identifiers to factory functions:
+There is no global registry. The application creates a `payloadregistry.Registry` (`payloadregistry.New()`),
+registers its payload types on it, and builds a `message.Decoder` from it. The registry maps type identifiers to
+factory functions:
 
 ```go
 Registry: {
@@ -168,12 +184,12 @@ Registry: {
 }
 ```
 
-When `BaseMessage.UnmarshalJSON()` encounters `"type":"core.json.v1"`, it:
+When `Decoder.Decode` reads a message whose type is `core.json.v1`, it:
 
-1. Looks up `"core.json.v1"` in the registry
+1. Looks up `core.json.v1` in the decoder's registry, and fails if it is not registered
 2. Calls the factory to create an empty payload instance
-3. Unmarshals the JSON data into that instance
-4. Stores the typed instance in `payloadInstance`
+3. Unmarshals the payload JSON into that instance, and fails if it does not fit
+4. Returns a `*BaseMessage` holding the typed payload
 
 This enables polymorphic deserialization without reflection or code generation.
 
@@ -254,9 +270,11 @@ func (p *RobotPositionPayload) EntityType() string {
     return "robot"
 }
 
-// Register with global registry
-func init() {
-    err := payloadregistry.Register(&payloadregistry.Registration{
+// RegisterPayloads registers the type with the application's registry, the
+// pattern message.RegisterPayloads follows; the application calls it at startup
+// on the registry it passes to message.NewDecoder.
+func RegisterPayloads(reg *payloadregistry.Registry) error {
+    return reg.Register(&payloadregistry.Registration{
         Domain:      "robotics",
         Category:    "position",
         Version:     "v1",
@@ -271,9 +289,6 @@ func init() {
             Timestamp: time.Now(),
         },
     })
-    if err != nil {
-        panic(err)
-    }
 }
 ```
 
@@ -372,17 +387,9 @@ func TestProcessorWithLocatable(t *testing.T) {
     func (m *MockLocatable) Validate() error { return nil }
     func (m *MockLocatable) Location() (float64, float64) { return m.Lat, m.Lon }
 
-    // Register mock type
-    payloadregistry.Register(&payloadregistry.Registration{
-        Domain: "mock",
-        Category: "locatable",
-        Version: "v1",
-        Factory: func() any { return &MockLocatable{} },
-    })
-
-    // Test processor
+    // Test processor: nothing is decoded, so no registry is needed
     payload := &MockLocatable{Lat: 40.7, Lon: -74.0}
-    msg := message.NewBaseMessage(payload)
+    msg := message.NewBaseMessage(payload.Schema(), payload, "test")
 
     processor := NewGeofenceProcessor(...)
     result, err := processor.Process(msg)
@@ -401,19 +408,20 @@ func TestMessageRoundTrip(t *testing.T) {
         "test": "value",
         "number": 42,
     })
-    originalMsg := message.NewBaseMessage(original)
+    originalMsg := message.NewBaseMessage(original.Schema(), original, "test")
 
     // Marshal to JSON
     data, err := json.Marshal(originalMsg)
     require.NoError(t, err)
 
-    // Unmarshal back
-    var reconstructed message.BaseMessage
-    err = json.Unmarshal(data, &reconstructed)
+    // Decode back through a registry holding core.json.v1
+    reg := payloadregistry.New()
+    require.NoError(t, message.RegisterPayloads(reg))
+    reconstructed, err := message.NewDecoder(reg).Decode(data)
     require.NoError(t, err)
 
     // Verify type and payload
-    assert.Equal(t, "core.json.v1", reconstructed.Type)
+    assert.Equal(t, "core.json.v1", reconstructed.Type().Key())
     payload := reconstructed.Payload().(*message.GenericJSONPayload)
     assert.Equal(t, "value", payload.Data["test"])
     assert.Equal(t, float64(42), payload.Data["number"])
@@ -431,11 +439,11 @@ func TestMessageRoundTrip(t *testing.T) {
 - Safe for concurrent reads from multiple goroutines
 - **NOT safe** for concurrent modification
 
-**Global registry is thread-safe**:
+**The payload registry is thread-safe**:
 
-- Payload registry uses internal synchronization
-- Safe to register types concurrently (during `init()`)
-- Safe to create payloads concurrently
+- `payloadregistry.Registry` uses internal synchronization
+- Safe to register types concurrently (at startup, before decoding)
+- Safe to create payloads, and to share one `Decoder`, across goroutines
 
 ### Performance
 
@@ -573,47 +581,53 @@ type OldMessage struct {
 }
 
 // New: Use BaseMessage
-func migrateOldMessage(old *OldMessage) (*message.BaseMessage, error) {
+// decoder is built from a registry holding the new payload types
+func migrateOldMessage(decoder *message.Decoder, old *OldMessage) (*message.BaseMessage, error) {
     // Map old types to new type identifiers
-    typeMap := map[string]string{
-        "temperature": "iot.sensor.v1",
-        "position": "robotics.position.v1",
+    typeMap := map[string]message.Type{
+        "temperature": {Domain: "iot", Category: "sensor", Version: "v1"},
+        "position":    {Domain: "robotics", Category: "position", Version: "v1"},
     }
 
     newType, ok := typeMap[old.Type]
     if !ok {
         // Fall back to GenericJSON
         var data map[string]any
-        json.Unmarshal(old.Payload, &data)
+        if err := json.Unmarshal(old.Payload, &data); err != nil {
+            return nil, err
+        }
         payload := message.NewGenericJSON(data)
-        return message.NewBaseMessage(payload), nil
+        return message.NewBaseMessage(payload.Schema(), payload, "migration"), nil
     }
 
-    // Reconstruct as BaseMessage
-    envelope := fmt.Sprintf(`{"type":"%s","payload":%s}`, newType, old.Payload)
-    var msg message.BaseMessage
-    err := json.Unmarshal([]byte(envelope), &msg)
-    return &msg, err
+    // Reconstruct as BaseMessage: the wire's type is an object, not a dotted string
+    envelope, err := json.Marshal(map[string]any{"type": newType, "payload": old.Payload})
+    if err != nil {
+        return nil, err
+    }
+    return decoder.Decode(envelope)
 }
 ```
 
 ## Troubleshooting
 
-### "unknown payload type" Error
+### "unregistered payload type" Error
 
-**Problem**: `UnmarshalJSON` fails with "unknown payload type: X.Y.Z"
+**Problem**: `Decoder.Decode` fails with "unregistered payload type: X.Y.Z"
 
-**Solution**: Ensure the payload type is registered with the global registry:
+**Solution**: Register the payload type on the registry the decoder was built from, before decoding:
 
 ```go
-func init() {
-    payloadregistry.Register(&payloadregistry.Registration{
-        Domain: "X",
-        Category: "Y",
-        Version: "Z",
-        Factory: func() any { return &MyPayload{} },
-    })
+reg := payloadregistry.New()
+if err := reg.Register(&payloadregistry.Registration{
+    Domain:   "X",
+    Category: "Y",
+    Version:  "Z",
+    Factory:  func() any { return &MyPayload{} },
+}); err != nil {
+    return err
 }
+decoder := message.NewDecoder(reg)
 ```
 
 ### Type Assertion Fails
@@ -639,7 +653,7 @@ if locatable, ok := payload.(message.Locatable); ok {
 
 ### JSON Deserialization Fails
 
-**Problem**: `UnmarshalJSON` succeeds but payload fields are zero-valued
+**Problem**: `Decoder.Decode` succeeds but payload fields are zero-valued
 
 **Cause**: JSON field names don't match struct tags
 
@@ -686,6 +700,6 @@ When adding new payload types:
 
 1. Implement `Payload` interface
 2. Implement relevant behavioral interfaces
-3. Register in `init()` function
+3. Add a `RegisterPayloads(reg *payloadregistry.Registry) error` function that registers it
 4. Add comprehensive tests
 5. Document type identifier format

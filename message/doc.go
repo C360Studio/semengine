@@ -358,9 +358,16 @@
 //	// Serialize message
 //	data, err := json.Marshal(msg)
 //
-//	// Deserialize message
-//	var msg BaseMessage
-//	err := json.Unmarshal(data, &msg)
+//	// Deserialize message: the Decoder resolves the payload type against
+//	// the registry it was built with
+//	reg := payloadregistry.New()
+//	if err := RegisterPayloads(reg); err != nil {
+//	    return err
+//	}
+//	decoded, err := NewDecoder(reg).Decode(data)
+//	if err != nil {
+//	    return err
+//	}
 //
 // Wire format preserves:
 //   - Message ID for deduplication and tracking
@@ -368,9 +375,11 @@
 //   - Payload data using Payload.MarshalJSON()
 //   - Metadata timestamps (millisecond precision) and source
 //
-// Note: Deserialization requires payload types to be registered in the global
-// PayloadRegistry. For generic JSON processing, use the well-known type
-// "core.json.v1" (GenericJSONPayload).
+// Note: there is no global registry. Deserialization goes through a Decoder
+// built with a payloadregistry.Registry that holds the message's payload type;
+// decoding a zero-value BaseMessage with json.Unmarshal always fails, because
+// it has no registry. For generic JSON processing, register the well-known type
+// "core.json.v1" (GenericJSONPayload) with RegisterPayloads.
 //
 // ## 4. Transmission
 //
@@ -399,9 +408,12 @@
 //
 // Services discover payload capabilities at runtime:
 //
+//	// decoder is built once at startup: NewDecoder(reg)
 //	func handler(m *nats.Msg) {
-//	    var msg BaseMessage
-//	    json.Unmarshal(m.Data, &msg)
+//	    msg, err := decoder.Decode(m.Data)
+//	    if err != nil {
+//	        return // malformed, or a payload type reg does not hold
+//	    }
 //
 //	    // Discover capabilities
 //	    if graphable, ok := msg.Payload().(Graphable); ok {

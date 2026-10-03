@@ -654,7 +654,8 @@
     gofmt then moves its import line in base_message.go into sorted order), and the tests'
     internal/semantictest is internal/harness/semantictest (task 2.8). Adapt item (owner ruling, #9
     comment 5957221949): message/README.md is ported with only the edit markdownlint requires: line 7
-    wrapped at 120 columns (MD013); no wording changed. README import paths (owner ruling, #9 comment
+    wrapped at 120 columns (MD013); no wording changed by that item (the decode-path item below
+    changes wording). README import paths (owner ruling, #9 comment
     5968665464), each an adapt item "import path changed to the SemEngine module", pin lines: :20 and
     :204 message → github.com/c360studio/semengine/message; :203 component →
     github.com/c360studio/semengine/component, a package not ported yet; :466 errors →
@@ -672,7 +673,20 @@
     :35-41 and :115-120; doc.go the federated-message example :330-332, and :463's WithFederation()
     is now WithMeta(). The pin's message tests named none of these, so no carried test is removed.
     Entity-ID federation prose (doc.go, storable.go, triple.go, types.go; pkg/types/entity_id.go,
-    ADR-102) stays. pkg/platform remains in-set for vocabulary.
+    ADR-102) stays. pkg/platform remains in-set for vocabulary. Adapt item, documented decode path
+    corrected (Codex F9, PR #48 comment 5969256728; owner ruling #9 comment 5968665464): the pin's
+    examples decode with json.Unmarshal into a zero-value BaseMessage, which always refuses (no
+    registry: BaseMessage.UnmarshalJSON's missing-registry error), and describe a global payload registry and a package-level
+    payloadregistry.Register, neither of which exists. Rewritten to build a payloadregistry.Registry,
+    register on it and call message.NewDecoder(reg).Decode(data) with its error handled; no code
+    changed. Pin lines: README.md :11, :13 (principles); :85, :89 (NewBaseMessage's signature and the
+    wire shape the decode example reads); :95-98 (decode example); :159, :169-174 (registry
+    explanation); :255-260 (init registration → a RegisterPayloads function); :372-383 (test example:
+    registration dropped, signature); :402-414 (round-trip example); :432-435 (thread safety);
+    :574-594 (migration example: the envelope's type was a dotted string, which the decoder refuses);
+    :600-612 (troubleshooting: the error text is "unregistered payload type"); :640; :687. doc.go
+    :366-367, :375-377 (serialization and the global-registry note); :407-408 (handler example).
+    README :329's NewBaseMessage(payload) call is left as the pin's text (not on the decode path).
   proving_tests: >-
     the 9 test files in message/ at the pin, carried unchanged except import paths; payload_test.go
     and triple_helpers_test.go use internal/harness/semantictest. Added (task 3.6b):
@@ -800,8 +814,9 @@
     :306; :317 → :332; :368 → :388; benchmark_test.go:183 → :183-191 (R1b: probe.Await until no key is
     live, 10 s failure bound). The 30 t.Parallel calls (coalescing_set_test.go 20,
     coalescing_set_attack_test.go 10) are removed: t.Parallel cannot be called in a bubble. Other test
-    edits: TestCoalescingSet_CallbackPanic asserted nothing and now asserts the batch after the panic is
-    delivered; BatchCleared and AddDuringCallback assert after releasing the test's mutex (at the pin a
+    edits: TestCoalescingSet_CallbackPanic asserted nothing at the pin and is gone, replaced in task
+    3.6a by TestCoalescingSet_CallbackPanicEndsTheProcess below (a callback panic ends the process;
+    nothing is delivered after it); BatchCleared and AddDuringCallback assert after releasing the test's mutex (at the pin a
     failed require held it and the deferred Close waited forever); the carried CoalescingSet tests call
     Shutdown(t.Context()) for Close(); the two test files' "Code generated ... DO NOT EDIT" headers,
     which made tools treat them as generated, are replaced by a note of their origin, and the 11 unused

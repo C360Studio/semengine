@@ -117,15 +117,16 @@ starts, `task merge:check -- 67` and the merge are recorded on this pull request
 
 ## 7. Review
 
-- [ ] 7.1 Hold: Codex's implementation review of PR #67, which the owner starts. Outcome: a review record by Codex's
-      `semengine-reviewer` on this pull request that names the commit it read; every finding fixed; and, where
-      there were findings, a record by Codex that names the commit holding the last fix.
-- [ ] 7.2 Hold: 7.1 on PR #67. Outcome: this pull request's description has one line `implemented-by:` that names
-      `claude`, and one line `reviewed-by:` that names `codex`, written once Codex's newest review record approves,
-      as the protocol's sentence from 5.1 says.
+- [x] 7.1 Codex's implementation review of PR #67: `Review record`, APPROVE at `0ea9363` (comment 5968479191), no
+      BLOCKING or HIGH finding, two MEDIUM document corrections, fixed in `da371c4`. Under the owner's ruling of
+      2026-10-03 (#66, comment 5968737070: cross-agent review is for code), the re-check of those documents-only
+      fixes, of `f52990c` and of this archive commit is either agent's reviewer's; Claude's `semengine-reviewer`
+      does it, and its record on this pull request names the commits it read.
+- [x] 7.2 The description has one line `implemented-by:` that names `claude` and one line `reviewed-by:` that names
+      `codex`, written on 2026-10-03 once Codex's newest review record (comment 5968479191) approved.
 
 ## 8. In the archive commit
 
-- [ ] 8.1 (W) The Purpose of `openspec/specs/merge-gate/spec.md` names the review check beside the defence against
-      flaky tests, in the same commit as `openspec archive review-gate-check` and the spec sync.
+- [x] 8.1 The Purpose of `openspec/specs/merge-gate/spec.md` names the review check beside the defence against
+      flaky tests, in the same commit as `openspec archive review-gate-check` and the spec sync (this commit).
       Gate: `task spec:check` on that commit.

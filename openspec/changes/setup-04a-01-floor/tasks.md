@@ -1,0 +1,637 @@
+# Tasks: setup-04a-01-floor
+
+Each task names the outcome that proves it and the gate that checks it. An unchecked task that says "Hold:" is one
+`task spec:queue` reports as blocked until the named review or ruling exists. "This pull request" is PR #48. Where
+there is code, the failing test is written and shown failing before the code that makes it pass. Owner of each
+task: **D** developer (`semengine-developer`), **R** reviewer (`semengine-reviewer`), **W** technical writer
+(`semengine-technical-writer`), **A** architect. Evidence (test output, coverage, `go list` listings) is recorded on
+this pull request as a comment unless a task says otherwise. No task asserts a fact that exists only after merge.
+
+## 1. Design and spec acceptance
+
+- [ ] 1.1 (A) `design.md` and the six deltas under `specs/` match the accepted foundation design (D2 row 1, D3–D7,
+      D9, D10.1) and the #9 rulings; every requirement has at least one scenario; `task spec:check` passes with no
+      `skip_specs`.
+- [x] 1.2 Independent design review (PASS on re-check 2, 2026-10-01). The reviewer's verdict on `design.md` and `specs/`
+      is a pass, recorded on this pull request with the reviewed files' checksums.
+- [x] 1.3 Owner acceptance of this change on #9 (2026-10-01) (the chain is accepted; this is the first change's own
+      scope).
+- [x] 1.4 Owner ruling on design D7 (2026-10-01, on #9). Superseded by task 1.6.
+- [x] 1.5 Owner rulings of 2026-10-01 on #9 (comment 5941920346): Q1 a repaired test file makes its row `adapt`;
+      Q2 `TestIntegration_Reconnection` is rewritten on `natsfixture.Restart` and proves re-dial; Q3 the three
+      `test_client_*_test.go` files are not ported (`defer-exclude` with `test_client.go`) and counts are restated
+      (the exclusion of `monitoring_consumers_test.go` follows from Q3 and is not part of the ruling, design D1);
+      Q4 the seven doc-comment sleeps are carried as they are. Its ruling 5 is superseded by task 1.6.
+- [x] 1.6 Owner ruling of 2026-10-02 on #9 (comment 5950234192): the lifecycle suite applies to services only
+      (`metric.Server`, `natsclient.Client`); helpers that run background work get plain unit tests; the
+      no-fallible-start exemption and its pinned list are removed; every real probe defect is a failing-first
+      `adapt` item. Recorded in `design.md` D2, D3, D7.
+- [x] 1.7 Owner ruling of 2026-10-02 on #9 (comment 5950482163), replacing rule 2.3 of 1.6: background work takes
+      one of three shapes (`Run(ctx)`, `Close()` that joins, `Shutdown(ctx)`), with no fixed shutdown timeout, as the
+      engine's standing rule. Recorded in `design.md` D7 and the `background-work` delta; tasks 3.1, 3.6, 3.7, 6.4
+      follow.
+
+## 2. Harness extension (first task, #9 item 6)
+
+- [x] 2.0 (D) Pre-port probe: in a throwaway test against the pin snapshot (not committed), run the suite's seven
+      existing checks through a minimal adapter against each of the five owners (`metric.Server`, `natsclient.Client`,
+      `TemporalResolver`, `CoalescingSet`, `resource.Watcher`) and record which checks fail on this pull request;
+      every failure becomes a named, `adapt` item with a test written first on the owner's row before its port task
+      runs; the probe's source is attached to the comment on this pull request, not committed. Known before the
+      probe: `Client.Close(nil)` panics and `Connect(nil)` is unchecked (design P13).
+- [x] 2.0b (D) Pre-port repeat probe: against the pin snapshot (not committed), `go test -race -count=1 -cpu 1` and
+      at least three runs of `go test -count=5 -cpu 1 -shuffle=on` over the 14 tested packages, each run's seed and
+      failing tests recorded on this pull request. Recorded in PR #48 comment 5942307713 (race 14/14; four shuffle
+      runs, two failing in `pkg/cache` with seeds `1790895004660367000` and `1790895074311951000`). Still to post:
+      the seeds of the two green runs and the design D8 hit list (P18). The three known `pkg/cache` failures
+      (`TestCoalescingSet_EntityUpdateScenario`, `TestAttack_ConcurrentAddRemove`,
+      `TestCoalescingSet_ContextCancellation`; design P19) are repair items on task 3.6.
+- [x] 2.1 (D) `Fixture.Restart` and `CreateMemoryStream`: an integration test, written first and shown to fail on the
+      base
+      (no `Restart` method), creates one file-backed stream with `CreateStream` and one memory-backed stream with
+      `CreateMemoryStream`, publishes one message to each, restarts, and asserts the file-backed message is readable
+      through the new `JetStream()` and the memory-backed one is not; a second test asserts `URL()` dials after the
+      restart; a third asserts a consumer with a running handler is ended before `Restart` returns and no handler runs
+      afterwards; a fourth asserts `Restart` before `Start` returns an error with no Docker call. Gate: `task
+      test:integration -- ./internal/harness/natsfixture`. The durability premise (design P3) is proven here, not
+      assumed.
+      - Note: the fixture's `connect` was fixed first to wait for its dial to finish before returning (commit
+        f1b046d). The pin's dial goroutine outlived the call, which the background-work rule forbids, and `Restart`
+        re-runs `connect`.
+- [x] 2.2 (D) Restart fault matrix: with the `stopContainer` and `startContainer` hooks made to return an error in turn,
+      `Restart`
+      returns a `FixtureError` naming the phase, no second container exists, and `Stop` observes the container gone;
+      the sensitivity test trips exactly its phase. The one-replacement rule is unchanged (`maxAttempts` untouched).
+- [x] 2.3 (D) `FaultKV`: unit tests written first show `FailAfter(Update)` returns the injected error while a fresh
+      read sees the new revision and `Calls()[Update] == 1`, and `FailBefore(Create)` leaves the key absent with
+      count zero; `go vet` confirms the wrapper satisfies `jetstream.KeyValue`; `go list -deps
+      ./internal/harness/natsfixture` shows no package of this module outside `internal/harness/`.
+- [x] 2.4 (D) `internal/harness/prochost`: tests written first show (a) the helper test is a no-op without the
+      marker, (b) a started helper is in its own process group with output under the evidence directory, (c) a kill
+      between two checkpoints leaves the first checkpoint's file and not the second's and `Wait` returns the killed
+      status within its bound, (d) after `Pause` the process is observed stopped (`ps` state `T`, read through
+      `probe.Await`) and the checkpoint count read while stopped is unchanged after the test writes the helper's
+      next request, and after `Resume` the checkpoint arrives, (e) a test that returns with the helper running
+      leaves no process behind, checked by start identity (`runner_test.go:255,293`) and not by pid alone; output
+      goes under `SEMENGINE_EVIDENCE_DIR` when set and under `t.TempDir()` otherwise, and (b) asserts the fallback;
+      no file in the package contains a sleep (`TestNoSleepsInTests` scans its non-test files). Gate: `task
+      test:unit` and `task test:repeat -- ./internal/harness/prochost` (no Docker needed).
+- [x] 2.5 (D) `lifecycletest.Run(t, factory, mustFail, promise)` and `CheckFailedStartHoldsNothing`: a test written
+      first shows `Run` failing before any check, naming the argument, when `mustFail` is nil. The `refowner` double
+      gains a must-fail construction mode (design D8 note): Start returns its error after `o.startAttempted = true`
+      (`refowner_test.go:72`); the `checks` entry for the new check is marked must-fail and every test iterating
+      `checks` — `TestEachFailpointTripsExactlyItsCheck` (`:382`) and `TestChecksPassAgainstCleanDouble`
+      (`:239-249`) — builds the must-fail double for it; the clean must-fail double passes the new check. A
+      `failpointTable` row `startFailsButHolds` (want `FailedStartHoldsNothing`) acts only in must-fail mode, is
+      caught by the new check naming the unresolved item, trips no other check, and is ended by `finalize` with no
+      exemption; `TestAbortStopThenFinishJoinsWorker` (`:414-418`) runs it as inert. A must-fail factory whose Start
+      succeeds makes the check fail stating so. Suite gap (`lifecycletest-panic-is-not-refusal`): a `failpointTable`
+      row `nilStartPanics` (want `NilContextsRefused`), written first, passes on the base because `call` turns the
+      panic into an error (`lifecycletest.go:291-297`); then `call` marks a recovered panic and no check counts it as
+      a refusal. Both existing callers (`refowner_test.go:491-492`, `natsfixture/fixture_integration_test.go:519`)
+      compile against the new signature. Gate: `task test:unit`; `task test:repeat -- ./internal/harness/lifecycletest`;
+      `task cover:check` keeps `lifecycletest` at 80%.
+- [x] 2.6 (D) The fixture's own must-fail factory: `TestS1_7Restart` passes `Run` a fixture whose `deps.start` fails;
+      the start-failure check passes (nothing unresolved, Stop nil, no Docker call counted). Gate: `task
+      test:integration -- ./internal/harness/natsfixture`.
+- [x] 2.7 (D) I8 and T-B8 in `internal/harness/contract`: a test over `go list -deps ./...` and `go.mod` fails on
+      any `github.com/c360studio/semstreams` path; a tree-shape sensitivity test (like `TestImportGraphSensitivity`)
+      shows the aggregator rule rejecting a package importing `Register` from two component packages and the
+      SemStreams rule rejecting a planted import; both pass on the real tree. Gate: `task test:unit`.
+- [x] 2.8 (D) `internal/harness/semantictest` and `internal/harness/payloadfixture` carry the pin's helpers
+      byte-for-byte except package path and import rewrites and, in `payloadfixture`, the `payloadregistry.New`,
+      `payloadregistry.Registry` and `payloadregistry.Registration` qualifications the move out of `package
+      payloadregistry` requires (recorded as `adapt` items on the `payloadregistry` row, task 3.5); T-B1 passes
+      with them in the harness and a sensitivity case shows it rejecting the same files planted outside
+      `internal/harness/`; `go list -deps` of each helper lists only pure-library packages of the set, and no test
+      in those packages imports the helper (design P5).
+      Lands after tasks 3.3 (`pkg/types`), 3.2 (`vocabulary`) and 3.5 (`payloadregistry`): at the pin
+      `internal/semantictest/fixtures.go:13-14` imports `pkg/types` and `vocabulary`, and
+      `payloadregistry/testing.go:6` imports `pkg/types`. It is therefore held by task 3.0 like section 3.
+      Done in 62d9f47 and 8d2a01a (`payloadfixture` package comment): `semantictest` is a `carry` row
+      (`internal/semantictest` → `internal/harness/semantictest`, matched to the pin by `task ledger:check`);
+      `payloadfixture/testing.go`'s qualifications are on the `payloadregistry` row by pin line.
+      `TestImportGraphRejectsHarnessHelpersOutsideTheHarness` plants both files at their pin paths and in the harness:
+      T-B1 refuses the first and admits the second (implementer-reported: it failed first with the helpers absent, and
+      with `testing` dropped from the forbidden list it failed naming `internal/semantictest/fixtures.go`). `go list
+      -deps`, implementer-reported: `semantictest` reaches `pkg/retry`, `pkg/errs`, `pkg/types`, `pkg/platform`,
+      `vocabulary`; `payloadfixture` those and `pkg/projection/contract`, `payloadregistry`; none has a `go` statement
+      in a non-test file, and no test of any of them imports either helper (their `TestImports` and `XTestImports`), as
+      P5 says of the pin.
+- [x] 2.9 (R) Harness review of tasks 2.1–2.7 and 2.10: the additions against the deltas, the fault matrices'
+      completeness, and the `natsfixture` import list. Verdict recorded on this pull request before any ported
+      package lands. Task 2.8 is not in this review; it is reviewed with section 3's port review (task 3.10).
+- [x] 2.10 (D) Public-signature contract test (owner ruling, #9 comment 5953477174; `harness-boundaries` › "Public
+      signatures name no internal type"): `TestPublicSignatures` in `internal/harness/contract` loads the module's
+      non-test packages with `golang.org/x/tools/go/packages` (already direct, as in `TestNoRetainedContext`,
+      `context_test.go:224`; no new dependency, no ledger row) and walks with `go/types` from each exported
+      identifier of every public package, modelled on the design review's `go/types` walk of design D5 (attached to
+      this pull request). `TestPublicSignaturesSensitivity`, written first and shown failing against a check that
+      reports nothing, plants a fixture module (`writeTree`, as `TestNoRetainedContextSensitivity` does) with one
+      violation per reach: a direct result, an exported method, an embedded field (an internal type, and an
+      unexported type whose exported method is promoted), an exported non-embedded struct field, an interface method
+      set, a type argument, a generic constraint on a function and on a type, an alias, an exported variable and
+      constant, an exported function returning an unexported type whose exported method names the internal type,
+      and an internal package nested below a public one. Each is reported naming the identifier and the internal
+      type; a mutation that skips unexported named types fails the unexported-type plant; a clean package that uses
+      the internal type only in unexported identifiers and bodies reports nothing. The real
+      tree passes; it has no public package until section 3, whose `task verify` runs then hold each ported package
+      to it. Gate: `task test:unit`. Not gated by #52 (task 3.0).
+- [x] 2.11 (D) No bare select (owner-approved on this pull request; `harness-boundaries` › "No bare select"):
+      `TestNoBareSelect` in `internal/harness/contract/testtext_test.go` parses every Go file in the module, test
+      and non-test, `package main` included, and fails on a `select` with no cases, naming the file and line; a file
+      that does not parse fails it. `TestNoBareSelectSensitivity`, written first and shown failing against a check
+      that reports nothing, plants a bare `select` in a test file, a non-test file and a `main`, in four spellings
+      (no space, spaces inside, across lines, a comment inside) and inside a goroutine, and shows a `select` with
+      cases and mentions in comments and strings passing. Reverting the prochost helper to a bare `select` fails
+      the real-tree test. Gate: `task test:unit`.
+
+## 3. Port mechanics, per package in design D1's order
+
+For each of the 15 packages (one task line per package below, named by its pin path): the ledger row is written
+first and `task ledger:check` passes; the package and its `_test.go` files are copied from the pin at
+`8b99efe9c66a4faa4fa509f9f62cc6bad8392128` to the row's `destination` (design D5: eleven keep their pin paths, four
+move from `pkg/<name>` to `internal/<name>`), with every pin import path rewritten to its destination and the design
+D8 repairs applied, each repair written so it fails first where the pin's test fails (P19) and listed on the row's
+`proving_tests` as pin `file:line` → SemEngine `file:line`; a row with any repaired test file is `adapt` (task 1.5, Q1);
+`task verify` passes; `task test:repeat -- ./<destination>` passes; the carried tests pass in their lane; the row's
+`proving_tests` names them; context roots in the package are triaged in `known_risks`.
+
+- [x] 3.0 Hold: section 3 waits for #52 (PR #54) to merge, per the owner's placement on #52 ("Scope and placement",
+      2026-10-02). Lifted: #54 merged as `39badc4` (2026-10-02). Section 2 is not held, except task 2.8, which needs
+      section 3's packages. The #52 command's output, each package's difference from the pin read through its
+      row's `source_path` → `destination` (design D5), is task 7.1's review input.
+
+- [x] 3.1 (D) `pkg/platform`, `pkg/resource`, `pkg/retry`, `pkg/security`, `pkg/timestamp` (level 0): rows `carry`
+      except `pkg/resource` (`adapt`, SS#1415-class ender and D8 repairs) and `pkg/retry` (`adapt`, D8 repair:
+      `retry_test.go:68`); `pkg/resource`'s six sleeps (`watcher_test.go:151,208,324,333,335,363`) are repaired
+      under `synctest` (D8 R1); `pkg/platform` and `pkg/security` rows record "no tests
+      at the pin"; `resource.Watcher` takes shape 1 (design D7): `Run(ctx) error` replaces `StartBackgroundCheck` and
+      `Stop`, behind tests written first — (1) `Run` inside `synctest.Test` returns `ctx.Err()` once its context is
+      cancelled, with the check called on each tick and nothing left running; (2) `Run(nil)` returns an error and
+      calls no check; the `cancel` and `wg` fields and the doc references to the removed methods (`watcher.go:108,
+      :138-140`; `doc.go:21, :57, :66, :85, :149, :151, :159`) go with them. Done in 084935e; evidence PR #48
+      comment 5954727965.
+- [x] 3.2 (D) `pkg/errs`, `vocabulary` (level 1): rows `carry`; `pkg/errs`'s row names `ErrAlreadyStopped`
+      (`errs.go:47`) as the one sentinel and change 3 as the SS#1218 proof's home; the two `pkg/errs` context roots
+      are triaged. Done in 4555515; evidence PR #48 comment 5954727965. Corrected in 358a01e: `vocabulary`'s row is
+      `adapt`, because its `README.md` is ported with markdownlint fixes (owner ruling, #9 comment 5955265930, since
+      replaced by 5957221949, which still allows them), and `task ledger:check` does not compare READMEs; `pkg/errs`
+      stays `carry`.
+- [x] 3.3 (D) `pkg/types` (level 2): row `carry`. Done in dcdf6dd; evidence PR #48 comment 5954727965. Corrected in
+      358a01e: the row is `adapt`, because its `README.md` is ported with markdownlint fixes (owner ruling, #9
+      comment 5955265930, since replaced by 5957221949, which still allows them).
+- [x] 3.3a (W) The identity documents ride with `pkg/types` (#72 ruling D, comment 5969505488; relayed in PR #48
+      comments 5969296459 §2 and 5969508639 §2), ported from the pin at
+      `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`, each with an `adapt` ledger row naming its corrections and a port
+      note naming what SemEngine has not yet ported: `docs/adr/102-entity-id-segment-semantics.md` (lint fixes
+      only), `docs/adr/104-unique-platform-authority.md`, `docs/concepts/16-federation.md` and the pin's
+      `openspec/specs/entity-id-contract/spec.md` (`:490` keeps `DeploymentPrefix` as `MUST export`). The spec is
+      ported to `docs/specs/entity-id-contract.md` as a reference contract, not to `openspec/specs/`, which holds
+      only current truth verified against code: most of its requirements describe packages not yet ported, and each
+      moves into an `openspec/specs/` capability when its code is (#72 ruling of 2026-10-03, comment
+      5970020197). Its opening note says so; its lint fixes and the path notes in ADR-102, ADR-104 and
+      `16-federation.md` (pin `:26`) are on their ledger rows. Corrections,
+      each cited in the document to the pin line it supersedes: ADR-104 decision 7 (`:94-100`) kept as history and
+      marked superseded (SemStreams #1188; the ADR's own `:127-128`; pin
+      `openspec/specs/component-runtime-config/spec.md:369-371`), with its restatements at `:115-118`, `:123` and
+      `:145`; `16-federation.md:56-58` rewritten to ADR-104 decisions 1 and 4 (the minted suffix) and `:60-64` to
+      the pin's authority gate (`processor/graph-ingest/authority_gate.go:51-52` and its ten call sites); "SemStreams"
+      to "SemEngine" at `16-federation.md:3, :190, :194` and `spec.md:211`; the `16-federation.md:190` link to an
+      unported concept page reworded; `pkg/platform/platform.go:1-4` (the package comment named `message` and
+      `vocabulary` as readers) now names `config` and positions 1-2 of the ID, an `adapt` item on the `pkg/platform`
+      row beside `:27-28`. `docs/repository-map.md` lists `docs/adr/`, the concept page and `docs/specs/`. Gates:
+      `task docs:check`, `task spec:check`, `task ledger:check`, `task verify`.
+- [x] 3.4 (D) `pkg/projection/contract`, `pkg/tlsutil` (level 3): `pkg/projection/contract` row `carry`, destination
+      `pkg/projection/contract` (public: SemConnect imports it; #9 comment 5953295358); `pkg/tlsutil` row `adapt`,
+      destination `internal/tlsutil` (design D5; #9 comment 5952661571): ported without
+      `LoadServerTLSConfigWithACME`, `LoadClientTLSConfigWithACME` and `initACMEClient` (`tlsutil.go:186-365`), the
+      `context`, `time` and `pkg/acme` imports only they use (`:5, :10, :12`), and the ACME parts of `doc.go` (the
+      ACME clauses of `:7` and `:10`; `:13-14, :27, :93-126, :151-154, :160, :166`, where `:152` is the blank line
+      between the two ACME error-handling parts); no tlsutil test calls them (pin grep, design D1). The row's
+      `known_risks` records the deferral to change 5 with both defects (design D7). Pin `pkg/security/doc.go:138`
+      links `internal/tlsutil` (the `pkg/security` carry check expects it once the `pkg/tlsutil` row maps the move).
+      Neither package has a `README.md` at the pin. `internal/tlsutil`'s integration-tagged test runs in the
+      integration lane. Done in 0031f26 and f1cc210; `task verify` ok on f1cc210.
+- [x] 3.5 (D) `metric`, `payloadregistry` (level 4), both at their pin paths (public: SemSource imports both; design
+      D5, #9 comment 5953295358): `metric` row `adapt` with its two roots triaged; `metric.Server`
+      adapter lists the listener, the `http.Server`, the serve goroutine and, since aa94acf, the requests its handler
+      admitted and has not returned from (`Stop` waits for them within its context). Since a19f393 (Codex review,
+      PR #48 comment 5959412053, finding 1), `Stop` closes admission before `Shutdown`: a request that reaches the
+      handler afterwards gets 503 with `Connection: close` and its handler never runs, and the closed flag and the
+      running count share one mutex, so a nil `Stop` is final (`metric/admission_test.go`); the suite runs with the bound-port
+      must-fail factory (#38's first real service). Two items (design D3), each written first:
+      `metric-abort-stop-reports-context` — an in-package test starts a server, replaces `s.serveDone` with a
+      buffered channel already holding a value, and calls `Stop` with an ended context, so both cases of the
+      `select` at `handler.go:222-228` are ready before it runs; over 30 such servers the pin's `Stop` returns nil
+      for at least one (each run is a fair coin), and after the fix every `Stop` returns the context's error;
+      `metric-forced-join-without-timer` — `forcedServeJoinTimeout` (`:23, :243-249`) is removed and the forced path
+      waits on `serveDone`. `payloadregistry` row `adapt` (`testing.go` rehomed, task 2.8; `adapt` items for its
+      unqualified `New`, `Registry` and `Registration` written as `payloadregistry.X` in `payloadfixture`);
+      `prometheus/client_golang` becomes direct. Done in ea46a68 (`payloadregistry`, without `testing.go`, which no
+      package test uses; the row records the rehome and gains the `payloadfixture` qualification items when task
+      2.8 lands) and 41e1d86 (`metric`; at the pin 13, 12, 11 and 16 of 30 `Stop`s returned nil, and the forced join
+      gave up on its timer; both green after the fix; `README.md` lint fixes recorded on the row); `task verify` ok
+      on 41e1d86.
+- [x] 3.5a (D) `metric` registration, design D9 (Codex review finding 4, PR #48 comment 5956732582; owner-accepted
+      2026-10-02): `RegisterOrGet[C]` replaces `MetricsRegistrar`, `RegisterOrGetGaugeVec` and the six `Register*`
+      methods; tests 1-8 of D9 written first, each with the oracle D9 names (test 4 asserts errors, zero returns and
+      the key map, not gathered values), plus D9's generated check `TestPropRegisterOrGetHistory`; the `metric` row
+      records the contract sentence, the adapt items (`registry.go:16-25, :27-60, :127-278, :246`; `doc.go:14,
+      :75-97, :111, :125, :136, :196-209, :236-253, :372-377`, the design's `:245` widened to the error list beside
+      it; the README registration examples under #9 comment 5957221949), the tests replaced, and the consumer
+      impact. Done in e78d0ce. Failing first, implementer-reported, at the pin's methods behind the new signature:
+      every same-key case gathered 1 where 2 was written; the type, help, nil-`Counter`, alias and direct-collision
+      cases were accepted; the typed-nil `*GaugeVec` and the core collision were already refused at the pin (test 6
+      failed only on the returned candidate). The generated check and the corrected evidence landed with the third
+      review's fixes (PR #48 comment 5959412053, findings 2 and 4). `task verify` ok on e78d0ce.
+- [x] 3.6 (D) `message`, `pkg/cache` (level 5), destinations by design D5 (#9 comment 5953295358, refining
+      5952661571): `message` stays public at `message` (SemSource imports it), `pkg/cache` moves to `internal/cache`.
+      `message` row `adapt`, not `carry`: its `README.md` needs a lint fix at the pin (line 7, MD013; #9 comment
+      5957221949) (`google/uuid` direct; its two tests that used
+      `internal/semantictest` import the harness copy); `pkg/cache` row `adapt`: its 26 sleeps are repaired under
+      `synctest` with its 30 `t.Parallel()` calls removed (D8 R1); `TestCoalescingSet_EntityUpdateScenario`,
+      `TestAttack_ConcurrentAddRemove` and `TestCoalescingSet_ContextCancellation` are shown failing first under a
+      recorded `test:repeat` seed from task 2.0b, and after the repair `task test:repeat -- ./internal/cache` passes on
+      that seed and on three further runs whose seeds are recorded; per design D7, each test written first:
+      `CoalescingSet` takes shape 3 — inside `synctest.Test` it is constructed, used and shut down with nothing left
+      running; `NewCoalescingSet(nil, …)` panics at the call with no goroutine started (today it panics in the
+      goroutine, `coalescing_set.go:136`); `Shutdown(ctx)` returns `ctx.Err()` when its context ends while a planted
+      callback blocks (the pin's `Close()` waits forever, `:116-126`), and once the callback returns the goroutine
+      exits and a second `Shutdown` returns nil. The TTL and hybrid caches take shape 2 — inside `synctest.Test` each
+      is constructed, used and closed with nothing left running, and `Close()` returns with no fixed wait
+      (`ttl.go:258-262`, `hybrid.go:276-292`); `cache.NewTTL` and `cache.NewFromConfig` return an error on a nil
+      context (today the TTL goroutine panics, `ttl.go:276`). By owner ruling (#9 comment 5950725772),
+      `WithEvictionCallback`
+      (`options.go:44`), `EvictCallback` (`cache.go:51-53`) and the eviction plumbing in the simple, LRU, TTL and
+      hybrid caches are removed, with `TestEvictCallback` (`cache_test.go:444-503`, design D8) and the examples in
+      `doc.go:39, :157, :162, :234` and `README.md:64, :117-125, :200, :410`. The row's `known_risks` names the later
+      callers (design D5) as port-refactor rows; the one `pkg/cache` root is triaged. `pkg/cache` adapt (design D9):
+      `metrics.go:69-84` registers its six collectors through `RegisterOrGet` and keeps the returned collectors; a
+      test with two caches under one prefix on one registry asserts the gathered sum.
+      - `pkg/cache` done in 70fe194 (port, `RegisterOrGet`), b137ab3 (eviction callback removed), 5fc2b63 (sleep
+        repair), c6d7108 (shapes 2 and 3), 420063f (generated check), ed40a15 (close-ordering example), e7cd3ae (ledger,
+        design and task record) and the lint fix after it. Two of the 26 sleeps went with `TestEvictCallback`; the other
+        24 are repaired, each on the row. The generated-check decision is in design D7. Failing first,
+        implementer-reported, on a copy of the pin (PR #48): under seed `1790895004660367000`, 48 of 48 runs of
+        `-count=5 -cpu 1` with 24 in parallel failed `TestCoalescingSet_EntityUpdateScenario`, and 11 of them hung in
+        `BatchCleared`'s deferred `Close`; under seed `1790895074311951000`, 6 of 48 failed
+        `TestAttack_ConcurrentAddRemove` (and 9 `TestCoalescingSet_CallbackFiresAfterWindow`).
+        `TestCoalescingSet_ContextCancellation` did not fail in those 96 runs nor in 2,400 runs of it alone at 12 in
+        parallel: not reproduced. After the repair, `task test:repeat -- ./internal/cache` passed on both seeds and on
+        `1790972252212655000`, `1790972253482840000` and `1790972254702897000`, and 96 of 96 runs of the seeds at 24 in
+        parallel passed.
+      - Every `internal/cache` constructor that returns `Cache` with an error (`NewSimple`, `NewLRU`, `NewTTL`, the
+        hybrid constructor, and `NewFromConfig` through them) returns a nil `Cache` on error, not a nil pointer
+        inside a non-nil interface (`TestCacheConstructorsReturnNilCacheOnError`). Implementer-reported: it failed
+        first for `NewSimple`, `NewLRU` and `NewFromConfig`'s simple and lru paths; the TTL and hybrid ones were
+        fixed in c6d7108.
+      - Also 479ce24 and a7dbf9d (`NewSimple` and `NewLRU` return a nil `Cache` on error, above).
+      - `message` done in c08b5c7 and 8d2a01a (gofmt of a rewritten import), after task 2.8 (62d9f47): its `.go` files
+        match the pin apart from import paths (`task ledger:diff -- message`: 25 files, 0 differ); its two tests that
+        used `internal/semantictest` import `internal/harness/semantictest`; `google/uuid` v1.6.0, the pin's version, is
+        direct; the row is `adapt` for the README line 7 wrap.
+- [x] 3.6a (D) Codex's review of the cache half (PR #48 comment 5968489295, at `a7dbf9d`) and the owner rulings of
+      2026-10-03 (#9 comment 5968830525: an admitted package is ported whole, and only dead surface is removed; #9
+      comment 5968665464: ported docs name SemEngine paths). Each finding with a test written first, failing first
+      implementer-reported: F1 (18424c3) a `CoalescingSet` callback panic ends the process and a nil callback panics at
+      the call; `prochost` gains `Process.StderrPath` with a `process-host` scenario; the pin's `CallbackPanic` and
+      `NilCallback` tests are replaced, and their three sleeps with them: of the pin's 26 sleeps, 21 remain, repaired
+      (two went with `TestEvictCallback`). F2 (5647994) concurrent `Close` of the TTL and hybrid caches. F3 (68f10f9)
+      the direct constructors refuse invalid dimensions; `NewTemporalResolverWithCache`, its one `natsclient` caller, is
+      dropped with `TemporalResolver` (task 3.7). F4 (2e2060a) `StatsInterval` removed, with the dead surface the
+      pin-wide search found (f56fcf6: `Entry`, `IsExpired`, `Touch`, `WithStats`, `StatsFromContext`, `ContextKeyStats`,
+      `Statistics.MemoryUsage`); the one outside reference, `processor/rule/config.go:245` and its docs, is a
+      port-refactor item on the row. F5 (65d9740, d62fdd9) unknown keys refused; `FuzzConfigUnmarshalJSON`, whose `null`
+      seed found a pin panic, now fixed; the generated-check decision is in design D7. F6 (4fcfc46)
+      `TestAttack_CallbackLatency` fails and ends when an `Add` blocks. F7 (58ffe7b) `doc.go` and `README.md` name
+      `./internal/cache` and drop `cache.NewHybrid`, which does not exist; the `message` hold no longer applies (task
+      3.6 is done) and is gone. README import paths (3485af3) in `message`, `pkg/retry`, `pkg/types` and `vocabulary`,
+      each an `adapt` item on its row. Rows: `pkg/cache` (contract, `known_risks`, `proving_tests`), `message`,
+      `pkg/retry`, `pkg/types`, `vocabulary`.
+- [x] 3.6b (D) Codex's sixth record (PR #48 comment 5969256728, at `c64ac33`: F8–F10), #72 ruling 1 (comment 5969293525)
+      as extended to `vocabulary.EntityIRI` (comment 5969505488, relayed in PR #48 comment 5969508639) with ruling D's
+      `pkg/platform` comment, and #9 ruling 7 (comment 5969522395). Each with a test written first, failing first
+      implementer-reported. Federation family removed (b9e216c): `TestMetaCarriesOnlyWhatTheWireCarries` failed first
+      naming `DefaultFederationMeta` and `FederationMeta`. F9 and F10 (0aefed9): the `message` decode examples call
+      `NewDecoder(reg).Decode`; the `pkg/cache` row drops the recovered-panic claim. `EntityIRI` removed (bb004ef) with
+      its doc example and test lines; `TestNoDeploymentAuthorityNames` (`internal/harness/contract`) fails on an
+      exported name matching `Federation|GlobalID|EntityIRI` in any production package and failed first naming
+      `vocabulary.EntityIRI`; its sensitivity test failed against a check that reports nothing, and a mutation skipping
+      methods fails it. Nothing in this change imports `pkg/platform` now; its reader is `config` (change 3), so it
+      stays public; its row is `adapt` for `platform.go:27-28`. Ruling 7 (5e31950): `BaseMessage` decodes both
+      timestamps strictly as integer milliseconds and refuses any other form; `TestBaseMessageTimestampsAreMilliseconds`
+      failed first (1999-01-01 decoded as year 30969, 1960-01-01 as -8032) and
+      `TestBaseMessageRefusesTimestampsThatAreNotMilliseconds` failed first (all eight forms accepted). The owner's
+      rulings of 2026-10-03 (#9 comment 5969776736): item 1 confirms that refusal, the RFC 3339 and number-in-a-string
+      forms the pin accepted included, with a missing value, `null` or 0 giving the zero time, which 5e31950 already
+      does (no further change); item 2, `BaseMessage` encoding refuses a `source` that is not valid UTF-8 instead of
+      writing U+FFFD in its place (1ee70d0): `TestBaseMessageRefusesSourceThatIsNotUTF8` failed first (all eight
+      marshals succeeded), and `FuzzDecoderRoundTrip` drops its U+FFFD exception, asserting refusal for an invalid
+      source and full equality otherwise. F8 (dbe98c5, seeds as of 1ee70d0): `FuzzDecoderDecode` (25 seeds, 8 accepted),
+      `FuzzDecoderRoundTrip` (9, one added in 1ee70d0: a valid source holding U+FFFD itself) and
+      `FuzzGenericJSONPayloadUnmarshalJSON` (13), with no timestamp carve-out; the generated-check decision is in design
+      D7. Mutants, implementer-reported, each detected on seed replay: decoder always refuses, decoder drops `source`,
+      the pin's `timestamp.Parse` heuristic restored. Exploration, separate from replay, implementer-reported (logs
+      local only): `go test -run '^$' -fuzz '^<target>$' -fuzztime 60s ./message` ran 1,970,895, 1,121,935 and
+      10,033,878 executions with no failing input, all run before 1ee70d0. Rows: `vocabulary`, `pkg/platform`,
+      `message`, `internal/semantictest`. The owner's ruling of 2026-10-03 (PR #48 comment 5970334875, extending ruling
+      2; Codex F12, comment 5970321028): invalid UTF-8 is refused wherever `message` encodes a string. `Type.Validate`
+      refuses a component that is not valid UTF-8 (`TestTypeValidateRefusesInvalidUTF8` failed first: all four
+      accepted); `BaseMessage.MarshalJSON` refuses such a type, and `GenericJSONPayload.MarshalJSON` such a string, key
+      or value at any depth of `Data` (`TestBaseMessageRefusesTypeThatIsNotUTF8` and
+      `TestGenericJSONRefusesStringsThatAreNotUTF8` failed first: 3 and 15 marshals succeeded with U+FFFD on the wire;
+      Codex's `TestReviewerRetainedUTF8Loss` probe, run unchanged and not committed, observed both losses before the fix
+      and fails on the refusal after). `FuzzDecoderStrings` (10 seeds, an invalid byte in each of the five positions)
+      generates the three type components and a generic key and value, asserting refusal or full equality through
+      `NewDecoder`. Mutants on the final code, implementer-reported: 14, of which 13 detected (the cycle guard's by the
+      test process being killed after unbounded recursion, the rest by named assertions) and 1 survived: removing the
+      `[]byte` skip, equivalent because byte elements hold no string. A reflect `CanInterface` guard whose mutant
+      survived was removed: its only reachable input makes `encoding/json` panic too. Exploration, separate from replay,
+      implementer-reported (log local only): `-fuzz '^FuzzDecoderStrings$' -fuzztime 30s` ran 320,542 executions with no
+      failing input on the final code (2,453,552 on an earlier revision of the walk). Rows: `pkg/types`, `message`.
+- [x] 3.7 (D) `natsclient` (level 6), port and unit lane: row `adapt`, its `source_sha` and the existing file rows'
+      at the pin. Not ported, with file rows: `test_client.go` (`adapt → natsfixture`, evidence in `proving_tests`)
+      and `test_options.go` (`defer-exclude`); six test files `defer-exclude` with design D1's reasons —
+      `test_client_factory_test.go`, `test_client_integration_test.go`, `test_client_readiness_test.go` (owner
+      ruling, task 1.5, Q3), and, forced by Q3 and not owner rulings, `monitoring_consumers_test.go` (`WithMonitoring`,
+      `test_client.go:448`), `test_options_test.go` (tests `test_options.go`) and `mapped_port_retry_test.go` (tests
+      `test_client.go` internals). Not ported as dropped surface, recorded on the package row (design D8, "A test of
+      a removed feature"): `kv_temporal.go` with `kv_temporal_integration_test.go` and
+      `TestTemporalResolver_ErrorBoundaries` (`kv_error_integration_test.go:353-450`) (owner ruling, PR #48 comment
+      5969522395, item 1); `typed.go` with `typed_test.go` (item 2). This commit compiles and `task verify` passes on
+      it: the production files with imports rewritten; `jetstream_metrics.go:128-161` registers all 11 collectors
+      through `RegisterOrGet` and keeps the returned collectors (design D9; the pin's `Register*` calls no longer
+      exist, task 3.5a); `github.com/nats-io/nats-server/v2` becomes a direct test requirement at v2.14.7, the
+      `.nats-image` line (the pin requires v2.12.4, `go.mod:11`), for the embedded broker at
+      `client_connect_test.go:104`, recorded in the row's `known_risks` as a pin difference with the carried tests as
+      the only regression evidence (T-B3 cannot see an embedded server, so one broker version across both lanes is
+      review only); and the 43 unit test files, of which: the census tests in `consumer_policy_callsite_test.go`
+      (`TestConsumerPolicyProductionCallsiteCensus` `:217`, `TestConsumerPolicyDirectCreationCallCensus` `:588`) are
+      rewritten for SemEngine as an `adapt` item (item 3) — their expected maps hold what SemEngine's tree has at this
+      commit, measured and not copied, a caller planted in a `t.TempDir()` tree is shown to fail each, and the row's
+      `known_risks` says each later port that adds a caller updates the maps; the 8 sleeps in `client_test.go` are
+      repaired under design D8 R1a; the 47 fixed-address lines in 8 unit files are repaired (D8 R5;
+      `stream_visibility_test.go:82` is an error string the guard does not match and stays); `testStreamMaxAge` and
+      `testStreamMaxBytes` (`test_client.go:912-913`, read at `client_test.go:373-374`) are defined in the one test-side
+      helper file that replaces `test_client.go`. `task test:unit`, `task test:repeat -- ./natsclient` and
+      `task tidy:check` pass. The nats.go v1.52→v1.54 difference is in `known_risks` with the carried tests as the only
+      regression evidence. Context roots: the pin's two live production roots are `client.go:566` (the metrics poller,
+      triaged in 3.7c) and `trace.go:56` (leaves with `DetachContextWithTrace`, 3.7a); the rest of the "nine" are
+      comments or `test_client.go`.
+      - Done in 9cda760 (port: 25 production files, 10,986 lines, and the 43 unit files, imports rewritten;
+        `RegisterOrGet` for the 11 collectors; `nats-server/v2` v2.14.7 direct; ledger rows), 369d21e (census),
+        e5a5f0e (D8 repairs) and eb03773. The work is split into commits for review: 9cda760 compiles and passes
+        `go vet`, and its census tests, sleep guard, fixed-address guard and `cleanup-roots:check` fail until
+        369d21e and e5a5f0e. `task verify` passes at eb03773 (implementer-reported, PR #48), with
+        `task test:repeat -- ./natsclient` and `task tidy:check`. Census maps measured on SemEngine's tree: no
+        caller of the four entry points; direct creations `natsclient/stream.go` ×2 and
+        `internal/harness/natsfixture/fixture.go` ×1. The two planted-caller tests name `planted.go` in all seven
+        subtests, and all seven fail when the checks return nil. Sleeps 8 → 0 (R1a, `synctest`); fixed-address
+        lines 47 → 0 (`"nats://unused"` for clients that never dial, `refusedNATSURL` for the one that dials).
+        Also repaired, though the list above does not name it: three `Close(context.Background())` calls that
+        `cleanup-roots:check` rejects (`client_connect_test.go:70, :98`, `client_test.go:700`) now run under a
+        10 s `WithTimeout`. `task ledger:diff -- natsclient`: 68 files compared, 12 differ, 39 only at the pin
+        (4 production files; 5 excluded unit files and `typed_test.go`; 29 integration-tagged files: task
+        3.7b's 27, `test_client_integration_test.go` and `kv_temporal_integration_test.go`), 1 only in the tree
+        (`test_helpers_test.go`). `doc.go:512`'s import path is the one `doc.go` difference (task 3.7e).
+- [x] 3.7a (D) `natsclient` surface audit (#9 comment 5968830525; owner rulings, #9 comment 5969522395, items 1–2),
+      each drop an `adapt` item on the row: `options.go` `WithPingInterval`, `WithRequestHandlerTimeout`,
+      `WithDisconnectCallback`, `WithReconnectCallback`, `WithHealthChangeCallback`, `WithCircuitBreakerThreshold`,
+      `WithMaxBackoff`, `WithToken`, `WithTLS`, `WithDrainTimeout`, `WithCompression`; `client.go` `OnHealthChange`,
+      `WithHealthCheck`, `ErrConnectionTimeout`, `ConnectionOptions`, `PublishToStreamAsync`,
+      `PublishToStreamAsyncWithMsgID`, `PublishAsyncComplete`, `PublishAsyncPending`, `MaxReconnects()`,
+      `ReconnectWait()`, `PingInterval()`; `request.go` `RequestReady`; `errors.go` `ReplyError`; `DeliveryResult`'s
+      `ControlError`, `SettlementError`, `SettlementAttempted`, `SettlementMethodSucceeded`;
+      `StorageResource.Undescribable`; `trace.go` `DetachContextWithTrace` with its root at `:56`.
+      `PublishBatchToStream` stays (semboids `boidgraph/publisher.go:32`). State that the drops leave written by
+      nothing goes with them, so no branch remains that no input reaches: the `token`, `tlsCertFile`, `tlsKeyFile`,
+      `tlsCAFile`, `tlsEnabled`, `compression`, `onDisconnect`, `onReconnect` and `onHealthChange` fields, and exactly
+      these lines — `client.go:423-425` (token option), `:427-435` (TLS options), `:442-445` (compression), `:569-572`
+      (health change on connect), `:615` (token clear), `:1500-1510` (disconnect and health callbacks), `:1520-1530`
+      (reconnect and health callbacks), `:1585-1591` (health callback on close), `:1658-1661` (the monitor's health
+      callback). Kept: the `clientName` option (`:437-440`), `armConnectionLossTimer` (`:1512`), the reconnect path's
+      status, circuit reset and timer cancel (`:1516-1518`), and each handler's `setStatus`. `publishToStreamAsync`'s
+      `msgID` parameter and its stamp go too (only `PublishToStreamAsyncWithMsgID` passed one; `PublishBatchToStream`
+      passes "" at `:1177`). Fields still read by behaviour keep their defaults with no setter (`pingInterval`,
+      `drainTimeout`, `circuitThreshold` 15, `maxBackoff` one minute; `requestHandlerTimeout` from the environment
+      variable, `request.go:37-55`, whose name is unchanged here, #69). Audit item (c): `testCircuit`'s comment
+      (`client.go:352-358`) promises a reconnect; the function only moves the status from open to disconnected, and
+      the comment is corrected to say so. Tests, in the unit files here and in the integration files as 3.7b lands
+      them: a test that reaches kept behaviour through a dropped symbol is retargeted, not deleted — it calls the
+      unexported path the symbol wrapped (`publishToStreamAsync`, as `PublishBatchToStream` does at `:1177`;
+      `requestMsgReady`, as `RequestReadyClassified` does at `errors.go:318`), reads the fields a dropped getter
+      returned (`DeliveryResult`'s `controlErr`, `settlementErr`, `settlementTried`; `StorageResource`'s three unknown
+      states; the client's reconnect and ping fields), uses the JetStream handle a dropped accessor forwarded, or sets
+      the request-handler timeout through the environment variable; a test whose only subject is dropped behaviour is
+      deleted (`TestConnectionOptions`, `client_test.go:393`; `TestRequestHandlerTimeout_Option` and `_OptionBeatsEnv`;
+      `TestReplyError_*`, `errors_test.go:211, :221`; `TestPublishAsyncComplete_JetStreamUnavailable`;
+      `TestIntegration_PublishToStreamAsyncWithMsgID_Dedup` and the message-ID half of `_StampsTraceAndMsgID`; the
+      typed-subject cases at `subscription_integration_test.go:54, :62`; `TestIntegration_HealthMonitoring`,
+      `integration_test.go:236-285`, which retires design D8's rows `:262` and `:278`). The row lists each as pin
+      `file:line` → SemEngine `file:line` or "deleted".
+      - Done in d6f6d18, unit lane (implementer-reported, PR #48): the 30 listed symbols, the nine fields and the
+        listed lines dropped, with `lastHealthy` (`client.go:1630, :1663`), which only the monitor's health callback
+        read and the compiler refuses once nothing reads it. Retargeted: `TestPublishToStreamAsync_NotConnected`,
+        `_CancelledContext`, `_CircuitOpen` (`publishToStreamAsync`); the 18 `DeliveryResult` getter calls in
+        `delivery_settlement_test.go` (the fields); the 7 `Undescribable()` calls in `storage_inventory_test.go`
+        (the three unknown states); `TestConnectionOptions` (the reconnect and ping fields: its subject is kept
+        options, so the retarget rule wins over its place in the deletion list); and
+        `TestClientHandleErrorDoesNotMutateRuntimeStateOrCallbacks`, which planted the three dropped callback
+        fields and is not in the list. Deleted: `TestRequestHandlerTimeout_Option`, `_OptionBeatsEnv`,
+        `TestReplyError_NilErr_NoOp`, `_EmptyReplyTo_NoOp`, `TestPublishAsyncComplete_JetStreamUnavailable`. Each
+        retarget fails on a mutant of the behaviour it covers; `Err()` without `controlErr` in its join survives,
+        as at the pin. `requestMsgReady` has no unit test; a scratch test over the embedded broker, not committed,
+        caught two mutants. The integration-file retargets and deletions this task names carry to 3.7b, listed on
+        the row. `task verify` passes. Every pin `file:line` → SemEngine `file:line` is on the row.
+- [x] 3.7b (D) `natsclient` integration lane: the 27 integration-tagged files land on `natsfixture`, 3.7a's rule applied
+      to their dropped-symbol uses. The 51 `NewTestClient` sites (56 at the pin less five in tests removed by 3.7 and
+      3.7a) are rewritten (51 before, 0 after), with the other `test_client.go` and `test_options.go` uses:
+      `TestStreamConfig` and `WithStreams`, `WithKV`, `WithJetStream`, `WithFileStorage`, `WithTestTimeout`,
+      `WithNATSVersion`; `WithMinimalFeatures` (`test_options.go:55-61`; called at
+      `client_close_integration_test.go:16`, `client_async_error_integration_test.go:28`,
+      `subscription_integration_test.go:84`) → a plain fixture, which always runs JetStream, and the review checks that
+      none of the three asserted JetStream's absence; `TestClient.Terminate()` (4 files at the pin, 3 after the drops)
+      and the `.Terminate(` calls through the container wrappers (14 files, 13 after the drops; 40 of the calls through
+      `integration_test.go:286-296` and 3 through `client_integration_test.go:197-200`) → `Fixture.Stop`;
+      `GetNativeConnection()` (3) → a connection dialled from `URL()` in `stream_visibility` and `kv_watcher_ownership`,
+      and `client.GetConnection()` (what the pin's helper returned) at `subscription_integration_test.go:98, :106`,
+      which closes the connection its own subscription is on; and the testcontainers imports and `testClient.container`
+      uses (`client_integration_test.go:14, :190-200`; `integration_test.go:18, :24-34, :70, :240, :286-296`).
+      Afterwards no `natsclient` test imports testcontainers. `natsfixture` gains one option that sets the broker's
+      `max_payload` (item 5), its consumer the four `WithTestMaxPayload` tests in
+      `request_response_bounds_integration_test.go`, with a fixture test written first (a publish above the set limit is
+      refused, one at or below it accepted) and the `nats-fixture` delta's requirement "Broker max payload is settable".
+      The 8 fixed-address lines in 4 integration files are repaired (D8 R5). The 23 integration sleeps (29 at the pin
+      less six in the removed `TemporalResolver` tests) are repaired per D8 R1, and the lane's real-clock timers are
+      re-counted after the deletions and each checked against D8's table. `TestIntegration_Reconnection`
+      (`integration_test.go:62`) is rewritten on `natsfixture.Restart` with no skip call (D8 R2; item 2): the loss is
+      observed through `WithConnectionLostCallback` and the client's `Status` through `probe.Await`, and a client
+      dialled from the new `URL()` is observed healthy; its name and comment say it proves re-dial, not nats.go's
+      automatic reconnect. The two tests that pin NATS 2.14.4 (`kv_key_contract_integration_test.go:38-39`,
+      `kv_watcher_ownership_integration_test.go:48`) run on `.nats-image` (2.14.7) with the version override dropped and
+      the log line corrected (item 6); T-B3 (`imagepin_test.go:78`) cannot see a version and digest held in separate
+      constants, so this is review only. `kv_key_contract_test.go:30`'s v1.52.0 constant becomes v1.54.0 and its comment
+      cites `kv.go:504-506` (the three regexes are byte-identical). `task test:integration -- ./natsclient` passes. Done
+      in `edfd431`, `9637826`, `8177a64`, `ce528b4`; CI run 37138705673 green at `ce528b4`. The 27 files are ported;
+      `NewTestClient` sites 51 → 0; `go list` test imports show no testcontainers. `TestMaxPayloadIsSettable` failed
+      first ("broker announces max_payload 1048576, want 4096"); the option writes a config file and passes `--config`,
+      since nats-server has no flag for it. Sleeps 23 → 0 (10 flushes, waits on observed events or counts, one removed
+      as waiting for nothing; the old Reconnection test's 3 went with its rewrite); fixed addresses 8 → 0; 31 failure
+      bounds under 10 s widened to 10 s and six hand-made polls moved to `probe.Await`. Beyond the listed scope: about
+      56 deferred `Close` calls go through a bounded `closeClient`; the refusal test's 150 ms request timeout became an
+      event-driven wait, so it asserts `context.Canceled` where the pin asserted a timeout; two late-responder tests
+      raise `MaxRetries` 5 → 10; the `publish_msgid` duplicate window 250 ms → 2 s.
+      `TestIntegration_ReconnectionIsRedial` fails on a mutant that removes the loss-timer arming. Added from the 3.7a
+      survivor: `TestConsumeDeliveryWithHeartbeatErrCarriesControlLoss` fails on the mutant that drops `controlErr` from
+      `Err()`'s join. Census maps unchanged. Text corrected after the fact: the `Terminate` and `GetNativeConnection`
+      mappings above, and D8's new row for `client_close_integration_test.go:77`.
+- [ ] 3.7c (D) Hold: Codex's checkpoint review of 3.7–3.7b, recorded on this pull request with the commit it read.
+      `Client` lifecycle (design D3): the test-side adapter lists the `nats.Conn`, JetStream handle, subscriptions,
+      internal consumer claims, the health monitor, the metrics poller, the claim-release goroutines and the two timers,
+      and the client passes the suite with a refused-URL must-fail factory after these items, each test written first
+      and shown to fail on the code as 3.7b leaves it: `natsclient-nil-context-refused` (`Close(nil)` panics at
+      `client.go:685`; `Connect(nil)` dials at `:494`, panics at `:495` and leaks the connection — both refuse with an
+      error before acting); `natsclient-connect-refuses-second-start` (`:547` overwrites the connection, `:566` starts a
+      second poller); `natsclient-close-joins-its-goroutines`, in-package tests, each registering the planted
+      callback's release in `t.Cleanup` before planting it and bounding every wait: (a) a connection-loss timer armed
+      by `handleDisconnect` (`:1512`) fires a planted `onConnectionLost` that blocks until released: the pin's `Close`
+      returns nil while it runs; after the fix `Close` under an ended context returns `ctx.Err()`, and a second `Close`
+      with a live context does not return until the callback is released and then returns nil (the pin's second
+      `Close` returns nil at once, `:583-585`); (b) a disconnect delivered once `Close` has begun and a loss timer that
+      fires after it start nothing and are not counted, `go test -race` passes, and the drop is logged at debug level;
+      (c) two concurrent `Close` calls while the planted callback blocks: the one whose context ends returns
+      `ctx.Err()` while the other still waits, and the other returns nil once the callback is released; (d) `Close`
+      with a bounded context called from inside `onConnectionLost` returns `ctx.Err()`; (e) the Close/Connect race,
+      made deterministic: `Connect` is given, through `WithLogger`, a handler that blocks on the "Successfully
+      connected to NATS" record (`:555`) until released, which holds `Connect` open after it releases `closeMu`
+      (`:553`) and before it starts the monitor (`:560`) and the poller (`:566`); `Close` runs and returns while
+      `Connect` is held, the handler is released, and once both have returned neither the monitor nor the poller runs
+      and the adapter lists nothing (the pin starts both, and writes `metricsCancel` with no lock that `Close` reads at
+      `:595`). The review checks that all six sites of design D3 go through the one helper. `jetstream.New`'s error
+      (`:525`, dropped at the pin) is returned by `Connect` with the dialled connection closed; no failing-first test
+      exists, because nats.go v1.54.0 `jetstream.New` fails only when an option does and
+      `WithPublishAsyncErrHandler` never does (`jetstream/jetstream.go:471-492`, `jetstream_options.go:41-46`), and the
+      row says so. The root at `client.go:566` is triaged on the row: `Close` cancels the poller's in-flight work and
+      joins it. Each item is changed behaviour on the row.
+- [ ] 3.7d (D) Hold: Codex's checkpoint review of 3.7c (concurrency), recorded on this pull request. `natsclient`
+      metrics (design D9; item 4): the three consumer collectors that `Add` cumulative server values on every poll
+      (`jetstream_metrics.go:305-307`) become gauges `Set` from server state — `consumer_delivered_total` →
+      `consumer_delivered_stream_sequence` (`Delivered.Stream`), `consumer_acked_total` →
+      `consumer_ack_floor_stream_sequence` (`AckFloor.Stream`), `consumer_redelivered_total` →
+      `consumer_redelivered_messages` (`NumRedelivered`) — with namespace and subsystem unchanged pending #69; the name
+      and type changes are consumer impact on the row. No client label. Tests written first: (1) two polls of an
+      unchanged consumer leave each of the three gathered values equal to the server's (the pin doubles them); (2) two
+      clients on one registry: each of the 11 collectors is the canonical one, and a value written through the second
+      client is gathered (fails at the pin for the 8 registered through `Register*`, `:128-146, :158-160`);
+      `jetstream_metrics_test.go:16` covers all 11. The shared-series ownership defects (`stream_state` set to 0 by one
+      client's failed `Info`, `:278`; `forgetConsumer` deleting series another client still writes, `:232-243`) are
+      tracked by #75, named on the row's `known_risks` (#9 comment 5968830525, rule 4; owner ruling #9 comment
+      5969776736, item 5), not fixed here.
+- [ ] 3.7e (D) `natsclient` `README.md` (375 lines at the pin) and `doc.go`: import paths at `README.md:14, :312`
+      and `doc.go:512` name the SemEngine module, each its own `adapt` item (#9 comment 5968665464); the lint fixes
+      (12 × MD013, 1 × MD032); behaviour edits by line (#9 comment 5957221949): `NewTestClient` (`README.md:277-281`,
+      `doc.go:352-354`) → `natsfixture`; `WithClosedCallback` (`README.md:231`), which does not exist; the defaults at
+      `README.md:213, :216`; `doc.go:339` (`WithTLS(true)`) and `doc.go:252` (a method shown as an option); every
+      passage that shows a 3.7a drop; `Close` and `Connect` as 3.7c leaves them; the request-handler-timeout comments
+      that name the dropped option (`client.go:100, :168`, `request.go:29`). `task docs:check` passes.
+- [ ] 3.8 (D) `task cover:check` targets `natsclient`, `message`, `payloadregistry` at 80%: the first measurement
+      of each is recorded on this pull request (design P8: the pin baseline is unmeasured). If any of the three
+      measures below 80%, a new task asking the owner to rule on that package's coverage is added to this file at
+      that moment, written so `task spec:queue` reads it, and the gate stays unwaived (plan `:206-209`); nothing in
+      this file waits on the owner until the measurement exists.
+- [ ] 3.9 (D) `stretchr/testify` and `pgregory.net/rapid` v1.3.0 are direct requirements (design D1; Rapid by owner
+      ruling, PR #48 comment 5951926492), with `github.com/nats-io/nats-server/v2` v2.14.7 (design D1; task 3.7), and
+      `pkg/types/entity_id_prop_test.go`, the floor's one Rapid file (design P23), is ported with its property test;
+      `task tidy:check` passes; the ported test-file count is recorded with its arithmetic: the pin's 127, less the six
+      excluded `natsclient` files, `pkg/acme`'s two, and the files removed with dropped surface (`typed_test.go`,
+      `kv_temporal_integration_test.go`, and any the other surface audits name on their rows), plus files this change
+      adds (each on its row, e.g. `message/meta_wire_test.go`, `message/decoder_fuzz_test.go`). The line count after
+      repair is recorded with `wc` against the pin's 33,279, less each deleted test the rows list, with a diff stat
+      against the pin per package.
+- [ ] 3.10 (R) Port review per package group (3.1–3.7e) and of task 2.8's rehomed helpers: the two service adapters list
+      every retained kind (the review checklist of the `lifecycle-suite` delta); each helper has the shape design D7
+      gives it, its `synctest` test and its nil-context refusal, and no fixed shutdown timeout remains
+      (`background-work` delta); rows validate, no file beyond the pin's was added except the two adapters, the
+      test-side helper file that replaces `test_client.go`, the `natsfixture` max-payload option and its test, and the
+      rewritten `NewTestClient` sites; the census tests' expected maps match the tree; and every D8 repair is on its
+      row; every real-clock timer in a repaired file is either an R1b failure bound sized per D8 or a site in D8's
+      disposition table with that disposition (a review check the text check cannot make);
+      `go test -v -run TestPublicSignatures ./internal/harness/contract` shows "public packages checked: 11" and passes,
+      and a run with a temporary exported `natsclient` function returning `*resource.Watcher` (from `internal/resource`,
+      used at `client.go:1394`) fails naming it (design D5, task 2.10). Verdict on this pull request.
+- [ ] 3.11 (D) CI time: the wall time of `task verify` per step (`scripts/verify.sh` prints it) and of the CI `verify`
+      job with every package ported are recorded on this pull request, with the integration lane's time against its
+      `-timeout 10m` (`scripts/test-integration.sh:402`). If the job exceeds its 15-minute limit (`merge-gate`
+      "Required needs both jobs"; `ci.yml:22`) or the lane exceeds its timeout, a new task asking the owner to rule is
+      added to this file at that moment, written so `task spec:queue` reads it, and the limit stays unchanged: the
+      limit is spec, and neither the developer nor the reviewer may raise it.
+
+## 4. Repair evidence this change can produce (ruling g)
+
+- [ ] 4.1 (D) Settlement, `natsclient` half: the 18 unit and 3 integration settlement tests pass against `natsfixture`;
+      the `transport-client` "Settlement follows the decision" scenarios map to named tests (long work with heartbeat →
+      `TestIntegrationConsumeDeliveryWithHeartbeatHealthyRenewalPreventsOverlap`; semantic retry →
+      `TestIntegrationSemanticRetryProducesDurableRedelivery`; work panics →
+      `TestConsumeDeliveryWithHeartbeatControlLossNormalizesInvalidAndPanic` and
+      `TestConsumeDeliveryWithHeartbeatPanicAndZeroPolicyFailClosed`, `delivery_settlement_test.go:690,739`); the row
+      names change 2 for the graph-ingest half. The tests that read `DeliveryResult`'s dropped getters read its
+      unexported fields instead, with the same assertions (task 3.7a).
+- [ ] 4.2 (D) Acknowledged is not durable, `natsclient` half: an integration test publishes through the ported client
+      to a memory-backed and a file-backed stream, restarts the fixture (task 2.1's primitive), and asserts absence
+      and presence respectively; the `natsclient` row names it and change 2 for the graph-ingest scenarios.
+- [ ] 4.3 (D) `Close`/`Drain` bounded: tests show `Drain(nil)` refused without a server call (carried), `Close(nil)` and
+      `Connect(nil)` refused with the connection untouched (new, test written first, task 3.7c), `Close` under a short
+      deadline returning within it with the connection closed, and a second `Close` returning nil (carried where the pin
+      has them; new ones where the row records a gap).
+
+## 5. Ledger items that need no port, and boundary gates
+
+- [ ] 5.1 (W) Eight `defer-exclude` rows for the D4 ten-out packages never carried (`agentic`, `agentic/agentrun`,
+      `gateway`, `gateway/graph-gateway`, `internal/agentterminal`, `internal/deliverylane`, `internal/looptoken`,
+      `vocabulary/agentic`) at the pin SHA with the D4 reason each; `task ledger:check` passes.
+- [ ] 5.2 (A) The Tier-1 cross-check re-measured on the ruled 65-package set (#9 item 1), recorded next to the
+      ledger as an inventory with its command and result; it changes no row.
+- [ ] 5.3 (D) Package-doc lint sensitivity: `package-comments` is already on (`revive.toml:22`); `task lint` passes
+      over the ported tree (every package in the set has a package comment at the pin, inventory §3.3), and a run
+      with one public package's comment removed fails naming it; the eleven public destinations (design D5) are the
+      ones the check protects.
+- [ ] 5.4 (D) `scripts/cover-check.sh` reads its targets from a list that this and later changes extend, adding
+      `natsclient`, `message` and `payloadregistry`, which lie outside the `internal/harness` base the script
+      hard-codes today (`cover-check.sh:14`), and `natsclient`'s statements come from the merged unit and integration
+      profiles; `TestCoverCheckSensitivity` (`cover_test.go:37`), which today names only the three harness packages,
+      gains a below-80% and a missing-from-profile case for a package outside `internal/harness`, written first and
+      failing; `TestCoverCheckPrintsFailingTest` (`cover_test.go:134`, flake-defense 4.4, merged) still passes.
+
+## 6. Docs
+
+- [ ] 6.2 (W) `docs/testing.md` (PR #39) or its successor gains: the `Restart` contract (`URL()` valid until the next
+      restart; stop the owner before, start after), `FaultKV`'s before/after semantics, the helper-process pattern,
+      the lifecycle suite for services with its required must-fail factory and the adapter checklist, the three
+      shapes of background work with their `synctest` test, and the repair classes for a ported test (design D8);
+      written for a working developer, each coined term defined at first use.
+- [ ] 6.3 (W) The `openspec/specs/` sync: the six deltas applied to `harness-boundaries`, `nats-fixture`,
+      `lifecycle-suite` and the three new capabilities (`process-host`, `transport-client`, `background-work`),
+      verified against the code as landed; `task spec:check` passes.
+- [ ] 6.4 (W) `.agents/contracts/semengine-developer.md` and `.agents/contracts/semengine-reviewer.md` gain the
+      "Background work" subsection after "Context ownership", and their detach bullets the no-join-by-timer clause, as
+      drafted on this pull request; `AGENTS.md`'s "Rules and what enforces them" table carries the background-work row,
+      added in commit b09374a; `task docs:check` passes; and, because guidance returns with the package (architect
+      contract § Extraction slices): the pin's `.agents/contracts/semstreams-developer.md` "NATS RPC" (`:226-233`) and
+      "Storage and retention contracts" (`:176-193`), `.agents/contracts/semstreams-reviewer.md` "NATS RPC error
+      contract" (`:217-226`) and "Storage, retention, and cutover review" (`:170-186`), and
+      `.agents/skills/kv-or-stream`. Each is read at the pin and carried in adapted form, or named as not applying with
+      its reason.
+
+## 7. Review and archive
+
+- [ ] 7.1 Hold: independent change review. The reviewer's verdict on the full diff (harness, 15 packages, rows,
+      gates, docs) is a pass recorded on this pull request with the reviewed commit; a critical-stage read applies
+      because this change adds new exported harness surface and changes `lifecycletest.Run`.
+- [ ] 7.2 (D) `task verify` green on the final commit; the integration lane green under the host lock, evidence
+      directory attached to this pull request; `implemented-by:` in the pull request body.
+- [ ] 7.3 (W) The change archived under `openspec/changes/archive/` as the last content commit before squash merge;
+      in that commit `openspec/specs/background-work/spec.md`, `process-host/spec.md` and `transport-client/spec.md`
+      each carry a real `## Purpose` in place of the placeholder `openspec archive` writes, which OpenSpec 1.13.2's
+      strict validation rejects (PR #48 comment 5951371629, item 2); `task spec:check` passes on that commit;
+      `task spec:queue` shows no open hold.

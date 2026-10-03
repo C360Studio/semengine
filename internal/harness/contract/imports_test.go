@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/parser"
 	"go/token"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -40,6 +41,35 @@ func TestImportGraphSensitivity(t *testing.T) {
 		for _, allowed := range []string{"engine_test.go", "internal/harness/probe", "pkg/clean"} {
 			if strings.Contains(line, allowed) {
 				t.Errorf("violation reported for an allowed file: %s", line)
+			}
+		}
+	}
+}
+
+// The rehomed test helpers (task 2.8) import testing, so T-B1 admits them only under
+// internal/harness/: the same files planted at their pin paths, outside the harness, are refused.
+func TestImportGraphRejectsHarnessHelpersOutsideTheHarness(t *testing.T) {
+	root := repoRoot(t)
+	helpers := map[string]string{
+		"internal/harness/semantictest/fixtures.go":  "internal/semantictest/fixtures.go",
+		"internal/harness/payloadfixture/testing.go": "payloadregistry/testing.go",
+	}
+	planted := map[string]string{"go.mod": "module github.com/c360studio/semengine\n"}
+	for harnessPath, pinPath := range helpers {
+		src, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(harnessPath)))
+		if err != nil {
+			t.Fatalf("read the helper: %v", err)
+		}
+		planted[harnessPath] = string(src)
+		planted[pinPath] = string(src)
+	}
+	plantedRoot, files := writeTree(t, planted)
+	v := importViolations(t, plantedRoot, files)
+	for harnessPath, pinPath := range helpers {
+		requireViolation(t, v, pinPath, `"testing"`)
+		for _, line := range v {
+			if strings.HasPrefix(line, harnessPath) {
+				t.Errorf("violation reported for the helper in the harness: %s", line)
 			}
 		}
 	}

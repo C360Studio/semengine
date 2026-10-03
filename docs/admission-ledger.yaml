@@ -20,8 +20,8 @@
 # destination path: the leading run of letters, digits, `/`, `.`, `_` and `-` in `destination`;
 # anything after it is a note. `task ledger:diff -- <source_path>` prints the differences of any entry;
 # `adapt` entries are printed there and never failed. Every entry below is re-checked at SETUP 03A.
-# No SemStreams package has been ported; the SETUP 02 rows record patterns adapted, two scripts carried
-# and later adapted (flake-defense), and exclusions.
+# The SETUP 02 rows record patterns adapted, two scripts carried and later adapted (flake-defense), and
+# exclusions; the package rows of change setup-04a-01-floor follow them.
 #
 # Port refactors (owner ruling on #8, Q4; SETUP 03B design.md D4a): restructuring ported code away from
 # the pin's shape (a seam, a file-level adapt, a dropped field or method) is disposition `adapt`, with
@@ -29,7 +29,7 @@
 # retained behavior, and `known_risks` naming `class:port-refactor` and its tracking issue (#25-#36).
 
 - source_path: natsclient/test_client.go
-  source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
     pattern for the owned disposable NATS fixture (phased setup, typed failure, one mapped-port
     replacement, fresh per-operation cleanup deadlines, bounded test streams)
@@ -46,12 +46,24 @@
     production package imported testing/testcontainers upstream (not carried); mutable tag pin upstream
     (replaced by digest); eleven caller knobs upstream (dropped)
   proving_tests: >-
-    natsfixture owner tests S1-1..S1-9; lifecycletest.Run over the fixture adapter; T-B1, T-B2, T-B3
+    natsfixture owner tests S1-1..S1-9; lifecycletest.Run over the fixture adapter; T-B1, T-B2, T-B3.
+    Not ported with the natsclient package (task 3.7; source_sha moved to the package's pin, where the
+    file is 987 lines): the two declarations a ported unit test reads, testStreamMaxAge and
+    testStreamMaxBytes (pin test_client.go:912-913, read at client_test.go:373-374), are defined in
+    natsclient/test_helpers_test.go, the one test-side helper file that replaces it; no ported unit
+    test reads anything else from it (go vet ./natsclient/ compiles the 43 unit files without it).
+    Its other callers, the 27 integration-tagged files, are rewritten onto natsfixture in task 3.7b
+    through natsclient/test_helpers_integration_test.go, the helper file's integration half
+    (startFixture, newFixtureClient for NewTestClient's 51 sites); the natsclient row lists each
+    rewrite. One caller knob returns, on owner ruling (#9 comment 5969522395, item 5):
+    natsfixture.WithMaxPayload for the pin's WithTestMaxPayload (test_client.go:503-508), proven by
+    TestMaxPayloadIsSettable, TestMaxPayloadDefaultsToTheBroker and
+    TestNonPositiveMaxPayloadIsRefused (nats-fixture delta, "Broker max payload is settable")
   owner: setup-02 developer
   disposition: adapt
 
 - source_path: natsclient/test_options.go
-  source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: none; read to confirm the knob surface that the fixture deliberately omits
   destination: none
   contract: n/a
@@ -59,6 +71,78 @@
   known_risks: knobs make callers predict Docker latency and name uniqueness
   proving_tests: n/a
   owner: setup-02 developer
+  disposition: defer-exclude
+
+- source_path: natsclient/test_client_factory_test.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: none; read to confirm it tests only what is not ported
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    tests NewTestClient, the factory in natsclient/test_client.go, which is not ported (owner ruling, #9 comment 5941920346, Q3; design D1)
+  proving_tests: n/a
+  owner: setup-04a-01-floor developer
+  disposition: defer-exclude
+
+- source_path: natsclient/test_client_integration_test.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: none; read to confirm it tests only what is not ported
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    integration-tagged tests of natsclient/test_client.go, which is not ported (owner ruling, #9 comment 5941920346, Q3; design D1)
+  proving_tests: n/a
+  owner: setup-04a-01-floor developer
+  disposition: defer-exclude
+
+- source_path: natsclient/test_client_readiness_test.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: none; read to confirm it tests only what is not ported
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    tests the readiness phases of natsclient/test_client.go, which is not ported (owner ruling, #9 comment 5941920346, Q3; design D1); natsfixture owns readiness (S1-1..S1-9)
+  proving_tests: n/a
+  owner: setup-04a-01-floor developer
+  disposition: defer-exclude
+
+- source_path: natsclient/monitoring_consumers_test.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: none; read to confirm it tests only what is not ported
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    walks the SemStreams tree for NewTestClient(..., WithMonitoring()) callers (:13-27, :83, :111-115); WithMonitoring is declared at test_client.go:448, which is not ported, and the files it names lie outside the ported set (processor/graph-index/...), so it has nothing left to check. Forced by Q3, not an owner ruling (design D1)
+  proving_tests: n/a
+  owner: setup-04a-01-floor developer
+  disposition: defer-exclude
+
+- source_path: natsclient/test_options_test.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: none; read to confirm it tests only what is not ported
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    tests natsclient/test_options.go, which is not ported. Forced by Q3, not an owner ruling (design D1)
+  proving_tests: n/a
+  owner: setup-04a-01-floor developer
+  disposition: defer-exclude
+
+- source_path: natsclient/mapped_port_retry_test.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: none; read to confirm it tests only what is not ported
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    tests natsclient/test_client.go internals (the mapped-port retry), which are not ported; natsfixture owns the one mapped-port replacement. Forced by Q3, not an owner ruling (design D1)
+  proving_tests: n/a
+  owner: setup-04a-01-floor developer
   disposition: defer-exclude
 
 - source_path: internal/lifecyclecleanup/lifecyclecleanup.go
@@ -208,3 +292,1106 @@
   proving_tests: n/a
   owner: setup-02 developer
   disposition: defer-exclude
+
+# Change setup-04a-01-floor (PR #48, epic #9), section 3: the floor's 15 package rows, in design D1's
+# import order. Destinations follow design D5 (owner rulings #9 comments 5952661571, 5953295358).
+
+- source_path: internal/semantictest
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    grammar-only fixtures (EntityID, Predicate) for message's tests (payload_test.go,
+    triple_helpers_test.go at the pin); a test helper, so it lives in the harness (design D2,
+    "Rehomed helpers"; task 2.8)
+  destination: internal/harness/semantictest
+  contract: >-
+    EntityID joins six positions and Predicate three without rewriting a byte, and each returns the
+    value only when pkg/types or vocabulary accepts it, failing the test otherwise, as at the pin
+  dependencies_and_side_effects: >-
+    pkg/types, vocabulary (in-set; their closure adds pkg/errs and pkg/retry, neither of which
+    starts a goroutine; pkg/platform left it when vocabulary.EntityIRI was removed, task 3.6b);
+    testing; no goroutine, no I/O
+  known_risks: >-
+    no context roots. Imports testing from a non-test file, which T-B1 admits only under
+    internal/harness/ (TestImportGraphRejectsHarnessHelpersOutsideTheHarness). No test of a package
+    in its closure imports it (design P5; go list, task 2.8)
+  proving_tests: internal/harness/semantictest/fixtures_test.go
+  owner: setup-04a-01-floor developer
+  disposition: carry
+
+- source_path: pkg/platform
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    platform identity (platform.Config). At the pin seven message symbols (the federation family)
+    and vocabulary.EntityIRI named it; the surface audit removed both (task 3.6b: #72 comment
+    5969293525, and ruling 1 as extended, #72 comment 5969505488), so nothing in this change
+    imports it. Its reader in the port set is config (change 3): pin config/config.go:29 (the
+    PlatformConfig alias), :49 (Config.Platform), :226-244 (the org and id validators) and
+    config/manager.go:88-101 (the platform_identity record). Surface whose caller is ported later:
+    it stays public at pkg/platform, because config's exported Config names it (design D5)
+  destination: pkg/platform
+  contract: Config carries the platform identity fields as at the pin; no behavior beyond the type
+  dependencies_and_side_effects: stdlib only; no goroutine, no I/O
+  known_risks: >-
+    no tests at the pin, none invented (design D1); no context roots. No package in the module
+    imports it until config is ported (change 3). Adapt item, doc comment corrected (#72 ruling D,
+    comment 5969505488): pin platform/platform.go:27-28 said Config "round-trips cleanly through
+    config files and embedded message metadata"; the second half described message.FederationMeta,
+    which never round-tripped (BaseMessage.MarshalJSON never wrote it) and is removed, so the
+    sentence now stops at config files. Adapt item, package comment corrected (#72 ruling D, relayed
+    in PR #48 comment 5969508639): pin platform/platform.go:1-4 said the package serves "leaf
+    packages (message, vocabulary)" that reference platform identity, false once the federation
+    family and vocabulary.EntityIRI were removed (task 3.6b); it now names config as the reader and
+    says positions 1-2 of an entity ID are the only carrier (ADR-102, ADR-104). No code changed
+  proving_tests: >-
+    none at the pin and none in this change: no test in the module names platform.Config once
+    vocabulary.EntityIRI's tests are removed (task 3.6b); go build and go vet type-check the package,
+    and TestPublicSignatures and TestNoDeploymentAuthorityNames (internal/harness/contract) load it.
+    config's tests are its proving tests when config is ported (change 3)
+  owner: setup-04a-01-floor developer
+  disposition: adapt
+
+- source_path: pkg/resource
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    resource.Watcher, bounded startup wait and periodic availability check for KV buckets and
+    streams; imported by natsclient (client.go WaitForStartup); no consumer imports it (design P21)
+  destination: internal/resource
+  contract: >-
+    WaitForStartup retries up to StartupAttempts at StartupInterval and stops on ctx; IsAvailable,
+    Name and the Config defaults as at the pin. Changed behavior (design D7, background-work shape
+    1): Run(ctx) error replaces StartBackgroundCheck and Stop; Run checks on each tick
+    (HealthInterval while available, else RecheckInterval), runs OnAvailable and OnLost on the
+    caller's goroutine, returns ctx.Err() when ctx ends, refuses a nil context with an error before
+    any check, and refuses a second Run while one is in progress (the pin's StartBackgroundCheck
+    "already running" guard); the cancel and wg fields and the doc references to the removed
+    methods (pin watcher.go:108, :138-140; doc.go:14, :21, :57, :66, :85, :149, :151, :159) are gone
+  dependencies_and_side_effects: stdlib only; Run blocks its caller's goroutine and starts none
+  known_risks: >-
+    no context roots. StartBackgroundCheck and Stop have no caller outside their own tests at the
+    pin (design P10); the WaitForStartup callers the later changes port are unaffected (design D5).
+    Deleted with the removed methods: TestWatcher_BackgroundCheck_Idempotent (pin
+    watcher_test.go:222-242, replaced by TestWatcher_Run_SecondRunRefused) and
+    TestWatcher_Stop_Idempotent (:244-261; Run has no Stop to repeat)
+  proving_tests: >-
+    internal/resource/watcher_test.go, every test inside synctest.Test except Name, ConfigDefaults
+    and ImmediateSuccess; new, written first: TestWatcher_Run_ReturnsOnCancelAndLeavesNothing,
+    TestWatcher_Run_NilContextRefused, TestWatcher_Run_SecondRunRefused. D8 repairs (R1a, sleep to
+    the bubble's clock): pin watcher_test.go:151 → watcher_test.go:175-176; :208 → :229-230; :324 →
+    :352; :333 → :363; :335 → :365; :363 → :395-396; the real-clock 500 ms elapsed bound (:104) →
+    an exact 100 ms on the bubble's clock (:115); the unjoined toggler goroutine (:330) joins (:357)
+  owner: setup-04a-01-floor developer
+  disposition: adapt
+
+- source_path: pkg/retry
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: bounded retry with backoff; SemSource imports it (4 files, design P16)
+  destination: pkg/retry
+  contract: >-
+    Do and DoWithResult retry up to MaxAttempts with exponential backoff capped at MaxDelay,
+    optional jitter, stop on ctx and on NonRetryable; DefaultConfig, Quick, Persistent as at the pin
+  dependencies_and_side_effects: stdlib only; process-global jitter source seeded at init
+  known_risks: >-
+    no context roots; production code unchanged from the pin. The pin's timing tests asserted
+    real-clock elapsed bounds (< 150 ms) that a slow host can fail on a correct implementation.
+    README lint fixes (owner ruling, #9 comment 5957221949): pkg/retry/README.md is ported with only the edits
+    markdownlint requires: line 7 wrapped at 120 columns (MD013), a blank line before the lists at
+    :115, :123, :130 (MD032), the trailing newline (MD047); no wording changed. README import path
+    (owner ruling, #9 comment 5968665464), an adapt item "import path changed to the SemEngine
+    module": pin README.md:12, github.com/c360/semstreams/pkg/retry →
+    github.com/c360studio/semengine/pkg/retry
+  proving_tests: >-
+    pkg/retry/retry_test.go, the six timer-driven tests inside synctest.Test. D8 repair (R1a): pin
+    retry_test.go:68 (time.Sleep 50 ms) → retry_test.go:74 (<-time.After on the bubble's clock);
+    Success, AllAttemptsFail, ContextCancellation, BackoffTiming, MaxDelay and WithResult wrapped in
+    synctest.Test, so their delays and elapsed bounds run on the fake clock
+  owner: setup-04a-01-floor developer
+  disposition: adapt
+
+- source_path: pkg/security
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    TLS and ACME configuration types; security.Config is named by metric.NewServer, so public by
+    the signature rule (design D5, P22)
+  destination: pkg/security
+  contract: configuration types and their field semantics as at the pin; no behavior beyond the types
+  dependencies_and_side_effects: stdlib only; no goroutine, no I/O
+  known_risks: >-
+    no tests at the pin, none invented (design D1); no context roots. doc.go's See Also names
+    pkg/tlsutil and pkg/acme by module path; pkg/acme is not ported (change 5), so the doc.go:139 link
+    points at a package that does not exist here, left as the pin's text because changing it would
+    break this row's carry check; pkg/tlsutil moved to internal/tlsutil (task 3.4, f1cc210), which
+    rewrote the doc.go:138 link to internal/tlsutil, as the ledger check expects once the pkg/tlsutil
+    row maps the move
+  proving_tests: none at the pin; compiled through metric's tests (task 3.5)
+  owner: setup-04a-01-floor developer
+  disposition: carry
+
+- source_path: pkg/timestamp
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    int64 millisecond timestamp helpers; imported by message; no consumer imports it (design P21)
+  destination: internal/timestamp
+  contract: conversion, parsing and formatting of millisecond timestamps as at the pin
+  dependencies_and_side_effects: stdlib only; no goroutine, no I/O
+  known_risks: >-
+    no context roots; import path differs from the pin (pkg/ → internal/, design D5). doc.go:127 links
+    github.com/c360studio/semengine/graph, which does not exist here; left as the pin's text, because
+    changing it would break this row's carry check
+  proving_tests: internal/timestamp/timestamp_test.go, internal/timestamp/example_test.go
+  owner: setup-04a-01-floor developer
+  disposition: carry
+
+- source_path: pkg/errs
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    error classification (transient, fatal, invalid), lifecycle sentinels and the shutdown error
+    type; SemSource imports it (3 files, design P16)
+  destination: pkg/errs
+  contract: >-
+    classification, wrapping and errors.Is/As behavior as at the pin; ErrAlreadyStopped
+    (errs.go:47) is the one already-stopped sentinel (SS#1218)
+  dependencies_and_side_effects: pkg/retry (in-set); stdlib; no goroutine, no I/O
+  known_risks: >-
+    SS#1218: the duplicate service.ErrAlreadyStopped (pin service/base.go:28) is removed in change 3,
+    where its proof lives (design D4). Context roots, the two D1 counts: both are example code inside
+    doc comments (doc.go:173, :297), not executable; the package has no production root. Doc-comment
+    sleeps (doc.go:48, :111, :288) carried as they are (owner ruling Q4, task 1.5)
+  proving_tests: >-
+    pkg/errs/errs_test.go, pkg/errs/classified_is_test.go, pkg/errs/shutdown_test.go
+  owner: setup-04a-01-floor developer
+  disposition: carry
+
+- source_path: vocabulary
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    predicate vocabulary, registry, IRI mapping and namespace authority; SemSource imports it (20
+    files, design P16). Only the package directory is ported; its sub-packages (agentic, bfo,
+    builtins, cco, examples, export, governance, rulepacks) are not in the floor
+  destination: vocabulary
+  contract: >-
+    predicate registration and lookup, dotted-name validation, IRI construction and namespace
+    authority as at the pin
+  dependencies_and_side_effects: >-
+    stdlib; a process-global predicate registry mutated at registration (pkg/platform was imported
+    only by vocabulary.EntityIRI, removed below)
+  known_risks: >-
+    no context roots; SemStreams IRI base strings carried unchanged (iris.go:14). README lint fixes
+    (owner ruling, #9 comment 5957221949): vocabulary/README.md is ported with only the edits
+    markdownlint requires: lines 7, 224, 263, 441, 582, 586, 671, 673 and 688 wrapped at 120 columns
+    (MD013); no wording changed. README import paths (owner ruling, #9 comment 5968665464), each an
+    adapt item "import path changed to the SemEngine module", pin lines: :111, :444 and :515
+    vocabulary/export; :390 vocabulary/bfo; :407 vocabulary/cco; :424 vocabulary/agentic; :645
+    vocabulary; from github.com/c360studio/semstreams to github.com/c360studio/semengine. The four
+    sub-packages are not ported yet (this row ports the package directory only). Adapt item, dead
+    surface removed (#72 ruling 1 as extended, comment 5969505488, under #9 comment 5968830525):
+    vocabulary.EntityIRI, a second IRI grammar for an entity built from platform.Config (it carries
+    platform.ID and Region and drops Org) with no production caller at the pin or in the four
+    starter consumers; the export IRI built from the entity ID (pin vocabulary/export/export.go:127-130,
+    change 7) is the one that stays. Removed, pin lines: vocabulary/iris.go:66-84 (its doc comment,
+    with the {platform_id}[/{region}]/{domain}/{type}/{local_id} grammar at :70 and the doc example
+    at :80-84), :85-111 (the function) and the pkg/platform import :9; vocabulary/iris_test.go
+    TestEntityIRI :76-142 (the call at :138), BenchmarkEntityIRI :291-300 (the call at :298) and
+    the pkg/platform import :7. TestNoDeploymentAuthorityNames (internal/harness/contract) failed
+    first naming vocabulary.EntityIRI and now holds the name out of every production package
+  proving_tests: >-
+    the 11 test files in vocabulary/ at the pin, less TestEntityIRI and BenchmarkEntityIRI (removed
+    with EntityIRI, above)
+  owner: setup-04a-01-floor developer
+  disposition: adapt
+
+- source_path: pkg/types
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    entity ID, entity type and domain authority types and their validation; SemSource imports it (5
+    files, design P16)
+  destination: pkg/types
+  contract: >-
+    entity ID parsing, the 256-byte bound (MaxEntityIDBytes), pattern matching, type and domain
+    authority validation as at the pin; Type.Validate also refuses a component that is not valid
+    UTF-8 (known_risks)
+  dependencies_and_side_effects: >-
+    pkg/errs (in-set); stdlib; pgregory.net/rapid v1.3.0 in tests only (owner ruling, PR #48 comment
+    5951926492); no goroutine, no I/O
+  known_risks: >-
+    no context roots. testdata/rapid carries the pin's curated seed for TestPropEntityIDByteBound (a
+    mutation-kill witness registered in testdata/rapid/README.md); any other .fail file Rapid writes
+    there is local debris and shows in task ledger:diff as "only in the tree". README lint fixes (owner
+    ruling, #9 comment 5957221949): pkg/types/README.md is ported with only the edits markdownlint
+    requires: lines 7 and 83 wrapped at 120 columns (MD013), the fence at :90 given the language text
+    (MD040); no wording changed. README import paths (owner ruling, #9 comment 5968665464), each an
+    adapt item "import path changed to the SemEngine module", pin lines: :74 pkg/types and :77 message,
+    from github.com/c360studio/semstreams to github.com/c360studio/semengine. Comment edit: the
+    requirement citations in entity_id_prop_test.go (:46, :60, :61, :88, :113, :145) name
+    docs/specs/entity-id-contract.md, where the pin's entity-id-contract capability now lives (#72,
+    comment 5970020197); no code changed. Behaviour change (owner ruling, PR #48 comment
+    5970334875, extending ruling 2 of #9 comment 5969776736): Type.Validate (type.go) refuses a
+    domain, category or version that is not valid UTF-8, so the payload registry and a projection
+    contract refuse such a type too; recorded with its encoding refusals on the message row
+  proving_tests: >-
+    the 6 test files in pkg/types/ at the pin, including entity_id_prop_test.go (Rapid properties
+    TestPropEntityIDRoundTrip, TestPropEntityIDByteBound, TestPropEntityIDPatternMatch; design P23)
+    and its testdata/rapid seed. Added: TestTypeValidateRefusesInvalidUTF8 in type_validate_test.go
+    (failed first: all four invalid components accepted)
+  owner: setup-04a-01-floor developer
+  disposition: adapt
+
+- source_path: docs/adr/102-entity-id-segment-semantics.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the decision record that defines the six entity-ID positions pkg/types/entity_id.go implements;
+    ported with pkg/types (#72 ruling D, comment 5969505488)
+  destination: docs/adr/102-entity-id-segment-semantics.md
+  contract: the decision text as at the pin
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    lint fixes only: the title is shortened to fit MD013's 80-column heading limit (the pin's full
+    title is quoted in the port note) and pin lines 58 and 77-79 are rewrapped at 120 columns; no
+    decision wording changed. Port note added under the title: SemStreams issue numbers, and records,
+    specs and packages it names that are not yet ported; it also says the entity-ID spec, named in the
+    text by its pin path, is docs/specs/entity-id-contract.md here (#72 ruling of 2026-10-03, comment
+    5970020197)
+  proving_tests: n/a (task docs:check lints it)
+  owner: setup-04a-01-floor technical writer
+  disposition: adapt
+
+- source_path: docs/adr/104-unique-platform-authority.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the decision record for the minted platform.id suffix that positions 1-2 of an entity ID carry;
+    ported with pkg/types and pkg/platform (#72 ruling D, comment 5969505488)
+  destination: docs/adr/104-unique-platform-authority.md
+  contract: decisions 1-6 as at the pin; decision 7 kept as history and marked superseded
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    corrections, each marked in the document with the pin line it supersedes: :94-100 decision 7 (the
+    (org, id, environment) guard) superseded, citing SemStreams #1188, the ADR's own :127-128 and pin
+    openspec/specs/component-runtime-config/spec.md:369-371 (environment separates nothing; a pin
+    probe finds no environment read in config/manager*.go); the restatements of decision 7 at :115-118
+    (consequence), :123 ("lost environment claim") and :145 ("one environment per bucket") marked
+    superseded with it. Lint fixes: pin lines 5 and 91 rewrapped at 120 columns. Port note added: issue
+    numbers are SemStreams'; config.Manager.Start, the component-runtime-config and
+    framework-bucket-catalog specs and the proposals inventory are not yet ported; it also says the
+    entity-id-contract spec the text calls a capability spec is the reference contract
+    docs/specs/entity-id-contract.md here (#72 ruling of 2026-10-03, comment 5970020197)
+  proving_tests: n/a (task docs:check lints it)
+  owner: setup-04a-01-floor technical writer
+  disposition: adapt
+
+- source_path: docs/concepts/16-federation.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the concept page for entity-ID positions and the authority check (pkg/types
+    ValidateEntityIDAuthority); ported with pkg/types (#72 ruling D, comment 5969505488)
+  destination: docs/concepts/16-federation.md
+  contract: the page as at the pin except the corrections below
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    corrections, each marked in the page with the pin line it supersedes: :56-58 (nothing coordinates
+    the authority pair; same pair mints colliding identities) rewritten to ADR-104 decisions 1 and 4,
+    the minted suffix; :60-64 (the boundary enforces only the lexical contract; a foreign authority is
+    accepted as local truth) rewritten to the pin's authority gate, authorizeSubject
+    (processor/graph-ingest/authority_gate.go:51-52) at ten call sites (canonical_mutations.go:244,
+    :307, :383, :474; component.go:1743, :2065, :2224, :2306, :2449, :2591). Product name (#9 comment
+    5968665464): :3, :190 and :194 say SemEngine for SemStreams. :190 link to 15-payload-registry.md
+    (not ported) reworded to the payloadregistry package. Port note added: graph, graph-ingest, the
+    WebSocket input, flow configuration and config.Manager.Start are not yet ported. :26 links the
+    entity-ID spec at its SemEngine path, docs/specs/entity-id-contract.md, in place of the pin's
+    openspec/specs/entity-id-contract/spec.md (#72 ruling of 2026-10-03, comment 5970020197)
+  proving_tests: n/a (task docs:check lints it)
+  owner: setup-04a-01-floor technical writer
+  disposition: adapt
+
+- source_path: openspec/specs/entity-id-contract/spec.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the reference contract for entity identity that pkg/types implements; ported with pkg/types (#72
+    ruling D, comment 5969505488). :490 keeps DeploymentPrefix as MUST export (its in-package caller
+    is SourcePrefix)
+  destination: docs/specs/entity-id-contract.md
+  contract: the requirements and scenarios as at the pin
+  dependencies_and_side_effects: none; a document, linted by task docs:check
+  known_risks: >-
+    :211 "SemStreams MUST NOT" reads "SemEngine MUST NOT" (#9 comment 5968665464). A port note in
+    Purpose names the seven pkg/types tests the spec cites that exist and pass here, the packages and
+    tests it names that are not yet ported (graph-ingest, graph-index, ObjectStore, config, agentic and
+    its processors, the example processors, the research pipeline, internal/entityidaudit), and three
+    test names (TestNewConversationMintsCanonicalUUID, TestCanonicalReplyToPassesFormCheck,
+    TestUnmintedCanonicalReplyToIsRefusedAsNotFound) that name no test function at the pin either.
+    Most requirements describe code not yet ported, so it is a reference contract, not current truth:
+    it lives at docs/specs/, not openspec/specs/, and each requirement moves into an openspec/specs/
+    capability when the code it describes is ported (#72 ruling of 2026-10-03, comment 5970020197). Its title
+    (:1) is "Entity-ID contract (reference)" with an opening note saying so. Lint fixes, now that
+    task docs:check lints it: blank lines around :20 "## Requirements"; :412, :592, :639 and :643
+    rewrapped at 120 columns; the trailing blank line :785 dropped; the file raises MD013's heading
+    limit to 120 so the requirement headings tests cite stay word for word
+  proving_tests: >-
+    pkg/types: TestEntityIDKeyOrderIsSystemBeforeDomain, TestFrameworkEntityDomainsIsTheClosedReservedSet,
+    TestEntityDomainDelegationIsADeclarationNotAPolicy, TestAuthorityRejectionIsCodedAndIdentityFree,
+    TestAuthorityRejectionLocalClaimOnImportLane, TestPrefixLevelsAreNamed,
+    TestTaxonomyAcrossSourcesIsPatternNotPrefix
+  owner: setup-04a-01-floor technical writer
+  disposition: adapt
+
+- source_path: pkg/projection/contract
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    projection contract data types (Contract, PredicateGroup, WriteMode) and their shape validation;
+    SemConnect imports it (gateway/cs-api/payloads.go:11, design P21); imported by payloadregistry
+  destination: pkg/projection/contract
+  contract: >-
+    Validate, ValidateShape and ValidateContracts accept and reject contracts as at the pin, every
+    rejection wrapping ErrInvalidContract
+  dependencies_and_side_effects: pkg/types, vocabulary (in-set); stdlib; no goroutine, no I/O
+  known_risks: >-
+    no context roots. The package doc (contract.go:1-6) names pkg/projection and ADR-103, which do not
+    exist here (pkg/projection is ported in a later change); left as the pin's text, because changing
+    it would break this row's carry check
+  proving_tests: pkg/projection/contract/contract_test.go
+  owner: setup-04a-01-floor developer
+  disposition: carry
+
+- source_path: pkg/tlsutil
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    builds tls.Config for servers and clients, with mTLS, from pkg/security types; imported by metric
+    (handler.go); no consumer imports it and no public signature names its types (design D5, P21, P22)
+  destination: internal/tlsutil
+  contract: >-
+    LoadServerTLSConfig, LoadClientTLSConfig, LoadServerTLSConfigWithMTLS and
+    LoadClientTLSConfigWithMTLS as at the pin: disabled config returns nil, the TLS version parse
+    defaults to 1.2, client CA pools and the CN whitelist are enforced, file and PEM failures are
+    errs fatal errors. Changed (owner ruling, #9 comment 5950752741; design D1): the ACME loaders
+    are not ported
+  dependencies_and_side_effects: >-
+    pkg/errs, pkg/security (in-set); stdlib; reads certificate and key files; no goroutine. The pin's
+    pkg/acme and go-acme/lego/v4 dependencies leave with the ACME loaders
+  known_risks: >-
+    no context roots; import path differs from the pin (pkg/ → internal/, design D5), so pin
+    pkg/security/doc.go:138 links internal/tlsutil here. Adapt items, all removals: tlsutil.go:186-365
+    (LoadServerTLSConfigWithACME, LoadClientTLSConfigWithACME, initACMEClient) and the context, time
+    and pkg/acme imports only they use (:5, :10, :12); in doc.go the ACME clauses of :7 and :10, and
+    lines :13-14, :27, :93-126, :151-154 (the transient-error bullet and ACME fallback paragraph, with
+    the blank line between them), :160 and :166. No tlsutil test calls the cut functions (pin grep of
+    WithACME and initACMEClient over pkg/tlsutil: tlsutil.go and doc.go only). Deferred to change 5
+    (setup-04a-05-first-consumer, which ports output/websocket, the first caller in the chain; #9
+    comment 5950752741 and its clarification; design D1, D7): the loaders, pkg/acme, go-acme/lego/v4
+    and two defects at the pin: the renewal goroutines' stop (tlsutil.go:253, :331) can block inside
+    legoClient.Certificate.Renew, which takes no context (pkg/acme/client.go:352), so it needs
+    Shutdown(ctx) and a renewal test seam; and the renewal callback writes tlsConfig.Certificates
+    while the config may be serving handshakes (tlsutil.go:258, :336), a data race.
+    input/websocket and output/httppost also call the loaders and are in no change of the chain
+  proving_tests: >-
+    internal/tlsutil/tlsutil_test.go (unit lane); internal/tlsutil/mtls_integration_test.go
+    (integration-tagged, run by task test:integration: real TLS handshakes over httptest servers for
+    required, optional and whitelisted client certificates)
+  owner: setup-04a-01-floor developer
+  disposition: adapt
+
+- source_path: metric
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    Prometheus metrics registry, core platform metrics and the metrics HTTP server; SemSource imports
+    it (design P16)
+  destination: metric
+  contract: >-
+    MetricsRegistry registration and conflict detection, CoreMetrics, and Server as at the pin: Start
+    and StartWithListener bind synchronously and refuse a nil or ended context, a used instance and
+    a nil registry; Address; a repeated completed Stop is a nil no-op; concurrent Stop is a typed
+    transient error. Changed behavior (design D3), each written first: Stop returns its context's
+    error whenever that context has ended, including after an idle server's Shutdown returned nil
+    (metric-abort-stop-reports-context, pin handler.go:222-228); after a forced close Stop waits on
+    the serve goroutine with no timer (metric-forced-join-without-timer: forcedServeJoinTimeout, pin
+    :23, :243-249, removed). Changed behavior (PR #48 review finding, owner-approved), written first:
+    Start applies the server mTLS configuration through tlsutil.LoadServerTLSConfigWithMTLS, so
+    RequireClientCert refuses a client with no certificate; at the pin Start called
+    LoadServerTLSConfig (pin handler.go:154) and no metric file names MTLS (pin grep), so the policy
+    was dropped; Start refuses mTLS enabled with server TLS disabled (ErrInvalidConfig) instead of
+    serving plain HTTP. Changed behavior (PR #48 review finding, owner-approved), written first: a
+    request the handler admitted, with the collection it runs, is the Server's work until the
+    handler returns; Stop waits for it within ctx after the serve join, returns ctx's error and
+    leaves it pending when ctx ends first, and a repeated Stop waits again and returns nil only once
+    it has finished; at the pin the forced path cleared its state after the serve join and the
+    repeated Stop returned nil at once (pin handler.go:202-206). Changed behavior (Codex review of
+    PR #48, comment 5959412053, finding 1), written first: Stop closes admission before it shuts
+    down, so a request that reaches the handler after Stop has begun is refused with 503 and its
+    handler never runs; admission closed and no request running are observed under one lock, so a
+    nil Stop is final. Changed behavior (design D9; Codex
+    review finding 4, PR #48 comment 5956732582; owner-accepted 2026-10-02), written first:
+    RegisterOrGet[C] keeps one canonical collector per logical key, of the exact concrete type and
+    descriptors; a nil candidate, a type or descriptor mismatch, and a cross-key alias are refused
+    with a fatal error and nothing stored. A caller uses the returned collector, never its own
+    candidate (AGENTS.md rule index, review only)
+  dependencies_and_side_effects: >-
+    pkg/errs, pkg/security, internal/tlsutil (in-set); prometheus/client_golang v1.23.2 (the pin's
+    version, now a direct requirement); prometheus/client_model v0.6.2 direct, for the D9 tests that
+    read gathered values (direct at the pin too, pin go.mod:14); binds a TCP listener and runs one serve goroutine per started
+    Server, joined by Stop; registry.go:76 starts a Describe goroutine drained by the range at :79-81
+    before the call returns (not background work, design D3)
+  known_risks: >-
+    Context roots, the two D1 counts: both are example code inside doc comments (doc.go:357, :362),
+    not executable; the package has no production root. Doc-comment sleep (doc.go:386) carried as it
+    is (owner ruling Q4, task 1.5). Registration adapt items (design D9), pin lines: registry.go:16-25
+    (MetricsRegistrar) removed; :27-60 (RegisterOrGetGaugeVec) generalised into RegisterOrGet;
+    :127-278 (RegisterCounter, RegisterGauge, RegisterHistogram, RegisterCounterVec,
+    RegisterGaugeVec, RegisterHistogramVec) removed, with :246, where RegisterGaugeVec threw away the
+    canonical collector; Unregister unchanged. doc.go:14, :75-97, :111, :125, :136, :196-209 and
+    :236-253 (the design's :245, widened: the error list beside it described the removed duplicate
+    handling) and :372-377 (the design's :373-378) restated for RegisterOrGet. Consumer impact:
+    semsource internal/entitypub/metrics.go:99-106 and semboids (internal/boidgraph/metrics.go,
+    internal/sim/lifecycle.go, internal/api/graphstream_metrics.go) stop compiling on their next pin
+    bump, and the semsource comment at :99-101 has to be rewritten. At run time, a consumer that
+    registers one descriptor under two keys now gets a fatal error at startup instead of silent
+    success; the pin's registry_test.go:254-275 encoded that pattern for "component recreation from
+    stale KV data". Later in-change callers adopt it in tasks 3.6 (pkg/cache) and 3.7 (natsclient).
+    Adapt items besides the behavior changes above: doc.go:331-333
+    restates Stop's forced join, admitted-request wait and context error in place of the one-second
+    bound. README behavior edits (owner ruling, #9 comment 5957221949: a passage describing behavior
+    the ported code no longer has is corrected, listed by line): pin README.md:318-320 (tree
+    :335-340), the Stop paragraph, rewritten for the graceful attempt within shutdownCtx, the forced
+    join without a timer, the wait for admitted requests, the context error and the 503 refusal once
+    Stop has begun; the registration
+    passages rewritten for RegisterOrGet (design D9): pin README.md:107-119, :151-154, :207-218 (the
+    MetricsRegistrar section, replaced by a RegisterOrGet entry under Functions), :286-293, :333-336,
+    :343-344, :367-372, :464-475 and :653-668. README import paths (#9 comment 5957221949; not a
+    behavior edit): pin README.md:19-20, :51, :419 and :596, import path changed to the SemEngine
+    module (github.com/c360/semstreams/metric and /pkg/security to
+    github.com/c360studio/semengine/metric and /pkg/security). doc.go:214, "testing with mock
+    registrars", which the removed MetricsRegistrar provided, rewritten to the actual test seam: a
+    registry from NewMetricsRegistry, read through PrometheusRegistry().Gather(). README lint fixes
+    (#9 comment 5957221949): lines 7, 9, 11, 27, 30, 33, 40,
+    233, 237 and 241 wrapped at 120 columns (MD013); a blank line after the headings at :26, :29,
+    :32, :39, :139, :158, :193, :209, :223 and :226 (MD022) and before the lists at :234, :238 and
+    :242 (MD032); the heading at :226, longer than 80 columns (MD013), becomes `NewServer` with the
+    signature on the line below it; no other wording changed
+  proving_tests: >-
+    the 3 test files in metric/ at the pin (handler_test.go, integration_test.go, registry_test.go);
+    new, written first, in metric/lifecycle_test.go: TestServerAbortStopReportsContext (30 servers
+    whose serveDone already holds a result, Stop with an ended context; at the pin 13, 12, 11 and 16
+    of 30 returned nil over four runs) and TestServerForcedStopJoinsServeWithoutTimer (inside
+    synctest.Test the serve result is withheld for an hour of the bubble's clock; at the pin Stop
+    returned "wait for forced metrics serve completion: context deadline exceeded");
+    TestServerLifecycleSuite runs lifecycletest.Run with an adapter listing the listener, the
+    http.Server, the serve goroutine and admitted requests, and counting in Calls the Server's own
+    external operations (listen, serve, shutdown, close server, close listener) through the
+    unexported opHook seam at each call site, and a must-fail factory whose Server is configured on a
+    port the test holds, so Start returns the bind error; an extra close on Stop's no-op path fails
+    RepeatedStopIsNoOp and FailedStartHoldsNothing, and passes both with Calls left nil (PR #48
+    review finding); in metric/tls_test.go, written first and failing
+    at the pin's Start ("An error is expected but got nil"): TestServerRequiredMTLSRejectsClientWithoutCertificate
+    (through StartWithListener, temporary certificates, an ephemeral listener: no client
+    certificate refused, a certificate the client CA signed served) and TestServerRefusesMTLSWithoutTLS;
+    in metric/lifecycle_test.go, written first and failing at the pre-fix Stop (the repeated Stop returned
+    nil where context.Canceled was expected):
+    TestServerRepeatedStopWaitsForAdmittedRequest (a real request whose collector blocks; Stop with
+    an ended context, then a repeat, both context.Canceled; the adapter reports the admitted
+    request; a live Stop returns nil only after the collection exited); handler_test.go's
+    in metric/admission_test.go: TestServerRefusesRequestAfterStopReportedCompletion (implementer-
+    reported failing first: "a request reached collection after Stop had reported completion"; a
+    real ephemeral listener whose connection pauses at net/http's second SetReadDeadline, after the
+    shutdown check and before the handler, while Stop with an ended context and a repeated Stop
+    run; on release the collector never starts) and TestAdmittedRequestsRefuseAfterClose (503, the
+    handler not run); handler_test.go's
+    TestServerStopIsCallerBounded asserted the pin's nil repeat before the release (pin
+    handler_test.go:461) and now asserts context.Canceled, with the nil Stop after the release;
+    in metric/registerorget_test.go, design D9 tests 1-8, each written first, with the oracle D9
+    lists: TestRegisterOrGetSameKeyReturnsCanonicalCollector (gathered 2 over six kinds),
+    ...RefusesSameKeyOfAnotherType, ...SameKeyWithDifferentHelp, ...CrossKeyAlias,
+    ...CoreMetricCollision and ...DirectRegistrationCollision (fatal error, zero collector and the
+    gathered value of the collector already registered), ...RefusesNilCandidates (fatal error, zero
+    collector, no panic, nothing in the key map; no gathered value) and
+    TestRegisterOrGetConcurrentCallersShareOneCollector (one identity, gathered as the worker count).
+    Failing first, implementer-reported, against the pin's registration methods behind the new
+    signature (a temporary shim, removed): all six same-key kinds gathered 1; the type, help,
+    nil-Counter, alias and direct-collision cases were accepted; the typed-nil *GaugeVec and the
+    core collision were already refused at the pin, the core test failing only on the returned
+    candidate; the concurrent callers got different collectors. Guard mutations, implementer-
+    reported: the type check, the descriptor check and the alias branch storing each fail a named
+    test; removing the nil guard fails no assertion but crashes the run with a nil-pointer panic
+    inside Prometheus' Register. In metric/registerorget_prop_test.go, D9's generated check
+    TestPropRegisterOrGetHistory: a Rapid state machine over RegisterOrGet, Unregister and writes
+    through returned handles, compared after every step with a test-owned reference model and
+    through Gather; it logs how often each assertion ran; implementer-reported, a planted removal of
+    the type check is found after 3 tests (seed 1320 run, shrunk to two registrations of k0: a
+    gauge, then a counter of the same name and help, accepted) and storing in the alias branch
+    after 0 tests (a gauge vector with the core status descriptor under a free key, accepted). Tests replaced, pin registry_test.go: TestMetricsRegistrar_Interface
+    (:360) and TestMetricsRegistry_IdempotentDuplicateRegistration (:254-275) deleted;
+    RegisterCounter (:22), RegisterGauge (:50) and RegisterHistogram (:225) replaced by test 1's
+    Counter, Gauge and Histogram cases; RegisterOrGetGaugeVecReturnsCanonicalCollector (:78) by test
+    1's GaugeVec case; ...RejectsIncompatibleCollector (:107) by test 2;
+    ...RejectsSameKeyDifferentDescriptor (:124) by test 3; ...RejectsCrossKeyDescriptorAlias (:140)
+    by test 5; GaugeVecAPIsShareCanonicalOwnership (:154, the legacy API) by tests 1 and 5;
+    ...ConcurrentCompatibleIdentity (:188) by test 8; UnregisterMetric (:277) and ThreadSafety
+    (:320) rewritten on RegisterOrGet. Pin integration_test.go: MockService.RegisterMetrics
+    (:29-52) takes *MetricsRegistry and keeps the returned collectors;
+    IdempotentRegistration (:90) and MultipleServicesSameNames (:210) now assert the summed
+    gathered value; MultipleServicesWithUniqueMetrics (:193) asserted the alias succeeded and now
+    asserts the fatal refusal
+  owner: setup-04a-01-floor developer
+  disposition: adapt
+
+- source_path: payloadregistry
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the binary's single payload type authority (registration, factories, indexing-profile floor,
+    projection contracts); SemSource imports it (run.go, design P16); imported by message
+  destination: payloadregistry
+  contract: >-
+    New, Register, lookups and the registration validation (projection contracts through
+    pkg/projection/contract) as at the pin
+  dependencies_and_side_effects: >-
+    pkg/errs, pkg/projection/contract, pkg/types, vocabulary (in-set); stdlib; no goroutine, no I/O
+  known_risks: >-
+    no context roots. Adapt item: testing.go (NewForTest, NewWithSubset, RegisterTestType) is not
+    ported into the package; it is a non-test file importing testing, which TestImportGraph refuses
+    in production code, and no payloadregistry test calls it (pin grep). Task 2.8 rehomed it to
+    internal/harness/payloadfixture/testing.go, the pin's text except these adapt items, by pin
+    testing.go line: :1 package payloadregistry → payloadfixture; :6 the pkg/types import path
+    rewritten, with an import of payloadregistry added beside it; New qualified as
+    payloadregistry.New at :20 and :34; Registry as payloadregistry.Registry at :18, :32 (twice) and
+    :53; Registration as payloadregistry.Registration at :55. A new doc.go gives payloadfixture
+    the package comment revive requires. T-B1 admits the file only under
+    internal/harness/ (TestImportGraphRejectsHarnessHelpersOutsideTheHarness). The package doc names ADR-103,
+    ADR-054, ADR-029, component.Dependencies and agentic, which do not exist here; left as the pin's
+    text
+  proving_tests: payloadregistry/registry_test.go, payloadregistry/attributes_test.go
+  owner: setup-04a-01-floor developer
+  disposition: adapt
+
+- source_path: message
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the message envelope, payload behaviors, triples, entity-ID parsing and metadata; SemSource
+    imports it (28 files, design P16), so it stays public at its pin path (design D5)
+  destination: message
+  contract: >-
+    BaseMessage, the payload and behavior interfaces, the JSON codecs, triple construction and
+    identity, entity-ID parsing and Meta as at the pin, less the federation family (dead surface,
+    known_risks). Changed behavior (owner ruling 7, #9 comment 5969522395): BaseMessage decodes
+    meta.created_at and meta.received_at strictly as the integer Unix milliseconds MarshalJSON
+    writes; absent, null or 0 is the zero time; any other value (a string, a fraction, an exponent
+    form, a bool, an object, an integer outside int64) is refused with an invalid-data error.
+    Changed behavior (owner ruling 2, #9 comment 5969776736): BaseMessage.MarshalJSON refuses a
+    meta source that is not valid UTF-8 with an invalid-data error. Changed behavior (owner ruling,
+    PR #48 comment 5970334875, extending ruling 2): BaseMessage.MarshalJSON refuses a message type
+    whose domain, category or version is not valid UTF-8, and GenericJSONPayload.MarshalJSON
+    refuses a string, map key or string value anywhere in Data that is not valid UTF-8, each with
+    an invalid-data error; message.Type.Validate (pkg/types row) refuses such a component. No other
+    behavior changed
+  dependencies_and_side_effects: >-
+    payloadregistry, pkg/errs, pkg/types, internal/timestamp (in-set);
+    github.com/google/uuid v1.6.0 (the pin's version, now a direct requirement); stdlib; no
+    goroutine, no I/O
+  known_risks: >-
+    no context roots. Import paths differ from the pin: pkg/timestamp is internal/timestamp (design D5;
+    gofmt then moves its import line in base_message.go into sorted order), and the tests'
+    internal/semantictest is internal/harness/semantictest (task 2.8). Adapt item (owner ruling, #9
+    comment 5957221949): message/README.md is ported with only the edit markdownlint requires: line 7
+    wrapped at 120 columns (MD013); no wording changed by that item (the decode-path item below
+    changes wording). README import paths (owner ruling, #9 comment
+    5968665464), each an adapt item "import path changed to the SemEngine module", pin lines: :20 and
+    :204 message → github.com/c360studio/semengine/message; :203 component →
+    github.com/c360studio/semengine/component, a package not ported yet; :466 errors →
+    github.com/c360studio/semengine/pkg/errs (the example's errors. identifiers are left as the pin's
+    text: the ruling covers import paths only). Adapt item, dead surface removed (owner ruling, #72
+    comment 5969293525, under #9 comment 5968830525; evidence SemStreams #1187, class:dead-surface,
+    and the pin's docs/proposals/gh1168-federation-identity-inventory.md:307-312, seam S8): the
+    message-level federation family, which no caller at the pin or in any sister uses and whose
+    origin fields BaseMessage.MarshalJSON never writes (pin base_message.go:233-238), so a decoded
+    message lost them. Removed, pin lines: message/federation.go whole (110 lines): FederationMeta
+    :22, DefaultFederationMeta :36 with its UID :73 and Platform :78, NewFederationMeta :50,
+    NewFederationMetaWithTime :60, GetPlatform :95, GetUID :105, and the BuildGlobalID example
+    :88-94 (a function that exists nowhere); base_message.go WithFederation :79-88 and
+    WithFederationAndTime :90-97, the pkg/platform import :12, and the examples that advertise them
+    :35-41 and :115-120; doc.go the federated-message example :330-332, and :463's WithFederation()
+    is now WithMeta(). The pin's message tests named none of these, so no carried test is removed.
+    Entity-ID federation prose (doc.go, storable.go, triple.go, types.go; pkg/types/entity_id.go,
+    ADR-102) stays. pkg/platform stays in the port set for config (its row). Adapt item, documented decode path
+    corrected (Codex F9, PR #48 comment 5969256728; owner ruling #9 comment 5968665464): the pin's
+    examples decode with json.Unmarshal into a zero-value BaseMessage, which always refuses (no
+    registry: BaseMessage.UnmarshalJSON's missing-registry error), and describe a global payload registry and a package-level
+    payloadregistry.Register, neither of which exists. Rewritten to build a payloadregistry.Registry,
+    register on it and call message.NewDecoder(reg).Decode(data) with its error handled; no code
+    changed. Pin lines: README.md :11, :13 (principles); :85, :89 (NewBaseMessage's signature and the
+    wire shape the decode example reads); :95-98 (decode example); :159, :169-174 (registry
+    explanation); :255-260 (init registration → a RegisterPayloads function); :372-383 (test example:
+    registration dropped, signature); :402-414 (round-trip example); :432-435 (thread safety);
+    :574-594 (migration example: the envelope's type was a dotted string, which the decoder refuses);
+    :600-612 (troubleshooting: the error text is "unregistered payload type"); :640; :687. doc.go
+    :366-367, :375-377 (serialization and the global-registry note); :407-408 (handler example).
+    README :329's NewBaseMessage(payload) call is left as the pin's text (not on the decode path).
+    Behaviour change, timestamp decode (owner ruling 7, #9 comment 5969522395): the pin decoded both
+    timestamps through timestamp.Parse (base_message.go:272-284), which reads a number up to 10^12 as
+    seconds and also accepts RFC 3339 and numeric strings, so every instant before 2001-09-09, which
+    MarshalJSON writes as fewer than 10^12 milliseconds, decoded wrong (1999-01-01 as year 30969, any
+    pre-1970 instant thousands of years earlier), and an unreadable value silently became the zero
+    time. Replaced by wireMillis: the wire is decoded with json.Decoder.UseNumber (pin :263's
+    json.Unmarshal) so the literal is read exactly, and anything but an integer in int64's range is
+    refused. internal/timestamp is unchanged; timestamp.Parse has no caller left in the module.
+    Behaviour change, source encoding (owner ruling 2, #9 comment 5969776736): the pin's
+    MarshalJSON wrote meta.source through encoding/json, which replaces each byte of a string that
+    is not valid UTF-8 with U+FFFD, so the wire carried a different source and nothing said so.
+    MarshalJSON now refuses such a source with an invalid-data error, checked at encoding because
+    NewBaseMessage returns no error and WithMeta accepts any Meta. Decoding is unchanged: JSON
+    text is UTF-8, so a decoded source is always valid. Behaviour change, type and generic payload
+    encoding (owner ruling, PR #48 comment 5970334875, extending ruling 2; Codex F12, comment
+    5970321028): the pin wrote the message type (base_message.go wireFormat.Type) and core.json.v1's
+    Data (generic_json.go MarshalJSON) through encoding/json in the same way, so an invalid byte in a
+    type component or in any string of Data reached the wire as U+FFFD with no error, and
+    Type.Validate accepted such a component. BaseMessage.MarshalJSON now refuses a type component
+    that is not valid UTF-8 (BaseMessage.Validate checks only that each component is non-empty, so
+    the check is at encoding, beside the source's); GenericJSONPayload.MarshalJSON walks Data by
+    encoding/json's rules (map keys, strings, TextMarshaler text, a pointer-receiver method on an
+    addressable value included, struct fields it writes, flattened embedded structs; not []byte,
+    fields tagged "-", unexported fields or a json.Marshaler's value) and refuses the first string that is not valid UTF-8, and refuses
+    encoded text that is not valid UTF-8 (a json.Marshaler's output is copied unchecked). A cycle
+    in Data stops the walk; json.Marshal reports it. Hash() ignores a payload marshal error, as at
+    the pin, so a payload refused here hashes as its type alone; tracked by #78.
+  proving_tests: >-
+    the 9 test files in message/ at the pin, carried unchanged except import paths; payload_test.go
+    and triple_helpers_test.go use internal/harness/semantictest. Added (task 3.6b):
+    meta_wire_test.go, TestMetaCarriesOnlyWhatTheWireCarries (every exported type implementing Meta
+    has only Meta's exported methods; failed first on the tree before the removal, naming
+    DefaultFederationMeta and FederationMeta) and TestBaseMessageMetaSurvivesTheWire;
+    TestBaseMessageTimestampsAreMilliseconds (1999-01-01, 1960-01-01, the epoch and a 2024 instant
+    round-trip at millisecond precision; failed first: 1999 decoded as year 30969, 1960 as -8032) and
+    TestBaseMessageRefusesTimestampsThatAreNotMilliseconds (failed first: all eight non-millisecond
+    forms accepted); TestBaseMessageRefusesSourceThatIsNotUTF8 (four invalid sources through
+    NewBaseMessage and WithMeta refused, five valid ones kept across the wire; failed first: all
+    eight marshals succeeded with U+FFFD on the wire); decoder_fuzz_test.go (Codex F8, design
+    D7): FuzzDecoderDecode, FuzzDecoderRoundTrip and FuzzGenericJSONPayloadUnmarshalJSON, through NewDecoder with a real
+    registry, against a standard-library oracle that predicts acceptance and refusal.
+    TestBaseMessageRefusesTypeThatIsNotUTF8 and TestGenericJSONRefusesStringsThatAreNotUTF8 (owner
+    ruling, PR #48 comment 5970334875; failed first: all three invalid types and all fifteen
+    invalid Data shapes of the first version marshalled with U+FFFD on the wire; the cycle,
+    embedded-struct and json.Marshaler cases came after, with the walk's field rules), and
+    FuzzDecoderStrings, which generates the
+    three type components and a generic key and value and asserts refusal or full equality through
+    NewDecoder, with seeds holding an invalid byte in each of the five positions
+  owner: setup-04a-01-floor developer
+  disposition: adapt
+
+- source_path: pkg/cache
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    generic caches (simple, LRU, TTL, hybrid) and CoalescingSet; admitted whole because six
+    admitted packages import it at the pin (design D1); nothing in this change imports it, since
+    natsclient's one importer, TemporalResolver, is dropped as dead surface (owner ruling, #9
+    comment 5969522395, item 1); no consumer imports it and no public signature names its types
+    (design D5, P21, P22)
+  destination: internal/cache
+  contract: >-
+    Cache[V] get, set, delete, clear, size, keys, statistics and close as at the pin; LRU size
+    eviction, TTL expiry on read and in the background cleanup; NewFromConfig validation; WithMetrics
+    exports the statistics as Prometheus collectors; CoalescingSet add, remove, prefix removal,
+    drain and one deduplicated batch per window as at the pin. Changed behavior, each written
+    first. Design D9: newCacheMetrics registers its six collectors through metric.RegisterOrGet and
+    keeps the collectors it returns, so caches sharing a prefix on one registry share one collector
+    per metric (the collectors are interface-typed; RegisterOrGet compares the concrete type).
+    Design D7, background-work shape 3: CoalescingSet.Shutdown(ctx) replaces Close(); it returns nil
+    once the goroutine has exited, ctx.Err() if ctx ends while the caller's callback still runs, and
+    nil on a later call once the callback has returned; Shutdown(nil) is refused with an error;
+    NewCoalescingSet panics on a nil context before it starts the goroutine. Design D7, shape 2: the
+    TTL and hybrid Close signal the cleanup goroutine and wait for it with no fixed bound; NewTTL and
+    NewFromConfig refuse a nil context with an error, for every strategy. Every constructor that
+    returns Cache[V] with an error (NewSimple, NewLRU, NewTTL, the hybrid constructor, and
+    NewFromConfig through them) returns a nil Cache on error; at the pin each returned its nil
+    pointer inside a non-nil Cache (pin config.go:152, :159, :170, :177). Owner ruling (#9 comment 5950725772): no eviction
+    callback. Changed behavior, task 3.6a (Codex review, PR #48 comment 5968489295; owner rulings,
+    #9 comments 5968830525 and 5968665464), each written first: a CoalescingSet callback panic is
+    not recovered and ends the process, and a nil callback panics at the call before the goroutine
+    starts (F1); concurrent Close calls on the TTL and hybrid caches are safe and each returns only
+    once the cleanup goroutine has exited (F2); NewLRU, NewTTL and the hybrid constructor refuse a
+    zero or negative size, TTL or cleanup interval with a classified invalid error, a nil Cache and
+    no goroutine started, as Config.Validate already did for NewFromConfig (F3); Config's JSON
+    decoder refuses unknown keys, stats_interval included, and treats a JSON null as a no-op (F4,
+    F5). Removed as dead surface (owner ruling #9 comment 5968830525, after a pin-wide reference
+    search): Config.StatsInterval and WithStatsInterval, Entry with IsExpired and Touch, WithStats,
+    StatsFromContext, ContextKeyStats, and Statistics.MemoryUsage, UpdateMemoryUsage and
+    StatsSummary.MemoryUsage
+  dependencies_and_side_effects: >-
+    metric, pkg/errs (in-set); prometheus/client_golang; stdlib; pgregory.net/rapid in tests only.
+    The TTL and hybrid caches run one cleanup goroutine each, joined by Close; CoalescingSet runs
+    one goroutine that calls the caller's callback, joined by Shutdown within its context
+  known_risks: >-
+    Context roots, the one D1 count: example code inside a doc comment (pin doc.go:255), not
+    executable; the package has no production root. Port-refactor rows for later callers (design
+    D5): CoalescingSet.Close becomes Shutdown(ctx) (pin processor/graph-embedding/component.go:875,
+    processor/rule/entity_watcher.go:980); WithEvictionCallback is deleted (pin
+    processor/rule/expression/regex_cache.go:21, a no-op callback; the pin's natsclient/kv_temporal.go:27,
+    :59 leave with TemporalResolver, task 3.7). Shared collectors: two caches under one prefix share the size gauge, which shows
+    whichever cache wrote last, not a sum (at the pin the second cache's gauge was not gathered at
+    all). Removed with the eviction callback (owner
+    ruling, #9 comment 5950725772; design D7): WithEvictionCallback (pin options.go:42-48, with the
+    evictCallback field :23-24), EvictCallback (cache.go:51-53), and the evictFn plumbing in
+    simple.go, lru.go, ttl.go and hybrid.go; TestEvictCallback (cache_test.go:444-503, 60 lines, two
+    subtests, two of the package's 26 sleeps) is deleted with it (design D8). Removed by shape 3:
+    CoalescingSet.Close (coalescing_set.go:114-126). Removed by shape 2: the fixed 5 s wait in the
+    TTL and hybrid Close (ttl.go:258-264, hybrid.go:285-291). doc.go adapt items, pin lines: the
+    eviction examples and prose at :39-41, :157, :162, :179 and :234-236 removed; the "Context and
+    Cleanup" section (:250-261) gains Close's join, the nil-context refusals and CoalescingSet's
+    Shutdown. README behavior edits (owner ruling, #9 comment 5957221949), pin lines: the eviction
+    callback examples at :64-66, :200-202 and :410-412 and the WithEvictionCallback section
+    :117-125 removed. README import paths (not a behavior edit, as on the metric row): :17 and :41
+    changed to github.com/c360studio/semengine/internal/cache and /metric. README lint fix: line 3
+    wrapped at 120 columns (MD013); no other wording changed. Task 3.6a (Codex PR #48 comment 5968489295; owner
+    rulings #9 comments 5968830525, 5968665464): a panic in a CoalescingSet callback ends the
+    process (owner ruling on F1); a caller that needs to survive one recovers inside its own
+    callback. Removed, pin lines: the recover in fireBatch (coalescing_set.go:167-180); the
+    check-then-close in the TTL and hybrid Close (ttl.go:251-256, hybrid.go:278-283), replaced by a
+    sync.Once; StatsInterval (config.go:46-47, :58, :103-106, :123-126, :232, :260-267; options.go:26-27,
+    :50-59, :66; ttl.go:34, :67; hybrid.go:38, :73; doc.go:163; README.md:67, :127-133, :194); Entry,
+    IsExpired, Touch, contextKey, ContextKeyStats, WithStats and StatsFromContext (cache.go:55-94);
+    memoryUsage, UpdateMemoryUsage, MemoryUsage and StatsSummary.MemoryUsage (stats.go:23, :68-72,
+    :114-119, :172, :185, :202). Pin-wide reference search (the pin and the four consumers named in
+    docs/inventory-scope.md): none of the removed symbols has a reader outside pkg/cache; the one
+    other reference is a setter, processor/rule/config.go:245 (StatsInterval: 30s), with
+    processor/rule/docs/configuration.md:219, :231 documenting stats_interval: a port-refactor item
+    for processor/rule, whose stats_interval key now fails to decode. Config.UnmarshalJSON decoded
+    into &aux (config.go:238), so a JSON null set aux to nil and panicked; it now decodes into aux.
+    doc.go behavior edits (rule 2(c)), pin lines: cache.NewHybrid, which the package does not have,
+    replaced by NewFromConfig with StrategyHybrid at :37-39, :72, :216 and :227-229; :267 and :271
+    name ./internal/cache; :286 no longer points at a nonexistent examples_test.go. README behavior
+    edits: cache.NewHybrid replaced the same way at :35, :102 and :403-411
+  proving_tests: >-
+    the 6 test files in pkg/cache/ at the pin, carried to internal/cache/ and repaired. New, written
+    first, in internal/cache/metrics_test.go: TestCacheMetricsTwoCachesOnePrefixGatherTheSum (two LRU
+    caches under one prefix on one registry; oracle: the operations the test performs, counted by hand,
+    each gathered on one series; at the pin the second cache's writes were not gathered,
+    implementer-reported). In internal/cache/background_test.go, each run inside synctest.Test:
+    TestCoalescingSetShutdownLeavesNothingRunning, TestTTLCacheCloseLeavesNothingRunning and
+    TestHybridCacheCloseLeavesNothingRunning (start, use, stop; oracle: the stop returns nil within an
+    hour of the bubble's clock with the goroutine's done channel already closed, and the bubble returns;
+    at the pin's behavior the TTL and hybrid tests pass, because the fixed wait shows only when the
+    goroutine does not exit), TestCoalescingSetNilContextPanicsAtTheCall and
+    TestCacheConstructorsRefuseNilContext (at the pin the goroutine panicked: coalescing_set.go:136,
+    ttl.go:276), TestCoalescingSetShutdownUnderABlockedCallback (oracle: context.DeadlineExceeded while
+    the callback is held, nil after it returns; at the pin's Close the bubble deadlocked) and
+    TestCoalescingSetShutdownRefusesNilContext; TestCacheCloseAfterContextEndAndAgain (a Close after the
+    context ended the goroutine, then a second Close, both nil; not a changed behavior, it passes at the
+    pin's behavior too); TestCacheConstructorsReturnNilCacheOnError (each constructor above,
+    NewFromConfig for every strategy, refused by a metrics registration collision; oracle: err != nil
+    and the returned Cache == nil; implementer-reported, it failed first for NewSimple, NewLRU and
+    NewFromConfig's simple and lru paths with a nil *simpleCache or *lruCache inside the Cache).
+    Generated check, in internal/cache/coalescing_set_prop_test.go: TestPropCoalescingSetHistory, a
+    Rapid history of Add, Remove, RemovePrefix, Drain, window ticks and Shutdown, each run in its own
+    bubble and compared after every step with a test-owned model; it logs how often each assertion ran;
+    and TestCoalescingSetRemovePrefixMatchesOnlyAtTheStart, the boundary the generator reaches only by
+    chance. D8 repairs (R1a, sleep to the bubble's clock, unless named), pin → SemEngine:
+    coalescing_set_test.go:137 → :143; :148 → :158; :257 → :271; :308 → :323; :318 → :334; :339 → :356;
+    :348 → :366; :428 → :447; :446 → :465; :516 → :537; :522 → :543; :527 → :548; the 10 ms not-yet
+    window (:89-94) → :94-100, after synctest.Wait; :586, :592 and :611 went with
+    TestCoalescingSet_CallbackPanic and TestCoalescingSet_NilCallback, replaced in task 3.6a;
+    coalescing_set_attack_test.go:105 → :114 (R1b: the callback is held on a channel the test releases;
+    the test stays on the real clock, because an Add blocked on the set's mutex would stall a bubble
+    instead of failing it; 10 s failure bound at :142); :177 → :200; :223 → :245-256 (a sentinel key:
+    the pin asserted a callback after a fixed 300 ms, which failed whenever the removers had emptied the
+    set; now one window, one callback, nothing pending); :241 → :270; :298 → :334-335 (wait for the
+    first delivery: a zero window ticks every nanosecond of the bubble's clock); cache_test.go:294 →
+    :306; :317 → :332; :368 → :388; benchmark_test.go:183 → :183-191 (R1b: probe.Await until no key is
+    live, 10 s failure bound). The 30 t.Parallel calls (coalescing_set_test.go 20,
+    coalescing_set_attack_test.go 10) are removed: t.Parallel cannot be called in a bubble. Other test
+    edits: TestCoalescingSet_CallbackPanic asserted nothing at the pin and is gone, replaced in task
+    3.6a by TestCoalescingSet_CallbackPanicEndsTheProcess below (a callback panic ends the process;
+    nothing is delivered after it); BatchCleared and AddDuringCallback assert after releasing the test's mutex (at the pin a
+    failed require held it and the deferred Close waited forever); the carried CoalescingSet tests call
+    Shutdown(t.Context()) for Close(); the two test files' "Code generated ... DO NOT EDIT" headers,
+    which made tools treat them as generated, are replaced by a note of their origin, and the 11 unused
+    parameters revive then reports are named _ (coalescing_set_test.go 6, coalescing_set_attack_test.go
+    5). Task 3.6a, each written first (implementer-reported failing first): in coalescing_set_test.go,
+    TestCoalescingSet_CallbackPanicEndsTheProcess replaces TestCoalescingSet_CallbackPanic (a prochost
+    helper; oracle: exit code 2, and the panic value and the fireBatch frame on its stderr) and
+    TestCoalescingSet_NilCallbackPanicsAtTheCall replaces TestCoalescingSet_NilCallback (the panic, and
+    no run goroutine in the bubble's stack dump); the tests that passed a nil callback pass a no-op one.
+    In background_test.go, TestCacheConcurrentCloseJoinsEveryCaller (2,000 rounds of 32 Close calls per
+    strategy; each returns nil with the goroutine's done channel closed) and
+    TestCacheConstructorsRefuseInvalidDimensions (errs.IsInvalid, a nil Cache, no cleanup goroutine in
+    the bubble's stack dump). In config_test.go, TestConfig_UnmarshalJSON_RefusesUnknownKeys,
+    TestConfig_UnmarshalJSON_RefusesStatsInterval and TestConfig_UnmarshalJSON_NullIsANoOp; the
+    duration-string table no longer sets stats_interval. In config_fuzz_test.go,
+    FuzzConfigUnmarshalJSON, a native fuzz target whose invariants are derived with the standard library
+    (no panic; only Config's keys; each duration from time.ParseDuration or the integer; a Marshal round
+    trip). TestAttack_CallbackLatency releases its callback and joins its adds on every exit path (F6).
+    Repeat runs (D8 R4; implementer-reported, PR #48): see task 3.6
+  owner: setup-04a-01-floor developer
+  disposition: adapt
+
+- source_path: natsclient
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the NATS and JetStream client: connection lifecycle with circuit breaker and health status,
+    streams, consumers with delivery settlement, KV buckets and watchers, request/reply, storage
+    inventory, pressure and reports, and JetStream metrics; SemSource imports it, so it stays public
+    at its pin path (design D5)
+  destination: natsclient
+  contract: >-
+    Client, its options and every exported operation as at the pin, less the surface named under
+    known_risks as dropped. Changed behavior, design D9 (task 3.7): newJetStreamMetrics registers
+    all 11 collectors through metric.RegisterOrGet and keeps the collector each call returns
+    (jetstream_metrics.go:128-161 at the pin, where 8 went through the removed Register* methods,
+    task 3.5a), so a second client on the same registry writes to the canonical collector. Metric
+    names, types and the semstreams namespace are unchanged (#69); the consumer counters' change to
+    gauges is task 3.7d. Changed surface, task 3.7a: the surface audit's drops listed under
+    known_risks are gone, and with them the token, TLS and compression connection options and the
+    disconnect, reconnect and health-change callbacks; pingInterval (30 s), drainTimeout (30 s),
+    circuitThreshold (15) and maxBackoff (one minute) keep their defaults (client.go:161-166 at
+    the pin → :149-154) with no setter, and requestHandlerTimeout is set only from
+    SEMSTREAMS_NATS_REQUEST_HANDLER_TIMEOUT (request.go:37-55, name unchanged, #69)
+  dependencies_and_side_effects: >-
+    metric, pkg/errs, pkg/retry, internal/resource (in-set); github.com/nats-io/nats.go v1.54.0
+    and nats.go/jetstream; prometheus/client_golang; stdlib. Test-only:
+    github.com/nats-io/nats-server/v2 v2.14.7 (embedded broker, client_connect_test.go:104),
+    stretchr/testify, prometheus client_model and testutil; the integration lane imports
+    internal/harness/natsfixture and internal/harness/probe and no natsclient test imports
+    testcontainers (task 3.7b). Dials NATS; runs the health monitor, the
+    metrics poller, claim-release goroutines and two timers (design D3; joins are task 3.7c)
+  known_risks: >-
+    Import paths differ from the pin: pkg/resource is internal/resource (design D5); the doc.go
+    import path at :512 is task 3.7e. Pin differences carried with the carried tests as the only
+    regression evidence: nats.go v1.52.0 at the pin (go.mod:12) is v1.54.0 here; the embedded test
+    broker nats-server/v2 v2.12.4 at the pin (go.mod:11) is v2.14.7 here, the .nats-image line
+    (owner ruling, #9 comment 5969776736); T-B3 cannot see an embedded server, so one broker
+    version across both lanes is review only. Context roots (design D1 re-measured: the pin's nine
+    are two live production roots, the rest are doc.go comments at :35, :151, :245, :524 or
+    test_client.go): client.go:566, the metrics poller started under context.Background(), a defect
+    triaged in task 3.7c; trace.go:56, DetachContextWithTrace, left with that function in task
+    3.7a. kv.go:600 is a bounded terminal drain, context.WithTimeout(context.WithoutCancel(ctx),
+    filteredWatcherDrainTimeout), the developer contract's admitted shape, not a root. Dropped
+    surface, not ported (design D8, "A test of a removed feature"): kv_temporal.go
+    (TemporalResolver, 228 lines) with kv_temporal_integration_test.go and
+    TestTemporalResolver_ErrorBoundaries (kv_error_integration_test.go:352-450 with its comment,
+    removed in task 3.7b) (owner ruling, #9 comment 5969522395, item 1); typed.go (117 lines) with
+    typed_test.go (item 2). Not ported, with file rows: test_client.go, test_options.go and six test
+    files (test_client_factory_test.go, test_client_integration_test.go,
+    test_client_readiness_test.go, monitoring_consumers_test.go, test_options_test.go,
+    mapped_port_retry_test.go). The 27 integration-tagged test files are ported in task 3.7b (below). Dropped as dead surface by the surface audit, task 3.7a (#9 comment
+    5968830525; owner rulings, #9 comment 5969522395, items 1-2), each an adapt item, pin →
+    deleted: options.go WithPingInterval :29-35, WithRequestHandlerTimeout :37-50,
+    WithDisconnectCallback :72-79, WithReconnectCallback :81-88, WithHealthChangeCallback :90-96,
+    WithCircuitBreakerThreshold :125-134, WithMaxBackoff :136-145, WithToken :156-162, WithTLS
+    :164-173, WithDrainTimeout :191-197, WithCompression :199-205; client.go ErrConnectionTimeout
+    :55, MaxReconnects :379-384, ReconnectWait :386-391, PingInterval :393-398, ConnectionOptions
+    :400-403, PublishToStreamAsync :1031-1048, PublishToStreamAsyncWithMsgID :1050-1058,
+    PublishAsyncComplete :1125-1137, PublishAsyncPending :1139-1147, OnHealthChange :1482-1487,
+    WithHealthCheck :1489-1494; request.go RequestReady :81-97; errors.go ReplyError :190-208 and
+    the RespondError doc paragraph that pointed to it :158-164; delivery_settlement.go
+    DeliveryResult.ControlError :240-241, SettlementError :243-244, SettlementAttempted :246-247,
+    SettlementMethodSucceeded :249-252; storage_resource.go StorageResource.Undescribable
+    :195-206; trace.go DetachContextWithTrace :51-65 with its context.Background root at :56.
+    PublishBatchToStream stays (semboids boidgraph/publisher.go:32). State the drops left written
+    by nothing, deleted: the client.go fields token :107, tlsEnabled, tlsCertFile, tlsKeyFile and
+    tlsCAFile :110-113, compression :117, onDisconnect, onReconnect and onHealthChange :125-127;
+    lines :423-425 (token option), :427-435 (TLS options), :442-445 (compression), :569-572
+    (health change on connect), :615 (token clear), :1500-1510 (disconnect and health callbacks),
+    :1520-1530 (reconnect and health callbacks), :1585-1591 (health callback on close),
+    :1658-1661 (the monitor's health callback), and lastHealthy :1630, :1663, which only that
+    callback read (the compiler refuses a variable assigned and never read); publishToStreamAsync's
+    msgID parameter (:1064 → :982) and its stamp :1098-1104 (only PublishToStreamAsyncWithMsgID
+    passed one; PublishBatchToStream passed "" at :1177 → :1064). publishToStreamAsync's doc
+    comment :1060-1063 → :968-981 carries the enqueue contract from PublishToStreamAsync's. Kept:
+    the clientName option :437-440 → :385-388, armConnectionLossTimer :1512 → :1373, the reconnect
+    path's status, circuit reset and timer cancel :1516-1518 → :1377-1379, each handler's
+    setStatus. Audit item (c): testCircuit's comment (:349, :352-358 → :337-339) promised a
+    reconnect; it now says the function only moves the status from open to disconnected. Comments
+    and examples that still name a dropped symbol are task 3.7e: client.go:98, :157 and
+    request.go:29 (the request-handler-timeout option), and doc.go. Census maps (owner ruling, #9 comment 5969522395, item 3): the
+    expected maps in consumer_policy_callsite_test.go hold SemEngine's production callers as
+    measured at task 3.7, so each later port that adds a caller of ConsumeInternalStreamWithConfig,
+    ConsumeStreamWithConfig, ConsumeStreamWithConfigContexts or GetConsumerConfig, or a direct
+    CreateOrUpdateConsumer, CreateConsumer or OrderedConsumer call, updates them in that port
+  proving_tests: >-
+    the 43 unit test files of natsclient at the pin, carried, with
+    natsclient/test_helpers_test.go (testStreamMaxAge and testStreamMaxBytes, pin
+    test_client.go:912-913) in place of test_client.go. jetstream_metrics_test.go:16 proves the
+    canonical collector for the three policy gauges only, as at the pin; the test that two clients
+    on one registry share all 11 collectors, failing at the pin for the 8 that went through
+    Register*, is task 3.7d's test (2). Adapt item, the census tests rewritten for SemEngine
+    (owner ruling, #9 comment 5969522395, item 3), pin → SemEngine:
+    TestConsumerPolicyProductionCallsiteCensus consumer_policy_callsite_test.go:217-292 → :222-229
+    with the check in consumerPolicyCallsiteCensusViolations :279-336 (the pin expected 2 internal,
+    15 port and 1 split-context SemStreams callers and 17 GetConsumerConfig files; SemEngine has
+    none of them); TestConsumerPolicyDirectCreationCallCensus :588-618 → :635-642 with the check in
+    directConsumerCreationCensusViolations :669-700 (the pin's output/otel and test/e2e entries are
+    replaced by internal/harness/natsfixture/fixture.go:CreateConsumer/args=2; natsclient/stream.go's
+    two stay). New, each adding a caller written in a t.TempDir() tree to the measured tree:
+    TestConsumerPolicyProductionCallsiteCensusRejectsPlantedCaller :231-277 (one caller per entry
+    point; each names planted.go) and TestConsumerPolicyDirectCreationCallCensusRejectsPlantedCaller
+    :644-667 (one per creation method). Mutation (implementer-reported, PR #48): both check
+    functions made to return nil: all seven planted subtests fail; restored, they pass. The module
+    path in the test's import strings (:200, :409, :415, :421, :427, :485, :541) is
+    github.com/c360studio/semengine/natsclient, so the retirement guards match SemEngine's imports.
+    D8 repairs, pin → SemEngine. R1a, the 8 sleeps in client_test.go, each test or subtest run
+    inside synctest.Test with the sleep replaced by <-time.After on the bubble's clock, and
+    synctest.Wait before each "did not fire" assertion: :267 → :270 (TestWaitForConnection
+    "returns when becomes connected", bubble :264); :502 → :502 (TestManagerScenarios, every
+    scenario in a bubble at :515); :594 → :598 and :598 → :602 (CancelledByReconnect, bubble
+    :586); :627 → :636 (RepeatDisconnectKeepsOriginalDeadline, bubble :621; inside the bubble the
+    measured elapsed time is exact); :660 → :671 (DisabledByDefault, :660); :677 → :691
+    (NoCallbackNoFire, :684); :702 → :721 (CloseCancels, :704). Mutation (implementer-reported, PR
+    #48), each on client.go with the tests unchanged: a second disconnect that restarts the
+    watchdog fails RepeatDisconnectKeepsOriginalDeadline ("300ms" is not less than or equal to
+    "275ms"); handleReconnect without cancelConnectionLossTimer fails CancelledByReconnect
+    (expected 0, actual 1); Close without cancelConnectionLossTimer (:592) is a survivor, because
+    the watchdog body's !m.closed.Load() check (:1564) also stops the callback. R5, the 47
+    fixed-address lines in 8 unit files: a client that never dials gets "nats://unused", the pin's
+    own spelling (client_connect_test.go:14); the one that dials, TestContextAwareMethods (pin
+    nats://invalid-host:4222, a DNS lookup), gets refusedNATSURL(t), a loopback port bound with
+    port 0 and released: client_async_error_test.go :114, :144; client_test.go :18 → :19, :22 →
+    :23, :29 → :30, :46 → :47, :63 → :64, :136 → :137, :149 → :150, :223 → :224, :234 → :235, :246
+    → :247, :262 → :265, :283 → :287, :303 → :307, :332 → :336 (refusedNATSURL), :359 → :363, :394
+    → :399, :413 → :413, :515 → :516, :556 → :558, :585 → :589, :614 → :623, :652 → :663, :671 →
+    :685, :690 → :707; getstream_circuit_breaker_test.go :255; kvspec_test.go :46, :64, :87, :199;
+    max_payload_test.go :10; publish_async_test.go :17, :29, :48, :67, :86, :115 → :98, :124 →
+    :107 (:99 deleted with its test, task 3.7a); request_handler_timeout_test.go :15, :39 → :29, :50
+    → :40 (:28 and :63 deleted with their tests, task 3.7a); stream_capacity_circuit_test.go :49,
+    :74 (other lines unchanged outside client_test.go). stream_visibility_test.go:82 is an error string
+    the guard does not match and stays. Bounded cleanup (harness-boundaries, "Bounded cleanup
+    roots"; not named in task 3.7's list, required by task verify): the three Close calls under
+    context.Background() take context.WithTimeout(context.Background(), closeBudget), 10 s:
+    client_connect_test.go:70 → :70-72, :98 → :100-102, client_test.go:700 → :717-719. The new
+    helpers testStreamMaxAge, testStreamMaxBytes, closeBudget and refusedNATSURL are in
+    natsclient/test_helpers_test.go. test:repeat -- ./natsclient passes (implementer-reported, PR #48).
+    Surface audit, task 3.7a, unit lane. Retargeted to the kept behaviour a dropped symbol reached,
+    pin → SemEngine: publish_async_test.go TestPublishToStreamAsync_NotConnected :20,
+    _CancelledContext :38, _CircuitOpen :57 → the same lines, calling publishToStreamAsync as
+    PublishBatchToStream does; client_test.go TestConnectionOptions :392-409 → :396-409 reads the
+    maxReconnects, reconnectWait and pingInterval fields the dropped getters returned (pingInterval
+    at its default; ConnectionOptions() and WithPingInterval go); delivery_settlement_test.go reads
+    controlErr, settlementErr and settlementTried for ControlError(), SettlementError() and
+    SettlementAttempted(), and settlementTried && settlementErr == nil for
+    SettlementMethodSucceeded(), at :309, :378-380, :382, :427, :472-473, :517, :569-570, :613,
+    :640, :643, :662, :664, :730, :733 (18 calls, lines unchanged); storage_inventory_test.go reads
+    the three unknown states through unknownOnEveryAxis (new, :139-144) at :436 → :443, :472 → :479,
+    :484 → :491, :492-493 → :499-500, :517 → :524, :575 → :582;
+    client_async_error_test.go TestClientHandleErrorDoesNotMutateRuntimeStateOrCallbacks plants
+    only onConnectionLost (:155-158 → :155; the three dropped callback fields go). Deleted, their
+    only subject dropped: client_test.go none (TestConnectionOptions is retargeted, above);
+    request_handler_timeout_test.go TestRequestHandlerTimeout_Option :27-35 and _OptionBeatsEnv
+    :59-70; errors_test.go TestReplyError_NilErr_NoOp :211-219 and _EmptyReplyTo_NoOp :221-227;
+    publish_async_test.go TestPublishAsyncComplete_JetStreamUnavailable :95-110. Mutation
+    (implementer-reported, PR #48), production file changed, tests unchanged, restored by checksum:
+    publishToStreamAsync without its context check fails _CancelledContext, without its circuit
+    gate fails _CircuitOpen; Err() without settlementErr in its join fails
+    TestImmediateDeliveryRetryUsesPlainNak and the truth table; controlErr never recorded,
+    settlementTried never set, or settlementErr discarded each fail the delivery tests reading the
+    field; Err() without controlErr in its join is a survivor, as at the pin: no test asserts that
+    Err() carries the control error, only the field; an undescribable row whose message capacity
+    is unbounded fails TestStorageInventory_UndescribableResourceIsNamedNotOmitted through
+    unknownOnEveryAxis; WithMaxReconnects or WithReconnectWait ignored, or pingInterval's default
+    changed, fails TestConnectionOptions; handleError calling onConnectionLost fails
+    TestClientHandleErrorDoesNotMutateRuntimeStateOrCallbacks. requestMsgReady has no unit test
+    (its retarget is in readiness_integration_test.go, task 3.7b): a scratch test, not committed,
+    calling it over the embedded broker caught a reply dropped on success and the transport cause
+    lost from the budget error; its committed retarget is in readiness_integration_test.go (task
+    3.7b, below). Err() without controlErr in its join is detected since task 3.7b:
+    TestConsumeDeliveryWithHeartbeatErrCarriesControlLoss (delivery_settlement_test.go:669-689)
+    runs clean work after a failed InProgress through ConsumeDeliveryWithHeartbeat and asserts
+    Err() carries ErrHeartbeatFailed and the transport cause; on that mutant it fails at the
+    ErrHeartbeatFailed assertion (:685), restored by checksum it passes (implementer-reported, PR
+    #48). Integration lane, task 3.7b: the 27 integration-tagged files at the pin, carried onto
+    natsfixture through natsclient/test_helpers_integration_test.go (startFixture;
+    newFixtureClient, built as the pin's NewTestClient built its client, test_client.go:777-781;
+    fixtureClient.stream for WithStreams; dial; flushClient; closeClient; failureBound 10 s,
+    closeBudget, stopBound, restartBound). NewTestClient sites 51 → 0: a site that read only the URL
+    starts a fixture, one that read Client gets newFixtureClient; WithJetStream, WithKV,
+    WithFileStorage and WithMinimalFeatures (client_close :16, client_async_error :28,
+    subscription :84; none asserted JetStream absent) take a plain fixture, which always runs
+    JetStream; WithStreams(TestStreamConfig) → fixtureClient.stream (fixture-owned, the same
+    MaxAge, MaxBytes and DiscardOld as test_client.go:919-930); WithTestTimeout(15s)
+    (kv_key_contract :47) → fixtureClientTimeout 15 s for every client; WithNATSVersion
+    (kv_key_contract :46, kv_watcher_ownership :48) → the fixture's .nats-image, the override
+    gone and the log lines corrected to the broker's reported version and SEMENGINE_NATS_IMAGE
+    (kv_key_contract :54-56, kv_watcher_ownership :60-61; owner ruling item 6; the pin's
+    normativeNATSServerVersion and digest constants :38-39 go; T-B3 cannot see a split
+    version/digest spelling, so this is review only); WithTestMaxPayload → natsfixture.WithMaxPayload
+    (request_response_bounds :67, :75, :143, :210). The container wrappers startNATSContainer,
+    startNATSContainerWithJS (integration_test.go:286-296), startTestNATSContainer and
+    startTestNATSContainerWithJS (client_integration_test.go:190-200) and managedTestContainer
+    (integration_test.go:20-35) go: their 43 calls start a fixture, and every deferred
+    Terminate is the Stop natsfixture.New registers on t.Cleanup under a fresh bounded context;
+    TestClient.Terminate() (internal_consumer_lifecycle :19, :64, :97, :143; stream_visibility
+    :31, :95) likewise; the mid-test Terminate in
+    TestIntegration_StorageInventory_DegradesToLastGoodWhenNATSGoesAway (:253) → Fixture.Stop
+    under stopBound (:247-249). GetNativeConnection: stream_visibility :47 → a connection dialled
+    from URL() (:48); kv_watcher_ownership :62 → the same, for ConnectedServerVersion (:61);
+    subscription :98, :106 → client.GetConnection() (:76, :85), the connection the pin's
+    GetNativeConnection returned (test_client.go:947-950): the test closes the connection its
+    subscription is on, which a second connection cannot stand in for. The retargets carried from
+    task 3.7a: publish_async :46 → :44, :54-59 → :52-58 (the JetStream handle's
+    PublishAsyncComplete and PublishAsyncPending through jetStreamOf, :336-344), :102 → :100,
+    :106 → :104, :221 → :174, :285 and :353 → awaitAsyncComplete (:237, :303; bounded, the pin
+    received with no bound), :348 → :298 (publishToStreamAsync); stream_capacity_circuit :70 →
+    :70, :82 → :82; readiness :46, :62, :84 → requestMsgReady (:64, :81, :103), reading .Data;
+    delivery_settlement :205 → :208, :268 → :270 (settlementTried && settlementErr == nil for
+    SettlementMethodSucceeded); storage_inventory :173 → unknownOnEveryAxis (:172); request
+    :261 → t.Setenv(requestHandlerTimeoutEnv, "5s") (:256). Deleted:
+    TestIntegration_PublishToStreamAsyncWithMsgID_Dedup (publish_async :148-190); the message-ID
+    half of TestIntegration_PublishToStreamAsync_StampsTraceAndMsgID (:283 WithMsgID, :315
+    MsgIdHdr), the test renamed TestIntegration_PublishToStreamAsync_StampsTrace (:216); the
+    typed-subject cases (subscription :52-66); TestIntegration_HealthMonitoring
+    (integration_test.go:235-282; design D8 rows :262, :278 retire with it);
+    TestTemporalResolver_ErrorBoundaries (above). Rewritten (owner rulings, #9 comment 5941920346,
+    Q2; 5969522395, item 2): TestIntegration_Reconnection (integration_test.go:61-109, with its
+    skip :63-65) → TestIntegration_ReconnectionIsRedial (:43-99): on natsfixture.Restart, the loss
+    observed through WithConnectionLostCallback (a client with no reconnects and a 100 ms
+    WithConnectionLossTimeout) and Status through probe.Await (StatusDisconnected), then a client
+    dialled from the new URL() observed StatusConnected through probe.Await and healthy, with an
+    RTT; name and comment say it proves re-dial, not nats.go's automatic reconnect. Mutation
+    (implementer-reported, PR #48): handleDisconnect without armConnectionLossTimer fails it at
+    :80 ("connection-lost callback did not fire"); restored by checksum. D8 R5, the 8
+    fixed-address lines: integration_test.go :117 → :106 refusedNATSURL(t) (it dials);
+    publish_msgid :81 → :89, request :136 → :138, :147 → :149, :317 → :321, stream :134 → :135,
+    :534 → :542, :684 → :692 "nats://unused" (none dials). D8 R1, the 23 sleeps: errors :82 →
+    :80, :133 → :130, :162 → :158, :229 → :224, :274 → :268 and request :41 → :42, :126 → :124,
+    :232 → :227, :279 → :275, :314 → :309 → flushClient, a flush on the subscribing connection
+    (the broker handles one connection in order, so the subscription is registered when it
+    answers); errors :304 → :296-312 and request :356 → :348-364, a late responder subscribed once
+    client.Failures() shows the first attempt failed, with MaxRetries 5 → 10 so the retry window
+    (about 5.6 s of backoff) outlasts the subscription on a slow host; readiness :38 →
+    :35-60, a monitor subscription that never replies sees the first attempt, then unsubscribes
+    (its unread messages held Close's drain open) and the responder subscribes;
+    integration_test.go :98, :107 → the Reconnection rewrite; :351 → :271-279, wait for the five
+    deliveries; kv :241 → :239-252, wait for the watcher's end-of-initial-values nil, then Put
+    synchronously with errors checked; kv_error :233 → :212-223, the update function writes the
+    key itself so every attempt conflicts (the pin raced a 2 ms ticker writer, :215, against the
+    sleep); stream :280 → :276, :445 → :450, :508 → :512 awaitCount (probe.Await over the
+    handler's count, :717-726); :376 → removed, with a comment at :369-371
+    (ConsumeStreamWithConfig creates the consumer before it returns, stream.go:495); :385 →
+    :380-391, probe.Await on the consumer's NumPending and NumAckPending reaching 0. Real-clock
+    timers, re-counted after the deletions (grep of time.After, NewTimer, NewTicker, Tick,
+    AfterFunc, WithTimeout, WithDeadline, Eventually, FetchMaxWait, FlushTimeout over the 27
+    files): every failure bound under 10 s takes failureBound (R1b): client_integration :123 →
+    :120, :183 → :179; client_close :42 → :42; consumer_policy :105 → :105; delivery_settlement
+    :73, :123, :193 → :196, :206 → :209, FetchMaxWait :285 → :287; integration_test.go :176 → :164,
+    :230 → :217; kv :248 → :256; kv_key_contract :424 → :415, :448 → :439, :468 → :459,
+    FlushTimeout :522 → :513, :744 → :735; kv_watcher_ownership :128 → :111;
+    request_response_bounds :122 → :124, :169 → :171, :176 → :178; request :43 → :45, :128 →
+    :130, :228 → :230, :236 → :238, :273 → :277, :309 → :313; storage_inventory collector
+    Timeout :241 → :236; stream_visibility :58 → :59; stream :214 → :215, :644 → :652; and the
+    5 s cleanup bounds client_async_error :34, stream_capacity_circuit :121, subscription :28 →
+    closeBudget (:35, :120, :23). Polls on a timer of their own become probe.Await: client_async_error
+    :130 1 ms ticker → :131; delivery_settlement Eventually :129 → :131; publish_msgid Eventually
+    :59 → :64; kv_watcher_ownership :98-125 3 s timer and 10 ms ticker → :99, under the framework
+    child's own context; internal_consumer_lifecycle's two runtime.Gosched spins with no bound
+    (:173-189, :191-207) → :165-176, :178-189 under failureBound. A request timeout that is the
+    expected outcome becomes an event: request_response_bounds :223 (150 ms, nats.ErrTimeout) →
+    :225-247, wait for the responder's logged refusal-publish failure, then cancel the request,
+    which must end by context.Canceled. Kept as R1c, its expiry only able to miss a defect:
+    subscription :115-119 → :95-99 and delivery_settlement :91-107 → :91-107 (D8's table);
+    client_close :77 → :77 (250 ms in which a correct Close must not return; its comment
+    :74-76 says so; not in D8's table, which lists the analogous subscription row);
+    publish_msgid's duplicate window :22 250 ms → 2 s (:25), which two back-to-back publishes must
+    fit inside; the 100 ms request timeouts and context of request :64, :92, :399 and the Nak
+    test's AckWait (stream :477), whose expiry is an accepted outcome. Bounded cleanup
+    (harness-boundaries, "Bounded cleanup roots"), not named in task 3.7b: the deferred
+    client.Close(ctx) (44 after the deletions), manager.Close(ctx) (4), observer.Close(ctx) and
+    first/second.Close(context.Background()) (delivery_settlement :145, :213) → closeClient, a
+    Close under closeBudget whose error fails the test; readiness :22 and stream_divergence :39
+    likewise. kv_key_contract_test.go:30 (unit) moves v1.52.0 → v1.54.0 with its comment citing
+    nats.go v1.54.0 jetstream/kv.go:504-506 (the three regexes byte-identical to v1.52.0's
+    :501-503). Mutation (implementer-reported, PR #48), each restored by checksum: kv.go's CAS
+    Update replaced by an unconditional Put fails max_retries_exhaustion
+    (kv_error_integration_test.go:226); requestMsgReady returning after its first miss fails
+    TestIntegration_RequestReady_ResponderAppearsLate (:68). task test:integration --
+    ./natsclient passes (implementer-reported, PR #48)
+  owner: setup-04a-01-floor developer
+  disposition: adapt

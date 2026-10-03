@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -516,8 +517,54 @@ func TestS1_7Restart(t *testing.T) {
 		t.Fatal("refused second Start changed the fixture")
 	}
 	t.Run("lifecycletest", func(t *testing.T) {
-		lifecycletest.Run(t, func() lifecycletest.Owner { return owner{New(t)} }, lifecycletest.Promise{Restart: false})
+		lifecycletest.Run(t, func() lifecycletest.Owner { return owner{New(t)} }, mustFailFixture(t), lifecycletest.Promise{Restart: false})
 	})
+}
+
+// errStartRefused is the start hook's injected failure in the fixture's must-fail factory.
+var errStartRefused = errors.New("injected: container start refused")
+
+// mustFailFixture is the fixture's must-fail factory: a fixture whose start hook creates the real
+// container and then returns an error, as GenericContainer can (generic.go:89,94). Start must fail
+// at PhaseStart and roll the container back, so the failed-start check judges that rollback, not a
+// start that never reached Docker.
+func mustFailFixture(t *testing.T) lifecycletest.Factory {
+	return func() lifecycletest.Owner {
+		f := New(t)
+		realStart := f.deps.start
+		f.deps.start = func(ctx context.Context, req testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
+			c, err := realStart(ctx, req)
+			if c == nil {
+				// No container means no rollback to judge: the check would pass on a start that
+				// never reached Docker.
+				t.Errorf("must-fail factory: the real start created no container: %v", err)
+			}
+			return c, errors.Join(err, errStartRefused)
+		}
+		return owner{f}
+	}
+}
+
+// nats-fixture › "Start hook fails": Start returns an *Error at PhaseStart naming the container it
+// rolled back, the fixture reports nothing unresolved, and a following Stop returns nil with no
+// call.
+func TestMustFailFixture(t *testing.T) {
+	o := mustFailFixture(t)().(owner)
+	err := o.f.Start(t.Context())
+	var fe *Error
+	if !errors.As(err, &fe) || fe.Phase != PhaseStart || !errors.Is(err, errStartRefused) || fe.ContainerID == "" || fe.Cleanup != nil {
+		t.Fatalf("Start = %v, want an *Error at phase %s with a clean rollback", err, PhaseStart)
+	}
+	if containerExists(t, fe.ContainerID) {
+		t.Fatalf("container %s survives the failed Start", fe.ContainerID)
+	}
+	if rem := o.f.remaining(); len(rem) != 0 {
+		t.Fatalf("failed Start holds %v", rem)
+	}
+	calls := o.f.callCounts()
+	if err := stop(t, o.f); err != nil || !maps(calls, o.f.callCounts()) {
+		t.Fatalf("Stop after the failed Start = %v, calls %v -> %v; want nil with no call", err, calls, o.f.callCounts())
+	}
 }
 
 // owner adapts a fixture to the lifecycle floor, reporting its retained state.
@@ -640,6 +687,316 @@ func TestStopJoinsHandlersOnAClosedConnection(t *testing.T) {
 	}
 }
 
+// restart restarts the fixture under a bounded context and fails the test on error.
+func restart(t *testing.T, f *Fixture) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), stopBound)
+	defer cancel()
+	if err := f.Restart(ctx); err != nil {
+		t.Fatalf("Restart: %v", err)
+	}
+}
+
+// Restart keeps the container's writable layer: a message acknowledged on a file-backed stream is
+// readable at its sequence afterwards, one on a memory-backed stream is not (design P3, proven
+// here). Stop then removes both streams and the container.
+func TestRestartKeepsFileStreamLosesMemoryStream(t *testing.T) {
+	f := startFixture(t)
+	ctx := t.Context()
+	file, mem := f.Name("file"), f.Name("mem")
+	if _, err := f.CreateStream(ctx, file, file+".>"); err != nil {
+		t.Fatal(err)
+	}
+	ms, err := f.CreateMemoryStream(ctx, mem, mem+".>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info, err := ms.Info(ctx); err != nil || info.Config.Storage != jetstream.MemoryStorage ||
+		info.Config.MaxAge != time.Hour || info.Config.MaxBytes != 64<<20 || info.Config.Discard != jetstream.DiscardOld {
+		t.Fatalf("memory stream as the broker reports it: %+v %v", info, err)
+	}
+	fileAck, err := f.JetStream().Publish(ctx, file+".1", []byte("kept"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	memAck, err := f.JetStream().Publish(ctx, mem+".1", []byte("lost"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := f.containerID
+
+	restart(t, f)
+
+	if f.containerID != id || f.callCounts()["start"] != 1 {
+		t.Fatalf("Restart replaced the container: %s -> %s, start calls %d", id, f.containerID, f.callCounts()["start"])
+	}
+	js := f.JetStream()
+	fs, err := js.Stream(ctx, file)
+	if err != nil {
+		t.Fatalf("file stream after restart: %v", err)
+	}
+	msg, err := fs.GetMsg(ctx, fileAck.Sequence)
+	if err != nil || string(msg.Data) != "kept" {
+		t.Fatalf("file-backed message at sequence %d after restart: %v %v", fileAck.Sequence, msg, err)
+	}
+	switch s, err := js.Stream(ctx, mem); {
+	case errors.Is(err, jetstream.ErrStreamNotFound):
+	case err != nil:
+		t.Fatalf("memory stream after restart: %v", err)
+	default:
+		if _, err := s.GetMsg(ctx, memAck.Sequence); !errors.Is(err, jetstream.ErrMsgNotFound) {
+			t.Fatalf("memory-backed message at sequence %d after restart: %v, want ErrMsgNotFound", memAck.Sequence, err)
+		}
+	}
+	if err := stop(t, f); err != nil {
+		t.Fatalf("Stop after Restart: %v", err)
+	}
+	if rem := f.remaining(); len(rem) != 0 || containerExists(t, id) {
+		t.Fatalf("after Stop: remaining %v", rem)
+	}
+}
+
+// After Restart, URL() is the container's current binding, read from Docker independently of the
+// fixture, and a fresh dial to it reaches the restarted broker.
+func TestRestartURLDials(t *testing.T) {
+	f := startFixture(t)
+	old := f.URL()
+	restart(t, f)
+	out, err := exec.Command("docker", "port", f.containerID, clientPort).Output()
+	if err != nil {
+		t.Fatalf("docker port: %v", err)
+	}
+	var ports []string
+	for _, line := range strings.Fields(string(out)) {
+		if i := strings.LastIndex(line, ":"); i >= 0 {
+			ports = append(ports, line[i+1:])
+		}
+	}
+	if !slices.ContainsFunc(ports, func(p string) bool { return strings.HasSuffix(f.URL(), ":"+p) }) {
+		t.Fatalf("URL %q is not the container's current binding %v", f.URL(), ports)
+	}
+	t.Logf("binding %s -> %s", old, f.URL())
+	nc, err := nats.Connect(f.URL(), nats.MaxReconnects(0))
+	if err != nil {
+		t.Fatalf("dial %s after restart: %v", f.URL(), err)
+	}
+	defer nc.Close()
+	flushCtx, cancel := context.WithTimeout(t.Context(), stopBound) // nats.go demands a deadline here
+	defer cancel()
+	if err := nc.FlushWithContext(flushCtx); err != nil {
+		t.Fatalf("round trip on the new binding: %v", err)
+	}
+	if conn(f).Status() != nats.CONNECTED {
+		t.Fatalf("fixture connection %v after restart", conn(f).Status())
+	}
+}
+
+// A consumer whose handler is running is ended before Restart returns: Restart waits for the
+// handler, no handler of that consumer runs afterwards, and only a new Consume delivers again.
+// Stop still succeeds and removes the consumer.
+func TestRestartEndsConsumers(t *testing.T) {
+	f := startFixture(t)
+	cb := probe.NewCallback()
+	t.Cleanup(cb.Release)
+	stream := f.Name("work")
+	if _, err := f.CreateStream(t.Context(), stream, stream+".>"); err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	if _, err := f.Consume(t.Context(), stream, "worker", func(ctx context.Context, msg jetstream.Msg) {
+		calls.Add(1)
+		cb.Block(ctx)
+		_ = msg.Ack()
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.JetStream().Publish(t.Context(), stream+".1", []byte("job")); err != nil {
+		t.Fatal(err)
+	}
+	<-cb.Entered()
+
+	ctx, cancel := context.WithTimeout(t.Context(), stopBound)
+	defer cancel()
+	result := make(chan error, 1)
+	go func() { result <- f.Restart(ctx) }()
+	awaitDeliveryStopped(t, f)
+	select {
+	case err := <-result:
+		t.Fatalf("Restart returned %v while the handler was running", err)
+	default:
+	}
+	cb.Release()
+	err := <-result
+	joined := closed(cb.Joined())
+	if err != nil {
+		t.Fatalf("Restart: %v", err)
+	}
+	if !joined {
+		t.Fatal("Restart returned before the handler had joined")
+	}
+
+	// A fresh consumer receiving a message published after the restart is the positive control:
+	// once it has, the ended consumer has had every chance to run its handler too.
+	fresh := make(chan struct{}, 1)
+	if _, err := f.Consume(t.Context(), stream, "fresh", func(_ context.Context, msg jetstream.Msg) {
+		if string(msg.Data()) == "after" {
+			select {
+			case fresh <- struct{}{}:
+			default:
+			}
+		}
+		_ = msg.Ack()
+	}); err != nil {
+		t.Fatalf("Consume after restart: %v", err)
+	}
+	if _, err := f.JetStream().Publish(t.Context(), stream+".2", []byte("after")); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-fresh:
+	case <-t.Context().Done():
+		t.Fatal("the new consumer never received the message published after the restart")
+	}
+	if n := calls.Load(); n != 1 {
+		t.Fatalf("the ended consumer's handler ran %d times, want 1 (before the restart only)", n)
+	}
+	id := f.containerID
+	if err := stop(t, f); err != nil {
+		t.Fatalf("Stop after Restart: %v", err)
+	}
+	if rem := f.remaining(); len(rem) != 0 || containerExists(t, id) {
+		t.Fatalf("after Stop: remaining %v", rem)
+	}
+}
+
+// sessionContainersLike lists the containers of this run's testcontainers session whose name
+// shares the fixture container's name up to its random suffix: every container this fixture could
+// have created, read from Docker rather than from the fixture.
+func sessionContainersLike(t *testing.T, f *Fixture, id string) []string {
+	t.Helper()
+	out, err := exec.Command("docker", "inspect", "--format", "{{.Name}}", id).Output()
+	if err != nil {
+		t.Fatalf("docker inspect %s: %v", id, err)
+	}
+	name := strings.TrimPrefix(strings.TrimSpace(string(out)), "/")
+	prefix := name[:strings.LastIndex(name, "-")+1]
+	data, err := os.ReadFile(filepath.Join(f.adm.evidenceDir, "testcontainers-session"))
+	if err != nil {
+		t.Fatalf("session labels: %v", err)
+	}
+	var ids []string
+	for _, label := range strings.Fields(string(data)) {
+		out, err := exec.Command("docker", "ps", "-a", "--no-trunc", "--filter", "label="+label, "--format", "{{.ID}} {{.Names}}").Output()
+		if err != nil {
+			t.Fatalf("docker ps --filter label=%s: %v", label, err)
+		}
+		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+			if fields := strings.Fields(line); len(fields) == 2 && strings.HasPrefix(fields[1], prefix) && !slices.Contains(ids, fields[0]) {
+				ids = append(ids, fields[0])
+			}
+		}
+	}
+	return ids
+}
+
+// Restart fault matrix (task 2.2): each container hook fails in turn, before and after its real
+// call. Restart returns an *Error naming exactly that phase, runs no later phase, creates no second
+// container, and Stop still removes the one container and observes it gone.
+func TestRestartFaultMatrix(t *testing.T) {
+	injected := errors.New("injected failure")
+	hook := func(real func(context.Context, testcontainers.Container) error, after bool) func(context.Context, testcontainers.Container) error {
+		return func(ctx context.Context, c testcontainers.Container) error {
+			if after {
+				_ = real(ctx, c)
+			}
+			return injected
+		}
+	}
+	for _, tc := range []struct {
+		name  string
+		phase Phase
+		set   func(d *deps)
+		// later is the dependency count that must not move: the next phase never ran.
+		later string
+	}{
+		{"stop-container before", PhaseStopContainer, func(d *deps) { d.stopContainer = hook(d.stopContainer, false) }, "startContainer"},
+		{"stop-container after", PhaseStopContainer, func(d *deps) { d.stopContainer = hook(d.stopContainer, true) }, "startContainer"},
+		{"start-container before", PhaseStartContainer, func(d *deps) { d.startContainer = hook(d.startContainer, false) }, "mappedPort"},
+		{"start-container after", PhaseStartContainer, func(d *deps) { d.startContainer = hook(d.startContainer, true) }, "mappedPort"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := startFixture(t)
+			id := f.containerID
+			tc.set(&f.deps)
+			before := f.callCounts()
+			ctx, cancel := context.WithTimeout(t.Context(), stopBound)
+			defer cancel()
+			err := f.Restart(ctx)
+			var fe *Error
+			if !errors.As(err, &fe) || fe.Phase != tc.phase || !errors.Is(err, injected) || fe.ContainerID != id || fe.ParentErr != nil {
+				t.Fatalf("Restart = %v, want an *Error at phase %s on container %s wrapping the injected cause", err, tc.phase, shortID(id))
+			}
+			calls := f.callCounts()
+			if calls[tc.later] != before[tc.later] {
+				t.Fatalf("a phase after %s ran: %s calls %d -> %d", tc.phase, tc.later, before[tc.later], calls[tc.later])
+			}
+			if calls["start"] != 1 {
+				t.Fatalf("start called %d times; Restart must not replace the container", calls["start"])
+			}
+			if got := sessionContainersLike(t, f, id); len(got) != 1 || got[0] != id {
+				t.Fatalf("containers of this fixture after a failed Restart: %v, want only %s", got, id)
+			}
+			if err := f.Restart(ctx); !errors.Is(err, errNotStarted) {
+				t.Fatalf("Restart after a failed Restart = %v, want the not-started refusal", err)
+			}
+			if err := stop(t, f); err != nil {
+				t.Fatalf("Stop after a failed Restart: %v", err)
+			}
+			if rem := f.remaining(); len(rem) != 0 || containerExists(t, id) {
+				t.Fatalf("after Stop: remaining %v, container exists %t", rem, containerExists(t, id))
+			}
+		})
+	}
+}
+
+// FaultKV over a real bucket (nats-fixture › "Fault-injecting key-value double"): a fail-after
+// Update stands on the broker at the next revision; a fail-before Create leaves no key.
+func TestFaultKVOverARealBucket(t *testing.T) {
+	f := startFixture(t)
+	ctx := t.Context()
+	bucket, err := f.CreateKeyValue(ctx, f.Name("faults"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	kv := NewFaultKV(bucket)
+	rev, err := kv.Create(ctx, "k", []byte("v1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	injected := errors.New("injected")
+	kv.FailAfter(KVUpdate, injected)
+	if _, err := kv.Update(ctx, "k", []byte("v2"), rev); !errors.Is(err, injected) {
+		t.Fatalf("Update = %v, want the injected error", err)
+	}
+	fresh, err := f.JetStream().KeyValue(ctx, bucket.Bucket())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e, err := fresh.Get(ctx, "k"); err != nil || string(e.Value()) != "v2" || e.Revision() != rev+1 {
+		t.Fatalf("fresh read after a fail-after Update: %v %v, want v2 at revision %d", e, err, rev+1)
+	}
+	kv.FailBefore(KVCreate, injected)
+	if _, err := kv.Create(ctx, "absent", []byte("v")); !errors.Is(err, injected) {
+		t.Fatalf("Create = %v, want the injected error", err)
+	}
+	if _, err := fresh.Get(ctx, "absent"); !errors.Is(err, jetstream.ErrKeyNotFound) {
+		t.Fatalf("key after a fail-before Create: %v, want ErrKeyNotFound", err)
+	}
+	if calls := kv.Calls(); calls[KVUpdate] != 1 || calls[KVCreate] != 1 {
+		t.Fatalf("Calls() = %v, want one bucket Update and one bucket Create (the first)", calls)
+	}
+}
+
 // M1: once Stop has begun, the fixture refuses to create anything; a resource created behind
 // Stop's back would be owned by nobody when Stop returned nil.
 func TestNoCreationOnceStopBegins(t *testing.T) {
@@ -663,5 +1020,57 @@ func TestNoCreationOnceStopBegins(t *testing.T) {
 	}
 	if rem := f.remaining(); len(rem) != 0 {
 		t.Fatalf("a refused creation is owned: %v", rem)
+	}
+}
+
+// nats-fixture › "Broker max payload is settable". The oracle is the broker: the limit it announces
+// to a client dialled from URL, and what it delivers. nats.go refuses a publish above the announced
+// limit before writing it, so the larger publish is refused on the broker's own figure.
+func TestMaxPayloadIsSettable(t *testing.T) {
+	const limit = 4096
+	f := New(t, WithMaxPayload(limit))
+	if err := f.Start(t.Context()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	nc, err := nats.Connect(f.URL(), nats.MaxReconnects(0))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer nc.Close()
+	if got := nc.MaxPayload(); got != limit {
+		t.Fatalf("broker announces max_payload %d, want %d", got, limit)
+	}
+	sub, err := nc.SubscribeSync("payload.bound")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := nc.Publish("payload.bound", make([]byte, limit)); err != nil {
+		t.Fatalf("publish of exactly %d bytes: %v", limit, err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), stopBound) // a failure bound, never reached when delivered
+	defer cancel()
+	msg, err := sub.NextMsgWithContext(ctx)
+	if err != nil {
+		t.Fatalf("the %d-byte message was not delivered: %v", limit, err)
+	}
+	if len(msg.Data) != limit {
+		t.Fatalf("delivered %d bytes, want %d", len(msg.Data), limit)
+	}
+	if err := nc.Publish("payload.bound", make([]byte, limit+1)); !errors.Is(err, nats.ErrMaxPayload) {
+		t.Fatalf("publish of %d bytes = %v, want nats.ErrMaxPayload", limit+1, err)
+	}
+}
+
+// With no option the broker keeps its own default (1 MiB for nats-server), so the option is the
+// only thing that moves it.
+func TestMaxPayloadDefaultsToTheBroker(t *testing.T) {
+	f := startFixture(t)
+	nc, err := nats.Connect(f.URL(), nats.MaxReconnects(0))
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer nc.Close()
+	if got := nc.MaxPayload(); got != 1<<20 {
+		t.Fatalf("broker announces max_payload %d with no option, want the nats-server default %d", got, 1<<20)
 	}
 }

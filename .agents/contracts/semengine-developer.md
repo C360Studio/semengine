@@ -162,9 +162,10 @@ BEFORE implementation.
   helpers rely on the caller invariant. Never default nil to `context.Background`.
 - Detach only terminal cleanup or finalization, or an already-accepted durability operation whose invariant requires
   bounded completion after owner cancellation. `context.WithTimeout` is the immediate boundary. With a parent, use
-  `context.WithTimeout(context.WithoutCancel(parent), budget)`. A timeout-only `Stop` or equivalent finalizer with no
-  parent contract may use `context.WithTimeout(context.Background(), budget)`. Complete synchronously or join all
-  tasks before return; never feed `Start`, `Run`, `Watch`, or continuing work.
+  `context.WithTimeout(context.WithoutCancel(parent), budget)`. A finalizer with no caller context, such as a test
+  cleanup (`natsfixture/fixture.go:75-81`), may use `context.WithTimeout(context.Background(), budget)`. The budget
+  bounds the work through its context and never replaces a join: complete synchronously or join all tasks before
+  return, with no timer in place of the join. Never feed `Start`, `Run`, `Watch`, or continuing work.
 - Do not use `context.WithoutCancel(parent)` directly or create an unbounded descendant. Nested child cancellation is
   allowed beneath the bounded context only when all tasks join before the terminal operation returns.
 - Exported lifecycle records SHALL NOT expose `context.CancelFunc`.
@@ -174,6 +175,14 @@ BEFORE implementation.
 - Before changing a lifecycle or concurrency seam, inventory it for every disguised form above. If the requested
   implementation would add, preserve, or work around any violation above, stop the slice and escalate for a removal
   design; do not implement it.
+
+### Background work
+
+A goroutine that outlives its call, outside a service, follows `openspec/specs/background-work/spec.md`:
+
+- `Run(ctx) error`, preferred: the caller owns the goroutine.
+- `Close() error` that cancels and joins, with no timeout: only when the goroutine waits on nothing outside `Close`.
+- `Shutdown(ctx) error` when stopping waits on a caller's callback, in-flight requests or network I/O.
 
 ## Test and operational fidelity
 
@@ -218,3 +227,6 @@ Summarize the implemented task slice, semantic blast radius, tests and exact res
 "What the pull request records", including what was not covered and unresolved survivors), unresolved gates, and any
 follow-up owned by the architect, reviewer, or technical writer. Name every issue the slice filed (protocol **File**
 ritual); a filing the ritual would not admit is an unresolved gate. Do not claim completion from compilation alone.
+
+A step is done only when the CI run for its pushed commit has passed. A local `task verify` is evidence, not the gate.
+A cancelled or superseded run is unverified, never green.

@@ -98,3 +98,51 @@ func TestIsNil(t *testing.T) {
 		t.Fatal("isNil misclassifies an owner")
 	}
 }
+
+// panicky panics where the checks expect a refusal or a failure: Stop(nil), and any Start once
+// started is set.
+type panicky struct {
+	observedScripted
+	started bool
+}
+
+func (p *panicky) Start(ctx context.Context) error {
+	if ctx == nil {
+		return errors.New("nil")
+	}
+	if p.started {
+		panic("second Start")
+	}
+	p.started = true
+	return nil
+}
+
+func (p *panicky) Stop(ctx context.Context) error {
+	if ctx == nil {
+		panic("nil Stop context")
+	}
+	return nil
+}
+
+// No check counts a panic as a refusal (lifecycle-suite › "Start panics on a nil context"), at any
+// of the sites that expect one: Start(nil) is the refowner matrix's nilStartPanics row; these are
+// Stop(nil), the second Start without a restart promise, and the must-fail owner's Start.
+func TestPanicIsNeverARefusal(t *testing.T) {
+	for name, check := range map[string]func(context.Context, Owner) error{
+		"Stop(nil)": CheckNilContextsRefused,
+		"second Start": func(ctx context.Context, o Owner) error {
+			return CheckSecondStartRefusedOrRestartCycle(ctx, o, Promise{})
+		},
+		// A must-fail owner whose Start panics has not failed its Start: it crashed.
+		"failed Start": func(ctx context.Context, o Owner) error {
+			o.(*panicky).started = true
+			return CheckFailedStartHoldsNothing(ctx, o)
+		},
+	} {
+		err := check(t.Context(), &panicky{})
+		var pe *panicError
+		if !errors.As(err, &pe) || !strings.Contains(err.Error(), "not a refusal") {
+			t.Errorf("%s: check = %v, want a panicError", name, err)
+		}
+	}
+}

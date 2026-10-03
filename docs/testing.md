@@ -1,8 +1,8 @@
 # Testing in SemEngine
 
 This page is for a developer about to write or review a test here. It covers what the test has to tell apart, which
-level to run it at, how to show it can fail, and what to record in the pull request. Today the only Go code in the
-repository is the test harness under `internal/harness/`, so the examples point at it.
+level to run it at, how to show it can fail, and what to record in the pull request. Most examples point at the
+test harness under `internal/harness/`; the packages ported from SemStreams carry their own tests.
 
 ## Start with the wrong behavior
 
@@ -102,7 +102,7 @@ state that changes from one run to the next.
 `task ledger:check` also runs `internal/harness/pindiff`, which compares every `carry` row of the ledger (a package
 ported unchanged) with the pin (SemStreams at the row's `source_sha`) and fails on any difference;
 `docs/provenance.md` rule 5 says what may differ and what to do when it fails. It fetches the pin. With no `carry`
-row it fetches nothing, as today; once one exists, `task verify` and CI make one unauthenticated fetch from
+row it fetches nothing; with one or more, as today, `task verify` and CI make one unauthenticated fetch from
 `github.com` per distinct `source_sha` (about 3.6 s for the whole `task ledger:check` in the one measured run). A
 fetch that does not answer (two minutes for all the fetches of a run) fails the check with a message that says no
 entry was checked. That is a red run to re-run, not a known flake (`.agents/protocol.md`, "Known flakes"). When a
@@ -179,9 +179,9 @@ evidence of fuzz exploration.
 
 A property-based test generates many inputs or sequences of operations and checks a rule that must hold for all of
 them. The rule must come from the requirement, not from reading the implementation. The property-testing library is
-Rapid, `pgregory.net/rapid` (admitted by the owner on 2026-10-02; SemStreams uses `v1.3.0`). It is not in `go.mod`
-yet: it enters with the first test that imports it, and no test in this repository uses it today. A native fuzz
-target that checks a rule can serve as a property test.
+Rapid, `pgregory.net/rapid` (admitted by the owner on 2026-10-02; SemStreams uses `v1.3.0`). It is in `go.mod` at
+`v1.3.0`; the first tests that use it are the properties in `pkg/types/entity_id_prop_test.go`. A native fuzz target
+that checks a rule can serve as a property test.
 
 For both tools, the generator must be able to reach the boundary the rule is about. A wide random range that only
 occasionally lands on a limit catches an off-by-one by luck. Being reachable is not the same as being exercised in a
@@ -233,10 +233,10 @@ read the number of checks actually completed from the tool's output. Record:
 ### Running and replaying a Rapid test
 
 Rapid's flags exist only in a package that imports Rapid, so name that package rather than `./...`.
-No package here uses Rapid yet; substitute your own package and test name:
+For example, one of the `pkg/types` properties:
 
 ```bash
-go test ./pkg/example -run '^TestPropName$' -count=1 -race -v -rapid.checks=100 -rapid.seed=1320
+go test ./pkg/types -run '^TestPropEntityIDRoundTrip$' -count=1 -race -v -rapid.checks=100 -rapid.seed=1320
 ```
 
 `-rapid.checks` sets how many cases to try (default 100) and `-rapid.seed` fixes the seed; `-rapid.seed=0` asks for a
@@ -281,6 +281,11 @@ including those.
   `task lint` and a contract test refuse fixed `net.Listen` ports and fixed broker addresses in tests.
 - Keep tests independent. A test must not depend on another test's stream, bucket, file or goroutine, and must be
   safe to run after a failure. Do not use `t.Parallel()` in tests that change process-wide state.
+- Check that a child process is alive before inspecting it. A test that looks at another process (with `ps`, a
+  signal, or its output) first confirms the process is still running, so a child that died early fails with that
+  cause named instead of a misleading error. In `internal/harness/prochost`, a helper process parked on a bare
+  `select {}` was killed by Go's deadlock detector, so the test's `ps` call failed intermittently (CI runs
+  37005148521, 37006036797 and 37013932497; fixed in 89395c2).
 
 ## Budgets and failure evidence
 

@@ -332,9 +332,11 @@ states the `Client` nil-context requirement; the row records each item as change
   5957221949, which replaced comment 5955265930: a ported `README.md` keeps the pin's text except for the edits
   markdownlint requires and edits to passages that describe behavior the ported code no longer has, each behavior edit
   listed by README line as an `adapt` item), `vocabulary` and `pkg/types`, whose READMEs need lint fixes (358a01e);
-  `pkg/platform` (a doc comment corrected, #72 ruling D, task 3.6b); `carry` for the other five: `pkg/security`,
-  `pkg/timestamp`, `pkg/errs`, `pkg/projection/contract` and `message`. `message` has a `README.md` at the pin, so its
-  row stays `carry` only if that file needs no edit.
+  `pkg/platform` (a doc comment corrected, #72 ruling D, task 3.6b); `message` (task 3.6b and its row: README import
+  paths and the decode path corrected, the federation family removed as dead surface (#72 comment 5969293525),
+  timestamps decoded strictly as integer milliseconds, and invalid UTF-8 refused in the source, the type and a generic
+  payload, owner rulings #9 comments 5969522395 and 5969776736 and PR #48 comment 5970334875); `carry` for the other
+  four: `pkg/security`, `pkg/timestamp`, `pkg/errs` and `pkg/projection/contract`.
 - Existing file rows updated: `natsclient/test_client.go` (`adapt`, now with its evidence in `proving_tests`),
   `natsclient/test_options.go` (`defer-exclude`, honoured); new `defer-exclude` file rows
   `natsclient/test_options_test.go` and `natsclient/mapped_port_retry_test.go` (forced by Q3); a new file row for

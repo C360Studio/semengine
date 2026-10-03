@@ -32,8 +32,11 @@ c := cache.NewLRU[*MyStruct](1000)
 // TTL cache with 5-minute expiry and 1-minute cleanup interval
 c := cache.NewTTL[int](ctx, 5*time.Minute, 1*time.Minute)
 
-// Hybrid cache combining LRU and TTL
-c := cache.NewHybrid[string](ctx, 1000, 5*time.Minute, 1*time.Minute)
+// Hybrid cache combining LRU and TTL (built from a Config; there is no direct hybrid constructor)
+c, err := cache.NewFromConfig[string](ctx, cache.Config{
+    Enabled: true, Strategy: cache.StrategyHybrid,
+    MaxSize: 1000, TTL: 5 * time.Minute, CleanupInterval: 1 * time.Minute,
+})
 ```
 
 ### With Prometheus Metrics
@@ -96,7 +99,10 @@ c := cache.NewTTL[V](ctx, ttl, cleanupInterval)
 Combines LRU and TTL - evicts items that are either expired or least recently used.
 
 ```go
-c := cache.NewHybrid[V](ctx, maxSize, ttl, cleanupInterval)
+c, err := cache.NewFromConfig[V](ctx, cache.Config{
+    Enabled: true, Strategy: cache.StrategyHybrid,
+    MaxSize: maxSize, TTL: ttl, CleanupInterval: cleanupInterval,
+})
 ```
 
 ## Functional Options
@@ -375,14 +381,14 @@ Different eviction strategies serve different use cases:
 ### Production Cache with Full Monitoring
 
 ```go
-func setupProductionCache(ctx context.Context, registry *metric.MetricsRegistry) cache.Cache[*User] {
-    return cache.NewHybrid[*User](
-        ctx,
-        10000,                // Max 10k users
-        30*time.Minute,       // 30 min TTL
-        5*time.Minute,        // Cleanup every 5 min
-        cache.WithMetrics[*User](registry, "user_cache"),
-    )
+func setupProductionCache(ctx context.Context, registry *metric.MetricsRegistry) (cache.Cache[*User], error) {
+    return cache.NewFromConfig[*User](ctx, cache.Config{
+        Enabled:         true,
+        Strategy:        cache.StrategyHybrid,
+        MaxSize:         10000,           // Max 10k users
+        TTL:             30 * time.Minute, // 30 min TTL
+        CleanupInterval: 5 * time.Minute,  // Cleanup every 5 min
+    }, cache.WithMetrics[*User](registry, "user_cache"))
 }
 ```
 

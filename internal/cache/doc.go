@@ -32,11 +32,12 @@
 //
 //	cache, err := cache.NewTTL[*Session](ctx, 30*time.Minute, 5*time.Minute)
 //
-// Hybrid cache with both LRU and TTL:
+// Hybrid cache with both LRU and TTL, built from a Config (there is no direct hybrid constructor):
 //
-//	cache, err := cache.NewHybrid[[]byte](ctx, 5000, 10*time.Minute, 1*time.Minute,
-//		cache.WithMetrics[[]byte](registry, "api_cache"),
-//	)
+//	cache, err := cache.NewFromConfig[[]byte](ctx, cache.Config{
+//		Enabled: true, Strategy: cache.StrategyHybrid,
+//		MaxSize: 5000, TTL: 10 * time.Minute, CleanupInterval: 1 * time.Minute,
+//	}, cache.WithMetrics[[]byte](registry, "api_cache"))
 //
 // # Cache Types and Eviction Policies
 //
@@ -66,7 +67,10 @@
 // Combines LRU and TTL - items are evicted if they're either least recently used
 // OR expired. Best for production caches requiring both size and time limits.
 //
-//	cache, _ := cache.NewHybrid[V](ctx, maxSize, ttl, cleanupInterval)
+//	cache, _ := cache.NewFromConfig[V](ctx, cache.Config{
+//		Enabled: true, Strategy: cache.StrategyHybrid,
+//		MaxSize: maxSize, TTL: ttl, CleanupInterval: cleanupInterval,
+//	})
 //
 // # Observability Architecture
 //
@@ -206,7 +210,10 @@
 //	stringCache := cache.NewSimple[string]()
 //	intCache := cache.NewLRU[int](100)
 //	structCache := cache.NewTTL[*User](ctx, 5*time.Minute, 1*time.Minute)
-//	sliceCache := cache.NewHybrid[[]byte](ctx, 1000, 10*time.Minute, 1*time.Minute)
+//	sliceCache := cache.NewFromConfig[[]byte](ctx, cache.Config{
+//		Enabled: true, Strategy: cache.StrategyHybrid,
+//		MaxSize: 1000, TTL: 10 * time.Minute, CleanupInterval: 1 * time.Minute,
+//	})
 //
 // Type constraints:
 //   - Keys are always strings (for consistent hashing and comparison)
@@ -217,9 +224,10 @@
 //
 // API Response Caching:
 //
-//	cache, _ := cache.NewHybrid[*Response](ctx, 5000, 30*time.Minute, 5*time.Minute,
-//		cache.WithMetrics[*Response](registry, "api_cache"),
-//	)
+//	cache, _ := cache.NewFromConfig[*Response](ctx, cache.Config{
+//		Enabled: true, Strategy: cache.StrategyHybrid,
+//		MaxSize: 5000, TTL: 30 * time.Minute, CleanupInterval: 5 * time.Minute,
+//	}, cache.WithMetrics[*Response](registry, "api_cache"))
 //
 // Session Storage:
 //
@@ -262,11 +270,11 @@
 //
 // The package includes comprehensive tests with race detection:
 //
-//	go test -race ./pkg/cache
+//	go test -race ./internal/cache
 //
 // Benchmarks are available to validate performance:
 //
-//	go test -bench=. ./pkg/cache
+//	go test -bench=. ./internal/cache
 //
 // Statistics make testing cache behavior easy:
 //
@@ -281,5 +289,5 @@
 //
 // # Examples
 //
-// See cache_test.go and examples_test.go for runnable examples that appear in godoc.
+// See cache_test.go for runnable examples.
 package cache

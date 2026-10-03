@@ -1495,7 +1495,7 @@
     (implementer-reported, PR #48): handleDisconnect without armConnectionLossTimer fails it at
     :80 ("connection-lost callback did not fire"); restored by checksum. D8 R5, the 8
     fixed-address lines: integration_test.go :117 → :106 refusedNATSURL(t) (it dials);
-    publish_msgid :81 → :89, request :136 → :138, :147 → :149, :317 → :321, stream :134 → :135,
+    publish_msgid :81 → :119, request :136 → :138, :147 → :149, :317 → :321, stream :134 → :135,
     :534 → :542, :684 → :692 "nats://unused" (none dials). D8 R1, the 23 sleeps: errors :82 →
     :80, :133 → :130, :162 → :158, :229 → :224, :274 → :268 and request :41 → :42, :126 → :124,
     :232 → :227, :279 → :275, :314 → :309 → flushClient, a flush on the subscribing connection
@@ -1526,7 +1526,7 @@
     5 s cleanup bounds client_async_error :34, stream_capacity_circuit :121, subscription :28 →
     closeBudget (:35, :120, :23). Polls on a timer of their own become probe.Await: client_async_error
     :130 1 ms ticker → :131; delivery_settlement Eventually :129 → :131; publish_msgid Eventually
-    :59 → :64; kv_watcher_ownership :98-125 3 s timer and 10 ms ticker → :99, under the framework
+    :59 → :103 (the expiry check, below); kv_watcher_ownership :98-125 3 s timer and 10 ms ticker → :99, under the framework
     child's own context; internal_consumer_lifecycle's two runtime.Gosched spins with no bound
     (:173-189, :191-207) → :165-176, :178-189 under failureBound. A request timeout that is the
     expected outcome becomes an event: request_response_bounds :223 (150 ms, nats.ErrTimeout) →
@@ -1534,9 +1534,17 @@
     which must end by context.Canceled. Kept as R1c, its expiry only able to miss a defect:
     subscription :115-119 → :95-99 and delivery_settlement :91-107 → :91-107 (D8's table);
     client_close :77 → :77 (250 ms in which a correct Close must not return; its comment
-    :74-76 says so; not in D8's table, which lists the analogous subscription row);
-    publish_msgid's duplicate window :22 250 ms → 2 s (:25), which two back-to-back publishes must
-    fit inside; the 100 ms request timeouts and context of request :64, :92, :399 and the Nak
+    :74-76 says so; not in D8's table, which lists the analogous subscription row); publish_msgid's 250 ms
+    duplicate window (:22), split at review F18 (Codex, PR #48) into two proofs: the dedup, distinct
+    and empty-ID assertions (TestIntegration_PublishToStreamWithMsgID_Dedup, :22-71) run under a
+    context ending failureBound after it starts (:48), on a stream whose window is six times that
+    (:29), so the two evt-1 publishes are stored at most failureBound apart and the window cannot
+    expire between them (the reason is the comment at :23-28); expiry is its own test,
+    _StoresAgainAfterWindow (:80-114), on a separate stream with the pin's 250 ms window (:81),
+    observed with probe.Await (:103) under duplicateWindow + failureBound (:100), which asserts no
+    duplicate inside the window, so a slow host can only make its first retry store at once.
+    Mutation (implementer-reported, PR #48), restored by checksum: the Nats-Msg-Id header not set
+    fails _Dedup at :60, :65 and :70; _StoresAgainAfterWindow passes on it, as an expiry check must; the 100 ms request timeouts and context of request :64, :92, :399 and the Nak
     test's AckWait (stream :477), whose expiry is an accepted outcome. Bounded cleanup
     (harness-boundaries, "Bounded cleanup roots"), not named in task 3.7b: the deferred
     client.Close(ctx) (44 after the deletions), manager.Close(ctx) (4), observer.Close(ctx) and

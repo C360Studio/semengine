@@ -3,8 +3,12 @@ name: CI
 on:
   push:
     branches: [main]
-  # Every PR gets CI whatever its base, so stacked PRs are covered too.
+  # Every PR gets CI whatever its base, so stacked PRs are covered too. Listing
+  # types replaces GitHub's default three, so they are listed with
+  # ready_for_review: marking a draft ready starts the run that applies the
+  # review check, which does not fail a draft.
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 
 # Superseded PR runs are cancelled; pushes to main are not, so two quick merges
 # never leave a cancelled Required on a commit that was never broken.
@@ -62,11 +66,14 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  # Known-flake check and up-to-date rule (scripts/merge-check.sh). It reads
-  # GitHub, so it is a job of its own and not part of task verify. The token gets
-  # these three reads and nothing else; a pull request from a fork or Dependabot
-  # gets a read-only token, which is all the job needs. On a push to main the
-  # number is empty and the script takes its push path.
+  # Up-to-date rule, review check and known-flake check (scripts/merge-check.sh).
+  # It reads GitHub, so it is a job of its own and not part of task verify. A
+  # code pull request that is not a draft fails unless its description names the
+  # other agent as reviewer; editing the description starts no run, so the job
+  # is run again after the edit. The token gets these three reads and nothing
+  # else; a pull request from a fork or Dependabot gets a read-only token, which
+  # is all the job needs. On a push to main the number is empty and the script
+  # takes its push path.
   merge-check:
     name: Merge check
     runs-on: ubuntu-latest
@@ -78,7 +85,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Check known flakes and the up-to-date rule
+      - name: Check the up-to-date rule, the cross-agent review and known flakes
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

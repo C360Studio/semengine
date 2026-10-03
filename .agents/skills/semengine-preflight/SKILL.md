@@ -42,7 +42,7 @@ with current CI.
 | `task test:integration` | Docker-backed tests through the admitted runner (host lock, process group, leak check) |
 | `task cover:check` | Fails below 80% coverage on `natsfixture`, `lifecycletest`, `probe`; each package on the SETUP 03B critical list (`setup-03b-contract-boundary` `design.md` D10) joins when it is ported |
 | `task test:repeat` | Unit tests five times at one CPU without the race detector, in shuffled order; `-- <pkgs>` to focus |
-| `task merge:check -- <n>` | Fails while an open `class:flake` issue is not closed by PR `n`, or while the rules on `main` do not require an up-to-date head; reads GitHub |
+| `task merge:check -- <n>` | Fails while an open `class:flake` issue is not closed by PR `n`, or while the rules on `main` do not require an up-to-date head, or while PR `n` is a code pull request, not a draft, whose `implemented-by:` and `reviewed-by:` lines do not name the two agents; reads GitHub |
 | `task verify` | The checks above except `doctor`, `fmt`, `spec:queue`, `merge:check`, cheapest first with `test:repeat` last; prints each step's time; fails on tracked-file change |
 
 CI has three jobs: `verify` runs `task verify`; `merge-check` runs `scripts/merge-check.sh` for the pull request (on a
@@ -65,7 +65,7 @@ Select by what the diff changes:
 - **Dependencies or `go.mod`:** `task tidy:check` and `task vuln` in addition to the Go gates.
 - **Before any implementation push:** `task verify`.
 - **Immediately before merging:** `task merge:check -- <n>`, in a shell where `GITHUB_ACTIONS` is not set. It sees a
-  flake filed, or a closing line removed, since the pull request's last CI run.
+  flake filed, a closing line removed, or a `reviewed-by:` line added, since the pull request's last CI run.
 
 Do not hand-run a narrower command in place of a gate CI runs: the task owns flags and pins.
 

@@ -405,6 +405,32 @@ keys; each duration equals what the test derives with the standard library (`tim
 Its seeds cover each accepted and refused form, and its JSON `null` seed found a pin panic. Named examples own the
 unknown-key and `stats_interval` refusals and the `null` case.
 
+**Generated checks for `message` (task 3.6b, Codex F8).** `Decoder.Decode` decodes outside bytes: a message
+envelope (`id`, `type`, `payload`, `meta`) whose payload is decoded by the type the registry holds for the envelope's
+`type`, and whose two timestamps are integer milliseconds (owner ruling 7, #9 comment 5969522395). The cases interact
+(malformed JSON, a field of the wrong JSON type, an unregistered type, a registered type that is not a `Payload`, a
+payload that does not fit its type, loose `meta` values, a timestamp that is not an integer), so it gets native fuzz
+targets in `message/decoder_fuzz_test.go`, each run through `NewDecoder` with a registry holding `core.json.v1`
+(`RegisterPayloads`), a test payload with a typed field and a schema-less stub (`payloadfixture.RegisterTestType`).
+`FuzzDecoderDecode` decodes the same bytes with the standard library into a test-owned copy of the documented envelope
+and predicts acceptance in both directions: accepted exactly when the envelope decodes, its type is registered as a
+`Payload`, the payload decodes into that type's fields, and each timestamp is absent, `null`, or an integer literal
+(RFC 8259's number grammar without fraction or exponent) in `int64`'s range, checked with `math/big`. So a decoder
+that refuses everything fails on the accepted seeds, and one that accepts too much fails on the refused ones. On
+acceptance it checks the ID, the type, the payload's fields, `meta.source` (empty unless a string) and each timestamp
+as exactly that many milliseconds, 0 being the zero time; a message that validates survives `json.Marshal` and a
+second `Decode` equal in full (ID, type, payload, source, both timestamps). `FuzzDecoderRoundTrip` builds a message
+through `NewBaseMessage` and `NewDefaultMetaWithReceivedAt` from a fuzzed source, two `int64` millisecond timestamps
+and a count, and asserts `decode(marshal(m)) == m` in full; its seeds sit on 0, ±1, 10^12 − 1 and 10^12 (the
+seconds/milliseconds switch of the pin's `timestamp.Parse`), pre-1970 instants and both ends of `int64`, so every
+boundary is reached by construction. A source that is not valid UTF-8 comes back with each invalid byte replaced by
+U+FFFD, which `encoding/json` documents for `Marshal`; the target asserts exactly that replacement, and the full
+equality for every valid source. `GenericJSONPayload.UnmarshalJSON` gets `FuzzGenericJSONPayloadUnmarshalJSON`, checked
+against the standard library's decode of `{"data": …}`. Named examples own the four ruled instants
+(`TestBaseMessageTimestampsAreMilliseconds`) and the refused timestamp forms
+(`TestBaseMessageRefusesTimestampsThatAreNotMilliseconds`). The entity-ID helpers keep the qualification of their
+canonical authority in `pkg/types`.
+
 The ACME loaders' renewal goroutines (`tlsutil.go:253, :331`) are not in this change (D1): their stop can wait inside
 `legoClient.Certificate.Renew`, which takes no context (`pkg/acme/client.go:352`), and their renewal callback writes
 `tlsConfig.Certificates` while the config may be serving handshakes (`tlsutil.go:258, :336`). Both defects travel with

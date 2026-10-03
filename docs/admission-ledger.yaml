@@ -737,7 +737,9 @@
     TestBaseMessageTimestampsAreMilliseconds (1999-01-01, 1960-01-01, the epoch and a 2024 instant
     round-trip at millisecond precision; failed first: 1999 decoded as year 30969, 1960 as -8032) and
     TestBaseMessageRefusesTimestampsThatAreNotMilliseconds (failed first: all eight non-millisecond
-    forms accepted)
+    forms accepted); decoder_fuzz_test.go (Codex F8, design D7): FuzzDecoderDecode,
+    FuzzDecoderRoundTrip and FuzzGenericJSONPayloadUnmarshalJSON, through NewDecoder with a real
+    registry, against a standard-library oracle that predicts acceptance and refusal
   owner: setup-04a-01-floor developer
   disposition: adapt
 

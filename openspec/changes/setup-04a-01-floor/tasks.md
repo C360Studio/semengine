@@ -378,9 +378,9 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         Also repaired, though the list above does not name it: three `Close(context.Background())` calls that
         `cleanup-roots:check` rejects (`client_connect_test.go:70, :98`, `client_test.go:700`) now run under a
         10 s `WithTimeout`. `task ledger:diff -- natsclient`: 68 files compared, 12 differ, 39 only at the pin
-        (4 production files; 5 excluded unit files and `typed_test.go`; 29 integration-tagged files: task 3.7b's
-        27, `test_client_integration_test.go` and `kv_temporal_integration_test.go`), 1 only in the tree (`test_helpers_test.go`). `doc.go:512`'s import path is the one `doc.go`
-        difference (task 3.7e).
+        (4 production files; 5 excluded unit files and `typed_test.go`; 29 integration-tagged files: task
+        3.7b's 27, `test_client_integration_test.go` and `kv_temporal_integration_test.go`), 1 only in the tree
+        (`test_helpers_test.go`). `doc.go:512`'s import path is the one `doc.go` difference (task 3.7e).
 - [ ] 3.7a (D) `natsclient` surface audit (#9 comment 5968830525; owner rulings, #9 comment 5969522395, items 1–2),
       each drop an `adapt` item on the row: `options.go` `WithPingInterval`, `WithRequestHandlerTimeout`,
       `WithDisconnectCallback`, `WithReconnectCallback`, `WithHealthChangeCallback`, `WithCircuitBreakerThreshold`,

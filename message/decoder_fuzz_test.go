@@ -255,7 +255,7 @@ func (p *anyTypePayload) UnmarshalJSON(data []byte) error {
 }
 
 // FuzzDecoderStrings: every string message encodes either reaches the wire unchanged or is
-// refused, never rewritten (owner ruling, PR #48 comment 5970334875, extending ruling 2 of #9
+// refused, never rewritten (owner ruling, #9 comment 5970334875, extending ruling 2 of #9
 // comment 5969776736). The expected outcomes come from the standard library's utf8 and strings
 // packages and the documented grammar, never from the message package:
 //

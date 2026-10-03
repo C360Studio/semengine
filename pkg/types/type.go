@@ -55,7 +55,7 @@ func (mt Type) IsValid() bool {
 // Validate reports whether the Type can round-trip through Key() and JSON:
 // every component must be non-empty, free of the "." separator, and valid
 // UTF-8 (encoding/json would write each invalid byte as U+FFFD, a different
-// type on the wire; owner ruling, semengine PR #48 comment 5970334875). It is the one
+// type on the wire; owner ruling, semengine #9 comment 5970334875). It is the one
 // owner of message-type component grammar — the payload registry refuses a
 // registration that fails it and a projection contract refuses a bound type
 // that fails it, so nothing downstream ever needs to parse a key back into

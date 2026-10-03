@@ -523,7 +523,7 @@
     from github.com/c360studio/semstreams to github.com/c360studio/semengine. Comment edit: the
     requirement citations in entity_id_prop_test.go (:46, :60, :61, :88, :113, :145) name
     docs/specs/entity-id-contract.md, where the pin's entity-id-contract capability now lives (#72,
-    comment 5970020197); no code changed. Behaviour change (owner ruling, PR #48 comment
+    comment 5970020197); no code changed. Behaviour change (owner ruling, #9 comment
     5970334875, extending ruling 2 of #9 comment 5969776736): Type.Validate (type.go) refuses a
     domain, category or version that is not valid UTF-8, so the payload registry and a projection
     contract refuse such a type too; recorded with its encoding refusals on the message row
@@ -872,7 +872,7 @@
     form, a bool, an object, an integer outside int64) is refused with an invalid-data error.
     Changed behavior (owner ruling 2, #9 comment 5969776736): BaseMessage.MarshalJSON refuses a
     meta source that is not valid UTF-8 with an invalid-data error. Changed behavior (owner ruling,
-    PR #48 comment 5970334875, extending ruling 2): BaseMessage.MarshalJSON refuses a message type
+    #9 comment 5970334875, extending ruling 2): BaseMessage.MarshalJSON refuses a message type
     whose domain, category or version is not valid UTF-8, and GenericJSONPayload.MarshalJSON
     refuses a string, map key or string value anywhere in Data that is not valid UTF-8, each with
     an invalid-data error; message.Type.Validate (pkg/types row) refuses such a component. No other
@@ -933,7 +933,7 @@
     MarshalJSON now refuses such a source with an invalid-data error, checked at encoding because
     NewBaseMessage returns no error and WithMeta accepts any Meta. Decoding is unchanged: JSON
     text is UTF-8, so a decoded source is always valid. Behaviour change, type and generic payload
-    encoding (owner ruling, PR #48 comment 5970334875, extending ruling 2; Codex F12, comment
+    encoding (owner ruling, #9 comment 5970334875, extending ruling 2; Codex F12, comment
     5970321028): the pin wrote the message type (base_message.go wireFormat.Type) and core.json.v1's
     Data (generic_json.go MarshalJSON) through encoding/json in the same way, so an invalid byte in a
     type component or in any string of Data reached the wire as U+FFFD with no error, and
@@ -961,7 +961,7 @@
     D7): FuzzDecoderDecode, FuzzDecoderRoundTrip and FuzzGenericJSONPayloadUnmarshalJSON, through NewDecoder with a real
     registry, against a standard-library oracle that predicts acceptance and refusal.
     TestBaseMessageRefusesTypeThatIsNotUTF8 and TestGenericJSONRefusesStringsThatAreNotUTF8 (owner
-    ruling, PR #48 comment 5970334875; failed first: all three invalid types and all fifteen
+    ruling, #9 comment 5970334875; failed first: all three invalid types and all fifteen
     invalid Data shapes of the first version marshalled with U+FFFD on the wire; the cycle,
     embedded-struct and json.Marshaler cases came after, with the walk's field rules), and
     FuzzDecoderStrings, which generates the

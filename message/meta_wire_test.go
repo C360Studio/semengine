@@ -268,7 +268,7 @@ func packageErrors(loaded []*packages.Package) []string {
 }
 
 // TestBaseMessageRefusesTypeThatIsNotUTF8: a type component that is not valid UTF-8 would reach the
-// wire as U+FFFD with no error, so encoding the envelope refuses it (owner ruling, PR #48 comment
+// wire as U+FFFD with no error, so encoding the envelope refuses it (owner ruling, #9 comment
 // 5970334875). BaseMessage.Validate checks only that each component is non-empty, so the refusal
 // is at MarshalJSON, as the source's is. A valid component, U+FFFD itself included, reaches the
 // wire unchanged.
@@ -343,7 +343,7 @@ type Inner struct{ V string }
 // TestGenericJSONRefusesStringsThatAreNotUTF8: core.json.v1 carries caller data of any shape, and
 // encoding/json writes each invalid byte of a string as U+FFFD with no error. Encoding the payload,
 // alone or in its envelope, refuses any string, map key or string value, at any depth, that is not
-// valid UTF-8 (owner ruling, PR #48 comment 5970334875). Valid data, U+FFFD itself included,
+// valid UTF-8 (owner ruling, #9 comment 5970334875). Valid data, U+FFFD itself included,
 // encodes and decodes unchanged; bytes encoding/json writes as base64, and a field it never
 // writes, are not strings on the wire and are not refused.
 func TestGenericJSONRefusesStringsThatAreNotUTF8(t *testing.T) {

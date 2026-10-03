@@ -338,7 +338,7 @@ states the `Client` nil-context requirement; the row records each item as change
   `pkg/platform` (a doc comment corrected, #72 ruling D, task 3.6b); `message` (task 3.6b and its row: README import
   paths and the decode path corrected, the federation family removed as dead surface (#72 comment 5969293525),
   timestamps decoded strictly as integer milliseconds, and invalid UTF-8 refused in the source, the type and a generic
-  payload, owner rulings #9 comments 5969522395 and 5969776736 and PR #48 comment 5970334875); `carry` for the other
+  payload, owner rulings #9 comments 5969522395 and 5969776736 and #9 comment 5970334875); `carry` for the other
   four: `pkg/security`, `pkg/timestamp`, `pkg/errs` and `pkg/projection/contract`.
 - Existing file rows updated: `natsclient/test_client.go` (`adapt`, now with its evidence in `proving_tests`),
   `natsclient/test_options.go` (`defer-exclude`, honoured); new `defer-exclude` file rows
@@ -449,7 +449,7 @@ seconds/milliseconds switch of the pin's `timestamp.Parse`), pre-1970 instants a
 boundary is reached by construction. `MarshalJSON` refuses a source that is not valid UTF-8 with an invalid-data error,
 where `encoding/json` would write each invalid byte as U+FFFD (owner ruling 2, #9 comment 5969776736); the target
 asserts that refusal, judged by `unicode/utf8`, and the full equality for every valid source, with no exception. The
-owner extended that ruling to every string `message` encodes (PR #48 comment 5970334875): `Type.Validate` and
+owner extended that ruling to every string `message` encodes (#9 comment 5970334875): `Type.Validate` and
 `MarshalJSON` refuse a type component that is not valid UTF-8, and `GenericJSONPayload.MarshalJSON` such a string, key
 or value at any depth. `FuzzDecoderStrings` generates the three type components and a generic key and value and asserts,
 judged by `unicode/utf8` and `strings`, that `Type.Validate`, the envelope and the payload refuse exactly those inputs,

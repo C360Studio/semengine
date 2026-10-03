@@ -335,7 +335,7 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       the pin's `timestamp.Parse` heuristic restored. Exploration, separate from replay, implementer-reported (logs
       local only): `go test -run '^$' -fuzz '^<target>$' -fuzztime 60s ./message` ran 1,970,895, 1,121,935 and
       10,033,878 executions with no failing input, all run before 1ee70d0. Rows: `vocabulary`, `pkg/platform`,
-      `message`, `internal/semantictest`. The owner's ruling of 2026-10-03 (PR #48 comment 5970334875, extending ruling
+      `message`, `internal/semantictest`. The owner's ruling of 2026-10-03 (#9 comment 5970334875, extending ruling
       2; Codex F12, comment 5970321028): invalid UTF-8 is refused wherever `message` encodes a string. `Type.Validate`
       refuses a component that is not valid UTF-8 (`TestTypeValidateRefusesInvalidUTF8` failed first: all four
       accepted); `BaseMessage.MarshalJSON` refuses such a type, and `GenericJSONPayload.MarshalJSON` such a string, key

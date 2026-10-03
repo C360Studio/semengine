@@ -35,7 +35,7 @@ func TestTypeValidateOwnsComponentGrammar(t *testing.T) {
 
 // TestTypeValidateRefusesInvalidUTF8: JSON text is UTF-8 and encoding/json writes each invalid byte
 // of a string as U+FFFD, so a component that is not valid UTF-8 would reach the wire as a different
-// type with no error. Validate refuses it (owner ruling, semengine PR #48 comment 5970334875,
+// type with no error. Validate refuses it (owner ruling, semengine #9 comment 5970334875,
 // extending ruling 2 of #9 comment 5969776736); U+FFFD itself and other multi-byte text are valid.
 func TestTypeValidateRefusesInvalidUTF8(t *testing.T) {
 	for _, mt := range []Type{

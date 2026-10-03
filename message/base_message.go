@@ -210,7 +210,7 @@ func (m *BaseMessage) MarshalJSON() ([]byte, error) {
 			"BaseMessage", "MarshalJSON", "source")
 	}
 
-	// The type is refused for the same reason (owner ruling, PR #48 comment 5970334875). Validate
+	// The type is refused for the same reason (owner ruling, #9 comment 5970334875). Validate
 	// above checks only that each component is non-empty.
 	for _, component := range []string{m.msgType.Domain, m.msgType.Category, m.msgType.Version} {
 		if !utf8.ValidString(component) {

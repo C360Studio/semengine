@@ -666,6 +666,28 @@ func TestConsumeDeliveryWithHeartbeatControlLossPreservesJoinedMeaning(t *testin
 	require.Equal(t, int32(1), msg.dataCount.Load())
 }
 
+// The caller reads a lost lease through Err(), the result's one aggregate, not through the
+// unexported field: work that ends cleanly after the renewal failed must still report the
+// heartbeat failure and its transport cause there.
+func TestConsumeDeliveryWithHeartbeatErrCarriesControlLoss(t *testing.T) {
+	transportErr := errors.New("heartbeat transport")
+	msg := &mockMsg{subject: "clean-after-loss", inProgressErr: transportErr}
+	policy, err := ValidateHeartbeatDeliveryPolicy(t.Context(), StreamConsumerConfig{}, time.Millisecond,
+		ImmediateDeliveryRetry(), func(ctx context.Context, _ []byte) (DeliveryDecision, error) {
+			<-ctx.Done()
+			return DeliveryDecisionAck, nil
+		})
+	require.NoError(t, err)
+
+	result := ConsumeDeliveryWithHeartbeat(t.Context(), msg, policy)
+	require.Equal(t, DeliveryDecisionAck, result.Decision())
+	require.NoError(t, result.Cause(), "the work itself succeeded; only the lease was lost")
+	require.ErrorIs(t, result.Err(), ErrHeartbeatFailed)
+	require.ErrorIs(t, result.Err(), transportErr)
+	require.True(t, result.OwnerStopRequired())
+	require.Zero(t, msg.ackCount.Load()+msg.nakCount.Load()+msg.termCount.Load())
+}
+
 func TestConsumeDeliveryWithHeartbeatOwnerCancellationJoinsThenSettles(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	entered := make(chan struct{})

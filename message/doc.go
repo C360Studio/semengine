@@ -381,6 +381,13 @@
 // it has no registry. For generic JSON processing, register the well-known type
 // "core.json.v1" (GenericJSONPayload) with RegisterPayloads.
 //
+// GenericJSONPayload is the fallback for JSON whose shape is not known when the
+// code is written: outside input, or a transform the user configures. Code that
+// builds a shape it knows registers a payload type instead. Its Data holds
+// JSON-shaped values only (map[string]any, []any, string, Go numbers,
+// json.Number, bool and nil); encoding refuses any other value with an error
+// naming its type and path, and any string or key that is not valid UTF-8.
+//
 // ## 4. Transmission
 //
 // Messages are published to NATS subjects derived from their type:

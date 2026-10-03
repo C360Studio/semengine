@@ -328,9 +328,16 @@ func (p *GeofenceProcessor) Process(msg *message.BaseMessage) (*message.BaseMess
 
 This processor works with `RobotPositionPayload`, `VehicleLocationPayload`, or ANY payload implementing `Locatable`.
 
-### GenericJSON for Prototyping
+### GenericJSON as the Fallback
 
-Use `GenericJSONPayload` for rapid iteration:
+`GenericJSONPayload` (`core.json.v1`) is the fallback for JSON whose shape is not known when the code is written:
+outside input, or a transform the user configures. Code that builds a shape it knows registers a payload type
+through the registry instead.
+
+`Data` holds JSON-shaped values only: `map[string]any`, `[]any`, `string`, Go numbers, `json.Number`, `bool` and
+`nil`, nested to any depth. Encoding refuses any other value (a struct, `time.Time`, a pointer, a typed map or
+slice such as `map[string]string`) with an error naming its type and path, such as `data.a[2].b`. It also refuses a
+string or key that is not valid UTF-8.
 
 ```go
 // Quick prototype - no custom types needed
@@ -361,14 +368,13 @@ func processTestData(msg *message.BaseMessage) {
 
 **When to use GenericJSON**:
 
-- ✅ Rapid prototyping and iteration
-- ✅ Integration tests with flexible schemas
-- ✅ ETL pipelines with varying structures
-- ✅ JSON transformation workflows
+- ✅ JSON from outside whose shape the code does not know
+- ✅ User-configured transforms (filter, map) over such JSON
+- ✅ Tests and prototypes
 
 **When NOT to use GenericJSON**:
 
-- ❌ Production systems with strict schemas
+- ❌ Any shape the code builds from fields it knows: register a payload type
 - ❌ Type-safe domain models
 - ❌ Performance-critical paths (use typed payloads)
 
@@ -522,7 +528,7 @@ func enrichMessage(msg *message.BaseMessage) (*message.BaseMessage, error) {
     // Create enriched payload
     enriched := message.NewGenericJSON(map[string]any{
         "original": original.Data,
-        "enriched_at": time.Now(),
+        "enriched_at": time.Now().UTC().Format(time.RFC3339Nano), // time.Time is not JSON-shaped
         "enrichment_version": "v1",
     })
 

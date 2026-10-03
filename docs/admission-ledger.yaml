@@ -923,6 +923,13 @@
     :600-612 (troubleshooting: the error text is "unregistered payload type"); :640; :687. doc.go
     :366-367, :375-377 (serialization and the global-registry note); :407-408 (handler example).
     README :329's NewBaseMessage(payload) call is left as the pin's text (not on the decode path).
+    Adapt item, generic payload documented as the fallback (owner ruling, #9 comment 5972208367,
+    item 2): README :314-316 (the section, retitled "GenericJSON as the Fallback", says core.json.v1
+    is for JSON whose shape is not known when the code is written, outside input or a user-configured
+    transform, that code building a known shape registers a payload type, and states the JSON-shaped
+    refusal), :345-356 (when to use it, rewritten to match), :515 (the enrichment example's
+    time.Now(), which encoding now refuses, formatted as RFC 3339 text); doc.go after :377 (the same
+    fallback and refusal, one paragraph). No code changed by this item.
     Behaviour change, timestamp decode (owner ruling 7, #9 comment 5969522395): the pin decoded both
     timestamps through timestamp.Parse (base_message.go:272-284), which reads a number up to 10^12 as
     seconds and also accepts RFC 3339 and numeric strings, so every instant before 2001-09-09, which

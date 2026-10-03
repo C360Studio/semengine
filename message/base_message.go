@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/c360studio/semengine/internal/timestamp"
 	"github.com/c360studio/semengine/payloadregistry"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/pkg/platform"
-	"github.com/c360studio/semengine/internal/timestamp"
 	"github.com/google/uuid"
 )
 

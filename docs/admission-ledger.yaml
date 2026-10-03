@@ -617,7 +617,8 @@
     testing.go line: :1 package payloadregistry → payloadfixture; :6 the pkg/types import path
     rewritten, with an import of payloadregistry added beside it; New qualified as
     payloadregistry.New at :20 and :34; Registry as payloadregistry.Registry at :18, :32 (twice) and
-    :53; Registration as payloadregistry.Registration at :55. T-B1 admits the file only under
+    :53; Registration as payloadregistry.Registration at :55. A new doc.go gives payloadfixture
+    the package comment revive requires. T-B1 admits the file only under
     internal/harness/ (TestImportGraphRejectsHarnessHelpersOutsideTheHarness). The package doc names ADR-103,
     ADR-054, ADR-029, component.Dependencies and agentic, which do not exist here; left as the pin's
     text
@@ -640,7 +641,7 @@
     goroutine, no I/O
   known_risks: >-
     no context roots. Import paths differ from the pin: pkg/timestamp is internal/timestamp (design
-    D5), and the tests' internal/semantictest is internal/harness/semantictest (task 2.8). Adapt item
+    D5; gofmt then moves its import line in base_message.go into sorted order), and the tests' internal/semantictest is internal/harness/semantictest (task 2.8). Adapt item
     (owner ruling, #9 comment 5957221949): message/README.md is ported with only the edit
     markdownlint requires: line 7 wrapped at 120 columns (MD013); no wording changed. The README's
     import examples still name github.com/c360/semstreams paths (:20, :203-204, :466), left as the

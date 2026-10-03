@@ -41,14 +41,15 @@ pull request closes #72 (`Closes #72` in its body).
       (`context_test.go:221-289`) with D3's predicate and exceptions held in one map mirroring the requirement's
       list by exact string (D4). Its failure line is D3's. 2.1 passes; the repository test passes on `main` (design
       P1). Gate: `task test:unit`.
-- [ ] 2.3 (D) Shown able to fail (`docs/testing.md`, "Show that the test can fail"): each wrong change in turn —
+- [x] 2.3 (D) Shown able to fail (`docs/testing.md`, "Show that the test can fail"): each wrong change in turn —
       drop the exported-only test (lowercase `org` then fails: the sensitivity test must catch the false positive);
       drop one exact-field exception (`component.Dependencies.Platform` then fails); except by type instead of by
       field (the fixture's second `Platform types.PlatformMeta` field then passes and the sensitivity test must
       catch it); drop the `CallerContext.Org` exception; match `Org` only; skip anonymous structs; skip `main`
       packages — with the baseline, wrong-change and restored runs recorded
       on this pull request. A wrong change the sensitivity test lets through is a survivor, closed with a case or
-      listed under what is not covered.
+      listed under what is not covered. Recorded: PR #73 comment 5969839223 (six listed changes detected, and the
+      case-insensitive variant of the first; dropping the exported-only test alone is an equivalent survivor, not covered).
 - [ ] 2.4 (D) The `contract` package's time in the `test:unit`, `test:integration` and `test:repeat` steps on
       `main` and on the branch, from the CI logs of two runs, recorded on this pull request and under "Declared
       costs" in `design.md`; over D6's 15 s budget, the two checks share one load before anything is removed.
@@ -71,7 +72,7 @@ pull request closes #72 (`Closes #72` in its body).
 
 ## 4. Documents
 
-- [ ] 4.1 (W) `AGENTS.md`: the rule's row as `design.md` D7 words it, naming both tests under "Enforced by" and what
+- [x] 4.1 (W) `AGENTS.md`: the rule's row as `design.md` D7 words it, naming both tests under "Enforced by" and what
       stays review only. Gate: `task docs:check`.
 - [ ] 4.2 (W) `docs/testing.md`, the list at `:155-161`: the two sensitivity pairs; `docs/repository-map.md:41`: the
       contract package's clause names the deployment-authority spelling. Gate: `task docs:check`.

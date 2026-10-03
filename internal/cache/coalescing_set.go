@@ -27,10 +27,15 @@ type CoalescingSet struct {
 
 // NewCoalescingSet creates a new CoalescingSet that fires the callback every window duration
 // with the collected (deduplicated) keys. The background goroutine stops when ctx is cancelled
-// or when Shutdown is called. A nil ctx panics here, before any goroutine starts.
+// or when Shutdown is called. A nil ctx or a nil callback panics here, before any goroutine
+// starts. The callback is not guarded: a panic in it ends the process, so a batch the callback
+// did not finish is never taken for one it processed.
 func NewCoalescingSet(ctx context.Context, window time.Duration, callback func([]string)) *CoalescingSet {
 	if ctx == nil {
 		panic("cache: NewCoalescingSet called with a nil context")
+	}
+	if callback == nil {
+		panic("cache: NewCoalescingSet called with a nil callback")
 	}
 	c := &CoalescingSet{
 		pending:  make(map[string]struct{}),
@@ -184,18 +189,8 @@ func (c *CoalescingSet) fireBatch() {
 	c.pending = make(map[string]struct{})
 	c.mu.Unlock()
 
-	// Call callback OUTSIDE the lock to prevent deadlock
-	// Wrap in defer/recover to handle panics gracefully
-	if c.callback != nil {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					// Callback panicked - recover gracefully and continue
-					// In production, this could log the panic
-					_ = r
-				}
-			}()
-			c.callback(keys)
-		}()
-	}
+	// Call callback OUTSIDE the lock to prevent deadlock. A panic is not recovered: the batch has
+	// left the pending set, so continuing would report work as done that the callback never
+	// finished (owner ruling on Codex F1, PR #48).
+	c.callback(keys)
 }

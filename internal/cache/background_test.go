@@ -122,7 +122,7 @@ func TestCoalescingSetShutdownUnderABlockedCallback(t *testing.T) {
 
 func TestCoalescingSetShutdownRefusesNilContext(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		set := NewCoalescingSet(context.Background(), time.Hour, nil)
+		set := NewCoalescingSet(context.Background(), time.Hour, func([]string) {})
 		var nilCtx context.Context // the nil context is the input under test
 		require.Error(t, set.Shutdown(nilCtx))
 		require.NoError(t, set.Shutdown(context.Background()))
@@ -296,19 +296,30 @@ func TestCacheConcurrentCloseJoinsEveryCaller(t *testing.T) {
 	}
 }
 
-// bubbleCleanupGoroutines counts goroutines in a synctest bubble that are running a TTL or
-// hybrid cleanup loop, read from the runtime's own stack dump.
-func bubbleCleanupGoroutines() int {
+// bubbleGoroutinesRunning counts goroutines in a synctest bubble whose stack holds any of
+// frames, read from the runtime's own stack dump.
+func bubbleGoroutinesRunning(frames ...string) int {
 	buf := make([]byte, 1<<20)
 	buf = buf[:runtime.Stack(buf, true)]
 	n := 0
 	for _, g := range strings.Split(string(buf), "\n\n") {
-		if strings.Contains(g, "synctest bubble") &&
-			(strings.Contains(g, "(*ttlCache[...]).cleanup") || strings.Contains(g, "(*hybridCache[...]).cleanup")) {
-			n++
+		if !strings.Contains(g, "synctest bubble") {
+			continue
+		}
+		for _, f := range frames {
+			if strings.Contains(g, f) {
+				n++
+				break
+			}
 		}
 	}
 	return n
+}
+
+// bubbleCleanupGoroutines counts goroutines in a synctest bubble running a TTL or hybrid
+// cleanup loop.
+func bubbleCleanupGoroutines() int {
+	return bubbleGoroutinesRunning("(*ttlCache[...]).cleanup", "(*hybridCache[...]).cleanup")
 }
 
 // TestCacheConstructorsRefuseInvalidDimensions: NewLRU, NewTTL and the hybrid constructor apply

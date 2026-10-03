@@ -8,12 +8,14 @@ package cache
 
 import (
 	"context"
+	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
 
+	"github.com/c360studio/semengine/internal/harness/prochost"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -227,7 +229,7 @@ func TestCoalescingSet_RemovePrefixExcludesMatchingKeys(t *testing.T) {
 
 func TestCoalescingSet_DrainReturnsAndClearsPendingKeys(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		set := NewCoalescingSet(context.Background(), time.Hour, nil)
+		set := NewCoalescingSet(context.Background(), time.Hour, func([]string) {})
 		set.Add("entity-1")
 		set.Add("entity-2")
 		require.ElementsMatch(t, []string{"entity-1", "entity-2"}, set.Drain())
@@ -239,7 +241,7 @@ func TestCoalescingSet_DrainReturnsAndClearsPendingKeys(t *testing.T) {
 
 func TestCoalescingSet_MutationResultsTrackPendingOwnership(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		set := NewCoalescingSet(context.Background(), time.Hour, nil)
+		set := NewCoalescingSet(context.Background(), time.Hour, func([]string) {})
 		require.True(t, set.Add("entity-1"))
 		require.False(t, set.Add("entity-1"))
 		require.False(t, set.Remove("missing"))
@@ -584,54 +586,39 @@ func TestCoalescingSet_MultipleCloseCalls(t *testing.T) {
 	})
 }
 
-// TestCoalescingSet_CallbackPanic verifies system handles panics in callback gracefully.
-func TestCoalescingSet_CallbackPanic(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		ctx := context.Background()
-		var callCount atomic.Int32
-
-		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(_ []string) {
-			count := callCount.Add(1)
-			if count == 1 {
-				panic("intentional panic in callback")
-			}
-		})
-		defer set.Shutdown(t.Context())
-
-		// Add keys to trigger first callback (which panics)
-		set.Add("entity-1")
-
-		// Wait for first window
-		<-time.After(100 * time.Millisecond)
-		synctest.Wait()
-
-		// Add keys for second window
-		set.Add("entity-2")
-
-		// Wait for second window
-		<-time.After(100 * time.Millisecond)
-		synctest.Wait()
-
-		// System should recover and continue processing: the second window's batch reached the
-		// callback, so the goroutine survived the first callback's panic. (At the pin this test
-		// asserted nothing; the count is the observation that the goroutine is still running.)
-		assert.Equal(t, int32(2), callCount.Load(), "the batch after the panic is delivered")
-	})
+// TestCoalescingSet_CallbackPanicEndsTheProcess: a panic in the callback is not recovered; it
+// ends the process, so a failed batch is never reported as processed (owner ruling on Codex F1,
+// PR #48). The set runs in a helper process (internal/harness/prochost); the oracle is the
+// child's exit (code 2, a Go runtime panic) and the panic text with the callback's own value on
+// its stderr, not the exit code alone: a bad test flag also exits 2. At the pin fireBatch
+// recovered the panic and the child stayed parked until the test's bound.
+func TestCoalescingSet_CallbackPanicEndsTheProcess(t *testing.T) {
+	p, err := prochost.Start(t, callbackPanicHelper)
+	require.NoError(t, err)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	status, err := p.Wait(ctx)
+	require.NoError(t, err, "the helper is still running: the callback's panic did not end it")
+	stderr, err := os.ReadFile(p.StderrPath())
+	require.NoError(t, err)
+	assert.Equal(t, prochost.ExitStatus{Code: 2}, status, "stderr:\n%s", stderr)
+	assert.Contains(t, string(stderr), "panic: "+callbackPanicValue)
+	assert.Contains(t, string(stderr), "(*CoalescingSet).fireBatch")
 }
 
-// TestCoalescingSet_NilCallback verifies behavior with nil callback.
-func TestCoalescingSet_NilCallback(t *testing.T) {
+// TestCoalescingSet_NilCallbackPanicsAtTheCall: a nil callback is refused by a panic at the call,
+// before the goroutine starts (the background-work shape of a nil context; owner ruling on Codex
+// F1). At the pin a nil callback was accepted and each batch was dropped. Oracle: the panic, and
+// no run goroutine in the bubble's stack dump.
+func TestCoalescingSet_NilCallbackPanicsAtTheCall(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		ctx := context.Background()
-
-		// Should not panic with nil callback
-		require.NotPanics(t, func() {
-			set := NewCoalescingSet(ctx, 50*time.Millisecond, nil)
-			defer set.Shutdown(t.Context())
-
-			set.Add("entity-1")
-			<-time.After(100 * time.Millisecond)
-		})
+		// Cancelled only as the test ends, after the count: it releases a goroutine a regression
+		// would start, so the bubble fails the test instead of running its ticker forever.
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		assert.Panics(t, func() { NewCoalescingSet(ctx, 50*time.Millisecond, nil) })
+		synctest.Wait()
+		assert.Zero(t, bubbleGoroutinesRunning("(*CoalescingSet).run"), "no goroutine started")
 	})
 }
 

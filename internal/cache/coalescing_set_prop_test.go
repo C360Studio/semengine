@@ -194,7 +194,7 @@ func runCoalescingHistory(history []propStep, c *propCounts) string {
 // only by chance: a key that holds the prefix past its start is not removed.
 func TestCoalescingSetRemovePrefixMatchesOnlyAtTheStart(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		set := NewCoalescingSet(context.Background(), time.Hour, nil)
+		set := NewCoalescingSet(context.Background(), time.Hour, func([]string) {})
 		set.Add("e2\x00a")
 		set.Add("a\x00e2")
 		if got := set.RemovePrefix("e2"); got != 1 {

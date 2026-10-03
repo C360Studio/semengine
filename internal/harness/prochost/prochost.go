@@ -181,6 +181,10 @@ func (p *Process) Kill() error {
 	return nil
 }
 
+// StderrPath is the file the helper's stderr goes to. A test reads it once Wait has returned, for
+// what the child printed as it ended, such as a runtime panic.
+func (p *Process) StderrPath() string { return p.stderr }
+
 // Alive reports whether the helper has not yet exited. It reads the host's own record of the
 // child, not the pid, so a reused pid cannot make it true.
 func (p *Process) Alive() bool {

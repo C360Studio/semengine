@@ -160,7 +160,7 @@ func TestStartedHelperHasItsOwnGroupAndCapturedOutput(t *testing.T) {
 			if pgid, _ := strconv.Atoi(strings.TrimSpace(string(out))); pgid != p.pid || pgid == syscall.Getpgrp() {
 				t.Fatalf("helper pgid %d, pid %d, test's group %d: want its own group", pgid, p.pid, syscall.Getpgrp())
 			}
-			for stream, file := range map[string]string{"hello from the helper": p.stdout, "hello on stderr": p.stderr} {
+			for stream, file := range map[string]string{"hello from the helper": p.stdout, "hello on stderr": p.StderrPath()} {
 				if !strings.HasPrefix(file, want+string(filepath.Separator)) {
 					t.Fatalf("output file %s is not under %s", file, want)
 				}

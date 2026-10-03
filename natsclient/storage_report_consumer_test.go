@@ -154,7 +154,7 @@ func runConsumer(t *testing.T, store *fakeWatchStore, observer StorageReportObse
 		cancel()
 		select {
 		case <-done:
-		case <-time.After(5 * time.Second):
+		case <-time.After(10 * time.Second):
 			t.Error("consumer did not stop when its context ended")
 		}
 	})
@@ -163,7 +163,7 @@ func runConsumer(t *testing.T, store *fakeWatchStore, observer StorageReportObse
 
 func eventually(t *testing.T, condition func() bool, msg string) {
 	t.Helper()
-	require.Eventually(t, condition, 3*time.Second, time.Millisecond, msg)
+	require.Eventually(t, condition, 10*time.Second, time.Millisecond, msg)
 }
 
 // --- tests -------------------------------------------------------------------

@@ -1282,10 +1282,21 @@
     after a failed InProgress fails InProgressFailureRequiresOwnerStop (its 5 s limit);
     streamVisibilityBudget at 100 ms fails CancelledWaitCarriesNoAbsenceEvidence (no
     DeadlineExceeded); the late probe failure reclassified through streamNotVisible fails
-    DoesNotReclassifyALaterProbeFailureAsAbsence. Not repaired here, being event-driven with no
-    production timer though their real-clock limits are under 10 s: kv_watcher_ownership_test.go
-    (2 s), message_timeout_test.go:23 (1 s), subscription_test.go:141, :160 (5 s), and the eight
-    other storage_report_consumer_test.go tests. R5, the 47 fixed-address lines in 8 unit files: a client that never dials gets "nats://unused", the pin's
+    DoesNotReclassifyALaterProbeFailureAsAbsence. LatestNeverWaitsOnCollection stays on synctest:
+    its lock-held mutant is caught only by the go test timeout, because a goroutine blocked on a
+    sync.Mutex is not durably blocked, so the bubble's fake clock does not advance to the 3 s
+    limit. R1b, the real-clock failure bounds left in the event-driven unit tests (no production
+    timer, no dial) widened to 10 s, test logic and assertions unchanged, lines unchanged from the
+    pin: kv_watcher_ownership_test.go :136 (rescue limit), :153, :158, :173, :178, :189, :218, 2 s
+    → 10 s; message_timeout_test.go :23, 1 s → 10 s (the 1 s at :11 and :29 is the configured
+    message timeout, not a bound); subscription_test.go :141, :160, the Drain context, 5 s → 10 s;
+    storage_report_consumer_test.go runConsumer's stop limit :156 → :157, 5 s → 10 s, and
+    eventually's limit :165 → :166, 3 s → 10 s, which bound every consumer test (on the bubble's
+    clock in the two R1a tests above). None of these is a behaviour window. Left as they are, being
+    behaviour intervals rather than failure bounds: the integration lane's
+    client_close_integration_test.go:77 and subscription_integration_test.go:98 (pin :115-119; R1c,
+    in the D8 table), delivery_settlement_integration_test.go:105 (R1c pacing, in the table), and
+    request_integration_test.go:94, a 100 ms deadline whose expiry is the error the test asserts. R5, the 47 fixed-address lines in 8 unit files: a client that never dials gets "nats://unused", the pin's
     own spelling (client_connect_test.go:14); the one that dials, TestContextAwareMethods (pin
     nats://invalid-host:4222, a DNS lookup), gets refusedNATSURL(t), a loopback port bound with
     port 0 and released: client_async_error_test.go :114, :144; client_test.go :18 → :19, :22 →

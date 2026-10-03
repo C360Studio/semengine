@@ -138,7 +138,7 @@ func TestSubscriptionDrainConnectionClosesMidDrain(t *testing.T) {
 	require.ErrorIs(t, sub.Drain(canceled), context.Canceled)
 
 	native.fireClosed()
-	ctx, cancelBounded := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancelBounded := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelBounded()
 	require.NoError(t, sub.Drain(ctx))
 	require.Equal(t, int32(1), native.drainCalls.Load())
@@ -157,7 +157,7 @@ func TestSubscriptionDrainNativeConnectionClosedWaitsForClosure(t *testing.T) {
 		"ErrConnectionClosed must wait for the closed handler, not return early")
 
 	native.fireClosed()
-	ctx, cancelBounded := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancelBounded := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelBounded()
 	require.NoError(t, sub.Drain(ctx))
 	require.Equal(t, int32(1), native.drainCalls.Load())

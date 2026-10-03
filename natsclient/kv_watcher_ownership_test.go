@@ -133,7 +133,7 @@ func TestKVStoreFilteredCancellationFinishesNativeDelivery(t *testing.T) {
 		select {
 		case <-bucket.watcher.done:
 		default:
-			rescueLimit := time.NewTimer(2 * time.Second)
+			rescueLimit := time.NewTimer(10 * time.Second)
 		rescue:
 			for {
 				select {
@@ -150,12 +150,12 @@ func TestKVStoreFilteredCancellationFinishesNativeDelivery(t *testing.T) {
 		}
 		select {
 		case <-bucket.watcher.done:
-		case <-time.After(2 * time.Second):
+		case <-time.After(10 * time.Second):
 			t.Error("test-owned producer did not join")
 		}
 		select {
 		case <-callDone:
-		case <-time.After(2 * time.Second):
+		case <-time.After(10 * time.Second):
 			t.Error("public listing task did not join")
 		}
 	}()
@@ -170,12 +170,12 @@ func TestKVStoreFilteredCancellationFinishesNativeDelivery(t *testing.T) {
 	}()
 	select {
 	case <-bucket.entered:
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("filtered constructor was not entered")
 	}
 	select {
 	case <-bucket.attempted:
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("native Updates send was not attempted")
 	}
 	cancel()
@@ -186,7 +186,7 @@ func TestKVStoreFilteredCancellationFinishesNativeDelivery(t *testing.T) {
 	}
 	select {
 	case got = <-result:
-	case <-time.After(2 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("public listing did not return after cancellation")
 	}
 	require.ErrorIs(t, got.err, context.Canceled)
@@ -215,7 +215,7 @@ func TestKVStoreFilteredCancellationFinishesNativeDelivery(t *testing.T) {
 		}
 		select {
 		case <-bucket.watcher.done:
-		case <-time.After(2 * time.Second):
+		case <-time.After(10 * time.Second):
 			t.Error("test-owned producer did not finish after delivery closure")
 		}
 	}

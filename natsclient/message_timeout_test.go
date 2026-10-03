@@ -20,7 +20,7 @@ func TestMessageHandlerContext_DisabledUsesLifecycleContext(t *testing.T) {
 		if ctx.Err() != context.Canceled {
 			t.Fatalf("context error = %v, want context.Canceled", ctx.Err())
 		}
-	case <-time.After(time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("lifecycle cancellation did not reach no-timeout message context")
 	}
 }

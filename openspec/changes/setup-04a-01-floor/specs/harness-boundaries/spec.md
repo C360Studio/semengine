@@ -98,15 +98,19 @@ A deployment's authority (`org`, `platform`) becomes the first two positions of 
 entity-ID family (#72 ruling A as extended, comment 5969505488). No exported name in a non-test package of this
 module, internal and `main` packages included, SHALL contain `Federation`, `GlobalID` or `EntityIRI`. This covers
 package-level identifiers, and the exported methods, struct fields and interface methods of package-level types,
-whether the type is exported or not. Unexported names and test files are not checked. The check that a struct field
-named `Org` or `Platform` appears only where ruling C allows it is not part of this requirement.
+whether the type is exported or not. A type alias is a package-level type: its own name is checked, and so are the
+members of the type it stands for; members of a type this module declares are reported once, at that declaration.
+A failure names the file, line, qualified identifier and rule. Unexported names and test files are not checked. The
+check that a struct field named `Org` or `Platform` appears only where ruling C allows it is not part of this
+requirement.
 
 #### Scenario: A deployment-authority name is exported
 
 - **WHEN** a fixture module declares an exported name containing `Federation`, `GlobalID` or `EntityIRI` in a
   public, an internal or a `main` package: a type, function, variable or constant, a method (of an unexported type
-  too), a struct field or an interface method
-- **THEN** the contract test fails naming each qualified identifier
+  too), a struct field or an interface method, or a type alias, or a member of the struct or interface an alias
+  stands for
+- **THEN** the contract test fails naming each one once, with its file, line and qualified identifier and the rule
 
 #### Scenario: The words appear where the rule does not apply
 

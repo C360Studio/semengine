@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"go/token"
 	"go/types"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -413,7 +414,36 @@ func TestNoDeploymentAuthorityNames(t *testing.T) {
 // authorityFixture plants a matching exported name at each place an exported name can be declared,
 // in a public, an internal and a main package, and the same words where the rule does not apply.
 var authorityFixture = map[string]string{
-	"go.mod": "module example.com/fixture\n\ngo 1.26\n",
+	"go.mod": "module example.com/fixture\n\ngo 1.26\n\nrequire example.com/dep v0.0.0\n\nreplace example.com/dep => ./dep\n",
+	// Aliases (Codex F11, PR #48 comment 5970321028): an alias's own name, and the members of the
+	// type it stands for, are checked; members of a type this module declares are reported once, at
+	// that declaration.
+	"pub/alias.go": `package pub
+
+import "example.com/dep"
+
+// Codex's control: a defined struct, reported as before.
+type Direct struct{ FederationOrigin string }
+
+type Metadata = struct{ FederationOrigin string }
+
+type AliasMeta = interface{ GlobalID() string }
+
+type PtrMeta = *struct{ EntityIRI string }
+
+// The alias name is checked; Message's members were reported at Message.
+type FederationAlias = Message
+
+type MessageAlias = *Message
+
+// A type declared outside the module: its members are reported at the alias.
+type Record = dep.Record
+
+// No forbidden name: nothing is reported.
+type Plain = struct{ Name string }
+`,
+	"dep/go.mod": "module example.com/dep\n\ngo 1.26\n",
+	"dep/dep.go": "package dep\n\ntype Record struct{ GlobalID string }\n\nfunc (Record) FederationOrigin() string { return \"\" }\n",
 	"pub/pub.go": `package pub
 
 type FederationMeta interface{ Platform() string }
@@ -458,64 +488,105 @@ func TestNoDeploymentAuthorityNamesSensitivity(t *testing.T) {
 	root, _ := writeTree(t, authorityFixture)
 	violations := authorityNameViolations(t, root)
 	t.Logf("violations:\n  %s", strings.Join(violations, "\n  "))
-	want := []string{
-		"example.com/fixture/cmd/tool.EntityIRI",
-		"example.com/fixture/internal/inner.NewFederationMeta",
-		"example.com/fixture/pub.BuildGlobalID",
-		"example.com/fixture/pub.DefaultFederation",
-		"example.com/fixture/pub.EntityIRIBase",
-		"example.com/fixture/pub.FederationMeta",
-		"example.com/fixture/pub.Message.FederationOrigin",
-		"example.com/fixture/pub.Message.WithFederation",
-		"example.com/fixture/pub.Meta.EntityIRI",
-		"example.com/fixture/pub.hidden.GlobalID",
+	at := func(position, qualified string) string {
+		return position + ": example.com/fixture/" + qualified + authoritySuffix
 	}
+	want := []string{
+		at("cmd/tool/main.go:3", "cmd/tool.EntityIRI"),
+		at("internal/inner/inner.go:3", "internal/inner.NewFederationMeta"),
+		at("pub/pub.go:3", "pub.FederationMeta"),
+		at("pub/pub.go:5", "pub.BuildGlobalID"),
+		at("pub/pub.go:7", "pub.DefaultFederation"),
+		at("pub/pub.go:9", "pub.EntityIRIBase"),
+		at("pub/pub.go:12", "pub.Message.FederationOrigin"),
+		at("pub/pub.go:16", "pub.Message.WithFederation"),
+		at("pub/pub.go:20", "pub.hidden.GlobalID"),
+		at("pub/pub.go:22", "pub.Meta.EntityIRI"),
+		at("pub/alias.go:6", "pub.Direct.FederationOrigin"),
+		at("pub/alias.go:8", "pub.Metadata.FederationOrigin"),
+		at("pub/alias.go:10", "pub.AliasMeta.GlobalID"),
+		at("pub/alias.go:12", "pub.PtrMeta.EntityIRI"),
+		at("pub/alias.go:15", "pub.FederationAlias"),
+		// dep.Record's members are declared outside the module, so the alias's line is reported.
+		at("pub/alias.go:20", "pub.Record.FederationOrigin"),
+		at("pub/alias.go:20", "pub.Record.GlobalID"),
+	}
+	sort.Strings(want)
 	if strings.Join(violations, "\n") != strings.Join(want, "\n") {
 		t.Errorf("violations:\n  %s\nwant exactly:\n  %s", strings.Join(violations, "\n  "), strings.Join(want, "\n  "))
 	}
 }
 
+const authoritySuffix = " spells the deployment authority outside the entity-ID family " +
+	"(harness-boundaries › No second spelling of deployment authority)"
+
 // authorityNameViolations reports every exported name matching authorityNames in the non-test
 // packages of the module at root: package-level identifiers, and the exported methods, struct
 // fields and interface methods of package-level types, exported or not (an exported method of an
-// unexported type is still callable through an exported function that returns it).
+// unexported type is still callable through an exported function that returns it). An alias is a
+// package-level type too: its own name is checked, and so are the members of the type it stands
+// for, unless that type is one this module declares, whose members are reported once, at its own
+// declaration. Each line names the file, line, qualified identifier and rule.
 func authorityNameViolations(t *testing.T, root string) []string {
 	t.Helper()
 	modulePath := modulePathOf(t, root)
-	var violations []string
-	report := func(qualified, name string) {
-		if token.IsExported(name) && authorityNames.MatchString(name) {
-			violations = append(violations, qualified)
-		}
+	inModule := func(pkg *types.Package) bool {
+		return pkg != nil && (pkg.Path() == modulePath || strings.HasPrefix(pkg.Path(), modulePath+"/"))
 	}
+	var violations []string
 	for _, pkg := range loadModuleTypes(t, root) {
-		if pkg.Types == nil || (pkg.PkgPath != modulePath && !strings.HasPrefix(pkg.PkgPath, modulePath+"/")) {
+		if pkg.Types == nil || !inModule(pkg.Types) {
 			continue
+		}
+		// report names obj, a candidate, at pos: obj's own position when the module declares it,
+		// else the position of the alias that exposes it.
+		report := func(pos token.Pos, qualified string, obj types.Object) {
+			if !obj.Exported() || !authorityNames.MatchString(obj.Name()) {
+				return
+			}
+			if inModule(obj.Pkg()) {
+				pos = obj.Pos()
+			}
+			position := pkg.Fset.Position(pos)
+			path, err := filepath.Rel(root, position.Filename)
+			if err != nil {
+				path = position.Filename
+			}
+			violations = append(violations,
+				fmt.Sprintf("%s:%d: %s%s", filepath.ToSlash(path), position.Line, qualified, authoritySuffix))
 		}
 		scope := pkg.Types.Scope()
 		for _, name := range scope.Names() {
 			obj := scope.Lookup(name)
 			qualified := pkg.PkgPath + "." + name
-			report(qualified, name)
+			report(obj.Pos(), qualified, obj)
 			tn, ok := obj.(*types.TypeName)
-			if !ok || tn.IsAlias() {
-				continue
-			}
-			named, ok := tn.Type().(*types.Named)
 			if !ok {
 				continue
 			}
-			for i := 0; i < named.NumMethods(); i++ {
-				report(qualified+"."+named.Method(i).Name(), named.Method(i).Name())
+			typ := tn.Type()
+			if tn.IsAlias() {
+				typ = types.Unalias(typ)
+				if ptr, isPtr := typ.(*types.Pointer); isPtr {
+					typ = types.Unalias(ptr.Elem())
+				}
+				if named, isNamed := typ.(*types.Named); isNamed && inModule(named.Obj().Pkg()) {
+					continue // reported at the declaration of the type the alias stands for
+				}
 			}
-			switch u := named.Underlying().(type) {
+			if named, isNamed := typ.(*types.Named); isNamed {
+				for i := 0; i < named.NumMethods(); i++ {
+					report(obj.Pos(), qualified+"."+named.Method(i).Name(), named.Method(i))
+				}
+			}
+			switch u := typ.Underlying().(type) {
 			case *types.Struct:
 				for i := 0; i < u.NumFields(); i++ {
-					report(qualified+"."+u.Field(i).Name(), u.Field(i).Name())
+					report(obj.Pos(), qualified+"."+u.Field(i).Name(), u.Field(i))
 				}
 			case *types.Interface:
 				for i := 0; i < u.NumExplicitMethods(); i++ {
-					report(qualified+"."+u.ExplicitMethod(i).Name(), u.ExplicitMethod(i).Name())
+					report(obj.Pos(), qualified+"."+u.ExplicitMethod(i).Name(), u.ExplicitMethod(i))
 				}
 			}
 		}

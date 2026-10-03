@@ -90,3 +90,25 @@ identifiers are not checked; a caller outside the module cannot reach them.
 - **WHEN** the contract test runs over this module with the floor's eleven public packages ported
 - **THEN** it passes, `natsclient.TemporalResolver`'s cache statistics being reached only through the unexported
   `cacheStats`
+
+### Requirement: No second spelling of deployment authority
+
+A deployment's authority (`org`, `platform`) becomes the first two positions of an identity only through the
+entity-ID family (#72 ruling A as extended, comment 5969505488). No exported name in a non-test package of this
+module, internal and `main` packages included, SHALL contain `Federation`, `GlobalID` or `EntityIRI`. This covers
+package-level identifiers, and the exported methods, struct fields and interface methods of package-level types,
+whether the type is exported or not. Unexported names and test files are not checked. The check that a struct field
+named `Org` or `Platform` appears only where ruling C allows it is not part of this requirement.
+
+#### Scenario: A deployment-authority name is exported
+
+- **WHEN** a fixture module declares an exported name containing `Federation`, `GlobalID` or `EntityIRI` in a
+  public, an internal or a `main` package: a type, function, variable or constant, a method (of an unexported type
+  too), a struct field or an interface method
+- **THEN** the contract test fails naming each qualified identifier
+
+#### Scenario: The words appear where the rule does not apply
+
+- **WHEN** the same words appear only in unexported names, in a name such as `Federated` that does not contain one
+  of them, or in a test file
+- **THEN** the contract test reports nothing for them

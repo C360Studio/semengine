@@ -97,6 +97,8 @@ func TestAttack_HighVolumeBatching(t *testing.T) {
 // blocked, so inside a bubble a regression would stall the fake clock and hang the test instead of
 // failing it. The callback is held on a channel the test releases, never on a timer (design D8,
 // R1b): the 100 Adds must all return while it is held; the 10 s bound is a failure bound only.
+// Every exit path releases the callback and joins the adds before anything takes the set's
+// mutex, so a callback run under that mutex fails the test and the test still ends (Codex F6).
 func TestAttack_CallbackLatency(t *testing.T) {
 	ctx := context.Background()
 	var callCount atomic.Int32
@@ -114,6 +116,9 @@ func TestAttack_CallbackLatency(t *testing.T) {
 		}
 	})
 	defer set.Shutdown(t.Context())
+	var releaseOnce sync.Once
+	releaseCallback := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseCallback() // before Shutdown, on an exit before the adds start
 
 	// Trigger first callback
 	set.Add("entity-1")
@@ -129,19 +134,23 @@ func TestAttack_CallbackLatency(t *testing.T) {
 			set.Add("entity-during-callback")
 		}
 	}()
+	defer func() { releaseCallback(); <-addsDone }() // every later exit: release, then join
 
 	// Adds should not block while the callback runs
 	select {
 	case <-addsDone:
 	case <-time.After(10 * time.Second):
-		t.Error("Add() blocked during callback execution")
+		// Release the callback and let the blocked adds finish before failing, so nothing that
+		// follows waits on a mutex the held callback owns.
+		releaseCallback()
+		<-addsDone
+		t.Fatal("Add() blocked during callback execution")
 	}
 	assert.Equal(t, 1, set.PendingCount(), "the adds made during the callback are pending")
 
 	// Release the callback and wait for it to finish
-	close(release)
+	releaseCallback()
 	<-callbackFinished
-	<-addsDone
 }
 
 // TestAttack_ContextCancellationDuringCallback verifies context cancellation during callback

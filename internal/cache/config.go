@@ -153,7 +153,12 @@ func NewFromConfig[V any](ctx context.Context, config Config, options ...Option[
 // Stats are always enabled for observability. Use WithMetrics() to also export as Prometheus metrics.
 func NewLRU[V any](maxSize int, options ...Option[V]) (Cache[V], error) {
 	opts := applyOptions(options...)
-	return newLRUCache[V](maxSize, opts)
+	c, err := newLRUCache[V](maxSize, opts)
+	if err != nil {
+		// A nil *lruCache returned as Cache[V] would be a non-nil interface.
+		return nil, err
+	}
+	return c, nil
 }
 
 // NewTTL creates a new TTL cache with the specified TTL and cleanup interval.
@@ -188,7 +193,12 @@ func newHybrid[V any](
 // Stats are always enabled for observability. Use WithMetrics() to also export as Prometheus metrics.
 func NewSimple[V any](options ...Option[V]) (Cache[V], error) {
 	opts := applyOptions(options...)
-	return newSimpleCache[V](opts)
+	c, err := newSimpleCache[V](opts)
+	if err != nil {
+		// A nil *simpleCache returned as Cache[V] would be a non-nil interface.
+		return nil, err
+	}
+	return c, nil
 }
 
 // NewNoop creates a cache that does nothing (always returns cache misses).

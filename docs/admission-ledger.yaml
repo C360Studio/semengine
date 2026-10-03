@@ -620,8 +620,10 @@
     nil on a later call once the callback has returned; Shutdown(nil) is refused with an error;
     NewCoalescingSet panics on a nil context before it starts the goroutine. Design D7, shape 2: the
     TTL and hybrid Close signal the cleanup goroutine and wait for it with no fixed bound; NewTTL and
-    NewFromConfig refuse a nil context with an error, for every strategy, and NewTTL and the hybrid
-    constructor return a nil Cache on error. Owner ruling (#9 comment 5950725772): no eviction
+    NewFromConfig refuse a nil context with an error, for every strategy. Every constructor that
+    returns Cache[V] with an error (NewSimple, NewLRU, NewTTL, the hybrid constructor, and
+    NewFromConfig through them) returns a nil Cache on error; at the pin each returned its nil
+    pointer inside a non-nil Cache (pin config.go:152, :159, :170, :177). Owner ruling (#9 comment 5950725772): no eviction
     callback
   dependencies_and_side_effects: >-
     metric, pkg/errs (in-set); prometheus/client_golang; stdlib; pgregory.net/rapid in tests only.
@@ -635,8 +637,7 @@
     processor/rule/expression/regex_cache.go:21, a no-op callback; natsclient/kv_temporal.go:27, :59,
     task 3.7). Shared collectors: two caches under one prefix share the size gauge, which shows
     whichever cache wrote last, not a sum (at the pin the second cache's gauge was not gathered at
-    all). NewLRU and NewSimple still return a nil pointer inside a non-nil Cache when metrics
-    registration fails, as at the pin; not changed here. Removed with the eviction callback (owner
+    all). Removed with the eviction callback (owner
     ruling, #9 comment 5950725772; design D7): WithEvictionCallback (pin options.go:42-48, with the
     evictCallback field :23-24), EvictCallback (cache.go:51-53), and the evictFn plumbing in
     simple.go, lru.go, ttl.go and hybrid.go; TestEvictCallback (cache_test.go:444-503, 60 lines, two
@@ -666,7 +667,11 @@
     while the callback is held, nil after it returns; at the pin's Close the bubble deadlocked) and
     TestCoalescingSetShutdownRefusesNilContext; TestCacheCloseAfterContextEndAndAgain (a Close after
     the context ended the goroutine, then a second Close, both nil; not a changed behavior, it
-    passes at the pin's behavior too). Generated check, in
+    passes at the pin's behavior too); TestCacheConstructorsReturnNilCacheOnError (each constructor
+    above, NewFromConfig for every strategy, refused by a metrics registration collision; oracle:
+    err != nil and the returned Cache == nil; implementer-reported, it failed first for NewSimple,
+    NewLRU and NewFromConfig's simple and lru paths with a nil *simpleCache or *lruCache inside the
+    Cache). Generated check, in
     internal/cache/coalescing_set_prop_test.go: TestPropCoalescingSetHistory, a Rapid history of
     Add, Remove, RemovePrefix, Drain, window ticks and Shutdown, each run in its own bubble and
     compared after every step with a test-owned model; it logs how often each assertion ran; and

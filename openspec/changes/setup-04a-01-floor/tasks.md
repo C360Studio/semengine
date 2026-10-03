@@ -250,6 +250,11 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         parallel: not reproduced. After the repair, `task test:repeat -- ./internal/cache` passed on both seeds and on
         `1790972252212655000`, `1790972253482840000` and `1790972254702897000`, and 96 of 96 runs of the seeds at 24 in
         parallel passed.
+      - Every `internal/cache` constructor that returns `Cache` with an error (`NewSimple`, `NewLRU`, `NewTTL`, the
+        hybrid constructor, and `NewFromConfig` through them) returns a nil `Cache` on error, not a nil pointer
+        inside a non-nil interface (`TestCacheConstructorsReturnNilCacheOnError`). Implementer-reported: it failed
+        first for `NewSimple`, `NewLRU` and `NewFromConfig`'s simple and lru paths; the TTL and hybrid ones were
+        fixed in c6d7108.
       - Hold: `message` waits for task 2.8. Its tests import `internal/semantictest`
         (`payload_test.go:10`, `triple_helpers_test.go:9` at the pin), and the harness copy is task 2.8's.
 - [ ] 3.7 (D) `natsclient` (level 6): row `adapt`; `test_client.go` and `test_options.go` are not ported and their

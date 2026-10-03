@@ -260,7 +260,9 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 	// 5968830525).
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
-	if err := dec.Decode(&aux); err != nil {
+	// Decode into the struct itself, not the pointer to it: a JSON null then leaves aux as it is
+	// instead of setting it to nil (at the pin, Unmarshal(&aux) on null panicked below).
+	if err := dec.Decode(aux); err != nil {
 		return err
 	}
 

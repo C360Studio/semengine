@@ -172,3 +172,16 @@ func TestConfig_UnmarshalJSON_RefusesStatsInterval(t *testing.T) {
 		t.Fatalf("error = %v, want an unknown-field error naming stats_interval", err)
 	}
 }
+
+// TestConfig_UnmarshalJSON_NullIsANoOp: a JSON null leaves the Config as it was, as encoding/json
+// does for any struct. At the pin it panicked with a nil-pointer dereference in UnmarshalJSON (pin
+// config.go:243), found by FuzzConfigUnmarshalJSON's null seed.
+func TestConfig_UnmarshalJSON_NullIsANoOp(t *testing.T) {
+	cfg := DefaultConfig()
+	if err := json.Unmarshal([]byte(`null`), &cfg); err != nil {
+		t.Fatalf("Unmarshal(null) = %v, want nil", err)
+	}
+	if cfg != DefaultConfig() {
+		t.Fatalf("Unmarshal(null) changed the Config to %+v", cfg)
+	}
+}

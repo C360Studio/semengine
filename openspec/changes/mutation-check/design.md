@@ -748,7 +748,11 @@ counts as well; the report shows where the race was.
 
 ## Owner's rulings
 
-None yet. The five questions above go to the owner on #79 after the pre-owner design review passes.
+The owner accepted this design and answered Q1 to Q5 as recommended on 2026-10-04, verbatim: "Accept, agree with all
+five" (#79, comment 5982900883; asked in comment 5982520123, on the design at `daca356`). So: Q1, the `AGENTS.md` row
+stays "review only" and names `task mutate:check` inside that clause; Q2, a whole-run timeout is never a detection;
+Q3, scripts and files read at run time stay with the manual procedure; Q4, a Go program at `internal/harness/mutcheck`;
+Q5, a race report counts only when named in advance with `-expect-text`.
 
 ## Premises
 

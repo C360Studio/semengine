@@ -1784,6 +1784,14 @@
     "dial" report, now made before the status write, until the winner has connected, and waits
     for the rejected connection's closed handler; it failed first (status Disconnected, want
     Connected), and both mutants are detected 10 of 10: the status restore removed (Connecting)
-    and handleClosed's current-connection check removed (Disconnected)
+    and handleClosed's current-connection check removed (Disconnected). Task 4.3 found two gaps:
+    the pin has no test of Drain(nil) (its refusal, client.go:798 at the pin, is kept) and none of
+    a Close whose context ends while the drain is held. Both are new and passed on first run,
+    since the behaviour was already in place: TestSubscriptionDrainRefusesNilContext
+    (subscription_test.go; the error names the nil context and the native Drain is not called) and
+    TestClientCloseUnderShortDeadlineClosesConnection (client_lifecycle_test.go; a 200 ms deadline
+    and a cancel after the drain begins: Close returns the context's error while a handler is
+    held, the connection is closed, and a second live Close waits on its context and returns nil
+    once the handler has returned)
   owner: setup-04a-01-floor developer
   disposition: adapt

@@ -812,10 +812,35 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
 - [ ] 4.2 (D) Acknowledged is not durable, `natsclient` half: an integration test publishes through the ported client
       to a memory-backed and a file-backed stream, restarts the fixture (task 2.1's primitive), and asserts absence
       and presence respectively; the `natsclient` row names it and change 2 for the graph-ingest scenarios.
-- [ ] 4.3 (D) `Close`/`Drain` bounded: tests show `Drain(nil)` refused without a server call (carried), `Close(nil)` and
+- [x] 4.3 (D) `Close`/`Drain` bounded: tests show `Drain(nil)` refused without a server call (carried), `Close(nil)` and
       `Connect(nil)` refused with the connection untouched (new, test written first, task 3.7c), `Close` under a short
       deadline returning within it with the connection closed, and a second `Close` returning nil (carried where the pin
       has them; new ones where the row records a gap).
+      - Done. Each clause and its test (all in `natsclient`, unit lane):
+        - `Drain(nil)`: `TestSubscriptionDrainRefusesNilContext` (`subscription_test.go`), new. The refusal is
+          carried (the pin's `client.go:798`); a test of it is not: the pin's `natsclient` tests have none, so
+          "carried" in this task holds for the behaviour only. The error names the nil context, the fake native
+          subscription's `Drain` is never called and it stays valid.
+        - `Close(nil)`, `Connect(nil)`: `TestClientCloseRefusesNilContext` (the connection stays connected) and
+          `TestClientConnectRefusesNilContext` (no dial), both written first in task 3.7c.
+        - `Close` under a short deadline: `TestClientCloseUnderShortDeadlineClosesConnection`
+          (`client_lifecycle_test.go`), new, the pin having no such test. A handler holds the drain; case
+          `deadline` gives `Close` 200 ms, case `cancelled-during-drain` cancels once `DRAINING_SUBS` is observed.
+          `Close` returns the context's error while the handler is held, and the connection is closed.
+        - A second `Close` returning nil: the same test, where a second `Close` with a live context is shown
+          waiting on its context (a test context that records its first `Done` call), the join still open, and
+          then nil once the handler is released; also `TestClientCloseUnderEndedContextAlwaysReportsIt` and
+          `TestClientCloseJoinsConnectionLossCallback` (3.7c). The pin has none.
+      - Failing first: not possible for either new test, since the code already behaved as required; both passed
+        on their first run. They are shown able to fail by mutants of `client.go`, each applied alone and
+        restored by checksum, run with `go test -race -v -count=N` on the two tests (logs local only): D1, the
+        nil check in `Subscription.Drain` removed: detected 5/5 (`Drain(nil)` panicked). C1, the deadline clamp
+        and the context case of `drainAndCloseConnection` removed: detected 3/3 in both cases (`Close` did not
+        return within 10 s). C2, the context case's `conn.Close()` removed: detected 10/10 by
+        `cancelled-during-drain`; the `deadline` case alone is partial, 2 of 10, because the clamp sets the drain
+        timer to the same deadline and that timer's branch also closes the connection. C3, a later `Close`
+        returning nil at once (the pin's `:583-585`): detected 10/10 in both cases. `go test -race -count=20` on
+        both tests passes. The row's `proving_tests` records the two gaps and the new tests.
 
 ## 5. Ledger items that need no port, and boundary gates
 

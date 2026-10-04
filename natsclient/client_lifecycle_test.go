@@ -517,6 +517,94 @@ func TestClientCloseUnderEndedContextAlwaysReportsIt(t *testing.T) {
 	require.NoError(t, c.Close(live), "a later Close with a live context")
 }
 
+// TestClientCloseUnderShortDeadlineClosesConnection is task 4.3's bounded Close (transport-client,
+// "Close under an ended context"): a client-owned handler holds the drain past the end of Close's
+// context. Close returns the context's error while the handler still runs, the connection is
+// closed by then, and a second Close with a live context waits for the handler and then returns
+// nil. The handler is held until the test releases it, so the context's end is the only way the
+// first Close can return; the 200 ms deadline is the subject under test, not a wait for an event.
+// The deadline case is the scenario. Close shortens its drain timer to the deadline, so there
+// either of its two timer branches may close the connection; the cancelled case, ended once the
+// drain is observed to have begun, reaches only the context branch.
+func TestClientCloseUnderShortDeadlineClosesConnection(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		want error
+	}{
+		{"deadline", context.DeadlineExceeded},
+		{"cancelled-during-drain", context.Canceled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
+			require.NoError(t, err)
+			require.NoError(t, c.Connect(t.Context()))
+			closeInCleanup(t, c)
+			held := newHeldCall(t)
+			_, err = c.Subscribe(t.Context(), "close.short", func(context.Context, *nats.Msg) { held.hold() })
+			require.NoError(t, err)
+			nc := c.GetConnection()
+			require.NoError(t, nc.FlushTimeout(lifecycleBound))
+			require.NoError(t, nc.Publish("close.short", nil))
+			await(t, held.entered, "the handler entering")
+			draining := nc.StatusChanged(nats.DRAINING_SUBS)
+			defer nc.RemoveStatusListener(draining)
+
+			var first <-chan error
+			if tc.want == context.DeadlineExceeded {
+				short, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+				defer cancel()
+				first = closeAsync(short, c)
+			} else {
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				first = closeAsync(ctx, c)
+				awaitValue(t, draining, "the drain beginning")
+				cancel()
+			}
+			err = awaitErr(t, first, "Close whose context ends while the handler runs")
+			require.ErrorIs(t, err, tc.want, "Close whose context ended")
+			require.True(t, nc.IsClosed(), "the connection is still open after Close returned on its context")
+
+			live, cancelLive := context.WithTimeout(t.Context(), 2*lifecycleBound)
+			defer cancelLive()
+			watched := newDoneWatchContext(live)
+			second := closeAsync(watched, c)
+			select {
+			case err := <-second:
+				t.Fatalf("a second Close returned %v while the handler still runs", err)
+			case <-watched.waiting:
+			case <-time.After(lifecycleBound):
+				t.Fatalf("the second Close neither returned nor waited on its context within %v", lifecycleBound)
+			}
+			requireJoinPending(t, c, joinOnOwnedWork, "the held handler returned")
+			select {
+			case err := <-second:
+				t.Fatalf("a second Close returned %v while the handler still runs", err)
+			default:
+			}
+			held.Release()
+			require.NoError(t, awaitErr(t, second, "the second Close after the handler returned"))
+		})
+	}
+}
+
+// doneWatchContext closes waiting the first time Done is called, so a test can tell a Close that
+// has reached its wait on the caller's context from one that has not yet run.
+type doneWatchContext struct {
+	context.Context
+	waiting chan struct{}
+	once    sync.Once
+}
+
+func newDoneWatchContext(parent context.Context) *doneWatchContext {
+	return &doneWatchContext{Context: parent, waiting: make(chan struct{})}
+}
+
+func (c *doneWatchContext) Done() <-chan struct{} {
+	c.once.Do(func() { close(c.waiting) })
+	return c.Context.Done()
+}
+
 // streamOnlyJetStream serves one stream from Stream; the embedded fake panics on anything else.
 type streamOnlyJetStream struct {
 	*fakeJetStream

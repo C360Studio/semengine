@@ -80,7 +80,7 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
       planted Rapid property in a temporary module that reads Rapid from the module cache with `GOPROXY=off`: the
       scenarios "A property test" and "A property test whose seed misses the wrong change", with no file under
       `testdata/rapid/` afterwards. Written first. Gate: `task test:unit`.
-- [ ] 2.11 (D) The corrections of implementation review round 1 (`impl-review-r1.md`, sha256 `c3edf5ca…4659`;
+- [x] 2.11 (D) The corrections of implementation review round 1 (`impl-review-r1.md`, sha256 `c3edf5ca…4659`;
       `design.md`, "Implementation review round 1 corrections"), each with a test written first and seen to fail against
       the code at `8bee3ea`, or, where a case already exists, named in the record: (a) an insertion is decided by its
       own statement list: recorded cases for the scenarios "An insertion at the end of an if-branch whose else ran" and
@@ -92,6 +92,9 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
       run killed before its test starts names the signal, as "Killed by a signal" says; (g) the report's bound line and
       the messages say "process group", and the tests set `GIT_CONFIG_GLOBAL=/dev/null` and `GIT_CONFIG_NOSYSTEM=1`.
       Gate: `task test:unit`.
+      Tests at `64307fe` (11 failing against the code of `8bee3ea`), fixes at `f30d841`; (c)'s malformed `-expect`
+      and empty `-expect-text` cases could not fail first and are shown able to fail in 3.3 (V04, V05).
+      Evidence: comment 5984462581.
 
 ## 3. Shown able to fail
 
@@ -110,10 +113,12 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
       recorded on this pull request.
       R01, R02 and R03: detection, as the trial found.
       Evidence: comment 5983606427.
-- [ ] 3.3 (D) The experiment of `docs/testing.md`, "Show that the test can fail", for the wrong changes `design.md`,
+- [x] 3.3 (D) The experiment of `docs/testing.md`, "Show that the test can fail", for the wrong changes `design.md`,
       D11, adds in revision 4: an insertion decided by a sibling branch's block, hunks merged by a caller's git setting,
       and a child's `PWD` left as the caller's. Each with its change and its baseline, wrong-change and after-runs
       recorded on this pull request; a survivor is reported as such.
+      V01 to V03: 3 detections, 0 survivors, 0 inconclusive, 0 invalid; V04 and V05 (extra): 2 detections.
+      Evidence: comment 5984462715.
 
 ## 4. Documents
 

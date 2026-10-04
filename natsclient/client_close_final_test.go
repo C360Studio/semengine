@@ -1479,3 +1479,77 @@ func TestClientCloseEndsConsumerOnReplacedConnection(t *testing.T) {
 		})
 	}
 }
+
+// gatedStream holds CreateOrUpdateConsumer until release, then returns consumer.
+type gatedStream struct {
+	jetstream.Stream
+	consumer jetstream.Consumer
+	entered  chan struct{}
+	release  chan struct{}
+}
+
+func (s *gatedStream) CreateOrUpdateConsumer(context.Context, jetstream.ConsumerConfig) (jetstream.Consumer, error) {
+	close(s.entered)
+	<-s.release
+	return s.consumer, nil
+}
+
+// 22. Review nit N-d: a consumer is attributed to the connection its JetStream handle was made
+// on, read with that handle, not to whatever connection is dialled by the time the setup admits
+// it. A setup holds a handle made on the first dialled connection; meanwhile SetConnection(nil)
+// and a second Connect install another. Close drains the second, so it must stop the consumer
+// running on the first, the caller's, connection, for the internal and the port API.
+func TestClientCloseAttributesConsumerToItsHandlesConnection(t *testing.T) {
+	for _, port := range []bool{false, true} {
+		name := "internal"
+		if port {
+			name = "port"
+		}
+		t.Run(name, func(t *testing.T) {
+			url := embeddedJetStreamURL(t)
+			c, err := NewClient(url, WithHealthInterval(0))
+			require.NoError(t, err)
+			require.NoError(t, c.Connect(t.Context()))
+			first := c.GetConnection()
+			t.Cleanup(first.Close)
+			closeInCleanup(t, c)
+
+			native := newKeptHandlerConsumer("S_ATTRIBUTED", "attributed", jetstream.AckExplicitPolicy)
+			gate := &gatedStream{consumer: native, entered: make(chan struct{}), release: make(chan struct{})}
+			c.mu.Lock()
+			c.js = &streamOnlyJetStream{fakeJetStream: &fakeJetStream{}, stream: gate}
+			c.mu.Unlock()
+
+			type result struct {
+				handle jetstream.ConsumeContext
+				err    error
+			}
+			setup := make(chan result, 1)
+			go func() {
+				h, err := consumeVia(t.Context(), c, port,
+					StreamConsumerConfig{StreamName: "S_ATTRIBUTED", ConsumerName: "attributed"},
+					func(context.Context, jetstream.Msg) {})
+				setup <- result{h, err}
+			}()
+			await(t, gate.entered, "the setup holding the first connection's JetStream handle")
+
+			c.SetConnection(nil)
+			require.NoError(t, c.Connect(t.Context()), "a second Connect after SetConnection(nil)")
+			require.NotSame(t, first, c.GetConnection(), "the second Connect dialled a new connection")
+			close(gate.release)
+			got := <-setup
+			require.NoError(t, got.err)
+
+			ctx, cancel := context.WithTimeout(t.Context(), lifecycleBound)
+			defer cancel()
+			closed := closeAsync(ctx, c)
+			stopped, err := probe.Await(ctx, func(context.Context) (bool, error) { return native.handle.stopped.Load(), nil },
+				func(s bool) bool { return s })
+			require.NoError(t, err, "Close did not stop the consumer on the first connection (stopped=%v)", stopped)
+			close(native.handle.closed)
+			require.NoError(t, awaitErr(t, closed, "Close"))
+			require.False(t, first.IsClosed(), "Close closed the first connection, which SetConnection gave back")
+			require.Zero(t, claimCount(c), "the claim outlived a nil Close")
+		})
+	}
+}

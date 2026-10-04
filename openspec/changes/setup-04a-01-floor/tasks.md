@@ -635,6 +635,15 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         once the handler count is zero. Mutant M17 removes that stop: detected, both cases. F27 corrected the ledger
         (owned-work count, status frozen until cleanup, admission as the refusal boundary), D3's consumer-setup
         bullet, and the spec's refusal scenario (the setup context may end first).
+      - The early check of `064d38d` (APPROVE) left M-a and N-d. M-a: D3's admission bullet still said one
+        `sync.WaitGroup`; it now states the owned-work count. N-d: the consumer's connection was read at admission,
+        not with the JetStream handle, so a `SetConnection(nil)` and a second `Connect` between the two reads
+        mis-attributed the consumer. The setup now reads the handle and its connection in one critical section
+        (`jetStreamWithConn`) and passes the connection to the ownership goroutine.
+        `TestClientCloseAttributesConsumerToItsHandlesConnection` holds the setup between the two reads, runs
+        `SetConnection(nil)` and a second `Connect`, and requires `Close` to stop the consumer. Run against the
+        attribution read at admission (mutant M18), both cases failed: `Close did not stop the consumer on the first
+        connection (stopped=false)`.
       - Departures from the design, each recorded here:
         - Test 6 runs real JetStream on an embedded server in the unit lane, not the Docker lane.
         - Test 15 checks the lifecycle adapter directly, not through the suite.

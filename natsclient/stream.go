@@ -474,7 +474,7 @@ func (c *Client) ConsumeInternalStreamWithConfig(
 		return nil, ErrNotConnected
 	}
 
-	js, err := c.JetStream()
+	js, jsConn, err := c.jetStreamWithConn()
 	if err != nil {
 		return nil, err
 	}
@@ -509,7 +509,7 @@ func (c *Client) ConsumeInternalStreamWithConfig(
 		c.recordFailure()
 		return nil, ClassifyConsumerPolicyError(err, "ConsumeInternalStreamWithConfig")
 	}
-	guarded := &guardedConsumer{Consumer: consumer}
+	guarded := &guardedConsumer{Consumer: consumer, conn: jsConn}
 	observed, err := c.observeInternalConsumer(ctx, guarded)
 	if err != nil {
 		return nil, err
@@ -538,7 +538,7 @@ func (c *Client) ConsumeInternalStreamWithConfig(
 	// has begun: native Consume is never called, and the deferred release frees
 	// the claim.
 	d := newOwnedDelivery(c, consumerAttrs(observed.stream, observed.durable, consumerCfg.AckPolicy)...)
-	owned, ok := c.ownConsumer(d, func(bool) {
+	owned, ok := c.ownConsumer(guarded.conn, d, func(bool) {
 		forgetObservation()
 		releaseClaim()
 	})
@@ -648,7 +648,7 @@ func (c *Client) startPortConsumer(
 	// so Close joins every handler invocation (design D3). Refused once Close
 	// has begun: native Consume is never called.
 	d := newOwnedDelivery(c, consumerAttrs(identity.stream, identity.durable, c.buildConsumerConfig(cfg).AckPolicy)...)
-	owned, ok := c.ownConsumer(d, func(started bool) {
+	owned, ok := c.ownConsumer(consumer.conn, d, func(started bool) {
 		if started && c.jsMetrics != nil {
 			c.jsMetrics.forgetConsumer(identity.stream, identity.durable)
 		}
@@ -744,7 +744,7 @@ func (c *Client) consumePortStreamWithConfigContexts(
 		return nil, ErrNotConnected
 	}
 
-	js, err := c.JetStream()
+	js, jsConn, err := c.jetStreamWithConn()
 	if err != nil {
 		return nil, err
 	}
@@ -774,7 +774,7 @@ func (c *Client) consumePortStreamWithConfigContexts(
 	// startPortConsumer owns the claim from here.
 	return c.startPortConsumer(
 		setupCtx, handlerCtx, operation, owner, cfg,
-		&guardedConsumer{Consumer: consumer}, identity, claim, handler,
+		&guardedConsumer{Consumer: consumer, conn: jsConn}, identity, claim, handler,
 	)
 }
 

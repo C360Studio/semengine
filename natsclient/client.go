@@ -1051,6 +1051,9 @@ func (m *Client) join(joined chan struct{}, conn *nats.Conn) {
 type guardedConsumer struct {
 	jetstream.Consumer
 	infoMu sync.Mutex
+	// conn is the connection the consumer's JetStream handle was made on, read with the handle
+	// (jetStreamWithConn); nil for a handle that did not come from Connect.
+	conn *nats.Conn
 }
 
 // Info serializes the underlying call. The lock is held across the network round trip
@@ -1371,16 +1374,24 @@ func (m *Client) Publish(ctx context.Context, subject string, data []byte) error
 
 // JetStream returns the JetStream context
 func (m *Client) JetStream() (jetstream.JetStream, error) {
+	js, _, err := m.jetStreamWithConn()
+	return js, err
+}
+
+// jetStreamWithConn returns the JetStream handle and the connection it was made on, read in one
+// critical section: connectWith installs both together, so a consumer made from this handle is
+// attributed to the connection it runs on even if SetConnection and a new Connect run meanwhile.
+func (m *Client) jetStreamWithConn() (jetstream.JetStream, *nats.Conn, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	if m.js == nil {
-		return nil, errs.WrapTransient(
+		return nil, nil, errs.WrapTransient(
 			fmt.Errorf("JetStream not initialized"),
 			"Client", "JetStream", "get JetStream context")
 	}
 
-	return m.js, nil
+	return m.js, m.dialled, nil
 }
 
 // CreateStream creates a JetStream stream

@@ -237,12 +237,12 @@ failing-first `adapt` items:
   `:1572-1579` does not wait for a timer that has already fired) and the circuit test (`:289`, never stopped). `Connect`
   also races `Close`: it releases `closeMu` at `:553`, starts the monitor (`:560`) and the poller (`:566`), and writes
   `metricsCancel` with no lock that `Close` reads at `:595`. The fix, in one place:
-  - Every site starts through one helper that, under `m.mu`, refuses once a `closing` flag is set and otherwise adds to
-    one `sync.WaitGroup` before the goroutine starts. The two timer bodies enter through the same check before doing
-    anything. No `Add` can then happen once `Close` has begun waiting, so a callback, disconnect or timer that nats.go
-    or the runtime delivers while `Close` runs (`handleDisconnect` arms the watchdog, `:1512`) cannot race the wait.
-    `Connect` admits and starts the monitor and poller through the same helper, so a `Close` that has begun refuses
-    them, and then returns `nats.ErrConnectionClosed`, not nil.
+  - Every site starts through one helper that, under `m.mu`, refuses once a `closing` flag is set and otherwise adds
+    one to an owned-work count before the goroutine starts; `Close` waits for that count to reach zero. The two timer
+    bodies enter through the same check before doing anything. Nothing can be admitted once `Close` has begun waiting,
+    so a callback, disconnect or timer that nats.go or the runtime delivers while `Close` runs (`handleDisconnect`
+    arms the watchdog, `:1512`) cannot race the wait. `Connect` admits and starts the monitor and poller through the
+    same helper, so a `Close` that has begun refuses them, and then returns `nats.ErrConnectionClosed`, not nil.
   - Arming either timer is refused, and logged, once `Close` has begun, so no timer is left pending after it.
     Arming the circuit timer stops a pending one from an earlier round, which nothing else would track or stop.
   - **`jetstream.New`'s error.** It is dropped at `:525`. `Connect` returns it and closes the dialled connection. No
@@ -326,7 +326,8 @@ failing-first `adapt` items:
   unsubscribe (N8), as they are when any core subscription is unsubscribed. Once `Close` has begun, `SetConnection`
   changes nothing and logs at warn level (owner answer 3). Client-created consumers are the client's in the same way
   (Codex F26, PR #48 comment 5981562076): when `Close` begins, the ownership goroutine of a consumer whose connection
-  (the one its JetStream handle was made on) is not the one `Close` drains stops it through its native handle, leaving
+  (the one its JetStream handle was made on, read together with that handle when the setup began) is not the one
+  `Close` drains stops it through its native handle, leaving
   that connection open. After `Stop` the native `Closed()` can report the end early, so the claim and the metrics
   observation are released only once the handler count reaches zero. A consumer on the drained connection keeps its
   graceful drain. Declared cost: messages that consumer had buffered are discarded by `Stop`

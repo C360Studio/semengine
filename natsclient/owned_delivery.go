@@ -120,12 +120,14 @@ type consumerOwnership struct {
 // whose connection SetConnection has since replaced is the client's but its connection is the
 // caller's (design D3): when Close begins, its goroutine stops it, leaving that connection open.
 // After Stop the native Closed() can report the end early, so the handler count decides completion.
-func (c *Client) ownConsumer(d *ownedDelivery, release func(started bool)) (*consumerOwnership, bool) {
+//
+// conn is the connection the consumer's JetStream handle was made on, read together with that
+// handle when the setup began (jetStreamWithConn), whatever SetConnection has installed since.
+func (c *Client) ownConsumer(
+	conn *nats.Conn, d *ownedDelivery, release func(started bool),
+) (*consumerOwnership, bool) {
 	o := &consumerOwnership{delivery: d, handle: make(chan jetstream.ConsumeContext, 1), released: make(chan struct{})}
-	// The consumer's connection is the one its JetStream handle was made on: the connection
-	// connectWith installed with it, whatever SetConnection has installed since.
 	c.mu.Lock()
-	conn := c.dialled
 	closing := c.closingSignalLocked()
 	c.mu.Unlock()
 	if !c.startBackground(workClaimRelease, func() {

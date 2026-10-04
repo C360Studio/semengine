@@ -1177,9 +1177,9 @@
     (the pin
     overwrote the connection at :547 and started a second poller at :566);
     natsclient-close-joins-its-goroutines,
-    the six sites (the health monitor :2132, the metrics poller :860, the claim releases of both consumer
-    APIs, now one site, owned_delivery.go:120, the connection-loss timer's body :2021 and the
-    circuit timer's body :582) start through one helper, startBackground (:214), which under mu
+    the six sites (the health monitor :2151, the metrics poller :868, the claim releases of both consumer
+    APIs, now one site, owned_delivery.go:133, the connection-loss timer's body :2040 and the
+    circuit timer's body :590) start through one helper, startBackground (:223), which under mu
     refuses once Close has begun and otherwise counts the work as client-owned (an owned-work
     count under mu, which the join waits to reach zero) before the goroutine starts; Connect admits the
     monitor and the poller through it. The first Close stops the monitor, both timers and the
@@ -1258,9 +1258,10 @@
     Close unsubscribes a client-owned subscription on a connection replaced through SetConnection
     and joins its handler, discarding its buffered messages, and treats an Unsubscribe error there
     as the subscription already ending; likewise, when Close
-    begins, it stops through its native handle a client-created consumer whose connection was
-    replaced, and releases its claim and observation once its handlers have returned (Codex F26,
-    PR #48 comment 5981562076; TestClientCloseEndsConsumerOnReplacedConnection, internal and port);
+    begins, it stops through its native handle a client-created consumer whose connection (the
+    one its JetStream handle was made on, read with that handle) was replaced, and releases its claim and observation once its handlers have returned (Codex F26,
+    PR #48 comment 5981562076; TestClientCloseEndsConsumerOnReplacedConnection and
+    TestClientCloseAttributesConsumerToItsHandlesConnection, internal and port);
     the replaced connection itself belongs to the SetConnection
     caller and Close neither closes nor waits for it; SetConnection after Close has begun changes
     nothing and logs at warn (TestClientLifecycleOperationTable,

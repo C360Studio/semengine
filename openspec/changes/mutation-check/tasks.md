@@ -29,42 +29,53 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
 
 ## 2. The program and its tests
 
-- [ ] 2.1 (D) The classifier: `go test -json` output captured from go1.26.6 for
+- [x] 2.1 (D) The classifier: `go test -json` output captured from go1.26.6 for
       each per-run case of `design.md`, D5, including a race report, a log line at the expected location, a run killed
       by a signal and a build failure, kept under `internal/harness/mutcheck/testdata/`. A test enumerates every
       combination of the per-run inputs and compares the program's reading with a reference table written in the test
       from the spec's rules. One named example for each aggregate rule. Written first. Gate: `task test:unit`.
-- [ ] 2.2 (D) Regions and reach, on recorded line diffs and coverage profiles: each
+      Evidence: comment 5983603895.
+- [x] 2.2 (D) Regions and reach, on recorded line diffs and coverage profiles: each
       scenario of "The changed region and reach", with the two planted cases of `design.md`, D11, item 2 (line numbers
       of the target against the mutant's; an insertion after an `if` line whose branch did not run). Written first.
       Gate: `task test:unit`.
-- [ ] 2.3 (D) The refusals: one case for each scenario of "The command and its
+      Evidence: comment 5983604024.
+- [x] 2.3 (D) The refusals: one case for each scenario of "The command and its
       inputs", and one each for `-seed 0`, `GOFLAGS` that sets `-overlay`, a mutant inside the module and a mutant
       identical to its target. Each case shows that no run started. Written first. Gate: `task test:unit`.
-- [ ] 2.4 (D) With a stand-in `go` first on `PATH`: a run that does not end by twice
+      Evidence: comment 5983604171.
+- [x] 2.4 (D) With a stand-in `go` first on `PATH`: a run that does not end by twice
       its timeout (`-timeout 200ms`) is stopped with its processes and is inconclusive; a test that writes into its
       package directory makes the check inconclusive. Written first. Gate: `task test:unit`.
-- [ ] 2.5 (D) End to end with the real toolchain, on planted modules that are git
+      Evidence: comment 5983604328.
+- [x] 2.5 (D) End to end with the real toolchain, on planted modules that are git
       repositories with a copy of `scripts/tree-state.sh`, `-runs 1`: a detection through a command the test builds, in
       a module whose every directory is read-only, with a caller's `-tags` set with `go env -w` in a temporary `GOENV`
       file and the seed in every run's environment, and the content hashes unchanged; and a deletion survivor that was
       reached. Written first. Gate: `task test:unit`.
-- [ ] 2.6 (D) SIGTERM to the built program while its stand-in `go` waits, having
+      Evidence: comment 5983604483.
+- [x] 2.6 (D) SIGTERM to the built program while its stand-in `go` waits, having
       started a helper that writes its own pid and its parent's, as `TestFetchLeavesNoProcess`'s helper does: neither
       process is running when the program exits, it exits non-zero, it prints no verdict, and the planted module is
       unchanged. The program is built with the inherited environment and run with `-overlay` removed from `GOFLAGS`.
       Written first. Gate: `task test:unit`.
-- [ ] 2.7 (D) The report and the exit status: each scenario of "Report and exit
+      A CI failure in the setup (a detached `git maintenance`) was fixed in `76aa263`; see the comment.
+      Evidence: comment 5983636217.
+- [x] 2.7 (D) The report and the exit status: each scenario of "Report and exit
       status", and the report's fields as that requirement lists them, the hunks, each run's `GOFLAGS` and the
       survivor's seed among them. Written first. Gate: `task test:unit`.
-- [ ] 2.8 (D) `Taskfile.yml` gains `mutate:check`, which runs
+      Evidence: comment 5983604625.
+- [x] 2.8 (D) `Taskfile.yml` gains `mutate:check`, which runs
       `go run ./internal/harness/mutcheck {{.CLI_ARGS}}`; its description says it is run by hand, writes nothing in
       the repository and fails unless the verdict is detection. `task --list` shows it. Gate: `task verify`.
-- [ ] 2.9 The package's test time: the sum of the two
+      Evidence: comment 5983604783.
+- [x] 2.9 The package's test time: the sum of the two
       `ok .../internal/harness/mutcheck <time>` lines that the `test:unit` and `test:repeat` steps print in a CI verify
       log of this branch, against the budget of 60 s in `design.md`, "Declared costs". The numbers and the run are
       recorded on this pull request and in "Declared costs". Over budget, the survivor case of 2.5 moves to a recorded
       profile and a stand-in `go` before this task is ticked.
+      CI run 37228603260 at `76aa263`: 6.727 s + 24.880 s = 31.607 s, under the 60 s budget.
+      Evidence: comment 5983636400.
 - [ ] 2.10 Hold: PR #48 merged into `main`, which brings Rapid into `go.mod`. (D) A
       planted Rapid property in a temporary module that reads Rapid from the module cache with `GOPROXY=off`: the
       scenarios "A property test" and "A property test whose seed misses the wrong change", with no file under
@@ -72,16 +83,21 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
 
 ## 3. Shown able to fail
 
-- [ ] 3.1 (D) The experiment of `docs/testing.md`, "Show that the test can fail",
+- [x] 3.1 (D) The experiment of `docs/testing.md`, "Show that the test can fail",
       for each wrong change to the program listed in `design.md`, D11, "Shown able to fail". It starts with one check
       of the program's own package by the command, recording whether that works; each wrong change the command cannot
       check is checked by hand as the page describes. For each, the change and the baseline, wrong-change and
       after-runs are recorded on this pull request. A wrong change the tests let through is reported as a survivor and
       closed with a new case, or listed under what is not covered.
-- [ ] 3.2 (D) The program run on the three recorded cases whose code is on `main`,
+      18 checks, 18 detections, 0 survivors, 0 inconclusive, 0 invalid; reports in comments 5983605892
+      and 5983606064. What is not covered is listed in the comment.
+      Evidence: comment 5983606233.
+- [x] 3.2 (D) The program run on the three recorded cases whose code is on `main`,
       R01 to R03 of the trial (PR #59's wrong changes to `internal/harness/probe/await.go`), with the assertion
       locations the trial used. The expected verdict for each is detection, as the trial found. The three reports are
       recorded on this pull request.
+      R01, R02 and R03: detection, as the trial found.
+      Evidence: comment 5983606427.
 
 ## 4. Documents
 

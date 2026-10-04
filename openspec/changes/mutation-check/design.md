@@ -636,6 +636,9 @@ belongs to generated tests.
   as the sum of the two `ok .../internal/harness/mutcheck <time>` lines that the `test:unit` and `test:repeat` steps
   print in a CI verify log (task 2.9). Over budget, the survivor case moves to a recorded profile and a stand-in `go`,
   leaving the detection and SIGTERM cases.
+  Measured (task 2.9): CI run 37228603260 at `76aa263` printed 6.727 s for `test:unit` and 24.880 s for
+  `test:repeat`, 31.607 s in all, under the budget; the survivor case stays on the real toolchain. The earlier run
+  37226655576 at `9c1b3e1` printed 5.576 s and 20.860 s (26.436 s).
 - **Run time of a check.** With the defaults a check is seven runs, plus one reach run for a would-be survivor: 6-43 s
   for the trial's cases other than R06 and R08, and about 60 s plus the baselines for a whole-run timeout of 60 s.
 - **The program itself:** about the prototype's size (500 lines), plus tests. Each call compiles the program first.

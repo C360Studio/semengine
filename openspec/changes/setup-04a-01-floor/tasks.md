@@ -697,9 +697,15 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         canonical-collector checks already passed at `82e979b`, because task 3.7 had moved registration to
         `RegisterOrGet`. Its stated reason, the pin's orphaned 8, is shown by mutant M20 instead.
       - Mutants, each restored by checksum. M19, `Add` in place of `Set` for the three: detected by test (1), all
-        three values doubled. M20, the pin's shape, each of the 8 collectors the pin registered through `Register*`
+        three values doubled, and the third poll, where `NumRedelivered` falls from 2 to 1, gathered 16, 14 and 5
+        for the server's 6, 6 and 1. M20, the pin's shape, each of the 8 collectors the pin registered through `Register*`
         keeping its own candidate instead of the collector `RegisterOrGet` returns: detected by test (2), identity
         differs for all 8.
+      - Early check of `112854b` (APPROVE): M-b, `NumRedelivered` counts messages redelivered and not yet
+        acknowledged, and falls on acknowledgement (nats.go `consumer_config.go:53-57`). The gauge's help text says
+        so, the row's consumer impact says the other two values are stream sequences, not counts, and test (1) has
+        a third poll in which `NumRedelivered` falls. N-e: a comment says the registration key is the registry
+        handle, not the metric name. N-f: test (1) polls under `t.Context()`.
       - Choices the design and the task text leave open, recorded here: the three gauges' help texts are new
         wording; the three registry keys (`consumer_delivered`, `consumer_acked`, `consumer_redelivered`) are kept
         unchanged, so `Unregister` by those keys still works.

@@ -98,7 +98,7 @@ func newJetStreamMetrics(registry *metric.MetricsRegistry) (*jetstreamMetrics, e
 			Namespace: "semstreams",
 			Subsystem: "jetstream",
 			Name:      "consumer_redelivered_messages",
-			Help:      "Number of messages redelivered to consumer, as the server reports it",
+			Help:      "Messages redelivered to consumer and not yet acknowledged, as the server reports it; falls on acknowledgement",
 		}, []string{"stream", "consumer"}),
 		policyRequested: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: "semstreams", Subsystem: "jetstream", Name: "consumer_max_ack_pending_requested",
@@ -130,6 +130,8 @@ func newJetStreamMetrics(registry *metric.MetricsRegistry) (*jetstreamMetrics, e
 	// second client on the same registry then writes to the canonical collector, not an orphan
 	// (design D9).
 	var err error
+	// The third argument is the registry key, the handle Unregister takes; it is not the metric
+	// name, which is the collector's own (Namespace_Subsystem_Name above).
 	if m.streamMessages, err = metric.RegisterOrGet(registry, "jetstream", "stream_messages", m.streamMessages); err != nil {
 		return nil, err
 	}

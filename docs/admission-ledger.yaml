@@ -1168,7 +1168,9 @@
     consumer_redelivered_total → consumer_redelivered_messages (NumRedelivered). No client label.
     Consumer impact: a dashboard, alert or query that names one of the three old metrics, or reads
     them as counters (rate(), increase()), finds no series under the old name and must use the new
-    name as a gauge. The other metric names and types and the semstreams namespace and jetstream
+    name as a gauge. The values also mean something else: the first two are stream sequence numbers,
+    not message counts, and the third counts messages redelivered and not yet acknowledged, so it
+    falls on acknowledgement (nats.go consumer_config.go:53-57). The other metric names and types and the semstreams namespace and jetstream
     subsystem are unchanged (#69). Changed surface, task 3.7a: the surface audit's drops listed under
     known_risks are gone, and with them the token, TLS and compression connection options and the
     disconnect, reconnect and health-change callbacks; pingInterval (30 s), drainTimeout (30 s),
@@ -1360,7 +1362,8 @@
     written through the second is gathered (task 3.7d test (2); the pin orphaned the 8 that went
     through Register*). TestJetStreamConsumerMetricsReportServerStateAcrossPolls proves that two
     polls of an unchanged consumer gather the server's values under the three new gauge names
-    (task 3.7d test (1); the pin doubled them). integration_test.go reads
+    (task 3.7d test (1); the pin doubled them), and that a third poll follows the server when
+    NumRedelivered falls. integration_test.go reads
     consumer_delivered_stream_sequence as a gauge. Adapt item, the census tests rewritten for SemEngine
     (owner ruling, #9 comment 5969522395, item 3), pin → SemEngine:
     TestConsumerPolicyProductionCallsiteCensus consumer_policy_callsite_test.go:217-292 → :222-229

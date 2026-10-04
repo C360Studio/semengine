@@ -143,34 +143,36 @@ func sampleValue(m *dto.Metric) float64 {
 	return m.GetCounter().GetValue()
 }
 
-// fixedConsumerInfo reports the same server state on every Info.
-type fixedConsumerInfo struct {
+// serverConsumerInfo reports info, the server state the test sets between polls.
+type serverConsumerInfo struct {
 	jetstream.Consumer
 	info *jetstream.ConsumerInfo
 }
 
-func (f *fixedConsumerInfo) Info(context.Context) (*jetstream.ConsumerInfo, error) {
+func (f *serverConsumerInfo) Info(context.Context) (*jetstream.ConsumerInfo, error) {
 	return f.info, nil
 }
 
 // Task 3.7d test (1), design D9: the three consumer metrics report the server's state, so two polls
 // of an unchanged consumer gather the server's values, as gauges under their new names. At the pin
 // they were counters that added the server's cumulative values on every poll, so a second poll
-// doubled them.
+// doubled them. A third poll follows the server when its state changes: NumRedelivered counts
+// messages redelivered and not yet acknowledged, so it falls on acknowledgement.
 func TestJetStreamConsumerMetricsReportServerStateAcrossPolls(t *testing.T) {
 	registry := metric.NewMetricsRegistry()
 	metrics, err := newJetStreamMetrics(registry)
 	if err != nil {
 		t.Fatal(err)
 	}
-	metrics.trackConsumer("EVENTS", "worker", &fixedConsumerInfo{info: &jetstream.ConsumerInfo{
+	server := &serverConsumerInfo{info: &jetstream.ConsumerInfo{
 		Stream: "EVENTS", Name: "worker", NumPending: 1, NumRedelivered: 2,
 		Delivered: jetstream.SequenceInfo{Stream: 5}, AckFloor: jetstream.SequenceInfo{Stream: 4},
-	}})
-	metrics.updateStats(context.Background())
-	metrics.updateStats(context.Background())
+	}}
+	metrics.trackConsumer("EVENTS", "worker", server)
+	metrics.updateStats(t.Context())
+	metrics.updateStats(t.Context())
 
-	server := []struct {
+	initial := []struct {
 		name  string
 		value float64
 	}{
@@ -183,7 +185,7 @@ func TestJetStreamConsumerMetricsReportServerStateAcrossPolls(t *testing.T) {
 		testutil.ToFloat64(metrics.consumerAcked.WithLabelValues("EVENTS", "worker")),
 		testutil.ToFloat64(metrics.consumerRedelivered.WithLabelValues("EVENTS", "worker")),
 	}
-	for i, want := range server {
+	for i, want := range initial {
 		if polled[i] != want.value {
 			t.Errorf("%s after two polls = %v, want the server's %v", want.name, polled[i], want.value)
 		}
@@ -197,7 +199,7 @@ func TestJetStreamConsumerMetricsReportServerStateAcrossPolls(t *testing.T) {
 	for _, family := range families {
 		byName[family.GetName()] = family
 	}
-	for _, want := range server {
+	for _, want := range initial {
 		family := byName[want.name]
 		if family == nil || family.GetType() != dto.MetricType_GAUGE || len(family.Metric) != 1 {
 			t.Errorf("%s: gathered %v, want one gauge series", want.name, family)
@@ -211,6 +213,28 @@ func TestJetStreamConsumerMetricsReportServerStateAcrossPolls(t *testing.T) {
 		"semstreams_jetstream_consumer_acked_total", "semstreams_jetstream_consumer_redelivered_total"} {
 		if byName[old] != nil {
 			t.Errorf("%s is still gathered", old)
+		}
+	}
+
+	// The server's state changes: one more message delivered, the ack floor caught up, and one of the
+	// two redelivered messages acknowledged, so NumRedelivered falls from 2 to 1.
+	server.info = &jetstream.ConsumerInfo{
+		Stream: "EVENTS", Name: "worker", NumRedelivered: 1,
+		Delivered: jetstream.SequenceInfo{Stream: 6}, AckFloor: jetstream.SequenceInfo{Stream: 6},
+	}
+	metrics.updateStats(t.Context())
+	changed := []struct {
+		name  string
+		got   float64
+		value float64
+	}{
+		{"consumer_delivered_stream_sequence", testutil.ToFloat64(metrics.consumerDelivered.WithLabelValues("EVENTS", "worker")), 6},
+		{"consumer_ack_floor_stream_sequence", testutil.ToFloat64(metrics.consumerAcked.WithLabelValues("EVENTS", "worker")), 6},
+		{"consumer_redelivered_messages", testutil.ToFloat64(metrics.consumerRedelivered.WithLabelValues("EVENTS", "worker")), 1},
+	}
+	for _, c := range changed {
+		if c.got != c.value {
+			t.Errorf("%s after the server's state changed = %v, want the server's %v", c.name, c.got, c.value)
 		}
 	}
 }

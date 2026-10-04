@@ -577,8 +577,9 @@ func TestClientHealthMonitorCannotOverwriteClosedStatus(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), lifecycleBound)
 	defer cancel()
 	closed := closeAsync(ctx, c)
-	require.Eventually(t, func() bool { return c.Status() == StatusDisconnected }, lifecycleBound, time.Millisecond,
-		"Close did not finish its cleanup")
+	_, err = probe.Await(ctx, func(context.Context) (ConnectionStatus, error) { return c.Status(), nil },
+		func(s ConnectionStatus) bool { return s == StatusDisconnected })
+	require.NoError(t, err, "Close did not finish its cleanup")
 	held.Release()
 	require.NoError(t, awaitErr(t, closed, "Close"))
 	require.Equal(t, StatusDisconnected, c.Status(), "the monitor committed a status after Close")
@@ -1086,6 +1087,9 @@ func runTableOp(t *testing.T, tc *tableClient, op string, id int, other *nats.Co
 			return c.Close(live)
 		}
 		out := closeAsync(live, c)
+		// A precondition, not the outcome: the held drain keeps the join open, so this live
+		// Close cannot have returned nil yet. What a Close returns while handlers are held is
+		// TestClientRefusedConsumerKeepsOwnershipUntilHandlersReturn's and test 1's to check.
 		requireJoinOpen(t, c, "the held drain was released")
 		tc.release()
 		return awaitErr(t, out, "the live Close")

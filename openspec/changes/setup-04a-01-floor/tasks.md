@@ -582,14 +582,15 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         'Lifecycle|Close|Connect|Subscribe|Consume' ./natsclient/` exit 0; `task verify` ok, its integration and
         repeat steps included.
       - Mutants, each applied alone to the code at the evidence commit and restored by checksum, run with `go test
-        -race` on the named tests (one run each unless a rate is given; logs are local only). None survived; none
-        was inconclusive.
+        -race` on the named tests (one run each unless a rate is given; logs are local only). None survived
+        outright and none was inconclusive; M2's detection by the JetStream case alone is partial (below).
         - M1, `ownedDelivery.run` runs the handler without counting it: detected by
           `TestClientCloseJoinsConsumerHandlerWhenClosedReportsEarly` (jetstream 10/10, fake) and
           `TestClientLifecycleAdapterListsHeldHandler`. Test 1 does not detect it: a core subscription's end
           already comes from the native closed handler, after the handler returned.
-        - M2, the consumer's ownership goroutine releases on `Closed()` alone: detected by test 6, fake 10/10 and
-          jetstream 8/10.
+        - M2, the consumer's ownership goroutine releases on `Closed()` alone: detected deterministically by test 6's
+          synctest twin (fake, 10/10). Test 6's JetStream case alone is partial: it detected 8 of 10 runs and the
+          mutant survived 2.
         - M3, a mutex held across the first `Close`'s cleanup and taken by every other `Close` and by `Connect`:
           detected by `TestClientCloseHonoursItsContextDuringAnotherDrain` and
           `TestClientConnectDuringCloseDrainReturnsPromptly`.

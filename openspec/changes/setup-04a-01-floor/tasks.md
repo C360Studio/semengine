@@ -891,10 +891,23 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       `vocabulary/agentic`) at the pin SHA with the D4 reason each; `task ledger:check` passes.
 - [ ] 5.2 (A) The Tier-1 cross-check re-measured on the ruled 65-package set (#9 item 1), recorded next to the
       ledger as an inventory with its command and result; it changes no row.
-- [ ] 5.3 (D) Package-doc lint sensitivity: `package-comments` is already on (`revive.toml:22`); `task lint` passes
+- [x] 5.3 (D) Package-doc lint sensitivity: `package-comments` is already on (`revive.toml:22`); `task lint` passes
       over the ported tree (every package in the set has a package comment at the pin, inventory §3.3), and a run
       with one public package's comment removed fails naming it; the eleven public destinations (design D5) are the
       ones the check protects.
+      - Done; no code changed. `task lint` exit 0, and `go list -f '{{.Doc}}'` is non-empty for all 15 packages.
+        For each of the eleven public packages in turn (`pkg/platform`, `pkg/retry`, `pkg/security`, `pkg/errs`,
+        `vocabulary`, `pkg/types`, `pkg/projection/contract`, `metric`, `payloadregistry`, `message`,
+        `natsclient`), the `//` comment block attached to the `package` clause was removed from every non-test
+        file that had one (1 to 5 files: `natsclient` 5, `message` 4, five packages 2, four packages 1), and
+        `task lint`'s revive command (`scripts/gopkgs.sh go tool revive -config revive.toml -formatter friendly
+        ./...`) run; then every file was restored and checked by checksum (the script is local only). All eleven
+        runs exit 1 with one finding, "should have a package comment" (`package-comments`), at a file in that
+        package's directory, e.g. `natsclient/backing_stream_prefix.go:1:1`, `pkg/platform/platform.go:1:1`. The
+        named file can be a test file (`pkg/errs/classified_is_test.go`, `metric/admission_test.go`,
+        `payloadregistry/attributes_test.go`); the path names the package either way. Where a package carries its
+        comment in several files, removing it from one file alone does not fail: revive asks for one package
+        comment per package, so the check protects the package, not each file.
 - [ ] 5.4 (D) `scripts/cover-check.sh` reads its targets from a list that this and later changes extend, adding
       `natsclient`, `message` and `payloadregistry`, which lie outside the `internal/harness` base the script
       hard-codes today (`cover-check.sh:14`), and `natsclient`'s statements come from the merged unit and integration

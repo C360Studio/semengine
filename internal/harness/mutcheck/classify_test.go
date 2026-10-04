@@ -18,7 +18,8 @@ import (
 //
 // The mutant runs mapped basic/value.go to mutant/value.go.txt (Value returns 2) with
 // GOFLAGS=-overlay=<file>; build-failed mapped it to mutant/broken.go.txt; pass-exit-nonzero ran
-// ./exit, whose TestMain exits 3 after its test passes. A stream holds no exit status, so each
+// ./exit, whose TestMain exits 3 after its test passes; killed-before-run ran ./early, whose
+// TestMain kills its own process before any test starts. A stream holds no exit status, so each
 // case below states the status go test exited with, as it was recorded.
 
 const testBound = 4 * time.Minute
@@ -44,6 +45,7 @@ var (
 	recBuildFailed  = recordedRun{"build-failed", "TestValue", processEnd{code: 1}}
 	recNoTest       = recordedRun{"no-test", "TestNope", processEnd{code: 0}}
 	recPassNonzero  = recordedRun{"pass-exit-nonzero", "TestPasses", processEnd{code: 1}}
+	recKilledEarly  = recordedRun{"killed-before-run", "TestEarly", processEnd{code: 1}}
 )
 
 func stream(t *testing.T, file string) []byte {
@@ -133,6 +135,9 @@ func TestObserveRecordedRuns(t *testing.T) {
 		{"killed by a signal", recKilled, true, expectAt("value_test.go:60"), want{
 			facts:   facts{selected: true, signal: "killed"},
 			outcome: inconclusive, words: []string{"signal", "killed"}}},
+		{"killed before the named test started", recKilledEarly, true, expectAt("early_test.go:15"), want{
+			facts:   facts{signal: "killed"},
+			outcome: inconclusive, words: []string{"signal", "killed"}}},
 		{"the wrong change does not build", recBuildFailed, true, expectAt("value_test.go:10"), want{
 			facts:   facts{buildFailed: true},
 			outcome: invalid, words: []string{"does not build"}}},
@@ -185,8 +190,8 @@ func TestObserveBoundedRun(t *testing.T) {
 	}
 	for _, mutant := range []bool{false, true} {
 		r := read(got.facts, mutant, testBound)
-		if r.outcome != inconclusive || !strings.Contains(r.reason, testBound.String()) {
-			t.Errorf("mutant=%v: got %s (%s), want inconclusive naming %s", mutant, r.outcome, r.reason, testBound)
+		if r.outcome != inconclusive || !strings.Contains(r.reason, testBound.String()) || !strings.Contains(r.reason, "process group") {
+			t.Errorf("mutant=%v: got %s (%s), want inconclusive naming %s and the process group", mutant, r.outcome, r.reason, testBound)
 		}
 	}
 }
@@ -240,11 +245,13 @@ func TestReadEveryCombination(t *testing.T) {
 				switch {
 				case f.bounded && !strings.Contains(got.reason, testBound.String()):
 					t.Errorf("%+v: reason %q does not name the bound", f, got.reason)
-				case !f.bounded && !f.buildFailed && !f.selected && !strings.Contains(got.reason, "integration"):
-					t.Errorf("%+v: reason %q does not mention integration tests", f, got.reason)
-				case got.outcome == inconclusive && !f.bounded && !f.buildFailed && f.selected && !f.timedOut &&
-					f.signal != "" && !strings.Contains(got.reason, f.signal):
+				case !f.bounded && !f.buildFailed && f.timedOut && !strings.Contains(got.reason, "timeout"):
+					t.Errorf("%+v: reason %q does not name the timeout", f, got.reason)
+				case !f.bounded && !f.buildFailed && !f.timedOut && f.signal != "" && !strings.Contains(got.reason, f.signal):
 					t.Errorf("%+v: reason %q does not name the signal", f, got.reason)
+				case !f.bounded && !f.buildFailed && !f.timedOut && f.signal == "" && !f.selected &&
+					!strings.Contains(got.reason, "integration"):
+					t.Errorf("%+v: reason %q does not mention integration tests", f, got.reason)
 				case mutant && got.outcome == inconclusive && f.selected && !f.buildFailed && !f.timedOut &&
 					f.signal == "" && !f.bounded && f.result == "fail" && f.race && !f.expectedHit &&
 					!strings.Contains(got.reason, "race"):
@@ -352,6 +359,11 @@ func TestCheckVerdicts(t *testing.T) {
 			wantRuns: full, want: detection},
 		{name: "the wrong change does not build", exp: expectAt("value_test.go:10"), plan: all(recBuildFailed, mutants3...),
 			wantRuns: full, want: invalid, words: []string{"does not build"}},
+		// Invalid needs every baseline run and the after-run to pass: a build that breaks for every
+		// run after the baselines says nothing about the wrong change.
+		{name: "the build breaks after the baselines", exp: expectAt("value_test.go:10"),
+			plan:     all(recBuildFailed, append(slices.Clone(mutants3), "after 1")...),
+			wantRuns: full, want: inconclusive, words: []string{"after-run", "does not build"}},
 		{name: "the after-run fails", exp: expectAt("value_test.go:10"),
 			plan:     map[string]recordedRun{"mutant 1": recFailExpected, "mutant 2": recFailExpected, "mutant 3": recFailExpected, "after 1": recFailExpected},
 			wantRuns: full, want: inconclusive, words: []string{"after-run"}},

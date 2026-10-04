@@ -66,7 +66,7 @@ func TestReportDetection(t *testing.T) {
 		"expected locations: value_test.go:10",
 		"expected texts: want 1",
 		"seed: 1",
-		"bound: 4m0s",
+		"bound: 4m0s, twice the timeout of 2m0s: a run not ended by then is stopped with its process group",
 	)
 	baseline := section(got.stdout, "run baseline 1:")
 	requireLines(t, "baseline run", baseline,
@@ -151,4 +151,28 @@ func TestReportRecordsAPanic(t *testing.T) {
 	requireLines(t, "mutant run", section(got.stdout, "run mutant 1:"),
 		"expected line:     value_test.go:23: Value() = 2, want 1",
 		"note: panic: assignment to entry in nil map")
+}
+
+// TestHunksAreNotMerged (mutation-check › "Hunks are not merged"): the caller's git configuration
+// sets diff.interHunkContext to 5, and the wrong change replaces lines 7 and 10 of the target,
+// three lines apart. The report lists two hunks, and lines 8 and 9, which are unchanged, are in
+// neither region.
+func TestHunksAreNotMerged(t *testing.T) {
+	standIn(t, detectingStandIn(t))
+	root := plantModule(t, standInModule)
+	config := outside(t, "gitconfig", "[diff]\n\tinterHunkContext = 5\n")
+	src := strings.Replace(standInModule["p/p.go"], "// Value returns one.", "// Value returns two.", 1)
+	mutant := outside(t, "p.go", strings.Replace(src, "return 1", "return 2", 1))
+	got := runIn(t, root, testEnv(t, "GOFLAGS=", "GIT_CONFIG_GLOBAL="+config), "-pkg", "./p", "-test", "TestValue",
+		"-file", "p/p.go", "-mutant", mutant, "-expect", "value_test.go:10", "-runs", "1")
+	if got.code != 0 || !strings.HasPrefix(got.lastLine(), "verdict: detection") {
+		t.Fatalf("got exit %d, last line %q; want exit 0 and a detection\n%s", got.code, got.lastLine(), got)
+	}
+	report := strings.Split(got.stdout, "\n")
+	requireLines(t, "report", report, "hunks: 2 (more than one hunk)", "@@ -7 +7 @@: target line 7", "@@ -10 +10 @@: target line 10")
+	for _, line := range report {
+		if strings.Contains(line, "target lines 7-") || strings.Contains(line, "@@ -7,") {
+			t.Errorf("a region holds the unchanged lines 8 and 9: %q", line)
+		}
+	}
 }

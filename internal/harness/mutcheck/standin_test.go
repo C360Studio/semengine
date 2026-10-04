@@ -119,8 +119,9 @@ func (p *heldPipe) requireGone(t *testing.T) {
 }
 
 // TestRunPastItsBoundIsStopped (mutation-check › "The runs", "A run that does not end"): with
-// -timeout 200ms, a go test that has not ended by 400ms is stopped with every process it started,
-// the check is inconclusive and names the bound, and no further run is made.
+// -timeout 200ms, a go test that has not ended by 400ms is stopped with its process group (the
+// stand-in and the helper it started), the check is inconclusive and names the bound and the
+// process group, and no further run is made.
 func TestRunPastItsBoundIsStopped(t *testing.T) {
 	pipe := newHeldPipe(t)
 	log := standIn(t, pipe.holdingStandIn(t))
@@ -136,7 +137,7 @@ func TestRunPastItsBoundIsStopped(t *testing.T) {
 	if got.code == 0 || !strings.HasPrefix(got.lastLine(), "verdict: inconclusive") {
 		t.Errorf("got exit %d, last line %q; want a non-zero exit and an inconclusive verdict\n%s", got.code, got.lastLine(), got)
 	}
-	for _, w := range []string{"baseline run 1", "400ms", "stopped"} {
+	for _, w := range []string{"baseline run 1", "400ms", "stopped", "process group"} {
 		if !strings.Contains(got.lastLine(), w) {
 			t.Errorf("the verdict does not say %q: %q", w, got.lastLine())
 		}

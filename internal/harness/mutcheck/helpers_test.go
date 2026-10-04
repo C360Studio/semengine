@@ -101,7 +101,9 @@ func outside(t *testing.T, name, content string) string {
 
 // testEnv is the environment a test gives the program: this process's environment without
 // GOFLAGS, GOENV, RAPID_SEED and RAPID_NOFAILFILE, with GOENV=off so no Go environment file of
-// the host applies, TMPDIR set to a fresh directory, and then the entries given. GORACE sets the
+// the host applies, the host's global and system git configuration left out (a setting such as
+// core.fsmonitor would let the program's git status write under the planted .git that the
+// snapshots walk), TMPDIR set to a fresh directory, and then the entries given. GORACE sets the
 // race detector's wait at exit (one second by default, in every passing run) to zero: the planted
 // tests have no exit-time code for it to watch, and the program passes the environment through
 // to every run unchanged.
@@ -111,12 +113,13 @@ func testEnv(t *testing.T, set ...string) []string {
 	for _, kv := range os.Environ() {
 		k, _, _ := strings.Cut(kv, "=")
 		switch k {
-		case "GOFLAGS", "GOENV", "RAPID_SEED", "RAPID_NOFAILFILE", "TMPDIR":
+		case "GOFLAGS", "GOENV", "RAPID_SEED", "RAPID_NOFAILFILE", "TMPDIR", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_NOSYSTEM":
 			continue
 		}
 		env = append(env, kv)
 	}
-	env = append(withoutKey(env, "GORACE"), "GOENV=off", "TMPDIR="+t.TempDir(), "GORACE=atexit_sleep_ms=0")
+	env = append(withoutKey(env, "GORACE"), "GOENV=off", "TMPDIR="+t.TempDir(), "GORACE=atexit_sleep_ms=0",
+		"GIT_CONFIG_GLOBAL="+os.DevNull, "GIT_CONFIG_NOSYSTEM=1")
 	for _, kv := range set {
 		k, _, _ := strings.Cut(kv, "=")
 		env = withoutKey(env, k)

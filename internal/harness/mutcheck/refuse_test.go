@@ -28,7 +28,7 @@ func passingStandIn(t *testing.T) string {
 
 // TestRefusals (mutation-check › "The command and its inputs"): one case for each scenario, and
 // for -seed 0, a GOFLAGS that sets -overlay, a mutant inside the module and a mutant identical to
-// its target. Each refusal exits non-zero, names the input and the reason, prints no verdict, and
+// its target, a target that does not exist and a target outside the module. Each refusal exits non-zero, names the input and the reason, prints no verdict, and
 // starts no run: the stand-in go's log holds no go test call.
 func TestRefusals(t *testing.T) {
 	mutant := func(t *testing.T) string { return outside(t, "p.go", valueMutant) }
@@ -48,7 +48,7 @@ func TestRefusals(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		args  func(t *testing.T, root string) []string
-		env   func(t *testing.T) []string // extra entries for the program's environment
+		env   func(t *testing.T, root string) []string // extra entries for the program's environment
 		setup func(t *testing.T, root string)
 		own   bool // the case writes into the module, so it gets one of its own
 		words []string
@@ -71,7 +71,7 @@ func TestRefusals(t *testing.T) {
 			words: []string{"-pkg", "one package"}},
 		{name: "coverage in GOFLAGS set with go env -w",
 			args: base,
-			env: func(t *testing.T) []string {
+			env: func(t *testing.T, _ string) []string {
 				file := filepath.Join(t.TempDir(), "go.env")
 				goEnvWrite(t, file, "GOFLAGS=-cover")
 				return []string{"GOENV=" + file}
@@ -89,7 +89,7 @@ func TestRefusals(t *testing.T) {
 			words: []string{"-seed", "random"}},
 		{name: "GOFLAGS that sets -overlay",
 			args: base,
-			env: func(t *testing.T) []string {
+			env: func(t *testing.T, _ string) []string {
 				return []string{"GOFLAGS=-overlay=" + filepath.Join(t.TempDir(), "o.json")}
 			},
 			words: []string{"GOFLAGS", "-overlay"}},
@@ -108,6 +108,34 @@ func TestRefusals(t *testing.T) {
 		{name: "a target that does not exist",
 			args:  func(t *testing.T, root string) []string { return replace(base(t, root), "-file", "p/missing.go") },
 			words: []string{"-file", "p/missing.go", "does not exist"}},
+		{name: "a malformed expected location",
+			args:  func(t *testing.T, root string) []string { return replace(base(t, root), "-expect", "probe_test.go") },
+			words: []string{"-expect", `"probe_test.go"`, "file.go:N"}},
+		{name: "an empty expected text",
+			args: func(t *testing.T, _ string) []string {
+				return []string{"-pkg", "./p", "-test", "TestValue", "-file", "p/p.go", "-mutant", mutant(t), "-expect-text", ""}
+			},
+			words: []string{"-expect-text"}},
+		{name: "no go.mod at the root",
+			args: base,
+			setup: func(t *testing.T, root string) {
+				if err := os.Remove(filepath.Join(root, "go.mod")); err != nil {
+					t.Fatal(err)
+				}
+			},
+			own:   true,
+			words: []string{"go.mod", "repository's root"}},
+		{name: "temporary files inside the module",
+			args: base,
+			env: func(t *testing.T, root string) []string {
+				dir := filepath.Join(root, "tmp")
+				if err := os.Mkdir(dir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				return []string{"TMPDIR=" + dir}
+			},
+			own:   true,
+			words: []string{"TMPDIR", "would be written into the repository"}},
 		{name: "a target outside the module",
 			args: func(t *testing.T, root string) []string {
 				return replace(base(t, root), "-file", outside(t, "q.go", "package q\n"))
@@ -125,7 +153,7 @@ func TestRefusals(t *testing.T) {
 			}
 			var extra []string
 			if tc.env != nil {
-				extra = tc.env(t)
+				extra = tc.env(t, root)
 			}
 			got := runIn(t, root, testEnv(t, extra...), tc.args(t, root)...)
 			if got.code == 0 {

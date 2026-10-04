@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -90,4 +91,22 @@ func TestDeletionSurvivorEndToEnd(t *testing.T) {
 		t.Fatalf("got exit %d, last line %q; want a non-zero exit and a survivor naming seed 3\n%s", got.code, got.lastLine(), got)
 	}
 	requireLines(t, "reach run", section(got.stdout, "run reach 1:"), "reach: reached", "target line 7", "-coverpkg")
+}
+
+// TestDetectionThroughASymlink (mutation-check › "A repository reached through a symbolic link"):
+// the program runs in a symbolic link to the planted module, with PWD naming the link, as a shell
+// that changed into the link leaves it. The wrong change (line 10 subtracts) fails TestTotal on
+// line 7 when the module is reached directly, so the verdict is detection.
+func TestDetectionThroughASymlink(t *testing.T) {
+	root := plantModule(t, survivorModule)
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(root, link); err != nil {
+		t.Fatal(err)
+	}
+	mutant := outside(t, "total.go", strings.Replace(survivorModule["plant/total.go"], "sum += x", "sum -= x", 1))
+	got := runIn(t, link, testEnv(t, "GOFLAGS=", "PWD="+link), "-pkg", "./plant", "-test", "TestTotal",
+		"-file", "plant/total.go", "-mutant", mutant, "-expect", "total_test.go:7", "-runs", "1")
+	if got.code != 0 || !strings.HasPrefix(got.lastLine(), "verdict: detection") {
+		t.Fatalf("got exit %d, last line %q; want exit 0 and a detection\n%s", got.code, got.lastLine(), got)
+	}
 }

@@ -60,6 +60,9 @@ func TestSIGTERMStopsEveryProcess(t *testing.T) {
 	if strings.Contains(got.stdout+got.stderr, "verdict:") {
 		t.Errorf("printed a verdict after SIGTERM\n%s", got)
 	}
+	if !strings.Contains(got.stderr, "process group") {
+		t.Errorf("the message does not say that the run's process group was stopped\n%s", got)
+	}
 	pipe.requireGone(t)
 	requireUnchanged(t, before, snapshot(t, root))
 }

@@ -1,0 +1,6 @@
+diff --git a/m/plant/branch.go b/mut/insertion-end-of-switch-case.go
+index 685fafa..7675104 100644
+--- a/m/plant/branch.go
++++ b/mut/insertion-end-of-switch-case.go
+@@ -18,0 +19 @@ func Name(n int) string {
++		s = "uno"

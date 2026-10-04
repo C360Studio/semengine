@@ -95,13 +95,16 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
       Tests at `64307fe` (11 failing against the code of `8bee3ea`), fixes at `f30d841`; (c)'s malformed `-expect`
       and empty `-expect-text` cases could not fail first and are shown able to fail in 3.3 (V04, V05).
       Evidence: comment 5984462581.
-- [ ] 2.12 (D) The corrections of implementation review round 2 (`impl-review-r2.md`, sha256 `2fdc930b…769d`;
+- [x] 2.12 (D) The corrections of implementation review round 2 (`impl-review-r2.md`, sha256 `2fdc930b…769d`;
       `design.md`, "Implementation review round 2 corrections"), each with a test written first and seen to fail against
       the code at `e936326`: (a) an insertion whose place lies inside a statement of its list is not measurable:
       recorded cases for the scenarios "An insertion inside a multi-line condition" and "An insertion right after a
       label", the second with the label reached by `goto`; (b) a `TMPDIR` that does not exist is refused: the scenario
       "Temporary files in a directory that does not exist", or, if a case already exists, named in the record. Gate:
       `task test:unit`.
+      Tests at `41b73da` (both reach cases failing against the code of `e936326`), fix at `10b9746`; (b)'s case
+      could not fail first and is shown able to fail in 3.4 (V07).
+      Evidence: comment 5984734456.
 
 ## 3. Shown able to fail
 
@@ -126,10 +129,12 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
       recorded on this pull request; a survivor is reported as such.
       V01 to V03: 3 detections, 0 survivors, 0 inconclusive, 0 invalid; V04 and V05 (extra): 2 detections.
       Evidence: comment 5984462715.
-- [ ] 3.4 (D) The experiment of `docs/testing.md`, "Show that the test can fail", for the wrong change that would undo
+- [x] 3.4 (D) The experiment of `docs/testing.md`, "Show that the test can fail", for the wrong change that would undo
       2.12 (a): an insertion inside a statement decided by a neighbouring statement's block, as `design.md`, D11, lists
       it. Its change and its baseline, wrong-change and after-runs are recorded on this pull request; a survivor is
       reported as such.
+      V06: 1 detection, 0 survivors, 0 inconclusive, 0 invalid; V07 (extra): 1 detection.
+      Evidence: comment 5984734642.
 
 ## 4. Documents
 

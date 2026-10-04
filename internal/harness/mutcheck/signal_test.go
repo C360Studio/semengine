@@ -53,7 +53,7 @@ func TestSIGTERMStopsEveryProcess(t *testing.T) {
 	if err := cmd.Process.Signal(syscall.SIGTERM); err != nil {
 		t.Fatal(err)
 	}
-	got := <-done
+	got := pipe.ended(t, done)
 	if got.code == 0 {
 		t.Errorf("got exit 0 after SIGTERM, want non-zero\n%s", got)
 	}

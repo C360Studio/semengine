@@ -76,6 +76,24 @@ func (p *heldPipe) started(t *testing.T, done <-chan result) {
 	_ = p.ownWriter.Close()
 }
 
+// ended waits for the program to end after it should have stopped its run. The bound only stops
+// a failing test from hanging: a program that does not stop the run fails here, and the helper and
+// the stand-in it held are killed so the program can return.
+func (p *heldPipe) ended(t *testing.T, done <-chan result) result {
+	t.Helper()
+	select {
+	case got := <-done:
+		return got
+	case <-time.After(30 * time.Second):
+		_ = syscall.Kill(p.pid, syscall.SIGKILL)
+		if p.parent > 1 {
+			_ = syscall.Kill(p.parent, syscall.SIGKILL)
+		}
+		t.Fatal("the program had not ended 30s after it should have stopped the run")
+		return result{}
+	}
+}
+
 // requireGone fails unless the pipe reads to end of file: no process the stand-in started, and
 // not the stand-in itself, still holds it. Nothing on the passing path waits on a clock; the bound
 // only stops a failing test from hanging, and the pids let it clean up.
@@ -114,7 +132,7 @@ func TestRunPastItsBoundIsStopped(t *testing.T) {
 			"-mutant", outside(t, "p.go", valueMutant), "-expect", "value_test.go:10", "-timeout", "200ms")
 	}()
 	pipe.started(t, done)
-	got := <-done
+	got := pipe.ended(t, done)
 	if got.code == 0 || !strings.HasPrefix(got.lastLine(), "verdict: inconclusive") {
 		t.Errorf("got exit %d, last line %q; want a non-zero exit and an inconclusive verdict\n%s", got.code, got.lastLine(), got)
 	}

@@ -533,8 +533,8 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       row says so. The root at `client.go:566` is triaged on the row: `Close` cancels the poller's in-flight work and
       joins it. Each item is changed behaviour on the row.
       - Done in `1be7abb` (implementer-reported, PR #48). The helper is `startBackground(kind, fn) bool`
-        (`client.go:171`); the six sites are the monitor (`:1707`), the poller (`:675`), the claim releases
-        (`stream.go:545, :652`) and the two timer bodies (`client.go:440, :1623`); arming either timer also refuses
+        (`client.go:171`); the six sites are the monitor (`:1745`), the poller (`:682`), the claim releases
+        (`stream.go:545, :652`) and the two timer bodies (`client.go:440, :1658`); arming either timer also refuses
         once `Close` has begun. Failing first at `29249fb` (3.7b's code): `Close(nil)` and `Connect(nil)` panicked;
         the second `Connect` returned nil; (a) `Close` under an ended context returned nil; (b) the late disconnect
         armed the timer; (c) Close A returned nil while the callback ran; (d) nil where `DeadlineExceeded` was
@@ -545,7 +545,9 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         19 mutants, one per fix, all detected; `go test -race -count=20` on the 13 tests and `task test:repeat`
         pass. Beyond the text, on the row: `Connect` overtaken by `Close` returns `nats.ErrConnectionClosed`; a
         consumer started once `Close` has begun is stopped and refused; re-arming the circuit timer stops a pending
-        one; a `Close` whose context has ended returns `ctx.Err()` even after the join. Task 4.3's `Close(nil)`,
+        one; a `Close` whose context has ended returns `ctx.Err()` even after the join; a `Connect` that loses admission
+        to a concurrent one leaves the winner's status (`TestClientConnectThatLosesAdmissionLeavesStatus`, failing
+        first with `Disconnected`; two mutants detected). Task 4.3's `Close(nil)`,
         `Connect(nil)` and second-`Close` items are proven here; 4.3 stays open.
 - [ ] 3.7d (D) Hold: Codex's checkpoint review of 3.7c (concurrency), recorded on this pull request. `natsclient`
       metrics (design D9; item 4): the three consumer collectors that `Add` cumulative server values on every poll

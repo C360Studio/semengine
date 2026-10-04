@@ -225,7 +225,10 @@ failing-first `adapt` items:
   for `Subscription.Drain` (`:796-799`).
 - **`natsclient-connect-refuses-second-start`.** `connectWith` has no already-connected guard. It overwrites `m.conn`
   at `:547` without closing it, and starts a second metrics poller at `:566`. A second `Connect` on a connected
-  client returns an error and changes nothing.
+  client returns an error and changes nothing. A `Connect` that passed that check and then lost admission to a
+  concurrent one closes its own connection and leaves the winner's status: it restores the `Connecting` it wrote
+  from the winner's connection, and the client's connection handlers ignore events from a connection the client
+  does not hold, so the rejected one's closed handler cannot write `Disconnected` (task 3.7c).
 - **`natsclient-close-joins-its-goroutines`.** `Close` signals but never joins six sites where the client runs work on
   another goroutine, once task 3.7a has dropped the disconnect, reconnect and health-change callbacks with their launch
   sites: the metrics poller (`jetstream_metrics.go:345`, cancelled at `client.go:595-596`); the health monitor (`:1628`,
@@ -240,7 +243,11 @@ failing-first `adapt` items:
     anything. No `Add` can then happen once `Close` has begun waiting, so a callback, disconnect or timer that nats.go
     or the runtime delivers while `Close` runs (`handleDisconnect` arms the watchdog, `:1512`) cannot race the wait.
     `Connect` admits and starts the monitor and poller through the same helper, so a `Close` that has begun refuses
-    them.
+    them, and then returns `nats.ErrConnectionClosed`, not nil.
+  - Arming either timer is refused, and logged, once `Close` has begun, so no timer is left pending after it.
+    Arming the circuit timer stops a pending one from an earlier round, which nothing else would track or stop.
+  - A port or internal consumer whose claim release is refused because `Close` has begun is stopped and refused with
+    `nats.ErrConnectionClosed`, and its claim is released.
   - **`jetstream.New`'s error.** It is dropped at `:525`. `Connect` returns it and closes the dialled connection. No
     failing test exists (nats.go v1.54.0 `jetstream.go:471-492`), and the row records that.
   - Work refused because the client is closing is dropped, not run inline. The pin already drops the watchdog's callback
@@ -250,8 +257,11 @@ failing-first `adapt` items:
   - Only the first `Close` runs the setup, once, under `closeMu` (held for the whole body at the pin, `:580-581`, and
     now for the setup alone): set `closing` under `m.mu`, the lock the helper checks; close the connection and the
     timers; start the single goroutine that runs `wg.Wait` and then closes `joined`, so `joined` is closed exactly
-    once. Every `Close`, first or later, then waits outside any lock in `select { case <-joined: return nil; case
-    <-ctx.Done(): return ctx.Err() }`; the pin's early `return nil` on a second call (`:583-585`) goes.
+    once. Every `Close`, first or later, then waits outside any lock in `select { case <-joined: …; case
+    <-ctx.Done(): return ctx.Err() }`; the pin's early `return nil` on a second call (`:583-585`) goes. On `joined`
+    it returns `ctx.Err()` if its context has ended, and otherwise the drain's result: when both cases are ready the
+    select picks at random, and a nil return under an ended context is what the suite's abort check rejects, so the
+    check is made deterministic, as `metric-abort-stop-reports-context` is for `Stop`.
   - A `Close` called from inside one of the client's callbacks waits on a group that includes its own goroutine, so
     it returns `ctx.Err()` when its context ends and never returns nil, as `http.Server.Shutdown` does from inside a
     handler. `Close`'s doc comment and the row say so; at the pin such a call returned at once.

@@ -807,7 +807,7 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         `pkg/projection/contract` +1 −1; `internal/tlsutil` +2 −2; `metric` +1,137 −314; `payloadregistry` +3 −3;
         `message` +1,370 −6; `internal/cache` +1,770 −937; `natsclient` +5,209 −4,478; `pkg/errs`, `pkg/platform`,
         `pkg/security` unchanged; total +9,982 −6,178, and 34,887 − 215 + 9,982 − 6,178 = 38,476.
-- [ ] 3.10 (R) Port review per package group (3.1–3.7e) and of task 2.8's rehomed helpers: the two service adapters list
+- [x] 3.10 (R) Port review per package group (3.1–3.7e) and of task 2.8's rehomed helpers: the two service adapters list
       every retained kind (the review checklist of the `lifecycle-suite` delta); each helper has the shape design D7
       gives it, its `synctest` test and its nil-context refusal, and no fixed shutdown timeout remains
       (`background-work` delta); rows validate, no file beyond the pin's was added except: the two adapters; the two
@@ -822,6 +822,15 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       `go test -v -run TestPublicSignatures ./internal/harness/contract` shows "public packages checked: 11" and passes,
       and a run with a temporary exported `natsclient` function returning `*resource.Watcher` (from `internal/resource`,
       used at `client.go:1394`) fails naming it (design D5, task 2.10). Verdict on this pull request.
+      - Done: APPROVE on re-check 2 at `5f7ee90`. The Claude port-review records on PR #48: comment 5984567497
+        (the review at `887f41b`, CHANGES REQUESTED: HIGH-1, MEDIUM-2 to MEDIUM-6, NIT-7), comment 5984883313
+        (re-check at `db7d037`, CHANGES REQUESTED: HIGH-R1, MEDIUM-R2, NIT-R3) and comment 5985118144 (re-check 2
+        at `5f7ee90`, APPROVE, NIT-R4). Fix commits: `a95c84a` (HIGH-1, MEDIUM-2, -3, -4, -6, NIT-7), `db7d037`
+        (MEDIUM-5, the technical writer's), `5f7ee90` (HIGH-R1, MEDIUM-R2, NIT-R3) and the commit that ticks this
+        task (NIT-R4: `TestIntegration_CircuitBreakerWithRealConnection` requires the 15 dials reported through
+        `opHook` before the circuit-open `Connect`; a mutant that stops `connectWith` reporting its dial fails it,
+        "the 15 failed Connects each reported a dial through opHook"). These are Claude's own reviewer's records;
+        the cross-agent review of the code is task 7.1.
 - [x] 3.11 (D) CI time: the wall time of `task verify` per step (`scripts/verify.sh` prints it) and of the CI `verify`
       job with every package ported are recorded on this pull request, with the integration lane's time against its
       `-timeout 10m` (`scripts/test-integration.sh:402`). If the job exceeds its 15-minute limit (`merge-gate`

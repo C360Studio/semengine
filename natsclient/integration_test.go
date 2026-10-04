@@ -192,6 +192,7 @@ func TestIntegration_CircuitBreakerWithRealConnection(t *testing.T) {
 	// Further attempts should fail immediately with circuit open error. "Immediately" is observed
 	// as no dial, where the pin asserted under 10 ms of wall time (design D8 R1b).
 	dialsBefore := dials.Load()
+	require.Equal(t, int32(15), dialsBefore, "the 15 failed Connects each reported a dial through opHook")
 	err = manager.Connect(ctx)
 
 	assert.Error(t, err)

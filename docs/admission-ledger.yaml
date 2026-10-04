@@ -1166,7 +1166,37 @@
     disconnect, reconnect and health-change callbacks; pingInterval (30 s), drainTimeout (30 s),
     circuitThreshold (15) and maxBackoff (one minute) keep their defaults (client.go:161-166 at
     the pin → :149-154) with no setter, and requestHandlerTimeout is set only from
-    SEMSTREAMS_NATS_REQUEST_HANDLER_TIMEOUT (request.go:37-55, name unchanged, #69)
+    SEMSTREAMS_NATS_REQUEST_HANDLER_TIMEOUT (request.go:37-55, name unchanged, #69). Changed
+    behavior, task 3.7c (design D3), each an adapt item: natsclient-nil-context-refused, Close(nil)
+    and Connect(nil) return an invalid error before any dial or close (client.go:541-543,
+    :696-698; the pin panicked at :685 and :495, and Connect(nil) dialled at :494 first);
+    natsclient-connect-refuses-second-start, a Connect on a connected client returns
+    errs.ErrAlreadyStarted before it dials and changes nothing (:544-549), and a concurrent
+    Connect that loses admission closes its own connection (:625-631; the pin overwrote the
+    connection at :547 and started a second poller at :566); natsclient-close-joins-its-goroutines,
+    the six sites (the health monitor :1707, the metrics poller :675, the claim releases
+    stream.go:545 and :652, the connection-loss timer's body :1623 and the circuit timer's body
+    :440) start through one helper, startBackground (:171), which under mu refuses once Close has
+    begun and otherwise adds to one WaitGroup before the goroutine starts; Connect admits the
+    monitor and the poller through it. The first Close, under closeMu, sets closing, stops the
+    monitor, both timers and the poller, drains the connection, clears the connection and the
+    JetStream handle, and starts the one goroutine that waits on the group and closes joined;
+    every Close then waits outside any lock and returns nil only after the join, or ctx.Err()
+    when its context ends first or had already ended (:695-758; the pin's second Close returned
+    nil at once, :583-585, and no Close joined anything). Work offered once Close has begun is
+    dropped, never run inline, and logged at debug level with its kind (:200-202): a goroutine
+    start, a timer body that fired, and arming either timer (:419-433, :1599-1615). No callback
+    runs once Close has begun; a Close called from inside a client callback returns ctx.Err() when
+    its context ends and never nil (the pin returned at once). Also changed: Connect returns
+    nats.ErrConnectionClosed when Close began after admission and refused the monitor or the
+    poller (:655-657; the pin started both and returned nil); a port or internal consumer started
+    once Close has begun is stopped and refused with nats.ErrConnectionClosed, its claim released
+    (stream.go:544-555, :651-662); arming the circuit timer stops a pending one from an earlier
+    round, which an untracked timer could otherwise outlive Close (:426-428; the pin never kept or
+    stopped it, :289). jetstream.New's error, dropped at the pin (:525), is returned by Connect
+    with the dialled connection closed (:597-602); no failing-first test exists, because nats.go
+    v1.54.0 jetstream.New fails only when an option does and WithPublishAsyncErrHandler never
+    does (jetstream/jetstream.go:471-492, jetstream_options.go:41-46)
   dependencies_and_side_effects: >-
     metric, pkg/errs, pkg/retry, internal/resource (in-set); github.com/nats-io/nats.go v1.54.0
     and nats.go/jetstream; prometheus/client_golang; stdlib. Test-only:
@@ -1174,7 +1204,8 @@
     stretchr/testify, prometheus client_model and testutil; the integration lane imports
     internal/harness/natsfixture and internal/harness/probe and no natsclient test imports
     testcontainers (task 3.7b). Dials NATS; runs the health monitor, the
-    metrics poller, claim-release goroutines and two timers (design D3; joins are task 3.7c)
+    metrics poller, claim-release goroutines and two timers, each started through startBackground
+    and joined by Close (design D3, task 3.7c)
   known_risks: >-
     Import paths differ from the pin: pkg/resource is internal/resource (design D5); the doc.go
     import path at :512 is task 3.7e. Pin differences carried with the carried tests as the only
@@ -1183,8 +1214,10 @@
     (owner ruling, #9 comment 5969776736); T-B3 cannot see an embedded server, so one broker
     version across both lanes is review only. Context roots (design D1 re-measured: the pin's nine
     are two live production roots, the rest are doc.go comments at :35, :151, :245, :524 or
-    test_client.go): client.go:566, the metrics poller started under context.Background(), a defect
-    triaged in task 3.7c; trace.go:56, DetachContextWithTrace, left with that function in task
+    test_client.go): client.go:566, the metrics poller started under context.Background(), triaged
+    in task 3.7c as a root the Client owns and kept: startMetricsPoller (client.go:670) creates it
+    so the poller outlives Connect's dial-scoped context, publishes its cancel before admitting the
+    poller, and Close cancels the poller's in-flight work and joins it; trace.go:56, DetachContextWithTrace, left with that function in task
     3.7a. kv.go:600 is a bounded terminal drain, context.WithTimeout(context.WithoutCancel(ctx),
     filteredWatcherDrainTimeout), the developer contract's admitted shape, not a root. Dropped
     surface, not ported (design D8, "A test of a removed feature"): kv_temporal.go
@@ -1622,6 +1655,35 @@
     Update replaced by an unconditional Put fails max_retries_exhaustion
     (kv_error_integration_test.go:226); requestMsgReady returning after its first miss fails
     TestIntegration_RequestReady_ResponderAppearsLate (:68). task test:integration --
-    ./natsclient passes (implementer-reported, PR #48)
+    ./natsclient passes (implementer-reported, PR #48). Task 3.7c (design D3), in
+    client_lifecycle_test.go: the test-side adapter clientOwner (:28-94) lists the nats.Conn, the
+    JetStream handle, subscriptions, internal consumer claims, each running kind of background
+    work, both timers while armed, and what the monitor and the poller publish before they start,
+    and counts dials and drains through the opHook seam; TestClientLifecycleSuite (:685) runs the
+    suite with a refused-URL must-fail factory. Written first and shown failing on the code as
+    task 3.7b left it (implementer-reported, PR #48): TestClientCloseRefusesNilContext (Close(nil)
+    panicked), TestClientConnectRefusesNilContext (Connect(nil) panicked),
+    TestClientSecondConnectRefused (second Connect returned nil), (a)
+    TestClientCloseJoinsConnectionLossCallback (Close under an ended context returned nil), (b)
+    TestClientCloseDropsLateDisconnect (a disconnect after Close armed the timer), (c)
+    TestClientConcurrentClosesEachHonourTheirContext (Close A returned nil while the callback ran),
+    (d) TestClientCloseFromInsideCallbackReportsContext (got nil, want DeadlineExceeded), (e)
+    TestClientCloseDuringConnectStartsNothing (held: jetstream handle, health monitor, metrics
+    poller; Connect returned nil), TestClientCloseStopsCircuitTimer (the circuit test ran after
+    Close), TestClientCloseJoinsClaimRelease, TestClientCloseJoinsInternalClaimRelease and
+    TestClientCloseUnderEndedContextAlwaysReportsIt (Close returned nil under an ended context),
+    and the suite (NilContextsRefused panicked; ControlledStop held the JetStream handle and the
+    poller; SecondStart returned nil). (e) holds Connect deterministically through WithLogger on
+    the "Successfully connected to NATS" record; (a)-(d) and the circuit test run in synctest
+    bubbles. Late timer bodies after Close (connectionLossFired, circuitTimerFired) had no
+    failing-first form, the pin's body being an inline closure that already skipped the callback
+    after close (:1564); they are held by mutants instead. Mutation (implementer-reported, PR
+    #48), each restored by checksum, 19 detected and none survived: either nil check removed;
+    the second-start check removed; no join in Close; the ended-context check after the join
+    removed; each of the six sites started with a plain go statement; Close not stopping the
+    timers; either timer armed after Close began; the drop log removed; the helper ignoring
+    closing; Connect returning nil when its work was refused; Close leaving the JetStream handle;
+    a refused port consumer not stopped. go test -race -count=20 on the 13 tests passes, also at
+    -cpu 1
   owner: setup-04a-01-floor developer
   disposition: adapt

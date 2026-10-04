@@ -504,7 +504,7 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       survivor: `TestConsumeDeliveryWithHeartbeatErrCarriesControlLoss` fails on the mutant that drops `controlErr` from
       `Err()`'s join. Census maps unchanged. Text corrected after the fact: the `Terminate` and `GetNativeConnection`
       mappings above, and D8's new row for `client_close_integration_test.go:77`.
-- [ ] 3.7c (D) Lifted: Codex's checkpoint review of 3.7–3.7b passed at `f97803f` (PR #48 comment 5974824034).
+- [x] 3.7c (D) Lifted: Codex's checkpoint review of 3.7–3.7b passed at `f97803f` (PR #48 comment 5974824034).
       `Client` lifecycle (design D3): the test-side adapter lists the `nats.Conn`, JetStream handle, subscriptions,
       internal consumer claims, the health monitor, the metrics poller, the claim-release goroutines and the two timers,
       and the client passes the suite with a refused-URL must-fail factory after these items, each test written first
@@ -532,6 +532,21 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       `WithPublishAsyncErrHandler` never does (`jetstream/jetstream.go:471-492`, `jetstream_options.go:41-46`), and the
       row says so. The root at `client.go:566` is triaged on the row: `Close` cancels the poller's in-flight work and
       joins it. Each item is changed behaviour on the row.
+      - Done in `1be7abb` (implementer-reported, PR #48). The helper is `startBackground(kind, fn) bool`
+        (`client.go:171`); the six sites are the monitor (`:1707`), the poller (`:675`), the claim releases
+        (`stream.go:545, :652`) and the two timer bodies (`client.go:440, :1623`); arming either timer also refuses
+        once `Close` has begun. Failing first at `29249fb` (3.7b's code): `Close(nil)` and `Connect(nil)` panicked;
+        the second `Connect` returned nil; (a) `Close` under an ended context returned nil; (b) the late disconnect
+        armed the timer; (c) Close A returned nil while the callback ran; (d) nil where `DeadlineExceeded` was
+        wanted; (e) the adapter held the JetStream handle, the monitor and the poller, and `Connect` returned nil;
+        the suite failed `NilContextsRefused`, `ControlledStopUnderLiveStartAuthority` and
+        `SecondStartRefusedOrRestartCycle`. Added beyond the five items, each failing first the same way: a
+        stopped circuit timer, both claim-release joins, and an ended-context `Close` after the join (64 calls).
+        19 mutants, one per fix, all detected; `go test -race -count=20` on the 13 tests and `task test:repeat`
+        pass. Beyond the text, on the row: `Connect` overtaken by `Close` returns `nats.ErrConnectionClosed`; a
+        consumer started once `Close` has begun is stopped and refused; re-arming the circuit timer stops a pending
+        one; a `Close` whose context has ended returns `ctx.Err()` even after the join. Task 4.3's `Close(nil)`,
+        `Connect(nil)` and second-`Close` items are proven here; 4.3 stays open.
 - [ ] 3.7d (D) Hold: Codex's checkpoint review of 3.7c (concurrency), recorded on this pull request. `natsclient`
       metrics (design D9; item 4): the three consumer collectors that `Add` cumulative server values on every poll
       (`jetstream_metrics.go:305-307`) become gauges `Set` from server state — `consumer_delivered_total` →

@@ -135,3 +135,20 @@ func requireLogs(t *testing.T, report, root string) {
 		t.Errorf("the log directory %s is inside the module %s", dir, root)
 	}
 }
+
+// TestReportRecordsAPanic (mutation-check › "A panic after the expected failure"): each mutant run
+// prints an expected line and then panics; the verdict is detection, and the report records the
+// panic.
+func TestReportRecordsAPanic(t *testing.T) {
+	standIn(t, "case \" $GOFLAGS \" in *\" -overlay=\"*) cat '"+eventsPath(t, "panic-after")+"'; exit 1 ;; esac\n"+
+		"cat '"+eventsPath(t, "panic-after-pass")+"'\n")
+	root := plantModule(t, standInModule)
+	got := runIn(t, root, testEnv(t, "GOFLAGS="), "-pkg", "./p", "-test", "TestPanicAfter", "-file", "p/p.go",
+		"-mutant", outside(t, "p.go", valueMutant), "-expect", "value_test.go:23", "-runs", "1")
+	if got.code != 0 || !strings.HasPrefix(got.lastLine(), "verdict: detection") {
+		t.Fatalf("got exit %d, last line %q; want exit 0 and a detection\n%s", got.code, got.lastLine(), got)
+	}
+	requireLines(t, "mutant run", section(got.stdout, "run mutant 1:"),
+		"expected line:     value_test.go:23: Value() = 2, want 1",
+		"note: panic: assignment to entry in nil map")
+}

@@ -10,8 +10,8 @@ import (
 )
 
 // testdata/reach holds one target (plant/target.go), the coverage profile of its unchanged code
-// that the reach run would record (cover.out, from
-// `go test -json -count=1 -cpu 1 -race -run '^TestClamp$' -coverpkg=./plant -coverprofile=cover.out ./plant`
+// that the reach run would record (profile.txt, from
+// `go test -json -count=1 -cpu 1 -race -run '^TestClamp$' -coverpkg=./plant -coverprofile=profile.txt ./plant`
 // with go1.26.6), and one line diff per case, taken with
 // `git diff --no-index --no-ext-diff --no-textconv --no-color -U0` from the target to a copy with
 // the wrong change. TestClamp calls Clamp(3): Clamp's first block (lines 20-25) and its last
@@ -39,7 +39,7 @@ type wantRegion struct {
 // decided as if every baseline and mutant run had passed, so the verdict comes from reach alone.
 func TestReachRecordedCases(t *testing.T) {
 	target := reachFile(t, "plant/target.go")
-	profile := reachFile(t, "cover.out")
+	profile := reachFile(t, "profile.txt")
 	for _, tc := range []struct {
 		name    string
 		diff    string
@@ -161,7 +161,7 @@ func TestReachRegionsAreNotMeasurableWithoutAProfileBlock(t *testing.T) {
 	if state, _, err := reach(hunks, target, empty, "target.go"); err != nil || state != notMeasurable {
 		t.Errorf("profile with no block: got %q, %v; want %q", state, err, notMeasurable)
 	}
-	if state, _, err := reach(nil, target, reachFile(t, "cover.out"), "target.go"); err != nil || state != notMeasurable {
+	if state, _, err := reach(nil, target, reachFile(t, "profile.txt"), "target.go"); err != nil || state != notMeasurable {
 		t.Errorf("no hunk: got %q, %v; want %q", state, err, notMeasurable)
 	}
 }

@@ -1,0 +1,5 @@
+mode: atomic
+plant.invalid/m/plant/target.go:14.19,17.2 2 0
+plant.invalid/m/plant/target.go:20.23,25.15 5 1
+plant.invalid/m/plant/target.go:25.15,31.3 5 0
+plant.invalid/m/plant/target.go:32.2,32.10 1 1

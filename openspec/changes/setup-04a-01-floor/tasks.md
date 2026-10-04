@@ -906,9 +906,11 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
 
 ## 5. Ledger items that need no port, and boundary gates
 
-- [ ] 5.1 (W) Eight `defer-exclude` rows for the D4 ten-out packages never carried (`agentic`, `agentic/agentrun`,
+- [x] 5.1 (W) Eight `defer-exclude` rows for the D4 ten-out packages never carried (`agentic`, `agentic/agentrun`,
       `gateway`, `gateway/graph-gateway`, `internal/agentterminal`, `internal/deliverylane`, `internal/looptoken`,
       `vocabulary/agentic`) at the pin SHA with the D4 reason each; `task ledger:check` passes.
+      Added at the end of `docs/admission-ledger.yaml` (46 entries), each `destination: none`, citing SETUP 03B
+      design D4 and the scope ruling (#8 comment 5930898291); `task ledger:check` passes.
 - [x] 5.2 (A) The Tier-1 cross-check re-measured on the ruled 65-package set (#9 item 1), recorded next to the
       ledger as an inventory with its command and result; it changes no row.
       Recorded in `docs/tier1-cross-check.md`: 39 in both, 23 Tier-1-only, 26 tier-0-only. These are the

@@ -1844,3 +1844,127 @@
     are change 2's (design D4)
   owner: setup-04a-01-floor developer
   disposition: adapt
+
+- source_path: agentic
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    none; separated at tier 0 as the agentic domain (owner scope ruling, #8 comment
+    5930898291; SETUP 03B design D4); 6,005 non-test lines at the pin, never carried
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    reached at the pin from component/dependencies.go:7, :56-57 (ToolRegistryReader),
+    gateway/graph-gateway/component.go:40 and processor/rule (actions.go:15, config_validation.go:9);
+    the processor/rule edge leaves with rule-core edit E3 (SETUP 03B design D12), and the component
+    adapt returns with E3, not before (scope Q1.5)
+  proving_tests: n/a
+  owner: setup-04a-01-floor technical writer
+  disposition: defer-exclude
+
+- source_path: internal/looptoken
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    none; separated at tier 0 as the agentic domain (owner scope ruling, #8 comment
+    5930898291; SETUP 03B design D4); 42 non-test lines at the pin, never carried
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    goes with agentic, the package it serves (SETUP 03B design D4, the agentic row)
+  proving_tests: n/a
+  owner: setup-04a-01-floor technical writer
+  disposition: defer-exclude
+
+- source_path: agentic/agentrun
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    none; separated at tier 0 as the agentic domain (owner scope ruling, #8 comment
+    5930898291; SETUP 03B design D4); 1,505 non-test lines at the pin, never carried
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    reached at the pin from service/milestone_service.go:10, which is not ported (constructed only by
+    internal/boot/run.go:573), and processor/rule (actions.go:16, agentrun.Mint :1989), whose edge
+    leaves with E3; consumer impact: semteams calls service.NewMilestoneService
+    (cmd/semteams/main.go:941; scope Q1.5)
+  proving_tests: n/a
+  owner: setup-04a-01-floor technical writer
+  disposition: defer-exclude
+
+- source_path: internal/deliverylane
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    none; separated at tier 0 as the agentic domain (owner scope ruling, #8 comment
+    5930898291; SETUP 03B design D4); 248 non-test lines at the pin, never carried
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    goes with agentic/agentrun, the package it serves (SETUP 03B design D4, the agentic/agentrun row)
+  proving_tests: n/a
+  owner: setup-04a-01-floor technical writer
+  disposition: defer-exclude
+
+- source_path: internal/agentterminal
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    none; separated at tier 0 as the agentic domain (owner scope ruling, #8 comment
+    5930898291; SETUP 03B design D4); 188 non-test lines at the pin, never carried
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    goes with agentic/agentrun, the package it serves (SETUP 03B design D4, the agentic/agentrun row)
+  proving_tests: n/a
+  owner: setup-04a-01-floor technical writer
+  disposition: defer-exclude
+
+- source_path: vocabulary/agentic
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    none; separated at tier 0 as the agentic domain (owner scope ruling, #8 comment
+    5930898291; SETUP 03B design D4); 2,133 non-test lines at the pin, never carried
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    reached at the pin from processor/graph-query/graphrag.go:1718-1720 (three label predicates, dropped
+    from labelPredicates when graph-query is ported) and processor/rule/actions.go:27 (stampRunAnchors
+    :731-753), whose edge leaves with E3
+  proving_tests: n/a
+  owner: setup-04a-01-floor technical writer
+  disposition: defer-exclude
+
+- source_path: gateway/graph-gateway
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    none; separated at tier 0: layer 4 of SETUP 03B design D5 is consumer-owned (owner scope
+    ruling, #8 comment 5930898291; SETUP 03B design D4); 2,676 non-test lines at the pin, never carried
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    composed by SemSource (run.go:852) but not exercised; it requires agentic_queries with no responder
+    and drags agentic and graph/inference; re-admission requires a consumer assertion through its HTTP
+    surface
+  proving_tests: n/a
+  owner: setup-04a-01-floor technical writer
+  disposition: defer-exclude
+
+- source_path: gateway
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    none; separated at tier 0: layer 4 of SETUP 03B design D5 is consumer-owned (owner scope
+    ruling, #8 comment 5930898291; SETUP 03B design D4); 319 non-test lines at the pin, never carried
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    SemConnect's cs-api imports it only for a compile-time interface assertion
+    (gateway/cs-api/component.go:198 at dff12657); dropping that assertion is SemConnect work; shipping
+    the 319-line base alone (03B pass3 set J) was not taken
+  proving_tests: n/a
+  owner: setup-04a-01-floor technical writer
+  disposition: defer-exclude

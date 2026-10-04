@@ -758,11 +758,17 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         code "no longer has" the behaviour; this task applies it to two passages that were wrong at the pin
         (the defaults, `WithClosedCallback`). Whether the passages above are edited the same way, or kept as
         the pin's text, is not settled by the ruling or this task.
-- [ ] 3.8 (D) `task cover:check` targets `natsclient`, `message`, `payloadregistry` at 80%: the first measurement
+- [x] 3.8 (D) `task cover:check` targets `natsclient`, `message`, `payloadregistry` at 80%: the first measurement
       of each is recorded on this pull request (design P8: the pin baseline is unmeasured). If any of the three
       measures below 80%, a new task asking the owner to rule on that package's coverage is added to this file at
       that moment, written so `task spec:queue` reads it, and the gate stays unwaived (plan `:206-209`); nothing in
       this file waits on the owner until the measurement exists.
+      - Done; all three are above 80%, so no owner task is added. First measurement, `task cover:check` inside
+        `task verify` at `ed3bcd0` (local) and in CI run 37232527143's `Verify` job at the same commit, both
+        green with the same figures: `natsclient` 87.8% (merged unit and integration profiles), `message` 91.9%,
+        `payloadregistry` 96.3% (unit profile); the harness packages `lifecycletest` 92.4%, `probe` 97.7%,
+        `natsfixture` 91.5%. Recorded here and not as a PR comment, by the instruction for this session. The CI
+        log is the artifact; the local profiles are local only.
 - [x] 3.9 (D) `stretchr/testify` and `pgregory.net/rapid` v1.3.0 are direct requirements (design D1; Rapid by owner
       ruling, PR #48 comment 5951926492), with `github.com/nats-io/nats-server/v2` v2.14.7 (design D1; task 3.7), and
       `pkg/types/entity_id_prop_test.go`, the floor's one Rapid file (design P23), is ported with its property test;
@@ -814,12 +820,20 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       `go test -v -run TestPublicSignatures ./internal/harness/contract` shows "public packages checked: 11" and passes,
       and a run with a temporary exported `natsclient` function returning `*resource.Watcher` (from `internal/resource`,
       used at `client.go:1394`) fails naming it (design D5, task 2.10). Verdict on this pull request.
-- [ ] 3.11 (D) CI time: the wall time of `task verify` per step (`scripts/verify.sh` prints it) and of the CI `verify`
+- [x] 3.11 (D) CI time: the wall time of `task verify` per step (`scripts/verify.sh` prints it) and of the CI `verify`
       job with every package ported are recorded on this pull request, with the integration lane's time against its
       `-timeout 10m` (`scripts/test-integration.sh:402`). If the job exceeds its 15-minute limit (`merge-gate`
       "Required needs both jobs"; `ci.yml:22`) or the lane exceeds its timeout, a new task asking the owner to rule is
       added to this file at that moment, written so `task spec:queue` reads it, and the limit stays unchanged: the
       limit is spec, and neither the developer nor the reviewer may raise it.
+      - Done; both are within their limits, so no owner task is added. At `ed3bcd0`, every package ported. CI run
+        37232527143, `Verify` job: 4 min 43 s (20:33:02 to 20:37:45 UTC) against `timeout-minutes: 15`; its
+        step timings: spec:check 1 s, docs:check 1, fmt:check 0, tidy:check 1, cleanup-roots:check 0, build 0,
+        vet 1, lint 1, vuln 2, ledger:check 3, test:unit 41, test:integration 122, cover:check 4, test:repeat 85.
+        The integration lane's step took 122 s against its `-timeout 10m`. Local `task verify` (exit 0, on a
+        shared host): spec:check 1 s, docs:check 1, fmt:check 0, tidy:check 0, cleanup-roots:check 0, build 0,
+        vet 1, lint 2, vuln 1, ledger:check 4, test:unit 57, test:integration 142, cover:check 4, test:repeat
+        140, 353 s in all; the runner recorded `go_test_ms=132550` for the lane (local evidence directory).
 
 ## 4. Repair evidence this change can produce (ruling g)
 

@@ -908,12 +908,32 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         `payloadregistry/attributes_test.go`); the path names the package either way. Where a package carries its
         comment in several files, removing it from one file alone does not fail: revive asks for one package
         comment per package, so the check protects the package, not each file.
-- [ ] 5.4 (D) `scripts/cover-check.sh` reads its targets from a list that this and later changes extend, adding
+- [x] 5.4 (D) `scripts/cover-check.sh` reads its targets from a list that this and later changes extend, adding
       `natsclient`, `message` and `payloadregistry`, which lie outside the `internal/harness` base the script
       hard-codes today (`cover-check.sh:14`), and `natsclient`'s statements come from the merged unit and integration
       profiles; `TestCoverCheckSensitivity` (`cover_test.go:37`), which today names only the three harness packages,
       gains a below-80% and a missing-from-profile case for a package outside `internal/harness`, written first and
       failing; `TestCoverCheckPrintsFailingTest` (`cover_test.go:134`, flake-defense 4.4, merged) still passes.
+      - Done in the commit that ticks this task. The list is the `targets` array at the top of
+        `scripts/cover-check.sh`, one `"<package directory> <profile>"` line each, profile `unit`, `integration`
+        or `merged`; a later port adds its line. It holds the three harness packages as before, `message unit`,
+        `payloadregistry unit` and `natsclient merged`. The no-argument mode's one `go test` run writes the unit
+        profile over every `unit` and `merged` target; a `merged` target is measured over both profiles at once,
+        a block counting once and covered if either run covered it. Messages name the package directory, with
+        `internal/harness/` dropped, so the harness lines read as before.
+      - Failing first, against the script before this change: `TestCoverCheckSensitivity` gained five subtests and
+        all five failed with `err=<nil>`, because the script measured none of the three packages: `message
+        below` (want "message 70.0%"), `payloadregistry missing` (want "payloadregistry: no statements"),
+        `natsclient below in both profiles` (want "natsclient 70.0%"), `natsclient missing from both profiles`
+        (want "natsclient: no statements"), and `natsclient merged from both profiles` (unit and integration
+        each cover 40%, their union 80%; want "natsclient 80.0%" and exit 0). The four harness subtests and
+        `TestCoverCheckPrintsFailingTest` passed then and pass now.
+      - Mutants of the script, each restored by checksum: `merged` measured from the unit profile only: detected
+        by the merged subtest; the `natsclient merged` line removed: detected by the three `natsclient`
+        subtests; `merged` targets left out of the unit run: survived the sensitivity test, which passes both
+        profiles in, so `TestCoverCheckUnitRunCoversUnitAndMergedTargets` was added (written after the script
+        change; a fake `go` records its arguments) and detects it. Not covered by a test: the refusal of an
+        unknown profile word in the list.
 
 ## 6. Docs
 

@@ -28,9 +28,11 @@ const lifecycleBound = 10 * time.Second
 
 // clientOwner adapts Client to the lifecycle suite (design D3). Unresolved lists what a started
 // Client retains: the nats.Conn, the JetStream handle, the subscriptions on that connection, the
-// internal consumer claims, each kind of background work still running (the health monitor, the
-// metrics poller, the claim-release goroutines and the two timer callbacks), and the two timers
-// while armed. Calls counts the external operations the client reports through its opHook seam:
+// internal consumer claims, each kind of client-owned work still running (the health monitor, the
+// metrics poller, the claim-release goroutines, the two timer callbacks, client-owned
+// subscriptions and the async publish error handler), the two timers while armed, message handler
+// invocations still running, and the connection event handlers Close is still waiting for. The
+// last two are visible after Close has cleared the connection. Calls counts the external operations the client reports through its opHook seam:
 // each dial and each drain.
 type clientOwner struct {
 	c     *Client
@@ -77,7 +79,13 @@ func (o *clientOwner) Observe() lifecycletest.Observation {
 	if c.metricsCancel != nil {
 		held = append(held, "metrics poller cancel")
 	}
+	if c.awaitingClosed != nil {
+		held = append(held, "connection event handlers")
+	}
 	c.mu.RUnlock()
+	if c.handlersRunning.Load() > 0 {
+		held = append(held, "message handler")
+	}
 	c.timersMu.Lock()
 	if c.lossTimer != nil {
 		held = append(held, "connection-loss timer armed")
@@ -472,13 +480,11 @@ func TestClientCloseStopsCircuitTimer(t *testing.T) {
 		require.NoError(t, c.Close(t.Context()))
 		require.Empty(t, owner.Observe().Unresolved)
 
-		// Once Close has begun, a circuit that opens arms no timer, and a timer that fired is
-		// refused before its test runs; both drops are logged.
-		for range c.circuitThreshold {
-			c.recordFailure()
-		}
-		require.Equal(t, StatusCircuitOpen, c.Status())
-		require.Empty(t, owner.Observe().Unresolved, "a circuit opened after Close armed its timer")
+		// Once Close has begun, arming the circuit timer is refused, and a timer that fired is
+		// refused before its test runs; both drops are logged. (Failures recorded after Close no
+		// longer open the circuit: TestClientFailuresAfterCloseLeaveStatusDisconnected.)
+		c.armCircuitTimer(time.Second)
+		require.Empty(t, owner.Observe().Unresolved, "a circuit timer armed after Close")
 		c.circuitTimerFired(func() bool { return false })
 		require.Empty(t, owner.Observe().Unresolved, "a circuit timer that fired after Close was counted")
 		require.Len(t, h.droppedWork("circuit-test timer"), 2, "the dropped arm and timer body were not both logged")
@@ -691,14 +697,15 @@ func TestClientCloseDuringConnectStartsNothing(t *testing.T) {
 // TestClientCloseJoinsClaimRelease: a port consumer's claim release waits for the consumer's
 // Closed channel, and Close joins it (design D3, the claim-release site). Close under an ended
 // context reports it while the release waits; once Closed fires, Close returns nil with the
-// claim released. A consumer started once Close has begun is stopped and refused, and its
+// claim released. A consumer started once Close has begun is refused before native Consume is
+// called (design D3, consumer setup that meets Close): its claim is released, and its claim
 // release is dropped, logged and not counted.
 func TestClientCloseJoinsClaimRelease(t *testing.T) {
 	h := newRecordingHandler("")
 	c, err := NewClient("nats://unused", WithLogger(slog.New(h)), WithMetrics(metric.NewMetricsRegistry()))
 	require.NoError(t, err)
 	owner := newClientOwner(c)
-	startConsumer := func(durable string) (*controlledNativeConsumeContext, func(), error) {
+	startConsumer := func(durable string) (*controlledNativeConsumer, func(), error) {
 		identity := internalConsumerIdentity{stream: "S_CLAIM", durable: durable}
 		claim, err := c.reserveInternalConsumer(identity, "ConsumeStreamWithConfig")
 		require.NoError(t, err)
@@ -720,7 +727,7 @@ func TestClientCloseJoinsClaimRelease(t *testing.T) {
 		_, err = c.startPortConsumer(t.Context(), t.Context(), "ConsumeStreamWithConfig",
 			PortConsumerContext{Component: "claim-test", Port: "input"}, cfg,
 			&guardedConsumer{Consumer: native}, identity, claim, func(context.Context, jetstream.Msg) {})
-		return handle, release, err
+		return native, release, err
 	}
 
 	_, releaseFirst, err := startConsumer("first")
@@ -739,10 +746,13 @@ func TestClientCloseJoinsClaimRelease(t *testing.T) {
 
 	late, _, err := startConsumer("late")
 	require.ErrorIs(t, err, nats.ErrConnectionClosed, "a consumer started once Close has begun")
-	require.True(t, late.stopped.Load(), "the refused consumer was not stopped")
+	select {
+	case <-late.consumeEntered:
+		t.Fatal("native Consume was called once Close had begun")
+	default:
+	}
 	require.Len(t, h.droppedWork("claim release"), 1, "the dropped claim release was not logged at debug level")
-	require.Equal(t, []string{"internal consumer claims"}, owner.Observe().Unresolved,
-		"only the late claim, which the caller's deferred release frees, may remain")
+	require.Empty(t, owner.Observe().Unresolved, "the refused consumer kept its claim")
 }
 
 // TestClientLifecycleSuite runs the lifecycle suite on Client (design D3) against an embedded

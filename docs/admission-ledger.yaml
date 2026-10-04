@@ -1168,38 +1168,37 @@
     the pin → :149-154) with no setter, and requestHandlerTimeout is set only from
     SEMSTREAMS_NATS_REQUEST_HANDLER_TIMEOUT (request.go:37-55, name unchanged, #69). Changed
     behavior, task 3.7c (design D3), each an adapt item: natsclient-nil-context-refused, Close(nil)
-    and Connect(nil) return an invalid error before any dial or close (client.go:541-543,
-    :703-705; the pin panicked at :685 and :495, and Connect(nil) dialled at :494 first);
+    and Connect(nil) return an invalid error before any dial or close (client.go:689-691,
+    :890-892; the pin panicked at :685 and :495, and Connect(nil) dialled at :494 first);
     natsclient-connect-refuses-second-start, a Connect on a connected client returns
-    errs.ErrAlreadyStarted before it dials and changes nothing (:544-549), and a concurrent Connect
+    errs.ErrAlreadyStarted before it dials and changes nothing (:692-700), and a concurrent Connect
     that lost to another, by failing, by having its context end, or by dialling successfully second,
     leaves the winner's status, failure count and circuit as they were and closes what it dialled
     (the pin
     overwrote the connection at :547 and started a second poller at :566);
     natsclient-close-joins-its-goroutines,
-    the six sites (the health monitor :1745, the metrics poller :682, the claim releases
-    stream.go:545 and :652, the connection-loss timer's body :1658 and the circuit timer's body
-    :440) start through one helper, startBackground (:171), which under mu refuses once Close has
+    the six sites (the health monitor :2132, the metrics poller :860, the claim releases of both consumer
+    APIs, now one site, owned_delivery.go:120, the connection-loss timer's body :2021 and the
+    circuit timer's body :582) start through one helper, startBackground (:214), which under mu refuses once Close has
     begun and otherwise adds to one WaitGroup before the goroutine starts; Connect admits the
     monitor and the poller through it. The first Close sets Status to Disconnected, stops the
     monitor, both timers and the poller, drains and closes the connection and clears the connection
     and the JetStream handle, bounded by its own context. Every Close returns nil only when
     everything the client owns has finished, and ctx.Err() when its own context ends first or had
-    already ended, without waiting for another Close's drain (:702-765; the pin's second Close
-    returned
-    nil at once, :583-585, and no Close joined anything). Work offered once Close has begun is
-    dropped, never run inline, and logged at debug level with its kind (:200-202): a goroutine
-    start, a timer body that fired, and arming either timer (:419-433, :1634-1650). Work offered
+    already ended, without waiting for another Close's drain (:889-1018; the pin's second Close
+    returned nil at once, :583-585, and no Close joined anything). Work offered once Close has begun is
+    dropped, never run inline, and logged at debug level with its kind (:272-274): a goroutine
+    start, a timer body that fired, and arming either timer (:561-575, :1984-2013). Work offered
     once Close has begun never starts; work admitted before it may still run, or enter its body,
     while Close waits for it. A Close called from inside a client callback returns ctx.Err() when
     its context ends and never nil (the pin returned at once). Also changed: Connect returns
     nats.ErrConnectionClosed when Close began after admission and refused the monitor or the
-    poller (:662-664; the pin started both and returned nil); a consumer setup refused before native
+    poller (:803-805; the pin started both and returned nil); a consumer setup refused before native
     delivery starts releases its claim and never calls native Consume; one that started native
     delivery is stopped, keeps its claim and metrics observation until its handler invocations have
     returned, and returns nats.ErrConnectionClosed with no handle (Codex F21); arming the circuit
     timer stops a pending one from an earlier
-    round, which an untracked timer could otherwise outlive Close (:426-428; the pin never kept or
+    round, which an untracked timer could otherwise outlive Close (:568-570; the pin never kept or
     stopped it, :289). natsclient-close-is-final (Codex F21, PR #48 comment 5980134911): Close
     returns nil only after every message handler invocation (Subscribe, SubscribeForRequests, the
     three Consume methods), the connection's event handlers (the installed connection's
@@ -1212,8 +1211,8 @@
     redelivery; AckNone and core: lost, as the buffered messages the native library discards at the
     same moment are, nats.go:3801-3803, :3817-3828), is logged at warn level and is counted as
     recordError("late_delivery_refused") when JetStream metrics are configured, a label that also
-    counts core subscriptions; accepting that AckNone loss is owner question 4, not yet answered
-    (Hold on task 3.7c2); Subscribe and SubscribeForRequests return nats.ErrConnectionClosed once
+    counts core subscriptions; the owner accepted that AckNone loss (question 4,
+    #9 comment 5980769459); Subscribe and SubscribeForRequests return nats.ErrConnectionClosed once
     Close has begun; a Connect that returns an error has no handler of its dialled connection still
     running. natsclient-close-honours-each-context (Codex F22): a Close or Connect never waits on
     another caller's drain to observe its own context. natsclient-status-ownership (Codex F23): a
@@ -1223,7 +1222,8 @@
     (the pin dialled). Each changed behaviour above is an adapt item with its test (design D3; task
     3.7c2): (1) Subscribe and SubscribeForRequests after Close has begun return
     nats.ErrConnectionClosed, where the pin returned ErrNotConnected after Close or subscribed on
-    the draining connection (the closing and closed rows of TestClientLifecycleOperationTable); (2)
+    the draining connection (the closing and closed rows of TestClientLifecycleOperationTable;
+    the carried TestContextAwareMethods, client_test.go:386-389, now asserts it); (2)
     consumer setup is refused before native Consume once Close has begun
     (TestClientLifecycleOperationTable); setup that already started delivery keeps its claim until
     its handlers return (TestClientRefusedConsumerKeepsOwnershipUntilHandlersReturn,
@@ -1253,7 +1253,7 @@
     nothing and logs at warn (TestClientLifecycleOperationTable,
     TestClientCloseEndsSubscriptionOnReplacedConnection). jetstream.New's error, dropped at the pin
     (:525), is returned by Connect
-    with the dialled connection closed (:599-604); no failing-first test exists, because nats.go
+    with the dialled connection closed (:747-756); no failing-first test exists, because nats.go
     v1.54.0 jetstream.New fails only when an option does and WithPublishAsyncErrHandler never
     does (jetstream/jetstream.go:471-492, jetstream_options.go:41-46)
   dependencies_and_side_effects: >-

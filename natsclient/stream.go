@@ -420,9 +420,14 @@ func streamNotVisible(ctx context.Context, absent error) error {
 }
 
 // ConsumeStreamWithConfig creates a port-backed JetStream consumer with full
-// configuration. The caller owns the exact returned native handle and must
-// Drain it and await Closed before canceling callback authority. The handler
-// receives the raw jetstream.Msg and must settle it with Ack, Nak, or Term.
+// configuration. The caller owns the exact returned native handle and should
+// Drain it when it is done with it. Closed can report the end early once
+// delivery was stopped without a drain or the connection was force-closed
+// (nats.go jetstream/pull.go:822-837); a nil Client.Close is the proof that no
+// handler invocation is still running. Client.Close stops and joins this
+// consumer if the caller has not. Once Close has begun this method returns
+// nats.ErrConnectionClosed. The handler receives the raw jetstream.Msg and must
+// settle it with Ack, Nak, or Term.
 func (c *Client) ConsumeStreamWithConfig(
 	ctx context.Context,
 	owner PortConsumerContext,
@@ -436,8 +441,12 @@ func (c *Client) ConsumeStreamWithConfig(
 
 // ConsumeInternalStreamWithConfig consumes a stream for framework-internal users
 // that make no JetStreamPort configuration claim. The caller owns the exact
-// returned native handle and must Drain it and await Closed before canceling
-// callback authority. Client.Close does not manage internal consumer children.
+// returned native handle and should Drain it when it is done with it. Closed can
+// report the end early once delivery was stopped without a drain or the
+// connection was force-closed (nats.go jetstream/pull.go:822-837); a nil
+// Client.Close is the proof that no handler invocation is still running.
+// Client.Close stops and joins this consumer if the caller has not. Once Close
+// has begun this method returns nats.ErrConnectionClosed.
 func (c *Client) ConsumeInternalStreamWithConfig(
 	ctx context.Context,
 	cfg StreamConsumerConfig,
@@ -454,6 +463,9 @@ func (c *Client) ConsumeInternalStreamWithConfig(
 	if cfg.StreamName == "" {
 		return nil, errs.WrapInvalid(errors.New("stream name is required"),
 			"Client", "ConsumeInternalStreamWithConfig", "missing stream name")
+	}
+	if c.isClosing() {
+		return nil, errs.Wrap(nats.ErrConnectionClosed, "Client", "ConsumeInternalStreamWithConfig", "client closed")
 	}
 	if c.Status() == StatusCircuitOpen {
 		return nil, ErrCircuitOpen
@@ -521,42 +533,44 @@ func (c *Client) ConsumeInternalStreamWithConfig(
 			c.jsMetrics.forgetConsumer(observed.stream, observed.durable)
 		}
 	}
-	consumeCtx, err := guarded.Consume(func(msg jetstream.Msg) {
-		msgCtx := ctx
-		if tc := ExtractTraceFromJetStream(msg.Headers()); tc != nil {
-			msgCtx = ContextWithTrace(ctx, tc)
-		}
-		messageTimeout := cfg.MessageTimeout
-		if messageTimeout <= 0 {
-			messageTimeout = 30 * time.Second
-		}
-		msgCtx, cancel := messageHandlerContext(msgCtx, messageTimeout, cfg.DisableMessageTimeout)
-		defer cancel()
-		c.safeHandleMessage(msgCtx, msg, handler)
-	})
-	if err != nil {
-		forgetObservation()
-		c.recordFailure()
-		return nil, errs.WrapTransient(err, "Client", "ConsumeInternalStreamWithConfig",
-			"failed to start consuming from stream "+cfg.StreamName)
-	}
-
-	closed := consumeCtx.Closed()
-	if !c.startBackground(workClaimRelease, func() {
-		<-closed
+	// The consumer becomes client-owned work before native Consume can deliver,
+	// so Close joins every handler invocation (design D3). Refused once Close
+	// has begun: native Consume is never called, and the deferred release frees
+	// the claim.
+	d := newOwnedDelivery(c, consumerAttrs(observed.stream, observed.durable, consumerCfg.AckPolicy)...)
+	owned, ok := c.ownConsumer(d, func(bool) {
 		forgetObservation()
 		releaseClaim()
-	}) {
-		// Close has begun: the consumer is stopped and its claim released here,
-		// and the caller is told it did not start.
-		consumeCtx.Stop()
+	})
+	if !ok {
 		forgetObservation()
 		return nil, errs.Wrap(nats.ErrConnectionClosed, "Client", "ConsumeInternalStreamWithConfig",
 			"client closed while starting consumer")
 	}
+	// From here the ownership goroutine releases the claim.
 	committed = true
-	c.resetCircuit()
-	return consumeCtx, nil
+	consumeCtx, err := guarded.Consume(func(msg jetstream.Msg) {
+		d.run(func() string { return msg.Subject() }, func() {
+			msgCtx := ctx
+			if tc := ExtractTraceFromJetStream(msg.Headers()); tc != nil {
+				msgCtx = ContextWithTrace(ctx, tc)
+			}
+			messageTimeout := cfg.MessageTimeout
+			if messageTimeout <= 0 {
+				messageTimeout = 30 * time.Second
+			}
+			msgCtx, cancel := messageHandlerContext(msgCtx, messageTimeout, cfg.DisableMessageTimeout)
+			defer cancel()
+			c.safeHandleMessage(msgCtx, msg, handler)
+		})
+	})
+	if err != nil {
+		owned.failed()
+		c.recordFailure()
+		return nil, errs.WrapTransient(err, "Client", "ConsumeInternalStreamWithConfig",
+			"failed to start consuming from stream "+cfg.StreamName)
+	}
+	return c.commitConsumer(ctx, "ConsumeInternalStreamWithConfig", owned, consumeCtx)
 }
 
 type internalConsumerIdentity struct {
@@ -588,6 +602,9 @@ func (c *Client) reserveInternalConsumer(
 	return claim, nil
 }
 
+// startPortConsumer owns claim from entry: it releases it on every refusal, and
+// once native Consume may deliver, the consumer's ownership goroutine releases
+// it after the last handler invocation has returned.
 func (c *Client) startPortConsumer(
 	setupCtx context.Context,
 	handlerCtx context.Context,
@@ -599,8 +616,10 @@ func (c *Client) startPortConsumer(
 	claim *internalConsumerClaim,
 	handler func(context.Context, jetstream.Msg),
 ) (jetstream.ConsumeContext, error) {
+	releaseClaim := func() { c.releaseInternalConsumer(identity, claim) }
 	policyKey, err := c.observePortConsumerPolicy(setupCtx, owner, cfg, consumer)
 	if err != nil {
+		releaseClaim()
 		return nil, err
 	}
 	forgetPolicy := func() {
@@ -610,11 +629,13 @@ func (c *Client) startPortConsumer(
 	}
 	if err := setupCtx.Err(); err != nil {
 		forgetPolicy()
+		releaseClaim()
 		return nil, errs.WrapTransient(err, "Client", operation,
 			"setup context ended before starting consumer")
 	}
 	if err := handlerCtx.Err(); err != nil {
 		forgetPolicy()
+		releaseClaim()
 		return nil, errs.WrapInvalid(err, "Client", operation,
 			"handler context ended before starting consumer")
 	}
@@ -623,52 +644,57 @@ func (c *Client) startPortConsumer(
 	if messageTimeout <= 0 {
 		messageTimeout = 30 * time.Second
 	}
-	consumeCtx, err := consumer.Consume(func(msg jetstream.Msg) {
-		msgCtx := handlerCtx
-		if tc := ExtractTraceFromJetStream(msg.Headers()); tc != nil {
-			msgCtx = ContextWithTrace(handlerCtx, tc)
+	// The consumer becomes client-owned work before native Consume can deliver,
+	// so Close joins every handler invocation (design D3). Refused once Close
+	// has begun: native Consume is never called.
+	d := newOwnedDelivery(c, consumerAttrs(identity.stream, identity.durable, c.buildConsumerConfig(cfg).AckPolicy)...)
+	owned, ok := c.ownConsumer(d, func(started bool) {
+		if started && c.jsMetrics != nil {
+			c.jsMetrics.forgetConsumer(identity.stream, identity.durable)
 		}
-		msgCtx, cancel := messageHandlerContext(msgCtx, messageTimeout, cfg.DisableMessageTimeout)
-		defer cancel()
-		c.safeHandleMessage(msgCtx, msg, handler)
+		forgetPolicy()
+		releaseClaim()
+	})
+	if !ok {
+		forgetPolicy()
+		releaseClaim()
+		return nil, errs.Wrap(nats.ErrConnectionClosed, "Client", operation,
+			"client closed while starting consumer")
+	}
+	consumeCtx, err := consumer.Consume(func(msg jetstream.Msg) {
+		d.run(func() string { return msg.Subject() }, func() {
+			msgCtx := handlerCtx
+			if tc := ExtractTraceFromJetStream(msg.Headers()); tc != nil {
+				msgCtx = ContextWithTrace(handlerCtx, tc)
+			}
+			msgCtx, cancel := messageHandlerContext(msgCtx, messageTimeout, cfg.DisableMessageTimeout)
+			defer cancel()
+			c.safeHandleMessage(msgCtx, msg, handler)
+		})
 	})
 	if err != nil {
-		forgetPolicy()
+		owned.failed()
 		c.recordFailure()
 		return nil, errs.WrapTransient(err, "Client", operation,
 			"failed to start consuming from stream "+cfg.StreamName)
 	}
 
+	// Tracked before the handle is handed over, so the ownership goroutine's
+	// forget cannot run first.
 	if c.jsMetrics != nil {
 		c.jsMetrics.trackConsumer(identity.stream, identity.durable, consumer)
 	}
-	forgetObservation := func() {
-		if c.jsMetrics != nil {
-			c.jsMetrics.forgetConsumer(identity.stream, identity.durable)
-			c.jsMetrics.forgetPolicy(policyKey)
-		}
-	}
-	closed := consumeCtx.Closed()
-	if !c.startBackground(workClaimRelease, func() {
-		<-closed
-		forgetObservation()
-		c.releaseInternalConsumer(identity, claim)
-	}) {
-		// Close has begun: the consumer is stopped, and the caller's deferred
-		// release frees the claim when this returns an error.
-		consumeCtx.Stop()
-		forgetObservation()
-		return nil, errs.Wrap(nats.ErrConnectionClosed, "Client", operation,
-			"client closed while starting consumer")
-	}
-	c.resetCircuit()
-	return consumeCtx, nil
+	return c.commitConsumer(setupCtx, operation, owned, consumeCtx)
 }
 
 // ConsumeStreamWithConfigContexts creates a port-backed JetStream consumer with
 // separate setup and delivered-message authority. The caller owns the exact
-// returned native handle and must Drain it and await Closed before canceling
-// callback authority.
+// returned native handle and should Drain it when it is done with it. Closed can
+// report the end early once delivery was stopped without a drain or the
+// connection was force-closed (nats.go jetstream/pull.go:822-837); a nil
+// Client.Close is the proof that no handler invocation is still running.
+// Client.Close stops and joins this consumer if the caller has not. Once Close
+// has begun this method returns nats.ErrConnectionClosed.
 func (c *Client) ConsumeStreamWithConfigContexts(
 	setupCtx context.Context,
 	handlerCtx context.Context,
@@ -708,6 +734,9 @@ func (c *Client) consumePortStreamWithConfigContexts(
 		return nil, errs.WrapInvalid(errors.New("stream name is required"),
 			"Client", operation, "missing stream name")
 	}
+	if c.isClosing() {
+		return nil, errs.Wrap(nats.ErrConnectionClosed, "Client", operation, "client closed")
+	}
 	if c.Status() == StatusCircuitOpen {
 		return nil, ErrCircuitOpen
 	}
@@ -736,26 +765,17 @@ func (c *Client) consumePortStreamWithConfigContexts(
 	if err != nil {
 		return nil, err
 	}
-	committed := false
-	defer func() {
-		if !committed {
-			c.releaseInternalConsumer(identity, claim)
-		}
-	}()
 	consumer, err := stream.CreateOrUpdateConsumer(setupCtx, c.buildConsumerConfig(cfg))
 	if err != nil {
+		c.releaseInternalConsumer(identity, claim)
 		c.recordFailure()
 		return nil, ClassifyConsumerPolicyError(err, operation)
 	}
-	handle, err := c.startPortConsumer(
+	// startPortConsumer owns the claim from here.
+	return c.startPortConsumer(
 		setupCtx, handlerCtx, operation, owner, cfg,
 		&guardedConsumer{Consumer: consumer}, identity, claim, handler,
 	)
-	if err != nil {
-		return nil, err
-	}
-	committed = true
-	return handle, nil
 }
 
 func (c *Client) releaseInternalConsumer(identity internalConsumerIdentity, claim *internalConsumerClaim) {

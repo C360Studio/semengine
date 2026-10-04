@@ -135,23 +135,60 @@ type Client struct {
 	healthInterval time.Duration
 	healthDone     chan struct{} // Signal to stop health monitoring goroutine
 
-	// Synchronization
-	mu      sync.RWMutex
-	closeMu sync.Mutex // serializes Close's setup with Connect's admission
+	// Synchronization. Every status write holds mu, so a writer's ownership
+	// check and its write are one step against Close and against a Connect
+	// installing its connection (design D3, natsclient-status-ownership).
+	mu sync.RWMutex
 
-	// Lifecycle (design D3). closing is set once, by the first Close, under mu.
-	// startBackground refuses work once it is set and otherwise adds to
-	// background under the same lock, so no Add follows the Wait that the
-	// first Close's joiner runs; joined is closed when that Wait returns.
-	// running counts the admitted work per kind, for the lifecycle adapter.
-	closing    bool
-	background sync.WaitGroup
-	running    map[string]int
-	joined     chan struct{}
+	// Lifecycle (design D3). closing is set once, by the first Close, under mu;
+	// from then on only Close writes the status. owned counts admitted
+	// client-owned work under the same lock, so nothing is admitted once the
+	// join has seen it reach zero; running counts it per kind, for the
+	// lifecycle adapter. joined is made by the first Close and closed by its
+	// joiner once the cleanup has finished, the drained connection's closed
+	// handler has returned and owned is zero; joinDone records that, and
+	// idleWait is how the joiner waits for owned to reach zero.
+	closing  bool
+	owned    int
+	running  map[string]int
+	joined   chan struct{}
+	joinDone bool
+	idleWait chan struct{}
+
+	// draining is the connection the first Close drains; drainTimedOut
+	// records that nats.go reported nats.ErrDrainTimeout for it. dialled is
+	// the connection connectWith installed, the only one that carries the
+	// client's event handlers. awaitingClosed is set while the joiner waits
+	// for that connection's closed handler, for the lifecycle adapter.
+	draining       *nats.Conn
+	drainTimedOut  bool
+	dialled        *nats.Conn
+	awaitingClosed *nats.Conn
+
+	// closingSignal is closed when Close begins, so each client-owned core
+	// subscription's watcher can end one left on a connection SetConnection
+	// replaced. The client keeps no catalog of its subscriptions.
+	closingSignal chan struct{}
+
+	// handlersRunning counts message handler invocations in flight, for the
+	// lifecycle adapter.
+	handlersRunning atomic.Int64
+
+	// closedSignals holds, per connection, a channel handleClosed closes once
+	// it has run: the end of that connection's event handlers (nats.go runs
+	// ClosedHandler last, nats.go:6236-6252, :3637-3660).
+	closedSignalsMu sync.Mutex
+	closedSignals   map[*nats.Conn]chan struct{}
 
 	// opHook, when set, is told of each external operation the client
 	// performs ("dial", "drain"); the lifecycle adapter counts them.
 	opHook func(op string)
+
+	// commitHook, when set, is called at a status commit, with its site:
+	// "connect failure" and "event handler" inside the commit's critical
+	// section, "health monitor" between the health check and the commit.
+	// Tests hold it to force an ordering.
+	commitHook func(site string)
 }
 
 // Kinds of background work, the six sites of design D3. Each starts through
@@ -162,11 +199,17 @@ const (
 	workClaimRelease   = "claim release"
 	workConnectionLost = "connection-loss timer"
 	workCircuitTest    = "circuit-test timer"
+
+	// Client-owned work that is not a goroutine of the client's: a core
+	// subscription until its delivery has ended, and a running invocation of
+	// the async publish error handler.
+	workSubscription    = "subscription"
+	workAsyncPublishErr = "async publish error handler"
 )
 
 // startBackground is the one way the client starts work that outlives the call
-// that started it. Under mu it refuses once Close has begun, and otherwise adds
-// to the background group before the goroutine starts. Refused work is dropped,
+// that started it. Under mu it refuses once Close has begun, and otherwise counts
+// the work as client-owned before the goroutine starts. Refused work is dropped,
 // never run inline: the drop is logged at debug level and false is returned.
 func (m *Client) startBackground(kind string, fn func()) bool {
 	m.mu.Lock()
@@ -175,28 +218,57 @@ func (m *Client) startBackground(kind string, fn func()) bool {
 		m.logDropped(kind)
 		return false
 	}
-	m.background.Add(1)
-	if m.running == nil {
-		m.running = make(map[string]int)
-	}
-	m.running[kind]++
+	finish := m.admitLocked(kind)
 	m.mu.Unlock()
 	go func() {
-		defer func() {
-			m.mu.Lock()
-			if m.running[kind]--; m.running[kind] == 0 {
-				delete(m.running, kind)
-			}
-			m.mu.Unlock()
-			m.background.Done()
-		}()
+		defer finish()
 		fn()
 	}()
 	return true
 }
 
-// logDropped records work refused because Close has begun. Continuing is safe:
-// no callback runs once Close has begun, and Close joins whatever was admitted.
+// admitLocked counts one unit of client-owned work of kind; mu must be held. The
+// returned finish, called once the work has ended, uncounts it and wakes the
+// joiner when nothing owned is left.
+func (m *Client) admitLocked(kind string) func() {
+	m.owned++
+	if m.running == nil {
+		m.running = make(map[string]int)
+	}
+	m.running[kind]++
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			m.mu.Lock()
+			if m.running[kind]--; m.running[kind] == 0 {
+				delete(m.running, kind)
+			}
+			m.owned--
+			if m.owned == 0 && m.idleWait != nil {
+				close(m.idleWait)
+				m.idleWait = nil
+			}
+			m.mu.Unlock()
+		})
+	}
+}
+
+// admitAlways counts work the client must never refuse, such as the async
+// publish error handler (design D3): before the join has completed it is joined
+// like any owned work; after that there is nothing left to join it to, and it
+// runs uncounted.
+func (m *Client) admitAlways(kind string) func() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.joinDone {
+		return func() {}
+	}
+	return m.admitLocked(kind)
+}
+
+// logDropped records work refused because Close has begun. Refusing is safe:
+// Close joins all work admitted before it began, and work offered after that
+// never starts.
 func (m *Client) logDropped(kind string) {
 	m.logger.Debug("NATS client closing; background work dropped", slog.String("work", kind))
 }
@@ -212,6 +284,44 @@ func (m *Client) recordOp(op string) {
 	if m.opHook != nil {
 		m.opHook(op)
 	}
+}
+
+func (m *Client) commitSeam(site string) {
+	if m.commitHook != nil {
+		m.commitHook(site)
+	}
+}
+
+// closedSignal returns the channel handleClosed closes once it has run for nc.
+func (m *Client) closedSignal(nc *nats.Conn) chan struct{} {
+	m.closedSignalsMu.Lock()
+	defer m.closedSignalsMu.Unlock()
+	if m.closedSignals == nil {
+		m.closedSignals = make(map[*nats.Conn]chan struct{})
+	}
+	ch, ok := m.closedSignals[nc]
+	if !ok {
+		ch = make(chan struct{})
+		m.closedSignals[nc] = ch
+	}
+	return ch
+}
+
+// awaitClosedHandler waits until handleClosed has run for nc. It takes no
+// context: the only callbacks on nc's dispatcher are the client's own event
+// handlers, which wait on nothing outside the client (design D3, background-work
+// shape 2).
+func (m *Client) awaitClosedHandler(nc *nats.Conn) {
+	<-m.closedSignal(nc)
+	m.closedSignalsMu.Lock()
+	delete(m.closedSignals, nc)
+	m.closedSignalsMu.Unlock()
+}
+
+// carriesClientHandlers reports whether conn's closed handler can be awaited: a
+// connection dialled with options that dropped the client's handlers has none.
+func carriesClientHandlers(conn *nats.Conn) bool {
+	return conn != nil && conn.ClosedHandler() != nil
 }
 
 // NewClient creates a new NATS client with optional configuration.
@@ -286,17 +396,24 @@ func (m *Client) MaxPayload() (int64, error) {
 	return m.conn.MaxPayload(), nil
 }
 
-// SetConnection sets the NATS connection (for testing)
+// SetConnection sets the NATS connection (for testing). The connection it
+// replaces belongs to the caller: Close neither closes it nor waits for its
+// event handlers. Once Close has begun it changes nothing and logs at warn level.
 func (m *Client) SetConnection(conn *nats.Conn) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.closing {
+		m.logger.Warn("NATS client closing; SetConnection ignored")
+		return
+	}
 	m.conn = conn
 	if conn != nil && conn.IsConnected() {
 		m.setStatus(StatusConnected)
 	}
 }
 
-// setStatus updates the connection status
+// setStatus stores the connection status. Production writers hold mu and have
+// checked that they own the status (design D3, natsclient-status-ownership).
 func (m *Client) setStatus(status ConnectionStatus) {
 	m.status.Store(status)
 }
@@ -316,8 +433,26 @@ func (m *Client) Backoff() time.Duration {
 	return m.backoff.Load().(time.Duration)
 }
 
-// recordFailure records a connection failure and manages circuit breaker
+// recordFailure records a connection failure and manages circuit breaker. Once
+// Close has begun it records nothing: only Close changes the status then (design
+// D3, natsclient-status-ownership).
 func (m *Client) recordFailure() {
+	m.mu.Lock()
+	if m.closing {
+		m.mu.Unlock()
+		return
+	}
+	arm, backoff := m.recordFailureLocked()
+	m.mu.Unlock()
+	if arm {
+		m.armCircuitTimer(backoff)
+	}
+}
+
+// recordFailureLocked counts one failure; mu must be held. It reports whether the
+// circuit opened, and the backoff its test timer must be armed with once mu is
+// released.
+func (m *Client) recordFailureLocked() (arm bool, backoff time.Duration) {
 	// Track total failures for metrics
 	totalFailures := m.failures.Add(1)
 	m.lastFailure.Store(time.Now())
@@ -333,30 +468,8 @@ func (m *Client) recordFailure() {
 
 		// We need to open or update the circuit breaker
 		if currentStatus != StatusCircuitOpen {
-			// Try to transition to open state (only one goroutine will succeed)
-			if m.status.CompareAndSwap(currentStatus, StatusCircuitOpen) {
-				// We successfully opened the circuit
-				currentBackoff := m.backoff.Load().(time.Duration)
-				newBackoff := currentBackoff * 2
-				if newBackoff > m.maxBackoff {
-					newBackoff = m.maxBackoff
-				}
-				m.backoff.Store(newBackoff)
-
-				m.logger.Info("Circuit breaker opened",
-					slog.Int64("circuit_failures", int64(circuitFailures)),
-					slog.Duration("backoff", currentBackoff),
-				)
-
-				// Reset circuit failures for next round
-				m.circuitFailures.Store(0)
-
-				// Schedule circuit test after backoff
-				m.armCircuitTimer(currentBackoff)
-			}
-		} else {
-			// Circuit already open - may need to increase backoff for consecutive failures
-			// This handles the case where failures continue while circuit is open
+			// mu is held, so this is the only status writer.
+			m.setStatus(StatusCircuitOpen)
 			currentBackoff := m.backoff.Load().(time.Duration)
 			newBackoff := currentBackoff * 2
 			if newBackoff > m.maxBackoff {
@@ -364,12 +477,32 @@ func (m *Client) recordFailure() {
 			}
 			m.backoff.Store(newBackoff)
 
-			m.logger.Info("Circuit breaker still open, increased backoff", slog.Duration("backoff", newBackoff))
+			m.logger.Info("Circuit breaker opened",
+				slog.Int64("circuit_failures", int64(circuitFailures)),
+				slog.Duration("backoff", currentBackoff),
+			)
 
 			// Reset circuit failures for next round
 			m.circuitFailures.Store(0)
+
+			// The caller schedules the circuit test after backoff.
+			return true, currentBackoff
 		}
+		// Circuit already open - may need to increase backoff for consecutive failures
+		// This handles the case where failures continue while circuit is open
+		currentBackoff := m.backoff.Load().(time.Duration)
+		newBackoff := currentBackoff * 2
+		if newBackoff > m.maxBackoff {
+			newBackoff = m.maxBackoff
+		}
+		m.backoff.Store(newBackoff)
+
+		m.logger.Info("Circuit breaker still open, increased backoff", slog.Duration("backoff", newBackoff))
+
+		// Reset circuit failures for next round
+		m.circuitFailures.Store(0)
 	}
+	return false, 0
 }
 
 // recordStreamPublishFailure accounts a failed JetStream publish against the
@@ -399,15 +532,23 @@ func isCircuitNeutralStreamCapacityError(err error) bool {
 	}
 }
 
-// resetCircuit resets the circuit breaker state
+// resetCircuit resets the circuit breaker state. Once Close has begun it leaves
+// the status alone.
 func (m *Client) resetCircuit() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.resetCircuitLocked()
+}
+
+// resetCircuitLocked resets the circuit breaker state; mu must be held.
+func (m *Client) resetCircuitLocked() {
 	m.failures.Store(0)
 	m.circuitFailures.Store(0)
 	m.backoff.Store(time.Second)
 	m.lastFailure.Store(time.Time{})
 
 	// Don't change status if we're connected
-	if m.Status() == StatusCircuitOpen {
+	if !m.closing && m.Status() == StatusCircuitOpen {
 		m.setStatus(StatusDisconnected)
 	}
 }
@@ -453,7 +594,9 @@ func (m *Client) circuitTimerFired(current func() bool) {
 func (m *Client) testCircuit() {
 	m.logger.Debug("Testing circuit breaker - attempting to close circuit")
 
-	if m.Status() == StatusCircuitOpen {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if !m.closing && m.Status() == StatusCircuitOpen {
 		m.logger.Debug("Circuit breaker test: moving from open to disconnected")
 		m.setStatus(StatusDisconnected)
 	}
@@ -524,9 +667,13 @@ func (m *Client) GetStatus() *Status {
 }
 
 // Connect establishes connection to NATS server. It refuses a nil context and a
-// client that is already connected, with an error and before any dial. Connect
+// client that is already connected, with an error and before any dial. Once
+// Close has begun it returns nats.ErrConnectionClosed before dialling. Connect
 // returns an error when Close has begun before it finished; the connection it
-// dialled is then closed and nothing it would have started runs.
+// dialled is then closed and nothing it would have started runs. A Connect that
+// returns an error has no event handler of the connection it dialled still
+// running, and changes neither the status, the failure count nor the circuit of
+// a connection another Connect installed (design D3).
 func (m *Client) Connect(ctx context.Context) error {
 	return m.connectWith(ctx, nats.Connect)
 }
@@ -542,8 +689,11 @@ func (m *Client) connectWith(
 		return errs.WrapInvalid(stderrors.New("nil context"), "Client", "Connect", "missing context")
 	}
 	m.mu.RLock()
-	started := m.conn != nil
+	started, closing := m.conn != nil, m.closing
 	m.mu.RUnlock()
+	if closing {
+		return errs.Wrap(nats.ErrConnectionClosed, "Client", "Connect", "client closed")
+	}
 	if started {
 		return errs.WrapInvalid(errs.ErrAlreadyStarted, "Client", "Connect", "already connected")
 	}
@@ -557,7 +707,17 @@ func (m *Client) connectWith(
 	// Reported before this call first writes the status, so a test can hold
 	// a Connect between its started check and its dial.
 	m.recordOp("dial")
-	m.setStatus(StatusConnecting)
+	// Connecting is a status commit like any other: written only while no
+	// connection is installed and Close has not begun.
+	m.mu.Lock()
+	if m.closing {
+		m.mu.Unlock()
+		return errs.Wrap(nats.ErrConnectionClosed, "Client", "Connect", "client closed")
+	}
+	if m.conn == nil {
+		m.setStatus(StatusConnecting)
+	}
+	m.mu.Unlock()
 	m.logger.Info("Connecting to NATS", slog.String("urls", m.urls))
 
 	// Build connection options
@@ -565,28 +725,15 @@ func (m *Client) connectWith(
 
 	conn, err := dial(m.urls, opts...)
 	if ctxErr := ctx.Err(); ctxErr != nil {
-		if conn != nil {
-			conn.Close()
-		}
-		m.recordFailure()
-		if m.Status() != StatusCircuitOpen {
-			m.setStatus(StatusDisconnected)
-		}
+		m.discardCandidate(conn)
+		m.connectFailed()
 		return errs.WrapTransient(ctxErr, "Client", "Connect", "connection cancelled")
 	}
 	if err != nil {
-		m.recordFailure()
-
-		// Only set to disconnected if circuit didn't open
-		if m.Status() != StatusCircuitOpen {
-			m.setStatus(StatusDisconnected)
-		}
-
-		// Check if circuit opened after this failure
-		if m.Status() == StatusCircuitOpen {
+		m.discardCandidate(conn)
+		if m.connectFailed() {
 			return ErrCircuitOpen
 		}
-
 		return errs.WrapTransient(err, "Client", "Connect", "establish connection")
 	}
 
@@ -598,51 +745,44 @@ func (m *Client) connectWith(
 	// option never does; the error is still returned, never dropped.
 	js, err := jetstream.New(conn, jetstream.WithPublishAsyncErrHandler(m.asyncPublishErrHandler))
 	if err != nil {
-		conn.Close()
-		m.setStatus(StatusDisconnected)
+		m.discardCandidate(conn)
+		m.mu.Lock()
+		if !m.closing && m.conn == nil {
+			m.setStatus(StatusDisconnected)
+		}
+		m.mu.Unlock()
 		return errs.Wrap(err, "Client", "Connect", "initialize JetStream")
 	}
 
-	// Close owns terminal admission. Once Close has begun, no native
-	// connection produced by an in-flight dial may become Client state.
-	m.closeMu.Lock()
+	// Admission, under mu: once Close has begun, or another Connect has
+	// installed its connection, no connection produced by this dial may become
+	// Client state.
+	m.mu.Lock()
 	if ctxErr := ctx.Err(); ctxErr != nil {
-		conn.Close()
-		m.recordFailure()
-		if m.Status() != StatusCircuitOpen {
-			m.setStatus(StatusDisconnected)
-		}
-		m.closeMu.Unlock()
+		m.mu.Unlock()
+		m.discardCandidate(conn)
+		m.connectFailed()
 		return errs.WrapTransient(ctxErr, "Client", "Connect", "connection cancelled")
 	}
-
-	m.mu.Lock()
 	switch {
 	case m.closing:
 		m.mu.Unlock()
-		conn.Close()
-		m.setStatus(StatusDisconnected)
-		m.closeMu.Unlock()
+		m.discardCandidate(conn)
 		return errs.Wrap(nats.ErrConnectionClosed, "Client", "Connect", "admit connection")
 	case m.conn != nil:
-		// A concurrent Connect won admission; this one leaves its connection in
-		// place. The Connecting this call wrote may have overwritten the
-		// winner's status, so it is restored from the winner's connection; a
-		// status anyone else wrote since is left alone. The rejected
-		// candidate's handlers are ignored (isCurrentConn).
-		m.status.CompareAndSwap(StatusConnecting, connStatus(m.conn))
+		// A concurrent Connect won admission; its status, failure count and
+		// circuit stand, and this candidate's handlers are ignored
+		// (ownsStatusLocked) and joined before this call returns.
 		m.mu.Unlock()
-		conn.Close()
-		m.closeMu.Unlock()
+		m.discardCandidate(conn)
 		return errs.WrapInvalid(errs.ErrAlreadyStarted, "Client", "Connect", "already connected")
 	}
 	m.conn = conn
 	m.js = js
-	m.mu.Unlock()
-
+	m.dialled = conn
 	m.setStatus(StatusConnected)
-	m.resetCircuit()
-	m.closeMu.Unlock()
+	m.resetCircuitLocked()
+	m.mu.Unlock()
 
 	m.logger.Info("Successfully connected to NATS", slog.String("urls", m.urls))
 
@@ -663,6 +803,43 @@ func (m *Client) connectWith(
 		return errs.Wrap(nats.ErrConnectionClosed, "Client", "Connect", "closed while starting")
 	}
 	return nil
+}
+
+// connectFailed records a failed Connect as at the pin, failure and status
+// together, but only while no connection is installed and Close has not begun:
+// a Connect that lost to an installed connection, or that Close overtook, owns
+// no status. It reports whether the circuit is open afterwards.
+func (m *Client) connectFailed() bool {
+	m.mu.Lock()
+	if m.closing || m.conn != nil {
+		m.mu.Unlock()
+		return false
+	}
+	m.commitSeam("connect failure")
+	arm, backoff := m.recordFailureLocked()
+	if m.Status() != StatusCircuitOpen {
+		m.setStatus(StatusDisconnected)
+	}
+	open := m.Status() == StatusCircuitOpen
+	m.mu.Unlock()
+	if arm {
+		m.armCircuitTimer(backoff)
+	}
+	return open
+}
+
+// discardCandidate closes a connection this Connect dialled and did not
+// install, and returns once that connection's closed handler has returned: work
+// a call starts belongs to that call until it returns (design D3).
+func (m *Client) discardCandidate(conn *nats.Conn) {
+	if conn == nil {
+		return
+	}
+	await := carriesClientHandlers(conn)
+	conn.Close()
+	if await {
+		m.awaitClosedHandler(conn)
+	}
 }
 
 // startMetricsPoller starts the JetStream metrics poller. It reports false when
@@ -689,67 +866,57 @@ func (m *Client) startMetricsPoller() bool {
 	return false
 }
 
-// Close drains and closes the NATS connection, stops the timers, and waits for
-// every goroutine the client started: the health monitor, the metrics poller,
-// the claim releases and the timer callbacks. It returns nil only once all of
-// them have returned. When ctx ends first, or has already ended, Close returns
-// ctx.Err() and the join stays pending; a later Close waits on the same join.
-// No callback runs once Close has begun: work offered after that is dropped and
-// logged at debug level. A Close called from inside one of the client's
-// callbacks waits on a join that includes its own goroutine, so it returns
-// ctx.Err() when its context ends and never returns nil. Close refuses a nil
-// context with an error and touches nothing.
+// Close drains and closes the NATS connection and waits until everything the
+// client owns has finished: its background goroutines and timer callbacks, every
+// running invocation of a message handler passed to Subscribe,
+// SubscribeForRequests or a Consume method, the async publish error handler, and
+// the connection's event handlers. It returns nil only then. When ctx ends
+// first, or has already ended, Close returns ctx.Err() at once, even while
+// another Close is draining, and the cleanup continues; a later Close waits for
+// the same completion. Once Close has begun the client starts no new work:
+// background work offered after that is dropped and logged at debug level, and
+// Connect, Subscribe, SubscribeForRequests and the Consume methods return
+// nats.ErrConnectionClosed. Work admitted before Close began may still run while
+// Close waits for it; message handlers keep handling messages already delivered
+// during the drain. Status keeps its value while Close drains and reports
+// Disconnected once the cleanup has finished. A drain that runs out of time is
+// reported by the first Close as a transient error wrapping
+// nats.ErrDrainTimeout. A Close called from inside one of the client's callbacks
+// waits on a join that includes its own invocation, so it returns ctx.Err() when
+// its context ends and never returns nil. Close refuses a nil context with an
+// error and touches nothing.
 func (m *Client) Close(ctx context.Context) error {
 	if ctx == nil {
 		return errs.WrapInvalid(stderrors.New("nil context"), "Client", "Close", "missing context")
 	}
 
-	// Only the first Close runs the setup, under closeMu; every Close then
-	// waits on the same join, outside any lock.
-	m.closeMu.Lock()
+	// Only the first Close takes the connection and runs the cleanup, bounded
+	// by its own context; no lock is held while it drains, so every other
+	// Close, and Connect, reaches its own context or refusal at once.
 	m.mu.Lock()
 	first := !m.closing
+	var (
+		conn         *nats.Conn
+		drainTimeout time.Duration
+		cancelPoller context.CancelFunc
+	)
 	if first {
 		m.closing = true
 		m.joined = make(chan struct{})
+		conn = m.conn
+		m.draining = conn
+		close(m.closingSignalLocked())
+		drainTimeout = m.drainTimeout
+		cancelPoller = m.metricsCancel
+		m.metricsCancel = nil
 	}
 	joined := m.joined
-	conn := m.conn
-	drainTimeout := m.drainTimeout
-	cancelPoller := m.metricsCancel
-	m.metricsCancel = nil
 	m.mu.Unlock()
 
 	var closeErr error
 	if first {
-		m.stopHealthMonitoring()
-		m.stopTimers()
-		if cancelPoller != nil {
-			cancelPoller()
-		}
-
-		closeErr = m.drainAndCloseConnection(ctx, conn, drainTimeout)
-
-		m.mu.Lock()
-		if m.conn == conn {
-			m.conn = nil
-		}
-		m.js = nil
-
-		// Clear sensitive credentials from memory
-		m.username = ""
-		m.password = ""
-		m.mu.Unlock()
-
-		m.setStatus(StatusDisconnected)
-
-		// closing is set, so startBackground adds nothing from here on.
-		go func() {
-			m.background.Wait()
-			close(joined)
-		}()
+		closeErr = m.cleanup(ctx, conn, drainTimeout, cancelPoller, joined)
 	}
-	m.closeMu.Unlock()
 
 	select {
 	case <-joined:
@@ -758,9 +925,94 @@ func (m *Client) Close(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		if !first {
+			return nil
+		}
+		m.mu.RLock()
+		timedOut := m.drainTimedOut
+		m.mu.RUnlock()
+		if closeErr == nil && timedOut {
+			// nats.go gave up the drain and closed the connection itself
+			// (nats.go:6349-6390); its report reached handleError before the
+			// closed handler the join waited for.
+			closeErr = errs.WrapTransient(nats.ErrDrainTimeout, "Client", "Close", "drain timeout")
+		}
 		return closeErr
 	case <-ctx.Done():
 		return ctx.Err()
+	}
+}
+
+// cleanup is the first Close's work: stop the monitor, the timers and the
+// poller; drain and close the connection; clear it; write Disconnected; and
+// start the joiner that closes joined.
+func (m *Client) cleanup(
+	ctx context.Context,
+	conn *nats.Conn,
+	drainTimeout time.Duration,
+	cancelPoller context.CancelFunc,
+	joined chan struct{},
+) error {
+	m.stopHealthMonitoring()
+	m.stopTimers()
+	if cancelPoller != nil {
+		cancelPoller()
+	}
+
+	closeErr := m.drainAndCloseConnection(ctx, conn, drainTimeout)
+
+	awaitHandlers := carriesClientHandlers(conn)
+	m.mu.Lock()
+	// Only a connection connectWith installed carries the client's handlers;
+	// one installed through SetConnection is closed without a handler join.
+	if conn != m.dialled {
+		awaitHandlers = false
+	}
+	if m.conn == conn {
+		m.conn = nil
+	}
+	m.js = nil
+
+	// Clear sensitive credentials from memory
+	m.username = ""
+	m.password = ""
+
+	m.setStatus(StatusDisconnected)
+	m.mu.Unlock()
+
+	var handlersOf *nats.Conn
+	if awaitHandlers {
+		handlersOf = conn
+	}
+	go m.join(joined, handlersOf)
+	return closeErr
+}
+
+// join closes joined once conn's closed handler has returned (when conn is not
+// nil) and no client-owned work is left. closing is set, so nothing is admitted
+// once owned has reached zero, except through admitAlways before joinDone.
+func (m *Client) join(joined chan struct{}, conn *nats.Conn) {
+	if conn != nil {
+		m.mu.Lock()
+		m.awaitingClosed = conn
+		m.mu.Unlock()
+		m.awaitClosedHandler(conn)
+		m.mu.Lock()
+		m.awaitingClosed = nil
+		m.mu.Unlock()
+	}
+	for {
+		m.mu.Lock()
+		if m.owned == 0 {
+			m.joinDone = true
+			close(joined)
+			m.mu.Unlock()
+			return
+		}
+		wait := make(chan struct{})
+		m.idleWait = wait
+		m.mu.Unlock()
+		<-wait
 	}
 }
 
@@ -856,8 +1108,10 @@ func (m *Client) drainAndCloseConnection(ctx context.Context, conn *nats.Conn, d
 	case <-closed:
 		return nil
 	case <-drainTimer.C:
+		// Reported the same way as the native drain's own timeout (Close), so
+		// one errors.Is check holds whichever timer ran out first.
 		drainErr := errs.WrapTransient(
-			fmt.Errorf("drain timeout after %v", drainTimeout),
+			fmt.Errorf("drain timeout after %v: %w", drainTimeout, nats.ErrDrainTimeout),
 			"Client", "Close", "drain timeout",
 		)
 		m.logger.Error("Drain timeout, force closing", slog.Duration("drain_timeout", drainTimeout))
@@ -903,10 +1157,12 @@ type Subscription struct {
 	drainErr  error
 	done      chan struct{}
 	doneOnce  sync.Once
+	onEnd     func()
 }
 
-func newSubscription(sub nativeSubscription) *Subscription {
-	s := &Subscription{sub: sub, done: make(chan struct{})}
+// newSubscription wraps sub; onEnd runs when its delivery has ended.
+func newSubscription(sub nativeSubscription, onEnd func()) *Subscription {
+	s := &Subscription{sub: sub, done: make(chan struct{}), onEnd: onEnd}
 	// nats.go calls the closed handler once, after the delivery goroutine
 	// exits, on drain, unsubscribe, and connection close alike.
 	sub.SetClosedHandler(func(string) { s.closeDone() })
@@ -920,7 +1176,12 @@ func newSubscription(sub nativeSubscription) *Subscription {
 
 // closeDone runs on the nats.go delivery goroutine, so it must not block.
 func (s *Subscription) closeDone() {
-	s.doneOnce.Do(func() { close(s.done) })
+	s.doneOnce.Do(func() {
+		close(s.done)
+		if s.onEnd != nil {
+			s.onEnd()
+		}
+	})
 }
 
 // Unsubscribe unsubscribes from the subject
@@ -967,32 +1228,115 @@ func (s *Subscription) Drain(ctx context.Context) error {
 // Each message handler receives the full *nats.Msg to access Subject, Data, Headers, etc.
 // This is essential for wildcard subscriptions where the actual subject differs from the pattern.
 // The context is derived from the parent context with a 30-second timeout for message processing.
-// Returns a Subscription handle that can be used to unsubscribe.
+// Returns a Subscription handle that can be used to unsubscribe. Once Close has
+// begun it returns nats.ErrConnectionClosed and subscribes nothing. Close joins
+// every running invocation of handler.
 func (m *Client) Subscribe(ctx context.Context, subject string, handler func(context.Context, *nats.Msg)) (*Subscription, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	return m.subscribeWith(ctx, subject, handler, nativeSubscribe)
+}
 
-	if m.conn == nil || !m.conn.IsConnected() {
-		return nil, ErrNotConnected
-	}
+// subscribeFunc subscribes cb to subject on conn. Subscribe and
+// SubscribeForRequests pass nativeSubscribe; it is a seam the way connectWith's
+// dial is.
+type subscribeFunc func(conn *nats.Conn, subject string, cb nats.MsgHandler) (nativeSubscription, error)
 
-	sub, err := m.conn.Subscribe(subject, func(msg *nats.Msg) {
-		// Create per-message context with timeout
-		msgCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		defer cancel()
-
-		// Extract trace context from message headers
-		if tc := ExtractTrace(msg); tc != nil {
-			msgCtx = ContextWithTrace(msgCtx, tc)
-		}
-
-		handler(msgCtx, msg)
-	})
+func nativeSubscribe(conn *nats.Conn, subject string, cb nats.MsgHandler) (nativeSubscription, error) {
+	sub, err := conn.Subscribe(subject, cb)
 	if err != nil {
 		return nil, err
 	}
+	return sub, nil
+}
 
-	return newSubscription(sub), nil
+func (m *Client) subscribeWith(
+	ctx context.Context, subject string, handler func(context.Context, *nats.Msg), subscribe subscribeFunc,
+) (*Subscription, error) {
+	return m.subscribeOwned("Subscribe", subject, func(*nats.Conn) nats.MsgHandler {
+		return func(msg *nats.Msg) {
+			// Create per-message context with timeout
+			msgCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+			defer cancel()
+
+			// Extract trace context from message headers
+			if tc := ExtractTrace(msg); tc != nil {
+				msgCtx = ContextWithTrace(msgCtx, tc)
+			}
+
+			handler(msgCtx, msg)
+		}
+	}, subscribe)
+}
+
+// subscribeOwned makes a client-owned core subscription: admitted before the
+// native subscribe, refused once Close has begun, counted until its delivery has
+// ended, with each handler invocation observed (design D3,
+// natsclient-close-is-final). build makes the native callback for the connection
+// the subscription is made on.
+func (m *Client) subscribeOwned(
+	operation, subject string, build func(conn *nats.Conn) nats.MsgHandler, subscribe subscribeFunc,
+) (*Subscription, error) {
+	m.mu.Lock()
+	if m.closing {
+		m.mu.Unlock()
+		return nil, errs.Wrap(nats.ErrConnectionClosed, "Client", operation, "client closed")
+	}
+	conn := m.conn
+	if conn == nil || !conn.IsConnected() {
+		m.mu.Unlock()
+		return nil, ErrNotConnected
+	}
+	d := newOwnedDelivery(m, slog.String("ack_policy", "core"))
+	finish := m.admitLocked(workSubscription)
+	closing := m.closingSignalLocked()
+	m.mu.Unlock()
+
+	cb := build(conn)
+	sub, err := subscribe(conn, subject, func(msg *nats.Msg) {
+		d.run(func() string { return msg.Subject }, func() { cb(msg) })
+	})
+	if err != nil {
+		finish()
+		return nil, err
+	}
+	s := newSubscription(sub, d.end)
+	go m.watchOwnedSubscription(conn, sub, d, closing, finish)
+	return s, nil
+}
+
+// watchOwnedSubscription is a client-owned subscription's share of Close's join;
+// it was admitted with the subscription and finishes once the subscription's
+// delivery has ended and its last handler invocation has returned. Close drains
+// the installed connection, which ends the subscriptions made on it. One left on
+// a connection SetConnection replaced is unsubscribed here once Close begins:
+// that connection belongs to the SetConnection caller, the subscription to the
+// client (design D3). An Unsubscribe error means the subscription is already
+// ending (its connection is closed or draining, or it was unsubscribed): its
+// closed handler still fires once its delivery goroutine exits
+// (nats.go:5391-5413, :5501-5530), so the wait below still ends.
+func (m *Client) watchOwnedSubscription(
+	conn *nats.Conn, sub nativeSubscription, d *ownedDelivery, closing <-chan struct{}, finish func(),
+) {
+	defer finish()
+	select {
+	case <-d.done:
+		return
+	case <-closing:
+	}
+	m.mu.RLock()
+	replaced := conn != m.draining
+	m.mu.RUnlock()
+	if replaced {
+		_ = sub.Unsubscribe()
+	}
+	<-d.done
+}
+
+// closingSignalLocked returns the channel the first Close closes; mu must be held.
+func (m *Client) closingSignalLocked() chan struct{} {
+	if m.closingSignal == nil {
+		m.closingSignal = make(chan struct{})
+	}
+	return m.closingSignal
 }
 
 // Publish publishes a message to a NATS subject
@@ -1158,7 +1502,13 @@ func (m *Client) publishToStream(ctx context.Context, subject string, data []byt
 // failed synchronous publish; a typed target-stream capacity refusal remains
 // circuit-neutral. The reset side lives on the enqueue path (successful enqueue
 // = connection healthy); this handler never resets the circuit.
+//
+// It runs on nats.go goroutines that have no end signal (jetstream/publish.go:408,
+// :491, :607-624; jetstream.go:1288-1307), so each invocation is client-owned work
+// that Close joins. It is never refused: its metric and log still count failed
+// acks during a drain. Only its failure accounting stops once Close has begun.
 func (m *Client) asyncPublishErrHandler(_ jetstream.JetStream, msg *nats.Msg, err error) {
+	defer m.admitAlways(workAsyncPublishErr)()
 	m.recordStreamPublishFailure(err)
 	if m.jsMetrics != nil {
 		m.jsMetrics.recordError("publish_async")
@@ -1586,32 +1936,43 @@ func connStatus(conn *nats.Conn) ConnectionStatus {
 	}
 }
 
-// isCurrentConn reports whether a handler's event comes from the connection the
-// client holds. A candidate Connect rejected, or one not yet admitted, is not
-// client state, and its events must not move the client's status. Tests call
-// the handlers with a nil connection on a client that holds none.
-func (m *Client) isCurrentConn(nc *nats.Conn) bool {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-	return nc == m.conn
+// ownsStatusLocked reports whether an event of nc may change the status: nc is
+// the installed connection and Close has not begun. A rejected Connect
+// candidate, or one not yet admitted, is not client state. Tests call the
+// handlers with a nil connection on a client that holds none. mu must be held, and the
+// caller writes before releasing it, so the check and the write are one step.
+func (m *Client) ownsStatusLocked(nc *nats.Conn) bool {
+	return !m.closing && nc == m.conn
 }
 
 // Event handlers for NATS connection
 func (m *Client) handleDisconnect(nc *nats.Conn, err error) {
-	if !m.isCurrentConn(nc) {
+	m.mu.Lock()
+	if nc != m.conn {
+		m.mu.Unlock()
 		return
 	}
-	m.setStatus(StatusReconnecting)
+	if !m.closing {
+		m.commitSeam("event handler")
+		m.setStatus(StatusReconnecting)
+	}
+	m.mu.Unlock()
 
+	// Once Close has begun the status is Close's, and arming is refused and
+	// logged as dropped work.
 	m.armConnectionLossTimer(err)
 }
 
 func (m *Client) handleReconnect(nc *nats.Conn) {
-	if !m.isCurrentConn(nc) {
+	m.mu.Lock()
+	if !m.ownsStatusLocked(nc) {
+		m.mu.Unlock()
 		return
 	}
+	m.commitSeam("event handler")
 	m.setStatus(StatusConnected)
-	m.resetCircuit()
+	m.resetCircuitLocked()
+	m.mu.Unlock()
 	m.cancelConnectionLossTimer()
 }
 
@@ -1634,7 +1995,8 @@ func (m *Client) armConnectionLossTimer(disconnectErr error) {
 	m.timersMu.Lock()
 	defer m.timersMu.Unlock()
 	if m.isClosing() {
-		// No callback runs once Close has begun, so there is nothing to arm.
+		// Close has begun, so arming is refused: a timer armed now would
+		// outlive the join.
 		m.logDropped(workConnectionLost)
 		return
 	}
@@ -1699,14 +2061,38 @@ func (m *Client) stopTimers() {
 	}
 }
 
+// handleClosed is the connection's last event handler (nats.go:6236-6252). Once
+// it has run, every earlier event handler of nc has returned, so it signals the
+// waits of Close and of a losing Connect.
 func (m *Client) handleClosed(nc *nats.Conn) {
-	if !m.isCurrentConn(nc) {
-		return
+	m.mu.Lock()
+	if m.ownsStatusLocked(nc) {
+		m.setStatus(StatusDisconnected)
 	}
-	m.setStatus(StatusDisconnected)
+	m.mu.Unlock()
+	if nc != nil {
+		ch := m.closedSignal(nc)
+		m.closedSignalsMu.Lock()
+		select {
+		case <-ch:
+		default:
+			close(ch)
+		}
+		m.closedSignalsMu.Unlock()
+	}
 }
 
-func (m *Client) handleError(_ *nats.Conn, sub *nats.Subscription, err error) {
+func (m *Client) handleError(nc *nats.Conn, sub *nats.Subscription, err error) {
+	if nc != nil && stderrors.Is(err, nats.ErrDrainTimeout) {
+		// nats.go gave up the drain Close started (nats.go:6374-6375); Close
+		// reports it.
+		m.mu.Lock()
+		if nc == m.draining {
+			m.drainTimedOut = true
+		}
+		m.mu.Unlock()
+	}
+
 	attrs := []any{slog.Any("error", err)}
 	if sub != nil {
 		attrs = append(attrs, slog.String("subject", sub.Subject))
@@ -1763,13 +2149,19 @@ func (m *Client) startHealthMonitoring() bool {
 				if _, err := conn.RTT(); err != nil {
 					healthy = false
 				}
+				m.commitSeam("health monitor")
 
-				// Update status based on health
-				if healthy && m.Status() != StatusConnected {
-					m.setStatus(StatusConnected)
-				} else if !healthy && m.Status() == StatusConnected {
-					m.setStatus(StatusReconnecting)
+				// Update status based on health, only while conn is still the
+				// installed connection and Close has not begun.
+				m.mu.Lock()
+				if m.ownsStatusLocked(conn) {
+					if healthy && m.Status() != StatusConnected {
+						m.setStatus(StatusConnected)
+					} else if !healthy && m.Status() == StatusConnected {
+						m.setStatus(StatusReconnecting)
+					}
 				}
+				m.mu.Unlock()
 			}
 		}
 	})

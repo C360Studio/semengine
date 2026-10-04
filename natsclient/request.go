@@ -325,20 +325,27 @@ func (c *Client) ReplyWithHeaders(ctx context.Context, replyTo string, data []by
 // the response data or an error.
 // Returns the Subscription so the caller can unsubscribe when done.
 // This is a convenience method for implementing request/reply services.
+// Once Close has begun it returns nats.ErrConnectionClosed and subscribes
+// nothing. Close joins every running invocation of handler.
 func (c *Client) SubscribeForRequests(
 	ctx context.Context,
 	subject string,
 	handler func(ctx context.Context, data []byte) ([]byte, error),
 ) (*Subscription, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	return c.subscribeOwned("SubscribeForRequests", subject, func(conn *nats.Conn) nats.MsgHandler {
+		return c.requestCallback(ctx, conn, subject, handler)
+	}, nativeSubscribe)
+}
 
-	if c.conn == nil || !c.conn.IsConnected() {
-		return nil, ErrNotConnected
-	}
-	conn := c.conn
-
-	sub, err := conn.Subscribe(subject, func(msg *nats.Msg) {
+// requestCallback is SubscribeForRequests' native callback for a subscription
+// made on conn.
+func (c *Client) requestCallback(
+	ctx context.Context,
+	conn *nats.Conn,
+	subject string,
+	handler func(ctx context.Context, data []byte) ([]byte, error),
+) nats.MsgHandler {
+	return func(msg *nats.Msg) {
 		// Extract trace from incoming request
 		msgCtx := ctx
 		if tc := ExtractTrace(msg); tc != nil {
@@ -401,13 +408,7 @@ func (c *Client) SubscribeForRequests(
 					"err", respErr.Error())
 			}
 		}
-	})
-	if err != nil {
-		return nil, err
 	}
-
-	wrappedSub := newSubscription(sub)
-	return wrappedSub, nil
 }
 
 // RetryConfig configures retry behavior for requests.

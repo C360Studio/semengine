@@ -71,7 +71,7 @@ func (s *fakeNativeSubscription) Unsubscribe() error {
 
 func TestSubscriptionDrainWaitsForNativeClosure(t *testing.T) {
 	native := newFakeNativeSubscription()
-	sub := newSubscription(native)
+	sub := newSubscription(native, nil)
 	result := make(chan error, 1)
 	go func() { result <- sub.Drain(context.Background()) }()
 
@@ -88,7 +88,7 @@ func TestSubscriptionDrainWaitsForNativeClosure(t *testing.T) {
 
 func TestSubscriptionDrainExternallyUnsubscribedIsSuccessfulAndRepeatable(t *testing.T) {
 	native := newFakeNativeSubscription()
-	sub := newSubscription(native)
+	sub := newSubscription(native, nil)
 	require.NoError(t, native.Unsubscribe())
 
 	require.NoError(t, sub.Drain(context.Background()))
@@ -99,7 +99,7 @@ func TestSubscriptionDrainExternallyUnsubscribedIsSuccessfulAndRepeatable(t *tes
 func TestSubscriptionDrainBornInvalidIsSuccessful(t *testing.T) {
 	native := newFakeNativeSubscription()
 	native.valid.Store(false)
-	sub := newSubscription(native)
+	sub := newSubscription(native, nil)
 
 	require.NoError(t, sub.Drain(context.Background()))
 	require.NoError(t, sub.Drain(context.Background()))
@@ -109,7 +109,7 @@ func TestSubscriptionDrainNativeErrBadSubscriptionIsSticky(t *testing.T) {
 	native := newFakeNativeSubscription()
 	native.drainErr = nats.ErrBadSubscription
 	native.closeOnDrain = true
-	sub := newSubscription(native)
+	sub := newSubscription(native, nil)
 
 	require.ErrorIs(t, sub.Drain(context.Background()), nats.ErrBadSubscription)
 	require.ErrorIs(t, sub.Drain(context.Background()), nats.ErrBadSubscription)
@@ -120,14 +120,14 @@ func TestSubscriptionDrainOtherNativeErrorSurvivesClosure(t *testing.T) {
 	native := newFakeNativeSubscription()
 	native.drainErr = errors.New("native drain failed")
 	native.closeOnDrain = true
-	sub := newSubscription(native)
+	sub := newSubscription(native, nil)
 
 	require.EqualError(t, sub.Drain(context.Background()), "native drain failed")
 }
 
 func TestSubscriptionDrainConnectionClosesMidDrain(t *testing.T) {
 	native := newFakeNativeSubscription()
-	sub := newSubscription(native)
+	sub := newSubscription(native, nil)
 
 	// A canceled ctx proves Drain is still waiting once native Drain has
 	// returned nil and the connection has gone.
@@ -146,7 +146,7 @@ func TestSubscriptionDrainConnectionClosesMidDrain(t *testing.T) {
 
 func TestSubscriptionDrainNativeConnectionClosedWaitsForClosure(t *testing.T) {
 	native := newFakeNativeSubscription()
-	sub := newSubscription(native)
+	sub := newSubscription(native, nil)
 	// The connection closes after construction, so native Drain refuses.
 	native.valid.Store(false)
 	native.drainErr = nats.ErrConnectionClosed
@@ -165,7 +165,7 @@ func TestSubscriptionDrainNativeConnectionClosedWaitsForClosure(t *testing.T) {
 
 func TestSubscriptionDrainCanceledCallerDoesNotConsumeOrDetachAuthority(t *testing.T) {
 	native := newFakeNativeSubscription()
-	sub := newSubscription(native)
+	sub := newSubscription(native, nil)
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -194,7 +194,7 @@ func TestSubscriptionDrainCanceledCallerDoesNotConsumeOrDetachAuthority(t *testi
 
 func TestSubscriptionDrainContextEndsFirst(t *testing.T) {
 	native := newFakeNativeSubscription()
-	sub := newSubscription(native)
+	sub := newSubscription(native, nil)
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
 	go func() { result <- sub.Drain(ctx) }()
@@ -208,7 +208,7 @@ func TestSubscriptionDrainContextEndsFirst(t *testing.T) {
 
 func TestSubscriptionDrainConcurrentCallersShareNativeDrain(t *testing.T) {
 	native := newFakeNativeSubscription()
-	sub := newSubscription(native)
+	sub := newSubscription(native, nil)
 	const callers = 8
 	results := make(chan error, callers)
 	var ready sync.WaitGroup

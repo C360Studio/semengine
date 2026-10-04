@@ -287,7 +287,8 @@ failing-first `adapt` items:
   `recordError("late_delivery_refused")` (`jetstream_metrics.go:248-252`, the path `publish_async` already uses,
   `client.go:1164`) when the client has JetStream metrics configured; without them the warn log is the only
   signal. That label also counts refusals on core subscriptions, although the metric's help text names JetStream
-  operations. Accepting the AckNone loss is owner question 4, not yet answered; task 3.7c2 carries the hold.
+  operations. The owner accepted that AckNone loss
+  (question 4, #9 comment 5980769459).
 
   Work a call starts belongs to that call until it returns and to the client afterwards: a
   `Connect` that returns an error has no event handler of the connection it dialled still running, so a `Connect`
@@ -298,23 +299,25 @@ failing-first `adapt` items:
   connection's `ClosedHandler` is the last callback its dispatcher runs, `nats.go:6236-6252, :3637-3660`).
 - **Connections installed or replaced through `SetConnection`.** `Close` joins the event handlers of exactly one
   connection: the one it drains and closes, when this client dialled it (only a dialled connection carries the
-  client's handlers, `buildConnectionOptions`, `client.go:480-503`). A connection installed through
-  `SetConnection` is drained and closed like any installed connection, with no handler join. A connection that
-  `SetConnection` replaced, dialled by this client or not, belongs to whoever called `SetConnection`: `Close`
-  neither closes it nor waits for its `ClosedHandler`, so `Close` cannot hang on it. Reasons: `SetConnection` is a
-  test hook ("for testing", `client.go:289`) whose only caller swaps a connection out and restores it in cleanup
-  (`request_response_bounds_integration_test.go:167, :189`), so closing the replaced connection would break the
-  caller that owns it; and the client's handlers on a replaced connection change nothing, because each
-  state-changing handler checks that its connection is the installed one first (`isCurrentConn`,
-  `client.go:1593-1597`); `handleError` only logs. Client-owned subscriptions are different: they were created by
-  `Subscribe` or `SubscribeForRequests` and belong to the client wherever their connection went. `Close`
+  client's handlers, `buildConnectionOptions`, `client.go:480-503`). A connection installed through `SetConnection` is
+  drained and closed like any installed connection, with no handler join. A connection that `SetConnection` replaced,
+  dialled by this client or not, belongs to whoever called `SetConnection`: `Close` neither closes it nor waits for
+  its `ClosedHandler`, so `Close` cannot hang on it. Reasons: `SetConnection` is a test hook ("for testing",
+  `client.go:289`) whose only caller swaps a connection out and restores it in cleanup
+  (`request_response_bounds_integration_test.go:167, :189`), so closing the replaced connection would break the caller
+  that owns it; and the client's handlers on a replaced connection change nothing, because each state-changing handler
+  checks that its connection is the installed one first (`isCurrentConn` at `7ce1940`, `client.go:1593-1597`;
+  `ownsStatusLocked` since 3.7c2); `handleError` only logs. Client-owned subscriptions are different: they were
+  created by `Subscribe` or `SubscribeForRequests` and belong to the client wherever their connection went. `Close`
   unsubscribes one left on a replaced connection and joins its running handler invocation (N2). An error from that
   `Unsubscribe` (the replaced connection already closed or draining, or the subscription already ended) means the
   subscription is already ending: `Close` neither fails nor returns early on it, and still waits for the
-  subscription's end, bounded by its own context. Declared cost: messages buffered on that subscription and not
-  yet handed to the handler are discarded by the native library on unsubscribe (N8), as they are when any core
-  subscription is unsubscribed. Once `Close` has begun, `SetConnection` changes nothing and logs at warn level
-  (owner answer 3).
+  subscription's end, bounded by its own context. The client keeps no catalog of its subscriptions, so the carried
+  guard `TestClientHasNoChildLifecycleSurfaceOrCatalog` stands: each client-owned subscription has its own admitted
+  watcher, which unsubscribes it when `Close` begins if its connection is not the one `Close` drains. Declared cost:
+  messages buffered on that subscription and not yet handed to the handler are discarded by the native library on
+  unsubscribe (N8), as they are when any core subscription is unsubscribed. Once `Close` has begun, `SetConnection`
+  changes nothing and logs at warn level (owner answer 3).
 - **Consumer setup that meets `Close`.** A consumer setup that has not started native delivery when `Close`
   begins is refused with `nats.ErrConnectionClosed`, its claim released, and the native `Consume` is never called.
   One that has started native delivery stops it and keeps its local claim and its metrics observation until every
@@ -382,7 +385,7 @@ mapping (task 3.7c2 tests by name; the 3.7c tests likewise):
 |---|---|---|
 | Background work admitted | `TestClientCloseDropsLateDisconnect`, `TestClientCloseDuringConnectStartsNothing` | `TestClientCloseJoinsConnectionLossCallback` |
 | Native delivery started (consumer setup) | `TestClientRefusedConsumerKeepsOwnershipUntilHandlersReturn`, `TestClientRefusedConsumerSetupContextEndsWhileHandlerRuns` | `TestClientLifecycleOperationTable` (closed-state rows) |
-| Handler invocation enters and returns | `TestClientCloseJoinsSubscribeHandlerAfterForcedClose`, `TestClientCloseJoinsConsumerHandlerWhenClosedReportsEarly`, `TestClientLifecycleSuiteWithHeldHandler` | `TestClientCloseJoinsSubscribeHandlerAfterForcedClose`, `TestClientCloseJoinsConsumerHandlerWhenClosedReportsEarly` |
+| Handler invocation enters and returns | `TestClientCloseJoinsSubscribeHandlerAfterForcedClose`, `TestClientCloseJoinsConsumerHandlerWhenClosedReportsEarly`, `TestClientLifecycleAdapterListsHeldHandler` | `TestClientCloseJoinsSubscribeHandlerAfterForcedClose`, `TestClientCloseJoinsConsumerHandlerWhenClosedReportsEarly` |
 | Native end signal (accurate, or early) | `TestClientCloseJoinsSubscribeHandlerAfterForcedClose` (accurate), `TestClientCloseJoinsConsumerHandlerWhenClosedReportsEarly` and `TestClientRefusesLateDeliveryAfterRecordedEnd` (early) | `TestClientRefusesLateDeliveryAfterRecordedEnd` |
 | Status commit | `TestClientHealthMonitorCannotOverwriteClosedStatus`, `TestClientFailuresAfterCloseLeaveStatusDisconnected`, `TestClientEventHandlerCannotCommitAfterClose`, `TestClientAsyncPublishErrorAfterCloseRecordsMetricOnly` | `TestClientHealthMonitorCannotOverwriteClosedStatus`, `TestClientConnectAfterCloseRefusesBeforeDial`, `TestClientLifecycleOperationTable` |
 | Status commit against a winner's install | `TestClientLosingConnectLeavesWinnerStatus` (four cases) | not applicable |

@@ -383,9 +383,10 @@ func TestContextAwareMethods(t *testing.T) {
 		err = client.Publish(ctx, "test.subject", []byte("data"))
 		assert.Equal(t, ErrNotConnected, err)
 
-		// Test Subscribe with context (will fail due to not connected)
+		// Subscribe after Close returns nats.ErrConnectionClosed (design D3,
+		// natsclient-status-ownership; the pin returned ErrNotConnected).
 		_, err = client.Subscribe(ctx, "test.subject", func(_ context.Context, _ *nats.Msg) {})
-		assert.Equal(t, ErrNotConnected, err)
+		assert.ErrorIs(t, err, nats.ErrConnectionClosed)
 	})
 }
 

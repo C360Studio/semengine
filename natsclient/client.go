@@ -554,13 +554,15 @@ func (m *Client) connectWith(
 		return ErrCircuitOpen
 	}
 
+	// Reported before this call first writes the status, so a test can hold
+	// a Connect between its started check and its dial.
+	m.recordOp("dial")
 	m.setStatus(StatusConnecting)
 	m.logger.Info("Connecting to NATS", slog.String("urls", m.urls))
 
 	// Build connection options
 	opts := m.buildConnectionOptions()
 
-	m.recordOp("dial")
 	conn, err := dial(m.urls, opts...)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		if conn != nil {
@@ -623,7 +625,12 @@ func (m *Client) connectWith(
 		m.closeMu.Unlock()
 		return errs.Wrap(nats.ErrConnectionClosed, "Client", "Connect", "admit connection")
 	case m.conn != nil:
-		// A concurrent Connect won admission; this one leaves its connection in place.
+		// A concurrent Connect won admission; this one leaves its connection in
+		// place. The Connecting this call wrote may have overwritten the
+		// winner's status, so it is restored from the winner's connection; a
+		// status anyone else wrote since is left alone. The rejected
+		// candidate's handlers are ignored (isCurrentConn).
+		m.status.CompareAndSwap(StatusConnecting, connStatus(m.conn))
 		m.mu.Unlock()
 		conn.Close()
 		m.closeMu.Unlock()
@@ -1567,14 +1574,42 @@ func (m *Client) ListKeyValueBuckets(ctx context.Context) ([]string, error) {
 	return names, nil
 }
 
+// connStatus is the status a connection's own state implies.
+func connStatus(conn *nats.Conn) ConnectionStatus {
+	switch {
+	case conn.IsConnected():
+		return StatusConnected
+	case conn.IsReconnecting():
+		return StatusReconnecting
+	default:
+		return StatusDisconnected
+	}
+}
+
+// isCurrentConn reports whether a handler's event comes from the connection the
+// client holds. A candidate Connect rejected, or one not yet admitted, is not
+// client state, and its events must not move the client's status. Tests call
+// the handlers with a nil connection on a client that holds none.
+func (m *Client) isCurrentConn(nc *nats.Conn) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return nc == m.conn
+}
+
 // Event handlers for NATS connection
-func (m *Client) handleDisconnect(_ *nats.Conn, err error) {
+func (m *Client) handleDisconnect(nc *nats.Conn, err error) {
+	if !m.isCurrentConn(nc) {
+		return
+	}
 	m.setStatus(StatusReconnecting)
 
 	m.armConnectionLossTimer(err)
 }
 
-func (m *Client) handleReconnect(_ *nats.Conn) {
+func (m *Client) handleReconnect(nc *nats.Conn) {
+	if !m.isCurrentConn(nc) {
+		return
+	}
 	m.setStatus(StatusConnected)
 	m.resetCircuit()
 	m.cancelConnectionLossTimer()
@@ -1664,7 +1699,10 @@ func (m *Client) stopTimers() {
 	}
 }
 
-func (m *Client) handleClosed(_ *nats.Conn) {
+func (m *Client) handleClosed(nc *nats.Conn) {
+	if !m.isCurrentConn(nc) {
+		return
+	}
 	m.setStatus(StatusDisconnected)
 }
 

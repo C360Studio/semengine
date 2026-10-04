@@ -14,6 +14,7 @@ import (
 
 	"github.com/c360studio/semengine/internal/harness/lifecycletest"
 	"github.com/c360studio/semengine/metric"
+	"github.com/c360studio/semengine/pkg/errs"
 	natsserver "github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -301,6 +302,70 @@ func TestClientSecondConnectRefused(t *testing.T) {
 	require.Same(t, first, c.GetConnection(), "a second Connect replaced the connection")
 	require.True(t, first.IsConnected(), "a second Connect closed the first connection")
 	require.Equal(t, StatusConnected, c.Status())
+}
+
+// TestClientConnectThatLosesAdmissionLeavesStatus: two Connects pass the started check; the one
+// held at its opHook "dial" report, after that check and before it writes the status, resumes
+// only once the other has connected. It must be refused and leave the status the winner set:
+// writing Connecting over a connected client is a silent wrong state, and so is its rejected
+// connection's closed handler writing Disconnected. The loser's dial runs the client's own
+// closed handler and then signals, so the check waits for that handler, not for luck.
+func TestClientConnectThatLosesAdmissionLeavesStatus(t *testing.T) {
+	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), closeBudget)
+		defer cancel()
+		_ = c.Close(ctx)
+	})
+	held, release := make(chan struct{}), make(chan struct{})
+	var releaseOnce, holdOnce sync.Once
+	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
+	c.opHook = func(op string) {
+		if op != "dial" {
+			return
+		}
+		first := false
+		holdOnce.Do(func() { first = true })
+		if first {
+			close(held)
+			<-release
+		}
+	}
+
+	loserClosed := make(chan struct{})
+	loserDial := func(url string, opts ...nats.Option) (*nats.Conn, error) {
+		return nats.Connect(url, append(opts, nats.ClosedHandler(func(nc *nats.Conn) {
+			c.handleClosed(nc)
+			close(loserClosed)
+		}))...)
+	}
+	loser := make(chan error, 1)
+	go func() { loser <- c.connectWith(t.Context(), loserDial) }()
+	select {
+	case <-held:
+	case <-time.After(lifecycleBound):
+		t.Fatal("the first Connect never reached its dial report")
+	}
+	require.NoError(t, c.Connect(t.Context()), "the Connect that wins admission")
+	winner := c.GetConnection()
+	require.Equal(t, StatusConnected, c.Status())
+
+	releaseOnce.Do(func() { close(release) })
+	select {
+	case err := <-loser:
+		require.ErrorIs(t, err, errs.ErrAlreadyStarted, "the Connect that lost admission")
+	case <-time.After(lifecycleBound):
+		t.Fatal("the losing Connect did not return")
+	}
+	select {
+	case <-loserClosed:
+	case <-time.After(lifecycleBound):
+		t.Fatal("the rejected connection's closed handler never ran")
+	}
+	require.Same(t, winner, c.GetConnection(), "the losing Connect replaced the connection")
+	require.True(t, winner.IsConnected(), "the losing Connect closed the winner's connection")
+	require.Equal(t, StatusConnected, c.Status(), "the losing Connect left its own status behind")
 }
 
 // TestClientCloseJoinsConnectionLossCallback is natsclient-close-joins-its-goroutines (a): a

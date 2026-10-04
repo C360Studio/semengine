@@ -568,20 +568,82 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       wording (F24). The late-delivery refusal loses one AckNone message, logged at warn level and counted as
       `late_delivery_refused`; D3 and the ledger row declare it, and the owner accepted it
       (question 4, #9 comment 5980769459).
-      - Done in `91832ab` (implementer-reported, PR #48). Failing first at `7ce1940`, each for its stated reason:
-        tests 1, 6, 11, 18 and 20, a live `Close` returned nil while the handler was held; 2 and 17, the refused
-        setup returned at once with its claim released; 3 and 9, the second `Close` and the `Connect` waited 10 s on
-        the drain; 4, the loser left `Disconnected` or `Connecting`; 7, `Connect` after `Close` dialled; 8 and 13, the
-        status became `CircuitOpen` and `Failures()` 15; 12, the loser returned while its candidate's closed handler
-        ran; 14, 16 rows of the closing and closed states; 15, the adapter listed nothing; 16, the handler ran; 19,
-        nil and an unwrapped timeout. Tests 5, 10 and 4's held-failure-write case needed the private commit seam,
-        added alone to `7ce1940` for that run; 16's core case needs the new subscribe seam and is shown by mutant
-        M6. 21 mutants, one per fix, all detected, none surviving. `go test -race -count=20 -run
+      - Done in `91832ab`, with the implementation early check's findings I-1 to I-4 fixed in the next commit
+        (implementer-reported, PR #48). Failing first at `7ce1940`, each for its stated reason: tests 1, 6, 11, 18 and
+        20, a live `Close` returned nil while the handler was held; 2 and 17, the refused setup returned at once with
+        its claim released; 3 and 9, the second `Close` and the `Connect` waited 10 s on the drain; 4, the loser left
+        `Disconnected` or `Connecting`; 7, `Connect` after `Close` dialled; 8 and 13, the status became `CircuitOpen`
+        and `Failures()` 15; 12, the loser returned while its candidate's closed handler ran; 14, 16 rows of the
+        closing and closed states; 15, the adapter listed nothing; 16, the handler ran; 19, nil and an unwrapped
+        timeout. Tests 5, 10 and 4's held-failure-write case needed the private commit seam, added alone to `7ce1940`
+        for that run; 16's core case needs the new subscribe seam and is shown by mutant M6. Those failing runs used
+        the short-deadline checks that I-1 replaced; the state checks that replaced them are shown able to fail by
+        mutants M1, M2, M9, M11 and M12 below. `go test -race -count=20 -run
         'Lifecycle|Close|Connect|Subscribe|Consume' ./natsclient/` exit 0; `task verify` ok, its integration and
-        repeat steps included. Departures from the design: test 6 runs real JetStream on an embedded server in the
-        unit lane, not the Docker lane; test 15 checks the adapter directly, not through the suite; the
-        replaced-connection unsubscribe is done by a per-subscription watcher, because the carried guard
-        `TestClientHasNoChildLifecycleSurfaceOrCatalog` forbids a subscription catalog.
+        repeat steps included.
+      - Mutants, each applied alone to the code at the evidence commit and restored by checksum, run with `go test
+        -race` on the named tests (one run each unless a rate is given; logs are local only). None survived; none
+        was inconclusive.
+        - M1, `ownedDelivery.run` runs the handler without counting it: detected by
+          `TestClientCloseJoinsConsumerHandlerWhenClosedReportsEarly` (jetstream 10/10, fake) and
+          `TestClientLifecycleAdapterListsHeldHandler`. Test 1 does not detect it: a core subscription's end
+          already comes from the native closed handler, after the handler returned.
+        - M2, the consumer's ownership goroutine releases on `Closed()` alone: detected by test 6, fake 10/10 and
+          jetstream 8/10.
+        - M3, a mutex held across the first `Close`'s cleanup and taken by every other `Close` and by `Connect`:
+          detected by `TestClientCloseHonoursItsContextDuringAnotherDrain` and
+          `TestClientConnectDuringCloseDrainReturnsPromptly`.
+        - M4a, `connectFailed` writes without its ownership check: detected by
+          `TestClientLosingConnectLeavesWinnerStatus` (dial-error, canceled-dial, held-before-connecting).
+        - M4b, `Connecting` written unconditionally: detected by its held-before-connecting case.
+        - M4c, `handleDisconnect` checks, releases `mu`, then writes: detected by
+          `TestClientEventHandlerCannotCommitAfterClose/handleDisconnect`.
+        - M4d, the monitor commits without its ownership check: detected by
+          `TestClientHealthMonitorCannotOverwriteClosedStatus`.
+        - M4e, `recordFailure` without its `closing` check: detected by
+          `TestClientFailuresAfterCloseLeaveStatusDisconnected` and `TestClientAsyncPublishErrorAfterCloseRecordsMetricOnly`.
+        - M4f, `connectFailed` releases `mu` between its check and its write: detected by the held-before-failure-write
+          case.
+        - M5, the async publish error handler not admitted: detected by
+          `TestClientCloseJoinsRunningAsyncPublishErrorHandler`.
+        - M6, a refused late delivery runs the handler: detected by `TestClientRefusesLateDeliveryAfterRecordedEnd`, all
+          three cases.
+        - M7, the refusal not counted on the metric: detected by the same three cases.
+        - M8a, the native drain timeout not reported: detected by `TestClientCloseReportsDrainTimeout/native-first`.
+        - M8b, the client's drain-timeout error formatted with `%v`, not `%w`: detected by its client-first case.
+        - M9, the replaced-connection watcher does not unsubscribe: detected by
+          `TestClientCloseEndsSubscriptionOnReplacedConnection/replaced-connection-open`, 10/10.
+        - M10, `Connect` without its entry `closing` check: detected by `TestClientConnectAfterCloseRefusesBeforeDial`.
+        - M11, a losing `Connect` does not await its candidate's closed handler: detected by
+          `TestClientLosingConnectLeavesNoCandidateHandler`, 10/10.
+        - M12, the join does not await the event handlers: detected by `TestClientCloseJoinsConnectionEventHandlers`,
+          10/10.
+        - M13, `SetConnection` installs after `Close` began: detected by `TestClientLifecycleOperationTable` (closing
+          and closed `SetConnection` rows).
+        - M14, `Subscribe` not refused once `Close` began: detected by the table's closing and closed subscribe rows.
+        - M15, the consumer APIs not refused at entry once `Close` began: detected by the table's consumer rows.
+        - M16, a refused setup returns before its handlers: detected by
+          `TestClientRefusedConsumerKeepsOwnershipUntilHandlersReturn` and
+          `TestClientRefusedConsumerSetupContextEndsWhileHandlerRuns`, both cases each.
+      - Departures from the design, each recorded here:
+        - Test 6 runs real JetStream on an embedded server in the unit lane, not the Docker lane.
+        - Test 15 checks the lifecycle adapter directly, not through the suite.
+        - The replaced-connection unsubscribe is done by a per-subscription watcher, because the carried guard
+          `TestClientHasNoChildLifecycleSurfaceOrCatalog` forbids a subscription catalog (D3 records it).
+        - D3 gains `natsclient-close-reports-drain-timeout` as a named item; the design revision carried it only in
+          its implementation section, the spec scenario and the ledger.
+        - The spec scenario "Status is final once Close begins" says the status keeps its value until `Close`'s
+          cleanup has finished and reads `Disconnected` after; the revision's draft said `Disconnected` from the start,
+          which contradicted its own status-ownership text.
+        - Carried tests changed with the behaviour, each named on the ledger row or here: `TestContextAwareMethods`
+          expects `nats.ErrConnectionClosed`; `TestClientCloseStopsCircuitTimer` arms the circuit timer directly,
+          since failures after `Close` no longer open the circuit; `TestClientCloseJoinsClaimRelease` expects the late
+          consumer refused before native `Consume`; `subscription_test.go` follows `newSubscription`'s new argument.
+        - `handleDisconnect` once `Close` has begun writes no status but still offers the connection-loss timer, so
+          the refusal is logged as dropped work, as 3.7c requires.
+        - The tests check that a call is still waiting through in-package state (`requireJoinPending`,
+          `requireJoinOpen`, the closed-handler wait in test 12), observed at a named wait point under a 10 s failure
+          bound, never with a short real-clock wait (design D8, R1b; implementation early check, finding I-1).
 - [ ] 3.7d (D) Hold: Codex's checkpoint review of 3.7c and 3.7c2 (concurrency), recorded on this pull request. `natsclient`
       metrics (design D9; item 4): the three consumer collectors that `Add` cumulative server values on every poll
       (`jetstream_metrics.go:305-307`) become gauges `Set` from server state — `consumer_delivered_total` →

@@ -268,6 +268,13 @@ failing-first `adapt` items:
     `ConsumeStreamWithConfig`, `ConsumeStreamWithConfigContexts` and `ConsumeInternalStreamWithConfig`;
   - the client's connection event handlers and its async publish error handler.
 
+  One residual is declared. An invocation of the async publish error handler that starts after the join has completed
+  runs unjoined: nats.go can still call it then, from the JetStream reply subscription's delivery goroutine caught
+  mid-callback by a forced close, or from `resetPendingAcksOnReconnect` processing a queued status
+  (`jetstream/publish.go:607-624`), and that goroutine has no end signal the client could wait for (nats.go v1.54.0).
+  It is safe: once `Close` has begun the handler records no failure and changes no client state; it only counts the
+  `publish_async` error metric and logs at debug level (`admitAlways`, `asyncPublishErrHandler`).
+
   This holds on every `Close` path: a drain that completes, a drain error, the drain timeout, the caller's context
   ending, and a connection the native library closed by itself. It does not rest on the native library's end
   signals alone, because nats.go v1.54.0 force-closes without waiting for a running callback (`nats.go:6196-6227`),

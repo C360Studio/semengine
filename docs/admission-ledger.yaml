@@ -1203,7 +1203,11 @@
     returns nil only after every message handler invocation (Subscribe, SubscribeForRequests, the
     three Consume methods), the connection's event handlers (the installed connection's
     ClosedHandler has returned) and the async publish error handler have finished, on every Close
-    path; the client observes handler ends itself because nats.go v1.54.0 force-closes without
+    path, except an async publish error handler invocation that starts after the join completed,
+    which runs unjoined because nats.go gives that goroutine no end signal (reply-subscription
+    callback at a forced close, resetPendingAcksOnReconnect, jetstream/publish.go:607-624) and is
+    safe because it then only counts the publish_async metric and logs at debug level; the client
+    observes handler ends itself because nats.go v1.54.0 force-closes without
     waiting (nats.go:6196-6227), ends a drain after its timeout with a callback running (:6349-6372,
     :6389-6390), and its consumer Closed() closes at once for an invalid subscription
     (jetstream/pull.go:822-837); a delivery handed over after the client recorded its consumer's or

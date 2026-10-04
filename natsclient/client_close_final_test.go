@@ -5,10 +5,12 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
 
+	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/pkg/errs"
 	natsserver "github.com/nats-io/nats-server/v2/server"
@@ -22,11 +24,6 @@ import (
 // The tests in this file are task 3.7c2 (design D3: natsclient-close-is-final,
 // natsclient-close-honours-each-context, natsclient-status-ownership and
 // natsclient-close-reports-drain-timeout), Codex F21-F25 at 7ce1940 (PR #48 comment 5980134911).
-
-// stillWaitingBound is the deadline of a Close that must not return nil yet: a correct client
-// returns context.DeadlineExceeded when it passes, because a held handler or callback keeps the
-// join open. The bound only decides how long the check takes; no outcome depends on it.
-const stillWaitingBound = 100 * time.Millisecond
 
 // heldCall blocks every caller of hold until Release; entered closes when the first caller
 // arrives and returned when it leaves. Release is registered in t.Cleanup before anything can
@@ -87,13 +84,59 @@ func endedContext(t *testing.T) context.Context {
 	return ctx
 }
 
-// requireCloseStillWaiting calls Close with a short live deadline. A client that still owns
-// running work must report the deadline, never nil.
-func requireCloseStillWaiting(t *testing.T, c *Client, what string) {
+// joinState is what requireJoinPending observes of Close's join, in-package.
+type joinState struct{ done, blocked bool }
+
+// Wait points of Close's joiner, for requireJoinPending.
+const (
+	joinOnOwnedWork     = "client-owned work"
+	joinOnEventHandlers = "the connection's event handlers"
+)
+
+// requireJoinPending requires that Close's join, which every nil Close waits for, is still open.
+// It waits (bounded by lifecycleBound, a failure bound) until the joiner is observed blocked at the
+// named wait point, the one the test's held work keeps it at, or has finished; then it requires
+// that the joiner has not finished. No real-clock interval decides the outcome (design D8, R1b): a
+// joiner observed blocked at that point has not closed the join, and cannot while the work is
+// held.
+func requireJoinPending(t *testing.T, c *Client, waitPoint, what string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), stillWaitingBound)
+	ctx, cancel := context.WithTimeout(t.Context(), lifecycleBound)
 	defer cancel()
-	require.ErrorIs(t, c.Close(ctx), context.DeadlineExceeded, "a live Close returned before %s", what)
+	st, err := probe.Await(ctx, func(context.Context) (joinState, error) {
+		c.mu.RLock()
+		defer c.mu.RUnlock()
+		if c.joined == nil {
+			return joinState{}, nil
+		}
+		select {
+		case <-c.joined:
+			return joinState{done: true}, nil
+		default:
+		}
+		if waitPoint == joinOnEventHandlers {
+			return joinState{blocked: c.awaitingClosed != nil}, nil
+		}
+		return joinState{blocked: c.idleWait != nil}, nil
+	}, func(s joinState) bool { return s.done || s.blocked })
+	require.NoError(t, err, "Close's joiner never waited for %s", waitPoint)
+	require.False(t, st.done, "Close's join completed before %s", what)
+}
+
+// requireJoinOpen requires that Close's join has not completed, at a moment the test has already
+// made it impossible for a correct client to complete it (the first Close's drain is held, so its
+// cleanup has not finished).
+func requireJoinOpen(t *testing.T, c *Client, what string) {
+	t.Helper()
+	c.mu.RLock()
+	joined := c.joined
+	c.mu.RUnlock()
+	require.NotNil(t, joined, "Close has not begun")
+	select {
+	case <-joined:
+		t.Fatalf("Close's join completed before %s", what)
+	default:
+	}
 }
 
 // requireLiveCloseNil calls Close with a live context and requires nil.
@@ -183,7 +226,7 @@ func TestClientCloseJoinsSubscribeHandlerAfterForcedClose(t *testing.T) {
 			await(t, held.entered, "the handler entering")
 
 			require.ErrorIs(t, c.Close(endedContext(t)), context.Canceled, "Close under an ended context")
-			requireCloseStillWaiting(t, c, "the handler returned")
+			requireJoinPending(t, c, joinOnOwnedWork, "the handler returned")
 
 			held.Release()
 			await(t, held.returned, "the handler returning")
@@ -602,7 +645,7 @@ func TestClientCloseJoinsConsumerHandlerWhenClosedReportsEarly(t *testing.T) {
 
 		require.ErrorIs(t, c.Close(endedContext(t)), context.Canceled, "Close under an ended context")
 		_ = handle.Closed() // the caller following the Consume doc comment
-		requireCloseStillWaiting(t, c, "the consumer handler returned")
+		requireJoinPending(t, c, joinOnOwnedWork, "the consumer handler returned")
 		require.Equal(t, 1, claimCount(c), "the claim was released while the handler runs")
 
 		held.Release()
@@ -781,7 +824,8 @@ func TestClientCloseJoinsConnectionEventHandlers(t *testing.T) {
 	await(t, h.entered, "the error handler entering")
 	require.NoError(t, sub.Unsubscribe())
 
-	requireCloseStillWaiting(t, c, "the error handler returned")
+	require.ErrorIs(t, c.Close(endedContext(t)), context.Canceled, "Close under an ended context")
+	requireJoinPending(t, c, joinOnEventHandlers, "the error handler returned")
 	h.releaseHold()
 	requireLiveCloseNil(t, c, "Close after the error handler returned")
 }
@@ -805,24 +849,46 @@ func TestClientLosingConnectLeavesNoCandidateHandler(t *testing.T) {
 		}
 	}
 	candidateClosed := newHeldCall(t)
+	candidates := make(chan *nats.Conn, 1)
 	loserDial := func(url string, opts ...nats.Option) (*nats.Conn, error) {
-		return nats.Connect(url, append(opts, nats.ClosedHandler(func(nc *nats.Conn) {
+		nc, err := nats.Connect(url, append(opts, nats.ClosedHandler(func(nc *nats.Conn) {
 			candidateClosed.hold()
 			c.handleClosed(nc)
 		}))...)
+		if nc != nil {
+			candidates <- nc
+		}
+		return nc, err
 	}
 	loser := make(chan error, 1)
-	go func() { loser <- c.connectWith(t.Context(), loserDial) }()
+	var loserReturned atomic.Bool
+	go func() {
+		err := c.connectWith(t.Context(), loserDial)
+		loserReturned.Store(true)
+		loser <- err
+	}()
 	await(t, held, "the loser reaching its dial report")
 	require.NoError(t, c.Connect(t.Context()), "the winner")
 
 	releaseOnce.Do(func() { close(release) })
 	await(t, candidateClosed.entered, "the candidate's closed handler entering")
-	select {
-	case err := <-loser:
-		t.Fatalf("the losing Connect returned %v while its candidate's closed handler runs", err)
-	case <-time.After(stillWaitingBound):
-	}
+	candidate := <-candidates
+	// The synchronization point: the loser has asked for its candidate's closed-handler signal,
+	// or has returned. A correct loser is then blocked on that signal, which the held closed
+	// handler has not yet given.
+	ctx, cancel := context.WithTimeout(t.Context(), lifecycleBound)
+	defer cancel()
+	_, err = probe.Await(ctx, func(context.Context) (bool, error) {
+		if loserReturned.Load() {
+			return true, nil
+		}
+		c.closedSignalsMu.Lock()
+		defer c.closedSignalsMu.Unlock()
+		_, waiting := c.closedSignals[candidate]
+		return waiting, nil
+	}, func(ready bool) bool { return ready })
+	require.NoError(t, err, "the losing Connect neither returned nor waited for its candidate")
+	require.False(t, loserReturned.Load(), "the losing Connect returned while its candidate's closed handler runs")
 	candidateClosed.Release()
 	require.ErrorIs(t, awaitErr(t, loser, "the losing Connect"), errs.ErrAlreadyStarted)
 	require.Equal(t, StatusConnected, c.Status())
@@ -1020,11 +1086,7 @@ func runTableOp(t *testing.T, tc *tableClient, op string, id int, other *nats.Co
 			return c.Close(live)
 		}
 		out := closeAsync(live, c)
-		select {
-		case err := <-out:
-			t.Fatalf("a live Close returned %v while the drain is held", err)
-		case <-time.After(stillWaitingBound):
-		}
+		requireJoinOpen(t, c, "the held drain was released")
 		tc.release()
 		return awaitErr(t, out, "the live Close")
 	case "CloseEnded":
@@ -1333,7 +1395,7 @@ func TestClientCloseEndsSubscriptionOnReplacedConnection(t *testing.T) {
 			}
 
 			require.ErrorIs(t, c.Close(endedContext(t)), context.Canceled)
-			requireCloseStillWaiting(t, c, "the handler on the replaced connection returned")
+			requireJoinPending(t, c, joinOnOwnedWork, "the handler on the replaced connection returned")
 			held.Release()
 			requireLiveCloseNil(t, c, "Close after the handler returned")
 			require.Zero(t, first.NumSubscriptions(), "the subscription on the replaced connection is still open")

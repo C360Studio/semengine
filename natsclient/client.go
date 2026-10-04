@@ -138,6 +138,9 @@ type Client struct {
 	// Synchronization. Every status write holds mu, so a writer's ownership
 	// check and its write are one step against Close and against a Connect
 	// installing its connection (design D3, natsclient-status-ownership).
+	// The event handlers take mu on the nats.go dispatcher goroutine, so mu is
+	// never held across a native call that dispatches or waits on dispatch
+	// (Close, Drain, Flush, Subscribe and the like).
 	mu sync.RWMutex
 
 	// Lifecycle (design D3). closing is set once, by the first Close, under mu;
@@ -176,7 +179,13 @@ type Client struct {
 
 	// closedSignals holds, per connection, a channel handleClosed closes once
 	// it has run: the end of that connection's event handlers (nats.go runs
-	// ClosedHandler last, nats.go:6236-6252, :3637-3660).
+	// ClosedHandler last, nats.go:6236-6252, :3637-3660). The waiter deletes
+	// its entry. handleClosed cannot delete an entry nobody has asked for yet,
+	// because a waiter may ask after the handler ran (a dialled connection that
+	// closed by itself before Close). So an entry outlives its use when no one
+	// ever waits: a connection replaced through SetConnection (a test hook), or
+	// the dialled connection of a client that is never closed. That is one
+	// entry, holding no goroutine, per such connection the client dialled.
 	closedSignalsMu sync.Mutex
 	closedSignals   map[*nats.Conn]chan struct{}
 

@@ -147,7 +147,10 @@
 //	    return err
 //	}
 //	// The owner retains consumeHandle and cancelOwner while running. During Stop,
-//	// drain and await exact native completion before canceling callback authority.
+//	// drain the handle. Closed reports the end of a drain that completed, but it can
+//	// report the end early once delivery was stopped without a drain or the
+//	// connection was force-closed (nats.go jetstream/pull.go:822-837). A nil
+//	// client.Close is the proof that no handler invocation is still running.
 //	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 5*time.Second)
 //	defer cancelShutdown()
 //	consumeHandle.Drain()
@@ -159,12 +162,12 @@
 //	}
 //	cancelOwner()
 //
-//	// Framework-internal consumers with no JetStreamPort contract retain exact
-//	// native ownership. Drain and await Closed before canceling handler authority.
+//	// Framework-internal consumers with no JetStreamPort contract retain the
+//	// native handle. Drain it when done; client.Close stops and joins the consumer
+//	// if the caller has not, and its nil return proves no handler still runs.
 //	internalHandle, err := client.ConsumeInternalStreamWithConfig(ctx, internalConfig, internalHandler)
 //	if err == nil {
-//	    internalHandle.Drain()
-//	    <-internalHandle.Closed()
+//	    defer internalHandle.Drain()
 //	}
 //
 // # Key-Value Store

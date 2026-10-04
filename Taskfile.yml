@@ -70,6 +70,11 @@ tasks:
     cmds:
       - 'go run ./internal/harness/pindiff diff {{.CLI_ARGS}}'
 
+  mutate:check:
+    desc: Run by hand, never by verify or CI. Check that one named test detects one wrong change to a Go source file (-- -pkg -test -file -mutant -expect or -expect-text); writes nothing in the repository; fails unless the verdict is detection
+    cmds:
+      - 'go run ./internal/harness/mutcheck {{.CLI_ARGS}}'
+
   vuln:
     desc: Run the pinned govulncheck over all packages
     cmds:

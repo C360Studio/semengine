@@ -348,7 +348,7 @@ lines 208-210, overlapped by `207.36,208.46` (12 times) and `208.46,210.4` (once
 Every run uses `-race`, as `task test:unit` does. A wrong change that removes a lock can fail only with the race
 detector's line `testing.go:1712: race detected during execution of test` (P18), not with an assertion of the test.
 How often that happens is not measured: none of the trial's 196 runs had a race report (`race=false` on every run line
-of `trial/cases/*/report.txt`).
+of `trial/cases/*/out*/report.txt`).
 
 | Option | Cost |
 | --- | --- |

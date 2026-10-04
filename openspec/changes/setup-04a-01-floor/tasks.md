@@ -964,11 +964,15 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
 
 ## 6. Docs
 
-- [ ] 6.2 (W) `docs/testing.md` (PR #39) or its successor gains: the `Restart` contract (`URL()` valid until the next
+- [x] 6.2 (W) `docs/testing.md` (PR #39) or its successor gains: the `Restart` contract (`URL()` valid until the next
       restart; stop the owner before, start after), `FaultKV`'s before/after semantics, the helper-process pattern,
       the lifecycle suite for services with its required must-fail factory and the adapter checklist, the three
       shapes of background work with their `synctest` test, and the repair classes for a ported test (design D8);
       written for a working developer, each coined term defined at first use.
+      In `docs/testing.md`: the `Restart`, `FaultKV` and `prochost` entries under "Helper packages", and new sections
+      "Services and the lifecycle suite", "Background work" and "Porting a test from SemStreams"; the stale
+      `Run(t, factory, promise)` signature and the three-target coverage lists here and in `docs/repository-map.md`
+      corrected to the code. `task docs:check` passes.
 - [ ] 6.3 (W) The `openspec/specs/` sync: the eight deltas applied to `harness-boundaries`, `nats-fixture`,
       `lifecycle-suite` and the five new capabilities (`process-host`, `transport-client`, `background-work`,
       `metric-registry`, `message-codec`),

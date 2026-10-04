@@ -46,7 +46,7 @@ not a task tracker and not a description of the tree.
 | `internal/harness/runner/` | Tests of the integration runner script |
 | `internal/harness/pindiff/` | The program behind `task ledger:check` and `task ledger:diff`: compares ledger entries with the pin (SemStreams at each entry's `source_sha`), which it fetches from GitHub when an entry needs it |
 | `scripts/test-integration.sh` | `task test:integration`: host lock, image preflight, signal forwarding, leak check |
-| `scripts/cover-check.sh` | `task cover:check`: 80% statements on `natsfixture`, `lifecycletest`, `probe` |
+| `scripts/cover-check.sh` | `task cover:check`: 80% statements on each package in its target list: `natsfixture`, `lifecycletest`, `probe`, `message`, `payloadregistry`, `natsclient` |
 | `scripts/merge-check.sh` | `task merge:check` and the CI job `merge-check`: fails while an open `class:flake` issue is not closed by the pull request, or while the rules on `main` do not require an up-to-date head, or while a code pull request that is not a draft lacks the `implemented-by:` and `reviewed-by:` lines naming the two agents (`.agents/protocol.md`, "Cross-agent review"). Reads GitHub, so not part of `task verify` |
 | `.nats-image` | The pinned NATS image digest every fixture starts |
 | `.evidence/` (ignored) | Per-run integration evidence; CI uploads it as an artifact |

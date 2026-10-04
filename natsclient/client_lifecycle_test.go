@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semengine/internal/harness/lifecycletest"
+	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/pkg/errs"
 	natsserver "github.com/nats-io/nats-server/v2/server"
@@ -563,7 +564,17 @@ func TestClientCloseUnderShortDeadlineClosesConnection(t *testing.T) {
 			}
 			err = awaitErr(t, first, "Close whose context ends while the handler runs")
 			require.ErrorIs(t, err, tc.want, "Close whose context ended")
-			require.True(t, nc.IsClosed(), "the connection is still open after Close returned on its context")
+			// Close has closed the connection by the time it returns, but nats.go's own drain
+			// goroutine, finding no subscriptions left once the connection closed, can still move its
+			// status to DRAINING_PUBS and then close it again (nats.go v1.54.0 nats.go:6378-6390), so
+			// IsClosed can read false for that moment. The wait is bounded by lifecycleBound; without
+			// Close's force close the native drain holds the connection open for the client's 30 s
+			// drain timeout, past that bound.
+			closedCtx, cancelClosed := context.WithTimeout(t.Context(), lifecycleBound)
+			defer cancelClosed()
+			_, err = probe.Await(closedCtx, func(context.Context) (bool, error) { return nc.IsClosed(), nil },
+				func(closed bool) bool { return closed })
+			require.NoError(t, err, "the connection is still open after Close returned on its context")
 
 			live, cancelLive := context.WithTimeout(t.Context(), 2*lifecycleBound)
 			defer cancelLive()

@@ -780,8 +780,9 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         ./pkg/types/` passes its three property tests. Rapid is also imported by two files this change adds,
         `metric/registerorget_prop_test.go` and `internal/cache/coalescing_set_prop_test.go`.
       - Counts are over `*_test.go` in each package directory (not subdirectories), the pin from the GitHub tarball
-        of `8b99efe9` with `find` and `wc -l`, the tree at this commit. Test files: the pin's 127 (the 15
-        packages' 125 and `pkg/acme`'s 2) − 6 excluded `natsclient` files − 2 `pkg/acme` − 2 removed with dropped
+        of `8b99efe9` with `find` and `wc -l`, the tree at `38a1074` (re-measured after tasks 4.2 and 4.3 added
+        tests). Test files: the pin's 127 (the 15 packages' 125 and `pkg/acme`'s 2) − 6 excluded `natsclient` files
+        − 2 `pkg/acme` − 2 removed with dropped
         surface (`typed_test.go`, `kv_temporal_integration_test.go`; no other surface audit removed a file) =
         117, + 17 added = 134, which is the tree's count. The 17, each named on its row: `metric` 5
         (`admission_test.go`, `lifecycle_test.go`, `registerorget_prop_test.go`, `registerorget_test.go`,
@@ -795,13 +796,13 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         `test_client_factory_test.go` 312, `test_client_integration_test.go` 361, `test_client_readiness_test.go`
         581, `monitoring_consumers_test.go` 139). Less the four other removed files (`test_options_test.go` 55,
         `mapped_port_retry_test.go` 276, `typed_test.go` 364, `kv_temporal_integration_test.go` 238): 32,346. The
-        tree has 38,293. Tests deleted inside carried files (`TestTemporalResolver_ErrorBoundaries`, 3.7a's
+        tree has 38,456. Tests deleted inside carried files (`TestTemporalResolver_ErrorBoundaries`, 3.7a's
         deletions) are counted in the diff stat, not subtracted one by one. Diff stat of the test files against the
         pin (plain `diff -U0`, added and removed lines; a removed file counts all its lines): `internal/resource`
         +313 −225; `pkg/retry` +119 −110; `internal/timestamp` +1 −1; `vocabulary` +0 −80; `pkg/types` +41 −9;
         `pkg/projection/contract` +1 −1; `internal/tlsutil` +2 −2; `metric` +1,123 −305; `payloadregistry` +3 −3;
-        `message` +1,370 −6; `internal/cache` +1,770 −937; `natsclient` +5,028 −4,471; `pkg/errs`, `pkg/platform`,
-        `pkg/security` unchanged; total +9,771 −6,150, and 34,887 − 215 + 9,771 − 6,150 = 38,293.
+        `message` +1,370 −6; `internal/cache` +1,770 −937; `natsclient` +5,188 −4,468; `pkg/errs`, `pkg/platform`,
+        `pkg/security` unchanged; total +9,931 −6,147, and 34,887 − 215 + 9,931 − 6,147 = 38,456.
 - [ ] 3.10 (R) Port review per package group (3.1–3.7e) and of task 2.8's rehomed helpers: the two service adapters list
       every retained kind (the review checklist of the `lifecycle-suite` delta); each helper has the shape design D7
       gives it, its `synctest` test and its nil-context refusal, and no fixed shutdown timeout remains
@@ -879,10 +880,19 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         nil check in `Subscription.Drain` removed: detected 5/5 (`Drain(nil)` panicked). C1, the deadline clamp
         and the context case of `drainAndCloseConnection` removed: detected 3/3 in both cases (`Close` did not
         return within 10 s). C2, the context case's `conn.Close()` removed: detected 10/10 by
-        `cancelled-during-drain`; the `deadline` case alone is partial, 2 of 10, because the clamp sets the drain
-        timer to the same deadline and that timer's branch also closes the connection. C3, a later `Close`
+        `cancelled-during-drain`; the `deadline` case alone is partial (2 of 10, and 1 of 10 after the change
+        below), because the clamp sets the drain timer to the same deadline and that timer's branch also closes
+        the connection. C3, a later `Close`
         returning nil at once (the pin's `:583-585`): detected 10/10 in both cases. `go test -race -count=20` on
         both tests passes. The row's `proving_tests` records the two gaps and the new tests.
+      - Corrected after `task verify` at `38a1074` failed `test:repeat` once (the `deadline` case, 1 failure in 5
+        shuffled runs at one CPU): the test read `IsClosed()` the moment `Close` returned, but nats.go's own drain
+        goroutine, finding no subscriptions once `Close` has force-closed the connection, moves the status to
+        `DRAINING_PUBS` and then closes again (nats.go v1.54.0 `nats.go:6378-6390`), so `IsClosed` can read false
+        for that moment. The test now waits for `IsClosed` with `probe.Await` under `lifecycleBound`; without the
+        force close the native drain keeps the connection open for the client's 30 s drain timeout, past that
+        bound. `go test -count=50 -cpu 1 -shuffle=on` and `go test -race -count=20` on the test pass; mutants C1,
+        C2 and C3 re-run with the outcomes above.
 
 ## 5. Ledger items that need no port, and boundary gates
 

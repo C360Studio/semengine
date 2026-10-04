@@ -40,9 +40,13 @@ func testGitEnv() []string {
 		"GIT_COMMITTER_NAME=planted", "GIT_COMMITTER_EMAIL=planted@example.invalid")
 }
 
+// gitIn runs git in a planted repository with automatic maintenance off. Otherwise git commit
+// starts `git maintenance run --auto --detach`, which outlives the commit and creates and removes
+// .git/objects/maintenance.lock while a test is taking its snapshot of the tree.
 func gitIn(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.CommandContext(t.Context(), "git", append([]string{"-C", dir}, args...)...)
+	cmd := exec.CommandContext(t.Context(), "git",
+		append([]string{"-C", dir, "-c", "maintenance.auto=false", "-c", "gc.auto=0"}, args...)...)
 	cmd.Env = testGitEnv()
 	out, err := cmd.CombinedOutput()
 	if err != nil {

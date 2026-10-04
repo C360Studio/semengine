@@ -1817,6 +1817,20 @@
     TestClientCloseUnderShortDeadlineClosesConnection (client_lifecycle_test.go; a 200 ms deadline
     and a cancel after the drain begins: Close returns the context's error while a handler is
     held, the connection is closed, and a second live Close waits on its context and returns nil
-    once the handler has returned)
+    once the handler has returned). Task 4.1, settlement (design D4; transport-client "Settlement
+    follows the decision"), the natsclient half: the pin's 18 unit tests in
+    delivery_settlement_test.go, with TestConsumeDeliveryWithHeartbeatErrCarriesControlLoss added in
+    task 3.7b, and its 3 integration tests in delivery_settlement_integration_test.go, which run on
+    natsfixture through newFixtureClient. Scenarios: long work with heartbeat →
+    TestIntegrationConsumeDeliveryWithHeartbeatHealthyRenewalPreventsOverlap; stopped heartbeat →
+    TestIntegrationConsumeDeliveryWithHeartbeatStoppedRenewalUsesBackOff; semantic retry →
+    TestIntegrationSemanticRetryProducesDurableRedelivery; work panics →
+    TestConsumeDeliveryWithHeartbeatControlLossNormalizesInvalidAndPanic and
+    TestConsumeDeliveryWithHeartbeatPanicAndZeroPolicyFailClosed. Task 4.2, acknowledged is not
+    durable, the natsclient half: TestIntegration_AcknowledgedIsNotDurableOnMemoryStream
+    (integration_test.go) publishes through PublishToStream to a memory-backed and a file-backed
+    natsfixture stream, reads both back, restarts the fixture, and finds the file-backed message
+    and not the memory-backed one. The graph-ingest half of both requirements, and its scenarios,
+    are change 2's (design D4)
   owner: setup-04a-01-floor developer
   disposition: adapt

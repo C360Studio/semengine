@@ -822,7 +822,7 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
 
 ## 4. Repair evidence this change can produce (ruling g)
 
-- [ ] 4.1 (D) Settlement, `natsclient` half: the 18 unit and 3 integration settlement tests pass against `natsfixture`;
+- [x] 4.1 (D) Settlement, `natsclient` half: the 18 unit and 3 integration settlement tests pass against `natsfixture`;
       the `transport-client` "Settlement follows the decision" scenarios map to named tests (long work with heartbeat →
       `TestIntegrationConsumeDeliveryWithHeartbeatHealthyRenewalPreventsOverlap`; semantic retry →
       `TestIntegrationSemanticRetryProducesDurableRedelivery`; work panics →
@@ -830,9 +830,30 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       `TestConsumeDeliveryWithHeartbeatPanicAndZeroPolicyFailClosed`, `delivery_settlement_test.go:690,739`); the row
       names change 2 for the graph-ingest half. The tests that read `DeliveryResult`'s dropped getters read its
       unexported fields instead, with the same assertions (task 3.7a).
-- [ ] 4.2 (D) Acknowledged is not durable, `natsclient` half: an integration test publishes through the ported client
+      - Done; no code changed, so no failing-first test. The unit tests are the pin's 18 in
+        `delivery_settlement_test.go` plus `TestConsumeDeliveryWithHeartbeatErrCarriesControlLoss` (task 3.7b);
+        `go test -race -count=1 -v` on the 19 shows 19 PASS. The three integration tests run on `natsfixture`
+        (`newFixtureClient`) and pass under `task test:integration -- -v -run '…' ./natsclient` (exit 0; the
+        runner's evidence directory is local only). The scenarios map as listed above, plus "Stopped heartbeat"
+        → `TestIntegrationConsumeDeliveryWithHeartbeatStoppedRenewalUsesBackOff`; the two panic tests are now at
+        `delivery_settlement_test.go:725, :778`. No test calls a dropped `DeliveryResult` getter (grep: none;
+        task 3.7a retargeted the 18 calls). The `natsclient` row's `proving_tests` names the tests, the scenario
+        map and change 2 for the graph-ingest half.
+- [x] 4.2 (D) Acknowledged is not durable, `natsclient` half: an integration test publishes through the ported client
       to a memory-backed and a file-backed stream, restarts the fixture (task 2.1's primitive), and asserts absence
       and presence respectively; the `natsclient` row names it and change 2 for the graph-ingest scenarios.
+      - Done: `TestIntegration_AcknowledgedIsNotDurableOnMemoryStream` (`natsclient/integration_test.go`). It
+        creates both streams through the fixture, checks through the client that the memory stream reports
+        `MemoryStorage`, publishes one message to each with `PublishToStream`, reads both back at sequence 1,
+        closes the client, restarts the fixture, and with a client on the new URL reads the file-backed message
+        and finds the memory-backed one gone (the stream was not found after the restart; the test also accepts
+        an empty re-created stream, as `natsfixture`'s own restart test does). Passed on its first run under
+        `task test:integration`: it tests behaviour already in place (the broker's and task 2.1's), so there is
+        no failing-first run. Mutants through the runner, each restored by checksum: `CreateMemoryStream` making
+        a file-backed stream: detected by the storage-class assertion; the same with that assertion disabled in
+        the test: detected by the absence check ("memory-backed message after the restart": got nil, want
+        `ErrMsgNotFound`); `publishToStream` skipping `PublishMsg`: detected by the read-back before the restart.
+        The `natsclient` row names the test and change 2 for the graph-ingest scenarios.
 - [x] 4.3 (D) `Close`/`Drain` bounded: tests show `Drain(nil)` refused without a server call (carried), `Close(nil)` and
       `Connect(nil)` refused with the connection untouched (new, test written first, task 3.7c), `Close` under a short
       deadline returning within it with the connection closed, and a second `Close` returning nil (carried where the pin

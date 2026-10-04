@@ -4,6 +4,7 @@ package natsclient
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
@@ -96,6 +97,65 @@ func TestIntegration_ReconnectionIsRedial(t *testing.T) {
 	assert.True(t, redialled.IsHealthy())
 	_, err = redialled.RTT()
 	require.NoError(t, err, "a round trip to the restarted broker")
+}
+
+// TestIntegration_AcknowledgedIsNotDurableOnMemoryStream is task 4.2, the natsclient half of
+// transport-client "Acknowledged is not durable on a memory stream": a message PublishToStream
+// returned nil for (the server acknowledged it) on a memory-backed stream is absent after the
+// broker restarts, and one published the same way on a file-backed stream is present. Both are
+// read back before the restart, so the absence afterwards is not a publish that never landed. The
+// graph-ingest half of the scenario is change 2's.
+func TestIntegration_AcknowledgedIsNotDurableOnMemoryStream(t *testing.T) {
+	ctx := t.Context()
+	f := startFixture(t)
+	file, mem := f.Name("file"), f.Name("mem")
+	_, err := f.CreateStream(ctx, file, file+".>")
+	require.NoError(t, err)
+	_, err = f.CreateMemoryStream(ctx, mem, mem+".>")
+	require.NoError(t, err)
+
+	publisher, err := NewClient(f.URL(), WithMaxReconnects(0), WithHealthInterval(0))
+	require.NoError(t, err)
+	require.NoError(t, publisher.Connect(ctx))
+	defer closeClient(t, publisher)
+	memStream, err := publisher.GetStream(ctx, mem)
+	require.NoError(t, err)
+	memInfo, err := memStream.Info(ctx)
+	require.NoError(t, err)
+	require.Equal(t, jetstream.MemoryStorage, memInfo.Config.Storage, "the client reports the stream's storage class")
+	require.NoError(t, publisher.PublishToStream(ctx, file+".1", []byte("kept")))
+	require.NoError(t, publisher.PublishToStream(ctx, mem+".1", []byte("lost")))
+	// Each stream is new, so its one message is at sequence 1.
+	for name, want := range map[string]string{file: "kept", mem: "lost"} {
+		s, err := publisher.GetStream(ctx, name)
+		require.NoError(t, err)
+		msg, err := s.GetMsg(ctx, 1)
+		require.NoError(t, err, "%s before the restart", name)
+		require.Equal(t, want, string(msg.Data), "%s before the restart", name)
+	}
+	closeClient(t, publisher) // the fixture contract: stop what is built on the old URL first
+
+	restartCtx, cancel := context.WithTimeout(ctx, restartBound)
+	defer cancel()
+	require.NoError(t, f.Restart(restartCtx))
+
+	reader, err := NewClient(f.URL(), WithMaxReconnects(0), WithHealthInterval(0))
+	require.NoError(t, err)
+	require.NoError(t, reader.Connect(ctx))
+	defer closeClient(t, reader)
+	fs, err := reader.GetStream(ctx, file)
+	require.NoError(t, err, "file-backed stream after the restart")
+	msg, err := fs.GetMsg(ctx, 1)
+	require.NoError(t, err, "file-backed message after the restart")
+	require.Equal(t, "kept", string(msg.Data))
+	// The memory stream itself may or may not be re-created empty; either way its message is gone.
+	ms, err := reader.GetStream(ctx, mem)
+	t.Logf("memory-backed stream after the restart: stream not found = %v", errors.Is(err, jetstream.ErrStreamNotFound))
+	if !errors.Is(err, jetstream.ErrStreamNotFound) {
+		require.NoError(t, err, "memory-backed stream after the restart")
+		_, err = ms.GetMsg(ctx, 1)
+		require.ErrorIs(t, err, jetstream.ErrMsgNotFound, "memory-backed message after the restart")
+	}
 }
 
 // TestIntegration_CircuitBreakerWithRealConnection tests circuit breaker with actual failures

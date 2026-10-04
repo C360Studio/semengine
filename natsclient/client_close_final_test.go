@@ -70,6 +70,19 @@ func awaitErr(t *testing.T, ch <-chan error, what string) error {
 	}
 }
 
+// awaitValue waits for one value on ch, failing the test after lifecycleBound.
+func awaitValue[T any](t *testing.T, ch <-chan T, what string) T {
+	t.Helper()
+	select {
+	case v := <-ch:
+		return v
+	case <-time.After(lifecycleBound):
+		t.Fatalf("%s: not within %v", what, lifecycleBound)
+		var zero T
+		return zero
+	}
+}
+
 // closeAsync runs Close(ctx) on its own goroutine.
 func closeAsync(ctx context.Context, c *Client) <-chan error {
 	out := make(chan error, 1)
@@ -663,9 +676,9 @@ func TestClientCloseJoinsConsumerHandlerWhenClosedReportsEarly(t *testing.T) {
 				StreamConsumerConfig{StreamName: "S_EARLY", ConsumerName: "early"},
 				func(context.Context, jetstream.Msg) { held.hold() })
 			require.NoError(t, err)
-			deliver := <-native.handler
+			deliver := awaitValue(t, native.handler, "native Consume receiving the handler")
 			go deliver(&mockMsg{subject: "early.one"})
-			<-held.entered
+			await(t, held.entered, "the consumer handler entering")
 
 			require.ErrorIs(t, c.Close(endedContext(t)), context.Canceled)
 			close(native.handle.closed) // native Closed() reports the end while the handler runs
@@ -873,7 +886,7 @@ func TestClientLosingConnectLeavesNoCandidateHandler(t *testing.T) {
 
 	releaseOnce.Do(func() { close(release) })
 	await(t, candidateClosed.entered, "the candidate's closed handler entering")
-	candidate := <-candidates
+	candidate := awaitValue(t, candidates, "the loser reporting its candidate")
 	// The synchronization point: the loser has asked for its candidate's closed-handler signal,
 	// or has returned. A correct loser is then blocked on that signal, which the held closed
 	// handler has not yet given.
@@ -1178,7 +1191,7 @@ func TestClientRefusesLateDeliveryAfterRecordedEnd(t *testing.T) {
 					StreamConsumerConfig{StreamName: "S_LATE", ConsumerName: "late", AckPolicy: tc.cfg, MaxAckPending: 17},
 					func(context.Context, jetstream.Msg) { ran = true })
 				require.NoError(t, err)
-				deliver := <-native.handler
+				deliver := awaitValue(t, native.handler, "native Consume receiving the handler")
 				close(native.handle.closed) // the end, with no invocation running
 				synctest.Wait()
 
@@ -1257,7 +1270,7 @@ func TestClientRefusedConsumerSetupContextEndsWhileHandlerRuns(t *testing.T) {
 					})
 					results <- result{h, e}
 				}()
-				<-native.entered
+				await(t, native.entered, "native Consume entering")
 				require.ErrorIs(t, c.Close(endedContext(t)), context.Canceled)
 				close(native.returnHandle)
 				synctest.Wait()
@@ -1309,7 +1322,7 @@ func TestClientCloseJoinsRunningAsyncPublishErrorHandler(t *testing.T) {
 			defer close(done)
 			c.asyncPublishErrHandler(nil, &nats.Msg{Subject: "async.held"}, errors.New("ack failed"))
 		}()
-		<-h.entered
+		await(t, h.entered, "the async publish error handler entering")
 
 		require.ErrorIs(t, c.Close(endedContext(t)), context.Canceled)
 		short, cancel := context.WithTimeout(t.Context(), time.Minute)
@@ -1317,7 +1330,7 @@ func TestClientCloseJoinsRunningAsyncPublishErrorHandler(t *testing.T) {
 		require.ErrorIs(t, c.Close(short), context.DeadlineExceeded,
 			"a live Close returned while the async publish error handler runs")
 		h.releaseHold()
-		<-done
+		await(t, done, "the async publish error handler returning")
 		require.NoError(t, c.Close(t.Context()))
 	})
 }
@@ -1537,7 +1550,7 @@ func TestClientCloseAttributesConsumerToItsHandlesConnection(t *testing.T) {
 			require.NoError(t, c.Connect(t.Context()), "a second Connect after SetConnection(nil)")
 			require.NotSame(t, first, c.GetConnection(), "the second Connect dialled a new connection")
 			close(gate.release)
-			got := <-setup
+			got := awaitValue(t, setup, "the consumer setup returning")
 			require.NoError(t, got.err)
 
 			ctx, cancel := context.WithTimeout(t.Context(), lifecycleBound)

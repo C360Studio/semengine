@@ -35,7 +35,7 @@ messages and a memory-backed stream does not.
 
 #### Scenario: Restart before Start
 
-- **WHEN** Restart is called on a fixture whose Start has not succeeded
+- **WHEN** Restart is called on a fixture whose Start has not succeeded, or once Stop has begun
 - **THEN** Restart returns an error and the Docker call count is unchanged
 
 #### Scenario: Start-container phase fails

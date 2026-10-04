@@ -1,6 +1,6 @@
 # Design: setup-04a-01-floor
 
-Status: architect draft for independent design review, then owner acceptance. The slicing, the harness extension's
+Status: accepted on #9 (2026-10-01, task 1.3); amended by the rulings it cites. The slicing, the harness extension's
 shape, the owner definition and the ledger conventions are the foundation design's, accepted on #9; this document
 cites it as "foundation D*n*" (`openspec/changes/archive/2026-10-01-setup-04a-foundation/design.md`) and decides only
 what the foundation left to the first change. The inventory it rests on is the foundation's `inventory.md` (§n).
@@ -10,7 +10,8 @@ what the foundation left to the first change. The inventory it rests on is the f
 Foundation D2 row 1 and D3 fix the scope: the 15 packages of closure(natsclient) ∪ closure(message) less `pkg/acme`
 (D1), their tests, the
 harness extension of D4, the failed-start check of D5, the lifecycle suite on the two services of this set and the
-helper tests of D7, the ledger items that need no port, and the five spec deltas of D10.1. Admission gates for the
+helper tests of D7, the ledger items that need no port, and the five spec deltas of D10.1 and the `background-work`
+delta that D7 adds (#9 comments 5950234192, 5950482163). Admission gates for the
 change: `task verify` green, the three `cover:check` targets at 80%, both services green under the lifecycle suite
 including the failed-start check, every helper green under its three tests (D7), the I8 test green, and the ledger
 rows validated by `task ledger:check`.
@@ -28,9 +29,10 @@ rows validated by `task ledger:check`.
   `metric/handler.go`; `pkg/resource/watcher.go`; `pkg/cache/coalescing_set.go`; `pkg/errs/errs.go`.
 - Per-package measurement: `scratchpad/04a/chain4.py` output for C1 and the per-package table reproduced in D1 (lines,
   files, tests, integration-tagged tests, `NewTestClient` sites, context roots, in-set imports, third-party imports).
-- Overlap: draft PR #73 (`claude/authority-one-spelling`) adds checks to `internal/harness/contract`; #48 merges first,
-  as #73 says. The pin's `natsclient` has no exported `Federation|GlobalID|EntityIRI` name and no `Org`/`Platform`
-  field, so nothing ported in 3.7 trips them.
+- Overlap: draft PR #73 (`claude/authority-one-spelling`) also changes `harness-boundaries`. This change carries the
+  names half of #72 ruling A (requirement "No second spelling of deployment authority",
+  `TestNoDeploymentAuthorityNames`; #9 comment 5969776736 item 3). #48 merges first. #73 then MODIFIES that
+  requirement to add the field check (ruling C) rather than ADDing a second requirement for the same names.
 
 ## Decisions
 
@@ -77,11 +79,12 @@ in the floor whole because it is admitted: six admitted packages import it at th
 `processor/graph-ingest`, `processor/graph-embedding`, `processor/rule`, `processor/rule/expression`,
 `storage/objectstore`). In this change nothing imports it. The loaders, `pkg/acme`, `go-acme/lego/v4` and their two
 defects (D7) move to change 5, which ports `output/websocket` (foundation D2 row 5); `input/websocket` and
-`output/httppost` call them too and are in no change of the chain, so the change that ports them inherits the row.
-`pkg/platform` and `pkg/security` have no tests at the pin; none are invented — their rows say so and D10 does not gate
-them. Ported files land at their row's `destination` (D5). Not ported: `test_client.go` (`adapt → natsfixture`) and
-`test_options.go` (`defer-exclude`); by owner ruling (#9, comment 5941920346, Q3), the three test files that exercise
-them — `test_client_factory_test.go`, `test_client_integration_test.go` and `test_client_readiness_test.go`
+`output/httppost` call them too and are in no change of the chain, so the change that ports them inherits the row (#9
+comment 5950822861). `pkg/platform` and `pkg/security` have no tests at the pin; none are invented — their rows say so
+and D10 does not gate them. Ported files land at their row's `destination` (D5). Not ported: `test_client.go`
+(`adapt → natsfixture`) and `test_options.go` (`defer-exclude`); by owner ruling (#9, comment 5941920346, Q3), the three
+test files that exercise them — `test_client_factory_test.go`, `test_client_integration_test.go` and
+`test_client_readiness_test.go`
 (`defer-exclude`). `monitoring_consumers_test.go` is also `defer-exclude`, an exclusion forced by Q3 and not an owner
 ruling: it walks the SemStreams tree for `NewTestClient(…, WithMonitoring())` callers (`:13-27, :83, :111-115`),
 `WithMonitoring` is declared at `test_client.go:448`, which is not ported, and the files it names lie outside the set
@@ -204,6 +207,9 @@ with its property test (P23).
 
 ### D3. The two services and their failing factories (foundation D5, D6)
 
+In the items marked F21–F27 and `natsclient-close-reports-drain-timeout`, a `client.go`, `stream.go` or
+`jetstream_metrics.go` cite is to `c69d7ac` unless it says otherwise.
+
 The lifecycle suite applies to services only: types the engine starts, supervises and stops, with a `Start` that can
 fail (ruling #9 comment 5950234192, item 1). In this set those are `metric.Server` and `natsclient.Client`. Each runs
 the full suite through a test-side adapter in its own package (a `_test.go` file, so it reads unexported state) that
@@ -237,12 +243,14 @@ failing-first `adapt` items:
   `:1572-1579` does not wait for a timer that has already fired) and the circuit test (`:289`, never stopped). `Connect`
   also races `Close`: it releases `closeMu` at `:553`, starts the monitor (`:560`) and the poller (`:566`), and writes
   `metricsCancel` with no lock that `Close` reads at `:595`. The fix, in one place:
-  - Every site starts through one helper that, under `m.mu`, refuses once a `closing` flag is set and otherwise adds
-    one to an owned-work count before the goroutine starts; `Close` waits for that count to reach zero. The two timer
-    bodies enter through the same check before doing anything. Nothing can be admitted once `Close` has begun waiting,
-    so a callback, disconnect or timer that nats.go or the runtime delivers while `Close` runs (`handleDisconnect`
-    arms the watchdog, `:1512`) cannot race the wait. `Connect` admits and starts the monitor and poller through the
-    same helper, so a `Close` that has begun refuses them, and then returns `nats.ErrConnectionClosed`, not nil.
+  - Every site starts through `startBackground`; a subscription and the async publish error handler are counted through
+    `admitLocked` and `admitAlways` (`client.go:223, :242, :269` at `c69d7ac`). The helper, under `m.mu`, refuses once a
+    `closing` flag is set and otherwise adds one to an owned-work count before the goroutine starts; `Close` waits for
+    that count to reach zero. The two timer bodies enter through the same check before doing anything. Nothing can be
+    admitted once `Close` has begun waiting, so a callback, disconnect or timer that nats.go or the runtime delivers
+    while `Close` runs (`handleDisconnect` arms the watchdog, `:1512`) cannot race the wait. `Connect` admits and starts
+    the monitor and poller through the same helper, so a `Close` that has begun refuses them, and then returns
+    `nats.ErrConnectionClosed`, not nil.
   - Arming either timer is refused, and logged, once `Close` has begun, so no timer is left pending after it.
     Arming the circuit timer stops a pending one from an earlier round, which nothing else would track or stop.
   - **`jetstream.New`'s error.** It is dropped at `:525`. `Connect` returns it and closes the dialled connection. No
@@ -258,12 +266,14 @@ failing-first `adapt` items:
     connection; clear the connection and the JetStream handle), bounded by its own context. The pin's early
     `return nil` on a second call (`:583-585`) goes. See `natsclient-close-honours-each-context` for what every
     other caller observes.
-  - A `Close` called from inside one of the client's callbacks waits on a group that includes its own goroutine, so
+  - A `Close` called from inside one of the client's callbacks waits for owned work that includes its own goroutine
+    (an owned-work count, `client.go:146-160` at `c69d7ac`), so
     it returns `ctx.Err()` when its context ends and never returns nil, as `http.Server.Shutdown` does from inside a
     handler. `Close`'s doc comment and the row say so; at the pin such a call returned at once.
 - **`natsclient-close-is-final`** (Codex F21, PR #48 comment 5980134911). `Close` returns nil only when everything
   the client owns has finished:
-  - the background work of the six sites above;
+  - the background work of the six sites above (five call sites since 3.7c2: the two claim releases are one,
+    `owned_delivery.go:133` at `c69d7ac`);
   - every invocation of a message handler passed to `Subscribe`, `SubscribeForRequests`,
     `ConsumeStreamWithConfig`, `ConsumeStreamWithConfigContexts` and `ConsumeInternalStreamWithConfig`;
   - the client's connection event handlers and its async publish error handler.
@@ -291,41 +301,43 @@ failing-first `adapt` items:
   most one message per subscription or consumer is refused this way, because the native library delivers on one
   goroutine per subscription. Each refusal is logged at warn level with the subject, the stream and consumer
   where there is one, and the ack policy, and counted on the existing JetStream error metric as
-  `recordError("late_delivery_refused")` (`jetstream_metrics.go:248-252`, the path `publish_async` already uses,
-  `client.go:1164`) when the client has JetStream metrics configured; without them the warn log is the only
+  `recordError("late_delivery_refused")` (`jetstream_metrics.go:252-256`, the path `publish_async` already uses,
+  `client.go:1534`) when the client has JetStream metrics configured; without them the warn log is the only
   signal. That label also counts refusals on core subscriptions, although the metric's help text names JetStream
   operations. The owner accepted that AckNone loss
   (question 4, #9 comment 5980769459).
 
-  Work a call starts belongs to that call until it returns and to the client afterwards: a
-  `Connect` that returns an error has no event handler of the connection it dialled still running, so a `Connect`
-  still in flight when `Close` returns (a valid ordering) does not leave work behind either. That wait takes no
-  context and is still background-work shape 2 (ruling #9 comment 5950482163), not shape 3: the only callbacks on
-  the candidate's native dispatcher are the client's own event handlers (`client.go:487-490`), which wait on
-  nothing outside the client, and no caller callback is ever queued there (N6 of the design revision: the
-  connection's `ClosedHandler` is the last callback its dispatcher runs, `nats.go:6236-6252, :3637-3660`).
+  Work a call starts belongs to that call until it returns and to the client afterwards: a `Connect` that returns an
+  error has no event handler of the connection it dialled still running, so a `Connect` still in flight when `Close`
+  returns (a valid ordering) does not leave work behind either (owner ruling 2, #9 comment 5980296112). That wait takes
+  no context and is still background-work shape 2 (ruling #9 comment 5950482163), not shape 3: the only callbacks on the
+  candidate's native dispatcher are the client's own event handlers (`client.go:639-642`), which wait on nothing outside
+  the client, and no caller callback is ever queued there (the connection's `ClosedHandler` is the last callback its
+  dispatcher runs, nats.go v1.54.0 `nats.go:6154-6160, :6236-6252, :3637-3660`).
 - **Connections installed or replaced through `SetConnection`.** `Close` joins the event handlers of exactly one
   connection: the one it drains and closes, when this client dialled it (only a dialled connection carries the
-  client's handlers, `buildConnectionOptions`, `client.go:480-503`). A connection installed through `SetConnection` is
+  client's handlers, `buildConnectionOptions`, `client.go:632-656`). A connection installed through `SetConnection` is
   drained and closed like any installed connection, with no handler join. A connection that `SetConnection` replaced,
   dialled by this client or not, belongs to whoever called `SetConnection`: `Close` neither closes it nor waits for
   its `ClosedHandler`, so `Close` cannot hang on it. Reasons: `SetConnection` is a test hook ("for testing",
-  `client.go:289`) whose only caller swaps a connection out and restores it in cleanup
+  `client.go:408`) whose only caller swaps a connection out and restores it in cleanup
   (`request_response_bounds_integration_test.go:167, :189`), so closing the replaced connection would break the caller
   that owns it; and the client's handlers on a replaced connection change nothing, because each state-changing handler
   checks that its connection is the installed one first (`isCurrentConn` at `7ce1940`, `client.go:1593-1597`;
-  `ownsStatusLocked` since 3.7c2); `handleError` only logs. Client-owned subscriptions are different: they were
-  created by `Subscribe` or `SubscribeForRequests` and belong to the client wherever their connection went. `Close`
-  unsubscribes one left on a replaced connection and joins its running handler invocation (N2). An error from that
-  `Unsubscribe` (the replaced connection already closed or draining, or the subscription already ended) means the
-  subscription is already ending: `Close` neither fails nor returns early on it, and still waits for the
+  `ownsStatusLocked`, `client.go:1964`, since 3.7c2); `handleError` only logs. Client-owned subscriptions are different:
+  they were created by `Subscribe` or `SubscribeForRequests` and belong to the client wherever their connection went.
+  `Close` unsubscribes one left on a replaced connection and joins its running handler invocation (nats.go v1.54.0
+  `nats.go:3826-3834`). An error from that `Unsubscribe` (the replaced connection already closed or draining, or the
+  subscription already ended) means the subscription is
+  already ending: `Close` neither fails nor returns early on it, and still waits for the
   subscription's end, bounded by its own context. The client keeps no catalog of its subscriptions, so the carried
   guard `TestClientHasNoChildLifecycleSurfaceOrCatalog` stands: each client-owned subscription has its own admitted
   watcher, which unsubscribes it when `Close` begins if its connection is not the one `Close` drains. Declared cost:
   messages buffered on that subscription and not yet handed to the handler are discarded by the native library on
-  unsubscribe (N8), as they are when any core subscription is unsubscribed. Once `Close` has begun, `SetConnection`
-  changes nothing and logs at warn level (owner answer 3). Client-created consumers are the client's in the same way
-  (Codex F26, PR #48 comment 5981562076): when `Close` begins, the ownership goroutine of a consumer whose connection
+  unsubscribe (nats.go v1.54.0 `nats.go:3801-3803, :3817-3828`, `jetstream/pull.go:58-61`), as they are when any core
+  subscription is unsubscribed. Once `Close` has begun, `SetConnection` changes nothing and logs at warn level (owner
+  ruling 3, #9 comment 5980296112). Client-created consumers are the client's in the same way (Codex F26, PR #48 comment
+  5981562076): when `Close` begins, the ownership goroutine of a consumer whose connection
   (the one its JetStream handle was made on, read together with that handle when the setup began) is not the one
   `Close` drains stops it through its native handle, leaving
   that connection open. After `Stop` the native `Closed()` can report the end early, so the claim and the metrics
@@ -333,6 +345,10 @@ failing-first `adapt` items:
   graceful drain. Declared cost: messages that consumer had buffered are discarded by `Stop`
   (`jetstream/pull.go:58-61`); with acknowledgements they are redelivered, with AckNone they are lost, as the owner
   accepted for a cut-short delivery (question 4).
+- **Consumer handle `Closed()`** (owner ruling 1, #9 comment 5980296112). nats.go v1.54.0 closes a consume
+  handle's `Closed()` at once for an invalid subscription (`jetstream/pull.go:822-837`), so the three Consume doc
+  comments say that a nil `Client.Close`, not `Closed()`, proves no handler runs. The handle is not wrapped; the
+  exact-native-handle contract (`stream_handle_test.go:87`) stays. Tracked by #83, with an upstream nats.go report.
 - **Consumer setup that meets `Close`.** The boundary is admission, which comes just before native `Consume`. A
   consumer setup not yet admitted when `Close` begins is refused with `nats.ErrConnectionClosed`, its claim released,
   and the native `Consume` is never called. One admitted before `Close` began may still call native `Consume` after
@@ -356,18 +372,20 @@ failing-first `adapt` items:
   - Once `Close` has begun, nothing but `Close` changes `Status()`: not the health monitor, not the connection
     event handlers, not failure accounting from operations still in flight, not a `Connect`. The status is frozen
     at whatever it was when `Close` began, so a handler still running during the drain can publish, read KV and
-    settle messages as before (those calls require `Connected`: `client.go:1056, :1117, :1197, :1335, :1381, :1437,
-    :1516, :1543`, `stream.go:163, :461, :714, :1000`). `Close` writes `Disconnected` once its cleanup has finished,
-    as at the pin (`:744`), and from then on `Status()` stays `Disconnected` for the life of the client. Declared
-    cost: if the server connection drops during the drain, `Status()` keeps the value it had when `Close` began
-    until the cleanup ends, which is bounded by the drain timeout or the first `Close`'s context.
+    settle messages as before (those calls require `Connected`: `client.go:1420, :1481, :1567, :1705, :1751, :1807,
+    :1886, :1913`, `stream.go:163, :473, :743, :1020`). `Close` writes `Disconnected` once its cleanup has finished,
+    as at the pin (`:578-640`, after the drain; `client.go:989` at `c69d7ac`), and from then on `Status()` stays
+    `Disconnected` for the life of the client. Declared cost: if the server connection drops during the drain,
+    `Status()` keeps the value it had when `Close` began until the cleanup ends, which is bounded by the drain timeout
+    or the first `Close`'s context.
   - Refusing new work once `Close` has begun depends on `Close` having begun, not on `Status()`: `Subscribe`,
     `SubscribeForRequests`, the three consumer APIs and `Connect` return `nats.ErrConnectionClosed` before any
-    status gate (`stream.go:461, :714`; `client.go:974`) can return `ErrNotConnected`.
+    status gate can return `ErrNotConnected`: the closing checks `stream.go:467, :737` and `client.go:1291`
+    (`subscribeOwned`) come ahead of the gates `stream.go:473, :743` and `client.go:1296`.
   - A `Connect` after `Close` refuses before it dials and writes no status.
 - **`natsclient-close-reports-drain-timeout`** (review finding F-3). A drain that ran out of time is reported the
   same way whichever timer ran out first, the native drain's or the client's own (they have the same length,
-  `client.go:485, :847-849`): the first `Close` returns a transient error wrapping `nats.ErrDrainTimeout`. At the pin
+  `client.go:638, :1094-1098`): the first `Close` returns a transient error wrapping `nats.ErrDrainTimeout`. At the pin
   and at `7ce1940` the native timer usually won and `Close` returned nil.
 - **`metric-abort-stop-reports-context`.** On an idle server `Shutdown(ctx)` (`handler.go:215`) returns nil even when
   `ctx` has ended, and the `select` at `:222-228` then picks between `serveDone` and `ctx.Done()` at random, so
@@ -416,16 +434,16 @@ Second, the sequential part (which operation is allowed in which lifecycle state
 `Close` with an ended context, `Subscribe`, `SubscribeForRequests`, `ConsumeStreamWithConfig`,
 `ConsumeInternalStreamWithConfig`, `SetConnection`). The third consumer entry point,
 `ConsumeStreamWithConfigContexts`, runs the same function as `ConsumeStreamWithConfig`
-(`consumePortStreamWithConfigContexts`, `stream.go:426-435, :672-683`) and differs only in taking a separate handler
-context, so the table covers it through `ConsumeStreamWithConfig`. `TestClientLifecycleOperationTable` enumerates
-all 32 pairs. The expected return and expected `Status()` for each pair are written out in the test from the
+(`consumePortStreamWithConfigContexts`, `stream.go:431-441, :698-709` at `c69d7ac`) and differs only in taking a
+separate handler context, so the table covers it through `ConsumeStreamWithConfig`. `TestClientLifecycleOperationTable`
+enumerates all 32 pairs. The expected return and expected `Status()` for each pair are written out in the test from the
 guarantees in D3, never derived by calling production code. Exhaustive enumeration covers every pair; a generator
 would only sample them.
 
 Repetition: the lifecycle tests run under `go test -race -count=20 -run 'Lifecycle|Close|Connect|Subscribe|Consume'`
 and in `task test:repeat`'s shuffled runs. What the examples do not cover: three-way orderings (two `Close` callers
-and a `Connect` racing one held drain) beyond the cases listed, and orderings inside nats.go itself, which the native
-constraints of the design revision (N1-N7) stand in for.
+and a `Connect` racing one held drain) beyond the cases listed, and orderings inside nats.go itself, which the nats.go
+v1.54.0 cites in this section stand in for.
 
 ### D4. Repair evidence this change's own code can produce (ruling g)
 
@@ -493,7 +511,8 @@ constraints of the design revision (N1-N7) stand in for.
   repairs), `pkg/tlsutil` (the ACME loaders cut, D1) and `pkg/retry` (D8 repair); and, by owner ruling (#9, comment
   5957221949, which replaced comment 5955265930: a ported `README.md` keeps the pin's text except for the edits
   markdownlint requires and edits to passages that describe behavior the ported code no longer has, each behavior edit
-  listed by README line as an `adapt` item), `vocabulary` and `pkg/types`, whose READMEs need lint fixes (358a01e);
+  listed by README line as an `adapt` item; and comment 5968665464: import paths and module references rewritten to
+  SemEngine, each an `adapt` item), `vocabulary` and `pkg/types`, whose READMEs need lint fixes (358a01e);
   `pkg/platform` (a doc comment corrected, #72 ruling D, task 3.6b); `message` (task 3.6b and its row: README import
   paths and the decode path corrected, the federation family removed as dead surface (#72 comment 5969293525),
   timestamps decoded strictly as integer milliseconds, and invalid UTF-8 refused in the source, the type and a generic
@@ -518,6 +537,9 @@ constraints of the design revision (N1-N7) stand in for.
   `processor/graph-index-spatial/component.go:456`, `processor/graph-embedding/component.go:1209`).
 - The Tier-1 cross-check re-measured on the ruled set (#9 item 1) is an inventory the architect writes and the
   technical writer records next to the ledger; it does not change a row.
+- The identity documents ride with `pkg/types`: ADR-102, ADR-104, `docs/concepts/16-federation.md` and
+  `docs/specs/entity-id-contract.md` (a reference contract, not `openspec/specs/`; #9 comments 5969510651,
+  5970020197; task 3.3a).
 
 ### D6. Gates this change adds or extends
 
@@ -530,7 +552,8 @@ public-signature rule is enforced by `TestPublicSignatures` in the same package 
 lint is already on (revive `package-comments`, `revive.toml:22`) and now covers eleven public packages; every package
 in the set has a package comment at the pin (§3.3), so the task is a sensitivity check, not an enablement. The
 compiled example consumer (D16's other gate) composes `service` and is change 3's; it will import at least the
-eight that SemSource imports. No context-root guard is added (D9).
+eight that SemSource imports. No context-root guard is added (D9). `TestNoBareSelect` (`testtext_test.go:205`)
+enforces `harness-boundaries` › 'No bare select', with its sensitivity test (task 2.11).
 
 ### D7. Background work outside services takes one of three shapes
 
@@ -687,7 +710,9 @@ pin `file:line` → SemEngine `file:line`. The repairs at the pin (P18, P19) fal
 - **R5. Fixed address.** A ported test binds or names no fixed address (`harness-boundaries`, "No fixed addresses in
   tests"). In `natsclient`, 55 lines in 12 files match the guard at the pin: 47 in 8 unit files and 8 in 4 integration
   files. `stream_visibility_test.go:82` is an error string the guard does not match. `t.Parallel()` (41 calls in 6
-  `natsclient` unit files) stays unless its test moves into a `synctest` bubble.
+  `natsclient` unit files) stays unless its test moves into a `synctest` bubble. The two tests that pinned NATS
+  2.14.4 run on `.nats-image` with the override dropped (#9 comment 5969522395, item 6); the image-pin guard cannot
+  see that spelling, review only.
 
 Doc-comment sleeps in ported non-test files (`pkg/errs/doc.go:48,111,288`, `metric/doc.go:386`,
 `natsclient/doc.go:209,536,541`) are carried as they are (Q4). They are outside both checks' scope.
@@ -889,7 +914,7 @@ defects (`:278`, `:232-243`) are one shared-series ownership issue, #75, tracked
 ## Declared costs
 
 - Nothing boots. The change's green is substrate, harness, two services and four sites of background work (P2).
-- Twenty-eight integration-tagged test files in the ported packages (27 in `natsclient`, D1; one in
+- 29 integration-tagged test files in the ported packages (27 ported and one helper in `natsclient`; one in
   `internal/tlsutil`), and the harness's own `natsfixture` one, run only under `task test:integration` and the host
   lock; the unit lane does not prove them, and `test:repeat` does not repeat them.
 - Ported tests are repaired (D8), so carried tests differ from the pin's text; every difference is on a row.
@@ -899,8 +924,12 @@ defects (`:278`, `:232-243`) are one shared-series ownership issue, #75, tracked
 - Two adapters read unexported fields; a reviewer re-checks each against the service's retained kinds.
 - `CoalescingSet.Close` becomes `Shutdown(ctx)` and `cache.WithEvictionCallback` is deleted; three later callers
   become port-refactor rows (D5).
-- `Client.Close` now joins six sites, and the Close/Connect race, it only signalled at the pin (D3); it can wait on a
-  caller's callback, bounded by its context, and work arriving once it is closing is dropped.
+- `Client.Close` now joins its background work, every running message-handler invocation and the event handlers of
+  the connection it closes (D3), and can wait on a caller's callback, bounded by its context. Work offered once it is
+  closing is refused. A delivery cut short by `Stop` or a forced close can lose one AckNone or core message (accepted,
+  #9 comment 5980769459). `Status()` keeps its value through the drain. A drain timeout is now an error.
+- Outward-facing names (`semstreams_*` metrics, the `SEMSTREAMS_` environment prefix) are carried unchanged pending
+  #69 (#9 comments 5969776736 item 4, 5968665464).
 - `URL()` changes after `Restart`; a test that forgets to re-dial fails loudly, not silently.
 - Four packages' import paths differ from the pin (`pkg/<name>` → `internal/<name>`, D5); each row's `source_path` →
   `destination` records the difference. The 3.7a list is dropped, including `WithTLS`, `WithToken` and

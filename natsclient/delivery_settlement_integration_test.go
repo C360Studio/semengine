@@ -147,15 +147,18 @@ func TestIntegrationConsumeDeliveryWithHeartbeatStoppedRenewalUsesBackOff(t *tes
 	require.NoError(t, first.Connect(ctx))
 	defer closeClient(t, first)
 
+	// semanticDelay is firstBackOff plus failureBound and AckWait twice that, so the upper bound
+	// below tells the BackOff redelivery from either policy's on a slow host (design D8 R1b; the
+	// pin's were 4 s and 8 s).
 	const (
 		firstBackOff  = 800 * time.Millisecond
-		semanticDelay = 4 * time.Second
+		semanticDelay = firstBackOff + failureBound
 	)
 	cfg := StreamConsumerConfig{
 		StreamName:    "DELIVERY_BACKOFF",
 		ConsumerName:  "delivery-backoff",
 		FilterSubject: "delivery.backoff",
-		AckWait:       8 * time.Second,
+		AckWait:       2 * semanticDelay,
 		BackOff:       []time.Duration{firstBackOff, 2 * time.Second},
 		MaxAckPending: 1,
 		DeliverPolicy: "all",
@@ -221,7 +224,7 @@ func TestIntegrationConsumeDeliveryWithHeartbeatStoppedRenewalUsesBackOff(t *tes
 	redelivery := fetchOneDelivery(t, consumer)
 	elapsed := time.Since(firstStarted)
 	// The lower bound tolerates scheduler/server jitter around the 800ms
-	// class. The upper bound is below both the 4s semantic delay and 8s
+	// class. The upper bound is below both the semantic delay and the
 	// AckWait, proving neither policy supplied the missing-settlement timer.
 	require.GreaterOrEqual(t, elapsed, 500*time.Millisecond)
 	require.Less(t, elapsed, semanticDelay)

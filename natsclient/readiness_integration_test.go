@@ -60,15 +60,16 @@ func TestIntegration_RequestReady_ResponderAppearsLate(t *testing.T) {
 	}()
 
 	start := time.Now()
-	// probe 300ms, budget 10s (generous).
-	resp, err := client.requestMsgReady(ctx, subject, []byte("ping"), 300*time.Millisecond, 10*time.Second)
+	// probe 300ms, budget 60s (generous): far above failureBound, so converging on the responder
+	// and reaching the cap stay apart on a slow host (design D8 R1b; the pin's budget was 10 s).
+	resp, err := client.requestMsgReady(ctx, subject, []byte("ping"), 300*time.Millisecond, 60*time.Second)
 	elapsed := time.Since(start)
 
 	require.NoError(t, <-subscribed, "the monitor saw the first attempt and the responder subscribed")
 	require.NoError(t, err, "readiness read must succeed once the responder appears")
 	assert.Equal(t, []byte("pong"), resp.Data)
 	// Well under the budget — proves it converged on the responder, not the cap.
-	assert.Less(t, elapsed, 5*time.Second, "should return shortly after the responder appears, not near the budget")
+	assert.Less(t, elapsed, failureBound, "should return shortly after the responder appears, not near the budget")
 }
 
 // No responder ever appears: the read must surface an error BOUNDED by the
@@ -78,13 +79,15 @@ func TestIntegration_RequestReady_NeverReady_BoundedByBudget(t *testing.T) {
 	client := readyTestClient(ctx, t)
 
 	start := time.Now()
-	_, err := client.requestMsgReady(ctx, "test.ready.absent", []byte("ping"), 300*time.Millisecond, 1*time.Second)
+	// The per-attempt query timeout is 60 s, far above failureBound, so a read bounded by the
+	// 1 s budget and one that runs to a full query timeout stay apart on a slow host (design D8
+	// R1b; the pin's query timeout was 300 ms and its ceiling 3 s).
+	_, err := client.requestMsgReady(ctx, "test.ready.absent", []byte("ping"), 60*time.Second, 1*time.Second)
 	elapsed := time.Since(start)
 
 	require.Error(t, err)
-	// Bounded by the budget (1s) with a ≥3× ceiling for CI/container jitter.
 	// The point is it does NOT hang past the budget.
-	assert.Less(t, elapsed, 3*time.Second, "must be bounded by the readiness budget, not a full query timeout")
+	assert.Less(t, elapsed, failureBound, "must be bounded by the readiness budget, not a full query timeout")
 }
 
 // An immediately-available responder returns on the first attempt.
@@ -121,7 +124,8 @@ func TestIntegration_RequestReadyClassified_HandlerErrorStopsLoop(t *testing.T) 
 	start := time.Now()
 	// Budget is large; if the loop wrongly retried the handler error it would burn
 	// the whole budget. It must return promptly because a reply WAS received.
-	_, err = client.RequestReadyClassified(ctx, subject, []byte("ping"), 300*time.Millisecond, 10*time.Second)
+	// The budget is 60 s, far above failureBound (design D8 R1b; the pin's was 10 s).
+	_, err = client.RequestReadyClassified(ctx, subject, []byte("ping"), 300*time.Millisecond, 60*time.Second)
 	elapsed := time.Since(start)
 
 	require.Error(t, err)
@@ -130,5 +134,5 @@ func TestIntegration_RequestReadyClassified_HandlerErrorStopsLoop(t *testing.T) 
 	// "readiness budget" or "no responders").
 	assert.Contains(t, err.Error(), marker, "must return the classified handler error, not a transport error")
 	assert.NotContains(t, err.Error(), "readiness budget", "must not have retried to budget exhaustion")
-	assert.Less(t, elapsed, 3*time.Second, "a received (error) reply means responder is up — must not retry to the budget")
+	assert.Less(t, elapsed, failureBound, "a received (error) reply means responder is up — must not retry to the budget")
 }

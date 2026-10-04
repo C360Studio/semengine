@@ -698,6 +698,15 @@ pin `file:line` → SemEngine `file:line`. The repairs at the pin (P18, P19) fal
   | `natsclient/delivery_settlement_integration_test.go:102-106` | 50 ms polling steps across the AckWait renewal window | R1c, kept: the window is AckWait's, and each step ends on `ctx.Done` or a redelivery check, never failing a correct renewal |
   | `pkg/cache/coalescing_set_test.go:92` | 10 ms in which the callback must not fire | R1a: inside the bubble, after `synctest.Wait`, the callback has not fired before the window |
   | `pkg/cache/cache_test.go:294` (TTL, `:286-298`) | 150 ms past a 100 ms TTL | R1a: `<-time.After` inside the bubble moves the fake clock |
+  | `natsclient/request_integration_test.go:66` (tree `:66`) | a 100 ms request timeout to a subject nobody answers | R1c, kept: the timeout (or no-responders) is the asserted error; a slow host can only miss a defect |
+  | `natsclient/request_integration_test.go:95` (tree `:94`) | a 100 ms context on a request nobody answers | R1c, kept: the context's end is the asserted error; a slow host can only miss a defect |
+  | `natsclient/request_integration_test.go:410` (tree `:412`) | 100 ms per attempt in the retry test with no responder | R1c, kept: retries exhausted is the asserted outcome; a slow host can only miss a defect |
+  | `natsclient/stream_integration_test.go:484` (tree `:488`) | the Nak test's 100 ms AckWait | R1c, kept: redelivery is the asserted outcome, and the interval only delays it |
+  | `natsclient/kv_error_integration_test.go:149`, `kv_integration_test.go:397` (tree `:405`) | 1 ns KV timeouts | R1c, kept: expiry is what the subtest exercises, and it accepts either outcome |
+  | `natsclient/errors_integration_test.go:318` (tree `:320`), `request_integration_test.go:376` (tree `:378`) | 2 s per attempt while a late responder subscribes | R1c, kept: a timed-out attempt is retried, so expiry only spends a retry; a slow host can only miss a defect |
+
+  The rows after the `pkg/cache` rows share one class (task 3.10 re-check, PR #48): a deadline whose expiry yields
+  the outcome the test asserts, or one it accepts, so a slow host can only make the check miss a defect.
 
   Three pin rows retired with their tests: `integration_test.go:262, :278` with `TestIntegration_HealthMonitoring`
   (owner ruling, #9 comment 5969522395, item 2), and `kv_error_integration_test.go:440` with

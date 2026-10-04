@@ -783,8 +783,8 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         ./pkg/types/` passes its three property tests. Rapid is also imported by two files this change adds,
         `metric/registerorget_prop_test.go` and `internal/cache/coalescing_set_prop_test.go`.
       - Counts are over `*_test.go` in each package directory (not subdirectories), the pin from the GitHub tarball
-        of `8b99efe9` with `find` and `wc -l`, the tree at the commit that fixes the 3.10 review's HIGH-1 and
-        MEDIUM-2 (re-measured after tasks 4.2 and 4.3 added tests, and again after that fix). Test files: the
+        of `8b99efe9` with `find` and `wc -l`, the tree at `a95c84a`, the commit that fixes the 3.10 review's
+        HIGH-1 and MEDIUM-2 (re-measured after tasks 4.2 and 4.3 added tests, and again after that fix). Test files: the
         pin's 127 (the 15 packages' 125 and `pkg/acme`'s 2) − 6 excluded `natsclient` files
         − 2 `pkg/acme` − 2 removed with dropped
         surface (`typed_test.go`, `kv_temporal_integration_test.go`; no other surface audit removed a file) =

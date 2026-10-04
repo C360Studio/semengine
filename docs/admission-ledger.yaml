@@ -1768,7 +1768,16 @@
     (1 s and 5 s) and kv :409 → :417 (5 s, the "reasonable timeout" subtest); the per-request
     timeouts of errors :84 → :82, :135 → :132, :164 → :160, :231 → :226, :276 → :270 (2 s). The
     1 ns timeouts at kv_error :149 and kv :397, whose expiry is what those subtests exercise, and
-    the late responder at errors :318 (below) stay. Polls on a timer of their own become probe.Await: client_async_error
+    the late responders' 2 s per-attempt timeouts at errors :318 → :320 and request :376 → :378
+    (a timed-out attempt is retried) stay; each is a row of D8's table (task 3.10 re-check).
+    Wall-clock upper bounds on a correct operation (task 3.10 re-check, HIGH-R1): integration_test
+    :142 → :199, under 10 ms after the circuit opened, is now no dial reported through opHook
+    beside ErrCircuitOpen (:170-175, :197-199); readiness :52 → :72 and :114 → :137, under 5 s and 3 s
+    against a 10 s budget, are now under failureBound against a 60 s budget (:65, :128);
+    readiness :68 → :90, under 3 s with a 1 s budget and a 300 ms query timeout, is now under
+    failureBound with the query timeout at 60 s (:85); delivery_settlement :224 → :230, under the
+    4 s semantic delay with an 8 s AckWait, keeps its bound with semanticDelay = firstBackOff +
+    failureBound and AckWait twice that (:150-156, :161). Polls on a timer of their own become probe.Await: client_async_error
     :130 1 ms ticker → :131; delivery_settlement Eventually :129 → :131; publish_msgid Eventually
     :59 → :103 (the expiry check, below); kv_watcher_ownership :98-125 3 s timer and 10 ms ticker → :99, under the framework
     child's own context; internal_consumer_lifecycle's two runtime.Gosched spins with no bound

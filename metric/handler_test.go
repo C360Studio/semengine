@@ -117,7 +117,7 @@ func TestServerNativeStartReportsOwnedEphemeralListener(t *testing.T) {
 	require.NoError(t, response.Body.Close())
 	require.Equal(t, http.StatusOK, response.StatusCode)
 	require.NoError(t, server.Stop(t.Context()))
-	connection, err := net.DialTimeout("tcp", owned.Addr().String(), 100*time.Millisecond)
+	connection, err := net.DialTimeout("tcp", owned.Addr().String(), failureBound)
 	require.Error(t, err, "Stop must close its originally acquired listener")
 	if connection != nil {
 		_ = connection.Close()
@@ -170,7 +170,7 @@ func TestServerStartOwnsListenerAndRequiresFreshInstanceForRestart(t *testing.T)
 	require.True(t, listener.closed.Load(), "Stop must close the original listener")
 	require.Equal(t, "http://localhost:9090/metrics", server.Address())
 
-	connection, err = net.DialTimeout("tcp", address, 100*time.Millisecond)
+	connection, err = net.DialTimeout("tcp", address, failureBound)
 	require.Error(t, err, "Stop must close the listener before returning")
 	if connection != nil {
 		_ = connection.Close()
@@ -458,7 +458,7 @@ func TestServerStopIsCallerBounded(t *testing.T) {
 	}
 
 	address := listener.Addr().String()
-	connection, dialErr := net.DialTimeout("tcp", address, 100*time.Millisecond)
+	connection, dialErr := net.DialTimeout("tcp", address, failureBound)
 	require.Error(t, dialErr, "deadline Stop must release the listener before returning")
 	if connection != nil {
 		_ = connection.Close()

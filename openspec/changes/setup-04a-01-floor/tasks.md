@@ -9,7 +9,8 @@ this pull request as a comment unless a task says otherwise. No task asserts a f
 
 ## 1. Design and spec acceptance
 
-- [ ] 1.1 (A) `design.md` and the six deltas under `specs/` match the accepted foundation design (D2 row 1, D3–D7,
+- [ ] 1.1 (A) `design.md` and the eight deltas under `specs/` (six, plus `metric-registry` and `message-codec` by owner
+      ruling, #9 comment 5983188211) match the accepted foundation design (D2 row 1, D3–D7,
       D9, D10.1) and the #9 rulings; every requirement has at least one scenario; `task spec:check` passes with no
       `skip_specs`.
 - [x] 1.2 Independent design review (PASS on re-check 2, 2026-10-01). The reviewer's verdict on `design.md` and `specs/`
@@ -797,8 +798,9 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       the lifecycle suite for services with its required must-fail factory and the adapter checklist, the three
       shapes of background work with their `synctest` test, and the repair classes for a ported test (design D8);
       written for a working developer, each coined term defined at first use.
-- [ ] 6.3 (W) The `openspec/specs/` sync: the six deltas applied to `harness-boundaries`, `nats-fixture`,
-      `lifecycle-suite` and the three new capabilities (`process-host`, `transport-client`, `background-work`),
+- [ ] 6.3 (W) The `openspec/specs/` sync: the eight deltas applied to `harness-boundaries`, `nats-fixture`,
+      `lifecycle-suite` and the five new capabilities (`process-host`, `transport-client`, `background-work`,
+      `metric-registry`, `message-codec`),
       verified against the code as landed; `task spec:check` passes.
 - [ ] 6.4 (W) `.agents/contracts/semengine-developer.md` and `.agents/contracts/semengine-reviewer.md` gain the
       "Background work" subsection after "Context ownership", and their detach bullets the no-join-by-timer clause, as
@@ -818,7 +820,7 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
 - [ ] 7.2 (D) `task verify` green on the final commit; the integration lane green under the host lock, evidence
       directory attached to this pull request; `implemented-by:` in the pull request body.
 - [ ] 7.3 (W) The change archived under `openspec/changes/archive/` as the last content commit before squash merge;
-      in that commit `openspec/specs/background-work/spec.md`, `process-host/spec.md` and `transport-client/spec.md`
-      each carry a real `## Purpose` in place of the placeholder `openspec archive` writes, which OpenSpec 1.13.2's
-      strict validation rejects (PR #48 comment 5951371629, item 2); `task spec:check` passes on that commit;
-      `task spec:queue` shows no open hold.
+      in that commit `openspec/specs/background-work/spec.md`, `process-host/spec.md`, `transport-client/spec.md`,
+      `metric-registry/spec.md` and `message-codec/spec.md` each carry a real `## Purpose` in place of the placeholder
+      `openspec archive` writes, which OpenSpec 1.13.2's strict validation rejects (PR #48 comment
+      5951371629, item 2); `task spec:check` passes on that commit; `task spec:queue` shows no open hold.

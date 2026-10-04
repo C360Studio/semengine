@@ -10,8 +10,9 @@ what the foundation left to the first change. The inventory it rests on is the f
 Foundation D2 row 1 and D3 fix the scope: the 15 packages of closure(natsclient) ∪ closure(message) less `pkg/acme`
 (D1), their tests, the
 harness extension of D4, the failed-start check of D5, the lifecycle suite on the two services of this set and the
-helper tests of D7, the ledger items that need no port, and the five spec deltas of D10.1 and the `background-work`
-delta that D7 adds (#9 comments 5950234192, 5950482163). Admission gates for the
+helper tests of D7, the ledger items that need no port, and the five spec deltas of D10.1, the `background-work`
+delta that D7 adds (#9 comments 5950234192, 5950482163), and the `metric-registry` and `message-codec` deltas that
+state D9's law and the `message` codec laws (#9 comment 5983188211). Admission gates for the
 change: `task verify` green, the three `cover:check` targets at 80%, both services green under the lifecycle suite
 including the failed-start check, every helper green under its three tests (D7), the I8 test green, and the ledger
 rows validated by `task ledger:check`.
@@ -646,6 +647,14 @@ decode of `{"data": …}`. Named examples own the four ruled instants (`TestBase
 refused timestamp forms (`TestBaseMessageRefusesTimestampsThatAreNotMilliseconds`). The entity-ID helpers keep the
 qualification of their canonical authority in `pkg/types`.
 
+The `message-codec` delta states these laws (owner ruling, #9 comment 5983188211). Its scenarios map to existing
+tests: millisecond timestamps → `TestBaseMessageTimestampsAreMilliseconds` (an instant before 2001) and
+`TestBaseMessageRefusesTimestampsThatAreNotMilliseconds` (refused forms; absent, `null` and 0), with
+`FuzzDecoderDecode` over the timestamp grammar; UTF-8 → `TestBaseMessageRefusesSourceThatIsNotUTF8`,
+`TestBaseMessageRefusesTypeThatIsNotUTF8` and `TestGenericJSONRefusesInvalidUTF8AtDepth`, with `FuzzDecoderStrings`;
+JSON shape → `TestGenericJSONRefusesValuesThatAreNotJSONShaped`, `TestGenericJSONRefusesCycles` and
+`TestGenericJSONAcceptsJSONShapedValues`, with `FuzzGenericJSONShapes`; round trip → `FuzzDecoderRoundTrip`.
+
 The ACME loaders' renewal goroutines (`tlsutil.go:253, :331`) are not in this change (D1): their stop can wait inside
 `legoClient.Certificate.Renew`, which takes no context (`pkg/acme/client.go:352`), and their renewal callback writes
 `tlsConfig.Certificates` while the config may be serving handshakes (`tlsutil.go:258, :336`). Both defects travel with
@@ -823,6 +832,14 @@ and of another type or descriptor, cross-key aliases, core-name collisions, unre
 the same or another key, inconsistent help after unregister, and writes through handles from earlier and later
 registrations. The eight examples still own: the six collector kinds one by one (the generator uses four), a
 collector registered directly on `PrometheusRegistry()`, and concurrent callers (the model is sequential).
+
+The `metric-registry` delta states this law (owner ruling, #9 comment 5983188211). Its scenarios map to the example
+tests above: same key, same type and descriptors → `TestRegisterOrGetSameKeyReturnsCanonicalCollector`,
+`TestRegisterOrGetConcurrentCallersShareOneCollector`; same key, another type or help →
+`TestRegisterOrGetRefusesSameKeyOfAnotherType`, `TestRegisterOrGetRefusesSameKeyWithDifferentHelp`; nil candidate →
+`TestRegisterOrGetRefusesNilCandidates`; cross-key alias → `TestRegisterOrGetRefusesCrossKeyAlias`,
+`TestRegisterOrGetRefusesCoreMetricCollision`, `TestRegisterOrGetRefusesDirectRegistrationCollision`. A label-name
+mismatch on a held key is reached by `TestPropRegisterOrGetHistory` only.
 
 Consumer impact, recorded on the `metric` row: semsource `internal/entitypub/metrics.go:99-106` and semboids
 (`internal/boidgraph/metrics.go`, `internal/sim/lifecycle.go`, `internal/api/graphstream_metrics.go`) stop compiling on

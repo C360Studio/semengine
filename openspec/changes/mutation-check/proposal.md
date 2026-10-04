@@ -1,7 +1,8 @@
 # mutation-check
 
-Status: revision 2, for round 2 of the independent pre-owner design review. It rests on `inventory.md`, which has
-`INVENTORY PASS` (PR #82, comment 5981915103), and on `design.md`, whose five owner questions are open.
+Status: revision 3, for a narrow round 3 of the independent pre-owner design review (round 2 passed). It rests on
+`inventory.md`, which has `INVENTORY PASS` (PR #82, comment 5981915103), and on `design.md`, whose five owner questions
+are open.
 
 ## Why
 
@@ -29,7 +30,8 @@ reach on the unchanged code and says why that answers the question.
   invalid or inconclusive. Survivor and invalid are told apart by one more run of the unchanged code with coverage:
   whether it executed the lines the wrong change removes or replaces, or the place where it inserts lines. A timeout,
   a kill or a failing exit status alone is never a detection; a race-detector report counts only when it is named.
-- **Every run has the same flags and environment** apart from the overlay and the reach run's coverage. Every run sets
+- **Every run has the same flags and environment** apart from the overlay and the reach run's coverage, with the
+  caller's `GOFLAGS` read from `go env` (so a value set with `go env -w` counts) and passed to every run. Every run sets
   `RAPID_SEED` and `RAPID_NOFAILFILE=true`, and the command refuses to start when an untracked Rapid failure file is
   present.
 - **It prints a report a pull request can quote,** with the verdict on its last line, and exits zero only for
@@ -56,7 +58,7 @@ any change to `merge-check`.
   coverage profiles under `testdata/`); one `Taskfile.yml` entry.
 - Changed later in the change (each waits as `tasks.md` says): `docs/testing.md`, `AGENTS.md`,
   `docs/repository-map.md`, the developer and reviewer contracts, and the preflight skill's command table.
-- Test time: an estimated 40-50 s summed over the package's `test:unit` and `test:repeat` runs, against a budget of
+- Test time: an estimated 40-55 s summed over the package's `test:unit` and `test:repeat` runs, against a budget of
   60 s measured from those runs' own times in a CI verify log (task 2.9).
 - Owner questions in `design.md`: the `AGENTS.md` row (Q1), timeouts by design (Q2), scripts and other files read at
   run time (Q3), a Go program instead of the script #79 names (Q4), and race-detector reports (Q5).

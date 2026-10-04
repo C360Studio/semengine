@@ -28,10 +28,12 @@ program SHALL take these flags:
 Before it starts any run the program SHALL refuse, exiting non-zero and naming the input and the reason, when the target
 does not exist, is outside the module, is not a Go source file, or is a `_test.go` file; when the mutant is inside the
 module or has the same content as the target; when neither `-expect` nor `-expect-text` is given; when `-seed` is 0,
-which Rapid takes as "choose a random seed"; when `GOFLAGS` in its environment sets `-overlay`, or sets `-cover`,
+which Rapid takes as "choose a random seed"; when the caller's `GOFLAGS` sets `-overlay`, or sets `-cover`,
 `-coverpkg`, `-covermode` or `-coverprofile`, under which Go builds the target from the file on disk and the wrong
 change would not run; or when a file that git does not track exists under the package's `testdata/rapid/` directory. A
-refusal because of the kind of target SHALL say that the manual procedure of `docs/testing.md` applies to it.
+refusal because of the kind of target SHALL say that the manual procedure of `docs/testing.md` applies to it. The
+caller's `GOFLAGS` is what `go env GOFLAGS` prints in the program's environment, so a value set with `go env -w`
+counts.
 
 #### Scenario: A script as the target
 
@@ -57,7 +59,7 @@ refusal because of the kind of target SHALL say that the manual procedure of `do
 
 #### Scenario: Coverage in GOFLAGS
 
-- **WHEN** `GOFLAGS` is `-cover`
+- **WHEN** `GOFLAGS` was set to `-cover` with `go env -w`, and the process environment has no `GOFLAGS`
 - **THEN** the program starts no run, exits non-zero, and says that under coverage Go would build the target from the
   file on disk
 
@@ -113,8 +115,9 @@ print no verdict.
 
 Every run of one check SHALL use the same command line and environment, apart from what this requirement adds for a
 mutant run and for the reach run. That command line is `go test -json -count=1 -cpu 1 -race -timeout <timeout> -run
-<the name, anchored> <pkg>`. The environment keeps the caller's `GOFLAGS` as given and sets `RAPID_SEED` to the seed
-and `RAPID_NOFAILFILE` to `true`. A mutant run adds the overlay that maps the target to the mutant to `GOFLAGS`. The
+<the name, anchored> <pkg>`. The environment sets `GOFLAGS` explicitly to the caller's `GOFLAGS`, read once, sets
+`RAPID_SEED` to the seed, and sets `RAPID_NOFAILFILE` to `true`. A mutant run appends the overlay that maps the target
+to the mutant to `GOFLAGS`. The
 reach run adds coverage of the target's package, and has no overlay.
 
 The program SHALL make, in this order: `-runs` baseline runs on the unchanged code; `-runs` mutant runs with the wrong
@@ -144,6 +147,11 @@ timeout SHALL be stopped, with every process it started; the report states that 
 - **THEN** every run's environment has `RAPID_SEED=7`, `RAPID_NOFAILFILE=true` and `-tags=planted` in `GOFLAGS`, and
   only the mutant runs' `GOFLAGS` also carries the overlay
 
+#### Scenario: Flags set with go env -w
+
+- **WHEN** `GOFLAGS` was set to `-tags=planted` with `go env -w`, and the process environment has no `GOFLAGS`
+- **THEN** every run's `GOFLAGS` has `-tags=planted`, the mutant runs' with the overlay appended
+
 #### Scenario: A property test
 
 - **WHEN** the named test is a Rapid property that fails on the wrong change for the given seed
@@ -156,17 +164,19 @@ timeout SHALL be stopped, with every process it started; the report states that 
 
 ### Requirement: The changed region and reach
 
-The program SHALL take the wrong change's hunks from a line diff of the target against the mutant with no context
-lines. A hunk that removes or replaces lines has those lines of the target as its region. A hunk that only inserts
-lines has, as its region, the position in the target where they are inserted. A mutant with more than one hunk SHALL
-be accepted, and the report SHALL list every hunk and say that there is more than one.
+The program SHALL take the wrong change's hunks from a line diff of the target against the mutant with no context lines,
+which no external diff program or text conversion that the caller configures can change. A hunk that removes or replaces
+lines has those lines of the target as its region. A hunk that only inserts lines has, as its region, the position in
+the target where they are inserted; when that position lies outside every function body of the target, the region is not
+measurable. A mutant with more than one hunk SHALL be accepted, and the report SHALL list every hunk and say that there
+is more than one.
 
 The reach run measures the unchanged code; Go builds a file it covers from the file on disk, so an overlay would not
 apply in that run anyway. A region is reached when the reach run's profile shows an executed block that overlaps the
-removed or replaced lines, or, for an insertion, an executed block that contains the insertion position or begins on
-the line after it. A region is not measurable when no block of the profile overlaps it or touches its position. The
-wrong change is reached when any of its regions is reached; not reached when every region is measurable and none is
-reached; and not measurable otherwise.
+removed or replaced lines, or, for an insertion inside a function body, an executed block of that body that contains the
+insertion position or begins on the line after it. A region is not measurable when no block of the profile overlaps it
+or touches its position. The wrong change is reached when any of its regions is reached; not reached when every region
+is measurable and none is reached; and not measurable otherwise.
 
 #### Scenario: A deletion that was reached
 
@@ -190,6 +200,12 @@ reached; and not measurable otherwise.
 - **WHEN** the wrong change only inserts a line into a branch that the reach run shows did not execute, and every
   mutant run passes
 - **THEN** the verdict is invalid
+
+#### Scenario: A method added before a function that did not run
+
+- **WHEN** the wrong change only inserts a new method between two top-level declarations, the function right after it
+  did not execute, and every mutant run passes
+- **THEN** the verdict is survivor, and the report says reach could not be measured
 
 #### Scenario: Two hunks
 

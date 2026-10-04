@@ -1,6 +1,9 @@
 # Design: mutation-check
 
-Status: **revision 2, for round 2 of the independent pre-owner design review.** Revision 1 (commit `ba7f440`) got
+Status: **revision 3, for a narrow round 3 of the independent pre-owner design review.** Revision 2 (commit
+`9773da9`) got DESIGN REVIEW PASS in round 2 (`design-review-r2.md`, sha256
+`48703ca562121a5b9f2c3ef54b0e82b4f83f1e0b9c898cea678745ff6978c9ac`), with two MEDIUM findings and five NITs that change
+no decision; "Round 2 review findings" below says where each is answered. Revision 1 (commit `ba7f440`) got
 DESIGN CHANGES REQUESTED in round 1 (`design-review-r1.md`, sha256
 `aea028aac0b394e5bcd605ee5e06fa3d7992620841619f70abdee01bc63e94ee`): one BLOCKING finding, one HIGH, eight MEDIUM and
 three NIT. "Round 1 review findings" below says where each is answered. The design rests on `inventory.md` in this
@@ -124,6 +127,18 @@ Answers to round 2's four NITs (`inventory-review-r2.md`, sha256 `52b42c4b3f413b
 | NIT: #80's ruling words | Quoted as recorded, with "Option A" marked as the session's reading (ordering section) |
 | Q1: the reviewer agrees with the design's reading | Kept; the orchestrator's split proposal and its withdrawal are recorded in Q1 |
 
+## Round 2 review findings, and where each is answered
+
+| Finding | Answer |
+| --- | --- |
+| MEDIUM 1: a `GOFLAGS` set with `go env -w` escapes the refusal, and an environment `GOFLAGS` replaces it in the mutant runs only | Re-measured (P22). D1, D15 and the spec: the caller's flags are what `go env GOFLAGS` prints in the program's environment; the refusal reads that value; every run gets it explicitly as `GOFLAGS`, a mutant run with the overlay appended. Scenarios for a `go env -w` value in the refusal and in "The runs" |
+| MEDIUM 2: an insertion between top-level declarations borrows reach from the next function | Re-measured (P23). D13 and the spec: an insertion whose position lies outside every function body, as Go's parser reads the target, is not measurable; inside a body, only that body's blocks count. Scenario "A method added before a function that did not run" |
+| NIT: a block counts its entry, not each line | Re-measured (P23); added to D13's declared limits |
+| NIT: `git diff --no-index` honours an external diff | Re-measured (P24); the diff is taken with `--no-ext-diff --no-textconv` (D4, P20), and the spec says no external diff can change it |
+| NIT: the bound case costs 2 s a pass | The case uses `-timeout 200ms` (bound 400 ms), counted in "Declared costs" |
+| NIT: the SIGTERM stand-in should start a grandchild | D11 and task 2.6: the stand-in `go` starts a helper that writes its own pid and its parent's, as `TestFetchLeavesNoProcess` does, and both must be gone |
+| NIT: Q1 and Q5 lack "what this costs you"; Q5's "often" and "many" | Both lines added; "often" and "many" removed, and Q5 and D14 say that none of the trial's 196 runs had a race report |
+
 ## What the inventory found, and what this design does with each
 
 | Finding | This design |
@@ -206,8 +221,9 @@ scripts and other files read at run time (Q3 below); making the command a step o
 leaves nothing behind. The overlay goes through `GOFLAGS`, not the `-overlay` flag, because only `GOFLAGS` reaches a
 `go build` that the test starts (P4; `pindiff`'s `TestCommandExitStatus` is such a test). O1c is a real option with a
 present consumer; it is Q3 for the owner, recommended "not now". Because Go drops the overlay for a file it builds with
-coverage (P16), the program refuses a caller's `GOFLAGS` that sets `-cover`, `-coverpkg`, `-covermode` or
-`-coverprofile`: with it, every mutant run would run the original code and pass (P17).
+coverage (P16), the program refuses when the caller's `GOFLAGS` sets `-cover`, `-coverpkg`, `-covermode` or
+`-coverprofile`: with it, every mutant run would run the original code and pass (P17). The caller's `GOFLAGS` is what
+`go env GOFLAGS` prints in the program's environment, so a value set with `go env -w` counts (P22, D15).
 
 Reading the tree's state must not write either. `scripts/tree-state.sh` runs `git status`, which may refresh
 `.git/index` as a side effect. The program runs it with `GIT_OPTIONAL_LOCKS=0`, which, in git's words, "will prevent
@@ -268,7 +284,9 @@ runs failed.
 
 **Recommended: the Go program**, run as `go run ./internal/harness/mutcheck {{.CLI_ARGS}}` from `Taskfile.yml`.
 Because #79 names a script, this is Q4 for the owner. Either way the line diff of the target against the mutant comes
-from `git diff --no-index -U0` (P20): Go's standard library has no line diff, and the program already runs git.
+from `git diff --no-index --no-ext-diff --no-textconv -U0` (P20): Go's standard library has no line diff, and the
+program already runs git. The two `--no-` options keep a caller's external diff program or text conversion from
+changing or breaking the hunks (P24).
 
 ### D13 How reach is shown
 
@@ -296,10 +314,14 @@ The regions, from the hunks of the line diff (P20):
 
 - A hunk that removes or replaces lines: those lines of the target. The region is reached when an executed block of
   the reach run's profile overlaps them.
-- A hunk that only inserts lines after target line k: the position between lines k and k+1. It is reached when an
-  executed block contains that position, or begins on line k+1 (the statement that would run right after the
-  inserted lines). Measured block shapes (P21): after `if x > Limit {` on line 8, the then-block `8.15,11.3` contains
-  the position; after the `}` on line 11, no block contains it and the next block, `12.2,12.14`, begins on line 12.
+- A hunk that only inserts lines after target line k: the position between lines k and k+1. When that position lies
+  outside every function body of the target, as Go's parser (`go/parser`) reads it, the region is not measurable,
+  like any other declaration: a new method or type placed before a function says nothing about whether that function
+  ran. A function's first block begins on its `func` line (P23), so without this rule such an insertion would borrow
+  the next function's reach. Inside a body, the region is reached when an executed block of that body contains the
+  position, or begins on line k+1 (the statement that would run right after the inserted lines). Measured block
+  shapes (P21): after `if x > Limit {` on line 8, the then-block `8.15,11.3` contains the position; after the `}` on
+  line 11, no block contains it and the next block, `12.2,12.14`, begins on line 12.
 - A region no block overlaps or touches is not measurable. The wrong change is reached when any region is reached, not
   reached when every region is measurable and none is reached, and not measurable otherwise.
 
@@ -313,22 +335,26 @@ hunks: removing the only call into a package means removing its import too. Refu
 changes back to the manual procedure. Cost: a copy taken before a later edit of the target reverts that edit in every
 mutant run; the list of hunks in the report is where that shows.
 
-What R1 cannot show, declared: a region reached on some schedules and not others; a declaration's reach; and the code
-the wrong change makes newly run, which is not measured itself but lies after a changed region that is.
+What R1 cannot show, declared: a region reached on some schedules and not others; a declaration's reach; the code the
+wrong change makes newly run, which is not measured itself but lies after a changed region that is; and a line after a
+call that does not return in that run. A block counts its entry, not each line (P23): a deletion after a call that
+panics and is recovered, calls `runtime.Goexit`, or blocks for good reads as reached.
 
 R04 and R05 re-read: R04 deletes target line 592, inside the original block `586.2,595.28`, executed once; R05 deletes
 lines 208-210, overlapped by `207.36,208.46` (12 times) and `208.46,210.4` (once). Both are reached under R1.
 
 ### D14 A report from the race detector
 
-Every run uses `-race`, as `task test:unit` does. A wrong change that removes a lock often fails only with the race
+Every run uses `-race`, as `task test:unit` does. A wrong change that removes a lock can fail only with the race
 detector's line `testing.go:1712: race detected during execution of test` (P18), not with an assertion of the test.
+How often that happens is not measured: none of the trial's 196 runs had a race report (`race=false` on every run line
+of `trial/cases/*/report.txt`).
 
 | Option | Cost |
 | --- | --- |
 | **The race report counts only when the implementer names it** (`-expect-text "race detected during execution of test"`), and the report shows the line (recommended) | The implementer has to know to name it. A race elsewhere in the package, set off by the wrong change's timing, counts as well; the report shows where the race was |
 | A race report always counts as detection | Readmits "a different failure" as detection whenever the test races for an unrelated reason |
-| A race report never counts | A lock-removal wrong change can only be detected by a test that observes a wrong value, which a race seldom produces on cue |
+| A race report never counts | A lock-removal wrong change can only be detected by a test that observes a wrong value, which a race need not produce on cue |
 
 This is owner question Q5, because whether the race detector is "the intended assertion" is a policy of the page, like
 Q2. Races also depend on the schedule: three mutant runs that do not all report it disagree, and the check is
@@ -461,17 +487,19 @@ which come from the page's text, never from running the program.
    not reached.
 3. **Refusals**, each scenario of "The command and its inputs".
 4. **With a stand-in `go`**, a script first on `PATH` that prints a recorded event stream, as `mergecheck_test.go` does
-   with its stand-in `gh`: a run that does not end by its bound (with `-timeout 1s`), and a test that writes into its
-   package directory. Neither needs a build.
+   with its stand-in `gh`: a run that does not end by its bound (with `-timeout 200ms`, so the bound is 400 ms), and a
+   test that writes into its package directory. Neither needs a build.
 5. **End to end with the real toolchain**, on planted modules in temporary directories, as `pindiff`'s
    `TestCommandExitStatus` does (inventory 5 (iii); Q6: "never invoke the real go" is a comment in one package, not a
    rule). Three cases, cut now (see "Declared costs"):
    - a detection in a planted module whose every directory is read-only, where the test detects the wrong change
      through a command it builds with `go build`. One check shows the overlay reaching a child build through `GOFLAGS`,
-     the environment of every run (seed, `RAPID_NOFAILFILE`, a caller's `-tags`), and that the content hash of every
+     the environment of every run (seed, `RAPID_NOFAILFILE`, a caller's `-tags` set with `go env -w` in a temporary
+     `GOENV` file), and that the content hash of every
      file is unchanged, as `TestWritesNothingInTree` does;
    - a deletion survivor that was reached, so a real reach run, its profile and its regions are read end to end;
-   - SIGTERM to the built program while its stand-in `go` waits: no process left, as `TestFetchLeavesNoProcess` does.
+   - SIGTERM to the built program while its stand-in `go` waits, having started a helper that writes its own pid and
+     its parent's, as `TestFetchLeavesNoProcess`'s helper does: neither process is left.
 
    Each planted module is a git repository with a copy of `scripts/tree-state.sh`.
 6. **Rapid** (waits for #48): a planted property in a temporary module that resolves Rapid from the module cache with
@@ -515,10 +543,16 @@ open pull request that changes the contracts. The preflight skill, which neither
 ### D15 The environment of the runs
 
 Every run of one check gets the same command line and environment, apart from the overlay of a mutant run and the
-coverage flags of the reach run. The caller's `GOFLAGS` is kept as given in every run, and a mutant run appends
-`-overlay=<file>` to it. The coverage flags of the reach run go on its command line. A `GOFLAGS` that already sets
-`-overlay` or a coverage flag is refused (D1). The report prints each run's command line and `GOFLAGS`. The program
-builds each child's environment from the environment it is given, setting `GOFLAGS`, `RAPID_SEED`,
+coverage flags of the reach run. The caller's flags are what `go env GOFLAGS` prints in the program's environment.
+That includes a value set with `go env -w`, which lives in Go's environment file and not in the process environment;
+and a `GOFLAGS` in the process environment replaces the file's value entirely (P22). So the program reads that value
+once, refuses on it (D1), and sets it explicitly as `GOFLAGS` in every run, a mutant run with `-overlay=<file>`
+appended. Without this, a file-set flag would apply to the baseline runs and vanish from the mutant runs, whose
+`GOFLAGS` carries the overlay. `GOFLAGS` is the only setting the program overrides, so every other setting of Go's
+environment file applies to every run alike. The coverage flags of the reach run go on its command line. The report
+prints each run's command line and `GOFLAGS`.
+
+The program builds each child's environment from the environment it is given, setting `GOFLAGS`, `RAPID_SEED`,
 `RAPID_NOFAILFILE` and, for git, `GIT_OPTIONAL_LOCKS`, rather than letting children inherit its process environment
 unread; that is what lets its tests, and a check of its own package, decide what a child sees.
 
@@ -581,13 +615,14 @@ The inventory (section 7) listed ten facts a session must hold to run the experi
 Four facts is two more than the architect contract's limit of two, so it is a design finding, recorded here. If a
 session knows none of them: the first three are checked before any run, and the session gets a refusal that names the
 flag or the file and, for the third, the manual procedure. The fourth shows in the survivor's reason, which names the
-seed. Revision 1 said no path ends in a wrong verdict; that was wrong. Three still can, and are declared: a log line
+seed. Revision 1 said no path ends in a wrong verdict; that was wrong. Four still can, and are declared: a log line
 named as the expected location gives a detection while another assertion failed (the report prints the line); a region
-reached only on some schedules or only in a child process is judged from one path of the unchanged code; and a seed
-that misses gives a survivor that holds for that seed only. A difference in `GOFLAGS` between runs no longer can (D15).
-The gap to "nothing": the second fact is the page's own rule, because only the implementer can say which assertion the
-wrong change is meant to trip; the first and third follow from overlay, and Q3 is the choice that would remove the
-third; the fourth belongs to generated tests.
+reached only on some schedules or only in a child process is judged from one path of the unchanged code; a deletion
+after a call that does not return reads as reached (D13); and a seed that misses gives a survivor that holds for that
+seed only. A difference in `GOFLAGS` between runs no longer can, including one set with `go env -w` (D15). The gap to
+"nothing": the second fact is the page's own rule, because only the implementer can say which assertion the wrong change
+is meant to trip; the first and third follow from overlay, and Q3 is the choice that would remove the third; the fourth
+belongs to generated tests.
 
 ## Declared costs
 
@@ -595,8 +630,9 @@ third; the fourth belongs to generated tests.
   A warm `go test -race -json` of a planted one-file module took 0.3-0.4 s here, with or without the overlay and with
   `-coverpkg`; the first runs after a toolchain switch took 1.3-3.2 s (scratch module `arch-ov2`, go1.26.6). The
   detection case makes three runs, each building a child command; the survivor case four; the SIGTERM case one build of
-  the program. That is about 6-8 s per pass, and the stand-in `go` cases add well under a second. `task test:unit` runs
-  the package once and `task test:repeat` five times (`-count=5`), so about 40-50 s summed. The budget is 60 s, measured
+  the program. That is about 6-8 s per pass. The stand-in `go` cases add about half a second, most of it the bound case's
+  400 ms wait. `task test:unit` runs the package once and `task test:repeat` five times (`-count=5`), so about 40-55 s
+  summed. The budget is 60 s, measured
   as the sum of the two `ok .../internal/harness/mutcheck <time>` lines that the `test:unit` and `test:repeat` steps
   print in a CI verify log (task 2.9). Over budget, the survivor case moves to a recorded profile and a stand-in `go`,
   leaving the detection and SIGTERM cases.
@@ -651,7 +687,9 @@ If you choose otherwise: putting the command in the enforced column makes it the
 as enforcement, which hides the kind of drift the table exists to show. The only way to make the rule truly fail when
 broken is a later `merge-check` rule that fails a code pull request claiming a detection without the command's report.
 That costs a new marker in pull request text, a new rule with its tests, and false failures on pull requests where no
-mutation check applies; it is worth ordering only if hand-written detection claims keep getting past review.
+mutation check applies; it is worth ordering only if hand-written detection claims keep getting past review. What
+"review only" costs you: a pull request that writes its detection by hand, without the command, still passes unless a
+reviewer reads its record, as today.
 
 **Q2. Should a test that can fail only by `go test`'s overall timeout ever count as catching the wrong change?**
 
@@ -697,13 +735,16 @@ Recommendation: only when the implementer names it in advance, with `-expect-tex
 test"`; otherwise the check is inconclusive.
 
 Why: the page counts only the intended assertion. Every unit test here runs under the race detector, and for a wrong
-change that removes a lock the race detector is often the only thing that notices, so it can be the intended check,
-but only the implementer can say that it is (D14). Requiring the name keeps an unrelated failure from counting by
-accident, and the report shows the line.
+change that removes a lock the race detector can be the only thing that notices, so it can be the intended check, but
+only the implementer can say that it is (D14). Requiring the name keeps an unrelated failure from counting by accident,
+and the report shows the line. How often a wrong change shows only as a race report is not measured: none of the
+trial's 196 runs had one.
 
 If you choose "always counts": a race that the wrong change only sets off somewhere else counts as catching it. If you
 choose "never counts": a lock-removal wrong change can be caught only by a test that sees a wrong value, which a race
-seldom gives on cue, so many of this repository's concurrency checks would read inconclusive.
+need not give on cue, so such wrong changes would read inconclusive. What the recommendation costs you: the implementer
+has to know to name the race line, and once it is named, a race elsewhere in the package that the wrong change sets off
+counts as well; the report shows where the race was.
 
 ## Owner's rulings
 
@@ -731,8 +772,11 @@ None yet. The five questions above go to the owner on #79 after the pre-owner de
 | P17 | A caller's `GOFLAGS` with `-cover` silently undoes the overlay | Same module: `GOFLAGS="-overlay=... -cover"`: `ok ... coverage: 50.0%`; the same without `-cover`: `e_test.go:7: Clamp(20) = 0`, FAIL |
 | P18 | A race the race detector finds fails the test with `testing.go:1712: race detected during execution of test` and exit 1 | Scratch module `arch-log`, `TestRace`, go1.26.6, `go test -json -race`; reproduces the review's `rv3-race` |
 | P19 | In `go test -json`, a `t.Logf` line and a `t.Errorf` or `t.Fatalf` line are the same kind of event with the same shape | `arch-log`, `TestLog`: `"Action":"output","Test":"TestLog","Output":"    l_test.go:13: checking the value\n"` and the same for `:14` and `:15`; no field tells them apart (go1.26.6) |
-| P20 | `git diff --no-index --no-color -U0` gives one hunk header per change: `@@ -27 +26,0 @@` for a deleted line 27, `@@ -30,0 +31 @@` for a line inserted after line 30 | Run against `internal/harness/probe/await.go` and copies outside the worktree with `GIT_OPTIONAL_LOCKS=0`; `git status --porcelain` empty afterwards |
+| P20 | `git diff --no-index --no-ext-diff --no-textconv --no-color -U0` gives one hunk header per change: `@@ -27 +26,0 @@` for a deleted line 27, `@@ -30,0 +31 @@` for a line inserted after line 30 | Run against `internal/harness/probe/await.go` and copies outside the worktree with `GIT_OPTIONAL_LOCKS=0`; `git status --porcelain` empty afterwards |
 | P21 | A coverage profile has no block for a package-level constant; an `if` line's block ends at its `{`, and its branch's block starts there | `arch-cov` unchanged code: blocks `7.23,8.15`, `8.15,11.3`, `12.2,12.14`, `12.14,14.3`, `15.2,15.10`; none overlaps line 4, `const Limit = 10` |
+| P22 | A `GOFLAGS` set with `go env -w` is not in the process environment; `go env GOFLAGS` prints it; a process `GOFLAGS` replaces it entirely, so a mutant run with only the overlay in its `GOFLAGS` drops the file's flags | Scratch `arch-goenv`, `GOENV` set to a scratch file, go1.26.6: after `go env -w GOFLAGS=-cover`, the process `GOFLAGS` is empty and `go env GOFLAGS` prints `-cover`; with `GOFLAGS=-overlay=/x.json` it prints `-overlay=/x.json`. In `arch-cov`, the baseline built with the file's `-cover` (`ok ... coverage: 50.0%`) while the run with `GOFLAGS=-overlay=...` built without it (`e_test.go:7: Clamp(20) = 0`). Reproduces the review's `rv4-goenv` |
+| P23 | A function's first coverage block begins on its `func` line, and a block counts its entry: it reads executed even when a call in it did not return | Scratch `arch-blk`, go1.26.6: `func F() {` on line 7 gives block `b.go:7.10,10.2 2 1`, counted executed although `F`'s call to `boom()` panicked (recovered by the test) before line 9 ran; `func G() int { return 1 }` on line 12 gives `12.14,12.26`. Reproduces the review's `rv4-blk` |
+| P24 | `git diff --no-index` runs a caller's external diff unless told not to | With `GIT_EXTERNAL_DIFF=/usr/bin/false`: exit 128 without `--no-ext-diff`; with `--no-ext-diff --no-textconv`, the hunk header `@@ -27 +26,0 @@` (git 2.50.1; worktree `git status --porcelain` empty afterwards) |
 | P15 | `scripts/tree-state.sh` prints a fingerprint in a tree whose every directory, `.git` included, is read-only, and leaves `.git/index` unchanged there | Scratch repository `arch-ro`: exit 0, the same fingerprint as before, the same SHA-256 of `.git/index` |
 
 ## Not measured

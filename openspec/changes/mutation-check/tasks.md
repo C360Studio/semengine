@@ -19,8 +19,9 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
       `774646d7…62ed9`.
 - [ ] 1.2 The independent pre-owner review of `design.md`, `proposal.md`, this file and the `mutation-check` delta:
       `DESIGN REVIEW PASS` in at most three rounds, recorded on this pull request, with the reviewed and the
-      committed checksums. Round 1 asked for changes (`design-review-r1.md`, sha256 `aea028aa…94ee`); revision 2
-      answers it.
+      committed checksums. Round 1 asked for changes (`design-review-r1.md`, sha256 `aea028aa…94ee`); round 2
+      passed with two MEDIUM findings and five NITs (`design-review-r2.md`, sha256 `48703ca5…c9ac`), which revision 3
+      answers for a narrow round 3.
 - [ ] 1.3 Hold: the owner's ruling on #79, questions Q1 to Q5 of `design.md`. The ruling is quoted under "Owner's
       rulings" with its comment link, and the design, the delta and these tasks follow it.
 
@@ -38,16 +39,17 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
 - [ ] 2.3 Hold: the owner's acceptance (1.3). (D) The refusals: one case for each scenario of "The command and its
       inputs", and one each for `-seed 0`, `GOFLAGS` that sets `-overlay`, a mutant inside the module and a mutant
       identical to its target. Each case shows that no run started. Written first. Gate: `task test:unit`.
-- [ ] 2.4 Hold: the owner's acceptance (1.3). (D) With a stand-in `go` first on `PATH`: a run that does not end by
-      twice its timeout is stopped with its processes and is inconclusive; a test that writes into its package
-      directory makes the check inconclusive. Written first. Gate: `task test:unit`.
+- [ ] 2.4 Hold: the owner's acceptance (1.3). (D) With a stand-in `go` first on `PATH`: a run that does not end by twice
+      its timeout (`-timeout 200ms`) is stopped with its processes and is inconclusive; a test that writes into its
+      package directory makes the check inconclusive. Written first. Gate: `task test:unit`.
 - [ ] 2.5 Hold: the owner's acceptance (1.3). (D) End to end with the real toolchain, on planted modules that are git
-      repositories with a copy of `scripts/tree-state.sh`, `-runs 1`: a detection through a command the test builds,
-      in a module whose every directory is read-only, with a caller's `-tags` and the seed in every run's environment
-      and the content hashes unchanged; and a deletion survivor that was reached. Written first. Gate:
-      `task test:unit`.
-- [ ] 2.6 Hold: the owner's acceptance (1.3). (D) SIGTERM to the built program while its stand-in `go` waits: no
-      process it started is running when it exits, it exits non-zero, it prints no verdict, and the planted module is
+      repositories with a copy of `scripts/tree-state.sh`, `-runs 1`: a detection through a command the test builds, in
+      a module whose every directory is read-only, with a caller's `-tags` set with `go env -w` in a temporary `GOENV`
+      file and the seed in every run's environment, and the content hashes unchanged; and a deletion survivor that was
+      reached. Written first. Gate: `task test:unit`.
+- [ ] 2.6 Hold: the owner's acceptance (1.3). (D) SIGTERM to the built program while its stand-in `go` waits, having
+      started a helper that writes its own pid and its parent's, as `TestFetchLeavesNoProcess`'s helper does: neither
+      process is running when the program exits, it exits non-zero, it prints no verdict, and the planted module is
       unchanged. The program is built with the inherited environment and run with `-overlay` removed from `GOFLAGS`.
       Written first. Gate: `task test:unit`.
 - [ ] 2.7 Hold: the owner's acceptance (1.3). (D) The report and the exit status: each scenario of "Report and exit

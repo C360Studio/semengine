@@ -708,9 +708,9 @@ func TestConnectionLossTimeout_DisabledByDefault(t *testing.T) {
 		synctest.Wait()
 		assert.Equal(t, int32(0), fired.Load())
 		// Structural check: no timer should have armed at all.
-		manager.lossTimerMu.Lock()
+		manager.timersMu.Lock()
 		assert.Nil(t, manager.lossTimer)
-		manager.lossTimerMu.Unlock()
+		manager.timersMu.Unlock()
 	})
 }
 
@@ -728,9 +728,9 @@ func TestConnectionLossTimeout_NoCallbackNoFire(t *testing.T) {
 		synctest.Wait()
 		// Mostly we're confirming this doesn't panic; the timer should not have
 		// armed at all since onConnectionLost is nil.
-		manager.lossTimerMu.Lock()
+		manager.timersMu.Lock()
 		assert.Nil(t, manager.lossTimer)
-		manager.lossTimerMu.Unlock()
+		manager.timersMu.Unlock()
 	})
 }
 

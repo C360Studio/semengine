@@ -541,14 +541,21 @@ func (c *Client) ConsumeInternalStreamWithConfig(
 			"failed to start consuming from stream "+cfg.StreamName)
 	}
 
-	committed = true
-	c.resetCircuit()
 	closed := consumeCtx.Closed()
-	go func() {
+	if !c.startBackground(workClaimRelease, func() {
 		<-closed
 		forgetObservation()
 		releaseClaim()
-	}()
+	}) {
+		// Close has begun: the consumer is stopped and its claim released here,
+		// and the caller is told it did not start.
+		consumeCtx.Stop()
+		forgetObservation()
+		return nil, errs.Wrap(nats.ErrConnectionClosed, "Client", "ConsumeInternalStreamWithConfig",
+			"client closed while starting consumer")
+	}
+	committed = true
+	c.resetCircuit()
 	return consumeCtx, nil
 }
 
@@ -641,13 +648,20 @@ func (c *Client) startPortConsumer(
 			c.jsMetrics.forgetPolicy(policyKey)
 		}
 	}
-	c.resetCircuit()
 	closed := consumeCtx.Closed()
-	go func() {
+	if !c.startBackground(workClaimRelease, func() {
 		<-closed
 		forgetObservation()
 		c.releaseInternalConsumer(identity, claim)
-	}()
+	}) {
+		// Close has begun: the consumer is stopped, and the caller's deferred
+		// release frees the claim when this returns an error.
+		consumeCtx.Stop()
+		forgetObservation()
+		return nil, errs.Wrap(nats.ErrConnectionClosed, "Client", operation,
+			"client closed while starting consumer")
+	}
+	c.resetCircuit()
 	return consumeCtx, nil
 }
 

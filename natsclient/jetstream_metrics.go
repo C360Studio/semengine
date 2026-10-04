@@ -335,29 +335,19 @@ func (m *jetstreamMetrics) updateStats(ctx context.Context) {
 	}
 }
 
-// startPoller starts a background goroutine that polls JetStream stats periodically.
-// Returns a cancel function to stop the poller.
-func (m *jetstreamMetrics) startPoller(ctx context.Context, interval time.Duration) context.CancelFunc {
-	if m == nil {
-		return func() {} // No-op if metrics disabled
-	}
+// runPoller polls JetStream stats every interval until ctx ends. The client
+// runs it on a goroutine it starts through startBackground and joins in Close.
+func (m *jetstreamMetrics) runPoller(ctx context.Context, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
 
-	ctx, cancel := context.WithCancel(ctx)
-
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				// Update stats, but don't let errors crash the poller
-				m.updateStats(ctx)
-			case <-ctx.Done():
-				return
-			}
+	for {
+		select {
+		case <-ticker.C:
+			// Update stats, but don't let errors crash the poller
+			m.updateStats(ctx)
+		case <-ctx.Done():
+			return
 		}
-	}()
-
-	return cancel
+	}
 }

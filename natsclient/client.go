@@ -123,7 +123,12 @@ type Client struct {
 	// connection instead of hot-looping in degraded mode forever).
 	connectionLossTimeout time.Duration
 	lossTimer             *time.Timer
-	lossTimerMu           sync.Mutex
+
+	// circuitTimer runs the circuit test once the breaker's backoff expires.
+	circuitTimer *time.Timer
+
+	// timersMu guards lossTimer and circuitTimer. Lock order: timersMu, then mu.
+	timersMu sync.Mutex
 
 	// Health monitoring
 	healthTicker   *time.Ticker
@@ -132,8 +137,81 @@ type Client struct {
 
 	// Synchronization
 	mu      sync.RWMutex
-	closeMu sync.Mutex  // Ensures Close() is called only once
-	closed  atomic.Bool // Track if client is closed
+	closeMu sync.Mutex // serializes Close's setup with Connect's admission
+
+	// Lifecycle (design D3). closing is set once, by the first Close, under mu.
+	// startBackground refuses work once it is set and otherwise adds to
+	// background under the same lock, so no Add follows the Wait that the
+	// first Close's joiner runs; joined is closed when that Wait returns.
+	// running counts the admitted work per kind, for the lifecycle adapter.
+	closing    bool
+	background sync.WaitGroup
+	running    map[string]int
+	joined     chan struct{}
+
+	// opHook, when set, is told of each external operation the client
+	// performs ("dial", "drain"); the lifecycle adapter counts them.
+	opHook func(op string)
+}
+
+// Kinds of background work, the six sites of design D3. Each starts through
+// startBackground; the name is what its drop log and the lifecycle adapter report.
+const (
+	workHealthMonitor  = "health monitor"
+	workMetricsPoller  = "metrics poller"
+	workClaimRelease   = "claim release"
+	workConnectionLost = "connection-loss timer"
+	workCircuitTest    = "circuit-test timer"
+)
+
+// startBackground is the one way the client starts work that outlives the call
+// that started it. Under mu it refuses once Close has begun, and otherwise adds
+// to the background group before the goroutine starts. Refused work is dropped,
+// never run inline: the drop is logged at debug level and false is returned.
+func (m *Client) startBackground(kind string, fn func()) bool {
+	m.mu.Lock()
+	if m.closing {
+		m.mu.Unlock()
+		m.logDropped(kind)
+		return false
+	}
+	m.background.Add(1)
+	if m.running == nil {
+		m.running = make(map[string]int)
+	}
+	m.running[kind]++
+	m.mu.Unlock()
+	go func() {
+		defer func() {
+			m.mu.Lock()
+			if m.running[kind]--; m.running[kind] == 0 {
+				delete(m.running, kind)
+			}
+			m.mu.Unlock()
+			m.background.Done()
+		}()
+		fn()
+	}()
+	return true
+}
+
+// logDropped records work refused because Close has begun. Continuing is safe:
+// no callback runs once Close has begun, and Close joins whatever was admitted.
+func (m *Client) logDropped(kind string) {
+	m.logger.Debug("NATS client closing; background work dropped", slog.String("work", kind))
+}
+
+// isClosing reports whether Close has begun.
+func (m *Client) isClosing() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.closing
+}
+
+func (m *Client) recordOp(op string) {
+	if m.opHook != nil {
+		m.opHook(op)
+	}
 }
 
 // NewClient creates a new NATS client with optional configuration.
@@ -274,7 +352,7 @@ func (m *Client) recordFailure() {
 				m.circuitFailures.Store(0)
 
 				// Schedule circuit test after backoff
-				time.AfterFunc(currentBackoff, m.testCircuit)
+				m.armCircuitTimer(currentBackoff)
 			}
 		} else {
 			// Circuit already open - may need to increase backoff for consecutive failures
@@ -332,6 +410,41 @@ func (m *Client) resetCircuit() {
 	if m.Status() == StatusCircuitOpen {
 		m.setStatus(StatusDisconnected)
 	}
+}
+
+// armCircuitTimer schedules the circuit test after backoff. Once Close has
+// begun it arms nothing, and logs the drop. A test from an earlier round that is
+// still pending is stopped: this round's backoff supersedes it, and an untracked
+// timer could outlive Close.
+func (m *Client) armCircuitTimer(backoff time.Duration) {
+	m.timersMu.Lock()
+	defer m.timersMu.Unlock()
+	if m.isClosing() {
+		m.logDropped(workCircuitTest)
+		return
+	}
+	if m.circuitTimer != nil {
+		m.circuitTimer.Stop()
+	}
+	var timer *time.Timer
+	// timer is read only under timersMu, where it was written.
+	timer = time.AfterFunc(backoff, func() { m.circuitTimerFired(func() bool { return m.circuitTimer == timer }) })
+	m.circuitTimer = timer
+}
+
+// circuitTimerFired is the circuit timer's body. It enters through
+// startBackground before doing anything, so once Close has begun the test is
+// dropped, not run. current, called under timersMu, reports whether the timer
+// that fired is still the armed one.
+func (m *Client) circuitTimerFired(current func() bool) {
+	m.startBackground(workCircuitTest, func() {
+		m.timersMu.Lock()
+		if current() {
+			m.circuitTimer = nil
+		}
+		m.timersMu.Unlock()
+		m.testCircuit()
+	})
 }
 
 // testCircuit runs when the circuit breaker's backoff expires. It only moves the
@@ -410,7 +523,10 @@ func (m *Client) GetStatus() *Status {
 	return status
 }
 
-// Connect establishes connection to NATS server
+// Connect establishes connection to NATS server. It refuses a nil context and a
+// client that is already connected, with an error and before any dial. Connect
+// returns an error when Close has begun before it finished; the connection it
+// dialled is then closed and nothing it would have started runs.
 func (m *Client) Connect(ctx context.Context) error {
 	return m.connectWith(ctx, nats.Connect)
 }
@@ -422,6 +538,16 @@ func (m *Client) connectWith(
 	ctx context.Context,
 	dial func(string, ...nats.Option) (*nats.Conn, error),
 ) error {
+	if ctx == nil {
+		return errs.WrapInvalid(stderrors.New("nil context"), "Client", "Connect", "missing context")
+	}
+	m.mu.RLock()
+	started := m.conn != nil
+	m.mu.RUnlock()
+	if started {
+		return errs.WrapInvalid(errs.ErrAlreadyStarted, "Client", "Connect", "already connected")
+	}
+
 	// Check circuit breaker first
 	if m.Status() == StatusCircuitOpen {
 		m.logger.Debug("Circuit breaker is open, skipping connection attempt")
@@ -434,6 +560,7 @@ func (m *Client) connectWith(
 	// Build connection options
 	opts := m.buildConnectionOptions()
 
+	m.recordOp("dial")
 	conn, err := dial(m.urls, opts...)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		if conn != nil {
@@ -465,9 +592,16 @@ func (m *Client) connectWith(
 	// bridges failed async acks into the circuit breaker so a broken ack
 	// path opens the breaker exactly as a failed synchronous publish does
 	// (see publishToStreamAsync). Keep both candidates local until admission.
-	js, _ := jetstream.New(conn, jetstream.WithPublishAsyncErrHandler(m.asyncPublishErrHandler))
+	// nats.go v1.54.0 fails jetstream.New only when an option does, and this
+	// option never does; the error is still returned, never dropped.
+	js, err := jetstream.New(conn, jetstream.WithPublishAsyncErrHandler(m.asyncPublishErrHandler))
+	if err != nil {
+		conn.Close()
+		m.setStatus(StatusDisconnected)
+		return errs.Wrap(err, "Client", "Connect", "initialize JetStream")
+	}
 
-	// Close owns terminal admission. Once Close sets closed, no native
+	// Close owns terminal admission. Once Close has begun, no native
 	// connection produced by an in-flight dial may become Client state.
 	m.closeMu.Lock()
 	if ctxErr := ctx.Err(); ctxErr != nil {
@@ -479,14 +613,22 @@ func (m *Client) connectWith(
 		m.closeMu.Unlock()
 		return errs.WrapTransient(ctxErr, "Client", "Connect", "connection cancelled")
 	}
-	if m.closed.Load() {
+
+	m.mu.Lock()
+	switch {
+	case m.closing:
+		m.mu.Unlock()
 		conn.Close()
 		m.setStatus(StatusDisconnected)
 		m.closeMu.Unlock()
 		return errs.Wrap(nats.ErrConnectionClosed, "Client", "Connect", "admit connection")
+	case m.conn != nil:
+		// A concurrent Connect won admission; this one leaves its connection in place.
+		m.mu.Unlock()
+		conn.Close()
+		m.closeMu.Unlock()
+		return errs.WrapInvalid(errs.ErrAlreadyStarted, "Client", "Connect", "already connected")
 	}
-
-	m.mu.Lock()
 	m.conn = conn
 	m.js = js
 	m.mu.Unlock()
@@ -497,64 +639,122 @@ func (m *Client) connectWith(
 
 	m.logger.Info("Successfully connected to NATS", slog.String("urls", m.urls))
 
-	// Start health monitoring if configured
+	// The monitor and the poller start through startBackground, so a Close that
+	// has begun since admission refuses them.
+	refused := false
 	if m.healthInterval > 0 {
 		m.logger.Debug("Starting health monitoring", slog.Duration("interval", m.healthInterval))
-		m.startHealthMonitoring()
+		refused = !m.startHealthMonitoring()
 	}
 
-	// Start JetStream metrics polling if configured
 	if m.jsMetrics != nil && m.metricsInterval > 0 {
 		m.logger.Debug("Starting JetStream metrics polling", slog.Duration("interval", m.metricsInterval))
-		m.metricsCancel = m.jsMetrics.startPoller(context.Background(), m.metricsInterval)
+		refused = !m.startMetricsPoller() || refused
 	}
 
+	if refused {
+		return errs.Wrap(nats.ErrConnectionClosed, "Client", "Connect", "closed while starting")
+	}
 	return nil
 }
 
-// Close closes the NATS connection
+// startMetricsPoller starts the JetStream metrics poller. It reports false when
+// Close has begun, in which case nothing is left running.
+//
+// The poller's context is a root this client owns (task 3.7c triage of the
+// pin's client.go:566): it outlives Connect's dial-scoped context on purpose,
+// and Close cancels the poller's in-flight work and joins it. The cancel is
+// published before the goroutine is admitted, so a Close that begins after
+// admission finds it.
+func (m *Client) startMetricsPoller() bool {
+	pollCtx, cancel := context.WithCancel(context.Background())
+	m.mu.Lock()
+	m.metricsCancel = cancel
+	m.mu.Unlock()
+	interval := m.metricsInterval
+	if m.startBackground(workMetricsPoller, func() { m.jsMetrics.runPoller(pollCtx, interval) }) {
+		return true
+	}
+	cancel()
+	m.mu.Lock()
+	m.metricsCancel = nil
+	m.mu.Unlock()
+	return false
+}
+
+// Close drains and closes the NATS connection, stops the timers, and waits for
+// every goroutine the client started: the health monitor, the metrics poller,
+// the claim releases and the timer callbacks. It returns nil only once all of
+// them have returned. When ctx ends first, or has already ended, Close returns
+// ctx.Err() and the join stays pending; a later Close waits on the same join.
+// No callback runs once Close has begun: work offered after that is dropped and
+// logged at debug level. A Close called from inside one of the client's
+// callbacks waits on a join that includes its own goroutine, so it returns
+// ctx.Err() when its context ends and never returns nil. Close refuses a nil
+// context with an error and touches nothing.
 func (m *Client) Close(ctx context.Context) error {
-	// Ensure Close() is only called once
+	if ctx == nil {
+		return errs.WrapInvalid(stderrors.New("nil context"), "Client", "Close", "missing context")
+	}
+
+	// Only the first Close runs the setup, under closeMu; every Close then
+	// waits on the same join, outside any lock.
 	m.closeMu.Lock()
-	defer m.closeMu.Unlock()
-
-	if m.closed.Load() {
-		return nil // Already closed
+	m.mu.Lock()
+	first := !m.closing
+	if first {
+		m.closing = true
+		m.joined = make(chan struct{})
 	}
-	m.closed.Store(true)
-
-	// Stop health monitoring first (before acquiring main mutex to avoid deadlock)
-	m.stopHealthMonitoring()
-
-	// Cancel any pending connection-loss watchdog so we don't fire after Close.
-	m.cancelConnectionLossTimer()
-
-	// Stop JetStream metrics polling
-	if m.metricsCancel != nil {
-		m.metricsCancel()
-	}
-
-	m.mu.RLock()
+	joined := m.joined
 	conn := m.conn
 	drainTimeout := m.drainTimeout
-	m.mu.RUnlock()
-
-	// Drain and close connection
-	closeErr := m.drainAndCloseConnection(ctx, conn, drainTimeout)
-
-	m.mu.Lock()
-	if m.conn == conn {
-		m.conn = nil
-	}
-
-	// Clear sensitive credentials from memory
-	m.username = ""
-	m.password = ""
+	cancelPoller := m.metricsCancel
+	m.metricsCancel = nil
 	m.mu.Unlock()
 
-	m.setStatus(StatusDisconnected)
+	var closeErr error
+	if first {
+		m.stopHealthMonitoring()
+		m.stopTimers()
+		if cancelPoller != nil {
+			cancelPoller()
+		}
 
-	return closeErr
+		closeErr = m.drainAndCloseConnection(ctx, conn, drainTimeout)
+
+		m.mu.Lock()
+		if m.conn == conn {
+			m.conn = nil
+		}
+		m.js = nil
+
+		// Clear sensitive credentials from memory
+		m.username = ""
+		m.password = ""
+		m.mu.Unlock()
+
+		m.setStatus(StatusDisconnected)
+
+		// closing is set, so startBackground adds nothing from here on.
+		go func() {
+			m.background.Wait()
+			close(joined)
+		}()
+	}
+	m.closeMu.Unlock()
+
+	select {
+	case <-joined:
+		// An ended context is reported even when the join has also finished,
+		// so a nil return always means the caller's context was live.
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		return closeErr
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // guardedConsumer serializes Info() on one consumer handle.
@@ -629,6 +829,7 @@ func (m *Client) drainAndCloseConnection(ctx context.Context, conn *nats.Conn, d
 	closed := conn.StatusChanged(nats.CLOSED)
 	defer conn.RemoveStatusListener(closed)
 
+	m.recordOp("drain")
 	if err := conn.Drain(); err != nil {
 		if isBenignDrainError(err) {
 			return nil
@@ -1395,23 +1596,43 @@ func (m *Client) armConnectionLossTimer(disconnectErr error) {
 		return
 	}
 
-	m.lossTimerMu.Lock()
-	defer m.lossTimerMu.Unlock()
+	m.timersMu.Lock()
+	defer m.timersMu.Unlock()
+	if m.isClosing() {
+		// No callback runs once Close has begun, so there is nothing to arm.
+		m.logDropped(workConnectionLost)
+		return
+	}
 	if m.lossTimer != nil {
 		return
 	}
-	timeout := m.connectionLossTimeout
-	m.lossTimer = time.AfterFunc(timeout, func() {
-		m.lossTimerMu.Lock()
-		m.lossTimer = nil
-		m.lossTimerMu.Unlock()
+	var timer *time.Timer
+	// timer is read only under timersMu, where it was written.
+	timer = time.AfterFunc(m.connectionLossTimeout, func() {
+		m.connectionLossFired(func() bool { return m.lossTimer == timer }, disconnectErr)
+	})
+	m.lossTimer = timer
+}
+
+// connectionLossFired is the connection-loss timer's body. It enters through
+// startBackground before doing anything, so once Close has begun the callback
+// is dropped, not run, and Close joins a callback that was admitted. current,
+// called under timersMu, reports whether the timer that fired is still the
+// armed one.
+func (m *Client) connectionLossFired(current func() bool, disconnectErr error) {
+	m.startBackground(workConnectionLost, func() {
+		m.timersMu.Lock()
+		if current() {
+			m.lossTimer = nil
+		}
+		m.timersMu.Unlock()
 
 		// Re-read the callback under the main lock so a concurrent option
-		// change or close doesn't race us into firing on a stale handle.
+		// change doesn't race us into firing on a stale handle.
 		m.mu.RLock()
 		fire := m.onConnectionLost
 		m.mu.RUnlock()
-		if fire != nil && !m.closed.Load() {
+		if fire != nil {
 			fire(disconnectErr)
 		}
 	})
@@ -1420,11 +1641,26 @@ func (m *Client) armConnectionLossTimer(disconnectErr error) {
 // cancelConnectionLossTimer stops the watchdog if armed. Safe to call when
 // no timer is pending.
 func (m *Client) cancelConnectionLossTimer() {
-	m.lossTimerMu.Lock()
-	defer m.lossTimerMu.Unlock()
+	m.timersMu.Lock()
+	defer m.timersMu.Unlock()
 	if m.lossTimer != nil {
 		m.lossTimer.Stop()
 		m.lossTimer = nil
+	}
+}
+
+// stopTimers stops both timers. A timer that has already fired enters
+// startBackground, which Close has closed by then.
+func (m *Client) stopTimers() {
+	m.timersMu.Lock()
+	defer m.timersMu.Unlock()
+	if m.lossTimer != nil {
+		m.lossTimer.Stop()
+		m.lossTimer = nil
+	}
+	if m.circuitTimer != nil {
+		m.circuitTimer.Stop()
+		m.circuitTimer = nil
 	}
 }
 
@@ -1453,12 +1689,14 @@ func (m *Client) handleError(_ *nats.Conn, sub *nats.Subscription, err error) {
 	// Don't record failure here as it may be called for non-connection errors
 }
 
-// startHealthMonitoring starts periodic health checks
-func (m *Client) startHealthMonitoring() {
+// startHealthMonitoring starts periodic health checks. It reports false when
+// Close has begun, in which case nothing is left running.
+func (m *Client) startHealthMonitoring() bool {
 	// Stop any existing health monitoring
 	m.stopHealthMonitoring()
 
-	// Initialize health monitoring channels with mutex protection
+	// The ticker and done channel are published before the goroutine is
+	// admitted, so a Close that begins after admission finds done to close.
 	m.mu.Lock()
 	m.healthTicker = time.NewTicker(m.healthInterval)
 	m.healthDone = make(chan struct{})
@@ -1466,7 +1704,7 @@ func (m *Client) startHealthMonitoring() {
 	done := m.healthDone
 	m.mu.Unlock()
 
-	go func() {
+	started := m.startBackground(workHealthMonitor, func() {
 		defer ticker.Stop() // Ensure ticker is stopped when goroutine exits
 
 		for {
@@ -1496,7 +1734,11 @@ func (m *Client) startHealthMonitoring() {
 				}
 			}
 		}
-	}()
+	})
+	if !started {
+		m.stopHealthMonitoring()
+	}
+	return started
 }
 
 // stopHealthMonitoring stops health monitoring goroutine

@@ -274,7 +274,7 @@ func TestJetStreamPolicyMetricsRemoveStaleEffectiveAndRecover(t *testing.T) {
 	metrics.trackPolicy(key, record, 8)
 	labels := record.labels()
 
-	metrics.updateStats(context.Background())
+	metrics.updateStats(t.Context())
 	if got := testutil.ToFloat64(metrics.policyRequested.WithLabelValues(labels...)); got != 8 {
 		t.Fatalf("requested = %v, want 8", got)
 	}
@@ -285,7 +285,7 @@ func TestJetStreamPolicyMetricsRemoveStaleEffectiveAndRecover(t *testing.T) {
 		t.Fatalf("effective series count after failure = %d, want 0", count)
 	}
 
-	metrics.updateStats(context.Background())
+	metrics.updateStats(t.Context())
 	if got := testutil.ToFloat64(metrics.policyAvailable.WithLabelValues(labels...)); got != 1 {
 		t.Fatalf("availability after recovery = %v, want 1", got)
 	}
@@ -328,7 +328,7 @@ func TestJetStreamConsumerClosedCannotBeUndoneByInflightRefresh(t *testing.T) {
 	metrics.trackConsumer("EVENTS", "internal-events", handle)
 	done := make(chan struct{})
 	go func() {
-		metrics.updateStats(context.Background())
+		metrics.updateStats(t.Context())
 		close(done)
 	}()
 	<-handle.started
@@ -366,7 +366,7 @@ func TestJetStreamPolicyStopCannotBeUndoneByInflightRefresh(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		metrics.updateStats(context.Background())
+		metrics.updateStats(t.Context())
 		close(done)
 	}()
 	<-handle.started
@@ -397,7 +397,7 @@ func TestJetStreamPolicyReplacementCannotBeUndoneByInflightRefresh(t *testing.T)
 
 	done := make(chan struct{})
 	go func() {
-		metrics.updateStats(context.Background())
+		metrics.updateStats(t.Context())
 		close(done)
 	}()
 	<-oldHandle.started

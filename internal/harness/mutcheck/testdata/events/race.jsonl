@@ -1,0 +1,45 @@
+{"Time":"2026-10-04T13:18:43.974538-05:00","Action":"start","Package":"rec.invalid/m/basic"}
+{"Time":"2026-10-04T13:18:44.162942-05:00","Action":"run","Package":"rec.invalid/m/basic","Test":"TestRace"}
+{"Time":"2026-10-04T13:18:44.163026-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"=== RUN   TestRace\n"}
+{"Time":"2026-10-04T13:18:44.163622-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"==================\n"}
+{"Time":"2026-10-04T13:18:44.163639-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"WARNING: DATA RACE\n"}
+{"Time":"2026-10-04T13:18:44.163648-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"Read at 0x00c0000124a8 by goroutine 8:\n"}
+{"Time":"2026-10-04T13:18:44.163664-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"  rec.invalid/m/basic.TestRace.func1()\n"}
+{"Time":"2026-10-04T13:18:44.163673-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"      /private/tmp/claude-501/-Users-coby-Code-c360-semengine/e059cfc2-10f9-462e-8912-1d5728a0a543/scratchpad/dev/rec/basic/value_test.go:43 +0x30\n"}
+{"Time":"2026-10-04T13:18:44.163696-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"\n"}
+{"Time":"2026-10-04T13:18:44.163704-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"Previous write at 0x00c0000124a8 by goroutine 7:\n"}
+{"Time":"2026-10-04T13:18:44.163711-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"  rec.invalid/m/basic.TestRace()\n"}
+{"Time":"2026-10-04T13:18:44.163726-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"      /private/tmp/claude-501/-Users-coby-Code-c360-semengine/e059cfc2-10f9-462e-8912-1d5728a0a543/scratchpad/dev/rec/basic/value_test.go:46 +0xfc\n"}
+{"Time":"2026-10-04T13:18:44.163736-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"  testing.tRunner()\n"}
+{"Time":"2026-10-04T13:18:44.163744-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"      /Users/coby/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.6.darwin-arm64/src/testing/testing.go:2036 +0x164\n"}
+{"Time":"2026-10-04T13:18:44.163757-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"  testing.(*T).Run.gowrap1()\n"}
+{"Time":"2026-10-04T13:18:44.163765-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"      /Users/coby/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.6.darwin-arm64/src/testing/testing.go:2101 +0x34\n"}
+{"Time":"2026-10-04T13:18:44.163773-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"\n"}
+{"Time":"2026-10-04T13:18:44.16378-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"Goroutine 8 (running) created at:\n"}
+{"Time":"2026-10-04T13:18:44.163788-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"  rec.invalid/m/basic.TestRace()\n"}
+{"Time":"2026-10-04T13:18:44.163795-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"      /private/tmp/claude-501/-Users-coby-Code-c360-semengine/e059cfc2-10f9-462e-8912-1d5728a0a543/scratchpad/dev/rec/basic/value_test.go:42 +0xe4\n"}
+{"Time":"2026-10-04T13:18:44.163802-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"  testing.tRunner()\n"}
+{"Time":"2026-10-04T13:18:44.16381-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"      /Users/coby/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.6.darwin-arm64/src/testing/testing.go:2036 +0x164\n"}
+{"Time":"2026-10-04T13:18:44.163817-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"  testing.(*T).Run.gowrap1()\n"}
+{"Time":"2026-10-04T13:18:44.163824-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"      /Users/coby/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.6.darwin-arm64/src/testing/testing.go:2101 +0x34\n"}
+{"Time":"2026-10-04T13:18:44.163864-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"\n"}
+{"Time":"2026-10-04T13:18:44.163871-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"Goroutine 7 (running) created at:\n"}
+{"Time":"2026-10-04T13:18:44.163877-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"  testing.(*T).Run()\n"}
+{"Time":"2026-10-04T13:18:44.163883-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"      /Users/coby/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.6.darwin-arm64/src/testing/testing.go:2101 +0x7bc\n"}
+{"Time":"2026-10-04T13:18:44.163888-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"  testing.runTests.func1()\n"}
+{"Time":"2026-10-04T13:18:44.163894-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"      /Users/coby/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.6.darwin-arm64/src/testing/testing.go:2585 +0x74\n"}
+{"Time":"2026-10-04T13:18:44.1639-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"  testing.tRunner()\n"}
+{"Time":"2026-10-04T13:18:44.163906-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"      /Users/coby/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.6.darwin-arm64/src/testing/testing.go:2036 +0x164\n"}
+{"Time":"2026-10-04T13:18:44.163911-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"  testing.runTests()\n"}
+{"Time":"2026-10-04T13:18:44.163917-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"      /Users/coby/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.6.darwin-arm64/src/testing/testing.go:2583 +0x7a0\n"}
+{"Time":"2026-10-04T13:18:44.163923-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"  testing.(*M).Run()\n"}
+{"Time":"2026-10-04T13:18:44.16393-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"      /Users/coby/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.6.darwin-arm64/src/testing/testing.go:2443 +0xb38\n"}
+{"Time":"2026-10-04T13:18:44.163936-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"  main.main()\n"}
+{"Time":"2026-10-04T13:18:44.163942-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"      _testmain.go:58 +0x100\n"}
+{"Time":"2026-10-04T13:18:44.163948-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"==================\n"}
+{"Time":"2026-10-04T13:18:44.163958-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"    testing.go:1712: race detected during execution of test\n"}
+{"Time":"2026-10-04T13:18:44.16397-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestRace","Output":"--- FAIL: TestRace (0.00s)\n"}
+{"Time":"2026-10-04T13:18:44.163977-05:00","Action":"fail","Package":"rec.invalid/m/basic","Test":"TestRace","Elapsed":0}
+{"Time":"2026-10-04T13:18:44.163984-05:00","Action":"output","Package":"rec.invalid/m/basic","Output":"FAIL\n"}
+{"Time":"2026-10-04T13:18:44.165286-05:00","Action":"output","Package":"rec.invalid/m/basic","Output":"FAIL\trec.invalid/m/basic\t0.191s\n"}
+{"Time":"2026-10-04T13:18:44.16531-05:00","Action":"fail","Package":"rec.invalid/m/basic","Elapsed":0.191}

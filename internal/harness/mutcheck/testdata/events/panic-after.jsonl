@@ -1,0 +1,23 @@
+{"Time":"2026-10-04T13:18:43.317309-05:00","Action":"start","Package":"rec.invalid/m/basic"}
+{"Time":"2026-10-04T13:18:43.492318-05:00","Action":"run","Package":"rec.invalid/m/basic","Test":"TestPanicAfter"}
+{"Time":"2026-10-04T13:18:43.492385-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestPanicAfter","Output":"=== RUN   TestPanicAfter\n"}
+{"Time":"2026-10-04T13:18:43.492409-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestPanicAfter","Output":"    value_test.go:23: Value() = 2, want 1\n"}
+{"Time":"2026-10-04T13:18:43.492433-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestPanicAfter","Output":"--- FAIL: TestPanicAfter (0.00s)\n"}
+{"Time":"2026-10-04T13:18:43.494965-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestPanicAfter","Output":"panic: assignment to entry in nil map [recovered, repanicked]\n"}
+{"Time":"2026-10-04T13:18:43.494982-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestPanicAfter","Output":"\n"}
+{"Time":"2026-10-04T13:18:43.494987-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestPanicAfter","Output":"goroutine 5 [running]:\n"}
+{"Time":"2026-10-04T13:18:43.494993-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestPanicAfter","Output":"testing.tRunner.func1.2({0x10295b8c0, 0x1029af360})\n"}
+{"Time":"2026-10-04T13:18:43.494998-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestPanicAfter","Output":"\t/Users/coby/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.6.darwin-arm64/src/testing/testing.go:1974 +0x2b8\n"}
+{"Time":"2026-10-04T13:18:43.495014-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestPanicAfter","Output":"testing.tRunner.func1()\n"}
+{"Time":"2026-10-04T13:18:43.495019-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestPanicAfter","Output":"\t/Users/coby/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.6.darwin-arm64/src/testing/testing.go:1977 +0x460\n"}
+{"Time":"2026-10-04T13:18:43.495029-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestPanicAfter","Output":"panic({0x10295b8c0?, 0x1029af360?})\n"}
+{"Time":"2026-10-04T13:18:43.495034-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestPanicAfter","Output":"\t/Users/coby/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.6.darwin-arm64/src/runtime/panic.go:860 +0x12c\n"}
+{"Time":"2026-10-04T13:18:43.495038-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestPanicAfter","Output":"rec.invalid/m/basic.TestPanicAfter(0xc000114248)\n"}
+{"Time":"2026-10-04T13:18:43.495042-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestPanicAfter","Output":"\t/private/tmp/claude-501/-Users-coby-Code-c360-semengine/e059cfc2-10f9-462e-8912-1d5728a0a543/scratchpad/dev/rec/basic/value_test.go:27 +0x84\n"}
+{"Time":"2026-10-04T13:18:43.49505-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestPanicAfter","Output":"testing.tRunner(0xc000114248, 0x102986db0)\n"}
+{"Time":"2026-10-04T13:18:43.495055-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestPanicAfter","Output":"\t/Users/coby/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.6.darwin-arm64/src/testing/testing.go:2036 +0x168\n"}
+{"Time":"2026-10-04T13:18:43.495066-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestPanicAfter","Output":"created by testing.(*T).Run in goroutine 1\n"}
+{"Time":"2026-10-04T13:18:43.49507-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestPanicAfter","Output":"\t/Users/coby/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.6.darwin-arm64/src/testing/testing.go:2101 +0x7c0\n"}
+{"Time":"2026-10-04T13:18:43.496295-05:00","Action":"fail","Package":"rec.invalid/m/basic","Test":"TestPanicAfter","Elapsed":0}
+{"Time":"2026-10-04T13:18:43.49631-05:00","Action":"output","Package":"rec.invalid/m/basic","Output":"FAIL\trec.invalid/m/basic\t0.179s\n"}
+{"Time":"2026-10-04T13:18:43.496322-05:00","Action":"fail","Package":"rec.invalid/m/basic","Elapsed":0.179}

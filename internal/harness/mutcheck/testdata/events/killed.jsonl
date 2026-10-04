@@ -1,0 +1,6 @@
+{"Time":"2026-10-04T13:18:45.669157-05:00","Action":"start","Package":"rec.invalid/m/basic"}
+{"Time":"2026-10-04T13:18:45.853957-05:00","Action":"run","Package":"rec.invalid/m/basic","Test":"TestKilled"}
+{"Time":"2026-10-04T13:18:45.854082-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestKilled","Output":"=== RUN   TestKilled\n"}
+{"Time":"2026-10-04T13:18:45.855125-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestKilled","Output":"signal: killed\n"}
+{"Time":"2026-10-04T13:18:45.855168-05:00","Action":"output","Package":"rec.invalid/m/basic","Output":"FAIL\trec.invalid/m/basic\t0.186s\n"}
+{"Time":"2026-10-04T13:18:45.855183-05:00","Action":"fail","Package":"rec.invalid/m/basic","Elapsed":0.186}

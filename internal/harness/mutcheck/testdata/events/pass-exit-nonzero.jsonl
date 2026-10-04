@@ -1,0 +1,8 @@
+{"Time":"2026-10-04T13:18:47.501458-05:00","Action":"start","Package":"rec.invalid/m/exit"}
+{"Time":"2026-10-04T13:18:47.733163-05:00","Action":"run","Package":"rec.invalid/m/exit","Test":"TestPasses"}
+{"Time":"2026-10-04T13:18:47.733287-05:00","Action":"output","Package":"rec.invalid/m/exit","Test":"TestPasses","Output":"=== RUN   TestPasses\n"}
+{"Time":"2026-10-04T13:18:47.733343-05:00","Action":"output","Package":"rec.invalid/m/exit","Test":"TestPasses","Output":"--- PASS: TestPasses (0.00s)\n"}
+{"Time":"2026-10-04T13:18:47.733361-05:00","Action":"pass","Package":"rec.invalid/m/exit","Test":"TestPasses","Elapsed":0}
+{"Time":"2026-10-04T13:18:47.733374-05:00","Action":"output","Package":"rec.invalid/m/exit","Output":"PASS\n"}
+{"Time":"2026-10-04T13:18:47.734876-05:00","Action":"output","Package":"rec.invalid/m/exit","Output":"FAIL\trec.invalid/m/exit\t0.233s\n"}
+{"Time":"2026-10-04T13:18:47.734941-05:00","Action":"fail","Package":"rec.invalid/m/exit","Elapsed":0.233}

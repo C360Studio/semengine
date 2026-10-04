@@ -1,0 +1,6 @@
+diff --git a/m/plant/target.go b/mut/deletion-reached.go
+index 69b5760..3c620d6 100644
+--- a/m/plant/target.go
++++ b/mut/deletion-reached.go
+@@ -24 +23,0 @@ func Clamp(x int) int {
+-	calls++

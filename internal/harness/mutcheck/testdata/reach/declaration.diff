@@ -1,0 +1,7 @@
+diff --git a/m/plant/target.go b/mut/declaration.go
+index 69b5760..83e8909 100644
+--- a/m/plant/target.go
++++ b/mut/declaration.go
+@@ -6 +6 @@ import "strconv"
+-const Limit = 10
++const Limit = 11

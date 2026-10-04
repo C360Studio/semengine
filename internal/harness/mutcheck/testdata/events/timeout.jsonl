@@ -1,0 +1,37 @@
+{"Time":"2026-10-04T13:18:44.315454-05:00","Action":"start","Package":"rec.invalid/m/basic"}
+{"Time":"2026-10-04T13:18:44.477528-05:00","Action":"run","Package":"rec.invalid/m/basic","Test":"TestTimeout"}
+{"Time":"2026-10-04T13:18:44.477598-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"=== RUN   TestTimeout\n"}
+{"Time":"2026-10-04T13:18:44.477626-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"    value_test.go:53: Value() = 2, want 1\n"}
+{"Time":"2026-10-04T13:18:45.480917-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"panic: test timed out after 1s\n"}
+{"Time":"2026-10-04T13:18:45.481071-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"\trunning tests:\n"}
+{"Time":"2026-10-04T13:18:45.481152-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"\t\tTestTimeout (1s)\n"}
+{"Time":"2026-10-04T13:18:45.481173-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"\n"}
+{"Time":"2026-10-04T13:18:45.481188-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"goroutine 6 [running]:\n"}
+{"Time":"2026-10-04T13:18:45.481214-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"testing.(*M).startAlarm.func1()\n"}
+{"Time":"2026-10-04T13:18:45.481231-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"\t/Users/coby/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.6.darwin-arm64/src/testing/testing.go:2802 +0x498\n"}
+{"Time":"2026-10-04T13:18:45.481262-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"created by time.goFunc\n"}
+{"Time":"2026-10-04T13:18:45.481274-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"\t/Users/coby/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.6.darwin-arm64/src/time/sleep.go:215 +0x44\n"}
+{"Time":"2026-10-04T13:18:45.481285-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"\n"}
+{"Time":"2026-10-04T13:18:45.481293-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"goroutine 1 [chan receive]:\n"}
+{"Time":"2026-10-04T13:18:45.481304-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"testing.(*T).Run(0xc00010c008, {0x10231d724, 0xb}, 0x1024a6dc0)\n"}
+{"Time":"2026-10-04T13:18:45.481409-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"\t/Users/coby/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.6.darwin-arm64/src/testing/testing.go:2109 +0x7dc\n"}
+{"Time":"2026-10-04T13:18:45.481422-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"testing.runTests.func1(0xc00010c008)\n"}
+{"Time":"2026-10-04T13:18:45.481433-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"\t/Users/coby/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.6.darwin-arm64/src/testing/testing.go:2585 +0x78\n"}
+{"Time":"2026-10-04T13:18:45.481443-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"testing.tRunner(0xc00010c008, 0xc0000b9ab8)\n"}
+{"Time":"2026-10-04T13:18:45.481453-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"\t/Users/coby/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.6.darwin-arm64/src/testing/testing.go:2036 +0x168\n"}
+{"Time":"2026-10-04T13:18:45.481464-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"testing.runTests({0x10231dfd9, 0xd}, {0x10231fb4b, 0x13}, 0xc0000ae018, {0x1024d45c0, 0x7, 0x7}, {0xc000098880?, 0xc0000bc180?, ...})\n"}
+{"Time":"2026-10-04T13:18:45.48149-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"\t/Users/coby/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.6.darwin-arm64/src/testing/testing.go:2583 +0x7a4\n"}
+{"Time":"2026-10-04T13:18:45.481501-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"testing.(*M).Run(0xc00009e140)\n"}
+{"Time":"2026-10-04T13:18:45.481575-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"\t/Users/coby/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.6.darwin-arm64/src/testing/testing.go:2443 +0xb3c\n"}
+{"Time":"2026-10-04T13:18:45.481593-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"main.main()\n"}
+{"Time":"2026-10-04T13:18:45.481603-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"\t_testmain.go:58 +0x104\n"}
+{"Time":"2026-10-04T13:18:45.481613-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"\n"}
+{"Time":"2026-10-04T13:18:45.481623-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"goroutine 5 [chan receive]:\n"}
+{"Time":"2026-10-04T13:18:45.481631-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"rec.invalid/m/basic.TestTimeout(0xc00010c248)\n"}
+{"Time":"2026-10-04T13:18:45.48164-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"\t/private/tmp/claude-501/-Users-coby-Code-c360-semengine/e059cfc2-10f9-462e-8912-1d5728a0a543/scratchpad/dev/rec/basic/value_test.go:54 +0x80\n"}
+{"Time":"2026-10-04T13:18:45.48165-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"testing.tRunner(0xc00010c248, 0x1024a6dc0)\n"}
+{"Time":"2026-10-04T13:18:45.481659-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"\t/Users/coby/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.6.darwin-arm64/src/testing/testing.go:2036 +0x168\n"}
+{"Time":"2026-10-04T13:18:45.481666-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"created by testing.(*T).Run in goroutine 1\n"}
+{"Time":"2026-10-04T13:18:45.481674-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestTimeout","Output":"\t/Users/coby/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.26.6.darwin-arm64/src/testing/testing.go:2101 +0x7c0\n"}
+{"Time":"2026-10-04T13:18:45.483663-05:00","Action":"output","Package":"rec.invalid/m/basic","Output":"FAIL\trec.invalid/m/basic\t1.168s\n"}
+{"Time":"2026-10-04T13:18:45.483813-05:00","Action":"fail","Package":"rec.invalid/m/basic","Elapsed":1.168}

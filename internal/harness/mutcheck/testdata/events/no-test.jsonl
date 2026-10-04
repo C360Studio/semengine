@@ -1,0 +1,5 @@
+{"Time":"2026-10-04T13:18:46.094669-05:00","Action":"start","Package":"rec.invalid/m/basic"}
+{"Time":"2026-10-04T13:18:46.272487-05:00","Action":"output","Package":"rec.invalid/m/basic","Output":"testing: warning: no tests to run\n"}
+{"Time":"2026-10-04T13:18:46.272558-05:00","Action":"output","Package":"rec.invalid/m/basic","Output":"PASS\n"}
+{"Time":"2026-10-04T13:18:47.279706-05:00","Action":"output","Package":"rec.invalid/m/basic","Output":"ok  \trec.invalid/m/basic\t1.185s [no tests to run]\n"}
+{"Time":"2026-10-04T13:18:47.279881-05:00","Action":"pass","Package":"rec.invalid/m/basic","Elapsed":1.185}

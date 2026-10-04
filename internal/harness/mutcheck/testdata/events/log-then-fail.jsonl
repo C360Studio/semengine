@@ -1,0 +1,10 @@
+{"Time":"2026-10-04T13:18:42.974149-05:00","Action":"start","Package":"rec.invalid/m/basic"}
+{"Time":"2026-10-04T13:18:43.156061-05:00","Action":"run","Package":"rec.invalid/m/basic","Test":"TestLogThenFail"}
+{"Time":"2026-10-04T13:18:43.156152-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestLogThenFail","Output":"=== RUN   TestLogThenFail\n"}
+{"Time":"2026-10-04T13:18:43.156198-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestLogThenFail","Output":"    value_test.go:15: checking Value\n"}
+{"Time":"2026-10-04T13:18:43.156215-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestLogThenFail","Output":"    value_test.go:17: Value() = 2, want 1\n"}
+{"Time":"2026-10-04T13:18:43.156229-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestLogThenFail","Output":"--- FAIL: TestLogThenFail (0.00s)\n"}
+{"Time":"2026-10-04T13:18:43.156242-05:00","Action":"fail","Package":"rec.invalid/m/basic","Test":"TestLogThenFail","Elapsed":0}
+{"Time":"2026-10-04T13:18:43.156289-05:00","Action":"output","Package":"rec.invalid/m/basic","Output":"FAIL\n"}
+{"Time":"2026-10-04T13:18:43.157475-05:00","Action":"output","Package":"rec.invalid/m/basic","Output":"FAIL\trec.invalid/m/basic\t0.183s\n"}
+{"Time":"2026-10-04T13:18:43.157506-05:00","Action":"fail","Package":"rec.invalid/m/basic","Elapsed":0.183}

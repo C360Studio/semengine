@@ -9,12 +9,12 @@
 // # Core Features
 //
 // Circuit Breaker Pattern: Prevents cascading failures by failing fast after a threshold
-// of consecutive failures (default: 5). The circuit opens to prevent further attempts,
+// of consecutive failures (default: 15). The circuit opens to prevent further attempts,
 // then gradually tests the connection with exponential backoff.
 //
 // Connection Lifecycle Management: Handles connection states automatically through the
 // lifecycle: Disconnected → Connecting → Connected → Reconnecting → Connected. The client
-// manages all transitions with configurable callbacks for state changes.
+// manages all transitions.
 //
 // JetStream Support: Full support for JetStream streams, consumers, and Key-Value stores
 // with proper error handling and circuit breaker integration.
@@ -56,13 +56,6 @@
 //	client, err := natsclient.NewClient("nats://localhost:4222",
 //	    natsclient.WithMaxReconnects(-1),  // Infinite reconnects
 //	    natsclient.WithReconnectWait(2*time.Second),
-//	    natsclient.WithCircuitBreakerThreshold(10),
-//	    natsclient.WithDisconnectCallback(func(err error) {
-//	        log.Printf("Disconnected: %v", err)
-//	    }),
-//	    natsclient.WithReconnectCallback(func() {
-//	        log.Println("Reconnected successfully")
-//	    }),
 //	)
 //
 // # Who owns a stream's limits
@@ -213,13 +206,6 @@
 //	    // Retry later
 //	}
 //
-// Circuit breaker configuration:
-//
-//	client, err := natsclient.NewClient(url,
-//	    natsclient.WithCircuitBreakerThreshold(5),  // Open after 5 failures
-//	    natsclient.WithMaxBackoff(time.Minute),     // Max backoff duration
-//	)
-//
 // # Connection Status and Health
 //
 // Monitoring connection health:
@@ -249,19 +235,6 @@
 //	defer cancel()
 //	err := client.WaitForConnection(ctx)
 //
-// Health monitoring with callbacks:
-//
-//	client, err := natsclient.NewClient(url,
-//	    natsclient.WithHealthCheck(10*time.Second),
-//	    natsclient.WithHealthChangeCallback(func(healthy bool) {
-//	        if healthy {
-//	            log.Println("Connection restored")
-//	        } else {
-//	            log.Println("Connection lost")
-//	        }
-//	    }),
-//	)
-//
 // # Error Handling
 //
 // The package defines specific error types for different failure scenarios:
@@ -269,7 +242,6 @@
 //	var (
 //	    ErrCircuitOpen        = errors.New("circuit breaker is open")
 //	    ErrNotConnected       = errors.New("not connected to NATS")
-//	    ErrConnectionTimeout  = errors.New("connection timeout")
 //	)
 //
 // Error detection patterns:
@@ -314,12 +286,7 @@
 //	WithMaxReconnects(n int)              // Maximum reconnection attempts (-1 = infinite)
 //	WithReconnectWait(d time.Duration)    // Wait between reconnection attempts
 //	WithTimeout(d time.Duration)          // Connection timeout
-//	WithDrainTimeout(d time.Duration)     // Timeout for graceful shutdown
-//	WithPingInterval(d time.Duration)     // Health check interval
-//	WithCircuitBreakerThreshold(n int)    // Failures before circuit opens
-//	WithMaxBackoff(d time.Duration)       // Maximum backoff duration
 //	WithLogger(logger Logger)             // Custom logger for debug output
-//	WithHealthCheck(d time.Duration)      // Enable health monitoring
 //	WithClientName(name string)           // Client identification
 //
 // # Authentication and Security
@@ -330,38 +297,25 @@
 //	    natsclient.WithCredentials("username", "password"),
 //	)
 //
-// Token authentication:
-//
-//	client, err := natsclient.NewClient(url,
-//	    natsclient.WithToken("auth-token"),
-//	)
-//
-// TLS configuration:
-//
-//	client, err := natsclient.NewClient(url,
-//	    natsclient.WithTLS(true),
-//	    natsclient.WithTLSCerts("client.crt", "client.key"),
-//	    natsclient.WithTLSCA("ca.crt"),
-//	)
-//
 // Note: Credentials are cleared from memory when the client is closed.
 //
 // # Testing
 //
-// The package provides test utilities for integration testing:
+// The package's integration tests start a real NATS server with internal/harness/natsfixture:
 //
 //	func TestMyService(t *testing.T) {
-//	    // Create test client with real NATS via testcontainers
-//	    testClient := natsclient.NewTestClient(t,
-//	        natsclient.WithJetStream(),
-//	        natsclient.WithKV(),
-//	    )
-//	    defer testClient.Close()
+//	    // Start a disposable NATS server via testcontainers; its Stop runs on t.Cleanup
+//	    fixture := natsfixture.New(t)
+//	    if err := fixture.Start(t.Context()); err != nil {
+//	        t.Fatal(err)
+//	    }
 //
-//	    client := testClient.Client
+//	    client, err := natsclient.NewClient(fixture.URL())
+//	    assert.NoError(t, err)
+//	    assert.NoError(t, client.Connect(t.Context()))
 //
 //	    // Test with real NATS server
-//	    err := client.Publish(ctx, "test.subject", []byte("test data"))
+//	    err = client.Publish(ctx, "test.subject", []byte("test data"))
 //	    assert.NoError(t, err)
 //	}
 //
@@ -377,7 +331,7 @@
 //   - All public methods are safe for concurrent use
 //   - Connection state is managed with atomic operations and mutexes
 //   - Subscriptions and consumers can be created from any goroutine
-//   - Close() can only be called once (subsequent calls are no-ops)
+//   - Only the first Close() drains; a later Close() waits for the same completion
 //
 // # Performance Considerations
 //
@@ -392,7 +346,7 @@
 // breaker adds negligible overhead in normal operation and fails fast when open.
 //
 // Connection Lifecycle: Reconnection uses exponential backoff to avoid overwhelming the
-// server during failures. Maximum backoff is configurable (default: 1 minute).
+// server during failures. Maximum backoff is one minute.
 //
 // # Distributed Tracing
 //
@@ -512,7 +466,7 @@
 //	    "log"
 //	    "time"
 //
-//	    "github.com/c360studio/semstreams/natsclient"
+//	    "github.com/c360studio/semengine/natsclient"
 //	)
 //
 //	func main() {

@@ -1298,8 +1298,7 @@
     Callers awaiting a consumer handle's native Closed() can see it close early after the
     connection was force-closed (jetstream/pull.go:822-837); Client.Close's nil is the completion
     proof, and the three Consume doc comments say so (owner answer 1, #9 comment 5980296112).
-    Import paths differ from the pin: pkg/resource is internal/resource (design D5); the doc.go
-    import path at :512 is task 3.7e. Pin differences carried with the carried tests as the only
+    Import paths differ from the pin: pkg/resource is internal/resource (design D5). Pin differences carried with the carried tests as the only
     regression evidence: nats.go v1.52.0 at the pin (go.mod:12) is v1.54.0 here; the embedded test
     broker nats-server/v2 v2.12.4 at the pin (go.mod:11) is v2.14.7 here, the .nats-image line
     (owner ruling, #9 comment 5969776736); T-B3 cannot see an embedded server, so one broker
@@ -1346,9 +1345,35 @@
     the clientName option :437-440 → :385-388, armConnectionLossTimer :1512 → :1373, the reconnect
     path's status, circuit reset and timer cancel :1516-1518 → :1377-1379, each handler's
     setStatus. Audit item (c): testCircuit's comment (:349, :352-358 → :337-339) promised a
-    reconnect; it now says the function only moves the status from open to disconnected. Comments
-    and examples that still name a dropped symbol are task 3.7e: client.go:98, :157 and
-    request.go:29 (the request-handler-timeout option), and doc.go. Census maps (owner ruling, #9 comment 5969522395, item 3): the
+    reconnect; it now says the function only moves the status from open to disconnected. Task
+    3.7e, comments naming the dropped request-handler-timeout option, each an adapt item, pin →
+    SemEngine: client.go:99 → :98 and :169 → :354, request.go:29; each now names the environment
+    variable only. README.md is ported (owner rulings, #9 comments 5957221949 and 5968665464).
+    README import paths, each an adapt item "import path changed to the SemEngine module", pin
+    lines :14 and :312, github.com/c360/semstreams/natsclient → github.com/c360studio/semengine/natsclient.
+    README behaviour edits, pin lines: :21 and :213, the circuit-breaker threshold default 5 → 15
+    and the reconnect default 5 → -1 (the code's defaults, also at the pin, client.go NewClient);
+    :25, "with configurable callbacks for state changes" removed (3.7a dropped the disconnect,
+    reconnect and health-change callbacks); :74-80, WithCircuitBreakerThreshold,
+    WithDisconnectCallback and WithReconnectCallback removed from the example; :216,
+    WithCircuitBreakerThreshold removed from the options list; :220-234, the Callbacks section
+    removed (its two options dropped in 3.7a, and WithClosedCallback never existed); :273-284, the
+    NewTestClient example and its lead sentence replaced by internal/harness/natsfixture (New,
+    Start, URL, then NewClient and Connect). README lint fixes: lines 3, 7, 9, 21, 25, 29, 33,
+    196, 198 and 200 wrapped at 120 columns (MD013); the headings at :172 and :176, longer than
+    80 columns (MD013), become `NewKVStore` and `UpdateJSON` with the signature on the line
+    below each; a blank line before the list at :36 (MD032). doc.go, pin lines: :512 import path
+    changed to the SemEngine module (an adapt item, not a behaviour edit); behaviour edits: :12
+    default 5 → 15; :17, the state-change callbacks removed; :59-65, the three dropped options
+    removed from the example; :213-218, the circuit-breaker configuration example (two dropped
+    options) removed; :249-260, the health-monitoring example (WithHealthCheck, a Client method
+    shown as an option, and WithHealthChangeCallback) removed; :269, ErrConnectionTimeout
+    removed; :314-317 and :319, the five dropped options removed from the options list; :330-342,
+    the token and TLS examples (WithToken, WithTLS) removed; :348-358, NewTestClient replaced by
+    internal/harness/natsfixture, with Connect; :377, "Close() can only be called once (subsequent
+    calls are no-ops)" → only the first Close drains and a later Close waits for the same
+    completion (task 3.7c); :392, "Maximum backoff is configurable" → one minute (WithMaxBackoff
+    dropped). Census maps (owner ruling, #9 comment 5969522395, item 3): the
     expected maps in consumer_policy_callsite_test.go hold SemEngine's production callers as
     measured at task 3.7, so each later port that adds a caller of ConsumeInternalStreamWithConfig,
     ConsumeStreamWithConfig, ConsumeStreamWithConfigContexts or GetConsumerConfig, or a direct

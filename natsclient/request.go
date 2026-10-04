@@ -26,7 +26,7 @@ const errorCodeResponseTooLarge = "response_too_large"
 // CI/default value and MUST NOT change without weighing every request
 // handler in the tree; slow-by-design handlers (e.g. an LLM answer-synthesis
 // path that legitimately needs >30s) raise it per deployment via
-// WithRequestHandlerTimeout or the SEMSTREAMS_NATS_REQUEST_HANDLER_TIMEOUT
+// the SEMSTREAMS_NATS_REQUEST_HANDLER_TIMEOUT
 // environment variable rather than editing this constant.
 const DefaultRequestHandlerTimeout = 30 * time.Second
 

@@ -196,6 +196,26 @@ class and code (`natsclient/doc.go`, "The unified RPC error contract").
 - Use `errors.Is` for JetStream sentinels, and cover sibling states such as key-not-found and key-deleted, or
   no-keys-found and key-not-found.
 
+### Storage and retention
+
+Carried with `natsclient` from SemStreams' developer contract at the pin (§ Storage and retention contracts, its
+first two bullets, which `natsclient` enforces; the rest govern graph state and the `storage` package, not yet
+ported).
+
+- Keep a bucket's class, its retention and capacity protection apart. A `BucketSpec` declares a `Class`
+  (`ClassAuthoritative`, `ClassDerived`, `ClassOperational`, `ClassDiagnostic`), which is descriptive, and a
+  `Retention`, which is enforced. An ordinary stream's finite `MaxAge`, `MaxBytes` and discard policy
+  (`CheckStreamBounds`, run when `EnsureStream`, `CreateStream` or a consumer's
+  auto-create creates one) are operational protection, never a way to remove
+  entities. `CheckStreamBounds` cannot require the discard policy, because its zero value is `DiscardOld`: set it
+  explicitly.
+- State that must not be evicted (a bucket whose retention is `RetentionNoLifecycle` or `RetentionNoLifecycleStrict`)
+  never has a TTL (`MaxAge`) or a binding `MaxBytes`. `CheckNoLifecycleRetention` refuses either with
+  `ErrGraphBucketRetention`, and `KVStore.AssertNoLifecycleRetention` checks a live bucket. The strict kind refuses a
+  foreign retention instead of stripping it. A finite ceiling on such state may only be a `DiscardNew` limit that
+  refuses writes honestly; `natsclient` has no retention kind for one yet, so adding it means a new `RetentionKind`
+  with its reconcile arm (`kvspec.go`).
+
 ## Test and operational fidelity
 
 The reasoning behind these rules, and the mutation procedure step by step, is in `docs/testing.md`.

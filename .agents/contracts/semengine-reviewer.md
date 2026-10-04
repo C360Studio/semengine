@@ -210,6 +210,20 @@ is in `natsclient/doc.go`, "The unified RPC error contract".
 - Require `errors.Is` for JetStream sentinels, with sibling states covered: key-not-found and key-deleted;
   no-keys-found and key-not-found.
 
+### Storage and retention review
+
+Carried with `natsclient` from SemStreams' reviewer contract at the pin (§ Storage, retention, and cutover review,
+its first two bullets; the rest govern graph state, the `storage` package and cutover, not yet ported).
+
+- A bucket's `Class` stays descriptive and its `Retention` enforced; neither stands in for the other. An ordinary
+  stream's `MaxAge`, `MaxBytes` and discard policy are capacity protection, not entity removal. Flag a stream created
+  through `EnsureStream` or `CreateStream` whose discard policy is left at its zero value (`DiscardOld`) without a
+  stated choice: `CheckStreamBounds` cannot see it.
+- A bucket declared `RetentionNoLifecycle` or `RetentionNoLifecycleStrict` with a TTL or a binding `MaxBytes`, or a
+  path that bypasses `CheckNoLifecycleRetention` or `AssertNoLifecycleRetention` for such a bucket, is `BLOCKING`. A
+  ceiling on that state is acceptable only as a `DiscardNew` limit with typed rejection, through a new
+  `RetentionKind`.
+
 ### Test fidelity
 
 - `docs/testing.md` is the developer-facing long form of these checks. A diff that contradicts it is a finding

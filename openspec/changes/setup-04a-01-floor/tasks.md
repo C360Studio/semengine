@@ -998,9 +998,13 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       - "NATS RPC" and "NATS RPC error contract": carried, adapted to `natsclient`, as § NATS RPC (developer) and
         § NATS RPC error contract (reviewer); the pin's "repository RPC contract" is `natsclient/doc.go`'s, and
         "gateways" became "code that passes a reply on" (no gateway is ported). `AGENTS.md` gains their row.
-      - "Storage and retention contracts" and "Storage, retention, and cutover review": not applying here. They
-        govern graph state, the `storage` package's `Store` and `StorageReference`, and retained deployed state;
-        this change ports none of them. They return with the change that ports `storage` and the graph processors.
+      - "Storage and retention contracts" and "Storage, retention, and cutover review": the first two bullets
+        carried, adapted to `natsclient`, as § Storage and retention (developer) and § Storage and retention review
+        (reviewer), because `natsclient` enforces them: `BucketClass` and `RetentionPolicy` (`kvspec.go`),
+        `CheckNoLifecycleRetention` and `AssertNoLifecycleRetention` (`kv.go`), `CheckStreamBounds`
+        (`stream_bounds.go`); port review MEDIUM-5, PR #48 comment 5984567497. The other bullets do not apply
+        here: they govern the `storage` package's `Store` and `StorageReference` and retained deployed state, which
+        this change does not port, and return with the change that ports `storage` and the graph processors.
       - `kv-or-stream`: not applying here. It decides how components and processors communicate; no component or
         processor is ported, and the concept docs and buckets it cites (`docs/concepts/02-kv-twofer.md`,
         `03-streams-vs-kv-watches.md`, `ENTITY_STATES`) do not exist here. It returns with the first change that

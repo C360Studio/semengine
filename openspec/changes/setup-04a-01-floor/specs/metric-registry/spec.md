@@ -24,9 +24,10 @@ untouched for each of these candidates:
   is made through each returned handle
 - **THEN** both calls return the same collector with no error, and the gathered value is 2
 
-#### Scenario: Same key, another type or help
+#### Scenario: Same key, another type, help or label names
 
-- **WHEN** a key held by a gauge is registered again as a counter of the same name and help, or with a different help
+- **WHEN** a key held by a gauge is registered again as a counter of the same name and help, or with a different help,
+  or with the same type, name and help but other label names
 - **THEN** the call returns the zero collector and a fatal error, and the first collector's gathered value is
   unchanged
 

@@ -429,6 +429,7 @@ mapping (task 3.7c2 tests by name; the 3.7c tests likewise):
 | Drain outcome | `TestClientCloseReportsDrainTimeout` | `TestClientCloseReportsDrainTimeout` |
 | A second `Close`, or a `Connect`, during the drain | `TestClientCloseHonoursItsContextDuringAnotherDrain`, `TestClientConnectDuringCloseDrainReturnsPromptly`, `TestClientConcurrentClosesEachHonourTheirContext` | `TestClientCloseHonoursItsContextDuringAnotherDrain` |
 | Subscription on a replaced connection | `TestClientCloseEndsSubscriptionOnReplacedConnection` | `TestClientCloseEndsSubscriptionOnReplacedConnection` |
+| Consumer on a replaced connection (the `transport-client` scenario "A consumer on a replaced connection") | `TestClientCloseEndsConsumerOnReplacedConnection`, `TestClientCloseAttributesConsumerToItsHandlesConnection` | `TestClientCloseEndsConsumerOnReplacedConnection`, `TestClientCloseAttributesConsumerToItsHandlesConnection` |
 
 Second, the sequential part (which operation is allowed in which lifecycle state) is small and finite: four states
 (new, connected, closing with a held drain, closed) times eight operations (`Connect`, `Close` with a live context,
@@ -835,11 +836,13 @@ collector registered directly on `PrometheusRegistry()`, and concurrent callers 
 
 The `metric-registry` delta states this law (owner ruling, #9 comment 5983188211). Its scenarios map to the example
 tests above: same key, same type and descriptors → `TestRegisterOrGetSameKeyReturnsCanonicalCollector`,
-`TestRegisterOrGetConcurrentCallersShareOneCollector`; same key, another type or help →
-`TestRegisterOrGetRefusesSameKeyOfAnotherType`, `TestRegisterOrGetRefusesSameKeyWithDifferentHelp`; nil candidate →
+`TestRegisterOrGetConcurrentCallersShareOneCollector`; same key, another type, help or label names →
+`TestRegisterOrGetRefusesSameKeyOfAnotherType`, `TestRegisterOrGetRefusesSameKeyWithDifferentHelp`,
+`TestRegisterOrGetRefusesSameKeyWithDifferentLabelNames`; nil candidate →
 `TestRegisterOrGetRefusesNilCandidates`; cross-key alias → `TestRegisterOrGetRefusesCrossKeyAlias`,
 `TestRegisterOrGetRefusesCoreMetricCollision`, `TestRegisterOrGetRefusesDirectRegistrationCollision`. A label-name
-mismatch on a held key is reached by `TestPropRegisterOrGetHistory` only.
+mismatch on a held key has its own example, because `TestPropRegisterOrGetHistory` cannot reach it: its generator
+fixes the label names by kind (`registerorget_prop_test.go:67-76`).
 
 Consumer impact, recorded on the `metric` row: semsource `internal/entitypub/metrics.go:99-106` and semboids
 (`internal/boidgraph/metrics.go`, `internal/sim/lifecycle.go`, `internal/api/graphstream_metrics.go`) stop compiling on

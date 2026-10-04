@@ -67,7 +67,17 @@ the import-graph test that keeps test libraries out of production files.
 - `process-host` (ADDED): a helper-process host for process-kill proofs.
 - `transport-client` (ADDED): what the ported `natsclient` keeps at tier 0 — acknowledged is not durable on a memory
   stream; settlement follows the decision; `Drain` refuses a nil context and `Close` is bounded by the caller's
-  deadline — and one thing it gains: `Close` and `Connect` refuse a nil context.
+  deadline — and what it gains: `Close` and `Connect` refuse a nil context; a nil `Close` means everything the client
+  owns has finished (every running handler joined, a drain timeout reported, each `Close` bounded by its own context,
+  subscriptions and consumers left on a connection replaced through `SetConnection` ended); `Close` refuses new work;
+  only `Close` changes the status once it begins; and a delivery after the recorded end is refused and counted.
+- `metric-registry` (ADDED): one canonical collector per metric key — `metric.RegisterOrGet` returns the collector
+  already held for a key of the same type and descriptors, and refuses with a fatal error, storing nothing, a
+  different type, help or label names, a nil candidate, and a descriptor another key, a core metric or a direct
+  registration owns (owner ruling, #9 comment 5983188211).
+- `message-codec` (ADDED): message timestamps travel as integer milliseconds; every string a message encodes is valid
+  UTF-8; generic JSON data is JSON-shaped; a valid message survives the wire unchanged (owner ruling, #9 comment
+  5983188211).
 
 ## Impact
 

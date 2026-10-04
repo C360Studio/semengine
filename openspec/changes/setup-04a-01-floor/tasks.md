@@ -9,10 +9,23 @@ this pull request as a comment unless a task says otherwise. No task asserts a f
 
 ## 1. Design and spec acceptance
 
-- [ ] 1.1 (A) `design.md` and the eight deltas under `specs/` (six, plus `metric-registry` and `message-codec` by owner
+- [x] 1.1 (A) `design.md` and the eight deltas under `specs/` (six, plus `metric-registry` and `message-codec` by owner
       ruling, #9 comment 5983188211) match the accepted foundation design (D2 row 1, D3–D7,
       D9, D10.1) and the #9 rulings; every requirement has at least one scenario; `task spec:check` passes with no
       `skip_specs`.
+      - Done. The architect's corrections were applied in `e1ada76` and `2f46546`. The reviewer's check of them
+        (2026-10-04) passed the criteria above with three findings, closed in the commit that ticks this task.
+        1.1-a: `transport-client` states F26's consumer half (a consumer on a replaced connection is stopped when
+        `Close` begins and its handlers are joined; its claim is released only after they return). Its scenario
+        "A consumer on a replaced connection" is mapped in D3's ownership table to
+        `TestClientCloseEndsConsumerOnReplacedConnection` and
+        `TestClientCloseAttributesConsumerToItsHandlesConnection`. 1.1-b: `TestRegisterOrGetRefusesSameKeyWithDifferentLabelNames`
+        is the example for a held key met with other label names, which `TestPropRegisterOrGetHistory` cannot reach.
+        It passes on the code as it stands. A mutant that drops label names from the descriptor comparison fails it
+        ("An error is expected but got nil"). The other `RegisterOrGet` examples pass under that mutant, and so did
+        one default run of the property test. The scenario is retitled "Same key, another type, help or label
+        names", and D9's map names the test. 1.1-c: `proposal.md`'s Capabilities list gains `metric-registry` and
+        `message-codec`, and its `transport-client` line names the four added requirements.
 - [x] 1.2 Independent design review (PASS on re-check 2, 2026-10-01). The reviewer's verdict on `design.md` and `specs/`
       is a pass, recorded on this pull request with the reviewed files' checksums.
 - [x] 1.3 Owner acceptance of this change on #9 (2026-10-01) (the chain is accepted; this is the first change's own

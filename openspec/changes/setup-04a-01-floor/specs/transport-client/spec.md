@@ -83,6 +83,9 @@ drain that runs out of time included, which Close SHALL report as a transient er
 wait on another caller's drain. A Close called from inside one of the client's callbacks SHALL return its context's
 error and never nil. A client-owned subscription left on a connection that `SetConnection` replaced SHALL be
 unsubscribed and its running handler joined; the replaced connection itself belongs to the `SetConnection` caller.
+A client-created consumer whose connection, the one its JetStream handle was made on, was replaced through
+`SetConnection` SHALL be stopped when Close begins and its handlers joined, and its claim SHALL be released only after
+they return.
 
 #### Scenario: A nil Close means every handler returned
 
@@ -111,6 +114,13 @@ unsubscribed and its running handler joined; the replaced connection itself belo
   when Close is called with a live context
 - **THEN** Close unsubscribes it and returns nil only after the handler returned, and the replaced connection stays
   open
+
+#### Scenario: A consumer on a replaced connection
+
+- **WHEN** a client-created consumer's connection, the one its JetStream handle was made on, has been replaced through
+  SetConnection, and Close is called with a live context
+- **THEN** Close stops the consumer, returns nil only after its handlers returned and its claim was released, and the
+  replaced connection stays open
 
 ### Requirement: Close refuses new work
 

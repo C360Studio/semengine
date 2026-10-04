@@ -117,6 +117,24 @@ func TestRegisterOrGetRefusesSameKeyWithDifferentHelp(t *testing.T) {
 	require.Equal(t, []float64{1}, gatheredSeries(t, r, "d9_help_total"))
 }
 
+// A held key met by a candidate of the same concrete type, name and help but other label names is
+// refused (the metric-registry delta, task 1.1). TestPropRegisterOrGetHistory cannot reach this
+// case: its generator fixes the label names by kind.
+func TestRegisterOrGetRefusesSameKeyWithDifferentLabelNames(t *testing.T) {
+	r := NewMetricsRegistry()
+	first, err := RegisterOrGet(r, "svc", "k",
+		prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "d9_labels", Help: "labels"}, []string{"a"}))
+	require.NoError(t, err)
+	first.WithLabelValues("x").Set(4)
+	other, err := RegisterOrGet(r, "svc", "k",
+		prometheus.NewGaugeVec(prometheus.GaugeOpts{Name: "d9_labels", Help: "labels"}, []string{"b"}))
+	require.Error(t, err, "other label names are a different descriptor")
+	require.True(t, errs.IsFatal(err))
+	require.ErrorContains(t, err, `logical metric key "svc.k" has a different descriptor`)
+	require.Nil(t, other, "a refusal returns the zero collector")
+	require.Equal(t, []float64{4}, gatheredSeries(t, r, "d9_labels"), "the canonical gauge is untouched")
+}
+
 // Test 4 (design D9).
 func TestRegisterOrGetRefusesNilCandidates(t *testing.T) {
 	r := NewMetricsRegistry()

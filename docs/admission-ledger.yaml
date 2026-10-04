@@ -1179,11 +1179,14 @@
     natsclient-close-joins-its-goroutines,
     the six sites (the health monitor :2132, the metrics poller :860, the claim releases of both consumer
     APIs, now one site, owned_delivery.go:120, the connection-loss timer's body :2021 and the
-    circuit timer's body :582) start through one helper, startBackground (:214), which under mu refuses once Close has
-    begun and otherwise adds to one WaitGroup before the goroutine starts; Connect admits the
-    monitor and the poller through it. The first Close sets Status to Disconnected, stops the
-    monitor, both timers and the poller, drains and closes the connection and clears the connection
-    and the JetStream handle, bounded by its own context. Every Close returns nil only when
+    circuit timer's body :582) start through one helper, startBackground (:214), which under mu
+    refuses once Close has begun and otherwise counts the work as client-owned (an owned-work
+    count under mu, which the join waits to reach zero) before the goroutine starts; Connect admits the
+    monitor and the poller through it. The first Close stops the monitor, both timers and the
+    poller, drains and closes the
+    connection, clears the connection and the JetStream handle, and only then sets Status to
+    Disconnected (the status keeps its value through the drain), bounded by its own context. Every
+    Close returns nil only when
     everything the client owns has finished, and ctx.Err() when its own context ends first or had
     already ended, without waiting for another Close's drain (:889-1018; the pin's second Close
     returned nil at once, :583-585, and no Close joined anything). Work offered once Close has begun is
@@ -1193,9 +1196,11 @@
     while Close waits for it. A Close called from inside a client callback returns ctx.Err() when
     its context ends and never nil (the pin returned at once). Also changed: Connect returns
     nats.ErrConnectionClosed when Close began after admission and refused the monitor or the
-    poller (:803-805; the pin started both and returned nil); a consumer setup refused before native
-    delivery starts releases its claim and never calls native Consume; one that started native
-    delivery is stopped, keeps its claim and metrics observation until its handler invocations have
+    poller (:803-805; the pin started both and returned nil); a consumer setup not yet admitted when
+    Close begins releases its claim and never calls native
+    Consume; one admitted before Close began may reach native Consume after it and is owned all
+    the same: once delivery started it is stopped, keeps its claim and metrics observation until its
+    handler invocations have
     returned, and returns nats.ErrConnectionClosed with no handle (Codex F21); arming the circuit
     timer stops a pending one from an earlier
     round, which an untracked timer could otherwise outlive Close (:568-570; the pin never kept or
@@ -1252,7 +1257,11 @@
     returned nil once the native drain gave up and closed (TestClientCloseReportsDrainTimeout); (9)
     Close unsubscribes a client-owned subscription on a connection replaced through SetConnection
     and joins its handler, discarding its buffered messages, and treats an Unsubscribe error there
-    as the subscription already ending; the replaced connection itself belongs to the SetConnection
+    as the subscription already ending; likewise, when Close
+    begins, it stops through its native handle a client-created consumer whose connection was
+    replaced, and releases its claim and observation once its handlers have returned (Codex F26,
+    PR #48 comment 5981562076; TestClientCloseEndsConsumerOnReplacedConnection, internal and port);
+    the replaced connection itself belongs to the SetConnection
     caller and Close neither closes nor waits for it; SetConnection after Close has begun changes
     nothing and logs at warn (TestClientLifecycleOperationTable,
     TestClientCloseEndsSubscriptionOnReplacedConnection). jetstream.New's error, dropped at the pin

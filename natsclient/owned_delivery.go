@@ -115,16 +115,38 @@ type consumerOwnership struct {
 // ownConsumer admits the consumer's ownership goroutine, which waits for the native handle's
 // Closed(), records the end, waits for the running invocation, and then calls release. It reports
 // false, and admits nothing, once Close has begun.
+//
+// Close drains the installed connection, which ends the consumers made on it gracefully. A consumer
+// whose connection SetConnection has since replaced is the client's but its connection is the
+// caller's (design D3): when Close begins, its goroutine stops it, leaving that connection open.
+// After Stop the native Closed() can report the end early, so the handler count decides completion.
 func (c *Client) ownConsumer(d *ownedDelivery, release func(started bool)) (*consumerOwnership, bool) {
 	o := &consumerOwnership{delivery: d, handle: make(chan jetstream.ConsumeContext, 1), released: make(chan struct{})}
+	// The consumer's connection is the one its JetStream handle was made on: the connection
+	// connectWith installed with it, whatever SetConnection has installed since.
+	c.mu.Lock()
+	conn := c.dialled
+	closing := c.closingSignalLocked()
+	c.mu.Unlock()
 	if !c.startBackground(workClaimRelease, func() {
 		defer close(o.released)
 		h := <-o.handle
 		if h != nil {
-			// Closed() alone is not the end of the handlers (jetstream/pull.go:822-837): it can
-			// close while one still runs. d.done is.
-			<-h.Closed()
+			closed := h.Closed()
+			select {
+			case <-closed:
+			case <-closing:
+				c.mu.RLock()
+				replaced := conn != c.draining
+				c.mu.RUnlock()
+				if replaced {
+					h.Stop()
+				}
+				<-closed
+			}
 		}
+		// Closed() alone is not the end of the handlers (jetstream/pull.go:822-837): it can
+		// close while one still runs. d.done is.
 		d.end()
 		<-d.done
 		release(h != nil)

@@ -324,13 +324,22 @@ failing-first `adapt` items:
   watcher, which unsubscribes it when `Close` begins if its connection is not the one `Close` drains. Declared cost:
   messages buffered on that subscription and not yet handed to the handler are discarded by the native library on
   unsubscribe (N8), as they are when any core subscription is unsubscribed. Once `Close` has begun, `SetConnection`
-  changes nothing and logs at warn level (owner answer 3).
-- **Consumer setup that meets `Close`.** A consumer setup that has not started native delivery when `Close`
-  begins is refused with `nats.ErrConnectionClosed`, its claim released, and the native `Consume` is never called.
-  One that has started native delivery stops it and keeps its local claim and its metrics observation until every
-  handler invocation has returned; it then returns `nats.ErrConnectionClosed` with no handle. If its setup context
-  ends first, it returns that context's error at that point; the claim stays held until the handlers return, and
-  `Close` does not return nil before they have. A caller that is refused has nothing to drain.
+  changes nothing and logs at warn level (owner answer 3). Client-created consumers are the client's in the same way
+  (Codex F26, PR #48 comment 5981562076): when `Close` begins, the ownership goroutine of a consumer whose connection
+  (the one its JetStream handle was made on) is not the one `Close` drains stops it through its native handle, leaving
+  that connection open. After `Stop` the native `Closed()` can report the end early, so the claim and the metrics
+  observation are released only once the handler count reaches zero. A consumer on the drained connection keeps its
+  graceful drain. Declared cost: messages that consumer had buffered are discarded by `Stop`
+  (`jetstream/pull.go:58-61`); with acknowledgements they are redelivered, with AckNone they are lost, as the owner
+  accepted for a cut-short delivery (question 4).
+- **Consumer setup that meets `Close`.** The boundary is admission, which comes just before native `Consume`. A
+  consumer setup not yet admitted when `Close` begins is refused with `nats.ErrConnectionClosed`, its claim released,
+  and the native `Consume` is never called. One admitted before `Close` began may still call native `Consume` after
+  it; it is owned all the same, and once native delivery has started it stops it and keeps its local claim and its
+  metrics observation until every handler invocation has returned; it then returns `nats.ErrConnectionClosed` with no
+  handle. If its setup context ends first, it returns that context's error at that point; the claim stays held until
+  the handlers return, and `Close` does not return nil before they have. A caller that is refused has nothing to
+  drain.
 - **`natsclient-close-honours-each-context`** (Codex F22). Every `Close` returns within its own context. A `Close`
   whose context has ended, or ends while another `Close` is draining, returns `ctx.Err()` at once, without waiting
   for that drain. Cleanup runs once, bounded by the first `Close`'s context; a later `Close` with a longer context

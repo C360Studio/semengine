@@ -81,9 +81,10 @@ repeated or retried by the client on the caller's behalf.
 
 #### Scenario: A consumer refused during Close keeps its claim
 
-- **WHEN** a consumer setup has started native delivery when Close begins
-- **THEN** it returns ErrConnectionClosed with no handle only after its handler invocations returned, and its
-  claim is held until then
+- **WHEN** a consumer setup admitted before Close began has started native delivery
+- **THEN** it returns ErrConnectionClosed with no handle only after its handler invocations returned, or, if its
+  setup context ends first, that context's error at that point; either way its claim is held, and Close does not
+  return nil, until the handlers have returned
 
 #### Scenario: Nil Close context
 

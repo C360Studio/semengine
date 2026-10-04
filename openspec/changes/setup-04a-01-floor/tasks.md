@@ -626,6 +626,15 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         - M16, a refused setup returns before its handlers: detected by
           `TestClientRefusedConsumerKeepsOwnershipUntilHandlersReturn` and
           `TestClientRefusedConsumerSetupContextEndsWhileHandlerRuns`, both cases each.
+      - Codex's re-review at `f8fa86d` (PR #48 comment 5981562076) requested F26 and F27. F26: an idle
+        client-created consumer left on a connection replaced through `SetConnection` kept `Close` from finishing.
+        `TestClientCloseEndsConsumerOnReplacedConnection`, Codex's diagnostic with its assertions unchanged plus a
+        port-API case, failed first at `f8fa86d` in both cases: `Close=context deadline exceeded`, the consumer still
+        open, one claim. Fixed in the consumer ownership goroutine shared by both APIs: when `Close` begins it stops a
+        consumer whose connection is not the drained one, leaves that connection open, and releases the claim only
+        once the handler count is zero. Mutant M17 removes that stop: detected, both cases. F27 corrected the ledger
+        (owned-work count, status frozen until cleanup, admission as the refusal boundary), D3's consumer-setup
+        bullet, and the spec's refusal scenario (the setup context may end first).
       - Departures from the design, each recorded here:
         - Test 6 runs real JetStream on an embedded server in the unit lane, not the Docker lane.
         - Test 15 checks the lifecycle adapter directly, not through the suite.

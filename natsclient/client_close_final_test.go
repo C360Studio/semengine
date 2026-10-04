@@ -1407,3 +1407,75 @@ func TestClientCloseEndsSubscriptionOnReplacedConnection(t *testing.T) {
 		})
 	}
 }
+
+// 21. Codex F26 (PR #48 comment 5981562076), its TestReviewerCloseEndsConsumerOnReplacedConnection
+// with assertions unchanged, for the internal and the port API: an idle client-created consumer
+// left on a connection replaced through SetConnection is stopped and joined by Close, which leaves
+// that connection, the caller's, open.
+func TestClientCloseEndsConsumerOnReplacedConnection(t *testing.T) {
+	for _, port := range []bool{false, true} {
+		name := "internal"
+		if port {
+			name = "port"
+		}
+		t.Run(name, func(t *testing.T) {
+			url := embeddedJetStreamURL(t)
+			c, err := NewClient(url, WithHealthInterval(0))
+			require.NoError(t, err)
+			require.NoError(t, c.Connect(t.Context()))
+			old := c.GetConnection()
+			var handle jetstream.ConsumeContext
+			defer func() {
+				if handle != nil {
+					handle.Stop()
+				}
+				old.Close()
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				if err := c.Close(ctx); err != nil {
+					t.Errorf("cleanup Close: %v", err)
+				}
+			}()
+			cfg := StreamConsumerConfig{StreamName: "REVIEW_REPLACED", ConsumerName: "replaced", FilterSubject: "review.replaced.>",
+				AckPolicy: "explicit", AutoCreate: true, AutoCreateConfig: boundedAutoCreate()}
+			handle, err = consumeVia(t.Context(), c, port, cfg, func(context.Context, jetstream.Msg) {
+				t.Error("idle diagnostic received an unexpected message")
+			})
+			require.NoError(t, err)
+			closed := handle.Closed()
+			replacement, err := nats.Connect(url)
+			require.NoError(t, err)
+			defer replacement.Close()
+			c.SetConnection(replacement)
+
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+			closeErr := c.Close(ctx)
+			cancel()
+			stillOpen := false
+			select {
+			case <-closed:
+			default:
+				stillOpen = true
+			}
+			t.Logf("Close=%v; original connection closed=%v; idle client-created consumer still open=%v; claims=%d", closeErr, old.IsClosed(), stillOpen, claimCount(c))
+			if closeErr != nil {
+				t.Errorf("Client.Close failed to finish its idle consumer on the replaced connection: %v", closeErr)
+			}
+			if stillOpen {
+				t.Error("client-created consumer survives Client.Close on the caller-owned replaced connection")
+			}
+			require.False(t, old.IsClosed(), "Client must preserve the caller-owned replaced connection")
+
+			handle.Stop()
+			joinedCtx, joinedCancel := context.WithTimeout(t.Context(), 10*time.Second)
+			defer joinedCancel()
+			select {
+			case <-closed:
+			case <-joinedCtx.Done():
+				t.Fatal("explicit caller Stop did not end consumer")
+			}
+			require.NoError(t, c.Close(joinedCtx), "explicit caller Stop releases Client.Close's join")
+			require.False(t, old.IsClosed(), "stopping the consumer must leave the old connection open")
+		})
+	}
+}

@@ -977,7 +977,7 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       `lifecycle-suite` and the five new capabilities (`process-host`, `transport-client`, `background-work`,
       `metric-registry`, `message-codec`),
       verified against the code as landed; `task spec:check` passes.
-- [ ] 6.4 (W) `.agents/contracts/semengine-developer.md` and `.agents/contracts/semengine-reviewer.md` gain the
+- [x] 6.4 (W) `.agents/contracts/semengine-developer.md` and `.agents/contracts/semengine-reviewer.md` gain the
       "Background work" subsection after "Context ownership", and their detach bullets the no-join-by-timer clause, as
       drafted on this pull request; `AGENTS.md`'s "Rules and what enforces them" table carries the background-work row,
       added in commit b09374a; `task docs:check` passes; and, because guidance returns with the package (architect
@@ -986,6 +986,20 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       contract" (`:217-226`) and "Storage, retention, and cutover review" (`:170-186`), and
       `.agents/skills/kv-or-stream`. Each is read at the pin and carried in adapted form, or named as not applying with
       its reason.
+      Both contracts carry "Background work" after "Context ownership" and the no-timer-in-place-of-a-join clause in
+      their detach bullets, and `AGENTS.md` carries the background-work row. Read at the pin with `gh api
+      …?ref=8b99efe9` (`docs/inventory-scope.md` rule 4):
+      - "NATS RPC" and "NATS RPC error contract": carried, adapted to `natsclient`, as § NATS RPC (developer) and
+        § NATS RPC error contract (reviewer); the pin's "repository RPC contract" is `natsclient/doc.go`'s, and
+        "gateways" became "code that passes a reply on" (no gateway is ported). `AGENTS.md` gains their row.
+      - "Storage and retention contracts" and "Storage, retention, and cutover review": not applying here. They
+        govern graph state, the `storage` package's `Store` and `StorageReference`, and retained deployed state;
+        this change ports none of them. They return with the change that ports `storage` and the graph processors.
+      - `kv-or-stream`: not applying here. It decides how components and processors communicate; no component or
+        processor is ported, and the concept docs and buckets it cites (`docs/concepts/02-kv-twofer.md`,
+        `03-streams-vs-kv-watches.md`, `ENTITY_STATES`) do not exist here. It returns with the first change that
+        ports a component.
+      `task docs:check` passes.
 
 ## 7. Review and archive
 

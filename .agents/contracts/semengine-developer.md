@@ -184,6 +184,18 @@ A goroutine that outlives its call, outside a service, follows `openspec/specs/b
 - `Close() error` that cancels and joins, with no timeout: only when the goroutine waits on nothing outside `Close`.
 - `Shutdown(ctx) error` when stopping waits on a caller's callback, in-flight requests or network I/O.
 
+### NATS RPC
+
+Carried with `natsclient` from SemStreams' developer contract at the pin (§ NATS RPC). A reply is either a success
+body or one classified error: a `SubscribeForRequests` handler's error goes back as a reply whose headers carry its
+class and code (`natsclient/doc.go`, "The unified RPC error contract").
+
+- Call a classified handler with `RequestClassified`, or `RequestWithRetryClassified` where redelivery is
+  authorized. Raw `Request` plus a JSON unmarshal can decode an error reply as a zero-valued success.
+- Propagate a classified request error without losing its class, code or detail.
+- Use `errors.Is` for JetStream sentinels, and cover sibling states such as key-not-found and key-deleted, or
+  no-keys-found and key-not-found.
+
 ## Test and operational fidelity
 
 The reasoning behind these rules, and the mutation procedure step by step, is in `docs/testing.md`.

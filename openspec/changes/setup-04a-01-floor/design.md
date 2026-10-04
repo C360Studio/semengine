@@ -214,7 +214,7 @@ pending.
 | Service | Start / end at the pin | `Unresolved` lists | Failing factory |
 |---|---|---|---|
 | `metric.Server` | `Start(ctx)` `handler.go:59`, `Stop(ctx)` `:192` | the listener, the `http.Server`, the serve goroutine, the requests its handler admitted and has not returned from (since aa94acf; `Stop` waits for them within its context). Since a19f393 (Codex, PR #48 comment 5959412053, finding 1) `Stop` closes admission before `Shutdown`; a later request gets 503 with `Connection: close` and its handler never runs, and the closed flag shares the count's mutex, so a nil `Stop` is final (`metric/admission_test.go`) | a server configured on a port the test already holds with `net.Listen`; `Start` binds synchronously (`:55-110`) and returns the bind error |
-| `natsclient.Client` | `Connect(ctx)` `client.go:471`, `Close(ctx)` `:578` | the `nats.Conn`, JetStream handle, subscriptions, internal consumer claims, the health monitor, the metrics poller, claim-release goroutines, and the connection-loss and circuit-test timers | a client whose URL is a refused local port (its own `Connect` returns the dial error) |
+| `natsclient.Client` | `Connect(ctx)` `client.go:471`, `Close(ctx)` `:578` | the `nats.Conn`, JetStream handle, subscriptions, internal consumer claims, the health monitor, the metrics poller, claim-release goroutines, the connection-loss and circuit-test timers, message handler invocations still running (after `Close` has cleared the connection), and connection event handlers still running | a client whose URL is a refused local port (its own `Connect` returns the dial error) |
 
 The task 2.0 probe (PR #48 comment 5942307713) and a read of every `go` statement in both packages give these
 failing-first `adapt` items:
@@ -225,10 +225,9 @@ failing-first `adapt` items:
   for `Subscription.Drain` (`:796-799`).
 - **`natsclient-connect-refuses-second-start`.** `connectWith` has no already-connected guard. It overwrites `m.conn`
   at `:547` without closing it, and starts a second metrics poller at `:566`. A second `Connect` on a connected
-  client returns an error and changes nothing. A `Connect` that passed that check and then lost admission to a
-  concurrent one closes its own connection and leaves the winner's status: it restores the `Connecting` it wrote
-  from the winner's connection, and the client's connection handlers ignore events from a connection the client
-  does not hold, so the rejected one's closed handler cannot write `Disconnected` (task 3.7c).
+  client returns an error and changes nothing. A `Connect` that passed that check and then lost to a concurrent one,
+  by failing, by having its context end, or by dialling successfully second, leaves the winner's status, failure
+  count and circuit as they were, and closes what it dialled (`natsclient-status-ownership` below).
 - **`natsclient-close-joins-its-goroutines`.** `Close` signals but never joins six sites where the client runs work on
   another goroutine, once task 3.7a has dropped the disconnect, reconnect and health-change callbacks with their launch
   sites: the metrics poller (`jetstream_metrics.go:345`, cancelled at `client.go:595-596`); the health monitor (`:1628`,
@@ -246,25 +245,110 @@ failing-first `adapt` items:
     them, and then returns `nats.ErrConnectionClosed`, not nil.
   - Arming either timer is refused, and logged, once `Close` has begun, so no timer is left pending after it.
     Arming the circuit timer stops a pending one from an earlier round, which nothing else would track or stop.
-  - A port or internal consumer whose claim release is refused because `Close` has begun is stopped and refused with
-    `nats.ErrConnectionClosed`, and its claim is released.
   - **`jetstream.New`'s error.** It is dropped at `:525`. `Connect` returns it and closes the dialled connection. No
     failing test exists (nats.go v1.54.0 `jetstream.go:471-492`), and the row records that.
-  - Work refused because the client is closing is dropped, not run inline. The pin already drops the watchdog's callback
-    after close (`:1564`, `!m.closed.Load()`). The drop site logs at debug level what it dropped (the contract's
-    silent-drop rule), and both it and `Close`'s doc comment say that no callback runs once `Close` has begun. The row
-    records this as changed behaviour.
-  - Only the first `Close` runs the setup, once, under `closeMu` (held for the whole body at the pin, `:580-581`, and
-    now for the setup alone): set `closing` under `m.mu`, the lock the helper checks; close the connection and the
-    timers; start the single goroutine that runs `wg.Wait` and then closes `joined`, so `joined` is closed exactly
-    once. Every `Close`, first or later, then waits outside any lock in `select { case <-joined: …; case
-    <-ctx.Done(): return ctx.Err() }`; the pin's early `return nil` on a second call (`:583-585`) goes. On `joined`
-    it returns `ctx.Err()` if its context has ended, and otherwise the drain's result: when both cases are ready the
-    select picks at random, and a nil return under an ended context is what the suite's abort check rejects, so the
-    check is made deterministic, as `metric-abort-stop-reports-context` is for `Stop`.
+  - Once `Close` has begun, the client starts no new work. Work offered after that point (a goroutine start, a timer
+    body that fired, arming either timer, a `Connect`, `Subscribe`, `SubscribeForRequests` or consumer setup) is
+    refused: background work is dropped, never run inline, and logged at debug level with its kind; a call returns
+    `nats.ErrConnectionClosed`. Work admitted before `Close` began may still be running, or may only now enter its
+    body, while `Close` waits for it. Message handlers keep running during `Close`'s drain, so messages already
+    delivered to the client are handled. The pin dropped the watchdog's callback after close (`:1564`); the drop
+    log is the contract's silent-drop rule, and the row records it as changed behaviour.
+  - Only the first `Close` performs cleanup (stop the monitor, the timers and the poller; drain and close the
+    connection; clear the connection and the JetStream handle), bounded by its own context. The pin's early
+    `return nil` on a second call (`:583-585`) goes. See `natsclient-close-honours-each-context` for what every
+    other caller observes.
   - A `Close` called from inside one of the client's callbacks waits on a group that includes its own goroutine, so
     it returns `ctx.Err()` when its context ends and never returns nil, as `http.Server.Shutdown` does from inside a
     handler. `Close`'s doc comment and the row say so; at the pin such a call returned at once.
+- **`natsclient-close-is-final`** (Codex F21, PR #48 comment 5980134911). `Close` returns nil only when everything
+  the client owns has finished:
+  - the background work of the six sites above;
+  - every invocation of a message handler passed to `Subscribe`, `SubscribeForRequests`,
+    `ConsumeStreamWithConfig`, `ConsumeStreamWithConfigContexts` and `ConsumeInternalStreamWithConfig`;
+  - the client's connection event handlers and its async publish error handler.
+
+  This holds on every `Close` path: a drain that completes, a drain error, the drain timeout, the caller's context
+  ending, and a connection the native library closed by itself. It does not rest on the native library's end
+  signals alone, because nats.go v1.54.0 force-closes without waiting for a running callback (`nats.go:6196-6227`),
+  finishes a drain after its timeout with a callback still running (`:6349-6372, :6389-6390`), and its consumer
+  `Closed()` closes at once, and closes a channel handed out earlier, when the subscription is already invalid
+  (`jetstream/pull.go:822-837`). The client observes the end of each handler invocation itself. A delivery that the
+  native library hands over after the client has recorded that consumer's or subscription's end does not run the
+  caller's handler. That can happen only when delivery was stopped without a drain (the caller's `Stop`, or a
+  forced close of the connection) and a native `Closed()` reported early. The native library is discarding that
+  consumer's buffered messages at the same moment (`nats.go:3801-3803, :3817-3828`; `jetstream/pull.go:58-61`).
+  The refused message's fate depends on the ack policy. With `AckPolicy` explicit or all, it is left
+  unacknowledged and the server redelivers it after its ack wait. With `AckPolicy: "none"` it is lost, like the
+  buffered AckNone messages discarded beside it. A core NATS message is lost, as core NATS is at-most-once. At
+  most one message per subscription or consumer is refused this way, because the native library delivers on one
+  goroutine per subscription. Each refusal is logged at warn level with the subject, the stream and consumer
+  where there is one, and the ack policy, and counted on the existing JetStream error metric as
+  `recordError("late_delivery_refused")` (`jetstream_metrics.go:248-252`, the path `publish_async` already uses,
+  `client.go:1164`) when the client has JetStream metrics configured; without them the warn log is the only
+  signal. That label also counts refusals on core subscriptions, although the metric's help text names JetStream
+  operations. Accepting the AckNone loss is owner question 4, not yet answered; task 3.7c2 carries the hold.
+
+  Work a call starts belongs to that call until it returns and to the client afterwards: a
+  `Connect` that returns an error has no event handler of the connection it dialled still running, so a `Connect`
+  still in flight when `Close` returns (a valid ordering) does not leave work behind either. That wait takes no
+  context and is still background-work shape 2 (ruling #9 comment 5950482163), not shape 3: the only callbacks on
+  the candidate's native dispatcher are the client's own event handlers (`client.go:487-490`), which wait on
+  nothing outside the client, and no caller callback is ever queued there (N6 of the design revision: the
+  connection's `ClosedHandler` is the last callback its dispatcher runs, `nats.go:6236-6252, :3637-3660`).
+- **Connections installed or replaced through `SetConnection`.** `Close` joins the event handlers of exactly one
+  connection: the one it drains and closes, when this client dialled it (only a dialled connection carries the
+  client's handlers, `buildConnectionOptions`, `client.go:480-503`). A connection installed through
+  `SetConnection` is drained and closed like any installed connection, with no handler join. A connection that
+  `SetConnection` replaced, dialled by this client or not, belongs to whoever called `SetConnection`: `Close`
+  neither closes it nor waits for its `ClosedHandler`, so `Close` cannot hang on it. Reasons: `SetConnection` is a
+  test hook ("for testing", `client.go:289`) whose only caller swaps a connection out and restores it in cleanup
+  (`request_response_bounds_integration_test.go:167, :189`), so closing the replaced connection would break the
+  caller that owns it; and the client's handlers on a replaced connection change nothing, because each
+  state-changing handler checks that its connection is the installed one first (`isCurrentConn`,
+  `client.go:1593-1597`); `handleError` only logs. Client-owned subscriptions are different: they were created by
+  `Subscribe` or `SubscribeForRequests` and belong to the client wherever their connection went. `Close`
+  unsubscribes one left on a replaced connection and joins its running handler invocation (N2). An error from that
+  `Unsubscribe` (the replaced connection already closed or draining, or the subscription already ended) means the
+  subscription is already ending: `Close` neither fails nor returns early on it, and still waits for the
+  subscription's end, bounded by its own context. Declared cost: messages buffered on that subscription and not
+  yet handed to the handler are discarded by the native library on unsubscribe (N8), as they are when any core
+  subscription is unsubscribed. Once `Close` has begun, `SetConnection` changes nothing and logs at warn level
+  (owner answer 3).
+- **Consumer setup that meets `Close`.** A consumer setup that has not started native delivery when `Close`
+  begins is refused with `nats.ErrConnectionClosed`, its claim released, and the native `Consume` is never called.
+  One that has started native delivery stops it and keeps its local claim and its metrics observation until every
+  handler invocation has returned; it then returns `nats.ErrConnectionClosed` with no handle. If its setup context
+  ends first, it returns that context's error at that point; the claim stays held until the handlers return, and
+  `Close` does not return nil before they have. A caller that is refused has nothing to drain.
+- **`natsclient-close-honours-each-context`** (Codex F22). Every `Close` returns within its own context. A `Close`
+  whose context has ended, or ends while another `Close` is draining, returns `ctx.Err()` at once, without waiting
+  for that drain. Cleanup runs once, bounded by the first `Close`'s context; a later `Close` with a longer context
+  does not extend the drain, and returns nil only once the cleanup and `natsclient-close-is-final` are complete. A
+  `Close` that has observed an ended context returns `ctx.Err()` even if the join has also finished (unchanged):
+  when both are ready a `select` picks at random, and a nil return under an ended context is what the suite's abort
+  check rejects. A `Connect` made while cleanup runs returns `nats.ErrConnectionClosed` without waiting for it.
+- **`natsclient-status-ownership`** (Codex F23). `Status()` reports the installed connection and nothing else:
+  - While a connection is installed and `Close` has not begun, a `Connect` that does not install its own
+    connection changes neither `Status()`, nor `Failures()`, nor the circuit.
+  - A `Connect` that fails while no connection is installed records its failure and writes `Disconnected`, or
+    opens the circuit, as at the pin.
+  - Once `Close` has begun, nothing but `Close` changes `Status()`: not the health monitor, not the connection
+    event handlers, not failure accounting from operations still in flight, not a `Connect`. The status is frozen
+    at whatever it was when `Close` began, so a handler still running during the drain can publish, read KV and
+    settle messages as before (those calls require `Connected`: `client.go:1056, :1117, :1197, :1335, :1381, :1437,
+    :1516, :1543`, `stream.go:163, :461, :714, :1000`). `Close` writes `Disconnected` once its cleanup has finished,
+    as at the pin (`:744`), and from then on `Status()` stays `Disconnected` for the life of the client. Declared
+    cost: if the server connection drops during the drain, `Status()` keeps the value it had when `Close` began
+    until the cleanup ends, which is bounded by the drain timeout or the first `Close`'s context.
+  - Refusing new work once `Close` has begun depends on `Close` having begun, not on `Status()`: `Subscribe`,
+    `SubscribeForRequests`, the three consumer APIs and `Connect` return `nats.ErrConnectionClosed` before any
+    status gate (`stream.go:461, :714`; `client.go:974`) can return `ErrNotConnected`.
+  - A `Connect` after `Close` refuses before it dials and writes no status.
+- **`natsclient-close-reports-drain-timeout`** (review finding F-3). A drain that ran out of time is reported the
+  same way whichever timer ran out first, the native drain's or the client's own (they have the same length,
+  `client.go:485, :847-849`): the first `Close` returns a transient error wrapping `nats.ErrDrainTimeout`. At the pin
+  and at `7ce1940` the native timer usually won and `Close` returned nil.
 - **`metric-abort-stop-reports-context`.** On an idle server `Shutdown(ctx)` (`handler.go:215`) returns nil even when
   `ctx` has ended, and the `select` at `:222-228` then picks between `serveDone` and `ctx.Done()` at random, so
   `Stop` drops the caller's cause about once in 1,000 runs at `-cpu 1`. `Stop` reports `ctx.Err()` whenever its
@@ -277,6 +361,51 @@ The `metric` row becomes `adapt`. Goroutines in these packages that end before t
 not background work: `metric/registry.go:76` (drained by the range at `:79-81`) and
 `natsclient/delivery_settlement.go:349` (joined on every exit, `:373, :379, :383`). The `transport-client` delta
 states the `Client` nil-context requirement; the row records each item as changed behaviour, not carried.
+
+**Generated checks for the `Client` lifecycle** (`docs/testing.md`, "Decide whether generated checks are needed").
+The `Client` lifecycle is a history: what `Close`, `Connect`, `Status()` and a consumer setup report depends on the
+order of `Connect`, `Close`, timer firings, native callbacks, consumer setup and context cancellation. It gets named
+examples, not a generator, for two reasons.
+
+First, the outcomes that matter depend on how operations interleave, not on which operations run in what order. A
+generator draws operation sequences, and its seed replays those; it cannot draw or replay goroutine interleavings
+against a real NATS connection, and `synctest` cannot host the embedded server's sockets. A generated test would
+therefore sample interleavings by luck and could not replay a failure, which `docs/testing.md` requires of a
+generated run. Each interleaving that matters is a point where ownership of work or of the status passes between a
+call and the client: admission of background work, the start of native delivery, a handler entering and returning,
+a native end signal, a status commit, and the two points of `Close` (it begins; it finishes cleanup). The examples
+force each such point against each `Close` point at a named seam (`opHook`, a held logger record, a held handler, a
+fake native consumer, or a private hook at the commit), so each ordering runs every time, deterministically. The
+mapping (task 3.7c2 tests by name; the 3.7c tests likewise):
+
+| Ownership point | Against `Close` beginning | Against `Close` finishing cleanup |
+|---|---|---|
+| Background work admitted | `TestClientCloseDropsLateDisconnect`, `TestClientCloseDuringConnectStartsNothing` | `TestClientCloseJoinsConnectionLossCallback` |
+| Native delivery started (consumer setup) | `TestClientRefusedConsumerKeepsOwnershipUntilHandlersReturn`, `TestClientRefusedConsumerSetupContextEndsWhileHandlerRuns` | `TestClientLifecycleOperationTable` (closed-state rows) |
+| Handler invocation enters and returns | `TestClientCloseJoinsSubscribeHandlerAfterForcedClose`, `TestClientCloseJoinsConsumerHandlerWhenClosedReportsEarly`, `TestClientLifecycleSuiteWithHeldHandler` | `TestClientCloseJoinsSubscribeHandlerAfterForcedClose`, `TestClientCloseJoinsConsumerHandlerWhenClosedReportsEarly` |
+| Native end signal (accurate, or early) | `TestClientCloseJoinsSubscribeHandlerAfterForcedClose` (accurate), `TestClientCloseJoinsConsumerHandlerWhenClosedReportsEarly` and `TestClientRefusesLateDeliveryAfterRecordedEnd` (early) | `TestClientRefusesLateDeliveryAfterRecordedEnd` |
+| Status commit | `TestClientHealthMonitorCannotOverwriteClosedStatus`, `TestClientFailuresAfterCloseLeaveStatusDisconnected`, `TestClientEventHandlerCannotCommitAfterClose`, `TestClientAsyncPublishErrorAfterCloseRecordsMetricOnly` | `TestClientHealthMonitorCannotOverwriteClosedStatus`, `TestClientConnectAfterCloseRefusesBeforeDial`, `TestClientLifecycleOperationTable` |
+| Status commit against a winner's install | `TestClientLosingConnectLeavesWinnerStatus` (four cases) | not applicable |
+| Event handler and async publish error handler | `TestClientCloseJoinsConnectionEventHandlers`, `TestClientCloseJoinsRunningAsyncPublishErrorHandler` | `TestClientCloseJoinsConnectionEventHandlers`, `TestClientLosingConnectLeavesNoCandidateHandler`, `TestClientCloseJoinsRunningAsyncPublishErrorHandler` |
+| Drain outcome | `TestClientCloseReportsDrainTimeout` | `TestClientCloseReportsDrainTimeout` |
+| A second `Close`, or a `Connect`, during the drain | `TestClientCloseHonoursItsContextDuringAnotherDrain`, `TestClientConnectDuringCloseDrainReturnsPromptly`, `TestClientConcurrentClosesEachHonourTheirContext` | `TestClientCloseHonoursItsContextDuringAnotherDrain` |
+| Subscription on a replaced connection | `TestClientCloseEndsSubscriptionOnReplacedConnection` | `TestClientCloseEndsSubscriptionOnReplacedConnection` |
+
+Second, the sequential part (which operation is allowed in which lifecycle state) is small and finite: four states
+(new, connected, closing with a held drain, closed) times eight operations (`Connect`, `Close` with a live context,
+`Close` with an ended context, `Subscribe`, `SubscribeForRequests`, `ConsumeStreamWithConfig`,
+`ConsumeInternalStreamWithConfig`, `SetConnection`). The third consumer entry point,
+`ConsumeStreamWithConfigContexts`, runs the same function as `ConsumeStreamWithConfig`
+(`consumePortStreamWithConfigContexts`, `stream.go:426-435, :672-683`) and differs only in taking a separate handler
+context, so the table covers it through `ConsumeStreamWithConfig`. `TestClientLifecycleOperationTable` enumerates
+all 32 pairs. The expected return and expected `Status()` for each pair are written out in the test from the
+guarantees in D3, never derived by calling production code. Exhaustive enumeration covers every pair; a generator
+would only sample them.
+
+Repetition: the lifecycle tests run under `go test -race -count=20 -run 'Lifecycle|Close|Connect|Subscribe|Consume'`
+and in `task test:repeat`'s shuffled runs. What the examples do not cover: three-way orderings (two `Close` callers
+and a `Connect` racing one held drain) beyond the cases listed, and orderings inside nats.go itself, which the native
+constraints of the design revision (N1-N7) stand in for.
 
 ### D4. Repair evidence this change's own code can produce (ruling g)
 

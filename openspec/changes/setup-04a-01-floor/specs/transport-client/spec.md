@@ -41,13 +41,49 @@ heartbeat policy while the work runs, and SHALL be redelivered when the heartbea
 `Subscription.Drain(ctx)` SHALL refuse a nil context (kept from the pin). `Client.Close(ctx)` and `Client.Connect(ctx)`
 SHALL refuse a nil context without touching the connection (changed behaviour: the pin reaches the context's
 deadline with a live connection). `Close` SHALL bound its drain by the caller's context deadline and return within
-it, reporting the drain outcome, and a second `Close` SHALL return nil without a server call; none of these SHALL be
+it, reporting the drain outcome, and a later `Close` SHALL make no server call, and SHALL return nil once the first
+`Close`'s cleanup and the join are complete; none of these SHALL be
 repeated or retried by the client on the caller's behalf.
 
 #### Scenario: Close under an ended context
 
 - **WHEN** Close is called with a deadline shorter than the drain needs
-- **THEN** Close returns within the deadline, the connection is closed, and a second Close returns nil
+- **THEN** Close returns within the deadline, the connection is closed, and a second Close with a live context returns
+  nil once no handler of the client is still running (see "A nil Close means every handler returned")
+
+#### Scenario: A drain that runs out of time is reported
+
+- **WHEN** a message handler is still running when the drain timeout passes, and Close's context is live
+- **THEN** the first Close returns an error wrapping the drain timeout, after the handler has returned
+
+#### Scenario: A nil Close means every handler returned
+
+- **WHEN** a message handler passed to Subscribe or a Consume method is running and Close is called, first with an
+  ended context and then with a live one
+- **THEN** the first Close returns the context's error, and the second returns nil only after the handler returned
+
+#### Scenario: Each Close observes its own context
+
+- **WHEN** one Close is draining and a second Close is called with an ended context
+- **THEN** the second Close returns the context's error without waiting for the drain
+
+#### Scenario: Status is final once Close begins
+
+- **WHEN** Close has begun and the health monitor, a connection handler, a failing operation or a Connect would
+  change the status
+- **THEN** Status keeps the value it had when Close began until Close's cleanup has finished, and reports
+  Disconnected from then on
+
+#### Scenario: A losing Connect leaves the winner's status
+
+- **WHEN** two Connect calls overlap, one installs its connection and the other fails or is cancelled
+- **THEN** Status, Failures and the circuit are those of the installed connection
+
+#### Scenario: A consumer refused during Close keeps its claim
+
+- **WHEN** a consumer setup has started native delivery when Close begins
+- **THEN** it returns ErrConnectionClosed with no handle only after its handler invocations returned, and its
+  claim is held until then
 
 #### Scenario: Nil Close context
 

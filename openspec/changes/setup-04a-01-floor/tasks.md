@@ -548,8 +548,27 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         ended returns `ctx.Err()` even after the join; a `Connect` that loses admission to a concurrent one leaves the
         winner's status (`TestClientConnectThatLosesAdmissionLeavesStatus`, failing first with `Disconnected`; two
         mutants detected). Task 4.3's `Close(nil)`, `Connect(nil)` and second-`Close` items are proven here; 4.3 stays
-        open.
-- [ ] 3.7d (D) Hold: Codex's checkpoint review of 3.7c (concurrency), recorded on this pull request. `natsclient`
+        open. Codex's checkpoint review at `7ce1940` (PR #48 comment 5980134911) requested changes F21–F25; the
+        guarantees above that they correct (the claim-release refusal, "no callback runs once Close has begun", the
+        losing-Connect status) are superseded by 3.7c2.
+- [ ] 3.7c2 (D) Hold: owner ruling on question 4 (#9; accept losing one AckNone message). Hold: Codex's re-review.
+      Codex F21–F25 (PR #48 comment 5980134911; design D3 `natsclient-close-is-final`,
+      `natsclient-close-honours-each-context`, `natsclient-status-ownership`,
+      `natsclient-close-reports-drain-timeout`, and the generated-checks decision). Tests written first and shown to
+      fail at `7ce1940`, Codex's reproductions ported with their assertions unchanged: the 20 tests of the D3 revision
+      (forced-close Subscribe and SubscribeForRequests join; refused consumer keeps ownership, internal and port; Close
+      during another drain; losing dial error, cancel and the two held-write cases; monitor commit after Close; early
+      native Closed; Connect after Close; failures after Close; Connect during drain; event handler commit after
+      Close; event handlers joined; losing Connect's candidate handler; async publish error after Close; the operation
+      table; the suite with a held handler; late delivery refused per ack policy; setup context ending while a handler
+      runs; a running async publish error handler joined; native drain timeout reported; a subscription on a replaced
+      connection ended and joined). One mutant per fix, each detected or reported as a survivor; `go test -race
+      -count=20 -run 'Lifecycle|Close|Connect|Subscribe|Consume' ./natsclient`, `task test:integration --
+      ./natsclient` and `task test:repeat` pass. D3, the ledger row and the `Close` doc comment state the corrected
+      wording (F24). The late-delivery refusal loses one AckNone message, logged at warn level and counted as
+      `late_delivery_refused`; D3 and the ledger row declare it, and it stands only if the owner accepts it (question
+      4). The second hold is Codex's re-review of the fix commits, recorded on this pull request.
+- [ ] 3.7d (D) Hold: Codex's checkpoint review of 3.7c and 3.7c2 (concurrency), recorded on this pull request. `natsclient`
       metrics (design D9; item 4): the three consumer collectors that `Add` cumulative server values on every poll
       (`jetstream_metrics.go:305-307`) become gauges `Set` from server state — `consumer_delivered_total` →
       `consumer_delivered_stream_sequence` (`Delivered.Stream`), `consumer_acked_total` →

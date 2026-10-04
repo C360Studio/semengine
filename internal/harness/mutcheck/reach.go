@@ -134,7 +134,9 @@ func removedRegion(h hunk, blocks []block) regionResult {
 // lines k and k+1 belongs to the innermost statement list that holds it. The block holding the
 // first statement of that list after the place decides; when none follows, the block holding the
 // last statement before it does. A sibling branch or clause never decides. Outside every function
-// body no list holds the place, and the region is not measurable.
+// body no list holds the place, and inside a statement of the list (a condition, call or literal
+// written over several lines, or the place between a label and its statement) no block measures
+// it: either way the region is not measurable.
 func insertedRegion(h hunk, blocks []block, lists []stmtList) regionResult {
 	k := h.oldStart
 	r := regionResult{hunk: h, region: regionText(h)}
@@ -152,10 +154,17 @@ func insertedRegion(h hunk, blocks []block, lists []stmtList) regionResult {
 		r.state, r.note = notMeasurable, "the statement list that holds the place has no statement"
 		return r
 	}
-	decider := list.stmts[len(list.stmts)-1]
-	for _, p := range list.stmts {
-		if p.Line > k {
-			decider = p
+	for _, st := range list.stmts {
+		if st.start.Line <= k && st.end.Line >= k+1 {
+			r.state = notMeasurable
+			r.note = fmt.Sprintf("the place is inside the statement on target lines %d-%d, and no block measures a place inside a statement", st.start.Line, st.end.Line)
+			return r
+		}
+	}
+	decider := list.stmts[len(list.stmts)-1].start
+	for _, st := range list.stmts {
+		if st.start.Line > k {
+			decider = st.start
 			break
 		}
 	}
@@ -241,8 +250,11 @@ func profileBlocks(profile []byte, base string) ([]block, error) {
 type stmtList struct {
 	open                token.Pos
 	openLine, closeLine int
-	stmts               []token.Position // where each statement begins
+	stmts               []stmtSpan
 }
+
+// stmtSpan is where one statement of a list begins and ends.
+type stmtSpan struct{ start, end token.Position }
 
 // statementLists lists every statement list of the target. A block's list lies between its
 // braces; a clause's lies between its colon and the next clause, or the closing brace of the
@@ -258,7 +270,7 @@ func statementLists(target []byte) ([]stmtList, error) {
 	add := func(open token.Pos, closeAt token.Pos, stmts []ast.Stmt) {
 		l := stmtList{open: open, openLine: fset.Position(open).Line, closeLine: fset.Position(closeAt).Line}
 		for _, st := range stmts {
-			l.stmts = append(l.stmts, fset.Position(st.Pos()))
+			l.stmts = append(l.stmts, stmtSpan{fset.Position(st.Pos()), fset.Position(st.End())})
 		}
 		lists = append(lists, l)
 	}

@@ -19,8 +19,8 @@ type jetstreamMetrics struct {
 	streamState    *prometheus.GaugeVec // Stream state (1=active, 0=inactive)
 
 	// Consumer state metrics
-	// The server's own consumer state, set on each poll (design D9): never added to, since the
-	// server's values are already cumulative.
+	// Each gauge is set from the server's current consumer state on each poll (design D9), never
+	// added to: some of these values fall (pending, and redelivered messages once acknowledged).
 	consumerPending     *prometheus.GaugeVec // Pending messages by consumer
 	consumerDelivered   *prometheus.GaugeVec // Stream sequence last delivered (Delivered.Stream)
 	consumerAcked       *prometheus.GaugeVec // Stream sequence of the ack floor (AckFloor.Stream)

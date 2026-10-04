@@ -1161,7 +1161,7 @@
     (jetstream_metrics.go:128-161 at the pin, where 8 went through the removed Register* methods,
     task 3.5a), so a second client on the same registry writes to the canonical collector. Changed
     behavior, design D9 (task 3.7d; owner ruling #9 comment 5969522395, item 4): the three consumer
-    counters that added the server's cumulative values on every poll (jetstream_metrics.go:305-307
+    counters that added the server's current values on every poll (jetstream_metrics.go:305-307
     at the pin → :309-311, so each poll doubled them) are gauges set from server state:
     consumer_delivered_total → consumer_delivered_stream_sequence (Delivered.Stream),
     consumer_acked_total → consumer_ack_floor_stream_sequence (AckFloor.Stream),

@@ -806,7 +806,7 @@ one descriptor under two keys now gets a fatal error at startup instead of silen
 `registry_test.go:254-275` encoded that pattern for "component recreation from stale KV data". The later callers in this
 change adopt it in tasks 3.6 (`pkg/cache`), 3.7 (`natsclient` registration, `jetstream_metrics.go:128-161`) and 3.7d. In
 `natsclient`, 8 of the 11 collectors orphan when two clients share a registry (`:128-146, :158-160`). Three counters
-`Add` cumulative server values on every poll (`:305-307`); they become gauges set from server state, with new names
+`Add` the server's current values on every poll (`:305-307`); they become gauges set from server state, with new names
 (owner ruling, #9 comment 5969522395, item 4). No client label. The `stream_state` and `forgetConsumer` sharing
 defects (`:278`, `:232-243`) are one shared-series ownership issue, #75, tracked, not fixed here.
 

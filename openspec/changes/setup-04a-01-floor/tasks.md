@@ -672,7 +672,7 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
           bound, never with a short real-clock wait (design D8, R1b; implementation early check, finding I-1).
 - [x] 3.7d (D) Lifted: Codex's checkpoint review of 3.7c and 3.7c2 (concurrency), Codex APPROVE at `4e44422`, comment
       5982063929; the metrics work below remains. `natsclient`
-      metrics (design D9; item 4): the three consumer collectors that `Add` cumulative server values on every poll
+      metrics (design D9; item 4): the three consumer collectors that `Add` the server's current values on every poll
       (`jetstream_metrics.go:305-307`) become gauges `Set` from server state — `consumer_delivered_total` →
       `consumer_delivered_stream_sequence` (`Delivered.Stream`), `consumer_acked_total` →
       `consumer_ack_floor_stream_sequence` (`AckFloor.Stream`), `consumer_redelivered_total` →
@@ -706,6 +706,9 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         so, the row's consumer impact says the other two values are stream sequences, not counts, and test (1) has
         a third poll in which `NumRedelivered` falls. N-e: a comment says the registration key is the registry
         handle, not the metric name. N-f: test (1) polls under `t.Context()`.
+      - Codex APPROVE at `c69d7ac` (comment 5982926823) left F29: the collector comment, D9, the row and this task
+        called the server's values cumulative, but pending and outstanding redeliveries fall. Each now says the
+        gauge is set from the server's current state.
       - Choices the design and the task text leave open, recorded here: the three gauges' help texts are new
         wording; the three registry keys (`consumer_delivered`, `consumer_acked`, `consumer_redelivered`) are kept
         unchanged, so `Unregister` by those keys still works.

@@ -155,7 +155,7 @@ func (f *serverConsumerInfo) Info(context.Context) (*jetstream.ConsumerInfo, err
 
 // Task 3.7d test (1), design D9: the three consumer metrics report the server's state, so two polls
 // of an unchanged consumer gather the server's values, as gauges under their new names. At the pin
-// they were counters that added the server's cumulative values on every poll, so a second poll
+// they were counters that added the server's current values on every poll, so a second poll
 // doubled them. A third poll follows the server when its state changes: NumRedelivered counts
 // messages redelivered and not yet acknowledged, so it falls on acknowledgement.
 func TestJetStreamConsumerMetricsReportServerStateAcrossPolls(t *testing.T) {

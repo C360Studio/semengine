@@ -504,7 +504,7 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       survivor: `TestConsumeDeliveryWithHeartbeatErrCarriesControlLoss` fails on the mutant that drops `controlErr` from
       `Err()`'s join. Census maps unchanged. Text corrected after the fact: the `Terminate` and `GetNativeConnection`
       mappings above, and D8's new row for `client_close_integration_test.go:77`.
-- [ ] 3.7c (D) Hold: Codex's checkpoint review of 3.7–3.7b, recorded on this pull request with the commit it read.
+- [ ] 3.7c (D) Lifted: Codex's checkpoint review of 3.7–3.7b passed at `f97803f` (PR #48 comment 5974824034).
       `Client` lifecycle (design D3): the test-side adapter lists the `nats.Conn`, JetStream handle, subscriptions,
       internal consumer claims, the health monitor, the metrics poller, the claim-release goroutines and the two timers,
       and the client passes the suite with a refused-URL must-fail factory after these items, each test written first

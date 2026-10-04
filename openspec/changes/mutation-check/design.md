@@ -1,6 +1,10 @@
 # Design: mutation-check
 
-Status: **revision 3, for a narrow round 3 of the independent pre-owner design review.** Revision 2 (commit
+Status: **revision 4: the accepted design, corrected after implementation review round 1.** The owner accepted
+revision 3 and answered Q1 to Q5 as recommended ("Owner's rulings"). Implementation review round 1
+(`impl-review-r1.md`, sha256 `c3edf5cab729cc09e717c01acb16118d974481da8efb23a0b7b595ae843e4659`, at code head
+`8bee3ea`) found the delta wrong or silent in six places; "Implementation review round 1 corrections" below says what
+changed. No decision changed. The history of the pre-owner rounds follows. Revision 2 (commit
 `9773da9`) got DESIGN REVIEW PASS in round 2 (`design-review-r2.md`, sha256
 `48703ca562121a5b9f2c3ef54b0e82b4f83f1e0b9c898cea678745ff6978c9ac`), with two MEDIUM findings and five NITs that change
 no decision; "Round 2 review findings" below says where each is answered. Revision 1 (commit `ba7f440`) got
@@ -139,6 +143,19 @@ Answers to round 2's four NITs (`inventory-review-r2.md`, sha256 `52b42c4b3f413b
 | NIT: the SIGTERM stand-in should start a grandchild | D11 and task 2.6: the stand-in `go` starts a helper that writes its own pid and its parent's, as `TestFetchLeavesNoProcess` does, and both must be gone |
 | NIT: Q1 and Q5 lack "what this costs you"; Q5's "often" and "many" | Both lines added; "often" and "many" removed, and Q5 and D14 say that none of the trial's 196 runs had a race report |
 
+## Implementation review round 1 corrections
+
+| Finding | Correction |
+| --- | --- |
+| HIGH-1: an insertion at the end of a branch that did not run reads reached when the next line opens a sibling block that ran | **Erratum.** D13's insertion sentence (revisions 1 to 3: "an executed block of that body contains the position, or begins on line k+1") counted the block that begins on the next line even when it belongs to a sibling `else` branch or `case` clause. Design-review rounds 2 and 3 passed that sentence. The review's proposed fix (decide by the blocks that contain the place, and use the next line's block only when none does) mends the `if`/`else` case but not the `case` clause: a clause's block ends at its last statement, so no block contains the place after it, and the next line's block is the next clause's (measured, P25). D13 and the spec now decide an insertion by its own statement list, as Go's parser reads it; scenarios for an `if`/`else` and a `switch` case |
+| MEDIUM: "every process it started" claims more than a process-group kill delivers | D8, D6 and the spec: the program stops the run's process group; a process the run starts in a process group of its own is not stopped, declared |
+| MEDIUM: "invalid, does not build" skipped the after-run (declared departure 5) | D13 and the spec: invalid needs every baseline run and the after-run to pass and the tree unchanged, like survivor; scenario "The build breaks after the baselines" |
+| NIT: the extra refusals are not in the delta (declared departure 1) | D2 and the spec's refusal list: a malformed `-expect`, an empty `-expect-text`, no `go.mod` at the root, `TMPDIR` inside the module; one scenario each |
+| MEDIUM: children inherit the caller's `PWD`, so through a symbolic link the overlay never matches | Measured with `go` itself (P26). D15: every child's `PWD` is the resolved root. The spec's "every Go build ... SHALL see the wrong change" now says it holds through a symbolic link, with a scenario |
+| MEDIUM: a caller's `diff.interHunkContext` merges hunks | Measured (P27). D4: the diff passes `--inter-hunk-context=0`; the spec says no hunk-merging setting can change the hunks, with a scenario |
+| NIT: "selected no test" is read before a signal | Code only: the spec's "Killed by a signal" scenario already requires the reason to name the signal (task 2.11) |
+| QUESTION: host git configuration (`core.fsmonitor`) reaching the program's git calls | D15 declares it; the tests isolate host git configuration (task 2.11) |
+
 ## What the inventory found, and what this design does with each
 
 | Finding | This design |
@@ -249,6 +266,10 @@ task mutate:check -- -pkg ./internal/harness/probe -test TestAwaitClearsEarlierO
   test file: Go prints the frame that reported the failure, which can be a helper in a non-test file
   (`lifecycletest.go`) or Go's own `testing.go` for a race report (P18).
 
+Before any run the program also refuses an `-expect` that is not `file.go:N` with N a positive whole number, an empty
+`-expect-text`, a directory with no `go.mod` (the program runs from the repository's root), and a `TMPDIR` inside the
+module, where its own files would be written into the repository. Each fails closed.
+
 | Option for naming the assertion | Cost |
 | --- | --- |
 | Location only | A helper that calls `t.Helper()` moves the printed line to its caller (R11), and Rapid prints every failure at the `rapid.Check` line, so the assertions inside one property cannot be told apart by location (trial) |
@@ -284,9 +305,10 @@ runs failed.
 
 **Recommended: the Go program**, run as `go run ./internal/harness/mutcheck {{.CLI_ARGS}}` from `Taskfile.yml`.
 Because #79 names a script, this is Q4 for the owner. Either way the line diff of the target against the mutant comes
-from `git diff --no-index --no-ext-diff --no-textconv -U0` (P20): Go's standard library has no line diff, and the
-program already runs git. The two `--no-` options keep a caller's external diff program or text conversion from
-changing or breaking the hunks (P24).
+from `git diff --no-index --no-ext-diff --no-textconv --inter-hunk-context=0 -U0` (P20): Go's standard library has no
+line diff, and the program already runs git. The two `--no-` options keep a caller's external diff program or text
+conversion from changing or breaking the hunks (P24), and `--inter-hunk-context=0` keeps a caller's
+`diff.interHunkContext` from merging nearby hunks into one region that holds unchanged lines (P27).
 
 ### D13 How reach is shown
 
@@ -314,19 +336,28 @@ The regions, from the hunks of the line diff (P20):
 
 - A hunk that removes or replaces lines: those lines of the target. The region is reached when an executed block of
   the reach run's profile overlaps them.
-- A hunk that only inserts lines after target line k: the position between lines k and k+1. When that position lies
-  outside every function body of the target, as Go's parser (`go/parser`) reads it, the region is not measurable,
-  like any other declaration: a new method or type placed before a function says nothing about whether that function
-  ran. A function's first block begins on its `func` line (P23), so without this rule such an insertion would borrow
-  the next function's reach. Inside a body, the region is reached when an executed block of that body contains the
-  position, or begins on line k+1 (the statement that would run right after the inserted lines). Measured block
-  shapes (P21): after `if x > Limit {` on line 8, the then-block `8.15,11.3` contains the position; after the `}` on
-  line 11, no block contains it and the next block, `12.2,12.14`, begins on line 12.
-- A region no block overlaps or touches is not measurable. The wrong change is reached when any region is reached, not
+- A hunk that only inserts lines after target line k: the place between lines k and k+1. When that place lies outside
+  every function body of the target, as Go's parser (`go/parser`) reads it, the region is not measurable, like any
+  other declaration: a new method or type placed before a function says nothing about whether that function ran. A
+  function's first block begins on its `func` line (P23), so without this rule such an insertion would borrow the next
+  function's reach. Inside a body, the place belongs to the innermost statement list that holds it: a function body, a
+  block, a branch of an `if`, or a clause of a `switch` or `select`. The block holding the first statement of that list
+  after the place decides; when no statement of the list follows the place, the block holding the last statement before
+  it decides. A block of a sibling branch or clause never decides, which is the error revisions 1 to 3 made (see
+  "Implementation review round 1 corrections"). Measured shapes (P21, P25): after `x = 0` on line 9 of `Clamp`, the
+  next statement `return Limit` lies in block `8.15,11.3`; after the `if` that ends on line 11, the next statement lies
+  in block `12.2,12.14`; at the end of `Sign`'s `if` branch, the last statement `x = -1` lies in `5.11,7.3`, not in the
+  `else` block `7.8,9.3` that begins on the next line; at the end of `Name`'s `case 1:`, the last statement lies in
+  `17.9,18.12`, which ends at that statement, while the next clause's block `19.9,20.12` begins on the next line.
+- A region no block decides is not measurable: no block overlaps the lines, the list has no statement, or no block holds
+  the deciding statement. The wrong change is reached when any region is reached, not
   reached when every region is measurable and none is reached, and not measurable otherwise.
 
 Verdicts: reached gives survivor; not reached gives invalid; not measurable gives survivor, with the report saying that
-reach could not be measured. Not measurable is not invalid, because nothing shows the test missed the change, and it is
+reach could not be measured. Invalid, whether by reach or because the wrong change does not build, needs what survivor
+needs of the other runs: every baseline run and the after-run passed, and the tree did not change. A build that breaks
+for every run after the baselines (a cache, a disk, a module download) then reads inconclusive, not "the wrong change
+does not build". Not measurable is not invalid, because nothing shows the test missed the change, and it is
 not inconclusive, because running again would not change it. A reach run that fails is inconclusive. The reach run comes
 after the after-run, and only when every mutant run passed.
 
@@ -435,8 +466,11 @@ for PR #48 (the owner's sequencing).
 
 ### D8 Interrupts, kills, runaway memory
 
-- **SIGINT or SIGTERM** to the program: it stops the running `go test` and everything it started, exits non-zero and
-  prints no verdict. Nothing in the tree needs restoring.
+- **SIGINT or SIGTERM** to the program: it stops the process group of the run in progress, exits non-zero and prints no
+  verdict. Nothing in the tree needs restoring. Every run starts in a process group of its own, and the stop (and the
+  bound of D6) reaches every process that stays in that group. A process the run starts in yet another group is not
+  stopped: `pindiff`'s fetch does that (`pin.go:91`), and so does this program for each of its own runs, so a check of
+  the program's own end-to-end tests leaves the inner program's `go test` to its own timeout. Declared.
 - **SIGKILL** to the program: the `go test` it started runs on until its own `-timeout`, then exits. The program itself
   has written nothing in the repository; what the orphaned test does is the test's, and the next check's fingerprint
   starts from the tree as it is then. The temporary directory with the logs and the overlay file stays behind outside the
@@ -512,17 +546,17 @@ A planted test that has to wait waits on a channel, never on `select {}` (PR #48
 **The self-check.** The program builds each child's environment from the environment it is given (D15). Its tests give
 it one whose `GOFLAGS` they choose, and the SIGTERM test builds the program with the inherited environment (so an outer
 check's overlay reaches the built program) but runs it with `-overlay` removed from `GOFLAGS`. An outer check of the
-program's own package is then not refused by the program under test. That arrangement is not measured: task 3.1 first
-runs one self-check and records whether it works, and checks by hand, as the page describes, each wrong change the
-self-check cannot.
+program's own package is then not refused by the program under test. Measured in task 3.1: the command checked its own
+package, 18 checks and 18 detections (PR #82, comment 5983606233).
 
-**Shown able to fail.** Each of these wrong changes to the program must be detected by its own tests, run as the
-page asks and recorded on the pull request: a non-zero exit read as detection; a survivor reported without a reach
-run; the fingerprint compare dropped; a timeout read as detection; a failing baseline ignored; a location outside the
-expected set accepted; an unexpected race report accepted; the overlay passed as a flag instead of through `GOFLAGS`
-(the child build then sees the original); a caller's `GOFLAGS` dropped from the mutant runs; a `GOFLAGS` with `-cover`
-not refused; regions read in the mutant's line numbers; an insertion's region taken from its neighbouring lines; a
-region that is not measurable read as not reached; exit zero for a survivor; and `RAPID_NOFAILFILE` not set.
+**Shown able to fail.** Each of these wrong changes to the program must be detected by its own tests, run as the page
+asks and recorded on the pull request: a non-zero exit read as detection; a survivor reported without a reach run; the
+fingerprint compare dropped; a timeout read as detection; a failing baseline ignored; a location outside the expected
+set accepted; an unexpected race report accepted; the overlay passed as a flag instead of through `GOFLAGS` (the child
+build then sees the original); a caller's `GOFLAGS` dropped from the mutant runs; a `GOFLAGS` with `-cover` not refused;
+regions read in the mutant's line numbers; an insertion's region taken from its neighbouring lines, or decided by a
+sibling branch's block; hunks merged by a caller's git setting; a child's `PWD` left as the caller's; a region that is
+not measurable read as not reached; exit zero for a survivor; and `RAPID_NOFAILFILE` not set.
 
 ### D12 Documents
 
@@ -553,8 +587,18 @@ environment file applies to every run alike. The coverage flags of the reach run
 prints each run's command line and `GOFLAGS`.
 
 The program builds each child's environment from the environment it is given, setting `GOFLAGS`, `RAPID_SEED`,
-`RAPID_NOFAILFILE` and, for git, `GIT_OPTIONAL_LOCKS`, rather than letting children inherit its process environment
-unread; that is what lets its tests, and a check of its own package, decide what a child sees.
+`RAPID_NOFAILFILE`, `PWD` and, for git, `GIT_OPTIONAL_LOCKS`, rather than letting children inherit its process
+environment unread; that is what lets its tests, and a check of its own package, decide what a child sees. `PWD` is the
+root with symbolic links resolved, the same root the overlay's paths are built from. Go takes its working directory from
+`PWD` when `PWD` names the current directory, and looks overlay paths up under it without resolving links, so a caller
+whose `PWD` reaches the repository through a symbolic link would otherwise get mutant runs that build the unchanged code
+(P26). `os/exec` sets `PWD` only when a command's environment is left empty, which the program never does.
+
+Host git configuration reaches the program's git commands, as it reaches the caller's own. A setting such as
+`core.fsmonitor=true` can make the `git status` the program runs start git's file-system monitor, which keeps its own
+files under `.git`. The program does not override host git configuration; that is the user's setting acting, declared
+and not measured. The program's tests isolate host git configuration (`GIT_CONFIG_GLOBAL=/dev/null`,
+`GIT_CONFIG_NOSYSTEM=1`), so their snapshots of planted modules cannot see it.
 
 ## Ordering against #48, #73, #60 and #80
 
@@ -583,6 +627,7 @@ unread; that is what lets its tests, and a check of its own package, decide what
 - A flake rarer than one failure in three baseline runs (D6).
 - A wrong change in a file the test reads while it runs (D1, D9).
 - Memory: a runaway mutant is stopped only by the operating system, the timeout or the bound (D6, D8).
+- A process the run starts in a process group of its own: neither the bound nor an interrupt stops it (D8).
 - Reach on some schedules only, or inside a child process. The reach run shows one path of the unchanged code, and a
   child process (a command the test builds, or the test binary run again) writes no coverage, so a region reached only
   there reads as not reached and the verdict is invalid, not survivor. A detection there is unaffected (R09, R11).
@@ -784,14 +829,18 @@ Q5, a race report counts only when named in advance with `-expect-text`.
 | P22 | A `GOFLAGS` set with `go env -w` is not in the process environment; `go env GOFLAGS` prints it; a process `GOFLAGS` replaces it entirely, so a mutant run with only the overlay in its `GOFLAGS` drops the file's flags | Scratch `arch-goenv`, `GOENV` set to a scratch file, go1.26.6: after `go env -w GOFLAGS=-cover`, the process `GOFLAGS` is empty and `go env GOFLAGS` prints `-cover`; with `GOFLAGS=-overlay=/x.json` it prints `-overlay=/x.json`. In `arch-cov`, the baseline built with the file's `-cover` (`ok ... coverage: 50.0%`) while the run with `GOFLAGS=-overlay=...` built without it (`e_test.go:7: Clamp(20) = 0`). Reproduces the review's `rv4-goenv` |
 | P23 | A function's first coverage block begins on its `func` line, and a block counts its entry: it reads executed even when a call in it did not return | Scratch `arch-blk`, go1.26.6: `func F() {` on line 7 gives block `b.go:7.10,10.2 2 1`, counted executed although `F`'s call to `boom()` panicked (recovered by the test) before line 9 ran; `func G() int { return 1 }` on line 12 gives `12.14,12.26`. Reproduces the review's `rv4-blk` |
 | P24 | `git diff --no-index` runs a caller's external diff unless told not to | With `GIT_EXTERNAL_DIFF=/usr/bin/false`: exit 128 without `--no-ext-diff`; with `--no-ext-diff --no-textconv`, the hunk header `@@ -27 +26,0 @@` (git 2.50.1; worktree `git status --porcelain` empty afterwards) |
+| P25 | An `if` branch's block ends at its closing brace, so the place after its last statement lies inside it; a `case` clause's block ends at its last statement, so the place after it lies in no block, and the next clause's block begins on the next line | Scratch module `arch-r4`, go1.26.6, `TestR` calling `Sign(5)`, `Name(2)`, `Pick(-1)`: `r.go:5.11,7.3 1 0` (the `if` branch), `7.8,9.3 1 1` (the `else`), `17.9,18.12 1 0` (`case 1:`), `19.9,20.12 1 1` (`case 2:`), `21.10,22.13 1 0` (`default:`) |
+| P26 | Through a symbolic link, with `PWD` naming the link, an overlay keyed by the resolved path is not applied; with `PWD` set to the resolved path it is | `arch-cov` reached through a symbolic link, go1.26.6, overlay keyed by the resolved path: `ok ... 0.263s` (the original ran); with `PWD=<resolved>`: `e_test.go:7: Clamp(20) = 0` |
+| P27 | `git -c diff.interHunkContext=5 diff --no-index -U0` merges two one-line changes three lines apart into one hunk; `--inter-hunk-context=0` keeps them apart | Scratch `arch-hunk`, git 2.50.1: `@@ -2 +2 @@` and `@@ -5 +5 @@` by default; `@@ -2,4 +2,4 @@` with the setting; the two hunks again with `--inter-hunk-context=0` |
 | P15 | `scripts/tree-state.sh` prints a fingerprint in a tree whose every directory, `.git` included, is read-only, and leaves `.git/index` unchanged there | Scratch repository `arch-ro`: exit 0, the same fingerprint as before, the same SHA-256 of `.git/index` |
 
 ## Not measured
 
-- The test time of the cut end-to-end set (budget and its measure in "Declared costs"; task 2.9).
 - The time `go run` takes to compile the program before each check.
 - Whether running without `-race` would let Go's own stack limit stop R08 before the operating system does.
-- The self-check under an outer overlay (D11): task 3.1 runs one first and records the result.
+- The program itself run from a directory reached through a symbolic link. P26 measures `go`'s side; the program's
+  test is task 2.11.
+- What git's file-system monitor writes under `.git` when a host sets `core.fsmonitor=true` (D15).
 - A test of this repository whose path to a changed region depends on scheduling, where D13's reach could differ from
   run to run. None was looked for beyond the trial's survivors, which are consistent (P14).
 - Whether `git status` would ever rewrite `.git/index` in this repository without `GIT_OPTIONAL_LOCKS=0`. In the

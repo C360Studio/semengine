@@ -1,8 +1,8 @@
 # mutation-check
 
-Status: revision 3, for a narrow round 3 of the independent pre-owner design review (round 2 passed). It rests on
-`inventory.md`, which has `INVENTORY PASS` (PR #82, comment 5981915103), and on `design.md`, whose five owner questions
-are open.
+Status: accepted by the owner (#79, comment 5982900883: "Accept, agree with all five"). Revision 4 corrects the
+delta after implementation review round 1, with no decision changed. It rests on `inventory.md`, which has
+`INVENTORY PASS` (PR #82, comment 5981915103), and on `design.md`.
 
 ## Why
 
@@ -58,8 +58,8 @@ any change to `merge-check`.
   coverage profiles under `testdata/`); one `Taskfile.yml` entry.
 - Changed later in the change (each waits as `tasks.md` says): `docs/testing.md`, `AGENTS.md`,
   `docs/repository-map.md`, the developer and reviewer contracts, and the preflight skill's command table.
-- Test time: an estimated 40-55 s summed over the package's `test:unit` and `test:repeat` runs, against a budget of
-  60 s measured from those runs' own times in a CI verify log (task 2.9).
+- Test time: measured at 31.607 s summed over the package's `test:unit` and `test:repeat` runs (CI run 37228603260),
+  under the 60 s budget (task 2.9).
 - Owner questions in `design.md`: the `AGENTS.md` row (Q1), timeouts by design (Q2), scripts and other files read at
   run time (Q3), a Go program instead of the script #79 names (Q4), and race-detector reports (Q5).
 - Overlaps: PR #48 and PR #73 (documents; ruled), #80 (documents; different sections), #60 (none: this change adds

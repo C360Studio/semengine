@@ -27,7 +27,10 @@ program SHALL take these flags:
 
 Before it starts any run the program SHALL refuse, exiting non-zero and naming the input and the reason, when the target
 does not exist, is outside the module, is not a Go source file, or is a `_test.go` file; when the mutant is inside the
-module or has the same content as the target; when neither `-expect` nor `-expect-text` is given; when `-seed` is 0,
+module or has the same content as the target; when neither `-expect` nor `-expect-text` is given; when an `-expect`
+value is not `file.go:N` with N a positive whole number, or an `-expect-text` value is empty; when there is no `go.mod`
+at the repository's root; when the directory for temporary files (`TMPDIR`) lies inside the module, so that the
+program's own files would land in the repository; when `-seed` is 0,
 which Rapid takes as "choose a random seed"; when the caller's `GOFLAGS` sets `-overlay`, or sets `-cover`,
 `-coverpkg`, `-covermode` or `-coverprofile`, under which Go builds the target from the file on disk and the wrong
 change would not run; or when a file that git does not track exists under the package's `testdata/rapid/` directory. A
@@ -57,6 +60,26 @@ counts.
 - **WHEN** `-pkg` is `./...`
 - **THEN** the program starts no run and exits non-zero, saying that one package is named
 
+#### Scenario: A malformed expected location
+
+- **WHEN** `-expect` is `probe_test.go` with no line number
+- **THEN** the program starts no run, exits non-zero, and names the value and the form `file.go:N`
+
+#### Scenario: An empty expected text
+
+- **WHEN** `-expect-text` is given an empty string
+- **THEN** the program starts no run and exits non-zero, naming the flag
+
+#### Scenario: No go.mod at the root
+
+- **WHEN** the directory the program runs from has no `go.mod`
+- **THEN** the program starts no run and exits non-zero, saying it must run from the repository's root
+
+#### Scenario: Temporary files inside the module
+
+- **WHEN** `TMPDIR` names a directory inside the module
+- **THEN** the program starts no run, exits non-zero, and says that its files would be written into the repository
+
 #### Scenario: Coverage in GOFLAGS
 
 - **WHEN** `GOFLAGS` was set to `-cover` with `go env -w`, and the process environment has no `GOFLAGS`
@@ -78,15 +101,17 @@ counts.
 The program itself SHALL NOT write, create or remove any file inside the repository, however it ends, SIGKILL
 included. The changed copy, the logs and every file the program makes SHALL be outside the repository. Reading the
 tree's state SHALL NOT refresh git's index. Every Go build that a mutant run makes SHALL see the wrong change: the test
-binary, and a `go build` or `go run` that the test itself starts. A file that the test reads while it runs is not
+binary, and a `go build` or `go run` that the test itself starts; this holds also when the repository is reached
+through a symbolic link. A file that the test reads while it runs is not
 replaced; that is why a target that is not Go source is refused.
 
 The program SHALL take the fingerprint of the tree that `scripts/tree-state.sh` prints before its first run and after
 its last run. When the two differ, whoever changed the tree, the verdict SHALL be inconclusive and the report SHALL say
 that the tree changed during the check.
 
-On SIGINT or SIGTERM the program SHALL stop every process it started before it exits, SHALL exit non-zero, and SHALL
-print no verdict.
+On SIGINT or SIGTERM the program SHALL stop the process group of the run in progress before it exits, SHALL exit
+non-zero, and SHALL print no verdict. Every run is started in a process group of its own; a process that the run starts
+in yet another process group is not stopped.
 
 #### Scenario: A read-only tree
 
@@ -100,11 +125,18 @@ print no verdict.
   in that command's source
 - **THEN** the command the test built shows the wrong change
 
+#### Scenario: A repository reached through a symbolic link
+
+- **WHEN** the program runs in a directory reached through a symbolic link to the repository, with `PWD` naming the
+  link, and the wrong change is detected when the repository is reached directly
+- **THEN** the verdict is detection
+
 #### Scenario: Interrupted
 
-- **WHEN** the program receives SIGTERM while the test of a run waits
-- **THEN** no process the program started is running when it exits, it exits non-zero, it prints no verdict, and
-  the tree is unchanged
+- **WHEN** the program receives SIGTERM while the test of a run waits, and the run has started a further process in
+  its process group
+- **THEN** no process of the run's process group is running when the program exits, it exits non-zero, it prints no
+  verdict, and the tree is unchanged
 
 #### Scenario: The tree changes during the check
 
@@ -117,14 +149,13 @@ Every run of one check SHALL use the same command line and environment, apart fr
 mutant run and for the reach run. That command line is `go test -json -count=1 -cpu 1 -race -timeout <timeout> -run
 <the name, anchored> <pkg>`. The environment sets `GOFLAGS` explicitly to the caller's `GOFLAGS`, read once, sets
 `RAPID_SEED` to the seed, and sets `RAPID_NOFAILFILE` to `true`. A mutant run appends the overlay that maps the target
-to the mutant to `GOFLAGS`. The
-reach run adds coverage of the target's package, and has no overlay.
+to the mutant to `GOFLAGS`. The reach run adds coverage of the target's package, and has no overlay.
 
 The program SHALL make, in this order: `-runs` baseline runs on the unchanged code; `-runs` mutant runs with the wrong
 change; one after-run on the unchanged code; and, only when every mutant run passed the named test, one reach run on
 the unchanged code. A baseline run that does not pass SHALL end the check before any mutant run. A mutant run that ends
 by the timeout, by a signal or by the bound below SHALL be the last mutant run. A run that has not ended by twice its
-timeout SHALL be stopped, with every process it started; the report states that bound.
+timeout SHALL be stopped, with its process group; the report states that bound.
 
 #### Scenario: A baseline run fails
 
@@ -139,7 +170,7 @@ timeout SHALL be stopped, with every process it started; the report states that 
 #### Scenario: A run that does not end
 
 - **WHEN** the `go` command of a run does not exit by twice the timeout
-- **THEN** the run is stopped with every process it started, and the verdict is inconclusive and names the bound
+- **THEN** the run is stopped with its process group, and the verdict is inconclusive and names the bound
 
 #### Scenario: The environment is the same in every run
 
@@ -165,18 +196,22 @@ timeout SHALL be stopped, with every process it started; the report states that 
 ### Requirement: The changed region and reach
 
 The program SHALL take the wrong change's hunks from a line diff of the target against the mutant with no context lines,
-which no external diff program or text conversion that the caller configures can change. A hunk that removes or replaces
-lines has those lines of the target as its region. A hunk that only inserts lines has, as its region, the position in
-the target where they are inserted; when that position lies outside every function body of the target, the region is not
-measurable. A mutant with more than one hunk SHALL be accepted, and the report SHALL list every hunk and say that there
-is more than one.
+which no external diff program, text conversion or hunk-merging setting that the caller configures can change. A hunk
+that removes or replaces lines has those lines of the target as its region. A hunk that only inserts lines after target
+line k has, as its region, the place between lines k and k+1; when that place lies outside every function body of the
+target, the region is not measurable. A mutant with more than one hunk SHALL be accepted, and the report SHALL list
+every hunk and say that there is more than one.
 
 The reach run measures the unchanged code; Go builds a file it covers from the file on disk, so an overlay would not
-apply in that run anyway. A region is reached when the reach run's profile shows an executed block that overlaps the
-removed or replaced lines, or, for an insertion inside a function body, an executed block of that body that contains the
-insertion position or begins on the line after it. A region is not measurable when no block of the profile overlaps it
-or touches its position. The wrong change is reached when any of its regions is reached; not reached when every region
-is measurable and none is reached; and not measurable otherwise.
+apply in that run anyway. A region of removed or replaced lines is reached when the reach run's profile shows an
+executed block that overlaps those lines. An insertion inside a function body belongs to the innermost statement list
+that holds its place, as Go's parser reads the target: a function body, a block, a branch of an `if`, or a clause of a
+`switch` or `select`. It is reached when the block holding the first statement of that list after the place executed;
+when no statement of that list follows the place, when the block holding the last statement before it executed. A block
+of a sibling branch or clause never decides it. A region is not measurable when no block decides it: no block overlaps
+the lines, the list has no statement, or no block holds the statement that would decide. The wrong change is reached
+when any of its regions is reached; not reached when every region is measurable and none is reached; and not measurable
+otherwise.
 
 #### Scenario: A deletion that was reached
 
@@ -200,6 +235,24 @@ is measurable and none is reached; and not measurable otherwise.
 - **WHEN** the wrong change only inserts a line into a branch that the reach run shows did not execute, and every
   mutant run passes
 - **THEN** the verdict is invalid
+
+#### Scenario: An insertion at the end of an if-branch whose else ran
+
+- **WHEN** the wrong change only inserts a line after the last statement of an `if` branch that did not execute, the
+  `else` branch that begins on the next line executed, and every mutant run passes
+- **THEN** the wrong change is not reached, and the verdict is invalid
+
+#### Scenario: An insertion at the end of a switch case whose next case ran
+
+- **WHEN** the wrong change only inserts a line after the last statement of a `case` clause that did not execute, the
+  next `case` clause executed, and every mutant run passes
+- **THEN** the wrong change is not reached, and the verdict is invalid
+
+#### Scenario: Hunks are not merged
+
+- **WHEN** the caller's git configuration sets `diff.interHunkContext` to 5, and the wrong change replaces two lines
+  three lines apart
+- **THEN** the report lists two hunks, and the unchanged lines between them are in neither region
 
 #### Scenario: A method added before a function that did not run
 
@@ -226,8 +279,8 @@ line of the named test or of its subtests that begins with an expected location 
   line; the after-run passed; and the tree did not change.
 - **Survivor:** every baseline run passed; every mutant run passed the named test and exited zero; the after-run passed;
   the tree did not change; the reach run passed; and the wrong change is reached or not measurable.
-- **Invalid:** the wrong change does not build; or every other condition for survivor holds and the wrong change is not
-  reached.
+- **Invalid:** every baseline run passed, the after-run passed and the tree did not change; and either the wrong
+  change does not build, or every other condition for survivor holds and the wrong change is not reached.
 - **Inconclusive:** every other case, including a baseline run that did not pass, a run that selected no test, a run
   that ended by the timeout (even when an expected line was printed before it), a run ended by a signal, a run stopped
   by the bound, a failure with no expected line, mutant runs that disagree, an after-run or a reach run that did not
@@ -280,6 +333,11 @@ equivalent is a reviewer's assessment.
 
 - **WHEN** the mutant does not compile
 - **THEN** the verdict is invalid
+
+#### Scenario: The build breaks after the baselines
+
+- **WHEN** every baseline run passed, and the mutant runs and the after-run all fail to build
+- **THEN** the verdict is inconclusive, not invalid
 
 #### Scenario: A flaky baseline
 

@@ -29,14 +29,13 @@ Before it starts any run the program SHALL refuse, exiting non-zero and naming t
 does not exist, is outside the module, is not a Go source file, or is a `_test.go` file; when the mutant is inside the
 module or has the same content as the target; when neither `-expect` nor `-expect-text` is given; when an `-expect`
 value is not `file.go:N` with N a positive whole number, or an `-expect-text` value is empty; when there is no `go.mod`
-at the repository's root; when the directory for temporary files (`TMPDIR`) lies inside the module, so that the
-program's own files would land in the repository; when `-seed` is 0,
-which Rapid takes as "choose a random seed"; when the caller's `GOFLAGS` sets `-overlay`, or sets `-cover`,
-`-coverpkg`, `-covermode` or `-coverprofile`, under which Go builds the target from the file on disk and the wrong
-change would not run; or when a file that git does not track exists under the package's `testdata/rapid/` directory. A
-refusal because of the kind of target SHALL say that the manual procedure of `docs/testing.md` applies to it. The
-caller's `GOFLAGS` is what `go env GOFLAGS` prints in the program's environment, so a value set with `go env -w`
-counts.
+at the repository's root; when the directory for temporary files (`TMPDIR`) does not exist, or lies inside the module so
+that the program's own files would land in the repository; when `-seed` is 0, which Rapid takes as "choose a random
+seed"; when the caller's `GOFLAGS` sets `-overlay`, or sets `-cover`, `-coverpkg`, `-covermode` or `-coverprofile`,
+under which Go builds the target from the file on disk and the wrong change would not run; or when a file that git does
+not track exists under the package's `testdata/rapid/` directory. A refusal because of the kind of target SHALL say that
+the manual procedure of `docs/testing.md` applies to it. The caller's `GOFLAGS` is what `go env GOFLAGS` prints in the
+program's environment, so a value set with `go env -w` counts.
 
 #### Scenario: A script as the target
 
@@ -74,6 +73,11 @@ counts.
 
 - **WHEN** the directory the program runs from has no `go.mod`
 - **THEN** the program starts no run and exits non-zero, saying it must run from the repository's root
+
+#### Scenario: Temporary files in a directory that does not exist
+
+- **WHEN** `TMPDIR` names a directory that does not exist
+- **THEN** the program starts no run, exits non-zero, and names the directory
 
 #### Scenario: Temporary files inside the module
 
@@ -208,9 +212,12 @@ executed block that overlaps those lines. An insertion inside a function body be
 that holds its place, as Go's parser reads the target: a function body, a block, a branch of an `if`, or a clause of a
 `switch` or `select`. It is reached when the block holding the first statement of that list after the place executed;
 when no statement of that list follows the place, when the block holding the last statement before it executed. A block
-of a sibling branch or clause never decides it. A region is not measurable when no block decides it: no block overlaps
-the lines, the list has no statement, or no block holds the statement that would decide. The wrong change is reached
-when any of its regions is reached; not reached when every region is measurable and none is reached; and not measurable
+of a sibling branch or clause never decides it. When the place lies inside a statement of that list, so that the
+statement begins on or before line k and ends on or after line k+1 (a condition, call or literal written over several
+lines, or the place between a label and its statement), the region is not measurable: Go's coverage counts statements,
+and no block measures a place inside one. A region is not measurable when no block decides it: no block overlaps the
+lines, the list has no statement, or no block holds the statement that would decide. The wrong change is reached when
+any of its regions is reached; not reached when every region is measurable and none is reached; and not measurable
 otherwise.
 
 #### Scenario: A deletion that was reached
@@ -247,6 +254,18 @@ otherwise.
 - **WHEN** the wrong change only inserts a line after the last statement of a `case` clause that did not execute, the
   next `case` clause executed, and every mutant run passes
 - **THEN** the wrong change is not reached, and the verdict is invalid
+
+#### Scenario: An insertion inside a multi-line condition
+
+- **WHEN** the wrong change only inserts a line inside an `if` condition written over two lines, the reach run shows
+  the statement executed, and every mutant run passes
+- **THEN** the verdict is survivor, and the report says reach could not be measured
+
+#### Scenario: An insertion right after a label
+
+- **WHEN** the wrong change only inserts a line between a label and its statement, the label is reached by `goto`,
+  and every mutant run passes
+- **THEN** the verdict is survivor, and the report says reach could not be measured
 
 #### Scenario: Hunks are not merged
 

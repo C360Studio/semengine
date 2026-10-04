@@ -1,6 +1,9 @@
 # Design: mutation-check
 
-Status: **revision 4: the accepted design, corrected after implementation review round 1.** The owner accepted
+Status: **revision 5: the accepted design, corrected after implementation review rounds 1 and 2.** Round 2
+(`impl-review-r2.md`, sha256 `2fdc930b6cd61035fefa89ffcdbf721aa830a88bbbffa726a82e0fca729b769d`, at code head
+`e936326`) found one more place where the reach rule decides by the wrong statement, and two NITs; "Implementation
+review round 2 corrections" below says what changed. The owner accepted
 revision 3 and answered Q1 to Q5 as recommended ("Owner's rulings"). Implementation review round 1
 (`impl-review-r1.md`, sha256 `c3edf5cab729cc09e717c01acb16118d974481da8efb23a0b7b595ae843e4659`, at code head
 `8bee3ea`) found the delta wrong or silent in six places; "Implementation review round 1 corrections" below says what
@@ -143,6 +146,14 @@ Answers to round 2's four NITs (`inventory-review-r2.md`, sha256 `52b42c4b3f413b
 | NIT: the SIGTERM stand-in should start a grandchild | D11 and task 2.6: the stand-in `go` starts a helper that writes its own pid and its parent's, as `TestFetchLeavesNoProcess` does, and both must be gone |
 | NIT: Q1 and Q5 lack "what this costs you"; Q5's "often" and "many" | Both lines added; "often" and "many" removed, and Q5 and D14 say that none of the trial's 196 runs had a race report |
 
+## Implementation review round 2 corrections
+
+| Finding | Correction |
+| --- | --- |
+| HIGH-2: an insertion whose place lies inside a statement of the list is decided by the wrong statement: inside a multi-line `if` condition, the next statement decides (block count 0, invalid, though the inserted condition ran); right after a label reached by `goto`, the block before the label decides, because the label's start is that block's inclusive end (invalid, though the label was reached) | Re-measured (P28). D13 and the spec: when the place lies inside a statement of its list (the statement begins on or before line k and ends on or after line k+1), the region is not measurable, so both shapes give survivor with the report saying reach could not be measured. The review's other fix, deciding by the containing statement's own block (for a label, its inner statement's), was weighed and not taken; D13 gives the reasons. Scenarios for a multi-line condition and for a label |
+| NIT-A: a line inserted after a `return`, `panic`, `break`, `continue` or `goto` is dead code but reads reached | Declared in D13 beside the block-entry limit |
+| NIT-B: a `TMPDIR` that does not exist is refused but not listed | D2 and the spec's refusal list, with a scenario |
+
 ## Implementation review round 1 corrections
 
 | Finding | Correction |
@@ -267,8 +278,8 @@ task mutate:check -- -pkg ./internal/harness/probe -test TestAwaitClearsEarlierO
   (`lifecycletest.go`) or Go's own `testing.go` for a race report (P18).
 
 Before any run the program also refuses an `-expect` that is not `file.go:N` with N a positive whole number, an empty
-`-expect-text`, a directory with no `go.mod` (the program runs from the repository's root), and a `TMPDIR` inside the
-module, where its own files would be written into the repository. Each fails closed.
+`-expect-text`, a directory with no `go.mod` (the program runs from the repository's root), a `TMPDIR` that does not
+exist, and a `TMPDIR` inside the module, where its own files would be written into the repository. Each fails closed.
 
 | Option for naming the assertion | Cost |
 | --- | --- |
@@ -349,6 +360,17 @@ The regions, from the hunks of the line diff (P20):
   in block `12.2,12.14`; at the end of `Sign`'s `if` branch, the last statement `x = -1` lies in `5.11,7.3`, not in the
   `else` block `7.8,9.3` that begins on the next line; at the end of `Name`'s `case 1:`, the last statement lies in
   `17.9,18.12`, which ends at that statement, while the next clause's block `19.9,20.12` begins on the next line.
+  When the place lies inside a statement of its list, so that the statement begins on or before line k and ends on or
+  after line k+1, the region is not measurable. That covers a condition, call or literal written over several lines,
+  and the place between a label and its statement. Go's coverage counts statements, and an insertion inside one changes
+  an expression or the statement's shape, which no block measures. The review also offered deciding by the containing
+  statement's own block (for a label, its inner statement's). It gives the right answer for both measured shapes, but
+  it is a proxy with errors of its own: an inserted operand after `&&` or `||` runs only when the operands before it
+  allow, so the statement's block can show executed while the inserted part never ran; and a label's start sits on the
+  inclusive end of the block before it (P28), the very slip that made round 2's finding. Not measurable gives survivor
+  with a note, so an insertion that truly never ran reads survivor, and the reader is told reach could not be
+  measured; it never gives a false invalid, which would send the implementer looking for a missing input while a
+  missing assertion goes unseen.
 - A region no block decides is not measurable: no block overlaps the lines, the list has no statement, or no block holds
   the deciding statement. The wrong change is reached when any region is reached, not
   reached when every region is measurable and none is reached, and not measurable otherwise.
@@ -369,7 +391,9 @@ mutant run; the list of hunks in the report is where that shows.
 What R1 cannot show, declared: a region reached on some schedules and not others; a declaration's reach; the code the
 wrong change makes newly run, which is not measured itself but lies after a changed region that is; and a line after a
 call that does not return in that run. A block counts its entry, not each line (P23): a deletion after a call that
-panics and is recovered, calls `runtime.Goexit`, or blocks for good reads as reached.
+panics and is recovered, calls `runtime.Goexit`, or blocks for good reads as reached. Likewise a line inserted right
+after a `return`, `panic`, `break`, `continue` or `goto` is dead code, yet the block of the statement before it decides
+and reads reached, so the verdict is survivor; whether that survivor is equivalent is the reviewer's assessment.
 
 R04 and R05 re-read: R04 deletes target line 592, inside the original block `586.2,595.28`, executed once; R05 deletes
 lines 208-210, overlapped by `207.36,208.46` (12 times) and `208.46,210.4` (once). Both are reached under R1.
@@ -555,8 +579,9 @@ fingerprint compare dropped; a timeout read as detection; a failing baseline ign
 set accepted; an unexpected race report accepted; the overlay passed as a flag instead of through `GOFLAGS` (the child
 build then sees the original); a caller's `GOFLAGS` dropped from the mutant runs; a `GOFLAGS` with `-cover` not refused;
 regions read in the mutant's line numbers; an insertion's region taken from its neighbouring lines, or decided by a
-sibling branch's block; hunks merged by a caller's git setting; a child's `PWD` left as the caller's; a region that is
-not measurable read as not reached; exit zero for a survivor; and `RAPID_NOFAILFILE` not set.
+sibling branch's block; an insertion inside a statement decided by a neighbouring statement's block; hunks merged by a
+caller's git setting; a child's `PWD` left as the caller's; a region that is not measurable read as not reached; exit
+zero for a survivor; and `RAPID_NOFAILFILE` not set.
 
 ### D12 Documents
 
@@ -832,6 +857,7 @@ Q5, a race report counts only when named in advance with `-expect-text`.
 | P25 | An `if` branch's block ends at its closing brace, so the place after its last statement lies inside it; a `case` clause's block ends at its last statement, so the place after it lies in no block, and the next clause's block begins on the next line | Scratch module `arch-r4`, go1.26.6, `TestR` calling `Sign(5)`, `Name(2)`, `Pick(-1)`: `r.go:5.11,7.3 1 0` (the `if` branch), `7.8,9.3 1 1` (the `else`), `17.9,18.12 1 0` (`case 1:`), `19.9,20.12 1 1` (`case 2:`), `21.10,22.13 1 0` (`default:`) |
 | P26 | Through a symbolic link, with `PWD` naming the link, an overlay keyed by the resolved path is not applied; with `PWD` set to the resolved path it is | `arch-cov` reached through a symbolic link, go1.26.6, overlay keyed by the resolved path: `ok ... 0.263s` (the original ran); with `PWD=<resolved>`: `e_test.go:7: Clamp(20) = 0` |
 | P27 | `git -c diff.interHunkContext=5 diff --no-index -U0` merges two one-line changes three lines apart into one hunk; `--inter-hunk-context=0` keeps them apart | Scratch `arch-hunk`, git 2.50.1: `@@ -2 +2 @@` and `@@ -5 +5 @@` by default; `@@ -2,4 +2,4 @@` with the setting; the two hunks again with `--inter-hunk-context=0` |
+| P28 | A multi-line `if` condition lies in the block that ends at the condition's `{`; a label's start is the inclusive end of the block before it | Scratch module `arch-r5`, go1.26.6, `TestS` calling `Pick(5)` and `Lab(-1)`: `s.go:3.22,5.11 1 1` holds `if x > 0 &&` (line 4) and `x < 100 {` (line 5); `16.2,17.1 2 0` ends at `done:` (line 17, column 1), skipped by `goto done`; `18.2,18.10 1 1` is the labeled `return x`. Reproduces the review's `rv8` profiles |
 | P15 | `scripts/tree-state.sh` prints a fingerprint in a tree whose every directory, `.git` included, is read-only, and leaves `.git/index` unchanged there | Scratch repository `arch-ro`: exit 0, the same fingerprint as before, the same SHA-256 of `.git/index` |
 
 ## Not measured

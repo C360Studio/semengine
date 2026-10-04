@@ -1,7 +1,7 @@
 # mutation-check
 
-Status: accepted by the owner (#79, comment 5982900883: "Accept, agree with all five"). Revision 4 corrects the
-delta after implementation review round 1, with no decision changed. It rests on `inventory.md`, which has
+Status: accepted by the owner (#79, comment 5982900883: "Accept, agree with all five"). Revision 5 corrects the
+delta after implementation review rounds 1 and 2, with no decision changed. It rests on `inventory.md`, which has
 `INVENTORY PASS` (PR #82, comment 5981915103), and on `design.md`.
 
 ## Why

@@ -43,7 +43,7 @@
 //	err = client.Publish(ctx, "subject.name", []byte("message data"))
 //
 //	// Subscribe to messages (receives full *nats.Msg for access to Subject, Data, Headers)
-//	err = client.Subscribe(ctx, "subject.*", func(msgCtx context.Context, msg *nats.Msg) {
+//	sub, err := client.Subscribe(ctx, "subject.*", func(msgCtx context.Context, msg *nats.Msg) {
 //	    // Handle message with context (30s timeout per message)
 //	    // For wildcard subscriptions, msg.Subject contains the actual subject
 //	    fmt.Printf("Received on %s: %s\n", msg.Subject, string(msg.Data))
@@ -286,8 +286,8 @@
 //	WithMaxReconnects(n int)              // Maximum reconnection attempts (-1 = infinite)
 //	WithReconnectWait(d time.Duration)    // Wait between reconnection attempts
 //	WithTimeout(d time.Duration)          // Connection timeout
-//	WithLogger(logger Logger)             // Custom logger for debug output
-//	WithClientName(name string)           // Client identification
+//	WithLogger(logger *slog.Logger)       // Custom logger for debug output
+//	WithName(name string)                 // Client identification
 //
 // # Authentication and Security
 //
@@ -381,7 +381,7 @@
 //	parentTC, _ := natsclient.TraceContextFromContext(ctx)
 //	childTC := parentTC.NewSpan()
 //	childCtx := natsclient.ContextWithTrace(ctx, childTC)
-//	err := client.Request(childCtx, "service.action", data, timeout)
+//	reply, err := client.Request(childCtx, "service.action", data, timeout)
 //
 // # The unified RPC error contract (ADR-060)
 //
@@ -464,6 +464,7 @@
 //	import (
 //	    "context"
 //	    "log"
+//	    "log/slog"
 //	    "time"
 //
 //	    "github.com/c360studio/semengine/natsclient"
@@ -472,7 +473,7 @@
 //	func main() {
 //	    client, err := natsclient.NewClient("nats://localhost:4222",
 //	        natsclient.WithMaxReconnects(-1),
-//	        natsclient.WithLogger(log.Default()),
+//	        natsclient.WithLogger(slog.Default()),
 //	    )
 //	    if err != nil {
 //	        log.Fatal(err)

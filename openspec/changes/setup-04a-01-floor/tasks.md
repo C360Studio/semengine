@@ -730,14 +730,14 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       - Generated checks: not used. A poll overwrites each gauge with the server's value and keeps no state of
         its own, so the history to cover is "more than one poll", which test (1)'s two polls are; the registration
         history is D9's `TestPropRegisterOrGetHistory`.
-- [ ] 3.7e (D) `natsclient` `README.md` (375 lines at the pin) and `doc.go`: import paths at `README.md:14, :312`
+- [x] 3.7e (D) `natsclient` `README.md` (375 lines at the pin) and `doc.go`: import paths at `README.md:14, :312`
       and `doc.go:512` name the SemEngine module, each its own `adapt` item (#9 comment 5968665464); the lint fixes
       (12 × MD013, 1 × MD032); behaviour edits by line (#9 comment 5957221949): `NewTestClient` (`README.md:277-281`,
       `doc.go:352-354`) → `natsfixture`; `WithClosedCallback` (`README.md:231`), which does not exist; the defaults at
       `README.md:213, :216`; `doc.go:339` (`WithTLS(true)`) and `doc.go:252` (a method shown as an option); every
       passage that shows a 3.7a drop; `Close` and `Connect` as 3.7c leaves them; the request-handler-timeout comments
       that name the dropped option (`client.go:100, :168`, `request.go:29`). `task docs:check` passes.
-      - Done for every item above; not ticked, because of the open question below. `natsclient/README.md` is
+      - Done for every item above. `natsclient/README.md` is
         ported from the pin and `doc.go` edited; each edit is on the `natsclient` row by pin line (import paths
         `README.md:14, :312` and `doc.go:512`; lint: 12 × MD013, the two long headings split as on the `metric`
         row, 1 × MD032; behaviour edits; the three timeout comments, which are at the pin's `client.go:99, :169`
@@ -747,17 +747,13 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         is the `Close` passage 3.7c changes. Neither file teaches `Closed()` as the completion proof: the README
         does not mention it, and `doc.go`'s Consume example keeps the #83 wording (a nil `Close` is the proof).
         `task docs:check` passes.
-      - Open, for the owner: the pin's README and `doc.go` also describe API the code does not have and never
-        had at the pin, in passages this task does not name (pin lines): `README.md:61-64` and `doc.go:46` (`Subscribe`'s
-        signature), `README.md:111` and `doc.go:427` (`Request` returns two values), `README.md:160` (`Option`
-        for `ClientOption`), `README.md:150-155` (`KVOptions`: three fields shown of six, `MaxRetries` default
-        3 for 10), `README.md:182-190` and `doc.go:318` (a `Logger` interface; `WithLogger` takes
-        `*slog.Logger`), `README.md:318` and `doc.go:518` (`WithLogger(log.Default())`), `doc.go:320`
-        (`WithClientName` for `WithName`), and `README.md:369-371` (links to `service`, `component` and
-        `config`, which SemEngine does not have). Ruling 5957221949 allows a behaviour edit where the ported
-        code "no longer has" the behaviour; this task applies it to two passages that were wrong at the pin
-        (the defaults, `WithClosedCallback`). Whether the passages above are edited the same way, or kept as
-        the pin's text, is not settled by the ruling or this task.
+      - Settled by owner ruling (#9 comment 5984291337, extending 5957221949): a passage that describes API the
+        code does not have, including API that never existed at the pin, is corrected to the real API, and links
+        to packages SemEngine does not have are removed. Applied, each an `adapt` item on the `natsclient` row
+        by pin line: `README.md:61-64` and `doc.go:46` (`Subscribe`), `README.md:111` and `doc.go:427`
+        (`Request`), `README.md:160` (`ClientOption`), `README.md:150-155` (`KVOptions`), `README.md:182-190`
+        and `doc.go:318` (`WithLogger` takes `*slog.Logger`), `README.md:318` and `doc.go:518`
+        (`slog.Default()`), `doc.go:320` (`WithName`), `README.md:369-371` (the related-packages links removed).
 - [x] 3.8 (D) `task cover:check` targets `natsclient`, `message`, `payloadregistry` at 80%: the first measurement
       of each is recorded on this pull request (design P8: the pin baseline is unmeasured). If any of the three
       measures below 80%, a new task asking the owner to rule on that package's coverage is added to this file at

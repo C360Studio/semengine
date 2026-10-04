@@ -71,7 +71,7 @@ defer client.Close(ctx)
 err = client.Publish(ctx, "subject.name", []byte("message data"))
 
 // Subscribe to messages
-sub, err := client.Subscribe("subject.*", func(msg *nats.Msg) {
+sub, err := client.Subscribe(ctx, "subject.*", func(msgCtx context.Context, msg *nats.Msg) {
     // Handle message
     fmt.Printf("Received: %s\n", string(msg.Data))
 })
@@ -114,7 +114,7 @@ err := client.Publish(ctx, "events.user", data)
 // Explicit trace context
 tc := natsclient.NewTraceContext()
 ctx = natsclient.ContextWithTrace(ctx, tc)
-err = client.Request(ctx, "service.action", data, 5*time.Second)
+reply, err := client.Request(ctx, "service.action", data, 5*time.Second)
 
 // Extract trace from incoming message
 tc = natsclient.ExtractTrace(msg)
@@ -155,15 +155,18 @@ Configuration for KV operations behavior.
 
 ```go
 type KVOptions struct {
-    MaxRetries int           // Maximum CAS retry attempts (default: 3)
-    RetryDelay time.Duration // Delay between retries (default: 10ms)
-    Timeout    time.Duration // Operation timeout (default: 5s)
+    MaxRetries            int           // Maximum CAS retry attempts (default: 10)
+    RetryDelay            time.Duration // Initial delay between retries (default: 10ms)
+    Timeout               time.Duration // Operation timeout (default: 5s)
+    MaxValueSize          int           // Maximum size for values (default: 1MB)
+    UseExponentialBackoff bool          // Enable exponential backoff with jitter (default: true)
+    MaxRetryDelay         time.Duration // Maximum delay between retries (default: 1s)
 }
 ```
 
 ### Functions
 
-#### `NewClient(url string, opts ...Option) (*Client, error)`
+#### `NewClient(url string, opts ...ClientOption) (*Client, error)`
 
 Creates a new NATS client with the specified server URL and options.
 
@@ -187,17 +190,9 @@ Creates a KVStore instance for high-level KV operations.
 
 Performs CAS update on JSON data with automatic retry on conflicts.
 
-### Interfaces
+### Logging
 
-#### `Logger`
-
-```go
-type Logger interface {
-    Printf(format string, v ...any)
-}
-```
-
-Optional logger interface for debug output.
+`WithLogger(logger *slog.Logger) ClientOption` sets the logger for debug output.
 
 ## Architecture
 
@@ -306,6 +301,7 @@ package main
 import (
     "context"
     "log"
+    "log/slog"
     "time"
 
     "github.com/c360studio/semengine/natsclient"
@@ -314,7 +310,7 @@ import (
 func main() {
     client, err := natsclient.NewClient("nats://localhost:4222",
         natsclient.WithMaxReconnects(-1),
-        natsclient.WithLogger(log.Default()),
+        natsclient.WithLogger(slog.Default()),
     )
     if err != nil {
         log.Fatal(err)
@@ -362,12 +358,6 @@ err = kvStore.UpdateJSON(ctx, "services.processor", func(config map[string]any) 
     return nil
 })
 ```
-
-## Related Packages
-
-- [`service`](../service): Uses natsclient for service communication
-- [`component`](../component): Components receive natsclient for messaging
-- [`config`](../config): Manager uses KV store for runtime configuration
 
 ## License
 

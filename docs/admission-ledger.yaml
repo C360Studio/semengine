@@ -1373,7 +1373,17 @@
     internal/harness/natsfixture, with Connect; :377, "Close() can only be called once (subsequent
     calls are no-ops)" → only the first Close drains and a later Close waits for the same
     completion (task 3.7c); :392, "Maximum backoff is configurable" → one minute (WithMaxBackoff
-    dropped). Census maps (owner ruling, #9 comment 5969522395, item 3): the
+    dropped). Corrections to API the code does not have, wrong at the pin too (owner ruling, #9
+    comment 5984291337), each an adapt item, pin lines: README.md :61-64 and doc.go:46, Subscribe
+    takes a context and a handler taking a context, and returns a Subscription and an error;
+    README.md :111 and doc.go:427, Request returns the reply and an error; README.md :160, Option →
+    ClientOption; README.md :150-155, KVOptions shows its six fields and MaxRetries' default 3 → 10
+    (DefaultKVOptions); README.md :182-190, the Logger interface section replaced by WithLogger's
+    *slog.Logger signature; doc.go:318, WithLogger(logger Logger) → WithLogger(logger *slog.Logger);
+    doc.go:320, WithClientName → WithName; README.md :318 and doc.go:518, WithLogger(log.Default())
+    → WithLogger(slog.Default()), with the log/slog import added; README.md :369-371, the Related
+    Packages section removed (its links name service, component and config, which SemEngine does
+    not have). Census maps (owner ruling, #9 comment 5969522395, item 3): the
     expected maps in consumer_policy_callsite_test.go hold SemEngine's production callers as
     measured at task 3.7, so each later port that adds a caller of ConsumeInternalStreamWithConfig,
     ConsumeStreamWithConfig, ConsumeStreamWithConfigContexts or GetConsumerConfig, or a direct

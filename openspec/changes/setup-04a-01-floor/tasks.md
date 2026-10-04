@@ -909,8 +909,13 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
 - [ ] 5.1 (W) Eight `defer-exclude` rows for the D4 ten-out packages never carried (`agentic`, `agentic/agentrun`,
       `gateway`, `gateway/graph-gateway`, `internal/agentterminal`, `internal/deliverylane`, `internal/looptoken`,
       `vocabulary/agentic`) at the pin SHA with the D4 reason each; `task ledger:check` passes.
-- [ ] 5.2 (A) The Tier-1 cross-check re-measured on the ruled 65-package set (#9 item 1), recorded next to the
+- [x] 5.2 (A) The Tier-1 cross-check re-measured on the ruled 65-package set (#9 item 1), recorded next to the
       ledger as an inventory with its command and result; it changes no row.
+      Recorded in `docs/tier1-cross-check.md`: 39 in both, 23 Tier-1-only, 26 tier-0-only. These are the
+      first-pass counts with six packages swapped each way between "both" and "Tier-1-only" and four within
+      "tier-0-only". Each Tier-1-only package has a disposition from a ruling or this measurement. Neither
+      first-wave consumer imports one without a ruling. No row changes. Side check: the ruled set sums to
+      140,842 non-test lines (03B D4).
 - [x] 5.3 (D) Package-doc lint sensitivity: `package-comments` is already on (`revive.toml:22`); `task lint` passes
       over the ported tree (every package in the set has a package comment at the pin, inventory §3.3), and a run
       with one public package's comment removed fails naming it; the eleven public destinations (design D5) are the

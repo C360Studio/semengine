@@ -52,7 +52,7 @@ func run(ctx context.Context, root string, args, environ []string, stdout, stder
 }
 
 func interrupted(stderr io.Writer, logs string) int {
-	msg := "mutcheck: interrupted; every process it started was stopped, and there is no verdict"
+	msg := "mutcheck: interrupted; the process group of the run in progress was stopped, and there is no verdict"
 	if logs != "" {
 		msg += "; the logs so far are in " + logs + " (on this machine only)"
 	}
@@ -79,7 +79,7 @@ func check(ctx context.Context, args []string, in inputs, p prepared, environ []
 	if err != nil {
 		return failed(err)
 	}
-	if r.diff, err = runGit(ctx, p.root, environ, "diff", "--no-index", "--no-ext-diff", "--no-textconv", "--no-color", "-U0", "--", p.target, r.mutantCopy); err != nil {
+	if r.diff, err = runGit(ctx, p.root, environ, "diff", "--no-index", "--no-ext-diff", "--no-textconv", "--inter-hunk-context=0", "--no-color", "-U0", "--", p.target, r.mutantCopy); err != nil {
 		return failed(err)
 	}
 	if r.hunks, err = parseHunks(r.diff); err != nil {

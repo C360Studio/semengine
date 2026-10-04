@@ -117,7 +117,7 @@ func prepare(ctx context.Context, root string, in inputs, environ []string) (pre
 	}
 	modData, err := os.ReadFile(filepath.Join(p.root, "go.mod"))
 	if err != nil {
-		return p, refusal{"working directory", "the program runs from the module's root, and " + err.Error()}
+		return p, refusal{"working directory", "the program runs from the repository's root, where go.mod is, and " + err.Error()}
 	}
 
 	target, err := resolve(p.root, in.file)
@@ -155,8 +155,12 @@ func prepare(ctx context.Context, root string, in inputs, environ []string) (pre
 	if v, ok := lookup(environ, "TMPDIR"); ok && v != "" {
 		p.tmpBase = v
 	}
-	if base, err := filepath.EvalSymlinks(p.tmpBase); err != nil || within(p.root, base) {
-		return p, refusal{"TMPDIR " + p.tmpBase, "the program's files are made outside the module, in a temporary directory that exists"}
+	base, err := filepath.EvalSymlinks(p.tmpBase)
+	switch {
+	case err != nil:
+		return p, refusal{"TMPDIR " + p.tmpBase, "the program makes its files in a temporary directory that exists: " + err.Error()}
+	case within(p.root, base):
+		return p, refusal{"TMPDIR " + p.tmpBase, "is inside the module, so the program's files would be written into the repository; set TMPDIR to a directory outside it"}
 	}
 
 	if p.goflags, p.goversion, err = goEnv(ctx, p.root, environ); err != nil {

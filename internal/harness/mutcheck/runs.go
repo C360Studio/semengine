@@ -29,11 +29,14 @@ func withEnv(environ []string, set ...string) []string {
 
 // command is a child process in a process group of its own. When ctx is done while it runs (the
 // bound of a run, or SIGINT or SIGTERM to the program), the whole group is killed, so a process it
-// started dies with it. A group is not signalled after its leader exited by itself: its number may
-// then belong to a process this program did not start.
+// started in that group dies with it; one it started in a group of its own does not. A group is
+// not signalled after its leader exited by itself: its number may then belong to a process this
+// program did not start. PWD is the directory the child runs in: Go takes its working directory
+// from PWD when PWD names that directory, and looks overlay paths up under it without resolving
+// symbolic links, so a caller's PWD through a link would hide the overlay (design D15, P26).
 func command(ctx context.Context, dir string, env []string, name string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Dir, cmd.Env = dir, env
+	cmd.Dir, cmd.Env = dir, withEnv(env, "PWD="+dir)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Cancel = func() error { return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) }
 	return cmd

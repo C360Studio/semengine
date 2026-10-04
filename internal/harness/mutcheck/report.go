@@ -78,7 +78,7 @@ func writeReport(w io.Writer, r report) {
 	pf("expected locations: %s", orNone(r.in.expect.locations))
 	pf("expected texts: %s", orNone(r.in.expect.texts))
 	pf("seed: %d (RAPID_SEED=%d and RAPID_NOFAILFILE=true in every run)", r.in.seed, r.in.seed)
-	pf("bound: %s, twice the timeout of %s: a run not ended by then is stopped with every process it started", r.bound, r.in.timeout)
+	pf("bound: %s, twice the timeout of %s: a run not ended by then is stopped with its process group", r.bound, r.in.timeout)
 	for _, run := range allRuns(r.c) {
 		writeRun(pf, run)
 		if run.kind == reachRun && run.reading.outcome == pass {

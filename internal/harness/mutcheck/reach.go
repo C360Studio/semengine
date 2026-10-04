@@ -79,7 +79,7 @@ func reach(hunks []hunk, target, profile []byte, base string) (reachState, []reg
 	if err != nil {
 		return "", nil, err
 	}
-	bodies, err := functionBodies(target)
+	lists, err := statementLists(target)
 	if err != nil {
 		return "", nil, err
 	}
@@ -90,7 +90,7 @@ func reach(hunks []hunk, target, profile []byte, base string) (reachState, []reg
 		if h.oldCount > 0 {
 			r = removedRegion(h, blocks)
 		} else {
-			r = insertedRegion(h, blocks, bodies)
+			r = insertedRegion(h, blocks, lists)
 		}
 		anyReached = anyReached || r.state == reached
 		allNotReached = allNotReached && r.state == notReached
@@ -130,30 +130,53 @@ func removedRegion(h hunk, blocks []block) regionResult {
 	return judge(r, overlapping, "no block of the profile overlaps it")
 }
 
-// insertedRegion judges a hunk that only inserts lines after target line k. Outside every function
-// body it is not measurable; inside one, it is reached when an executed block of that body
-// contains the position or begins on line k+1, the statement that would run right after it.
-func insertedRegion(h hunk, blocks []block, bodies [][2]int) regionResult {
+// insertedRegion judges a hunk that only inserts lines after target line k. The place between
+// lines k and k+1 belongs to the innermost statement list that holds it. The block holding the
+// first statement of that list after the place decides; when none follows, the block holding the
+// last statement before it does. A sibling branch or clause never decides. Outside every function
+// body no list holds the place, and the region is not measurable.
+func insertedRegion(h hunk, blocks []block, lists []stmtList) regionResult {
 	k := h.oldStart
 	r := regionResult{hunk: h, region: regionText(h)}
-	body, inside := [2]int{}, false
-	for _, b := range bodies {
-		if b[0] <= k && k < b[1] && (!inside || b[0] > body[0]) {
-			body, inside = b, true
+	var list *stmtList
+	for i, l := range lists {
+		if l.openLine <= k && k+1 <= l.closeLine && (list == nil || l.open > list.open) {
+			list = &lists[i]
 		}
 	}
-	if !inside {
-		r.state, r.note = notMeasurable, "the position is outside every function body"
+	switch {
+	case list == nil:
+		r.state, r.note = notMeasurable, "the place is outside every function body"
+		return r
+	case len(list.stmts) == 0:
+		r.state, r.note = notMeasurable, "the statement list that holds the place has no statement"
 		return r
 	}
-	var touching []block
-	for _, b := range blocks {
-		ofBody := b.startLine >= body[0] && b.endLine <= body[1]
-		if ofBody && ((b.startLine <= k && b.endLine >= k+1) || b.startLine == k+1) {
-			touching = append(touching, b)
+	decider := list.stmts[len(list.stmts)-1]
+	for _, p := range list.stmts {
+		if p.Line > k {
+			decider = p
+			break
 		}
 	}
-	return judge(r, touching, "no block of its function body contains the position or begins on the line after it")
+	var holding []block
+	for _, b := range blocks {
+		if b.holds(decider.Line, decider.Column) {
+			holding = append(holding, b)
+		}
+	}
+	r = judge(r, holding, fmt.Sprintf("no block of the profile holds the statement on target line %d that decides it", decider.Line))
+	if r.note == "" {
+		r.note = fmt.Sprintf("decided by the statement on target line %d", decider.Line)
+	}
+	return r
+}
+
+// holds reports whether the block covers the position line.col.
+func (b block) holds(line, col int) bool {
+	after := line > b.startLine || (line == b.startLine && col >= b.startCol)
+	before := line < b.endLine || (line == b.endLine && col <= b.endCol)
+	return after && before
 }
 
 // judge sets a region's state from the blocks that overlap or touch it, keeping those that
@@ -212,27 +235,63 @@ func profileBlocks(profile []byte, base string) ([]block, error) {
 	return blocks, scanner.Err()
 }
 
-// functionBodies lists the line of the opening and of the closing brace of every function body in
-// the target, function literals included, as Go's parser reads it.
-func functionBodies(target []byte) ([][2]int, error) {
+// stmtList is one list of statements as Go's parser reads the target: a function body, a block,
+// a branch of an if, or a clause of a switch or select. A line inserted after line k joins it
+// when openLine <= k and k+1 <= closeLine; open orders nested lists, the innermost last.
+type stmtList struct {
+	open                token.Pos
+	openLine, closeLine int
+	stmts               []token.Position // where each statement begins
+}
+
+// statementLists lists every statement list of the target. A block's list lies between its
+// braces; a clause's lies between its colon and the next clause, or the closing brace of the
+// switch or select. The body of a switch or select holds clauses, not statements, and is not a
+// list.
+func statementLists(target []byte) ([]stmtList, error) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "target.go", target, parser.SkipObjectResolution)
 	if err != nil {
 		return nil, fmt.Errorf("the target could not be parsed: %w", err)
 	}
-	var bodies [][2]int
-	ast.Inspect(file, func(n ast.Node) bool {
-		var body *ast.BlockStmt
-		switch f := n.(type) {
-		case *ast.FuncDecl:
-			body = f.Body
-		case *ast.FuncLit:
-			body = f.Body
+	var lists []stmtList
+	add := func(open token.Pos, closeAt token.Pos, stmts []ast.Stmt) {
+		l := stmtList{open: open, openLine: fset.Position(open).Line, closeLine: fset.Position(closeAt).Line}
+		for _, st := range stmts {
+			l.stmts = append(l.stmts, fset.Position(st.Pos()))
 		}
-		if body != nil {
-			bodies = append(bodies, [2]int{fset.Position(body.Lbrace).Line, fset.Position(body.Rbrace).Line})
+		lists = append(lists, l)
+	}
+	clauseBodies := map[*ast.BlockStmt]bool{}
+	clauses := func(body *ast.BlockStmt) {
+		clauseBodies[body] = true
+		for i, c := range body.List {
+			next := body.Rbrace
+			if i+1 < len(body.List) {
+				next = body.List[i+1].Pos()
+			}
+			switch c := c.(type) {
+			case *ast.CaseClause:
+				add(c.Colon, next, c.Body)
+			case *ast.CommClause:
+				add(c.Colon, next, c.Body)
+			}
+		}
+	}
+	ast.Inspect(file, func(n ast.Node) bool {
+		switch s := n.(type) {
+		case *ast.SwitchStmt:
+			clauses(s.Body)
+		case *ast.TypeSwitchStmt:
+			clauses(s.Body)
+		case *ast.SelectStmt:
+			clauses(s.Body)
+		case *ast.BlockStmt:
+			if !clauseBodies[s] {
+				add(s.Lbrace, s.Rbrace, s.List)
+			}
 		}
 		return true
 	})
-	return bodies, nil
+	return lists, nil
 }

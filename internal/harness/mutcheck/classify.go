@@ -166,17 +166,19 @@ func (o *observed) readLine(line, test string, ours bool, exp expectation) {
 func read(f facts, mutant bool, bound time.Duration) reading {
 	switch {
 	case f.bounded:
-		return reading{inconclusive, fmt.Sprintf("the run had not ended by the bound of %s, twice its timeout, and was stopped with every process it started", bound)}
+		return reading{inconclusive, fmt.Sprintf("the run had not ended by the bound of %s, twice its timeout, and was stopped with its process group", bound)}
 	case f.buildFailed && mutant:
 		return reading{invalid, "the wrong change does not build"}
 	case f.buildFailed:
 		return reading{inconclusive, "the unchanged code does not build"}
-	case !f.selected:
-		return reading{inconclusive, "the name selected no test; a test in a file built only with the integration tag is not run by this command"}
+	// A timeout or a signal can end the run before the named test starts; the reason names what
+	// ended it, not the selection.
 	case f.timedOut:
 		return reading{inconclusive, "go test's whole-run timeout ended the run"}
 	case f.signal != "":
 		return reading{inconclusive, "the test process was ended by a signal: " + f.signal}
+	case !f.selected:
+		return reading{inconclusive, "the name selected no test; a test in a file built only with the integration tag is not run by this command"}
 	case f.result == "pass" && f.exitZero:
 		return reading{pass, "the named test passed and go test exited zero"}
 	case f.result == "pass":

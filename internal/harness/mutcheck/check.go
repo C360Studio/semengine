@@ -134,15 +134,17 @@ func decideRuns(c checkResult) (outcome, string) {
 			return inconclusive, "the mutant runs disagree: " + strings.Join(each, ", ")
 		}
 	}
-	if first == invalid {
-		return invalid, "the wrong change does not build"
-	}
+	// Invalid, like survivor and detection, needs the after-run to pass: a build that breaks for
+	// every run after the baselines says nothing about the wrong change.
 	if c.after == nil || c.after.reading.outcome != pass {
 		why := "it was not made"
 		if c.after != nil {
 			why = c.after.reading.reason
 		}
 		return inconclusive, "the after-run on the unchanged code did not pass: " + why
+	}
+	if first == invalid {
+		return invalid, "the wrong change does not build"
 	}
 	if first == detection {
 		return detection, fmt.Sprintf("each of the %d mutant runs failed the named test with an expected line, and the after-run passed", len(c.mutants))

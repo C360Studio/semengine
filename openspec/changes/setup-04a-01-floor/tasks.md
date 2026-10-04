@@ -551,7 +551,7 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         open. Codex's checkpoint review at `7ce1940` (PR #48 comment 5980134911) requested changes F21–F25; the
         guarantees above that they correct (the claim-release refusal, "no callback runs once Close has begun", the
         losing-Connect status) are superseded by 3.7c2.
-- [ ] 3.7c2 (D) Hold: owner ruling on question 4 (#9; accept losing one AckNone message). Hold: Codex's re-review.
+- [ ] 3.7c2 (D) Hold: Codex's re-review of the fix commits, recorded on this pull request.
       Codex F21–F25 (PR #48 comment 5980134911; design D3 `natsclient-close-is-final`,
       `natsclient-close-honours-each-context`, `natsclient-status-ownership`,
       `natsclient-close-reports-drain-timeout`, and the generated-checks decision). Tests written first and shown to
@@ -566,8 +566,22 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       -count=20 -run 'Lifecycle|Close|Connect|Subscribe|Consume' ./natsclient`, `task test:integration --
       ./natsclient` and `task test:repeat` pass. D3, the ledger row and the `Close` doc comment state the corrected
       wording (F24). The late-delivery refusal loses one AckNone message, logged at warn level and counted as
-      `late_delivery_refused`; D3 and the ledger row declare it, and it stands only if the owner accepts it (question
-      4). The second hold is Codex's re-review of the fix commits, recorded on this pull request.
+      `late_delivery_refused`; D3 and the ledger row declare it, and the owner accepted it
+      (question 4, #9 comment 5980769459).
+      - Done in `91832ab` (implementer-reported, PR #48). Failing first at `7ce1940`, each for its stated reason:
+        tests 1, 6, 11, 18 and 20, a live `Close` returned nil while the handler was held; 2 and 17, the refused
+        setup returned at once with its claim released; 3 and 9, the second `Close` and the `Connect` waited 10 s on
+        the drain; 4, the loser left `Disconnected` or `Connecting`; 7, `Connect` after `Close` dialled; 8 and 13, the
+        status became `CircuitOpen` and `Failures()` 15; 12, the loser returned while its candidate's closed handler
+        ran; 14, 16 rows of the closing and closed states; 15, the adapter listed nothing; 16, the handler ran; 19,
+        nil and an unwrapped timeout. Tests 5, 10 and 4's held-failure-write case needed the private commit seam,
+        added alone to `7ce1940` for that run; 16's core case needs the new subscribe seam and is shown by mutant
+        M6. 21 mutants, one per fix, all detected, none surviving. `go test -race -count=20 -run
+        'Lifecycle|Close|Connect|Subscribe|Consume' ./natsclient/` exit 0; `task verify` ok, its integration and
+        repeat steps included. Departures from the design: test 6 runs real JetStream on an embedded server in the
+        unit lane, not the Docker lane; test 15 checks the adapter directly, not through the suite; the
+        replaced-connection unsubscribe is done by a per-subscription watcher, because the carried guard
+        `TestClientHasNoChildLifecycleSurfaceOrCatalog` forbids a subscription catalog.
 - [ ] 3.7d (D) Hold: Codex's checkpoint review of 3.7c and 3.7c2 (concurrency), recorded on this pull request. `natsclient`
       metrics (design D9; item 4): the three consumer collectors that `Add` cumulative server values on every poll
       (`jetstream_metrics.go:305-307`) become gauges `Set` from server state — `consumer_delivered_total` →

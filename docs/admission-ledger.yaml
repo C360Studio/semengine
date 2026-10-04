@@ -373,12 +373,15 @@
     watcher_test.go:222-242, replaced by TestWatcher_Run_SecondRunRefused) and
     TestWatcher_Stop_Idempotent (:244-261; Run has no Stop to repeat)
   proving_tests: >-
-    internal/resource/watcher_test.go, every test inside synctest.Test except Name, ConfigDefaults
-    and ImmediateSuccess; new, written first: TestWatcher_Run_ReturnsOnCancelAndLeavesNothing,
+    internal/resource/watcher_test.go, every test inside synctest.Test except Name and
+    ConfigDefaults, which use no clock; new, written first: TestWatcher_Run_ReturnsOnCancelAndLeavesNothing,
     TestWatcher_Run_NilContextRefused, TestWatcher_Run_SecondRunRefused. D8 repairs (R1a, sleep to
-    the bubble's clock): pin watcher_test.go:151 → watcher_test.go:175-176; :208 → :229-230; :324 →
-    :352; :333 → :363; :335 → :365; :363 → :395-396; the real-clock 500 ms elapsed bound (:104) →
-    an exact 100 ms on the bubble's clock (:115); the unjoined toggler goroutine (:330) joins (:357)
+    the bubble's clock): pin watcher_test.go:151 → watcher_test.go:179-180; :208 → :233-234; :324 →
+    :356; :333 → :367; :335 → :369; :363 → :399-400; the real-clock 500 ms elapsed bound (:104) →
+    an exact 100 ms on the bubble's clock (:119); the unjoined toggler goroutine (:330) joins (:361).
+    Task 3.10 review HIGH-1 (PR #48 comment 5984567497): ImmediateSuccess's real-clock 5 s deadline
+    (pin :20), below D8 R1b's 10 s, → the test runs inside synctest.Test (:20-38), where that
+    deadline is on the bubble's clock and cannot end a correct run (R1a)
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -825,7 +828,16 @@
     (:29-52) takes *MetricsRegistry and keeps the returned collectors;
     IdempotentRegistration (:90) and MultipleServicesSameNames (:210) now assert the summed
     gathered value; MultipleServicesWithUniqueMetrics (:193) asserted the alias succeeded and now
-    asserts the fatal refusal
+    asserts the fatal refusal. Real-clock bounds, design D8 R1b (task 3.10 review, PR #48 comment
+    5984567497, HIGH-1 and MEDIUM-2): handler_test.go gains failureBound, 10 s (:83). The 5 s
+    failure bounds carried from the pin take it: the cleanup Stop contexts pin :95, :345, :422 →
+    :100, :350, :427, and the cleanup waits pin :336, :342, :419 → :341, :347, :424. So do the
+    HTTP client timeouts on requests the tests expect to succeed: testServerGET's default client,
+    pin :87 (2 s) → :92; the TLS test's client, pin :308 (2 s) → :313; the mTLS test's client in
+    the new file tls_test.go:76 (5 s); and the dial that must succeed once Start returns, pin :155
+    (250 ms) → :160. Kept, because their expiry can only miss a defect and never fail a correct
+    run: the three dials that must be refused after Stop, pin :115, :168, :456 (100 ms) → :120,
+    :173, :461; a timeout there also returns the error the test asserts
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -1239,7 +1251,9 @@
     once Close has begun only Close changes Status, which keeps its value through the drain and is
     Disconnected for good once the cleanup has finished; Connect after Close refuses before dialling
     (the pin dialled). Each changed behaviour above is an adapt item with its test (design D3; task
-    3.7c2; the new tests named in (1)-(9) are in the new file client_close_final_test.go): (1) Subscribe and SubscribeForRequests after Close has begun return
+    3.7c2; the new tests named in (1)-(9) are in the new file client_close_final_test.go; new
+    production file natsclient/owned_delivery.go, ownedDelivery, beyond the pin: design D3
+    natsclient-close-is-final, Codex F21; #9 comments 5980296112, 5980769459): (1) Subscribe and SubscribeForRequests after Close has begun return
     nats.ErrConnectionClosed, where the pin returned ErrNotConnected after Close or subscribed on
     the draining connection (the closing and closed rows of TestClientLifecycleOperationTable;
     the carried TestContextAwareMethods, client_test.go:386-389, now asserts it); (2)
@@ -1747,7 +1761,14 @@
     :130, :228 → :230, :236 → :238, :273 → :277, :309 → :313; storage_inventory collector
     Timeout :241 → :236; stream_visibility :58 → :59; stream :214 → :215, :644 → :652; and the
     5 s cleanup bounds client_async_error :34, stream_capacity_circuit :121, subscription :28 →
-    closeBudget (:35, :120, :23). Polls on a timer of their own become probe.Await: client_async_error
+    closeBudget (:35, :120, :23). Operation timeouts under 10 s that tests pass to the client for
+    operations they expect to succeed are R1b failure bounds too, as the storage_inventory
+    collector Timeout above, and take failureBound (task 3.10 review, PR #48 comment 5984567497,
+    MEDIUM-2): the KVOptions.Timeout of kv_error :38 → :38, :84 → :84, :205 → :205, :304 → :290
+    (1 s and 5 s) and kv :409 → :417 (5 s, the "reasonable timeout" subtest); the per-request
+    timeouts of errors :84 → :82, :135 → :132, :164 → :160, :231 → :226, :276 → :270 (2 s). The
+    1 ns timeouts at kv_error :149 and kv :397, whose expiry is what those subtests exercise, and
+    the late responder at errors :318 (below) stay. Polls on a timer of their own become probe.Await: client_async_error
     :130 1 ms ticker → :131; delivery_settlement Eventually :129 → :131; publish_msgid Eventually
     :59 → :103 (the expiry check, below); kv_watcher_ownership :98-125 3 s timer and 10 ms ticker → :99, under the framework
     child's own context; internal_consumer_lifecycle's two runtime.Gosched spins with no bound

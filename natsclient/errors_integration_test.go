@@ -79,7 +79,7 @@ func TestIntegration_RequestClassified_RoundTripPreservesClass(t *testing.T) {
 			// the same connection.
 			flushClient(t, client)
 
-			data, err := client.RequestClassified(ctx, subject, []byte("ping"), 2*time.Second)
+			data, err := client.RequestClassified(ctx, subject, []byte("ping"), failureBound)
 			if data != nil {
 				t.Errorf("data should be nil on classified error; got %q", data)
 			}
@@ -129,7 +129,7 @@ func TestIntegration_LegacyRequest_SuccessBodyUnchanged(t *testing.T) {
 	require.NoError(t, err)
 	flushClient(t, client)
 
-	data, err := client.Request(ctx, subject, []byte("ping"), 2*time.Second)
+	data, err := client.Request(ctx, subject, []byte("ping"), failureBound)
 	require.NoError(t, err)
 	if !bytes.Equal(data, want) {
 		t.Fatalf("Request success body diverged from handler bytes:\n  got  %q\n  want %q", data, want)
@@ -157,7 +157,7 @@ func TestIntegration_RequestClassified_SuccessPath(t *testing.T) {
 	require.NoError(t, err)
 	flushClient(t, client)
 
-	data, err := client.RequestClassified(ctx, subject, []byte("ping"), 2*time.Second)
+	data, err := client.RequestClassified(ctx, subject, []byte("ping"), failureBound)
 	require.NoError(t, err)
 	if string(data) != string(want) {
 		t.Fatalf("data = %q, want %q", data, want)
@@ -223,7 +223,7 @@ func TestIntegration_RequestWithRetryClassified_RoundTripPreservesClass(t *testi
 			require.NoError(t, err)
 			flushClient(t, client)
 
-			data, err := client.RequestWithRetryClassified(ctx, subject, []byte("write"), 2*time.Second, retry)
+			data, err := client.RequestWithRetryClassified(ctx, subject, []byte("write"), failureBound, retry)
 			if data != nil {
 				t.Errorf("data should be nil on classified error; got %q", data)
 			}
@@ -267,7 +267,7 @@ func TestIntegration_RequestWithRetryClassified_SuccessPath(t *testing.T) {
 	require.NoError(t, err)
 	flushClient(t, client)
 
-	data, err := client.RequestWithRetryClassified(ctx, subject, []byte("write"), 2*time.Second, DefaultRetryConfig())
+	data, err := client.RequestWithRetryClassified(ctx, subject, []byte("write"), failureBound, DefaultRetryConfig())
 	require.NoError(t, err)
 	if !bytes.Equal(data, want) {
 		t.Fatalf("data = %q, want %q", data, want)

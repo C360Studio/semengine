@@ -414,7 +414,7 @@ func TestKVStore_Timeout(t *testing.T) {
 
 	t.Run("normal operations with reasonable timeout", func(t *testing.T) {
 		kvStore := client.NewKVStore(bucket, func(opts *KVOptions) {
-			opts.Timeout = 5 * time.Second // Reasonable timeout
+			opts.Timeout = failureBound // Reasonable timeout (design D8 R1b)
 		})
 
 		// Should complete normally

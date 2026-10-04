@@ -35,7 +35,7 @@ func TestKVStore_ErrorBoundaries(t *testing.T) {
 		kv := client.NewKVStore(bucket, func(opts *KVOptions) {
 			opts.MaxRetries = 3
 			opts.RetryDelay = 10 * time.Millisecond
-			opts.Timeout = time.Second
+			opts.Timeout = failureBound
 			opts.MaxValueSize = 100 // Small limit for testing
 		})
 
@@ -81,7 +81,7 @@ func TestKVStore_ErrorBoundaries(t *testing.T) {
 		kv := client.NewKVStore(bucket, func(opts *KVOptions) {
 			opts.MaxRetries = 20 // High retry count for stress test
 			opts.RetryDelay = 5 * time.Millisecond
-			opts.Timeout = 5 * time.Second
+			opts.Timeout = failureBound
 			opts.UseExponentialBackoff = true
 			opts.MaxRetryDelay = 100 * time.Millisecond
 		})
@@ -202,7 +202,7 @@ func TestKVStore_ErrorBoundaries(t *testing.T) {
 		kv := client.NewKVStore(bucket, func(opts *KVOptions) {
 			opts.MaxRetries = 2 // Low retry count
 			opts.RetryDelay = 5 * time.Millisecond
-			opts.Timeout = time.Second
+			opts.Timeout = failureBound
 		})
 
 		// Create initial value
@@ -287,7 +287,7 @@ func TestKVStore_ErrorBoundaries(t *testing.T) {
 		kv := client.NewKVStore(bucket, func(opts *KVOptions) {
 			opts.MaxRetries = 3
 			opts.RetryDelay = 10 * time.Millisecond
-			opts.Timeout = time.Second
+			opts.Timeout = failureBound
 		})
 
 		_, err := bucket.Create(ctx, "must-exist-tombstone-key", []byte("initial"))

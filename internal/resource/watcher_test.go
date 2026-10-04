@@ -15,23 +15,27 @@ import (
 // so no test paces itself on the real clock (design D8, R1a).
 
 func TestWatcher_WaitForStartup_ImmediateSuccess(t *testing.T) {
-	// Resource available immediately
-	checkFn := func(_ context.Context) error {
-		return nil
-	}
+	// Inside the bubble the 5 s deadline is on the fake clock, so it cannot end a correct run on a
+	// slow host (design D8, R1a; the pin ran it on the real clock).
+	synctest.Test(t, func(t *testing.T) {
+		// Resource available immediately
+		checkFn := func(_ context.Context) error {
+			return nil
+		}
 
-	w := NewWatcher("test-resource", checkFn, DefaultConfig())
+		w := NewWatcher("test-resource", checkFn, DefaultConfig())
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
 
-	if !w.WaitForStartup(ctx) {
-		t.Error("expected WaitForStartup to return true when resource is available")
-	}
+		if !w.WaitForStartup(ctx) {
+			t.Error("expected WaitForStartup to return true when resource is available")
+		}
 
-	if !w.IsAvailable() {
-		t.Error("expected IsAvailable to return true after successful startup")
-	}
+		if !w.IsAvailable() {
+			t.Error("expected IsAvailable to return true after successful startup")
+		}
+	})
 }
 
 func TestWatcher_WaitForStartup_EventualSuccess(t *testing.T) {

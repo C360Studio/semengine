@@ -77,6 +77,11 @@ func newBlockingCollector() *blockingCollector {
 	}
 }
 
+// failureBound bounds a wait, and an operation the test expects to succeed, that a correct server
+// finishes sooner; it is reached only when the server is wrong. Design D8 R1b sizes it at 10 s at
+// least, because the lanes run under -race -cpu 1.
+const failureBound = 10 * time.Second
+
 func testServerGET(t *testing.T, address string, client *http.Client) (*http.Response, error) {
 	t.Helper()
 	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, address, nil)
@@ -84,7 +89,7 @@ func testServerGET(t *testing.T, address string, client *http.Client) (*http.Res
 		return nil, err
 	}
 	if client == nil {
-		client = &http.Client{Timeout: 2 * time.Second}
+		client = &http.Client{Timeout: failureBound}
 	}
 	return client.Do(request)
 }
@@ -92,7 +97,7 @@ func testServerGET(t *testing.T, address string, client *http.Client) (*http.Res
 func registerServerCleanup(t *testing.T, server *Server) {
 	t.Helper()
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), failureBound)
 		defer cancel()
 		require.NoError(t, server.Stop(ctx))
 	})
@@ -152,7 +157,7 @@ func TestServerStartOwnsListenerAndRequiresFreshInstanceForRestart(t *testing.T)
 	registerServerCleanup(t, server)
 	require.Equal(t, "http://"+address+"/metrics", server.Address())
 	require.Same(t, t.Context(), server.server.BaseContext(server.listener))
-	connection, err := net.DialTimeout("tcp", address, 250*time.Millisecond)
+	connection, err := net.DialTimeout("tcp", address, failureBound)
 	require.NoError(t, err, "Start must return only after the listener is owned")
 	require.NoError(t, connection.Close())
 	response, err := testServerGET(t, server.Address(), nil)
@@ -305,7 +310,7 @@ func TestServerStartWithListenerAppliesConfiguredTLSOnce(t *testing.T) {
 	require.Equal(t, "https://"+listener.Addr().String()+"/metrics", server.Address())
 	pool := x509.NewCertPool()
 	require.True(t, pool.AppendCertsFromPEM(certPEM))
-	client := &http.Client{Timeout: 2 * time.Second, Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}} //nolint:gosec // trusted test CA
+	client := &http.Client{Timeout: failureBound, Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool}}} //nolint:gosec // trusted test CA
 	response, err := testServerGET(t, server.Address(), client)
 	require.NoError(t, err)
 	require.NoError(t, response.Body.Close())
@@ -333,16 +338,16 @@ func TestServerConcurrentStopIsTypedTransientAndDoesNotHoldLifecycleLock(t *test
 		if stopFinished != nil {
 			select {
 			case <-stopFinished:
-			case <-time.After(5 * time.Second):
+			case <-time.After(failureBound):
 				t.Error("concurrent Stop did not finish after collector release")
 			}
 		}
 		select {
 		case <-requestFinished:
-		case <-time.After(5 * time.Second):
+		case <-time.After(failureBound):
 			t.Error("metrics request did not finish after collector release")
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), failureBound)
 		defer cancel()
 		require.NoError(t, server.Stop(ctx))
 	})
@@ -416,10 +421,10 @@ func TestServerStopIsCallerBounded(t *testing.T) {
 		releaseCollector()
 		select {
 		case <-requestFinished:
-		case <-time.After(5 * time.Second):
+		case <-time.After(failureBound):
 			t.Error("metrics request did not finish after collector release")
 		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), failureBound)
 		defer cancel()
 		require.NoError(t, server.Stop(ctx))
 	})

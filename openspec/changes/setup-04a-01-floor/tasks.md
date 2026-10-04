@@ -129,10 +129,11 @@ this pull request as a comment unless a task says otherwise. No task asserts a f
       `TestImportGraphRejectsHarnessHelpersOutsideTheHarness` plants both files at their pin paths and in the harness:
       T-B1 refuses the first and admits the second (implementer-reported: it failed first with the helpers absent, and
       with `testing` dropped from the forbidden list it failed naming `internal/semantictest/fixtures.go`). `go list
-      -deps`, implementer-reported: `semantictest` reaches `pkg/retry`, `pkg/errs`, `pkg/types`, `pkg/platform`,
-      `vocabulary`; `payloadfixture` those and `pkg/projection/contract`, `payloadregistry`; none has a `go` statement
-      in a non-test file, and no test of any of them imports either helper (their `TestImports` and `XTestImports`), as
-      P5 says of the pin.
+      -deps`, implementer-reported at `62d9f47`: `semantictest` reaches `pkg/retry`, `pkg/errs`, `pkg/types`,
+      `pkg/platform`, `vocabulary` (at `887f41b`, measured by the 3.10 review, the same without `pkg/platform`, which
+      left when task 3.6b removed `vocabulary.EntityIRI`); `payloadfixture` those and `pkg/projection/contract`,
+      `payloadregistry`; none has a `go` statement in a non-test file, and no test of any of them imports either
+      helper (their `TestImports` and `XTestImports`), as P5 says of the pin.
 - [x] 2.9 (R) Harness review of tasks 2.1–2.7 and 2.10: the additions against the deltas, the fault matrices'
       completeness, and the `natsfixture` import list. Verdict recorded on this pull request before any ported
       package lands. Task 2.8 is not in this review; it is reviewed with section 3's port review (task 3.10).
@@ -782,8 +783,9 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         ./pkg/types/` passes its three property tests. Rapid is also imported by two files this change adds,
         `metric/registerorget_prop_test.go` and `internal/cache/coalescing_set_prop_test.go`.
       - Counts are over `*_test.go` in each package directory (not subdirectories), the pin from the GitHub tarball
-        of `8b99efe9` with `find` and `wc -l`, the tree at `38a1074` (re-measured after tasks 4.2 and 4.3 added
-        tests). Test files: the pin's 127 (the 15 packages' 125 and `pkg/acme`'s 2) − 6 excluded `natsclient` files
+        of `8b99efe9` with `find` and `wc -l`, the tree at the commit that fixes the 3.10 review's HIGH-1 and
+        MEDIUM-2 (re-measured after tasks 4.2 and 4.3 added tests, and again after that fix). Test files: the
+        pin's 127 (the 15 packages' 125 and `pkg/acme`'s 2) − 6 excluded `natsclient` files
         − 2 `pkg/acme` − 2 removed with dropped
         surface (`typed_test.go`, `kv_temporal_integration_test.go`; no other surface audit removed a file) =
         117, + 17 added = 134, which is the tree's count. The 17, each named on its row: `metric` 5
@@ -798,19 +800,23 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         `test_client_factory_test.go` 312, `test_client_integration_test.go` 361, `test_client_readiness_test.go`
         581, `monitoring_consumers_test.go` 139). Less the four other removed files (`test_options_test.go` 55,
         `mapped_port_retry_test.go` 276, `typed_test.go` 364, `kv_temporal_integration_test.go` 238): 32,346. The
-        tree has 38,456. Tests deleted inside carried files (`TestTemporalResolver_ErrorBoundaries`, 3.7a's
+        tree has 38,476. Tests deleted inside carried files (`TestTemporalResolver_ErrorBoundaries`, 3.7a's
         deletions) are counted in the diff stat, not subtracted one by one. Diff stat of the test files against the
         pin (plain `diff -U0`, added and removed lines; a removed file counts all its lines): `internal/resource`
-        +313 −225; `pkg/retry` +119 −110; `internal/timestamp` +1 −1; `vocabulary` +0 −80; `pkg/types` +41 −9;
-        `pkg/projection/contract` +1 −1; `internal/tlsutil` +2 −2; `metric` +1,123 −305; `payloadregistry` +3 −3;
-        `message` +1,370 −6; `internal/cache` +1,770 −937; `natsclient` +5,188 −4,468; `pkg/errs`, `pkg/platform`,
-        `pkg/security` unchanged; total +9,931 −6,147, and 34,887 − 215 + 9,931 − 6,147 = 38,456.
+        +329 −237; `pkg/retry` +119 −110; `internal/timestamp` +1 −1; `vocabulary` +0 −80; `pkg/types` +41 −9;
+        `pkg/projection/contract` +1 −1; `internal/tlsutil` +2 −2; `metric` +1,137 −314; `payloadregistry` +3 −3;
+        `message` +1,370 −6; `internal/cache` +1,770 −937; `natsclient` +5,209 −4,478; `pkg/errs`, `pkg/platform`,
+        `pkg/security` unchanged; total +9,982 −6,178, and 34,887 − 215 + 9,982 − 6,178 = 38,476.
 - [ ] 3.10 (R) Port review per package group (3.1–3.7e) and of task 2.8's rehomed helpers: the two service adapters list
       every retained kind (the review checklist of the `lifecycle-suite` delta); each helper has the shape design D7
       gives it, its `synctest` test and its nil-context refusal, and no fixed shutdown timeout remains
-      (`background-work` delta); rows validate, no file beyond the pin's was added except the two adapters, the
-      test-side helper file that replaces `test_client.go`, the `natsfixture` max-payload option and its test, and the
-      rewritten `NewTestClient` sites; the census tests' expected maps match the tree; and every D8 repair is on its
+      (`background-work` delta); rows validate, no file beyond the pin's was added except: the two adapters; the two
+      test-side helper files that replace `test_client.go` (`test_helpers_test.go`, `test_helpers_integration_test.go`);
+      `natsclient/owned_delivery.go` and `client_close_final_test.go` (D3 F21–F28); `metric/admission_test.go`,
+      `registerorget_test.go`, `registerorget_prop_test.go`, `tls_test.go`; the four `message` test files (3.6b); the
+      four `internal/cache` test files (D7); `internal/harness/payloadfixture/doc.go`; the `natsfixture` max-payload
+      option and its tests; and the rewritten `NewTestClient` sites (corrected per the 3.10 review, PR #48 comment
+      5984567497, MEDIUM-3); the census tests' expected maps match the tree; and every D8 repair is on its
       row; every real-clock timer in a repaired file is either an R1b failure bound sized per D8 or a site in D8's
       disposition table with that disposition (a review check the text check cannot make);
       `go test -v -run TestPublicSignatures ./internal/harness/contract` shows "public packages checked: 11" and passes,

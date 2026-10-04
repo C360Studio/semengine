@@ -73,7 +73,7 @@ func TestServerRequiredMTLSRejectsClientWithoutCertificate(t *testing.T) {
 	clientFor := func(certs ...tls.Certificate) *http.Client {
 		transport := &http.Transport{TLSClientConfig: &tls.Config{RootCAs: roots, Certificates: certs}}
 		t.Cleanup(transport.CloseIdleConnections)
-		return &http.Client{Timeout: 5 * time.Second, Transport: transport}
+		return &http.Client{Timeout: failureBound, Transport: transport}
 	}
 
 	response, err := testServerGET(t, server.Address(), clientFor())

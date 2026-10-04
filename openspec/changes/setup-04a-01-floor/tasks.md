@@ -551,7 +551,7 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         open. Codex's checkpoint review at `7ce1940` (PR #48 comment 5980134911) requested changes F21–F25; the
         guarantees above that they correct (the claim-release refusal, "no callback runs once Close has begun", the
         losing-Connect status) are superseded by 3.7c2.
-- [ ] 3.7c2 (D) Hold: Codex's re-review of the fix commits, recorded on this pull request.
+- [x] 3.7c2 (D) Lifted: Codex's re-review of the fix commits, Codex APPROVE at `4e44422`, comment 5982063929.
       Codex F21–F25 (PR #48 comment 5980134911; design D3 `natsclient-close-is-final`,
       `natsclient-close-honours-each-context`, `natsclient-status-ownership`,
       `natsclient-close-reports-drain-timeout`, and the generated-checks decision). Tests written first and shown to
@@ -644,6 +644,13 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         `SetConnection(nil)` and a second `Connect`, and requires `Close` to stop the consumer. Run against the
         attribution read at admission (mutant M18), both cases failed: `Close did not stop the consumer on the first
         connection (stopped=false)`.
+      - The early check of `a2f975a` bounded every receive on the test goroutine of `client_close_final_test.go`
+        (`awaitValue`, `await`, `awaitErr`). Codex's approval at `4e44422` left F28: test 22 released its fake holds
+        only on the success path. Each fake hold in the file released only there (test 22's gate and native end;
+        the native end of tests 6 and 16; the native return of tests 2 and 17) is now an idempotent release that
+        `t.Cleanup` also runs (`releaseInCleanup`), and test 22's cleanup joins its setup goroutine within
+        `lifecycleBound`. Shown under mutant M18, which fails before both releases: a goroutine stack probe in the
+        parent test's cleanup found a goroutine blocked in the fake at `4e44422` and none after the fix.
       - Departures from the design, each recorded here:
         - Test 6 runs real JetStream on an embedded server in the unit lane, not the Docker lane.
         - Test 15 checks the lifecycle adapter directly, not through the suite.
@@ -663,7 +670,8 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         - The tests check that a call is still waiting through in-package state (`requireJoinPending`,
           `requireJoinOpen`, the closed-handler wait in test 12), observed at a named wait point under a 10 s failure
           bound, never with a short real-clock wait (design D8, R1b; implementation early check, finding I-1).
-- [ ] 3.7d (D) Hold: Codex's checkpoint review of 3.7c and 3.7c2 (concurrency), recorded on this pull request. `natsclient`
+- [ ] 3.7d (D) Lifted: Codex's checkpoint review of 3.7c and 3.7c2 (concurrency), Codex APPROVE at `4e44422`, comment
+      5982063929; the metrics work below remains. `natsclient`
       metrics (design D9; item 4): the three consumer collectors that `Add` cumulative server values on every poll
       (`jetstream_metrics.go:305-307`) become gauges `Set` from server state — `consumer_delivered_total` →
       `consumer_delivered_stream_sequence` (`Delivered.Stream`), `consumer_acked_total` →

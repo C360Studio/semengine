@@ -83,6 +83,16 @@ func awaitValue[T any](t *testing.T, ch <-chan T, what string) T {
 	}
 }
 
+// releaseInCleanup returns an idempotent close of a fake's hold channel and registers it in
+// t.Cleanup, so a test that fails before its normal-path release leaves no goroutine waiting on
+// the fake. Inside a synctest bubble the cleanup runs before the bubble waits for its goroutines.
+func releaseInCleanup(t *testing.T, ch chan struct{}) func() {
+	var once sync.Once
+	release := func() { once.Do(func() { close(ch) }) }
+	t.Cleanup(release)
+	return release
+}
+
 // closeAsync runs Close(ctx) on its own goroutine.
 func closeAsync(ctx context.Context, c *Client) <-chan error {
 	out := make(chan error, 1)
@@ -314,6 +324,7 @@ func TestClientRefusedConsumerKeepsOwnershipUntilHandlersReturn(t *testing.T) {
 				c.js = &streamOnlyJetStream{fakeJetStream: &fakeJetStream{}, stream: &consumerOnlyStream{consumer: native}}
 				c.mu.Unlock()
 				c.setStatus(StatusConnected)
+				returnHandle := releaseInCleanup(t, native.returnHandle)
 				type result struct {
 					handle jetstream.ConsumeContext
 					err    error
@@ -332,7 +343,7 @@ func TestClientRefusedConsumerKeepsOwnershipUntilHandlersReturn(t *testing.T) {
 				ended, cancel := context.WithCancel(t.Context())
 				cancel()
 				require.ErrorIs(t, c.Close(ended), context.Canceled)
-				close(native.returnHandle)
+				returnHandle()
 				synctest.Wait()
 				var early *result
 				select {
@@ -671,6 +682,7 @@ func TestClientCloseJoinsConsumerHandlerWhenClosedReportsEarly(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			native := newKeptHandlerConsumer("S_EARLY", "early", jetstream.AckExplicitPolicy)
 			c := fakeConsumerClient(t, native)
+			endNative := releaseInCleanup(t, native.handle.closed)
 			held := newHeldCall(t)
 			_, err := c.ConsumeInternalStreamWithConfig(t.Context(),
 				StreamConsumerConfig{StreamName: "S_EARLY", ConsumerName: "early"},
@@ -681,7 +693,7 @@ func TestClientCloseJoinsConsumerHandlerWhenClosedReportsEarly(t *testing.T) {
 			await(t, held.entered, "the consumer handler entering")
 
 			require.ErrorIs(t, c.Close(endedContext(t)), context.Canceled)
-			close(native.handle.closed) // native Closed() reports the end while the handler runs
+			endNative() // native Closed() reports the end while the handler runs
 			synctest.Wait()
 			live, cancel := context.WithTimeout(t.Context(), time.Hour)
 			defer cancel()
@@ -694,7 +706,7 @@ func TestClientCloseJoinsConsumerHandlerWhenClosedReportsEarly(t *testing.T) {
 			}
 			require.Equal(t, 1, claimCount(c), "the claim was released while the handler runs")
 			held.Release()
-			require.NoError(t, <-later)
+			require.NoError(t, awaitErr(t, later, "Close after the handler returned"))
 			require.Zero(t, claimCount(c))
 		})
 	})
@@ -1186,13 +1198,14 @@ func TestClientRefusesLateDeliveryAfterRecordedEnd(t *testing.T) {
 				h := newRecordingHandler("")
 				native := newKeptHandlerConsumer("S_LATE", "late", tc.ack)
 				c := fakeConsumerClient(t, native, WithLogger(slog.New(h)), WithMetrics(metric.NewMetricsRegistry()))
+				endNative := releaseInCleanup(t, native.handle.closed)
 				ran := false
 				_, err := consumeVia(t.Context(), c, tc.port,
 					StreamConsumerConfig{StreamName: "S_LATE", ConsumerName: "late", AckPolicy: tc.cfg, MaxAckPending: 17},
 					func(context.Context, jetstream.Msg) { ran = true })
 				require.NoError(t, err)
 				deliver := awaitValue(t, native.handler, "native Consume receiving the handler")
-				close(native.handle.closed) // the end, with no invocation running
+				endNative() // the end, with no invocation running
 				synctest.Wait()
 
 				msg := &mockMsg{subject: "late.one"}
@@ -1255,6 +1268,7 @@ func TestClientRefusedConsumerSetupContextEndsWhileHandlerRuns(t *testing.T) {
 					handle: handle, entered: make(chan struct{}), returnHandle: make(chan struct{}), callbackEntered: entered,
 				}
 				c := fakeConsumerClient(t, native)
+				returnHandle := releaseInCleanup(t, native.returnHandle)
 				setupCtx, cancelSetup := context.WithCancel(t.Context())
 				defer cancelSetup()
 				type result struct {
@@ -1272,7 +1286,7 @@ func TestClientRefusedConsumerSetupContextEndsWhileHandlerRuns(t *testing.T) {
 				}()
 				await(t, native.entered, "native Consume entering")
 				require.ErrorIs(t, c.Close(endedContext(t)), context.Canceled)
-				close(native.returnHandle)
+				returnHandle()
 				synctest.Wait()
 				select {
 				case r := <-results:
@@ -1302,7 +1316,7 @@ func TestClientRefusedConsumerSetupContextEndsWhileHandlerRuns(t *testing.T) {
 				default:
 				}
 				held.Release()
-				require.NoError(t, <-later)
+				require.NoError(t, awaitErr(t, later, "Close after the handler returned"))
 				require.Zero(t, claimCount(c))
 			})
 		})
@@ -1538,7 +1552,21 @@ func TestClientCloseAttributesConsumerToItsHandlesConnection(t *testing.T) {
 				err    error
 			}
 			setup := make(chan result, 1)
+			setupDone := make(chan struct{})
+			// On failure: the fake holds are released first (cleanups run last-registered first),
+			// then the setup goroutine is joined under lifecycleBound, then closeInCleanup's
+			// bounded Close joins the ownership goroutine.
+			t.Cleanup(func() {
+				select {
+				case <-setupDone:
+				case <-time.After(lifecycleBound):
+					t.Errorf("cleanup: the consumer setup did not return within %v", lifecycleBound)
+				}
+			})
+			releaseSetup := releaseInCleanup(t, gate.release)
+			endNative := releaseInCleanup(t, native.handle.closed)
 			go func() {
+				defer close(setupDone)
 				h, err := consumeVia(t.Context(), c, port,
 					StreamConsumerConfig{StreamName: "S_ATTRIBUTED", ConsumerName: "attributed"},
 					func(context.Context, jetstream.Msg) {})
@@ -1549,7 +1577,7 @@ func TestClientCloseAttributesConsumerToItsHandlesConnection(t *testing.T) {
 			c.SetConnection(nil)
 			require.NoError(t, c.Connect(t.Context()), "a second Connect after SetConnection(nil)")
 			require.NotSame(t, first, c.GetConnection(), "the second Connect dialled a new connection")
-			close(gate.release)
+			releaseSetup()
 			got := awaitValue(t, setup, "the consumer setup returning")
 			require.NoError(t, got.err)
 
@@ -1559,7 +1587,7 @@ func TestClientCloseAttributesConsumerToItsHandlesConnection(t *testing.T) {
 			stopped, err := probe.Await(ctx, func(context.Context) (bool, error) { return native.handle.stopped.Load(), nil },
 				func(s bool) bool { return s })
 			require.NoError(t, err, "Close did not stop the consumer on the first connection (stopped=%v)", stopped)
-			close(native.handle.closed)
+			endNative()
 			require.NoError(t, awaitErr(t, closed, "Close"))
 			require.False(t, first.IsClosed(), "Close closed the first connection, which SetConnection gave back")
 			require.Zero(t, claimCount(c), "the claim outlived a nil Close")

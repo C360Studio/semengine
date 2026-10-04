@@ -11,9 +11,13 @@ import (
 	"github.com/c360studio/semengine/metric"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	dto "github.com/prometheus/client_model/go"
 )
 
-func TestJetStreamPolicyMetricsShareCanonicalCollectorsAcrossOwners(t *testing.T) {
+// Task 3.7d test (2), design D9: two clients' metrics on one registry share the canonical
+// collector for each of the 11 metrics, and a value written through the second is gathered. At the
+// pin the 8 registered through the removed Register* methods were orphans for the second client.
+func TestJetStreamMetricsShareCanonicalCollectorsAcrossOwners(t *testing.T) {
 	registry := metric.NewMetricsRegistry()
 	first, err := newJetStreamMetrics(registry)
 	if err != nil {
@@ -75,6 +79,139 @@ func TestJetStreamPolicyMetricsShareCanonicalCollectorsAcrossOwners(t *testing.T
 	sort.Strings(wantNames)
 	if !reflect.DeepEqual(gotNames, wantNames) {
 		t.Fatalf("policy metric names = %v, want exact names %v", gotNames, wantNames)
+	}
+
+	// The other 8 collectors. Add, which gauges and counters share, writes through the second owner.
+	others := []struct {
+		name     string
+		same     bool
+		write    func()
+		wantType dto.MetricType
+	}{
+		{"semstreams_jetstream_stream_messages", first.streamMessages == second.streamMessages,
+			func() { second.streamMessages.WithLabelValues("EVENTS").Add(3) }, dto.MetricType_GAUGE},
+		{"semstreams_jetstream_stream_bytes", first.streamBytes == second.streamBytes,
+			func() { second.streamBytes.WithLabelValues("EVENTS").Add(3) }, dto.MetricType_GAUGE},
+		{"semstreams_jetstream_stream_state", first.streamState == second.streamState,
+			func() { second.streamState.WithLabelValues("EVENTS").Add(3) }, dto.MetricType_GAUGE},
+		{"semstreams_jetstream_consumer_pending_messages", first.consumerPending == second.consumerPending,
+			func() { second.consumerPending.WithLabelValues("EVENTS", "worker").Add(3) }, dto.MetricType_GAUGE},
+		{"semstreams_jetstream_consumer_delivered_stream_sequence", first.consumerDelivered == second.consumerDelivered,
+			func() { second.consumerDelivered.WithLabelValues("EVENTS", "worker").Add(3) }, dto.MetricType_GAUGE},
+		{"semstreams_jetstream_consumer_ack_floor_stream_sequence", first.consumerAcked == second.consumerAcked,
+			func() { second.consumerAcked.WithLabelValues("EVENTS", "worker").Add(3) }, dto.MetricType_GAUGE},
+		{"semstreams_jetstream_consumer_redelivered_messages", first.consumerRedelivered == second.consumerRedelivered,
+			func() { second.consumerRedelivered.WithLabelValues("EVENTS", "worker").Add(3) }, dto.MetricType_GAUGE},
+		{"semstreams_jetstream_operation_errors_total", first.errors == second.errors,
+			func() { second.errors.WithLabelValues("publish").Add(3) }, dto.MetricType_COUNTER},
+	}
+	for _, o := range others {
+		if !o.same {
+			t.Errorf("%s: collector identity differs across JetStream metrics owners", o.name)
+		}
+		o.write()
+	}
+	families, err = registry.PrometheusRegistry().Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := make(map[string]*dto.MetricFamily, len(families))
+	for _, family := range families {
+		byName[family.GetName()] = family
+	}
+	for _, o := range others {
+		family := byName[o.name]
+		if family == nil {
+			t.Errorf("%s: not gathered", o.name)
+			continue
+		}
+		if family.GetType() != o.wantType || len(family.Metric) != 1 {
+			t.Errorf("%s: type %v with %d series, want %v with 1", o.name, family.GetType(), len(family.Metric), o.wantType)
+			continue
+		}
+		if got := sampleValue(family.Metric[0]); got != 3 {
+			t.Errorf("%s = %v, want the 3 written through the second owner", o.name, got)
+		}
+	}
+}
+
+// sampleValue is a gauge's or a counter's gathered value.
+func sampleValue(m *dto.Metric) float64 {
+	if m.GetGauge() != nil {
+		return m.GetGauge().GetValue()
+	}
+	return m.GetCounter().GetValue()
+}
+
+// fixedConsumerInfo reports the same server state on every Info.
+type fixedConsumerInfo struct {
+	jetstream.Consumer
+	info *jetstream.ConsumerInfo
+}
+
+func (f *fixedConsumerInfo) Info(context.Context) (*jetstream.ConsumerInfo, error) {
+	return f.info, nil
+}
+
+// Task 3.7d test (1), design D9: the three consumer metrics report the server's state, so two polls
+// of an unchanged consumer gather the server's values, as gauges under their new names. At the pin
+// they were counters that added the server's cumulative values on every poll, so a second poll
+// doubled them.
+func TestJetStreamConsumerMetricsReportServerStateAcrossPolls(t *testing.T) {
+	registry := metric.NewMetricsRegistry()
+	metrics, err := newJetStreamMetrics(registry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metrics.trackConsumer("EVENTS", "worker", &fixedConsumerInfo{info: &jetstream.ConsumerInfo{
+		Stream: "EVENTS", Name: "worker", NumPending: 1, NumRedelivered: 2,
+		Delivered: jetstream.SequenceInfo{Stream: 5}, AckFloor: jetstream.SequenceInfo{Stream: 4},
+	}})
+	metrics.updateStats(context.Background())
+	metrics.updateStats(context.Background())
+
+	server := []struct {
+		name  string
+		value float64
+	}{
+		{"semstreams_jetstream_consumer_delivered_stream_sequence", 5},
+		{"semstreams_jetstream_consumer_ack_floor_stream_sequence", 4},
+		{"semstreams_jetstream_consumer_redelivered_messages", 2},
+	}
+	polled := []float64{
+		testutil.ToFloat64(metrics.consumerDelivered.WithLabelValues("EVENTS", "worker")),
+		testutil.ToFloat64(metrics.consumerAcked.WithLabelValues("EVENTS", "worker")),
+		testutil.ToFloat64(metrics.consumerRedelivered.WithLabelValues("EVENTS", "worker")),
+	}
+	for i, want := range server {
+		if polled[i] != want.value {
+			t.Errorf("%s after two polls = %v, want the server's %v", want.name, polled[i], want.value)
+		}
+	}
+
+	families, err := registry.PrometheusRegistry().Gather()
+	if err != nil {
+		t.Fatal(err)
+	}
+	byName := make(map[string]*dto.MetricFamily, len(families))
+	for _, family := range families {
+		byName[family.GetName()] = family
+	}
+	for _, want := range server {
+		family := byName[want.name]
+		if family == nil || family.GetType() != dto.MetricType_GAUGE || len(family.Metric) != 1 {
+			t.Errorf("%s: gathered %v, want one gauge series", want.name, family)
+			continue
+		}
+		if got := family.Metric[0].GetGauge().GetValue(); got != want.value {
+			t.Errorf("%s gathered %v, want the server's %v", want.name, got, want.value)
+		}
+	}
+	for _, old := range []string{"semstreams_jetstream_consumer_delivered_total",
+		"semstreams_jetstream_consumer_acked_total", "semstreams_jetstream_consumer_redelivered_total"} {
+		if byName[old] != nil {
+			t.Errorf("%s is still gathered", old)
+		}
 	}
 }
 

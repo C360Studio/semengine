@@ -1159,9 +1159,17 @@
     known_risks as dropped. Changed behavior, design D9 (task 3.7): newJetStreamMetrics registers
     all 11 collectors through metric.RegisterOrGet and keeps the collector each call returns
     (jetstream_metrics.go:128-161 at the pin, where 8 went through the removed Register* methods,
-    task 3.5a), so a second client on the same registry writes to the canonical collector. Metric
-    names, types and the semstreams namespace are unchanged (#69); the consumer counters' change to
-    gauges is task 3.7d. Changed surface, task 3.7a: the surface audit's drops listed under
+    task 3.5a), so a second client on the same registry writes to the canonical collector. Changed
+    behavior, design D9 (task 3.7d; owner ruling #9 comment 5969522395, item 4): the three consumer
+    counters that added the server's cumulative values on every poll (jetstream_metrics.go:305-307
+    at the pin → :309-311, so each poll doubled them) are gauges set from server state:
+    consumer_delivered_total → consumer_delivered_stream_sequence (Delivered.Stream),
+    consumer_acked_total → consumer_ack_floor_stream_sequence (AckFloor.Stream),
+    consumer_redelivered_total → consumer_redelivered_messages (NumRedelivered). No client label.
+    Consumer impact: a dashboard, alert or query that names one of the three old metrics, or reads
+    them as counters (rate(), increase()), finds no series under the old name and must use the new
+    name as a gauge. The other metric names and types and the semstreams namespace and jetstream
+    subsystem are unchanged (#69). Changed surface, task 3.7a: the surface audit's drops listed under
     known_risks are gone, and with them the token, TLS and compression connection options and the
     disconnect, reconnect and health-change callbacks; pingInterval (30 s), drainTimeout (30 s),
     circuitThreshold (15) and maxBackoff (one minute) keep their defaults (client.go:161-166 at
@@ -1281,6 +1289,10 @@
     handlers and connection event handlers to nats.go goroutines; Close joins all of them (design
     D3, tasks 3.7c and 3.7c2)
   known_risks: >-
+    Shared-series ownership, #75, tracked and not fixed here (#9 comment 5968830525, rule 4; owner
+    ruling #9 comment 5969776736, item 5): with two clients on one registry, one client's failed
+    stream Info sets the shared stream_state series to 0 (jetstream_metrics.go:278 at the pin → :283),
+    and forgetConsumer deletes consumer series another client still writes (:232-243 → :236-247).
     Callers awaiting a consumer handle's native Closed() can see it close early after the
     connection was force-closed (jetstream/pull.go:822-837); Client.Close's nil is the completion
     proof, and the three Consume doc comments say so (owner answer 1, #9 comment 5980296112).
@@ -1342,10 +1354,14 @@
   proving_tests: >-
     the 43 unit test files of natsclient at the pin, carried, with
     natsclient/test_helpers_test.go (testStreamMaxAge and testStreamMaxBytes, pin
-    test_client.go:912-913) in place of test_client.go. jetstream_metrics_test.go:16 proves the
-    canonical collector for the three policy gauges only, as at the pin; the test that two clients
-    on one registry share all 11 collectors, failing at the pin for the 8 that went through
-    Register*, is task 3.7d's test (2). Adapt item, the census tests rewritten for SemEngine
+    test_client.go:912-913) in place of test_client.go. jetstream_metrics_test.go:16, renamed
+    TestJetStreamMetricsShareCanonicalCollectorsAcrossOwners (it covered the three policy gauges at
+    the pin), now proves that two clients on one registry share all 11 collectors and that a value
+    written through the second is gathered (task 3.7d test (2); the pin orphaned the 8 that went
+    through Register*). TestJetStreamConsumerMetricsReportServerStateAcrossPolls proves that two
+    polls of an unchanged consumer gather the server's values under the three new gauge names
+    (task 3.7d test (1); the pin doubled them). integration_test.go reads
+    consumer_delivered_stream_sequence as a gauge. Adapt item, the census tests rewritten for SemEngine
     (owner ruling, #9 comment 5969522395, item 3), pin → SemEngine:
     TestConsumerPolicyProductionCallsiteCensus consumer_policy_callsite_test.go:217-292 → :222-229
     with the check in consumerPolicyCallsiteCensusViolations :279-336 (the pin expected 2 internal,

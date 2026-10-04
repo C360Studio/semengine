@@ -19,10 +19,12 @@ type jetstreamMetrics struct {
 	streamState    *prometheus.GaugeVec // Stream state (1=active, 0=inactive)
 
 	// Consumer state metrics
-	consumerPending     *prometheus.GaugeVec   // Pending messages by consumer
-	consumerDelivered   *prometheus.CounterVec // Total delivered by consumer
-	consumerAcked       *prometheus.CounterVec // Total acked by consumer
-	consumerRedelivered *prometheus.CounterVec // Total redelivered by consumer
+	// The server's own consumer state, set on each poll (design D9): never added to, since the
+	// server's values are already cumulative.
+	consumerPending     *prometheus.GaugeVec // Pending messages by consumer
+	consumerDelivered   *prometheus.GaugeVec // Stream sequence last delivered (Delivered.Stream)
+	consumerAcked       *prometheus.GaugeVec // Stream sequence of the ack floor (AckFloor.Stream)
+	consumerRedelivered *prometheus.GaugeVec // Messages redelivered (NumRedelivered)
 	policyRequested     *prometheus.GaugeVec
 	policyEffective     *prometheus.GaugeVec
 	policyAvailable     *prometheus.GaugeVec
@@ -78,25 +80,25 @@ func newJetStreamMetrics(registry *metric.MetricsRegistry) (*jetstreamMetrics, e
 			Help:      "Number of pending messages for consumer",
 		}, []string{"stream", "consumer"}),
 
-		consumerDelivered: prometheus.NewCounterVec(prometheus.CounterOpts{
+		consumerDelivered: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: "semstreams",
 			Subsystem: "jetstream",
-			Name:      "consumer_delivered_total",
-			Help:      "Total messages delivered to consumer",
+			Name:      "consumer_delivered_stream_sequence",
+			Help:      "Stream sequence of the last message delivered to consumer, as the server reports it",
 		}, []string{"stream", "consumer"}),
 
-		consumerAcked: prometheus.NewCounterVec(prometheus.CounterOpts{
+		consumerAcked: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: "semstreams",
 			Subsystem: "jetstream",
-			Name:      "consumer_acked_total",
-			Help:      "Total messages acknowledged by consumer",
+			Name:      "consumer_ack_floor_stream_sequence",
+			Help:      "Stream sequence of consumer's ack floor, as the server reports it",
 		}, []string{"stream", "consumer"}),
 
-		consumerRedelivered: prometheus.NewCounterVec(prometheus.CounterOpts{
+		consumerRedelivered: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: "semstreams",
 			Subsystem: "jetstream",
-			Name:      "consumer_redelivered_total",
-			Help:      "Total messages redelivered to consumer",
+			Name:      "consumer_redelivered_messages",
+			Help:      "Number of messages redelivered to consumer, as the server reports it",
 		}, []string{"stream", "consumer"}),
 		policyRequested: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: "semstreams", Subsystem: "jetstream", Name: "consumer_max_ack_pending_requested",
@@ -304,9 +306,9 @@ func (m *jetstreamMetrics) updateStats(ctx context.Context) {
 			continue
 		}
 		m.consumerPending.WithLabelValues(streamName, consumerName).Set(float64(info.NumPending))
-		m.consumerDelivered.WithLabelValues(streamName, consumerName).Add(float64(info.Delivered.Stream))
-		m.consumerAcked.WithLabelValues(streamName, consumerName).Add(float64(info.AckFloor.Stream))
-		m.consumerRedelivered.WithLabelValues(streamName, consumerName).Add(float64(info.NumRedelivered))
+		m.consumerDelivered.WithLabelValues(streamName, consumerName).Set(float64(info.Delivered.Stream))
+		m.consumerAcked.WithLabelValues(streamName, consumerName).Set(float64(info.AckFloor.Stream))
+		m.consumerRedelivered.WithLabelValues(streamName, consumerName).Set(float64(info.NumRedelivered))
 		m.mu.Unlock()
 	}
 	for _, record := range policies {

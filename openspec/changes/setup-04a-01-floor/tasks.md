@@ -670,7 +670,7 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         - The tests check that a call is still waiting through in-package state (`requireJoinPending`,
           `requireJoinOpen`, the closed-handler wait in test 12), observed at a named wait point under a 10 s failure
           bound, never with a short real-clock wait (design D8, R1b; implementation early check, finding I-1).
-- [ ] 3.7d (D) Lifted: Codex's checkpoint review of 3.7c and 3.7c2 (concurrency), Codex APPROVE at `4e44422`, comment
+- [x] 3.7d (D) Lifted: Codex's checkpoint review of 3.7c and 3.7c2 (concurrency), Codex APPROVE at `4e44422`, comment
       5982063929; the metrics work below remains. `natsclient`
       metrics (design D9; item 4): the three consumer collectors that `Add` cumulative server values on every poll
       (`jetstream_metrics.go:305-307`) become gauges `Set` from server state — `consumer_delivered_total` →
@@ -685,6 +685,27 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       client's failed `Info`, `:278`; `forgetConsumer` deleting series another client still writes, `:232-243`) are
       tracked by #75, named on the row's `known_risks` (#9 comment 5968830525, rule 4; owner ruling #9 comment
       5969776736, item 5), not fixed here.
+      - Done (owner, 2026-10-04: "yes, carry on with 3.7d"). The three collectors are `GaugeVec`s `Set` from
+        `Delivered.Stream`, `AckFloor.Stream` and `NumRedelivered` (`jetstream_metrics.go:309-311`). Test (1) is
+        `TestJetStreamConsumerMetricsReportServerStateAcrossPolls`; test (2) is `jetstream_metrics_test.go:16`, extended
+        to all 11 collectors and renamed `TestJetStreamMetricsShareCanonicalCollectorsAcrossOwners`. The row's
+        contract names the changes and their consumer impact; its `known_risks` names #75.
+        `integration_test.go`'s delivered-metric read uses the new name as a gauge. gopls `references` on the three
+        fields found no other reader; `doc.go` names no metric, and `README.md` is not yet carried (3.7e).
+      - Failing first at `82e979b`. Test (1) failed for its stated reason: two polls gathered 10, 8 and 4 for the
+        server's 5, 4 and 2; it also failed on the three new names. Test (2) failed only on the three new names: its
+        canonical-collector checks already passed at `82e979b`, because task 3.7 had moved registration to
+        `RegisterOrGet`. Its stated reason, the pin's orphaned 8, is shown by mutant M20 instead.
+      - Mutants, each restored by checksum. M19, `Add` in place of `Set` for the three: detected by test (1), all
+        three values doubled. M20, the pin's shape, each of the 8 collectors the pin registered through `Register*`
+        keeping its own candidate instead of the collector `RegisterOrGet` returns: detected by test (2), identity
+        differs for all 8.
+      - Choices the design and the task text leave open, recorded here: the three gauges' help texts are new
+        wording; the three registry keys (`consumer_delivered`, `consumer_acked`, `consumer_redelivered`) are kept
+        unchanged, so `Unregister` by those keys still works.
+      - Generated checks: not used. A poll overwrites each gauge with the server's value and keeps no state of
+        its own, so the history to cover is "more than one poll", which test (1)'s two polls are; the registration
+        history is D9's `TestPropRegisterOrGetHistory`.
 - [ ] 3.7e (D) `natsclient` `README.md` (375 lines at the pin) and `doc.go`: import paths at `README.md:14, :312`
       and `doc.go:512` name the SemEngine module, each its own `adapt` item (#9 comment 5968665464); the lint fixes
       (12 × MD013, 1 × MD032); behaviour edits by line (#9 comment 5957221949): `NewTestClient` (`README.md:277-281`,

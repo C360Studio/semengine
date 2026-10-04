@@ -311,9 +311,9 @@ func TestIntegration_JetStreamMetrics(t *testing.T) {
 	consumerPending := metricsByName["semstreams_jetstream_consumer_pending_messages"]
 	require.NotNil(t, consumerPending, "consumer pending metric should exist")
 
-	consumerDelivered := metricsByName["semstreams_jetstream_consumer_delivered_total"]
+	consumerDelivered := metricsByName["semstreams_jetstream_consumer_delivered_stream_sequence"]
 	require.NotNil(t, consumerDelivered, "consumer delivered metric should exist")
-	assert.GreaterOrEqual(t, *consumerDelivered.Metric[0].Counter.Value, float64(0))
+	assert.GreaterOrEqual(t, *consumerDelivered.Metric[0].Gauge.Value, float64(0))
 
 	client.jsMetrics.mu.Lock()
 	var observationKey string

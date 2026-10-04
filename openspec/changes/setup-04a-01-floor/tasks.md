@@ -14,7 +14,8 @@ this pull request as a comment unless a task says otherwise. No task asserts a f
       D9, D10.1) and the #9 rulings; every requirement has at least one scenario; `task spec:check` passes with no
       `skip_specs`.
       - Done. The architect's corrections were applied in `e1ada76` and `2f46546`. The reviewer's check of them
-        (2026-10-04) passed the criteria above with three findings, closed in the commit that ticks this task.
+        (PR #48 comment 5983766238) passed the criteria above with three findings, closed in the commit that ticks
+        this task.
         1.1-a: `transport-client` states F26's consumer half (a consumer on a replaced connection is stopped when
         `Close` begins and its handlers are joined; its claim is released only after they return). Its scenario
         "A consumer on a replaced connection" is mapped in D3's ownership table to
@@ -741,7 +742,7 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       measures below 80%, a new task asking the owner to rule on that package's coverage is added to this file at
       that moment, written so `task spec:queue` reads it, and the gate stays unwaived (plan `:206-209`); nothing in
       this file waits on the owner until the measurement exists.
-- [ ] 3.9 (D) `stretchr/testify` and `pgregory.net/rapid` v1.3.0 are direct requirements (design D1; Rapid by owner
+- [x] 3.9 (D) `stretchr/testify` and `pgregory.net/rapid` v1.3.0 are direct requirements (design D1; Rapid by owner
       ruling, PR #48 comment 5951926492), with `github.com/nats-io/nats-server/v2` v2.14.7 (design D1; task 3.7), and
       `pkg/types/entity_id_prop_test.go`, the floor's one Rapid file (design P23), is ported with its property test;
       `task tidy:check` passes; the ported test-file count is recorded with its arithmetic: the pin's 127, less the six
@@ -750,6 +751,36 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       adds (each on its row, e.g. `message/meta_wire_test.go`, `message/decoder_fuzz_test.go`). The line count after
       repair is recorded with `wc` against the pin's 33,279, less each deleted test the rows list, with a diff stat
       against the pin per package.
+      - Done; already true, nothing to change in `go.mod`. Its first `require` block lists
+        `github.com/stretchr/testify v1.12.1` (the pin has v1.11.1, `go.mod:18`), `pgregory.net/rapid v1.3.0` and
+        `github.com/nats-io/nats-server/v2 v2.14.7`, none `// indirect`. `task tidy:check` exit 0.
+        `pkg/types/entity_id_prop_test.go` is ported; it differs from the pin only in its six spec-path comments
+        (`entity-id-contract` → `docs/specs/entity-id-contract.md`, task 3.3a), and `go test -run Prop -v
+        ./pkg/types/` passes its three property tests. Rapid is also imported by two files this change adds,
+        `metric/registerorget_prop_test.go` and `internal/cache/coalescing_set_prop_test.go`.
+      - Counts are over `*_test.go` in each package directory (not subdirectories), the pin from the GitHub tarball
+        of `8b99efe9` with `find` and `wc -l`, the tree at this commit. Test files: the pin's 127 (the 15
+        packages' 125 and `pkg/acme`'s 2) − 6 excluded `natsclient` files − 2 `pkg/acme` − 2 removed with dropped
+        surface (`typed_test.go`, `kv_temporal_integration_test.go`; no other surface audit removed a file) =
+        117, + 17 added = 134, which is the tree's count. The 17, each named on its row: `metric` 5
+        (`admission_test.go`, `lifecycle_test.go`, `registerorget_prop_test.go`, `registerorget_test.go`,
+        `tls_test.go`); `message` 4 (`decoder_fuzz_test.go`, `generic_json_fuzz_test.go`,
+        `generic_json_shape_test.go`, `meta_wire_test.go`); `internal/cache` 4 (`background_test.go`,
+        `coalescing_set_prop_test.go`, `config_fuzz_test.go`, `helper_process_test.go`); `natsclient` 4
+        (`client_close_final_test.go`, `client_lifecycle_test.go`, `test_helpers_test.go`,
+        `test_helpers_integration_test.go`). `helper_process_test.go` and `client_close_final_test.go` were not
+        named on their rows; this commit names them.
+      - Lines: the pin's 33,279 checks out (34,887 over the 16 directories − `pkg/acme`'s 215 −
+        `test_client_factory_test.go` 312, `test_client_integration_test.go` 361, `test_client_readiness_test.go`
+        581, `monitoring_consumers_test.go` 139). Less the four other removed files (`test_options_test.go` 55,
+        `mapped_port_retry_test.go` 276, `typed_test.go` 364, `kv_temporal_integration_test.go` 238): 32,346. The
+        tree has 38,293. Tests deleted inside carried files (`TestTemporalResolver_ErrorBoundaries`, 3.7a's
+        deletions) are counted in the diff stat, not subtracted one by one. Diff stat of the test files against the
+        pin (plain `diff -U0`, added and removed lines; a removed file counts all its lines): `internal/resource`
+        +313 −225; `pkg/retry` +119 −110; `internal/timestamp` +1 −1; `vocabulary` +0 −80; `pkg/types` +41 −9;
+        `pkg/projection/contract` +1 −1; `internal/tlsutil` +2 −2; `metric` +1,123 −305; `payloadregistry` +3 −3;
+        `message` +1,370 −6; `internal/cache` +1,770 −937; `natsclient` +5,028 −4,471; `pkg/errs`, `pkg/platform`,
+        `pkg/security` unchanged; total +9,771 −6,150, and 34,887 − 215 + 9,771 − 6,150 = 38,293.
 - [ ] 3.10 (R) Port review per package group (3.1–3.7e) and of task 2.8's rehomed helpers: the two service adapters list
       every retained kind (the review checklist of the `lifecycle-suite` delta); each helper has the shape design D7
       gives it, its `synctest` test and its nil-context refusal, and no fixed shutdown timeout remains

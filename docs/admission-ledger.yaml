@@ -1130,7 +1130,7 @@
     parameters revive then reports are named _ (coalescing_set_test.go 6, coalescing_set_attack_test.go
     5). Task 3.6a, each written first (implementer-reported failing first): in coalescing_set_test.go,
     TestCoalescingSet_CallbackPanicEndsTheProcess replaces TestCoalescingSet_CallbackPanic (a prochost
-    helper; oracle: exit code 2, and the panic value and the fireBatch frame on its stderr) and
+    helper, defined by TestHelperProcess in the new file helper_process_test.go; oracle: exit code 2, and the panic value and the fireBatch frame on its stderr) and
     TestCoalescingSet_NilCallbackPanicsAtTheCall replaces TestCoalescingSet_NilCallback (the panic, and
     no run goroutine in the bubble's stack dump); the tests that passed a nil callback pass a no-op one.
     In background_test.go, TestCacheConcurrentCloseJoinsEveryCaller (2,000 rounds of 32 Close calls per
@@ -1239,7 +1239,7 @@
     once Close has begun only Close changes Status, which keeps its value through the drain and is
     Disconnected for good once the cleanup has finished; Connect after Close refuses before dialling
     (the pin dialled). Each changed behaviour above is an adapt item with its test (design D3; task
-    3.7c2): (1) Subscribe and SubscribeForRequests after Close has begun return
+    3.7c2; the new tests named in (1)-(9) are in the new file client_close_final_test.go): (1) Subscribe and SubscribeForRequests after Close has begun return
     nats.ErrConnectionClosed, where the pin returned ErrNotConnected after Close or subscribed on
     the draining connection (the closing and closed rows of TestClientLifecycleOperationTable;
     the carried TestContextAwareMethods, client_test.go:386-389, now asserts it); (2)

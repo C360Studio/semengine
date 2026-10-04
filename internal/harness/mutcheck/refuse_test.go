@@ -125,6 +125,12 @@ func TestRefusals(t *testing.T) {
 			},
 			own:   true,
 			words: []string{"go.mod", "repository's root"}},
+		{name: "temporary files in a directory that does not exist",
+			args: base,
+			env: func(t *testing.T, _ string) []string {
+				return []string{"TMPDIR=" + filepath.Join(t.TempDir(), "missing")}
+			},
+			words: []string{"TMPDIR", string(filepath.Separator) + "missing"}},
 		{name: "temporary files inside the module",
 			args: base,
 			env: func(t *testing.T, root string) []string {

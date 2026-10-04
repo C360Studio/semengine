@@ -9,17 +9,20 @@ import (
 	"testing"
 )
 
-// testdata/reach holds two targets (plant/target.go and plant/branch.go), the coverage profile of
-// their unchanged code that the reach run would record (profile.txt, from
-// `go test -json -count=1 -cpu 1 -race -run '^(TestClamp|TestBranches)$' -coverpkg=./plant -coverprofile=profile.txt ./plant`
+// testdata/reach holds three targets (plant/target.go, plant/branch.go and plant/inside.go), the
+// coverage profile of their unchanged code that the reach run would record (profile.txt, from
+// `go test -json -count=1 -cpu 1 -race -run '^(TestClamp|TestBranches|TestInside)$' -coverpkg=./plant -coverprofile=profile.txt ./plant`
 // with go1.26.6), and one line diff per case, taken with
 // `git diff --no-index --no-ext-diff --no-textconv --no-color -U0` from the target to a copy with
 // the wrong change. TestClamp calls Clamp(3): Clamp's first block (lines 20-25) and its last
 // statement (line 32) run; the branch of `if x > Limit` (lines 25-31) and unused (lines 14-17) do
 // not. TestBranches calls Sign(5) and Name(2): Sign's else branch (block 7.8,9.3) runs and its if
 // branch (5.11,7.3) does not; Name's `case 2:` (19.9,20.12) runs and `case 1:` (17.9,18.12), whose
-// block ends at its last statement, does not. Every wrong change here compiles, and the test of
-// its target passes on each of them.
+// block ends at its last statement, does not. TestInside calls Pick(5) and Lab(-1): Pick's
+// condition, written over lines 5-6, lies in block 4.22,6.11, which ran, and its `return 0`
+// (9.2,9.10) did not; Lab jumps to the label `done:` on line 18, skipping `x++` in block 17.2,18.1,
+// whose inclusive end is the label's start, and runs `return x` (19.2,19.10). Every wrong change
+// here compiles, and the test of its target passes on each of them.
 
 func reachFile(t *testing.T, name string) []byte {
 	t.Helper()
@@ -43,70 +46,81 @@ type wantRegion struct {
 func TestReachRecordedCases(t *testing.T) {
 	target := reachFile(t, "plant/target.go")
 	profile := reachFile(t, "profile.txt")
-	branch := reachFile(t, "plant/branch.go")
 	for _, tc := range []struct {
 		name    string
 		diff    string
-		branch  bool // the target is plant/branch.go, not plant/target.go
+		file    string // the target under plant/; "" is target.go
 		regions []wantRegion
 		want    reachState
 		verdict outcome // "" when the scenario states none
 		words   []string
 	}{
-		{"a deletion that was reached", "deletion-reached.diff", false, []wantRegion{
+		{"a deletion that was reached", "deletion-reached.diff", "", []wantRegion{
 			{hunk{oldStart: 24, oldCount: 1, newStart: 23}, reached, []string{"20.23,25.15 1"}, []string{"line 24"}},
 		}, reached, survivor, nil},
-		{"a deletion in a branch that did not run", "deletion-not-reached.diff", false, []wantRegion{
+		{"a deletion in a branch that did not run", "deletion-not-reached.diff", "", []wantRegion{
 			{hunk{oldStart: 29, oldCount: 1, newStart: 28}, notReached, []string{"25.15,31.3 0"}, []string{"line 29"}},
 		}, notReached, invalid, []string{"did not reach the wrong change"}},
 		// Hunk 2 deletes target lines 22-24, which ran. Its mutant-side numbers (+28,0) point into the
 		// branch that did not run, and the mutant's lines 22-24 are unused's body, which did not run
 		// either: read in the mutant's numbers, the change would not be reached.
-		{"regions are read in the target's line numbers", "target-numbers.diff", false, []wantRegion{
+		{"regions are read in the target's line numbers", "target-numbers.diff", "", []wantRegion{
 			{hunk{oldStart: 12, newStart: 13, newCount: 7}, notMeasurable, nil, []string{"after target line 12", "outside every function body"}},
 			{hunk{oldStart: 22, oldCount: 3, newStart: 28}, reached, []string{"20.23,25.15 1"}, []string{"lines 22-24"}},
 		}, reached, "", nil},
 		// The neighbouring-lines rule would count line 25, which ran, and say reached.
-		{"an insertion in a branch that did not run", "insertion-not-reached.diff", false, []wantRegion{
+		{"an insertion in a branch that did not run", "insertion-not-reached.diff", "", []wantRegion{
 			{hunk{oldStart: 25, newStart: 26, newCount: 1}, notReached, []string{"25.15,31.3 0"}, []string{"after target line 25"}},
 		}, notReached, invalid, nil},
 		// unused's first block begins on its func line, 14, right after the insertion; the
 		// insertion is outside every function body, so that block says nothing.
-		{"a method added before a function that did not run", "method-before-unrun.diff", false, []wantRegion{
+		{"a method added before a function that did not run", "method-before-unrun.diff", "", []wantRegion{
 			{hunk{oldStart: 13, newStart: 14, newCount: 2}, notMeasurable, nil, []string{"after target line 13", "outside every function body"}},
 		}, notMeasurable, survivor, []string{"reach could not be measured"}},
-		{"two hunks", "two-hunks.diff", false, []wantRegion{
+		{"two hunks", "two-hunks.diff", "", []wantRegion{
 			{hunk{oldStart: 3, oldCount: 1, newStart: 2}, notMeasurable, nil, []string{"line 3"}},
 			{hunk{oldStart: 21, oldCount: 1, newStart: 19}, reached, []string{"20.23,25.15 1"}, []string{"line 21"}},
 		}, reached, "", nil},
-		{"a change to a declaration", "declaration.diff", false, []wantRegion{
+		{"a change to a declaration", "declaration.diff", "", []wantRegion{
 			{hunk{oldStart: 6, oldCount: 1, newStart: 6, newCount: 1}, notMeasurable, nil, []string{"line 6"}},
 		}, notMeasurable, survivor, []string{"reach could not be measured"}},
 		// No block contains the position after line 31, the branch's closing brace; the statement
 		// that would run right after the inserted line begins on line 32, and it ran.
-		{"an insertion before a statement that ran", "insertion-before-next-statement.diff", false, []wantRegion{
+		{"an insertion before a statement that ran", "insertion-before-next-statement.diff", "", []wantRegion{
 			{hunk{oldStart: 31, newStart: 32, newCount: 1}, reached, []string{"32.2,32.10 1"}, []string{"after target line 31"}},
 		}, reached, "", nil},
 		// An insertion is decided by its own statement list. The place after the last statement of
 		// Sign's if branch lies in that branch; the else block begins on the next line and ran, but
 		// a sibling branch never decides.
-		{"an insertion at the end of an if-branch whose else ran", "insertion-end-of-if-branch.diff", true, []wantRegion{
+		{"an insertion at the end of an if-branch whose else ran", "insertion-end-of-if-branch.diff", "branch.go", []wantRegion{
 			{hunk{oldStart: 6, newStart: 7, newCount: 1}, notReached, []string{"5.11,7.3 0"}, []string{"after target line 6"}},
 		}, notReached, invalid, []string{"did not reach the wrong change"}},
 		// No block holds the place after `case 1:`'s last statement: its block ends at that
 		// statement, and the next clause's block begins on the next line and ran.
-		{"an insertion at the end of a switch case whose next case ran", "insertion-end-of-switch-case.diff", true, []wantRegion{
+		{"an insertion at the end of a switch case whose next case ran", "insertion-end-of-switch-case.diff", "branch.go", []wantRegion{
 			{hunk{oldStart: 18, newStart: 19, newCount: 1}, notReached, []string{"17.9,18.12 0"}, []string{"after target line 18"}},
 		}, notReached, invalid, []string{"did not reach the wrong change"}},
 		// No statement of the else branch follows the place, so the last one before it decides.
-		{"an insertion at the end of a branch that ran", "insertion-end-of-branch-that-ran.diff", true, []wantRegion{
+		{"an insertion at the end of a branch that ran", "insertion-end-of-branch-that-ran.diff", "branch.go", []wantRegion{
 			{hunk{oldStart: 8, newStart: 9, newCount: 1}, reached, []string{"7.8,9.3 1"}, []string{"after target line 8"}},
 		}, reached, survivor, nil},
+		// The place after line 5 lies inside the if statement on lines 5-8, in its condition. The next
+		// statement of the list, `return 0`, did not run, but the inserted operand did: no block
+		// measures a place inside a statement.
+		{"an insertion inside a multi-line condition", "insertion-inside-condition.diff", "inside.go", []wantRegion{
+			{hunk{oldStart: 5, newStart: 6, newCount: 1}, notMeasurable, nil, []string{"after target line 5", "inside the statement on target lines 5-8"}},
+		}, notMeasurable, survivor, []string{"reach could not be measured"}},
+		// The place after `done:` lies inside the labeled statement on lines 18-19; the inserted line
+		// becomes the label's statement, which goto reaches. The block before the label, which ends
+		// at the label's start and did not run, says nothing.
+		{"an insertion right after a label", "insertion-after-label.diff", "inside.go", []wantRegion{
+			{hunk{oldStart: 18, newStart: 19, newCount: 1}, notMeasurable, nil, []string{"after target line 18", "inside the statement on target lines 18-19"}},
+		}, notMeasurable, survivor, []string{"reach could not be measured"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			target, base := target, "target.go"
-			if tc.branch {
-				target, base = branch, "branch.go"
+			if tc.file != "" {
+				target, base = reachFile(t, "plant/"+tc.file), tc.file
 			}
 			hunks, err := parseHunks(reachFile(t, tc.diff))
 			if err != nil {

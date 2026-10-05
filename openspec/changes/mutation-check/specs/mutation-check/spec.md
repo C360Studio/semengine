@@ -211,14 +211,15 @@ apply in that run anyway. A region of removed or replaced lines is reached when 
 executed block that overlaps those lines. An insertion inside a function body belongs to the innermost statement list
 that holds its place, as Go's parser reads the target: a function body, a block, a branch of an `if`, or a clause of a
 `switch` or `select`. It is reached when the block holding the first statement of that list after the place executed;
-when no statement of that list follows the place, when the block holding the last statement before it executed. A block
-of a sibling branch or clause never decides it. When the place lies inside a statement of that list, so that the
-statement begins on or before line k and ends on or after line k+1 (a condition, call or literal written over several
-lines, or the place between a label and its statement), the region is not measurable: Go's coverage counts statements,
-and no block measures a place inside one. A region is not measurable when no block decides it: no block overlaps the
-lines, the list has no statement, or no block holds the statement that would decide. The wrong change is reached when
-any of its regions is reached; not reached when every region is measurable and none is reached; and not measurable
-otherwise.
+when no statement of that list follows the place, when the block holding the last statement before it executed. When
+that last statement is labeled, the region is not measurable: a label reached by `goto` sits on the inclusive end of the
+block before it, which `goto` skips. A block of a sibling branch or clause never decides it. When the place lies inside
+a statement of that list, so that the statement begins on or before line k and ends on or after line k+1 (a condition,
+call or literal written over several lines, or the place between a label and its statement), the region is not
+measurable: Go's coverage counts statements, and no block measures a place inside one. A region is not measurable when
+no block decides it: no block overlaps the lines, the list has no statement, or no block holds the statement that would
+decide. The wrong change is reached when any of its regions is reached; not reached when every region is measurable and
+none is reached; and not measurable otherwise.
 
 #### Scenario: A deletion that was reached
 
@@ -265,6 +266,12 @@ otherwise.
 
 - **WHEN** the wrong change only inserts a line between a label and its statement, the label is reached by `goto`,
   and every mutant run passes
+- **THEN** the verdict is survivor, and the report says reach could not be measured
+
+#### Scenario: An insertion after a labeled last statement
+
+- **WHEN** the wrong change only inserts a line after a labeled statement that is the last of its list, the label is
+  reached by `goto` that skips the statement before it, and every mutant run passes
 - **THEN** the verdict is survivor, and the report says reach could not be measured
 
 #### Scenario: Hunks are not merged

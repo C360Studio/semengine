@@ -105,6 +105,12 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
       Tests at `41b73da` (both reach cases failing against the code of `e936326`), fix at `10b9746`; (b)'s case
       could not fail first and is shown able to fail in 3.4 (V07).
       Evidence: comment 5984734456.
+- [ ] 2.13 (D) The correction of implementation review round 3 (`impl-review-r3.md`, sha256 `7ee140a5…ef6e`; the owner's
+      ruling "fix now", #79, comment 5994738791; `design.md`, "Implementation review round 3 correction"): an insertion
+      after a labeled statement that is the last of its list is not measurable, while the first-after decider keeps a
+      labeled statement. A recorded case for the scenario "An insertion after a labeled last statement", with the label
+      reached by `goto`, written first and seen to fail against the code at `390ddcf`; the existing case for a place
+      right before a label still passes. Gate: `task test:unit`.
 
 ## 3. Shown able to fail
 
@@ -135,6 +141,10 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
       reported as such.
       V06: 1 detection, 0 survivors, 0 inconclusive, 0 invalid; V07 (extra): 1 detection.
       Evidence: comment 5984734642.
+- [ ] 3.5 (D) The experiment of `docs/testing.md`, "Show that the test can fail", for the wrong change that would undo
+      2.13: an insertion after a labeled last statement decided by the label's block, as `design.md`, D11, lists it. Its
+      change and its baseline, wrong-change and after-runs are recorded on this pull request; a survivor is reported as
+      such.
 
 ## 4. Documents
 

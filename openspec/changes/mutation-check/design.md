@@ -1,6 +1,10 @@
 # Design: mutation-check
 
-Status: **revision 5: the accepted design, corrected after implementation review rounds 1 and 2.** Round 2
+Status: **revision 6: the accepted design, corrected after implementation review rounds 1 to 3.** Round 3
+(`impl-review-r3.md`, sha256 `7ee140a5c236bdca736e31644d1c3b817074fffd73c25668513bf0c66351ef6e`, at code head
+`390ddcf`) approved with one MEDIUM finding open, which went to the owner under the three-round rule; the owner ruled
+"fix now" (#79, comment 5994738791). "Implementation review round 3 correction" below says what changed. Revision 5
+was the accepted design, corrected after implementation review rounds 1 and 2. Round 2
 (`impl-review-r2.md`, sha256 `2fdc930b6cd61035fefa89ffcdbf721aa830a88bbbffa726a82e0fca729b769d`, at code head
 `e936326`) found one more place where the reach rule decides by the wrong statement, and two NITs; "Implementation
 review round 2 corrections" below says what changed. The owner accepted
@@ -145,6 +149,12 @@ Answers to round 2's four NITs (`inventory-review-r2.md`, sha256 `52b42c4b3f413b
 | NIT: the bound case costs 2 s a pass | The case uses `-timeout 200ms` (bound 400 ms), counted in "Declared costs" |
 | NIT: the SIGTERM stand-in should start a grandchild | D11 and task 2.6: the stand-in `go` starts a helper that writes its own pid and its parent's, as `TestFetchLeavesNoProcess` does, and both must be gone |
 | NIT: Q1 and Q5 lack "what this costs you"; Q5's "often" and "many" | Both lines added; "often" and "many" removed, and Q5 and D14 say that none of the trial's 196 runs had a race report |
+
+## Implementation review round 3 correction
+
+| Finding | Correction |
+| --- | --- |
+| MEDIUM: an insertion after a labeled statement that is the last of its list reads not reached when the label is reached by `goto`: the last-before decider uses the statement's start, the label, which sits on the inclusive end of the block before it, and `goto` skips that block (measured by the review: `Lab2(-1)`, profile `9.2,10.1 2 0` and `11.2,11.11 1 1`, verdict invalid where survivor is right) | Re-measured (P29). The owner ruled, verbatim, "fix now" (#79, comment 5994738791), choosing: when the deciding statement is labeled, the region is not measurable, so survivor with the note. As the review advised, the rule applies to the last-before decider only. The first-after decider keeps a labeled statement: the place right before a label is reached only by falling through, which the block before the label measures. D13 and the spec say so; scenario "An insertion after a labeled last statement" |
 
 ## Implementation review round 2 corrections
 
@@ -371,6 +381,13 @@ The regions, from the hunks of the line diff (P20):
   with a note, so an insertion that truly never ran reads survivor, and the reader is told reach could not be
   measured; it never gives a false invalid, which would send the implementer looking for a missing input while a
   missing assertion goes unseen.
+  When no statement of the list follows the place and the last statement before it is labeled, the region is not
+  measurable either, by the owner's ruling (#79, comment 5994738791). The decider would be the block holding the
+  label, and a label reached by `goto` sits on the inclusive end of the block before it, which `goto` skips (P29). The
+  first-after decider keeps a labeled statement: the place right before a label is reached only by falling through,
+  which that same block measures. The cost, declared: a labeled loop as the last statement of a list, whose label
+  lies inside an ordinary block and decides correctly (P29), now reads not measurable too. No Go file of this
+  repository has a label today (implementation review round 3).
 - A region no block decides is not measurable: no block overlaps the lines, the list has no statement, or no block holds
   the deciding statement. The wrong change is reached when any region is reached, not
   reached when every region is measurable and none is reached, and not measurable otherwise.
@@ -579,9 +596,10 @@ fingerprint compare dropped; a timeout read as detection; a failing baseline ign
 set accepted; an unexpected race report accepted; the overlay passed as a flag instead of through `GOFLAGS` (the child
 build then sees the original); a caller's `GOFLAGS` dropped from the mutant runs; a `GOFLAGS` with `-cover` not refused;
 regions read in the mutant's line numbers; an insertion's region taken from its neighbouring lines, or decided by a
-sibling branch's block; an insertion inside a statement decided by a neighbouring statement's block; hunks merged by a
-caller's git setting; a child's `PWD` left as the caller's; a region that is not measurable read as not reached; exit
-zero for a survivor; and `RAPID_NOFAILFILE` not set.
+sibling branch's block; an insertion inside a statement decided by a neighbouring statement's block; an insertion after
+a labeled last statement decided by the label's block; hunks merged by a caller's git setting; a child's `PWD` left as
+the caller's; a region that is not measurable read as not reached; exit zero for a survivor; and `RAPID_NOFAILFILE` not
+set.
 
 ### D12 Documents
 
@@ -858,6 +876,7 @@ Q5, a race report counts only when named in advance with `-expect-text`.
 | P26 | Through a symbolic link, with `PWD` naming the link, an overlay keyed by the resolved path is not applied; with `PWD` set to the resolved path it is | `arch-cov` reached through a symbolic link, go1.26.6, overlay keyed by the resolved path: `ok ... 0.263s` (the original ran); with `PWD=<resolved>`: `e_test.go:7: Clamp(20) = 0` |
 | P27 | `git -c diff.interHunkContext=5 diff --no-index -U0` merges two one-line changes three lines apart into one hunk; `--inter-hunk-context=0` keeps them apart | Scratch `arch-hunk`, git 2.50.1: `@@ -2 +2 @@` and `@@ -5 +5 @@` by default; `@@ -2,4 +2,4 @@` with the setting; the two hunks again with `--inter-hunk-context=0` |
 | P28 | A multi-line `if` condition lies in the block that ends at the condition's `{`; a label's start is the inclusive end of the block before it | Scratch module `arch-r5`, go1.26.6, `TestS` calling `Pick(5)` and `Lab(-1)`: `s.go:3.22,5.11 1 1` holds `if x > 0 &&` (line 4) and `x < 100 {` (line 5); `16.2,17.1 2 0` ends at `done:` (line 17, column 1), skipped by `goto done`; `18.2,18.10 1 1` is the labeled `return x`. Reproduces the review's `rv8` profiles |
+| P29 | A simple labeled statement's label is the inclusive end of the block before it, which `goto` skips; a labeled loop's label lies inside the block that runs up to the loop's `{` | Scratch module `arch-r6`, go1.26.6, `TestL` calling `Lab2(-1)` and `Loop(2)`: `l.go:9.2,10.1 2 0` ends at `done:` (line 10, column 1) and `11.2,11.11 1 1` is the labeled `hits += 2`, reproducing the review's `rv9`; `14.18,17.25 2 1` holds `outer:` (line 16) and the loop header |
 | P15 | `scripts/tree-state.sh` prints a fingerprint in a tree whose every directory, `.git` included, is read-only, and leaves `.git/index` unchanged there | Scratch repository `arch-ro`: exit 0, the same fingerprint as before, the same SHA-256 of `.git/index` |
 
 ## Not measured

@@ -862,10 +862,9 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         the restored 1.2 fallback, a fatal class for the refusal); `a2cf43d` `PredicateAuthority` cut. The tree has
         no mention of a removed name outside the audit file and the ledger's records of it (`git grep` over code,
         docs, specs, design and ledger). `TestPublicSignatures` passes with its count unchanged; no census test
-        names these packages. Not covered: the README sub-package sections (`bfo/`, `cco/`, `agentic/`, `export/`)
-        and the `docs/vocabulary/` links in `vocabulary/README.md`, and `message/README.md`'s References links,
-        describe packages SemEngine does not have and are left for the README pass; they are outside the audit's
-        cut.
+        names these packages. The README sub-package sections (`bfo/`, `cco/`, `agentic/`, `export/`) and the
+        `docs/vocabulary/` links in `vocabulary/README.md`, and `message/README.md`'s References links to packages
+        SemEngine does not have, are removed (owner ruling, #9 comment 5994720412, item 5; both rows).
 - [x] 3.12a (D) The `RequireClientCert` fail-open (owner ruling 5985900154, item 3): with mTLS enabled,
       `RequireClientCert` false and `AllowedClientCNs` empty, `internal/tlsutil` admitted a client with no
       certificate, and the schema tag (`pkg/security/config.go:91`) called the default true while the Go zero

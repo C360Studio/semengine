@@ -576,9 +576,6 @@ See `*_test.go` files for comprehensive examples:
 
 ## References
 
-- [SemStreams Component Package](../component/) - Component registry and payload registration
-- [SemStreams Errors Package](../errors/) - Error classification system
-- [Composition](../composition/) - Port-declaration validation of a composition
 - [NATS Client](../natsclient/) - Message transport layer
 
 ## Contributing

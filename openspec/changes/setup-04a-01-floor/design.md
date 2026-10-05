@@ -394,7 +394,7 @@ failing-first `adapt` items:
   panic is logged at error level with the message's subject, and it is counted as `handler_panic` on the JetStream
   error metric. A Nak that fails is logged with the panic. At the pin the panic was recovered and Nak'd, but the Nak
   error was discarded, nothing was counted, and the doc comment promised a default Nak for a handler that settles
-  nothing, which the code never did; that promise is removed, since neither this design nor the ruling asks for it,
+  nothing, which the code never did; that promise is removed (owner ruling, #9 comment 5994720412, item 1),
   and such a message is redelivered by the server when its AckWait expires.
 - **`metric-abort-stop-reports-context`.** On an idle server `Shutdown(ctx)` (`handler.go:215`) returns nil even when
   `ctx` has ended, and the `select` at `:222-228` then picks between `serveDone` and `ctx.Done()` at random, so

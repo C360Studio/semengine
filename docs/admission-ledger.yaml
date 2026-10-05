@@ -572,8 +572,12 @@
     only), :592, :596 and :598-641 (the cut graph.rel.* terms); :647-651 (the usage example uses
     GraphRelContains); :663, :665 (Dublin Core and Schema.org bullets); :671, :673 (the
     predicates are framework terms, not examples; the examples/ files are not here); :678
-    (standards.go's families) and :683 (examples/). The sub-package sections (:384-456, :679-682)
-    keep their planned import paths under #9 comment 5968665464. Tests of the removed names,
+    (standards.go's families) and :683 (examples/). Removed (owner ruling, #9 comment 5994720412, item 5: sections and links for
+    packages SemEngine does not have go, applying 5984291337 over 5968665464), pin lines: :108-120
+    (Quick Start's export example), :381-452 (the bfo/, cco/, agentic/ and export/ sections and the
+    docs/vocabulary/ link), :510-531 (the export IRI-mapping example) and :679-682, :686 (the
+    Related Documentation entries); this supersedes the import-path items at :111, :390, :407,
+    :424, :444 and :515. Tests of the removed names,
     pin lines: iris_test.go :11-75, :144-246 and :262-312 (TestNamespaceConstants keeps its
     SemStreamsBase assertion); registry_test.go :39-64 (two RegisterPredicate tests), :190-271
     (DiscoverInversePredicates, HasInverse, IsSymmetricPredicate) and the Role assertions of
@@ -1136,7 +1140,9 @@
     Locatable geofence processor), :359-391 (its test) and :523-546 (the Observable transformation
     pattern) removed; :551, :554 (the filtering pattern asserts Storable); :630-633 (the
     troubleshooting check asserts Storable). The pin's message tests named none of the ten
-    interfaces, so no carried test is removed.
+    interfaces, so no carried test is removed. README.md pin lines :668-670 removed (owner ruling, #9 comment
+    5994720412, item 5): the References links to ../component/, ../errors/ and ../composition/,
+    packages SemEngine does not have at those paths; the natsclient link stays.
   proving_tests: >-
     the 9 test files in message/ at the pin, carried unchanged except import paths and four comments
     in payload_test.go (known_risks); payload_test.go and triple_helpers_test.go use

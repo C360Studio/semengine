@@ -106,19 +106,6 @@ triple := message.Triple{
 nc.Subscribe("robotics.battery.*", handler)  // All battery predicates
 ```
 
-### 4. Export to RDF (Optional)
-
-```go
-import "github.com/c360studio/semengine/vocabulary/export"
-
-// Serialize triples to Turtle
-err := export.Serialize(os.Stdout, triples, export.Turtle)
-
-// Or get as string in any format
-s, err := export.SerializeToString(triples, export.NTriples)
-s, err := export.SerializeToString(triples, export.JSONLD)
-```
-
 ## Functional Options API
 
 The `Register()` function uses functional options for clean, composable configuration:
@@ -316,79 +303,6 @@ const (
 
 See `standards.go` for the complete list of standard vocabulary IRIs.
 
-## Ontology Subpackages
-
-The vocabulary package includes ontology subpackages that provide IRI constants layered from foundational to domain-specific:
-
-### `bfo/` - Basic Formal Ontology (BFO 2.0)
-
-Upper-level ontology (ISO 21838-2) providing domain-neutral categories for all entities.
-
-```go
-import "github.com/c360studio/semengine/vocabulary/bfo"
-
-// Classify a physical asset
-triple := message.Triple{
-    Subject:   entityID,
-    Predicate: "rdf.type",
-    Object:    bfo.Object, // http://purl.obolibrary.org/obo/BFO_0000030
-}
-```
-
-Key concepts: `Entity`, `Continuant`, `Occurrent`, `Object`, `Process`, `Role`, `Quality`
-
-### `cco/` - Common Core Ontologies
-
-Mid-level ontology built on BFO for modeling agents, actions, information entities, and artifacts.
-
-```go
-import "github.com/c360studio/semengine/vocabulary/cco"
-
-// Classify a software agent
-triple := message.Triple{
-    Subject:   agentID,
-    Predicate: "rdf.type",
-    Object:    cco.IntelligentSoftwareAgent,
-}
-```
-
-Key concepts: `InformationContentEntity`, `Agent`, `IntentionalAct`, `PlanSpecification`, `Capability`
-
-### `agentic/` - W3C S-Agent-Comm
-
-AI agent interoperability predicates aligned with the W3C Semantic Agent Communication ontology.
-
-```go
-import "github.com/c360studio/semengine/vocabulary/agentic"
-
-// Express an agent's intent
-triple := message.Triple{
-    Subject:   agentID,
-    Predicate: agentic.IntentGoal,
-    Object:    "analyze customer feedback",
-}
-
-// Register all agentic predicates with IRI mappings
-agentic.Register()
-```
-
-Key concepts: `IntentGoal`, `CapabilityName`, `DelegationFrom`, `AccountabilityActor`, `ExecutionEnvironment`
-
-### `export/` - RDF Serialization
-
-Serializes `[]message.Triple` to standard RDF formats (Turtle, N-Triples, JSON-LD) using the vocabulary registry for IRI
-resolution.
-
-```go
-import "github.com/c360studio/semengine/vocabulary/export"
-
-output, err := export.SerializeToString(triples, export.Turtle)
-```
-
-Supported formats: `export.Turtle`, `export.NTriples`, `export.JSONLD`
-
-See [Vocabulary Documentation](docs/vocabulary/) for architecture guides and detailed usage.
-
 ## Registry API
 
 ### Registration
@@ -441,28 +355,6 @@ nc.Subscribe("robotics.battery.*", handler)
 entityState.SetProperty("geo.location.latitude", 37.7749)
 
 // NO IRIs in internal code!
-```
-
-### External: IRI Mappings at Boundaries
-
-The `export` package handles dotted-to-IRI translation automatically:
-
-```go
-import "github.com/c360studio/semengine/vocabulary/export"
-
-// Serialize to Turtle — registered predicates map to standard IRIs,
-// unregistered predicates generate SemStreams predicate IRIs.
-err := export.Serialize(w, triples, export.Turtle)
-
-// Custom base IRI for subject generation
-err = export.Serialize(w, triples, export.NTriples,
-    export.WithBaseIRI("https://example.org"))
-
-// Custom subject IRI function for full control
-err = export.Serialize(w, triples, export.JSONLD,
-    export.WithSubjectIRIFunc(func(subject string) string {
-        return "https://example.org/entities/" + subject
-    }))
 ```
 
 ## Best Practices
@@ -566,13 +458,8 @@ Applications should define their own domain-specific vocabularies.
 
 - `doc.go` - Comprehensive package documentation
 - `standards.go` - Standard vocabulary IRI constants (SKOS, Dublin Core, PROV-O)
-- `bfo/` - BFO 2.0 upper-level ontology classes and relations
-- `cco/` - Common Core Ontology classes for agents, actions, information
-- `agentic/` - W3C S-Agent-Comm predicates for AI agent interoperability
-- `export/` - RDF serialization to Turtle, N-Triples, JSON-LD
 - `message/triple.go` - Triple structure for semantic facts
 - `message/types.go` - EntityID, EntityType, Type patterns
-- [Vocabulary Documentation](docs/vocabulary/) - Architecture guides and usage patterns
 
 The vocabulary package focuses on **predicate management**, not IRI generation. For entity-level IRI needs, use the
 entity's own methods.

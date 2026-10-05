@@ -584,7 +584,7 @@ var (
 // cancellation must not turn a partial owner snapshot into successful keys.
 func (kv *KVStore) KeysByFilter(ctx context.Context, pattern string) ([]string, error) {
 	if ctx == nil {
-		return nil, errors.New("kv keys by filter: nil context")
+		return nil, nilContextErrorOf("KVStore", "KeysByFilter")
 	}
 	ctx, cancel := kv.applyTimeout(ctx)
 	defer cancel()

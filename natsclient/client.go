@@ -1220,7 +1220,7 @@ func (s *Subscription) Unsubscribe() error {
 // starts a second one.
 func (s *Subscription) Drain(ctx context.Context) error {
 	if ctx == nil {
-		return stderrors.New("natsclient: nil Subscription.Drain context")
+		return nilContextErrorOf("Subscription", "Drain")
 	}
 	if s == nil || s.sub == nil {
 		return nil

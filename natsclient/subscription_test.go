@@ -10,6 +10,8 @@ import (
 
 	"github.com/nats-io/nats.go"
 	"github.com/stretchr/testify/require"
+
+	"github.com/c360studio/semengine/pkg/errs"
 )
 
 // fakeNativeSubscription models the nats.go closed handler: it fires once,
@@ -106,7 +108,8 @@ func TestSubscriptionDrainRefusesNilContext(t *testing.T) {
 	var nilCtx context.Context
 	panicked, err := recoverCall(func() error { return sub.Drain(nilCtx) })
 	require.Nil(t, panicked, "Drain(nil) panicked")
-	require.ErrorContains(t, err, "nil Subscription.Drain context")
+	require.ErrorContains(t, err, "nil context")
+	require.True(t, errs.IsInvalid(err), "Drain(nil) is an invalid-data refusal: %v", err)
 	require.Zero(t, native.drainCalls.Load(), "Drain(nil) reached the native subscription")
 	require.True(t, native.IsValid(), "Drain(nil) ended the native subscription")
 }

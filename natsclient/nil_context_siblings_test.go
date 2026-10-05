@@ -178,9 +178,9 @@ func TestNegativeMaxRetriesNeverDispatches(t *testing.T) {
 
 // Every other exported, error-returning natsclient entry that takes a context refuses a nil one,
 // without panicking and before touching any state (Codex F32, "cover these sibling entry points
-// together"). wantInvalid is false only for the three that refused nil before this sweep with a
-// plain error (KVStore.KeysByFilter, ValidateHeartbeatDeliveryPolicy, Subscription.Drain); their
-// errors are unchanged.
+// together"), with the same invalid-data error as the rest. KVStore.KeysByFilter,
+// ValidateHeartbeatDeliveryPolicy and Subscription.Drain refused nil before the sweep with an
+// unclassified error; they now use the same class (early check E2).
 func TestExportedNilContextRefusedOnEveryOtherEntry(t *testing.T) {
 	c, err := NewClient(embeddedJetStreamURL(t), WithHealthInterval(0))
 	require.NoError(t, err)
@@ -212,85 +212,84 @@ func TestExportedNilContextRefusedOnEveryOtherEntry(t *testing.T) {
 	updateBytes := func(b []byte) ([]byte, error) { return b, nil }
 
 	for _, tc := range []struct {
-		name        string
-		wantInvalid bool
-		call        func(context.Context) error
+		name string
+		call func(context.Context) error
 	}{
 		// KVStore
-		{"KVStore.AssertNoLifecycleRetention", true, func(ctx context.Context) error { return kv.AssertNoLifecycleRetention(ctx, "NILCTX_KV") }},
-		{"KVStore.Create", true, func(ctx context.Context) error { _, err := kv.Create(ctx, "new", nil); return err }},
-		{"KVStore.Delete", true, func(ctx context.Context) error { return kv.Delete(ctx, "k") }},
-		{"KVStore.DeleteAtRevision", true, func(ctx context.Context) error { return kv.DeleteAtRevision(ctx, "k", 1) }},
-		{"KVStore.Get", true, func(ctx context.Context) error { _, err := kv.Get(ctx, "k"); return err }},
-		{"KVStore.Keys", true, func(ctx context.Context) error { _, err := kv.Keys(ctx); return err }},
-		{"KVStore.KeysByFilter", false, func(ctx context.Context) error { _, err := kv.KeysByFilter(ctx, "k"); return err }},
-		{"KVStore.KeysByPrefix", true, func(ctx context.Context) error { _, err := kv.KeysByPrefix(ctx, "k"); return err }},
-		{"KVStore.Put", true, func(ctx context.Context) error { _, err := kv.Put(ctx, "k", nil); return err }},
-		{"KVStore.Update", true, func(ctx context.Context) error { _, err := kv.Update(ctx, "k", nil, 1); return err }},
-		{"KVStore.UpdateJSON", true, func(ctx context.Context) error {
+		{"KVStore.AssertNoLifecycleRetention", func(ctx context.Context) error { return kv.AssertNoLifecycleRetention(ctx, "NILCTX_KV") }},
+		{"KVStore.Create", func(ctx context.Context) error { _, err := kv.Create(ctx, "new", nil); return err }},
+		{"KVStore.Delete", func(ctx context.Context) error { return kv.Delete(ctx, "k") }},
+		{"KVStore.DeleteAtRevision", func(ctx context.Context) error { return kv.DeleteAtRevision(ctx, "k", 1) }},
+		{"KVStore.Get", func(ctx context.Context) error { _, err := kv.Get(ctx, "k"); return err }},
+		{"KVStore.Keys", func(ctx context.Context) error { _, err := kv.Keys(ctx); return err }},
+		{"KVStore.KeysByFilter", func(ctx context.Context) error { _, err := kv.KeysByFilter(ctx, "k"); return err }},
+		{"KVStore.KeysByPrefix", func(ctx context.Context) error { _, err := kv.KeysByPrefix(ctx, "k"); return err }},
+		{"KVStore.Put", func(ctx context.Context) error { _, err := kv.Put(ctx, "k", nil); return err }},
+		{"KVStore.Update", func(ctx context.Context) error { _, err := kv.Update(ctx, "k", nil, 1); return err }},
+		{"KVStore.UpdateJSON", func(ctx context.Context) error {
 			return kv.UpdateJSON(ctx, "k", func(map[string]any) error { return nil })
 		}},
-		{"KVStore.UpdateWithRetry", true, func(ctx context.Context) error { return kv.UpdateWithRetry(ctx, "k", updateBytes) }},
-		{"KVStore.UpdateWithRetryRev", true, func(ctx context.Context) error {
+		{"KVStore.UpdateWithRetry", func(ctx context.Context) error { return kv.UpdateWithRetry(ctx, "k", updateBytes) }},
+		{"KVStore.UpdateWithRetryRev", func(ctx context.Context) error {
 			_, err := kv.UpdateWithRetryRev(ctx, "k", updateBytes)
 			return err
 		}},
-		{"KVStore.Watch", true, func(ctx context.Context) error { _, err := kv.Watch(ctx, "k"); return err }},
+		{"KVStore.Watch", func(ctx context.Context) error { _, err := kv.Watch(ctx, "k"); return err }},
 		// Retention and bucket helpers
-		{"BucketRetention", true, func(ctx context.Context) error { _, _, err := BucketRetention(ctx, bucket); return err }},
-		{"BucketLastSeq", true, func(ctx context.Context) error { _, err := BucketLastSeq(ctx, bucket); return err }},
-		{"FilteredKeys", true, func(ctx context.Context) error { _, err := FilteredKeys(ctx, bucket, "k"); return err }},
-		{"ReconcileNoLifecycleRetention", true, func(ctx context.Context) error {
+		{"BucketRetention", func(ctx context.Context) error { _, _, err := BucketRetention(ctx, bucket); return err }},
+		{"BucketLastSeq", func(ctx context.Context) error { _, err := BucketLastSeq(ctx, bucket); return err }},
+		{"FilteredKeys", func(ctx context.Context) error { _, err := FilteredKeys(ctx, bucket, "k"); return err }},
+		{"ReconcileNoLifecycleRetention", func(ctx context.Context) error {
 			return ReconcileNoLifecycleRetention(ctx, js, "NILCTX_KV", nil)
 		}},
 		// Streams and consumers
-		{"CreateStream", true, func(ctx context.Context) error { _, err := c.CreateStream(ctx, streamCfg); return err }},
-		{"EnsureStream", true, func(ctx context.Context) error { _, err := c.EnsureStream(ctx, streamCfg); return err }},
-		{"GetStream", true, func(ctx context.Context) error { _, err := c.GetStream(ctx, "NILCTX_STREAM"); return err }},
-		{"PublishToStream", true, func(ctx context.Context) error { return c.PublishToStream(ctx, "nilctx.stream.a", nil) }},
-		{"PublishToStreamWithAck", true, func(ctx context.Context) error {
+		{"CreateStream", func(ctx context.Context) error { _, err := c.CreateStream(ctx, streamCfg); return err }},
+		{"EnsureStream", func(ctx context.Context) error { _, err := c.EnsureStream(ctx, streamCfg); return err }},
+		{"GetStream", func(ctx context.Context) error { _, err := c.GetStream(ctx, "NILCTX_STREAM"); return err }},
+		{"PublishToStream", func(ctx context.Context) error { return c.PublishToStream(ctx, "nilctx.stream.a", nil) }},
+		{"PublishToStreamWithAck", func(ctx context.Context) error {
 			_, err := c.PublishToStreamWithAck(ctx, "nilctx.stream.a", nil)
 			return err
 		}},
-		{"PublishToStreamWithMsgID", true, func(ctx context.Context) error {
+		{"PublishToStreamWithMsgID", func(ctx context.Context) error {
 			return c.PublishToStreamWithMsgID(ctx, "nilctx.stream.a", nil, "id-1")
 		}},
-		{"PublishBatchToStream", true, func(ctx context.Context) error {
+		{"PublishBatchToStream", func(ctx context.Context) error {
 			return c.PublishBatchToStream(ctx, "nilctx.stream.a", [][]byte{nil})
 		}},
-		{"ConsumeInternalStreamWithConfig", true, func(ctx context.Context) error {
+		{"ConsumeInternalStreamWithConfig", func(ctx context.Context) error {
 			_, err := c.ConsumeInternalStreamWithConfig(ctx, consumerCfg, noop)
 			return err
 		}},
-		{"ConsumeStreamWithConfig", true, func(ctx context.Context) error {
+		{"ConsumeStreamWithConfig", func(ctx context.Context) error {
 			_, err := c.ConsumeStreamWithConfig(ctx, owner, consumerCfg, noop)
 			return err
 		}},
-		{"ConsumeStreamWithConfigContexts", true, func(ctx context.Context) error {
+		{"ConsumeStreamWithConfigContexts", func(ctx context.Context) error {
 			_, err := c.ConsumeStreamWithConfigContexts(ctx, ctx, owner, consumerCfg, noop)
 			return err
 		}},
-		{"ObserveDirectPortConsumerPolicy", true, func(ctx context.Context) error {
+		{"ObserveDirectPortConsumerPolicy", func(ctx context.Context) error {
 			_, err := c.ObserveDirectPortConsumerPolicy(ctx, owner, jetstream.ConsumerConfig{}, consumer)
 			return err
 		}},
-		{"ValidateHeartbeatDeliveryPolicy", false, func(ctx context.Context) error {
+		{"ValidateHeartbeatDeliveryPolicy", func(ctx context.Context) error {
 			_, err := ValidateHeartbeatDeliveryPolicy(ctx, consumerCfg, time.Second, DeliveryRetryPolicy{}, nil)
 			return err
 		}},
 		// Subscriptions and connection
-		{"Subscribe", true, func(ctx context.Context) error {
+		{"Subscribe", func(ctx context.Context) error {
 			s, err := c.Subscribe(ctx, "nilctx.sub2", func(context.Context, *nats.Msg) {})
 			if s != nil {
 				return errors.New("a refused subscribe returned a subscription")
 			}
 			return err
 		}},
-		{"Subscription.Drain", false, func(ctx context.Context) error { return sub.Drain(ctx) }},
-		{"WaitForConnection", true, func(ctx context.Context) error { return c.WaitForConnection(ctx) }},
+		{"Subscription.Drain", func(ctx context.Context) error { return sub.Drain(ctx) }},
+		{"WaitForConnection", func(ctx context.Context) error { return c.WaitForConnection(ctx) }},
 		// Storage reporting
-		{"StorageInventoryCollector.Collect", true, func(ctx context.Context) error { _, err := collector.Collect(ctx); return err }},
-		{"StorageReportPublisher.Publish", true, func(ctx context.Context) error {
+		{"StorageInventoryCollector.Collect", func(ctx context.Context) error { _, err := collector.Collect(ctx); return err }},
+		{"StorageReportPublisher.Publish", func(ctx context.Context) error {
 			_, err := publisher.Publish(ctx, StorageInventory{})
 			return err
 		}},
@@ -306,7 +305,7 @@ func TestExportedNilContextRefusedOnEveryOtherEntry(t *testing.T) {
 			switch {
 			case err == nil:
 				t.Error("nil context accepted")
-			case tc.wantInvalid && !errs.IsInvalid(err):
+			case !errs.IsInvalid(err):
 				t.Errorf("nil context: err = %v, want an invalid-data refusal", err)
 			}
 		})

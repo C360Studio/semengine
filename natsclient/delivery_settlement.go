@@ -160,7 +160,7 @@ func ValidateHeartbeatDeliveryPolicy(
 	work DeliveryWork,
 ) (HeartbeatDeliveryPolicy, error) {
 	if ctx == nil {
-		return HeartbeatDeliveryPolicy{}, fmt.Errorf("delivery policy context is required")
+		return HeartbeatDeliveryPolicy{}, nilContextErrorOf("natsclient", "ValidateHeartbeatDeliveryPolicy")
 	}
 	if err := ctx.Err(); err != nil {
 		return HeartbeatDeliveryPolicy{}, fmt.Errorf("delivery policy context already ended: %w", err)

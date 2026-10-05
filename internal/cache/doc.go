@@ -265,7 +265,7 @@
 // still running; the goroutine then exits when the callback returns. NewCoalescingSet panics on a
 // nil context or a nil callback before it starts the goroutine. A panic in the callback is
 // recovered: the batch is dropped, the panic is logged with the batch size (WithPanicLogger) and
-// counted (WithPanicCounter), and later batches still fire.
+// counted when WithCoalescingMetrics names a registry, and later batches still fire.
 //
 // # Testing
 //

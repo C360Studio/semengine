@@ -1242,10 +1242,13 @@
     5994720412 item 3, applying 5985697767 item 3 in place of the F1 reading of 5968830525 that let
     a callback panic end the process): fireBatch recovers a callback panic, as the pin did (pin
     coalescing_set.go:167-180), but where the pin discarded it (`_ = r`) the batch is now dropped
-    with an error log naming the panic and the batch size and an increment of the counter
-    WithPanicCounter supplies; later batches still fire. New surface for it: CoalescingOption,
-    WithPanicLogger (default slog.Default()) and WithPanicCounter, the variadic options of
-    NewCoalescingSet. Removed, pin lines: the
+    with an error log naming the panic and the batch size and an increment of
+    semstreams_cache_coalescing_callback_panics_total{component=prefix}; later batches still fire.
+    New surface for it: CoalescingOption, WithPanicLogger (default slog.Default(); the package has
+    no other logger path) and WithCoalescingMetrics(registry, prefix), which follows WithMetrics'
+    registry-and-prefix convention (design D7), the variadic options of NewCoalescingSet; no present
+    production consumer. A counter the registry refuses is logged and not counted, a declared
+    degrade. Removed, pin lines: the
     check-then-close in the TTL and hybrid Close (ttl.go:251-256, hybrid.go:278-283), replaced by a
     sync.Once; StatsInterval (config.go:46-47, :58, :103-106, :123-126, :232, :260-267; options.go:26-27,
     :50-59, :66; ttl.go:34, :67; hybrid.go:38, :73; doc.go:163; README.md:67, :127-133, :194); Entry,
@@ -1312,10 +1315,13 @@
     Owner ruling #9 comment 5994720412 item 3: coalescing_panic_test.go,
     TestCoalescingSet_CallbackPanicIsRecoveredAndLaterBatchesFire replaces task 3.6a's
     TestCoalescingSet_CallbackPanicEndsTheProcess and its helper file helper_process_test.go (the
-    error log with the panic value and batch size, the counter at 1, and the next batch delivered,
-    each under a bound in a synctest bubble). Failed first: without the recover the test binary
-    died with the callback's panic in fireBatch; mutants that skip the count, skip the log or
-    drop the recover each fail it.
+    error log with the panic value and batch size, the series gathered at 1 from the registry
+    WithCoalescingMetrics names, and the next batch delivered, each under a bound in a synctest
+    bubble). Failed first: without the recover the test binary died with the callback's panic in
+    fireBatch; mutants that skip the count, skip the log, drop the recover or ignore the registry
+    each fail it. TestCoalescingSet_PanicCounterRefusedIsLoggedAndPanicsStillRecovered (a gauge
+    already owns the counter's key: the refusal and then the recovered panic are logged); mutants
+    that drop the refusal log or ignore the registry fail it.
     In background_test.go, TestCacheConcurrentCloseJoinsEveryCaller (2,000 rounds of 32 Close calls per
     strategy; each returns nil with the goroutine's done channel closed) and
     TestCacheConstructorsRefuseInvalidDimensions (errs.IsInvalid, a nil Cache, no cleanup goroutine in

@@ -618,8 +618,16 @@ Why these shapes, at the pin:
   `Shutdown(ctx)` bounds the wait by the caller's context whatever the callback does, with one signature change.
   A callback panic is recovered (owner ruling, #9 comment 5994720412 item 3, applying 5985697767 item 3 in place of
   the reading of 5968830525 that let it end the process): the batch is dropped, the panic is logged at error level
-  with the batch size and counted on the counter `WithPanicCounter` supplies, and later batches still fire
-  (`TestCoalescingSet_CallbackPanicIsRecoveredAndLaterBatchesFire`).
+  with the batch size and counted, and later batches still fire
+  (`TestCoalescingSet_CallbackPanicIsRecoveredAndLaterBatchesFire`). The count follows the package's one metrics
+  convention, `WithMetrics(registry, prefix)`: `WithCoalescingMetrics(registry, prefix)` registers
+  `semstreams_cache_coalescing_callback_panics_total{component=prefix}` through `metric.RegisterOrGet` (D9), and a
+  nil registry or an empty prefix is ignored, as `WithMetrics` ignores them. `WithPanicLogger` stays because the
+  package has no logger path; it defaults to `slog.Default()`. `NewCoalescingSet` returns no error, so a counter the
+  registry refuses is logged at error level and the set runs with panics logged, not counted: a declared degrade
+  (`TestCoalescingSet_PanicCounterRefusedIsLoggedAndPanicsStillRecovered`). Neither option has a present production
+  consumer; `NewCoalescingSet` itself has none in this tree. They exist because the ruling requires the panic to be
+  logged and counted.
 - **`Watcher` takes shape 1.** Its loop calls a caller's check function, and its start and stop have no caller to
   keep. `Run(ctx)` removes the goroutine, the cancel and the wait group from the type.
 

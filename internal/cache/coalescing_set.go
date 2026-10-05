@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/prometheus/client_golang/prometheus"
 )
@@ -27,28 +28,38 @@ type CoalescingSet struct {
 	closeOnce sync.Once
 
 	logger       *slog.Logger
-	panicCounter prometheus.Counter
+	panicCounter prometheus.Counter // nil: panics are logged, not counted
 }
 
 // CoalescingOption configures a CoalescingSet.
-type CoalescingOption func(*CoalescingSet)
+type CoalescingOption func(*coalescingOptions)
+
+type coalescingOptions struct {
+	logger        *slog.Logger
+	metricsReg    *metric.MetricsRegistry
+	metricsPrefix string
+}
 
 // WithPanicLogger sets the logger that records a recovered callback panic. A nil logger keeps
-// the default, slog.Default().
+// the default, slog.Default(). The package has no other logger path.
 func WithPanicLogger(logger *slog.Logger) CoalescingOption {
-	return func(c *CoalescingSet) {
+	return func(o *coalescingOptions) {
 		if logger != nil {
-			c.logger = logger
+			o.logger = logger
 		}
 	}
 }
 
-// WithPanicCounter sets the counter a recovered callback panic increments. Register it through
-// metric.RegisterOrGet and pass the collector that call returns. Without one a panic is logged
-// but not counted.
-func WithPanicCounter(counter prometheus.Counter) CoalescingOption {
-	return func(c *CoalescingSet) {
-		c.panicCounter = counter
+// WithCoalescingMetrics counts recovered callback panics on
+// semstreams_cache_coalescing_callback_panics_total{component=prefix}, registered on registry the
+// way WithMetrics registers a cache's collectors. A nil registry or an empty prefix is ignored, as
+// WithMetrics ignores them: a panic is then logged but not counted.
+func WithCoalescingMetrics(registry *metric.MetricsRegistry, prefix string) CoalescingOption {
+	return func(o *coalescingOptions) {
+		if registry != nil && prefix != "" {
+			o.metricsReg = registry
+			o.metricsPrefix = prefix
+		}
 	}
 }
 
@@ -57,8 +68,10 @@ func WithPanicCounter(counter prometheus.Counter) CoalescingOption {
 // or when Shutdown is called. A nil ctx or a nil callback panics here, before any goroutine
 // starts. A panic in the callback is recovered: the set is a helper inside a service, not a root
 // process (owner ruling, #9 comment 5994720412 item 3). The batch the callback was handed is
-// dropped, the panic is logged at error level with the batch size and counted on the
-// WithPanicCounter counter, and later batches still fire.
+// dropped, the panic is logged at error level with the batch size and counted when
+// WithCoalescingMetrics names a registry, and later batches still fire. If that counter cannot be
+// registered (another collector owns its name), the error is logged and the set runs with
+// panics logged but not counted: a declared degrade, since the constructor returns no error.
 func NewCoalescingSet(
 	ctx context.Context, window time.Duration, callback func([]string), opts ...CoalescingOption,
 ) *CoalescingSet {
@@ -74,11 +87,28 @@ func NewCoalescingSet(
 		callback: callback,
 		shutdown: make(chan struct{}),
 		done:     make(chan struct{}),
-		logger:   slog.Default(),
 	}
+	o := coalescingOptions{logger: slog.Default()}
 	for _, opt := range opts {
 		if opt != nil {
-			opt(c)
+			opt(&o)
+		}
+	}
+	c.logger = o.logger
+	if o.metricsReg != nil {
+		counter, err := metric.RegisterOrGet(o.metricsReg, o.metricsPrefix, "cache_coalescing_callback_panics",
+			prometheus.NewCounter(prometheus.CounterOpts{
+				Namespace:   "semstreams",
+				Subsystem:   "cache",
+				Name:        "coalescing_callback_panics_total",
+				ConstLabels: prometheus.Labels{"component": o.metricsPrefix},
+				Help:        "Total number of CoalescingSet callback panics recovered; each dropped its batch",
+			}))
+		if err != nil {
+			c.logger.Error("CoalescingSet panic counter not registered; callback panics will be logged, not counted",
+				slog.String("component", o.metricsPrefix), slog.Any("error", err))
+		} else {
+			c.panicCounter = counter
 		}
 	}
 

@@ -601,6 +601,10 @@ Why these shapes, at the pin:
   is the user callback the shape-3 rule names. Handing the callback a context that `Close` cancels would change the
   callback's signature for its two later callers and still hang `Close` on a callback that ignores the context;
   `Shutdown(ctx)` bounds the wait by the caller's context whatever the callback does, with one signature change.
+  A callback panic is recovered (owner ruling, #9 comment 5994720412 item 3, applying 5985697767 item 3 in place of
+  the reading of 5968830525 that let it end the process): the batch is dropped, the panic is logged at error level
+  with the batch size and counted on the counter `WithPanicCounter` supplies, and later batches still fire
+  (`TestCoalescingSet_CallbackPanicIsRecoveredAndLaterBatchesFire`).
 - **`Watcher` takes shape 1.** Its loop calls a caller's check function, and its start and stop have no caller to
   keep. `Run(ctx)` removes the goroutine, the cancel and the wait group from the type.
 

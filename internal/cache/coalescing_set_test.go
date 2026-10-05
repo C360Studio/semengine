@@ -8,14 +8,12 @@ package cache
 
 import (
 	"context"
-	"os"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
 
-	"github.com/c360studio/semengine/internal/harness/prochost"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -584,26 +582,6 @@ func TestCoalescingSet_MultipleCloseCalls(t *testing.T) {
 		err = set.Shutdown(t.Context())
 		require.NoError(t, err)
 	})
-}
-
-// TestCoalescingSet_CallbackPanicEndsTheProcess: a panic in the callback is not recovered; it
-// ends the process, so a failed batch is never reported as processed (owner ruling on Codex F1,
-// PR #48). The set runs in a helper process (internal/harness/prochost); the oracle is the
-// child's exit (code 2, a Go runtime panic) and the panic text with the callback's own value on
-// its stderr, not the exit code alone: a bad test flag also exits 2. At the pin fireBatch
-// recovered the panic and the child stayed parked until the test's bound.
-func TestCoalescingSet_CallbackPanicEndsTheProcess(t *testing.T) {
-	p, err := prochost.Start(t, callbackPanicHelper)
-	require.NoError(t, err)
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	status, err := p.Wait(ctx)
-	require.NoError(t, err, "the helper is still running: the callback's panic did not end it")
-	stderr, err := os.ReadFile(p.StderrPath())
-	require.NoError(t, err)
-	assert.Equal(t, prochost.ExitStatus{Code: 2}, status, "stderr:\n%s", stderr)
-	assert.Contains(t, string(stderr), "panic: "+callbackPanicValue)
-	assert.Contains(t, string(stderr), "(*CoalescingSet).fireBatch")
 }
 
 // TestCoalescingSet_NilCallbackPanicsAtTheCall: a nil callback is refused by a panic at the call,

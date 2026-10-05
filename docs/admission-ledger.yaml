@@ -1201,9 +1201,9 @@
     NewFromConfig through them) returns a nil Cache on error; at the pin each returned its nil
     pointer inside a non-nil Cache (pin config.go:152, :159, :170, :177). Owner ruling (#9 comment 5950725772): no eviction
     callback. Changed behavior, task 3.6a (Codex review, PR #48 comment 5968489295; owner rulings,
-    #9 comments 5968830525 and 5968665464), each written first: a CoalescingSet callback panic is
-    not recovered and ends the process, and a nil callback panics at the call before the goroutine
-    starts (F1); concurrent Close calls on the TTL and hybrid caches are safe and each returns only
+    #9 comments 5968830525 and 5968665464), each written first: a nil callback panics at the call
+    before the goroutine starts (F1; F1's other half, a callback panic ending the process, is
+    replaced below); concurrent Close calls on the TTL and hybrid caches are safe and each returns only
     once the cleanup goroutine has exited (F2); NewLRU, NewTTL and the hybrid constructor refuse a
     zero or negative size, TTL or cleanup interval with a classified invalid error, a nil Cache and
     no goroutine started, as Config.Validate already did for NewFromConfig (F3); Config's JSON
@@ -1238,9 +1238,14 @@
     :117-125 removed. README import paths (not a behavior edit, as on the metric row): :17 and :41
     changed to github.com/c360studio/semengine/internal/cache and /metric. README lint fix: line 3
     wrapped at 120 columns (MD013); no other wording changed. Task 3.6a (Codex PR #48 comment 5968489295; owner
-    rulings #9 comments 5968830525, 5968665464): a panic in a CoalescingSet callback ends the
-    process (owner ruling on F1); a caller that needs to survive one recovers inside its own
-    callback. Removed, pin lines: the recover in fireBatch (coalescing_set.go:167-180); the
+    rulings #9 comments 5968830525, 5968665464). Changed behavior (owner ruling, #9 comment
+    5994720412 item 3, applying 5985697767 item 3 in place of the F1 reading of 5968830525 that let
+    a callback panic end the process): fireBatch recovers a callback panic, as the pin did (pin
+    coalescing_set.go:167-180), but where the pin discarded it (`_ = r`) the batch is now dropped
+    with an error log naming the panic and the batch size and an increment of the counter
+    WithPanicCounter supplies; later batches still fire. New surface for it: CoalescingOption,
+    WithPanicLogger (default slog.Default()) and WithPanicCounter, the variadic options of
+    NewCoalescingSet. Removed, pin lines: the
     check-then-close in the TTL and hybrid Close (ttl.go:251-256, hybrid.go:278-283), replaced by a
     sync.Once; StatsInterval (config.go:46-47, :58, :103-106, :123-126, :232, :260-267; options.go:26-27,
     :50-59, :66; ttl.go:34, :67; hybrid.go:38, :73; doc.go:163; README.md:67, :127-133, :194); Entry,
@@ -1295,17 +1300,22 @@
     live, 10 s failure bound). The 30 t.Parallel calls (coalescing_set_test.go 20,
     coalescing_set_attack_test.go 10) are removed: t.Parallel cannot be called in a bubble. Other test
     edits: TestCoalescingSet_CallbackPanic asserted nothing at the pin and is gone, replaced in task
-    3.6a by TestCoalescingSet_CallbackPanicEndsTheProcess below (a callback panic ends the process;
-    nothing is delivered after it); BatchCleared and AddDuringCallback assert after releasing the test's mutex (at the pin a
+    3.6a by a process-ending test that owner ruling #9 comment 5994720412 item 3 replaced in turn
+    (below); BatchCleared and AddDuringCallback assert after releasing the test's mutex (at the pin a
     failed require held it and the deferred Close waited forever); the carried CoalescingSet tests call
     Shutdown(t.Context()) for Close(); the two test files' "Code generated ... DO NOT EDIT" headers,
     which made tools treat them as generated, are replaced by a note of their origin, and the 11 unused
     parameters revive then reports are named _ (coalescing_set_test.go 6, coalescing_set_attack_test.go
     5). Task 3.6a, each written first (implementer-reported failing first): in coalescing_set_test.go,
-    TestCoalescingSet_CallbackPanicEndsTheProcess replaces TestCoalescingSet_CallbackPanic (a prochost
-    helper, defined by TestHelperProcess in the new file helper_process_test.go; oracle: exit code 2, and the panic value and the fireBatch frame on its stderr) and
     TestCoalescingSet_NilCallbackPanicsAtTheCall replaces TestCoalescingSet_NilCallback (the panic, and
     no run goroutine in the bubble's stack dump); the tests that passed a nil callback pass a no-op one.
+    Owner ruling #9 comment 5994720412 item 3: coalescing_panic_test.go,
+    TestCoalescingSet_CallbackPanicIsRecoveredAndLaterBatchesFire replaces task 3.6a's
+    TestCoalescingSet_CallbackPanicEndsTheProcess and its helper file helper_process_test.go (the
+    error log with the panic value and batch size, the counter at 1, and the next batch delivered,
+    each under a bound in a synctest bubble). Failed first: without the recover the test binary
+    died with the callback's panic in fireBatch; mutants that skip the count, skip the log or
+    drop the recover each fail it.
     In background_test.go, TestCacheConcurrentCloseJoinsEveryCaller (2,000 rounds of 32 Close calls per
     strategy; each returns nil with the goroutine's done channel closed) and
     TestCacheConstructorsRefuseInvalidDimensions (errs.IsInvalid, a nil Cache, no cleanup goroutine in

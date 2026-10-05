@@ -325,6 +325,9 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       3.6 is done) and is gone. README import paths (3485af3) in `message`, `pkg/retry`, `pkg/types` and `vocabulary`,
       each an `adapt` item on its row. Rows: `pkg/cache` (contract, `known_risks`, `proving_tests`), `message`,
       `pkg/retry`, `pkg/types`, `vocabulary`.
+      - F1's process-ending panic is superseded by owner ruling 5994720412 item 3: the panic is recovered, logged and
+        counted, the batch dropped and later batches fired
+        (`TestCoalescingSet_CallbackPanicIsRecoveredAndLaterBatchesFire`; the `internal/cache` row).
 - [x] 3.6b (D) Codex's sixth record (PR #48 comment 5969256728, at `c64ac33`: F8–F10), #72 ruling 1 (comment 5969293525)
       as extended to `vocabulary.EntityIRI` (comment 5969505488, relayed in PR #48 comment 5969508639) with ruling D's
       `pkg/platform` comment, and #9 ruling 7 (comment 5969522395). Each with a test written first, failing first

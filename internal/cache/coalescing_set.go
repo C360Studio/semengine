@@ -3,11 +3,13 @@ package cache
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/c360studio/semengine/pkg/errs"
+	"github.com/prometheus/client_golang/prometheus"
 )
 
 // CoalescingSet collects keys over a time window and fires a callback with the batch.
@@ -23,14 +25,43 @@ type CoalescingSet struct {
 	shutdown  chan struct{}
 	done      chan struct{}
 	closeOnce sync.Once
+
+	logger       *slog.Logger
+	panicCounter prometheus.Counter
+}
+
+// CoalescingOption configures a CoalescingSet.
+type CoalescingOption func(*CoalescingSet)
+
+// WithPanicLogger sets the logger that records a recovered callback panic. A nil logger keeps
+// the default, slog.Default().
+func WithPanicLogger(logger *slog.Logger) CoalescingOption {
+	return func(c *CoalescingSet) {
+		if logger != nil {
+			c.logger = logger
+		}
+	}
+}
+
+// WithPanicCounter sets the counter a recovered callback panic increments. Register it through
+// metric.RegisterOrGet and pass the collector that call returns. Without one a panic is logged
+// but not counted.
+func WithPanicCounter(counter prometheus.Counter) CoalescingOption {
+	return func(c *CoalescingSet) {
+		c.panicCounter = counter
+	}
 }
 
 // NewCoalescingSet creates a new CoalescingSet that fires the callback every window duration
 // with the collected (deduplicated) keys. The background goroutine stops when ctx is cancelled
 // or when Shutdown is called. A nil ctx or a nil callback panics here, before any goroutine
-// starts. The callback is not guarded: a panic in it ends the process, so a batch the callback
-// did not finish is never taken for one it processed.
-func NewCoalescingSet(ctx context.Context, window time.Duration, callback func([]string)) *CoalescingSet {
+// starts. A panic in the callback is recovered: the set is a helper inside a service, not a root
+// process (owner ruling, #9 comment 5994720412 item 3). The batch the callback was handed is
+// dropped, the panic is logged at error level with the batch size and counted on the
+// WithPanicCounter counter, and later batches still fire.
+func NewCoalescingSet(
+	ctx context.Context, window time.Duration, callback func([]string), opts ...CoalescingOption,
+) *CoalescingSet {
 	if ctx == nil {
 		panic("cache: NewCoalescingSet called with a nil context")
 	}
@@ -43,6 +74,12 @@ func NewCoalescingSet(ctx context.Context, window time.Duration, callback func([
 		callback: callback,
 		shutdown: make(chan struct{}),
 		done:     make(chan struct{}),
+		logger:   slog.Default(),
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(c)
+		}
 	}
 
 	// Handle zero or negative window by using minimum ticker duration
@@ -189,8 +226,22 @@ func (c *CoalescingSet) fireBatch() {
 	c.pending = make(map[string]struct{})
 	c.mu.Unlock()
 
-	// Call callback OUTSIDE the lock to prevent deadlock. A panic is not recovered: the batch has
-	// left the pending set, so continuing would report work as done that the callback never
-	// finished (owner ruling on Codex F1, PR #48).
+	// Call callback OUTSIDE the lock to prevent deadlock.
+	c.runCallback(keys)
+}
+
+// runCallback calls the callback and recovers a panic in it (owner ruling, #9 comment 5994720412
+// item 3). The batch has already left the pending set, so it is dropped: the drop is declared by
+// the error log, which names the batch size, and by the panic counter.
+func (c *CoalescingSet) runCallback(keys []string) {
+	defer func() {
+		if r := recover(); r != nil {
+			if c.panicCounter != nil {
+				c.panicCounter.Inc()
+			}
+			c.logger.Error("panic in CoalescingSet callback; batch dropped",
+				slog.Any("panic", r), slog.Int("batch_size", len(keys)))
+		}
+	}()
 	c.callback(keys)
 }

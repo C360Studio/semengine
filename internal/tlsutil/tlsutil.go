@@ -81,8 +81,15 @@ func LoadClientTLSConfig(cfg security.ClientTLSConfig) (*tls.Config, error) {
 	return tlsConfig, nil
 }
 
-// LoadServerTLSConfigWithMTLS creates a tls.Config for HTTP/WebSocket servers with optional mTLS support
+// LoadServerTLSConfigWithMTLS creates a tls.Config for HTTP/WebSocket servers with optional mTLS support.
+// Enabling mTLS while server TLS is disabled is refused with errs.ErrInvalidConfig: a plain
+// HTTP server cannot verify a client certificate, so there is no config that honours both.
 func LoadServerTLSConfigWithMTLS(cfg security.ServerTLSConfig, mtlsCfg security.ServerMTLSConfig) (*tls.Config, error) {
+	if mtlsCfg.Enabled && !cfg.Enabled {
+		return nil, errs.WrapInvalid(errs.ErrInvalidConfig, "tlsutil", "LoadServerTLSConfigWithMTLS",
+			"mTLS is enabled but server TLS is not")
+	}
+
 	// Start with base server TLS config
 	tlsConfig, err := LoadServerTLSConfig(cfg)
 	if err != nil {

@@ -63,7 +63,6 @@ func TestServerRequiredMTLSRejectsClientWithoutCertificate(t *testing.T) {
 		Enabled: true, Mode: "manual", CertFile: id.certFile, KeyFile: id.keyFile,
 		MTLS: security.ServerMTLSConfig{Enabled: true, RequireClientCert: true, ClientCAFiles: []string{id.certFile}},
 	}}}
-	require.NoError(t, securityCfg.Validate())
 	server := NewServer(9090, "/metrics", NewMetricsRegistry(), securityCfg)
 	require.NoError(t, server.StartWithListener(t.Context(), boundServerListener(t)))
 	registerServerCleanup(t, server)
@@ -97,7 +96,6 @@ func TestServerRefusesMTLSWithoutTLS(t *testing.T) {
 	securityCfg := security.Config{TLS: security.TLSConfig{Server: security.ServerTLSConfig{
 		MTLS: security.ServerMTLSConfig{Enabled: true, RequireClientCert: true, ClientCAFiles: []string{id.certFile}},
 	}}}
-	require.NoError(t, securityCfg.Validate())
 	server := NewServer(9090, "/metrics", NewMetricsRegistry(), securityCfg)
 	listener := boundServerListener(t)
 	err := server.StartWithListener(t.Context(), listener)

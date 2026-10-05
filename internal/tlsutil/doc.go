@@ -105,12 +105,14 @@
 //   - "1.2" - TLS 1.2 (default, widely compatible)
 //   - "1.3" - TLS 1.3 (more secure, modern clients only)
 //
-// If unspecified or invalid, defaults to TLS 1.2.
+// If unspecified, defaults to TLS 1.2. Any other value is refused with an
+// invalid-configuration error.
 //
 // # Error Handling
 //
 // Errors are classified using the errs package:
 //   - Fatal errors: File not found, invalid PEM data
+//   - Invalid errors: a MinVersion other than "1.2", "1.3" or empty
 //
 // # Thread Safety
 //

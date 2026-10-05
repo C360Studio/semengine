@@ -17,6 +17,11 @@ func LoadServerTLSConfig(cfg security.ServerTLSConfig) (*tls.Config, error) {
 		return nil, nil
 	}
 
+	minVersion, err := parseTLSVersion(cfg.MinVersion)
+	if err != nil {
+		return nil, errs.WrapInvalid(err, "tlsutil", "LoadServerTLSConfig", "parse min_version")
+	}
+
 	cert, err := tls.LoadX509KeyPair(cfg.CertFile, cfg.KeyFile)
 	if err != nil {
 		return nil, errs.WrapFatal(err, "tlsutil", "LoadServerTLSConfig", "load certificate")
@@ -24,7 +29,7 @@ func LoadServerTLSConfig(cfg security.ServerTLSConfig) (*tls.Config, error) {
 
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{cert},
-		MinVersion:   parseTLSVersion(cfg.MinVersion),
+		MinVersion:   minVersion,
 	}
 
 	return tlsConfig, nil
@@ -33,8 +38,13 @@ func LoadServerTLSConfig(cfg security.ServerTLSConfig) (*tls.Config, error) {
 // LoadClientTLSConfig creates a tls.Config for HTTP/WebSocket clients from platform config
 // Always uses system CA bundle first, CAFiles are additional trusted CAs
 func LoadClientTLSConfig(cfg security.ClientTLSConfig) (*tls.Config, error) {
+	minVersion, err := parseTLSVersion(cfg.MinVersion)
+	if err != nil {
+		return nil, errs.WrapInvalid(err, "tlsutil", "LoadClientTLSConfig", "parse min_version")
+	}
+
 	tlsConfig := &tls.Config{
-		MinVersion: parseTLSVersion(cfg.MinVersion),
+		MinVersion: minVersion,
 	}
 
 	// Start with system CA pool
@@ -167,15 +177,16 @@ func LoadClientTLSConfigWithMTLS(cfg security.ClientTLSConfig, mtlsCfg security.
 	return tlsConfig, nil
 }
 
-// parseTLSVersion converts version string to crypto/tls constant
-// Returns tls.VersionTLS12 if empty or invalid
-func parseTLSVersion(version string) uint16 {
+// parseTLSVersion converts version string to crypto/tls constant.
+// Empty means the default, TLS 1.2. Any other value is refused, as the pin's
+// config loader refused it at boot: a typo must not silently become TLS 1.2.
+func parseTLSVersion(version string) (uint16, error) {
 	switch version {
 	case "1.3":
-		return tls.VersionTLS13
-	case "1.2":
-		return tls.VersionTLS12
+		return tls.VersionTLS13, nil
+	case "1.2", "":
+		return tls.VersionTLS12, nil
 	default:
-		return tls.VersionTLS12 // Safe default
+		return 0, fmt.Errorf("invalid TLS version %q (must be \"1.2\" or \"1.3\")", version)
 	}
 }

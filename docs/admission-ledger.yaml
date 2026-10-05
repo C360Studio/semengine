@@ -416,18 +416,45 @@
     TLS and ACME configuration types; security.Config is named by metric.NewServer, so public by
     the signature rule (design D5, P22)
   destination: pkg/security
-  contract: configuration types and their field semantics as at the pin; no behavior beyond the types
-  dependencies_and_side_effects: stdlib only; no goroutine, no I/O
+  contract: >-
+    the seven configuration types (Config, TLSConfig, ServerTLSConfig, ClientTLSConfig,
+    ServerMTLSConfig, ClientMTLSConfig, ACMEConfig) and their field semantics and JSON keys as at
+    the pin; no behavior beyond the types: internal/tlsutil checks a configuration when it builds
+    a tls.Config
+  dependencies_and_side_effects: >-
+    no imports; no goroutine, no I/O. Corrected (owner ruling, #9 comment 5985900154, item 3): at
+    the pin the seven Validate methods called os.Stat (pin config.go:104, :158, :161, :189, :192,
+    :231), so the pin's package did file I/O and this row's earlier "stdlib only; no I/O" was
+    wrong; with the methods removed (known_risks) the package has neither
   known_risks: >-
-    no tests at the pin, none invented (design D1); no context roots. doc.go's See Also names
-    pkg/tlsutil and pkg/acme by module path; pkg/acme is not ported (change 5), so the doc.go:139 link
-    points at a package that does not exist here, left as the pin's text because changing it would
-    break this row's carry check; pkg/tlsutil moved to internal/tlsutil (task 3.4, f1cc210), which
-    rewrote the doc.go:138 link to internal/tlsutil, as the ledger check expects once the pkg/tlsutil
-    row maps the move
-  proving_tests: none at the pin; compiled through metric's tests (task 3.5)
+    no context roots. doc.go's See Also names pkg/tlsutil and pkg/acme by module path; pkg/acme is
+    not ported (change 5), so the doc.go:139 link points at a package that does not exist here,
+    left as the pin's text; pkg/tlsutil moved to internal/tlsutil (task 3.4, f1cc210), which
+    rewrote the doc.go:138 link to internal/tlsutil. Adapt item, dead surface removed (owner
+    rulings, #9 comments 5985697767 item 2 and 5985900154 item 3; evidence: the surface audit,
+    openspec/changes/setup-04a-01-floor/surface-audit.md §3): 11 of the 18 exported identifiers,
+    with no caller in SemEngine, the pin, semsource or semconnect. Removed, pin lines: config.go
+    :4-8 (the fmt, os and time imports only they used), :15-26 (DefaultConfig, Config.Validate),
+    :34-51 (DefaultTLSConfig, TLSConfig.Validate), :65-85 (ACMEConfig.Validate), :95-109
+    (ServerMTLSConfig.Validate), :126-169 (DefaultServerTLSConfig, ServerTLSConfig.Validate),
+    :178-196 (ClientMTLSConfig.Validate) and :213-244 (DefaultClientTLSConfig,
+    ClientTLSConfig.Validate). The pin's boot path never ran them: its config loader validated
+    the fields itself (pin config/config.go:303-364). Doc edits (owner rulings, #9 comments
+    5957221949 and 5984291337), pin lines of doc.go: :14 (the validation feature bullet), :44-47
+    (an example calling cfg.Validate()), :116-120 (the Validation section now says the types carry
+    no validation and internal/tlsutil checks files and MinVersion), :124 (the defaults are the
+    zero values, not DefaultConfig()), :132-133 (the sentence on validation methods). Not done in
+    this row, held for the owner (tasks.md 3.12a): the RequireClientCert fail-open (with mTLS
+    enabled, RequireClientCert false and no AllowedClientCNs, a client with no certificate is
+    admitted; the schema tag at config.go:91 says default:true while the Go zero value is false)
+  proving_tests: >-
+    none at the pin. Added: pkg/security/config_test.go, TestConfigDecodesEveryKey (a JSON
+    document naming every key decodes, unknown fields refused, into the expected Config; a mutant
+    renaming require_client_cert fails it) and TestConfigDocumentCoversEveryField (every field of
+    the expected Config is non-zero, so a field added without a key fails; a mutant adding a field
+    fails it). Field behavior is proven through internal/tlsutil's tests and metric's (task 3.5)
   owner: setup-04a-01-floor developer
-  disposition: carry
+  disposition: adapt
 
 - source_path: pkg/timestamp
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
@@ -720,10 +747,13 @@
   destination: internal/tlsutil
   contract: >-
     LoadServerTLSConfig, LoadClientTLSConfig, LoadServerTLSConfigWithMTLS and
-    LoadClientTLSConfigWithMTLS as at the pin: disabled config returns nil, the TLS version parse
-    defaults to 1.2, client CA pools and the CN whitelist are enforced, file and PEM failures are
+    LoadClientTLSConfigWithMTLS as at the pin: disabled config returns nil, an empty MinVersion
+    means TLS 1.2, client CA pools and the CN whitelist are enforced, file and PEM failures are
     errs fatal errors. Changed (owner ruling, #9 comment 5950752741; design D1): the ACME loaders
-    are not ported
+    are not ported. Changed behavior (owner ruling, #9 comment 5985900154, item 3): a MinVersion
+    other than "1.2", "1.3" or empty is refused with an errs invalid error naming the value; the
+    pin's parseTLSVersion mapped it to TLS 1.2, and only the pin's config loader, not ported,
+    refused it at boot (pin config/config.go:324-326, :348-350, :358-364)
   dependencies_and_side_effects: >-
     pkg/errs, pkg/security (in-set); stdlib; reads certificate and key files; no goroutine. The pin's
     pkg/acme and go-acme/lego/v4 dependencies leave with the ACME loaders
@@ -741,11 +771,24 @@
     legoClient.Certificate.Renew, which takes no context (pkg/acme/client.go:352), so it needs
     Shutdown(ctx) and a renewal test seam; and the renewal callback writes tlsConfig.Certificates
     while the config may be serving handshakes (tlsutil.go:258, :336), a data race.
-    input/websocket and output/httppost also call the loaders and are in no change of the chain
+    input/websocket and output/httppost also call the loaders and are in no change of the chain.
+    Behaviour change, MinVersion refusal (owner ruling, #9 comment 5985900154, item 3; surface
+    audit §3.3 item 5 and inventory review MEDIUM-I2, the port opened it): pin tlsutil.go :173-184
+    (parseTLSVersion returns an error for any value but "1.2", "1.3" or empty), :30 and :40 (both
+    loaders parse MinVersion first and wrap a refusal with errs.WrapInvalid). doc.go pin lines :145
+    (unspecified means 1.2; anything else is refused) and :150 (the invalid error class). Tests,
+    pin lines of tlsutil_test.go: :88-93, :111-112, :122-123 and :167-169 (TestLoadServerTLSConfig
+    asserts the version constant itself instead of calling parseTLSVersion, its own oracle),
+    :260-277 (TestParseTLSVersion: "invalid" and "1.1" are refused)
   proving_tests: >-
     internal/tlsutil/tlsutil_test.go (unit lane); internal/tlsutil/mtls_integration_test.go
     (integration-tagged, run by task test:integration: real TLS handshakes over httptest servers for
-    required, optional and whitelisted client certificates)
+    required, optional and whitelisted client certificates); internal/tlsutil/minversion_test.go,
+    added: TestLoadServerTLSConfigRefusesUnknownMinVersion and
+    TestLoadClientTLSConfigRefusesUnknownMinVersion (nine near-miss spellings, through the plain
+    and the mTLS loaders; failed first: all 18 subtests accepted the value; a mutant restoring the
+    1.2 fallback fails both, and one wrapping the client refusal as fatal fails the client test)
+    and TestLoadersAcceptTheThreeMinVersionSpellings
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -841,7 +884,8 @@
     review finding); in metric/tls_test.go, written first and failing
     at the pin's Start ("An error is expected but got nil"): TestServerRequiredMTLSRejectsClientWithoutCertificate
     (through StartWithListener, temporary certificates, an ephemeral listener: no client
-    certificate refused, a certificate the client CA signed served) and TestServerRefusesMTLSWithoutTLS;
+    certificate refused, a certificate the client CA signed served) and TestServerRefusesMTLSWithoutTLS
+    (their securityCfg.Validate() precondition calls removed with that method, pkg/security row);
     in metric/lifecycle_test.go, written first and failing at the pre-fix Stop (the repeated Stop returned
     nil where context.Canceled was expected):
     TestServerRepeatedStopWaitsForAdmittedRequest (a real request whose collector blocks; Stop with
@@ -893,7 +937,7 @@
     :100, :350, :427, and the cleanup waits pin :336, :342, :419 → :341, :347, :424. So do the
     HTTP client timeouts on requests the tests expect to succeed: testServerGET's default client,
     pin :87 (2 s) → :92; the TLS test's client, pin :308 (2 s) → :313; the mTLS test's client in
-    the new file tls_test.go:76 (5 s); and the dial that must succeed once Start returns, pin :155
+    the new file tls_test.go:75 (5 s); and the dial that must succeed once Start returns, pin :155
     (250 ms) → :160. Kept, because their expiry can only miss a defect and never fail a correct
     run: the three dials that must be refused after Stop, pin :115, :168, :456 (100 ms) → :120,
     :173, :461; a timeout there also returns the error the test asserts

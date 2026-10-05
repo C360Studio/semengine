@@ -87,10 +87,11 @@ func TestLoadServerTLSConfig(t *testing.T) {
 	defer cleanup()
 
 	tests := []struct {
-		name    string
-		cfg     security.ServerTLSConfig
-		wantNil bool
-		wantErr bool
+		name        string
+		cfg         security.ServerTLSConfig
+		wantNil     bool
+		wantErr     bool
+		wantVersion uint16
 	}{
 		{
 			name: "disabled",
@@ -108,8 +109,9 @@ func TestLoadServerTLSConfig(t *testing.T) {
 				KeyFile:    keyFile,
 				MinVersion: "1.3",
 			},
-			wantNil: false,
-			wantErr: false,
+			wantNil:     false,
+			wantErr:     false,
+			wantVersion: tls.VersionTLS13,
 		},
 		{
 			name: "enabled with TLS 1.2",
@@ -119,8 +121,9 @@ func TestLoadServerTLSConfig(t *testing.T) {
 				KeyFile:    keyFile,
 				MinVersion: "1.2",
 			},
-			wantNil: false,
-			wantErr: false,
+			wantNil:     false,
+			wantErr:     false,
+			wantVersion: tls.VersionTLS12,
 		},
 		{
 			name: "missing cert file",
@@ -165,8 +168,7 @@ func TestLoadServerTLSConfig(t *testing.T) {
 			assert.NotEmpty(t, got.Certificates)
 
 			// Verify MinVersion
-			expectedVersion := parseTLSVersion(tt.cfg.MinVersion)
-			assert.Equal(t, expectedVersion, got.MinVersion)
+			assert.Equal(t, tt.wantVersion, got.MinVersion)
 		})
 	}
 }
@@ -261,17 +263,23 @@ func TestParseTLSVersion(t *testing.T) {
 	tests := []struct {
 		version string
 		want    uint16
+		wantErr bool
 	}{
-		{"1.3", tls.VersionTLS13},
-		{"1.2", tls.VersionTLS12},
-		{"", tls.VersionTLS12},        // Default
-		{"invalid", tls.VersionTLS12}, // Default fallback
-		{"1.1", tls.VersionTLS12},     // Old version defaults to 1.2
+		{"1.3", tls.VersionTLS13, false},
+		{"1.2", tls.VersionTLS12, false},
+		{"", tls.VersionTLS12, false}, // Default
+		{"invalid", 0, true},          // Refused, not a 1.2 fallback
+		{"1.1", 0, true},              // Old version refused
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.version, func(t *testing.T) {
-			got := parseTLSVersion(tt.version)
+			got, err := parseTLSVersion(tt.version)
+			if tt.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
 			assert.Equal(t, tt.want, got)
 		})
 	}

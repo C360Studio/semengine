@@ -72,9 +72,9 @@ patterns into `internal/harness/` and `scripts/test-integration.sh`, recorded fo
 byte-identical (`scripts/lint-test-ports.sh` and its fixture test). Change `flake-defense` then adapted those two
 scripts: the inline exemption marker is gone and the guidance names no SemStreams file, so both rows read `adapt`.
 `task ledger:check` (contract test T-B7, `internal/harness/contract/ledger_test.go`) machine-checks the schema inside
-`task verify`, then compares every `carry` row with the pin (rule 5). Four of the fourteen ported packages are `carry`
-rows (`pkg/security`, `pkg/timestamp`, `pkg/errs`, `pkg/projection/contract`), so the check fetches the pin. The other
-ten are `adapt`; `vocabulary` and `pkg/types` were first among them only because their `README.md` files include
+`task verify`, then compares every `carry` row with the pin (rule 5). Three of the fourteen ported packages are `carry`
+rows (`pkg/timestamp`, `pkg/errs`, `pkg/projection/contract`), so the check fetches the pin. The other
+eleven are `adapt`; `vocabulary` and `pkg/types` were first among them only because their `README.md` files include
 markdownlint fixes, and the check compares `.go` and `testdata` files, not READMEs. A ported README
 keeps the pin's text except for two kinds of edit: the fixes markdownlint requires, and changes to passages that
 describe behavior the ported code no longer has, each listed by README line as an `adapt` item on the package's row

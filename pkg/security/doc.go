@@ -11,7 +11,6 @@
 //   - Client TLS configuration (CA trust, certificate verification)
 //   - Mutual TLS (mTLS) for both client and server
 //   - ACME integration for automatic certificate management
-//   - Comprehensive validation for all configuration options
 //
 // # Architecture
 //
@@ -41,10 +40,6 @@
 //	    CertFile:   "/etc/ssl/server.crt",
 //	    KeyFile:    "/etc/ssl/server.key",
 //	    MinVersion: "1.2",
-//	}
-//
-//	if err := cfg.Validate(); err != nil {
-//	    log.Fatal(err)
 //	}
 //
 // Client TLS with additional CAs:
@@ -113,15 +108,13 @@
 //
 // # Validation
 //
-// All config types provide Validate() methods that check:
-//   - Required fields are present when features are enabled
-//   - File paths exist and are readable
-//   - Enum values are valid ("1.2"/"1.3", "manual"/"acme", etc.)
-//   - Duration strings parse correctly
+// These types carry no validation of their own. internal/tlsutil checks a
+// configuration when it builds a tls.Config: it reads the certificate, key and
+// CA files, and refuses a MinVersion other than "1.2", "1.3" or empty.
 //
 // # Security Defaults
 //
-// DefaultConfig() provides secure defaults:
+// The zero value of each type provides these defaults:
 //   - TLS disabled by default (explicit opt-in)
 //   - TLS 1.2 minimum version
 //   - InsecureSkipVerify false
@@ -129,8 +122,7 @@
 //
 // # Thread Safety
 //
-// Config types are value types and safe to copy. Validation methods
-// are safe for concurrent use.
+// Config types are value types and safe to copy.
 //
 // # See Also
 //

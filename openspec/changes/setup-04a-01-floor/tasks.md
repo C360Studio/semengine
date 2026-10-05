@@ -885,6 +885,41 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         `ClientCertOptional: true`; the `default:true` tag is gone; the exported-field change is on the
         `pkg/security` row.
 
+- [x] 3.13 (D) The owner's independent read (PR #48 comment 5985648705), owner rulings #9 comment 5994720412 items
+      1-5, and the reviewer early check at `5ecc016` (Claude's own `semengine-reviewer`, PR #48; not the review of
+      record). Each with a test written first; failing-first runs and mutants are implementer-reported unless named.
+      - `765a9d9`: `safeHandleMessage` logs, counts (`handler_panic`) and Naks a recovered handler panic and logs a
+        failed Nak (`TestSafeHandleMessageRecoversPanicNaksLogsAndCounts`); a consumer whose `Info` fails has its four
+        gauges deleted, `consumer_info` counted and one Warn per transition
+        (`TestJetStreamConsumerMetricsDropSeriesWhenInfoFails`). Both failed first; the reviewer's mutants at `5ecc016`
+        (`DeleteLabelValues` removed, the log-once guard removed) each fail the second. Three tests that could not fail
+        now can: the Nak test's AckWait exceeds its await bound, the native-drain test asserts the durable's claim is
+        released, and the cache concurrency test checks `Set` errors and reads every write.
+      - Item 1, no default Nak: the promise is removed in `765a9d9`; no text still makes it.
+      - Item 4, `cd06a08`: task 3.12a.
+      - Item 5, `4cae56d`: task 3.12's closing note.
+      - Item 3, `9e5b53a` and `2a9909e`: task 3.6a's sub-bullet and design D7.
+        `TestCoalescingSet_CallbackPanicIsRecoveredAndLaterBatchesFire` failed first (the binary died with the
+        callback's panic). Its mutants (no count, no log, no recover, the registry ignored) each fail it.
+        `TestCoalescingSet_PanicCounterRefusedIsLoggedAndPanicsStillRecovered` covers a counter the registry refuses.
+        Its mutants (no refusal log, the registry ignored) each fail it.
+      - Item 2, `5ecc016`: the caller's context bounds setup only. Handlers run under a context the client owns per
+        consumer, cancelled when Close begins, and Close joins them (design D3 `natsclient-consume-handler-context`;
+        `transport-client` requirement).
+        - `TestConsumeSetupDeadlineDoesNotEndLaterHandlers` and `TestConsumeHandlerContextEndsWhenCloseBegins` cover
+          the internal and port paths. Both failed first on both.
+        - Their mutants each fail them: no cancel on Close, port handlers under the setup context, and internal
+          handlers under the setup context.
+      - Early check HIGH, `b620a4f`: Close cancels a running handler's context after delivery has ended.
+        - `TestConsumeHandlerContextEndsWhenCloseBeginsAfterDeliveryEnded` covers the internal and port paths, with
+          `DisableMessageTimeout`. It failed first on both ("not within 10s").
+        - The cancel removed from that wait fails it.
+      - Early check MEDIUM, `b620a4f`: `TestConsumeHandlerContextEndsWhenCloseBeginsBeforeTheHandle`.
+        - The cancel removed from the closing case before the handle survived the whole unit suite at `5ecc016`
+          (reviewer). It now fails this test on both paths.
+      - Early check MEDIUM, `3a10d6f`: `prochost.Process.StderrPath` and its `process-host` scenario are cut as dead
+        surface (task 3.6a).
+
 ## 4. Repair evidence this change can produce (ruling g)
 
 - [x] 4.1 (D) Settlement, `natsclient` half: the 18 unit and 3 integration settlement tests pass against `natsfixture`;

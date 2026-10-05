@@ -21,11 +21,6 @@ normal test run. No runtime binary SHALL be required.
 - **THEN** a child process exists in its own process group and its output is written under the evidence directory
   or, when none is set, under the test's temporary directory
 
-#### Scenario: A test reads what the helper wrote to stderr
-
-- **WHEN** the helper writes to stderr, for example a runtime panic as it ends, and `Wait` has returned
-- **THEN** the file at the process's stderr path holds what it wrote
-
 ### Requirement: Signals and bounded wait
 
 The host SHALL offer signal, pause and resume, kill, a wait bounded by the caller's context, and an alive probe;

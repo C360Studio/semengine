@@ -1662,7 +1662,9 @@
     invalid-data error by every exported context-taking, error-returning call before any state, callback or NATS
     call (F32; commits bb23dc7, e17ecfd); RequestWithRetry and RequestWithRetryClassified refuse a negative
     MaxRetries before sending (F31; bb23dc7) and check the context before every attempt, the first included,
-    without counting a caller's cancellation toward the circuit breaker (F32; c206229); GetStatus reads the
+    without counting a caller's cancellation toward the circuit breaker (F32; c206229), nor does Request,
+    RequestWithHeaders or a retrying call count one that arrives while an attempt is in flight (early check E1);
+    GetStatus reads the
     connection once under mu (F33; ff93b8e); the storage report consumer replaces its view at a watch's sync
     marker, clears AccountKnown on a delete or purge of the account key, logging at Warn that observers are not
     told (issue #85), and Snapshot shares no mutable memory (F36, F37; 5464e50). The handler-deadline

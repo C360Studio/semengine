@@ -484,7 +484,10 @@ where it is `natsclient` behaviour.
   anything is sent (0 means one attempt), and check the context before every attempt, the first included. A caller's
   cancellation is returned as a transient error that still matches `context.Canceled` and does not count toward the
   circuit breaker (commits bb23dc7, c206229; `TestNegativeMaxRetriesNeverDispatches`,
-  `TestRetryRequestEndedContextNeverDispatches`).
+  `TestRetryRequestEndedContextNeverDispatches`). No request call that counts failures (`Request`,
+  `RequestWithHeaders`, `RequestClassified` and the two retrying calls) counts a cancellation that arrives while an
+  attempt waits for its reply; an attempt's own timeout still counts (early check E1;
+  `TestRequestCancelledInFlightRecordsNoFailure`).
 - **Status during Close.** `GetStatus` reads the connection once under the client's mutex, so polling it while
   `Close` runs is neither a data race nor a nil dereference (commit ff93b8e; `TestReviewerGetStatusConcurrentClose`).
 - **mTLS.** `LoadServerTLSConfigWithMTLS` refuses mTLS with server TLS disabled with `errs.ErrInvalidConfig` (commit

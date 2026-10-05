@@ -233,7 +233,10 @@ invalid-data error before it touches client state, calls a callback or calls NAT
 before anything is sent; 0 means one attempt. They SHALL check the context before every attempt, the first included,
 and SHALL return a caller's cancellation as a transient error that matches `context.Canceled` without counting it
 toward the circuit breaker (changed behaviour: at the pin a negative count returned success with no reply, or
-panicked, and a cancelled context counted as a transport failure; Codex F31, F32).
+panicked, and a cancelled context counted as a transport failure; Codex F31, F32). No request call that counts
+failures (`Request`, `RequestWithHeaders` and `RequestClassified` through it, and the two retrying calls) SHALL count
+a caller's cancellation toward the circuit breaker, whether the context ended before an attempt or while one waited
+for its reply; an attempt's own timeout still counts (early check E1).
 
 #### Scenario: Negative retry count
 
@@ -245,6 +248,12 @@ panicked, and a cancelled context counted as a transport failure; Codex F31, F32
 - **WHEN** a retrying request is called with a context that has already ended
 - **THEN** it returns an error matching `context.Canceled`, the responder's handler never runs, and the client's
   failure count is unchanged
+
+#### Scenario: Cancelled while an attempt is in flight
+
+- **WHEN** a caller cancels `Request`, `RequestWithHeaders`, `RequestClassified`, `RequestWithRetry` or
+  `RequestWithRetryClassified` while the responder holds the request
+- **THEN** the call returns an error matching `context.Canceled` and the client's failure count is unchanged
 
 ### Requirement: The storage report view changes at a sync marker
 

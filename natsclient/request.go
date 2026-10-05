@@ -221,7 +221,10 @@ func (c *Client) Request(ctx context.Context, subject string, data []byte, timeo
 	// Perform the request using NATS request/reply
 	reply, err := conn.RequestMsgWithContext(reqCtx, msg)
 	if err != nil {
-		c.recordFailure()
+		// The caller's own cancellation is not a transport failure; reqCtx's timeout still is.
+		if ctx.Err() == nil {
+			c.recordFailure()
+		}
 		return nil, err
 	}
 
@@ -287,7 +290,10 @@ func (c *Client) RequestWithHeaders(
 	// Perform the request
 	reply, err := conn.RequestMsgWithContext(reqCtx, msg)
 	if err != nil {
-		c.recordFailure()
+		// The caller's own cancellation is not a transport failure; reqCtx's timeout still is.
+		if ctx.Err() == nil {
+			c.recordFailure()
+		}
 		return nil, err
 	}
 
@@ -562,6 +568,11 @@ func (c *Client) requestMsgWithRetry(
 			return reply, nil
 		}
 
+		// A caller that cancelled while the attempt was in flight ends the call here, uncounted;
+		// reqCtx's own timeout is a real failure and is counted.
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, errs.WrapTransient(ctxErr, "Client", method, fmt.Sprintf("request attempt %d", attempt+1))
+		}
 		lastErr = err
 		c.recordFailure()
 

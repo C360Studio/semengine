@@ -1104,6 +1104,15 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
 - [ ] 7.1 Hold: independent change review. The reviewer's verdict on the full diff (harness, 15 packages, rows,
       gates, docs) is a pass recorded on this pull request with the reviewed commit; a critical-stage read applies
       because this change adds new exported harness surface and changes `lifecycletest.Run`.
+      - Fix round for Codex's review of record (CHANGES REQUESTED, PR #48 comment 5996819933, reviewed head
+        3686676). Still held: Codex's re-review of these commits is not yet recorded. F30 → 344044c (GenericJSON
+        decode keeps exact numbers); F31 → bb23dc7 (negative `MaxRetries` refused); F32 → 0c46833 (`retry.Do`),
+        bb23dc7 and e17ecfd (nil contexts refused on every exported `natsclient` entry), c206229 (context checked
+        before every retry attempt); F33 → ff93b8e (`GetStatus` under the mutex); F34 → 0c46833 (tiny jitter);
+        F35 → f79f6e9 (mTLS without TLS refused); F36 and F37 → 5464e50 (storage report retraction, `Snapshot`
+        copies); F38 → 5463f93 (examples and descriptions); F39 → 7ee73db (current docs, design, spec deltas,
+        ledger items); F40 → 1642acd (handler deadline at its derivation seam). Filed, not fixed here: issue #85,
+        `StorageReportObserver` has no method to retract an account row (the exported-interface gap F36 exposed).
 - [ ] 7.2 (D) `task verify` green on the final commit; the integration lane green under the host lock, evidence
       directory attached to this pull request; `implemented-by:` in the pull request body.
 - [ ] 7.3 (W) The change archived under `openspec/changes/archive/` as the last content commit before squash merge;

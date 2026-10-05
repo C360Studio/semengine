@@ -19,6 +19,12 @@ const DefaultRequestTimeout = 5 * time.Second
 
 const errorCodeResponseTooLarge = "response_too_large"
 
+// nilContextError is the refusal an exported Client method returns for a nil context, before any
+// client state, callback or NATS call is reached (developer contract, Context ownership; Codex F32).
+func nilContextError(method string) error {
+	return errs.WrapInvalid(errors.New("nil context"), "Client", method, "missing context")
+}
+
 // DefaultRequestHandlerTimeout bounds a single inbound request-handler
 // invocation (SubscribeForRequests). It caps how long a handler may run
 // before its context is cancelled, so a wedged or pathologically slow
@@ -92,6 +98,9 @@ const (
 func (c *Client) requestMsgReady(
 	ctx context.Context, subject string, data []byte, probeTimeout, budget time.Duration,
 ) (*nats.Msg, error) {
+	if ctx == nil {
+		return nil, nilContextError("RequestReadyClassified")
+	}
 	c.mu.RLock()
 	conn := c.conn
 	c.mu.RUnlock()
@@ -168,6 +177,9 @@ func (c *Client) requestMsgReady(
 // races / responder restarts cause silent data loss. See
 // docs/operations/07-nats-request-retry.md for the full rule.
 func (c *Client) Request(ctx context.Context, subject string, data []byte, timeout time.Duration) ([]byte, error) {
+	if ctx == nil {
+		return nil, nilContextError("Request")
+	}
 	c.mu.RLock()
 	conn := c.conn
 	c.mu.RUnlock()
@@ -221,6 +233,9 @@ func (c *Client) RequestWithHeaders(
 	headers map[string]string,
 	timeout time.Duration,
 ) (*nats.Msg, error) {
+	if ctx == nil {
+		return nil, nilContextError("RequestWithHeaders")
+	}
 	c.mu.RLock()
 	conn := c.conn
 	c.mu.RUnlock()
@@ -277,6 +292,9 @@ func (c *Client) RequestWithHeaders(
 // Reply sends a reply to a request message.
 // This is typically used by service handlers to respond to requests.
 func (c *Client) Reply(ctx context.Context, replyTo string, data []byte) error {
+	if ctx == nil {
+		return nilContextError("Reply")
+	}
 	if replyTo == "" {
 		return nil // No reply requested
 	}
@@ -286,6 +304,9 @@ func (c *Client) Reply(ctx context.Context, replyTo string, data []byte) error {
 
 // ReplyWithHeaders sends a reply with custom headers.
 func (c *Client) ReplyWithHeaders(ctx context.Context, replyTo string, data []byte, headers map[string]string) error {
+	if ctx == nil {
+		return nilContextError("ReplyWithHeaders")
+	}
 	if replyTo == "" {
 		return nil // No reply requested
 	}
@@ -332,6 +353,10 @@ func (c *Client) SubscribeForRequests(
 	subject string,
 	handler func(ctx context.Context, data []byte) ([]byte, error),
 ) (*Subscription, error) {
+	// Refused here, not in the callback: each request derives its handler context from ctx.
+	if ctx == nil {
+		return nil, nilContextError("SubscribeForRequests")
+	}
 	return c.subscribeOwned("SubscribeForRequests", subject, func(conn *nats.Conn) nats.MsgHandler {
 		return c.requestCallback(ctx, conn, subject, handler)
 	}, nativeSubscribe)
@@ -454,7 +479,7 @@ func (c *Client) RequestWithRetry(
 	timeout time.Duration,
 	retry RetryConfig,
 ) ([]byte, error) {
-	msg, err := c.requestMsgWithRetry(ctx, subject, data, timeout, retry)
+	msg, err := c.requestMsgWithRetry(ctx, "RequestWithRetry", subject, data, timeout, retry)
 	if err != nil {
 		return nil, err
 	}
@@ -466,13 +491,25 @@ func (c *Client) RequestWithRetry(
 // or run the message through ClassifyReply (RequestWithRetryClassified
 // in errors.go). Keeps the two retry-aware request methods in lockstep
 // so a future retry-logic tweak doesn't silently drift between them.
+//
+// method names the exported caller in a refusal. A nil context and a negative MaxRetries are
+// refused before anything is sent: with MaxRetries below zero the loop below would run no
+// attempt and return no reply and no error (Codex F31).
 func (c *Client) requestMsgWithRetry(
 	ctx context.Context,
+	method string,
 	subject string,
 	data []byte,
 	timeout time.Duration,
 	retry RetryConfig,
 ) (*nats.Msg, error) {
+	if ctx == nil {
+		return nil, nilContextError(method)
+	}
+	if retry.MaxRetries < 0 {
+		return nil, errs.WrapInvalid(fmt.Errorf("MaxRetries %d is negative; 0 means one attempt", retry.MaxRetries),
+			"Client", method, "retry config")
+	}
 	c.mu.RLock()
 	conn := c.conn
 	c.mu.RUnlock()

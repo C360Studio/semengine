@@ -332,6 +332,11 @@ func EnsureFrameworkBucket(ctx context.Context, c *Client, spec BucketSpec) (jet
 // not-ready error naming the catalog Owner, so the operator reads "wait for /
 // deploy the owner", not "the reader is broken".
 func OpenFrameworkBucket(ctx context.Context, c *Client, spec BucketSpec) (jetstream.KeyValue, error) {
+	// Nil context first, as in EnsureFrameworkBucket: it would reach JetStream and panic (Codex F32).
+	if ctx == nil {
+		return nil, errs.WrapInvalid(errors.New("nil context"),
+			"KVSpec", "OpenFrameworkBucket", "open framework bucket")
+	}
 	if c == nil {
 		return nil, errs.WrapInvalid(errors.New("nil NATS client"),
 			"KVSpec", "OpenFrameworkBucket", "open framework bucket")

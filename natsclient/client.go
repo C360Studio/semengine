@@ -1353,6 +1353,9 @@ func (m *Client) closingSignalLocked() chan struct{} {
 
 // Publish publishes a message to a NATS subject
 func (m *Client) Publish(ctx context.Context, subject string, data []byte) error {
+	if ctx == nil {
+		return nilContextError("Publish")
+	}
 	m.mu.RLock()
 	conn := m.conn
 	m.mu.RUnlock()
@@ -1743,6 +1746,9 @@ func (m *Client) GetStream(ctx context.Context, name string) (jetstream.Stream, 
 
 // CreateKeyValueBucket creates or gets a KV bucket with configuration
 func (m *Client) CreateKeyValueBucket(ctx context.Context, cfg jetstream.KeyValueConfig) (jetstream.KeyValue, error) {
+	if ctx == nil {
+		return nil, nilContextError("CreateKeyValueBucket")
+	}
 	// Check circuit breaker first
 	if m.Status() == StatusCircuitOpen {
 		return nil, ErrCircuitOpen
@@ -1799,6 +1805,9 @@ func (m *Client) CreateKeyValueBucket(ctx context.Context, cfg jetstream.KeyValu
 
 // GetKeyValueBucket gets an existing KV bucket
 func (m *Client) GetKeyValueBucket(ctx context.Context, name string) (jetstream.KeyValue, error) {
+	if ctx == nil {
+		return nil, nilContextError("GetKeyValueBucket")
+	}
 	// Check circuit breaker first
 	if m.Status() == StatusCircuitOpen {
 		return nil, ErrCircuitOpen
@@ -1842,6 +1851,9 @@ func (m *Client) GetKeyValueBucket(ctx context.Context, name string) (jetstream.
 // For more advanced patterns (background recovery, loss detection), use
 // pkg/resource.Watcher directly.
 func (m *Client) WaitForBucket(ctx context.Context, name string, timeout time.Duration) (jetstream.KeyValue, error) {
+	if ctx == nil {
+		return nil, nilContextError("WaitForBucket")
+	}
 	// Try immediately first
 	if bucket, err := m.GetKeyValueBucket(ctx, name); err == nil {
 		return bucket, nil
@@ -1878,6 +1890,9 @@ func (m *Client) WaitForBucket(ctx context.Context, name string, timeout time.Du
 
 // DeleteKeyValueBucket deletes a KV bucket
 func (m *Client) DeleteKeyValueBucket(ctx context.Context, name string) error {
+	if ctx == nil {
+		return nilContextError("DeleteKeyValueBucket")
+	}
 	// Check circuit breaker first
 	if m.Status() == StatusCircuitOpen {
 		return ErrCircuitOpen
@@ -1905,6 +1920,9 @@ func (m *Client) DeleteKeyValueBucket(ctx context.Context, name string) error {
 
 // ListKeyValueBuckets lists all KV buckets
 func (m *Client) ListKeyValueBuckets(ctx context.Context) ([]string, error) {
+	if ctx == nil {
+		return nil, nilContextError("ListKeyValueBuckets")
+	}
 	// Check circuit breaker first
 	if m.Status() == StatusCircuitOpen {
 		return nil, ErrCircuitOpen

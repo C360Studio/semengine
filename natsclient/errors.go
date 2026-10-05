@@ -266,7 +266,7 @@ func (c *Client) RequestWithRetryClassified(
 	timeout time.Duration,
 	retry RetryConfig,
 ) ([]byte, error) {
-	msg, err := c.requestMsgWithRetry(ctx, subject, data, timeout, retry)
+	msg, err := c.requestMsgWithRetry(ctx, "RequestWithRetryClassified", subject, data, timeout, retry)
 	if err != nil {
 		return nil, err
 	}

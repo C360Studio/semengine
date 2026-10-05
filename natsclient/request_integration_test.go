@@ -4,7 +4,6 @@ package natsclient
 
 import (
 	"context"
-	"strconv"
 	"testing"
 	"time"
 
@@ -240,12 +239,14 @@ func TestIntegration_SubscribeForRequests(t *testing.T) {
 	}
 }
 
-// TestIntegration_SubscribeForRequests_HandlerTimeoutConfigurable proves the
-// per-message handler context carries the CONFIGURED deadline, not the hardcoded
-// 30s. The handler reports the remaining budget on its ctx; with a 5s configured
-// timeout the deadline must be ~5s (well under the old 30s default), which is what
-// lets a slow-by-design handler (8B answer synthesis) get a >30s budget when the
-// deployment raises it. WithRequestHandlerTimeout was dropped as dead surface
+// TestIntegration_SubscribeForRequests_HandlerTimeoutConfigurable proves, through a
+// real broker, that the per-message handler context carries the CONFIGURED deadline,
+// not the 30s default. The exact value is proven at the derivation seam by
+// TestRequestHandlerDeadlineIsTheConfiguredTimeout; here the handler hands its
+// deadline back over a channel and the test brackets it by events: the handler
+// started after the request was sent and before the reply arrived, so its deadline
+// lies between those two instants plus the configured timeout. No bound depends on
+// how fast the host runs. WithRequestHandlerTimeout was dropped as dead surface
 // (task 3.7a); the timeout is set through the environment variable it overrode.
 func TestIntegration_SubscribeForRequests_HandlerTimeoutConfigurable(t *testing.T) {
 	ctx := context.Background()
@@ -260,29 +261,39 @@ func TestIntegration_SubscribeForRequests_HandlerTimeoutConfigurable(t *testing.
 	require.NoError(t, err)
 	defer closeClient(t, client)
 
+	type handlerDeadline struct {
+		at time.Time
+		ok bool
+	}
+	seen := make(chan handlerDeadline, 1)
 	subject := "test.handler.timeout"
 	_, err = client.SubscribeForRequests(ctx, subject, func(hctx context.Context, _ []byte) ([]byte, error) {
-		dl, ok := hctx.Deadline()
-		if !ok {
-			return []byte("no-deadline"), nil
+		at, ok := hctx.Deadline()
+		select {
+		case seen <- handlerDeadline{at: at, ok: ok}:
+		default: // only the first request is examined
 		}
-		// Report remaining budget in milliseconds so the test can assert it
-		// tracks `configured`, not the old hardcoded 30s.
-		return []byte(strconv.FormatInt(int64(time.Until(dl)/time.Millisecond), 10)), nil
+		return []byte("ok"), nil
 	})
 	require.NoError(t, err)
 
 	flushClient(t, client)
 
+	sent := time.Now()
 	resp, err := client.Request(ctx, subject, []byte("x"), failureBound)
+	replied := time.Now()
 	require.NoError(t, err)
+	require.Equal(t, "ok", string(resp))
 
-	remainingMs, err := strconv.ParseInt(string(resp), 10, 64)
-	require.NoError(t, err, "handler must report a deadline, got %q", string(resp))
-	// Budget must reflect the 5s config (allow generous slack for delivery),
-	// and must be far below the old 30s default.
-	assert.Greater(t, remainingMs, int64(3000), "handler budget should be ~5s, got %dms", remainingMs)
-	assert.Less(t, remainingMs, int64(5200), "handler budget must reflect the 5s config, not the old 30s default, got %dms", remainingMs)
+	got := <-seen
+	require.True(t, got.ok, "the handler context carries a deadline")
+	// Both instants and the deadline carry monotonic clock readings, so these
+	// comparisons are unaffected by wall-clock changes.
+	assert.False(t, got.at.Before(sent.Add(configured)),
+		"the handler started after the request was sent; deadline %v is earlier than sent+%v", got.at, configured)
+	assert.False(t, got.at.After(replied.Add(configured)),
+		"the handler started before the reply arrived; deadline %v is later than replied+%v (the 30s default?)",
+		got.at, configured)
 }
 
 // TestIntegration_SubscribeForRequests_Error tests error handling in request handler

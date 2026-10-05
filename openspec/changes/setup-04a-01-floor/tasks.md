@@ -1113,6 +1113,10 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         copies); F38 → 5463f93 (examples and descriptions); F39 → 7ee73db (current docs, design, spec deltas,
         ledger items); F40 → 1642acd (handler deadline at its derivation seam). Filed, not fixed here: issue #85,
         `StorageReportObserver` has no method to retract an account row (the exported-interface gap F36 exposed).
+        Claude's early check at adfa13f (PR #48 comment 5999383164, not the review of record) → E1 03cef1c (an
+        in-flight cancellation never counts toward the circuit breaker), E2 1a12501 (the three older nil-context
+        refusals use the invalid-data class; `retry.Do`'s exception is stated in design D3), E3 38bc24d (`message`
+        README examples), E7 0c36971; E4 was the PR body.
 - [ ] 7.2 (D) `task verify` green on the final commit; the integration lane green under the host lock, evidence
       directory attached to this pull request; `implemented-by:` in the pull request body.
 - [ ] 7.3 (W) The change archived under `openspec/changes/archive/` as the last content commit before squash merge;

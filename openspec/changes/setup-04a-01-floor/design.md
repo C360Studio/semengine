@@ -477,7 +477,10 @@ where it is `natsclient` behaviour.
   with an invalid-data error before it touches client state, a callback or NATS (commits bb23dc7, e17ecfd;
   `TestExportedNilContextRefusedOnRequestAndBucketPaths`, `TestExportedNilContextRefusedOnEveryOtherEntry`).
   `retry.Do`, and `DoWithResult` through it, refuses a nil context before the operation runs, and checks the context
-  before every attempt, so an already-ended context never runs it (commit 0c46833). A delay under 4 ns, whose
+  before every attempt, so an already-ended context never runs it (commit 0c46833). These two refusals are plain
+  errors, not the invalid-data class: `pkg/errs` imports `pkg/retry` (`pkg/errs/errs.go:13`), so `pkg/retry` cannot
+  classify without an import cycle. The ended-context refusal wraps `ctx.Err()`, so it matches `context.Canceled`
+  or `context.DeadlineExceeded`. A delay under 4 ns, whose
   jitter range (a quarter of the delay) is empty, gets no jitter instead of panicking with the package's random lock
   held (F34).
 - **Retrying requests.** `RequestWithRetry` and `RequestWithRetryClassified` refuse a negative `MaxRetries` before

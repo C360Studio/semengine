@@ -63,13 +63,19 @@ type oracleCount struct {
 }
 
 // unmarshalNumbers is the standard library's exact reading of a core.json.v1 body: it refuses
-// what json.Unmarshal refuses, and keeps every number as a json.Number holding its literal, so an
-// integer beyond 2^53 keeps its value (Codex F30).
+// malformed JSON, trailing data after the value, and a value that does not fit v's shape, and
+// keeps every number as a json.Number holding its literal, so an integer beyond 2^53 and a
+// literal beyond float64's range such as 1e400 keep their exact value (Codex F30, F41).
+//
+// Syntax and trailing data are checked by json.Unmarshal into a json.RawMessage, which copies the
+// bytes and converts no number; decoding into an `any` would narrow each number to float64 and
+// refuse 1e400, which the payload contract accepts.
 func unmarshalNumbers(data []byte, v any) error {
-	if err := json.Unmarshal(data, new(any)); err != nil {
+	var raw json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
-	d := json.NewDecoder(bytes.NewReader(data))
+	d := json.NewDecoder(bytes.NewReader(raw))
 	d.UseNumber()
 	return d.Decode(v)
 }
@@ -122,6 +128,12 @@ func FuzzDecoderDecode(f *testing.F) {
 		`{"id":"m-3","type":{"domain":"core","category":"json","version":"v1"},"payload":null,"meta":null}`,
 		`{"id":"m-4","type":{"domain":"core","category":"json","version":"v1"},"payload":{"data":{"k":1}},` +
 			`"meta":{"source":7,"created_at":null,"extra":[1],"Created_At":"x"}}`,
+		// numbers beyond float64's range or precision keep their literal (Codex F41)
+		`{"id":"m-4a","type":{"domain":"core","category":"json","version":"v1"},"payload":{"data":{"n":1e400}}}`,
+		`{"id":"m-4b","type":{"domain":"core","category":"json","version":"v1"},"payload":{"data":{"n":-1e400}}}`,
+		`{"id":"m-4c","type":{"domain":"core","category":"json","version":"v1"},"payload":{"data":{"n":1e-400}}}`,
+		`{"id":"m-4d","type":{"domain":"core","category":"json","version":"v1"},` +
+			`"payload":{"data":{"n":123456789012345678901234567890}}}`,
 		`{"ID":"m-5","Type":{"Domain":"test","Category":"count","Version":"v1"},"Payload":{"Count":-3},"unknown":1}`,
 		// refused
 		`{"id":"m-6","type":{"domain":"nope","category":"json","version":"v1"},"payload":{"data":{}}}`,
@@ -491,8 +503,9 @@ func checkPreserved(t *testing.T, data []byte, got *message.BaseMessage, want or
 }
 
 // FuzzGenericJSONPayloadUnmarshalJSON: GenericJSONPayload.UnmarshalJSON decodes outside bytes
-// (task 3.6b, Codex F8). It never panics, it refuses exactly what the standard library refuses
-// for {"data": object}, and it keeps exactly the data the standard library decodes.
+// (task 3.6b, Codex F8). It never panics, it refuses exactly the malformed input, trailing data
+// and wrong shapes unmarshalNumbers refuses for {"data": object}, and it keeps exactly the data
+// unmarshalNumbers decodes, each number at its literal (Codex F41).
 func FuzzGenericJSONPayloadUnmarshalJSON(f *testing.F) {
 	for _, seed := range []string{
 		// accepted
@@ -500,6 +513,7 @@ func FuzzGenericJSONPayloadUnmarshalJSON(f *testing.F) {
 		`{"data":{}}`,
 		`{"Data":{"k":"v"}}`,
 		`{"data":null}`,
+		`{"data":{"n":-1e400,"m":1e-400,"i":123456789012345678901234567890}}`,
 		`{}`,
 		`{"other":1}`,
 		`null`,
@@ -507,6 +521,8 @@ func FuzzGenericJSONPayloadUnmarshalJSON(f *testing.F) {
 		`{"data":[1,2]}`,
 		`{"data":"text"}`,
 		`{"data":{"k":1}`,
+		`{"data":{"n":1e400}} {}`,
+		`{"data":{"n":1e400}}x`,
 		`[]`,
 		`"data"`,
 		``,

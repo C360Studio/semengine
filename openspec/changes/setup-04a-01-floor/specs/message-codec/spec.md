@@ -82,9 +82,10 @@ contains itself (#9 comments 5972117486, 5972208367).
 `GenericJSONPayload` (type `core.json.v1`) SHALL be the fallback for JSON whose shape is not known when the code is
 written, such as outside input. Code that builds a shape it knows registers a payload type for that shape instead.
 Nothing SHALL register `core.json.v1` implicitly: a process that decodes it calls `RegisterPayloads` on the registry
-its `Decoder` uses. `GenericJSONPayload.UnmarshalJSON` SHALL refuse what `json.Unmarshal` refuses and SHALL keep every
-number as a `json.Number` holding its exact literal, so an integer beyond 2^53 keeps its value (changed behaviour: at
-the pin every decoded number became a `float64`; PR #48, Codex F30). A payload built in process SHALL hold the Go
+its `Decoder` uses. `GenericJSONPayload.UnmarshalJSON` SHALL refuse malformed JSON, data after the value, and a
+`data` that is not an object, and SHALL keep every number as a `json.Number` holding its exact literal, so an integer
+beyond 2^53 and a literal beyond `float64`'s range such as `1e400` keep their exact value (changed behaviour: at the
+pin every decoded number became a `float64`; PR #48, Codex F30, F41). A payload built in process SHALL hold the Go
 numbers its caller supplied.
 
 #### Scenario: A large integer survives the wire

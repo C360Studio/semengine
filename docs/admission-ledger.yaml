@@ -1172,8 +1172,9 @@
     GraphProcessor, which SemEngine does not have; Storable is now described by its own methods,
     with graph.Graphable marked as SemStreams'. No code changed.
     Adapt item (Codex review of record, PR #48 comment 5996819933, F30; commit 344044c):
-    GenericJSONPayload.UnmarshalJSON refuses what json.Unmarshal refuses (json.Valid) and decodes with
-    UseNumber, so every number keeps its literal as a json.Number; at the pin each became a float64. Two carried
+    GenericJSONPayload.UnmarshalJSON refuses malformed JSON and data after the value (json.Valid) and a data
+    that is not an object, and decodes with UseNumber, so every number keeps its exact literal as a json.Number,
+    1e400 included (Codex F41); at the pin each became a float64. Two carried
     pin tests and three README examples that read float64 read json.Number. Malformed input and a well-formed
     body whose data is not an object are both refused with an invalid-data error; at the pin both returned the
     standard library's unclassified error (early check E7). README examples (early check E3; owner stance,

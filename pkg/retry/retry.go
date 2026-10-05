@@ -63,8 +63,12 @@ func DefaultConfig() Config {
 	}
 }
 
-// Do executes fn with exponential backoff retry
+// Do executes fn with exponential backoff retry. A nil ctx is refused before fn runs, and fn never
+// runs once ctx has ended.
 func Do(ctx context.Context, cfg Config, fn func() error) error {
+	if ctx == nil {
+		return errors.New("retry: nil context")
+	}
 	// Validate configuration
 	if cfg.InitialDelay < 0 {
 		return errors.New("retry: InitialDelay cannot be negative")
@@ -104,6 +108,9 @@ func Do(ctx context.Context, cfg Config, fn func() error) error {
 	delay := cfg.InitialDelay
 
 	for attempt := 1; attempt <= cfg.MaxAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("retry cancelled before attempt %d: %w", attempt, err)
+		}
 		// Try the operation
 		err := fn()
 		if err == nil {
@@ -129,11 +136,7 @@ func Do(ctx context.Context, cfg Config, fn func() error) error {
 		// Calculate sleep duration with optional jitter
 		sleepDuration := delay
 		if cfg.AddJitter {
-			// Add up to 25% jitter using thread-safe random
-			randMu.Lock()
-			jitter := time.Duration(randSource.Int63n(int64(delay / 4)))
-			randMu.Unlock()
-			sleepDuration = delay + jitter
+			sleepDuration = delay + jitter(delay)
 		}
 
 		// Sleep with context cancellation support
@@ -157,6 +160,18 @@ func Do(ctx context.Context, cfg Config, fn func() error) error {
 	}
 
 	return fmt.Errorf("retry failed after %d attempts: %w", cfg.MaxAttempts, lastErr)
+}
+
+// jitter returns a random duration below a quarter of delay, using the thread-safe source. A delay
+// under 4ns has no room for jitter and gets none: Int63n panics on zero (Codex F34).
+func jitter(delay time.Duration) time.Duration {
+	limit := int64(delay / 4)
+	if limit <= 0 {
+		return 0
+	}
+	randMu.Lock()
+	defer randMu.Unlock()
+	return time.Duration(randSource.Int63n(limit))
 }
 
 // DoWithResult executes fn with retry and returns both result and error

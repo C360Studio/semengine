@@ -5,10 +5,10 @@ package message
 // This file defines PURE structural behavioral interfaces that payloads can
 // optionally implement to expose additional capabilities.
 //
-// Semantic interfaces (Graphable, Storable) are defined in separate files.
+// The semantic interface Storable is defined in its own file.
 // RuleReadable is a member of this family too; it lives in rule_readable.go.
 
-// IndexingProfiler lets a Graphable payload declare its indexing profile —
+// IndexingProfiler lets an entity payload declare its indexing profile —
 // the producer's hint for which semantic substrates (embedding, community
 // clustering, search) should index the entity (ADR-054). It does NOT affect
 // the structural graph, which is always queryable/traversable regardless of

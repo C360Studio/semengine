@@ -134,7 +134,9 @@ vocabulary.Register("sensor.temperature.celsius",
 
 One declaration renders three ways. The Go column is what the serializer typically sees, **not** what you declare;
 the RDF column is owned by `vocabulary/export` (ADR-107 keeps semantic-web vocabulary at the export edge, never on
-the declaration surface):
+the declaration surface). No code in SemEngine renders the RDF or JSON Schema column yet: `vocabulary/export` is a
+SemStreams package that is not ported here, so those two columns, including the `semstreams-entity-id` format name,
+state SemStreams' mapping, not output of this repository:
 
 | Constant | Value | Typical Go value | RDF (Turtle / N-Triples) | JSON Schema |
 |---|---|---|---|---|
@@ -150,8 +152,8 @@ Declaring nothing is legal. **Anything else panics at registration**, naming the
 vocabulary. The framework translates nothing — there is no legacy-spelling map, so `float64`, `number`, `double`,
 `time.Time`, `timestamp`, `int64`, `array`, `entity_ref`, `reference` and `boolean` all halt the binary rather than
 becoming their canonical equivalent. If you declare any of them today, see
-[`docs/operations/migration-predicate-datatype.md`](../docs/operations/migration-predicate-datatype.md), which is
-the whole migration.
+SemStreams' `docs/operations/migration-predicate-datatype.md` (not in this repository), which is the whole
+migration.
 
 Export honors the declaration, and **ignores it for any triple whose observed value contradicts it** — a fractional
 value under an `int` declaration serializes as `xsd:double`, not as a rounded integer.

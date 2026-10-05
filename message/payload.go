@@ -6,8 +6,8 @@ import "encoding/json"
 // All message payloads must implement this interface to provide
 // schema information, validation, and serialization capabilities.
 //
-// Payloads may also implement behavioral interfaces (Graphable,
-// Storable, RuleReadable, etc.) to expose additional capabilities
+// Payloads may also implement behavioral interfaces (Storable,
+// RuleReadable, IndexingProfiler) to expose additional capabilities
 // that can be discovered and utilized at runtime.
 //
 // Example implementation:

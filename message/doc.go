@@ -25,13 +25,14 @@
 // Payloads implement only the interfaces relevant to their domain, and services
 // discover these capabilities dynamically through type assertions.
 //
-// ## Primary Entity Interface
+// ## Entity Interface
 //
-// Graphable: Declares entities and relationships for knowledge graph storage
+// Storable: Declares an entity, its facts, and where its full data is stored
 //   - EntityID() string - Returns federated entity identifier
 //   - Triples() []Triple - Returns semantic facts about the entity
-//   - Use when: Payload represents entities that should be stored in the graph
-//   - Example: Drone telemetry, sensor readings, IoT device states
+//   - StorageRef() *StorageReference - Returns where the full data is stored, or nil
+//   - Use when: Payload represents an entity whose facts and stored data a consumer needs
+//   - ContentStorable and BinaryStorable extend it for text and binary content
 //
 // ## Rule Interfaces
 //
@@ -54,10 +55,11 @@
 // Services discover capabilities at runtime through type assertions:
 //
 //	// Check for entity data
-//	if graphable, ok := msg.Payload().(Graphable); ok {
-//	    entityID := graphable.EntityID()
-//	    triples := graphable.Triples()
-//	    // Store in knowledge graph, build relationships, etc.
+//	if entity, ok := msg.Payload().(Storable); ok {
+//	    entityID := entity.EntityID()
+//	    triples := entity.Triples()
+//	    ref := entity.StorageRef() // nil when the data is not stored externally
+//	    // Record the facts, fetch the stored data through ref when needed, etc.
 //	}
 //
 //	// Check for rule-readable fields
@@ -161,11 +163,11 @@
 // Ask yourself:
 //
 //  1. Defining a message schema? → Use Type (Schema() method)
-//  2. Providing entity identity? → Use EntityID (Graphable.EntityID() method)
+//  2. Providing entity identity? → Use EntityID (Storable.EntityID() method)
 //  3. Extracting entity classification? → Use EntityType (derived from EntityID)
 //
-// Most payloads only need Type (for Schema()). Only implement Graphable if your
-// payload represents entities that should be stored in the knowledge graph.
+// Most payloads only need Type (for Schema()). Only implement Storable if your
+// payload represents an entity whose facts and stored data a consumer needs.
 // EntityType is typically not constructed directly - it's extracted from EntityID
 // using the EntityType() method when querying or classifying graph entities.
 //
@@ -207,9 +209,21 @@
 //	    return json.Unmarshal(data, (*Alias)(t))
 //	}
 //
-//	// Implement optional behavioral interfaces
-//	func (t *TemperaturePayload) Timestamp() time.Time {
-//	    return t.Timestamp
+//	// Implement an optional behavioral interface (RuleReadable)
+//	func (t *TemperaturePayload) RuleFields() map[string]any {
+//	    return map[string]any{"sensor_id": t.SensorID, "temperature": t.Temperature}
+//	}
+//
+//	// Register the type so a Decoder can rebuild it from the wire
+//	reg := payloadregistry.New()
+//	if err := reg.Register(&payloadregistry.Registration{
+//	    Domain:      "sensors",
+//	    Category:    "temperature",
+//	    Version:     "v1",
+//	    Description: "Temperature reading",
+//	    Factory:     func() any { return &TemperaturePayload{} },
+//	}); err != nil {
+//	    return err
 //	}
 //
 //	// Create and use a message
@@ -226,15 +240,14 @@
 //	    "temperature-monitor",
 //	)
 //
-//	// Services can discover capabilities
-//	// Modern approach using Graphable (preferred)
-//	if graphable, ok := msg.Payload().(Graphable); ok {
-//	    entityID := graphable.EntityID()
-//	    triples := graphable.Triples()
-//	    fmt.Printf("Entity: %s with %d triples\n", entityID, len(triples))
-//	    for _, triple := range triples {
-//	        fmt.Printf("  %s: %v\n", triple.Predicate, triple.Object)
-//	    }
+//	// After NewDecoder(reg).Decode, a service reads the payload by its
+//	// concrete type, or by an interface it implements
+//	if reading, ok := msg.Payload().(*TemperaturePayload); ok {
+//	    fmt.Printf("%s: %.1f %s\n", reading.SensorID, reading.Temperature, reading.Unit)
+//	}
+//	if readable, ok := msg.Payload().(RuleReadable); ok {
+//	    fields := readable.RuleFields()
+//	    fmt.Printf("rule fields: %v\n", fields)
 //	}
 //
 // # Message Lifecycle
@@ -348,8 +361,8 @@
 //	    }
 //
 //	    // Discover capabilities
-//	    if graphable, ok := msg.Payload().(Graphable); ok {
-//	        // Process entity data
+//	    if entity, ok := msg.Payload().(Storable); ok {
+//	        // Process entity data: entity.EntityID(), entity.Triples()
 //	    }
 //	}
 //
@@ -365,7 +378,7 @@
 //
 // 2. Implement Optional Interfaces Thoughtfully
 //   - Only implement behavioral interfaces that make semantic sense
-//   - Consider whether your payload truly represents an entity before implementing Graphable
+//   - Consider whether your payload truly represents an entity before implementing Storable
 //
 // 3. Validation Philosophy
 //   - Structural validation: Check required fields and basic types
@@ -417,10 +430,10 @@
 //
 //   - Example:
 //
-//     if graphable, ok := msg.Payload().(Graphable); ok {
-//     // Safe to use graphable methods
+//     if entity, ok := msg.Payload().(Storable); ok {
+//     // Safe to use entity's methods
 //     } else {
-//     // Payload doesn't implement Graphable, skip or handle differently
+//     // Payload doesn't implement Storable, skip or handle differently
 //     }
 //
 // 2. Error Handling

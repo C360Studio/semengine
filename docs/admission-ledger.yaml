@@ -608,6 +608,12 @@
     TestNewPredicateAuthorityRejectsInvalidDelegation) and the errors import :4
     Adapt item, product prose (owner ruling, #9 comment 5984291337): doc.go tree line :1 says SemEngine, not the
     SemStreams platform.
+    Adapt item, README (owner ruling, #9 comment 5984291337), tree lines at commit 47b120d: after :137 a
+    sentence says no SemEngine code renders the RDF or JSON Schema column, since vocabulary/export is not
+    ported, so those columns, the semstreams-entity-id format name included, state SemStreams' mapping (the
+    outward name itself is left for #69, #9 comment 5969776736 item 4); :153-154, the link to
+    docs/operations/migration-predicate-datatype.md, which this repository does not have, is plain text naming
+    it as SemStreams'.
   proving_tests: >-
     the 11 test files in vocabulary/ at the pin, less TestEntityIRI and BenchmarkEntityIRI (removed
     with EntityIRI, above) and the tests of the dead surface removed above;
@@ -1173,6 +1179,14 @@
     core.json.v1 as the fallback for JSON of unknown shape, decoded only after RegisterPayloads. Product prose
     (#9 comment 5984291337), tree lines: doc.go :1 and README.md :3, :7, :30 name SemEngine, not SemStreams;
     README.md :54 says core.json.v1 is registered by RegisterPayloads; README.md :395 names pkg/errs.
+    Adapt item, doc comments only (owner ruling, #9 comment 5984291337): no Graphable type exists in SemEngine,
+    so the passages that asserted msg.Payload().(Graphable) now use what message has. Tree lines at commit
+    47b120d: doc.go :28-34 (the entity interface is Storable, with ContentStorable and BinaryStorable), :57-60
+    (discovery asserts Storable), :164, :167-168 (Storable, not Graphable), :210-212 (the example's Timestamp
+    method, which collided with its field and named the removed Timeable, is a RuleFields method, and the
+    example registers its type with payloadregistry), :229-237 (the decoded payload is read by its concrete type
+    and as RuleReadable), :351-352, :368, :420-421 and :423 (Storable); behaviors.go :8 and :11; payload.go
+    :9-10 (Storable, RuleReadable, IndexingProfiler). No code changed.
   proving_tests: >-
     the 9 test files in message/ at the pin, carried unchanged except import paths and four comments
     in payload_test.go (known_risks); payload_test.go and triple_helpers_test.go use

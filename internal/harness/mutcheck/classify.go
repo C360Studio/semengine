@@ -54,7 +54,7 @@ type observed struct {
 	facts
 	expectedLines []string // every expected line, in full
 	locations     []string // each file.go:N that starts an output line of the named test, once
-	notes         []string // panics and fatal errors, wherever they were printed
+	notes         []string // panics and fatal errors anywhere; other located lines of the named test, in full
 	buildLines    []string // the build's output
 }
 
@@ -150,13 +150,19 @@ func (o *observed) readLine(line, test string, ours bool, exp expectation) {
 	if !ours {
 		return
 	}
-	if m := locationLine.FindStringSubmatch(trimmed); m != nil && !slices.Contains(o.locations, m[1]) {
+	m := locationLine.FindStringSubmatch(trimmed)
+	if m != nil && !slices.Contains(o.locations, m[1]) {
 		o.locations = append(o.locations, m[1])
 	}
 	o.race = o.race || strings.Contains(line, raceReport)
-	if exp.matches(line) {
+	switch {
+	case exp.matches(line):
 		o.expectedHit = true
 		o.expectedLines = append(o.expectedLines, line)
+	case m != nil:
+		// A further line at another location is kept in full for the report and never changes the
+		// reading. Go prints a log line and a failure line alike, so it is a note, not a failure.
+		o.notes = append(o.notes, trimmed)
 	}
 }
 

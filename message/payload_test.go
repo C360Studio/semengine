@@ -75,7 +75,7 @@ func (p *SamplePayload) EntityType() EntityType {
 	return EntityType{Domain: "test", Type: "test_entity"}
 }
 
-// Locatable implementation (only if Loc is set)
+// Location returns the sample's coordinates (only if Loc is set)
 func (p *SamplePayload) Location() (lat, lon float64) {
 	if p.Loc != nil {
 		return p.Loc.Lat, p.Loc.Lon
@@ -83,7 +83,7 @@ func (p *SamplePayload) Location() (lat, lon float64) {
 	return 0, 0
 }
 
-// Timeable implementation
+// Timestamp returns the sample's time
 func (p *SamplePayload) Timestamp() time.Time {
 	return p.Time
 }
@@ -242,13 +242,13 @@ func TestSamplePayloadBehavioralInterfaces(t *testing.T) {
 		t.Errorf("EntityType() = %v, want %v", dt, expectedType)
 	}
 
-	// Test Locatable
+	// Test Location
 	lat, lon := payload.Location()
 	if lat != 51.5074 || lon != -0.1278 {
 		t.Errorf("Location() = %v, %v, want 51.5074, -0.1278", lat, lon)
 	}
 
-	// Test Timeable
+	// Test Timestamp
 	if ts := payload.Timestamp(); !ts.Equal(now) {
 		t.Errorf("Timestamp() = %v, want %v", ts, now)
 	}

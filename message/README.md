@@ -11,7 +11,7 @@ behavioral interfaces for specialized processing.
 Key design principles:
 
 - **Polymorphic by default**: A `Decoder` deserializes messages to the concrete payload types its registry holds
-- **Behavior-based processing**: Type-assert to capabilities (Locatable, Timeable, etc.) not concrete types
+- **Behavior-based processing**: Type-assert to capabilities (RuleReadable, Storable, etc.) not concrete types
 - **Registry-driven**: A payload registry, created by the application and passed to `message.NewDecoder`, adds
   payload types without changing this package
 - **Type-safe**: Compile-time type checking with runtime polymorphism
@@ -41,8 +41,8 @@ Every SemStreams message consists of:
 │ │  GenericJSONPayload               │    │
 │ │  ├─ Data: map[string]any          │    │
 │ │  ├─ Implements: Payload           │    │
-│ │  └─ Optionally: Locatable,        │    │
-│ │                 Timeable, etc.    │    │
+│ │  └─ Optionally: RuleReadable,     │    │
+│ │                 Storable, etc.    │    │
 │ └───────────────────────────────────┘    │
 └──────────────────────────────────────────┘
 ```
@@ -63,12 +63,9 @@ Optional capabilities that payloads can implement:
 
 | Interface | Purpose | Methods | Use Case |
 |-----------|---------|---------|----------|
-| **Locatable** | Geographic coordinates | `Location() (lat, lon float64)` | Mapping, geofencing |
-| **Timeable** | Temporal metadata | `Timestamp() time.Time` | Time-series analysis |
-| **Observable** | Sensor observations | `ObservedEntity()`, `ObservedProperty()`, `ObservedValue()`, `ObservedUnit()` | Sensor data processing |
-| **Correlatable** | Message correlation | `CorrelationID() string` | Request/response matching |
-| **Identifiable** | Entity identification | `EntityID() string`, `EntityType() string` | Entity tracking |
-| **Targetable** | Destination info | `TargetID() string`, `TargetType() string` | Routing decisions |
+| **IndexingProfiler** | Indexing profile hint | `IndexingProfile() string` | Embedding and clustering eligibility |
+| **RuleReadable** | Fields rules may read | `RuleFields() map[string]any` | Rule conditions and substitutions |
+| **Storable** | Entity with a storage reference | `EntityID()`, `Triples()`, `StorageRef()` | Graph storage of large payloads |
 
 Processors type-assert to the specific behaviors they need, making components reusable across different payload types.
 
@@ -124,25 +121,10 @@ if genericJSON, ok := payload.(*message.GenericJSONPayload); ok {
 ### Using Behavioral Interfaces
 
 ```go
-// Check if payload has location data
-if locatable, ok := msg.Payload().(message.Locatable); ok {
-    lat, lon := locatable.Location()
-    fmt.Printf("Location: %.6f, %.6f\n", lat, lon)
-}
-
-// Check if payload has timestamp
-if timeable, ok := msg.Payload().(message.Timeable); ok {
-    ts := timeable.Timestamp()
-    fmt.Printf("Recorded at: %s\n", ts.Format(time.RFC3339))
-}
-
-// Check for observation data
-if obs, ok := msg.Payload().(message.Observable); ok {
-    entity := obs.ObservedEntity()
-    property := obs.ObservedProperty()
-    value := obs.ObservedValue()
-    unit := obs.ObservedUnit()
-    fmt.Printf("%s.%s = %v %s\n", entity, property, value, unit)
+// Check if payload declares the fields rules may read
+if readable, ok := msg.Payload().(message.RuleReadable); ok {
+    fields := readable.RuleFields()
+    fmt.Printf("Rule fields: %v\n", fields)
 }
 ```
 
@@ -254,14 +236,6 @@ func (p *RobotPositionPayload) Validate() error {
 }
 
 // Implement behavioral interfaces
-func (p *RobotPositionPayload) Location() (float64, float64) {
-    return p.Latitude, p.Longitude
-}
-
-func (p *RobotPositionPayload) Timestamp() time.Time {
-    return p.Timestamp
-}
-
 func (p *RobotPositionPayload) EntityID() string {
     return p.RobotID
 }
@@ -291,42 +265,6 @@ func RegisterPayloads(reg *payloadregistry.Registry) error {
     })
 }
 ```
-
-### Writing Behavior-Based Processors
-
-```go
-// Processor that works with ANY payload that is Locatable
-type GeofenceProcessor struct {
-    center message.Location
-    radius float64
-}
-
-func (p *GeofenceProcessor) Process(msg *message.BaseMessage) (*message.BaseMessage, error) {
-    // Type-assert to Locatable behavior
-    locatable, ok := msg.Payload().(message.Locatable)
-    if !ok {
-        return nil, fmt.Errorf("payload must be Locatable")
-    }
-
-    lat, lon := locatable.Location()
-    distance := p.calculateDistance(lat, lon, p.center.Lat, p.center.Lon)
-
-    if distance > p.radius {
-        // Outside geofence - create alert payload
-        alertPayload := message.NewGenericJSON(map[string]any{
-            "alert_type": "geofence_breach",
-            "distance": distance,
-            "threshold": p.radius,
-        })
-        return message.NewBaseMessage(alertPayload), nil
-    }
-
-    // Inside geofence - pass through
-    return msg, nil
-}
-```
-
-This processor works with `RobotPositionPayload`, `VehicleLocationPayload`, or ANY payload implementing `Locatable`.
 
 ### GenericJSON as the Fallback
 
@@ -379,31 +317,6 @@ func processTestData(msg *message.BaseMessage) {
 - ❌ Performance-critical paths (use typed payloads)
 
 ## Testing
-
-### Testing Behavioral Interfaces
-
-```go
-func TestProcessorWithLocatable(t *testing.T) {
-    // Create mock Locatable payload
-    type MockLocatable struct {
-        Lat, Lon float64
-    }
-
-    // Schema() implements Payload interface - Schema().String() returns type ID
-    func (m *MockLocatable) Validate() error { return nil }
-    func (m *MockLocatable) Location() (float64, float64) { return m.Lat, m.Lon }
-
-    // Test processor: nothing is decoded, so no registry is needed
-    payload := &MockLocatable{Lat: 40.7, Lon: -74.0}
-    msg := message.NewBaseMessage(payload.Schema(), payload, "test")
-
-    processor := NewGeofenceProcessor(...)
-    result, err := processor.Process(msg)
-
-    require.NoError(t, err)
-    assert.NotNil(t, result)
-}
-```
 
 ### Testing Round-Trip Serialization
 
@@ -536,38 +449,14 @@ func enrichMessage(msg *message.BaseMessage) (*message.BaseMessage, error) {
 }
 ```
 
-### Transformation Pattern
-
-```go
-// Transform payload to different type
-func transformToAlert(msg *message.BaseMessage) (*message.BaseMessage, error) {
-    // Type-assert to source type
-    if obs, ok := msg.Payload().(message.Observable); ok {
-        value := obs.ObservedValue()
-
-        if value > threshold {
-            // Create alert payload (custom type)
-            alert := &AlertPayload{
-                AlertType: "threshold_exceeded",
-                Source: obs.ObservedEntity(),
-                Value: value,
-                Timestamp: time.Now(),
-            }
-            return message.NewBaseMessage(alert), nil
-        }
-    }
-    return nil, nil // No alert needed
-}
-```
-
 ### Filtering Pattern
 
 ```go
 // Filter messages based on behavioral capabilities
-func filterLocatableOnly(msgs []*message.BaseMessage) []*message.BaseMessage {
+func filterStorableOnly(msgs []*message.BaseMessage) []*message.BaseMessage {
     var result []*message.BaseMessage
     for _, msg := range msgs {
-        if _, ok := msg.Payload().(message.Locatable); ok {
+        if _, ok := msg.Payload().(message.Storable); ok {
             result = append(result, msg)
         }
     }
@@ -649,10 +538,10 @@ fmt.Printf("Payload type: %T\n", payload)
 fmt.Printf("Payload type ID: %s\n", payload.Schema().String())
 
 // Check behavioral interface
-if locatable, ok := payload.(message.Locatable); ok {
-    fmt.Println("Payload IS Locatable")
+if _, ok := payload.(message.Storable); ok {
+    fmt.Println("Payload IS Storable")
 } else {
-    fmt.Println("Payload is NOT Locatable")
+    fmt.Println("Payload is NOT Storable")
     // Check what interfaces it does implement
 }
 ```

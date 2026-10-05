@@ -27,7 +27,7 @@ type Message interface {
 	Type() Type
 
 	// Payload returns the message payload that may implement behavioral interfaces.
-	// Payloads expose capabilities like Identifiable, Locatable, Observable, etc.
+	// Payloads expose capabilities like Storable, RuleReadable and IndexingProfiler.
 	Payload() Payload
 
 	// Meta returns metadata about the message lifecycle and origin.

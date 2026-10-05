@@ -1,16 +1,14 @@
 // Package message - the RuleReadable behavioral interface.
 //
-// A sibling of the optional behaviors in behaviors.go (Locatable, Timeable,
-// Observable, ...), discovered the same way and optional in the same sense.
-// It lives in its own file only because behaviors.go is already at revive's
-// per-file max-public-structs cap of 10.
+// A sibling of the optional behavior in behaviors.go (IndexingProfiler),
+// discovered the same way and optional in the same sense.
 package message
 
 // RuleReadable exposes the fields a payload is willing to have rule
 // conditions and `$message.*` substitutions read.
 //
 // Optional and discovered at runtime by type assertion, exactly like its
-// siblings in behaviors.go. A payload that does not implement it is not
+// sibling in behaviors.go. A payload that does not implement it is not
 // rule-readable: the rule engine reads no fields from it, the rule does not
 // fire, and the engine reports the rule/payload-type pairing rather than
 // evaluating false in silence.

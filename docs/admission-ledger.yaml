@@ -936,8 +936,8 @@
   destination: message
   contract: >-
     BaseMessage, the payload and behavior interfaces, the JSON codecs, triple construction and
-    identity, entity-ID parsing and Meta as at the pin, less the federation family (dead surface,
-    known_risks). Changed behavior (owner ruling 7, #9 comment 5969522395): BaseMessage decodes
+    identity, entity-ID parsing and Meta as at the pin, less the federation family and ten
+    capability interfaces (dead surface, known_risks). Changed behavior (owner ruling 7, #9 comment 5969522395): BaseMessage decodes
     meta.created_at and meta.received_at strictly as the integer Unix milliseconds MarshalJSON
     writes; absent, null or 0 is the zero time; any other value (a string, a fraction, an exponent
     form, a bool, an object, an integer outside int64) is refused with an invalid-data error.
@@ -1042,9 +1042,34 @@
     (internal/sim/component.go:653, :696; strings, uint32, uint64); semsource (e4febc0d),
     semconnect (d0d06e00) and semteams (d5ee6325) have none. Hash() ignores a payload marshal error, as at
     the pin, so a payload refused here hashes as its type alone; tracked by #78.
+    Adapt item, dead surface removed (owner rulings, #9 comments 5985697767 item 2 and 5985900154;
+    evidence: the surface audit, openspec/changes/setup-04a-01-floor/surface-audit.md §2): ten
+    capability interfaces that nothing type-asserts and no production type implements in SemEngine,
+    the pin, semsource or semconnect. Removed, pin lines: behaviors.go :19-137 (Locatable, Timeable,
+    Observable, Correlatable, Measurable, Deployable, Processable, Traceable, Expirable; IndexingProfiler,
+    which admitted processor/graph-ingest asserts, stays) with the time import :2-3, and the header
+    :8-16 corrected (the runtime-discovery example asserted Locatable, and RuleReadable no longer
+    lives apart for revive's per-file cap); triple.go :102-136 (TripleGenerator, a third spelling of
+    Triples() beside graph.Graphable and message.Storable, asserted nowhere). Doc comments corrected
+    to the remaining interfaces: rule_readable.go :3-6, :13; message.go :30 and payload.go :10
+    (Identifiable, Locatable and Observable → Storable, RuleReadable, IndexingProfiler);
+    payload_test.go comments :78, :86, :245, :251 (the methods stay; no interface names them).
+    doc.go (owner rulings, #9 comments 5957221949 and 5984291337), pin lines: :36-98 (the spatial,
+    temporal, observational, correlation and processing interface sections), :119-124 and :130-135
+    (the Locatable and Timeable discovery examples), :414-416 (the Locatable branch of the handler
+    example), :431-432 and :474 (best-practice lines naming Locatable and Timeable). README.md
+    behaviour edits, same rulings, pin lines: :12 and :41-42 (the capabilities named are RuleReadable
+    and Storable); :63-68 (the interface table lists IndexingProfiler, RuleReadable and Storable; the
+    pin's Identifiable and Targetable never existed); :111-129 (the behavioural example asserts
+    RuleReadable); :239-246 (the example payload's Location and Timestamp methods); :277-312 (the
+    Locatable geofence processor), :359-391 (its test) and :523-546 (the Observable transformation
+    pattern) removed; :551, :554 (the filtering pattern asserts Storable); :630-633 (the
+    troubleshooting check asserts Storable). The pin's message tests named none of the ten
+    interfaces, so no carried test is removed.
   proving_tests: >-
-    the 9 test files in message/ at the pin, carried unchanged except import paths; payload_test.go
-    and triple_helpers_test.go use internal/harness/semantictest. Added (task 3.6b):
+    the 9 test files in message/ at the pin, carried unchanged except import paths and four comments
+    in payload_test.go (known_risks); payload_test.go and triple_helpers_test.go use
+    internal/harness/semantictest. Added (task 3.6b):
     meta_wire_test.go, TestMetaCarriesOnlyWhatTheWireCarries (every exported type implementing Meta
     has only Meta's exported methods; failed first on the tree before the removal, naming
     DefaultFederationMeta and FederationMeta) and TestBaseMessageMetaSurvivesTheWire;

@@ -7,7 +7,7 @@ import "encoding/json"
 // schema information, validation, and serialization capabilities.
 //
 // Payloads may also implement behavioral interfaces (Graphable,
-// Locatable, Observable, etc.) to expose additional capabilities
+// Storable, RuleReadable, etc.) to expose additional capabilities
 // that can be discovered and utilized at runtime.
 //
 // Example implementation:

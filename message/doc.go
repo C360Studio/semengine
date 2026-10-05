@@ -33,69 +33,6 @@
 //   - Use when: Payload represents entities that should be stored in the graph
 //   - Example: Drone telemetry, sensor readings, IoT device states
 //
-// ## Spatial Interfaces
-//
-// Locatable: Provides geographic coordinates for spatial indexing
-//   - Location() (lat, lon float64) - Returns decimal degrees coordinates
-//   - Use when: Payload has geographic location data
-//   - Example: GPS coordinates, facility locations, vehicle positions
-//
-// ## Temporal Interfaces
-//
-// Timeable: Provides event/observation timestamp for time-series analysis
-//   - Timestamp() time.Time - Returns event time (not message creation time)
-//   - Use when: Payload represents time-series data or historical events
-//   - Example: Sensor readings, log entries, financial trades
-//
-// Expirable: Defines time-to-live for automatic cleanup
-//   - ExpiresAt() time.Time - Returns expiration timestamp
-//   - TTL() time.Duration - Returns time-to-live from creation
-//   - Use when: Payload should be automatically cleaned up after expiration
-//   - Example: Temporary cache entries, session data, ephemeral events
-//
-// ## Observational Interfaces
-//
-// Observable: Represents observations of other entities
-//   - ObservedEntity() string - Returns ID of observed entity
-//   - ObservedProperty() string - Returns observed property name
-//   - ObservedValue() any - Returns observed value
-//   - ObservedUnit() string - Returns measurement unit
-//   - Use when: Payload is a sensor reading or observation
-//   - Example: Temperature sensor reading, pressure measurement
-//
-// Measurable: Contains multiple measurements with units
-//   - Measurements() map[string]any - Returns all measurements
-//   - Unit(measurement string) string - Returns unit for specific measurement
-//   - Use when: Payload contains multiple related measurements
-//   - Example: Weather station data, health monitor readings
-//
-// ## Correlation Interfaces
-//
-// Correlatable: Enables distributed tracing and request/response matching
-//   - CorrelationID() string - Returns correlation identifier
-//   - Use when: Messages need to be correlated across requests/responses
-//   - Example: Request/response pairs, distributed transactions
-//
-// Traceable: Supports distributed tracing with spans (OpenTelemetry compatible)
-//   - TraceID() string - Returns trace identifier
-//   - SpanID() string - Returns span identifier
-//   - ParentSpanID() string - Returns parent span identifier
-//   - Use when: Integrating with distributed tracing systems
-//   - Example: Microservice calls, async processing chains
-//
-// ## Processing Interfaces
-//
-// Processable: Specifies processing priority and deadlines
-//   - Priority() int - Returns priority (0-10, higher = more important)
-//   - Deadline() time.Time - Returns processing deadline
-//   - Use when: Messages need priority-based or deadline-aware processing
-//   - Example: Real-time alerts, time-sensitive commands
-//
-// Deployable: Indicates deployment or collection membership
-//   - DeploymentID() string - Returns deployment identifier
-//   - Use when: Messages need to be grouped by deployment context
-//   - Example: Multi-tenant systems, A/B testing, staging environments
-//
 // ## Rule Interfaces
 //
 // RuleReadable: Declares the fields rule conditions and `$message.*`
@@ -116,23 +53,11 @@
 //
 // Services discover capabilities at runtime through type assertions:
 //
-//	// Check for location data
-//	if locatable, ok := msg.Payload().(Locatable); ok {
-//	    lat, lon := locatable.Location()
-//	    // Index by location, build spatial queries, etc.
-//	}
-//
 //	// Check for entity data
 //	if graphable, ok := msg.Payload().(Graphable); ok {
 //	    entityID := graphable.EntityID()
 //	    triples := graphable.Triples()
 //	    // Store in knowledge graph, build relationships, etc.
-//	}
-//
-//	// Check for time-series data
-//	if timeable, ok := msg.Payload().(Timeable); ok {
-//	    timestamp := timeable.Timestamp()
-//	    // Index by time, build time-series queries, etc.
 //	}
 //
 //	// Check for rule-readable fields
@@ -426,9 +351,6 @@
 //	    if graphable, ok := msg.Payload().(Graphable); ok {
 //	        // Process entity data
 //	    }
-//	    if locatable, ok := msg.Payload().(Locatable); ok {
-//	        // Process location data
-//	    }
 //	}
 //
 // # Best Practices
@@ -443,8 +365,6 @@
 //
 // 2. Implement Optional Interfaces Thoughtfully
 //   - Only implement behavioral interfaces that make semantic sense
-//   - Don't implement Locatable just because you have two numbers
-//   - Don't implement Timeable if you only have message creation time
 //   - Consider whether your payload truly represents an entity before implementing Graphable
 //
 // 3. Validation Philosophy
@@ -486,7 +406,6 @@
 // 3. Timestamp Considerations
 //   - Default timestamp (time.Now()) is correct for most cases
 //   - Use WithTime() only for historical data or testing
-//   - For event time vs creation time: use Timeable interface
 //
 // ## Message Processing
 //

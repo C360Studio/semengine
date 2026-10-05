@@ -99,41 +99,6 @@ type Triple struct {
 	ExpiresAt *time.Time `json:"expires_at,omitempty"`
 }
 
-// TripleGenerator enables messages to produce semantic triples for graph storage.
-// This interface replaces the use of untyped Properties maps with structured
-// semantic assertions that enable reasoning and complex queries.
-//
-// Implementations should:
-//   - Generate triples for all meaningful properties from the message
-//   - Use vocabulary predicate constants for consistency
-//   - Include entity relationships as triples with entity reference objects
-//   - Set appropriate confidence levels based on data source quality
-//   - Use EntityID.Key() format for consistent subject identification
-//
-// Example implementation for a drone battery payload:
-//
-//	func (b *BatteryPayload) Triples() []Triple {
-//	    entityID := EntityID{
-//	        Org: "acme", Platform: "dep1", System: "telemetry",
-//	        Domain: "robotics", Type: "drone", Instance: fmt.Sprintf("%d", b.SystemID),
-//	    }.Key()
-//
-//	    return []Triple{{
-//	        Subject: entityID,
-//	        Predicate: vocabulary.ROBOTICS_BATTERY_LEVEL, // "robotics.battery.level"
-//	        Object: float64(b.BatteryRemaining),
-//	        Source: "mavlink_battery",
-//	        Timestamp: time.Now(),
-//	        Confidence: 1.0,
-//	    }}
-//	}
-type TripleGenerator interface {
-	// Triples returns semantic triples extracted from this message.
-	// Each triple represents a meaningful assertion about an entity,
-	// using structured predicates and proper confidence scoring.
-	Triples() []Triple
-}
-
 // IsRelationship checks if this triple represents a relationship between entities
 // rather than a property with a literal value.
 // Returns true if Object is a valid canonical EntityID.

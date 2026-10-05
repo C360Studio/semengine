@@ -9,9 +9,10 @@ import (
 	"testing"
 )
 
-// testdata/reach holds three targets (plant/target.go, plant/branch.go and plant/inside.go), the
-// coverage profile of their unchanged code that the reach run would record (profile.txt, from
-// `go test -json -count=1 -cpu 1 -race -run '^(TestClamp|TestBranches|TestInside)$' -coverpkg=./plant -coverprofile=profile.txt ./plant`
+// testdata/reach holds four targets (plant/target.go, plant/branch.go, plant/inside.go and
+// plant/label.go), the coverage profile of their unchanged code that the reach run would record
+// (profile.txt, from
+// `go test -json -count=1 -cpu 1 -race -run '^(TestClamp|TestBranches|TestInside|TestLabel)$' -coverpkg=./plant -coverprofile=profile.txt ./plant`
 // with go1.26.6), and one line diff per case, taken with
 // `git diff --no-index --no-ext-diff --no-textconv --no-color -U0` from the target to a copy with
 // the wrong change. TestClamp calls Clamp(3): Clamp's first block (lines 20-25) and its last
@@ -21,8 +22,10 @@ import (
 // block ends at its last statement, does not. TestInside calls Pick(5) and Lab(-1): Pick's
 // condition, written over lines 5-6, lies in block 4.22,6.11, which ran, and its `return 0`
 // (9.2,9.10) did not; Lab jumps to the label `done:` on line 18, skipping `x++` in block 17.2,18.1,
-// whose inclusive end is the label's start, and runs `return x` (19.2,19.10). Every wrong change
-// here compiles, and the test of its target passes on each of them.
+// whose inclusive end is the label's start, and runs `return x` (19.2,19.10). TestLabel calls
+// Lab2(-1), which jumps to `done:` on line 11, skipping `hits++` in block 10.2,11.1, and runs the
+// labeled `hits += 2` (12.2,12.11), the last statement of the body. Every wrong change here
+// compiles, and the test of its target passes on each of them.
 
 func reachFile(t *testing.T, name string) []byte {
 	t.Helper()
@@ -116,6 +119,17 @@ func TestReachRecordedCases(t *testing.T) {
 		{"an insertion right after a label", "insertion-after-label.diff", "inside.go", []wantRegion{
 			{hunk{oldStart: 18, newStart: 19, newCount: 1}, notMeasurable, nil, []string{"after target line 18", "inside the statement on target lines 18-19"}},
 		}, notMeasurable, survivor, []string{"reach could not be measured"}},
+		// No statement follows the place after line 12; the last statement before it is labeled, and
+		// its label's start is the inclusive end of block 10.2,11.1, which goto skipped although the
+		// labeled statement and the inserted line ran.
+		{"an insertion after a labeled last statement", "insertion-after-labeled-last.diff", "label.go", []wantRegion{
+			{hunk{oldStart: 12, newStart: 13, newCount: 1}, notMeasurable, nil, []string{"after target line 12", "labeled"}},
+		}, notMeasurable, survivor, []string{"reach could not be measured"}},
+		// The first statement after the place, the labeled one, still decides: the place right before
+		// a label is reached only by falling through, which block 10.2,11.1 measures.
+		{"an insertion right before a label", "insertion-before-label.diff", "label.go", []wantRegion{
+			{hunk{oldStart: 10, newStart: 11, newCount: 1}, notReached, []string{"10.2,11.1 0"}, []string{"after target line 10"}},
+		}, notReached, invalid, []string{"did not reach the wrong change"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			target, base := target, "target.go"

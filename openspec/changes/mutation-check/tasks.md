@@ -153,8 +153,8 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
 
 ## 4. Documents
 
-- [ ] 4.1 (W) `.agents/skills/semengine-preflight/SKILL.md`: the command table
-      gains `task mutate:check`. Gate: `task docs:check`.
+- [x] 4.1 (W) `.agents/skills/semengine-preflight/SKILL.md`: the command table
+      gains `task mutate:check`. Gate: `task docs:check`. Done in `87329fe`; evidence comment 5995720079.
 - [ ] 4.2 Hold: PR #48 merged into `main`. (W)
       `.agents/contracts/semengine-developer.md` and `semengine-reviewer.md`: the mutation passages name
       `task mutate:check` for a Go source target, keep the `cp` procedure for the rest, and give the checksum as

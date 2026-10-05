@@ -42,8 +42,9 @@ with current CI.
 | `task test:integration` | Docker-backed tests through the admitted runner (host lock, process group, leak check) |
 | `task cover:check` | Fails below 80% coverage on `natsfixture`, `lifecycletest`, `probe`; each package on the SETUP 03B critical list (`setup-03b-contract-boundary` `design.md` D10) joins when it is ported |
 | `task test:repeat` | Unit tests five times at one CPU without the race detector, in shuffled order; `-- <pkgs>` to focus |
+| `task mutate:check -- -pkg … -test … -file … -mutant … -expect …` | Run by hand: applies one wrong change to a Go source file through `go test -overlay` and prints detection, survivor, invalid or inconclusive (the `mutation-check` spec); fails unless the verdict is detection; writes nothing in the repository |
 | `task merge:check -- <n>` | Fails while an open `class:flake` issue is not closed by PR `n`, or while the rules on `main` do not require an up-to-date head, or while PR `n` is a code pull request, not a draft, whose `implemented-by:` and `reviewed-by:` lines do not name the two agents; reads GitHub |
-| `task verify` | The checks above except `doctor`, `fmt`, `spec:queue`, `merge:check`, cheapest first with `test:repeat` last; prints each step's time; fails on tracked-file change |
+| `task verify` | The checks above except `doctor`, `fmt`, `spec:queue`, `mutate:check`, `merge:check`, cheapest first with `test:repeat` last; prints each step's time; fails on tracked-file change |
 
 CI has three jobs: `verify` runs `task verify`; `merge-check` runs `scripts/merge-check.sh` for the pull request (on a
 push to `main`, only its up-to-date half); `required` fails if `verify` or `merge-check` failed, is missing, or was

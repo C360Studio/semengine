@@ -15,14 +15,15 @@ package message
 // profile ("graph visibility is storage; indexing is policy").
 //
 // Optional and additive: a payload that does not implement it falls through
-// to graph-ingest's resolution order (mutation-envelope field, then the
-// fallback floor derived from MessageType + EntityID type-segment). Absence
+// to its consumer's own resolution order. SemStreams' graph-ingest, not ported
+// here, reads the mutation-envelope field, then the fallback floor derived
+// from MessageType + EntityID type-segment. Absence
 // means "let the framework decide", never "no profile".
 //
 // Valid return values are the four indexing profiles in the vocabulary
 // package: IndexingProfileContent, IndexingProfileControl,
 // IndexingProfileSignal, IndexingProfileTrace. An empty or unrecognized
-// return is treated as absent (graph-ingest falls through to the floor).
+// return is treated as absent (the consumer falls through to the floor).
 type IndexingProfiler interface {
 	// IndexingProfile returns one of "content" | "control" | "signal" | "trace".
 	IndexingProfile() string

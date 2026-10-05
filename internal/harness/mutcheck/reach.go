@@ -133,10 +133,11 @@ func removedRegion(h hunk, blocks []block) regionResult {
 // insertedRegion judges a hunk that only inserts lines after target line k. The place between
 // lines k and k+1 belongs to the innermost statement list that holds it. The block holding the
 // first statement of that list after the place decides; when none follows, the block holding the
-// last statement before it does. A sibling branch or clause never decides. Outside every function
-// body no list holds the place, and inside a statement of the list (a condition, call or literal
-// written over several lines, or the place between a label and its statement) no block measures
-// it: either way the region is not measurable.
+// last statement before it does, unless that statement is labeled. A sibling branch or clause
+// never decides. Outside every function body no list holds the place, and inside a statement of
+// the list (a condition, call or literal written over several lines, or the place between a label
+// and its statement) or after a labeled last statement no block measures it: the region is then
+// not measurable.
 func insertedRegion(h hunk, blocks []block, lists []stmtList) regionResult {
 	k := h.oldStart
 	r := regionResult{hunk: h, region: regionText(h)}
@@ -161,12 +162,22 @@ func insertedRegion(h hunk, blocks []block, lists []stmtList) regionResult {
 			return r
 		}
 	}
-	decider := list.stmts[len(list.stmts)-1].start
+	last := list.stmts[len(list.stmts)-1]
+	decider, follows := last.start, false
 	for _, st := range list.stmts {
 		if st.start.Line > k {
-			decider = st.start
+			decider, follows = st.start, true
 			break
 		}
+	}
+	// A labeled statement's start, its label, is the inclusive end of the block before it, which a
+	// goto to the label skips. The first statement after the place may be labeled: the place right
+	// before a label is reached only by falling through, which that block measures. The last one
+	// before the place may not (design D13, P29; the owner's ruling on #79).
+	if !follows && last.labeled {
+		r.state = notMeasurable
+		r.note = fmt.Sprintf("the last statement before the place, on target line %d, is labeled: a goto can reach it past the block before it, so no block measures the place", last.start.Line)
+		return r
 	}
 	var holding []block
 	for _, b := range blocks {
@@ -253,8 +264,11 @@ type stmtList struct {
 	stmts               []stmtSpan
 }
 
-// stmtSpan is where one statement of a list begins and ends.
-type stmtSpan struct{ start, end token.Position }
+// stmtSpan is where one statement of a list begins and ends, and whether it is labeled.
+type stmtSpan struct {
+	start, end token.Position
+	labeled    bool
+}
 
 // statementLists lists every statement list of the target. A block's list lies between its
 // braces; a clause's lies between its colon and the next clause, or the closing brace of the
@@ -270,7 +284,8 @@ func statementLists(target []byte) ([]stmtList, error) {
 	add := func(open token.Pos, closeAt token.Pos, stmts []ast.Stmt) {
 		l := stmtList{open: open, openLine: fset.Position(open).Line, closeLine: fset.Position(closeAt).Line}
 		for _, st := range stmts {
-			l.stmts = append(l.stmts, stmtSpan{fset.Position(st.Pos()), fset.Position(st.End())})
+			_, labeled := st.(*ast.LabeledStmt)
+			l.stmts = append(l.stmts, stmtSpan{fset.Position(st.Pos()), fset.Position(st.End()), labeled})
 		}
 		lists = append(lists, l)
 	}

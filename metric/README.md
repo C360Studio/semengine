@@ -1,10 +1,10 @@
 # Metric
 
-Prometheus-based metrics collection and HTTP server for SemStreams platform monitoring and observability.
+Prometheus-based metrics collection and HTTP server for SemEngine monitoring and observability.
 
 ## Overview
 
-The metric package provides comprehensive metrics collection capabilities for the SemStreams platform using Prometheus
+The metric package provides comprehensive metrics collection capabilities for SemEngine using Prometheus
 as the underlying metrics system. It includes core platform metrics, service-specific metric registration, and an HTTP
 metrics server for monitoring and alerting integration.
 
@@ -13,7 +13,7 @@ processing, NATS connection health) and custom service-specific metrics. The HTT
 format for collection by monitoring systems.
 
 The design follows Prometheus best practices with proper metric naming, labeling, and types (counters, gauges,
-histograms) to provide comprehensive operational visibility into the SemStreams platform.
+histograms) to provide comprehensive operational visibility into SemEngine.
 
 ## Installation
 

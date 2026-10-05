@@ -402,6 +402,11 @@
     (owner ruling, #9 comment 5968665464), an adapt item "import path changed to the SemEngine
     module": pin README.md:12, github.com/c360/semstreams/pkg/retry →
     github.com/c360studio/semengine/pkg/retry
+    Adapt item (Codex review of record, PR #48 comment 5996819933, F32 and F34; commit 0c46833): Do refuses a
+    nil context before the operation runs and checks the context before every attempt, so an ended context never
+    runs it; jitter() gives no jitter when a quarter of the delay is under 1 ns, instead of passing zero to
+    Int63n, and releases randMu with defer. README.md tree line 3: "the SemStreams framework" now reads
+    SemEngine (owner ruling, #9 comment 5984291337).
   proving_tests: >-
     pkg/retry/retry_test.go, the six timer-driven tests inside synctest.Test. D8 repair (R1a): pin
     retry_test.go:68 (time.Sleep 50 ms) → retry_test.go:74 (<-time.After on the bubble's clock);
@@ -601,6 +606,8 @@
     PredicateNamespace, ParsePredicateNamespace and RequireDeclaredPredicate stay.
     namespace_authority_test.go :45-102 (TestPredicateAuthority,
     TestNewPredicateAuthorityRejectsInvalidDelegation) and the errors import :4
+    Adapt item, product prose (owner ruling, #9 comment 5984291337): doc.go tree line :1 says SemEngine, not the
+    SemStreams platform.
   proving_tests: >-
     the 11 test files in vocabulary/ at the pin, less TestEntityIRI and BenchmarkEntityIRI (removed
     with EntityIRI, above) and the tests of the dead surface removed above;
@@ -803,6 +810,9 @@
     pin lines of tlsutil_test.go: :88-93, :111-112, :122-123 and :167-169 (TestLoadServerTLSConfig
     asserts the version constant itself instead of calling parseTLSVersion, its own oracle),
     :260-277 (TestParseTLSVersion: "invalid" and "1.1" are refused)
+    Adapt item (Codex review of record, PR #48 comment 5996819933, F35; commit f79f6e9):
+    LoadServerTLSConfigWithMTLS refuses mTLS with server TLS disabled with errs.ErrInvalidConfig, where the pin
+    dereferenced the nil config.
   proving_tests: >-
     internal/tlsutil/tlsutil_test.go (unit lane); internal/tlsutil/mtls_integration_test.go
     (integration-tagged, run by task test:integration: real TLS handshakes over httptest servers for
@@ -899,6 +909,14 @@
     :32, :39, :139, :158, :193, :209, :223 and :226 (MD022) and before the lists at :234, :238 and
     :242 (MD032); the heading at :226, longer than 80 columns (MD013), becomes `NewServer` with the
     signature on the line below it; no other wording changed
+    Adapt item, doc corrections (Codex review of record, PR #48 comment 5996819933, F38; owner ruling #9 comment
+    5984291337; commit 5463f93), tree lines at that commit: doc.go :1-2, :37-38, :41-42, :46-47, :49-60, :62,
+    :68, :71-74, :77-80, :89-92, :129-131, :165, :186-188, :197, :205-206, :249-251, :277, :280-281, :296-297,
+    :302-305, :329-331, :372, :414; README.md :36, :43-44, :48-49, :58, :62, :118-119, :122, :127, :132,
+    :159-160, :165, :172, :174, :177, :186, :190, :196-206, :220, :271-272, :277-279, :406, :422, :429, :606,
+    :613, :817-819. RegisterOrGet examples stop on a refusal; recording examples use the methods Metrics has;
+    /health answers plain-text OK. README.md tree lines :3, :7 and :16 describe SemEngine, not the SemStreams
+    platform.
   proving_tests: >-
     the 3 test files in metric/ at the pin (handler_test.go, integration_test.go, registry_test.go);
     new, written first, in metric/lifecycle_test.go: TestServerAbortStopReportsContext (30 servers
@@ -1142,7 +1160,19 @@
     troubleshooting check asserts Storable). The pin's message tests named none of the ten
     interfaces, so no carried test is removed. README.md pin lines :668-670 removed (owner ruling, #9 comment
     5994720412, item 5): the References links to ../component/, ../errors/ and ../composition/,
-    packages SemEngine does not have at those paths; the natsclient link stays.
+    packages SemEngine does not have at those paths; the natsclient link stays. Adapt item, doc
+    comments only (owner ruling, #9 comment 5984291337; Codex review of PR #48, F39 round):
+    storable.go pin lines :11-14, :38-52, :66 and :70 named graph.Graphable, ObjectStore and
+    GraphProcessor, which SemEngine does not have; Storable is now described by its own methods,
+    with graph.Graphable marked as SemStreams'. No code changed.
+    Adapt item (Codex review of record, PR #48 comment 5996819933, F30; commit 344044c):
+    GenericJSONPayload.UnmarshalJSON refuses what json.Unmarshal refuses (json.Valid) and decodes with
+    UseNumber, so every number keeps its literal as a json.Number; at the pin each became a float64. Two carried
+    pin tests and three README examples that read float64 read json.Number. Doc comments, same rulings (commit
+    5463f93): generic_json.go tree lines :31-32, :38, :53-58, :60-63, :75-76 and :87-88 at that commit describe
+    core.json.v1 as the fallback for JSON of unknown shape, decoded only after RegisterPayloads. Product prose
+    (#9 comment 5984291337), tree lines: doc.go :1 and README.md :3, :7, :30 name SemEngine, not SemStreams;
+    README.md :54 says core.json.v1 is registered by RegisterPayloads; README.md :395 names pkg/errs.
   proving_tests: >-
     the 9 test files in message/ at the pin, carried unchanged except import paths and four comments
     in payload_test.go (known_risks); payload_test.go and triple_helpers_test.go use
@@ -1267,6 +1297,13 @@
     replaced by NewFromConfig with StrategyHybrid at :37-39, :72, :216 and :227-229; :267 and :271
     name ./internal/cache; :286 no longer points at a nonexistent examples_test.go. README behavior
     edits: cache.NewHybrid replaced the same way at :35, :102 and :403-411
+    Adapt item, doc corrections (Codex review of record, PR #48 comment 5996819933, F38; owner ruling #9 comment
+    5984291337; commit 5463f93), tree lines at that commit: doc.go :18-20, :23-30, :34, :36, :41-44, :48,
+    :52-54, :63, :70, :77, :84, :89-91, :172, :175-177, :227-230, :239-240, :243, :250, :252, :254-261, :265,
+    :277-280, :308-313, :315-317, :321; README.md :25-27, :30-33, :36-39, :42-45, :48, :52-54, :66, :69-71, :84,
+    :87-89, :94-95, :101, :109, :117, :149-156, :162-163, :166, :423, :425-430, :432-439, :441. Every two-result
+    constructor's error is checked before use; the Cache interface shown is the real one; the nonexistent
+    average-lifetime statistic is gone.
   proving_tests: >-
     the 6 test files in pkg/cache/ at the pin, carried to internal/cache/ and repaired. New, written
     first, in internal/cache/metrics_test.go: TestCacheMetricsTwoCachesOnePrefixGatherTheSum (two LRU
@@ -1607,6 +1644,20 @@
     measured at task 3.7, so each later port that adds a caller of ConsumeInternalStreamWithConfig,
     ConsumeStreamWithConfig, ConsumeStreamWithConfigContexts or GetConsumerConfig, or a direct
     CreateOrUpdateConsumer, CreateConsumer or OrderedConsumer call, updates them in that port
+    Adapt items (Codex review of record, PR #48 comment 5996819933): a nil context is refused with an
+    invalid-data error by every exported context-taking, error-returning call before any state, callback or NATS
+    call (F32; commits bb23dc7, e17ecfd); RequestWithRetry and RequestWithRetryClassified refuse a negative
+    MaxRetries before sending (F31; bb23dc7) and check the context before every attempt, the first included,
+    without counting a caller's cancellation toward the circuit breaker (F32; c206229); GetStatus reads the
+    connection once under mu (F33; ff93b8e); the storage report consumer replaces its view at a watch's sync
+    marker, clears AccountKnown on a delete or purge of the account key, logging at Warn that observers are not
+    told (issue #85), and Snapshot shares no mutable memory (F36, F37; 5464e50). The handler-deadline
+    integration test's wall-clock slack is replaced by TestRequestHandlerDeadlineIsTheConfiguredTimeout at the
+    derivation seam and an event-bounded broker check (F40; 1642acd). Doc comments (F38; commit 5463f93), tree
+    lines at that commit: doc.go :7, :23-24, :188-192, :194, :322, :428, :434-436 (no KVStore.GetJSON; handler
+    errors reply with RespondError's classified envelope; SemStreams references marked); request.go :71-76,
+    :183-184, :472-473, :476-483. README.md tree lines :13 and :226 describe SemEngine, not SemStreams (#9
+    comment 5984291337).
   proving_tests: >-
     the 43 unit test files of natsclient at the pin, carried, with
     natsclient/test_helpers_test.go (testStreamMaxAge and testStreamMaxBytes, pin

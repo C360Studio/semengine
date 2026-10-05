@@ -1,6 +1,6 @@
 # Retry Package
 
-Simple exponential backoff retry for the SemStreams framework.
+Simple exponential backoff retry for SemEngine.
 
 ## Overview
 

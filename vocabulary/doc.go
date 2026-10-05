@@ -1,4 +1,4 @@
-// Package vocabulary provides semantic vocabulary management for the SemStreams platform.
+// Package vocabulary provides semantic vocabulary management for SemEngine.
 // It defines predicates using dotted notation and provides optional IRI mappings for
 // standards compliance at API boundaries.
 //

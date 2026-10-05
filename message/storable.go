@@ -9,8 +9,8 @@ package message
 // of large messages.
 //
 // Example usage:
-//   - ObjectStore stores full message and returns StorageReference
-//   - GraphProcessor receives Storable with reference to full data
+//   - A storage component stores the full message and returns a StorageReference
+//   - A graph consumer receives a Storable with a reference to the full data
 //   - Components can fetch full data only when needed
 type StorageReference struct {
 	// StorageInstance identifies which storage component holds the data.
@@ -35,20 +35,20 @@ type StorageReference struct {
 	Size int64 `json:"size,omitempty"`
 }
 
-// Storable extends graph.Graphable with storage reference capability.
+// Storable is a payload that names its entity and its facts (EntityID and
+// Triples) and carries a reference to where its full data is stored.
 // Components that implement Storable can provide both semantic
-// information (via Graphable) and a reference to their full data.
+// information and a reference to their full data.
 //
 // This interface enables the lightweight message pattern where:
 //  1. Domain processors create messages with semantic data
-//  2. ObjectStore stores full message and adds StorageReference
-//  3. GraphProcessor receives Storable with both semantics and reference
+//  2. A storage component stores the full message and adds a StorageReference
+//  3. A graph consumer receives the Storable with both semantics and reference
 //  4. Consumers can access full data via StorageReference when needed
 //
-// NOTE: This interface duplicates graph.Graphable methods inline to avoid
-// an import cycle (graph imports message for Triple, so message cannot
-// import graph). Any type implementing this interface also implements
-// graph.Graphable automatically due to identical method signatures.
+// SemEngine has no graph package yet. In SemStreams, where this file comes
+// from, EntityID and Triples are also the methods of graph.Graphable, so a
+// Storable there satisfies that interface too.
 //
 // Example implementation:
 //
@@ -63,11 +63,9 @@ type StorageReference struct {
 //	func (s *StoredEntity) StorageRef() *StorageReference { return s.storage }
 type Storable interface {
 	// EntityID returns deterministic 6-part ID: org.platform.system.domain.type.instance
-	// (duplicated from graph.Graphable to avoid import cycle)
 	EntityID() string
 
 	// Triples returns all facts about this entity
-	// (duplicated from graph.Graphable to avoid import cycle)
 	Triples() []Triple
 
 	// StorageRef returns reference to where full data is stored.

@@ -214,3 +214,60 @@ client SHALL cancel when `Close` begins; `Close` SHALL still join every handler 
 - **GIVEN** a consumer whose handler is running
 - **WHEN** `Close` begins
 - **THEN** the handler's context ends, and `Close` returns nil only after the handler has returned
+
+### Requirement: An exported call refuses a nil context before it acts
+
+Every exported `natsclient` call that takes a context and returns an error SHALL refuse a nil context with an
+invalid-data error before it touches client state, calls a callback or calls NATS (changed behaviour: at the pin
+`Request`, `RequestWithHeaders`, `OpenFrameworkBucket` and their siblings panicked; PR #48, Codex F32).
+
+#### Scenario: Nil context on a request or bucket call
+
+- **WHEN** `Request`, `RequestWithHeaders`, `OpenFrameworkBucket` or any other exported context-taking,
+  error-returning call is given a nil context on a connected client
+- **THEN** it returns an invalid-data error, no handler runs and no bucket changes
+
+### Requirement: A retrying request refuses what it cannot attempt
+
+`RequestWithRetry` and `RequestWithRetryClassified` SHALL refuse a negative `MaxRetries` with an invalid-data error
+before anything is sent; 0 means one attempt. They SHALL check the context before every attempt, the first included,
+and SHALL return a caller's cancellation as a transient error that matches `context.Canceled` without counting it
+toward the circuit breaker (changed behaviour: at the pin a negative count returned success with no reply, or
+panicked, and a cancelled context counted as a transport failure; Codex F31, F32).
+
+#### Scenario: Negative retry count
+
+- **WHEN** a retrying request is called with `MaxRetries` below zero
+- **THEN** it returns an invalid-data error and the responder's handler never runs
+
+#### Scenario: Ended context
+
+- **WHEN** a retrying request is called with a context that has already ended
+- **THEN** it returns an error matching `context.Canceled`, the responder's handler never runs, and the client's
+  failure count is unchanged
+
+### Requirement: The storage report view changes at a sync marker
+
+The storage report consumer SHALL collect a watch's initial values until the watch's sync marker and then make them
+its view in one step, so a row or account row the bucket no longer holds is gone even when no delete marker for it
+was replayed. Until that marker a `Snapshot` caller SHALL see the previous view whole; before the first watch's
+marker the view is empty and `Synced` is false. A delete or purge of the account key SHALL clear `AccountKnown`.
+`Snapshot` SHALL share no mutable memory with the consumer. `StorageReportObserver` has no method that retracts an
+account, so an observer is not told of an account retraction; the consumer SHALL log it at Warn (declared gap, issue #85;
+Codex F36, F37).
+
+#### Scenario: A replacement watch over a bucket that lost rows
+
+- **WHEN** a replacement watch's initial values lack a row the previous view held, and no delete marker for it is
+  replayed
+- **THEN** `Snapshot` returns the previous view until the sync marker, and from the marker on the row is gone
+
+#### Scenario: The account key is deleted
+
+- **WHEN** the account key is deleted or purged
+- **THEN** `Snapshot` reports `AccountKnown` false and a Warn record says observers keep the last account
+
+#### Scenario: Editing a snapshot
+
+- **WHEN** a caller edits any slice or pointer field of a returned snapshot
+- **THEN** the next `Snapshot` is unchanged

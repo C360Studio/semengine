@@ -77,6 +77,33 @@ contains itself (#9 comments 5972117486, 5972208367).
 - **THEN** encoding gives the standard library's encoding of the same value, and the message decodes through
   `NewDecoder`
 
+### Requirement: Generic JSON is a fallback that keeps every number
+
+`GenericJSONPayload` (type `core.json.v1`) SHALL be the fallback for JSON whose shape is not known when the code is
+written, such as outside input. Code that builds a shape it knows registers a payload type for that shape instead.
+Nothing SHALL register `core.json.v1` implicitly: a process that decodes it calls `RegisterPayloads` on the registry
+its `Decoder` uses. `GenericJSONPayload.UnmarshalJSON` SHALL refuse what `json.Unmarshal` refuses and SHALL keep every
+number as a `json.Number` holding its exact literal, so an integer beyond 2^53 keeps its value (changed behaviour: at
+the pin every decoded number became a `float64`; PR #48, Codex F30). A payload built in process SHALL hold the Go
+numbers its caller supplied.
+
+#### Scenario: A large integer survives the wire
+
+- **WHEN** a generic JSON payload holding `int64(9007199254740993)`, the largest `uint64` or
+  `json.Number("9007199254740993")` is encoded and decoded through `NewDecoder`
+- **THEN** the decoded payload holds that number as a `json.Number` with the same literal, and re-encodes to the same
+  bytes
+
+#### Scenario: An in-process payload
+
+- **WHEN** a generic JSON payload is built in process from Go numbers
+- **THEN** `Data` holds those Go numbers as supplied, until the payload is encoded and decoded
+
+#### Scenario: Decoding without registration
+
+- **WHEN** a `core.json.v1` message is decoded by a `Decoder` whose registry did not get `RegisterPayloads`
+- **THEN** `Decode` returns an error
+
 ### Requirement: A valid message survives the wire unchanged
 
 A message that validates SHALL survive `json.Marshal` and `Decoder.Decode`, with the payload's type registered,

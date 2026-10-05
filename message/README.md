@@ -1,10 +1,10 @@
 # Message Package
 
-Polymorphic message handling for SemStreams data flows with behavior-based processing and type-safe payload management.
+Polymorphic message handling for SemEngine data flows with behavior-based processing and type-safe payload management.
 
 ## Overview
 
-The message package provides the foundation for type-safe, extensible message processing in SemStreams. Messages flow
+The message package provides the foundation for type-safe, extensible message processing in SemEngine. Messages flow
 through components as polymorphic envelopes (BaseMessage) containing typed payloads that can be type-asserted to
 behavioral interfaces for specialized processing.
 
@@ -27,7 +27,7 @@ import "github.com/c360studio/semengine/message"
 
 ### Message Structure
 
-Every SemStreams message consists of:
+Every SemEngine message consists of:
 
 1. **Envelope** (`BaseMessage`): Polymorphic wrapper with type metadata
 2. **Payload**: Concrete data implementing the Payload interface
@@ -51,7 +51,7 @@ Every SemStreams message consists of:
 
 Payloads are identified by "domain.category.version" strings:
 
-- `core.json.v1` - Generic JSON (built-in SemStreams type)
+- `core.json.v1` - Generic JSON (built-in type, registered by `RegisterPayloads`)
 - `robotics.mavlink.v1` - MAVLink messages (domain-specific)
 - `iot.sensor.v2` - IoT sensor data (domain-specific)
 
@@ -392,7 +392,7 @@ BenchmarkTypedPayload_Unmarshal    1500000    900 ns/op
 
 ### Error Handling
 
-Uses SemStreams error classification:
+Uses the `pkg/errs` error classification:
 
 ```go
 import "github.com/c360studio/semengine/pkg/errs"

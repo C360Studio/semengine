@@ -1,4 +1,4 @@
-// Package message provides the core message infrastructure for the SemStreams platform.
+// Package message provides the core message infrastructure for SemEngine.
 // It defines interfaces and types for creating, validating, and processing messages
 // that flow through the semantic event mesh.
 //

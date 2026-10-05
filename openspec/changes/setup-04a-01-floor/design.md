@@ -470,6 +470,35 @@ and in `task test:repeat`'s shuffled runs. What the examples do not cover: three
 and a `Connect` racing one held drain) beyond the cases listed, and orderings inside nats.go itself, which the nats.go
 v1.54.0 cites in this section stand in for.
 
+**Boundaries the review of record closed (Codex F31–F37, F40; PR #48).** Each holds in the `transport-client` delta
+where it is `natsclient` behaviour.
+
+- **Nil contexts.** Every exported `natsclient` call that takes a context and returns an error refuses a nil context
+  with an invalid-data error before it touches client state, a callback or NATS (commits bb23dc7, e17ecfd;
+  `TestExportedNilContextRefusedOnRequestAndBucketPaths`, `TestExportedNilContextRefusedOnEveryOtherEntry`).
+  `retry.Do`, and `DoWithResult` through it, refuses a nil context before the operation runs, and checks the context
+  before every attempt, so an already-ended context never runs it (commit 0c46833). A delay under 4 ns, whose
+  jitter range (a quarter of the delay) is empty, gets no jitter instead of panicking with the package's random lock
+  held (F34).
+- **Retrying requests.** `RequestWithRetry` and `RequestWithRetryClassified` refuse a negative `MaxRetries` before
+  anything is sent (0 means one attempt), and check the context before every attempt, the first included. A caller's
+  cancellation is returned as a transient error that still matches `context.Canceled` and does not count toward the
+  circuit breaker (commits bb23dc7, c206229; `TestNegativeMaxRetriesNeverDispatches`,
+  `TestRetryRequestEndedContextNeverDispatches`).
+- **Status during Close.** `GetStatus` reads the connection once under the client's mutex, so polling it while
+  `Close` runs is neither a data race nor a nil dereference (commit ff93b8e; `TestReviewerGetStatusConcurrentClose`).
+- **mTLS.** `LoadServerTLSConfigWithMTLS` refuses mTLS with server TLS disabled with `errs.ErrInvalidConfig` (commit
+  f79f6e9; `TestReviewerMTLSWithoutTLSDoesNotPanic`).
+- **Storage report consumer.** A watch's initial values replace the view in one step at its sync marker, so a row or
+  account row the bucket no longer holds is gone even when no delete marker was replayed; a delete or purge of the
+  account key clears `AccountKnown`; `Snapshot` shares no mutable memory with the consumer (commit 5464e50,
+  `natsclient/storage_report_resync_test.go`). `StorageReportObserver` has no method to retract an account, so an
+  observer is not told; the consumer logs it at Warn, and issue #85 tracks the missing method.
+- **Handler deadline.** `TestRequestHandlerDeadlineIsTheConfiguredTimeout` proves the configured handler timeout at
+  the seam where the handler's context is derived, inside a `synctest` bubble; the broker test keeps only an
+  event-bounded check (the deadline lies between request sent and reply received, plus the timeout), which no host
+  speed can fail (commit 1642acd, F40).
+
 ### D4. Repair evidence this change's own code can produce (ruling g)
 
 - **Settlement, `natsclient` half.** `natsclient/delivery_settlement.go` (`DeliveryWork`, `DeliveryDecision`,
@@ -686,8 +715,15 @@ judged by `unicode/utf8` and `strings`, that `Type.Validate`, the envelope and t
 and that every accepted one survives `NewDecoder` equal in full; a type registered per input carries the generated
 components through the registry, and its seeds hold an invalid byte in each of the five positions.
 `GenericJSONPayload.UnmarshalJSON` gets `FuzzGenericJSONPayloadUnmarshalJSON`, checked against the standard library's
-decode of `{"data": …}`. Named examples own the four ruled instants (`TestBaseMessageTimestampsAreMilliseconds`) and the
-refused timestamp forms (`TestBaseMessageRefusesTimestampsThatAreNotMilliseconds`). The entity-ID helpers keep the
+decode of `{"data": …}` read with `UseNumber`. A decode keeps every number as a `json.Number` holding its literal,
+where the pin turned each into a `float64` and changed integers beyond 2^53 (Codex F30, commit 344044c):
+`FuzzGenericJSONShapes` compares the `NewDecoder` result with the generated values themselves, and
+`TestReviewerGenericJSONPreservesIntegerValue` holds the three boundary numbers. A payload built in process holds the
+Go numbers its caller supplied. `core.json.v1` is the fallback for JSON whose shape is unknown when the code is
+written; code that builds a known shape registers a payload type, and decoding `core.json.v1` needs
+`RegisterPayloads` on the decoder's registry. Named examples own the four ruled instants
+(`TestBaseMessageTimestampsAreMilliseconds`) and the refused timestamp forms
+(`TestBaseMessageRefusesTimestampsThatAreNotMilliseconds`). The entity-ID helpers keep the
 qualification of their canonical authority in `pkg/types`.
 
 The `message-codec` delta states these laws (owner ruling, #9 comment 5983188211). Its scenarios map to existing
@@ -696,7 +732,9 @@ tests: millisecond timestamps → `TestBaseMessageTimestampsAreMilliseconds` (an
 `FuzzDecoderDecode` over the timestamp grammar; UTF-8 → `TestBaseMessageRefusesSourceThatIsNotUTF8`,
 `TestBaseMessageRefusesTypeThatIsNotUTF8` and `TestGenericJSONRefusesInvalidUTF8AtDepth`, with `FuzzDecoderStrings`;
 JSON shape → `TestGenericJSONRefusesValuesThatAreNotJSONShaped`, `TestGenericJSONRefusesCycles` and
-`TestGenericJSONAcceptsJSONShapedValues`, with `FuzzGenericJSONShapes`; round trip → `FuzzDecoderRoundTrip`.
+`TestGenericJSONAcceptsJSONShapedValues`, with `FuzzGenericJSONShapes`; fallback and exact numbers →
+`TestReviewerGenericJSONPreservesIntegerValue`, with `FuzzGenericJSONShapes`, `FuzzGenericJSONPayloadUnmarshalJSON`
+and, for an unregistered type, `FuzzDecoderDecode`; round trip → `FuzzDecoderRoundTrip`.
 
 The ACME loaders' renewal goroutines (`tlsutil.go:253, :331`) are not in this change (D1): their stop can wait inside
 `legoClient.Certificate.Renew`, which takes no context (`pkg/acme/client.go:352`), and their renewal callback writes

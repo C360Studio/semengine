@@ -10,7 +10,7 @@ environments. It wraps the standard NATS Go client with additional reliability f
 pattern for failure protection, exponential backoff for reconnection, and proper context propagation throughout all
 operations.
 
-This package is the foundation for all NATS communication in the SemStreams framework, providing both core pub/sub
+This package is the foundation for all NATS communication in SemEngine, providing both core pub/sub
 functionality and advanced features like JetStream streams, consumers, and Key-Value stores. The client handles
 connection lifecycle management automatically, allowing applications to focus on business logic rather than connection
 state management.
@@ -223,7 +223,7 @@ across services. Centralizes revision conflict handling and retry logic.
 ### Integration Points
 
 - **Dependencies**: NATS server (2.x compatible)
-- **Used By**: All SemStreams services and components requiring messaging
+- **Used By**: Code that needs NATS messaging
 - **Data Flow**: `Application → Client → Circuit Breaker → NATS Connection → Server`
 
 ## Configuration

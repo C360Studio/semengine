@@ -866,15 +866,18 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         and the `docs/vocabulary/` links in `vocabulary/README.md`, and `message/README.md`'s References links,
         describe packages SemEngine does not have and are left for the README pass; they are outside the audit's
         cut.
-- [ ] 3.12a Hold: the owner's design choice on #9. (D) The `RequireClientCert` fail-open (owner ruling
-      5985900154, item 3): with mTLS enabled,
-      `RequireClientCert` false and `AllowedClientCNs` empty, `internal/tlsutil` admits a client with no
-      certificate, and the schema tag (`pkg/security/config.go:91`) calls the default true while the Go zero value
-      is false. Fixing it needs a design choice the rulings leave open: let the zero value mean "required" (a
-      pointer or an inverted field, which changes the exported field and its JSON key), or refuse the combination
-      at load (which removes the optional-client-certificate mode that `TestMTLSHandshake_OptionalClientCert_*`
-      and `TestLoadServerTLSConfigWithMTLS_OptionalClientCert` hold). The schema tag is left as it is until the
-      choice is made, since one answer makes it true.
+- [x] 3.12a (D) The `RequireClientCert` fail-open (owner ruling 5985900154, item 3): with mTLS enabled,
+      `RequireClientCert` false and `AllowedClientCNs` empty, `internal/tlsutil` admitted a client with no
+      certificate, and the schema tag (`pkg/security/config.go:91`) called the default true while the Go zero
+      value was false. Lifted: the owner chose on #9 (comment 5994720412, item 4): `RequireClientCert` is replaced
+      by `ClientCertOptional` (JSON `client_cert_optional`), so the zero value requires a client certificate and
+      optional mode stays when it is set.
+      - Done. `TestServerMTLSRequiresClientCertificateByDefault` (`internal/tlsutil/mtls_default_test.go`): neither
+        field set and no CN allowlist, a client with no certificate is refused and one the client CA signed is
+        served, in real handshakes on TLS 1.2 and 1.3. Failed first on both versions (the client with no
+        certificate was served); a mutant inverting the default fails it. The optional-mode tests set
+        `ClientCertOptional: true`; the `default:true` tag is gone; the exported-field change is on the
+        `pkg/security` row.
 
 ## 4. Repair evidence this change can produce (ruling g)
 

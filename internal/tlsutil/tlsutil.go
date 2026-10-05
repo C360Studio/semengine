@@ -120,10 +120,12 @@ func applyMTLSConfig(tlsConfig *tls.Config, mtlsCfg security.ServerMTLSConfig) e
 	}
 
 	tlsConfig.ClientCAs = clientCAs
-	if mtlsCfg.RequireClientCert {
-		tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
-	} else {
+	// A client certificate is required unless the configuration says otherwise, so the
+	// zero value fails closed (owner ruling, #9 comment 5994720412, item 4).
+	if mtlsCfg.ClientCertOptional {
 		tlsConfig.ClientAuth = tls.VerifyClientCertIfGiven
+	} else {
+		tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
 	}
 
 	// Optional: CN whitelist verification

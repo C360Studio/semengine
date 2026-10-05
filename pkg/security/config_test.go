@@ -35,7 +35,7 @@ const configDocument = `{
       "mtls": {
         "enabled": true,
         "client_ca_files": ["/etc/ssl/client-ca.pem"],
-        "require_client_cert": true,
+        "client_cert_optional": true,
         "allowed_client_cns": ["service-a"]
       }
     },
@@ -82,10 +82,10 @@ var wantConfig = security.Config{
 				CABundle:      "/etc/ssl/step-ca.pem",
 			},
 			MTLS: security.ServerMTLSConfig{
-				Enabled:           true,
-				ClientCAFiles:     []string{"/etc/ssl/client-ca.pem"},
-				RequireClientCert: true,
-				AllowedClientCNs:  []string{"service-a"},
+				Enabled:            true,
+				ClientCAFiles:      []string{"/etc/ssl/client-ca.pem"},
+				ClientCertOptional: true,
+				AllowedClientCNs:   []string{"service-a"},
 			},
 		},
 		Client: security.ClientTLSConfig{

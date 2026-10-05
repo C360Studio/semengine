@@ -47,9 +47,8 @@ func TestMTLSHandshake_ServerRequiresClientCert(t *testing.T) {
 	}
 
 	serverMTLSCfg := security.ServerMTLSConfig{
-		Enabled:           true,
-		ClientCAFiles:     []string{clientCAFile},
-		RequireClientCert: true,
+		Enabled:       true,
+		ClientCAFiles: []string{clientCAFile},
 	}
 
 	serverTLSConfig, err := LoadServerTLSConfigWithMTLS(serverCfg, serverMTLSCfg)
@@ -127,9 +126,8 @@ func TestMTLSHandshake_ServerRequiresClientCert_NoClientCert(t *testing.T) {
 	}
 
 	serverMTLSCfg := security.ServerMTLSConfig{
-		Enabled:           true,
-		ClientCAFiles:     []string{clientCAFile},
-		RequireClientCert: true,
+		Enabled:       true,
+		ClientCAFiles: []string{clientCAFile},
 	}
 
 	serverTLSConfig, err := LoadServerTLSConfigWithMTLS(serverCfg, serverMTLSCfg)
@@ -200,10 +198,9 @@ func TestMTLSHandshake_CNWhitelist_Allowed(t *testing.T) {
 	}
 
 	serverMTLSCfg := security.ServerMTLSConfig{
-		Enabled:           true,
-		ClientCAFiles:     []string{clientCAFile},
-		RequireClientCert: true,
-		AllowedClientCNs:  []string{clientCN, "another-allowed-client"},
+		Enabled:          true,
+		ClientCAFiles:    []string{clientCAFile},
+		AllowedClientCNs: []string{clientCN, "another-allowed-client"},
 	}
 
 	serverTLSConfig, err := LoadServerTLSConfigWithMTLS(serverCfg, serverMTLSCfg)
@@ -279,10 +276,9 @@ func TestMTLSHandshake_CNWhitelist_Rejected(t *testing.T) {
 	}
 
 	serverMTLSCfg := security.ServerMTLSConfig{
-		Enabled:           true,
-		ClientCAFiles:     []string{clientCAFile},
-		RequireClientCert: true,
-		AllowedClientCNs:  []string{"authorized-client", "another-allowed-client"},
+		Enabled:          true,
+		ClientCAFiles:    []string{clientCAFile},
+		AllowedClientCNs: []string{"authorized-client", "another-allowed-client"},
 	}
 
 	serverTLSConfig, err := LoadServerTLSConfigWithMTLS(serverCfg, serverMTLSCfg)
@@ -354,9 +350,9 @@ func TestMTLSHandshake_OptionalClientCert_WithCert(t *testing.T) {
 	}
 
 	serverMTLSCfg := security.ServerMTLSConfig{
-		Enabled:           true,
-		ClientCAFiles:     []string{clientCAFile},
-		RequireClientCert: false, // Optional
+		Enabled:            true,
+		ClientCAFiles:      []string{clientCAFile},
+		ClientCertOptional: true, // Optional
 	}
 
 	serverTLSConfig, err := LoadServerTLSConfigWithMTLS(serverCfg, serverMTLSCfg)
@@ -433,9 +429,9 @@ func TestMTLSHandshake_OptionalClientCert_WithoutCert(t *testing.T) {
 	}
 
 	serverMTLSCfg := security.ServerMTLSConfig{
-		Enabled:           true,
-		ClientCAFiles:     []string{clientCAFile},
-		RequireClientCert: false, // Optional
+		Enabled:            true,
+		ClientCAFiles:      []string{clientCAFile},
+		ClientCertOptional: true, // Optional
 	}
 
 	serverTLSConfig, err := LoadServerTLSConfigWithMTLS(serverCfg, serverMTLSCfg)

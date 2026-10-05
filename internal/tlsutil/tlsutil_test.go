@@ -415,7 +415,7 @@ func TestLoadServerTLSConfigWithMTLS_Disabled(t *testing.T) {
 	assert.Nil(t, tlsCfg.ClientCAs)
 }
 
-func TestLoadServerTLSConfigWithMTLS_RequireClientCert(t *testing.T) {
+func TestLoadServerTLSConfigWithMTLS_ClientCertRequiredByDefault(t *testing.T) {
 	certFile, keyFile, caFile, cleanup := setupTestFiles(t)
 	defer cleanup()
 
@@ -426,9 +426,8 @@ func TestLoadServerTLSConfigWithMTLS_RequireClientCert(t *testing.T) {
 	}
 
 	mtlsCfg := security.ServerMTLSConfig{
-		Enabled:           true,
-		ClientCAFiles:     []string{caFile},
-		RequireClientCert: true,
+		Enabled:       true,
+		ClientCAFiles: []string{caFile},
 	}
 
 	tlsCfg, err := LoadServerTLSConfigWithMTLS(serverCfg, mtlsCfg)
@@ -451,9 +450,9 @@ func TestLoadServerTLSConfigWithMTLS_OptionalClientCert(t *testing.T) {
 	}
 
 	mtlsCfg := security.ServerMTLSConfig{
-		Enabled:           true,
-		ClientCAFiles:     []string{caFile},
-		RequireClientCert: false,
+		Enabled:            true,
+		ClientCAFiles:      []string{caFile},
+		ClientCertOptional: true,
 	}
 
 	tlsCfg, err := LoadServerTLSConfigWithMTLS(serverCfg, mtlsCfg)
@@ -476,10 +475,9 @@ func TestLoadServerTLSConfigWithMTLS_WithCNWhitelist(t *testing.T) {
 	}
 
 	mtlsCfg := security.ServerMTLSConfig{
-		Enabled:           true,
-		ClientCAFiles:     []string{caFile},
-		RequireClientCert: true,
-		AllowedClientCNs:  []string{"allowed-client", "another-client"},
+		Enabled:          true,
+		ClientCAFiles:    []string{caFile},
+		AllowedClientCNs: []string{"allowed-client", "another-client"},
 	}
 
 	tlsCfg, err := LoadServerTLSConfigWithMTLS(serverCfg, mtlsCfg)
@@ -501,9 +499,8 @@ func TestLoadServerTLSConfigWithMTLS_MissingClientCA(t *testing.T) {
 	}
 
 	mtlsCfg := security.ServerMTLSConfig{
-		Enabled:           true,
-		ClientCAFiles:     []string{"/nonexistent/ca.pem"},
-		RequireClientCert: true,
+		Enabled:       true,
+		ClientCAFiles: []string{"/nonexistent/ca.pem"},
 	}
 
 	_, err := LoadServerTLSConfigWithMTLS(serverCfg, mtlsCfg)

@@ -26,10 +26,10 @@ type ACMEConfig struct {
 
 // ServerMTLSConfig holds mTLS configuration for servers (client certificate validation).
 type ServerMTLSConfig struct {
-	Enabled           bool     `json:"enabled" schema:"type:boolean,description:Enable mTLS client certificate validation,default:false,category:security"`
-	ClientCAFiles     []string `json:"client_ca_files,omitempty" schema:"type:array,description:CA certificates to trust for client validation,category:security"`
-	RequireClientCert bool     `json:"require_client_cert,omitempty" schema:"type:boolean,description:Require client certificate (vs optional),default:true,category:security"`
-	AllowedClientCNs  []string `json:"allowed_client_cns,omitempty" schema:"type:array,description:Allowed client certificate Common Names (empty=any),category:security"`
+	Enabled            bool     `json:"enabled" schema:"type:boolean,description:Enable mTLS client certificate validation,default:false,category:security"`
+	ClientCAFiles      []string `json:"client_ca_files,omitempty" schema:"type:array,description:CA certificates to trust for client validation,category:security"`
+	ClientCertOptional bool     `json:"client_cert_optional,omitempty" schema:"type:boolean,description:Admit clients without a certificate (default: required),default:false,category:security"`
+	AllowedClientCNs   []string `json:"allowed_client_cns,omitempty" schema:"type:array,description:Allowed client certificate Common Names (empty=any),category:security"`
 }
 
 // ServerTLSConfig holds TLS configuration for HTTP/WebSocket servers.

@@ -56,7 +56,6 @@
 //	    security.ServerMTLSConfig{
 //	        Enabled:           true,
 //	        ClientCAFiles:     []string{"/etc/ssl/client-ca.pem"},
-//	        RequireClientCert: true,
 //	        AllowedClientCNs:  []string{"service-a"},
 //	    },
 //	)

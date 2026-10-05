@@ -58,7 +58,6 @@
 //	    MTLS: security.ServerMTLSConfig{
 //	        Enabled:           true,
 //	        ClientCAFiles:     []string{"/etc/ssl/client-ca.pem"},
-//	        RequireClientCert: true,
 //	        AllowedClientCNs:  []string{"service-a", "service-b"},
 //	    },
 //	}
@@ -93,7 +92,7 @@
 //
 // ServerMTLSConfig - Server mTLS (validate client certs):
 //   - ClientCAFiles: CAs to trust for client certs
-//   - RequireClientCert: Require vs optional
+//   - ClientCertOptional: Admit clients without a certificate (default: required)
 //   - AllowedClientCNs: Optional CN whitelist
 //
 // ClientMTLSConfig - Client mTLS (present client cert):

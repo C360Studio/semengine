@@ -443,14 +443,21 @@
     5957221949 and 5984291337), pin lines of doc.go: :14 (the validation feature bullet), :44-47
     (an example calling cfg.Validate()), :116-120 (the Validation section now says the types carry
     no validation and internal/tlsutil checks files and MinVersion), :124 (the defaults are the
-    zero values, not DefaultConfig()), :132-133 (the sentence on validation methods). Not done in
-    this row, held for the owner (tasks.md 3.12a): the RequireClientCert fail-open (with mTLS
-    enabled, RequireClientCert false and no AllowedClientCNs, a client with no certificate is
-    admitted; the schema tag at config.go:91 says default:true while the Go zero value is false)
+    zero values, not DefaultConfig()), :132-133 (the sentence on validation methods). Adapt item,
+    exported field changed (owner ruling, #9 comment 5994720412, item 4; task 3.12a): pin
+    config.go:91's ServerMTLSConfig.RequireClientCert (JSON require_client_cert, schema tag
+    default:true) is replaced by ClientCertOptional (JSON client_cert_optional, default:false), so
+    the zero value requires a client certificate. At the pin the Go zero value was false while the
+    tag said true, and internal/tlsutil mapped false to tls.VerifyClientCertIfGiven: with mTLS
+    enabled and no AllowedClientCNs, a client with no certificate was admitted. Optional mode stays
+    when ClientCertOptional is set. A configuration that still sets require_client_cert is refused
+    by a decoder that refuses unknown fields, and its key is otherwise ignored; no consumer imports
+    this package (audit §3.2). doc.go pin lines :66 (the example's RequireClientCert line, now the
+    default) and :101 (the field list)
   proving_tests: >-
     none at the pin. Added: pkg/security/config_test.go, TestConfigDecodesEveryKey (a JSON
     document naming every key decodes, unknown fields refused, into the expected Config; a mutant
-    renaming require_client_cert fails it) and TestConfigDocumentCoversEveryField (every field of
+    renaming client_cert_optional fails it) and TestConfigDocumentCoversEveryField (every field of
     the expected Config is non-zero, so a field added without a key fails; a mutant adding a field
     fails it). Field behavior is proven through internal/tlsutil's tests and metric's (task 3.5)
   owner: setup-04a-01-floor developer
@@ -759,7 +766,9 @@
     LoadServerTLSConfig, LoadClientTLSConfig, LoadServerTLSConfigWithMTLS and
     LoadClientTLSConfigWithMTLS as at the pin: disabled config returns nil, an empty MinVersion
     means TLS 1.2, client CA pools and the CN whitelist are enforced, file and PEM failures are
-    errs fatal errors. Changed (owner ruling, #9 comment 5950752741; design D1): the ACME loaders
+    errs fatal errors; a client certificate is required unless ServerMTLSConfig.ClientCertOptional
+    is set (changed behavior, owner ruling #9 comment 5994720412 item 4; pkg/security row). Changed
+    (owner ruling, #9 comment 5950752741; design D1): the ACME loaders
     are not ported. Changed behavior (owner ruling, #9 comment 5985900154, item 3): a MinVersion
     other than "1.2", "1.3" or empty is refused with an errs invalid error naming the value; the
     pin's parseTLSVersion mapped it to TLS 1.2, and only the pin's config loader, not ported,
@@ -798,7 +807,15 @@
     TestLoadClientTLSConfigRefusesUnknownMinVersion (nine near-miss spellings, through the plain
     and the mTLS loaders; failed first: all 18 subtests accepted the value; a mutant restoring the
     1.2 fallback fails both, and one wrapping the client refusal as fatal fails the client test)
-    and TestLoadersAcceptTheThreeMinVersionSpellings
+    and TestLoadersAcceptTheThreeMinVersionSpellings; internal/tlsutil/mtls_default_test.go, added:
+    TestServerMTLSRequiresClientCertificateByDefault (mTLS enabled, no optional flag, no CN
+    allowlist: a client with no certificate is refused and one the client CA signed is served, in
+    real handshakes on TLS 1.2 and 1.3; failed first on both versions, the client was served; a
+    mutant inverting the default fails it). Edits for the field change, pin lines: tlsutil.go
+    :116-120 (ClientAuth); doc.go :62; tlsutil_test.go :410 (renamed
+    TestLoadServerTLSConfigWithMTLS_ClientCertRequiredByDefault), :423, :448, :473, :498;
+    mtls_integration_test.go :52, :132, :205, :284, :359, :438 (the required cases drop the
+    field, the optional cases set ClientCertOptional)
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -818,7 +835,7 @@
     the serve goroutine with no timer (metric-forced-join-without-timer: forcedServeJoinTimeout, pin
     :23, :243-249, removed). Changed behavior (PR #48 review finding, owner-approved), written first:
     Start applies the server mTLS configuration through tlsutil.LoadServerTLSConfigWithMTLS, so
-    RequireClientCert refuses a client with no certificate; at the pin Start called
+    a required client certificate refuses a client with no certificate; at the pin Start called
     LoadServerTLSConfig (pin handler.go:154) and no metric file names MTLS (pin grep), so the policy
     was dropped; Start refuses mTLS enabled with server TLS disabled (ErrInvalidConfig) instead of
     serving plain HTTP. Changed behavior (PR #48 review finding, owner-approved), written first: a

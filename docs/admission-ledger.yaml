@@ -494,13 +494,14 @@
 - source_path: vocabulary
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    predicate vocabulary, registry, IRI mapping and namespace authority; SemSource imports it (20
+    predicate vocabulary, registry, IRI mapping and the declared-predicate check; SemSource imports it (20
     files, design P16). Only the package directory is ported; its sub-packages (agentic, bfo,
     builtins, cco, examples, export, governance, rulepacks) are not in the floor
   destination: vocabulary
   contract: >-
-    predicate registration and lookup, dotted-name validation, IRI construction and namespace
-    authority as at the pin
+    predicate registration and lookup, dotted-name and namespace validation and the
+    declared-predicate check (RequireDeclaredPredicate) as at the pin, less the dead surface and
+    PredicateAuthority (known_risks)
   dependencies_and_side_effects: >-
     stdlib; a process-global predicate registry mutated at registration (pkg/platform was imported
     only by vocabulary.EntityIRI, removed below)
@@ -579,7 +580,16 @@
     TestRegistrationRefusalNamesTheValueAndTheVocabulary). Readers left behind (audit §1.8): the
     not-admitted vocabulary/examples, vocabulary/agentic and processor/agentic-tools/executors at
     the pin; processor/rule/config_validation_test.go:122,127 switches to Register when rule is
-    ported. A consumer that needs a cut term declares a local constant and registers it
+    ported. A consumer that needs a cut term declares a local constant and registers it.
+    Adapt item, PredicateAuthority removed (owner ruling, #9 comment 5985900154, item 2; surface
+    audit §1.4): a producer-to-namespace write authorization whose only caller is the excluded
+    agentic package (pin agentic/tools.go:443-459), and which trusts a producer name the caller
+    supplies, so it authorizes without authenticating; it is named as prior art in the security
+    epic. Removed, pin lines: namespace_authority.go :24-40 (NamespaceDelegation,
+    PredicateAuthority), :57-75 (NewPredicateAuthority) and :96-124 (PredicateAuthority.Authorize);
+    PredicateNamespace, ParsePredicateNamespace and RequireDeclaredPredicate stay.
+    namespace_authority_test.go :45-102 (TestPredicateAuthority,
+    TestNewPredicateAuthorityRejectsInvalidDelegation) and the errors import :4
   proving_tests: >-
     the 11 test files in vocabulary/ at the pin, less TestEntityIRI and BenchmarkEntityIRI (removed
     with EntityIRI, above) and the tests of the dead surface removed above;

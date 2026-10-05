@@ -113,12 +113,27 @@ if err != nil {
 // Access the payload
 payload := msg.Payload()
 if genericJSON, ok := payload.(*message.GenericJSONPayload); ok {
-    // A decoded number is a json.Number holding its literal, so no integer is rounded.
-    temperature, err := genericJSON.Data["temperature"].(json.Number).Float64()
-    if err != nil {
-        return err
+    if temperature, ok := number(genericJSON.Data["temperature"]); ok {
+        fmt.Printf("Temperature: %.1f°C\n", temperature)
     }
-    fmt.Printf("Temperature: %.1f°C\n", temperature)
+}
+
+// number reads a JSON number from GenericJSON data. A decoded payload holds a json.Number (its exact
+// literal, so no integer is rounded); a payload built in process holds the Go number it was given.
+// A missing key or a value that is not a number reports false.
+func number(v any) (float64, bool) {
+    switch n := v.(type) {
+    case json.Number:
+        f, err := n.Float64()
+        return f, err == nil
+    case float64:
+        return n, true
+    case int:
+        return float64(n), true
+    case int64:
+        return float64(n), true
+    }
+    return 0, false
 }
 ```
 
@@ -282,28 +297,34 @@ slice such as `map[string]string`) with an error naming its type and path, such 
 string or key that is not valid UTF-8.
 
 ```go
-// Quick prototype - no custom types needed
-func createTestMessage() *message.BaseMessage {
-    payload := message.NewGenericJSON(map[string]any{
-        "test_id": "test-001",
-        "status": "running",
-        "metrics": map[string]any{
-            "cpu": 45.2,
-            "memory": 67.8,
-        },
-    })
-    return message.NewBaseMessage(payload)
+// Wrap a JSON object from outside whose shape the code does not know.
+func wrapExternal(body []byte, source string) (*message.BaseMessage, error) {
+    var data map[string]any
+    d := json.NewDecoder(bytes.NewReader(body))
+    d.UseNumber() // keep each number's exact value, as a decoded core.json.v1 payload does
+    if err := d.Decode(&data); err != nil {
+        return nil, err
+    }
+    payload := message.NewGenericJSON(data)
+    if err := payload.Validate(); err != nil { // a JSON null body gives nil data
+        return nil, err
+    }
+    return message.NewBaseMessage(payload.Schema(), payload, source), nil
 }
 
-// Process in a flow
-func processTestData(msg *message.BaseMessage) {
-    if genericJSON, ok := msg.Payload().(*message.GenericJSONPayload); ok {
-        metrics := genericJSON.Data["metrics"].(map[string]any)
-        n, _ := metrics["cpu"].(json.Number) // a decoded number is a json.Number
-        if cpu, err := n.Float64(); err == nil && cpu > 80.0 {
-            // Alert high CPU
-        }
+// Read a field a user-configured rule names, such as metrics.cpu > limit. The message may come
+// from wrapExternal in the same process or off the wire; number (above) reads either.
+func cpuAbove(msg *message.BaseMessage, limit float64) bool {
+    genericJSON, ok := msg.Payload().(*message.GenericJSONPayload)
+    if !ok {
+        return false
     }
+    metrics, ok := genericJSON.Data["metrics"].(map[string]any)
+    if !ok {
+        return false
+    }
+    cpu, ok := number(metrics["cpu"])
+    return ok && cpu > limit
 }
 ```
 
@@ -311,7 +332,6 @@ func processTestData(msg *message.BaseMessage) {
 
 - ✅ JSON from outside whose shape the code does not know
 - ✅ User-configured transforms (filter, map) over such JSON
-- ✅ Tests and prototypes
 
 **When NOT to use GenericJSON**:
 
@@ -344,7 +364,8 @@ func TestMessageRoundTrip(t *testing.T) {
 
     // Verify type and payload
     assert.Equal(t, "core.json.v1", reconstructed.Type().Key())
-    payload := reconstructed.Payload().(*message.GenericJSONPayload)
+    payload, ok := reconstructed.Payload().(*message.GenericJSONPayload)
+    require.True(t, ok, "payload is %T", reconstructed.Payload())
     assert.Equal(t, "value", payload.Data["test"])
     assert.Equal(t, json.Number("42"), payload.Data["number"])
 }
@@ -439,7 +460,10 @@ Error classification enables retry logic and proper error handling in components
 // Add metadata to existing message
 func enrichMessage(msg *message.BaseMessage) (*message.BaseMessage, error) {
     // Extract original data
-    original := msg.Payload().(*message.GenericJSONPayload)
+    original, ok := msg.Payload().(*message.GenericJSONPayload)
+    if !ok {
+        return nil, fmt.Errorf("enrich: payload is %T, want core.json.v1", msg.Payload())
+    }
 
     // Create enriched payload
     enriched := message.NewGenericJSON(map[string]any{
@@ -448,7 +472,7 @@ func enrichMessage(msg *message.BaseMessage) (*message.BaseMessage, error) {
         "enrichment_version": "v1",
     })
 
-    return message.NewBaseMessage(enriched), nil
+    return message.NewBaseMessage(enriched.Schema(), enriched, msg.Meta().Source()), nil
 }
 ```
 

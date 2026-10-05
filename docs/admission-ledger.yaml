@@ -1176,7 +1176,13 @@
     UseNumber, so every number keeps its literal as a json.Number; at the pin each became a float64. Two carried
     pin tests and three README examples that read float64 read json.Number. Malformed input and a well-formed
     body whose data is not an object are both refused with an invalid-data error; at the pin both returned the
-    standard library's unclassified error (early check E7). Doc comments, same rulings (commit
+    standard library's unclassified error (early check E7). README examples (early check E3; owner stance,
+    #9 comment 5972208367, core.json.v1 is a fallback only), tree lines: :114-139 read a number through a
+    checked helper, number, that takes a json.Number or a Go number; :298-330 replace the pin's "Quick
+    prototype" createTestMessage/processTestData pair (a one-argument NewBaseMessage that does not compile, and
+    an unchecked assertion) with wrapExternal, which decodes outside JSON with UseNumber, and cpuAbove, which
+    reads it with checked assertions; the pin's "Tests and prototypes" use is gone; :367-368 and :463-466
+    check their assertions; :475 calls the three-argument NewBaseMessage. Doc comments, same rulings (commit
     5463f93): generic_json.go tree lines :31-32, :38, :53-58, :60-63, :75-76 and :87-88 at that commit describe
     core.json.v1 as the fallback for JSON of unknown shape, decoded only after RegisterPayloads. Product prose
     (#9 comment 5984291337), tree lines: doc.go :1 and README.md :3, :7, :30 name SemEngine, not SemStreams;

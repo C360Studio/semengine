@@ -153,6 +153,29 @@ func TestReportRecordsAPanic(t *testing.T) {
 		"note: panic: assignment to entry in nil map")
 }
 
+// TestReportPrintsFurtherLines (mutation-check › "Outcome classification": a further failure
+// line printed after an expected line is recorded in the report and does not change a detection).
+// The log-then-fail recording, with value_test.go:15 expected, logs at line 15 and then fails at
+// line 17. The mutant run's section prints the expected line and the line at 17 in full, not as
+// an expected line, and the reading stays detection. Go prints a log line and a failure line
+// alike, so the report does not call the line at 17 a failure.
+func TestReportPrintsFurtherLines(t *testing.T) {
+	r := runAs(t, recLogThenFail, mutantRun, 1, expectAt("value_test.go:15"))
+	if r.reading.outcome != detection {
+		t.Fatalf("reading: got %s (%s), want detection", r.reading.outcome, r.reading.reason)
+	}
+	var lines []string
+	writeRun(func(format string, args ...any) { lines = append(lines, fmt.Sprintf(format, args...)) }, r)
+	requireLines(t, "mutant run", lines,
+		"expected line:     value_test.go:15: checking Value",
+		"note: value_test.go:17: Value() = 2, want 1")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "  expected line:") && strings.Contains(line, "value_test.go:17") {
+			t.Errorf("the line at 17 is printed as an expected line: %q", line)
+		}
+	}
+}
+
 // TestHunksAreNotMerged (mutation-check › "Hunks are not merged"): the caller's git configuration
 // sets diff.interHunkContext to 5, and the wrong change replaces lines 7 and 10 of the target,
 // three lines apart. The report lists two hunks, and lines 8 and 9, which are unchanged, are in

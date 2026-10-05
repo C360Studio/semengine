@@ -1043,8 +1043,9 @@ func (m *Client) join(joined chan struct{}, conn *nats.Conn) {
 // must stay EXACTLY `Info(context.Context) (*jetstream.ConsumerInfo, error)` — a
 // divergent signature would silently stop overriding and reopen the race.
 //
-// STILL PRESENT UPSTREAM as of nats.go v1.52.0 (checked 2026-07-30; we pin v1.48.0).
-// The assignment is byte-identical across both, so a dependency bump does NOT retire
+// STILL PRESENT UPSTREAM in nats.go v1.54.0, the version go.mod pins (checked 2026-10-04
+// against v1.48.0: jetstream/consumer.go:209 and :242 unchanged, still unsynchronized).
+// The assignment is byte-identical across versions, so a dependency bump does NOT retire
 // this guard — do not delete it on upgrade. Filing it upstream is tracked in the
 // change's follow-ups.
 type guardedConsumer struct {

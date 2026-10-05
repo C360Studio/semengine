@@ -388,6 +388,13 @@ failing-first `adapt` items:
   same way whichever timer ran out first, the native drain's or the client's own (they have the same length,
   `client.go:638, :1094-1098`): the first `Close` returns a transient error wrapping `nats.ErrDrainTimeout`. At the pin
   and at `7ce1940` the native timer usually won and `Close` returned nil.
+- **`natsclient-handler-panic-recovered`** (owner ruling 3, #9 comment 5985697767; PR #48 comment 5985648705, HIGH 2).
+  A panic in a consumer's message handler is recovered by `safeHandleMessage` (`stream.go`): the message is Nak'd, the
+  panic is logged at error level with the message's subject, and it is counted as `handler_panic` on the JetStream
+  error metric. A Nak that fails is logged with the panic. At the pin the panic was recovered and Nak'd, but the Nak
+  error was discarded, nothing was counted, and the doc comment promised a default Nak for a handler that settles
+  nothing, which the code never did; that promise is removed, since neither this design nor the ruling asks for it,
+  and such a message is redelivered by the server when its AckWait expires.
 - **`metric-abort-stop-reports-context`.** On an idle server `Shutdown(ctx)` (`handler.go:215`) returns nil even when
   `ctx` has ended, and the `select` at `:222-228` then picks between `serveDone` and `ctx.Done()` at random, so
   `Stop` drops the caller's cause about once in 1,000 runs at `-cpu 1`. `Stop` reports `ctx.Err()` whenever its
@@ -701,7 +708,7 @@ pin `file:line` → SemEngine `file:line`. The repairs at the pin (P18, P19) fal
   | `natsclient/request_integration_test.go:66` (tree `:66`) | a 100 ms request timeout to a subject nobody answers | R1c, kept: the timeout (or no-responders) is the asserted error; a slow host can only miss a defect |
   | `natsclient/request_integration_test.go:95` (tree `:94`) | a 100 ms context on a request nobody answers | R1c, kept: the context's end is the asserted error; a slow host can only miss a defect |
   | `natsclient/request_integration_test.go:410` (tree `:412`) | 100 ms per attempt in the retry test with no responder | R1c, kept: retries exhausted is the asserted outcome; a slow host can only miss a defect |
-  | `natsclient/stream_integration_test.go:484` (tree `:488`) | the Nak test's 100 ms AckWait | R1c, kept: redelivery is the asserted outcome, and the interval only delays it |
+  | `natsclient/stream_integration_test.go:484` (tree `:490`) | the Nak test's 100 ms AckWait | Raised to `3 * failureBound` (owner's independent read, PR #48): at 100 ms the expiry redelivered whether or not the Nak worked; now only the Nak redelivers within the bound |
   | `natsclient/kv_error_integration_test.go:149`, `kv_integration_test.go:397` (tree `:405`) | 1 ns KV timeouts | R1c, kept: expiry is what the subtest exercises, and it accepts either outcome |
   | `natsclient/errors_integration_test.go:318` (tree `:320`), `request_integration_test.go:376` (tree `:378`) | 2 s per attempt while a late responder subscribes | R1c, kept: a timed-out attempt is retried, so expiry only spends a retry; a slow host can only miss a defect |
 

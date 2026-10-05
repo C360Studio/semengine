@@ -409,14 +409,21 @@ func runConcurrentOperations(t *testing.T, cache Cache[string], numGoroutines, n
 				key := fmt.Sprintf("key%d-%d", id, j)
 				value := fmt.Sprintf("value%d-%d", id, j)
 
-				_, _ = cache.Set(key, value)
+				if _, err := cache.Set(key, value); err != nil {
+					t.Errorf("Set(%s): %v", key, err)
+					continue
+				}
 
-				if retrievedValue, exists := cache.Get(key); exists && retrievedValue != value {
-					t.Errorf("Expected %s, got %s", value, retrievedValue)
+				// Each key is written by one goroutine only, and the caches are sized so
+				// nothing is evicted or expires during the run, so the write must be read back.
+				if retrievedValue, exists := cache.Get(key); !exists || retrievedValue != value {
+					t.Errorf("Get(%s) = %q, %v; want %q, true", key, retrievedValue, exists, value)
 				}
 
 				if j%10 == 0 {
-					_, _ = cache.Delete(key)
+					if _, err := cache.Delete(key); err != nil {
+						t.Errorf("Delete(%s): %v", key, err)
+					}
 				}
 			}
 		}(i)
@@ -424,6 +431,13 @@ func runConcurrentOperations(t *testing.T, cache Cache[string], numGoroutines, n
 
 	wg.Wait()
 }
+
+// The concurrency run's shape: concurrencyKeys distinct keys in all.
+const (
+	concurrencyGoroutines = 10
+	concurrencyOperations = 100
+	concurrencyKeys       = concurrencyGoroutines * concurrencyOperations
+)
 
 // TestConcurrency tests thread safety of cache implementations.
 func TestConcurrency(t *testing.T) {
@@ -433,9 +447,11 @@ func TestConcurrency(t *testing.T) {
 		cache Cache[string]
 	} {
 		simple, _ := NewSimple[string]()
-		lru, _ := NewLRU[string](100)
-		ttl, _ := NewTTL[string](context.Background(), 1*time.Second, 500*time.Millisecond)
-		hybrid, _ := newHybrid[string](context.Background(), 100, 1*time.Second, 500*time.Millisecond)
+		// Capacity covers every key the run writes and the TTL outlasts it, so a Get that
+		// misses is a defect, not an eviction or an expiry.
+		lru, _ := NewLRU[string](concurrencyKeys)
+		ttl, _ := NewTTL[string](context.Background(), time.Hour, 500*time.Millisecond)
+		hybrid, _ := newHybrid[string](context.Background(), concurrencyKeys, time.Hour, 500*time.Millisecond)
 
 		return []struct {
 			name  string
@@ -455,10 +471,7 @@ func TestConcurrency(t *testing.T) {
 			cache := tc.cache
 			defer cache.Close()
 
-			const numGoroutines = 10
-			const numOperations = 100
-
-			runConcurrentOperations(t, cache, numGoroutines, numOperations)
+			runConcurrentOperations(t, cache, concurrencyGoroutines, concurrencyOperations)
 		})
 	}
 }

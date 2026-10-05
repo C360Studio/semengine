@@ -177,3 +177,21 @@ redelivered. With `AckPolicy: "none"`, or on a core subscription, it is lost; th
 - **WHEN** a delivery reaches the client after it recorded the consumer's end
 - **THEN** the handler does not run, the message is not settled, a warn record names the subject and ack policy,
   and the `late_delivery_refused` count rises by one
+
+### Requirement: A message handler's panic is recovered
+
+A panic in a message handler passed to a Consume method SHALL be recovered by the client, which SHALL Nak the
+message, log the panic at error level with the message's subject, and count it as `handler_panic` on the JetStream
+error metric when the client has JetStream metrics configured (owner ruling 3, #9 comment 5985697767: only a root
+process lets a panic end it). A Nak that fails SHALL be logged with the panic, not discarded.
+
+#### Scenario: A handler panics
+
+- **WHEN** a consumer's message handler panics
+- **THEN** the panic does not escape, the message is Nak'd, an error record names the panic and the subject, and
+  the `handler_panic` count rises by one
+
+#### Scenario: The Nak after a panic fails
+
+- **WHEN** a handler panics and the Nak that follows returns an error
+- **THEN** the error record names the panic, the subject and the Nak error

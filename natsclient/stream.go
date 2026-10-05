@@ -428,6 +428,11 @@ func streamNotVisible(ctx context.Context, absent error) error {
 // consumer if the caller has not. Once Close has begun this method returns
 // nats.ErrConnectionClosed. The handler receives the raw jetstream.Msg and must
 // settle it with Ack, Nak, or Term.
+//
+// ctx is both the setup limit and the parent of every handler's context, for as
+// long as the consumer runs. A ctx with a deadline sized for setup therefore
+// ends the context of every handler invoked after that deadline, while delivery
+// continues. To bound setup alone, use ConsumeStreamWithConfigContexts.
 func (c *Client) ConsumeStreamWithConfig(
 	ctx context.Context,
 	owner PortConsumerContext,
@@ -447,6 +452,10 @@ func (c *Client) ConsumeStreamWithConfig(
 // Client.Close is the proof that no handler invocation is still running.
 // Client.Close stops and joins this consumer if the caller has not. Once Close
 // has begun this method returns nats.ErrConnectionClosed.
+//
+// As with ConsumeStreamWithConfig, ctx is both the setup limit and the parent of
+// every handler's context: a deadline on it ends the context of every handler
+// invoked after it, while delivery continues.
 func (c *Client) ConsumeInternalStreamWithConfig(
 	ctx context.Context,
 	cfg StreamConsumerConfig,
@@ -526,7 +535,7 @@ func (c *Client) ConsumeInternalStreamWithConfig(
 	}
 
 	if c.jsMetrics != nil {
-		c.jsMetrics.trackConsumer(observed.stream, observed.durable, guarded)
+		c.jsMetrics.trackConsumer(observed.stream, observed.durable, guarded, c.logger)
 	}
 	forgetObservation := func() {
 		if c.jsMetrics != nil {
@@ -682,7 +691,7 @@ func (c *Client) startPortConsumer(
 	// Tracked before the handle is handed over, so the ownership goroutine's
 	// forget cannot run first.
 	if c.jsMetrics != nil {
-		c.jsMetrics.trackConsumer(identity.stream, identity.durable, consumer)
+		c.jsMetrics.trackConsumer(identity.stream, identity.durable, consumer, c.logger)
 	}
 	return c.commitConsumer(setupCtx, operation, owned, consumeCtx)
 }
@@ -695,6 +704,10 @@ func (c *Client) startPortConsumer(
 // Client.Close is the proof that no handler invocation is still running.
 // Client.Close stops and joins this consumer if the caller has not. Once Close
 // has begun this method returns nats.ErrConnectionClosed.
+//
+// setupCtx bounds only the setup and is not retained. handlerCtx is the parent
+// of every handler's context for as long as the consumer runs; its end does not
+// stop delivery, it only ends the context each later handler receives.
 func (c *Client) ConsumeStreamWithConfigContexts(
 	setupCtx context.Context,
 	handlerCtx context.Context,
@@ -796,14 +809,23 @@ func messageHandlerContext(parent context.Context, timeout time.Duration, disabl
 	return context.WithTimeout(parent, timeout)
 }
 
-// safeHandleMessage wraps the handler with panic recovery.
-// If handler doesn't ack/nak/term the message, Nak is called by default.
+// safeHandleMessage runs handler and recovers a panic in it (owner ruling 3, #9 comment
+// 5985697767: only a root process lets a panic end it). A recovered panic is logged at error
+// level with the message's subject, counted on the JetStream error metric as operation
+// handler_panic, and the message is Nak'd so the server redelivers it; a Nak that fails is logged
+// with the panic, never discarded. A handler that returns without settling its message is left
+// as it is: the message is redelivered when its AckWait expires, by the server, not by this call.
 func (c *Client) safeHandleMessage(ctx context.Context, msg jetstream.Msg, handler func(context.Context, jetstream.Msg)) {
 	defer func() {
 		if r := recover(); r != nil {
-			c.logger.Error("panic in message handler", slog.Any("panic", r))
-			// Nak on panic to allow redelivery
-			_ = msg.Nak()
+			c.jsMetrics.recordError("handler_panic")
+			if err := msg.Nak(); err != nil {
+				c.logger.Error("panic in message handler; Nak failed",
+					slog.Any("panic", r), slog.String("subject", msg.Subject()), slog.Any("nak_error", err))
+				return
+			}
+			c.logger.Error("panic in message handler; message Nak'd for redelivery",
+				slog.Any("panic", r), slog.String("subject", msg.Subject()))
 		}
 	}()
 

@@ -2,6 +2,7 @@ package natsclient
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -40,7 +41,10 @@ type jetstreamMetrics struct {
 }
 
 type trackedConsumer struct {
-	handle jetstream.Consumer
+	handle        jetstream.Consumer
+	stream, name  string
+	logger        *slog.Logger
+	infoAvailable bool // the last poll's Info succeeded; guarded by jetstreamMetrics.mu
 }
 
 // newJetStreamMetrics creates and registers JetStream metrics with the provided registry.
@@ -223,14 +227,16 @@ func (m *jetstreamMetrics) trackStream(name string, stream jetstream.Stream) {
 }
 
 // trackConsumer adds a consumer to the tracking list for metrics collection.
-func (m *jetstreamMetrics) trackConsumer(streamName, consumerName string, consumer jetstream.Consumer) {
+func (m *jetstreamMetrics) trackConsumer(streamName, consumerName string, consumer jetstream.Consumer, logger *slog.Logger) {
 	if m == nil {
 		return
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	key := streamName + ":" + consumerName
-	m.consumers[key] = &trackedConsumer{handle: consumer}
+	m.consumers[key] = &trackedConsumer{
+		handle: consumer, stream: streamName, name: consumerName, logger: logger, infoAvailable: true,
+	}
 }
 
 // forgetConsumer removes generic observation only after the exact native
@@ -295,7 +301,24 @@ func (m *jetstreamMetrics) updateStats(ctx context.Context) {
 	for key, consumer := range consumers {
 		info, err := consumer.handle.Info(ctx)
 		if err != nil {
-			// Consumer might be deleted or unavailable - fail gracefully
+			// The consumer may be deleted or unreachable. Its gauges are set from the server's current
+			// state (design D9), so they are deleted rather than left holding the last poll's values
+			// as if current; the failure is counted each poll and logged once per transition, as the
+			// policy loop below does. A later successful poll sets them again.
+			m.mu.Lock()
+			if m.consumers[key] == consumer {
+				m.consumerPending.DeleteLabelValues(consumer.stream, consumer.name)
+				m.consumerDelivered.DeleteLabelValues(consumer.stream, consumer.name)
+				m.consumerAcked.DeleteLabelValues(consumer.stream, consumer.name)
+				m.consumerRedelivered.DeleteLabelValues(consumer.stream, consumer.name)
+				m.errors.WithLabelValues("consumer_info").Inc()
+				if consumer.infoAvailable && consumer.logger != nil {
+					consumer.logger.Warn("JetStream consumer state unavailable; its gauges are removed until it answers",
+						"stream", consumer.stream, "consumer", consumer.name, "error", err)
+				}
+				consumer.infoAvailable = false
+			}
+			m.mu.Unlock()
 			continue
 		}
 
@@ -311,6 +334,7 @@ func (m *jetstreamMetrics) updateStats(ctx context.Context) {
 		m.consumerDelivered.WithLabelValues(streamName, consumerName).Set(float64(info.Delivered.Stream))
 		m.consumerAcked.WithLabelValues(streamName, consumerName).Set(float64(info.AckFloor.Stream))
 		m.consumerRedelivered.WithLabelValues(streamName, consumerName).Set(float64(info.NumRedelivered))
+		consumer.infoAvailable = true
 		m.mu.Unlock()
 	}
 	for _, record := range policies {

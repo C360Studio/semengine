@@ -45,7 +45,7 @@ type BaseMessage struct {
 	// package) when constructing a BaseMessage for unmarshaling. nil is
 	// fail-fast: UnmarshalJSON returns a clear error pointing at
 	// message.NewDecoder. There is no fallback — production code must
-	// go through Decoder; tests use payloadbuiltins.NewTestDecoder.
+	// go through Decoder, and so do tests.
 	registry *payloadregistry.Registry
 }
 
@@ -265,8 +265,8 @@ func wireMillis(meta map[string]any, key string) (time.Time, error) {
 //
 // Resolves the payload type discriminator against m.registry, which
 // must be set by the Decoder before json.Unmarshal is invoked.
-// Production callers MUST go through message.NewDecoder(reg).Decode(data);
-// tests use payloadbuiltins.NewTestDecoder(t). Zero-value BaseMessage
+// Callers, tests included, MUST go through message.NewDecoder(reg).Decode(data).
+// Zero-value BaseMessage
 // is a hard error — there is no global fallback and no test-mode side
 // door. Mirrors stdlib's bufio.Scanner state-set-by-constructor
 // pattern.
@@ -303,8 +303,8 @@ func (m *BaseMessage) UnmarshalJSON(data []byte) error {
 
 	m.meta = NewDefaultMetaWithReceivedAt(createdAt, receivedAt, source)
 
-	// Fail-fast on zero-value BaseMessage — production must go through
-	// Decoder, tests through payloadbuiltins.NewTestDecoder.
+	// Fail-fast on zero-value BaseMessage — every caller, tests included,
+	// must go through Decoder.
 	if m.registry == nil {
 		return errs.WrapInvalid(
 			fmt.Errorf("no payload registry configured; use message.NewDecoder(reg).Decode(data)"),

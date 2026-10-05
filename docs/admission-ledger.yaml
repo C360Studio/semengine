@@ -1289,7 +1289,20 @@
     the replaced connection itself belongs to the SetConnection
     caller and Close neither closes nor waits for it; SetConnection after Close has begun changes
     nothing and logs at warn (TestClientLifecycleOperationTable,
-    TestClientCloseEndsSubscriptionOnReplacedConnection). jetstream.New's error, dropped at the pin
+    TestClientCloseEndsSubscriptionOnReplacedConnection); (10) natsclient-handler-panic-recovered
+    (owner ruling 3, #9 comment 5985697767): a panic in a consumer's message handler is recovered,
+    the message is Nak'd, and the panic is logged at error level with the message's subject and
+    counted as handler_panic on the JetStream error metric; a failed Nak is logged with the panic
+    (stream.go safeHandleMessage; the pin discarded the Nak error, counted nothing, and its doc
+    comment promised a default Nak for an unsettled message that the code never sent; that promise is
+    removed) (TestSafeHandleMessageRecoversPanicNaksLogsAndCounts); (11) a consumer whose Info fails
+    on a metrics poll has its four consumer gauges deleted, the JetStream error metric's
+    consumer_info counted, and one Warn logged per change from answering to failing, until Info
+    answers again (task 3.7d sets these gauges from server state, so a value the server did not
+    give is not shown, as the policy loop already did for its gauges; the pin skipped the consumer silently and kept the last values,
+    jetstream_metrics.go:290-294 at the pin, :296-300 at 931d90f) (TestJetStreamConsumerMetricsDropSeriesWhenInfoFails);
+    with two clients on one registry the deletion is the shared-series case under known_risks (#75).
+    jetstream.New's error, dropped at the pin
     (:525), is returned by Connect
     with the dialled connection closed (:747-756); no failing-first test exists, because nats.go
     v1.54.0 jetstream.New fails only when an option does and WithPublishAsyncErrHandler never

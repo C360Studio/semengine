@@ -3,6 +3,7 @@ package natsclient
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"reflect"
 	"sort"
 	"strings"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/c360studio/semengine/metric"
 	"github.com/nats-io/nats.go/jetstream"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	dto "github.com/prometheus/client_model/go"
 )
@@ -168,7 +170,7 @@ func TestJetStreamConsumerMetricsReportServerStateAcrossPolls(t *testing.T) {
 		Stream: "EVENTS", Name: "worker", NumPending: 1, NumRedelivered: 2,
 		Delivered: jetstream.SequenceInfo{Stream: 5}, AckFloor: jetstream.SequenceInfo{Stream: 4},
 	}}
-	metrics.trackConsumer("EVENTS", "worker", server)
+	metrics.trackConsumer("EVENTS", "worker", server, nil)
 	metrics.updateStats(t.Context())
 	metrics.updateStats(t.Context())
 
@@ -325,7 +327,7 @@ func TestJetStreamConsumerClosedCannotBeUndoneByInflightRefresh(t *testing.T) {
 		t.Fatal(err)
 	}
 	handle := &blockingTrackedConsumer{started: make(chan struct{}), release: make(chan struct{})}
-	metrics.trackConsumer("EVENTS", "internal-events", handle)
+	metrics.trackConsumer("EVENTS", "internal-events", handle, nil)
 	done := make(chan struct{})
 	go func() {
 		metrics.updateStats(t.Context())
@@ -459,5 +461,78 @@ func TestJetStreamPolicyIdentityKeepsSiblingAndReplacesOnlyExactRecord(t *testin
 	}
 	if got := testutil.ToFloat64(metrics.policyRequested.WithLabelValues(replacement.labels()...)); got != 9 {
 		t.Fatalf("replacement requested = %v, want 9", got)
+	}
+}
+
+// switchableConsumerInfo reports info, or err when it is set, as the test switches between polls.
+type switchableConsumerInfo struct {
+	jetstream.Consumer
+	info *jetstream.ConsumerInfo
+	err  error
+}
+
+func (s *switchableConsumerInfo) Info(context.Context) (*jetstream.ConsumerInfo, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+	return s.info, nil
+}
+
+// TestJetStreamConsumerMetricsDropSeriesWhenInfoFails (PR #48 comment 5985648705, HIGH 1): when a
+// tracked consumer's Info fails, its four gauges are deleted rather than left holding the last
+// poll's values as if current (each is set from the server's current state, design D9), and the
+// failure is counted on the JetStream error metric each poll, as operation consumer_info. A later
+// successful poll sets them again.
+func TestJetStreamConsumerMetricsDropSeriesWhenInfoFails(t *testing.T) {
+	metrics, err := newJetStreamMetrics(metric.NewMetricsRegistry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	logs := newRecordingHandler("")
+	handle := &switchableConsumerInfo{info: &jetstream.ConsumerInfo{
+		Stream: "EVENTS", Name: "worker", NumPending: 3, NumRedelivered: 1,
+		Delivered: jetstream.SequenceInfo{Stream: 7}, AckFloor: jetstream.SequenceInfo{Stream: 6},
+	}}
+	metrics.trackConsumer("EVENTS", "worker", handle, slog.New(logs))
+	gauges := map[string]*prometheus.GaugeVec{
+		"pending": metrics.consumerPending, "delivered": metrics.consumerDelivered,
+		"acked": metrics.consumerAcked, "redelivered": metrics.consumerRedelivered,
+	}
+	series := func() map[string]int {
+		out := map[string]int{}
+		for name, g := range gauges {
+			out[name] = testutil.CollectAndCount(g)
+		}
+		return out
+	}
+	metrics.updateStats(t.Context())
+	for name, n := range series() {
+		if n != 1 {
+			t.Fatalf("%s series after a good poll = %d, want 1", name, n)
+		}
+	}
+
+	handle.err = errors.New("consumer info unavailable")
+	metrics.updateStats(t.Context())
+	metrics.updateStats(t.Context())
+	for name, n := range series() {
+		if n != 0 {
+			t.Errorf("%s series after Info failed = %d, want 0 (a stale value reads as current)", name, n)
+		}
+	}
+	if got := testutil.ToFloat64(metrics.errors.WithLabelValues("consumer_info")); got != 2 {
+		t.Errorf("consumer_info errors after two failed polls = %v, want 2", got)
+	}
+	warned := logs.find(func(r loggedRecord) bool {
+		return r.level == slog.LevelWarn && r.attrs["consumer"] == "worker" && r.attrs["stream"] == "EVENTS"
+	})
+	if len(warned) != 1 {
+		t.Errorf("warnings for the unavailable consumer = %d, want one per transition", len(warned))
+	}
+
+	handle.err = nil
+	metrics.updateStats(t.Context())
+	if got := testutil.ToFloat64(metrics.consumerDelivered.WithLabelValues("EVENTS", "worker")); got != 7 {
+		t.Errorf("delivered after recovery = %v, want the server's 7", got)
 	}
 }

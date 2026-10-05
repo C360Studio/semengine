@@ -485,7 +485,9 @@ func TestIntegration_ConsumeStreamWithConfig_Nak(t *testing.T) {
 		DeliverPolicy: "all",
 		AckPolicy:     "explicit",
 		MaxDeliver:    3,
-		AckWait:       100 * time.Millisecond,
+		// Longer than awaitCount's bound, so an AckWait expiry cannot stand in for
+		// the Nak: only the Nak redelivers in time.
+		AckWait: 3 * failureBound,
 	}
 
 	handle, err := client.ConsumeStreamWithConfig(ctx, PortConsumerContext{Component: "integration", Port: "input"}, cfg, func(_ context.Context, msg jetstream.Msg) {
@@ -587,12 +589,28 @@ func TestIntegration_NativeHandleStopsConsumer(t *testing.T) {
 		AckPolicy:     "explicit",
 	}
 
-	handle, err := client.ConsumeStreamWithConfig(ctx, PortConsumerContext{Component: "integration", Port: "input"}, cfg, func(_ context.Context, msg jetstream.Msg) {
-		msg.Ack()
-	})
+	owner := PortConsumerContext{Component: "integration", Port: "input"}
+	ack := func(_ context.Context, msg jetstream.Msg) { msg.Ack() }
+	handle, err := client.ConsumeStreamWithConfig(ctx, owner, cfg, ack)
 	require.NoError(t, err)
 
+	// While the handle runs the client holds the durable's local claim, so a second
+	// consumer of it is refused.
+	_, err = client.ConsumeStreamWithConfig(ctx, owner, cfg, ack)
+	require.ErrorContains(t, err, "already has a local owner", "test premise: the running consumer holds its claim")
+
 	drainNativeConsume(t, handle)
+
+	// Draining the native handle is the caller's stop; the client's part is to see the
+	// handle end and give the durable up, so the same durable can be consumed again.
+	awaitCtx, cancel := context.WithTimeout(t.Context(), failureBound)
+	defer cancel()
+	claims, err := probe.Await(awaitCtx, func(context.Context) (int, error) { return claimCount(client), nil },
+		func(n int) bool { return n == 0 })
+	require.NoError(t, err, "the client still holds %d consumer claims after the native drain", claims)
+	again, err := client.ConsumeStreamWithConfig(ctx, owner, cfg, ack)
+	require.NoError(t, err, "the drained durable could not be consumed again")
+	drainNativeConsume(t, again)
 }
 
 // TestIntegration_NativeHandlesStopMultipleConsumers tests stopping multiple exact owned consumers.

@@ -39,6 +39,19 @@ The client handles all transitions automatically.
 A high-level abstraction over NATS KV providing automatic CAS (Compare-And-Swap) retry logic, JSON helpers, and
 consistent error handling for configuration management scenarios.
 
+### Consumer contexts and handler panics
+
+`ConsumeStreamWithConfig` and `ConsumeInternalStreamWithConfig` take one context, and it does two jobs: it bounds the
+consumer's setup, and it is the parent of every handler's context for as long as the consumer runs. A context with a
+deadline sized for setup therefore ends the context of every handler invoked after that deadline; delivery itself
+continues. `ConsumeStreamWithConfigContexts` takes the two separately: `setupCtx` bounds setup only, and `handlerCtx`
+is the handlers' parent.
+
+A panic in a message handler is recovered: it is logged at error level with the message's subject, counted on the
+JetStream error metric as operation `handler_panic`, and the message is Nak'd so the server redelivers it. A Nak that
+fails is logged with the panic. A handler that returns without settling its message is not Nak'd for it; the server
+redelivers the message when its AckWait expires.
+
 ### Distributed Tracing
 
 All publish and request methods automatically propagate W3C-compliant trace context. If no trace exists in the context,

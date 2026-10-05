@@ -113,7 +113,11 @@ if err != nil {
 // Access the payload
 payload := msg.Payload()
 if genericJSON, ok := payload.(*message.GenericJSONPayload); ok {
-    temperature := genericJSON.Data["temperature"].(float64)
+    // A decoded number is a json.Number holding its literal, so no integer is rounded.
+    temperature, err := genericJSON.Data["temperature"].(json.Number).Float64()
+    if err != nil {
+        return err
+    }
     fmt.Printf("Temperature: %.1f°C\n", temperature)
 }
 ```
@@ -295,9 +299,8 @@ func createTestMessage() *message.BaseMessage {
 func processTestData(msg *message.BaseMessage) {
     if genericJSON, ok := msg.Payload().(*message.GenericJSONPayload); ok {
         metrics := genericJSON.Data["metrics"].(map[string]any)
-        cpu := metrics["cpu"].(float64)
-
-        if cpu > 80.0 {
+        n, _ := metrics["cpu"].(json.Number) // a decoded number is a json.Number
+        if cpu, err := n.Float64(); err == nil && cpu > 80.0 {
             // Alert high CPU
         }
     }
@@ -343,7 +346,7 @@ func TestMessageRoundTrip(t *testing.T) {
     assert.Equal(t, "core.json.v1", reconstructed.Type().Key())
     payload := reconstructed.Payload().(*message.GenericJSONPayload)
     assert.Equal(t, "value", payload.Data["test"])
-    assert.Equal(t, float64(42), payload.Data["number"])
+    assert.Equal(t, json.Number("42"), payload.Data["number"])
 }
 ```
 

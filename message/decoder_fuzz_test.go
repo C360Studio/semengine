@@ -1,6 +1,7 @@
 package message_test
 
 import (
+	"bytes"
 	"encoding/json"
 	"math"
 	"math/big"
@@ -59,6 +60,18 @@ type oracleGenericJSON struct {
 
 type oracleCount struct {
 	Count int64 `json:"count"`
+}
+
+// unmarshalNumbers is the standard library's exact reading of a core.json.v1 body: it refuses
+// what json.Unmarshal refuses, and keeps every number as a json.Number holding its literal, so an
+// integer beyond 2^53 keeps its value (Codex F30).
+func unmarshalNumbers(data []byte, v any) error {
+	if err := json.Unmarshal(data, new(any)); err != nil {
+		return err
+	}
+	d := json.NewDecoder(bytes.NewReader(data))
+	d.UseNumber()
+	return d.Decode(v)
 }
 
 // fuzzRegistry holds the three kinds of registration the decoder can meet: the built-in
@@ -436,7 +449,7 @@ func oracleDecode(data []byte) (oracleExpect, bool) {
 	switch t := want.env.Type; {
 	case t.Domain == "core" && t.Category == "json" && t.Version == "v1":
 		want.generic = &oracleGenericJSON{}
-		return want, json.Unmarshal(want.env.Payload, want.generic) == nil
+		return want, unmarshalNumbers(want.env.Payload, want.generic) == nil
 	case t.Domain == "test" && t.Category == "count" && t.Version == "v1":
 		want.count = &oracleCount{}
 		return want, json.Unmarshal(want.env.Payload, want.count) == nil
@@ -505,7 +518,7 @@ func FuzzGenericJSONPayloadUnmarshalJSON(f *testing.F) {
 		err := got.UnmarshalJSON(data)
 
 		var want oracleGenericJSON
-		wantErr := json.Unmarshal(data, &want)
+		wantErr := unmarshalNumbers(data, &want)
 		if (err == nil) != (wantErr == nil) {
 			t.Fatalf("UnmarshalJSON(%q): err = %v, standard library err = %v", data, err, wantErr)
 		}

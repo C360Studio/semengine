@@ -190,32 +190,6 @@ func sameShape(v, decoded any) bool {
 	return false
 }
 
-// asFloats converts every json.Number in a UseNumber decode to the float64 its literal parses to,
-// which is what json.Unmarshal gives a GenericJSONPayload.
-func asFloats(t *testing.T, v any) any {
-	switch v := v.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(v))
-		for k, e := range v {
-			out[k] = asFloats(t, e)
-		}
-		return out
-	case []any:
-		out := make([]any, len(v))
-		for i, e := range v {
-			out[i] = asFloats(t, e)
-		}
-		return out
-	case json.Number:
-		f, err := strconv.ParseFloat(string(v), 64)
-		if err != nil {
-			t.Fatalf("literal %q: %v", v, err)
-		}
-		return f
-	}
-	return v
-}
-
 // FuzzGenericJSONShapes: encoding a core.json.v1 payload whose Data is a generated tree of every
 // ruled kind either refuses it or writes it so that it decodes to the same tree (#9 comments
 // 5970334875, 5972117486 and 5972208367). The expected outcome comes from what the generator
@@ -224,8 +198,8 @@ func asFloats(t *testing.T, v any) any {
 // envelope, encodes, and its bytes decode back to the generated tree. Numbers are compared at
 // the literal: a json.Decoder with UseNumber reads each number's text, which must be the exact
 // decimal of a generated integer, parse to the same float64 or float32, or equal a generated
-// json.Number. The decode through NewDecoder must then equal that tree with every number as the
-// float64 its literal parses to, as json.Unmarshal stores it.
+// json.Number. The decode through NewDecoder must then hold the generated tree by the same
+// comparison against the generated values (Codex F30): every number keeps its exact value.
 //
 // Seeds reach each kind (one seed per kind byte), invalid UTF-8 in a key and in a value at
 // depth, each refused kind at depth, a NaN, and an empty map and list.
@@ -281,8 +255,8 @@ func FuzzGenericJSONShapes(f *testing.F) {
 		if err != nil {
 			t.Fatalf("Decode(%s): %v", envelope, err)
 		}
-		if want := asFloats(t, exact.Data); !reflect.DeepEqual(got.Payload().(*message.GenericJSONPayload).Data, want) {
-			t.Fatalf("decoded %#v, want %#v", got.Payload().(*message.GenericJSONPayload).Data, want)
+		if gotData := got.Payload().(*message.GenericJSONPayload).Data; !sameShape(top, any(gotData)) {
+			t.Fatalf("Data %#v decoded through NewDecoder as %#v", top, gotData)
 		}
 	})
 }

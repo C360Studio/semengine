@@ -106,7 +106,8 @@ func TestGenericJSON_UnmarshalJSON(t *testing.T) {
 
 	assert.NotNil(t, payload.Data)
 	assert.Equal(t, "temp-001", payload.Data["sensor_id"])
-	assert.Equal(t, 23.5, payload.Data["temperature"])
+	// A number decodes as its literal (Codex F30), so no value is rounded through float64.
+	assert.Equal(t, json.Number("23.5"), payload.Data["temperature"])
 	assert.Equal(t, "celsius", payload.Data["unit"])
 }
 
@@ -133,7 +134,7 @@ func TestGenericJSON_RoundTrip(t *testing.T) {
 
 	// Verify
 	assert.Equal(t, original.Data["string_field"], decoded.Data["string_field"])
-	assert.Equal(t, original.Data["number_field"], decoded.Data["number_field"])
+	assert.Equal(t, json.Number("42"), decoded.Data["number_field"]) // 42.0 encodes as 42
 	assert.Equal(t, original.Data["boolean_field"], decoded.Data["boolean_field"])
 
 	nestedOriginal := original.Data["nested_field"].(map[string]any)

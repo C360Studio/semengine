@@ -229,7 +229,7 @@ func TestGenericJSONAcceptsJSONShapedValues(t *testing.T) {
 		t.Fatalf("Decode(%s): %v", encoded, err)
 	}
 	var oracle map[string]any
-	if err := json.Unmarshal(got, &oracle); err != nil {
+	if err := unmarshalNumbers(got, &oracle); err != nil {
 		t.Fatal(err)
 	}
 	if gotData := decoded.Payload().(*message.GenericJSONPayload).Data; !reflect.DeepEqual(gotData, oracle["data"]) {

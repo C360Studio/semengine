@@ -2,6 +2,7 @@
 package message
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -228,10 +229,21 @@ func member(at, k string) string {
 }
 
 // UnmarshalJSON deserializes JSON data into the GenericJSON payload.
+//
+// Every number in Data decodes as a json.Number holding its literal, never as a float64, so an
+// accepted integer beyond 2^53 (an int64, a uint64 or a json.Number) keeps its exact value and
+// re-encodes to the same text. A reader converts with json.Number's Int64, Float64 or String.
 func (g *GenericJSONPayload) UnmarshalJSON(data []byte) error {
 	// Use alias to avoid infinite recursion
 	type Alias GenericJSONPayload
-	return json.Unmarshal(data, (*Alias)(g))
+	// json.Unmarshal checks the whole input before it changes g, and refuses anything after the
+	// value; a Decoder stops at the value's end, so the same check comes first here.
+	if !json.Valid(data) {
+		return errs.WrapInvalid(errs.ErrInvalidData, "GenericJSONPayload", "UnmarshalJSON", "not one JSON value")
+	}
+	d := json.NewDecoder(bytes.NewReader(data))
+	d.UseNumber()
+	return d.Decode((*Alias)(g))
 }
 
 // RuleFields implements RuleReadable: the whole data map IS this payload's

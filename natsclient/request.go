@@ -533,6 +533,11 @@ func (c *Client) requestMsgWithRetry(
 
 	var lastErr error
 	for attempt := 0; attempt <= retry.MaxRetries; attempt++ {
+		// An ended context sends nothing, and the caller's cancellation is not counted as a
+		// transport failure toward the shared circuit breaker (Codex F32).
+		if err := ctx.Err(); err != nil {
+			return nil, errs.WrapTransient(err, "Client", method, fmt.Sprintf("request attempt %d", attempt+1))
+		}
 		reqCtx, cancel := context.WithTimeout(ctx, timeout)
 
 		// Build message with trace headers
@@ -564,7 +569,7 @@ func (c *Client) requestMsgWithRetry(
 
 			select {
 			case <-ctx.Done():
-				return nil, ctx.Err()
+				return nil, errs.WrapTransient(ctx.Err(), "Client", method, fmt.Sprintf("backoff before attempt %d", attempt+2))
 			case <-time.After(backoff):
 				// Continue to next retry
 			}

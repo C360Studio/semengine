@@ -108,6 +108,43 @@ func TestExportedNilContextRefusedOnRequestAndBucketPaths(t *testing.T) {
 	require.Equal(t, int64(2), calls.Load())
 }
 
+// An already-cancelled context sends nothing from either retrying request method: each attempt,
+// the first included, checks the context first (Codex F32), and the refusal is a transient
+// classified error that still matches context.Canceled.
+func TestRetryRequestEndedContextNeverDispatches(t *testing.T) {
+	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
+	require.NoError(t, err)
+	require.NoError(t, c.Connect(t.Context()))
+	closeInCleanup(t, c)
+	const subject = "endedctx.dispatch"
+	var calls atomic.Int64
+	_, err = c.SubscribeForRequests(t.Context(), subject, func(context.Context, []byte) ([]byte, error) {
+		calls.Add(1)
+		return []byte("handled"), nil
+	})
+	require.NoError(t, err)
+	require.NoError(t, c.GetConnection().FlushTimeout(10*time.Second))
+
+	ended, cancel := context.WithCancel(t.Context())
+	cancel()
+	failuresBefore := c.GetStatus().FailureCount
+	_, err = c.RequestWithRetry(ended, subject, nil, 10*time.Second, DefaultRetryConfig())
+	require.ErrorIs(t, err, context.Canceled)
+	require.True(t, errs.IsTransient(err), "RequestWithRetry: %v", err)
+	_, err = c.RequestWithRetryClassified(ended, subject, nil, 10*time.Second, DefaultRetryConfig())
+	require.ErrorIs(t, err, context.Canceled)
+	require.True(t, errs.IsTransient(err), "RequestWithRetryClassified: %v", err)
+	// No attempt was made, so the caller's cancellation is not a transport failure: it must not
+	// count toward the shared circuit breaker that fast-fails unrelated calls.
+	require.Equal(t, failuresBefore, c.GetStatus().FailureCount, "an ended context recorded a transport failure")
+
+	// Sent after the refused calls on the same connection, so delivered after anything they sent.
+	data, err := c.RequestWithRetryClassified(t.Context(), subject, nil, 10*time.Second, RetryConfig{})
+	require.NoError(t, err)
+	require.Equal(t, "handled", string(data))
+	require.Equal(t, int64(1), calls.Load(), "only the request with a live context reached the handler")
+}
+
 // A negative MaxRetries is refused as invalid by both retrying request methods and sends nothing
 // (Codex F31). The probe in reviewer_full_nats_probe_test.go proves the refusal; this proves no
 // request reached the handler.

@@ -664,9 +664,13 @@ func (m *Client) GetStatus() *Status {
 		LastFailureTime: lastFailure,
 	}
 
-	// Add RTT if connected
-	if m.conn != nil && m.conn.IsConnected() {
-		if rtt, err := m.conn.RTT(); err == nil {
+	// Add RTT if connected. cleanup clears m.conn under mu, so read it once under mu and use that
+	// value; RTT is a round trip to the server, so it runs after mu is released (Codex F33).
+	m.mu.RLock()
+	conn := m.conn
+	m.mu.RUnlock()
+	if conn != nil && conn.IsConnected() {
+		if rtt, err := conn.RTT(); err == nil {
 			status.RTT = rtt
 		}
 	}

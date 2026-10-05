@@ -80,10 +80,11 @@ type StorageReportSnapshot struct {
 	Account      AccountReport
 	AccountKnown bool
 
-	// Synced reports that the watch has delivered every current value at least
-	// once. Before it, an empty snapshot means "not read yet" rather than "the
-	// account holds nothing" — the same distinction the inventory's Stale flag
-	// keeps.
+	// Synced reports that a watch has delivered every current value at least
+	// once. Before it, the snapshot is empty and means "not read yet" rather
+	// than "the account holds nothing" — the same distinction the inventory's
+	// Stale flag keeps. It stays true while a replacement watch is syncing,
+	// because the view is then the previous watch's complete one.
 	Synced bool
 
 	// UpdatedAt is when the last change was applied.
@@ -168,7 +169,13 @@ func NewStorageReportConsumer(
 }
 
 // Snapshot returns the current view without doing any I/O. Safe to call from a
-// health check, an HTTP handler, or a metrics scrape.
+// health check, an HTTP handler, or a metrics scrape. The result shares no
+// memory with the consumer, so a caller may edit it.
+//
+// While a replacement watch delivers its initial values, Snapshot returns the
+// previous view unchanged; at that watch's sync marker the view becomes exactly
+// the bucket's current values in one step, so a row or account row the bucket no
+// longer holds is gone even when no delete marker for it was replayed.
 func (c *StorageReportConsumer) Snapshot() StorageReportSnapshot {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -209,6 +216,14 @@ func (c *StorageReportConsumer) watchOnce(ctx context.Context) {
 	}
 	defer func() { _ = watcher.Stop() }()
 
+	// Until this watch's sync marker its entries fill initial, not the view. A
+	// Snapshot caller meanwhile sees the previous view whole (or, on the first
+	// watch, an empty view with Synced false), never a mix of the old view and
+	// part of the new one. At the marker the view becomes exactly this watch's
+	// initial values in one step, which is what retracts a row or account the
+	// bucket no longer holds: a bucket that was recreated, or whose delete
+	// markers were purged, replays no tombstone for it.
+	initial := newReportStage()
 	updates := watcher.Updates()
 	for {
 		select {
@@ -221,7 +236,14 @@ func (c *StorageReportConsumer) watchOnce(ctx context.Context) {
 			if entry == nil {
 				// nats.go sends exactly one nil when every current value has
 				// been delivered. It is a marker, not a row.
-				c.markSynced()
+				if initial != nil {
+					c.replaceWith(initial)
+					initial = nil
+				}
+				continue
+			}
+			if initial != nil {
+				initial.apply(c, entry)
 				continue
 			}
 			c.apply(entry)
@@ -229,7 +251,19 @@ func (c *StorageReportConsumer) watchOnce(ctx context.Context) {
 	}
 }
 
-// apply folds one watch entry into the view and fans it out.
+// decodeReportEntry decodes a put entry. The reserved account key carries a
+// different row kind; discriminating on the key is sound because a resource key
+// can never contain a dot (see StorageAccountReportKey).
+func decodeReportEntry(entry jetstream.KeyValueEntry) (row ResourceReport, account AccountReport, err error) {
+	if entry.Key() == StorageAccountReportKey {
+		err = json.Unmarshal(entry.Value(), &account)
+		return row, account, err
+	}
+	err = json.Unmarshal(entry.Value(), &row)
+	return row, account, err
+}
+
+// apply folds one live watch entry into the view and fans it out.
 func (c *StorageReportConsumer) apply(entry jetstream.KeyValueEntry) {
 	key := entry.Key()
 
@@ -238,27 +272,138 @@ func (c *StorageReportConsumer) apply(entry jetstream.KeyValueEntry) {
 		return
 	}
 
-	// The reserved account key carries a different row kind. Discriminating on
-	// the key is sound because a resource key can never contain a dot; see
-	// StorageAccountReportKey.
-	if key == StorageAccountReportKey {
-		var report AccountReport
-		if err := json.Unmarshal(entry.Value(), &report); err != nil {
-			c.logSkip(key, entry.Revision(), err)
-			return
-		}
-		c.putAccount(report)
-		return
-	}
-
-	var row ResourceReport
-	if err := json.Unmarshal(entry.Value(), &row); err != nil {
+	row, account, err := decodeReportEntry(entry)
+	if err != nil {
 		// One undecodable value must not blank the account's whole view; the
 		// next publication of that key repairs it.
 		c.logSkip(key, entry.Revision(), err)
 		return
 	}
+	if key == StorageAccountReportKey {
+		c.putAccount(account)
+		return
+	}
 	c.putResource(key, row)
+}
+
+// reportStage collects one watch's initial values until its sync marker.
+type reportStage struct {
+	rows map[string]ResourceReport
+	// undecodable holds keys present in the bucket whose value could not be
+	// decoded. As on the live path, the row held for such a key is kept until
+	// the next publication repairs it, rather than retracted as absent.
+	undecodable     map[string]struct{}
+	account         AccountReport
+	hasAcct         bool
+	acctUndecodable bool
+}
+
+func newReportStage() *reportStage {
+	return &reportStage{
+		rows:        make(map[string]ResourceReport, 32),
+		undecodable: make(map[string]struct{}),
+	}
+}
+
+func (s *reportStage) apply(c *StorageReportConsumer, entry jetstream.KeyValueEntry) {
+	key := entry.Key()
+	isAccount := key == StorageAccountReportKey
+
+	if entry.Operation() != jetstream.KeyValuePut {
+		if isAccount {
+			s.account, s.hasAcct, s.acctUndecodable = AccountReport{}, false, false
+			return
+		}
+		delete(s.rows, key)
+		delete(s.undecodable, key)
+		return
+	}
+
+	row, account, err := decodeReportEntry(entry)
+	switch {
+	case err != nil && isAccount:
+		c.logSkip(key, entry.Revision(), err)
+		s.account, s.hasAcct, s.acctUndecodable = AccountReport{}, false, true
+	case err != nil:
+		c.logSkip(key, entry.Revision(), err)
+		delete(s.rows, key)
+		s.undecodable[key] = struct{}{}
+	case isAccount:
+		s.account, s.hasAcct, s.acctUndecodable = account, true, false
+	default:
+		s.rows[key] = row
+		delete(s.undecodable, key)
+	}
+}
+
+// replaceWith makes a completed watch's initial values the view, retracting
+// every held row the bucket no longer holds, and fans the changes out.
+func (c *StorageReportConsumer) replaceWith(s *reportStage) {
+	keys := make([]string, 0, len(s.rows))
+	for key := range s.rows {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	observed := make([]ResourceReport, 0, len(keys))
+	for _, key := range keys {
+		observed = append(observed, s.rows[key])
+	}
+
+	c.mu.Lock()
+	var forgotten []ResourceReport
+	for key, held := range c.rows {
+		if _, present := s.rows[key]; present {
+			continue
+		}
+		if _, present := s.undecodable[key]; present {
+			s.rows[key] = held
+			continue
+		}
+		forgotten = append(forgotten, held)
+	}
+	sort.Slice(forgotten, func(i, j int) bool { return forgotten[i].Resource.Name < forgotten[j].Resource.Name })
+	c.rows = s.rows
+
+	accountRetracted := false
+	switch {
+	case s.hasAcct:
+		c.account, c.hasAcct = s.account, true
+	case s.acctUndecodable:
+		// Keep the held account row, as the live path does for an undecodable value.
+	case c.hasAcct:
+		c.account, c.hasAcct = AccountReport{}, false
+		accountRetracted = true
+	}
+	c.synced = true
+	c.updated = time.Now()
+	c.rebuildLocked()
+	c.mu.Unlock()
+
+	if accountRetracted {
+		c.logAccountRetracted()
+	}
+	if c.observer == nil {
+		return
+	}
+	for _, row := range forgotten {
+		c.observer.ForgetResource(row)
+	}
+	for _, row := range observed {
+		c.observer.ObserveResource(row)
+	}
+	if s.hasAcct {
+		c.observer.ObserveAccount(s.account)
+	}
+}
+
+// logAccountRetracted declares the one change an observer cannot be told:
+// StorageReportObserver has no method that retracts an account row, so an
+// observer keeps the last account it was given while the snapshot reports
+// AccountKnown false.
+func (c *StorageReportConsumer) logAccountRetracted() {
+	c.logger.Warn("the storage report's account row is gone; the snapshot no longer reports an account, "+
+		"and observers keep the last account row they were given",
+		slog.String("key", StorageAccountReportKey))
 }
 
 func (c *StorageReportConsumer) logSkip(key string, revision uint64, err error) {
@@ -295,7 +440,12 @@ func (c *StorageReportConsumer) putAccount(report AccountReport) {
 
 // remove drops a reclaimed row. A tombstone for a key this process never held
 // fans out NOTHING: there is no series to retract and no identity to name.
+// A delete or purge of the reserved account key retracts the account row.
 func (c *StorageReportConsumer) remove(key string) {
+	if key == StorageAccountReportKey {
+		c.removeAccount()
+		return
+	}
 	c.mu.Lock()
 	row, held := c.rows[key]
 	if held {
@@ -310,11 +460,19 @@ func (c *StorageReportConsumer) remove(key string) {
 	}
 }
 
-func (c *StorageReportConsumer) markSynced() {
+func (c *StorageReportConsumer) removeAccount() {
 	c.mu.Lock()
-	c.synced = true
-	c.rebuildLocked()
+	held := c.hasAcct
+	if held {
+		c.account, c.hasAcct = AccountReport{}, false
+		c.updated = time.Now()
+		c.rebuildLocked()
+	}
 	c.mu.Unlock()
+
+	if held {
+		c.logAccountRetracted()
+	}
 }
 
 // rebuildLocked recomputes the published snapshot. Callers hold the write lock,
@@ -350,16 +508,71 @@ func (c *StorageReportConsumer) rebuildLocked() {
 	}
 }
 
-// clone hands out a copy. Rows are value types all the way down apart from the
-// pointer fields, which no consumer writes through, so copying the slice and
-// the count map is a full copy for the purposes that matter: a caller ranging
-// the snapshot cannot mutate the consumer's state under the watch goroutine.
+// clone hands out a copy that shares no memory with the consumer's view: the
+// row and tier slices, the count map, and every pointer field are copied, so a
+// caller editing a snapshot, through a pointer field included, cannot change
+// the consumer's state or a later snapshot.
 func (s StorageReportSnapshot) clone() StorageReportSnapshot {
 	out := s
-	out.Resources = append(make([]ResourceReport, 0, len(s.Resources)), s.Resources...)
+	out.Resources = make([]ResourceReport, len(s.Resources))
+	for i, row := range s.Resources {
+		out.Resources[i] = row.clone()
+	}
+	out.Account = s.Account.clone()
 	out.PressureCounts = make(map[PressureState]int, len(s.PressureCounts))
 	for state, count := range s.PressureCounts {
 		out.PressureCounts[state] = count
 	}
 	return out
+}
+
+func (r ResourceReport) clone() ResourceReport {
+	r.Resource.Bytes = r.Resource.Bytes.clone()
+	r.Resource.Messages = r.Resource.Messages.clone()
+	r.Growth = r.Growth.clone()
+	r.Projection = r.Projection.clone()
+	return r
+}
+
+func (a AccountReport) clone() AccountReport {
+	if a.Tiers == nil {
+		return a
+	}
+	tiers := make([]TierComparison, len(a.Tiers))
+	for i, tier := range a.Tiers {
+		tier.Limit = tier.Limit.clone()
+		tier.Growth = tier.Growth.clone()
+		tier.Projection = tier.Projection.clone()
+		tiers[i] = tier
+	}
+	a.Tiers = tiers
+	return a
+}
+
+func (c Capacity) clone() Capacity {
+	c.ConfiguredLimit = clonePointer(c.ConfiguredLimit)
+	c.Used = clonePointer(c.Used)
+	return c
+}
+
+func (g Growth) clone() Growth {
+	g.BytesPerSecond = clonePointer(g.BytesPerSecond)
+	g.ObservedFrom = clonePointer(g.ObservedFrom)
+	return g
+}
+
+func (p Projection) clone() Projection {
+	p.HeadroomBytes = clonePointer(p.HeadroomBytes)
+	p.HeadroomFraction = clonePointer(p.HeadroomFraction)
+	p.ThresholdBytes = clonePointer(p.ThresholdBytes)
+	p.TimeToThreshold = clonePointer(p.TimeToThreshold)
+	return p
+}
+
+func clonePointer[T any](p *T) *T {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
 }

@@ -823,7 +823,7 @@ func TestClientCloseJoinsClaimRelease(t *testing.T) {
 		}
 		close(native.consumeRelease)
 		cfg := StreamConsumerConfig{StreamName: identity.stream, ConsumerName: durable, MaxAckPending: 17}
-		_, err = c.startPortConsumer(t.Context(), t.Context(), "ConsumeStreamWithConfig",
+		_, err = c.startPortConsumer(t.Context(), t.Context(), nil, "ConsumeStreamWithConfig",
 			PortConsumerContext{Component: "claim-test", Port: "input"}, cfg,
 			&guardedConsumer{Consumer: native}, identity, claim, func(context.Context, jetstream.Msg) {})
 		return native, release, err

@@ -123,21 +123,35 @@ type consumerOwnership struct {
 //
 // conn is the connection the consumer's JetStream handle was made on, read together with that
 // handle when the setup began (jetStreamWithConn), whatever SetConnection has installed since.
+//
+// cancelHandlers, when not nil, cancels the context the client owns for this consumer's handlers
+// (owner ruling, #9 comment 5994720412 item 2). The goroutine calls it as soon as Close begins, and
+// once every handler invocation has returned. When ownConsumer reports false the caller cancels.
 func (c *Client) ownConsumer(
-	conn *nats.Conn, d *ownedDelivery, release func(started bool),
+	conn *nats.Conn, d *ownedDelivery, cancelHandlers context.CancelFunc, release func(started bool),
 ) (*consumerOwnership, bool) {
+	if cancelHandlers == nil {
+		cancelHandlers = func() {}
+	}
 	o := &consumerOwnership{delivery: d, handle: make(chan jetstream.ConsumeContext, 1), released: make(chan struct{})}
 	c.mu.Lock()
 	closing := c.closingSignalLocked()
 	c.mu.Unlock()
 	if !c.startBackground(workClaimRelease, func() {
 		defer close(o.released)
-		h := <-o.handle
+		var h jetstream.ConsumeContext
+		select {
+		case h = <-o.handle:
+		case <-closing:
+			cancelHandlers()
+			h = <-o.handle
+		}
 		if h != nil {
 			closed := h.Closed()
 			select {
 			case <-closed:
 			case <-closing:
+				cancelHandlers()
 				c.mu.RLock()
 				replaced := conn != c.draining
 				c.mu.RUnlock()
@@ -151,6 +165,7 @@ func (c *Client) ownConsumer(
 		// close while one still runs. d.done is.
 		d.end()
 		<-d.done
+		cancelHandlers()
 		release(h != nil)
 	}) {
 		return nil, false

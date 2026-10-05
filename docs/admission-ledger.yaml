@@ -1473,6 +1473,13 @@
     give is not shown, as the policy loop already did for its gauges; the pin skipped the consumer silently and kept the last values,
     jetstream_metrics.go:290-294 at the pin, :296-300 at 931d90f) (TestJetStreamConsumerMetricsDropSeriesWhenInfoFails);
     with two clients on one registry the deletion is the shared-series case under known_risks (#75).
+    (12) natsclient-consume-handler-context (owner ruling, #9 comment 5994720412, item 2): in
+    ConsumeStreamWithConfig and ConsumeInternalStreamWithConfig the caller's context bounds setup
+    only; handlers run under a context the Client owns per consumer, cancelled when Close begins and
+    after the consumer's last handler returns (at the pin the caller's context parented every
+    handler, so a short setup deadline ended later handlers)
+    (TestConsumeSetupDeadlineDoesNotEndLaterHandlers, TestConsumeHandlerContextEndsWhenCloseBegins;
+    both failed first on the internal and port paths).
     jetstream.New's error, dropped at the pin
     (:525), is returned by Connect
     with the dialled connection closed (:747-756); no failing-first test exists, because nats.go
@@ -1505,7 +1512,10 @@
     test_client.go): client.go:566, the metrics poller started under context.Background(), triaged
     in task 3.7c as a root the Client owns and kept: startMetricsPoller (client.go:677) creates it
     so the poller outlives Connect's dial-scoped context, publishes its cancel before admitting the
-    poller, and Close cancels the poller's in-flight work and joins it; trace.go:56, DetachContextWithTrace, left with that function in task
+    poller, and Close cancels the poller's in-flight work and joins it; stream.go
+    clientOwnedHandlerContext, a context.WithCancel(context.Background()) root the Client owns per
+    consumer (#9 comment 5994720412, item 2), cancelled by the consumer's ownership goroutine
+    (owned_delivery.go ownConsumer) when Close begins and after its last handler returns; trace.go:56, DetachContextWithTrace, left with that function in task
     3.7a. kv.go:600 is a bounded terminal drain, context.WithTimeout(context.WithoutCancel(ctx),
     filteredWatcherDrainTimeout), the developer contract's admitted shape, not a root. Dropped
     surface, not ported (design D8, "A test of a removed feature"): kv_temporal.go
@@ -2055,7 +2065,12 @@
     (integration_test.go) publishes through PublishToStream to a memory-backed and a file-backed
     natsfixture stream, reads both back, restarts the fixture, and finds the file-backed message
     and not the memory-backed one. The graph-ingest half of both requirements, and its scenarios,
-    are change 2's (design D4)
+    are change 2's (design D4). Owner ruling #9 comment 5994720412 item 2, separate setup and
+    handler contexts: TestConsumeSetupDeadlineDoesNotEndLaterHandlers and
+    TestConsumeHandlerContextEndsWhenCloseBegins (consume_context_test.go), each over the internal
+    and port paths, failed first on both. Mutation (implementer-reported, PR #48): Close not
+    cancelling the handler context in either path, port handlers parented by the setup context, and
+    internal handlers parented by the setup context: each fails its test; restored, they pass
   owner: setup-04a-01-floor developer
   disposition: adapt
 

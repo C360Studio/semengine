@@ -389,6 +389,21 @@ failing-first `adapt` items:
   same way whichever timer ran out first, the native drain's or the client's own (they have the same length,
   `client.go:638, :1094-1098`): the first `Close` returns a transient error wrapping `nats.ErrDrainTimeout`. At the pin
   and at `7ce1940` the native timer usually won and `Close` returned nil.
+- **`natsclient-consume-handler-context`** (owner ruling, #9 comment 5994720412 item 2). `ConsumeStreamWithConfig` and
+  `ConsumeInternalStreamWithConfig` took one context that both bounded setup and parented every handler's context for
+  as long as the consumer ran, so a deadline sized for setup ended the context of every later handler while delivery
+  continued, a silent failure. The context now bounds setup only and is not retained. Each consumer's handlers run
+  under a context the client owns (`clientOwnedHandlerContext`, `stream.go`): a root, triaged on the `natsclient`
+  row as the metrics poller's is, because no other context of the client lives as long as the consumer. The
+  consumer's ownership goroutine (`ownConsumer`, `owned_delivery.go`) cancels it as soon as `Close` begins, whether
+  the native handle has arrived yet or not, and again once the last handler has returned; `Close` joins the handlers
+  as before. `ConsumeStreamWithConfigContexts` already took the two apart and is unchanged: its `handlerCtx` stays the
+  caller's. `Subscribe` and `SubscribeForRequests` are not the same shape: their context bounds no setup and is only
+  the handlers' parent, by their doc comments. What a caller observes, and the tests:
+  `TestConsumeSetupDeadlineDoesNotEndLaterHandlers` (a handler delivered after the setup deadline gets a live
+  context) and `TestConsumeHandlerContextEndsWhenCloseBegins` (the handler's context ends once `Close` begins, and
+  `Close` returns nil after the handler returned), each over both entry points (`transport-client`, "A consumer's
+  setup context does not parent its handlers").
 - **`natsclient-handler-panic-recovered`** (owner ruling 3, #9 comment 5985697767; PR #48 comment 5985648705, HIGH 2).
   A panic in a consumer's message handler is recovered by `safeHandleMessage` (`stream.go`): the message is Nak'd, the
   panic is logged at error level with the message's subject, and it is counted as `handler_panic` on the JetStream

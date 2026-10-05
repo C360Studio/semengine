@@ -41,11 +41,10 @@ consistent error handling for configuration management scenarios.
 
 ### Consumer contexts and handler panics
 
-`ConsumeStreamWithConfig` and `ConsumeInternalStreamWithConfig` take one context, and it does two jobs: it bounds the
-consumer's setup, and it is the parent of every handler's context for as long as the consumer runs. A context with a
-deadline sized for setup therefore ends the context of every handler invoked after that deadline; delivery itself
-continues. `ConsumeStreamWithConfigContexts` takes the two separately: `setupCtx` bounds setup only, and `handlerCtx`
-is the handlers' parent.
+The context passed to `ConsumeStreamWithConfig` and `ConsumeInternalStreamWithConfig` bounds the consumer's setup
+only. Each handler's context descends from a context the client owns for that consumer, which it cancels when `Close`
+begins; `Close` still waits for every handler to return. `ConsumeStreamWithConfigContexts` takes a second context,
+`handlerCtx`, when the caller wants to choose the handlers' parent itself.
 
 A panic in a message handler is recovered: it is logged at error level with the message's subject, counted on the
 JetStream error metric as operation `handler_panic`, and the message is Nak'd so the server redelivers it. A Nak that

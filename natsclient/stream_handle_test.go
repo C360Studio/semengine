@@ -75,7 +75,7 @@ func TestPortConsumerCommitIgnoresCancellationAfterNativeConsumeBegins(t *testin
 	resultCh := make(chan result, 1)
 	go func() {
 		returned, startErr := client.startPortConsumer(
-			ctx, ctx, "ConsumeStreamWithConfig", owner, cfg, guarded, identity, claim,
+			ctx, ctx, nil, "ConsumeStreamWithConfig", owner, cfg, guarded, identity, claim,
 			func(context.Context, jetstream.Msg) {},
 		)
 		resultCh <- result{handle: returned, err: startErr}

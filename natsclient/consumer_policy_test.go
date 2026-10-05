@@ -85,7 +85,7 @@ func TestPortConsumerObservesBeforeDeliveryAndLogsOnce(t *testing.T) {
 
 	identity := internalConsumerIdentity{stream: cfg.StreamName, durable: cfg.ConsumerName}
 	consumeCtx, err := client.startPortConsumer(
-		context.Background(), context.Background(), "ConsumeStreamWithConfig", owner, cfg,
+		context.Background(), context.Background(), nil, "ConsumeStreamWithConfig", owner, cfg,
 		&guardedConsumer{Consumer: consumer}, identity, nil, func(context.Context, jetstream.Msg) {})
 	if err != nil {
 		t.Fatal(err)
@@ -121,7 +121,7 @@ func TestPortConsumerInitialInfoFailureIsTransientAndPreventsDelivery(t *testing
 	cfg := StreamConsumerConfig{StreamName: "EVENTS", ConsumerName: "worker-events"}
 	identity := internalConsumerIdentity{stream: cfg.StreamName, durable: cfg.ConsumerName}
 	handle, err := client.startPortConsumer(
-		context.Background(), context.Background(), "ConsumeStreamWithConfig", owner, cfg,
+		context.Background(), context.Background(), nil, "ConsumeStreamWithConfig", owner, cfg,
 		&guardedConsumer{Consumer: consumer}, identity, nil, func(context.Context, jetstream.Msg) {})
 	if !errs.IsTransient(err) || !errors.Is(err, cause) {
 		t.Fatalf("error = %v, want transient preserving Info cause", err)

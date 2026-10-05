@@ -429,19 +429,34 @@ func streamNotVisible(ctx context.Context, absent error) error {
 // nats.ErrConnectionClosed. The handler receives the raw jetstream.Msg and must
 // settle it with Ack, Nak, or Term.
 //
-// ctx is both the setup limit and the parent of every handler's context, for as
-// long as the consumer runs. A ctx with a deadline sized for setup therefore
-// ends the context of every handler invoked after that deadline, while delivery
-// continues. To bound setup alone, use ConsumeStreamWithConfigContexts.
+// ctx bounds the setup only and is not retained (owner ruling, #9 comment
+// 5994720412 item 2). Each handler's context descends from a context the client
+// owns for this consumer: it is cancelled when Close begins, and Close joins every
+// handler invocation. A caller that wants its own parent for the handlers uses
+// ConsumeStreamWithConfigContexts.
 func (c *Client) ConsumeStreamWithConfig(
 	ctx context.Context,
 	owner PortConsumerContext,
 	cfg StreamConsumerConfig,
 	handler func(ctx context.Context, msg jetstream.Msg),
 ) (jetstream.ConsumeContext, error) {
-	return c.consumePortStreamWithConfigContexts(
-		ctx, ctx, "ConsumeStreamWithConfig", owner, cfg, handler,
+	handlerCtx, cancelHandlers := clientOwnedHandlerContext()
+	h, err := c.consumePortStreamWithConfigContexts(
+		ctx, handlerCtx, cancelHandlers, "ConsumeStreamWithConfig", owner, cfg, handler,
 	)
+	if err != nil {
+		cancelHandlers()
+	}
+	return h, err
+}
+
+// clientOwnedHandlerContext is the parent of a consumer's handler contexts when the caller gave
+// none (owner ruling, #9 comment 5994720412 item 2). It is a root this client owns, like the
+// metrics poller's: the setup context must not parent handlers that outlive it, and no other
+// context of the client lives as long as the consumer. The consumer's ownership goroutine cancels
+// it when Close begins and once the last handler has returned (ownConsumer).
+func clientOwnedHandlerContext() (context.Context, context.CancelFunc) {
+	return context.WithCancel(context.Background())
 }
 
 // ConsumeInternalStreamWithConfig consumes a stream for framework-internal users
@@ -453,9 +468,10 @@ func (c *Client) ConsumeStreamWithConfig(
 // Client.Close stops and joins this consumer if the caller has not. Once Close
 // has begun this method returns nats.ErrConnectionClosed.
 //
-// As with ConsumeStreamWithConfig, ctx is both the setup limit and the parent of
-// every handler's context: a deadline on it ends the context of every handler
-// invoked after it, while delivery continues.
+// As with ConsumeStreamWithConfig, ctx bounds the setup only and is not retained:
+// each handler's context descends from a context the client owns for this
+// consumer, cancelled when Close begins (owner ruling, #9 comment 5994720412
+// item 2).
 func (c *Client) ConsumeInternalStreamWithConfig(
 	ctx context.Context,
 	cfg StreamConsumerConfig,
@@ -547,11 +563,13 @@ func (c *Client) ConsumeInternalStreamWithConfig(
 	// has begun: native Consume is never called, and the deferred release frees
 	// the claim.
 	d := newOwnedDelivery(c, consumerAttrs(observed.stream, observed.durable, consumerCfg.AckPolicy)...)
-	owned, ok := c.ownConsumer(guarded.conn, d, func(bool) {
+	handlerCtx, cancelHandlers := clientOwnedHandlerContext()
+	owned, ok := c.ownConsumer(guarded.conn, d, cancelHandlers, func(bool) {
 		forgetObservation()
 		releaseClaim()
 	})
 	if !ok {
+		cancelHandlers()
 		forgetObservation()
 		return nil, errs.Wrap(nats.ErrConnectionClosed, "Client", "ConsumeInternalStreamWithConfig",
 			"client closed while starting consumer")
@@ -560,9 +578,9 @@ func (c *Client) ConsumeInternalStreamWithConfig(
 	committed = true
 	consumeCtx, err := guarded.Consume(func(msg jetstream.Msg) {
 		d.run(func() string { return msg.Subject() }, func() {
-			msgCtx := ctx
+			msgCtx := handlerCtx
 			if tc := ExtractTraceFromJetStream(msg.Headers()); tc != nil {
-				msgCtx = ContextWithTrace(ctx, tc)
+				msgCtx = ContextWithTrace(handlerCtx, tc)
 			}
 			messageTimeout := cfg.MessageTimeout
 			if messageTimeout <= 0 {
@@ -617,6 +635,7 @@ func (c *Client) reserveInternalConsumer(
 func (c *Client) startPortConsumer(
 	setupCtx context.Context,
 	handlerCtx context.Context,
+	cancelHandlers context.CancelFunc,
 	operation string,
 	owner PortConsumerContext,
 	cfg StreamConsumerConfig,
@@ -657,7 +676,7 @@ func (c *Client) startPortConsumer(
 	// so Close joins every handler invocation (design D3). Refused once Close
 	// has begun: native Consume is never called.
 	d := newOwnedDelivery(c, consumerAttrs(identity.stream, identity.durable, c.buildConsumerConfig(cfg).AckPolicy)...)
-	owned, ok := c.ownConsumer(consumer.conn, d, func(started bool) {
+	owned, ok := c.ownConsumer(consumer.conn, d, cancelHandlers, func(started bool) {
 		if started && c.jsMetrics != nil {
 			c.jsMetrics.forgetConsumer(identity.stream, identity.durable)
 		}
@@ -716,13 +735,17 @@ func (c *Client) ConsumeStreamWithConfigContexts(
 	handler func(ctx context.Context, msg jetstream.Msg),
 ) (jetstream.ConsumeContext, error) {
 	return c.consumePortStreamWithConfigContexts(
-		setupCtx, handlerCtx, "ConsumeStreamWithConfigContexts", owner, cfg, handler,
+		setupCtx, handlerCtx, nil, "ConsumeStreamWithConfigContexts", owner, cfg, handler,
 	)
 }
 
+// consumePortStreamWithConfigContexts runs a port consumer's setup under setupCtx and its handlers
+// under handlerCtx. cancelHandlers is nil when the caller owns handlerCtx, and is handed to the
+// consumer's ownership goroutine when the client owns it.
 func (c *Client) consumePortStreamWithConfigContexts(
 	setupCtx context.Context,
 	handlerCtx context.Context,
+	cancelHandlers context.CancelFunc,
 	operation string,
 	owner PortConsumerContext,
 	cfg StreamConsumerConfig,
@@ -786,7 +809,7 @@ func (c *Client) consumePortStreamWithConfigContexts(
 	}
 	// startPortConsumer owns the claim from here.
 	return c.startPortConsumer(
-		setupCtx, handlerCtx, operation, owner, cfg,
+		setupCtx, handlerCtx, cancelHandlers, operation, owner, cfg,
 		&guardedConsumer{Consumer: consumer, conn: jsConn}, identity, claim, handler,
 	)
 }

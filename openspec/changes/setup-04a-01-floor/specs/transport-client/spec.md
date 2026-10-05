@@ -195,3 +195,22 @@ process lets a panic end it). A Nak that fails SHALL be logged with the panic, n
 
 - **WHEN** a handler panics and the Nak that follows returns an error
 - **THEN** the error record names the panic, the subject and the Nak error
+
+### Requirement: A consumer's setup context does not parent its handlers
+
+`ConsumeStreamWithConfig` and `ConsumeInternalStreamWithConfig` SHALL use their context to bound setup only and SHALL
+NOT retain it. Each handler's context SHALL descend from a context the client owns for that consumer, which the
+client SHALL cancel when `Close` begins; `Close` SHALL still join every handler invocation (owner ruling, #9 comment
+5994720412 item 2). `ConsumeStreamWithConfigContexts` keeps the caller's `handlerCtx` as the handlers' parent.
+
+#### Scenario: A handler after the setup deadline
+
+- **GIVEN** a consumer started with a setup context whose deadline then passes
+- **WHEN** a message is delivered after that deadline
+- **THEN** its handler receives a context that has not ended
+
+#### Scenario: Close begins while a handler runs
+
+- **GIVEN** a consumer whose handler is running
+- **WHEN** `Close` begins
+- **THEN** the handler's context ends, and `Close` returns nil only after the handler has returned

@@ -75,6 +75,9 @@ func (kv *KVStore) applyTimeout(ctx context.Context) (context.Context, context.C
 
 // Get retrieves a value with its revision for CAS operations
 func (kv *KVStore) Get(ctx context.Context, key string) (*KVEntry, error) {
+	if ctx == nil {
+		return nil, nilContextErrorOf("KVStore", "Get")
+	}
 	ctx, cancel := kv.applyTimeout(ctx)
 	defer cancel()
 
@@ -107,6 +110,9 @@ func (kv *KVStore) Get(ctx context.Context, key string) (*KVEntry, error) {
 func BucketLastSeq(ctx context.Context, bucket interface {
 	Status(context.Context) (jetstream.KeyValueStatus, error)
 }) (uint64, error) {
+	if ctx == nil {
+		return 0, nilContextErrorOf("natsclient", "BucketLastSeq")
+	}
 	status, err := bucket.Status(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("kv status: %w", err)
@@ -132,6 +138,9 @@ func BucketLastSeq(ctx context.Context, bucket interface {
 // KeyValueStatus interface does not surface these, so we read the concrete
 // JetStream-backed status's stream config.
 func BucketRetention(ctx context.Context, bucket jetstream.KeyValue) (maxAge time.Duration, maxBytes int64, err error) {
+	if ctx == nil {
+		return 0, 0, nilContextErrorOf("natsclient", "BucketRetention")
+	}
 	status, err := bucket.Status(ctx)
 	if err != nil {
 		return 0, 0, fmt.Errorf("kv status: %w", err)
@@ -184,6 +193,9 @@ func CheckNoLifecycleRetention(name string, maxAge time.Duration, maxBytes int64
 // some process won the get-or-create race with a TTL/size cap; fail-closed
 // rather than silently expire state that cannot be regenerated.
 func (kv *KVStore) AssertNoLifecycleRetention(ctx context.Context, name string) error {
+	if ctx == nil {
+		return nilContextErrorOf("KVStore", "AssertNoLifecycleRetention")
+	}
 	maxAge, maxBytes, err := BucketRetention(ctx, kv.bucket)
 	if err != nil {
 		return err
@@ -193,6 +205,9 @@ func (kv *KVStore) AssertNoLifecycleRetention(ctx context.Context, name string) 
 
 // Put creates or updates a key without revision check (last writer wins)
 func (kv *KVStore) Put(ctx context.Context, key string, value []byte) (uint64, error) {
+	if ctx == nil {
+		return 0, nilContextErrorOf("KVStore", "Put")
+	}
 	ctx, cancel := kv.applyTimeout(ctx)
 	defer cancel()
 
@@ -210,6 +225,9 @@ func (kv *KVStore) Put(ctx context.Context, key string, value []byte) (uint64, e
 
 // Create only creates if key doesn't exist (returns error if exists)
 func (kv *KVStore) Create(ctx context.Context, key string, value []byte) (uint64, error) {
+	if ctx == nil {
+		return 0, nilContextErrorOf("KVStore", "Create")
+	}
 	ctx, cancel := kv.applyTimeout(ctx)
 	defer cancel()
 
@@ -230,6 +248,9 @@ func (kv *KVStore) Create(ctx context.Context, key string, value []byte) (uint64
 
 // Update performs CAS update with explicit revision
 func (kv *KVStore) Update(ctx context.Context, key string, value []byte, revision uint64) (uint64, error) {
+	if ctx == nil {
+		return 0, nilContextErrorOf("KVStore", "Update")
+	}
 	ctx, cancel := kv.applyTimeout(ctx)
 	defer cancel()
 
@@ -276,6 +297,9 @@ func (kv *KVStore) getRetryConfig() retry.Config {
 // returns that writer's revision.
 func (kv *KVStore) UpdateWithRetry(ctx context.Context, key string,
 	updateFn func(current []byte) ([]byte, error)) error {
+	if ctx == nil {
+		return nilContextErrorOf("KVStore", "UpdateWithRetry")
+	}
 	_, err := kv.UpdateWithRetryRev(ctx, key, updateFn)
 	return err
 }
@@ -299,6 +323,9 @@ func (kv *KVStore) UpdateWithRetry(ctx context.Context, key string,
 // On any non-nil error the returned revision is 0 — nothing committed.
 func (kv *KVStore) UpdateWithRetryRev(ctx context.Context, key string,
 	updateFn func(current []byte) ([]byte, error)) (uint64, error) {
+	if ctx == nil {
+		return 0, nilContextErrorOf("KVStore", "UpdateWithRetryRev")
+	}
 
 	// Apply timeout to the entire retry operation
 	ctx, cancel := kv.applyTimeout(ctx)
@@ -427,6 +454,9 @@ func (kv *KVStore) UpdateWithRetryRev(ctx context.Context, key string,
 // UpdateJSON performs CAS update on JSON data with automatic retry
 func (kv *KVStore) UpdateJSON(ctx context.Context, key string,
 	updateFn func(current map[string]any) error) error {
+	if ctx == nil {
+		return nilContextErrorOf("KVStore", "UpdateJSON")
+	}
 
 	return kv.UpdateWithRetry(ctx, key, func(currentBytes []byte) ([]byte, error) {
 		// Parse current JSON
@@ -452,6 +482,9 @@ func (kv *KVStore) UpdateJSON(ctx context.Context, key string,
 
 // Delete removes a key from the bucket
 func (kv *KVStore) Delete(ctx context.Context, key string) error {
+	if ctx == nil {
+		return nilContextErrorOf("KVStore", "Delete")
+	}
 	ctx, cancel := kv.applyTimeout(ctx)
 	defer cancel()
 
@@ -473,6 +506,9 @@ func (kv *KVStore) Delete(ctx context.Context, key string) error {
 // DeleteAtRevision removes a key only when revision is still current.
 // It makes one revision-fenced delete attempt and never reads or retries.
 func (kv *KVStore) DeleteAtRevision(ctx context.Context, key string, revision uint64) error {
+	if ctx == nil {
+		return nilContextErrorOf("KVStore", "DeleteAtRevision")
+	}
 	if revision == 0 {
 		return errs.WrapInvalid(errors.New("revision must be nonzero"), "KVStore", "DeleteAtRevision", "validate revision")
 	}
@@ -502,6 +538,9 @@ func (kv *KVStore) DeleteAtRevision(ctx context.Context, key string, revision ui
 
 // Keys returns all keys in the bucket
 func (kv *KVStore) Keys(ctx context.Context) ([]string, error) {
+	if ctx == nil {
+		return nil, nilContextErrorOf("KVStore", "Keys")
+	}
 	ctx, cancel := kv.applyTimeout(ctx)
 	defer cancel()
 
@@ -521,6 +560,9 @@ func (kv *KVStore) Keys(ctx context.Context) ([]string, error) {
 // Uses JetStream KV's native key filtering for efficient server-side filtering.
 // The prefix is automatically converted to a NATS wildcard pattern (prefix + ">").
 func (kv *KVStore) KeysByPrefix(ctx context.Context, prefix string) ([]string, error) {
+	if ctx == nil {
+		return nil, nilContextErrorOf("KVStore", "KeysByPrefix")
+	}
 	// Convert prefix to NATS wildcard pattern
 	// "entity.sensor." becomes "entity.sensor.>" to match all keys with that prefix
 	return kv.KeysByFilter(ctx, prefix+">")
@@ -626,6 +668,9 @@ drain:
 func FilteredKeys(ctx context.Context, kv interface {
 	ListKeysFiltered(ctx context.Context, filters ...string) (jetstream.KeyLister, error)
 }, pattern string) ([]string, error) {
+	if ctx == nil {
+		return nil, nilContextErrorOf("natsclient", "FilteredKeys")
+	}
 	lister, err := kv.ListKeysFiltered(ctx, pattern)
 	if err != nil {
 		if errors.Is(err, jetstream.ErrNoKeysFound) || errors.Is(err, jetstream.ErrKeyNotFound) {
@@ -668,6 +713,9 @@ func collectFilteredKeys(ctx context.Context, lister jetstream.KeyLister) ([]str
 // Watch creates a watcher for key changes
 // Note: Watch does not apply timeout as it creates a long-lived watcher
 func (kv *KVStore) Watch(ctx context.Context, pattern string) (jetstream.KeyWatcher, error) {
+	if ctx == nil {
+		return nil, nilContextErrorOf("KVStore", "Watch")
+	}
 	watcher, err := kv.bucket.Watch(ctx, pattern)
 	if err != nil {
 		return nil, fmt.Errorf("kv watch %s: %w", pattern, err)

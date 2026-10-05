@@ -263,6 +263,9 @@ func (c *StorageInventoryCollector) Latest() StorageInventory {
 // ending — a graceful shutdown — leaves the last good result unmarked, because
 // "context canceled" is not a storage finding.
 func (c *StorageInventoryCollector) Collect(parent context.Context) (StorageInventory, error) {
+	if parent == nil {
+		return StorageInventory{}, nilContextErrorOf("StorageInventoryCollector", "Collect")
+	}
 	c.collectMu.Lock()
 	defer c.collectMu.Unlock()
 

@@ -223,6 +223,9 @@ func NewStorageReportPublisher(store ReportStore, cfg StorageReportConfig) (*Sto
 // failures are joined and returned, naming the resources they lost, so a
 // partial publication is REPORTED rather than silently shrinking the report.
 func (p *StorageReportPublisher) Publish(ctx context.Context, inv StorageInventory) (PublishResult, error) {
+	if ctx == nil {
+		return PublishResult{}, nilContextErrorOf("StorageReportPublisher", "Publish")
+	}
 	if inv.Stale || inv.CollectedAt.IsZero() {
 		return PublishResult{Skipped: true, SkipReason: SkipReasonStaleInventory}, nil
 	}

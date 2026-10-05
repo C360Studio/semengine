@@ -144,6 +144,9 @@ func (c *Client) ObserveDirectPortConsumerPolicy(
 	finalConfig jetstream.ConsumerConfig,
 	consumer jetstream.Consumer,
 ) (func(), error) {
+	if ctx == nil {
+		return nil, nilContextError("ObserveDirectPortConsumerPolicy")
+	}
 	owner.Component = strings.TrimSpace(owner.Component)
 	owner.Port = strings.TrimSpace(owner.Port)
 	if err := validatePortConsumerContext(owner, "ObserveDirectPortConsumerPolicy"); err != nil {

@@ -612,6 +612,9 @@ func (m *Client) testCircuit() {
 
 // WaitForConnection waits for the connection to be established
 func (m *Client) WaitForConnection(ctx context.Context) error {
+	if ctx == nil {
+		return nilContextError("WaitForConnection")
+	}
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 
@@ -1248,6 +1251,10 @@ func (s *Subscription) Drain(ctx context.Context) error {
 // begun it returns nats.ErrConnectionClosed and subscribes nothing. Close joins
 // every running invocation of handler.
 func (m *Client) Subscribe(ctx context.Context, subject string, handler func(context.Context, *nats.Msg)) (*Subscription, error) {
+	// Refused here, not in the callback, which hands ctx to handler for every message.
+	if ctx == nil {
+		return nil, nilContextError("Subscribe")
+	}
 	return m.subscribeWith(ctx, subject, handler, nativeSubscribe)
 }
 
@@ -1403,6 +1410,9 @@ func (m *Client) jetStreamWithConn() (jetstream.JetStream, *nats.Conn, error) {
 
 // CreateStream creates a JetStream stream
 func (m *Client) CreateStream(ctx context.Context, cfg jetstream.StreamConfig) (jetstream.Stream, error) {
+	if ctx == nil {
+		return nil, nilContextError("CreateStream")
+	}
 	// Fail closed on a KV/ObjectStore backing-stream name before anything else,
 	// so the refusal does not depend on connection or circuit state.
 	if err := CheckOrdinaryStreamName(cfg.Name, "natsclient.Client.CreateStream"); err != nil {
@@ -1452,6 +1462,9 @@ func (m *Client) CreateStream(ctx context.Context, cfg jetstream.StreamConfig) (
 // PublishToStream publishes to a JetStream stream with automatic trace context propagation.
 // If no trace context exists in ctx, one is auto-generated for distributed tracing.
 func (m *Client) PublishToStream(ctx context.Context, subject string, data []byte) error {
+	if ctx == nil {
+		return nilContextError("PublishToStream")
+	}
 	return m.publishToStream(ctx, subject, data, "")
 }
 
@@ -1473,6 +1486,9 @@ func (m *Client) PublishToStream(ctx context.Context, subject string, data []byt
 // Question #1. An empty msgID is equivalent to PublishToStream (no dedup),
 // so this is a safe drop-in.
 func (m *Client) PublishToStreamWithMsgID(ctx context.Context, subject string, data []byte, msgID string) error {
+	if ctx == nil {
+		return nilContextError("PublishToStreamWithMsgID")
+	}
 	return m.publishToStream(ctx, subject, data, msgID)
 }
 
@@ -1635,6 +1651,9 @@ func (m *Client) publishToStreamAsync(ctx context.Context, subject string, data 
 // once by asyncPublishErrHandler — this loop only collects them for the returned
 // error (accounting here too would double-count).
 func (m *Client) PublishBatchToStream(ctx context.Context, subject string, msgs [][]byte) error {
+	if ctx == nil {
+		return nilContextError("PublishBatchToStream")
+	}
 	if len(msgs) == 0 {
 		return nil
 	}
@@ -1704,6 +1723,9 @@ func (m *Client) PublishBatchToStream(ctx context.Context, subject string, msgs 
 // A caller deciding something for the process lifetime wants ErrStreamNotVisible
 // out of the guarded consumer setup instead; see that sentinel and the package doc.
 func (m *Client) GetStream(ctx context.Context, name string) (jetstream.Stream, error) {
+	if ctx == nil {
+		return nil, nilContextError("GetStream")
+	}
 	// Check circuit breaker first
 	if m.Status() == StatusCircuitOpen {
 		return nil, ErrCircuitOpen

@@ -62,6 +62,9 @@ func kvBackingStreamRetention(
 func ReconcileNoLifecycleRetention(
 	ctx context.Context, js jetstream.JetStream, bucket string, logger *slog.Logger,
 ) error {
+	if ctx == nil {
+		return nilContextErrorOf("natsclient", "ReconcileNoLifecycleRetention")
+	}
 	if logger == nil {
 		logger = slog.Default()
 	}

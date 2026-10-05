@@ -144,6 +144,9 @@ func DefaultStreamConfig() *StreamAutoCreateConfig {
 
 // EnsureStream creates a stream if it doesn't exist, or returns the existing one.
 func (c *Client) EnsureStream(ctx context.Context, cfg jetstream.StreamConfig) (jetstream.Stream, error) {
+	if ctx == nil {
+		return nil, nilContextError("EnsureStream")
+	}
 	// Fail closed on a KV/ObjectStore backing-stream name before anything else,
 	// so the refusal does not depend on connection or circuit state. This seam is
 	// operator-reachable — processor/gated-dag exposes dispatch_stream as config
@@ -1058,6 +1061,9 @@ func (c *Client) PublishToStreamWithAck(
 	subject string,
 	data []byte,
 ) (*jetstream.PubAck, error) {
+	if ctx == nil {
+		return nil, nilContextError("PublishToStreamWithAck")
+	}
 	if c.Status() == StatusCircuitOpen {
 		return nil, ErrCircuitOpen
 	}

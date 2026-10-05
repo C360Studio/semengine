@@ -22,7 +22,12 @@ const errorCodeResponseTooLarge = "response_too_large"
 // nilContextError is the refusal an exported Client method returns for a nil context, before any
 // client state, callback or NATS call is reached (developer contract, Context ownership; Codex F32).
 func nilContextError(method string) error {
-	return errs.WrapInvalid(errors.New("nil context"), "Client", method, "missing context")
+	return nilContextErrorOf("Client", method)
+}
+
+// nilContextErrorOf is nilContextError for an exported function or a method of another type.
+func nilContextErrorOf(component, method string) error {
+	return errs.WrapInvalid(errors.New("nil context"), component, method, "missing context")
 }
 
 // DefaultRequestHandlerTimeout bounds a single inbound request-handler

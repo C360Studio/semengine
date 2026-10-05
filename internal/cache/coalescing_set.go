@@ -65,21 +65,21 @@ func WithCoalescingMetrics(registry *metric.MetricsRegistry, prefix string) Coal
 
 // NewCoalescingSet creates a new CoalescingSet that fires the callback every window duration
 // with the collected (deduplicated) keys. The background goroutine stops when ctx is cancelled
-// or when Shutdown is called. A nil ctx or a nil callback panics here, before any goroutine
-// starts. A panic in the callback is recovered: the set is a helper inside a service, not a root
-// process (owner ruling, #9 comment 5994720412 item 3). The batch the callback was handed is
-// dropped, the panic is logged at error level with the batch size and counted when
-// WithCoalescingMetrics names a registry, and later batches still fire. If that counter cannot be
-// registered (another collector owns its name), the error is logged and the set runs with
-// panics logged but not counted: a declared degrade, since the constructor returns no error.
+// or when Shutdown is called. A nil ctx or a nil callback is refused with an invalid-argument
+// error, and a panic counter the registry refuses with a transient error, as the cache
+// constructors return a metrics-registration error; in each case no goroutine starts. A panic in
+// the callback is recovered: the set is a helper inside a service, not a root process (owner
+// ruling, #9 comment 5994720412 item 3). The batch the callback was handed is dropped, the panic
+// is logged at error level with the batch size and counted when WithCoalescingMetrics names a
+// registry, and later batches still fire.
 func NewCoalescingSet(
 	ctx context.Context, window time.Duration, callback func([]string), opts ...CoalescingOption,
-) *CoalescingSet {
+) (*CoalescingSet, error) {
 	if ctx == nil {
-		panic("cache: NewCoalescingSet called with a nil context")
+		return nil, errs.WrapInvalid(errors.New("nil context"), "cache", "NewCoalescingSet", "context is required")
 	}
 	if callback == nil {
-		panic("cache: NewCoalescingSet called with a nil callback")
+		return nil, errs.WrapInvalid(errors.New("nil callback"), "cache", "NewCoalescingSet", "callback is required")
 	}
 	c := &CoalescingSet{
 		pending:  make(map[string]struct{}),
@@ -105,11 +105,9 @@ func NewCoalescingSet(
 				Help:        "Total number of CoalescingSet callback panics recovered; each dropped its batch",
 			}))
 		if err != nil {
-			c.logger.Error("CoalescingSet panic counter not registered; callback panics will be logged, not counted",
-				slog.String("component", o.metricsPrefix), slog.Any("error", err))
-		} else {
-			c.panicCounter = counter
+			return nil, errs.WrapTransient(err, "cache", "NewCoalescingSet", "metrics registration")
 		}
+		c.panicCounter = counter
 	}
 
 	// Handle zero or negative window by using minimum ticker duration
@@ -123,7 +121,7 @@ func NewCoalescingSet(
 	// Start background goroutine
 	go c.run(ctx)
 
-	return c
+	return c, nil
 }
 
 // Add adds a key to the pending set and reports whether it was newly inserted.

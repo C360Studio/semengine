@@ -14,6 +14,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -23,7 +24,7 @@ func TestCoalescingSet_AddCollectsKeys(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := context.Background()
 		var callbackFired atomic.Bool
-		set := NewCoalescingSet(ctx, 100*time.Millisecond, func(_ []string) {
+		set := newTestCoalescingSet(ctx, t, 100*time.Millisecond, func(_ []string) {
 			callbackFired.Store(true)
 		})
 		defer set.Shutdown(t.Context())
@@ -43,7 +44,7 @@ func TestCoalescingSet_DeduplicatesKeys(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := context.Background()
 		callbackCh := make(chan []string, 1)
-		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(keys []string) {
+		set := newTestCoalescingSet(ctx, t, 50*time.Millisecond, func(keys []string) {
 			callbackCh <- keys
 		})
 		defer set.Shutdown(t.Context())
@@ -78,7 +79,7 @@ func TestCoalescingSet_CallbackFiresAfterWindow(t *testing.T) {
 		callbackCh := make(chan []string, 1)
 		windowDuration := 50 * time.Millisecond
 
-		set := NewCoalescingSet(ctx, windowDuration, func(keys []string) {
+		set := newTestCoalescingSet(ctx, t, windowDuration, func(keys []string) {
 			callbackCh <- keys
 		})
 		defer set.Shutdown(t.Context())
@@ -121,7 +122,7 @@ func TestCoalescingSet_BatchCleared(t *testing.T) {
 		var firstBatch, secondBatch []string
 		var mu sync.Mutex
 
-		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(keys []string) {
+		set := newTestCoalescingSet(ctx, t, 50*time.Millisecond, func(keys []string) {
 			count := callCount.Add(1)
 			mu.Lock()
 			defer mu.Unlock()
@@ -170,7 +171,7 @@ func TestCoalescingSet_RemoveExcludesFromBatch(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := context.Background()
 		callbackCh := make(chan []string, 1)
-		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(keys []string) {
+		set := newTestCoalescingSet(ctx, t, 50*time.Millisecond, func(keys []string) {
 			callbackCh <- keys
 		})
 		defer set.Shutdown(t.Context())
@@ -206,7 +207,7 @@ func TestCoalescingSet_RemovePrefixExcludesMatchingKeys(t *testing.T) {
 		defer cancel()
 
 		received := make(chan []string, 1)
-		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(keys []string) {
+		set := newTestCoalescingSet(ctx, t, 50*time.Millisecond, func(keys []string) {
 			received <- keys
 		})
 		defer func() { require.NoError(t, set.Shutdown(t.Context())) }()
@@ -227,7 +228,7 @@ func TestCoalescingSet_RemovePrefixExcludesMatchingKeys(t *testing.T) {
 
 func TestCoalescingSet_DrainReturnsAndClearsPendingKeys(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		set := NewCoalescingSet(context.Background(), time.Hour, func([]string) {})
+		set := newTestCoalescingSet(context.Background(), t, time.Hour, func([]string) {})
 		set.Add("entity-1")
 		set.Add("entity-2")
 		require.ElementsMatch(t, []string{"entity-1", "entity-2"}, set.Drain())
@@ -239,7 +240,7 @@ func TestCoalescingSet_DrainReturnsAndClearsPendingKeys(t *testing.T) {
 
 func TestCoalescingSet_MutationResultsTrackPendingOwnership(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		set := NewCoalescingSet(context.Background(), time.Hour, func([]string) {})
+		set := newTestCoalescingSet(context.Background(), t, time.Hour, func([]string) {})
 		require.True(t, set.Add("entity-1"))
 		require.False(t, set.Add("entity-1"))
 		require.False(t, set.Remove("missing"))
@@ -259,7 +260,7 @@ func TestCoalescingSet_EmptyBatchNoCallback(t *testing.T) {
 		var callbackFired atomic.Bool
 		callbackCh := make(chan []string, 10)
 
-		set := NewCoalescingSet(ctx, 30*time.Millisecond, func(keys []string) {
+		set := newTestCoalescingSet(ctx, t, 30*time.Millisecond, func(keys []string) {
 			callbackFired.Store(true)
 			callbackCh <- keys
 		})
@@ -288,7 +289,7 @@ func TestCoalescingSet_ZeroWindow(t *testing.T) {
 		ctx := context.Background()
 		callbackCh := make(chan []string, 1)
 
-		set := NewCoalescingSet(ctx, 0, func(keys []string) {
+		set := newTestCoalescingSet(ctx, t, 0, func(keys []string) {
 			callbackCh <- keys
 		})
 		defer set.Shutdown(t.Context())
@@ -312,7 +313,7 @@ func TestCoalescingSet_CloseStopsCallback(t *testing.T) {
 		ctx := context.Background()
 		var callCount atomic.Int32
 
-		set := NewCoalescingSet(ctx, 30*time.Millisecond, func(_ []string) {
+		set := newTestCoalescingSet(ctx, t, 30*time.Millisecond, func(_ []string) {
 			callCount.Add(1)
 		})
 
@@ -344,7 +345,7 @@ func TestCoalescingSet_ContextCancellation(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		var callCount atomic.Int32
 
-		set := NewCoalescingSet(ctx, 30*time.Millisecond, func(_ []string) {
+		set := newTestCoalescingSet(ctx, t, 30*time.Millisecond, func(_ []string) {
 			callCount.Add(1)
 		})
 		defer set.Shutdown(t.Context())
@@ -378,7 +379,7 @@ func TestCoalescingSet_ConcurrentAdds(t *testing.T) {
 		var receivedKeys atomic.Value // Will store []string
 		doneCh := make(chan struct{})
 
-		set := NewCoalescingSet(ctx, 100*time.Millisecond, func(keys []string) {
+		set := newTestCoalescingSet(ctx, t, 100*time.Millisecond, func(keys []string) {
 			receivedKeys.Store(keys)
 			close(doneCh)
 		})
@@ -434,7 +435,7 @@ func TestCoalescingSet_AddDuringCallback(t *testing.T) {
 		var mu sync.Mutex
 		callbackStarted := make(chan struct{})
 
-		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(keys []string) {
+		set := newTestCoalescingSet(ctx, t, 50*time.Millisecond, func(keys []string) {
 			count := callCount.Add(1)
 
 			mu.Lock()
@@ -486,7 +487,7 @@ func TestCoalescingSet_RapidUpdates(t *testing.T) {
 		ctx := context.Background()
 		callbackCh := make(chan []string, 1)
 
-		set := NewCoalescingSet(ctx, 100*time.Millisecond, func(keys []string) {
+		set := newTestCoalescingSet(ctx, t, 100*time.Millisecond, func(keys []string) {
 			callbackCh <- keys
 		})
 		defer set.Shutdown(t.Context())
@@ -523,7 +524,7 @@ func TestCoalescingSet_EntityUpdateScenario(t *testing.T) {
 		ctx := context.Background()
 		callbackCh := make(chan []string, 1)
 
-		set := NewCoalescingSet(ctx, 100*time.Millisecond, func(keys []string) {
+		set := newTestCoalescingSet(ctx, t, 100*time.Millisecond, func(keys []string) {
 			callbackCh <- keys
 		})
 		defer set.Shutdown(t.Context())
@@ -568,7 +569,7 @@ func TestCoalescingSet_EntityUpdateScenario(t *testing.T) {
 func TestCoalescingSet_MultipleCloseCalls(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := context.Background()
-		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(_ []string) {})
+		set := newTestCoalescingSet(ctx, t, 50*time.Millisecond, func(_ []string) {})
 
 		// First close
 		err := set.Shutdown(t.Context())
@@ -584,17 +585,29 @@ func TestCoalescingSet_MultipleCloseCalls(t *testing.T) {
 	})
 }
 
-// TestCoalescingSet_NilCallbackPanicsAtTheCall: a nil callback is refused by a panic at the call,
-// before the goroutine starts (the background-work shape of a nil context; owner ruling on Codex
-// F1). At the pin a nil callback was accepted and each batch was dropped. Oracle: the panic, and
-// no run goroutine in the bubble's stack dump.
-func TestCoalescingSet_NilCallbackPanicsAtTheCall(t *testing.T) {
+// newTestCoalescingSet calls NewCoalescingSet and fails the test if it returns an error.
+func newTestCoalescingSet(
+	ctx context.Context, t *testing.T, window time.Duration, callback func([]string), opts ...CoalescingOption,
+) *CoalescingSet {
+	t.Helper()
+	set, err := NewCoalescingSet(ctx, window, callback, opts...)
+	require.NoError(t, err)
+	return set
+}
+
+// TestCoalescingSet_NilCallbackRefusedAtTheCall: a nil callback is refused with an invalid-argument
+// error at the call, before the goroutine starts (the background-work shape of a nil context,
+// design D7; Codex F1). At the pin a nil callback was accepted and each batch was dropped. Oracle:
+// the error, and no run goroutine in the bubble's stack dump.
+func TestCoalescingSet_NilCallbackRefusedAtTheCall(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		// Cancelled only as the test ends, after the count: it releases a goroutine a regression
 		// would start, so the bubble fails the test instead of running its ticker forever.
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		assert.Panics(t, func() { NewCoalescingSet(ctx, 50*time.Millisecond, nil) })
+		set, err := NewCoalescingSet(ctx, 50*time.Millisecond, nil)
+		assert.True(t, errs.IsInvalid(err), "a nil callback is an invalid argument: %v", err)
+		assert.Nil(t, set)
 		synctest.Wait()
 		assert.Zero(t, bubbleGoroutinesRunning("(*CoalescingSet).run"), "no goroutine started")
 	})
@@ -606,7 +619,7 @@ func TestCoalescingSet_RemoveNonexistentKey(t *testing.T) {
 		ctx := context.Background()
 		callbackCh := make(chan []string, 1)
 
-		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(keys []string) {
+		set := newTestCoalescingSet(ctx, t, 50*time.Millisecond, func(keys []string) {
 			callbackCh <- keys
 		})
 		defer set.Shutdown(t.Context())
@@ -640,7 +653,7 @@ func TestCoalescingSet_EmptyKeyString(t *testing.T) {
 		ctx := context.Background()
 		callbackCh := make(chan []string, 1)
 
-		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(keys []string) {
+		set := newTestCoalescingSet(ctx, t, 50*time.Millisecond, func(keys []string) {
 			callbackCh <- keys
 		})
 		defer set.Shutdown(t.Context())

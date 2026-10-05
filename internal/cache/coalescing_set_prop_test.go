@@ -85,11 +85,14 @@ func runCoalescingHistory(history []propStep, c *propCounts) string {
 	const window = 50 * time.Millisecond
 	var mu sync.Mutex
 	var delivered [][]string
-	set := NewCoalescingSet(context.Background(), window, func(batch []string) {
+	set, err := NewCoalescingSet(context.Background(), window, func(batch []string) {
 		mu.Lock()
 		delivered = append(delivered, batch)
 		mu.Unlock()
 	})
+	if err != nil {
+		return "NewCoalescingSet: " + err.Error()
+	}
 	defer func() { _ = set.Shutdown(context.Background()) }()
 	takeDelivered := func() [][]string {
 		mu.Lock()
@@ -194,7 +197,7 @@ func runCoalescingHistory(history []propStep, c *propCounts) string {
 // only by chance: a key that holds the prefix past its start is not removed.
 func TestCoalescingSetRemovePrefixMatchesOnlyAtTheStart(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		set := NewCoalescingSet(context.Background(), time.Hour, func([]string) {})
+		set := newTestCoalescingSet(context.Background(), t, time.Hour, func([]string) {})
 		set.Add("e2\x00a")
 		set.Add("a\x00e2")
 		if got := set.RemovePrefix("e2"); got != 1 {

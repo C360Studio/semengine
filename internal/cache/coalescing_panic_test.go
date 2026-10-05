@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semengine/metric"
+	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
@@ -39,7 +40,7 @@ func TestCoalescingSet_CallbackPanicIsRecoveredAndLaterBatchesFire(t *testing.T)
 		records := make(chan slog.Record, 4)
 		registry := metric.NewMetricsRegistry()
 		batches := make(chan []string, 4)
-		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(keys []string) {
+		set := newTestCoalescingSet(ctx, t, 50*time.Millisecond, func(keys []string) {
 			if len(keys) == 1 && keys[0] == "poison" {
 				panic("coalescing callback panic sentinel")
 			}
@@ -76,11 +77,11 @@ semstreams_cache_coalescing_callback_panics_total{component="coalescer"} 1
 	})
 }
 
-// TestCoalescingSet_PanicCounterRefusedIsLoggedAndPanicsStillRecovered: when the registry refuses
-// the panic counter because another collector owns its key, construction logs the refusal at
-// error level and the set still recovers and logs a callback panic (a declared degrade: the
-// constructor returns no error). Oracle: the two log records, in order, under a bound.
-func TestCoalescingSet_PanicCounterRefusedIsLoggedAndPanicsStillRecovered(t *testing.T) {
+// TestCoalescingSet_RefusesARegistryThatRefusesThePanicCounter: when the registry refuses the panic
+// counter because another collector owns its key, NewCoalescingSet returns the error, as the
+// cache constructors return a metrics-registration error, and starts no goroutine. Oracle: the
+// classified error, a nil set, and no run goroutine in the bubble's stack dump.
+func TestCoalescingSet_RefusesARegistryThatRefusesThePanicCounter(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
@@ -88,23 +89,13 @@ func TestCoalescingSet_PanicCounterRefusedIsLoggedAndPanicsStillRecovered(t *tes
 		_, err := metric.RegisterOrGet(registry, "coalescer", "cache_coalescing_callback_panics",
 			prometheus.NewGauge(prometheus.GaugeOpts{Name: "squatter", Help: "owns the key first"}))
 		require.NoError(t, err)
-		records := make(chan slog.Record, 4)
-		set := NewCoalescingSet(ctx, 50*time.Millisecond, func([]string) { panic("sentinel") },
-			WithPanicLogger(slog.New(recordHandler{records: records})), WithCoalescingMetrics(registry, "coalescer"))
 
-		awaitRecord := func(want string) {
-			t.Helper()
-			select {
-			case r := <-records:
-				assert.Equal(t, slog.LevelError, r.Level)
-				assert.Equal(t, want, r.Message)
-			case <-time.After(time.Second):
-				t.Fatalf("no log record %q", want)
-			}
-		}
-		awaitRecord("CoalescingSet panic counter not registered; callback panics will be logged, not counted")
-		set.Add("k")
-		awaitRecord("panic in CoalescingSet callback; batch dropped")
-		require.NoError(t, set.Shutdown(t.Context()))
+		set, err := NewCoalescingSet(ctx, 50*time.Millisecond, func([]string) {},
+			WithCoalescingMetrics(registry, "coalescer"))
+		require.Error(t, err, "a refused panic counter must fail the constructor")
+		assert.True(t, errs.IsTransient(err), "classified as the cache constructors classify it: %v", err)
+		assert.Nil(t, set)
+		synctest.Wait()
+		assert.Zero(t, bubbleGoroutinesRunning("(*CoalescingSet).run"), "no goroutine started")
 	})
 }

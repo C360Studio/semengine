@@ -1194,14 +1194,15 @@
     Design D7, background-work shape 3: CoalescingSet.Shutdown(ctx) replaces Close(); it returns nil
     once the goroutine has exited, ctx.Err() if ctx ends while the caller's callback still runs, and
     nil on a later call once the callback has returned; Shutdown(nil) is refused with an error;
-    NewCoalescingSet panics on a nil context before it starts the goroutine. Design D7, shape 2: the
+    NewCoalescingSet refuses a nil context with an error before it starts the goroutine. Design D7, shape 2: the
     TTL and hybrid Close signal the cleanup goroutine and wait for it with no fixed bound; NewTTL and
     NewFromConfig refuse a nil context with an error, for every strategy. Every constructor that
     returns Cache[V] with an error (NewSimple, NewLRU, NewTTL, the hybrid constructor, and
     NewFromConfig through them) returns a nil Cache on error; at the pin each returned its nil
     pointer inside a non-nil Cache (pin config.go:152, :159, :170, :177). Owner ruling (#9 comment 5950725772): no eviction
     callback. Changed behavior, task 3.6a (Codex review, PR #48 comment 5968489295; owner rulings,
-    #9 comments 5968830525 and 5968665464), each written first: a nil callback panics at the call
+    #9 comments 5968830525 and 5968665464), each written first: a nil callback is refused at the call
+    with an error (a panic in task 3.6a; an error once NewCoalescingSet returned one, task 3.13)
     before the goroutine starts (F1; F1's other half, a callback panic ending the process, is
     replaced below); concurrent Close calls on the TTL and hybrid caches are safe and each returns only
     once the cleanup goroutine has exited (F2); NewLRU, NewTTL and the hybrid constructor refuse a
@@ -1247,8 +1248,10 @@
     New surface for it: CoalescingOption, WithPanicLogger (default slog.Default(); the package has
     no other logger path) and WithCoalescingMetrics(registry, prefix), which follows WithMetrics'
     registry-and-prefix convention (design D7), the variadic options of NewCoalescingSet; no present
-    production consumer. A counter the registry refuses is logged and not counted, a declared
-    degrade. Removed, pin lines: the
+    production consumer. NewCoalescingSet now returns (*CoalescingSet, error), like the cache
+    constructors: a counter the registry refuses is a transient metrics-registration error, and a
+    nil context or nil callback an invalid-argument error, with no goroutine started (design D7).
+    Removed, pin lines: the
     check-then-close in the TTL and hybrid Close (ttl.go:251-256, hybrid.go:278-283), replaced by a
     sync.Once; StatsInterval (config.go:46-47, :58, :103-106, :123-126, :232, :260-267; options.go:26-27,
     :50-59, :66; ttl.go:34, :67; hybrid.go:38, :73; doc.go:163; README.md:67, :127-133, :194); Entry,
@@ -1274,7 +1277,7 @@
     TestHybridCacheCloseLeavesNothingRunning (start, use, stop; oracle: the stop returns nil within an
     hour of the bubble's clock with the goroutine's done channel already closed, and the bubble returns;
     at the pin's behavior the TTL and hybrid tests pass, because the fixed wait shows only when the
-    goroutine does not exit), TestCoalescingSetNilContextPanicsAtTheCall and
+    goroutine does not exit), TestCoalescingSetNilContextRefusedAtTheCall and
     TestCacheConstructorsRefuseNilContext (at the pin the goroutine panicked: coalescing_set.go:136,
     ttl.go:276), TestCoalescingSetShutdownUnderABlockedCallback (oracle: context.DeadlineExceeded while
     the callback is held, nil after it returns; at the pin's Close the bubble deadlocked) and
@@ -1310,7 +1313,7 @@
     which made tools treat them as generated, are replaced by a note of their origin, and the 11 unused
     parameters revive then reports are named _ (coalescing_set_test.go 6, coalescing_set_attack_test.go
     5). Task 3.6a, each written first (implementer-reported failing first): in coalescing_set_test.go,
-    TestCoalescingSet_NilCallbackPanicsAtTheCall replaces TestCoalescingSet_NilCallback (the panic, and
+    TestCoalescingSet_NilCallbackRefusedAtTheCall replaces TestCoalescingSet_NilCallback (the error, and
     no run goroutine in the bubble's stack dump); the tests that passed a nil callback pass a no-op one.
     Owner ruling #9 comment 5994720412 item 3: coalescing_panic_test.go,
     TestCoalescingSet_CallbackPanicIsRecoveredAndLaterBatchesFire replaces task 3.6a's
@@ -1319,9 +1322,11 @@
     WithCoalescingMetrics names, and the next batch delivered, each under a bound in a synctest
     bubble). Failed first: without the recover the test binary died with the callback's panic in
     fireBatch; mutants that skip the count, skip the log, drop the recover or ignore the registry
-    each fail it. TestCoalescingSet_PanicCounterRefusedIsLoggedAndPanicsStillRecovered (a gauge
-    already owns the counter's key: the refusal and then the recovered panic are logged); mutants
-    that drop the refusal log or ignore the registry fail it.
+    each fail it. TestCoalescingSet_RefusesARegistryThatRefusesThePanicCounter (a gauge already
+    owns the counter's key: a transient error, a nil set, no run goroutine) failed first against
+    the logged degrade it replaces; a mutant that swallows the refusal fails it. The two nil tests
+    failed first against the panics (the test binary panicked); a mutant that accepts a nil
+    callback fails its test.
     In background_test.go, TestCacheConcurrentCloseJoinsEveryCaller (2,000 rounds of 32 Close calls per
     strategy; each returns nil with the goroutine's done channel closed) and
     TestCacheConstructorsRefuseInvalidDimensions (errs.IsInvalid, a nil Cache, no cleanup goroutine in

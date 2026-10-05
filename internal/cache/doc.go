@@ -262,8 +262,9 @@
 //
 // CoalescingSet's goroutine runs the caller's callback, so it stops through Shutdown(ctx):
 // Shutdown returns once the goroutine has exited, or ctx.Err() if ctx ends while the callback is
-// still running; the goroutine then exits when the callback returns. NewCoalescingSet panics on a
-// nil context or a nil callback before it starts the goroutine. A panic in the callback is
+// still running; the goroutine then exits when the callback returns. NewCoalescingSet refuses a
+// nil context, a nil callback, or a panic counter the registry refuses with an error, before it
+// starts the goroutine. A panic in the callback is
 // recovered: the batch is dropped, the panic is logged with the batch size (WithPanicLogger) and
 // counted when WithCoalescingMetrics names a registry, and later batches still fire.
 //

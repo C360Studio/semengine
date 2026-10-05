@@ -25,7 +25,7 @@ func TestAttack_RapidAddRemoveSameEntity(t *testing.T) {
 		ctx := context.Background()
 		callbackCh := make(chan []string, 10)
 
-		set := NewCoalescingSet(ctx, 100*time.Millisecond, func(keys []string) {
+		set := newTestCoalescingSet(ctx, t, 100*time.Millisecond, func(keys []string) {
 			callbackCh <- keys
 		})
 		defer set.Shutdown(t.Context())
@@ -62,7 +62,7 @@ func TestAttack_HighVolumeBatching(t *testing.T) {
 		ctx := context.Background()
 		callbackCh := make(chan []string, 1)
 
-		set := NewCoalescingSet(ctx, 200*time.Millisecond, func(keys []string) {
+		set := newTestCoalescingSet(ctx, t, 200*time.Millisecond, func(keys []string) {
 			callbackCh <- keys
 		})
 		defer set.Shutdown(t.Context())
@@ -106,7 +106,7 @@ func TestAttack_CallbackLatency(t *testing.T) {
 	release := make(chan struct{})
 	callbackFinished := make(chan struct{})
 
-	set := NewCoalescingSet(ctx, 50*time.Millisecond, func(_ []string) {
+	set := newTestCoalescingSet(ctx, t, 50*time.Millisecond, func(_ []string) {
 		count := callCount.Add(1)
 		if count == 1 {
 			close(callbackStarted)
@@ -160,7 +160,7 @@ func TestAttack_ContextCancellationDuringCallback(t *testing.T) {
 		callbackStarted := make(chan struct{})
 		callbackPanicked := make(chan interface{}, 1)
 
-		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(keys []string) {
+		set := newTestCoalescingSet(ctx, t, 50*time.Millisecond, func(keys []string) {
 			// Signal callback started
 			select {
 			case callbackStarted <- struct{}{}:
@@ -208,7 +208,7 @@ func TestAttack_ConcurrentAddRemove(t *testing.T) {
 		ctx := context.Background()
 		var callbackCount atomic.Int32
 
-		set := NewCoalescingSet(ctx, 100*time.Millisecond, func(_ []string) {
+		set := newTestCoalescingSet(ctx, t, 100*time.Millisecond, func(_ []string) {
 			callbackCount.Add(1)
 		})
 		defer set.Shutdown(t.Context())
@@ -264,7 +264,7 @@ func TestAttack_CloseWhileCallbackRunning(t *testing.T) {
 		callbackRunning := make(chan struct{})
 		callbackFinished := make(chan struct{})
 
-		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(_ []string) {
+		set := newTestCoalescingSet(ctx, t, 50*time.Millisecond, func(_ []string) {
 			close(callbackRunning)
 			// Simulate long-running callback
 			<-time.After(150 * time.Millisecond)
@@ -310,7 +310,7 @@ func TestAttack_ZeroWindowRaceCondition(t *testing.T) {
 		var mu sync.Mutex
 
 		delivered := make(chan struct{}, 1)
-		set := NewCoalescingSet(ctx, 0, func(keys []string) {
+		set := newTestCoalescingSet(ctx, t, 0, func(keys []string) {
 			callbackCount.Add(1)
 			mu.Lock()
 			receivedBatches = append(receivedBatches, keys)
@@ -359,7 +359,7 @@ func TestAttack_ZeroWindowRaceCondition(t *testing.T) {
 func TestAttack_ConcurrentClose(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := context.Background()
-		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(_ []string) {})
+		set := newTestCoalescingSet(ctx, t, 50*time.Millisecond, func(_ []string) {})
 
 		// Add some keys
 		set.Add("entity-1")
@@ -393,7 +393,7 @@ func TestAttack_ConcurrentClose(t *testing.T) {
 func TestAttack_AddAfterClose(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx := context.Background()
-		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(_ []string) {})
+		set := newTestCoalescingSet(ctx, t, 50*time.Millisecond, func(_ []string) {})
 
 		// Close immediately
 		require.NoError(t, set.Shutdown(t.Context()))
@@ -425,7 +425,7 @@ func TestAttack_LargeKeyNames(t *testing.T) {
 		ctx := context.Background()
 		callbackCh := make(chan []string, 1)
 
-		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(keys []string) {
+		set := newTestCoalescingSet(ctx, t, 50*time.Millisecond, func(keys []string) {
 			callbackCh <- keys
 		})
 		defer set.Shutdown(t.Context())

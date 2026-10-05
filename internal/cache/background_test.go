@@ -64,7 +64,7 @@ func TestCoalescingSetShutdownLeavesNothingRunning(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		ctx, release := context.WithCancel(context.Background())
 		delivered := make(chan []string, 1)
-		set := NewCoalescingSet(ctx, 50*time.Millisecond, func(keys []string) {
+		set := newTestCoalescingSet(ctx, t, 50*time.Millisecond, func(keys []string) {
 			delivered <- keys
 		})
 		set.Add("entity-1")
@@ -78,11 +78,16 @@ func TestCoalescingSetShutdownLeavesNothingRunning(t *testing.T) {
 	})
 }
 
-func TestCoalescingSetNilContextPanicsAtTheCall(t *testing.T) {
+// TestCoalescingSetNilContextRefusedAtTheCall: NewCoalescingSet returns an error, so a nil context
+// is refused with one, as NewTTL refuses it (design D7: an error where the entry returns one), and
+// no goroutine starts.
+func TestCoalescingSetNilContextRefusedAtTheCall(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var fired bool
 		var nilCtx context.Context // the nil context is the input under test
-		assert.Panics(t, func() { NewCoalescingSet(nilCtx, time.Millisecond, func([]string) { fired = true }) })
+		set, err := NewCoalescingSet(nilCtx, time.Millisecond, func([]string) { fired = true })
+		assert.True(t, errs.IsInvalid(err), "a nil context is an invalid argument: %v", err)
+		assert.Nil(t, set)
 		// Had a goroutine started, it would still be running here and the bubble would not return;
 		// the clock is moved past several windows to give it every chance to run.
 		<-time.After(10 * time.Millisecond)
@@ -96,7 +101,7 @@ func TestCoalescingSetShutdownUnderABlockedCallback(t *testing.T) {
 		started := make(chan struct{})
 		release := make(chan struct{})
 		returned := make(chan struct{})
-		set := NewCoalescingSet(context.Background(), 50*time.Millisecond, func([]string) {
+		set := newTestCoalescingSet(context.Background(), t, 50*time.Millisecond, func([]string) {
 			close(started)
 			<-release
 			close(returned)
@@ -122,7 +127,7 @@ func TestCoalescingSetShutdownUnderABlockedCallback(t *testing.T) {
 
 func TestCoalescingSetShutdownRefusesNilContext(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		set := NewCoalescingSet(context.Background(), time.Hour, func([]string) {})
+		set := newTestCoalescingSet(context.Background(), t, time.Hour, func([]string) {})
 		var nilCtx context.Context // the nil context is the input under test
 		require.Error(t, set.Shutdown(nilCtx))
 		require.NoError(t, set.Shutdown(context.Background()))

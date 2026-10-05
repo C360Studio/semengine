@@ -600,7 +600,7 @@ Every `go` statement in the 15 packages at the pin outside the two services (the
 | `pkg/resource.Watcher` | `StartBackgroundCheck(ctx)` (`watcher.go:141-154`) starts `go w.backgroundLoop(ctx)` (`:153`); `Stop()` waits on `wg.Wait()` with no bound (`:218-227`); the loop calls the caller's check function (`:183`) | Shape 1: `Run(ctx) error` is the loop itself, returns when `ctx` ends, refuses nil with an error, and refuses a second `Run` while one is in progress with an error at the call (carried from the pin's "already running" guard, `watcher.go:145-147`). `StartBackgroundCheck`, `Stop`, and the `cancel` and `wg` fields are removed, with their doc references (`watcher.go:108, :138-140`; `doc.go:21, :57, :66, :85, :149, :151, :159`) |
 | TTL cache | `go c.cleanup(ctx)` (`ttl.go:73`); `Close()` (`:249-263`) waits on `c.done` or a fixed `time.After(5 * time.Second)` (`:258-262`); a nil context panics in the goroutine (`:276`) | Shape 2: `Close() error` closes `shutdown` and waits on `c.done`, with the fixed wait removed; `cache.NewTTL` refuses nil with an error |
 | Hybrid cache | `go c.cleanup(ctx)` (`hybrid.go:79`); `Close()` (`:276-292`) has the same fixed 5 s wait (`:289`) | Shape 2, as the TTL cache; `cache.NewFromConfig` refuses nil with an error |
-| `pkg/cache.CoalescingSet` | `go c.run(ctx)` (`coalescing_set.go:45`); each tick calls `fireBatch` (`:142`), which calls the caller's callback outside the lock (`:163-175`); `Close()` waits on `<-c.done` with no bound (`:116-126`); a nil context panics in the goroutine (`:136`) | Shape 3: `Shutdown(ctx) error` replaces `Close()`; `NewCoalescingSet` panics at the call on nil |
+| `pkg/cache.CoalescingSet` | `go c.run(ctx)` (`coalescing_set.go:45`); each tick calls `fireBatch` (`:142`), which calls the caller's callback outside the lock (`:163-175`); `Close()` waits on `<-c.done` with no bound (`:116-126`); a nil context panics in the goroutine (`:136`) | Shape 3: `Shutdown(ctx) error` replaces `Close()`; `NewCoalescingSet` refuses nil with an error at the call |
 
 Why these shapes, at the pin:
 
@@ -623,9 +623,13 @@ Why these shapes, at the pin:
   convention, `WithMetrics(registry, prefix)`: `WithCoalescingMetrics(registry, prefix)` registers
   `semstreams_cache_coalescing_callback_panics_total{component=prefix}` through `metric.RegisterOrGet` (D9), and a
   nil registry or an empty prefix is ignored, as `WithMetrics` ignores them. `WithPanicLogger` stays because the
-  package has no logger path; it defaults to `slog.Default()`. `NewCoalescingSet` returns no error, so a counter the
-  registry refuses is logged at error level and the set runs with panics logged, not counted: a declared degrade
-  (`TestCoalescingSet_PanicCounterRefusedIsLoggedAndPanicsStillRecovered`). Neither option has a present production
+  package has no logger path; it defaults to `slog.Default()`. `NewCoalescingSet` returns an error, as the cache
+  constructors do: a counter the registry refuses is returned as a transient metrics-registration error, the way
+  `newLRUCache`, `newTTLCache` and `newHybridCache` return theirs
+  (`TestCoalescingSet_RefusesARegistryThatRefusesThePanicCounter`), and, by the rule above (an error where the entry
+  returns one), a nil context or a nil callback is an invalid-argument error, not a panic
+  (`TestCoalescingSetNilContextRefusedAtTheCall`, `TestCoalescingSet_NilCallbackRefusedAtTheCall`). No goroutine
+  starts on any of the three. Neither option has a present production
   consumer; `NewCoalescingSet` itself has none in this tree. They exist because the ruling requires the panic to be
   logged and counted.
 - **`Watcher` takes shape 1.** Its loop calls a caller's check function, and its start and stop have no caller to

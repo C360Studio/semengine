@@ -311,21 +311,21 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       2026-10-03 (#9 comment 5968830525: an admitted package is ported whole, and only dead surface is removed; #9
       comment 5968665464: ported docs name SemEngine paths). Each finding with a test written first, failing first
       implementer-reported: F1 (18424c3) a `CoalescingSet` callback panic ends the process (superseded below) and
-      a nil callback panics at the call; `prochost` gains `Process.StderrPath` with a `process-host` scenario (cut
-      below); the pin's `CallbackPanic` and `NilCallback` tests are replaced, and their three sleeps with them: of
-      the pin's 26 sleeps, 21 remain, repaired (two went with `TestEvictCallback`). F2 (5647994) concurrent
-      `Close` of the TTL and hybrid caches. F3 (68f10f9) the direct constructors refuse invalid dimensions;
-      `NewTemporalResolverWithCache`, its one `natsclient` caller, is dropped with `TemporalResolver` (task 3.7).
-      F4 (2e2060a) `StatsInterval` removed, with the dead surface the pin-wide search found (f56fcf6: `Entry`,
-      `IsExpired`, `Touch`, `WithStats`, `StatsFromContext`, `ContextKeyStats`, `Statistics.MemoryUsage`); the one
-      outside reference, `processor/rule/config.go:245` and its docs, is a port-refactor item on the row. F5
-      (65d9740, d62fdd9) unknown keys refused; `FuzzConfigUnmarshalJSON`, whose `null` seed found a pin panic, now
-      fixed; the generated-check decision is in design D7. F6 (4fcfc46) `TestAttack_CallbackLatency` fails and
-      ends when an `Add` blocks. F7 (58ffe7b) `doc.go` and `README.md` name `./internal/cache` and drop
-      `cache.NewHybrid`, which does not exist; the `message` hold no longer applies (task 3.6 is done) and is
-      gone. README import paths (3485af3) in `message`, `pkg/retry`, `pkg/types` and `vocabulary`, each an `adapt`
-      item on its row. Rows: `pkg/cache` (contract, `known_risks`, `proving_tests`), `message`, `pkg/retry`,
-      `pkg/types`, `vocabulary`.
+      a nil callback panics at the call (an error since task 3.13); `prochost` gains `Process.StderrPath` with a
+      `process-host` scenario (cut below); the pin's `CallbackPanic` and `NilCallback` tests are replaced, and
+      their three sleeps with them: of the pin's 26 sleeps, 21 remain, repaired (two went with
+      `TestEvictCallback`). F2 (5647994) concurrent `Close` of the TTL and hybrid caches. F3 (68f10f9) the direct
+      constructors refuse invalid dimensions; `NewTemporalResolverWithCache`, its one `natsclient` caller, is
+      dropped with `TemporalResolver` (task 3.7). F4 (2e2060a) `StatsInterval` removed, with the dead surface the
+      pin-wide search found (f56fcf6: `Entry`, `IsExpired`, `Touch`, `WithStats`, `StatsFromContext`,
+      `ContextKeyStats`, `Statistics.MemoryUsage`); the one outside reference, `processor/rule/config.go:245` and
+      its docs, is a port-refactor item on the row. F5 (65d9740, d62fdd9) unknown keys refused;
+      `FuzzConfigUnmarshalJSON`, whose `null` seed found a pin panic, now fixed; the generated-check decision is
+      in design D7. F6 (4fcfc46) `TestAttack_CallbackLatency` fails and ends when an `Add` blocks. F7 (58ffe7b)
+      `doc.go` and `README.md` name `./internal/cache` and drop `cache.NewHybrid`, which does not exist; the
+      `message` hold no longer applies (task 3.6 is done) and is gone. README import paths (3485af3) in `message`,
+      `pkg/retry`, `pkg/types` and `vocabulary`, each an `adapt` item on its row. Rows: `pkg/cache` (contract,
+      `known_risks`, `proving_tests`), `message`, `pkg/retry`, `pkg/types`, `vocabulary`.
       - F1's process-ending panic is superseded by owner ruling 5994720412 item 3: the panic is recovered, logged and
         counted, the batch dropped and later batches fired
         (`TestCoalescingSet_CallbackPanicIsRecoveredAndLaterBatchesFire`; the `internal/cache` row).
@@ -901,8 +901,13 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       - Item 3, `9e5b53a` and `2a9909e`: task 3.6a's sub-bullet and design D7.
         `TestCoalescingSet_CallbackPanicIsRecoveredAndLaterBatchesFire` failed first (the binary died with the
         callback's panic). Its mutants (no count, no log, no recover, the registry ignored) each fail it.
-        `TestCoalescingSet_PanicCounterRefusedIsLoggedAndPanicsStillRecovered` covers a counter the registry refuses.
-        Its mutants (no refusal log, the registry ignored) each fail it.
+      - Re-check MEDIUM at `a517c8c`: `NewCoalescingSet` returns an error, like the cache constructors.
+        - `TestCoalescingSet_RefusesARegistryThatRefusesThePanicCounter` replaces the logged-degrade test: a refused
+          panic counter is a transient error, with no goroutine started. It failed first against the degrade, and a
+          mutant that swallows the refusal fails it.
+        - A nil context or nil callback is an invalid-argument error, not a panic (design D7: an error where the entry
+          returns one): `TestCoalescingSetNilContextRefusedAtTheCall` and `TestCoalescingSet_NilCallbackRefusedAtTheCall`
+          failed first (the binary panicked). A mutant accepting a nil callback fails its test.
       - Item 2, `5ecc016`: the caller's context bounds setup only. Handlers run under a context the client owns per
         consumer, cancelled when Close begins, and Close joins them (design D3 `natsclient-consume-handler-context`;
         `transport-client` requirement).

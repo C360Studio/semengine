@@ -1174,7 +1174,9 @@
     Adapt item (Codex review of record, PR #48 comment 5996819933, F30; commit 344044c):
     GenericJSONPayload.UnmarshalJSON refuses what json.Unmarshal refuses (json.Valid) and decodes with
     UseNumber, so every number keeps its literal as a json.Number; at the pin each became a float64. Two carried
-    pin tests and three README examples that read float64 read json.Number. Doc comments, same rulings (commit
+    pin tests and three README examples that read float64 read json.Number. Malformed input and a well-formed
+    body whose data is not an object are both refused with an invalid-data error; at the pin both returned the
+    standard library's unclassified error (early check E7). Doc comments, same rulings (commit
     5463f93): generic_json.go tree lines :31-32, :38, :53-58, :60-63, :75-76 and :87-88 at that commit describe
     core.json.v1 as the fallback for JSON of unknown shape, decoded only after RegisterPayloads. Product prose
     (#9 comment 5984291337), tree lines: doc.go :1 and README.md :3, :7, :30 name SemEngine, not SemStreams;

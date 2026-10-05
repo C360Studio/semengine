@@ -239,7 +239,12 @@ func (g *GenericJSONPayload) UnmarshalJSON(data []byte) error {
 	}
 	d := json.NewDecoder(bytes.NewReader(data))
 	d.UseNumber()
-	return d.Decode((*Alias)(g))
+	// A well-formed value of the wrong shape (data that is not an object) is refused with the
+	// same invalid-data class as malformed input.
+	if err := d.Decode((*Alias)(g)); err != nil {
+		return errs.WrapInvalid(err, "GenericJSONPayload", "UnmarshalJSON", "data is not a JSON object")
+	}
+	return nil
 }
 
 // RuleFields implements RuleReadable: the whole data map IS this payload's

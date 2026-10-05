@@ -253,3 +253,23 @@ func TestGenericJSONRefusesInvalidUTF8AtDepth(t *testing.T) {
 		t.Run(name, func(t *testing.T) { requireRefused(t, tc.data, tc.want...) })
 	}
 }
+
+// UnmarshalJSON refuses malformed input and a well-formed value of the wrong shape with the same
+// invalid-data class (early check E7), and leaves no partial data behind for malformed input.
+func TestGenericJSONUnmarshalRefusalsAreInvalid(t *testing.T) {
+	for name, in := range map[string]string{
+		"malformed":        `{"data":{"k":1}`,
+		"trailing data":    `{"data":{}} 1`,
+		"data is a list":   `{"data":[1,2]}`,
+		"data is text":     `{"data":"text"}`,
+		"top is a list":    `[]`,
+		"data is a number": `{"data":3}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			var p message.GenericJSONPayload
+			if err := p.UnmarshalJSON([]byte(in)); !errs.IsInvalid(err) {
+				t.Fatalf("UnmarshalJSON(%s) = %v, want an invalid-data error", in, err)
+			}
+		})
+	}
+}

@@ -125,7 +125,7 @@ func Do(ctx context.Context, cfg Config, fn func() error) error {
 
 		// Check if context is cancelled
 		if ctx.Err() != nil {
-			return fmt.Errorf("retry cancelled before attempt %d: %w", attempt, ctx.Err())
+			return fmt.Errorf("retry cancelled after attempt %d failed: %w", attempt, ctx.Err())
 		}
 
 		// Don't sleep after the last attempt

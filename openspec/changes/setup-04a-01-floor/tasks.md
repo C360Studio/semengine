@@ -846,6 +846,36 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         vet 1, lint 2, vuln 1, ledger:check 4, test:unit 57, test:integration 142, cover:check 4, test:repeat
         140, 353 s in all; the runner recorded `go_test_ms=132550` for the lane (local evidence directory).
 
+- [x] 3.12 (D) Surface audit of vocabulary, message capability interfaces and pkg/security (owner rulings
+      5985697767, 5985900154): the architect's inventory, inventory-reviewed PASS, is committed as
+      `openspec/changes/setup-04a-01-floor/surface-audit.md` (lint fixes only) and cited from the `vocabulary`,
+      `message`, `pkg/security` and `pkg/tlsutil` rows; what it marks dead is removed and recorded on those rows by
+      pin line, with its readers.
+      - Done. `b902520` the audit file; `3b7c8aa` `vocabulary` keeps 92 of 258 exported identifiers (162 removed;
+        README and `doc.go` corrected, including the SSN/SOSA constants that never existed);
+        `TestGetRelationshipPredicates` asserts `graph.rel.contains` is the only `graph.rel.*` registration (a
+        mutant re-registering `graph.rel.near` fails it); `a89555c` the ten `message` capability interfaces removed,
+        `IndexingProfiler` kept, the runtime-discovery and spatial-indexing docs corrected; `6248299` `pkg/security`
+        drops 4 `Default*` and 7 `Validate` (row now `adapt`, its "no I/O" claim corrected), gains
+        `config_test.go` (mutants: a renamed JSON key, an uncovered new field), and `internal/tlsutil` refuses a
+        `MinVersion` other than "1.2", "1.3" or empty (failed first: 18 of 18 near-miss subtests accepted; mutants:
+        the restored 1.2 fallback, a fatal class for the refusal); `a2cf43d` `PredicateAuthority` cut. The tree has
+        no mention of a removed name outside the audit file and the ledger's records of it (`git grep` over code,
+        docs, specs, design and ledger). `TestPublicSignatures` passes with its count unchanged; no census test
+        names these packages. Not covered: the README sub-package sections (`bfo/`, `cco/`, `agentic/`, `export/`)
+        and the `docs/vocabulary/` links in `vocabulary/README.md`, and `message/README.md`'s References links,
+        describe packages SemEngine does not have and are left for the README pass; they are outside the audit's
+        cut.
+- [ ] 3.12a Hold: the owner's design choice on #9. (D) The `RequireClientCert` fail-open (owner ruling
+      5985900154, item 3): with mTLS enabled,
+      `RequireClientCert` false and `AllowedClientCNs` empty, `internal/tlsutil` admits a client with no
+      certificate, and the schema tag (`pkg/security/config.go:91`) calls the default true while the Go zero value
+      is false. Fixing it needs a design choice the rulings leave open: let the zero value mean "required" (a
+      pointer or an inverted field, which changes the exported field and its JSON key), or refuse the combination
+      at load (which removes the optional-client-certificate mode that `TestMTLSHandshake_OptionalClientCert_*`
+      and `TestLoadServerTLSConfigWithMTLS_OptionalClientCert` hold). The schema tag is left as it is until the
+      choice is made, since one answer makes it true.
+
 ## 4. Repair evidence this change can produce (ruling g)
 
 - [x] 4.1 (D) Settlement, `natsclient` half: the 18 unit and 3 integration settlement tests pass against `natsfixture`;

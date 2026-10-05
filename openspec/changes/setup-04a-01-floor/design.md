@@ -81,8 +81,9 @@ in the floor whole because it is admitted: six admitted packages import it at th
 `storage/objectstore`). In this change nothing imports it. The loaders, `pkg/acme`, `go-acme/lego/v4` and their two
 defects (D7) move to change 5, which ports `output/websocket` (foundation D2 row 5); `input/websocket` and
 `output/httppost` call them too and are in no change of the chain, so the change that ports them inherits the row (#9
-comment 5950822861). `pkg/platform` and `pkg/security` have no tests at the pin; none are invented — their rows say so
-and D10 does not gate them. Ported files land at their row's `destination` (D5). Not ported: `test_client.go`
+comment 5950822861). `pkg/platform` and `pkg/security` have no tests at the pin; none are invented for `pkg/platform` —
+its row says so and D10 does not gate it. `pkg/security` gains tests for its seven kept types (owner ruling, #9
+comment 5985900154, item 3; its row). Ported files land at their row's `destination` (D5). Not ported: `test_client.go`
 (`adapt → natsfixture`) and `test_options.go` (`defer-exclude`); by owner ruling (#9, comment 5941920346, Q3), the three
 test files that exercise them — `test_client_factory_test.go`, `test_client_integration_test.go` and
 `test_client_readiness_test.go`
@@ -517,16 +518,19 @@ v1.54.0 cites in this section stand in for.
   5941920346, Q1: a repaired test file makes the row `adapt`): `adapt` for `natsclient` (the `NewTestClient` sites,
   `test_client.go`, the D3 items, the D8 repairs, the surface audit's drops, the census rewrite, the D9 gauges),
   `metric` (D3 items), `payloadregistry` (`testing.go` rehomed), `pkg/cache` and `pkg/resource` (the D7 items, the D8
-  repairs), `pkg/tlsutil` (the ACME loaders cut, D1) and `pkg/retry` (D8 repair); and, by owner ruling (#9, comment
-  5957221949, which replaced comment 5955265930: a ported `README.md` keeps the pin's text except for the edits
-  markdownlint requires and edits to passages that describe behavior the ported code no longer has, each behavior edit
-  listed by README line as an `adapt` item; and comment 5968665464: import paths and module references rewritten to
-  SemEngine, each an `adapt` item), `vocabulary` and `pkg/types`, whose READMEs need lint fixes (358a01e);
-  `pkg/platform` (a doc comment corrected, #72 ruling D, task 3.6b); `message` (task 3.6b and its row: README import
-  paths and the decode path corrected, the federation family removed as dead surface (#72 comment 5969293525),
-  timestamps decoded strictly as integer milliseconds, and invalid UTF-8 refused in the source, the type and a generic
-  payload, owner rulings #9 comments 5969522395 and 5969776736 and #9 comment 5970334875); `carry` for the other
-  four: `pkg/security`, `pkg/timestamp`, `pkg/errs` and `pkg/projection/contract`.
+  repairs), `pkg/tlsutil` (the ACME loaders cut, D1; an unknown MinVersion refused, owner ruling #9 comment 5985900154)
+  and `pkg/retry` (D8 repair); and, by owner ruling (#9, comment 5957221949, which replaced comment 5955265930: a ported
+  `README.md` keeps the pin's text except for the edits markdownlint requires and edits to passages that describe
+  behavior the ported code no longer has, each behavior edit listed by README line as an `adapt` item; and comment
+  5968665464: import paths and module references rewritten to SemEngine, each an `adapt` item), `vocabulary` and
+  `pkg/types`, whose READMEs need lint fixes (358a01e), and `vocabulary`'s 162 dead identifiers and `PredicateAuthority`
+  (owner ruling #9 comment 5985900154, surface audit); `pkg/platform` (a doc comment corrected, #72 ruling D, task
+  3.6b); `message` (task 3.6b and its row: README import paths and the decode path corrected, the federation family
+  removed as dead surface (#72 comment 5969293525), the ten capability interfaces removed (owner ruling #9 comment
+  5985900154), timestamps decoded strictly as integer milliseconds, and invalid UTF-8 refused in the source, the type
+  and a generic payload, owner rulings #9 comments 5969522395 and 5969776736 and #9 comment 5970334875); `pkg/security`
+  (its 11 dead identifiers removed, owner ruling #9 comment 5985900154, surface audit); `carry` for the other three:
+  `pkg/timestamp`, `pkg/errs` and `pkg/projection/contract`.
 - Existing file rows updated: `natsclient/test_client.go` (`adapt`, now with its evidence in `proving_tests`),
   `natsclient/test_options.go` (`defer-exclude`, honoured); new `defer-exclude` file rows
   `natsclient/test_options_test.go` and `natsclient/mapped_port_retry_test.go` (forced by Q3); a new file row for

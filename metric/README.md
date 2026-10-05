@@ -33,24 +33,20 @@ import (
 Centralized registry that manages Prometheus metric registration, provides core platform metrics, and allows services to
 register custom metrics with conflict detection and lifecycle management.
 
-### CoreMetrics
+### Core metrics (`Metrics`)
 
 Pre-defined platform-level metrics covering service status, message processing throughput, error rates, health check
 status, and NATS connection monitoring for consistent operational visibility.
 
 ### Metrics Server
 
-HTTP server that exposes collected metrics in Prometheus format with configurable port and path, health endpoints, and
-OpenMetrics support for integration with monitoring systems.
-
-During composed production boot, `service.Manager` privately registers the
-fixed `semstreams_startup_units` collector and owns the configured server
-listener. A standalone `metric.Server` retains its direct lifecycle behavior.
+HTTP server that exposes collected metrics in Prometheus format with configurable port and path, a `/health` endpoint
+that answers 200 with the plain-text body `OK`, and OpenMetrics support for integration with monitoring systems.
 
 ### Service Metrics
 
-Framework for services to register custom metrics including counters, gauges, and histograms with automatic namespacing
-and conflict prevention for service-specific monitoring needs.
+Services register their own counters, gauges and histograms with `RegisterOrGet`, keyed by service and metric name. It
+refuses a registration that conflicts with one already held; it does not add a namespace or prefix to the metric name.
 
 ## Usage
 
@@ -59,9 +55,11 @@ and conflict prevention for service-specific monitoring needs.
 ```go
 import (
     "context"
+    "log"
     "time"
 
     "github.com/c360studio/semengine/metric"
+    "github.com/c360studio/semengine/pkg/security"
 )
 
 // Create metrics registry with core platform metrics
@@ -117,20 +115,21 @@ queueGauge := prometheus.NewGauge(prometheus.GaugeOpts{
     Help:      "Current GPS processing queue size",
 })
 
-// Register custom metrics with the registry, keeping the collectors it returns
+// Register custom metrics with the registry, keeping the collectors it returns. On an
+// error the returned collector is nil: stop rather than use it.
 messageCounter, err := metric.RegisterOrGet(registry, "gps-service", "coordinates_processed", messageCounter)
 if err != nil {
-    log.Printf("Failed to register counter: %v", err)
+    return fmt.Errorf("register counter: %w", err)
 }
 
 latencyHistogram, err = metric.RegisterOrGet(registry, "gps-service", "processing_duration", latencyHistogram)
 if err != nil {
-    log.Printf("Failed to register histogram: %v", err)
+    return fmt.Errorf("register histogram: %w", err)
 }
 
 queueGauge, err = metric.RegisterOrGet(registry, "gps-service", "queue_size", queueGauge)
 if err != nil {
-    log.Printf("Failed to register gauge: %v", err)
+    return fmt.Errorf("register gauge: %w", err)
 }
 
 // Use the custom metrics
@@ -157,24 +156,25 @@ Central registry for managing all platform metrics.
 
 ```go
 type MetricsRegistry struct {
-    // private fields
+    Metrics *Metrics // the core platform metrics; also returned by CoreMetrics
+    // other fields are private
 }
 
 func NewMetricsRegistry() *MetricsRegistry                 // Create new registry
 func (r *MetricsRegistry) PrometheusRegistry() *prometheus.Registry  // Get Prometheus registry
-func (r *MetricsRegistry) CoreMetrics() *CoreMetrics      // Get core platform metrics
+func (r *MetricsRegistry) CoreMetrics() *Metrics          // Get core platform metrics
 
 // Service metric registration: one collector per service/metric key
 func RegisterOrGet[C prometheus.Collector](r *MetricsRegistry, serviceName, metricName string, candidate C) (C, error)
 func (r *MetricsRegistry) Unregister(serviceName, metricName string) bool  // Remove metric
 ```
 
-#### `CoreMetrics`
+#### `Metrics`
 
-Pre-defined platform-level metrics for consistent monitoring.
+Pre-defined platform-level metrics for consistent monitoring, returned by `CoreMetrics()`.
 
 ```go
-type CoreMetrics struct {
+type Metrics struct {
     // Service metrics
     ServiceStatus      *prometheus.GaugeVec    // Service status (0=stopped, 1=starting, 2=running, 3=stopping, 4=failed)
     MessagesReceived   *prometheus.CounterVec  // Total messages received by service and type
@@ -183,26 +183,27 @@ type CoreMetrics struct {
     ProcessingDuration *prometheus.HistogramVec // Processing duration by service and operation
     ErrorsTotal        *prometheus.CounterVec  // Total errors by service and type
     HealthCheckStatus  *prometheus.GaugeVec    // Health status by service (0=unhealthy, 1=healthy)
+    LogEntriesTotal    *prometheus.CounterVec  // WARN+ log records by component and level (no Record method)
 
     // NATS metrics
     NATSConnected      prometheus.Gauge        // NATS connection status (0=disconnected, 1=connected)
-    NATSRTT            prometheus.Gauge        // NATS round-trip time in milliseconds
+    NATSRTT            prometheus.Gauge        // NATS round-trip time in seconds
     NATSReconnects     prometheus.Counter      // Total NATS reconnections
     NATSCircuitBreaker prometheus.Gauge        // Circuit breaker status (0=closed, 1=open, 2=half-open)
 }
 
 // Recording methods
-func (c *CoreMetrics) RecordServiceStatus(service string, status int)
-func (c *CoreMetrics) RecordMessageReceived(service, messageType string)
-func (c *CoreMetrics) RecordMessageProcessed(service, messageType, status string)
-func (c *CoreMetrics) RecordMessagePublished(service, subject string)
-func (c *CoreMetrics) RecordProcessingDuration(service, operation string, duration time.Duration)
-func (c *CoreMetrics) RecordError(service, errorType string)
-func (c *CoreMetrics) RecordHealthStatus(service string, healthy bool)
-func (c *CoreMetrics) RecordNATSStatus(connected bool)
-func (c *CoreMetrics) RecordNATSRTT(rtt time.Duration)
-func (c *CoreMetrics) RecordNATSReconnect()
-func (c *CoreMetrics) RecordCircuitBreakerState(state int)
+func (c *Metrics) RecordServiceStatus(service string, status int)
+func (c *Metrics) RecordMessageReceived(service, messageType string)
+func (c *Metrics) RecordMessageProcessed(service, messageType, status string)
+func (c *Metrics) RecordMessagePublished(service, subject string)
+func (c *Metrics) RecordProcessingDuration(service, operation string, duration time.Duration)
+func (c *Metrics) RecordError(service, errorType string)
+func (c *Metrics) RecordHealthStatus(service string, healthy bool)
+func (c *Metrics) RecordNATSStatus(connected bool)
+func (c *Metrics) RecordNATSRTT(rtt time.Duration)
+func (c *Metrics) RecordNATSReconnect()
+func (c *Metrics) RecordCircuitBreakerState(state int)
 ```
 
 #### `Server`
@@ -216,6 +217,7 @@ type Server struct {
 
 func NewServer(port int, path string, registry *MetricsRegistry, security security.Config) *Server
 func (s *Server) Start(context.Context) error // One-shot synchronous bind; context owns served requests
+func (s *Server) StartWithListener(context.Context, net.Listener) error // Start on a caller-bound listener
 func (s *Server) Stop(context.Context) error  // Caller-bounded graceful attempt, then bounded force-close/join
 func (s *Server) Address() string              // Get server address
 ```
@@ -266,38 +268,15 @@ services without each service needing to define standard metrics.
 ### Integration Points
 
 - **Dependencies**: Prometheus Go client library for metrics implementation and HTTP handlers
-- **Used By**: Service framework for automatic metrics collection, components for performance monitoring
+- **Used By**: `natsclient` (`WithMetrics`, JetStream metrics) and `internal/cache` (`WithMetrics`,
+  `WithCoalescingMetrics`)
 - **Data Flow**: `Service Operations → Metric Recording → Registry Storage → HTTP Endpoint → Prometheus Scraping`
 
 ## Configuration
 
-### Metrics Server Configuration
-
-```yaml
-# Metrics server configuration
-metrics:
-  enabled: true
-  port: 9090           # HTTP server port
-  path: "/metrics"     # Metrics endpoint path
-  include_go_metrics: true  # Include Go runtime metrics
-```
-
-### Service Metrics Configuration
-
-```yaml
-# Service-specific metrics configuration
-services:
-  gps-service:
-    metrics:
-      custom_metrics:
-        - name: "coordinates_processed"
-          type: "counter"
-          help: "Total GPS coordinates processed"
-        - name: "processing_latency"
-          type: "histogram"
-          help: "GPS processing latency"
-          buckets: [0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0]
-```
+The package reads no configuration file. The server's port and path are `NewServer` arguments, its TLS and mTLS
+settings come from the `security.Config` passed to it, and the Go runtime and process collectors are always registered
+by `NewMetricsRegistry`. Service metrics are declared in code with `RegisterOrGet`.
 
 ## Error Handling
 
@@ -424,7 +403,7 @@ func TestCoreMetrics(t *testing.T) {
 - **Metric Recording**: O(1) operation for most Prometheus metric types
 - **Registry Operations**: Thread-safe with read-write mutex - concurrent reads allowed
 - **Memory Usage**: Metrics consume memory proportional to label cardinality (avoid high-cardinality labels)
-- **HTTP Server**: Single-threaded for simplicity - sufficient for typical Prometheus scraping patterns
+- **HTTP Server**: `net/http` serves each request on its own goroutine; `Stop` waits for every admitted request
 
 ## Examples
 
@@ -440,13 +419,14 @@ import (
     "time"
 
     "github.com/c360studio/semengine/metric"
+    "github.com/c360studio/semengine/pkg/security"
     "github.com/prometheus/client_golang/prometheus"
 )
 
 type GPSService struct {
     name         string
     registry     *metric.MetricsRegistry
-    coreMetrics  *metric.CoreMetrics
+    coreMetrics  *metric.Metrics
 
     // Custom metrics
     coordinatesProcessed prometheus.Counter
@@ -623,13 +603,14 @@ import (
     "time"
 
     "github.com/c360studio/semengine/metric"
+    "github.com/c360studio/semengine/pkg/security"
     "github.com/prometheus/client_golang/prometheus"
 )
 
 type MonitoredService struct {
     name        string
     registry    *metric.MetricsRegistry
-    coreMetrics *metric.CoreMetrics
+    coreMetrics *metric.Metrics
 
     // Service-specific metrics
     requestCounter  prometheus.Counter
@@ -833,10 +814,9 @@ func main() {
 
 ## Related Packages
 
-- [`pkg/service`](../service): Service framework with automatic metrics integration
-- [`pkg/health`](../health): Health monitoring with metrics recording
-- [`pkg/component`](../component): Component framework with performance metrics
-- [`pkg/errors`](../errors): Error classification with metrics integration
+- [`natsclient`](../natsclient): NATS client that records JetStream stream and consumer metrics in a registry
+- [`internal/cache`](../internal/cache): caches that export hit, miss and size metrics
+- [`pkg/errs`](../pkg/errs): error classification used by this package's refusals
 
 ## License
 

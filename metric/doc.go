@@ -1,5 +1,5 @@
-// Package metric provides Prometheus-based metrics collection and HTTP server
-// for StreamKit platform monitoring and observability.
+// Package metric provides Prometheus-based metrics collection and an HTTP server
+// for monitoring and observability.
 //
 // The package offers a centralized metrics registry managing both core platform
 // metrics (service status, message processing, NATS health) and custom
@@ -34,47 +34,62 @@
 //	// Record core platform metrics
 //	coreMetrics := registry.CoreMetrics()
 //	coreMetrics.RecordServiceStatus("my-service", 2)
-//	coreMetrics.RecordMessagesProcessed("my-service", 1500)
-//	coreMetrics.RecordNATSHealth(1.0)
+//	coreMetrics.RecordMessageProcessed("my-service", "gps.position", "success")
+//	coreMetrics.RecordNATSStatus(true)
 //
 // The metrics server will expose Prometheus-formatted metrics at http://localhost:9090/metrics
-// and a health check at http://localhost:9090/health.
+// and a health check at http://localhost:9090/health, which answers 200 with the plain-text
+// body OK.
 //
 // # Core Metrics
 //
-// The package automatically registers core platform metrics tracking:
+// The package automatically registers core platform metrics (the Metrics type), all
+// in the "semstreams" namespace:
 //
-//   - Service lifecycle: service_status (0=stopped, 1=starting, 2=running, 3=stopping)
-//   - Message processing: messages_processed_total, messages_failed_total
-//   - Processing performance: message_processing_duration_seconds
-//   - NATS connectivity: nats_connection_status, nats_messages_total
-//   - Error tracking: errors_total, panic_total
+//   - Service lifecycle: semstreams_service_status{service} (0=stopped, 1=starting,
+//     2=running, 3=stopping, 4=failed)
+//   - Message flow: semstreams_messages_received_total{service,type},
+//     semstreams_messages_processed_total{service,type,status},
+//     semstreams_messages_published_total{service,subject}
+//   - Processing performance: semstreams_processing_duration_seconds{service,operation}
+//   - Errors and health: semstreams_errors_total{service,type},
+//     semstreams_health_status{service}
+//   - Logging: semstreams_log_entries_total{component,level}, which has no recording
+//     method; write it through the LogEntriesTotal field
+//   - NATS connectivity: semstreams_nats_connected, semstreams_nats_rtt_seconds,
+//     semstreams_nats_reconnects_total, semstreams_nats_circuit_breaker
 //
-// Access core metrics through the registry:
+// Record core metrics through the registry:
 //
 //	coreMetrics := registry.CoreMetrics()
 //
 //	// Service lifecycle tracking
 //	coreMetrics.RecordServiceStatus("processor", 2) // 2 = running
+//	coreMetrics.RecordHealthStatus("processor", true)
 //
 //	// Message processing metrics
-//	coreMetrics.RecordMessagesProcessed("processor", 100)
-//	coreMetrics.RecordMessagesFailed("processor", 2)
-//	coreMetrics.ObserveProcessingDuration("processor", 0.150) // 150ms
+//	coreMetrics.RecordMessageReceived("processor", "sensor.reading")
+//	coreMetrics.RecordMessageProcessed("processor", "sensor.reading", "success")
+//	coreMetrics.RecordMessagePublished("processor", "output.subject")
+//	coreMetrics.RecordProcessingDuration("processor", "transform", 150*time.Millisecond)
 //
 //	// NATS connectivity
-//	coreMetrics.RecordNATSHealth(1.0) // 1.0 = healthy
-//	coreMetrics.RecordNATSMessages("input-subject", 50)
+//	coreMetrics.RecordNATSStatus(true)
+//	coreMetrics.RecordNATSRTT(2 * time.Millisecond)
+//	coreMetrics.RecordNATSReconnect()
+//	coreMetrics.RecordCircuitBreakerState(0) // 0 = closed
 //
 //	// Error tracking
 //	coreMetrics.RecordError("processor", "validation")
-//	coreMetrics.RecordPanic("processor")
 //
 // # Service-Specific Metrics
 //
 // Services register custom metrics with RegisterOrGet. There is one collector
 // per service/metric key: RegisterOrGet returns it, and the caller uses the
-// returned collector, never its own candidate.
+// returned collector, never its own candidate. When RegisterOrGet returns an
+// error the collector it returns is the zero value (nil for these types), so
+// stop on the error rather than use it; each example below continues with
+// `if err != nil { return err }`.
 //
 //	// Register a counter
 //	requestCounter, err := metric.RegisterOrGet(registry, "api-service", "api_requests_total",
@@ -111,6 +126,9 @@
 //	    []string{"status", "method"},
 //	)
 //	httpRequestsVec, err := metric.RegisterOrGet(registry, "api-service", "http_requests_total", httpRequestsVec)
+//	if err != nil {
+//	    return err
+//	}
 //
 //	// Use the metric with specific label values
 //	httpRequestsVec.WithLabelValues("200", "GET").Inc()
@@ -144,7 +162,7 @@
 //
 //   - GET / - HTML page with links to metrics and health endpoints
 //   - GET /metrics - Prometheus-formatted metrics (default path, configurable)
-//   - GET /health - JSON health check response
+//   - GET /health - 200 with the plain-text body OK
 //
 // Server configuration:
 //
@@ -165,12 +183,9 @@
 //	    log.Printf("Error stopping server: %v", err)
 //	}
 //
-// Health endpoint response format:
-//
-//	{
-//	    "status": "healthy",
-//	    "timestamp": "2024-01-15T10:30:00Z"
-//	}
+// The health endpoint answers every request that reaches it with status 200 and
+// the plain-text body OK; it reports that the server is serving, nothing more.
+// Once Stop has begun, a request is refused with 503 instead.
 //
 // # Prometheus Integration
 //
@@ -179,7 +194,7 @@
 //
 //	# prometheus.yml
 //	scrape_configs:
-//	  - job_name: 'streamkit'
+//	  - job_name: 'semengine'
 //	    static_configs:
 //	      - targets: ['localhost:9090']
 //	    metrics_path: '/metrics'
@@ -187,14 +202,10 @@
 //
 // All core metrics use the namespace "semstreams" and appropriate subsystems:
 //   - semstreams_service_status{service="..."}
-//   - semstreams_messages_processed_total{service="..."}
-//   - semstreams_nats_connection_status
+//   - semstreams_messages_processed_total{service="...",type="...",status="..."}
+//   - semstreams_nats_connected
 //
 // Service-specific metrics use the metric name as provided during registration.
-// A composed service.Manager privately registers semstreams_startup_units in
-// this registry before binding the configured Prometheus listener. It is not a
-// CoreMetrics recording API and is absent from a standalone registry until the
-// Manager claims it for a boot.
 //
 // # Registering From a Service
 //
@@ -235,9 +246,9 @@
 //	coreMetrics := registry.CoreMetrics()
 //
 //	// Safe to call from multiple goroutines
-//	go coreMetrics.RecordMessagesProcessed("service-1", 100)
-//	go coreMetrics.RecordMessagesProcessed("service-2", 200)
-//	go coreMetrics.RecordMessagesProcessed("service-3", 300)
+//	go coreMetrics.RecordMessageProcessed("service-1", "event", "success")
+//	go coreMetrics.RecordMessageProcessed("service-2", "event", "success")
+//	go coreMetrics.RecordMessageProcessed("service-3", "event", "failed")
 //
 // # Error Handling
 //
@@ -263,8 +274,11 @@
 //
 // The Server.Start(ctx) method returns errors for:
 //
+//   - A nil or already-ended context
 //   - Server instance already used (Server is one-shot)
 //   - Nil registry
+//   - mTLS enabled while server TLS is disabled
+//   - TLS configuration that cannot be loaded
 //   - HTTP server failures (port in use, permission denied)
 //
 // # Testing
@@ -279,14 +293,16 @@
 //
 //	func TestMyService_Metrics(t *testing.T) {
 //	    registry := metric.NewMetricsRegistry()
-//	    service := NewMyService(registry)
+//	    service, err := NewMyService(registry)
+//	    require.NoError(t, err)
 //
 //	    // Perform operations
 //	    service.DoWork()
 //
-//	    // Verify metrics
-//	    coreMetrics := registry.CoreMetrics()
-//	    // Check that metrics were recorded
+//	    // Verify metrics through what the registry gathers
+//	    families, err := registry.PrometheusRegistry().Gather()
+//	    require.NoError(t, err)
+//	    // Find operations_total in families and check its value
 //	}
 //
 // # Performance Considerations
@@ -310,12 +326,9 @@
 //
 // # Architecture Integration
 //
-// The metric package integrates with StreamKit components:
-//
-//   - service: Services record lifecycle and processing metrics
-//   - component: Components track message flow metrics
-//   - natsclient: NATS client records connectivity metrics
-//   - health: Health status can be mirrored as metrics
+// Within this repository, natsclient (WithMetrics, for JetStream metrics) and
+// internal/cache (WithMetrics, WithCoalescingMetrics) register their collectors
+// in a MetricsRegistry.
 //
 // Data flow:
 //
@@ -356,6 +369,7 @@
 //	    "time"
 //
 //	    "github.com/c360studio/semengine/metric"
+//	    "github.com/c360studio/semengine/pkg/security"
 //	    "github.com/prometheus/client_golang/prometheus"
 //	)
 //
@@ -397,7 +411,7 @@
 //	    // Simulate work
 //	    for i := 0; i < 100; i++ {
 //	        operationCounter.Inc()
-//	        coreMetrics.RecordMessagesProcessed("my-service", 1)
+//	        coreMetrics.RecordMessageProcessed("my-service", "operation", "success")
 //	        time.Sleep(100 * time.Millisecond)
 //	    }
 //	}

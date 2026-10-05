@@ -4,7 +4,7 @@
 // The natsclient package wraps the standard NATS Go client with additional reliability
 // features including circuit breaker pattern for failure protection, exponential backoff
 // for reconnection, and proper context propagation throughout all operations. It serves
-// as the foundation for all NATS communication in the StreamKit framework.
+// as the foundation for all of SemEngine's NATS communication.
 //
 // # Core Features
 //
@@ -20,8 +20,8 @@
 // with proper error handling and circuit breaker integration.
 //
 // KVStore Abstraction: High-level abstraction over NATS KV providing automatic CAS
-// (Compare-And-Swap) retry logic, JSON helpers, and consistent error handling for
-// configuration management scenarios.
+// (Compare-And-Swap) retry logic, a JSON read-modify-write helper (UpdateJSON), and
+// consistent error handling for configuration management scenarios.
 //
 // # Basic Usage
 //
@@ -185,9 +185,13 @@
 //	    return nil
 //	})
 //
-//	// Get JSON value
+//	// Read a JSON value: KVStore has no JSON getter, so decode the entry's bytes
+//	entry, err := kvStore.Get(ctx, "service.config")
+//	if err != nil {
+//	    return err
+//	}
 //	var config map[string]any
-//	err = kvStore.GetJSON(ctx, "service.config", &config)
+//	err = json.Unmarshal(entry.Value, &config)
 //
 // # Circuit Breaker Pattern
 //
@@ -315,7 +319,7 @@
 //	    assert.NoError(t, client.Connect(t.Context()))
 //
 //	    // Test with real NATS server
-//	    err = client.Publish(ctx, "test.subject", []byte("test data"))
+//	    err = client.Publish(t.Context(), "test.subject", []byte("test data"))
 //	    assert.NoError(t, err)
 //	}
 //
@@ -421,18 +425,15 @@
 // Handler-side, return a classified error so the headers carry truth:
 //
 //	return nil, errs.ClassifiedCode(errs.ErrorInvalid,
-//	    graph.ErrorCodeEntityNotFound, fmt.Errorf("not found: %s", req.ID))
+//	    "entity_not_found", fmt.Errorf("not found: %s", req.ID))
 //	// Consumer via RequestClassified: errs.IsInvalid(err) == true,
 //	// errors.As → ce.Code == "entity_not_found"; gateways map that to 404.
 //
 // # Architecture Integration
 //
-// The natsclient package integrates with StreamKit components:
-//
-//   - service: Services use natsclient for pub/sub communication
-//   - config: Manager uses KV store for runtime configuration
-//   - component: Components receive natsclient for messaging
-//   - engine: Flow engine coordinates component communication via NATS
+// The natsclient package is the NATS layer under SemEngine's other packages. It
+// records JetStream stream and consumer metrics in a metric.MetricsRegistry
+// when given one (WithMetrics), and returns pkg/errs classified errors.
 //
 // Data flow:
 //

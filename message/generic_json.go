@@ -1,4 +1,3 @@
-// Package message provides the GenericJSON payload for StreamKit.
 package message
 
 import (
@@ -29,14 +28,14 @@ func buildGenericJSONPayload(fields map[string]any) (any, error) {
 }
 
 // RegisterPayloads registers the GenericJSON payload type (core.json.v1)
-// with the supplied registry. Called from payloadbuiltins.Register at
-// process bootstrap.
+// with the supplied registry. Nothing registers it implicitly: a process that
+// decodes core.json.v1 calls this on the registry its Decoder uses.
 func RegisterPayloads(reg *payloadregistry.Registry) error {
 	return reg.Register(&payloadregistry.Registration{
 		Domain:      "core",
 		Category:    "json",
 		Version:     "v1",
-		Description: "Generic JSON payload for testing, prototyping, and basic data processing",
+		Description: "JSON whose shape is not known when the code is written",
 		Factory: func() any {
 			return &GenericJSONPayload{}
 		},
@@ -51,18 +50,17 @@ func RegisterPayloads(reg *payloadregistry.Registry) error {
 	})
 }
 
-// GenericJSONPayload provides a simple, explicitly flexible payload type
-// for testing, prototyping, and basic data processing flows.
+// GenericJSONPayload is the core.json.v1 payload: the fallback for JSON whose
+// shape is not known when the code is written, such as outside input or the
+// output of a transform the user configures. It is never the primary shape for
+// data: code that builds a shape it knows registers a payload type for it
+// instead. Decoding core.json.v1 needs this type registered explicitly, with
+// RegisterPayloads, in the registry the Decoder uses.
 //
-// This is an intentional, well-known type (core.json.v1) designed for:
-//   - Rapid prototyping of flows
-//   - Integration testing
-//   - Basic JSON data processing (filter, map, transform)
-//   - Simple ETL pipelines
-//
-// Components that work with GenericJSON (JSONFilter, JSONMap) explicitly
-// declare they require "core.json.v1" type, providing type safety while
-// maintaining flexibility for arbitrary JSON structures.
+// Numbers depend on where the payload came from. A decoded payload holds every
+// number as a json.Number carrying its exact literal (see UnmarshalJSON); an
+// in-process payload holds whatever Go numbers its caller supplied, so a reader
+// that accepts both handles json.Number and the Go numeric kinds.
 //
 // Example usage:
 //
@@ -74,9 +72,8 @@ func RegisterPayloads(reg *payloadregistry.Registry) error {
 //	    },
 //	}
 type GenericJSONPayload struct {
-	// Data contains the JSON payload as a map.
-	// This supports arbitrary JSON structures while remaining type-safe
-	// at the component level (components declare they work with core.json.v1).
+	// Data contains the JSON payload as a map of JSON-shaped values (see
+	// MarshalJSON for the values it accepts).
 	Data map[string]any `json:"data"`
 }
 
@@ -87,9 +84,8 @@ func NewGenericJSON(data map[string]any) *GenericJSONPayload {
 	}
 }
 
-// Schema returns the payload type identifier for GenericJSON.
-// Always returns core.json.v1 as this is the well-known type for
-// generic JSON processing in StreamKit.
+// Schema returns the payload type identifier for GenericJSON, which is always
+// core.json.v1.
 func (g *GenericJSONPayload) Schema() Type {
 	return Type{
 		Domain:   "core",

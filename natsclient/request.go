@@ -68,11 +68,12 @@ func resolveRequestHandlerTimeoutFromEnv() time.Duration {
 }
 
 // Readiness-gated read defaults (ADR-060 sibling doctrine, third bucket — see
-// docs/operations/07-nats-request-retry.md). A readiness-gated read tolerates a
-// not-yet-subscribed responder at cold start / after reconnect: it retries with
-// a SHORT per-attempt timeout up to a bounded TOTAL budget, returning the first
-// reply. Because the per-attempt timeout is short and the total is bounded, a
-// genuinely hung responder fails within the budget rather than a full-timeout×N
+// SemStreams' docs/operations/07-nats-request-retry.md at the pin; not carried
+// here). A readiness-gated read tolerates a not-yet-subscribed responder at
+// cold start / after reconnect: it retries with a SHORT per-attempt timeout up
+// to a bounded TOTAL budget, returning the first reply. Because the
+// per-attempt timeout is short and the total is bounded, a genuinely hung
+// responder fails within the budget rather than a full-timeout×N
 // storm — so it does NOT mask a hung responder the way retrying a full-timeout
 // query would. Distinct from Request (steady-state query: timeout = real signal,
 // no retry) and RequestWithRetry (mutation: retry-any at full timeout).
@@ -179,8 +180,8 @@ func (c *Client) requestMsgReady(
 // surface to the caller, who decides whether to retry, fall back, or
 // raise an error. For MUTATIONS use RequestWithRetry instead;
 // without retry, transient "no responders" errors during startup
-// races / responder restarts cause silent data loss. See
-// docs/operations/07-nats-request-retry.md for the full rule.
+// races / responder restarts cause silent data loss. See SemStreams'
+// docs/operations/07-nats-request-retry.md at the pin for the full rule.
 func (c *Client) Request(ctx context.Context, subject string, data []byte, timeout time.Duration) ([]byte, error) {
 	if ctx == nil {
 		return nil, nilContextError("Request")
@@ -468,15 +469,18 @@ func DefaultRetryConfig() RetryConfig {
 // first attempt's response gets lost, so the responder must converge
 // to the same state on duplicate receives. For QUERIES use Request
 // instead; retrying on timeout masks hung responders as latency. See
-// docs/operations/07-nats-request-retry.md for the full rule.
+// SemStreams' docs/operations/07-nats-request-retry.md at the pin for the
+// full rule.
 //
 // Footgun: when the responder returns a Go error, SubscribeForRequests
-// wire-encodes the failure as a legacy "error: <msg>" text body with
-// nil err. This method returns reply.Data on transport success without
-// running it through ClassifyReply, so callers that json.Unmarshal the
-// body silently corrupt on handler errors. For mutation paths that
-// want both retry AND classified error handling, use
-// RequestWithRetryClassified (closes the matrix gap filed as gh#192).
+// replies through RespondError: an X-Status: error header, an X-Error-Class
+// header (and X-Error-Code when the error carries a code), and a
+// {message, detail} JSON body. This method returns reply.Data on transport
+// success without running it through ClassifyReply, so it returns that error body as data with a nil error,
+// and a caller that json.Unmarshals it into its success type gets a
+// zero-valued success. For mutation paths that want both retry AND
+// classified error handling, use RequestWithRetryClassified (SemStreams
+// gh#192 closed that gap).
 func (c *Client) RequestWithRetry(
 	ctx context.Context,
 	subject string,

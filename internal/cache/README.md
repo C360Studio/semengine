@@ -22,21 +22,36 @@ import "github.com/c360studio/semengine/internal/cache"
 
 ### Basic Usage
 
+Every constructor except `NewNoop` returns `(Cache[V], error)`, and the cache is nil when the error is not: check the
+error before using the cache.
+
 ```go
 // Simple cache with default settings (stats always enabled)
-c := cache.NewSimple[string]()
+names, err := cache.NewSimple[string]()
+if err != nil {
+    return err
+}
 
 // LRU cache with max 1000 items
-c := cache.NewLRU[*MyStruct](1000)
+items, err := cache.NewLRU[*MyStruct](1000)
+if err != nil {
+    return err
+}
 
 // TTL cache with 5-minute expiry and 1-minute cleanup interval
-c := cache.NewTTL[int](ctx, 5*time.Minute, 1*time.Minute)
+counts, err := cache.NewTTL[int](ctx, 5*time.Minute, 1*time.Minute)
+if err != nil {
+    return err
+}
 
 // Hybrid cache combining LRU and TTL (built from a Config; there is no direct hybrid constructor)
-c, err := cache.NewFromConfig[string](ctx, cache.Config{
+hybrid, err := cache.NewFromConfig[string](ctx, cache.Config{
     Enabled: true, Strategy: cache.StrategyHybrid,
     MaxSize: 1000, TTL: 5 * time.Minute, CleanupInterval: 1 * time.Minute,
 })
+if err != nil {
+    return err
+}
 ```
 
 ### With Prometheus Metrics
@@ -48,9 +63,12 @@ import "github.com/c360studio/semengine/metric"
 registry := metric.NewMetricsRegistry()
 
 // Create cache with metrics export
-c := cache.NewLRU[*Entity](1000,
+c, err := cache.NewLRU[*Entity](1000,
     cache.WithMetrics[*Entity](registry, "my_component"),
 )
+if err != nil {
+    return err
+}
 
 // Metrics automatically exported:
 // - semstreams_cache_hits_total{component="my_component"}
@@ -63,19 +81,24 @@ c := cache.NewLRU[*Entity](1000,
 
 ```go
 // Compose multiple functional options
-c := cache.NewTTL[*Document](ctx, 10*time.Minute, 1*time.Minute,
+c, err := cache.NewTTL[*Document](ctx, 10*time.Minute, 1*time.Minute,
     cache.WithMetrics[*Document](registry, "document_cache"),
 )
+if err != nil {
+    return err
+}
 ```
 
 ## Cache Types
+
+Each constructor below returns an error; check it before using `c`, as in Quick Start.
 
 ### Simple Cache
 
 No eviction policy - items remain until explicitly deleted.
 
 ```go
-c := cache.NewSimple[V]()
+c, err := cache.NewSimple[V]()
 ```
 
 ### LRU Cache
@@ -83,7 +106,7 @@ c := cache.NewSimple[V]()
 Evicts least recently used items when capacity is reached.
 
 ```go
-c := cache.NewLRU[V](maxSize)
+c, err := cache.NewLRU[V](maxSize)
 ```
 
 ### TTL Cache
@@ -91,7 +114,7 @@ c := cache.NewLRU[V](maxSize)
 Evicts items after a time-to-live period expires.
 
 ```go
-c := cache.NewTTL[V](ctx, ttl, cleanupInterval)
+c, err := cache.NewTTL[V](ctx, ttl, cleanupInterval)
 ```
 
 ### Hybrid Cache
@@ -123,22 +146,24 @@ cache.WithMetrics[V](registry, "component_name")
 
 ```go
 type Cache[V any] interface {
-    Get(key string) (V, bool)       // Retrieve value by key
-    Set(key string, value V) bool   // Store key-value pair
-    Delete(key string) bool          // Remove entry by key
-    Clear()                          // Remove all entries
-    Size() int                       // Current number of entries
-    Keys() []string                  // All keys currently in cache
-    Stats() *Statistics              // Cache statistics (never nil)
+    Get(key string) (V, bool)                // Retrieve value by key
+    Set(key string, value V) (bool, error)   // Store; true when a new entry was created
+    Delete(key string) (bool, error)         // Remove; true when the key existed
+    Clear() error                            // Remove all entries
+    Size() int                               // Current number of entries
+    Keys() []string                          // All keys currently in cache
+    Stats() *Statistics                      // Cache statistics; nil for the no-op cache
+    Close() error                            // Stop background work (the TTL and hybrid cleanup goroutine)
 }
 ```
 
 ### Statistics
 
-Statistics are **always** collected (not optional) for observability:
+Statistics are **always** collected (not optional) by the simple, LRU, TTL and hybrid caches. The no-op cache
+(`NewNoop`, and `NewFromConfig` with `Enabled: false`) stores nothing and its `Stats()` is nil.
 
 ```go
-stats := cache.Stats()
+stats := c.Stats()
 
 // Available metrics:
 stats.Hits()              // Total cache hits
@@ -395,19 +420,25 @@ func setupProductionCache(ctx context.Context, registry *metric.MetricsRegistry)
 ### Request-Scoped Cache
 
 ```go
-func handleRequest(ctx context.Context) {
+func handleRequest(keys []string) error {
     // Create a request-scoped cache
-    requestCache := cache.NewLRU[*ComputedResult](100)
-    defer requestCache.Clear()
-    
-    // Use cache during request processing
-    if result, ok := requestCache.Get(key); ok {
-        return result
+    requestCache, err := cache.NewLRU[*ComputedResult](100)
+    if err != nil {
+        return err
     }
-    
-    // Compute and cache
-    result := expensiveComputation()
-    requestCache.Set(key, result)
+    defer requestCache.Close()
+
+    // Use cache during request processing
+    for _, key := range keys {
+        if _, ok := requestCache.Get(key); ok {
+            continue
+        }
+        // Compute and cache
+        if _, err := requestCache.Set(key, expensiveComputation(key)); err != nil {
+            return err
+        }
+    }
+    return nil
 }
 ```
 

@@ -15,29 +15,43 @@
 //
 // # Quick Start
 //
+// Every constructor except NewNoop returns (Cache[V], error), and the cache is nil when
+// the error is not: check the error before using the cache.
+//
 // Simple cache creation:
 //
-//	cache := cache.NewSimple[string]()
-//	cache.Set("key", "value")
-//	value, ok := cache.Get("key")
+//	names, err := cache.NewSimple[string]()
+//	if err != nil {
+//		return err
+//	}
+//	if _, err := names.Set("key", "value"); err != nil {
+//		return err
+//	}
+//	value, ok := names.Get("key")
 //
 // LRU cache with capacity limit:
 //
-//	cache, err := cache.NewLRU[*User](1000)
+//	users, err := cache.NewLRU[*User](1000)
 //	if err != nil {
-//		log.Fatal(err)
+//		return err
 //	}
 //
 // TTL cache with expiration:
 //
-//	cache, err := cache.NewTTL[*Session](ctx, 30*time.Minute, 5*time.Minute)
+//	sessions, err := cache.NewTTL[*Session](ctx, 30*time.Minute, 5*time.Minute)
+//	if err != nil {
+//		return err
+//	}
 //
 // Hybrid cache with both LRU and TTL, built from a Config (there is no direct hybrid constructor):
 //
-//	cache, err := cache.NewFromConfig[[]byte](ctx, cache.Config{
+//	responses, err := cache.NewFromConfig[[]byte](ctx, cache.Config{
 //		Enabled: true, Strategy: cache.StrategyHybrid,
 //		MaxSize: 5000, TTL: 10 * time.Minute, CleanupInterval: 1 * time.Minute,
 //	}, cache.WithMetrics[[]byte](registry, "api_cache"))
+//	if err != nil {
+//		return err
+//	}
 //
 // # Cache Types and Eviction Policies
 //
@@ -46,31 +60,34 @@
 // Items remain in cache until explicitly deleted or cache is cleared. Best for
 // small, stable datasets where manual control is desired.
 //
-//	cache := cache.NewSimple[V]()
+//	c, err := cache.NewSimple[V]()
 //
 // LRU Cache (Capacity-Based):
 //
 // Evicts least recently used items when maximum capacity is reached. Best for
 // fixed-size caches where recent access patterns indicate importance.
 //
-//	cache, _ := cache.NewLRU[V](maxSize)
+//	c, err := cache.NewLRU[V](maxSize)
 //
 // TTL Cache (Time-Based):
 //
 // Items expire after a time-to-live period. Background cleanup goroutine removes
 // expired items. Best for time-sensitive data like sessions or tokens.
 //
-//	cache, _ := cache.NewTTL[V](ctx, ttl, cleanupInterval)
+//	c, err := cache.NewTTL[V](ctx, ttl, cleanupInterval)
 //
 // Hybrid Cache (Capacity + Time):
 //
 // Combines LRU and TTL - items are evicted if they're either least recently used
 // OR expired. Best for production caches requiring both size and time limits.
 //
-//	cache, _ := cache.NewFromConfig[V](ctx, cache.Config{
+//	c, err := cache.NewFromConfig[V](ctx, cache.Config{
 //		Enabled: true, Strategy: cache.StrategyHybrid,
 //		MaxSize: maxSize, TTL: ttl, CleanupInterval: cleanupInterval,
 //	})
+//
+// In each case check err before using c, as in Quick Start. NewFromConfig with Enabled
+// false returns the no-op cache from NewNoop, which stores nothing and whose Stats is nil.
 //
 // # Observability Architecture
 //
@@ -105,7 +122,6 @@
 //   - Hit ratio (hits / total requests)
 //   - Requests per second with built-in timing
 //   - Miss ratio (misses / total requests)
-//   - Average item lifetime (for TTL caches)
 //
 // 3. Different Use Cases:
 //   - Statistics: Programmatic access, debugging, tests, runtime inspection
@@ -153,9 +169,12 @@
 //
 // The package uses functional options for clean, composable configuration:
 //
-//	cache, err := cache.NewLRU[V](capacity,
+//	c, err := cache.NewLRU[V](capacity,
 //		cache.WithMetrics[V](registry, "component"),
 //	)
+//	if err != nil {
+//		return err
+//	}
 //
 // Available options:
 //   - WithMetrics: Enable Prometheus metrics export
@@ -205,15 +224,10 @@
 //
 // # Generic Type Support
 //
-// Caches are fully generic and work with any Go type:
-//
-//	stringCache := cache.NewSimple[string]()
-//	intCache := cache.NewLRU[int](100)
-//	structCache := cache.NewTTL[*User](ctx, 5*time.Minute, 1*time.Minute)
-//	sliceCache := cache.NewFromConfig[[]byte](ctx, cache.Config{
-//		Enabled: true, Strategy: cache.StrategyHybrid,
-//		MaxSize: 1000, TTL: 10 * time.Minute, CleanupInterval: 1 * time.Minute,
-//	})
+// Caches are fully generic and work with any Go type: the type parameter names the
+// value type, as in cache.NewSimple[string](), cache.NewLRU[int](100),
+// cache.NewTTL[*User](ctx, 5*time.Minute, 1*time.Minute) or cache.NewFromConfig[[]byte](ctx, cfg).
+// Each returns an error to check, as in Quick Start.
 //
 // Type constraints:
 //   - Keys are always strings (for consistent hashing and comparison)
@@ -222,25 +236,33 @@
 //
 // # Common Use Cases
 //
+// Every example below continues with `if err != nil { return err }` before the cache is used.
+//
 // API Response Caching:
 //
-//	cache, _ := cache.NewFromConfig[*Response](ctx, cache.Config{
+//	responses, err := cache.NewFromConfig[*Response](ctx, cache.Config{
 //		Enabled: true, Strategy: cache.StrategyHybrid,
 //		MaxSize: 5000, TTL: 30 * time.Minute, CleanupInterval: 5 * time.Minute,
 //	}, cache.WithMetrics[*Response](registry, "api_cache"))
 //
 // Session Storage:
 //
-//	cache, _ := cache.NewTTL[*Session](ctx, 2*time.Hour, 10*time.Minute)
+//	sessions, err := cache.NewTTL[*Session](ctx, 2*time.Hour, 10*time.Minute)
 //
-// Entity Caching (Two-Level):
+// Entity Caching (Two-Level), one error check per constructor:
 //
-//	l1Cache, _ := cache.NewLRU[*Entity](1000) // Hot entities
-//	l2Cache, _ := cache.NewTTL[*Entity](ctx, 1*time.Hour, 5*time.Minute) // All recent entities
+//	hot, err := cache.NewLRU[*Entity](1000) // Hot entities
+//	if err != nil {
+//		return err
+//	}
+//	recent, err := cache.NewTTL[*Entity](ctx, 1*time.Hour, 5*time.Minute) // All recent entities
+//	if err != nil {
+//		return err
+//	}
 //
 // Computed Results:
 //
-//	cache, _ := cache.NewLRU[*Result](500,
+//	results, err := cache.NewLRU[*Result](500,
 //		cache.WithMetrics[*Result](registry, "computation_cache"),
 //	)
 //
@@ -252,7 +274,10 @@
 //	ctx, cancel := context.WithCancel(context.Background())
 //	defer cancel()
 //
-//	cache, _ := cache.NewTTL[V](ctx, ttl, cleanupInterval)
+//	c, err := cache.NewTTL[V](ctx, ttl, cleanupInterval)
+//	if err != nil {
+//		return err
+//	}
 //	// Cleanup goroutine stops when ctx is canceled
 //
 // Close also stops the cleanup goroutine, and returns once it has exited. NewTTL and
@@ -280,16 +305,18 @@
 //
 // Statistics make testing cache behavior easy:
 //
-//	cache := cache.NewSimple[int]()
-//	cache.Set("key", 42)
-//	_, _ = cache.Get("key")
-//	_, _ = cache.Get("missing")
+//	c, err := cache.NewSimple[int]()
+//	require.NoError(t, err)
+//	_, err = c.Set("key", 42)
+//	require.NoError(t, err)
+//	_, _ = c.Get("key")
+//	_, _ = c.Get("missing")
 //
-//	assert.Equal(t, int64(1), cache.Stats().Hits())
-//	assert.Equal(t, int64(1), cache.Stats().Misses())
-//	assert.Equal(t, 0.5, cache.Stats().HitRatio())
+//	assert.Equal(t, int64(1), c.Stats().Hits())
+//	assert.Equal(t, int64(1), c.Stats().Misses())
+//	assert.Equal(t, 0.5, c.Stats().HitRatio())
 //
 // # Examples
 //
-// See cache_test.go for runnable examples.
+// The tests in cache_test.go show each cache in use; the package has no Example functions.
 package cache

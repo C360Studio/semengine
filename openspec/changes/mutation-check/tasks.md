@@ -114,6 +114,14 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
       Test at `efbd685` (failing against the code of `390ddcf`), fix at `4a5feb2`; no case for a place right
       before a label existed, so one was added at `efbd685`, passing before and after the fix.
       Evidence: comment 5994937391.
+- [ ] 2.14 (D) The corrections of Codex's implementation review of record (PR #82, comment 5995872776: APPROVE at
+      `35fa1d9` with two MEDIUM findings). (a) The report prints in full, as a note, every further line of the named
+      test and its subtests that begins with a location, and the reading does not change: a report assertion on the
+      `log-then-fail` recording, written first and seen to fail against the code at `29f8abe`, and one mutation check
+      through `task mutate:check` with a wrong change that drops those lines again. (b) `design.md` gains the
+      per-ruling conformance table (`.agents/contracts/semengine-reviewer.md:113-117`) for Q1 to Q5, the sequencing
+      and the labeled-last-statement ruling, each with its `file:line` evidence or its held task. Gate:
+      `task test:unit`.
 
 ## 3. Shown able to fail
 

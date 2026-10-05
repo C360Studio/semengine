@@ -197,7 +197,7 @@ Use constants from `standards.go` for common vocabularies.
 
 ```go
 vocabulary.Register("entity.label.preferred",
-    vocabulary.WithIRI(vocabulary.SkosPrefLabel))
+    vocabulary.WithIRI(vocabulary.DcTitle))
 ```
 
 #### `WithAlias(aliasType, priority int)`
@@ -229,41 +229,37 @@ resolution and correlation.
 
 **AliasTypeIdentity** - Entity equivalence
 
-- Go constants: `vocabulary.OwlSameAs`, `vocabulary.SchemaSameAs`
 - RDF equivalents: owl:sameAs, schema:sameAs
 - Use for: Federated entity IDs, external system UUIDs
 - Resolution: ✅ Can resolve to entity IDs
 
 **AliasTypeAlternate** - Secondary unique identifiers
 
-- Go constants: `vocabulary.SchemaAlternateName`, `vocabulary.DcAlternative`
 - RDF equivalents: schema:alternateName, dc:alternative
 - Use for: Model numbers, registration IDs
 - Resolution: ✅ Can resolve to entity IDs
 
 **AliasTypeExternal** - External system identifiers
 
-- Go constants: `vocabulary.DcIdentifier`, `vocabulary.SchemaIdentifier`
+- Go constants: `vocabulary.DcIdentifier`
 - RDF equivalents: dc:identifier, schema:identifier
 - Use for: Manufacturer serial numbers, legacy system IDs
 - Resolution: ✅ Can resolve to entity IDs
 
 **AliasTypeCommunication** - Communication identifiers
 
-- Go constants: `vocabulary.FoafAccountName`
 - RDF equivalent: foaf:accountName
 - Use for: Radio call signs, network hostnames, MQTT client IDs
 - Resolution: ✅ Can resolve to entity IDs
 
 **AliasTypeLabel** - Display names
 
-- Go constants: `vocabulary.RdfsLabel`, `vocabulary.SkosPrefLabel`, `vocabulary.SchemaName`
 - RDF equivalents: rdfs:label, skos:prefLabel, schema:name
 - Use for: Human-readable display names
 - Resolution: ❌ NOT for resolution (ambiguous - many entities share labels)
 
 **Note**: The RDF notation shown (e.g., `owl:sameAs`) is shorthand for full IRIs. In Go code, always use the provided
-constants from `standards.go` (e.g., `vocabulary.OwlSameAs`).
+constants from `standards.go` (e.g., `vocabulary.DcIdentifier`).
 
 ### Example: Registering Aliases
 
@@ -272,8 +268,7 @@ constants from `standards.go` (e.g., `vocabulary.OwlSameAs`).
 vocabulary.Register("robotics.communication.callsign",
     vocabulary.WithDescription("Radio call sign for ATC"),
     vocabulary.WithDataType(vocabulary.DataTypeString),
-    vocabulary.WithAlias(vocabulary.AliasTypeCommunication, 0),
-    vocabulary.WithIRI(vocabulary.FoafAccountName))
+    vocabulary.WithAlias(vocabulary.AliasTypeCommunication, 0))
 
 // External identifier
 vocabulary.Register("robotics.identifier.serial",
@@ -286,8 +281,7 @@ vocabulary.Register("robotics.identifier.serial",
 vocabulary.Register("entity.label.display",
     vocabulary.WithDescription("Human-readable display name"),
     vocabulary.WithDataType(vocabulary.DataTypeString),
-    vocabulary.WithAlias(vocabulary.AliasTypeLabel, 10),  // Low priority
-    vocabulary.WithIRI(vocabulary.RdfsLabel))
+    vocabulary.WithAlias(vocabulary.AliasTypeLabel, 10))  // Low priority
 ```
 
 ### Discovering Aliases
@@ -302,24 +296,12 @@ aliases := vocabulary.DiscoverAliasPredicates()
 
 Common standard vocabulary IRIs are provided in `standards.go`:
 
-### OWL (Web Ontology Language)
-
-```go
-const (
-    OwlSameAs            = "http://www.w3.org/2002/07/owl#sameAs"
-    OwlEquivalentClass   = "http://www.w3.org/2002/07/owl#equivalentClass"
-    OwlInverseOf         = "http://www.w3.org/2002/07/owl#inverseOf"
-)
-```
-
 ### SKOS (Simple Knowledge Organization System)
 
 ```go
 const (
-    SkosPrefLabel = "http://www.w3.org/2004/02/skos/core#prefLabel"
-    SkosAltLabel  = "http://www.w3.org/2004/02/skos/core#altLabel"
-    SkosBroader   = "http://www.w3.org/2004/02/skos/core#broader"
-    SkosNarrower  = "http://www.w3.org/2004/02/skos/core#narrower"
+    SkosBroader  = "http://www.w3.org/2004/02/skos/core#broader"
+    SkosNarrower = "http://www.w3.org/2004/02/skos/core#narrower"
 )
 ```
 
@@ -327,55 +309,8 @@ const (
 
 ```go
 const (
-    DcIdentifier  = "http://purl.org/dc/terms/identifier"
-    DcTitle       = "http://purl.org/dc/terms/title"
-    DcAlternative = "http://purl.org/dc/terms/alternative"
-    DcReferences  = "http://purl.org/dc/terms/references"
-    DcRequires    = "http://purl.org/dc/terms/requires"
-)
-```
-
-### Schema.org
-
-```go
-const (
-    SchemaName          = "https://schema.org/name"
-    SchemaAlternateName = "https://schema.org/alternateName"
-    SchemaIdentifier    = "https://schema.org/identifier"
-    SchemaSameAs        = "https://schema.org/sameAs"
-)
-```
-
-### PROV-O (Provenance Ontology)
-
-```go
-const (
-    ProvEntity            = "http://www.w3.org/ns/prov#Entity"
-    ProvActivity          = "http://www.w3.org/ns/prov#Activity"
-    ProvAgent             = "http://www.w3.org/ns/prov#Agent"
-    ProvWasDerivedFrom    = "http://www.w3.org/ns/prov#wasDerivedFrom"
-    ProvWasGeneratedBy    = "http://www.w3.org/ns/prov#wasGeneratedBy"
-    ProvWasAssociatedWith = "http://www.w3.org/ns/prov#wasAssociatedWith"
-    ProvActedOnBehalfOf   = "http://www.w3.org/ns/prov#actedOnBehalfOf"
-)
-```
-
-### SSN/SOSA (Semantic Sensor Network)
-
-```go
-const (
-    SsnHasDeployment    = "http://www.w3.org/ns/ssn/hasDeployment"
-    SosaObserves        = "http://www.w3.org/ns/sosa/observes"
-    SosaHasSimpleResult = "http://www.w3.org/ns/sosa/hasSimpleResult"
-)
-```
-
-### FOAF (Friend of a Friend)
-
-```go
-const (
-    FoafName        = "http://xmlns.com/foaf/0.1/name"
-    FoafAccountName = "http://xmlns.com/foaf/0.1/accountName"
+    DcIdentifier = "http://purl.org/dc/terms/identifier"
+    DcTitle      = "http://purl.org/dc/terms/title"
 )
 ```
 
@@ -461,9 +396,6 @@ See [Vocabulary Documentation](docs/vocabulary/) for architecture guides and det
 ```go
 // Register with functional options
 vocabulary.Register(name string, opts ...Option)
-
-// Register using struct directly (backward compatibility)
-vocabulary.RegisterPredicate(meta PredicateMetadata)
 ```
 
 ### Retrieval
@@ -588,73 +520,27 @@ The vocabulary package provides standard relationship predicates for linking ent
 
 ### Relationship Types
 
-All relationship predicates follow the pattern `graph.rel.*` and are registered with Dublin Core, Schema.org, and PROV-O
+All relationship predicates follow the pattern `graph.rel.*` and are registered with PROV-O
 mappings where applicable.
 
 #### Hierarchical Relationships
 
 ```go
 vocabulary.GraphRelContains     // Parent contains child
-vocabulary.GraphRelDependsOn    // Subject depends on object
 ```
 
 - `graph.rel.contains` → `prov:hadMember` - Hierarchical containment (platform contains sensors)
-- `graph.rel.depends_on` → `dcterms:requires` - Dependency relationship (spec depends on spec)
-
-#### Reference Relationships
-
-```go
-vocabulary.GraphRelReferences   // Directional reference
-vocabulary.GraphRelRelatedTo    // General association
-vocabulary.GraphRelDiscusses    // Discussion/commentary
-```
-
-- `graph.rel.references` → `dcterms:references` - Documentation references specifications
-- `graph.rel.related_to` → `dcterms:relation` - Generic relationship
-- `graph.rel.discusses` → `schema:about` - Discussion about a topic
-
-#### Causal Relationships
-
-```go
-vocabulary.GraphRelInfluences   // Causal/impact relationship
-vocabulary.GraphRelTriggeredBy  // Event causation
-```
-
-- `graph.rel.influences` - Decision influences implementation
-- `graph.rel.triggered_by` - Alert triggered by threshold
-
-#### Implementation Relationships
-
-```go
-vocabulary.GraphRelImplements   // Implementation relationship
-vocabulary.GraphRelSupersedes   // Replacement/versioning
-vocabulary.GraphRelBlockedBy    // Blocking relationship
-```
-
-- `graph.rel.implements` - Code implements specification
-- `graph.rel.supersedes` → `dcterms:replaces` - v2 supersedes v1
-- `graph.rel.blocked_by` - Issue blocked by another issue
-
-#### Spatial/Communication Relationships
-
-```go
-vocabulary.GraphRelNear         // Spatial proximity
-vocabulary.GraphRelCommunicates // Communication/interaction
-```
-
-- `graph.rel.near` - Sensors near a location
-- `graph.rel.communicates` - Services communicate with each other
 
 ### Usage Example
 
 ```go
 import "github.com/c360studio/semengine/vocabulary"
 
-// Create relationship between specification and implementation
+// Create containment relationship between platform and sensor
 triple := message.Triple{
-    Subject:   "spec-001",
-    Predicate: vocabulary.GraphRelImplements,  // "graph.rel.implements"
-    Object:    "pr-123",
+    Subject:   "platform-001",
+    Predicate: vocabulary.GraphRelContains,  // "graph.rel.contains"
+    Object:    "sensor-001",
 }
 
 // Query all relationships using NATS wildcards
@@ -666,29 +552,24 @@ nc.Subscribe("graph.rel.contains", handler)  // Only containment
 
 Relationship predicates map to established semantic web vocabularies:
 
-- **Dublin Core Terms** - References, dependencies, replacements, relations
 - **PROV-O** - Provenance and membership relationships
-- **Schema.org** - Discussion and content relationships
 
 See `relationships.go` for the complete registration and `standards.go` for IRI constants.
 
 ## Framework Predicates
 
-The vocabulary package provides example framework predicates in `predicates.go`. These demonstrate the pattern but are
-NOT required.
+The vocabulary package provides framework predicates in `predicates.go`.
 
-Applications should define their own domain-specific vocabularies. See `examples/robotics.go` and `examples/semantic.go`
-for reference implementations.
+Applications should define their own domain-specific vocabularies.
 
 ## Related Documentation
 
 - `doc.go` - Comprehensive package documentation
-- `standards.go` - Standard vocabulary IRI constants (OWL, SKOS, Dublin Core, PROV-O, SSN/SOSA)
+- `standards.go` - Standard vocabulary IRI constants (SKOS, Dublin Core, PROV-O)
 - `bfo/` - BFO 2.0 upper-level ontology classes and relations
 - `cco/` - Common Core Ontology classes for agents, actions, information
 - `agentic/` - W3C S-Agent-Comm predicates for AI agent interoperability
 - `export/` - RDF serialization to Turtle, N-Triples, JSON-LD
-- `examples/` - Reference domain vocabulary implementations
 - `message/triple.go` - Triple structure for semantic facts
 - `message/types.go` - EntityID, EntityType, Type patterns
 - [Vocabulary Documentation](docs/vocabulary/) - Architecture guides and usage patterns

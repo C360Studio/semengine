@@ -250,26 +250,6 @@ func WithSymmetric(symmetric bool) Option {
 	}
 }
 
-// WithRole declares the predicate's semantic role — a stored, first-class
-// ranking signal (ADR-062 increment 5, gh#396 / semsource ask #2).
-//
-// It is declared but not yet read: measured 2026-09-09, no path in this
-// repository or any sister reads PredicateMetadata.Role. The deterministic
-// fusion ranker this comment previously named as its consumer reads Weight
-// (pkg/fusion/fusionvocab/signals.go:48), not Role. Corrected under gh#1267
-// Q5; whether Role gains a closed-set validator is a separate decision.
-//
-// Example:
-//
-//	Register("robotics.identity.serial",
-//	    WithRole(RoleIdentity),
-//	    WithWeight(1.0))
-func WithRole(role PredicateRole) Option {
-	return func(m *PredicateMetadata) {
-		m.Role = role
-	}
-}
-
 // WithWeight declares the predicate's salience weight, SIGNED: positive = more
 // salient (boost), 0 = neutral, NEGATIVE = down-rank (demote). Lets a ranker
 // prefer entities carrying salient facts — or push down structurally-
@@ -306,8 +286,7 @@ func WithWeight(weight float64) Option {
 //
 // Amend cannot CLEAR a field by omitting its option; pass the explicit zero
 // (WithRuleOpaque(false), WithWeight(0), WithDescription(""), …) to clear one.
-// The alias flag has no un-alias option; to fully REPLACE a registration
-// (including removing an alias role), use RegisterPredicate, which overwrites.
+// The alias flag has no un-alias option.
 //
 // Example:
 //
@@ -379,44 +358,12 @@ func parseDomainCategory(name string) (domain, category string) {
 	return domain, category
 }
 
-// RegisterPredicate registers a predicate using the PredicateMetadata struct directly.
-// This function is provided for backward compatibility and testing.
-// New code should use Register() with functional options.
-// Allows overriding framework defaults.
-func RegisterPredicate(meta PredicateMetadata) {
-	parts, err := ParsePredicate(meta.Name)
-	if err != nil {
-		panic(fmt.Sprintf("register predicate %q: %v", meta.Name, err))
-	}
-	if meta.Domain != "" && meta.Domain != parts.Domain {
-		panic(fmt.Sprintf("register predicate %q: metadata domain %q does not match predicate domain %q",
-			meta.Name, meta.Domain, parts.Domain))
-	}
-	if meta.Category != "" && meta.Category != parts.Category {
-		panic(fmt.Sprintf("register predicate %q: metadata category %q does not match predicate category %q",
-			meta.Name, meta.Category, parts.Category))
-	}
-	meta.Domain = parts.Domain
-	meta.Category = parts.Category
-
-	registryMu.Lock()
-	defer registryMu.Unlock()
-	if err := validatePredicateMetadataLocked(meta); err != nil {
-		panic(fmt.Sprintf("register predicate %q: %v", meta.Name, err))
-	}
-
-	predicateRegistry[meta.Name] = meta
-}
-
 // validatePredicateMetadataLocked validates relationships between metadata
 // fields. The caller holds registryMu so an already-declared inverse can be
 // checked without racing another registration.
 //
 // It is the ONE enforcement seam for the closed datatype vocabulary
-// (ADR-107, gh#1267): both registration entry points reach it, so the
-// struct-literal path sister repositories use is covered by the same rule as
-// the functional-option path. Enforcing inside WithDataType would leave the
-// struct-literal path open.
+// (ADR-107, gh#1267): Register reaches it after applying every option.
 //
 // It refuses a non-canonical datatype rather than rewriting one, so what an
 // adopter declared is what the registry stores. Nothing here normalizes, which
@@ -494,7 +441,7 @@ func ListRegisteredPredicates() []string {
 // Used by AliasIndex to determine which predicates to index.
 //
 // If no alias predicates are registered, returns an empty map.
-// Applications must register their domain-specific alias predicates using RegisterPredicate().
+// Applications must register their domain-specific alias predicates using Register().
 func DiscoverAliasPredicates() map[string]int {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
@@ -574,66 +521,6 @@ func IsRuleOpaque(predicate string) bool {
 		return false
 	}
 	return meta.RuleOpaque
-}
-
-// IsSymmetricPredicate checks if a predicate is symmetric.
-// Symmetric predicates represent bidirectional relationships where
-// if A relates to B, then B also relates to A with the same predicate.
-//
-// Returns false if the predicate is not registered or is not symmetric.
-func IsSymmetricPredicate(predicate string) bool {
-	registryMu.RLock()
-	defer registryMu.RUnlock()
-
-	meta, exists := predicateRegistry[predicate]
-	if !exists {
-		return false
-	}
-	return meta.IsSymmetric
-}
-
-// HasInverse checks if a predicate has an inverse defined (either explicit or symmetric).
-// Returns true if the predicate is symmetric or has an InverseOf set.
-func HasInverse(predicate string) bool {
-	registryMu.RLock()
-	defer registryMu.RUnlock()
-
-	meta, exists := predicateRegistry[predicate]
-	if !exists {
-		return false
-	}
-	return meta.IsSymmetric || meta.InverseOf != ""
-}
-
-// DiscoverInversePredicates returns all predicates that have inverses defined.
-// Returns a map where keys are predicate names and values are their inverse predicate names.
-// For symmetric predicates, the value equals the key.
-//
-// This function is useful for:
-//   - Debugging and introspection
-//   - Generating documentation about predicate relationships
-//   - Reasoning systems that need to traverse relationships bidirectionally
-//
-// Example output:
-//
-//	{
-//	    "hierarchy.type.member": "hierarchy.type.contains",
-//	    "hierarchy.type.contains": "hierarchy.type.member",
-//	    "hierarchy.type.sibling": "hierarchy.type.sibling",  // symmetric
-//	}
-func DiscoverInversePredicates() map[string]string {
-	registryMu.RLock()
-	defer registryMu.RUnlock()
-
-	inverses := make(map[string]string)
-	for name, meta := range predicateRegistry {
-		if meta.IsSymmetric {
-			inverses[name] = name
-		} else if meta.InverseOf != "" {
-			inverses[name] = meta.InverseOf
-		}
-	}
-	return inverses
 }
 
 // ClearRegistry clears all registered predicates.

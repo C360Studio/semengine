@@ -22,77 +22,6 @@ func TestRelationshipPredicates(t *testing.T) {
 			expectedCategory: "rel",
 			expectedIRI:      ProvHadMember,
 		},
-		{
-			name:             "GraphRelReferences",
-			predicate:        GraphRelReferences,
-			expectedDomain:   "graph",
-			expectedCategory: "rel",
-			expectedIRI:      DcReferences,
-		},
-		{
-			name:             "GraphRelInfluences",
-			predicate:        GraphRelInfluences,
-			expectedDomain:   "graph",
-			expectedCategory: "rel",
-		},
-		{
-			name:             "GraphRelCommunicates",
-			predicate:        GraphRelCommunicates,
-			expectedDomain:   "graph",
-			expectedCategory: "rel",
-		},
-		{
-			name:             "GraphRelNear",
-			predicate:        GraphRelNear,
-			expectedDomain:   "graph",
-			expectedCategory: "rel",
-		},
-		{
-			name:             "GraphRelTriggeredBy",
-			predicate:        GraphRelTriggeredBy,
-			expectedDomain:   "graph",
-			expectedCategory: "rel",
-		},
-		{
-			name:             "GraphRelDependsOn",
-			predicate:        GraphRelDependsOn,
-			expectedDomain:   "graph",
-			expectedCategory: "rel",
-			expectedIRI:      DcRequires,
-		},
-		{
-			name:             "GraphRelImplements",
-			predicate:        GraphRelImplements,
-			expectedDomain:   "graph",
-			expectedCategory: "rel",
-		},
-		{
-			name:             "GraphRelDiscusses",
-			predicate:        GraphRelDiscusses,
-			expectedDomain:   "graph",
-			expectedCategory: "rel",
-			expectedIRI:      SchemaAbout,
-		},
-		{
-			name:             "GraphRelSupersedes",
-			predicate:        GraphRelSupersedes,
-			expectedDomain:   "graph",
-			expectedCategory: "rel",
-			expectedIRI:      DcReplaces,
-		},
-		{
-			name:             "GraphRelBlockedBy",
-			predicate:        GraphRelBlockedBy,
-			expectedDomain:   "graph",
-			expectedCategory: "rel",
-		},
-		{
-			name:             "GraphRelRelatedTo",
-			predicate:        GraphRelRelatedTo,
-			expectedDomain:   "graph",
-			expectedCategory: "rel",
-			expectedIRI:      DcRelation,
-		},
 	}
 
 	for _, tt := range tests {
@@ -134,9 +63,10 @@ func TestGetRelationshipPredicates(t *testing.T) {
 		}
 	}
 
-	// Should have all 12 relationship predicates
-	assert.GreaterOrEqual(t, len(relPredicates), 12,
-		"Should have at least 12 graph.rel.* predicates")
+	// graph.rel.contains is the one relationship predicate the framework
+	// registers; the eleven others were left behind as dead surface.
+	assert.Equal(t, []string{GraphRelContains}, relPredicates,
+		"graph.rel.contains should be the only graph.rel.* predicate")
 
 	// Verify specific predicates exist
 	predicateMap := make(map[string]bool)
@@ -146,17 +76,6 @@ func TestGetRelationshipPredicates(t *testing.T) {
 
 	expectedPredicates := []string{
 		GraphRelContains,
-		GraphRelReferences,
-		GraphRelInfluences,
-		GraphRelCommunicates,
-		GraphRelNear,
-		GraphRelTriggeredBy,
-		GraphRelDependsOn,
-		GraphRelImplements,
-		GraphRelDiscusses,
-		GraphRelSupersedes,
-		GraphRelBlockedBy,
-		GraphRelRelatedTo,
 	}
 
 	for _, pred := range expectedPredicates {
@@ -171,11 +90,6 @@ func TestRelationshipIRIMappings(t *testing.T) {
 		expectedIRI string
 	}{
 		{GraphRelContains, ProvHadMember},
-		{GraphRelReferences, DcReferences},
-		{GraphRelDependsOn, DcRequires},
-		{GraphRelDiscusses, SchemaAbout},
-		{GraphRelSupersedes, DcReplaces},
-		{GraphRelRelatedTo, DcRelation},
 	}
 
 	for _, tt := range tests {
@@ -193,17 +107,6 @@ func TestRelationshipPredicateFormat(t *testing.T) {
 	// All relationship predicates should follow graph.rel.* pattern
 	allRelPredicates := []string{
 		GraphRelContains,
-		GraphRelReferences,
-		GraphRelInfluences,
-		GraphRelCommunicates,
-		GraphRelNear,
-		GraphRelTriggeredBy,
-		GraphRelDependsOn,
-		GraphRelImplements,
-		GraphRelDiscusses,
-		GraphRelSupersedes,
-		GraphRelBlockedBy,
-		GraphRelRelatedTo,
 	}
 
 	for _, pred := range allRelPredicates {

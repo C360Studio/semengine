@@ -150,14 +150,6 @@ func TestHierarchyInversePredicates(t *testing.T) {
 			assert.Equal(t, tt.expectedInverse, inverse,
 				"GetInversePredicate(%s) should return %s", tt.predicate, tt.expectedInverse)
 
-			// Verify IsSymmetricPredicate
-			assert.Equal(t, tt.isSymmetric, IsSymmetricPredicate(tt.predicate),
-				"IsSymmetricPredicate(%s) should return %v", tt.predicate, tt.isSymmetric)
-
-			// Verify HasInverse
-			assert.True(t, HasInverse(tt.predicate),
-				"HasInverse(%s) should return true", tt.predicate)
-
 			// Verify metadata fields
 			meta := GetPredicateMetadata(tt.predicate)
 			require.NotNil(t, meta)
@@ -199,54 +191,15 @@ func TestInversePairConsistency(t *testing.T) {
 	}
 }
 
-func TestDiscoverInversePredicates(t *testing.T) {
-	inverses := DiscoverInversePredicates()
-
-	// Should include all hierarchy predicates with inverses
-	expectedPredicates := []string{
-		HierarchyDomainMember,
-		HierarchyDomainContains,
-		HierarchySystemMember,
-		HierarchySystemContains,
-		HierarchyTypeMember,
-		HierarchyTypeContains,
-		HierarchyTypeSibling,
-	}
-
-	for _, pred := range expectedPredicates {
-		inverse, exists := inverses[pred]
-		assert.True(t, exists,
-			"DiscoverInversePredicates should include %s", pred)
-		assert.NotEmpty(t, inverse,
-			"Inverse of %s should not be empty", pred)
-	}
-
-	// Verify symmetric predicate maps to itself
-	assert.Equal(t, HierarchyTypeSibling, inverses[HierarchyTypeSibling],
-		"Symmetric predicate should map to itself")
-}
-
 func TestGetInversePredicateForUnregistered(t *testing.T) {
 	// Should return empty string for unregistered predicates
 	inverse := GetInversePredicate("unregistered.predicate.name")
 	assert.Empty(t, inverse, "Unregistered predicate should have no inverse")
 }
 
-func TestIsSymmetricPredicateForUnregistered(t *testing.T) {
-	// Should return false for unregistered predicates
-	assert.False(t, IsSymmetricPredicate("unregistered.predicate.name"),
-		"Unregistered predicate should not be symmetric")
-}
-
-func TestHasInverseForUnregistered(t *testing.T) {
-	// Should return false for unregistered predicates
-	assert.False(t, HasInverse("unregistered.predicate.name"),
-		"Unregistered predicate should not have inverse")
-}
-
 func TestPredicateWithoutInverse(t *testing.T) {
 	// Sensor predicates should not have inverses
-	meta := GetPredicateMetadata(SensorTemperatureCelsius)
+	meta := GetPredicateMetadata("sensor.temperature.celsius")
 
 	// The sensor predicate may not be registered by default
 	// If it is registered, it should not have an inverse
@@ -258,7 +211,7 @@ func TestPredicateWithoutInverse(t *testing.T) {
 	}
 
 	// GetInversePredicate should return empty for predicates without inverse
-	inverse := GetInversePredicate(SensorTemperatureCelsius)
+	inverse := GetInversePredicate("sensor.temperature.celsius")
 	assert.Empty(t, inverse,
 		"GetInversePredicate should return empty for predicate without inverse")
 }

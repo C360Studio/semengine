@@ -145,44 +145,32 @@ func TestRegistrationStoresTheDeclaredValueUnchanged(t *testing.T) {
 	for _, canonical := range canonicalDataTypeDomain {
 		segment := strings.ReplaceAll(canonical, "_", "")
 		option := "datatype." + segment + ".optionpath"
-		structPath := "datatype." + segment + ".structpath"
 
 		Register(option, WithDataType(canonical))
 		if got := GetPredicateMetadata(option).DataType; got != canonical {
 			t.Errorf("option path for %q: DataType = %q, want the declared value", canonical, got)
 		}
-
-		RegisterPredicate(PredicateMetadata{Name: structPath, DataType: canonical})
-		if got := GetPredicateMetadata(structPath).DataType; got != canonical {
-			t.Errorf("struct-literal path for %q: DataType = %q, want the declared value", canonical, got)
-		}
 	}
 }
 
-// TestRegistrationRefusesALegacySpellingOnBothPaths pins the no-legacy ruling
-// at the registration seam rather than at the validator, and on both entry
-// points: before the ruling, each of these calls succeeded and silently stored
-// a different value than the one written.
+// TestRegistrationRefusesALegacySpelling pins the no-legacy ruling
+// at the registration seam rather than at the validator: before the ruling,
+// each of these calls succeeded and silently stored a different value than
+// the one written.
 //
 // spec: predicate-contract / A declared predicate datatype comes from one closed pragmatic vocabulary
-func TestRegistrationRefusesALegacySpellingOnBothPaths(t *testing.T) {
+func TestRegistrationRefusesALegacySpelling(t *testing.T) {
 	defer SnapshotRegistry()()
 
 	for _, legacy := range retiredLegacySpellings {
 		option := "datatype.legacy.optionpath"
-		structPath := "datatype.legacy.structpath"
 
 		if msg := registrationPanic(func() {
 			Register(option, WithDataType(legacy))
 		}); msg == "" {
 			t.Errorf("option path accepted retired spelling %q, want a refusal", legacy)
 		}
-		if msg := registrationPanic(func() {
-			RegisterPredicate(PredicateMetadata{Name: structPath, DataType: legacy})
-		}); msg == "" {
-			t.Errorf("struct-literal path accepted retired spelling %q, want a refusal", legacy)
-		}
-		if GetPredicateMetadata(option) != nil || GetPredicateMetadata(structPath) != nil {
+		if GetPredicateMetadata(option) != nil {
 			t.Fatalf("a registration refused for %q was still stored", legacy)
 		}
 	}
@@ -218,20 +206,16 @@ func TestAmendingReRegistrationKeepsTheInheritedValue(t *testing.T) {
 	}
 }
 
-// TestBothRegistrationEntryPointsRefuseTheSameValue pins that neither path
-// accepts a value the other refuses, and that refusal names both the offending
-// value and the accepted vocabulary.
+// TestRegistrationRefusalNamesTheValueAndTheVocabulary pins that refusal names
+// both the offending value and the accepted vocabulary.
 //
 // spec: predicate-contract / A declared predicate datatype comes from one closed pragmatic vocabulary
-func TestBothRegistrationEntryPointsRefuseTheSameValue(t *testing.T) {
+func TestRegistrationRefusalNamesTheValueAndTheVocabulary(t *testing.T) {
 	defer SnapshotRegistry()()
 
 	const refused = "PeerReviewPayload"
 	paths := map[string]func(){
 		"functional option": func() { Register("datatype.refuse.optionpath", WithDataType(refused)) },
-		"direct metadata": func() {
-			RegisterPredicate(PredicateMetadata{Name: "datatype.refuse.structpath", DataType: refused})
-		},
 	}
 
 	for name, register := range paths {
@@ -250,8 +234,7 @@ func TestBothRegistrationEntryPointsRefuseTheSameValue(t *testing.T) {
 		}
 	}
 
-	if GetPredicateMetadata("datatype.refuse.optionpath") != nil ||
-		GetPredicateMetadata("datatype.refuse.structpath") != nil {
+	if GetPredicateMetadata("datatype.refuse.optionpath") != nil {
 		t.Error("a refused registration was still stored")
 	}
 }
@@ -265,17 +248,12 @@ func TestRegistrationAcceptsAnAbsentDataType(t *testing.T) {
 	defer SnapshotRegistry()()
 
 	if msg := registrationPanic(func() {
-		RegisterPredicate(PredicateMetadata{Name: "datatype.absent.structpath"})
-	}); msg != "" {
-		t.Fatalf("registering with no datatype panicked: %s", msg)
-	}
-	if msg := registrationPanic(func() {
 		Register("datatype.absent.optionpath", WithDescription("no datatype declared"))
 	}); msg != "" {
 		t.Fatalf("registering with no datatype panicked: %s", msg)
 	}
 
-	for _, predicate := range []string{"datatype.absent.structpath", "datatype.absent.optionpath"} {
+	for _, predicate := range []string{"datatype.absent.optionpath"} {
 		meta := GetPredicateMetadata(predicate)
 		if meta == nil {
 			t.Fatalf("%s: not registered", predicate)

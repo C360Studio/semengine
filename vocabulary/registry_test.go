@@ -36,41 +36,11 @@ func TestRegisterRejectsSymmetricPredicateWithExplicitInverse(t *testing.T) {
 		})
 }
 
-func TestRegisterPredicateRejectsInconsistentMetadata(t *testing.T) {
-	defer SnapshotRegistry()()
-
-	assert.PanicsWithValue(t,
-		`register predicate "test.rel.parent": metadata domain "other" does not match predicate domain "test"`,
-		func() {
-			RegisterPredicate(PredicateMetadata{
-				Name:     "test.rel.parent",
-				Domain:   "other",
-				Category: "rel",
-			})
-		})
-}
-
-func TestRegisterPredicateFillsCanonicalMetadata(t *testing.T) {
-	defer SnapshotRegistry()()
-
-	RegisterPredicate(PredicateMetadata{Name: "test.rel.parent"})
-	meta := GetPredicateMetadata("test.rel.parent")
-	if meta == nil {
-		t.Fatal("registered metadata not found")
-	}
-	assert.Equal(t, "test", meta.Domain)
-	assert.Equal(t, "rel", meta.Category)
-}
-
-func TestRegisterPredicateRejectsInvalidAliasMetadata(t *testing.T) {
+func TestRegisterRejectsInvalidAliasMetadata(t *testing.T) {
 	defer SnapshotRegistry()()
 
 	panicValue := capturePanic(func() {
-		RegisterPredicate(PredicateMetadata{
-			Name:      "test.identity.alias",
-			IsAlias:   true,
-			AliasType: AliasType("invented"),
-		})
+		Register("test.identity.alias", WithAlias(AliasType("invented"), 0))
 	})
 	assert.Contains(t, panicValue, `register predicate "test.identity.alias": invalid alias type "invented"`)
 }
@@ -187,88 +157,6 @@ func TestGetInversePredicateWithExplicitInverse(t *testing.T) {
 	assert.Equal(t, "test.rel.member", GetInversePredicate("test.rel.contains"))
 }
 
-func TestDiscoverInversePredicatesIsolated(t *testing.T) {
-	originalRegistry := make(map[string]PredicateMetadata)
-	registryMu.RLock()
-	for k, v := range predicateRegistry {
-		originalRegistry[k] = v
-	}
-	registryMu.RUnlock()
-	defer func() {
-		registryMu.Lock()
-		predicateRegistry = originalRegistry
-		registryMu.Unlock()
-	}()
-
-	ClearRegistry()
-
-	// Register various predicates
-	Register("test.rel.member", WithInverseOf("test.rel.contains"))
-	Register("test.rel.contains", WithInverseOf("test.rel.member"))
-	Register("test.rel.sibling", WithSymmetric(true))
-	Register("test.data.value") // No inverse
-
-	inverses := DiscoverInversePredicates()
-
-	// Should have 3 predicates with inverses
-	assert.Len(t, inverses, 3)
-	assert.Equal(t, "test.rel.contains", inverses["test.rel.member"])
-	assert.Equal(t, "test.rel.member", inverses["test.rel.contains"])
-	assert.Equal(t, "test.rel.sibling", inverses["test.rel.sibling"])
-
-	// test.data.value should not be in the map
-	_, exists := inverses["test.data.value"]
-	assert.False(t, exists)
-}
-
-func TestHasInverseFunction(t *testing.T) {
-	originalRegistry := make(map[string]PredicateMetadata)
-	registryMu.RLock()
-	for k, v := range predicateRegistry {
-		originalRegistry[k] = v
-	}
-	registryMu.RUnlock()
-	defer func() {
-		registryMu.Lock()
-		predicateRegistry = originalRegistry
-		registryMu.Unlock()
-	}()
-
-	ClearRegistry()
-
-	Register("test.rel.member", WithInverseOf("test.rel.contains"))
-	Register("test.rel.sibling", WithSymmetric(true))
-	Register("test.data.value") // No inverse
-
-	assert.True(t, HasInverse("test.rel.member"))
-	assert.True(t, HasInverse("test.rel.sibling"))
-	assert.False(t, HasInverse("test.data.value"))
-	assert.False(t, HasInverse("nonexistent.predicate.name"))
-}
-
-func TestIsSymmetricPredicateFunction(t *testing.T) {
-	originalRegistry := make(map[string]PredicateMetadata)
-	registryMu.RLock()
-	for k, v := range predicateRegistry {
-		originalRegistry[k] = v
-	}
-	registryMu.RUnlock()
-	defer func() {
-		registryMu.Lock()
-		predicateRegistry = originalRegistry
-		registryMu.Unlock()
-	}()
-
-	ClearRegistry()
-
-	Register("test.rel.member", WithInverseOf("test.rel.contains"))
-	Register("test.rel.sibling", WithSymmetric(true))
-
-	assert.False(t, IsSymmetricPredicate("test.rel.member"))
-	assert.True(t, IsSymmetricPredicate("test.rel.sibling"))
-	assert.False(t, IsSymmetricPredicate("nonexistent.predicate.name"))
-}
-
 func TestCombineMultipleOptions(t *testing.T) {
 	originalRegistry := make(map[string]PredicateMetadata)
 	registryMu.RLock()
@@ -370,15 +258,14 @@ func TestRegisterAmend_OmittedFieldsRetained(t *testing.T) {
 	assert.Equal(t, 1, priority)
 }
 
-// TestRegisterAmend_RoleAndWeightRetained guards the same clobber class for the
-// increment-5b ranking signals (#408): a re-Register omitting WithRole/WithWeight
+// TestRegisterAmend_WeightRetained guards the same clobber class for the
+// increment-5b ranking signals (#408): a re-Register omitting WithWeight
 // must not strip a previously-declared salience.
-func TestRegisterAmend_RoleAndWeightRetained(t *testing.T) {
+func TestRegisterAmend_WeightRetained(t *testing.T) {
 	defer SnapshotRegistry()()
 	ClearRegistry()
 
 	Register("test.identity.serial",
-		WithRole(RoleIdentity),
 		WithWeight(1.5))
 
 	// Re-register with only a description.
@@ -388,7 +275,6 @@ func TestRegisterAmend_RoleAndWeightRetained(t *testing.T) {
 	meta := GetPredicateMetadata("test.identity.serial")
 	require.NotNil(t, meta)
 	assert.Equal(t, "Serial number", meta.Description)
-	assert.Equal(t, RoleIdentity, meta.Role, "role must survive a role-less re-Register")
 	assert.Equal(t, 1.5, meta.Weight, "weight must survive a weight-less re-Register")
 }
 
@@ -484,9 +370,9 @@ func TestRegisterWithRuleOpaque(t *testing.T) {
 
 // TestRegisterWithRoleAndWeight verifies the predicate-salience ranking signal
 // (ADR-062 increment 5, gh#396 / semsource ask #2) round-trips through the
-// registry: WithRole/WithWeight surface on PredicateMetadata, and undeclared
-// predicates default to RoleUnspecified / weight 0.
-func TestRegisterWithRoleAndWeight(t *testing.T) {
+// registry: WithWeight surfaces on PredicateMetadata, and undeclared
+// predicates default to weight 0.
+func TestRegisterWithWeight(t *testing.T) {
 	originalRegistry := make(map[string]PredicateMetadata)
 	registryMu.RLock()
 	for k, v := range predicateRegistry {
@@ -503,7 +389,6 @@ func TestRegisterWithRoleAndWeight(t *testing.T) {
 
 	Register("test.identity.serial",
 		WithDescription("Serial number"),
-		WithRole(RoleIdentity),
 		WithWeight(1.0))
 
 	// A predicate registered without the salience options keeps the zero values.
@@ -512,14 +397,12 @@ func TestRegisterWithRoleAndWeight(t *testing.T) {
 
 	meta := GetPredicateMetadata("test.identity.serial")
 	require.NotNil(t, meta)
-	assert.Equal(t, RoleIdentity, meta.Role)
 	assert.Equal(t, 1.0, meta.Weight)
 
 	neutral := GetPredicateMetadata("test.meta.updated")
 	require.NotNil(t, neutral)
-	assert.Equal(t, RoleUnspecified, neutral.Role, "undeclared role defaults to unspecified")
 	assert.Equal(t, 0.0, neutral.Weight, "undeclared weight defaults to 0 (neutral)")
 
-	// Unregistered predicates return nil metadata (no role/weight).
+	// Unregistered predicates return nil metadata (no weight).
 	assert.Nil(t, GetPredicateMetadata("test.unknown.field"))
 }

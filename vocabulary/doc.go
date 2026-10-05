@@ -90,11 +90,6 @@
 //	    }
 //	}
 //
-//	// Import from RDF - translate IRI to dotted
-//	if dotted := vocabulary.LookupByIRI(rdfTriple.Predicate); dotted != "" {
-//	    triple.Predicate = dotted  // "robotics.battery.level"
-//	}
-//
 // # Alias Predicates for Entity Resolution
 //
 // Some predicates represent entity aliases (identifiers, labels, call signs).
@@ -138,16 +133,16 @@
 // Common standard vocabulary IRIs are provided in standards.go:
 //
 //	const (
-//	    OWL_SAME_AS = "http://www.w3.org/2002/07/owl#sameAs"
-//	    SKOS_PREF_LABEL = "http://www.w3.org/2004/02/skos/core#prefLabel"
-//	    SCHEMA_NAME = "http://schema.org/name"
-//	    // ... many more
+//	    SkosBroader = "http://www.w3.org/2004/02/skos/core#broader"
+//	    DcTitle = "http://purl.org/dc/terms/title"
+//	    ProvHadMember = ProvNamespace + "hadMember"
+//	    // ... the others in standards.go
 //	)
 //
 // Use these constants when registering predicates with standard mappings:
 //
 //	vocabulary.Register("entity.label.preferred",
-//	    vocabulary.WithIRI(vocabulary.SKOS_PREF_LABEL))
+//	    vocabulary.WithIRI(vocabulary.DcTitle))
 //
 // # Best Practices
 //
@@ -215,23 +210,6 @@
 //
 //	// Clear (testing only)
 //	ClearRegistry()
-//
-// # Migration from Colon Notation
-//
-// If you have legacy code using colon notation ("robotics:Drone"):
-//
-// **Before:**
-//
-//	iri := vocabulary.EntityTypeIRI("robotics:Drone")
-//
-// **After:**
-//
-//	// Use dotted notation everywhere
-//	entityType := message.EntityType{Domain: "robotics", Type: "drone"}
-//	typeStr := entityType.Key()  // "robotics.drone"
-//
-//	// IRI functions now accept dotted notation
-//	iri := vocabulary.EntityTypeIRI(typeStr)
 //
 // # Design Philosophy Summary
 //

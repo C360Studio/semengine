@@ -495,10 +495,69 @@
     at :80-84), :85-111 (the function) and the pkg/platform import :9; vocabulary/iris_test.go
     TestEntityIRI :76-142 (the call at :138), BenchmarkEntityIRI :291-300 (the call at :298) and
     the pkg/platform import :7. TestNoDeploymentAuthorityNames (internal/harness/contract) failed
-    first naming vocabulary.EntityIRI and now holds the name out of every production package
+    first naming vocabulary.EntityIRI and now holds the name out of every production package.
+    Adapt item, dead surface removed (owner rulings, #9 comments 5985697767 item 1 and 5985900154
+    item 1, under #9 comment 5968830525; evidence: the surface audit,
+    openspec/changes/setup-04a-01-floor/surface-audit.md §1, which lists each identifier's readers in
+    SemEngine, the pin's admitted and not-admitted packages, semsource and semconnect): 162 of the 258
+    exported identifiers, which nothing reads in SemEngine production, an admitted pin package, or
+    semsource or semconnect production code; 92 stay (57 pattern, 29 base terms, 4 consumer-read, 2
+    test helpers). Removed, pin lines: predicates.go :27-71 (the 17 Sensor constants), :82-104 (10 Geo
+    constants; latitude, longitude and altitude stay), :107-188 (10 Time, 10 Network, 9 Quality),
+    :196-239 (11 GraphRel constants; graph.rel.contains stays), :545-551 (the PredicateMetadata.Role
+    field) and :561-584 (PredicateRole and its 7 constants), and the NOTE at :435-439 corrected: the
+    remaining constants are base terms, not examples, and vocabulary/examples is not here;
+    standards.go: the 7 OWL, 3 SKOS (prefLabel, altLabel, hiddenLabel), 3 RDFS, 2 DC (alternative,
+    source), 2 DCTerms dotted (creator, identifier), 4 Schema.org, 40 PROV-O, 7 DC relation, 3
+    Schema.org relation and 3 FOAF constants (pin :20-51, :54-67, :88-100, :111-117, :127-134,
+    :137-155, :165-220, :227-270, :276-285, :292-360, :364-371, :375-382, :384-459), leaving
+    SkosNotation, SkosBroader, SkosNarrower, SkosRelated, DcIdentifier, DcTitle, DCTermsTitle,
+    ProvNamespace, ProvWasAttributedTo, ProvHadMember and ProvGeneratedAtTime; relationships.go
+    :12-60 (the 11 registrations of the cut graph.rel.* terms, so ListRegisteredPredicates no
+    longer returns them and RequireDeclaredPredicate refuses them; no consumer filter matches
+    graph.rel., audit inventory review); iris.go :4-8 (imports), :15-16 (GraphNamespace,
+    SystemNamespace), :19-65 (EntityTypeIRI) and :113-198 (RelationshipIRI, SubjectIRI and
+    toKebabCase, whose only caller was RelationshipIRI); registry.go :253-272 (WithRole), :382-410
+    (RegisterPredicate, a second registration spelling with no production caller) and :579-638
+    (IsSymmetricPredicate, HasInverse, DiscoverInversePredicates: query spellings of what
+    GetInversePredicate answers, no reader). Doc comments corrected to the remaining API:
+    registry.go :309-310 (Register's pointer to RegisterPredicate for replace semantics: a
+    registration cannot now be replaced), :416-419 (the one enforcement seam is reached by
+    Register only) and :497 (alias registration uses Register). doc.go (owner rulings, #9
+    comments 5957221949 and 5984291337), pin lines: :93-97 (an IRI import example calling
+    vocabulary.LookupByIRI, which never existed), :141-144 and :150 (OWL_SAME_AS, SKOS_PREF_LABEL
+    and SCHEMA_NAME, which never existed, replaced by kept constants), :219-235 (the colon-notation
+    migration section, built on EntityTypeIRI). README.md behaviour edits, same rulings, pin lines:
+    :199 (SkosPrefLabel → DcTitle); :230, :237, :251, :258 (Go-constant lines naming only cut
+    constants) and :244 (SchemaIdentifier dropped); :263 (the example constant is DcIdentifier);
+    :272-273 and :286-287 (WithIRI of FoafAccountName and RdfsLabel dropped); :302-378 (the OWL,
+    Schema.org, PROV-O, SSN/SOSA and FOAF sections removed, the SSN/SOSA constants never having
+    existed at the pin; the SKOS and Dublin Core blocks keep SkosBroader, SkosNarrower,
+    DcIdentifier and DcTitle); :460-462 (RegisterPredicate); :586 (mappings sentence: PROV-O
+    only), :592, :596 and :598-641 (the cut graph.rel.* terms); :647-651 (the usage example uses
+    GraphRelContains); :663, :665 (Dublin Core and Schema.org bullets); :671, :673 (the
+    predicates are framework terms, not examples; the examples/ files are not here); :678
+    (standards.go's families) and :683 (examples/). The sub-package sections (:384-456, :679-682)
+    keep their planned import paths under #9 comment 5968665464. Tests of the removed names,
+    pin lines: iris_test.go :11-75, :144-246 and :262-312 (TestNamespaceConstants keeps its
+    SemStreamsBase assertion); registry_test.go :39-64 (two RegisterPredicate tests), :190-271
+    (DiscoverInversePredicates, HasInverse, IsSymmetricPredicate) and the Role assertions of
+    :376-395 and :489-525 (renamed TestRegisterAmend_WeightRetained and TestRegisterWithWeight),
+    with :65-76 kept on Register (TestRegisterRejectsInvalidAliasMetadata); hierarchy_test.go
+    :153-160, :202-228, :235-246 (the symmetric and inverse assertions stay through
+    GetInversePredicate and the metadata) and :249, :261 (an unregistered sensor literal replaces
+    the cut constant); relationships_test.go the 11 cut terms' rows, and :137-139 now asserts that
+    graph.rel.contains is the only graph.rel.* predicate registered; predicate_datatype_test.go the
+    RegisterPredicate halves of five tests (two renamed TestRegistrationRefusesALegacySpelling and
+    TestRegistrationRefusalNamesTheValueAndTheVocabulary). Readers left behind (audit §1.8): the
+    not-admitted vocabulary/examples, vocabulary/agentic and processor/agentic-tools/executors at
+    the pin; processor/rule/config_validation_test.go:122,127 switches to Register when rule is
+    ported. A consumer that needs a cut term declares a local constant and registers it
   proving_tests: >-
     the 11 test files in vocabulary/ at the pin, less TestEntityIRI and BenchmarkEntityIRI (removed
-    with EntityIRI, above)
+    with EntityIRI, above) and the tests of the dead surface removed above;
+    relationships_test.go TestGetRelationshipPredicates asserts graph.rel.contains is the only
+    graph.rel.* registration (a mutant re-registering graph.rel.near fails it)
   owner: setup-04a-01-floor developer
   disposition: adapt
 

@@ -7,6 +7,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -135,6 +136,102 @@ func TestConsumeHandlerContextEndsWhenCloseBegins(t *testing.T) {
 				await(t, returned, "the handler returning")
 				native.end()
 				require.NoError(t, awaitErr(t, closed, "Close"), "Close joins the handler and returns nil")
+			})
+		})
+	}
+}
+
+// TestConsumeHandlerContextEndsWhenCloseBeginsAfterDeliveryEnded (owner ruling, #9 comment
+// 5994720412 item 2; reviewer early check at 5ecc016, HIGH): delivery can end, by the caller's
+// Stop or a native end, while a handler still runs. Close beginning after that still cancels the
+// handler's context, so a handler without a message timeout does not hold Close until its context
+// ends.
+func TestConsumeHandlerContextEndsWhenCloseBeginsAfterDeliveryEnded(t *testing.T) {
+	for _, tc := range consumeContextCases {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				c, native := newCapturingClient(t)
+				entered := make(chan struct{})
+				ended := make(chan struct{})
+				releaseCh := make(chan struct{})
+				releaseInCleanup(t, releaseCh)
+				cfg := StreamConsumerConfig{StreamName: "S_CTX", ConsumerName: "ctx", MaxAckPending: 17,
+					DisableMessageTimeout: true}
+				_, err := consumeVia(t.Context(), c, tc.port, cfg, func(ctx context.Context, _ jetstream.Msg) {
+					close(entered)
+					select {
+					case <-ctx.Done():
+						close(ended)
+					case <-releaseCh:
+					}
+				})
+				require.NoError(t, err)
+				native.deliver()
+				await(t, entered, "the handler starting")
+				native.end()
+				synctest.Wait()
+
+				closed := closeAsync(t.Context(), c)
+				await(t, ended, "the handler's context ending once Close began")
+				assert.NoError(t, awaitErr(t, closed, "Close"), "Close joins the handler and returns nil")
+			})
+		})
+	}
+}
+
+// TestConsumeHandlerContextEndsWhenCloseBeginsBeforeTheHandle (owner ruling, #9 comment
+// 5994720412 item 2; reviewer early check at 5ecc016, MEDIUM): native Consume can deliver before
+// it returns its handle. If Close begins in that window, the running handler's context is
+// cancelled then, not only once the handle arrives.
+func TestConsumeHandlerContextEndsWhenCloseBeginsBeforeTheHandle(t *testing.T) {
+	for _, tc := range consumeContextCases {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				c, err := NewClient("nats://unused")
+				require.NoError(t, err)
+				callbackEntered := make(chan struct{})
+				ended := make(chan struct{})
+				releaseCh := make(chan struct{})
+				var releaseOnce sync.Once
+				releaseHandler := func() { releaseOnce.Do(func() { close(releaseCh) }) }
+				handle := &controlledNativeConsumeContext{closed: make(chan struct{})}
+				native := &startedNativeConsumer{
+					info: &jetstream.ConsumerInfo{Stream: "S_CTX", Name: "ctx",
+						Config: jetstream.ConsumerConfig{Durable: "ctx", MaxAckPending: 17}},
+					handle: handle, entered: make(chan struct{}), returnHandle: make(chan struct{}),
+					callbackEntered: callbackEntered,
+				}
+				c.mu.Lock()
+				c.js = &streamOnlyJetStream{fakeJetStream: &fakeJetStream{}, stream: &consumerOnlyStream{consumer: native}}
+				c.mu.Unlock()
+				c.setStatus(StatusConnected)
+				// Cleanups run last-registered first: the handler is released, the handle returned,
+				// then a bounded Close joins the rest.
+				closeInCleanup(t, c)
+				returnHandle := releaseInCleanup(t, native.returnHandle)
+				t.Cleanup(releaseHandler)
+
+				setup := make(chan error, 1)
+				go func() {
+					cfg := StreamConsumerConfig{StreamName: "S_CTX", ConsumerName: "ctx", MaxAckPending: 17,
+						DisableMessageTimeout: true}
+					_, e := consumeVia(t.Context(), c, tc.port, cfg, func(ctx context.Context, _ jetstream.Msg) {
+						close(callbackEntered)
+						select {
+						case <-ctx.Done():
+							close(ended)
+						case <-releaseCh:
+						}
+					})
+					setup <- e
+				}()
+				await(t, native.entered, "native Consume delivering before its handle")
+
+				closed := closeAsync(t.Context(), c)
+				await(t, ended, "the handler's context ending once Close began, before the handle")
+				returnHandle()
+				assert.ErrorIs(t, awaitErr(t, setup, "the refused setup"), nats.ErrConnectionClosed)
+				assert.NoError(t, awaitErr(t, closed, "Close"), "Close joins the handler and returns nil")
 			})
 		})
 	}

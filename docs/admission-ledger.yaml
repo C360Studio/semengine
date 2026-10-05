@@ -2070,7 +2070,14 @@
     TestConsumeHandlerContextEndsWhenCloseBegins (consume_context_test.go), each over the internal
     and port paths, failed first on both. Mutation (implementer-reported, PR #48): Close not
     cancelling the handler context in either path, port handlers parented by the setup context, and
-    internal handlers parented by the setup context: each fails its test; restored, they pass
+    internal handlers parented by the setup context: each fails its test; restored, they pass.
+    TestConsumeHandlerContextEndsWhenCloseBeginsAfterDeliveryEnded (delivery ended by a native end
+    while a handler with DisableMessageTimeout runs, then Close; failed first on both paths at
+    5ecc016, reviewer early check HIGH) and TestConsumeHandlerContextEndsWhenCloseBeginsBeforeTheHandle
+    (native Consume delivers before returning its handle and Close begins in that window). Mutation:
+    the cancel removed from owned_delivery.go ownConsumer's closing case before the handle (it
+    survived the whole unit suite at 5ecc016), and from the closing case while it waits for the last
+    handler: each fails its test on both paths; restored, they pass
   owner: setup-04a-01-floor developer
   disposition: adapt
 

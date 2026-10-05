@@ -162,9 +162,15 @@ func (c *Client) ownConsumer(
 			}
 		}
 		// Closed() alone is not the end of the handlers (jetstream/pull.go:822-837): it can
-		// close while one still runs. d.done is.
+		// close while one still runs. d.done is. Delivery can have ended before Close begins (the
+		// caller's Stop, or a native end), so Close beginning still cancels a running handler.
 		d.end()
-		<-d.done
+		select {
+		case <-d.done:
+		case <-closing:
+			cancelHandlers()
+			<-d.done
+		}
 		cancelHandlers()
 		release(h != nil)
 	}) {

@@ -139,6 +139,7 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
       (`reach.go:155`), `-expect reach_test.go:172`: detection; the branch deleted, `-expect-text
       'index out of range [-1]'`: inconclusive, the subtest fails with that panic, which Go prints under the parent
       test. With the branch deleted, the package's tests at `5e963ad` pass.
+      Evidence: comment 6021125031.
 
 ## 3. Shown able to fail
 
@@ -214,10 +215,12 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
       names"): a review record that approves them, naming the commit it read, recorded on this pull request.
       Record 6020389633 (claude, semengine-reviewer) approves `288cf55..cb4427d` at `cb4427d`, on CI run
       37490965851, with one MEDIUM finding and three NITs; all four are fixed in the commit that ticks this task.
-- [ ] 5.4 Codex's re-review of the empty-list test commit: a review record that approves, at the head that carries it.
+- [x] 5.4 Codex's re-review of the empty-list test commit: a review record that approves, at the head that carries it.
+      Record 6021349852 approves at `0385e0c`, which carries `3045d1f`; CI run 37497437140 passed at `0385e0c`. Its
+      two MEDIUM findings are fixed in `11515c4`.
 
 ## 6. In the archive commit
 
-- [ ] 6.1 `openspec archive mutation-check` creates `openspec/specs/mutation-check/spec.md`, in the same commit as
+- [x] 6.1 `openspec archive mutation-check` creates `openspec/specs/mutation-check/spec.md`, in the same commit as
       the spec sync and the ticks this commit makes. The same commit moves the spec's entry in
       `docs/repository-map.md` from "Not yet present" to the "Present" table. Gate: `task spec:check` on that commit.

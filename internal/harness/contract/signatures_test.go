@@ -443,9 +443,22 @@ type Record = dep.Record
 
 // No forbidden name: nothing is reported.
 type Plain = struct{ Name string }
+
+// An interface that embeds one declared outside the module: GlobalID is reported at the alias.
+type Exposed = interface{ dep.Identity }
+
+// A module-owned embedded interface: GlobalID is reported once, at Inner.
+type Inner interface{ GlobalID() string }
+
+type Outer interface{ Inner }
+
+type OuterAlias = interface{ Inner }
+
+type Wraps interface{ dep.Identity }
 `,
 	"dep/go.mod": "module example.com/dep\n\ngo 1.26\n",
-	"dep/dep.go": "package dep\n\ntype Record struct{ GlobalID string }\n\nfunc (Record) FederationOrigin() string { return \"\" }\n",
+	"dep/dep.go": "package dep\n\ntype Record struct{ GlobalID string }\n\nfunc (Record) FederationOrigin() string { return \"\" }\n\n" +
+		"type Identity interface{ GlobalID() string }\n",
 	"pub/pub.go": `package pub
 
 type FederationMeta interface{ Platform() string }
@@ -533,6 +546,11 @@ func TestNoDeploymentAuthorityNamesSensitivity(t *testing.T) {
 		// dep.Record's members are declared outside the module, so the alias's line is reported.
 		at("pub/alias.go:20", "pub.Record.FederationOrigin"),
 		at("pub/alias.go:20", "pub.Record.GlobalID"),
+		// Inherited interface methods (Codex F3, PR #73 comment 6018394100): one declared outside the
+		// module is reported at the embedder; one the module declares, once, at its declaration.
+		at("pub/alias.go:26", "pub.Exposed.GlobalID"),
+		at("pub/alias.go:29", "pub.Inner.GlobalID"),
+		at("pub/alias.go:35", "pub.Wraps.GlobalID"),
 	}
 	sort.Strings(want)
 	if strings.Join(violations, "\n") != strings.Join(want, "\n") {
@@ -545,8 +563,9 @@ const authoritySuffix = " spells the deployment authority outside the entity-ID 
 
 // authorityNameViolations reports every exported name matching authorityNames in the non-test
 // packages of the module at root: package-level identifiers, and the exported methods, struct
-// fields and interface methods of package-level types, exported or not (an exported method of an
-// unexported type is still callable through an exported function that returns it). An alias is a
+// fields and interface methods (embedded ones included) of package-level types, exported or not
+// (an exported method of an unexported type is still callable through an exported function that
+// returns it). An alias is a
 // package-level type too: its own name is checked, and so are the members of the type it stands
 // for, unless that type is one this module declares, whose members are reported once, at its own
 // declaration. Each line names the file, line, qualified identifier and rule; the count is the
@@ -611,8 +630,17 @@ func authorityNameViolations(t *testing.T, root string) ([]string, int) {
 					report(obj.Pos(), qualified+"."+u.Field(i).Name(), u.Field(i))
 				}
 			case *types.Interface:
+				// The whole method set, embedded interfaces included: a method declared in the
+				// module is reported at its own declaration, so here only when it is this
+				// interface's own; one inherited from outside the module only here.
+				explicit := map[*types.Func]bool{}
 				for i := 0; i < u.NumExplicitMethods(); i++ {
-					report(obj.Pos(), qualified+"."+u.ExplicitMethod(i).Name(), u.ExplicitMethod(i))
+					explicit[u.ExplicitMethod(i)] = true
+				}
+				for i := 0; i < u.NumMethods(); i++ {
+					if m := u.Method(i); explicit[m] || !inModule(m.Pkg()) {
+						report(obj.Pos(), qualified+"."+m.Name(), m)
+					}
 				}
 			}
 		}

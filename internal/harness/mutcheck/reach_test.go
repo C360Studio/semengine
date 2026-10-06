@@ -9,10 +9,10 @@ import (
 	"testing"
 )
 
-// testdata/reach holds four targets (plant/target.go, plant/branch.go, plant/inside.go and
-// plant/label.go), the coverage profile of their unchanged code that the reach run would record
-// (profile.txt, from
-// `go test -json -count=1 -cpu 1 -race -run '^(TestClamp|TestBranches|TestInside|TestLabel)$' -coverpkg=./plant -coverprofile=profile.txt ./plant`
+// testdata/reach holds five targets (plant/target.go, plant/branch.go, plant/inside.go,
+// plant/label.go and plant/empty.go), the coverage profile of their unchanged code that the reach
+// run would record (profile.txt, from
+// `go test -json -count=1 -cpu 1 -race -run '^(TestClamp|TestBranches|TestInside|TestLabel|TestEmpty)$' -coverpkg=./plant -coverprofile=profile.txt ./plant`
 // with go1.26.6), and one line diff per case, taken with
 // `git diff --no-index --no-ext-diff --no-textconv --no-color -U0` from the target to a copy with
 // the wrong change. TestClamp calls Clamp(3): Clamp's first block (lines 20-25) and its last
@@ -24,8 +24,10 @@ import (
 // (9.2,9.10) did not; Lab jumps to the label `done:` on line 18, skipping `x++` in block 17.2,18.1,
 // whose inclusive end is the label's start, and runs `return x` (19.2,19.10). TestLabel calls
 // Lab2(-1), which jumps to `done:` on line 11, skipping `hits++` in block 10.2,11.1, and runs the
-// labeled `hits += 2` (12.2,12.11), the last statement of the body. Every wrong change here
-// compiles, and the test of its target passes on each of them.
+// labeled `hits += 2` (12.2,12.11), the last statement of the body. TestEmpty calls Offer on a
+// channel with no receiver: the send's case (6.15,7.14) does not run; the empty `default:` clause,
+// recorded as the zero-statement block 8.10,8.10, runs, and so does `return false` (10.2,10.14).
+// Every wrong change here compiles, and the test of its target passes on each of them.
 
 func reachFile(t *testing.T, name string) []byte {
 	t.Helper()
@@ -130,6 +132,12 @@ func TestReachRecordedCases(t *testing.T) {
 		{"an insertion right before a label", "insertion-before-label.diff", "label.go", []wantRegion{
 			{hunk{oldStart: 10, newStart: 11, newCount: 1}, notReached, []string{"10.2,11.1 0"}, []string{"after target line 10"}},
 		}, notReached, invalid, []string{"did not reach the wrong change"}},
+		// The place after `default:` lies in that clause's list, which has no statement to decide
+		// it. The clause's zero-statement block 8.10,8.10 ran, and so did `return false` on line 10,
+		// outside the clause; neither decides.
+		{"an insertion into an empty default clause", "insertion-into-empty-clause.diff", "empty.go", []wantRegion{
+			{hunk{oldStart: 8, newStart: 9, newCount: 1}, notMeasurable, nil, []string{"after target line 8", "has no statement"}},
+		}, notMeasurable, survivor, []string{"reach could not be measured"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			target, base := target, "target.go"

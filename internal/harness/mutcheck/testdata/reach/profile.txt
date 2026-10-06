@@ -8,6 +8,10 @@ plant.invalid/m/plant/branch.go:17.9,18.12 1 0
 plant.invalid/m/plant/branch.go:19.9,20.12 1 1
 plant.invalid/m/plant/branch.go:21.10,22.13 1 0
 plant.invalid/m/plant/branch.go:24.2,24.10 1 1
+plant.invalid/m/plant/empty.go:4.37,5.9 1 1
+plant.invalid/m/plant/empty.go:6.15,7.14 1 0
+plant.invalid/m/plant/empty.go:8.10,8.10 0 1
+plant.invalid/m/plant/empty.go:10.2,10.14 1 1
 plant.invalid/m/plant/inside.go:4.22,6.11 1 1
 plant.invalid/m/plant/inside.go:6.11,8.3 1 1
 plant.invalid/m/plant/inside.go:9.2,9.10 1 0

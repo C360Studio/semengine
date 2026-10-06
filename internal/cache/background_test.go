@@ -216,12 +216,12 @@ func TestCacheCloseAfterContextEndAndAgain(t *testing.T) {
 // TestCacheConstructorsReturnNilCacheOnError: every constructor that returns Cache[V] and an error
 // returns a nil Cache with the error, never a nil pointer inside a non-nil interface, which a
 // caller checking c != nil would take for a cache. The error is a metrics registration refusal:
-// the registry already holds a collector named semstreams_cache_hits_total with another help.
+// the registry already holds a collector named semengine_cache_hits_total with another help.
 func TestCacheConstructorsReturnNilCacheOnError(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		registry := metric.NewMetricsRegistry()
 		require.NoError(t, registry.PrometheusRegistry().Register(prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: "semstreams", Subsystem: "cache", Name: "hits_total",
+			Namespace: "semengine", Subsystem: "cache", Name: "hits_total",
 			ConstLabels: prometheus.Labels{"component": "taken"}, Help: "another help",
 		})))
 		opt := WithMetrics[string](registry, "taken")

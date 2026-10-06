@@ -9,6 +9,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -71,7 +73,7 @@ func (c *blockingCollector) Collect(ch chan<- prometheus.Metric) {
 
 func newBlockingCollector() *blockingCollector {
 	return &blockingCollector{
-		desc:    prometheus.NewDesc("semstreams_lifecycle_block", "test", nil, nil),
+		desc:    prometheus.NewDesc("semengine_lifecycle_block", "test", nil, nil),
 		entered: make(chan struct{}),
 		release: make(chan struct{}),
 	}
@@ -482,6 +484,23 @@ func TestServerServesHealthOverRealHTTP(t *testing.T) {
 	err = server.Start(ended)
 	require.Error(t, err)
 	require.True(t, errors.Is(err, context.Canceled) || errors.Is(err, errs.ErrAlreadyStarted))
+}
+
+// The root page is outward-facing: it names SemEngine, never SemStreams (#69).
+func TestServerRootPageNamesSemEngine(t *testing.T) {
+	server := NewServer(9090, "/metrics", NewMetricsRegistry(), security.Config{})
+	require.NoError(t, server.StartWithListener(t.Context(), boundServerListener(t)))
+	registerServerCleanup(t, server)
+
+	response, err := testServerGET(t, server.Address()[:len(server.Address())-len("/metrics")]+"/", nil)
+	require.NoError(t, err)
+	body, err := io.ReadAll(response.Body)
+	require.NoError(t, err)
+	require.NoError(t, response.Body.Close())
+	require.Equal(t, http.StatusOK, response.StatusCode)
+	require.Contains(t, string(body), "<title>SemEngine Metrics</title>")
+	require.Contains(t, string(body), "<h1>SemEngine Metrics Server</h1>")
+	require.NotContains(t, strings.ToLower(string(body)), "semstreams")
 }
 
 func boundServerListener(t *testing.T) *observedTCPListener {

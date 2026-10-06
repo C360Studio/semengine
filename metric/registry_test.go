@@ -122,17 +122,17 @@ func TestMetricsRegistry_CoreMetricsInitialization(t *testing.T) {
 	require.NoError(t, err)
 
 	expectedCoreMetrics := []string{
-		"semstreams_service_status",
-		"semstreams_messages_received_total",
-		"semstreams_messages_processed_total",
-		"semstreams_messages_published_total",
-		"semstreams_processing_duration_seconds",
-		"semstreams_errors_total",
-		"semstreams_health_status",
-		"semstreams_nats_connected",
-		"semstreams_nats_rtt_seconds",
-		"semstreams_nats_reconnects_total",
-		"semstreams_nats_circuit_breaker",
+		"semengine_service_status",
+		"semengine_messages_received_total",
+		"semengine_messages_processed_total",
+		"semengine_messages_published_total",
+		"semengine_processing_duration_seconds",
+		"semengine_errors_total",
+		"semengine_health_status",
+		"semengine_nats_connected",
+		"semengine_nats_rtt_seconds",
+		"semengine_nats_reconnects_total",
+		"semengine_nats_circuit_breaker",
 	}
 
 	foundMetrics := make(map[string]bool)
@@ -154,10 +154,10 @@ func TestMetricsRegistry_NoCoreBusinessMetrics(t *testing.T) {
 
 	// These business metrics should NOT be in core registry
 	businessMetrics := []string{
-		"semstreams_business_drifters_tracked",
-		"semstreams_business_convergence_zones_total",
-		"semstreams_business_files_processed_total",
-		"semstreams_business_catalog_size",
+		"semengine_business_drifters_tracked",
+		"semengine_business_convergence_zones_total",
+		"semengine_business_files_processed_total",
+		"semengine_business_catalog_size",
 	}
 
 	foundMetrics := make(map[string]bool)

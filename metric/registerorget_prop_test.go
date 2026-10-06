@@ -41,7 +41,7 @@ const (
 	kindGauge                          // prometheus.NewGauge, registered as Gauge
 	kindGaugeAsCounter                 // prometheus.NewGauge, registered as Counter: a gauge satisfies Counter
 	kindCounterVec                     // prometheus.NewCounterVec, label "l"
-	kindCoreAlias                      // a *GaugeVec with semstreams_service_status' descriptor
+	kindCoreAlias                      // a *GaugeVec with semengine_service_status' descriptor
 )
 
 // concrete names the concrete collector type, which is what D9 compares.
@@ -76,7 +76,7 @@ func (s propSpec) descriptor() string {
 	return s.name + "|" + s.help + "|" + labels
 }
 
-const coreStatusName = "semstreams_service_status"
+const coreStatusName = "semengine_service_status"
 const coreStatusHelp = "Service status (0=stopped, 1=starting, 2=running, 3=stopping, 4=failed)"
 
 // propHandle is a returned collector: its identity, for the canonical check, and how to write once.

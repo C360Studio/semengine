@@ -518,7 +518,7 @@
     stdlib; a process-global predicate registry mutated at registration (pkg/platform was imported
     only by vocabulary.EntityIRI, removed below)
   known_risks: >-
-    no context roots; SemStreams IRI base strings carried unchanged (iris.go:14). README lint fixes
+    no context roots; the IRI base is renamed (adapt item, outward names, below). README lint fixes
     (owner ruling, #9 comment 5957221949): vocabulary/README.md is ported with only the edits
     markdownlint requires: lines 7, 224, 263, 441, 582, 586, 671, 673 and 688 wrapped at 120 columns
     (MD013); no wording changed. README import paths (owner ruling, #9 comment 5968665464), each an
@@ -614,6 +614,12 @@
     outward name itself is left for #69, #9 comment 5969776736 item 4); :153-154, the link to
     docs/operations/migration-predicate-datatype.md, which this repository does not have, is plain text naming
     it as SemStreams'.
+    Adapt item, outward names (owner ruling, #69 comments of 2026-10-06; supersedes "left for #69" above):
+    SemStreamsBase = "https://semstreams.semanticstream.ing" (pin iris.go:14) is SemEngineBase =
+    "https://semengine.semanticstream.ing" (iris.go:6), its comment names the SemEngine vocabulary, and
+    iris_test.go TestNamespaceConstants asserts the new name and value; README.md's JSON Schema format name
+    is semengine-entity-id, not semstreams-entity-id. Consumer impact: stored IRIs under the old base do not
+    match new ones; a consumer clears its NATS volume (owner, #69).
   proving_tests: >-
     the 11 test files in vocabulary/ at the pin, less TestEntityIRI and BenchmarkEntityIRI (removed
     with EntityIRI, above) and the tests of the dead surface removed above;
@@ -923,6 +929,12 @@
     :613, :817-819. RegisterOrGet examples stop on a refusal; recording examples use the methods Metrics has;
     /health answers plain-text OK. README.md tree lines :3, :7 and :16 describe SemEngine, not the SemStreams
     platform.
+    Adapt item, outward names (owner ruling, #69 comments of 2026-10-06): the Prometheus namespace of the 12
+    core collectors (core.go) is semengine, not semstreams, and the root page served by Server (handler.go:144,
+    :146) is titled "SemEngine Metrics" and "SemEngine Metrics Server"; doc.go and README.md state the new
+    namespace, and the tests that state the names follow, with TestServerRootPageNamesSemEngine new
+    (handler_test.go). Consumer impact: a dashboard or alert on semstreams_* must use semengine_*; no
+    consumer pins SemEngine yet.
   proving_tests: >-
     the 3 test files in metric/ at the pin (handler_test.go, integration_test.go, registry_test.go);
     new, written first, in metric/lifecycle_test.go: TestServerAbortStopReportsContext (30 servers
@@ -1299,7 +1311,7 @@
     a callback panic end the process): fireBatch recovers a callback panic, as the pin did (pin
     coalescing_set.go:167-180), but where the pin discarded it (`_ = r`) the batch is now dropped
     with an error log naming the panic and the batch size and an increment of
-    semstreams_cache_coalescing_callback_panics_total{component=prefix}; later batches still fire.
+    semengine_cache_coalescing_callback_panics_total{component=prefix}; later batches still fire.
     New surface for it: CoalescingOption, WithPanicLogger (default slog.Default(); the package has
     no other logger path) and WithCoalescingMetrics(registry, prefix), which follows WithMetrics'
     registry-and-prefix convention (design D7), the variadic options of NewCoalescingSet; no present
@@ -1329,6 +1341,10 @@
     :87-89, :94-95, :101, :109, :117, :149-156, :162-163, :166, :423, :425-430, :432-439, :441. Every two-result
     constructor's error is checked before use; the Cache interface shown is the real one; the nonexistent
     average-lifetime statistic is gone.
+    Adapt item, outward names (owner ruling, #69 comments of 2026-10-06): the Prometheus namespace of the 7
+    collectors (metrics.go, 6; coalescing_set.go, 1) is semengine, not semstreams; README.md's metric table and
+    example, and the tests that state the names (metrics_test.go, background_test.go,
+    coalescing_panic_test.go), follow. No consumer pins SemEngine yet.
   proving_tests: >-
     the 6 test files in pkg/cache/ at the pin, carried to internal/cache/ and repaired. New, written
     first, in internal/cache/metrics_test.go: TestCacheMetricsTwoCachesOnePrefixGatherTheSum (two LRU
@@ -1426,13 +1442,13 @@
     them as counters (rate(), increase()), finds no series under the old name and must use the new
     name as a gauge. The values also mean something else: the first two are stream sequence numbers,
     not message counts, and the third counts messages redelivered and not yet acknowledged, so it
-    falls on acknowledgement (nats.go consumer_config.go:53-57). The other metric names and types and the semstreams namespace and jetstream
-    subsystem are unchanged (#69). Changed surface, task 3.7a: the surface audit's drops listed under
+    falls on acknowledgement (nats.go consumer_config.go:53-57). The other metric names and types and the jetstream subsystem are
+    unchanged; the namespace is semengine (adapt item below, #69). Changed surface, task 3.7a: the surface audit's drops listed under
     known_risks are gone, and with them the token, TLS and compression connection options and the
     disconnect, reconnect and health-change callbacks; pingInterval (30 s), drainTimeout (30 s),
     circuitThreshold (15) and maxBackoff (one minute) keep their defaults (client.go:161-166 at
     the pin → :149-154) with no setter, and requestHandlerTimeout is set only from
-    SEMSTREAMS_NATS_REQUEST_HANDLER_TIMEOUT (request.go:37-55, name unchanged, #69). Changed
+    SEMENGINE_NATS_REQUEST_HANDLER_TIMEOUT (request.go:37-55; renamed, adapt item below, #69). Changed
     behavior, task 3.7c (design D3), each an adapt item: natsclient-nil-context-refused, Close(nil)
     and Connect(nil) return an invalid error before any dial or close (client.go:689-691,
     :890-892; the pin panicked at :685 and :495, and Connect(nil) dialled at :494 first);
@@ -1685,6 +1701,13 @@
     errors reply with RespondError's classified envelope; SemStreams references marked); request.go :71-76,
     :183-184, :472-473, :476-483. README.md tree lines :13 and :226 describe SemEngine, not SemStreams (#9
     comment 5984291337).
+    Adapt item, outward names (owner ruling, #69 comments of 2026-10-06): the Prometheus namespace of the 11
+    collectors in jetstream_metrics.go is semengine, not semstreams, and the environment variable is
+    SEMENGINE_NATS_REQUEST_HANDLER_TIMEOUT, not SEMSTREAMS_NATS_REQUEST_HANDLER_TIMEOUT (request.go:48, with
+    the doc comments at request.go:40 and client.go:99, :353); the tests that state the names
+    (jetstream_metrics_test.go, integration_test.go, request_handler_timeout_test.go) follow. Consumer impact:
+    a dashboard or alert on semstreams_jetstream_* and a deployment setting the old variable must use the new
+    names; no consumer pins SemEngine yet.
   proving_tests: >-
     the 43 unit test files of natsclient at the pin, carried, with
     natsclient/test_helpers_test.go (testStreamMaxAge and testStreamMaxBytes, pin

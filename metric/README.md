@@ -94,14 +94,14 @@ coreMetrics.RecordHealthStatus("my-service", true)
 ```go
 // Create custom metrics for a service
 messageCounter := prometheus.NewCounter(prometheus.CounterOpts{
-    Namespace: "semstreams",
+    Namespace: "semengine",
     Subsystem: "gps_service",
     Name:      "coordinates_processed_total",
     Help:      "Total GPS coordinates processed",
 })
 
 latencyHistogram := prometheus.NewHistogram(prometheus.HistogramOpts{
-    Namespace: "semstreams",
+    Namespace: "semengine",
     Subsystem: "gps_service",
     Name:      "processing_duration_seconds",
     Help:      "GPS coordinate processing duration",
@@ -109,7 +109,7 @@ latencyHistogram := prometheus.NewHistogram(prometheus.HistogramOpts{
 })
 
 queueGauge := prometheus.NewGauge(prometheus.GaugeOpts{
-    Namespace: "semstreams",
+    Namespace: "semengine",
     Subsystem: "gps_service",
     Name:      "queue_size",
     Help:      "Current GPS processing queue size",
@@ -324,7 +324,7 @@ instance is terminal after that attempt; a completed repeated `Stop` returns nil
 ```go
 // DO: Use consistent metric naming
 counter := prometheus.NewCounter(prometheus.CounterOpts{
-    Namespace: "semstreams",           // Always use "semstreams"
+    Namespace: "semengine",           // Always use "semengine"
     Subsystem: "service_name",         // Use service name
     Name:      "operations_total",     // Descriptive name with units
     Help:      "Total operations processed",
@@ -443,14 +443,14 @@ func NewGPSService(registry *metric.MetricsRegistry) (*GPSService, error) {
 
     // Create custom metrics
     service.coordinatesProcessed = prometheus.NewCounter(prometheus.CounterOpts{
-        Namespace: "semstreams",
+        Namespace: "semengine",
         Subsystem: "gps",
         Name:      "coordinates_processed_total",
         Help:      "Total GPS coordinates processed",
     })
 
     service.processingLatency = prometheus.NewHistogram(prometheus.HistogramOpts{
-        Namespace: "semstreams",
+        Namespace: "semengine",
         Subsystem: "gps",
         Name:      "processing_duration_seconds",
         Help:      "GPS coordinate processing duration",
@@ -458,7 +458,7 @@ func NewGPSService(registry *metric.MetricsRegistry) (*GPSService, error) {
     })
 
     service.queueSize = prometheus.NewGauge(prometheus.GaugeOpts{
-        Namespace: "semstreams",
+        Namespace: "semengine",
         Subsystem: "gps",
         Name:      "queue_size",
         Help:      "Current GPS processing queue size",
@@ -633,28 +633,28 @@ func NewMonitoredService(name string, registry *metric.MetricsRegistry) (*Monito
 
     // Create metrics
     service.requestCounter = prometheus.NewCounter(prometheus.CounterOpts{
-        Namespace: "semstreams",
+        Namespace: "semengine",
         Subsystem: name,
         Name:      "requests_total",
         Help:      fmt.Sprintf("Total requests processed by %s", name),
     })
 
     service.responseTime = prometheus.NewHistogram(prometheus.HistogramOpts{
-        Namespace: "semstreams",
+        Namespace: "semengine",
         Subsystem: name,
         Name:      "response_time_seconds",
         Help:      fmt.Sprintf("Response time for %s", name),
     })
 
     service.activeUsers = prometheus.NewGauge(prometheus.GaugeOpts{
-        Namespace: "semstreams",
+        Namespace: "semengine",
         Subsystem: name,
         Name:      "active_users",
         Help:      fmt.Sprintf("Active users for %s", name),
     })
 
     service.errorRate = prometheus.NewCounter(prometheus.CounterOpts{
-        Namespace: "semstreams",
+        Namespace: "semengine",
         Subsystem: name,
         Name:      "errors_total",
         Help:      fmt.Sprintf("Total errors for %s", name),

@@ -1,7 +1,7 @@
 // Package vocabulary provides semantic vocabulary definitions and mappings.
 package vocabulary
 
-// Base IRI constants for the SemStreams vocabulary
+// Base IRI constants for the SemEngine vocabulary
 const (
-	SemStreamsBase = "https://semstreams.semanticstream.ing"
+	SemEngineBase = "https://semengine.semanticstream.ing"
 )

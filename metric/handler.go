@@ -141,9 +141,9 @@ func (s *Server) start(ctx context.Context, supplied net.Listener, provided bool
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		_, _ = fmt.Fprintf(w, `<html>
-<head><title>SemStreams Metrics</title></head>
+<head><title>SemEngine Metrics</title></head>
 <body>
-<h1>SemStreams Metrics Server</h1>
+<h1>SemEngine Metrics Server</h1>
 <p><a href="%s">Metrics</a></p>
 <p><a href="/health">Health</a></p>
 </body>

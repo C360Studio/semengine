@@ -135,13 +135,13 @@ vocabulary.Register("sensor.temperature.celsius",
 One declaration renders three ways. The Go column is what the serializer typically sees, **not** what you declare;
 the RDF column is owned by `vocabulary/export` (ADR-107 keeps semantic-web vocabulary at the export edge, never on
 the declaration surface). No code in SemEngine renders the RDF or JSON Schema column yet: `vocabulary/export` is a
-SemStreams package that is not ported here, so those two columns, including the `semstreams-entity-id` format name,
-state SemStreams' mapping, not output of this repository:
+SemStreams package that is not ported here, so those two columns state SemStreams' mapping, not output of this
+repository, except that the entity-ID format is named `semengine-entity-id`, the name SemEngine will emit:
 
 | Constant | Value | Typical Go value | RDF (Turtle / N-Triples) | JSON Schema |
 |---|---|---|---|---|
 | `DataTypeString` | `string` | `string` | `"text"` (`xsd:string`, omitted) | `{"type":"string"}` |
-| `DataTypeEntityID` | `entity_id` | `string` (6-part ID) | `<iri>` — a resource, never a literal | `{"type":"string","format":"semstreams-entity-id"}` |
+| `DataTypeEntityID` | `entity_id` | `string` (6-part ID) | `<iri>` — a resource, never a literal | `{"type":"string","format":"semengine-entity-id"}` |
 | `DataTypeInt` | `int` | `float64` after the round trip | `"5"^^xsd:integer` | `{"type":"integer"}` |
 | `DataTypeFloat` | `float` | `float64` | `"5.5"^^xsd:double` | `{"type":"number"}` |
 | `DataTypeBool` | `bool` | `bool` | `"true"^^xsd:boolean` | `{"type":"boolean"}` |

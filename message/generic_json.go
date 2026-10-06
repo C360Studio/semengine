@@ -239,10 +239,11 @@ func (g *GenericJSONPayload) UnmarshalJSON(data []byte) error {
 	}
 	d := json.NewDecoder(bytes.NewReader(data))
 	d.UseNumber()
-	// A well-formed value of the wrong shape (data that is not an object) is refused with the
-	// same invalid-data class as malformed input.
+	// A well-formed value of the wrong shape (a body that is neither an object nor null, or a
+	// data field that is neither an object nor null) is refused with the same invalid-data class
+	// as malformed input.
 	if err := d.Decode((*Alias)(g)); err != nil {
-		return errs.WrapInvalid(err, "GenericJSONPayload", "UnmarshalJSON", "data is not a JSON object")
+		return errs.WrapInvalid(err, "GenericJSONPayload", "UnmarshalJSON", "body or data is not a JSON object or null")
 	}
 	return nil
 }

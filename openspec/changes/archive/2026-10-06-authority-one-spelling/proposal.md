@@ -67,5 +67,7 @@ and `platform` fields, which are those copies.
 - Change 2 ports `graph/inference.HierarchyConfig` (`Org`/`Platform` strings, `hierarchy.go:100-101` at the pin) and
   `graph/llm.EntityParts` (`prompt_types.go:14-15`): both fail C-2 as ported. The change-2 design decides the shape
   (the carrier type, or a constructor); this change records the consequence and decides nothing for it.
-- PR #48 also changes `openspec/specs/harness-boundaries` (three requirements). The two deltas add requirements
-  under different names; #48 archives first, and this change's archive applies after it.
+- PR #48 also changes `openspec/specs/harness-boundaries` (three requirements), one of them "No second spelling of
+  deployment authority" for the name check. This change modifies that requirement rather than adding a second, so
+  `harness-boundaries` holds one requirement for the rule; #48 archives first, and this change's archive applies
+  after it.

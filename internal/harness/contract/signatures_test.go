@@ -458,7 +458,8 @@ type Wraps interface{ dep.Identity }
 `,
 	"dep/go.mod": "module example.com/dep\n\ngo 1.26\n",
 	"dep/dep.go": "package dep\n\ntype Record struct{ GlobalID string }\n\nfunc (Record) FederationOrigin() string { return \"\" }\n\n" +
-		"type Identity interface{ GlobalID() string }\n",
+		"type Identity interface{ GlobalID() string }\n\n" +
+		"type Client struct{}\n\nfunc (*Client) GlobalID() string { return \"\" }\n\nfunc (Client) FederationOrigin() string { return \"\" }\n",
 	"pub/pub.go": `package pub
 
 type FederationMeta interface{ Platform() string }
@@ -503,6 +504,26 @@ func FederationTestHelper() {}
 const Label = "BuildGlobalID FederationMeta EntityIRI"
 
 func Confederation() string { return Label }
+`,
+	// Members gained by embedding a struct (PR #73): promoted from outside the module, reported at
+	// the embedder, a pointer-receiver method included; declared by the module, once, where declared.
+	"pub/embed.go": `package pub
+
+import "example.com/dep"
+
+type Holder struct{ dep.Record }
+
+type Session struct{ dep.Client }
+
+type base struct{}
+
+func (*base) GlobalID() string { return "" }
+
+type Wrapper struct{ base }
+
+type Nested = interface{ interface{ EntityIRI() string } }
+
+type NestedUser interface{ Nested }
 `,
 	"internal/inner/inner.go": "package inner\n\nfunc NewFederationMeta() {}\n",
 	"cmd/tool/main.go":        "package main\n\nfunc EntityIRI() {}\n\nfunc main() {}\n",
@@ -551,6 +572,12 @@ func TestNoDeploymentAuthorityNamesSensitivity(t *testing.T) {
 		at("pub/alias.go:26", "pub.Exposed.GlobalID"),
 		at("pub/alias.go:29", "pub.Inner.GlobalID"),
 		at("pub/alias.go:35", "pub.Wraps.GlobalID"),
+		at("pub/embed.go:5", "pub.Holder.FederationOrigin"),
+		at("pub/embed.go:5", "pub.Holder.GlobalID"),
+		at("pub/embed.go:7", "pub.Session.FederationOrigin"),
+		at("pub/embed.go:7", "pub.Session.GlobalID"),
+		at("pub/embed.go:11", "pub.base.GlobalID"),
+		at("pub/embed.go:15", "pub.Nested.EntityIRI"),
 	}
 	sort.Strings(want)
 	if strings.Join(violations, "\n") != strings.Join(want, "\n") {
@@ -563,13 +590,13 @@ const authoritySuffix = " spells the deployment authority outside the entity-ID 
 
 // authorityNameViolations reports every exported name matching authorityNames in the non-test
 // packages of the module at root: package-level identifiers, and the exported methods, struct
-// fields and interface methods (embedded ones included) of package-level types, exported or not
-// (an exported method of an unexported type is still callable through an exported function that
-// returns it). An alias is a
-// package-level type too: its own name is checked, and so are the members of the type it stands
-// for, unless that type is one this module declares, whose members are reported once, at its own
-// declaration. Each line names the file, line, qualified identifier and rule; the count is the
-// number of module packages checked.
+// fields and interface methods of package-level types, exported or not (an exported method of an
+// unexported type is still callable through an exported function that returns it), including the
+// members a type gains by embedding. An alias is a package-level type too: its own name is
+// checked, and so are the members of the type it stands for. A member the module declares is
+// reported once, at its own declaration; a member declared outside the module is reported at each
+// module type that exposes it, since nowhere else will. Each line names the file, line, qualified
+// identifier and rule; the count is the number of module packages checked.
 func authorityNameViolations(t *testing.T, root string) ([]string, int) {
 	t.Helper()
 	modulePath := modulePathOf(t, root)
@@ -577,34 +604,45 @@ func authorityNameViolations(t *testing.T, root string) ([]string, int) {
 		return pkg != nil && (pkg.Path() == modulePath || strings.HasPrefix(pkg.Path(), modulePath+"/"))
 	}
 	var violations []string
+	reported := map[types.Object]bool{} // module-declared members already reported
+	// report names obj, a candidate, at pos: obj's own position when the module declares it,
+	// else the position of the module type that exposes it.
+	report := func(fset *token.FileSet, pos token.Pos, qualified string, obj types.Object) {
+		if !obj.Exported() || !authorityNames.MatchString(obj.Name()) {
+			return
+		}
+		if inModule(obj.Pkg()) {
+			pos = obj.Pos()
+			reported[obj] = true
+		}
+		position := fset.Position(pos)
+		path, err := filepath.Rel(root, position.Filename)
+		if err != nil {
+			path = position.Filename
+		}
+		violations = append(violations,
+			fmt.Sprintf("%s:%d: %s%s", filepath.ToSlash(path), position.Line, qualified, authoritySuffix))
+	}
+	type exposer struct {
+		fset      *token.FileSet
+		pos       token.Pos
+		qualified string
+		typ       types.Type
+		direct    map[types.Object]bool
+	}
+	var exposers []exposer
 	checked := 0
+	// Pass 1: each package-level name, and the members a type declares itself.
 	for _, pkg := range loadModuleTypes(t, root) {
 		if pkg.Types == nil || !inModule(pkg.Types) {
 			continue
 		}
 		checked++
-		// report names obj, a candidate, at pos: obj's own position when the module declares it,
-		// else the position of the alias that exposes it.
-		report := func(pos token.Pos, qualified string, obj types.Object) {
-			if !obj.Exported() || !authorityNames.MatchString(obj.Name()) {
-				return
-			}
-			if inModule(obj.Pkg()) {
-				pos = obj.Pos()
-			}
-			position := pkg.Fset.Position(pos)
-			path, err := filepath.Rel(root, position.Filename)
-			if err != nil {
-				path = position.Filename
-			}
-			violations = append(violations,
-				fmt.Sprintf("%s:%d: %s%s", filepath.ToSlash(path), position.Line, qualified, authoritySuffix))
-		}
 		scope := pkg.Types.Scope()
 		for _, name := range scope.Names() {
 			obj := scope.Lookup(name)
 			qualified := pkg.PkgPath + "." + name
-			report(obj.Pos(), qualified, obj)
+			report(pkg.Fset, obj.Pos(), qualified, obj)
 			tn, ok := obj.(*types.TypeName)
 			if !ok {
 				continue
@@ -619,30 +657,36 @@ func authorityNameViolations(t *testing.T, root string) ([]string, int) {
 					continue // reported at the declaration of the type the alias stands for
 				}
 			}
+			direct := map[types.Object]bool{}
+			own := func(member types.Object) {
+				direct[member] = true
+				report(pkg.Fset, obj.Pos(), qualified+"."+member.Name(), member)
+			}
 			if named, isNamed := typ.(*types.Named); isNamed {
 				for i := 0; i < named.NumMethods(); i++ {
-					report(obj.Pos(), qualified+"."+named.Method(i).Name(), named.Method(i))
+					own(named.Method(i))
 				}
 			}
 			switch u := typ.Underlying().(type) {
 			case *types.Struct:
 				for i := 0; i < u.NumFields(); i++ {
-					report(obj.Pos(), qualified+"."+u.Field(i).Name(), u.Field(i))
+					own(u.Field(i))
 				}
 			case *types.Interface:
-				// The whole method set, embedded interfaces included: a method declared in the
-				// module is reported at its own declaration, so here only when it is this
-				// interface's own; one inherited from outside the module only here.
-				explicit := map[*types.Func]bool{}
 				for i := 0; i < u.NumExplicitMethods(); i++ {
-					explicit[u.ExplicitMethod(i)] = true
-				}
-				for i := 0; i < u.NumMethods(); i++ {
-					if m := u.Method(i); explicit[m] || !inModule(m.Pkg()) {
-						report(obj.Pos(), qualified+"."+m.Name(), m)
-					}
+					own(u.ExplicitMethod(i))
 				}
 			}
+			exposers = append(exposers, exposer{pkg.Fset, obj.Pos(), qualified, typ, direct})
+		}
+	}
+	// Pass 2, after every declared member is reported: the members a type gains by embedding.
+	for _, e := range exposers {
+		for _, member := range promotedMembers(e.typ) {
+			if e.direct[member] || (inModule(member.Pkg()) && reported[member]) {
+				continue
+			}
+			report(e.fset, e.pos, e.qualified+"."+member.Name(), member)
 		}
 	}
 	// A load that found no package of the module would pass vacuously; it fails instead.
@@ -651,4 +695,45 @@ func authorityNameViolations(t *testing.T, root string) ([]string, int) {
 	}
 	sort.Strings(violations)
 	return violations, checked
+}
+
+// promotedMembers returns the methods and fields a value of typ can select that typ does not
+// declare itself: the method set of *T (of T for an interface), so that methods promoted through
+// a pointer receiver count, and the fields promoted through embedded structs that a selector
+// actually reaches (a shallower or ambiguous name hides a deeper one).
+func promotedMembers(typ types.Type) []types.Object {
+	var members []types.Object
+	ms := types.NewMethodSet(typ)
+	if !types.IsInterface(typ) {
+		ms = types.NewMethodSet(types.NewPointer(typ))
+	}
+	for i := 0; i < ms.Len(); i++ {
+		members = append(members, ms.At(i).Obj())
+	}
+	seen := map[types.Type]bool{}
+	var walk func(types.Type, int)
+	walk = func(t types.Type, depth int) {
+		t = types.Unalias(t)
+		if ptr, isPtr := t.(*types.Pointer); isPtr {
+			t = types.Unalias(ptr.Elem())
+		}
+		st, isStruct := t.Underlying().(*types.Struct)
+		if seen[t] || !isStruct {
+			return
+		}
+		seen[t] = true
+		for i := 0; i < st.NumFields(); i++ {
+			field := st.Field(i)
+			if depth > 0 {
+				if found, _, _ := types.LookupFieldOrMethod(typ, true, field.Pkg(), field.Name()); found == field {
+					members = append(members, field)
+				}
+			}
+			if field.Embedded() {
+				walk(field.Type(), depth+1)
+			}
+		}
+	}
+	walk(typ, 0)
+	return members
 }

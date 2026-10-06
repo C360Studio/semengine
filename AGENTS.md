@@ -43,8 +43,9 @@ task vuln         # pinned govulncheck
 task test:unit    # unit tests once, under the race detector, at one CPU
 task test:repeat  # unit tests five times at one CPU, without the race detector, shuffled
 task ledger:diff  # -- <source_path>...: print how ledger entries differ from the SemStreams pin; fetches it
-task mutate:check # -- -pkg -test -file -mutant -expect: run one test against one wrong change to a Go source
-                  # file, kept in a copy outside the repository; fail unless the verdict is detection; run by hand
+task mutate:check # -- -pkg -test -file -mutant -expect or -expect-text: run one test against one wrong change
+                  # to a Go source file, kept in a copy outside the repository; fail unless the verdict is
+                  # detection; run by hand
 task merge:check  # -- <n>: fail while a known flake is open that PR n does not close, main's rules lack the
                   # up-to-date setting, or PR n is a code PR, not a draft, whose implemented-by:/reviewed-by:
                   # lines do not name the two agents; reads GitHub

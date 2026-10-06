@@ -262,23 +262,34 @@ hand, show it yourself (step 2). The command shows it with the reach run: one mo
 Go's coverage of the file's package, made only when every run with the wrong change passed.
 
 The unchanged code and the wrong change run the same statements on the same inputs until a run first enters a changed
-line. So if the unchanged code ran a changed line, the runs with the wrong change got there too. From the coverage of
-the unchanged code, the command reads:
+line. So if the unchanged code ran a changed line, the runs with the wrong change got there too. Go's coverage records
+how many times each coverage block ran: a coverage block is a stretch of statements with no branch between them,
+given by its first and last line and column. From the coverage of the unchanged code, the command reads:
 
-- for lines the wrong change removes or replaces: whether any of them ran;
-- for lines it only inserts: whether the statement right after the insertion, in the same block, ran; at the end of a
-  block, the statement right before it. A different branch of the same `if`, `switch` or `select` never decides.
+- for lines the wrong change removes or replaces: whether a coverage block that overlaps them ran;
+- for lines it only inserts: whether the coverage block holding the statement right after the insertion ran, taking
+  that statement from the same `{}` block or `case` clause; at the end of the block or clause, the statement right
+  before the insertion. A different branch of the same `if`, `switch` or `select` never decides.
 
 Reached gives survivor; not reached gives invalid. When coverage cannot answer, the outcome is survivor and the report
-says that reach could not be measured. That is so for a change outside any function body (a declaration, an import, a
-new method), an insertion inside a statement written over several lines, an insertion between a label and its
-statement, and an insertion after a labeled statement that ends its block.
+says that reach could not be measured. That happens when:
+
+- no coverage block overlaps the removed or replaced lines, as for a declaration or an import outside any function;
+- the insertion lies outside any function body, as a new method or type does;
+- the insertion goes into an empty `{}` block (a function body, a branch, a loop body) or an empty `case` or `default`
+  clause, which has no statement to decide it;
+- the insertion lies inside a statement written over several lines, or between a label and its statement;
+- the insertion ends a block or clause whose last statement is labeled;
+- no coverage block holds the statement that would decide.
+
+When the wrong change is in several places (the report's hunks), one place reached is enough for reached. If none is
+reached and one cannot be measured, reach could not be measured.
 
 The reach run shows one path through the unchanged code. A line that runs only on some schedules, or only in a child
-process the test starts (which writes no coverage), can read as not reached, and the outcome is then invalid. Coverage
-counts a block when it is entered, not each line in it, so a line after a call that panics, or right after a `return`,
-can read as reached although it never ran, and the outcome is then survivor. The report lists the coverage blocks that
-decided reach.
+process the test starts (which writes no coverage), can read as not reached, and the outcome is then invalid. A
+coverage block counts as run once it is entered, not line by line, so a line after a call that panics, or right after
+a `return`, can read as reached although it never ran, and the outcome is then survivor. The report lists the coverage
+blocks that decided reach.
 
 ### Tests that generate their inputs
 

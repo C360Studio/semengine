@@ -197,10 +197,12 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
       `codex`, written once Codex's newest review record approves.
       `implemented-by: claude (opus semengine-developer)` and `reviewed-by: codex (gpt-6-astra semengine-reviewer)`,
       read with `gh pr view 82 --json body`.
-- [ ] 5.3 The re-review of the content commits after `d022140`: the conformance-table correction (`288cf55`), tasks
+- [x] 5.3 The re-review of the content commits after `d022140`: the conformance-table correction (`288cf55`), tasks
       4.3 to 4.5 (`e1961ab`, `1492c32`, `c4ed889`) and the ticks that follow them. They change Markdown and OpenSpec
       files only, so either agent's reviewer may make it (`.agents/protocol.md`, "A record covers the commit it
       names"): a review record that approves them, naming the commit it read, recorded on this pull request.
+      Record 6020389633 (claude, semengine-reviewer) approves `288cf55..cb4427d` at `cb4427d`, on CI run
+      37490965851, with one MEDIUM finding and three NITs; all four are fixed in the commit that ticks this task.
 
 ## 6. In the archive commit
 

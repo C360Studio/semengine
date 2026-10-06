@@ -1,0 +1,16 @@
+diff --git a/m/plant/target.go b/mut/target-numbers.go
+index 69b5760..894344c 100644
+--- a/m/plant/target.go
++++ b/mut/target-numbers.go
+@@ -12,0 +13,7 @@ var label string
++// shifted 1
++// shifted 2
++// shifted 3
++// shifted 4
++// shifted 5
++// shifted 6
++// shifted 7
+@@ -22,3 +28,0 @@ func Clamp(x int) int {
+-	calls++
+-	calls++
+-	calls++

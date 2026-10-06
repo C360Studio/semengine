@@ -1,0 +1,7 @@
+diff --git a/m/plant/target.go b/mut/method-before-unrun.go
+index 69b5760..8837722 100644
+--- a/m/plant/target.go
++++ b/mut/method-before-unrun.go
+@@ -13,0 +14,2 @@ var label string
++func (c counter) double() counter { return 2 * c }
++

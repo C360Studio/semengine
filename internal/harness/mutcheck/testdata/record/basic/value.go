@@ -1,0 +1,5 @@
+// Package basic is the code under test of the streams recorded in testdata/events.
+package basic
+
+// Value returns one.
+func Value() int { return 1 }

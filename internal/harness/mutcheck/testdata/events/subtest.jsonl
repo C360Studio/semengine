@@ -1,0 +1,13 @@
+{"Time":"2026-10-04T13:18:43.65453-05:00","Action":"start","Package":"rec.invalid/m/basic"}
+{"Time":"2026-10-04T13:18:43.824166-05:00","Action":"run","Package":"rec.invalid/m/basic","Test":"TestOuter"}
+{"Time":"2026-10-04T13:18:43.824234-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestOuter","Output":"=== RUN   TestOuter\n"}
+{"Time":"2026-10-04T13:18:43.824423-05:00","Action":"run","Package":"rec.invalid/m/basic","Test":"TestOuter/inner"}
+{"Time":"2026-10-04T13:18:43.824436-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestOuter/inner","Output":"=== RUN   TestOuter/inner\n"}
+{"Time":"2026-10-04T13:18:43.824536-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestOuter/inner","Output":"    value_test.go:34: Value() = 2, want 1\n"}
+{"Time":"2026-10-04T13:18:43.82457-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestOuter/inner","Output":"--- FAIL: TestOuter/inner (0.00s)\n"}
+{"Time":"2026-10-04T13:18:43.824581-05:00","Action":"fail","Package":"rec.invalid/m/basic","Test":"TestOuter/inner","Elapsed":0}
+{"Time":"2026-10-04T13:18:43.82461-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestOuter","Output":"--- FAIL: TestOuter (0.00s)\n"}
+{"Time":"2026-10-04T13:18:43.824635-05:00","Action":"fail","Package":"rec.invalid/m/basic","Test":"TestOuter","Elapsed":0}
+{"Time":"2026-10-04T13:18:43.824776-05:00","Action":"output","Package":"rec.invalid/m/basic","Output":"FAIL\n"}
+{"Time":"2026-10-04T13:18:43.825898-05:00","Action":"output","Package":"rec.invalid/m/basic","Output":"FAIL\trec.invalid/m/basic\t0.171s\n"}
+{"Time":"2026-10-04T13:18:43.825917-05:00","Action":"fail","Package":"rec.invalid/m/basic","Elapsed":0.171}

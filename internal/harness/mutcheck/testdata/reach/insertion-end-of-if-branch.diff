@@ -1,0 +1,6 @@
+diff --git a/m/plant/branch.go b/mut/insertion-end-of-if-branch.go
+index 685fafa..a93cf5e 100644
+--- a/m/plant/branch.go
++++ b/mut/insertion-end-of-if-branch.go
+@@ -6,0 +7 @@ func Sign(x int) int {
++		x = 0

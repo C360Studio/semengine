@@ -60,8 +60,9 @@ pull request closes #72 (`Closes #72` in its body).
 ## 3. C-1: the name check
 
 - [x] 3.1 (D) Adopted check verified at #48's merged head `deaafd4` against D2 and the delta's name scenarios; at
-      `30b9e5f`, `signatures_test.go:408` (`Federation|GlobalID|EntityIRI`), `:573-654` (every module package,
-      file:line lines, inherited interface methods since `30b9e5f`, Codex F3). The fixture gained `Confederation`,
+      `fe3eddc`, `signatures_test.go:408` (`Federation|GlobalID|EntityIRI`), `:600-698` and `:704-739` (every
+      module package, file:line lines; inherited interface methods, Codex F3, `30b9e5f`; members gained by
+      embedding, `fe3eddc`). The fixture gained `Confederation`,
       comment and literal non-matches (`1b80a11`), a package count (`7084f9e`), the rule name as a literal
       (`28c9ffa`), and both checks fail on zero packages, scenario "This module passes" (`29fbd9b`, each
       sensitivity test's empty-module case).
@@ -69,7 +70,9 @@ pull request closes #72 (`Closes #72` in its body).
 - [x] 3.2 (D) Shown able to fail: D2's five wrong changes (internal scope, methods, fields, case-insensitive match,
       test files) each fail the sensitivity test after `1b80a11` (the case-insensitive one survived #48's fixture);
       baseline, wrong-change and restored runs, with checksums, in the PR #73 comment recording `1b80a11`; the two
-      F3 wrong changes (inherited methods dropped; in-module rule dropped) fail it at `30b9e5f`, recorded likewise.
+      F3 wrong changes (inherited methods dropped; in-module rule dropped) fail it at `30b9e5f`, and the embedding
+      wrong changes (struct promotion dropped; in-module rule for promoted members dropped; value method set for
+      pointer; promoted fields dropped) fail it at `fe3eddc`, recorded likewise.
 
 ## 4. Documents
 

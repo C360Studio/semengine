@@ -853,11 +853,17 @@ stays "review only" and names `task mutate:check` inside that clause; Q2, a whol
 Q3, scripts and files read at run time stay with the manual procedure; Q4, a Go program at `internal/harness/mutcheck`;
 Q5, a race report counts only when named in advance with `-expect-text`.
 
+On 2026-10-06 the owner ruled that any reviewer may run `task mutate:check` to reproduce mutation evidence (#79,
+comment 6019548780). Task 4.2's edit to `.agents/contracts/semengine-reviewer.md` (`36f1c35`) says that a read-only
+reviewer can run the command, because it builds the wrong change from a copy kept outside the repository and edits
+nothing in the tree; the `cp` procedure for a wrong change the command refuses still needs the user's separate
+authorization. Asked whether to keep that, the owner answered, verbatim: "yes any reviewer can run the command".
+
 ### Conformance to the rulings
 
-Each binding ruling, where the code carries it out and which test shows it, or the held task where it waits. Paths
-under `internal/harness/mutcheck/` are given by file name. No deviation from a ruling was found, so there is no
-DEVIATION row.
+Each binding ruling, where the code or a document carries it out and which test shows it, or the held task where it
+waits. Paths under `internal/harness/mutcheck/` are given by file name. No deviation from a ruling was found, so there
+is no DEVIATION row.
 
 | Ruling | Carried out at | Shown by | State |
 | --- | --- | --- | --- |
@@ -866,8 +872,9 @@ DEVIATION row.
 | Q3 (same comment): wrong changes to scripts and other files read at run time stay with the manual procedure, and the command says so | `inputs.go:39` (the manual-procedure text); `inputs.go:130` and `inputs.go:132` (a test file, or a target that is not Go source, is refused with that text) | `refuse_test.go:56` (a script as the target); `refuse_test.go:61` (a test file as the target) | Carried out |
 | Q4 (same comment): a Go program at `internal/harness/mutcheck`, run by `task mutate:check` | `main.go:1` and `main.go:29`; `Taskfile.yml:73-76` | The package's tests, end to end at `e2e_test.go:48`; tasks 3.1 to 3.5 and 2.14 ran every check through the command | Carried out |
 | Q5 (same comment): a race report counts as a detection only when named in advance with `-expect-text`; otherwise inconclusive | `classify.go:192` (detection needs an expected line); `classify.go:194` (a race report with none is inconclusive) | `classify_test.go:122` and `classify_test.go:125` (a recorded race, not named and named); `classify_test.go:354` and `classify_test.go:356` (the check's verdicts); task 3.1, W07. The sentence in `docs/testing.md` is `tasks.md:178`, task 4.3, held | Carried out; documents held |
-| Sequencing (#79, comment 5981621215): the trial first; the program, its tests and the `Taskfile.yml` entry now; the `AGENTS.md` row and `docs/testing.md` after #48 and then #73; seed replay after #48 | The trial: `design.md:217`. Now: the package and `Taskfile.yml:73`. Held: `tasks.md:178`, `tasks.md:183` and `tasks.md:185` (tasks 4.3 to 4.5); `tasks.md:79` (task 2.10, the Rapid property). Every run already sets `RAPID_SEED` and `RAPID_NOFAILFILE` (`main.go:118`) | `e2e_test.go:48`, whose planted test fails unless both variables reach the run; task 3.1, W15 | Carried out; held parts as listed |
+| Sequencing (#79, comment 5981621215): the trial first; the program, its tests and the `Taskfile.yml` entry now; the `AGENTS.md` row and `docs/testing.md` after #48 and then #73; seed replay after #48 | The trial: `design.md:217`. Now: the package and `Taskfile.yml:73`. Seed replay, after #48 merged as `deaafd4`: every run sets `RAPID_SEED` and `RAPID_NOFAILFILE` (`main.go:118`), and task 2.10 (`tasks.md:79`) planted a Rapid property. Held on #73: `tasks.md:178`, `tasks.md:183` and `tasks.md:185` (tasks 4.3 to 4.5) | `e2e_test.go:48`, whose planted test fails unless both variables reach the run; `rapid_test.go:93` (seed 1 finds the wrong change: detection) and `rapid_test.go:108` (seed 3 misses it: a survivor whose reason names the seed), each requiring no file under `testdata/rapid/` afterwards; task 3.1, W15; task 2.10, V10 | Carried out; tasks 4.3 to 4.5 held |
 | Labeled last statement (#79, comment 5994738791): "fix now": when the last statement before an insertion is labeled, the region is not measurable | `reach.go:177` | `reach_test.go:125` (written first at `efbd685`); `reach_test.go:130` (the first statement after the place still decides when labeled); task 3.5, V08 | Carried out |
+| Reviewer permission (#79, comment 6019548780): "yes any reviewer can run the command": a read-only reviewer may run `task mutate:check` to reproduce mutation evidence; the `cp` procedure for a wrong change the command refuses still needs the user's separate authorization | `.agents/contracts/semengine-reviewer.md:47-55` (task 4.2, `36f1c35`) | No test: a rule of agent conduct, review only. Codex's review record 6019732337 checked the contract text against the ruling | Carried out |
 
 ## Premises
 

@@ -55,12 +55,31 @@ or runtime mechanics; they do not replace this project-specific role.
    `git stash` in any form (including `git stash push -- <path>`), `git clean`, `git reset --hard`. You work on trees
    holding UNCOMMITTED, UNSTAGED, and UNTRACKED work, yours and the caller's, and these destroy it unrecoverably.
 
-   Step 3's "observe the intended failure" and any mutation check must be done with a `cp` backup you make first, and
-   restoration verified by checksum:
+   A mutation check (one deliberate wrong change that shows a test can fail: `docs/testing.md`, "Show that the test
+   can fail") of a Go source file that is not a test file runs through `task mutate:check`. Make the wrong change in a
+   copy kept outside the repository, and name the assertion you expect to fail by the `file.go:N` location Go prints
+   for it (`-expect`) or by text in its message (`-expect-text`):
 
    ```bash
-   cp path/to/file.go "${TMPDIR:-/tmp}/file.go.bak" && shasum path/to/file.go   # BEFORE
-   cp "${TMPDIR:-/tmp}/file.go.bak" path/to/file.go && shasum path/to/file.go   # AFTER; sums MUST match
+   cp path/to/file.go "${TMPDIR:-/tmp}/mutant.go"   # then make the wrong change in the copy, never in the tree
+   task mutate:check -- -pkg ./path/to -test TestName -file path/to/file.go \
+     -mutant "${TMPDIR:-/tmp}/mutant.go" -expect file_test.go:42
+   ```
+
+   The command runs the test on the unchanged code, on the wrong change, and on the unchanged code again. For the wrong
+   change Go builds the test with the copy in place of the file (an overlay, Go's `-overlay` build option), so nothing
+   in the tree is edited. It prints one verdict and exits zero only for detection (the expected assertion failed).
+   The others: survivor (the test ran with the wrong change and still passed), invalid (the wrong change does not
+   build, or the test never reached it), and inconclusive (anything else, such as a timeout or a different failure).
+   The `mutation-check` spec states the rule for each.
+
+   Any other change you make in the tree to watch a test fail (in step 3's "observe the intended failure", or for a
+   wrong change the command refuses: a script, or another file a test reads while it runs) must be made with a `cp`
+   backup you make first, and restoration verified by a SHA-256 checksum:
+
+   ```bash
+   cp path/to/file "${TMPDIR:-/tmp}/file.bak" && shasum -a 256 path/to/file   # BEFORE
+   cp "${TMPDIR:-/tmp}/file.bak" path/to/file && shasum -a 256 path/to/file   # AFTER; sums MUST match
    ```
 
    Do not verify restoration with `git diff --stat`: it reports nothing for untracked files, and new test files are

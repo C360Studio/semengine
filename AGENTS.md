@@ -43,6 +43,9 @@ task vuln         # pinned govulncheck
 task test:unit    # unit tests once, under the race detector, at one CPU
 task test:repeat  # unit tests five times at one CPU, without the race detector, shuffled
 task ledger:diff  # -- <source_path>...: print how ledger entries differ from the SemStreams pin; fetches it
+task mutate:check # -- -pkg -test -file -mutant -expect or -expect-text: run one test against one wrong change
+                  # to a Go source file, kept in a copy outside the repository; fail unless the verdict is
+                  # detection; run by hand
 task merge:check  # -- <n>: fail while a known flake is open that PR n does not close, main's rules lack the
                   # up-to-date setting, or PR n is a code PR, not a draft, whose implemented-by:/reviewed-by:
                   # lines do not name the two agents; reads GitHub
@@ -107,7 +110,7 @@ indexed by their spec. A change that can turn a "review only" row into a failing
 | Tests use an independent oracle and are shown able to fail | `docs/testing.md`; developer and reviewer contracts, test fidelity | the structural guards carry paired sensitivity tests (`internal/harness/contract`); elsewhere review only |
 | A change with interacting input cases, a stated law, or an order-dependent history records whether it uses generated checks or why examples suffice | `docs/testing.md`, "Decide whether generated checks are needed"; developer and reviewer contracts, test fidelity | review only |
 | A generated run records its seed, the checks completed and a replayable failure; each assertion is shown to run; a history is checked against a test-owned reference model | `docs/testing.md`, "Fuzz targets and property-based tests"; developer and reviewer contracts, test fidelity | review only |
-| A mutation check reports survivors and inconclusive runs as such, never as detections; fuzz seed replay and exploration are reported apart; the pull request records what was not covered | `docs/testing.md`, "Show that the test can fail" and "What the pull request records"; developer contract § Handoff | review only |
+| A mutation check reports survivors and inconclusive runs as such, never as detections; fuzz seed replay and exploration are reported apart; the pull request records what was not covered | `docs/testing.md`, "Show that the test can fail" and "What the pull request records"; developer contract § Handoff | review only; `task mutate:check` runs the experiment for a Go source file and prints a record a pull request can quote; nothing fails when a pull request does not use it |
 | Sister repositories are read-only and inventoried only as scoped | `docs/inventory-scope.md` | review only |
 | Docs are written for a working developer: coined terms defined at first use, no jargon, no marketing | technical-writer contract, rule 9; reviewer contract § Contract and task-truth review | review only |
 

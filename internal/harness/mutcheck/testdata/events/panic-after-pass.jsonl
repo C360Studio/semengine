@@ -1,0 +1,8 @@
+{"Time":"2026-10-04T13:56:56.820432-05:00","Action":"start","Package":"rec.invalid/m/basic"}
+{"Time":"2026-10-04T13:56:57.054554-05:00","Action":"run","Package":"rec.invalid/m/basic","Test":"TestPanicAfter"}
+{"Time":"2026-10-04T13:56:57.054679-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestPanicAfter","Output":"=== RUN   TestPanicAfter\n"}
+{"Time":"2026-10-04T13:56:57.054716-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestPanicAfter","Output":"--- PASS: TestPanicAfter (0.00s)\n"}
+{"Time":"2026-10-04T13:56:57.054733-05:00","Action":"pass","Package":"rec.invalid/m/basic","Test":"TestPanicAfter","Elapsed":0}
+{"Time":"2026-10-04T13:56:57.054742-05:00","Action":"output","Package":"rec.invalid/m/basic","Output":"PASS\n"}
+{"Time":"2026-10-04T13:56:58.064324-05:00","Action":"output","Package":"rec.invalid/m/basic","Output":"ok  \trec.invalid/m/basic\t1.244s\n"}
+{"Time":"2026-10-04T13:56:58.064488-05:00","Action":"pass","Package":"rec.invalid/m/basic","Elapsed":1.244}

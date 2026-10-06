@@ -139,22 +139,181 @@ deliberate wrong change to the code and confirms the test fails because of it. T
    different assertion failing does not count.
 4. Put the original code back and run the test again. It passes.
 
-Keep a copy of every file before you change it (`cp`) and restore from that copy. Do not use `git checkout --`,
-`git restore`, `git stash` or `git reset --hard`; they can discard other work in the tree. Record the change you made,
-the commands, and the output of all three runs in the pull request.
+When the wrong change is to a Go source file that is not a test file, `task mutate:check` runs these steps for you,
+edits nothing in the tree, and names the outcome by the rules under "Outcomes" below. For any other file, run the
+steps by hand.
+
+### Run it with `task mutate:check`
+
+Write the wrong change into a copy of the file kept outside the repository. Then name the package, the test, the
+file, the copy, and the assertion you expect the wrong change to make fail. In this example the wrong change stops
+`probe.Await` from keeping the latest value it observed, which `TestAwaitClearsEarlierObservationError` checks:
+
+```bash
+sed 's/last, lastErr = value, err/lastErr = err/' internal/harness/probe/await.go >"${TMPDIR:-/tmp}/await.go"
+task mutate:check -- -pkg ./internal/harness/probe -test TestAwaitClearsEarlierObservationError \
+  -file internal/harness/probe/await.go -mutant "${TMPDIR:-/tmp}/await.go" -expect-text 'want final observation'
+```
+
+It ends with `verdict: detection` and exits zero. The flags:
+
+- `-pkg`: one package, as `go test` takes it. A pattern with `...` is refused.
+- `-test`: one top-level test, or `Name/Sub` for one of its subtests. Each part is matched exactly.
+- `-file`: the file the wrong change is made to. `-mutant`: the copy with the wrong change in it.
+- `-expect`: the location Go prints at the start of the expected failure line, written `file.go:N`, such as
+  `probe_test.go:217`. `-expect-text`: a fixed string that line contains. Give at least one; each can be repeated.
+- `-runs` (default 3), `-timeout` (default `2m`, the `go test -timeout` of each run) and `-seed` (default 1; see
+  "Tests that generate their inputs").
+
+The command runs `go test -race` on the named test `-runs` times on the unchanged code (the baseline runs), `-runs`
+times with the wrong change (the mutant runs), and once more on the unchanged code (the after-run). If every mutant
+run passes, it makes one more run to find out whether the test reached the wrong change at all (the reach run, under
+"How reach is judged"). For a mutant run, Go compiles the copy in place of the file: the command passes Go's
+`-overlay` build option, which maps a file's path to another file's content, through `GOFLAGS`. A program the test
+itself builds with `go build` or `go run` gets the wrong change too, and no file in the repository is written. A run
+that has not ended by twice `-timeout` is stopped, with the processes it started in its process group, and counts as
+inconclusive. Ctrl-C or SIGTERM stops the run in progress, and the command exits non-zero with no verdict.
+
+It prints a report to paste into the pull request. The report shows the commit and the Go version, the wrong change
+as a diff, the expected locations and texts, the seed, each run's command line, `GOFLAGS`, result and failure lines,
+the file's SHA-256 checksum before and after, and a fingerprint of the tree before the first run and after the last
+(a short hash, from `scripts/tree-state.sh`, of the commit, the uncommitted changes and the untracked files git does
+not ignore). Its last line is the verdict and the reason. The command exits zero only for detection. The log
+directory the report names is on your machine only.
+
+Before it starts any run, the command refuses, naming the reason, when:
+
+- the file is a `_test.go` file (the experiment leaves the test unchanged), or is not Go source: a script, YAML, test
+  data, or another file a test reads while it runs. An overlay replaces only what the compiler reads, so check those
+  by hand;
+- the copy is inside the repository, or is identical to the file;
+- neither `-expect` nor `-expect-text` is given;
+- `GOFLAGS`, including a value set with `go env -w`, already sets `-overlay` or a coverage flag (`-cover`, `-coverpkg`,
+  `-covermode`, `-coverprofile`). With coverage on, Go compiles the file on disk and the wrong change would not run;
+- `-seed` is 0, or an untracked file sits under the package's `testdata/rapid/` (see "Tests that generate their
+  inputs").
+
+The `mutation-check` spec lists every refusal. The command does not run integration tests: plain `go test` does not
+build a file tagged `integration`, so the test is not found and the outcome is inconclusive.
+
+The command applies the rules; it does not judge. Whether the wrong change is plausible, and whether the assertion you
+named is the one meant to catch it, stay with you and the reviewer. Three baseline runs catch a test that fails often;
+a rarer flaky test can pass all three.
+
+### Run it by hand
+
+Use this for a wrong change the command refuses. Keep a copy of every file before you change it (`cp`), and record
+its SHA-256 checksum. Restore from that copy, and check that the checksum matches:
+
+```bash
+cp scripts/cover-check.sh "${TMPDIR:-/tmp}/cover-check.sh.bak" && shasum -a 256 scripts/cover-check.sh   # before
+cp "${TMPDIR:-/tmp}/cover-check.sh.bak" scripts/cover-check.sh && shasum -a 256 scripts/cover-check.sh   # after
+```
+
+Do not use `git checkout --`, `git restore`, `git stash` or `git reset --hard`; they can discard other work in the
+tree. Do not check the restore with `git diff` either: it shows nothing for an untracked file. Record the change you
+made, the commands, and the output of all three runs in the pull request.
+
+### Outcomes
 
 Only step 3 going red as expected counts as a detection. Record any other outcome under its own name:
 
+- **Detection:** every baseline run passed, every run with the wrong change failed with the expected assertion, and
+  the after-run passed.
 - **Survivor:** the wrong change compiled and the test ran, but the test still passed. Look for the missing input,
   assertion or scope, and report the survivor until it is resolved. If you change the test as a result, start again
   from step 1 with the new test.
-- **Inconclusive:** the run ended without the intended assertion failing: an error, a timeout of the whole run, a
-  different or unrelated failure, or a `-run` pattern that did not select the test. A failing exit code alone is not a
-  detection. Fix the cause and run the check again; never skip or weaken a test to get past it.
+- **Invalid:** the wrong change does not compile, or the test never reached it (see "How reach is judged"). Either
+  way it says nothing about the test's assertions. Fix a wrong change that does not compile. For one the test never
+  reached, look for a missing input, or choose a wrong change on the path the test is meant to cover; then check
+  again.
+- **Inconclusive:** the run ended without the intended assertion failing: an error, a timeout of the whole run, a run
+  killed by a signal, a different or unrelated failure, or a `-run` pattern that did not select the test. Runs with the
+  wrong change that disagree, a baseline or after-run that failed, and a change to the tree during the check also give
+  inconclusive. A failing exit code alone is not a detection. Fix the cause and run the check again; never skip or
+  weaken a test to get past it.
+
+When the wrong change makes something never finish, a test can still detect it if the test waits with a time limit of
+its own and fails with its own message when that limit runs out (for example, a `probe.Await` whose context has a
+deadline): that failure line is an assertion like any other. The timeout of the whole `go test` run cannot detect it.
+It shows only that the run did not finish, not which check caught the wrong change, so the outcome is inconclusive.
+When you need a detection from such a test, give the test its own time limit.
+
+A report from Go's race detector, the line `race detected during execution of test`, counts as the expected failure
+only when you named it before running: with the command, `-expect-text 'race detected during execution of test'`.
+Otherwise a run whose only failure is a race report is inconclusive. Name it when the wrong change removes a lock and
+the race detector is the check meant to catch that. Once it is named, a race anywhere in the package that the wrong
+change sets off counts as well; the report shows where the race was.
+
+Go prints a `t.Log` line the same way as a failure line, so a log line at an expected location matches too. The
+report prints every matched line in full: read them to confirm the failure is the one you meant. A panic or a further
+failure after the expected line is listed in the report and does not change a detection.
+
+Only lines printed by the named test and its subtests are matched. When `-test` names a subtest (`Name/Sub`) and the
+code panics inside it, `go test -json`, which the command reads, files the panic text under the parent test, `Name`.
+That text cannot match the subtest's `-expect-text`, so unless the subtest printed an expected line before the panic,
+the outcome is inconclusive. An expected line printed before the panic still gives a detection, and the report lists
+the panic either way. If the wrong change is likely to panic, name an assertion that fails before the panic, or give
+`-test` the parent test, whose output includes the panic text.
+
+A survivor is equivalent when the wrong change alters nothing the code promises, for example by swapping two
+independent assignments. Equivalent is never an outcome: the outcome stays survivor. Whether a survivor is equivalent
+is the reviewer's assessment, recorded in the pull request with the contract the code is held to, the inputs
+considered, the reasoning, and who assessed it.
+
+### How reach is judged
+
+The test reaches a wrong change when it runs at least one of the changed lines. A wrong change the test never runs
+cannot make it fail, so a passing run with the wrong change says nothing about the test until reach is shown. By
+hand, show it yourself (step 2). The command shows it with the reach run: one more run of the unchanged code with
+Go's coverage of the file's package, made only when every run with the wrong change passed.
+
+The unchanged code and the wrong change run the same statements on the same inputs until a run first enters a changed
+line. So if the unchanged code ran a changed line, the runs with the wrong change got there too. Go's coverage records
+how many times each coverage block ran: a coverage block is a stretch of statements with no branch between them,
+given by its first and last line and column. From the coverage of the unchanged code, the command reads:
+
+- for lines the wrong change removes or replaces: whether a coverage block that overlaps them ran;
+- for lines it only inserts: whether the coverage block holding the statement right after the insertion ran, taking
+  that statement from the same `{}` block or `case` clause; at the end of the block or clause, the statement right
+  before the insertion. A different branch of the same `if`, `switch` or `select` never decides.
+
+Reached gives survivor; not reached gives invalid. When coverage cannot answer, the outcome is survivor and the report
+says that reach could not be measured. That happens when:
+
+- no coverage block overlaps the removed or replaced lines, as for a declaration or an import outside any function;
+- the insertion lies outside any function body, as a new method or type does;
+- the insertion goes into an empty `{}` block (a function body, a branch, a loop body) or an empty `case` or `default`
+  clause, which has no statement to decide it;
+- the insertion lies inside a statement written over several lines, or between a label and its statement;
+- the insertion ends a block or clause whose last statement is labeled;
+- no coverage block holds the statement that would decide.
+
+When the wrong change is in several places (the report's hunks), one place reached is enough for reached. If none is
+reached and one cannot be measured, reach could not be measured.
+
+The reach run shows one path through the unchanged code. A line that runs only on some schedules, or only in a child
+process the test starts (which writes no coverage), can read as not reached, and the outcome is then invalid. A
+coverage block counts as run once it is entered, not line by line, so a line after a call that panics, or right after
+a `return`, can read as reached although it never ran, and the outcome is then survivor. The report lists the coverage
+blocks that decided reach.
+
+### Tests that generate their inputs
 
 If the test generates its inputs, replay the same input or seed against the wrong change and against the original
 code. Two different random samples differ for reasons unrelated to the change; if the same input cannot be replayed,
 the outcome is inconclusive.
+
+The command does this for Rapid. Every run gets `RAPID_SEED` set from `-seed` (default 1) and `RAPID_NOFAILFILE=true`,
+so every run starts from the same seed and Rapid writes no failure file. The seed decides whether the generated inputs
+hit what the wrong change breaks, so a survivor holds only for that seed, and its reason says so: choose a seed that
+finds the wrong change. A seed of 0 is refused, because Rapid reads it as "choose a random seed". The command also
+refuses to start while an untracked file sits under the package's `testdata/rapid/`: Rapid replays every file there on
+every run, and a failure file left by an earlier run could turn a survivor into a detection. A committed file there is
+a fixed input, replayed in every run alike. A native fuzz target needs nothing more: plain `go test` replays only its
+seeds.
+
+### When to run one
 
 Do this when the change:
 
@@ -167,6 +326,8 @@ Do this when the change:
 
 If none applies, a one-line reason in the pull request is enough. If you cannot complete the experiment, say why and
 what risk remains; the reviewer accepts or rejects that.
+
+### Built into the repository's own checks
 
 The repository's own checks follow the same pattern, built into the tests:
 

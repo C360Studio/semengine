@@ -1,0 +1,6 @@
+diff --git a/m/plant/label.go b/mut/insertion-before-label.go
+index 2ae437c..b571f60 100644
+--- a/m/plant/label.go
++++ b/mut/insertion-before-label.go
+@@ -10,0 +11 @@ func Lab2(x int) {
++	hits *= 1

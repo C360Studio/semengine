@@ -1,0 +1,6 @@
+diff --git a/m/plant/inside.go b/mut/insertion-after-label.go
+index 945fd49..6d4e078 100644
+--- a/m/plant/inside.go
++++ b/mut/insertion-after-label.go
+@@ -18,0 +19 @@ done:
++	x = x * 1

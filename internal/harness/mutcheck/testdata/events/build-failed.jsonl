@@ -1,0 +1,6 @@
+{"ImportPath":"rec.invalid/m/basic [rec.invalid/m/basic.test]","Action":"build-output","Output":"# rec.invalid/m/basic [rec.invalid/m/basic.test]\n"}
+{"ImportPath":"rec.invalid/m/basic [rec.invalid/m/basic.test]","Action":"build-output","Output":"./mut/broken.go:5:27: cannot use \"one\" (untyped string constant) as int value in return statement\n"}
+{"ImportPath":"rec.invalid/m/basic [rec.invalid/m/basic.test]","Action":"build-fail"}
+{"Time":"2026-10-04T13:18:45.954163-05:00","Action":"start","Package":"rec.invalid/m/basic"}
+{"Time":"2026-10-04T13:18:45.954221-05:00","Action":"output","Package":"rec.invalid/m/basic","Output":"FAIL\trec.invalid/m/basic [build failed]\n"}
+{"Time":"2026-10-04T13:18:45.954233-05:00","Action":"fail","Package":"rec.invalid/m/basic","Elapsed":0,"FailedBuild":"rec.invalid/m/basic [rec.invalid/m/basic.test]"}

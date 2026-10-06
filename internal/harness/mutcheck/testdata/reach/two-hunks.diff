@@ -1,0 +1,8 @@
+diff --git a/m/plant/target.go b/mut/two-hunks.go
+index 69b5760..eda78fa 100644
+--- a/m/plant/target.go
++++ b/mut/two-hunks.go
+@@ -3 +2,0 @@ package plant
+-import "strconv"
+@@ -21 +19,0 @@ func Clamp(x int) int {
+-	label = strconv.Itoa(x)

@@ -1,0 +1,6 @@
+diff --git a/m/plant/inside.go b/mut/insertion-inside-condition.go
+index 945fd49..55a77a7 100644
+--- a/m/plant/inside.go
++++ b/mut/insertion-inside-condition.go
+@@ -5,0 +6 @@ func Pick(x int) int {
++		x != 7 &&

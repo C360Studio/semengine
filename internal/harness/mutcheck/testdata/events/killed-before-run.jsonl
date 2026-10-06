@@ -1,0 +1,4 @@
+{"Time":"2026-10-04T16:01:46.060639-05:00","Action":"start","Package":"rec.invalid/m/early"}
+{"Time":"2026-10-04T16:01:46.317841-05:00","Action":"output","Package":"rec.invalid/m/early","Output":"signal: killed\n"}
+{"Time":"2026-10-04T16:01:46.317922-05:00","Action":"output","Package":"rec.invalid/m/early","Output":"FAIL\trec.invalid/m/early\t0.257s\n"}
+{"Time":"2026-10-04T16:01:46.317949-05:00","Action":"fail","Package":"rec.invalid/m/early","Elapsed":0.257}

@@ -96,17 +96,17 @@ the regular expression `Federation|GlobalID|EntityIRI` on the identifier, case-s
 names, comments and literals; and test files, which every guard in `internal/harness/contract` leaves out
 (`context_test.go:221-229` loads non-test packages; `testtext_test.go` is the one that reads test files, for text
 rules) because a test file exports nothing a consumer imports — the harness norm, confirmed with Q1 (#72 comment
-5969757891). Failure line, as #48 wrote it (`signatures_test.go:588-589, :623-624` at `fe3eddc`): `<path>:<line>:
+5969757891). Failure line, as #48 wrote it (`signatures_test.go:609-610, :644-645` at `441066e`): `<path>:<line>:
 <pkg>.<Qualified> spells the deployment authority outside the entity-ID family (harness-boundaries › No second
 spelling of deployment authority)`.
 
 Adopted from PR #48 (`bb004ef`, aliases and file/line from its F11 fix `a8ae8ad`): C-1 is
-`TestNoDeploymentAuthorityNames` (lines at this change's `fe3eddc`: `signatures_test.go:410-414`; predicate `:408`,
-walk `authorityNameViolations` `:600-698` with `promotedMembers` `:704-739`) with its pair
-`TestNoDeploymentAuthorityNamesSensitivity` (`:532-586`, fixture `authorityFixture` `:418-530`). What a caller
+`TestNoDeploymentAuthorityNames` (lines at this change's `441066e`: `signatures_test.go:410-414`; predicate `:408`,
+walk `authorityNameViolations` `:621-719` with `promotedMembers` `:725-760`) with its pair
+`TestNoDeploymentAuthorityNamesSensitivity` (`:549-607`, fixture `authorityFixture` `:418-547`). What a caller
 observes: `TestNoDeploymentAuthorityNames` fails with one such line per identifier, sorted, and with `checked no
 package of <module>` when it checked none; it logs the number of packages it checked; passes on a tree with none.
-Proof: the sensitivity test plants twenty-six names across a public package `pub`, an internal package
+Proof: the sensitivity test plants thirty names across a public package `pub`, an internal package
 `internal/inner` and a `main` package `cmd/tool` — in `pub` a type, a function, a variable, a constant, a struct
 field, a method, an exported method of an unexported type, an interface method, alias names and the members of
 aliased struct, interface, pointer and outside-module types, and an interface method inherited from an embedded
@@ -114,11 +114,13 @@ interface (from outside the module, reported at the alias `Exposed` and the defi
 `Inner`, reported once at `Inner`, not again at `Outer` or `OuterAlias`; Codex F3), and members gained by embedding
 a struct (from outside the module, `Holder{dep.Record}` and `Session{dep.Client}` with a pointer-receiver method,
 reported at the struct; the module's own `base.GlobalID`, once at `base`, not at `Wrapper`; a nested interface
-literal's method, once at `Nested`, not at `NestedUser`); one function in each of the
+literal's method, once at `Nested`, not at `NestedUser`; an ambiguous `GlobalID` in `Both{dep.Record; dep.Other}`
+and one hidden by `Shadow`'s own field, not reported; `cross/b.Base.GlobalID`, once at `b`, not at `cross/a.Embeds`);
+one function in each of the
 other two — beside non-matches (unexported `federationMeta` and `entityIRI`, a lowercase `globalID` field, an
 unexported method, an exported `Confederation`, a comment and a string literal naming the words, and a `_test.go` `FederationTestHelper`),
-and requires exactly those twenty-six lines, with the rule's name written from the spec heading rather than taken
-from the check's constant, and three checked packages; a module with no package must give the one `checked no
+and requires exactly those thirty lines, with the rule's name written from the spec heading rather than taken
+from the check's constant, and five checked packages; a module with no package must give the one `checked no
 package` line. Task 3.1 added the `Confederation`, comment and literal non-matches (`pub/words.go`), the count, the
 empty-module case, the literal rule name, the inherited interface methods and the members gained by embedding; #48's fixture
 let a case-insensitive match, an inherited interface method and a promoted member pass.

@@ -76,10 +76,16 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
       profile and a stand-in `go` before this task is ticked.
       CI run 37228603260 at `76aa263`: 6.727 s + 24.880 s = 31.607 s, under the 60 s budget.
       Evidence: comment 5983636400.
-- [ ] 2.10 (D) (PR #48 merged as `deaafd4`, which brings Rapid into `go.mod`.) A
+- [x] 2.10 (D) (PR #48 merged as `deaafd4`, which brings Rapid into `go.mod`.) A
       planted Rapid property in a temporary module that reads Rapid from the module cache with `GOPROXY=off`: the
       scenarios "A property test" and "A property test whose seed misses the wrong change", with no file under
       `testdata/rapid/` afterwards. Written first. Gate: `task test:unit`.
+      Seeds 1 (finds the wrong change) and 3 (misses it), calibrated on the planted module. Both cases passed against
+      the code as it stood, so they are named in the record, not seen to fail. V10 (`RAPID_NOFAILFILE` not set):
+      detection. With these cases the package went over its budget (CI run 37477518090 at `85b6984`: 66.656 s), so
+      the survivor case of 2.5 moved to a recorded profile and a stand-in `go` (`6ccceea`). CI run 37480956128 at
+      `6ccceea`: 9.945 s + 46.406 s = 56.351 s, under the 60 s budget.
+      Evidence: comment 6018825761.
 - [x] 2.11 (D) The corrections of implementation review round 1 (`impl-review-r1.md`, sha256 `c3edf5ca…4659`;
       `design.md`, "Implementation review round 1 corrections"), each with a test written first and seen to fail against
       the code at `8bee3ea`, or, where a case already exists, named in the record: (a) an insertion is decided by its

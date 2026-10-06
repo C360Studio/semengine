@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Enforce 80% statement coverage on the three harness packages every later proof
-# rests on (owner ruling Q3, 2026-09-30): natsfixture from the integration profile,
-# because its owner tests need Docker, and lifecycletest and probe from a unit
-# profile. A package missing from its profile fails: no statements is not coverage.
+# Enforce 80% statement coverage on the packages listed in targets below: the three
+# harness packages every later proof rests on (owner ruling Q3, 2026-09-30), and each
+# package on the critical list (SETUP 03B design D10) once it is ported. A package is
+# measured from the unit profile, the integration profile (natsfixture: its owner tests
+# need Docker), or both merged (natsclient: its unit and integration lanes test
+# different code). A package missing from its profile fails: no statements is not coverage.
 # Usage: cover-check.sh [unit-profile integration-profile]
 #   With no arguments it measures the unit profile itself and reads the integration
 #   profile of the last `task test:integration` run in this worktree, which must have
@@ -12,7 +14,32 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
 
 readonly threshold=80
-readonly base=github.com/c360studio/semengine/internal/harness
+readonly module=github.com/c360studio/semengine
+
+# The coverage targets, "<package directory> <profile>", profile one of unit, integration
+# or merged. A change that ports a package on the critical list adds its line here.
+readonly targets=(
+  "internal/harness/lifecycletest unit"
+  "internal/harness/probe unit"
+  "internal/harness/natsfixture integration"
+  "message unit"
+  "payloadregistry unit"
+  "natsclient merged"
+)
+
+# The unit profile's packages: every target measured from it, alone or merged.
+unit_packages=()
+for target in "${targets[@]}"; do
+  read -r dir kind <<<"$target"
+  case "$kind" in
+  unit | merged) unit_packages+=("./$dir/") ;;
+  integration) ;;
+  *)
+    echo "cover: target $dir: unknown profile $kind" >&2
+    exit 1
+    ;;
+  esac
+done
 
 if [ $# -eq 2 ]; then
   unit=$1 integration=$2
@@ -20,7 +47,7 @@ else
   mkdir -p coverage
   unit=coverage/unit.coverprofile
   # Its output is printed: a test that fails here must be named, not discarded.
-  go test -count=1 -coverprofile="$unit" "./internal/harness/lifecycletest/" "./internal/harness/probe/"
+  go test -count=1 -coverprofile="$unit" "${unit_packages[@]}"
   if [ ! -f .evidence/last-run ]; then
     echo "cover: no integration run recorded in this worktree; run task test:integration first" >&2
     exit 1
@@ -38,11 +65,14 @@ else
   fi
 fi
 
-# Percent of statements covered in one package. A block (file:range) appearing in
-# several package runs of a merged profile counts once, covered if any run covered it.
-percent() { # package profile
-  awk -v pkg="$1" '
-    NR == 1 && /^mode:/ { next }
+# Percent of statements covered in one package, over one or more profiles. A block
+# (file:range) appearing in several package runs or profiles counts once, covered if
+# any run covered it.
+percent() { # package profile...
+  local pkg=$1
+  shift
+  awk -v pkg="$pkg" '
+    FNR == 1 && /^mode:/ { next }
     {
       split($1, loc, ":"); file = loc[1]
       dir = file; sub(/\/[^\/]*$/, "", dir)
@@ -54,26 +84,33 @@ percent() { # package profile
       for (b in stmts) { total += stmts[b]; if (b in hit) covered += stmts[b] }
       if (total == 0) { print "none"; exit }
       printf "%.1f\n", 100 * covered / total
-    }' "$2"
+    }' "$@"
 }
 
 fail=0
-check() { # short-name profile label
-  local pct
-  pct=$(percent "$base/$1" "$2")
+check() { # package-directory label profile...
+  local name=$1 label=$2 pct
+  shift 2
+  pct=$(percent "$module/$name" "$@")
+  name=${name#internal/harness/}
   if [ "$pct" = none ]; then
-    echo "cover: $1: no statements in the $3 profile ($2)"
+    echo "cover: $name: no statements in the $label profile ($*)"
     fail=1
   elif awk -v p="$pct" -v t="$threshold" 'BEGIN { exit !(p < t) }'; then
-    echo "cover: $1 $pct% < $threshold% ($3 profile)"
+    echo "cover: $name $pct% < $threshold% ($label profile)"
     fail=1
   else
-    echo "cover: $1 $pct% ($3 profile)"
+    echo "cover: $name $pct% ($label profile)"
   fi
 }
-check lifecycletest "$unit" unit
-check probe "$unit" unit
-check natsfixture "$integration" integration
+for target in "${targets[@]}"; do
+  read -r dir kind <<<"$target"
+  case "$kind" in
+  unit) check "$dir" unit "$unit" ;;
+  integration) check "$dir" integration "$integration" ;;
+  merged) check "$dir" "merged unit and integration" "$unit" "$integration" ;;
+  esac
+done
 
 if [ "$fail" -ne 0 ]; then echo "cover: FAILED (threshold $threshold%)"; exit 1; fi
 echo "cover: ok (threshold $threshold%)"

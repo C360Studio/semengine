@@ -98,7 +98,7 @@ tasks:
       - scripts/merge-check.sh {{.CLI_ARGS}}
 
   cover:check:
-    desc: Fail below 80% coverage on natsfixture (last integration run) and lifecycletest, probe (unit run)
+    desc: Fail below 80% coverage on each target listed in scripts/cover-check.sh - lifecycletest, probe, message, payloadregistry (unit run), natsfixture (last integration run), natsclient (both merged)
     cmds:
       - scripts/cover-check.sh
 

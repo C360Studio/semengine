@@ -2,6 +2,10 @@ package contract
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -184,6 +188,98 @@ func buildTagViolations(t *testing.T, root string, files []string) []string {
 	}
 	if tests == 0 {
 		violations = append(violations, fmt.Sprintf("scanned no test file among %d file(s)", len(files)))
+	}
+	return violations
+}
+
+// harness-boundaries › "No bare select": no Go file in the module, test or non-test, package main
+// included, contains a select statement with no cases. A goroutine parked on one has no way out,
+// and in a re-executed test binary, which runs with no test-timeout timer, Go's deadlock detector
+// kills the process once every goroutine blocks: that is what made prochost flaky (CI runs
+// 37005148521, 37006036797, 37013932497). Park on ctx.Done(), a channel, or signal.Notify; a main
+// uses signal.NotifyContext. The check parses each file, so it matches code and never a comment or
+// a string, and every spelling of an empty select (spaces, newlines, a comment inside) alike. The
+// literal is assembled at run time so this file does not contain what it forbids.
+var bareSelect = "select" + " {}"
+
+func TestNoBareSelect(t *testing.T) {
+	root := repoRoot(t)
+	requireNoViolations(t, "bare select", bareSelectViolations(t, root, repoFiles(t, root)))
+}
+
+func TestNoBareSelectSensitivity(t *testing.T) {
+	clean := map[string]string{
+		"x/x_test.go": "package x\n\n// A helper never parks on a bare " + bareSelect + "; it waits on a channel.\n" +
+			"func park(c chan int) {\n\tselect {\n\tcase <-c:\n\t}\n}\n",
+		"x/x.go": "package x\n\n/* " + bareSelect + " in a block comment */\nvar s = \"" + bareSelect + "\"\n\n" +
+			"func wait(c chan int) {\n\tselect {\n\tcase <-c:\n\tdefault:\n\t}\n}\n",
+	}
+	root, files := writeTree(t, clean)
+	requireNoViolations(t, "clean fixture", bareSelectViolations(t, root, files))
+
+	for _, tc := range []struct {
+		name, file, body, want string
+	}{
+		{"test file", "x/x_test.go", "\t" + bareSelect + "\n", "x/x_test.go:4"},
+		{"non-test file", "x/x.go", "\t" + bareSelect + "\n", "x/x.go:4"},
+		{"package main", "cmd/tool/main.go", "\t" + bareSelect + "\n", "cmd/tool/main.go:4"},
+		{"no space", "x/x.go", "\tselect" + "{}\n", "x/x.go:4"},
+		{"spaces inside", "x/x.go", "\tselect" + " {  }\n", "x/x.go:4"},
+		{"across lines", "x/x.go", "\tselect" + " {\n\t}\n", "x/x.go:4"},
+		{"comment inside", "x/x.go", "\tselect" + " { // park forever\n\t}\n", "x/x.go:4"},
+		{"in a goroutine", "x/x.go", "\tgo func() { select" + " {} }()\n", "x/x.go:4"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pkg := "x"
+			if strings.HasPrefix(tc.file, "cmd/") {
+				pkg = "main"
+			}
+			tree := map[string]string{tc.file: "package " + pkg + "\n\nfunc f() {\n" + tc.body + "}\n"}
+			if !strings.HasSuffix(tc.file, "_test.go") {
+				tree["x/x_test.go"] = "package x\n"
+			}
+			root, files := writeTree(t, tree)
+			requireViolation(t, bareSelectViolations(t, root, files), tc.want, "select with no cases")
+		})
+	}
+	t.Run("unparsable file", func(t *testing.T) {
+		root, files := writeTree(t, map[string]string{"x/x_test.go": "package x\n\nfunc f() {\n"})
+		requireViolation(t, bareSelectViolations(t, root, files), "x/x_test.go", "parse")
+	})
+	t.Run("no Go file", func(t *testing.T) {
+		root, files := writeTree(t, map[string]string{"x/README.md": bareSelect + "\n"})
+		requireViolation(t, bareSelectViolations(t, root, files), "scanned no Go file")
+	})
+}
+
+// bareSelectViolations parses every Go file and reports each select statement with no cases. A
+// file that does not parse is a violation: a check that could not read a file has not passed it.
+func bareSelectViolations(t *testing.T, root string, files []string) []string {
+	t.Helper()
+	var violations []string
+	scanned := 0
+	fset := token.NewFileSet()
+	for _, name := range files {
+		if !strings.HasSuffix(name, ".go") {
+			continue
+		}
+		scanned++
+		file, err := parser.ParseFile(fset, filepath.Join(root, filepath.FromSlash(name)), nil, parser.SkipObjectResolution)
+		if err != nil {
+			violations = append(violations, fmt.Sprintf("%s: parse: %v", name, err))
+			continue
+		}
+		ast.Inspect(file, func(n ast.Node) bool {
+			if sel, ok := n.(*ast.SelectStmt); ok && len(sel.Body.List) == 0 {
+				violations = append(violations, fmt.Sprintf("%s:%d: select with no cases parks forever; "+
+					"wait on ctx.Done(), a channel or signal.Notify (a main uses signal.NotifyContext)",
+					name, fset.Position(sel.Pos()).Line))
+			}
+			return true
+		})
+	}
+	if scanned == 0 {
+		violations = append(violations, fmt.Sprintf("scanned no Go file among %d file(s)", len(files)))
 	}
 	return violations
 }

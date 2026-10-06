@@ -1,8 +1,8 @@
 # Testing in SemEngine
 
 This page is for a developer about to write or review a test here. It covers what the test has to tell apart, which
-level to run it at, how to show it can fail, and what to record in the pull request. Today the only Go code in the
-repository is the test harness under `internal/harness/`, so the examples point at it.
+level to run it at, how to show it can fail, and what to record in the pull request. Most examples point at the
+test harness under `internal/harness/`; the packages ported from SemStreams carry their own tests.
 
 ## Start with the wrong behavior
 
@@ -76,18 +76,36 @@ The packages under `internal/harness/` are test-only; a contract test refuses an
   `Start(ctx)` returns only once JetStream answers. `Name(base)` produces run-unique resource names, and the fixture
   creates streams, buckets and consumers for you and records each one. `Stop` returns nil only after it has seen every
   owned resource, the connection and the container gone.
+- `natsfixture.Restart(ctx)` stops and starts the same container, so a file-backed stream keeps its messages and a
+  memory-backed one does not. Docker may map a new host port, so `URL()` and `JetStream()` are valid only until the
+  next `Restart`. Stop whatever you built on the old URL (a client, a consumer) before calling `Restart`, and start
+  it again from the new `URL()` afterwards. `Restart` first ends every consumer the fixture's `Consume` created and
+  waits for its handlers, so never call it from inside a `Consume` handler. Handles taken from the old connection
+  are dead afterwards.
+- `natsfixture.FaultKV` wraps a real key-value bucket so a write fails on demand. `FailBefore(op, err)` returns
+  `err` without calling the server, so nothing is written. `FailAfter(op, err)` makes the real write and then returns
+  `err`, the case where the server applied the write but the caller saw an error. `op` is one of `KVPut` (which
+  covers `PutString`), `KVCreate`, `KVUpdate` or `KVDelete`; every other method reaches the bucket unchanged. A
+  fault stays set until you pass a nil error, and `Calls()` reports how many real calls each write made.
+- `prochost` runs a helper process for tests that kill, pause or signal a process. A helper is a function in the
+  test binary: register each one with `prochost.Helper(name, fn)` inside a `TestHelperProcess` function, and
+  `prochost.Start(t, name)` re-runs the test binary with a marker that selects it. In a normal test run every
+  `Helper` call returns at once. The child runs in its own process group, its output goes to files, and the test's
+  cleanup kills and reaps it. A helper that must stay up waits for SIGTERM (`signal.Notify`, then receive), never on
+  a bare `select {}`: Go's deadlock detector kills a process whose goroutines are all blocked.
 - `probe` lets a test observe what a component did instead of guessing from timing. `Callback` exposes entered and
   joined channels and a `Release` method for a blocked callback; `ObservedContext` signals when code first checks
   `ctx.Done()`; `Await` polls under your context and, on timeout, reports the last value and last error it saw.
 - `lifecycletest` is a minimum set of checks for anything with `Start(ctx)` and `Stop(ctx)`: nil contexts refused,
-  cancelled start refused, stop before start safe, repeated stop is a no-op, and so on. `Run(t, factory, promise)`
-  runs them as subtests. Passing these checks does not prove a component drains and joins its own workers; that still
-  needs focused tests.
+  cancelled start refused, stop before start safe, repeated stop is a no-op, a failed start holds nothing, and so on.
+  `Run(t, factory, mustFail, promise)` runs them as subtests; "Services and the lifecycle suite" below says how to
+  use it. Passing these checks does not prove a component drains and joins its own workers; that still needs
+  focused tests.
 - `pindiff` is not a test helper: it is the program behind `task ledger:check` and `task ledger:diff`, described
   under "Structural guards" below.
 
 The requirements behind each package are in `openspec/specs/nats-fixture/`, `lifecycle-suite/`,
-`integration-test-runner/` and `harness-boundaries/`.
+`integration-test-runner/`, `process-host/` and `harness-boundaries/`.
 
 ### Structural guards
 
@@ -102,7 +120,7 @@ state that changes from one run to the next.
 `task ledger:check` also runs `internal/harness/pindiff`, which compares every `carry` row of the ledger (a package
 ported unchanged) with the pin (SemStreams at the row's `source_sha`) and fails on any difference;
 `docs/provenance.md` rule 5 says what may differ and what to do when it fails. It fetches the pin. With no `carry`
-row it fetches nothing, as today; once one exists, `task verify` and CI make one unauthenticated fetch from
+row it fetches nothing; with one or more, as today, `task verify` and CI make one unauthenticated fetch from
 `github.com` per distinct `source_sha` (about 3.6 s for the whole `task ledger:check` in the one measured run). A
 fetch that does not answer (two minutes for all the fetches of a run) fails the check with a message that says no
 entry was checked. That is a red run to re-run, not a known flake (`.agents/protocol.md`, "Known flakes"). When a
@@ -179,9 +197,9 @@ evidence of fuzz exploration.
 
 A property-based test generates many inputs or sequences of operations and checks a rule that must hold for all of
 them. The rule must come from the requirement, not from reading the implementation. The property-testing library is
-Rapid, `pgregory.net/rapid` (admitted by the owner on 2026-10-02; SemStreams uses `v1.3.0`). It is not in `go.mod`
-yet: it enters with the first test that imports it, and no test in this repository uses it today. A native fuzz
-target that checks a rule can serve as a property test.
+Rapid, `pgregory.net/rapid` (admitted by the owner on 2026-10-02; SemStreams uses `v1.3.0`). It is in `go.mod` at
+`v1.3.0`; the first tests that use it are the properties in `pkg/types/entity_id_prop_test.go`. A native fuzz target
+that checks a rule can serve as a property test.
 
 For both tools, the generator must be able to reach the boundary the rule is about. A wide random range that only
 occasionally lands on a limit catches an off-by-one by luck. Being reachable is not the same as being exercised in a
@@ -233,10 +251,10 @@ read the number of checks actually completed from the tool's output. Record:
 ### Running and replaying a Rapid test
 
 Rapid's flags exist only in a package that imports Rapid, so name that package rather than `./...`.
-No package here uses Rapid yet; substitute your own package and test name:
+For example, one of the `pkg/types` properties:
 
 ```bash
-go test ./pkg/example -run '^TestPropName$' -count=1 -race -v -rapid.checks=100 -rapid.seed=1320
+go test ./pkg/types -run '^TestPropEntityIDRoundTrip$' -count=1 -race -v -rapid.checks=100 -rapid.seed=1320
 ```
 
 `-rapid.checks` sets how many cases to try (default 100) and `-rapid.seed` fixes the seed; `-rapid.seed=0` asks for a
@@ -281,13 +299,90 @@ including those.
   `task lint` and a contract test refuse fixed `net.Listen` ports and fixed broker addresses in tests.
 - Keep tests independent. A test must not depend on another test's stream, bucket, file or goroutine, and must be
   safe to run after a failure. Do not use `t.Parallel()` in tests that change process-wide state.
+- Check that a child process is alive before inspecting it. A test that looks at another process (with `ps`, a
+  signal, or its output) first confirms the process is still running, so a child that died early fails with that
+  cause named instead of a misleading error. In `internal/harness/prochost`, a helper process parked on a bare
+  `select {}` was killed by Go's deadlock detector, so the test's `ps` call failed intermittently (CI runs
+  37005148521, 37006036797 and 37013932497; fixed in 89395c2).
+
+## Services and the lifecycle suite
+
+A service here is a type the engine starts, supervises and stops, whose `Start` can fail: `metric.Server` and
+`natsclient.Client` today. Every service runs the whole `lifecycletest` suite:
+
+```go
+lifecycletest.Run(t, factory, mustFail, lifecycletest.Promise{})
+```
+
+- `factory` returns a fresh, unstarted owner each time it is called.
+- `mustFail` is required. It returns an owner whose `Start` fails for a real reason, such as a port the test is
+  already holding or a refused local address. The suite checks that the failed `Start` returned an error, that the
+  owner then holds nothing, and that a following `Stop` returns nil and makes no call. `Run` fails before any check
+  if `mustFail` is nil.
+- `Promise{Restart: true}` says a stopped owner accepts a second full start and stop; without it, a second `Start`
+  must be refused.
+
+The suite judges completion through `Observe()`, which reports what the owner still holds. Production types do not
+grow an `Observe` method. Instead, write an adapter in a `_test.go` file in the service's own package, where it can
+read unexported fields; `metric/lifecycle_test.go` (`serverOwner`) and `natsclient/client_lifecycle_test.go` are the
+two in the tree. Checklist for an adapter:
+
+- `Unresolved` names every kind of thing the service holds while started, with a stable name each: connections,
+  subscriptions, consumers, key-value watchers, listeners, goroutines, tickers and timers.
+- `Calls` counts every cleanup or external call the service makes (a bind, a shutdown, a close), so the suite can
+  show that a second `Stop` did nothing.
+- The suite cannot notice a kind the adapter leaves out. A reviewer compares the adapter's list with every field
+  the service retains.
+
+## Background work
+
+Background work is a goroutine that outlives the call that started it, in code that is not a service. It stops in
+one of three ways, and never by waiting a fixed time:
+
+| Shape | Use it when | Example in the tree |
+|---|---|---|
+| `Run(ctx) error`, preferred | The caller can run the loop on a goroutine it owns. `Run` returns when `ctx` ends, and its return is the join. | `internal/resource.Watcher.Run` |
+| `Close() error`, or a stop function | The goroutine waits only on what the stop controls, such as its own ticker or done channel. `Close` cancels it and waits with no timeout. | the TTL and hybrid caches in `internal/cache` |
+| `Shutdown(ctx) error` | The goroutine waits on something the stop does not control: a caller's callback, in-flight requests, network I/O. `Shutdown` waits within `ctx` and returns `ctx.Err()` if it ends first; the goroutine exits once what it waited on returns, and a later `Shutdown` returns nil. | `internal/cache.CoalescingSet.Shutdown` |
+
+Two more rules apply to every shape:
+
+- A nil context is refused at the call that receives it: with an error where the call returns one, otherwise with
+  a panic at the call before any goroutine starts, never with a panic inside the goroutine.
+- The code has a unit test that starts the work, uses it and stops it inside `synctest.Test`. The bubble returns
+  only when every goroutine started in it has exited, so the test fails if the stop left one running. Examples:
+  `TestWatcher_Run_ReturnsOnCancelAndLeavesNothing` (`internal/resource`), `TestTTLCacheCloseLeavesNothingRunning`
+  and `TestCoalescingSetShutdownLeavesNothingRunning` (`internal/cache`).
+
+The rule is the `background-work` capability in `openspec/specs/`.
+
+## Porting a test from SemStreams
+
+A ported `_test.go` file lands already meeting this page's rules: no sleeps, no skips, no hidden build tags, no fixed
+addresses, and green under `task test:repeat`. Each repair is recorded on the package's ledger row, by line at the
+SemStreams pin and in SemEngine. The repairs fall into five classes:
+
+- **Sleep replaced by a signal.** Code whose timing comes from its own timers runs inside `synctest.Test`, where
+  `<-time.After(d)` advances a fake clock and `synctest.Wait` settles the bubble before an assertion (`t.Parallel`
+  cannot be called inside a bubble). A test against a real broker waits on a channel, a callback or `probe.Await`;
+  a real-clock timer is allowed only as the failure bound of that wait, taken from the test's context or at least 10
+  seconds. A real-clock interval that the behaviour itself is defined by (an ack wait, a TTL, a drain window) is
+  allowed only when its expiry can never fail a correct implementation, and only where the change's design lists it.
+- **Skip removed.** A test skipped because it needs a broker moves into an `//go:build integration` file instead.
+- **Old build tag removed.** A `// +build` line is deleted; the `//go:build integration` line stays.
+- **Repeat failure fixed.** A ported test that fails `task test:repeat` is fixed in the porting pull request, by
+  removing its cause, and never filed as a flake.
+- **Fixed address removed.** A test binds an ephemeral port or uses the fixture's `URL()`.
+
+A test of a feature that the port removes is deleted with it, and the deletion is recorded on the row like a repair.
 
 ## Budgets and failure evidence
 
 What the repository enforces today:
 
-- `task cover:check` fails below 80% statement coverage on `natsfixture` (from the last integration run) and on
-  `lifecycletest` and `probe` (from the unit run).
+- `task cover:check` fails below 80% statement coverage on each package in its target list
+  (`scripts/cover-check.sh`): `natsfixture` (from the last integration run); `lifecycletest`, `probe`, `message` and
+  `payloadregistry` (from the unit run); and `natsclient` (the unit and integration runs merged).
 - The integration runner caps a run at a 10-minute `go test` timeout and records per-package wall time.
 - One NATS fixture is one container. The fixture's cleanup gets 60 seconds.
 - `task verify` prints the wall time of each step.

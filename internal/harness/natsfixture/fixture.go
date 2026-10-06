@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -35,6 +36,10 @@ const (
 	// test fails on a ceiling instead of filling the broker (SemStreams test_client.go:911-927).
 	resourceMaxAge   = time.Hour
 	resourceMaxBytes = 64 << 20
+	// readyLog is the line nats-server logs once per boot when it accepts clients.
+	readyLog = "Server is ready"
+	// maxPayloadConfig is where WithMaxPayload's config file lands in the container.
+	maxPayloadConfig = "/etc/nats/semengine-fixture.conf"
 )
 
 // Fixture is one test's NATS server and the resources it creates on it. It holds no
@@ -50,28 +55,43 @@ type Fixture struct {
 	op chan struct{}
 	mu sync.Mutex // guards everything below; never held across a Docker or NATS call
 
-	used        bool
-	stopping    bool          // set when Stop begins on owned resources; creation is refused from then on
-	stopBegun   chan struct{} // closed with stopping set, so a creation queued for the slot is refused too
-	adm         admission
-	container   testcontainers.Container
-	containerID string
-	url         string
-	nc          *nats.Conn
-	js          jetstream.JetStream
-	consumers   []*consumer
-	streams     []string
-	buckets     []string
-	calls       map[string]int
-	slotWaits   map[string]int // operations that found the slot taken, by kind; read by tests
-	rec         record
+	used          bool
+	stopping      bool          // set when Stop begins on owned resources; creation is refused from then on
+	stopBegun     chan struct{} // closed with stopping set, so a creation queued for the slot is refused too
+	adm           admission
+	container     testcontainers.Container
+	containerID   string
+	url           string
+	nc            *nats.Conn
+	js            jetstream.JetStream
+	consumers     []*consumer
+	streams       []string
+	buckets       []string
+	calls         map[string]int
+	slotWaits     map[string]int // operations that found the slot taken, by kind; read by tests
+	rec           record
+	maxPayload    int64 // broker max_payload in bytes, from WithMaxPayload
+	maxPayloadSet bool  // unset leaves the broker default
+}
+
+// Option configures a fixture's broker; New applies it before any Docker call.
+type Option func(*Fixture)
+
+// WithMaxPayload starts the broker with max_payload set to n bytes, so a test can reach a payload
+// bound without building a megabyte message. Without it the broker's own default applies. Start
+// refuses an n below 1 before any Docker call.
+func WithMaxPayload(n int64) Option {
+	return func(f *Fixture) { f.maxPayload, f.maxPayloadSet = n, true }
 }
 
 // New binds a fixture to its test and registers a Stop, under fresh bounded authority, as the
 // test's cleanup. It makes no Docker call.
-func New(t testing.TB) *Fixture {
+func New(t testing.TB, opts ...Option) *Fixture {
 	t.Helper()
 	f := &Fixture{testName: t.Name(), errorf: t.Errorf, deps: defaultDeps(), calls: map[string]int{}}
+	for _, opt := range opts {
+		opt(f)
+	}
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), cleanupBudget)
 		defer cancel()
@@ -92,6 +112,9 @@ func (f *Fixture) Start(ctx context.Context) error {
 	// Refusals before any action consume nothing: the fixture can still be started.
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if f.maxPayloadSet && f.maxPayload < 1 {
+		return fmt.Errorf("natsfixture: max payload %d bytes: the broker needs at least 1", f.maxPayload)
 	}
 	if err := f.acquire(ctx, "start"); err != nil {
 		return err
@@ -143,8 +166,8 @@ func (f *Fixture) Start(ctx context.Context) error {
 }
 
 // acquire takes the operation slot for an operation of kind who, or returns ctx's error if ctx
-// ends first. A creation also gives up when Stop begins: it may be queued behind Stop, and Stop may
-// be waiting to join the very handler that is creating.
+// ends first. A creation or a restart also gives up when Stop begins: it may be queued behind Stop,
+// and Stop may be waiting to join the very handler that called it.
 func (f *Fixture) acquire(ctx context.Context, who string) error {
 	f.mu.Lock()
 	if f.op == nil {
@@ -154,8 +177,8 @@ func (f *Fixture) acquire(ctx context.Context, who string) error {
 		f.stopBegun = make(chan struct{})
 	}
 	op := f.op
-	var stopBegun <-chan struct{} // nil, never ready, except for creations
-	if who == "create" {
+	var stopBegun <-chan struct{} // nil, never ready, except for creations and restarts
+	if who == "create" || who == "restart" {
 		stopBegun = f.stopBegun
 	}
 	f.mu.Unlock()
@@ -244,15 +267,29 @@ func (f *Fixture) attempt(ctx context.Context, n int) error {
 		return err
 	}
 
+	// The image's entrypoint prefixes nats-server to flag arguments. JetStream stores in the
+	// container's own filesystem: the fixture creates no volume.
+	cmd := []string{"--port", "4222", "--js"}
+	var files []testcontainers.ContainerFile
+	if f.maxPayloadSet {
+		// nats-server has no command-line flag for max_payload, so it goes in a config file
+		// copied in before the container starts; the flags above still apply over it. The file
+		// is in the container's writable layer, so a Restart keeps the limit.
+		cmd = append(cmd, "--config", maxPayloadConfig)
+		files = append(files, testcontainers.ContainerFile{
+			Reader:            strings.NewReader(fmt.Sprintf("max_payload: %d\n", f.maxPayload)),
+			ContainerFilePath: maxPayloadConfig,
+			FileMode:          0o644,
+		})
+	}
 	req := testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        image,
 			Name:         f.Name("nats"),
 			ExposedPorts: []string{clientPort},
-			// The image's entrypoint prefixes nats-server to flag arguments. JetStream stores in
-			// the container's own filesystem: the fixture creates no volume.
-			Cmd:        []string{"--port", "4222", "--js"},
-			WaitingFor: wait.ForLog("Server is ready"),
+			Cmd:          cmd,
+			Files:        files,
+			WaitingFor:   wait.ForLog("Server is ready"),
 		},
 		Started: true,
 	}
@@ -426,12 +463,26 @@ func (f *Fixture) beginCreate(ctx context.Context) (jetstream.JetStream, string,
 	return js, id, nil
 }
 
-// CreateStream creates a stream the fixture owns, with the fixture's MaxAge, MaxBytes, and
-// DiscardOld bounds. Stop deletes it and observes it absent.
+// CreateStream creates a file-backed stream the fixture owns, with the fixture's MaxAge, MaxBytes,
+// and DiscardOld bounds. Its messages survive Restart. Stop deletes it and observes it absent.
 func (f *Fixture) CreateStream(ctx context.Context, name string, subjects ...string) (jetstream.Stream, error) {
 	if ctx == nil {
 		return nil, errors.New("natsfixture: CreateStream with a nil context")
 	}
+	return f.createStream(ctx, jetstream.FileStorage, name, subjects)
+}
+
+// CreateMemoryStream creates a memory-backed stream the fixture owns, with the same bounds as
+// CreateStream. Its messages do not survive Restart; Stop deletes it, or observes it absent when
+// the restart took it.
+func (f *Fixture) CreateMemoryStream(ctx context.Context, name string, subjects ...string) (jetstream.Stream, error) {
+	if ctx == nil {
+		return nil, errors.New("natsfixture: CreateMemoryStream with a nil context")
+	}
+	return f.createStream(ctx, jetstream.MemoryStorage, name, subjects)
+}
+
+func (f *Fixture) createStream(ctx context.Context, storage jetstream.StorageType, name string, subjects []string) (jetstream.Stream, error) {
 	js, id, err := f.beginCreate(ctx)
 	if err != nil {
 		return nil, err
@@ -441,7 +492,8 @@ func (f *Fixture) CreateStream(ctx context.Context, name string, subjects ...str
 	// stream that turns out not to exist as absent.
 	f.own(&f.streams, name, "stream "+name)
 	s, err := f.deps.createStream(ctx, js, jetstream.StreamConfig{
-		Name: name, Subjects: subjects, MaxAge: resourceMaxAge, MaxBytes: resourceMaxBytes, Discard: jetstream.DiscardOld,
+		Name: name, Subjects: subjects, Storage: storage,
+		MaxAge: resourceMaxAge, MaxBytes: resourceMaxBytes, Discard: jetstream.DiscardOld,
 	})
 	f.count("createStream")
 	if err != nil {

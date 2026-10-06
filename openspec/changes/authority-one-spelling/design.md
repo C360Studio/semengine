@@ -92,27 +92,30 @@ Scope: every package of the module (`./...` with the `integration` tag, as `load
 `publicSignatureViolations`, `signatures_test.go:248-269` at `deaafd4`), including internal and `main` packages — the
 ruling says "anywhere" — and in each, every exported object: package-scope names, exported methods of named types,
 exported struct fields, interface methods, and alias members (#48's F11). Match:
-`strings.Contains` on the identifier, case-sensitive, for the three words. Not checked: unexported names, comments and
-literals; and
-test files, which every guard in `internal/harness/contract` leaves out (`context_test.go:221-229` loads non-test
-packages; `testtext_test.go` is the one that reads test files, for text rules) because a test file exports nothing a
-consumer imports — the harness norm, confirmed with Q1 (#72 comment 5969757891). Failure line, as #48 wrote it
-(`signatures_test.go:535-536, :573-574` at `deaafd4`): `<path>:<line>: <pkg>.<Qualified> spells the deployment
-authority outside the entity-ID family (harness-boundaries › No second spelling of deployment authority)`.
+the regular expression `Federation|GlobalID|EntityIRI` on the identifier, case-sensitive. Not checked: unexported
+names, comments and literals; and test files, which every guard in `internal/harness/contract` leaves out
+(`context_test.go:221-229` loads non-test packages; `testtext_test.go` is the one that reads test files, for text
+rules) because a test file exports nothing a consumer imports — the harness norm, confirmed with Q1 (#72 comment
+5969757891). Failure line, as #48 wrote it (`signatures_test.go:543-544, :581-582` at `29fbd9b`): `<path>:<line>:
+<pkg>.<Qualified> spells the deployment authority outside the entity-ID family (harness-boundaries › No second
+spelling of deployment authority)`.
 
 Adopted from PR #48 (`bb004ef`, aliases and file/line from its F11 fix `a8ae8ad`): C-1 is
-`TestNoDeploymentAuthorityNames` (`signatures_test.go:410-414` at `deaafd4` plus this change's count; predicate
-`:408`, walk `authorityNameViolations` `:546-614`) with its pair `TestNoDeploymentAuthorityNamesSensitivity`
-(`:498-533`, fixture `authorityFixture` `:418-496`). What a caller observes: `TestNoDeploymentAuthorityNames` fails
-with one such line per identifier, sorted, and logs the number of packages it checked; passes on a tree with none.
+`TestNoDeploymentAuthorityNames` (lines at this change's `29fbd9b`: `signatures_test.go:410-414`; predicate `:408`,
+walk `authorityNameViolations` `:554-626`) with its pair `TestNoDeploymentAuthorityNamesSensitivity` (`:498-541`,
+fixture `authorityFixture` `:418-496`). What a caller observes: `TestNoDeploymentAuthorityNames` fails with one such
+line per identifier, sorted, and with `checked no package of <module>` when it checked none; it logs the number of
+packages it checked; passes on a tree with none.
 Proof: the sensitivity test plants seventeen names across a public package `pub`, an internal package
 `internal/inner` and a `main` package `cmd/tool` — in `pub` a type, a function, a variable, a constant, a struct
 field, a method, an exported method of an unexported type, an interface method, alias names and the members of
 aliased struct, interface, pointer and outside-module types; one function in each of the other two — beside
 non-matches (unexported `federationMeta` and `entityIRI`, a lowercase `globalID` field, an unexported method, an
 exported `Confederation`, a comment and a string literal naming the words, and a `_test.go` `FederationTestHelper`),
-and requires exactly those seventeen lines and three checked packages. Task 3.1 added the `Confederation`, comment and
-literal non-matches and the count (`pub/words.go` in the fixture); #48's fixture let a case-insensitive match pass.
+and requires exactly those seventeen lines, with the rule's name written from the spec heading rather than taken
+from the check's constant, and three checked packages; a module with no package must give the one `checked no
+package` line. Task 3.1 added the `Confederation`, comment and literal non-matches (`pub/words.go`), the count, the
+empty-module case and the literal rule name; #48's fixture let a case-insensitive match pass.
 
 ### D3 C-2: exported `Org`/`Platform` fields outside the owners
 
@@ -171,12 +174,15 @@ share one load (the developer's mechanism) before anything is removed.
 
 ### D7 Documents changed with the code
 
-`AGENTS.md` rules table, one row: rule "A deployment's authority is spelled once: established by
-`config.Manager.Start`, carried as `deps.Platform`, composed only by `FrameworkIdentityFamily.EntityID`; no second
-name, field or envelope copy" | canonical home `harness-boundaries` spec, "No second spelling of deployment
-authority" (PR #48, as this change modifies it); ADR-102, ADR-104 | enforced by `TestNoDeploymentAuthorityNames`
-(adopted from PR #48) and `TestNoSecondAuthorityField` (`task test:unit`); lowercase and differently named copies,
-values re-joined in a function body, the extract-after-`Start` ordering (ruling B), and the composer being the only
+`AGENTS.md` rules table, one row (`AGENTS.md:71`): rule "A deployment's authority is spelled once: established by
+`config.Manager.Start`, carried as `deps.Platform`, composed only by `FrameworkIdentityFamily.EntityID`; no exported
+name in a production package matches `Federation|GlobalID|EntityIRI`, and no second field or envelope copy (#72
+ruling A as extended, comment 5969505488; ruling C)" | canonical home `harness-boundaries` spec, "No second spelling
+of deployment authority" (PR #48, as this change modifies it); ADR-102, ADR-104 | enforced by
+`TestNoDeploymentAuthorityNames` and `TestNoDeploymentAuthorityNamesSensitivity` (`task test:unit`, PR #48) for
+exported names; `TestNoSecondAuthorityField` and its sensitivity test (`task test:unit`) for exported
+`Org`/`Platform` struct fields outside the packages ruling C allows; lowercase and differently named copies, values
+re-joined in a function body, the extract-after-`Start` ordering (ruling B), and the composer being the only
 composer are review only. `docs/testing.md:173-181` (the sensitivity-pair list): the two sensitivity pairs.
 `docs/repository-map.md:40`: "the deployment-authority spelling" in the contract package's clause.
 

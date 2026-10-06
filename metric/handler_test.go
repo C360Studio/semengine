@@ -117,11 +117,12 @@ func TestServerNativeStartReportsOwnedEphemeralListener(t *testing.T) {
 	require.NoError(t, response.Body.Close())
 	require.Equal(t, http.StatusOK, response.StatusCode)
 	require.NoError(t, server.Stop(t.Context()))
-	connection, err := net.DialTimeout("tcp", owned.Addr().String(), failureBound)
-	require.Error(t, err, "Stop must close its originally acquired listener")
-	if connection != nil {
-		_ = connection.Close()
-	}
+	// Ask the listener itself, not the freed port: once Stop closes it, any process on the host may be handed
+	// that port, so a dial there can succeed on a healthy tree (#88). SetDeadline fails only on a closed listener.
+	tcpListener, ok := owned.(*net.TCPListener)
+	require.True(t, ok, "native acquisition without TLS holds a *net.TCPListener, got %T", owned)
+	require.ErrorIs(t, tcpListener.SetDeadline(time.Now()), net.ErrClosed,
+		"Stop must close its originally acquired listener")
 }
 
 func TestServerAddressEscapesScopedIPv6Zone(t *testing.T) {

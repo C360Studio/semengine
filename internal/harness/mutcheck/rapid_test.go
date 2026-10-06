@@ -102,7 +102,9 @@ func TestRapidPropertyDetected(t *testing.T) {
 
 // TestRapidPropertySeedMisses (mutation-check › "A property test whose seed misses the wrong
 // change"): with seed 3 the property passes on the wrong change. The verdict is survivor, and its
-// reason names seed 3 and says the result holds for it.
+// reason names seed 3 and says the result holds for it. Its reach run is the package's one real
+// reach run: the profile go test writes, and the block it gives for the insertion, are read end to
+// end.
 func TestRapidPropertySeedMisses(t *testing.T) {
 	root := plantModule(t, rapidModule(t))
 	got := runIn(t, root, testEnv(t, rapidEnv(t)...), "-pkg", "./prop", "-test", "TestAbs", "-file", "prop/abs.go",
@@ -111,5 +113,7 @@ func TestRapidPropertySeedMisses(t *testing.T) {
 	if got.code == 0 || !strings.HasPrefix(last, "verdict: survivor") || !strings.Contains(last, "holds for seed 3") {
 		t.Fatalf("got exit %d, last line %q; want a non-zero exit and a survivor that holds for seed 3\n%s", got.code, last, got)
 	}
+	requireLines(t, "reach run", section(got.stdout, "run reach 1:"), "-coverpkg=./prop", "reach: reached",
+		"an insertion after target line 4: reached", "blocks 4.21,5.11")
 	requireNoFailureFiles(t, root)
 }

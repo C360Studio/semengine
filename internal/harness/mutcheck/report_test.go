@@ -89,10 +89,13 @@ func TestReportDetection(t *testing.T) {
 	requireLogs(t, got.stdout, root)
 }
 
-// TestReportSurvivor (mutation-check › "A survivor fails", "Two hunks" in the report): a survivor
-// exits non-zero, its last line names the verdict, its reason and the seed, and the report lists
-// both hunks of the wrong change, says there is more than one, gives the reach run's blocks, and
-// prints each run's GOFLAGS, the overlay in the mutant run's only.
+// TestReportSurvivor (mutation-check › "A survivor fails", "A deletion that was reached", "Two
+// hunks" in the report): a survivor exits non-zero, its last line names the verdict, its reason and
+// the seed, and the report lists both hunks of the wrong change, says there is more than one, gives
+// the reach run's blocks, and prints each run's GOFLAGS, the overlay in the mutant run's only. The
+// deletion of line 9, which the recorded profile shows executed, is the reached deletion; that case
+// left the real toolchain when the Rapid cases took the package over its test-time budget
+// (design.md, "Declared costs"), and TestRapidPropertySeedMisses reads a real reach run instead.
 func TestReportSurvivor(t *testing.T) {
 	profile := outside(t, "cover.out", "mode: atomic\nplanted.invalid/m/p/p.go:8.18,11.2 2 1\n")
 	standIn(t, "for a in \"$@\"; do case \"$a\" in -coverprofile=*) cp '"+profile+"' \"${a#-coverprofile=}\" ;; esac; done\n"+

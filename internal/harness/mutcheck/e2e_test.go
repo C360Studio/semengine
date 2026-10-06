@@ -79,20 +79,6 @@ var survivorModule = map[string]string{
 	"plant/total_test.go": "package plant\n\nimport \"testing\"\n\nfunc TestTotal(t *testing.T) {\n\tif got := Total([]int{1, 2}); got != 3 {\n\t\tt.Fatalf(\"Total = %d, want 3\", got)\n\t}\n}\n",
 }
 
-// TestDeletionSurvivorEndToEnd (mutation-check › "A deletion that was reached"): the wrong change
-// deletes line 7, which runs and which the test does not observe. Every mutant run passes, the
-// real reach run's profile shows the line executed, and the verdict is survivor with its seed.
-func TestDeletionSurvivorEndToEnd(t *testing.T) {
-	root := plantModule(t, survivorModule)
-	mutant := outside(t, "total.go", strings.Replace(survivorModule["plant/total.go"], "\tcalls++\n", "", 1))
-	got := runIn(t, root, testEnv(t, "GOFLAGS="), "-pkg", "./plant", "-test", "TestTotal",
-		"-file", "plant/total.go", "-mutant", mutant, "-expect", "total_test.go:7", "-seed", "3", "-runs", "1")
-	if got.code == 0 || !strings.HasPrefix(got.lastLine(), "verdict: survivor") || !strings.Contains(got.lastLine(), "seed 3") {
-		t.Fatalf("got exit %d, last line %q; want a non-zero exit and a survivor naming seed 3\n%s", got.code, got.lastLine(), got)
-	}
-	requireLines(t, "reach run", section(got.stdout, "run reach 1:"), "reach: reached", "target line 7", "-coverpkg")
-}
-
 // TestDetectionThroughASymlink (mutation-check › "A repository reached through a symbolic link"):
 // the program runs in a symbolic link to the planted module, with PWD naming the link, as a shell
 // that changed into the link leaves it. The wrong change (line 10 subtracts) fails TestTotal on

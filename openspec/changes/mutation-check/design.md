@@ -572,7 +572,9 @@ which come from the page's text, never from running the program.
      the environment of every run (seed, `RAPID_NOFAILFILE`, a caller's `-tags` set with `go env -w` in a temporary
      `GOENV` file), and that the content hash of every
      file is unchanged, as `TestWritesNothingInTree` does;
-   - a deletion survivor that was reached, so a real reach run, its profile and its regions are read end to end;
+   - a deletion survivor that was reached, so a real reach run, its profile and its regions are read end to end.
+     Measured over budget with item 6 added (task 2.10), it moved to a recorded profile and a stand-in `go`
+     (`TestReportSurvivor`), as "Declared costs" provides; item 6's survivor now reads the real reach run;
    - SIGTERM to the built program while its stand-in `go` waits, having started a helper that writes its own pid and
      its parent's, as `TestFetchLeavesNoProcess`'s helper does: neither process is left.
 
@@ -727,6 +729,11 @@ belongs to generated tests.
   Measured (task 2.9): CI run 37228603260 at `76aa263` printed 6.727 s for `test:unit` and 24.880 s for
   `test:repeat`, 31.607 s in all, under the budget; the survivor case stays on the real toolchain. The earlier run
   37226655576 at `9c1b3e1` printed 5.576 s and 20.860 s (26.436 s).
+  Measured (task 2.10), with the two Rapid cases of D11 item 6 added: CI run 37477518090 at `85b6984` printed 11.715 s
+  and 54.941 s, 66.656 s in all, over the budget. In that run's `test:repeat`, `contract`, `metric`, `natsclient`,
+  `tlsutil` and `pindiff` took 1.5 to 2.0 times as long as in run 37474423694 at `cf74191` (this package: 5.016 s and
+  20.933 s) and `runner` the same, so part of the rise may be the runner. Over budget, the survivor case moved to a
+  recorded profile and a stand-in `go`.
 - **Run time of a check.** With the defaults a check is seven runs, plus one reach run for a would-be survivor: 6-43 s
   for the trial's cases other than R06 and R08, and about 60 s plus the baselines for a whole-run timeout of 60 s.
 - **The program itself:** about the prototype's size (500 lines), plus tests. Each call compiles the program first.

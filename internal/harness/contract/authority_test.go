@@ -11,7 +11,7 @@ import (
 )
 
 // authorityRule is the requirement every authority violation names.
-const authorityRule = "(harness-boundaries › One spelling of the deployment authority)"
+const authorityRule = "(harness-boundaries › No second spelling of deployment authority)"
 
 // TestNoSecondAuthorityFieldSensitivity plants the fixture of design D3 (change
 // authority-one-spelling) in a temporary module: each field the rule forbids must be named by file,
@@ -206,7 +206,7 @@ type Claim struct {
 }
 
 // authorityOwnerPackages and authorityOwnerFields mirror, by exact string, the exceptions the
-// harness-boundaries requirement "One spelling of the deployment authority" lists; the list is the
+// harness-boundaries requirement "No second spelling of deployment authority" lists; the list is the
 // spec's, and a new entry needs a spec change first (design D4). Paths are relative to the module
 // path read from go.mod, so a fixture module is excepted the same way this one is. A field's type is
 // never consulted: the carrier is excepted field by field (#72 comment 5969757891).

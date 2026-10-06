@@ -721,11 +721,15 @@ judged by `unicode/utf8` and `strings`, that `Type.Validate`, the envelope and t
 and that every accepted one survives `NewDecoder` equal in full; a type registered per input carries the generated
 components through the registry, and its seeds hold an invalid byte in each of the five positions.
 `GenericJSONPayload.UnmarshalJSON` gets `FuzzGenericJSONPayloadUnmarshalJSON`, checked against the standard library's
-decode of `{"data": …}` read with `UseNumber`: the oracle refuses malformed input, data after the value and a `data`
-that is not an object, and converts no number on the way, so a literal beyond `float64`'s range such as `1e400` is
-accepted with its text (Codex F41; seeds in this target and in `FuzzDecoderDecode`). A decode keeps every number as a
-`json.Number` holding its literal,
-where the pin turned each into a `float64` and changed integers beyond 2^53 (Codex F30, commit 344044c):
+decode of `{"data": …}` read with `UseNumber`: that differential oracle accepts a body that is an object or `null`,
+refuses malformed input, non-whitespace bytes after the JSON value, a body that is neither an object nor `null` and a
+`data` that is neither an object nor `null`, and converts no number on the way, so a literal beyond `float64`'s range
+such as `1e400` is accepted (Codex F41; seeds in this target and in `FuzzDecoderDecode`). Because it shares the
+standard library's decoder with production, the numbers are checked independently: `checkNumberLiterals` reads each
+number token from the raw bytes by hand and requires every decoded number to be a `json.Number` with that text, and
+`TestGenericJSONKeepsNumberLiteral` states six literals' expected values. A decode keeps every number as a
+`json.Number` holding its literal, where the pin turned each into a `float64` and changed integers beyond 2^53 (Codex
+F30, commit 344044c):
 `FuzzGenericJSONShapes` compares the `NewDecoder` result with the generated values themselves, and
 `TestReviewerGenericJSONPreservesIntegerValue` holds the three boundary numbers. A payload built in process holds the
 Go numbers its caller supplied. `core.json.v1` is the fallback for JSON whose shape is unknown when the code is

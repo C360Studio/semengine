@@ -63,13 +63,17 @@ type oracleCount struct {
 }
 
 // unmarshalNumbers is the standard library's exact reading of a core.json.v1 body: it refuses
-// malformed JSON, trailing data after the value, and a value that does not fit v's shape, and
-// keeps every number as a json.Number holding its literal, so an integer beyond 2^53 and a
+// malformed JSON, non-whitespace bytes after the value, and a value that does not fit v's shape,
+// and keeps every number as a json.Number holding its literal, so an integer beyond 2^53 and a
 // literal beyond float64's range such as 1e400 keep their exact value (Codex F30, F41).
 //
-// Syntax and trailing data are checked by json.Unmarshal into a json.RawMessage, which copies the
-// bytes and converts no number; decoding into an `any` would narrow each number to float64 and
-// refuse 1e400, which the payload contract accepts.
+// Syntax and trailing bytes are checked by json.Unmarshal into a json.RawMessage, which copies
+// the bytes and converts no number; decoding into an `any` would narrow each number to float64
+// and refuse 1e400, which the payload contract accepts.
+//
+// This is a differential oracle: it shares the standard library's scanner and decoder with
+// production, so it settles acceptance and shape, not the numbers. checkNumberLiterals reads each
+// number from the raw bytes by hand, and TestGenericJSONKeepsNumberLiteral states literal values.
 func unmarshalNumbers(data []byte, v any) error {
 	var raw json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
@@ -78,6 +82,59 @@ func unmarshalNumbers(data []byte, v any) error {
 	d := json.NewDecoder(bytes.NewReader(raw))
 	d.UseNumber()
 	return d.Decode(v)
+}
+
+// numberLiterals reads, by hand and without any JSON decoder, the text of every number token in
+// well-formed JSON: a run starting with '-' or a digit outside a string.
+func numberLiterals(data []byte) map[string]bool {
+	literals := map[string]bool{}
+	for i := 0; i < len(data); i++ {
+		switch c := data[i]; {
+		case c == '"':
+			for i++; i < len(data) && data[i] != '"'; i++ {
+				if data[i] == '\\' {
+					i++
+				}
+			}
+		case c == '-' || ('0' <= c && c <= '9'):
+			j := i
+			for j < len(data) && strings.IndexByte("+-.eE0123456789", data[j]) >= 0 {
+				j++
+			}
+			literals[string(data[i:j])] = true
+			i = j - 1
+		}
+	}
+	return literals
+}
+
+// checkNumberLiterals fails unless every number in the decoded tree v is a json.Number whose text
+// is a number literal written in raw, so a decode that narrows or rewrites a number is caught
+// without trusting any decoder's reading of it (Codex F41).
+func checkNumberLiterals(t *testing.T, raw []byte, v any) {
+	t.Helper()
+	literals := numberLiterals(raw)
+	var walk func(v any)
+	walk = func(v any) {
+		switch v := v.(type) {
+		case map[string]any:
+			for _, e := range v {
+				walk(e)
+			}
+		case []any:
+			for _, e := range v {
+				walk(e)
+			}
+		case json.Number:
+			if !literals[string(v)] {
+				t.Fatalf("decoded number %q is not a literal in %q", v, raw)
+			}
+		case nil, string, bool:
+		default:
+			t.Fatalf("decoded value %#v (%T) from %q is not a JSON value with its number literal", v, v, raw)
+		}
+	}
+	walk(v)
 }
 
 // fuzzRegistry holds the three kinds of registration the decoder can meet: the built-in
@@ -481,6 +538,7 @@ func checkPreserved(t *testing.T, data []byte, got *message.BaseMessage, want or
 	}
 	switch p := got.Payload().(type) {
 	case *message.GenericJSONPayload:
+		checkNumberLiterals(t, want.env.Payload, p.Data)
 		if want.generic == nil || !reflect.DeepEqual(p.Data, want.generic.Data) {
 			t.Fatalf("Decode(%q): core.json.v1 data %#v, want %#v", data, p.Data, want.generic)
 		}
@@ -537,6 +595,9 @@ func FuzzGenericJSONPayloadUnmarshalJSON(f *testing.F) {
 		wantErr := unmarshalNumbers(data, &want)
 		if (err == nil) != (wantErr == nil) {
 			t.Fatalf("UnmarshalJSON(%q): err = %v, standard library err = %v", data, err, wantErr)
+		}
+		if err == nil {
+			checkNumberLiterals(t, data, got.Data)
 		}
 		if err == nil && !reflect.DeepEqual(got.Data, want.Data) {
 			t.Fatalf("UnmarshalJSON(%q): data %#v, want %#v", data, got.Data, want.Data)

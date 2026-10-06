@@ -15,6 +15,9 @@ not a task tracker and not a description of the tree.
   `openspec/specs/` are the current truth, and `docs/contract.md` states the tier-0 contract 03B approved. The Slice
   04A design names seven implementation changes (`setup-04a-01-floor` to `setup-04a-07-substrate-seam`);
   `setup-04a-02` to `setup-04a-07` are not started.
+- **The `mutation-check` spec under `openspec/specs/`.** It is written in the open change
+  `openspec/changes/mutation-check/` (PR #82), at `specs/mutation-check/spec.md`, and moves to
+  `openspec/specs/mutation-check/` when that change is archived.
 
 ## Present
 
@@ -43,6 +46,7 @@ not a task tracker and not a description of the tree.
 | `internal/harness/semantictest/` | Helpers that build well-formed entity IDs and predicates for test fixtures; the pin's `internal/semantictest` |
 | `internal/harness/runner/` | Tests of the integration runner script |
 | `internal/harness/pindiff/` | The program behind `task ledger:check` and `task ledger:diff`: compares ledger entries with the pin (SemStreams at each entry's `source_sha`), which it fetches from GitHub when an entry needs it |
+| `internal/harness/mutcheck/` | The program behind `task mutate:check`: runs one named test against one wrong change to a Go source file, kept in a copy outside the repository, and reports detection, survivor, invalid or inconclusive (`docs/testing.md`, "Show that the test can fail"). Run by hand, never by `task verify` or CI; writes nothing in the repository |
 | `scripts/test-integration.sh` | `task test:integration`: host lock, image preflight, signal forwarding, leak check |
 | `scripts/cover-check.sh` | `task cover:check`: 80% statements on each package in its target list: `natsfixture`, `lifecycletest`, `probe`, `message`, `payloadregistry`, `natsclient` |
 | `scripts/merge-check.sh` | `task merge:check` and the CI job `merge-check`: fails while an open `class:flake` issue is not closed by the pull request, or while the rules on `main` do not require an up-to-date head, or while a code pull request that is not a draft lacks the `implemented-by:` and `reviewed-by:` lines naming the two agents (`.agents/protocol.md`, "Cross-agent review"). Reads GitHub, so not part of `task verify` |

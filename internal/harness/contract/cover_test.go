@@ -29,10 +29,18 @@ func itoa(n int) string {
 	return string(d)
 }
 
-const harness = "github.com/c360studio/semengine/internal/harness/"
+const (
+	module  = "github.com/c360studio/semengine/"
+	harness = module + "internal/harness/"
+)
 
-// TestCoverCheckSensitivity: scripts/cover-check.sh (task cover:check) fails when any of the
-// three enforced packages is below 80% or missing from its profile, and passes at 80%. Blocks
+// blocks drops the mode line of a rendered profile, so profiles can be concatenated.
+func blocks(p string) string { return strings.TrimPrefix(p, "mode: atomic\n") }
+
+// TestCoverCheckSensitivity: scripts/cover-check.sh (task cover:check) fails when any enforced
+// package is below 80% or missing from its profile, and passes at 80%: the three harness packages,
+// and message, payloadregistry and natsclient (setup-04a-01-floor task 5.4), which lie outside
+// internal/harness. natsclient is measured from the unit and integration profiles merged. Blocks
 // repeated across a merged profile count once, covered if any copy was.
 func TestCoverCheckSensitivity(t *testing.T) {
 	script := filepath.Join(repoRoot(t), "scripts", "cover-check.sh")
@@ -50,19 +58,47 @@ func TestCoverCheckSensitivity(t *testing.T) {
 		return string(out), err
 	}
 	eighty := [][2]int{{8, 1}, {2, 0}}
-	unitOK := profile(harness+"lifecycletest", eighty...) + strings.TrimPrefix(profile(harness+"probe", eighty...), "mode: atomic\n")
+	harnessUnitOK := profile(harness+"lifecycletest", eighty...) + blocks(profile(harness+"probe", eighty...))
+	portedUnitOK := blocks(profile(module+"message", eighty...)) + blocks(profile(module+"payloadregistry", eighty...))
+	natsclientOK := blocks(profile(module+"natsclient", eighty...))
+	unitOK := harnessUnitOK + portedUnitOK + natsclientOK
 	fixtureOK := profile(harness+"natsfixture", eighty...)
 
 	if out, err := run(t, unitOK, fixtureOK); err != nil {
 		t.Fatalf("80%% on every package refused: %v\n%s", err, out)
 	}
+	// natsclient's unit and integration runs each cover half of what the floor needs; only their
+	// union reaches 80%. Block 1 (4 statements) is covered by the unit run, block 2 (4) by the
+	// integration run, block 3 (2) by neither.
+	natsclientHalf := func(covered int) string {
+		var b strings.Builder
+		for i, stmts := range []int{4, 4, 2} {
+			count := 0
+			if i+1 == covered {
+				count = 1
+			}
+			b.WriteString(module + "natsclient/f.go:" + itoa(i+1) + ".1," + itoa(i+1) + ".9 " + itoa(stmts) + " " + itoa(count) + "\n")
+		}
+		return b.String()
+	}
+	t.Run("natsclient merged from both profiles", func(t *testing.T) {
+		out, err := run(t, harnessUnitOK+portedUnitOK+natsclientHalf(1), fixtureOK+natsclientHalf(2))
+		if err != nil || !strings.Contains(out, "natsclient 80.0%") {
+			t.Fatalf("natsclient not measured from the merged profiles: %v\n%s", err, out)
+		}
+	})
 	for _, tc := range []struct {
 		name, unit, integration, want string
 	}{
 		{"natsfixture below", unitOK, profile(harness+"natsfixture", [2]int{7, 1}, [2]int{3, 0}), "natsfixture 70.0%"},
-		{"probe below", profile(harness+"lifecycletest", eighty...) + strings.TrimPrefix(profile(harness+"probe", [2]int{1, 1}, [2]int{1, 0}), "mode: atomic\n"), fixtureOK, "probe 50.0%"},
+		{"probe below", profile(harness+"lifecycletest", eighty...) + blocks(profile(harness+"probe", [2]int{1, 1}, [2]int{1, 0})) + portedUnitOK + natsclientOK, fixtureOK, "probe 50.0%"},
 		{"lifecycletest missing", strings.Replace(unitOK, "lifecycletest", "other", -1), fixtureOK, "lifecycletest: no statements"},
-		{"natsfixture only in the unit profile", unitOK + strings.TrimPrefix(fixtureOK, "mode: atomic\n"), profile(harness+"probe", eighty...), "natsfixture: no statements"},
+		{"natsfixture only in the unit profile", unitOK + blocks(fixtureOK), profile(harness+"probe", eighty...), "natsfixture: no statements"},
+		// Packages outside internal/harness (task 5.4), written before the script read them.
+		{"message below", harnessUnitOK + blocks(profile(module+"message", [2]int{7, 1}, [2]int{3, 0})) + blocks(profile(module+"payloadregistry", eighty...)) + natsclientOK, fixtureOK, "message 70.0%"},
+		{"payloadregistry missing", harnessUnitOK + blocks(profile(module+"message", eighty...)) + natsclientOK, fixtureOK, "payloadregistry: no statements"},
+		{"natsclient below in both profiles", harnessUnitOK + portedUnitOK + blocks(profile(module+"natsclient", [2]int{7, 1}, [2]int{3, 0})), fixtureOK, "natsclient 70.0%"},
+		{"natsclient missing from both profiles", harnessUnitOK + portedUnitOK, fixtureOK, "natsclient: no statements"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			out, err := run(t, tc.unit, tc.integration)
@@ -124,6 +160,43 @@ func TestTreeStateSeesUntrackedContent(t *testing.T) {
 	}
 	if after := state(); after == before {
 		t.Fatalf("editing an untracked file left the fingerprint at %s", before)
+	}
+}
+
+// TestCoverCheckUnitRunCoversUnitAndMergedTargets: in its no-argument mode scripts/cover-check.sh
+// writes the unit profile with one go test run, over every target measured from the unit profile
+// alone or merged (natsclient), and not over an integration-only target (natsfixture), whose owner
+// tests need Docker. A fake go records its arguments and fails, which ends the script there.
+func TestCoverCheckUnitRunCoversUnitAndMergedTargets(t *testing.T) {
+	root := copyScript(t, "cover-check.sh")
+	argsFile := filepath.Join(t.TempDir(), "args")
+	env := fakeBin(t, map[string]string{"go": "#!/bin/sh\necho \"$@\" > \"$ARGS_FILE\"\nexit 1\n"}, "ARGS_FILE="+argsFile)
+	cmd := exec.Command("bash", filepath.Join(root, "scripts", "cover-check.sh"))
+	cmd.Dir = root
+	cmd.Env = env
+	if out, err := cmd.CombinedOutput(); err == nil {
+		t.Fatalf("cover-check.sh exited 0 after its go test failed:\n%s", out)
+	}
+	raw, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("the fake go was not run: %v", err)
+	}
+	args := strings.Fields(string(raw))
+	has := func(pkg string) bool {
+		for _, a := range args {
+			if a == pkg {
+				return true
+			}
+		}
+		return false
+	}
+	for _, pkg := range []string{"./internal/harness/lifecycletest/", "./internal/harness/probe/", "./message/", "./payloadregistry/", "./natsclient/"} {
+		if !has(pkg) {
+			t.Errorf("the unit run does not cover %s: go %s", pkg, raw)
+		}
+	}
+	if has("./internal/harness/natsfixture/") {
+		t.Errorf("the unit run covers the integration-only natsfixture: go %s", raw)
 	}
 }
 

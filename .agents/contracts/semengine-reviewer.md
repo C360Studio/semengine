@@ -177,14 +177,52 @@ Three further checks, scoped as the architect contract (Extraction slices) state
   helpers rely on that invariant. Any nil-to-`context.Background` default is `BLOCKING`.
 - Detachment is allowed only for terminal cleanup or finalization, or an already-accepted durability operation whose
   invariant requires bounded completion after owner cancellation. Require `context.WithTimeout` as the immediate
-  boundary. With a parent, require `context.WithTimeout(context.WithoutCancel(parent), budget)`. A timeout-only `Stop`
-  or equivalent finalizer with no parent contract may use `context.WithTimeout(context.Background(), budget)`. Work
-  must complete synchronously or join before return and never feed `Start`, `Run`, `Watch`, or continuing work.
+  boundary. With a parent, require `context.WithTimeout(context.WithoutCancel(parent), budget)`. A finalizer with no
+  caller context, such as a test cleanup (`natsfixture/fixture.go:75-81`), may use
+  `context.WithTimeout(context.Background(), budget)`. The budget bounds the work through its context and never
+  replaces a join: work must complete synchronously or join before return, with no timer in place of the join, and
+  never feed `Start`, `Run`, `Watch`, or continuing work.
 - Direct use or any unbounded descendant of `context.WithoutCancel` is `BLOCKING`. Nested child cancellation is
   allowed beneath the bounded context only when all tasks join before the terminal operation returns.
 - An exported lifecycle record exposing `context.CancelFunc` is `BLOCKING`.
 - A `Stop` that replaces the caller's finite context with its own timeout, or that treats timeout or cancellation as
   proof of completed callback or worker joins, is a finding.
+
+### Background work
+
+Check every goroutine that outlives its call, outside a service, against `openspec/specs/background-work/spec.md`.
+Each is `BLOCKING`:
+
+- Not in one of the three shapes, or `Close()` on a goroutine that runs a caller's callback or network I/O.
+- A fixed duration in place of a join.
+- No `synctest` test proving nothing is left behind, or a nil context that reaches a background goroutine.
+
+### NATS RPC error contract
+
+Carried with `natsclient` from SemStreams' reviewer contract at the pin (§ NATS RPC error contract); the reply format
+is in `natsclient/doc.go`, "The unified RPC error contract".
+
+- A classified handler called by raw `Request` plus a JSON unmarshal can decode an error reply as a zero-valued
+  success. Require `RequestClassified` or `RequestWithRetryClassified`, and the classified error propagated intact.
+- Audit every unclassified `Request` caller in the changed seam's blast radius, including code that passes a reply
+  on.
+- A handler failure arrives as the classified reply, not necessarily as the request's `err`.
+- Require `errors.Is` for JetStream sentinels, with sibling states covered: key-not-found and key-deleted;
+  no-keys-found and key-not-found.
+
+### Storage and retention review
+
+Carried with `natsclient` from SemStreams' reviewer contract at the pin (§ Storage, retention, and cutover review,
+its first two bullets; the rest govern graph state, the `storage` package and cutover, not yet ported).
+
+- A bucket's `Class` stays descriptive and its `Retention` enforced; neither stands in for the other. An ordinary
+  stream's `MaxAge`, `MaxBytes` and discard policy are capacity protection, not entity removal. Flag a stream created
+  through `EnsureStream` or `CreateStream` whose discard policy is left at its zero value (`DiscardOld`) without a
+  stated choice: `CheckStreamBounds` cannot see it.
+- A bucket declared `RetentionNoLifecycle` or `RetentionNoLifecycleStrict` with a TTL or a binding `MaxBytes`, or a
+  path that bypasses `CheckNoLifecycleRetention` or `AssertNoLifecycleRetention` for such a bucket, is `BLOCKING`. A
+  ceiling on that state is acceptable only as a `DiscardNew` limit with typed rejection, through a new
+  `RetentionKind`.
 
 ### Test fidelity
 
@@ -269,6 +307,11 @@ Three further checks, scoped as the architect contract (Extraction slices) state
 - **Check that the package's guidance came with it.** The slice names the SemStreams contract sections and skills
   that apply to the package and carries the adapted text. A ported package whose known footguns are documented only
   in SemStreams is a finding.
+- **Check that a known shape left the generic payload.** For every `NewGenericJSON` call in the ported package
+  that builds its map from fields the code knows, the ledger row carries an `adapt` item that moves the site to a
+  registered payload or states why the shape is open (architect contract, Extraction slices). A known-shape site
+  with neither is a finding. Until the structural caller check arrives with the first ported production caller,
+  this search is yours to run.
 - **Check a boundary change against the stated purpose.** A design that sets or moves a boundary carries the intent
   table (architect contract, Intent check). A capability `AGENTS.md` names that is deferred or excluded with no
   owner ruling cited is `BLOCKING` at inventory review.
@@ -305,3 +348,7 @@ Use `BLOCKING` for silent corruption, data loss, invalid readiness, contract bre
 a likely functional defect or known project discipline failure, `MEDIUM` for a non-blocking correction, and `NIT` for
 style only. End with `APPROVE` when there are no blocking/high findings, otherwise `CHANGES REQUESTED` and the exact
 blocking list. State explicitly when evidence was unavailable rather than guessing.
+
+A PASS or `APPROVE` names the CI run and the commit it rests on: a step is done only when the CI run for its pushed
+commit has passed. A local `task verify` is evidence, not the gate. A cancelled or superseded run is unverified, never
+green.

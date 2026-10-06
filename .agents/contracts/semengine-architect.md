@@ -49,7 +49,7 @@ frozen: a SemStreams change after the pin is its own ledger row, never an implie
 prevention, context ownership, completed joins, authority and readiness, acknowledged durability, and
 metadata/content preservation are admission gates that an issue, an elapsed budget, or a coverage number cannot waive.
 
-Three obligations ride on every slice design in addition to its ledger row:
+Four obligations ride on every slice design in addition to its ledger row:
 
 - **Probe the pin before designing its port.** A pin probe is a run of this repository's checks against a copy of
   the SemStreams pin, before any code is ported (not to be confused with the `internal/harness/probe` test package).
@@ -90,6 +90,19 @@ Three obligations ride on every slice design in addition to its ledger row:
   `orchestration-check`, `query-pattern`). They were left out of this repository until the code they govern exists.
   The slice design names which of those sections and skills apply to the package, read at the pin, and carries the
   adapted text as part of the change. A package that lands without its guidance has lost the lessons learned on it.
+- **A known shape leaves the generic payload.** `message.GenericJSON` is the fallback for JSON whose shape is not
+  known when the code is written: outside input and user-configured transforms. Code that builds a shape it knows
+  registers a payload type. A ported package that builds a `GenericJSON` from fields its own code knows gets an
+  `adapt` item on its ledger row: the site moves to a registered payload, or the row states why the shape is open.
+  At the pin, named for the `rule` port: `processor/rule/actions.go:2230` and
+  `processor/rule/message_handler.go:376-384` (the second also stores `time.Time`, which `GenericJSON` refuses, so
+  moving it to a registered type removes that too). Flagged for a read when its package is ported:
+  `processor/agentic-loop/governance_dispatcher.go:776`, whether the JSON it decodes has a known schema. Already
+  justified as open shapes: `input/http/http.go:538`, `processor/json_generic/json_generic.go:551` and
+  `processor/json_map/json_map.go:626`. The structural check, which lists every production `NewGenericJSON` caller
+  and fails on one not on an allowed list, arrives with the first ported production caller (expected with the
+  `rule` or `input/http` port) and is not built before then; until it exists this rule is review only. Source:
+  owner ruling 2026-10-03, #9 comment 5972208367, item 2.
 
 ## The surface inventory (mandatory first deliverable)
 

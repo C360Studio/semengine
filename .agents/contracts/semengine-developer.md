@@ -162,9 +162,10 @@ BEFORE implementation.
   helpers rely on the caller invariant. Never default nil to `context.Background`.
 - Detach only terminal cleanup or finalization, or an already-accepted durability operation whose invariant requires
   bounded completion after owner cancellation. `context.WithTimeout` is the immediate boundary. With a parent, use
-  `context.WithTimeout(context.WithoutCancel(parent), budget)`. A timeout-only `Stop` or equivalent finalizer with no
-  parent contract may use `context.WithTimeout(context.Background(), budget)`. Complete synchronously or join all
-  tasks before return; never feed `Start`, `Run`, `Watch`, or continuing work.
+  `context.WithTimeout(context.WithoutCancel(parent), budget)`. A finalizer with no caller context, such as a test
+  cleanup (`natsfixture/fixture.go:75-81`), may use `context.WithTimeout(context.Background(), budget)`. The budget
+  bounds the work through its context and never replaces a join: complete synchronously or join all tasks before
+  return, with no timer in place of the join. Never feed `Start`, `Run`, `Watch`, or continuing work.
 - Do not use `context.WithoutCancel(parent)` directly or create an unbounded descendant. Nested child cancellation is
   allowed beneath the bounded context only when all tasks join before the terminal operation returns.
 - Exported lifecycle records SHALL NOT expose `context.CancelFunc`.
@@ -174,6 +175,46 @@ BEFORE implementation.
 - Before changing a lifecycle or concurrency seam, inventory it for every disguised form above. If the requested
   implementation would add, preserve, or work around any violation above, stop the slice and escalate for a removal
   design; do not implement it.
+
+### Background work
+
+A goroutine that outlives its call, outside a service, follows `openspec/specs/background-work/spec.md`:
+
+- `Run(ctx) error`, preferred: the caller owns the goroutine.
+- `Close() error` that cancels and joins, with no timeout: only when the goroutine waits on nothing outside `Close`.
+- `Shutdown(ctx) error` when stopping waits on a caller's callback, in-flight requests or network I/O.
+
+### NATS RPC
+
+Carried with `natsclient` from SemStreams' developer contract at the pin (§ NATS RPC). A reply is either a success
+body or one classified error: a `SubscribeForRequests` handler's error goes back as a reply whose headers carry its
+class and code (`natsclient/doc.go`, "The unified RPC error contract").
+
+- Call a classified handler with `RequestClassified`, or `RequestWithRetryClassified` where redelivery is
+  authorized. Raw `Request` plus a JSON unmarshal can decode an error reply as a zero-valued success.
+- Propagate a classified request error without losing its class, code or detail.
+- Use `errors.Is` for JetStream sentinels, and cover sibling states such as key-not-found and key-deleted, or
+  no-keys-found and key-not-found.
+
+### Storage and retention
+
+Carried with `natsclient` from SemStreams' developer contract at the pin (§ Storage and retention contracts, its
+first two bullets, which `natsclient` enforces; the rest govern graph state and the `storage` package, not yet
+ported).
+
+- Keep a bucket's class, its retention and capacity protection apart. A `BucketSpec` declares a `Class`
+  (`ClassAuthoritative`, `ClassDerived`, `ClassOperational`, `ClassDiagnostic`), which is descriptive, and a
+  `Retention`, which is enforced. An ordinary stream's finite `MaxAge`, `MaxBytes` and discard policy
+  (`CheckStreamBounds`, run when `EnsureStream`, `CreateStream` or a consumer's
+  auto-create creates one) are operational protection, never a way to remove
+  entities. `CheckStreamBounds` cannot require the discard policy, because its zero value is `DiscardOld`: set it
+  explicitly.
+- State that must not be evicted (a bucket whose retention is `RetentionNoLifecycle` or `RetentionNoLifecycleStrict`)
+  never has a TTL (`MaxAge`) or a binding `MaxBytes`. `CheckNoLifecycleRetention` refuses either with
+  `ErrGraphBucketRetention`, and `KVStore.AssertNoLifecycleRetention` checks a live bucket. The strict kind refuses a
+  foreign retention instead of stripping it. A finite ceiling on such state may only be a `DiscardNew` limit that
+  refuses writes honestly; `natsclient` has no retention kind for one yet, so adding it means a new `RetentionKind`
+  with its reconcile arm (`kvspec.go`).
 
 ## Test and operational fidelity
 
@@ -218,3 +259,6 @@ Summarize the implemented task slice, semantic blast radius, tests and exact res
 "What the pull request records", including what was not covered and unresolved survivors), unresolved gates, and any
 follow-up owned by the architect, reviewer, or technical writer. Name every issue the slice filed (protocol **File**
 ritual); a filing the ritual would not admit is an unresolved gate. Do not claim completion from compilation alone.
+
+A step is done only when the CI run for its pushed commit has passed. A local `task verify` is evidence, not the gate.
+A cancelled or superseded run is unverified, never green.

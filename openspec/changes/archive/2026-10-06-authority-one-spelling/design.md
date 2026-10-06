@@ -96,26 +96,29 @@ the regular expression `Federation|GlobalID|EntityIRI` on the identifier, case-s
 names, comments and literals; and test files, which every guard in `internal/harness/contract` leaves out
 (`context_test.go:221-229` loads non-test packages; `testtext_test.go` is the one that reads test files, for text
 rules) because a test file exports nothing a consumer imports — the harness norm, confirmed with Q1 (#72 comment
-5969757891). Failure line, as #48 wrote it (`signatures_test.go:543-544, :581-582` at `29fbd9b`): `<path>:<line>:
+5969757891). Failure line, as #48 wrote it (`signatures_test.go:561-562, :600-601` at `30b9e5f`): `<path>:<line>:
 <pkg>.<Qualified> spells the deployment authority outside the entity-ID family (harness-boundaries › No second
 spelling of deployment authority)`.
 
 Adopted from PR #48 (`bb004ef`, aliases and file/line from its F11 fix `a8ae8ad`): C-1 is
-`TestNoDeploymentAuthorityNames` (lines at this change's `29fbd9b`: `signatures_test.go:410-414`; predicate `:408`,
-walk `authorityNameViolations` `:554-626`) with its pair `TestNoDeploymentAuthorityNamesSensitivity` (`:498-541`,
-fixture `authorityFixture` `:418-496`). What a caller observes: `TestNoDeploymentAuthorityNames` fails with one such
+`TestNoDeploymentAuthorityNames` (lines at this change's `30b9e5f`: `signatures_test.go:410-414`; predicate `:408`,
+walk `authorityNameViolations` `:573-654`) with its pair `TestNoDeploymentAuthorityNamesSensitivity` (`:511-559`,
+fixture `authorityFixture` `:418-509`). What a caller observes: `TestNoDeploymentAuthorityNames` fails with one such
 line per identifier, sorted, and with `checked no package of <module>` when it checked none; it logs the number of
 packages it checked; passes on a tree with none.
-Proof: the sensitivity test plants seventeen names across a public package `pub`, an internal package
+Proof: the sensitivity test plants twenty names across a public package `pub`, an internal package
 `internal/inner` and a `main` package `cmd/tool` — in `pub` a type, a function, a variable, a constant, a struct
 field, a method, an exported method of an unexported type, an interface method, alias names and the members of
-aliased struct, interface, pointer and outside-module types; one function in each of the other two — beside
-non-matches (unexported `federationMeta` and `entityIRI`, a lowercase `globalID` field, an unexported method, an
-exported `Confederation`, a comment and a string literal naming the words, and a `_test.go` `FederationTestHelper`),
-and requires exactly those seventeen lines, with the rule's name written from the spec heading rather than taken
+aliased struct, interface, pointer and outside-module types, and an interface method inherited from an embedded
+interface (from outside the module, reported at the alias `Exposed` and the defined `Wraps`; from the module's own
+`Inner`, reported once at `Inner`, not again at `Outer` or `OuterAlias`; Codex F3); one function in each of the
+other two — beside non-matches (unexported `federationMeta` and `entityIRI`, a lowercase `globalID` field, an
+unexported method, an exported `Confederation`, a comment and a string literal naming the words, and a `_test.go` `FederationTestHelper`),
+and requires exactly those twenty lines, with the rule's name written from the spec heading rather than taken
 from the check's constant, and three checked packages; a module with no package must give the one `checked no
 package` line. Task 3.1 added the `Confederation`, comment and literal non-matches (`pub/words.go`), the count, the
-empty-module case and the literal rule name; #48's fixture let a case-insensitive match pass.
+empty-module case, the literal rule name and the inherited interface methods; #48's fixture let a case-insensitive
+match and an inherited interface method pass.
 
 ### D3 C-2: exported `Org`/`Platform` fields outside the owners
 

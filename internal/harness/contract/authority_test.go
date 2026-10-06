@@ -183,7 +183,10 @@ type Claim struct {
 		{"component/local.go:5: field Platform on example.com/fixture/component.Dependencies "},
 	}
 	for _, want := range failing {
-		requireViolation(t, v, append(want, "spells the deployment authority outside its owners", authorityRule)...)
+		// The rule's name is written from the spec heading, not taken from authorityRule, so a
+		// wrong constant fails here.
+		requireViolation(t, v, append(want, "spells the deployment authority outside its owners",
+			"(harness-boundaries › No second spelling of deployment authority)")...)
 	}
 	silent := []string{
 		"graph/inference/hierarchy.go:9:", "graph/inference/hierarchy.go:10:", "hierarchy_test.go",

@@ -503,8 +503,11 @@ func TestNoDeploymentAuthorityNamesSensitivity(t *testing.T) {
 		t.Errorf("want 3 fixture packages checked, got %d", checked)
 	}
 	t.Logf("violations:\n  %s", strings.Join(violations, "\n  "))
+	// The suffix is written from the spec heading, not taken from authoritySuffix, so a wrong
+	// constant fails here.
 	at := func(position, qualified string) string {
-		return position + ": example.com/fixture/" + qualified + authoritySuffix
+		return position + ": example.com/fixture/" + qualified + " spells the deployment authority outside the " +
+			"entity-ID family (harness-boundaries › No second spelling of deployment authority)"
 	}
 	want := []string{
 		at("cmd/tool/main.go:3", "cmd/tool.EntityIRI"),

@@ -1119,7 +1119,10 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         README examples), E7 0c36971; E4 was the PR body. Codex's re-review at d0a0c73 (CHANGES REQUESTED, PR #48
         comment 6000342279; F30–F40 resolved) → F41 8baf72d (the exact-number oracle no longer narrows numbers to
         `float64`; Codex's `reviewer_large_exponent` corpus file added unchanged), F42 166cae5 (the in-flight
-        cancellation test reports on every path). Each commit body carries its fail-before run.
+        cancellation test reports on every path). Each commit body carries its fail-before run. Claude's early
+        check at aa1c681 (PR #48 comment 6006339493, not the review of record) → G1, G2 and G4 74e7e5f (a
+        test-owned exact-literal table, an independent number check in both fuzz targets, exact accept/refuse
+        wording), G3 a536513 (the in-flight cancellation test fails a named assertion, not the suite timeout).
 - [ ] 7.2 (D) `task verify` green on the final commit; the integration lane green under the host lock, evidence
       directory attached to this pull request; `implemented-by:` in the pull request body.
 - [ ] 7.3 (W) The change archived under `openspec/changes/archive/` as the last content commit before squash merge;

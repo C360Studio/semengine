@@ -201,7 +201,9 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
 - [x] 5.1 Codex's implementation review of this pull request: a review record that approves, at the head that
       carries every code commit, recorded on this pull request. A later content commit gets a re-review (5.3).
       Record 6019732337 approves at `d022140` with one MEDIUM finding, the conformance table, corrected in `288cf55`;
-      CI run 37484636746 passed at `d022140`. No code file of this pull request changed after it.
+      CI run 37484636746 passed at `d022140`. From `d022140` to `5e963ad` this pull request's own commits changed only
+      Markdown and OpenSpec files (the merge of `main` at `67788c9` touched none of its files); the later test commit
+      `3045d1f` (task 2.15) is reviewed under 5.4.
 - [x] 5.2 The description has one line `implemented-by:` that names `claude` and one line `reviewed-by:` that names
       `codex`, written once Codex's newest review record approves.
       `implemented-by: claude (opus semengine-developer)` and `reviewed-by: codex (gpt-6-astra semengine-reviewer)`,

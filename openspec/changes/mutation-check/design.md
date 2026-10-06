@@ -669,6 +669,11 @@ and not measured. The program's tests isolate host git configuration (`GIT_CONFI
 - Whether a pull request used it at all. Only a check that reads the pull request could see that (Q1).
 - Whether the wrong change is plausible, and whether the named assertion is the intended one (D2).
 - Whether a matched line was a log line or a failure: Go prints both the same way (D5, P19).
+- A panic's text, when `-test` names a subtest and the code panics inside it. `go test -json` files the panic text
+  under the parent test, and only output of the named test and its subtests is matched (`classify.go:110`,
+  `:150-161`), so that text cannot satisfy the subtest's `-expect-text`; with no other expected line the verdict is
+  inconclusive. An expected line the subtest printed before the panic still gives detection. Found in Codex's review
+  record 6021349852 (the deletion of the empty-clause branch, task 2.15); no classifier change.
 - A flake rarer than one failure in three baseline runs (D6).
 - A wrong change in a file the test reads while it runs (D1, D9).
 - Memory: a runaway mutant is stopped only by the operating system, the timeout or the bound (D6, D8).

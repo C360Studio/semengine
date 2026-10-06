@@ -249,6 +249,13 @@ Go prints a `t.Log` line the same way as a failure line, so a log line at an exp
 report prints every matched line in full: read them to confirm the failure is the one you meant. A panic or a further
 failure after the expected line is listed in the report and does not change a detection.
 
+Only lines printed by the named test and its subtests are matched. When `-test` names a subtest (`Name/Sub`) and the
+code panics inside it, `go test -json`, which the command reads, files the panic text under the parent test, `Name`.
+That text cannot match the subtest's `-expect-text`, so unless the subtest printed an expected line before the panic,
+the outcome is inconclusive. An expected line printed before the panic still gives a detection, and the report lists
+the panic either way. If the wrong change is likely to panic, name an assertion that fails before the panic, or give
+`-test` the parent test, whose output includes the panic text.
+
 A survivor is equivalent when the wrong change alters nothing the code promises, for example by swapping two
 independent assignments. Equivalent is never an outcome: the outcome stays survivor. Whether a survivor is equivalent
 is the reviewer's assessment, recorded in the pull request with the contract the code is held to, the inputs

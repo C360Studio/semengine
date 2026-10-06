@@ -171,10 +171,10 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
 
 - [x] 4.1 (W) `.agents/skills/semengine-preflight/SKILL.md`: the command table
       gains `task mutate:check`. Gate: `task docs:check`. Done in `87329fe`; evidence comment 5995720079.
-- [ ] 4.2 (W) (PR #48 merged as `deaafd4`.)
+- [x] 4.2 (W) (PR #48 merged as `deaafd4`.)
       `.agents/contracts/semengine-developer.md` and `semengine-reviewer.md`: the mutation passages name
       `task mutate:check` for a Go source target, keep the `cp` procedure for the rest, and give the checksum as
-      `shasum -a 256`. Gate: `task docs:check`.
+      `shasum -a 256`. Gate: `task docs:check`. Done in `36f1c35`; evidence comment 6019183479.
 - [ ] 4.3 Hold: PR #73 merged into `main` (PR #48 merged as `deaafd4`). (W) `docs/testing.md`, "Show
       that the test can fail": the command and what it checks, the manual procedure for what it refuses, the outcome
       invalid and how reach is judged, the sentence on bounded assertions, the race detector as the owner rules on Q5,

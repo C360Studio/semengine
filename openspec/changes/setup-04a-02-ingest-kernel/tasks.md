@@ -106,7 +106,7 @@ references` check, with the tests that read only it; READMEs are read claim by c
 - [ ] 4.3 (D) #15: memory stream + `Fixture.Restart` + retained guard bucket: re-ingestion at lower sequences is
       applied and queried back; a same-generation redelivery is a no-op; the two degrades of design D8 are logged and
       counted. Fails first on the pin's guard key. Hold: task 1.4.
-- [ ] 4.4 (D) Settlement (Q18): the process-kill test of design D8 (a `prochost.Helper` in graph-ingest's `TestMain`;
+- [ ] 4.4 (D) Settlement (Q18): the process-kill test of design D8 (a `prochost.Helper` in graph-ingest's `TestHelperProcess`;
       the guard-record write held open by a `_test.go` wrapper in the first run; the entity write and the pending
       acknowledgement confirmed from the buckets and the consumer's info; the helper confirmed alive, then killed;
       redelivery acknowledged in the second run and the state equal to one application); the long-apply test; the

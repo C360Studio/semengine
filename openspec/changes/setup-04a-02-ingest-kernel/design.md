@@ -184,7 +184,9 @@ reader in the admitted set** (§2: `Watch` is read only by `processor/gated-dag/
 The developer chooses locks and join order, settled by a failing-first test under `-race`. A nil context is refused at
 the call (an error). Callers inside this change adapt in the same commit (graph-ingest's `KeyedPool` and readiness
 use). Callers in later changes are the `class:port-refactor` rows foundation (h) placed (changes 5 and 7:
-`fusionnats/client.go:139`, `processor/graph-clustering/component.go:1509,1524`).
+`ReviewWorker` start and stop at `processor/graph-clustering/component.go:2450` and `:1232`; the readiness
+watcher's start at `:1512` and `:1527` and stop at `:1260` and `:1266`; `fusionnats/client.go:140` (start) and `:103`
+(stop)).
 
 ### D6. Surface audit dispositions
 
@@ -201,6 +203,8 @@ reads is removed (#9 comment 5968830525).
   `KeyedPool.Submit`, `KeyedPool.Stats`; `readiness.Set` with `NewSet`, `Dump`, `Verdict`; in `graph/inference`,
   `ReviewWorker.Pause`/`Resume`, `NATSAnomalyStorage.Watch`/`Cleanup` and the rest of its appendix rows;
   `internal/graphmutation.IsCommitUnknown`; `storage/storeregistry.Registry.Instances`.
+  `readiness.Set`'s one reader, `gateway/graph-gateway`, is deferred as consumer-owned (03B D4), not abandoned; the
+  readiness ledger row's `known_risks` names it, so its return is recognised as returning surface.
 - **`Component.MergeEntity`** (`processor/graph-ingest/component.go:2021`) is a one-line wrapper over
   `mergeEntityOnLane(ctx, entity, false)` with no non-test reader. Its 27 test call sites in 10 files exercise the live
   merge path (ADR-072 merge, the write gate, the poison proofs): `batch_integration_test.go` 5,
@@ -218,8 +222,9 @@ reads is removed (#9 comment 5968830525).
   component contract keeps `ConfigSchema` (no admitted package calls it) is filed as a follow-up issue (task 6.3), not
   decided in a port.
 - **Config (b).** graph-ingest refuses an unknown configuration key at construction, naming the key
-  (`TestCreateGraphIngestRefusesUnknownKey`; at the pin the key is ignored). It adopts the pin's existing shape,
-  `inference.RejectUnknownKeys` (`graph/inference/config.go:249`, strict decoding; ADR-054), rather than a second one.
+  (`TestCreateGraphIngestRefusesUnknownKey`; at the pin the key is ignored). It uses the same strict-decoding shape
+  (`DisallowUnknownFields`) as `inference.RejectUnknownKeys` (`graph/inference/config.go:249`; ADR-054), rather than a
+  second one.
   `IngestLanes < 1` keeps the pin's clamp to 1, a declared degrade, now with a test that an explicit 0 builds a
   one-lane component. Each of graph-ingest's four fields has a test that fails when the field is ignored.
   `graph/inference.Config`: its five fields that nothing reads (`RunWithCommunityDetection`, `ReviewConfig.BatchSize`,
@@ -269,19 +274,19 @@ in a later change.
 | #29 | `component` reaches no agentic package (`component-registration`) | `go list -deps ./component` has no `agentic` path, in a contract test; I8's test already forbids a SemStreams import |
 | SS#1411 | graph-ingest composes the one owner-lifecycle guard (D13); the 11 later admitted copies adopt it when ported | the guard's own `lifecycletest.Run` over a test owner built only from the guard (with a failing factory); graph-ingest's suite run; `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop` on the guard-composed component |
 
-**The settlement process-kill test.** There is no boot path, so the process is the test binary itself:
-`prochost.Helper` (`internal/harness/prochost/prochost.go:43`) runs a helper function from graph-ingest's
-`TestMain` that builds graph-ingest through its factory against the fixture URL passed in the environment, starts it
-on a file-backed input stream, and parks on a signal. The window between apply and acknowledgement is held inside the
+**The settlement process-kill test.** There is no boot path, so the process is the test binary itself: `prochost.Helper`
+(`internal/harness/prochost/prochost.go:43`) runs a helper function from graph-ingest's `TestHelperProcess`, as its doc
+comment directs, that builds graph-ingest through its factory against the fixture URL passed in the environment, starts
+it on a file-backed input stream, and parks on a signal. The window between apply and acknowledgement is held inside the
 helper, not raced from outside: in the first run, the helper wraps the guard-record bucket with a `_test.go` wrapper
 (set through the same in-package setter as foundation D4-A's KV setter) whose write does not return. The test then
-publishes one input, waits until the entity's write appears in the entity bucket, confirms from the consumer's info
-that the input is delivered and still pending acknowledgement, confirms the helper is still running
-(`Process.Alive`), and kills it (`Process.Kill`). A second helper run, without the wrapper, starts graph-ingest on the
-same stream and buckets; the test waits for the input's redelivery to be acknowledged and asserts the entity equals
-the state after one application and nothing else changed. No production failpoint is added. Rejected: pausing the
-helper with `SIGSTOP` when the entity write appears — the guard write and the acknowledgement follow within the same
-call, so the pause can land after the acknowledgement and the test would need retries to catch the window.
+publishes one input, waits until the entity's write appears in the entity bucket, confirms from the consumer's info that
+the input is delivered and still pending acknowledgement, confirms the helper is still running (`Process.Alive`), and
+kills it (`Process.Kill`). A second helper run, without the wrapper, starts graph-ingest on the same stream and buckets;
+the test waits for the input's redelivery to be acknowledged and asserts the entity equals the state after one
+application and nothing else changed. No production failpoint is added. Rejected: pausing the helper with `SIGSTOP` when
+the entity write appears — the guard write and the acknowledgement follow within the same call, so the pause can land
+after the acknowledgement and the test would need retries to catch the window.
 
 The "delivery limit exhausted → parked and visible" scenario needs `internal/maxdelivery` (change 7). Under ruling (g)
 it is not in this change's delta; the row names change 7.
@@ -452,10 +457,11 @@ surface that needs a present consumer.
 **F. `graph/inference` is held to the 80% coverage floor from the change that ports it. It is at 47.9% after removing
 dead code, and reaching 80% means tests for about 450 more statements — the anomaly detectors, the review worker, the
 anomaly storage and the 38 configuration fields they read — whose only caller, graph-clustering, arrives in change 7.
-Add `graph/inference` to the coverage gate in change 7 instead of here?** Recommendation: yes. Reasons: graph-ingest
+Add `graph/inference` to the coverage gate in change 7 instead of here?** Recommendation: yes. Only the 80% target
+moves: the `ReviewWorker` `synctest` test that `background-work` requires stays in this change, whatever you decide.
+Reasons: graph-ingest
 uses only the package's hierarchy half, which this change tests; tests written now would drive the detectors without
-the component that runs them, and change 7 rewrites the call paths they would test (the review worker's `Shutdown`,
-the readiness watcher's `Run`); this pull request is already the largest port. The ledger row records the 47.9%
+the component that runs them; this pull request is already the largest port. The ledger row records the 47.9%
 figure, the missing per-field tests and the change that owes them, and a tracking issue holds them. Cost of the other
 answer: about 450 statements of tests in this change, mostly table tests of configuration validation and integration
 tests of the anomaly storage, written before their caller exists. Cost to you: a package on the ruled critical list

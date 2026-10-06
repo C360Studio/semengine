@@ -408,7 +408,9 @@ func (w *signatureWalker) walk(typ types.Type, trail string) {
 var authorityNames = regexp.MustCompile(`Federation|GlobalID|EntityIRI`)
 
 func TestNoDeploymentAuthorityNames(t *testing.T) {
-	requireNoViolations(t, "deployment-authority name", authorityNameViolations(t, repoRoot(t)))
+	violations, checked := authorityNameViolations(t, repoRoot(t))
+	requireNoViolations(t, "deployment-authority name", violations)
+	t.Logf("checked %d packages", checked)
 }
 
 // authorityFixture plants a matching exported name at each place an exported name can be declared,
@@ -495,7 +497,11 @@ func Confederation() string { return Label }
 
 func TestNoDeploymentAuthorityNamesSensitivity(t *testing.T) {
 	root, _ := writeTree(t, authorityFixture)
-	violations := authorityNameViolations(t, root)
+	violations, checked := authorityNameViolations(t, root)
+	// pub, internal/inner and cmd/tool; dep is a second module.
+	if checked != 3 {
+		t.Errorf("want 3 fixture packages checked, got %d", checked)
+	}
 	t.Logf("violations:\n  %s", strings.Join(violations, "\n  "))
 	at := func(position, qualified string) string {
 		return position + ": example.com/fixture/" + qualified + authoritySuffix
@@ -535,18 +541,21 @@ const authoritySuffix = " spells the deployment authority outside the entity-ID 
 // unexported type is still callable through an exported function that returns it). An alias is a
 // package-level type too: its own name is checked, and so are the members of the type it stands
 // for, unless that type is one this module declares, whose members are reported once, at its own
-// declaration. Each line names the file, line, qualified identifier and rule.
-func authorityNameViolations(t *testing.T, root string) []string {
+// declaration. Each line names the file, line, qualified identifier and rule; the count is the
+// number of module packages checked.
+func authorityNameViolations(t *testing.T, root string) ([]string, int) {
 	t.Helper()
 	modulePath := modulePathOf(t, root)
 	inModule := func(pkg *types.Package) bool {
 		return pkg != nil && (pkg.Path() == modulePath || strings.HasPrefix(pkg.Path(), modulePath+"/"))
 	}
 	var violations []string
+	checked := 0
 	for _, pkg := range loadModuleTypes(t, root) {
 		if pkg.Types == nil || !inModule(pkg.Types) {
 			continue
 		}
+		checked++
 		// report names obj, a candidate, at pos: obj's own position when the module declares it,
 		// else the position of the alias that exposes it.
 		report := func(pos token.Pos, qualified string, obj types.Object) {
@@ -601,5 +610,5 @@ func authorityNameViolations(t *testing.T, root string) []string {
 		}
 	}
 	sort.Strings(violations)
-	return violations
+	return violations, checked
 }

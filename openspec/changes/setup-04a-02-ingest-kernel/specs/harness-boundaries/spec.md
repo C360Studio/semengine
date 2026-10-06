@@ -5,25 +5,27 @@
 ### Requirement: One image pin
 
 The NATS image SHALL be spelled only in `.nats-image` as `nats:<tag>@sha256:<digest>`; scripts and Go SHALL receive it
-through SEMENGINE_NATS_IMAGE. The check covers every tracked file that configures or runs Docker (`*.sh`,
-`Taskfile.yml`, `*.yaml`/`*.yml`, Dockerfiles, CI workflows, and every `*.go` file that imports
-`github.com/testcontainers/testcontainers-go` or a package under it, `github.com/docker/docker` or a package under it,
-or `os/exec`), including variable tags such as `nats:${TAG}`; Markdown, other prose, and Go files that import none of
-those packages may hold a `nats:` literal, such as a component port identifier `nats:<subject>`.
+through SEMENGINE_NATS_IMAGE. The check covers every tracked file that configures or runs Docker (`*.go`, `*.sh`,
+`Taskfile.yml`, `*.yaml`/`*.yml`, Dockerfiles, CI workflows), including variable tags such as `nats:${TAG}`; Markdown
+and other prose may cite the tag. In a `*.go` file the check reports `nats:` only when a digit or a variable (`$`,
+`${`) follows it, and reports every `nats@sha256:`; a Go literal `nats:` followed by a letter, such as a component port
+identifier `nats:<subject>` or a tag such as `nats:latest`, is not reported, and an image tag that starts with a letter
+in Go is review only.
 
 #### Scenario: Literal elsewhere
 
 - **WHEN** a tracked file that configures or runs Docker, other than .nats-image, contains a `nats:` image literal
 - **THEN** the contract test fails
 
-#### Scenario: A port identifier in a Go file that starts no container
+#### Scenario: A port identifier in a Go file
 
-- **WHEN** a Go test file that imports none of the container or process packages contains the literal `"nats:in"`
+- **WHEN** a Go file contains the literal `"nats:in"` or `"nats:sensor.data"`
 - **THEN** the contract test reports nothing for it
 
-#### Scenario: An image in a Go file that runs a process
+#### Scenario: An image in a Go file
 
-- **WHEN** a Go file that imports `os/exec` contains the literal `"nats:2.10"`
+- **WHEN** a Go file contains the literal `"nats:2.10"`, `"nats:${TAG}"`, or a `nats@sha256:` digest in a constant in a
+  file with no imports
 - **THEN** the contract test fails naming the file and line
 
 ### Requirement: No second spelling of deployment authority
@@ -112,8 +114,8 @@ identifiers are not checked; a caller outside the module cannot reach them.
 
 One exception, listed here and nowhere else: a parameter of type `componentadmission.Access`, declared in
 `internal/componentadmission` as a struct with no fields, of the `component.Registry` methods `CreateComponent`,
-`SealComposition`, `Snapshot` and `Snapshots`. It is an access token that keeps those methods to the engine's own
-component manager (owner question C of `setup-04a-02-ingest-kernel`). The token type SHALL have no fields and no
+`SealComposition` and `Snapshots`. It is an access token that keeps those methods to the engine's own component
+manager (owner question C of `setup-04a-02-ingest-kernel`). The token type SHALL have no fields and no
 methods, and no other exported identifier SHALL name it.
 
 #### Scenario: A planted violation fails
@@ -132,9 +134,9 @@ methods, and no other exported identifier SHALL name it.
 
 #### Scenario: The access token is the only exception
 
-- **WHEN** a fixture module's public package has the four `Registry` methods taking the field-less token, and another
-  exported function that takes the same token
-- **THEN** the contract test reports the other function and not the four methods
+- **WHEN** a fixture module's public package has the three `Registry` methods taking the field-less token, and
+  another exported function that takes the same token
+- **THEN** the contract test reports the other function and not the three methods
 
 #### Scenario: The floor passes
 

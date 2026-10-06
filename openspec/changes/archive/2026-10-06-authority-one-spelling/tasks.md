@@ -84,12 +84,13 @@ pull request closes #72 (`Closes #72` in its body).
 
 ## 5. Review
 
-- [ ] 5.1 Hold: until Codex's `Review record` at `2d3b8df` is posted on PR #73 (the owner reports APPROVE on
-      2026-10-06; the record is not on the pull request yet). Codex's implementation review of this pull request (a
+- [x] 5.1 Codex `Review record` APPROVE at `fd02b82` (PR #73 comment 6019262509; F5 MEDIUM nonblocking filed as #87),
+      after CHANGES REQUESTED at `83f4fdb` (comment 6018394100, F3/F4 fixed in `83f4fdb..fd02b82`). Codex's
+      implementation review of this pull request (a
       code pull request: Go files under
       `internal/harness/contract/`), recorded on it as `Review record` with the commit it read; a later content
       commit gets its re-review. A disagreement goes to the owner.
-- [ ] 5.2 Hold: with 5.1 — the line is final once that record is on the pull request. The description has one
+- [x] 5.2 Written once comment 6019262509 approved. The description has one
       line `implemented-by:` naming `claude` (with the model) and one line
       `reviewed-by:` naming `codex`, written once Codex's newest review record approves.
 

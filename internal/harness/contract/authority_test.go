@@ -206,6 +206,11 @@ type Claim struct {
 	if checked != 12 {
 		t.Errorf("want 12 fixture packages checked, got %d", checked)
 	}
+	empty, _ := writeTree(t, map[string]string{"go.mod": "module example.com/empty\n\ngo 1.26\n"})
+	got, n := authorityFieldViolations(t, empty)
+	if n != 0 || len(got) != 1 || got[0] != "checked no package of example.com/empty" {
+		t.Errorf("a module with no package: want one \"checked no package\" violation, got %d packages and %q", n, got)
+	}
 }
 
 // authorityOwnerPackages and authorityOwnerFields mirror, by exact string, the exceptions the
@@ -328,6 +333,10 @@ func authorityFieldViolations(t *testing.T, root string) ([]string, int) {
 		}
 	}
 	sort.Strings(violations)
+	// A load that found no package of the module would pass vacuously; it fails instead.
+	if checked == 0 {
+		violations = append(violations, "checked no package of "+modulePath)
+	}
 	return violations, checked
 }
 

@@ -502,6 +502,11 @@ func TestNoDeploymentAuthorityNamesSensitivity(t *testing.T) {
 	if checked != 3 {
 		t.Errorf("want 3 fixture packages checked, got %d", checked)
 	}
+	empty, _ := writeTree(t, map[string]string{"go.mod": "module example.com/empty\n\ngo 1.26\n"})
+	got, n := authorityNameViolations(t, empty)
+	if n != 0 || len(got) != 1 || got[0] != "checked no package of example.com/empty" {
+		t.Errorf("a module with no package: want one \"checked no package\" violation, got %d packages and %q", n, got)
+	}
 	t.Logf("violations:\n  %s", strings.Join(violations, "\n  "))
 	// The suffix is written from the spec heading, not taken from authoritySuffix, so a wrong
 	// constant fails here.
@@ -611,6 +616,10 @@ func authorityNameViolations(t *testing.T, root string) ([]string, int) {
 				}
 			}
 		}
+	}
+	// A load that found no package of the module would pass vacuously; it fails instead.
+	if checked == 0 {
+		violations = append(violations, "checked no package of "+modulePath)
 	}
 	sort.Strings(violations)
 	return violations, checked

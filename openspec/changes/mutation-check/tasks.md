@@ -189,12 +189,21 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
 
 ## 5. Review
 
-- [ ] 5.1 Codex's implementation review of this pull request: a review record that approves, at the head that
-      carries every code commit, recorded on this pull request. A later content commit gets a re-review.
-- [ ] 5.2 The description has one line `implemented-by:` that names `claude` and one line `reviewed-by:` that names
+- [x] 5.1 Codex's implementation review of this pull request: a review record that approves, at the head that
+      carries every code commit, recorded on this pull request. A later content commit gets a re-review (5.3).
+      Record 6019732337 approves at `d022140` with one MEDIUM finding, the conformance table, corrected in `288cf55`;
+      CI run 37484636746 passed at `d022140`. No code file of this pull request changed after it.
+- [x] 5.2 The description has one line `implemented-by:` that names `claude` and one line `reviewed-by:` that names
       `codex`, written once Codex's newest review record approves.
+      `implemented-by: claude (opus semengine-developer)` and `reviewed-by: codex (gpt-6-astra semengine-reviewer)`,
+      read with `gh pr view 82 --json body`.
+- [ ] 5.3 The re-review of the content commits after `d022140`: the conformance-table correction (`288cf55`), tasks
+      4.3 to 4.5 (`e1961ab`, `1492c32`, `c4ed889`) and the ticks that follow them. They change Markdown and OpenSpec
+      files only, so either agent's reviewer may make it (`.agents/protocol.md`, "A record covers the commit it
+      names"): a review record that approves them, naming the commit it read, recorded on this pull request.
 
 ## 6. In the archive commit
 
 - [ ] 6.1 `openspec archive mutation-check` creates `openspec/specs/mutation-check/spec.md`, in the same commit as
-      the spec sync and the ticks this commit makes. Gate: `task spec:check` on that commit.
+      the spec sync and the ticks this commit makes. The same commit moves the spec's entry in
+      `docs/repository-map.md` from "Not yet present" to the "Present" table. Gate: `task spec:check` on that commit.

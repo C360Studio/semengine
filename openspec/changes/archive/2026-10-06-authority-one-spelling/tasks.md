@@ -78,14 +78,14 @@ pull request closes #72 (`Closes #72` in its body).
 
 ## 5. Review
 
-- [ ] 5.1 Codex's implementation review of this pull request (a code pull request: Go files under
+- [ ] 5.1 Hold: until Codex's `Review record` at `2d3b8df` is posted on PR #73 (the owner reports APPROVE on 2026-10-06; the record is not on the pull request yet). Codex's implementation review of this pull request (a code pull request: Go files under
       `internal/harness/contract/`), recorded on it as `Review record` with the commit it read; a later content
       commit gets its re-review. A disagreement goes to the owner.
-- [ ] 5.2 The description has one line `implemented-by:` naming `claude` (with the model) and one line
+- [ ] 5.2 Hold: with 5.1 — the line is final once that record is on the pull request. The description has one line `implemented-by:` naming `claude` (with the model) and one line
       `reviewed-by:` naming `codex`, written once Codex's newest review record approves.
 
 ## 6. In the archive commit
 
-- [ ] 6.1 The Purpose of `openspec/specs/harness-boundaries/spec.md` says the capability also holds the
+- [x] 6.1 The Purpose of `openspec/specs/harness-boundaries/spec.md` says the capability also holds the
       machine-checked shape rules over ported production code, in the same commit as
       `openspec archive authority-one-spelling` and the spec sync. Gate: `task spec:check` on that commit.

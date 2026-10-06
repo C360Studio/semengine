@@ -480,6 +480,15 @@ func (Federated) entityIRI() string { return "" }
 
 func FederationTestHelper() {}
 `,
+	// The match is by declared name and case-sensitive: an exported name with the word in lower
+	// case only, a comment and a string literal are not reported (PR #73, task 3.1).
+	"pub/words.go": `package pub
+
+// BuildGlobalID, FederationMeta and EntityIRI in a comment are not names.
+const Label = "BuildGlobalID FederationMeta EntityIRI"
+
+func Confederation() string { return Label }
+`,
 	"internal/inner/inner.go": "package inner\n\nfunc NewFederationMeta() {}\n",
 	"cmd/tool/main.go":        "package main\n\nfunc EntityIRI() {}\n\nfunc main() {}\n",
 }

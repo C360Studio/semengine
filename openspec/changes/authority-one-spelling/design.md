@@ -77,35 +77,42 @@ carrier of that type anywhere would have been invisible to the check.
 
 ### D1 The rule is one requirement with two enforcing paragraphs
 
-`specs/harness-boundaries/spec.md`, "One spelling of the deployment authority": the owner's sentence verbatim as the
-SHALL, then **Names** (C-1) and **Fields** (C-2), each stating what is matched, what is excluded, what the failure
-names, and what is outside the check by construction. Six scenarios, each observable by running a test.
+`specs/harness-boundaries/spec.md` MODIFIES "No second spelling of deployment authority", the requirement PR #48
+landed with C-1 (`openspec/specs/harness-boundaries/spec.md:459` on `main` `deaafd4`), rather than adding a second,
+overlapping one: the owner's sentence verbatim as the SHALL, then **Names** (C-1, #48's text, with "case-sensitive"
+and "comments and string literals" made explicit) and **Fields** (C-2), each stating what is matched, what is
+excluded, what the failure names, and what is outside the check by construction. #48's closing sentence, that the
+field check is not part of the requirement, is replaced by the Fields paragraph. Six scenarios, each observable by
+running a test: #48's two name scenarios (the second gains the lower-case, comment and literal cases this change's
+first delta named) and this change's four.
 
 ### D2 C-1: exported names containing `Federation`, `GlobalID` or `EntityIRI`
 
-Scope: every package of the module (`./...` with the `integration` tag, as `publicSignatureViolations` loads them,
-`signatures_test.go:215-219` in #48), including internal and `main` packages — the ruling says "anywhere" — and in
-each, every exported object: package-scope names, exported methods of named types, exported struct fields. Match:
+Scope: every package of the module (`./...` with the `integration` tag, as `loadModuleTypes` loads them for
+`publicSignatureViolations`, `signatures_test.go:248-269` at `deaafd4`), including internal and `main` packages — the
+ruling says "anywhere" — and in each, every exported object: package-scope names, exported methods of named types,
+exported struct fields, interface methods, and alias members (#48's F11). Match:
 `strings.Contains` on the identifier, case-sensitive, for the three words. Not checked: unexported names, comments and
 literals; and
 test files, which every guard in `internal/harness/contract` leaves out (`context_test.go:221-229` loads non-test
 packages; `testtext_test.go` is the one that reads test files, for text rules) because a test file exports nothing a
-consumer imports — the harness norm, confirmed with Q1 (#72 comment 5969757891). Failure line:
-`<path>:<line>: exported <kind> <Name> contains <word> — a second spelling
-of the deployment authority (harness-boundaries › One spelling of the deployment authority)`.
+consumer imports — the harness norm, confirmed with Q1 (#72 comment 5969757891). Failure line, as #48 wrote it
+(`signatures_test.go:535-536, :573-574` at `deaafd4`): `<path>:<line>: <pkg>.<Qualified> spells the deployment
+authority outside the entity-ID family (harness-boundaries › No second spelling of deployment authority)`.
 
-Adopted from PR #48 (`bb004ef`): C-1 is `TestNoDeploymentAuthorityNames` with its pair
-`TestNoDeploymentAuthorityNamesSensitivity` in `internal/harness/contract/signatures_test.go`, not written here; task
-3.1 verifies at #48's merged head that its predicate and fixture match this paragraph and scenarios 1–2. What a
-caller observes: `TestNoDeploymentAuthorityNames` fails with one such line per identifier, sorted; passes on a
-tree with none. Proof: `TestNoDeploymentAuthorityNamesSensitivity` plants #48's fixture (`authorityFixture`, read
-at #48's head `71cfc89`), ten names across a public package `pub`, an internal package `internal/inner` and a `main`
-package `cmd/tool` — a type, a function, a variable, a constant, a struct field, a method, an exported method of an
-unexported type and an interface method in `pub`, and one function in each of the other two — beside non-matches
-(unexported `federationMeta` and `entityIRI`, a lowercase `globalID` field, an unexported method, and a `_test.go`
-`FederationTestHelper`), and requires exactly those ten. Task 3.1 checks this fixture against scenarios 1–2 at the
-merged head; at `71cfc89` it has no comment or string-literal non-match, and its lines name the qualified identifier
-without file, line or rule.
+Adopted from PR #48 (`bb004ef`, aliases and file/line from its F11 fix `a8ae8ad`): C-1 is
+`TestNoDeploymentAuthorityNames` (`signatures_test.go:410-414` at `deaafd4` plus this change's count; predicate
+`:408`, walk `authorityNameViolations` `:546-614`) with its pair `TestNoDeploymentAuthorityNamesSensitivity`
+(`:498-533`, fixture `authorityFixture` `:418-496`). What a caller observes: `TestNoDeploymentAuthorityNames` fails
+with one such line per identifier, sorted, and logs the number of packages it checked; passes on a tree with none.
+Proof: the sensitivity test plants seventeen names across a public package `pub`, an internal package
+`internal/inner` and a `main` package `cmd/tool` — in `pub` a type, a function, a variable, a constant, a struct
+field, a method, an exported method of an unexported type, an interface method, alias names and the members of
+aliased struct, interface, pointer and outside-module types; one function in each of the other two — beside
+non-matches (unexported `federationMeta` and `entityIRI`, a lowercase `globalID` field, an unexported method, an
+exported `Confederation`, a comment and a string literal naming the words, and a `_test.go` `FederationTestHelper`),
+and requires exactly those seventeen lines and three checked packages. Task 3.1 added the `Confederation`, comment and
+literal non-matches and the count (`pub/words.go` in the fixture); #48's fixture let a case-insensitive match pass.
 
 ### D3 C-2: exported `Org`/`Platform` fields outside the owners
 
@@ -121,7 +128,7 @@ destinations (D2,
 `openspec/changes/archive/2026-10-01-setup-04a-foundation/design.md:155-178`); none but `pkg/types` and
 `pkg/platform` exists at `c64ac338`, and a listed exception that does not exist excludes nothing. Failure line:
 `<path>:<line>: field <Name> on <pkg>.<Type> spells the deployment authority outside its owners
-(harness-boundaries › One spelling of the deployment authority)`; an anonymous struct is named `struct{…}`.
+(harness-boundaries › No second spelling of deployment authority)`; an anonymous struct is named `struct{…}`.
 
 What a caller observes: `TestNoSecondAuthorityField` fails with one line per field, sorted; passes on `main` and at
 `c64ac338`. Proof: `TestNoSecondAuthorityFieldSensitivity` plants, in a fixture module whose path is
@@ -149,11 +156,11 @@ SemEngine's is.
 
 ### D5 Order against PR #48
 
-PR #48 merges first. C-1 is #48's own test (`signatures_test.go`, adopted from `bb004ef`), and at `c64ac338` C-1 names seven
-identifiers #48 is ruled to remove (premise P2); task 3.1 carries `Hold: until PR #48 merges`. C-2, the requirement,
-the row and the sensitivity tests do not wait. Both changes add requirements to `harness-boundaries` under distinct
-names; the archive of whichever lands second applies cleanly. If #48 were to land after this change's archive, task
-3.1 stays unticked and the change is not archived until it is ticked.
+PR #48 merges first; it merged as `deaafd4` on 2026-10-06. C-1 is #48's own test (`signatures_test.go`, adopted
+from `bb004ef`), and at `c64ac338` C-1 named seven identifiers #48 was ruled to remove (premise P2); task 3.1 carried
+`Hold: until PR #48 merges`. C-2 and the sensitivity tests did not wait. #48 landed C-1's half of the rule as the
+requirement "No second spelling of deployment authority"; this change's delta MODIFIES that requirement (D1), so
+the archive replaces it with the merged text and `harness-boundaries` holds one requirement for the rule.
 
 ### D6 Cost and budget
 
@@ -166,17 +173,18 @@ share one load (the developer's mechanism) before anything is removed.
 
 `AGENTS.md` rules table, one row: rule "A deployment's authority is spelled once: established by
 `config.Manager.Start`, carried as `deps.Platform`, composed only by `FrameworkIdentityFamily.EntityID`; no second
-name, field or envelope copy" | canonical home `harness-boundaries` spec, "One spelling of the deployment
-authority"; ADR-102, ADR-104 | enforced by `TestNoDeploymentAuthorityNames` (adopted from PR #48) and
-`TestNoSecondAuthorityField` (`task test:unit`); lowercase and differently named copies, values re-joined in a
-function body, the extract-after-`Start` ordering (ruling B), and the composer being the only composer are review
-only. `docs/testing.md:155-161`: the two sensitivity pairs in the list. `docs/repository-map.md:41`: "the
-deployment-authority spelling" in the contract package's clause.
+name, field or envelope copy" | canonical home `harness-boundaries` spec, "No second spelling of deployment
+authority" (PR #48, as this change modifies it); ADR-102, ADR-104 | enforced by `TestNoDeploymentAuthorityNames`
+(adopted from PR #48) and `TestNoSecondAuthorityField` (`task test:unit`); lowercase and differently named copies,
+values re-joined in a function body, the extract-after-`Start` ordering (ruling B), and the composer being the only
+composer are review only. `docs/testing.md:173-181` (the sensitivity-pair list): the two sensitivity pairs.
+`docs/repository-map.md:40`: "the deployment-authority spelling" in the contract package's clause.
 
 ## PR #48 and the other open pull requests
 
 `gh pr list --state open` → #48 (draft) only. Overlap: `internal/harness/contract/signatures_test.go` (C-1's loader),
-`openspec/specs/harness-boundaries` (both add requirements), `AGENTS.md` (#48 edits other rows). #48 first (D5).
+`openspec/specs/harness-boundaries` (#48 added the name requirement this change modifies), `AGENTS.md` (#48 edits
+other rows). #48 first (D5).
 
 ## What the checks do not see
 
@@ -199,7 +207,7 @@ deployment-authority spelling" in the contract package's clause.
 - I3: an exception is by exact string and exists only in the requirement — "Fields" paragraph, D4.
 - I4: a check that matches nothing fails its sensitivity test — the package's rule (`doc.go:2-4`); every scenario.
 - I5: a type-check error in the module fails the test rather than passing it — inherited from
-  `publicSignatureViolations` (`signatures_test.go:223-232`) and `contextViolations` (`context_test.go:233-242`).
+  `publicSignatureViolations` (`loadModuleTypes`, `signatures_test.go:255-267` at `deaafd4`) and `contextViolations` (`context_test.go:233-242`).
 
 ## Adopter seam
 
@@ -219,8 +227,8 @@ bucket or config field.
 The shape is "a static walk over the module's packages that reports a forbidden declaration by file and line, with
 exact-name exceptions held in the spec and a planted-violation sensitivity test". Its closest existing instances are
 `TestNoRetainedContext` (`internal/harness/contract/context_test.go:22-25`, walk `:221-289`, exceptions `:215-217`,
-sensitivity `:27-91`) and, in #48, `TestPublicSignatures` (`signatures_test.go:17-24`, loader `:212-258`,
-sensitivity `:150-192`), on the helpers `writeTree`, `requireViolation`, `requireNoViolations`
+sensitivity `:27-91`) and, in #48, `TestPublicSignatures` (`signatures_test.go:20-27` at `deaafd4`, walk
+`:215-244`, loader `:248-269`, sensitivity `:153-195`), on the helpers `writeTree`, `requireViolation`, `requireNoViolations`
 (`repo_test.go:65-81, 104-127`). This design adopts them: C-2 is the context walk with a different predicate, C-1 (as #48
 wrote it) a second predicate over the signature loader. It establishes no new pattern, so no sweep is owed.
 
@@ -260,14 +268,14 @@ the exclusions; adding it would be a change to this requirement.
   Search: `grep -rn --include='*.go' -E '^\s+(Org|Platform)\s+[A-Za-z\[\]\*\.]+' . | grep -v _test.go` over the pin
   snapshot.
 - P4. `signatures_test.go` exists in #48 only: `ls internal/harness/contract` on `main` lists fourteen files, none
-  of that name; the worktree has it (`internal/harness/contract/signatures_test.go:17`).
-- P5. The sensitivity pattern this design adopts: `context_test.go:27-91`, `signatures_test.go:150-192`,
+  of that name; the worktree has it (`internal/harness/contract/signatures_test.go:17`). On `main` since `deaafd4`.
+- P5. The sensitivity pattern this design adopts: `context_test.go:27-91`, `signatures_test.go:153-195` (at `deaafd4`),
   `repo_test.go:65-81, 104-127`; `docs/testing.md:155-158` requires it.
 - P6. `task test:unit` is `scripts/gopkgs.sh go test -race -count=1 -cpu 1 ./...` (`Taskfile.yml:81`), which runs
   the `contract` package; `task test:repeat` runs it five more times (`AGENTS.md` command table).
 - P7. `task spec:check` is `openspec validate --all --strict` (`Taskfile.yml:108`, openspec 1.7.0); a delta with
-  `## ADDED Requirements`, one requirement and six scenarios in the `#### Scenario:` form validates as the archived
-  `review-gate-check` delta does.
+  `## MODIFIED Requirements` naming the existing heading exactly and carrying the requirement's full text, with six
+  scenarios in the `#### Scenario:` form, validates (run on this branch after the merge of `deaafd4`).
 - P8. Open pull requests: `gh pr list --state open` → #48 only.
 
 ## Declared costs

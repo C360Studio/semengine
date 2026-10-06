@@ -1,21 +1,23 @@
 # harness-boundaries
 
-## ADDED Requirements
+## MODIFIED Requirements
 
-### Requirement: One spelling of the deployment authority
+### Requirement: No second spelling of deployment authority
 
 A deployment's authority (`org`, `platform`) SHALL be established once, by `config.Manager.Start` under ADR-104,
 carried to components once as `deps.Platform`, and SHALL become positions 1–2 of an identity only through
-`FrameworkIdentityFamily.EntityID`. No other package SHALL compute, parse, re-join or carry it, and no message,
-envelope or metadata SHALL hold a copy. Two contract tests in `internal/harness/contract`, both run by
-`task test:unit`, enforce the parts of this a static check can see; each has a sensitivity test that plants the
-violation in a temporary module and requires the check to name it.
+`FrameworkIdentityFamily.EntityID` (#72 ruling A as extended, comment 5969505488). No other package SHALL compute,
+parse, re-join or carry it, and no message, envelope or metadata SHALL hold a copy. Two contract tests in
+`internal/harness/contract`, both run by `task test:unit`, enforce the parts of this a static check can see; each has
+a sensitivity test that plants the violation in a temporary module and requires the check to name it.
 
-**Names.** The public-signature contract's walk over the module's packages SHALL also fail on an exported identifier
-— a package-level type, function, variable or constant, an exported method, or an exported struct field — declared
-in a non-test file of any package of this module, public, internal or `main`, whose name contains `Federation`,
-`GlobalID` or `EntityIRI` (case-sensitive substrings). The failure SHALL name the file, the line, the identifier and
-this requirement. Unexported identifiers, test files, comments and string literals are not checked.
+**Names.** No exported name in a non-test package of this module, internal and `main` packages included, SHALL
+contain `Federation`, `GlobalID` or `EntityIRI` (case-sensitive substrings). This covers package-level identifiers,
+and the exported methods, struct fields and interface methods of package-level types, whether the type is exported
+or not. A type alias is a package-level type: its own name is checked, and so are the members of the type it stands
+for; members of a type this module declares are reported once, at that declaration. A failure names the file, line,
+qualified identifier and this requirement. Unexported names, test files, comments and string literals are not
+checked.
 
 **Fields.** No exported struct field named `Org` or `Platform` SHALL be declared in a non-test file of a package of
 this module, in a named or an anonymous struct, except: any field in the packages `pkg/types`, `pkg/platform` and
@@ -30,17 +32,19 @@ requirement. The failure SHALL name the file, the line, the struct type, the fie
 static and by name: a field named otherwise (`OrgID`, `PlatformID`, `org`, `platform`), a copy held in an untyped
 holder, and a value re-joined inside a function body are outside its scope by construction, and remain review only.
 
-#### Scenario: A second spelling by name fails
+#### Scenario: A deployment-authority name is exported
 
-- **WHEN** a non-test file of any package of a fixture module declares an exported type `FederationMeta`, a function
-  `WithFederation`, a function `BuildGlobalID`, a function `EntityIRI`, a method `EntityIRI` on an exported type, a
-  constant `FederationLane`, or an exported struct field `GlobalID`, in a public, an internal or a `main` package
-- **THEN** the contract test fails naming each identifier with its file and line
+- **WHEN** a fixture module declares an exported name containing `Federation`, `GlobalID` or `EntityIRI` in a
+  public, an internal or a `main` package: a type, function, variable or constant, a method (of an unexported type
+  too), a struct field or an interface method, or a type alias, or a member of the struct or interface an alias
+  stands for
+- **THEN** the contract test fails naming each one once, with its file, line and qualified identifier and the rule
 
-#### Scenario: Names the rule does not cover pass
+#### Scenario: The words appear where the rule does not apply
 
-- **WHEN** a fixture module declares an unexported `federationMeta`, an identifier containing `federation` in lower
-  case only, a test-file identifier `TestFederation`, or a comment and a string literal that say `BuildGlobalID`
+- **WHEN** the same words appear only in unexported names, in an exported name that holds one of them in lower case
+  only (`Confederation`), in a name such as `Federated` that does not contain one of them, in a comment or a string
+  literal, or in a test file
 - **THEN** the contract test reports nothing for them
 
 #### Scenario: An authority field outside the owners fails

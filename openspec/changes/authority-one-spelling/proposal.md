@@ -45,10 +45,12 @@ and `platform` fields, which are those copies.
 
 ### Modified Capabilities
 
-- `harness-boundaries`: one requirement added, "One spelling of the deployment authority", with the two checks as its
-  enforcement. No existing requirement changes. Its Purpose names the harness's own boundaries today and is edited in
-  the archive commit to say it also holds the machine-checked shape rules over ported production code, which is what
-  its "No retained context" and (from PR #48) "Public signatures name no internal type" requirements already are.
+- `harness-boundaries`: one requirement modified, "No second spelling of deployment authority" (added by PR #48 with
+  the name check): it gains the rule's full statement and the field check, so the two checks are its enforcement and
+  the rule has one requirement, not two. No other requirement changes. Its Purpose names the harness's own
+  boundaries today and is edited in the archive commit to say it also holds the machine-checked shape rules over
+  ported production code, which is what its "No retained context" and (from PR #48) "Public signatures name no
+  internal type" requirements already are.
 
 ## Impact
 

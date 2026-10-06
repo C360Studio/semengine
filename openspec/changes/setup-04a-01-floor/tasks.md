@@ -1101,11 +1101,11 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
 
 ## 7. Review and archive
 
-- [ ] 7.1 Hold: independent change review. The reviewer's verdict on the full diff (harness, 15 packages, rows,
+- [x] 7.1 Hold: independent change review. The reviewer's verdict on the full diff (harness, 15 packages, rows,
       gates, docs) is a pass recorded on this pull request with the reviewed commit; a critical-stage read applies
       because this change adds new exported harness surface and changes `lifecycletest.Run`.
       - Fix round for Codex's review of record (CHANGES REQUESTED, PR #48 comment 5996819933, reviewed head
-        3686676). Still held: Codex's re-review of these commits is not yet recorded. F30 → 344044c (GenericJSON
+        3686676). F30 → 344044c (GenericJSON
         decode keeps exact numbers); F31 → bb23dc7 (negative `MaxRetries` refused); F32 → 0c46833 (`retry.Do`),
         bb23dc7 and e17ecfd (nil contexts refused on every exported `natsclient` entry), c206229 (context checked
         before every retry attempt); F33 → ff93b8e (`GetStatus` under the mutex); F34 → 0c46833 (tiny jitter);
@@ -1123,6 +1123,10 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         check at aa1c681 (PR #48 comment 6006339493, not the review of record) → G1, G2 and G4 74e7e5f (a
         test-owned exact-literal table, an independent number check in both fuzz targets, exact accept/refuse
         wording), G3 a536513 (the in-flight cancellation test fails a named assertion, not the suite timeout).
+      - Released: Codex's review of record APPROVES the implementation at 1c3d8cc (PR #48 comment 6007198080),
+        F41 and F42 resolved. Its non-blocking F43 (the nil-`Data` wording holds for a fresh receiver) is
+        corrected in the spec delta, the ledger item and the literal test's comment in the commit that ticks this
+        task.
 - [ ] 7.2 (D) `task verify` green on the final commit; the integration lane green under the host lock, evidence
       directory attached to this pull request; `implemented-by:` in the pull request body.
 - [ ] 7.3 (W) The change archived under `openspec/changes/archive/` as the last content commit before squash merge;

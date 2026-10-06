@@ -81,14 +81,15 @@ contains itself (#9 comments 5972117486, 5972208367).
 
 `GenericJSONPayload` (type `core.json.v1`) SHALL be the fallback for JSON whose shape is not known when the code is
 written, such as outside input. Code that builds a shape it knows registers a payload type for that shape instead.
-Nothing SHALL register `core.json.v1` implicitly: a process that decodes it calls `RegisterPayloads` on the registry
-its `Decoder` uses. `GenericJSONPayload.UnmarshalJSON` SHALL accept a body that is a JSON object or `null`, leaving
-`Data` nil when `data` is `null` or absent (`{"data":null}`, `{}`, `null`). It SHALL refuse with an invalid-data error
-malformed JSON, non-whitespace bytes after the JSON value, a body that is neither an object nor `null` (such as `[]`
-or `1`), and a `data` that is neither an object nor `null`. It SHALL keep every number as a `json.Number` holding its
-exact literal, so an integer beyond 2^53 and a literal beyond `float64`'s range such as `1e400` keep their exact value
-(changed behaviour: at the pin every decoded number became a `float64`; PR #48, Codex F30, F41). A payload built in
-process SHALL hold the Go numbers its caller supplied.
+Nothing SHALL register `core.json.v1` implicitly: a process that decodes it calls `RegisterPayloads` on the registry its
+`Decoder` uses. `GenericJSONPayload.UnmarshalJSON` SHALL accept a body that is a JSON object or `null`, leaving `Data`
+nil on a fresh (zero-value) receiver when `data` is `null` or absent (`{"data":null}`, `{}`, `null`; a receiver that
+already holds `Data` keeps it for `{}` and `null`, and `{"data":null}` clears it). It SHALL refuse with an invalid-data
+error malformed JSON, non-whitespace bytes after the JSON value, a body that is neither an object nor `null` (such as
+`[]` or `1`), and a `data` that is neither an object nor `null`. It SHALL keep every number as a `json.Number` holding
+its exact literal, so an integer beyond 2^53 and a literal beyond `float64`'s range such as `1e400` keep their exact
+value (changed behaviour: at the pin every decoded number became a `float64`; PR #48, Codex F30, F41). A payload built
+in process SHALL hold the Go numbers its caller supplied.
 
 #### Scenario: A large integer survives the wire
 

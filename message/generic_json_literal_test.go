@@ -50,7 +50,7 @@ func TestGenericJSONKeepsNumberLiteral(t *testing.T) {
 
 // What GenericJSONPayload.UnmarshalJSON accepts and refuses, stated input by input as the
 // message-codec spec states it: a body that is an object or null is accepted, and data that is
-// null or absent leaves Data nil; malformed JSON, non-whitespace bytes after the value, a body
+// null or absent leaves a fresh receiver's Data nil; malformed JSON, non-whitespace bytes after the value, a body
 // that is neither an object nor null, and a data that is neither an object nor null are refused
 // with an invalid-data error.
 func TestGenericJSONUnmarshalAcceptsAndRefuses(t *testing.T) {

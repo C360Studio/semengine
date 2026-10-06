@@ -437,7 +437,7 @@
     left as the pin's text; pkg/tlsutil moved to internal/tlsutil (task 3.4, f1cc210), which
     rewrote the doc.go:138 link to internal/tlsutil. Adapt item, dead surface removed (owner
     rulings, #9 comments 5985697767 item 2 and 5985900154 item 3; evidence: the surface audit,
-    openspec/changes/setup-04a-01-floor/surface-audit.md §3): 11 of the 18 exported identifiers,
+    openspec/changes/archive/2026-10-05-setup-04a-01-floor/surface-audit.md §3): 11 of the 18 exported identifiers,
     with no caller in SemEngine, the pin, semsource or semconnect. Removed, pin lines: config.go
     :4-8 (the fmt, os and time imports only they used), :15-26 (DefaultConfig, Config.Validate),
     :34-51 (DefaultTLSConfig, TLSConfig.Validate), :65-85 (ACMEConfig.Validate), :95-109
@@ -538,7 +538,7 @@
     first naming vocabulary.EntityIRI and now holds the name out of every production package.
     Adapt item, dead surface removed (owner rulings, #9 comments 5985697767 item 1 and 5985900154
     item 1, under #9 comment 5968830525; evidence: the surface audit,
-    openspec/changes/setup-04a-01-floor/surface-audit.md §1, which lists each identifier's readers in
+    openspec/changes/archive/2026-10-05-setup-04a-01-floor/surface-audit.md §1, which lists each identifier's readers in
     SemEngine, the pin's admitted and not-admitted packages, semsource and semconnect): 162 of the 258
     exported identifiers, which nothing reads in SemEngine production, an admitted pin package, or
     semsource or semconnect production code; 92 stay (57 pattern, 29 base terms, 4 consumer-read, 2
@@ -1142,7 +1142,7 @@
     semconnect (d0d06e00) and semteams (d5ee6325) have none. Hash() ignores a payload marshal error, as at
     the pin, so a payload refused here hashes as its type alone; tracked by #78.
     Adapt item, dead surface removed (owner rulings, #9 comments 5985697767 item 2 and 5985900154;
-    evidence: the surface audit, openspec/changes/setup-04a-01-floor/surface-audit.md §2): ten
+    evidence: the surface audit, openspec/changes/archive/2026-10-05-setup-04a-01-floor/surface-audit.md §2): ten
     capability interfaces that nothing type-asserts and no production type implements in SemEngine,
     the pin, semsource or semconnect. Removed, pin lines: behaviors.go :19-137 (Locatable, Timeable,
     Observable, Correlatable, Measurable, Deployable, Processable, Traceable, Expirable; IndexingProfiler,

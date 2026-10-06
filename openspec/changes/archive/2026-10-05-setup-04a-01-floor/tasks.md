@@ -855,7 +855,7 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
 
 - [x] 3.12 (D) Surface audit of vocabulary, message capability interfaces and pkg/security (owner rulings
       5985697767, 5985900154): the architect's inventory, inventory-reviewed PASS, is committed as
-      `openspec/changes/setup-04a-01-floor/surface-audit.md` (lint fixes only) and cited from the `vocabulary`,
+      `openspec/changes/archive/2026-10-05-setup-04a-01-floor/surface-audit.md` (lint fixes only) and cited from the `vocabulary`,
       `message`, `pkg/security` and `pkg/tlsutil` rows; what it marks dead is removed and recorded on those rows by
       pin line, with its readers.
       - Done. `b902520` the audit file; `3b7c8aa` `vocabulary` keeps 92 of 258 exported identifiers (162 removed;
@@ -1067,10 +1067,15 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
       "Services and the lifecycle suite", "Background work" and "Porting a test from SemStreams"; the stale
       `Run(t, factory, promise)` signature and the three-target coverage lists here and in `docs/repository-map.md`
       corrected to the code. `task docs:check` passes.
-- [ ] 6.3 (W) The `openspec/specs/` sync: the eight deltas applied to `harness-boundaries`, `nats-fixture`,
+- [x] 6.3 (W) The `openspec/specs/` sync: the eight deltas applied to `harness-boundaries`, `nats-fixture`,
       `lifecycle-suite` and the five new capabilities (`process-host`, `transport-client`, `background-work`,
       `metric-registry`, `message-codec`),
       verified against the code as landed; `task spec:check` passes.
+      Done in the archive commit. `openspec archive setup-04a-01-floor` applied the eight deltas (33 requirements
+      added, 2 modified). Each synced requirement was read against the code at that commit: the named functions,
+      types, metric labels and contract tests exist with the stated behaviour, and the eleven public packages
+      counted in "Public signatures name no internal type" are the module's eleven. No requirement needed a
+      correction. `task spec:check` passes on that commit.
 - [x] 6.4 (W) `.agents/contracts/semengine-developer.md` and `.agents/contracts/semengine-reviewer.md` gain the
       "Background work" subsection after "Context ownership", and their detach bullets the no-join-by-timer clause, as
       drafted on this pull request; `AGENTS.md`'s "Rules and what enforces them" table carries the background-work row,
@@ -1127,10 +1132,17 @@ D8 repairs applied, each repair written so it fails first where the pin's test f
         F41 and F42 resolved. Its non-blocking F43 (the nil-`Data` wording holds for a fresh receiver) is
         corrected in the spec delta, the ledger item and the literal test's comment in the commit that ticks this
         task.
-- [ ] 7.2 (D) `task verify` green on the final commit; the integration lane green under the host lock, evidence
+- [x] 7.2 (D) `task verify` green on the final commit; the integration lane green under the host lock, evidence
       directory attached to this pull request; `implemented-by:` in the pull request body.
-- [ ] 7.3 (W) The change archived under `openspec/changes/archive/` as the last content commit before squash merge;
+      Done in the archive commit. `task verify` was green locally at cec1982, the last head before the archive,
+      and exited 0 locally on the archive commit's tree; the CI run on the archive commit runs the same gates.
+      The integration lane was green under the host lock at cec1982; its evidence is attached as PR #48 comment
+      6008432344. The archive commit changes documents only, so the code tested there is the code that lands.
+      `implemented-by:` is in the pull request body.
+- [x] 7.3 (W) The change archived under `openspec/changes/archive/` as the last content commit before squash merge;
       in that commit `openspec/specs/background-work/spec.md`, `process-host/spec.md`, `transport-client/spec.md`,
       `metric-registry/spec.md` and `message-codec/spec.md` each carry a real `## Purpose` in place of the placeholder
       `openspec archive` writes, which OpenSpec 1.13.2's strict validation rejects (PR #48 comment
       5951371629, item 2); `task spec:check` passes on that commit; `task spec:queue` shows no open hold.
+      Done in the archive commit: archived as the last content commit, with the five Purposes written in place of
+      the placeholder; `task spec:check` passes on that commit and `task spec:queue` shows no open hold.

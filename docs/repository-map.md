@@ -10,11 +10,11 @@ not a task tracker and not a description of the tree.
   (`docs/contract.md`) and approved in SETUP 03B (issue #8), but no code implements it yet.
 - **No runtime binary, no release, no tag.**
 - **No consumer lane** in the gate graph; it joins `task verify` when its workload exists.
-- **Six of the seven Slice 04A implementation changes.** SETUP 02, SETUP 03B, the Slice 04A design and
-  `flake-defense` are archived; SETUP 02's four capability specs, as amended by `flake-defense`, and the `merge-gate`
-  spec it added are the current truth under `openspec/specs/`, and `docs/contract.md` states the tier-0 contract 03B
-  approved. The Slice 04A design names seven implementation changes (`setup-04a-01-floor` to
-  `setup-04a-07-substrate-seam`); only `setup-04a-01-floor` is open (draft PR #48).
+- **Six of the seven Slice 04A implementation changes.** SETUP 02, SETUP 03B, the Slice 04A design,
+  `flake-defense` and the first implementation change, `setup-04a-01-floor`, are archived; the capability specs under
+  `openspec/specs/` are the current truth, and `docs/contract.md` states the tier-0 contract 03B approved. The Slice
+  04A design names seven implementation changes (`setup-04a-01-floor` to `setup-04a-07-substrate-seam`);
+  `setup-04a-02` to `setup-04a-07` are not started.
 
 ## Present
 
@@ -51,13 +51,14 @@ not a task tracker and not a description of the tree.
 | `.github/` | CI workflow (jobs `verify`, `merge-check` and `required`) and Dependabot configuration |
 | `package.json`, `.nvmrc`, `.task-version` | Pins for the Node-based OpenSpec and markdownlint tools and Task |
 | `.markdownlint.yaml`, `.markdownlint-cli2.yaml` | Markdown lint configuration behind `task docs:check` |
-| `openspec/specs/{integration-test-runner,nats-fixture,lifecycle-suite,harness-boundaries}/` | Current truth, synced by the SETUP 02 archive; `lifecycle-suite` and `harness-boundaries` amended by the `flake-defense` archive |
-| `openspec/changes/setup-04a-01-floor/` | The open change (draft PR #48, epic #9): the floor's 15 packages, the harness extension, and their tasks and holds |
+| `openspec/specs/{integration-test-runner,nats-fixture,lifecycle-suite,harness-boundaries}/` | Current truth, synced by the SETUP 02 archive; `lifecycle-suite` and `harness-boundaries` amended by the `flake-defense` archive, and `nats-fixture`, `lifecycle-suite` and `harness-boundaries` by the `setup-04a-01-floor` archive |
+| `openspec/specs/{background-work,process-host,transport-client,metric-registry,message-codec}/` | Current truth for the floor: how background goroutines stop, the helper-process host, `natsclient`, `metric.RegisterOrGet` and the `message` codec, synced by the `setup-04a-01-floor` archive |
 | `message/`, `metric/`, `natsclient/`, `payloadregistry/`, `vocabulary/`, `pkg/{errs,platform,projection/contract,retry,security,types}/`, `internal/{cache,resource,timestamp,tlsutil}/` | The 15 SemStreams packages ported by `setup-04a-01-floor`; each has an admission-ledger row naming its pin path and destination |
 | `openspec/specs/merge-gate/` | Current truth for the merge gate's flake defenses, synced by the `flake-defense` archive |
 | `openspec/changes/archive/2026-09-30-setup-02-isolated-harness/` | The archived SETUP 02 change (PR #13, epic #6) |
 | `openspec/changes/archive/2026-10-01-setup-03b-contract-boundary/` | The archived SETUP 03B change (PR #21, epic #8), with its three inventory passes (`inventory.md`, `inventory-2-scope.md`, `inventory-3-pass3.md`) |
 | `openspec/changes/archive/2026-10-01-setup-04a-foundation/` | The archived Slice 04A design (PR #47, epic #9): the inventory, the seven-change cut (`design.md` D2), the harness extension for change 1 (D3–D5) and the owner's rulings |
+| `openspec/changes/archive/2026-10-05-setup-04a-01-floor/` | The archived first implementation change (PR #48, epic #9): the floor's 15 packages, the harness extension, the surface audit (`surface-audit.md`) and their tasks |
 | `openspec/changes/archive/2026-10-01-flake-defense/` | The archived `flake-defense` change (PR #44, issue #42): repeated and shuffled unit runs, the known-flake merge check, and the no-sleep and no-skip test rules |
 | `docs/admission-ledger.yaml` | The admission ledger: 46 entries at full SemStreams SHAs, checked by `task ledger:check`, which also fails a `carry` entry that differs from the pin; four are `carry` (three ported packages and `internal/semantictest`) |
 | `docs/tier1-cross-check.md` | The tier-0 port set (65 packages) compared with SemStreams' Tier 1 sister-import list at the pin: 39 in both, 23 Tier-1-only (each with its disposition), 26 tier-0-only; a record that changes no ledger row |
@@ -97,7 +98,7 @@ There is no `/tickets` state and no handoff document; each question has one home
 - The Slice 04A design (PR #47) is accepted: owner rulings of 2026-10-01 on #9 fix the seven-change chain, the
   rule that each package lands with its tests, ledger rows and repair proofs green, and #24's re-scope to the pin's
   composition points. The first implementation change is `setup-04a-01-floor` (15 packages, the transport and
-  message floor, plus the harness extension), claimed on draft PR #48.
+  message floor, plus the harness extension), carried on PR #48 and archived there.
 - Owner rulings of 2026-09-30 on the plan are recorded at
   [PR #1 comment 5917717356](https://github.com/C360Studio/semengine/pull/1#issuecomment-5917717356).
 

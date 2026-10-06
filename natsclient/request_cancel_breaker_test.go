@@ -16,9 +16,9 @@ import (
 //
 // Every path reports rather than hangs (Codex F42): each subtest has its own subject and
 // responder, so no invocation outlives its subtest's channels; the responder's release is a close,
-// safe after the responder has exited or if it never ran; the wait for entry is bounded by a
-// test-owned deadline that cancels the call; and the cancelling goroutine is joined on every
-// outcome.
+// safe after the responder has exited or if it never ran; a test-owned bound limits both the wait
+// for entry and the wait for the call to return after the cancellation (early check G3); and the
+// cancelling goroutine is joined on every outcome.
 func TestRequestCancelledInFlightRecordsNoFailure(t *testing.T) {
 	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
 	require.NoError(t, err)
@@ -74,9 +74,12 @@ func TestRequestCancelledInFlightRecordsNoFailure(t *testing.T) {
 
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
-			// The deadline bounds only the wait for entry; it is far beyond any healthy dispatch.
-			entryDeadline, stopDeadline := context.WithTimeout(t.Context(), 30*time.Second)
-			defer stopDeadline()
+			// bound is the test's own limit on the whole call, entry and return, far beyond any
+			// healthy dispatch and well under the per-attempt time.Minute: a call that ignores the
+			// cancellation fails a named assertion here instead of reaching the suite timeout.
+			const limit = 10 * time.Second
+			bound, stopBound := context.WithTimeout(t.Context(), limit)
+			defer stopBound()
 			returned := make(chan struct{})
 			waiterDone := make(chan struct{})
 			var cancelledAfterEntry, entryTimedOut bool
@@ -86,20 +89,28 @@ func TestRequestCancelledInFlightRecordsNoFailure(t *testing.T) {
 				case <-entered: // the request reached the responder and is waiting for its reply
 					cancelledAfterEntry = true
 					cancel()
-				case <-entryDeadline.Done():
+				case <-bound.Done():
 					entryTimedOut = true
-					cancel() // so the call returns and the test reports
+					cancel() // so a call that honours cancellation returns and the test reports
 				case <-returned: // the call ended before the responder was entered
 				}
 			}()
 
 			before := c.GetStatus().FailureCount
-			err = tc.call(ctx, subject)
-			close(returned)
-			close(release)
+			result := make(chan error, 1) // buffered: the call never blocks on a test that has stopped waiting
+			go func() { result <- tc.call(ctx, subject) }()
+			callReturned := false
+			select {
+			case err = <-result:
+				callReturned = true
+				close(returned)
+			case <-bound.Done():
+			}
+			close(release) // also lets a call that ignored the cancellation finish with the late reply
 			<-waiterDone
 
-			require.False(t, entryTimedOut, "the responder was not entered within the deadline; call returned %v", err)
+			require.False(t, entryTimedOut, "the responder was not entered within %v; call returned %t, err %v", limit, callReturned, err)
+			require.True(t, callReturned, "the call did not return within %v although it was cancelled after the responder was entered", limit)
 			require.True(t, cancelledAfterEntry, "the call returned before the responder was entered: %v", err)
 			require.ErrorIs(t, err, context.Canceled)
 			require.Equal(t, before, c.GetStatus().FailureCount, "a caller's cancellation counted as a transport failure")

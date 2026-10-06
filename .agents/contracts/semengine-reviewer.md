@@ -45,13 +45,21 @@ check, not the gate.
    on top of the stack, frequently an unrelated stash dumped over the tree you are reviewing.
 
    Mutation evidence is encouraged; a read-only reviewer requests it from the implementing agent and verifies the
-   artifact. If the user separately authorizes the reviewer to make changes, **`cp` is the only sanctioned
-   backup/restoration mechanism** for a mutation check:
+   artifact. For a wrong change to a Go source file that is not a test file, the artifact is the report that
+   `task mutate:check` prints. It ends with one verdict, and only detection (the expected assertion failed) counts:
+   survivor (the test ran with the wrong change and still passed), invalid (the wrong change does not build, or the
+   test never reached it) and inconclusive (anything else, such as a timeout or a different failure) do not. The
+   `mutation-check` spec states the rule for each. The command builds the wrong change from a copy kept outside the
+   repository and edits nothing in the tree, so a read-only reviewer can run it to reproduce the evidence.
+
+   A wrong change the command refuses (a script, or another file a test reads while it runs) is made in the tree. If
+   the user separately authorizes the reviewer to make changes, **`cp` is the only sanctioned backup/restoration
+   mechanism** for such a mutation check:
 
    ```bash
-   cp path/to/file.go "${TMPDIR:-/tmp}/file.go.bak" && shasum path/to/file.go   # BEFORE mutating; record the sum
+   cp path/to/file "${TMPDIR:-/tmp}/file.bak" && shasum -a 256 path/to/file   # BEFORE mutating; record the sum
    # ... mutate, run the test, observe ...
-   cp "${TMPDIR:-/tmp}/file.go.bak" path/to/file.go && shasum path/to/file.go   # restore; sum MUST match
+   cp "${TMPDIR:-/tmp}/file.bak" path/to/file && shasum -a 256 path/to/file   # restore; sum MUST match
    ```
 
    **Verify restoration with checksums, not `git diff --stat`.** `git diff --stat` reports nothing at all for untracked

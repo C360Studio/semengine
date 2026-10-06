@@ -175,16 +175,17 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
       `.agents/contracts/semengine-developer.md` and `semengine-reviewer.md`: the mutation passages name
       `task mutate:check` for a Go source target, keep the `cp` procedure for the rest, and give the checksum as
       `shasum -a 256`. Gate: `task docs:check`. Done in `36f1c35`; evidence comment 6019183479.
-- [ ] 4.3 Hold: PR #73 merged into `main` (PR #48 merged as `deaafd4`). (W) `docs/testing.md`, "Show
+- [x] 4.3 (W) (PR #48 merged as `deaafd4`; PR #73 as `955fc83`.) `docs/testing.md`, "Show
       that the test can fail": the command and what it checks, the manual procedure for what it refuses, the outcome
       invalid and how reach is judged, the sentence on bounded assertions, the race detector as the owner rules on Q5,
       equivalence as a reviewer's assessment, and SHA-256 for the restore check (`design.md`, D5, D12, D13 and D14).
-      Gate: `task docs:check`.
-- [ ] 4.4 Hold: PR #73 merged into `main` (PR #48 merged as `deaafd4`). (W) `docs/repository-map.md`:
-      the program's row and the `mutation-check` spec. Gate: `task docs:check`.
-- [ ] 4.5 Hold: PR #73 merged into `main` (PR #48 merged as `deaafd4`). (W) `AGENTS.md`:
+      Gate: `task docs:check`. Done in `e1961ab`.
+- [x] 4.4 (W) (PR #48 merged as `deaafd4`; PR #73 as `955fc83`.) `docs/repository-map.md`:
+      the program's row and the `mutation-check` spec. Gate: `task docs:check`. Done in `1492c32`; the spec is listed
+      under "Not yet present" until the archive (6.1) moves it to `openspec/specs/`.
+- [x] 4.5 (W) (PR #48 merged as `deaafd4`; PR #73 as `955fc83`.) `AGENTS.md`:
       the Commands block gains `task mutate:check`, and the row on mutation outcomes says what the ruling says. Gate:
-      `task docs:check`.
+      `task docs:check`. Done in `c4ed889`.
 
 ## 5. Review
 

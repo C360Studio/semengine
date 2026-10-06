@@ -171,9 +171,11 @@ what risk remains; the reviewer accepts or rejects that.
 The repository's own checks follow the same pattern, built into the tests:
 
 - The Go guards in `internal/harness/contract/` have paired `...Sensitivity` tests (for example
-  `TestNoFixedAddressesInTests` and `TestNoFixedAddressesInTestsSensitivity`). The sensitivity test plants the
-  violation in a temporary tree and requires the guard to name the planted file and what it violates, so a guard that
-  fires for the wrong reason, or matches nothing, fails. Two script guards are covered the same way by
+  `TestNoFixedAddressesInTests` and `TestNoFixedAddressesInTestsSensitivity`; the deployment-authority checks
+  `TestNoDeploymentAuthorityNames` and `TestNoDeploymentAuthorityNamesSensitivity`, and `TestNoSecondAuthorityField`
+  and `TestNoSecondAuthorityFieldSensitivity`). The sensitivity test plants the violation in a temporary tree and
+  requires the guard to name the planted file and what it violates, so a guard that fires for the wrong reason, or
+  matches nothing, fails. Two script guards are covered the same way by
   `TestCleanupRootsCheckSensitivity` and `TestCoverCheckSensitivity`; the fixed-port script has its own fixture test,
   `scripts/lint-test-ports_fixture_test.sh`; and `TestMergeCheckKnownFlake` and `TestMergeCheckReview` run the merge
   check against canned GitHub answers.

@@ -130,6 +130,15 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
       `task test:unit`.
       Test at `714197f` (failing against the code of `29f8abe`), fix at `7630ad9`, V09 a detection; the table at `a3d27f7`.
       Evidence: comment 5996159559.
+- [x] 2.15 (D) The owner's ruling on #79 (comment 6020499993): "add one table case to `reach_test.go` now, shown able
+      to fail". An insertion into a statement list with no statement is not measurable (`reach.go:154`), and no case
+      reached that branch (found in record 6020389633). A recorded target `plant/empty.go`, a non-blocking send whose
+      `select` has an empty `default:` clause, its re-recorded profile, and the case "an insertion into an empty default
+      clause": not measurable with the note "has no statement", and the verdict survivor. Gate: `task test:unit`.
+      Test at `3045d1f`. Through `task mutate:check` on that subtest: the branch's state changed to not reached
+      (`reach.go:155`), `-expect reach_test.go:172`: detection; the branch deleted, `-expect-text
+      'index out of range [-1]'`: inconclusive, the subtest fails with that panic, which Go prints under the parent
+      test. With the branch deleted, the package's tests at `5e963ad` pass.
 
 ## 3. Shown able to fail
 
@@ -203,6 +212,7 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
       names"): a review record that approves them, naming the commit it read, recorded on this pull request.
       Record 6020389633 (claude, semengine-reviewer) approves `288cf55..cb4427d` at `cb4427d`, on CI run
       37490965851, with one MEDIUM finding and three NITs; all four are fixed in the commit that ticks this task.
+- [ ] 5.4 Codex's re-review of the empty-list test commit: a review record that approves, at the head that carries it.
 
 ## 6. In the archive commit
 

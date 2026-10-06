@@ -117,12 +117,17 @@ func TestServerNativeStartReportsOwnedEphemeralListener(t *testing.T) {
 	require.NoError(t, response.Body.Close())
 	require.Equal(t, http.StatusOK, response.StatusCode)
 	require.NoError(t, server.Stop(t.Context()))
-	// Ask the listener itself, not the freed port: once Stop closes it, any process on the host may be handed
-	// that port, so a dial there can succeed on a healthy tree (#88). SetDeadline fails only on a closed listener.
-	tcpListener, ok := owned.(*net.TCPListener)
-	require.True(t, ok, "native acquisition without TLS holds a *net.TCPListener, got %T", owned)
-	require.ErrorIs(t, tcpListener.SetDeadline(time.Now()), net.ErrClosed,
-		"Stop must close its originally acquired listener")
+	requireListenerClosed(t, owned, "Stop must close its originally acquired listener")
+}
+
+// requireListenerClosed asks the listener itself, not its freed port: once a listener closes, any process on the
+// host may be handed that port, so a dial there can succeed on a healthy tree (#88). SetDeadline fails with
+// net.ErrClosed only on a closed listener, and it never blocks.
+func requireListenerClosed(t *testing.T, listener net.Listener, message string) {
+	t.Helper()
+	tcpListener, ok := listener.(*net.TCPListener)
+	require.True(t, ok, "expected a *net.TCPListener, got %T", listener)
+	require.ErrorIs(t, tcpListener.SetDeadline(time.Now()), net.ErrClosed, message)
 }
 
 func TestServerAddressEscapesScopedIPv6Zone(t *testing.T) {
@@ -170,12 +175,7 @@ func TestServerStartOwnsListenerAndRequiresFreshInstanceForRestart(t *testing.T)
 	require.NoError(t, server.Stop(t.Context()))
 	require.True(t, listener.closed.Load(), "Stop must close the original listener")
 	require.Equal(t, "http://localhost:9090/metrics", server.Address())
-
-	connection, err = net.DialTimeout("tcp", address, failureBound)
-	require.Error(t, err, "Stop must close the listener before returning")
-	if connection != nil {
-		_ = connection.Close()
-	}
+	requireListenerClosed(t, listener.Listener, "Stop must close the listener before returning")
 
 	err = server.Start(t.Context())
 	require.Error(t, err, "a stopped Server is one-shot")
@@ -458,12 +458,7 @@ func TestServerStopIsCallerBounded(t *testing.T) {
 		t.Fatal("Stop returned before the exact Serve goroutine joined")
 	}
 
-	address := listener.Addr().String()
-	connection, dialErr := net.DialTimeout("tcp", address, failureBound)
-	require.Error(t, dialErr, "deadline Stop must release the listener before returning")
-	if connection != nil {
-		_ = connection.Close()
-	}
+	requireListenerClosed(t, listener.Listener, "deadline Stop must release the listener before returning")
 	require.ErrorIs(t, server.Stop(stopCtx), context.Canceled,
 		"a repeat while the admitted collection still runs must not report completion")
 

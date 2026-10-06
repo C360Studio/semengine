@@ -59,24 +59,20 @@ pull request closes #72 (`Closes #72` in its body).
 
 ## 3. C-1: the name check
 
-- [ ] 3.1 Hold: until PR #48 merges — it carries the name check this change adopts,
-      `TestNoDeploymentAuthorityNames` and `TestNoDeploymentAuthorityNamesSensitivity` in `signatures_test.go`
-      (#48 commit `bb004ef`); at its pushed head `c64ac338` the check names seven identifiers #48 is ruled to
-      remove (design P2). (D) After #48 merges: verify the adopted check's predicate and sensitivity fixture match
-      `design.md` D2 and the delta's scenarios 1–2 (any gap is named on #48's thread before Codex's record there,
-      if one exists); re-cite its lines at #48's merged head; tick. Gate: `task test:unit`.
-- [ ] 3.2 (D) Shown able to fail: confirm #48's recorded failing-first and wrong-change runs cover D2's wrong
-      changes (drop the internal-package scope; drop methods; drop struct fields; match `federation`
-      case-insensitively; check test files); run any that is missing here, recorded on this pull request as 2.3.
+- [x] 3.1 (D) Adopted check verified at #48's merged head `deaafd4` against D2 and the delta's name scenarios:
+      `signatures_test.go:408` (`Federation|GlobalID|EntityIRI`), `:546-614` (every module package, file:line lines);
+      the fixture gained `Confederation`, comment and literal non-matches (`1b80a11`) and a package count (`7084f9e`).
+      Gate: `go test -count=1 -race -run 'TestNoDeploymentAuthorityNames' -v ./internal/harness/contract/` passes.
+- [x] 3.2 (D) Shown able to fail: D2's five wrong changes (internal scope, methods, fields, case-insensitive match,
+      test files) each fail the sensitivity test after `1b80a11` (the case-insensitive one survived #48's fixture);
+      baseline, wrong-change and restored runs, with checksums, in the PR #73 comment recording `1b80a11`.
 
 ## 4. Documents
 
 - [x] 4.1 (W) `AGENTS.md`: the rule's row as `design.md` D7 words it, naming both tests under "Enforced by" and what
       stays review only. Gate: `task docs:check`.
-- [ ] 4.2 Hold: until PR #48 merges — the name check's sensitivity pair arrives with it (task 3.1); the field
-      check's pair and the `docs/repository-map.md` clause are already in place.
-      (W) `docs/testing.md`, the list at `:155-161`: the two sensitivity pairs; `docs/repository-map.md:41`: the
-      contract package's clause names the deployment-authority spelling. Gate: `task docs:check`.
+- [x] 4.2 (W) `docs/testing.md:173-181` names both sensitivity pairs (`f2957e2`); `docs/repository-map.md:40`
+      names the deployment-authority spelling. Gate: `task docs:check` passes.
 
 ## 5. Review
 

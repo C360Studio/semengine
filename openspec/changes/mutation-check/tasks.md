@@ -76,7 +76,7 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
       profile and a stand-in `go` before this task is ticked.
       CI run 37228603260 at `76aa263`: 6.727 s + 24.880 s = 31.607 s, under the 60 s budget.
       Evidence: comment 5983636400.
-- [ ] 2.10 Hold: PR #48 merged into `main`, which brings Rapid into `go.mod`. (D) A
+- [ ] 2.10 (D) (PR #48 merged as `deaafd4`, which brings Rapid into `go.mod`.) A
       planted Rapid property in a temporary module that reads Rapid from the module cache with `GOPROXY=off`: the
       scenarios "A property test" and "A property test whose seed misses the wrong change", with no file under
       `testdata/rapid/` afterwards. Written first. Gate: `task test:unit`.
@@ -165,18 +165,18 @@ starts, `task merge:check -- 82` and the merge are recorded on this pull request
 
 - [x] 4.1 (W) `.agents/skills/semengine-preflight/SKILL.md`: the command table
       gains `task mutate:check`. Gate: `task docs:check`. Done in `87329fe`; evidence comment 5995720079.
-- [ ] 4.2 Hold: PR #48 merged into `main`. (W)
+- [ ] 4.2 (W) (PR #48 merged as `deaafd4`.)
       `.agents/contracts/semengine-developer.md` and `semengine-reviewer.md`: the mutation passages name
       `task mutate:check` for a Go source target, keep the `cp` procedure for the rest, and give the checksum as
       `shasum -a 256`. Gate: `task docs:check`.
-- [ ] 4.3 Hold: PR #48 and then PR #73 merged into `main`. (W) `docs/testing.md`, "Show
+- [ ] 4.3 Hold: PR #73 merged into `main` (PR #48 merged as `deaafd4`). (W) `docs/testing.md`, "Show
       that the test can fail": the command and what it checks, the manual procedure for what it refuses, the outcome
       invalid and how reach is judged, the sentence on bounded assertions, the race detector as the owner rules on Q5,
       equivalence as a reviewer's assessment, and SHA-256 for the restore check (`design.md`, D5, D12, D13 and D14).
       Gate: `task docs:check`.
-- [ ] 4.4 Hold: PR #48 and then PR #73 merged into `main`. (W) `docs/repository-map.md`:
+- [ ] 4.4 Hold: PR #73 merged into `main` (PR #48 merged as `deaafd4`). (W) `docs/repository-map.md`:
       the program's row and the `mutation-check` spec. Gate: `task docs:check`.
-- [ ] 4.5 Hold: PR #48 and then PR #73 merged into `main`. (W) `AGENTS.md`:
+- [ ] 4.5 Hold: PR #73 merged into `main` (PR #48 merged as `deaafd4`). (W) `AGENTS.md`:
       the Commands block gains `task mutate:check`, and the row on mutation outcomes says what the ruling says. Gate:
       `task docs:check`.
 

@@ -459,7 +459,8 @@ type Wraps interface{ dep.Identity }
 	"dep/go.mod": "module example.com/dep\n\ngo 1.26\n",
 	"dep/dep.go": "package dep\n\ntype Record struct{ GlobalID string }\n\nfunc (Record) FederationOrigin() string { return \"\" }\n\n" +
 		"type Identity interface{ GlobalID() string }\n\n" +
-		"type Client struct{}\n\nfunc (*Client) GlobalID() string { return \"\" }\n\nfunc (Client) FederationOrigin() string { return \"\" }\n",
+		"type Client struct{}\n\nfunc (*Client) GlobalID() string { return \"\" }\n\nfunc (Client) FederationOrigin() string { return \"\" }\n\n" +
+		"type Other struct{ GlobalID string }\n",
 	"pub/pub.go": `package pub
 
 type FederationMeta interface{ Platform() string }
@@ -524,7 +525,23 @@ type Wrapper struct{ base }
 type Nested = interface{ interface{ EntityIRI() string } }
 
 type NestedUser interface{ Nested }
+
+// Ambiguous: both embedded types carry GlobalID, so neither is selectable; FederationOrigin is.
+type Both struct {
+	dep.Record
+	dep.Other
+}
+
+// Shadowed: Shadow's own GlobalID hides Record's.
+type Shadow struct {
+	GlobalID string
+	dep.Record
+}
 `,
+	// A module type from package b embedded in package a, which the walk reaches first: the method
+	// is reported once, at its declaration in b, whatever order the packages load in.
+	"cross/a/a.go":            "package a\n\nimport \"example.com/fixture/cross/b\"\n\ntype Embeds struct{ b.Base }\n",
+	"cross/b/b.go":            "package b\n\ntype Base struct{}\n\nfunc (Base) GlobalID() string { return \"\" }\n",
 	"internal/inner/inner.go": "package inner\n\nfunc NewFederationMeta() {}\n",
 	"cmd/tool/main.go":        "package main\n\nfunc EntityIRI() {}\n\nfunc main() {}\n",
 }
@@ -532,9 +549,9 @@ type NestedUser interface{ Nested }
 func TestNoDeploymentAuthorityNamesSensitivity(t *testing.T) {
 	root, _ := writeTree(t, authorityFixture)
 	violations, checked := authorityNameViolations(t, root)
-	// pub, internal/inner and cmd/tool; dep is a second module.
-	if checked != 3 {
-		t.Errorf("want 3 fixture packages checked, got %d", checked)
+	// pub, internal/inner, cmd/tool, cross/a and cross/b; dep is a second module.
+	if checked != 5 {
+		t.Errorf("want 5 fixture packages checked, got %d", checked)
 	}
 	empty, _ := writeTree(t, map[string]string{"go.mod": "module example.com/empty\n\ngo 1.26\n"})
 	got, n := authorityNameViolations(t, empty)
@@ -578,6 +595,10 @@ func TestNoDeploymentAuthorityNamesSensitivity(t *testing.T) {
 		at("pub/embed.go:7", "pub.Session.GlobalID"),
 		at("pub/embed.go:11", "pub.base.GlobalID"),
 		at("pub/embed.go:15", "pub.Nested.EntityIRI"),
+		at("pub/embed.go:20", "pub.Both.FederationOrigin"),
+		at("pub/embed.go:26", "pub.Shadow.FederationOrigin"),
+		at("pub/embed.go:27", "pub.Shadow.GlobalID"),
+		at("cross/b/b.go:5", "cross/b.Base.GlobalID"),
 	}
 	sort.Strings(want)
 	if strings.Join(violations, "\n") != strings.Join(want, "\n") {

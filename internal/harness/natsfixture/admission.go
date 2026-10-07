@@ -100,7 +100,12 @@ func ownerLive(ctx context.Context, host, pid, identity string) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		// %v, not %w, so a context error reaches admit only through the ctx.Err() check above.
 		return fmt.Errorf("owner pid %d is not live: read its start time: %v", n, err)
+	}
+	// An empty read proves nothing live, and would equal a record that has no identity.
+	if started == "" {
+		return fmt.Errorf("owner pid %d is not live: ps printed no start time", n)
 	}
 	if started != identity {
 		return fmt.Errorf("owner pid %d started at %q, not at the recorded identity %q", n, started, identity)

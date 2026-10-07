@@ -184,6 +184,30 @@ func TestAdmissionRequiresALiveOwner(t *testing.T) {
 	}
 }
 
+// A ps that exits 0 and prints nothing shows no start time, so it proves nothing live, even against
+// a record with no identity, whose missing value would otherwise equal the empty read.
+func TestAdmissionRefusesAnEmptyStartTime(t *testing.T) {
+	plantLock(t, "tok", "tok")
+	host, err := os.Hostname()
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := fmt.Sprintf("host=%s\npid=%d\nstarted=1\ntoken=tok\ncommand=semengine /x/scripts/test-integration.sh\n", host, os.Getpid())
+	if err := os.WriteFile(filepath.Join(os.Getenv("SEMENGINE_DOCKER_ADMISSION_LOCK_DIR"), "owner"), []byte(owner), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	if err := os.WriteFile(filepath.Join(bin, "ps"), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+	f := New(t)
+	noDocker(t, f)
+	if err := f.Start(t.Context()); !errors.Is(err, ErrNotAdmitted) || !strings.Contains(err.Error(), "no start time") {
+		t.Fatalf("Start = %v, want ErrNotAdmitted naming no start time", err)
+	}
+}
+
 // A live owner admits: plantLock's record names this process with the start time the runner's own
 // command reads for it. Admission reads under its caller's context, so a caller already cancelled
 // is told so rather than refused.

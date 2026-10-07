@@ -4,9 +4,10 @@
 The spec queue is `scripts/openspec-queue.sh`, run as `task spec:queue`: for each OpenSpec change in flight it
 prints how many tasks are ticked and one line for each open task that carries a label, so a reader sees why a change
 is still open. It reads every line of each open task, and it prints a hold (the text `Hold:`) from `Hold:` on,
-wherever in the task the hold is written. The queue is advisory: it fails nothing, and neither `task verify` nor CI
-runs it. Run with `--check`, as `task spec:check` runs it, the same script fails on a hold written outside every task,
-where the queue cannot show it.
+wherever in the task the hold is written. The queue is advisory: it exits 0 whatever it shows unless run with
+`--strict`, exit 2 means it could not read the changes, and neither `task verify` nor CI runs it. Run with `--check`,
+as `task spec:check` runs it, the same script fails on a hold written below the file's first `##` heading and outside
+every task, where the queue cannot show it.
 
 ## Requirements
 

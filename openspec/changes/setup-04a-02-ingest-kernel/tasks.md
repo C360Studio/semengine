@@ -38,17 +38,18 @@ heading>` (#81's form). No task asserts a fact that exists only after merge.
 
 - [ ] 2.1 (D) Re-run inventory P-1, P-4 and P-7 on the branch's copy at the first port commit and post the seeds, the
       hit list and the coverage figures; any difference from `inventory.md` is a finding on this pull request. Hold:
-      task 1.4.
+      task 3.1 (the first port commit).
 - [x] 2.2 (D) `TestOneImagePin` in Go files matches `nats:` followed by a digit or a variable, or `nats@sha256:` (design
       D10): sensitivity cases, written first, plant `"nats:in"` in a Go file (passes), `"nats:2.10"` and
       `"nats:${TAG}"` in a Go file (fail), and keep "digest literal in Go" failing. Gate: `task test:unit`.
 - [x] 2.3 (D) `TestNoProcessGlobalRegistration` and its sensitivity test (`metric-registry`, "No process-global
       registration"). Gate: `task test:unit`.
 - [ ] 2.4 (D) `TestReservedSubjectsDeclaredOnce` and its sensitivity test (`graph-transport-boundary`). It is red until
-      task 3.7 declares the subjects; written first.
+      task 3.7 declares the subjects; written first. Hold: task 3.7; it lands in 3.7's commit, after being shown red,
+      because a red test fails `task verify` on every push before it.
 - [ ] 2.5 (D) `TestPublicSignatures` and `TestNoSecondAuthorityField` pass over the ported tree with no new exception
       and no change to either check (rulings B and C; design D9, D14); the pass is posted with each check's package
-      count. Gate: `task test:unit`.
+      count. Gate: `task test:unit`. Hold: tasks 3.1–3.13 (the ported tree).
 - [x] 2.6 (D) The `natsfixture` helper of design D3 (`nats-fixture`, "Connected value for a package's tests"), its three
       scenarios as tests, written first. Gate: `task test:integration`.
 - [x] 2.7 (D) `internal/lifecycleguard` (design D13): `lifecycletest.Run` over a test owner built only from the guard,

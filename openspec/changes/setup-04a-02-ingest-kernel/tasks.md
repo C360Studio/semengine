@@ -199,11 +199,19 @@ posted on this pull request.
       bubble. Task 3.12 must pass `deps.Platform` to the constructor and the triggering time to the call, and fail
       the birth on its error (design D21, task 4.9). Fourteen `task mutate:check` detections and one wrong change made
       by hand (`TestNoSecondAuthorityField` reads files from disk) are quoted in the commit body.
-- [ ] 3.9 (D) `pkg/projection`: carried code without `Version`; the typed client refuses a statement with no
+- [x] 3.9 (D) `pkg/projection`: carried code without `Version`; the typed client refuses a statement with no
       timestamp before sending, on `Create`, `Append` and `Reconcile` (`TestMutationClientRefusesMissingTimestamp`,
       written first; `projection-mutation`, "The typed client never reads the clock"); `Reconcile` requires
       `Metadata.Source` and sends it as the request's source (`TestMutationClientReconcileRequiresSource`, written
       first; design D15); its repair is tasks 4.1–4.2.
+      Done: ported `contract.go`, `doc.go`, `mutation_client.go`, `mutation_types.go`, `contract_test.go` and
+      `mutation_client_test.go`; the tests build `graph.EntityState` without `Version`, and the whole surface stays
+      (design D6, K1). `canonicalizeTriples`, which `Create`, `Append` and `Reconcile` all call before any request
+      (the exact read included), refuses a statement with no `Timestamp` under metadata with none, and metadata
+      with no `Source` on all three, as `MutationInvalid`, class invalid, not-committed; the clock read is gone.
+      `Reconcile` sends `Metadata.Source` as the request's `source`. The two tests, written first in
+      `mutation_client_refusals_test.go`, fail on the pin's code. The carried tests now give their statements a
+      time and their reconciles a source. Seven `task mutate:check` detections are quoted in the commit body.
 - [ ] 3.10 (D) `pkg/lifecycle`: 7 fixture-client sites; `harness_gate_integration_test.go` on per-package payload
       registration; `Manager.Watch` and `WatchEvents` in the watch shape of design D5; no `Version: 1`
       (design D15); every statement the manager writes carries the constant source `semengine-lifecycle`, which its

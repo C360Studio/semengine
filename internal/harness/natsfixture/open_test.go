@@ -40,7 +40,7 @@ func startedAt(url string) *Fixture { return &Fixture{url: url} }
 
 // Requirement: nats-fixture/Connected value for a package's tests; Scenario: Opening fails
 func TestOpenFailureNamesURLAndRegistersNoClose(t *testing.T) {
-	const url = "nats://127.0.0.1:1"
+	const url = "fixture-url-a"
 	refused := errors.New("connection refused")
 	rec := &recordingTB{TB: t, ctx: t.Context()}
 	var openedWith string
@@ -75,7 +75,7 @@ func TestOpenCloseErrorIsATestError(t *testing.T) {
 	rec := &recordingTB{TB: t, ctx: t.Context()}
 	failed := errors.New("drain failed")
 	var hadDeadline bool
-	got := Open(rec, startedAt("nats://127.0.0.1:2"), func(context.Context, string) (string, func(context.Context) error, error) {
+	got := Open(rec, startedAt("fixture-url-b"), func(context.Context, string) (string, func(context.Context) error, error) {
 		return "value", func(ctx context.Context) error {
 			_, hadDeadline = ctx.Deadline()
 			return failed

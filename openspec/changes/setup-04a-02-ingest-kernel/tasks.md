@@ -88,9 +88,12 @@ posted on this pull request.
       the error, written first and failing on the pin's code); the four scenarios of `lifecycle-suite` "Failed-start
       rollback helper" as tests; a package doc comment stating what a component that calls it must do (#77 inventory
       §10, the five facts); `internal/lifecycleguard` (task 2.7) calls it. Gate: `task test:unit`.
-- [ ] 3.2 (D) What is not ported, checked on the tree (design D1, D1a): no `graph/llm`, `graph/structural`,
+- [x] 3.2 (D) What is not ported, checked on the tree (design D1, D1a): no `graph/llm`, `graph/structural`,
       `model/wire`, `pkg/worker` or `internal/componentadmission` directory; `graph/inference` holds only the slice's
-      files; no `go-openai` in `go.mod`. The `go list ./...` listing is posted. Hold: task 3.8.
+      files; no `go-openai` in `go.mod`. The `go list ./...` listing is posted.
+      Done: checked at `6cbb88e`, after task 3.8. The five directories are absent; `graph/inference` holds the slice
+      and its own `doc.go`; neither `go.mod` nor `go.sum` names `go-openai`. The listing (37 packages) is PR #93
+      comment 6045139429.
 - [ ] 3.3 (D) `graph`, the root (design D16, D15, D9): the data model and wire types only; `EntityState` without
       `Version` (`TestStoredEntityHasNoVersion`, written first); the write-mode rules as pure functions, with
       `TestReplaceOrderedByTimestamp`, `TestConfidenceAndContextNeverOrder` and

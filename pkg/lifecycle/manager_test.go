@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -1585,5 +1586,129 @@ func TestCreate_UnrelatedConcurrentUpdateIsNotADuplicateBirth(t *testing.T) {
 	}
 	if !errors.Is(err, ErrUpdateRetriesExhausted) {
 		t.Errorf("err = %v, want a retryable contention error", err)
+	}
+}
+
+// scriptedExactReader answers the nth exact read (one-based) through read, so a
+// test can make Create's first read and its reread after a revision mismatch
+// disagree.
+type scriptedExactReader struct {
+	reads int
+	read  func(n int) (*graph.ExactEntity, error)
+}
+
+func (r *scriptedExactReader) ReadExactEntity(context.Context, string) (*graph.ExactEntity, error) {
+	r.reads++
+	return r.read(r.reads)
+}
+
+// TestCreateAttachKeepsAFailedReread pins Create's attach path when the reread
+// after a revision mismatch fails: the caller gets the reread's own error, with
+// its chain and class. A failed read has established neither a concurrent
+// attach nor unrelated contention, so reporting either one would be a guess.
+// Re-review 6049038706 (PR #93), HIGH pkg/lifecycle/manager.go:432.
+func TestCreateAttachKeepsAFailedReread(t *testing.T) {
+	const id = "c360.platform1.gcs.lifecycle.mission.attach-failed-read"
+	fatal := errs.ClassifiedCodeDetail(errs.ErrorFatal, "poisoned_entity",
+		map[string]any{"entity_id": id}, errors.New("corrupt canonical entity"))
+	for _, test := range []struct {
+		name  string
+		cause error
+		class errs.ErrorClass
+	}{
+		{"fatal read", fatal, errs.ErrorFatal},
+		{"canceled read", context.Canceled, errs.ErrorTransient},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			mgr, emitter, _ := newTestManager(t)
+			reader := &scriptedExactReader{read: func(n int) (*graph.ExactEntity, error) {
+				if n == 1 {
+					return &graph.ExactEntity{Entity: &graph.EntityState{ID: id}, KVRevision: 1}, nil
+				}
+				return nil, test.cause
+			}}
+			mgr.exactReader = reader
+			emitter.reconcileHook = func(int, *graph.ReconcilePredicatesRequest) error {
+				return errs.ErrRevisionMismatch
+			}
+
+			err := mgr.Create(context.Background(), &fixtureMission{ID: id, PhaseF: "planning"})
+			if reader.reads != 2 {
+				t.Fatalf("exact reads = %d, want 2 (the first read and the reread)", reader.reads)
+			}
+			if !errors.Is(err, test.cause) {
+				t.Fatalf("reread cause lost: got %v (class=%v, contention=%v), want cause %v",
+					err, errs.Classify(err), errors.Is(err, ErrUpdateRetriesExhausted), test.cause)
+			}
+			if errors.Is(err, ErrUpdateRetriesExhausted) || errors.Is(err, ErrAlreadyExists) {
+				t.Fatalf("err = %v, want neither contention nor a duplicate birth from a failed reread", err)
+			}
+			if got := errs.Classify(err); got != test.class {
+				t.Fatalf("class = %v, want the reread's class %v", got, test.class)
+			}
+		})
+	}
+}
+
+// TestCreateAttachRereadDecidesTheOutcome pins the two outcomes a successful
+// reread after a revision mismatch can establish. A phase triple means another
+// writer attached the lifecycle first: a duplicate birth, not a retry signal. No
+// phase triple means the entity moved for some other reason: retryable
+// contention that keeps the mismatch as text, so it stays transient rather
+// than taking the mismatch's invalid class.
+func TestCreateAttachRereadDecidesTheOutcome(t *testing.T) {
+	const id = "c360.platform1.gcs.lifecycle.mission.attach-reread"
+	const mismatchText = "expected revision 1, found 2"
+	for _, test := range []struct {
+		name       string
+		reread     []message.Triple
+		want       error
+		notWant    error
+		wantInText string
+	}{
+		{
+			name:    "phase present",
+			reread:  []message.Triple{{Subject: id, Predicate: "mission.lifecycle.phase", Object: "planning"}},
+			want:    ErrAlreadyExists,
+			notWant: ErrUpdateRetriesExhausted,
+		},
+		{
+			name:       "no phase",
+			reread:     []message.Triple{{Subject: id, Predicate: "mission.identity.owner-org-id", Object: "acme"}},
+			want:       ErrUpdateRetriesExhausted,
+			notWant:    ErrAlreadyExists,
+			wantInText: mismatchText,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			mgr, emitter, _ := newTestManager(t)
+			reader := &scriptedExactReader{read: func(n int) (*graph.ExactEntity, error) {
+				if n == 1 {
+					return &graph.ExactEntity{Entity: &graph.EntityState{ID: id}, KVRevision: 1}, nil
+				}
+				return &graph.ExactEntity{Entity: &graph.EntityState{ID: id, Triples: test.reread}, KVRevision: 2}, nil
+			}}
+			mgr.exactReader = reader
+			emitter.reconcileHook = func(int, *graph.ReconcilePredicatesRequest) error {
+				return fmt.Errorf("%w: %s", errs.ErrRevisionMismatch, mismatchText)
+			}
+
+			err := mgr.Create(context.Background(), &fixtureMission{ID: id, PhaseF: "planning"})
+			if reader.reads != 2 {
+				t.Fatalf("exact reads = %d, want 2 (the first read and the reread)", reader.reads)
+			}
+			if !errors.Is(err, test.want) || errors.Is(err, test.notWant) {
+				t.Fatalf("err = %v, want %v and not %v", err, test.want, test.notWant)
+			}
+			if errors.Is(err, errs.ErrRevisionMismatch) {
+				t.Fatalf("err = %v matches the revision mismatch, whose invalid class a retry policy reads as final", err)
+			}
+			if test.wantInText != "" && !strings.Contains(err.Error(), test.wantInText) {
+				t.Fatalf("err = %q, want the mismatch detail %q in its text", err, test.wantInText)
+			}
+			if test.want == ErrUpdateRetriesExhausted && errs.Classify(err) != errs.ErrorTransient {
+				t.Fatalf("class = %v, want transient for retryable contention", errs.Classify(err))
+			}
+		})
 	}
 }

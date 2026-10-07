@@ -380,8 +380,8 @@ func (m *Manager) createWithRegistration(ctx context.Context, reg *registration,
 	//     (atomic create-or-fail; ErrAlreadyExists on race)
 	//   - entity present without phase triple → attach lifecycle via
 	//     entity.reconcile with CAS-on-condition (ExpectedRevision
-	//     = current rev; concurrent attach fails with revision mismatch
-	//     which we surface as ErrAlreadyExists)
+	//     = current rev; a revision mismatch is decided by a reread
+	//     below: ErrAlreadyExists only when it shows a phase triple)
 	//
 	// Per ADR-049 reviewer B2 this split closes the silent concurrent-
 	// create race that ExpectedRevision=0 had on the prior code.
@@ -428,16 +428,23 @@ func (m *Manager) createWithRegistration(ctx context.Context, reg *registration,
 			// that a lifecycle birth happened. Any writer merging an unrelated
 			// predicate produces one, and reporting that as "already
 			// lifecycle-managed" is a false answer on a public route. Re-read
-			// and let the phase triple decide.
+			// and let the phase triple decide. A failed reread decides nothing,
+			// so its own error goes back with its chain and class.
 			latest, _, reErr := m.getEntity(ctx, entityID)
-			if reErr == nil && latest != nil && hasTriple(latest.Triples, entityID, reg.workflow.PhasePredicate) {
+			if reErr != nil {
+				return createOutcome{}, fmt.Errorf("lifecycle: create workflow=%q entity_id=%q: reread after revision mismatch: %w",
+					reg.workflow.Name, entityID, reErr)
+			}
+			if hasTriple(latest.Triples, entityID, reg.workflow.PhasePredicate) {
 				return createOutcome{}, fmt.Errorf("%w: workflow=%q entity_id=%q (concurrent attach)",
 					ErrAlreadyExists, reg.workflow.Name, entityID)
 			}
 			// No phase triple: the entity moved for an unrelated reason. Report
-			// the contention as retryable rather than as a duplicate birth.
-			return createOutcome{}, fmt.Errorf("%w: workflow=%q entity_id=%q: entity changed during lifecycle attach",
-				ErrUpdateRetriesExhausted, reg.workflow.Name, entityID)
+			// the contention as retryable rather than as a duplicate birth. The
+			// mismatch stays text: wrapping it would give a retry signal its
+			// invalid class.
+			return createOutcome{}, fmt.Errorf("%w: workflow=%q entity_id=%q: entity changed during lifecycle attach (last: %v)",
+				ErrUpdateRetriesExhausted, reg.workflow.Name, entityID, err)
 		}
 		return createOutcome{}, err
 	}

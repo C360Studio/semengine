@@ -135,16 +135,17 @@ references` check, with the tests that read only it; READMEs are read claim by c
 ## 5. Ledger, gates and boundaries
 
 - [ ] 5.1 (W) Rows at the full pin SHA, written on top of #92's ledger: 16 package rows (15 whole, and `graph/llm`
-      `adapt` to `client.go`, naming the files left for change 7) and three `defer-exclude` rows (`pkg/worker`, ruling
-      E; `internal/componentadmission`, ruling C; `model/wire`, change 7, design D1a). Each package row has its verdict
-      from design D1, its adapt items (including #69's renames of design D9, with the consumers who edit them), its
-      `proving_tests` and its `known_risks` (graph-ingest: #75's shared gauges; `graph/inference`: unit coverage 47.9%
-      (674/1406) at the pin after the drop, the gate and the tests owed by change 7, the tracking issue of task 6.5;
-      `component`: a consumer can call the three registry methods directly, review only). The
-      `internal/lifecyclecleanup` package row is `adapt` to `pkg/lifecyclecleanup` (public home, nil rollback refused),
-      naming the harness copy; the file row's `known_risks` names the production home and why the copy stays (design
-      D7.4); Q13's row cites PR #1437 head `0ea823a6`; #29 and #33 rows name `class:port-refactor`. Gate: `task
-      ledger:check`. Hold: task 1.4.
+      `adapt` to `client.go`, naming the files left for change 4 and change 7) and three `defer-exclude` rows
+      (`pkg/worker`, ruling E; `internal/componentadmission`, ruling C; `model/wire`, change 7, design D1a). Each
+      package row has its verdict from design D1, its adapt items (including #69's renames of design D9, with the
+      consumers who edit them), its `proving_tests` (graph-ingest's includes
+      `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop`, the `lifecycle-suite` exception's proof) and its
+      `known_risks` (graph-ingest: #75's shared gauges; `graph/inference`: unit coverage 47.9% (674/1406) at the pin
+      after the drop, the gate and the tests owed by change 7, the tracking issue of task 6.5; `component`: a consumer
+      can call the three registry methods directly, review only). The `internal/lifecyclecleanup` package row is `adapt`
+      to `pkg/lifecyclecleanup` (public home, nil rollback refused), naming the harness copy; the file row's
+      `known_risks` names the production home and why the copy stays (design D7.4); Q13's row cites PR #1437 head
+      `0ea823a6`; #29 and #33 rows name `class:port-refactor`. Gate: `task ledger:check`. Hold: task 1.4.
 - [ ] 5.2 (D) `scripts/cover-check.sh` gains the nine targets of design D11 (`graph/inference` is not one, ruling F);
       the tests design D11 names for `internal/graphmutation`, `pkg/projection`, `component` and `pkg/lifecycle` are
       added; each target's figure is posted. Ticked only on a green `task cover:check`. Hold: task 1.4.
@@ -164,14 +165,18 @@ references` check, with the tests that read only it; READMEs are read claim by c
       only; ruling C), and a ported component whose failed `Start` cleanup fails reporting both errors and keeping
       what is left for a later `Stop` (`lifecycle-suite`, "Failed start whose own cleanup fails"; each component's own
       named test; that a newly ported component has one is review only). Gate: `task docs:check`. Hold: task 1.4.
-- [ ] 6.2 (W) `docs/repository-map.md` lists the ported packages and the two new ones; READMEs carried with their
+- [ ] 6.2 (W) `docs/repository-map.md` lists the ported packages and the two new ones, and
+      `docs/tier1-cross-check.md:68` records the change-2 dispositions of `internal/componentadmission` (dropped, ruling
+      C) and `internal/lifecyclecleanup` (public as `pkg/lifecyclecleanup`, #77 ruling); READMEs carried with their
       claims checked (tasks 3.x). Hold: task 1.4.
 - [ ] 6.3 (W) Tracking issues filed and linked here: the adoption sweep of design D3 (the `natsfixture` helper), the
       adoption sweep of design D13 (the guard), the `component.Discoverable.ConfigSchema` question (design D6, K4).
       Hold: task 1.4.
 - [ ] 6.4 (W) #77 gets a comment naming the public helper (`pkg/lifecyclecleanup.RollbackFailedStart`), the
       `lifecycle-suite` requirement and graph-ingest's test that carry its ruling (design D7), for SemTeams' proving
-      case. Hold: task 1.4.
+      case. The comment names the one change to a pin behavior, a nil rollback now refused with an error (design D7.2),
+      and the inverted test `TestRollbackFailedStartNilRollback`, so SemTeams can review it as #77's body asks. Hold:
+      task 1.4.
 - [ ] 6.5 (W) A tracking issue filed and linked here for `graph/inference`'s tests owed by change 7 (ruling F): the
       80% target in `scripts/cover-check.sh`, the 451 statements short at the pin after the drop (design D11), and, for
       each of the 37 configuration fields still read, a test that fails when the field is ignored. Hold: task 1.4.

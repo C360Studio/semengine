@@ -114,7 +114,10 @@ what `graph/inference` reads from it.** P-9 (`inventory.md` §8) measured that a
 - `Client`, `ChatRequest` and `ChatResponse` are the whole of `graph/llm/client.go` (65 lines; its one import is
   `context`). That file is ported; the other seven (`config.go`, `content_fetcher.go`, `doc.go`, `openai_client.go`,
   `prompt_data.go`, `prompt_types.go`, `prompts.go`), the two test files that test the OpenAI client, and the README
-  stay behind until change 7.
+  stay behind. Their next reader is change 4, not change 7: `graph/clustering` (change 4) reads `llm.EntityParts`,
+  `CommunityPrompt`, `ContentFetcher`, `EntityContent`, `DomainGroup`, `SystemType` and `CommunitySummaryData`
+  (`summarizer.go`) and `SummarizeCommunity` (`enhancement_worker.go`). So `EntityParts`, and with it the
+  deployment-authority question ruling B avoided here, returns in change 4, and that change's design answers it.
 - `ReviewConfig.LLM` (the `review.llm` key) is dropped, so a configuration that sets it is refused by
   `RejectUnknownKeys` (D6). P-9 found no reader of it anywhere in the pin, graph-clustering included: the only
   `\.LLM` hit in a non-test file is the doc-comment example `graph/inference/doc.go:51`. graph-clustering builds its
@@ -138,10 +141,11 @@ holds for `go-openai`, whose only importer in the closure is `graph/llm`.
 
 What this changes from foundation D8: change 2 carries no dormant package; no row says "dormant until #32"; `go.mod`
 does not gain `go-openai`, so `task vuln` does not scan it for changes 2–6; foundation D8's "excluded from coverage
-targets" no longer applies (`graph/llm` after the cut declares one interface and two structs and has no statements,
-so it has no coverage figure and no target, D11). What it costs: change 7 ports the rest of `graph/llm` and
-`model/wire`, if the seam keeps them, instead of deleting copies; that cut was made at the pin, the "blind" cut #8 Q4
-was written to avoid, which the owner accepted in ruling B.
+targets" no longer applies (`graph/llm` after the cut declares one interface and two structs and has no statements, so
+it has no coverage figure and no target, D11). What it costs: change 4 ports the parts of `graph/llm` that
+`graph/clustering` reads, change 7 ports the rest of `graph/llm` and `model/wire` if the seam keeps them, instead of
+deleting copies; that cut was made at the pin, the "blind" cut #8 Q4 was written to avoid, which the owner accepted in
+ruling B.
 
 ### D2. Test files that import packages outside the set
 

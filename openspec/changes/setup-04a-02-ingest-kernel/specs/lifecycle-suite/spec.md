@@ -50,17 +50,19 @@ governed by "Failed start whose own cleanup fails" and is not judged by this che
 ### Requirement: Failed start whose own cleanup fails
 
 A component this module ports MAY return from a failed Start still holding what its own cleanup could not release,
-provided that Start's error reports both the start failure and the cleanup failure, and that the component keeps
-what is left on record so that a later Stop tries again to release it. A Stop that then completes the cleanup SHALL
-return nil and leave nothing unresolved. Each such component SHALL prove this branch with its own test, by name; the
-shared failed-start check of "Portable floor" is not run on it. This requirement binds the components this module
-ports; a component outside this module is proven by its own tests (#77 ruling, comment 6035317931).
+provided that Start's error reports both the start failure and the cleanup failure, and that the component keeps what is
+left on record so that a later Stop tries again to release it. A Stop that then completes the cleanup SHALL return nil
+and leave nothing unresolved. Each such component SHALL prove this branch with its own test, named in that component's
+admission-ledger row under `proving_tests`; the shared failed-start check of "Portable floor" is not run on it. This
+requirement binds the components this module ports; a component outside this module is proven by its own tests (#77
+ruling, comment 6035317931).
 
 #### Scenario: graph-ingest's cleanup fails after a failed start
 
 - **WHEN** graph-ingest's Start fails after acquiring resources and the cleanup it runs then also fails
 - **THEN** Start returns an error that reports both failures, the adapter lists what is still held, and a following
-  Stop that can complete the cleanup returns nil and leaves nothing listed
+  Stop that can complete the cleanup returns nil and leaves nothing listed, as
+  `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop` proves
 
 #### Scenario: Cleanup succeeds after a failed start
 
@@ -80,6 +82,13 @@ library.
 
 - **WHEN** the parent context is already cancelled and carries a value, and the rollback reads its own context
 - **THEN** the rollback sees a live context with a deadline and the parent's value, and its nil result makes the
+  helper return nil
+
+#### Scenario: Expired parent
+
+- **WHEN** the parent context's deadline has already passed and it carries a value, and the rollback reads its own
+  context
+- **THEN** the rollback sees a live context with a fresh deadline and the parent's value, and its nil result makes the
   helper return nil
 
 #### Scenario: Rollback outlives the budget

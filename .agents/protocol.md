@@ -22,8 +22,9 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
   reviewed with the code. Every task can be ticked in or before the archive commit. No task may assert a post-merge
   fact ("CI green", "merge-ready") or wait on a step that follows the archive (the check of the archive, undraft, the
   final CI run, the merge): such a task strands the change, and those steps are recorded on the PR. A hold is written
-  on the unticked task it stops, as `Hold:` followed by what it waits for (an issue or PR number, or the owner's
-  ruling). The queue reads unticked task lines only: a hold in a heading or a paragraph does not show.
+  in the unticked task it stops, on any of its lines, as `Hold:` followed by what it waits for (an issue or PR number,
+  or the owner's ruling). The queue reads every line of an unticked task and prints each hold from `Hold:` on. A hold
+  in a heading or a paragraph outside every task does not show, and `task spec:check` fails on it.
 - **Why:** an ADR, or the owner's ruling comment on the issue. Owner rulings of 2026-09-30 on the plan are recorded
   on PR #1.
 

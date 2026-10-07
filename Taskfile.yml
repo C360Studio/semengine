@@ -108,9 +108,10 @@ tasks:
       - scripts/cover-check.sh
 
   spec:check:
-    desc: Validate all OpenSpec changes and specs strictly
+    desc: Validate all OpenSpec changes and specs strictly, and fail on a hold written outside every task
     cmds:
       - npx --no-install openspec validate --all --strict --no-interactive
+      - scripts/openspec-queue.sh --check
 
   spec:queue:
     desc: Show each in-flight OpenSpec change with its holds and blocking conditions

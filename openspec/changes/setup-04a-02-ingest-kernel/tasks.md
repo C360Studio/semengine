@@ -51,7 +51,7 @@ heading>` (#81's form). No task asserts a fact that exists only after merge.
       count. Gate: `task test:unit`.
 - [x] 2.6 (D) The `natsfixture` helper of design D3 (`nats-fixture`, "Connected value for a package's tests"), its three
       scenarios as tests, written first. Gate: `task test:integration`.
-- [ ] 2.7 (D) `internal/lifecycleguard` (design D13): `lifecycletest.Run` over a test owner built only from the guard,
+- [x] 2.7 (D) `internal/lifecycleguard` (design D13): `lifecycletest.Run` over a test owner built only from the guard,
       with a failing factory, written first. Gate: `task test:unit`.
 
 ## 3. Port, per package in design D1's order
@@ -62,7 +62,7 @@ imports of design D2); the package's dead surface (design D6, appendix of `inven
 references` check, with the tests that read only it; READMEs are read claim by claim; `task verify` passes on the push.
 
 - [ ] 3.1 (D) `types`, `storage`, `model` (carry).
-- [ ] 3.1a (D) `internal/lifecyclecleanup` → `pkg/lifecyclecleanup` (design D7): `RollbackFailedStart` keeps its name
+- [x] 3.1a (D) `internal/lifecyclecleanup` → `pkg/lifecyclecleanup` (design D7): `RollbackFailedStart` keeps its name
       and its five-second budget; a nil rollback is refused (`TestRollbackFailedStartNilRollback` inverted to expect
       the error, written first and failing on the pin's code); the four scenarios of `lifecycle-suite` "Failed-start
       rollback helper" as tests; a package doc comment stating what a component that calls it must do (#77 inventory

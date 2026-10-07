@@ -416,6 +416,65 @@ func TestWatcher_UndecodableValueDoesNotRefreshFreshness(t *testing.T) {
 	}
 }
 
+// TestWatcher_UndecodableValueRevokesFreshness: an undecodable value is the key's
+// CURRENT status, and nothing can say what it reports. The last good envelope must stop
+// reading as fresh the moment the garbage lands, not three heartbeats later, or the gate
+// keeps admitting reads on a status the producer has already replaced. That envelope is
+// kept for diagnostics only, and the next good update restores freshness.
+//
+// The test above ages the good value out of its window before the garbage arrives, so
+// it cannot see this: here the garbage lands while the good value is still fresh.
+func TestWatcher_UndecodableValueRevokesFreshness(t *testing.T) {
+	h := newHarness(t)
+	healthy := graph.IndexStatusResponse{
+		Ready: true, State: graph.IndexStateReady, BootstrapComplete: true,
+		IndexedRevision: 500, TargetRevision: 500,
+	}
+	good := fakeEntry{key: KeyGraphIndex, value: statusJSON(t, healthy), rev: 1, op: jetstream.KeyValuePut}
+	gate := func(r Reading) (bool, DeferReason) {
+		return EvaluateReadinessGate(StatusReading{Status: r.Status, Fresh: r.Fresh})
+	}
+
+	h.deliver(good)
+	// Control: the healthy envelope admits reads, so the refusal below is the garbage's.
+	if proceed, reason := gate(h.watcher.Read()); !proceed {
+		t.Fatalf("gate on the healthy envelope = (false, %q), want proceed", reason)
+	}
+
+	h.deliver(fakeEntry{key: KeyGraphIndex, value: []byte("{not json"), rev: 2, op: jetstream.KeyValuePut})
+
+	r := h.watcher.Read()
+	if proceed, reason := gate(r); proceed || reason != DeferStatusUnknown {
+		t.Fatalf("gate after an undecodable update = (%v, %q), want (false, %q); Known=%v Fresh=%v Err=%v",
+			proceed, reason, DeferStatusUnknown, r.Known, r.Fresh, r.Err)
+	}
+	if !r.Known {
+		t.Error("Known = false; an envelope did arrive, so the defer log must not read as no producer seen")
+	}
+	// Diagnostics: Err carries the decode failure, and Status and Raw are still the last
+	// good envelope, so the defer log can say what the producer last reported.
+	var syntaxErr *json.SyntaxError
+	if !errors.As(r.Err, &syntaxErr) {
+		t.Errorf("Err = %v, want the JSON decode failure", r.Err)
+	}
+	if !reflect.DeepEqual(r.Status, healthy) || string(r.Raw) != string(good.value) {
+		t.Errorf("held envelope = %+v (raw %q), want the last good one %+v (raw %q)",
+			r.Status, r.Raw, healthy, good.value)
+	}
+
+	// Recovery: the next good update is the current status again.
+	good.rev = 3
+	h.deliver(good)
+	r = h.watcher.Read()
+	if proceed, reason := gate(r); !proceed {
+		t.Fatalf("gate after a good update following garbage = (false, %q), want proceed; Known=%v Fresh=%v Err=%v",
+			reason, r.Known, r.Fresh, r.Err)
+	}
+	if r.Err != nil {
+		t.Errorf("Err = %v after a good update, want nil", r.Err)
+	}
+}
+
 // TestWatcher_RebindsAfterWatchLoss proves the feed recovers on its own: when the
 // watch closes (connection loss, server restart), the watcher re-opens and the next
 // delivery makes the consumer fresh again — the recovery path that keeps a transient

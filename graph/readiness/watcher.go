@@ -117,12 +117,12 @@ func FreshnessWindow(heartbeat time.Duration) time.Duration {
 // needed to attribute a defer without correlating log lines.
 //
 // Status is authoritative ONLY when Fresh. When Fresh is false the envelope is
-// last-known-and-aged (or the zero value if none ever arrived) and is carried for
-// DIAGNOSTICS only — a caller must fail closed, never read the stale bits as index
-// state. That distinction is the whole point: gh#590 cost three investigation cycles
-// because a transport failure wore not-ready's log line.
+// last-known-and-aged, or no longer the key's current value (or the zero value if none
+// ever arrived), and is carried for DIAGNOSTICS only — a caller must fail closed, never
+// read the stale bits as index state. That distinction is the whole point: gh#590 cost
+// three investigation cycles because a transport failure wore not-ready's log line.
 type Reading struct {
-	// Status is the last envelope received on the key.
+	// Status is the last envelope decoded from the key.
 	Status graph.IndexStatusResponse
 	// Raw is the untouched wire value the Status field was decoded from, for a caller
 	// that must decode into its OWN field-identical struct (pkg/fusion.IndexStatus).
@@ -131,14 +131,16 @@ type Reading struct {
 	// IndexedRevision/Lag once before and read downstream as a false caught-up. Nil
 	// when !Known.
 	Raw []byte
-	// Fresh reports that the last update arrived within FreshnessMultiplier
-	// heartbeats. False means UNKNOWN — fail closed.
+	// Fresh reports that the held envelope arrived within FreshnessMultiplier
+	// heartbeats, was not already older than that when it arrived, and is still the
+	// key's current value (no undecodable value has replaced it). False means
+	// UNKNOWN — fail closed.
 	Fresh bool
 	// Known reports that an envelope has been received at least once. It separates
 	// "never saw the producer" (absent bucket/key, standalone deployment) from "the
 	// feed went quiet", which are different operator problems.
 	Known bool
-	// Age is how long ago the last update arrived, consumer-local. Zero when
+	// Age is how long ago the held envelope arrived, consumer-local. Zero when
 	// !Known.
 	Age time.Duration
 	// Err is the last bucket/watch/decode failure, if any, for the structured defer
@@ -165,11 +167,13 @@ type Watcher struct {
 	raw         []byte
 	lastArrival time.Time
 	known       bool
-	// staleOnArrival marks a held envelope that was ALREADY older than the freshness
-	// window when it was delivered. See apply for why this one commit-time comparison
-	// exists.
-	staleOnArrival bool
-	lastErr        error
+	// revoked marks a held envelope Read must never report fresh, whatever its
+	// arrival age: one that was ALREADY older than the freshness window when it was
+	// delivered (see apply for why this one commit-time comparison exists), or one an
+	// undecodable value has since replaced on the key. Each decoded update sets it
+	// afresh.
+	revoked bool
+	lastErr error
 
 	// first is closed once an envelope has been decoded and held, so a consumer
 	// binding lazily can wait for its first answer instead of failing closed on a
@@ -294,7 +298,7 @@ func (w *Watcher) Read() Reading {
 	r.Age = w.now().Sub(w.lastArrival)
 	// A negative age (clock stepped backwards) is still within the window: the
 	// update did arrive, and the comparison is entirely local.
-	r.Fresh = !w.staleOnArrival && r.Age <= w.freshnessWindow()
+	r.Fresh = !w.revoked && r.Age <= w.freshnessWindow()
 	return r
 }
 
@@ -364,9 +368,9 @@ func (w *Watcher) watchOnce(ctx context.Context) error {
 }
 
 // apply folds one delivered entry into held state and stamps the CONSUMER-LOCAL
-// arrival time. A tombstone or an undecodable value clears knownness instead of
-// refreshing it: neither is evidence the producer is alive and healthy, and letting
-// either stamp an arrival time would make garbage read as fresh.
+// arrival time. A tombstone clears knownness and an undecodable value revokes the held
+// envelope's freshness. Neither stamps an arrival time: neither is evidence the
+// producer is alive and healthy, and stamping one would make garbage read as fresh.
 func (w *Watcher) apply(entry jetstream.KeyValueEntry) {
 	defer w.signalApplied()
 
@@ -374,7 +378,7 @@ func (w *Watcher) apply(entry jetstream.KeyValueEntry) {
 		w.mu.Lock()
 		w.known = false
 		w.raw = nil
-		w.staleOnArrival = false
+		w.revoked = false
 		w.lastErr = fmt.Errorf("readiness: status key %s/%s deleted", w.bucket, w.key)
 		w.mu.Unlock()
 		return
@@ -385,7 +389,14 @@ func (w *Watcher) apply(entry jetstream.KeyValueEntry) {
 	// to KV, not a published message payload.
 	var status graph.IndexStatusResponse
 	if err := json.Unmarshal(entry.Value(), &status); err != nil {
-		w.recordErr(fmt.Errorf("readiness: decode %s/%s: %w", w.bucket, w.key, err))
+		// The key's current value is now one nothing can read, so the held envelope no
+		// longer describes the producer's status: revoke its freshness at once rather
+		// than let it serve the gate for the rest of its window. It stays held, with its
+		// arrival stamp, for diagnostics only; the next decoded update restores freshness.
+		w.mu.Lock()
+		w.revoked = true
+		w.lastErr = fmt.Errorf("readiness: decode %s/%s: %w", w.bucket, w.key, err)
+		w.mu.Unlock()
 		w.logger.Warn("readiness status undecodable",
 			slog.String("bucket", w.bucket), slog.String("key", w.key), slog.Any("error", err))
 		return
@@ -426,7 +437,7 @@ func (w *Watcher) apply(entry jetstream.KeyValueEntry) {
 	w.raw = entry.Value()
 	w.lastArrival = arrival
 	w.known = true
-	w.staleOnArrival = staleOnArrival
+	w.revoked = staleOnArrival
 	w.lastErr = staleErr
 	w.mu.Unlock()
 

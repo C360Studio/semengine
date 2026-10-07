@@ -31,9 +31,11 @@ starts, `task merge:check -- 113` and the merge are recorded on this pull reques
 - [x] 2.2 (D) `TestSpecQueueFirstLineCaveats`: the nine cases of SemStreams `8b99efe9`
       `scripts/openspec-queue_fixture_test.sh:79-113`, with their texts word for word, as the delta's second
       requirement states them. They pass on the unchanged script. Gate: `task test:unit`.
-- [x] 2.3 (D) Written first: `TestSpecQueueCheck` (cases C1-C7) and `TestSpecCheckWiring`, as
-      `design.md`, "Tests", says. Run against the unchanged script and `Taskfile.yml`, every case fails. That output
-      is recorded on this pull request. Gate: the recorded failing run.
+- [x] 2.3 (D) Written first: `TestSpecQueueCheck` (cases C1-C7) and `TestSpecCheckWiring`, as `design.md`,
+      "Tests", says. Run against the unchanged script and `Taskfile.yml`, every `TestSpecQueueCheck` case fails, and
+      `TestSpecCheckWiring` fails on its subtest that reads the repository's `Taskfile.yml`. Its subtests that plant
+      their own Taskfile text pass, because they test the checker, not the repository file. That output is recorded
+      on this pull request. Gate: the recorded failing run.
 - [x] 2.4 (D) `scripts/openspec-queue.sh` reads the whole block of each open task and prints holds
       as `design.md`, D1-D5, says, and gains `--check` as D9 says, using only what the script already runs. Its header
       comment says so. `Taskfile.yml`'s `spec:check` runs the check as D10 says. The four tests pass. Committed with
@@ -54,9 +56,9 @@ starts, `task merge:check -- 113` and the merge are recorded on this pull reques
 
 ## 4. Review
 
-- [ ] 4.1 Codex's implementation review of this pull request, recorded on it, naming the commit it read. Each
+- [x] 4.1 Codex's implementation review of this pull request, recorded on it, naming the commit it read. Each
       finding is fixed or answered before 5.1.
-- [ ] 4.2 The description has one line `implemented-by:` that names `claude` and one line `reviewed-by:` that names
+- [x] 4.2 The description has one line `implemented-by:` that names `claude` and one line `reviewed-by:` that names
       `codex`, written once Codex's newest review record approves.
 
 ## 5. In the archive commit

@@ -10,10 +10,10 @@ starts, `task merge:check -- 112` and the merge are recorded on this pull reques
 
 ## 1. Design
 
-- [ ] 1.1 The independent review of `inventory.md`: `INVENTORY PASS`, recorded on this pull request with the
-      reviewed file's checksum.
-- [ ] 1.2 The independent pre-owner review of `design.md`, `proposal.md`, this file and the `merge-gate` delta:
-      `DESIGN REVIEW PASS`, recorded on this pull request.
+- [x] 1.1 The independent review of `inventory.md`: `INVENTORY PASS`, recorded on this pull request with the
+      reviewed file's checksum (comment 6036743505).
+- [x] 1.2 The independent pre-owner review of `design.md`, `proposal.md`, this file and the `merge-gate` delta:
+      `DESIGN REVIEW PASS`, recorded on this pull request (comment 6036743505).
 - [x] 1.3 The owner's rulings on #61 (comment 6036642422, 2026-10-07): the check holds the exact label `ubuntu-24.04`
       on every job, and GitHub's builds within 24.04 are an accepted cost. They are recorded in `design.md`, "Owner's
       rulings", and leave no open owner question.

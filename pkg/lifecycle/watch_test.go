@@ -3,10 +3,12 @@ package lifecycle
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
 
+	"github.com/c360studio/semengine/graph"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -106,6 +108,53 @@ func TestWatchReturnsWhenItsContextEnds(t *testing.T) {
 				defer cancel()
 				if err := watch.run(mgr, ctx, cancel); !errors.Is(err, context.Canceled) {
 					t.Fatalf("%s returned %v, want context.Canceled", watch.name, err)
+				}
+				if !watcher.stopped.Load() {
+					t.Fatalf("%s returned with its subscription still open", watch.name)
+				}
+			})
+		})
+	}
+}
+
+// TestWatchReturnsProjectionFailure: a value that decodes but cannot be projected into the
+// workflow's type (its phase is an object, not a string) ends Watch and WatchEvents with an error
+// naming the entity and its revision, and nothing after it is delivered. Skipping the entry would
+// leave the caller's view silently behind the graph.
+func TestWatchReturnsProjectionFailure(t *testing.T) {
+	for _, watch := range []struct {
+		name string
+		run  func(*Manager, func() error) error
+	}{
+		{"Watch", func(mgr *Manager, call func() error) error {
+			return mgr.Watch(context.Background(), "fixture", func(Participant) error { return call() })
+		}},
+		{"WatchEvents", func(mgr *Manager, call func() error) error {
+			return mgr.WatchEvents(context.Background(), "fixture", func(Event) error { return call() })
+		}},
+	} {
+		t.Run(watch.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				mgr, watcher, _ := newWatchedManager(t)
+				const id = "acme.ops.gcs.lifecycle.mission.unprojectable"
+				state := validLifecycleState(id)
+				state.Triples[0].Object = map[string]any{"unexpected": true}
+				data, err := graph.MarshalEntityState(state)
+				if err != nil {
+					t.Fatalf("MarshalEntityState: %v", err)
+				}
+				watcher.updates <- &fakeKVEntry{key: id, value: data, revision: 7}
+				watcher.updates <- validLifecycleWatchEntry(t, "acme.ops.gcs.lifecycle.mission.later", 8)
+				calls := 0
+				err = watch.run(mgr, func() error { calls++; return errStopWatch })
+				if err == nil || errors.Is(err, errStopWatch) {
+					t.Fatalf("%s returned %v, want the unprojectable entry's error", watch.name, err)
+				}
+				if calls != 0 {
+					t.Errorf("%s delivered %d entries after the unprojectable one", watch.name, calls)
+				}
+				if msg := err.Error(); !strings.Contains(msg, `"`+id+`"`) || !strings.Contains(msg, "revision 7") {
+					t.Errorf("%s error %q does not name entity %s at revision 7", watch.name, msg, id)
 				}
 				if !watcher.stopped.Load() {
 					t.Fatalf("%s returned with its subscription still open", watch.name)

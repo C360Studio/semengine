@@ -140,7 +140,8 @@ type Event struct {
 // onParticipant runs on the caller's goroutine, and Watch returns once the
 // watch has ended, with nothing it started left running: ctx.Err() when ctx
 // ends, onParticipant's error when it returns one, and an error when the
-// subscription closes or delivers a value it cannot decode. A nil ctx or
+// subscription closes or delivers a value it cannot decode or project into the
+// workflow's type; that error names the entity and its revision. A nil ctx or
 // onParticipant is refused before any subscription opens.
 func (m *Manager) Watch(ctx context.Context, workflow string, onParticipant func(Participant) error) error {
 	if ctx == nil {
@@ -216,7 +217,7 @@ func (m *Manager) startWatch(ctx context.Context, workflow, caller string) (*reg
 // onUpsert for each matching projected write and onDelete for each matching
 // reclaim, and returns when the watch ends: ctx.Err() on ctx.Done, a
 // callback's error, a transient index-not-ready error when the watcher closes
-// while ctx is live, or the decode error of an entry it cannot read. It stops
+// while ctx is live, or the error of an entry it cannot decode or project. It stops
 // the watcher before returning. onDelete may be nil (Watch's upsert-only
 // surface). Shared by Watch and WatchEvents so the projection/dispatch logic
 // is not duplicated.
@@ -280,7 +281,9 @@ type lifecycleWatchDelivery struct {
 }
 
 // prepareWatchEntry decodes and projects one entry from a workflow-pattern
-// watch. Validation belongs to this subscription's matching read path.
+// watch. Validation belongs to this subscription's matching read path. An entry
+// outside the workflow's pattern, or without its phase triple, is not kept; an
+// entry it cannot decode or project is an error, never a skip.
 func (m *Manager) prepareWatchEntry(
 	reg *registration,
 	entry jetstream.KeyValueEntry,
@@ -299,9 +302,12 @@ func (m *Manager) prepareWatchEntry(
 	if !matchPattern(reg.workflow.EntityIDPattern, entry.Key()) {
 		return lifecycleWatchDelivery{}, false, nil
 	}
-	participant, ok := m.projectWatchState(reg, entry.Key(), &state)
-	if !ok {
-		return lifecycleWatchDelivery{}, false, nil
+	if !hasTriple(state.Triples, entry.Key(), reg.workflow.PhasePredicate) {
+		return lifecycleWatchDelivery{}, false, nil // not lifecycle-managed yet
+	}
+	participant := reflect.New(reg.meta.GoType).Interface().(Participant)
+	if err := projectTriples(reg.meta, entry.Key(), state.Triples, participant); err != nil {
+		return lifecycleWatchDelivery{}, false, err
 	}
 	return lifecycleWatchDelivery{entityID: entry.Key(), participant: participant}, true, nil
 }
@@ -318,29 +324,6 @@ func (m *Manager) deliverWatchEntry(
 		return onDelete(delivery.entityID)
 	}
 	return onUpsert(delivery.entityID, delivery.participant)
-}
-
-// projectWatchState phase-gates and projects a decoded upsert KV entry into a
-// fresh Participant of the workflow's Schema type. Returns
-// (participant, true) on a matching lifecycle-managed write, or (nil, false)
-// when the entry should be skipped — an unmarshal failure, a missing phase
-// triple (not yet lifecycle-managed), or a projection failure (the two error
-// cases are logged). The caller has already pattern-matched the key and
-// confirmed the op is an upsert.
-func (m *Manager) projectWatchState(reg *registration, entityID string, state *graph.EntityState) (Participant, bool) {
-	if !hasTriple(state.Triples, entityID, reg.workflow.PhasePredicate) {
-		return nil, false
-	}
-	target := reflect.New(reg.meta.GoType).Interface().(Participant)
-	if err := projectTriples(reg.meta, entityID, state.Triples, target); err != nil {
-		m.logger.Warn("lifecycle: watch projection failed; skipping entry",
-			slog.String("workflow", reg.workflow.Name),
-			slog.String("key", entityID),
-			slog.String("error", err.Error()),
-		)
-		return nil, false
-	}
-	return target, true
 }
 
 // History returns the bounded operator transition window recorded in the

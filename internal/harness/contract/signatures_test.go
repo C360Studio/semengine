@@ -606,6 +606,43 @@ func TestNoDeploymentAuthorityNamesSensitivity(t *testing.T) {
 	}
 }
 
+// A member declared on a generic type is the module's own declaration wherever an instantiation
+// promotes it, so it is reported once, at that declaration, and not again under the type that
+// embeds the instance (Codex F5, PR #73 comment 6019262509; issue #87). An instantiation has its
+// own copy of every method and interface method, and of each field whose type uses the type
+// parameter.
+func TestNoDeploymentAuthorityNamesGenericPromotion(t *testing.T) {
+	root, _ := writeTree(t, map[string]string{
+		"go.mod": "module example.com/fixture\n\ngo 1.26\n",
+		"pub/generic.go": `package pub
+
+type Base[T any] struct{}
+
+func (Base[T]) GlobalID() string { return "" }
+
+type Derived struct{ Base[int] }
+
+type Box[T any] struct{ GlobalID T }
+
+type Boxed struct{ Box[int] }
+
+type Getter[T any] interface{ GlobalID() T }
+
+type IntGetter interface{ Getter[int] }
+`,
+	})
+	violations, _ := authorityNameViolations(t, root)
+	want := []string{
+		"pub/generic.go:5: example.com/fixture/pub.Base.GlobalID" + authoritySuffix,
+		"pub/generic.go:9: example.com/fixture/pub.Box.GlobalID" + authoritySuffix,
+		"pub/generic.go:13: example.com/fixture/pub.Getter.GlobalID" + authoritySuffix,
+	}
+	sort.Strings(want)
+	if strings.Join(violations, "\n") != strings.Join(want, "\n") {
+		t.Errorf("violations:\n  %s\nwant exactly:\n  %s", strings.Join(violations, "\n  "), strings.Join(want, "\n  "))
+	}
+}
+
 const authoritySuffix = " spells the deployment authority outside the entity-ID family " +
 	"(harness-boundaries › No second spelling of deployment authority)"
 
@@ -625,7 +662,7 @@ func authorityNameViolations(t *testing.T, root string) ([]string, int) {
 		return pkg != nil && (pkg.Path() == modulePath || strings.HasPrefix(pkg.Path(), modulePath+"/"))
 	}
 	var violations []string
-	reported := map[types.Object]bool{} // module-declared members already reported
+	reported := map[types.Object]bool{} // module-declared members already reported, by declaration
 	// report names obj, a candidate, at pos: obj's own position when the module declares it,
 	// else the position of the module type that exposes it.
 	report := func(fset *token.FileSet, pos token.Pos, qualified string, obj types.Object) {
@@ -634,7 +671,7 @@ func authorityNameViolations(t *testing.T, root string) ([]string, int) {
 		}
 		if inModule(obj.Pkg()) {
 			pos = obj.Pos()
-			reported[obj] = true
+			reported[declaration(obj)] = true
 		}
 		position := fset.Position(pos)
 		path, err := filepath.Rel(root, position.Filename)
@@ -704,7 +741,7 @@ func authorityNameViolations(t *testing.T, root string) ([]string, int) {
 	// Pass 2, after every declared member is reported: the members a type gains by embedding.
 	for _, e := range exposers {
 		for _, member := range promotedMembers(e.typ) {
-			if e.direct[member] || (inModule(member.Pkg()) && reported[member]) {
+			if e.direct[member] || (inModule(member.Pkg()) && reported[declaration(member)]) {
 				continue
 			}
 			report(e.fset, e.pos, e.qualified+"."+member.Name(), member)
@@ -716,6 +753,19 @@ func authorityNameViolations(t *testing.T, root string) ([]string, int) {
 	}
 	sort.Strings(violations)
 	return violations, checked
+}
+
+// declaration returns the object a member was declared as. An instantiation of a generic type
+// has its own copy of every method and interface method, and of each field whose type uses the
+// type parameter; Origin maps the copy back to the generic declaration.
+func declaration(obj types.Object) types.Object {
+	switch member := obj.(type) {
+	case *types.Func:
+		return member.Origin()
+	case *types.Var:
+		return member.Origin()
+	}
+	return obj
 }
 
 // promotedMembers returns the methods and fields a value of typ can select that typ does not

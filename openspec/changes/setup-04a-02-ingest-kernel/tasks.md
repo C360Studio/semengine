@@ -217,8 +217,20 @@ posted on this pull request.
       (design D15); every statement the manager writes carries the constant source `semengine-lifecycle`, which its
       reconciles send as the request's source (`TestTransitionReplacesItsPhaseStatement`, written first: two
       transitions with different `TransitionSource`s leave one phase statement carrying `semengine-lifecycle`; design
-      D15); the emitter's error no
-      longer discarded (`TestManagerWithoutClientRefusesEmit`, written first, design D17).
+      D15); the emitter's error no longer discarded (`TestManagerWithoutClientRefusesEmit`, written first, design
+      D17).
+      Done: ported every file but `harness_gate_integration_test.go`, the whole surface kept (design D6, K1); no
+      `Version: 1`; the 6 fixture-client sites of `manager_integration_test.go` open through `natsfixture.Open`.
+      `Watch` and `WatchEvents` take a callback that runs on the caller's goroutine and return when the watch ends,
+      with nothing left running; a nil context is refused before a subscription opens (`watch_test.go`, in `synctest`
+      bubbles). Every statement the manager builds carries `semengine-lifecycle`, and its three reconcile builders
+      send it as the request's `source` (`TestManagerWritesUnderTheLifecycleSource`, request level, written first).
+      With no NATS client every write returns `ErrEmitFailed` naming the missing client
+      (`TestManagerWithoutClientRefusesEmit`; on the pin's code it panics). The commit body quotes the failing runs
+      and the mutation records.
+      Hold: task 3.12 — `harness_gate_integration_test.go` (`payloadfixture.NewWithSubset` per design D2, its
+      fixture-client site through `natsfixture.Open`) and `TestTransitionReplacesItsPhaseStatement` through
+      graph-ingest.
 - [ ] 3.11 (D) `component`: `ToolRegistry` and `ToolRegistryReader` removed (#29) and `LifecycleManager` removed
       (#102, design D17); `lifecycle_test_suite.go` and its self-test not ported; `ProcessorMetrics`,
       `config_validator.go`, `Registry.Snapshot` and the other dead rows removed; `CreateComponent`,

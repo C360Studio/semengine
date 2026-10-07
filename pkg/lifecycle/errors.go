@@ -1,0 +1,140 @@
+package lifecycle
+
+import "errors"
+
+// Package error sentinels. Callers compare with errors.Is.
+var (
+	// ErrWorkflowNotRegistered is returned by Manager operations when the
+	// referenced workflow type was never passed to Manager.Register. This
+	// is always a programming error — registration belongs at startup,
+	// before any Get/Create/Transition calls land.
+	ErrWorkflowNotRegistered = errors.New("lifecycle: workflow not registered")
+
+	// ErrWorkflowAlreadyRegistered is returned by Manager.Register when a
+	// workflow type is registered twice. Registration must be idempotent
+	// at startup, not a fire-and-forget — duplicate registration likely
+	// indicates a wire-up bug, not a benign re-init.
+	ErrWorkflowAlreadyRegistered = errors.New("lifecycle: workflow already registered")
+
+	// ErrInvalidWorkflow is returned by Workflow.validate() at Register
+	// time when the declaration itself is malformed (missing required
+	// field, wrong-arity EntityIDPattern, duplicate ChildSpec
+	// LinkPredicate, etc.). Distinct from ErrWorkflowNotRegistered —
+	// that one fires at lookup time when a caller references a
+	// workflow type that was never registered. Callers branching on
+	// errors.Is(err, ErrInvalidWorkflow) can distinguish "you wrote
+	// a bad Workflow{}" from "you asked for an unknown workflow."
+	ErrInvalidWorkflow = errors.New("lifecycle: invalid workflow declaration")
+
+	// ErrEntityNotFound is returned by Manager.Get when no entity exists
+	// at the given EntityID in ENTITY_STATES. Distinct from
+	// ErrEntityNotLifecycleManaged — that one fires when the entity
+	// exists but has no phase triple (lifecycle never attached).
+	ErrEntityNotFound = errors.New("lifecycle: entity not found")
+
+	// ErrEntityNotLifecycleManaged is returned by Manager.Get / Transition
+	// / Complete / Fail / UpdateFromOperator when the entity exists in
+	// ENTITY_STATES but has no triple for the workflow's PhasePredicate
+	// — i.e. Manager.Create was never called for it. Distinct from
+	// ErrEntityNotFound so callers can distinguish "no such entity" from
+	// "exists but not lifecycle-managed yet" (forward-reference case
+	// per ADR-049 Q5).
+	ErrEntityNotLifecycleManaged = errors.New("lifecycle: entity not lifecycle-managed (no phase triple)")
+
+	// ErrAlreadyExists is returned by Manager.Create when the entity
+	// already has a triple for the workflow's PhasePredicate (the
+	// entity is already lifecycle-managed in this workflow). The
+	// entity itself MAY exist with non-lifecycle triples; ADR-049's
+	// Create semantics is "add lifecycle dimension," not "create
+	// fresh entity."
+	ErrAlreadyExists = errors.New("lifecycle: entity already lifecycle-managed")
+
+	// ErrInvalidInitialState is returned by Manager.CreateFromOperator when
+	// the supplied initial state cannot be turned into a valid Participant
+	// for the named workflow: empty body, undecodable JSON, or no entity ID.
+	// Deliberately NOT a cause: a body whose Workflow() differs from the
+	// route's — that guard was removed (production Workflow() returns a
+	// constant, so only fakes could ever trip it); CreateFromOperator's doc
+	// records the same.
+	//
+	// Distinct from ErrInvalidTransition (which covers an undeclared initial
+	// PHASE, validated inside Create) so a caller can tell "your payload is
+	// malformed" from "your payload is well-formed but names a phase this
+	// workflow does not declare" — the two need different corrections, and
+	// an operator surface that collapsed them would send people to the wrong
+	// one.
+	ErrInvalidInitialState = errors.New("lifecycle: invalid initial state")
+
+	// ErrInvalidTransition is returned by Manager.Transition when the
+	// requested (from → to) edge is not declared in the registered
+	// Transitions table for the workflow. Surfaces misconfigured rules
+	// at runtime rather than letting the state machine drift.
+	ErrInvalidTransition = errors.New("lifecycle: invalid transition")
+
+	// ErrInvalidTransitionRecord is returned when the bounded transition
+	// records in a participant's current entity value are incomplete,
+	// duplicated, or otherwise malformed. History returns no partial result,
+	// and transitions refuse to overwrite malformed records.
+	ErrInvalidTransitionRecord = errors.New("lifecycle: invalid transition record")
+
+	// ErrTerminalPhase is returned by Manager.Transition when the current
+	// phase has no declared out-edges (i.e. is terminal). Distinguishes
+	// "you tried to transition from completed/failed" from a generic
+	// invalid-edge error so operator dashboards can show the right hint.
+	ErrTerminalPhase = errors.New("lifecycle: entity is in terminal phase")
+
+	// ErrMissingIDField is returned by struct-tag parsing when a
+	// registered Schema struct has no field tagged `lifecycle:"id"`.
+	// Validates app-side wiring at Register time so the bug surfaces
+	// during startup.
+	ErrMissingIDField = errors.New("lifecycle: Schema struct missing field with lifecycle:\"id\" tag")
+
+	// ErrMissingPhaseField mirrors ErrMissingIDField for the phase field.
+	ErrMissingPhaseField = errors.New("lifecycle: Schema struct missing field with lifecycle:\"phase\" tag")
+
+	// ErrFieldNotOperatorWritable is returned by Manager.UpdateFromOperator
+	// when the patch attempts to mutate a field NOT tagged
+	// `lifecycle:"operator_writable"`. Default-deny: unflagged fields are
+	// not operator-writable.
+	ErrFieldNotOperatorWritable = errors.New("lifecycle: field is not operator_writable")
+
+	// ErrInvalidTransitionsTable is returned by Manager.Register when the
+	// Transitions table is internally inconsistent (e.g. an out-edge
+	// references a phase not declared as a key). Catches typos at startup.
+	ErrInvalidTransitionsTable = errors.New("lifecycle: invalid transitions table")
+
+	// ErrUpdateRetriesExhausted is returned by Manager.Update,
+	// Transition, UpdateFromOperator, Complete, and Fail when the
+	// per-call CAS-conflict retry budget is consumed under persistent
+	// contention.
+	//
+	// Operationally this signals one of:
+	//   - A stuck rule writing to the same entity in a tight loop
+	//   - An upstream system hammering the same key past framework
+	//     capacity
+	//   - Misconfigured per-entity fan-in (multiple coordinators
+	//     racing on one state)
+	//
+	// Callers wanting application-layer retry semantics distinct
+	// from the framework's bounded retry can branch on
+	// errors.Is(err, lifecycle.ErrUpdateRetriesExhausted) and apply
+	// their own backoff + retry policy.
+	ErrUpdateRetriesExhausted = errors.New("lifecycle: Update retry budget exhausted (persistent CAS contention)")
+
+	// ErrEmitFailed is returned by Manager state-change operations
+	// when the graph-ingest reconcile request fails — typically because
+	// graph-ingest is down, the request handler returns a non-CAS
+	// error, or the NATS transport itself errors. Wraps the
+	// underlying transport / handler error so callers can branch
+	// on transient-vs-permanent.
+	ErrEmitFailed = errors.New("lifecycle: emit to graph-ingest failed")
+
+	// ErrEntityIDPatternMismatch is returned by Manager.Create (gh#814) and by
+	// Manager.Despawn / DespawnWith
+	// when the given entityID does not match the named (and registered)
+	// workflow's EntityIDPattern. Distinct from ErrWorkflowNotRegistered (the
+	// workflow itself is known) — this scopes a reclaim to a known workflow and
+	// refuses to emit a delete for an entity that provably belongs to a
+	// different pattern (a caller wire-up bug: wrong workflow for the entity).
+	ErrEntityIDPatternMismatch = errors.New("lifecycle: entity_id does not match workflow EntityIDPattern")
+)

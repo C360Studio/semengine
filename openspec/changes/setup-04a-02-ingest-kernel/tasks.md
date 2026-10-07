@@ -134,8 +134,18 @@ posted on this pull request.
       to Prometheus' global registry). `TestComputeIndexStatus_PreExistingFieldsUnchanged` asserts `IndexedRevision`
       where it asserted the removed `Revision` string. Six `task mutate:check` detections are quoted in the commit
       body.
-- [ ] 3.5 (D) `internal/graphmutation` (`InterfaceType` becomes `semengine.graph.mutation`, design D9) and
+- [x] 3.5 (D) `internal/graphmutation` (`InterfaceType` becomes `semengine.graph.mutation`, design D9) and
       `storage/storeregistry` (the `pkg/fusion` assertion removed, noted for change 5).
+      Done: `TestInterfaceTypeNamesSemEngine`, written first, holds the new name; `SubjectFamily` stays at
+      `protocol.go:16` (D20). `IsCommitUnknown` and `Registry.Instances` removed (D6). The three tests that called
+      `IsCommitUnknown` assert `errors.As` to `*TransportError` with `TransportCommitUnknown`, the function's own
+      test. `TestInstancesSnapshot` becomes `TestDistinctInstancesResolveTheirOwnStores` (both names resolve, each
+      to its own store); its copy half left with the method. The no-op `Deregister` test reads `Streamable` for the
+      name. Not in the design: the client refuses a nil context before any request (developer contract, "Context
+      ownership"; `TestClientRefusesNilContext`, written first). For task 5.1: the `storeregistry_test.go:30`
+      `fusion.StoreResolver` assertion is removed and returns with `pkg/fusion` in change 5, a `port-refactor` note
+      on both rows (D2); the `graphmutation` row's adapt items are the rename, the drop and the nil-context refusal.
+      Seven `task mutate:check` detections are quoted in the commit body.
 - [ ] 3.6 (D) `pkg/dispatch` → `internal/dispatch`: `BoundedDispatcher`, `New`, `Config`, `Deps`, `ErrQueueFull`,
       `KeyedPool.Submit` and `Stats` removed; `ErrStopped` declared in `internal/dispatch`, with no `pkg/worker` import
       (ruling E); `KeyedPool.Shutdown(ctx)` with no fixed default wait

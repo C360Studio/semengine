@@ -85,12 +85,12 @@ integer (`admission.go:83-85`) stays before the read.
 - **Refusals name the reason.** A mismatch names the pid, the recorded identity and the text read; a failed read names
   the pid and the error. Both stay `ErrNotAdmitted` naming `task test:integration` (`admission.go:66`); the refusal
   for a pid with no process keeps the words "not live", which the existing case checks (`admission_test.go:143`).
-- **Context.** If `Start`'s context has ended when the read fails, `Start` returns the context's error, as it does
-  when the context ended before admission (`fixture.go:113-115`), and makes no Docker call. `admit` checks
-  `ctx.Err()` after a failed read, because the read's own error does not say so: a context that ends while ps runs
-  makes `exec` kill ps, and the error is `signal: killed`, an `*exec.ExitError` (the reviewer's Go 1.26.4 probe,
-  review round 1); a context that ended before the read stops `exec` before ps starts, with `context.Canceled` (P7).
-  The test's already-cancelled context exercises the check.
+- **Context.** If `Start`'s context has ended when the read fails, `Start` returns the context's error, as it does when
+  the context ended before admission (`fixture.go:113-115`), and makes no Docker call. `ownerLive` checks `ctx.Err()`
+  after a failed read and returns it, and `admit` passes it through (`admission.go:100-101`, `:70-71`), because the
+  read's own error does not say so: a context that ends while ps runs makes `exec` kill ps, and the error is `signal:
+  killed`, an `*exec.ExitError` (the reviewer's Go 1.26.4 probe, review round 1); a context that ended before the read
+  stops `exec` before ps starts, with `context.Canceled` (P7). The test's already-cancelled context exercises the check.
 
 The reader is unexported in `admission.go`. The test copies stay as they are: `runner_test.go:261-271` is R1's
 independent oracle for the script, and `prochost_test.go:311-314` the oracle for another fact; making admission's
@@ -101,8 +101,8 @@ touched.
 
 | Case | Admission | Why |
 | --- | --- | --- |
-| `identity` is `unknown`, or the key is absent | refused. No special case: ps never prints `unknown` or an empty line, so the comparison fails | admission acts on proof of life. The runner records `unknown` only when ps printed nothing for its own pid (`:101-102`), and ps is a declared runner dependency (ledger `:206`). On such a host every fixture test is refused, with the recorded identity in the message |
-| ps fails or prints nothing | refused | the pid names no process, or the host cannot show that it does |
+| `identity` is `unknown`, or the key is absent | refused. No special case for either: ps never prints `unknown`, so a nonempty read never equals it; an absent key reads as an empty identity, and an empty read is refused before the comparison (`admission.go:107-109`), so only a nonempty read is compared, and it never equals an empty identity | admission acts on proof of life. The runner records `unknown` only when ps printed nothing for its own pid (`:101-102`), and ps is a declared runner dependency (ledger `:206`). On such a host every fixture test is refused, with the recorded identity in the message |
+| ps fails or prints nothing | refused: a failed read at `admission.go:97-104`, an empty read at `:107-109`, before the comparison | the pid names no process, or the host cannot show that it does |
 | the text read differs | refused | #124's case |
 | the read fails and `Start`'s context has ended | the context's error | a cancelled caller is told so, as `TestCancelledStartIsRecognisable` requires of the start phase (`admission_test.go:199-200`) |
 | a pid reused within the second the owner started | admitted, and the runner respects it | lstart has one-second resolution, as `prochost_test.go:308-310` notes; the runner's requirement states it. The runner would have to die, and its pid be reused, within the second it started |
@@ -156,7 +156,7 @@ internal/harness/natsfixture/admission.go`, each wrong change in a copy outside 
 | M3: the read is trimmed with `strings.TrimSpace` | `TestAdmissionAdmitsALiveOwner` | detection on macOS (P1's trailing blanks). On Linux a survivor, equivalent there: procps-ng 4.0.2 (P5) and 4.0.4 (the reviewer, review round 1) print no padding. Run on macOS; a run on Linux is recorded as "survivor, equivalent on Linux" |
 | M4: the read uses `exec.Command`, without the context | `TestAdmissionAdmitsALiveOwner`, its cancelled-context case | detection |
 
-M4 assumes `admit` checks the context only after a failed read (D2). A check of the context before the read, beside
+M4 assumes admission checks the context only after a failed read (D2). A check of the context before the read, beside
 `Start`'s own (`fixture.go:113-115`), would make M4 a survivor by construction; it is then recorded as such.
 
 ## Invariants and their spec homes
@@ -223,3 +223,16 @@ SemStreams' runner at the pin writes and judges the identity exactly as SemEngin
    measurement that turns the attempted quarantine into "busy"; finding 2 declared out of scope and tracked in #126.
    The owner confirms both or rules otherwise.
 5. `task doctor` keeps its host-and-pid rule; only its `:107` comment is corrected (D1).
+
+### Conformance
+
+The owner answered all five as recommended (PR #125 comment 6047427432) and accepted the design (comment
+6047433678). Where each answer is carried out, at `04a3660`:
+
+| Decision | Carried out at | Shown by |
+| --- | --- | --- |
+| 1. Refuse `unknown` | `admission.go:110-112`: ps never prints `unknown`, so the comparison refuses it; said at `:82-83` | case "owner identity unknown" (`admission_test.go:168`); M2 detected (comment 6047820553); `nats-fixture` scenario "An unknown identity is refused" |
+| 2. The rule in the runner's spec | `specs/integration-test-runner/spec.md`, "Shared host lock" (MODIFIED), defines `identity` and a live owner; `specs/nats-fixture/spec.md`, "Admission before Docker" (MODIFIED), refers to it; `admission.go:78-79` cites it | `task spec:check` and the trial archive |
+| 3. The context's error | `admission.go:100-101` returns `ctx.Err()` after a failed read; `:70-71` passes it through | the cancelled-context case of `TestAdmissionAdmitsALiveOwner` (`admission_test.go:227-230`); M4 and M5 detected (comment 6047820553) |
+| 4. The two runner findings | no code: "Not in this change" records finding 1 as accepted and finding 2 as #126 | #126, open |
+| 5. `task doctor` | `scripts/doctor.sh:107-108`, the comment only | task 2.3's record (comment 6047820054): `bash -n` passes, the diff is the comment only |

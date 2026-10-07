@@ -37,6 +37,24 @@ func TestExactEntityReaderClassifiesInvalidIDBeforeTransport(t *testing.T) {
 	}
 }
 
+// ReadExactEntity is an exported boundary that returns an error, so a nil context is
+// refused there, before any request (developer contract, "Context ownership"). The
+// requester here would answer a valid read, so only the boundary's own check can refuse.
+func TestExactEntityReaderRefusesNilContextBeforeTransport(t *testing.T) {
+	const entityID = "acme.ops.robotics.gcs.drone.001"
+	var nilCtx context.Context
+	called := false
+	requester := exactEntityRequesterFunc(func(context.Context, string, []byte, time.Duration) ([]byte, error) {
+		called = true
+		return []byte(`{"entity":{"id":"` + entityID + `","triples":[]},"kvRevision":17}`), nil
+	})
+	exact, err := NewExactEntityReader(requester, time.Second).ReadExactEntity(nilCtx, entityID)
+	if err == nil || called || exact != nil {
+		t.Fatalf("ReadExactEntity(nil) = (%+v, %v), requester called = %v; want a refusal before any request",
+			exact, err, called)
+	}
+}
+
 func TestExactEntityReaderReturnsValidatedEntityAndRevision(t *testing.T) {
 	const entityID = "acme.ops.robotics.gcs.drone.001"
 	requester := exactEntityRequesterFunc(func(_ context.Context, subject string, data []byte, _ time.Duration) ([]byte, error) {

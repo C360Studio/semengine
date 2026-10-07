@@ -49,6 +49,9 @@ func (r *natsExactEntityReader) ReadExactEntity(ctx context.Context, entityID st
 	if r == nil || r.requester == nil {
 		return nil, errors.New("exact entity reader is unavailable")
 	}
+	if ctx == nil {
+		return nil, errors.New("exact entity context is required")
+	}
 	if err := semtypes.ValidateEntityID(entityID); err != nil {
 		return nil, errs.ClassifiedCode(errs.ErrorInvalid, ErrorCodeInvalidRequest,
 			fmt.Errorf("exact entity ID: %w", err))

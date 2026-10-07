@@ -60,6 +60,19 @@ func TestReplaceOrderedByTimestamp(t *testing.T) {
 		requireSameStatements(t, got.Triples, []message.Triple{stmt(predP, "B", t0, 3.0),
 			stmt(predP, "A", t0.Add(time.Second), 4.0)})
 	})
+	t.Run("a set is as new as its latest statement, whichever comes first", func(t *testing.T) {
+		spread := []message.Triple{stmt(predP, "A", t0.Add(-time.Second), 8.0), stmt(predP, "A", t0.Add(time.Second), 9.0)}
+		got := graph.ReplaceBySource(stored, spread)
+		requireSameStatements(t, got.Triples, spread)
+		if len(got.Stale) != 0 {
+			t.Fatalf("arriving set's Stale = %+v, want none: its latest statement is newer", got.Stale)
+		}
+		got = graph.ReplaceBySource(spread, []message.Triple{stmt(predP, "A", t0, 10.0)})
+		requireSameStatements(t, got.Triples, spread)
+		if len(got.Stale) != 1 {
+			t.Fatalf("stored set's Stale = %+v, want the arrival named: the stored latest is newer", got.Stale)
+		}
+	})
 }
 
 // Requirement: graph-entity-writes/Statement metadata is required
@@ -155,10 +168,16 @@ func TestSingleValueReadPicksLatestAcrossSources(t *testing.T) {
 			t.Fatalf("GetPropertyValue over %v = %v, %v; want from-a", sources(order), v, ok)
 		}
 	}
+	laterB := stmt(predP, "B", t0.Add(time.Minute), "later-b")
+	olderA := stmt(predP, "A", t0, "older-a")
+	es := &graph.EntityState{ID: subject, Triples: []message.Triple{olderA, laterB}}
+	if got := es.GetTriple(predP); got == nil || got.Source != "B" {
+		t.Fatalf("GetTriple = %+v, want source B's later statement: the timestamp decides before the source", got)
+	}
 
 	tieB := stmt(predP, "B", t0, "tie-b")
 	tieA := stmt(predP, "A", t0, "tie-a")
-	es := &graph.EntityState{ID: subject, Triples: []message.Triple{tieB, tieA}}
+	es = &graph.EntityState{ID: subject, Triples: []message.Triple{tieB, tieA}}
 	if got := es.GetTriple(predP); got == nil || got.Source != "A" {
 		t.Fatalf("GetTriple on equal timestamps = %+v, want the source that sorts first (A)", got)
 	}
@@ -235,7 +254,12 @@ func TestIndexStatusResponseHasNoLegacyFields(t *testing.T) {
 	}
 }
 
-func requireSameStatements(t *testing.T, got, want []message.Triple) {
+// requireSameStatements fails t unless got and want hold the same statements, each as many times, in any order. t is
+// a *testing.T or a *rapid.T.
+func requireSameStatements(t interface {
+	Helper()
+	Fatalf(format string, args ...any)
+}, got, want []message.Triple) {
 	t.Helper()
 	if len(got) != len(want) {
 		t.Fatalf("statements = %+v, want %+v", got, want)

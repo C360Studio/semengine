@@ -146,11 +146,24 @@ posted on this pull request.
       `fusion.StoreResolver` assertion is removed and returns with `pkg/fusion` in change 5, a `port-refactor` note
       on both rows (D2); the `graphmutation` row's adapt items are the rename, the drop and the nil-context refusal.
       Seven `task mutate:check` detections are quoted in the commit body.
-- [ ] 3.6 (D) `pkg/dispatch` → `internal/dispatch`: `BoundedDispatcher`, `New`, `Config`, `Deps`, `ErrQueueFull`,
+- [x] 3.6 (D) `pkg/dispatch` → `internal/dispatch`: `BoundedDispatcher`, `New`, `Config`, `Deps`, `ErrQueueFull`,
       `KeyedPool.Submit` and `Stats` removed; `ErrStopped` declared in `internal/dispatch`, with no `pkg/worker` import
       (ruling E); `KeyedPool.Shutdown(ctx)` with no fixed default wait
       (`TestKeyedPoolShutdownWithoutDeadlineWaitsForJoin`, `synctest`); metrics through `RegisterOrGet`; unbounded
       cleanups, sleeps and the fixture-client site repaired.
+      Done: ported `keyed_pool.go`, `keyed_pool_test.go` and `errors.go`; `doc.go` rewritten for `KeyedPool` alone.
+      `completion_watcher.go` leaves too, a transitive drop: its only reader was `dispatcher.go:138`. With them go
+      `dispatcher_test.go`, `completion_watcher_test.go` and `integration_test.go`, which read no `KeyedPool`; the
+      pin's five sleeps (`integration_test.go:131`, `:138`, `:208`; `dispatcher_test.go:151`, `:243`) and its one
+      fixture-client site (`integration_test.go:37`) were all in them, so they leave with them. `ErrLaneFull` and
+      `dispatch_dropped_total` leave with `Submit`, their only producer and writer; `ErrNATSClientRequired` with
+      `New`. The unbounded second `Stop` of `TestKeyedPool_StopDeadlineCanResumeConstructorOwnedDrain` becomes
+      `TestKeyedPoolShutdownUnderABlockedProcess`, in a `synctest` bubble with an hour-bounded later `Shutdown`.
+      `Shutdown` refuses a nil context; the drain starts at the first `Shutdown`, so cancelling the run context
+      leaves nothing running (`TestKeyedPoolRunContextCancelLeavesNothingRunning`, failing first); `NewKeyedPool`
+      returns a registration refusal (`TestKeyedPoolReturnsARegistrationRefusal`, failing first). Tests that read
+      `Stats` read the pool's counters or their own. Nine `task mutate:check` detections are quoted in the commit
+      body.
 - [ ] 3.7 (D) `graph`'s `ExactEntityReader` takes its subject from the verb table, and graph-ingest's literal sites
       use the table in task 3.12 (#16, design D20). Task 2.4 turns green with 3.12.
 - [ ] 3.8 (D) `graph/inference`, the hierarchy slice only (#97, design D1a): `hierarchy.go`, `container_entity.go` and

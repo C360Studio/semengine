@@ -20,22 +20,24 @@ starts, `task merge:check -- 112` and the merge are recorded on this pull reques
 
 ## 2. The check and the workflow
 
-- [ ] 2.1 (D) Written first: `ciJob` gains `RunsOn`, and `ciWorkflowViolations` requires every job's `runs-on` to
+- [x] 2.1 (D) Written first: `ciJob` gains `RunsOn`, and `ciWorkflowViolations` requires every job's `runs-on` to
       be the one label `runnerLabel` (`ubuntu-24.04`), a constant in the test (`design.md`, D2). Run against the
       unchanged `.github/workflows/ci.yml`, `TestCIWorkflowPinned` fails naming `verify`, `merge-check` and
-      `required` with `ubuntu-latest`; that output is recorded on this pull request. Gate: the recorded failing run.
+      `required` with `ubuntu-latest`; that output is recorded on this pull request (comment 6037163135).
+      Gate: the recorded failing run.
 - [x] 2.2 (D) `TestCIWorkflowPinnedSensitivity`: the clean fixture gains `runs-on: ubuntu-24.04` on each job, and
       the seven planted workflows of `design.md`, D3, are added, the `ubuntu-latest` one on a fourth job.
       Gate: `task test:unit`.
 - [x] 2.3 (D) `.github/workflows/ci.yml`: the three `runs-on:` lines read `ubuntu-24.04`, with the comment of
       `design.md`, D4. Committed with 2.1 and 2.2 so that no commit is red. `TestCIWorkflowPinned` passes.
       Gate: `task verify`.
-- [ ] 2.4 (D) Shown able to fail, by hand (`docs/testing.md`, "Run it by hand"): the four wrong changes of
+- [x] 2.4 (D) Shown able to fail, by hand (`docs/testing.md`, "Run it by hand"): the four wrong changes of
       `design.md`, "Tests", each caught by its plant (`-latest` only, absent skipped, three named jobs only, prefix
-      match). Baseline, wrong-change and restored runs, and what is not covered, are recorded on this pull request.
-- [ ] 2.5 The first CI run of this pull request with the pin: each job's "Set up job" log reports
+      match). Baseline, wrong-change and restored runs, and what is not covered, are recorded on this pull request
+      (comment 6037163135).
+- [x] 2.5 The first CI run of this pull request with the pin: each job's "Set up job" log reports
       `Image: ubuntu-24.04`. The run's link and the image version of each job are recorded on this pull request.
-      Gate: CI `Required` on that head.
+      Gate: CI `Required` on that head (run 37614567578 on `a54bcf1`; comment 6037163135).
 
 ## 3. Review
 

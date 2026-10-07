@@ -39,10 +39,9 @@ heading>` (#81's form). No task asserts a fact that exists only after merge.
 - [ ] 2.1 (D) Re-run inventory P-1, P-4 and P-7 on the branch's copy at the first port commit and post the seeds, the
       hit list and the coverage figures; any difference from `inventory.md` is a finding on this pull request. Hold:
       task 1.4.
-- [ ] 2.2 (D) `TestOneImagePin` in Go files matches `nats:` followed by a digit or a variable, or `nats@sha256:` (design
+- [x] 2.2 (D) `TestOneImagePin` in Go files matches `nats:` followed by a digit or a variable, or `nats@sha256:` (design
       D10): sensitivity cases, written first, plant `"nats:in"` in a Go file (passes), `"nats:2.10"` and
-      `"nats:${TAG}"` in a Go file (fail), and keep "digest literal in Go" failing. Gate: `task test:unit`. Hold:
-      task 1.4.
+      `"nats:${TAG}"` in a Go file (fail), and keep "digest literal in Go" failing. Gate: `task test:unit`.
 - [ ] 2.3 (D) `TestNoProcessGlobalRegistration` and its sensitivity test (`metric-registry`, "No process-global
       registration"). Gate: `task test:unit`.
 - [ ] 2.4 (D) `TestReservedSubjectsDeclaredOnce` and its sensitivity test (`graph-transport-boundary`). It is red until

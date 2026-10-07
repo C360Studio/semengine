@@ -13,8 +13,15 @@ subject, predicate, datatype, source, context and object; a delete removes the e
 revision. A conditional replace SHALL name one source, a request without one SHALL be refused as `invalid_request`
 and store nothing, every statement it carries SHALL have that source, and an empty
 set SHALL clear only that source's statements of the named predicates. A conditional replace SHALL report "unchanged"
-only when the stored statements of its predicates from its source equal the requested ones in every field. No non-test
-file of graph-ingest other than the write path's own SHALL call a write method of the entity bucket.
+only when the stored statements of its predicates from its source equal the requested ones in every field. Within one
+write, statements equal in every field SHALL count once. No non-test file of graph-ingest other than the write path's
+own SHALL call a write method of the entity bucket.
+
+#### Scenario: A statement repeated in one write is stored once
+
+- **WHEN** a stream message carries the same statement twice, equal in every field, and a third that differs from it
+  only in `Timestamp`, `Confidence` or `ExpiresAt`
+- **THEN** the replaced set holds the repeated statement once and the third beside it
 
 #### Scenario: Append agrees across lanes
 

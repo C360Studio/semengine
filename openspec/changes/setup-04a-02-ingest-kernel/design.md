@@ -1,6 +1,6 @@
 # Design: setup-04a-02-ingest-kernel
 
-Status: **draft, round 6.** Round 2 answered the 17 findings of the pre-owner design review's round 1 and went to the
+Status: **accepted, round 7.** Round 2 answered the 17 findings of the pre-owner design review's round 1 and went to the
 owner with questions A–F. Round 3 applied the owner's rulings of 2026-10-07 on B, C, E and F (#91 comments 6035429806
 and 6035477895) and the pin probe P-9 that ruling B asked for (`inventory.md` §8). Round 4 applied #77's ruling
 (#77 comment 6035317931), which answers question A: D7 is rewritten and `lifecycle-suite` gains a delta. The owner
@@ -10,8 +10,11 @@ comment 6036316289): the rulings on #97, #98 and #99, and the port-refactors #10
 round 5 (#91 comment 6037287957) and that review's findings: the replace is keyed on (subject, predicate, source),
 mutation-lane births keep the pin's no-hierarchy behavior, derived statements take the triggering message's time
 (D15, D21), `graph/structural`'s move is ruled (D1a, D11), the `LifecycleManager` adopter sites are named (D17), and
-the readiness envelope loses its legacy fields and gains `published_at` here (D16; `inventory.md` §9.15). Round 6
-needs the review's re-check and the owner's acceptance (tasks 1.11, 1.12); nothing after round 4 is approved yet.
+the readiness envelope loses its legacy fields and gains `published_at` here (D16; `inventory.md` §9.15). Round 7
+applies the owner's rulings 1–5 on the round-6 review (#91 comment 6037604840) and that review's findings (D15, "Left
+open", "Ruled"). Rounds 5 to 7 passed independent review (PR #93 comment 6037662484; task 1.11), and the owner
+accepted them on #91 (2026-10-07, comment 6037996648; task 1.12). Later edits record implementation and review
+findings within the accepted decisions (D13, D15, D18, D22).
 
 Shorthand, defined once:
 
@@ -93,7 +96,7 @@ otherwise `pkg/<name>` moves to `internal/<name>`.
 | Level | Package | Destination | Why public / internal | Verdict |
 | --- | --- | --- | --- | --- |
 | 0 | `internal/lifecyclecleanup` | `pkg/lifecyclecleanup` | public by #77's ruling (comment 6035317931); SemTeams' components call it | adapt (D7: public home, a nil rollback refused) |
-| 0 | `types` | `types` | consumers import it (54 + 20 sites) | carry |
+| 0 | `types` | `types` | consumers import it (54 + 20 sites) | adapt: `ComponentConfig.Equal` refuses trailing input after the first JSON value (PR #93 comment 6039549363) |
 | 0 | `model` | `model` | consumers import it (3); `component.Dependencies.ModelRegistry` names `model.RegistryReader` | carry: whole until #32 decides the seam (D6) |
 | 0 | `model/wire` | — | nothing ported here reads it (D1a, P-9) | not ported; `defer-exclude` row naming change 7 |
 | 0 | `graph/llm` | — | nothing ported here reads it once `graph/inference` is its hierarchy slice (D1a, P-11) | not ported; `defer-exclude` row naming changes 4 and 7 |
@@ -611,8 +614,10 @@ returns its own context's error first; a repeated `Stop` after a completed one r
 whose cleanup fails keeps the cleanup pending for the next `Stop`, which runs it again, and a later `Stop` returns nil
 only after a cleanup that succeeded; a failed `Start` whose rollback succeeds holds nothing, and one whose rollback
 fails keeps the cleanup pending for the next `Stop` (D7). Tests: `lifecycletest.Run` over a test owner built only from
-the guard, with a failing factory, in the guard's package; graph-ingest's suite run; the carried pin test of D7. Spec
-home: the existing `lifecycle-suite` "Portable floor" requirement, whose checks are exactly these behaviors; no delta.
+the guard, with a failing factory, in the guard's package; `TestGuardFailedStopLeavesCleanupForNextStop` in the same
+package, for the retry after a failed `Stop`, which no suite check reaches; graph-ingest's suite run; the carried pin
+test of D7. Spec home: the existing `lifecycle-suite` "Portable floor" requirement, whose checks are these behaviors
+except that retry; no delta.
 
 Adoption sweep (D13 establishes a reusable primitive; one tracking issue, task 6.3): `service/component_manager.go:102`,
 `service/message_logger.go:234` (change 3); `processor/graph-query/component.go:177`,
@@ -1089,9 +1094,17 @@ Under (b): every read has an observable stand-in in the same test. "A refused `S
 "a following `Start` is not refused with `errs.ErrAlreadyStarted`"; "terminal" becomes "a repeated `Stop` calls
 nothing and a `Start` is refused", which those tests already count. Every struct literal that built a component
 mid-lifecycle becomes a setup step that calls the component's guard's `Start` with a start function that acquires
-nothing, or one that fails with a rollback that fails, which leaves the cleanup pending (`guard.go:66-71`). The lock in
+nothing, or one that fails with a rollback that fails, which leaves the cleanup pending (`guard.go:58-68`). The lock in
 `lifecycle_integration_test.go:192-197` guards the component's own handles, not the guard's state, and stays.
-`internal/lifecycleguard` does not change; task 2.7 stands.
+`internal/lifecycleguard` gains no read-out; task 2.7 stands.
+
+One pin test asserts the rule D13 replaces, and is inverted when task 3.12 ports it (PR #93 comment 6039549363).
+`TestLifecycleOwnerRunningDeadlineIsTerminalWithoutReplay` (`processor/graph-ingest/lifecycle_owner_test.go:180-214`)
+expects a running owner whose `Stop` fails during the drain to become terminal, and the next `Stop` to return nil with
+the consumer still open; the pin's `Stop` (`component.go:1098-1111`) clears its handles after a cleanup that failed.
+Under D13 the handles stay after a failed cleanup and are cleared only by a cleanup that succeeds, inside the cleanup
+function given to the guard; the next `Stop` runs cleanup again and returns its result. The test's "drain not replayed"
+assertion stands: once `drainIssued` is set, the pin's cleanup (`component.go:1123-1170`) issues no second drain.
 
 ### Left open for #105–#111
 

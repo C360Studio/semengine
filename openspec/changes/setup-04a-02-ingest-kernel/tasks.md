@@ -134,7 +134,7 @@ posted on this pull request.
       (`TestKeyedPoolShutdownWithoutDeadlineWaitsForJoin`, `synctest`); metrics through `RegisterOrGet`; unbounded
       cleanups, sleeps and the fixture-client site repaired.
 - [ ] 3.7 (D) `graph`'s `ExactEntityReader` takes its subject from the verb table, and graph-ingest's literal sites
-      use the table in task 3.12 (#16, design D20). Task 2.4 turns green with 3.12. Hold: task 3.3b.
+      use the table in task 3.12 (#16, design D20). Task 2.4 turns green with 3.12.
 - [ ] 3.8 (D) `graph/inference`, the hierarchy slice only (#97, design D1a): `hierarchy.go`, `container_entity.go` and
       the `TripleAdder` interface, with a package comment for what the slice holds; `HierarchyConfig` without
       `Org`/`Platform`, the carrier passed to the constructor (design D9); `DefaultHierarchyConfig`, `OnEntityCreated`,

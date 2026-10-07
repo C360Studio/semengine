@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 
 	"github.com/c360studio/semengine/pkg/errs"
 )
@@ -81,8 +82,12 @@ func canonicalJSON(raw json.RawMessage) (string, bool) {
 	if err := dec.Decode(&v); err != nil {
 		return "", false
 	}
-	// Reject trailing content after the first JSON value (Decode reads only one).
-	if dec.More() {
+	// Reject trailing content after the first JSON value (Decode reads only
+	// one). Only EOF from a second Decode means nothing but whitespace
+	// follows: Decoder.More is no substitute, because it reports false at a
+	// stray closing delimiter, so "{}]" would pass.
+	var extra any
+	if err := dec.Decode(&extra); err != io.EOF {
 		return "", false
 	}
 	// Re-marshal: encoding/json sorts object keys, yielding a canonical,

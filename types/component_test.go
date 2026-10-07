@@ -226,6 +226,10 @@ func TestComponentConfigEqual(t *testing.T) {
 		Config:  json.RawMessage(`{"port":8080,"host":"0.0.0.0"}`),
 	}
 
+	withConfig := func(raw string) types.ComponentConfig {
+		return types.ComponentConfig{Type: base.Type, Name: base.Name, Enabled: base.Enabled, Config: json.RawMessage(raw)}
+	}
+
 	tests := []struct {
 		name string
 		a    types.ComponentConfig
@@ -308,6 +312,17 @@ func TestComponentConfigEqual(t *testing.T) {
 			b:    types.ComponentConfig{Type: base.Type, Name: base.Name, Enabled: base.Enabled, Config: json.RawMessage(`{"b":[1,2,3],"a":{"y":2,"x":1}}`)},
 			want: true,
 		},
+		// Anything after the first JSON value makes the body malformed, so it
+		// falls back to a byte compare and must not equal the valid `{}`. A
+		// stray closing delimiter is the case json.Decoder.More does not see.
+		{name: "trailing closing bracket is not equal", a: withConfig(`{}`), b: withConfig(`{}]`), want: false},
+		{name: "trailing closing brace is not equal", a: withConfig(`{}`), b: withConfig(`{}}`), want: false},
+		{name: "trailing token is not equal", a: withConfig(`{}`), b: withConfig(`{} x`), want: false},
+		{name: "second value is not equal", a: withConfig(`{}`), b: withConfig(`{}{}`), want: false},
+		{name: "second value after a space is not equal", a: withConfig(`{}`), b: withConfig(`{} {}`), want: false},
+		// The pin accepts trailing whitespace, and so does this port.
+		{name: "trailing newline is equal", a: withConfig(`{}`), b: withConfig("{}\n"), want: true},
+		{name: "trailing space is equal", a: withConfig(`{}`), b: withConfig("{} "), want: true},
 	}
 
 	for _, tt := range tests {

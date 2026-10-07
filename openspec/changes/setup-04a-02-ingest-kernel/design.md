@@ -607,11 +607,12 @@ public surface.
 What a component composing the guard observes (developer chooses the methods): a second `Start` returns
 `ErrAlreadyStarted` before acquiring anything; a nil or already-cancelled context is refused; `Stop` before `Start`
 returns nil and a later `Start` is refused; `Stop` during an in-flight `Start` waits for that `Start` to finish, or
-returns its own context's error first; a repeated `Stop` after a completed one returns nil and calls nothing; a failed
-`Start` whose rollback succeeds holds nothing, and one whose rollback fails keeps the cleanup pending for the next
-`Stop` (D7). Tests: `lifecycletest.Run` over a test owner built only from the guard, with a failing factory, in the
-guard's package; graph-ingest's suite run; the carried pin test of D7. Spec home: the existing `lifecycle-suite`
-"Portable floor" requirement, whose checks are exactly these behaviors; no delta.
+returns its own context's error first; a repeated `Stop` after a completed one returns nil and calls nothing; a `Stop`
+whose cleanup fails keeps the cleanup pending for the next `Stop`, which runs it again, and a later `Stop` returns nil
+only after a cleanup that succeeded; a failed `Start` whose rollback succeeds holds nothing, and one whose rollback
+fails keeps the cleanup pending for the next `Stop` (D7). Tests: `lifecycletest.Run` over a test owner built only from
+the guard, with a failing factory, in the guard's package; graph-ingest's suite run; the carried pin test of D7. Spec
+home: the existing `lifecycle-suite` "Portable floor" requirement, whose checks are exactly these behaviors; no delta.
 
 Adoption sweep (D13 establishes a reusable primitive; one tracking issue, task 6.3): `service/component_manager.go:102`,
 `service/message_logger.go:234` (change 3); `processor/graph-query/component.go:177`,

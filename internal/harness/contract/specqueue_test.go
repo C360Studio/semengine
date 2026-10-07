@@ -15,7 +15,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// spec-queue › all three requirements: scripts/openspec-queue.sh runs from a throwaway root with a
+// spec-queue › all four requirements: scripts/openspec-queue.sh runs from a throwaway root with a
 // stand-in openspec CLI and one planted tasks.md, as openspec/changes/fx/tasks.md. The stand-in
 // answers `list --json` as the case says and refuses any other call, so a case cannot pass on an
 // answer to another question. Its JSON has no lastModified, so no staleness note depends on the
@@ -35,6 +35,9 @@ const (
 
 // The message the check prints after "<path>:<line>: " for each misplaced hold (design D9).
 const holdOutsideMsg = "Hold: outside every task; task spec:queue cannot show it. Put it in the task it stops."
+
+// A tasks.md whose open task holds the two bytes 0xff 0xfe, which are not valid UTF-8.
+const notUTF8Tasks = "## 1. Work\n\n- [ ] 1.1 (D) Write the reader. \xff\xfe\n"
 
 type queueRun struct {
 	stdout, stderr string
@@ -123,6 +126,19 @@ func requireReported(t *testing.T, r queueRun, want ...queueLine) {
 	}
 	if ok := okLineRE.MatchString(r.stdout); ok != (len(want) == 0) {
 		t.Fatalf("ok line printed: %t, want %t\nstdout:\n%s", ok, len(want) == 0, r.stdout)
+	}
+}
+
+// requireCannotRead fails unless the script exited 2 and printed, as a whole line of standard
+// error, that it cannot read the planted tasks.md. Other text may come before that line.
+func requireCannotRead(t *testing.T, r queueRun) {
+	t.Helper()
+	const want = "queue unavailable: cannot read openspec/changes/fx/tasks.md"
+	if r.status != 2 {
+		t.Errorf("exit %d, want 2\nstderr:\n%s", r.status, r.stderr)
+	}
+	if !slices.Contains(strings.Split(r.stderr, "\n"), want) {
+		t.Errorf("stderr has no line %q\nstderr:\n%s", want, r.stderr)
 	}
 }
 
@@ -236,6 +252,19 @@ func TestSpecQueueHolds(t *testing.T) {
 		}
 		if r := runSpecQueue(t, listOneChange, lines(taskB91c60d...)); r.status != 0 {
 			t.Errorf("without --strict: exit %d, want 0\nstdout:\n%s\nstderr:\n%s", r.status, r.stdout, r.stderr)
+		}
+	})
+
+	// spec-queue › "A tasks.md that cannot be read stops the queue and the check": a file the
+	// queue did not read is never reported free of caveats. Not in the table: requireReported
+	// wants exit 0.
+	t.Run("H12 a tasks.md that is not UTF-8", func(t *testing.T) {
+		r := runSpecQueue(t, listOneChange, notUTF8Tasks)
+		requireCannotRead(t, r)
+		for _, s := range strings.Split(r.stdout, "\n") {
+			if f := strings.Fields(s); len(f) > 0 && f[0] == "ok" {
+				t.Errorf("stdout has the ok line %q, want none\nstdout:\n%s", s, r.stdout)
+			}
 		}
 	})
 }

@@ -19,7 +19,7 @@ starts, `task merge:check -- 122` and the merge are recorded on this pull reques
 
 ## 2. The tests
 
-- [ ] 2.1 (D) `TestSpecQueueHolds` gains `H12 a tasks.md that is not UTF-8`, as its own `t.Run` beside H11, with the
+- [x] 2.1 (D) `TestSpecQueueHolds` gains `H12 a tasks.md that is not UTF-8`, as its own `t.Run` beside H11, with the
       fixture and assertions of `design.md`, D2, and a comment naming the new requirement. The file comment's "all
       three requirements" becomes "all four". In the same commit, `scripts/openspec-queue.sh:47`, a line of the
       `--help` text, reads `# exits 0. An unreadable change list or tasks.md exits 2, as for the queue.`, still one

@@ -35,7 +35,7 @@ func NewMetrics() *Metrics {
 		// Service metrics
 		ServiceStatus: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
-				Namespace: "semstreams",
+				Namespace: "semengine",
 				Subsystem: "service",
 				Name:      "status",
 				Help:      "Service status (0=stopped, 1=starting, 2=running, 3=stopping, 4=failed)",
@@ -45,7 +45,7 @@ func NewMetrics() *Metrics {
 
 		MessagesReceived: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Namespace: "semstreams",
+				Namespace: "semengine",
 				Subsystem: "messages",
 				Name:      "received_total",
 				Help:      "Total number of messages received",
@@ -55,7 +55,7 @@ func NewMetrics() *Metrics {
 
 		MessagesProcessed: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Namespace: "semstreams",
+				Namespace: "semengine",
 				Subsystem: "messages",
 				Name:      "processed_total",
 				Help:      "Total number of messages processed",
@@ -65,7 +65,7 @@ func NewMetrics() *Metrics {
 
 		MessagesPublished: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Namespace: "semstreams",
+				Namespace: "semengine",
 				Subsystem: "messages",
 				Name:      "published_total",
 				Help:      "Total number of messages published",
@@ -75,7 +75,7 @@ func NewMetrics() *Metrics {
 
 		ProcessingDuration: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Namespace: "semstreams",
+				Namespace: "semengine",
 				Subsystem: "processing",
 				Name:      "duration_seconds",
 				Help:      "Message processing duration in seconds",
@@ -86,7 +86,7 @@ func NewMetrics() *Metrics {
 
 		ErrorsTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Namespace: "semstreams",
+				Namespace: "semengine",
 				Subsystem: "errors",
 				Name:      "total",
 				Help:      "Total number of errors",
@@ -96,7 +96,7 @@ func NewMetrics() *Metrics {
 
 		HealthCheckStatus: prometheus.NewGaugeVec(
 			prometheus.GaugeOpts{
-				Namespace: "semstreams",
+				Namespace: "semengine",
 				Subsystem: "health",
 				Name:      "status",
 				Help:      "Health check status (0=unhealthy, 1=healthy)",
@@ -106,7 +106,7 @@ func NewMetrics() *Metrics {
 
 		LogEntriesTotal: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
-				Namespace: "semstreams",
+				Namespace: "semengine",
 				Subsystem: "log",
 				Name:      "entries_total",
 				Help:      "Total slog records emitted at WARN+ by component and level. Use rate() or increase() for windowed views.",
@@ -117,7 +117,7 @@ func NewMetrics() *Metrics {
 		// NATS metrics
 		NATSConnected: prometheus.NewGauge(
 			prometheus.GaugeOpts{
-				Namespace: "semstreams",
+				Namespace: "semengine",
 				Subsystem: "nats",
 				Name:      "connected",
 				Help:      "NATS connection status (0=disconnected, 1=connected)",
@@ -126,7 +126,7 @@ func NewMetrics() *Metrics {
 
 		NATSRTT: prometheus.NewGauge(
 			prometheus.GaugeOpts{
-				Namespace: "semstreams",
+				Namespace: "semengine",
 				Subsystem: "nats",
 				Name:      "rtt_seconds",
 				Help:      "NATS round-trip time in seconds",
@@ -135,7 +135,7 @@ func NewMetrics() *Metrics {
 
 		NATSReconnects: prometheus.NewCounter(
 			prometheus.CounterOpts{
-				Namespace: "semstreams",
+				Namespace: "semengine",
 				Subsystem: "nats",
 				Name:      "reconnects_total",
 				Help:      "Total number of NATS reconnections",
@@ -144,7 +144,7 @@ func NewMetrics() *Metrics {
 
 		NATSCircuitBreaker: prometheus.NewGauge(
 			prometheus.GaugeOpts{
-				Namespace: "semstreams",
+				Namespace: "semengine",
 				Subsystem: "nats",
 				Name:      "circuit_breaker",
 				Help:      "NATS circuit breaker status (0=closed, 1=open, 2=half-open)",

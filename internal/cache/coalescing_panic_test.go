@@ -59,12 +59,12 @@ func TestCoalescingSet_CallbackPanicIsRecoveredAndLaterBatchesFire(t *testing.T)
 			t.Fatal("the recovered panic was not logged")
 		}
 		const want = `
-# HELP semstreams_cache_coalescing_callback_panics_total Total number of CoalescingSet callback panics recovered; each dropped its batch
-# TYPE semstreams_cache_coalescing_callback_panics_total counter
-semstreams_cache_coalescing_callback_panics_total{component="coalescer"} 1
+# HELP semengine_cache_coalescing_callback_panics_total Total number of CoalescingSet callback panics recovered; each dropped its batch
+# TYPE semengine_cache_coalescing_callback_panics_total counter
+semengine_cache_coalescing_callback_panics_total{component="coalescer"} 1
 `
 		assert.NoError(t, testutil.GatherAndCompare(registry.PrometheusRegistry(), strings.NewReader(want),
-			"semstreams_cache_coalescing_callback_panics_total"), "the recovered panic was not counted")
+			"semengine_cache_coalescing_callback_panics_total"), "the recovered panic was not counted")
 
 		set.Add("after")
 		select {

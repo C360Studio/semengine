@@ -25,7 +25,7 @@ func TestRequestHandlerTimeout_DefaultIs30s(t *testing.T) {
 }
 
 func TestRequestHandlerTimeout_EnvOverride(t *testing.T) {
-	t.Setenv("SEMSTREAMS_NATS_REQUEST_HANDLER_TIMEOUT", "150s")
+	t.Setenv("SEMENGINE_NATS_REQUEST_HANDLER_TIMEOUT", "150s")
 	c, err := NewClient("nats://unused")
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
@@ -36,7 +36,7 @@ func TestRequestHandlerTimeout_EnvOverride(t *testing.T) {
 }
 
 func TestRequestHandlerTimeout_EnvInvalidFallsBackToDefault(t *testing.T) {
-	t.Setenv("SEMSTREAMS_NATS_REQUEST_HANDLER_TIMEOUT", "not-a-duration")
+	t.Setenv("SEMENGINE_NATS_REQUEST_HANDLER_TIMEOUT", "not-a-duration")
 	c, err := NewClient("nats://unused")
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)

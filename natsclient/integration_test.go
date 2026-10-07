@@ -363,24 +363,24 @@ func TestIntegration_JetStreamMetrics(t *testing.T) {
 	}
 
 	// Verify stream metrics exist
-	streamMessages := metricsByName["semstreams_jetstream_stream_messages"]
+	streamMessages := metricsByName["semengine_jetstream_stream_messages"]
 	require.NotNil(t, streamMessages, "stream messages metric should exist")
 	// Should have 5 messages in stream (might have consumed some)
 	assert.GreaterOrEqual(t, *streamMessages.Metric[0].Gauge.Value, float64(0))
 
-	streamBytes := metricsByName["semstreams_jetstream_stream_bytes"]
+	streamBytes := metricsByName["semengine_jetstream_stream_bytes"]
 	require.NotNil(t, streamBytes, "stream bytes metric should exist")
 	assert.Greater(t, *streamBytes.Metric[0].Gauge.Value, float64(0))
 
-	streamState := metricsByName["semstreams_jetstream_stream_state"]
+	streamState := metricsByName["semengine_jetstream_stream_state"]
 	require.NotNil(t, streamState, "stream state metric should exist")
 	assert.Equal(t, float64(1), *streamState.Metric[0].Gauge.Value, "stream should be active")
 
 	// Verify consumer metrics exist
-	consumerPending := metricsByName["semstreams_jetstream_consumer_pending_messages"]
+	consumerPending := metricsByName["semengine_jetstream_consumer_pending_messages"]
 	require.NotNil(t, consumerPending, "consumer pending metric should exist")
 
-	consumerDelivered := metricsByName["semstreams_jetstream_consumer_delivered_stream_sequence"]
+	consumerDelivered := metricsByName["semengine_jetstream_consumer_delivered_stream_sequence"]
 	require.NotNil(t, consumerDelivered, "consumer delivered metric should exist")
 	assert.GreaterOrEqual(t, *consumerDelivered.Metric[0].Gauge.Value, float64(0))
 

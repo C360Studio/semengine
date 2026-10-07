@@ -45,27 +45,27 @@ func TestCacheMetricsIntegration(t *testing.T) {
 	}
 
 	// Check hits metric
-	hitsMetric := metricsByName["semstreams_cache_hits_total"]
+	hitsMetric := metricsByName["semengine_cache_hits_total"]
 	require.NotNil(t, hitsMetric, "hits metric should exist")
 	assert.Equal(t, float64(1), *hitsMetric.Metric[0].Counter.Value, "should have 1 hit")
 
 	// Check misses metric
-	missesMetric := metricsByName["semstreams_cache_misses_total"]
+	missesMetric := metricsByName["semengine_cache_misses_total"]
 	require.NotNil(t, missesMetric, "misses metric should exist")
 	assert.Equal(t, float64(1), *missesMetric.Metric[0].Counter.Value, "should have 1 miss")
 
 	// Check sets metric
-	setsMetric := metricsByName["semstreams_cache_sets_total"]
+	setsMetric := metricsByName["semengine_cache_sets_total"]
 	require.NotNil(t, setsMetric, "sets metric should exist")
 	assert.Equal(t, float64(2), *setsMetric.Metric[0].Counter.Value, "should have 2 sets")
 
 	// Check deletes metric
-	deletesMetric := metricsByName["semstreams_cache_deletes_total"]
+	deletesMetric := metricsByName["semengine_cache_deletes_total"]
 	require.NotNil(t, deletesMetric, "deletes metric should exist")
 	assert.Equal(t, float64(1), *deletesMetric.Metric[0].Counter.Value, "should have 1 delete")
 
 	// Check size metric
-	sizeMetric := metricsByName["semstreams_cache_size"]
+	sizeMetric := metricsByName["semengine_cache_size"]
 	require.NotNil(t, sizeMetric, "size metric should exist")
 	assert.Equal(t, float64(1), *sizeMetric.Metric[0].Gauge.Value, "should have 1 item remaining")
 
@@ -134,11 +134,11 @@ func TestCacheMetricsTwoCachesOnePrefixGatherTheSum(t *testing.T) {
 		byName[mf.GetName()] = mf
 	}
 	want := map[string]float64{
-		"semstreams_cache_sets_total":      4,
-		"semstreams_cache_evictions_total": 2,
-		"semstreams_cache_hits_total":      2,
-		"semstreams_cache_misses_total":    2,
-		"semstreams_cache_deletes_total":   2,
+		"semengine_cache_sets_total":      4,
+		"semengine_cache_evictions_total": 2,
+		"semengine_cache_hits_total":      2,
+		"semengine_cache_misses_total":    2,
+		"semengine_cache_deletes_total":   2,
 	}
 	for name, value := range want {
 		mf := byName[name]

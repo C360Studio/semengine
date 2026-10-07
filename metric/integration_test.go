@@ -32,7 +32,7 @@ func (m *MockService) RegisterMetrics(registry *MetricsRegistry) error {
 	// Register a custom counter
 	dataProcessed, err := RegisterOrGet(registry, m.name, "data_processed_total",
 		prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace: "semstreams",
+			Namespace: "semengine",
 			Subsystem: "mock_service",
 			Name:      "data_processed_total",
 			Help:      "Total number of data items processed",
@@ -45,7 +45,7 @@ func (m *MockService) RegisterMetrics(registry *MetricsRegistry) error {
 	// Register a custom gauge
 	queueDepth, err := RegisterOrGet(registry, m.name, "queue_depth",
 		prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: "semstreams",
+			Namespace: "semengine",
 			Subsystem: "mock_service",
 			Name:      "queue_depth",
 			Help:      "Current depth of processing queue",
@@ -87,9 +87,9 @@ func TestMetricsIntegration_ServiceRegistration(t *testing.T) {
 	}
 
 	// Verify custom metrics are registered
-	assert.True(t, foundMetrics["semstreams_mock_service_data_processed_total"],
+	assert.True(t, foundMetrics["semengine_mock_service_data_processed_total"],
 		"Custom data_processed metric should be registered")
-	assert.True(t, foundMetrics["semstreams_mock_service_queue_depth"],
+	assert.True(t, foundMetrics["semengine_mock_service_queue_depth"],
 		"Custom queue_depth metric should be registered")
 }
 
@@ -110,7 +110,7 @@ func TestMetricsIntegration_IdempotentRegistration(t *testing.T) {
 	require.NoError(t, err, "same-key registration returns the canonical collectors")
 	service1.ProcessData(1, 0)
 	service2.ProcessData(2, 0)
-	assert.Equal(t, []float64{3}, gatheredSeries(t, registry, "semstreams_mock_service_data_processed_total"))
+	assert.Equal(t, []float64{3}, gatheredSeries(t, registry, "semengine_mock_service_data_processed_total"))
 }
 
 func TestMetricsIntegration_CoreAndServiceMetricsSeparate(t *testing.T) {
@@ -138,21 +138,21 @@ func TestMetricsIntegration_CoreAndServiceMetricsSeparate(t *testing.T) {
 	}
 
 	// Verify core metrics
-	assert.True(t, foundMetrics["semstreams_service_status"],
+	assert.True(t, foundMetrics["semengine_service_status"],
 		"core service status metric should be present")
-	assert.True(t, foundMetrics["semstreams_messages_received_total"],
+	assert.True(t, foundMetrics["semengine_messages_received_total"],
 		"core messages received metric should be present")
 
 	// Verify service-specific metrics
-	assert.True(t, foundMetrics["semstreams_mock_service_data_processed_total"],
+	assert.True(t, foundMetrics["semengine_mock_service_data_processed_total"],
 		"Service-specific data processed metric should be present")
-	assert.True(t, foundMetrics["semstreams_mock_service_queue_depth"],
+	assert.True(t, foundMetrics["semengine_mock_service_queue_depth"],
 		"Service-specific queue depth metric should be present")
 
 	// Verify business metrics are NOT present (they should be registered by specific services only)
-	assert.False(t, foundMetrics["semstreams_business_drifters_tracked"],
+	assert.False(t, foundMetrics["semengine_business_drifters_tracked"],
 		"Business drifters metric should NOT be in core registry")
-	assert.False(t, foundMetrics["semstreams_business_convergence_zones_total"],
+	assert.False(t, foundMetrics["semengine_business_convergence_zones_total"],
 		"Business convergence zones metric should NOT be in core registry")
 }
 
@@ -177,7 +177,7 @@ func TestMetricsIntegration_MetricsUnregistration(t *testing.T) {
 		foundBefore[mf.GetName()] = true
 	}
 
-	assert.True(t, foundBefore["semstreams_mock_service_data_processed_total"],
+	assert.True(t, foundBefore["semengine_mock_service_data_processed_total"],
 		"Metric should be present before unregistration")
 
 	// Unregister one of the metrics
@@ -193,9 +193,9 @@ func TestMetricsIntegration_MetricsUnregistration(t *testing.T) {
 		foundAfter[mf.GetName()] = true
 	}
 
-	assert.False(t, foundAfter["semstreams_mock_service_data_processed_total"],
+	assert.False(t, foundAfter["semengine_mock_service_data_processed_total"],
 		"Metric should be absent after unregistration")
-	assert.True(t, foundAfter["semstreams_mock_service_queue_depth"],
+	assert.True(t, foundAfter["semengine_mock_service_queue_depth"],
 		"Other service metrics should remain")
 }
 
@@ -235,5 +235,5 @@ func TestMetricsIntegration_MultipleServicesSameNames(t *testing.T) {
 	require.NoError(t, err, "same-key registration returns the canonical collectors")
 	service1.ProcessData(0, 4)
 	service2.ProcessData(0, 7)
-	assert.Equal(t, []float64{7}, gatheredSeries(t, registry, "semstreams_mock_service_queue_depth"))
+	assert.Equal(t, []float64{7}, gatheredSeries(t, registry, "semengine_mock_service_queue_depth"))
 }

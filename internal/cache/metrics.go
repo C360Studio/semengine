@@ -22,42 +22,42 @@ type cacheMetrics struct {
 func newCacheMetrics(registry *metric.MetricsRegistry, prefix string) (*cacheMetrics, error) {
 	m := &cacheMetrics{
 		hits: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace:   "semstreams",
+			Namespace:   "semengine",
 			Subsystem:   "cache",
 			Name:        "hits_total",
 			ConstLabels: prometheus.Labels{"component": prefix},
 			Help:        "Total number of cache hits",
 		}),
 		misses: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace:   "semstreams",
+			Namespace:   "semengine",
 			Subsystem:   "cache",
 			Name:        "misses_total",
 			ConstLabels: prometheus.Labels{"component": prefix},
 			Help:        "Total number of cache misses",
 		}),
 		sets: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace:   "semstreams",
+			Namespace:   "semengine",
 			Subsystem:   "cache",
 			Name:        "sets_total",
 			ConstLabels: prometheus.Labels{"component": prefix},
 			Help:        "Total number of cache set operations",
 		}),
 		deletes: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace:   "semstreams",
+			Namespace:   "semengine",
 			Subsystem:   "cache",
 			Name:        "deletes_total",
 			ConstLabels: prometheus.Labels{"component": prefix},
 			Help:        "Total number of cache delete operations",
 		}),
 		evictions: prometheus.NewCounter(prometheus.CounterOpts{
-			Namespace:   "semstreams",
+			Namespace:   "semengine",
 			Subsystem:   "cache",
 			Name:        "evictions_total",
 			ConstLabels: prometheus.Labels{"component": prefix},
 			Help:        "Total number of cache evictions",
 		}),
 		size: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace:   "semstreams",
+			Namespace:   "semengine",
 			Subsystem:   "cache",
 			Name:        "size",
 			ConstLabels: prometheus.Labels{"component": prefix},

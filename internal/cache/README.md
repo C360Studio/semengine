@@ -71,9 +71,9 @@ if err != nil {
 }
 
 // Metrics automatically exported:
-// - semstreams_cache_hits_total{component="my_component"}
-// - semstreams_cache_misses_total{component="my_component"}
-// - semstreams_cache_size{component="my_component"}
+// - semengine_cache_hits_total{component="my_component"}
+// - semengine_cache_misses_total{component="my_component"}
+// - semengine_cache_size{component="my_component"}
 // - etc.
 ```
 
@@ -180,12 +180,12 @@ When enabled via `WithMetrics()`, the following metrics are exported:
 
 | Metric | Type | Description |
 |--------|------|-------------|
-| `semstreams_cache_hits_total` | Counter | Total cache hits |
-| `semstreams_cache_misses_total` | Counter | Total cache misses |
-| `semstreams_cache_sets_total` | Counter | Total set operations |
-| `semstreams_cache_deletes_total` | Counter | Total delete operations |
-| `semstreams_cache_evictions_total` | Counter | Total evictions |
-| `semstreams_cache_size` | Gauge | Current number of entries |
+| `semengine_cache_hits_total` | Counter | Total cache hits |
+| `semengine_cache_misses_total` | Counter | Total cache misses |
+| `semengine_cache_sets_total` | Counter | Total set operations |
+| `semengine_cache_deletes_total` | Counter | Total delete operations |
+| `semengine_cache_evictions_total` | Counter | Total evictions |
+| `semengine_cache_size` | Gauge | Current number of entries |
 
 All metrics include a `component` label for identifying different cache instances.
 

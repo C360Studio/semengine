@@ -3,14 +3,22 @@
 ## Purpose
 The integration runner is the one admitted entry to Docker-backed tests in SemEngine: it takes the host lock shared
 with SemStreams, owns the `go test` process group, and proves after every run that nothing it started survives.
+
 ## Requirements
+
 ### Requirement: Shared host lock
 
 The runner SHALL acquire `/tmp/semstreams-integration.lock` with an atomic directory create and an owner record with
 exactly the keys host, pid, started, identity, token, command (command naming this repository and worktree) before any
-Docker call; SHALL fail fast reporting the owner when the lock is busy unless SEMENGINE_DOCKER_ADMISSION_WAIT_SECONDS
-(1–3600) is set; SHALL quarantine only a same-host owner whose pid is dead or whose start identity changed; SHALL
-release only while the owner token still matches; and SHALL read no SEMSTREAMS_* variable.
+Docker call. The identity SHALL be the runner's start time as `ps -o lstart= -p <pid>` prints it in the runner's
+environment, with leading blanks removed and trailing blanks kept, or `unknown` when that prints nothing. An owner
+record is live when its host is this host and `ps -o lstart= -p <pid>`, read the same way in the reader's
+environment, prints its identity; an `unknown` identity is never live. ps reports start times to the second, so a
+pid reused within the second its owner started reads as that owner. The runner SHALL fail fast reporting the owner
+when the lock is busy unless SEMENGINE_DOCKER_ADMISSION_WAIT_SECONDS (1–3600) is set; SHALL quarantine only a
+same-host owner whose pid `kill -0` cannot signal (another user's process included) or whose start time, read the
+same way, differs from an identity other than `unknown`, and SHALL respect every other owner; SHALL release only while
+the owner token still matches; and SHALL read no SEMSTREAMS_* variable.
 
 #### Scenario: Busy lock refuses before Docker
 
@@ -20,6 +28,11 @@ release only while the owner token still matches; and SHALL read no SEMSTREAMS_*
 #### Scenario: Provably stale lock is quarantined
 
 - **WHEN** the owner record names this host and a pid that is not running
+- **THEN** the runner moves the directory to `.stale.<pid>.<started>`, removes it, and acquires
+
+#### Scenario: Changed start time is quarantined
+
+- **WHEN** the owner record names this host and a running pid whose start time differs from the record's identity
 - **THEN** the runner moves the directory to `.stale.<pid>.<started>`, removes it, and acquires
 
 #### Scenario: Foreign or live owner is respected
@@ -97,4 +110,3 @@ latency, effective Docker host and context, and Ryuk settings.
 
 - **WHEN** another repository re-pulls the mutable `nats:2.14-alpine` tag
 - **THEN** the runner's digest-addressed cache check and pull are unaffected
-

@@ -26,12 +26,12 @@ starts, `task merge:check -- 122` and the merge are recorded on this pull reques
       line (`design.md`, D4). Gate: `task test:unit`.
 - [x] 2.2 (D) `TestSpecQueueCheck` gains `C8 a tasks.md that is not UTF-8`, as its own `t.Run` after C7, with the
       fixture and assertions of `design.md`, D2, and a comment naming the new requirement. Gate: `task test:unit`.
-- [ ] 2.3 (D) Shown able to fail, by hand (`docs/testing.md`, "Run it by hand"): the wrong changes M1a, M1b and M2 of
+- [x] 2.3 (D) Shown able to fail, by hand (`docs/testing.md`, "Run it by hand"): the wrong changes M1a, M1b and M2 of
       `design.md`, D3, run one at a time, each against H12 and C8. For each, the baseline, wrong-change and restored
       runs, the checksums before and after, and the outcome by its name (detection, survivor, invalid or
       inconclusive), with what is not covered, recorded on this pull request. Gate: the recorded runs, with a
       detection wherever D3's table says the case must fail.
-- [ ] 2.4 (D) `task verify` passes on the commit that carries 2.1 and 2.2, and that commit's CI run passes. Gate: CI
+- [x] 2.4 (D) `task verify` passes on the commit that carries 2.1 and 2.2, and that commit's CI run passes. Gate: CI
       `Required` on that commit, its run link recorded on this pull request.
 
 ## 3. Review

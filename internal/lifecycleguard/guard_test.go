@@ -143,6 +143,43 @@ func TestGuardFailedRollbackLeavesCleanupForStop(t *testing.T) {
 	}
 }
 
+// A running owner whose Stop fails keeps its cleanup pending: each later Stop runs cleanup again
+// and returns its result, and Stop returns nil and calls nothing only after a cleanup succeeded.
+//
+// Requirement: lifecycle-suite/Portable floor
+func TestGuardFailedStopLeavesCleanupForNextStop(t *testing.T) {
+	o := &owner{}
+	if err := o.Start(t.Context()); err != nil {
+		t.Fatalf("Start = %v", err)
+	}
+	o.mu.Lock()
+	o.failRelease = true
+	o.mu.Unlock()
+	for want := 1; want <= 2; want++ {
+		if err := o.Stop(t.Context()); !errors.Is(err, errRelease) {
+			t.Fatalf("Stop %d while release fails = %v, want the release error", want, err)
+		}
+		if obs := o.Observe(); len(obs.Unresolved) != 1 || obs.Calls["release"] != want {
+			t.Fatalf("after failed Stop %d the owner holds %v with %d release call(s); want the worker and %d",
+				want, obs.Unresolved, obs.Calls["release"], want)
+		}
+	}
+	o.mu.Lock()
+	o.failRelease = false
+	o.mu.Unlock()
+	if err := o.Stop(t.Context()); err != nil {
+		t.Fatalf("Stop once release succeeds = %v, want nil", err)
+	}
+	if obs := o.Observe(); len(obs.Unresolved) != 0 || obs.Calls["release"] != 3 {
+		t.Fatalf("after the successful Stop the owner holds %v with %d release call(s); want nothing and 3",
+			obs.Unresolved, obs.Calls["release"])
+	}
+	if err := o.Stop(t.Context()); err != nil || o.Observe().Calls["release"] != 3 {
+		t.Fatalf("Stop after the successful one = %v with %d release call(s); want nil and still 3",
+			err, o.Observe().Calls["release"])
+	}
+}
+
 // A Stop that arrives while Start is still acquiring waits for that Start to finish and then
 // releases what it acquired; a Stop whose own context ends first returns that context's error.
 //

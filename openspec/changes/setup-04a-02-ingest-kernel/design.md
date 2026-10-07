@@ -253,7 +253,10 @@ ported (ruling E). Not ported in change 2, so their shape is change 7's: `infere
 `inference.NATSAnomalyStorage.Watch` (#97, D1a). `lifecycle.Manager.Watch` and `WatchEvents` have **no
 reader in the admitted set** (§2: `Watch` is read only by `processor/gated-dag/executor.go:119` and
 `gateway/lifecycle-gateway/handlers.go:475`; `WatchEvents` by nobody); they are adapted because D6 keeps
-`pkg/lifecycle`'s surface whole (K1), and the shape change is their only change.
+`pkg/lifecycle`'s surface whole (K1). Their shape changed, and so did one behaviour: an entry `Watch` or `WatchEvents`
+cannot project now ends the watch with an error naming the entity and revision, where at the pin it was a logged skip
+(`manager_query.go:337`; checkpoint-2 review, PR #93 comment 6048386249; `TestWatchReturnsProjectionFailure`,
+`167aec4`).
 
 The developer chooses locks and join order, settled by a failing-first test under `-race`. A nil context is refused at
 the call (an error). Callers inside this change adapt in the same commit (graph-ingest's `KeyedPool` and readiness

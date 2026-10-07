@@ -383,6 +383,17 @@ func TestSpecQueueCheck(t *testing.T) {
 			}
 		})
 	}
+
+	// spec-queue › "A tasks.md that cannot be read stops the queue and the check": a file the
+	// check did not read is never reported free of misplaced holds. Not in C7's loop: C7 wants
+	// "queue unavailable:" first on standard error, and the reader's traceback comes before it.
+	t.Run("C8 a tasks.md that is not UTF-8", func(t *testing.T) {
+		r := runSpecQueue(t, listOneChange, notUTF8Tasks, "--check")
+		requireCannotRead(t, r)
+		if strings.Contains(r.stdout, "holds: ok") {
+			t.Errorf("stdout has %q, want none\nstdout:\n%s", "holds: ok", r.stdout)
+		}
+	})
 }
 
 // spec-queue › "spec:check runs the check": the task runs openspec validate, then the check, and

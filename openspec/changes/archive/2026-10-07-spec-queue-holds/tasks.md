@@ -63,7 +63,7 @@ starts, `task merge:check -- 113` and the merge are recorded on this pull reques
 
 ## 5. In the archive commit
 
-- [ ] 5.1 (W) The archive command creates `openspec/specs/spec-queue/spec.md`, in the same commit as the spec sync
+- [x] 5.1 (W) The archive command creates `openspec/specs/spec-queue/spec.md`, in the same commit as the spec sync
       and the ticks this commit makes. The command is `openspec archive` with this change's id. The same commit
       writes the spec's Purpose: what the queue reads and prints, that it is advisory, and what `--check` fails on.
       It also gives `docs/repository-map.md` a row for the archived change and lists the `spec-queue` spec as

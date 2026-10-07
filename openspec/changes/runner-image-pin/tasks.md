@@ -24,10 +24,10 @@ starts, `task merge:check -- 112` and the merge are recorded on this pull reques
       be the one label `runnerLabel` (`ubuntu-24.04`), a constant in the test (`design.md`, D2). Run against the
       unchanged `.github/workflows/ci.yml`, `TestCIWorkflowPinned` fails naming `verify`, `merge-check` and
       `required` with `ubuntu-latest`; that output is recorded on this pull request. Gate: the recorded failing run.
-- [ ] 2.2 (D) `TestCIWorkflowPinnedSensitivity`: the clean fixture gains `runs-on: ubuntu-24.04` on each job, and
+- [x] 2.2 (D) `TestCIWorkflowPinnedSensitivity`: the clean fixture gains `runs-on: ubuntu-24.04` on each job, and
       the seven planted workflows of `design.md`, D3, are added, the `ubuntu-latest` one on a fourth job.
       Gate: `task test:unit`.
-- [ ] 2.3 (D) `.github/workflows/ci.yml`: the three `runs-on:` lines read `ubuntu-24.04`, with the comment of
+- [x] 2.3 (D) `.github/workflows/ci.yml`: the three `runs-on:` lines read `ubuntu-24.04`, with the comment of
       `design.md`, D4. Committed with 2.1 and 2.2 so that no commit is red. `TestCIWorkflowPinned` passes.
       Gate: `task verify`.
 - [ ] 2.4 (D) Shown able to fail, by hand (`docs/testing.md`, "Run it by hand"): the four wrong changes of

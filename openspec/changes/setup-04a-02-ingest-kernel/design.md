@@ -1,8 +1,9 @@
 # Design: setup-04a-02-ingest-kernel
 
-Status: **draft, round 2, not reviewed.** It answers the 17 findings of the pre-owner design review's round 1 on the
-revised inventory (`inventory.md`, this folder). Nothing here is approved; the independent review and the owner's
-acceptance on #91 come first.
+Status: **draft, round 3.** Round 2 answered the 17 findings of the pre-owner design review's round 1 and went to the
+owner with questions A–F. This round applies the owner's rulings of 2026-10-07 on B, C, E and F (#91 comments
+6035429806 and 6035477895; "Ruled" below) and the pin probe P-9 that ruling B asked for (`inventory.md` §8). Nothing
+here is approved; the owner's acceptance on #91 comes first.
 
 Shorthand, defined once:
 
@@ -34,21 +35,24 @@ Shorthand, defined once:
 
 ## Purpose and admission
 
-Foundation D2 row 2 and issue #91 fix the scope: the 17 packages of closure(graph-ingest) less change 1 (16 if the
-owner accepts question E), `graph/llm` and `model/wire` carried dormant (foundation D8), the repair rows foundation D7
-places here (#15, #16's `graph` and graph-ingest half, #19, #20, settlement, Q13, #29, #33, SS#1411), and the deltas of
-foundation D10.2. The claim: **graph-ingest runs as a component under the lifecycle suite, with no boot path** — built
-through its own factory, started against `natsfixture`, and driven by `lifecycletest.Run` with a failing factory whose
-broker refuses the connection. The current `lifecycle-suite` requirement "Observe adapter contract" already binds it
-("A service ported from the pin SHALL be run through the suite via a test-side adapter in its package"), so this change
-carries no `lifecycle-suite` delta.
+Foundation D2 row 2 and issue #91 fix the scope, as the owner's rulings amend it: of the 17 packages of
+closure(graph-ingest) less change 1, the 15 left once `pkg/worker` (ruling E) and `internal/componentadmission` (ruling
+C) are not ported; from `graph/llm`, only the file `graph/inference` reads (ruling B, D1a); `model/wire` not ported
+(D1a); the repair rows foundation D7 places here (issues #15, #19, #20, #29 and #33, the `graph` and graph-ingest half
+of #16, settlement, Q13 and SS#1411); and the deltas of foundation D10.2. The claim: **graph-ingest runs as a component
+under the lifecycle suite, with no boot path** — built through its own factory, started against `natsfixture`, and
+driven by `lifecycletest.Run` with a failing factory whose broker refuses the connection. The current `lifecycle-suite`
+requirement "Observe adapter contract" already binds it ("A service ported from the pin SHALL be run through the suite
+via a test-side adapter in its package"), so this revision carries no `lifecycle-suite` delta; task 1.9 adds the one
+that #77's ruling needs.
 
 Admission gates: `task verify` green, including `cover:check` with this change's targets at the one 80% floor (D11);
 graph-ingest green under the lifecycle suite; every helper that runs background work green under its
 `background-work` tests (D5); each repair row's proving test green (D8); the ledger rows valid under `task
 ledger:check`. Owner rulings this change follows: #9 items 1–9; foundation (a)–(h); change 1's rulings 1.6 and 1.7
 (services get the suite, helpers get the three background-work shapes); #9 comments 5968830525 (surface audit) and
-5972208367 (generic payload); #69 (outward-facing names, 2026-10-06); #19 Q6, #20 Q7; Q12, Q13, Q16, Q18 on #8.
+5972208367 (generic payload); #69 (outward-facing names, 2026-10-06); #19 Q6, #20 Q7; Q12, Q13, Q16, Q18 on #8; #91
+comments 6035429806 (E, F) and 6035477895 (B, C).
 
 **Order with #92.** PR #92 (claim for #69, head `aceb2be`) renames the floor's outward-facing names to `semengine`.
 It changes 25 files (`gh pr view 92 --json files`), one of which this change also edits:
@@ -69,31 +73,74 @@ otherwise `pkg/<name>` moves to `internal/<name>`.
 
 | Level | Package | Destination | Why public / internal | Verdict |
 | --- | --- | --- | --- | --- |
-| 0 | `internal/lifecyclecleanup` | `internal/lifecyclecleanup` | internal at the pin | carry (D7; #77 may move it) |
+| 0 | `internal/lifecyclecleanup` | `internal/lifecyclecleanup` | internal at the pin | carry (D7; #77's ruling gives the helper a public home, task 1.9) |
 | 0 | `types` | `types` | consumers import it (54 + 20 sites) | carry |
 | 0 | `model` | `model` | consumers import it (3) | carry: whole until #32 decides the seam (D6) |
-| 0 | `model/wire` | `model/wire` | dormant | carry, dormant (foundation D8) |
+| 0 | `model/wire` | — | nothing ported here reads it (D1a, P-9) | not ported in change 2 (D1a, following ruling B's reasoning); `defer-exclude` row naming change 7 |
+| 0 | `graph/llm` | `graph/llm` | `graph/inference` (public) names `llm.Client` in `ReviewWorkerConfig.LLMClient` (`review_worker.go:69`) | adapt: `client.go` only (ruling B, D1a) |
 | 0 | `storage` | `storage` | consumers import it (20) | carry |
-| 1 | `pkg/worker` | — (or `internal/worker`) | no reader once `BoundedDispatcher` goes (§2) | exclude, owner question E (or adapt, D5) |
+| 1 | `pkg/worker` | — | no reader once `BoundedDispatcher` goes (§2) | not ported (ruling E); `defer-exclude` row |
 | 1 | `graph` | `graph` | consumers import it (72 + 11) | adapt (D3, D6, D9) |
-| 2 | `graph/llm` | `graph/llm` | dormant | carry, dormant; see owner question B |
 | 2 | `graph/readiness` | `graph/readiness` | consumers import it (2) | adapt (D4, D5, D6) |
 | 2 | `graph/structural` | `graph/structural` | `graph/inference` (public) names `structural.Indices` (`detector.go:36`) | adapt (D6) |
-| 2 | `internal/componentadmission` | `internal/componentadmission` | internal at the pin | carry; see owner question C |
+| 2 | `internal/componentadmission` | — | its only reader is the token parameter ruling C removes (D14) | not ported (ruling C); `defer-exclude` row |
 | 2 | `internal/graphmutation` | `internal/graphmutation` | internal at the pin | adapt (D6, D9) |
-| 2 | `pkg/dispatch` | `internal/dispatch` | no consumer import; no public signature names it | adapt (D3, D4, D5, D6) |
+| 2 | `pkg/dispatch` | `internal/dispatch` | no consumer import; no public signature names it | adapt (D3, D4, D5, D6; its own `ErrStopped`, ruling E) |
 | 2 | `storage/storeregistry` | `storage/storeregistry` | consumers import it (4) | adapt (D2, D6) |
-| 3 | `graph/inference` | `graph/inference` | `processor/graph-clustering.Config` names `inference.Config` (`component.go:77`, change 7) | adapt (D4, D5, D6, D9) |
+| 3 | `graph/inference` | `graph/inference` | `processor/graph-clustering.Config` names `inference.Config` (`component.go:77`, change 7) | adapt (D4, D5, D6, D9; 47.9% coverage recorded, gate in change 7, ruling F) |
 | 3 | `pkg/projection` | `pkg/projection` | consumers import it (11 + 12) | repair-before-port (#19, #20; D8) |
 | 4 | `pkg/lifecycle` | `pkg/lifecycle` | semteams and semboids import it (12) | adapt (D3, D5) |
-| 5 | `component` | `component` | consumers import it (76 + 23) | adapt (#29, D6, D9; owner question C) |
+| 5 | `component` | `component` | consumers import it (76 + 23) | adapt (#29, D6, D9, D14) |
 | 6 | `processor/graph-ingest` | `processor/graph-ingest` | consumers import it (3 + 8) | repair-before-port (#15, #16, #20, settlement, Q13, #33, SS#1411; D8, D13) |
 
 New, not from the pin: `internal/lifecycleguard` (D13), recorded on graph-ingest's row as its SS#1411 repair item.
 `component/lifecycle_test_suite.go` is not ported: its ledger row says `adapt → internal/harness/lifecycletest`; its one
-in-set caller, `component/lifecycle_test_support_test.go`, leaves with it. Dependencies entering `go.mod`:
-`github.com/sashabaranov/go-openai` (dormant `graph/llm`; `task vuln` scans it) and `golang.org/x/net`
-(`model/httpclient.go:7`), at versions that do not downgrade the base's `x/text`, `x/tools` or `x/vuln` (P-2).
+in-set caller, `component/lifecycle_test_support_test.go`, leaves with it. One dependency enters `go.mod`:
+`golang.org/x/net` (`model/httpclient.go:7`), at a version that does not downgrade the base's `x/text`, `x/tools` or
+`x/vuln` (P-2). `github.com/sashabaranov/go-openai` does not enter: its only importer in the closure is the part of
+`graph/llm` ruling B leaves behind (P-9).
+
+### D1a. Ruled deviation from foundation D8: `graph/llm` and `model/wire`
+
+Foundation D8 carried `graph/llm` and `model/wire` whole and unused ("dormant") from change 2 to change 7, because
+`graph/inference` imports `graph/llm`. **Owner ruling B (#91 comment 6035477895) modifies D8 for `graph/llm`: port only
+what `graph/inference` reads from it.** P-9 (`inventory.md` §8) measured that at the pin:
+
+- `graph/inference`'s non-test code reads `llm.Client` (`review_worker.go:40` — `llmClient llm.Client`, and `:69`, the
+  exported `ReviewWorkerConfig.LLMClient`), `llm.ChatRequest` (`:430`) and `llm.Config` (`config.go:123`, the field
+  `ReviewConfig.LLM`, JSON key `llm`). Its tests read `llm.Client`, `llm.ChatRequest` and
+  `llm.ChatResponse` (`review_worker_test.go:30,42`).
+- `Client`, `ChatRequest` and `ChatResponse` are the whole of `graph/llm/client.go` (65 lines; its one import is
+  `context`). That file is ported; the other seven (`config.go`, `content_fetcher.go`, `doc.go`, `openai_client.go`,
+  `prompt_data.go`, `prompt_types.go`, `prompts.go`), the two test files that test the OpenAI client, and the README
+  stay behind until change 7.
+- `ReviewConfig.LLM` (the `review.llm` key) is dropped, so a configuration that sets it is refused by
+  `RejectUnknownKeys` (D6). P-9 found no reader of it anywhere in the pin, graph-clustering included: the only
+  `\.LLM` hit in a non-test file is the doc-comment example `graph/inference/doc.go:51`. graph-clustering builds its
+  review client from the model registry (`processor/graph-clustering/component.go:2476` — `func (c *Component)
+  resolveReviewLLMClient() llm.Client {`) and reads other `Review` fields, not `LLM` (`:1081`, `:2456-2460`).
+  The ruling's note that graph-clustering reads the key does not hold at the pin; the drop stands on either reading.
+  Round 2's count of 38 read `graph/inference.Config` fields included this one through the word "LLM" in log text
+  (§8): the corrected count is 37 read and 6 unread.
+- `client.go`'s package comment (`:1-10`) describes summarization, answer generation and the OpenAI SDK, none of which
+  the ported file does; it is rewritten to describe the interface (surface audit (c)). The `doc.go:45-56` example in
+  `graph/inference` loses its `cfg.Review.LLM` lines.
+- No exception to the deployment-authority rule is needed: `EntityParts` (`prompt_types.go:14-15`) is not ported.
+
+**`model/wire` admits the same cut, and it is cut to nothing.** P-9: at the pin, `model/wire`'s non-test importers are
+`graph/llm/openai_client.go`, its own sub-package `model/wire/responses`, and `processor/agentic-model` (cut from the
+engine, #8 Q4). In the graph-ingest closure the only edge into it is `graph/llm → model/wire` (`go list -deps -f
+'{{.ImportPath}} {{.Imports}}' ./processor/graph-ingest`). Once `openai_client.go` stays behind, no package this change
+ports reads `model/wire`, so, following ruling B's reasoning (port what the admitted packages read), none of it is
+ported. It is ledgered `defer-exclude`, naming change 7 and the seam (#32) as where it returns if it returns. The same
+holds for `go-openai`, whose only importer in the closure is `graph/llm`.
+
+What this changes from foundation D8: change 2 carries no dormant package; no row says "dormant until #32"; `go.mod`
+does not gain `go-openai`, so `task vuln` does not scan it for changes 2–6; foundation D8's "excluded from coverage
+targets" no longer applies (`graph/llm` after the cut declares one interface and two structs and has no statements,
+so it has no coverage figure and no target, D11). What it costs: change 7 ports the rest of `graph/llm` and
+`model/wire`, if the seam keeps them, instead of deleting copies; that cut was made at the pin, the "blind" cut #8 Q4
+was written to avoid, which the owner accepted in ruling B.
 
 ### D2. Test files that import packages outside the set
 
@@ -143,7 +190,8 @@ one tracking issue (task 6.3). The establishing change converts only its own fiv
 Every live registration moves to `metric.RegisterOrGet` and uses the collector it returns (the AGENTS.md rule; ledger
 `metric` row). Live sites: `graph/readiness/gauges.go:149-157` (7), `KeyedPool`'s four (`keyed_pool.go:441-460`),
 graph-ingest (`component.go` 12, `poison_inventory.go` 1). The dead ones go with their surface (D6):
-`component/metrics.go` (4), `graph/inference/metrics.go` (7), `pkg/worker/pool.go:133-139` (7).
+`component/metrics.go` (4), `graph/inference/metrics.go` (7); `pkg/worker/pool.go:133-139` (7) is not ported
+(ruling E).
 
 What a caller observes:
 
@@ -169,14 +217,14 @@ audit drops (D6) needs no shape. Per remaining helper, what the caller observes,
 
 | Helper | Pin | After the port | What the caller observes |
 | --- | --- | --- | --- |
-| `dispatch.KeyedPool` | `Stop(ctx)` | `Shutdown(ctx)` | returns nil once every lane has drained and exited, or `ctx.Err()` first; with no deadline it waits for the join; a later `Shutdown` returns nil; `SubmitBlocking` after `Shutdown` began is refused with `ErrStopped` |
+| `dispatch.KeyedPool` | `Stop(ctx)` | `Shutdown(ctx)` | returns nil once every lane has drained and exited, or `ctx.Err()` first; with no deadline it waits for the join; a later `Shutdown` returns nil; `SubmitBlocking` after `Shutdown` began is refused with `ErrStopped`, which `internal/dispatch` now declares itself (ruling E; at the pin it re-exported `worker.ErrPoolStopped`, `pkg/dispatch/errors.go:24`) |
 | `readiness.Watcher` | `Start(ctx)`, `Stop()` waiting unbounded on a goroutine doing KV watch I/O | `Run(ctx)` | the caller runs `Run` on its own goroutine; `Run` returns `ctx.Err()` when the context ends and leaves nothing running; `Read` keeps its pin behavior |
 | `inference.ReviewWorker` | `Start(ctx)`, `Stop()` | `Shutdown(ctx)` | as `KeyedPool` |
 | `lifecycle.Manager.Watch`, `.WatchEvents` | return a channel; the goroutine ends when ctx ends and is never joined | a watch whose callback runs on the caller's goroutine; returning is the join | no goroutine left after return |
-| `worker.Pool[T]` (only if question E keeps it) | `Start(ctx)`, `Stop(timeout)`; a timed-out `Stop` leaves workers running and a second `Stop` panics (P-6) | `Shutdown(ctx)` | as `KeyedPool`; a second `Shutdown` never panics |
 
 Dropped, so no shape: `dispatch.BoundedDispatcher` (and with it its fixed 30 s default wait, `dispatcher.go:226-231`),
-`readiness.Set`, `inference.NATSAnomalyStorage.Watch` (D6). `lifecycle.Manager.Watch` and `WatchEvents` have **no
+`readiness.Set`, `inference.NATSAnomalyStorage.Watch` (D6); `worker.Pool[T]`, whose second `Stop` after a timed-out
+one panics at the pin (P-6), is not ported (ruling E). `lifecycle.Manager.Watch` and `WatchEvents` have **no
 reader in the admitted set** (§2: `Watch` is read only by `processor/gated-dag/executor.go:119` and
 `gateway/lifecycle-gateway/handlers.go:475`; `WatchEvents` by nobody); they are adapted because D6 keeps
 `pkg/lifecycle`'s surface whole (K1), and the shape change is their only change.
@@ -193,9 +241,12 @@ watcher's start at `:1512` and `:1527` and stop at `:1260` and `:1266`; `fusionn
 From §2, read by type (the appendix lists all 186 with a disposition). Admission is per package; only surface nothing
 reads is removed (#9 comment 5968830525).
 
-- **Dropped (134 plus the transitive drops of §2):** among them `component.NewProcessorMetrics` and
-  `ProcessorMetrics`; `inference.NewReviewMetrics` and `ReviewMetrics`; `worker.WithMetricsRegistry` and
-  `Pool.SubmitBlocking`; the 20 `graph/errors.go` sentinels; `graph.IncomingEdges` and its methods;
+- **Not ported by ruling:** `pkg/worker` whole (ruling E), and with it its appendix rows
+  (`worker.WithMetricsRegistry`, `Pool.SubmitBlocking`); `internal/componentadmission` whole (ruling C, D14); the
+  seven files of `graph/llm` other than `client.go` (ruling B, D1a).
+- **Dropped (the rest of the 134 plus the transitive drops of §2):** among them `component.NewProcessorMetrics` and
+  `ProcessorMetrics`; `inference.NewReviewMetrics` and `ReviewMetrics`; the 20 `graph/errors.go` sentinels;
+  `graph.IncomingEdges` and its methods;
   `component.{GetString,GetInt,GetBool,GetFloat64,ValidateJSONSize,ValidateComponentConfig,
   ValidateAndPersistComponentConfig,IsLifecycleComponent,Registerable}`, `LogLevel*`, `LogEntry`, and
   `component/config_validator.go` whole; `component.Registry.Snapshot`; `component.MergePortConfig` (read by six
@@ -227,15 +278,18 @@ reads is removed (#9 comment 5968830525).
   second one.
   `IngestLanes < 1` keeps the pin's clamp to 1, a declared degrade, now with a test that an explicit 0 builds a
   one-lane component. Each of graph-ingest's four fields has a test that fails when the field is ignored.
-  `graph/inference.Config`: its five fields that nothing reads (`RunWithCommunityDetection`, `ReviewConfig.BatchSize`,
-  `RequireLLMClassification`, `RetentionDays`, `CleanupInterval`; §2 b) are dropped with their defaults and
-  validation, so a configuration that sets one is refused by `RejectUnknownKeys` rather than ignored. Its other 38
-  fields are read by the anomaly detectors, the review worker, the applier and the storage, whose only workload is
-  graph-clustering (change 7); their per-field tests are owner question F.
-- **Described, not implemented (c):** `processor/graph-ingest/TEST_DISPUTE.md` is not ported. The five READMEs are
+  `graph/inference.Config`: its six fields that nothing reads (`RunWithCommunityDetection`, `ReviewConfig.BatchSize`,
+  `ReviewConfig.LLM`, `RequireLLMClassification`, `RetentionDays`, `CleanupInterval`; §2 b and §8) are dropped with
+  their defaults and validation, so a configuration that sets one is refused by `RejectUnknownKeys` rather than
+  ignored. `ReviewConfig.LLM` (the `review.llm` key) is the one ruling B names (D1a). Its other 37 fields are read by
+  the anomaly detectors, the review worker, the applier and the storage, whose only workload is graph-clustering
+  (change 7); their per-field tests are owed by change 7 (ruling F, D11).
+- **Described, not implemented (c):** `processor/graph-ingest/TEST_DISPUTE.md` is not ported. `graph/llm/client.go`'s
+  package comment and `graph/inference/doc.go`'s `cfg.Review.LLM` example are rewritten (D1a); `graph/llm/README.md`
+  is not ported. The four READMEs of ported packages (`component`, `graph`, `types`, `processor/graph-ingest`) are
   read claim by claim in each port task; a claim no code implements is removed or the gap filed.
 - **Generic payload:** no `NewGenericJSON` or `GenericJSONPayload{` construction in the 17 (search over §2's file
-  list, empty), so no `adapt` item under #9 comment 5972208367.
+  list, empty; the set this change ports is a subset), so no `adapt` item under #9 comment 5972208367.
 
 ### D7. Failed-start rollback (`internal/lifecyclecleanup`)
 
@@ -245,20 +299,24 @@ values; startup and rollback errors are both returned (`errors.Join`); when roll
 nothing; when rollback fails, the component keeps what it could not release and the next `Stop` tries again. The
 five-second budget is a terminal finalization budget, which `background-work` "No fixed shutdown timeout" allows.
 
-The last branch does not meet the current `lifecycle-suite` rule that a failed `Start` holds nothing (#38). Whether it
-may is #77's separate grant (comment 6024793500). This change does not write that exception into any spec. It carries
-the pin's behavior unchanged, records it on graph-ingest's ledger row under `known_risks` ("a failed `Start` whose
-rollback also fails returns both errors and keeps what it could not release until the next `Stop`; pending #77 and its
-grant on #38"), and pins it with the pin's own test, carried on the in-package adapter:
+The last branch does not meet the current `lifecycle-suite` rule that a failed `Start` holds nothing (#38). **#77 was
+ruled on 2026-10-07** (comment 6035317931): the component cleans up its own failed start with a helper SemEngine makes
+public, the managers stay as the second line, and the #38 exception is granted for components SemEngine ports; the
+helper's public home and name, and whether it keeps accepting a nil callback, are this change's to settle, and PR #93
+closes #77 (comment 6035358884). This revision does not yet apply that ruling: it applies the rulings on B, C, E and F
+only. Task 1.9 restates D7 and D13 on #77's ruling (public destination, the `natsfixture` copy, the `lifecycle-suite`
+delta for the exception) before the design returns to review. Until then this section states the pin's behavior,
+which the ruling keeps: carried unchanged, recorded on graph-ingest's ledger row under `known_risks` ("a failed
+`Start` whose rollback also fails returns both errors and keeps what it could not release until the next `Stop`"),
+and pinned by the pin's own test, carried on the in-package adapter:
 `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop` (`processor/graph-ingest/lifecycle_owner_test.go:134`).
 The suite's failed-start check runs on graph-ingest with a failing factory whose cleanup succeeds, and passes as
 written.
 
 Two homes remain: `natsfixture.rollback` (15 s, `internal/harness/natsfixture/rollback.go:17`) and this package. They
 are kept apart: `natsfixture` may import no module package ("Import graph"), and the two budgets bound different work
-(Docker teardown, component cleanup). Recorded on both ledger rows. If #77 is ruled for a public helper before this
-design is accepted, the helper's destination is the only thing in this change that moves; otherwise #77's ruling lands
-in a later change.
+(Docker teardown, component cleanup). Recorded on both ledger rows. #77's ruling asks this change to reconcile them
+(foundation D9); that is task 1.9's.
 
 ### D8. Repair rows and what proves each
 
@@ -302,8 +360,10 @@ line and a counter each, with a test.
   inference takes the carrier `types.PlatformMeta` from graph-ingest's `deps.Platform` as a constructor argument and
   keeps it unexported. graph-ingest's two unexported strings (`component.go:772-773`) become one unexported
   `types.PlatformMeta`. `TestNoSecondAuthorityField` then passes for every live package.
-- `graph/llm.EntityParts.{Org,Platform}` (dormant) fail the same test: owner question B.
-- `component.Registry`'s access-token parameter fails `TestPublicSignatures`: owner question C.
+- `graph/llm.EntityParts.{Org,Platform}` (`prompt_types.go:14-15`) are not ported (ruling B, D1a), so the check needs
+  no exception and its requirement text is unchanged.
+- `component.Registry`'s access-token parameter, which fails `TestPublicSignatures` at the pin (P-4), is removed
+  (ruling C, D14), so that check needs no exception either.
 - **Wire and storage names, applied under #69** (not a question: #69's ruling, "one rule for every outward-facing
   name: semengine", with no consumer needing its stored data kept, covers them). `adapt` items on the rows named:
   `graph` — `BucketSemStreamsConfig = "semstreams_config"` (`graph/constants.go:74`) becomes
@@ -316,9 +376,9 @@ line and a counter each, with a test.
   configs), semboids (`configs/flock.json`, seven integration test files), and semteams' flow configs. A running
   deployment clears its NATS volume (#69).
 - `TestOneImagePin` flags six `nats:<subject>` port identifiers in `component` tests: D10.
-- The 11 fixed broker addresses, 28 sleeps (19 without `pkg/worker`), 6 skips and 20 unbounded cleanups (P-4) are
-  repaired in the port as change 1 D8 did: sleeps become waits on a channel, a callback or a `synctest` bubble; the six
-  skipped tests are rewritten as integration tests on `natsfixture`; addresses come from the fixture.
+- The 11 fixed broker addresses, 19 sleeps (the pin's 28 less `pkg/worker`'s 9), 6 skips and 20 unbounded cleanups (P-4)
+  are repaired in the port as change 1 D8 did: sleeps become waits on a channel, a callback or a `synctest` bubble; the
+  six skipped tests are rewritten as integration tests on `natsfixture`; addresses come from the fixture.
 
 ### D10. The image-pin check and component port identifiers
 
@@ -344,8 +404,9 @@ Recommendation **(d)**, as a `harness-boundaries` modification with a sensitivit
 
 - `scripts/cover-check.sh` targets, one floor (80%, `scripts/cover-check.sh:16`): `processor/graph-ingest merged`,
   `graph merged`, `graph/readiness unit`, `pkg/projection unit`, `internal/graphmutation unit`, `component merged`,
-  `storage/storeregistry unit`, `pkg/lifecycle merged`, `graph/inference unit` (owner question F), `graph/structural
-  unit`. Task 5.2 is ticked only on a green `cover:check`. Per package, from P-7 and P-8:
+  `storage/storeregistry unit`, `pkg/lifecycle merged`, `graph/structural unit`. Task 5.2 is ticked only on a green
+  `cover:check`. `graph/inference` joins the gate in change 7 (ruling F, #91 comment 6035429806); `graph/llm` has no
+  statements after the cut (D1a) and so no target. Per package, from P-7 and P-8:
   - Already over the floor after the drop: graph-ingest 84.0%, `graph` 85.5%, `graph/readiness` 83.6%,
     `graph/structural` 89.6%, `storage/storeregistry` 100%.
   - `internal/graphmutation` 69.7%, 10 statements short: tests that the client refuses a malformed append response
@@ -360,7 +421,9 @@ Recommendation **(d)**, as a `harness-boundaries` modification with a sensitivit
   - `pkg/lifecycle` 70.7% merged, 97 short (unread surface kept, K1): `Manager.Children`, `List`, `ListWorkflows`,
     `AssertRuleWritable`, a workflow definition's `validate` refusals, and `Complete`/`Fail` transitions, on
     `natsfixture`.
-  - `graph/inference` 47.9%, 451 short: owner question F.
+  - `graph/inference` 47.9% (674/1406), 451 short: not a target in this change (ruling F). Its ledger row records the
+    figure and that change 7 owes the tests; a tracking issue holds them (task 6.5). The `ReviewWorker` `synctest`
+    test that `background-work` requires (D5) stays in this change.
 - `TestReservedSubjectsDeclaredOnce` (D8), `TestNoProcessGlobalRegistration` (`metric-registry`) and the `component`
   no-agentic test (#29), each with an AGENTS.md row.
 - The `revive` package-comment lint covers the public packages ported here.
@@ -417,80 +480,89 @@ Adoption sweep (D13 establishes a reusable primitive; one tracking issue, task 6
 (`metric/handler.go:37-38`) and `natsclient.Client` (`natsclient/client.go:154`), which are not components, track
 different state (admitted HTTP requests; a connection with its own close path), and already pass the suite (change 1).
 
+### D14. Registry methods without the access token (ruling C)
+
+Owner ruling C (#91 comment 6035477895): "drop the token". At the pin, `component.Registry.CreateComponent`
+(`component/registry.go:193-201`), `SealComposition` (`:475`) and `Snapshots` (`:842-844`) take a parameter of type
+`componentadmission.Access`, an empty struct in `internal/componentadmission` (`access.go`, 8 lines) that only code in
+the module can build. After the port:
+
+- The three methods take no token; `internal/componentadmission` is not ported. Their behavior is otherwise the pin's.
+  `Snapshot` (`:824`) has no reader and is dropped (D6).
+- Each method's doc comment says that it exists for the component manager (`service.ComponentManager`, ported in
+  change 3), that a consumer creates and composes components through that manager, and that a direct call bypasses
+  the manager's bookkeeping. The comments name the manager in plain text, not as a doc link, until change 3 ports it.
+  `Snapshots` keeps its `revive:disable:unexported-return` directive (`:841`) with its reason restated without the
+  token.
+- `TestPublicSignatures` passes with no exception; the "Public signatures name no internal type" requirement is
+  unchanged.
+- What a caller observes: nothing refuses a consumer's direct call. That a consumer creates components only through
+  the manager is review only, with an `AGENTS.md` row (task 6.1). semboids' integration tests call
+  `registry.CreateComponent` directly (`internal/zone/ingest_integration_test.go:52` and eight more sites in six other
+  files; semsource, semconnect and semteams call none of the three methods). They are on SemStreams
+  `v1.0.0-beta.160`, whose call takes three arguments, so on SemEngine they add the pin's `prepare` argument (nil is
+  accepted, `component/registry.go:222`) and need no token.
+- Callers that change: in this change, the token's 19 uses in `component`'s tests (`registry_boot_admission_test.go`
+  12, `registry_integration_test.go` 4, `registry_test.go` 3) drop the argument. In later changes,
+  `class:port-refactor` items: `service/component_manager.go:290,384,397,1108` and `service/message_logger.go:347`
+  (change 3), and the test files `componentregistry/register_integration_test.go` and
+  `internal/portgrammarcontrol/target_test.go` when their packages are ported.
+
 ## Owner questions
 
-Each is written for the owner; the recommendation comes first.
+**A. (Framing only.)** Who cleans up when a component fails partway through `Start`, and may a `Start` whose cleanup
+fails return still holding what it could not release? Both were asked on #77 (comment 6024793500). The owner ruled on
+2026-10-07 (comment 6035317931; D7) and directed that PR #93 close #77 (comment 6035358884). This change asks nothing
+further; applying the ruling is task 1.9.
 
-**A. (Framing only; #77 decides it.)** Who cleans up when a component fails partway through `Start`, and may a `Start`
-whose cleanup fails return still holding what it could not release? Both questions are posted on #77 (comment
-6024793500) with their inventory; this change asks nothing further. Until #77 is ruled, graph-ingest keeps the pin's
-behavior, recorded as a known risk and pinned by a test (D7), and no spec here changes.
+### Ruled
 
-**B. The dormant `graph/llm` package has an exported `EntityParts` type with `Org` and `Platform` fields, which the
-deployment-authority check refuses. Should the spec list it as a temporary exception until change 7 deletes the
-package?** Recommendation: yes, a named exception that change 7 removes. Reasons: the code is carried untouched until
-the capability seam (#32) decides it; nothing in SemEngine runs it; a named exception is visible in the spec and goes
-with the package. Cost of the other answers: editing code nobody runs that change 7 deletes, including its prompt
-template (`graph/llm/prompts.go:47` reads `{{.Org}}`); or cutting `graph/llm` out of `graph/inference` now, the blind
-seam cut Q4 ruled out. Cost to you: one more exception line in a rule you wanted to have none.
+- **B** — "port": port only what `graph/inference` reads from `graph/llm` (`client.go`); drop `ReviewConfig.LLM`; the
+  rest of `graph/llm` and `go-openai` wait for change 7; no authority-rule exception; foundation D8 modified for
+  `graph/llm` (#91 comment 6035477895). Applied in D1, D1a, D6, D9; `model/wire` follows its reasoning (D1a).
+- **C** — "drop the token": `internal/componentadmission` is not ported; the three registry methods are plain public
+  methods whose doc comments direct callers to the component manager; no public-signature exception; a consumer
+  creating a component outside the manager is review only (#91 comment 6035477895). Applied in D1, D9, D14.
+- **E** — "Leave it out if it's dead code": `pkg/worker` is not ported; `internal/dispatch` declares its own "stopped"
+  error (#91 comment 6035429806). Applied in D1, D4, D5, D6.
+- **F** — "Agree": `graph/inference` joins the 80% gate in change 7; the `ReviewWorker` `synctest` test stays here; the
+  ledger row records 47.9% and a tracking issue holds the tests (#91 comment 6035429806). Applied in D6, D11.
 
-**C. Three component-registry methods (`CreateComponent`, `SealComposition`, `Snapshots`;
-`component/registry.go:193,475,842`) take an empty internal "access" value, so only engine code can call them. The
-rule that a public API never names an internal type refuses that. Allow it as a stated exception?** Recommendation:
-yes — an exception for parameters of one field-less type in `internal/componentadmission`, listed by method. Reasons:
-it is the pin's way of keeping consumers from creating components behind the component manager's back; the type has
-no fields, so no caller is missing anything it could construct; the exception is narrow and tested. A fourth method,
-`Snapshot`, has no reader and is dropped. Cost of the other answers: moving those methods behind an internal hook (a
-function variable set at startup, harder to read and review); or dropping the guard, after which a consumer can create
-components the manager does not know about. Cost to you: the rule you ruled (#9 comment 5953477174) gains its first
-exception.
-
-**E. After removing code nothing reads, the worker-pool package (`pkg/worker`) is used by nothing in SemEngine except
-one error value. Leave the package out of this port?** Recommendation: yes; `internal/dispatch` declares its own
-"stopped" error with the same text. Reasons: its only user, `dispatch.BoundedDispatcher`, is read only by a gated-DAG
-processor SemEngine does not admit; no consumer imports either package; carrying it means repairing a pool whose second
-`Stop` panics (P-6), nine sleeps, a metrics goroutine nothing starts, and an 827-line README, for no caller. Cost of
-the other answer: about 700 lines and their tests ported and repaired with no reader. Cost to you: the package list you
-accepted for change 2 (foundation D2) shrinks from 17 to 16, and a later need for a worker pool comes back as new
-surface that needs a present consumer.
-
-**F. `graph/inference` is held to the 80% coverage floor from the change that ports it. It is at 47.9% after removing
-dead code, and reaching 80% means tests for about 450 more statements — the anomaly detectors, the review worker, the
-anomaly storage and the 38 configuration fields they read — whose only caller, graph-clustering, arrives in change 7.
-Add `graph/inference` to the coverage gate in change 7 instead of here?** Recommendation: yes. Only the 80% target
-moves: the `ReviewWorker` `synctest` test that `background-work` requires stays in this change, whatever you decide.
-Reasons: graph-ingest
-uses only the package's hierarchy half, which this change tests; tests written now would drive the detectors without
-the component that runs them; this pull request is already the largest port. The ledger row records the 47.9%
-figure, the missing per-field tests and the change that owes them, and a tracking issue holds them. Cost of the other
-answer: about 450 statements of tests in this change, mostly table tests of configuration validation and integration
-tests of the anomaly storage, written before their caller exists. Cost to you: a package on the ruled critical list
-(#8 comment 5932313950: "the gate applies to a package when it is admitted") sits below the floor for five changes,
-an exception you would be granting.
-
-(Round 1's question D, the wire and storage names, is answered by #69 and applied in D9.)
+Round 1's question D, the wire and storage names, is answered by #69 and applied in D9.
 
 ## Premises (each with its measurement)
 
-- P1. The set is 17 + 2 packages, 30,613 + 2,024 lines, 154 test files. — §0, `go list -deps` and a line count.
+- P1. The set is 15 whole packages and `graph/llm/client.go`: 29,963 non-test lines (§0's 30,613 less `pkg/worker`'s
+  707 and `internal/componentadmission`'s 8, plus 65), and 152 test files with 40,202 lines (§0's 154 less
+  `pkg/worker`'s 2; `graph/llm`'s two test files test the OpenAI client and stay behind). — §0, §8.
 - P2. No live production context root is in the set. — §0, grep with comment lines removed.
 - P3. Change 1 removed only the registration methods this set uses. — P-2, build of the copy.
 - P4. Eight test files import packages outside the set. — P-3.
 - P5. graph-ingest passes the suite's eight checks at the pin, observed through return values only. — P-5.
-- P6. A timed-out `Pool.Stop` followed by a second `Stop` panics at the pin. — P-6.
+- P6. A timed-out `Pool.Stop` followed by a second `Stop` panics at the pin (a reason for ruling E). — P-6.
 - P7. No unit flake at the pin over five shuffled runs ×3 and one race run. — P-1.
 - P8. The repository's checks fail on the copy exactly as listed. — P-4.
 - P9. 186 exported identifiers have no reader by type in the admitted set or a consumer; `BoundedDispatcher`,
   `readiness.Set` and `lifecycle.Manager.Watch` among them. — §2, the type-based reader and the hand-read consumer
   hits.
-- P10. `pkg/worker`'s only non-test importers are `pkg/dispatch/dispatcher.go` and `errors.go`. — §2, `grep -rl`.
+- P10. `pkg/worker`'s only non-test importers are `pkg/dispatch/dispatcher.go` and `errors.go` (the basis of ruling
+  E). — §2, `grep -rl`.
 - P11. `graph/inference` is public by signature (`processor/graph-clustering/component.go:77`); `graph/structural` by
-  `graph/inference/detector.go:36`; `pkg/dispatch` and `pkg/worker` by neither. — §2.
-- P12. Coverage after the drop is as in P-8: five packages are at or over 80%; four are short by 10, 31, 81 and 97
-  statements, and `graph/inference` by 451. — P-7, P-8 (local-only profiles; commands in §1).
+  `graph/inference/detector.go:36`; `graph/llm` by `graph/inference/review_worker.go:69`; `pkg/dispatch` by neither.
+  — §2, §8.
+- P12. Coverage after the drop is as in P-8: five target packages are at or over 80%; four are short by 10, 31, 81 and
+  97 statements; `graph/inference`, not a target here (ruling F), is short by 451. — P-7, P-8 (local-only profiles;
+  commands in §1).
 - P13. The owner-lifecycle state has 12 copies in the admitted set and none in the four consumers. — §3 category 2.
 - P14. No `Hash` caller (#78), no storage-report observer (#85) and no second `natsclient.Client` (#75) in the set. —
   `grep -n '\.Hash()'` and `StorageReportObserver` over the 17: empty; observers only in `service` (change 3).
+- P15. `graph/inference` reads from `graph/llm` only `Client`, `ChatRequest`, `ChatResponse` (all of `client.go`) and
+  `Config` (through `ReviewConfig.LLM`). — P-9.
+- P16. In the graph-ingest closure, `model/wire` and `go-openai` are imported only by `graph/llm`, and within
+  `graph/llm` only by files other than `client.go`. — P-9.
+- P17. `ReviewConfig.LLM` has no reader at the pin outside a doc-comment example. — P-9.
+- P18. `componentadmission.Access` is read in the set only by `component/registry.go` (four methods) and its tests. —
+  §8.
 
 ## Invariants and their spec homes
 
@@ -508,17 +580,19 @@ an exception you would be granting.
 
 Issues #75 (shared series; D4 records graph-ingest's gauges under it), #78 and #85 (no caller in the set, P14), #81 (new
 and repaired tests carry `// Requirement:` citations in #81's form; carried tests wait for #80's scope ruling), #24
-(unblocked when this change merges, foundation (d)), #77 (question A), SS#1411 (answered here for SemEngine; the
-SemStreams issue is not touched).
+(unblocked when this change merges, foundation (d)), SS#1411 (answered here for SemEngine; the SemStreams issue is not
+touched). #77 is ruled and this change closes it (comment 6035358884) once task 1.9 applies the ruling.
 
 ## Declared costs
 
-- The largest port so far: 18 or 19 packages, about 150 test files, 43 fixture-client sites, 28 sleeps, 20 unbounded
+- The largest port so far: 16 package directories, 152 test files, 43 fixture-client sites, 19 sleeps, 20 unbounded
   cleanups, 8 test files with out-of-set imports.
 - A new harness helper (D3) and a new internal package (D13), each with an adoption list.
-- Five helpers change shape (D5); their later callers are port-refactor rows in changes 5 and 7.
-- `go-openai` becomes a direct dependency for changes 2–7.
-- Tests to write to reach the floor: about 220 statements across four packages, plus question F.
-- Owner questions B, C, E and F gate tasks; A is framing only.
+- Four helpers change shape (D5); their later callers are port-refactor rows in changes 5 and 7.
+- Tests to write to reach the floor: about 220 statements across four packages. `graph/inference` sits at 47.9%,
+  below the floor, until change 7 (ruling F).
+- Change 7 ports the rest of `graph/llm`, `model/wire` and `go-openai` if the seam keeps them (ruling B, D1a).
+- A consumer can call the three registry methods directly; that it does not is review only (ruling C, D14).
+- #77's ruling is not yet applied (task 1.9).
 - graph-ingest metrics change name (`semengine_*`) and stop appearing on the process-global registry; three wire and
   storage names change (D9).

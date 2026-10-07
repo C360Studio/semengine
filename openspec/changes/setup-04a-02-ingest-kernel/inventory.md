@@ -2,7 +2,9 @@
 # Inventory: setup-04a-02-ingest-kernel (#91)
 
 - **base:** `1334ce6` (worktree `claude/setup-04a-02-ingest-kernel`; `main` at `89c878e`). Round 2 (2026-10-06)
-  answers review round 1; the branch head `3fcf88a` differs from the base only in this folder.
+  answers review round 1; the branch head `3fcf88a` differs from the base only in this folder. Round 3 (2026-10-07)
+  adds §8, the probes the owner's rulings on #91 (comments 6035429806 and 6035477895) called for; §0–§7 are the round-2
+  record, and where §8 corrects or supersedes a statement in them, §8 says so.
 - **pin:** SemStreams `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`, from `gh api repos/C360Studio/semstreams/tarball/<sha>`
   (sha256 of the tarball `47a0c1c5a050a3d92b392f8b98c98a867c3c67d15cc8a5b275d4523f14773f48`). Every `path:line`
   without a repository prefix below is a pin path.
@@ -426,6 +428,84 @@ adds 2 lines to it), `query-pattern` (93; graph-ingest serves the four `graph.in
    reads stay with the port tasks. (2) answered by the type-based method of §2. (3) stands: P-5 ran with a vacuous
    `Observe`; the in-package adapter is the real check.
 2. P-8 is an upper bound computed at the pin; the port re-measures (task 5.2).
+
+## 8. Round 3: the owner's rulings and the probes they required
+
+Rulings (2026-10-07): **E** and **F** in #91 comment 6035429806, **B** and **C** in #91 comment 6035477895. Ruling B
+asks whether `model/wire` admits the same cut as `graph/llm`. All pin reads below are on the pin tarball named in
+the header (local only; the commands are quoted so they can be re-run on any copy of the pin).
+
+**P-9 what the closure reads from `graph/llm` and `model/wire`.**
+
+- Edges into the two packages inside closure(graph-ingest): `go list -deps -f '{{.ImportPath}} {{join .Imports " "}}'
+  ./processor/graph-ingest`, filtered to imports ending `model/wire` or `graph/llm`: two lines,
+  `graph/inference -> graph/llm` and `graph/llm -> model/wire`. `go-openai`'s importers in the same listing:
+  `graph/llm` only.
+- What `graph/inference` reads from `graph/llm` (`grep -on 'llm\.[A-Za-z]*'` over its files): non-test
+  `graph/inference/review_worker.go:40` — `llmClient llm.Client          // optional - nil if LLM disabled`,
+  `:69` — `LLMClient     llm.Client // optional`, `:430` — `response, err := w.llmClient.ChatCompletion(ctx,
+  llm.ChatRequest{`, and `graph/inference/config.go:123` — ``LLM llm.Config `json:"llm"` ``; doc comment
+  `graph/inference/doc.go:51`, the example line `cfg.Review.LLM = llm.Config{`; tests
+  `graph/inference/review_worker_test.go:30,42` (`llm.Client`, `llm.ChatRequest`, `llm.ChatResponse`).
+- `graph/llm/client.go` (65 lines) declares exactly `Client` (`:19` — `type Client interface {`), `ChatRequest`
+  (`:31`) and `ChatResponse` (`:47`), and imports only `context` (`:14`). Its package comment (`:1-10`) speaks of
+  community summarization, search answer generation and the OpenAI SDK.
+- `model/wire`'s importers in the whole pin (`grep -rln '"github.com/c360studio/semstreams/model/wire'
+  --include='*.go'`), non-test: `graph/llm/openai_client.go`, `model/wire/responses/errors.go`, and 12 files of
+  `processor/agentic-model` (cut, #8 Q4). With `openai_client.go` not ported, no package this change ports imports
+  `model/wire`: it admits the cut, to nothing.
+- `graph/llm`'s importers in the pin outside `graph/inference` (same search for `graph/llm`): `graph/clustering`,
+  `graph/query`, `processor/graph-clustering`, `processor/graph-query`, `processor/agentic-loop` and the four
+  `processor/research-graph-*` packages, which read `EntityParts`, `NewOpenAIClient`, `OpenAIConfigFromEndpoint`,
+  prompts and summarizers as well as `Client`, `ChatRequest` and `ChatResponse`. None is ported in change 2.
+
+**`ReviewConfig.LLM` has no reader at the pin.** `grep -rnE '\.LLM\b' --include='*.go' .` over the pin, non-test
+files: one hit, `graph/inference/doc.go:51` (a doc-comment example). graph-clustering's review worker gets its client
+from `processor/graph-clustering/component.go:2476` — `func (c *Component) resolveReviewLLMClient() llm.Client {`
+(the model registry's `anomaly_review` capability, falling back to the community-summary client) and passes it as
+`LLMClient: reviewClient` (`:2439`); it reads `c.config.AnomalyConfig.Review.Enabled` (`:1081`), `.Workers`, `.AutoApproveThreshold` and
+`.AutoRejectThreshold` (`:2456-2460`), never `.Review.LLM`. **Correction to §2 (b):** the by-name search counted
+`LLM` as read because `review_worker.go` spells the word in log text (`:389` — `w.logger.Warn("LLM review failed,
+falling back",`). `graph/inference.Config` has 43 JSON fields (`sed -n 17,180p graph/inference/config.go | grep -c
+'json:"'` → 43): 37 read, 6 unread.
+
+**`internal/componentadmission`'s readers.** `grep -rn componentadmission --include='*.go'` over the pin, non-test:
+`component/registry.go:194,475,825,843` (the parameters of `CreateComponent`, `SealComposition`, `Snapshot`,
+`Snapshots`), `service/component_manager.go:290,384,397,1108` and `service/message_logger.go:347` (change 3). Tests
+that build the token: `component/registry_boot_admission_test.go` 12 lines, `component/registry_integration_test.go`
+4, `component/registry_test.go` 3; outside the set, `componentregistry/register_integration_test.go` 2,
+`internal/portgrammarcontrol/target_test.go` 1, and five `service` test files. Consumers: semboids calls
+`registry.CreateComponent` at 9 sites in 7 integration-test files (`internal/zone/ingest_integration_test.go:52` —
+`inst, err := registry.CreateComponent("graph-ingest-test", types.ComponentConfig{`), on SemStreams
+`v1.0.0-beta.160` (semboids `go.mod:6`), with three arguments; semsource, semconnect and semteams call none of
+`CreateComponent`, `SealComposition` or `Snapshots` (search of the three tarballs: 0 lines). The pin's
+`CreateComponent` accepts a nil `prepare` (`component/registry.go:222` — `if prepare != nil {`).
+
+**`pkg/worker`'s one remaining read.** `pkg/dispatch/errors.go:24` — `ErrStopped = worker.ErrPoolStopped`, whose
+text is `pkg/worker/errors.go:11` — `ErrPoolStopped = errors.New("worker pool stopped")`. `KeyedPool` returns it
+(`pkg/dispatch/keyed_pool.go:227`); its tests assert it with `errors.Is` (`keyed_pool_test.go:353-354`), so a
+declaration in `internal/dispatch` keeps them meaningful.
+
+**Counts after the rulings.** 15 whole packages (§0's 17 less `pkg/worker` and `internal/componentadmission`) and
+`graph/llm/client.go`: non-test lines 30,613 − 707 − 8 + 65 = 29,963; test files 154 − 2 = 152, lines 40,768 − 566
+= 40,202 (`graph/llm`'s two test files test the OpenAI client and are not ported; `internal/componentadmission` has
+none). Sleeps in tests: P-4's 28 less `pkg/worker`'s 9 = 19. Coverage: unchanged for the nine targets; `graph/llm`
+after the cut has no statements.
+
+**Intent check (§6), re-run for the moved boundary.** The rulings move four package boundaries (`pkg/worker`,
+`internal/componentadmission`, most of `graph/llm`, `model/wire`). None is a capability `AGENTS.md` "What this is for"
+names: the first two are helpers, and the LLM client and model wire format are providers, which tier 0 does without.
+Each move has its ruling (B, C, E above; `model/wire` follows B's reasoning and is recorded as such in the design).
+
+**Adopter seam (§5), one item added by ruling C.** (f) A consumer must know to create components through the component
+manager, not by calling `Registry.CreateComponent`, `SealComposition` or `Snapshots`. If it does not, a component
+exists that the manager does not track. It finds out from the methods' doc comments only. The owner accepted that
+cost in ruling C ("a consumer creating a component outside the manager is review only").
+
+**#77 was ruled after round 2** (#77 comment 6035317931; relayed on PR #93 in comments 6035318863 and 6035358556):
+the component cleans up its own failed start with a public helper whose home and name this change settles; the #38
+exception is granted for ported components; PR #93 closes #77 (#77 comment 6035358884). Round 3 records it and does
+not apply it (design task 1.9).
 
 ## Appendix: dead-surface candidates (186), by type, pinned at the pin
 

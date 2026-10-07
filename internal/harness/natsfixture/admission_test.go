@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os/exec"
+	"math"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/testcontainers/testcontainers-go"
@@ -111,14 +112,20 @@ func noDocker(t *testing.T, f *Fixture) {
 	}
 }
 
-// deadPID returns the pid of a process that has exited and been reaped.
-func deadPID(t *testing.T) int {
+// absentPID returns a pid that no process has and none can be given: the largest pid_t, far above
+// the highest pid either kernel the tests run on hands out (Linux caps pid_max at 2^22, macOS at
+// 99999). kill(pid, 0) finds no such process, which is how ownerLive sees an owner that has exited
+// and been reaped. An exited child's pid would do only until the kernel gave it to a new process:
+// admission compares host and pid alone, so a reused pid admits (#50). The runner's deadPID closes
+// that window with the owner's start identity, which admission does not read.
+func absentPID(t *testing.T) int {
 	t.Helper()
-	cmd := exec.Command("true")
-	if err := cmd.Run(); err != nil {
-		t.Fatal(err)
+	pid := math.MaxInt32
+	// ESRCH is "no such process"; any other answer means the premise above does not hold here.
+	if err := syscall.Kill(pid, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Fatalf("kill(%d, 0) = %v, want ESRCH: no process may hold this pid", pid, err)
 	}
-	return cmd.Process.Pid
+	return pid
 }
 
 // The token must be in a live owner's file: an owner file the runner left behind when it died (a
@@ -131,7 +138,7 @@ func TestAdmissionRequiresALiveOwner(t *testing.T) {
 	for _, tc := range []struct {
 		name, host, pid, want string
 	}{
-		{"owner process has exited", host, strconv.Itoa(deadPID(t)), "not live"},
+		{"owner pid is not a running process", host, strconv.Itoa(absentPID(t)), "not live"},
 		{"owner on another host", host + "-elsewhere", strconv.Itoa(os.Getpid()), "another host"},
 		{"owner pid unreadable", host, "x", "pid"},
 	} {

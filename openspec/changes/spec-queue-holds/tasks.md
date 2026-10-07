@@ -23,32 +23,32 @@ starts, `task merge:check -- 113` and the merge are recorded on this pull reques
 
 ## 2. The queue reads whole tasks, and spec:check gains the check
 
-- [ ] 2.1 (D) Written first: `TestSpecQueueHolds` in
+- [x] 2.1 (D) Written first: `TestSpecQueueHolds` in
       `internal/harness/contract/specqueue_test.go`, with the harness `runSpecQueue` and the cases H1-H11 of
       `design.md`, "Tests" (D6). Run against the unchanged `scripts/openspec-queue.sh`, H1, H2, H3, H5, H9, H10 and
       H11 fail, and H4, H6, H7 and H8 pass. That output is recorded on this pull request.
       Gate: the recorded failing run.
-- [ ] 2.2 (D) `TestSpecQueueFirstLineCaveats`: the nine cases of SemStreams `8b99efe9`
+- [x] 2.2 (D) `TestSpecQueueFirstLineCaveats`: the nine cases of SemStreams `8b99efe9`
       `scripts/openspec-queue_fixture_test.sh:79-113`, with their texts word for word, as the delta's second
       requirement states them. They pass on the unchanged script. Gate: `task test:unit`.
-- [ ] 2.3 (D) Written first: `TestSpecQueueCheck` (cases C1-C7) and `TestSpecCheckWiring`, as
+- [x] 2.3 (D) Written first: `TestSpecQueueCheck` (cases C1-C7) and `TestSpecCheckWiring`, as
       `design.md`, "Tests", says. Run against the unchanged script and `Taskfile.yml`, every case fails. That output
       is recorded on this pull request. Gate: the recorded failing run.
-- [ ] 2.4 (D) `scripts/openspec-queue.sh` reads the whole block of each open task and prints holds
+- [x] 2.4 (D) `scripts/openspec-queue.sh` reads the whole block of each open task and prints holds
       as `design.md`, D1-D5, says, and gains `--check` as D9 says, using only what the script already runs. Its header
       comment says so. `Taskfile.yml`'s `spec:check` runs the check as D10 says. The four tests pass. Committed with
       2.1-2.3, so that no commit is red. Gate: `task verify`.
-- [ ] 2.5 (D) Shown able to fail, by hand (`docs/testing.md`, "Run it by hand"): the wrong changes
+- [x] 2.5 (D) Shown able to fail, by hand (`docs/testing.md`, "Run it by hand"): the wrong changes
       of `design.md`, "Tests", each caught by the case named for it. The baseline, wrong-change and restored runs,
       and what is not covered, are recorded on this pull request.
-- [ ] 2.6 (D) The new script, run by hand, gives what `design.md`, "On real files", says. The queue
+- [x] 2.6 (D) The new script, run by hand, gives what `design.md`, "On real files", says. The queue
       prints 22 lines for #93's `tasks.md` at `c758aaf5`, at the line numbers of `inventory.md:569-580`; `L62` for
       `b91c60d`; `L258` and `L381` for `a7dbf9d`. `--check` reports nothing on the 15 files of P14. The output is
       recorded on this pull request.
 
 ## 3. Documents
 
-- [ ] 3.1 (W) `.agents/protocol.md:24-26`, `AGENTS.md:35` and `:107`, preflight `SKILL.md:31`,
+- [x] 3.1 (W) `.agents/protocol.md:24-26`, `AGENTS.md:35` and `:107`, preflight `SKILL.md:31`,
       `docs/testing.md:338-341`, `Taskfile.yml:111` and `scripts/doctor.sh:40-42` read as `design.md`, D8, says.
       Gate: `task docs:check`, and `task doctor` still passes.
 

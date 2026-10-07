@@ -51,7 +51,7 @@ starts, `task merge:check -- 112` and the merge are recorded on this pull reques
 
 ## 4. In the archive commit
 
-- [ ] 4.1 (W) In the same commit as `openspec archive runner-image-pin` and the spec sync: the Purpose of
+- [x] 4.1 (W) In the same commit as `openspec archive runner-image-pin` and the spec sync: the Purpose of
       `openspec/specs/merge-gate/spec.md` names the pinned runner image beside the defences against flaky tests, and
       `docs/repository-map.md` gains a row for the archived change, as the `mutation-check` row does. Gate:
       `task spec:check` and `task docs:check` on that commit.

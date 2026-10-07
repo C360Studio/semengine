@@ -14,8 +14,7 @@ heading>` (#81's form). No task asserts a fact that exists only after merge.
       questions. Hold: `INVENTORY PASS` recorded on this pull request.
 - [ ] 1.2 (A) `design.md` and the deltas under `specs/` restated on the passed inventory; every requirement has a
       scenario; `task spec:check` passes. Hold: task 1.1.
-- [ ] 1.3 (R) Independent pre-owner design review; PASS recorded with the reviewed files' checksums. Hold: tasks 1.2,
-      1.9.
+- [ ] 1.3 (R) Independent pre-owner design review; PASS recorded with the reviewed files' checksums. Hold: task 1.2.
 - [ ] 1.4 (O) Owner acceptance of the design on #91; PR #92 merged into `main`, `origin/main` merged into this branch,
       and #92's final file list re-read against design "Order with #92". Hold: task 1.3; owner acceptance on #91;
       PR #92 merged.
@@ -29,10 +28,10 @@ heading>` (#81's form). No task asserts a fact that exists only after merge.
       error (#91 comment 6035429806). Applied in design D1, D4, D5 and D6.
 - [x] 1.8 (O) Owner ruling on question F: `graph/inference` joins the coverage gate in change 7; its `ReviewWorker`
       `synctest` test stays here (#91 comment 6035429806). Applied in design D6 and D11.
-- [ ] 1.9 (A) Apply #77's ruling (#77 comment 6035317931) to design D7 and D13 and the deltas: a public home and name
-      for the failed-start rollback helper, whether it keeps accepting a nil callback (#77 inventory, section 13, Q3
-      and Q4), the `natsfixture` rollback copy reconciled (foundation D9), and a `lifecycle-suite` delta for the #38
-      exception granted to ported components; PR #93's body names `Closes #77` (#77 comment 6035358884).
+- [x] 1.9 (A) Question A, ruled on #77 (comment 6035317931), applied: design D7 settles the helper's public home and
+      name (`pkg/lifecyclecleanup.RollbackFailedStart`), refuses a nil rollback, reconciles the `natsfixture` copy
+      (foundation D9), and the `lifecycle-suite` delta writes the #38 exception for ported components; PR #93's body
+      names `Closes #77` (#77 comment 6035358884).
 
 ## 2. Probes and harness
 
@@ -62,7 +61,12 @@ are repaired (sleeps, skips, fixed addresses, unbounded cleanups, the fixture cl
 imports of design D2); the package's dead surface (design D6, appendix of `inventory.md`) is removed after a `gopls
 references` check, with the tests that read only it; READMEs are read claim by claim; `task verify` passes on the push.
 
-- [ ] 3.1 (D) `internal/lifecyclecleanup`, `types`, `storage`, `model` (carry). Hold: task 1.4.
+- [ ] 3.1 (D) `types`, `storage`, `model` (carry). Hold: task 1.4.
+- [ ] 3.1a (D) `internal/lifecyclecleanup` → `pkg/lifecyclecleanup` (design D7): `RollbackFailedStart` keeps its name
+      and its five-second budget; a nil rollback is refused (`TestRollbackFailedStartNilRollback` inverted to expect
+      the error, written first and failing on the pin's code); the four scenarios of `lifecycle-suite` "Failed-start
+      rollback helper" as tests; a package doc comment stating what a component that calls it must do (#77 inventory
+      §10, the five facts); `internal/lifecycleguard` (task 2.7) calls it. Gate: `task test:unit`. Hold: task 1.4.
 - [ ] 3.2 (D) `graph/llm`: `client.go` only (design D1a), its package comment rewritten to describe the interface;
       no other `graph/llm` file, no `model/wire`, no `pkg/worker` and no `internal/componentadmission` in the tree,
       and no `go-openai` in `go.mod`. Hold: task 1.4.
@@ -104,8 +108,9 @@ references` check, with the tests that read only it; READMEs are read claim by c
       task 1.4.
 - [ ] 3.13 (D) graph-ingest under the lifecycle suite: an in-package adapter whose `Observe` lists consumers, request
       subscriptions, ingest lanes and the status loop; failing factory = a refused broker; `lifecycletest.Run` green;
-      `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop` carried on the adapter, green (design D7).
-      Hold: task 1.4.
+      `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop` carried on the adapter, green, and citing
+      `lifecycle-suite`/"Failed start whose own cleanup fails" (design D7.3); the "Cleanup succeeds after a failed
+      start" scenario is the suite's failed-start check on the refused-broker factory. Hold: task 1.4.
 
 ## 4. Repair evidence (design D8)
 
@@ -117,11 +122,11 @@ references` check, with the tests that read only it; READMEs are read claim by c
 - [ ] 4.3 (D) #15: memory stream + `Fixture.Restart` + retained guard bucket: re-ingestion at lower sequences is
       applied and queried back; a same-generation redelivery is a no-op; the two degrades of design D8 are logged and
       counted. Fails first on the pin's guard key. Hold: task 1.4.
-- [ ] 4.4 (D) Settlement (Q18): the process-kill test of design D8 (a `prochost.Helper` in graph-ingest's `TestHelperProcess`;
-      the guard-record write held open by a `_test.go` wrapper in the first run; the entity write and the pending
-      acknowledgement confirmed from the buckets and the consumer's info; the helper confirmed alive, then killed;
-      redelivery acknowledged in the second run and the state equal to one application); the long-apply test; the
-      durable-record failure test. Hold: task 1.4.
+- [ ] 4.4 (D) Settlement (Q18): the process-kill test of design D8 (a `prochost.Helper` in graph-ingest's
+      `TestHelperProcess`; the guard-record write held open by a `_test.go` wrapper in the first run; the entity write
+      and the pending acknowledgement confirmed from the buckets and the consumer's info; the helper confirmed alive,
+      then killed; redelivery acknowledged in the second run and the state equal to one application); the long-apply
+      test; the durable-record failure test. Hold: task 1.4.
 - [ ] 4.5 (D) Q13: SemStreams PR #1437's graph-ingest half (head `0ea823a6`) with its two test files on a
       test-registered payload type; the "Payload panics while giving its entity ID" scenario green. Hold: task 1.4.
 - [ ] 4.6 (D) #33: the hierarchy refusal names `inference.RegisterPayloads` (`component-registration`). Hold: task 1.4.
@@ -133,11 +138,12 @@ references` check, with the tests that read only it; READMEs are read claim by c
       `adapt` to `client.go`, naming the files left for change 7) and three `defer-exclude` rows (`pkg/worker`, ruling
       E; `internal/componentadmission`, ruling C; `model/wire`, change 7, design D1a). Each package row has its verdict
       from design D1, its adapt items (including #69's renames of design D9, with the consumers who edit them), its
-      `proving_tests` and its `known_risks` (graph-ingest: #75's shared gauges, and the failed-rollback branch of design
-      D7 as task 1.9 states it; `graph/inference`: unit coverage 47.9% (674/1406) at the pin after the drop, the gate
-      and the tests owed by change 7, the tracking issue of task 6.5; `component`: a consumer can call the three
-      registry methods directly, review only). The `internal/lifecyclecleanup` file row reconciled with the package
-      row; Q13's row cites PR #1437 head `0ea823a6`; #29 and #33 rows name `class:port-refactor`. Gate: `task
+      `proving_tests` and its `known_risks` (graph-ingest: #75's shared gauges; `graph/inference`: unit coverage 47.9%
+      (674/1406) at the pin after the drop, the gate and the tests owed by change 7, the tracking issue of task 6.5;
+      `component`: a consumer can call the three registry methods directly, review only). The
+      `internal/lifecyclecleanup` package row is `adapt` to `pkg/lifecyclecleanup` (public home, nil rollback refused),
+      naming the harness copy; the file row's `known_risks` names the production home and why the copy stays (design
+      D7.4); Q13's row cites PR #1437 head `0ea823a6`; #29 and #33 rows name `class:port-refactor`. Gate: `task
       ledger:check`. Hold: task 1.4.
 - [ ] 5.2 (D) `scripts/cover-check.sh` gains the nine targets of design D11 (`graph/inference` is not one, ruling F);
       the tests design D11 names for `internal/graphmutation`, `pkg/projection`, `component` and `pkg/lifecycle` are
@@ -155,14 +161,17 @@ references` check, with the tests that read only it; READMEs are read claim by c
       component composing `internal/lifecycleguard` (review only), and a consumer creating a component, sealing the
       composition or reading the admission snapshots only through the component manager, never by calling
       `Registry.CreateComponent`, `SealComposition` or `Snapshots` itself (the three methods' doc comments; review
-      only; ruling C). Gate: `task docs:check`. Hold: task 1.4.
+      only; ruling C), and a ported component whose failed `Start` cleanup fails reporting both errors and keeping
+      what is left for a later `Stop` (`lifecycle-suite`, "Failed start whose own cleanup fails"; each component's own
+      named test; that a newly ported component has one is review only). Gate: `task docs:check`. Hold: task 1.4.
 - [ ] 6.2 (W) `docs/repository-map.md` lists the ported packages and the two new ones; READMEs carried with their
       claims checked (tasks 3.x). Hold: task 1.4.
 - [ ] 6.3 (W) Tracking issues filed and linked here: the adoption sweep of design D3 (the `natsfixture` helper), the
       adoption sweep of design D13 (the guard), the `component.Discoverable.ConfigSchema` question (design D6, K4).
       Hold: task 1.4.
-- [ ] 6.4 (W) #77 gets a comment naming the public helper, the test and the ledger line that carry its ruling, as
-      task 1.9 designs them. Hold: tasks 1.4, 1.9.
+- [ ] 6.4 (W) #77 gets a comment naming the public helper (`pkg/lifecyclecleanup.RollbackFailedStart`), the
+      `lifecycle-suite` requirement and graph-ingest's test that carry its ruling (design D7), for SemTeams' proving
+      case. Hold: task 1.4.
 - [ ] 6.5 (W) A tracking issue filed and linked here for `graph/inference`'s tests owed by change 7 (ruling F): the
       80% target in `scripts/cover-check.sh`, the 451 statements short at the pin after the drop (design D11), and, for
       each of the 37 configuration fields still read, a test that fails when the field is ignored. Hold: task 1.4.

@@ -32,8 +32,12 @@ recreated; the **owner-lifecycle state** is a component's one-shot `Start`/`Stop
 - Repair the ported tests to the harness rules: the pin's test NATS client becomes one `natsfixture` helper that takes
   an open function (43 sites); sleeps, 6 skipped tests, 11 fixed broker addresses and 20 unbounded cleanups are
   repaired; eight test files that import packages outside the set are adapted.
-- graph-ingest runs under `lifecycletest.Run` through a test-side adapter, with a failing factory. A failed start whose
-  own cleanup fails keeps the pin's behavior, pinned by a test; #77's ruling on it (2026-10-07) is applied by task 1.9.
+- graph-ingest runs under `lifecycletest.Run` through a test-side adapter, with a failing factory.
+- The failed-start rollback helper becomes public as `pkg/lifecyclecleanup.RollbackFailedStart`, same name and
+  five-second budget, now refusing a nil callback (#77 ruling, comment 6035317931). A ported component whose failed
+  `Start` cleanup also fails may keep what it could not release, reporting both errors and retrying in `Stop`, proven
+  by its own test (the #38 exception for ported components). The `natsfixture` copy stays, each home naming the
+  other.
 - One owner-lifecycle guard, `internal/lifecycleguard`, composed by graph-ingest; the 11 later copies adopt it when
   ported.
 - Helpers that run background work take the standing shapes (`Run(ctx)`, `Shutdown(ctx)`): the keyed dispatch pool,
@@ -51,8 +55,8 @@ recreated; the **owner-lifecycle state** is a component's one-shot `Start`/`Stop
 - Guidance returns with the packages: the SemStreams contract sections on semantic identity and graph, payload
   registry, and state ownership and component wiring; the skills `entity-or-bucket`, `kv-or-stream`, `new-payload`,
   `query-pattern`.
-- Ledger: package rows; the `internal/lifecyclecleanup` file row reconciled; `cover:check` gains its targets at the one
-  80% floor. `graph/inference` is recorded at 47.9% and joins the gate in change 7 (ruling F).
+- Ledger: package rows; the `internal/lifecyclecleanup` package and file rows reconciled; `cover:check` gains its
+  targets at the one 80% floor. `graph/inference` is recorded at 47.9% and joins the gate in change 7 (ruling F).
 
 ## Capabilities
 
@@ -69,20 +73,24 @@ recreated; the **owner-lifecycle state** is a component's one-shot `Start`/`Stop
   remove the two exceptions round 2 asked for.
 - `nats-fixture` (ADDED requirement): a connected value for a package's tests, with bounded cleanup.
 - `metric-registry` (ADDED requirement): nothing registers on Prometheus' process-global registry.
-- `lifecycle-suite`: unchanged in this revision. Its current "Observe adapter contract" already binds graph-ingest.
-  The #38 exception #77 granted for ported components is written by task 1.9.
+- `lifecycle-suite` (MODIFIED "Portable floor"; ADDED "Failed start whose own cleanup fails" and "Failed-start
+  rollback helper"): the #38 exception for ported components, and the public helper's contract. Its current "Observe
+  adapter contract" already binds graph-ingest.
 
 ## Impact
 
 - New Go code: 16 package directories from the pin (15 whole, and `graph/llm` as one file), one new package
-  (`internal/lifecycleguard`) and a new `natsfixture` helper; `go.mod` gains `golang.org/x/net`.
+  (`internal/lifecycleguard`), a new `natsfixture` helper, and `internal/lifecyclecleanup` moved to the public
+  `pkg/lifecyclecleanup`; `go.mod` gains `golang.org/x/net`.
 - Metric names change from `semstreams_*` to `semengine_*` for graph-ingest, readiness and the keyed pool; three wire
   and storage names change; the consumers who spell them edit them when they adopt SemEngine.
 - A consumer that calls `Registry.CreateComponent`, `SealComposition` or `Snapshots` directly is no longer stopped by
   the compiler; that it uses the component manager instead is review only (ruling C).
 - `docs/admission-ledger.yaml` (also changed by #92, which merges first), `scripts/cover-check.sh`, the developer and
   reviewer contracts, four skills and `AGENTS.md` rows change.
-- Owner questions B, C, E and F are ruled (`design.md`, "Ruled"). Question A was framing for #77, which the owner ruled
-  on 2026-10-07 (#77 comment 6035317931); PR #93 closes #77 (comment 6035358884).
+- Every owner question is ruled (`design.md`, "Ruled"): B, C, E and F on #91; A on #77 (comment 6035317931). PR #93
+  closes #91 and #77 (#77 comment 6035358884).
+- SemTeams' components change one import path, `internal/lifecyclecleanup` to `pkg/lifecyclecleanup`, and their
+  proving case compiles against it from this change on.
 - Out of scope: the composition refusal of overlapping stream filters (#16, change 3); the parked-delivery scenario
   (`internal/maxdelivery`, change 7); `service`, `config`, `composition` (change 3).

@@ -504,8 +504,10 @@ cost in ruling C ("a consumer creating a component outside the manager is review
 
 **#77 was ruled after round 2** (#77 comment 6035317931; relayed on PR #93 in comments 6035318863 and 6035358556):
 the component cleans up its own failed start with a public helper whose home and name this change settles; the #38
-exception is granted for ported components; PR #93 closes #77 (#77 comment 6035358884). Round 3 records it and does
-not apply it (design task 1.9).
+exception is granted for ported components; PR #93 closes #77 (#77 comment 6035358884). Round 3 recorded it; round 4
+applies it (design D7), taking #77's passed inventory (comments 6024786639 and 6024787123) as given under
+`docs/inventory-scope.md` rule 3. Round 4's only new reads: `git grep -n RollbackFailedStart -- '*.go'` on the branch
+(empty) and `internal/harness/natsfixture/rollback.go` and `fixture_test.go:294-309` (the copy and its test).
 
 ## Appendix: dead-surface candidates (186), by type, pinned at the pin
 

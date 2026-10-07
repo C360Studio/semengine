@@ -1,9 +1,10 @@
 # Design: setup-04a-02-ingest-kernel
 
-Status: **draft, round 3.** Round 2 answered the 17 findings of the pre-owner design review's round 1 and went to the
-owner with questions A–F. This round applies the owner's rulings of 2026-10-07 on B, C, E and F (#91 comments
-6035429806 and 6035477895; "Ruled" below) and the pin probe P-9 that ruling B asked for (`inventory.md` §8). Nothing
-here is approved; the owner's acceptance on #91 comes first.
+Status: **draft, round 4.** Round 2 answered the 17 findings of the pre-owner design review's round 1 and went to the
+owner with questions A–F. Round 3 applied the owner's rulings of 2026-10-07 on B, C, E and F (#91 comments 6035429806
+and 6035477895) and the pin probe P-9 that ruling B asked for (`inventory.md` §8). Round 4 applies #77's ruling
+(#77 comment 6035317931), which answers question A: D7 is rewritten and `lifecycle-suite` gains a delta. Nothing here
+is approved; the owner's acceptance on #91 comes first.
 
 Shorthand, defined once:
 
@@ -43,8 +44,8 @@ of #16, settlement, Q13 and SS#1411); and the deltas of foundation D10.2. The cl
 under the lifecycle suite, with no boot path** — built through its own factory, started against `natsfixture`, and
 driven by `lifecycletest.Run` with a failing factory whose broker refuses the connection. The current `lifecycle-suite`
 requirement "Observe adapter contract" already binds it ("A service ported from the pin SHALL be run through the suite
-via a test-side adapter in its package"), so this revision carries no `lifecycle-suite` delta; task 1.9 adds the one
-that #77's ruling needs.
+via a test-side adapter in its package"), so graph-ingest's suite run needs no new requirement. The `lifecycle-suite`
+delta of this change writes the #38 exception #77's ruling granted, and the public rollback helper's contract (D7).
 
 Admission gates: `task verify` green, including `cover:check` with this change's targets at the one 80% floor (D11);
 graph-ingest green under the lifecycle suite; every helper that runs background work green under its
@@ -73,7 +74,7 @@ otherwise `pkg/<name>` moves to `internal/<name>`.
 
 | Level | Package | Destination | Why public / internal | Verdict |
 | --- | --- | --- | --- | --- |
-| 0 | `internal/lifecyclecleanup` | `internal/lifecyclecleanup` | internal at the pin | carry (D7; #77's ruling gives the helper a public home, task 1.9) |
+| 0 | `internal/lifecyclecleanup` | `pkg/lifecyclecleanup` | public by #77's ruling (comment 6035317931); SemTeams' components call it | adapt (D7: public home, a nil rollback refused) |
 | 0 | `types` | `types` | consumers import it (54 + 20 sites) | carry |
 | 0 | `model` | `model` | consumers import it (3) | carry: whole until #32 decides the seam (D6) |
 | 0 | `model/wire` | — | nothing ported here reads it (D1a, P-9) | not ported in change 2 (D1a, following ruling B's reasoning); `defer-exclude` row naming change 7 |
@@ -291,32 +292,130 @@ reads is removed (#9 comment 5968830525).
 - **Generic payload:** no `NewGenericJSON` or `GenericJSONPayload{` construction in the 17 (search over §2's file
   list, empty; the set this change ports is a subset), so no `adapt` item under #9 comment 5972208367.
 
-### D7. Failed-start rollback (`internal/lifecyclecleanup`)
+### D7. Failed-start rollback: the public helper and the #38 exception (#77)
 
-Ported as `carry` under `internal/`: graph-ingest's `Start` calls it (`component.go:984`) and keeps the pin's
-behavior. On a failed start, cleanup runs synchronously under a fresh five-second context that keeps the parent's
-values; startup and rollback errors are both returned (`errors.Join`); when rollback succeeds, the component holds
-nothing; when rollback fails, the component keeps what it could not release and the next `Stop` tries again. The
-five-second budget is a terminal finalization budget, which `background-work` "No fixed shutdown timeout" allows.
+**The ruling.** #77 comment 6035317931: a component cleans up its own failed start, using a helper SemEngine makes
+public; the component manager and the service manager stay as the second line; the #38 exception is granted, and #38
+binds only components SemEngine ports. The helper's public home and name, and whether it keeps accepting a nil
+callback, are this design's to settle. PR #93 closes #77 (comment 6035358884). This section settles the three, writes
+the exception as a `lifecycle-suite` delta, and reconciles the `natsfixture` copy. #77's passed inventory (comments
+6024786639 and 6024787123) is taken as given; its sections cited below as "#77 §n".
 
-The last branch does not meet the current `lifecycle-suite` rule that a failed `Start` holds nothing (#38). **#77 was
-ruled on 2026-10-07** (comment 6035317931): the component cleans up its own failed start with a helper SemEngine makes
-public, the managers stay as the second line, and the #38 exception is granted for components SemEngine ports; the
-helper's public home and name, and whether it keeps accepting a nil callback, are this change's to settle, and PR #93
-closes #77 (comment 6035358884). This revision does not yet apply that ruling: it applies the rulings on B, C, E and F
-only. Task 1.9 restates D7 and D13 on #77's ruling (public destination, the `natsfixture` copy, the `lifecycle-suite`
-delta for the exception) before the design returns to review. Until then this section states the pin's behavior,
-which the ruling keeps: carried unchanged, recorded on graph-ingest's ledger row under `known_risks` ("a failed
-`Start` whose rollback also fails returns both errors and keeps what it could not release until the next `Stop`"),
-and pinned by the pin's own test, carried on the in-package adapter:
-`TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop` (`processor/graph-ingest/lifecycle_owner_test.go:134`).
-The suite's failed-start check runs on graph-ingest with a failing factory whose cleanup succeeds, and passes as
-written.
+**The helper at the pin** (`internal/lifecyclecleanup/lifecyclecleanup.go`, 38 lines, standard library only):
+`func RollbackFailedStart(parent context.Context, rollback func(context.Context) error) error` (`:17`) runs `rollback`
+synchronously under `context.WithTimeout(context.WithoutCancel(parent), 5*time.Second)` (`:12`, `:33`), so the
+rollback keeps the parent's values but not its cancellation or deadline, and returns `errors.Join(rollbackErr,
+ctx.Err())` (`:36-37`). A nil parent is refused with an error (`:26-27`); a nil `rollback` returns nil (`:29-30`).
+34 production call sites at the pin, all in components and the two managers; none passes nil (#77 §3, §2d).
 
-Two homes remain: `natsfixture.rollback` (15 s, `internal/harness/natsfixture/rollback.go:17`) and this package. They
-are kept apart: `natsfixture` may import no module package ("Import graph"), and the two budgets bound different work
-(Docker teardown, component cleanup). Recorded on both ledger rows. #77's ruling asks this change to reconcile them
-(foundation D9); that is task 1.9's.
+**Its consumer.** SemTeams' proving case (#77 §8): it compiles "the exported helper plus SemEngine's component
+interface" and tests a component directly, with no manager, from change 2 on. The agentic components SemTeams is taking
+over call it at the pin as `lifecyclecleanup.RollbackFailedStart(…)` (#77 §3, rows 1-2 and 9-13).
+
+#### D7.1 Home and exported name
+
+Options, each keeping the function name `RollbackFailedStart` (the ruling's premise: "nothing in SemEngine's ported
+managers needs adapting if the helper keeps its name when it moves"):
+
+- (a) **`pkg/lifecyclecleanup.RollbackFailedStart`.** The pin's package moved from `internal/` to `pkg/`, unchanged
+  in name. SemTeams changes one import path per calling file and no call text. It follows the standing destination
+  rule (change 1 D5, #9 comment 5953295358): a package a starter consumer imports is public, and SemEngine's public
+  utility packages already live under `pkg/` (`pkg/errs`, `pkg/retry`, `pkg/projection`). It imports only the standard
+  library, so a caller pulls in nothing else, and `internal/lifecycleguard` (D13) can call it without importing
+  `component`. Cost: one more public package, holding one function.
+- (b) **`component.RollbackFailedStart`.** No new package; `component` already holds the component interface the
+  helper serves, and every pin caller already imports `component` (no import cycle: `go list -deps ./component` at the
+  pin reaches none of the callers' packages). Cost: SemTeams changes the call text as well as the import, at every
+  call; `internal/lifecycleguard` would import `component`, a 5,585-line package, for one function; and the helper,
+  which is about any lifecycle owner, sits in the package about components.
+- (c) **A new top-level package** (for example `lifecycle` or `failedstart`). Cost: a new name to learn; `lifecycle`
+  would be confused with `pkg/lifecycle`, the workflow-entity layer (`pkg/lifecycle/doc.go:1-3`; #77 §13 Q3); the
+  module's top-level packages are the pin's domain packages, not helpers.
+- (d) **Do nothing (keep it internal).** Not open: the ruling makes it public.
+
+Recommendation **(a)**: `pkg/lifecyclecleanup.RollbackFailedStart`. It is the only option under which SemTeams' change
+is the import path alone, as the ruling describes, and the only one that keeps the guard free of `component`. The name
+`RollbackFailedStart` is unused in SemEngine (`git grep -n RollbackFailedStart -- '*.go'` on the branch: empty; the
+only `lifecyclecleanup` mention is the provenance comment `internal/harness/natsfixture/rollback.go:16`). Later
+changes that port a caller rewrite its import through the ledger's destination (`harness-boundaries`, "Comparison with
+the pin", scenario "Import of a package the ledger moved").
+
+**With D13 and ruling C.** The guard (D13) stays `internal/lifecycleguard`, owns the one-shot state, and calls
+`lifecyclecleanup.RollbackFailedStart` on a failed `Start`; SemEngine's own components get the five facts #77 §10 lists
+(record cleanup pending first, call the helper synchronously with `Start`'s context, join its result, clear the record
+only on nil, release in `Stop`) from the guard. An external component gets them from the helper's doc comment, which
+states all five: the cost #77 §10 names, which the owner accepted ("Accept that SemEngine can check the helper and its
+managers in its own repository, while only SemTeams' tests can check that SemTeams' components call the helper", asked
+in #77 comment 6024793500, ruled in 6035317931). Making the guard public as well would remove most of that cost, but it
+has no consumer who asked for it (D13 option (c)); it is not proposed. Ruling C is unaffected: the helper names no
+internal type, so `TestPublicSignatures` passes with no exception.
+
+#### D7.2 A nil rollback callback
+
+At the pin a nil `rollback` returns nil (`:29-30`), pinned by `lifecyclecleanup_test.go:32`
+(`TestRollbackFailedStartNilRollback`). What a caller observes: a component whose `Start` failed and that passed nil
+gets "rollback succeeded", although no rollback ran; it then clears its cleanup-pending record (#77 §10, fact (d)), and
+whatever it acquired is held with no record, so no later `Stop` releases it. That is a silent success on a failure
+path, which the developer contract forbids ("A failure path fails closed").
+
+Options: (a) keep the pin's nil-returns-nil; (b) **refuse it: return an error naming the nil callback**, as the nil
+parent is refused (`:26-27`); (c) panic. Recommendation **(b)**. A caller observes `RollbackFailedStart(ctx, nil)`
+returning a non-nil error that names the nil rollback, which it joins into `Start`'s error and which keeps its record
+set, so the failure is reported and a later `Stop` still runs. No pin caller passes nil (#77 §3), so no ported caller
+changes. Cost: a declared change from the pin (an `adapt` item on the row); the carried test
+`TestRollbackFailedStartNilRollback` is inverted to expect the error, written first and failing on the pin's code; an
+external caller that passed nil on purpose now gets an error; none is known (all 34 pin callers, the agentic ones
+SemTeams is taking over included, pass a closure or a method value, #77 §13 Q4). (c) is rejected: a panic in a failing
+`Start` is the shape the lifecycle suite does not count as a refusal ("Portable floor").
+
+The rest of the contract is the pin's: the five-second budget per call, fresh, synchronous and cooperative (#77 §11,
+behaviour 2; the ruling keeps "a fresh five-second budget per component"); a terminal finalization budget, which
+`background-work` "No fixed shutdown timeout" allows. Its spec home is the `lifecycle-suite` delta, "Failed-start
+rollback helper".
+
+#### D7.3 The #38 exception, as a spec delta
+
+The current "Portable floor" requires a failed `Start` to hold nothing, and its failed-start check fails the honest
+"rollback failed, still held" branch at either boundary (#77 §2c rows B and F). The owner granted the exception for
+ported components (comment 6035317931, item 2). The `lifecycle-suite` delta:
+
+- modifies "Portable floor" to say that its failed-start check judges a failed `Start` whose own cleanup succeeded,
+  and that the branch where that cleanup fails is governed by the new requirement, not by this check;
+- adds "Failed start whose own cleanup fails": a component SemEngine ports MAY return from a failed `Start` still
+  holding what its cleanup could not release, provided its error reports both the start failure and the cleanup
+  failure, and it keeps what is left on record so that a later `Stop` tries again; each such component proves it with
+  its own test, not the shared check; components outside this module are proven by their own tests;
+- adds "Failed-start rollback helper": the D7.1 and D7.2 contract.
+
+This replaces round 3's `known_risks` treatment: graph-ingest's retained branch is now specified behavior, proven by
+the pin's own test carried on the in-package adapter,
+`TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop` (`processor/graph-ingest/lifecycle_owner_test.go:134`),
+tagged with the new requirement. The suite's failed-start check runs on graph-ingest with a failing factory whose
+cleanup succeeds, and passes as written.
+
+#### D7.4 The `natsfixture` copy (foundation D9)
+
+Foundation D9: "`internal/lifecyclecleanup` keeps its harness-helper file row and gains a package row; the two homes
+are reconciled in change 2". The copy is `natsfixture.rollback` (`internal/harness/natsfixture/rollback.go:18`, 15 s
+budget at `:12`), adapted from the pin file (ledger file row `internal/lifecyclecleanup/lifecyclecleanup.go`, base
+`docs/admission-ledger.yaml:148-162`, `known_risks`: "production home deferred until a production consumer exists").
+Options:
+
+- (a) `natsfixture` calls the public helper. Cost: the `harness-boundaries` "Import graph" requirement says
+  `natsfixture` "SHALL import no package of this module outside `internal/harness/`", so that requirement changes; and
+  the helper's fixed five seconds is shorter than Docker teardown under concurrent package cleanup, which the copy's
+  15 s exists for (`rollback.go:9-11`), so the helper would gain a budget parameter whose only caller is the harness
+  (surface with no production consumer).
+- (b) **Two homes, reconciled on the record.** The production home is `pkg/lifecyclecleanup`; the harness keeps its
+  unexported copy for the two stated reasons. The file row's `known_risks` changes from "production home deferred" to
+  name the production home and the two reasons; the package row names the harness copy. Both refuse a nil parent and
+  keep the parent's values; each has its own test (`internal/harness/natsfixture/fixture_test.go:294-309` for the
+  copy). The copy has no nil-callback case: its callers are its own package's.
+- (c) Move the copy's budget into the public helper and delete the copy: (a)'s costs, plus a fixture timeout chosen by
+  production code.
+
+Recommendation **(b)**. It changes no requirement and adds no surface; the reconciliation foundation D9 asked for is
+that each home names the other and why they stay apart.
 
 ### D8. Repair rows and what proves each
 
@@ -447,7 +546,7 @@ cleanup-pending flag in 2 of 12; the terminal flag spelled two ways), no doc or 
 carrying a copy. SS#1411 asks for exactly this choice. Options:
 
 - (a) **One guard under `internal/`**, a new package `internal/lifecycleguard`, that graph-ingest composes. It owns the
-  owner-lifecycle state and nothing else; rollback stays in `internal/lifecyclecleanup` (D7), which the guard calls on
+  owner-lifecycle state and nothing else; rollback stays in `pkg/lifecyclecleanup` (D7), which the guard calls on
   a failed start. Cost: a new package; graph-ingest's tests that read the fields directly (`lifecycle_owner_test.go`,
   `test_owner_test.go`, `test_owner_child_test.go`, `component_test.go`) read the guard instead.
 - (b) Record the copy as the idiom: each component keeps its own state machine, and the lifecycle suite (already run
@@ -458,9 +557,9 @@ carrying a copy. SS#1411 asks for exactly this choice. Options:
 - (d) Nothing in this change. Cost: a deviation from foundation D7 that the owner would have to accept.
 
 Recommendation **(a)**. It is what foundation D7 already assigned; it is internal because every adopter is in this
-module; whether external component authors get public lifecycle helpers is #77's question (for rollback), and a
-ruling there can promote the guard later without changing what it does. Separate from `internal/lifecyclecleanup` so a
-ruling that makes the rollback helper public does not drag the guard with it.
+module. #77's ruling made only the rollback helper public (D7); a later ruling can promote the guard without changing
+what it does. Separate from `pkg/lifecyclecleanup`, so the public helper does not drag the guard's state machine into
+public surface.
 
 What a component composing the guard observes (developer chooses the methods): a second `Start` returns
 `ErrAlreadyStarted` before acquiring anything; a nil or already-cancelled context is refused; `Stop` before `Start`
@@ -510,12 +609,13 @@ the module can build. After the port:
 
 ## Owner questions
 
-**A. (Framing only.)** Who cleans up when a component fails partway through `Start`, and may a `Start` whose cleanup
-fails return still holding what it could not release? Both were asked on #77 (comment 6024793500). The owner ruled on
-2026-10-07 (comment 6035317931; D7) and directed that PR #93 close #77 (comment 6035358884). This change asks nothing
-further; applying the ruling is task 1.9.
+None open. Every question this design asked is ruled; the list follows.
 
 ### Ruled
+
+- **A** — asked on #77 (comment 6024793500): the component cleans up its own failed start with a public helper, the
+  managers stay as the second line; the #38 exception is granted and binds only ported components (#77 comment
+  6035317931); PR #93 closes #77 (#77 comment 6035358884). Applied in D7 and the `lifecycle-suite` delta.
 
 - **B** — "port": port only what `graph/inference` reads from `graph/llm` (`client.go`); drop `ReviewConfig.LLM`; the
   rest of `graph/llm` and `go-openai` wait for change 7; no authority-rule exception; foundation D8 modified for
@@ -574,14 +674,19 @@ Round 1's question D, the wire and storage names, is answered by #69 and applied
 - Accepted is not durable (I7) — `graph-ingest-recovery`, "Acknowledged is not durable".
 - One reserved-subject declaration (I2, its first half) — `graph-transport-boundary`.
 - Per-package registration (I1, its adopter path) — `component-registration`.
-- One-shot owner lifecycle (D13) — `lifecycle-suite`, "Portable floor" (current spec, unchanged).
+- One-shot owner lifecycle (D13) — `lifecycle-suite`, "Portable floor" (as this change modifies it).
+- Failed-start rollback (D7): a nil parent or nil rollback is refused; the rollback sees the parent's values with a
+  deadline and no parent cancellation; its error and the budget's expiry are both returned — `lifecycle-suite`,
+  "Failed-start rollback helper".
+- A failed `Start` whose own cleanup fails reports both failures and keeps what is left for a later `Stop` (D7) —
+  `lifecycle-suite`, "Failed start whose own cleanup fails".
 
 ## Related issues this change does not close
 
 Issues #75 (shared series; D4 records graph-ingest's gauges under it), #78 and #85 (no caller in the set, P14), #81 (new
 and repaired tests carry `// Requirement:` citations in #81's form; carried tests wait for #80's scope ruling), #24
 (unblocked when this change merges, foundation (d)), SS#1411 (answered here for SemEngine; the SemStreams issue is not
-touched). #77 is ruled and this change closes it (comment 6035358884) once task 1.9 applies the ruling.
+touched). #77 is ruled and this change closes it (comment 6035358884); D7 applies the ruling.
 
 ## Declared costs
 
@@ -593,6 +698,8 @@ touched). #77 is ruled and this change closes it (comment 6035358884) once task 
   below the floor, until change 7 (ruling F).
 - Change 7 ports the rest of `graph/llm`, `model/wire` and `go-openai` if the seam keeps them (ruling B, D1a).
 - A consumer can call the three registry methods directly; that it does not is review only (ruling C, D14).
-- #77's ruling is not yet applied (task 1.9).
+- One new public package, `pkg/lifecyclecleanup` (one function), by #77's ruling; that an external component calls it
+  correctly is checked only by that component's own tests (D7.1).
+- A nil rollback callback becomes an error, a declared change from the pin (D7.2).
 - graph-ingest metrics change name (`semengine_*`) and stop appearing on the process-global registry; three wire and
   storage names change (D9).

@@ -42,7 +42,7 @@ heading>` (#81's form). No task asserts a fact that exists only after merge.
       round-6 review (#91 comment 6037604840) and that review's findings applied (design D15, "Left open", "Ruled").
 - [x] 1.11 (R) Independent review of rounds 5 to 7: `INVENTORY PASS` on `inventory.md` §9 and a design PASS,
       recorded on this pull request with the reviewed files' checksums. Done: PR #93 comment 6037662484.
-- [x] 1.12 (O) Owner acceptance of rounds 5 to 7 on #91. Done: accepted 2026-10-07 (https://github.com/C360Studio/semengine/issues/91#issuecomment-6037996648).
+- [x] 1.12 (O) Owner acceptance of rounds 5 to 7 on #91. Done: accepted 2026-10-07 (#91 comment 6037996648).
 
 ## 2. Probes and harness
 

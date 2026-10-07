@@ -840,6 +840,22 @@ marked as holding the pin's behavior; spec home `graph-entity-writes`, plus `pro
   `Delete`, `DeleteAtRevision`) is called outside the seam's file, with a sensitivity case that plants one. It holds
   the shape #100 asks for; the developer chooses the seam's API.
 
+**Generated checks** (`docs/testing.md`, "Decide whether generated checks are needed"). The replace rule's result
+depends on how subject, source, timestamps, repeats and arrival order combine, so it gets one generated check:
+`TestPropReplaceBySourceMatchesModel` (`graph`; Rapid, the repository's property-testing library) draws a stored
+entity and an arrival from one small pool of statements, so a write often repeats a statement, carries two sources or
+predicates, ties a timestamp or arrives older than what is stored, and compares the result with a model the test owns,
+written from this section. The model counts statements equal in every field once; checkpoint 1 stored such a repeat
+twice (Codex, PR #93). `graph` compares the object in its stored form (an int and a float64 of one value are one) and
+times as instants. A random draw is not sure to reach a boundary, so each is also a named example:
+`TestReplaceCountsEqualStatementsOnce` (a repeat, kept in arrival order; statements differing in one field each; an
+object `==` cannot compare; values that store as one; a repeated stale set) and `TestReplaceOrderedByTimestamp` (an
+equal timestamp; a set as new as its latest statement, on both sides, which the property missed in 100 checks at seed
+1). The single-value read is a fixed three-level order over one entity's statements, not a history, so examples
+suffice: `TestSingleValueReadPicksLatestAcrossSources` shows each level deciding when the levels before it tie (the
+timestamp, in both stored orders; the source; the stored order) and a later timestamp beating a source that sorts
+first.
+
 **Not changed** (the audit's "port untouched" list): acknowledgement order (KV write, durable guard stamp, ack,
 `keyed_ingest.go:208-224`); `authorizeSubject` at every lane before any I/O; `MarshalEntityState` as the one validating
 write gate and `UnmarshalEntityState`'s poison classification; `projection.MutationClient`'s commit-state model over

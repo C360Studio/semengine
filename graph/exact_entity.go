@@ -14,8 +14,8 @@ import (
 const exactEntityQuerySubject = "graph.ingest.query.entity"
 
 // ExactEntity is one validated authority value and the revision of the same
-// ENTITY_STATES entry. EntityState.Version is logical metadata and is not a
-// substitute for KVRevision.
+// ENTITY_STATES entry. KVRevision is the entry's only revision: the stored
+// value carries none of its own.
 type ExactEntity struct {
 	Entity     *EntityState `json:"entity"`
 	KVRevision uint64       `json:"kvRevision"`

@@ -9,9 +9,9 @@ starts, `task merge:check -- 122` and the merge are recorded on this pull reques
 
 ## 1. Design
 
-- [ ] 1.1 The independent review of `inventory.md`: `INVENTORY PASS`, recorded on this pull request with the
+- [x] 1.1 The independent review of `inventory.md`: `INVENTORY PASS`, recorded on this pull request with the
       reviewed file's checksum.
-- [ ] 1.2 The independent pre-owner review of `design.md`, `proposal.md`, this file and the `spec-queue` delta:
+- [x] 1.2 The independent pre-owner review of `design.md`, `proposal.md`, this file and the `spec-queue` delta:
       `DESIGN REVIEW PASS`, recorded on this pull request.
 - [ ] 1.3 The owner's acceptance of the design, recorded on #115 or this pull request, including its departure from
       #115's recommendation 2: one ADDED requirement in place of scenarios added to requirements 1 and 3

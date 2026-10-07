@@ -110,11 +110,16 @@ posted on this pull request.
       Done: the 11 fixture-client sites call one `natsfixture.Open` helper; `FrameworkOwnedBuckets`, dead at the pin
       (appendix), is dropped with the test of its unexported derivation; `TestEntityStatesKeepsOneRevision` holds the
       pin's behavior and its `task mutate:check` record (a mutant declaring `History` 2) is posted on this pull request.
-- [ ] 3.3b (D) The reply envelope and the verb table in `graph` (design D18, D20): `QueryResponse` with
+- [x] 3.3b (D) The reply envelope and the verb table in `graph` (design D18, D20): `QueryResponse` with
       `indexed_revision` and `producer`, built only with both (`TestQueryResponseCarriesIndexedRevisionAndProducer`,
       written first); the `min_revision` request field, declared and embedded in no type yet (design D18); a constructor
       that refuses an empty producer; no `UnwrapQueryResponse`; the verb table with `entity`, `batch` and `prefix`,
       responder `graph-ingest`. Gate: `task test:unit`.
+      Done: `MinRevisionField` in `graph/query_contracts.go`; `QueryVerbs` in `graph/query_verbs.go`, its request and
+      reply types written as strings, as the pin's graph-query table writes them; `UnwrapQueryResponse`, its key-set
+      constants and its four tests removed; the field-set test now holds the four keys. Three `task mutate:check`
+      detections (constructor drops the revision, accepts an empty producer; table regains a suffix verb) are quoted
+      in the commit body.
 - [ ] 3.4 (D) `graph/readiness`: `Watcher` takes `Run(ctx)` (design D5), with `synctest` tests that `Run` returns
       `ctx.Err()` and leaves nothing running; `Set`, `NewSet`, `Dump`, `Verdict` removed, the row's `known_risks`
       naming their return with #110; `Publisher.Publish` sets `published_at` (`TestPublishStampsPublishedAt`, written

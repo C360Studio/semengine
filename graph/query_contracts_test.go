@@ -1,8 +1,8 @@
 package graph
 
 import (
-	"bytes"
 	"encoding/json"
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -19,183 +19,92 @@ func mustMarshal(t *testing.T, v any) []byte {
 	return b
 }
 
-// TestUnwrapQueryResponse_RecognizesTheEnvelope covers the positive direction:
-// a marshalled QueryResponse is unwrapped to exactly its data payload.
-func TestUnwrapQueryResponse_RecognizesTheEnvelope(t *testing.T) {
-	tests := []struct {
-		name string
-		resp any
+// TestQueryResponseCarriesIndexedRevisionAndProducer is design D18's test: a
+// reply on graph.query.* says which component answered and which ENTITY_STATES
+// revision the answer reflects, and both survive the wire.
+func TestQueryResponseCarriesIndexedRevisionAndProducer(t *testing.T) {
+	const producer = "graph-query-1"
+	const revision uint64 = 42
+	data := SummaryData{TotalEntities: 3}
+
+	resp, err := NewQueryResponse(data, producer, revision)
+	if err != nil {
+		t.Fatalf("NewQueryResponse(%q, %d): %v", producer, revision, err)
+	}
+	raw := mustMarshal(t, resp)
+
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		t.Fatalf("unmarshal: %v\n  got: %s", err, raw)
+	}
+	for _, key := range []string{"data", "timestamp"} {
+		if _, ok := fields[key]; !ok {
+			t.Errorf("JSON has no %q key\n  got: %s", key, raw)
+		}
+	}
+	if got := string(fields["indexed_revision"]); got != "42" {
+		t.Errorf("indexed_revision = %s, want 42\n  got: %s", got, raw)
+	}
+	if got := string(fields["producer"]); got != `"graph-query-1"` {
+		t.Errorf(`producer = %s, want "graph-query-1"`+"\n  got: %s", got, raw)
+	}
+
+	var decoded QueryResponse[SummaryData]
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("decode: %v\n  got: %s", err, raw)
+	}
+	if !reflect.DeepEqual(decoded.Data, data) || decoded.Producer != producer ||
+		decoded.IndexedRevision != revision || !decoded.Timestamp.Equal(resp.Timestamp) {
+		t.Fatalf("decoded response differs from the one encoded\n  encoded: %+v\n  decoded: %+v", resp, decoded)
+	}
+}
+
+// TestNewQueryResponseRefusesEmptyProducer holds design D18: a response cannot
+// be built without naming the component that answers.
+func TestNewQueryResponseRefusesEmptyProducer(t *testing.T) {
+	resp, err := NewQueryResponse(SummaryData{TotalEntities: 3}, "", 42)
+	if !errors.Is(err, errNoProducer) {
+		t.Fatalf("NewQueryResponse with an empty producer: err = %v, want %v", err, errNoProducer)
+	}
+	if !reflect.DeepEqual(resp, QueryResponse[SummaryData]{}) {
+		t.Fatalf("refused response is not the zero value: %+v", resp)
+	}
+}
+
+// TestQueryResponseDeclaresOnlyEnvelopeFields walks the struct tags, not a
+// marshalled value, so a field added with `omitempty` is seen too: the
+// envelope's key set is exactly design D18's.
+func TestQueryResponseDeclaresOnlyEnvelopeFields(t *testing.T) {
+	typeOfResponse := reflect.TypeOf(QueryResponse[struct{}]{})
+	keys := make([]string, 0, typeOfResponse.NumField())
+	for i := 0; i < typeOfResponse.NumField(); i++ {
+		key, _, _ := strings.Cut(typeOfResponse.Field(i).Tag.Get("json"), ",")
+		keys = append(keys, key)
+	}
+	want := []string{"data", "indexed_revision", "producer", "timestamp"}
+	if !reflect.DeepEqual(keys, want) {
+		t.Fatalf("QueryResponse JSON fields = %v, want %v", keys, want)
+	}
+}
+
+// TestMinRevisionFieldEmbedsAtTheTopLevel holds design D18: a request type that
+// embeds MinRevisionField carries min_revision beside its own fields, and leaves
+// it out when no minimum is asked for.
+func TestMinRevisionFieldEmbedsAtTheTopLevel(t *testing.T) {
+	type request struct {
+		MinRevisionField
+		ID string `json:"id"`
+	}
+	for _, tc := range []struct {
+		req  request
 		want string
 	}{
-		{
-			name: "summary data (gh#762's motivating instance)",
-			resp: NewQueryResponse(SummaryData{TotalEntities: 42}),
-			want: `"total_entities":42`,
-		},
-		{
-			name: "name data (reached via the graph.query.byName proxy)",
-			resp: NewQueryResponse(NameData{Matches: []NameMatch{}}),
-			want: `"matches":[]`,
-		},
-		{
-			name: "predicate list data",
-			resp: NewQueryResponse(PredicateListData{}),
-			// No substring assertion: the real content of this case is the
-			// unwrapped verdict and the timestamp-absence check below. `"{"`
-			// would be true of any JSON object and only reads like coverage.
-			want: ``,
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			raw := mustMarshal(t, tc.resp)
-
-			got, unwrapped := UnwrapQueryResponse(raw)
-			if !unwrapped {
-				t.Fatalf("expected the envelope to be recognized; got raw back\n  input: %s", raw)
-			}
-			if !bytes.Contains(got, []byte(tc.want)) {
-				t.Errorf("unwrapped payload missing %q\n  got: %s", tc.want, got)
-			}
-			// The payload must be the DATA, not the envelope — assert the
-			// envelope's own keys are gone rather than only that the leaf is
-			// reachable. Reaching the leaf is exactly what the double-nested
-			// shape also permits.
-			if bytes.Contains(got, []byte(`"timestamp"`)) {
-				t.Errorf("envelope key \"timestamp\" survived unwrapping\n  got: %s", got)
-			}
-		})
-	}
-}
-
-// TestUnwrapQueryResponse_NoCollisionWithRealResponseTypes is task 2.2 of the
-// gateway-response-envelope-detection change, and the discharge of its one
-// data-loss risk.
-//
-// Every response type actually served through the gateway's projection path is
-// asserted NOT to be detected as an envelope. A collision here would mean a
-// real payload silently loses a nesting level, which is strictly worse than the
-// double-nesting defect being fixed.
-//
-// Mutation check: replacing the closed-key-set loop in UnwrapQueryResponse with
-// a bare `data` presence test turns the "envelope-shaped plus a foreign key"
-// and "data without timestamp" cases RED.
-func TestUnwrapQueryResponse_NoCollisionWithRealResponseTypes(t *testing.T) {
-	tests := []struct {
-		name string
-		raw  []byte
-	}{
-		{
-			// Task 2.3: PrefixQueryResponse is its own struct, NOT a
-			// QueryResponse[T], and must fail on BOTH required keys.
-			name: "PrefixQueryResponse (graph.query.prefix, has its own unwrap path)",
-			raw:  mustMarshal(t, PrefixQueryResponse{}),
-		},
-		{
-			name: "EntityBatchResponse (graph.query.batch)",
-			raw:  mustMarshal(t, EntityBatchResponse{}),
-		},
-		{
-			name: "NameData unwrapped (already-flat payload)",
-			raw:  mustMarshal(t, NameData{Matches: []NameMatch{}}),
-		},
-		{
-			name: "SummaryData unwrapped (already-flat payload)",
-			raw:  mustMarshal(t, SummaryData{TotalEntities: 3}),
-		},
-		{
-			name: "AliasData unwrapped",
-			raw:  mustMarshal(t, AliasData{}),
-		},
-		{
-			name: "OutgoingRelationshipsData unwrapped",
-			raw:  mustMarshal(t, OutgoingRelationshipsData{}),
-		},
-		{
-			// Hand-written by field names, NOT a marshalled production type:
-			// `graph` cannot import processor/graph-embedding. The
-			// subject-keyed inventory that DOES use production types lives in
-			// gateway/graph-gateway/response_shape_test.go.
-			name: "SimilarResponse shape (graph.query.similar)",
-			raw:  []byte(`{"entity_id":"a.b.c.d.e.f","similar":[],"duration":"1ms"}`),
-		},
-		{
-			name: "a bare JSON array (spatial/temporal results)",
-			raw:  []byte(`[{"id":"a"},{"id":"b"}]`),
-		},
-		{
-			name: "a JSON scalar",
-			raw:  []byte(`42`),
-		},
-		{
-			name: "malformed JSON",
-			raw:  []byte(`{not json`),
-		},
-
-		// The three shapes that make the discriminator CLOSED rather than
-		// permissive. Each would be unwrapped by a `has("data")` test.
-		{
-			name: "legitimate top-level data field, no timestamp",
-			raw:  []byte(`{"data":{"inner":1}}`),
-		},
-		{
-			name: "data and timestamp ALONGSIDE a foreign key",
-			raw:  []byte(`{"data":{"inner":1},"timestamp":"2026-07-31T00:00:00Z","total":5}`),
-		},
-		{
-			name: "timestamp without data",
-			raw:  []byte(`{"timestamp":"2026-07-31T00:00:00Z"}`),
-		},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got, unwrapped := UnwrapQueryResponse(tc.raw)
-			if unwrapped {
-				t.Fatalf("FALSE POSITIVE — this type was detected as the envelope "+
-					"and would silently lose a nesting level in production\n  input: %s\n  would serve: %s",
-					tc.raw, got)
-			}
-			if !bytes.Equal(got, tc.raw) {
-				t.Errorf("non-envelope input must be returned byte-for-byte\n  in:  %s\n  out: %s", tc.raw, got)
-			}
-		})
-	}
-}
-
-// TestUnwrapQueryResponse_RemovesExactlyOneLayer pins design decision D3.
-//
-// A payload whose own contents are envelope-shaped must survive. Unwrapping
-// "while it still looks like an envelope" would make the number of layers
-// removed depend on user data, so the same query would project differently for
-// different entities.
-func TestUnwrapQueryResponse_RemovesExactlyOneLayer(t *testing.T) {
-	inner := map[string]any{
-		"data":      map[string]any{"deep": true},
-		"timestamp": "2026-07-31T00:00:00Z",
-	}
-	raw := mustMarshal(t, NewQueryResponse(inner))
-
-	got, unwrapped := UnwrapQueryResponse(raw)
-	if !unwrapped {
-		t.Fatalf("outer envelope not recognized: %s", raw)
-	}
-
-	// Exactly one layer came off: the inner object is delivered intact,
-	// including its own data/timestamp keys.
-	var payload map[string]json.RawMessage
-	if err := json.Unmarshal(got, &payload); err != nil {
-		t.Fatalf("unwrapped payload is not an object: %s", got)
-	}
-	if _, ok := payload["data"]; !ok {
-		t.Errorf("inner \"data\" was stripped — more than one layer removed\n  got: %s", got)
-	}
-	if _, ok := payload["timestamp"]; !ok {
-		t.Errorf("inner \"timestamp\" was stripped — more than one layer removed\n  got: %s", got)
-	}
-	if !bytes.Contains(got, []byte(`"deep":true`)) {
-		t.Errorf("inner payload lost\n  got: %s", got)
+		{request{MinRevisionField{MinRevision: 7}, "a"}, `{"min_revision":7,"id":"a"}`},
+		{request{ID: "a"}, `{"id":"a"}`},
+	} {
+		if got := string(mustMarshal(t, tc.req)); got != tc.want {
+			t.Errorf("request JSON = %s, want %s", got, tc.want)
+		}
 	}
 }
 
@@ -207,7 +116,11 @@ func TestUnwrapQueryResponse_RemovesExactlyOneLayer(t *testing.T) {
 // If a future change reintroduces the field, this fails and the gateway's
 // deleted branch has to be reconsidered deliberately rather than by accident.
 func TestQueryResponse_HasNoErrorField(t *testing.T) {
-	raw := mustMarshal(t, NewQueryResponse(SummaryData{}))
+	resp, err := NewQueryResponse(SummaryData{}, "graph-query-1", 1)
+	if err != nil {
+		t.Fatalf("NewQueryResponse: %v", err)
+	}
+	raw := mustMarshal(t, resp)
 
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil {
@@ -219,46 +132,4 @@ func TestQueryResponse_HasNoErrorField(t *testing.T) {
 	}
 
 	_ = fields
-}
-
-// TestQueryResponse_DeclaredFieldsMatchClosedKeySet keeps the discriminator in
-// sync with the struct it describes.
-//
-// It walks the STRUCT TAGS, not a marshalled value. An earlier version iterated
-// the keys of a marshalled zero value, which cannot see an `omitempty` field.
-// That blind spot is the exact re-entry
-// path for gh#762: add `Cursor string \`json:"cursor,omitempty"\“ to
-// QueryResponse and every detector test stays green, but a real reply that
-// populates Cursor then carries a foreign key, UnwrapQueryResponse returns
-// (raw, false), and that subject silently goes back to `data.<field>.data.*` —
-// the defect this capability exists to remove, re-entering through the guard
-// meant to prevent it. Found by review and proven by mutation, not argued.
-func TestQueryResponse_DeclaredFieldsMatchClosedKeySet(t *testing.T) {
-	rt := reflect.TypeOf(QueryResponse[json.RawMessage]{})
-	seen := map[string]bool{}
-
-	for i := 0; i < rt.NumField(); i++ {
-		key, _, _ := strings.Cut(rt.Field(i).Tag.Get("json"), ",")
-		if key == "" || key == "-" {
-			continue
-		}
-		seen[key] = true
-		switch key {
-		case queryResponseDataKey, queryResponseTimestampKey:
-		default:
-			t.Errorf("QueryResponse declares json key %q, absent from the closed key set used "+
-				"by UnwrapQueryResponse. Add it to the constants, or detection stops "+
-				"recognizing its own envelope and the double-nesting defect returns.", key)
-		}
-	}
-
-	// The reverse direction: a constant naming a key the struct no longer
-	// declares makes the closed set wider than the type, which admits foreign
-	// shapes.
-	for _, key := range []string{queryResponseDataKey, queryResponseTimestampKey} {
-		if !seen[key] {
-			t.Errorf("closed key set names %q, which QueryResponse no longer declares — "+
-				"the discriminator is wider than the type it describes", key)
-		}
-	}
 }

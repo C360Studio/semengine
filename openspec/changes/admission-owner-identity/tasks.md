@@ -19,7 +19,7 @@ starts, `task merge:check -- 125` and the merge are recorded on this pull reques
 
 ## 2. The fix and its tests
 
-- [ ] 2.1 (D) In `internal/harness/natsfixture/admission_test.go`, as `design.md`, D4 states: `plantLock` records
+- [x] 2.1 (D) In `internal/harness/natsfixture/admission_test.go`, as `design.md`, D4 states: `plantLock` records
       the identity its oracle reads, and `TestAdmissionRequiresALiveOwner` gains an identity per case and the cases
       "owner pid names a process with another start time" and "owner identity unknown". Run on the base code, the
       two new cases fail because `Start` is admitted, and the rest pass. Gate: that run, recorded on this pull

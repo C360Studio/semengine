@@ -44,20 +44,20 @@
 // # Core Metrics
 //
 // The package automatically registers core platform metrics (the Metrics type), all
-// in the "semstreams" namespace:
+// in the "semengine" namespace:
 //
-//   - Service lifecycle: semstreams_service_status{service} (0=stopped, 1=starting,
+//   - Service lifecycle: semengine_service_status{service} (0=stopped, 1=starting,
 //     2=running, 3=stopping, 4=failed)
-//   - Message flow: semstreams_messages_received_total{service,type},
-//     semstreams_messages_processed_total{service,type,status},
-//     semstreams_messages_published_total{service,subject}
-//   - Processing performance: semstreams_processing_duration_seconds{service,operation}
-//   - Errors and health: semstreams_errors_total{service,type},
-//     semstreams_health_status{service}
-//   - Logging: semstreams_log_entries_total{component,level}, which has no recording
+//   - Message flow: semengine_messages_received_total{service,type},
+//     semengine_messages_processed_total{service,type,status},
+//     semengine_messages_published_total{service,subject}
+//   - Processing performance: semengine_processing_duration_seconds{service,operation}
+//   - Errors and health: semengine_errors_total{service,type},
+//     semengine_health_status{service}
+//   - Logging: semengine_log_entries_total{component,level}, which has no recording
 //     method; write it through the LogEntriesTotal field
-//   - NATS connectivity: semstreams_nats_connected, semstreams_nats_rtt_seconds,
-//     semstreams_nats_reconnects_total, semstreams_nats_circuit_breaker
+//   - NATS connectivity: semengine_nats_connected, semengine_nats_rtt_seconds,
+//     semengine_nats_reconnects_total, semengine_nats_circuit_breaker
 //
 // Record core metrics through the registry:
 //
@@ -200,10 +200,10 @@
 //	    metrics_path: '/metrics'
 //	    scrape_interval: 15s
 //
-// All core metrics use the namespace "semstreams" and appropriate subsystems:
-//   - semstreams_service_status{service="..."}
-//   - semstreams_messages_processed_total{service="...",type="...",status="..."}
-//   - semstreams_nats_connected
+// All core metrics use the namespace "semengine" and appropriate subsystems:
+//   - semengine_service_status{service="..."}
+//   - semengine_messages_processed_total{service="...",type="...",status="..."}
+//   - semengine_nats_connected
 //
 // Service-specific metrics use the metric name as provided during registration.
 //

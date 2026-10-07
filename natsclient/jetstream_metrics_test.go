@@ -50,14 +50,14 @@ func TestJetStreamMetricsShareCanonicalCollectorsAcrossOwners(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantValues := map[string]float64{
-		"semstreams_jetstream_consumer_max_ack_pending_requested":             7,
-		"semstreams_jetstream_consumer_max_ack_pending_effective":             5,
-		"semstreams_jetstream_consumer_max_ack_pending_observation_available": 1,
+		"semengine_jetstream_consumer_max_ack_pending_requested":             7,
+		"semengine_jetstream_consumer_max_ack_pending_effective":             5,
+		"semengine_jetstream_consumer_max_ack_pending_observation_available": 1,
 	}
 	gotNames := make([]string, 0, len(wantValues))
 	for _, family := range families {
 		name := family.GetName()
-		if strings.HasPrefix(name, "semstreams_jetstream_") &&
+		if strings.HasPrefix(name, "semengine_jetstream_") &&
 			(strings.Contains(name, "queue") || strings.Contains(name, "drop")) {
 			t.Fatalf("unexpected queue/drop metric added with consumer-policy observation: %q", name)
 		}
@@ -90,21 +90,21 @@ func TestJetStreamMetricsShareCanonicalCollectorsAcrossOwners(t *testing.T) {
 		write    func()
 		wantType dto.MetricType
 	}{
-		{"semstreams_jetstream_stream_messages", first.streamMessages == second.streamMessages,
+		{"semengine_jetstream_stream_messages", first.streamMessages == second.streamMessages,
 			func() { second.streamMessages.WithLabelValues("EVENTS").Add(3) }, dto.MetricType_GAUGE},
-		{"semstreams_jetstream_stream_bytes", first.streamBytes == second.streamBytes,
+		{"semengine_jetstream_stream_bytes", first.streamBytes == second.streamBytes,
 			func() { second.streamBytes.WithLabelValues("EVENTS").Add(3) }, dto.MetricType_GAUGE},
-		{"semstreams_jetstream_stream_state", first.streamState == second.streamState,
+		{"semengine_jetstream_stream_state", first.streamState == second.streamState,
 			func() { second.streamState.WithLabelValues("EVENTS").Add(3) }, dto.MetricType_GAUGE},
-		{"semstreams_jetstream_consumer_pending_messages", first.consumerPending == second.consumerPending,
+		{"semengine_jetstream_consumer_pending_messages", first.consumerPending == second.consumerPending,
 			func() { second.consumerPending.WithLabelValues("EVENTS", "worker").Add(3) }, dto.MetricType_GAUGE},
-		{"semstreams_jetstream_consumer_delivered_stream_sequence", first.consumerDelivered == second.consumerDelivered,
+		{"semengine_jetstream_consumer_delivered_stream_sequence", first.consumerDelivered == second.consumerDelivered,
 			func() { second.consumerDelivered.WithLabelValues("EVENTS", "worker").Add(3) }, dto.MetricType_GAUGE},
-		{"semstreams_jetstream_consumer_ack_floor_stream_sequence", first.consumerAcked == second.consumerAcked,
+		{"semengine_jetstream_consumer_ack_floor_stream_sequence", first.consumerAcked == second.consumerAcked,
 			func() { second.consumerAcked.WithLabelValues("EVENTS", "worker").Add(3) }, dto.MetricType_GAUGE},
-		{"semstreams_jetstream_consumer_redelivered_messages", first.consumerRedelivered == second.consumerRedelivered,
+		{"semengine_jetstream_consumer_redelivered_messages", first.consumerRedelivered == second.consumerRedelivered,
 			func() { second.consumerRedelivered.WithLabelValues("EVENTS", "worker").Add(3) }, dto.MetricType_GAUGE},
-		{"semstreams_jetstream_operation_errors_total", first.errors == second.errors,
+		{"semengine_jetstream_operation_errors_total", first.errors == second.errors,
 			func() { second.errors.WithLabelValues("publish").Add(3) }, dto.MetricType_COUNTER},
 	}
 	for _, o := range others {
@@ -178,9 +178,9 @@ func TestJetStreamConsumerMetricsReportServerStateAcrossPolls(t *testing.T) {
 		name  string
 		value float64
 	}{
-		{"semstreams_jetstream_consumer_delivered_stream_sequence", 5},
-		{"semstreams_jetstream_consumer_ack_floor_stream_sequence", 4},
-		{"semstreams_jetstream_consumer_redelivered_messages", 2},
+		{"semengine_jetstream_consumer_delivered_stream_sequence", 5},
+		{"semengine_jetstream_consumer_ack_floor_stream_sequence", 4},
+		{"semengine_jetstream_consumer_redelivered_messages", 2},
 	}
 	polled := []float64{
 		testutil.ToFloat64(metrics.consumerDelivered.WithLabelValues("EVENTS", "worker")),
@@ -211,8 +211,8 @@ func TestJetStreamConsumerMetricsReportServerStateAcrossPolls(t *testing.T) {
 			t.Errorf("%s gathered %v, want the server's %v", want.name, got, want.value)
 		}
 	}
-	for _, old := range []string{"semstreams_jetstream_consumer_delivered_total",
-		"semstreams_jetstream_consumer_acked_total", "semstreams_jetstream_consumer_redelivered_total"} {
+	for _, old := range []string{"semengine_jetstream_consumer_delivered_total",
+		"semengine_jetstream_consumer_acked_total", "semengine_jetstream_consumer_redelivered_total"} {
 		if byName[old] != nil {
 			t.Errorf("%s is still gathered", old)
 		}

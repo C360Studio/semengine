@@ -177,14 +177,14 @@ func TestRegisterOrGetRefusesCoreMetricCollision(t *testing.T) {
 	r := NewMetricsRegistry()
 	r.CoreMetrics().ServiceStatus.WithLabelValues("core").Set(2)
 	alias, err := RegisterOrGet(r, "svc", "status", prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: "semstreams", Subsystem: "service", Name: "status",
+		Namespace: "semengine", Subsystem: "service", Name: "status",
 		Help: "Service status (0=stopped, 1=starting, 2=running, 3=stopping, 4=failed)",
 	}, []string{"service"}))
 	require.Error(t, err)
 	require.True(t, errs.IsFatal(err))
 	require.Nil(t, alias)
 	require.False(t, r.Unregister("svc", "status"))
-	require.Equal(t, []float64{2}, gatheredSeries(t, r, "semstreams_service_status"))
+	require.Equal(t, []float64{2}, gatheredSeries(t, r, "semengine_service_status"))
 }
 
 // Test 7 (design D9): a collector registered directly through PrometheusRegistry owns its

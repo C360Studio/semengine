@@ -56,21 +56,21 @@ func newJetStreamMetrics(registry *metric.MetricsRegistry) (*jetstreamMetrics, e
 	m := &jetstreamMetrics{
 		// Stream metrics
 		streamMessages: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "semstreams",
+			Namespace: "semengine",
 			Subsystem: "jetstream",
 			Name:      "stream_messages",
 			Help:      "Current number of messages in stream",
 		}, []string{"stream"}),
 
 		streamBytes: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "semstreams",
+			Namespace: "semengine",
 			Subsystem: "jetstream",
 			Name:      "stream_bytes",
 			Help:      "Storage bytes used by stream",
 		}, []string{"stream"}),
 
 		streamState: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "semstreams",
+			Namespace: "semengine",
 			Subsystem: "jetstream",
 			Name:      "stream_state",
 			Help:      "Stream state (1=active, 0=inactive)",
@@ -78,48 +78,48 @@ func newJetStreamMetrics(registry *metric.MetricsRegistry) (*jetstreamMetrics, e
 
 		// Consumer metrics
 		consumerPending: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "semstreams",
+			Namespace: "semengine",
 			Subsystem: "jetstream",
 			Name:      "consumer_pending_messages",
 			Help:      "Number of pending messages for consumer",
 		}, []string{"stream", "consumer"}),
 
 		consumerDelivered: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "semstreams",
+			Namespace: "semengine",
 			Subsystem: "jetstream",
 			Name:      "consumer_delivered_stream_sequence",
 			Help:      "Stream sequence of the last message delivered to consumer, as the server reports it",
 		}, []string{"stream", "consumer"}),
 
 		consumerAcked: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "semstreams",
+			Namespace: "semengine",
 			Subsystem: "jetstream",
 			Name:      "consumer_ack_floor_stream_sequence",
 			Help:      "Stream sequence of consumer's ack floor, as the server reports it",
 		}, []string{"stream", "consumer"}),
 
 		consumerRedelivered: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "semstreams",
+			Namespace: "semengine",
 			Subsystem: "jetstream",
 			Name:      "consumer_redelivered_messages",
 			Help:      "Messages redelivered to consumer and not yet acknowledged, as the server reports it; falls on acknowledgement",
 		}, []string{"stream", "consumer"}),
 		policyRequested: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "semstreams", Subsystem: "jetstream", Name: "consumer_max_ack_pending_requested",
+			Namespace: "semengine", Subsystem: "jetstream", Name: "consumer_max_ack_pending_requested",
 			Help: "Final requested MaxAckPending for a port-backed consumer",
 		}, []string{"component", "port", "stream", "consumer", "policy_source"}),
 		policyEffective: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "semstreams", Subsystem: "jetstream", Name: "consumer_max_ack_pending_effective",
+			Namespace: "semengine", Subsystem: "jetstream", Name: "consumer_max_ack_pending_effective",
 			Help: "Observed effective MaxAckPending for a port-backed consumer",
 		}, []string{"component", "port", "stream", "consumer", "policy_source"}),
 		policyAvailable: prometheus.NewGaugeVec(prometheus.GaugeOpts{
-			Namespace: "semstreams", Subsystem: "jetstream", Name: "consumer_max_ack_pending_observation_available",
+			Namespace: "semengine", Subsystem: "jetstream", Name: "consumer_max_ack_pending_observation_available",
 			Help: "Whether effective MaxAckPending observation is currently available",
 		}, []string{"component", "port", "stream", "consumer", "policy_source"}),
 
 		// Error counters
 		errors: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: "semstreams",
+			Namespace: "semengine",
 			Subsystem: "jetstream",
 			Name:      "operation_errors_total",
 			Help:      "Total number of JetStream operation errors",

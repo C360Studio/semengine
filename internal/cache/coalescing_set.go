@@ -51,7 +51,7 @@ func WithPanicLogger(logger *slog.Logger) CoalescingOption {
 }
 
 // WithCoalescingMetrics counts recovered callback panics on
-// semstreams_cache_coalescing_callback_panics_total{component=prefix}, registered on registry the
+// semengine_cache_coalescing_callback_panics_total{component=prefix}, registered on registry the
 // way WithMetrics registers a cache's collectors. A nil registry or an empty prefix is ignored, as
 // WithMetrics ignores them: a panic is then logged but not counted.
 func WithCoalescingMetrics(registry *metric.MetricsRegistry, prefix string) CoalescingOption {
@@ -98,7 +98,7 @@ func NewCoalescingSet(
 	if o.metricsReg != nil {
 		counter, err := metric.RegisterOrGet(o.metricsReg, o.metricsPrefix, "cache_coalescing_callback_panics",
 			prometheus.NewCounter(prometheus.CounterOpts{
-				Namespace:   "semstreams",
+				Namespace:   "semengine",
 				Subsystem:   "cache",
 				Name:        "coalescing_callback_panics_total",
 				ConstLabels: prometheus.Labels{"component": o.metricsPrefix},

@@ -76,9 +76,10 @@ references` check, with the tests that read only it; READMEs are read claim by c
 Every test a task names as "written first" is shown failing before the code that makes it pass, and the failure is
 posted on this pull request.
 
-- [x] 3.1 (D) `types`, `storage`, `model` (carry). Done: the pin's files at their destinations with the module path
-      rewritten, `types/README.md` corrected (name, import path, `config` and `service` arriving in change 3);
-      `golang.org/x/net` enters at v0.59.0, the base's version (task 5.3).
+- [x] 3.1 (D) `types` (adapt: `ComponentConfig.Equal` refuses trailing input after the first JSON value, design D1),
+      `storage` and `model` (carry). Done: the pin's files at their destinations with the module path rewritten,
+      `types/README.md` corrected (name, import path, `config` and `service` arriving in change 3);
+      `golang.org/x/net` enters at v0.59.0, the base's version (task 5.3); the `Equal` repair landed in `9f40bd4`.
 - [x] 3.1a (D) `internal/lifecyclecleanup` → `pkg/lifecyclecleanup` (design D7): `RollbackFailedStart` keeps its name
       and its five-second budget; a nil rollback is refused (`TestRollbackFailedStartNilRollback` inverted to expect
       the error, written first and failing on the pin's code); the four scenarios of `lifecycle-suite` "Failed-start

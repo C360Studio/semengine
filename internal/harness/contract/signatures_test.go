@@ -672,9 +672,9 @@ const authoritySuffix = " spells the deployment authority outside the entity-ID 
 // members a type gains by embedding. An alias is a package-level type too: its own name is
 // checked, and so are the members of the type it stands for. A member the module declares is
 // reported once, at its own declaration, under the first qualified name the walk reaches it by
-// (sorted names within a package); a member declared outside the module is reported at each
-// module type that exposes it, since nowhere else will. Each line names the file, line, qualified
-// identifier and rule; the count is the number of module packages checked.
+// (sorted package paths, then sorted names); a member declared outside the module is reported
+// at each module type that exposes it, since nowhere else will. Each line names the file, line,
+// qualified identifier and rule; the count is the number of module packages checked.
 func authorityNameViolations(t *testing.T, root string) ([]string, int) {
 	t.Helper()
 	modulePath := modulePathOf(t, root)
@@ -716,8 +716,12 @@ func authorityNameViolations(t *testing.T, root string) ([]string, int) {
 	}
 	var exposers []exposer
 	checked := 0
+	// packages.Load documents no order, and the first name to reach a declaration is the one
+	// reported, so the walk sorts the packages itself.
+	pkgs := loadModuleTypes(t, root)
+	sort.Slice(pkgs, func(i, j int) bool { return pkgs[i].PkgPath < pkgs[j].PkgPath })
 	// Pass 1: each package-level name, and the members a type declares itself.
-	for _, pkg := range loadModuleTypes(t, root) {
+	for _, pkg := range pkgs {
 		if pkg.Types == nil || !inModule(pkg.Types) {
 			continue
 		}

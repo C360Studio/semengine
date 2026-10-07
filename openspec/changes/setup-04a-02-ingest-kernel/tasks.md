@@ -38,7 +38,8 @@ heading>` (#81's form). No task asserts a fact that exists only after merge.
       a failing-first test each (design D15–D21); the guard-state question of tasks 3.12 and 3.13 answered (design
       D22); `inventory.md` §9 with its probes; `task spec:check` and `task docs:check` pass on the change. Round 6:
       the owner's rulings A–F on the round-4 review (#91 comment 6037287957) and that review's four findings applied
-      (design D1a, D6, D11, D15, D16, D17, D21, "Owner questions"; `inventory.md` §9.15).
+      (design D1a, D6, D11, D15, D16, D17, D21, "Owner questions"; `inventory.md` §9.15). Round 7: rulings 1–5 on the
+      round-6 review (#91 comment 6037604840) and that review's findings applied (design D15, "Left open", "Ruled").
 - [ ] 1.11 (R) Independent review of rounds 5 and 6: `INVENTORY PASS` on `inventory.md` §9 and a design PASS,
       recorded on this pull request with the reviewed files' checksums. Hold: task 1.10.
 - [ ] 1.12 (O) Owner acceptance of rounds 5 and 6 on #91. Hold: task 1.11.
@@ -88,7 +89,9 @@ posted on this pull request.
       `Version` (`TestStoredEntityHasNoVersion`, written first); the write-mode rules as pure functions, with
       `TestReplaceOrderedByTimestamp`, `TestConfidenceAndContextNeverOrder` and
       `TestSingleValueReadPicksLatestAcrossSources` at rule level, written first (design D15);
-      `ReconcilePredicatesRequest` with a required `source`; `IndexStatusResponse` without `Phase`, `Revision` and
+      `ReconcilePredicatesRequest` with a required `source`; the reserved sources `graph-ingest-indexing-profile`,
+      `graph-ingest-hierarchy` and `semengine-lifecycle` as three constants and `IsReservedSource` (ruling 5, design
+      D15); `IndexStatusResponse` without `Phase`, `Revision` and
       `LastSynced` and with `published_at` (`TestIndexStatusResponseHasNoLegacyFields`, written first, design D16);
       `ExactEntityReader` without the `natsclient` import, a zero timeout passed through; `events.go` not ported; dead
       sentinels, `IncomingEdges` and the other dead `graph` rows removed, test-only exports unexported or moved into
@@ -135,8 +138,10 @@ posted on this pull request.
       first; design D15); its repair is tasks 4.1–4.2. Hold: task 1.12.
 - [ ] 3.10 (D) `pkg/lifecycle`: 7 fixture-client sites; `harness_gate_integration_test.go` on per-package payload
       registration; `Manager.Watch` and `WatchEvents` in the watch shape of design D5; no `Version: 1`
-      (design D15); every statement the manager writes carries one constant source, which its reconciles send as the
-      request's source (`TestTransitionReplacesItsPhaseStatement`, written first, design D15); the emitter's error no
+      (design D15); every statement the manager writes carries the constant source `semengine-lifecycle`, which its
+      reconciles send as the request's source (`TestTransitionReplacesItsPhaseStatement`, written first: two
+      transitions with different `TransitionSource`s leave one phase statement carrying `semengine-lifecycle`; design
+      D15); the emitter's error no
       longer discarded (`TestManagerWithoutClientRefusesEmit`, written first, design D17). Hold: task 1.12.
 - [ ] 3.11 (D) `component`: `ToolRegistry` and `ToolRegistryReader` removed (#29) and `LifecycleManager` removed
       (#102, design D17); `lifecycle_test_suite.go` and its self-test not ported; `ProcessorMetrics`,
@@ -193,15 +198,16 @@ posted on this pull request.
       3.12.
 - [ ] 4.7 (D) #29 and #102: the `component` contract test of task 3.11 green on the ported tree, with its package
       count posted. Hold: task 3.11.
-- [ ] 4.8 (D) #100 and #98, the `graph-entity-writes` scenarios through graph-ingest, each written first and failing
-      on the pin's code: `TestWriteModesAgreeAcrossLanes`, `TestReplaceKeepsOtherSourcesStatements`,
+- [ ] 4.8 (D) #100 and #98, the `graph-entity-writes` scenarios through graph-ingest, each written first and failing on
+      the pin's code: `TestWriteModesAgreeAcrossLanes`, `TestReplaceKeepsOtherSourcesStatements`,
       `TestStreamLaneGroupsByStampedSource`, `TestReconcileReplacesOnlyItsSource`,
-      `TestReconcileRefusesForeignSourceStatement`, `TestReplaceOrderedByTimestamp` on the stream lane (the stale-set
-      counter rises by one for the same source and not for another), `TestConfidenceAndContextNeverOrder`,
+      `TestReconcileRefusesForeignSourceStatement` (a reconcile with no `source` on the wire included, ruling 1),
+      `TestStreamLaneRefusesReservedSource` (ruling 5), `TestReplaceOrderedByTimestamp` on the stream lane (the
+      stale-set counter rises by one for the same source and not for another), `TestConfidenceAndContextNeverOrder`,
       `TestWriteRefusesStatementWithoutSourceOrTimestamp` (an empty create included),
       `TestGraphableLaneStampsFromEnvelope`, `TestGraphableLaneRefusesWithoutEnvelopeMetadata`,
       `TestDerivedStatementsCarryTriggeringTime` (rulings A and C and the round-4 review's derived-statement finding,
-      #91 comment 6037287957; design D15). Hold: task 3.12a.
+      #91 comment 6037287957; rulings 1 and 5, #91 comment 6037604840; design D15). Hold: task 3.12a.
 - [ ] 4.9 (D) #111 item 1: `TestHierarchyFailureFailsTheBirth` (`graph-entity-writes`, "Birth with hierarchy fails
       closed") and `TestCorruptGuardRecordIsRefused` (`graph-ingest-recovery`, "A record that cannot be decoded"),
       each written first and failing on the pin's code (design D21). Hold: task 3.12b.

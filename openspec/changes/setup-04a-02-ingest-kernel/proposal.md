@@ -43,7 +43,8 @@ graph-ingest); a **statement** is one stored triple with its source, time, confi
   stream lane, never from the clock by default; a statement's time orders a replace, and an older arrival is not
   applied and is counted; confidence and context never order a write; a reconcile is fenced by the caller's revision,
   not by time (ruling C). Statements graph-ingest derives (the indexing profile, hierarchy edges) carry the
-  triggering message's time. The typed mutation client stops reading the clock.
+  triggering message's time. The stream lane refuses the source names graph-ingest and `pkg/lifecycle` write under
+  (rulings 1–5, #91 comment 6037604840). The typed mutation client stops reading the clock.
 - **One stored revision** (#99): `ENTITY_STATES` keeps one revision per key, written down as a constraint.
 - **The `graph` root** (#101) holds the data model and wire types and imports no NATS package: the bucket catalog
   moves to a new `graph/kvcatalog`, the readiness computation to `graph/readiness`, and `events.go` (a second mutation

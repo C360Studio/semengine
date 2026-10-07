@@ -694,24 +694,32 @@ that mode only, not an identity rule. Within one write, statements equal in ever
 **The source a set is keyed on.**
 
 - **Stream lane.** Statements are stamped first (statement metadata, below) and then grouped. A statement without a
-  `Source` takes the envelope's, so a producer that never names a source per statement replaces exactly what its
-  earlier messages stored. A statement that names its own `Source` is grouped under it, so one message may carry sets
-  for several sources, and a relay that re-publishes another producer's statements under that producer's name
-  replaces that producer's set. The stream lane does not require a statement's source to match the envelope's, as the
-  pin requires nothing of it; that one source's message can replace a set stored under another source's name is
-  declared, not checked.
+  `Source` takes the envelope's, so a producer that never names a source per statement replaces exactly what its earlier
+  messages stored. A statement that names its own `Source` is grouped under it, so one message may carry sets for
+  several sources, and a relay that re-publishes another producer's statements under that producer's name replaces that
+  producer's set. The stream lane does not require a statement's source to match the envelope's, as the pin requires
+  nothing of it; that one source's message can replace a set stored under another source's name is declared, not
+  checked, with one exception: the reserved sources (ruling 5, #91 comment 6037604840). The names graph-ingest and
+  `pkg/lifecycle` write under, `graph-ingest-indexing-profile`, `graph-ingest-hierarchy` and `semengine-lifecycle`, are
+  declared once in `graph` (three exported constants and `graph.IsReservedSource`; their consumers are graph-ingest, the
+  hierarchy slice and `pkg/lifecycle`). After stamping, a stream message any of whose statements carries one is
+  terminated as poison with an `invalid_request`-class error naming the statement's index and the source, counted on
+  graph-ingest's poison counter under the reason `reserved_source`, and nothing of it is stored, so no producer on the
+  stream can replace graph-ingest's or the lifecycle manager's sets. The mutation lane does not refuse them:
+  `pkg/lifecycle` writes there under its own.
 - **Conditional replace.** `graph.ReconcilePredicatesRequest` gains `source`, required: every desired statement's
-  `Source` must equal it, or the request is refused as `invalid_request` naming the statement's index. The typed
+  `Source` must equal it, or the request is refused as `invalid_request` naming the statement's index; a request with no
+  `source` on the wire is refused as `invalid_request` naming `source`, and nothing is stored (ruling 1). The typed
   client fills it from `Metadata.Source`, which `Reconcile` now requires as `Create` and `Append` do
   (`pkg/projection/mutation_client.go:344-350` at the pin requires it for those two only); `pkg/lifecycle` sends its
   reconciles on the raw wire, not through the typed client, and its statements carry no source at the pin
-  (`graph_emit.go:116-121`); after the port they carry one constant naming the lifecycle manager, which its three
-  reconcile builders (`manager.go:419`, `:619`, `:739`) also send as the request's source. One source for every
-  lifecycle write keeps a transition's reconcile replacing the phase statement it wrote before, as the pin's comment
-  at `manager.go:611-618` requires (a phase that accumulates values is the bug it names). The other
-  answer, a reconcile that replaces every source's statements of its predicates because its caller read them at that
-  revision, keeps the cross-source wipe ruling A removes, for the lane a projection writes on; ruling A names no
-  exception, so this design takes none. The reviewer may weigh it.
+  (`graph_emit.go:116-121`); after the port they carry one constant naming the lifecycle manager
+  (`semengine-lifecycle`), which its three reconcile builders (`manager.go:419`, `:619`, `:739`) also send as the
+  request's source. One source for every lifecycle write keeps a transition's reconcile replacing the phase statement it
+  wrote before, as the pin's comment at `manager.go:611-618` requires (a phase that accumulates values is the bug it
+  names). The other answer, a reconcile that replaces every source's statements of its predicates because its caller
+  read them at that revision, keeps the cross-source wipe ruling A removes, for the lane a projection writes on; ruling
+  A names no exception, so this design takes none. The reviewer may weigh it.
 - **Append and delete** are unchanged: the append identity already contains the source.
 
 **What a reader sees.** A predicate may hold statements from several sources; `EntityState.Triples` returns all of
@@ -740,8 +748,8 @@ mutation lane gets no hierarchy statements, as at the pin (`canonical_mutations.
   that carries its own keeps it. When the envelope has no source or no creation time either, the message is refused
   as poison: terminated, counted and logged as a structurally invalid candidate is.
 - **Statements graph-ingest derives** (the indexing profile, hierarchy edges, a hierarchy container's type statement)
-  name graph-ingest's producer in `Source` (one constant per producer; the pin's `graph-ingest-indexing-profile`,
-  `component.go:1890`, is one) and carry the triggering message's time, never the clock (the round-4 review, applied
+  name graph-ingest's producer in `Source` (`graph-ingest-indexing-profile`, the pin's name at `component.go:1890`,
+  and `graph-ingest-hierarchy`) and carry the triggering message's time, never the clock (the round-4 review, applied
   on #91 comment 6037287957). On the stream lane that is the envelope's creation time, the value that stamps the
   message's own statements. On the mutation and in-process lanes it is the latest `Timestamp` among the write's own
   statements, each of which is required. A create on those two lanes that carries no statement has no time to give,
@@ -751,6 +759,9 @@ mutation lane gets no hierarchy statements, as at the pin (`canonical_mutations.
   neither source nor time (`graph/inference/hierarchy.go:358-374`, `:409-430`, `:485-493`).
 - `EntityState.UpdatedAt` is the store's write time, not a statement; it stays the clock, as at the pin
   (`component.go:2165`, `:2494`, `:2685`).
+- The lifecycle manager originates its own statements, so it keeps stamping them from the clock
+  (`pkg/lifecycle/graph_emit.go:119`); the rule against the clock binds graph-ingest and defaults for a value a writer
+  left out, not an originator asserting its own time.
 - The typed mutation client stops reading the clock: a `Create`, `Append` or `Reconcile` whose `Metadata.Timestamp` is
   zero and whose statement has none is refused before any request is sent, not-committed
   (`pkg/projection/mutation_client.go:378-383` at the pin).
@@ -790,10 +801,16 @@ marked as holding the pin's behavior; spec home `graph-entity-writes`, plus `pro
 - `TestStreamLaneGroupsByStampedSource`: an arrival whose statements carry no source replaces the set stored under the
   envelope's source; one whose statements name two sources replaces both sets and no other.
 - `TestReconcileReplacesOnlyItsSource` (graph-ingest) and `TestReconcileRefusesForeignSourceStatement`: an empty
-  reconcile from A leaves B's statements of P; a desired statement from B in A's reconcile is refused, nothing stored.
+  reconcile from A leaves B's statements of P; a desired statement from B in A's reconcile, and a reconcile with no
+  `source` on the wire, are each refused as `invalid_request`, nothing stored.
+- `TestStreamLaneRefusesReservedSource`: a stream message with a statement naming `graph-ingest-hierarchy`, and one
+  whose envelope source is `semengine-lifecycle`, are each terminated as poison with an `invalid_request`-class error
+  naming the index and source, the poison counter rises by one each, and the entity is unchanged. Fails on the pin,
+  which stores both.
 - `TestMutationClientReconcileRequiresSource` (`pkg/projection`): not-committed, no request sent.
 - `TestTransitionReplacesItsPhaseStatement` (`pkg/lifecycle`, through graph-ingest): after a create and two
-  transitions the entity holds one phase statement, carrying the lifecycle manager's source. Fails on the pin's
+  transitions, the two with different `TransitionSource`s (`rule` and `operator`), the entity holds one phase
+  statement, and it carries the constant source `semengine-lifecycle`. Fails on the pin's
   statements, which carry no source and are refused once D15 lands.
 - `TestSingleValueReadPicksLatestAcrossSources` (`graph`): the latest timestamp wins whatever the stored order; ties
   go to the source that sorts first.
@@ -1075,6 +1092,9 @@ These issues belong to changes 4, 5 and 7. This change forecloses none of them:
   `readiness.Set` is dropped here as dead surface and returns with #110 as returning surface, named on the readiness
   row's `known_risks` (D6), so the drop forecloses nothing.
 - **#111 items 2–4**: changes 4 and 7.
+- **The indexing profile's reader** (ruling 4): with sources side by side, an entity's profile predicate can hold
+  graph-ingest's statement and a producer's. Change 4's design says how graph-index reads the profile (the
+  single-value read of ruling 2, or a rule of its own); nothing here decides it.
 
 **D7 and D13, re-checked against D15 and D17.** `pkg/lifecyclecleanup` imports only the standard library and
 `internal/lifecycleguard` only `pkg/errs` and `pkg/lifecyclecleanup`; neither touches a graph package or `component`,
@@ -1083,11 +1103,8 @@ is unchanged; #109's processor shell would be one more adopter, in change 4.
 
 ## Owner questions
 
-None open. No ruling's text contradicts the measured pin. One reading of ruling A is named for the reviewer: it is
-applied to the conditional replace as well as the stream lane's replace, so a reconcile names one source (D15, "The
-source a set is keyed on"); the ruling names no exception, and the other answer's cost is stated there. #101's list of
-catalog rows "for owners SemEngine does not admit" is a design decision, not a ruling (three of its four owners are
-admitted; D16).
+None open. No ruling's text contradicts the measured pin. #101's list of catalog rows "for owners SemEngine does not
+admit" is a design decision, not a ruling (three of its four owners are admitted; D16).
 
 ### Ruled
 
@@ -1132,6 +1149,21 @@ admitted; D16).
     in this change; semsource changes once, on adoption. Applied in D16.
   - From the same comment: statements graph-ingest derives carry the triggering message's timestamp, never the
     clock (#98). Applied in D15.
+- **Rulings 1–5 on the round-6 review, consequences of ruling A** (#91 comment 6037604840, 2026-10-07, "accept all
+  recommendations"):
+  - **1** (reconcile names a source): a raw-wire reconcile without `source` is refused with a typed
+    `invalid_request` and nothing is stored; semconnect's raw reconcile must send it. Applied in D15 and
+    `graph-entity-writes`.
+  - **2** (single-value reads pick the latest): `GetTriple` and `GetPropertyValue` return the latest-timestamp
+    statement across sources (ties: the source first in sort order, then the first stored); the rule processor,
+    graph-query and graph-embedding inherit it in changes 4, 6 and 7. Applied in D15.
+  - **3** (empty creates refused): a create with no statements on the mutation or in-process lane is refused, so the
+    indexing profile never takes its time from the clock. Applied in D15.
+  - **4** (indexing profiles side by side): a producer's profile statement sits beside graph-ingest's; change 4's
+    design says how graph-index reads the profile ("Left open for #105–#111"). Applied in D15.
+  - **5** (reserved sources refused on the stream): a stream statement may name its own source, and the stream lane
+    refuses the reserved names graph-ingest and `pkg/lifecycle` write under, in this change. Applied in D15 and
+    `graph-entity-writes`.
 
 The port-refactors #100–#104, #106's pattern and #111 item 1 are owner-ordered for this change (PR #93 comment
 6036316289) and applied in D15–D21. Round 1's question D, the wire and storage names, is answered by #69 and applied in

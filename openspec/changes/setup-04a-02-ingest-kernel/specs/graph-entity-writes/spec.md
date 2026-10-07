@@ -10,7 +10,8 @@ every lane: a create stores a new entity and refuses an existing key; a replace 
 statements of one (subject, predicate, source) as one set and replace that set whole, keeping the statements of the
 same predicate from every other source; an append adds a statement only when no stored statement has the same
 subject, predicate, datatype, source, context and object; a delete removes the entity at the caller's expected
-revision. A conditional replace SHALL name one source, every statement it carries SHALL have that source, and an empty
+revision. A conditional replace SHALL name one source, a request without one SHALL be refused as `invalid_request`
+and store nothing, every statement it carries SHALL have that source, and an empty
 set SHALL clear only that source's statements of the named predicates. A conditional replace SHALL report "unchanged"
 only when the stored statements of its predicates from its source equal the requested ones in every field. No non-test
 file of graph-ingest other than the write path's own SHALL call a write method of the entity bucket.
@@ -32,6 +33,11 @@ file of graph-ingest other than the write path's own SHALL call a write method o
 - **WHEN** predicate P holds statements from sources A and B, and a conditional replace from source A names P with no
   statements
 - **THEN** P holds only source B's statements
+
+#### Scenario: A conditional replace without a source
+
+- **WHEN** a reconcile request on the wire carries no `source`
+- **THEN** it is refused as `invalid_request` naming `source`, and nothing is stored
 
 #### Scenario: A conditional replace with a statement from another source
 
@@ -57,15 +63,20 @@ reads of `graph` (`EntityState.GetTriple`, `EntityState.GetPropertyValue`) SHALL
 ### Requirement: Statement metadata is required
 
 Every statement graph-ingest stores SHALL carry a non-empty `Source` and a non-zero `Timestamp`, and neither SHALL be
-taken from the clock. A write carrying a statement without them SHALL be refused as `invalid_request`, naming the
-statement's index and the missing field, and SHALL store nothing. On the stream lane, a statement that lacks `Source` or
-`Timestamp` SHALL take the message envelope's source or creation time before its replace set is formed; a message whose
-envelope lacks the needed value SHALL be terminated as poison and counted. Statements graph-ingest derives itself (the
-indexing profile, hierarchy statements, a hierarchy container's statements) SHALL name graph-ingest's producer in
-`Source` and SHALL carry the triggering message's time: on the stream lane the envelope's creation time, on the mutation
-and in-process lanes the latest `Timestamp` among the write's own statements. A create on the mutation or in-process
-lane that carries no statement SHALL be refused as `invalid_request`. `Confidence` and `Context` SHALL be stored as
-given and SHALL NOT decide whether a write applies.
+taken from the clock by graph-ingest, or as a default for a value the writer left out; a writer that originates a
+statement MAY assert its own time. A write carrying a statement without them SHALL be refused as `invalid_request`,
+naming the statement's index and the missing field, and SHALL store nothing. On the stream lane, a statement that lacks
+`Source` or `Timestamp` SHALL take the message envelope's source or creation time before its replace set is formed; a
+message whose envelope lacks the needed value SHALL be terminated as poison and counted. The stream lane SHALL refuse a
+message any of whose statements, once stamped, carries a reserved source, the names graph-ingest and `pkg/lifecycle`
+write under (`graph-ingest-indexing-profile`, `graph-ingest-hierarchy` and `semengine-lifecycle`): the message SHALL be
+terminated as poison with an `invalid_request`-class error naming the statement's index and the source, counted, and
+nothing of it SHALL be stored. Statements graph-ingest derives itself (the indexing profile, hierarchy statements, a
+hierarchy container's statements) SHALL name graph-ingest's producer in `Source` and SHALL carry the triggering
+message's time: on the stream lane the envelope's creation time, on the mutation and in-process lanes the latest
+`Timestamp` among the write's own statements. A create on the mutation or in-process lane that carries no statement
+SHALL be refused as `invalid_request`. `Confidence` and `Context` SHALL be stored as given and SHALL NOT decide whether
+a write applies.
 
 #### Scenario: A mutation without a timestamp
 
@@ -84,6 +95,13 @@ given and SHALL NOT decide whether a write applies.
   enabled
 - **THEN** its indexing-profile and hierarchy statements, and the statements of any container created for it, carry
   timestamp T and graph-ingest's producer as source
+
+#### Scenario: A stream message names a reserved source
+
+- **WHEN** a `Graphable` payload carries a statement whose `Source` is `graph-ingest-hierarchy`, or carries none and
+  its envelope's source is `semengine-lifecycle`
+- **THEN** the message is terminated as poison with an `invalid_request`-class error naming the statement's index and
+  the source, the refusal is counted, and nothing of the message is stored
 
 #### Scenario: Confidence does not order
 

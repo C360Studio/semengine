@@ -136,15 +136,17 @@ func TestAdmissionRequiresALiveOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tc := range []struct {
-		name, host, pid, want string
+		name, host string
+		pid        func(t *testing.T) string // called inside the case, so a failed premise fails only that case
+		want       string
 	}{
-		{"owner pid is not a running process", host, strconv.Itoa(absentPID(t)), "not live"},
-		{"owner on another host", host + "-elsewhere", strconv.Itoa(os.Getpid()), "another host"},
-		{"owner pid unreadable", host, "x", "pid"},
+		{"owner pid is not a running process", host, func(t *testing.T) string { return strconv.Itoa(absentPID(t)) }, "not live"},
+		{"owner on another host", host + "-elsewhere", func(*testing.T) string { return strconv.Itoa(os.Getpid()) }, "another host"},
+		{"owner pid unreadable", host, func(*testing.T) string { return "x" }, "pid"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			plantLock(t, "tok", "tok")
-			owner := fmt.Sprintf("host=%s\npid=%s\nstarted=1\nidentity=x\ntoken=tok\ncommand=semengine /x/scripts/test-integration.sh\n", tc.host, tc.pid)
+			owner := fmt.Sprintf("host=%s\npid=%s\nstarted=1\nidentity=x\ntoken=tok\ncommand=semengine /x/scripts/test-integration.sh\n", tc.host, tc.pid(t))
 			if err := os.WriteFile(filepath.Join(os.Getenv("SEMENGINE_DOCKER_ADMISSION_LOCK_DIR"), "owner"), []byte(owner), 0o644); err != nil {
 				t.Fatal(err)
 			}

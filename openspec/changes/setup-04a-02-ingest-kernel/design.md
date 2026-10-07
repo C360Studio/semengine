@@ -704,7 +704,8 @@ that mode only, not an identity rule. Within one write, statements equal in ever
   declared once in `graph` (three exported constants and `graph.IsReservedSource`; their consumers are graph-ingest, the
   hierarchy slice and `pkg/lifecycle`). After stamping, a stream message any of whose statements carries one is
   terminated as poison with an `invalid_request`-class error naming the statement's index and the source, counted on
-  graph-ingest's poison counter under the reason `reserved_source`, and nothing of it is stored, so no producer on the
+  `predicate_contract_rejections_total` with `lane="graphable"` and `reason="reserved_source"` (the pin's
+  candidate-rejection counter, `component.go:171`), and nothing of it is stored, so no producer on the
   stream can replace graph-ingest's or the lifecycle manager's sets. The mutation lane does not refuse them:
   `pkg/lifecycle` writes there under its own.
 - **Conditional replace.** `graph.ReconcilePredicatesRequest` gains `source`, required: every desired statement's
@@ -805,8 +806,8 @@ marked as holding the pin's behavior; spec home `graph-entity-writes`, plus `pro
   `source` on the wire, are each refused as `invalid_request`, nothing stored.
 - `TestStreamLaneRefusesReservedSource`: a stream message with a statement naming `graph-ingest-hierarchy`, and one
   whose envelope source is `semengine-lifecycle`, are each terminated as poison with an `invalid_request`-class error
-  naming the index and source, the poison counter rises by one each, and the entity is unchanged. Fails on the pin,
-  which stores both.
+  naming the index and source, `predicate_contract_rejections_total{lane="graphable",reason="reserved_source"}` rises by
+  one each, and the entity is unchanged. Fails on the pin, which stores both.
 - `TestMutationClientReconcileRequiresSource` (`pkg/projection`): not-committed, no request sent.
 - `TestTransitionReplacesItsPhaseStatement` (`pkg/lifecycle`, through graph-ingest): after a create and two
   transitions, the two with different `TransitionSource`s (`rule` and `operator`), the entity holds one phase

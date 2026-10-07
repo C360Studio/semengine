@@ -40,9 +40,9 @@ heading>` (#81's form). No task asserts a fact that exists only after merge.
       the owner's rulings A–F on the round-4 review (#91 comment 6037287957) and that review's four findings applied
       (design D1a, D6, D11, D15, D16, D17, D21, "Owner questions"; `inventory.md` §9.15). Round 7: rulings 1–5 on the
       round-6 review (#91 comment 6037604840) and that review's findings applied (design D15, "Left open", "Ruled").
-- [ ] 1.11 (R) Independent review of rounds 5 and 6: `INVENTORY PASS` on `inventory.md` §9 and a design PASS,
+- [ ] 1.11 (R) Independent review of rounds 5 to 7: `INVENTORY PASS` on `inventory.md` §9 and a design PASS,
       recorded on this pull request with the reviewed files' checksums. Hold: task 1.10.
-- [ ] 1.12 (O) Owner acceptance of rounds 5 and 6 on #91. Hold: task 1.11.
+- [ ] 1.12 (O) Owner acceptance of rounds 5 to 7 on #91. Hold: task 1.11.
 
 ## 2. Probes and harness
 
@@ -91,14 +91,14 @@ posted on this pull request.
       `TestSingleValueReadPicksLatestAcrossSources` at rule level, written first (design D15);
       `ReconcilePredicatesRequest` with a required `source`; the reserved sources `graph-ingest-indexing-profile`,
       `graph-ingest-hierarchy` and `semengine-lifecycle` as three constants and `IsReservedSource` (ruling 5, design
-      D15); `IndexStatusResponse` without `Phase`, `Revision` and
-      `LastSynced` and with `published_at` (`TestIndexStatusResponseHasNoLegacyFields`, written first, design D16);
-      `ExactEntityReader` without the `natsclient` import, a zero timeout passed through; `events.go` not ported; dead
-      sentinels, `IncomingEdges` and the other dead `graph` rows removed, test-only exports unexported or moved into
-      `_test.go` files; README rewritten; the #69 rename of the configuration bucket constant (`semengine_config`); 11
-      fixture-client sites. `TestGraphImportsNoTransport` and its sensitivity test (`graph-transport-boundary`, "The
-      graph root imports no transport"), written first and red on the pin-shaped root, land in this task's commit. Gate:
-      `task test:unit`. Hold: task 1.12.
+      D15), with a rule-level `TestIsReservedSourceNamesAll` listing the three literal names; `IndexStatusResponse`
+      without `Phase`, `Revision` and `LastSynced` and with `published_at` (`TestIndexStatusResponseHasNoLegacyFields`,
+      written first, design D16); `ExactEntityReader` without the `natsclient` import, a zero timeout passed through;
+      `events.go` not ported; dead sentinels, `IncomingEdges` and the other dead `graph` rows removed, test-only exports
+      unexported or moved into `_test.go` files; README rewritten; the #69 rename of the configuration bucket constant
+      (`semengine_config`); 11 fixture-client sites. `TestGraphImportsNoTransport` and its sensitivity test
+      (`graph-transport-boundary`, "The graph root imports no transport"), written first and red on the pin-shaped root,
+      land in this task's commit. Gate: `task test:unit`. Hold: task 1.12.
 - [ ] 3.3a (D) `graph/kvcatalog` (design D16): `kvcatalog.go`, `owned_bucket_retention.go` and `IsKVTombstone` from
       the pin's `graph`, with their tests; no `TOOL_CALL_OUTCOMES` or `ENTITY_SUFFIX_INDEX` row or constant; the
       configuration bucket's description names SemEngine (design D9); `TestEntityStatesKeepsOneRevision`

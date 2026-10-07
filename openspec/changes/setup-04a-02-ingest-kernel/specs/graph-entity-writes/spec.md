@@ -70,13 +70,14 @@ naming the statement's index and the missing field, and SHALL store nothing. On 
 message whose envelope lacks the needed value SHALL be terminated as poison and counted. The stream lane SHALL refuse a
 message any of whose statements, once stamped, carries a reserved source, the names graph-ingest and `pkg/lifecycle`
 write under (`graph-ingest-indexing-profile`, `graph-ingest-hierarchy` and `semengine-lifecycle`): the message SHALL be
-terminated as poison with an `invalid_request`-class error naming the statement's index and the source, counted, and
-nothing of it SHALL be stored. Statements graph-ingest derives itself (the indexing profile, hierarchy statements, a
-hierarchy container's statements) SHALL name graph-ingest's producer in `Source` and SHALL carry the triggering
-message's time: on the stream lane the envelope's creation time, on the mutation and in-process lanes the latest
-`Timestamp` among the write's own statements. A create on the mutation or in-process lane that carries no statement
-SHALL be refused as `invalid_request`. `Confidence` and `Context` SHALL be stored as given and SHALL NOT decide whether
-a write applies.
+terminated as poison with an `invalid_request`-class error naming the statement's index and the source, counted on
+`predicate_contract_rejections_total` with `reason="reserved_source"`, and nothing of it SHALL be stored. The mutation
+lane accepts the reserved sources, since `pkg/lifecycle` writes there under its own. Statements graph-ingest derives
+itself (the indexing profile, hierarchy statements, a hierarchy container's statements) SHALL name graph-ingest's
+producer in `Source` and SHALL carry the triggering message's time: on the stream lane the envelope's creation time, on
+the mutation and in-process lanes the latest `Timestamp` among the write's own statements. A create on the mutation or
+in-process lane that carries no statement SHALL be refused as `invalid_request`. `Confidence` and `Context` SHALL be
+stored as given and SHALL NOT decide whether a write applies.
 
 #### Scenario: A mutation without a timestamp
 

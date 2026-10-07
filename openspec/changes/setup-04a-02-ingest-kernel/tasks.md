@@ -231,7 +231,7 @@ posted on this pull request.
       Hold: task 3.12 — `harness_gate_integration_test.go` (`payloadfixture.NewWithSubset` per design D2, its
       fixture-client site through `natsfixture.Open`) and `TestTransitionReplacesItsPhaseStatement` through
       graph-ingest.
-- [ ] 3.11 (D) `component`: `ToolRegistry` and `ToolRegistryReader` removed (#29) and `LifecycleManager` removed
+- [x] 3.11 (D) `component`: `ToolRegistry` and `ToolRegistryReader` removed (#29) and `LifecycleManager` removed
       (#102, design D17); `lifecycle_test_suite.go` and its self-test not ported; `ProcessorMetrics`,
       `config_validator.go`, `Registry.Snapshot` and the other dead rows removed; `CreateComponent`,
       `SealComposition` and `Snapshots` without the access-token parameter, their doc comments directing callers to
@@ -239,6 +239,24 @@ posted on this pull request.
       repaired. The contract test that `go list -deps ./component` lists no agentic or graph-family path, with its
       sensitivity test (`component-registration`, "The component model reaches no agentic or graph package"),
       written first and red on the pin's `dependencies.go`, lands in this task's commit.
+      Done: ported 42 files; `Dependencies` has no `ToolRegistry` or `LifecycleManager`, and `ToolRegistryReader` is
+      gone. Not ported: `lifecycle_test_suite.go` and `lifecycle_test_support_test.go`; `config_validator.go` and its
+      test; `metrics.go` (`ProcessorMetrics`); `registerable.go`; `logging.go` and its test; `main_test.go`, whose
+      `TestMain` opens a shared NATS client no test reads; `component/flowgraph/`, a separate package only
+      `composition/` imports. Dropped with the D6 rows (`GetString`, `GetInt`, `GetBool`, `GetFloat64`,
+      `ValidateJSONSize`, `Registry.Snapshot`, `IsLifecycleComponent`, `MergePortConfig` with `mergePortDirection`):
+      `MaxInt` and `MinInt`, which only `GetInt` and `GetFloat64` read. `CreateComponent(instanceName, config, deps,
+      prepare)`, `SealComposition()` and `Snapshots()` take no token, the private `createComponent` folded into
+      `CreateComponent`; their doc comments name `service.ComponentManager` in plain text; the token's 19 test uses are
+      gone. The 3 fixture-client sites open through `natsfixture.Open`; the pin's sleep (`attack_test.go:62`) is
+      replaced by a `synctest` bubble. `TestComponentReachesNoAgenticOrGraphPackage` and its sensitivity test
+      (`internal/harness/contract/componentdeps_test.go`) failed first on the pin's `dependencies.go`, with only its
+      agentic import cut, naming `graph`, `graph/kvcatalog`, `internal/graphmutation`, `pkg/projection` and
+      `pkg/lifecycle`. `component/README.md` read claim by claim and rewritten to what the code does. Shown able to
+      fail (records in the commit body): `LifecycleManager` restored, the contract test names the same five paths;
+      the `agentic-` rule removed, the sensitivity test's `processor/agentic-tools` case fails; a goroutine left
+      blocked in the mock's `DebugStatus`, the leak test panics; `task mutate:check` on `CreateComponent`'s seal
+      check, detection at `registry_boot_admission_test.go:160`.
 - [ ] 3.12 (D) `processor/graph-ingest`: metrics per design D4 (`TestGraphIngestMetricsRegisterOnItsRegistry`,
       `TestGraphIngestNilRegistryRegistersNothing`, written first); the authority as one `types.PlatformMeta`; unknown
       configuration keys refused by strict decoding (`TestCreateGraphIngestRefusesUnknownKey`); the owner-lifecycle

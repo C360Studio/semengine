@@ -214,10 +214,10 @@ one tracking issue (task 6.3). The establishing change converts only its own fiv
 ### D4. Metrics: one collector per key, `semengine`, no global registry
 
 Every live registration moves to `metric.RegisterOrGet` and uses the collector it returns (the AGENTS.md rule; ledger
-`metric` row). Live sites: `graph/readiness/gauges.go:149-157` (7), `KeyedPool`'s four (`keyed_pool.go:441-460`),
-graph-ingest (`component.go` 12, `poison_inventory.go` 1). The dead ones go with their surface (D6):
-`component/metrics.go` (4); `graph/inference/metrics.go` (7) and `pkg/worker/pool.go:133-139` (7) are not ported
-(#97, ruling E).
+`metric` row). Live sites: `graph/readiness/gauges.go:149-157` (7), `KeyedPool`'s seven (`keyed_pool.go:488-494`; six
+remain once `dispatch_dropped_total` leaves with `Submit`, D6), graph-ingest (`component.go` 12,
+`poison_inventory.go` 1). The dead ones go with their surface (D6): `component/metrics.go` (4);
+`graph/inference/metrics.go` (7) and `pkg/worker/pool.go:133-139` (7) are not ported (#97, ruling E).
 
 What a caller observes:
 

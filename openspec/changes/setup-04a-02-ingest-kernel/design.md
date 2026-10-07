@@ -965,7 +965,8 @@ imports only the standard library (§9.4). Both stay as they are.
 
 **`pkg/lifecycle`'s discarded error** (`graph_emit.go:31`, named by #102): the manager no longer discards
 `graphmutation.NewClient`'s error. With no client it holds no emitter, and every emit returns `ErrEmitFailed` naming
-the missing client, which is the pin's observable outcome without the discarded error.
+the missing client. At the pin the first emit panics instead, a nil pointer dereference at `natsclient/request.go:248`
+(measured in task 3.10, `b3c219a`).
 
 **What a caller observes, and the tests.** `go list -deps ./component` lists no `agentic`, `graph`, `graph/…`,
 `internal/graphmutation`, `pkg/lifecycle` or `pkg/projection` path (`pkg/projection/contract`, which

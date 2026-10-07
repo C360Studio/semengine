@@ -1,6 +1,8 @@
 package graph
 
 import (
+	"time"
+
 	"github.com/c360studio/semengine/message"
 )
 
@@ -45,7 +47,9 @@ type replaceKey struct{ subject, predicate, source string }
 // older than the latest Timestamp of the stored set of its key is not applied
 // and is named in Stale; equal timestamps apply. Confidence and Context never
 // decide. Stored statements of keys the arrival does not carry are kept in
-// their order, ahead of the arrival's applied sets.
+// their order, ahead of the arrival's applied sets. An applied set keeps a
+// statement the arrival repeats equal in every field once, the first in
+// arrival order (see keyOfStatement for what equal means).
 func ReplaceBySource(stored, arrival []message.Triple) ReplaceResult {
 	if len(arrival) == 0 {
 		return ReplaceResult{Triples: stored}
@@ -88,10 +92,42 @@ func ReplaceBySource(stored, arrival []message.Triple) ReplaceResult {
 			merged = append(merged, t)
 		}
 	}
+	kept := map[statementKey]bool{}
 	for _, t := range arrival {
-		if applied[keyOf(t)] {
+		if !applied[keyOf(t)] {
+			continue
+		}
+		if k := keyOfStatement(t); !kept[k] {
+			kept[k] = true
 			merged = append(merged, t)
 		}
 	}
 	return ReplaceResult{Triples: merged, Stale: stale}
+}
+
+// statementKey is equal for two statements exactly when they are equal in
+// every field; within one write such statements count once (design D15).
+type statementKey struct {
+	identity   string
+	timestamp  time.Time
+	confidence float64
+	expiresAt  time.Time
+	expires    bool
+}
+
+// keyOfStatement compares the six fields of message.AppendIdentityKey as that
+// key does, so the object is compared in its stored form (an int and a float64
+// of one value store as one, and an object Go cannot compare with == does not
+// panic), and adds the other three. The times are instants: Round(0) drops the
+// monotonic reading and UTC the location, which == on time.Time would compare.
+func keyOfStatement(t message.Triple) statementKey {
+	k := statementKey{
+		identity:   message.AppendIdentityKey(t),
+		timestamp:  t.Timestamp.Round(0).UTC(),
+		confidence: t.Confidence,
+	}
+	if t.ExpiresAt != nil {
+		k.expiresAt, k.expires = t.ExpiresAt.Round(0).UTC(), true
+	}
+	return k
 }

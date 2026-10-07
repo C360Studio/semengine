@@ -83,6 +83,65 @@ func TestConfidenceAndContextNeverOrder(t *testing.T) {
 	}
 }
 
+// Requirement: graph-entity-writes/One rule per write mode (design D15: within one write, statements equal in every
+// field count once)
+func TestReplaceCountsEqualStatementsOnce(t *testing.T) {
+	x := stmt(predP, "A", t0, 10.0)
+	y := stmt(predP, "A", t0, 11.0)
+
+	t.Run("an identical statement repeated is stored once, in arrival order", func(t *testing.T) {
+		got := graph.ReplaceBySource(nil, []message.Triple{x, y, x})
+		if !reflect.DeepEqual(got.Triples, []message.Triple{x, y}) {
+			t.Fatalf("statements = %+v, want x then y", got.Triples)
+		}
+		if len(got.Stale) != 0 {
+			t.Fatalf("Stale = %+v, want none", got.Stale)
+		}
+	})
+	t.Run("statements differing in one field each stay", func(t *testing.T) {
+		later := x
+		later.Timestamp = t0.Add(time.Second)
+		lower := x
+		lower.Confidence = 0.5
+		expiring := x
+		expiry := t0.Add(time.Hour)
+		expiring.ExpiresAt = &expiry
+		withContext := x
+		withContext.Context = "batch-1"
+		typed := x
+		typed.Datatype = "xsd:float"
+		near := []message.Triple{x, later, lower, expiring, withContext, typed, y}
+		got := graph.ReplaceBySource(nil, near)
+		requireSameStatements(t, got.Triples, near)
+	})
+	t.Run("an object that is not comparable is compared by value", func(t *testing.T) {
+		list := stmt(predP, "A", t0, []any{1.0, "two"})
+		same := stmt(predP, "A", t0, []any{1.0, "two"})
+		other := stmt(predP, "A", t0, map[string]any{"k": []any{1.0}})
+		got := graph.ReplaceBySource(nil, []message.Triple{list, other, same, other})
+		requireSameStatements(t, got.Triples, []message.Triple{list, other})
+	})
+	t.Run("values that store as one are one", func(t *testing.T) {
+		at, alsoAt := t0.Add(time.Hour), t0.Add(time.Hour)
+		asInt := stmt(predP, "A", t0, 85)
+		asInt.ExpiresAt = &at
+		asFloat := stmt(predP, "A", t0.In(time.FixedZone("UTC+2", 2*60*60)), 85.0)
+		asFloat.ExpiresAt = &alsoAt
+		got := graph.ReplaceBySource(nil, []message.Triple{asInt, asFloat})
+		if len(got.Triples) != 1 || got.Triples[0].Object != 85 {
+			t.Fatalf("statements = %+v, want only the int 85, the first arrival", got.Triples)
+		}
+	})
+	t.Run("a repeated stale set is named once and stores nothing", func(t *testing.T) {
+		older := stmt(predP, "A", t0.Add(-time.Second), 9.0)
+		got := graph.ReplaceBySource([]message.Triple{x}, []message.Triple{older, older})
+		requireSameStatements(t, got.Triples, []message.Triple{x})
+		if !reflect.DeepEqual(got.Stale, []graph.StaleSet{{Subject: subject, Predicate: predP, Source: "A"}}) {
+			t.Fatalf("Stale = %+v, want the one (P, A) set", got.Stale)
+		}
+	})
+}
+
 // Requirement: graph-entity-writes/A single-value read picks one statement the same way every time
 func TestSingleValueReadPicksLatestAcrossSources(t *testing.T) {
 	older := stmt(predP, "B", t0, "from-b")

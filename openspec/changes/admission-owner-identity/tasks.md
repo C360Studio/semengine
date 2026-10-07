@@ -33,11 +33,11 @@ starts, `task merge:check -- 125` and the merge are recorded on this pull reques
       only, so a pid reused by another process reads as busy there, though the runner would quarantine it. No other
       line of the script changes. Gate: `bash -n scripts/doctor.sh`, and the commit's diff of that file being that
       comment only, recorded on this pull request.
-- [ ] 2.4 (D) Shown able to fail with `task mutate:check`: the wrong changes M1 to M4 of `design.md`, D4, one at a
+- [x] 2.4 (D) Shown able to fail with `task mutate:check`: the wrong changes M1 to M4 of `design.md`, D4, one at a
       time, each report pasted on this pull request with the system it ran on, beside the record of
       `docs/testing.md`, "What the pull request records". Gate: detection for M1, M2 and M4, and for M3 on macOS (on
       Linux, "survivor, equivalent on Linux"); a survivor or an inconclusive run is reported as such.
-- [ ] 2.5 (D) `task verify` passes on the commit that carries 2.1 to 2.3, its integration step admitting the
+- [x] 2.5 (D) `task verify` passes on the commit that carries 2.1 to 2.3, its integration step admitting the
       fixture tests through the real runner's record on macOS, and that commit's CI run passes on ubuntu-24.04.
       Gate: CI `Required` on that commit, its run link recorded on this pull request.
 

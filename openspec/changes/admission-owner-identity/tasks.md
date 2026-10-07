@@ -24,7 +24,7 @@ starts, `task merge:check -- 125` and the merge are recorded on this pull reques
       "owner pid names a process with another start time" and "owner identity unknown". Run on the base code, the
       two new cases fail because `Start` is admitted, and the rest pass. Gate: that run, recorded on this pull
       request.
-- [ ] 2.2 (D) `admission.go` and `fixture.go:129` as `design.md`, D2 and D3 state: the read under `Start`'s context,
+- [x] 2.2 (D) `admission.go` and `fixture.go:129` as `design.md`, D2 and D3 state: the read under `Start`'s context,
       the comparison, refusals that name their reason, the context's error after a failed read, no `kill(pid, 0)`.
       In the same commit, `TestAdmissionAdmitsALiveOwner` with its cancelled-context case, and the comments at
       `admission.go:24-26`, `:71-74` and `admission_test.go:117-120` rewritten to the new rule. Gate:

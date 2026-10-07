@@ -131,10 +131,9 @@ func noDocker(t *testing.T, f *Fixture) {
 
 // absentPID returns a pid that no process has and none can be given: the largest pid_t, far above
 // the highest pid either kernel the tests run on hands out (Linux caps pid_max at 2^22, macOS at
-// 99999). kill(pid, 0) finds no such process, which is how ownerLive sees an owner that has exited
-// and been reaped. An exited child's pid would do only until the kernel gave it to a new process:
-// admission compares host and pid alone, so a reused pid admits (#50). The runner's deadPID closes
-// that window with the owner's start identity, which admission does not read.
+// 99999). ps prints no start time for it, which is how ownerLive sees an owner that has exited and
+// been reaped. An exited child's pid would do only until the kernel gave it to a new process: that
+// process would be refused too, but for its start time, which is another case below.
 func absentPID(t *testing.T) int {
 	t.Helper()
 	pid := math.MaxInt32
@@ -182,6 +181,29 @@ func TestAdmissionRequiresALiveOwner(t *testing.T) {
 				t.Fatalf("Start = %v, want ErrNotAdmitted naming %q", err, tc.want)
 			}
 		})
+	}
+}
+
+// A live owner admits: plantLock's record names this process with the start time the runner's own
+// command reads for it. Admission reads under its caller's context, so a caller already cancelled
+// is told so rather than refused.
+func TestAdmissionAdmitsALiveOwner(t *testing.T) {
+	plantLock(t, "tok", "tok")
+	adm, err := admit(t.Context())
+	if err != nil {
+		t.Fatalf("admit = %v, want the live owner admitted", err)
+	}
+	if want := os.Getenv("SEMENGINE_EVIDENCE_DIR"); adm.evidenceDir != want {
+		t.Errorf("evidence directory = %q, want %q", adm.evidenceDir, want)
+	}
+	if want := os.Getenv("SEMENGINE_NATS_IMAGE"); adm.image != want {
+		t.Errorf("image = %q, want %q", adm.image, want)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := admit(ctx); !errors.Is(err, context.Canceled) {
+		t.Errorf("admit with a cancelled context = %v, want context.Canceled", err)
 	}
 }
 

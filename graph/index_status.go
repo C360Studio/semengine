@@ -73,8 +73,8 @@ type IndexStatusResponse struct {
 	// emits none, so the wire is byte-unchanged. FailedReasons is bounded to a fixed
 	// reason enum (a handful of keys), keeping the watched key compact on the hot KV
 	// path. FirstFailureAt is RFC3339. FailedCount is echoed from the projection input
-	// (it also drives State=degraded, see ComputeIndexStatus); the other two are set by
-	// the producer after the projection.
+	// (it also drives State=degraded, see readiness.ComputeIndexStatus); the other two
+	// are set by the producer after the projection.
 	FailedCount    uint64            `json:"failed_count,omitempty"`
 	FailedReasons  map[string]uint64 `json:"failed_reasons,omitempty"`
 	FirstFailureAt string            `json:"first_failure_at,omitempty"`
@@ -92,9 +92,9 @@ type IndexStatusResponse struct {
 	// treat `StalenessMs > 0` as the presence bit and never read an absent age as
 	// "0ms fresh".
 	//
-	// It is REPORTED, never gating. EvaluateReadinessGate does not look at this field:
-	// readiness withholds an answer only for index health, and how far behind the view
-	// is rides on the answer instead (community detection stamps it on
+	// It is REPORTED, never gating. readiness.EvaluateReadinessGate does not look at
+	// this field: readiness withholds an answer only for index health, and how far
+	// behind the view is rides on the answer instead (community detection stamps it on
 	// staleness_at_detection_ms). A consumer that surfaces it must carry the presence
 	// encoding with it — publishing a bare 0 as "caught up" is the one way to turn an
 	// unknown age back into a false claim.
@@ -117,9 +117,9 @@ type IndexStatusResponse struct {
 	// gh#732 raises this: a consumer waiting for a bootstrap replay cannot otherwise
 	// tell an empty-by-truth replay from one it observed too early.
 	//
-	// THE GATE MUST NOT READ IT. EvaluateReadinessGate does not look at this field and
-	// must never start: the moment a verdict depends on a magnitude, this becomes a
-	// threshold knob and readiness stops being a health question (ADR-085 deleted
+	// THE GATE MUST NOT READ IT. readiness.EvaluateReadinessGate does not look at this
+	// field and must never start: the moment a verdict depends on a magnitude, this
+	// becomes a threshold knob and readiness stops being a health question (ADR-085 deleted
 	// max_staleness for the same reason). A test pins the gate's verdict as identical
 	// across two envelopes differing only in this field.
 	//

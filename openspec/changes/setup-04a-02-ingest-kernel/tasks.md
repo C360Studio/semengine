@@ -120,12 +120,19 @@ posted on this pull request.
       constants and its four tests removed; the field-set test now holds the four keys. Three `task mutate:check`
       detections (constructor drops the revision, accepts an empty producer; table regains a suffix verb) are quoted
       in the commit body.
-- [ ] 3.4 (D) `graph/readiness`: `Watcher` takes `Run(ctx)` (design D5), with `synctest` tests that `Run` returns
+- [x] 3.4 (D) `graph/readiness`: `Watcher` takes `Run(ctx)` (design D5), with `synctest` tests that `Run` returns
       `ctx.Err()` and leaves nothing running; `Set`, `NewSet`, `Dump`, `Verdict` removed, the row's `known_risks`
       naming their return with #110; `Publisher.Publish` sets `published_at` (`TestPublishStampsPublishedAt`, written
       first) and the inputs lose `LastSynced` (design D16); gauges through
       `RegisterOrGet` under `semengine` (design D4); 2 sleeps repaired; receives `readiness_gate.go` and the
       computation in `index_status.go` from `graph`, with their tests (design D16).
+      Done: `Run` refuses a nil context, a nil source and an empty key before any I/O; `Start` and `Stop` are gone.
+      `set.go` and `set_test.go` are not ported, and the two sleeps were both in `set_test.go` (`:85`, `:302`), so
+      they leave with it; the `known_risks` text naming `Set`'s return with #110 is written with the row in task 5.1.
+      `Gauges.Register` returns the registry's refusal, and with a nil registry registers nothing (the pin fell back
+      to Prometheus' global registry). `TestComputeIndexStatus_PreExistingFieldsUnchanged` asserts `IndexedRevision`
+      where it asserted the removed `Revision` string. Six `task mutate:check` detections are quoted in the commit
+      body.
 - [ ] 3.5 (D) `internal/graphmutation` (`InterfaceType` becomes `semengine.graph.mutation`, design D9) and
       `storage/storeregistry` (the `pkg/fusion` assertion removed, noted for change 5).
 - [ ] 3.6 (D) `pkg/dispatch` → `internal/dispatch`: `BoundedDispatcher`, `New`, `Config`, `Deps`, `ErrQueueFull`,

@@ -36,9 +36,9 @@ starts, `task merge:check -- 122` and the merge are recorded on this pull reques
 
 ## 3. Review
 
-- [ ] 3.1 Codex's implementation review of this pull request, recorded on it, naming the commit it read. Each finding
+- [x] 3.1 Codex's implementation review of this pull request, recorded on it, naming the commit it read. Each finding
       is fixed or answered before 4.1.
-- [ ] 3.2 The description has one line `implemented-by:` that names `claude` and one line `reviewed-by:` that names
+- [x] 3.2 The description has one line `implemented-by:` that names `claude` and one line `reviewed-by:` that names
       `codex`, written once Codex's newest review record approves.
 
 ## 4. In the archive commit

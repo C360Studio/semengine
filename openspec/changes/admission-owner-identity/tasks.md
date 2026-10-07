@@ -13,7 +13,7 @@ starts, `task merge:check -- 125` and the merge are recorded on this pull reques
       reviewed file's checksum.
 - [x] 1.2 The independent pre-owner review of `design.md`, `proposal.md`, this file and the two spec deltas:
       `DESIGN REVIEW PASS`, recorded on this pull request.
-- [ ] 1.3 The owner's acceptance of the design, recorded on #124 or this pull request, with an answer to each item of
+- [x] 1.3 The owner's acceptance of the design, recorded on #124 or this pull request, with an answer to each item of
       `design.md`, "Owner decisions": the refusal of an `unknown` identity, the definition's home, the context's
       error, runner finding 1 accepted and finding 2 tracked in #126, and doctor's comment-only correction.
 

@@ -41,10 +41,13 @@ starts, `task merge:check -- 112` and the merge are recorded on this pull reques
 
 ## 3. Review
 
-- [ ] 3.1 Codex's implementation review of this pull request, recorded on it, naming the commit it read. Each
-      finding is fixed or answered before 4.1.
-- [ ] 3.2 The description has one line `implemented-by:` that names `claude` and one line `reviewed-by:` that names
-      `codex`, written once Codex's newest review record approves.
+- [x] 3.1 Codex's implementation review of this pull request, recorded on it, naming the commit it read. Each
+      finding is fixed or answered before 4.1. APPROVE at `7c6dae2` (comment 6037693225); its two MEDIUM
+      documentation findings (the stale status paragraphs, the missing ruling-conformance table) are fixed in
+      `proposal.md` and `design.md`, "Conformance to the rulings".
+- [x] 3.2 The description has one line `implemented-by:` that names `claude` and one line `reviewed-by:` that names
+      `codex`, written once Codex's newest review record approves. The body reads
+      `implemented-by: claude (opus semengine-developer)` and `reviewed-by: codex (GPT-6 Astra semengine-reviewer)`.
 
 ## 4. In the archive commit
 

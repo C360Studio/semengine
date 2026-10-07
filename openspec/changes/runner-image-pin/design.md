@@ -1,8 +1,9 @@
 # Design: runner-image-pin
 
-Status: draft, revision 2, for independent pre-owner review. `inventory.md` has `INVENTORY PASS` (independent review,
-2026-10-07). This revision answers that review's design findings and records the owner's rulings on #61
-(comment 6036642422), which leave no open owner question. Base `1e383fe`.
+Status: revision 2. `inventory.md` has `INVENTORY PASS` and this design `DESIGN REVIEW PASS` (PR #112, comment
+6036743505); Codex's implementation review approved `7c6dae2` (comment 6037693225). After that review, this paragraph
+and "Conformance to the rulings" were added, with no decision changed. The owner's rulings on #61 (comment
+6036642422) leave no open owner question. Base `1e383fe`.
 
 ## Why a design file
 
@@ -42,6 +43,17 @@ From #61, comment 6036642422 (2026-10-07):
 Alternatives R1 closes, one line each: no check (the pin stays review only); refusing only `-latest` labels (a move to
 26 needs no spec change, and lists, groups, expressions and `ubuntu-24.04-arm` pass); a `ubuntu-NN.NN` pattern (the
 same, with a pattern where one constant does); one spelling through a repository variable (the pin leaves the tree).
+
+### Conformance to the rulings
+
+Each ruling, where this branch carries it out and what shows it. Paths under `internal/harness/contract/` are given by
+file name; `specs/merge-gate/spec.md` is this change's delta. No deviation from a ruling was found (Codex's review,
+PR #112 comment 6037693225), so there is no DEVIATION row.
+
+| Ruling | Carried out at | Shown by | State |
+| --- | --- | --- | --- |
+| R1: every job's `runs-on` is exactly `ubuntu-24.04`, in the spec and in `TestCIWorkflowPinned` | `.github/workflows/ci.yml:27`, `:81` and `:103` (`verify`, `merge-check`, `required`), with the comment at `:22`; `runnerLabel` at `mergegate_test.go:131`; the check in `ciWorkflowViolations` (`mergegate_test.go:305`) at `:329`–`:332`; the requirement "Pinned runner image" at `specs/merge-gate/spec.md:5` | `TestCIWorkflowPinned` (`mergegate_test.go:134`) and `TestCIWorkflowPinnedSensitivity` (`:142`) with its seven planted workflows (task 2.2); the check failing first on the unchanged workflow (task 2.1) and four wrong changes, each caught (task 2.4), on PR #112 comment 6037163135; CI run 37615895793 on `7c6dae2`, all three jobs on `ubuntu-24.04` (comment 6037693225) | Carried out |
+| R2: GitHub's builds within 24.04 are an accepted cost; containers SemEngine starts stay on official images pinned by digest | No build pin and no `container:` key in `.github/workflows/ci.yml`; the NATS fixture's digest check `internal/harness/natsfixture/admission.go:22` and the pin `.nats-image:5`, both unchanged on this branch | Run 37614567578 (task 2.5): `Verify` and `Merge check` on build `20260927.320.1`, `Required` on `20261004.327.1`, recorded as the accepted variation on PR #112 comment 6037163135 | Carried out |
 
 ## Decisions
 

@@ -1,9 +1,9 @@
 # runner-image-pin
 
-Status: draft, revision 2. It rests on `inventory.md`, which has `INVENTORY PASS` (independent review, 2026-10-07),
-and on `design.md`, revised for that review's design findings and awaiting pre-owner review. The owner's rulings it
-implements are on #61: comment 6035540608 (pin `ubuntu-24.04`) and comment 6036642422 (the check holds the exact
-label; GitHub's builds within 24.04 are accepted).
+Status: revision 2, implemented. It rests on `inventory.md` (`INVENTORY PASS`) and `design.md` (`DESIGN REVIEW
+PASS`), both reviewed on PR #112, comment 6036743505. Codex's implementation review approved `7c6dae2` (comment
+6037693225). The owner's rulings it implements are on #61: comment 6035540608 (pin `ubuntu-24.04`) and comment
+6036642422 (the check holds the exact label; GitHub's builds within 24.04 are accepted).
 
 ## Why
 

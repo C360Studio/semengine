@@ -42,7 +42,7 @@ heading>` (#81's form). No task asserts a fact that exists only after merge.
       round-6 review (#91 comment 6037604840) and that review's findings applied (design D15, "Left open", "Ruled").
 - [x] 1.11 (R) Independent review of rounds 5 to 7: `INVENTORY PASS` on `inventory.md` §9 and a design PASS,
       recorded on this pull request with the reviewed files' checksums. Done: PR #93 comment 6037662484.
-- [ ] 1.12 (O) Owner acceptance of rounds 5 to 7 on #91. Hold: task 1.11.
+- [x] 1.12 (O) Owner acceptance of rounds 5 to 7 on #91. Done: accepted 2026-10-07 (https://github.com/C360Studio/semengine/issues/91#issuecomment-6037996648).
 
 ## 2. Probes and harness
 
@@ -76,7 +76,7 @@ references` check, with the tests that read only it; READMEs are read claim by c
 Every test a task names as "written first" is shown failing before the code that makes it pass, and the failure is
 posted on this pull request.
 
-- [ ] 3.1 (D) `types`, `storage`, `model` (carry). Hold: task 1.12.
+- [ ] 3.1 (D) `types`, `storage`, `model` (carry).
 - [x] 3.1a (D) `internal/lifecyclecleanup` → `pkg/lifecyclecleanup` (design D7): `RollbackFailedStart` keeps its name
       and its five-second budget; a nil rollback is refused (`TestRollbackFailedStartNilRollback` inverted to expect
       the error, written first and failing on the pin's code); the four scenarios of `lifecycle-suite` "Failed-start
@@ -98,29 +98,28 @@ posted on this pull request.
       unexported or moved into `_test.go` files; README rewritten; the #69 rename of the configuration bucket constant
       (`semengine_config`); 11 fixture-client sites. `TestGraphImportsNoTransport` and its sensitivity test
       (`graph-transport-boundary`, "The graph root imports no transport"), written first and red on the pin-shaped root,
-      land in this task's commit. Gate: `task test:unit`. Hold: task 1.12.
+      land in this task's commit. Gate: `task test:unit`.
 - [ ] 3.3a (D) `graph/kvcatalog` (design D16): `kvcatalog.go`, `owned_bucket_retention.go` and `IsKVTombstone` from
       the pin's `graph`, with their tests; no `TOOL_CALL_OUTCOMES` or `ENTITY_SUFFIX_INDEX` row or constant; the
       configuration bucket's description names SemEngine (design D9); `TestEntityStatesKeepsOneRevision`
       (`graph-entity-writes`, "One stored revision per entity"). Gate: `task test:unit`, `task test:integration`.
-      Hold: task 1.12.
 - [ ] 3.3b (D) The reply envelope and the verb table in `graph` (design D18, D20): `QueryResponse` with
       `indexed_revision` and `producer`, built only with both (`TestQueryResponseCarriesIndexedRevisionAndProducer`,
       written first); the `min_revision` request field; no `UnwrapQueryResponse`; the verb table with `entity`,
-      `batch` and `prefix`, responder `graph-ingest`. Gate: `task test:unit`. Hold: task 1.12.
+      `batch` and `prefix`, responder `graph-ingest`. Gate: `task test:unit`.
 - [ ] 3.4 (D) `graph/readiness`: `Watcher` takes `Run(ctx)` (design D5), with `synctest` tests that `Run` returns
       `ctx.Err()` and leaves nothing running; `Set`, `NewSet`, `Dump`, `Verdict` removed, the row's `known_risks`
       naming their return with #110; `Publisher.Publish` sets `published_at` (`TestPublishStampsPublishedAt`, written
       first) and the inputs lose `LastSynced` (design D16); gauges through
       `RegisterOrGet` under `semengine` (design D4); 2 sleeps repaired; receives `readiness_gate.go` and the
-      computation in `index_status.go` from `graph`, with their tests (design D16). Hold: task 1.12.
+      computation in `index_status.go` from `graph`, with their tests (design D16).
 - [ ] 3.5 (D) `internal/graphmutation` (`InterfaceType` becomes `semengine.graph.mutation`, design D9) and
-      `storage/storeregistry` (the `pkg/fusion` assertion removed, noted for change 5). Hold: task 1.12.
+      `storage/storeregistry` (the `pkg/fusion` assertion removed, noted for change 5).
 - [ ] 3.6 (D) `pkg/dispatch` → `internal/dispatch`: `BoundedDispatcher`, `New`, `Config`, `Deps`, `ErrQueueFull`,
       `KeyedPool.Submit` and `Stats` removed; `ErrStopped` declared in `internal/dispatch`, with no `pkg/worker` import
       (ruling E); `KeyedPool.Shutdown(ctx)` with no fixed default wait
       (`TestKeyedPoolShutdownWithoutDeadlineWaitsForJoin`, `synctest`); metrics through `RegisterOrGet`; unbounded
-      cleanups, sleeps and the fixture-client site repaired. Hold: task 1.12.
+      cleanups, sleeps and the fixture-client site repaired.
 - [ ] 3.7 (D) `graph`'s `ExactEntityReader` takes its subject from the verb table, and graph-ingest's literal sites
       use the table in task 3.12 (#16, design D20). Task 2.4 turns green with 3.12. Hold: task 3.3b.
 - [ ] 3.8 (D) `graph/inference`, the hierarchy slice only (#97, design D1a): `hierarchy.go`, `container_entity.go` and
@@ -130,19 +129,19 @@ posted on this pull request.
       `GetHierarchyTriples` and the adder; `GetHierarchyTriples` returns every failure, an inverse edge's and the
       sibling pass's included (`TestGetHierarchyTriplesReportsEveryFailure`, written first, design D21); hierarchy
       statements carry graph-ingest's producer as `Source` and the triggering time, which `GetHierarchyTriples` takes
-      as an argument and passes to the containers it creates (design D15); 1 sleep repaired. Hold: task 1.12.
+      as an argument and passes to the containers it creates (design D15); 1 sleep repaired.
 - [ ] 3.9 (D) `pkg/projection`: carried code without `Version`; the typed client refuses a statement with no
       timestamp before sending, on `Create`, `Append` and `Reconcile` (`TestMutationClientRefusesMissingTimestamp`,
       written first; `projection-mutation`, "The typed client never reads the clock"); `Reconcile` requires
       `Metadata.Source` and sends it as the request's source (`TestMutationClientReconcileRequiresSource`, written
-      first; design D15); its repair is tasks 4.1–4.2. Hold: task 1.12.
+      first; design D15); its repair is tasks 4.1–4.2.
 - [ ] 3.10 (D) `pkg/lifecycle`: 7 fixture-client sites; `harness_gate_integration_test.go` on per-package payload
       registration; `Manager.Watch` and `WatchEvents` in the watch shape of design D5; no `Version: 1`
       (design D15); every statement the manager writes carries the constant source `semengine-lifecycle`, which its
       reconciles send as the request's source (`TestTransitionReplacesItsPhaseStatement`, written first: two
       transitions with different `TransitionSource`s leave one phase statement carrying `semengine-lifecycle`; design
       D15); the emitter's error no
-      longer discarded (`TestManagerWithoutClientRefusesEmit`, written first, design D17). Hold: task 1.12.
+      longer discarded (`TestManagerWithoutClientRefusesEmit`, written first, design D17).
 - [ ] 3.11 (D) `component`: `ToolRegistry` and `ToolRegistryReader` removed (#29) and `LifecycleManager` removed
       (#102, design D17); `lifecycle_test_suite.go` and its self-test not ported; `ProcessorMetrics`,
       `config_validator.go`, `Registry.Snapshot` and the other dead rows removed; `CreateComponent`,
@@ -150,7 +149,7 @@ posted on this pull request.
       the component manager, and the token's 19 test uses dropped (design D14); 3 fixture-client sites, 1 sleep
       repaired. The contract test that `go list -deps ./component` lists no agentic or graph-family path, with its
       sensitivity test (`component-registration`, "The component model reaches no agentic or graph package"),
-      written first and red on the pin's `dependencies.go`, lands in this task's commit. Hold: task 1.12.
+      written first and red on the pin's `dependencies.go`, lands in this task's commit.
 - [ ] 3.12 (D) `processor/graph-ingest`: metrics per design D4 (`TestGraphIngestMetricsRegisterOnItsRegistry`,
       `TestGraphIngestNilRegistryRegistersNothing`, written first); the authority as one `types.PlatformMeta`; unknown
       configuration keys refused by strict decoding (`TestCreateGraphIngestRefusesUnknownKey`); the owner-lifecycle
@@ -161,7 +160,7 @@ posted on this pull request.
       (`TestGraphIngestServesExactlyTheDeclaredVerbs`, written first, design D20); `lastSyncedRFC3339` and its test
       not ported (design D16); `TEST_DISPUTE.md` not ported; 21
       fixture-client sites, 10 sleeps, 6 skips (rewritten as integration tests), 11 fixed addresses, 5 unbounded
-      cleanups repaired; the eight out-of-set test imports adapted (design D2). Hold: task 1.12.
+      cleanups repaired; the eight out-of-set test imports adapted (design D2).
 - [ ] 3.12a (D) graph-ingest's write seam (#100, #98; design D15): one write path for the seven write sites
       (`TestEntityWritesHaveOneSeam` and its sensitivity case, written first); births on every lane stamp the
       profile, and with hierarchy enabled the stream and in-process births add hierarchy statements while a mutation
@@ -237,13 +236,13 @@ posted on this pull request.
       #110). The `internal/lifecyclecleanup` package row is `adapt` to
       `pkg/lifecyclecleanup` (public home, nil rollback refused), naming the harness copy; the file row's
       `known_risks` names the production home and why the copy stays (design D7.4); Q13's row cites PR #1437 head
-      `0ea823a6`; #29 and #33 rows name `class:port-refactor`. Gate: `task ledger:check`. Hold: task 1.12.
+      `0ea823a6`; #29 and #33 rows name `class:port-refactor`. Gate: `task ledger:check`.
 - [ ] 5.2 (D) `scripts/cover-check.sh` gains the ten targets of design D11, `graph/inference` and `graph/kvcatalog`
       among them; the tests design D11 names for `internal/graphmutation`, `pkg/projection`, `component` and
       `pkg/lifecycle` are added; each target's figure is posted. Ticked only on a green `task cover:check`. Hold: task
       1.12.
 - [ ] 5.3 (D) `go.mod`: `golang.org/x/net` at a version that downgrades nothing, and no `go-openai`; `task vuln` and
-      `task tidy:check` green. Hold: task 1.12.
+      `task tidy:check` green.
 
 ## 6. Docs and guidance
 
@@ -258,7 +257,7 @@ posted on this pull request.
       `Registry.CreateComponent`, `SealComposition` or `Snapshots` itself (the three methods' doc comments; review
       only; ruling C), and a ported component whose failed `Start` cleanup fails reporting both errors and keeping
       what is left for a later `Stop` (`lifecycle-suite`, "Failed start whose own cleanup fails"; each component's own
-      named test; that a newly ported component has one is review only). Gate: `task docs:check`. Hold: task 1.12.
+      named test; that a newly ported component has one is review only). Gate: `task docs:check`.
 - [ ] 6.2 (W) `docs/repository-map.md` lists the ported packages and the three new ones (`internal/lifecycleguard`,
       `pkg/lifecyclecleanup`, `graph/kvcatalog`), and `docs/tier1-cross-check.md:68` records the change-2
       dispositions of `internal/componentadmission` (dropped, ruling C), `internal/lifecyclecleanup` (public as
@@ -266,7 +265,7 @@ posted on this pull request.
       #97); READMEs carried with their claims checked (tasks 3.x).
 - [ ] 6.3 (W) Tracking issues filed and linked here: the adoption sweeps of design D3 (the `natsfixture` helper), D13
       (the guard) and D20 (the responder-owned verb table), and the `component.Discoverable.ConfigSchema` question
-      (design D6, K4). Hold: task 1.12.
+      (design D6, K4).
 - [ ] 6.4 (W) #77 gets a comment naming the public helper (`pkg/lifecyclecleanup.RollbackFailedStart`), the
       `lifecycle-suite` requirement and graph-ingest's test that carry its ruling (design D7), for SemTeams' proving
       case. The comment names the one change to a pin behavior, a nil rollback now refused with an error (design D7.2),
@@ -275,7 +274,7 @@ posted on this pull request.
       graph-clustering in change 7 into a package already under the 80% gate (ruling F re-read, design D11): the
       tests that rest of the package owes (451 statements short at the pin for the whole package, design D11's
       figure), a test per configuration field it reads (37), the drop of its six unread fields with `review.llm`, and
-      the review worker's `Shutdown(ctx)` shape with its `synctest` test. Hold: task 1.12.
+      the review worker's `Shutdown(ctx)` shape with its `synctest` test.
 - [ ] 6.6 (W) PR #93's body names `Closes` for #97, #98 and #99 (their rulings close with the implementing change) and
       for #100–#104, and `Addresses` #106, #110 and #111 (this change lands a part of each); each issue gets a comment
       naming the design decision and the tests that carry it.

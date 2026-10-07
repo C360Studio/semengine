@@ -49,7 +49,7 @@ heading>` (#81's form). No task asserts a fact that exists only after merge.
 - [ ] 2.5 (D) `TestPublicSignatures` and `TestNoSecondAuthorityField` pass over the ported tree with no new exception
       and no change to either check (rulings B and C; design D9, D14); the pass is posted with each check's package
       count. Gate: `task test:unit`.
-- [ ] 2.6 (D) The `natsfixture` helper of design D3 (`nats-fixture`, "Connected value for a package's tests"), its three
+- [x] 2.6 (D) The `natsfixture` helper of design D3 (`nats-fixture`, "Connected value for a package's tests"), its three
       scenarios as tests, written first. Gate: `task test:integration`.
 - [ ] 2.7 (D) `internal/lifecycleguard` (design D13): `lifecycletest.Run` over a test owner built only from the guard,
       with a failing factory, written first. Gate: `task test:unit`.

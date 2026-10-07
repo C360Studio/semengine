@@ -1074,3 +1074,44 @@ func TestMaxPayloadDefaultsToTheBroker(t *testing.T) {
 		t.Fatalf("broker announces max_payload %d with no option, want the nats-server default %d", got, 1<<20)
 	}
 }
+
+// Requirement: nats-fixture/Connected value for a package's tests; Scenario: Close runs first, bounded
+// A value opened through Open is closed while the fixture still serves: its own connection is
+// still connected and the broker still answers the value's flush, under a deadline.
+func TestOpenClosesBeforeTheFixtureStops(t *testing.T) {
+	var (
+		f                                *Fixture
+		closeRan, hadDeadline, fixtureUp bool
+		flushErr                         error
+	)
+	t.Run("open", func(t *testing.T) {
+		f = startFixture(t)
+		nc := Open(t, f, func(_ context.Context, url string) (*nats.Conn, func(context.Context) error, error) {
+			nc, err := nats.Connect(url, nats.MaxReconnects(0))
+			if err != nil {
+				return nil, nil, err
+			}
+			return nc, func(ctx context.Context) error {
+				closeRan = true
+				_, hadDeadline = ctx.Deadline()
+				own := conn(f)
+				fixtureUp = own != nil && own.IsConnected()
+				flushErr = nc.FlushWithContext(ctx)
+				nc.Close()
+				return nil
+			}, nil
+		})
+		if !nc.IsConnected() {
+			t.Fatal("Open returned a connection that is not connected")
+		}
+	})
+	if !closeRan || !hadDeadline {
+		t.Fatalf("close ran = %v with a deadline = %v; want both", closeRan, hadDeadline)
+	}
+	if !fixtureUp || flushErr != nil {
+		t.Fatalf("at close the fixture's connection was up = %v and the broker answered with %v; want up and nil", fixtureUp, flushErr)
+	}
+	if rem := f.remaining(); len(rem) != 0 {
+		t.Fatalf("the fixture's Stop left %v", rem)
+	}
+}

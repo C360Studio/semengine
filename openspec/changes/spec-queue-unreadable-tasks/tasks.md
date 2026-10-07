@@ -13,7 +13,7 @@ starts, `task merge:check -- 122` and the merge are recorded on this pull reques
       reviewed file's checksum.
 - [x] 1.2 The independent pre-owner review of `design.md`, `proposal.md`, this file and the `spec-queue` delta:
       `DESIGN REVIEW PASS`, recorded on this pull request.
-- [ ] 1.3 The owner's acceptance of the design, recorded on #115 or this pull request, including its departure from
+- [x] 1.3 The owner's acceptance of the design, recorded on #115 or this pull request, including its departure from
       #115's recommendation 2: one ADDED requirement in place of scenarios added to requirements 1 and 3
       (`design.md`, "Owner decision").
 

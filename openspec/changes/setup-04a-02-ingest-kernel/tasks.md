@@ -33,15 +33,15 @@ heading>` (#81's form). No task asserts a fact that exists only after merge.
       name (`pkg/lifecyclecleanup.RollbackFailedStart`), refuses a nil rollback, reconciles the `natsfixture` copy
       (foundation D9), and the `lifecycle-suite` delta writes the #38 exception for ported components; PR #93's body
       names `Closes #77` (#77 comment 6035358884).
-- [ ] 1.10 (A) Round 5: the pre-port audit (PR #93 comment 6036316289) folded into the change. Rulings #97, #98 and
+- [x] 1.10 (A) Round 5: the pre-port audit (PR #93 comment 6036316289) folded into the change. Rulings #97, #98 and
       #99 applied (design D1, D1a, D11, D15); port-refactors #100–#104, #106's pattern and #111 item 1 designed with
       a failing-first test each (design D15–D21); the guard-state question of tasks 3.12 and 3.13 answered (design
       D22); `inventory.md` §9 with its probes; `task spec:check` and `task docs:check` pass on the change. Round 6:
       the owner's rulings A–F on the round-4 review (#91 comment 6037287957) and that review's four findings applied
       (design D1a, D6, D11, D15, D16, D17, D21, "Owner questions"; `inventory.md` §9.15). Round 7: rulings 1–5 on the
       round-6 review (#91 comment 6037604840) and that review's findings applied (design D15, "Left open", "Ruled").
-- [ ] 1.11 (R) Independent review of rounds 5 to 7: `INVENTORY PASS` on `inventory.md` §9 and a design PASS,
-      recorded on this pull request with the reviewed files' checksums. Hold: task 1.10.
+- [x] 1.11 (R) Independent review of rounds 5 to 7: `INVENTORY PASS` on `inventory.md` §9 and a design PASS,
+      recorded on this pull request with the reviewed files' checksums. Done: PR #93 comment 6037662484.
 - [ ] 1.12 (O) Owner acceptance of rounds 5 to 7 on #91. Hold: task 1.11.
 
 ## 2. Probes and harness

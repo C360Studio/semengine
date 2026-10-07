@@ -17,14 +17,18 @@ type QueryVerb struct {
 
 const responderGraphIngest = "graph-ingest"
 
+// entityVerb is the table's entity entry: ExactEntityReader requests on its
+// Subject.
+var entityVerb = QueryVerb{
+	Name: "entity", Subject: "graph.ingest.query.entity", Responder: responderGraphIngest,
+	RequestType: "{id:string}", ReplyType: "graph.ExactEntity",
+}
+
 // QueryVerbs returns the declared request/reply verbs. Each call returns a new
 // slice, so a caller cannot change the declaration.
 func QueryVerbs() []QueryVerb {
 	return []QueryVerb{
-		{
-			Name: "entity", Subject: "graph.ingest.query.entity", Responder: responderGraphIngest,
-			RequestType: "{id:string}", ReplyType: "graph.ExactEntity",
-		},
+		entityVerb,
 		{
 			Name: "batch", Subject: "graph.ingest.query.batch", Responder: responderGraphIngest,
 			RequestType: "{ids:[]string}", ReplyType: "graph.EntityBatchResponse",

@@ -54,11 +54,14 @@ heading>` (#81's form). No task asserts a fact that exists only after merge.
       `"nats:${TAG}"` in a Go file (fail), and keep "digest literal in Go" failing. Gate: `task test:unit`.
 - [x] 2.3 (D) `TestNoProcessGlobalRegistration` and its sensitivity test (`metric-registry`, "No process-global
       registration"). Gate: `task test:unit`.
-- [ ] 2.4 (D) `TestReservedSubjectsDeclaredOnce` and its sensitivity test (`graph-transport-boundary`, "Reserved
+- [x] 2.4 (D) `TestReservedSubjectsDeclaredOnce` and its sensitivity test (`graph-transport-boundary`, "Reserved
       request subjects have one declaration"): the two declaring files are `graph`'s verb table and
       `internal/graphmutation/protocol.go` (design D20). It is red until task 3.7 declares the subjects; written first.
       Hold: task 3.7; it lands in 3.7's commit, after being shown red, because a red test fails `task verify` on every
       push before it.
+      Done: `internal/harness/contract/reservedsubjects_test.go`, red on `986953c` naming `graph/exact_entity.go:14`
+      and green in task 3.7's commit. The reserved subjects are read from `graph.QueryVerbs` and
+      `graphmutation.SubjectFamily`, so a verb added to the table is held from the commit that adds it.
 - [ ] 2.5 (D) `TestPublicSignatures` and `TestNoSecondAuthorityField` pass over the ported tree with no new exception
       and no change to either check (rulings B and C; design D9, D14); the pass is posted with each check's package
       count. Gate: `task test:unit`. Hold: tasks 3.1–3.13 (the ported tree).
@@ -164,8 +167,12 @@ posted on this pull request.
       returns a registration refusal (`TestKeyedPoolReturnsARegistrationRefusal`, failing first). Tests that read
       `Stats` read the pool's counters or their own. Nine `task mutate:check` detections are quoted in the commit
       body.
-- [ ] 3.7 (D) `graph`'s `ExactEntityReader` takes its subject from the verb table, and graph-ingest's literal sites
-      use the table in task 3.12 (#16, design D20). Task 2.4 turns green with 3.12.
+- [x] 3.7 (D) `graph`'s `ExactEntityReader` takes its subject from the verb table, and graph-ingest's literal sites
+      use the table in task 3.12 (#16, design D20). Task 2.4's test turns green here; in task 3.12 graph-ingest's
+      literal sites must take their subjects from the table to keep it green.
+      Done: `ReadExactEntity` requests on `entityVerb.Subject`, the table's entity entry, now named in
+      `query_verbs.go`; `exactEntityQuerySubject` is gone. Two `task mutate:check` detections and two wrong changes
+      made by hand (the check reads files from disk; the checker is a test file) are quoted in the commit body.
 - [ ] 3.8 (D) `graph/inference`, the hierarchy slice only (#97, design D1a): `hierarchy.go`, `container_entity.go` and
       the `TripleAdder` interface, with a package comment for what the slice holds; `HierarchyConfig` without
       `Org`/`Platform`, the carrier passed to the constructor (design D9); `DefaultHierarchyConfig`, `OnEntityCreated`,

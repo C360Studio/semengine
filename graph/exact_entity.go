@@ -11,8 +11,6 @@ import (
 	semtypes "github.com/c360studio/semengine/pkg/types"
 )
 
-const exactEntityQuerySubject = "graph.ingest.query.entity"
-
 // ExactEntity is one validated authority value and the revision of the same
 // ENTITY_STATES entry. KVRevision is the entry's only revision: the stored
 // value carries none of its own.
@@ -61,7 +59,7 @@ func (r *natsExactEntityReader) ReadExactEntity(ctx context.Context, entityID st
 	if err != nil {
 		return nil, fmt.Errorf("marshal exact entity request: %w", err)
 	}
-	response, err := r.requester.RequestClassified(ctx, exactEntityQuerySubject, request, r.timeout)
+	response, err := r.requester.RequestClassified(ctx, entityVerb.Subject, request, r.timeout)
 	if err != nil {
 		return nil, err
 	}

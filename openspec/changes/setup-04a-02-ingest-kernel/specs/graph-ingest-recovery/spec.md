@@ -46,8 +46,10 @@ acknowledgement wait.
 The applied-sequence record SHALL be keyed by stream generation, learned from the server and never from
 configuration. Within one generation, an input whose sequence is not newer than the last applied SHALL be dropped
 as a redelivery and acknowledged without changing state. An input from a newer generation SHALL never be dropped
-because of a sequence recorded in an older one. When graph-ingest cannot read or holds no applied-sequence record, it
-SHALL log and count that it is treating the input as first seen.
+because of a sequence recorded in an older one. An input with no stored record SHALL be applied as first seen; when
+graph-ingest has no applied-sequence bucket at all, it SHALL log and count that it is treating the input as first
+seen. A stored record graph-ingest cannot decode SHALL be refused: the input SHALL NOT be applied or acknowledged, the
+refusal SHALL be counted and logged once per key with the key, and the input SHALL be delivered again.
 
 #### Scenario: Stream recreated with lower sequences
 
@@ -59,6 +61,12 @@ SHALL log and count that it is treating the input as first seen.
 
 - **WHEN** an input already applied in the current generation is delivered again
 - **THEN** it is acknowledged and the entity state does not change
+
+#### Scenario: A record that cannot be decoded
+
+- **WHEN** the stored applied-sequence record for an input's entity and stream is three bytes long
+- **THEN** the input is neither applied nor acknowledged and the refusal count rises by one, and once the record is
+  deleted the redelivered input is applied
 
 ### Requirement: A failing payload is poison, not a redelivery loop
 

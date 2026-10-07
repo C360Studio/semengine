@@ -4,7 +4,9 @@
 - **base:** `1334ce6` (worktree `claude/setup-04a-02-ingest-kernel`; `main` at `89c878e`). Round 2 (2026-10-06)
   answers review round 1; the branch head `3fcf88a` differs from the base only in this folder. Round 3 (2026-10-07)
   adds §8, the probes the owner's rulings on #91 (comments 6035429806 and 6035477895) called for; §0–§7 are the round-2
-  record, and where §8 corrects or supersedes a statement in them, §8 says so.
+  record, and where §8 corrects or supersedes a statement in them, §8 says so. Round 5 (2026-10-07, branch head
+  `57b1ffa`) adds §9, the probes the owner-ordered pre-port graph design audit called for (PR #93 comment
+  6036316289; rulings on #97, #98 and #99); §9 says which earlier statements it supersedes.
 - **pin:** SemStreams `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`, from `gh api repos/C360Studio/semstreams/tarball/<sha>`
   (sha256 of the tarball `47a0c1c5a050a3d92b392f8b98c98a867c3c67d15cc8a5b275d4523f14773f48`). Every `path:line`
   without a repository prefix below is a pin path.
@@ -428,6 +430,9 @@ adds 2 lines to it), `query-pattern` (93; graph-ingest serves the four `graph.in
    reads stay with the port tasks. (2) answered by the type-based method of §2. (3) stands: P-5 ran with a vacuous
    `Observe`; the in-package adapter is the real check.
 2. P-8 is an upper bound computed at the pin; the port re-measures (task 5.2).
+3. Round 5: §9.1's slice coverage and §9.10's regrouped figures are upper bounds of the same kind; the `graph` root's
+   margin is two statements. §9.5 finds #101's list of catalog rows "for owners SemEngine does not admit" wrong for
+   three of its four rows; the design keeps those three (D16).
 
 ## 8. Round 3: the owner's rulings and the probes they required
 
@@ -509,13 +514,364 @@ applies it (design D7), taking #77's passed inventory (comments 6024786639 and 6
 `docs/inventory-scope.md` rule 3. Round 4's only new reads: `git grep -n RollbackFailedStart -- '*.go'` on the branch
 (empty) and `internal/harness/natsfixture/rollback.go` and `fixture_test.go:294-309` (the copy and its test).
 
+## 9. Round 5: the pre-port graph design audit and the probes it required
+
+Round 5 (2026-10-07) folds the owner-ordered pre-port audit (PR #93 comment 6036316289): the rulings on #97, #98
+and #99 (comments 6036308092, 6036308354, 6036308600, each "accepted as recommended") and the change-2
+port-refactors #100–#104, #106's pattern and #111 item 1. Base for this section: branch head `57b1ffa`. §0–§8 and
+the appendix are the record of rounds 2–4; where this section corrects or supersedes one of their statements, it
+says so. Pin reads are on the pin tarball named in the header; the probe copy is a second copy of the pin with the
+files named below removed (local only; every command is quoted so it can be re-run).
+
+### 9.1 #97: `graph/inference` as its hierarchy slice (P-10)
+
+- **What graph-ingest reads.** `grep -no 'inference\.[A-Za-z]*'` over graph-ingest's non-test files:
+  `processor/graph-ingest/component.go:436` — `inference.EntityManager`, `:465` — `inference.TripleAdder`, `:512` —
+  `inference.HierarchyInference`, `:736` — `inference.HierarchyContainerMessageType`, `:1428` —
+  `inference.HierarchyConfig`, `:1442` — `inference.NewHierarchyInference`. Its tests add `GetHierarchyTriples` and
+  `HierarchyContainerMessageType` (`registered_type_gate_integration_test.go:184`).
+- **The slice compiles alone.** In the probe copy, every file of `graph/inference` except `hierarchy.go` (540 lines),
+  `container_entity.go` (71) and the three `hierarchy_*_test.go` files was removed. The one missing name was
+  `TripleAdder`, declared in `applier.go:137-141` — `type TripleAdder interface {` (a three-line interface; the rest
+  of `applier.go` is the dead `NewNATSRelationshipApplier`, `NewNoOpApplier`, `NewDirectRelationshipApplier`
+  family and `MutationRelationshipApplier`). With that interface copied into the slice: `go build ./graph/inference/
+  ./processor/graph-ingest/` clean; `go test -count=1 -cover ./graph/inference/` — `ok`, 84.1%;
+  `go test -race -count=1 -cpu 1` — `ok`; `go test -count=5 -cpu 1 -shuffle=on` — `ok`, seed
+  `1791371403407864000`; `go test -count=1 ./processor/graph-ingest/` — `ok`.
+- **What the slice imports.** `hierarchy.go`: `graph`, `message`, `natsclient`, `pkg/errs`, `pkg/types`, `vocabulary`;
+  `container_entity.go`: `message`, `payloadregistry`, `pkg/types`, `vocabulary`. Neither imports `graph/llm` or
+  `graph/structural`.
+- **Who else imports `graph/inference` at the pin** (`grep -rln` of its import path, non-test):
+  `gateway/graph-gateway/component.go`, `gateway/graph-gateway/openapi.go` (not admitted), `payloadbuiltins/register.go`
+  (an aggregator, not ported, #3), `processor/graph-clustering/{anomaly.go,component.go,similarity.go}` (change 7),
+  `processor/graph-ingest/component.go`.
+- **The slice's dead surface** (appendix rows, read by type): `DefaultHierarchyConfig` (`hierarchy.go:122`),
+  `HierarchyInference.OnEntityCreated` (`:290`, 27 test reads, a wrapper over `GetHierarchyTriples` plus the adder),
+  `ClearCache` (`:523`), `GetMetrics` (`:530`), `GetCacheStats` (`:535`). `RegisterPayloads`
+  (`container_entity.go:62`) stays (K3). The other 21 `graph/inference` appendix rows belong to files that are not
+  ported in change 2 and are audited in change 7.
+- **Slice coverage after the drop** (unit profile of the slice run above, statements inside the five dropped
+  functions removed): **82.8% (101/122)**; before the drop 84.1% (116/138). An upper bound in the same sense as P-8.
+- **Supersedes:** §8's P-9 premise that `graph/inference` reads `graph/llm` — true of the whole package
+  (`review_worker.go:40,69,430`, `config.go:123`), false of the slice; the §0 row for `graph/inference` (5,338 lines)
+  and P-7/P-8's 47.9% figure, which measured the whole package.
+
+### 9.2 The closure after #97 and #102 (P-11)
+
+`go list -deps ./processor/graph-ingest`, module packages, on the pin (38), on the probe copy after the slice (35),
+and after the slice with `component/dependencies.go`'s `LifecycleManager` field and its import removed (30, `#29`'s
+agentic field removed as well):
+
+- after #97, three packages leave: `graph/llm`, `graph/structural`, `model/wire`;
+- after #102 (and #29), five more: `agentic`, `internal/looptoken`, `vocabulary/agentic`, `pkg/lifecycle`,
+  `pkg/projection`.
+
+`graph/structural`'s importers at the pin (`grep -rl` of its import path, non-test, by directory): `graph/inference`
+(4 files: the detectors) and `processor/graph-clustering` (3). `graph/llm`'s: `graph/inference` (2: `review_worker.go`,
+`config.go`), `graph/clustering`, `graph/query`, `processor/graph-clustering`, `processor/graph-query`,
+`processor/agentic-loop` and the four `processor/research-graph-*`. So, after #97, **nothing ported in change 2 reads
+`graph/llm`, `model/wire` or `graph/structural`.** `pkg/lifecycle` and `pkg/projection` leave the closure but stay in
+change 2 by owner ruling (#8 Q16; foundation (a) and (d)); `model`, `storage` and `storage/storeregistry` stay in the
+closure through `component` (§9.4).
+
+**Counts.** Non-test lines of the set before dead-surface removal: round 3's 29,963 less `graph/llm/client.go` (65),
+`graph/structural` (883) and `graph/inference` outside the slice (5,338 − 616) = **24,293** (the slice is 611 lines
+plus the 5-line `TripleAdder`). Test files: 152 less `graph/inference`'s nine non-slice test files (3,165 lines) and
+`graph/structural`'s two (736) = **141 files, 36,301 lines**. P-4's counts are unchanged: 43 fixture-client sites, 19
+sleeps (the `graph/inference` one is in the slice, `hierarchy_attack_test.go:588`), 6 skips, 11 fixed addresses, 20
+unbounded cleanups.
+
+### 9.3 #100 and #98: the three-lanes census (P-12)
+
+**Lanes and their write sites** (`grep -n 'entityBucket\.\(UpdateWithRetry\|UpdateWithRetryRev\|Create\|Update\)('`,
+non-test, plus `DeleteAtRevision`):
+
+| Lane | Entry | Write site | Identity rule for a predicate |
+| --- | --- | --- | --- |
+| Stream (Graphable) | `processIngest` → `ingestEntity` → `mergeEntityOnLane` (`component.go:1711`) | `component.go:2104` — `err := c.entityBucket.UpdateWithRetry(ctx, entity.ID, func(current []byte) ([]byte, error) {` | replace per (subject, predicate): `component.go:2154` — `existing.Triples = graph.MergeTriples(existing.Triples, newer)`; `graph/helpers.go:98-108` ("this is full-set-replace, NOT preserve-all-unique-relationships") |
+| Mutation RPC create | `handleCanonicalCreate` (`canonical_mutations.go:226`) | `:280` — `revision, err := c.entityBucket.Create(ctx, entity.ID, encoded)` | birth; no hierarchy call on this lane (`grep -n hierarchy canonical_mutations.go`: one comment, `:201`) |
+| Mutation RPC reconcile | `handleCanonicalReconcile` (`:297`) | `:348` — `committedRevision, err := c.entityBucket.Update(ctx, request.EntityID, encoded, request.ExpectedRevision)` | replace the named predicates' set; "unchanged" judged by `sameReconcileTriple` (`:630-640`: append identity plus `Confidence`, `Timestamp`, `ExpiresAt`) |
+| Mutation RPC append | `handleCanonicalAppend` (`:369`) → `addTriplesLane` | `component.go:2655` — `casRevision, casErr := c.entityBucket.UpdateWithRetryRev(ctx, subject, func(current []byte) ([]byte, error) {` | append, deduplicated by `message.AppendIdentityKey` (`message/triple_identity.go:61-78`: subject, predicate, datatype, source, context, object) |
+| In-process create | `CreateEntity` (`component.go:1997`) → `createEntityWithReceipt` (hierarchy containers, `entityManagerAdapter` `:452`) | `:2266` — `committedRev, writeErr := c.entityBucket.Create(ctx, entity.ID, data)` | birth, with hierarchy (`:2240-2245`) |
+| In-process append | `tripleAdderAdapter.AddTriple` (`:474`, hierarchy inverse edges) → `addTripleLane` | `:2460` — `casRevision, casErr := c.entityBucket.UpdateWithRetryRev(ctx, triple.Subject, func(current []byte) ([]byte, error) {` | append, as the RPC append |
+| Mutation RPC delete | `handleCanonicalDelete` → `deleteEntityAtRevision` (`:2298`) | `DeleteAtRevision` (`:2315`) | removes the entity at a revision |
+
+`MergeEntity` (`:2021`) is the in-process entry to the stream lane's body (no non-test caller, §2). No test drives
+one predicate through two lanes: `processor/graph-ingest/merge_entity_integration_test.go:157` pins the replace lane
+only. The projection contract already names two write modes per predicate group
+(`pkg/projection/contract/contract.go:24-30` — `ModeReconcile WriteMode = "reconcile"`, `ModeAppend WriteMode =
+"append"`), checked by the client (`pkg/projection/mutation_client.go:269-317`), never by graph-ingest
+(`grep -rn 'projection/contract\|\.Groups\b' processor/graph-ingest`, non-test: empty).
+
+**`EntityState.Version`.** Declared `graph/types.go:42-43` — `// Version is incremented on each update for
+optimistic concurrency control.` / ``Version uint64 `json:"version"` ``. `gopls references graph/types.go:43:2`,
+non-test hits: writes at `component.go:1817` (`Version: 1`), `:2164`, `:2493`, `:2684` (`Version++`),
+`canonical_mutations.go:265-266`, `:342`, `pkg/lifecycle/manager.go:395` (`Version: 1`), `graph/types.go:106`
+(`Clone`); one read outside a write, `processor/rule/message_handler.go:380` — `"version":    entityState.Version,`
+(change 6, a `GenericJSON` payload already flagged under #9 comment 5972208367); the rest are `test/e2e` files (not
+ported). Consumers: no reader (`grep -rn '\.Version\b'` over the four tarballs, non-test, filtered to entity
+state: no hit). The KV revision is the fence (`graph/exact_entity.go:18` — `// ENTITY_STATES entry.
+EntityState.Version is logical metadata and is not a`). `graph/entity_predicate_contract.go:255,287` decode leniently
+(no `DisallowUnknownFields` in `graph`), so a stored value that still has a `version` key decodes.
+
+**Statement metadata (#98).** `message/triple.go:54-80` declares `Source`, `Timestamp`, `Confidence`, `Context`.
+At the pin: the Graphable lane builds the entity from `graphable.Triples()` and stamps neither
+(`processor/graph-ingest/component.go:1813-1818`); the envelope carries both (`message/meta.go:17` —
+`CreatedAt() time.Time`, `:27` — `Source() string`; SemEngine's `message/meta.go:17,27` the same); replace ignores
+`Timestamp` (`component.go:2154`) and `MessageType` is latest-wins (`:2155` — `existing.MessageType =
+entity.MessageType`); the typed client defaults a missing `Timestamp` to the wall clock
+(`pkg/projection/mutation_client.go:378-383` — `triple.Timestamp = time.Now().UTC()`; the issue's
+`internal/graphmutation/mutation_client.go` path does not exist at the pin, the code is in `pkg/projection`); graph-ingest
+stamps the indexing-profile triple with the wall clock (`component.go:1890-1891` — `Source:
+"graph-ingest-indexing-profile",` / `Timestamp:  time.Now(),`); hierarchy triples carry neither `Source` nor
+`Timestamp` (`graph/inference/hierarchy.go:358-364`, `:369-375`, `:409-415`, `:424-430`, `:485-493`: `Context:
+"inference.hierarchy"`, `Confidence: 1.0`). Callers of the typed client that set a timestamp: semsource
+`processor/supersession/lifecycle.go:385-389,408-411`; no consumer relies on the wall-clock default except by
+leaving it zero (`grep -rn 'MutationMetadata{' -A5` over the four tarballs). A raw-wire caller: semconnect
+`gateway/cs-api/graph_mutations.go:214-217` builds `graph.ReconcilePredicatesRequest` itself.
+
+**#99.** `graph/kvcatalog.go:59-68` — `entityStates.History = 1`, with "Owner decision 2026-07-28, corrected
+2026-08-05"; the poison sweep depends on it (`processor/graph-ingest/component.go:1256-1260` — "Snapshot completeness
+leans on ENTITY_STATES History=1 … Raising the bucket's history depth invalidates this marker math.").
+
+### 9.4 #102: what `component` imports, and who reads its three slots (P-13)
+
+- `go list -f '{{.Imports}}' ./component` at the pin, module packages: `agentic`, `internal/componentadmission`,
+  `metric`, `model`, `natsclient`, `payloadregistry`, `pkg/cache`, `pkg/errs`, `pkg/lifecycle`, `pkg/security`,
+  `storage`, `storage/storeregistry`, `types`. The graph family arrives only through `pkg/lifecycle`
+  (`component/dependencies.go:12`, `:99` — `LifecycleManager *lifecycle.Manager`); `go list -deps ./component` lists
+  `graph`, `internal/graphmutation`, `pkg/projection`, `pkg/lifecycle`. `pkg/lifecycle`'s non-test files that import
+  `graph`: `graph_emit.go`, `manager.go`, `manager_query.go` (`sed -n '/^import/,/^)/p'`). `lifecycle.` appears in no
+  other non-test `component` file (`grep -rn 'lifecycle\.' component/*.go`, non-test, excluding the unported
+  `lifecycle_test_suite.go`: `dependencies.go:99` only).
+- With the field and the import removed in the probe copy (and #29's agentic field), `go list -deps ./component`
+  lists no `graph`, `graph/…`, `internal/graphmutation`, `pkg/lifecycle` or `pkg/projection` path, and only
+  `pkg/projection/contract` (through `payloadregistry`).
+- **Readers of `Dependencies.LifecycleManager`** (`grep -rn '\.LifecycleManager\b\|LifecycleManager:'`, non-test):
+  `processor/rule/factory.go:160-161` (change 6; it narrows to `processor/rule.LifecycleManager`,
+  `actions.go:509-532`, whose methods name `lifecycle.TransitionSource`, `lifecycle.Participant` and
+  `lifecycle.WorkflowDef`); `service/component_manager.go:205,1218` (change 3, which copies it into every
+  component's dependencies); `processor/gated-dag/component.go:72`, `gateway/lifecycle-gateway/component.go:274,289`,
+  `internal/boot/run.go:287-559` (not admitted). Consumers: semboids `internal/sim/component.go:255-256` (narrows to
+  `boidSpawner`, `internal/sim/lifecycle.go:51-53` — `Create(ctx context.Context, p lifecycle.Participant) error`);
+  semboids `cmd/semboids/main.go:190` and semteams `cmd/semteams/main.go:209` set `service.Dependencies.LifecycleManager`
+  (the service's struct, change 3). `lifecycle.Participant`, `TransitionSource` and `WorkflowDef` are declared in
+  `pkg/lifecycle/participant.go:29,74,138`, a file with no imports.
+- **#29's precedent** (`gh issue view 29`): "drop `Dependencies.ToolRegistry` and `ToolRegistryReader`". #29 removes
+  the field; `ToolRegistryReader` itself names `agentic.ToolCall` (`component/dependencies.go:56`), so the narrow
+  interface was the edge, not the cure.
+- **`ModelRegistry`** is `model.RegistryReader`, an interface `model` declares; `model` imports only
+  `golang.org/x/net/http2` and the standard library. **`StoreRegistry`** is `*storeregistry.Registry`;
+  `storage/storeregistry` imports only `storage`, which imports only the standard library. Neither reaches a graph
+  package.
+- **`pkg/lifecycle/graph_emit.go:31`** — `mutationClient, _ := graphmutation.NewClient(client, timeout)`: the error is
+  discarded; `NewClient` refuses a nil requester (`internal/graphmutation/client.go:79-81`), and every emit then
+  returns `ErrEmitFailed` "graph mutation client is unavailable" (`graph_emit.go:38-40`).
+
+### 9.5 #101: the `graph` root (P-14)
+
+Non-test files and their imports (`sed -n '/^import/,/^)/p'` per file): NATS is imported by `exact_entity.go`
+(`natsclient`, only for `natsclient.DefaultRequestTimeout`, `:46`), `kvcatalog.go` and
+`owned_bucket_retention.go` (`natsclient`, `jetstream`), and `state_contract.go` (`jetstream`, only for
+`IsKVTombstone`, `:50`). `index_status.go` (398 lines) and `readiness_gate.go` (171) import nothing. SemEngine's
+`natsclient` applies its own default when a request timeout is 0 (`natsclient/request.go:177` — "If timeout is 0,
+DefaultRequestTimeout is used.").
+
+**Catalog rows and their owners** (`graph/kvcatalog.go:143-182`), against the admitted set
+(`docs/tier1-cross-check.md:59-71`):
+
+| Row | Owner at the pin | Admitted? |
+| --- | --- | --- |
+| `TOOL_CALL_OUTCOMES` (`:151`) | agentic-tools (`processor/agentic-tools/component.go:252`) | no: agentic, cut (#8 Q4) |
+| `ENTITY_SUFFIX_INDEX` (`:146`) | graph-ingest | yes; dropped by #104 |
+| `COMMUNITY_SUMMARIES` (`:173`) | graph-clustering | yes (change 7) |
+| `STORAGE_REPORT` (`:77`) | the storage collector, `service/storage_observability.go:397` | yes (`service`, change 3) |
+| `semstreams_config` (`:132`) | `config.Manager` | yes (`config`, change 3) |
+
+**#101's text names all four of the last rows except `ENTITY_SUFFIX_INDEX` as rows "for owners SemEngine does not
+admit"; the pin admits three of those owners.** #101 is a port-refactor issue, not a ruling, so this is a design
+decision (D16), not an owner question.
+
+**`events.go`.** Readers by type (§2's reader): `Event`, `EventMetadata` and `NewEntityUpdateEvent` are read in
+non-test code only by `processor/rule` (`expression_factory.go:353`, `test_rule_factory.go:136-141`; change 6), which
+publishes to `event.Subject()` (`publisher.go:151-152`); the other producer is `gateway/graph-gateway/component.go:1073`
+(not admitted). Subscribers to `graph.events.`: none (`grep -rln 'graph\.events'` over the pin's Go, JSON and YAML,
+non-test: `graph/events.go`, the gateway, and an archived review JSON; the four consumers: two semconnect evidence
+files saying "No graph.events.* consumer is present").
+
+**Readiness computation.** `ComputeIndexStatus` (`index_status.go:221`), `ComputeBacklogStatus` (`:345`) and their
+inputs are read by graph-ingest (`readiness.go`, change 2), graph-index and graph-embedding (changes 4–5);
+`EvaluateReadinessGate` (`readiness_gate.go:142`) and `StatusReading` by `graph/readiness/set.go` (dropped),
+`pkg/fusion/engine_lens.go` (5) and graph-clustering (7). The wire type `IndexStatusResponse` (`index_status.go:34`)
+and the `IndexState*` constants are read by 34 admitted non-test sites (§2's reader).
+
+**Consumers that name what moves** (`grep -rnoE 'graph\.(…)'` over the four tarballs, non-test): semsource
+`graph.CatalogReader` ×2, `graph.OpenCatalogReader` ×2, `graph.IndexStatusResponse` ×1; semconnect
+`graph.EnsureCatalogBucket` ×1, `graph.IsKVTombstone` ×1, `graph.EvaluateReadinessGate` ×1, `graph.StatusReading` ×1,
+`graph.IndexStatusResponse` ×2, `graph.IndexStateResetRequired` ×1 (and, staying in `graph`, `graph.ExactEntity` ×14,
+`graph.StateContractError` and its classifiers); semteams `graph.ExactEntityReader` ×2, `graph.NewExactEntityReader`
+×1 (staying); semboids `graph.ExactEntity` ×1 (staying).
+
+**README** (`graph/README.md:7-8`): "It contains storage types and interfaces but no runtime processing logic";
+`:126`: "This package contains **types and interfaces only**."
+
+**Export count.** §2's type reader lists 226 exported identifiers in `graph`; 83 have no non-test reader outside
+`graph` itself; 51 appendix rows (nothing reads them at all) are in the root. #101's "64 of 205" is a different
+count; the port task settles the set by `gopls references`.
+
+### 9.6 #103: the reply envelope (P-15)
+
+`graph/query_contracts.go:17-20` — `QueryResponse[T]` is `{data, timestamp}`; `UnwrapQueryResponse` (`:89-115`) sniffs
+a closed key set. Non-test readers by type: `UnwrapQueryResponse` — `pkg/fusion/fusionnats/client.go` (change 5);
+`NewQueryResponse` — graph-index (`name_index.go`, `query.go`) and graph-query (`summary.go`), changes 4; consumers:
+semconnect `gateway/cs-api/systems.go:993` decodes `graph.QueryResponse[graph.PredicateData]`; semsource only in a
+test. graph-query's operation table declares 14 bare and 2 enveloped verbs (`processor/graph-query/query.go:49-66`).
+graph-ingest's replies on `graph.ingest.query.*` are bare: `graph.ExactEntity{entity, kvRevision}`
+(`processor/graph-ingest/query.go:119-122`), `graph.EntityBatchResponse` (`:177`), a prefix response (`:446`), and
+`map[string]string{"id": …}` for the suffix verb (`:488,503,521`). The classified code for "not yet indexed" exists:
+`graph/mutation_responses.go:79` — `ErrorCodeIndexNotReady = "index_not_ready"`.
+
+### 9.7 #104 and #106: the suffix index and the `graph.ingest.query.*` subjects (P-16)
+
+- Suffix: bucket created at `processor/graph-ingest/component.go:1213-1218`, cache `:1220-1231` (both inside `initStorage`), writes
+  `updateSuffixIndex` (`:2792-2812`, Debug on failure), deletes `removeSuffixIndex` (`:2816-2835`, `_ =`), the verb
+  `handleQuerySuffixNATS` (`query.go:463-522`) with a full-scan fallback that returns the first key ending in the suffix
+  (`query.go:594-614`) and `{"id":""}` when nothing matches (`:521`). Callers of `graph.ingest.query.suffix`: one,
+  `processor/graph-query/entity_resolver.go:102`, step 3 of `resolvePartialEntityID` (`:11-40`, after the alias
+  index), called from `graphrag.go:422,1016` (change 4). Consumers: none (`grep -rn 'graph\.ingest\.query'` over the
+  four tarballs: empty).
+- Subject literals for `graph.ingest.query.*` in non-test Go at the pin: `processor/graph-ingest/query.go:27,34,41,48,55`
+  (the responder), `graph/exact_entity.go:15`, `processor/graph-query/router.go:19-21`,
+  `processor/graph-query/entity_resolver.go:102`, `processor/agentic-loop/lessons.go:20` (cut),
+  `processor/gated-dag/reader.go:64` (not admitted). `graph.mutation.>` has one home:
+  `internal/graphmutation/protocol.go:16` — `SubjectFamily = "graph.mutation.>"`.
+- Shape to adopt (#106): graph-query's operation table (`processor/graph-query/query.go:33-43`, the
+  `queryOperationSpec` struct: operation, suffix, request type, success type, envelope, consumers, handler).
+  Adopters later: `processor/graph-index/query.go:31-106`, `processor/graph-embedding/query.go:24-46`,
+  `processor/graph-index-spatial/query.go:27-43`, `processor/graph-index-temporal/query.go:22-29`,
+  `processor/graph-clustering/query.go:24-56`, `processor/graph-query/router.go:16-43`,
+  `pkg/fusion/fusionnats/client.go:26-31`; semsource spells `graph.query.*` on its own ports
+  (`cmd/semsource/run.go:846-856`).
+
+### 9.8 #111 item 1: hierarchy birth and the guard value (P-17)
+
+- Birth: `processor/graph-ingest/component.go:2088-2095` (stream lane: `GetHierarchyTriples` error → `Warn`, entity
+  written without the triples) and `:2240-2246` (in-process create: "Don't fail entity creation if hierarchy fails -
+  just log warning"); the gate is first-write-only (`:2112` — `if len(current) == 0 {`), so nothing adds them later.
+  Inside the slice, a failed inverse edge is also a `Warn` plus a counter that only the dead `GetMetrics` reads
+  (`graph/inference/hierarchy.go:376-385`, `:432-448`), and a failed sibling pass is a `Warn`
+  (`:245-250`); container and forward-edge failures are returned joined
+  (`:280-282`).
+- Guard value: `processor/graph-ingest/keyed_ingest.go:277-278` — `if len(entry.Value) < 8 {` / `return false, nil //
+  corrupt/legacy value → treat as first-seen, re-stamp on apply`. The guard bucket's acquisition failure fails `Start`
+  (`component.go:1239-1242`), so a nil bucket (`keyed_ingest.go:267`) exists only in a hand-built component.
+- The closest shape for a refused stored value: resident poison in `ENTITY_STATES` — Nak, bounded by the consumer's
+  delivery limit, recorded once per entity (`keyed_ingest.go:168-186`).
+
+### 9.9 Tasks 3.12 and 3.13: the guard's state in graph-ingest's tests (P-18)
+
+`grep -nE '\.(lifecycleUsed|terminal|cleanupPending|startDone|stopping|lifecycleMu)\b'` over graph-ingest's tests:
+reads at `component_test.go:975` (`assert.False(t, comp.lifecycleUsed)` after a refused `Start`),
+`lifecycle_owner_test.go:201-202` (`terminal` after a deadline `Stop`), `:223,229` (`lifecycleUsed` after refused
+`Start` and `Stop(nil)`); a lock of the component's own handle mutex, not guard state,
+`lifecycle_integration_test.go:192-197`; and struct literals that build a component mid-lifecycle
+(`lifecycleUsed: true, running: true` and `cleanupPending: true`) at `test_owner_test.go:37,62,87,108`,
+`test_owner_child_test.go:123`, `lifecycle_owner_test.go:184`. Each read has an observable equivalent in the same
+test: the next `Start` refused or not with `errs.ErrAlreadyStarted`, a repeated `Stop` calling nothing (the tests
+already count drains, `lifecycle_owner_test.go:207-209`). Each literal state is reachable through the guard's own
+methods (`internal/lifecycleguard/guard.go:41` `Start`, `:88` `Stop`): a successful `Start` with a start function
+that acquires nothing, or a failed one whose rollback fails, which leaves the cleanup pending (`guard.go:66-71`).
+
+### 9.10 Coverage after the audit (P-19)
+
+The P-7 profiles, measured as P-8 (dead surface removed), regrouped by where the code lands (local-only script
+`r5/cov5.py`):
+
+| Target | Profile | Figure | Short of 80% |
+| --- | --- | --- | --- |
+| `processor/graph-ingest` (suffix code removed, #104) | merged | 84.7% (1703/2010) | 0 |
+| `graph` root (less the catalog files, `events.go`, the readiness computation and `IsKVTombstone`) | merged | 80.9% (182/225) | 0 |
+| `graph/kvcatalog` (`kvcatalog.go`, `owned_bucket_retention.go`, `IsKVTombstone`) | merged | 80.3% (57/71); unit 50.7% | 0 |
+| `graph/readiness` with `readiness_gate.go` and the computation of `index_status.go` | unit | 86.4% (178/206) | 0 |
+| `graph/inference` (the slice, §9.1) | unit | 82.8% (101/122) | 0 |
+
+Unchanged from P-8: `internal/graphmutation` 69.7% (10 short), `pkg/projection` 66.5% (31), `component` 73.9% (81),
+`pkg/lifecycle` 70.7% (97), `storage/storeregistry` 100%. `graph/structural` (89.6%) is not ported in change 2. The
+root's margin is two statements; #100's rewrite changes graph-ingest's figure, which the port re-measures (task 5.2).
+
+### 9.11 Category 3, re-run: open pull requests
+
+`gh pr list --state open` (2026-10-07): **#93** (this claim; 23 files) and **#112** (draft, `claude/runner-pin`, "ci:
+pin the runner image to ubuntu-24.04 (#61)", 0 files so far). No overlap: #112's subject is the CI runner image; no
+`openspec/changes/*/specs/` file. Issues added to the territory: #97–#111 (audit), each read in full.
+
+### 9.12 Collision tables for the two primitives round 5 adds
+
+**Entity write seam (#100).**
+
+| Dimension | Evidence |
+| --- | --- |
+| Semantic class | change one entity's stored state in `ENTITY_STATES` |
+| Owners | graph-ingest only (`kvcatalog.go:59` owner "graph-ingest"; `WriteOwnerOnly`); seven write sites, §9.3 |
+| Catalogs | `graph/kvcatalog.go:59-68` (History 1, no lifecycle retention); the projection contract's write modes (`pkg/projection/contract/contract.go:24-30`) |
+| Status | `EntityState.Version` (unread); the KV revision returned by each write (`CreateEntityResponse.KVRevision`, `addTriplesResult.CommittedRevisions`) |
+| Lifecycle | birth (create), replace, conditional replace (reconcile at a revision), append, delete at a revision |
+| Ownership | one writer per key at a time through CAS (`UpdateWithRetry`, `Update` at revision, `Create`) |
+| Readers | graph-ingest's queries; every follower of `ENTITY_STATES` (graph-index, embedding, spatial, temporal, rule); semsource reads the bucket raw (#103) |
+| Writers | graph-ingest only; `pkg/lifecycle` and `pkg/projection` write through `graph.mutation.*` |
+| Recovery | poison inventory and `Nak` on resident poison (`keyed_ingest.go:168-186`); the boot sweep (`component.go:1252-1260`) |
+
+**Query subject declaration (#106 pattern, with #16).**
+
+| Dimension | Evidence |
+| --- | --- |
+| Semantic class | the name and owner of a request/reply verb |
+| Owners | graph-ingest's literals (`query.go:27-55`); graph-query's internal table (`processor/graph-query/query.go:49-66`); `internal/graphmutation/protocol.go:16` for mutations |
+| Catalogs | graph-query's table (internal, "deliberately not an exported subject catalog", `:45-48`); `router.go:16-43` a second spelling |
+| Status | none |
+| Lifecycle | subscribed in each responder's `Start` |
+| Ownership | none declared; semsource records a past collision on `graph.query.summary` (semsource `processor/source-manifest/component.go:32-41`) |
+| Readers | §9.7's caller list |
+| Writers | n/a |
+| Recovery | n/a |
+
+### 9.13 Adopter seam, items added by round 5
+
+- (g) A raw-wire mutation caller must put `source` and `timestamp` on every triple (#98). If it does not, the
+  write is refused as `invalid_request` naming the triple (a typed runtime error). semconnect's raw reconcile
+  (`gateway/cs-api/graph_mutations.go:214-217`) is the known case. Typed-client callers already pass both
+  (§9.3), except where `Metadata.Timestamp` was left zero, which now refuses instead of reading the clock.
+- (h) A consumer that read `graph.CatalogReader`, `OpenCatalogReader`, `EnsureCatalogBucket`, `IsKVTombstone`,
+  `IndexStatusResponse`-adjacent computation or `EvaluateReadinessGate` from `graph` imports the new home (§9.5's
+  list): a compile error, the best rank. A consumer that reads `EntityState.Version`: none (§9.3).
+- (i) semboids' sim component reads `component.Dependencies.LifecycleManager` (§9.4). After D17 it receives the
+  manager through its own constructor: a compile error.
+- (j) semteams, taking over agentic-tools, acquires `TOOL_CALL_OUTCOMES` itself with its own bucket descriptor
+  (§9.5): a compile error on `graph.BucketToolCallOutcomes`.
+- (k) graph-query (change 4) resolves a partial ID without `graph.ingest.query.suffix` (§9.7): a design item for
+  change 4, not an adopter outside the repository.
+
+### 9.14 Intent check, re-run for the boundaries round 5 moves
+
+| Boundary moved | Capability ("What this is for") | Status | Ruling |
+| --- | --- | --- | --- |
+| `graph/inference` beyond the hierarchy slice (detectors, review worker, storage) to change 7 | index (anomaly inference rides with clustering) | admitted, order only | #97 comment 6036308092 |
+| `graph/structural` to change 7, with its readers | index | admitted, order only | #97's "the detectors … ride with graph-clustering at change 7"; no ruling names the package (a design decision, D1a) |
+| `graph/llm`, `model/wire`, `go-openai` not ported | none (providers; tier 0 has none) | deferred to changes 4 and 7 | ruling B's reasoning (#91 comment 6035477895), #97 |
+| `graph.events.*` grammar (`events.go`) not ported | rules (rule's emission moves to the mutation protocol, change 6) | rules admitted; the second grammar excluded | #101, owner-ordered in PR #93 comment 6036316289 |
+| `ENTITY_SUFFIX_INDEX` and `graph.ingest.query.suffix` | query (partial-ID resolution) | admitted; change 4 decides how graph-query resolves a partial ID | #104, owner-ordered as above |
+| `TOOL_CALL_OUTCOMES` catalog row | none (agentic) | excluded | #8 Q4 |
+
 ## Appendix: dead-surface candidates (186), by type, pinned at the pin
 
 Dispositions: **drop**; **keep K1** — `pkg/lifecycle` and `pkg/projection` are the durable-execution primitive (#8
 Q16; foundation (a)) and #24 decides their surface; **keep K2** — `model` is carried whole until #32 decides the seam
 (change 7; Q4); **keep K3** — the per-package `RegisterPayloads` (#33); **keep K4** — required by
 `component.Discoverable`, an interface of the component contract that consumer components implement. Readers are
-non-test/test counts.
+non-test/test counts. Round 5: the 21 `graph/inference` rows outside the hierarchy slice and the six
+`graph/structural` rows are not ported in change 2 (§9.1, §9.2) and are audited again when their files are ported;
+the five slice rows (`DefaultHierarchyConfig`, `OnEntityCreated`, `ClearCache`, `GetMetrics`, `GetCacheStats`) stay
+`drop`.
 
 | Identifier | Pin | Kind | Readers | Disposition |
 | --- | --- | --- | --- | --- |

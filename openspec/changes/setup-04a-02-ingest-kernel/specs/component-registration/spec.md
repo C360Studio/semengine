@@ -25,15 +25,25 @@ type, construction SHALL fail with an error naming the missing type and the per-
 - **WHEN** graph-ingest is built with `enable_hierarchy` and a payload registry that lacks the container type
 - **THEN** construction fails naming the type and `inference.RegisterPayloads`
 
-### Requirement: The component model reaches no agentic package
+### Requirement: The component model reaches no agentic or graph package
 
-`component` SHALL NOT import, directly or through its dependencies, any package of the agentic domain; a
-`component.Dependencies` SHALL carry no tool registry.
+`component` SHALL NOT import, directly or through its dependencies, any package of the agentic domain, the `graph`
+package or a package under it, `internal/graphmutation`, `pkg/lifecycle`, or `pkg/projection` other than
+`pkg/projection/contract`. A `component.Dependencies` SHALL carry no tool registry and no lifecycle manager; a
+component that needs the lifecycle manager receives it from the host when it is registered or constructed. A
+sensitivity test SHALL require the contract test's failure for a temporary module whose package reaches a
+forbidden path.
 
 #### Scenario: Dependency listing
 
 - **WHEN** a contract test lists the dependencies of `./component`
-- **THEN** no listed path contains an `agentic` element
+- **THEN** no listed path contains an `agentic` element, and none is `graph`, under `graph/`,
+  `internal/graphmutation`, `pkg/lifecycle`, or `pkg/projection` other than `pkg/projection/contract`
+
+#### Scenario: A graph import reaches the component model
+
+- **WHEN** a file of `component` imports a package that imports `pkg/lifecycle`
+- **THEN** the contract test fails naming the path it found
 
 ### Requirement: Unknown configuration keys are refused
 

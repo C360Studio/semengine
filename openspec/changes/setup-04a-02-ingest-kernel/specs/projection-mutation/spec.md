@@ -34,3 +34,15 @@ commit-unknown.
 
 - **WHEN** the entity bucket refuses the update for a revision mismatch
 - **THEN** the receipt reports not-committed with the conflict classification
+
+### Requirement: The typed client never reads the clock
+
+`projection.MutationClient` SHALL send a statement's `Timestamp` only as the caller gave it, on the statement or in
+the request's metadata. A `Create` or `Append` with a statement that has no `Timestamp` and metadata with none SHALL be
+refused as invalid before any request is sent, and its receipt SHALL report not-committed.
+
+#### Scenario: No timestamp anywhere
+
+- **WHEN** an `Append` carries a statement with no `Timestamp` and its metadata's `Timestamp` is zero
+- **THEN** the client returns an invalid-class error, the receipt reports not-committed, and no request reaches the
+  broker

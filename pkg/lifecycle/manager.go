@@ -203,7 +203,7 @@ func (m *Manager) getEntity(ctx context.Context, entityID string) (*graph.Entity
 	if err != nil {
 		var classified *errs.ClassifiedError
 		if errors.As(err, &classified) && classified.Code == graph.ErrorCodeEntityNotFound {
-			return nil, 0, fmt.Errorf("%w: entity_id=%q", ErrEntityNotFound, entityID)
+			return nil, 0, fmt.Errorf("%w: entity_id=%q: %w", ErrEntityNotFound, entityID, err)
 		}
 		return nil, 0, fmt.Errorf("lifecycle: exact read for %q: %w", entityID, err)
 	}
@@ -401,8 +401,9 @@ func (m *Manager) createWithRegistration(ctx context.Context, reg *registration,
 		resp, err := m.emitter.create(ctx, createReq)
 		if err != nil {
 			if errors.Is(err, ErrAlreadyExists) {
-				return createOutcome{}, fmt.Errorf("%w: workflow=%q entity_id=%q",
-					ErrAlreadyExists, reg.workflow.Name, entityID)
+				// err already carries ErrAlreadyExists and the graph's refusal; add the context.
+				return createOutcome{}, fmt.Errorf("lifecycle: create workflow=%q entity_id=%q: %w",
+					reg.workflow.Name, entityID, err)
 			}
 			return createOutcome{}, err
 		}

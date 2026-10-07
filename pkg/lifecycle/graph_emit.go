@@ -92,9 +92,9 @@ func classifyEmitError(operation graphmutation.Operation, err error) error {
 		case graph.ErrorCodeRevisionMismatch:
 			return err
 		case graph.ErrorCodeEntityNotFound:
-			return fmt.Errorf("%w: %s", ErrEntityNotFound, err.Error())
+			return fmt.Errorf("%w: %w", ErrEntityNotFound, err)
 		case graph.ErrorCodeEntityExists:
-			return fmt.Errorf("%w: %s", ErrAlreadyExists, err.Error())
+			return fmt.Errorf("%w: %w", ErrAlreadyExists, err)
 		default:
 			return fmt.Errorf("%w: %s: %w", ErrEmitFailed, operation, err)
 		}

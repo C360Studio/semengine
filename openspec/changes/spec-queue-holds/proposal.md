@@ -1,10 +1,10 @@
 # spec-queue-holds
 
-Status: revision 2, answering the pre-owner design review's round 1. It rests on `inventory.md`, which passed the
-independent inventory review (`INVENTORY PASS` on the file with sha256 `70882609…bff3`; this copy differs only by one
-repeated word removed at `:183`). Base `8abb383`. Issue #76; claim PR #113. The recommendation keeps a failing
-command, but not the one the issue proposed, and the owner is asked to choose (`design.md`, "Questions for the owner",
-Q1).
+Status: accepted. The owner ruled on 2026-10-07 (#76, comment 6040382533): keep a failing command, the one this
+design recommends (O10); the first line, anywhere on it, if a first-line rule is ever chosen (Q2, which O10 does
+not use); and this change may merge before #93. It rests on `inventory.md`, which passed the independent inventory
+review (`INVENTORY PASS` on sha256 `70882609…bff3`; this copy differs only by one repeated word removed at `:183`).
+Base `8abb383`. Issue #76; claim PR #113. `DESIGN REVIEW PASS` is recorded on PR #113 (comment 6039920176).
 
 ## Why
 

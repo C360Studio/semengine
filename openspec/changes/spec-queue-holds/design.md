@@ -1,9 +1,9 @@
 # Design: spec-queue-holds
 
-Status: revision 2, answering the pre-owner design review's round 1 (CHANGES REQUESTED, nine findings). Base
-`8abb383`. `inventory.md` passed the independent inventory review (`INVENTORY PASS`, sha256 `70882609…bff3`); the
-copy in this change differs only by one repeated word removed at `:183`. The recommendation keeps a failing command,
-but not the one the issue proposed, so it waits for the owner's answer to Q1.
+Status: accepted by the owner on 2026-10-07 (#76, comment 6040382533): O10, as recommended; see "Owner's rulings".
+`DESIGN REVIEW PASS` is recorded on PR #113 (comment 6039920176). Base `8abb383`. `inventory.md` passed the
+independent inventory review (`INVENTORY PASS`, sha256 `70882609…bff3`); the copy in this change differs only by
+one repeated word removed at `:183`.
 
 ## Terms
 
@@ -604,10 +604,19 @@ are files of this change; `spec.md` is `specs/spec-queue/spec.md`.
 
 | Ruling or brief item | Where the drafts meet it | State |
 | --- | --- | --- |
-| R1 (owner): the issue's recommendation is the starting point; whether the failing form lives in `spec:check` or a new `verify` step is the design's call | The starting point is O3, the issue's recommendation (`design.md:176-181`), designed in full (`:517-590`). The issue's step 1, reading the whole task block, is D1 (`:287-290`). Its step 2, a failing check, lives in `spec:check` (D9 and D10, `:368-387`); a new `verify` step is weighed and rejected (O4, `:182-184`). Its step 4, the harness test with PR #73's regression as the fixture, is D6 and case H1 (`:312-322`, `:395`) | **Departs from the starting point in what fails, and put to the owner.** The recommended check, O10, fails on a hold outside every task, not on a hold below a first line (`design.md:200-205`). The owner chooses in Q1 (`:209-249`), as stated in `proposal.md:5-7`. Implementation waits for the answer (`tasks.md:18-22`, and the hold on tasks 2.1-2.6 at `tasks.md:26`, `:31`, `:34`, `:37`, `:41`, `:44`) |
+| R1 (owner): the issue's recommendation is the starting point; whether the failing form lives in `spec:check` or a new `verify` step is the design's call | The starting point is O3, the issue's recommendation (`design.md:176-181`), designed in full (`:517-590`). The issue's step 1, reading the whole task block, is D1 (`:287-290`). Its step 2, a failing check, lives in `spec:check` (D9 and D10, `:368-387`); a new `verify` step is weighed and rejected (O4, `:182-184`). Its step 4, the harness test with PR #73's regression as the fixture, is D6 and case H1 (`:312-322`, `:395`) | **Departs from the starting point in what fails; the owner accepted the departure.** The recommended check, O10, fails on a hold outside every task, not on a hold below a first line (`design.md:200-205`). The owner ruled O10 on Q1 (#76, comment 6040382533; "Owner's rulings" below), so tasks 2.1-2.6 are no longer held (`tasks.md:18-22`) |
 | R2 (owner): simple code; a new language or tool must be justified | D5: no new language or tool; the change stays inside the script with what it already runs (`design.md:309-311`). O5 is rejected for adding JavaScript (`:185-187`). The tests reuse existing helpers (P10, `:72-76`). `proposal.md:66` | Met |
 | R3 (owner): written for a working developer; coined terms defined at first use | "Terms" defines the queue, open task, first and continuation line, block, hold, fail and show, and the check, before any use (`design.md:8-24`). The proposal defines a hold at first use (`proposal.md:11-12`). The delta defines in-flight change, open task, block and hold inside its first requirement (`spec.md:7-12`). The `tasks.md` header says what a hold does (`tasks.md:3-7`) | Met |
 | B1 (brief): frame `docs:check` and `lint` as homes too | O5, `docs:check` (`design.md:147`, `:185-187`); O6, `lint` (`:148`, `:188-190`) | Met |
 | B2 (brief): a per-ruling conformance table | This table | Met |
 | B3 (brief): the three open questions as owner questions, recommendation first, then reasons, then the other answer's cost to the owner and the #93 session; the whole-task option weighed fairly against failing and doing nothing | Q1 (`design.md:209-249`), Q2 (`:251-261`) and Q3 (`:263-281`). Each gives the recommended answer first, then its reasons and its costs, then the other answers' costs, including the owner's extra rulings and #93's 18 holds (21 under "first words"). The whole-task option O2 is weighed beside doing nothing (O1) and every failing form (O10, O3-O9) (`design.md:135-198`) | Met |
 | B4 (brief): say which merges first, and the cost of each order, without contacting #93 | Q3 recommends that this change may merge first, and gives each order's cost under O10 or O2 and under O3 (`design.md:263-281`). "Overlap and order" restates it (`design.md:592-598`). Nothing in the drafts asks the #93 session for anything | Met |
+
+## Owner's rulings
+
+The owner answered Q1-Q3 on 2026-10-07, in the Claude session that runs PR #113. The answers are recorded on #76,
+[comment 6040382533](https://github.com/C360Studio/semengine/issues/76#issuecomment-6040382533).
+
+- **Q1:** keep a failing command, the one that fails on a hold outside every task (O10, the recommendation).
+- **Q2:** the first line, anywhere on it. O10 has no first-line rule, so this applies only if one is chosen later.
+- **Q3:** this change may merge first, and neither this change nor #93 waits for the other.

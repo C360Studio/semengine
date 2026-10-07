@@ -1,13 +1,17 @@
 # Design: setup-04a-02-ingest-kernel
 
-Status: **draft, round 5.** Round 2 answered the 17 findings of the pre-owner design review's round 1 and went to the
+Status: **draft, round 6.** Round 2 answered the 17 findings of the pre-owner design review's round 1 and went to the
 owner with questions A–F. Round 3 applied the owner's rulings of 2026-10-07 on B, C, E and F (#91 comments 6035429806
 and 6035477895) and the pin probe P-9 that ruling B asked for (`inventory.md` §8). Round 4 applied #77's ruling
 (#77 comment 6035317931), which answers question A: D7 is rewritten and `lifecycle-suite` gains a delta. The owner
 accepted round 4 on #91 (2026-10-07; task 1.4). Round 5 folds the owner-ordered pre-port graph design audit (PR #93
 comment 6036316289): the rulings on #97, #98 and #99, and the port-refactors #100–#104, #106's pattern and #111 item
-1 (D1, D1a, D11 and D15–D22; `inventory.md` §9). Round 5 needs the independent review and the owner's acceptance
-again (tasks 1.11, 1.12); nothing in it is approved yet.
+1 (D1, D1a, D11 and D15–D22; `inventory.md` §9). Round 6 applies the owner's rulings A–F on the round-4 review of
+round 5 (#91 comment 6037287957) and that review's findings: the replace is keyed on (subject, predicate, source),
+mutation-lane births keep the pin's no-hierarchy behavior, derived statements take the triggering message's time
+(D15, D21), `graph/structural`'s move is ruled (D1a, D11), the `LifecycleManager` adopter sites are named (D17), and
+the readiness envelope loses its legacy fields and gains `published_at` here (D16; `inventory.md` §9.15). Round 6
+needs the review's re-check and the owner's acceptance (tasks 1.11, 1.12); nothing after round 4 is approved yet.
 
 Shorthand, defined once:
 
@@ -66,7 +70,8 @@ ledger:check`. Owner rulings this change follows: #9 items 1–9; foundation (a)
 (services get the suite, helpers get the three background-work shapes); #9 comments 5968830525 (surface audit) and
 5972208367 (generic payload); #69 (outward-facing names, 2026-10-06); #19 Q6, #20 Q7; Q12, Q13, Q16, Q18 on #8; #91
 comments 6035429806 (E, F) and 6035477895 (B, C); #97, #98 and #99 (comments 6036308092, 6036308354 and
-6036308600); the audit's port-refactors, owner-ordered in PR #93 comment 6036316289.
+6036308600); the audit's port-refactors, owner-ordered in PR #93 comment 6036316289; rulings A–F on the audit's
+review (#91 comment 6037287957).
 
 **Order with #92.** PR #92 (claim for #69, head `aceb2be`) renames the floor's outward-facing names to `semengine`.
 It changes 25 files (`gh pr view 92 --json files`), one of which this change also edits:
@@ -101,7 +106,7 @@ otherwise `pkg/<name>` moves to `internal/<name>`.
 | 2 | `internal/graphmutation` | `internal/graphmutation` | internal at the pin | adapt (D6, D9) |
 | 2 | `pkg/dispatch` | `internal/dispatch` | no consumer import; no public signature names it | adapt (D3, D4, D5, D6; its own `ErrStopped`, ruling E) |
 | 2 | `storage/storeregistry` | `storage/storeregistry` | consumers import it (4) | adapt (D2, D6) |
-| 3 | `graph/inference` | `graph/inference` | `processor/graph-clustering.Config` names `inference.Config` (`component.go:77`, change 7) | adapt: the hierarchy slice only (#97, D1a; D6, D9, D21) |
+| 3 | `graph/inference` | `graph/inference` | `processor/graph-clustering.Config` names `inference.Config` (`component.go:77`, change 7) | adapt: the hierarchy slice only (#97, D1a; D6, D9, D15, D21) |
 | 3 | `pkg/projection` | `pkg/projection` | consumers import it (11 + 12) | repair-before-port (#19, #20; D8; D15) |
 | 4 | `pkg/lifecycle` | `pkg/lifecycle` | semteams and semboids import it (12) | adapt (D3, D5, D15, D17) |
 | 5 | `component` | `component` | consumers import it (76 + 23) | adapt (#29, D6, D9, D14, D17) |
@@ -151,8 +156,10 @@ ledger row names those files and #97.
   foundation D2 placed it: 883 lines with no importer for five changes, its six dead-surface rows judged with no
   caller in the tree; (b) **move it with its readers** (recommended): the reasoning of ruling B and #97 ("the detectors
   … ride with graph-clustering at change 7"). (b) changes order, not admission: the package stays in the admitted set
-  and change 7 ports it whole. No ruling names `graph/structural`, so this is a design decision for the reviewer; it
-  is not an owner question, because no ruling's text conflicts with it (inventory §9.14).
+  and change 7 ports it whole. Ruled (E, #91 comment 6037287957): "`graph/structural` moves to change 7 with its only
+  readers. This changes foundation D2's package list and the D10 critical list." Foundation D2 row 2 loses
+  `graph/structural` and row 7 gains it; 03B D10's critical list keeps `graph/structural` at the 80% floor, gated
+  from change 7, when it is ported, not from change 2 (D11).
 - **Carried to change 7 with the code:** the review worker's `Shutdown(ctx)` shape and its `synctest` test (round 4
   D5), and the drop of `graph/inference.Config`'s six unread fields with `review.llm` among them (round 4 D6).
   Ruling F is re-read in D11.
@@ -271,8 +278,10 @@ reads is removed (#9 comment 5968830525).
   `KeyedPool.Submit`, `KeyedPool.Stats`; `readiness.Set` with `NewSet`, `Dump`, `Verdict`; in the `graph/inference`
   slice, `DefaultHierarchyConfig`, `HierarchyInference.OnEntityCreated`, `ClearCache`, `GetMetrics` and
   `GetCacheStats`; `internal/graphmutation.IsCommitUnknown`; `storage/storeregistry.Registry.Instances`.
-  `readiness.Set`'s one reader, `gateway/graph-gateway`, is deferred as consumer-owned (03B D4), not abandoned; the
-  readiness ledger row's `known_risks` names it, so its return is recognised as returning surface.
+  `readiness.Set`'s one reader, `gateway/graph-gateway`, is deferred as consumer-owned (03B D4), not abandoned, and
+  #110's fix shape needs it back ("`Health()` reports from the same `readiness.Set` the bucket is written from",
+  change 7). The readiness ledger row's `known_risks` names both, so `Set` returns as returning surface with #110 and
+  the drop forecloses nothing.
 - **Removed by a port-refactor, not as dead surface** (each read by something, each with its decision): `graph`'s
   `events.go` (D16), the `TOOL_CALL_OUTCOMES` catalog row and constant (D16), `EntityState.Version` (D15),
   `UnwrapQueryResponse` (D18), `component.Dependencies.LifecycleManager` (D17), and graph-ingest's suffix index with
@@ -527,7 +536,8 @@ Recommendation **(d)**, as a `harness-boundaries` modification with a sensitivit
 - `scripts/cover-check.sh` targets, one floor (80%, `scripts/cover-check.sh:16`): `processor/graph-ingest merged`,
   `graph merged`, `graph/kvcatalog merged`, `graph/readiness unit`, `graph/inference unit`, `pkg/projection unit`,
   `internal/graphmutation unit`, `component merged`, `storage/storeregistry unit`, `pkg/lifecycle merged`. Task 5.2 is
-  ticked only on a green `cover:check`. `graph/structural` is not ported here (D1a), so it is not a target. Per
+  ticked only on a green `cover:check`. `graph/structural` is not ported here (D1a, ruling E), so it is not a target
+  here; it stays on 03B D10's critical list and becomes a target in change 7. Per
   package, from P-7, P-8 and P-19 (inventory §9.10):
   - Already over the floor after the drop: graph-ingest 84.7% (its suffix code removed, D19), `graph` 80.9% (the root
     after D16; a two-statement margin), `graph/kvcatalog` 80.3% merged, `graph/readiness` 86.4% (with the readiness
@@ -656,12 +666,14 @@ statement. No test drives one predicate through two lanes.
 - (a) Port the lanes as they are. Cost: #100's lock-in: three write semantics for one predicate become SemEngine's
   contract, and a dead `version` field sits in every stored value.
 - (b) Keep the code, and write each lane's rule into the spec. Cost: the same three rules, now promised.
-- (c) **One write seam** (recommended): every change to a stored entity goes through one write path inside
-  graph-ingest, and the rule for a statement's identity belongs to the write mode, declared once and the same on
-  every lane.
-- (d) (c) with the replace identity widened to (subject, predicate, source), so a producer replaces only its own
-  statements. It would make the cross-lane case below keep another source's statements. Rejected: #98's ruling fixes
-  the replace identity as "the same (subject, predicate)"; widening it reopens that ruling.
+- (c) One write seam with the replace keyed on (subject, predicate), round 5's design. Cost: a stream arrival from one
+  source removes every other source's statements of its predicate, appended ones included (the cross-lane wipe the
+  round-4 review raised).
+- (d) **One write seam, with the replace keyed on (subject, predicate, source)**: ruled (A, #91 comment 6037287957):
+  "each source replaces only its own values … A predicate may hold values from several sources; a reader that wants
+  one value picks." Every change to a stored entity goes through one write path inside graph-ingest, and the rule for
+  a statement's identity belongs to the write mode, declared once and the same on every lane. Ruling A replaces the
+  "(subject, predicate)" wording of #98's ruling for the replace identity; the rest of #98's ruling stands.
 
 **The write modes** (spec home: `graph-entity-writes`). The rules are pure functions in `graph`, beside
 `EntityState`, with no I/O, so they are tested without a broker; the seam calls them. `MergeTriples` becomes the
@@ -670,24 +682,53 @@ replace rule (the developer chooses the name).
 | Mode | Lanes | Identity of a stored statement | Fence and order |
 | --- | --- | --- | --- |
 | create | mutation create; in-process create (hierarchy containers); the stream lane when the entity is absent | none: the entity is new | the bucket's create; an existing key is refused (`entity_already_exists` on the mutation lane; the stream lane retries as a replace) |
-| replace | the stream lane, for each predicate the arrival carries | (subject, predicate): the stored set of the predicate is replaced whole | the KV revision (compare-and-set); `Timestamp` orders it (below) |
-| conditional replace | mutation reconcile, for the predicates the request names (an empty set clears one) | (subject, predicate), as replace | the caller's expected revision; `Timestamp` does not order it, because the caller saw the state at that revision |
+| replace | the stream lane, for each (predicate, source) set the arrival carries once its statements are stamped (below) | (subject, predicate, source): the stored statements of the predicate from that source are replaced whole; the predicate's statements from other sources stay | the KV revision (compare-and-set); `Timestamp` orders it, per set (below) |
+| conditional replace | mutation reconcile, for the predicates the request names, from the request's one source (an empty set clears that source's statements of them) | (subject, predicate, source), as replace | the caller's expected revision; `Timestamp` does not order it, because the caller saw the state at that revision (ruling C) |
 | append | mutation append; in-process append (hierarchy's inverse edges) | `message.AppendIdentityKey`: subject, predicate, datatype, source, context, object | the KV revision; a statement whose identity is stored is not added again |
 | delete | mutation delete | none | the caller's expected revision |
 
-"Unchanged", the conditional replace's no-op answer, is equality of every field, `Confidence`, `Timestamp` and
-`ExpiresAt` included; it is a test of equal values, used by that mode only, not an identity rule. Within one write,
-statements equal in every field count once.
+"Unchanged", the conditional replace's no-op answer, is equality of every field of the stored statements of its
+predicates from its source, `Confidence`, `Timestamp` and `ExpiresAt` included; it is a test of equal values, used by
+that mode only, not an identity rule. Within one write, statements equal in every field count once.
 
-**The cross-lane case, declared.** A replace of predicate P replaces every stored statement of P, whichever lane wrote
-it: a stream arrival carrying P removes the P statements an append added. That is the consequence of #98's (subject,
-predicate) identity; it is now specified and tested instead of unremarked.
+**The source a set is keyed on.**
 
-**Births.** One rule on every lane: a birth stamps the indexing profile (ADR-054, as at the pin) and, with
-`enable_hierarchy`, the hierarchy statements (D21). At the pin the mutation lane's create skipped hierarchy inference
-(`canonical_mutations.go:226-296`); a deployment with hierarchy enabled now gets container edges for entities born on
-that lane too, so the hierarchy listing no longer misses them. A declared change; its cost is the inference's work
-(including the sibling pass, O(n) in the type's population) on those births.
+- **Stream lane.** Statements are stamped first (statement metadata, below) and then grouped. A statement without a
+  `Source` takes the envelope's, so a producer that never names a source per statement replaces exactly what its
+  earlier messages stored. A statement that names its own `Source` is grouped under it, so one message may carry sets
+  for several sources, and a relay that re-publishes another producer's statements under that producer's name
+  replaces that producer's set. The stream lane does not require a statement's source to match the envelope's, as the
+  pin requires nothing of it; that one source's message can replace a set stored under another source's name is
+  declared, not checked.
+- **Conditional replace.** `graph.ReconcilePredicatesRequest` gains `source`, required: every desired statement's
+  `Source` must equal it, or the request is refused as `invalid_request` naming the statement's index. The typed
+  client fills it from `Metadata.Source`, which `Reconcile` now requires as `Create` and `Append` do
+  (`pkg/projection/mutation_client.go:344-350` at the pin requires it for those two only); `pkg/lifecycle` sends its
+  reconciles on the raw wire, not through the typed client, and its statements carry no source at the pin
+  (`graph_emit.go:116-121`); after the port they carry one constant naming the lifecycle manager, which its three
+  reconcile builders (`manager.go:419`, `:619`, `:739`) also send as the request's source. One source for every
+  lifecycle write keeps a transition's reconcile replacing the phase statement it wrote before, as the pin's comment
+  at `manager.go:611-618` requires (a phase that accumulates values is the bug it names). The other
+  answer, a reconcile that replaces every source's statements of its predicates because its caller read them at that
+  revision, keeps the cross-source wipe ruling A removes, for the lane a projection writes on; ruling A names no
+  exception, so this design takes none. The reviewer may weigh it.
+- **Append and delete** are unchanged: the append identity already contains the source.
+
+**What a reader sees.** A predicate may hold statements from several sources; `EntityState.Triples` returns all of
+them. The single-value reads in `graph`, `EntityState.GetTriple` and `EntityState.GetPropertyValue`
+(`graph/types.go:49-77`), which at the pin return the first stored match, pick one the same way every time: the latest
+`Timestamp`; on equal timestamps, the `Source` that sorts first; on equal sources, the first stored. Stored order is no
+longer a meaning a reader can rely on, since a source's replace moves its set. No reader in this change calls them
+(`gopls references`); their readers are graph-query, graph-embedding and graph-clustering (changes 4 and 7) and the
+rule processor (change 6), which inherit this pick, including for the indexing profile: a later producer's profile
+statement now sits beside the one graph-ingest stamped at birth, where at the pin it replaced it, and the read returns
+the later one. A reader that wants another choice reads `Triples` and picks.
+
+**Births.** A birth stamps the indexing profile on every lane (ADR-054, as at the pin). Hierarchy statements are added
+at birth, with `enable_hierarchy`, on the lanes that infer hierarchy at the pin: the stream lane
+(`processor/graph-ingest/component.go:2088`) and the in-process create (`:2240`) (D21). An entity created on the
+mutation lane gets no hierarchy statements, as at the pin (`canonical_mutations.go:226-296`): ruled (B, #91 comment
+6037287957).
 
 **Statement metadata (#98, ruled).**
 
@@ -698,21 +739,31 @@ that lane too, so the hierarchy listing no longer misses them. A declared change
   message envelope: the envelope's source (`Meta().Source()`) and creation time (`Meta().CreatedAt()`). A statement
   that carries its own keeps it. When the envelope has no source or no creation time either, the message is refused
   as poison: terminated, counted and logged as a structurally invalid candidate is.
-- Statements graph-ingest derives itself (the indexing profile, hierarchy edges, container type statements) name
-  graph-ingest's producer in `Source` (one constant per producer) and carry the time graph-ingest derived them:
-  graph-ingest is their originator, so this stamps an assertion, it does not default a missing value.
-- The typed mutation client stops reading the clock: a `Create` or `Append` whose `Metadata.Timestamp` is zero and
-  whose statement has none is refused before any request is sent, not-committed
+- **Statements graph-ingest derives** (the indexing profile, hierarchy edges, a hierarchy container's type statement)
+  name graph-ingest's producer in `Source` (one constant per producer; the pin's `graph-ingest-indexing-profile`,
+  `component.go:1890`, is one) and carry the triggering message's time, never the clock (the round-4 review, applied
+  on #91 comment 6037287957). On the stream lane that is the envelope's creation time, the value that stamps the
+  message's own statements. On the mutation and in-process lanes it is the latest `Timestamp` among the write's own
+  statements, each of which is required. A create on those two lanes that carries no statement has no time to give,
+  and is refused as `invalid_request`; at the pin it was accepted and its profile stamped with `time.Now()`
+  (`component.go:1891`). `GetHierarchyTriples` takes the triggering time as an argument, and the containers it creates
+  for a birth carry it too: an `adapt` item on the `graph/inference` row, since the pin's hierarchy statements carry
+  neither source nor time (`graph/inference/hierarchy.go:358-374`, `:409-430`, `:485-493`).
+- `EntityState.UpdatedAt` is the store's write time, not a statement; it stays the clock, as at the pin
+  (`component.go:2165`, `:2494`, `:2685`).
+- The typed mutation client stops reading the clock: a `Create`, `Append` or `Reconcile` whose `Metadata.Timestamp` is
+  zero and whose statement has none is refused before any request is sent, not-committed
   (`pkg/projection/mutation_client.go:378-383` at the pin).
-- **`Timestamp` orders a replace.** For each predicate P an arrival carries, the arrival's P statements are applied
-  only if their latest `Timestamp` is not older than the latest `Timestamp` of the stored P statements; equal
-  timestamps apply, in arrival order. A predicate not applied keeps its stored statements; the arrival's other
-  predicates are still applied. The message is acknowledged: it has been applied as far as it may be.
-- **The result says so.** The stream lane has no reply, so each predicate not applied as older is counted, on
-  `semengine_graph_ingest_stale_predicates_total` (the count #98 requires; its present consumers are the ruling and
-  the test below), and logged at debug level with the entity and predicate.
-- The entity's own fields (`MessageType`, `StorageRef`) take the arrival's values only when no predicate of that
-  arrival was skipped as older.
+- **`Timestamp` orders a replace** (stream lane only; ruling C). For each (predicate, source) set an arrival carries,
+  the set is applied only if its latest `Timestamp` is not older than the latest `Timestamp` of the stored statements
+  of that predicate from that source; equal timestamps apply, in arrival order. Another source's statements of the
+  predicate take no part in the comparison. A set not applied keeps the stored statements; the arrival's other sets
+  are still applied. The message is acknowledged: it has been applied as far as it may be.
+- **The result says so.** The stream lane has no reply, so each set not applied as older is counted, on
+  `semengine_graph_ingest_stale_sets_total` (the count #98 requires; its present consumers are the ruling and the test
+  below), and logged at debug level with the entity, predicate and source.
+- The entity's own fields (`MessageType`, `StorageRef`) take the arrival's values only when no set of that arrival was
+  skipped as older.
 - `Confidence` and `Context` are carried and never order a write.
 
 **`EntityState.Version` goes (#100).** The KV revision is the only fence. `EntityState` has no `Version` field, and a
@@ -727,26 +778,44 @@ its input stream, not the bucket. This is written into `graph-entity-writes` and
 re-decided only on a named consumer need with its own design. The boot sweep's arithmetic depends on it
 (`processor/graph-ingest/component.go:1256-1260`).
 
-**What a caller observes, and the tests** (each written first and failing on the pin's code; spec home
-`graph-entity-writes`, plus `projection-mutation` for the client):
+**What a caller observes, and the tests** (each written first and failing on the pin's code, except where a test is
+marked as holding the pin's behavior; spec home `graph-entity-writes`, plus `projection-mutation` for the client):
 
 - `TestWriteModesAgreeAcrossLanes`: one predicate written through each lane that uses a mode leaves the same stored
   statements (append through the mutation and in-process lanes; birth through all three; replace and conditional
-  replace leave the same set for the same incoming statements).
-- `TestReplaceRemovesAppendedStatementsOfItsPredicate`: append P from source A, then a stream arrival with P from
-  source B: P holds the arrival's statements; every other predicate is unchanged.
-- `TestReplaceOrderedByTimestamp` (rule level in `graph`, and through the stream lane): an older arrival leaves P
-  unchanged and raises the stale counter by one while its newer predicates apply; an equal timestamp applies.
+  replace leave the same set for the same incoming statements from one source).
+- `TestReplaceKeepsOtherSourcesStatements`: append P from source A, then a stream arrival with P from source B: P holds
+  both; a second arrival with P from source B replaces only B's statement. Fails on the pin, where the arrival removes
+  A's.
+- `TestStreamLaneGroupsByStampedSource`: an arrival whose statements carry no source replaces the set stored under the
+  envelope's source; one whose statements name two sources replaces both sets and no other.
+- `TestReconcileReplacesOnlyItsSource` (graph-ingest) and `TestReconcileRefusesForeignSourceStatement`: an empty
+  reconcile from A leaves B's statements of P; a desired statement from B in A's reconcile is refused, nothing stored.
+- `TestMutationClientReconcileRequiresSource` (`pkg/projection`): not-committed, no request sent.
+- `TestTransitionReplacesItsPhaseStatement` (`pkg/lifecycle`, through graph-ingest): after a create and two
+  transitions the entity holds one phase statement, carrying the lifecycle manager's source. Fails on the pin's
+  statements, which carry no source and are refused once D15 lands.
+- `TestSingleValueReadPicksLatestAcrossSources` (`graph`): the latest timestamp wins whatever the stored order; ties
+  go to the source that sorts first.
+- `TestReplaceOrderedByTimestamp` (rule level in `graph`, and through the stream lane): an older set from the same
+  source leaves P's statements from that source unchanged and raises the stale counter by one while the arrival's
+  newer sets apply; an older set from another source is stored and counts nothing; an equal timestamp applies.
 - `TestConfidenceAndContextNeverOrder`: a newer arrival with lower confidence replaces; an older one with higher
   confidence does not.
 - `TestWriteRefusesStatementWithoutSourceOrTimestamp`: on the mutation lane (create, append, reconcile) and the
-  in-process lane, `invalid_request` naming the index and the field; nothing stored.
+  in-process lane, `invalid_request` naming the index and the field; nothing stored. An empty create on those lanes is
+  refused the same way.
 - `TestGraphableLaneStampsFromEnvelope` and `TestGraphableLaneRefusesWithoutEnvelopeMetadata` (poison, counted).
+- `TestDerivedStatementsCarryTriggeringTime`: a stream birth with hierarchy enabled, the envelope created at T, under a
+  test clock set elsewhere: the profile, hierarchy and container statements carry T and graph-ingest's producer; a
+  mutation create's profile carries the latest timestamp of its statements. Fails on the pin, which stamps the profile
+  with the clock and hierarchy statements with nothing.
 - `TestMutationClientRefusesMissingTimestamp` (`pkg/projection`): not-committed, and no request reaches the broker.
 - `TestStoredEntityHasNoVersion`: the stored JSON has no `version` key; a value that has one decodes.
 - `TestEntityStatesKeepsOneRevision`: the catalog descriptor of `ENTITY_STATES` has `History` 1.
-- `TestMutationCreateBirthGetsHierarchy`: with `enable_hierarchy`, an entity created on the mutation lane carries its
-  container edges.
+- `TestMutationCreateBirthGetsNoHierarchy`: with `enable_hierarchy`, an entity created on the mutation lane carries its
+  statements and its profile and no hierarchy statement. Holds the pin's behavior (ruling B), so it passes on the pin's
+  code; its sensitivity is shown by `task mutate:check` with a mutant that runs the inference on that lane.
 - `TestEntityWritesHaveOneSeam`: a package test that parses graph-ingest's non-test files and fails, naming file and
   line, when a write method of the entity bucket (`Create`, `Update`, `UpdateWithRetry`, `UpdateWithRetryRev`, `Put`,
   `Delete`, `DeleteAtRevision`) is called outside the seam's file, with a sensitivity case that plants one. It holds
@@ -785,7 +854,27 @@ At the pin the root carries six jobs (P-14, §9.5) and four of its files import 
 - **`graph/readiness`** receives the readiness computation: `readiness_gate.go` whole (`EvaluateReadinessGate`,
   `StatusReading`, `DeferReason`) and `index_status.go`'s computation (`ComputeIndexStatus`, `IndexStatusInputs`,
   `ComputeBacklogStatus`, `BacklogStatusInputs`), with their tests. The wire type stays in the root, so a reader of
-  GRAPH_STATUS needs no NATS import, and #110's change to its fields lands where this change leaves it.
+  GRAPH_STATUS needs no NATS import.
+- **The readiness envelope (#110's change-2 part; ruled F, #91 comment 6037287957).** `IndexStatusResponse` ports
+  without `Phase`, `Revision` and `LastSynced` (`graph/index_status.go:134-138`), and gains `published_at`. P-20
+  (§9.15): `Revision` is `IndexedRevision` as a string (`index_status.go:249-251`) and `LastSynced` the last apply time
+  (`processor/graph-ingest/readiness.go:309-321`); `Phase` is never set. With them go `IndexStatusInputs.LastSynced` and
+  `BacklogStatusInputs.LastSynced`, graph-ingest's `lastSyncedRFC3339` and its test (`readiness_test.go:172-183`);
+  `lastAppliedAt` stays, since the staleness computation reads it (`oldestOutstandingAt`, `readiness.go:295-307`).
+  `published_at` is set by `graph/readiness.Publisher.Publish` (`graph/readiness/publisher.go:90-107`) on every write,
+  whatever the caller passed, so no producer can leave it out: UTC, RFC 3339 with nanoseconds, from the wall clock. The
+  clock is right here: the field states when the producer wrote, not when anything in the graph was asserted, so #98's
+  rule does not apply. What a reader does with it (stale to unknown in the gate, #110's fix shape) is change 7's; this
+  change ships the field. The doc comment's "the two structs change together" with `pkg/fusion.IndexStatus` becomes a
+  `class:port-refactor` note on the `pkg/fusion` row (change 5, #110). Consumer: semsource decodes `GRAPH_STATUS` into
+  its own struct and reads `revision` and `last_synced` (`processor/source-manifest/workbench_capabilities.go:110-118`,
+  `readiness.go:42-43` at `e4febc0d`); after the port both arrive absent and its browser contract carries them empty. No
+  compile error tells it: a silent change, named on the `graph` row's adapt item and in §9.13 (l), and semsource changes
+  once, on adoption (ruling F). Tests: `TestIndexStatusResponseHasNoLegacyFields` (`graph`: the encoded envelope has no
+  `phase`, `revision` or `last_synced` key) and `TestPublishStampsPublishedAt` (`graph/readiness`: the stored value's
+  `published_at` lies between the clock read before and after `Publish`, and a caller's value is replaced), each written
+  first and failing on the pin's code. Spec home: `graph-transport-boundary`, "The readiness envelope carries its
+  publish time and no legacy fields".
 - **`events.go` is not ported.** It is a second mutation grammar (`map[string]any` payloads on `graph.events.*`) with
   no subscriber at the pin; its one admitted producer is `processor/rule` (`expression_factory.go:353`,
   `publisher.go:151-152`), whose port moves that emission to the mutation-request protocol or drops it (a
@@ -822,6 +911,12 @@ At the pin the root carries six jobs (P-14, §9.5) and four of its files import 
   `class:port-refactor` notes on their rows; semboids' sim component takes it through its own constructor. Each is a
   compile error, the best way to find out.
 - (d) Keep the concrete field: #102's lock-in.
+
+Ruled (D, #91 comment 6037287957): "`Dependencies.LifecycleManager` is dropped, not narrowed. semboids' sim component
+and semteams' wiring change on adoption." The `component` ledger row's adapt item for the drop names the adopter
+sites (§9.4, at the inventoried commits): semboids `internal/sim/component.go:255-256`, which reads the field, and
+`cmd/semboids/main.go:190`, and semteams `cmd/semteams/main.go:209`, which set it on the service's dependencies
+(change 3's struct, which loses its copy into components under the same item).
 
 **`ModelRegistry` and `StoreRegistry`, asked the same question** (#102): neither reaches a graph package.
 `ModelRegistry` is `model.RegistryReader`, an interface `model` declares, and `model` imports only
@@ -910,10 +1005,11 @@ graph-ingest after the drop: 84.7% (P-19).
 - **Not in this change:** refusing a second subscriber on a declared verb at `Start` (#106's boot error) needs a view
   across components, which change 4 builds when it generalises the table; refusing a stream filter that overlaps a
   reserved subject stays change 3's (#16).
-- **Adoption sweep** (D20 establishes a reusable shape; one tracking issue, task 6.3): `processor/graph-index/query.go:31-106`,
-  `processor/graph-query/query.go:49-66` and `router.go:16-43` (change 4); `processor/graph-embedding/query.go:24-46`,
-  `pkg/fusion/fusionnats/client.go:26-31` (change 5); `processor/graph-index-spatial/query.go:27-43`,
-  `processor/graph-index-temporal/query.go:22-29`, `processor/graph-clustering/query.go:24-56` (change 7).
+- **Adoption sweep** (D20 establishes a reusable shape; one tracking issue, task 6.3):
+  `processor/graph-index/query.go:31-106`, `processor/graph-query/query.go:49-66` and `router.go:16-43` (change 4);
+  `processor/graph-embedding/query.go:24-46`, `pkg/fusion/fusionnats/client.go:26-31` (change 5);
+  `processor/graph-index-spatial/query.go:27-43`, `processor/graph-index-temporal/query.go:22-29`,
+  `processor/graph-clustering/query.go:24-56` (change 7).
 
 ### D21. Hierarchy birth and the guard record fail closed (#111 item 1)
 
@@ -925,11 +1021,12 @@ Options: (a) **fail the birth** (recommended); (b) store a repairable "hierarchy
 pass: new stored state and a new background pass, for a consumer no one has named; (c) the pin's warning: the silent
 degrade #111 names.
 
-What a caller observes under (a): with `enable_hierarchy`, an entity is born with its hierarchy statements or not at
-all. `GetHierarchyTriples` returns an error when any part fails: a container birth, a forward edge, an inverse edge or
-the sibling pass. graph-ingest then writes nothing for the entity and returns the error, classified transient. On the
-stream lane the input is not acknowledged and is delivered again; on the mutation lane the #20 classification decides
-what the typed client reports; on the in-process lane the caller gets the error. Containers and inverse edges
+What a caller observes under (a): with `enable_hierarchy`, an entity born on a lane that infers hierarchy (the stream
+lane and the in-process create, as at the pin; D15) is born with its hierarchy statements or not at all. A mutation-lane
+create infers none, so the rule does not reach it (ruled B, #91 comment 6037287957). `GetHierarchyTriples` returns an
+error when any part fails: a container birth, a forward edge, an inverse edge or the sibling pass. graph-ingest then
+writes nothing for the entity and returns the error, classified transient. On the stream lane the input is not
+acknowledged and is delivered again; on the in-process lane the caller gets the error. Containers and inverse edges
 committed before the failure are what the next attempt commits too; the append identity suppresses the repeats. Test:
 `TestHierarchyFailureFailsTheBirth`: the inference's entity manager fails once, the entity is absent and the error is
 transient; on the redelivery the entity is born with its container edges. Written first, failing on the pin's code.
@@ -973,9 +1070,10 @@ These issues belong to changes 4, 5 and 7. This change forecloses none of them:
 - **#109** (follower and processor shell): D17's test forbids `component` from importing a graph package, so an
   `ENTITY_STATES` follower cannot live in `component`; change 4 homes it in a graph package. The processor shell
   imports no graph package and can live in `component`, holding an `internal/lifecycleguard.Guard` unexported (D13).
-- **#110** (readiness envelope): `IndexStatusResponse` stays in the `graph` root with its pin fields. #110's body names
-  change 2 for "envelope fields"; the audit's sequencing (PR #93 comment 6036316289) places #110 in changes 4, 5 and
-  7; this design follows the comment, and the edit lands on the type where this change leaves it.
+- **#110** (readiness envelope): its envelope fields land here (ruling F, D16); the fusion copy is change 5's and
+  the gate's use of `published_at`, the single consumer entry and `Health()` from the readiness set are change 7's.
+  `readiness.Set` is dropped here as dead surface and returns with #110 as returning surface, named on the readiness
+  row's `known_risks` (D6), so the drop forecloses nothing.
 - **#111 items 2–4**: changes 4 and 7.
 
 **D7 and D13, re-checked against D15 and D17.** `pkg/lifecyclecleanup` imports only the standard library and
@@ -985,11 +1083,11 @@ is unchanged; #109's processor shell would be one more adopter, in change 4.
 
 ## Owner questions
 
-None open. No ruling's text contradicts the measured pin. Two places where an audit issue's text and the pin differ
-are design decisions, not rulings, and are named for the reviewer: #101's list of catalog rows "for owners SemEngine
-does not admit" (three of its four owners are admitted; D16), and `graph/structural`'s move to change 7, which no
-ruling names (D1a). #110's body and the audit comment disagree on whether #110's envelope fields are change 2's; this
-design follows the comment ("Left open for #105–#111", after D22).
+None open. No ruling's text contradicts the measured pin. One reading of ruling A is named for the reviewer: it is
+applied to the conditional replace as well as the stream lane's replace, so a reconcile names one source (D15, "The
+source a set is keyed on"); the ruling names no exception, and the other answer's cost is stated there. #101's list of
+catalog rows "for owners SemEngine does not admit" is a design decision, not a ruling (three of its four owners are
+admitted; D16).
 
 ### Ruled
 
@@ -1016,6 +1114,24 @@ design follows the comment ("Left open for #105–#111", after D22).
   `Confidence` and `Context` never order (comment 6036308354). Applied in D15.
 - **#99** — `ENTITY_STATES` keeps `History` 1, declared as a constraint, re-decided only on a named consumer need
   (comment 6036308600). Applied in D15.
+
+- **Rulings A–F on the round-4 review of round 5** (#91 comment 6037287957, 2026-10-07, "accept all
+  recommendations"):
+  - **A** (#100's cross-lane wipe): a replace is keyed on (subject, predicate, source); a predicate may hold values
+    from several sources, and a reader that wants one value picks. Applied in D15 (the write modes, the stream lane's
+    stamped source, the single-value read) and `graph-entity-writes`.
+  - **B** (hierarchy on mutation-lane births): the pin's behavior; a mutation-lane create gets no hierarchy
+    statements, and #111's fail-closed birth does not reach it. Applied in D15 and D21.
+  - **C** (#98's ordering and reconcile): a conditional replace is fenced by the caller's KV revision, not by
+    `Timestamp`; `Timestamp` orders the plain replace. Applied in D15 as round 5 had it.
+  - **D** (#102): `Dependencies.LifecycleManager` is dropped, not narrowed; semboids' sim component and semteams'
+    wiring change on adoption. Applied in D17, the adopter sites named on the `component` ledger row (task 5.1).
+  - **E**: `graph/structural` moves to change 7 with its only readers, changing foundation D2's package list and 03B
+    D10's critical list. Applied in D1a and D11.
+  - **F** (#110): `IndexStatusResponse` ports without `Phase`, `Revision` and `LastSynced` and gains `published_at`
+    in this change; semsource changes once, on adoption. Applied in D16.
+  - From the same comment: statements graph-ingest derives carry the triggering message's timestamp, never the
+    clock (#98). Applied in D15.
 
 The port-refactors #100–#104, #106's pattern and #111 item 1 are owner-ordered for this change (PR #93 comment
 6036316289) and applied in D15–D21. Round 1's question D, the wire and storage names, is answered by #69 and applied in
@@ -1070,6 +1186,12 @@ D9.
   bytes is read as first seen. — P-17.
 - P27. Every guard-state read in graph-ingest's tests has an observable stand-in, and every literal state is reachable
   through the guard's methods. — P-18.
+- P28. `IndexStatusResponse.Phase` is never set; `Revision` repeats `IndexedRevision` and `LastSynced` the last apply
+  time, written in the ported set only by the readiness computation from graph-ingest's input; semsource reads
+  `revision` and `last_synced` from its own struct. — P-20.
+- P29. `pkg/lifecycle`'s statements carry no `Source` and stamp `Timestamp` from the clock, and it reconciles on the
+  raw wire; the hierarchy slice's statements carry neither; the pin's indexing profile is stamped with the clock;
+  the mutation lane's create may carry no statement. — P-21.
 
 ## Invariants and their spec homes
 
@@ -1090,12 +1212,17 @@ D9.
 - One identity rule per write mode, the same on every lane (D15) — `graph-entity-writes`, "One rule per write mode".
 - Every stored statement has a `Source` and a `Timestamp`; none comes from the clock by default (#98, D15) —
   `graph-entity-writes`, "Statement metadata is required".
-- A replace never applies statements older than the stored ones for their (subject, predicate) (#98, D15) —
+- Each source replaces only its own statements of a predicate; a single-value read picks the same statement every time
+  (ruling A, D15) — `graph-entity-writes`, "One rule per write mode" and "A single-value read picks one statement the
+  same way every time".
+- A replace never applies statements older than the stored ones for their (subject, predicate, source) (#98, D15) —
   `graph-entity-writes`, "Timestamp orders a replace".
 - The KV revision is the only fence; one stored revision per key (#99, #100, D15) — `graph-entity-writes`, "The
   revision is the only fence" and "One stored revision per entity".
-- An entity is born with its hierarchy statements or not at all (#111, D21) — `graph-entity-writes`, "Birth with
-  hierarchy fails closed".
+- The readiness envelope carries `published_at`, set by the publisher, and none of the legacy fields (ruling F, D16) —
+  `graph-transport-boundary`, "The readiness envelope carries its publish time and no legacy fields".
+- An entity born on a lane that infers hierarchy is born with its hierarchy statements or not at all (#111, D21) —
+  `graph-entity-writes`, "Birth with hierarchy fails closed".
 - A guard record that cannot be decoded is refused, never read as first seen (#111, D21) — `graph-ingest-recovery`,
   "Replay protection is generation-aware".
 - The `graph` root imports no transport; `component` reaches no graph package (#101, #102; D16, D17) —
@@ -1107,10 +1234,10 @@ D9.
 Issues #75 (shared series; D4 records graph-ingest's gauges under it), #78 and #85 (no caller in the set, P14), #81 (new
 and repaired tests carry `// Requirement:` citations in #81's form; carried tests wait for #80's scope ruling), #24
 (unblocked when this change merges, foundation (d)), SS#1411 (answered here for SemEngine; the SemStreams issue is not
-touched), #105, #107, #108, #109 and #110 (changes 4, 5 and 7; "Left open for #105–#111"), #106 and #111 (this change
-lands #106's pattern and #111's item 1; the rest is changes 4 and 7). #77 is ruled and this change closes it (comment
-6035358884); D7 applies the ruling. The rulings on #97, #98 and #99 say each closes with the change that implements
-it, and #100–#104 land whole here, so PR #93 closes #97–#104 (task 6.6).
+touched), #105, #107, #108 and #109 (changes 4, 5 and 7; "Left open for #105–#111"), #106, #110 and #111 (this change
+lands #106's pattern, #110's envelope fields (ruling F) and #111's item 1; the rest is changes 4, 5 and 7). #77 is ruled
+and this change closes it (comment 6035358884); D7 applies the ruling. The rulings on #97, #98 and #99 say each closes
+with the change that implements it, and #100–#104 land whole here, so PR #93 closes #97–#104 (task 6.6).
 
 ## Declared costs
 
@@ -1129,12 +1256,18 @@ it, and #100–#104 land whole here, so PR #93 closes #97–#104 (task 6.6).
 - A nil rollback callback becomes an error, a declared change from the pin (D7.2).
 - graph-ingest metrics change name (`semengine_*`) and stop appearing on the process-global registry; two wire and
   storage names change (D9).
-- The write path is rewritten at port (D15): births on the mutation lane gain hierarchy statements; a statement
-  without `Source` or `Timestamp` is refused on every lane, and the typed client no longer reads the clock; an older
-  stream arrival no longer overwrites a predicate; stored values lose `version`.
+- The write path is rewritten at port (D15): a replace touches only its source's statements of a predicate, so a
+  predicate can hold several sources' values and the single-value reads pick by time, not stored order; a statement
+  without `Source` or `Timestamp` is refused on every lane, the typed client no longer reads the clock, and a reconcile
+  names its source; derived statements take the triggering message's time, and an empty create on the mutation or
+  in-process lane is refused; an older stream arrival from the same source no longer overwrites its statements;
+  stored values lose `version`. Mutation-lane births keep the pin's no-hierarchy behavior (ruling B).
+- The readiness envelope loses `phase`, `revision` and `last_synced` and gains `published_at` (D16); semsource's
+  reads of the two it uses go empty without a compile error, and it changes on adoption (ruling F).
 - Later changes inherit port-refactor items: rule's event emission, its `version` read and its lifecycle-manager wiring
   (change 6); `service`'s dependency copy (change 3); graph-query's suffix resolution, the envelope's producers and
   the verb table's generalisation (change 4); `fusionnats`' unwrap (change 5).
 - Consumers edit imports for what moved out of `graph` (D16), semboids' sim takes the lifecycle manager through its
   constructor (D17), semteams acquires `TOOL_CALL_OUTCOMES` itself (D16), and raw-wire mutation callers stamp `source`
-  and `timestamp` (D15); each finds out from a compile error or a typed refusal (§9.13).
+  and `timestamp` and name a reconcile's source (D15); each finds out from a compile error or a typed refusal
+  (§9.13), except semsource's readiness reads, which go empty silently (D16, §9.13 (l)).

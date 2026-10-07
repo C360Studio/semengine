@@ -58,3 +58,16 @@ carries the key-value revision it read.
 - **WHEN** a response is built for producer P at revision R and encoded
 - **THEN** its JSON has `data`, `indexed_revision` equal to R, `producer` equal to P and `timestamp`, and it decodes
   back equal
+
+### Requirement: The readiness envelope carries its publish time and no legacy fields
+
+`graph.IndexStatusResponse`, the value a producer writes to its `GRAPH_STATUS` key, SHALL carry `published_at`, the
+UTC time in RFC 3339 form at which the producer's publisher wrote it, set by the publisher on every write whatever the
+caller passed. It SHALL carry no `phase`, `revision` or `last_synced` field; `indexed_revision` is the one spelling of
+the revision.
+
+#### Scenario: A published envelope
+
+- **WHEN** a producer publishes its status between times T1 and T2
+- **THEN** the stored JSON has `published_at` at or after T1 and at or before T2, and no `phase`, `revision` or
+  `last_synced` key

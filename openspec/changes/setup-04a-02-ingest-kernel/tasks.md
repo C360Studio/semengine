@@ -36,10 +36,12 @@ heading>` (#81's form). No task asserts a fact that exists only after merge.
 - [ ] 1.10 (A) Round 5: the pre-port audit (PR #93 comment 6036316289) folded into the change. Rulings #97, #98 and
       #99 applied (design D1, D1a, D11, D15); port-refactors #100–#104, #106's pattern and #111 item 1 designed with
       a failing-first test each (design D15–D21); the guard-state question of tasks 3.12 and 3.13 answered (design
-      D22); `inventory.md` §9 with its probes; `task spec:check` and `task docs:check` pass on the change.
-- [ ] 1.11 (R) Independent review of round 5: `INVENTORY PASS` on `inventory.md` §9 and a design PASS, recorded on
-      this pull request with the reviewed files' checksums. Hold: task 1.10.
-- [ ] 1.12 (O) Owner acceptance of round 5 on #91. Hold: task 1.11.
+      D22); `inventory.md` §9 with its probes; `task spec:check` and `task docs:check` pass on the change. Round 6:
+      the owner's rulings A–F on the round-4 review (#91 comment 6037287957) and that review's four findings applied
+      (design D1a, D6, D11, D15, D16, D17, D21, "Owner questions"; `inventory.md` §9.15).
+- [ ] 1.11 (R) Independent review of rounds 5 and 6: `INVENTORY PASS` on `inventory.md` §9 and a design PASS,
+      recorded on this pull request with the reviewed files' checksums. Hold: task 1.10.
+- [ ] 1.12 (O) Owner acceptance of rounds 5 and 6 on #91. Hold: task 1.11.
 
 ## 2. Probes and harness
 
@@ -84,13 +86,16 @@ posted on this pull request.
       files; no `go-openai` in `go.mod`. The `go list ./...` listing is posted. Hold: task 3.8.
 - [ ] 3.3 (D) `graph`, the root (design D16, D15, D9): the data model and wire types only; `EntityState` without
       `Version` (`TestStoredEntityHasNoVersion`, written first); the write-mode rules as pure functions, with
-      `TestReplaceOrderedByTimestamp` and `TestConfidenceAndContextNeverOrder` at rule level, written first (design
-      D15); `ExactEntityReader` without the `natsclient` import, a zero timeout passed through; `events.go` not
-      ported; dead sentinels, `IncomingEdges` and the other dead `graph` rows removed, test-only exports unexported or
-      moved into `_test.go` files; README rewritten; the #69 rename of the configuration bucket constant
-      (`semengine_config`); 11 fixture-client sites. `TestGraphImportsNoTransport` and its sensitivity test
-      (`graph-transport-boundary`, "The graph root imports no transport"), written first and red on the pin-shaped
-      root, land in this task's commit. Gate: `task test:unit`. Hold: task 1.12.
+      `TestReplaceOrderedByTimestamp`, `TestConfidenceAndContextNeverOrder` and
+      `TestSingleValueReadPicksLatestAcrossSources` at rule level, written first (design D15);
+      `ReconcilePredicatesRequest` with a required `source`; `IndexStatusResponse` without `Phase`, `Revision` and
+      `LastSynced` and with `published_at` (`TestIndexStatusResponseHasNoLegacyFields`, written first, design D16);
+      `ExactEntityReader` without the `natsclient` import, a zero timeout passed through; `events.go` not ported; dead
+      sentinels, `IncomingEdges` and the other dead `graph` rows removed, test-only exports unexported or moved into
+      `_test.go` files; README rewritten; the #69 rename of the configuration bucket constant (`semengine_config`); 11
+      fixture-client sites. `TestGraphImportsNoTransport` and its sensitivity test (`graph-transport-boundary`, "The
+      graph root imports no transport"), written first and red on the pin-shaped root, land in this task's commit. Gate:
+      `task test:unit`. Hold: task 1.12.
 - [ ] 3.3a (D) `graph/kvcatalog` (design D16): `kvcatalog.go`, `owned_bucket_retention.go` and `IsKVTombstone` from
       the pin's `graph`, with their tests; no `TOOL_CALL_OUTCOMES` or `ENTITY_SUFFIX_INDEX` row or constant; the
       configuration bucket's description names SemEngine (design D9); `TestEntityStatesKeepsOneRevision`
@@ -101,7 +106,9 @@ posted on this pull request.
       written first); the `min_revision` request field; no `UnwrapQueryResponse`; the verb table with `entity`,
       `batch` and `prefix`, responder `graph-ingest`. Gate: `task test:unit`. Hold: task 1.12.
 - [ ] 3.4 (D) `graph/readiness`: `Watcher` takes `Run(ctx)` (design D5), with `synctest` tests that `Run` returns
-      `ctx.Err()` and leaves nothing running; `Set`, `NewSet`, `Dump`, `Verdict` removed; gauges through
+      `ctx.Err()` and leaves nothing running; `Set`, `NewSet`, `Dump`, `Verdict` removed, the row's `known_risks`
+      naming their return with #110; `Publisher.Publish` sets `published_at` (`TestPublishStampsPublishedAt`, written
+      first) and the inputs lose `LastSynced` (design D16); gauges through
       `RegisterOrGet` under `semengine` (design D4); 2 sleeps repaired; receives `readiness_gate.go` and the
       computation in `index_status.go` from `graph`, with their tests (design D16). Hold: task 1.12.
 - [ ] 3.5 (D) `internal/graphmutation` (`InterfaceType` becomes `semengine.graph.mutation`, design D9) and
@@ -119,14 +126,18 @@ posted on this pull request.
       `ClearCache`, `GetMetrics` and `GetCacheStats` removed, the tests that called `OnEntityCreated` calling
       `GetHierarchyTriples` and the adder; `GetHierarchyTriples` returns every failure, an inverse edge's and the
       sibling pass's included (`TestGetHierarchyTriplesReportsEveryFailure`, written first, design D21); hierarchy
-      statements carry `Source` and `Timestamp` (design D15); 1 sleep repaired. Hold: task 1.12.
+      statements carry graph-ingest's producer as `Source` and the triggering time, which `GetHierarchyTriples` takes
+      as an argument and passes to the containers it creates (design D15); 1 sleep repaired. Hold: task 1.12.
 - [ ] 3.9 (D) `pkg/projection`: carried code without `Version`; the typed client refuses a statement with no
-      timestamp before sending (`TestMutationClientRefusesMissingTimestamp`, written first; `projection-mutation`,
-      "The typed client never reads the clock"; design D15); its repair is tasks 4.1–4.2. Hold: task 1.12.
+      timestamp before sending, on `Create`, `Append` and `Reconcile` (`TestMutationClientRefusesMissingTimestamp`,
+      written first; `projection-mutation`, "The typed client never reads the clock"); `Reconcile` requires
+      `Metadata.Source` and sends it as the request's source (`TestMutationClientReconcileRequiresSource`, written
+      first; design D15); its repair is tasks 4.1–4.2. Hold: task 1.12.
 - [ ] 3.10 (D) `pkg/lifecycle`: 7 fixture-client sites; `harness_gate_integration_test.go` on per-package payload
       registration; `Manager.Watch` and `WatchEvents` in the watch shape of design D5; no `Version: 1`
-      (design D15); the emitter's error no longer discarded (`TestManagerWithoutClientRefusesEmit`, written first,
-      design D17). Hold: task 1.12.
+      (design D15); every statement the manager writes carries one constant source, which its reconciles send as the
+      request's source (`TestTransitionReplacesItsPhaseStatement`, written first, design D15); the emitter's error no
+      longer discarded (`TestManagerWithoutClientRefusesEmit`, written first, design D17). Hold: task 1.12.
 - [ ] 3.11 (D) `component`: `ToolRegistry` and `ToolRegistryReader` removed (#29) and `LifecycleManager` removed
       (#102, design D17); `lifecycle_test_suite.go` and its self-test not ported; `ProcessorMetrics`,
       `config_validator.go`, `Registry.Snapshot` and the other dead rows removed; `CreateComponent`,
@@ -142,13 +153,16 @@ posted on this pull request.
       guard through its methods (design D22); `MergeEntity` removed and its 27 test call sites calling
       `mergeEntityOnLane(ctx, entity, false)` (design D6); the suffix index, its cache and the suffix verb not ported
       (`TestGraphIngestProvisionsNoSuffixIndex`, written first, design D19); subscriptions taken from the verb table
-      (`TestGraphIngestServesExactlyTheDeclaredVerbs`, written first, design D20); `TEST_DISPUTE.md` not ported; 21
+      (`TestGraphIngestServesExactlyTheDeclaredVerbs`, written first, design D20); `lastSyncedRFC3339` and its test
+      not ported (design D16); `TEST_DISPUTE.md` not ported; 21
       fixture-client sites, 10 sleeps, 6 skips (rewritten as integration tests), 11 fixed addresses, 5 unbounded
       cleanups repaired; the eight out-of-set test imports adapted (design D2). Hold: task 1.12.
 - [ ] 3.12a (D) graph-ingest's write seam (#100, #98; design D15): one write path for the seven write sites
-      (`TestEntityWritesHaveOneSeam` and its sensitivity case, written first); births on every lane stamp the profile
-      and, with hierarchy enabled, the hierarchy statements (`TestMutationCreateBirthGetsHierarchy`); the tests of
-      task 4.8. Hold: task 3.12.
+      (`TestEntityWritesHaveOneSeam` and its sensitivity case, written first); births on every lane stamp the
+      profile, and with hierarchy enabled the stream and in-process births add hierarchy statements while a mutation
+      create adds none (`TestMutationCreateBirthGetsNoHierarchy`, which holds the pin's behavior, ruling B; its
+      `task mutate:check` record, with a mutant that runs the inference on that lane, posted); the tests of task 4.8.
+      Hold: task 3.12.
 - [ ] 3.12b (D) Fail closed at birth and on the guard record (#111 item 1; design D21): the tests of task 4.9. Hold:
       task 3.12a.
 - [ ] 3.13 (D) graph-ingest under the lifecycle suite: an in-package adapter whose `Observe` lists consumers, request
@@ -180,11 +194,14 @@ posted on this pull request.
 - [ ] 4.7 (D) #29 and #102: the `component` contract test of task 3.11 green on the ported tree, with its package
       count posted. Hold: task 3.11.
 - [ ] 4.8 (D) #100 and #98, the `graph-entity-writes` scenarios through graph-ingest, each written first and failing
-      on the pin's code: `TestWriteModesAgreeAcrossLanes`, `TestReplaceRemovesAppendedStatementsOfItsPredicate`,
-      `TestReplaceOrderedByTimestamp` on the stream lane (the stale-predicate counter rises by one),
-      `TestConfidenceAndContextNeverOrder`, `TestWriteRefusesStatementWithoutSourceOrTimestamp`,
-      `TestGraphableLaneStampsFromEnvelope`, `TestGraphableLaneRefusesWithoutEnvelopeMetadata` (design D15). Hold:
-      task 3.12a.
+      on the pin's code: `TestWriteModesAgreeAcrossLanes`, `TestReplaceKeepsOtherSourcesStatements`,
+      `TestStreamLaneGroupsByStampedSource`, `TestReconcileReplacesOnlyItsSource`,
+      `TestReconcileRefusesForeignSourceStatement`, `TestReplaceOrderedByTimestamp` on the stream lane (the stale-set
+      counter rises by one for the same source and not for another), `TestConfidenceAndContextNeverOrder`,
+      `TestWriteRefusesStatementWithoutSourceOrTimestamp` (an empty create included),
+      `TestGraphableLaneStampsFromEnvelope`, `TestGraphableLaneRefusesWithoutEnvelopeMetadata`,
+      `TestDerivedStatementsCarryTriggeringTime` (rulings A and C and the round-4 review's derived-statement finding,
+      #91 comment 6037287957; design D15). Hold: task 3.12a.
 - [ ] 4.9 (D) #111 item 1: `TestHierarchyFailureFailsTheBirth` (`graph-entity-writes`, "Birth with hierarchy fails
       closed") and `TestCorruptGuardRecordIsRefused` (`graph-ingest-recovery`, "A record that cannot be decoded"),
       each written first and failing on the pin's code (design D21). Hold: task 3.12b.
@@ -200,11 +217,18 @@ posted on this pull request.
       edit them, and the audit's port-refactors, each naming its issue), its `proving_tests` (graph-ingest's includes
       `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop`, the `lifecycle-suite` exception's proof) and
       its `known_risks` (graph-ingest: #75's shared gauges, and `ENTITY_STATES` kept at one revision per key (#99);
-      `component`: a consumer can call the three registry methods directly, review only). `class:port-refactor`
+      `component`: a consumer can call the three registry methods directly, review only; `graph/readiness`: `Set`
+      dropped, read by `gateway/graph-gateway` and needed back by #110, design D6). Adapt items that name adopters:
+      `component`'s `LifecycleManager` drop names semboids `internal/sim/component.go:255-256` and
+      `cmd/semboids/main.go:190` and semteams `cmd/semteams/main.go:209` (ruling D, design D17); `graph`'s readiness
+      envelope names semsource's reads of `revision` and `last_synced`, a silent change (ruling F, design D16); the
+      write rules name raw-wire reconcile callers, who send `source` (design D15). The `graph/structural` row cites
+      ruling E and the change to foundation D2 and 03B D10 it makes. `class:port-refactor`
       notes for later changes: rule (change 6: `events.go` emission, the `version` read, the lifecycle manager at
       registration), `service` (change 3: no lifecycle manager copied into component dependencies), graph-query
       (change 4: partial-ID resolution without the suffix verb, envelope producers, the verb table), `fusionnats`
-      (change 5: no `UnwrapQueryResponse`). The `internal/lifecyclecleanup` package row is `adapt` to
+      (change 5: no `UnwrapQueryResponse`), `pkg/fusion` (change 5: its envelope copy without the legacy fields,
+      #110). The `internal/lifecyclecleanup` package row is `adapt` to
       `pkg/lifecyclecleanup` (public home, nil rollback refused), naming the harness copy; the file row's
       `known_risks` names the production home and why the copy stays (design D7.4); Q13's row cites PR #1437 head
       `0ea823a6`; #29 and #33 rows name `class:port-refactor`. Gate: `task ledger:check`. Hold: task 1.12.
@@ -228,7 +252,7 @@ posted on this pull request.
       `Registry.CreateComponent`, `SealComposition` or `Snapshots` itself (the three methods' doc comments; review
       only; ruling C), and a ported component whose failed `Start` cleanup fails reporting both errors and keeping
       what is left for a later `Stop` (`lifecycle-suite`, "Failed start whose own cleanup fails"; each component's own
-      named test; that a newly ported component has one is review only). Gate: `task docs:check`.
+      named test; that a newly ported component has one is review only). Gate: `task docs:check`. Hold: task 1.12.
 - [ ] 6.2 (W) `docs/repository-map.md` lists the ported packages and the three new ones (`internal/lifecycleguard`,
       `pkg/lifecyclecleanup`, `graph/kvcatalog`), and `docs/tier1-cross-check.md:68` records the change-2
       dispositions of `internal/componentadmission` (dropped, ruling C), `internal/lifecyclecleanup` (public as
@@ -236,7 +260,7 @@ posted on this pull request.
       #97); READMEs carried with their claims checked (tasks 3.x).
 - [ ] 6.3 (W) Tracking issues filed and linked here: the adoption sweeps of design D3 (the `natsfixture` helper), D13
       (the guard) and D20 (the responder-owned verb table), and the `component.Discoverable.ConfigSchema` question
-      (design D6, K4).
+      (design D6, K4). Hold: task 1.12.
 - [ ] 6.4 (W) #77 gets a comment naming the public helper (`pkg/lifecyclecleanup.RollbackFailedStart`), the
       `lifecycle-suite` requirement and graph-ingest's test that carry its ruling (design D7), for SemTeams' proving
       case. The comment names the one change to a pin behavior, a nil rollback now refused with an error (design D7.2),
@@ -245,9 +269,9 @@ posted on this pull request.
       graph-clustering in change 7 into a package already under the 80% gate (ruling F re-read, design D11): the
       tests that rest of the package owes (451 statements short at the pin for the whole package, design D11's
       figure), a test per configuration field it reads (37), the drop of its six unread fields with `review.llm`, and
-      the review worker's `Shutdown(ctx)` shape with its `synctest` test.
+      the review worker's `Shutdown(ctx)` shape with its `synctest` test. Hold: task 1.12.
 - [ ] 6.6 (W) PR #93's body names `Closes` for #97, #98 and #99 (their rulings close with the implementing change) and
-      for #100–#104, and `Addresses` #106 and #111 (this change lands a part of each); each issue gets a comment
+      for #100–#104, and `Addresses` #106, #110 and #111 (this change lands a part of each); each issue gets a comment
       naming the design decision and the tests that carry it.
 
 ## 7. Review and archive

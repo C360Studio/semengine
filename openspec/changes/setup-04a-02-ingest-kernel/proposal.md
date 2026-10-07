@@ -14,7 +14,8 @@ durable-execution epic #24 is unblocked.
 
 Before the graph packages are fixed in place, the owner ordered a pre-port design audit of them (PR #93 comment
 6036316289). Its change-2 part is folded in here: three rulings (#97, #98, #99) and seven port-refactors that fix
-debt at the port instead of carrying it (#100–#104, #106's pattern, #111 item 1).
+debt at the port instead of carrying it (#100–#104, #106's pattern, #111 item 1). The owner's rulings A–F on the
+review of that fold (#91 comment 6037287957) settle the open choices it raised.
 
 Terms: a **service** is an owner the engine starts and stops with a `Start` that can fail, run through the lifecycle
 suite; **background work** is a goroutine that outlives the call that started it in code that is not a service; a
@@ -26,32 +27,40 @@ graph-ingest); a **statement** is one stored triple with its source, time, confi
 
 ## What Changes
 
-- Port 14 of the 17 packages foundation D2 assigns to this change, with their tests, one of them, `graph/inference`,
-  as its hierarchy slice (`hierarchy.go`, `container_entity.go` and the `TripleAdder` interface; #97). Not ported:
+- Port 14 of the 17 packages foundation D2 assigns to this change, with their tests, one of them, `graph/inference`, as
+  its hierarchy slice (`hierarchy.go`, `container_entity.go` and the `TripleAdder` interface; #97). Not ported:
   `pkg/worker` (ruling E), `internal/componentadmission` (ruling C), `graph/structural` (to change 7 with its only
-  readers), and nothing of `graph/llm`, `model/wire` or `go-openai` (no package ported here reads them). `pkg/dispatch`
-  moves to `internal/dispatch` and declares its own "stopped" error. `component/lifecycle_test_suite.go` is not
-  ported (its replacement is `internal/harness/lifecycletest`).
+  readers, ruling E, which amends foundation D2 and the 80%-coverage critical list), and nothing of `graph/llm`,
+  `model/wire` or `go-openai` (no package ported here reads them). `pkg/dispatch` moves to `internal/dispatch` and
+  declares its own "stopped" error. `component/lifecycle_test_suite.go` is not ported (its replacement is
+  `internal/harness/lifecycletest`).
 - **One write seam** (#100): every change to a stored entity goes through one write path, with one identity rule per
   write mode (create, replace, conditional replace, append, delete), the same on every lane; `EntityState.Version`
-  goes, and the key-value revision is the only fence.
+  goes, and the key-value revision is the only fence. A replace is keyed on (subject, predicate, source): each source
+  replaces only its own values, so a predicate may hold several sources' values, and the single-value reads pick the
+  latest (ruling A). A reconcile names its source.
 - **Statement metadata** (#98): every stored statement has a source and a time, taken from the message envelope on the
   stream lane, never from the clock by default; a statement's time orders a replace, and an older arrival is not
-  applied and is counted; confidence and context never order a write. The typed mutation client stops reading the
-  clock.
+  applied and is counted; confidence and context never order a write; a reconcile is fenced by the caller's revision,
+  not by time (ruling C). Statements graph-ingest derives (the indexing profile, hierarchy edges) carry the
+  triggering message's time. The typed mutation client stops reading the clock.
 - **One stored revision** (#99): `ENTITY_STATES` keeps one revision per key, written down as a constraint.
 - **The `graph` root** (#101) holds the data model and wire types and imports no NATS package: the bucket catalog
   moves to a new `graph/kvcatalog`, the readiness computation to `graph/readiness`, and `events.go` (a second mutation
   grammar with no subscriber) is not ported; the catalog loses the `TOOL_CALL_OUTCOMES` row.
-- **`component` reaches no graph package** (#102): `Dependencies.LifecycleManager` goes, as #29's tool registry does;
+- **`component` reaches no graph package** (#102): `Dependencies.LifecycleManager` goes, as #29's tool registry does
+  (ruling D);
   `ModelRegistry` and `StoreRegistry` stay, since neither reaches a graph package.
 - **One reply envelope** (#103): `graph.QueryResponse` carries `indexed_revision` and `producer`, requests may carry
   `min_revision`, and the content-sniffing `UnwrapQueryResponse` is not ported; producers follow in change 4.
 - **`ENTITY_SUFFIX_INDEX` and the suffix verb are not ported** (#104).
 - **`graph.ingest.query.*` is declared once, by its responder** (#106's pattern): a verb table in `graph`, from which
   graph-ingest subscribes and callers take subjects.
-- **Hierarchy birth and the guard record fail closed** (#111 item 1): an entity is born with its hierarchy statements
-  or not at all; a guard record that cannot be decoded is refused, not read as first seen.
+- **Hierarchy birth and the guard record fail closed** (#111 item 1): on the lanes that infer hierarchy, an entity is
+  born with its hierarchy statements or not at all; a mutation-lane create gets none, as at the pin (ruling B); a
+  guard record that cannot be decoded is refused, not read as first seen.
+- **The readiness envelope** (#110's change-2 part, ruling F): `IndexStatusResponse` loses `phase`, `revision` and
+  `last_synced` and gains `published_at`, set by the publisher on every write.
 - `component.Registry`'s `CreateComponent`, `SealComposition` and `Snapshots` lose the internal access-token parameter
   and become plain public methods whose doc comments direct callers to the component manager (ruling C).
 - Repair the ported tests to the harness rules: the pin's test NATS client becomes one `natsfixture` helper that takes
@@ -84,16 +93,17 @@ graph-ingest); a **statement** is one stored triple with its source, time, confi
 
 ## Capabilities
 
-- `graph-entity-writes` (ADDED): one rule per write mode on every lane; statement metadata required; time orders a
-  replace; the revision is the only fence; one stored revision per entity; birth with hierarchy fails closed.
+- `graph-entity-writes` (ADDED): one rule per write mode on every lane, a replace keyed by source; a single-value read
+  that picks the same statement every time; statement metadata required; time orders a replace; the revision is the
+  only fence; one stored revision per entity; birth with hierarchy fails closed.
 - `graph-ingest-recovery` (ADDED): accepted is not durable; recovery on a file stream is redelivery; settlement
   order; generation-aware replay protection, refusing a guard record it cannot decode; a payload that fails or panics
   on the Graphable lane is poison, not a redelivery loop.
-- `projection-mutation` (ADDED): conditional reconcile at a caller-observed revision; commit ambiguity preserved; the
-  typed client never reads the clock.
+- `projection-mutation` (ADDED): conditional reconcile at a caller-observed revision, from one named source; commit
+  ambiguity preserved; the typed client never reads the clock.
 - `graph-transport-boundary` (ADDED): the reserved request subjects have one declaration, owned by their responder,
-  which serves exactly its declared verbs; the `graph` root imports no transport; one reply envelope for the graph
-  query family. The stream-filter refusal is change 3's.
+  which serves exactly its declared verbs; the `graph` root imports no transport; one reply envelope for the graph query
+  family; the readiness envelope carries its publish time and no legacy fields. The stream-filter refusal is change 3's.
 - `component-registration` (ADDED): each component package registers itself; no aggregator; refusals name the
   per-package call; `component` reaches no agentic or graph package; unknown configuration keys are refused.
 - `harness-boundaries` (MODIFIED): in Go files the image-pin check matches a tag that starts with a digit or a
@@ -111,12 +121,15 @@ graph-ingest); a **statement** is one stored triple with its source, time, confi
   `internal/lifecyclecleanup` moved to the public `pkg/lifecyclecleanup`; `go.mod` gains `golang.org/x/net`.
 - Metric names change from `semstreams_*` to `semengine_*` for graph-ingest, readiness and the keyed pool; two wire and
   storage names change; the consumers who spell them edit them when they adopt SemEngine.
-- The write path changes behavior at port: entities born on the mutation lane gain hierarchy statements; a statement
-  without source or time is refused on every lane; an older stream arrival no longer overwrites a predicate; stored
-  values lose `version`.
+- The write path changes behavior at port: a stream arrival replaces only its own source's statements of a predicate,
+  where at the pin it replaced every source's; a statement without source or time is refused on every lane, as is an
+  empty create on the mutation or in-process lane; an older stream arrival no longer overwrites its source's
+  statements; stored values lose `version`. Mutation-lane births keep the pin's no-hierarchy behavior.
 - Consumers that adopt SemEngine edit imports for what leaves the `graph` root, semboids' sim takes the lifecycle
   manager through its constructor, semteams acquires `TOOL_CALL_OUTCOMES` itself, and a raw-wire mutation caller
-  stamps `source` and `timestamp`; each finds out from a compile error or a typed refusal.
+  stamps `source` and `timestamp` and names a reconcile's source; each finds out from a compile error or a typed
+  refusal. semsource's reads of the readiness envelope's `revision` and `last_synced` go empty with no error; it
+  changes on adoption (ruling F).
 - Later changes inherit `class:port-refactor` items: rule (change 6), `service` (change 3), graph-query (change 4),
   `fusionnats` (change 5).
 - A consumer that calls `Registry.CreateComponent`, `SealComposition` or `Snapshots` directly is no longer stopped by
@@ -124,9 +137,10 @@ graph-ingest); a **statement** is one stored triple with its source, time, confi
 - `docs/admission-ledger.yaml`, `scripts/cover-check.sh`, the developer and reviewer contracts, four skills and
   `AGENTS.md` rows change.
 - Every owner question is ruled (`design.md`, "Ruled"): B, C, E and F on #91; A on #77 (comment 6035317931); #97,
-  #98 and #99 on their issues. PR #93 closes #91, #77 and #97–#104.
+  #98 and #99 on their issues; A–F on the audit's review (#91 comment 6037287957). PR #93 closes #91, #77 and
+  #97–#104.
 - SemTeams' components change one import path, `internal/lifecyclecleanup` to `pkg/lifecyclecleanup`, and their
   proving case compiles against it from this change on.
 - Out of scope: the composition refusal of overlapping stream filters (#16, change 3); the parked-delivery scenario
-  (`internal/maxdelivery`, change 7); `service`, `config`, `composition` (change 3); #105, #107–#110 and #111 items 2–4
-  (changes 4, 5 and 7), which this change leaves open.
+  (`internal/maxdelivery`, change 7); `service`, `config`, `composition` (change 3); #105, #107–#109, #110 beyond its
+  envelope fields, and #111 items 2–4 (changes 4, 5 and 7), which this change leaves open.

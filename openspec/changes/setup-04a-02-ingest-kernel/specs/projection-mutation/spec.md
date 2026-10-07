@@ -6,12 +6,20 @@
 
 `projection.ReconcileMutation` SHALL carry an expected revision, sent through the typed `MutationClient`. When it is
 set, graph-ingest SHALL apply the mutation only if that revision is the entity's current revision, and otherwise
-SHALL return a revision-conflict error naming the expected and the current revision and SHALL change nothing.
+SHALL return a revision-conflict error naming the expected and the current revision and SHALL change nothing. The
+request SHALL name its source, taken from the mutation's metadata, which `Reconcile` requires as `Create` and `Append`
+do; the reconcile replaces only that source's statements of the named predicates.
 
 #### Scenario: Concurrent update between read and reconcile
 
 - **WHEN** the caller read revision R, another writer committed R+1, and the caller reconciles at R
 - **THEN** the result is a revision conflict naming R and R+1, and the entity is unchanged at R+1
+
+#### Scenario: Reconcile without a source
+
+- **WHEN** a `ReconcileMutation`'s metadata has no `Source`
+- **THEN** the client returns an invalid-class error, the receipt reports not-committed, and no request reaches the
+  broker
 
 #### Scenario: Unchanged revision
 
@@ -37,9 +45,9 @@ commit-unknown.
 
 ### Requirement: The typed client never reads the clock
 
-`projection.MutationClient` SHALL send a statement's `Timestamp` only as the caller gave it, on the statement or in
-the request's metadata. A `Create` or `Append` with a statement that has no `Timestamp` and metadata with none SHALL be
-refused as invalid before any request is sent, and its receipt SHALL report not-committed.
+`projection.MutationClient` SHALL send a statement's `Timestamp` only as the caller gave it, on the statement or in the
+request's metadata. A `Create`, `Append` or `Reconcile` with a statement that has no `Timestamp` and metadata with none
+SHALL be refused as invalid before any request is sent, and its receipt SHALL report not-committed.
 
 #### Scenario: No timestamp anywhere
 

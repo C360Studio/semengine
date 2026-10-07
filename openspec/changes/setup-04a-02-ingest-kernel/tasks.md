@@ -173,7 +173,7 @@ posted on this pull request.
       Done: `ReadExactEntity` requests on `entityVerb.Subject`, the table's entity entry, now named in
       `query_verbs.go`; `exactEntityQuerySubject` is gone. Two `task mutate:check` detections and two wrong changes
       made by hand (the check reads files from disk; the checker is a test file) are quoted in the commit body.
-- [ ] 3.8 (D) `graph/inference`, the hierarchy slice only (#97, design D1a): `hierarchy.go`, `container_entity.go` and
+- [x] 3.8 (D) `graph/inference`, the hierarchy slice only (#97, design D1a): `hierarchy.go`, `container_entity.go` and
       the `TripleAdder` interface, with a package comment for what the slice holds; `HierarchyConfig` without
       `Org`/`Platform`, the carrier passed to the constructor (design D9); `DefaultHierarchyConfig`, `OnEntityCreated`,
       `ClearCache`, `GetMetrics` and `GetCacheStats` removed, the tests that called `OnEntityCreated` calling
@@ -181,6 +181,21 @@ posted on this pull request.
       sibling pass's included (`TestGetHierarchyTriplesReportsEveryFailure`, written first, design D21); hierarchy
       statements carry graph-ingest's producer as `Source` and the triggering time, which `GetHierarchyTriples` takes
       as an argument and passes to the containers it creates (design D15); 1 sleep repaired.
+      Done: ported `hierarchy.go`, `container_entity.go` (`RegisterPayloads` kept for task 4.6) and the three test
+      files; `TripleAdder` alone in `applier.go`; a new `doc.go` describes the slice. The constructor is
+      `NewHierarchyInference(entityManager, tripleAdder, config, platform types.PlatformMeta, logger)` and the call is
+      `GetHierarchyTriples(ctx, entityID, at time.Time)`. With the five dropped methods go the three counters only
+      `GetMetrics` read, and the tests of that surface (`TestDefaultHierarchyConfig`,
+      `TestHierarchyInference_ClearCache` and `_GetMetrics`, `TestAttack_ClearCacheDuringOperations`,
+      `TestAttack_MetricsConcurrency`).
+      `TestHierarchyInference_InverseEdgeWriteFailureIsNonFatal`, which held the pin's warning, gives way to
+      `TestGetHierarchyTriplesReportsEveryFailure` (failing first): on any failure the call returns the failures joined
+      and no statements. One helper builds every hierarchy statement with `graph.SourceHierarchy` and the time passed
+      in (`TestGetHierarchyTriplesStampsSourceAndTime`, failing first); a zero time is refused
+      (`TestGetHierarchyTriplesRefusesZeroTime`). The sleep in `TestAttack_GoroutineCount` gives way to a `synctest`
+      bubble. Task 3.12 must pass `deps.Platform` to the constructor and the triggering time to the call, and fail
+      the birth on its error (design D21, task 4.9). Fourteen `task mutate:check` detections and one wrong change made
+      by hand (`TestNoSecondAuthorityField` reads files from disk) are quoted in the commit body.
 - [ ] 3.9 (D) `pkg/projection`: carried code without `Version`; the typed client refuses a statement with no
       timestamp before sending, on `Create`, `Append` and `Reconcile` (`TestMutationClientRefusesMissingTimestamp`,
       written first; `projection-mutation`, "The typed client never reads the clock"); `Reconcile` requires

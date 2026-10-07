@@ -1,0 +1,432 @@
+// Attack tests — permanent CI fixtures.
+
+package inference
+
+import (
+	"context"
+	"strings"
+	"sync"
+	"testing"
+	"testing/synctest"
+	"time"
+
+	"github.com/c360studio/semengine/types"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// TestAttack_IsContainerEntity_Concurrent verifies that isContainerEntity
+// is safe to call concurrently from multiple goroutines.
+func TestAttack_IsContainerEntity_Concurrent(t *testing.T) {
+	testCases := []struct {
+		entityID        string
+		wantIsContainer bool
+	}{
+		{"c360.semstreams-hierarchy-test.sensor.environmental.temperature.group", true},
+		{"c360.semstreams-hierarchy-test.sensor.environmental.group.container", true},
+		{"c360.semstreams-hierarchy-test.sensor.group.container.level", true},
+		{"c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-001", false},
+		{"", false},
+		{"a.b.c.d.e", false},
+		{"a.b.c.d.e.f.g", false},
+	}
+
+	const goroutines = 100
+	const iterations = 1000
+
+	var wg sync.WaitGroup
+	for g := 0; g < goroutines; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				for _, tc := range testCases {
+					got := isContainerEntity(tc.entityID)
+					if got != tc.wantIsContainer {
+						t.Errorf("isContainerEntity(%q) = %v, want %v", tc.entityID, got, tc.wantIsContainer)
+					}
+				}
+			}
+		}()
+	}
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Success
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout: concurrent isContainerEntity calls hung")
+	}
+}
+
+// TestAttack_GetHierarchyTriples_Concurrent verifies that GetHierarchyTriples
+// is safe to call concurrently with container and real entities.
+func TestAttack_GetHierarchyTriples_Concurrent(t *testing.T) {
+	tripleAdder := &hierarchyMockTripleAdder{}
+	entityManager := newMockEntityManager()
+
+	config := HierarchyConfig{
+		Enabled:           true,
+		CreateTypeEdges:   true,
+		CreateSystemEdges: true,
+		CreateDomainEdges: true,
+	}
+
+	hi := NewHierarchyInference(entityManager, tripleAdder, config, hierarchyTestAuthority, nil)
+
+	entities := []string{
+		// Real entities
+		"c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-001",
+		"c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-002",
+		"c360.semstreams-hierarchy-test.sensor.environmental.pressure.press-001",
+		// Container entities (should be skipped)
+		"c360.semstreams-hierarchy-test.sensor.environmental.temperature.group",
+		"c360.semstreams-hierarchy-test.sensor.environmental.group.container",
+		"c360.semstreams-hierarchy-test.sensor.group.container.level",
+	}
+
+	const goroutines = 50
+	var wg sync.WaitGroup
+
+	for g := 0; g < goroutines; g++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			entityID := entities[idx%len(entities)]
+			_ = addHierarchy(context.Background(), hi, tripleAdder, entityID)
+		}(g)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Success - verify no panic and reasonable results
+		createdEntities := entityManager.getCreatedEntities()
+
+		// Real entities create containers, so we should have some
+		// But containers themselves should NOT create additional containers
+		// With 3 real entities (2 temp, 1 pressure) in 50 goroutines:
+		// - temp-001 and temp-002 share same type container (temperature.group)
+		// - press-001 has its own type container (pressure.group)
+		// - Each real entity creates 3 levels (type, system, domain)
+		// - Max containers: 4 unique type containers + 1 system + 1 domain = 6
+		assert.LessOrEqual(t, len(createdEntities), 6,
+			"Should create bounded containers, got %d", len(createdEntities))
+
+		// The key test: verify that if we processed 50 goroutines with some being
+		// container entities, those container entities did NOT create additional containers.
+		// We can verify this by checking the container count is bounded and matches
+		// what real entities would create (not exponential growth).
+
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout: concurrent GetHierarchyTriples calls hung")
+	}
+}
+
+// TestAttack_CancelledContext verifies that operations respect cancelled context.
+func TestAttack_CancelledContext(t *testing.T) {
+	tripleAdder := &hierarchyMockTripleAdder{}
+	entityManager := newMockEntityManager()
+
+	config := HierarchyConfig{
+		Enabled:           true,
+		CreateTypeEdges:   true,
+		CreateSystemEdges: true,
+		CreateDomainEdges: true,
+	}
+
+	hi := NewHierarchyInference(entityManager, tripleAdder, config, hierarchyTestAuthority, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // Cancel immediately
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		// Should not hang on cancelled context
+		_ = addHierarchy(ctx, hi, tripleAdder, "c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-001")
+	}()
+
+	select {
+	case <-done:
+		// Success - operation completed without hanging
+	case <-time.After(5 * time.Second):
+		t.Fatal("GetHierarchyTriples hung on cancelled context")
+	}
+}
+
+// TestAttack_EdgeCaseInputs verifies handling of unusual input strings.
+func TestAttack_EdgeCaseInputs(t *testing.T) {
+	testCases := []struct {
+		name     string
+		entityID string
+	}{
+		{"empty string", ""},
+		{"single character", "a"},
+		{"single dot", "."},
+		{"leading dot", ".a.b.c.d.e.f"},
+		{"trailing dot", "a.b.c.d.e.f."},
+		{"multiple trailing dots", "a.b.c.d.e.group..."},
+		{"double dots", "a..b.c.d.e.group"},
+		{"very long ID", strings.Repeat("a.", 1000) + "group"},
+		{"unicode", "c360.semstreams-hierarchy-test.环境.sensor.温度.group"},
+		{"special chars", "c360.semstreams-hierarchy-test.env$ironmental.sensor.temp@.group"},
+		{"newline", "a.b.c.d.e\n.group"},
+		{"null byte", "a.b.c.d.e\x00.group"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Should not panic
+			require.NotPanics(t, func() {
+				_ = isContainerEntity(tc.entityID)
+			}, "isContainerEntity panicked on %q", tc.entityID)
+
+			// Should handle gracefully in GetHierarchyTriples
+			tripleAdder := &hierarchyMockTripleAdder{}
+			entityManager := newMockEntityManager()
+			config := HierarchyConfig{
+				Enabled: true, CreateTypeEdges: true,
+			}
+			hi := NewHierarchyInference(entityManager, tripleAdder, config, hierarchyTestAuthority, nil)
+
+			require.NotPanics(t, func() {
+				_ = addHierarchy(context.Background(), hi, tripleAdder, tc.entityID)
+			}, "GetHierarchyTriples panicked on %q", tc.entityID)
+		})
+	}
+}
+
+// TestAttack_ContainerCacheConcurrency verifies that container cache
+// is safe under concurrent access.
+func TestAttack_ContainerCacheConcurrency(t *testing.T) {
+	tripleAdder := &hierarchyMockTripleAdder{}
+	entityManager := newMockEntityManager()
+
+	config := HierarchyConfig{
+		Enabled:           true,
+		CreateTypeEdges:   true,
+		CreateSystemEdges: true,
+		CreateDomainEdges: true,
+	}
+
+	hi := NewHierarchyInference(entityManager, tripleAdder, config, hierarchyTestAuthority, nil)
+
+	// Create same entity from multiple goroutines
+	// This stresses the container cache with concurrent reads/writes
+	const goroutines = 100
+	var wg sync.WaitGroup
+
+	for g := 0; g < goroutines; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = addHierarchy(context.Background(), hi, tripleAdder, "c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-001")
+		}()
+	}
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// Verify cache is consistent
+		cacheSize := cachedContainers(hi)
+		assert.LessOrEqual(t, cacheSize, 3, "Cache should have at most 3 containers")
+
+		// Verify containers were created (not duplicated)
+		createdEntities := entityManager.getCreatedEntities()
+		assert.LessOrEqual(t, len(createdEntities), 3,
+			"Should create at most 3 containers despite concurrent access")
+
+	case <-time.After(10 * time.Second):
+		t.Fatal("timeout: concurrent container cache access hung")
+	}
+}
+
+// TestAttack_NilConfig verifies graceful handling of edge case configurations.
+func TestAttack_NilConfig(t *testing.T) {
+	tripleAdder := &hierarchyMockTripleAdder{}
+	entityManager := newMockEntityManager()
+
+	// Zero-value config (all false)
+	config := HierarchyConfig{}
+
+	require.NotPanics(t, func() {
+		hi := NewHierarchyInference(entityManager, tripleAdder, config, types.PlatformMeta{}, nil)
+		_ = addHierarchy(context.Background(), hi, tripleAdder, "c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-001")
+	}, "Should handle zero-value config")
+}
+
+// TestAttack_ContainerEntityVariants verifies all container suffix variants
+// are correctly identified under concurrent stress.
+func TestAttack_ContainerEntityVariants(t *testing.T) {
+	variants := []struct {
+		entityID        string
+		wantIsContainer bool
+	}{
+		// Valid containers
+		{"a.b.c.d.e.group", true},
+		{"a.b.c.d.e.container", true},
+		{"a.b.c.d.e.level", true},
+
+		// Invalid: wrong part count
+		{"a.b.c.d.group", false},     // 5 parts
+		{"a.b.c.d.e.f.group", false}, // 7 parts
+		{"group", false},             // 1 part
+		{"a.b.c.group", false},       // 4 parts
+
+		// Invalid: suffix in wrong position
+		{"a.group.c.d.e.f", false},
+		{"a.b.container.d.e.f", false},
+		{"a.b.c.level.e.f", false},
+
+		// Invalid: similar but not exact match
+		{"a.b.c.d.e.groups", false},
+		{"a.b.c.d.e.grouped", false},
+		{"a.b.c.d.e.containers", false},
+		{"a.b.c.d.e.levels", false},
+		{"a.b.c.d.e.GROUP", false}, // Case sensitive
+	}
+
+	const goroutines = 50
+	const iterations = 100
+
+	var wg sync.WaitGroup
+	for g := 0; g < goroutines; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < iterations; i++ {
+				for _, v := range variants {
+					got := isContainerEntity(v.entityID)
+					if got != v.wantIsContainer {
+						t.Errorf("isContainerEntity(%q) = %v, want %v", v.entityID, got, v.wantIsContainer)
+					}
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+}
+
+// TestAttack_LargeEntityBurst verifies handling of many entities at once.
+func TestAttack_LargeEntityBurst(t *testing.T) {
+	tripleAdder := &hierarchyMockTripleAdder{}
+	entityManager := newMockEntityManager()
+
+	config := HierarchyConfig{
+		Enabled:           true,
+		CreateTypeEdges:   true,
+		CreateSystemEdges: true,
+		CreateDomainEdges: true,
+	}
+
+	hi := NewHierarchyInference(entityManager, tripleAdder, config, hierarchyTestAuthority, nil)
+
+	const entityCount = 1000
+	var wg sync.WaitGroup
+
+	start := time.Now()
+	for i := 0; i < entityCount; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			// Different types to create different containers
+			entityID := "c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-" + string(rune('A'+idx%26))
+			_ = addHierarchy(context.Background(), hi, tripleAdder, entityID)
+		}(i)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		elapsed := time.Since(start)
+		t.Logf("Processed %d entities in %v", entityCount, elapsed)
+
+		// Verify bounded container creation
+		createdEntities := entityManager.getCreatedEntities()
+		assert.LessOrEqual(t, len(createdEntities), 78, // 26 types * 3 levels
+			"Should create bounded containers, got %d", len(createdEntities))
+
+	case <-time.After(30 * time.Second):
+		t.Fatal("timeout: large entity burst took too long")
+	}
+}
+
+// TestAttack_MemoryUsage verifies that the container cache doesn't grow unbounded.
+func TestAttack_MemoryUsage(t *testing.T) {
+	tripleAdder := &hierarchyMockTripleAdder{}
+	entityManager := newMockEntityManager()
+
+	config := HierarchyConfig{
+		Enabled:           true,
+		CreateTypeEdges:   true,
+		CreateSystemEdges: true,
+		CreateDomainEdges: true,
+	}
+
+	hi := NewHierarchyInference(entityManager, tripleAdder, config, hierarchyTestAuthority, nil)
+
+	// Create 10,000 entities with different types
+	const entityCount = 10000
+	for i := 0; i < entityCount; i++ {
+		entityID := "c360.semstreams-hierarchy-test.sensor.environmental.temp.instance-" + string(rune('A'+i%26)) + string(rune('0'+i%10))
+		_ = addHierarchy(context.Background(), hi, tripleAdder, entityID)
+	}
+
+	// Cache should only contain unique containers, not all entities
+	cacheSize := cachedContainers(hi)
+	assert.LessOrEqual(t, cacheSize, 1000, // Generous upper bound
+		"Cache grew unbounded: %d entries", cacheSize)
+
+	// Verify actual container count is reasonable
+	createdEntities := entityManager.getCreatedEntities()
+	assert.LessOrEqual(t, len(createdEntities), 1000,
+		"Created excessive containers: %d", len(createdEntities))
+}
+
+// TestAttack_GoroutineCount checks that GetHierarchyTriples leaves no
+// goroutine running. synctest.Test returns only once every goroutine started
+// in its bubble has exited, and fails the test as a deadlock when one is left
+// blocked, so the test needs no wait for cleanup and no goroutine count.
+func TestAttack_GoroutineCount(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tripleAdder := &hierarchyMockTripleAdder{}
+		entityManager := newMockEntityManager()
+
+		config := HierarchyConfig{
+			Enabled:           true,
+			CreateTypeEdges:   true,
+			CreateSystemEdges: true,
+			CreateDomainEdges: true,
+		}
+
+		hi := NewHierarchyInference(entityManager, tripleAdder, config, hierarchyTestAuthority, nil)
+
+		// Create 100 entities
+		for i := 0; i < 100; i++ {
+			entityID := "c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-" + string(rune('A'+i%26))
+			require.NoError(t, addHierarchy(t.Context(), hi, tripleAdder, entityID))
+		}
+	})
+}

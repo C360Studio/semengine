@@ -104,7 +104,8 @@ elif ! $daemon; then ok ryuk-image "$ryuk (daemon not reachable; cache unknown)"
 elif docker image inspect "$ryuk" >/dev/null 2>&1; then ok ryuk-image "cached: $ryuk"
 else warn ryuk-image "not cached; testcontainers pulls it on first use: $ryuk"; fi
 
-# The shared admission lock, judged the way the runner would judge it.
+# The shared admission lock, judged by host and pid only: a pid reused by another process reads as
+# busy here, though the runner, which also compares the owner's start time, would quarantine it.
 # shellcheck source=scripts/admission-lock.sh
 . scripts/admission-lock.sh
 if [ -f "$admission_lock_default/owner" ]; then

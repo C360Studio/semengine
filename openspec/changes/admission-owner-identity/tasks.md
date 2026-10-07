@@ -29,7 +29,7 @@ starts, `task merge:check -- 125` and the merge are recorded on this pull reques
       In the same commit, `TestAdmissionAdmitsALiveOwner` with its cancelled-context case, and the comments at
       `admission.go:24-26`, `:71-74` and `admission_test.go:117-120` rewritten to the new rule. Gate:
       `task test:unit`.
-- [ ] 2.3 (D) `scripts/doctor.sh:107`'s comment says what doctor checks, as `design.md`, D1 states: host and pid
+- [x] 2.3 (D) `scripts/doctor.sh:107`'s comment says what doctor checks, as `design.md`, D1 states: host and pid
       only, so a pid reused by another process reads as busy there, though the runner would quarantine it. No other
       line of the script changes. Gate: `bash -n scripts/doctor.sh`, and the commit's diff of that file being that
       comment only, recorded on this pull request.

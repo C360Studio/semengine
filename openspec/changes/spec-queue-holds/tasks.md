@@ -11,9 +11,9 @@ starts, `task merge:check -- 113` and the merge are recorded on this pull reques
 
 ## 1. Design
 
-- [ ] 1.1 The independent review of `inventory.md`: `INVENTORY PASS` on the file with sha256 `70882609…bff3`,
+- [x] 1.1 The independent review of `inventory.md`: `INVENTORY PASS` on the file with sha256 `70882609…bff3`,
       recorded on this pull request. The copy in this change differs only by one repeated word removed at `:183`.
-- [ ] 1.2 Hold: independent pre-owner design review. The reviewer's verdict on `design.md`, `proposal.md`, this file
+- [x] 1.2 Hold: independent pre-owner design review. The reviewer's verdict on `design.md`, `proposal.md`, this file
       and the `spec-queue` delta is `DESIGN REVIEW PASS`, recorded on this pull request.
 - [ ] 1.3 Hold: the owner's answers to Q1, Q2 and Q3 on #76 (`design.md`, "Questions for the owner"). They are
       recorded in `design.md` as owner's rulings, with the comment's link. If the owner wants no failing command,

@@ -188,7 +188,7 @@ func NewStorageReportPublisher(store ReportStore, cfg StorageReportConfig) (*Sto
 	if store == nil {
 		return nil, errs.WrapInvalid(
 			errors.New("a ReportStore is required; acquire the report bucket through the catalog owner seam "+
-				"(graph.EnsureCatalogBucket with graph.BucketStorageReport)"),
+				"(kvcatalog.EnsureCatalogBucket with graph.BucketStorageReport)"),
 			"StorageReportPublisher", "New", "validate configuration")
 	}
 	if cfg.Thresholds == nil {

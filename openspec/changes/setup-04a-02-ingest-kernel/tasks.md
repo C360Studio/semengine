@@ -100,14 +100,16 @@ posted on this pull request.
       unexported or moved into `_test.go` files; README rewritten; the #69 rename of the configuration bucket constant
       (`semengine_config`); 11 fixture-client sites. `TestGraphImportsNoTransport` and its sensitivity test
       (`graph-transport-boundary`, "The graph root imports no transport"), written first and red on the pin-shaped root,
-      land in this task's commit. Gate: `task test:unit`. Hold: two parts are open. The sweep of test-only exports
-      waits for their readers (tasks 3.4–3.12), since `gopls references` on the tree sees none before they are
-      ported; the 11 fixture-client sites are in the catalog's test files, which move with task 3.3a. The rest landed
-      in the root's port commit.
-- [ ] 3.3a (D) `graph/kvcatalog` (design D16): `kvcatalog.go`, `owned_bucket_retention.go` and `IsKVTombstone` from
+      land in this task's commit. Gate: `task test:unit`. Hold: the sweep of test-only exports waits for their readers
+      (tasks 3.4–3.12), since `gopls references` on the tree sees none before they are ported. The rest landed in the
+      root's port commit, and the 11 fixture-client sites, in the catalog's test files, with task 3.3a.
+- [x] 3.3a (D) `graph/kvcatalog` (design D16): `kvcatalog.go`, `owned_bucket_retention.go` and `IsKVTombstone` from
       the pin's `graph`, with their tests; no `TOOL_CALL_OUTCOMES` or `ENTITY_SUFFIX_INDEX` row or constant; the
       configuration bucket's description names SemEngine (design D9); `TestEntityStatesKeepsOneRevision`
       (`graph-entity-writes`, "One stored revision per entity"). Gate: `task test:unit`, `task test:integration`.
+      Done: the 11 fixture-client sites call one `natsfixture.Open` helper; `FrameworkOwnedBuckets`, dead at the pin
+      (appendix), is dropped with the test of its unexported derivation; `TestEntityStatesKeepsOneRevision` holds the
+      pin's behavior and its `task mutate:check` record (a mutant declaring `History` 2) is posted on this pull request.
 - [ ] 3.3b (D) The reply envelope and the verb table in `graph` (design D18, D20): `QueryResponse` with
       `indexed_revision` and `producer`, built only with both (`TestQueryResponseCarriesIndexedRevisionAndProducer`,
       written first); the `min_revision` request field; no `UnwrapQueryResponse`; the verb table with `entity`,

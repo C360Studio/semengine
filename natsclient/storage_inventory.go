@@ -98,7 +98,7 @@ type StreamListerSource func() (StreamLister, error)
 // returning "" for a bucket it does not declare.
 //
 // This is a FUNCTION, not a map, and that is the point: attribution must be a
-// read of the one descriptor catalog at collection time. graph.OwnerOf
+// read of the one descriptor catalog at collection time. kvcatalog.OwnerOf
 // satisfies it directly. A retained copy could disagree with the acquisition
 // seam about who owns a bucket, and would keep reporting a former owner after
 // the catalog dropped the row.
@@ -194,7 +194,7 @@ func NewStorageInventoryCollector(
 	}
 	if cfg.OwnerResolver == nil {
 		return nil, errs.WrapInvalid(
-			fmt.Errorf("an OwnerResolver is required; pass graph.OwnerOf to attribute KV resources "+
+			fmt.Errorf("an OwnerResolver is required; pass kvcatalog.OwnerOf to attribute KV resources "+
 				"from the bucket descriptor catalog, or an explicit always-unattributed resolver to "+
 				"opt out deliberately"),
 			"StorageInventoryCollector", "New", "validate configuration")

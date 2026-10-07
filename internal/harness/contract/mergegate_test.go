@@ -112,21 +112,24 @@ func unitInvocationViolations(taskfile, verify []byte) []string {
 	return violations
 }
 
-// merge-gate › "Required needs both jobs" and "A run when a pull request is marked ready":
-// .github/workflows/ci.yml held to six facts. The job merge-check runs under exactly three read
-// permissions; no permission anywhere in the workflow is a write; required needs verify and
-// merge-check; verify's limit is 15 minutes; required runs under if: always(), and its step, which
-// takes its results from needs.*.result, exits 0 only when every needed job succeeded; the
-// pull_request trigger lists four activity types. The step is shown by running its script as the
-// workflow writes it, with each set of results planted. As above, the expected values are constants
-// here, never read from the file under test.
+// merge-gate › "Required needs both jobs", "A run when a pull request is marked ready" and "Pinned
+// runner image": .github/workflows/ci.yml held to seven facts. The job merge-check runs under
+// exactly three read permissions; no permission anywhere in the workflow is a write; required needs
+// verify and merge-check; verify's limit is 15 minutes; required runs under if: always(), and its
+// step, which takes its results from needs.*.result, exits 0 only when every needed job succeeded;
+// the pull_request trigger lists four activity types; every job runs on the one label ubuntu-24.04.
+// The step is shown by running its script as the workflow writes it, with each set of results
+// planted. As above, the expected values are constants here, never read from the file under test.
 var (
 	requiredNeeds         = []string{"verify", "merge-check"}
 	mergeCheckPermissions = map[string]string{"contents": "read", "issues": "read", "pull-requests": "read"}
 	pullRequestTypes      = []string{"opened", "synchronize", "reopened", "ready_for_review"}
 )
 
-const verifyTimeoutMinutes = 15
+const (
+	verifyTimeoutMinutes = 15
+	runnerLabel          = "ubuntu-24.04"
+)
 
 func TestCIWorkflowPinned(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(repoRoot(t), ".github", "workflows", "ci.yml"))
@@ -146,9 +149,11 @@ permissions:
   contents: read
 jobs:
   verify:
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps: [{run: task verify}]
   merge-check:
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
@@ -156,6 +161,7 @@ jobs:
       pull-requests: read
     steps: [{run: scripts/merge-check.sh}]
   required:
+    runs-on: ubuntu-24.04
     needs: [verify, merge-check]
     if: always()
     steps:
@@ -241,6 +247,25 @@ jobs:
 			[]string{"pull_request", "ready_for_review"}},
 		{"default type missing", "types: [opened, synchronize, reopened, ready_for_review]", "types: [opened, reopened, ready_for_review]",
 			[]string{"pull_request", "synchronize"}},
+		// "Pinned runner image": each plant defeats one weaker check. The fourth job defeats a check
+		// of the three named jobs only; the missing runs-on, one that runs only when runs-on is
+		// present; ubuntu-26.04, a refusal of -latest labels only; ubuntu-24.04-arm, a prefix match;
+		// the list, a "contains ubuntu-24.04" test of the printed value; the group, a check that
+		// handles a list but not a mapping; the expression, a check that skips expressions.
+		{"a fourth job on the moving label", "jobs:\n", "jobs:\n  lint: {runs-on: ubuntu-latest, steps: [{run: echo}]}\n",
+			[]string{"job lint", "ubuntu-latest", "ubuntu-24.04"}},
+		{"required has no runs-on", "  required:\n    runs-on: ubuntu-24.04\n", "  required:\n",
+			[]string{"job required", "no runs-on", "ubuntu-24.04"}},
+		{"verify on another release", "  verify:\n    runs-on: ubuntu-24.04\n", "  verify:\n    runs-on: ubuntu-26.04\n",
+			[]string{"job verify", "ubuntu-26.04", "ubuntu-24.04"}},
+		{"merge-check on another image of the release", "  merge-check:\n    runs-on: ubuntu-24.04\n", "  merge-check:\n    runs-on: ubuntu-24.04-arm\n",
+			[]string{"job merge-check", "ubuntu-24.04-arm"}},
+		{"verify on a list of labels", "  verify:\n    runs-on: ubuntu-24.04\n", "  verify:\n    runs-on: [self-hosted, ubuntu-24.04]\n",
+			[]string{"job verify", "[self-hosted ubuntu-24.04]"}},
+		{"merge-check on a runner group", "  merge-check:\n    runs-on: ubuntu-24.04\n", "  merge-check:\n    runs-on: {group: ci, labels: ubuntu-24.04}\n",
+			[]string{"job merge-check", "group:ci", "labels:ubuntu-24.04"}},
+		{"required on an expression", "  required:\n    runs-on: ubuntu-24.04\n", "  required:\n    runs-on: ${{ vars.RUNNER_IMAGE }}\n",
+			[]string{"job required", "runs on ${{ vars.RUNNER_IMAGE }}"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			requireViolation(t, ciWorkflowViolations(t, plant(t, tc.old, tc.repl)), tc.wants...)
@@ -249,6 +274,7 @@ jobs:
 }
 
 type ciJob struct {
+	RunsOn          any            `yaml:"runs-on"`
 	Needs           any            `yaml:"needs"`
 	If              any            `yaml:"if"`
 	ContinueOnError any            `yaml:"continue-on-error"`
@@ -288,7 +314,9 @@ func ciWorkflowViolations(t *testing.T, data []byte) []string {
 	}
 	violations := pullRequestTriggerViolations(wf.On)
 
-	// No write anywhere: the workflow's default and every job's own grant.
+	// No write anywhere: the workflow's default and every job's own grant. Every job on the one
+	// runner label: a list, a runner group or an expression is refused even when it would resolve
+	// to that label.
 	violations = append(violations, writeGrants("workflow", wf.Permissions)...)
 	names := make([]string, 0, len(wf.Jobs))
 	for name := range wf.Jobs {
@@ -296,7 +324,13 @@ func ciWorkflowViolations(t *testing.T, data []byte) []string {
 	}
 	slices.Sort(names)
 	for _, name := range names {
-		violations = append(violations, writeGrants("job "+name, wf.Jobs[name].Permissions)...)
+		job := wf.Jobs[name]
+		violations = append(violations, writeGrants("job "+name, job.Permissions)...)
+		if job.RunsOn == nil {
+			violations = append(violations, fmt.Sprintf("ci.yml: job %s has no runs-on; the merge-gate spec (\"Pinned runner image\") requires runs-on: %s", name, runnerLabel))
+		} else if label, ok := job.RunsOn.(string); !ok || label != runnerLabel {
+			violations = append(violations, fmt.Sprintf("ci.yml: job %s runs on %v; the merge-gate spec (\"Pinned runner image\") requires the one label %s", name, job.RunsOn, runnerLabel))
+		}
 	}
 
 	if mc, ok := wf.Jobs["merge-check"]; !ok {

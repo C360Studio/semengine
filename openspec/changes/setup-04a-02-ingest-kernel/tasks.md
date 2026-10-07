@@ -112,8 +112,9 @@ posted on this pull request.
       pin's behavior and its `task mutate:check` record (a mutant declaring `History` 2) is posted on this pull request.
 - [ ] 3.3b (D) The reply envelope and the verb table in `graph` (design D18, D20): `QueryResponse` with
       `indexed_revision` and `producer`, built only with both (`TestQueryResponseCarriesIndexedRevisionAndProducer`,
-      written first); the `min_revision` request field; no `UnwrapQueryResponse`; the verb table with `entity`,
-      `batch` and `prefix`, responder `graph-ingest`. Gate: `task test:unit`.
+      written first); the `min_revision` request field, declared and embedded in no type yet (design D18); a constructor
+      that refuses an empty producer; no `UnwrapQueryResponse`; the verb table with `entity`, `batch` and `prefix`,
+      responder `graph-ingest`. Gate: `task test:unit`.
 - [ ] 3.4 (D) `graph/readiness`: `Watcher` takes `Run(ctx)` (design D5), with `synctest` tests that `Run` returns
       `ctx.Err()` and leaves nothing running; `Set`, `NewSet`, `Dump`, `Verdict` removed, the row's `known_risks`
       naming their return with #110; `Publisher.Publish` sets `published_at` (`TestPublishStampsPublishedAt`, written

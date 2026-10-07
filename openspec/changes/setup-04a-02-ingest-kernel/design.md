@@ -962,11 +962,12 @@ key set whether a reply is enveloped (P-15, §9.6).
 
 - Every reply on the `graph.query.*` family is one envelope, `graph.QueryResponse[T]`: `data`, `indexed_revision`
   (the `ENTITY_STATES` revision the answer reflects), `producer` (the responding component instance) and
-  `timestamp`. Building one requires the producer and the revision.
-- A request on that family may carry `min_revision`, one field declared once in `graph` that request types embed. A
-  producer whose indexed revision is below it answers with the classified `index_not_ready`
-  (`graph/mutation_responses.go:79`) or after a bounded wait; that producer behavior is change 4's to specify and
-  prove.
+  `timestamp`. Building one requires the producer and the revision: the constructor refuses an empty producer.
+- A request on that family may carry `min_revision`, one field declared once in `graph` that request types embed. Change
+  2 declares it and embeds it in no type: the request types ported here (`PrefixQueryRequest`, the batch request) serve
+  `graph.ingest.query.*`, which is off the envelope, and the `graph.query.*` request types arrive with graph-query in
+  change 4. A producer whose indexed revision is below it answers with the classified `index_not_ready`
+  (`graph/mutation_responses.go:79`) or after a bounded wait; that producer behavior is change 4's to specify and prove.
 - `UnwrapQueryResponse` is not ported: a reply's shape is its verb's declared reply type (D20), never sniffed. Its one
   admitted reader, `pkg/fusion/fusionnats/client.go` (change 5), decodes by the declared type (a
   `class:port-refactor` note on its row).

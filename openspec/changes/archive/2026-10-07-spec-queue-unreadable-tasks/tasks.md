@@ -43,7 +43,7 @@ starts, `task merge:check -- 122` and the merge are recorded on this pull reques
 
 ## 4. In the archive commit
 
-- [ ] 4.1 (W) In the same commit as `openspec archive spec-queue-unreadable-tasks` and the spec sync:
+- [x] 4.1 (W) In the same commit as `openspec archive spec-queue-unreadable-tasks` and the spec sync:
       `docs/repository-map.md` gains a row for the archived change, as the `spec-queue-holds` row does, and its
       `openspec/specs/spec-queue/` row (`:60`), "synced by the `spec-queue-holds` archive", adds "amended by the
       `spec-queue-unreadable-tasks` archive", as the row at `:55` does. Gate: `task spec:check` and

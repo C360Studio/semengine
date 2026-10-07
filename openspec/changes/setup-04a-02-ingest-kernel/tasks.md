@@ -10,14 +10,15 @@ heading>` (#81's form). No task asserts a fact that exists only after merge.
 
 ## 1. Inventory, design and acceptance
 
-- [ ] 1.1 (R) Independent review of `inventory.md` (round 2, and round 3's §8), including its open evidence
-      questions. Hold: `INVENTORY PASS` recorded on this pull request.
-- [ ] 1.2 (A) `design.md` and the deltas under `specs/` restated on the passed inventory; every requirement has a
-      scenario; `task spec:check` passes. Hold: task 1.1.
-- [ ] 1.3 (R) Independent pre-owner design review; PASS recorded with the reviewed files' checksums. Hold: task 1.2.
-- [ ] 1.4 (O) Owner acceptance of the design on #91; PR #92 merged into `main`, `origin/main` merged into this branch,
-      and #92's final file list re-read against design "Order with #92". Hold: task 1.3; owner acceptance on #91;
-      PR #92 merged.
+- [x] 1.1 (R) Independent review of `inventory.md` (round 2, and round 3's §8), including its open evidence
+      questions. Done: `INVENTORY PASS` at `0f781ac` and `d94dbad`, recorded in PR #93 comment 6035876773.
+- [x] 1.2 (A) `design.md` and the deltas under `specs/` restated on the passed inventory; every requirement has a
+      scenario; `task spec:check` passes. Done at `c5dd296`.
+- [x] 1.3 (R) Independent pre-owner design review; PASS recorded with the reviewed files' checksums. Done: PR #93
+      comment 6035876773.
+- [x] 1.4 (O) Owner acceptance of the design on #91; PR #92 merged into `main`, `origin/main` merged into this branch,
+      and #92's final file list re-read against design "Order with #92". Done: accepted on #91 (2026-10-07); #92
+      merged as `1e383fe`, merged here in `8d75cd3`; its final 25 files match "Order with #92".
 - [x] 1.5 (O) Owner ruling on question B: "port" only `graph/llm/client.go`, drop `ReviewConfig.LLM`, no
       authority-rule exception (#91 comment 6035477895). Applied in design D1, D1a, D6 and D9; the
       `harness-boundaries` delta no longer modifies "No second spelling of deployment authority"; `model/wire` follows

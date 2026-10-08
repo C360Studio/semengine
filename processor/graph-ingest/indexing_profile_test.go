@@ -74,7 +74,7 @@ func TestIndexingProfile_Create_DefaultsToControlFloor(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)
 	req := graph.CreateEntityRequest{
 		Entity:  &graph.EntityState{ID: testProfileEntityID, MessageType: testWidgetMessageType()},
-		Triples: []message.Triple{{Subject: testProfileEntityID, Predicate: semantictest.Predicate(t, "robotics", "status", "armed"), Object: true, Timestamp: time.Now()}},
+		Triples: withTestMetadata(message.Triple{Subject: testProfileEntityID, Predicate: semantictest.Predicate(t, "robotics", "status", "armed"), Object: true, Timestamp: time.Now()}),
 	}
 	data, _ := json.Marshal(req)
 
@@ -93,7 +93,7 @@ func TestIndexingProfile_Create_EnvelopeProfileWins(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)
 	req := graph.CreateEntityRequest{
 		Entity:          &graph.EntityState{ID: testProfileEntityID, MessageType: testWidgetMessageType()},
-		Triples:         []message.Triple{{Subject: testProfileEntityID, Predicate: semantictest.Predicate(t, "doc", "body", "text"), Object: "hello", Timestamp: time.Now()}},
+		Triples:         withTestMetadata(message.Triple{Subject: testProfileEntityID, Predicate: semantictest.Predicate(t, "doc", "body", "text"), Object: "hello", Timestamp: time.Now()}),
 		IndexingProfile: vocabulary.IndexingProfileContent,
 	}
 	data, _ := json.Marshal(req)
@@ -209,7 +209,7 @@ func TestIndexingProfile_StructuralGraphNeverGated_TraceEntityStaysQueryable(t *
 
 	req := graph.CreateEntityRequest{
 		Entity:          &graph.EntityState{ID: testProfileEntityID, MessageType: testWidgetMessageType()},
-		Triples:         []message.Triple{{Subject: testProfileEntityID, Predicate: semantictest.Predicate(t, "audit", "event", "kind"), Object: "trace-line", Timestamp: time.Now()}},
+		Triples:         withTestMetadata(message.Triple{Subject: testProfileEntityID, Predicate: semantictest.Predicate(t, "audit", "event", "kind"), Object: "trace-line", Timestamp: time.Now()}),
 		IndexingProfile: vocabulary.IndexingProfileTrace,
 	}
 	createData, _ := json.Marshal(req)
@@ -262,6 +262,7 @@ func TestIndexingProfile_FloorMetric_FiresExactlyOnFloor(t *testing.T) {
 	create := func(id, profile string) {
 		req := graph.CreateEntityRequest{
 			Entity:          &graph.EntityState{ID: id, MessageType: mt},
+			Triples:         withTestMetadata(message.Triple{Subject: id, Predicate: "test.fixture.value", Object: "v"}),
 			IndexingProfile: profile,
 		}
 		data, _ := json.Marshal(req)
@@ -347,7 +348,10 @@ func TestIndexingProfile_RegistryFloor_RegisteredTypeNoMetric(t *testing.T) {
 	before := testutil.ToFloat64(counter)
 
 	const id = "c360.platform.test.sys.floored.001"
-	req := graph.CreateEntityRequest{Entity: &graph.EntityState{ID: id, MessageType: mt}}
+	req := graph.CreateEntityRequest{
+		Entity:  &graph.EntityState{ID: id, MessageType: mt},
+		Triples: withTestMetadata(message.Triple{Subject: id, Predicate: "test.fixture.value", Object: "v"}),
+	}
 	data, err := json.Marshal(req)
 	require.NoError(t, err)
 	_, err = comp.handleCanonicalCreate(ctx, data)
@@ -377,7 +381,10 @@ func TestIndexingProfile_Append_DoesNotStamp(t *testing.T) {
 
 	const id = "c360.platform.test.sys.widget.addtriple1"
 	// Pre-create the entity via the create seam so it exists in ENTITY_STATES.
-	req := graph.CreateEntityRequest{Entity: &graph.EntityState{ID: id, MessageType: testWidgetMessageType()}}
+	req := graph.CreateEntityRequest{
+		Entity:  &graph.EntityState{ID: id, MessageType: testWidgetMessageType()},
+		Triples: withTestMetadata(message.Triple{Subject: id, Predicate: "test.fixture.value", Object: "v"}),
+	}
 	data, err := json.Marshal(req)
 	require.NoError(t, err)
 	_, err = comp.handleCanonicalCreate(ctx, data)
@@ -390,7 +397,7 @@ func TestIndexingProfile_Append_DoesNotStamp(t *testing.T) {
 
 	// Now add a user triple via the append path.
 	tr := message.Triple{Subject: id, Predicate: "evidence.note.value", Object: "v", Confidence: 1.0}
-	appendData, err := json.Marshal(graph.AppendTriplesRequest{Triples: []message.Triple{tr}})
+	appendData, err := json.Marshal(graph.AppendTriplesRequest{Triples: withTestMetadata(tr)})
 	require.NoError(t, err)
 	_, err = comp.handleCanonicalAppend(ctx, appendData)
 	require.NoError(t, err)
@@ -417,7 +424,10 @@ func TestIndexingProfile_RegistryFloor_RegisteredNoFloorFiresMetric(t *testing.T
 	before := testutil.ToFloat64(counter)
 
 	const id = "c360.platform.test.sys.nofloor.001"
-	req := graph.CreateEntityRequest{Entity: &graph.EntityState{ID: id, MessageType: mt}}
+	req := graph.CreateEntityRequest{
+		Entity:  &graph.EntityState{ID: id, MessageType: mt},
+		Triples: withTestMetadata(message.Triple{Subject: id, Predicate: "test.fixture.value", Object: "v"}),
+	}
 	data, _ := json.Marshal(req)
 	_, err := comp.handleCanonicalCreate(ctx, data)
 	require.NoError(t, err)

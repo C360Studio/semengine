@@ -57,9 +57,9 @@ func newRetryingStreamLane(t *testing.T, err error) (*Component, *createFailsOnc
 	arrival := &graph.EntityState{
 		ID:          id,
 		MessageType: testEntityType(),
-		Triples: []message.Triple{
-			{Subject: id, Predicate: "robotics.status.armed", Object: true, Timestamp: now},
-		},
+		Triples: withTestMetadata(
+			message.Triple{Subject: id, Predicate: "robotics.status.armed", Object: true, Timestamp: now},
+		),
 		UpdatedAt: now,
 	}
 	return c, bucket, arrival
@@ -133,9 +133,9 @@ func TestReplaceEntityRetryAfterLostBirthMergesOnlyTheArrival(t *testing.T) {
 		otherLane := graph.EntityState{
 			ID:          arrival.ID,
 			MessageType: testEntityType(),
-			Triples: []message.Triple{
-				{Subject: arrival.ID, Predicate: "robotics.status.mode", Object: "manual", Timestamp: time.Now()},
-			},
+			Triples: withTestMetadata(
+				message.Triple{Subject: arrival.ID, Predicate: "robotics.status.mode", Object: "manual", Timestamp: time.Now()},
+			),
 			UpdatedAt: time.Now(),
 		}
 		data, err := graph.MarshalEntityState(&otherLane)

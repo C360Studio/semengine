@@ -71,10 +71,10 @@ func TestIntegration_NoGuardConsumerOnEntityStatesAfterStart(t *testing.T) {
 	require.NoError(t, c.mergeEntityOnLane(ctx, &graph.EntityState{
 		ID:          seededID,
 		MessageType: testEntityType(),
-		Triples: []message.Triple{{
+		Triples: withTestMetadata(message.Triple{
 			Subject: seededID, Predicate: "test.state.value", Object: "post-start",
 			Timestamp: time.Now(), Confidence: 1.0,
-		}},
+		}),
 	}, false))
 	assert.Equal(t, 0, entityStatesConsumerCount(t, ctx, natsClient),
 		"a steady-state entity write must not be re-delivered to its writer")
@@ -150,10 +150,10 @@ func TestIntegration_BootSweepInventoriesResidentPoisonRealNATS(t *testing.T) {
 	require.NoError(t, c.CreateEntity(ctx, &graph.EntityState{
 		ID:          poisonID,
 		MessageType: testEntityType(),
-		Triples: []message.Triple{{
+		Triples: withTestMetadata(message.Triple{
 			Subject: poisonID, Predicate: "test.state.value", Object: "reborn",
 			Timestamp: time.Now(), Confidence: 1.0,
-		}},
+		}),
 	}))
 	data, err = c.handleQueryEntityNATS(ctx, []byte(`{"id":"`+poisonID+`"}`))
 	require.NoError(t, err, "recreated entity must serve without restart")

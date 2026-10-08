@@ -70,9 +70,9 @@ func TestResidentUnregisteredStampIsNotPoison(t *testing.T) {
 
 	client, err := graphmutation.NewClient(nc, 5*time.Second)
 	require.NoError(t, err)
-	appended, err := client.Append(ctx, graph.AppendTriplesRequest{Triples: []message.Triple{{
+	appended, err := client.Append(ctx, graph.AppendTriplesRequest{Triples: withTestMetadata(message.Triple{
 		Subject: id, Predicate: "test.event.value", Object: "appended", Timestamp: now, Confidence: 1,
-	}}})
+	})})
 	require.NoError(t, err)
 	require.Len(t, appended.Results, 1)
 	assert.Equal(t, graph.MutationApplied, appended.Results[0].Outcome, "must-exist mutations ignore the stamp")

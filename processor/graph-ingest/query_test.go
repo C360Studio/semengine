@@ -96,14 +96,14 @@ func TestComponent_HandleQueryPrefix_Success(t *testing.T) {
 				seedOwnedOrMirrored(t, comp, &graph.EntityState{
 					ID:          id,
 					MessageType: testEntityType(),
-					Triples: []message.Triple{
-						{
+					Triples: withTestMetadata(
+						message.Triple{
 							Subject:   id,
 							Predicate: "test.entity.predicate",
 							Object:    "test-value",
 							Timestamp: time.Now(),
 						},
-					},
+					),
 					UpdatedAt: time.Now(),
 				})
 			}
@@ -154,20 +154,20 @@ func TestComponent_HandleQueryPrefix_ReturnsFullEntities(t *testing.T) {
 	entity := &graph.EntityState{
 		ID:          "c360.platform.robotics.mav1.drone.001",
 		MessageType: testEntityType(),
-		Triples: []message.Triple{
-			{
+		Triples: withTestMetadata(
+			message.Triple{
 				Subject:   "c360.platform.robotics.mav1.drone.001",
 				Predicate: "robotics.status.armed",
 				Object:    true,
 				Timestamp: time.Now(),
 			},
-			{
+			message.Triple{
 				Subject:   "c360.platform.robotics.mav1.drone.001",
 				Predicate: "robotics.battery.level",
 				Object:    85.5,
 				Timestamp: time.Now(),
 			},
-		},
+		),
 		UpdatedAt: time.Now(),
 	}
 	require.NoError(t, comp.CreateEntity(ctx, entity))
@@ -218,12 +218,7 @@ func TestComponent_HandleQueryPrefix_NoMatches(t *testing.T) {
 	ctx := context.Background()
 
 	// Store some entities
-	entity := &graph.EntityState{
-		ID:          "c360.platform.robotics.mav1.drone.001",
-		MessageType: testEntityType(),
-		Triples:     []message.Triple{},
-		UpdatedAt:   time.Now(),
-	}
+	entity := newTestEntity("c360.platform.robotics.mav1.drone.001")
 	require.NoError(t, comp.CreateEntity(ctx, entity))
 
 	// Query with non-matching prefix

@@ -722,14 +722,14 @@ func TestComponent_CreateEntity_ValidEntity(t *testing.T) {
 	entity := &graph.EntityState{
 		ID:          "c360.platform.robotics.mav1.drone.001",
 		MessageType: testEntityType(),
-		Triples: []message.Triple{
-			{
+		Triples: withTestMetadata(
+			message.Triple{
 				Subject:   "c360.platform.robotics.mav1.drone.001",
 				Predicate: "robotics.status.armed",
 				Object:    true,
 				Timestamp: time.Now(),
 			},
-		},
+		),
 		UpdatedAt: time.Now(),
 	}
 
@@ -762,14 +762,14 @@ func TestComponent_CreateEntity_TriggersHierarchy(t *testing.T) {
 	entity := &graph.EntityState{
 		ID:          "c360.platform.robotics.mav1.drone.001",
 		MessageType: testEntityType(),
-		Triples: []message.Triple{
-			{
+		Triples: withTestMetadata(
+			message.Triple{
 				Subject:   "c360.platform.robotics.mav1.drone.001",
 				Predicate: "robotics.status.armed",
 				Object:    true,
 				Timestamp: time.Now(),
 			},
-		},
+		),
 		UpdatedAt: time.Now(),
 	}
 
@@ -785,12 +785,7 @@ func TestComponent_DeleteEntity_ValidID(t *testing.T) {
 	ctx := context.Background()
 
 	// Create entity first
-	entity := &graph.EntityState{
-		ID:          "c360.platform.robotics.mav1.drone.001",
-		MessageType: testEntityType(),
-		Triples:     []message.Triple{},
-		UpdatedAt:   time.Now(),
-	}
+	entity := newTestEntity("c360.platform.robotics.mav1.drone.001")
 	require.NoError(t, comp.CreateEntity(ctx, entity))
 
 	entry, err := comp.entityBucket.Get(ctx, entity.ID)
@@ -810,12 +805,7 @@ func TestComponent_CanonicalAppend_ValidTriple(t *testing.T) {
 	ctx := context.Background()
 
 	// Create entity first
-	entity := &graph.EntityState{
-		ID:          "c360.platform.robotics.mav1.drone.001",
-		MessageType: testEntityType(),
-		Triples:     []message.Triple{},
-		UpdatedAt:   time.Now(),
-	}
+	entity := newTestEntity("c360.platform.robotics.mav1.drone.001")
 	require.NoError(t, comp.CreateEntity(ctx, entity))
 
 	// Add triple
@@ -826,7 +816,7 @@ func TestComponent_CanonicalAppend_ValidTriple(t *testing.T) {
 		Timestamp: time.Now(),
 	}
 
-	data, err := json.Marshal(graph.AppendTriplesRequest{Triples: []message.Triple{triple}})
+	data, err := json.Marshal(graph.AppendTriplesRequest{Triples: withTestMetadata(triple)})
 	require.NoError(t, err)
 	body, err := comp.handleCanonicalAppend(ctx, data)
 	require.NoError(t, err)

@@ -265,9 +265,9 @@ func TestProcessIngest_DirtyStoredStateNaksAndInventoriesPerEntity(t *testing.T)
 			component.logger = slog.New(slog.NewTextHandler(&logs, nil))
 			msg := &keyedIngestTestMsg{}
 			work := ingestWork{
-				entity: &graph.EntityState{ID: tt.entityID, Triples: []message.Triple{{
+				entity: &graph.EntityState{ID: tt.entityID, Triples: withTestMetadata(message.Triple{
 					Subject: tt.entityID, Predicate: "test.state.value", Object: "new",
-				}}},
+				})},
 				msg: msg, entityID: tt.entityID, stream: "ENTITY", seq: 2,
 			}
 			predicateBefore := testutil.ToFloat64(component.predicateContractRejections.WithLabelValues("graphable", "arity"))
@@ -321,9 +321,9 @@ func TestProcessIngest_GenericFatalApplyErrorTerminatesWithoutPoison(t *testing.
 	msg := &keyedIngestTestMsg{}
 
 	err := component.processIngest(context.Background(), 0, ingestWork{
-		entity: &graph.EntityState{ID: entityID, Triples: []message.Triple{{
+		entity: &graph.EntityState{ID: entityID, Triples: withTestMetadata(message.Triple{
 			Subject: entityID, Predicate: "test.state.value", Object: "new",
-		}}},
+		})},
 		msg: msg, entityID: entityID, stream: "ENTITY", seq: 1,
 	})
 

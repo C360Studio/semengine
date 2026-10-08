@@ -18,7 +18,7 @@ import (
 
 func appendThroughCanonicalHandler(t *testing.T, ctx context.Context, c *Component, triples []message.Triple) graph.AppendTriplesResponse {
 	t.Helper()
-	request, err := json.Marshal(graph.AppendTriplesRequest{Triples: triples})
+	request, err := json.Marshal(graph.AppendTriplesRequest{Triples: withTestMetadata(triples...)})
 	require.NoError(t, err)
 	body, err := c.handleCanonicalAppend(ctx, request)
 	require.NoError(t, err)
@@ -183,10 +183,10 @@ func TestIntegration_HandleTripleAddBatch_RoundTrip(t *testing.T) {
 	require.NoError(t, c.mergeEntityOnLane(ctx, &graph.EntityState{ID: entityID}, false))
 
 	req := graph.AppendTriplesRequest{
-		Triples: []message.Triple{
-			{Subject: entityID, Predicate: "test.batch.id", Object: "1", Timestamp: now, Confidence: 1.0},
-			{Subject: entityID, Predicate: "test.batch.status", Object: "pending", Timestamp: now, Confidence: 1.0},
-		},
+		Triples: withTestMetadata(
+			message.Triple{Subject: entityID, Predicate: "test.batch.id", Object: "1", Timestamp: now, Confidence: 1.0},
+			message.Triple{Subject: entityID, Predicate: "test.batch.status", Object: "pending", Timestamp: now, Confidence: 1.0},
+		),
 	}
 	reqBytes, err := json.Marshal(req)
 	require.NoError(t, err)
@@ -286,12 +286,12 @@ func TestIntegration_HandleTripleAdd_AbsentEntityRejects(t *testing.T) {
 
 	const subject = "c360.test.absent.single.entity.001"
 	req := graph.AppendTriplesRequest{
-		Triples: []message.Triple{{
+		Triples: withTestMetadata(message.Triple{
 			Subject:    subject,
 			Predicate:  "evidence.note.value",
 			Object:     "should-not-land",
 			Confidence: 1.0,
-		}},
+		}),
 	}
 	reqBytes, err := json.Marshal(req)
 	require.NoError(t, err)
@@ -321,9 +321,9 @@ func TestIntegration_HandleTripleAddBatch_AbsentEntityRejects(t *testing.T) {
 
 	const subject = "c360.test.absent.batch.entity.001"
 	req := graph.AppendTriplesRequest{
-		Triples: []message.Triple{
-			{Subject: subject, Predicate: "evidence.note.value", Object: "should-not-land", Confidence: 1.0},
-		},
+		Triples: withTestMetadata(
+			message.Triple{Subject: subject, Predicate: "evidence.note.value", Object: "should-not-land", Confidence: 1.0},
+		),
 	}
 	reqBytes, err := json.Marshal(req)
 	require.NoError(t, err)

@@ -61,9 +61,9 @@ func seedStructuralGateEntity(t *testing.T, comp *Component, entityID string) (*
 		ID:          entityID,
 		MessageType: structuralGateTestType,
 		UpdatedAt:   now,
-		Triples: []message.Triple{
-			{Subject: entityID, Predicate: "sensor.temperature.celsius", Object: 22.5, Timestamp: now, Confidence: 1.0},
-		},
+		Triples: withTestMetadata(
+			message.Triple{Subject: entityID, Predicate: "sensor.temperature.celsius", Object: 22.5, Timestamp: now, Confidence: 1.0},
+		),
 	}))
 	stored, revision, err := comp.fetchEntityState(ctx, entityID)
 	require.NoError(t, err)
@@ -216,9 +216,9 @@ func TestHandleCanonicalCreate_InvalidPredicate_NothingPersisted(t *testing.T) {
 	handler := comp.meteredMutation(structuralCreateSubject, comp.handleCanonicalCreate)
 	reqBytes, err := json.Marshal(graph.CreateEntityRequest{
 		Entity: &graph.EntityState{ID: createID, MessageType: structuralGateTestType, UpdatedAt: now},
-		Triples: []message.Triple{
-			{Subject: createID, Predicate: "agent.role", Object: "researcher", Timestamp: now, Confidence: 1.0}, // predicate-audit:invalid {"kind":"stored-predicate","value":"agent.role","reason":"arity"}
-		},
+		Triples: withTestMetadata(
+			message.Triple{Subject: createID, Predicate: "agent.role", Object: "researcher", Timestamp: now, Confidence: 1.0}, // predicate-audit:invalid {"kind":"stored-predicate","value":"agent.role","reason":"arity"}
+		),
 	})
 	require.NoError(t, err)
 
@@ -256,11 +256,11 @@ func TestHandleCanonicalReconcile_InvalidPredicate_EntityUnchanged(t *testing.T)
 	require.NoError(t, err)
 	handler := comp.meteredMutation(structuralReconcileSubject, comp.handleCanonicalReconcile)
 	reqBytes, err := json.Marshal(graph.ReconcilePredicatesRequest{
-		EntityID: structuralGateEntity, ExpectedRevision: entry.Revision,
+		EntityID: structuralGateEntity, ExpectedRevision: entry.Revision, Source: fixtureSource,
 		Predicates: []string{"agent.role"},
-		Desired: []message.Triple{
-			{Subject: structuralGateEntity, Predicate: "agent.role", Object: "researcher", Timestamp: now, Confidence: 1.0}, // predicate-audit:invalid {"kind":"stored-predicate","value":"agent.role","reason":"arity"}
-		},
+		Desired: withTestMetadata(
+			message.Triple{Subject: structuralGateEntity, Predicate: "agent.role", Object: "researcher", Timestamp: now, Confidence: 1.0}, // predicate-audit:invalid {"kind":"stored-predicate","value":"agent.role","reason":"arity"}
+		),
 	})
 	require.NoError(t, err)
 
@@ -322,10 +322,10 @@ func TestHandleCanonicalAppend_ValidPredicate_PersistsMergeIntact(t *testing.T) 
 	before := testutil.ToFloat64(counter)
 
 	handler := comp.meteredMutation(structuralAppendSubject, comp.handleCanonicalAppend)
-	reqBytes, err := json.Marshal(graph.AppendTriplesRequest{Triples: []message.Triple{{
+	reqBytes, err := json.Marshal(graph.AppendTriplesRequest{Triples: withTestMetadata(message.Triple{
 		Subject: structuralGateEntity, Predicate: "sensorml.capability.value", Object: "50m",
 		Timestamp: time.Now(), Confidence: 1.0,
-	}}})
+	})})
 	require.NoError(t, err)
 
 	respBytes, err := handler(ctx, reqBytes)

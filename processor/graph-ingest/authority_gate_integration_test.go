@@ -297,7 +297,7 @@ func TestAuthorityGateAllowsForeignReferenceObject(t *testing.T) {
 			MessageType: testEntityType(),
 			UpdatedAt:   time.Now(),
 		},
-		Triples: []message.Triple{reference},
+		Triples: withTestMetadata(reference),
 	})
 	require.NoError(t, err)
 
@@ -505,12 +505,13 @@ func TestAuthorityGateRefusesForeignReconcileRegardlessOfExistence(t *testing.T)
 		reqBytes, err := json.Marshal(graph.ReconcilePredicatesRequest{
 			EntityID:         entityID,
 			ExpectedRevision: 1,
+			Source:           fixtureSource,
 			Predicates:       []string{semantictest.Predicate(t, "test", "fixture", "curation")},
-			Desired: []message.Triple{{
+			Desired: withTestMetadata(message.Triple{
 				Subject:   entityID,
 				Predicate: semantictest.Predicate(t, "test", "fixture", "curation"),
 				Object:    "curated", Timestamp: time.Now(), Confidence: 1.0,
-			}},
+			}),
 		})
 		require.NoError(t, err)
 

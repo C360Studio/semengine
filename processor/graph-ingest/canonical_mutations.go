@@ -262,6 +262,9 @@ func (c *Component) handleCanonicalCreate(ctx context.Context, data []byte) ([]b
 					index, entity.Triples[index].Subject, entity.ID))
 		}
 	}
+	if err := requireCreateStatements(request.Triples); err != nil {
+		return nil, err
+	}
 	if entity.UpdatedAt.IsZero() {
 		entity.UpdatedAt = time.Now()
 	}
@@ -292,7 +295,7 @@ func (c *Component) handleCanonicalCreate(ctx context.Context, data []byte) ([]b
 
 func (c *Component) handleCanonicalReconcile(ctx context.Context, data []byte) ([]byte, error) {
 	var request graph.ReconcilePredicatesRequest
-	if err := decodeCanonicalMutation(data, &request, "entity_id", "expected_revision", "predicates", "desired"); err != nil {
+	if err := decodeCanonicalMutation(data, &request, "entity_id", "expected_revision", "source", "predicates", "desired"); err != nil {
 		return nil, rejectInvalid(graph.ErrorCodeInvalidRequest, fmt.Errorf("invalid request: %w", err))
 	}
 	if err := validateEntityID(request.EntityID); err != nil {
@@ -308,6 +311,12 @@ func (c *Component) handleCanonicalReconcile(ctx context.Context, data []byte) (
 	}
 	predicates, err := validateCanonicalReconcileRequest(request)
 	if err != nil {
+		return nil, rejectInvalid(graph.ErrorCodeInvalidRequest, err)
+	}
+	if err := requireStatementMetadata(request.Desired); err != nil {
+		return nil, err
+	}
+	if err := requireReconcileSource(request); err != nil {
 		return nil, rejectInvalid(graph.ErrorCodeInvalidRequest, err)
 	}
 
@@ -374,6 +383,9 @@ func (c *Component) handleCanonicalAppend(ctx context.Context, data []byte) ([]b
 		if err := c.authorizeSubject(request.Triples[index].Subject, false); err != nil {
 			return nil, err
 		}
+	}
+	if err := requireStatementMetadata(request.Triples); err != nil {
+		return nil, err
 	}
 
 	result, batchErr := c.addTriplesLane(ctx, request.Triples, dedupLaneAddBatch)
@@ -560,6 +572,22 @@ func validateCanonicalReconcileRequest(request graph.ReconcilePredicatesRequest)
 		return nil, err
 	}
 	return predicates, nil
+}
+
+// requireReconcileSource is the conditional replace's source rule (design D15, ruling 1): a
+// reconcile names the one source whose statements it replaces, and every desired statement is
+// from it. A request with no source on the wire is refused earlier, by decodeCanonicalMutation.
+func requireReconcileSource(request graph.ReconcilePredicatesRequest) error {
+	if request.Source == "" {
+		return errors.New("source cannot be empty")
+	}
+	for index := range request.Desired {
+		if request.Desired[index].Source != request.Source {
+			return fmt.Errorf("desired triple[%d] source %q is not the reconcile's source %q",
+				index, request.Desired[index].Source, request.Source)
+		}
+	}
+	return nil
 }
 
 func validateCanonicalAppendRequest(triples []message.Triple) error {

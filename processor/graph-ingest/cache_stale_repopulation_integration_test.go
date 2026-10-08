@@ -101,6 +101,7 @@ func TestIntegration_CacheStaleRepopulationRace(t *testing.T) {
 		Subject:    id,
 		Predicate:  semantictest.Predicate(t, "test", "stale", "marker"),
 		Object:     "committed",
+		Source:     fixtureSource,
 		Timestamp:  time.Now(),
 		Confidence: 1.0,
 	}, dedupLaneAddBatch)

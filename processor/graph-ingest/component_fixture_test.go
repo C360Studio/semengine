@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -45,6 +46,29 @@ var testStampKeys = []message.Type{
 	{Domain: "boid", Category: "telemetry", Version: "v1"},
 	{Domain: "workflow", Category: "task-unit", Version: "v1"},
 	{Domain: "mission", Category: "command", Version: "v1"},
+}
+
+// fixtureSource and fixtureTime are the Source and Timestamp withTestMetadata gives a fixture
+// statement that carries none: every statement graph-ingest stores carries both, and a write
+// carrying a statement without them is refused (design D15, #98).
+const fixtureSource = "graph-ingest-fixture"
+
+var fixtureTime = time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+
+// withTestMetadata returns a copy of triples in which each empty Source is fixtureSource and
+// each zero Timestamp is fixtureTime; a statement that carries its own keeps it. It is for the
+// statements of a test that is not about their source or time.
+func withTestMetadata(triples ...message.Triple) []message.Triple {
+	stamped := slices.Clone(triples)
+	for index := range stamped {
+		if stamped[index].Source == "" {
+			stamped[index].Source = fixtureSource
+		}
+		if stamped[index].Timestamp.IsZero() {
+			stamped[index].Timestamp = fixtureTime
+		}
+	}
+	return stamped
 }
 
 // testEntityType is the stamp for test entities born through CreateEntity.
@@ -205,15 +229,13 @@ func newTestEntity(id string) *graph.EntityState {
 	return &graph.EntityState{
 		ID:          id,
 		MessageType: testEntityType(),
-		Triples: []message.Triple{
-			{
-				Subject:    id,
-				Predicate:  "entity.type.class",
-				Object:     "test.entity",
-				Confidence: 1.0,
-				Timestamp:  time.Now(),
-			},
-		},
+		Triples: withTestMetadata(message.Triple{
+			Subject:    id,
+			Predicate:  "entity.type.class",
+			Object:     "test.entity",
+			Confidence: 1.0,
+			Timestamp:  time.Now(),
+		}),
 		UpdatedAt: time.Now(),
 	}
 }

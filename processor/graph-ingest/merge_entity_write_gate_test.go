@@ -25,14 +25,14 @@ import (
 func TestMergeEntity_InvalidCandidateNeverCommits(t *testing.T) {
 	validID := "acme.ops.test.system.widget.001"
 
-	badPredicateTriples := []message.Triple{
-		{Subject: validID, Predicate: semantictest.Predicate(t, "test", "state", "value"), Object: "ok"},
-		{Subject: validID, Predicate: "not-canonical", Object: "x"}, // predicate-audit:invalid {"kind":"stored-predicate","value":"not-canonical","reason":"arity"}
-	}
-	badSubjectTriples := []message.Triple{
-		{Subject: validID, Predicate: semantictest.Predicate(t, "test", "state", "value"), Object: "ok"},
-		{Subject: "bad", Predicate: semantictest.Predicate(t, "test", "state", "value"), Object: "x"},
-	}
+	badPredicateTriples := withTestMetadata(
+		message.Triple{Subject: validID, Predicate: semantictest.Predicate(t, "test", "state", "value"), Object: "ok"},
+		message.Triple{Subject: validID, Predicate: "not-canonical", Object: "x"}, // predicate-audit:invalid {"kind":"stored-predicate","value":"not-canonical","reason":"arity"}
+	)
+	badSubjectTriples := withTestMetadata(
+		message.Triple{Subject: validID, Predicate: semantictest.Predicate(t, "test", "state", "value"), Object: "ok"},
+		message.Triple{Subject: "bad", Predicate: semantictest.Predicate(t, "test", "state", "value"), Object: "x"},
+	)
 
 	cases := []struct {
 		name    string
@@ -45,9 +45,9 @@ func TestMergeEntity_InvalidCandidateNeverCommits(t *testing.T) {
 	for _, tc := range cases {
 		t.Run("merge branch "+tc.name, func(t *testing.T) {
 			c, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
-			resident := &graph.EntityState{ID: validID, Triples: []message.Triple{
-				{Subject: validID, Predicate: semantictest.Predicate(t, "test", "state", "value"), Object: "resident"},
-			}}
+			resident := &graph.EntityState{ID: validID, Triples: withTestMetadata(
+				message.Triple{Subject: validID, Predicate: semantictest.Predicate(t, "test", "state", "value"), Object: "resident"},
+			)}
 			require.NoError(t, c.mergeEntityOnLane(context.Background(), resident, false))
 			storedBefore, ok := bucket.data[validID]
 			require.True(t, ok, "resident seed must exist")

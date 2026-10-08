@@ -2009,6 +2009,9 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 	if err := c.authorizeSubject(entity.ID, importLane); err != nil {
 		return c.recordDirectAuthorityRejection(err)
 	}
+	if err := requireStatementMetadata(entity.Triples); err != nil {
+		return err
+	}
 	if err := ctx.Err(); err != nil {
 		return errs.Wrap(err, "Component", "mergeEntityOnLane", "context cancelled")
 	}
@@ -2095,6 +2098,9 @@ func (c *Component) createEntityWithReceipt(
 	}
 	if err := graph.ValidateEntityStateContract(entity); err != nil {
 		return nil, 0, errs.WrapInvalid(err, "Component", "CreateEntity", "validate entity state contract")
+	}
+	if err := requireCreateStatements(entity.Triples); err != nil {
+		return nil, 0, err
 	}
 
 	// Check context
@@ -2313,6 +2319,9 @@ func (c *Component) addTripleLane(ctx context.Context, triple message.Triple, la
 	// direct lane's to meter.
 	if authErr := c.authorizeSubject(triple.Subject, false); authErr != nil {
 		return false, 0, c.recordDirectAuthorityRejection(authErr)
+	}
+	if err := requireStatementMetadata([]message.Triple{triple}); err != nil {
+		return false, 0, err
 	}
 
 	// Check context

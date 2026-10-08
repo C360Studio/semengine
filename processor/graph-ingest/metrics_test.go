@@ -47,7 +47,7 @@ func TestComponent_MetricsUpdate_EntityOperations(t *testing.T) {
 
 	// Append a fact through the admitted mutation lane.
 	triple := message.Triple{Subject: entity.ID, Predicate: "test.metric.value", Object: "updated"}
-	data, err := json.Marshal(graph.AppendTriplesRequest{Triples: []message.Triple{triple}})
+	data, err := json.Marshal(graph.AppendTriplesRequest{Triples: withTestMetadata(triple)})
 	require.NoError(t, err)
 	_, err = comp.handleCanonicalAppend(ctx, data)
 	require.NoError(t, err)

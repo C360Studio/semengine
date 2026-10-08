@@ -83,7 +83,7 @@ func TestPoisonRepairRecoveryWithoutRestart(t *testing.T) {
 	require.NoError(t, c.CreateEntity(context.Background(), &graph.EntityState{
 		ID:          id,
 		MessageType: testEntityType(),
-		Triples:     []message.Triple{{Subject: id, Predicate: "test.state.value", Object: "fresh", Timestamp: time.Now(), Confidence: 1.0}},
+		Triples:     withTestMetadata(message.Triple{Subject: id, Predicate: "test.state.value", Object: "fresh", Timestamp: time.Now(), Confidence: 1.0}),
 	}))
 	data, err = queryEntity(t, c, id)
 	require.NoError(t, err, "fresh create after repair must serve")
@@ -220,7 +220,7 @@ func TestPoisonInventoryIsObservabilityOnly(t *testing.T) {
 		require.NoError(t, c.mergeEntityOnLane(ctx, &graph.EntityState{
 			ID:          id,
 			MessageType: testEntityType(),
-			Triples:     []message.Triple{{Subject: id, Predicate: "test.state.value", Object: "merged", Timestamp: time.Now(), Confidence: 1.0}},
+			Triples:     withTestMetadata(message.Triple{Subject: id, Predicate: "test.state.value", Object: "merged", Timestamp: time.Now(), Confidence: 1.0}),
 		}, false), "writes never consult the inventory")
 		_, inventoried := poisonInventoryEntry(c, id)
 		assert.False(t, inventoried, "the committed write clears the stale entry (D3b)")
@@ -281,7 +281,7 @@ func TestAggregateReadNamesEveryPoisonedEntity(t *testing.T) {
 // a retry-inviting transient internal error.
 func TestMutationReadSeamsReturnTypedFatal(t *testing.T) {
 	const id = "acme.ops.test.system.widget.seam"
-	validTriple := message.Triple{Subject: id, Predicate: "test.state.value", Object: "v", Timestamp: time.Now(), Confidence: 1.0}
+	validTriple := message.Triple{Subject: id, Predicate: "test.state.value", Object: "v", Source: fixtureSource, Timestamp: time.Now(), Confidence: 1.0}
 
 	assertTypedFatalReject := func(t *testing.T, data []byte, err error) {
 		t.Helper()
@@ -297,7 +297,7 @@ func TestMutationReadSeamsReturnTypedFatal(t *testing.T) {
 		c, bucket := poisonScopingTestComponent(t)
 		seedPoisonBytes(bucket, id, 1)
 		req, err := json.Marshal(graph.ReconcilePredicatesRequest{
-			EntityID: id, ExpectedRevision: 1, Predicates: []string{validTriple.Predicate},
+			EntityID: id, ExpectedRevision: 1, Source: fixtureSource, Predicates: []string{validTriple.Predicate},
 			Desired: []message.Triple{validTriple},
 		})
 		require.NoError(t, err)
@@ -334,9 +334,9 @@ func TestProcessIngestResidentPoisonNakThenAppliesAfterRepair(t *testing.T) {
 	seedPoisonBytes(bucket, id, 1)
 
 	work := ingestWork{
-		entity: &graph.EntityState{ID: id, MessageType: testEntityType(), Triples: []message.Triple{{
+		entity: &graph.EntityState{ID: id, MessageType: testEntityType(), Triples: withTestMetadata(message.Triple{
 			Subject: id, Predicate: "test.state.value", Object: "survivor", Timestamp: time.Now(), Confidence: 1.0,
-		}}},
+		})},
 		msg: &keyedIngestTestMsg{}, entityID: id, stream: "ENTITY", seq: 7,
 	}
 

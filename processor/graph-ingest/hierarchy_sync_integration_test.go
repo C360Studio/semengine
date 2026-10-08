@@ -122,14 +122,14 @@ func TestComponent_SynchronousHierarchy_IncludedBeforeWrite(t *testing.T) {
 			entity := &graph.EntityState{
 				ID:          tt.entityID,
 				MessageType: testEntityType(),
-				Triples: []message.Triple{
-					{
+				Triples: withTestMetadata(
+					message.Triple{
 						Subject:   tt.entityID,
 						Predicate: "entity.type.class",
 						Object:    "test.entity",
 						Timestamp: time.Now(),
 					},
-				},
+				),
 				UpdatedAt: time.Now(),
 			}
 
@@ -206,14 +206,14 @@ func TestComponent_SynchronousHierarchy_SingleWrite(t *testing.T) {
 			entity := &graph.EntityState{
 				ID:          tt.entityID,
 				MessageType: testEntityType(),
-				Triples: []message.Triple{
-					{
+				Triples: withTestMetadata(
+					message.Triple{
 						Subject:   tt.entityID,
 						Predicate: "entity.type.class",
 						Object:    "test.entity",
 						Timestamp: time.Now(),
 					},
-				},
+				),
 				UpdatedAt: time.Now(),
 			}
 
@@ -291,14 +291,14 @@ func TestComponent_SynchronousHierarchy_ContainerCreation(t *testing.T) {
 	entity := &graph.EntityState{
 		ID:          entityID,
 		MessageType: testEntityType(),
-		Triples: []message.Triple{
-			{
+		Triples: withTestMetadata(
+			message.Triple{
 				Subject:   entityID,
 				Predicate: "entity.type.class",
 				Object:    "robotics.drone",
 				Timestamp: time.Now(),
 			},
-		},
+		),
 		UpdatedAt: time.Now(),
 	}
 
@@ -361,14 +361,14 @@ func TestComponent_SynchronousHierarchy_MultipleEntitiesSameType(t *testing.T) {
 		entity := &graph.EntityState{
 			ID:          entityID,
 			MessageType: testEntityType(),
-			Triples: []message.Triple{
-				{
+			Triples: withTestMetadata(
+				message.Triple{
 					Subject:   entityID,
 					Predicate: "entity.type.class",
 					Object:    "robotics.drone",
 					Timestamp: time.Now(),
 				},
-			},
+			),
 			UpdatedAt: time.Now(),
 		}
 		require.NoError(t, comp.CreateEntity(ctx, entity))
@@ -463,14 +463,14 @@ func TestComponent_SynchronousHierarchy_NoWatcherLifecycle(t *testing.T) {
 				entity := &graph.EntityState{
 					ID:          "c360.platform.test.system.type.instance001",
 					MessageType: testEntityType(),
-					Triples: []message.Triple{
-						{
+					Triples: withTestMetadata(
+						message.Triple{
 							Subject:   "c360.platform.test.system.type.instance001",
 							Predicate: "entity.type.class",
 							Object:    "test.entity",
 							Timestamp: time.Now(),
 						},
-					},
+					),
 					UpdatedAt: time.Now(),
 				}
 
@@ -530,14 +530,14 @@ func TestComponent_SynchronousHierarchy_DisabledConfig(t *testing.T) {
 		entity := &graph.EntityState{
 			ID:          entityID,
 			MessageType: testEntityType(),
-			Triples: []message.Triple{
-				{
+			Triples: withTestMetadata(
+				message.Triple{
 					Subject:   entityID,
 					Predicate: "entity.type.class",
 					Object:    "robotics.drone",
 					Timestamp: time.Now(),
 				},
-			},
+			),
 			UpdatedAt: time.Now(),
 		}
 
@@ -687,14 +687,14 @@ func TestComponent_SynchronousHierarchy_ContextCancellation(t *testing.T) {
 		entity := &graph.EntityState{
 			ID:          entityID,
 			MessageType: testEntityType(),
-			Triples: []message.Triple{
-				{
+			Triples: withTestMetadata(
+				message.Triple{
 					Subject:   entityID,
 					Predicate: "entity.type.class",
 					Object:    "robotics.drone",
 					Timestamp: time.Now(),
 				},
-			},
+			),
 			UpdatedAt: time.Now(),
 		}
 
@@ -733,14 +733,14 @@ func TestComponent_SynchronousHierarchy_SiblingEdges(t *testing.T) {
 		entity1 := &graph.EntityState{
 			ID:          entity1ID,
 			MessageType: testEntityType(),
-			Triples: []message.Triple{
-				{
+			Triples: withTestMetadata(
+				message.Triple{
 					Subject:   entity1ID,
 					Predicate: "entity.type.class",
 					Object:    "sensor.temperature",
 					Timestamp: time.Now(),
 				},
-			},
+			),
 			UpdatedAt: time.Now(),
 		}
 
@@ -762,14 +762,14 @@ func TestComponent_SynchronousHierarchy_SiblingEdges(t *testing.T) {
 		entity2 := &graph.EntityState{
 			ID:          entity2ID,
 			MessageType: testEntityType(),
-			Triples: []message.Triple{
-				{
+			Triples: withTestMetadata(
+				message.Triple{
 					Subject:   entity2ID,
 					Predicate: "entity.type.class",
 					Object:    "sensor.temperature",
 					Timestamp: time.Now(),
 				},
-			},
+			),
 			UpdatedAt: time.Now(),
 		}
 
@@ -837,14 +837,14 @@ func TestComponent_SynchronousHierarchy_SiblingEdges(t *testing.T) {
 			entity := &graph.EntityState{
 				ID:          entityID,
 				MessageType: testEntityType(),
-				Triples: []message.Triple{
-					{
+				Triples: withTestMetadata(
+					message.Triple{
 						Subject:   entityID,
 						Predicate: "entity.type.class",
 						Object:    "sensor.pressure",
 						Timestamp: time.Now(),
 					},
-				},
+				),
 				UpdatedAt: time.Now(),
 			}
 			require.NoError(t, comp.CreateEntity(ctx, entity))

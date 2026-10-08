@@ -96,7 +96,7 @@ func gateCreateRequest(id string, mt message.Type) graph.CreateEntityRequest {
 	now := time.Now()
 	return graph.CreateEntityRequest{
 		Entity:  &graph.EntityState{ID: id, MessageType: mt, UpdatedAt: now},
-		Triples: []message.Triple{{Subject: id, Predicate: "test.state.value", Object: "born", Timestamp: now, Confidence: 1}},
+		Triples: withTestMetadata(message.Triple{Subject: id, Predicate: "test.state.value", Object: "born", Timestamp: now, Confidence: 1}),
 	}
 }
 
@@ -211,7 +211,7 @@ func TestHierarchyContainerBirthCarriesRegisteredType(t *testing.T) {
 	now := time.Now()
 	require.NoError(t, c.CreateEntity(ctx, &graph.EntityState{
 		ID: id, MessageType: message.Type{Domain: "test", Category: "entity", Version: "v1"},
-		Triples:   []message.Triple{{Subject: id, Predicate: "entity.type.class", Object: "test.entity", Timestamp: now, Confidence: 1}},
+		Triples:   withTestMetadata(message.Triple{Subject: id, Predicate: "entity.type.class", Object: "test.entity", Timestamp: now, Confidence: 1}),
 		UpdatedAt: now,
 	}))
 

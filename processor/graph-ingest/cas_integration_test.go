@@ -33,7 +33,7 @@ func TestIntegration_ConcurrentCanonicalAppend(t *testing.T) {
 	require.NoError(t, c.Start(owner.startContext(ctx)))
 
 	const entityID = "c360.test.cas.concurrent.drone.001"
-	require.NoError(t, c.CreateEntity(ctx, &graph.EntityState{ID: entityID, MessageType: testEntityType(), UpdatedAt: time.Now()}))
+	require.NoError(t, c.CreateEntity(ctx, newTestEntity(entityID)))
 
 	const writers = 20
 	var wg sync.WaitGroup
@@ -69,5 +69,6 @@ func TestIntegration_ConcurrentCanonicalAppend(t *testing.T) {
 	require.NoError(t, err)
 	var entity graph.EntityState
 	require.NoError(t, json.Unmarshal(entry.Value, &entity))
-	assert.Equal(t, writers, nonProfileTripleCount(&entity), "no concurrent append may be lost")
+	// The seed's own statement is of another predicate: a create carries one (design D15).
+	assert.Equal(t, writers, countDedupTriples(entity, "test.concurrent.value"), "no concurrent append may be lost")
 }

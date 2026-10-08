@@ -55,10 +55,10 @@ func TestIngestEntity_FillsOnlyEmptyFactProjectionSubject(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)
 	entity := &graph.EntityState{
 		ID: flParentID,
-		Triples: []message.Triple{
-			{Subject: "", Predicate: "test.subject.omitted", Object: "filled"},
-			{Subject: flParentID, Predicate: "test.subject.explicit", Object: "unchanged"},
-		},
+		Triples: withTestMetadata(
+			message.Triple{Subject: "", Predicate: "test.subject.omitted", Object: "filled"},
+			message.Triple{Subject: flParentID, Predicate: "test.subject.explicit", Object: "unchanged"},
+		),
 	}
 
 	require.NoError(t, comp.ingestEntity(context.Background(), entity, false))
@@ -187,7 +187,7 @@ func TestIngestEntity_SingleSubjectNoForeignEntityCreated(t *testing.T) {
 	entity := &graph.EntityState{
 		ID:          flParentID,
 		MessageType: testWidgetMessageType(),
-		Triples:     []message.Triple{{Subject: flParentID, Predicate: "graph.rel.hosts", Object: "x", Timestamp: time.Now()}},
+		Triples:     withTestMetadata(message.Triple{Subject: flParentID, Predicate: "graph.rel.hosts", Object: "x", Timestamp: time.Now()}),
 	}
 	comp.ingestEntity(ctx, entity, false)
 

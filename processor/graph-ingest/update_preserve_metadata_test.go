@@ -29,9 +29,9 @@ func TestCanonicalReconcilePreservesEntityEnvelope(t *testing.T) {
 			MessageType: messageType,
 			StorageRef:  storageRef,
 		},
-		Triples: []message.Triple{{
+		Triples: withTestMetadata(message.Triple{
 			Subject: id, Predicate: "lifecycle.state.phase", Object: "active", Confidence: 1,
-		}},
+		}),
 	})
 	require.NoError(t, err)
 	createBody, err := comp.handleCanonicalCreate(t.Context(), createData)
@@ -43,10 +43,11 @@ func TestCanonicalReconcilePreservesEntityEnvelope(t *testing.T) {
 	reconcileData, err := json.Marshal(graph.ReconcilePredicatesRequest{
 		EntityID:         id,
 		ExpectedRevision: created.KVRevision,
+		Source:           fixtureSource,
 		Predicates:       []string{"lifecycle.state.phase"},
-		Desired: []message.Triple{{
+		Desired: withTestMetadata(message.Triple{
 			Subject: id, Predicate: "lifecycle.state.phase", Object: "done", Confidence: 1,
-		}},
+		}),
 	})
 	require.NoError(t, err)
 	reconcileBody, err := comp.handleCanonicalReconcile(t.Context(), reconcileData)

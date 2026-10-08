@@ -102,9 +102,9 @@ func TestIntegration_StructuralGate_Create_WireContract(t *testing.T) {
 			MessageType: message.Type{Domain: "test", Category: "mutation", Version: "v1"},
 			UpdatedAt:   now,
 		},
-		Triples: []message.Triple{
-			{Subject: createID, Predicate: "agent.role", Object: "researcher", Timestamp: now, Confidence: 1.0}, // predicate-audit:invalid {"kind":"stored-predicate","value":"agent.role","reason":"arity"}
-		},
+		Triples: withTestMetadata(
+			message.Triple{Subject: createID, Predicate: "agent.role", Object: "researcher", Timestamp: now, Confidence: 1.0}, // predicate-audit:invalid {"kind":"stored-predicate","value":"agent.role","reason":"arity"}
+		),
 	})
 	require.NoError(t, err)
 

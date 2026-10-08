@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
-	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/assert"
@@ -58,10 +57,7 @@ func TestHandleCanonicalAppend_SuppressedIsUnchanged(t *testing.T) {
 func TestHandleCanonicalAppend_ReportsItsOwnCASRevision(t *testing.T) {
 	comp, bucket := createTestComponentWithMockKVBucket(t)
 	ctx := context.Background()
-	require.NoError(t, comp.CreateEntity(ctx, &graph.EntityState{
-		ID:          dedupSubject,
-		MessageType: testEntityType(), Triples: []message.Triple{}, UpdatedAt: time.Now(),
-	}))
+	require.NoError(t, comp.CreateEntity(ctx, newTestEntity(dedupSubject)))
 
 	triple := dedupTriple(dedupSubject)
 	requestData, err := json.Marshal(graph.AppendTriplesRequest{Triples: []message.Triple{triple}})

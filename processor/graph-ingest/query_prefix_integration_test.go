@@ -136,12 +136,12 @@ func TestIntegration_PrefixQuery_IndivisibleEntityTooLarge(t *testing.T) {
 	entity := &graph.EntityState{
 		ID:          id,
 		MessageType: testEntityType(),
-		Triples: []message.Triple{{
+		Triples: withTestMetadata(message.Triple{
 			Subject:   id,
 			Predicate: "test.entity.attribute",
 			Object:    strings.Repeat("x", int(maxPayload)),
 			Timestamp: time.Now(),
-		}},
+		}),
 		UpdatedAt: time.Now(),
 	}
 	require.NoError(t, comp.CreateEntity(ctx, entity))

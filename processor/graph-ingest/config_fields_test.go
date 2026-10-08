@@ -50,9 +50,9 @@ func createDrone(t *testing.T, c *Component, instance string) []message.Triple {
 	entity := &graph.EntityState{
 		ID:          id,
 		MessageType: testEntityType(),
-		Triples: []message.Triple{
-			{Subject: id, Predicate: "robotics.status.armed", Object: true, Timestamp: now},
-		},
+		Triples: withTestMetadata(
+			message.Triple{Subject: id, Predicate: "robotics.status.armed", Object: true, Timestamp: now},
+		),
 		UpdatedAt: now,
 	}
 	if err := c.CreateEntity(t.Context(), entity); err != nil {

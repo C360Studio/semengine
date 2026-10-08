@@ -31,18 +31,20 @@ func dedupTriple(subject string) message.Triple {
 		Subject:    subject,
 		Predicate:  "hierarchy.type.contains",
 		Object:     "c360.platform.robotics.mav1.drone.002",
-		Source:     "",
+		Source:     fixtureSource,
+		Timestamp:  fixtureTime,
 		Context:    "inference.hierarchy",
 		Confidence: 1.0,
 	}
 }
 
-// seedDedupEntity creates an empty entity and returns the component, its
-// bucket, and the entity's revision after creation.
+// seedDedupEntity creates an entity holding one statement of another predicate (a create
+// carries at least one, design D15) and returns the component and the entity's revision after
+// creation.
 func seedDedupEntity(t *testing.T, id string) (*Component, uint64) {
 	t.Helper()
 	comp := createTestComponentWithMockKV(t)
-	entity := &graph.EntityState{ID: id, MessageType: testEntityType(), Triples: []message.Triple{}, UpdatedAt: time.Now()}
+	entity := newTestEntity(id)
 	require.NoError(t, comp.CreateEntity(context.Background(), entity))
 	entry, err := comp.entityBucket.Get(context.Background(), id)
 	require.NoError(t, err)
@@ -411,10 +413,7 @@ func TestHandleCanonicalAppend_MultiSubjectReportsIndependentRevisions(t *testin
 	comp, _ := seedDedupEntity(t, dedupSubject)
 	ctx := context.Background()
 	const otherSubject = "c360.platform.robotics.mav1.drone.007"
-	require.NoError(t, comp.CreateEntity(ctx, &graph.EntityState{
-		ID:          otherSubject,
-		MessageType: testEntityType(), Triples: []message.Triple{}, UpdatedAt: time.Now(),
-	}))
+	require.NoError(t, comp.CreateEntity(ctx, newTestEntity(otherSubject)))
 
 	first := dedupTriple(dedupSubject)
 	second := dedupTriple(otherSubject)

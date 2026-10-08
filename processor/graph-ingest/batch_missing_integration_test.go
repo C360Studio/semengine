@@ -39,9 +39,9 @@ func TestIntegration_BatchQuery_ReportsMissingIDs(t *testing.T) {
 		require.NoError(t, c.CreateEntity(ctx, &graph.EntityState{
 			ID:          id,
 			MessageType: testEntityType(),
-			Triples: []message.Triple{{
+			Triples: withTestMetadata(message.Triple{
 				Subject: id, Predicate: "core.identity.type", Object: "drone", Confidence: 1.0,
-			}},
+			}),
 		}))
 	}
 
@@ -126,9 +126,9 @@ func TestIntegration_BatchQuery_EmptyIDIsAccountedFor(t *testing.T) {
 	require.NoError(t, c.CreateEntity(ctx, &graph.EntityState{
 		ID:          present,
 		MessageType: testEntityType(),
-		Triples: []message.Triple{{
+		Triples: withTestMetadata(message.Triple{
 			Subject: present, Predicate: "core.identity.type", Object: "drone", Confidence: 1.0,
-		}},
+		}),
 	}))
 
 	body, err := json.Marshal(map[string]any{"ids": []string{present, ""}})

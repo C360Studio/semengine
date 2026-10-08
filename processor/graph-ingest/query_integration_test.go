@@ -54,27 +54,27 @@ func TestIntegration_QueryHandlers(t *testing.T) {
 		{
 			ID:          "c360.platform.robotics.mav1.drone.001",
 			MessageType: testEntityType(),
-			Triples: []message.Triple{
-				{
+			Triples: withTestMetadata(
+				message.Triple{
 					Subject:   "c360.platform.robotics.mav1.drone.001",
 					Predicate: "robotics.status.armed",
 					Object:    true,
 					Timestamp: time.Now(),
 				},
-			},
+			),
 			UpdatedAt: time.Now(),
 		},
 		{
 			ID:          "c360.platform.robotics.mav1.drone.002",
 			MessageType: testEntityType(),
-			Triples: []message.Triple{
-				{
+			Triples: withTestMetadata(
+				message.Triple{
 					Subject:   "c360.platform.robotics.mav1.drone.002",
 					Predicate: "robotics.battery.level",
 					Object:    85.5,
 					Timestamp: time.Now(),
 				},
-			},
+			),
 			UpdatedAt: time.Now(),
 		},
 	}

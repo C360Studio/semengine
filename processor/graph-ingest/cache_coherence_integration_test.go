@@ -59,7 +59,7 @@ func TestIntegration_CacheCoherence_AppendVisibleAfterPrefixRead(t *testing.T) {
 	require.Nil(t, got.GetTriple("test.coherence.marker"), "marker not present yet")
 
 	// Commit a new predicate via canonical append.
-	updReq := graph.AppendTriplesRequest{Triples: []message.Triple{{Subject: id, Predicate: "test.coherence.marker", Object: "v1", Timestamp: time.Now(), Confidence: 1.0}}}
+	updReq := graph.AppendTriplesRequest{Triples: withTestMetadata(message.Triple{Subject: id, Predicate: "test.coherence.marker", Object: "v1", Timestamp: time.Now(), Confidence: 1.0})}
 	updData, err := json.Marshal(updReq)
 	require.NoError(t, err)
 	_, err = nc.RequestClassified(ctx, "graph.mutation.triple.append", updData, coherenceRequestTimeout)
@@ -71,7 +71,7 @@ func TestIntegration_CacheCoherence_AppendVisibleAfterPrefixRead(t *testing.T) {
 	require.NotNil(t, got.GetTriple("test.coherence.marker"), "append must be visible on the next prefix read (cache invalidated)")
 
 	// Same contract for a second append.
-	addReq := graph.AppendTriplesRequest{Triples: []message.Triple{{Subject: id, Predicate: "test.coherence.added", Object: "v2", Timestamp: time.Now(), Confidence: 1.0}}}
+	addReq := graph.AppendTriplesRequest{Triples: withTestMetadata(message.Triple{Subject: id, Predicate: "test.coherence.added", Object: "v2", Timestamp: time.Now(), Confidence: 1.0})}
 	addData, err := json.Marshal(addReq)
 	require.NoError(t, err)
 	_, err = nc.RequestClassified(ctx, "graph.mutation.triple.append", addData, coherenceRequestTimeout)

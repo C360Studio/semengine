@@ -27,7 +27,7 @@ func TestIntegration_CanonicalMutationLifecycle(t *testing.T) {
 
 	create := graph.CreateEntityRequest{
 		Entity:  &graph.EntityState{ID: id, MessageType: testMutationType, UpdatedAt: now},
-		Triples: []message.Triple{{Subject: id, Predicate: "test.state.value", Object: "created", Timestamp: now, Confidence: 1}},
+		Triples: withTestMetadata(message.Triple{Subject: id, Predicate: "test.state.value", Object: "created", Timestamp: now, Confidence: 1}),
 	}
 	createData, err := json.Marshal(create)
 	require.NoError(t, err)
@@ -44,9 +44,9 @@ func TestIntegration_CanonicalMutationLifecycle(t *testing.T) {
 	assert.Equal(t, graph.ErrorCodeEntityExists, classified.Code)
 
 	reconcile := graph.ReconcilePredicatesRequest{
-		EntityID: id, ExpectedRevision: created.KVRevision,
+		EntityID: id, ExpectedRevision: created.KVRevision, Source: fixtureSource,
 		Predicates: []string{"test.state.value"},
-		Desired:    []message.Triple{{Subject: id, Predicate: "test.state.value", Object: "reconciled", Timestamp: now, Confidence: 1}},
+		Desired:    withTestMetadata(message.Triple{Subject: id, Predicate: "test.state.value", Object: "reconciled", Timestamp: now, Confidence: 1}),
 	}
 	reconcileData, err := json.Marshal(reconcile)
 	require.NoError(t, err)
@@ -61,9 +61,9 @@ func TestIntegration_CanonicalMutationLifecycle(t *testing.T) {
 	require.ErrorAs(t, err, &classified)
 	assert.Equal(t, graph.ErrorCodeRevisionMismatch, classified.Code)
 
-	appendRequest, err := json.Marshal(graph.AppendTriplesRequest{Triples: []message.Triple{{
+	appendRequest, err := json.Marshal(graph.AppendTriplesRequest{Triples: withTestMetadata(message.Triple{
 		Subject: id, Predicate: "test.event.value", Object: "appended", Timestamp: now, Confidence: 1,
-	}}})
+	})})
 	require.NoError(t, err)
 	body, err = c.handleCanonicalAppend(ctx, appendRequest)
 	require.NoError(t, err)
@@ -90,9 +90,9 @@ func TestIntegration_CanonicalAppend_ReportsIndependentMissingSubject(t *testing
 	c, owner := startBatchTestComponent(ctx, t)
 	defer owner.finish(ctx, t)
 	const missing = "c360.test.mutation.system.widget.missing"
-	request, err := json.Marshal(graph.AppendTriplesRequest{Triples: []message.Triple{{
+	request, err := json.Marshal(graph.AppendTriplesRequest{Triples: withTestMetadata(message.Triple{
 		Subject: missing, Predicate: "test.event.value", Object: "not-written",
-	}}})
+	})})
 	require.NoError(t, err)
 	body, err := c.handleCanonicalAppend(ctx, request)
 	require.NoError(t, err)

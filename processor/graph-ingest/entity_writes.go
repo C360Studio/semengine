@@ -2,12 +2,15 @@ package graphingest
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"slices"
 	"time"
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/natsclient"
+	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/pkg/retry"
 	"github.com/c360studio/semengine/vocabulary"
 )
@@ -20,6 +23,8 @@ import (
 // Callers keep their own validation, authority checks, metrics, cache and poison bookkeeping,
 // and replies; a method here takes what its mode needs and returns the revision it committed
 // (where the caller uses it) and the bucket's error unwrapped, so callers classify it as before.
+// Every lane that writes statements first applies the seam's statement-metadata rule,
+// requireStatementMetadata, to the statements its caller gave.
 //
 // The modes, and the lanes on which each is used:
 //
@@ -31,6 +36,50 @@ import (
 //   - append (appendEntityTriples): mutation append; in-process append (hierarchy's inverse
 //     edges). Identity is message.AppendIdentityKey, under the KV revision.
 //   - delete (deleteEntity): mutation delete, at the caller's expected revision.
+
+// requireStatementMetadata is the seam's statement-metadata rule (design D15, #98): every
+// statement the seam stores has a non-empty Source and a non-zero Timestamp, and neither is
+// defaulted from the clock. It refuses the first of triples that lacks either as
+// invalid_request, naming the statement's index and the missing field.
+//
+// Every lane applies it to the statements its caller gave, after its own validation and
+// authority gate, before its first read or write of the bucket and before graph-ingest adds the
+// statements it derives, so a refused write stores nothing and the index is the caller's: the
+// mutation create, append and reconcile (handleCanonicalCreate, handleCanonicalAppend,
+// handleCanonicalReconcile), the in-process create and append (createEntityWithReceipt,
+// addTripleLane), and the stream lane (mergeEntityOnLane). A check inside the write methods below
+// would come too late for both: an in-process create's hierarchy inference stores containers and
+// edges before its write, and an append batch commits one subject at a time. On the stream lane,
+// stampFromEnvelope has already filled both or refused the message, so the rule is a second line
+// there.
+func requireStatementMetadata(triples []message.Triple) error {
+	for index := range triples {
+		switch {
+		case triples[index].Source == "":
+			return refuseMissingMetadata(index, "source")
+		case triples[index].Timestamp.IsZero():
+			return refuseMissingMetadata(index, "timestamp")
+		}
+	}
+	return nil
+}
+
+// requireCreateStatements is requireStatementMetadata for a create on the mutation and
+// in-process lanes, which also refuses a create that carries no statement: the statements
+// graph-ingest derives at birth take the latest Timestamp among the write's own, so with none
+// there is no time to give them (design D15).
+func requireCreateStatements(triples []message.Triple) error {
+	if len(triples) == 0 {
+		return errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeInvalidRequest,
+			errors.New("triples cannot be empty: a create's derived statements take their time from its own"))
+	}
+	return requireStatementMetadata(triples)
+}
+
+func refuseMissingMetadata(index int, field string) error {
+	return errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeInvalidRequest,
+		fmt.Errorf("triple[%d] has no %s", index, field))
+}
 
 // createEntity is the create mode: the bucket's atomic create-or-fail, the only admitted birth
 // primitive. An existing key is refused with natsclient.ErrKVKeyExists, which is returned as is

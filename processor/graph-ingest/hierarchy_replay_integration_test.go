@@ -59,12 +59,12 @@ func replayEntity(id string) *graph.EntityState {
 	return &graph.EntityState{
 		ID:          id,
 		MessageType: testEntityType(),
-		Triples: []message.Triple{{
+		Triples: withTestMetadata(message.Triple{
 			Subject:   id,
 			Predicate: "entity.type.class",
 			Object:    "robotics.drone",
 			Timestamp: time.Now(),
-		}},
+		}),
 		UpdatedAt: time.Now(),
 	}
 }

@@ -56,12 +56,7 @@ func TestCreateEntity_UnicodeID(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			entity := &graph.EntityState{
-				ID:          tt.entityID,
-				MessageType: testEntityType(),
-				Triples:     []message.Triple{},
-				UpdatedAt:   time.Now(),
-			}
+			entity := newTestEntity(tt.entityID)
 
 			err := comp.CreateEntity(ctx, entity)
 
@@ -105,7 +100,7 @@ func TestCreateEntity_LargeTripleSet(t *testing.T) {
 	entity := &graph.EntityState{
 		ID:          "c360.platform.test.sys.type.001",
 		MessageType: testEntityType(),
-		Triples:     triples,
+		Triples:     withTestMetadata(triples...),
 		UpdatedAt:   time.Now(),
 	}
 

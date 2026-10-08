@@ -44,14 +44,14 @@ func storePrefixEntity(t *testing.T, comp *Component, id string) {
 	entity := &graph.EntityState{
 		ID:          id,
 		MessageType: testEntityType(),
-		Triples: []message.Triple{
-			{
+		Triples: withTestMetadata(
+			message.Triple{
 				Subject:   id,
 				Predicate: "test.entity.attribute",
 				Object:    "val",
 				Timestamp: time.Now(),
 			},
-		},
+		),
 		UpdatedAt: time.Now(),
 	}
 	require.NoError(t, comp.CreateEntity(ctx, entity))

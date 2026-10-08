@@ -30,7 +30,7 @@ func newSeedEntity(id string, triples ...message.Triple) *graph.EntityState {
 	now := time.Now()
 	return &graph.EntityState{
 		ID:          id,
-		Triples:     triples,
+		Triples:     withTestMetadata(triples...),
 		MessageType: message.Type{Domain: "test", Category: "seed", Version: "v1"},
 		UpdatedAt:   now,
 	}

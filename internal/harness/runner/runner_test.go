@@ -20,8 +20,8 @@ import (
 
 // semstreamsOwnerKeys is the owner-record format of SemStreams scripts/run-integration-tests.sh
 // at 5457b3458936f668b71d2fea061f67f8d7d01e67, lines 213-220, recorded here as the independent
-// oracle: both runners must write and read exactly these keys, in this order, or neither can judge
-// the other's lock.
+// oracle: this runner writes these keys, in this order, followed by identity_utc, a key
+// SemStreams' runner ignores, so each runner can judge the other's lock.
 var semstreamsOwnerKeys = []string{"host", "pid", "started", "identity", "token", "command"}
 
 // fakeDocker records every invocation and answers the handful of subcommands the runner uses.
@@ -224,14 +224,18 @@ func (h *harness) evidenceFile(t *testing.T, name string) string {
 	return string(data)
 }
 
-// writeOwner plants a lock held by someone else, in the shared owner-record format.
-func (h *harness) writeOwner(t *testing.T, host string, pid int, identity string) {
+// writeOwner plants a lock held by someone else, in the shared owner-record format: SemStreams'
+// six keys, then each of extra as a line of its own (a SemEngine runner's identity_utc).
+func (h *harness) writeOwner(t *testing.T, host string, pid int, identity string, extra ...string) {
 	t.Helper()
 	if err := os.Mkdir(h.lock, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	owner := fmt.Sprintf("host=%s\npid=%d\nstarted=%d\nidentity=%s\ntoken=foreign-token\ncommand=scripts/run-integration-tests.sh\n",
 		host, pid, time.Now().Unix(), identity)
+	for _, line := range extra {
+		owner += line + "\n"
+	}
 	if err := os.WriteFile(filepath.Join(h.lock, "owner"), []byte(owner), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -333,28 +337,38 @@ func deadPID(t *testing.T) (int, string) {
 func pidAlive(pid int) bool { return syscall.Kill(pid, 0) == nil }
 
 // R1: a live same-host owner refuses the run before any Docker call, and SEMSTREAMS_* variables
-// (here a wait budget and a different lock path) are not read.
+// (here a wait budget and a different lock path) are not read. Both records name this process
+// with its real identity: SemStreams' six keys are judged by it, and a record whose identity_utc
+// is unknown is judged by that, which is never stale.
 func TestR1BusyLockRefusesBeforeDocker(t *testing.T) {
 	t.Parallel()
-	h := newHarness(t, "SEMSTREAMS_INTEGRATION_LOCK_WAIT_SECONDS=30", "SEMSTREAMS_INTEGRATION_LOCK_DIR=/nonexistent/semstreams.lock")
-	h.writeOwner(t, hostname(t), os.Getpid(), startIdentity(t, os.Getpid()))
-	r := h.run(t, "./internal/harness/natsfixture/")
-	if r.status != 1 {
-		t.Fatalf("status %d, want 1\nstdout:\n%s\nstderr:\n%s", r.status, r.stdout, r.stderr)
-	}
-	for _, want := range []string{"lock owner host=" + hostname(t), fmt.Sprintf("pid=%d", os.Getpid()), "command=scripts/run-integration-tests.sh"} {
-		if !strings.Contains(r.stderr, want) {
-			t.Errorf("stderr does not report the owner (%q):\n%s", want, r.stderr)
-		}
-	}
-	if log := h.read(t, "docker.log"); log != "" {
-		t.Errorf("docker was invoked while the lock was busy:\n%s", log)
-	}
-	if h.read(t, "go.argv") != "" {
-		t.Error("go test ran while the lock was busy")
-	}
-	if owner, err := os.ReadFile(filepath.Join(h.lock, "owner")); err != nil || !strings.Contains(string(owner), "token=foreign-token") {
-		t.Errorf("the foreign owner record was disturbed: %q, %v", owner, err)
+	for name, extra := range map[string][]string{
+		"live owner":           nil,
+		"identity_utc unknown": {"identity_utc=unknown"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			h := newHarness(t, "SEMSTREAMS_INTEGRATION_LOCK_WAIT_SECONDS=30", "SEMSTREAMS_INTEGRATION_LOCK_DIR=/nonexistent/semstreams.lock")
+			h.writeOwner(t, hostname(t), os.Getpid(), startIdentity(t, os.Getpid()), extra...)
+			r := h.run(t, "./internal/harness/natsfixture/")
+			if r.status != 1 {
+				t.Fatalf("status %d, want 1\nstdout:\n%s\nstderr:\n%s", r.status, r.stdout, r.stderr)
+			}
+			for _, want := range []string{"lock owner host=" + hostname(t), fmt.Sprintf("pid=%d", os.Getpid()), "command=scripts/run-integration-tests.sh"} {
+				if !strings.Contains(r.stderr, want) {
+					t.Errorf("stderr does not report the owner (%q):\n%s", want, r.stderr)
+				}
+			}
+			if log := h.read(t, "docker.log"); log != "" {
+				t.Errorf("docker was invoked while the lock was busy:\n%s", log)
+			}
+			if h.read(t, "go.argv") != "" {
+				t.Error("go test ran while the lock was busy")
+			}
+			if owner, err := os.ReadFile(filepath.Join(h.lock, "owner")); err != nil || !strings.Contains(string(owner), "token=foreign-token") {
+				t.Errorf("the foreign owner record was disturbed: %q, %v", owner, err)
+			}
+		})
 	}
 }
 
@@ -373,6 +387,285 @@ func TestR1ForeignHostOwnerIsRespected(t *testing.T) {
 	}
 }
 
+// T1 (#126): a second runner, started from a shell in another time zone and locale, reads the
+// first runner, still running, as the live owner it is, and refuses rather than quarantine its
+// lock. Each runner sets both, so the test does not depend on the host's own zone. Both locales
+// are non-C: on macOS, whose ps prints the start time in the locale, a writer or a judge that
+// reads it without LC_ALL=C records or reads text the other side does not. A Linux host with no
+// such locale runs both in C, and only the time zones differ there.
+func TestR1LiveOwnerInAnotherTimeZoneOrLocaleIsRespected(t *testing.T) {
+	t.Parallel()
+	a := newHarness(t, "FAKE_GO_MODE=hang", "TZ=EST5", "LC_ALL=en_GB.UTF-8")
+	cmdA := a.command(t.Context(), "./internal/harness/natsfixture/")
+	waitedA, stdoutA, stderrA := a.startRunner(t, cmdA, "go.ready")
+	var errA error
+	reapedA := false
+	// A is stopped with TERM, its graceful path, on every path out of the test, while the test's
+	// context (which would SIGKILL the runner alone and orphan its go test group) is still live.
+	defer func() {
+		if !reapedA {
+			_ = cmdA.Process.Signal(syscall.SIGTERM)
+			<-waitedA
+		}
+	}()
+	// runningA reports whether A is still running: Wait has not returned and its pid takes a signal.
+	runningA := func() bool {
+		select {
+		case errA = <-waitedA:
+			reapedA = true
+			return false
+		default:
+			return pidAlive(cmdA.Process.Pid)
+		}
+	}
+	if !runningA() {
+		t.Fatalf("runner A stopped running before runner B started (wait: %v)", errA)
+	}
+	ownerA, err := os.ReadFile(filepath.Join(a.lock, "owner"))
+	if err != nil {
+		t.Fatalf("runner A holds no owner record: %v", err)
+	}
+	// The record's mode is the one a new file gets under the umask runner A inherits from this
+	// process, which a file os.Create makes here gets too.
+	newFile, err := os.Create(filepath.Join(t.TempDir(), "new-file"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := newFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+	ownerInfo, err := os.Stat(filepath.Join(a.lock, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	newInfo, err := os.Stat(newFile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := ownerInfo.Mode().Perm(), newInfo.Mode().Perm(); got != want {
+		t.Errorf("owner record mode %v, want %v, the mode a new file gets under the runner's umask", got, want)
+	}
+	tokenA := ""
+	for _, line := range strings.Split(string(ownerA), "\n") {
+		if v, ok := strings.CutPrefix(line, "token="); ok {
+			tokenA = v
+		}
+	}
+	if tokenA == "" {
+		t.Fatalf("runner A's owner record holds no token:\n%s", ownerA)
+	}
+
+	// B has its own fakes and evidence and the default FAKE_GO_MODE, and A's lock directory: the
+	// later value in the environment wins (os/exec). No wait budget is set, so B decides at once.
+	b := newHarness(t, "SEMENGINE_DOCKER_ADMISSION_LOCK_DIR="+a.lock, "TZ=JST-9", "LC_ALL=ja_JP.UTF-8")
+	// A watchdog, not a synchronisation: a B that refuses exits at once and a B that acquires runs
+	// to completion, so the deadline ends only a B that does neither.
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	cmdB := b.command(ctx, "./internal/harness/natsfixture/")
+	var stdoutB, stderrB bytes.Buffer
+	cmdB.Stdout, cmdB.Stderr = &stdoutB, &stderrB
+	statusB := exitCode(cmdB.Run())
+	if statusB != 1 || !strings.Contains(stderrB.String(), fmt.Sprintf("pid=%d ", cmdA.Process.Pid)) {
+		t.Errorf("runner B status %d, want 1 naming runner A (pid %d) as the lock owner\nstdout:\n%s\nstderr:\n%s",
+			statusB, cmdA.Process.Pid, stdoutB.String(), stderrB.String())
+	}
+	if owner, err := os.ReadFile(filepath.Join(a.lock, "owner")); err != nil || !strings.Contains(string(owner), "\ntoken="+tokenA+"\n") {
+		t.Errorf("the owner record no longer holds runner A's token %q: %q, %v", tokenA, owner, err)
+	}
+	if !runningA() {
+		t.Fatalf("runner A stopped running while runner B judged its lock (wait: %v)", errA)
+	}
+	if err := cmdA.Process.Signal(syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	errA, reapedA = <-waitedA, true
+	if code := exitCode(errA); code != 143 {
+		t.Errorf("runner A exit %d, want 143\nstdout:\n%s\nstderr:\n%s", code, stdoutA, stderrA)
+	}
+}
+
+// publicationHook is sourced by runner A's bash through BASH_ENV. Its printf is the builtin,
+// except that on the first call whose format is the owner record's command line, a call made
+// inside publication, it writes publication.ready into A's fake directory and then blocks reading
+// the FIFO named by FAKE_GATE. A failed read returns as a resumed one, so the hook never changes
+// the script's flow, only when it continues.
+const publicationHook = `printf() {
+  builtin printf "$@" || return
+  if [ "$1" = 'command=%s\n' ] && [ -z "${publication_paused:-}" ]; then
+    publication_paused=1
+    : > "$FAKE_DIR/publication.ready"
+    read -r _ < "$FAKE_GATE" || true
+  fi
+}
+`
+
+// T2 (#126, D7): a runner that finds the lock while its owner is still publishing the record
+// respects the owner. Runner A pauses inside publication, after its command= line and before its
+// identity_utc line, as in Codex's probe (PR #127 comment 6059322575). Runner B, in another time
+// zone, must not read a partly written record as SemStreams' six keys and quarantine A on a start
+// time it reads differently. A then publishes its whole record, runs, and releases the lock,
+// leaving nothing beside it.
+func TestR1ContenderDuringPublicationRespectsTheOwner(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	hook, gatePath := filepath.Join(dir, "publication-hook.bash"), filepath.Join(dir, "gate")
+	if err := os.WriteFile(hook, []byte(publicationHook), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(gatePath, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Opened for reading and writing, so neither this open nor A's open for reading waits for the
+	// other side. It stays open until A is reaped, so a resume line written before A opens the
+	// FIFO is still there when A reads.
+	gate, err := os.OpenFile(gatePath, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gate.Close()
+
+	a := newHarness(t, "TZ=EST5", "LC_ALL=C", "BASH_ENV="+hook, "FAKE_GATE="+gatePath)
+	// A watchdog, not a synchronisation: the deadline ends an A that the gate never releases, and
+	// WaitDelay bounds Wait if a child of A still holds A's output open after that.
+	ctxA, cancelA := context.WithTimeout(t.Context(), time.Minute)
+	defer cancelA()
+	cmdA := a.command(ctxA, "./internal/harness/natsfixture/")
+	cmdA.WaitDelay = 10 * time.Second
+	waitedA, stdoutA, stderrA := a.startRunner(t, cmdA, "publication.ready")
+	pidA := cmdA.Process.Pid
+	var errA error
+	reapedA, resumed := false, false
+	resumeA := func() {
+		if !resumed {
+			resumed = true
+			if _, err := gate.Write([]byte("resume\n")); err != nil {
+				t.Errorf("resume runner A: %v", err)
+			}
+		}
+	}
+	// Every path out resumes A and waits for it, within ctxA's deadline.
+	defer func() {
+		resumeA()
+		if !reapedA {
+			<-waitedA
+		}
+	}()
+	// runningA reports whether A is still running: Wait has not returned and its pid takes a signal.
+	runningA := func() bool {
+		select {
+		case errA = <-waitedA:
+			reapedA = true
+			return false
+		default:
+			return pidAlive(pidA)
+		}
+	}
+	if !runningA() {
+		t.Fatalf("runner A stopped running at the publication gate (wait: %v)", errA)
+	}
+
+	// The premise: ps prints A's start time, and prints it differently in A's time zone and in
+	// B's, so a judge that compares A's recorded identity with its own reading calls A stale. A
+	// host where ps is denied, or ignores TZ, fails here instead of passing without the race.
+	lstart := func(tz string) (string, error) {
+		cmd := exec.Command("ps", "-o", "lstart=", "-p", strconv.Itoa(pidA))
+		cmd.Env = append(os.Environ(), tz, "LC_ALL=C")
+		out, err := cmd.Output()
+		return trimIdentity(out), err
+	}
+	inA, errInA := lstart("TZ=EST5")
+	inB, errInB := lstart("TZ=JST-9")
+	if errInA != nil || errInB != nil || inA == "" || inB == "" || inA == inB {
+		t.Fatalf("premise: ps must print runner A's start time in both time zones, and differently: TZ=EST5 %q (%v), TZ=JST-9 %q (%v)",
+			inA, errInA, inB, errInB)
+	}
+
+	// B has its own fakes and evidence, A's lock directory, and no wait budget, so it decides at
+	// once; its deadline is a watchdog, as in T1.
+	b := newHarness(t, "SEMENGINE_DOCKER_ADMISSION_LOCK_DIR="+a.lock, "TZ=JST-9", "LC_ALL=C")
+	ctxB, cancelB := context.WithTimeout(t.Context(), time.Minute)
+	defer cancelB()
+	cmdB := b.command(ctxB, "./internal/harness/natsfixture/")
+	var stdoutB, stderrB bytes.Buffer
+	cmdB.Stdout, cmdB.Stderr = &stdoutB, &stderrB
+	statusB := exitCode(cmdB.Run())
+	if want := "host lock is busy and no wait budget was requested: " + a.lock; statusB != 1 || !strings.Contains(stderrB.String(), want) {
+		t.Errorf("runner B status %d, want 1 reporting %q\nstdout:\n%s\nstderr:\n%s", statusB, want, stdoutB.String(), stderrB.String())
+	}
+	if strings.Contains(stdoutB.String()+stderrB.String(), "cleaned stale lock") {
+		t.Errorf("runner B quarantined the lock of runner A (pid %d) while A was publishing its record", pidA)
+	}
+	if log := b.read(t, "docker.log"); log != "" {
+		t.Errorf("runner B called Docker:\n%s", log)
+	}
+	if !runningA() {
+		t.Fatalf("runner A stopped running while runner B judged its lock (wait: %v)", errA)
+	}
+
+	resumeA()
+	errA, reapedA = <-waitedA, true
+	if code := exitCode(errA); code != 0 {
+		t.Errorf("runner A exit %d, want 0\nstdout:\n%s\nstderr:\n%s", code, stdoutA, stderrA)
+	}
+	if strings.Contains(stderrA.String(), "lock ownership changed") {
+		t.Errorf("runner A lost its lock while publishing its record:\n%s", stderrA)
+	}
+	// A's token is the one it exported to go test; its evidence must be its whole record.
+	tokenA := ""
+	for _, line := range strings.Split(a.read(t, "go.env"), "\n") {
+		if v, ok := strings.CutPrefix(line, "SEMENGINE_DOCKER_ADMISSION_TOKEN="); ok {
+			tokenA = v
+		}
+	}
+	evidence, err := os.ReadFile(filepath.Join(a.evidence, "lock-owner"))
+	var keys []string
+	owner := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSuffix(string(evidence), "\n"), "\n") {
+		k, v, _ := strings.Cut(line, "=")
+		keys, owner[k] = append(keys, k), v
+	}
+	wantKeys := append(slices.Clone(semstreamsOwnerKeys), "identity_utc")
+	if err != nil || !slices.Equal(keys, wantKeys) || tokenA == "" || owner["token"] != tokenA || owner["pid"] != strconv.Itoa(pidA) {
+		t.Errorf("runner A's lock-owner evidence is not its whole record: keys %q (want %q), token %q (want %q), pid %q (want %d), read error %v",
+			keys, wantKeys, owner["token"], tokenA, owner["pid"], pidA, err)
+	}
+	if left, err := filepath.Glob(a.lock + "*"); err != nil || len(left) != 0 {
+		t.Errorf("left at the lock path or beside it after release: %q, %v", left, err)
+	}
+}
+
+// fakeMktemp refuses the owner record's template, a name holding ".owner.", as a full or
+// read-only temporary directory would, and hands every other call to the system's mktemp.
+const fakeMktemp = `#!/usr/bin/env bash
+case "$*" in
+  *.owner.*) echo "fake mktemp: cannot create $*" >&2; exit 1 ;;
+esac
+command -p mktemp "$@"
+`
+
+// T3 (#126, D7): a runner that has created the lock directory and cannot write its record beside
+// it removes the lock directory, leaves nothing beside it, and exits non-zero before any Docker
+// call.
+func TestR1OwnerRecordThatCannotBePublishedReleasesTheLock(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	if err := os.WriteFile(filepath.Join(h.fake, "mktemp"), []byte(fakeMktemp), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r := h.run(t, "./internal/harness/natsfixture/")
+	if r.status == 0 || !strings.Contains(r.stderr, "could not publish") || !strings.Contains(r.stderr, "owner record") {
+		t.Fatalf("status %d, want non-zero reporting that it could not publish the owner record\nstdout:\n%s\nstderr:\n%s",
+			r.status, r.stdout, r.stderr)
+	}
+	if log := h.read(t, "docker.log"); log != "" {
+		t.Errorf("docker was invoked without a published owner record:\n%s", log)
+	}
+	if left, err := filepath.Glob(h.lock + "*"); err != nil || len(left) != 0 {
+		t.Errorf("left at the lock path or beside it: %q, %v", left, err)
+	}
+}
+
 // R2: a same-host owner whose pid is dead, or whose pid now belongs to a different process, is
 // quarantined and removed; the run then acquires, completes, and releases.
 func TestR2StaleLockIsQuarantined(t *testing.T) {
@@ -386,6 +679,10 @@ func TestR2StaleLockIsQuarantined(t *testing.T) {
 		},
 		"changed identity": func(t *testing.T, h *harness) {
 			h.writeOwner(t, hostname(t), os.Getpid(), "Mon Jan  1 00:00:00 1990")
+		},
+		// A record with identity_utc is judged by it, not by its identity, which here is live.
+		"changed identity_utc": func(t *testing.T, h *harness) {
+			h.writeOwner(t, hostname(t), os.Getpid(), startIdentity(t, os.Getpid()), "identity_utc=Mon Jan  1 00:00:00 1990")
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -516,8 +813,13 @@ func TestR4CanonicalInvocationAndOwnerFormat(t *testing.T) {
 		k, v, _ := strings.Cut(line, "=")
 		keys, owner[k] = append(keys, k), v
 	}
-	if !slices.Equal(keys, semstreamsOwnerKeys) {
-		t.Errorf("owner keys %q, want SemStreams' %q", keys, semstreamsOwnerKeys)
+	if want := append(slices.Clone(semstreamsOwnerKeys), "identity_utc"); !slices.Equal(keys, want) {
+		t.Errorf("owner keys %q, want SemStreams' followed by identity_utc: %q", keys, want)
+	}
+	// ps prints the runner's start time on every host this runs on, so unknown is a failed read.
+	// TrimSpace above strips the last line's trailing blanks: no value is checked byte for byte.
+	if v := owner["identity_utc"]; v == "" || v == "unknown" {
+		t.Errorf("owner identity_utc %q, want the runner's start time", v)
 	}
 	if env["SEMENGINE_DOCKER_ADMISSION_TOKEN"] == "" || owner["token"] != env["SEMENGINE_DOCKER_ADMISSION_TOKEN"] {
 		t.Errorf("exported token %q does not match the owner record's %q", env["SEMENGINE_DOCKER_ADMISSION_TOKEN"], owner["token"])

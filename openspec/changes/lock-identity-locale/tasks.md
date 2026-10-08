@@ -57,7 +57,7 @@ starts, `task merge:check -- 127` and the merge are recorded on this pull reques
       directory after `mkdir`, its mode set, renamed to `owner`; a record that cannot be published removes the file
       and the lock directory and fails before any Docker call. Gate: `bash -n scripts/test-integration.sh` under
       `/bin/bash` 3.2 and `task test:unit`, T1 to T3 passing.
-- [ ] 2.9 (D) Shown able to fail: R-M3, R-M4 and R-M5 of `design.md`, D7, each made in the tree with the `cp` and
+- [x] 2.9 (D) Shown able to fail: R-M3, R-M4 and R-M5 of `design.md`, D7, each made in the tree with the `cp` and
       checksum procedure of the reviewer contract, § Required review workflow, item 8, the restored file's checksum
       matching the one taken before, each report pasted on this pull request with the system it ran on. Gate:
       detection for each, R-M4 where the umask is not `077`; a survivor or an inconclusive run is reported as such.

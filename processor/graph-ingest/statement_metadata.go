@@ -16,25 +16,39 @@ const (
 	statementReasonMissingSource    = "missing_source"
 	statementReasonMissingTimestamp = "missing_timestamp"
 	statementReasonReservedSource   = "reserved_source"
+	statementReasonNoStatement      = "no_statement"
 )
 
 // statementRefusal is a Graphable payload's statement the stream lane refuses: it lacks a
 // Source or Timestamp the message envelope lacks too, or, once stamped, it carries a reserved
-// source (graph.IsReservedSource). Such a message can never be admitted, so the consume
-// closure terminates, counts and logs it as processIngest does a structurally invalid
-// candidate.
+// source (graph.IsReservedSource). It is also the refusal of a payload that carries no
+// statement, which leaves the statements graph-ingest derives no time to take; that refusal
+// names no index. Such a message can never be admitted, so the consume closure terminates,
+// counts and logs it as processIngest does a structurally invalid candidate.
 type statementRefusal struct {
-	index  int
-	field  string // "source" or "timestamp"
+	index  int    // -1 when reason is statementReasonNoStatement
+	field  string // "source", "timestamp", or "triples" for statementReasonNoStatement
 	reason string // one of the statementReason constants
 	source string // the reserved source, when reason is statementReasonReservedSource
 }
 
 func (r *statementRefusal) Error() string {
-	if r.reason == statementReasonReservedSource {
+	switch r.reason {
+	case statementReasonReservedSource:
 		return fmt.Sprintf("triple[%d] source %q is reserved: graph-ingest and the lifecycle manager write under it", r.index, r.source)
+	case statementReasonNoStatement:
+		return "the message carries no statement: the statements graph-ingest derives take their time from the message's own"
 	}
 	return fmt.Sprintf("triple[%d] has no %s and the message envelope has none", r.index, r.field)
+}
+
+// refuseNoStatement is the stream lane's refusal of a Graphable payload that carries no
+// statement (owner ruling, #91 comment 6066791396): the statements graph-ingest derives take the
+// latest Timestamp among the message's own, so with none there is no time to give them. That
+// includes a payload that would only replace an existing entity's message type or storage
+// reference.
+func refuseNoStatement() error {
+	return refuseStatement(&statementRefusal{index: -1, field: "triples", reason: statementReasonNoStatement})
 }
 
 // stampFromEnvelope returns triples with each empty Source taken from the envelope's source

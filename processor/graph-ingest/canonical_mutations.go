@@ -262,14 +262,16 @@ func (c *Component) handleCanonicalCreate(ctx context.Context, data []byte) ([]b
 					index, entity.Triples[index].Subject, entity.ID))
 		}
 	}
-	if err := requireCreateStatements(request.Triples); err != nil {
+	if err := requireOwnStatements(request.Triples); err != nil {
 		return nil, err
 	}
 	if entity.UpdatedAt.IsZero() {
 		entity.UpdatedAt = time.Now()
 	}
-	stampExplicitIndexingProfile(entity, request.IndexingProfile)
-	c.reconcileIndexingProfile(entity)
+	// Read before graph-ingest adds the profile (design D15).
+	at := triggeringTime(entity)
+	stampExplicitIndexingProfile(entity, request.IndexingProfile, at)
+	c.reconcileIndexingProfile(entity, at)
 	if err := graph.ValidateEntityStateContract(entity); err != nil {
 		return nil, rejectInvalid(graph.ErrorCodeInvalidRequest, err)
 	}

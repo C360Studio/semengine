@@ -239,7 +239,7 @@ func TestReconcileIndexingProfile_DedupesToFirst(t *testing.T) {
 		{Subject: testProfileEntityID, Predicate: semantictest.Predicate(t, "test", "fixture", "value"), Object: "v", Timestamp: time.Now()},
 		{Subject: es.ID, Predicate: semantictest.Predicate(t, "entity", "indexing", "profile"), Object: vocabulary.IndexingProfileTrace},
 	}
-	comp.reconcileIndexingProfile(es)
+	comp.reconcileIndexingProfile(es, fixtureTime)
 	assert.Equal(t, []string{vocabulary.IndexingProfileContent}, profileValues(es),
 		"reconcile keeps the FIRST profile and drops duplicates (single-valued)")
 }
@@ -313,14 +313,14 @@ func TestIndexingProfileMetricLabel(t *testing.T) {
 
 func TestStampExplicitIndexingProfile_IgnoresInvalid(t *testing.T) {
 	es := &graph.EntityState{ID: testProfileEntityID}
-	stampExplicitIndexingProfile(es, "garbage")
+	stampExplicitIndexingProfile(es, "garbage", fixtureTime)
 	assert.Empty(t, profileValues(es), "invalid explicit profile must be ignored (fall through to floor)")
 
-	stampExplicitIndexingProfile(es, vocabulary.IndexingProfileSignal)
+	stampExplicitIndexingProfile(es, vocabulary.IndexingProfileSignal, fixtureTime)
 	assert.Equal(t, []string{vocabulary.IndexingProfileSignal}, profileValues(es))
 
 	// Re-stamping replaces (single-valued).
-	stampExplicitIndexingProfile(es, vocabulary.IndexingProfileContent)
+	stampExplicitIndexingProfile(es, vocabulary.IndexingProfileContent, fixtureTime)
 	assert.Equal(t, []string{vocabulary.IndexingProfileContent}, profileValues(es))
 }
 

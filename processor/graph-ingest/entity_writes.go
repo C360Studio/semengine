@@ -69,14 +69,16 @@ func requireStatementMetadata(triples []message.Triple) error {
 	return nil
 }
 
-// requireCreateStatements is requireStatementMetadata for a create on the mutation and
-// in-process lanes, which also refuses a create that carries no statement: the statements
-// graph-ingest derives at birth take the latest Timestamp among the write's own, so with none
-// there is no time to give them (design D15).
-func requireCreateStatements(triples []message.Triple) error {
+// requireOwnStatements is requireStatementMetadata for a write whose derived statements take
+// their time from its own: a create on the mutation and in-process lanes, and the stream lane's
+// merge. It also refuses a write that carries no statement: the statements graph-ingest derives
+// take the latest Timestamp among the write's own, so with none there is no time to give them
+// (design D15). On the stream lane extractEntityFromMessage has already refused such a message
+// as poison, so the rule is a second line there.
+func requireOwnStatements(triples []message.Triple) error {
 	if len(triples) == 0 {
 		return errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeInvalidRequest,
-			errors.New("triples cannot be empty: a create's derived statements take their time from its own"))
+			errors.New("triples cannot be empty: the statements graph-ingest derives take their time from the write's own"))
 	}
 	return requireStatementMetadata(triples)
 }
@@ -107,9 +109,9 @@ func (c *Component) createEntity(ctx context.Context, entityID string, encoded [
 // debug level once the write commits (design D15, "Timestamp orders a replace"). The bucket
 // re-runs the callback after a create conflict or a retryable create error, so the birth never
 // changes entity: a retry that finds the key present merges from the arrival as it came (#91,
-// PR #93 comment 6060120246). It returns the revision it committed and the size of the value
-// written.
-func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState, hierarchyTriples []message.Triple) (uint64, int, error) {
+// PR #93 comment 6060120246). A profile it stamps carries at, the arrival's triggeringTime. It
+// returns the revision it committed and the size of the value written.
+func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState, hierarchyTriples []message.Triple, at time.Time) (uint64, int, error) {
 	var bytesWritten int
 	// stale is the committed attempt's sets not applied as older. It is assigned on each run of
 	// the callback, never accumulated, so a lost compare-and-set does not count its sets twice.
@@ -139,7 +141,7 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 				born.Triples = slices.Concat(entity.Triples, hierarchyTriples)
 				// ADR-054: first write is entity birth — stamp the profile
 				// (explicit-if-declared via IndexingProfiler, else floor).
-				c.reconcileIndexingProfile(&born)
+				c.reconcileIndexingProfile(&born, at)
 				data, err := graph.MarshalEntityState(&born)
 				if err != nil {
 					return nil, err
@@ -191,7 +193,7 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 		// reconcile stamps the profile (kept from the incoming declaration, else floor). For an
 		// already-profiled entity this is a no-op (keep-first preserves the
 		// create-time value), so a re-arrival never re-profiles.
-		c.reconcileIndexingProfile(&existing)
+		c.reconcileIndexingProfile(&existing, at)
 		existing.UpdatedAt = time.Now()
 		data, err := graph.MarshalEntityState(&existing)
 		if err != nil {

@@ -2,9 +2,10 @@ package graphingest
 
 // Statement metadata on the stream lane (design D15, #98; task 4.8): a Graphable payload's
 // statement without a Source or Timestamp takes the message envelope's, a message whose
-// envelope cannot supply a needed value is refused as poison, and a message carrying a
-// reserved source is refused as poison. Each test drives the consume closure Start wires
-// for the entity_stream port, with a real keyed ingest pool behind it.
+// envelope cannot supply a needed value is refused as poison, a message carrying a reserved
+// source is refused as poison, and so is a message carrying no statement. Each test drives the
+// consume closure Start wires for the entity_stream port, with a real keyed ingest pool behind
+// it.
 
 import (
 	"bytes"
@@ -355,4 +356,94 @@ func TestStreamLaneRefusesReservedSource(t *testing.T) {
 			assertInvalidRequest(t, err, "triple[1]", tt.source)
 		})
 	}
+}
+
+// TestStreamLaneRefusesEmptyArrival: a stream message that carries no statement gives the
+// statements graph-ingest derives no time to take (owner ruling, #91 comment 6066791396), so it
+// is refused as poison, counted, and nothing of it is stored: neither a birth nor an existing
+// entity's message type or storage reference.
+func TestStreamLaneRefusesEmptyArrival(t *testing.T) {
+	created := time.UnixMilli(1_790_000_000_000)
+
+	t.Run("a new entity", func(t *testing.T) {
+		c, handler := startStreamLane(t)
+		const entityID = "c360.test.stamp.empty.entity.001"
+		data := streamLaneData(t, &mergeTestGraphable{entityID: entityID}, "stamp-producer", message.WithTime(created))
+
+		var logs bytes.Buffer
+		c.logger = slog.New(slog.NewTextHandler(&logs, nil))
+		counter := c.predicateContractRejections.WithLabelValues("graphable", "no_statement")
+		before := testutil.ToFloat64(counter)
+
+		if got := deliverStreamLane(t, handler, data, 1); got != "term" {
+			t.Errorf("disposition = %s, want term", got)
+		}
+		if got := testutil.ToFloat64(counter); got != before+1 {
+			t.Errorf("predicate_contract_rejections_total{lane=graphable,reason=no_statement} = %v, want %v", got, before+1)
+		}
+		logLine := logs.String()
+		for _, want := range []string{"level=WARN", "lane=graphable", "field=triples", "reason=no_statement"} {
+			if !strings.Contains(logLine, want) {
+				t.Errorf("rejection log %q lacks %q", logLine, want)
+			}
+		}
+		if _, _, ok := storedRevision(t, c, entityID); ok {
+			t.Errorf("entity %s stored from a refused message", entityID)
+		}
+
+		_, err := c.decodeEntity("entity.statement-metadata", data)
+		assertInvalidRequest(t, err, "no statement")
+	})
+
+	// An arrival with no statement for an existing entity would otherwise replace its message
+	// type: the entity is stored under another type than the arrival's.
+	t.Run("an existing entity's message type", func(t *testing.T) {
+		c, handler := startStreamLane(t)
+		const entityID = "c360.test.stamp.empty.entity.002"
+		seed := graph.EntityState{
+			ID:          entityID,
+			MessageType: testEntityType(),
+			Triples: []message.Triple{
+				{Subject: entityID, Predicate: "stamp.state.kept", Object: "before", Source: "stamp-producer", Timestamp: created, Confidence: 1},
+			},
+			UpdatedAt: created,
+		}
+		encoded, err := graph.MarshalEntityState(&seed)
+		if err != nil {
+			t.Fatalf("encode seed entity: %v", err)
+		}
+		if _, err := c.entityBucket.Put(t.Context(), entityID, encoded); err != nil {
+			t.Fatalf("store seed entity: %v", err)
+		}
+		beforeValue, beforeRevision, _ := storedRevision(t, c, entityID)
+
+		counter := c.predicateContractRejections.WithLabelValues("graphable", "no_statement")
+		before := testutil.ToFloat64(counter)
+		data := streamLaneData(t, &mergeTestGraphable{entityID: entityID}, "stamp-producer", message.WithTime(created.Add(time.Second)))
+		if got := deliverStreamLane(t, handler, data, 2); got != "term" {
+			t.Errorf("disposition = %s, want term", got)
+		}
+		if got := testutil.ToFloat64(counter); got != before+1 {
+			t.Errorf("predicate_contract_rejections_total{lane=graphable,reason=no_statement} = %v, want %v", got, before+1)
+		}
+		afterValue, afterRevision, _ := storedRevision(t, c, entityID)
+		if afterRevision != beforeRevision || !bytes.Equal(afterValue, beforeValue) {
+			t.Errorf("entity changed by a refused message: revision %d -> %d", beforeRevision, afterRevision)
+		}
+	})
+
+	// The Storable payload does not travel the wire (its codec is a stub), so this case reads
+	// the extract step the consume closure runs after decoding: its refusal is the one the
+	// closure terminates and counts above.
+	t.Run("only a storage reference", func(t *testing.T) {
+		c, _ := startStreamLane(t)
+		const entityID = "c360.test.stamp.empty.entity.003"
+		payload := &testStorablePayload{id: entityID, ref: &message.StorageReference{StorageInstance: "objectstore-primary", Key: "stamp/empty/003"}}
+		_, err := c.extractEntityFromMessage(message.NewBaseMessage(payload.Schema(), payload, "stamp-producer", message.WithTime(created)))
+		assertInvalidRequest(t, err, "no statement")
+		var refusal *statementRefusal
+		if !errors.As(err, &refusal) {
+			t.Errorf("refusal %v is not a statement refusal, so the consume closure would not terminate it", err)
+		}
+	})
 }

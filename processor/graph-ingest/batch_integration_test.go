@@ -27,6 +27,14 @@ func appendThroughCanonicalHandler(t *testing.T, ctx context.Context, c *Compone
 	return response
 }
 
+// batchSeed is an entity to pre-create on the stream lane, which refuses a write that carries
+// no statement (design D15), so it carries one.
+func batchSeed(entityID string) *graph.EntityState {
+	return &graph.EntityState{ID: entityID, Triples: withTestMetadata(
+		message.Triple{Subject: entityID, Predicate: "test.batch.seeded", Object: true, Confidence: 1.0},
+	)}
+}
+
 // TestIntegration_AddTriples_SingleSubjectIsOneCAS pins the load-bearing
 // optimisation behind ADR-036 §Stage 2: many triples sharing one Subject
 // commit in a single CAS round-trip. Failure shows up as multiple
@@ -41,7 +49,7 @@ func TestIntegration_AddTriples_SingleSubjectIsOneCAS(t *testing.T) {
 	now := time.Now()
 
 	// ADR-055: pre-create the entity before adding triples (must-exist).
-	require.NoError(t, c.mergeEntityOnLane(ctx, &graph.EntityState{ID: entityID}, false))
+	require.NoError(t, c.mergeEntityOnLane(ctx, batchSeed(entityID), false))
 
 	// Capture the KV revision immediately after pre-create so we can assert
 	// AddTriples commits exactly one write (not one per triple).
@@ -91,8 +99,8 @@ func TestIntegration_AddTriples_MultiSubjectGroupsByEntity(t *testing.T) {
 	now := time.Now()
 
 	// ADR-055: pre-create both entities before adding triples (must-exist).
-	require.NoError(t, c.mergeEntityOnLane(ctx, &graph.EntityState{ID: idA}, false))
-	require.NoError(t, c.mergeEntityOnLane(ctx, &graph.EntityState{ID: idB}, false))
+	require.NoError(t, c.mergeEntityOnLane(ctx, batchSeed(idA), false))
+	require.NoError(t, c.mergeEntityOnLane(ctx, batchSeed(idB), false))
 
 	// Capture baseline versions and triple counts after pre-create.
 	preA, err := c.entityBucket.Get(ctx, idA)
@@ -180,7 +188,7 @@ func TestIntegration_HandleTripleAddBatch_RoundTrip(t *testing.T) {
 	now := time.Now()
 
 	// ADR-055: pre-create the entity before adding triples (must-exist).
-	require.NoError(t, c.mergeEntityOnLane(ctx, &graph.EntityState{ID: entityID}, false))
+	require.NoError(t, c.mergeEntityOnLane(ctx, batchSeed(entityID), false))
 
 	req := graph.AppendTriplesRequest{
 		Triples: withTestMetadata(
@@ -213,7 +221,7 @@ func TestIntegration_AddTriples_PreservesInputOrderWithinSubject(t *testing.T) {
 	now := time.Now()
 
 	// ADR-055: pre-create the entity before adding triples (must-exist).
-	require.NoError(t, c.mergeEntityOnLane(ctx, &graph.EntityState{ID: entityID}, false))
+	require.NoError(t, c.mergeEntityOnLane(ctx, batchSeed(entityID), false))
 
 	// Emit a known sequence: A, B, C, D, E across the same subject.
 	// The retrieved Triples slice must come back in this exact order.

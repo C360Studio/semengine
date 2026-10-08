@@ -1,11 +1,11 @@
 package graphingest
 
 // Statement metadata on the mutation and in-process lanes (design D15, #98; task 4.8): a write
-// carrying a statement without a Source or a Timestamp is refused, a create carrying no
-// statement is refused, and a reconcile names its source and carries no other. Each refusal is
-// invalid_request and stores nothing. The writes go through the lanes' production entries: the
-// canonical mutation handlers, and the CreateEntity and AddTriple hierarchy inference calls; the
-// stream lane's merge, where the rule is a second line, is called directly.
+// carrying a statement without a Source or a Timestamp is refused, a create or stream merge
+// carrying no statement is refused, and a reconcile names its source and carries no other. Each
+// refusal is invalid_request and stores nothing. The writes go through the lanes' production
+// entries: the canonical mutation handlers, and the CreateEntity and AddTriple hierarchy
+// inference calls; the stream lane's merge, where the rule is a second line, is called directly.
 
 import (
 	"bytes"
@@ -138,6 +138,7 @@ func TestWriteRefusesStatementWithoutSourceOrTimestamp(t *testing.T) {
 		{"in-process append without timestamp", inProcessAppend(noTimestamp(statementB)), []string{"triple[0]", "timestamp"}},
 		{"stream merge without source", streamMerge(inProcess, noSource(inProcess)), []string{"triple[1]", "source"}},
 		{"stream merge without timestamp", streamMerge(inProcess, noTimestamp(inProcess)), []string{"triple[1]", "timestamp"}},
+		{"stream merge with no statement", streamMerge(), nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

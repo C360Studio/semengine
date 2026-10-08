@@ -123,10 +123,9 @@ func TestReplaceEntityRetryAfterCreateErrorStoresNoStatementTwice(t *testing.T) 
 
 // TestReplaceEntityRetryAfterLostBirthMergesOnlyTheArrival: another lane stores the key, then
 // this lane's create fails with the conflict error, so the retry merges into the other lane's
-// entity. The stored entity carries none of the statements this lane added to its abandoned
-// birth: no hierarchy statement and not the profile statement it stamped. (The merge stamps its
-// own profile on the unprofiled entity, at least one retry delay later, so it is a different
-// statement.)
+// entity. The stored entity carries none of the hierarchy statements this lane added to its
+// abandoned birth. (The profile is not compared: the merge stamps the unprofiled entity's
+// profile from the same arrival, so it is the same statement as the abandoned birth's.)
 func TestReplaceEntityRetryAfterLostBirthMergesOnlyTheArrival(t *testing.T) {
 	c, bucket, arrival := newRetryingStreamLane(t, jetstream.ErrKeyExists)
 	bucket.beforeFail = func() {
@@ -161,24 +160,15 @@ func TestReplaceEntityRetryAfterLostBirthMergesOnlyTheArrival(t *testing.T) {
 		t.Fatal("the drone's create never failed, so no retry was exercised")
 	}
 
-	// What this lane added to the arrival in its abandoned birth.
+	// The hierarchy statements this lane added to the arrival in its abandoned birth.
 	added := make(map[string]bool)
-	var hierarchy, profile int
 	for _, tr := range decodeEntity(t, bucket.abandoned).Triples {
-		if arrivalPredicates[tr.Predicate] {
-			continue
-		}
-		added[statementKey(tr)] = true
-		switch {
-		case isHierarchyPredicate(tr.Predicate):
-			hierarchy++
-		case tr.Predicate == vocabulary.EntityIndexingProfile:
-			profile++
+		if !arrivalPredicates[tr.Predicate] && isHierarchyPredicate(tr.Predicate) {
+			added[statementKey(tr)] = true
 		}
 	}
-	if hierarchy == 0 || profile == 0 {
-		t.Fatalf("abandoned birth added %d hierarchy and %d profile statements, want at least one of each",
-			hierarchy, profile)
+	if len(added) == 0 {
+		t.Fatal("abandoned birth added no hierarchy statement, want at least one")
 	}
 
 	for _, tr := range storedEntity(t, c, arrival.ID).Triples {

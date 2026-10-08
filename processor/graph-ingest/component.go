@@ -1723,11 +1723,15 @@ func (c *Component) extractEntityFromMessage(msg *message.BaseMessage) (*graph.E
 		return nil, fmt.Errorf("graphable payload returned empty entity ID")
 	}
 
-	// Statement metadata (design D15, #98): a statement without a Source or Timestamp takes
-	// the envelope's, and a statement under a reserved source refuses the message. This reads
-	// only the payload's statements, before the indexing-profile statement graph-ingest stamps
-	// below under its own reserved source.
-	triples, err := stampFromEnvelope(graphable.Triples(), msg.Meta())
+	// Statement metadata (design D15, #98): a payload with no statement refuses the message,
+	// a statement without a Source or Timestamp takes the envelope's, and a statement under a
+	// reserved source refuses the message. This reads only the payload's statements, before the
+	// indexing-profile statement graph-ingest stamps below under its own reserved source.
+	own := graphable.Triples()
+	if len(own) == 0 {
+		return nil, refuseNoStatement()
+	}
+	triples, err := stampFromEnvelope(own, msg.Meta())
 	if err != nil {
 		return nil, err
 	}
@@ -1757,9 +1761,10 @@ func (c *Component) extractEntityFromMessage(msg *message.BaseMessage) (*graph.E
 	// profile via the optional IndexingProfiler interface. Stamp it explicitly
 	// here so it's present on entity.Triples by the time mergeEntityOnLane reaches
 	// its create seam; absence (or an invalid value) falls through to the
-	// fallback floor there.
+	// fallback floor there. It carries the time read from the stamped statements
+	// before it is added (design D15), the time mergeEntityOnLane reads again.
 	if profiler, ok := payload.(message.IndexingProfiler); ok {
-		stampExplicitIndexingProfile(entity, profiler.IndexingProfile())
+		stampExplicitIndexingProfile(entity, profiler.IndexingProfile(), triggeringTime(entity))
 	}
 
 	return entity, nil
@@ -1802,19 +1807,18 @@ func removeIndexingProfileTriples(entity *graph.EntityState) {
 	entity.Triples = filtered
 }
 
-// triggeringTime is the time the hierarchy statements of entity's birth carry: the latest
-// Timestamp among the write's own statements, never the clock (design D15). Statements
-// under a reserved source are graph-ingest's own derivations, not the write's, so they are
-// not read. With no own statement carrying a time it returns the zero time, which
-// GetHierarchyTriples refuses, and the birth continues without hierarchy statements, as
-// the pin continues past every hierarchy failure (design D21 makes that refusal fail the
-// birth, in task 3.12b).
+// triggeringTime is the time every statement graph-ingest derives for a write carries (the
+// indexing profile, hierarchy statements, a hierarchy container's statements): the latest
+// Timestamp among entity's statements, never the clock (design D15; owner ruling, #91 comment
+// 6066791396). Each lane reads it from the write's own statements before graph-ingest adds one
+// of its own, and reads all of them, reserved sources included: a hierarchy container's
+// statements are all graph-ingest-hierarchy, and pkg/lifecycle writes under its own. A
+// statement graph-ingest has added already carries this time, so reading after it gives the
+// same answer. Every lane refuses a write that carries no statement before it reads this, so
+// the time it returns is never zero.
 func triggeringTime(entity *graph.EntityState) time.Time {
 	var latest time.Time
 	for _, triple := range entity.Triples {
-		if graph.IsReservedSource(triple.Source) {
-			continue
-		}
 		if triple.Timestamp.After(latest) {
 			latest = triple.Timestamp
 		}
@@ -1822,15 +1826,16 @@ func triggeringTime(entity *graph.EntityState) time.Time {
 	return latest
 }
 
-// appendIndexingProfileTriple appends one entity.indexing.profile triple.
-// Callers are responsible for having removed any prior value first.
-func appendIndexingProfileTriple(entity *graph.EntityState, profile string) {
+// appendIndexingProfileTriple appends one entity.indexing.profile triple carrying at,
+// the write's triggeringTime. Callers are responsible for having removed any prior value
+// first.
+func appendIndexingProfileTriple(entity *graph.EntityState, profile string, at time.Time) {
 	entity.Triples = append(entity.Triples, message.Triple{
 		Subject:    entity.ID,
 		Predicate:  vocabulary.EntityIndexingProfile,
 		Object:     profile,
 		Source:     "graph-ingest-indexing-profile",
-		Timestamp:  time.Now(),
+		Timestamp:  at,
 		Confidence: 1.0,
 	})
 }
@@ -1840,13 +1845,14 @@ func appendIndexingProfileTriple(entity *graph.EntityState, profile string) {
 // values are ignored — the entity then falls through to the fallback floor at
 // its create seam rather than failing (lenient Phase 1 semantics). Used by the
 // Graphable IndexingProfiler channel (extractEntityFromMessage) and the
-// mutation-envelope channel (handleEntityCreateWithTriples).
-func stampExplicitIndexingProfile(entity *graph.EntityState, profile string) {
+// mutation-envelope channel (handleEntityCreateWithTriples). The statement carries at, the
+// write's triggeringTime.
+func stampExplicitIndexingProfile(entity *graph.EntityState, profile string, at time.Time) {
 	if entity == nil || !vocabulary.IsValidIndexingProfile(profile) {
 		return
 	}
 	removeIndexingProfileTriples(entity)
-	appendIndexingProfileTriple(entity, profile)
+	appendIndexingProfileTriple(entity, profile, at)
 }
 
 // reconcileIndexingProfile is the entity-CREATION-seam stamp (ADR-054 §5). It
@@ -1864,7 +1870,9 @@ func stampExplicitIndexingProfile(entity *graph.EntityState, profile string) {
 //     indexing_profile_default_total{message_type} ONLY when the registered type
 //     declares no floor (control is the fail-safe default). The create seams
 //     refuse an unregistered type before this runs.
-func (c *Component) reconcileIndexingProfile(entity *graph.EntityState) {
+//
+// The floor statement carries at, the write's triggeringTime.
+func (c *Component) reconcileIndexingProfile(entity *graph.EntityState, at time.Time) {
 	if entity == nil {
 		return
 	}
@@ -1890,7 +1898,7 @@ func (c *Component) reconcileIndexingProfile(entity *graph.EntityState) {
 	// classification, not an operator gap; the label now points at a
 	// Registration literal.
 	profile, floored := c.registeredIndexingProfile(entity.MessageType)
-	appendIndexingProfileTriple(entity, profile)
+	appendIndexingProfileTriple(entity, profile, at)
 	if !floored && c.indexingProfileDefault != nil {
 		c.indexingProfileDefault.WithLabelValues(indexingProfileMetricLabel(entity.MessageType)).Inc()
 	}
@@ -2002,12 +2010,16 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 	if err := c.authorizeSubject(entity.ID, importLane); err != nil {
 		return c.recordDirectAuthorityRejection(err)
 	}
-	if err := requireStatementMetadata(entity.Triples); err != nil {
+	if err := requireOwnStatements(entity.Triples); err != nil {
 		return err
 	}
 	if err := ctx.Err(); err != nil {
 		return errs.Wrap(err, "Component", "mergeEntityOnLane", "context cancelled")
 	}
+	// Read over the arrival's statements, stamped from the envelope, and any explicit profile
+	// extractEntityFromMessage stamped with this same time: every statement graph-ingest derives
+	// for this write carries it.
+	at := triggeringTime(entity)
 
 	// Hierarchy inference is deterministic per entityID — calling it
 	// on every merge would APPEND the same hierarchy triples on each
@@ -2025,7 +2037,7 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 		// the hierarchy triples — the probe is an optimization, not
 		// correctness.
 		if _, err := c.entityBucket.Get(ctx, entity.ID); err != nil && natsclient.IsKVNotFoundError(err) {
-			triples, herr := c.hierarchyInference.GetHierarchyTriples(ctx, entity.ID, triggeringTime(entity))
+			triples, herr := c.hierarchyInference.GetHierarchyTriples(ctx, entity.ID, at)
 			if herr != nil {
 				c.logger.Warn("Failed to get hierarchy triples",
 					slog.String("entity_id", entity.ID),
@@ -2036,7 +2048,7 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 		}
 	}
 
-	_, bytesWritten, err := c.replaceEntity(ctx, entity, hierarchyTriples)
+	_, bytesWritten, err := c.replaceEntity(ctx, entity, hierarchyTriples, at)
 	if err != nil {
 		atomic.AddInt64(&c.errors, 1)
 		return errs.Wrap(err, "Component", "mergeEntityOnLane", "CAS update")
@@ -2085,9 +2097,11 @@ func (c *Component) createEntityWithReceipt(
 	if err := graph.ValidateEntityStateContract(entity); err != nil {
 		return nil, 0, errs.WrapInvalid(err, "Component", "CreateEntity", "validate entity state contract")
 	}
-	if err := requireCreateStatements(entity.Triples); err != nil {
+	if err := requireOwnStatements(entity.Triples); err != nil {
 		return nil, 0, err
 	}
+	// Read before graph-ingest adds hierarchy statements or the profile.
+	at := triggeringTime(entity)
 
 	// Check context
 	if err := ctx.Err(); err != nil {
@@ -2098,7 +2112,7 @@ func (c *Component) createEntityWithReceipt(
 	// Get hierarchy triples BEFORE writing entity to storage
 	// This ensures entity is written once with all triples included (no cascade)
 	if c.config.EnableHierarchy && c.hierarchyInference != nil {
-		hierarchyTriples, err := c.hierarchyInference.GetHierarchyTriples(ctx, entity.ID, triggeringTime(entity))
+		hierarchyTriples, err := c.hierarchyInference.GetHierarchyTriples(ctx, entity.ID, at)
 		if err != nil {
 			c.logger.Warn("Failed to get hierarchy triples",
 				slog.String("entity_id", entity.ID),
@@ -2113,7 +2127,7 @@ func (c *Component) createEntityWithReceipt(
 	// ADR-054: stamp the indexing profile at the creation seam — keeps an
 	// explicit declaration (envelope/Graphable, already on entity.Triples) and
 	// otherwise applies the fallback floor + default metric.
-	c.reconcileIndexingProfile(entity)
+	c.reconcileIndexingProfile(entity, at)
 
 	// Serialize entity (now includes hierarchy triples if enabled)
 	data, err := graph.MarshalEntityState(entity)

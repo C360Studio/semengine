@@ -102,6 +102,57 @@ func TestCanonicalCreateHasNoHierarchyOrRelationshipSideEffects(t *testing.T) {
 	}
 }
 
+// TestMutationCreateBirthGetsNoHierarchy holds the pin's behavior (ruling B; graph-entity-writes,
+// "Birth on the mutation lane"): with hierarchy inference enabled and wired, an entity created
+// through a mutation request is stored with the request's statements and its indexing profile, and
+// with no hierarchy statement; no container is minted for it. An in-process birth on the same
+// component then gets hierarchy statements, which shows the inference was live for the first.
+func TestMutationCreateBirthGetsNoHierarchy(t *testing.T) {
+	c, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
+	c.config.EnableHierarchy = true
+	c.initHierarchyInference()
+
+	createCanonicalEntity(t, c, canonicalEntityA, []message.Triple{
+		canonicalTriple(canonicalEntityA, "test.state.value", "ready"),
+	})
+
+	stored := storedEntity(t, c, canonicalEntityA)
+	if got := storedStatement(t, stored, "test.state.value"); got.Object != "ready" || got.Source != "canonical-test" {
+		t.Errorf("stored request statement = %+v, want object ready from canonical-test", got)
+	}
+	if got := profileValues(stored); len(got) != 1 {
+		t.Errorf("stored indexing profiles = %v, want one", got)
+	}
+	for _, tr := range stored.Triples {
+		if isHierarchyPredicate(tr.Predicate) || tr.Source == graph.SourceHierarchy {
+			t.Errorf("mutation-lane birth stored a hierarchy statement: %s %s %v (source %s)",
+				tr.Subject, tr.Predicate, tr.Object, tr.Source)
+		}
+	}
+	bucket.mu.Lock()
+	keys := len(bucket.data)
+	bucket.mu.Unlock()
+	if keys != 1 {
+		t.Errorf("bucket holds %d keys after the mutation-lane birth, want only the entity's", keys)
+	}
+
+	// Control: the in-process lane's birth of a sibling entity runs the inference.
+	sibling := canonicalMutationEntity(canonicalEntityB)
+	sibling.Triples = []message.Triple{canonicalTriple(canonicalEntityB, "test.state.value", "on")}
+	if err := c.CreateEntity(t.Context(), sibling); err != nil {
+		t.Fatalf("CreateEntity (in-process control): %v", err)
+	}
+	hierarchy := 0
+	for _, tr := range storedEntity(t, c, canonicalEntityB).Triples {
+		if isHierarchyPredicate(tr.Predicate) {
+			hierarchy++
+		}
+	}
+	if hierarchy == 0 {
+		t.Fatal("the in-process control birth got no hierarchy statement, so the inference was not live")
+	}
+}
+
 // TestCanonicalCreateRefusesTriplelessEntity: the pin accepted a create with no statement and
 // stamped its profile with the clock. Design D15 (design.md:769-771) refuses it: the profile takes
 // the latest time among the create's own statements, and with none there is no time to give.

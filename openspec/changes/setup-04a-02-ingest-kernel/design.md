@@ -616,11 +616,13 @@ returns nil and a later `Start` is refused; `Stop` during an in-flight `Start` w
 returns its own context's error first; a repeated `Stop` after a completed one returns nil and calls nothing; a `Stop`
 whose cleanup fails keeps the cleanup pending for the next `Stop`, which runs it again, and a later `Stop` returns nil
 only after a cleanup that succeeded; a failed `Start` whose rollback succeeds holds nothing, and one whose rollback
-fails keeps the cleanup pending for the next `Stop` (D7). Tests: `lifecycletest.Run` over a test owner built only from
-the guard, with a failing factory, in the guard's package; `TestGuardFailedStopLeavesCleanupForNextStop` in the same
-package, for the retry after a failed `Stop`, which no suite check reaches; graph-ingest's suite run; the carried pin
-test of D7. Spec home: the existing `lifecycle-suite` "Portable floor" requirement, whose checks are these behaviors
-except that retry; no delta.
+fails keeps the cleanup pending for the next `Stop` (D7). graph-ingest's own refusals, a component that is not
+initialized and one with no NATS client, run before the guard and do not use it up, as at the pin; on a component that
+was never initialized they are reported ahead of `ErrAlreadyStarted` (PR #93 comment 6050697147). Tests:
+`lifecycletest.Run` over a test owner built only from the guard, with a failing factory, in the guard's package;
+`TestGuardFailedStopLeavesCleanupForNextStop` in the same package, for the retry after a failed `Stop`, which no suite
+check reaches; graph-ingest's suite run; the carried pin test of D7. Spec home: the existing `lifecycle-suite` "Portable
+floor" requirement, whose checks are these behaviors except that retry; no delta.
 
 Adoption sweep (D13 establishes a reusable primitive; one tracking issue, task 6.3): `service/component_manager.go:102`,
 `service/message_logger.go:234` (change 3); `processor/graph-query/component.go:177`,

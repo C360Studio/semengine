@@ -21,8 +21,7 @@ starts, `task merge:check -- 127` and the merge are recorded on this pull reques
 - [x] 1.5 The independent pre-owner review of `design.md` revision 2 (D7, L7, I5, owner decisions 5, 6 and 8, the
       "Conformance" heading), this file's tasks 1.5 to 2.11 and the runner spec delta's publication text and three
       scenarios: `DESIGN REVIEW PASS`, recorded on this pull request.
-- [ ] 1.6 The owner's acceptance of `design.md`, owner decision 8 (D7 and L7), recorded on #126 or this pull request.
-      Hold: the owner's acceptance of D7 (#126 or PR #127)
+- [x] 1.6 The owner's acceptance of `design.md`, owner decision 8 (D7 and L7), recorded on #126 or this pull request.
 
 ## 2. The fix and its tests
 
@@ -54,12 +53,10 @@ starts, `task merge:check -- 127` and the merge are recorded on this pull reques
       because runner B exits 0 having quarantined runner A's live lock and entered the fake Docker, and T3 because the
       run exits 0; T1's mode check and every other test pass. Gate: that run's output, recorded on this pull request
       with the system it ran on.
-      Hold: the owner's acceptance of D7 (task 1.6)
 - [ ] 2.8 (D) The runner publishes the owner record whole, as `design.md`, D7 states: written beside the lock
       directory after `mkdir`, its mode set, renamed to `owner`; a record that cannot be published removes the file
       and the lock directory and fails before any Docker call. Gate: `bash -n scripts/test-integration.sh` under
       `/bin/bash` 3.2 and `task test:unit`, T1 to T3 passing.
-      Hold: the owner's acceptance of D7 (task 1.6)
 - [ ] 2.9 (D) Shown able to fail: R-M3, R-M4 and R-M5 of `design.md`, D7, each made in the tree with the `cp` and
       checksum procedure of the reviewer contract, § Required review workflow, item 8, the restored file's checksum
       matching the one taken before, each report pasted on this pull request with the system it ran on. Gate:

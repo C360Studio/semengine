@@ -81,7 +81,8 @@ It changes 25 files (`gh pr view 92 --json files`), one of which this change als
 `docs/admission-ledger.yaml`. **#92 merges first.** #92 edits the `vocabulary`, `metric`, `pkg/cache` and
 `natsclient` rows (hunks at base lines 518, 614, 923, 1299, 1329, 1426, 1701); this change edits the
 `internal/lifecyclecleanup/lifecyclecleanup.go` file row (`:148-162`) and adds package rows before the `agentic`
-`defer-exclude` row (`:2173`), touching none of #92's rows. Task 1.4 merges `origin/main` into this branch after #92
+`defer-exclude` row (`:2173`), touching none of #92's rows. That no longer holds: task 3.12a edits the `natsclient`
+row (D23), after #92 merged as `1e383fe`. Task 1.4 merges `origin/main` into this branch after #92
 merges (never a rebase), re-reads #92's final file list, and every ledger task (5.1) runs on top of it; `task
 ledger:check` is the gate. Every metric this change ports registers under `semengine` from its first commit (D4).
 
@@ -764,10 +765,12 @@ mutation lane gets no hierarchy statements, as at the pin (`canonical_mutations.
 - **Statements graph-ingest derives** (the indexing profile, hierarchy edges, a hierarchy container's type statement)
   name graph-ingest's producer in `Source` (`graph-ingest-indexing-profile`, the pin's name at `component.go:1890`,
   and `graph-ingest-hierarchy`) and carry the triggering message's time, never the clock (the round-4 review, applied
-  on #91 comment 6037287957). On the stream lane that is the envelope's creation time, the value that stamps the
-  message's own statements. On the mutation and in-process lanes it is the latest `Timestamp` among the write's own
-  statements, each of which is required. A create on those two lanes that carries no statement has no time to give,
-  and is refused as `invalid_request`; at the pin it was accepted and its profile stamped with `time.Now()`
+  on #91 comment 6037287957). On every lane that is the latest `Timestamp` among the write's own statements, each of
+  which is required, read before graph-ingest adds a statement of its own and over all of them, reserved sources
+  included; on the stream lane after the envelope has stamped those that carry none, so it is the envelope's creation
+  time when the producer leaves statement times out. A stream arrival with no statement is refused as poison (owner
+  ruling, #91 comment 6066791396). A create on the mutation or in-process lane that carries no statement has no time
+  to give, and is refused as `invalid_request`; at the pin it was accepted and its profile stamped with `time.Now()`
   (`component.go:1891`). `GetHierarchyTriples` takes the triggering time as an argument, and the containers it creates
   for a birth carry it too: an `adapt` item on the `graph/inference` row, since the pin's hierarchy statements carry
   neither source nor time (`graph/inference/hierarchy.go:358-374`, `:409-430`, `:485-493`).
@@ -839,8 +842,10 @@ marked as holding the pin's behavior; spec home `graph-entity-writes`, plus `pro
 - `TestGraphableLaneStampsFromEnvelope` and `TestGraphableLaneRefusesWithoutEnvelopeMetadata` (poison, counted).
 - `TestDerivedStatementsCarryTriggeringTime`: a stream birth with hierarchy enabled, the envelope created at T, under a
   test clock set elsewhere: the profile, hierarchy and container statements carry T and graph-ingest's producer; a
-  mutation create's profile carries the latest timestamp of its statements. Fails on the pin, which stamps the profile
-  with the clock and hierarchy statements with nothing.
+  mutation create's profile carries the latest timestamp of its statements. A stream message whose envelope was created
+  at T and one of whose statements carries T2, after T, gives every derived statement T2. A container birth and a
+  `pkg/lifecycle` create carry non-zero profile times. Fails on the pin, which stamps the profile with the clock and
+  hierarchy statements with nothing.
 - `TestMutationClientRefusesMissingTimestamp` (`pkg/projection`): not-committed, and no request reaches the broker.
 - `TestStoredEntityHasNoVersion`: the stored JSON has no `version` key; a value that has one decodes.
 - `TestEntityStatesKeepsOneRevision`: the catalog descriptor of `ENTITY_STATES` has `History` 1.
@@ -848,9 +853,9 @@ marked as holding the pin's behavior; spec home `graph-entity-writes`, plus `pro
   statements and its profile and no hierarchy statement. Holds the pin's behavior (ruling B), so it passes on the pin's
   code; its sensitivity is shown by `task mutate:check` with a mutant that runs the inference on that lane.
 - `TestEntityWritesHaveOneSeam`: a package test that parses graph-ingest's non-test files and fails, naming file and
-  line, when a write method of the entity bucket (`Create`, `Update`, `UpdateWithRetry`, `UpdateWithRetryRev`, `Put`,
-  `Delete`, `DeleteAtRevision`) is called outside the seam's file, with a sensitivity case that plants one. It holds
-  the shape #100 asks for; the developer chooses the seam's API.
+  line, when a write method of the entity bucket (`Create`, `Update`, `UpdateWithRetry`, `UpdateWithRetryRev`,
+  `UpdateWithRetryRead`, `UpdateJSON`, `Put`, `Delete`, `DeleteAtRevision`) is called outside the seam's file, with a
+  sensitivity case that plants one. It holds the shape #100 asks for; the developer chooses the seam's API.
 
 **Generated checks** (`docs/testing.md`, "Decide whether generated checks are needed"). The replace rule's result
 depends on how subject, source, timestamps, repeats and arrival order combine, so it gets one generated check:
@@ -1113,6 +1118,104 @@ the consumer still open; the pin's `Stop` (`component.go:1098-1111`) clears its 
 Under D13 the handles stay after a failed cleanup and are cleared only by a cleanup that succeeds, inside the cleanup
 function given to the guard; the next `Stop` runs cleanup again and returns its result. The test's "drain not replayed"
 assertion stands: once `drainIssued` is set, the pin's cleanup (`component.go:1123-1170`) issues no second drain.
+
+### D23. The compare-and-set callback gets the revision it read (#91)
+
+Accepted as drafted (owner ruling, #91 comment 6066791396; draft: PR #93 comment 6066201522). Line numbers are at
+`930bf49`.
+
+**The problem.** The seam's compare-and-set, `natsclient.KVStore.UpdateWithRetryRev` (`natsclient/kv.go:324`), gives its
+callback only the bytes. So a no-op append reads the key again, and a delete between the reads makes it
+`entity_not_found` (`canonical_mutations.go:427`); an all-older arrival still writes; poison found in the loop is
+recorded by a second read (`poison_inventory.go:167`). Ruled (#91 comment 6065395072): extend `natsclient`, one loop.
+
+**Shapes considered.** (a) Decline by returning nil: an empty value is storable and is poison to graph-ingest
+(`mutation_runtime.go:215`), so a mistaken nil skips silently. (b) A skip returns the read revision and a `written` flag
+(round 1): a revision the call did not commit sits in the slot for its own (`kv.go:307-323`), and a caller that drops
+the flag hands it to `committed` as proof (`entity_writes.go:326-328`). (c) **Recommended:** the callback gets the
+revision and declines with a sentinel (`errNoOpAddDuplicate`, `component.go:2258`, given one home); the result is the
+call's own commit or 0; a caller keeps the read revision from the callback's argument, as the seam keeps `stale`
+(`entity_writes.go:113-124`). A new method keeps a carried signature (`docs/admission-ledger.yaml:1429-1431`).
+
+**The surface** (new in `natsclient`, beyond the pin; the sentinel sits with the others at `kv.go:772-777`):
+
+```go
+// ErrKVSkipWrite, returned by an update callback (wrapped or not), makes the update write nothing.
+var ErrKVSkipWrite = errors.New("kv: update callback skipped the write")
+
+// UpdateWithRetryRead is UpdateWithRetryRev whose callback also gets the revision it read.
+func (kv *KVStore) UpdateWithRetryRead(ctx context.Context, key string,
+    updateFn func(current []byte, revision uint64) ([]byte, error)) (uint64, error)
+```
+
+It holds today's loop; `UpdateWithRetryRev` keeps its signature and nil-context check and passes through; the other two
+wrappers are unchanged in code; for the sentinel their result changes (adapt item). The sentinel's text holds no
+substring `IsKVConflictError` or `IsKVNotFoundError` matches (`kv.go:738-770`).
+
+**What a caller observes.** New: the callback's second argument is the revision of the bytes it got, 0 when the key is
+absent (never written, deleted or purged). A callback error `errors.Is` matches to `ErrKVSkipWrite` ends the call after
+that run: nothing written, the value beside it ignored, `(0, nil)`, and no error through the three wrappers. No commit
+is revision 0, so `(0, nil)` means a skip. Unchanged from `UpdateWithRetryRev` at `930bf49`: absent is created, present
+is written only if still at the revision read, the result being the commit's revision; a conflict, or an infrastructure
+error from `Get`, `Create` or `Update` (`kv.go:369`, `:417`, `:439`), reruns the callback; `MaxRetries`+1 conflicts give
+`(0, ErrKVMaxRetriesExceeded)`, as does, after one run, a callback error whose chain or text `IsKVConflictError` matches
+(`kv.go:443-445`, `:755-770`; predates D23); any other callback error, or a value over `MaxValueSize`, gives `(0, err)`
+after one run, `errors.Is` reaching it; a nil context is refused before any read; an ended context starts no further
+run, `errors.Is(err, ctx.Err())`. 0 means no commit is attributed to the call, not that nothing committed: a write cut
+short may have committed and be read by the next run, where a skip attributes nothing (#20, task 4.1); the `kv.go:323`
+doc says so. A caller must know two facts (0 is absent; the sentinel skips), only to use what is new.
+
+**Tests**, written first in `kv_update_revision_integration_test.go`; mutants via `task mutate:check` with
+`GOFLAGS=-tags=integration`, records posted; examples suffice (one interleaving, driven by a put in the callback):
+
+- `TestUpdateWithRetryRead_PassesTheRevisionItRead`: at R → `(bytes, R)`, result Get's revision; absent, and deleted →
+  `(nil, 0)`, created; an empty value at R → `(empty, R)`. Mutant: pass 0.
+- `TestUpdateWithRetryRead_SkipWritesNothing`: at R, a value and `fmt.Errorf("x: %w", ErrKVSkipWrite)` → `(0, nil)`, one
+  run, `BucketLastSeq` and value unchanged; absent stays absent; the same through the three wrappers. Mutants: write the
+  returned value; return the sentinel as the error.
+- `TestUpdateWithRetryRead_ConflictPassesTheNewerRevision`: the first run puts the key (revision E) and returns a value;
+  the second gets that put's bytes and E; writing → above E, skipping → `(0, nil)`. Mutant: pass the first run's.
+- `TestUpdateWithRetryRead_ErrorsAttributeNoCommit`: callback error → `(0, err)`, reachable, one run; a context
+  cancelled first → `context.Canceled`, no run. Mutant: `retry.NonRetryable` removed at `kv.go:382`, which
+  `kv_error_integration_test.go:65-76` survives. Plus a `nil_context_siblings_test.go` row; old tests pass unedited.
+
+**Spec homes.** New delta `specs/transport-client/spec.md`, ADDED "A retried update passes the revision it read": the
+callback SHALL get the stored bytes and the revision read, 0 for an absent key; a callback error matching
+`ErrKVSkipWrite` SHALL make that run write nothing, and the call SHALL return 0 and no error; the returned revision
+SHALL be the call's own commit, or 0 (scenarios "A skip writes nothing", "A conflict passes the newer revision").
+`graph-entity-writes`: "One rule per write mode" (`:5-18`) adds "An append that adds no statement SHALL write nothing
+and report unchanged at the revision it read"; "Timestamp orders a replace" (`:120-128`) adds "A message with at least
+one set, none of which applies, SHALL write nothing, unless the stored entity has no indexing profile, which the write
+then stamps (ADR-054)"; new requirement "The write path refuses a stored value it cannot change": a value empty at a
+nonzero revision, not decodable as an entity, or naming another entity than its key, and a change whose result the
+canonical contract refuses because of statements it keeps from the stored value, SHALL be refused, nothing written, and
+recorded at the revision read. A scenario each.
+
+**graph-ingest's side (run 3b-ii).** Absence is revision 0, never an empty value. The read check is the trusted decode
+plus `decodeStoredEntity`'s key check (`mutation_runtime.go:228`); `MarshalEntityState` still gates every commit
+(`graph/entity_predicate_contract.go:265-286`). Declared cost: a no-op canonical append over a value only the full rule
+refuses reports unchanged, where today's re-read (`canonical_mutations.go:425-433`) fails it; and a stream arrival whose
+every set is older, over such a value, is acknowledged with nothing written, where today its write fails and records it;
+the full rule before every skip has an unmeasured cost on restart replay (gh#713). Refusals go to
+`inventoryEntityPoison` at the callback's revision. A skip clears no poison record or cache entry; the next valid read
+or commit does (D3c). The append returns revision, outcome (`graph.MutationApplied`/`MutationUnchanged`) and suppressed
+in an unexported struct.
+
+**Ledger.** The `natsclient` row (`adapt`) gains in `contract`: "Changed surface, task 3.12a (design D23; owner
+ruling #91 comment 6065395072), three adapt items. natsclient-update-callback-reads-revision:
+KVStore.UpdateWithRetryRead and ErrKVSkipWrite are new; UpdateWithRetryRead holds the loop that is
+UpdateWithRetryRev's at the pin (kv.go:300), passes its callback the revision it read (0 when absent), and on its
+ErrKVSkipWrite writes nothing and returns (0, nil). natsclient-update-skip-through-wrappers: UpdateWithRetryRev,
+UpdateWithRetry and UpdateJSON now return no error for that sentinel, writing nothing, where the pin returned it.
+natsclient-update-commit-attribution: the pin's 'nothing committed' now reads 'attributes no commit to itself'.
+Present consumer: the write seam." `proving_tests`: the four tests.
+
+**Adoption sweep** (issue #TBD; nothing migrates here). Move now: `entity_writes.go:126`, `:257`; no other caller
+outside tests or in semsource, semconnect, semteams, semboids. At their port: the pin's retry loops
+`graph/clustering/summary_store.go:179`, `graph/embedding/storage.go:308`, `:367`, `:438`; one line for the
+read-then-write updates `processor/graph-index-spatial/component.go:944`, `graph-index-temporal` `:1054`, `:1138`.
+**Elsewhere:** `design.md:851` adds `UpdateWithRetryRead` and `UpdateJSON`; `design.md:82-84` no longer holds (this
+change edits the `natsclient` row; #92 merged, `1e383fe`).
 
 ### Left open for #105–#111
 

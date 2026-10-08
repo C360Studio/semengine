@@ -287,10 +287,23 @@ posted on this pull request.
       mutation records. The choices the design does not spell out are in PR #93's "Notes for checkpoint 3" comments
       (6050325985, 6050697147, 6051342812, 6052103765 and 6053166232).
 - [ ] 3.12a (D) graph-ingest's write seam (#100, #98; design D15): one write path for the seven write sites
-      (`TestEntityWritesHaveOneSeam` and its sensitivity case, written first); births on every lane stamp the
-      profile, and with hierarchy enabled the stream and in-process births add hierarchy statements while a mutation
-      create adds none (`TestMutationCreateBirthGetsNoHierarchy`, which holds the pin's behavior, ruling B; its
-      `task mutate:check` record, with a mutant that runs the inference on that lane, posted); the tests of task 4.8.
+      (`TestEntityWritesHaveOneSeam` and its sensitivity case, written first); births on every lane stamp the profile,
+      and with hierarchy enabled the stream and in-process births add hierarchy statements while a mutation create adds
+      none (`TestMutationCreateBirthGetsNoHierarchy`, which holds the pin's behavior, ruling B; its `task mutate:check`
+      record, with a mutant that runs the inference on that lane, posted); derived statements take the latest
+      `Timestamp` among the write's own statements, read before graph-ingest adds its own, reserved sources included,
+      and a stream arrival with no statement is poison (design D15; `TestStreamLaneRefusesEmptyArrival`);
+      `TestReplaceEntityRetryAfterLostBirthMergesOnlyTheArrival` drops its clock-dependent profile check; the tests of
+      task 4.8. The seam reads its revision from `natsclient.KVStore.UpdateWithRetryRead` (design D23). One commit adds
+      D23's natsclient tests, the README entry, the `kv.go:323` doc, the `natsclient` row's three adapt items, and
+      `UpdateWithRetryRead` and `UpdateJSON` in `entity_writes_seam_test.go`'s map with a planted case for the first.
+      Then, each failing first on `930bf49`: a no-op append reports `unchanged` at the revision it read, a key deleted
+      after the read included (`TestCanonicalAppendNoOpReportsTheRevisionItRead`); an all-older arrival writes nothing
+      over a profiled entity and still counts each set (`TestStreamArrivalAllOlderWritesNothing`, with an unprofiled
+      case that writes once and stamps the profile, its `task mutate:check` mutant "skip regardless of profile"); on the
+      stream and append lanes, a value under another key and an empty value are refused and recorded at the revision
+      read (`TestWriteSeamRefusesValueUnderAnotherKey`, `TestWriteSeamRefusesEmptyStoredValue`); `errNoOpAddDuplicate`
+      and `inventoryEntityPoisonAtCurrentRevision` go; the adoption issue (#TBD) is filed.
 - [ ] 3.12b (D) Fail closed at birth and on the guard record (#111 item 1; design D21): the tests of task 4.9; and
       #130, the hierarchy container cache that is never invalidated, fixed here, since failing the birth closed turns
       it from a warning into a redelivery that never ends (PR #93 comment 6061824292). Hold: task 3.12a.

@@ -14,8 +14,9 @@ revision. A conditional replace SHALL name one source, a request without one SHA
 and store nothing, every statement it carries SHALL have that source, and an empty
 set SHALL clear only that source's statements of the named predicates. A conditional replace SHALL report "unchanged"
 only when the stored statements of its predicates from its source equal the requested ones in every field. Within one
-write, statements equal in every field SHALL count once. No non-test file of graph-ingest other than the write path's
-own SHALL call a write method of the entity bucket.
+write, statements equal in every field SHALL count once. An append that adds no statement SHALL write nothing and
+report unchanged at the revision it read. No non-test file of graph-ingest other than the write path's own SHALL call a
+write method of the entity bucket.
 
 #### Scenario: A statement repeated in one write is stored once
 
@@ -27,6 +28,11 @@ own SHALL call a write method of the entity bucket.
 
 - **WHEN** the same statement is appended through a mutation request and through graph-ingest's in-process append
 - **THEN** both leave the same stored statements, and a second append of it on either lane stores nothing
+
+#### Scenario: An append that adds nothing
+
+- **WHEN** an entity is at revision R and an append request carries only statements it already holds
+- **THEN** nothing is written, and the reply reports unchanged at revision R
 
 #### Scenario: Each source replaces only its own statements
 
@@ -81,10 +87,10 @@ terminated as poison with an `invalid_request`-class error naming the statement'
 `predicate_contract_rejections_total` with `reason="reserved_source"`, and nothing of it SHALL be stored. The mutation
 lane accepts the reserved sources, since `pkg/lifecycle` writes there under its own. Statements graph-ingest derives
 itself (the indexing profile, hierarchy statements, a hierarchy container's statements) SHALL name graph-ingest's
-producer in `Source` and SHALL carry the triggering message's time: on the stream lane the envelope's creation time, on
-the mutation and in-process lanes the latest `Timestamp` among the write's own statements. A create on the mutation or
-in-process lane that carries no statement SHALL be refused as `invalid_request`. `Confidence` and `Context` SHALL be
-stored as given and SHALL NOT decide whether a write applies.
+producer in `Source` and SHALL carry the triggering message's time: the latest `Timestamp` among the write's own
+statements, on the stream lane once stamped from the envelope. A create on the mutation or in-process lane that carries
+no statement SHALL be refused as `invalid_request`. A stream message with no statement SHALL be terminated as poison
+and counted. `Confidence` and `Context` SHALL be stored as given and SHALL NOT decide whether a write applies.
 
 #### Scenario: A mutation without a timestamp
 
@@ -99,10 +105,16 @@ stored as given and SHALL NOT decide whether a write applies.
 
 #### Scenario: Derived statements take the triggering time
 
-- **WHEN** an entity is born from a stream message whose envelope was created at time T, with hierarchy inference
-  enabled
+- **WHEN** an entity is born from a stream message whose envelope was created at time T, whose statements carry no time
+  of their own, with hierarchy inference enabled
 - **THEN** its indexing-profile and hierarchy statements, and the statements of any container created for it, carry
   timestamp T and graph-ingest's producer as source
+
+#### Scenario: A statement carries a later time
+
+- **WHEN** an entity is born from a stream message whose envelope was created at time T, and one of its statements
+  carries time T2, after T
+- **THEN** its derived statements carry timestamp T2
 
 #### Scenario: A stream message names a reserved source
 
@@ -124,8 +136,9 @@ stored statements of that predicate from that source only when the latest `Times
 older than the latest `Timestamp` among those stored statements; equal timestamps SHALL apply in arrival order. A set
 not applied SHALL leave its stored statements as they are, the message's other sets SHALL still apply, and each set
 not applied SHALL be counted and logged with the entity, predicate and source. The entity's message type and storage
-reference SHALL take the message's values only when none of its sets was skipped. A conditional replace SHALL be
-fenced by its expected revision, not ordered by `Timestamp`.
+reference SHALL take the message's values only when none of its sets was skipped. A message with at least one set, none
+of which applies, SHALL write nothing, unless the stored entity has no indexing profile, which the write then stamps
+(ADR-054). A conditional replace SHALL be fenced by its expected revision, not ordered by `Timestamp`.
 
 #### Scenario: An older arrival
 
@@ -143,6 +156,23 @@ fenced by its expected revision, not ordered by `Timestamp`.
 
 - **WHEN** a message carries P from source A at the same timestamp as the stored statements of P from source A
 - **THEN** the message's statements replace them
+
+#### Scenario: Every set is older
+
+- **WHEN** a stored entity with an indexing profile is at revision R, and a message's every set is older than the
+  stored statements of its predicate from its source
+- **THEN** nothing is written, the entity stays at revision R, and each set not applied is counted
+
+### Requirement: The write path refuses a stored value it cannot change
+
+A stored value that is empty at a nonzero revision, that does not decode as an entity, or that names another entity
+than its key, and a change whose result the canonical contract refuses because of statements it keeps from the stored
+value, SHALL be refused: nothing SHALL be written, and the refusal SHALL be recorded at the revision read.
+
+#### Scenario: A stored value under another key
+
+- **WHEN** the value stored at entity A's key names entity B, and a stream message or an append request writes to A
+- **THEN** the write is refused, nothing is written, and the refusal is recorded at the revision read
 
 ### Requirement: The revision is the only fence
 

@@ -286,7 +286,7 @@ posted on this pull request.
       `harness_gate_integration_test.go` is adapted under task 3.10. Each commit body quotes its failing runs and
       mutation records. The choices the design does not spell out are in PR #93's "Notes for checkpoint 3" comments
       (6050325985, 6050697147, 6051342812, 6052103765 and 6053166232).
-- [ ] 3.12a (D) graph-ingest's write seam (#100, #98; design D15): one write path for the seven write sites
+- [x] 3.12a (D) graph-ingest's write seam (#100, #98; design D15): one write path for the seven write sites
       (`TestEntityWritesHaveOneSeam` and its sensitivity case, written first); births on every lane stamp the profile,
       and with hierarchy enabled the stream and in-process births add hierarchy statements while a mutation create adds
       none (`TestMutationCreateBirthGetsNoHierarchy`, which holds the pin's behavior, ruling B; its `task mutate:check`
@@ -303,10 +303,13 @@ posted on this pull request.
       case that writes once and stamps the profile, its `task mutate:check` mutant "skip regardless of profile"); on the
       stream and append lanes, a value under another key and an empty value are refused and recorded at the revision
       read (`TestWriteSeamRefusesValueUnderAnotherKey`, `TestWriteSeamRefusesEmptyStoredValue`); `errNoOpAddDuplicate`
-      and `inventoryEntityPoisonAtCurrentRevision` go; the adoption issue (#141) is filed.
-- [ ] 3.12b (D) Fail closed at birth and on the guard record (#111 item 1; design D21): the tests of task 4.9; and
-      #130, the hierarchy container cache that is never invalidated, fixed here, since failing the birth closed turns
-      it from a warning into a redelivery that never ends (PR #93 comment 6061824292). Hold: task 3.12a.
+      and `inventoryEntityPoisonAtCurrentRevision` go; the adoption issue (#141) is filed. Each commit body quotes its
+      failing runs and mutation records. The choices the design does not spell out are in PR #93's "Notes for checkpoint
+      3" comments (6062508678, 6063769189, 6064772182, 6065164632, 6065823926, 6067057540, 6067512048, 6068062023,
+      6069037847, 6069561642 and 6069916935).
+- [ ] 3.12b (D) Fail closed at birth and on the guard record (#111 item 1; design D21): the tests of task 4.9; and #130,
+      the hierarchy container cache that is never invalidated, fixed here, since failing the birth closed turns it from
+      a warning into a redelivery that never ends (PR #93 comment 6061824292).
 - [ ] 3.13 (D) graph-ingest under the lifecycle suite: an in-package adapter whose `Observe` lists consumers, request
       subscriptions, ingest lanes and the status loop; failing factory = a refused broker; `lifecycletest.Run` green;
       `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop` carried on the adapter, green, driving the
@@ -317,10 +320,8 @@ posted on this pull request.
 ## 4. Repair and port-refactor evidence (design D8, D15–D21)
 
 - [ ] 4.1 (D) #20: `FaultKV.FailAfter(Update, …)` in graph-ingest's entity bucket → the typed client reports
-      commit-unknown; conflict and not-found stay not-committed. Fails first on the pin's classification. Hold: task
-      3.12a.
+      commit-unknown; conflict and not-found stay not-committed. Fails first on the pin's classification.
 - [ ] 4.2 (D) #19: `ReconcileMutation` gains the expected revision; the two `projection-mutation` scenarios as tests.
-      Hold: task 3.12a, where graph-ingest's conditional replace applies the expected revision (design D15).
 - [ ] 4.3 (D) #15: memory stream + `Fixture.Restart` + retained guard bucket: re-ingestion at lower sequences is
       applied and queried back; a same-generation redelivery is a no-op; the no-bucket degrade of design D8 is logged
       and counted. Fails first on the pin's guard key.
@@ -328,13 +329,13 @@ posted on this pull request.
       `TestHelperProcess`; the guard-record write held open by a `_test.go` wrapper in the first run; the entity write
       and the pending acknowledgement confirmed from the buckets and the consumer's info; the helper confirmed alive,
       then killed; redelivery acknowledged in the second run and the state equal to one application); the long-apply
-      test; the durable-record failure test. Hold: task 3.12a.
+      test; the durable-record failure test.
 - [ ] 4.5 (D) Q13: SemStreams PR #1437's graph-ingest half (head `0ea823a6`) with its two test files on a
       test-registered payload type; the "Payload panics while giving its entity ID" scenario green.
 - [ ] 4.6 (D) #33: the hierarchy refusal names `inference.RegisterPayloads` (`component-registration`).
 - [ ] 4.7 (D) #29 and #102: the `component` contract test of task 3.11 green on the ported tree, with its package
       count posted.
-- [ ] 4.8 (D) #100 and #98, the `graph-entity-writes` scenarios through graph-ingest, each written first and failing on
+- [x] 4.8 (D) #100 and #98, the `graph-entity-writes` scenarios through graph-ingest, each written first and failing on
       the pin's code: `TestWriteModesAgreeAcrossLanes`, `TestReplaceKeepsOtherSourcesStatements`,
       `TestStreamLaneGroupsByStampedSource`, `TestReconcileReplacesOnlyItsSource`,
       `TestReconcileRefusesForeignSourceStatement` (a reconcile with no `source` on the wire included, ruling 1),
@@ -343,7 +344,7 @@ posted on this pull request.
       `TestWriteRefusesStatementWithoutSourceOrTimestamp` (an empty create included),
       `TestGraphableLaneStampsFromEnvelope`, `TestGraphableLaneRefusesWithoutEnvelopeMetadata`,
       `TestDerivedStatementsCarryTriggeringTime` (rulings A and C and the round-4 review's derived-statement finding,
-      #91 comment 6037287957; rulings 1 and 5, #91 comment 6037604840; design D15). Hold: task 3.12a.
+      #91 comment 6037287957; rulings 1 and 5, #91 comment 6037604840; design D15).
 - [ ] 4.9 (D) #111 item 1: `TestHierarchyFailureFailsTheBirth` (`graph-entity-writes`, "Birth with hierarchy fails
       closed") and `TestCorruptGuardRecordIsRefused` (`graph-ingest-recovery`, "A record that cannot be decoded"),
       each written first and failing on the pin's code (design D21). Hold: task 3.12b.

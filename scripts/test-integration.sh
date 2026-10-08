@@ -201,19 +201,37 @@ clean_stale_lock() {
   return 1
 }
 
+# Publish the owner record whole (D7). It is written beside the lock directory, on
+# its filesystem and outside the .stale. quarantine name, then renamed into it, so a
+# reader finds no owner file or the complete record. mktemp creates mode 0600; chmod
+# gives the mode a redirection would, so another user's runner can read it. On any
+# failure the file and the lock directory, which holds nothing else, are removed. An
+# mv stopped after its rename leaves the record naming this runner; rmdir then fails.
+publish_owner() {
+  local tmp=""
+  tmp=$(mktemp "${lock_dir}.owner.XXXXXX") &&
+    {
+      printf 'host=%s\n' "$owner_host" &&
+        printf 'pid=%s\n' "$owner_pid" &&
+        printf 'started=%s\n' "$owner_started" &&
+        printf 'identity=%s\n' "$owner_identity" &&
+        printf 'token=%s\n' "$owner_token" &&
+        printf 'command=%s\n' "$owner_command" &&
+        printf 'identity_utc=%s\n' "$owner_identity_utc"
+    } > "$tmp" &&
+    chmod "$(printf '%o' $((0666 & ~$(umask))))" "$tmp" &&
+    mv "$tmp" "$lock_dir/owner" && return 0
+  echo "[INTEGRATION] could not publish the owner record; removing $lock_dir" >&2
+  [ -z "$tmp" ] || rm -f "$tmp"
+  rmdir "$lock_dir"
+  return 1
+}
+
 acquire_lock() {
   local deadline=$((owner_started + wait_seconds)) announced=false
   while true; do
     if mkdir "$lock_dir" 2>/dev/null; then
-      {
-        printf 'host=%s\n' "$owner_host"
-        printf 'pid=%s\n' "$owner_pid"
-        printf 'started=%s\n' "$owner_started"
-        printf 'identity=%s\n' "$owner_identity"
-        printf 'token=%s\n' "$owner_token"
-        printf 'command=%s\n' "$owner_command"
-        printf 'identity_utc=%s\n' "$owner_identity_utc"
-      } > "$lock_dir/owner"
+      publish_owner || return 1
       lock_held=true
       cp "$lock_dir/owner" "$evidence_dir/lock-owner"
       record lock_wait_s "$(($(date +%s) - owner_started))"

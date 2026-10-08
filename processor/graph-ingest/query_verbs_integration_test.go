@@ -16,36 +16,11 @@ import (
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/c360studio/semengine/metric"
-	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/payloadregistry"
 	"github.com/c360studio/semengine/types"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 )
-
-// verbsClientTimeout is the fixture client's request timeout, the value the pin's
-// NewTestClient family used.
-const verbsClientTimeout = 15 * time.Second
-
-// openVerbsClient opens a natsclient.Client the way the pin's NewTestClient built it: no
-// reconnects, no health monitor (natsfixture.Open bounds it and closes it on cleanup).
-func openVerbsClient(ctx context.Context, url string) (*natsclient.Client, func(context.Context) error, error) {
-	client, err := natsclient.NewClient(url,
-		natsclient.WithTimeout(verbsClientTimeout),
-		natsclient.WithMaxReconnects(0),
-		natsclient.WithHealthInterval(0),
-	)
-	if err != nil {
-		return nil, nil, err
-	}
-	if err := client.Connect(ctx); err != nil {
-		return nil, nil, errors.Join(err, client.Close(ctx))
-	}
-	if err := client.WaitForConnection(ctx); err != nil {
-		return nil, nil, errors.Join(err, client.Close(ctx))
-	}
-	return client, client.Close, nil
-}
 
 // recordingHandler keeps every log record the component writes, so a test can read what
 // the component reports it did.
@@ -101,7 +76,7 @@ func startGraphIngestOnFixture(t *testing.T) (*natsfixture.Fixture, *recordingHa
 	if err := f.Start(t.Context()); err != nil {
 		t.Fatalf("natsfixture Start: %v", err)
 	}
-	client := natsfixture.Open(t, f, openVerbsClient)
+	client := natsfixture.Open(t, f, openFixtureClient)
 
 	config := DefaultConfig()
 	stream := f.Name("entity")

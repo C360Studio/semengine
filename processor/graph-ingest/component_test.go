@@ -574,9 +574,6 @@ func TestComponent_Health_NotStarted(t *testing.T) {
 	assert.Equal(t, 0, health.ErrorCount)
 }
 
-// TestComponent_Health_Running is not ported here: it skipped at the pin ("requires real NATS
-// connection"); stage 3 of task 3.12 rewrites it as an integration test (design D9).
-
 func TestComponent_DataFlow_ReturnsMetrics(t *testing.T) {
 	comp := createTestComponent(t)
 
@@ -617,9 +614,6 @@ func TestComponent_Initialize_InvalidConfig(t *testing.T) {
 	assert.Error(t, err, "Initialize should fail with invalid config")
 }
 
-// TestComponent_Start_Success is not ported here: it skipped at the pin ("requires real NATS
-// connection"); stage 3 of task 3.12 rewrites it as an integration test (design D9).
-
 func TestComponent_Start_BeforeInitialize(t *testing.T) {
 	comp := createTestComponent(t)
 	ctx := context.Background()
@@ -629,12 +623,6 @@ func TestComponent_Start_BeforeInitialize(t *testing.T) {
 
 	assert.Error(t, err, "Start should fail if not initialized")
 }
-
-// TestComponent_Start_AlreadyStarted is not ported here: it skipped at the pin ("requires real NATS
-// connection"); stage 3 of task 3.12 rewrites it as an integration test (design D9).
-
-// TestComponent_Stop_Success is not ported here: it skipped at the pin ("requires real NATS
-// connection"); stage 3 of task 3.12 rewrites it as an integration test (design D9).
 
 func TestComponent_Stop_BeforeStart(t *testing.T) {
 	comp := createTestComponent(t)
@@ -646,9 +634,6 @@ func TestComponent_Stop_BeforeStart(t *testing.T) {
 
 	assert.NoError(t, err, "Stop should be safe even if not started")
 }
-
-// TestComponent_Stop_Timeout is not ported here: it skipped at the pin ("requires real NATS
-// connection"); stage 3 of task 3.12 rewrites it as an integration test (design D9).
 
 // ====================================================================================
 // Factory and Registration Tests
@@ -871,9 +856,6 @@ func TestComponent_CanonicalAppend_MissingSubject(t *testing.T) {
 // ====================================================================================
 // Context Handling Tests
 // ====================================================================================
-
-// TestComponent_RespectsContext_Cancellation is not ported here: it skipped at the pin ("requires real NATS
-// connection"); stage 3 of task 3.12 rewrites it as an integration test (design D9).
 
 func TestComponent_RespectsContext_Timeout(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)

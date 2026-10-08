@@ -359,3 +359,72 @@ func TestIndexingProfile_RegistryFloor_RegisteredTypeNoMetric(t *testing.T) {
 	assert.InDelta(t, before, testutil.ToFloat64(counter), 0.0001,
 		"a registered floor is NOT a gap → the default metric must NOT fire")
 }
+
+// TestIndexingProfile_Append_DoesNotStamp and
+// TestIndexingProfile_RegistryFloor_RegisteredNoFloorFiresMetric also come from the
+// pin's indexing_profile_registry_test.go (:126-160, :187-209). Design D2 excludes that
+// file for its agentic and research floors; neither test touches that domain, so they
+// are kept here unchanged except for imports and the metric (below).
+
+// TestIndexingProfile_Append_DoesNotStamp locks the indexing invariant:
+// append is NOT a stamp seam. An entity updated via append carries no
+// additional profile triple — reconcileIndexingProfile is not on this path.
+// The entity must be pre-created (ADR-055 deleted the auto-vivify path);
+// Appending to a pre-existing entity must NOT re-stamp indexing metadata.
+func TestIndexingProfile_Append_DoesNotStamp(t *testing.T) {
+	comp := createTestComponentWithMockKV(t)
+	ctx := context.Background()
+
+	const id = "c360.platform.test.sys.widget.addtriple1"
+	// Pre-create the entity via the create seam so it exists in ENTITY_STATES.
+	req := graph.CreateEntityRequest{Entity: &graph.EntityState{ID: id, MessageType: testWidgetMessageType()}}
+	data, err := json.Marshal(req)
+	require.NoError(t, err)
+	_, err = comp.handleCanonicalCreate(ctx, data)
+	require.NoError(t, err)
+
+	// Record the profile triples stamped at create time so we can assert
+	// that append does NOT add more.
+	esBefore := storedEntity(t, comp, id)
+	profilesBefore := profileValues(esBefore)
+
+	// Now add a user triple via the append path.
+	tr := message.Triple{Subject: id, Predicate: "evidence.note.value", Object: "v", Confidence: 1.0}
+	appendData, err := json.Marshal(graph.AppendTriplesRequest{Triples: []message.Triple{tr}})
+	require.NoError(t, err)
+	_, err = comp.handleCanonicalAppend(ctx, appendData)
+	require.NoError(t, err)
+
+	esAfter := storedEntity(t, comp, id)
+	assert.Equal(t, profilesBefore, profileValues(esAfter),
+		"append must NOT stamp or change the indexing profile (only the create seam stamps)")
+	assert.Equal(t, nonProfileTripleCount(esBefore)+1, nonProfileTripleCount(esAfter),
+		"the entity holds exactly one additional user triple after append")
+}
+
+// The complement: a REGISTERED type that declares no floor falls to control AND
+// fires the metric — its new meaning under ADR-103: the label names a
+// Registration literal whose IndexingProfile is empty.
+//
+// The pin read getIndexingProfileDefaultMetric(nil); the counter is the component's
+// own now (design D4).
+func TestIndexingProfile_RegistryFloor_RegisteredNoFloorFiresMetric(t *testing.T) {
+	comp := createTestComponentWithMockKV(t)
+	ctx := context.Background()
+
+	mt := message.Type{Domain: "test", Category: "nofloor", Version: "v1"}
+	counter := comp.indexingProfileDefault.WithLabelValues(mt.Key())
+	before := testutil.ToFloat64(counter)
+
+	const id = "c360.platform.test.sys.nofloor.001"
+	req := graph.CreateEntityRequest{Entity: &graph.EntityState{ID: id, MessageType: mt}}
+	data, _ := json.Marshal(req)
+	_, err := comp.handleCanonicalCreate(ctx, data)
+	require.NoError(t, err)
+
+	es := storedEntity(t, comp, id)
+	assert.Equal(t, []string{vocabulary.IndexingProfileControl}, profileValues(es),
+		"a registered type with no floor falls to control (fail-safe)")
+	assert.InDelta(t, before+1, testutil.ToFloat64(counter), 0.0001,
+		"a registered type with no floor IS the metered gap → the default metric must fire exactly once")
+}

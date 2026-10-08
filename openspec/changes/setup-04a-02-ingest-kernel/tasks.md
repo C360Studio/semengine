@@ -212,7 +212,7 @@ posted on this pull request.
       `Reconcile` sends `Metadata.Source` as the request's `source`. The two tests, written first in
       `mutation_client_refusals_test.go`, fail on the pin's code. The carried tests now give their statements a
       time and their reconciles a source. Seven `task mutate:check` detections are quoted in the commit body.
-- [ ] 3.10 (D) `pkg/lifecycle`: 7 fixture-client sites; `harness_gate_integration_test.go` on per-package payload
+- [x] 3.10 (D) `pkg/lifecycle`: 7 fixture-client sites; `harness_gate_integration_test.go` on per-package payload
       registration; `Manager.Watch` and `WatchEvents` in the watch shape of design D5; no `Version: 1`
       (design D15); every statement the manager writes carries the constant source `semengine-lifecycle`, which its
       reconciles send as the request's source (`TestTransitionReplacesItsPhaseStatement`, written first: two
@@ -227,10 +227,17 @@ posted on this pull request.
       send it as the request's `source` (`TestManagerWritesUnderTheLifecycleSource`, request level, written first).
       With no NATS client every write returns `ErrEmitFailed` naming the missing client
       (`TestManagerWithoutClientRefusesEmit`; on the pin's code it panics). The commit body quotes the failing runs
-      and the mutation records.
-      Hold: task 3.12 — `harness_gate_integration_test.go` (`payloadfixture.NewWithSubset` per design D2, its
-      fixture-client site through `natsfixture.Open`) and `TestTransitionReplacesItsPhaseStatement` through
-      graph-ingest.
+      and the mutation records. With task 3.12: `harness_gate_integration_test.go` ported into package `lifecycle`,
+      its registry `payloadfixture.NewWithSubset(t, RegisterPayloads)` (design D2), its fixture-client site (the
+      seventh) opened through `natsfixture.Open` with the package's `openClient`, and graph-ingest built on its own
+      metrics registry, from which the rejection counter is read (design D4). `TestTransitionReplacesItsPhaseStatement`
+      (`transition_phase_integration_test.go`) drives a create and two transitions, `rule` then `operator`, through a
+      real graph-ingest: the entity holds one phase statement, and it carries `semengine-lifecycle`. It passes on this
+      tree without task 3.12a's conditional replace by source. It was written after the manager's change, which
+      `TestManagerWritesUnderTheLifecycleSource` drove first, so its red runs are wrong changes made by hand (records
+      in the bodies of `b95e790` and `97d9ac6`): lifecycle's registration skipped, the birth is refused at
+      graph-ingest's registered-type gate; the phase statement's source taken from the `TransitionSource`, the source
+      assertion fails; graph-ingest's reconcile keeping the earlier phase statements, the count assertion fails.
 - [x] 3.11 (D) `component`: `ToolRegistry` and `ToolRegistryReader` removed (#29) and `LifecycleManager` removed
       (#102, design D17); `lifecycle_test_suite.go` and its self-test not ported; `ProcessorMetrics`,
       `config_validator.go`, `Registry.Snapshot` and the other dead rows removed; `CreateComponent`,
@@ -257,7 +264,7 @@ posted on this pull request.
       the `agentic-` rule removed, the sensitivity test's `processor/agentic-tools` case fails; a goroutine left
       blocked in the mock's `DebugStatus`, the leak test panics; `task mutate:check` on `CreateComponent`'s seal
       check, detection at `registry_boot_admission_test.go:160`.
-- [ ] 3.12 (D) `processor/graph-ingest`: metrics per design D4 (`TestGraphIngestMetricsRegisterOnItsRegistry`,
+- [x] 3.12 (D) `processor/graph-ingest`: metrics per design D4 (`TestGraphIngestMetricsRegisterOnItsRegistry`,
       `TestGraphIngestNilRegistryRegistersNothing`, written first); the authority as one `types.PlatformMeta`; unknown
       configuration keys refused by strict decoding (`TestCreateGraphIngestRefusesUnknownKey`); the owner-lifecycle
       state replaced by `internal/lifecycleguard` (design D13), the tests that read or set its fields driving the
@@ -268,12 +275,22 @@ posted on this pull request.
       not ported (design D16); `TEST_DISPUTE.md` not ported; 21
       fixture-client sites, 10 sleeps, 6 skips (rewritten as integration tests), 11 fixed addresses, 5 unbounded
       cleanups repaired; the eight out-of-set test imports adapted (design D2).
+      Done: production in `18e6a77`; unit tests in `e8b3c31`, `d88d688`, `be10223`, `d09ebd1` and `88d3692`;
+      integration tests in `ab69042`, `4ed6266`, `4c2a3a7` and `67d3bda`. Counted at the SemStreams pin and on the
+      tree at `67d3bda`: all 22 of the pin's integration test files and 33 of its 34 unit test files are on the tree.
+      `indexing_profile_registry_test.go` is not ported (design D2); three of its tests moved into
+      `indexing_profile_test.go`. `TEST_DISPUTE.md` is absent. Repaired, with none of each left on the tree: 21
+      fixture-client sites (the `TestMain`'s `NewSharedTestClient` is not ported), 10 sleeps, 6 skips (rewritten in
+      `component_integration_test.go`), 11 fixed addresses, 5 unbounded cleanups, and 27 `MergeEntity` test call sites
+      across 10 files. None of the eight out-of-set test imports is left (design D2); `pkg/lifecycle`'s
+      `harness_gate_integration_test.go` is adapted under task 3.10. Each commit body quotes its failing runs and
+      mutation records. The choices the design does not spell out are in PR #93's "Notes for checkpoint 3" comments
+      (6050325985, 6050697147, 6051342812, 6052103765, and the one for stages 3c to 3e that follows them).
 - [ ] 3.12a (D) graph-ingest's write seam (#100, #98; design D15): one write path for the seven write sites
       (`TestEntityWritesHaveOneSeam` and its sensitivity case, written first); births on every lane stamp the
       profile, and with hierarchy enabled the stream and in-process births add hierarchy statements while a mutation
       create adds none (`TestMutationCreateBirthGetsNoHierarchy`, which holds the pin's behavior, ruling B; its
       `task mutate:check` record, with a mutant that runs the inference on that lane, posted); the tests of task 4.8.
-      Hold: task 3.12.
 - [ ] 3.12b (D) Fail closed at birth and on the guard record (#111 item 1; design D21): the tests of task 4.9. Hold:
       task 3.12a.
 - [ ] 3.13 (D) graph-ingest under the lifecycle suite: an in-package adapter whose `Observe` lists consumers, request
@@ -281,7 +298,7 @@ posted on this pull request.
       `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop` carried on the adapter, green, driving the
       guard through its methods (design D22), and citing `lifecycle-suite`/"Failed start whose own cleanup fails"
       (design D7.3); the "Cleanup succeeds after a failed start" scenario is the suite's failed-start check on the
-      refused-broker factory. Hold: task 3.12.
+      refused-broker factory.
 
 ## 4. Repair and port-refactor evidence (design D8, D15–D21)
 
@@ -292,16 +309,15 @@ posted on this pull request.
       Hold: task 3.12a, where graph-ingest's conditional replace applies the expected revision (design D15).
 - [ ] 4.3 (D) #15: memory stream + `Fixture.Restart` + retained guard bucket: re-ingestion at lower sequences is
       applied and queried back; a same-generation redelivery is a no-op; the no-bucket degrade of design D8 is logged
-      and counted. Fails first on the pin's guard key. Hold: task 3.12.
+      and counted. Fails first on the pin's guard key.
 - [ ] 4.4 (D) Settlement (Q18): the process-kill test of design D8 (a `prochost.Helper` in graph-ingest's
       `TestHelperProcess`; the guard-record write held open by a `_test.go` wrapper in the first run; the entity write
       and the pending acknowledgement confirmed from the buckets and the consumer's info; the helper confirmed alive,
       then killed; redelivery acknowledged in the second run and the state equal to one application); the long-apply
       test; the durable-record failure test. Hold: task 3.12a.
 - [ ] 4.5 (D) Q13: SemStreams PR #1437's graph-ingest half (head `0ea823a6`) with its two test files on a
-      test-registered payload type; the "Payload panics while giving its entity ID" scenario green. Hold: task 3.12.
-- [ ] 4.6 (D) #33: the hierarchy refusal names `inference.RegisterPayloads` (`component-registration`). Hold: task
-      3.12.
+      test-registered payload type; the "Payload panics while giving its entity ID" scenario green.
+- [ ] 4.6 (D) #33: the hierarchy refusal names `inference.RegisterPayloads` (`component-registration`).
 - [ ] 4.7 (D) #29 and #102: the `component` contract test of task 3.11 green on the ported tree, with its package
       count posted.
 - [ ] 4.8 (D) #100 and #98, the `graph-entity-writes` scenarios through graph-ingest, each written first and failing on

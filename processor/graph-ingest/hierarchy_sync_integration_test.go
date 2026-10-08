@@ -9,74 +9,47 @@ package graphingest
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/vocabulary"
-	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// entityWrites counts the writes to graph-ingest's entity bucket from the moment
-// watchEntityWrites returns. The pin read EntityState.Version to say how often a key
-// had been written; design D15 removes Version and leaves the KV revision as the only
-// fence, and ENTITY_STATES keeps one revision per key, so the writes are counted off a
-// watcher instead.
-type entityWrites struct {
-	watcher jetstream.KeyWatcher
-	counts  map[string]int
-	last    uint64
-}
+// The pin read EntityState.Version to say how often a key had been written. Design D15
+// removes Version and leaves the KV revision as the only fence, and ENTITY_STATES keeps
+// one revision per key, so these tests check what each write left in the stored state:
+// an entity's stored revision is its birth's, and every statement it holds is held once.
 
-// watchEntityWrites starts counting. The watcher first replays each key's current
-// value and then sends nil; those replayed values are not writes made since, so they
-// are passed over.
-func watchEntityWrites(ctx context.Context, t *testing.T, comp *Component) *entityWrites {
-	t.Helper()
-	watcher, err := comp.entityBucket.Watch(ctx, ">")
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = watcher.Stop() })
-	ew := &entityWrites{watcher: watcher, counts: make(map[string]int)}
-	for {
-		select {
-		case <-ctx.Done():
-			t.Fatalf("entity bucket watcher: no end of its initial values: %v", ctx.Err())
-		case entry, ok := <-watcher.Updates():
-			if !ok {
-				t.Fatal("entity bucket watcher closed before the end of its initial values")
-			}
-			if entry == nil {
-				return ew
-			}
-			ew.last = max(ew.last, entry.Revision())
+// statementCount returns how many of triples state predicate with object.
+func statementCount(triples []message.Triple, predicate string, object any) int {
+	n := 0
+	for _, triple := range triples {
+		if triple.Predicate == predicate && triple.Object == object {
+			n++
 		}
 	}
+	return n
 }
 
-// writesTo returns how many times key has been written since watchEntityWrites. It
-// reads the watcher until it has delivered the key's stored revision; the watcher
-// delivers in revision order, so every earlier write has been counted by then.
-func (ew *entityWrites) writesTo(ctx context.Context, t *testing.T, comp *Component, key string) int {
+// assertEachStatementOnce fails if entity holds any statement more than once.
+func assertEachStatementOnce(t *testing.T, entity graph.EntityState) {
 	t.Helper()
-	entry, err := comp.entityBucket.Get(ctx, key)
-	require.NoError(t, err)
-	for ew.last < entry.Revision {
-		select {
-		case <-ctx.Done():
-			t.Fatalf("entity bucket watcher: revision %d of %s not delivered (last %d): %v",
-				entry.Revision, key, ew.last, ctx.Err())
-		case update, ok := <-ew.watcher.Updates():
-			if !ok {
-				t.Fatalf("entity bucket watcher closed before revision %d of %s", entry.Revision, key)
-			}
-			ew.counts[update.Key()]++
-			ew.last = update.Revision()
+	seen := make(map[string]int)
+	for _, triple := range entity.Triples {
+		seen[fmt.Sprintf("%s %s %v", triple.Subject, triple.Predicate, triple.Object)]++
+	}
+	var repeated []string
+	for statement, n := range seen {
+		if n > 1 {
+			repeated = append(repeated, fmt.Sprintf("%s (%d times)", statement, n))
 		}
 	}
-	return ew.counts[key]
+	assert.Empty(t, repeated, "%s holds a statement more than once", entity.ID)
 }
 
 // ====================================================================================
@@ -133,9 +106,10 @@ func TestComponent_SynchronousHierarchy_IncludedBeforeWrite(t *testing.T) {
 				UpdatedAt: time.Now(),
 			}
 
-			// Write entity - hierarchy should be applied synchronously
-			writes := watchEntityWrites(ctx, t, comp)
-			require.NoError(t, comp.CreateEntity(ctx, entity), tt.reason)
+			// Write entity - hierarchy should be applied synchronously. CreateEntity
+			// is this call with the birth's revision dropped.
+			_, birthRevision, err := comp.createEntityWithReceipt(ctx, entity)
+			require.NoError(t, err, tt.reason)
 
 			// Read back from KV - should already contain hierarchy triples
 			entry, err := comp.entityBucket.Get(ctx, tt.entityID)
@@ -145,10 +119,11 @@ func TestComponent_SynchronousHierarchy_IncludedBeforeWrite(t *testing.T) {
 			err = json.Unmarshal(entry.Value, &storedEntity)
 			require.NoError(t, err)
 
-			// Verify entity was written with hierarchy triples included
-			// The pin asserted Version == 1; with Version gone (design D15) the
-			// writes to the key are counted.
-			assert.Equal(t, 1, writes.writesTo(ctx, t, comp, tt.entityID), "entity should be written once")
+			// Verify entity was written once, with hierarchy triples included. The
+			// pin asserted Version == 1; with Version gone (design D15) the stored
+			// revision must be the birth's: a later write would have replaced it.
+			assert.Equal(t, birthRevision, entry.Revision, "entity should be written once")
+			assertEachStatementOnce(t, storedEntity)
 			assert.GreaterOrEqual(t, len(storedEntity.Triples), tt.expectedTripleMin,
 				"%s: expected at least %d triples", tt.reason, tt.expectedTripleMin)
 
@@ -217,9 +192,9 @@ func TestComponent_SynchronousHierarchy_SingleWrite(t *testing.T) {
 				UpdatedAt: time.Now(),
 			}
 
-			// Write entity
-			writes := watchEntityWrites(ctx, t, comp)
-			require.NoError(t, comp.CreateEntity(ctx, entity))
+			// Write entity. CreateEntity is this call with the birth's revision dropped.
+			_, birthRevision, err := comp.createEntityWithReceipt(ctx, entity)
+			require.NoError(t, err)
 
 			// Read back immediately - should have been written once
 			entry, err := comp.entityBucket.Get(ctx, tt.entityID)
@@ -231,10 +206,11 @@ func TestComponent_SynchronousHierarchy_SingleWrite(t *testing.T) {
 
 			// CRITICAL: Entity must be written once with all triples. A second write
 			// means AddTriple was called after initial write (async pattern). The pin
-			// read Version == 1; design D15 removes Version, so the writes to the key
-			// are counted.
-			assert.Equal(t, 1, writes.writesTo(ctx, t, comp, tt.entityID),
+			// read Version == 1; design D15 removes Version, so the stored revision
+			// must be the birth's: a later write would have replaced it.
+			assert.Equal(t, birthRevision, entry.Revision,
 				"entity must be written once - no cascade updates allowed")
+			assertEachStatementOnce(t, storedEntity)
 
 			// Verify hierarchy triples are present despite single write
 			hierarchyTriples := 0
@@ -254,21 +230,25 @@ func TestComponent_SynchronousHierarchy_ContainerCreation(t *testing.T) {
 		name        string
 		containerID string
 		level       string
+		contains    string
 	}{
 		{
 			name:        "type_container",
 			containerID: "c360.platform.robotics.mav1.drone.group",
 			level:       "type",
+			contains:    vocabulary.HierarchyTypeContains,
 		},
 		{
 			name:        "system_container",
 			containerID: "c360.platform.robotics.mav1.group.container",
 			level:       "system",
+			contains:    vocabulary.HierarchySystemContains,
 		},
 		{
 			name:        "domain_container",
 			containerID: "c360.platform.robotics.group.container.level",
 			level:       "domain",
+			contains:    vocabulary.HierarchyDomainContains,
 		},
 	}
 
@@ -303,7 +283,6 @@ func TestComponent_SynchronousHierarchy_ContainerCreation(t *testing.T) {
 	}
 
 	// Write entity - containers should be created synchronously
-	writes := watchEntityWrites(ctx, t, comp)
 	require.NoError(t, comp.CreateEntity(ctx, entity))
 
 	// Verify all containers exist immediately (no async delay needed)
@@ -316,26 +295,28 @@ func TestComponent_SynchronousHierarchy_ContainerCreation(t *testing.T) {
 			err = json.Unmarshal(entry.Value, &containerEntity)
 			require.NoError(t, err)
 
-			// Verify container has type classification
-			hasTypeTriple := false
-			for _, triple := range containerEntity.Triples {
-				if triple.Predicate == "entity.type.class" && triple.Object == "hierarchy.container" {
-					hasTypeTriple = true
-					break
-				}
-			}
-			assert.True(t, hasTypeTriple, "container should have type classification")
+			// Verify container has type classification, once
+			assert.Equal(t, 1, statementCount(containerEntity.Triples, "entity.type.class", "hierarchy.container"),
+				"container should hold its type classification once")
 
 			// Verify container ID format
 			assert.Equal(t, tt.containerID, containerEntity.ID)
 
-			// Verify the container was born once and took its one inverse contains
-			// edge: two writes. The pin asserted Version == 1, which counted the
-			// inverse edge's bump on a container born at Version 0 (pin
-			// hierarchy.go:482 sets no Version; addTripleLane bumps it). Design D15
-			// removes Version, so the writes to the key are counted.
-			assert.Equal(t, 2, writes.writesTo(ctx, t, comp, tt.containerID),
-				"container should be written twice: its birth and its inverse contains edge")
+			// Verify the container took its one inverse contains edge, to the entity.
+			// The pin asserted Version == 1, which counted the inverse edge's bump on
+			// a container born at Version 0 (pin hierarchy.go:482 sets no Version;
+			// addTripleLane bumps it). Design D15 removes Version, so what that one
+			// append leaves is checked: one contains edge, and it names the entity.
+			assert.Equal(t, 1, statementCount(containerEntity.Triples, tt.contains, entityID),
+				"container should hold its inverse %s edge to the entity once", tt.contains)
+			members := 0
+			for _, triple := range containerEntity.Triples {
+				if triple.Predicate == tt.contains {
+					members++
+				}
+			}
+			assert.Equal(t, 1, members, "container should hold one %s edge: the entity is its only member", tt.contains)
+			assertEachStatementOnce(t, containerEntity)
 		})
 	}
 }

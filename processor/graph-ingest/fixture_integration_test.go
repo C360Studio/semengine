@@ -12,12 +12,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/c360studio/semengine/graph"
-	"github.com/c360studio/semengine/graph/inference"
 	"github.com/c360studio/semengine/internal/harness/natsfixture"
-	"github.com/c360studio/semengine/internal/harness/payloadfixture"
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/natsclient"
-	"github.com/c360studio/semengine/payloadregistry"
 )
 
 // fixtureClientTimeout is the fixture client's request timeout, the value the pin's
@@ -154,57 +151,4 @@ func seedPrefixEntity(t *testing.T, ctx context.Context, c *Component, id string
 		UpdatedAt: time.Now(),
 	}
 	require.NoError(t, c.CreateEntity(ctx, entity))
-}
-
-// mergeTestGraphable is a minimal Graphable payload that stamps a caller-supplied
-// triple set on an entity ID. It and registerMergeTestPayload are in the pin's
-// merge_entity_integration_test.go:329-378, which a later stage ports; they move here
-// with their first ported readers.
-type mergeTestGraphable struct {
-	entityID string
-	triples  []message.Triple
-}
-
-func (g *mergeTestGraphable) EntityID() string          { return g.entityID }
-func (g *mergeTestGraphable) Triples() []message.Triple { return g.triples }
-func (g *mergeTestGraphable) Schema() message.Type {
-	return message.Type{Domain: "test", Category: "merge", Version: "v1"}
-}
-
-func (g *mergeTestGraphable) MarshalJSON() ([]byte, error) {
-	return json.Marshal(struct {
-		EntityID string           `json:"entity_id"`
-		Triples  []message.Triple `json:"triples"`
-	}{g.entityID, g.triples})
-}
-
-func (g *mergeTestGraphable) UnmarshalJSON(data []byte) error {
-	var v struct {
-		EntityID string           `json:"entity_id"`
-		Triples  []message.Triple `json:"triples"`
-	}
-	if err := json.Unmarshal(data, &v); err != nil {
-		return err
-	}
-	g.entityID = v.EntityID
-	g.triples = v.Triples
-	return nil
-}
-
-func (g *mergeTestGraphable) Validate() error { return nil }
-
-// registerMergeTestPayload gives c a decoder that decodes test.merge.v1 into a
-// mergeTestGraphable. The pin started from payloadbuiltins.Register (:369); design D2
-// takes the per-package RegisterPayloads graph-ingest's fixture registry uses instead.
-func registerMergeTestPayload(t *testing.T, c *Component) {
-	t.Helper()
-	reg := payloadfixture.NewWithSubset(t, message.RegisterPayloads, inference.RegisterPayloads)
-	require.NoError(t, reg.Register(&payloadregistry.Registration{
-		Domain:      "test",
-		Category:    "merge",
-		Version:     "v1",
-		Description: "merge-entity integration-test payload",
-		Factory:     func() any { return &mergeTestGraphable{} },
-	}))
-	c.decoder = message.NewDecoder(reg)
 }

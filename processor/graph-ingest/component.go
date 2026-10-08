@@ -1447,6 +1447,17 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 		// poison message: count + ack-drop (today's behavior).
 		entity, derr := c.decodeEntity(subject, msg.Data())
 		if derr != nil {
+			// A refused statement (design D15) is this message's own fault and can never be
+			// admitted: it is terminated, counted and logged as processIngest does a
+			// structurally invalid candidate, not acked as an undecodable message is.
+			var refusal *statementRefusal
+			if errors.As(derr, &refusal) {
+				c.recordStructuralRejection("graphable", derr)
+				if termErr := msg.Term(); termErr != nil {
+					c.logger.Error("Failed to terminate structurally invalid ingest", slog.Any("error", termErr))
+				}
+				return
+			}
 			c.logger.Warn("graph-ingest: decode/extract failed; dropping",
 				slog.String("subject", subject), slog.Any("error", derr))
 			atomic.AddInt64(&c.errors, 1)
@@ -1694,7 +1705,14 @@ func (c *Component) extractEntityFromMessage(msg *message.BaseMessage) (*graph.E
 		return nil, fmt.Errorf("graphable payload returned empty entity ID")
 	}
 
-	triples := graphable.Triples()
+	// Statement metadata (design D15, #98): a statement without a Source or Timestamp takes
+	// the envelope's, and a statement under a reserved source refuses the message. This reads
+	// only the payload's statements, before the indexing-profile statement graph-ingest stamps
+	// below under its own reserved source.
+	triples, err := stampFromEnvelope(graphable.Triples(), msg.Meta())
+	if err != nil {
+		return nil, err
+	}
 
 	// Build EntityState
 	entity := &graph.EntityState{

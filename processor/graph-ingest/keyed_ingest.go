@@ -128,9 +128,7 @@ func (c *Component) processIngest(ctx context.Context, lane int, work ingestWork
 		if reason, isAuthority := authorityMetricReason(validationErr); isAuthority {
 			c.recordAuthorityRejection(work.subject, reason, validationErr)
 		} else {
-			c.recordEntityStateContractRejection("graphable", validationErr)
-			c.recordPredicateContractRejections("graphable", validationErr)
-			c.logStructuralContractRejection("graphable", validationErr)
+			c.recordStructuralRejection("graphable", validationErr)
 		}
 		if termErr := work.msg.Term(); termErr != nil {
 			c.logger.Error("Failed to terminate structurally invalid ingest", slog.Any("error", termErr))
@@ -230,11 +228,24 @@ func (c *Component) processIngest(ctx context.Context, lane int, work ingestWork
 	return nil
 }
 
+// recordStructuralRejection counts and logs one stream message refused because its candidate
+// is structurally invalid: processIngest's record for a candidate that fails its contract, and
+// the consume closure's for a refused statement (design D15). The caller terminates the message.
+func (c *Component) recordStructuralRejection(lane string, err error) {
+	c.recordEntityStateContractRejection(lane, err)
+	c.recordPredicateContractRejections(lane, err)
+	c.logStructuralContractRejection(lane, err)
+}
+
 func (c *Component) logStructuralContractRejection(lane string, err error) {
 	if c.logger == nil {
 		return
 	}
 	field, reason, tripleIndex, ok := entityStateContractRejectionLabels(err)
+	var refusal *statementRefusal
+	if !ok && errors.As(err, &refusal) {
+		field, reason, tripleIndex, ok = refusal.field, refusal.reason, refusal.index, true
+	}
 	if !ok {
 		predicateReason, predicate := predicateContractReason(err)
 		if predicate {

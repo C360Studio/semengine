@@ -70,6 +70,11 @@ func (c *Component) recordPredicateContractRejections(lane string, err error) {
 	if c.predicateContractRejections == nil {
 		return
 	}
+	var refusal *statementRefusal
+	if errors.As(err, &refusal) {
+		c.predicateContractRejections.WithLabelValues(lane, refusal.reason).Inc()
+		return
+	}
 	var contractErr *graph.EntityPredicateContractError
 	if !errors.As(err, &contractErr) {
 		return

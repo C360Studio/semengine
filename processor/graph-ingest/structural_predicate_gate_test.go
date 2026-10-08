@@ -49,9 +49,11 @@ const (
 var structuralGateTestType = message.Type{Domain: "test", Category: "mutation", Version: "v1"}
 
 // seedStructuralGateEntity creates a conforming entity and returns its stored
-// baseline state (triples may include framework-injected ones), so tests assert
-// "unchanged" against what the store actually holds post-seed.
-func seedStructuralGateEntity(t *testing.T, comp *Component, entityID string) *graph.EntityState {
+// baseline state (triples may include framework-injected ones) and the KV
+// revision it was read at, so tests assert "unchanged" against what the store
+// actually holds post-seed. The KV revision is the one revision (design D15,
+// #99): it stands where the pin compared EntityState.Version.
+func seedStructuralGateEntity(t *testing.T, comp *Component, entityID string) (*graph.EntityState, uint64) {
 	t.Helper()
 	ctx := context.Background()
 	now := time.Now()
@@ -63,9 +65,9 @@ func seedStructuralGateEntity(t *testing.T, comp *Component, entityID string) *g
 			{Subject: entityID, Predicate: "sensor.temperature.celsius", Object: 22.5, Timestamp: now, Confidence: 1.0},
 		},
 	}))
-	stored, _, err := comp.fetchEntityState(ctx, entityID)
+	stored, revision, err := comp.fetchEntityState(ctx, entityID)
 	require.NoError(t, err)
-	return stored
+	return stored, revision
 }
 
 // TestValidateTriplePredicates_FailClosed_RejectsClassified pins the
@@ -169,7 +171,7 @@ func TestHandleCanonicalAppend_InvalidPredicate_WholeBatchRejected(t *testing.T)
 	comp := createTestComponentWithMockKV(t, withAuthority("acme", "ops"))
 	ctx := context.Background()
 
-	baseline := seedStructuralGateEntity(t, comp, structuralGateEntity)
+	baseline, baselineRevision := seedStructuralGateEntity(t, comp, structuralGateEntity)
 	now := time.Now()
 
 	handler := comp.meteredMutation(structuralAppendSubject, comp.handleCanonicalAppend)
@@ -187,10 +189,11 @@ func TestHandleCanonicalAppend_InvalidPredicate_WholeBatchRejected(t *testing.T)
 	require.ErrorAs(t, err, &ce)
 	assert.Equal(t, graph.ErrorCodeInvalidRequest, ce.Code)
 
-	stored, _, err := comp.fetchEntityState(ctx, structuralGateEntity)
+	stored, storedRevision, err := comp.fetchEntityState(ctx, structuralGateEntity)
 	require.NoError(t, err)
 	assert.Equal(t, len(baseline.Triples), len(stored.Triples),
 		"the conforming triple in the rejected batch must not be persisted")
+	assert.Equal(t, baselineRevision, storedRevision, "entity KV revision must be untouched")
 }
 
 // TestHandleCanonicalCreate_InvalidPredicate_NothingPersisted pins the
@@ -246,7 +249,7 @@ func TestHandleCanonicalReconcile_InvalidPredicate_EntityUnchanged(t *testing.T)
 	comp := createTestComponentWithMockKV(t, withAuthority("acme", "ops"))
 	ctx := context.Background()
 
-	baseline := seedStructuralGateEntity(t, comp, structuralGateEntity)
+	baseline, baselineRevision := seedStructuralGateEntity(t, comp, structuralGateEntity)
 	now := time.Now()
 
 	entry, err := comp.entityBucket.Get(ctx, structuralGateEntity)
@@ -271,9 +274,10 @@ func TestHandleCanonicalReconcile_InvalidPredicate_EntityUnchanged(t *testing.T)
 		"the authoritative contract seam precedes the gate on this lane (invalid_request)")
 	assert.True(t, errs.IsInvalid(err))
 
-	stored, _, err := comp.fetchEntityState(ctx, structuralGateEntity)
+	stored, storedRevision, err := comp.fetchEntityState(ctx, structuralGateEntity)
 	require.NoError(t, err)
 	assert.Equal(t, baseline.Triples, stored.Triples, "stored triples must be unchanged")
+	assert.Equal(t, baselineRevision, storedRevision, "stored KV revision must be unchanged")
 }
 
 // TestIngestEntity_InvalidPredicate_NothingPersisted pins the Graphable
@@ -305,14 +309,14 @@ func TestIngestEntity_InvalidPredicate_NothingPersisted(t *testing.T) {
 
 // TestHandleCanonicalAppend_ValidPredicate_PersistsMergeIntact is the regression
 // guard: a fully-conforming mutation passes the structural gate and persists
-// with the existing merge semantics intact (append on the entity, version
-// bump, prior triples preserved). Includes the gh#519 collision case: a real
+// with the existing merge semantics intact (append on the entity, KV revision
+// advanced, prior triples preserved). Includes the gh#519 collision case: a real
 // 3-part predicate ending in the literal segment "value".
 func TestHandleCanonicalAppend_ValidPredicate_PersistsMergeIntact(t *testing.T) {
 	comp := createTestComponentWithMockKV(t, withAuthority("acme", "ops"))
 	ctx := context.Background()
 
-	baseline := seedStructuralGateEntity(t, comp, structuralGateEntity)
+	baseline, baselineRevision := seedStructuralGateEntity(t, comp, structuralGateEntity)
 
 	counter := comp.mutationRejections.WithLabelValues(structuralAppendSubject, graph.ErrorCodeStructuralInvalid)
 	before := testutil.ToFloat64(counter)
@@ -332,7 +336,7 @@ func TestHandleCanonicalAppend_ValidPredicate_PersistsMergeIntact(t *testing.T) 
 	require.Len(t, resp.Results, 1)
 	assert.NotZero(t, resp.Results[0].KVRevision, "success response carries the post-write revision")
 
-	stored, _, err := comp.fetchEntityState(ctx, structuralGateEntity)
+	stored, storedRevision, err := comp.fetchEntityState(ctx, structuralGateEntity)
 	require.NoError(t, err)
 	assert.Equal(t, len(baseline.Triples)+1, len(stored.Triples),
 		"the new triple appends; prior triples are preserved (merge semantics intact)")
@@ -347,6 +351,7 @@ func TestHandleCanonicalAppend_ValidPredicate_PersistsMergeIntact(t *testing.T) 
 	}
 	assert.True(t, seedPreserved, "seed triple preserved")
 	assert.True(t, newPersisted, "new triple persisted")
+	assert.Greater(t, storedRevision, baselineRevision, "KV revision advances on write")
 
 	assert.InDelta(t, before, testutil.ToFloat64(counter), 0.0001,
 		"no structural rejection metered for a conforming mutation")

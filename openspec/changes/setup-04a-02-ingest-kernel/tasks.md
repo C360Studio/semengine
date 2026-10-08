@@ -309,7 +309,16 @@ posted on this pull request.
       6069037847, 6069561642 and 6069916935).
 - [ ] 3.12b (D) Fail closed at birth and on the guard record (#111 item 1; design D21): the tests of task 4.9; and #130,
       the hierarchy container cache that is never invalidated, fixed here, since failing the birth closed turns it from
-      a warning into a redelivery that never ends (PR #93 comment 6061824292).
+      a warning into a redelivery that never ends (PR #93 comment 6061824292). With it, `graph/inference` as #134
+      routes here: a constructor that takes the store, the authority and the logger, refuses an empty authority, and
+      whose nil result means hierarchy is off (item 1); one interface over graph-ingest with one adapter, and the verb
+      named for what it writes (item 2); sibling edges, `ListWithPrefix` and `enable_type_siblings` dropped (item 3,
+      ruled G, #91 comment 6062681355; `hierarchy.type.sibling` stays registered in `vocabulary`); test doubles that
+      refuse what graph-ingest refuses (item 4); and graph-ingest's two hierarchy fetches made one (#139 section D).
+- [ ] 3.12c (D) A boot sweep that cannot run fails `Start` (ruled H, #91 comment 6062681355; #139 section C, first
+      item): `entityWatchLost`, `entityBootstrapStarted`, `entityBootstrapComplete`, `markEntityWatchLost` and their
+      reader branches go; a test written first, failing on the pin's code, makes the sweep fail and shows `Start`
+      returning the error with nothing left running.
 - [ ] 3.13 (D) graph-ingest under the lifecycle suite: an in-package adapter whose `Observe` lists consumers, request
       subscriptions, ingest lanes and the status loop; failing factory = a refused broker; `lifecycletest.Run` green;
       `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop` carried on the adapter, green, driving the

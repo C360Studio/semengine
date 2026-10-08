@@ -200,7 +200,7 @@ consumer need.
 
 With hierarchy inference enabled, an entity born on a lane that infers hierarchy (the stream lane and the in-process
 lane) SHALL be stored with its hierarchy statements or not at all. When the inference fails for any part (a
-container, a forward edge, an inverse edge, the sibling pass), graph-ingest SHALL store nothing for the entity and
+container, a forward edge, an inverse edge), graph-ingest SHALL store nothing for the entity and
 return the failure classified as transient; on the stream lane the message SHALL not be acknowledged, so it is
 delivered again. An entity created through a mutation request SHALL get no hierarchy statements.
 

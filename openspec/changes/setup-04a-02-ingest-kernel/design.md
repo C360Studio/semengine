@@ -1078,10 +1078,13 @@ degrade #111 names.
 What a caller observes under (a): with `enable_hierarchy`, an entity born on a lane that infers hierarchy (the stream
 lane and the in-process create, as at the pin; D15) is born with its hierarchy statements or not at all. A mutation-lane
 create infers none, so the rule does not reach it (ruled B, #91 comment 6037287957). `GetHierarchyTriples` returns an
-error when any part fails: a container birth, a forward edge, an inverse edge or the sibling pass. graph-ingest then
+error when any part fails: a container birth, a forward edge or an inverse edge. graph-ingest then
 writes nothing for the entity and returns the error, classified transient. On the stream lane the input is not
 acknowledged and is delivered again; on the in-process lane the caller gets the error. Containers and inverse edges
-committed before the failure are what the next attempt commits too; the append identity suppresses the repeats. Test:
+committed before the failure are what the next attempt commits too; the append identity suppresses the repeats. That
+holds because the inference keeps no record of which containers exist: each birth asks storage, so a container deleted
+since an earlier birth is created again (#130). The inference writes no sibling edges (ruled G, #91 comment
+6062681355); `hierarchy.type.sibling` stays registered in `vocabulary`. Test:
 `TestHierarchyFailureFailsTheBirth`: the inference's entity manager fails once, the entity is absent and the error is
 transient; on the redelivery the entity is born with its container edges. Written first, failing on the pin's code.
 

@@ -338,8 +338,10 @@ The repository's own checks follow the same pattern, built into the tests:
   requires the guard to name the planted file and what it violates, so a guard that fires for the wrong reason, or
   matches nothing, fails. Two script guards are covered the same way by
   `TestCleanupRootsCheckSensitivity` and `TestCoverCheckSensitivity`; the fixed-port script has its own fixture test,
-  `scripts/lint-test-ports_fixture_test.sh`; and `TestMergeCheckKnownFlake` and `TestMergeCheckReview` run the merge
-  check against canned GitHub answers.
+  `scripts/lint-test-ports_fixture_test.sh`; `TestMergeCheckKnownFlake` and `TestMergeCheckReview` run the merge
+  check against canned GitHub answers; and `TestSpecQueueHolds`, `TestSpecQueueFirstLineCaveats`,
+  `TestSpecQueueCheck` and `TestSpecCheckWiring` run the OpenSpec queue script, `scripts/openspec-queue.sh`, against
+  a stand-in `openspec` command and planted `tasks.md` files.
 - `TestEachFailpointTripsExactlyItsCheck` in `internal/harness/lifecycletest/` runs every lifecycle check against a
   reference component with one defect switched on at a time, and requires exactly the matching check to fail.
 

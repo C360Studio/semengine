@@ -28,7 +28,7 @@ with current CI.
 | `task fmt` | Formats Go sources; the only task here that changes files |
 | `task fmt:check` | Fails if any Go source needs formatting; writes nothing |
 | `task doctor` | Reports tool versions and Docker reachability against their pins; starts no workloads |
-| `task spec:check` | Validates all OpenSpec changes and specs strictly |
+| `task spec:check` | Validates all OpenSpec changes and specs strictly, and fails on a `Hold:` written outside every task |
 | `task spec:queue` | Shows each in-flight OpenSpec change with its holds and blocking conditions |
 | `task docs:check` | Lints Markdown with `markdownlint-cli2` |
 | `task tidy:check` | Fails if `go.mod` or `go.sum` are not tidy |

@@ -1,0 +1,152 @@
+package graphingest
+
+import (
+	"context"
+	"encoding/json"
+	"slices"
+	"testing"
+	"time"
+
+	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/message"
+	"github.com/c360studio/semengine/natsclient"
+	"github.com/c360studio/semengine/vocabulary"
+)
+
+// Each of graph-ingest's four configuration fields has a test here that fails when the
+// field is ignored, that is, when the component runs on the field's default instead of
+// the value the configuration gave it (design D6, Config (b)). Each test builds the
+// component through CreateGraphIngest from JSON, so the value goes through the strict
+// decoder, ApplyDefaults and Validate as an operator's would.
+
+// newConfiguredGraphIngest builds graph-ingest through CreateGraphIngest from config and
+// gives it the in-memory entity bucket, as createTestComponentWithMockKV does.
+func newConfiguredGraphIngest(t *testing.T, config Config) *Component {
+	t.Helper()
+	raw, err := json.Marshal(config)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	natsClient, err := natsclient.NewClient("")
+	if err != nil {
+		t.Fatalf("natsclient.NewClient: %v", err)
+	}
+	built, err := CreateGraphIngest(raw, testDependencies(t, natsClient))
+	if err != nil {
+		t.Fatalf("CreateGraphIngest: %v", err)
+	}
+	c := built.(*Component)
+	c.entityBucket = natsClient.NewKVStore(newMockKVBucket())
+	return c
+}
+
+// createDrone creates one entity of the c360.platform.robotics.mav1.drone type through
+// the in-process create path and returns its stored triples. The statement carries a
+// Timestamp, which the hierarchy inference takes as the triggering time.
+func createDrone(t *testing.T, c *Component, instance string) []message.Triple {
+	t.Helper()
+	id := "c360.platform.robotics.mav1.drone." + instance
+	now := time.Now()
+	entity := &graph.EntityState{
+		ID:          id,
+		MessageType: testEntityType(),
+		Triples: []message.Triple{
+			{Subject: id, Predicate: "robotics.status.armed", Object: true, Timestamp: now},
+		},
+		UpdatedAt: now,
+	}
+	if err := c.CreateEntity(t.Context(), entity); err != nil {
+		t.Fatalf("CreateEntity %s: %v", id, err)
+	}
+	stored, err := c.entityBucket.Get(t.Context(), id)
+	if err != nil {
+		t.Fatalf("read %s back: %v", id, err)
+	}
+	var state graph.EntityState
+	if err := graph.UnmarshalEntityState(stored.Value, &state); err != nil {
+		t.Fatalf("decode %s: %v", id, err)
+	}
+	return state.Triples
+}
+
+func hasPredicate(triples []message.Triple, predicate string) bool {
+	return slices.ContainsFunc(triples, func(tr message.Triple) bool { return tr.Predicate == predicate })
+}
+
+// TestConfigPortsAreTheComponentsPorts: an input port the configuration renames is
+// the port the component declares. Ignored, the default entity_stream port is declared.
+func TestConfigPortsAreTheComponentsPorts(t *testing.T) {
+	config := DefaultConfig()
+	config.Ports.Inputs[0].Name = "configured_entity_stream"
+
+	c := newConfiguredGraphIngest(t, config)
+
+	var names []string
+	for _, port := range c.InputPorts() {
+		names = append(names, port.Name)
+	}
+	if !slices.Contains(names, "configured_entity_stream") || slices.Contains(names, "entity_stream") {
+		t.Fatalf("input ports = %v, want configured_entity_stream in place of entity_stream", names)
+	}
+}
+
+// TestConfigEnableHierarchyAddsHierarchyStatements: with enable_hierarchy, a birth
+// carries its type-membership statement. Ignored, hierarchy is off and it carries none.
+func TestConfigEnableHierarchyAddsHierarchyStatements(t *testing.T) {
+	config := DefaultConfig()
+	config.EnableHierarchy = true
+
+	c := newConfiguredGraphIngest(t, config)
+	c.initHierarchyInference() // Start's step that reads the field
+
+	if triples := createDrone(t, c, "001"); !hasPredicate(triples, vocabulary.HierarchyTypeMember) {
+		t.Fatalf("birth with enable_hierarchy has no %s statement: %v", vocabulary.HierarchyTypeMember, triples)
+	}
+}
+
+// TestConfigEnableTypeSiblingsFalseAddsNoSiblingEdge: with hierarchy on and
+// enable_type_siblings false, a second entity of one type gets no sibling edge.
+// Ignored, siblings default to on and it gets one.
+func TestConfigEnableTypeSiblingsFalseAddsNoSiblingEdge(t *testing.T) {
+	siblings := false
+	config := DefaultConfig()
+	config.EnableHierarchy = true
+	config.EnableTypeSiblings = &siblings
+
+	c := newConfiguredGraphIngest(t, config)
+	c.initHierarchyInference()
+
+	createDrone(t, c, "001")
+	triples := createDrone(t, c, "002")
+	if !hasPredicate(triples, vocabulary.HierarchyTypeMember) {
+		t.Fatalf("second birth has no %s statement, so hierarchy did not run: %v", vocabulary.HierarchyTypeMember, triples)
+	}
+	if hasPredicate(triples, vocabulary.HierarchyTypeSibling) {
+		t.Fatalf("second birth with enable_type_siblings false has a %s edge: %v", vocabulary.HierarchyTypeSibling, triples)
+	}
+}
+
+// TestConfigIngestLanesSetsTheLaneCount: ingest_lanes 3 builds three ingest lanes,
+// each with its in-memory redelivery guard. Ignored, the default eight are built. (An
+// explicit 0 is not tested here: ApplyDefaults turns it into the default before
+// Validate's clamp; PR #93 comment 6050325985.)
+func TestConfigIngestLanesSetsTheLaneCount(t *testing.T) {
+	config := DefaultConfig()
+	config.IngestLanes = 3
+
+	c := newConfiguredGraphIngest(t, config)
+	if err := c.buildIngestPool(t.Context()); err != nil {
+		t.Fatalf("buildIngestPool: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := c.ingestPool.Shutdown(ctx); err != nil {
+			t.Errorf("ingest pool Shutdown: %v", err)
+		}
+	})
+
+	if got := len(c.ingestGuardMem); got != 3 {
+		t.Fatalf("ingest lanes = %d, want 3", got)
+	}
+}

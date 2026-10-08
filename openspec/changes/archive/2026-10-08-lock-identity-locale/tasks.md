@@ -77,7 +77,7 @@ starts, `task merge:check -- 127` and the merge are recorded on this pull reques
 
 ## 4. In the archive commit
 
-- [ ] 4.1 (W) In the same commit as `openspec archive lock-identity-locale` and the spec sync:
+- [x] 4.1 (W) In the same commit as `openspec archive lock-identity-locale` and the spec sync:
       `docs/repository-map.md` gains a row for the archived change, as the `admission-owner-identity` row (`:70`)
       does, and its specs row (`:55`) adds that `integration-test-runner` and `nats-fixture` are amended by the
       `lock-identity-locale` archive. Gate: `task spec:check` and `task docs:check` on that commit.

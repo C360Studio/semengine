@@ -21,7 +21,7 @@ starts, `task merge:check -- 127` and the merge are recorded on this pull reques
 
 ## 2. The fix and its tests
 
-- [ ] 2.1 (D) The tests of `design.md`, D6, R4 and R1's "identity_utc unknown" among them, written first and run on
+- [x] 2.1 (D) The tests of `design.md`, D6, R4 and R1's "identity_utc unknown" among them, written first and run on
       the base code: T1, R2's "changed identity_utc", R4, "an owner read in another time zone", "identity_utc names
       another start time" and "identity_utc unknown" fail for the reasons D6 names (T1: runner B exits 0 having
       quarantined runner A's live lock; R4: the record has six keys); every other test passes. Gate: that run's

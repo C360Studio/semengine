@@ -328,6 +328,11 @@ Tests for D7, in `internal/harness/runner/runner_test.go`; no sleep, skip or add
   of a file the test creates with `os.Create` in its temporary directory, which gets `0666` less the umask the runner
   inherits. It passes on `ecf2033`, whose redirection gives that mode; it holds D7's `chmod`.
 
+Generated checks are not used for D7. Its history has one boundary: a reader that reads after `mkdir` and before
+the rename. With D7, every such reader finds no owner file and respects the lock, so one held point is enough.
+T2 holds the writer at the latest point of the old in-place write, where the most of the record is visible and
+the old code misjudges it. An earlier point shows the old code less of the record, and the new code nothing.
+
 Shown able to fail: `task mutate:check` refuses a script, so each wrong change is made in the tree with the `cp` and
 checksum procedure of the reviewer contract, § Required review workflow, item 8:
 
@@ -460,16 +465,16 @@ below, and 7 left declared, with no issue filed. Decision 8 is new in revision 2
 
 ## Conformance
 
-To be filled once task 2.10's commit lands, so its lines are final: each accepted decision, and D7, mapped to the
-`file:line` that carries it out and the test or record that shows it.
+Each accepted decision, and D7, mapped to the `file:line` that carries it out at `5755327` (task 2.10's commit)
+and to the test or record that shows it. Comments are on PR #127.
 
 | Decision | Carried out at | Shown by |
 | --- | --- | --- |
-| 1. Admit a test process in another time zone or locale (D3) | to be filled | to be filled |
-| 2. `identity_utc`, last line, always written, `unknown` when empty (D1, L5) | to be filled | to be filled |
-| 3. Absent or empty `identity_utc` falls back to `identity`; reason per judge (D2, D4) | to be filled | to be filled |
-| 4. Wording of the ledger row, script comments and R4 (D5) | to be filled | to be filled |
+| 1. Admit a test process in another time zone or locale (D3) | `internal/harness/natsfixture/admission.go:68`, `:92-128` (`ownerLive` judges a record with `identity_utc` by a read under `TZ=UTC LC_ALL=C`) | `TestAdmissionAdmitsALiveOwner/an owner read in another time zone` (`admission_test.go:274`); M1 and M4 (PR #127 comment 6049934316) |
+| 2. `identity_utc`, last line, always written, `unknown` when empty (D1, L5) | `scripts/test-integration.sh:104-105` (the fixed read, `unknown` when empty); `:220` (written last, in `publish_owner`) | R4 (`runner_test.go:781`, keys at `:628`); the real runner's seven-key record (comments 6050018875 and 6060678797) |
+| 3. Absent or empty `identity_utc` falls back to `identity`; reason per judge (D2, D4) | runner: `scripts/test-integration.sh:142`, `:152`, `:175-187`; admission: `admission.go:79-128` | `TestAdmissionJudgesARecordWithoutIdentityUTCByIdentity` (`admission_test.go:290`); the six-key rows of `TestAdmissionRequiresALiveOwner` (`:179`); R2's "changed identity_utc" (`runner_test.go:671`); M2, M3 and M5 (comment 6049934316) |
+| 4. Wording of the ledger row, script comments and R4 (D5) | `scripts/test-integration.sh:5-7`, `:137`; `scripts/admission-lock.sh:3-6`; `docs/admission-ledger.yaml:202-212`; `runner_test.go:21-25` | `task ledger:check`; the early check (comment 6050069499) and Codex's review (comment 6059322575) found each text as D5 states it |
 | 5. Q1 settled: SemStreams `main` is the pin | PR #127 comment 6049508662 | claim E, P15 |
 | 6. Q6 settled: no other repository uses the lock path | PR #127 comment 6049508662 | the code search recorded there |
 | 7. L3 left declared | `design.md`, L3 | no issue filed |
-| 8. Publication whole (D7, L7) | to be filled | to be filled |
+| 8. Publication whole (D7, L7) | `scripts/test-integration.sh:203-228` (`publish_owner`), `:234` (`acquire_lock` publishes, or fails before Docker) | T2 (`runner_test.go:509`), T3 (`:650`), T1's mode check (`:445`); R-M3, R-M4 and R-M5 (comment 6060487135) |

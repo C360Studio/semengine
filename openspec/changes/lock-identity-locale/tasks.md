@@ -64,7 +64,7 @@ starts, `task merge:check -- 127` and the merge are recorded on this pull reques
 - [x] 2.10 (D) `task verify` passes on the commit that carries 2.8, its integration step admitting the fixture tests
       through the published record on macOS, and that commit's CI run passes on ubuntu-24.04. Gate: CI `Required` on
       that commit, its run link recorded on this pull request.
-- [ ] 2.11 `design.md`, "Conformance", maps each accepted decision and D7 to the `file:line` that carries it out at
+- [x] 2.11 `design.md`, "Conformance", maps each accepted decision and D7 to the `file:line` that carries it out at
       the commit of 2.10, and to the test or record that shows it. Gate: every row filled, in a commit that changes
       no other file.
 

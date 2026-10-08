@@ -49,7 +49,7 @@ starts, `task merge:check -- 127` and the merge are recorded on this pull reques
 - [x] 2.6 (D) `task verify` passes on the commit that carries 2.2 to 2.4, its integration step admitting the fixture
       tests through the real runner's record on macOS, and that commit's CI run passes on ubuntu-24.04. Gate: CI
       `Required` on that commit, its run link recorded on this pull request.
-- [ ] 2.7 (D) T2, T3 and T1's mode check of `design.md`, D7, written first and run on the code of `ecf2033`: T2 fails
+- [x] 2.7 (D) T2, T3 and T1's mode check of `design.md`, D7, written first and run on the code of `ecf2033`: T2 fails
       because runner B exits 0 having quarantined runner A's live lock and entered the fake Docker, and T3 because the
       run exits 0; T1's mode check and every other test pass. Gate: that run's output, recorded on this pull request
       with the system it ran on.

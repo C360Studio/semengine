@@ -35,7 +35,7 @@ starts, `task merge:check -- 127` and the merge are recorded on this pull reques
       states; the admission tests of D6. Gate: `task test:unit`.
 - [x] 2.4 (D) The runner row of `docs/admission-ledger.yaml` (`:203`, `:207-209`) as `design.md`, D5 states. Gate:
       `task ledger:check`.
-- [ ] 2.5 (D) Shown able to fail: the wrong changes M1 to M5 of `design.md`, D6, one at a time with
+- [x] 2.5 (D) Shown able to fail: the wrong changes M1 to M5 of `design.md`, D6, one at a time with
       `task mutate:check`, and R-M1 and R-M2 to `scripts/test-integration.sh` made in the tree with the `cp` and
       checksum procedure of the reviewer contract, § Required review workflow, item 8, the restored file's checksum
       matching the one taken before. Each report is pasted on this pull request with the system it ran on, beside the

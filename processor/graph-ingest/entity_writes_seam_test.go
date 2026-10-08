@@ -16,13 +16,15 @@ const entityWriteSeamFile = "entity_writes.go"
 
 // entityBucketWrites are the methods of natsclient.KVStore that change a stored entity.
 var entityBucketWrites = map[string]bool{
-	"Create":             true,
-	"Update":             true,
-	"UpdateWithRetry":    true,
-	"UpdateWithRetryRev": true,
-	"Put":                true,
-	"Delete":             true,
-	"DeleteAtRevision":   true,
+	"Create":              true,
+	"Update":              true,
+	"UpdateJSON":          true,
+	"UpdateWithRetry":     true,
+	"UpdateWithRetryRead": true,
+	"UpdateWithRetryRev":  true,
+	"Put":                 true,
+	"Delete":              true,
+	"DeleteAtRevision":    true,
 }
 
 // TestEntityWritesHaveOneSeam holds #100's shape: every change to a stored entity goes through one
@@ -82,6 +84,10 @@ func TestEntityWritesHaveOneSeamSensitivity(t *testing.T) {
 			"func (c *Component) w(id string) {\n\tgo func() {\n" +
 			"\t\t_, _ = c.entityBucket.UpdateWithRetryRev(nil, id, nil)\n\t}()\n}\n",
 			"planted.go:5: c.entityBucket.UpdateWithRetryRev"},
+		{"UpdateWithRetryRead through the component", header +
+			"func (c *Component) w(id string) {\n" +
+			"\t_, _ = c.entityBucket.UpdateWithRetryRead(nil, id, nil)\n}\n",
+			"planted.go:4: c.entityBucket.UpdateWithRetryRead"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tree := copyTree(clean)

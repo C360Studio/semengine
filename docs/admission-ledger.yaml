@@ -1573,7 +1573,15 @@
     (:525), is returned by Connect
     with the dialled connection closed (:747-756); no failing-first test exists, because nats.go
     v1.54.0 jetstream.New fails only when an option does and WithPublishAsyncErrHandler never
-    does (jetstream/jetstream.go:471-492, jetstream_options.go:41-46)
+    does (jetstream/jetstream.go:471-492, jetstream_options.go:41-46). Changed surface, task 3.12a
+    (design D23; owner ruling #91 comment 6065395072), three adapt items.
+    natsclient-update-callback-reads-revision: KVStore.UpdateWithRetryRead and ErrKVSkipWrite are
+    new; UpdateWithRetryRead holds the loop that is UpdateWithRetryRev's at the pin (kv.go:300),
+    passes its callback the revision it read (0 when absent), and on its ErrKVSkipWrite writes
+    nothing and returns (0, nil). natsclient-update-skip-through-wrappers: UpdateWithRetryRev,
+    UpdateWithRetry and UpdateJSON now return no error for that sentinel, writing nothing, where the
+    pin returned it. natsclient-update-commit-attribution: the pin's 'nothing committed' now reads
+    'attributes no commit to itself'. Present consumer: the write seam.
   dependencies_and_side_effects: >-
     metric, pkg/errs, pkg/retry, internal/resource (in-set); github.com/nats-io/nats.go v1.54.0
     and nats.go/jetstream; prometheus/client_golang; stdlib. Test-only:
@@ -2189,7 +2197,10 @@
     (native Consume delivers before returning its handle and Close begins in that window). Mutation:
     the cancel removed from owned_delivery.go ownConsumer's closing case before the handle (it
     survived the whole unit suite at 5ecc016), and from the closing case while it waits for the last
-    handler: each fails its test on both paths; restored, they pass
+    handler: each fails its test on both paths; restored, they pass. Task 3.12a, design D23
+    (kv_update_revision_integration_test.go): TestUpdateWithRetryRead_PassesTheRevisionItRead,
+    TestUpdateWithRetryRead_SkipWritesNothing, TestUpdateWithRetryRead_ConflictPassesTheNewerRevision
+    and TestUpdateWithRetryRead_ErrorsAttributeNoCommit
   owner: setup-04a-01-floor developer
   disposition: adapt
 

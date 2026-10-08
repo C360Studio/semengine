@@ -15,6 +15,7 @@ import (
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/payloadregistry"
 	"github.com/c360studio/semengine/pkg/errs"
+	"github.com/c360studio/semengine/pkg/lifecycle"
 	semtypes "github.com/c360studio/semengine/pkg/types"
 )
 
@@ -60,12 +61,14 @@ func registerTestStamps(tb testing.TB, reg *payloadregistry.Registry) {
 
 // newTestPayloadRegistry builds the registry graph-ingest tests inject: the
 // framework payloads graph-ingest writes or decodes (message's GenericJSON and
-// the hierarchy container inference births) and every test-only stamp. At the
-// pin this was payloadbuiltins' whole builtin set plus agentic/research; design
-// D2 takes the per-package RegisterPayloads the tests need instead.
+// the hierarchy container inference births), lifecycle.harness.v1 (the stamp
+// update_preserve_metadata_test.go creates and reconciles) and every test-only
+// stamp. At the pin this was payloadbuiltins' whole builtin set plus
+// agentic/research; design D2 takes the per-package RegisterPayloads the tests
+// need instead.
 func newTestPayloadRegistry(tb testing.TB) *payloadregistry.Registry {
 	tb.Helper()
-	reg := payloadfixture.NewWithSubset(tb, message.RegisterPayloads, inference.RegisterPayloads)
+	reg := payloadfixture.NewWithSubset(tb, message.RegisterPayloads, inference.RegisterPayloads, lifecycle.RegisterPayloads)
 	registerTestStamps(tb, reg)
 	return reg
 }

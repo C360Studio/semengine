@@ -175,9 +175,9 @@ func (c *Component) processIngest(ctx context.Context, lane int, work ingestWork
 			// consumer's existing MaxDeliver; backoff is the consumer's
 			// delivery policy. A structurally-invalid CANDIDATE (its own
 			// fault, can never succeed) stays Term'd. The inventory record and
-			// once-per-entity ERROR happened at the RMW classification seam
-			// (classifyStoredStateRMWError), so a redelivery loop cannot spam
-			// the log.
+			// once-per-entity ERROR happened in the write seam's callback
+			// (decodeStoredForWrite or classifyStoredStateRMWError), so a
+			// redelivery loop cannot spam the log.
 			if nakErr := work.msg.Nak(); nakErr != nil {
 				c.logger.Error("Failed to Nak ingest blocked by resident poisoned state", slog.Any("error", nakErr))
 			}

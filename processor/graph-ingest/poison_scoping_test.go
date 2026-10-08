@@ -135,8 +135,8 @@ func TestPoisonRevisionGuardConcurrentRepair(t *testing.T) {
 	t.Run("record arriving after repair records nothing", func(t *testing.T) {
 		c, bucket := poisonScopingTestComponent(t)
 		seedValidBytes(bucket, id, 2) // repair won the race before the record ran
-		// The RMW classification path re-validates current bytes at record time.
-		err := c.classifyStoredStateRMWError(ctx, id, guardTestPoisonBytes(id), errors.New("cycle error"))
+		// The RMW read the poison at revision 1; the record's verify re-reads the current bytes.
+		err := c.classifyStoredStateRMWError(ctx, id, guardTestPoisonBytes(id), 1, errors.New("cycle error"))
 		var stateErr *graph.StateContractError
 		require.True(t, errors.As(err, &stateErr), "stale bytes still classify typed for the failing caller")
 		_, inventoried := poisonInventoryEntry(c, id)

@@ -225,14 +225,24 @@ func decodeStoredEntity(key string, value []byte) (graph.EntityState, error) {
 		}
 		return graph.EntityState{}, err
 	}
-	if state.ID != key {
-		return graph.EntityState{}, graph.ClassifyStateContractError(&graph.StateContractError{
-			Reason:   graph.GraphStateReasonNoncanonicalEntityID,
-			EntityID: key,
-			Err:      fmt.Errorf("authority key contains entity %q", state.ID),
-		})
+	if err := checkStoredEntityKey(key, state.ID); err != nil {
+		return graph.EntityState{}, err
 	}
 	return state, nil
+}
+
+// checkStoredEntityKey is decodeStoredEntity's key check, which the write seam's read check
+// also runs (decodeStoredForWrite; design D23): storedID, the entity a value stored under key
+// holds, must be the one key names. A refusal is a graph-state error whose entity ID is the key.
+func checkStoredEntityKey(key, storedID string) error {
+	if storedID == key {
+		return nil
+	}
+	return graph.ClassifyStateContractError(&graph.StateContractError{
+		Reason:   graph.GraphStateReasonNoncanonicalEntityID,
+		EntityID: key,
+		Err:      fmt.Errorf("authority key contains entity %q", storedID),
+	})
 }
 
 func rejectInvalid(code string, err error) error {

@@ -110,8 +110,10 @@ func (c *Component) createEntity(ctx context.Context, entityID string, encoded [
 // debug level once the write commits (design D15, "Timestamp orders a replace"). The bucket
 // re-runs the callback after a create conflict or a retryable create error, so the birth never
 // changes entity: a retry that finds the key present merges from the arrival as it came (#91,
-// PR #93 comment 6060120246). A profile it stamps carries at, the arrival's triggeringTime. It
-// returns the revision it committed and the size of the value written.
+// PR #93 comment 6060120246). A profile it stamps carries at, the arrival's triggeringTime. A
+// stored value the seam's read check refuses (decodeStoredForWrite), or a merge the write gate
+// refuses for a statement kept from it, writes nothing and is recorded at the revision read
+// (design D23). It returns the revision it committed and the size of the value written.
 func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState, hierarchyTriples []message.Triple, at time.Time) (uint64, int, error) {
 	var bytesWritten int
 	// stale is the committed attempt's sets not applied as older. It is assigned on each run of
@@ -126,16 +128,16 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 	// It is not built before the loop: a merge never needs it, and stamping the profile fires
 	// the default-profile metric.
 	var birth []byte
-	revision, err := c.entityBucket.UpdateWithRetryRev(ctx, entity.ID, func(current []byte) ([]byte, error) {
+	revision, err := c.entityBucket.UpdateWithRetryRead(ctx, entity.ID, func(current []byte, read uint64) ([]byte, error) {
 		casAttempt++
 		if casAttempt > 1 && c.casRetries != nil {
 			c.casRetries.Inc()
 		}
 		stale = nil
-		// First write: entity didn't exist. Apply hierarchy triples
-		// (deterministic-per-ID so safe to apply once on create),
+		// First write: entity didn't exist (absence is revision 0, never an empty value; design
+		// D23). Apply hierarchy triples (deterministic-per-ID so safe to apply once on create),
 		// then store verbatim.
-		if len(current) == 0 {
+		if read == 0 {
 			if birth == nil {
 				// A copy with its own statements: reconcileIndexingProfile filters in place.
 				born := *entity
@@ -157,13 +159,13 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 		// Hierarchy triples are NOT re-applied — they landed on the
 		// original create and would only produce duplicates here.
 		//
-		// gh#562: trusted decode — this is the owner's own RMW read on the
-		// per-key-serialized ingest hot path; MarshalEntityState below
-		// re-validates the merged candidate, so resident poison still fails
-		// the write (classified via classifyStoredStateRMWError).
-		var existing graph.EntityState
-		if err := graph.UnmarshalEntityStateTrusted(current, &existing); err != nil {
-			return nil, c.classifyStoredStateRMWError(ctx, entity.ID, current, err) // non-retryable
+		// gh#562: the read check is the trusted decode plus the key check, on the
+		// per-key-serialized ingest hot path; MarshalEntityState below re-validates the merged
+		// candidate, so a poisoned statement kept from the stored value still fails the write
+		// (classified via classifyStoredStateRMWError).
+		existing, err := c.decodeStoredForWrite(ctx, entity.ID, current, read)
+		if err != nil {
+			return nil, err // non-retryable
 		}
 		// The indexing profile is create-time immutable (ADR-054). The arrival's declaration
 		// would replace the stored one under the reserved source, where stampExplicitIndexingProfile
@@ -198,7 +200,7 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 		existing.UpdatedAt = time.Now()
 		data, err := graph.MarshalEntityState(&existing)
 		if err != nil {
-			return nil, c.classifyStoredStateRMWError(ctx, entity.ID, current, err)
+			return nil, c.classifyStoredStateRMWError(ctx, entity.ID, current, read, err)
 		}
 		bytesWritten = len(data)
 		return data, nil
@@ -219,6 +221,27 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 	}
 	c.committed(ctx, entity.ID, revision)
 	return revision, bytesWritten, nil
+}
+
+// decodeStoredForWrite is the write seam's read check (design D23) of current, a value stored
+// under key and read at revision, which is nonzero: the trusted decode, then decodeStoredEntity's
+// key check. Absence is revision 0, so an empty value here is unreadable, never a birth or an
+// absent entity. A value it refuses is recorded in the poison inventory at revision and returned
+// as its graph-state error, which the caller returns from its callback, so nothing is written.
+// The full canonical rule is not run here: MarshalEntityState still gates every commit.
+func (c *Component) decodeStoredForWrite(ctx context.Context, key string, current []byte, revision uint64) (graph.EntityState, error) {
+	var stored graph.EntityState
+	if err := graph.UnmarshalEntityStateTrusted(current, &stored); err != nil {
+		return graph.EntityState{}, c.classifyStoredStateRMWError(ctx, key, current, revision, err)
+	}
+	if err := checkStoredEntityKey(key, stored.ID); err != nil {
+		var contractErr *graph.StateContractError
+		if errors.As(err, &contractErr) {
+			c.inventoryEntityPoison(ctx, contractErr, revision)
+		}
+		return graph.EntityState{}, err
+	}
+	return stored, nil
 }
 
 // reconcileCandidate is the conditional replace's rule, applied to the state the caller read at
@@ -262,9 +285,10 @@ type appendResult struct {
 
 // appendEntityTriples is the append mode: a read-modify-write under the KV revision that adds
 // to subject's stored entity each of triples whose message.AppendIdentityKey is not stored yet.
-// The entity must exist: an absent subject fails with natsclient.ErrKVKeyNotFound. When every
-// triple is already stored the result is unchanged at the revision read (design D23). On an
-// error the result is the zero value.
+// The entity must exist: an absent subject fails with natsclient.ErrKVKeyNotFound. A stored
+// value is refused as replaceEntity refuses one, before any triple is compared with it. When
+// every triple is already stored the result is unchanged at the revision read (design D23). On
+// an error the result is the zero value.
 func (c *Component) appendEntityTriples(ctx context.Context, subject string, triples []message.Triple) (appendResult, error) {
 	// read and suppressed are assigned on each run of the callback, never accumulated, so they
 	// describe the last run: the one that committed or declined.
@@ -274,19 +298,18 @@ func (c *Component) appendEntityTriples(ctx context.Context, subject string, tri
 	)
 	revision, err := c.entityBucket.UpdateWithRetryRead(ctx, subject, func(current []byte, currentRevision uint64) ([]byte, error) {
 		read = currentRevision
-		var entity graph.EntityState
-
-		if len(current) > 0 {
-			// gh#562: trusted decode on the owner's own RMW read;
-			// MarshalEntityState below re-validates the final candidate.
-			if err := graph.UnmarshalEntityStateTrusted(current, &entity); err != nil {
-				return nil, c.classifyStoredStateRMWError(ctx, subject, current, err) // Non-retryable
-			}
-		} else {
+		if currentRevision == 0 {
 			// Must-exist (ADR-055): a triple targeting an absent entity is
-			// rejected, not silently auto-vivified. NonRetryable stops the CAS
-			// loop and surfaces the sentinel for the handler to map.
+			// rejected, not silently auto-vivified. Absence is revision 0, never an
+			// empty value (design D23). NonRetryable stops the CAS loop and surfaces
+			// the sentinel for the handler to map.
 			return nil, retry.NonRetryable(natsclient.ErrKVKeyNotFound)
+		}
+		// gh#562: the read check is the trusted decode plus the key check;
+		// MarshalEntityState below re-validates the final candidate.
+		entity, err := c.decodeStoredForWrite(ctx, subject, current, currentRevision)
+		if err != nil {
+			return nil, err // non-retryable
 		}
 
 		// Append deduplication, INSIDE the CAS closure and BEFORE the
@@ -319,7 +342,7 @@ func (c *Component) appendEntityTriples(ctx context.Context, subject string, tri
 
 		data, err := graph.MarshalEntityState(&entity)
 		if err != nil {
-			return nil, c.classifyStoredStateRMWError(ctx, subject, current, err)
+			return nil, c.classifyStoredStateRMWError(ctx, subject, current, currentRevision, err)
 		}
 		return data, nil
 	})

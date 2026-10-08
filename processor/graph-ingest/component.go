@@ -1286,14 +1286,15 @@ func (c *Component) recordBootSweepPoison(ctx context.Context, sweep map[string]
 }
 
 // classifyStoredStateRMWError re-attributes a read-modify-write failure to
-// resident stored-state poison (gh#562). The owner's own RMW reads use
-// graph.UnmarshalEntityStateTrusted, so noncanonical STORED state no longer
-// fails on the read — it surfaces either as a trusted-decode failure
-// (unreadable JSON) or as a MarshalEntityState write-gate rejection that
-// would otherwise blame the merged CANDIDATE the caller submitted. On this
-// slow path (the write is already failing) re-validate the stored bytes: when
-// the poison predates the merge, stamp the RMW target's entity ID, record it
-// in the per-entity poison inventory, and return the
+// resident stored-state poison (gh#562). The owner's own RMW reads check only
+// the trusted decode and the key (decodeStoredForWrite, design D23), so a
+// noncanonical STORED statement does not fail on the read — it surfaces either
+// as a trusted-decode failure (unreadable JSON) or as a MarshalEntityState
+// write-gate rejection that would otherwise blame the merged CANDIDATE the
+// caller submitted. On this slow path (the write is already failing)
+// re-validate the stored bytes: when the poison predates the merge, stamp the
+// RMW target's entity ID, record it in the per-entity poison inventory at
+// revision, the revision the RMW read current at, and return the
 // graph-state-reset-required classification instead of a candidate-invalid
 // error. A canonical stored state returns cycleErr unchanged — the candidate
 // really was at fault.
@@ -1301,7 +1302,7 @@ func (c *Component) recordBootSweepPoison(ctx context.Context, sweep map[string]
 // entityID is the RMW target (the CAS key) — the closures are the only place
 // the identity is reliably in scope, so stamping happens here rather than at
 // any outer helper (design D4).
-func (c *Component) classifyStoredStateRMWError(ctx context.Context, entityID string, current []byte, cycleErr error) error {
+func (c *Component) classifyStoredStateRMWError(ctx context.Context, entityID string, current []byte, revision uint64, cycleErr error) error {
 	var stored graph.EntityState
 	err := graph.UnmarshalEntityState(current, &stored)
 	if err == nil {
@@ -1310,7 +1311,7 @@ func (c *Component) classifyStoredStateRMWError(ctx context.Context, entityID st
 	var contractErr *graph.StateContractError
 	if errors.As(err, &contractErr) {
 		contractErr.EntityID = entityID
-		c.inventoryEntityPoisonAtCurrentRevision(ctx, contractErr)
+		c.inventoryEntityPoison(ctx, contractErr, revision)
 	}
 	return err
 }
@@ -2268,10 +2269,12 @@ func (c *Component) recordSuppressedDuplicates(lane dedupLane, suppressed int) {
 
 // addTripleLane applies one hierarchy append, carrying the lane label for the
 // suppressed-duplicate metric. deduplicated=true means the write was a no-op:
-// nothing committed, no revision advanced, and err is nil.
+// this call wrote nothing, and err is nil.
 //
 // committedRevision is the EXACT revision this call's CAS produced, and is 0
-// whenever nothing committed (suppressed, or an error). It is deliberately not
+// whenever the call attributes no commit to itself (suppressed, or an error; an
+// error does not mean nothing committed: a write cut short by an infrastructure
+// error may have committed, design D23). It is deliberately not
 // a post-hoc read: another writer can commit between the CAS and a re-read, and
 // a caller attributing that writer's revision to its own write would suppress
 // the writer's genuine change (Codex C2).
@@ -2313,9 +2316,10 @@ func (c *Component) addTripleLane(ctx context.Context, triple message.Triple, la
 		return false, 0, errs.Wrap(casErr, "Component", "AddTriple", "CAS update")
 	}
 	if appended.outcome == graph.MutationUnchanged {
-		// Duplicate suppression is a SUCCESS with nothing committed, so it is not
+		// Duplicate suppression is a SUCCESS that wrote nothing, so it is not
 		// metered as a component error: that would make every restart replay look
-		// like a fault. The committed revision stays 0: this call wrote nothing.
+		// like a fault. The committed revision stays 0: the call attributes no
+		// commit to itself.
 		c.recordSuppressedDuplicates(lane, 1)
 		return true, 0, nil
 	}

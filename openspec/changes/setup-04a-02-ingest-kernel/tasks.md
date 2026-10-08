@@ -303,7 +303,7 @@ posted on this pull request.
       case that writes once and stamps the profile, its `task mutate:check` mutant "skip regardless of profile"); on the
       stream and append lanes, a value under another key and an empty value are refused and recorded at the revision
       read (`TestWriteSeamRefusesValueUnderAnotherKey`, `TestWriteSeamRefusesEmptyStoredValue`); `errNoOpAddDuplicate`
-      and `inventoryEntityPoisonAtCurrentRevision` go; the adoption issue (#TBD) is filed.
+      and `inventoryEntityPoisonAtCurrentRevision` go; the adoption issue (#141) is filed.
 - [ ] 3.12b (D) Fail closed at birth and on the guard record (#111 item 1; design D21): the tests of task 4.9; and
       #130, the hierarchy container cache that is never invalidated, fixed here, since failing the birth closed turns
       it from a warning into a redelivery that never ends (PR #93 comment 6061824292). Hold: task 3.12a.

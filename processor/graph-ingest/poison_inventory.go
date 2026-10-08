@@ -121,7 +121,8 @@ func (c *Component) logEntityPoisonRecorded(contractErr *graph.StateContractErro
 }
 
 // inventoryEntityPoison is the standard record path for detection sites that
-// hold the failing entry's revision (query lanes, mutation read seams). It
+// hold the failing entry's revision (query lanes, mutation read seams, and the
+// write seam's callbacks, at the revision they read: design D23). It
 // records, logs once on a new record, and then verifies the record against the
 // key's CURRENT bytes — closing the last record/clear interleaving: a repair
 // (delete or commit) that completed entirely between this detection's read and
@@ -155,32 +156,6 @@ func (c *Component) verifyEntityPoisonRecord(ctx context.Context, entityID strin
 	if _, err := decodeStoredEntity(entityID, entry.Value); err == nil {
 		c.dropEntityPoisonRecord(entityID, entry.Revision)
 	}
-}
-
-// inventoryEntityPoisonAtCurrentRevision is the record path for RMW
-// classifications: the CAS closures hold the failing bytes but not the
-// revision they were read at, so re-read the key. If its CURRENT bytes now
-// validate, a concurrent repair won the race — record nothing and drop any
-// stale entry, so the record-after-clear interleaving ends with no entry (D3).
-// Otherwise record at the current revision. Only reached on the already-failing
-// slow path.
-func (c *Component) inventoryEntityPoisonAtCurrentRevision(ctx context.Context, contractErr *graph.StateContractError) {
-	if contractErr == nil || contractErr.EntityID == "" || c.entityBucket == nil {
-		return
-	}
-	entry, err := c.entityBucket.Get(ctx, contractErr.EntityID)
-	if err != nil {
-		// Key absent (concurrent repair-by-delete): nothing resident to
-		// inventory. A TRANSIENT read error also lands here and skips this
-		// detection's record — acceptable, the key's next touch records it.
-		return
-	}
-	var probe graph.EntityState
-	if graph.UnmarshalEntityState(entry.Value, &probe) == nil {
-		c.dropEntityPoisonRecord(contractErr.EntityID, entry.Revision)
-		return
-	}
-	c.inventoryEntityPoison(ctx, contractErr, entry.Revision)
 }
 
 // dropEntityPoisonRecord removes an inventory entry. proofRev == 0 clears

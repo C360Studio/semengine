@@ -1,7 +1,9 @@
 package graphingest
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync/atomic"
@@ -176,4 +178,185 @@ func TestReplaceEntityRetryAfterLostBirthMergesOnlyTheArrival(t *testing.T) {
 			t.Errorf("the merge stored a statement from this lane's abandoned birth: %s", statementKey(tr))
 		}
 	}
+}
+
+// The write seam refuses a stored value it cannot change (spec graph-entity-writes, "The write
+// path refuses a stored value it cannot change"; design D23). On the stream lane and on both
+// append lanes, the canonical request and the in-process one, a refused write stores nothing and
+// the refusal is recorded at the revision the seam read. Each lane settles as it does for any
+// poisoned stored value: the error is fatal/graph_state_reset_required, the stream message is
+// negatively acknowledged (never terminated, so the arrival survives a repair), and the canonical
+// append replies failed for the subject.
+//
+// The test plants the stored value at seamReadRevision. Right after the seam's read it plays
+// another writer that stores the same value again at the next revision, so a record taken from a
+// later read, or a write retried after one, shows.
+
+const (
+	seamKey          = "acme.ops.test.system.widget.seam-key"
+	seamOtherEntity  = "acme.ops.test.system.widget.other-id"
+	seamReadRevision = uint64(7)
+)
+
+// seamHeld is a statement the stored value carries, and seamAdded one it does not.
+var (
+	seamHeld = message.Triple{
+		Subject: seamKey, Predicate: "test.state.value", Object: "held",
+		Source: fixtureSource, Timestamp: fixtureTime, Confidence: 1.0,
+	}
+	seamAdded = message.Triple{
+		Subject: seamKey, Predicate: "test.evidence.value", Object: "added",
+		Source: fixtureSource, Timestamp: fixtureTime, Confidence: 1.0,
+	}
+)
+
+// seamWrite is one write through the seam: a lane writing triple to seamKey. It checks the lane's
+// refusal, the error and the settlement its caller sees.
+type seamWrite struct {
+	name   string
+	triple message.Triple
+	write  func(t *testing.T, c *Component, triple message.Triple)
+}
+
+func streamLaneWrite(t *testing.T, c *Component, triple message.Triple) {
+	t.Helper()
+	c.ingestGuardMem = []*laneGuard{newLaneGuard(16)}
+	msg := &keyedIngestTestMsg{}
+	err := c.processIngest(t.Context(), 0, ingestWork{
+		entity:   &graph.EntityState{ID: seamKey, MessageType: testEntityType(), Triples: []message.Triple{triple}},
+		msg:      msg,
+		entityID: seamKey,
+		stream:   "ENTITY",
+		seq:      1,
+	})
+	assertIngestResetRequired(t, err)
+	if !msg.nak.Load() || msg.term.Load() || msg.ack.Load() {
+		t.Fatalf("settlement: nak %v, term %v, ack %v; want only a negative acknowledgement",
+			msg.nak.Load(), msg.term.Load(), msg.ack.Load())
+	}
+}
+
+func canonicalAppendWrite(t *testing.T, c *Component, triple message.Triple) {
+	t.Helper()
+	data, err := c.handleCanonicalAppend(t.Context(), mustCanonicalJSON(t, graph.AppendTriplesRequest{
+		Triples: []message.Triple{triple},
+	}))
+	if err != nil {
+		t.Fatalf("handleCanonicalAppend: %v", err)
+	}
+	var response graph.AppendTriplesResponse
+	if err := json.Unmarshal(data, &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if len(response.Results) != 1 {
+		t.Fatalf("results = %#v, want one", response.Results)
+	}
+	result := response.Results[0]
+	if result.EntityID != seamKey || result.Outcome != graph.MutationFailed || result.KVRevision != 0 ||
+		result.Error == nil || *result.Error != (graph.MutationFailure{Class: "fatal", Code: graph.ErrorCodeGraphStateResetRequired}) {
+		t.Fatalf("append result = %#v (error %+v), want failed with fatal/%s",
+			result, result.Error, graph.ErrorCodeGraphStateResetRequired)
+	}
+}
+
+func inProcessAppendWrite(t *testing.T, c *Component, triple message.Triple) {
+	t.Helper()
+	deduplicated, committed, err := c.addTripleLane(t.Context(), triple, dedupLaneHierarchy)
+	assertIngestResetRequired(t, err)
+	if deduplicated || committed != 0 {
+		t.Fatalf("in-process append: deduplicated %v, committed revision %d; want neither", deduplicated, committed)
+	}
+}
+
+// assertWriteSeamRefuses runs each write over stored, planted at seamKey, and checks that it
+// wrote nothing and that the refusal is recorded for reason at seamReadRevision.
+func assertWriteSeamRefuses(t *testing.T, stored []byte, reason graph.StateResetReason, writes []seamWrite) {
+	t.Helper()
+	for _, write := range writes {
+		t.Run(write.name, func(t *testing.T) {
+			c, bucket := poisonScopingTestComponent(t)
+			bucket.data[seamKey] = mockKVData{value: stored, revision: seamReadRevision}
+			bucket.getFunc = func(_ context.Context, key string) (jetstream.KeyValueEntry, error) {
+				bucket.mu.Lock()
+				defer bucket.mu.Unlock()
+				entry, ok := bucket.data[key]
+				if !ok {
+					return nil, jetstream.ErrKeyNotFound
+				}
+				if key == seamKey && entry.revision == seamReadRevision {
+					// The other writer: the same value again, after this read.
+					bucket.data[key] = mockKVData{value: entry.value, revision: seamReadRevision + 1}
+				}
+				return &mockKVEntry{key: key, data: entry.value, revision: entry.revision}, nil
+			}
+
+			write.write(t, c, write.triple)
+
+			bucket.mu.Lock()
+			after := bucket.data[seamKey]
+			bucket.mu.Unlock()
+			if !bytes.Equal(after.value, stored) || after.revision != seamReadRevision+1 {
+				t.Fatalf("the refused write wrote: stored %q at revision %d, want %q at %d (the other writer's)",
+					after.value, after.revision, stored, seamReadRevision+1)
+			}
+			record, inventoried := poisonInventoryEntry(c, seamKey)
+			if !inventoried {
+				t.Fatal("the refusal is not recorded in the poison inventory")
+			}
+			if record.revision != seamReadRevision {
+				t.Fatalf("refusal recorded at revision %d, want %d, the revision the seam read",
+					record.revision, seamReadRevision)
+			}
+			if record.contractErr.EntityID != seamKey || record.contractErr.Reason != reason {
+				t.Fatalf("refusal recorded for %q with reason %q, want %q with %q",
+					record.contractErr.EntityID, record.contractErr.Reason, seamKey, reason)
+			}
+		})
+	}
+}
+
+func TestWriteSeamRefusesValueUnderAnotherKey(t *testing.T) {
+	// A canonical entity, but another one than its key names. It carries seamHeld, so an append
+	// of seamHeld would add nothing.
+	stored, err := graph.MarshalEntityState(&graph.EntityState{
+		ID: seamOtherEntity, MessageType: testEntityType(), Triples: []message.Triple{seamHeld},
+	})
+	if err != nil {
+		t.Fatalf("encode the stored value: %v", err)
+	}
+	assertWriteSeamRefuses(t, stored, graph.GraphStateReasonNoncanonicalEntityID, []seamWrite{
+		{name: "stream lane", triple: seamAdded, write: streamLaneWrite},
+		{name: "canonical append", triple: seamAdded, write: canonicalAppendWrite},
+		{name: "canonical append that adds nothing", triple: seamHeld, write: canonicalAppendWrite},
+		{name: "in-process append", triple: seamAdded, write: inProcessAppendWrite},
+		{name: "in-process append that adds nothing", triple: seamHeld, write: inProcessAppendWrite},
+	})
+}
+
+// Absence is revision 0. An empty value at a nonzero revision is no birth on the stream lane and
+// no absent entity on the append lanes. It carries no statement, so no append over it adds nothing.
+func TestWriteSeamRefusesEmptyStoredValue(t *testing.T) {
+	assertWriteSeamRefuses(t, []byte{}, graph.GraphStateReasonUnreadableEntity, []seamWrite{
+		{name: "stream lane", triple: seamAdded, write: streamLaneWrite},
+		{name: "canonical append", triple: seamAdded, write: canonicalAppendWrite},
+		{name: "in-process append", triple: seamAdded, write: inProcessAppendWrite},
+	})
+}
+
+// A value that does not decode, and a write whose result the write gate refuses for a statement it
+// keeps from the stored value, are refused as before; the record is now at the revision the seam
+// read, not at a later read's. An append that adds nothing over a value only the full rule
+// refuses is not here: it reports unchanged, the cost design D23 declares.
+func TestWriteSeamRecordsStoredPoisonAtTheRevisionRead(t *testing.T) {
+	writes := []seamWrite{
+		{name: "stream lane", triple: seamAdded, write: streamLaneWrite},
+		{name: "canonical append", triple: seamAdded, write: canonicalAppendWrite},
+		{name: "in-process append", triple: seamAdded, write: inProcessAppendWrite},
+	}
+	t.Run("value that does not decode", func(t *testing.T) {
+		assertWriteSeamRefuses(t, []byte(`{"id":`), graph.GraphStateReasonUnreadableEntity, writes)
+	})
+	t.Run("statement the write gate refuses", func(t *testing.T) {
+		assertWriteSeamRefuses(t, guardTestPoisonBytes(seamKey), graph.GraphStateReasonNoncanonicalPredicate, writes)
+	})
 }

@@ -1210,7 +1210,7 @@ UpdateWithRetry and UpdateJSON now return no error for that sentinel, writing no
 natsclient-update-commit-attribution: the pin's 'nothing committed' now reads 'attributes no commit to itself'.
 Present consumer: the write seam." `proving_tests`: the four tests.
 
-**Adoption sweep** (issue #TBD; nothing migrates here). Move now: `entity_writes.go:126`, `:257`; no other caller
+**Adoption sweep** (issue #141; nothing migrates here). Move now: `entity_writes.go:126`, `:257`; no other caller
 outside tests or in semsource, semconnect, semteams, semboids. At their port: the pin's retry loops
 `graph/clustering/summary_store.go:179`, `graph/embedding/storage.go:308`, `:367`, `:438`; one line for the
 read-then-write updates `processor/graph-index-spatial/component.go:944`, `graph-index-temporal` `:1054`, `:1138`.

@@ -61,7 +61,7 @@ starts, `task merge:check -- 127` and the merge are recorded on this pull reques
       checksum procedure of the reviewer contract, § Required review workflow, item 8, the restored file's checksum
       matching the one taken before, each report pasted on this pull request with the system it ran on. Gate:
       detection for each, R-M4 where the umask is not `077`; a survivor or an inconclusive run is reported as such.
-- [ ] 2.10 (D) `task verify` passes on the commit that carries 2.8, its integration step admitting the fixture tests
+- [x] 2.10 (D) `task verify` passes on the commit that carries 2.8, its integration step admitting the fixture tests
       through the published record on macOS, and that commit's CI run passes on ubuntu-24.04. Gate: CI `Required` on
       that commit, its run link recorded on this pull request.
 - [ ] 2.11 `design.md`, "Conformance", maps each accepted decision and D7 to the `file:line` that carries it out at

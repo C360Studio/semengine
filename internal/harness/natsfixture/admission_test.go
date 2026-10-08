@@ -24,19 +24,14 @@ var admissionEnv = []string{
 }
 
 // plantLock writes a lock owner record holding token and points the fixture's environment at it.
+// The owner is this test process on this host: live, as the runner is while its tests run.
 func plantLock(t *testing.T, ownerToken, envToken string) {
 	t.Helper()
 	lock := filepath.Join(t.TempDir(), "lock")
 	if err := os.Mkdir(lock, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// The owner is this test process on this host: live, as the runner is while its tests run.
-	host, err := os.Hostname()
-	if err != nil {
-		t.Fatal(err)
-	}
-	owner := fmt.Sprintf("host=%s\npid=%d\nstarted=1\nidentity=%s\ntoken=%s\ncommand=semengine /x/scripts/test-integration.sh\n",
-		host, os.Getpid(), runnerIdentity(t, os.Getpid()), ownerToken)
+	owner := ownerRecord(t, ownerToken, runnerIdentity(t, os.Getpid()))
 	if err := os.WriteFile(filepath.Join(lock, "owner"), []byte(owner), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -46,13 +41,47 @@ func plantLock(t *testing.T, ownerToken, envToken string) {
 	t.Setenv("SEMENGINE_NATS_IMAGE", "nats"+":2.14.7-alpine@sha256:"+strings.Repeat("0", 64))
 }
 
-// runnerIdentity reads pid's start time as the runner records its own: scripts/test-integration.sh's
-// command text, run by bash, whose command substitution removes the trailing newline and keeps any
-// trailing blanks. It shares no code with admission's read, which must equal it.
-func runnerIdentity(t *testing.T, pid int) string {
+// ownerRecord is the record the runner writes when this process holds the lock with token:
+// SemStreams' six keys, identity as given, then identity_utc as the runner reads it.
+func ownerRecord(t *testing.T, token, identity string) string {
 	t.Helper()
-	out, err := exec.CommandContext(t.Context(), "bash", "-c",
-		`printf %s "$(ps -o lstart= -p "$1" 2>/dev/null | sed "s/^[[:space:]]*//")"`, "_", strconv.Itoa(pid)).Output()
+	host, err := os.Hostname()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fmt.Sprintf("host=%s\npid=%d\nstarted=1\nidentity=%s\ntoken=%s\ncommand=semengine /x/scripts/test-integration.sh\nidentity_utc=%s\n",
+		host, os.Getpid(), identity, token, runnerIdentityUTC(t, os.Getpid()))
+}
+
+// replaceOwner replaces the owner record plantLock wrote.
+func replaceOwner(t *testing.T, owner string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(os.Getenv("SEMENGINE_DOCKER_ADMISSION_LOCK_DIR"), "owner"), []byte(owner), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// runnerIdentity reads pid's start time as the runner records its identity, in this process's
+// environment with env added (the time zone a record was written in). runnerIdentityUTC reads it
+// as the runner records its identity_utc, with TZ=UTC and LC_ALL=C set for ps alone. Each is
+// scripts/test-integration.sh's command text, run by bash, whose command substitution removes the
+// trailing newline and keeps any trailing blanks. They share no code with admission's read, which
+// must equal them.
+func runnerIdentity(t *testing.T, pid int, env ...string) string {
+	t.Helper()
+	return runnerStartTime(t, pid, `printf %s "$(ps -o lstart= -p "$1" 2>/dev/null | sed "s/^[[:space:]]*//")"`, env)
+}
+
+func runnerIdentityUTC(t *testing.T, pid int) string {
+	t.Helper()
+	return runnerStartTime(t, pid, `printf %s "$(TZ=UTC LC_ALL=C ps -o lstart= -p "$1" 2>/dev/null | sed "s/^[[:space:]]*//")"`, nil)
+}
+
+func runnerStartTime(t *testing.T, pid int, command string, env []string) string {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "bash", "-c", command, "_", strconv.Itoa(pid))
+	cmd.Env = append(os.Environ(), env...)
+	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("read the start time of pid %d: %v", pid, err)
 	}
@@ -153,24 +182,32 @@ func TestAdmissionRequiresALiveOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	self := func(*testing.T) string { return strconv.Itoa(os.Getpid()) }
-	// Each case below differs from a live owner (this host, this process, its start time) in one field.
+	// The first five cases are SemStreams' six keys, judged by identity: each differs from a live
+	// six-key owner (this host, this process, its start time) in one field. The last two add
+	// identity_utc, and each differs from a live seven-key owner in identity_utc alone.
 	live := runnerIdentity(t, os.Getpid())
 	for _, tc := range []struct {
-		name, host string
-		pid        func(t *testing.T) string // called inside the case, so a failed premise fails only that case
-		identity   string
-		want       string
+		name, host  string
+		pid         func(t *testing.T) string // called inside the case, so a failed premise fails only that case
+		identity    string
+		identityUTC string // written as the seventh line unless empty
+		want        string
 	}{
-		{"owner pid is not a running process", host, func(t *testing.T) string { return strconv.Itoa(absentPID(t)) }, live, "not live"},
-		{"owner on another host", host + "-elsewhere", self, live, "another host"},
-		{"owner pid unreadable", host, func(*testing.T) string { return "x" }, live, "pid"},
-		{"owner pid names a process with another start time", host, self, "Mon Jan  1 00:00:00 1990", "Mon Jan  1 00:00:00 1990"},
-		{"owner identity unknown", host, self, "unknown", "unknown"},
+		{"owner pid is not a running process", host, func(t *testing.T) string { return strconv.Itoa(absentPID(t)) }, live, "", "not live"},
+		{"owner on another host", host + "-elsewhere", self, live, "", "another host"},
+		{"owner pid unreadable", host, func(*testing.T) string { return "x" }, live, "", "pid"},
+		{"owner pid names a process with another start time", host, self, "Mon Jan  1 00:00:00 1990", "", "Mon Jan  1 00:00:00 1990"},
+		{"owner identity unknown", host, self, "unknown", "", "unknown"},
+		{"identity_utc names another start time", host, self, live, "Mon Jan  1 00:00:00 1990", "Mon Jan  1 00:00:00 1990"},
+		{"identity_utc unknown", host, self, live, "unknown", "unknown"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			plantLock(t, "tok", "tok")
 			owner := fmt.Sprintf("host=%s\npid=%s\nstarted=1\nidentity=%s\ntoken=tok\ncommand=semengine /x/scripts/test-integration.sh\n",
 				tc.host, tc.pid(t), tc.identity)
+			if tc.identityUTC != "" {
+				owner += "identity_utc=" + tc.identityUTC + "\n"
+			}
 			if err := os.WriteFile(filepath.Join(os.Getenv("SEMENGINE_DOCKER_ADMISSION_LOCK_DIR"), "owner"), []byte(owner), 0o644); err != nil {
 				t.Fatal(err)
 			}
@@ -208,26 +245,66 @@ func TestAdmissionRefusesAnEmptyStartTime(t *testing.T) {
 	}
 }
 
-// A live owner admits: plantLock's record names this process with the start time the runner's own
-// command reads for it. Admission reads under its caller's context, so a caller already cancelled
-// is told so rather than refused.
+// A live owner admits: plantLock's record names this process with the start times the runner's
+// own commands read for it. Admission reads under its caller's context, so a caller already
+// cancelled is told so rather than refused.
 func TestAdmissionAdmitsALiveOwner(t *testing.T) {
-	plantLock(t, "tok", "tok")
-	adm, err := admit(t.Context())
-	if err != nil {
-		t.Fatalf("admit = %v, want the live owner admitted", err)
-	}
-	if want := os.Getenv("SEMENGINE_EVIDENCE_DIR"); adm.evidenceDir != want {
-		t.Errorf("evidence directory = %q, want %q", adm.evidenceDir, want)
-	}
-	if want := os.Getenv("SEMENGINE_NATS_IMAGE"); adm.image != want {
-		t.Errorf("image = %q, want %q", adm.image, want)
-	}
+	t.Run("live owner", func(t *testing.T) {
+		plantLock(t, "tok", "tok")
+		adm, err := admit(t.Context())
+		if err != nil {
+			t.Fatalf("admit = %v, want the live owner admitted", err)
+		}
+		if want := os.Getenv("SEMENGINE_EVIDENCE_DIR"); adm.evidenceDir != want {
+			t.Errorf("evidence directory = %q, want %q", adm.evidenceDir, want)
+		}
+		if want := os.Getenv("SEMENGINE_NATS_IMAGE"); adm.image != want {
+			t.Errorf("image = %q, want %q", adm.image, want)
+		}
 
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	if _, err := admit(ctx); !errors.Is(err, context.Canceled) {
-		t.Errorf("admit with a cancelled context = %v, want context.Canceled", err)
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+		if _, err := admit(ctx); !errors.Is(err, context.Canceled) {
+			t.Errorf("admit with a cancelled context = %v, want context.Canceled", err)
+		}
+	})
+	// The runner wrote its identity in one time zone, and the test process reads in another with a
+	// locale that is not C. Both zones are set, so the host's own zone plays no part. identity_utc
+	// is read with TZ=UTC and LC_ALL=C on both sides, so it still matches.
+	t.Run("an owner read in another time zone", func(t *testing.T) {
+		plantLock(t, "tok", "tok")
+		replaceOwner(t, ownerRecord(t, "tok", runnerIdentity(t, os.Getpid(), "TZ=EST5")))
+		t.Setenv("TZ", "JST-9")
+		t.Setenv("LC_ALL", "de_DE.UTF-8")
+		if _, err := admit(t.Context()); err != nil {
+			t.Fatalf("admit = %v, want the live owner admitted", err)
+		}
+	})
+}
+
+// A record without identity_utc, as SemStreams' runner or a SemEngine runner older than the key
+// writes it, is judged by its identity, read in the test process's environment; so is a record
+// whose identity_utc is empty, which only a hand edit makes. A six-key record with another
+// identity is refused: TestAdmissionRequiresALiveOwner's "owner pid names a process with another
+// start time".
+func TestAdmissionJudgesARecordWithoutIdentityUTCByIdentity(t *testing.T) {
+	host, err := os.Hostname()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sixKeys := fmt.Sprintf("host=%s\npid=%d\nstarted=1\nidentity=%s\ntoken=tok\ncommand=semengine /x/scripts/test-integration.sh\n",
+		host, os.Getpid(), runnerIdentity(t, os.Getpid()))
+	for _, tc := range []struct{ name, owner string }{
+		{"six keys", sixKeys},
+		{"empty identity_utc", sixKeys + "identity_utc=\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			plantLock(t, "tok", "tok")
+			replaceOwner(t, tc.owner)
+			if _, err := admit(t.Context()); err != nil {
+				t.Fatalf("admit = %v, want the owner admitted by its identity", err)
+			}
+		})
 	}
 }
 

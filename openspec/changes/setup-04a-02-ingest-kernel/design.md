@@ -311,12 +311,14 @@ reads is removed (#9 comment 5968830525).
 - **Config (b).** graph-ingest refuses an unknown configuration key at construction, naming the key
   (`TestCreateGraphIngestRefusesUnknownKey`; at the pin the key is ignored). It uses the same strict-decoding shape
   (`DisallowUnknownFields`) as the pin's `inference.RejectUnknownKeys` (`graph/inference/config.go:249`; ADR-054),
-  rather than a second one; that function is in `config.go`, which ports in change 7 (#97).
-  `IngestLanes < 1` keeps the pin's clamp to 1, a declared degrade, now with a test that an explicit 0 builds a
-  one-lane component. Each of graph-ingest's four fields has a test that fails when the field is ignored.
+  rather than a second one; that function is in `config.go`, which ports in change 7 (#97). An explicit `ingest_lanes`
+  of 0 is read as unset and takes the default of 8 lanes, as at the pin, because `CreateGraphIngest` calls
+  `ApplyDefaults` before `Validate`; a negative value keeps the pin's clamp to 1, a declared degrade.
+  `TestConfigIngestLanesBelowOne` shows that 0 builds eight lanes and -1 builds one (owner ruling, #91 comment
+  6059144952). Each of graph-ingest's four fields has a test that fails when the field is ignored.
   `graph/inference.HierarchyConfig` is built in code by graph-ingest (`component.go:1428-1440`), never decoded from
-  operator configuration in change 2, so its JSON tags carry no configuration surface here. `graph/inference.Config`
-  and its six unread fields, `review.llm` among them, are change 7's (D1a).
+  operator configuration in change 2, so its JSON tags carry no configuration surface here. `graph/inference.Config` and
+  its six unread fields, `review.llm` among them, are change 7's (D1a).
 - **Described, not implemented (c):** `processor/graph-ingest/TEST_DISPUTE.md` is not ported. `graph/README.md` says
   the package is "types and interfaces only" while it holds the catalog and readiness computation; it is rewritten
   for what the root holds after D16. The four READMEs of ported packages (`component`, `graph`, `types`,

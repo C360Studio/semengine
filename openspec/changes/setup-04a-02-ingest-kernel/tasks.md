@@ -285,7 +285,7 @@ posted on this pull request.
       across 10 files. None of the eight out-of-set test imports is left (design D2); `pkg/lifecycle`'s
       `harness_gate_integration_test.go` is adapted under task 3.10. Each commit body quotes its failing runs and
       mutation records. The choices the design does not spell out are in PR #93's "Notes for checkpoint 3" comments
-      (6050325985, 6050697147, 6051342812, 6052103765, and the one for stages 3c to 3e that follows them).
+      (6050325985, 6050697147, 6051342812, 6052103765 and 6053166232).
 - [ ] 3.12a (D) graph-ingest's write seam (#100, #98; design D15): one write path for the seven write sites
       (`TestEntityWritesHaveOneSeam` and its sensitivity case, written first); births on every lane stamp the
       profile, and with hierarchy enabled the stream and in-process births add hierarchy statements while a mutation

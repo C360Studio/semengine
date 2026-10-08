@@ -254,7 +254,9 @@ func (c *Config) Validate() error {
 		return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate", err.Error())
 	}
 	// IngestLanes < 1 clamps to serial (ADR-072). Clamp rather than reject so a
-	// mis-set 0/negative degrades to safe-serial instead of failing boot.
+	// mis-set negative degrades to safe-serial instead of failing boot. A 0 does
+	// not reach the clamp: the factory runs ApplyDefaults first, which reads 0 as
+	// unset and makes it the default of 8 (owner ruling, #91 comment 6059144952).
 	if c.IngestLanes < 1 {
 		c.IngestLanes = 1
 	}

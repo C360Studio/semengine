@@ -127,9 +127,8 @@ func TestConfigEnableTypeSiblingsFalseAddsNoSiblingEdge(t *testing.T) {
 }
 
 // TestConfigIngestLanesSetsTheLaneCount: ingest_lanes 3 builds three ingest lanes,
-// each with its in-memory redelivery guard. Ignored, the default eight are built. (An
-// explicit 0 is not tested here: ApplyDefaults turns it into the default before
-// Validate's clamp; PR #93 comment 6050325985.)
+// each with its in-memory redelivery guard. Ignored, the default eight are built. (0
+// and a negative value: TestConfigIngestLanesBelowOne.)
 func TestConfigIngestLanesSetsTheLaneCount(t *testing.T) {
 	config := DefaultConfig()
 	config.IngestLanes = 3
@@ -148,5 +147,42 @@ func TestConfigIngestLanesSetsTheLaneCount(t *testing.T) {
 
 	if got := len(c.ingestGuardMem); got != 3 {
 		t.Fatalf("ingest lanes = %d, want 3", got)
+	}
+}
+
+// TestConfigIngestLanesBelowOne: as at the pin, an explicit ingest_lanes 0 is read as
+// unset and builds the default eight lanes, and a negative value is clamped to one lane
+// (owner ruling, #91 comment 6059144952). The field has no omitempty, so the JSON the
+// factory decodes carries the 0.
+func TestConfigIngestLanesBelowOne(t *testing.T) {
+	cases := []struct {
+		name  string
+		lanes int
+		want  int
+	}{
+		{name: "zero", lanes: 0, want: 8},
+		{name: "negative", lanes: -1, want: 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			config := DefaultConfig()
+			config.IngestLanes = tc.lanes
+
+			c := newConfiguredGraphIngest(t, config)
+			if err := c.buildIngestPool(t.Context()); err != nil {
+				t.Fatalf("buildIngestPool: %v", err)
+			}
+			t.Cleanup(func() {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				if err := c.ingestPool.Shutdown(ctx); err != nil {
+					t.Errorf("ingest pool Shutdown: %v", err)
+				}
+			})
+
+			if got := len(c.ingestGuardMem); got != tc.want {
+				t.Fatalf("ingest_lanes %d built %d lanes, want %d", tc.lanes, got, tc.want)
+			}
+		})
 	}
 }

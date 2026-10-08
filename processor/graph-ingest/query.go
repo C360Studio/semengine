@@ -1,0 +1,706 @@
+// Package graphingest query handlers
+package graphingest
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/natsclient"
+	"github.com/c360studio/semengine/pkg/errs"
+	semtypes "github.com/c360studio/semengine/pkg/types"
+)
+
+// defaultMaxConcurrent is the default bounded concurrency for entity fetches
+const defaultMaxConcurrent = 10
+
+// queryResponder is the responder name the verb table gives graph-ingest's verbs.
+const queryResponder = "graph-ingest"
+
+// queryHandlers maps each verb graph-ingest answers, by its name in graph.QueryVerbs, to
+// its handler.
+func (c *Component) queryHandlers() map[string]func(context.Context, []byte) ([]byte, error) {
+	return map[string]func(context.Context, []byte) ([]byte, error){
+		"entity": c.handleQueryEntityNATS,
+		"batch":  c.handleQueryBatchNATS,
+		"prefix": c.handleQueryPrefixNATS,
+	}
+}
+
+// setupQueryHandlers subscribes to the subject of every verb the table in graph declares
+// for graph-ingest, and to nothing else (design D20). A declared verb with no handler
+// here fails Start: serving fewer verbs than the table declares would leave callers
+// with no responder for a subject they were told is served.
+func (c *Component) setupQueryHandlers(ctx context.Context) error {
+	handlers := c.queryHandlers()
+	var subjects []string
+	for _, verb := range graph.QueryVerbs() {
+		if verb.Responder != queryResponder {
+			continue
+		}
+		handler, ok := handlers[verb.Name]
+		if !ok {
+			return fmt.Errorf("query verb %q (%s) is declared for graph-ingest but has no handler", verb.Name, verb.Subject)
+		}
+		sub, err := c.natsClient.SubscribeForRequests(ctx, verb.Subject, handler)
+		if err != nil {
+			return fmt.Errorf("subscribe %s query: %w", verb.Name, err)
+		}
+		c.subscriptions = append(c.subscriptions, sub)
+		subjects = append(subjects, verb.Subject)
+	}
+	c.logger.Info("query handlers registered", "subjects", subjects)
+	return nil
+}
+
+// handleQueryEntityNATS handles single entity query requests via NATS request/reply
+func (c *Component) handleQueryEntityNATS(ctx context.Context, data []byte) ([]byte, error) {
+	if err := c.ensureEntityQueriesReady(); err != nil {
+		return nil, err
+	}
+	// Create context with timeout for KV operation
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	// Parse request
+	var req struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(data, &req); err != nil {
+		// ADR-060: invalid request → invalid class + Code invalid_request, so a
+		// consumer reads ce.Code instead of sniffing the message.
+		return nil, errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeInvalidRequest,
+			fmt.Errorf("invalid request: %w", err))
+	}
+
+	// Validate before any authority I/O. Exact reads never reinterpret malformed
+	// identity as absence.
+	if err := semtypes.ValidateEntityID(req.ID); err != nil {
+		return nil, errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeInvalidRequest,
+			fmt.Errorf("invalid request: entity ID: %w", err))
+	}
+
+	// Get entity from KV bucket
+	entry, err := c.entityBucket.Get(ctx, req.ID)
+	if err != nil {
+		if natsclient.IsKVNotFoundError(err) {
+			// HTTP semantics (400 vs 404) live at the gateway. ADR-060: not-found
+			// classifies as Invalid at the wire boundary and carries the stable
+			// Code entity_not_found, so a gateway routes 404 off ce.Code rather
+			// than substring-sniffing the message.
+			return nil, errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeEntityNotFound,
+				fmt.Errorf("not found: %s", req.ID))
+		}
+		return nil, errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal,
+			fmt.Errorf("internal error: %w", err))
+	}
+
+	if err := c.validateEntityQueryValue(ctx, req.ID, entry.Value, entry.Revision); err != nil {
+		return nil, err
+	}
+	var entity graph.EntityState
+	if err := graph.UnmarshalEntityState(entry.Value, &entity); err != nil {
+		return nil, errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired,
+			fmt.Errorf("decode validated entity %s at revision %d: %w", req.ID, entry.Revision, err))
+	}
+	if entity.ID != req.ID {
+		stateErr := &graph.StateContractError{
+			Reason:   graph.GraphStateReasonNoncanonicalEntityID,
+			EntityID: req.ID,
+			Err:      fmt.Errorf("authority key contains entity %q", entity.ID),
+		}
+		c.inventoryEntityPoison(ctx, stateErr, entry.Revision)
+		return nil, graph.ClassifyStateContractError(stateErr)
+	}
+	return json.Marshal(graph.ExactEntity{
+		Entity:     entity.Clone(),
+		KVRevision: entry.Revision,
+	})
+}
+
+// handleQueryBatchNATS handles batch entity query requests via NATS request/reply
+func (c *Component) handleQueryBatchNATS(ctx context.Context, data []byte) ([]byte, error) {
+	if err := c.ensureEntityQueriesReady(); err != nil {
+		return nil, err
+	}
+	// Create context with timeout for KV operations
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	// Parse request
+	var req struct {
+		IDs []string `json:"ids"`
+	}
+	if err := json.Unmarshal(data, &req); err != nil {
+		return nil, errs.Classified(errs.ErrorInvalid, fmt.Errorf("invalid request: %w", err))
+	}
+	// Handle empty IDs (return empty entities)
+	if len(req.IDs) == 0 {
+		return []byte(`{"entities":[]}`), nil
+	}
+
+	// Fetch entities with bounded concurrency and cache.
+	//
+	// Timed because this handler's budget and its CALLER's budget are set
+	// independently and were inverted: graph-query's loadEntities abandons the
+	// request at its QueryTimeout (default 5s) while this handler is allowed
+	// 10s, so a batch taking 5–10s is charged to the caller as an opaque
+	// "context deadline exceeded" that no server-side log records at all. That
+	// is how gh#830 presented — an intermittent e2e failure with nothing on the
+	// responder side to look at. Same reasoning as reportBatchMissing below:
+	// the symptom reaches the user several hops from the fact.
+	fetchStart := time.Now()
+	entities, missing, err := c.fetchEntitiesConcurrent(ctx, req.IDs, defaultMaxConcurrent)
+	fetchElapsed := time.Since(fetchStart)
+	if err != nil {
+		c.logger.Warn("entity batch fetch failed",
+			slog.Int("requested", len(req.IDs)),
+			slog.Duration("elapsed", fetchElapsed),
+			slog.String("error", err.Error()))
+		return nil, c.classifyEntityQueryError(err)
+	}
+	c.logger.Debug("entity batch fetch",
+		slog.Int("requested", len(req.IDs)),
+		slog.Int("returned", len(entities)),
+		slog.Int("missing", len(missing)),
+		slog.Duration("elapsed", fetchElapsed))
+	c.reportBatchMissing(req.IDs, missing)
+
+	resp := graph.EntityBatchResponse{Entities: entities}
+	for _, id := range missing {
+		resp.Missing = append(resp.Missing, graph.MissingEntity{ID: id, Reason: batchMissingReason(id)})
+	}
+	return json.Marshal(resp)
+}
+
+// batchMissingReason classifies one unhydrated requested ID. An empty ID was never
+// looked up, so `not_found` would assert something unobserved — the exact move this
+// change exists to stop. It is malformed input, which is a per-ID fault: `error`.
+//
+// One function so the wire and the counter cannot drift; they did, briefly.
+func batchMissingReason(id string) graph.MissingReason {
+	if id == "" {
+		return graph.MissingError
+	}
+	return graph.MissingNotFound
+}
+
+// reportBatchMissing makes partial hydration observable. It is the gh#597 soak
+// instrumentation: the open question there is whether a dropped ID's KV read was
+// genuinely not-found at the moment of failure, and until now nothing recorded that a
+// batch came back short at all — the symptom reached the user as a missing search
+// result several hops away.
+//
+// The log carries the IDs (bounded) because "which one" is the whole question; the
+// counter carries only counts, since entity IDs are an unbounded label space.
+func (c *Component) reportBatchMissing(requested, missing []string) {
+	if len(missing) == 0 {
+		return
+	}
+	if c.batchMissing != nil {
+		// Counted by the SAME reason the wire reports, not a blanket not_found: the
+		// empty-ID case added alongside this counter is reported as `error`, and a
+		// metric that disagrees with the response is worse than no metric.
+		byReason := make(map[graph.MissingReason]int, 2)
+		for _, id := range missing {
+			byReason[batchMissingReason(id)]++
+		}
+		for reason, n := range byReason {
+			c.batchMissing.WithLabelValues(string(reason)).Add(float64(n))
+		}
+	}
+	logged := missing
+	if len(logged) > maxLoggedMissingIDs {
+		logged = logged[:maxLoggedMissingIDs]
+	}
+	// Debug, not Warn: with reads now serving under lag (ADR-084), a semantic index
+	// ranking an entity whose ENTITY_STATES write has not landed yet is ordinary
+	// operation, and warning on it would train operators to ignore the line. The
+	// COUNTER above is the alertable signal — it has a rate, which is what
+	// distinguishes normal churn from the gh#597 pathology.
+	c.logger.Debug("batch entity query did not hydrate every requested ID",
+		"requested", len(requested),
+		"missing", len(missing),
+		"reason", string(graph.MissingNotFound),
+		"missing_ids", logged)
+}
+
+// maxLoggedMissingIDs bounds the ID list on the defer log. A batch is already capped
+// well below this in practice; the bound exists so a pathological caller cannot turn
+// one log line into a payload.
+const maxLoggedMissingIDs = 20
+
+// handleQueryPrefixNATS handles prefix-based entity listing for hierarchy queries.
+//
+// Wire contract:
+//   - Accepts PrefixQueryRequest; omitted cursor requests the first page.
+//   - Returns graph.PrefixQueryResponse {"entities":[…],"next_cursor":"…"};
+//     next_cursor is omitted when the result set is exhausted.
+//   - Keys are sorted lexicographically before cursor application. This is a
+//     behaviour change from pre-pagination (where order was KV-scan order,
+//     i.e. non-deterministic) but is required for cursor correctness and is
+//     safe because callers have always treated the result as a set.
+func (c *Component) handleQueryPrefixNATS(ctx context.Context, data []byte) ([]byte, error) {
+	maxPayload, err := c.natsClient.MaxPayload()
+	if err != nil {
+		return nil, errs.Classified(errs.ErrorTransient, fmt.Errorf("observe NATS max payload: %w", err))
+	}
+	return c.handleQueryPrefixWithMaxPayload(ctx, data, maxPayload)
+}
+
+func (c *Component) handleQueryPrefixWithMaxPayload(
+	ctx context.Context,
+	data []byte,
+	maxPayload int64,
+) ([]byte, error) {
+	if err := c.ensureEntityQueriesReady(); err != nil {
+		return nil, err
+	}
+	// Create context with timeout for KV operation
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	// Parse the typed request. An omitted cursor denotes the first page.
+	var req graph.PrefixQueryRequest
+	if err := json.Unmarshal(data, &req); err != nil {
+		return nil, errs.Classified(errs.ErrorInvalid, fmt.Errorf("invalid request: %w", err))
+	}
+	if req.Prefix != "" {
+		if err := semtypes.ValidateEntityIDPrefix(req.Prefix); err != nil {
+			return nil, err
+		}
+	}
+
+	// Clamp limit.
+	limit := req.Limit
+	if limit <= 0 {
+		limit = graph.DefaultPrefixQueryLimit
+	}
+	if limit > graph.MaxPrefixQueryLimit {
+		limit = graph.MaxPrefixQueryLimit
+	}
+
+	// Build prefix for server-side filtering.
+	prefixDot := req.Prefix
+	if req.Prefix != "" {
+		prefixDot = req.Prefix + "."
+	}
+
+	// Use server-side prefix filtering instead of loading all keys.
+	keys, err := c.entityBucket.KeysByPrefix(ctx, prefixDot)
+	if err != nil {
+		return nil, errs.Classified(errs.ErrorTransient, fmt.Errorf("failed to get keys: %w", err))
+	}
+
+	// Also check exact match for full entity ID queries (6-part IDs
+	// where KeysByPrefix("org.plat.dom.sys.type.inst.") finds nothing).
+	if req.Prefix != "" && len(keys) == 0 {
+		if _, getErr := c.entityBucket.Get(ctx, req.Prefix); getErr == nil {
+			keys = []string{req.Prefix}
+		} else if !natsclient.IsKVNotFoundError(getErr) {
+			return nil, errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal,
+				fmt.Errorf("failed to check exact entity key: %w", getErr))
+		}
+	}
+
+	// MANDATORY: sort before cursor application — cursor is meaningless
+	// without a deterministic key order.
+	sort.Strings(keys)
+
+	// Apply cursor: advance past keys up to and including lastKey.
+	if req.Cursor != "" {
+		lastKey, decodeErr := graph.DecodeCursor(req.Cursor)
+		if decodeErr != nil {
+			return nil, errs.Classified(errs.ErrorInvalid, fmt.Errorf("invalid cursor: %w", decodeErr))
+		}
+		// SearchStrings finds first index where keys[i] >= lastKey.
+		idx := sort.SearchStrings(keys, lastKey)
+		// Advance past any key equal to lastKey (inclusive skip).
+		for idx < len(keys) && keys[idx] == lastKey {
+			idx++
+		}
+		keys = keys[idx:]
+	}
+
+	// Slice the page — we'll potentially trim further by byte budget below.
+	pageKeys := keys
+	if len(pageKeys) > limit {
+		pageKeys = pageKeys[:limit]
+	}
+
+	// Fetch full entities with bounded concurrency and cache. Missing IDs are
+	// deliberately NOT reported here: pageKeys came from a live key scan moments ago,
+	// so an absence is a concurrent delete rather than an unanswerable question about a
+	// caller-supplied ID. The prefix contract is "what is under this prefix now", and a
+	// key deleted mid-page is honestly not under it.
+	entities, _, err := c.fetchEntitiesConcurrent(ctx, pageKeys, defaultMaxConcurrent)
+	if err != nil {
+		return nil, c.classifyEntityQueryError(err)
+	}
+
+	// fetchEntitiesConcurrent returns cache-hits-then-misses order, NOT sorted.
+	// Re-sort by ID so the page is a deterministic sorted prefix of pageKeys and
+	// the byte-trim cursor below (derived from the last RETURNED entity) is the
+	// true lexicographic max. Without this, a byte-trimmed page would set a
+	// cursor on an arbitrary key and skip entities on the next page.
+	sort.Slice(entities, func(i, j int) bool { return entities[i].ID < entities[j].ID })
+
+	// A count-limited page continues after the last key selected for this
+	// fetch. Byte fitting may choose an earlier returned entity, in which case
+	// marshalFittingPrefixPage replaces this boundary with that entity's ID.
+	var followingBoundary string
+	if len(keys) > len(pageKeys) && len(pageKeys) > 0 {
+		followingBoundary = pageKeys[len(pageKeys)-1]
+	}
+
+	return marshalFittingPrefixPage(entities, followingBoundary, maxPayload)
+}
+
+// marshalFittingPrefixPage returns the largest sorted entity prefix whose
+// complete typed response encoding fits maxPayload. Candidate measurement
+// includes the final continuation cursor; no envelope reserve or average
+// entity estimate participates in the decision.
+func marshalFittingPrefixPage(
+	entities []graph.EntityState,
+	followingBoundary string,
+	maxPayload int64,
+) ([]byte, error) {
+	entityBytes := make([][]byte, len(entities))
+	for i := range entities {
+		encoded, err := json.Marshal(entities[i])
+		if err != nil {
+			return nil, fmt.Errorf("marshal prefix entity %q: %w", entities[i].ID, err)
+		}
+		entityBytes[i] = encoded
+	}
+
+	cursorFor := func(count int) string {
+		if count > 0 && count < len(entities) {
+			return graph.EncodeCursor(entities[count-1].ID)
+		}
+		if followingBoundary != "" {
+			return graph.EncodeCursor(followingBoundary)
+		}
+		return ""
+	}
+
+	encodedSize := func(count int, cursor string) (int64, error) {
+		size := int64(len(`{"entities":[`) + len(`]}`))
+		for i := 0; i < count; i++ {
+			size += int64(len(entityBytes[i]))
+			if i > 0 {
+				size++ // comma between entity encodings
+			}
+		}
+		if cursor != "" {
+			encodedCursor, err := json.Marshal(cursor)
+			if err != nil {
+				return 0, fmt.Errorf("marshal prefix cursor: %w", err)
+			}
+			size += int64(len(`,"next_cursor":`) + len(encodedCursor))
+		}
+		return size, nil
+	}
+
+	bestCount := -1
+	bestCursor := ""
+	firstCandidateBytes := int64(0)
+	for count := 0; count <= len(entities); count++ {
+		if count == 0 && len(entities) > 0 {
+			continue
+		}
+		cursor := cursorFor(count)
+		size, err := encodedSize(count, cursor)
+		if err != nil {
+			return nil, err
+		}
+		if count == 1 || (count == 0 && len(entities) == 0) {
+			firstCandidateBytes = size
+		}
+		if size <= maxPayload {
+			bestCount = count
+			bestCursor = cursor
+		}
+	}
+
+	if bestCount < 0 {
+		return nil, errs.ClassifiedCodeDetail(
+			errs.ErrorInvalid,
+			"response_too_large",
+			map[string]any{
+				"response_bytes": firstCandidateBytes,
+				"max_payload":    maxPayload,
+			},
+			errors.New("prefix response entity exceeds active NATS maximum payload"),
+		)
+	}
+
+	response := graph.PrefixQueryResponse{
+		Entities:   entities[:bestCount],
+		NextCursor: bestCursor,
+	}
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		return nil, fmt.Errorf("marshal prefix response: %w", err)
+	}
+	if int64(len(encoded)) > maxPayload {
+		return nil, fmt.Errorf("prefix response fitting invariant: encoded %d bytes exceeds max payload %d", len(encoded), maxPayload)
+	}
+	return encoded, nil
+}
+
+// ensureEntityQueriesReady is the plain atomic readiness check at query
+// handler entry. The flags settle inside Start before any subscription
+// registers, so no lock discipline is needed (design D2 — the old
+// entityQueryMu commit-point ceremony existed only to serialize the retired
+// surface-global poison latch and was deleted with it). Poison refusal is
+// per-entity and lives at each read's validating decode, not here.
+func (c *Component) ensureEntityQueriesReady() error {
+	if c.entityWatchLost.Load() {
+		return errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeIndexNotReady,
+			errors.New("graph-ingest query not ready: ENTITY_STATES snapshot sweep unavailable"))
+	}
+	if c.entityBootstrapStarted.Load() && !c.entityBootstrapComplete.Load() {
+		return errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeIndexNotReady,
+			errors.New("graph-ingest query not ready: ENTITY_STATES bootstrap validating"))
+	}
+	return nil
+}
+
+// validateEntityQueryValue enforces the per-read canonical decode on a single
+// entity read. Refusal derives solely from the bytes actually stored — the
+// poison inventory is observability-only and is never consulted. A poisoned
+// decode stamps the entity ID and records it in the inventory; a successful
+// decode clears any stale inventory entry for the key (D3c), so an
+// out-of-band repair recovers Health on its next read without a restart.
+func (c *Component) validateEntityQueryValue(ctx context.Context, entityID string, data []byte, revision uint64) error {
+	var state graph.EntityState
+	if err := graph.UnmarshalEntityState(data, &state); err != nil {
+		var contractErr *graph.StateContractError
+		if errors.As(err, &contractErr) {
+			contractErr.EntityID = entityID
+			c.inventoryEntityPoison(ctx, contractErr, revision)
+		}
+		return c.classifyEntityQueryError(err)
+	}
+	c.clearEntityPoisonOnValidRead(entityID, revision)
+	return nil
+}
+
+func (c *Component) classifyEntityQueryError(err error) error {
+	if graph.IsStateContractError(err) {
+		// Already fatal/graph_state_reset_required passes through unchanged
+		// (aggregate errors arrive pre-classified naming every poisoned entity).
+		return graph.ClassifyStateContractError(err)
+	}
+	return errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal, err)
+}
+
+// fetchEntitiesConcurrent fetches entities by IDs using bounded concurrency with cache.
+// Cache hits skip KV entirely; cache misses are fetched with bounded concurrency.
+//
+// It returns the entities found AND the IDs whose read came back not-found, because the
+// caller cannot recover the second set from the first: the entity slice is ordered
+// cache-hits-then-misses, so it carries no correspondence to the requested order, and a
+// caller diffing the sets would have to re-derive what this function already knew. That
+// gap is the gh#597 drop path — a requested ID silently absent from a shorter list.
+//
+// Order remains non-deterministic by contract; callers that need request order restore
+// it themselves (fusionnats.Entities does, because fusion ranks by position).
+func (c *Component) fetchEntitiesConcurrent(ctx context.Context, ids []string, maxConcurrent int) ([]graph.EntityState, []string, error) {
+	if len(ids) == 0 {
+		return nil, nil, nil
+	}
+	if maxConcurrent <= 0 {
+		maxConcurrent = defaultMaxConcurrent
+	}
+
+	// Phase 1: Check cache for all IDs, collect misses
+	var cached []graph.EntityState
+	var missIDs []string
+	var invalid []string
+	for _, id := range ids {
+		if id == "" {
+			// Reported, not skipped. The response contract is that every requested ID
+			// appears exactly once across entities+missing; silently dropping the empty
+			// string put it in neither and made the accounting a lie for the one input
+			// a caller is most likely to send by accident.
+			invalid = append(invalid, id)
+			continue
+		}
+		if c.entityCache != nil {
+			if entity, ok := c.entityCache.Get(id); ok {
+				cached = append(cached, entity)
+				continue
+			}
+		}
+		missIDs = append(missIDs, id)
+	}
+
+	// Phase 2: Fetch cache misses with bounded concurrency
+	if len(missIDs) == 0 {
+		return cached, invalid, nil
+	}
+
+	type fetchResult struct {
+		entity   graph.EntityState
+		err      error
+		ok       bool
+		notFound bool
+	}
+
+	results := make([]fetchResult, len(missIDs))
+	sem := make(chan struct{}, maxConcurrent)
+	var wg sync.WaitGroup
+
+	for i, id := range missIDs {
+		if err := ctx.Err(); err != nil {
+			break
+		}
+
+		wg.Add(1)
+		go func(idx int, entityID string) {
+			defer wg.Done()
+
+			// Acquire semaphore (with context cancellation)
+			select {
+			case <-ctx.Done():
+				return
+			case sem <- struct{}{}:
+				defer func() { <-sem }()
+			}
+
+			// Check context after acquiring semaphore
+			if ctx.Err() != nil {
+				return
+			}
+
+			// Capture the per-key invalidation generation BEFORE the KV Get so
+			// the repopulating Set below can detect an invalidate that raced our
+			// read window (read-after-write coherence guard — see
+			// invalidateEntityCacheEntry). This load happens-before the Get in
+			// program order.
+			gen0 := c.loadEntityCacheGen(entityID)
+
+			entry, err := c.entityBucket.Get(ctx, entityID)
+			if err != nil {
+				if natsclient.IsKVNotFoundError(err) {
+					// Not an error — this ID simply is not in the bucket. It is
+					// REPORTED rather than dropped so the caller can tell a short
+					// list from a partial one (gh#597).
+					results[idx].notFound = true
+				} else {
+					results[idx].err = err
+				}
+				return
+			}
+
+			var entity graph.EntityState
+			if err := graph.UnmarshalEntityState(entry.Value, &entity); err != nil {
+				// Stamp the entity ID here — the goroutine is where the
+				// identity is in scope (design D4) — and record the poison in
+				// the inventory with the failing revision so a single batch
+				// attempt inventories EVERY poisoned entity it touched (D5).
+				var contractErr *graph.StateContractError
+				if errors.As(err, &contractErr) {
+					contractErr.EntityID = entityID
+					c.inventoryEntityPoison(ctx, contractErr, entry.Revision)
+				}
+				results[idx].err = err
+				return
+			}
+
+			// A validating read succeeded — clear any stale inventory entry
+			// for this key (D3c). Steady-state cost: one atomic load.
+			c.clearEntityPoisonOnValidRead(entityID, entry.Revision)
+
+			// Test-only seam: deterministically inject a concurrent invalidation
+			// into the read window (between the KV Get and the repopulating Set).
+			// nil in production.
+			if c.repopulateHook != nil {
+				c.repopulateHook(entityID)
+			}
+
+			// Repopulate the read-through cache, but drop the Set if this key was
+			// invalidated during the read window (gen0 no longer current) — a slow
+			// reader must not resurrect pre-write state past a concurrent
+			// invalidate. See invalidateEntityCacheEntry for the contract.
+			c.repopulateEntityCacheEntry(entityID, entity, gen0)
+
+			results[idx] = fetchResult{entity: entity, ok: true}
+		}(i, id)
+	}
+
+	wg.Wait()
+	if err := ctx.Err(); err != nil {
+		return nil, nil, err
+	}
+
+	// Phase 3: Merge cached + fetched results. Poison fails the WHOLE read with one
+	// typed error naming every poisoned entity encountered in this attempt (design D5),
+	// and never a B-only response that hides A's poison.
+	//
+	// A not-found ID is different in kind: it does not fail the call, it is collected
+	// and REPORTED. Partiality was never the bug — invisibility was.
+	var poisoned []*graph.StateContractError
+	var firstOtherErr error
+	missing := invalid
+	entities := make([]graph.EntityState, 0, len(cached)+len(missIDs))
+	entities = append(entities, cached...)
+	for i, r := range results {
+		if r.err != nil {
+			var contractErr *graph.StateContractError
+			if errors.As(r.err, &contractErr) {
+				poisoned = append(poisoned, contractErr)
+			} else if firstOtherErr == nil {
+				firstOtherErr = r.err
+			}
+			continue
+		}
+		if r.notFound {
+			missing = append(missing, missIDs[i])
+			continue
+		}
+		if r.ok {
+			entities = append(entities, r.entity)
+		}
+	}
+	if len(poisoned) > 0 {
+		return nil, nil, aggregateEntityPoisonError(poisoned)
+	}
+	if firstOtherErr != nil {
+		return nil, nil, firstOtherErr
+	}
+
+	return entities, missing, nil
+}
+
+// aggregateEntityPoisonError builds the single typed failure for a
+// multi-entity read that encountered poisoned entities: fatal
+// graph_state_reset_required naming every poisoned entity (bounded list),
+// wrapping one typed cause so errors.As(*graph.StateContractError) is
+// preserved across the seam. Kills the one-repair-per-round-trip discovery
+// loop (design D5).
+func aggregateEntityPoisonError(poisoned []*graph.StateContractError) error {
+	ids := make([]string, 0, len(poisoned))
+	for _, p := range poisoned {
+		ids = append(ids, p.EntityID)
+	}
+	sort.Strings(ids)
+	sample := ids
+	suffix := ""
+	if len(sample) > entityPoisonSampleCap {
+		sample = sample[:entityPoisonSampleCap]
+		suffix = fmt.Sprintf(" (+%d more)", len(ids)-entityPoisonSampleCap)
+	}
+	return errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired,
+		fmt.Errorf("read encountered %d poisoned entities: %s%s: %w",
+			len(ids), strings.Join(sample, ", "), suffix, poisoned[0]))
+}

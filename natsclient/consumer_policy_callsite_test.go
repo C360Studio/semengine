@@ -311,14 +311,16 @@ func consumerPolicyCallsiteCensusViolations(files []productionGoFile) []string {
 		}
 	}
 
-	// SemEngine's tree at task 3.7: no production package outside natsclient consumes a stream
-	// yet, and natsclient calls none of the four through a selector.
+	// SemEngine's tree at task 3.7: no production package outside natsclient consumed a stream,
+	// and natsclient calls none of the four through a selector. Task 3.12 ports graph-ingest,
+	// whose JetStream input ports are its one canonical port consumer and its one
+	// GetConsumerConfig reader (the pin's census names the same file once).
 	var violations []string
 	wantInternal := map[string]int{}
 	if !reflect.DeepEqual(internalCallers, wantInternal) {
 		violations = append(violations, fmt.Sprintf("internal consumer census = %#v, want %#v", internalCallers, wantInternal))
 	}
-	wantPort := map[string]int{}
+	wantPort := map[string]int{"processor/graph-ingest/component.go": 1}
 	if !reflect.DeepEqual(portCallers, wantPort) {
 		violations = append(violations, fmt.Sprintf("canonical port consumer census = %#v, want %#v", portCallers, wantPort))
 	}
@@ -326,8 +328,9 @@ func consumerPolicyCallsiteCensusViolations(files []productionGoFile) []string {
 	if !reflect.DeepEqual(contextsPortCallers, wantContextsPort) {
 		violations = append(violations, fmt.Sprintf("split-context canonical port census = %#v, want %#v", contextsPortCallers, wantContextsPort))
 	}
-	if len(portConfigCallers) != 0 {
-		violations = append(violations, fmt.Sprintf("GetConsumerConfig production files = %d, want 0: %#v", len(portConfigCallers), portConfigCallers))
+	wantPortConfig := map[string]struct{}{"processor/graph-ingest/component.go": {}}
+	if !reflect.DeepEqual(portConfigCallers, wantPortConfig) {
+		violations = append(violations, fmt.Sprintf("GetConsumerConfig production files = %#v, want %#v", portConfigCallers, wantPortConfig))
 	}
 	if len(portBackedInternalCallers) != 0 {
 		violations = append(violations, fmt.Sprintf("port-backed files use internal consumer path: %#v", portBackedInternalCallers))

@@ -13,13 +13,11 @@ starts, `task merge:check -- 127` and the merge are recorded on this pull reques
       into revision 2, recorded on this pull request with both files' checksums.
 - [x] 1.2 The independent pre-owner review of `design.md`, `proposal.md`, this file and the two spec deltas:
       `DESIGN REVIEW PASS`, recorded on this pull request.
-- [ ] 1.3 The owner's acceptance of the design, recorded on #126 or this pull request, with an answer to each item of
+- [x] 1.3 The owner's acceptance of the design, recorded on #126 or this pull request, with an answer to each item of
       `design.md`, "Owner decisions".
-      Hold: the owner's acceptance (#126 or PR #127)
-- [ ] 1.4 Q1 settled before 2.2: either the owner's word that the measure at the SemStreams pin stands, or, on the
+- [x] 1.4 Q1 settled before 2.2: either the owner's word that the measure at the SemStreams pin stands, or, on the
       owner's word, a read of `scripts/run-integration-tests.sh` at SemStreams `main` recorded on this pull request
       that shows its owner parser ignores a key it does not know. If it does not, the design returns to review.
-      Hold: the owner's word on Q1
 
 ## 2. The fix and its tests
 
@@ -32,7 +30,6 @@ starts, `task merge:check -- 127` and the merge are recorded on this pull reques
       record's last line, reads it, and judges by it when it is usable; the comments at `:5-6`, `:134` and
       `scripts/admission-lock.sh:3-4` as D5 states. Gate: `bash -n scripts/test-integration.sh` and
       `task test:unit`, the runner tests among them passing.
-      Hold: Q1, task 1.4
 - [ ] 2.3 (D) Admission, as `design.md`, D2 and D4 state: `admission.go` reads and compares `identity_utc` when it is
       usable, with the fixed read under `Start`'s context, and falls back to `identity` otherwise; its comments as D5
       states; the admission tests of D6. Gate: `task test:unit`.

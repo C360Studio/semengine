@@ -11,6 +11,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/inference"
 	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/c360studio/semengine/internal/harness/payloadfixture"
@@ -100,6 +101,54 @@ func startBatchTestComponent(ctx context.Context, t *testing.T) (*Component, *gr
 
 	owner.transfer()
 	return c, owner
+}
+
+// startPrefixTestComponent starts graph-ingest with its default configuration on a
+// fixture broker under the authority opts give, and returns its client for prefix
+// queries. At the pin it is in query_prefix_integration_test.go:22-52, which a later
+// stage ports; it moves here with its first ported readers
+// (cache_coherence_integration_test.go, cache_stale_repopulation_integration_test.go).
+// The pin slept 100ms after Start "to allow subscriptions to stabilise"; Start returns
+// only once the query handlers are subscribed, so the sleep is gone, as in
+// startBatchTestComponent.
+func startPrefixTestComponent(ctx context.Context, t *testing.T, opts ...testComponentOption) (*Component, *natsclient.Client, *graphIngestTestOwner) {
+	t.Helper()
+
+	nc := newFixtureClient(t, entityStream)
+
+	config := DefaultConfig()
+	deps := testDependencies(t, nc, opts...)
+	configJSON, err := json.Marshal(config)
+	require.NoError(t, err)
+
+	comp, err := CreateGraphIngest(configJSON, deps)
+	require.NoError(t, err)
+
+	c := comp.(*Component)
+	owner := newGraphIngestTestOwner(c)
+	defer owner.provisionalFinish(ctx, t)
+	require.NoError(t, c.Initialize())
+	require.NoError(t, c.Start(owner.startContext(ctx)))
+
+	owner.transfer()
+	return c, nc, owner
+}
+
+// seedPrefixEntity writes a minimal entity to the KV bucket through CreateEntity so
+// it shows up in prefix queries. It moves here from the pin's
+// query_prefix_integration_test.go:54-68 with startPrefixTestComponent; the pin's
+// Version: 1 is gone (design D15).
+func seedPrefixEntity(t *testing.T, ctx context.Context, c *Component, id string) {
+	t.Helper()
+	entity := &graph.EntityState{
+		ID:          id,
+		MessageType: testEntityType(),
+		Triples: []message.Triple{
+			{Subject: id, Predicate: "test.entity.attribute", Object: "val", Timestamp: time.Now()},
+		},
+		UpdatedAt: time.Now(),
+	}
+	require.NoError(t, c.CreateEntity(ctx, entity))
 }
 
 // mergeTestGraphable is a minimal Graphable payload that stamps a caller-supplied

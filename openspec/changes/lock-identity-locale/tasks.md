@@ -9,9 +9,9 @@ starts, `task merge:check -- 127` and the merge are recorded on this pull reques
 
 ## 1. Design
 
-- [ ] 1.1 The independent review of `inventory.md`: `INVENTORY PASS` on revision 1, and its five corrections folded
+- [x] 1.1 The independent review of `inventory.md`: `INVENTORY PASS` on revision 1, and its five corrections folded
       into revision 2, recorded on this pull request with both files' checksums.
-- [ ] 1.2 The independent pre-owner review of `design.md`, `proposal.md`, this file and the two spec deltas:
+- [x] 1.2 The independent pre-owner review of `design.md`, `proposal.md`, this file and the two spec deltas:
       `DESIGN REVIEW PASS`, recorded on this pull request.
 - [ ] 1.3 The owner's acceptance of the design, recorded on #126 or this pull request, with an answer to each item of
       `design.md`, "Owner decisions".

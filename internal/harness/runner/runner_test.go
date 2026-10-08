@@ -425,6 +425,26 @@ func TestR1LiveOwnerInAnotherTimeZoneOrLocaleIsRespected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runner A holds no owner record: %v", err)
 	}
+	// The record's mode is the one a new file gets under the umask runner A inherits from this
+	// process, which a file os.Create makes here gets too.
+	newFile, err := os.Create(filepath.Join(t.TempDir(), "new-file"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := newFile.Close(); err != nil {
+		t.Fatal(err)
+	}
+	ownerInfo, err := os.Stat(filepath.Join(a.lock, "owner"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	newInfo, err := os.Stat(newFile.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := ownerInfo.Mode().Perm(), newInfo.Mode().Perm(); got != want {
+		t.Errorf("owner record mode %v, want %v, the mode a new file gets under the runner's umask", got, want)
+	}
 	tokenA := ""
 	for _, line := range strings.Split(string(ownerA), "\n") {
 		if v, ok := strings.CutPrefix(line, "token="); ok {
@@ -462,6 +482,187 @@ func TestR1LiveOwnerInAnotherTimeZoneOrLocaleIsRespected(t *testing.T) {
 	errA, reapedA = <-waitedA, true
 	if code := exitCode(errA); code != 143 {
 		t.Errorf("runner A exit %d, want 143\nstdout:\n%s\nstderr:\n%s", code, stdoutA, stderrA)
+	}
+}
+
+// publicationHook is sourced by runner A's bash through BASH_ENV. Its printf is the builtin,
+// except that on the first call whose format is the owner record's command line, a call made
+// inside publication, it writes publication.ready into A's fake directory and then blocks reading
+// the FIFO named by FAKE_GATE. A failed read returns as a resumed one, so the hook never changes
+// the script's flow, only when it continues.
+const publicationHook = `printf() {
+  builtin printf "$@" || return
+  if [ "$1" = 'command=%s\n' ] && [ -z "${publication_paused:-}" ]; then
+    publication_paused=1
+    : > "$FAKE_DIR/publication.ready"
+    read -r _ < "$FAKE_GATE" || true
+  fi
+}
+`
+
+// T2 (#126, D7): a runner that finds the lock while its owner is still publishing the record
+// respects the owner. Runner A pauses inside publication, after its command= line and before its
+// identity_utc line, as in Codex's probe (PR #127 comment 6059322575). Runner B, in another time
+// zone, must not read a partly written record as SemStreams' six keys and quarantine A on a start
+// time it reads differently. A then publishes its whole record, runs, and releases the lock,
+// leaving nothing beside it.
+func TestR1ContenderDuringPublicationRespectsTheOwner(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	hook, gatePath := filepath.Join(dir, "publication-hook.bash"), filepath.Join(dir, "gate")
+	if err := os.WriteFile(hook, []byte(publicationHook), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Mkfifo(gatePath, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Opened for reading and writing, so neither this open nor A's open for reading waits for the
+	// other side. It stays open until A is reaped, so a resume line written before A opens the
+	// FIFO is still there when A reads.
+	gate, err := os.OpenFile(gatePath, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gate.Close()
+
+	a := newHarness(t, "TZ=EST5", "LC_ALL=C", "BASH_ENV="+hook, "FAKE_GATE="+gatePath)
+	// A watchdog, not a synchronisation: the deadline ends an A that the gate never releases, and
+	// WaitDelay bounds Wait if a child of A still holds A's output open after that.
+	ctxA, cancelA := context.WithTimeout(t.Context(), time.Minute)
+	defer cancelA()
+	cmdA := a.command(ctxA, "./internal/harness/natsfixture/")
+	cmdA.WaitDelay = 10 * time.Second
+	waitedA, stdoutA, stderrA := a.startRunner(t, cmdA, "publication.ready")
+	pidA := cmdA.Process.Pid
+	var errA error
+	reapedA, resumed := false, false
+	resumeA := func() {
+		if !resumed {
+			resumed = true
+			if _, err := gate.Write([]byte("resume\n")); err != nil {
+				t.Errorf("resume runner A: %v", err)
+			}
+		}
+	}
+	// Every path out resumes A and waits for it, within ctxA's deadline.
+	defer func() {
+		resumeA()
+		if !reapedA {
+			<-waitedA
+		}
+	}()
+	// runningA reports whether A is still running: Wait has not returned and its pid takes a signal.
+	runningA := func() bool {
+		select {
+		case errA = <-waitedA:
+			reapedA = true
+			return false
+		default:
+			return pidAlive(pidA)
+		}
+	}
+	if !runningA() {
+		t.Fatalf("runner A stopped running at the publication gate (wait: %v)", errA)
+	}
+
+	// The premise: ps prints A's start time, and prints it differently in A's time zone and in
+	// B's, so a judge that compares A's recorded identity with its own reading calls A stale. A
+	// host where ps is denied, or ignores TZ, fails here instead of passing without the race.
+	lstart := func(tz string) (string, error) {
+		cmd := exec.Command("ps", "-o", "lstart=", "-p", strconv.Itoa(pidA))
+		cmd.Env = append(os.Environ(), tz, "LC_ALL=C")
+		out, err := cmd.Output()
+		return trimIdentity(out), err
+	}
+	inA, errInA := lstart("TZ=EST5")
+	inB, errInB := lstart("TZ=JST-9")
+	if errInA != nil || errInB != nil || inA == "" || inB == "" || inA == inB {
+		t.Fatalf("premise: ps must print runner A's start time in both time zones, and differently: TZ=EST5 %q (%v), TZ=JST-9 %q (%v)",
+			inA, errInA, inB, errInB)
+	}
+
+	// B has its own fakes and evidence, A's lock directory, and no wait budget, so it decides at
+	// once; its deadline is a watchdog, as in T1.
+	b := newHarness(t, "SEMENGINE_DOCKER_ADMISSION_LOCK_DIR="+a.lock, "TZ=JST-9", "LC_ALL=C")
+	ctxB, cancelB := context.WithTimeout(t.Context(), time.Minute)
+	defer cancelB()
+	cmdB := b.command(ctxB, "./internal/harness/natsfixture/")
+	var stdoutB, stderrB bytes.Buffer
+	cmdB.Stdout, cmdB.Stderr = &stdoutB, &stderrB
+	statusB := exitCode(cmdB.Run())
+	if want := "host lock is busy and no wait budget was requested: " + a.lock; statusB != 1 || !strings.Contains(stderrB.String(), want) {
+		t.Errorf("runner B status %d, want 1 reporting %q\nstdout:\n%s\nstderr:\n%s", statusB, want, stdoutB.String(), stderrB.String())
+	}
+	if strings.Contains(stdoutB.String()+stderrB.String(), "cleaned stale lock") {
+		t.Errorf("runner B quarantined the lock of runner A (pid %d) while A was publishing its record", pidA)
+	}
+	if log := b.read(t, "docker.log"); log != "" {
+		t.Errorf("runner B called Docker:\n%s", log)
+	}
+	if !runningA() {
+		t.Fatalf("runner A stopped running while runner B judged its lock (wait: %v)", errA)
+	}
+
+	resumeA()
+	errA, reapedA = <-waitedA, true
+	if code := exitCode(errA); code != 0 {
+		t.Errorf("runner A exit %d, want 0\nstdout:\n%s\nstderr:\n%s", code, stdoutA, stderrA)
+	}
+	if strings.Contains(stderrA.String(), "lock ownership changed") {
+		t.Errorf("runner A lost its lock while publishing its record:\n%s", stderrA)
+	}
+	// A's token is the one it exported to go test; its evidence must be its whole record.
+	tokenA := ""
+	for _, line := range strings.Split(a.read(t, "go.env"), "\n") {
+		if v, ok := strings.CutPrefix(line, "SEMENGINE_DOCKER_ADMISSION_TOKEN="); ok {
+			tokenA = v
+		}
+	}
+	evidence, err := os.ReadFile(filepath.Join(a.evidence, "lock-owner"))
+	var keys []string
+	owner := map[string]string{}
+	for _, line := range strings.Split(strings.TrimSuffix(string(evidence), "\n"), "\n") {
+		k, v, _ := strings.Cut(line, "=")
+		keys, owner[k] = append(keys, k), v
+	}
+	wantKeys := append(slices.Clone(semstreamsOwnerKeys), "identity_utc")
+	if err != nil || !slices.Equal(keys, wantKeys) || tokenA == "" || owner["token"] != tokenA || owner["pid"] != strconv.Itoa(pidA) {
+		t.Errorf("runner A's lock-owner evidence is not its whole record: keys %q (want %q), token %q (want %q), pid %q (want %d), read error %v",
+			keys, wantKeys, owner["token"], tokenA, owner["pid"], pidA, err)
+	}
+	if left, err := filepath.Glob(a.lock + "*"); err != nil || len(left) != 0 {
+		t.Errorf("left at the lock path or beside it after release: %q, %v", left, err)
+	}
+}
+
+// fakeMktemp refuses the owner record's template, a name holding ".owner.", as a full or
+// read-only temporary directory would, and hands every other call to the system's mktemp.
+const fakeMktemp = `#!/usr/bin/env bash
+case "$*" in
+  *.owner.*) echo "fake mktemp: cannot create $*" >&2; exit 1 ;;
+esac
+command -p mktemp "$@"
+`
+
+// T3 (#126, D7): a runner that has created the lock directory and cannot write its record beside
+// it removes the lock directory, leaves nothing beside it, and exits non-zero before any Docker
+// call.
+func TestR1OwnerRecordThatCannotBePublishedReleasesTheLock(t *testing.T) {
+	t.Parallel()
+	h := newHarness(t)
+	if err := os.WriteFile(filepath.Join(h.fake, "mktemp"), []byte(fakeMktemp), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	r := h.run(t, "./internal/harness/natsfixture/")
+	if r.status == 0 || !strings.Contains(r.stderr, "could not publish") || !strings.Contains(r.stderr, "owner record") {
+		t.Fatalf("status %d, want non-zero reporting that it could not publish the owner record\nstdout:\n%s\nstderr:\n%s",
+			r.status, r.stdout, r.stderr)
+	}
+	if log := h.read(t, "docker.log"); log != "" {
+		t.Errorf("docker was invoked without a published owner record:\n%s", log)
+	}
+	if left, err := filepath.Glob(h.lock + "*"); err != nil || len(left) != 0 {
+		t.Errorf("left at the lock path or beside it: %q, %v", left, err)
 	}
 }
 

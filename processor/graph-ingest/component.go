@@ -2022,7 +2022,7 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 		}
 	}
 
-	bytesWritten, err := c.replaceEntity(ctx, entity, hierarchyTriples)
+	revision, bytesWritten, err := c.replaceEntity(ctx, entity, hierarchyTriples)
 	if err != nil {
 		atomic.AddInt64(&c.errors, 1)
 		return errs.Wrap(err, "Component", "mergeEntityOnLane", "CAS update")
@@ -2030,7 +2030,7 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 
 	// A committed write passed the MarshalEntityState gate — clear any stale
 	// poison inventory entry (D3b). Steady-state cost: one atomic load.
-	c.clearEntityPoisonOnCommit(ctx, entity.ID, 0)
+	c.clearEntityPoisonOnCommit(ctx, entity.ID, revision)
 
 	// Cache invalidation matches createEntity — readers must see the
 	// merged state on next Get (bumps the coherence generation).
@@ -2321,7 +2321,7 @@ func (c *Component) addTripleLane(ctx context.Context, triple message.Triple, la
 	}
 
 	// Committed via the write gate — clear any stale poison entry (D3b).
-	c.clearEntityPoisonOnCommit(ctx, triple.Subject, 0)
+	c.clearEntityPoisonOnCommit(ctx, triple.Subject, casRevision)
 
 	// Read-after-write coherence: the entity-query cache must not serve the
 	// pre-append state on the next graph.ingest.query.* read.
@@ -2486,7 +2486,7 @@ func (c *Component) addTriplesLane(ctx context.Context, triples []message.Triple
 			continue
 		}
 		// Committed via the write gate — clear any stale poison entry (D3b).
-		c.clearEntityPoisonOnCommit(ctx, subject, 0)
+		c.clearEntityPoisonOnCommit(ctx, subject, casRevision)
 		// Read-after-write coherence: invalidate the just-written subject's
 		// cached entity so the next query reflects the appended triples.
 		c.invalidateEntityCacheEntry(subject)

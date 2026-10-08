@@ -216,30 +216,12 @@ func (c *Component) clearEntityPoisonOnDelete(entityID string) {
 
 // clearEntityPoisonOnCommit is clear path (b): a write-gate-validated commit
 // to the key proves repair when its revision is newer than the recorded one.
-// committedRev == 0 means the commit lane does not surface its revision
-// (UpdateWithRetry); resolve by re-reading and re-validating the key — reached
-// only when this exact entity is inventoried, never on the healthy hot path,
-// which exits on the first atomic load (design D2's required fast path).
-func (c *Component) clearEntityPoisonOnCommit(ctx context.Context, entityID string, committedRev uint64) {
+// committedRev is the revision that commit produced, as the write returned it.
+// The healthy hot path exits on the first atomic load (design D2's required
+// fast path).
+func (c *Component) clearEntityPoisonOnCommit(_ context.Context, entityID string, committedRev uint64) {
 	if c.entityPoisonSize.Load() == 0 {
 		return // steady-state: one atomic load, mutex untouched
-	}
-	c.entityPoisonMu.Lock()
-	_, ok := c.entityPoison[entityID]
-	c.entityPoisonMu.Unlock()
-	if !ok {
-		return
-	}
-	if committedRev == 0 {
-		entry, err := c.entityBucket.Get(ctx, entityID)
-		if err != nil {
-			return // cannot prove newness; the entry self-heals on next touch (D3c)
-		}
-		var probe graph.EntityState
-		if graph.UnmarshalEntityState(entry.Value, &probe) != nil {
-			return // current bytes are still (or again) poison — keep the record
-		}
-		committedRev = entry.Revision
 	}
 	c.dropEntityPoisonRecord(entityID, committedRev)
 }

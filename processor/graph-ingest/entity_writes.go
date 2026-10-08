@@ -2,6 +2,7 @@ package graphingest
 
 import (
 	"context"
+	"slices"
 	"time"
 
 	"github.com/c360studio/semengine/graph"
@@ -40,17 +41,24 @@ func (c *Component) createEntity(ctx context.Context, entityID string, encoded [
 
 // replaceEntity is the stream lane's write: a read-modify-write under the KV revision
 // (compare-and-set), so concurrent arrivals on the same subject converge without racing.
-// When the key is absent the arrival is a birth: hierarchyTriples are appended to entity and
-// its profile is stamped, and entity is changed in place. Otherwise the stored entity's
-// statements are replaced by predicate with the arrival's. It returns the size of the value
-// written.
-func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState, hierarchyTriples []message.Triple) (int, error) {
+// When the key is absent the arrival is a birth: a copy of entity is written with
+// hierarchyTriples appended and its profile stamped. Otherwise the stored entity's statements
+// are replaced by predicate with entity's. The bucket re-runs the callback after a create
+// conflict or a retryable create error, so the birth never changes entity: a retry that finds
+// the key present merges from the arrival as it came (#91, PR #93 comment 6060120246). It
+// returns the revision it committed and the size of the value written.
+func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState, hierarchyTriples []message.Triple) (uint64, int, error) {
 	var bytesWritten int
 	// casAttempt counts CAS-callback invocations; each re-run (attempt > 1) means
 	// the prior revision-checked Put lost the CAS and retried (ADR-072
 	// cas_retries — cross-entity contention observability, not a keying proof).
 	casAttempt := 0
-	err := c.entityBucket.UpdateWithRetry(ctx, entity.ID, func(current []byte) ([]byte, error) {
+	// birth is the encoded birth. It depends only on the arrival, so it is built on the first
+	// run that finds the key absent and reused by a retry, which then writes the same value.
+	// It is not built before the loop: a merge never needs it, and stamping the profile fires
+	// the default-profile metric.
+	var birth []byte
+	revision, err := c.entityBucket.UpdateWithRetryRev(ctx, entity.ID, func(current []byte) ([]byte, error) {
 		casAttempt++
 		if casAttempt > 1 && c.casRetries != nil {
 			c.casRetries.Inc()
@@ -59,17 +67,21 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 		// (deterministic-per-ID so safe to apply once on create),
 		// then store verbatim.
 		if len(current) == 0 {
-			if len(hierarchyTriples) > 0 {
-				entity.Triples = append(entity.Triples, hierarchyTriples...)
+			if birth == nil {
+				// A copy with its own statements: reconcileIndexingProfile filters in place.
+				born := *entity
+				born.Triples = slices.Concat(entity.Triples, hierarchyTriples)
+				// ADR-054: first write is entity birth — stamp the profile
+				// (explicit-if-declared via IndexingProfiler, else floor).
+				c.reconcileIndexingProfile(&born)
+				data, err := graph.MarshalEntityState(&born)
+				if err != nil {
+					return nil, err
+				}
+				birth = data
 			}
-			// ADR-054: first write is entity birth — stamp the profile
-			// (explicit-if-declared via IndexingProfiler, else floor).
-			c.reconcileIndexingProfile(entity)
-			data, err := graph.MarshalEntityState(entity)
-			if err == nil {
-				bytesWritten = len(data)
-			}
-			return data, err
+			bytesWritten = len(birth)
+			return birth, nil
 		}
 		// Existing entity: merge triples + refresh latest-wins metadata.
 		// Hierarchy triples are NOT re-applied — they landed on the
@@ -118,7 +130,7 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 		bytesWritten = len(data)
 		return data, nil
 	})
-	return bytesWritten, err
+	return revision, bytesWritten, err
 }
 
 // reconcileCandidate is the conditional replace's rule, applied to the state the caller read at

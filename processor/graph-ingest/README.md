@@ -70,7 +70,7 @@ graph.mutation.> ───────┼─►│ graph-ingest ├──► ENT
 | `ports` | object | required | Input and output ports. Exactly one input must be the required `nats-request` port on `graph.mutation.>` with the `semengine.graph.mutation` v1 interface, and at least one output is required. |
 | `enable_hierarchy` | bool | `false` | Create hierarchy container entities and edges (below). |
 | `enable_type_siblings` | bool | `true` when hierarchy is on | Add sibling edges between entities of the same type. |
-| `ingest_lanes` | int | `8` | Number of ingest lanes. Messages for one entity ID always use the same lane, so they apply in arrival order; different entities apply in parallel. `1` is fully serial; `0` or a negative value is clamped to `1`. |
+| `ingest_lanes` | int | `8` | Number of ingest lanes. Messages for one entity ID always use the same lane, so they apply in arrival order; different entities apply in parallel. `1` is fully serial. `0` counts as unset and takes the default of `8`; a negative value is clamped to `1`. |
 
 A configuration key not in this table is refused when the component is built, with an error naming the key.
 

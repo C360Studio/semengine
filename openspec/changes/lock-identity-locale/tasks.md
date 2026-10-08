@@ -42,7 +42,7 @@ starts, `task merge:check -- 127` and the merge are recorded on this pull reques
       record of `docs/testing.md`, "What the pull request records". Gate: detection for M1, M2, M3 and M5, and for
       M4, R-M1 and R-M2 on macOS (on Linux, "survivor, equivalent on Linux"); a survivor or an inconclusive run is
       reported as such.
-- [ ] 2.6 (D) `task verify` passes on the commit that carries 2.2 to 2.4, its integration step admitting the fixture
+- [x] 2.6 (D) `task verify` passes on the commit that carries 2.2 to 2.4, its integration step admitting the fixture
       tests through the real runner's record on macOS, and that commit's CI run passes on ubuntu-24.04. Gate: CI
       `Required` on that commit, its run link recorded on this pull request.
 

@@ -334,7 +334,7 @@ func (c *Component) handleCanonicalReconcile(ctx context.Context, data []byte) (
 			fmt.Errorf("revision mismatch: expected %d, current %d", request.ExpectedRevision, revision))
 	}
 
-	candidate, unchanged := reconcileCandidate(current, request.Desired, predicates)
+	candidate, unchanged := reconcileCandidate(current, request.Source, request.Desired, predicates)
 	if unchanged {
 		return json.Marshal(graph.ReconcilePredicatesResponse{
 			Outcome: graph.MutationUnchanged, Entity: current.Clone(), KVRevision: revision,
@@ -603,11 +603,20 @@ func validateCanonicalAppendRequest(triples []message.Triple) error {
 	return nil
 }
 
-func selectedPredicatesEqual(current, desired []message.Triple, predicates map[string]struct{}) bool {
+// reconciledBy reports whether triple is one of the statements a reconcile from source of
+// predicates replaces: one of those predicates, from that source.
+func reconciledBy(triple message.Triple, source string, predicates map[string]struct{}) bool {
+	_, selected := predicates[triple.Predicate]
+	return selected && triple.Source == source
+}
+
+// selectedPredicatesEqual reports whether source's stored statements of predicates equal
+// desired in every field, counting repeats.
+func selectedPredicatesEqual(current []message.Triple, source string, desired []message.Triple, predicates map[string]struct{}) bool {
 	counts := make([]fullTripleCount, 0, len(desired))
 	currentCount := 0
 	for _, triple := range current {
-		if _, selected := predicates[triple.Predicate]; selected {
+		if reconciledBy(triple, source, predicates) {
 			counts = countsFullTriple(counts, triple)
 			currentCount++
 		}
@@ -678,10 +687,12 @@ func dedupeReconcileTriples(incoming []message.Triple) []message.Triple {
 	return result
 }
 
-func reconcileSelectedPredicates(current, desired []message.Triple, predicates map[string]struct{}) []message.Triple {
+// reconcileSelectedPredicates keeps every stored statement but source's statements of
+// predicates, and adds desired after them.
+func reconcileSelectedPredicates(current []message.Triple, source string, desired []message.Triple, predicates map[string]struct{}) []message.Triple {
 	result := make([]message.Triple, 0, len(current)+len(desired))
 	for _, triple := range current {
-		if _, selected := predicates[triple.Predicate]; !selected {
+		if !reconciledBy(triple, source, predicates) {
 			result = append(result, triple)
 		}
 	}

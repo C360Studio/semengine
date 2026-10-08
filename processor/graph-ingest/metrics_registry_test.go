@@ -99,6 +99,7 @@ func TestGraphIngestMetricsRegisterOnItsRegistry(t *testing.T) {
 		"semengine_graph_ingest_ingest_lag_seconds",
 		"semengine_graph_ingest_redeliveries_dropped_total",
 		"semengine_graph_ingest_cas_retries_total",
+		"semengine_graph_ingest_stale_sets_total",
 		"semengine_graph_ingest_poisoned_entities",
 		"semengine_graph_ingest_batch_query_missing_total",
 	}

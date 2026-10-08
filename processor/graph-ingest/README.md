@@ -22,7 +22,7 @@ graph.mutation.> ───────┼─►│ graph-ingest ├──► ENT
 ## Features
 
 - **Entity writes:** create, merge, reconcile and delete entities.
-- **Triple mutations:** append triples to an entity, and replace the triples of named predicates (reconcile).
+- **Triple mutations:** append triples to an entity, and replace one source's triples of named predicates (reconcile).
 - **Hierarchy inference:** optionally creates container entities from the 6-part entity ID structure.
 - **At-least-once delivery:** JetStream consumption with explicit acknowledgment; a redelivery the applied-sequence
   guard has already seen is dropped and counted.
@@ -145,6 +145,7 @@ each collector.
 | `semengine_graph_ingest_ingest_lag_seconds` | histogram | |
 | `semengine_graph_ingest_redeliveries_dropped_total` | counter | |
 | `semengine_graph_ingest_cas_retries_total` | counter | |
+| `semengine_graph_ingest_stale_sets_total` | counter | |
 | `semengine_graph_ingest_duplicate_triples_suppressed_total` | counter | `lane` |
 | `semengine_graph_ingest_poisoned_entities` | gauge | |
 

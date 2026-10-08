@@ -188,6 +188,19 @@ func newCasRetriesMetric() prometheus.Counter {
 	return casRetriesCounter
 }
 
+// newStaleSetsMetric builds the counter of (predicate, source) sets a stream message carried that
+// were not applied because they were older than the stored set of the same key (design D15,
+// "Timestamp orders a replace"; #98). The stream lane has no reply, so this count and the debug
+// line beside it are how a producer learns that part of its message was not applied.
+func newStaleSetsMetric() prometheus.Counter {
+	return prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "semengine",
+		Subsystem: "graph_ingest",
+		Name:      "stale_sets_total",
+		Help:      "Stream-lane statement sets not applied because they were older than the stored set of the same predicate and source.",
+	})
+}
+
 // dedupLane names the append entry point that submitted a suppressed
 // duplicate. The label set is a CLOSED enum declared here, never a
 // caller-supplied string: the value is chosen at each in-repo call site, so
@@ -502,6 +515,7 @@ type Component struct {
 	ingestLag                     prometheus.Histogram   // gh#480 message age at processing start (queue-wait half)
 	redeliveriesDropped           prometheus.Counter     // ADR-072 stale redeliveries dropped by the applied-sequence guard
 	casRetries                    prometheus.Counter     // ADR-072 entity-merge CAS-conflict retries (contention observability)
+	staleSets                     prometheus.Counter     // stream-lane sets not applied as older (design D15, #98)
 	duplicateTriplesSuppressed    *prometheus.CounterVec // append duplicates not stored, by lane (closed enum)
 	poisonedEntities              prometheus.Gauge       // per-entity poison inventory size (single gauge, no per-entity labels)
 	metricsRegistry               *metric.MetricsRegistry
@@ -693,6 +707,7 @@ func (c *Component) registerMetrics(registry *metric.MetricsRegistry) error {
 	c.ingestLag = newIngestLagMetric()
 	c.redeliveriesDropped = newRedeliveriesDroppedMetric()
 	c.casRetries = newCasRetriesMetric()
+	c.staleSets = newStaleSetsMetric()
 	c.duplicateTriplesSuppressed = newDuplicateTriplesSuppressedMetric()
 	c.poisonedEntities = newPoisonedEntitiesMetric()
 	// Readiness gauges: the scrapeable half of the ADR-066 envelope. NO revision
@@ -740,6 +755,9 @@ func (c *Component) registerMetrics(registry *metric.MetricsRegistry) error {
 		return err
 	}
 	if c.casRetries, err = metric.RegisterOrGet(registry, metricService, "cas_retries_total", c.casRetries); err != nil {
+		return err
+	}
+	if c.staleSets, err = metric.RegisterOrGet(registry, metricService, "stale_sets_total", c.staleSets); err != nil {
 		return err
 	}
 	if c.duplicateTriplesSuppressed, err = metric.RegisterOrGet(registry, metricService, "duplicate_triples_suppressed_total", c.duplicateTriplesSuppressed); err != nil {
@@ -1749,7 +1767,7 @@ func (c *Component) extractEntityFromMessage(msg *message.BaseMessage) (*graph.E
 
 // hasIndexingProfileTriple reports whether the entity already carries a
 // create-time indexing profile. That profile is immutable (ADR-054), so a
-// later Graphable arrival must not override it through the newer-wins merge.
+// later Graphable arrival must not override it through the stream lane's replace.
 func hasIndexingProfileTriple(entity *graph.EntityState) bool {
 	for _, t := range entity.Triples {
 		if t.Predicate == vocabulary.EntityIndexingProfile {
@@ -1760,8 +1778,8 @@ func hasIndexingProfileTriple(entity *graph.EntityState) bool {
 }
 
 // triplesWithoutPredicate returns triples with every triple carrying predicate
-// removed. Non-mutating; used to drop an incoming immutable predicate before a
-// newer-wins merge.
+// removed. Non-mutating; used to drop an incoming immutable predicate before the
+// stream lane's replace.
 func triplesWithoutPredicate(triples []message.Triple, predicate string) []message.Triple {
 	out := make([]message.Triple, 0, len(triples))
 	for _, t := range triples {
@@ -1802,32 +1820,6 @@ func triggeringTime(entity *graph.EntityState) time.Time {
 		}
 	}
 	return latest
-}
-
-// replaceByPredicate is the pin's stream-lane merge rule (graph.MergeTriples at the pin,
-// gh#466), kept with the pin's behavior until the write seam of design D15 replaces it with
-// graph.ReplaceBySource: every existing triple whose (subject, predicate) also appears in
-// newer is dropped, and all of newer is kept. A multi-valued predicate's whole prior set
-// is replaced by newer's set; a predicate absent from newer is kept untouched.
-func replaceByPredicate(existing, newer []message.Triple) []message.Triple {
-	if len(existing) == 0 {
-		return newer
-	}
-	if len(newer) == 0 {
-		return existing
-	}
-	replaced := make(map[[2]string]bool, len(newer))
-	for _, triple := range newer {
-		replaced[[2]string{triple.Subject, triple.Predicate}] = true
-	}
-	merged := make([]message.Triple, 0, len(existing)+len(newer))
-	merged = append(merged, newer...)
-	for _, triple := range existing {
-		if !replaced[[2]string{triple.Subject, triple.Predicate}] {
-			merged = append(merged, triple)
-		}
-	}
-	return merged
 }
 
 // appendIndexingProfileTriple appends one entity.indexing.profile triple.
@@ -1953,11 +1945,11 @@ func (c *Component) CreateEntity(ctx context.Context, entity *graph.EntityState)
 // by extractEntityFromMessage from a Graphable arriving on the
 // JetStream input) WITHOUT clobbering pre-existing triples on the
 // entity. First write behaves like CreateEntity (the entity didn't
-// exist; its fields land verbatim); subsequent writes MERGE the incoming
-// triples predicate-level (replace per (subject,predicate) via
-// replaceByPredicate, gh#466 — the create-time indexing profile is
-// preserved) and refresh latest-wins metadata (MessageType, StorageRef,
-// UpdatedAt).
+// exist; its fields land verbatim); subsequent writes replace each
+// (predicate, source) set the arrival carries, unless it is older than the
+// stored set, keeping every other source's statements (graph.ReplaceBySource,
+// design D15; the create-time indexing profile is preserved), and take the
+// arrival's MessageType and StorageRef when no set was older (UpdatedAt always).
 //
 // Closes gh#177: the prior code called CreateEntity (Put = full-
 // replace) from handleMessage, which erased triples written through mutation
@@ -1982,17 +1974,18 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 	// gh#562 write-cost: the full ValidateEntityStateContract pass that used to
 	// run here was redundant with the MarshalEntityState write gate inside the
 	// CAS closure — BOTH closure branches marshal a superset of the incoming
-	// candidate (create: candidate + hierarchy/profile stamps; merge:
-	// MergeTriples keeps every incoming triple), so an invalid candidate never
+	// candidate (create: candidate + hierarchy/profile stamps; merge: every
+	// incoming statement but a set older than the stored one, which is not
+	// committed), so an invalid candidate never
 	// commits under its own key, and classifyStoredStateRMWError keeps the
 	// caller-vs-resident attribution honest. The Graphable ingest lane already
 	// runs one caller-blaming full pass before side effects, so the pass here was a
 	// third full validation per mutation on the
 	// per-key-serialized hot path (ADR-072). Two narrow ergonomic changes for
 	// un-preflighted direct callers: (1) an incoming entity.indexing.profile
-	// triple dropped pre-merge on an already-profiled entity is no longer
-	// validated — it is dropped, not committed, so the store contract is
-	// unaffected; (2) with EnableHierarchy set, an invalid candidate with a
+	// triple dropped pre-merge on an already-profiled entity, and a set older
+	// than the stored one, are not validated — they are left out, not
+	// committed, so the store contract is unaffected; (2) with EnableHierarchy set, an invalid candidate with a
 	// valid ID reaches the pre-closure hierarchy step below, whose
 	// GetHierarchyTriples COMMITS container entities + inverse contains-edges +
 	// sibling edges before the write gate rejects the candidate itself — that

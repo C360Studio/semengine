@@ -63,8 +63,9 @@ func TestIntegration_MergeEntity_FirstWriteCreatesAtomically(t *testing.T) {
 
 // TestIntegration_MergeEntity_SecondWriteMergesTriples pins the load-
 // bearing fix: when an entity already exists, MergeEntity MERGES the new
-// triples predicate-level (gh#466 — replace per (subject,predicate),
-// preserving non-conflicting existing triples). Pre-fix code used Put
+// triples per (predicate, source) set (gh#466; design D15 — each set the
+// arrival carries replaces the stored set of the same key, preserving
+// non-conflicting existing triples). Pre-fix code used Put
 // (full-replace) and would have wiped the first set of triples. This test
 // uses DISTINCT predicates across the two arrivals, so both survive under
 // the merge; see TestIntegration_MergeEntity_SamePredicateReplaces for the
@@ -144,8 +145,8 @@ func TestIntegration_MergeEntity_SamePredicateReplaces(t *testing.T) {
 	}
 	assert.Equal(t, 1, count, "gh#466: same-predicate re-arrivals must not accumulate duplicate triples")
 
-	// Reader sees the newest value (MergeTriples puts newer first; GetPropertyValue
-	// returns first-match — pre-fix append served the STALE first-written value).
+	// Reader sees the newest value: the one statement left is the last arrival's
+	// (pre-fix append served the STALE first-written value).
 	v, ok := graph.GetPropertyValue(stored, "flock.position.x")
 	require.True(t, ok)
 	assert.Equal(t, "3", v, "newest value wins after merge")

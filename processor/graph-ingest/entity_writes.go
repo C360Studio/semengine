@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"slices"
 	"time"
 
@@ -29,8 +30,9 @@ import (
 // The modes, and the lanes on which each is used:
 //
 //   - create (createEntity): mutation create; in-process create (hierarchy containers).
-//   - replace (replaceEntity): the stream lane. A birth when the key is absent, else a replace by
-//     predicate (replaceByPredicate), under the KV revision.
+//   - replace (replaceEntity): the stream lane. A birth when the key is absent, else
+//     graph.ReplaceBySource: each (predicate, source) set the arrival carries replaces the stored
+//     set of the same key, unless it is older, under the KV revision.
 //   - conditional replace (reconcileCandidate, then replaceEntityAtRevision): mutation reconcile,
 //     at the caller's expected revision.
 //   - append (appendEntityTriples): mutation append; in-process append (hierarchy's inverse
@@ -91,13 +93,19 @@ func (c *Component) createEntity(ctx context.Context, entityID string, encoded [
 // replaceEntity is the stream lane's write: a read-modify-write under the KV revision
 // (compare-and-set), so concurrent arrivals on the same subject converge without racing.
 // When the key is absent the arrival is a birth: a copy of entity is written with
-// hierarchyTriples appended and its profile stamped. Otherwise the stored entity's statements
-// are replaced by predicate with entity's. The bucket re-runs the callback after a create
-// conflict or a retryable create error, so the birth never changes entity: a retry that finds
-// the key present merges from the arrival as it came (#91, PR #93 comment 6060120246). It
-// returns the revision it committed and the size of the value written.
+// hierarchyTriples appended and its profile stamped. Otherwise each (predicate, source) set of
+// entity's statements replaces the stored set of the same key (graph.ReplaceBySource), except a
+// set older than the stored one, which is left out, counted on stale_sets_total and logged at
+// debug level once the write commits (design D15, "Timestamp orders a replace"). The bucket
+// re-runs the callback after a create conflict or a retryable create error, so the birth never
+// changes entity: a retry that finds the key present merges from the arrival as it came (#91,
+// PR #93 comment 6060120246). It returns the revision it committed and the size of the value
+// written.
 func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState, hierarchyTriples []message.Triple) (uint64, int, error) {
 	var bytesWritten int
+	// stale is the committed attempt's sets not applied as older. It is assigned on each run of
+	// the callback, never accumulated, so a lost compare-and-set does not count its sets twice.
+	var stale []graph.StaleSet
 	// casAttempt counts CAS-callback invocations; each re-run (attempt > 1) means
 	// the prior revision-checked Put lost the CAS and retried (ADR-072
 	// cas_retries — cross-entity contention observability, not a keying proof).
@@ -112,6 +120,7 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 		if casAttempt > 1 && c.casRetries != nil {
 			c.casRetries.Inc()
 		}
+		stale = nil
 		// First write: entity didn't exist. Apply hierarchy triples
 		// (deterministic-per-ID so safe to apply once on create),
 		// then store verbatim.
@@ -132,7 +141,8 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 			bytesWritten = len(birth)
 			return birth, nil
 		}
-		// Existing entity: merge triples + refresh latest-wins metadata.
+		// Existing entity: replace the arrival's sets, and take its message type and storage
+		// reference when none of its sets was older than the stored one.
 		// Hierarchy triples are NOT re-applied — they landed on the
 		// original create and would only produce duplicates here.
 		//
@@ -144,27 +154,30 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 		if err := graph.UnmarshalEntityStateTrusted(current, &existing); err != nil {
 			return nil, c.classifyStoredStateRMWError(ctx, entity.ID, current, err) // non-retryable
 		}
-		// gh#466: predicate-level merge (replace per (subject,predicate)), NOT raw
-		// append — otherwise a producer republishing the same entity accumulates
-		// duplicate triples forever. replaceByPredicate lets the incoming arrival win on
-		// a (subject,predicate) conflict while preserving non-conflicting existing
-		// triples (e.g. lifecycle-managed predicates the arrival doesn't carry —
-		// gh#177).
-		//
-		// The indexing profile is the exception: it is create-time-immutable
-		// (ADR-054), but replaceByPredicate is newer-wins, so a re-arrival declaring a
-		// different profile would override the create-time one. Drop the incoming
-		// profile before merging WHEN the existing entity already carries one. An
-		// existing unprofiled entity keeps the incoming declaration so
-		// reconcileIndexingProfile can apply it below.
+		// The indexing profile is create-time immutable (ADR-054). The arrival's declaration
+		// would replace the stored one under the reserved source, where stampExplicitIndexingProfile
+		// puts it, or sit beside it under the envelope's source, so it is dropped before the
+		// replace WHEN the existing entity already carries one. An existing unprofiled entity
+		// keeps the incoming declaration so reconcileIndexingProfile can apply it below.
 		newer := entity.Triples
 		if hasIndexingProfileTriple(&existing) {
 			newer = triplesWithoutPredicate(newer, vocabulary.EntityIndexingProfile)
 		}
-		existing.Triples = replaceByPredicate(existing.Triples, newer)
-		existing.MessageType = entity.MessageType
-		if entity.StorageRef != nil {
-			existing.StorageRef = entity.StorageRef
+		// Each (predicate, source) set replaces the stored set of the same key whole; the
+		// predicate's statements from other sources, and predicates the arrival does not carry
+		// (e.g. lifecycle-managed ones, gh#177), stay. A re-arrival of the same set replaces it,
+		// so a producer republishing an entity does not accumulate statements (gh#466).
+		// ReplaceBySource returns a new slice whenever newer is non-empty, and existing's own
+		// otherwise, so reconcileIndexingProfile's in-place filter below never writes into the
+		// arrival's statements.
+		replaced := graph.ReplaceBySource(existing.Triples, newer)
+		existing.Triples = replaced.Triples
+		stale = replaced.Stale
+		if len(stale) == 0 {
+			existing.MessageType = entity.MessageType
+			if entity.StorageRef != nil {
+				existing.StorageRef = entity.StorageRef
+			}
 		}
 		// ADR-054: when a producer merges into an existing unprofiled entity,
 		// reconcile stamps the profile (kept from the incoming declaration, else floor). For an
@@ -179,21 +192,36 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 		bytesWritten = len(data)
 		return data, nil
 	})
-	return revision, bytesWritten, err
+	if err != nil {
+		return revision, bytesWritten, err
+	}
+	// The write committed: the arrival is applied as far as it may be, and the stream lane
+	// acknowledges it; each set left out is declared here.
+	for _, set := range stale {
+		if c.staleSets != nil {
+			c.staleSets.Inc()
+		}
+		c.logger.Debug("statement set not applied: older than the stored set",
+			slog.String("entity_id", entity.ID),
+			slog.String("predicate", set.Predicate),
+			slog.String("source", set.Source))
+	}
+	return revision, bytesWritten, nil
 }
 
 // reconcileCandidate is the conditional replace's rule, applied to the state the caller read at
-// its expected revision: desired (with repeats counted once) replaces the stored statements of
-// predicates whole, and an empty desired set clears them. unchanged reports that the stored
-// statements of predicates already equal desired, in which case nothing is to be written and
+// its expected revision: desired (with repeats counted once) replaces source's stored statements
+// of predicates whole, an empty desired set clears them, and the statements of predicates from
+// every other source stay (design D15). unchanged reports that source's stored statements of
+// predicates already equal desired in every field, in which case nothing is to be written and
 // candidate is nil.
-func reconcileCandidate(current *graph.EntityState, desired []message.Triple, predicates map[string]struct{}) (candidate *graph.EntityState, unchanged bool) {
+func reconcileCandidate(current *graph.EntityState, source string, desired []message.Triple, predicates map[string]struct{}) (candidate *graph.EntityState, unchanged bool) {
 	desired = dedupeReconcileTriples(desired)
-	if selectedPredicatesEqual(current.Triples, desired, predicates) {
+	if selectedPredicatesEqual(current.Triples, source, desired, predicates) {
 		return nil, true
 	}
 	candidate = current.Clone()
-	candidate.Triples = reconcileSelectedPredicates(current.Triples, desired, predicates)
+	candidate.Triples = reconcileSelectedPredicates(current.Triples, source, desired, predicates)
 	candidate.UpdatedAt = time.Now()
 	return candidate, false
 }

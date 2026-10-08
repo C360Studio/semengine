@@ -59,9 +59,9 @@ func (m *streamLaneMsg) TermWithReason(string) error      { m.settled <- "term";
 // startStreamLane wires the component's JetStream inputs as Start does (setupSubscriptions,
 // over a real keyed ingest pool and the mock entity bucket) and returns the consume closure
 // the entity_stream consumer would call for each message.
-func startStreamLane(t *testing.T) (*Component, func(context.Context, jetstream.Msg)) {
+func startStreamLane(t *testing.T, opts ...testComponentOption) (*Component, func(context.Context, jetstream.Msg)) {
 	t.Helper()
-	c, _ := createTestComponentWithMockKVBucket(t, withAuthority("c360", "test"))
+	c, _ := createTestComponentWithMockKVBucket(t, append([]testComponentOption{withAuthority("c360", "test")}, opts...)...)
 	registerMergeTestPayload(t, c)
 	if err := c.buildIngestPool(t.Context()); err != nil {
 		t.Fatalf("buildIngestPool: %v", err)

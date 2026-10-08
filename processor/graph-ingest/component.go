@@ -2049,16 +2049,21 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 		}
 	}
 
-	_, bytesWritten, err := c.replaceEntity(ctx, entity, hierarchyTriples, at)
+	revision, bytesWritten, err := c.replaceEntity(ctx, entity, hierarchyTriples, at)
 	if err != nil {
 		atomic.AddInt64(&c.errors, 1)
 		return errs.Wrap(err, "Component", "mergeEntityOnLane", "CAS update")
 	}
 
-	// replaceEntity cleared the key's poison record and invalidated its cache entry.
 	atomic.AddInt64(&c.messagesProcessed, 1)
 	atomic.AddInt64(&c.bytesProcessed, int64(bytesWritten))
 	c.lastActivity.Store(time.Now())
+	if revision == 0 {
+		// Every set was older and nothing was written (design D23); replaceEntity counted and
+		// logged each set. The message is processed, but no entity was updated.
+		return nil
+	}
+	// replaceEntity cleared the key's poison record and invalidated its cache entry.
 	c.entitiesUpdated.Inc()
 
 	c.logger.Debug("entity merged",

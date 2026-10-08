@@ -6,12 +6,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"maps"
+	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/message"
+	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/vocabulary"
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -358,5 +363,142 @@ func TestWriteSeamRecordsStoredPoisonAtTheRevisionRead(t *testing.T) {
 	})
 	t.Run("statement the write gate refuses", func(t *testing.T) {
 		assertWriteSeamRefuses(t, guardTestPoisonBytes(seamKey), graph.GraphStateReasonNoncanonicalPredicate, writes)
+	})
+}
+
+// An arrival whose every set is older than the stored set of its predicate and source applies
+// nothing (graph-entity-writes, "Every set is older"; design D23). Over a profiled entity the
+// write is declined: the value and the revision the test planted stay, and the stream lane still
+// acknowledges the arrival and counts and logs each set. Over an unprofiled entity the arrival
+// writes once, to stamp the profile (ADR-054) at the arrival's time. The arrival goes through
+// processIngest, the stream lane's per-message handler, so its settlement is observed; the
+// stored revision is planted by the test, so "unchanged" is not read off the code under test.
+func TestStreamArrivalAllOlderWritesNothing(t *testing.T) {
+	const (
+		id      = "acme.ops.test.system.widget.all-older"
+		other   = "test.state.other"
+		source  = "source-a"
+		planted = uint64(41)
+	)
+	storedSets := []message.Triple{
+		wmStatement(id, "p3", source, wmTime(3)),
+		{Subject: id, Predicate: other, Object: "q3", Source: source, Timestamp: wmTime(3), Confidence: 1},
+	}
+	// Both sets are older than the stored ones; the latest, wmTime(2), is the arrival's time.
+	arrival := []message.Triple{
+		wmStatement(id, "p1", source, wmTime(1)),
+		{Subject: id, Predicate: other, Object: "q2", Source: source, Timestamp: wmTime(2), Confidence: 1},
+	}
+	profile := message.Triple{
+		Subject: id, Predicate: vocabulary.EntityIndexingProfile, Object: vocabulary.IndexingProfileControl,
+		Source: "graph-ingest-indexing-profile", Timestamp: wmTime(3), Confidence: 1,
+	}
+
+	// arrive plants the stored entity at the planted revision, delivers the arrival, and returns
+	// the bucket's entry for id afterwards, with how far stale_sets_total and
+	// entities_updated_total rose. It requires the arrival acknowledged and each set logged.
+	arrive := func(t *testing.T, stored []message.Triple) (before, after mockKVData, staleRose, updatedRose float64) {
+		t.Helper()
+		registry := metric.NewMetricsRegistry()
+		c, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"), withMetricsRegistry(registry))
+		var logs bytes.Buffer
+		c.logger = slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		value, err := graph.MarshalEntityState(&graph.EntityState{
+			ID: id, MessageType: testEntityType(), Triples: stored, UpdatedAt: wmTime(3),
+			StorageRef: &message.StorageReference{StorageInstance: "store", Key: "ref-stored"},
+		})
+		if err != nil {
+			t.Fatalf("encode the stored entity: %v", err)
+		}
+		before = mockKVData{value: value, revision: planted}
+		bucket.data[id] = before
+		updated := func() float64 {
+			family, ok := gatherFamilies(t, registry.PrometheusRegistry())["semengine_datamanager_entities_updated_total"]
+			if !ok || len(family.GetMetric()) != 1 {
+				t.Fatal("the registry does not gather semengine_datamanager_entities_updated_total")
+			}
+			return family.GetMetric()[0].GetCounter().GetValue()
+		}
+		staleBefore, updatedBefore := staleSetsTotal(t, registry), updated()
+
+		c.ingestGuardMem = []*laneGuard{newLaneGuard(16)}
+		msg := &keyedIngestTestMsg{}
+		err = c.processIngest(t.Context(), 0, ingestWork{
+			entity: &graph.EntityState{ID: id, MessageType: testEntityType(), Triples: slices.Clone(arrival),
+				StorageRef: &message.StorageReference{StorageInstance: "store", Key: "ref-arrival"}},
+			msg: msg, entityID: id, stream: "ENTITY", seq: 1,
+		})
+		if err != nil {
+			t.Fatalf("processIngest: %v", err)
+		}
+		if !msg.ack.Load() || msg.nak.Load() || msg.term.Load() {
+			t.Fatalf("settlement: ack %v, nak %v, term %v; want only an acknowledgement",
+				msg.ack.Load(), msg.nak.Load(), msg.term.Load())
+		}
+		for _, predicate := range []string{writeModesPredicate, other} {
+			logged := false
+			for line := range strings.Lines(logs.String()) {
+				logged = logged || strings.Contains(line, "level=DEBUG") && strings.Contains(line, "entity_id="+id) &&
+					strings.Contains(line, "predicate="+predicate+" ") && strings.Contains(line, "source="+source)
+			}
+			if !logged {
+				t.Errorf("no debug line names the set not applied of %s from %s", predicate, source)
+			}
+		}
+		bucket.mu.Lock()
+		after = bucket.data[id]
+		bucket.mu.Unlock()
+		return before, after, staleSetsTotal(t, registry) - staleBefore, updated() - updatedBefore
+	}
+
+	t.Run("profiled entity", func(t *testing.T) {
+		before, after, staleRose, updatedRose := arrive(t, append(slices.Clone(storedSets), profile))
+		if after.revision != planted || !bytes.Equal(after.value, before.value) {
+			t.Errorf("the arrival wrote: stored at revision %d, value changed %v; want revision %d and the planted value",
+				after.revision, !bytes.Equal(after.value, before.value), planted)
+		}
+		if staleRose != 2 {
+			t.Errorf("stale_sets_total rose by %v, want 2: each set is counted though nothing is written", staleRose)
+		}
+		if updatedRose != 0 {
+			t.Errorf("entities_updated_total rose by %v, want 0: no entity was updated", updatedRose)
+		}
+	})
+
+	t.Run("unprofiled entity", func(t *testing.T) {
+		_, after, staleRose, updatedRose := arrive(t, slices.Clone(storedSets))
+		if after.revision != planted+1 {
+			t.Fatalf("stored at revision %d, want %d: one write, to stamp the profile", after.revision, planted+1)
+		}
+		var stored graph.EntityState
+		if err := json.Unmarshal(after.value, &stored); err != nil {
+			t.Fatalf("decode the stored entity: %v", err)
+		}
+		var profiles []message.Triple
+		held := map[string]string{}
+		for _, triple := range stored.Triples {
+			switch triple.Predicate {
+			case vocabulary.EntityIndexingProfile:
+				profiles = append(profiles, triple)
+			case writeModesPredicate, other:
+				held[triple.Predicate] = heldEntry(triple.Object, triple.Source, triple.Timestamp)
+			}
+		}
+		if len(profiles) != 1 || !profiles[0].Timestamp.Equal(wmTime(2)) {
+			t.Errorf("profile statements %+v, want one stamped at the arrival's time %v", profiles, wmTime(2))
+		}
+		want := map[string]string{writeModesPredicate: "p3/source-a/3", other: "q3/source-a/3"}
+		if !maps.Equal(held, want) {
+			t.Errorf("stored sets %v, want %v: an older set is not applied", held, want)
+		}
+		if stored.StorageRef == nil || stored.StorageRef.Key != "ref-stored" {
+			t.Errorf("storage reference %+v, want ref-stored: a message with a skipped set keeps it", stored.StorageRef)
+		}
+		if staleRose != 2 {
+			t.Errorf("stale_sets_total rose by %v, want 2", staleRose)
+		}
+		if updatedRose != 1 {
+			t.Errorf("entities_updated_total rose by %v, want 1", updatedRose)
+		}
 	})
 }

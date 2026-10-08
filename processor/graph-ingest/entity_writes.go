@@ -107,17 +107,21 @@ func (c *Component) createEntity(ctx context.Context, entityID string, encoded [
 // hierarchyTriples appended and its profile stamped. Otherwise each (predicate, source) set of
 // entity's statements replaces the stored set of the same key (graph.ReplaceBySource), except a
 // set older than the stored one, which is left out, counted on stale_sets_total and logged at
-// debug level once the write commits (design D15, "Timestamp orders a replace"). The bucket
+// debug level once the write commits or is declined (design D15, "Timestamp orders a replace").
+// An arrival none of whose sets applies writes nothing over a profiled entity (design D23); over
+// an unprofiled one it writes once, to stamp the profile (ADR-054). The bucket
 // re-runs the callback after a create conflict or a retryable create error, so the birth never
 // changes entity: a retry that finds the key present merges from the arrival as it came (#91,
 // PR #93 comment 6060120246). A profile it stamps carries at, the arrival's triggeringTime. A
 // stored value the seam's read check refuses (decodeStoredForWrite), or a merge the write gate
 // refuses for a statement kept from it, writes nothing and is recorded at the revision read
-// (design D23). It returns the revision it committed and the size of the value written.
+// (design D23). It returns the revision it committed, or 0 when it wrote nothing, and the size
+// of the value written.
 func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState, hierarchyTriples []message.Triple, at time.Time) (uint64, int, error) {
 	var bytesWritten int
-	// stale is the committed attempt's sets not applied as older. It is assigned on each run of
-	// the callback, never accumulated, so a lost compare-and-set does not count its sets twice.
+	// stale is the last attempt's sets not applied as older: the one that committed or declined.
+	// It is assigned on each run of the callback, never accumulated, so a lost compare-and-set
+	// does not count its sets twice.
 	var stale []graph.StaleSet
 	// casAttempt counts CAS-callback invocations; each re-run (attempt > 1) means
 	// the prior revision-checked Put lost the CAS and retried (ADR-072
@@ -173,7 +177,8 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 		// replace WHEN the existing entity already carries one. An existing unprofiled entity
 		// keeps the incoming declaration so reconcileIndexingProfile can apply it below.
 		newer := entity.Triples
-		if hasIndexingProfileTriple(&existing) {
+		profiled := hasIndexingProfileTriple(&existing)
+		if profiled {
 			newer = triplesWithoutPredicate(newer, vocabulary.EntityIndexingProfile)
 		}
 		// Each (predicate, source) set replaces the stored set of the same key whole; the
@@ -184,8 +189,14 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 		// otherwise, so reconcileIndexingProfile's in-place filter below never writes into the
 		// arrival's statements.
 		replaced := graph.ReplaceBySource(existing.Triples, newer)
-		existing.Triples = replaced.Triples
 		stale = replaced.Stale
+		// Every set is older: the arrival changes nothing on a profiled entity, so the write is
+		// declined (design D23, "Every set is older"). A rewrite would bump the revision and
+		// re-fire the ENTITY_STATES watchers for nothing. Each set is still counted below.
+		if profiled && everySetStale(newer, stale) {
+			return nil, natsclient.ErrKVSkipWrite
+		}
+		existing.Triples = replaced.Triples
 		if len(stale) == 0 {
 			existing.MessageType = entity.MessageType
 			if entity.StorageRef != nil {
@@ -208,8 +219,8 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 	if err != nil {
 		return revision, bytesWritten, err
 	}
-	// The write committed: the arrival is applied as far as it may be, and the stream lane
-	// acknowledges it; each set left out is declared here.
+	// The write committed or was declined: the arrival is applied as far as it may be, and the
+	// stream lane acknowledges it; each set left out is declared here.
 	for _, set := range stale {
 		if c.staleSets != nil {
 			c.staleSets.Inc()
@@ -219,8 +230,33 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 			slog.String("predicate", set.Predicate),
 			slog.String("source", set.Source))
 	}
+	if revision == 0 {
+		// The callback declined (UpdateWithRetryRead returns 0 only then) and nothing was
+		// written. A skip clears no poison record and invalidates no cache entry: the next
+		// valid read or commit clears a stale record (D3c).
+		return 0, 0, nil
+	}
 	c.committed(ctx, entity.ID, revision)
 	return revision, bytesWritten, nil
+}
+
+// everySetStale reports whether arrival carries at least one statement and each belongs to a
+// set in stale, the sets graph.ReplaceBySource did not apply: then none of the arrival's sets
+// applies.
+func everySetStale(arrival []message.Triple, stale []graph.StaleSet) bool {
+	if len(stale) == 0 {
+		return false
+	}
+	notApplied := make(map[graph.StaleSet]struct{}, len(stale))
+	for _, set := range stale {
+		notApplied[set] = struct{}{}
+	}
+	for _, t := range arrival {
+		if _, ok := notApplied[graph.StaleSet{Subject: t.Subject, Predicate: t.Predicate, Source: t.Source}]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // decodeStoredForWrite is the write seam's read check (design D23) of current, a value stored

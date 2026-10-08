@@ -30,10 +30,10 @@ starts, `task merge:check -- 127` and the merge are recorded on this pull reques
       record's last line, reads it, and judges by it when it is usable; the comments at `:5-6`, `:134` and
       `scripts/admission-lock.sh:3-4` as D5 states. Gate: `bash -n scripts/test-integration.sh` and
       `task test:unit`, the runner tests among them passing.
-- [ ] 2.3 (D) Admission, as `design.md`, D2 and D4 state: `admission.go` reads and compares `identity_utc` when it is
+- [x] 2.3 (D) Admission, as `design.md`, D2 and D4 state: `admission.go` reads and compares `identity_utc` when it is
       usable, with the fixed read under `Start`'s context, and falls back to `identity` otherwise; its comments as D5
       states; the admission tests of D6. Gate: `task test:unit`.
-- [ ] 2.4 (D) The runner row of `docs/admission-ledger.yaml` (`:203`, `:207-209`) as `design.md`, D5 states. Gate:
+- [x] 2.4 (D) The runner row of `docs/admission-ledger.yaml` (`:203`, `:207-209`) as `design.md`, D5 states. Gate:
       `task ledger:check`.
 - [ ] 2.5 (D) Shown able to fail: the wrong changes M1 to M5 of `design.md`, D6, one at a time with
       `task mutate:check`, and R-M1 and R-M2 to `scripts/test-integration.sh` made in the tree with the `cp` and

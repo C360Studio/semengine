@@ -30,7 +30,6 @@ import (
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/payloadregistry"
 	"github.com/c360studio/semengine/pkg/errs"
-	"github.com/c360studio/semengine/pkg/retry"
 	semtypes "github.com/c360studio/semengine/pkg/types"
 	"github.com/c360studio/semengine/types"
 	"github.com/c360studio/semengine/vocabulary"
@@ -1949,7 +1948,7 @@ func (c *Component) CreateEntity(ctx context.Context, entity *graph.EntityState)
 // most loudly: Manager.Create stamped the phase triple, then the
 // first Graphable arrival via a downstream processor wiped it.
 //
-// Uses entityBucket.UpdateWithRetry for atomic CAS read-modify-write,
+// Writes through replaceEntity (entity_writes.go), a CAS read-modify-write,
 // so concurrent arrivals on the same Subject converge without racing.
 //
 // importLane carries the arrival lane so the authority gate can admit a
@@ -2023,79 +2022,7 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 		}
 	}
 
-	var bytesWritten int
-	// casAttempt counts CAS-callback invocations; each re-run (attempt > 1) means
-	// the prior revision-checked Put lost the CAS and retried (ADR-072
-	// cas_retries — cross-entity contention observability, not a keying proof).
-	casAttempt := 0
-	err := c.entityBucket.UpdateWithRetry(ctx, entity.ID, func(current []byte) ([]byte, error) {
-		casAttempt++
-		if casAttempt > 1 && c.casRetries != nil {
-			c.casRetries.Inc()
-		}
-		// First write: entity didn't exist. Apply hierarchy triples
-		// (deterministic-per-ID so safe to apply once on create),
-		// then store verbatim.
-		if len(current) == 0 {
-			if len(hierarchyTriples) > 0 {
-				entity.Triples = append(entity.Triples, hierarchyTriples...)
-			}
-			// ADR-054: first write is entity birth — stamp the profile
-			// (explicit-if-declared via IndexingProfiler, else floor).
-			c.reconcileIndexingProfile(entity)
-			data, err := graph.MarshalEntityState(entity)
-			if err == nil {
-				bytesWritten = len(data)
-			}
-			return data, err
-		}
-		// Existing entity: merge triples + refresh latest-wins metadata.
-		// Hierarchy triples are NOT re-applied — they landed on the
-		// original create and would only produce duplicates here.
-		//
-		// gh#562: trusted decode — this is the owner's own RMW read on the
-		// per-key-serialized ingest hot path; MarshalEntityState below
-		// re-validates the merged candidate, so resident poison still fails
-		// the write (classified via classifyStoredStateRMWError).
-		var existing graph.EntityState
-		if err := graph.UnmarshalEntityStateTrusted(current, &existing); err != nil {
-			return nil, c.classifyStoredStateRMWError(ctx, entity.ID, current, err) // non-retryable
-		}
-		// gh#466: predicate-level merge (replace per (subject,predicate)), NOT raw
-		// append — otherwise a producer republishing the same entity accumulates
-		// duplicate triples forever. MergeTriples lets the incoming arrival win on
-		// a (subject,predicate) conflict while preserving non-conflicting existing
-		// triples (e.g. lifecycle-managed predicates the arrival doesn't carry —
-		// gh#177). Same helper the mutation lane (AddTriples) already uses.
-		//
-		// The indexing profile is the exception: it is create-time-immutable
-		// (ADR-054), but replaceByPredicate is newer-wins, so a re-arrival declaring a
-		// different profile would override the create-time one. Drop the incoming
-		// profile before merging WHEN the existing entity already carries one. An
-		// existing unprofiled entity keeps the incoming declaration so
-		// reconcileIndexingProfile can apply it below.
-		newer := entity.Triples
-		if hasIndexingProfileTriple(&existing) {
-			newer = triplesWithoutPredicate(newer, vocabulary.EntityIndexingProfile)
-		}
-		existing.Triples = replaceByPredicate(existing.Triples, newer)
-		existing.MessageType = entity.MessageType
-		if entity.StorageRef != nil {
-			existing.StorageRef = entity.StorageRef
-		}
-		// ADR-054: when a producer merges into an existing unprofiled entity,
-		// reconcile stamps the profile (kept from the incoming declaration, else floor). For an
-		// already-profiled entity this is a no-op (keep-first preserves the
-		// create-time value), so a re-arrival never re-profiles.
-		c.reconcileIndexingProfile(&existing)
-		existing.UpdatedAt = time.Now()
-		data, err := graph.MarshalEntityState(&existing)
-		if err != nil {
-			return nil, c.classifyStoredStateRMWError(ctx, entity.ID, current, err)
-		}
-		bytesWritten = len(data)
-		return data, nil
-	})
+	bytesWritten, err := c.replaceEntity(ctx, entity, hierarchyTriples)
 	if err != nil {
 		atomic.AddInt64(&c.errors, 1)
 		return errs.Wrap(err, "Component", "mergeEntityOnLane", "CAS update")
@@ -2187,7 +2114,7 @@ func (c *Component) createEntityWithReceipt(
 
 	// Atomic create-or-fail is the only admitted birth primitive. Preserve the
 	// conflict sentinel so the calling component can make its own decision.
-	committedRev, writeErr := c.entityBucket.Create(ctx, entity.ID, data)
+	committedRev, writeErr := c.createEntity(ctx, entity.ID, data)
 	if writeErr != nil && errors.Is(writeErr, natsclient.ErrKVKeyExists) {
 		return nil, 0, writeErr
 	}
@@ -2233,7 +2160,7 @@ func (c *Component) deleteEntityAtRevision(ctx context.Context, entityID string,
 	if c.entityBucket == nil {
 		return errors.New("ENTITY_STATES authority bucket unavailable")
 	}
-	if err := c.entityBucket.DeleteAtRevision(ctx, entityID, revision); err != nil {
+	if err := c.deleteEntity(ctx, entityID, revision); err != nil {
 		atomic.AddInt64(&c.errors, 1)
 		return err
 	}
@@ -2375,49 +2302,9 @@ func (c *Component) addTripleLane(ctx context.Context, triple message.Triple, la
 		return false, 0, errs.Wrap(ctxErr, "Component", "AddTriple", "context cancelled")
 	}
 
-	// UpdateWithRetryRev: atomic read-modify-write with CAS, returning the exact
+	// appendEntityTriples: atomic read-modify-write with CAS, returning the exact
 	// revision the commit produced (see the committedRevision doc above).
-	casRevision, casErr := c.entityBucket.UpdateWithRetryRev(ctx, triple.Subject, func(current []byte) ([]byte, error) {
-		var entity graph.EntityState
-
-		if len(current) > 0 {
-			// gh#562: trusted decode on the owner's own RMW read;
-			// MarshalEntityState below re-validates the final candidate.
-			if err := graph.UnmarshalEntityStateTrusted(current, &entity); err != nil {
-				return nil, c.classifyStoredStateRMWError(ctx, triple.Subject, current, err) // Non-retryable
-			}
-		} else {
-			// Must-exist (ADR-055): a triple targeting an absent entity is
-			// rejected, not silently auto-vivified. NonRetryable stops the CAS
-			// loop and surfaces the sentinel for the handler to map.
-			return nil, retry.NonRetryable(natsclient.ErrKVKeyNotFound)
-		}
-
-		// Append deduplication, INSIDE the CAS closure and BEFORE the
-		// revision-checked write. `entity` was decoded from the bytes read at
-		// the revision this iteration will CAS against, so a request that loses
-		// the CAS re-runs here against the winner's committed state and
-		// suppresses on the retry. A pre-read outside UpdateWithRetry would
-		// reintroduce exactly the time-of-check-to-time-of-use window in which
-		// two concurrent identical appends both observe the tuple absent.
-		//
-		// One triple in, so the suppressed count is 0 or 1 and is implied by
-		// len(survivors); the batch lane below reads it explicitly.
-		survivors, _ := message.DedupeAppendTriples(entity.Triples, []message.Triple{triple})
-		if len(survivors) == 0 {
-			// TRUE no-op — exit via the sentinel, not by returning `current`.
-			return nil, errNoOpAddDuplicate
-		}
-
-		entity.Triples = append(entity.Triples, survivors...)
-		entity.UpdatedAt = time.Now()
-
-		data, marshalErr := graph.MarshalEntityState(&entity)
-		if marshalErr != nil {
-			return nil, c.classifyStoredStateRMWError(ctx, triple.Subject, current, marshalErr)
-		}
-		return data, nil
-	})
+	casRevision, _, casErr := c.appendEntityTriples(ctx, triple.Subject, []message.Triple{triple})
 
 	if casErr != nil {
 		// Duplicate suppression is a SUCCESS with nothing committed. Recovered
@@ -2565,49 +2452,9 @@ func (c *Component) addTriplesLane(ctx context.Context, triples []message.Triple
 			break
 		}
 		group := bySubject[subject]
-		// groupSuppressed is ASSIGNED (never accumulated) by the closure, so a
-		// CAS retry replaces the losing attempt's count with the re-evaluation
-		// against the winner's committed state rather than double-counting.
-		// UpdateWithRetry invokes the closure synchronously on this goroutine,
-		// so the capture needs no synchronization.
-		groupSuppressed := 0
-		casRevision, casErr := c.entityBucket.UpdateWithRetryRev(ctx, subject, func(current []byte) ([]byte, error) {
-			var entity graph.EntityState
-
-			if len(current) > 0 {
-				// gh#562: trusted decode on the owner's own RMW read;
-				// MarshalEntityState below re-validates the final candidate.
-				if err := graph.UnmarshalEntityStateTrusted(current, &entity); err != nil {
-					return nil, c.classifyStoredStateRMWError(ctx, subject, current, err) // Non-retryable
-				}
-			} else {
-				// Must-exist (ADR-055): a triple targeting an absent entity is
-				// rejected, not silently auto-vivified. NonRetryable stops the CAS
-				// loop and surfaces the sentinel for the handler to map.
-				return nil, retry.NonRetryable(natsclient.ErrKVKeyNotFound)
-			}
-
-			// Append deduplication, INSIDE the CAS closure and BEFORE the
-			// revision-checked write, against the state read at the revision
-			// this iteration will CAS on — see addTripleLane for why a pre-read
-			// outside the loop would be a TOCTOU regression. This also collapses
-			// repeats WITHIN the group, so one request commits at most one copy.
-			survivors, suppressed := message.DedupeAppendTriples(entity.Triples, group)
-			groupSuppressed = suppressed
-			if len(survivors) == 0 {
-				// TRUE no-op — exit via the sentinel, not by returning `current`.
-				return nil, errNoOpAddDuplicate
-			}
-
-			entity.Triples = append(entity.Triples, survivors...)
-			entity.UpdatedAt = time.Now()
-
-			data, err := graph.MarshalEntityState(&entity)
-			if err != nil {
-				return nil, c.classifyStoredStateRMWError(ctx, subject, current, err)
-			}
-			return data, nil
-		})
+		// groupSuppressed is the count appendEntityTriples took against the state
+		// its last CAS attempt read, so a retry never double-counts.
+		casRevision, groupSuppressed, casErr := c.appendEntityTriples(ctx, subject, group)
 
 		if casErr != nil {
 			// Recovered FIRST, before failedSubjects / c.errors / allAbsences:

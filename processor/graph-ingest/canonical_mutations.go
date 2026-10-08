@@ -274,7 +274,7 @@ func (c *Component) handleCanonicalCreate(ctx context.Context, data []byte) ([]b
 	if err != nil {
 		return nil, rejectInvalid(graph.ErrorCodeInvalidRequest, err)
 	}
-	revision, err := c.entityBucket.Create(ctx, entity.ID, encoded)
+	revision, err := c.createEntity(ctx, entity.ID, encoded)
 	if err != nil {
 		if errors.Is(err, natsclient.ErrKVKeyExists) {
 			return nil, rejectInvalidDetail(graph.ErrorCodeEntityExists,
@@ -325,22 +325,18 @@ func (c *Component) handleCanonicalReconcile(ctx context.Context, data []byte) (
 			fmt.Errorf("revision mismatch: expected %d, current %d", request.ExpectedRevision, revision))
 	}
 
-	desired := dedupeReconcileTriples(request.Desired)
-	if selectedPredicatesEqual(current.Triples, desired, predicates) {
+	candidate, unchanged := reconcileCandidate(current, request.Desired, predicates)
+	if unchanged {
 		return json.Marshal(graph.ReconcilePredicatesResponse{
 			Outcome: graph.MutationUnchanged, Entity: current.Clone(), KVRevision: revision,
 			TraceID: request.TraceID, RequestID: request.RequestID,
 		})
 	}
-
-	candidate := current.Clone()
-	candidate.Triples = reconcileSelectedPredicates(current.Triples, desired, predicates)
-	candidate.UpdatedAt = time.Now()
 	encoded, err := graph.MarshalEntityState(candidate)
 	if err != nil {
 		return nil, rejectFromError(err)
 	}
-	committedRevision, err := c.entityBucket.Update(ctx, request.EntityID, encoded, request.ExpectedRevision)
+	committedRevision, err := c.replaceEntityAtRevision(ctx, request.EntityID, encoded, request.ExpectedRevision)
 	if err != nil {
 		if errors.Is(err, natsclient.ErrKVRevisionMismatch) {
 			return nil, rejectRevisionMismatch(

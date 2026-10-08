@@ -18,7 +18,7 @@ starts, `task merge:check -- 127` and the merge are recorded on this pull reques
 - [x] 1.4 Q1 settled before 2.2: either the owner's word that the measure at the SemStreams pin stands, or, on the
       owner's word, a read of `scripts/run-integration-tests.sh` at SemStreams `main` recorded on this pull request
       that shows its owner parser ignores a key it does not know. If it does not, the design returns to review.
-- [ ] 1.5 The independent pre-owner review of `design.md` revision 2 (D7, L7, I5, owner decisions 5, 6 and 8, the
+- [x] 1.5 The independent pre-owner review of `design.md` revision 2 (D7, L7, I5, owner decisions 5, 6 and 8, the
       "Conformance" heading), this file's tasks 1.5 to 2.11 and the runner spec delta's publication text and three
       scenarios: `DESIGN REVIEW PASS`, recorded on this pull request.
 - [ ] 1.6 The owner's acceptance of `design.md`, owner decision 8 (D7 and L7), recorded on #126 or this pull request.

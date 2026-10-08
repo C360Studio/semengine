@@ -323,6 +323,96 @@ func TestMutationReadSeamsReturnTypedFatal(t *testing.T) {
 	})
 }
 
+// TestEveryEntityReadRefusesTheSameStoredPoison holds one read rule on the five
+// sites that read one authority value (#139 B): the entity verb, batch, prefix,
+// reconcile and delete. A stored value whose entity ID is not its key, and an
+// empty value, are graph-state poison to every one of them: refused, inventoried
+// at the revision read, never served, cached, reported absent or deleted.
+func TestEveryEntityReadRefusesTheSameStoredPoison(t *testing.T) {
+	const (
+		key      = "acme.ops.test.system.widget.read-key"
+		revision = uint64(7)
+	)
+	triple := message.Triple{Subject: key, Predicate: "test.state.value", Object: "v", Source: fixtureSource, Timestamp: time.Now(), Confidence: 1.0}
+	reconcileRequest, err := json.Marshal(graph.ReconcilePredicatesRequest{
+		EntityID: key, ExpectedRevision: revision, Source: fixtureSource,
+		Predicates: []string{triple.Predicate}, Desired: []message.Triple{triple},
+	})
+	require.NoError(t, err)
+	deleteRequest, err := json.Marshal(graph.DeleteEntityRequest{EntityID: key, ExpectedRevision: revision})
+	require.NoError(t, err)
+	prefixRequest, err := json.Marshal(graph.PrefixQueryRequest{Prefix: "acme.ops.test.system.widget"})
+	require.NoError(t, err)
+
+	stored := []struct {
+		name   string
+		value  []byte
+		reason graph.StateResetReason
+	}{
+		{
+			name:   "entity ID is not its key",
+			value:  guardTestValidBytes("acme.ops.test.system.widget.other-id"),
+			reason: graph.GraphStateReasonNoncanonicalEntityID,
+		},
+		{name: "empty value", value: []byte{}, reason: graph.GraphStateReasonUnreadableEntity},
+	}
+	reads := []struct {
+		name string
+		read func(context.Context, *Component) ([]byte, error)
+	}{
+		{"entity verb", func(ctx context.Context, c *Component) ([]byte, error) {
+			return c.handleQueryEntityNATS(ctx, []byte(`{"id":"`+key+`"}`))
+		}},
+		{"batch", func(ctx context.Context, c *Component) ([]byte, error) {
+			return c.handleQueryBatchNATS(ctx, []byte(`{"ids":["`+key+`"]}`))
+		}},
+		{"prefix", func(ctx context.Context, c *Component) ([]byte, error) {
+			return c.handleQueryPrefixWithMaxPayload(ctx, prefixRequest, 1<<20)
+		}},
+		{"reconcile", func(ctx context.Context, c *Component) ([]byte, error) {
+			return c.handleCanonicalReconcile(ctx, reconcileRequest)
+		}},
+		{"delete", func(ctx context.Context, c *Component) ([]byte, error) {
+			return c.handleCanonicalDelete(ctx, deleteRequest)
+		}},
+	}
+
+	for _, value := range stored {
+		for _, site := range reads {
+			t.Run(value.name+"/"+site.name, func(t *testing.T) {
+				c, bucket := poisonScopingTestComponent(t)
+				entityCache, err := cache.NewFromConfig[graph.EntityState](t.Context(), cache.Config{
+					Enabled:         true,
+					Strategy:        cache.StrategyHybrid,
+					MaxSize:         16,
+					TTL:             time.Minute,
+					CleanupInterval: time.Minute,
+				})
+				require.NoError(t, err)
+				t.Cleanup(func() { require.NoError(t, entityCache.Close()) })
+				c.entityCache = entityCache
+				bucket.data[key] = mockKVData{value: value.value, revision: revision}
+
+				data, err := site.read(t.Context(), c)
+				require.Nil(t, data, "the stored value must not be served: %s", data)
+				assertIngestResetRequired(t, err)
+
+				record, inventoried := poisonInventoryEntry(c, key)
+				require.True(t, inventoried, "the read must inventory the poison")
+				assert.Equal(t, value.reason, record.contractErr.Reason)
+				assert.Equal(t, key, record.contractErr.EntityID)
+				assert.Equal(t, revision, record.revision, "inventoried at the revision read")
+				_, cached := entityCache.Get(key)
+				assert.False(t, cached, "a refused value must not be cached")
+				bucket.mu.Lock()
+				_, kept := bucket.data[key]
+				bucket.mu.Unlock()
+				assert.True(t, kept, "a refused read must not delete the value")
+			})
+		}
+	}
+}
+
 // TestProcessIngestResidentPoisonNakThenAppliesAfterRepair drives the spec
 // scenario "valid arrival survives a poison window" (D8): the resident-poison
 // arrival is Nak'd (not Term'd), and a redelivery of the SAME message applies
@@ -494,7 +584,8 @@ func TestDetectionInvalidatesCachedEntry(t *testing.T) {
 	// Out-of-band poison lands under the cached key; the single-read lane
 	// detects it on the stored bytes.
 	seedPoisonBytes(bucket, id, 2)
-	require.Error(t, c.validateEntityQueryValue(ctx, id, guardTestPoisonBytes(id), 2))
+	_, _, err = c.readEntity(ctx, id)
+	require.Error(t, err)
 
 	_, hit = entityCache.Get(id)
 	assert.False(t, hit, "the cached response must not outlive poison detection")

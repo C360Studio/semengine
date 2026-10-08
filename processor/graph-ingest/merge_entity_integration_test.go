@@ -53,10 +53,9 @@ func TestIntegration_MergeEntity_FirstWriteCreatesAtomically(t *testing.T) {
 
 	require.NoError(t, c.mergeEntityOnLane(ctx, entity, false))
 
-	stored, _, err := c.fetchEntityState(ctx, entityID)
+	stored, _, err := c.readEntity(ctx, entityID)
 	require.NoError(t, err)
-	require.NotNil(t, stored)
-	assert.Equal(t, 1, nonProfileTripleCount(stored), "ADR-054 profile stamp excluded from the seed-triple count")
+	assert.Equal(t, 1, nonProfileTripleCount(&stored), "ADR-054 profile stamp excluded from the seed-triple count")
 	assert.Equal(t, "test.merge.kind", stored.Triples[0].Predicate)
 	assert.Equal(t, "alpha", stored.Triples[0].Object)
 }
@@ -84,7 +83,7 @@ func TestIntegration_MergeEntity_SecondWriteMergesTriples(t *testing.T) {
 		message.Triple{Subject: entityID, Predicate: "mission.state.phase", Object: "planning", Timestamp: now, Confidence: 1.0},
 	)
 	require.NoError(t, c.mergeEntityOnLane(ctx, first, false))
-	_, firstRevision, err := c.fetchEntityState(ctx, entityID)
+	_, firstRevision, err := c.readEntity(ctx, entityID)
 	require.NoError(t, err)
 
 	// Second write: command triple (simulates a mission-command Graphable arrival).
@@ -94,9 +93,8 @@ func TestIntegration_MergeEntity_SecondWriteMergesTriples(t *testing.T) {
 	second.MessageType = message.Type{Domain: "mission", Category: "command", Version: "v1"}
 	require.NoError(t, c.mergeEntityOnLane(ctx, second, false))
 
-	stored, storedRevision, err := c.fetchEntityState(ctx, entityID)
+	stored, storedRevision, err := c.readEntity(ctx, entityID)
 	require.NoError(t, err)
-	require.NotNil(t, stored)
 
 	// Both triples must be present — pre-fix this assertion failed
 	// because the second MergeEntity (then CreateEntity → Put) wiped
@@ -134,7 +132,7 @@ func TestIntegration_MergeEntity_SamePredicateReplaces(t *testing.T) {
 			message.Triple{Subject: entityID, Predicate: "flock.position.x", Object: v, Timestamp: now, Confidence: 1.0}), false))
 	}
 
-	stored, _, err := c.fetchEntityState(ctx, entityID)
+	stored, _, err := c.readEntity(ctx, entityID)
 	require.NoError(t, err)
 
 	count := 0
@@ -147,7 +145,7 @@ func TestIntegration_MergeEntity_SamePredicateReplaces(t *testing.T) {
 
 	// Reader sees the newest value: the one statement left is the last arrival's
 	// (pre-fix append served the STALE first-written value).
-	v, ok := graph.GetPropertyValue(stored, "flock.position.x")
+	v, ok := graph.GetPropertyValue(&stored, "flock.position.x")
 	require.True(t, ok)
 	assert.Equal(t, "3", v, "newest value wins after merge")
 }
@@ -174,7 +172,7 @@ func TestIntegration_MergeEntity_MultiValuedPredicateFullSetReplace(t *testing.T
 		message.Triple{Subject: entityID, Predicate: "flock.relation.neighbor", Object: "c", Timestamp: now, Confidence: 1.0},
 		message.Triple{Subject: entityID, Predicate: "flock.relation.neighbor", Object: "d", Timestamp: now, Confidence: 1.0}), false))
 
-	stored, _, err := c.fetchEntityState(ctx, entityID)
+	stored, _, err := c.readEntity(ctx, entityID)
 	require.NoError(t, err)
 
 	neighbors := map[any]bool{}
@@ -234,9 +232,8 @@ func TestIntegration_HandleMessage_DoesNotClobber(t *testing.T) {
 	// Step 4: assert both triples are present. Pre-fix, only the
 	// second arrival's triple survived; the seeded mission.state.phase
 	// vanished. Post-fix, MergeEntity preserves both.
-	stored, _, err := c.fetchEntityState(ctx, entityID)
+	stored, _, err := c.readEntity(ctx, entityID)
 	require.NoError(t, err)
-	require.NotNil(t, stored)
 	predicates := make(map[string]any, len(stored.Triples)) // predicate-audit:unrelated {"column":16,"surface":"go-assignment:predicates","value":"","basis":"reviewed output map populated from persisted triples"}
 	for _, tr := range stored.Triples {
 		predicates[tr.Predicate] = tr.Object
@@ -288,7 +285,7 @@ func TestIntegration_MergeEntity_HierarchyDoesNotDuplicate(t *testing.T) {
 	)
 	require.NoError(t, c.mergeEntityOnLane(ctx, first, false))
 
-	stored, _, err := c.fetchEntityState(ctx, entityID)
+	stored, _, err := c.readEntity(ctx, entityID)
 	require.NoError(t, err)
 	tripleCountAfterFirst := len(stored.Triples)
 	require.Greater(t, tripleCountAfterFirst, 1,
@@ -312,7 +309,7 @@ func TestIntegration_MergeEntity_HierarchyDoesNotDuplicate(t *testing.T) {
 	)
 	require.NoError(t, c.mergeEntityOnLane(ctx, second, false))
 
-	stored2, _, err := c.fetchEntityState(ctx, entityID)
+	stored2, _, err := c.readEntity(ctx, entityID)
 	require.NoError(t, err)
 
 	// Final state: first-call payload + hierarchy + second-call payload.

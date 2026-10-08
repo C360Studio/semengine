@@ -136,10 +136,11 @@ func (c *Component) inventoryEntityPoison(ctx context.Context, contractErr *grap
 
 // verifyEntityPoisonRecord re-reads a just-recorded key and drops the record
 // if the CURRENT bytes prove repair: absent key (repaired by delete) or bytes
-// that validate (repaired by commit or out-of-band overwrite, at that
-// revision — the revision guard keeps a re-poison newer than the proof). A
-// transient KV read error keeps the record; it self-heals on the key's next
-// touch (D3c). One extra KV Get, only on the already-failing detection path.
+// that pass readEntity's rule, decodeStoredEntity (repaired by commit or
+// out-of-band overwrite, at that revision — the revision guard keeps a
+// re-poison newer than the proof). A transient KV read error keeps the record;
+// it self-heals on the key's next touch (D3c). One extra KV Get, only on the
+// already-failing detection path.
 func (c *Component) verifyEntityPoisonRecord(ctx context.Context, entityID string) {
 	if c.entityBucket == nil {
 		return
@@ -151,8 +152,7 @@ func (c *Component) verifyEntityPoisonRecord(ctx context.Context, entityID strin
 		}
 		return // transient read error: keep the record; next touch resolves it
 	}
-	var probe graph.EntityState
-	if graph.UnmarshalEntityState(entry.Value, &probe) == nil {
+	if _, err := decodeStoredEntity(entityID, entry.Value); err == nil {
 		c.dropEntityPoisonRecord(entityID, entry.Revision)
 	}
 }

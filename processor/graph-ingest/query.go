@@ -87,8 +87,7 @@ func (c *Component) handleQueryEntityNATS(ctx context.Context, data []byte) ([]b
 			fmt.Errorf("invalid request: entity ID: %w", err))
 	}
 
-	// Get entity from KV bucket
-	entry, err := c.entityBucket.Get(ctx, req.ID)
+	entity, revision, err := c.readEntity(ctx, req.ID)
 	if err != nil {
 		if natsclient.IsKVNotFoundError(err) {
 			// HTTP semantics (400 vs 404) live at the gateway. ADR-060: not-found
@@ -98,30 +97,15 @@ func (c *Component) handleQueryEntityNATS(ctx context.Context, data []byte) ([]b
 			return nil, errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeEntityNotFound,
 				fmt.Errorf("not found: %s", req.ID))
 		}
+		if graph.IsStateContractError(err) {
+			return nil, graph.ClassifyStateContractError(err)
+		}
 		return nil, errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal,
 			fmt.Errorf("internal error: %w", err))
 	}
-
-	if err := c.validateEntityQueryValue(ctx, req.ID, entry.Value, entry.Revision); err != nil {
-		return nil, err
-	}
-	var entity graph.EntityState
-	if err := graph.UnmarshalEntityState(entry.Value, &entity); err != nil {
-		return nil, errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired,
-			fmt.Errorf("decode validated entity %s at revision %d: %w", req.ID, entry.Revision, err))
-	}
-	if entity.ID != req.ID {
-		stateErr := &graph.StateContractError{
-			Reason:   graph.GraphStateReasonNoncanonicalEntityID,
-			EntityID: req.ID,
-			Err:      fmt.Errorf("authority key contains entity %q", entity.ID),
-		}
-		c.inventoryEntityPoison(ctx, stateErr, entry.Revision)
-		return nil, graph.ClassifyStateContractError(stateErr)
-	}
 	return json.Marshal(graph.ExactEntity{
 		Entity:     entity.Clone(),
-		KVRevision: entry.Revision,
+		KVRevision: revision,
 	})
 }
 
@@ -474,26 +458,6 @@ func (c *Component) ensureEntityQueriesReady() error {
 	return nil
 }
 
-// validateEntityQueryValue enforces the per-read canonical decode on a single
-// entity read. Refusal derives solely from the bytes actually stored — the
-// poison inventory is observability-only and is never consulted. A poisoned
-// decode stamps the entity ID and records it in the inventory; a successful
-// decode clears any stale inventory entry for the key (D3c), so an
-// out-of-band repair recovers Health on its next read without a restart.
-func (c *Component) validateEntityQueryValue(ctx context.Context, entityID string, data []byte, revision uint64) error {
-	var state graph.EntityState
-	if err := graph.UnmarshalEntityState(data, &state); err != nil {
-		var contractErr *graph.StateContractError
-		if errors.As(err, &contractErr) {
-			contractErr.EntityID = entityID
-			c.inventoryEntityPoison(ctx, contractErr, revision)
-		}
-		return c.classifyEntityQueryError(err)
-	}
-	c.clearEntityPoisonOnValidRead(entityID, revision)
-	return nil
-}
-
 func (c *Component) classifyEntityQueryError(err error) error {
 	if graph.IsStateContractError(err) {
 		// Already fatal/graph_state_reset_required passes through unchanged
@@ -589,7 +553,10 @@ func (c *Component) fetchEntitiesConcurrent(ctx context.Context, ids []string, m
 			// program order.
 			gen0 := c.loadEntityCacheGen(entityID)
 
-			entry, err := c.entityBucket.Get(ctx, entityID)
+			// readEntity records poison at the failing revision, so a single
+			// batch attempt inventories EVERY poisoned entity it touched (D5),
+			// and clears a stale record on a valid read (D3c).
+			entity, _, err := c.readEntity(ctx, entityID)
 			if err != nil {
 				if natsclient.IsKVNotFoundError(err) {
 					// Not an error — this ID simply is not in the bucket. It is
@@ -601,25 +568,6 @@ func (c *Component) fetchEntitiesConcurrent(ctx context.Context, ids []string, m
 				}
 				return
 			}
-
-			var entity graph.EntityState
-			if err := graph.UnmarshalEntityState(entry.Value, &entity); err != nil {
-				// Stamp the entity ID here — the goroutine is where the
-				// identity is in scope (design D4) — and record the poison in
-				// the inventory with the failing revision so a single batch
-				// attempt inventories EVERY poisoned entity it touched (D5).
-				var contractErr *graph.StateContractError
-				if errors.As(err, &contractErr) {
-					contractErr.EntityID = entityID
-					c.inventoryEntityPoison(ctx, contractErr, entry.Revision)
-				}
-				results[idx].err = err
-				return
-			}
-
-			// A validating read succeeded — clear any stale inventory entry
-			// for this key (D3c). Steady-state cost: one atomic load.
-			c.clearEntityPoisonOnValidRead(entityID, entry.Revision)
 
 			// Test-only seam: deterministically inject a concurrent invalidation
 			// into the read window (between the KV Get and the repopulating Set).

@@ -8,7 +8,6 @@ import (
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/message"
-	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 	semtypes "github.com/c360studio/semengine/pkg/types"
 	"github.com/c360studio/semengine/vocabulary"
@@ -186,26 +185,54 @@ func (c *Component) validateTriplePredicates(triples []message.Triple) error {
 	return nil
 }
 
-// fetchEntityState reads one authority value and its same-entry revision.
-func (c *Component) fetchEntityState(ctx context.Context, entityID string) (*graph.EntityState, uint64, error) {
+// readEntity is the one validated read of one authority value: every site that
+// reads an entity by its key (the entity, batch and prefix verbs, reconcile,
+// append and delete) calls it and keeps its own reply. It returns the entity and
+// the revision of the entry it decoded. An absent key is the KV not-found error.
+// Refusal derives only from the stored bytes; the poison inventory is never
+// consulted. A value decodeStoredEntity refuses is recorded in the inventory at
+// that revision and returned as its graph-state error; a valid value clears any
+// stale record at or below it (D3c), so an out-of-band repair recovers Health
+// on its next read.
+func (c *Component) readEntity(ctx context.Context, entityID string) (graph.EntityState, uint64, error) {
 	entry, err := c.entityBucket.Get(ctx, entityID)
 	if err != nil {
-		return nil, 0, err
+		return graph.EntityState{}, 0, err
 	}
-	if len(entry.Value) == 0 {
-		return nil, 0, natsclient.ErrKVKeyNotFound
-	}
-	var state graph.EntityState
-	if err := graph.UnmarshalEntityState(entry.Value, &state); err != nil {
+	state, err := decodeStoredEntity(entityID, entry.Value)
+	if err != nil {
 		var contractErr *graph.StateContractError
 		if errors.As(err, &contractErr) {
-			contractErr.EntityID = entityID
 			c.inventoryEntityPoison(ctx, contractErr, entry.Revision)
 		}
-		return nil, 0, fmt.Errorf("unmarshal entity state: %w", err)
+		return graph.EntityState{}, 0, err
 	}
 	c.clearEntityPoisonOnValidRead(entityID, entry.Revision)
-	return &state, entry.Revision, nil
+	return state, entry.Revision, nil
+}
+
+// decodeStoredEntity is the rule for the bytes stored under one key. They must
+// decode under the canonical contract, so an empty value is unreadable poison,
+// never absence (a deleted key is already not-found at the KV), and the entity
+// they hold must be the one the key names. A refusal is a graph-state error
+// whose entity ID is the key.
+func decodeStoredEntity(key string, value []byte) (graph.EntityState, error) {
+	var state graph.EntityState
+	if err := graph.UnmarshalEntityState(value, &state); err != nil {
+		var contractErr *graph.StateContractError
+		if errors.As(err, &contractErr) {
+			contractErr.EntityID = key
+		}
+		return graph.EntityState{}, err
+	}
+	if state.ID != key {
+		return graph.EntityState{}, graph.ClassifyStateContractError(&graph.StateContractError{
+			Reason:   graph.GraphStateReasonNoncanonicalEntityID,
+			EntityID: key,
+			Err:      fmt.Errorf("authority key contains entity %q", state.ID),
+		})
+	}
+	return state, nil
 }
 
 func rejectInvalid(code string, err error) error {

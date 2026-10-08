@@ -104,13 +104,12 @@ func TestIntegration_KeyedIngest_PublishedEntityIngestsThroughPool(t *testing.T)
 
 	// The entity must land in ENTITY_STATES via the consume→pool→ingest wire.
 	require.Eventually(t, func() bool {
-		stored, _, ferr := c.fetchEntityState(ctx, entityID)
-		return ferr == nil && stored != nil
+		_, _, ferr := c.readEntity(ctx, entityID)
+		return ferr == nil
 	}, 10*time.Second, 20*time.Millisecond, "published entity must ingest through the keyed pool")
 
-	stored, _, err := c.fetchEntityState(ctx, entityID)
+	stored, _, err := c.readEntity(ctx, entityID)
 	require.NoError(t, err)
-	require.NotNil(t, stored)
 	found := false
 	for _, tr := range stored.Triples {
 		if tr.Predicate == "wire.state.status" && tr.Object == "ok" {
@@ -241,8 +240,8 @@ func TestIntegration_KeyedIngest_SameEntityUpdatesStayOrdered(t *testing.T) {
 
 	// The single-valued order.sequence.value predicate must converge to the LAST update.
 	orderSeq := func() (float64, bool) {
-		stored, _, err := c.fetchEntityState(ctx, entityID)
-		if err != nil || stored == nil {
+		stored, _, err := c.readEntity(ctx, entityID)
+		if err != nil {
 			return 0, false
 		}
 		for _, tr := range stored.Triples {

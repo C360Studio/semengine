@@ -65,9 +65,9 @@ func seedStructuralGateEntity(t *testing.T, comp *Component, entityID string) (*
 			message.Triple{Subject: entityID, Predicate: "sensor.temperature.celsius", Object: 22.5, Timestamp: now, Confidence: 1.0},
 		),
 	}))
-	stored, revision, err := comp.fetchEntityState(ctx, entityID)
+	stored, revision, err := comp.readEntity(ctx, entityID)
 	require.NoError(t, err)
-	return stored, revision
+	return &stored, revision
 }
 
 // TestValidateTriplePredicates_FailClosed_RejectsClassified pins the
@@ -189,7 +189,7 @@ func TestHandleCanonicalAppend_InvalidPredicate_WholeBatchRejected(t *testing.T)
 	require.ErrorAs(t, err, &ce)
 	assert.Equal(t, graph.ErrorCodeInvalidRequest, ce.Code)
 
-	stored, storedRevision, err := comp.fetchEntityState(ctx, structuralGateEntity)
+	stored, storedRevision, err := comp.readEntity(ctx, structuralGateEntity)
 	require.NoError(t, err)
 	assert.Equal(t, len(baseline.Triples), len(stored.Triples),
 		"the conforming triple in the rejected batch must not be persisted")
@@ -274,7 +274,7 @@ func TestHandleCanonicalReconcile_InvalidPredicate_EntityUnchanged(t *testing.T)
 		"the authoritative contract seam precedes the gate on this lane (invalid_request)")
 	assert.True(t, errs.IsInvalid(err))
 
-	stored, storedRevision, err := comp.fetchEntityState(ctx, structuralGateEntity)
+	stored, storedRevision, err := comp.readEntity(ctx, structuralGateEntity)
 	require.NoError(t, err)
 	assert.Equal(t, baseline.Triples, stored.Triples, "stored triples must be unchanged")
 	assert.Equal(t, baselineRevision, storedRevision, "stored KV revision must be unchanged")
@@ -336,7 +336,7 @@ func TestHandleCanonicalAppend_ValidPredicate_PersistsMergeIntact(t *testing.T) 
 	require.Len(t, resp.Results, 1)
 	assert.NotZero(t, resp.Results[0].KVRevision, "success response carries the post-write revision")
 
-	stored, storedRevision, err := comp.fetchEntityState(ctx, structuralGateEntity)
+	stored, storedRevision, err := comp.readEntity(ctx, structuralGateEntity)
 	require.NoError(t, err)
 	assert.Equal(t, len(baseline.Triples)+1, len(stored.Triples),
 		"the new triple appends; prior triples are preserved (merge semantics intact)")

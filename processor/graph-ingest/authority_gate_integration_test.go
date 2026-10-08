@@ -205,12 +205,12 @@ func (h *authorityGateHarness) absent(t *testing.T, entityID string) {
 func (h *authorityGateHarness) awaitEntity(t *testing.T, entityID string) *graph.EntityState {
 	t.Helper()
 	require.Eventually(t, func() bool {
-		stored, _, err := h.component.fetchEntityState(h.ctx, entityID)
-		return err == nil && stored != nil
+		_, _, err := h.component.readEntity(h.ctx, entityID)
+		return err == nil
 	}, 10*time.Second, 20*time.Millisecond, "entity %q never landed in ENTITY_STATES", entityID)
-	stored, _, err := h.component.fetchEntityState(h.ctx, entityID)
+	stored, _, err := h.component.readEntity(h.ctx, entityID)
 	require.NoError(t, err)
-	return stored
+	return &stored
 }
 
 // TestAuthorityGateRejectsForeignOnFactLane — a peer's own entity arriving on a
@@ -479,7 +479,7 @@ func TestAuthorityGateRejectsReconcileOfImportedSubject(t *testing.T) {
 // revision is equally consistent with reading the entity and then refusing.
 //
 // The probe is absence. A missing entity is observable ONLY through
-// fetchEntityState, which reports it as entity_not_found. Reconciling a
+// readEntity, which reports it as entity_not_found. Reconciling a
 // never-persisted FOREIGN id returns entity_id_authority_invalid instead; the
 // identical request against a never-persisted LOCAL id DOES return
 // entity_not_found. The local partner is what makes the foreign case evidence
@@ -491,7 +491,7 @@ func TestAuthorityGateRejectsReconcileOfImportedSubject(t *testing.T) {
 // that fetched the state FIRST and then authorized, discarding the fetch result
 // when the authority check fails, would satisfy every assertion below.
 // "Before any KV I/O" (ADR-102 d5) is a code-level invariant: authorizeSubject
-// precedes fetchEntityState in every canonical handler. What this test defends
+// precedes readEntity in every canonical handler. What this test defends
 // is the regression that actually threatens that invariant — moving the
 // authorization after the fetch and letting not-found win — which it kills.
 func TestAuthorityGateRefusesForeignReconcileRegardlessOfExistence(t *testing.T) {
@@ -529,7 +529,7 @@ func TestAuthorityGateRefusesForeignReconcileRegardlessOfExistence(t *testing.T)
 	// verdict, and not merely about which error code outranks which.
 	local := reconcileOf(t, authorityLocalAbsentID)
 	require.Equal(t, graph.ErrorCodeEntityNotFound, local.Code,
-		"a never-persisted LOCAL subject must reach fetchEntityState and be reported absent — "+
+		"a never-persisted LOCAL subject must reach readEntity and be reported absent — "+
 			"if this stops holding, the foreign assertion below stops proving anything")
 
 	foreign := reconcileOf(t, authorityForeignAbsentID)

@@ -225,9 +225,9 @@ func TestCanonicalReconcileCompetingCASAllowsOneWinner(t *testing.T) {
 	_, err := c.handleCanonicalReconcile(context.Background(), mustCanonicalJSON(t, request("loser")))
 	assertCanonicalCode(t, err, graph.ErrorCodeRevisionMismatch)
 
-	stored, _, err := c.fetchEntityState(context.Background(), canonicalEntityA)
+	stored, _, err := c.readEntity(context.Background(), canonicalEntityA)
 	if err != nil {
-		t.Fatalf("fetchEntityState: %v", err)
+		t.Fatalf("readEntity: %v", err)
 	}
 	if value, ok := stored.GetPropertyValue("test.state.value"); !ok || value != "winner" {
 		t.Fatalf("stored value = %#v, %v", value, ok)
@@ -277,9 +277,9 @@ func TestCanonicalAppendRacesGraphableMergeWithoutLosingFacts(t *testing.T) {
 		}
 	}
 
-	stored, _, err := c.fetchEntityState(context.Background(), canonicalEntityA)
+	stored, _, err := c.readEntity(context.Background(), canonicalEntityA)
 	if err != nil {
-		t.Fatalf("fetchEntityState: %v", err)
+		t.Fatalf("readEntity: %v", err)
 	}
 	for predicate, want := range map[string]any{
 		"test.state.seed":      "present",
@@ -425,7 +425,7 @@ func TestCanonicalAppendReturnsBatchCancellation(t *testing.T) {
 	if len(data) != 0 {
 		t.Fatalf("canceled batch response = %s, want no fabricated subject result", data)
 	}
-	stored, _, fetchErr := c.fetchEntityState(context.Background(), canonicalEntityA)
+	stored, _, fetchErr := c.readEntity(context.Background(), canonicalEntityA)
 	if fetchErr != nil {
 		t.Fatalf("fetch entity: %v", fetchErr)
 	}
@@ -530,9 +530,9 @@ func TestCanonicalConcurrentIdenticalAppendStoresOneTuple(t *testing.T) {
 	if counts[graph.MutationApplied] != 1 || counts[graph.MutationUnchanged] != 1 {
 		t.Fatalf("outcomes = %v", counts)
 	}
-	stored, _, err := c.fetchEntityState(context.Background(), canonicalEntityA)
+	stored, _, err := c.readEntity(context.Background(), canonicalEntityA)
 	if err != nil {
-		t.Fatalf("fetchEntityState: %v", err)
+		t.Fatalf("readEntity: %v", err)
 	}
 	count := 0
 	for _, triple := range stored.Triples {

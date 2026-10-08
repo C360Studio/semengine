@@ -62,7 +62,7 @@ func TestCanonicalReconcilePreservesEntityEnvelope(t *testing.T) {
 	assert.Equal(t, storageRef.Key, stored.StorageRef.Key)
 	// The pin read EntityState.Version here (7, then 8). Design D15 removes the
 	// field and makes the KV revision the one revision (#99).
-	_, storedRevision, err := comp.fetchEntityState(t.Context(), id)
+	_, storedRevision, err := comp.readEntity(t.Context(), id)
 	require.NoError(t, err)
 	assert.Greater(t, storedRevision, created.KVRevision, "reconcile advances the KV revision from its stored value")
 	phase, ok := stored.GetPropertyValue("lifecycle.state.phase")

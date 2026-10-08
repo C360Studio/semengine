@@ -320,7 +320,7 @@ func (c *Component) handleCanonicalReconcile(ctx context.Context, data []byte) (
 		return nil, rejectInvalid(graph.ErrorCodeInvalidRequest, err)
 	}
 
-	current, revision, err := c.fetchEntityState(ctx, request.EntityID)
+	current, revision, err := c.readEntity(ctx, request.EntityID)
 	if err != nil {
 		if natsclient.IsKVNotFoundError(err) {
 			return nil, rejectInvalidDetail(graph.ErrorCodeEntityNotFound,
@@ -334,7 +334,7 @@ func (c *Component) handleCanonicalReconcile(ctx context.Context, data []byte) (
 			fmt.Errorf("revision mismatch: expected %d, current %d", request.ExpectedRevision, revision))
 	}
 
-	candidate, unchanged := reconcileCandidate(current, request.Source, request.Desired, predicates)
+	candidate, unchanged := reconcileCandidate(&current, request.Source, request.Desired, predicates)
 	if unchanged {
 		return json.Marshal(graph.ReconcilePredicatesResponse{
 			Outcome: graph.MutationUnchanged, Entity: current.Clone(), KVRevision: revision,
@@ -424,7 +424,7 @@ func (c *Component) handleCanonicalAppend(ctx context.Context, data []byte) ([]b
 		}
 		// Duplicate-only is explicitly accounted as unchanged. Read only to attach
 		// the current revision; readability never proves the operation ran.
-		_, revision, readErr := c.fetchEntityState(ctx, subject)
+		_, revision, readErr := c.readEntity(ctx, subject)
 		if readErr != nil {
 			if natsclient.IsKVNotFoundError(readErr) {
 				response.Results = append(response.Results, graph.AppendSubjectResult{
@@ -480,7 +480,7 @@ func (c *Component) handleCanonicalDelete(ctx context.Context, data []byte) ([]b
 	if request.ExpectedRevision == 0 {
 		return nil, rejectInvalid(graph.ErrorCodeInvalidRequest, errors.New("expected_revision must be nonzero"))
 	}
-	_, currentRevision, err := c.fetchEntityState(ctx, request.EntityID)
+	_, currentRevision, err := c.readEntity(ctx, request.EntityID)
 	if err != nil {
 		if natsclient.IsKVNotFoundError(err) {
 			return nil, rejectInvalidDetail(graph.ErrorCodeEntityNotFound,

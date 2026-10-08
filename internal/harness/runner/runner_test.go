@@ -465,7 +465,7 @@ func TestR1LiveOwnerInAnotherTimeZoneOrLocaleIsRespected(t *testing.T) {
 	}
 }
 
-// R2:a same-host owner whose pid is dead, or whose pid now belongs to a different process, is
+// R2: a same-host owner whose pid is dead, or whose pid now belongs to a different process, is
 // quarantined and removed; the run then acquires, completes, and releases.
 func TestR2StaleLockIsQuarantined(t *testing.T) {
 	t.Parallel()

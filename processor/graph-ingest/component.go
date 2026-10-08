@@ -2036,20 +2036,13 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 		}
 	}
 
-	revision, bytesWritten, err := c.replaceEntity(ctx, entity, hierarchyTriples)
+	_, bytesWritten, err := c.replaceEntity(ctx, entity, hierarchyTriples)
 	if err != nil {
 		atomic.AddInt64(&c.errors, 1)
 		return errs.Wrap(err, "Component", "mergeEntityOnLane", "CAS update")
 	}
 
-	// A committed write passed the MarshalEntityState gate — clear any stale
-	// poison inventory entry (D3b). Steady-state cost: one atomic load.
-	c.clearEntityPoisonOnCommit(ctx, entity.ID, revision)
-
-	// Cache invalidation matches createEntity — readers must see the
-	// merged state on next Get (bumps the coherence generation).
-	c.invalidateEntityCacheEntry(entity.ID)
-
+	// replaceEntity cleared the key's poison record and invalidated its cache entry.
 	atomic.AddInt64(&c.messagesProcessed, 1)
 	atomic.AddInt64(&c.bytesProcessed, int64(bytesWritten))
 	c.lastActivity.Store(time.Now())
@@ -2140,13 +2133,7 @@ func (c *Component) createEntityWithReceipt(
 		return nil, 0, errs.Wrap(writeErr, "Component", "CreateEntity", "KV store")
 	}
 
-	// Committed valid bytes at a known revision — clear any stale poison
-	// inventory entry (D3b: revision guard). Steady-state: one atomic load.
-	c.clearEntityPoisonOnCommit(ctx, entity.ID, committedRev)
-
-	// Invalidate cache on write (cache consistency; bumps the coherence generation)
-	c.invalidateEntityCacheEntry(entity.ID)
-
+	// createEntity cleared the key's poison record and invalidated its cache entry.
 	// Update metrics
 	atomic.AddInt64(&c.messagesProcessed, 1)
 	atomic.AddInt64(&c.bytesProcessed, int64(len(data)))
@@ -2181,8 +2168,6 @@ func (c *Component) deleteEntityAtRevision(ctx context.Context, entityID string,
 		atomic.AddInt64(&c.errors, 1)
 		return err
 	}
-	c.clearEntityPoisonOnDelete(entityID)
-	c.invalidateEntityCacheEntry(entityID)
 	atomic.AddInt64(&c.messagesProcessed, 1)
 	c.lastActivity.Store(time.Now())
 	return nil
@@ -2329,9 +2314,9 @@ func (c *Component) addTripleLane(ctx context.Context, triple message.Triple, la
 	if casErr != nil {
 		// Duplicate suppression is a SUCCESS with nothing committed. Recovered
 		// before the error counter: metering it as a component error would make
-		// every restart replay look like a fault. Nothing was written, so the
-		// poison-clear and cache invalidation below are also correctly skipped
-		// (the stored bytes and revision are untouched).
+		// every restart replay look like a fault. Nothing was written, so the seam
+		// owed no poison-clear or cache invalidation (the stored bytes and
+		// revision are untouched).
 		if errors.Is(casErr, errNoOpAddDuplicate) {
 			c.recordSuppressedDuplicates(lane, 1)
 			return true, 0, nil
@@ -2339,13 +2324,8 @@ func (c *Component) addTripleLane(ctx context.Context, triple message.Triple, la
 		atomic.AddInt64(&c.errors, 1)
 		return false, 0, errs.Wrap(casErr, "Component", "AddTriple", "CAS update")
 	}
-
-	// Committed via the write gate — clear any stale poison entry (D3b).
-	c.clearEntityPoisonOnCommit(ctx, triple.Subject, casRevision)
-
-	// Read-after-write coherence: the entity-query cache must not serve the
-	// pre-append state on the next graph.ingest.query.* read.
-	c.invalidateEntityCacheEntry(triple.Subject)
+	// appendEntityTriples cleared the key's poison record and invalidated its
+	// cache entry, so the next query reads the appended state.
 	return false, casRevision, nil
 }
 
@@ -2481,8 +2461,8 @@ func (c *Component) addTriplesLane(ctx context.Context, triples []message.Triple
 			// a wholly-duplicate subject committed nothing but did not FAIL, and
 			// counting it into allAbsences would misclassify a mixed batch as a
 			// pure entity-not-found batch (wrong ErrorCodeEntityNotFound on the
-			// reply). Nothing was written, so no poison-clear or cache
-			// invalidation is owed either.
+			// reply). Nothing was written, so the seam owed no poison-clear or
+			// cache invalidation either.
 			if errors.Is(casErr, errNoOpAddDuplicate) {
 				c.recordSuppressedDuplicates(lane, groupSuppressed)
 				deduplicated += groupSuppressed
@@ -2505,11 +2485,8 @@ func (c *Component) addTriplesLane(ctx context.Context, triples []message.Triple
 			}
 			continue
 		}
-		// Committed via the write gate — clear any stale poison entry (D3b).
-		c.clearEntityPoisonOnCommit(ctx, subject, casRevision)
-		// Read-after-write coherence: invalidate the just-written subject's
-		// cached entity so the next query reflects the appended triples.
-		c.invalidateEntityCacheEntry(subject)
+		// appendEntityTriples cleared the key's poison record and invalidated its
+		// cache entry, so the next query reads the appended state.
 		c.recordSuppressedDuplicates(lane, groupSuppressed)
 		deduplicated += groupSuppressed
 		// Only NEWLY appended tuples count as written.

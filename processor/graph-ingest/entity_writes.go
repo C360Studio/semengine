@@ -21,9 +21,12 @@ import (
 // to a stored entity is read in one place. TestEntityWritesHaveOneSeam fails when the bucket is
 // written from any other file.
 //
-// Callers keep their own validation, authority checks, metrics, cache and poison bookkeeping,
-// and replies; a method here takes what its mode needs and returns the revision it committed
-// (where the caller uses it) and the bucket's error unwrapped, so callers classify it as before.
+// After each commit a method here does the bookkeeping every write owes: it clears
+// the key's poison record at the revision it committed, or drops it on a delete, and invalidates
+// the key's entity-query cache entry, in that order, before it returns. Callers keep their own
+// validation, authority checks, metrics and replies; a method here takes what its mode needs and
+// returns the revision it committed (where the caller uses it) and the bucket's error unwrapped,
+// so callers classify it as before.
 // Every lane that writes statements first applies the seam's statement-metadata rule,
 // requireStatementMetadata, to the statements its caller gave.
 //
@@ -87,7 +90,12 @@ func refuseMissingMetadata(index int, field string) error {
 // primitive. An existing key is refused with natsclient.ErrKVKeyExists, which is returned as is
 // so each lane makes its own decision (entity_already_exists on the mutation lane).
 func (c *Component) createEntity(ctx context.Context, entityID string, encoded []byte) (uint64, error) {
-	return c.entityBucket.Create(ctx, entityID, encoded)
+	revision, err := c.entityBucket.Create(ctx, entityID, encoded)
+	if err != nil {
+		return revision, err
+	}
+	c.committed(ctx, entityID, revision)
+	return revision, nil
 }
 
 // replaceEntity is the stream lane's write: a read-modify-write under the KV revision
@@ -206,6 +214,7 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 			slog.String("predicate", set.Predicate),
 			slog.String("source", set.Source))
 	}
+	c.committed(ctx, entity.ID, revision)
 	return revision, bytesWritten, nil
 }
 
@@ -230,7 +239,12 @@ func reconcileCandidate(current *graph.EntityState, source string, desired []mes
 // result) is stored only if the entity is still at expectedRevision, the revision the caller
 // read. natsclient.ErrKVRevisionMismatch and a not-found error are returned as is.
 func (c *Component) replaceEntityAtRevision(ctx context.Context, entityID string, encoded []byte, expectedRevision uint64) (uint64, error) {
-	return c.entityBucket.Update(ctx, entityID, encoded, expectedRevision)
+	revision, err := c.entityBucket.Update(ctx, entityID, encoded, expectedRevision)
+	if err != nil {
+		return revision, err
+	}
+	c.committed(ctx, entityID, revision)
+	return revision, nil
 }
 
 // appendEntityTriples is the append mode: a read-modify-write under the KV revision that adds
@@ -287,11 +301,29 @@ func (c *Component) appendEntityTriples(ctx context.Context, subject string, tri
 		}
 		return data, nil
 	})
-	return revision, suppressed, err
+	if err != nil {
+		return revision, suppressed, err
+	}
+	c.committed(ctx, subject, revision)
+	return revision, suppressed, nil
 }
 
 // deleteEntity is the delete mode: the entity is removed only if it is still at revision, the
 // caller's expected revision. The bucket's error is returned as is.
 func (c *Component) deleteEntity(ctx context.Context, entityID string, revision uint64) error {
-	return c.entityBucket.DeleteAtRevision(ctx, entityID, revision)
+	if err := c.entityBucket.DeleteAtRevision(ctx, entityID, revision); err != nil {
+		return err
+	}
+	// The poisoned bytes, if any, are gone with the key.
+	c.clearEntityPoisonOnDelete(entityID)
+	c.invalidateEntityCacheEntry(entityID)
+	return nil
+}
+
+// committed is the bookkeeping after a write that committed revision under entityID: the
+// write passed the MarshalEntityState gate, so a poison record at or below revision is stale
+// (clear path (b), D3b), and the next query must not be served the entry cached before it.
+func (c *Component) committed(ctx context.Context, entityID string, revision uint64) {
+	c.clearEntityPoisonOnCommit(ctx, entityID, revision)
+	c.invalidateEntityCacheEntry(entityID)
 }

@@ -286,7 +286,7 @@ func (c *Component) handleCanonicalCreate(ctx context.Context, data []byte) ([]b
 		return nil, rejectFromError(err)
 	}
 
-	c.recordCanonicalEntityCommit(ctx, entity.ID, revision, len(encoded))
+	c.recordCanonicalEntityCommit(len(encoded))
 	return json.Marshal(graph.CreateEntityResponse{
 		Outcome: graph.MutationApplied, Entity: entity.Clone(), KVRevision: revision,
 		TraceID: request.TraceID, RequestID: request.RequestID,
@@ -359,7 +359,7 @@ func (c *Component) handleCanonicalReconcile(ctx context.Context, data []byte) (
 		return nil, rejectFromError(err)
 	}
 
-	c.recordCanonicalEntityCommit(ctx, request.EntityID, committedRevision, len(encoded))
+	c.recordCanonicalEntityCommit(len(encoded))
 	return json.Marshal(graph.ReconcilePredicatesResponse{
 		Outcome: graph.MutationApplied, Entity: candidate, KVRevision: committedRevision,
 		TraceID: request.TraceID, RequestID: request.RequestID,
@@ -712,9 +712,8 @@ func distinctSortedSubjects(triples []message.Triple) []string {
 	return subjects
 }
 
-func (c *Component) recordCanonicalEntityCommit(ctx context.Context, entityID string, revision uint64, bytesWritten int) {
-	c.clearEntityPoisonOnCommit(ctx, entityID, revision)
-	c.invalidateEntityCacheEntry(entityID)
+// recordCanonicalEntityCommit meters a mutation commit; the seam has done its bookkeeping.
+func (c *Component) recordCanonicalEntityCommit(bytesWritten int) {
 	atomic.AddInt64(&c.messagesProcessed, 1)
 	atomic.AddInt64(&c.bytesProcessed, int64(bytesWritten))
 	c.lastActivity.Store(time.Now())

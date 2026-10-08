@@ -200,13 +200,16 @@
     preflight, cached-or-bounded image pull, canonical go test flags
   destination: scripts/test-integration.sh
   contract: >-
-    byte-compatible lock protocol at /tmp/semstreams-integration.lock;
+    lock protocol at /tmp/semstreams-integration.lock that SemStreams' runner reads as an ordinary
+    owner: its six owner keys unchanged, plus identity_utc, which it ignores;
     -race -failfast -tags=integration -count=1 -p 2
   dependencies_and_side_effects: >-
     bash, ps, mkdir, docker CLI; creates the lock dir; may quarantine stale dirs; pulls images
   known_risks: >-
     upstream traps do not forward INT/TERM to go test (repaired: process group); -p 2 inherited
-    unmeasured; upstream reads SEMSTREAMS_* env (not carried; SEMENGINE_* namespace)
+    unmeasured; upstream reads SEMSTREAMS_* env (not carried; SEMENGINE_* namespace); a SemEngine
+    runner and a SemStreams runner whose shells differ in time zone or locale still read each
+    other's live owner as changed (#126, accepted)
   proving_tests: runner contract tests R1–R4; pass-evidence items 1–3
   owner: setup-02 developer
   disposition: adapt

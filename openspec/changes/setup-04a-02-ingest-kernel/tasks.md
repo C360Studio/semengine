@@ -48,7 +48,7 @@ heading>` (#81's form). No task asserts a fact that exists only after merge.
 
 - [ ] 2.1 (D) Re-run inventory P-1, P-4 and P-7, and §9.1's slice runs, on the branch's copy at the first port commit
       and post the seeds, the hit list and the coverage figures; any difference from `inventory.md` is a finding on
-      this pull request. Hold: task 3.1 (the first port commit).
+      this pull request.
 - [x] 2.2 (D) `TestOneImagePin` in Go files matches `nats:` followed by a digit or a variable, or `nats@sha256:` (design
       D10): sensitivity cases, written first, plant `"nats:in"` in a Go file (passes), `"nats:2.10"` and
       `"nats:${TAG}"` in a Go file (fail), and keep "digest literal in Go" failing. Gate: `task test:unit`.
@@ -289,7 +289,7 @@ posted on this pull request.
       commit-unknown; conflict and not-found stay not-committed. Fails first on the pin's classification. Hold: task
       3.12a.
 - [ ] 4.2 (D) #19: `ReconcileMutation` gains the expected revision; the two `projection-mutation` scenarios as tests.
-      Hold: task 3.9.
+      Hold: task 3.12a, where graph-ingest's conditional replace applies the expected revision (design D15).
 - [ ] 4.3 (D) #15: memory stream + `Fixture.Restart` + retained guard bucket: re-ingestion at lower sequences is
       applied and queried back; a same-generation redelivery is a no-op; the no-bucket degrade of design D8 is logged
       and counted. Fails first on the pin's guard key. Hold: task 3.12.
@@ -303,7 +303,7 @@ posted on this pull request.
 - [ ] 4.6 (D) #33: the hierarchy refusal names `inference.RegisterPayloads` (`component-registration`). Hold: task
       3.12.
 - [ ] 4.7 (D) #29 and #102: the `component` contract test of task 3.11 green on the ported tree, with its package
-      count posted. Hold: task 3.11.
+      count posted.
 - [ ] 4.8 (D) #100 and #98, the `graph-entity-writes` scenarios through graph-ingest, each written first and failing on
       the pin's code: `TestWriteModesAgreeAcrossLanes`, `TestReplaceKeepsOtherSourcesStatements`,
       `TestStreamLaneGroupsByStampedSource`, `TestReconcileReplacesOnlyItsSource`,

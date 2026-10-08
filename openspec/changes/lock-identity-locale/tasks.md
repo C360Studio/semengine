@@ -53,7 +53,7 @@ starts, `task merge:check -- 127` and the merge are recorded on this pull reques
       because runner B exits 0 having quarantined runner A's live lock and entered the fake Docker, and T3 because the
       run exits 0; T1's mode check and every other test pass. Gate: that run's output, recorded on this pull request
       with the system it ran on.
-- [ ] 2.8 (D) The runner publishes the owner record whole, as `design.md`, D7 states: written beside the lock
+- [x] 2.8 (D) The runner publishes the owner record whole, as `design.md`, D7 states: written beside the lock
       directory after `mkdir`, its mode set, renamed to `owner`; a record that cannot be published removes the file
       and the lock directory and fails before any Docker call. Gate: `bash -n scripts/test-integration.sh` under
       `/bin/bash` 3.2 and `task test:unit`, T1 to T3 passing.

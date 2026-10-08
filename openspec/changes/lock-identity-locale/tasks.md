@@ -18,6 +18,11 @@ starts, `task merge:check -- 127` and the merge are recorded on this pull reques
 - [x] 1.4 Q1 settled before 2.2: either the owner's word that the measure at the SemStreams pin stands, or, on the
       owner's word, a read of `scripts/run-integration-tests.sh` at SemStreams `main` recorded on this pull request
       that shows its owner parser ignores a key it does not know. If it does not, the design returns to review.
+- [ ] 1.5 The independent pre-owner review of `design.md` revision 2 (D7, L7, I5, owner decisions 5, 6 and 8, the
+      "Conformance" heading), this file's tasks 1.5 to 2.11 and the runner spec delta's publication text and three
+      scenarios: `DESIGN REVIEW PASS`, recorded on this pull request.
+- [ ] 1.6 The owner's acceptance of `design.md`, owner decision 8 (D7 and L7), recorded on #126 or this pull request.
+      Hold: the owner's acceptance of D7 (#126 or PR #127)
 
 ## 2. The fix and its tests
 
@@ -45,6 +50,26 @@ starts, `task merge:check -- 127` and the merge are recorded on this pull reques
 - [x] 2.6 (D) `task verify` passes on the commit that carries 2.2 to 2.4, its integration step admitting the fixture
       tests through the real runner's record on macOS, and that commit's CI run passes on ubuntu-24.04. Gate: CI
       `Required` on that commit, its run link recorded on this pull request.
+- [ ] 2.7 (D) T2, T3 and T1's mode check of `design.md`, D7, written first and run on the code of `ecf2033`: T2 fails
+      because runner B exits 0 having quarantined runner A's live lock and entered the fake Docker, and T3 because the
+      run exits 0; T1's mode check and every other test pass. Gate: that run's output, recorded on this pull request
+      with the system it ran on.
+      Hold: the owner's acceptance of D7 (task 1.6)
+- [ ] 2.8 (D) The runner publishes the owner record whole, as `design.md`, D7 states: written beside the lock
+      directory after `mkdir`, its mode set, renamed to `owner`; a record that cannot be published removes the file
+      and the lock directory and fails before any Docker call. Gate: `bash -n scripts/test-integration.sh` under
+      `/bin/bash` 3.2 and `task test:unit`, T1 to T3 passing.
+      Hold: the owner's acceptance of D7 (task 1.6)
+- [ ] 2.9 (D) Shown able to fail: R-M3, R-M4 and R-M5 of `design.md`, D7, each made in the tree with the `cp` and
+      checksum procedure of the reviewer contract, § Required review workflow, item 8, the restored file's checksum
+      matching the one taken before, each report pasted on this pull request with the system it ran on. Gate:
+      detection for each, R-M4 where the umask is not `077`; a survivor or an inconclusive run is reported as such.
+- [ ] 2.10 (D) `task verify` passes on the commit that carries 2.8, its integration step admitting the fixture tests
+      through the published record on macOS, and that commit's CI run passes on ubuntu-24.04. Gate: CI `Required` on
+      that commit, its run link recorded on this pull request.
+- [ ] 2.11 `design.md`, "Conformance", maps each accepted decision and D7 to the `file:line` that carries it out at
+      the commit of 2.10, and to the test or record that shows it. Gate: every row filled, in a commit that changes
+      no other file.
 
 ## 3. Review
 

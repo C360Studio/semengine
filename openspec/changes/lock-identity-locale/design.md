@@ -1,8 +1,12 @@
 # Design: lock-identity-locale
 
-Status: revision 1, draft. It rests on `inventory.md` revision 2 (review round 1: `INVENTORY PASS`; its five
+Status: revision 2, draft. It rests on `inventory.md` revision 2 (review round 1: `INVENTORY PASS`; its five
 corrections are folded in). Issue #126, owner ruling #126 comment 6048776879, claim PR #127. Claims A to I, probes P10
-to P17 and every pin are the inventory's unless a pin is given here.
+to P17 and every pin are the inventory's unless a pin is given here. Revision 1 passed pre-owner review, the owner
+accepted it (PR #127 comment 6049508662), and it was implemented at `33c5111` to `ecf2033`. Revision 2 answers Codex's
+review of `ecf2033` (PR #127 comment 6059322575): D7 publishes the owner record whole (the BLOCKING finding), with
+probes P18 to P21, L7, I5, and owner decision 8; owner decisions 5 and 6 carry the owner's answers, and "Conformance"
+is added (the MEDIUM finding). Pins to `scripts/test-integration.sh` in D7 are at `ecf2033`.
 
 ## Context
 
@@ -206,6 +210,133 @@ The rest of the runner's evidence is T1, R2's new case and R4 failing on the bas
 can go wrong is the read's environment: a finite set, covered by the cases above and measured by P10 to P17. No
 generated string reaches it.
 
+### D7. The owner record is published whole
+
+**The defect** (Codex, PR #127 comment 6059322575; P18). `acquire_lock` creates the lock directory and then writes the
+record into `$lock_dir/owner` one `printf` at a time (`scripts/test-integration.sh:207-216`). A runner that reads it
+after the `identity` line and before the `identity_utc` line finds six keys, takes D2's fallback and, when its shell's
+time zone or locale differs, quarantines the live owner, which then runs without the lock. D2 is right for a finished
+record; the fault is that a writer shows an unfinished one. T1 cannot see it: B starts after `go.ready`, after
+publication.
+
+**Options for publication** (D1 to D6 stand):
+
+- **(a) Write the record to a file beside the lock directory after `mkdir` succeeds, then rename it to `owner`.**
+  Between `mkdir` and the rename it runs `mktemp`, the writes, two command substitutions, `chmod` and `mv`: about 5 ms
+  on macOS (L7). A SIGKILL in that window leaves an ownerless lock directory, which every SemEngine and SemStreams
+  runner then refuses or waits on until a person removes it. It writes nothing while a runner waits, and keeps
+  publication in one place.
+- **(b) The same, with the file written before `mkdir`** (before the wait loop), and only the rename after it. Its
+  window after `mkdir` is one `mv`. Its SIGKILL leftover is an inert file beside the lock that no reader in either
+  repository reads; it is left by a SIGKILL at any time from its creation to the rename, a whole wait of up to 3600 s
+  included, and the EXIT trap removes it on every other exit. One `BASH_ENV` hook can still pause both codes inside
+  publication, with two triggers: `printf` on `command=%s\n` while `[ -d "$lock_dir" ]` (`ecf2033`'s in-place write),
+  and an `mv` whose last argument ends in `/owner` (the rename under (b), which `ecf2033` never calls).
+- **(c) The file inside the lock directory.** A runner killed before the rename leaves a lock directory `rmdir` cannot
+  remove; both runners' quarantine removes only `owner` before `rmdir` (`:192-195`; pin `:112-115`).
+- **(d) `identity_utc` written first,** so a partial record that holds `identity` holds it too. It contradicts the
+  accepted order (owner decision 2, D1) and Codex's "preserve the approved field order".
+- **(e) Readers tolerate an unfinished record:** a `command=semengine` record without `identity_utc` read as
+  unfinished, or a re-read after a pause. The first ends the six-key fallback for SemEngine runners older than this
+  change (L1); the second is a timing guess.
+- **(f) Publish a prepared directory by renaming it to the lock path.** POSIX `rename()` replaces an existing empty
+  directory, and `mv` onto an existing directory moves into it, so this breaks the `mkdir` exclusion SemStreams shares.
+
+Options (c) to (f) each break an accepted decision or the shared `mkdir` exclusion. Between (a) and (b), recommended:
+(a). What (a) risks is loud and safe: later runners refuse with "host lock is busy", `task doctor` names the state, and
+no runner reaches Docker without the lock. It needs a SIGKILL within about 5 ms of `mkdir`: the runner traps INT and
+TERM, and an interrupt during publication ends without wedging the lock (below). (b) narrows that window to one `mv`,
+and in exchange leaves a file nobody notices after any SIGKILL during a wait of up to an hour, and splits preparation,
+publication and cleanup across the script. Both windows are small against any plausible SIGKILL; (a) is the simpler
+script. If the owner chooses (b), the rule's first three bullets move before the wait loop, the EXIT trap removes the
+file, T2's hook gains the `mv` trigger, and T3 and R-M5 fail the rename with a fake `mv`, since `mktemp` then fails
+before `mkdir`, and the runner spec's sentence that the record is written after the lock directory is created says
+before it instead.
+
+**The rule (option a).**
+
+- After `mkdir "$lock_dir"` succeeds, the runner creates a file with `mktemp "${lock_dir}.owner.XXXXXX"`: beside the
+  lock directory, in its parent directory and so on its filesystem (P21); unpredictable in a world-writable `/tmp`; and
+  not under `${lock_dir}.stale.`, the quarantine name of both runners (`:190`; pin `:110`). Like that name, it assumes
+  a lock path without a trailing slash (the default, `admission-lock.sh:7`).
+- It writes the record there as D1 states: the same seven lines, in the same order, with the same `printf` calls. The
+  record's bytes do not change, so SemStreams' six lines stay byte-identical (the Q1 ruling).
+- It sets the file's mode to `0666` less the runner's umask, the mode the redirection gives today. `mktemp` creates
+  `0600` (P21), which another user's `task doctor` or runner could not read.
+- It renames the file to `$lock_dir/owner` with `mv`. Both names are on one filesystem, where POSIX `mv` acts as
+  `rename()`, and `rename()` makes the new name refer to the whole file at once: a reader finds no `owner`, or the
+  complete record.
+- Only then is `lock_held=true`, and `cp "$lock_dir/owner" "$evidence_dir/lock-owner"` (`:218`) still copies the
+  published record (P19: the evidence holds the seven keys).
+- If `mktemp`, the write, `chmod` or `mv` fails, the runner removes the file if it exists and the lock directory,
+  empty since nothing else is written in it, prints that it could not publish the owner record, and `acquire_lock`
+  fails, so the runner exits 1 before any Docker call (`:339`).
+- A SIGTERM sent to the runner alone only records the signal (`on_signal`, `:297-308`): publication completes,
+  `exit_for_signal` (`:340`) exits, and `finish` releases the lock (`:324-331`). A terminal's Ctrl-C reaches the whole
+  foreground process group, so it can kill `mktemp`, `chmod` or `mv`, and the failure path above runs (the reviewer
+  measured a script that traps INT seeing its external child exit 130 and continuing). Killed before the rename, the
+  file and the lock directory are removed and the runner exits 130. A `mktemp` killed after creating its file leaves
+  that file, whose name the failure path never learned (inert, L7). An `mv` killed after the rename leaves the
+  published record, the failure path's `rmdir` fails on it, and the runner exits 130: the record names a pid about to
+  be dead, which the next runner quarantines by that dead pid. No outcome shows part of a record or runs Docker
+  without the lock; only a SIGKILL inside the window wedges it (L7).
+
+What each reader sees between `mkdir` and the rename (the lock directory exists, with no `owner`):
+
+| Reader | Sees | Verdict | Pin |
+| --- | --- | --- | --- |
+| SemEngine runner | `read_owner` returns early; every observed value `unknown`, `identity_utc` empty | respected: `unknown` is not this host (`:176`); busy or waits (P19, P20) | `:143` |
+| SemStreams' runner at the pin, which is its `main` (owner decision 5) | `read_owner` returns early; `observed_host="unknown"` | respected (pin `:98`; P20) | pin `:68-70` |
+| `task doctor` | the path exists, with no `owner` | "exists without an owner file (being written, or foreign)" | `doctor.sh:120-121` |
+| Admission | no owner file | refused, "no live lock owner file"; a runner's own tests start only after `acquire_lock` returns (`:339`) | `admission.go:44-47` |
+
+This window is not new: at `ecf2033` it lies between `mkdir` and the redirection's open. What D7 removes is the record
+seen in part. Nothing after the rename changes: `read_owner`, `owner_is_stale`, `clean_stale_lock` and `release_lock`
+read and remove `owner` as now, and the lock directory holds only `owner`, so both runners' quarantine still empties it.
+
+Measured for D7 (2026-10-08; the prototype is a copy of `ecf2033`'s runner with option a applied, local only, under
+`/tmp/claude-126/proto/`, driven by Codex's probe with the runner's root as its argument):
+
+| Probe | Input | Result |
+| --- | --- | --- |
+| P18 | Codex's probe on an unchanged copy of `ecf2033`'s runner: A `TZ=EST5`, B `TZ=JST-9`, both `LC_ALL=C`; A paused by a `BASH_ENV` hook after its `command=` line | macOS and Debian (`golang:1.26.6-bookworm`): A's lock directory holds `owner` (six lines); B exits 0 after `cleaned stale lock ... pid=<A>` and enters the fake Docker; A, resumed, prints `lock ownership changed`, and its `lock-owner` evidence is missing |
+| P19 | the same probe on the prototype | macOS and Debian: while A is paused its lock directory is empty and `lock.owner.<random>` lies beside it; B exits 1, `host lock is busy and no wait budget was requested`, and never enters the fake Docker; A, resumed, exits 0 without `lock ownership changed`, its `lock-owner` evidence holds the seven keys, and no `lock*` path remains |
+| P20 | the prototype's A killed with SIGKILL while paused | left: `lock` (empty) and `lock.owner.<random>` (mode `0600`, six lines). Runner B: exit 1, busy. SemStreams' pin judge and SemEngine's judge (P15, P15b) on that directory: respected, `host=unknown pid=unknown` |
+| P21 | `mktemp "<dir>/lock.owner.XXXXXX"` on macOS and in Debian (GNU coreutils 9.1); a redirection under umask 022; `printf '%o' $((0666 & ~$(umask)))` under `/bin/bash` 3.2.57; `stat -f %d` of the parent and the file | `mktemp` creates mode `0600` on both; the redirection `0644`; the expression prints `644` under umask 022 and `600` under 077; parent and file on one device |
+
+Tests for D7, in `internal/harness/runner/runner_test.go`; no sleep, skip or address:
+
+- **T2, `TestR1ContenderDuringPublicationRespectsTheOwner`** (new; Codex's probe as a test). Runner A, `TZ=EST5
+  LC_ALL=C`, starts with `BASH_ENV` naming a hook the test writes: a `printf` function that calls `builtin printf` and,
+  on the first call whose format is `command=%s\n`, writes a ready file into A's fake directory and blocks reading a
+  FIFO the test made (`syscall.Mkfifo`) and holds open for reading and writing, so neither side blocks on opening it.
+  That call is inside publication in both codes: at `ecf2033` `owner` then holds six lines, under D7 the lock directory
+  is empty. The test waits for the ready file with `startRunner` (`probe.Await`), confirms A is still running
+  (`docs/testing.md:467-471`), and checks its premise: ps prints a start time for A's pid under `TZ=EST5 LC_ALL=C` and
+  under `TZ=JST-9 LC_ALL=C`, and the two differ; a host where they do not fails the test, as Codex's sandboxed run,
+  with `ps` denied, would otherwise pass. Runner B then runs from its own harness on A's lock directory, `TZ=JST-9
+  LC_ALL=C`, no wait budget, under a context with a deadline. Required: B exits 1 naming the busy lock, never prints
+  `cleaned stale lock`, and its fake `docker` records no call; A is still running. The test then writes to the FIFO.
+  Required: A exits 0, its stderr lacks `lock ownership changed`, its `lock-owner` evidence holds the seven keys with
+  A's token, and `filepath.Glob(a.lock + "*")` is empty. Every path out resumes A and waits for it with a bound. On
+  `ecf2033` B exits 0, prints `cleaned stale lock` and enters Docker (P18, macOS and Linux): T2 fails first.
+- **T3, `TestR1OwnerRecordThatCannotBePublishedReleasesTheLock`** (new). A fake `mktemp`, first in `PATH` from the
+  harness's fake directory as `docker` and `go` are, fails for the `.owner.` template. Required: the runner exits
+  non-zero naming the failure, its fake `docker` records no call, and `filepath.Glob(h.lock + "*")` is empty. On
+  `ecf2033`, which calls no `mktemp`, the run exits 0: T3 fails first.
+- **T1 gains a mode check** while A holds the lock (beside `runner_test.go:424`): the `owner` file's mode equals that
+  of a file the test creates with `os.Create` in its temporary directory, which gets `0666` less the umask the runner
+  inherits. It passes on `ecf2033`, whose redirection gives that mode; it holds D7's `chmod`.
+
+Shown able to fail: `task mutate:check` refuses a script, so each wrong change is made in the tree with the `cp` and
+checksum procedure of the reviewer contract, § Required review workflow, item 8:
+
+| Wrong change to `scripts/test-integration.sh` | Test that must fail | Expected |
+| --- | --- | --- |
+| R-M3: the record written in place, line by line, into `$lock_dir/owner` (the `ecf2033` shape) | T2 | detection on macOS and on Linux |
+| R-M4: the `chmod` left out | T1's mode check | detection where the umask is not `077`; under `077`, equivalent (`0600` either way) |
+| R-M5: on a failed publication, the lock directory left in place | T3 | detection |
+
 ## Invariants and their spec homes
 
 - **I1** (from #125, unchanged): `Start` makes a Docker call only when the owner record holds the test's token and the
@@ -219,6 +350,8 @@ generated string reaches it.
 - **I4:** `identity_utc` is the same text for every reader environment. Home: "Shared host lock", which defines the
   read with `TZ=UTC` and `LC_ALL=C` set. This is a property of `ps` under those settings: P10 to P14 and P17 measure it,
   T1 exercises it for the time zone everywhere and for the locale on macOS, as the admission case does.
+- **I5:** a reader of the lock directory finds no owner record, or the complete record its writer published; never part
+  of one. Home: "Shared host lock", its scenario "A contender during publication respects the owner".
 
 ## Declared limits
 
@@ -234,6 +367,15 @@ generated string reaches it.
 - **L5 (Q5).** If the fixed read prints nothing for the runner's own pid, `identity_utc` is `unknown`: the runner then
   respects the owner and admission refuses it, naming `unknown`. Not reproduced on either system.
 - **L6.** One-second resolution, as before: a pid reused within the second its owner started reads as that owner.
+- **L7 (D7).** A runner killed with SIGKILL between `mkdir` and the rename leaves the lock directory with no `owner`,
+  and `${lock_dir}.owner.<random>` beside it (mode `0600`, the record's first lines; P20). Every reader respects that
+  directory, so later runners refuse or wait until a person removes it (`rmdir`, and the stray file with `rm`); `task
+  doctor` reports it. The class is not new: at `ecf2033` a SIGKILL between `mkdir` and the `pid=` line leaves a
+  directory no runner quarantines either, since its pid reads `unknown` (`:177`). The window grows from one `printf`
+  to three external commands (`mktemp`, `chmod`, `mv`): about 5 ms on macOS (the reviewer's measurement, 200
+  iterations under `/bin/bash` 3.2.57: 9.4 ms against 4.4 ms for `mkdir`, publication, `rm` and `rmdir`). A Ctrl-C
+  that kills `mktemp` after it creates its file also leaves `${lock_dir}.owner.<random>` beside the lock, but no lock
+  directory: an inert file that no reader in either repository reads.
 
 ## Files
 
@@ -241,12 +383,14 @@ generated string reaches it.
   `read_owner` (`:136-150`) reads it; `owner_is_stale` (`:165-174`) applies D2; the comments at `:5-6` and `:134`.
   Bash 3.2 (`:13`): the fixed read is a variable prefix on `ps` inside a command substitution, run under `/bin/bash`
   3.2.57 in P10.
+- `scripts/test-integration.sh`, `acquire_lock` (`:204-221` at `ecf2033`): publication as D7 states.
 - `scripts/admission-lock.sh:3-4`: the comment (D5).
 - `internal/harness/natsfixture/admission.go`: `ownerLive` takes the record's `identity_utc`; the fixed read under
   `Start`'s context with `TZ=UTC` and `LC_ALL=C` added to the inherited environment (os/exec: "If Env contains
   duplicate environment keys, only the last value in the slice for each duplicate key is used"; P11); refusal texts
   per D2; the comments (D5). The rest of `admit` (token, context's error) is unchanged.
-- `internal/harness/natsfixture/admission_test.go`, `internal/harness/runner/runner_test.go`: D6.
+- `internal/harness/natsfixture/admission_test.go`, `internal/harness/runner/runner_test.go`: D6; T2, T3 and T1's
+  mode check (D7), with the hook and the fake `mktemp` written by the tests, as `fakeDocker` and `fakeGo` are.
 - `docs/admission-ledger.yaml:203`, `:207-209`: D5.
 - Not changed: `scripts/doctor.sh`, `internal/harness/natsfixture/fixture.go`, `internal/harness/prochost/`,
   `AGENTS.md` (no new rule), anything in SemStreams.
@@ -261,6 +405,13 @@ generated string reaches it.
 - The runner's `now_ms` (`scripts/test-integration.sh:84-88`) splits bash 5's `EPOCHREALTIME` on a period, but bash
   writes it with the locale's decimal separator, a comma under `de_DE.UTF-8`, so it silently misreads the time:
   #128. T1 gives runner A `en_GB.UTF-8`, whose separator is a period, so T1 neither depends on nor shows that defect.
+- `describe_owner` reports a lock directory with no `owner` as `host=unknown pid=unknown elapsed=<seconds since the
+  epoch>s`, since `observed_started` is `0` (`:140`, `:157-164`; P19 printed `elapsed=1791460973s`). It predates this
+  change; T2 sees it and does not depend on it.
+- `clean_stale_lock` moves the lock path after judging an earlier read (`:190-191`; pin `:110-111`), so a runner that
+  judged an older, stale owner can move a newer lock directory, one in its publication window included; D7's `rmdir`
+  and `mv -f` then act on another runner's directory. The race exists at `ecf2033`, whose redirection writes into
+  whatever directory the path names, and in SemStreams; D7 does not widen it, and its failure path does not cover it.
 
 ## Overlaps and order
 
@@ -275,6 +426,9 @@ generated string reaches it.
 
 ## Owner decisions
 
+The owner answered decisions 1 to 7 on 2026-10-07 (PR #127 comment 6049508662): 1 to 4 as recommended, 5 and 6 as
+below, and 7 left declared, with no issue filed. Decision 8 is new in revision 2.
+
 1. **Admission admits a direct `go test` from a shell with another time zone or locale** that holds a live runner's
    token (D3). Recommended: admit, as the ruling's rule does. The other answer, option 4, keeps a refusal that protects
    nothing and keeps the Q2 exposure.
@@ -285,14 +439,37 @@ generated string reaches it.
    tests. This keeps the ruling and corrects only its parenthetical.
 4. **The new wording of the ledger row, the two script comments and R4 (D5).** The spec sentence changes as the ruling
    accepted.
-5. **Q1, SemStreams `main` (open; needs your word).** Not read. The claims that rest on it: SemStreams' runner reads a
-   SemEngine record as an ordinary owner and ignores `identity_utc` (claim E, P15, I3's purpose), and therefore L1's
-   bound and the ruling's premise that "SemStreams reads a SemEngine lock exactly as before". They are measured at the
-   pin only. If SemStreams' runner at `main` refuses or quarantines a record with a key it does not know, this change
-   would make it misjudge every live SemEngine lock. Recommended: authorize one read of
-   `scripts/run-integration-tests.sh` at SemStreams `main` (one `gh api` call) before task 2.2 (task 1.4), or rule that
-   the pin's measure stands.
-6. **Q6, other users of the lock path (open; needs your word).** Whether semsource, semconnect, semteams or semboids
-   takes `/tmp/semstreams-integration.lock` is not measured; `docs/inventory-scope.md` does not admit the question.
-   Nothing at the pin points to one.
+5. **Q1, SemStreams `main`: settled.** The owner authorized one read. SemStreams `main` is the pin:
+   `gh api repos/C360Studio/semstreams/commits/main` returned `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`, and its
+   `scripts/run-integration-tests.sh` is the file P15 ran (sha256 `9a4bcf19…58d9`), whose owner parser ignores a key it
+   does not know. Claim E, P15, L1's bound and the ruling's premise that "SemStreams reads a SemEngine lock exactly as
+   before" therefore hold for `main` as of 2026-10-07; a later push to SemStreams `main` reopens them.
+6. **Q6, other users of the lock path: settled.** The owner authorized one code search: `gh search code --owner
+   C360Studio` for `semstreams-integration.lock`, `SEMSTREAMS_INTEGRATION_LOCK_DIR` and `run-integration-tests.sh`
+   found hits only in `semengine` and `semstreams`. Limit: code search reads each repository's default branch, and
+   only repositories it has indexed.
 7. **L3, a wall-clock step on Linux.** Declared and left alone here. File an issue for it, or leave it declared.
+8. **D7: publish the owner record whole, by a file beside the lock directory renamed to `owner`. Choose (a) or (b),
+   and accept its leftover.** Recommended: (a), for the reasons in D7.
+   - (a), the file written after `mkdir`: about 5 ms after `mkdir` in which a SIGKILL leaves an ownerless lock
+     directory that blocks both repositories' runners until removed by hand (L7).
+   - (b), the file written before `mkdir`: one `mv` after `mkdir`; a SIGKILL from the file's creation to the rename,
+     a wait included, leaves an inert file no reader reads.
+
+   Either way a failed publication fails before Docker (T3), and options (c) to (f) are not offered.
+
+## Conformance
+
+To be filled once task 2.10's commit lands, so its lines are final: each accepted decision, and D7, mapped to the
+`file:line` that carries it out and the test or record that shows it.
+
+| Decision | Carried out at | Shown by |
+| --- | --- | --- |
+| 1. Admit a test process in another time zone or locale (D3) | to be filled | to be filled |
+| 2. `identity_utc`, last line, always written, `unknown` when empty (D1, L5) | to be filled | to be filled |
+| 3. Absent or empty `identity_utc` falls back to `identity`; reason per judge (D2, D4) | to be filled | to be filled |
+| 4. Wording of the ledger row, script comments and R4 (D5) | to be filled | to be filled |
+| 5. Q1 settled: SemStreams `main` is the pin | PR #127 comment 6049508662 | claim E, P15 |
+| 6. Q6 settled: no other repository uses the lock path | PR #127 comment 6049508662 | the code search recorded there |
+| 7. L3 left declared | `design.md`, L3 | no issue filed |
+| 8. Publication whole (D7, L7) | to be filled | to be filled |

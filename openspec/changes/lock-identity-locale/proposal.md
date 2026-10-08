@@ -21,6 +21,9 @@ judges the same way and ignores a key it does not know. The owner ruled a fix in
   record has a non-empty one, and `identity` otherwise, as today (`design.md`, D2). A record without `identity_utc`
   reaches the runner from SemStreams or from a SemEngine runner older than this change; it reaches admission only from
   such an older SemEngine runner or from a test, since only SemEngine's runner exports the admission token (D4).
+- **The record is published whole.** The runner writes the owner record to a file beside the lock directory and
+  renames it into place, so no reader ever finds part of it; a record that cannot be published releases the lock
+  before any Docker call (`design.md`, D7, added after Codex's review of `ecf2033`, PR #127 comment 6059322575).
 - **Admission and another shell.** A direct `go test` from a shell whose time zone or locale differ from the
   runner's, holding a copy of a live runner's token, is now admitted, as it already is from a shell that matches (D3).
 - **Texts that said the record is SemStreams' format byte for byte** change: the runner's spec, the admission
@@ -37,8 +40,10 @@ change. Also out: `task doctor`, a native start-time read, and a wall-clock step
 ### Modified Capabilities
 
 - `integration-test-runner`: "Shared host lock" lists SemStreams' six keys followed by `identity_utc`, defines it,
-  judges liveness by it when it is usable and by `identity` otherwise, states the limit that remains, and gains two
-  scenarios: an owner in another time zone or locale is respected, and the record's format.
+  judges liveness by it when it is usable and by `identity` otherwise, states how the record is published and the
+  limits that remain, and gains four scenarios: an owner in another time zone or locale is respected, the record's
+  format, a contender during publication respects the owner, and a record that cannot be published releases the
+  lock.
 - `nats-fixture`: "Admission before Docker" judges liveness as the runner's spec now defines it, says which records
   can lack `identity_utc` there, and gains two scenarios: a test process in another time zone is admitted, and a
   record without `identity_utc` is judged by `identity`.

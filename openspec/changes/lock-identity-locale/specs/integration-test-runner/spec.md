@@ -8,7 +8,18 @@ The runner SHALL acquire `/tmp/semstreams-integration.lock` with an atomic direc
 any Docker call. The record SHALL hold SemStreams' six keys host, pid, started, identity, token, command, in that
 order (command naming this repository and worktree), followed by the key identity_utc and no other, each on a line
 that ends with a newline; SemStreams' runner at its pin ignores a key it does not know, so it reads the record as an
-ordinary owner. The identity SHALL be the runner's start time as `ps -o lstart= -p <pid>` prints it in the runner's
+ordinary owner. The runner SHALL publish the record whole: after creating the lock directory it SHALL write the record
+to a new file beside that directory, in the same parent directory, named `<lock>.owner.<random>`, give it the mode a new
+file gets under the runner's umask, and rename it to `<lock>/owner`, so that a reader finds either no owner file or the
+complete record. It SHALL write nothing else inside the lock directory, and that file's name never begins
+`<lock>.stale.`, the quarantine name. If publication fails, the runner SHALL exit non-zero before any Docker call,
+having removed the lock directory and the file it wrote beside it, unless the complete record already stands in the
+lock directory, as when an interrupt stops `mv` after it has renamed the file; that record names the exiting runner,
+and the next runner quarantines it once that pid is dead. An interrupt that stops `mktemp` after it created its file
+leaves that file beside the lock directory, where no reader reads it. A lock directory without an owner file is
+respected by every reader, since its host reads as unknown; a runner killed between creating the lock directory and
+the rename leaves one, which stays until it is removed by hand.
+The identity SHALL be the runner's start time as `ps -o lstart= -p <pid>` prints it in the runner's
 environment, and identity_utc the same read made with TZ=UTC and LC_ALL=C set for ps; each with leading blanks removed
 and trailing blanks kept, or `unknown` when that read prints nothing. An owner record is live when its host is this
 host and, if its identity_utc is present and not empty, `ps -o lstart= -p <pid>` read with TZ=UTC and LC_ALL=C prints
@@ -56,4 +67,17 @@ no SEMSTREAMS_* variable.
 
 - **WHEN** the runner holds the lock
 - **THEN** its owner record holds host, pid, started, identity, token, command and identity_utc, in that order and no
-  other key, and its identity_utc is not empty
+  other key, its identity_utc is not empty, and its mode is the one a new file gets under the runner's umask
+
+#### Scenario: A contender during publication respects the owner
+
+- **WHEN** a runner has created the lock directory and not yet renamed its record into it, and a second runner on the
+  same host, started from a shell with another time zone, finds the lock with no wait budget set
+- **THEN** the second runner exits non-zero without quarantining the lock or making a Docker call, and the first runner
+  then publishes its complete record, runs, and releases the lock, leaving no file beside it
+
+#### Scenario: A record that cannot be published releases the lock
+
+- **WHEN** the runner has created the lock directory and cannot write its record beside it
+- **THEN** the runner removes the lock directory and any file it wrote beside it, and exits non-zero without a Docker
+  call

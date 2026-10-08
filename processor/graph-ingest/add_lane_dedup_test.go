@@ -16,12 +16,11 @@ import (
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/natsclient"
-	"github.com/c360studio/semengine/pkg/retry"
 )
 
 // Add-lane deduplication (gh#697 / gh#713). These drive the PRODUCTION
-// KVStore.UpdateWithRetry wrap chain over a CAS-capable mock bucket, so the
-// sentinel recovery, the revision arithmetic, and the response shape are all
+// KVStore.UpdateWithRetryRead loop over a CAS-capable mock bucket, so the
+// declined write, the revision arithmetic, and the response shape are all
 // exercised the way the NATS handlers exercise them.
 
 const dedupSubject = "c360.platform.robotics.mav1.drone.001"
@@ -74,24 +73,6 @@ func appendDedupTriple(ctx context.Context, t *testing.T, comp *Component, tripl
 	t.Helper()
 	_, _, err := comp.addTripleLane(ctx, triple, dedupLaneAddBatch)
 	require.NoError(t, err)
-}
-
-// Task 2.3: errors.Is must reach the sentinel through
-// retry.NonRetryable(fmt.Errorf("update function error: %w", err)) — if it did
-// not, every suppressed write would surface as a CAS failure instead of a
-// silent success.
-func TestErrNoOpAddDuplicate_SurvivesUpdateWithRetryWrapChain(t *testing.T) {
-	comp, _ := seedDedupEntity(t, dedupSubject)
-
-	err := comp.entityBucket.UpdateWithRetry(context.Background(), dedupSubject,
-		func(_ []byte) ([]byte, error) { return nil, errNoOpAddDuplicate })
-
-	require.Error(t, err)
-	assert.ErrorIs(t, err, errNoOpAddDuplicate,
-		"the sentinel must survive UpdateWithRetry's NonRetryable + fmt.Errorf wrap chain")
-	assert.True(t, retry.IsNonRetryable(err), "and must stop the CAS loop rather than retry")
-	assert.False(t, natsclient.IsKVConflictError(err),
-		"the sentinel message must not trip IsKVConflictError's substring sniffing")
 }
 
 // Task 3.1 + the zero-write requirement: a duplicate add commits NOTHING.

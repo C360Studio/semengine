@@ -421,24 +421,12 @@ func (c *Component) handleCanonicalAppend(ctx context.Context, data []byte) ([]b
 			})
 			continue
 		}
-		if _, unchanged := result.UnchangedSubjects[subject]; !unchanged {
+		revision, unchanged := result.UnchangedSubjects[subject]
+		if !unchanged {
 			return nil, rejectInternal(fmt.Errorf("append subject %q lost its accounted outcome", subject))
 		}
-		// Duplicate-only is explicitly accounted as unchanged. Read only to attach
-		// the current revision; readability never proves the operation ran.
-		_, revision, readErr := c.readEntity(ctx, subject)
-		if readErr != nil {
-			if natsclient.IsKVNotFoundError(readErr) {
-				response.Results = append(response.Results, graph.AppendSubjectResult{
-					EntityID: subject, Outcome: graph.MutationEntityNotFound,
-				})
-				continue
-			}
-			response.Results = append(response.Results, graph.AppendSubjectResult{
-				EntityID: subject, Outcome: graph.MutationFailed, Error: canonicalAppendFailure(readErr),
-			})
-			continue
-		}
+		// Duplicate-only wrote nothing: unchanged at the revision the append's CAS
+		// read (design D23), never a later read's.
 		response.Results = append(response.Results, graph.AppendSubjectResult{
 			EntityID: subject, Outcome: graph.MutationUnchanged, KVRevision: revision,
 		})

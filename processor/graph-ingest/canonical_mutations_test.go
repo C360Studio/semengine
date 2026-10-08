@@ -459,6 +459,75 @@ func TestCanonicalAppendReportsPartialAndDoesNotBirthAbsentSubject(t *testing.T)
 	}
 }
 
+// An append that adds nothing writes nothing and replies unchanged at the revision its
+// compare-and-set read (spec graph-entity-writes, "An append that adds nothing"; design D23),
+// also when the key is deleted after that read: the reply's revision is the read's, never a
+// second read's. The test plants the stored revision, so the expected reply does not come from
+// the code under test.
+func TestCanonicalAppendNoOpReportsTheRevisionItRead(t *testing.T) {
+	const plantedRevision = 41
+	held := canonicalTriple(canonicalEntityA, "test.state.value", "ready")
+	for _, tt := range []struct {
+		name            string
+		deleteAfterRead bool
+	}{
+		{name: "entity at its stored revision"},
+		{name: "key deleted after the read", deleteAfterRead: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
+			createCanonicalEntity(t, c, canonicalEntityA, []message.Triple{held})
+			bucket.mu.Lock()
+			stored := bucket.data[canonicalEntityA]
+			stored.revision = plantedRevision
+			bucket.data[canonicalEntityA] = stored
+			bucket.mu.Unlock()
+			// The append's first read of the key is its compare-and-set's, so the delete lands
+			// after the read the append decides on.
+			bucket.getFunc = func(_ context.Context, key string) (jetstream.KeyValueEntry, error) {
+				bucket.mu.Lock()
+				defer bucket.mu.Unlock()
+				entry, ok := bucket.data[key]
+				if !ok {
+					return nil, jetstream.ErrKeyNotFound
+				}
+				if tt.deleteAfterRead {
+					delete(bucket.data, key)
+				}
+				return &mockKVEntry{key: key, data: entry.value, revision: entry.revision}, nil
+			}
+
+			data, err := c.handleCanonicalAppend(context.Background(), mustCanonicalJSON(t, graph.AppendTriplesRequest{
+				Triples: []message.Triple{held},
+			}))
+			if err != nil {
+				t.Fatalf("handleCanonicalAppend: %v", err)
+			}
+			var response graph.AppendTriplesResponse
+			if err := json.Unmarshal(data, &response); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			want := graph.AppendSubjectResult{
+				EntityID: canonicalEntityA, Outcome: graph.MutationUnchanged, KVRevision: plantedRevision,
+			}
+			if len(response.Results) != 1 || response.Results[0] != want {
+				t.Fatalf("results = %#v, want only %#v", response.Results, want)
+			}
+
+			bucket.mu.Lock()
+			after, present := bucket.data[canonicalEntityA]
+			bucket.mu.Unlock()
+			switch {
+			case tt.deleteAfterRead && present:
+				t.Fatalf("the deleted key was written again at revision %d", after.revision)
+			case !tt.deleteAfterRead && (!present || after.revision != plantedRevision):
+				t.Fatalf("stored entry after a no-op append = %#v (present %v), want revision %d untouched",
+					after, present, plantedRevision)
+			}
+		})
+	}
+}
+
 func TestCanonicalAppendReturnsBatchCancellation(t *testing.T) {
 	c, _ := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
 	createCanonicalEntity(t, c, canonicalEntityA, []message.Triple{canonicalTriple(canonicalEntityA, "test.seed.value", "seeded")})
@@ -493,7 +562,7 @@ func TestCanonicalAppendAccountingRequiresExactlyOneOutcomePerSubject(t *testing
 	subjects := []string{canonicalEntityA, canonicalEntityB}
 	valid := addTriplesResult{
 		CommittedRevisions: map[string]uint64{canonicalEntityA: 2},
-		UnchangedSubjects:  map[string]struct{}{canonicalEntityB: {}},
+		UnchangedSubjects:  map[string]uint64{canonicalEntityB: 1},
 	}
 	if err := validateCanonicalAppendAccounting(subjects, valid); err != nil {
 		t.Fatalf("valid accounting: %v", err)

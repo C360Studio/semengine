@@ -39,7 +39,8 @@ import (
 //   - conditional replace (reconcileCandidate, then replaceEntityAtRevision): mutation reconcile,
 //     at the caller's expected revision.
 //   - append (appendEntityTriples): mutation append; in-process append (hierarchy's inverse
-//     edges). Identity is message.AppendIdentityKey, under the KV revision.
+//     edges). Identity is message.AppendIdentityKey, under the KV revision. An append that adds
+//     nothing writes nothing and is unchanged at the revision it read.
 //   - delete (deleteEntity): mutation delete, at the caller's expected revision.
 
 // requireStatementMetadata is the seam's statement-metadata rule (design D15, #98): every
@@ -249,14 +250,30 @@ func (c *Component) replaceEntityAtRevision(ctx context.Context, entityID string
 	return revision, nil
 }
 
+// appendResult is what one append did. outcome is graph.MutationApplied when the append
+// committed revision, or graph.MutationUnchanged when every triple was already stored: nothing
+// was written, and revision is the one its compare-and-set read. suppressed is the number of
+// triples not added, as counted against the state the last attempt read.
+type appendResult struct {
+	revision   uint64
+	outcome    graph.MutationOutcome
+	suppressed int
+}
+
 // appendEntityTriples is the append mode: a read-modify-write under the KV revision that adds
 // to subject's stored entity each of triples whose message.AppendIdentityKey is not stored yet.
 // The entity must exist: an absent subject fails with natsclient.ErrKVKeyNotFound. When every
-// triple is already stored nothing is written and the error is errNoOpAddDuplicate. revision is
-// the exact revision this write committed (0 when nothing committed), and suppressed is the
-// number of triples not added, as counted against the state the last attempt read.
-func (c *Component) appendEntityTriples(ctx context.Context, subject string, triples []message.Triple) (revision uint64, suppressed int, err error) {
-	revision, err = c.entityBucket.UpdateWithRetryRev(ctx, subject, func(current []byte) ([]byte, error) {
+// triple is already stored the result is unchanged at the revision read (design D23). On an
+// error the result is the zero value.
+func (c *Component) appendEntityTriples(ctx context.Context, subject string, triples []message.Triple) (appendResult, error) {
+	// read and suppressed are assigned on each run of the callback, never accumulated, so they
+	// describe the last run: the one that committed or declined.
+	var (
+		read       uint64
+		suppressed int
+	)
+	revision, err := c.entityBucket.UpdateWithRetryRead(ctx, subject, func(current []byte, currentRevision uint64) ([]byte, error) {
+		read = currentRevision
 		var entity graph.EntityState
 
 		if len(current) > 0 {
@@ -285,13 +302,16 @@ func (c *Component) appendEntityTriples(ctx context.Context, subject string, tri
 		// suppressed is ASSIGNED (never accumulated), so a CAS retry replaces
 		// the losing attempt's count with the re-evaluation against the
 		// winner's committed state rather than double-counting.
-		// UpdateWithRetryRev invokes the closure synchronously on this
+		// UpdateWithRetryRead invokes the closure synchronously on this
 		// goroutine, so the capture needs no synchronization.
 		var survivors []message.Triple
 		survivors, suppressed = message.DedupeAppendTriples(entity.Triples, triples)
 		if len(survivors) == 0 {
-			// TRUE no-op — exit via the sentinel, not by returning `current`.
-			return nil, errNoOpAddDuplicate
+			// TRUE no-op: decline the write. Returning `current` instead would be
+			// an identity rewrite (revision bump + ENTITY_STATES watcher re-fire),
+			// and a restart replaying its derived triples must be invisible
+			// downstream (gh#713).
+			return nil, natsclient.ErrKVSkipWrite
 		}
 
 		entity.Triples = append(entity.Triples, survivors...)
@@ -304,10 +324,16 @@ func (c *Component) appendEntityTriples(ctx context.Context, subject string, tri
 		return data, nil
 	})
 	if err != nil {
-		return revision, suppressed, err
+		return appendResult{}, err
+	}
+	if revision == 0 {
+		// The callback declined (UpdateWithRetryRead returns 0 only then) and nothing was
+		// written. A skip clears no poison record and invalidates no cache entry: the next
+		// valid read or commit clears a stale record (D3c).
+		return appendResult{revision: read, outcome: graph.MutationUnchanged, suppressed: suppressed}, nil
 	}
 	c.committed(ctx, subject, revision)
-	return revision, suppressed, nil
+	return appendResult{revision: revision, outcome: graph.MutationApplied, suppressed: suppressed}, nil
 }
 
 // deleteEntity is the delete mode: the entity is removed only if it is still at revision, the

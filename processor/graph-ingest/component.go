@@ -2255,22 +2255,6 @@ func (c *Component) repopulateEntityCacheEntry(id string, entity graph.EntitySta
 	}
 }
 
-// errNoOpAddDuplicate exits an append CAS closure when every submitted triple
-// is already stored under an identical six-field tuple: a TRUE no-op. It
-// uses a sentinel because the closure must not exit by returning the current bytes: UpdateWithRetry
-// CAS-writes whatever the closure returns, so `return current, nil` would be an
-// identity rewrite (revision bump + ENTITY_STATES watcher re-fire), not a skip.
-// A restart replaying its derived triples must be invisible downstream, and a
-// revision bump is exactly what makes it visible (gh#713).
-//
-// The caller maps it to success with NO write committed, BEFORE the error
-// counter: a duplicate is not a failure. errors.Is reaches it through
-// natsclient.UpdateWithRetry's wrap chain — retry.NonRetryable(fmt.Errorf(
-// "update function error: %w", err)) — because *retry.NonRetryableError
-// implements Unwrap. The message deliberately avoids the substrings
-// IsKVConflictError sniffs for ("key exists", "wrong last sequence").
-var errNoOpAddDuplicate = errors.New("add triple: every submitted triple is already stored (no-op)")
-
 // recordSuppressedDuplicates meters triples the append path declined to store
 // because the entity already carried them. Nil-guarded so it is safe on a
 // hand-built Component (the test-construction pattern) that reaches it without
@@ -2323,24 +2307,21 @@ func (c *Component) addTripleLane(ctx context.Context, triple message.Triple, la
 
 	// appendEntityTriples: atomic read-modify-write with CAS, returning the exact
 	// revision the commit produced (see the committedRevision doc above).
-	casRevision, _, casErr := c.appendEntityTriples(ctx, triple.Subject, []message.Triple{triple})
-
+	appended, casErr := c.appendEntityTriples(ctx, triple.Subject, []message.Triple{triple})
 	if casErr != nil {
-		// Duplicate suppression is a SUCCESS with nothing committed. Recovered
-		// before the error counter: metering it as a component error would make
-		// every restart replay look like a fault. Nothing was written, so the seam
-		// owed no poison-clear or cache invalidation (the stored bytes and
-		// revision are untouched).
-		if errors.Is(casErr, errNoOpAddDuplicate) {
-			c.recordSuppressedDuplicates(lane, 1)
-			return true, 0, nil
-		}
 		atomic.AddInt64(&c.errors, 1)
 		return false, 0, errs.Wrap(casErr, "Component", "AddTriple", "CAS update")
 	}
+	if appended.outcome == graph.MutationUnchanged {
+		// Duplicate suppression is a SUCCESS with nothing committed, so it is not
+		// metered as a component error: that would make every restart replay look
+		// like a fault. The committed revision stays 0: this call wrote nothing.
+		c.recordSuppressedDuplicates(lane, 1)
+		return true, 0, nil
+	}
 	// appendEntityTriples cleared the key's poison record and invalidated its
 	// cache entry, so the next query reads the appended state.
-	return false, casRevision, nil
+	return false, appended.revision, nil
 }
 
 // addTriplesResult is one internal append batch's outcome. Grouped into a struct
@@ -2361,10 +2342,10 @@ type addTriplesResult struct {
 	// SubjectErrors preserves typed subject-local failures for the canonical
 	// partial-result wire without erasing earlier receipts.
 	SubjectErrors map[string]error
-	// UnchangedSubjects identifies subjects whose submitted tuples were all
-	// already present. The canonical handler uses this explicit classification
-	// instead of inferring an attempted no-op from a later readable entity.
-	UnchangedSubjects map[string]struct{}
+	// UnchangedSubjects maps each subject whose submitted tuples were all already
+	// present to the revision its CAS read: nothing was written, and the canonical
+	// reply is unchanged at that revision, never at a later read's (design D23).
+	UnchangedSubjects map[string]uint64
 	// CommittedRevisions holds the EXACT revision each subject's CAS produced,
 	// keyed by subject. A subject that was wholly suppressed or that failed is
 	// ABSENT — presence in this map is the authoritative answer to "did this
@@ -2435,7 +2416,7 @@ func (c *Component) addTriplesLane(ctx context.Context, triples []message.Triple
 	failedSubjects := make(map[string]string)
 	notFoundSubjects := make(map[string]struct{})
 	subjectErrors := make(map[string]error)
-	unchangedSubjects := make(map[string]struct{})
+	unchangedSubjects := make(map[string]uint64)
 	committedRevisions := make(map[string]uint64)
 	// allAbsences tracks whether EVERY per-subject failure was an ADR-055
 	// entity-not-found rejection. When true the aggregated error wraps
@@ -2466,23 +2447,8 @@ func (c *Component) addTriplesLane(ctx context.Context, triples []message.Triple
 			break
 		}
 		group := bySubject[subject]
-		// groupSuppressed is the count appendEntityTriples took against the state
-		// its last CAS attempt read, so a retry never double-counts.
-		casRevision, groupSuppressed, casErr := c.appendEntityTriples(ctx, subject, group)
-
+		appended, casErr := c.appendEntityTriples(ctx, subject, group)
 		if casErr != nil {
-			// Recovered FIRST, before failedSubjects / c.errors / allAbsences:
-			// a wholly-duplicate subject committed nothing but did not FAIL, and
-			// counting it into allAbsences would misclassify a mixed batch as a
-			// pure entity-not-found batch (wrong ErrorCodeEntityNotFound on the
-			// reply). Nothing was written, so the seam owed no poison-clear or
-			// cache invalidation either.
-			if errors.Is(casErr, errNoOpAddDuplicate) {
-				c.recordSuppressedDuplicates(lane, groupSuppressed)
-				deduplicated += groupSuppressed
-				unchangedSubjects[subject] = struct{}{}
-				continue
-			}
 			atomic.AddInt64(&c.errors, 1)
 			failedSubjects[subject] = casErr.Error()
 			if errors.Is(casErr, natsclient.ErrKVKeyNotFound) {
@@ -2499,14 +2465,24 @@ func (c *Component) addTriplesLane(ctx context.Context, triples []message.Triple
 			}
 			continue
 		}
+		// appended.suppressed is the count appendEntityTriples took against the
+		// state its last CAS attempt read, so a retry never double-counts.
+		c.recordSuppressedDuplicates(lane, appended.suppressed)
+		deduplicated += appended.suppressed
+		if appended.outcome == graph.MutationUnchanged {
+			// A wholly-duplicate subject committed nothing but did not FAIL: it
+			// stays out of failedSubjects, c.errors and allAbsences, which would
+			// otherwise misclassify a mixed batch as a pure entity-not-found batch
+			// (wrong ErrorCodeEntityNotFound on the reply).
+			unchangedSubjects[subject] = appended.revision
+			continue
+		}
 		// appendEntityTriples cleared the key's poison record and invalidated its
 		// cache entry, so the next query reads the appended state.
-		c.recordSuppressedDuplicates(lane, groupSuppressed)
-		deduplicated += groupSuppressed
 		// Only NEWLY appended tuples count as written.
-		writtenCount += len(group) - groupSuppressed
+		writtenCount += len(group) - appended.suppressed
 		// This subject COMMITTED, at exactly this revision.
-		committedRevisions[subject] = casRevision
+		committedRevisions[subject] = appended.revision
 	}
 
 	result := addTriplesResult{

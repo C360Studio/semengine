@@ -24,6 +24,11 @@ import (
 // NewTestClient family used.
 const fixtureClientTimeout = 15 * time.Second
 
+// wireRequestTimeout bounds one request a test sends the component over the broker. The
+// pin's query and gate tests used 2s or 5s; docs/testing.md ("Porting a test from
+// SemStreams") asks a real-clock failure bound of a broker wait to be at least ten seconds.
+const wireRequestTimeout = 10 * time.Second
+
 // openFixtureClient opens a natsclient.Client the way the pin's NewTestClient built it: no
 // reconnects, no health monitor. It is the open function this package gives
 // natsfixture.Open (design D3), which bounds it and closes it on cleanup.

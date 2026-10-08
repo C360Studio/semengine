@@ -106,7 +106,7 @@ func TestIntegration_KeyedIngest_PublishedEntityIngestsThroughPool(t *testing.T)
 	require.Eventually(t, func() bool {
 		stored, _, ferr := c.fetchEntityState(ctx, entityID)
 		return ferr == nil && stored != nil
-	}, 5*time.Second, 20*time.Millisecond, "published entity must ingest through the keyed pool")
+	}, 10*time.Second, 20*time.Millisecond, "published entity must ingest through the keyed pool")
 
 	stored, _, err := c.fetchEntityState(ctx, entityID)
 	require.NoError(t, err)
@@ -257,7 +257,7 @@ func TestIntegration_KeyedIngest_SameEntityUpdatesStayOrdered(t *testing.T) {
 	require.Eventually(t, func() bool {
 		v, ok := orderSeq()
 		return ok && v == float64(updates)
-	}, 5*time.Second, 20*time.Millisecond, "same-entity updates must apply in order; final must be the last write")
+	}, 10*time.Second, 20*time.Millisecond, "same-entity updates must apply in order; final must be the last write")
 
 	// Belt-and-suspenders: it settled on exactly the last value, not an earlier one.
 	v, ok := orderSeq()

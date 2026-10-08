@@ -291,8 +291,9 @@ posted on this pull request.
       profile, and with hierarchy enabled the stream and in-process births add hierarchy statements while a mutation
       create adds none (`TestMutationCreateBirthGetsNoHierarchy`, which holds the pin's behavior, ruling B; its
       `task mutate:check` record, with a mutant that runs the inference on that lane, posted); the tests of task 4.8.
-- [ ] 3.12b (D) Fail closed at birth and on the guard record (#111 item 1; design D21): the tests of task 4.9. Hold:
-      task 3.12a.
+- [ ] 3.12b (D) Fail closed at birth and on the guard record (#111 item 1; design D21): the tests of task 4.9; and
+      #130, the hierarchy container cache that is never invalidated, fixed here, since failing the birth closed turns
+      it from a warning into a redelivery that never ends (PR #93 comment 6061824292). Hold: task 3.12a.
 - [ ] 3.13 (D) graph-ingest under the lifecycle suite: an in-package adapter whose `Observe` lists consumers, request
       subscriptions, ingest lanes and the status loop; failing factory = a refused broker; `lifecycletest.Run` green;
       `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop` carried on the adapter, green, driving the

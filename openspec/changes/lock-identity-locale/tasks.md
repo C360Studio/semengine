@@ -26,7 +26,7 @@ starts, `task merge:check -- 127` and the merge are recorded on this pull reques
       another start time" and "identity_utc unknown" fail for the reasons D6 names (T1: runner B exits 0 having
       quarantined runner A's live lock; R4: the record has six keys); every other test passes. Gate: that run's
       output, recorded on this pull request with the system it ran on.
-- [ ] 2.2 (D) The runner, as `design.md`, D1 and D2 state: `scripts/test-integration.sh` writes `identity_utc` as the
+- [x] 2.2 (D) The runner, as `design.md`, D1 and D2 state: `scripts/test-integration.sh` writes `identity_utc` as the
       record's last line, reads it, and judges by it when it is usable; the comments at `:5-6`, `:134` and
       `scripts/admission-lock.sh:3-4` as D5 states. Gate: `bash -n scripts/test-integration.sh` and
       `task test:unit`, the runner tests among them passing.

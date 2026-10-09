@@ -134,8 +134,8 @@ not applied SHALL be counted and logged with the entity, predicate and source. T
 reference SHALL take the message's values only when none of its sets was skipped. A message with at least one set, none
 of which applies, SHALL write nothing, unless the stored entity has no indexing profile, which the write then stamps
 (ADR-054). On an entity with an indexing profile, an arriving indexing-profile statement SHALL be dropped, and a message
-with no statement left after that SHALL write nothing, whatever its time, its message type and storage reference
-included, and SHALL count no set as not applied. A conditional replace SHALL be fenced by its expected revision, not
+with no statement left after that SHALL write nothing, not even its message type or storage reference, whatever its
+time, and SHALL count no set as not applied. A conditional replace SHALL be fenced by its expected revision, not
 ordered by `Timestamp`.
 
 #### Scenario: An older arrival

@@ -140,7 +140,8 @@ detection, review and storage, which stay behind, so the slice gets a package co
 Its tests are the three `hierarchy_*_test.go` files. At the pin the slice builds alone and its tests pass under the
 race detector and five shuffled runs. Its dead surface goes (D6): `DefaultHierarchyConfig`, `OnEntityCreated`,
 `ClearCache`, `GetMetrics`, `GetCacheStats`. The tests that call `OnEntityCreated` (27 reads) call
-`GetHierarchyTriples` and the adder they pass instead, as the `MergeEntity` tests do. The rest of the package
+`GetHierarchyTriples` instead, as the `MergeEntity` tests do; the adder they also passed leaves with task 3.12j
+(ruled M). The rest of the package
 (`detector.go`, the three detectors, `storage.go`, `review_worker.go`, `http_handlers.go`, the appliers in
 `applier.go`, `config.go`, `metrics.go`, `types.go`, `doc.go`) is ported with graph-clustering in change 7; the
 ledger row names those files and #97.
@@ -250,15 +251,16 @@ audit drops (D6) needs no shape. Per remaining helper, what the caller observes,
 
 Dropped, so no shape: `dispatch.BoundedDispatcher` (and with it its fixed 30 s default wait, `dispatcher.go:226-231`)
 and `readiness.Set` (D6); the readiness `Watcher` is not carried (ruled P, D6) and takes `Run(ctx)` when it returns with
-change 5; `worker.Pool[T]`, whose second `Stop` after a timed-out one panics at the pin (P-6), is not
-ported (ruling E). Not ported in change 2, so their shape is change 7's: `inference.ReviewWorker` and
-`inference.NATSAnomalyStorage.Watch` (#97, D1a). `lifecycle.Manager.Watch` and `WatchEvents` have **no
-reader in the admitted set** (§2: `Watch` is read only by `processor/gated-dag/executor.go:119` and
-`gateway/lifecycle-gateway/handlers.go:475`; `WatchEvents` by nobody); they are adapted because D6 keeps
-`pkg/lifecycle`'s surface whole (K1). Their shape changed, and so did one behaviour: an entry `Watch` or `WatchEvents`
-cannot project now ends the watch with an error naming the entity and revision, where at the pin it was a logged skip
-(`manager_query.go:337`; checkpoint-2 review, PR #93 comment 6048386249; `TestWatchReturnsProjectionFailure`,
-`167aec4`).
+change 5 (`Run` returns `ctx.Err()` when its context ends and leaves nothing running; an undecodable value revokes the
+held envelope's freshness until the next decoded update, PR #93 comment 6048386249); `worker.Pool[T]`, whose second
+`Stop` after a timed-out one panics at the pin (P-6), is not ported (ruling E). Not ported in change 2, so their shape
+is change 7's: `inference.ReviewWorker` and `inference.NATSAnomalyStorage.Watch` (#97, D1a). `lifecycle.Manager.Watch`
+and `WatchEvents` have **no reader in the admitted set** (§2: `Watch` is read only by
+`processor/gated-dag/executor.go:119` and `gateway/lifecycle-gateway/handlers.go:475`; `WatchEvents` by nobody); they
+are adapted because D6 keeps `pkg/lifecycle`'s surface whole (K1). Their shape changed, and so did one behaviour: an
+entry `Watch` or `WatchEvents` cannot project now ends the watch with an error naming the entity and revision, where at
+the pin it was a logged skip (`manager_query.go:337`; checkpoint-2 review, PR #93 comment 6048386249;
+`TestWatchReturnsProjectionFailure`, `167aec4`).
 
 The developer chooses locks and join order, settled by a failing-first test under `-race`. A nil context is refused at
 the call (an error). Callers inside this change adapt in the same commit (graph-ingest's `KeyedPool` use). Callers in
@@ -556,9 +558,10 @@ Recommendation **(d)**, as a `harness-boundaries` modification with a sensitivit
   here; it stays on 03B D10's critical list and becomes a target in change 7. Per
   package, from P-7, P-8 and P-19 (inventory §9.10):
   - Already over the floor after the drop: graph-ingest 84.7% (its suffix code removed, D19), `graph` 80.9% (the root
-    after D16; a two-statement margin), `graph/kvcatalog` 80.3% merged, `graph/readiness` 84.6% unit (55 of 65
-    statements once ruling P's removal lands, with task 3.12k's two added tests; 78.5% without them), `graph/inference`
-    82.8% (the slice), `storage/storeregistry` 100%.
+    after D16; a two-statement margin), `graph/kvcatalog` 80.3% merged, `graph/inference` 82.8% (the slice),
+    `storage/storeregistry` 100%.
+  - `graph/readiness` 78.5% unit after ruling P's removal (51 of 65 statements), one statement short; task 3.12k's two
+    added tests bring it to 84.6% (55 of 65).
   - `internal/graphmutation` 69.7%, 10 statements short: tests that the client refuses a malformed append response
     (`validateAppendResponse`) and that `Reconcile` and `Delete` send their requests and read their replies.
   - `pkg/projection` 66.5%, 31 short (its unread surface is kept, K1, so the drop buys nothing): the typed client's
@@ -1113,18 +1116,16 @@ lane and the in-process create, as at the pin; D15) is born with its hierarchy s
 create infers none, so the rule does not reach it (ruled B, #91 comment 6037287957). `AddToContainers` (the pin's
 `GetHierarchyTriples`) returns an error when any part fails: a container birth or a forward edge. It writes no inverse
 edge (ruled M, #91 comment 6080973822; #145): an existing container's stored value does not change when a member is
-born, and membership is read from the forward edges on each member.
-graph-ingest then
-writes nothing for the entity and returns the error, classified transient. On the stream lane the input is not
-acknowledged and is delivered again; on the in-process lane the caller gets the error. Containers born before the
-failure are found by the next attempt, which births only those still absent. That
-holds because the inference keeps no record of which containers exist: each birth asks storage, so a container deleted
-since an earlier birth is created again (#130). The inference writes no sibling edges (ruled G, #91 comment
-6062681355); `hierarchy.type.sibling` stays registered in `vocabulary`; so do the three `hierarchy.*.contains`
-predicates, which no birth writes (ruled M), as sibling does (ruled G). The stream lane reads the key to tell a birth
-from an update before it runs the inference; if that read finds the entity and the compare-and-set then finds the key
-absent (deleted in between), the write stores nothing and returns a transient error, so the redelivery reads again
-and births the entity with its hierarchy (PR #93 comment 6072740123). Test:
+born, and membership is read from the forward edges on each member. On that error graph-ingest writes nothing for the
+entity and returns it, classified transient. On the stream lane the input is not acknowledged and is delivered again; on
+the in-process lane the caller gets the error. Containers born before the failure are found by the next attempt, which
+births only those still absent. That holds because the inference keeps no record of which containers exist: each birth
+asks storage, so a container deleted since an earlier birth is created again (#130). The inference writes no sibling
+edges (ruled G, #91 comment 6062681355); `hierarchy.type.sibling` stays registered in `vocabulary`; so do the three
+`hierarchy.*.contains` predicates, which no birth writes (ruled M), as sibling does (ruled G). The stream lane reads the
+key to tell a birth from an update before it runs the inference; if that read finds the entity and the compare-and-set
+then finds the key absent (deleted in between), the write stores nothing and returns a transient error, so the
+redelivery reads again and births the entity with its hierarchy (PR #93 comment 6072740123). Test:
 `TestHierarchyFailureFailsTheBirth`: the inference's entity manager fails once, the entity is absent and the error is
 transient; on the redelivery the entity is born with its container edges. Written first, failing on the pin's code.
 

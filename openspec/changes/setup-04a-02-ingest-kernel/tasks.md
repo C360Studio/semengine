@@ -371,9 +371,12 @@ posted on this pull request.
       of the old one; no production change, both fences hold. CI on `8fb4408` (run 37936839601) failed on the known
       flake #144 alone; CI on `f4364bc`, which carries it, is green (run 37939020158). Notes: PR #93 comment
       6081968133.
-- [ ] 3.12g (D) #151 and #152: `graph.NewExactEntityReader` refuses a negative timeout at construction (zero keeps
+- [x] 3.12g (D) #151 and #152: `graph.NewExactEntityReader` refuses a negative timeout at construction (zero keeps
       meaning the default, D16); `lifecycle.Manager.CreateFromOperator` refuses a second JSON value after the first,
       as `types/component.go` does since task 3.1; a test for each, written first.
+      Done in `8504a73` (CI 37942461597 green): `NewExactEntityReader` returns `(ExactEntityReader, error)`;
+      `NewManager` panics on the refusal its 5 s constant cannot cause; mutation records and choices in PR #93 comment
+      6082801917.
 - [ ] 3.12h (D) #146, ruled N (#91 comment 6080973822): `natsclient.IsKVConflictError` and `IsKVNotFoundError`
       classify by type only (`errors.Is` on natsclient's sentinels and on jetstream's `ErrKeyNotFound`, `ErrKeyDeleted`
       and `ErrKeyExists`, and `errors.As` on `*jetstream.APIError` with its error code), and `errs.IsTransient` by class

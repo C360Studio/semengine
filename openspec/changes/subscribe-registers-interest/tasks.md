@@ -20,7 +20,7 @@ starts, `task merge:check -- 156` and the merge are recorded on this pull reques
 
 ## 2. The fix and its tests
 
-- [ ] 2.1 (D) T1 to T8 of `design.md`, D7 (revision 4), written first and run on the base code: T1 fails with "no
+- [x] 2.1 (D) T1 to T8 of `design.md`, D7 (revision 4), written first and run on the base code: T1 fails with "no
       responders" for both calls, and T2 to T8 fail because the call returns a subscription and no error (T4: the
       server reads a `SUB`). Run together in one `go test` run, T2 to T8 each report that failure, and the run ends
       with those failures, not with a `fatal error` or a time-out. The first run (PR #156 comment 6086018979) settled

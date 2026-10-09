@@ -360,6 +360,30 @@ func (c *Client) ReplyWithHeaders(ctx context.Context, replyTo string, data []by
 // This is a convenience method for implementing request/reply services.
 // Once Close has begun it returns nats.ErrConnectionClosed and subscribes
 // nothing. Close joins every running invocation of handler.
+//
+// The subscription is registered with the server when SubscribeForRequests
+// returns it: the call sends a PING on the connection it subscribed on and waits
+// for the PONG, which the server sends once it has read the SUB, so a request
+// sent to that server from any connection after the call returns finds the
+// handler. The wait ends when the server answers, when ctx ends, or when
+// DefaultRequestTimeout has passed, whichever comes first. If ctx has already
+// ended, the call sends no SUB and returns a transient error matching ctx's
+// error. Nothing here says when a responder in another component has subscribed,
+// or what holds after a reconnect or across the servers of a cluster.
+//
+// When the wait does not complete, or Close has begun when it ends, the call
+// ends the subscription (it unsubscribes it, so it is not restored on a
+// reconnect; on a connection Close is draining or has closed, Close ends it) and
+// returns no subscription and the first of these errors that holds:
+//   - nats.ErrConnectionClosed, if Close has begun;
+//   - a transient error matching context.Canceled or context.DeadlineExceeded,
+//     if ctx ended or DefaultRequestTimeout passed;
+//   - a transient error matching ErrNotConnected, and not
+//     nats.ErrConnectionClosed, if the connection was lost or closed by anything
+//     but Close.
+//
+// It returns at once, without waiting for a running invocation of handler;
+// Close joins that invocation.
 func (c *Client) SubscribeForRequests(
 	ctx context.Context,
 	subject string,
@@ -369,7 +393,7 @@ func (c *Client) SubscribeForRequests(
 	if ctx == nil {
 		return nil, nilContextError("SubscribeForRequests")
 	}
-	return c.subscribeOwned("SubscribeForRequests", subject, func(conn *nats.Conn) nats.MsgHandler {
+	return c.subscribeOwned(ctx, "SubscribeForRequests", subject, func(conn *nats.Conn) nats.MsgHandler {
 		return c.requestCallback(ctx, conn, subject, handler)
 	}, nativeSubscribe)
 }

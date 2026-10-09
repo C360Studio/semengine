@@ -1250,6 +1250,30 @@ func (s *Subscription) Drain(ctx context.Context) error {
 // Returns a Subscription handle that can be used to unsubscribe. Once Close has
 // begun it returns nats.ErrConnectionClosed and subscribes nothing. Close joins
 // every running invocation of handler.
+//
+// The subscription is registered with the server when Subscribe returns it:
+// Subscribe sends a PING on the connection it subscribed on and waits for the
+// PONG, which the server sends once it has read the SUB, so a message or request
+// sent to that server from any connection after the call returns finds the
+// subscription. The wait ends when the server answers, when ctx ends, or when
+// DefaultRequestTimeout has passed, whichever comes first. If ctx has already
+// ended, Subscribe sends no SUB and returns a transient error matching ctx's
+// error. Nothing here says when a responder in another component has subscribed,
+// or what holds after a reconnect or across the servers of a cluster.
+//
+// When the wait does not complete, or Close has begun when it ends, Subscribe
+// ends the subscription (it unsubscribes it, so it is not restored on a
+// reconnect; on a connection Close is draining or has closed, Close ends it) and
+// returns no subscription and the first of these errors that holds:
+//   - nats.ErrConnectionClosed, if Close has begun;
+//   - a transient error matching context.Canceled or context.DeadlineExceeded,
+//     if ctx ended or DefaultRequestTimeout passed;
+//   - a transient error matching ErrNotConnected, and not
+//     nats.ErrConnectionClosed, if the connection was lost or closed by anything
+//     but Close.
+//
+// It returns at once, without waiting for a running invocation of handler;
+// Close joins that invocation.
 func (m *Client) Subscribe(ctx context.Context, subject string, handler func(context.Context, *nats.Msg)) (*Subscription, error) {
 	// Refused here, not in the callback, which hands ctx to handler for every message.
 	if ctx == nil {
@@ -1274,7 +1298,7 @@ func nativeSubscribe(conn *nats.Conn, subject string, cb nats.MsgHandler) (nativ
 func (m *Client) subscribeWith(
 	ctx context.Context, subject string, handler func(context.Context, *nats.Msg), subscribe subscribeFunc,
 ) (*Subscription, error) {
-	return m.subscribeOwned("Subscribe", subject, func(*nats.Conn) nats.MsgHandler {
+	return m.subscribeOwned(ctx, "Subscribe", subject, func(*nats.Conn) nats.MsgHandler {
 		return func(msg *nats.Msg) {
 			// Create per-message context with timeout
 			msgCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -1294,14 +1318,23 @@ func (m *Client) subscribeWith(
 // native subscribe, refused once Close has begun, counted until its delivery has
 // ended, with each handler invocation observed (design D3,
 // natsclient-close-is-final). build makes the native callback for the connection
-// the subscription is made on.
+// the subscription is made on. It returns the subscription only once the server
+// has read its SUB: a PING on that connection and its PONG, bounded by ctx and
+// DefaultRequestTimeout (design subscribe-registers-interest, D1 to D5).
 func (m *Client) subscribeOwned(
-	operation, subject string, build func(conn *nats.Conn) nats.MsgHandler, subscribe subscribeFunc,
+	ctx context.Context, operation, subject string, build func(conn *nats.Conn) nats.MsgHandler,
+	subscribe subscribeFunc,
 ) (*Subscription, error) {
 	m.mu.Lock()
 	if m.closing {
 		m.mu.Unlock()
 		return nil, errs.Wrap(nats.ErrConnectionClosed, "Client", operation, "client closed")
+	}
+	// Checked before acting: with a PONG and an ended context both ready, the
+	// round trip's select would pick one at random.
+	if err := ctx.Err(); err != nil {
+		m.mu.Unlock()
+		return nil, errs.WrapTransient(err, "Client", operation, "subscribe")
 	}
 	conn := m.conn
 	if conn == nil || !conn.IsConnected() {
@@ -1323,7 +1356,44 @@ func (m *Client) subscribeOwned(
 	}
 	s := newSubscription(sub, d.end)
 	go m.watchOwnedSubscription(conn, sub, d, closing, finish)
-	return s, nil
+
+	// The round trip runs on conn, the connection the SUB went to, never on one
+	// SetConnection installed since.
+	roundTrip, cancel := context.WithTimeout(ctx, DefaultRequestTimeout)
+	rtErr := conn.FlushWithContext(roundTrip)
+	cancel()
+	m.mu.RLock()
+	closed := m.closing
+	m.mu.RUnlock()
+	if rtErr == nil && !closed {
+		return s, nil
+	}
+
+	// Fail closed. Unsubscribing removes the subscription from the connection's
+	// set, so nats.go does not restore it on a reconnect, and queues its UNSUB.
+	// An Unsubscribe error means the subscription is already ending: it is closed,
+	// or its connection is draining or closed, as once Close has begun
+	// (nats.go:5400-5407); Close's drain or the close ends it. The call does not
+	// wait for a running handler: the watcher above keeps the subscription owned
+	// until its delivery ends, so Close joins that handler.
+	_ = sub.Unsubscribe()
+	switch {
+	case closed:
+		// First, because Close's drain timeout or ended context closes the
+		// connection, which ends the round trip with nats.ErrConnectionClosed, as
+		// a lost connection does. Close having begun decides, whatever the round
+		// trip's outcome.
+		return nil, errs.Wrap(nats.ErrConnectionClosed, "Client", operation, "client closed")
+	case ctx.Err() != nil:
+		return nil, errs.WrapTransient(ctx.Err(), "Client", operation, "register with server")
+	case stderrors.Is(rtErr, nats.ErrConnectionClosed):
+		// The connection was lost, or closed by anything but this client's Close.
+		return nil, errs.WrapTransient(ErrNotConnected, "Client", operation, "register with server")
+	default:
+		// DefaultRequestTimeout passed: rtErr is context.DeadlineExceeded, the only
+		// other error FlushWithContext returns here (nats.go context.go:174-215).
+		return nil, errs.WrapTransient(rtErr, "Client", operation, "register with server")
+	}
 }
 
 // watchOwnedSubscription is a client-owned subscription's share of Close's join;

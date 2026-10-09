@@ -238,7 +238,7 @@ posted on this pull request.
       in the bodies of `b95e790` and `97d9ac6`): lifecycle's registration skipped, the birth is refused at
       graph-ingest's registered-type gate; the phase statement's source taken from the `TransitionSource`, the source
       assertion fails; graph-ingest's reconcile keeping the earlier phase statements, the count assertion fails.
-- [x] 3.11 (D) `component`: `ToolRegistry` and `ToolRegistryReader` removed (#29) and `LifecycleManager` removed
+- [ ] 3.11 (D) `component`: `ToolRegistry` and `ToolRegistryReader` removed (#29) and `LifecycleManager` removed
       (#102, design D17); `lifecycle_test_suite.go` and its self-test not ported; `ProcessorMetrics`,
       `config_validator.go`, `Registry.Snapshot` and the other dead rows removed; `CreateComponent`,
       `SealComposition` and `Snapshots` without the access-token parameter, their doc comments directing callers to
@@ -264,6 +264,12 @@ posted on this pull request.
       the `agentic-` rule removed, the sensitivity test's `processor/agentic-tools` case fails; a goroutine left
       blocked in the mock's `DebugStatus`, the leak test panics; `task mutate:check` on `CreateComponent`'s seal
       check, detection at `registry_boot_admission_test.go:160`.
+      Not done (found 2026-10-09, #153 item 1): rows `inventory.md:958-978` marks `drop` are still in `component` with
+      no production reader, and `component/README.md` documents them as API: `Registry.ListComponentTypes`,
+      `GetFactory`, `ListAvailable` (with `Info`), `declarationSnapshot.Factory`, `PortFacts.KVReadBucket`,
+      `StreamFacts.ConsumerName`, `GetPropertyValue`, `GetProperties`, `IsComplexType`, `SortedPropertyNames`,
+      `PortFieldInfo.ZeroIsOmitted`, `ValidateNetworkConfig`, and `ValidateConfigKey` and `GetComponentSchema`, whose
+      readers were all dropped. Remove them and their README entries.
 - [x] 3.12 (D) `processor/graph-ingest`: metrics per design D4 (`TestGraphIngestMetricsRegisterOnItsRegistry`,
       `TestGraphIngestNilRegistryRegistersNothing`, written first); the authority as one `types.PlatformMeta`; unknown
       configuration keys refused by strict decoding (`TestCreateGraphIngestRefusesUnknownKey`); the owner-lifecycle
@@ -324,10 +330,27 @@ posted on this pull request.
       `TestCorruptGuardRecordIsRefused`). Choices the design does not spell out: PR #93 comments 6072002735,
       6072192627, 6072528806, 6072740123, 6073028310 and 6073367616. CI green at `074c800` (run 37926039654), once
       `main`'s go1.26.9 (PR #143, #142) was merged in and `golang.org/x/net` raised under task 5.3.
-- [ ] 3.12c (D) A boot sweep that cannot run fails `Start` (ruled H, #91 comment 6062681355; #139 section C, first
+- [x] 3.12c (D) A boot sweep that cannot run fails `Start` (ruled H, #91 comment 6062681355; #139 section C, first
       item): `entityWatchLost`, `entityBootstrapStarted`, `entityBootstrapComplete`, `markEntityWatchLost` and their
       reader branches go; a test written first, failing on the pin's code, makes the sweep fail and shows `Start`
       returning the error with nothing left running.
+      Done in `8e0ecd1` (CI 37929231613 green): `TestGraphIngest_FailedBootSweepFailsStart`
+      (`lifecycle_integration_test.go`) for each failure (a refused watch, updates closed before the end-of-snapshot
+      marker, the context ended mid-sweep), failing first on `52611ea`; `TestEntityStateGuardFailureIsReturned`
+      replaces the test of the old behaviour; `ensureEntityQueriesReady` and Health's "sweep unavailable" branch go;
+      one unexported seam, `watchEntityStates`. Mutation records and choices: PR #93 comment 6080843431.
+- [ ] 3.12d (D) #147: the boot sweep (`sweepEntityStateGuardEntry`) and `classifyStoredStateRMWError` decode through
+      `decodeStoredEntity`, so a value stored under one key that names another entity is inventoried at boot, not at
+      its first read; a test written first, failing on the current code.
+- [ ] 3.12e (D) #150: an older arrival on a profiled entity whose only statement is the indexing profile writes
+      nothing (D23, the all-older rule; `7f8d9fc` is the sibling fix); a test written first, failing on the current
+      code, shows the revision unchanged.
+- [ ] 3.12f (D) #149: the revision fences on canonical reconcile and delete get tests that can fail: a write injected
+      between the handler's read and its write, and the unit bucket's `Delete` checking `LastRevision`; a
+      `task mutate:check` record for each fence (the fenced update as a `Put`, `DeleteAtRevision` as `Delete`).
+- [ ] 3.12g (D) #151 and #152: `graph.NewExactEntityReader` refuses a negative timeout at construction (zero keeps
+      meaning the default, D16); `lifecycle.Manager.CreateFromOperator` refuses a second JSON value after the first,
+      as `types/component.go` does since task 3.1; a test for each, written first.
 - [ ] 3.13 (D) graph-ingest under the lifecycle suite: an in-package adapter whose `Observe` lists consumers, request
       subscriptions, ingest lanes and the status loop; failing factory = a refused broker; `lifecycletest.Run` green;
       `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop` carried on the adapter, green, driving the

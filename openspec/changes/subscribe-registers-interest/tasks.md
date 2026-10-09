@@ -16,7 +16,7 @@ starts, `task merge:check -- 156` and the merge are recorded on this pull reques
 - [x] 1.3 The owner's acceptance of the design, revision 3, recorded on #144 or this pull request.
 - [x] 1.4 The independent pre-owner review of `design.md` revision 4 (D7, L6, L7, "Files", "Overlaps and order",
       "Owner decisions") and of this file's revision 4 changes: `DESIGN REVIEW PASS`, recorded on this pull request.
-- [ ] 1.5 The owner's answers to O1 and O2 (`design.md`, "Owner decisions"), recorded on #144 or this pull request.
+- [x] 1.5 The owner's answers to O1 and O2 (`design.md`, "Owner decisions"), recorded on #144 or this pull request.
 
 ## 2. The fix and its tests
 
@@ -25,7 +25,7 @@ starts, `task merge:check -- 156` and the merge are recorded on this pull reques
       server reads a `SUB`). Run together in one `go test` run, T2 to T8 each report that failure, and the run ends
       with those failures, not with a `fatal error` or a time-out. The first run (PR #156 comment 6086018979) settled
       T1's miss count and the dial seam. Gate: the run's output recorded on this pull request with the system it ran
-      on. Hold: the owner's acceptance of revision 4 (task 1.5).
+      on.
 - [ ] 2.2 (D) The round trip in natsclient's core subscribe, as `design.md`, D1 to D5 state, and the doc comments of
       `Subscribe` and `SubscribeForRequests` saying that the subscription is registered with the server when the call
       returns, what bounds the wait, which errors a failed round trip returns, and that a failed call does not wait
@@ -53,9 +53,10 @@ starts, `task merge:check -- 156` and the merge are recorded on this pull reques
       `Required` on that commit, its run link recorded on this pull request.
 - [ ] 2.7 `design.md`, "Conformance", maps each decision to the `file:line` that carries it out at the commit of 2.6,
       and to the test or record that shows it. Gate: every row filled, in a commit that changes no other file.
-- [ ] 2.8 (W) `docs/testing.md`, "How reach is judged" (`:295-296`), no longer says that a child process the test
-      starts writes no coverage: one given `-test.gocoverdir`, as D7's helper is, writes it, and so does a `prochost`
-      helper, through the `GOCOVERDIR` it inherits. Gate: `task docs:check`.
+- [ ] 2.8 (W) The rule of O1 (`design.md`, "Owner decisions"): its bullet in `docs/testing.md`, "Concurrency and
+      cleanup", and its row in `AGENTS.md`'s rule table after the child-process row; and `docs/testing.md`, "How
+      reach is judged" (`:295-296`), no longer says that a child process the test starts writes no coverage. Gate:
+      `task docs:check`.
 
 ## 3. Review
 

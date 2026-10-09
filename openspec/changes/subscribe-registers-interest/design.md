@@ -1,12 +1,13 @@
 # Design: subscribe-registers-interest
 
-Status: revision 4, draft. Review rounds 1 and 2 asked for changes (round 2: one MEDIUM, on D4's wait for running
-handlers); revision 3 answered each finding, passed review and was accepted by the owner (PR #156 comment
-6085722854). Revision 4 changes D7's test plan, adds L6 and L7, and corrects one sentence of `docs/testing.md`, after
-task 2.1 found that T2 to T8 cannot share a test process (PR #156 comment 6086018979). It asks the owner two
-questions ("Owner decisions"). It rests on `inventory.md` revision 2, which passed inventory review. Issue #144
-(`class:flake`); owner ruling 2026-10-09 (fix it once, in natsclient's subscribe, as its own pull request on `main`);
-claim PR #156. Pins are at base `805ace8`, and revision 4's at `c4b61ec`; probes P1 to P5 are in `inventory.md`.
+Status: revision 4, accepted by the owner (PR #156 comment 6091034659). Review rounds 1 and 2 asked for changes (round
+2: one MEDIUM, on D4's wait for running handlers); revision 3 answered each finding, passed review and was accepted by
+the owner (PR #156 comment 6085722854). Revision 4 changes D7's test plan, adds L6 and L7, and adds one rule, in
+`docs/testing.md` and `AGENTS.md` (O1), after task 2.1 found that T2 to T8 cannot share a test process (PR #156 comment
+6086018979). The owner answered both of its questions ("Owner decisions"). It rests on `inventory.md` revision 2, which
+passed inventory review. Issue #144 (`class:flake`); owner ruling 2026-10-09 (fix it once, in natsclient's subscribe, as
+its own pull request on `main`); claim PR #156. Pins are at base `805ace8`, and revision 4's at `c4b61ec`; probes P1 to
+P5 are in `inventory.md`.
 
 ## Context
 
@@ -300,6 +301,8 @@ event orders would explore the same few endings.
 - `docs/testing.md`, "How reach is judged" (`:295-296`): the sentence that says a child process the test starts
   writes no coverage, since D7's helper gives its run the parent's coverage directory (and a `prochost` helper
   writes it through the `GOCOVERDIR` it inherits).
+- The rule of O1: one bullet in `docs/testing.md`, "Concurrency and cleanup", after `:471`, and its row in
+  `AGENTS.md`'s rule table, after `:81`.
 - `docs/admission-ledger.yaml`, natsclient's row: adapt item `(13) natsclient-subscribe-registers-interest` at the end
   of `contract`, and T1 to T8 with the mutation record at the end of `proving_tests`.
 - At the archive: `openspec/specs/transport-client/spec.md` (the new requirement and one clause in the Purpose),
@@ -324,8 +327,9 @@ SemStreams; the ADR-094 observation in the inventory.
   change `natsclient/README.md`: #93 adds lines at `:248` and `:270`, this change one sentence at `:85-86` in the
   archive commit; no textual conflict. #93's task 3.12h changes `errs.IsTransient` to class and sentinel only; this
   change sets the class explicitly (D4), so it is unaffected.
-- **#158** and **#166** (drafts; the role contracts, `.agents/protocol.md`, `AGENTS.md`, `docs/inventory-scope.md`,
-  `docs/setup-plan.md`): no shared file.
+- **#158** and **#166** (drafts) change `AGENTS.md`'s rule table, as this change does (O1): #158's hunk starts at
+  `:96`, and #166 adds three rows at the end of the table. This change's row goes after `:81`, so no hunk is shared.
+  This change merges first (it closes #144); each of them then merges `origin/main`. Their other files are not shared.
 - **#118** (nats-server 2.15.0, the embedded server T1 runs on) cannot merge while #144 is open, so it merges after
   this change, and its CI runs T1 on the new server.
 - **#116, #117, #119, #120**: no shared file; each also waits for #144 to close. #117's OpenSpec CLI then runs
@@ -337,14 +341,15 @@ Revision 3 left none open. Round 1's four questions are decided above: the bound
 lost-connection error (D4), and no read of semsource or semconnect (D6, L5). D4 does not adopt the Consume rule's wait
 for handlers and states why core subscriptions differ; the spec delta states the rule and its relation to Consume's.
 
-Revision 4 asks two, answered at task 1.5; task 2.1 waits for them:
+Revision 4 asked two, answered by the owner at task 1.5 (PR #156 comment 6091034659):
 
-- O1. Is "a test that runs a nats.go connection inside a `testing/synctest` bubble runs in a test process of its own"
-  a rule for the whole repository, added by this pull request to `docs/testing.md` and `AGENTS.md`? Recommended: yes.
-  The crash or hang it prevents shows only in some shuffle orders, the class #144 belongs to, and nothing else tells
-  the next author. If no, the helper's doc comment is its only record.
+- O1. Is "a test that runs a nats.go connection inside a `testing/synctest` bubble runs in a test process of its own" a
+  rule for the whole repository, added by this pull request to `docs/testing.md` and `AGENTS.md`? Recommended: yes. The
+  crash or hang it prevents shows only in some shuffle orders, the class #144 belongs to, and nothing else tells the
+  next author. If no, the helper's doc comment is its only record. Answered: yes, in this pull request (comment
+  6091034659).
 - O2. Revision 4 replaces D7's test plan, which the owner accepted in revision 3. Does the owner accept revision 4,
-  after its pre-owner review (task 1.4)?
+  after its pre-owner review (task 1.4)? Answered: accepted at `a88b190` (comment 6091034659).
 
 ## Conformance
 

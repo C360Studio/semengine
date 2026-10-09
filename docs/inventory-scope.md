@@ -34,6 +34,7 @@ rest of the portfolio is archived, folded into semteams, or post-MVP, and is not
    names.
 3. One inventory per question, reviewed once by the independent reviewer. A second inventory on the same question
    needs the owner's word.
-4. SemStreams code facts and decision records come from the pin snapshot. Sister checkouts under the owner's
-   workspace may be live work areas: never modified, never the target of `git` commands; cite with
-   `gh api … ?ref=<sha>`.
+4. SemStreams code facts and decision records come from the pin snapshot; the decision records (`docs/adr`) were
+   added by the owner's decision on [#157](https://github.com/C360Studio/semengine/issues/157) (2026-10-09). Sister
+   checkouts under the owner's workspace may be live work areas: never modified, never the target of `git` commands;
+   cite with `gh api … ?ref=<sha>`.

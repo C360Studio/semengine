@@ -115,9 +115,10 @@ Four further checks, scoped as the architect contract (Extraction slices) states
 
 - A design statement about how the SemStreams pin behaves, with no pin-probe result behind it, is a finding.
 - A decision that a listed ADR records and the design keeps, changes or drops without citing that ADR is a finding;
-  check each cited decision against the ADR's text. A change or drop not raised to the owner is a finding, and so is
-  a binding ADR (one whose decision the ported code implements) that is neither ported with its package nor given a
-  reason in the design.
+  check each cited decision against the ADR's text. A change or drop that neither names the ADR in an owner question
+  the handoff raises nor cites the owner ruling that already covers it is a finding, and so is a binding ADR (one
+  whose decision the ported code implements) that is neither ported with its package nor given a reason in the
+  design.
 - A design that does not state, for each overlapping open pull request in its inventory, which merges first is a
   finding.
 - A finding about a lock, a join or a race between two calls is resolved by removing the mechanism from the design

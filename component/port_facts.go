@@ -12,7 +12,6 @@ type PortFacts struct {
 	stream            *StreamFacts
 	network           *NetworkFacts
 	storeReadBucket   string
-	kvReadBucket      string
 }
 
 // StreamFacts is the immutable JetStream-specific portion of PortFacts.
@@ -24,7 +23,6 @@ type StreamFacts struct {
 	retentionDays     int
 	maxSizeGB         int
 	replicas          int
-	consumerName      string
 	deliverPolicy     string
 	ackPolicy         string
 	maxDeliver        int
@@ -93,22 +91,6 @@ func (f PortFacts) StoreReadBucket() (string, bool) {
 	return f.storeReadBucket, true
 }
 
-// KVReadBucket returns the declared KV bucket for a kv-read port, so a
-// component OBSERVES the bucket it was bound to instead of predicting the
-// name with a constant. Reports false for every other port kind: the second
-// return is the whole answer to "is this a KV read port", and a caller must
-// never treat an empty bucket as a default.
-//
-// This is the projection route for the bucket; concrete port config types are
-// only interpreted by the canonical projection owners (this file and
-// port_codec.go).
-func (f PortFacts) KVReadBucket() (string, bool) {
-	if f.kind != PortKindKVRead || f.kvReadBucket == "" {
-		return "", false
-	}
-	return f.kvReadBucket, true
-}
-
 // Name returns the declared stream name.
 func (f StreamFacts) Name() string { return f.streamName }
 
@@ -129,9 +111,6 @@ func (f StreamFacts) MaxSizeGB() int { return f.maxSizeGB }
 
 // Replicas returns the declared stream replica count.
 func (f StreamFacts) Replicas() int { return f.replicas }
-
-// ConsumerName returns the declared durable consumer name.
-func (f StreamFacts) ConsumerName() string { return f.consumerName }
 
 // DeliverPolicy returns the declared consumer delivery policy.
 func (f StreamFacts) DeliverPolicy() string { return f.deliverPolicy }
@@ -239,7 +218,6 @@ func jetStreamPortFacts(config Portable) PortFacts {
 		retentionDays:     port.RetentionDays,
 		maxSizeGB:         port.MaxSizeGB,
 		replicas:          port.Replicas,
-		consumerName:      port.ConsumerName,
 		deliverPolicy:     port.DeliverPolicy,
 		ackPolicy:         port.AckPolicy,
 		maxDeliver:        port.MaxDeliver,
@@ -262,7 +240,6 @@ func kvReadPortFacts(config Portable) PortFacts {
 	port := config.(KVReadPort)
 	facts := basePortFacts(port, PatternRead, port.ResourceID())
 	facts.interfaceContract = cloneInterfaceContract(port.Interface)
-	facts.kvReadBucket = port.Bucket
 	return facts
 }
 

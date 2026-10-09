@@ -584,7 +584,7 @@ func TestGeneratePortFieldSchema(t *testing.T) {
 	}
 	maxAckPending := jetstream.Properties["max_ack_pending"]
 	if maxAckPending.Minimum == nil || *maxAckPending.Minimum != -1 ||
-		!maxAckPending.ZeroIsOmitted() || !sameDirections(maxAckPending.Directions, []Direction{DirectionInput}) {
+		!sameDirections(maxAckPending.Directions, []Direction{DirectionInput}) {
 		t.Fatalf("max_ack_pending constraint = %#v", maxAckPending)
 	}
 	discoveryJSON, err := json.Marshal(fields)

@@ -202,32 +202,3 @@ func SafeUnmarshal(rawConfig json.RawMessage, target any) error {
 type Validatable interface {
 	Validate() error
 }
-
-// ValidateNetworkConfig validates network configuration including port and bind address
-func ValidateNetworkConfig(port int, bindAddr string) error {
-	// Validate port range
-	if err := ValidatePortNumber(port); err != nil {
-		return err
-	}
-
-	// Validate bind address
-	if bindAddr != "" && bindAddr != "*" {
-		// Check for valid IP address format
-		parts := strings.Split(bindAddr, ".")
-		if len(parts) != 4 {
-			return errs.WrapInvalid(
-				fmt.Errorf("invalid bind address format: %s", bindAddr),
-				"ConfigValidator", "ValidateNetworkConfig", "address format check")
-		}
-		for _, part := range parts {
-			// Simple validation - could be enhanced
-			if len(part) == 0 || len(part) > 3 {
-				return errs.WrapInvalid(
-					fmt.Errorf("invalid bind address segment: %s", part),
-					"ConfigValidator", "ValidateNetworkConfig", "address segment check")
-			}
-		}
-	}
-
-	return nil
-}

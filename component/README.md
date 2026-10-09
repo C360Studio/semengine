@@ -182,8 +182,8 @@ The other port types are `NATSRequestPort` (request and reply), `KVReadPort`, `H
 - `NewRegistry()` returns an empty registry.
 - `RegisterWithConfig(RegistrationConfig)` registers a factory and its static metadata. It refuses an empty name, a nil
   factory, an empty type, a nil port declarer (`Ports`), and a name already registered.
-- `ListAvailable()`, `ListFactories()`, `ListComponentTypes()`, `GetFactory(name)` and `GetComponentSchema(name)` read
-  factory metadata; none of them returns a live component.
+- `ListFactories()` returns a copy of each registration's metadata, without its factory function; it returns no live
+  component.
 - `Declare(instanceName, config)` runs a factory's port declarer for one configured instance and returns its
   `Declaration`, without building the component.
 - `CreateComponent(instanceName, config, deps, prepare)`, `SealComposition()` and `Snapshots()` exist for the

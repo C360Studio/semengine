@@ -5,21 +5,11 @@ import (
 	"fmt"
 	"slices"
 	"sort"
-	"strings"
 	"sync"
 
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/types"
 )
-
-// Info holds metadata about an available component type
-type Info struct {
-	Type        string `json:"type"`        // "input", "processor", "output", "storage"
-	Protocol    string `json:"protocol"`    // Technical protocol (udp, tcp, mavlink, etc.)
-	Domain      string `json:"domain"`      // Business domain (robotics, semantic, network, storage)
-	Description string `json:"description"` // Human-readable description
-	Version     string `json:"version"`     // Component version
-}
 
 // Factory creates a component instance from configuration following service pattern
 // The factory function receives raw JSON configuration and dependencies, parses its own config,
@@ -109,8 +99,7 @@ type declarationSnapshot struct {
 	record Declaration
 }
 
-func (s declarationSnapshot) Name() string    { return s.record.InstanceName }
-func (s declarationSnapshot) Factory() string { return s.record.FactoryIdentity }
+func (s declarationSnapshot) Name() string { return s.record.InstanceName }
 
 func (s declarationSnapshot) Inputs() []Port {
 	return cloneResolvedPorts(s.record.InputPorts)
@@ -468,39 +457,6 @@ func (r *Registry) SealComposition() {
 	r.mu.Unlock()
 }
 
-// GetComponentSchema retrieves a component's schema directly from Registration metadata
-// This method retrieves schemas without component instantiation (Feature 011 - Option 1)
-// Schema is stored as static metadata during registration, avoiding dependency validation issues
-func (r *Registry) GetComponentSchema(name string) (ConfigSchema, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	// Look up by factory name (same as component type)
-	registration, exists := r.factories[name]
-	if !exists {
-		return ConfigSchema{}, errs.WrapInvalid(
-			fmt.Errorf("component type %q not found", name),
-			"Registry", "GetComponentSchema", "type lookup")
-	}
-
-	// Return schema directly from Registration metadata (no instantiation needed)
-	return cloneConfigSchema(registration.Schema), nil
-}
-
-// ListComponentTypes returns all registered component factory type names
-// This returns factory names (e.g., "udp-input", "websocket-output") not instance names
-func (r *Registry) ListComponentTypes() []string {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	names := make([]string, 0, len(r.factories))
-	for name := range r.factories {
-		names = append(names, name)
-	}
-
-	return names
-}
-
 // ListFactories returns all registered component factories
 // This provides information about what types of components can be created.
 func (r *Registry) ListFactories() map[string]*Registration {
@@ -577,19 +533,6 @@ func clonePropertySchema(property PropertySchema) PropertySchema {
 	return clone
 }
 
-// GetFactory returns a specific factory by name
-// Unlike ListFactories, this returns the actual Factory function for creating components
-func (r *Registry) GetFactory(name string) (Factory, bool) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	registration, exists := r.factories[name]
-	if !exists {
-		return nil, false
-	}
-	return registration.Factory, true
-}
-
 // RegisterWithConfig registers a component using a configuration struct.
 // This is the recommended registration method that replaces the multi-parameter functions.
 //
@@ -622,52 +565,11 @@ func (r *Registry) RegisterWithConfig(config RegistrationConfig) error {
 	return r.RegisterFactory(config.Name, registration)
 }
 
-// ListAvailable returns information about all available component types
-// This provides metadata about what types of components can be created.
-func (r *Registry) ListAvailable() map[string]Info {
-	factories := r.ListFactories()
-	result := make(map[string]Info, len(factories))
-
-	for name, registration := range factories {
-		result[name] = Info{
-			Type:        registration.Type,
-			Protocol:    registration.Protocol,
-			Domain:      registration.Domain,
-			Description: registration.Description,
-			Version:     registration.Version,
-		}
-	}
-
-	return result
-}
-
 // Config validation constants - security limits
 const (
 	MaxStringLength = 1024        // Maximum length for string values
 	MaxJSONSize     = 1024 * 1024 // Maximum JSON size (1MB)
-	MinPort         = 1           // Minimum valid port number
-	MaxPort         = 65535       // Maximum valid port number
 )
-
-// ValidateConfigKey checks if a configuration key is valid
-func ValidateConfigKey(key string) error {
-	if key == "" {
-		return errs.WrapInvalid(errs.ErrInvalidConfig, "ConfigValidator", "ValidateConfigKey", "empty key")
-	}
-	if len(key) > MaxStringLength {
-		return errs.WrapInvalid(errs.ErrInvalidConfig, "ConfigValidator", "ValidateConfigKey", "key too long")
-	}
-	// Check for potentially dangerous characters
-	if strings.ContainsAny(key, "\x00\n\r\t") {
-		return errs.WrapInvalid(
-			errs.ErrInvalidConfig,
-			"ConfigValidator",
-			"ValidateConfigKey",
-			"invalid key characters",
-		)
-	}
-	return nil
-}
 
 // ValidateComponentName validates component/instance names for security
 func ValidateComponentName(name string) error {
@@ -685,16 +587,6 @@ func ValidateComponentName(name string) error {
 				errs.ErrInvalidConfig, "ConfigValidator", "ValidateComponentName",
 				"invalid name characters")
 		}
-	}
-	return nil
-}
-
-// ValidatePortNumber validates port numbers are within valid range
-func ValidatePortNumber(port int) error {
-	if port < MinPort || port > MaxPort {
-		msg := fmt.Errorf("port %d outside valid range %d-%d", port, MinPort, MaxPort)
-		return errs.WrapInvalid(msg, "ConfigValidator", "ValidatePortNumber",
-			"port range validation")
 	}
 	return nil
 }

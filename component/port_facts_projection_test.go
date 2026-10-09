@@ -51,7 +51,7 @@ func TestPortFactsProjectionResolvesEveryCanonicalFactAndReturnsCopies(t *testin
 	}
 	if stream.Name() != "EVENTS" || stream.Storage() != "file" || stream.RetentionPolicy() != "limits" ||
 		stream.RetentionDays() != 7 || stream.MaxSizeGB() != 3 || stream.Replicas() != 2 ||
-		stream.ConsumerName() != "worker" || stream.DeliverPolicy() != "all" || stream.AckPolicy() != "explicit" ||
+		stream.DeliverPolicy() != "all" || stream.AckPolicy() != "explicit" ||
 		stream.MaxDeliver() != 5 || stream.AckWait() != "2s" || stream.HeartbeatInterval() != "1s" ||
 		stream.MaxAckPending() != 23 {
 		t.Fatalf("stream facts did not preserve the canonical JetStream declaration")

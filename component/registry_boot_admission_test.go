@@ -67,8 +67,8 @@ func mutateDeclarationSnapshot(snapshot declarationSnapshot) {
 
 func assertWorkerDeclarationUnchanged(t *testing.T, snapshot declarationSnapshot) {
 	t.Helper()
-	if snapshot.Name() != "worker" || snapshot.Factory() != "declaration-test" {
-		t.Fatalf("snapshot identity = %q/%q, want worker/declaration-test", snapshot.Name(), snapshot.Factory())
+	if factory := snapshot.Declaration().FactoryIdentity; snapshot.Name() != "worker" || factory != "declaration-test" {
+		t.Fatalf("snapshot identity = %q/%q, want worker/declaration-test", snapshot.Name(), factory)
 	}
 	outputs := snapshot.Outputs()
 	if len(outputs) != 2 {

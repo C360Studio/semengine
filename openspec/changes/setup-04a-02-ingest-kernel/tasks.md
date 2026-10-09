@@ -276,12 +276,21 @@ posted on this pull request.
       the `agentic-` rule removed, the sensitivity test's `processor/agentic-tools` case fails; a goroutine left
       blocked in the mock's `DebugStatus`, the leak test panics; `task mutate:check` on `CreateComponent`'s seal
       check, detection at `registry_boot_admission_test.go:160`.
-      Not done (found 2026-10-09, #153 item 1): rows `inventory.md:958-978` marks `drop` are still in `component` with
-      no production reader, and `component/README.md` documents them as API: `Registry.ListComponentTypes`,
-      `GetFactory`, `ListAvailable` (with `Info`), `declarationSnapshot.Factory`, `PortFacts.KVReadBucket`,
+      Removed (found 2026-10-09, #153 item 1): the rows `inventory.md:958-978` marks `drop`, each shown by `gopls
+      references` to have no reader outside its own tests: `Registry.ListComponentTypes`, `GetFactory`,
+      `ListAvailable` with `Info`, `GetComponentSchema`, `declarationSnapshot.Factory`, `PortFacts.KVReadBucket`,
       `StreamFacts.ConsumerName`, `GetPropertyValue`, `GetProperties`, `IsComplexType`, `SortedPropertyNames`,
-      `PortFieldInfo.ZeroIsOmitted`, `ValidateNetworkConfig`, and `ValidateConfigKey` and `GetComponentSchema`, whose
-      readers were all dropped. Remove them and their README entries.
+      `PortFieldInfo.ZeroIsOmitted`, `ValidateNetworkConfig` and `ValidateConfigKey`. With them went what only they
+      read: `ValidatePortNumber`, `MinPort` and `MaxPort` (read by `ValidateNetworkConfig` alone), the private fields
+      `PortFacts.kvReadBucket` and `StreamFacts.consumerName`, and the copy of `zeroIsOmitted` into discovery
+      metadata. `PortFieldInfo.zeroIsOmitted` stays: the port resolver reads it on a port kind's field constraints
+      (`component/port_resolver.go:113`). `Registry.ListFactories`, whose one production reader was `ListAvailable`,
+      stays: tests read it (`component/registry_test.go`, `processor/graph-ingest/component_test.go:757`), and it has
+      no D6 row. Tests whose only subject was a removed name went with it (`TestGetPropertyValue`,
+      `TestGetPropertiesByCategory`, `TestGetPropertiesDefaultCategory`, `TestComplexTypeDetection`,
+      `TestSchemaOrdering`, three `TestSchemaFallback` subtests); the `ConsumerName`, `ZeroIsOmitted` and `Factory`
+      checks were cut from tests that check other facts, the `Factory` one now reading `Declaration().FactoryIdentity`.
+      `component/README.md`'s Registry list names only `ListFactories`.
 - [x] 3.12 (D) `processor/graph-ingest`: metrics per design D4 (`TestGraphIngestMetricsRegisterOnItsRegistry`,
       `TestGraphIngestNilRegistryRegistersNothing`, written first); the authority as one `types.PlatformMeta`; unknown
       configuration keys refused by strict decoding (`TestCreateGraphIngestRefusesUnknownKey`); the owner-lifecycle

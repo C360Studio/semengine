@@ -771,7 +771,8 @@ mutation lane gets no hierarchy statements, as at the pin (`canonical_mutations.
   time when the producer leaves statement times out. A stream arrival with no statement is refused as poison (owner
   ruling, #91 comment 6066791396). A create on the mutation or in-process lane that carries no statement has no time
   to give, and is refused as `invalid_request`; at the pin it was accepted and its profile stamped with `time.Now()`
-  (`component.go:1891`). `GetHierarchyTriples` takes the triggering time as an argument, and the containers it creates
+  (`component.go:1891`). `AddToContainers` (the pin's `GetHierarchyTriples`, renamed by #134) takes the triggering
+  time as an argument, and the containers it creates
   for a birth carry it too: an `adapt` item on the `graph/inference` row, since the pin's hierarchy statements carry
   neither source nor time (`graph/inference/hierarchy.go:358-374`, `:409-430`, `:485-493`).
 - `EntityState.UpdatedAt` is the store's write time, not a statement; it stays the clock, as at the pin
@@ -1077,8 +1078,9 @@ degrade #111 names.
 
 What a caller observes under (a): with `enable_hierarchy`, an entity born on a lane that infers hierarchy (the stream
 lane and the in-process create, as at the pin; D15) is born with its hierarchy statements or not at all. A mutation-lane
-create infers none, so the rule does not reach it (ruled B, #91 comment 6037287957). `GetHierarchyTriples` returns an
-error when any part fails: a container birth, a forward edge or an inverse edge. graph-ingest then
+create infers none, so the rule does not reach it (ruled B, #91 comment 6037287957). `AddToContainers` (the pin's
+`GetHierarchyTriples`) returns an error when any part fails: a container birth, a forward edge or an inverse edge.
+graph-ingest then
 writes nothing for the entity and returns the error, classified transient. On the stream lane the input is not
 acknowledged and is delivered again; on the in-process lane the caller gets the error. Containers and inverse edges
 committed before the failure are what the next attempt commits too; the append identity suppresses the repeats. That

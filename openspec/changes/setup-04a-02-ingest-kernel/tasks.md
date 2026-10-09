@@ -404,7 +404,8 @@ posted on this pull request.
       settled by removal, as the ruling says. A test written first, failing on the current code: each container keeps
       its revision across a member's birth.
 - [ ] 3.12k (D) Ruled P (#91 comment 6080973822; design D6, D16, D18): remove the surface nothing in production reads
-      (`gopls references` at `6102b75`).
+      (`gopls references` at `6102b75`). Hold: the owner's re-check of ruling P against the pin's ADR-083 and
+      ADR-088 and 03B's "Readiness" row (#91 comment 6084907233).
       **Removed:**
       - `graph/readiness/watcher.go`, `watcher_test.go`, `readiness_gate.go` and `readiness_gate_test.go`;
       - `ComputeIndexStatus`, `IndexStatusInputs` and the three `TestComputeIndexStatus_*` tests;

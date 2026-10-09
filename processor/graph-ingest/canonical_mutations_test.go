@@ -285,6 +285,27 @@ func TestCanonicalReconcileCompetingCASAllowsOneWinner(t *testing.T) {
 	}
 }
 
+// TestCanonicalReconcileFenceHoldsAgainstAWriteAfterItsRead: a reconcile at the revision the
+// handler read, after another writer has committed, is refused by the bucket's
+// compare-and-set and writes nothing (design D15, the conditional replace: "the caller's
+// expected revision").
+func TestCanonicalReconcileFenceHoldsAgainstAWriteAfterItsRead(t *testing.T) {
+	c, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
+	created := createCanonicalEntity(t, c, canonicalEntityA, []message.Triple{
+		canonicalTriple(canonicalEntityA, "test.state.value", "before"),
+	})
+	other := otherWriterAfterRead(t, c, bucket, created.KVRevision, "other writer")
+
+	_, err := c.handleCanonicalReconcile(context.Background(), mustCanonicalJSON(t, graph.ReconcilePredicatesRequest{
+		EntityID: canonicalEntityA, ExpectedRevision: created.KVRevision, Source: "canonical-test",
+		Predicates: []string{"test.state.value"},
+		Desired:    []message.Triple{canonicalTriple(canonicalEntityA, "test.state.value", "reconciled")},
+	}))
+
+	assertLostRace(t, err)
+	assertStoredUnder(t, bucket, other, created.KVRevision+1)
+}
+
 func TestCanonicalAppendRacesGraphableMergeWithoutLosingFacts(t *testing.T) {
 	c, _ := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
 	created := createCanonicalEntity(t, c, canonicalEntityA, []message.Triple{
@@ -687,6 +708,24 @@ func TestCanonicalDeleteIsRevisionFenced(t *testing.T) {
 	}
 }
 
+// TestCanonicalDeleteFenceHoldsAgainstAWriteAfterItsRead: a delete at the revision the
+// handler read, after another writer has committed, is refused by the bucket and deletes
+// nothing (design D15, delete: "the caller's expected revision").
+func TestCanonicalDeleteFenceHoldsAgainstAWriteAfterItsRead(t *testing.T) {
+	c, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
+	created := createCanonicalEntity(t, c, canonicalEntityA, []message.Triple{
+		canonicalTriple(canonicalEntityA, "test.state.value", "before"),
+	})
+	other := otherWriterAfterRead(t, c, bucket, created.KVRevision, "other writer")
+
+	_, err := c.handleCanonicalDelete(context.Background(), mustCanonicalJSON(t, graph.DeleteEntityRequest{
+		EntityID: canonicalEntityA, ExpectedRevision: created.KVRevision,
+	}))
+
+	assertLostRace(t, err)
+	assertStoredUnder(t, bucket, other, created.KVRevision+1)
+}
+
 func TestCanonicalMutationOutcomeMetricAndRevisionMismatchLog(t *testing.T) {
 	c, _ := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
 	created := createCanonicalEntity(t, c, canonicalEntityA, []message.Triple{canonicalTriple(canonicalEntityA, "test.seed.value", "seeded")})
@@ -803,5 +842,59 @@ func assertCanonicalCode(t *testing.T, err error, code string) {
 	var classified *errs.ClassifiedError
 	if !errors.As(err, &classified) || classified.Code != code {
 		t.Fatalf("error = %v, want classified code %s", err, code)
+	}
+}
+
+// otherWriterAfterRead puts another writer between a handler's read of canonicalEntityA and
+// its write: once a read has returned the entity at revision read, the bucket holds a state
+// whose test.state.value is value, at read+1. The handler's own comparison of the revision it
+// read then passes, and only the bucket's revision check can refuse the write. It returns
+// the other writer's bytes.
+func otherWriterAfterRead(t *testing.T, c *Component, bucket *mockKVBucket, read uint64, value string) []byte {
+	t.Helper()
+	state, _, err := c.readEntity(context.Background(), canonicalEntityA)
+	if err != nil {
+		t.Fatalf("readEntity: %v", err)
+	}
+	state.Triples = []message.Triple{canonicalTriple(canonicalEntityA, "test.state.value", value)}
+	other, err := graph.MarshalEntityState(&state)
+	if err != nil {
+		t.Fatalf("MarshalEntityState: %v", err)
+	}
+	bucket.getFunc = func(_ context.Context, key string) (jetstream.KeyValueEntry, error) {
+		bucket.mu.Lock()
+		defer bucket.mu.Unlock()
+		entry, ok := bucket.data[key]
+		if !ok {
+			return nil, jetstream.ErrKeyNotFound
+		}
+		if key == canonicalEntityA && entry.revision == read {
+			bucket.data[key] = mockKVData{value: other, revision: read + 1}
+		}
+		return &mockKVEntry{key: key, data: entry.value, revision: entry.revision}, nil
+	}
+	return other
+}
+
+// assertLostRace checks err is the refusal graph documents for a lost race: class invalid,
+// code revision_mismatch, and errs.ErrRevisionMismatch under errors.Is.
+func assertLostRace(t *testing.T, err error) {
+	t.Helper()
+	var classified *errs.ClassifiedError
+	if !errors.As(err, &classified) || classified.Class != errs.ErrorInvalid ||
+		classified.Code != graph.ErrorCodeRevisionMismatch || !errors.Is(err, errs.ErrRevisionMismatch) {
+		t.Fatalf("error = %v, want class %v, code %s", err, errs.ErrorInvalid, graph.ErrorCodeRevisionMismatch)
+	}
+}
+
+// assertStoredUnder checks the bucket holds want under canonicalEntityA at revision.
+func assertStoredUnder(t *testing.T, bucket *mockKVBucket, want []byte, revision uint64) {
+	t.Helper()
+	bucket.mu.Lock()
+	stored, ok := bucket.data[canonicalEntityA]
+	bucket.mu.Unlock()
+	if !ok || !bytes.Equal(stored.value, want) || stored.revision != revision {
+		t.Fatalf("stored %q at revision %d (present %v), want the other writer's %q at %d",
+			stored.value, stored.revision, ok, want, revision)
 	}
 }

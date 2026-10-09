@@ -8,6 +8,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -87,8 +89,43 @@ func (m *mockKVBucket) Delete(ctx context.Context, key string, opts ...jetstream
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// As the real bucket: jetstream.LastRevision(n) deletes only while n is the key's latest
+	// revision, and an absent key has none (the server compares n with last sequence 0).
+	if revision := lastRevisionOption(opts); revision != 0 && m.data[key].revision != revision {
+		return errors.New("wrong last sequence")
+	}
 	delete(m.data, key)
 	return nil
+}
+
+// lastRevisionOption returns the revision a jetstream.LastRevision option among opts names, or
+// 0 if none does. jetstream applies a delete option to an unexported struct, so this applies
+// each option to a fresh one by reflection and reads its revision field. An option of any
+// other shape panics: read as no revision, it would turn a fenced delete into an unfenced one.
+func lastRevisionOption(opts []jetstream.KVDeleteOpt) uint64 {
+	var revision uint64
+	for _, opt := range opts {
+		if opt == nil {
+			continue
+		}
+		apply := reflect.ValueOf(opt)
+		if apply.Kind() != reflect.Func || apply.Type().NumIn() != 1 ||
+			apply.Type().In(0).Kind() != reflect.Pointer || apply.Type().In(0).Elem().Kind() != reflect.Struct {
+			panic(fmt.Sprintf("mockKVBucket.Delete: cannot read jetstream.KVDeleteOpt %T", opt))
+		}
+		target := reflect.New(apply.Type().In(0).Elem())
+		if err := apply.Call([]reflect.Value{target})[0]; !err.IsNil() {
+			panic(fmt.Sprintf("mockKVBucket.Delete: applying %T: %v", opt, err))
+		}
+		field := target.Elem().FieldByName("revision")
+		if field.Kind() != reflect.Uint64 {
+			panic(fmt.Sprintf("mockKVBucket.Delete: %T sets no revision field", opt))
+		}
+		if field.Uint() != 0 {
+			revision = field.Uint()
+		}
+	}
+	return revision
 }
 
 func (m *mockKVBucket) Bucket() string {

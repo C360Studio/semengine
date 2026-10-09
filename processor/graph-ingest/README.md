@@ -158,6 +158,6 @@ registered on the same registry.
 
 ## Health
 
-The component reports healthy when it is running, no processing error has been counted, no stored entity fails to
-decode (the poison inventory is empty), the `ENTITY_STATES` watch is live, and the boot sweep of `ENTITY_STATES`, once
-started, has completed.
+The component reports healthy when it is running, no processing error has been counted, and no stored entity fails to
+decode (the poison inventory is empty). Running implies the boot sweep of `ENTITY_STATES` completed: `Start` fails
+when the sweep cannot reach the end of the snapshot.

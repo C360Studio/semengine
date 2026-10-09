@@ -62,9 +62,6 @@ func (c *Component) setupQueryHandlers(ctx context.Context) error {
 
 // handleQueryEntityNATS handles single entity query requests via NATS request/reply
 func (c *Component) handleQueryEntityNATS(ctx context.Context, data []byte) ([]byte, error) {
-	if err := c.ensureEntityQueriesReady(); err != nil {
-		return nil, err
-	}
 	// Create context with timeout for KV operation
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -111,9 +108,6 @@ func (c *Component) handleQueryEntityNATS(ctx context.Context, data []byte) ([]b
 
 // handleQueryBatchNATS handles batch entity query requests via NATS request/reply
 func (c *Component) handleQueryBatchNATS(ctx context.Context, data []byte) ([]byte, error) {
-	if err := c.ensureEntityQueriesReady(); err != nil {
-		return nil, err
-	}
 	// Create context with timeout for KV operations
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -244,9 +238,6 @@ func (c *Component) handleQueryPrefixWithMaxPayload(
 	data []byte,
 	maxPayload int64,
 ) ([]byte, error) {
-	if err := c.ensureEntityQueriesReady(); err != nil {
-		return nil, err
-	}
 	// Create context with timeout for KV operation
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -438,24 +429,6 @@ func marshalFittingPrefixPage(
 		return nil, fmt.Errorf("prefix response fitting invariant: encoded %d bytes exceeds max payload %d", len(encoded), maxPayload)
 	}
 	return encoded, nil
-}
-
-// ensureEntityQueriesReady is the plain atomic readiness check at query
-// handler entry. The flags settle inside Start before any subscription
-// registers, so no lock discipline is needed (design D2 — the old
-// entityQueryMu commit-point ceremony existed only to serialize the retired
-// surface-global poison latch and was deleted with it). Poison refusal is
-// per-entity and lives at each read's validating decode, not here.
-func (c *Component) ensureEntityQueriesReady() error {
-	if c.entityWatchLost.Load() {
-		return errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeIndexNotReady,
-			errors.New("graph-ingest query not ready: ENTITY_STATES snapshot sweep unavailable"))
-	}
-	if c.entityBootstrapStarted.Load() && !c.entityBootstrapComplete.Load() {
-		return errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeIndexNotReady,
-			errors.New("graph-ingest query not ready: ENTITY_STATES bootstrap validating"))
-	}
-	return nil
 }
 
 func (c *Component) classifyEntityQueryError(err error) error {

@@ -10,8 +10,10 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/c360studio/semengine/component"
+	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/nats-io/nats.go/jetstream"
@@ -168,5 +170,122 @@ func TestGraphIngest_FailedStartRollbackOwnsExactConsumerAndPreservesDurable(t *
 	consumerName := "graph-ingest-" + strings.ReplaceAll("entity.one", ".", "-")
 	if _, observeErr := comp.observeOutstandingWork(t.Context(), "ENTITY", consumerName); observeErr != nil {
 		t.Fatalf("durable consumer was deleted during failed-Start rollback: %v", observeErr)
+	}
+}
+
+// TestGraphIngest_FailedBootSweepFailsStart makes the boot sweep of ENTITY_STATES fail
+// inside a real Start, at each of its three failure exits, and checks that Start returns
+// the failure, classified transient, and that the rollback left nothing running: no
+// consumer on the input stream, no responder on a query subject, the sweep's watcher
+// stopped, and a guard that refuses a later Start and lets Stop return nil (design D13).
+func TestGraphIngest_FailedBootSweepFailsStart(t *testing.T) {
+	sentinel := errors.New("ENTITY_STATES watch refused")
+	cases := []struct {
+		name string
+		// watch is the sweep's Watch; opened is closed once it has been called.
+		watch func(opened chan<- struct{}, watcher *ingestGuardWatcher) (jetstream.KeyWatcher, error)
+		// cancelDuringSweep cancels Start's context once the watcher is open.
+		cancelDuringSweep bool
+		want              error
+	}{
+		{
+			name: "watch refused",
+			watch: func(opened chan<- struct{}, _ *ingestGuardWatcher) (jetstream.KeyWatcher, error) {
+				close(opened)
+				return nil, sentinel
+			},
+			want: sentinel,
+		},
+		{
+			name: "updates closed before the end of the snapshot",
+			watch: func(opened chan<- struct{}, watcher *ingestGuardWatcher) (jetstream.KeyWatcher, error) {
+				watcher.closeUpdates()
+				close(opened)
+				return watcher, nil
+			},
+		},
+		{
+			name: "start cancelled during the sweep",
+			watch: func(opened chan<- struct{}, watcher *ingestGuardWatcher) (jetstream.KeyWatcher, error) {
+				close(opened)
+				return watcher, nil
+			},
+			cancelDuringSweep: true,
+			want:              context.Canceled,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			comp := createTestComponentForLifecycle(t)
+			if err := comp.Initialize(); err != nil {
+				t.Fatalf("Initialize: %v", err)
+			}
+			watcher := newIngestGuardWatcher(0)
+			opened := make(chan struct{})
+			comp.watchEntityStates = func(context.Context, string) (jetstream.KeyWatcher, error) {
+				return tc.watch(opened, watcher)
+			}
+
+			startCtx, cancelStart := context.WithCancel(t.Context())
+			defer cancelStart()
+			startResult := make(chan error, 1)
+			go func() { startResult <- comp.Start(startCtx) }()
+			<-opened
+			if tc.cancelDuringSweep {
+				cancelStart()
+			}
+			startErr := <-startResult
+
+			if startErr == nil {
+				t.Fatal("Start returned nil after the boot sweep failed")
+			}
+			if tc.want != nil && !errors.Is(startErr, tc.want) {
+				t.Fatalf("Start error = %v, want it to wrap %v", startErr, tc.want)
+			}
+			var classified *errs.ClassifiedError
+			if !errors.As(startErr, &classified) || classified.Class != errs.ErrorTransient {
+				t.Fatalf("Start error = %T %v, want a transient classified error", startErr, startErr)
+			}
+			// Every case but the refused watch hands the sweep a watcher, which it must stop.
+			if tc.want != sentinel && !watcher.stopped() {
+				t.Fatal("the sweep's watcher was not stopped")
+			}
+
+			health := comp.Health()
+			if health.Healthy || health.Status != "stopped" {
+				t.Fatalf("Health after a failed Start = %+v, want stopped and not healthy", health)
+			}
+			js, err := comp.natsClient.JetStream()
+			if err != nil {
+				t.Fatalf("JetStream: %v", err)
+			}
+			stream, err := js.Stream(t.Context(), entityStream.name)
+			if err != nil {
+				t.Fatalf("stream %s: %v", entityStream.name, err)
+			}
+			info, err := stream.Info(t.Context())
+			if err != nil {
+				t.Fatalf("stream %s info: %v", entityStream.name, err)
+			}
+			if info.State.Consumers != 0 {
+				t.Fatalf("stream %s has %d consumers after a failed Start, want 0", entityStream.name, info.State.Consumers)
+			}
+			for _, verb := range graph.QueryVerbs() {
+				if verb.Responder != queryResponder {
+					continue
+				}
+				_, err := comp.natsClient.RequestClassified(t.Context(), verb.Subject, []byte(`{}`), 5*time.Second)
+				if !natsclient.IsNoResponders(err) {
+					t.Fatalf("request on %s after a failed Start: %v, want no responders", verb.Subject, err)
+				}
+			}
+
+			if err := comp.Stop(t.Context()); err != nil {
+				t.Fatalf("Stop after a failed Start: %v", err)
+			}
+			if err := comp.Start(t.Context()); !errors.Is(err, errs.ErrAlreadyStarted) {
+				t.Fatalf("Start after a failed Start = %v, want ErrAlreadyStarted", err)
+			}
+		})
 	}
 }

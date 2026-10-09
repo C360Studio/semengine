@@ -51,15 +51,9 @@ func TestBootSweepInventoriesResidentPoisonAndBoots(t *testing.T) {
 	c := newIngestGuardTestComponent(bucket)
 	c.logger = slog.New(slog.NewTextHandler(logs, nil))
 
-	c.startEntityStateGuard(context.Background(), c.entityBucket)
-
-	// Ingest boots and queries are READY — a poisoned entity no longer blocks
-	// the surface.
-	if !c.entityBootstrapComplete.Load() {
-		t.Fatal("boot sweep did not complete")
-	}
-	if err := c.ensureEntityQueriesReady(); err != nil {
-		t.Fatalf("queries not ready after sweep: %v", err)
+	// The sweep completes: a poisoned entity does not fail it.
+	if err := c.startEntityStateGuard(context.Background(), c.entityBucket); err != nil {
+		t.Fatalf("boot sweep: %v", err)
 	}
 
 	rec, ok := poisonInventoryEntry(c, guardTestPoisonID)
@@ -137,7 +131,9 @@ func TestBootSweepLastRevisionWins(t *testing.T) {
 			bucket.watchAllFactory = func() (jetstream.KeyWatcher, error) { return watcher, nil }
 			c := newIngestGuardTestComponent(bucket)
 
-			c.startEntityStateGuard(context.Background(), c.entityBucket)
+			if err := c.startEntityStateGuard(context.Background(), c.entityBucket); err != nil {
+				t.Fatalf("boot sweep: %v", err)
+			}
 
 			if _, ok := poisonInventoryEntry(c, guardTestPoisonID); ok {
 				t.Fatal("superseded poisoned revision must leave no inventory entry")
@@ -145,61 +141,94 @@ func TestBootSweepLastRevisionWins(t *testing.T) {
 			if got := testutil.ToFloat64(c.poisonedEntities); got != 0 {
 				t.Fatalf("poisoned-entities gauge = %v, want 0", got)
 			}
-			if err := c.ensureEntityQueriesReady(); err != nil {
-				t.Fatalf("queries not ready after sweep: %v", err)
-			}
 		})
 	}
 }
 
-// TestEntityStateGuardBootstrapAndTransportFailureAreTransient: pre-marker
-// channel closure is a genuine transport failure — ingest boots, queries
-// return the transient not-ready classification, and NO poison is recorded
-// from the failure itself (spec: "snapshot transport failure keeps the boot
-// recovery contract").
-func TestEntityStateGuardBootstrapAndTransportFailureAreTransient(t *testing.T) {
+// TestEntityStateGuardFailureIsReturned: a sweep that cannot reach the end
+// of the snapshot returns a transient error, which fails Start, at each of its
+// three exits; the sweep stops any watcher it opened and records no poison
+// from the failure.
+func TestEntityStateGuardFailureIsReturned(t *testing.T) {
 	t.Parallel()
 
-	watcher := newIngestGuardWatcher(2)
-	bucket := newMockKVBucket()
-	// The guard marks the sweep started before it opens the watcher, so the
-	// factory's call is the signal the pin polled entityBootstrapStarted for.
-	watcherOpened := make(chan struct{})
-	bucket.watchAllFactory = func() (jetstream.KeyWatcher, error) {
-		close(watcherOpened)
-		return watcher, nil
+	refused := errors.New("watch refused")
+	cases := []struct {
+		name string
+		// watch is the bucket's Watch; it closes opened once called.
+		watch  func(opened chan<- struct{}, watcher *ingestGuardWatcher) (jetstream.KeyWatcher, error)
+		cancel bool // cancel the sweep's context once the watcher is open
+		want   error
+	}{
+		{
+			name: "watch refused",
+			watch: func(opened chan<- struct{}, _ *ingestGuardWatcher) (jetstream.KeyWatcher, error) {
+				close(opened)
+				return nil, refused
+			},
+			want: refused,
+		},
+		{
+			name: "updates closed before the end of the snapshot",
+			watch: func(opened chan<- struct{}, watcher *ingestGuardWatcher) (jetstream.KeyWatcher, error) {
+				watcher.updates <- &mockKVEntry{key: guardTestPoisonID, revision: 3, data: guardTestPoisonBytes(guardTestPoisonID)}
+				watcher.closeUpdates()
+				close(opened)
+				return watcher, nil
+			},
+		},
+		{
+			name: "context cancelled during the sweep",
+			watch: func(opened chan<- struct{}, watcher *ingestGuardWatcher) (jetstream.KeyWatcher, error) {
+				close(opened)
+				return watcher, nil
+			},
+			cancel: true,
+			want:   context.Canceled,
+		},
 	}
-	c := newIngestGuardTestComponent(bucket)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	done := make(chan struct{})
-	go func() {
-		c.startEntityStateGuard(context.Background(), c.entityBucket)
-		close(done)
-	}()
-	<-watcherOpened
-	assertIngestNotReady(t, c.ensureEntityQueriesReady())
+			watcher := newIngestGuardWatcher(1)
+			opened := make(chan struct{})
+			bucket := newMockKVBucket()
+			bucket.watchAllFactory = func() (jetstream.KeyWatcher, error) { return tc.watch(opened, watcher) }
+			c := newIngestGuardTestComponent(bucket)
 
-	// Close the channel BEFORE the marker: transport failure.
-	watcher.closeUpdates()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("guard did not finish after transport failure")
-	}
-	if !c.entityWatchLost.Load() {
-		t.Fatal("pre-marker closure must mark watch lost")
-	}
-	assertIngestNotReady(t, c.ensureEntityQueriesReady())
-	if c.entityPoisonSize.Load() != 0 {
-		t.Fatal("transport failure must not record poison")
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			result := make(chan error, 1)
+			go func() { result <- c.startEntityStateGuard(ctx, c.entityBucket) }()
+			<-opened
+			if tc.cancel {
+				cancel()
+			}
+			err := <-result
+
+			var classified *errs.ClassifiedError
+			if !errors.As(err, &classified) || classified.Class != errs.ErrorTransient {
+				t.Fatalf("sweep error = %T %v, want a transient classified error", err, err)
+			}
+			if tc.want != nil && !errors.Is(err, tc.want) {
+				t.Fatalf("sweep error = %v, want it to wrap %v", err, tc.want)
+			}
+			// Every case but the refused watch hands the sweep a watcher, which it must stop.
+			if tc.want != refused && !watcher.stopped() {
+				t.Fatal("the sweep's watcher was not stopped")
+			}
+			if c.entityPoisonSize.Load() != 0 {
+				t.Fatal("a failed sweep must not record poison")
+			}
+		})
 	}
 }
 
 // TestEntityStateGuardDeliberateStopDrainsToCloseWithoutMisclassification:
 // after the end-of-snapshot marker the watcher is stopped and its channel
 // consumed until close, discarding post-marker entries; the deliberate stop
-// is never classified as watch loss and Health is not degraded by it (spec:
-// "deliberate stop drains to channel close without misclassification").
+// is not a sweep failure and Health is not degraded by it.
 func TestEntityStateGuardDeliberateStopDrainsToCloseWithoutMisclassification(t *testing.T) {
 	t.Parallel()
 
@@ -215,25 +244,19 @@ func TestEntityStateGuardDeliberateStopDrainsToCloseWithoutMisclassification(t *
 	bucket.watchAllFactory = func() (jetstream.KeyWatcher, error) { return watcher, nil }
 	c := newIngestGuardTestComponent(bucket)
 
-	done := make(chan struct{})
-	go func() {
-		c.startEntityStateGuard(context.Background(), c.entityBucket)
-		close(done)
-	}()
+	done := make(chan error, 1)
+	go func() { done <- c.startEntityStateGuard(context.Background(), c.entityBucket) }()
 	select {
-	case <-done:
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("deliberate stop reported as a sweep failure: %v", err)
+		}
 	case <-time.After(time.Second):
 		t.Fatal("guard did not drain to close after the deliberate stop")
 	}
 
 	if !watcher.stopped() {
 		t.Fatal("watcher was not stopped after the snapshot marker")
-	}
-	if c.entityWatchLost.Load() {
-		t.Fatal("deliberate stop misclassified as watch loss")
-	}
-	if err := c.ensureEntityQueriesReady(); err != nil {
-		t.Fatalf("queries not ready after deliberate stop: %v", err)
 	}
 	if c.entityPoisonSize.Load() != 0 {
 		t.Fatal("post-marker discarded entries must not be inventoried")
@@ -443,12 +466,4 @@ func containsAll(s string, needles ...string) bool {
 		}
 	}
 	return true
-}
-
-func assertIngestNotReady(t *testing.T, err error) {
-	t.Helper()
-	var classified *errs.ClassifiedError
-	if !errors.As(err, &classified) || classified.Class != errs.ErrorTransient || classified.Code != graph.ErrorCodeIndexNotReady {
-		t.Fatalf("error = %T %v, want transient/%s", err, err, graph.ErrorCodeIndexNotReady)
-	}
 }

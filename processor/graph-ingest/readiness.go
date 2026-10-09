@@ -231,14 +231,12 @@ func (c *Component) observeOutstandingWork(ctx context.Context, streamName, cons
 // the fallback for when every bind-time read failed. Either way it is captured once and
 // never moves, so a later burst cannot retroactively enlarge the "initial build".
 //
-// BootstrapComplete is the conjunction of two independent facts, per task 3.3:
+// BootstrapComplete is the boot backlog worked off — observed as outstanding reaching
+// zero at least once since binding. The boot ENTITY_STATES sweep needs no check here:
+// Start fails when the sweep cannot finish, and the status loop that calls this starts
+// after it.
 //
-//  1. the boot ENTITY_STATES sweep drained (entityBootstrapComplete, already surfaced
-//     in Health), and
-//  2. the boot backlog was worked off — observed as outstanding reaching zero at
-//     least once since binding.
-//
-// (2) is a LATCH, not a live read: Ready already carries "caught up right now", and a
+// It is a LATCH, not a live read: Ready already carries "caught up right now", and a
 // bootstrap bit that flickered off under ordinary write load would make every
 // consumer defer during normal operation. It is sound because outstanding only leaves
 // the counters by being acked (applied) or parked, so reaching zero means everything
@@ -270,8 +268,7 @@ func (c *Component) latchBootstrap(outstanding uint64, observationFailed bool) (
 		c.bootBacklogDrained.Store(true)
 	}
 
-	sweepDone := !c.entityBootstrapStarted.Load() || c.entityBootstrapComplete.Load()
-	return c.bootBacklog.Load(), sweepDone && c.bootBacklogDrained.Load()
+	return c.bootBacklog.Load(), c.bootBacklogDrained.Load()
 }
 
 // oldestOutstandingAt reports the timestamp the staleness projection ages from, or the

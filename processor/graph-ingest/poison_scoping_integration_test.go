@@ -85,10 +85,7 @@ func TestIntegration_NoGuardConsumerOnEntityStatesAfterStart(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, string(data), seededID)
 
-	// Health/readiness are clean: the deliberate stop was not classified as
-	// watch loss.
-	assert.False(t, c.entityWatchLost.Load(), "deliberate stop misclassified as watch loss")
-	require.NoError(t, c.ensureEntityQueriesReady())
+	// Health is clean after the sweep's deliberate stop.
 	health := c.Health()
 	assert.True(t, health.Healthy, "steady state after snapshot-then-stop must be healthy: %+v", health)
 }
@@ -127,8 +124,7 @@ func TestIntegration_BootSweepInventoriesResidentPoisonRealNATS(t *testing.T) {
 	require.NoError(t, c.Initialize())
 	require.NoError(t, c.Start(owner.startContext(ctx)))
 
-	// Boots with the poison inventoried; queries ready.
-	require.NoError(t, c.ensureEntityQueriesReady())
+	// Boots with the poison inventoried.
 	rec, inventoried := poisonInventoryEntry(c, poisonID)
 	require.True(t, inventoried, "boot sweep must inventory resident poison")
 	assert.NotZero(t, rec.revision, "inventory record must carry the failing KV revision")

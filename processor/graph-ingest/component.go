@@ -403,6 +403,8 @@ type Component struct {
 		natsclient.StreamConsumerConfig,
 		func(context.Context, jetstream.Msg),
 	) (jetstream.ConsumeContext, error)
+	// watchEntityStates stands in for the entity bucket's Watch in the boot sweep.
+	watchEntityStates func(context.Context, string) (jetstream.KeyWatcher, error)
 
 	// Domain resources
 	entityBucket *natsclient.KVStore            // authoritative KV operations, snapshot watch, and CAS support
@@ -420,12 +422,9 @@ type Component struct {
 	lifecycle lifecycleguard.Guard
 	// handlesMu guards the handles Start records for release: the cancel functions,
 	// statusDone and consumers.
-	handlesMu               sync.Mutex
-	statusDone              chan struct{}
-	cancel                  context.CancelFunc
-	entityWatchLost         atomic.Bool
-	entityBootstrapStarted  atomic.Bool
-	entityBootstrapComplete atomic.Bool
+	handlesMu  sync.Mutex
+	statusDone chan struct{}
+	cancel     context.CancelFunc
 
 	// Readiness producer state (ADR-083 envelope on the graph-ingest GRAPH_STATUS
 	// key). See readiness.go for the projection and the bootstrap latch rules.
@@ -849,17 +848,13 @@ func (c *Component) Health() component.HealthStatus {
 		if c.entityPoisonSize.Load() > 0 {
 			status = graph.IndexStateDegraded
 			lastErr = c.entityPoisonHealthMessage()
-		} else if c.entityWatchLost.Load() {
-			status = graph.IndexStateDegraded
-			lastErr = graph.ErrorCodeIndexNotReady + ": ENTITY_STATES snapshot sweep unavailable"
 		} else if errorCount > 0 {
 			lastErr = "errors occurred during processing"
 		}
 	}
 
 	return component.HealthStatus{
-		Healthy: c.running && errorCount == 0 && c.entityPoisonSize.Load() == 0 &&
-			!c.entityWatchLost.Load() && (!c.entityBootstrapStarted.Load() || c.entityBootstrapComplete.Load()),
+		Healthy:    c.running && errorCount == 0 && c.entityPoisonSize.Load() == 0,
 		LastCheck:  time.Now(),
 		ErrorCount: errorCount,
 		LastError:  lastErr,
@@ -981,7 +976,9 @@ func (c *Component) start(ctx context.Context) error {
 	if err := c.initStorage(runCtx); err != nil {
 		return err
 	}
-	c.startEntityStateGuard(runCtx, c.entityBucket)
+	if err := c.startEntityStateGuard(runCtx, c.entityBucket); err != nil {
+		return errs.Wrap(err, "Component", "Start", "ENTITY_STATES snapshot sweep")
+	}
 	if err := c.initHierarchyInference(); err != nil {
 		return errs.Wrap(err, "Component", "Start", "hierarchy inference")
 	}
@@ -1161,25 +1158,22 @@ func (c *Component) initStorage(ctx context.Context) error {
 // startEntityStateGuard synchronously validates the resident ENTITY_STATES
 // snapshot into the per-entity poison inventory, then STOPS the watcher —
 // graph-ingest holds no steady-state self-watch on the bucket it writes
-// (poison-response-scoping D1; steady-state detection rides the read points
-// that already exist). It intentionally does not fail startup on transport
-// errors: this component is the canonical writer and must remain available,
-// while every query fails closed until the sweep completes.
+// (steady-state detection rides the read points that already exist). A sweep
+// that cannot reach the end of the snapshot returns an error, which fails Start.
 //
 // Snapshot completeness leans on ENTITY_STATES History=1: with a per-subject
 // limit of 1 the pre-marker replay carries exactly the latest revision per
 // key, so gap-resets cannot inflate the received set and the nil
 // end-of-snapshot marker means the full resident state was seen. Raising the
 // bucket's history depth invalidates this marker math.
-func (c *Component) startEntityStateGuard(ctx context.Context, bucket *natsclient.KVStore) {
-	c.entityBootstrapStarted.Store(true)
-	watcher, err := bucket.Watch(ctx, ">")
+func (c *Component) startEntityStateGuard(ctx context.Context, bucket *natsclient.KVStore) error {
+	watch := bucket.Watch
+	if c.watchEntityStates != nil {
+		watch = c.watchEntityStates
+	}
+	watcher, err := watch(ctx, ">")
 	if err != nil {
-		if ctx.Err() == nil {
-			c.markEntityWatchLost()
-			c.logger.Error("failed to start ENTITY_STATES snapshot sweep watcher", slog.Any("error", err))
-		}
-		return
+		return errs.WrapTransient(err, "Component", "startEntityStateGuard", "open ENTITY_STATES snapshot watcher")
 	}
 
 	// Drain bookkeeping is LAST-REVISION-WINS per key: a poisoned revision
@@ -1191,26 +1185,24 @@ func (c *Component) startEntityStateGuard(ctx context.Context, bucket *natsclien
 		select {
 		case <-ctx.Done():
 			c.stopEntityStateGuardWatcher(watcher, updates)
-			return
+			return errs.WrapTransient(ctx.Err(), "Component", "startEntityStateGuard", "ENTITY_STATES snapshot sweep")
 		case entry, ok := <-updates:
 			if !ok {
-				// PRE-marker channel closure is a genuine transport failure:
-				// ingest writers still boot, entity queries stay not-ready
-				// (transient), and no poison is recorded from the failure.
+				// The channel closed before the end-of-snapshot marker, so the
+				// snapshot was not seen in full; no poison is recorded from it.
 				_ = watcher.Stop()
-				if ctx.Err() == nil {
-					c.markEntityWatchLost()
+				cause := ctx.Err()
+				if cause == nil {
+					cause = errors.New("watch closed before the end of the snapshot")
 				}
-				return
+				return errs.WrapTransient(cause, "Component", "startEntityStateGuard", "ENTITY_STATES snapshot sweep")
 			}
 			if entry == nil {
 				// End-of-snapshot marker: the full resident snapshot was seen.
-				// Stop deliberately (never classified as watch loss), record
-				// the surviving sweep entries, then open the query surface.
+				// Stop deliberately, then record the surviving sweep entries.
 				c.stopEntityStateGuardWatcher(watcher, updates)
 				c.recordBootSweepPoison(ctx, sweep)
-				c.entityBootstrapComplete.Store(true)
-				return
+				return nil
 			}
 			c.sweepEntityStateGuardEntry(sweep, entry)
 		}
@@ -1222,8 +1214,8 @@ func (c *Component) startEntityStateGuard(ctx context.Context, bucket *natsclien
 // until nats.go closes it, discarding entries. The nats.go update callback
 // blocks on a full channel while holding the watcher mutex, so an unread
 // channel would wedge the connection's async-callback dispatcher (via
-// SetClosedHandler). The post-Stop closure here is deliberate and MUST NOT be
-// classified as watch loss.
+// SetClosedHandler). The post-Stop closure here is deliberate and is not a sweep
+// failure.
 func (c *Component) stopEntityStateGuardWatcher(watcher jetstream.KeyWatcher, updates <-chan jetstream.KeyValueEntry) {
 	_ = watcher.Stop()
 	discarded := 0
@@ -1321,10 +1313,6 @@ func (c *Component) classifyStoredStateRMWError(ctx context.Context, entityID st
 		c.inventoryEntityPoison(ctx, contractErr, revision)
 	}
 	return err
-}
-
-func (c *Component) markEntityWatchLost() {
-	c.entityWatchLost.Store(true)
 }
 
 // initHierarchyInference builds hierarchy inference when enable_hierarchy is

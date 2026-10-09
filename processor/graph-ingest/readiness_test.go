@@ -95,23 +95,6 @@ func TestLatchBootstrap_DrainedIsALatchNotALiveRead(t *testing.T) {
 	}
 }
 
-// TestLatchBootstrap_RequiresTheEntityStateSweep pins the conjunction: the boot
-// ENTITY_STATES sweep draining is an INDEPENDENT fact from the stream backlog, and
-// both must hold.
-func TestLatchBootstrap_RequiresTheEntityStateSweep(t *testing.T) {
-	c := withTestRegistry(t, &Component{})
-	c.entityBootstrapStarted.Store(true) // a sweep is in progress
-
-	if _, complete := c.latchBootstrap(0, false); complete {
-		t.Error("reported complete with the entity-state sweep still running")
-	}
-
-	c.entityBootstrapComplete.Store(true)
-	if _, complete := c.latchBootstrap(0, false); !complete {
-		t.Error("expected complete once both the sweep and the backlog finished")
-	}
-}
-
 // TestBoundConsumers_DedupedAndDeterministic keeps the backlog sum from
 // double-counting a consumer across a rebind, and keeps a degraded verdict naming the
 // same consumer run to run.

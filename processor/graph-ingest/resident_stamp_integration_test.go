@@ -59,8 +59,6 @@ func TestResidentUnregisteredStampIsNotPoison(t *testing.T) {
 	require.NoError(t, c.Initialize())
 	require.NoError(t, c.Start(owner.startContext(ctx)))
 
-	require.NoError(t, c.ensureEntityQueriesReady())
-
 	_, inventoried := poisonInventoryEntry(c, id)
 	assert.False(t, inventoried, "a resident unregistered stamp is not poison")
 

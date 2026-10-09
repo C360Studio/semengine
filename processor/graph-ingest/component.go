@@ -2048,8 +2048,9 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 	atomic.AddInt64(&c.bytesProcessed, int64(bytesWritten))
 	c.lastActivity.Store(time.Now())
 	if revision == 0 {
-		// Every set was older and nothing was written (design D23); replaceEntity counted and
-		// logged each set. The message is processed, but no entity was updated.
+		// No set applied and nothing was written (design D23): every set was older, or the only
+		// statement was the profile of a profiled entity. replaceEntity counted and logged each
+		// older set. The message is processed, but no entity was updated.
 		return nil
 	}
 	// replaceEntity cleared the key's poison record and invalidated its cache entry.

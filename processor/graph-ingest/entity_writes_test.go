@@ -502,3 +502,80 @@ func TestStreamArrivalAllOlderWritesNothing(t *testing.T) {
 		}
 	})
 }
+
+// An arrival whose only statement is the indexing profile carries nothing that can apply to a
+// profiled entity: the profile is create-time immutable (ADR-054), so the replace drops the
+// arrival's, and no set is left. It writes nothing (graph-entity-writes, "Timestamp orders a
+// replace": a message with at least one set, none of which applies; design D23; #150), whatever
+// its age: older and newer than the stored profile alike, the value and the revision the test
+// planted stay, so the arrival's storage reference is not taken, and the stream lane still
+// acknowledges it. No set was older, so none is counted stale.
+func TestStreamArrivalOnlyProfileWritesNothing(t *testing.T) {
+	const (
+		id      = "acme.ops.test.system.widget.profile-only"
+		planted = uint64(41)
+	)
+	profileAt := func(at time.Time) message.Triple {
+		return message.Triple{
+			Subject: id, Predicate: vocabulary.EntityIndexingProfile, Object: vocabulary.IndexingProfileControl,
+			Source: "graph-ingest-indexing-profile", Timestamp: at, Confidence: 1,
+		}
+	}
+	for _, tc := range []struct {
+		name string
+		at   time.Time
+	}{
+		{name: "older than the stored profile", at: wmTime(1)},
+		{name: "newer than the stored profile", at: wmTime(5)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			registry := metric.NewMetricsRegistry()
+			c, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"), withMetricsRegistry(registry))
+			value, err := graph.MarshalEntityState(&graph.EntityState{
+				ID: id, MessageType: testEntityType(), UpdatedAt: wmTime(3),
+				Triples:    []message.Triple{wmStatement(id, "p3", "source-a", wmTime(3)), profileAt(wmTime(3))},
+				StorageRef: &message.StorageReference{StorageInstance: "store", Key: "ref-stored"},
+			})
+			if err != nil {
+				t.Fatalf("encode the stored entity: %v", err)
+			}
+			bucket.data[id] = mockKVData{value: value, revision: planted}
+			updated := func() float64 {
+				family, ok := gatherFamilies(t, registry.PrometheusRegistry())["semengine_datamanager_entities_updated_total"]
+				if !ok || len(family.GetMetric()) != 1 {
+					t.Fatal("the registry does not gather semengine_datamanager_entities_updated_total")
+				}
+				return family.GetMetric()[0].GetCounter().GetValue()
+			}
+			staleBefore, updatedBefore := staleSetsTotal(t, registry), updated()
+
+			c.ingestGuardMem = []*laneGuard{newLaneGuard(16)}
+			msg := &keyedIngestTestMsg{}
+			err = c.processIngest(t.Context(), 0, ingestWork{
+				entity: &graph.EntityState{ID: id, MessageType: testEntityType(), Triples: []message.Triple{profileAt(tc.at)},
+					StorageRef: &message.StorageReference{StorageInstance: "store", Key: "ref-arrival"}},
+				msg: msg, entityID: id, stream: "ENTITY", seq: 1,
+			})
+			if err != nil {
+				t.Fatalf("processIngest: %v", err)
+			}
+			if !msg.ack.Load() || msg.nak.Load() || msg.term.Load() {
+				t.Fatalf("settlement: ack %v, nak %v, term %v; want only an acknowledgement",
+					msg.ack.Load(), msg.nak.Load(), msg.term.Load())
+			}
+			bucket.mu.Lock()
+			after := bucket.data[id]
+			bucket.mu.Unlock()
+			if after.revision != planted || !bytes.Equal(after.value, value) {
+				t.Errorf("the arrival wrote: stored at revision %d, value changed %v; want revision %d and the planted value",
+					after.revision, !bytes.Equal(after.value, value), planted)
+			}
+			if rose := updated() - updatedBefore; rose != 0 {
+				t.Errorf("entities_updated_total rose by %v, want 0: no entity was updated", rose)
+			}
+			if rose := staleSetsTotal(t, registry) - staleBefore; rose != 0 {
+				t.Errorf("stale_sets_total rose by %v, want 0: the arrival carried no older set", rose)
+			}
+		})
+	}
+}

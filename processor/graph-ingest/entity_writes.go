@@ -203,10 +203,11 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 		// arrival's statements.
 		replaced := graph.ReplaceBySource(existing.Triples, newer)
 		stale = replaced.Stale
-		// Every set is older: the arrival changes nothing on a profiled entity, so the write is
-		// declined (design D23, "Every set is older"). A rewrite would bump the revision and
-		// re-fire the ENTITY_STATES watchers for nothing. Each set is still counted below.
-		if profiled && everySetStale(newer, stale) {
+		// No set applies: the arrival's only statements were the profile, dropped above, or every
+		// set is older. It changes nothing on a profiled entity, so the write is declined (design
+		// D23, "Every set is older"; #150). A rewrite would bump the revision and re-fire the
+		// ENTITY_STATES watchers for nothing. Each older set is still counted below.
+		if profiled && (len(newer) == 0 || everySetStale(newer, stale)) {
 			return nil, natsclient.ErrKVSkipWrite
 		}
 		existing.Triples = replaced.Triples

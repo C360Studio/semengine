@@ -315,6 +315,15 @@ posted on this pull request.
       named for what it writes (item 2); sibling edges, `ListWithPrefix` and `enable_type_siblings` dropped (item 3,
       ruled G, #91 comment 6062681355; `hierarchy.type.sibling` stays registered in `vocabulary`); test doubles that
       refuse what graph-ingest refuses (item 4); and graph-ingest's two hierarchy fetches made one (#139 section D).
+      Done in six commits, each failing first and with its mutation records in its body: `999f3f5` (#130: each birth
+      asks storage, the doubles refuse as graph-ingest does), `c12dbbf` and `f58d311` (#134 items 1–3; the verb is
+      `AddToContainers`), `92c19f6` (item 4's second half: no watchdogs, exact counts), `c4a885f` (a failed inference
+      fails the birth on both lanes, one fetch; `TestHierarchyFailureFailsTheBirth`), `ecf00a7` (a key deleted after
+      the stream lane's birth read stores nothing and is redelivered, D21 as `dd8d2a7` wrote it) and `36e370d` (a
+      guard record of any length but eight is refused, counted and logged once per key;
+      `TestCorruptGuardRecordIsRefused`). Choices the design does not spell out: PR #93 comments 6072002735,
+      6072192627, 6072528806, 6072740123, 6073028310 and 6073367616. Hold: CI green on the last of these commits; each
+      run fails `vuln` alone, the standard-library advisories of #142, fixed on `main` by PR #143.
 - [ ] 3.12c (D) A boot sweep that cannot run fails `Start` (ruled H, #91 comment 6062681355; #139 section C, first
       item): `entityWatchLost`, `entityBootstrapStarted`, `entityBootstrapComplete`, `markEntityWatchLost` and their
       reader branches go; a test written first, failing on the pin's code, makes the sweep fail and shows `Start`
@@ -356,7 +365,8 @@ posted on this pull request.
       #91 comment 6037287957; rulings 1 and 5, #91 comment 6037604840; design D15).
 - [ ] 4.9 (D) #111 item 1: `TestHierarchyFailureFailsTheBirth` (`graph-entity-writes`, "Birth with hierarchy fails
       closed") and `TestCorruptGuardRecordIsRefused` (`graph-ingest-recovery`, "A record that cannot be decoded"),
-      each written first and failing on the pin's code (design D21). Hold: task 3.12b.
+      each written first and failing on the pin's code (design D21). Done with task 3.12b, in `c4a885f`, `ecf00a7` and
+      `36e370d`. Hold: task 3.12b.
 
 ## 5. Ledger, gates and boundaries
 

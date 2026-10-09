@@ -100,7 +100,8 @@ Five obligations ride on every slice design in addition to its ledger row:
 
   This rule and inventory category 6 come from the owner's decision on #157 (2026-10-09). They bind every porting
   design written or edited from then on, including edits to the design of Slice 04A change 2 (PR #93) while that
-  pull request is open; they do not reopen decisions that design made before #157.
+  pull request is open; they do not reopen decisions that design made before #157 (whether ruling P stands is the
+  re-check on #91, not this rule's).
 - **A known shape leaves the generic payload.** `message.GenericJSON` is the fallback for JSON whose shape is not
   known when the code is written: outside input and user-configured transforms. Code that builds a shape it knows
   registers a payload type. A ported package that builds a `GenericJSON` from fields its own code knows gets an
@@ -166,9 +167,8 @@ each either cited at `file:line` or closed with the exact searches that came up 
    Then read any record whose title names what the package does: a record can govern a package without naming it
    (ADR-083, readiness as distributed state, names neither string above). A package that no record governs is
    written as "none" with the searches that found nothing; a change that carries no package from the pin says so in
-   one line. Source: owner decision
-   2026-10-09, #157, after PR #93's design ported `graph/readiness` without reading ADR-083 and ADR-088 and
-   re-derived the question they answer: when one component may rely on another.
+   one line. Source: owner decision 2026-10-09, #157, after PR #93's design ported `graph/readiness` without reading
+   ADR-083 and ADR-088 and re-derived the question they answer: when one component may rely on another.
 
 An inventory that is genuinely empty in a category says so with the searches that prove it; that is a real and useful
 result, not a formality to skip.

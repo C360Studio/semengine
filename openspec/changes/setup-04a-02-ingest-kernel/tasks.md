@@ -339,9 +339,12 @@ posted on this pull request.
       marker, the context ended mid-sweep), failing first on `52611ea`; `TestEntityStateGuardFailureIsReturned`
       replaces the test of the old behaviour; `ensureEntityQueriesReady` and Health's "sweep unavailable" branch go;
       one unexported seam, `watchEntityStates`. Mutation records and choices: PR #93 comment 6080843431.
-- [ ] 3.12d (D) #147: the boot sweep (`sweepEntityStateGuardEntry`) and `classifyStoredStateRMWError` decode through
+- [x] 3.12d (D) #147: the boot sweep (`sweepEntityStateGuardEntry`) and `classifyStoredStateRMWError` decode through
       `decodeStoredEntity`, so a value stored under one key that names another entity is inventoried at boot, not at
       its first read; a test written first, failing on the current code.
+      Done in `6102b75` (CI 37931629741 green): `TestBootSweepInventoriesMisKeyedValue`, failing first on `707205a`;
+      no caller can hand the classifier a mis-keyed value, so it decodes through the one rule with no test of its own.
+      Notes and the mutation record: PR #93 comment 6081213285.
 - [ ] 3.12e (D) #150: an older arrival on a profiled entity whose only statement is the indexing profile writes
       nothing (D23, the all-older rule; `7f8d9fc` is the sibling fix); a test written first, failing on the current
       code, shows the revision unchanged.
@@ -351,6 +354,22 @@ posted on this pull request.
 - [ ] 3.12g (D) #151 and #152: `graph.NewExactEntityReader` refuses a negative timeout at construction (zero keeps
       meaning the default, D16); `lifecycle.Manager.CreateFromOperator` refuses a second JSON value after the first,
       as `types/component.go` does since task 3.1; a test for each, written first.
+- [ ] 3.12h (D) #146, ruled N (#91 comment 6080973822): `natsclient.IsKVConflictError` and `IsKVNotFoundError`
+      classify by type only (`errors.Is` on natsclient's sentinels, `errors.As` on `*jetstream.APIError` and its error
+      code), and `errs.IsTransient` by class and sentinel, never by text; a test per function, written first, with an
+      error whose text holds each string the old match read and whose type does not match; natsclient's ledger row
+      gains the `adapt` items. Hold: the design edit for rulings M–P (D23's classification sentences).
+- [ ] 3.12i (D) #148, ruled O (#91 comment 6080973822): when `handleCanonicalDelete`'s pre-read refuses with a
+      graph-state error, the handler proceeds to `DeleteAtRevision` at the caller's expected revision, the KV's
+      revision check being the fence; the repair test drives the wire handler. A test written first, failing on the
+      current code: a poisoned entity is deleted over the wire at its current revision and a later create births it;
+      a stale expected revision is still refused.
+- [ ] 3.12j (D) #145, ruled M (#91 comment 6080973822): a birth writes no inverse `contains` edge into its containers;
+      `AddTriple` leaves the inference's `EntityStore`, and `TripleAdder` and graph-ingest's hierarchy dedup lane
+      (`addTripleLane`) go; #134 items 5 (the run-time inverse lookup), 7 (`ExistsEntity`) and 11 are settled by
+      removal, as the ruling says. A test
+      written first, failing on the current code: each container keeps its revision across a member's birth. Hold: the
+      design edit for rulings M–P (D1a, D15, D21, P15; `graph-entity-writes`).
 - [ ] 3.13 (D) graph-ingest under the lifecycle suite: an in-package adapter whose `Observe` lists consumers, request
       subscriptions, ingest lanes and the status loop; failing factory = a refused broker; `lifecycletest.Run` green;
       `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop` carried on the adapter, green, driving the

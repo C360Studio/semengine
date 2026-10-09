@@ -1086,7 +1086,10 @@ acknowledged and is delivered again; on the in-process lane the caller gets the 
 committed before the failure are what the next attempt commits too; the append identity suppresses the repeats. That
 holds because the inference keeps no record of which containers exist: each birth asks storage, so a container deleted
 since an earlier birth is created again (#130). The inference writes no sibling edges (ruled G, #91 comment
-6062681355); `hierarchy.type.sibling` stays registered in `vocabulary`. Test:
+6062681355); `hierarchy.type.sibling` stays registered in `vocabulary`. The stream lane reads the key to tell a birth
+from an update before it runs the inference; if that read finds the entity and the compare-and-set then finds the key
+absent (deleted in between), the write stores nothing and returns a transient error, so the redelivery reads again
+and births the entity with its hierarchy (PR #93 comment 6072740123). Test:
 `TestHierarchyFailureFailsTheBirth`: the inference's entity manager fails once, the entity is absent and the error is
 transient; on the redelivery the entity is born with its container edges. Written first, failing on the pin's code.
 

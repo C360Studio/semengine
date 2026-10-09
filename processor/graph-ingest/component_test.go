@@ -82,6 +82,17 @@ func (m *mockKVBucket) Get(ctx context.Context, key string) (jetstream.KeyValueE
 	return nil, jetstream.ErrKeyNotFound
 }
 
+// errWrongLastSequence is a CAS refusal as nats.go v1.54.0 returns it from Update and
+// from Delete with LastRevision (jetstream/kv.go:1109-1114): the server's API error,
+// code 10071, wrapping jetstream.ErrKeyRevisionMismatch. natsclient reads the code,
+// never the text (#146).
+func errWrongLastSequence() error {
+	apiErr := &jetstream.APIError{
+		Code: 400, ErrorCode: jetstream.JSErrCodeStreamWrongLastSequence, Description: "wrong last sequence",
+	}
+	return fmt.Errorf("%w: %w", apiErr, jetstream.ErrKeyRevisionMismatch)
+}
+
 func (m *mockKVBucket) Delete(ctx context.Context, key string, opts ...jetstream.KVDeleteOpt) error {
 	if m.deleteFunc != nil {
 		return m.deleteFunc(ctx, key, opts...)
@@ -92,7 +103,7 @@ func (m *mockKVBucket) Delete(ctx context.Context, key string, opts ...jetstream
 	// As the real bucket: jetstream.LastRevision(n) deletes only while n is the key's latest
 	// revision, and an absent key has none (the server compares n with last sequence 0).
 	if revision := lastRevisionOption(opts); revision != 0 && m.data[key].revision != revision {
-		return errors.New("wrong last sequence")
+		return errWrongLastSequence()
 	}
 	delete(m.data, key)
 	return nil
@@ -165,7 +176,7 @@ func (m *mockKVBucket) Update(ctx context.Context, key string, value []byte, rev
 	}
 	if current.revision != revision {
 		// CAS failure - revision mismatch
-		return 0, errors.New("wrong last sequence")
+		return 0, errWrongLastSequence()
 	}
 
 	newRev := current.revision + 1

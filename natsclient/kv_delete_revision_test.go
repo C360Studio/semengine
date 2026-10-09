@@ -57,7 +57,9 @@ func TestKVStoreDeleteAtRevisionMapsTypedErrors(t *testing.T) {
 		want error
 	}{
 		{name: "not found", raw: jetstream.ErrKeyNotFound, want: ErrKVKeyNotFound},
-		{name: "revision mismatch", raw: errors.New("wrong last sequence"), want: ErrKVRevisionMismatch},
+		{name: "revision mismatch", raw: &jetstream.APIError{
+			Code: 400, ErrorCode: jetstream.JSErrCodeStreamWrongLastSequence, Description: "wrong last sequence",
+		}, want: ErrKVRevisionMismatch},
 		{name: "other", raw: transient, want: transient},
 	}
 	for _, tt := range tests {

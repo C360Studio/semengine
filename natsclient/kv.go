@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
+	"slices"
 	"time"
 
 	"github.com/c360studio/semengine/pkg/errs"
@@ -760,37 +760,37 @@ func (kv *KVStore) Watch(ctx context.Context, pattern string) (jetstream.KeyWatc
 // branch defends paths that bypass that mapping (Watch handler entry-error chains,
 // GetRevision wrappers, future SDK changes). See issue #122 and
 // feedback_jetstream_sentinel_set_coverage.
+//
+// The class is read from the error's type, never its text (#146): a refusal's
+// text can name a stored entity, and an ID holding "10037" is not an absence.
 func IsKVNotFoundError(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, ErrKVKeyNotFound) {
-		return true
-	}
-	if errors.Is(err, jetstream.ErrKeyNotFound) || errors.Is(err, jetstream.ErrKeyDeleted) {
-		return true
-	}
-	errMsg := err.Error()
-	return strings.Contains(errMsg, "key not found") ||
-		strings.Contains(errMsg, "key was deleted") ||
-		strings.Contains(errMsg, "10037")
+	return errors.Is(err, ErrKVKeyNotFound) ||
+		errors.Is(err, jetstream.ErrKeyNotFound) ||
+		errors.Is(err, jetstream.ErrKeyDeleted) ||
+		hasJetStreamErrorCode(err, jetstream.JSErrCodeMessageNotFound)
 }
 
-// IsKVConflictError checks if error indicates a conflict (key exists or wrong revision)
+// IsKVConflictError checks if error indicates a conflict (key exists or wrong revision).
+// Like IsKVNotFoundError it reads the error's type, never its text (#146). A
+// replicated stream reports a wrong last sequence as 10164 where a single
+// replica reports 10071.
 func IsKVConflictError(err error) bool {
-	if err == nil {
+	return errors.Is(err, ErrKVRevisionMismatch) ||
+		errors.Is(err, ErrKVKeyExists) ||
+		errors.Is(err, jetstream.ErrKeyExists) ||
+		hasJetStreamErrorCode(err,
+			jetstream.JSErrCodeStreamWrongLastSequence,
+			jetstream.JSErrCodeStreamWrongLastSequenceConstant,
+			jetstream.JSErrCodeStreamNameInUse)
+}
+
+// hasJetStreamErrorCode reports whether err wraps a JetStream API error with one of codes.
+func hasJetStreamErrorCode(err error, codes ...jetstream.ErrorCode) bool {
+	var apiErr *jetstream.APIError
+	if !errors.As(err, &apiErr) {
 		return false
 	}
-	// Check for our custom errors
-	if errors.Is(err, ErrKVRevisionMismatch) || errors.Is(err, ErrKVKeyExists) {
-		return true
-	}
-	// Check for raw NATS errors
-	errMsg := err.Error()
-	return strings.Contains(errMsg, "wrong last sequence") ||
-		strings.Contains(errMsg, "10071") ||
-		strings.Contains(errMsg, "key exists") ||
-		strings.Contains(errMsg, "10058")
+	return slices.Contains(codes, apiErr.ErrorCode)
 }
 
 // Well-known errors matching Graph processor patterns

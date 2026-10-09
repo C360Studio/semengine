@@ -12,7 +12,8 @@
 //
 // # Error Classification
 //
-// Errors are automatically classified based on their type or content:
+// Errors are classified by their class (a ClassifiedError) or a wrapped sentinel, never by
+// their text: an error with neither is unclassified, and Classify gives it ErrorTransient.
 //
 //   - Transient: Network timeouts, connection issues, temporary unavailability (retry recommended)
 //   - Invalid: Malformed input, validation failures, bad configuration (do not retry)
@@ -189,8 +190,8 @@
 //   - Memory: 80 bytes per wrapped error
 //
 // The overhead is negligible compared to the actual error condition being handled.
-// Classification uses type assertions for known types (O(1)) and falls back to
-// pattern matching for unknown errors (O(n) where n is pattern count).
+// Classification uses errors.As and errors.Is on known types and sentinels; it never
+// reads an error's text.
 //
 // # Thread Safety
 //

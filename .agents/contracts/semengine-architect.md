@@ -106,28 +106,30 @@ Four obligations ride on every slice design in addition to its ledger row:
 
 ### One package per pull request
 
-From Slice 04A change 3 (`setup-04a-03-boot`) on, a porting pull request carries one package, or one owner struct
-with its package: about 3,000 pin lines at most, with a design of about one page. Pin lines are the package's
-non-test Go lines at the pin, the count in the Lines column of D2's table in the archived Slice 04A design
-(`openspec/changes/archive/2026-10-01-setup-04a-foundation/design.md:145-151`). An owner struct is a type that starts
-background work, stops it, and holds what that work uses (goroutines, subscriptions, watchers, timers, listeners),
-such as `metric.Server` or `natsclient.Client`; D2's package lists (`:155-178`) name the owners in each change.
+From Slice 04A change 3 (`setup-04a-03-boot`) on, a porting pull request carries one package, or one lifecycle owner
+(defined in the archived Slice 04A design, `openspec/changes/archive/2026-10-01-setup-04a-foundation/design.md:84-97`)
+with its package: about 3,000 pin lines at most, with a design of about one page. A package that alone exceeds that
+bound is named to the repository owner, with its line count, before its design is written, and the owner's ruling is
+recorded on the package's issue. Pin lines are the package's non-test Go lines at the pin, the count in the Lines
+column of D2's table in the same design (`:145-151`); D2's package lists (`:155-178`) name the lifecycle owners in
+each change.
 
-Each change in D2's table becomes a group of pull requests under one milestone, not one pull request and one OpenSpec
-change. "An admitted package is ported whole" (Surface audit, above) holds for each package. A group's closure is the
-package list D2 gives its change: the change's root packages, such as `service` for change 3, and every package they
-import that an earlier change did not port. The group ends when its closure compiles. Every pull request passes
-`task verify`, which builds every package in the tree, so a package is ported after the packages it imports. A
-package whose importer is not ported yet is dormant until it is: it is in the tree and builds, and nothing ported so
-far imports it. D8 of the same design (`:437-451`) already allows a package to be carried dormant across changes.
+From change 3 on, each change in D2's table becomes a group of pull requests under the Slice 04A milestone, not one
+pull request and one OpenSpec change. "An admitted package is ported whole" (Surface audit, above) holds for each
+package. A group's closure is the package list D2 gives its change: the change's root packages, such as `service`
+for change 3, and every package they import that an earlier change did not port. The group ends when its closure
+compiles. Every pull request passes `task verify`, which builds every package in the tree, so a package is ported
+after the packages it imports. A package that nothing ported so far imports is carried in the tree: it builds, keeps
+its ledger row, its tests and its coverage floor where it has one, and waits for its importer. D8 of the same design
+(`:437-451`) is the precedent for carrying a package across changes.
 
 Source: owner ruling 2026-10-09, epic #9 comment 6085243841, ruling 1; issue #159.
 
 ### The shape sweep
 
-The shape sweep is a read of each package a porting pull request carries, made per package on the copy of the pin
-that the pin probe runs on, as part of the inventory and before the design is written. The bar is the owner's
-(2026-10-07): "clean, idiomatic and pragmatic Go, simple yet detailed". The sweep looks for five shapes:
+From Slice 04A change 3 on, the shape sweep is a read of each package a porting pull request carries, made on the
+copy of the pin that the pin probe runs on, as part of the inventory and before the design is written. The bar is
+the owner's (2026-10-07): "clean, idiomatic and pragmatic Go, simple yet detailed". The sweep looks for five shapes:
 
 1. **A second spelling of one thing:** one fact computed, declared or encoded in two places, such as two error
    vocabularies for one failure or three ways to resolve one endpoint. Inventory category 2's rule applies: more than
@@ -152,7 +154,8 @@ Source: issue #159, filed with ruling 1 in epic #9 comment 6085243841.
 ## The surface inventory (mandatory first deliverable)
 
 The inventory is a file, `openspec/changes/<id>/inventory.md`, with a `base: <sha>` header and every entry pinned as
-`` `path:line` — `<the line's text>` `` so the reviewer can re-check each pin after commits. Enumerate from the
+`` `path:line` — `<the line's text>` `` so the reviewer can re-check each pin after commits. A porting change's
+inventory also lists the shape sweep's findings (Extraction slices, "The shape sweep"). Enumerate from the
 repository, never from the briefing: a briefing's list is a set of hypotheses, and a directed check inherits the
 director's blind spots. The reviewer's independent re-derivation is the check on your blind spots. Five categories,
 each either cited at `file:line` or closed with the exact searches that came up empty:

@@ -13,7 +13,7 @@ starts, `task merge:check -- 156` and the merge are recorded on this pull reques
       pull request with the file's checksum.
 - [x] 1.2 The independent pre-owner review of `design.md`, `proposal.md`, this file and the `transport-client` delta:
       `DESIGN REVIEW PASS`, recorded on this pull request.
-- [ ] 1.3 The owner's acceptance of the design, recorded on #144 or this pull request.
+- [x] 1.3 The owner's acceptance of the design, recorded on #144 or this pull request.
 
 ## 2. The fix and its tests
 
@@ -22,7 +22,6 @@ starts, `task merge:check -- 156` and the merge are recorded on this pull reques
       `SUB`). The run settles two things D7 leaves unmeasured: T1's miss count per call at one CPU, and which of
       `connectWith`'s dial seam or `SetConnection` lets a `natsclient.Client` reach the scripted server in a
       `synctest` bubble. Gate: that run's output, with both, recorded on this pull request with the system it ran on.
-      Hold: task 1.3, the owner's acceptance of the design.
 - [ ] 2.2 (D) The round trip in natsclient's core subscribe, as `design.md`, D1 to D5 state, and the doc comments of
       `Subscribe` and `SubscribeForRequests` saying that the subscription is registered with the server when the call
       returns, what bounds the wait, which errors a failed round trip returns, and that a failed call does not wait

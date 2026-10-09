@@ -118,9 +118,10 @@ Three further checks, scoped as the architect contract (Extraction slices) state
 
 For a porting design from Slice 04A change 3 on (architect contract, Extraction slices, "One package per pull request"
 and "The shape sweep"), check that the design names its unit, one package or one lifecycle owner with its package,
-and states its pin line count; and that the inventory carries the shape sweep's findings, each cited at the pin's
-`path:line` and mapped to an item on the design's list of port refactors and an `adapt` item on the ledger row. A
-missing unit, line count, finding or mapping is a finding.
+states its pin line count and, over the limit, cites the owner's ruling on the package's issue; and that the inventory
+carries the shape sweep's findings, each cited at the pin's `path:line` and mapped to an item on the design's list of
+port refactors and an `adapt` item on the ledger row. A missing unit, line count, ruling, finding or mapping is a
+finding.
 
 ## Contract and task-truth review
 

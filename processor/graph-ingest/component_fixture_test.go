@@ -149,6 +149,15 @@ func withAuthority(org, platform string) testComponentOption {
 	}
 }
 
+// buildHierarchyInference does Start's hierarchy step for a component a test
+// drives without Start: it builds the inference when enable_hierarchy is set.
+func buildHierarchyInference(t *testing.T, c *Component) {
+	t.Helper()
+	if err := c.initHierarchyInference(); err != nil {
+		t.Fatalf("initHierarchyInference: %v", err)
+	}
+}
+
 // testDependencies builds the standard fixture Dependencies: a real payload
 // registry, the caller's NATS client, and the deployment authority every
 // graph-ingest now requires at construction.

@@ -615,7 +615,7 @@ func TestAuthorityGateMetersDirectPersistenceRejectionsOnEveryDirectSeam(t *test
 			return h.component.mergeEntityOnLane(h.ctx, foreignEntity(), false)
 		}},
 		{name: "hierarchy inverse-edge adapter", call: func() error {
-			return (&tripleAdderAdapter{component: h.component}).AddTriple(h.ctx, foreignTriple)
+			return (&hierarchyStore{component: h.component}).AddTriple(h.ctx, foreignTriple)
 		}},
 		{name: "batch append body", call: func() error {
 			_, err := h.component.addTriplesLane(h.ctx, []message.Triple{foreignTriple}, dedupLaneAddBatch)

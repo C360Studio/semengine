@@ -14,7 +14,7 @@ import (
 // Review HIGH-3: the migration note promises three LOUD paths. Deleting all
 // three refusals in one compiling mutant left six suites green, which made the
 // promise artifact-free. These pin two of them; the third
-// (inference.GetHierarchyTriples) lives beside its own code in graph/inference.
+// (inference.NewHierarchyInference) lives beside its own code in graph/inference.
 //
 // A refusal that nothing asserts is a comment.
 

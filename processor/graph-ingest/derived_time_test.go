@@ -101,7 +101,7 @@ func startHierarchyStreamLane(t *testing.T) (*Component, func(context.Context, j
 	var logs bytes.Buffer
 	c.logger = slog.New(slog.NewTextHandler(&logs, nil))
 	c.config.EnableHierarchy = true
-	c.initHierarchyInference()
+	buildHierarchyInference(t, c)
 	return c, handler, &logs
 }
 
@@ -256,7 +256,7 @@ func TestDerivedStatementsCarryTriggeringTime(t *testing.T) {
 		var logs bytes.Buffer
 		c.logger = slog.New(slog.NewTextHandler(&logs, nil))
 		c.config.EnableHierarchy = true
-		c.initHierarchyInference()
+		buildHierarchyInference(t, c)
 		const id = "acme.ops.robotics.gcs.drone.030"
 		entity := canonicalMutationEntity(id)
 		entity.Triples = []message.Triple{

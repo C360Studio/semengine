@@ -211,8 +211,8 @@ const (
 	// dedupLaneAddBatch is the canonical append mutation lane.
 	dedupLaneAddBatch dedupLane = "append"
 	// dedupLaneHierarchy is hierarchy inference's in-process adder
-	// (tripleAdderAdapter), the lane that produced gh#713: createEntity calls
-	// GetHierarchyTriples unconditionally, and its container-inverse edges
+	// (hierarchyStore), the lane that produced gh#713: createEntity calls
+	// AddToContainers unconditionally, and its container-inverse edges
 	// commit through here on every re-registration.
 	dedupLaneHierarchy dedupLane = "hierarchy"
 )
@@ -334,12 +334,14 @@ const (
 // schema defines the configuration schema for graph-ingest component
 var schema = component.GenerateConfigSchema(reflect.TypeOf(Config{}))
 
-// entityManagerAdapter adapts Component to implement inference.EntityManager interface
-type entityManagerAdapter struct {
+// hierarchyStore is graph-ingest as hierarchy inference's inference.EntityStore:
+// the existence check reads the entity bucket, the create is the in-process
+// create, and the append is the hierarchy lane.
+type hierarchyStore struct {
 	component *Component
 }
 
-func (a *entityManagerAdapter) ExistsEntity(ctx context.Context, id string) (bool, error) {
+func (a *hierarchyStore) ExistsEntity(ctx context.Context, id string) (bool, error) {
 	_, err := a.component.entityBucket.Get(ctx, id)
 	if err != nil {
 		if natsclient.IsKVNotFoundError(err) {
@@ -350,23 +352,15 @@ func (a *entityManagerAdapter) ExistsEntity(ctx context.Context, id string) (boo
 	return true, nil
 }
 
-func (a *entityManagerAdapter) CreateEntity(ctx context.Context, entity *graph.EntityState) (*graph.EntityState, error) {
-	err := a.component.CreateEntity(ctx, entity)
-	if err != nil {
-		return nil, err
-	}
-	return entity, nil
+func (a *hierarchyStore) CreateEntity(ctx context.Context, entity *graph.EntityState) error {
+	return a.component.CreateEntity(ctx, entity)
 }
 
-// tripleAdderAdapter adapts Component to implement inference.TripleAdder interface
-type tripleAdderAdapter struct {
-	component *Component
-}
-
-// AddTriple routes hierarchy inference's container-inverse edges through the shared append implementation, labelled so their suppressed duplicates
-// are attributable to hierarchy rather than to an operator-issued mutation
+// AddTriple routes hierarchy inference's container-inverse edges through the
+// shared append implementation, labelled so their suppressed duplicates are
+// attributable to hierarchy rather than to an operator-issued mutation
 // (gh#713: createEntity re-derives these on every re-registration).
-func (a *tripleAdderAdapter) AddTriple(ctx context.Context, triple message.Triple) error {
+func (a *hierarchyStore) AddTriple(ctx context.Context, triple message.Triple) error {
 	_, _, err := a.component.addTripleLane(ctx, triple, dedupLaneHierarchy)
 	return err
 }
@@ -970,7 +964,9 @@ func (c *Component) start(ctx context.Context) error {
 		return err
 	}
 	c.startEntityStateGuard(runCtx, c.entityBucket)
-	c.initHierarchyInference()
+	if err := c.initHierarchyInference(); err != nil {
+		return errs.Wrap(err, "Component", "Start", "hierarchy inference")
+	}
 	if err := c.createStatusBucket(runCtx); err != nil {
 		return errs.Wrap(err, "Component", "Start", "readiness status bucket")
 	}
@@ -1313,30 +1309,24 @@ func (c *Component) markEntityWatchLost() {
 	c.entityWatchLost.Store(true)
 }
 
-// initHierarchyInference initializes hierarchy inference if enabled.
-func (c *Component) initHierarchyInference() {
+// initHierarchyInference builds hierarchy inference when enable_hierarchy is
+// set. With it off the inference stays nil, and a nil inference is what "off"
+// means at every birth.
+func (c *Component) initHierarchyInference() error {
 	if !c.config.EnableHierarchy {
-		return
+		return nil
 	}
-
-	hierarchyConfig := inference.HierarchyConfig{
-		Enabled:           true,
-		CreateTypeEdges:   true,
-		CreateSystemEdges: true,
-		CreateDomainEdges: true,
-	}
-
 	// The deployment's own authority, the same deps.Platform the gate reads:
 	// containers are minted from the ingested entity's prefix, so an imported
 	// entity would mint them under a peer's authority. Inference skips those
-	// entities entirely (ADR-102).
-	c.hierarchyInference = inference.NewHierarchyInference(
-		&entityManagerAdapter{component: c},
-		&tripleAdderAdapter{component: c},
-		hierarchyConfig,
-		c.platform,
-		c.logger,
-	)
+	// entities entirely (ADR-102). The factory has already refused an empty
+	// pair, so the constructor's own refusal is not reached from here.
+	hi, err := inference.NewHierarchyInference(&hierarchyStore{component: c}, c.platform, c.logger)
+	if err != nil {
+		return err
+	}
+	c.hierarchyInference = hi
+	return nil
 }
 
 // ============================================================================
@@ -1982,7 +1972,7 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 	// than the stored one, are not validated — they are left out, not
 	// committed, so the store contract is unaffected; (2) with EnableHierarchy set, an invalid candidate with a
 	// valid ID reaches the pre-closure hierarchy step below, whose
-	// GetHierarchyTriples COMMITS container entities + inverse contains-edges
+	// AddToContainers COMMITS container entities + inverse contains-edges
 	// before the write gate rejects the candidate itself — that
 	// pre-committed content is contract-valid and identical to what a later
 	// legitimate birth of the same ID would create. References to absent entities
@@ -2016,7 +2006,7 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 	// fetch happens once per genuine create. See go-reviewer concern 5
 	// on the gh#177 fix.
 	var hierarchyTriples []message.Triple
-	if c.config.EnableHierarchy && c.hierarchyInference != nil {
+	if c.hierarchyInference != nil {
 		// Probe-then-fetch: cheap pre-check avoids the inference cost
 		// on guaranteed-second-write paths. Even if the entity is
 		// concurrently created between probe and CAS, the callback's
@@ -2024,7 +2014,7 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 		// the hierarchy triples — the probe is an optimization, not
 		// correctness.
 		if _, err := c.entityBucket.Get(ctx, entity.ID); err != nil && natsclient.IsKVNotFoundError(err) {
-			triples, herr := c.hierarchyInference.GetHierarchyTriples(ctx, entity.ID, at)
+			triples, herr := c.hierarchyInference.AddToContainers(ctx, entity.ID, at)
 			if herr != nil {
 				c.logger.Warn("Failed to get hierarchy triples",
 					slog.String("entity_id", entity.ID),
@@ -2103,8 +2093,8 @@ func (c *Component) createEntityWithReceipt(
 	// SYNCHRONOUS HIERARCHY INFERENCE:
 	// Get hierarchy triples BEFORE writing entity to storage
 	// This ensures entity is written once with all triples included (no cascade)
-	if c.config.EnableHierarchy && c.hierarchyInference != nil {
-		hierarchyTriples, err := c.hierarchyInference.GetHierarchyTriples(ctx, entity.ID, at)
+	if c.hierarchyInference != nil {
+		hierarchyTriples, err := c.hierarchyInference.AddToContainers(ctx, entity.ID, at)
 		if err != nil {
 			c.logger.Warn("Failed to get hierarchy triples",
 				slog.String("entity_id", entity.ID),

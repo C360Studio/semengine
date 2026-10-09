@@ -180,14 +180,7 @@ func TestHierarchyInference_SkipContainerEntities(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			store := newFakeStore()
 
-			config := HierarchyConfig{
-				Enabled:           true,
-				CreateTypeEdges:   true,
-				CreateSystemEdges: true,
-				CreateDomainEdges: true,
-			}
-
-			hi := NewHierarchyInference(store, store, config, hierarchyTestAuthority, nil)
+			hi := newTestInference(t, store)
 
 			err := addHierarchy(context.Background(), hi, store, tt.entityID)
 			require.NoError(t, err)
@@ -214,14 +207,7 @@ func TestHierarchyInference_SkipContainerEntities(t *testing.T) {
 func TestHierarchyInference_NoCascade(t *testing.T) {
 	store := newFakeStore()
 
-	config := HierarchyConfig{
-		Enabled:           true,
-		CreateTypeEdges:   true,
-		CreateSystemEdges: true,
-		CreateDomainEdges: true,
-	}
-
-	hi := NewHierarchyInference(store, store, config, hierarchyTestAuthority, nil)
+	hi := newTestInference(t, store)
 
 	// Create a real entity
 	entityID := "c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-001"
@@ -283,14 +269,7 @@ func TestHierarchyInference_NoCascade(t *testing.T) {
 func TestHierarchyInference_MultipleEntitiesSameType(t *testing.T) {
 	store := newFakeStore()
 
-	config := HierarchyConfig{
-		Enabled:           true,
-		CreateTypeEdges:   true,
-		CreateSystemEdges: true,
-		CreateDomainEdges: true,
-	}
-
-	hi := NewHierarchyInference(store, store, config, hierarchyTestAuthority, nil)
+	hi := newTestInference(t, store)
 
 	// Create 10 entities of the same type
 	baseID := "c360.semstreams-hierarchy-test.sensor.environmental.temperature"
@@ -344,14 +323,7 @@ func TestHierarchyInference_MultipleEntitiesSameType(t *testing.T) {
 func TestHierarchyInference_ContainerEntityWithNonStandardSuffix(t *testing.T) {
 	store := newFakeStore()
 
-	config := HierarchyConfig{
-		Enabled:           true,
-		CreateTypeEdges:   true,
-		CreateSystemEdges: false,
-		CreateDomainEdges: false,
-	}
-
-	hi := NewHierarchyInference(store, store, config, hierarchyTestAuthority, nil)
+	hi := newTestInference(t, store)
 
 	// Entity that contains "group" but doesn't end with it
 	entityID := "c360.semstreams-hierarchy-test.group.sensor.temperature.temp-001"
@@ -360,10 +332,10 @@ func TestHierarchyInference_ContainerEntityWithNonStandardSuffix(t *testing.T) {
 
 	// Should process normally (not skipped as container)
 	createdEntities := store.getCreatedEntities()
-	assert.Len(t, createdEntities, 1, "Should create container for non-container entity")
+	assert.Len(t, createdEntities, 3, "Should create containers for non-container entity")
 
 	triples := store.getTriples()
-	assert.Len(t, triples, 2, "Should create edges for non-container entity")
+	assert.Len(t, triples, 6, "Should create edges for non-container entity")
 }
 
 // entity-id-audit:classify intentional-malformed "c360.semstreams-hierarchy-test.sensor.environmental.temperature" line=80 column=21 surface=go-field:.entityID entity_id_invalid:arity verifies five-position IDs are not containers

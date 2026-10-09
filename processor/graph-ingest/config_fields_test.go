@@ -97,7 +97,7 @@ func TestConfigEnableHierarchyAddsHierarchyStatements(t *testing.T) {
 	config.EnableHierarchy = true
 
 	c := newConfiguredGraphIngest(t, config)
-	c.initHierarchyInference() // Start's step that reads the field
+	buildHierarchyInference(t, c) // Start's step that reads the field
 
 	if triples := createDrone(t, c, "001"); !hasPredicate(triples, vocabulary.HierarchyTypeMember) {
 		t.Fatalf("birth with enable_hierarchy has no %s statement: %v", vocabulary.HierarchyTypeMember, triples)
@@ -112,7 +112,7 @@ func TestHierarchyBirthWritesNoSiblingEdge(t *testing.T) {
 	config.EnableHierarchy = true
 
 	c := newConfiguredGraphIngest(t, config)
-	c.initHierarchyInference()
+	buildHierarchyInference(t, c)
 
 	createDrone(t, c, "001")
 	second := createDrone(t, c, "002")

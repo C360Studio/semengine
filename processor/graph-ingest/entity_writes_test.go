@@ -56,7 +56,7 @@ func newRetryingStreamLane(t *testing.T, err error) (*Component, *createFailsOnc
 	const id = "c360.platform.robotics.mav1.drone.001"
 	c, mock := createTestComponentWithMockKVBucket(t)
 	c.config.EnableHierarchy = true
-	c.initHierarchyInference()
+	buildHierarchyInference(t, c)
 	bucket := &createFailsOnce{mockKVBucket: mock, key: id, err: err}
 	c.entityBucket = c.natsClient.NewKVStore(bucket)
 

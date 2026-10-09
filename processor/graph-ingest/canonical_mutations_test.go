@@ -110,7 +110,7 @@ func TestCanonicalCreateHasNoHierarchyOrRelationshipSideEffects(t *testing.T) {
 func TestMutationCreateBirthGetsNoHierarchy(t *testing.T) {
 	c, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
 	c.config.EnableHierarchy = true
-	c.initHierarchyInference()
+	buildHierarchyInference(t, c)
 
 	createCanonicalEntity(t, c, canonicalEntityA, []message.Triple{
 		canonicalTriple(canonicalEntityA, "test.state.value", "ready"),

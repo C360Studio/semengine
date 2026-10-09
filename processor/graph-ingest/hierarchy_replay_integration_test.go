@@ -4,10 +4,10 @@
 // append already-present triples or advance entity revisions when nothing in
 // the world changed.
 //
-// The trigger is NOT in hierarchy.go. createEntity calls GetHierarchyTriples
+// The trigger is NOT in hierarchy.go. createEntity calls AddToContainers
 // UNCONDITIONALLY (component.go, before the KV write), and that call is not a
 // pure read: it commits container-inverse edges as side effects through
-// tripleAdder. On an already-present ID the subsequent atomic
+// hierarchyStore.AddTriple. On an already-present ID the subsequent atomic
 // Create returns natsclient.ErrKVKeyExists and createEntity returns early —
 // but the inverse edges have ALREADY committed. mergeEntityOnLane (the pin's
 // MergeEntity, design D6), by contrast, gates hierarchy behind an absence probe,

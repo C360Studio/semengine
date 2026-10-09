@@ -317,7 +317,7 @@ func TestSuppressedDuplicateCounter_IsLaneAttributed(t *testing.T) {
 	triple := dedupTriple(dedupSubject)
 	appendDedupTriple(ctx, t, comp, triple)
 
-	adder := &tripleAdderAdapter{component: comp}
+	adder := &hierarchyStore{component: comp}
 	hierarchyBefore := testutil.ToFloat64(comp.duplicateTriplesSuppressed.WithLabelValues(string(dedupLaneHierarchy)))
 	addBefore := testutil.ToFloat64(comp.duplicateTriplesSuppressed.WithLabelValues(string(dedupLaneAddBatch)))
 

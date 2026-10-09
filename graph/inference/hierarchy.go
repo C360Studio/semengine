@@ -16,12 +16,12 @@ import (
 	"github.com/c360studio/semengine/vocabulary"
 )
 
-// errHierarchyAuthorityUnset is returned when an ENABLED HierarchyInference
-// holds no deployment authority to compare an entity against.
+// errHierarchyAuthorityUnset is returned when a HierarchyInference is built
+// with no deployment authority to compare an entity against.
 var errHierarchyAuthorityUnset = errors.New("hierarchy inference has no deployment authority")
 
-// errHierarchyTimeUnset is returned when an ENABLED HierarchyInference is
-// given no triggering time to stamp its statements with.
+// errHierarchyTimeUnset is returned when a HierarchyInference is given no
+// triggering time to stamp its statements with.
 var errHierarchyTimeUnset = errors.New("hierarchy inference has no triggering time")
 
 // HierarchyInference creates membership edges to container entities based on
@@ -37,29 +37,15 @@ var errHierarchyTimeUnset = errors.New("hierarchy inference has no triggering ti
 //   - Source container:   <SourcePrefix>.group.container.level (level 3 + padding)
 //
 // Graph distances via containers:
-//   - Same type siblings: 2 hops (entity → type.group ← entity)
+//   - Same type: 2 hops (entity → type.group ← entity)
 //   - Same taxonomy, different type: 4 hops
 //   - Same source, different taxonomy: 6 hops
 //
-// NAMING DEBT (ADR-102 §B.4 / H7, owner item O-6): the config fields
-// CreateSystemEdges / CreateDomainEdges and the vocabulary predicates
-// hierarchy.system.member / hierarchy.domain.member were named for the
-// retired order and now misname their container — the "system" edge is the
-// taxonomy container and the "domain" edge is the source container. The
-// ruling is to retire containers with gh606 rather than rename an
-// operator-facing field and a published predicate for one release; the
-// mechanics below are unchanged and correct.
-//
+// A caller with hierarchy off builds none: there is no disabled inference.
 // This is a stateless utility - no lifecycle methods (Start/Stop).
 type HierarchyInference struct {
-	// entityManager handles entity existence checks and creation
-	entityManager EntityManager
-
-	// tripleAdder adds triples to entities (used for inverse edges on containers)
-	tripleAdder TripleAdder
-
-	// Configuration
-	config HierarchyConfig
+	// store checks and creates containers and writes their inverse edges.
+	store EntityStore
 
 	// platform is the deployment's own authority, positions 1-2 of every
 	// identity this deployment may mint (ADR-102 d5), from graph-ingest's
@@ -70,63 +56,38 @@ type HierarchyInference struct {
 	logger *slog.Logger
 }
 
-// EntityManager provides entity existence checks and creation. Production
-// implementations route creation through graph-ingest.
-type EntityManager interface {
+// EntityStore is the entity storage the inference creates containers in and
+// writes their inverse edges to. graph-ingest implements it, and it refuses
+// what graph-ingest refuses: CreateEntity of a key the store holds returns
+// natsclient.ErrKVKeyExists, and AddTriple to an absent entity fails.
+type EntityStore interface {
+	TripleAdder
+
+	// ExistsEntity reports whether the store holds an entity under id.
 	ExistsEntity(ctx context.Context, id string) (bool, error)
-	CreateEntity(ctx context.Context, entity *gtypes.EntityState) (*gtypes.EntityState, error)
+
+	// CreateEntity writes entity under its ID, refusing an ID the store holds
+	// with natsclient.ErrKVKeyExists.
+	CreateEntity(ctx context.Context, entity *gtypes.EntityState) error
 }
 
-// HierarchyConfig configures hierarchy container inference.
-type HierarchyConfig struct {
-	// Enabled activates hierarchy inference on entity creation
-	Enabled bool `json:"enabled"`
-
-	// CreateTypeEdges enables type membership edges (5-part prefix → type container)
-	// StandardIRI: skos:broader
-	CreateTypeEdges bool `json:"create_type_edges"`
-
-	// CreateSystemEdges enables system membership edges (4-part prefix → system container)
-	// StandardIRI: skos:broader
-	CreateSystemEdges bool `json:"create_system_edges"`
-
-	// CreateDomainEdges enables domain membership edges (3-part prefix → domain container)
-	// StandardIRI: skos:broader
-	CreateDomainEdges bool `json:"create_domain_edges"`
-}
-
-// NewHierarchyInference creates a new hierarchy inference component.
-//
-// Parameters:
-//   - entityManager: Component for entity existence checks and creation
-//   - tripleAdder: Component that can add triples (for inverse edges on containers)
-//   - config: Configuration for edge creation
-//   - platform: the deployment's own authority, graph-ingest's deps.Platform.
-//     An entity whose positions 1-2 differ is an imported mirror, and
-//     GetHierarchyTriples mints NOTHING for it (no container, no membership
-//     triple, no inverse edge), because the framework never mints
-//     under a foreign authority. An empty pair while config.Enabled is set is
-//     refused loudly by GetHierarchyTriples rather than silently skipping
-//     every entity.
-//   - logger: Logger for observability (can be nil)
-func NewHierarchyInference(
-	entityManager EntityManager,
-	tripleAdder TripleAdder,
-	config HierarchyConfig,
-	platform types.PlatformMeta,
-	logger *slog.Logger,
-) *HierarchyInference {
+// NewHierarchyInference builds the inference over store for the deployment
+// whose authority is platform, graph-ingest's deps.Platform. An entity whose
+// positions 1-2 differ is an imported mirror, and AddToContainers mints
+// NOTHING for it (no container, no membership triple, no inverse edge),
+// because the framework never mints under a foreign authority (ADR-102). An
+// empty pair could only read every entity as foreign and mint nothing,
+// forever, so it is refused here rather than on every call. A nil logger is
+// slog.Default.
+func NewHierarchyInference(store EntityStore, platform types.PlatformMeta, logger *slog.Logger) (*HierarchyInference, error) {
+	if platform.Org == "" || platform.Platform == "" {
+		return nil, errs.WrapInvalid(errHierarchyAuthorityUnset, "HierarchyInference", "NewHierarchyInference",
+			"hierarchy inference requires the deployment authority (platform.org and platform.id)")
+	}
 	if logger == nil {
 		logger = slog.Default()
 	}
-
-	return &HierarchyInference{
-		entityManager: entityManager,
-		tripleAdder:   tripleAdder,
-		config:        config,
-		platform:      platform,
-		logger:        logger,
-	}
+	return &HierarchyInference{store: store, platform: platform, logger: logger}, nil
 }
 
 // isContainerEntity returns true if the entityID represents a container entity.
@@ -142,24 +103,14 @@ func isContainerEntity(entityID string) bool {
 	return semtypes.IsReservedInstanceToken(parsed.Instance)
 }
 
-// GetHierarchyTriples returns hierarchy membership triples for the given entity ID.
-//
-// IT HAS SIDE EFFECTS ON CONTAINER ENTITIES. It does not write the SUBJECT entity —
-// the caller must include the returned triples before writing that — but it DOES
-// create missing container entities and append inverse edges to them, as steps 2 and 4
-// below say plainly.
-//
-// The previous comment here opened with "This method has NO side effects", contradicted
-// four lines later by its own step 2. That was gh#713's cover story: a reader who
-// stopped at the first line had no reason to look for the re-fire the container writes
-// cause. A name that says "Get" and a comment that says "no side effects" are not a
-// contract; the steps are.
-//
-// For each enabled level (type, system, domain), it:
-// 1. Computes the container entity ID
-// 2. Auto-creates the container if it doesn't exist (WRITE — side effect on containers)
-// 3. Returns a membership triple from entity to container
-// 4. Adds inverse edge to container (container → contains → entity) (WRITE)
+// AddToContainers adds an entity being born to its three containers (type,
+// taxonomy, source). For each one it:
+//  1. creates the container if storage does not hold it (a write);
+//  2. writes the container's inverse edge, container → contains → entity (a
+//     write);
+//  3. returns the entity's membership statement, entity → member → container,
+//     which it does not write: the caller writes the returned statements with
+//     the entity.
 //
 // Every statement it returns or writes, a new container's type statement
 // included, names graph.SourceHierarchy as its source and carries at, the time
@@ -170,32 +121,18 @@ func isContainerEntity(entityID string) bool {
 // comment 6062681355); vocabulary.HierarchyTypeSibling stays registered.
 //
 // If any part fails (a container's existence check or birth, or an inverse
-// edge), it returns every failure joined and no statements, so the caller refuses the birth (design D21).
-// Containers and inverse edges written before the failure are what the next
-// attempt writes again.
+// edge), it returns every failure joined and no statements, so the caller
+// refuses the birth (design D21). Containers and inverse edges written before
+// the failure are what the next attempt writes again.
 //
-// Returns empty slice if hierarchy is disabled, the entity ID is invalid, or
-// the entity carries a FOREIGN authority (an imported mirror — ADR-102).
-func (h *HierarchyInference) GetHierarchyTriples(ctx context.Context, entityID string, at time.Time) ([]message.Triple, error) {
-	if !h.config.Enabled {
-		return nil, nil
-	}
-
-	// An enabled inference with no deployment authority could only answer
-	// "everything is foreign" and mint nothing, for every entity, forever. That
-	// is the silent shape this check exists to prevent: it is a construction
-	// mistake, so it fails the write loudly instead of quietly disabling the
-	// feature. graph-ingest cannot reach it — its factory refuses an absent
-	// deps.Platform first.
-	if h.platform.Org == "" || h.platform.Platform == "" {
-		return nil, errs.WrapInvalid(errHierarchyAuthorityUnset, "HierarchyInference", "GetHierarchyTriples",
-			"hierarchy inference requires the deployment authority (the platform passed to NewHierarchyInference)")
-	}
-
+// It returns no statements, and writes nothing, for an invalid entity ID, a
+// container, or an entity carrying a FOREIGN authority (an imported mirror,
+// ADR-102).
+func (h *HierarchyInference) AddToContainers(ctx context.Context, entityID string, at time.Time) ([]message.Triple, error) {
 	// A statement with no time is refused by graph-ingest's write rules; refusing
 	// here names the cause instead of minting statements stamped with the zero time.
 	if at.IsZero() {
-		return nil, errs.WrapInvalid(errHierarchyTimeUnset, "HierarchyInference", "GetHierarchyTriples",
+		return nil, errs.WrapInvalid(errHierarchyTimeUnset, "HierarchyInference", "AddToContainers",
 			"hierarchy inference requires the time of the write that triggered it")
 	}
 
@@ -221,42 +158,27 @@ func (h *HierarchyInference) GetHierarchyTriples(ctx context.Context, entityID s
 		return nil, nil
 	}
 
-	var triples []message.Triple
+	// The taxonomy and source containers' membership predicates keep the names
+	// of the retired order, hierarchy.system.member and hierarchy.domain.member
+	// (ADR-102 §B.4, H7).
+	levels := [...]struct {
+		containerID string
+		predicate   string
+	}{
+		{buildTypeContainerID(parsed), vocabulary.HierarchyTypeMember},
+		{buildTaxonomyContainerID(parsed), vocabulary.HierarchySystemMember},
+		{buildSourceContainerID(parsed), vocabulary.HierarchyDomainMember},
+	}
+
+	triples := make([]message.Triple, 0, len(levels))
 	var failures []error
-
-	// Create type membership: entity → type.group
-	if h.config.CreateTypeEdges {
-		typeContainerID := buildTypeContainerID(parsed)
-		triple, err := h.ensureContainerAndReturnEdge(ctx, entityID, typeContainerID, vocabulary.HierarchyTypeMember, at)
+	for _, level := range levels {
+		triple, err := h.ensureContainerAndReturnEdge(ctx, entityID, level.containerID, level.predicate, at)
 		if err != nil {
 			failures = append(failures, err)
-		} else {
-			triples = append(triples, triple)
+			continue
 		}
-	}
-
-	// Create taxonomy membership: entity → <TaxonomyPrefix>.group.container.
-	// Config field and predicate keep the retired "system" name (H7 above).
-	if h.config.CreateSystemEdges {
-		systemContainerID := buildTaxonomyContainerID(parsed)
-		triple, err := h.ensureContainerAndReturnEdge(ctx, entityID, systemContainerID, vocabulary.HierarchySystemMember, at)
-		if err != nil {
-			failures = append(failures, err)
-		} else {
-			triples = append(triples, triple)
-		}
-	}
-
-	// Create source membership: entity → <SourcePrefix>.group.container.level.
-	// Config field and predicate keep the retired "domain" name (H7 above).
-	if h.config.CreateDomainEdges {
-		domainContainerID := buildSourceContainerID(parsed)
-		triple, err := h.ensureContainerAndReturnEdge(ctx, entityID, domainContainerID, vocabulary.HierarchyDomainMember, at)
-		if err != nil {
-			failures = append(failures, err)
-		} else {
-			triples = append(triples, triple)
-		}
+		triples = append(triples, triple)
 	}
 
 	if len(failures) > 0 {
@@ -289,18 +211,16 @@ func buildTypeContainerID(eid semtypes.EntityID) string {
 }
 
 // buildTaxonomyContainerID creates a 6-part container ID from the level-4
-// taxonomy prefix plus two padding tokens. Reached through the
-// CreateSystemEdges config field and stamped hierarchy.system.member — both
-// retired names for this container (H7).
+// taxonomy prefix plus two padding tokens. Its membership predicate is
+// hierarchy.system.member, the retired order's name for it (H7).
 // Output: org.platform.system.domain.group.container
 func buildTaxonomyContainerID(eid semtypes.EntityID) string {
 	return eid.TaxonomyPrefix() + ".group.container"
 }
 
 // buildSourceContainerID creates a 6-part container ID from the level-3 source
-// prefix plus three padding tokens. Reached through the CreateDomainEdges
-// config field and stamped hierarchy.domain.member — both retired names for
-// this container (H7).
+// prefix plus three padding tokens. Its membership predicate is
+// hierarchy.domain.member, the retired order's name for it (H7).
 // Output: org.platform.system.group.container.level
 func buildSourceContainerID(eid semtypes.EntityID) string {
 	return eid.SourcePrefix() + ".group.container.level"
@@ -327,7 +247,7 @@ func (h *HierarchyInference) ensureContainerAndReturnEdge(ctx context.Context, e
 	if inversePredicate != "" {
 		// e.g., hierarchy.type.contains
 		inverseTriple := hierarchyTriple(containerID, inversePredicate, entityID, at)
-		if err := h.tripleAdder.AddTriple(ctx, inverseTriple); err != nil {
+		if err := h.store.AddTriple(ctx, inverseTriple); err != nil {
 			return message.Triple{}, fmt.Errorf("add hierarchy inverse edge %s %s %s: %w",
 				containerID, inversePredicate, entityID, err)
 		}
@@ -342,7 +262,7 @@ func (h *HierarchyInference) ensureContainerAndReturnEdge(ctx context.Context, e
 // an earlier birth is created again, and a birth delivered again commits what the
 // first attempt did (#130, design D21).
 func (h *HierarchyInference) ensureContainerExists(ctx context.Context, containerID string, at time.Time) error {
-	exists, err := h.entityManager.ExistsEntity(ctx, containerID)
+	exists, err := h.store.ExistsEntity(ctx, containerID)
 	if err != nil {
 		return err
 	}
@@ -360,7 +280,7 @@ func (h *HierarchyInference) ensureContainerExists(ctx context.Context, containe
 		},
 	}
 
-	if _, err := h.entityManager.CreateEntity(ctx, containerEntity); err != nil {
+	if err := h.store.CreateEntity(ctx, containerEntity); err != nil {
 		// Another writer may win the same atomic container birth between the
 		// check above and this create. That definite conflict means the desired
 		// container exists; no string matching needed.

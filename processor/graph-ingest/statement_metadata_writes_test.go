@@ -98,8 +98,7 @@ func TestWriteRefusesStatementWithoutSourceOrTimestamp(t *testing.T) {
 		return func(_ *testing.T, c *Component) error {
 			entity := canonicalMutationEntity(inProcessID)
 			entity.Triples = triples
-			_, err := (&entityManagerAdapter{component: c}).CreateEntity(context.Background(), entity)
-			return err
+			return (&hierarchyStore{component: c}).CreateEntity(context.Background(), entity)
 		}
 	}
 	// The stream lane stamps a Graphable's statements from the envelope before its merge, so its
@@ -113,7 +112,7 @@ func TestWriteRefusesStatementWithoutSourceOrTimestamp(t *testing.T) {
 	}
 	inProcessAppend := func(triple message.Triple) func(*testing.T, *Component) error {
 		return func(_ *testing.T, c *Component) error {
-			return (&tripleAdderAdapter{component: c}).AddTriple(context.Background(), triple)
+			return (&hierarchyStore{component: c}).AddTriple(context.Background(), triple)
 		}
 	}
 
@@ -149,7 +148,7 @@ func TestWriteRefusesStatementWithoutSourceOrTimestamp(t *testing.T) {
 			// inference creates containers and appends edges, so a refusal found after it would
 			// leave them stored.
 			c.config.EnableHierarchy = true
-			c.initHierarchyInference()
+			buildHierarchyInference(t, c)
 			before := bucketContents(bucket)
 
 			assertRefused(t, tt.write(t, c), tt.names...)

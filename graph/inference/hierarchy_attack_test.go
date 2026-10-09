@@ -10,7 +10,6 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/c360studio/semengine/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -64,19 +63,12 @@ func TestAttack_IsContainerEntity_Concurrent(t *testing.T) {
 	}
 }
 
-// TestAttack_GetHierarchyTriples_Concurrent verifies that GetHierarchyTriples
+// TestAttack_AddToContainers_Concurrent verifies that AddToContainers
 // is safe to call concurrently with container and real entities.
-func TestAttack_GetHierarchyTriples_Concurrent(t *testing.T) {
+func TestAttack_AddToContainers_Concurrent(t *testing.T) {
 	store := newFakeStore()
 
-	config := HierarchyConfig{
-		Enabled:           true,
-		CreateTypeEdges:   true,
-		CreateSystemEdges: true,
-		CreateDomainEdges: true,
-	}
-
-	hi := NewHierarchyInference(store, store, config, hierarchyTestAuthority, nil)
+	hi := newTestInference(t, store)
 
 	entities := []string{
 		// Real entities
@@ -128,7 +120,7 @@ func TestAttack_GetHierarchyTriples_Concurrent(t *testing.T) {
 		// what real entities would create (not exponential growth).
 
 	case <-time.After(10 * time.Second):
-		t.Fatal("timeout: concurrent GetHierarchyTriples calls hung")
+		t.Fatal("timeout: concurrent AddToContainers calls hung")
 	}
 }
 
@@ -136,14 +128,7 @@ func TestAttack_GetHierarchyTriples_Concurrent(t *testing.T) {
 func TestAttack_CancelledContext(t *testing.T) {
 	store := newFakeStore()
 
-	config := HierarchyConfig{
-		Enabled:           true,
-		CreateTypeEdges:   true,
-		CreateSystemEdges: true,
-		CreateDomainEdges: true,
-	}
-
-	hi := NewHierarchyInference(store, store, config, hierarchyTestAuthority, nil)
+	hi := newTestInference(t, store)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
@@ -159,7 +144,7 @@ func TestAttack_CancelledContext(t *testing.T) {
 	case <-done:
 		// Success - operation completed without hanging
 	case <-time.After(5 * time.Second):
-		t.Fatal("GetHierarchyTriples hung on cancelled context")
+		t.Fatal("AddToContainers hung on cancelled context")
 	}
 }
 
@@ -190,16 +175,13 @@ func TestAttack_EdgeCaseInputs(t *testing.T) {
 				_ = isContainerEntity(tc.entityID)
 			}, "isContainerEntity panicked on %q", tc.entityID)
 
-			// Should handle gracefully in GetHierarchyTriples
+			// Should handle gracefully in AddToContainers
 			store := newFakeStore()
-			config := HierarchyConfig{
-				Enabled: true, CreateTypeEdges: true,
-			}
-			hi := NewHierarchyInference(store, store, config, hierarchyTestAuthority, nil)
+			hi := newTestInference(t, store)
 
 			require.NotPanics(t, func() {
 				_ = addHierarchy(context.Background(), hi, store, tc.entityID)
-			}, "GetHierarchyTriples panicked on %q", tc.entityID)
+			}, "AddToContainers panicked on %q", tc.entityID)
 		})
 	}
 }
@@ -212,14 +194,7 @@ func TestAttack_EdgeCaseInputs(t *testing.T) {
 func TestAttack_ConcurrentBirthsCreateEachContainerOnce(t *testing.T) {
 	store := newFakeStore()
 
-	config := HierarchyConfig{
-		Enabled:           true,
-		CreateTypeEdges:   true,
-		CreateSystemEdges: true,
-		CreateDomainEdges: true,
-	}
-
-	hi := NewHierarchyInference(store, store, config, hierarchyTestAuthority, nil)
+	hi := newTestInference(t, store)
 
 	// Create same entity from multiple goroutines
 	const goroutines = 100
@@ -249,19 +224,6 @@ func TestAttack_ConcurrentBirthsCreateEachContainerOnce(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("timeout: concurrent births of one entity hung")
 	}
-}
-
-// TestAttack_NilConfig verifies graceful handling of edge case configurations.
-func TestAttack_NilConfig(t *testing.T) {
-	store := newFakeStore()
-
-	// Zero-value config (all false)
-	config := HierarchyConfig{}
-
-	require.NotPanics(t, func() {
-		hi := NewHierarchyInference(store, store, config, types.PlatformMeta{}, nil)
-		_ = addHierarchy(context.Background(), hi, store, "c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-001")
-	}, "Should handle zero-value config")
 }
 
 // TestAttack_ContainerEntityVariants verifies all container suffix variants
@@ -321,14 +283,7 @@ func TestAttack_ContainerEntityVariants(t *testing.T) {
 func TestAttack_LargeEntityBurst(t *testing.T) {
 	store := newFakeStore()
 
-	config := HierarchyConfig{
-		Enabled:           true,
-		CreateTypeEdges:   true,
-		CreateSystemEdges: true,
-		CreateDomainEdges: true,
-	}
-
-	hi := NewHierarchyInference(store, store, config, hierarchyTestAuthority, nil)
+	hi := newTestInference(t, store)
 
 	const entityCount = 1000
 	var wg sync.WaitGroup
@@ -372,14 +327,7 @@ func TestAttack_LargeEntityBurst(t *testing.T) {
 func TestAttack_ManyBirthsOfOneTypeCreateThreeContainers(t *testing.T) {
 	store := newFakeStore()
 
-	config := HierarchyConfig{
-		Enabled:           true,
-		CreateTypeEdges:   true,
-		CreateSystemEdges: true,
-		CreateDomainEdges: true,
-	}
-
-	hi := NewHierarchyInference(store, store, config, hierarchyTestAuthority, nil)
+	hi := newTestInference(t, store)
 
 	// 10,000 births of one type: 130 instances, each born many times
 	const entityCount = 10000
@@ -393,7 +341,7 @@ func TestAttack_ManyBirthsOfOneTypeCreateThreeContainers(t *testing.T) {
 	assert.Len(t, store.createCalls(), 3, "no birth after the first asked for a create")
 }
 
-// TestAttack_GoroutineCount checks that GetHierarchyTriples leaves no
+// TestAttack_GoroutineCount checks that AddToContainers leaves no
 // goroutine running. synctest.Test returns only once every goroutine started
 // in its bubble has exited, and fails the test as a deadlock when one is left
 // blocked, so the test needs no wait for cleanup and no goroutine count.
@@ -401,14 +349,7 @@ func TestAttack_GoroutineCount(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		store := newFakeStore()
 
-		config := HierarchyConfig{
-			Enabled:           true,
-			CreateTypeEdges:   true,
-			CreateSystemEdges: true,
-			CreateDomainEdges: true,
-		}
-
-		hi := NewHierarchyInference(store, store, config, hierarchyTestAuthority, nil)
+		hi := newTestInference(t, store)
 
 		// Create 100 entities
 		for i := 0; i < 100; i++ {

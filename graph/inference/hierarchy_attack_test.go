@@ -4,6 +4,8 @@ package inference
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -48,23 +50,13 @@ func TestAttack_IsContainerEntity_Concurrent(t *testing.T) {
 			}
 		}()
 	}
-
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		// Success
-	case <-time.After(10 * time.Second):
-		t.Fatal("timeout: concurrent isContainerEntity calls hung")
-	}
+	wg.Wait()
 }
 
-// TestAttack_AddToContainers_Concurrent verifies that AddToContainers
-// is safe to call concurrently with container and real entities.
+// TestAttack_AddToContainers_Concurrent: fifty births at once, of three entities
+// and of three IDs that are containers. Every birth succeeds, and a container's
+// birth adds it to no container, so the store ends holding the six IDs born and
+// the one container no birth names (pressure's type container), and nothing else.
 func TestAttack_AddToContainers_Concurrent(t *testing.T) {
 	store := newFakeStore()
 
@@ -89,39 +81,29 @@ func TestAttack_AddToContainers_Concurrent(t *testing.T) {
 		go func(idx int) {
 			defer wg.Done()
 			entityID := entities[idx%len(entities)]
-			_ = addHierarchy(context.Background(), hi, store, entityID)
+			assert.NoError(t, addHierarchy(context.Background(), hi, store, entityID))
 		}(g)
 	}
+	wg.Wait()
 
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		// Success - verify no panic and reasonable results
-		createdEntities := store.getCreatedEntities()
-
-		// Real entities create containers, so we should have some
-		// But containers themselves should NOT create additional containers
-		// With 3 real entities (2 temp, 1 pressure) in 50 goroutines:
-		// - temp-001 and temp-002 share same type container (temperature.group)
-		// - press-001 has its own type container (pressure.group)
-		// - Each real entity creates 3 levels (type, system, domain)
-		// - Max containers: 4 unique type containers + 1 system + 1 domain = 6
-		assert.LessOrEqual(t, len(createdEntities), 6,
-			"Should create bounded containers, got %d", len(createdEntities))
-
-		// The key test: verify that if we processed 50 goroutines with some being
-		// container entities, those container entities did NOT create additional containers.
-		// We can verify this by checking the container count is bounded and matches
-		// what real entities would create (not exponential growth).
-
-	case <-time.After(10 * time.Second):
-		t.Fatal("timeout: concurrent AddToContainers calls hung")
-	}
+	// Seven: the three entities and their four containers, which are the type
+	// containers of temperature and of pressure, and the taxonomy and source
+	// containers all three share. If a container's birth added it to containers,
+	// the store would hold more: the source container's birth alone would add two.
+	//
+	// The inference's own creates are not counted: a container's birth here puts
+	// it in the store as another writer would, racing the inference's create, so
+	// how many of the inference's creates commit (one to four) depends on the
+	// schedule. What the store holds does not.
+	assert.ElementsMatch(t, []string{
+		"c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-001",
+		"c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-002",
+		"c360.semstreams-hierarchy-test.sensor.environmental.pressure.press-001",
+		"c360.semstreams-hierarchy-test.sensor.environmental.temperature.group",
+		"c360.semstreams-hierarchy-test.sensor.environmental.pressure.group",
+		"c360.semstreams-hierarchy-test.sensor.environmental.group.container",
+		"c360.semstreams-hierarchy-test.sensor.group.container.level",
+	}, store.heldIDs(), "the entities born and their four containers, and nothing else")
 }
 
 // TestAttack_CancelledContext verifies that operations respect cancelled context.
@@ -133,19 +115,8 @@ func TestAttack_CancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // Cancel immediately
 
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		// Should not hang on cancelled context
-		_ = addHierarchy(ctx, hi, store, "c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-001")
-	}()
-
-	select {
-	case <-done:
-		// Success - operation completed without hanging
-	case <-time.After(5 * time.Second):
-		t.Fatal("AddToContainers hung on cancelled context")
-	}
+	// Should not hang on a cancelled context; go test -timeout bounds the call.
+	_ = addHierarchy(ctx, hi, store, "c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-001")
 }
 
 // TestAttack_EdgeCaseInputs verifies handling of unusual input strings.
@@ -207,23 +178,12 @@ func TestAttack_ConcurrentBirthsCreateEachContainerOnce(t *testing.T) {
 			assert.NoError(t, addHierarchy(context.Background(), hi, store, "c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-001"))
 		}()
 	}
+	wg.Wait()
 
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		// Each container was created once, by the create that won.
-		createdEntities := store.getCreatedEntities()
-		assert.Len(t, createdEntities, 3,
-			"each of the three containers is created once despite concurrent births")
-
-	case <-time.After(10 * time.Second):
-		t.Fatal("timeout: concurrent births of one entity hung")
-	}
+	// Each container was created once, by the create that won.
+	createdEntities := store.getCreatedEntities()
+	assert.Len(t, createdEntities, 3,
+		"each of the three containers is created once despite concurrent births")
 }
 
 // TestAttack_ContainerEntityVariants verifies all container suffix variants
@@ -279,7 +239,9 @@ func TestAttack_ContainerEntityVariants(t *testing.T) {
 	wg.Wait()
 }
 
-// TestAttack_LargeEntityBurst verifies handling of many entities at once.
+// TestAttack_LargeEntityBurst: a thousand births at once, of 26 instances of one
+// type. Every birth succeeds and the type's three containers are each created
+// once.
 func TestAttack_LargeEntityBurst(t *testing.T) {
 	store := newFakeStore()
 
@@ -293,31 +255,19 @@ func TestAttack_LargeEntityBurst(t *testing.T) {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			// Different types to create different containers
+			// temp-A to temp-Z: 26 instances, all of type temperature
 			entityID := "c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-" + string(rune('A'+idx%26))
-			_ = addHierarchy(context.Background(), hi, store, entityID)
+			assert.NoError(t, addHierarchy(context.Background(), hi, store, entityID))
 		}(i)
 	}
+	wg.Wait()
+	t.Logf("Processed %d entities in %v", entityCount, time.Since(start))
 
-	done := make(chan struct{})
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		elapsed := time.Since(start)
-		t.Logf("Processed %d entities in %v", entityCount, elapsed)
-
-		// Verify bounded container creation
-		createdEntities := store.getCreatedEntities()
-		assert.LessOrEqual(t, len(createdEntities), 78, // 26 types * 3 levels
-			"Should create bounded containers, got %d", len(createdEntities))
-
-	case <-time.After(30 * time.Second):
-		t.Fatal("timeout: large entity burst took too long")
-	}
+	// Three: the 26 instances share one type, so one type container, one
+	// taxonomy container and one source container. Births that find one absent
+	// race to create it, but the store's create is atomic and refuses every create
+	// after the first with natsclient.ErrKVKeyExists, so each commits once.
+	assert.Len(t, store.getCreatedEntities(), 3, "one type's three containers, each created once")
 }
 
 // TestAttack_ManyBirthsOfOneTypeCreateThreeContainers: ten thousand births of
@@ -357,4 +307,11 @@ func TestAttack_GoroutineCount(t *testing.T) {
 			require.NoError(t, addHierarchy(t.Context(), hi, store, entityID))
 		}
 	})
+}
+
+// heldIDs returns the ID of every entity the store holds.
+func (s *fakeStore) heldIDs() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Collect(maps.Keys(s.entities))
 }

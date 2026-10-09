@@ -1230,23 +1230,25 @@ func (c *Component) stopEntityStateGuardWatcher(watcher jetstream.KeyWatcher, up
 
 // sweepEntityStateGuardEntry folds one pre-marker snapshot delivery into the
 // sweep map, last-revision-wins per key: a valid or tombstoned delivery erases
-// an earlier poisoned one for the same key.
+// an earlier poisoned one for the same key. A delivery is judged by
+// decodeStoredEntity, the rule readEntity applies, so a value naming another
+// entity than its key is inventoried at boot, not at its first read.
 func (c *Component) sweepEntityStateGuardEntry(sweep map[string]entityPoisonRecord, entry jetstream.KeyValueEntry) {
 	if kvcatalog.IsKVTombstone(entry.Operation()) {
 		delete(sweep, entry.Key()) // key deleted: nothing resident to inventory
 		return
 	}
-	var state graph.EntityState
-	err := graph.UnmarshalEntityState(entry.Value(), &state)
+	_, err := decodeStoredEntity(entry.Key(), entry.Value())
 	if err == nil {
 		delete(sweep, entry.Key()) // valid revision supersedes an earlier poisoned one
 		return
 	}
 	var contractErr *graph.StateContractError
 	if !errors.As(err, &contractErr) {
-		contractErr = &graph.StateContractError{Reason: graph.GraphStateReasonUnreadableEntity, Err: err}
+		contractErr = &graph.StateContractError{
+			Reason: graph.GraphStateReasonUnreadableEntity, EntityID: entry.Key(), Err: err,
+		}
 	}
-	contractErr.EntityID = entry.Key()
 	sweep[entry.Key()] = entityPoisonRecord{contractErr: contractErr, revision: entry.Revision()}
 }
 
@@ -1291,25 +1293,25 @@ func (c *Component) recordBootSweepPoison(ctx context.Context, sweep map[string]
 // as a trusted-decode failure (unreadable JSON) or as a MarshalEntityState
 // write-gate rejection that would otherwise blame the merged CANDIDATE the
 // caller submitted. On this slow path (the write is already failing)
-// re-validate the stored bytes: when the poison predates the merge, stamp the
-// RMW target's entity ID, record it in the per-entity poison inventory at
-// revision, the revision the RMW read current at, and return the
+// re-validate the stored bytes under decodeStoredEntity, the rule readEntity
+// and the boot sweep apply: when the poison predates the merge, record it,
+// stamped with the RMW target's entity ID, in the per-entity poison inventory
+// at revision, the revision the RMW read current at, and return the
 // graph-state-reset-required classification instead of a candidate-invalid
 // error. A canonical stored state returns cycleErr unchanged — the candidate
-// really was at fault.
+// really was at fault. Every caller's bytes have already failed the decode or
+// passed the key check, so only the decode can refuse them here.
 //
 // entityID is the RMW target (the CAS key) — the closures are the only place
 // the identity is reliably in scope, so stamping happens here rather than at
 // any outer helper (design D4).
 func (c *Component) classifyStoredStateRMWError(ctx context.Context, entityID string, current []byte, revision uint64, cycleErr error) error {
-	var stored graph.EntityState
-	err := graph.UnmarshalEntityState(current, &stored)
+	_, err := decodeStoredEntity(entityID, current)
 	if err == nil {
 		return cycleErr
 	}
 	var contractErr *graph.StateContractError
 	if errors.As(err, &contractErr) {
-		contractErr.EntityID = entityID
 		c.inventoryEntityPoison(ctx, contractErr, revision)
 	}
 	return err

@@ -145,6 +145,72 @@ func TestBootSweepLastRevisionWins(t *testing.T) {
 	}
 }
 
+// TestBootSweepInventoriesMisKeyedValue: a value stored under one key that
+// names another entity is inventoried by the boot sweep under its key, refused
+// as the first read of the key refuses it (gh#147), and a later valid revision
+// for the key still erases it (last revision wins).
+func TestBootSweepInventoriesMisKeyedValue(t *testing.T) {
+	t.Parallel()
+
+	// Canonical bytes, but for guardTestValidID, stored under guardTestPoisonID.
+	misKeyed := func() *mockKVEntry {
+		return &mockKVEntry{key: guardTestPoisonID, revision: 3, data: guardTestValidBytes(guardTestValidID)}
+	}
+	// sweep boots over entries, which the bucket also holds (the last one per
+	// key), so the sweep's re-read of a recorded key sees the same bytes.
+	sweep := func(t *testing.T, entries ...jetstream.KeyValueEntry) *Component {
+		t.Helper()
+		watcher := newIngestGuardWatcher(len(entries) + 1)
+		bucket := newMockKVBucket()
+		for _, entry := range entries {
+			watcher.updates <- entry
+			bucket.data[entry.Key()] = mockKVData{value: entry.Value(), revision: entry.Revision()}
+		}
+		watcher.updates <- nil
+		bucket.watchAllFactory = func() (jetstream.KeyWatcher, error) { return watcher, nil }
+		c := newIngestGuardTestComponent(bucket)
+		if err := c.startEntityStateGuard(context.Background(), c.entityBucket); err != nil {
+			t.Fatalf("boot sweep: %v", err)
+		}
+		return c
+	}
+
+	t.Run("inventoried at boot", func(t *testing.T) {
+		t.Parallel()
+		c := sweep(t, misKeyed())
+
+		rec, ok := poisonInventoryEntry(c, guardTestPoisonID)
+		if !ok {
+			t.Fatal("mis-keyed value not inventoried by the boot sweep")
+		}
+		if rec.revision != 3 {
+			t.Fatalf("inventory revision = %d, want 3", rec.revision)
+		}
+		if rec.contractErr.EntityID != guardTestPoisonID {
+			t.Fatalf("record entity ID = %q, want the key %q", rec.contractErr.EntityID, guardTestPoisonID)
+		}
+		if rec.contractErr.Reason != graph.GraphStateReasonNoncanonicalEntityID {
+			t.Fatalf("record reason = %q, want %q", rec.contractErr.Reason, graph.GraphStateReasonNoncanonicalEntityID)
+		}
+		if got := testutil.ToFloat64(c.poisonedEntities); got != 1 {
+			t.Fatalf("poisoned-entities gauge = %v, want 1", got)
+		}
+	})
+
+	t.Run("a later valid revision erases it", func(t *testing.T) {
+		t.Parallel()
+		c := sweep(t, misKeyed(),
+			&mockKVEntry{key: guardTestPoisonID, revision: 4, data: guardTestValidBytes(guardTestPoisonID)})
+
+		if _, ok := poisonInventoryEntry(c, guardTestPoisonID); ok {
+			t.Fatal("a valid later revision must leave no inventory entry")
+		}
+		if got := testutil.ToFloat64(c.poisonedEntities); got != 0 {
+			t.Fatalf("poisoned-entities gauge = %v, want 0", got)
+		}
+	})
+}
+
 // TestEntityStateGuardFailureIsReturned: a sweep that cannot reach the end
 // of the snapshot returns a transient error, which fails Start, at each of its
 // three exits; the sweep stops any watcher it opened and records no poison

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -46,10 +47,34 @@ type ingestWork struct {
 type laneGuard struct {
 	seq      map[string]uint64
 	capacity int
+	// refused holds the keys whose durable record this lane refused as undecodable and logged,
+	// so a redelivery loop logs once per key (design D21). A key leaves when its record is next
+	// read absent or decodable, which is the repair. It is bounded like seq: past capacity one
+	// arbitrary key leaves, and if that key's record is still undecodable it is logged again.
+	refused map[string]struct{}
 }
 
 func newLaneGuard(capacity int) *laneGuard {
-	return &laneGuard{seq: make(map[string]uint64), capacity: capacity}
+	return &laneGuard{seq: make(map[string]uint64), capacity: capacity, refused: make(map[string]struct{})}
+}
+
+// markRefused records key as refused and reports whether it was not recorded already.
+func (g *laneGuard) markRefused(key string) bool {
+	if _, ok := g.refused[key]; ok {
+		return false
+	}
+	if len(g.refused) >= g.capacity {
+		for k := range g.refused {
+			delete(g.refused, k)
+			break
+		}
+	}
+	g.refused[key] = struct{}{}
+	return true
+}
+
+func (g *laneGuard) forgetRefused(key string) {
+	delete(g.refused, key)
 }
 
 func (g *laneGuard) get(key string) (uint64, bool) {
@@ -141,11 +166,14 @@ func (c *Component) processIngest(ctx context.Context, lane int, work ingestWork
 	// same stream.
 	stale, err := c.ingestGuardStale(ctx, lane, work)
 	if err != nil {
-		// Transient durable-guard read failure — Nak so a redelivery re-reads,
-		// rather than risk applying a possibly-stale message or dropping a valid
-		// one on a blind guess.
-		c.logger.Warn("graph-ingest: redelivery-guard read failed; redelivering",
-			slog.String("entity_id", work.entityID), slog.Any("error", err))
+		// Transient durable-guard read failure, or a stored record that cannot be
+		// decoded — Nak so a redelivery re-reads, rather than risk applying a
+		// possibly-stale message or dropping a valid one on a blind guess. The
+		// undecodable record was counted and logged once per key where it was read.
+		if !errors.Is(err, errUndecodableGuardRecord) {
+			c.logger.Warn("graph-ingest: redelivery-guard read failed; redelivering",
+				slog.String("entity_id", work.entityID), slog.Any("error", err))
+		}
 		if nakErr := work.msg.Nak(); nakErr != nil {
 			c.logger.Error("Failed to Nak after guard-read error", slog.Any("error", nakErr))
 		}
@@ -281,16 +309,43 @@ func (c *Component) ingestGuardStale(ctx context.Context, lane int, work ingestW
 	entry, err := c.ingestGuardBucket.Get(ctx, key)
 	if err != nil {
 		if natsclient.IsKVNotFoundError(err) {
-			return false, nil // never applied → not stale
+			c.ingestGuardMem[lane].forgetRefused(key)
+			return false, nil // never applied, or the record was deleted → not stale
 		}
 		return false, err
 	}
-	if len(entry.Value) < 8 {
-		return false, nil // corrupt/legacy value → treat as first-seen, re-stamp on apply
+	// ingestGuardStampDurable writes the one format: the sequence as eight big-endian bytes. A
+	// record of any other length cannot be decoded. Reading it as first seen would reopen the
+	// overwrite the record prevents, and reading a prefix of a longer one would be a guess, so the
+	// input is refused until the key is deleted (design D21).
+	if len(entry.Value) != 8 {
+		c.refuseUndecodableGuardRecord(lane, key, len(entry.Value))
+		return false, fmt.Errorf("%w: key %s holds %d bytes", errUndecodableGuardRecord, key, len(entry.Value))
 	}
+	c.ingestGuardMem[lane].forgetRefused(key)
 	last := binary.BigEndian.Uint64(entry.Value)
 	c.ingestGuardMem[lane].set(key, last) // warm the cache
 	return work.seq <= last, nil
+}
+
+// errUndecodableGuardRecord marks an input refused because its stored applied-sequence record
+// cannot be decoded. processIngest Naks it without its per-delivery warning: the refusal was
+// counted and logged once for its key where the record was read.
+var errUndecodableGuardRecord = errors.New("applied-sequence record cannot be decoded")
+
+// refuseUndecodableGuardRecord counts one refused input and logs the key the first time this lane
+// refuses it. Not applying the input and not acknowledging it is the safe answer: the record
+// exists to stop an older input overwriting a newer one, and graph-ingest cannot tell which this
+// is. Deleting the key repairs it; the redelivery is then applied as first seen.
+func (c *Component) refuseUndecodableGuardRecord(lane int, key string, size int) {
+	c.guardRecordRefusals.Inc()
+	if !c.ingestGuardMem[lane].markRefused(key) || c.logger == nil {
+		return
+	}
+	c.logger.Error("graph-ingest: applied-sequence record cannot be decoded; its inputs are refused until the key is deleted",
+		slog.String("bucket", graph.BucketGraphIngestAppliedSeq),
+		slog.String("key", key),
+		slog.Int("bytes", size))
 }
 
 // ingestGuardStampDurable persists the last-applied sequence for (entity,

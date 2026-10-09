@@ -88,6 +88,30 @@ func TestLaneGuard_UpdateAtCapDoesNotEvict(t *testing.T) {
 	assert.Equal(t, uint64(2), vb)
 }
 
+// TestLaneGuard_RefusedKeysAreBounded: a key is reported new once, again after it is forgotten,
+// and the set of refused keys never holds more than the lane's capacity (design D21).
+func TestLaneGuard_RefusedKeysAreBounded(t *testing.T) {
+	g := newLaneGuard(2)
+	if !g.markRefused("a") || g.markRefused("a") {
+		t.Fatal("a refused key must be reported new once")
+	}
+	g.forgetRefused("a")
+	if !g.markRefused("a") {
+		t.Fatal("a forgotten key must be reported new again")
+	}
+	for _, key := range []string{"b", "c", "d"} {
+		if !g.markRefused(key) {
+			t.Errorf("key %s was reported as already refused", key)
+		}
+	}
+	if len(g.refused) != 2 {
+		t.Errorf("refused keys = %d, want at most the capacity, 2", len(g.refused))
+	}
+	if _, ok := g.refused["d"]; !ok {
+		t.Error("the key just refused is not held")
+	}
+}
+
 func TestGuardKey(t *testing.T) {
 	assert.Equal(t, "c360.ops.robotics.gcs.drone.001/SENSOR",
 		guardKey("c360.ops.robotics.gcs.drone.001", "SENSOR"))

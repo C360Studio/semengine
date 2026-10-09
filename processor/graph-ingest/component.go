@@ -169,6 +169,19 @@ func newRedeliveriesDroppedMetric() prometheus.Counter {
 	return redeliveriesDroppedCounter
 }
 
+// newGuardRecordRefusalsMetric builds the counter of stream inputs refused because the stored
+// applied-sequence record for their entity and stream cannot be decoded (design D21). Each refused
+// delivery counts once; the key is logged once. A rising count means a key in
+// GRAPH_INGEST_APPLIED_SEQ needs deleting, after which the redelivery applies.
+func newGuardRecordRefusalsMetric() prometheus.Counter {
+	return prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "semengine",
+		Subsystem: "graph_ingest",
+		Name:      "guard_record_refusals_total",
+		Help:      "Stream inputs not applied and not acknowledged because their stored applied-sequence record cannot be decoded; deleting the key repairs it.",
+	})
+}
+
 // newCasRetriesMetric builds the counter of CAS-conflict retries
 // during entity merge (ADR-072). Incremented each time mergeEntityOnLane's CAS
 // callback re-runs (attempt > 1) — the previous attempt's revision-checked Put
@@ -501,6 +514,7 @@ type Component struct {
 	processingDuration            prometheus.Histogram   // gh#480 per-message apply time (processing half)
 	ingestLag                     prometheus.Histogram   // gh#480 message age at processing start (queue-wait half)
 	redeliveriesDropped           prometheus.Counter     // ADR-072 stale redeliveries dropped by the applied-sequence guard
+	guardRecordRefusals           prometheus.Counter     // inputs refused for an undecodable applied-sequence record (design D21)
 	casRetries                    prometheus.Counter     // ADR-072 entity-merge CAS-conflict retries (contention observability)
 	staleSets                     prometheus.Counter     // stream-lane sets not applied as older (design D15, #98)
 	duplicateTriplesSuppressed    *prometheus.CounterVec // append duplicates not stored, by lane (closed enum)
@@ -693,6 +707,7 @@ func (c *Component) registerMetrics(registry *metric.MetricsRegistry) error {
 	c.processingDuration = newProcessingDurationMetric()
 	c.ingestLag = newIngestLagMetric()
 	c.redeliveriesDropped = newRedeliveriesDroppedMetric()
+	c.guardRecordRefusals = newGuardRecordRefusalsMetric()
 	c.casRetries = newCasRetriesMetric()
 	c.staleSets = newStaleSetsMetric()
 	c.duplicateTriplesSuppressed = newDuplicateTriplesSuppressedMetric()
@@ -739,6 +754,9 @@ func (c *Component) registerMetrics(registry *metric.MetricsRegistry) error {
 		return err
 	}
 	if c.redeliveriesDropped, err = metric.RegisterOrGet(registry, metricService, "redeliveries_dropped_total", c.redeliveriesDropped); err != nil {
+		return err
+	}
+	if c.guardRecordRefusals, err = metric.RegisterOrGet(registry, metricService, "guard_record_refusals_total", c.guardRecordRefusals); err != nil {
 		return err
 	}
 	if c.casRetries, err = metric.RegisterOrGet(registry, metricService, "cas_retries_total", c.casRetries); err != nil {

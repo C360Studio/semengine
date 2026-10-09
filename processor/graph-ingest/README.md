@@ -25,7 +25,10 @@ graph.mutation.> ───────┼─►│ graph-ingest ├──► ENT
 - **Triple mutations:** append triples to an entity, and replace one source's triples of named predicates (reconcile).
 - **Hierarchy inference:** optionally creates container entities from the 6-part entity ID structure.
 - **At-least-once delivery:** JetStream consumption with explicit acknowledgment; a redelivery the applied-sequence
-  guard has already seen is dropped and counted.
+  guard has already seen is dropped and counted. The guard keeps the last applied sequence for each entity and stream in
+  `GRAPH_INGEST_APPLIED_SEQ`, as eight bytes. A stored value of any other length cannot be decoded, so the input is
+  neither applied nor acknowledged: it is delivered again, each refusal is counted, and the key is logged once.
+  Deleting the key repairs it, and the next delivery is applied as first seen.
 
 ## Configuration
 
@@ -143,6 +146,7 @@ each collector.
 | `semengine_graph_ingest_processing_duration_seconds` | histogram | |
 | `semengine_graph_ingest_ingest_lag_seconds` | histogram | |
 | `semengine_graph_ingest_redeliveries_dropped_total` | counter | |
+| `semengine_graph_ingest_guard_record_refusals_total` | counter | |
 | `semengine_graph_ingest_cas_retries_total` | counter | |
 | `semengine_graph_ingest_stale_sets_total` | counter | |
 | `semengine_graph_ingest_duplicate_triples_suppressed_total` | counter | `lane` |

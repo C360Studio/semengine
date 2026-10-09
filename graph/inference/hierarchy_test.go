@@ -244,14 +244,12 @@ func TestNewHierarchyInferenceRefusesEmptyAuthority(t *testing.T) {
 }
 
 // TestAddToContainersSkipsForeignAuthority is the DISCRIMINATING test for
-// the ADR-102 skip, and it lives here rather than at the graph-ingest seam for a
-// measured reason: at that seam the skip is shadowed. graph-ingest's own
-// authority gate refuses every container birth under a peer's pair, which makes
-// AddToContainers return a joined error, and the merge path then discards
-// the WHOLE triple set on any error (component.go, "Failed to get hierarchy
-// triples") — so an imported entity ends up with no hierarchy triples whether
-// this check exists or not. Deleting the check is invisible there and visible
-// here.
+// the ADR-102 skip, and it lives here rather than at the graph-ingest seam
+// because there the skip is not named. Without it, graph-ingest's own authority
+// gate refuses every container birth under a peer's pair, AddToContainers
+// returns a joined error, and graph-ingest refuses the imported entity's birth
+// (design D21): at the seam a deleted check shows as an import that never
+// lands, and here as the skip itself.
 //
 // It also covers the case graph-ingest cannot: this is exported framework
 // surface, and a consumer calling AddToContainers directly has no second

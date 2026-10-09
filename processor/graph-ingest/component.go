@@ -629,9 +629,9 @@ func CreateGraphIngest(rawConfig json.RawMessage, deps component.Dependencies) (
 		return nil, err
 	}
 	// O-16 (a): hierarchy containers are born with a registered framework type.
-	// A registry that lacks it would refuse every container birth per arrival
-	// (WARN and skip — hierarchy edges silently absent), so the composition
-	// root learns at construction instead.
+	// A registry that lacks it would refuse every container birth, and with it
+	// every birth that infers hierarchy (design D21), so the composition root
+	// learns at construction instead.
 	if config.EnableHierarchy {
 		containerType := inference.HierarchyContainerMessageType().Key()
 		if _, ok := deps.PayloadRegistry.GetRegistration(containerType); !ok {
@@ -1998,30 +1998,31 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 	// for this write carries it.
 	at := triggeringTime(entity)
 
-	// Hierarchy inference is deterministic per entityID — calling it
-	// on every merge would APPEND the same hierarchy triples on each
-	// arrival (50 mission-command Graphables → 50 copies of
-	// type.container / system.container / etc. on the same entity).
-	// Gate to first-write only, applied inside the CAS callback so the
-	// fetch happens once per genuine create. See go-reviewer concern 5
-	// on the gh#177 fix.
+	// Hierarchy is added at birth only: the CAS callback's create branch applies the
+	// membership statements, so a merge never appends them again (gh#177). The read
+	// below decides whether this arrival is a birth before the inference runs, so an
+	// update pays no inference. If another writer creates the entity between this
+	// read and the CAS, the callback's merge branch does not apply them: that
+	// writer's birth is the birth. If the entity is deleted between the two, the CAS
+	// births it without hierarchy; this read does not close that window.
 	var hierarchyTriples []message.Triple
 	if c.hierarchyInference != nil {
-		// Probe-then-fetch: cheap pre-check avoids the inference cost
-		// on guaranteed-second-write paths. Even if the entity is
-		// concurrently created between probe and CAS, the callback's
-		// len(current) == 0 branch is the gate that actually applies
-		// the hierarchy triples — the probe is an optimization, not
-		// correctness.
-		if _, err := c.entityBucket.Get(ctx, entity.ID); err != nil && natsclient.IsKVNotFoundError(err) {
-			triples, herr := c.hierarchyInference.AddToContainers(ctx, entity.ID, at)
+		_, err := c.entityBucket.Get(ctx, entity.ID)
+		switch {
+		case err == nil:
+			// An update: no hierarchy.
+		case natsclient.IsKVNotFoundError(err):
+			// A birth: born with its hierarchy statements or not at all (design D21).
+			triples, herr := c.addToContainers(ctx, entity.ID, at)
 			if herr != nil {
-				c.logger.Warn("Failed to get hierarchy triples",
-					slog.String("entity_id", entity.ID),
-					slog.Any("error", herr))
-			} else {
-				hierarchyTriples = triples
+				return herr
 			}
+			hierarchyTriples = triples
+		default:
+			// A birth cannot be told from an update, and the CAS below could birth the
+			// entity without its hierarchy, so nothing is written and the input is
+			// delivered again (design D21).
+			return errs.WrapTransient(err, "Component", "mergeEntityOnLane", "read entity before hierarchy")
 		}
 	}
 
@@ -2049,6 +2050,27 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 	return nil
 }
 
+// addToContainers adds an entity being born to its containers and returns the
+// membership statements its birth carries; with hierarchy off it returns none. The
+// stream lane and the in-process create call it, and only for a birth. A failure of
+// any part (a container, an inverse edge) is returned classified transient, and the
+// caller stores nothing for the entity (design D21): the stream lane leaves the
+// input unacknowledged, so it is delivered again, and the in-process caller gets the
+// error. The class is transient whatever class the store gave its refusal: the
+// arrival is not at fault, and what committed before the failure is what the next
+// attempt commits again. The inference's one refusal of its own, a zero time, is
+// not reached: both callers have run requireOwnStatements, so at is set.
+func (c *Component) addToContainers(ctx context.Context, entityID string, at time.Time) ([]message.Triple, error) {
+	if c.hierarchyInference == nil {
+		return nil, nil
+	}
+	triples, err := c.hierarchyInference.AddToContainers(ctx, entityID, at)
+	if err != nil {
+		return nil, errs.WrapTransient(err, "Component", "addToContainers", "hierarchy inference")
+	}
+	return triples, nil
+}
+
 func (c *Component) createEntityWithReceipt(
 	ctx context.Context,
 	entity *graph.EntityState,
@@ -2057,8 +2079,9 @@ func (c *Component) createEntityWithReceipt(
 		return nil, 0, errs.WrapInvalid(errs.ErrInvalidData, "Component", "CreateEntity", "entity cannot be nil")
 	}
 	// ADR-103 d3: the in-process birth passes the same registered-type gate as
-	// the RPC lane. The classified error goes back to the caller (the hierarchy
-	// container path WARNs and continues); it is not metered here.
+	// the RPC lane. The classified error goes back to the caller (on the hierarchy
+	// container path it fails the birth that asked for the container, design D21);
+	// it is not metered here.
 	if err := c.requireRegisteredMessageType(entity); err != nil {
 		return nil, 0, err
 	}
@@ -2090,21 +2113,13 @@ func (c *Component) createEntityWithReceipt(
 		return nil, 0, errs.Wrap(err, "Component", "CreateEntity", "context cancelled")
 	}
 
-	// SYNCHRONOUS HIERARCHY INFERENCE:
-	// Get hierarchy triples BEFORE writing entity to storage
-	// This ensures entity is written once with all triples included (no cascade)
-	if c.hierarchyInference != nil {
-		hierarchyTriples, err := c.hierarchyInference.AddToContainers(ctx, entity.ID, at)
-		if err != nil {
-			c.logger.Warn("Failed to get hierarchy triples",
-				slog.String("entity_id", entity.ID),
-				slog.Any("error", err))
-			// Don't fail entity creation if hierarchy fails - just log warning
-		} else if len(hierarchyTriples) > 0 {
-			// Add hierarchy triples to entity before writing
-			entity.Triples = append(entity.Triples, hierarchyTriples...)
-		}
+	// Hierarchy before the write, so the entity is written once with its membership
+	// statements, or not at all when the inference fails (design D21).
+	hierarchyTriples, err := c.addToContainers(ctx, entity.ID, at)
+	if err != nil {
+		return nil, 0, err
 	}
+	entity.Triples = append(entity.Triples, hierarchyTriples...)
 
 	// ADR-054: stamp the indexing profile at the creation seam — keeps an
 	// explicit declaration (envelope/Graphable, already on entity.Triples) and

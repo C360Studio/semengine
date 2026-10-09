@@ -8,11 +8,8 @@ package graphingest
 // path behind it, the canonical create handler and the in-process create.
 
 import (
-	"bytes"
 	"context"
-	"log/slog"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 
@@ -62,8 +59,9 @@ func assertDerivedStatements(t *testing.T, entity *graph.EntityState, at time.Ti
 
 // assertBirthDerivations checks the birth of id with hierarchy on: the entity and every
 // container its birth created carry their derived statements at at, the entity has a profile and
-// a hierarchy statement, each container has a profile, and no hierarchy inference was refused.
-func assertBirthDerivations(t *testing.T, c *Component, logs *bytes.Buffer, id string, at time.Time, own ...string) {
+// a hierarchy statement, and each container has a profile. A refused hierarchy inference fails the
+// birth (design D21), which each caller's check of the birth itself catches.
+func assertBirthDerivations(t *testing.T, c *Component, id string, at time.Time, own ...string) {
 	t.Helper()
 	profile, hierarchy := assertDerivedStatements(t, storedEntity(t, c, id), at, own...)
 	if profile != 1 || hierarchy == 0 {
@@ -88,26 +86,20 @@ func assertBirthDerivations(t *testing.T, c *Component, logs *bytes.Buffer, id s
 	if containers == 0 {
 		t.Errorf("the birth of %s created no hierarchy container: stored %v", id, keys)
 	}
-	if strings.Contains(logs.String(), "Failed to get hierarchy triples") {
-		t.Errorf("hierarchy inference was refused during the birth: %s", logs.String())
-	}
 }
 
-// startHierarchyStreamLane is startStreamLane with hierarchy inference on and graph-ingest's log
-// written to the returned buffer.
-func startHierarchyStreamLane(t *testing.T) (*Component, func(context.Context, jetstream.Msg), *bytes.Buffer) {
+// startHierarchyStreamLane is startStreamLane with hierarchy inference on.
+func startHierarchyStreamLane(t *testing.T) (*Component, func(context.Context, jetstream.Msg)) {
 	t.Helper()
 	c, handler := startStreamLane(t)
-	var logs bytes.Buffer
-	c.logger = slog.New(slog.NewTextHandler(&logs, nil))
 	c.config.EnableHierarchy = true
 	buildHierarchyInference(t, c)
-	return c, handler, &logs
+	return c, handler
 }
 
 func TestDerivedStatementsCarryTriggeringTime(t *testing.T) {
 	t.Run("stream birth takes the envelope's creation time", func(t *testing.T) {
-		c, handler, logs := startHierarchyStreamLane(t)
+		c, handler := startHierarchyStreamLane(t)
 		const id = "c360.test.robotics.mav1.drone.001"
 		payload := &mergeTestGraphable{entityID: id, triples: []message.Triple{
 			{Subject: id, Predicate: "robotics.status.armed", Object: true, Confidence: 1},
@@ -116,11 +108,11 @@ func TestDerivedStatementsCarryTriggeringTime(t *testing.T) {
 		if got := deliverStreamLane(t, handler, data, 1); got != "ack" {
 			t.Fatalf("disposition = %s, want ack", got)
 		}
-		assertBirthDerivations(t, c, logs, id, derivedEnvelopeTime, "robotics.status.armed")
+		assertBirthDerivations(t, c, id, derivedEnvelopeTime, "robotics.status.armed")
 	})
 
 	t.Run("stream birth takes a later statement time", func(t *testing.T) {
-		c, handler, logs := startHierarchyStreamLane(t)
+		c, handler := startHierarchyStreamLane(t)
 		const id = "c360.test.robotics.mav1.drone.002"
 		// The later statement is not the last, so neither the first nor the last statement's
 		// time is the latest.
@@ -133,12 +125,12 @@ func TestDerivedStatementsCarryTriggeringTime(t *testing.T) {
 		if got := deliverStreamLane(t, handler, data, 1); got != "ack" {
 			t.Fatalf("disposition = %s, want ack", got)
 		}
-		assertBirthDerivations(t, c, logs, id, derivedLaterTime,
+		assertBirthDerivations(t, c, id, derivedLaterTime,
 			"robotics.status.armed", "robotics.status.mode", "robotics.status.battery")
 	})
 
 	t.Run("stream birth's explicit profile takes the triggering time", func(t *testing.T) {
-		c, _, logs := startHierarchyStreamLane(t)
+		c, _ := startHierarchyStreamLane(t)
 		const id = "c360.test.robotics.mav1.drone.003"
 		payload := &testGraphablePayload{
 			id: id,
@@ -160,7 +152,7 @@ func TestDerivedStatementsCarryTriggeringTime(t *testing.T) {
 		if got := storedStatement(t, stored, vocabulary.EntityIndexingProfile).Object; got != vocabulary.IndexingProfileContent {
 			t.Errorf("profile = %v, want the declared %s", got, vocabulary.IndexingProfileContent)
 		}
-		assertBirthDerivations(t, c, logs, id, derivedLaterTime, "robotics.status.mode", "robotics.status.armed")
+		assertBirthDerivations(t, c, id, derivedLaterTime, "robotics.status.mode", "robotics.status.armed")
 	})
 
 	// A stream arrival for an existing entity with no profile stamps one. It takes the arrival's
@@ -253,8 +245,6 @@ func TestDerivedStatementsCarryTriggeringTime(t *testing.T) {
 
 	t.Run("in-process create takes its latest statement time", func(t *testing.T) {
 		c, _ := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
-		var logs bytes.Buffer
-		c.logger = slog.New(slog.NewTextHandler(&logs, nil))
 		c.config.EnableHierarchy = true
 		buildHierarchyInference(t, c)
 		const id = "acme.ops.robotics.gcs.drone.030"
@@ -266,6 +256,6 @@ func TestDerivedStatementsCarryTriggeringTime(t *testing.T) {
 		if err := c.CreateEntity(t.Context(), entity); err != nil {
 			t.Fatalf("CreateEntity: %v", err)
 		}
-		assertBirthDerivations(t, c, &logs, id, derivedLaterTime, "test.state.first", "test.state.second")
+		assertBirthDerivations(t, c, id, derivedLaterTime, "test.state.first", "test.state.second")
 	})
 }

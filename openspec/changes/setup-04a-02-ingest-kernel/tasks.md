@@ -307,7 +307,7 @@ posted on this pull request.
       failing runs and mutation records. The choices the design does not spell out are in PR #93's "Notes for checkpoint
       3" comments (6062508678, 6063769189, 6064772182, 6065164632, 6065823926, 6067057540, 6067512048, 6068062023,
       6069037847, 6069561642 and 6069916935).
-- [ ] 3.12b (D) Fail closed at birth and on the guard record (#111 item 1; design D21): the tests of task 4.9; and #130,
+- [x] 3.12b (D) Fail closed at birth and on the guard record (#111 item 1; design D21): the tests of task 4.9; and #130,
       the hierarchy container cache that is never invalidated, fixed here, since failing the birth closed turns it from
       a warning into a redelivery that never ends (PR #93 comment 6061824292). With it, `graph/inference` as #134
       routes here: a constructor that takes the store, the authority and the logger, refuses an empty authority, and
@@ -322,8 +322,8 @@ posted on this pull request.
       the stream lane's birth read stores nothing and is redelivered, D21 as `dd8d2a7` wrote it) and `36e370d` (a
       guard record of any length but eight is refused, counted and logged once per key;
       `TestCorruptGuardRecordIsRefused`). Choices the design does not spell out: PR #93 comments 6072002735,
-      6072192627, 6072528806, 6072740123, 6073028310 and 6073367616. Hold: CI green on the last of these commits; each
-      run fails `vuln` alone, the standard-library advisories of #142, fixed on `main` by PR #143.
+      6072192627, 6072528806, 6072740123, 6073028310 and 6073367616. CI green at `074c800` (run 37926039654), once
+      `main`'s go1.26.9 (PR #143, #142) was merged in and `golang.org/x/net` raised under task 5.3.
 - [ ] 3.12c (D) A boot sweep that cannot run fails `Start` (ruled H, #91 comment 6062681355; #139 section C, first
       item): `entityWatchLost`, `entityBootstrapStarted`, `entityBootstrapComplete`, `markEntityWatchLost` and their
       reader branches go; a test written first, failing on the pin's code, makes the sweep fail and shows `Start`
@@ -363,10 +363,10 @@ posted on this pull request.
       `TestGraphableLaneStampsFromEnvelope`, `TestGraphableLaneRefusesWithoutEnvelopeMetadata`,
       `TestDerivedStatementsCarryTriggeringTime` (rulings A and C and the round-4 review's derived-statement finding,
       #91 comment 6037287957; rulings 1 and 5, #91 comment 6037604840; design D15).
-- [ ] 4.9 (D) #111 item 1: `TestHierarchyFailureFailsTheBirth` (`graph-entity-writes`, "Birth with hierarchy fails
+- [x] 4.9 (D) #111 item 1: `TestHierarchyFailureFailsTheBirth` (`graph-entity-writes`, "Birth with hierarchy fails
       closed") and `TestCorruptGuardRecordIsRefused` (`graph-ingest-recovery`, "A record that cannot be decoded"),
       each written first and failing on the pin's code (design D21). Done with task 3.12b, in `c4a885f`, `ecf00a7` and
-      `36e370d`. Hold: task 3.12b.
+      `36e370d`.
 
 ## 5. Ledger, gates and boundaries
 
@@ -398,8 +398,9 @@ posted on this pull request.
       among them; the tests design D11 names for `internal/graphmutation`, `pkg/projection`, `component` and
       `pkg/lifecycle` are added; each target's figure is posted. Ticked only on a green `task cover:check`. Hold: task
       1.12.
-- [ ] 5.3 (D) `go.mod`: `golang.org/x/net` at a version that downgrades nothing, and no `go-openai`; `task vuln` and
-      `task tidy:check` green.
+- [x] 5.3 (D) `go.mod`: `golang.org/x/net` at a version that downgrades nothing, and no `go-openai`; `task vuln` and
+      `task tidy:check` green. Done in `074c800`: v0.59.0 → v0.60.0 for five HTTP/2 advisories, nothing else moved,
+      no `go-openai` in `go.mod` or `go.sum`; both gates green there, locally and in CI run 37926039654.
 
 ## 6. Docs and guidance
 

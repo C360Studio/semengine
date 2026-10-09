@@ -1,9 +1,12 @@
 # Design: subscribe-registers-interest
 
-Status: revision 3, draft. Review rounds 1 and 2 asked for changes (round 2: one MEDIUM, on D4's wait for running
-handlers); this revision answers each finding. It rests on `inventory.md` revision 2, which passed inventory review.
-Issue #144 (`class:flake`); owner ruling 2026-10-09 (fix it once, in natsclient's subscribe, as its own pull request on
-`main`); claim PR #156. Pins are at base `805ace8`; probes P1 to P5 are in `inventory.md`.
+Status: revision 4, draft. Review rounds 1 and 2 asked for changes (round 2: one MEDIUM, on D4's wait for running
+handlers); revision 3 answered each finding, passed review and was accepted by the owner (PR #156 comment
+6085722854). Revision 4 changes D7's test plan, adds L6 and L7, and corrects one sentence of `docs/testing.md`, after
+task 2.1 found that T2 to T8 cannot share a test process (PR #156 comment 6086018979). It asks the owner two
+questions ("Owner decisions"). It rests on `inventory.md` revision 2, which passed inventory review. Issue #144
+(`class:flake`); owner ruling 2026-10-09 (fix it once, in natsclient's subscribe, as its own pull request on `main`);
+claim PR #156. Pins are at base `805ace8`, and revision 4's at `c4b61ec`; probes P1 to P5 are in `inventory.md`.
 
 ## Context
 
@@ -165,18 +168,52 @@ KV watchers are not core subscriptions natsclient makes, so none of them pays.
 
 All are unit tests in `natsclient`, so `task test:unit` (race detector, one CPU) and `task test:repeat` (five runs,
 one CPU, shuffled) run them, and `task mutate:check` (one CPU, race detector) can check them; #129 limits it for
-integration tests only.
+integration tests only. `task mutate:check` matches a failure line that T2 to T7 print from their own process (below)
+like any other: in design round 4, M2 to M10 were each a detection against a sketch of D1 to D4.
 
 - T1 uses the embedded server natsclient's unit tests already start (`client_lifecycle_test.go:108`), on an ephemeral
   port. It can fail only at one CPU: P1 missed 831 and 800 of 2,000 at `-cpu=1` (without and with `-race`), and #144's
-  test failed 0 of 500 at the default CPU count. Its comment says so. natsclient's own miss rate is not measured yet;
-  task 2.1's count settles it, and if it is low, M1 may be a survivor and is reported as one.
-- T2 to T8 use a scripted server on `net.Pipe` inside a `testing/synctest` bubble: it answers the handshake, records
-  every line the client sends, delivers a message when told, and answers or withholds each later PONG as the test
-  says. P3 shows nats.go v1.54.0 runs this way with a raw `nats.Conn`. Whether a `natsclient.Client` runs this way,
-  dialled through `connectWith`'s dial seam (`client.go:699-701`) or given the connection through `SetConnection`
-  (`client.go:410`), is not measured; task 2.1 settles it. The pipe has no address, so "Tests bind no fixed address or
-  port" holds, and a withheld PONG costs no wall time. No test sleeps.
+  test failed 0 of 500 at the default CPU count. Its comment says so. On the base code natsclient missed 104 to 124 of
+  200 per call at one CPU (task 2.1, PR #156 comment 6086018979).
+- T2 to T7 use a scripted server on `net.Pipe` inside a `testing/synctest` bubble (goroutines on a fake clock that
+  moves only when all of them are blocked): it answers the handshake, records every line the client sends, delivers a
+  message when told, and answers or withholds each later PONG as the test says. The client reaches it through
+  `connectWith`'s dial seam (`client.go:699-701`), with nats.go's `SetCustomDialer` and `SkipHostLookup` options and a
+  URL that names no port; a connection given through `SetConnection` carries none of the client's handlers, so it is
+  not used (task 2.1). The pipe has no address, so "Tests bind no fixed address or port" holds, and a withheld PONG
+  costs no wall time. No test sleeps.
+- Each of T2 to T7 runs in a test process of its own: the test runs the test binary again for itself alone and, when
+  that run fails, reports its output. nats.go v1.54.0 keeps one pool of timers for the whole process (`timer.go:22`;
+  `FlushTimeout`, `nats.go:6030`, which Close's drain calls at `:5430` and `:6384`). A timer made inside a bubble goes
+  back to that pool, and when code outside the bubble, or in another bubble, takes it, the Go runtime ends the process
+  (`fatal error: reset of synctest timer from outside bubble`), or a bubble waits on a timer its clock does not drive
+  and the run hangs. Any test that flushes, requests or drains can be that code, in whatever order `task test:repeat`
+  shuffles. Round 4's probes: with two `runtime.GC()` calls around each bubble instead, and T8 on real time, 5 of 40
+  runs of the package ended with that `fatal error`, and 4 of the reviewer's 20 ended or hung, 2 of them hung in T7's
+  bubble; with a process of its own, none of 122, 112 of them of the whole package (L6). natsclient's other bubbles
+  run no nats.go connection, so they share the process as before. The run of its own:
+  - is started only for a top-level test: called from a subtest (a name with `/`), the helper fails the test before
+    any run starts, because `-test.run` splits its pattern at each slash and a repeated subtest name gains a `#01`
+    suffix, so such a run could select nothing;
+  - passes only when it exits 0 and prints the test's `--- PASS: <name> (` line; a run that selects no test exits 0
+    without that line, and the test fails;
+  - keeps the parent's CPU count, so `-cpu 1` still applies;
+  - gets nine tenths of the parent's remaining time limit, so a run that hangs ends first, and its own timeout panic
+    and goroutine dump appear in the test's failure message; with no time left the test fails without starting it;
+  - writes its coverage where `go test` collects the parent's (`-test.gocoverdir`), so `task cover:check` and
+    `task mutate:check`'s reach run count what it runs; without that, T2's lines read as never run;
+  - turns off the race detector's one-second sleep at exit (`GORACE` option `atexit_sleep_ms=0`), so a run of its own
+    costs about 10 ms, not one second.
+- T8 uses the same scripted server on real time, outside a bubble. When Close closes the connection itself, nats.go's
+  drain goroutine runs for up to 5 s more and nothing signals its end (L7); a bubble whose test returns while that
+  goroutine runs panics (`deadlock: main bubble goroutine has exited but blocked goroutines remain`). On real time it
+  ends on its own, with an ordinary timer. T8 begins Close once the server has read the round trip's PING, or reports
+  the call's result if the call returns first (on the base code no PING comes), and Close's context has already ended,
+  so nothing in T8 waits for time to pass. T8 rests on one wall-clock limit: less than the call's own bound
+  (`DefaultRequestTimeout`, 5 s) passes between the server's read of the PING and Close closing the connection, a
+  window in which the test cancels a context and calls Close, and Close closes the connection as soon as it sees the
+  ended context (`client.go:1141-1145`). If a stalled machine lets 5 s pass, the call returns the bound's error first,
+  and T8 fails at its `nats.ErrConnectionClosed` assertion, printing the error it got; it cannot pass wrongly.
 
 | Test | Observable |
 | --- | --- |
@@ -187,7 +224,7 @@ integration tests only.
 | T5 | With the PONG withheld, the server closes its end of the pipe: the call returns a transient error that matches `ErrNotConnected` and does not match `nats.ErrConnectionClosed`; the connection's subscription count (`Conn.NumSubscriptions`) is back to its value before the call. |
 | T6 | The server delivers a message after the `SUB` and withholds the PONG; the handler starts and is held; `DefaultRequestTimeout` passes: the call returns a transient error matching `context.DeadlineExceeded` while the handler is still held, and a `Close` with a live context returns nil only after the handler has been released and returned. |
 | T7 | As T6 up to the held handler; then `Close` begins with a live context and the server answers every PING: the call returns an error matching `nats.ErrConnectionClosed` and no subscription, although its round trip completed, while the handler is still held; `Close` returns nil only after the handler has been released and returned. |
-| T8 | With the PONG withheld, `Close` begins and the server never answers, so Close's context ends and Close closes the connection, which ends the round trip with nats.go's `ErrConnectionClosed`: the call returns an error matching `nats.ErrConnectionClosed` and not `ErrNotConnected`. |
+| T8 | On real time. With the PONG withheld and the server's read of the PING seen, `Close` begins with a context that has already ended, so Close closes the connection at once, which ends the round trip with nats.go's `ErrConnectionClosed`: the call returns an error matching `nats.ErrConnectionClosed` and not `ErrNotConnected`, and no subscription. |
 
 Each is written first and run on the base code, where every one fails (T1 by "no responders", the others because the
 call returns a subscription and no error; T4 also because the server reads a `SUB`). The reproduction the protocol
@@ -199,7 +236,7 @@ Wrong changes, one at a time, with `task mutate:check`; each must be a detection
 | Mutant | Change | Expected to fail |
 | --- | --- | --- |
 | M1 | the round trip removed | T1's "answered" assertion (P1: about 40% of iterations miss at `-cpu=1`) |
-| M2 | `DefaultRequestTimeout` in the bound replaced by `50 * DefaultRequestTimeout` | T2's assertion that the bubble's elapsed time equals `DefaultRequestTimeout` (it is 250 s) |
+| M2 | `DefaultRequestTimeout` in the bound replaced by `50 * DefaultRequestTimeout` | T2's assertion that the bubble's elapsed time equals `DefaultRequestTimeout` (round 4 measured 90 s: with every PONG withheld, nats.go ends the connection after two unanswered pings 30 s apart, `client.go:346` and nats.go's `DefaultMaxPingOut`, `nats.go:62`) |
 | M3 | on a failed round trip, the subscription is left subscribed | T2's and T3's `UNSUB` assertion; T5's count |
 | M4 | on a failed round trip, the client stops owning the subscription before its delivery ends | T6's assertion that `Close` has not returned nil while the handler is held |
 | M5 | the ended-context check removed | T4's "no `SUB`" assertion |
@@ -247,12 +284,22 @@ event orders would explore the same few endings.
 - L4. A handler may still be running, for a message that arrived during a round trip that then failed, when the call
   returns its error; Close joins it (D4).
 - L5. Whether semsource or semconnect subscribe per request is not measured (D6).
+- L6. nats.go v1.54.0 keeps one pool of timers for the whole process (`timer.go:22`), so a `synctest` bubble that runs
+  a nats.go connection cannot share a test process with other tests; T2 to T7 each run in a process of their own
+  (D7). Out of scope: upstream; nats.go's newest release and its main branch both keep the pool.
+- L7. When Close closes the connection itself (its context ended, or the drain timed out), nats.go's drain goroutine
+  runs for up to 5 s more (`nats.go:6355`, `:6380-6390`) and Close does not wait for it; nothing signals its end.
+  Unchanged by this change, and the reason T8 runs on real time (D7). Out of scope: upstream.
 
 ## Files
 
 - `natsclient/client.go` (`subscribeOwned` and the doc comment of `Subscribe`), `natsclient/request.go` (the doc
   comment of `SubscribeForRequests`).
-- New tests in `natsclient` (T1 to T8), in a new `_test.go` file; no integration file.
+- New tests in `natsclient` (T1 to T8) and the unexported helper that runs each of T2 to T7 in a test process of its
+  own, in a new `_test.go` file; no integration file.
+- `docs/testing.md`, "How reach is judged" (`:295-296`): the sentence that says a child process the test starts
+  writes no coverage, since D7's helper gives its run the parent's coverage directory (and a `prochost` helper
+  writes it through the `GOCOVERDIR` it inherits).
 - `docs/admission-ledger.yaml`, natsclient's row: adapt item `(13) natsclient-subscribe-registers-interest` at the end
   of `contract`, and T1 to T8 with the mutation record at the end of `proving_tests`.
 - At the archive: `openspec/specs/transport-client/spec.md` (the new requirement and one clause in the Purpose),
@@ -277,7 +324,8 @@ SemStreams; the ADR-094 observation in the inventory.
   change `natsclient/README.md`: #93 adds lines at `:248` and `:270`, this change one sentence at `:85-86` in the
   archive commit; no textual conflict. #93's task 3.12h changes `errs.IsTransient` to class and sentinel only; this
   change sets the class explicitly (D4), so it is unaffected.
-- **#158** (draft; the architect and reviewer contracts, `AGENTS.md`, `docs/inventory-scope.md`): no shared file.
+- **#158** and **#166** (drafts; the role contracts, `.agents/protocol.md`, `AGENTS.md`, `docs/inventory-scope.md`,
+  `docs/setup-plan.md`): no shared file.
 - **#118** (nats-server 2.15.0, the embedded server T1 runs on) cannot merge while #144 is open, so it merges after
   this change, and its CI runs T1 on the new server.
 - **#116, #117, #119, #120**: no shared file; each also waits for #144 to close. #117's OpenSpec CLI then runs
@@ -285,9 +333,18 @@ SemStreams; the ADR-094 observation in the inventory.
 
 ## Owner decisions
 
-None. Round 1's four questions are decided above: the bound (D2), the ended context (D3), the lost-connection error
-(D4), and no read of semsource or semconnect (D6, L5). D4 does not adopt the Consume rule's wait for handlers and
-states why core subscriptions differ; the spec delta states the rule and its relation to Consume's.
+Revision 3 left none open. Round 1's four questions are decided above: the bound (D2), the ended context (D3), the
+lost-connection error (D4), and no read of semsource or semconnect (D6, L5). D4 does not adopt the Consume rule's wait
+for handlers and states why core subscriptions differ; the spec delta states the rule and its relation to Consume's.
+
+Revision 4 asks two, answered at task 1.5; task 2.1 waits for them:
+
+- O1. Is "a test that runs a nats.go connection inside a `testing/synctest` bubble runs in a test process of its own"
+  a rule for the whole repository, added by this pull request to `docs/testing.md` and `AGENTS.md`? Recommended: yes.
+  The crash or hang it prevents shows only in some shuffle orders, the class #144 belongs to, and nothing else tells
+  the next author. If no, the helper's doc comment is its only record.
+- O2. Revision 4 replaces D7's test plan, which the owner accepted in revision 3. Does the owner accept revision 4,
+  after its pre-owner review (task 1.4)?
 
 ## Conformance
 

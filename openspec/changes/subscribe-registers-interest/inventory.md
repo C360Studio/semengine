@@ -278,7 +278,10 @@ Same-class collision table (the job: know that the server has a subscription bef
 | after an `Unsubscribe` on a connected client | the server reads `UNSUB <sid>` (P3: the fake read `SUB s.x  1`, `PING`, `UNSUB 1`) | `nats.go:5542-5550` |
 
 P3 also shows that nats.go v1.54.0 connects, subscribes and runs a round trip inside a `testing/synctest` bubble over
-`net.Pipe`, with a scripted server, and that the bubble ends cleanly after `Close`.
+`net.Pipe`, with a scripted server, and that the bubble ends cleanly after `Close`. P3 ran one bubble per process, so
+it could not show that two such bubbles in one process end it: nats.go keeps one pool of timers for the whole process
+(`timer.go:22`), and a timer made in a bubble is fatal when taken outside it (task 2.1, PR #156 comment 6086018979;
+design D7 and L6, revision 4).
 
 ## Intent check
 

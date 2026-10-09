@@ -315,7 +315,7 @@ posted on this pull request.
       named for what it writes (item 2); sibling edges, `ListWithPrefix` and `enable_type_siblings` dropped (item 3,
       ruled G, #91 comment 6062681355; `hierarchy.type.sibling` stays registered in `vocabulary`); test doubles that
       refuse what graph-ingest refuses (item 4); and graph-ingest's two hierarchy fetches made one (#139 section D).
-      Done in six commits, each failing first and with its mutation records in its body: `999f3f5` (#130: each birth
+      Done in seven commits, each failing first and with its mutation records in its body: `999f3f5` (#130: each birth
       asks storage, the doubles refuse as graph-ingest does), `c12dbbf` and `f58d311` (#134 items 1–3; the verb is
       `AddToContainers`), `92c19f6` (item 4's second half: no watchdogs, exact counts), `c4a885f` (a failed inference
       fails the birth on both lanes, one fetch; `TestHierarchyFailureFailsTheBirth`), `ecf00a7` (a key deleted after

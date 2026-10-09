@@ -62,6 +62,9 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
   semengine-developer)`). Bring a pushed branch up to date by merging `origin/main` into it; do not rebase or force-push
   it. A review record names the commit it read, and a rebase leaves that record pointing at a commit the branch no
   longer has. The squash merge keeps `main` linear either way.
+  The developer's notes for an implementation review, the choices a task made that its design does not spell out, are
+  a file per task, `openspec/changes/<id>/notes/<task>.md`, with a one-line pull request comment that links it
+  (developer contract § Handoff); they archive with the change.
 - **Cross-agent review:** on a code pull request the implementation review, and the re-review of a fix that changes
   code, are done by the agent that wrote none of the commits under review, as the pull request's `implemented-by:` line
   records; the re-review of a fix that changes documents only, and the check of the archive/spec sync, are either

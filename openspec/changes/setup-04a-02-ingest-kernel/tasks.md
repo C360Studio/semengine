@@ -378,9 +378,11 @@ posted on this pull request.
       `NewManager` panics on the refusal its 5 s constant cannot cause; mutation records and choices in PR #93 comment
       6082801917.
 - [ ] 3.12l (D) #144 (`class:flake`), ruled on #144 (comment 6083704443): graph-ingest's `Start` makes one server
-      round trip (`natsclient.Client.RTT`) after its request subscriptions, so a `Start` that returned is routable
-      from any connection (design D20; `graph-transport-boundary`, "Routable when Start returns"). The reproduction the
-      protocol asks of a flake fix ("Known flakes"): the command that runs
+      round trip after its request subscriptions, through a new `natsclient.Client.Flush(ctx)` that ends when the
+      server answers or `ctx` ends (design D20), so a `Start` that returned is routable from any connection
+      (`graph-transport-boundary`, "Routable when Start returns"); `Flush` has its own tests (a cancelled context
+      returns promptly; a context with no deadline is bounded) and natsclient's ledger row an `adapt` item. The
+      reproduction the protocol asks of a flake fix ("Known flakes"): the command that runs
       `TestGraphIngestServesExactlyTheDeclaredVerbs` and `TestGraphIngestProvisionsNoSuffixIndex` many times, and how
       often each failed before the fix and after; a mutation record with the round trip removed.
 - [ ] 3.12h (D) #146, ruled N (#91 comment 6080973822): `natsclient.IsKVConflictError` and `IsKVNotFoundError`

@@ -1091,11 +1091,14 @@ graph-ingest after the drop: 84.7% (P-19).
   table subject or of the `graph.mutation.` prefix in a non-test file other than the two declaring files.
   `TestGraphIngestServesExactlyTheDeclaredVerbs`: the subjects graph-ingest's adapter lists as request
   subscriptions equal the table's entries for responder `graph-ingest`; written first, failing on the pin's code
-  (four literal subscriptions, one undeclared). `Start` returns only after one server round trip
-  (`natsclient.Client.RTT`) that follows its request subscriptions, so each listed subject is routable from any
-  connection when `Start` returns (ruled on #144, comment 6083704443); without it the test above, which asks from the
-  fixture's own connection, failed when its request reached the server before graph-ingest's subscriptions did (task
-  3.12l records how often, before and after). Spec home: `graph-transport-boundary`.
+  (four literal subscriptions, one undeclared). `Start` returns only after one server round trip that follows its
+  request subscriptions, so each listed subject is routable from any connection when `Start` returns (ruled on #144,
+  comment 6083704443); without it the test above, which asks from the fixture's own connection, failed when its
+  request reached the server before graph-ingest's subscriptions did (task 3.12l records how often, before and after).
+  The round trip is `natsclient.Client.Flush(ctx)`, new here, which ends when the server answers or `ctx` ends, and
+  bounds a `ctx` with no deadline by natsclient's `DefaultRequestTimeout`. `Client.RTT` is not used: it waits a fixed
+  10 s whatever `Start`'s context says (nats.go v1.54.0 `nats.go:6066`), and nats.go's `FlushWithContext` refuses a
+  context with no deadline (`context.go:174-183`). Spec home: `graph-transport-boundary`.
 - **Not in this change:** refusing a second subscriber on a declared verb at `Start` (#106's boot error) needs a view
   across components, which change 4 builds when it generalises the table; refusing a stream filter that overlaps a
   reserved subject stays change 3's (#16).

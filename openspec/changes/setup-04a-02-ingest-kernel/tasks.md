@@ -345,9 +345,13 @@ posted on this pull request.
       Done in `6102b75` (CI 37931629741 green): `TestBootSweepInventoriesMisKeyedValue`, failing first on `707205a`;
       no caller can hand the classifier a mis-keyed value, so it decodes through the one rule with no test of its own.
       Notes and the mutation record: PR #93 comment 6081213285.
-- [ ] 3.12e (D) #150: an older arrival on a profiled entity whose only statement is the indexing profile writes
+- [x] 3.12e (D) #150: an older arrival on a profiled entity whose only statement is the indexing profile writes
       nothing (D23, the all-older rule; `7f8d9fc` is the sibling fix); a test written first, failing on the current
       code, shows the revision unchanged.
+      Done in `1edc247` (CI 37934155773 green): `TestStreamArrivalOnlyProfileWritesNothing`, older and newer cases,
+      failing first on `8f8f8c8`. A profile-only arrival on a profiled entity declines whatever its age, since the
+      immutable profile is dropped before the replace and nothing of the arrival can apply; a newer one no longer
+      updates `MessageType` or `StorageRef`. Notes and the mutation record: PR #93 comment 6081549343.
 - [ ] 3.12f (D) #149: the revision fences on canonical reconcile and delete get tests that can fail: a write injected
       between the handler's read and its write, and the unit bucket's `Delete` checking `LastRevision`; a
       `task mutate:check` record for each fence (the fenced update as a `Put`, `DeleteAtRevision` as `Delete`).

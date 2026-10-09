@@ -49,7 +49,7 @@ frozen: a SemStreams change after the pin is its own ledger row, never an implie
 prevention, context ownership, completed joins, authority and readiness, acknowledged durability, and
 metadata/content preservation are admission gates that an issue, an elapsed budget, or a coverage number cannot waive.
 
-Four obligations ride on every slice design in addition to its ledger row:
+Five obligations ride on every slice design in addition to its ledger row:
 
 - **Probe the pin before designing its port.** A pin probe is a run of this repository's checks against a copy of
   the SemStreams pin, before any code is ported (not to be confused with the `internal/harness/probe` test package).
@@ -90,6 +90,14 @@ Four obligations ride on every slice design in addition to its ledger row:
   `orchestration-check`, `query-pattern`). They were left out of this repository until the code they govern exists.
   The slice design names which of those sections and skills apply to the package, read at the pin, and carries the
   adapted text as part of the change. A package that lands without its guidance has lost the lessons learned on it.
+- **Cite the pin's decision records.** The design cites the ADR, from inventory category 6, wherever it keeps,
+  changes or drops a decision that ADR records. Changing or dropping one is a boundary change: the design names the
+  ADR, and the change is an owner question raised in the handoff, as a boundary moved without a ruling is under
+  Intent check below. An ADR is binding on a package when the package's code implements what it decides. A binding
+  ADR is ported with the package it governs, or the design states why not. ADR-102 and ADR-104 came with `pkg/types`
+  this way: each sits in `docs/adr/` with a port note under its title (the pin path and SHA, the packages it came
+  with, its admission-ledger row, and what it names that is not ported here) and has its own row in
+  `docs/admission-ledger.yaml`.
 - **A known shape leaves the generic payload.** `message.GenericJSON` is the fallback for JSON whose shape is not
   known when the code is written: outside input and user-configured transforms. Code that builds a shape it knows
   registers a payload type. A ported package that builds a `GenericJSON` from fields its own code knows gets an
@@ -109,7 +117,7 @@ Four obligations ride on every slice design in addition to its ledger row:
 The inventory is a file, `openspec/changes/<id>/inventory.md`, with a `base: <sha>` header and every entry pinned as
 `` `path:line` — `<the line's text>` `` so the reviewer can re-check each pin after commits. Enumerate from the
 repository, never from the briefing: a briefing's list is a set of hypotheses, and a directed check inherits the
-director's blind spots. The reviewer's independent re-derivation is the check on your blind spots. Five categories,
+director's blind spots. The reviewer's independent re-derivation is the check on your blind spots. Six categories,
 each either cited at `file:line` or closed with the exact searches that came up empty:
 
 1. **The claimed gap.** If the change says X is missing, search for X under every plausible spelling: exported and
@@ -137,6 +145,21 @@ each either cited at `file:line` or closed with the exact searches that came up 
    does: admit-or-refuse at a seam, create-vs-exists, read-through over a cache, classified refusal plus observed
    signal, authority delegation, bounded dispatch. Then search for the closest existing instance of that shape
    anywhere in the tree, cite it at `file:line`, and state either that this design adopts it or why it does not.
+6. **The pin's decision records for each carried package.** An ADR (architecture decision record) records one
+   settled design question and its answer; SemStreams keeps them in `docs/adr`, and two are ported here. For every
+   package the change carries from the pin, list each ADR that governs it: the ADR's number and title, and what it
+   decides that the port keeps, changes or drops. List the records at the pin, then fetch each one's text:
+
+   ```bash
+   gh api 'repos/C360Studio/semstreams/contents/docs/adr?ref=8b99efe9' --jq '.[].name'
+   gh api 'repos/C360Studio/semstreams/contents/docs/adr/<name>?ref=8b99efe9' -H 'Accept: application/vnd.github.raw'
+   ```
+
+   Search each record's text for the package's path and its exported names, and read any record whose title names
+   what the package does. A package that no record governs is written as "none" with the searches that found
+   nothing; a change that carries no package from the pin says so in one line. Source: owner decision
+   2026-10-09, #157, after PR #93's design ported `graph/readiness` without reading ADR-083 and ADR-088 and
+   re-derived the question they answer: when one component may rely on another.
 
 An inventory that is genuinely empty in a category says so with the searches that prove it; that is a real and useful
 result, not a formality to skip.

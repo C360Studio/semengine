@@ -5,9 +5,7 @@
 // each enabled level it makes sure the level's container entity exists,
 // creating it when it does not, writes the container's inverse edge to the
 // new entity through a TripleAdder, and returns the entity's membership
-// statement for the caller to write with the entity. With type siblings
-// enabled it also returns an edge to each entity of the same type and writes
-// the inverse edge on each. Every statement names graph-ingest's hierarchy
+// statement for the caller to write with the entity. Every statement names graph-ingest's hierarchy
 // producer (graph.SourceHierarchy) as its source and carries the time of the
 // write that triggered it. If any part fails, GetHierarchyTriples returns an
 // error and no statements, so the caller can refuse the birth. An entity of

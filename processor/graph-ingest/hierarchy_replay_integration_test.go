@@ -6,8 +6,8 @@
 //
 // The trigger is NOT in hierarchy.go. createEntity calls GetHierarchyTriples
 // UNCONDITIONALLY (component.go, before the KV write), and that call is not a
-// pure read: it commits container-inverse and sibling-inverse edges as side
-// effects through tripleAdder. On an already-present ID the subsequent atomic
+// pure read: it commits container-inverse edges as side effects through
+// tripleAdder. On an already-present ID the subsequent atomic
 // Create returns natsclient.ErrKVKeyExists and createEntity returns early —
 // but the inverse edges have ALREADY committed. mergeEntityOnLane (the pin's
 // MergeEntity, design D6), by contrast, gates hierarchy behind an absence probe,
@@ -35,7 +35,7 @@ import (
 	"github.com/c360studio/semengine/vocabulary"
 )
 
-// replayEntityIDs are three same-type siblings, the shape gh#713 measured on
+// replayEntityIDs are three entities of one type, the shape gh#713 measured on
 // the model registry (containers 6->9, endpoints 4->6 / 3->5 / 2->4).
 var replayEntityIDs = []string{
 	"c360.platform.robotics.mav1.drone.replay001",
@@ -151,15 +151,15 @@ func TestComponent_HierarchyReplay_UnchangedEntitiesAdvanceNoRevision(t *testing
 	// Seed sanity — WITHOUT these the comparison below could pass vacuously on
 	// an empty or degenerate store. These are the counts gh#713's arithmetic
 	// depends on: 3 entities + 3 containers; the type container holds one
-	// inverse `contains` edge per child; each entity holds one sibling edge per
-	// OTHER entity.
+	// inverse `contains` edge per child. No entity holds a sibling edge (ruling
+	// G, #91 comment 6062681355).
 	require.Len(t, before, len(replayEntityIDs)+len(replayContainerIDs),
 		"seed must have produced 3 entities and 3 containers")
 	require.Equal(t, 3, countStoredPredicate(t, ctx, replay, replayContainerIDs[0], vocabulary.HierarchyTypeContains),
 		"the type container must hold one inverse contains edge per child")
 	for _, id := range replayEntityIDs {
-		require.Equal(t, 2, countStoredPredicate(t, ctx, replay, id, vocabulary.HierarchyTypeSibling),
-			"%s must hold one sibling edge per other entity", id)
+		require.Zero(t, countStoredPredicate(t, ctx, replay, id, vocabulary.HierarchyTypeSibling),
+			"%s must hold no sibling edge", id)
 	}
 
 	suppressedBefore := testutil.ToFloat64(
@@ -191,10 +191,10 @@ func TestComponent_HierarchyReplay_UnchangedEntitiesAdvanceNoRevision(t *testing
 
 	// Task 6.3: a suppression that is invisible is indistinguishable from a lane
 	// that never ran. Each re-registration re-derives 3 container-inverse edges
-	// (type, system, domain) and 2 sibling-inverse edges (one per other
-	// entity) = 5 suppressed tuples per entity, 15 across the three.
+	// (type, system, domain) = 3 suppressed tuples per entity, 9 across the
+	// three.
 	suppressedAfter := testutil.ToFloat64(
 		replay.duplicateTriplesSuppressed.WithLabelValues(string(dedupLaneHierarchy)))
-	assert.InDelta(t, suppressedBefore+15, suppressedAfter, 0.0001,
+	assert.InDelta(t, suppressedBefore+9, suppressedAfter, 0.0001,
 		"the hierarchy lane's suppressed duplicates must be observable and attributable")
 }

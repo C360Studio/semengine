@@ -7,8 +7,7 @@ import (
 )
 
 // TripleAdder adds one statement to an entity that already exists.
-// HierarchyInference writes the inverse edges onto containers and siblings
-// through it.
+// HierarchyInference writes the inverse edges onto containers through it.
 type TripleAdder interface {
 	AddTriple(ctx context.Context, triple message.Triple) error
 }

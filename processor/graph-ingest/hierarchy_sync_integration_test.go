@@ -695,171 +695,63 @@ func TestComponent_SynchronousHierarchy_ContextCancellation(t *testing.T) {
 }
 
 // ====================================================================================
-// Sibling Edge Tests - Entities with same type get bidirectional sibling edges
+// No sibling edges - ruling G (#91 comment 6062681355)
 // ====================================================================================
 
-func TestComponent_SynchronousHierarchy_SiblingEdges(t *testing.T) {
-	t.Run("creates_bidirectional_sibling_edges", func(t *testing.T) {
-		ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
-		defer cancelOperation()
-		comp := createTestComponentWithHierarchyConfig(t, true)
-		owner := newGraphIngestTestOwner(comp)
-		defer owner.finish(ctx, t)
+// TestComponent_SynchronousHierarchy_NoSiblingEdges: three births of one type each
+// carry their type-membership statement, and none of the three entities holds a
+// hierarchy.type.sibling statement once all three are born, so no birth wrote one on
+// itself or on an entity born before it. The predicate stays registered in vocabulary.
+func TestComponent_SynchronousHierarchy_NoSiblingEdges(t *testing.T) {
+	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancelOperation()
+	comp := createTestComponentWithHierarchyConfig(t, true)
+	owner := newGraphIngestTestOwner(comp)
+	defer owner.finish(ctx, t)
 
-		require.NoError(t, comp.Initialize())
-		require.NoError(t, comp.Start(owner.startContext(ctx)))
+	require.NoError(t, comp.Initialize())
+	require.NoError(t, comp.Start(owner.startContext(ctx)))
 
-		// Create first entity - no siblings yet
-		entity1ID := "c360.platform.sensors.hvac.temperature.sensor001"
-		entity1 := &graph.EntityState{
-			ID:          entity1ID,
+	entityIDs := []string{
+		"c360.platform.sensors.hvac.pressure.press001",
+		"c360.platform.sensors.hvac.pressure.press002",
+		"c360.platform.sensors.hvac.pressure.press003",
+	}
+	for _, entityID := range entityIDs {
+		entity := &graph.EntityState{
+			ID:          entityID,
 			MessageType: testEntityType(),
 			Triples: withTestMetadata(
 				message.Triple{
-					Subject:   entity1ID,
+					Subject:   entityID,
 					Predicate: "entity.type.class",
-					Object:    "sensor.temperature",
+					Object:    "sensor.pressure",
 					Timestamp: time.Now(),
 				},
 			),
 			UpdatedAt: time.Now(),
 		}
+		require.NoError(t, comp.CreateEntity(ctx, entity))
+	}
 
-		require.NoError(t, comp.CreateEntity(ctx, entity1))
-
-		// Verify first entity has hierarchy triples but no sibling triples
-		entry1, err := comp.entityBucket.Get(ctx, entity1ID)
+	for _, entityID := range entityIDs {
+		entry, err := comp.entityBucket.Get(ctx, entityID)
 		require.NoError(t, err)
+		var stored graph.EntityState
+		require.NoError(t, json.Unmarshal(entry.Value, &stored))
 
-		var stored1 graph.EntityState
-		err = json.Unmarshal(entry1.Value, &stored1)
-		require.NoError(t, err)
-
-		siblingCount1 := countSiblingTriples(stored1.Triples)
-		assert.Equal(t, 0, siblingCount1, "first entity should have no sibling edges initially")
-
-		// Create second entity of same type - should create bidirectional sibling edges
-		entity2ID := "c360.platform.sensors.hvac.temperature.sensor002"
-		entity2 := &graph.EntityState{
-			ID:          entity2ID,
-			MessageType: testEntityType(),
-			Triples: withTestMetadata(
-				message.Triple{
-					Subject:   entity2ID,
-					Predicate: "entity.type.class",
-					Object:    "sensor.temperature",
-					Timestamp: time.Now(),
-				},
-			),
-			UpdatedAt: time.Now(),
-		}
-
-		require.NoError(t, comp.CreateEntity(ctx, entity2))
-
-		// Verify second entity has sibling edge to first
-		entry2, err := comp.entityBucket.Get(ctx, entity2ID)
-		require.NoError(t, err)
-
-		var stored2 graph.EntityState
-		err = json.Unmarshal(entry2.Value, &stored2)
-		require.NoError(t, err)
-
-		siblingCount2 := countSiblingTriples(stored2.Triples)
-		assert.Equal(t, 1, siblingCount2, "second entity should have 1 sibling edge to first")
-
-		// Verify sibling edge points to first entity
-		hasSiblingToEntity1 := false
-		for _, triple := range stored2.Triples {
-			if triple.Predicate == vocabulary.HierarchyTypeSibling {
-				if obj, ok := triple.Object.(string); ok && obj == entity1ID {
-					hasSiblingToEntity1 = true
-				}
-			}
-		}
-		assert.True(t, hasSiblingToEntity1, "second entity should have sibling edge to first")
-
-		// Verify first entity was updated with sibling edge to second
-		entry1Updated, err := comp.entityBucket.Get(ctx, entity1ID)
-		require.NoError(t, err)
-
-		var stored1Updated graph.EntityState
-		err = json.Unmarshal(entry1Updated.Value, &stored1Updated)
-		require.NoError(t, err)
-
-		hasSiblingToEntity2 := false
-		for _, triple := range stored1Updated.Triples {
-			if triple.Predicate == vocabulary.HierarchyTypeSibling {
-				if obj, ok := triple.Object.(string); ok && obj == entity2ID {
-					hasSiblingToEntity2 = true
-				}
-			}
-		}
-		assert.True(t, hasSiblingToEntity2, "first entity should have been updated with sibling edge to second")
-	})
-
-	t.Run("creates_sibling_edges_for_multiple_entities", func(t *testing.T) {
-		ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
-		defer cancelOperation()
-		comp := createTestComponentWithHierarchyConfig(t, true)
-		owner := newGraphIngestTestOwner(comp)
-		defer owner.finish(ctx, t)
-
-		require.NoError(t, comp.Initialize())
-		require.NoError(t, comp.Start(owner.startContext(ctx)))
-
-		// Create 3 entities of same type
-		entityIDs := []string{
-			"c360.platform.sensors.hvac.pressure.press001",
-			"c360.platform.sensors.hvac.pressure.press002",
-			"c360.platform.sensors.hvac.pressure.press003",
-		}
-
-		for _, entityID := range entityIDs {
-			entity := &graph.EntityState{
-				ID:          entityID,
-				MessageType: testEntityType(),
-				Triples: withTestMetadata(
-					message.Triple{
-						Subject:   entityID,
-						Predicate: "entity.type.class",
-						Object:    "sensor.pressure",
-						Timestamp: time.Now(),
-					},
-				),
-				UpdatedAt: time.Now(),
-			}
-			require.NoError(t, comp.CreateEntity(ctx, entity))
-		}
-
-		// Verify third entity has 2 sibling edges (to first and second)
-		entry3, err := comp.entityBucket.Get(ctx, entityIDs[2])
-		require.NoError(t, err)
-
-		var stored3 graph.EntityState
-		err = json.Unmarshal(entry3.Value, &stored3)
-		require.NoError(t, err)
-
-		siblingCount3 := countSiblingTriples(stored3.Triples)
-		assert.Equal(t, 2, siblingCount3, "third entity should have 2 sibling edges")
-
-		// Verify first entity now has 2 sibling edges (to second and third)
-		entry1, err := comp.entityBucket.Get(ctx, entityIDs[0])
-		require.NoError(t, err)
-
-		var stored1 graph.EntityState
-		err = json.Unmarshal(entry1.Value, &stored1)
-		require.NoError(t, err)
-
-		siblingCount1 := countSiblingTriples(stored1.Triples)
-		assert.Equal(t, 2, siblingCount1, "first entity should have 2 sibling edges (updated by second and third)")
-	})
+		assert.Equal(t, 1, countPredicate(stored.Triples, vocabulary.HierarchyTypeMember),
+			"%s: the birth ran the inference", entityID)
+		assert.Zero(t, countPredicate(stored.Triples, vocabulary.HierarchyTypeSibling),
+			"%s: no birth writes a sibling statement", entityID)
+	}
 }
 
-// countSiblingTriples counts the number of hierarchy.type.sibling triples
-func countSiblingTriples(triples []message.Triple) int {
+// countPredicate counts the triples that state predicate.
+func countPredicate(triples []message.Triple, predicate string) int {
 	count := 0
 	for _, triple := range triples {
-		if triple.Predicate == vocabulary.HierarchyTypeSibling {
+		if triple.Predicate == predicate {
 			count++
 		}
 	}

@@ -49,13 +49,6 @@ const (
 	// canonical — only its positions 1-2 differ — so a structural rejection
 	// here would prove nothing about the authority gate.
 	authorityForeignID = "acme.dep2.src.git.commit.a1"
-	// authorityForeignSiblingID shares authorityForeignID's five-position type
-	// prefix. Sibling edges need no container, so with hierarchy enabled a
-	// second import under the same prefix is the ONE path that would put a
-	// hierarchy triple on an imported entity even while every container birth
-	// is refused elsewhere — which is what makes the skip in
-	// GetHierarchyTriples load-bearing rather than shadowed.
-	authorityForeignSiblingID = "acme.dep2.src.git.commit.a2"
 	// authorityLocalClaimID carries THIS deployment's pair and is what a peer
 	// must not be able to mint through an import lane.
 	authorityLocalClaimID = "acme.dep1.src.git.commit.a1"
@@ -350,27 +343,18 @@ func TestImportLaneAcceptsForeignRejectsLocalClaim(t *testing.T) {
 }
 
 // TestHierarchySkipsForeignAuthority — the framework never mints under a
-// foreign authority, so an imported entity gets no container, no membership
-// triple, and no inverse sibling edge, on the import lane as on any other.
+// foreign authority, so an imported entity gets no container and no membership
+// triple, on the import lane as on any other.
 func TestHierarchySkipsForeignAuthority(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()
 	h := startAuthorityGateComponent(ctx, t, true)
 	defer h.owner.finish(ctx, t)
 
-	// Two imports sharing a type prefix: the second would take the sibling-edge
-	// path, which mints a forward hierarchy triple onto the entity itself
-	// without needing a container.
 	h.publishFact(t, authorityImportSubject, authorityForeignID)
-	h.awaitEntity(t, authorityForeignID)
-	h.publishFact(t, authorityImportSubject, authorityForeignSiblingID)
-	h.awaitEntity(t, authorityForeignSiblingID)
-
-	for _, id := range []string{authorityForeignID, authorityForeignSiblingID} {
-		for _, tr := range h.awaitEntity(t, id).Triples {
-			assert.NotContains(t, tr.Predicate, "hierarchy.",
-				"imported entity %q must carry no hierarchy triple (got %q)", id, tr.Predicate)
-		}
+	for _, tr := range h.awaitEntity(t, authorityForeignID).Triples {
+		assert.NotContains(t, tr.Predicate, "hierarchy.",
+			"imported entity %q must carry no hierarchy triple (got %q)", authorityForeignID, tr.Predicate)
 	}
 	// No container was born under the peer's authority.
 	parsed, err := semtypes.ParseEntityID(authorityForeignID)

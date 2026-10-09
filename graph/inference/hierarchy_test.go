@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -21,7 +20,7 @@ import (
 
 // hierarchyTestOrg / hierarchyTestPlatform are the deployment authority every
 // enabled HierarchyInference is constructed with (ADR-102): inference mints containers
-// and sibling edges from the ingested entity's own prefix, so it must know
+// from the ingested entity's own prefix, so it must know
 // which prefix is this deployment's. They match positions 1-2 of every entity
 // ID in this package's hierarchy fixtures — change one and the other must
 // follow, or the fixture becomes an import and mints nothing.
@@ -95,7 +94,6 @@ type fakeStore struct {
 	afterExists func(id string)
 	existsErr   error
 	createErr   error
-	listErr     error
 	addErr      error
 }
 
@@ -129,23 +127,6 @@ func (s *fakeStore) CreateEntity(_ context.Context, entity *gtypes.EntityState) 
 	s.entities[entity.ID] = entity.Clone()
 	s.created = append(s.created, entity)
 	return entity, nil
-}
-
-func (s *fakeStore) ListWithPrefix(_ context.Context, prefix string) ([]string, error) {
-	if s.listErr != nil {
-		return nil, s.listErr
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	var matched []string
-	prefixDot := prefix + "."
-	for id := range s.entities {
-		if strings.HasPrefix(id, prefixDot) {
-			matched = append(matched, id)
-		}
-	}
-	return matched, nil
 }
 
 func (s *fakeStore) AddTriple(_ context.Context, triple message.Triple) error {
@@ -282,11 +263,10 @@ func TestGetHierarchyTriplesDisabledIsSilentWithoutAuthority(t *testing.T) {
 func TestGetHierarchyTriplesSkipsForeignAuthority(t *testing.T) {
 	store := newFakeStore()
 	hi := NewHierarchyInference(store, store, HierarchyConfig{
-		Enabled:            true,
-		CreateTypeEdges:    true,
-		CreateSystemEdges:  true,
-		CreateDomainEdges:  true,
-		CreateTypeSiblings: true,
+		Enabled:           true,
+		CreateTypeEdges:   true,
+		CreateSystemEdges: true,
+		CreateDomainEdges: true,
 	}, hierarchyTestAuthority, nil)
 
 	// A peer deployment's entity: same org, different platform, canonical shape.
@@ -295,7 +275,7 @@ func TestGetHierarchyTriplesSkipsForeignAuthority(t *testing.T) {
 	triples, err := hi.GetHierarchyTriples(context.Background(), imported, hierarchyTestTime)
 
 	require.NoError(t, err, "a foreign entity is skipped, not rejected")
-	assert.Empty(t, triples, "no membership or sibling triple may be minted for an imported entity")
+	assert.Empty(t, triples, "no membership triple may be minted for an imported entity")
 	assert.Empty(t, store.getCreatedEntities(),
 		"no container entity may be born under a peer's authority")
 	assert.Empty(t, store.getTriples(),
@@ -631,4 +611,34 @@ func TestHierarchyInference_DeletedContainerIsBornAgain(t *testing.T) {
 	assert.Equal(t, 1, statementCount(container.Triples, vocabulary.HierarchyTypeContains, second))
 	assert.Zero(t, statementCount(container.Triples, vocabulary.HierarchyTypeContains, first),
 		"the deleted container's statements went with it")
+}
+
+// TestHierarchyInference_BirthWritesNoSiblingEdge holds ruling G (#91 comment
+// 6062681355) and design D21: a birth of a type that already has a member
+// returns no hierarchy.type.sibling statement and writes none on the member
+// born before it. The predicate stays registered in vocabulary; the inference
+// does not write it.
+func TestHierarchyInference_BirthWritesNoSiblingEdge(t *testing.T) {
+	const first = "c360.semstreams-hierarchy-test.sensor.document.temperature.sensor-001"
+	const second = "c360.semstreams-hierarchy-test.sensor.document.temperature.sensor-002"
+	const containerID = "c360.semstreams-hierarchy-test.sensor.document.temperature.group"
+	ctx := context.Background()
+	store := newFakeStore()
+	hi := NewHierarchyInference(store, store, HierarchyConfig{
+		Enabled:           true,
+		CreateTypeEdges:   true,
+		CreateSystemEdges: true,
+		CreateDomainEdges: true,
+	}, hierarchyTestAuthority, nil)
+	require.NoError(t, addHierarchy(ctx, hi, store, first))
+
+	triples, err := hi.GetHierarchyTriples(ctx, second, hierarchyTestTime)
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, statementCount(triples, vocabulary.HierarchyTypeMember, containerID),
+		"the second birth ran the inference")
+	for _, triple := range append(triples, store.getTriples()...) {
+		assert.NotEqual(t, vocabulary.HierarchyTypeSibling, triple.Predicate,
+			"%s %s %v: no birth writes a sibling statement", triple.Subject, triple.Predicate, triple.Object)
+	}
 }

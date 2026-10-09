@@ -75,8 +75,6 @@ type HierarchyInference struct {
 type EntityManager interface {
 	ExistsEntity(ctx context.Context, id string) (bool, error)
 	CreateEntity(ctx context.Context, entity *gtypes.EntityState) (*gtypes.EntityState, error)
-	// ListWithPrefix returns entity IDs matching a prefix (for sibling discovery)
-	ListWithPrefix(ctx context.Context, prefix string) ([]string, error)
 }
 
 // HierarchyConfig configures hierarchy container inference.
@@ -95,11 +93,6 @@ type HierarchyConfig struct {
 	// CreateDomainEdges enables domain membership edges (3-part prefix → domain container)
 	// StandardIRI: skos:broader
 	CreateDomainEdges bool `json:"create_domain_edges"`
-
-	// CreateTypeSiblings enables sibling edges between entities with the same type (5-part prefix)
-	// When enabled, creates bidirectional hierarchy.type.sibling edges
-	// Cost: O(N) per new entity where N is existing sibling count
-	CreateTypeSiblings bool `json:"create_type_siblings"`
 }
 
 // NewHierarchyInference creates a new hierarchy inference component.
@@ -111,7 +104,7 @@ type HierarchyConfig struct {
 //   - platform: the deployment's own authority, graph-ingest's deps.Platform.
 //     An entity whose positions 1-2 differ is an imported mirror, and
 //     GetHierarchyTriples mints NOTHING for it (no container, no membership
-//     triple, no inverse sibling edge), because the framework never mints
+//     triple, no inverse edge), because the framework never mints
 //     under a foreign authority. An empty pair while config.Enabled is set is
 //     refused loudly by GetHierarchyTriples rather than silently skipping
 //     every entity.
@@ -173,9 +166,11 @@ func isContainerEntity(entityID string) bool {
 // of the write that triggered the inference, never the clock (design D15). A
 // zero at is refused.
 //
-// If any part fails (a container's existence check or birth, an inverse edge,
-// the sibling listing or a sibling's inverse edge), it returns every failure
-// joined and no statements, so the caller refuses the birth (design D21).
+// It writes no sibling edge between entities of one type (ruling G, #91
+// comment 6062681355); vocabulary.HierarchyTypeSibling stays registered.
+//
+// If any part fails (a container's existence check or birth, or an inverse
+// edge), it returns every failure joined and no statements, so the caller refuses the birth (design D21).
 // Containers and inverse edges written before the failure are what the next
 // attempt writes again.
 //
@@ -237,16 +232,6 @@ func (h *HierarchyInference) GetHierarchyTriples(ctx context.Context, entityID s
 			failures = append(failures, err)
 		} else {
 			triples = append(triples, triple)
-		}
-	}
-
-	// Create sibling edges to entities with same type (5-part prefix)
-	if h.config.CreateTypeSiblings {
-		siblingTriples, err := h.createSiblingEdges(ctx, entityID, parsed, at)
-		if err != nil {
-			failures = append(failures, err)
-		} else {
-			triples = append(triples, siblingTriples...)
 		}
 	}
 
@@ -319,53 +304,6 @@ func buildTaxonomyContainerID(eid semtypes.EntityID) string {
 // Output: org.platform.system.group.container.level
 func buildSourceContainerID(eid semtypes.EntityID) string {
 	return eid.SourcePrefix() + ".group.container.level"
-}
-
-// createSiblingEdges creates bidirectional sibling edges between the new entity
-// and all existing entities sharing its level-5 type prefix.
-//
-// For each existing sibling:
-//   - Returns a forward edge: newEntity → hierarchy.type.sibling → existingSibling
-//   - Adds inverse edge directly: existingSibling → hierarchy.type.sibling → newEntity
-//
-// It stops at the first inverse edge that fails and returns that failure.
-//
-// Cost: O(N) per new entity where N is existing sibling count.
-func (h *HierarchyInference) createSiblingEdges(ctx context.Context, entityID string, eid semtypes.EntityID, at time.Time) ([]message.Triple, error) {
-	// The level-5 type prefix is the sibling scope (excludes the instance).
-	prefix := eid.TypePrefix()
-
-	// Find existing members with same prefix
-	existingMembers, err := h.entityManager.ListWithPrefix(ctx, prefix)
-	if err != nil {
-		return nil, fmt.Errorf("list hierarchy siblings of %s: %w", entityID, err)
-	}
-
-	var triples []message.Triple
-	for _, siblingID := range existingMembers {
-		// Skip self and container entities
-		if siblingID == entityID || isContainerEntity(siblingID) {
-			continue
-		}
-
-		// Forward edge: new entity → sibling → existing
-		triples = append(triples, hierarchyTriple(entityID, vocabulary.HierarchyTypeSibling, siblingID, at))
-
-		// Inverse edge: existing → sibling → new entity (update existing entity)
-		// Since HierarchyTypeSibling is symmetric, both directions use same predicate
-		inverseTriple := hierarchyTriple(siblingID, vocabulary.HierarchyTypeSibling, entityID, at)
-		if err := h.tripleAdder.AddTriple(ctx, inverseTriple); err != nil {
-			return nil, fmt.Errorf("add hierarchy sibling edge %s -> %s: %w", siblingID, entityID, err)
-		}
-	}
-
-	if len(triples) > 0 {
-		h.logger.Debug("Created sibling edges",
-			"entity_id", entityID,
-			"sibling_count", len(triples))
-	}
-
-	return triples, nil
 }
 
 // ensureContainerAndReturnEdge creates the container entity if needed, then returns

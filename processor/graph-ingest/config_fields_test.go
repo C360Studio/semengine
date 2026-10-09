@@ -13,7 +13,7 @@ import (
 	"github.com/c360studio/semengine/vocabulary"
 )
 
-// Each of graph-ingest's four configuration fields has a test here that fails when the
+// Each of graph-ingest's three configuration fields has a test here that fails when the
 // field is ignored, that is, when the component runs on the field's default instead of
 // the value the configuration gave it (design D6, Config (b)). Each test builds the
 // component through CreateGraphIngest from JSON, so the value goes through the strict
@@ -104,25 +104,26 @@ func TestConfigEnableHierarchyAddsHierarchyStatements(t *testing.T) {
 	}
 }
 
-// TestConfigEnableTypeSiblingsFalseAddsNoSiblingEdge: with hierarchy on and
-// enable_type_siblings false, a second entity of one type gets no sibling edge.
-// Ignored, siblings default to on and it gets one.
-func TestConfigEnableTypeSiblingsFalseAddsNoSiblingEdge(t *testing.T) {
-	siblings := false
+// TestHierarchyBirthWritesNoSiblingEdge: with enable_hierarchy, a second birth of one
+// type carries its type-membership statement and no hierarchy.type.sibling statement,
+// and the entity born first gains none (ruling G, #91 comment 6062681355).
+func TestHierarchyBirthWritesNoSiblingEdge(t *testing.T) {
 	config := DefaultConfig()
 	config.EnableHierarchy = true
-	config.EnableTypeSiblings = &siblings
 
 	c := newConfiguredGraphIngest(t, config)
 	c.initHierarchyInference()
 
 	createDrone(t, c, "001")
-	triples := createDrone(t, c, "002")
-	if !hasPredicate(triples, vocabulary.HierarchyTypeMember) {
-		t.Fatalf("second birth has no %s statement, so hierarchy did not run: %v", vocabulary.HierarchyTypeMember, triples)
+	second := createDrone(t, c, "002")
+	if !hasPredicate(second, vocabulary.HierarchyTypeMember) {
+		t.Fatalf("second birth has no %s statement, so hierarchy did not run: %v", vocabulary.HierarchyTypeMember, second)
 	}
-	if hasPredicate(triples, vocabulary.HierarchyTypeSibling) {
-		t.Fatalf("second birth with enable_type_siblings false has a %s edge: %v", vocabulary.HierarchyTypeSibling, triples)
+	first := storedEntity(t, c, "c360.platform.robotics.mav1.drone.001").Triples
+	for name, triples := range map[string][]message.Triple{"second birth": second, "first entity": first} {
+		if hasPredicate(triples, vocabulary.HierarchyTypeSibling) {
+			t.Errorf("%s carries a %s statement: %v", name, vocabulary.HierarchyTypeSibling, triples)
+		}
 	}
 }
 

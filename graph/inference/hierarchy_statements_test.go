@@ -26,14 +26,13 @@ var hierarchyLevels = []hierarchyLevel{
 
 // TestGetHierarchyTriplesReportsEveryFailure holds design D21: GetHierarchyTriples
 // returns an error when any part of the inference fails (a container birth, the
-// existence check a forward edge rests on, an inverse edge, or the sibling
-// pass) and returns no statements with it, so graph-ingest can refuse the birth.
-// At the pin a failed inverse edge or sibling pass was only a warning. Each
+// existence check a forward edge rests on, or an inverse edge) and returns no
+// statements with it, so graph-ingest can refuse the birth. At the pin a failed
+// inverse edge was only a warning. Each
 // container level is failed on its own, so a level that drops its error fails
 // its own case.
 func TestGetHierarchyTriplesReportsEveryFailure(t *testing.T) {
 	const entityID = "c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-001"
-	const siblingID = "c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-002"
 	injected := errors.New("injected failure")
 
 	type failureCase struct {
@@ -52,23 +51,9 @@ func TestGetHierarchyTriplesReportsEveryFailure(t *testing.T) {
 				func(s *fakeStore) { s.addErr = injected }},
 		)
 	}
-	siblings := HierarchyConfig{Enabled: true, CreateTypeSiblings: true}
-	cases = append(cases,
-		failureCase{"sibling pass", siblings,
-			func(s *fakeStore) { s.listErr = injected }},
-		failureCase{"sibling inverse edge", siblings,
-			func(s *fakeStore) { s.addErr = injected }},
-		// The membership edge succeeds before the sibling pass fails, so a
-		// partial result returned beside the error would show here.
-		failureCase{"sibling pass after a membership edge",
-			HierarchyConfig{Enabled: true, CreateTypeEdges: true, CreateTypeSiblings: true},
-			func(s *fakeStore) { s.listErr = injected }},
-	)
-
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			store := newFakeStore()
-			store.addExistingEntity(siblingID)
 			tc.arrange(store)
 			hi := NewHierarchyInference(store, store, tc.config, hierarchyTestAuthority, nil)
 
@@ -82,34 +67,30 @@ func TestGetHierarchyTriplesReportsEveryFailure(t *testing.T) {
 }
 
 // TestGetHierarchyTriplesStampsSourceAndTime holds design D15: every statement
-// the inference derives (the membership and sibling edges it returns, the
-// inverse edges it writes, and each new container's type statement) names
+// the inference derives (the membership edges it returns, the inverse edges it
+// writes, and each new container's type statement) names
 // graph-ingest's hierarchy producer as its source and carries the triggering
 // time it was given, never the clock.
 func TestGetHierarchyTriplesStampsSourceAndTime(t *testing.T) {
 	const entityID = "c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-001"
-	const siblingID = "c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-002"
 	at := time.Date(2025, 3, 4, 5, 6, 7, 8, time.UTC)
 
 	store := newFakeStore()
-	store.addExistingEntity(siblingID)
 	hi := NewHierarchyInference(store, store, HierarchyConfig{
-		Enabled:            true,
-		CreateTypeEdges:    true,
-		CreateSystemEdges:  true,
-		CreateDomainEdges:  true,
-		CreateTypeSiblings: true,
+		Enabled:           true,
+		CreateTypeEdges:   true,
+		CreateSystemEdges: true,
+		CreateDomainEdges: true,
 	}, hierarchyTestAuthority, nil)
 
 	returned, err := hi.GetHierarchyTriples(context.Background(), entityID, at)
 	require.NoError(t, err)
 
-	// Three membership edges and one sibling edge are returned; three container
-	// inverse edges and one sibling inverse edge are written; three containers
-	// are born with one statement each.
-	require.Len(t, returned, 4)
+	// Three membership edges are returned; three container inverse edges are
+	// written; three containers are born with one statement each.
+	require.Len(t, returned, 3)
 	added := store.getTriples()
-	require.Len(t, added, 4)
+	require.Len(t, added, 3)
 	created := store.getCreatedEntities()
 	require.Len(t, created, 3)
 

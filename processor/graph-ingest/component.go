@@ -212,8 +212,8 @@ const (
 	dedupLaneAddBatch dedupLane = "append"
 	// dedupLaneHierarchy is hierarchy inference's in-process adder
 	// (tripleAdderAdapter), the lane that produced gh#713: createEntity calls
-	// GetHierarchyTriples unconditionally, and its container-inverse and
-	// sibling-inverse edges commit through here on every re-registration.
+	// GetHierarchyTriples unconditionally, and its container-inverse edges
+	// commit through here on every re-registration.
 	dedupLaneHierarchy dedupLane = "hierarchy"
 )
 
@@ -239,9 +239,8 @@ func newDuplicateTriplesSuppressedMetric() *prometheus.CounterVec {
 
 // Config holds configuration for graph-ingest component
 type Config struct {
-	Ports              *component.PortConfig `json:"ports" schema:"type:ports,description:Port configuration,category:basic"`
-	EnableHierarchy    bool                  `json:"enable_hierarchy" schema:"type:bool,description:Enable hierarchy inference,default:false,category:advanced"`
-	EnableTypeSiblings *bool                 `json:"enable_type_siblings" schema:"type:bool,description:Enable sibling edges between same-type entities (default true when hierarchy enabled),category:advanced"`
+	Ports           *component.PortConfig `json:"ports" schema:"type:ports,description:Port configuration,category:basic"`
+	EnableHierarchy bool                  `json:"enable_hierarchy" schema:"type:bool,description:Enable hierarchy inference,default:false,category:advanced"`
 	// IngestLanes is the number of keyed-concurrent ingest lanes (ADR-072,
 	// gh#480). Messages are partitioned by entity ID (same entity → one lane →
 	// serial in arrival order, preserving the arrival-order merge; different
@@ -359,18 +358,12 @@ func (a *entityManagerAdapter) CreateEntity(ctx context.Context, entity *graph.E
 	return entity, nil
 }
 
-func (a *entityManagerAdapter) ListWithPrefix(ctx context.Context, prefix string) ([]string, error) {
-	// Use server-side prefix filtering (prefix + "." to ensure we match the exact level)
-	return a.component.entityBucket.KeysByPrefix(ctx, prefix+".")
-}
-
 // tripleAdderAdapter adapts Component to implement inference.TripleAdder interface
 type tripleAdderAdapter struct {
 	component *Component
 }
 
-// AddTriple routes hierarchy inference's container-inverse and sibling-inverse
-// edges through the shared append implementation, labelled so their suppressed duplicates
+// AddTriple routes hierarchy inference's container-inverse edges through the shared append implementation, labelled so their suppressed duplicates
 // are attributable to hierarchy rather than to an operator-issued mutation
 // (gh#713: createEntity re-derives these on every re-registration).
 func (a *tripleAdderAdapter) AddTriple(ctx context.Context, triple message.Triple) error {
@@ -1326,24 +1319,17 @@ func (c *Component) initHierarchyInference() {
 		return
 	}
 
-	// Enable sibling edges by default, can be disabled via config
-	enableTypeSiblings := true
-	if c.config.EnableTypeSiblings != nil {
-		enableTypeSiblings = *c.config.EnableTypeSiblings
-	}
-
 	hierarchyConfig := inference.HierarchyConfig{
-		Enabled:            true,
-		CreateTypeEdges:    true,
-		CreateSystemEdges:  true,
-		CreateDomainEdges:  true,
-		CreateTypeSiblings: enableTypeSiblings,
+		Enabled:           true,
+		CreateTypeEdges:   true,
+		CreateSystemEdges: true,
+		CreateDomainEdges: true,
 	}
 
 	// The deployment's own authority, the same deps.Platform the gate reads:
-	// containers and sibling edges are minted from the ingested entity's prefix,
-	// so an imported entity would mint them under a peer's authority. Inference
-	// skips those entities entirely (ADR-102).
+	// containers are minted from the ingested entity's prefix, so an imported
+	// entity would mint them under a peer's authority. Inference skips those
+	// entities entirely (ADR-102).
 	c.hierarchyInference = inference.NewHierarchyInference(
 		&entityManagerAdapter{component: c},
 		&tripleAdderAdapter{component: c},
@@ -1996,8 +1982,8 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 	// than the stored one, are not validated — they are left out, not
 	// committed, so the store contract is unaffected; (2) with EnableHierarchy set, an invalid candidate with a
 	// valid ID reaches the pre-closure hierarchy step below, whose
-	// GetHierarchyTriples COMMITS container entities + inverse contains-edges +
-	// sibling edges before the write gate rejects the candidate itself — that
+	// GetHierarchyTriples COMMITS container entities + inverse contains-edges
+	// before the write gate rejects the candidate itself — that
 	// pre-committed content is contract-valid and identical to what a later
 	// legitimate birth of the same ID would create. References to absent entities
 	// are valid graph facts and remain observable as unresolved references.

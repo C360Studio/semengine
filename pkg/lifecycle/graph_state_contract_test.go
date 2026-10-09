@@ -110,7 +110,7 @@ func TestProductionExactRPCPoisonPreservesClassificationWithoutConcreteCause(t *
 	t.Parallel()
 	mgr, emitter, _ := newTestManager(t)
 	entityID := "acme.ops.gcs.lifecycle.mission.poisoned"
-	mgr.exactReader = graph.NewExactEntityReader(classifiedPoisonRequester{entityID: entityID}, time.Second)
+	mgr.exactReader = productionExactReader(t, classifiedPoisonRequester{entityID: entityID})
 
 	participant, err := mgr.Get(context.Background(), "fixture", entityID)
 	if participant != nil || err == nil || !errs.IsFatal(err) {

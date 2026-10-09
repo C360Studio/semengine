@@ -5,11 +5,26 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"testing"
+	"time"
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/nats-io/nats.go/jetstream"
 )
+
+// productionExactReader is graph.NewExactEntityReader, the reader production
+// managers use, over a test requester.
+func productionExactReader(t *testing.T, requester interface {
+	RequestClassified(context.Context, string, []byte, time.Duration) ([]byte, error)
+}) graph.ExactEntityReader {
+	t.Helper()
+	reader, err := graph.NewExactEntityReader(requester, time.Second)
+	if err != nil {
+		t.Fatalf("NewExactEntityReader: %v", err)
+	}
+	return reader
+}
 
 // bucketExactEntityReader adapts the in-memory KV fixture used by lifecycle
 // tests. Production managers always use graph.NewExactEntityReader over the

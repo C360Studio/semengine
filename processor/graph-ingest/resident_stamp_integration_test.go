@@ -62,7 +62,9 @@ func TestResidentUnregisteredStampIsNotPoison(t *testing.T) {
 	_, inventoried := poisonInventoryEntry(c, id)
 	assert.False(t, inventoried, "a resident unregistered stamp is not poison")
 
-	exact, err := graph.NewExactEntityReader(nc, 5*time.Second).ReadExactEntity(ctx, id)
+	reader, err := graph.NewExactEntityReader(nc, 5*time.Second)
+	require.NoError(t, err)
+	exact, err := reader.ReadExactEntity(ctx, id)
 	require.NoError(t, err)
 	assert.Equal(t, "legacy.gone.v1", exact.Entity.MessageType.Key(), "the stamp reads back unchanged")
 

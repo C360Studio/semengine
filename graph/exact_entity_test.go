@@ -27,7 +27,7 @@ func TestExactEntityReaderClassifiesInvalidIDBeforeTransport(t *testing.T) {
 		called = true
 		return nil, nil
 	})
-	_, err := NewExactEntityReader(requester, time.Second).ReadExactEntity(context.Background(), "not-six-parts")
+	_, err := newTestExactEntityReader(t, requester).ReadExactEntity(context.Background(), "not-six-parts")
 	if called {
 		t.Fatal("invalid entity ID reached transport")
 	}
@@ -48,7 +48,7 @@ func TestExactEntityReaderRefusesNilContextBeforeTransport(t *testing.T) {
 		called = true
 		return []byte(`{"entity":{"id":"` + entityID + `","triples":[]},"kvRevision":17}`), nil
 	})
-	exact, err := NewExactEntityReader(requester, time.Second).ReadExactEntity(nilCtx, entityID)
+	exact, err := newTestExactEntityReader(t, requester).ReadExactEntity(nilCtx, entityID)
 	if err == nil || called || exact != nil {
 		t.Fatalf("ReadExactEntity(nil) = (%+v, %v), requester called = %v; want a refusal before any request",
 			exact, err, called)
@@ -70,7 +70,7 @@ func TestExactEntityReaderReturnsValidatedEntityAndRevision(t *testing.T) {
 		return []byte(`{"entity":{"id":"` + entityID + `","version":999,"triples":[]},"kvRevision":17}`), nil
 	})
 
-	reader := NewExactEntityReader(requester, time.Second)
+	reader := newTestExactEntityReader(t, requester)
 	exact, err := reader.ReadExactEntity(context.Background(), entityID)
 	if err != nil {
 		t.Fatalf("ReadExactEntity: %v", err)
@@ -92,8 +92,45 @@ func TestExactEntityReaderRejectsZeroRevisionAndMismatchedEntity(t *testing.T) {
 		requester := exactEntityRequesterFunc(func(context.Context, string, []byte, time.Duration) ([]byte, error) {
 			return []byte(response), nil
 		})
-		if exact, err := NewExactEntityReader(requester, time.Second).ReadExactEntity(context.Background(), entityID); err == nil {
+		if exact, err := newTestExactEntityReader(t, requester).ReadExactEntity(context.Background(), entityID); err == nil {
 			t.Fatalf("response %s returned %#v", response, exact)
 		}
+	}
+}
+
+func newTestExactEntityReader(t *testing.T, requester exactEntityRequesterFunc) ExactEntityReader {
+	t.Helper()
+	reader, err := NewExactEntityReader(requester, time.Second)
+	if err != nil {
+		t.Fatalf("NewExactEntityReader: %v", err)
+	}
+	return reader
+}
+
+// A negative timeout would give every request a context that has already
+// expired, so each read would fail while the caller's context is live and count
+// against the shared client's breaker (#151). The constructor refuses it. Zero
+// stays valid and reaches the requester as zero, whose own default applies (D16).
+func TestNewExactEntityReaderRefusesNegativeTimeoutAndPassesZeroThrough(t *testing.T) {
+	const entityID = "acme.ops.robotics.gcs.drone.001"
+	var timeouts []time.Duration
+	requester := exactEntityRequesterFunc(func(_ context.Context, _ string, _ []byte, timeout time.Duration) ([]byte, error) {
+		timeouts = append(timeouts, timeout)
+		return []byte(`{"entity":{"id":"` + entityID + `","triples":[]},"kvRevision":17}`), nil
+	})
+
+	if reader, err := NewExactEntityReader(requester, -time.Nanosecond); err == nil || reader != nil {
+		t.Fatalf("NewExactEntityReader(-1ns) = (%v, %v), want (nil, error)", reader, err)
+	}
+
+	reader, err := NewExactEntityReader(requester, 0)
+	if err != nil {
+		t.Fatalf("NewExactEntityReader(0): %v, want a reader: zero means the requester's default", err)
+	}
+	if _, err := reader.ReadExactEntity(context.Background(), entityID); err != nil {
+		t.Fatalf("ReadExactEntity: %v", err)
+	}
+	if len(timeouts) != 1 || timeouts[0] != 0 {
+		t.Fatalf("requester saw timeouts %v, want [0]: a zero timeout is passed through", timeouts)
 	}
 }

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"reflect"
 	"sync"
@@ -83,7 +84,13 @@ func NewManager(client *natsclient.Client, logger *slog.Logger) *Manager {
 		registrations: make(map[string]*registration),
 	}
 	if client != nil {
-		manager.exactReader = graph.NewExactEntityReader(client, 5*time.Second)
+		reader, err := graph.NewExactEntityReader(client, 5*time.Second)
+		if err != nil {
+			// Unreachable: the constructor refuses only a negative timeout, and
+			// this one is a positive constant.
+			panic(fmt.Sprintf("lifecycle: exact entity reader: %v", err))
+		}
+		manager.exactReader = reader
 	}
 	return manager
 }
@@ -1023,6 +1030,15 @@ func (m *Manager) CreateFromOperator(ctx context.Context, workflow string, initi
 	if err := dec.Decode(target); err != nil {
 		return CreateResult{}, fmt.Errorf("%w: decode initial state for workflow %q: %s",
 			ErrInvalidInitialState, workflow, err.Error())
+	}
+	// Decode reads one value and ignores what follows, so a second value would
+	// be dropped behind a success, unknown fields and all. Only io.EOF from a
+	// second Decode means nothing but whitespace follows; Decoder.More is no
+	// substitute, because it reports false at a stray closing delimiter.
+	var extra any
+	if err := dec.Decode(&extra); err != io.EOF {
+		return CreateResult{}, fmt.Errorf("%w: initial state for workflow %q has content after its first JSON value",
+			ErrInvalidInitialState, workflow)
 	}
 
 	if target.EntityID() == "" {

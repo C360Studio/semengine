@@ -33,16 +33,24 @@ type natsExactEntityReader struct {
 
 // NewExactEntityReader constructs the narrow embedded authority-read adapter.
 // It exposes no raw subject, KV handle, or aggregate graph-client capability.
+// A zero timeout means the requester's default; a negative one is refused.
 func NewExactEntityReader(
 	requester interface {
 		RequestClassified(context.Context, string, []byte, time.Duration) ([]byte, error)
 	},
 	timeout time.Duration,
-) ExactEntityReader {
+) (ExactEntityReader, error) {
+	// natsclient replaces only a zero timeout with its default, so a negative
+	// one would give every request an already expired context: each read would
+	// fail while the caller's context is live, and count against the shared
+	// client's breaker.
+	if timeout < 0 {
+		return nil, fmt.Errorf("exact entity reader timeout must not be negative, got %s", timeout)
+	}
 	// A zero timeout is passed through: the requester applies its own default
 	// (natsclient's RequestClassified uses DefaultRequestTimeout), so the root
 	// imports no transport package for it.
-	return &natsExactEntityReader{requester: requester, timeout: timeout}
+	return &natsExactEntityReader{requester: requester, timeout: timeout}, nil
 }
 
 func (r *natsExactEntityReader) ReadExactEntity(ctx context.Context, entityID string) (*ExactEntity, error) {

@@ -152,13 +152,13 @@ func TestEmitMappingsKeepTheClassifiedCause(t *testing.T) {
 		}},
 		{"Get of a missing entity", ErrEntityNotFound, graph.ErrorCodeEntityNotFound, func(t *testing.T) error {
 			mgr, _, _ := newTestManager(t)
-			mgr.exactReader = graph.NewExactEntityReader(notFound, time.Second)
+			mgr.exactReader = productionExactReader(t, notFound)
 			_, err := mgr.Get(context.Background(), "fixture", entityID)
 			return err
 		}},
 		{"Create that loses the create race", ErrAlreadyExists, graph.ErrorCodeEntityExists, func(t *testing.T) error {
 			mgr, _, _ := newTestManager(t)
-			mgr.exactReader = graph.NewExactEntityReader(notFound, time.Second)
+			mgr.exactReader = productionExactReader(t, notFound)
 			mgr.emitter = emitterFor(t, exists)
 			return mgr.Create(context.Background(), &fixtureMission{ID: entityID, PhaseF: "planning"})
 		}},

@@ -61,9 +61,13 @@ func newMutationClient(
 	if err != nil {
 		return nil, err
 	}
+	reader, err := graph.NewExactEntityReader(requester, timeout)
+	if err != nil {
+		return nil, err
+	}
 	return &MutationClient{
 		wire:      wire,
-		reader:    graph.NewExactEntityReader(requester, timeout),
+		reader:    reader,
 		contracts: bindings,
 	}, nil
 }

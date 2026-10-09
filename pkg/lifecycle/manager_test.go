@@ -1562,6 +1562,42 @@ func TestCreateFromOperator_RejectsUnknownFields(t *testing.T) {
 	}
 }
 
+// TestCreateFromOperator_RejectsTrailingContent pins that the initial state is
+// exactly one JSON value (#152). A json.Decoder reads one value and ignores what
+// follows, so without a check a second value, unknown field included, is
+// dropped behind a success. Trailing whitespace is not content and is accepted.
+func TestCreateFromOperator_RejectsTrailingContent(t *testing.T) {
+	const valid = `{"entity_id":"c360.platform1.gcs.lifecycle.mission.trail","phase":"planning"}`
+	cases := []struct {
+		name    string
+		body    string
+		refused bool
+	}{
+		{"a second value", valid + `{"bogus":1}`, true},
+		{"a stray closing delimiter", valid + `]`, true},
+		{"trailing whitespace only", valid + " \n\t\r ", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			mgr, emitter, _ := newTestManager(t)
+			_, err := mgr.CreateFromOperator(context.Background(), "fixture", []byte(c.body))
+			emitter.mu.Lock()
+			creates := len(emitter.creates)
+			emitter.mu.Unlock()
+			if c.refused {
+				if !errors.Is(err, ErrInvalidInitialState) || creates != 0 {
+					t.Fatalf("CreateFromOperator(%q) = %v with %d create requests, want ErrInvalidInitialState and none",
+						c.body, err, creates)
+				}
+				return
+			}
+			if err != nil || creates != 1 {
+				t.Fatalf("CreateFromOperator(%q) = %v with %d create requests, want success and one", c.body, err, creates)
+			}
+		})
+	}
+}
+
 // TestCreate_UnrelatedConcurrentUpdateIsNotADuplicateBirth pins the attach-path
 // correction: a CAS revision mismatch means something changed the entity, not
 // that a lifecycle birth happened. Any writer merging an unrelated predicate

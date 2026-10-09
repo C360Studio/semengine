@@ -377,13 +377,19 @@ posted on this pull request.
       Done in `8504a73` (CI 37942461597 green): `NewExactEntityReader` returns `(ExactEntityReader, error)`;
       `NewManager` panics on the refusal its 5 s constant cannot cause; mutation records and choices in PR #93 comment
       6082801917.
+- [ ] 3.12l (D) #144 (`class:flake`), ruled on #144 (comment 6083704443): graph-ingest's `Start` makes one server
+      round trip (`natsclient.Client.RTT`) after its request subscriptions, so a `Start` that returned is routable
+      from any connection (design D20; `graph-transport-boundary`, "Routable when Start returns"). The reproduction the
+      protocol asks of a flake fix ("Known flakes"): the command that runs
+      `TestGraphIngestServesExactlyTheDeclaredVerbs` and `TestGraphIngestProvisionsNoSuffixIndex` many times, and how
+      often each failed before the fix and after; a mutation record with the round trip removed.
 - [ ] 3.12h (D) #146, ruled N (#91 comment 6080973822): `natsclient.IsKVConflictError` and `IsKVNotFoundError`
       classify by type only (`errors.Is` on natsclient's sentinels and on jetstream's `ErrKeyNotFound`, `ErrKeyDeleted`
-      and `ErrKeyExists`, and `errors.As` on `*jetstream.APIError` with its error code), and `errs.IsTransient` by class
-      and sentinel, never by text; a test per function, written first, with an
-      error whose text holds each string the old match read and whose type does not match; natsclient's ledger row gains
-      the `adapt` items, and `pkg/errs`'s row (`docs/admission-ledger.yaml:489-507`, now `carry`) becomes `adapt` with
-      the `IsTransient` item (design D23, "Classification").
+      and `ErrKeyExists`, and `errors.As` on `*jetstream.APIError` with its error code), and `errs.IsTransient` and
+      `errs.IsFatal` (N extended, #91 comment 6083704900) by class and sentinel, never by text; a test per function,
+      written first, with an error whose text holds each string the old match read and whose type does not match;
+      natsclient's ledger row gains the `adapt` items, and `pkg/errs`'s row (`docs/admission-ledger.yaml:489-507`, now
+      `carry`) becomes `adapt` with the `IsTransient` and `IsFatal` item (design D23, "Classification").
 - [ ] 3.12i (D) #148, ruled O (#91 comment 6080973822): when `handleCanonicalDelete`'s pre-read refuses with a
       graph-state error, the handler proceeds to `DeleteAtRevision` at the caller's expected revision, the KV's
       revision check being the fence; the repair test drives the wire handler. A test written first, failing on the

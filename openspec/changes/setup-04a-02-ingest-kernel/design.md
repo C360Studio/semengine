@@ -1091,7 +1091,11 @@ graph-ingest after the drop: 84.7% (P-19).
   table subject or of the `graph.mutation.` prefix in a non-test file other than the two declaring files.
   `TestGraphIngestServesExactlyTheDeclaredVerbs`: the subjects graph-ingest's adapter lists as request
   subscriptions equal the table's entries for responder `graph-ingest`; written first, failing on the pin's code
-  (four literal subscriptions, one undeclared). Spec home: `graph-transport-boundary`.
+  (four literal subscriptions, one undeclared). `Start` returns only after one server round trip
+  (`natsclient.Client.RTT`) that follows its request subscriptions, so each listed subject is routable from any
+  connection when `Start` returns (ruled on #144, comment 6083704443); without it the test above, which asks from the
+  fixture's own connection, failed when its request reached the server before graph-ingest's subscriptions did (task
+  3.12l records how often, before and after). Spec home: `graph-transport-boundary`.
 - **Not in this change:** refusing a second subscriber on a declared verb at `Start` (#106's boot error) needs a view
   across components, which change 4 builds when it generalises the table; refusing a stream filter that overlaps a
   reserved subject stays change 3's (#16).
@@ -1252,11 +1256,11 @@ drop writes nothing, whatever its time, and counts no set as not applied (#150; 
 
 **Classification (ruled N, #91 comment 6080973822; #146).** `natsclient.IsKVConflictError` and `IsKVNotFoundError`
 classify by `errors.Is` on natsclient's sentinels and on jetstream's `ErrKeyNotFound`, `ErrKeyDeleted` and
-`ErrKeyExists`, and `errors.As` on `*jetstream.APIError` with its error code. `errs.IsTransient` classifies by class and
-sentinel. None of them classifies by error text. `pkg/errs`'s ledger row becomes `adapt` with the `IsTransient` item (it
-is `carry`, `docs/admission-ledger.yaml:489-507`), and `natsclient`'s row gains its two items. Test: task 3.12h's, one
-per function. #146's retry-loop conflict flag and `readEntity`'s not-found mapping are not ruled. Nor is `errs.IsFatal`,
-which still classifies by text (#146).
+`ErrKeyExists`, and `errors.As` on `*jetstream.APIError` with its error code. `errs.IsTransient` and `errs.IsFatal`
+classify by class and sentinel (`IsFatal` added to ruling N, #91 comment 6083704900). None of them classifies by error
+text. `pkg/errs`'s ledger row becomes `adapt` with the `IsTransient` and `IsFatal` item (it is `carry`,
+`docs/admission-ledger.yaml:489-507`), and `natsclient`'s row gains its two items. Test: task 3.12h's, one per function.
+The retry-loop conflict flag and `readEntity`'s not-found mapping that #146 proposes are not ruled.
 
 **Ledger.** The `natsclient` row (`adapt`) gains in `contract`: "Changed surface, task 3.12a (design D23; owner
 ruling #91 comment 6065395072), three adapt items. natsclient-update-callback-reads-revision:

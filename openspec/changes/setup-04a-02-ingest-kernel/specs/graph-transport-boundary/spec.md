@@ -25,12 +25,18 @@ temporary module and require the failure.
 ### Requirement: The responder serves exactly its declared verbs
 
 graph-ingest SHALL subscribe to the subjects of the verb table's entries whose responder is graph-ingest, and to no
-other request subject.
+other request subject. When `Start` returns, the server SHALL route each of those subjects to graph-ingest from any
+connection (ruled on #144).
 
 #### Scenario: Subscriptions match the table
 
 - **WHEN** graph-ingest has started and its test adapter lists its request subscriptions
 - **THEN** the listed subjects equal the table's subjects for responder graph-ingest
+
+#### Scenario: Routable when Start returns
+
+- **WHEN** graph-ingest's `Start` has returned and another connection sends a request on each listed subject
+- **THEN** every request reaches a responder; none gets "no responders"
 
 ### Requirement: The graph root imports no transport
 

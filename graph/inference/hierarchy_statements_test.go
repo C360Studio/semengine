@@ -39,39 +39,38 @@ func TestGetHierarchyTriplesReportsEveryFailure(t *testing.T) {
 	type failureCase struct {
 		name    string
 		config  HierarchyConfig
-		arrange func(*mockEntityManager, *hierarchyMockTripleAdder)
+		arrange func(*fakeStore)
 	}
 	var cases []failureCase
 	for _, level := range hierarchyLevels {
 		cases = append(cases,
 			failureCase{level.name + " container birth", level.config,
-				func(m *mockEntityManager, _ *hierarchyMockTripleAdder) { m.createErr = injected }},
+				func(s *fakeStore) { s.createErr = injected }},
 			failureCase{level.name + " forward edge's container check", level.config,
-				func(m *mockEntityManager, _ *hierarchyMockTripleAdder) { m.existsErr = injected }},
+				func(s *fakeStore) { s.existsErr = injected }},
 			failureCase{level.name + " inverse edge", level.config,
-				func(_ *mockEntityManager, a *hierarchyMockTripleAdder) { a.err = injected }},
+				func(s *fakeStore) { s.addErr = injected }},
 		)
 	}
 	siblings := HierarchyConfig{Enabled: true, CreateTypeSiblings: true}
 	cases = append(cases,
 		failureCase{"sibling pass", siblings,
-			func(m *mockEntityManager, _ *hierarchyMockTripleAdder) { m.listErr = injected }},
+			func(s *fakeStore) { s.listErr = injected }},
 		failureCase{"sibling inverse edge", siblings,
-			func(_ *mockEntityManager, a *hierarchyMockTripleAdder) { a.err = injected }},
+			func(s *fakeStore) { s.addErr = injected }},
 		// The membership edge succeeds before the sibling pass fails, so a
 		// partial result returned beside the error would show here.
 		failureCase{"sibling pass after a membership edge",
 			HierarchyConfig{Enabled: true, CreateTypeEdges: true, CreateTypeSiblings: true},
-			func(m *mockEntityManager, _ *hierarchyMockTripleAdder) { m.listErr = injected }},
+			func(s *fakeStore) { s.listErr = injected }},
 	)
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			entityManager := newMockEntityManager()
-			entityManager.addExistingEntity(siblingID)
-			tripleAdder := &hierarchyMockTripleAdder{}
-			tc.arrange(entityManager, tripleAdder)
-			hi := NewHierarchyInference(entityManager, tripleAdder, tc.config, hierarchyTestAuthority, nil)
+			store := newFakeStore()
+			store.addExistingEntity(siblingID)
+			tc.arrange(store)
+			hi := NewHierarchyInference(store, store, tc.config, hierarchyTestAuthority, nil)
 
 			triples, err := hi.GetHierarchyTriples(context.Background(), entityID, hierarchyTestTime)
 
@@ -92,10 +91,9 @@ func TestGetHierarchyTriplesStampsSourceAndTime(t *testing.T) {
 	const siblingID = "c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-002"
 	at := time.Date(2025, 3, 4, 5, 6, 7, 8, time.UTC)
 
-	entityManager := newMockEntityManager()
-	entityManager.addExistingEntity(siblingID)
-	tripleAdder := &hierarchyMockTripleAdder{}
-	hi := NewHierarchyInference(entityManager, tripleAdder, HierarchyConfig{
+	store := newFakeStore()
+	store.addExistingEntity(siblingID)
+	hi := NewHierarchyInference(store, store, HierarchyConfig{
 		Enabled:            true,
 		CreateTypeEdges:    true,
 		CreateSystemEdges:  true,
@@ -110,9 +108,9 @@ func TestGetHierarchyTriplesStampsSourceAndTime(t *testing.T) {
 	// inverse edges and one sibling inverse edge are written; three containers
 	// are born with one statement each.
 	require.Len(t, returned, 4)
-	added := tripleAdder.getTriples()
+	added := store.getTriples()
 	require.Len(t, added, 4)
-	created := entityManager.getCreatedEntities()
+	created := store.getCreatedEntities()
 	require.Len(t, created, 3)
 
 	check := func(kind string, triples []message.Triple) {
@@ -136,9 +134,8 @@ func TestGetHierarchyTriplesStampsSourceAndTime(t *testing.T) {
 // triggering time has nothing to stamp its statements with, so it refuses
 // before it births a container or writes an edge.
 func TestGetHierarchyTriplesRefusesZeroTime(t *testing.T) {
-	entityManager := newMockEntityManager()
-	tripleAdder := &hierarchyMockTripleAdder{}
-	hi := NewHierarchyInference(entityManager, tripleAdder,
+	store := newFakeStore()
+	hi := NewHierarchyInference(store, store,
 		HierarchyConfig{Enabled: true, CreateTypeEdges: true}, hierarchyTestAuthority, nil)
 
 	triples, err := hi.GetHierarchyTriples(context.Background(),
@@ -147,6 +144,6 @@ func TestGetHierarchyTriplesRefusesZeroTime(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, errHierarchyTimeUnset)
 	assert.Empty(t, triples)
-	assert.Empty(t, entityManager.getCreatedEntities())
-	assert.Empty(t, tripleAdder.getTriples())
+	assert.Empty(t, store.getCreatedEntities())
+	assert.Empty(t, store.getTriples())
 }

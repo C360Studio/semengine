@@ -178,8 +178,7 @@ func TestHierarchyInference_SkipContainerEntities(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tripleAdder := &hierarchyMockTripleAdder{}
-			entityManager := newMockEntityManager()
+			store := newFakeStore()
 
 			config := HierarchyConfig{
 				Enabled:           true,
@@ -188,22 +187,22 @@ func TestHierarchyInference_SkipContainerEntities(t *testing.T) {
 				CreateDomainEdges: true,
 			}
 
-			hi := NewHierarchyInference(entityManager, tripleAdder, config, hierarchyTestAuthority, nil)
+			hi := NewHierarchyInference(store, store, config, hierarchyTestAuthority, nil)
 
-			err := addHierarchy(context.Background(), hi, tripleAdder, tt.entityID)
+			err := addHierarchy(context.Background(), hi, store, tt.entityID)
 			require.NoError(t, err)
 
 			if tt.shouldSkip {
 				// Container entities should NOT create any containers or edges
-				assert.Empty(t, entityManager.getCreatedEntities(),
+				assert.Empty(t, store.getCreatedEntities(),
 					"Container entity %q should not create any containers", tt.entityID)
-				assert.Empty(t, tripleAdder.getTriples(),
+				assert.Empty(t, store.getTriples(),
 					"Container entity %q should not create any edges", tt.entityID)
 			} else {
 				// Real entities should create containers and edges
-				assert.NotEmpty(t, entityManager.getCreatedEntities(),
+				assert.NotEmpty(t, store.getCreatedEntities(),
 					"Real entity %q should create containers", tt.entityID)
-				assert.NotEmpty(t, tripleAdder.getTriples(),
+				assert.NotEmpty(t, store.getTriples(),
 					"Real entity %q should create edges", tt.entityID)
 			}
 		})
@@ -213,8 +212,7 @@ func TestHierarchyInference_SkipContainerEntities(t *testing.T) {
 // TestHierarchyInference_NoCascade verifies that creating a real entity
 // results in exactly 3 containers (type, system, domain), not exponential growth.
 func TestHierarchyInference_NoCascade(t *testing.T) {
-	tripleAdder := &hierarchyMockTripleAdder{}
-	entityManager := newMockEntityManager()
+	store := newFakeStore()
 
 	config := HierarchyConfig{
 		Enabled:           true,
@@ -223,15 +221,15 @@ func TestHierarchyInference_NoCascade(t *testing.T) {
 		CreateDomainEdges: true,
 	}
 
-	hi := NewHierarchyInference(entityManager, tripleAdder, config, hierarchyTestAuthority, nil)
+	hi := NewHierarchyInference(store, store, config, hierarchyTestAuthority, nil)
 
 	// Create a real entity
 	entityID := "c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-001"
-	err := addHierarchy(context.Background(), hi, tripleAdder, entityID)
+	err := addHierarchy(context.Background(), hi, store, entityID)
 	require.NoError(t, err)
 
 	// Verify exactly 3 containers created
-	createdEntities := entityManager.getCreatedEntities()
+	createdEntities := store.getCreatedEntities()
 	require.Len(t, createdEntities, 3, "Should create exactly 3 containers, got %d", len(createdEntities))
 
 	// Verify container IDs
@@ -256,7 +254,7 @@ func TestHierarchyInference_NoCascade(t *testing.T) {
 		"Created unexpected containers")
 
 	// Verify 6 edges: 3 forward (member) + 3 inverse (contains)
-	triples := tripleAdder.getTriples()
+	triples := store.getTriples()
 	require.Len(t, triples, 6, "Should create exactly 6 edges (3 forward + 3 inverse), got %d", len(triples))
 
 	// Now simulate what would happen if containers were processed (BUG scenario)
@@ -264,27 +262,26 @@ func TestHierarchyInference_NoCascade(t *testing.T) {
 	typeContainer := "c360.semstreams-hierarchy-test.sensor.environmental.temperature.group"
 
 	// Clear state to test container processing in isolation
-	tripleAdder.mu.Lock()
-	tripleAdder.triples = nil
-	tripleAdder.mu.Unlock()
+	store.mu.Lock()
+	store.triples = nil
+	store.mu.Unlock()
 
 	// Try to process the type container
-	err = addHierarchy(context.Background(), hi, tripleAdder, typeContainer)
+	err = addHierarchy(context.Background(), hi, store, typeContainer)
 	require.NoError(t, err)
 
 	// After fix: container should be skipped, no new entities or triples
-	newCreatedEntities := entityManager.getCreatedEntities()
+	newCreatedEntities := store.getCreatedEntities()
 	assert.Len(t, newCreatedEntities, 3, "Processing container should not create additional entities")
 
-	newTriples := tripleAdder.getTriples()
+	newTriples := store.getTriples()
 	assert.Empty(t, newTriples, "Processing container should not create additional edges")
 }
 
 // TestHierarchyInference_MultipleEntitiesSameType verifies that multiple
 // entities of the same type share containers without cascade.
 func TestHierarchyInference_MultipleEntitiesSameType(t *testing.T) {
-	tripleAdder := &hierarchyMockTripleAdder{}
-	entityManager := newMockEntityManager()
+	store := newFakeStore()
 
 	config := HierarchyConfig{
 		Enabled:           true,
@@ -293,7 +290,7 @@ func TestHierarchyInference_MultipleEntitiesSameType(t *testing.T) {
 		CreateDomainEdges: true,
 	}
 
-	hi := NewHierarchyInference(entityManager, tripleAdder, config, hierarchyTestAuthority, nil)
+	hi := NewHierarchyInference(store, store, config, hierarchyTestAuthority, nil)
 
 	// Create 10 entities of the same type
 	baseID := "c360.semstreams-hierarchy-test.sensor.environmental.temperature"
@@ -302,17 +299,17 @@ func TestHierarchyInference_MultipleEntitiesSameType(t *testing.T) {
 		// canonical entity-ID segment, so the tenth entity was silently
 		// ungrammatical and every count below was one short of its claim.
 		entityID := baseID + ".temp-" + strconv.Itoa(i)
-		err := addHierarchy(context.Background(), hi, tripleAdder, entityID)
+		err := addHierarchy(context.Background(), hi, store, entityID)
 		require.NoError(t, err, "Failed to create entity %q", entityID)
 	}
 
 	// Verify exactly 3 containers created (shared by all entities)
-	createdEntities := entityManager.getCreatedEntities()
+	createdEntities := store.getCreatedEntities()
 	assert.Len(t, createdEntities, 3,
 		"Should create exactly 3 containers regardless of entity count, got %d", len(createdEntities))
 
 	// Verify 60 edges: 10 entities × (3 forward + 3 inverse) = 60
-	triples := tripleAdder.getTriples()
+	triples := store.getTriples()
 	assert.Len(t, triples, 60,
 		"Should create 60 edges (10 entities × 6 edges each), got %d", len(triples))
 
@@ -345,8 +342,7 @@ func TestHierarchyInference_MultipleEntitiesSameType(t *testing.T) {
 // TestHierarchyInference_ContainerEntityWithNonStandardSuffix verifies that
 // entities with non-standard suffixes are processed normally.
 func TestHierarchyInference_ContainerEntityWithNonStandardSuffix(t *testing.T) {
-	tripleAdder := &hierarchyMockTripleAdder{}
-	entityManager := newMockEntityManager()
+	store := newFakeStore()
 
 	config := HierarchyConfig{
 		Enabled:           true,
@@ -355,18 +351,18 @@ func TestHierarchyInference_ContainerEntityWithNonStandardSuffix(t *testing.T) {
 		CreateDomainEdges: false,
 	}
 
-	hi := NewHierarchyInference(entityManager, tripleAdder, config, hierarchyTestAuthority, nil)
+	hi := NewHierarchyInference(store, store, config, hierarchyTestAuthority, nil)
 
 	// Entity that contains "group" but doesn't end with it
 	entityID := "c360.semstreams-hierarchy-test.group.sensor.temperature.temp-001"
-	err := addHierarchy(context.Background(), hi, tripleAdder, entityID)
+	err := addHierarchy(context.Background(), hi, store, entityID)
 	require.NoError(t, err)
 
 	// Should process normally (not skipped as container)
-	createdEntities := entityManager.getCreatedEntities()
+	createdEntities := store.getCreatedEntities()
 	assert.Len(t, createdEntities, 1, "Should create container for non-container entity")
 
-	triples := tripleAdder.getTriples()
+	triples := store.getTriples()
 	assert.Len(t, triples, 2, "Should create edges for non-container entity")
 }
 

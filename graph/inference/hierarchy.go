@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sync"
 	"time"
 
 	gtypes "github.com/c360studio/semengine/graph"
@@ -69,10 +68,6 @@ type HierarchyInference struct {
 
 	// Logger for observability
 	logger *slog.Logger
-
-	// Cache of known container entities to avoid repeated existence checks
-	containerCache   map[string]bool
-	containerCacheMu sync.RWMutex
 }
 
 // EntityManager provides entity existence checks and creation. Production
@@ -133,12 +128,11 @@ func NewHierarchyInference(
 	}
 
 	return &HierarchyInference{
-		entityManager:  entityManager,
-		tripleAdder:    tripleAdder,
-		config:         config,
-		platform:       platform,
-		logger:         logger,
-		containerCache: make(map[string]bool),
+		entityManager: entityManager,
+		tripleAdder:   tripleAdder,
+		config:        config,
+		platform:      platform,
+		logger:        logger,
 	}
 }
 
@@ -379,7 +373,7 @@ func (h *HierarchyInference) createSiblingEdges(ctx context.Context, entityID st
 // Also adds inverse edge to container (container → contains → entity) for bidirectional
 // traversal; a failure of either write is returned.
 func (h *HierarchyInference) ensureContainerAndReturnEdge(ctx context.Context, entityID, containerID, predicate string, at time.Time) (message.Triple, error) {
-	// Ensure container exists (with caching)
+	// Ensure the container exists, asking storage.
 	if err := h.ensureContainerExists(ctx, containerID, at); err != nil {
 		return message.Triple{}, err
 	}
@@ -404,30 +398,17 @@ func (h *HierarchyInference) ensureContainerAndReturnEdge(ctx context.Context, e
 	return forwardTriple, nil
 }
 
-// ensureContainerExists creates a minimal container entity if it doesn't exist,
-// its type statement carrying the triggering time at.
-// Uses an in-memory cache to avoid repeated existence checks.
+// ensureContainerExists creates a minimal container entity if storage does not
+// hold it, its type statement carrying the triggering time at. It keeps no record
+// of which containers exist: each call asks storage, so a container deleted since
+// an earlier birth is created again, and a birth delivered again commits what the
+// first attempt did (#130, design D21).
 func (h *HierarchyInference) ensureContainerExists(ctx context.Context, containerID string, at time.Time) error {
-	// Check cache first
-	h.containerCacheMu.RLock()
-	exists := h.containerCache[containerID]
-	h.containerCacheMu.RUnlock()
-
-	if exists {
-		return nil
-	}
-
-	// Check if container exists in storage
-	existsInStorage, err := h.entityManager.ExistsEntity(ctx, containerID)
+	exists, err := h.entityManager.ExistsEntity(ctx, containerID)
 	if err != nil {
 		return err
 	}
-
-	if existsInStorage {
-		// Update cache and return
-		h.containerCacheMu.Lock()
-		h.containerCache[containerID] = true
-		h.containerCacheMu.Unlock()
+	if exists {
 		return nil
 	}
 
@@ -441,23 +422,15 @@ func (h *HierarchyInference) ensureContainerExists(ctx context.Context, containe
 		},
 	}
 
-	_, err = h.entityManager.CreateEntity(ctx, containerEntity)
-	if err != nil {
-		// Another writer may win the same atomic container birth. That definite
-		// conflict means the desired container exists; no string matching needed.
+	if _, err := h.entityManager.CreateEntity(ctx, containerEntity); err != nil {
+		// Another writer may win the same atomic container birth between the
+		// check above and this create. That definite conflict means the desired
+		// container exists; no string matching needed.
 		if errors.Is(err, natsclient.ErrKVKeyExists) {
-			h.containerCacheMu.Lock()
-			h.containerCache[containerID] = true
-			h.containerCacheMu.Unlock()
 			return nil
 		}
 		return err
 	}
-
-	// Update cache
-	h.containerCacheMu.Lock()
-	h.containerCache[containerID] = true
-	h.containerCacheMu.Unlock()
 
 	h.logger.Debug("Created hierarchy container entity",
 		"container_id", containerID)

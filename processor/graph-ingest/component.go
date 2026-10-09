@@ -2163,7 +2163,12 @@ func (c *Component) deleteEntityAtRevision(ctx context.Context, entityID string,
 		return errors.New("ENTITY_STATES authority bucket unavailable")
 	}
 	if err := c.deleteEntity(ctx, entityID, revision); err != nil {
-		atomic.AddInt64(&c.errors, 1)
+		// A revision mismatch is the fence refusing the caller's revision: the caller's
+		// outcome, as on the reconcile lane and CreateEntity's key-exists, not a processing
+		// error that keeps Health down until restart.
+		if !errors.Is(err, natsclient.ErrKVRevisionMismatch) {
+			atomic.AddInt64(&c.errors, 1)
+		}
 		return err
 	}
 	atomic.AddInt64(&c.messagesProcessed, 1)

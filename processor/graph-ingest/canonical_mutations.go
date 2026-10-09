@@ -471,14 +471,19 @@ func (c *Component) handleCanonicalDelete(ctx context.Context, data []byte) ([]b
 		return nil, rejectInvalid(graph.ErrorCodeInvalidRequest, errors.New("expected_revision must be nonzero"))
 	}
 	_, currentRevision, err := c.readEntity(ctx, request.EntityID)
-	if err != nil {
-		if natsclient.IsKVNotFoundError(err) {
-			return nil, rejectInvalidDetail(graph.ErrorCodeEntityNotFound,
-				map[string]any{"entity": request.EntityID}, fmt.Errorf("entity not found: %s", request.EntityID))
-		}
+	var stateErr *graph.StateContractError
+	switch {
+	case errors.As(err, &stateErr):
+		// A delete is not refused for its stored value (ruled O, #91 comment
+		// 6080973822; design D15): readEntity has recorded the refusal, and the
+		// delete below runs at the caller's expected revision, the bucket's
+		// revision check being the fence. This is the repair the poison advice names.
+	case natsclient.IsKVNotFoundError(err):
+		return nil, rejectInvalidDetail(graph.ErrorCodeEntityNotFound,
+			map[string]any{"entity": request.EntityID}, fmt.Errorf("entity not found: %s", request.EntityID))
+	case err != nil:
 		return nil, rejectFromError(err)
-	}
-	if currentRevision != request.ExpectedRevision {
+	case currentRevision != request.ExpectedRevision:
 		return nil, rejectRevisionMismatch(
 			map[string]any{"entity": request.EntityID, "expected_revision": request.ExpectedRevision, "current_revision": currentRevision},
 			fmt.Errorf("revision mismatch: expected %d, current %d", request.ExpectedRevision, currentRevision))

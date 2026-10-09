@@ -14,6 +14,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/c360studio/semengine/internal/cache"
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/pkg/errs"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
@@ -52,13 +54,27 @@ func queryEntity(t *testing.T, c *Component, id string) ([]byte, error) {
 	return c.handleQueryEntityNATS(context.Background(), []byte(`{"id":"`+id+`"}`))
 }
 
+// storedEntry reads what the mock bucket holds under id.
+func storedEntry(bucket *mockKVBucket, id string) (mockKVData, bool) {
+	bucket.mu.Lock()
+	defer bucket.mu.Unlock()
+	entry, ok := bucket.data[id]
+	return entry, ok
+}
+
 // TestPoisonRepairRecoveryWithoutRestart drives the spec scenario "operator
-// repair recovers Health without restart": delete clears the inventory, the
-// gauge reads zero, Health recovers, and a fresh canonical create serves.
+// repair recovers Health without restart" through the wire handlers (ruled O,
+// #91 comment 6080973822; design D15, delete): a delete at an older revision is
+// refused as a revision mismatch and keeps the value; the delete at the stored
+// revision removes it, clears the inventory, the gauge reads zero, Health
+// recovers, and a canonical create births the entity again.
 func TestPoisonRepairRecoveryWithoutRestart(t *testing.T) {
-	const id = "acme.ops.test.system.widget.repair"
+	const (
+		id       = "acme.ops.test.system.widget.repair"
+		revision = uint64(3)
+	)
 	c, bucket := poisonScopingTestComponent(t)
-	seedPoisonBytes(bucket, id, 1)
+	seedPoisonBytes(bucket, id, revision)
 
 	// First touch detects, inventories, degrades Health.
 	data, err := queryEntity(t, c, id)
@@ -71,20 +87,31 @@ func TestPoisonRepairRecoveryWithoutRestart(t *testing.T) {
 	assert.False(t, health.Healthy)
 	assert.Equal(t, graph.IndexStateDegraded, health.Status)
 
-	// Canonical wire repair step 1: delete.
-	require.NoError(t, c.deleteEntityAtRevision(context.Background(), id, 1))
+	// Canonical wire repair step 1: delete. The revision is the fence, so an older one is refused.
+	_, err = c.handleCanonicalDelete(t.Context(), mustCanonicalJSON(t, graph.DeleteEntityRequest{
+		EntityID: id, ExpectedRevision: revision - 1,
+	}))
+	assertCanonicalCode(t, err, graph.ErrorCodeRevisionMismatch)
+	_, kept := storedEntry(bucket, id)
+	require.True(t, kept, "a refused delete must keep the value")
+
+	data, err = c.handleCanonicalDelete(t.Context(), mustCanonicalJSON(t, graph.DeleteEntityRequest{
+		EntityID: id, ExpectedRevision: revision,
+	}))
+	require.NoError(t, err, "a delete at the stored revision must not be refused for the stored value")
+	var deleted graph.DeleteEntityResponse
+	require.NoError(t, json.Unmarshal(data, &deleted))
+	assert.Equal(t, graph.DeleteEntityResponse{EntityID: id, Outcome: graph.MutationApplied, ExpectedRevision: revision}, deleted)
+	_, kept = storedEntry(bucket, id)
+	assert.False(t, kept, "the delete must remove the key")
 	_, inventoried = poisonInventoryEntry(c, id)
 	assert.False(t, inventoried, "delete must clear the inventory entry (D3a)")
 	assert.Equal(t, float64(0), testutil.ToFloat64(c.poisonedEntities))
 	health = c.Health()
 	assert.True(t, health.Healthy, "Health must recover without restart: %+v", health)
 
-	// Canonical wire repair step 2: fresh create serves.
-	require.NoError(t, c.CreateEntity(context.Background(), &graph.EntityState{
-		ID:          id,
-		MessageType: testEntityType(),
-		Triples:     withTestMetadata(message.Triple{Subject: id, Predicate: "test.state.value", Object: "fresh", Timestamp: time.Now(), Confidence: 1.0}),
-	}))
+	// Canonical wire repair step 2: a canonical create births the entity, and it serves.
+	createCanonicalEntity(t, c, id, []message.Triple{canonicalTriple(id, "test.state.value", "fresh")})
 	data, err = queryEntity(t, c, id)
 	require.NoError(t, err, "fresh create after repair must serve")
 	assert.Contains(t, string(data), id)
@@ -323,11 +350,33 @@ func TestMutationReadSeamsReturnTypedFatal(t *testing.T) {
 	})
 }
 
-// TestEveryEntityReadRefusesTheSameStoredPoison holds one read rule on the five
-// sites that read one authority value (#139 B): the entity verb, batch, prefix,
-// reconcile and delete. A stored value whose entity ID is not its key, and an
-// empty value, are graph-state poison to every one of them: refused, inventoried
-// at the revision read, never served, cached, reported absent or deleted.
+// storedPoisonCase is a stored value every validated read refuses as graph state.
+type storedPoisonCase struct {
+	name   string
+	value  []byte
+	reason graph.StateResetReason
+}
+
+// storedPoison lists the refused values beside guardTestPoisonBytes' noncanonical
+// predicate: a value whose entity ID is not its key, and an empty value.
+func storedPoison() []storedPoisonCase {
+	return []storedPoisonCase{
+		{
+			name:   "entity ID is not its key",
+			value:  guardTestValidBytes("acme.ops.test.system.widget.other-id"),
+			reason: graph.GraphStateReasonNoncanonicalEntityID,
+		},
+		{name: "empty value", value: []byte{}, reason: graph.GraphStateReasonUnreadableEntity},
+	}
+}
+
+// TestEveryEntityReadRefusesTheSameStoredPoison holds one read rule on the four
+// sites that read one authority value and answer with it (#139 B): the entity
+// verb, batch, prefix and reconcile. A stored value whose entity ID is not its
+// key, and an empty value, are graph-state poison to every one of them: refused,
+// inventoried at the revision read, never served, cached, reported absent or
+// deleted. The delete reads the same way but is not refused for the value
+// (TestCanonicalDeleteRemovesAValueTheReadRefuses).
 func TestEveryEntityReadRefusesTheSameStoredPoison(t *testing.T) {
 	const (
 		key      = "acme.ops.test.system.widget.read-key"
@@ -339,23 +388,9 @@ func TestEveryEntityReadRefusesTheSameStoredPoison(t *testing.T) {
 		Predicates: []string{triple.Predicate}, Desired: []message.Triple{triple},
 	})
 	require.NoError(t, err)
-	deleteRequest, err := json.Marshal(graph.DeleteEntityRequest{EntityID: key, ExpectedRevision: revision})
-	require.NoError(t, err)
 	prefixRequest, err := json.Marshal(graph.PrefixQueryRequest{Prefix: "acme.ops.test.system.widget"})
 	require.NoError(t, err)
 
-	stored := []struct {
-		name   string
-		value  []byte
-		reason graph.StateResetReason
-	}{
-		{
-			name:   "entity ID is not its key",
-			value:  guardTestValidBytes("acme.ops.test.system.widget.other-id"),
-			reason: graph.GraphStateReasonNoncanonicalEntityID,
-		},
-		{name: "empty value", value: []byte{}, reason: graph.GraphStateReasonUnreadableEntity},
-	}
 	reads := []struct {
 		name string
 		read func(context.Context, *Component) ([]byte, error)
@@ -372,12 +407,9 @@ func TestEveryEntityReadRefusesTheSameStoredPoison(t *testing.T) {
 		{"reconcile", func(ctx context.Context, c *Component) ([]byte, error) {
 			return c.handleCanonicalReconcile(ctx, reconcileRequest)
 		}},
-		{"delete", func(ctx context.Context, c *Component) ([]byte, error) {
-			return c.handleCanonicalDelete(ctx, deleteRequest)
-		}},
 	}
 
-	for _, value := range stored {
+	for _, value := range storedPoison() {
 		for _, site := range reads {
 			t.Run(value.name+"/"+site.name, func(t *testing.T) {
 				c, bucket := poisonScopingTestComponent(t)
@@ -411,6 +443,61 @@ func TestEveryEntityReadRefusesTheSameStoredPoison(t *testing.T) {
 			})
 		}
 	}
+}
+
+// TestCanonicalDeleteRemovesAValueTheReadRefuses: a delete is not refused for its
+// stored value (ruled O, #91 comment 6080973822; design D15, delete). Its read
+// still refuses the value and records it at the revision read; the delete then
+// runs at the caller's expected revision, the bucket's revision check being the
+// fence: an older revision is refused as a mismatch and keeps the value, the
+// stored one removes it. A read that fails for any other reason is answered as
+// before and deletes nothing.
+func TestCanonicalDeleteRemovesAValueTheReadRefuses(t *testing.T) {
+	const (
+		key      = "acme.ops.test.system.widget.delete-key"
+		revision = uint64(7)
+	)
+	deleteAt := func(t *testing.T, c *Component, expected uint64) error {
+		t.Helper()
+		_, err := c.handleCanonicalDelete(t.Context(), mustCanonicalJSON(t, graph.DeleteEntityRequest{
+			EntityID: key, ExpectedRevision: expected,
+		}))
+		return err
+	}
+
+	for _, value := range storedPoison() {
+		t.Run(value.name, func(t *testing.T) {
+			c, bucket := poisonScopingTestComponent(t)
+			bucket.data[key] = mockKVData{value: value.value, revision: revision}
+
+			assertCanonicalCode(t, deleteAt(t, c, revision-1), graph.ErrorCodeRevisionMismatch)
+			_, kept := storedEntry(bucket, key)
+			require.True(t, kept, "a delete at an older revision must keep the value")
+			record, inventoried := poisonInventoryEntry(c, key)
+			require.True(t, inventoried, "the delete's read must record the refusal")
+			assert.Equal(t, value.reason, record.contractErr.Reason)
+			assert.Equal(t, revision, record.revision, "recorded at the revision read")
+
+			require.NoError(t, deleteAt(t, c, revision))
+			_, kept = storedEntry(bucket, key)
+			assert.False(t, kept, "a delete at the stored revision must remove the value")
+		})
+	}
+
+	t.Run("a read that fails for another reason", func(t *testing.T) {
+		c, bucket := poisonScopingTestComponent(t)
+		bucket.getFunc = func(context.Context, string) (jetstream.KeyValueEntry, error) {
+			return nil, errors.New("bucket unavailable")
+		}
+		var deletes atomic.Int32
+		bucket.deleteFunc = func(context.Context, string, ...jetstream.KVDeleteOpt) error {
+			deletes.Add(1)
+			return nil
+		}
+
+		assertCanonicalCode(t, deleteAt(t, c, revision), graph.ErrorCodeInternal)
+		assert.Zero(t, deletes.Load(), "a read that failed for another reason must not reach the delete")
+	})
 }
 
 // TestProcessIngestResidentPoisonNakThenAppliesAfterRepair drives the spec

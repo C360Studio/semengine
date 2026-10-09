@@ -363,9 +363,14 @@ posted on this pull request.
       older and newer cases, failing first on `8f8f8c8`. A profile-only arrival on a profiled entity declines whatever
       its age, since the immutable profile is dropped before the replace and nothing of the arrival can apply; a newer
       one no longer updates `MessageType` or `StorageRef`. Notes and the mutation record: PR #93 comment 6081549343.
-- [ ] 3.12f (D) #149: the revision fences on canonical reconcile and delete get tests that can fail: a write injected
+- [x] 3.12f (D) #149: the revision fences on canonical reconcile and delete get tests that can fail: a write injected
       between the handler's read and its write, and the unit bucket's `Delete` checking `LastRevision`; a
       `task mutate:check` record for each fence (the fenced update as a `Put`, `DeleteAtRevision` as `Delete`).
+      Done in `8fb4408`: `TestCanonicalReconcileFenceHoldsAgainstAWriteAfterItsRead` and
+      `TestCanonicalDeleteFenceHoldsAgainstAWriteAfterItsRead`; each mutant a detection by the new test and a survivor
+      of the old one; no production change, both fences hold. CI on `8fb4408` (run 37936839601) failed on the known
+      flake #144 alone; CI on `f4364bc`, which carries it, is green (run 37939020158). Notes: PR #93 comment
+      6081968133.
 - [ ] 3.12g (D) #151 and #152: `graph.NewExactEntityReader` refuses a negative timeout at construction (zero keeps
       meaning the default, D16); `lifecycle.Manager.CreateFromOperator` refuses a second JSON value after the first,
       as `types/component.go` does since task 3.1; a test for each, written first.

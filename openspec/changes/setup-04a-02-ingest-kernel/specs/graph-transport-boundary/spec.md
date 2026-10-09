@@ -44,20 +44,16 @@ such a path.
 - **WHEN** a file of the `graph` package imports a package that imports `natsclient`
 - **THEN** the contract test fails naming the path it found
 
-### Requirement: One reply envelope for the graph query family
+### Requirement: Authority reads are not enveloped
 
-A reply on the `graph.query.*` family SHALL be `graph.QueryResponse`, whose JSON carries `data`, `indexed_revision`
-(the entity-bucket revision the answer reflects), `producer` (the responding component instance) and `timestamp`;
-building one SHALL require the producer and the revision. A request on that family MAY carry `min_revision`,
-declared once in `graph`. The module SHALL provide no function that decides from a reply's content whether it is
-enveloped. Replies on `graph.ingest.query.*` are authority reads and are not enveloped; the entity verb's reply
-carries the key-value revision it read.
+Replies on `graph.ingest.query.*` are authority reads and SHALL NOT be enveloped: the entity verb's reply SHALL carry
+the key-value revision it read. The module SHALL provide no function that decides from a reply's content whether it
+is enveloped.
 
-#### Scenario: Envelope fields
+#### Scenario: An entity read carries its revision
 
-- **WHEN** a response is built for producer P at revision R and encoded
-- **THEN** its JSON has `data`, `indexed_revision` equal to R, `producer` equal to P and `timestamp`, and it decodes
-  back equal
+- **WHEN** the entity verb's reply for entity E is a bare `graph.ExactEntity` with revision R
+- **THEN** the reader returns E and revision R
 
 ### Requirement: The readiness envelope carries its publish time and no legacy fields
 

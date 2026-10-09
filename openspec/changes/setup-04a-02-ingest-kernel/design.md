@@ -104,7 +104,7 @@ otherwise `pkg/<name>` moves to `internal/<name>`.
 | 0 | `storage` | `storage` | consumers import it (20) | carry |
 | 1 | `pkg/worker` | — | no reader once `BoundedDispatcher` goes (§2) | not ported (ruling E); `defer-exclude` row |
 | 1 | `graph` | `graph`, with its catalog moved to `graph/kvcatalog` and its readiness computation to `graph/readiness` (D16) | consumers import it (72 + 11) | adapt (D3, D6, D9, D15, D16, D18, D20) |
-| 2 | `graph/readiness` | `graph/readiness` | consumers import it (2) | adapt (D4, D5, D6, D16) |
+| 2 | `graph/readiness` | `graph/readiness` | consumers import it (2) | adapt (D4, D6, D16; the consumer half returns with changes 4 and 5, ruled P) |
 | 2 | `graph/structural` | — | its readers are the detectors and graph-clustering, both in change 7 (D1a, P-11) | not ported in change 2; `defer-exclude` row naming change 7 |
 | 2 | `internal/componentadmission` | — | its only reader is the token parameter ruling C removes (D14) | not ported (ruling C); `defer-exclude` row |
 | 2 | `internal/graphmutation` | `internal/graphmutation` | internal at the pin | adapt (D6, D9) |
@@ -134,8 +134,8 @@ issue #24 waits for them (foundation (d)), and #19 and #20 are proven through `p
 `ReviewWorker`, `http_handlers.go`, `NATSRelationshipApplier` and `ReviewConfig.LLM` do not port in change 2; the
 ledger row records the slice; this design re-measures foundation D8's dormant carriage.
 
-**The slice** (P-10, inventory §9.1): `hierarchy.go`, `container_entity.go`, and from `applier.go` only the three-line
-`TripleAdder` interface that `hierarchy.go` names (`applier.go:137-141`). The pin's `doc.go` describes anomaly
+**The slice** (P-10, inventory §9.1) is `hierarchy.go` and `container_entity.go`; nothing of `applier.go` ports (ruled
+M, #91 comment 6080973822; #145). The pin's `doc.go` describes anomaly
 detection, review and storage, which stay behind, so the slice gets a package comment that describes what it holds.
 Its tests are the three `hierarchy_*_test.go` files. At the pin the slice builds alone and its tests pass under the
 race detector and five shuffled runs. Its dead surface goes (D6): `DefaultHierarchyConfig`, `OnEntityCreated`,
@@ -215,10 +215,11 @@ one tracking issue (task 6.3). The establishing change converts only its own fiv
 ### D4. Metrics: one collector per key, `semengine`, no global registry
 
 Every live registration moves to `metric.RegisterOrGet` and uses the collector it returns (the AGENTS.md rule; ledger
-`metric` row). Live sites: `graph/readiness/gauges.go:149-157` (7), `KeyedPool`'s seven (`keyed_pool.go:488-494`; six
-remain once `dispatch_dropped_total` leaves with `Submit`, D6), graph-ingest (`component.go` 12,
-`poison_inventory.go` 1). The dead ones go with their surface (D6): `component/metrics.go` (4);
-`graph/inference/metrics.go` (7) and `pkg/worker/pool.go:133-139` (7) are not ported (#97, ruling E).
+`metric` row). Live sites: `graph/readiness/gauges.go:149-157` (7 at the port; 5 once the revision gauges go, ruled P),
+`KeyedPool`'s seven (`keyed_pool.go:488-494`; six remain once `dispatch_dropped_total` leaves with `Submit`, D6),
+graph-ingest (`component.go` 12, `poison_inventory.go` 1). The dead ones go with their surface (D6):
+`component/metrics.go` (4); `graph/inference/metrics.go` (7) and `pkg/worker/pool.go:133-139` (7) are not ported (#97,
+ruling E).
 
 What a caller observes:
 
@@ -245,11 +246,11 @@ audit drops (D6) needs no shape. Per remaining helper, what the caller observes,
 | Helper | Pin | After the port | What the caller observes |
 | --- | --- | --- | --- |
 | `dispatch.KeyedPool` | `Stop(ctx)` | `Shutdown(ctx)` | returns nil once every lane has drained and exited, or `ctx.Err()` first; with no deadline it waits for the join; a later `Shutdown` returns nil; `SubmitBlocking` after `Shutdown` began is refused with `ErrStopped`, which `internal/dispatch` now declares itself (ruling E; at the pin it re-exported `worker.ErrPoolStopped`, `pkg/dispatch/errors.go:24`) |
-| `readiness.Watcher` | `Start(ctx)`, `Stop()` waiting unbounded on a goroutine doing KV watch I/O | `Run(ctx)` | the caller runs `Run` on its own goroutine; `Run` returns `ctx.Err()` when the context ends and leaves nothing running; `Read` keeps its pin behavior, except that an undecodable value revokes the held envelope's freshness at once and the next decoded update restores it (checkpoint-2 review, PR #93 comment 6048386249) |
 | `lifecycle.Manager.Watch`, `.WatchEvents` | return a channel; the goroutine ends when ctx ends and is never joined | a watch whose callback runs on the caller's goroutine; returning is the join | no goroutine left after return |
 
 Dropped, so no shape: `dispatch.BoundedDispatcher` (and with it its fixed 30 s default wait, `dispatcher.go:226-231`)
-and `readiness.Set` (D6); `worker.Pool[T]`, whose second `Stop` after a timed-out one panics at the pin (P-6), is not
+and `readiness.Set` (D6); the readiness `Watcher` is not carried (ruled P, D6) and takes `Run(ctx)` when it returns with
+change 5; `worker.Pool[T]`, whose second `Stop` after a timed-out one panics at the pin (P-6), is not
 ported (ruling E). Not ported in change 2, so their shape is change 7's: `inference.ReviewWorker` and
 `inference.NATSAnomalyStorage.Watch` (#97, D1a). `lifecycle.Manager.Watch` and `WatchEvents` have **no
 reader in the admitted set** (§2: `Watch` is read only by `processor/gated-dag/executor.go:119` and
@@ -260,8 +261,8 @@ cannot project now ends the watch with an error naming the entity and revision, 
 `167aec4`).
 
 The developer chooses locks and join order, settled by a failing-first test under `-race`. A nil context is refused at
-the call (an error). Callers inside this change adapt in the same commit (graph-ingest's `KeyedPool` and readiness
-use). Callers in later changes are the `class:port-refactor` rows foundation (h) placed (changes 5 and 7: the
+the call (an error). Callers inside this change adapt in the same commit (graph-ingest's `KeyedPool` use). Callers in
+later changes are the `class:port-refactor` rows foundation (h) placed (changes 5 and 7: the
 readiness watcher's start at `processor/graph-clustering/component.go:1512` and `:1527` and stop at `:1260` and
 `:1266`; `fusionnats/client.go:140` (start) and `:103` (stop)). The review worker's start and stop
 (`processor/graph-clustering/component.go:2450`, `:1232`) adapt with the review worker itself in change 7.
@@ -274,7 +275,13 @@ reads is removed (#9 comment 5968830525).
 - **Not ported by ruling:** `pkg/worker` whole (ruling E), and with it its appendix rows
   (`worker.WithMetricsRegistry`, `Pool.SubmitBlocking`); `internal/componentadmission` whole (ruling C, D14);
   `graph/inference` outside its hierarchy slice (#97, D1a), whose 21 appendix rows are audited again in change 7;
-  `graph/llm`, `model/wire` and `graph/structural` (D1a), the last with its six appendix rows.
+  `graph/llm`, `model/wire` and `graph/structural` (D1a), the last with its six appendix rows. By ruling P (#91 comment
+  6080973822), surface that returns with its first reader instead of being carried: `graph/readiness`'s consumer half,
+  that is, the `Watcher` with `Reading`, `BucketSource`, `Option`, `WithHeartbeat`, `WithLogger`, `FreshnessWindow` and
+  `FreshnessMultiplier`; the gate with `StatusReading`, `DeferReason` and `AllDeferReasons`; `ComputeIndexStatus` with
+  `IndexStatusInputs`; and `WithRevisionGauges` with `GaugeOption`. Also `graph`'s `QueryResponse`, `NewQueryResponse`
+  and `MinRevisionField`, with the three aliases of `query_response_types.go` (D16, D18). The data types those aliases
+  wrap stay, because graph-index reads them at the pin (`processor/graph-index/query.go:141`, `:326`, `:356`).
 - **Dropped (the rest of the 134 plus the transitive drops of §2):** among them `component.NewProcessorMetrics` and
   `ProcessorMetrics`; the 20 `graph/errors.go` sentinels;
   `graph.IncomingEdges` and its methods;
@@ -549,8 +556,9 @@ Recommendation **(d)**, as a `harness-boundaries` modification with a sensitivit
   here; it stays on 03B D10's critical list and becomes a target in change 7. Per
   package, from P-7, P-8 and P-19 (inventory §9.10):
   - Already over the floor after the drop: graph-ingest 84.7% (its suffix code removed, D19), `graph` 80.9% (the root
-    after D16; a two-statement margin), `graph/kvcatalog` 80.3% merged, `graph/readiness` 86.4% (with the readiness
-    computation D16 moves into it), `graph/inference` 82.8% (the slice), `storage/storeregistry` 100%.
+    after D16; a two-statement margin), `graph/kvcatalog` 80.3% merged, `graph/readiness` 84.6% unit (55 of 65
+    statements once ruling P's removal lands, with task 3.12k's two added tests; 78.5% without them), `graph/inference`
+    82.8% (the slice), `storage/storeregistry` 100%.
   - `internal/graphmutation` 69.7%, 10 statements short: tests that the client refuses a malformed append response
     (`validateAppendResponse`) and that `Reconcile` and `Delete` send their requests and read their replies.
   - `pkg/projection` 66.5%, 31 short (its unread surface is kept, K1, so the drop buys nothing): the typed client's
@@ -698,8 +706,12 @@ replace rule (the developer chooses the name).
 | create | mutation create; in-process create (hierarchy containers); the stream lane when the entity is absent | none: the entity is new | the bucket's create; an existing key is refused (`entity_already_exists` on the mutation lane; the stream lane retries as a replace) |
 | replace | the stream lane, for each (predicate, source) set the arrival carries once its statements are stamped (below) | (subject, predicate, source): the stored statements of the predicate from that source are replaced whole; the predicate's statements from other sources stay | the KV revision (compare-and-set); `Timestamp` orders it, per set (below) |
 | conditional replace | mutation reconcile, for the predicates the request names, from the request's one source (an empty set clears that source's statements of them) | (subject, predicate, source), as replace | the caller's expected revision; `Timestamp` does not order it, because the caller saw the state at that revision (ruling C) |
-| append | mutation append; in-process append (hierarchy's inverse edges) | `message.AppendIdentityKey`: subject, predicate, datatype, source, context, object | the KV revision; a statement whose identity is stored is not added again |
+| append | mutation append | `message.AppendIdentityKey`: subject, predicate, datatype, source, context, object | the KV revision; a statement whose identity is stored is not added again |
 | delete | mutation delete | none | the caller's expected revision |
+
+A delete is not refused because of its stored value: any stored value the write path refuses is deleted at the caller's
+expected revision, and the revision check is the fence (ruled O, #91 comment 6080973822; #148). This is the repair the
+operator messages name: delete the entity, then create it. Test: task 3.12i's, through the wire handler.
 
 "Unchanged", the conditional replace's no-op answer, is equality of every field of the stored statements of its
 predicates from its source, `Confidence`, `Timestamp` and `ExpiresAt` included; it is a test of equal values, used by
@@ -811,8 +823,8 @@ re-decided only on a named consumer need with its own design. The boot sweep's a
 marked as holding the pin's behavior; spec home `graph-entity-writes`, plus `projection-mutation` for the client):
 
 - `TestWriteModesAgreeAcrossLanes`: one predicate written through each lane that uses a mode leaves the same stored
-  statements (append through the mutation and in-process lanes; birth through all three; replace and conditional
-  replace leave the same set for the same incoming statements from one source).
+  statements (birth through all three; replace and conditional replace leave the same set for the same incoming
+  statements from one source; append has one lane, the mutation request, since ruling M removed the in-process append).
 - `TestReplaceKeepsOtherSourcesStatements`: append P from source A, then a stream arrival with P from source B: P holds
   both; a second arrival with P from source B replaces only B's statement. Fails on the pin, where the arrival removes
   A's.
@@ -887,11 +899,11 @@ At the pin the root carries six jobs (P-14, §9.5) and four of its files import 
 - **The root (`graph`)** holds the data model (`EntityState`, `Graphable`, the write-mode rules of D15, entity-ID
   prefixes, the state-contract encode and decode, the predicate codec, the bucket-name constants, `StateContractError`
   and its classifiers) and the wire types (the query request and reply types, the mutation requests and responses,
-  `ExactEntity`, the GRAPH_STATUS envelope `IndexStatusResponse` with its `IndexState*` constants, the reply envelope
-  of D18, and the verb table of D20). It imports no NATS package: `ExactEntityReader` keeps its narrow requester
-  interface and passes a zero timeout through, so the request's own default applies (SemEngine's `natsclient`
-  documents "If timeout is 0, DefaultRequestTimeout is used", `natsclient/request.go:177`); the pin's only use of
-  `natsclient` in that file was that default.
+  `ExactEntity`, the GRAPH_STATUS envelope `IndexStatusResponse` with its `IndexState*` constants, and the verb table of
+  D20; D18's reply envelope is decided here and arrives with change 4, ruled P). It imports no NATS package:
+  `ExactEntityReader` keeps its narrow requester interface and passes a zero timeout through, so the request's own
+  default applies (SemEngine's `natsclient` documents "If timeout is 0, DefaultRequestTimeout is used",
+  `natsclient/request.go:177`); the pin's only use of `natsclient` in that file was that default.
 - **`graph/kvcatalog`** (new) holds the bucket catalog and its acquisition (`kvcatalog.go`), the retention check
   (`owned_bucket_retention.go`) and `IsKVTombstone`, the one `jetstream` use in `state_contract.go`. Options: (a)
   **a sub-package** (recommended): the catalog keeps its names in `graph` and its NATS edge out of the root; (b) move
@@ -904,19 +916,26 @@ At the pin the root carries six jobs (P-14, §9.5) and four of its files import 
   `config.Manager` (change 3) (§9.5). They stay: the surface audit keeps what an admitted package reads (#9 comment
   5968830525), and the catalog is the one home their owners would otherwise re-add them to. #101 is a port-refactor
   issue, not a ruling, so this is not an owner question; the reviewer may weigh it.
-- **`graph/readiness`** receives the readiness computation: `readiness_gate.go` whole (`EvaluateReadinessGate`,
-  `StatusReading`, `DeferReason`) and `index_status.go`'s computation (`ComputeIndexStatus`, `IndexStatusInputs`,
-  `ComputeBacklogStatus`, `BacklogStatusInputs`), with their tests. The wire type stays in the root, so a reader of
-  GRAPH_STATUS needs no NATS import.
+- **`graph/readiness`** receives the producer half of the readiness computation: `ComputeBacklogStatus` and
+  `BacklogStatusInputs` from `index_status.go`, with their tests, beside the publisher and the gauges graph-ingest
+  writes through. The wire type stays in the root, so a reader of GRAPH_STATUS needs no NATS import. The consumer half
+  has no reader in this change and is not carried (ruled P, #91 comment 6080973822; D6); each piece returns with its
+  first reader. The gate, `ComputeIndexStatus` and `WithRevisionGauges` return with graph-index in change 4 (pin
+  `processor/graph-index/query.go:237`, `watermark.go:93`, `metrics.go:97`). The `Watcher` returns with
+  `pkg/fusion/fusionnats` in change 5 (pin `client.go:139`). Removal settles #135 items 1, 2, (a)–(d) and (g) here
+  (ruled P). The returning change fixes (b), that `ComputeIndexStatus` never sets `BootstrapComplete`, rather than carry
+  it (#9 comment 5968830525, rule 4). The `graph/readiness` row's `known_risks` names each piece, its change, and the
+  last commit that holds the adapted code.
 - **The readiness envelope (#110's change-2 part; ruled F, #91 comment 6037287957).** `IndexStatusResponse` ports
   without `Phase`, `Revision` and `LastSynced` (`graph/index_status.go:134-138`), and gains `published_at`. P-20
   (§9.15): `Revision` is `IndexedRevision` as a string (`index_status.go:249-251`) and `LastSynced` the last apply time
-  (`processor/graph-ingest/readiness.go:309-321`); `Phase` is never set. With them go `IndexStatusInputs.LastSynced` and
-  `BacklogStatusInputs.LastSynced`, graph-ingest's `lastSyncedRFC3339` and its test (`readiness_test.go:172-183`);
-  `lastAppliedAt` stays, since the staleness computation reads it (`oldestOutstandingAt`, `readiness.go:295-307`).
-  `published_at` is set by `graph/readiness.Publisher.Publish` (`graph/readiness/publisher.go:90-107`) on every write,
-  whatever the caller passed, so no producer can leave it out: UTC, RFC 3339 with nanoseconds, from the wall clock. The
-  clock is right here: the field states when the producer wrote, not when anything in the graph was asserted, so #98's
+  (`processor/graph-ingest/readiness.go:309-321`); `Phase` is never set. With them go `BacklogStatusInputs.LastSynced`
+  (`IndexStatusInputs` is not carried, ruled P), graph-ingest's `lastSyncedRFC3339` and its test
+  (`readiness_test.go:172-183`); `lastAppliedAt` stays, since the staleness computation reads it (`oldestOutstandingAt`,
+  `readiness.go:295-307`). `published_at` is set by `graph/readiness.Publisher.Publish`
+  (`graph/readiness/publisher.go:90-107`) on every write, whatever the caller passed, so no producer can leave it out:
+  UTC, RFC 3339 with nanoseconds, from the wall clock. The clock is right here: the field states when the producer
+  wrote, not when anything in the graph was asserted, so #98's
   rule does not apply. What a reader does with it (stale to unknown in the gate, #110's fix shape) is change 7's; this
   change ships the field. The doc comment's "the two structs change together" with `pkg/fusion.IndexStatus` becomes a
   `class:port-refactor` note on the `pkg/fusion` row (change 5, #110). Consumer: semsource decodes `GRAPH_STATUS` into
@@ -996,11 +1015,18 @@ key set whether a reply is enveloped (P-15, §9.6).
 
 **Decision.**
 
+The shape below is decided here, as #103 asks; its code is not carried in this change (ruled P, #91 comment 6080973822;
+D6). `QueryResponse`, `NewQueryResponse` and `MinRevisionField` have no producer, embedder or reader in change 2. They
+return with their first readers, graph-index and graph-query in change 4 (pin `processor/graph-index/query.go`,
+`name_index.go`; `processor/graph-query/summary.go`), and that change carries the type, its constructor, the request
+field and their tests. The three aliases of `query_response_types.go` go with `QueryResponse`. The data types they wrap
+stay (D6). The `graph` row's `known_risks` and graph-query's `class:port-refactor` note name them.
+
 - Every reply on the `graph.query.*` family is one envelope, `graph.QueryResponse[T]`: `data`, `indexed_revision`
   (the `ENTITY_STATES` revision the answer reflects), `producer` (the responding component instance) and
   `timestamp`. Building one requires the producer and the revision: the constructor refuses an empty producer.
 - A request on that family may carry `min_revision`, one field declared once in `graph` that request types embed. Change
-  2 declares it and embeds it in no type: the request types ported here (`PrefixQueryRequest`, the batch request) serve
+  4 declares it with its first embedder; the request types ported here (`PrefixQueryRequest`, the batch request) serve
   `graph.ingest.query.*`, which is off the envelope, and the `graph.query.*` request types arrive with graph-query in
   change 4. A producer whose indexed revision is below it answers with the classified `index_not_ready`
   (`graph/mutation_responses.go:79`) or after a bounded wait; that producer behavior is change 4's to specify and prove.
@@ -1014,14 +1040,20 @@ key set whether a reply is enveloped (P-15, §9.6).
   `graph.query.*` (change 4).
 
 **Options considered.** (a) The envelope on both families now: graph-ingest has no indexed revision to report, and
-an authority read needs none; (b) the decision above (recommended); (c) defer the whole decision to change 4: #103
-asks for it now.
+an authority read needs none; (b) the decision above (recommended); (c) defer the whole decision to change 4: #103 asks
+for it now; (d) the decision with its code now: ruled out by P, since the code has no reader in this change.
 
-**What a caller observes, and the test.** `TestQueryResponseCarriesIndexedRevisionAndProducer`: a response built for a
-producer at a revision encodes `data`, `indexed_revision`, `producer` and `timestamp`, and decodes back equal; written
-first, failing on the pin's type. The absence of `UnwrapQueryResponse` is a compile fact. Consumers: semconnect decodes
-`graph.QueryResponse[graph.PredicateData]` (`gateway/cs-api/systems.go:993`); the added fields do not break that.
-Spec home: `graph-transport-boundary`.
+**What a caller observes, and the test.** Nothing in change 2: no reply on `graph.query.*` is produced or read here, and
+the module holds no envelope type and no function that decides from a reply's content whether it is enveloped. What
+stays is the authority read. The entity verb's reply is bare and carries the revision it read
+(`TestExactEntityReaderReturnsValidatedEntityAndRevision`, `graph/exact_entity_test.go:58`). Change 4 writes first
+`TestQueryResponseCarriesIndexedRevisionAndProducer` (a response built for producer P at revision R encodes `data`,
+`indexed_revision`, `producer` and `timestamp`, and decodes back equal) and the empty-producer refusal. Task 3.3b's
+tests leave with the code (task 3.12k). Consumers: semconnect decodes `graph.QueryResponse[graph.PredicateData]`
+(`gateway/cs-api/systems.go:993` at `dff12657`), and semsource decodes a `QueryResponse[SummaryData]` in a test
+(`internal/governance/live_graph_integration_test.go:764` at `e4febc0d`). An adopter before change 4 gets a compile
+error, and nothing answers on `graph.query.*` before then. Spec home: `graph-transport-boundary`, "Authority reads are
+not enveloped"; the envelope requirement returns in change 4's delta.
 
 ### D19. `ENTITY_SUFFIX_INDEX` and the suffix verb are not ported (#104)
 
@@ -1079,14 +1111,17 @@ degrade #111 names.
 What a caller observes under (a): with `enable_hierarchy`, an entity born on a lane that infers hierarchy (the stream
 lane and the in-process create, as at the pin; D15) is born with its hierarchy statements or not at all. A mutation-lane
 create infers none, so the rule does not reach it (ruled B, #91 comment 6037287957). `AddToContainers` (the pin's
-`GetHierarchyTriples`) returns an error when any part fails: a container birth, a forward edge or an inverse edge.
+`GetHierarchyTriples`) returns an error when any part fails: a container birth or a forward edge. It writes no inverse
+edge (ruled M, #91 comment 6080973822; #145): an existing container's stored value does not change when a member is
+born, and membership is read from the forward edges on each member.
 graph-ingest then
 writes nothing for the entity and returns the error, classified transient. On the stream lane the input is not
-acknowledged and is delivered again; on the in-process lane the caller gets the error. Containers and inverse edges
-committed before the failure are what the next attempt commits too; the append identity suppresses the repeats. That
+acknowledged and is delivered again; on the in-process lane the caller gets the error. Containers born before the
+failure are found by the next attempt, which births only those still absent. That
 holds because the inference keeps no record of which containers exist: each birth asks storage, so a container deleted
 since an earlier birth is created again (#130). The inference writes no sibling edges (ruled G, #91 comment
-6062681355); `hierarchy.type.sibling` stays registered in `vocabulary`. The stream lane reads the key to tell a birth
+6062681355); `hierarchy.type.sibling` stays registered in `vocabulary`; so do the three `hierarchy.*.contains`
+predicates, which no birth writes (ruled M), as sibling does (ruled G). The stream lane reads the key to tell a birth
 from an update before it runs the inference; if that read finds the entity and the compare-and-set then finds the key
 absent (deleted in between), the write stores nothing and returns a transient error, so the redelivery reads again
 and births the entity with its hierarchy (PR #93 comment 6072740123). Test:
@@ -1130,7 +1165,7 @@ assertion stands: once `drainIssued` is set, the pin's cleanup (`component.go:11
 ### D23. The compare-and-set callback gets the revision it read (#91)
 
 Accepted as drafted (owner ruling, #91 comment 6066791396; draft: PR #93 comment 6066201522). Line numbers are at
-`930bf49`.
+`930bf49` unless a cite names another commit.
 
 **The problem.** The seam's compare-and-set, `natsclient.KVStore.UpdateWithRetryRev` (`natsclient/kv.go:324`), gives its
 callback only the bytes. So a no-op append reads the key again, and a delete between the reads makes it
@@ -1157,8 +1192,9 @@ func (kv *KVStore) UpdateWithRetryRead(ctx context.Context, key string,
 ```
 
 It holds today's loop; `UpdateWithRetryRev` keeps its signature and nil-context check and passes through; the other two
-wrappers are unchanged in code; for the sentinel their result changes (adapt item). The sentinel's text holds no
-substring `IsKVConflictError` or `IsKVNotFoundError` matches (`kv.go:738-770`).
+wrappers are unchanged in code; for the sentinel their result changes (adapt item). `IsKVConflictError` and
+`IsKVNotFoundError` classify by type only (ruled N; `kv.go:763-794` at `dc7f08a`), so no error text, the sentinel's or
+an entity ID's, changes a class.
 
 **What a caller observes.** New: the callback's second argument is the revision of the bytes it got, 0 when the key is
 absent (never written, deleted or purged). A callback error `errors.Is` matches to `ErrKVSkipWrite` ends the call after
@@ -1166,12 +1202,13 @@ that run: nothing written, the value beside it ignored, `(0, nil)`, and no error
 is revision 0, so `(0, nil)` means a skip. Unchanged from `UpdateWithRetryRev` at `930bf49`: absent is created, present
 is written only if still at the revision read, the result being the commit's revision; a conflict, or an infrastructure
 error from `Get`, `Create` or `Update` (`kv.go:369`, `:417`, `:439`), reruns the callback; `MaxRetries`+1 conflicts give
-`(0, ErrKVMaxRetriesExceeded)`, as does, after one run, a callback error whose chain or text `IsKVConflictError` matches
-(`kv.go:443-445`, `:755-770`; predates D23); any other callback error, or a value over `MaxValueSize`, gives `(0, err)`
-after one run, `errors.Is` reaching it; a nil context is refused before any read; an ended context starts no further
-run, `errors.Is(err, ctx.Err())`. 0 means no commit is attributed to the call, not that nothing committed: a write cut
-short may have committed and be read by the next run, where a skip attributes nothing (#20, task 4.1); the `kv.go:323`
-doc says so. A caller must know two facts (0 is absent; the sentinel skips), only to use what is new.
+`(0, ErrKVMaxRetriesExceeded)`, as does, after one run, a callback error that `IsKVConflictError` matches (`kv.go:469`
+at `dc7f08a`; predates D23), by type only since ruling N; any other callback error, or a value over `MaxValueSize`,
+gives `(0, err)` after one run, `errors.Is` reaching it; a nil context is refused before any read; an ended context
+starts no further run, `errors.Is(err, ctx.Err())`. 0 means no commit is attributed to the call, not that nothing
+committed: a write cut short may have committed and be read by the next run, where a skip attributes nothing (#20, task
+4.1); the `kv.go:323` doc says so. A caller must know two facts (0 is absent; the sentinel skips), only to use what is
+new.
 
 **Tests**, written first in `kv_update_revision_integration_test.go`; mutants via `task mutate:check` with
 `GOFLAGS=-tags=integration`, records posted; examples suffice (one interleaving, driven by a put in the callback):
@@ -1207,7 +1244,18 @@ every set is older, over such a value, is acknowledged with nothing written, whe
 the full rule before every skip has an unmeasured cost on restart replay (gh#713). Refusals go to
 `inventoryEntityPoison` at the callback's revision. A skip clears no poison record or cache entry; the next valid read
 or commit does (D3c). The append returns revision, outcome (`graph.MutationApplied`/`MutationUnchanged`) and suppressed
-in an unexported struct.
+in an unexported struct. On an entity with an indexing profile, an arrival's profile statement is dropped before the
+replace, because the profile is set at creation and never changed (ADR-054). An arrival with nothing left after that
+drop writes nothing, whatever its time, and counts no set as not applied (#150; task 3.12e,
+`TestStreamArrivalOnlyProfileWritesNothing`).
+
+**Classification (ruled N, #91 comment 6080973822; #146).** `natsclient.IsKVConflictError` and `IsKVNotFoundError`
+classify by `errors.Is` on natsclient's sentinels and on jetstream's `ErrKeyNotFound`, `ErrKeyDeleted` and
+`ErrKeyExists`, and `errors.As` on `*jetstream.APIError` with its error code. `errs.IsTransient` classifies by class and
+sentinel. None of them classifies by error text. `pkg/errs`'s ledger row becomes `adapt` with the `IsTransient` item (it
+is `carry`, `docs/admission-ledger.yaml:489-507`), and `natsclient`'s row gains its two items. Test: task 3.12h's, one
+per function. #146's retry-loop conflict flag and `readEntity`'s not-found mapping are not ruled. Nor is `errs.IsFatal`,
+which still classifies by text (#146).
 
 **Ledger.** The `natsclient` row (`adapt`) gains in `contract`: "Changed surface, task 3.12a (design D23; owner
 ruling #91 comment 6065395072), three adapt items. natsclient-update-callback-reads-revision:
@@ -1229,7 +1277,8 @@ change edits the `natsclient` row; #92 merged, `1e383fe`).
 
 These issues belong to changes 4, 5 and 7. This change forecloses none of them:
 
-- **#103 and #106** are decided here in the shape change 4 extends (D18, D20).
+- **#103 and #106** are decided here in the shape change 4 extends (D18, D20); D18's envelope code arrives with change 4
+  (ruled P).
 - **#105** (split graph-query): the NL coordinator registers its verbs in the same table (D20).
 - **#107** (`KeyedPool` adopters): `internal/dispatch.KeyedPool` is the target. `Submit` and `Stats` go as dead
   surface (no reader at the pin); if graph-index needs a non-blocking submit in change 4, it is new surface with a
@@ -1241,7 +1290,8 @@ These issues belong to changes 4, 5 and 7. This change forecloses none of them:
 - **#110** (readiness envelope): its envelope fields land here (ruling F, D16); the fusion copy is change 5's and
   the gate's use of `published_at`, the single consumer entry and `Health()` from the readiness set are change 7's.
   `readiness.Set` is dropped here as dead surface and returns with #110 as returning surface, named on the readiness
-  row's `known_risks` (D6), so the drop forecloses nothing.
+  row's `known_risks` (D6), so the drop forecloses nothing. The readiness consumer half (the gate, the `Watcher`,
+  `ComputeIndexStatus`) is not carried either (ruled P, D6) and returns with changes 4 and 5, before change 7 reads it.
 - **#111 items 2–4**: changes 4 and 7.
 - **The indexing profile's reader** (ruling 4): with sources side by side, an entity's profile predicate can hold
   graph-ingest's statement and a producer's. Change 4's design says how graph-index reads the profile (the
@@ -1341,8 +1391,10 @@ D9.
 - P11. `graph/inference` is public by signature (`processor/graph-clustering/component.go:77`); `pkg/dispatch` is not.
   — §2, §8.
 - P12. Coverage after the drops, regrouped by D16: graph-ingest 84.7%, `graph` 80.9%, `graph/kvcatalog` 80.3%,
-  `graph/readiness` 86.4%, `graph/inference` (slice) 82.8%, `storage/storeregistry` 100%; four packages short by 10,
-  31, 81 and 97 statements. — P-7, P-8, P-10, P-19 (local-only profiles; commands in §1 and §9).
+  `graph/readiness` 86.4% (84.6%, 55 of 65 statements, after ruling P's removal with task 3.12k's two tests; measured on
+  a scratch copy of `6102b75` with task 3.12k applied (local only)), `graph/inference` (slice) 82.8%,
+  `storage/storeregistry` 100%; four packages short by 10, 31, 81 and 97 statements. — P-7, P-8, P-10, P-19 (local-only
+  profiles; commands in §1 and §9).
 - P13. The owner-lifecycle state has 12 copies in the admitted set and none in the four consumers. — §3 category 2.
 - P14. No `Hash` caller (#78), no storage-report observer (#85) and no second `natsclient.Client` (#75) in the set. —
   `grep -n '\.Hash()'` and `StorageReportObserver` over the set: empty; observers only in `service` (change 3).
@@ -1448,8 +1500,13 @@ with the change that implements it, and #100–#104 land whole here, so PR #93 c
 - The readiness envelope loses `phase`, `revision` and `last_synced` and gains `published_at` (D16); semsource's
   reads of the two it uses go empty without a compile error, and it changes on adoption (ruling F).
 - Later changes inherit port-refactor items: rule's event emission, its `version` read and its lifecycle-manager wiring
-  (change 6); `service`'s dependency copy (change 3); graph-query's suffix resolution, the envelope's producers and
-  the verb table's generalisation (change 4); `fusionnats`' unwrap (change 5).
+  (change 6); `service`'s dependency copy (change 3); graph-query's suffix resolution, the envelope type with its
+  constructor, `min_revision` and their producers, and the verb table's generalisation (change 4); the readiness gate,
+  `ComputeIndexStatus` and the revision gauges (change 4) and the `Watcher` (change 5), ruled P; `fusionnats`' unwrap
+  (change 5).
+- `graph/readiness` clears the 80% floor by three statements after ruling P (55 of 65, D11). Ruling M removes the
+  `lane="hierarchy"` series of `semengine_graph_ingest_duplicate_triples_suppressed_total`.
+- A profile-only arrival on a profiled entity no longer updates its message type or storage reference (#150, task 3.12e).
 - Consumers edit imports for what moved out of `graph` (D16), semboids' sim takes the lifecycle manager through its
   constructor (D17), semteams acquires `TOOL_CALL_OUTCOMES` itself (D16), and raw-wire mutation callers stamp `source`
   and `timestamp` and name a reconcile's source (D15); each finds out from a compile error or a typed refusal

@@ -103,12 +103,15 @@ posted on this pull request.
       D15), with a rule-level `TestIsReservedSourceNamesAll` listing the three literal names; `IndexStatusResponse`
       without `Phase`, `Revision` and `LastSynced` and with `published_at` (`TestIndexStatusResponseHasNoLegacyFields`,
       written first, design D16); `ExactEntityReader` without the `natsclient` import, a zero timeout passed through;
-      `events.go` not ported; dead sentinels, `IncomingEdges` and the other dead `graph` rows removed, test-only exports
-      unexported or moved into `_test.go` files; README rewritten; the #69 rename of the configuration bucket constant
-      (`semengine_config`); 11 fixture-client sites. `TestGraphImportsNoTransport` and its sensitivity test
+      `events.go` not ported; `QueryResponse`, `NewQueryResponse`, `MinRevisionField` and the three aliases of
+      `query_response_types.go` not in the root (ruled P, task 3.12k; #132 item (a) settled by removal); dead sentinels,
+      `IncomingEdges` and the other dead `graph` rows removed, test-only exports
+      unexported or moved into `_test.go` files; README rewritten, saying the query envelope arrives with change 4; the
+      #69 rename of the configuration bucket constant (`semengine_config`); 11 fixture-client sites.
+      `TestGraphImportsNoTransport` and its sensitivity test
       (`graph-transport-boundary`, "The graph root imports no transport"), written first and red on the pin-shaped root,
       land in this task's commit. Gate: `task test:unit`. Hold: the sweep of test-only exports waits for their readers
-      (tasks 3.4–3.12), since `gopls references` on the tree sees none before they are ported. The rest landed in the
+      (tasks 3.4–3.12k), since `gopls references` on the tree sees none before they are ported. The rest landed in the
       root's port commit, and the 11 fixture-client sites, in the catalog's test files, with task 3.3a.
 - [x] 3.3a (D) `graph/kvcatalog` (design D16): `kvcatalog.go`, `owned_bucket_retention.go` and `IsKVTombstone` from
       the pin's `graph`, with their tests; no `TOOL_CALL_OUTCOMES` or `ENTITY_SUFFIX_INDEX` row or constant; the
@@ -125,8 +128,11 @@ posted on this pull request.
       Done: `MinRevisionField` in `graph/query_contracts.go`; `QueryVerbs` in `graph/query_verbs.go`, its request and
       reply types written as strings, as the pin's graph-query table writes them; `UnwrapQueryResponse`, its key-set
       constants and its four tests removed; the field-set test now holds the four keys. Three `task mutate:check`
-      detections (constructor drops the revision, accepts an empty producer; table regains a suffix verb) are quoted
-      in the commit body.
+      detections (constructor drops the revision, accepts an empty producer; table regains a suffix verb) are quoted in
+      the commit body. Later: ruled P (#91 comment 6080973822), the type, its constructor, `MinRevisionField` and their
+      five tests leave with task 3.12k and return with change 4; the verb table stays. Of the three mutation records,
+      the two on the constructor are of code no longer in the tree; the one on the verb table (`query_verbs_test.go:34`)
+      stands.
 - [x] 3.4 (D) `graph/readiness`: `Watcher` takes `Run(ctx)` (design D5), with `synctest` tests that `Run` returns
       `ctx.Err()` and leaves nothing running; `Set`, `NewSet`, `Dump`, `Verdict` removed, the row's `known_risks`
       naming their return with #110; `Publisher.Publish` sets `published_at` (`TestPublishStampsPublishedAt`, written
@@ -138,8 +144,11 @@ posted on this pull request.
       they leave with it; the `known_risks` text naming `Set`'s return with #110 is written with the row in task 5.1.
       `Gauges.Register` returns the registry's refusal, and with a nil registry registers nothing (the pin fell back
       to Prometheus' global registry). `TestComputeIndexStatus_PreExistingFieldsUnchanged` asserts `IndexedRevision`
-      where it asserted the removed `Revision` string. Six `task mutate:check` detections are quoted in the commit
-      body.
+      where it asserted the removed `Revision` string. Six `task mutate:check` detections are quoted in the commit body.
+      Later: ruled P (#91 comment 6080973822), task 3.12k removes the `Watcher`, the gate, `ComputeIndexStatus` and
+      `WithRevisionGauges` with their tests. Of the six mutation records, the three on `Run` leave with it, and 3.12k
+      re-runs the three on `Register`. What stays from this task: the publisher with `published_at`, the gauges through
+      `RegisterOrGet`, `ComputeBacklogStatus`, and the drop of `Set`.
 - [x] 3.5 (D) `internal/graphmutation` (`InterfaceType` becomes `semengine.graph.mutation`, design D9) and
       `storage/storeregistry` (the `pkg/fusion` assertion removed, noted for change 5).
       Done: `TestInterfaceTypeNamesSemEngine`, written first, holds the new name; `SubjectFamily` stays at
@@ -198,7 +207,9 @@ posted on this pull request.
       (`TestGetHierarchyTriplesRefusesZeroTime`). The sleep in `TestAttack_GoroutineCount` gives way to a `synctest`
       bubble. Task 3.12 must pass `deps.Platform` to the constructor and the triggering time to the call, and fail
       the birth on its error (design D21, task 4.9). Fourteen `task mutate:check` detections and one wrong change made
-      by hand (`TestNoSecondAuthorityField` reads files from disk) are quoted in the commit body.
+      by hand (`TestNoSecondAuthorityField` reads files from disk) are quoted in the commit body. Later: ruled M (#91
+      comment 6080973822; #145), task 3.12j removes the inverse-edge write, and with it `TripleAdder`, `AddTriple` and
+      `NewHierarchyInference`'s adder argument; a failure is a container's or a forward edge's.
 - [x] 3.9 (D) `pkg/projection`: carried code without `Version`; the typed client refuses a statement with no
       timestamp before sending, on `Create`, `Append` and `Reconcile` (`TestMutationClientRefusesMissingTimestamp`,
       written first; `projection-mutation`, "The typed client never reads the clock"); `Reconcile` requires
@@ -345,13 +356,13 @@ posted on this pull request.
       Done in `6102b75` (CI 37931629741 green): `TestBootSweepInventoriesMisKeyedValue`, failing first on `707205a`;
       no caller can hand the classifier a mis-keyed value, so it decodes through the one rule with no test of its own.
       Notes and the mutation record: PR #93 comment 6081213285.
-- [x] 3.12e (D) #150: an older arrival on a profiled entity whose only statement is the indexing profile writes
-      nothing (D23, the all-older rule; `7f8d9fc` is the sibling fix); a test written first, failing on the current
-      code, shows the revision unchanged.
-      Done in `1edc247` (CI 37934155773 green): `TestStreamArrivalOnlyProfileWritesNothing`, older and newer cases,
-      failing first on `8f8f8c8`. A profile-only arrival on a profiled entity declines whatever its age, since the
-      immutable profile is dropped before the replace and nothing of the arrival can apply; a newer one no longer
-      updates `MessageType` or `StorageRef`. Notes and the mutation record: PR #93 comment 6081549343.
+- [x] 3.12e (D) #150: on an entity with an indexing profile, an arrival whose only statement is the indexing profile
+      writes nothing, older or newer, and counts no set as not applied (D23; `graph-entity-writes`, "A profile-only
+      arrival"; `7f8d9fc` is the sibling fix); a test written first, failing on the current code, shows the revision and
+      the stored value unchanged. Done in `1edc247` (CI 37934155773 green): `TestStreamArrivalOnlyProfileWritesNothing`,
+      older and newer cases, failing first on `8f8f8c8`. A profile-only arrival on a profiled entity declines whatever
+      its age, since the immutable profile is dropped before the replace and nothing of the arrival can apply; a newer
+      one no longer updates `MessageType` or `StorageRef`. Notes and the mutation record: PR #93 comment 6081549343.
 - [ ] 3.12f (D) #149: the revision fences on canonical reconcile and delete get tests that can fail: a write injected
       between the handler's read and its write, and the unit bucket's `Delete` checking `LastRevision`; a
       `task mutate:check` record for each fence (the fenced update as a `Put`, `DeleteAtRevision` as `Delete`).
@@ -359,10 +370,12 @@ posted on this pull request.
       meaning the default, D16); `lifecycle.Manager.CreateFromOperator` refuses a second JSON value after the first,
       as `types/component.go` does since task 3.1; a test for each, written first.
 - [ ] 3.12h (D) #146, ruled N (#91 comment 6080973822): `natsclient.IsKVConflictError` and `IsKVNotFoundError`
-      classify by type only (`errors.Is` on natsclient's sentinels, `errors.As` on `*jetstream.APIError` and its error
-      code), and `errs.IsTransient` by class and sentinel, never by text; a test per function, written first, with an
-      error whose text holds each string the old match read and whose type does not match; natsclient's ledger row
-      gains the `adapt` items. Hold: the design edit for rulings M–P (D23's classification sentences).
+      classify by type only (`errors.Is` on natsclient's sentinels and on jetstream's `ErrKeyNotFound`, `ErrKeyDeleted`
+      and `ErrKeyExists`, and `errors.As` on `*jetstream.APIError` with its error code), and `errs.IsTransient` by class
+      and sentinel, never by text; a test per function, written first, with an
+      error whose text holds each string the old match read and whose type does not match; natsclient's ledger row gains
+      the `adapt` items, and `pkg/errs`'s row (`docs/admission-ledger.yaml:489-507`, now `carry`) becomes `adapt` with
+      the `IsTransient` item (design D23, "Classification").
 - [ ] 3.12i (D) #148, ruled O (#91 comment 6080973822): when `handleCanonicalDelete`'s pre-read refuses with a
       graph-state error, the handler proceeds to `DeleteAtRevision` at the caller's expected revision, the KV's
       revision check being the fence; the repair test drives the wire handler. A test written first, failing on the
@@ -370,10 +383,44 @@ posted on this pull request.
       a stale expected revision is still refused.
 - [ ] 3.12j (D) #145, ruled M (#91 comment 6080973822): a birth writes no inverse `contains` edge into its containers;
       `AddTriple` leaves the inference's `EntityStore`, and `TripleAdder` and graph-ingest's hierarchy dedup lane
-      (`addTripleLane`) go; #134 items 5 (the run-time inverse lookup), 7 (`ExistsEntity`) and 11 are settled by
-      removal, as the ruling says. A test
-      written first, failing on the current code: each container keeps its revision across a member's birth. Hold: the
-      design edit for rulings M–P (D1a, D15, D21, P15; `graph-entity-writes`).
+      (`addTripleLane`) go; the duplicate-suppression metric's Help text (`processor/graph-ingest/component.go:248`,
+      "(append|hierarchy)") drops `hierarchy`; #134 items 5 (the run-time inverse lookup), 7 (`ExistsEntity`) and 11 are
+      settled by removal, as the ruling says. A test written first, failing on the current code: each container keeps
+      its revision across a member's birth.
+- [ ] 3.12k (D) Ruled P (#91 comment 6080973822; design D6, D16, D18): remove the surface nothing in production reads
+      (`gopls references` at `6102b75`).
+      **Removed:**
+      - `graph/readiness/watcher.go`, `watcher_test.go`, `readiness_gate.go` and `readiness_gate_test.go`;
+      - `ComputeIndexStatus`, `IndexStatusInputs` and the three `TestComputeIndexStatus_*` tests;
+      - `GaugeOption`, `WithRevisionGauges`, the revision-gauge fields, and the revision branches in `NewGauges`,
+        `MetricNames`, `Register` (`:159-166`) and `Set`;
+      - `TestBootstrapScope_GateVerdictInvariant`;
+      - in `graph`: `query_contracts.go`, `query_contracts_test.go` and `query_response_types.go` (the data types it
+        aliases stay).
+      **Moved unchanged out of `watcher.go`:** `BucketGraphStatus`, `KeyGraphIndex`, `KeyGraphEmbedding`,
+      `KeyGraphIngest`, `KeyRule` and `DefaultHeartbeat`. The package comment moves too, rewritten for the producer
+      half.
+      **Rewritten:**
+      - `TestPublisher_ValueIsPlainEnvelopeJSON` decodes with `json.Unmarshal` into `graph.IndexStatusResponse`;
+      - the two `TestIndexStatusResponse_*WireRoundTrip` tests build their envelope as a literal;
+      - `TestComputeBacklogStatus_ObservationFailureCannotReportReady` asserts `Ready` is false where it asked the gate;
+      - `registeredGauges` and the five gauge tests run without options, and their name lists drop `indexed_revision`
+        and `target_revision`;
+      - `graph/README.md`'s envelope paragraph keeps only "Replies on `graph.ingest.query.*` are not enveloped.";
+      - every comment that names a removed symbol or test, `graph/index_status.go:123-124` included.
+      **Added:** an under-1 ms row in `TestComputeBacklogStatus_Staleness` (`StalenessMs` 1), and a `Publisher.Key`
+      test, nil and set (graph-ingest reads it at `readiness.go:341`).
+      **Proof:**
+      - `git grep -n -w -E
+        'ComputeIndexStatus|IndexStatusInputs|EvaluateReadinessGate|StatusReading|DeferReason|WithRevisionGauges|GaugeOption|NewWatcher|FreshnessWindow|FreshnessMultiplier|QueryResponse|NewQueryResponse|MinRevisionField|AllDeferReasons|BucketSource|WaitForFirst'
+        -- graph processor/graph-ingest` lists nothing;
+      - `TestPublishStampsPublishedAt`, `TestIndexStatusResponseHasNoLegacyFields`,
+        `TestExactEntityReaderReturnsValidatedEntityAndRevision` and the `TestComputeBacklogStatus_*` tests are green;
+      - 3.4's three `Register` mutation records, re-run on the rewritten gauge tests, are each a detection;
+      - the five tests in `processor/graph-ingest/readiness_integration_test.go` and
+        `TestIntegration_ReadinessGaugesAreEmitted` are green and unchanged;
+      - `go test -cover ./graph/readiness/` is at or above 80% (84.6% expected), quoted.
+      Gate: `task verify`.
 - [ ] 3.13 (D) graph-ingest under the lifecycle suite: an in-package adapter whose `Observe` lists consumers, request
       subscriptions, ingest lanes and the status loop; failing factory = a refused broker; `lifecycletest.Run` green;
       `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop` carried on the adapter, green, driving the
@@ -408,7 +455,9 @@ posted on this pull request.
       `TestWriteRefusesStatementWithoutSourceOrTimestamp` (an empty create included),
       `TestGraphableLaneStampsFromEnvelope`, `TestGraphableLaneRefusesWithoutEnvelopeMetadata`,
       `TestDerivedStatementsCarryTriggeringTime` (rulings A and C and the round-4 review's derived-statement finding,
-      #91 comment 6037287957; rulings 1 and 5, #91 comment 6037604840; design D15).
+      #91 comment 6037287957; rulings 1 and 5, #91 comment 6037604840; design D15). Later: ruled M, task 3.12j removes
+      the in-process append; `TestWriteModesAgreeAcrossLanes` keeps its birth, replace and conditional-replace cases and
+      loses the in-process append case (`write_modes_test.go:175`).
 - [x] 4.9 (D) #111 item 1: `TestHierarchyFailureFailsTheBirth` (`graph-entity-writes`, "Birth with hierarchy fails
       closed") and `TestCorruptGuardRecordIsRefused` (`graph-ingest-recovery`, "A record that cannot be decoded"),
       each written first and failing on the pin's code (design D21). Done with task 3.12b, in `c4a885f`, `ecf00a7` and
@@ -426,7 +475,10 @@ posted on this pull request.
       `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop`, the `lifecycle-suite` exception's proof) and
       its `known_risks` (graph-ingest: #75's shared gauges, and `ENTITY_STATES` kept at one revision per key (#99);
       `component`: a consumer can call the three registry methods directly, review only; `graph/readiness`: `Set`
-      dropped, read by `gateway/graph-gateway` and needed back by #110, design D6). Adapt items that name adopters:
+      dropped, read by `gateway/graph-gateway` and needed back by #110, design D6; the consumer half not carried (ruled
+      P, design D16), each piece named with the change that brings its first reader and the last commit holding its
+      adapted code, #135 (b) to be fixed on return; `graph`: the query envelope and its three aliases not carried (ruled
+      P, design D18), returning with change 4). Adapt items that name adopters:
       `component`'s `LifecycleManager` drop names semboids `internal/sim/component.go:255-256` and
       `cmd/semboids/main.go:190` and semteams `cmd/semteams/main.go:209` (ruling D, design D17); `graph`'s readiness
       envelope names semsource's reads of `revision` and `last_synced`, a silent change (ruling F, design D16); the
@@ -434,15 +486,20 @@ posted on this pull request.
       ruling E and the change to foundation D2 and 03B D10 it makes. `class:port-refactor`
       notes for later changes: rule (change 6: `events.go` emission, the `version` read, the lifecycle manager at
       registration), `service` (change 3: no lifecycle manager copied into component dependencies), graph-query
-      (change 4: partial-ID resolution without the suffix verb, envelope producers, the verb table), `fusionnats`
-      (change 5: no `UnwrapQueryResponse`), `pkg/fusion` (change 5: its envelope copy without the legacy fields,
-      #110). The `internal/lifecyclecleanup` package row is `adapt` to
+      (change 4: partial-ID resolution without the suffix verb, the envelope type, its constructor, `min_revision` and
+      their producers, the verb table), `fusionnats` (change 5: no `UnwrapQueryResponse`; the readiness `Watcher`, in
+      design D5's `Run(ctx)` shape), graph-index (change 4: the readiness gate, `ComputeIndexStatus`,
+      `WithRevisionGauges`), graph-embedding (change 5: `ComputeIndexStatus`, `WithRevisionGauges`), graph-clustering
+      (change 7: the `Watcher` and the gate), `pkg/fusion` (change 5: its envelope copy without the legacy fields,
+      #110; the readiness gate). The `internal/lifecyclecleanup` package row is `adapt` to
       `pkg/lifecyclecleanup` (public home, nil rollback refused), naming the harness copy; the file row's
       `known_risks` names the production home and why the copy stays (design D7.4); Q13's row cites PR #1437 head
-      `0ea823a6`; #29 and #33 rows name `class:port-refactor`. Gate: `task ledger:check`.
+      `0ea823a6`; #29 and #33 rows name `class:port-refactor`. The `graph/inference` row also records the inverse-edge
+      write's removal (ruled M); the `pkg/errs` row is `adapt` (ruled N, task 3.12h). Gate: `task ledger:check`.
 - [ ] 5.2 (D) `scripts/cover-check.sh` gains the ten targets of design D11, `graph/inference` and `graph/kvcatalog`
       among them; the tests design D11 names for `internal/graphmutation`, `pkg/projection`, `component` and
-      `pkg/lifecycle` are added; each target's figure is posted. Ticked only on a green `task cover:check`. Hold: task
+      `pkg/lifecycle` are added; each target's figure is posted. `graph/readiness` at or above 80% after task 3.12k
+      (84.6% expected, design D11). Ticked only on a green `task cover:check`. Hold: task
       1.12.
 - [x] 5.3 (D) `go.mod`: `golang.org/x/net` at a version that downgrades nothing, and no `go-openai`; `task vuln` and
       `task tidy:check` green. Done in `074c800`: v0.59.0 → v0.60.0 for five HTTP/2 advisories, nothing else moved,

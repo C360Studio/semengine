@@ -28,7 +28,7 @@ graph-ingest); a **statement** is one stored triple with its source, time, confi
 ## What Changes
 
 - Port 14 of the 17 packages foundation D2 assigns to this change, with their tests, one of them, `graph/inference`, as
-  its hierarchy slice (`hierarchy.go`, `container_entity.go` and the `TripleAdder` interface; #97). Not ported:
+  its hierarchy slice (`hierarchy.go` and `container_entity.go`; #97, ruling M). Not ported:
   `pkg/worker` (ruling E), `internal/componentadmission` (ruling C), `graph/structural` (to change 7 with its only
   readers, ruling E, which amends foundation D2 and the 80%-coverage critical list), and nothing of `graph/llm`,
   `model/wire` or `go-openai` (no package ported here reads them). `pkg/dispatch` moves to `internal/dispatch` and
@@ -47,13 +47,15 @@ graph-ingest); a **statement** is one stored triple with its source, time, confi
   (rulings 1–5, #91 comment 6037604840). The typed mutation client stops reading the clock.
 - **One stored revision** (#99): `ENTITY_STATES` keeps one revision per key, written down as a constraint.
 - **The `graph` root** (#101) holds the data model and wire types and imports no NATS package: the bucket catalog
-  moves to a new `graph/kvcatalog`, the readiness computation to `graph/readiness`, and `events.go` (a second mutation
+  moves to a new `graph/kvcatalog`, the readiness computation's producer half to `graph/readiness` (its consumer half
+  returns with changes 4 and 5, ruling P), and `events.go` (a second mutation
   grammar with no subscriber) is not ported; the catalog loses the `TOOL_CALL_OUTCOMES` row.
 - **`component` reaches no graph package** (#102): `Dependencies.LifecycleManager` goes, as #29's tool registry does
   (ruling D);
   `ModelRegistry` and `StoreRegistry` stay, since neither reaches a graph package.
-- **One reply envelope** (#103): `graph.QueryResponse` carries `indexed_revision` and `producer`, requests may carry
-  `min_revision`, and the content-sniffing `UnwrapQueryResponse` is not ported; producers follow in change 4.
+- **One reply envelope** (#103): its shape is decided here (`graph.QueryResponse` with `indexed_revision` and
+  `producer`, and an optional `min_revision` on requests), and the content-sniffing `UnwrapQueryResponse` is not ported.
+  The type, its constructor and its producers arrive in change 4 (ruling P).
 - **`ENTITY_SUFFIX_INDEX` and the suffix verb are not ported** (#104).
 - **`graph.ingest.query.*` is declared once, by its responder** (#106's pattern): a verb table in `graph`, from which
   graph-ingest subscribes and callers take subjects.
@@ -75,8 +77,8 @@ graph-ingest); a **statement** is one stored triple with its source, time, confi
   other.
 - One owner-lifecycle guard, `internal/lifecycleguard`, composed by graph-ingest; the 11 later copies adopt it when
   ported.
-- Helpers that run background work take the standing shapes (`Run(ctx)`, `Shutdown(ctx)`): the keyed dispatch pool,
-  the readiness watcher, and the lifecycle manager's two watches.
+- Helpers that run background work take the standing shapes (`Run(ctx)`, `Shutdown(ctx)`): the keyed dispatch pool and
+  the lifecycle manager's two watches; the readiness watcher returns with change 5 (ruling P).
 - Metrics register through `metric.RegisterOrGet`, under the `semengine` namespace (after #92), on the registry the
   component is given, never on Prometheus' process-global registry. The configuration bucket and the mutation
   interface type are renamed to `semengine` under #69.
@@ -103,8 +105,8 @@ graph-ingest); a **statement** is one stored triple with its source, time, confi
 - `projection-mutation` (ADDED): conditional reconcile at a caller-observed revision, from one named source; commit
   ambiguity preserved; the typed client never reads the clock.
 - `graph-transport-boundary` (ADDED): the reserved request subjects have one declaration, owned by their responder,
-  which serves exactly its declared verbs; the `graph` root imports no transport; one reply envelope for the graph query
-  family; the readiness envelope carries its publish time and no legacy fields. The stream-filter refusal is change 3's.
+  which serves exactly its declared verbs; the `graph` root imports no transport; authority reads are not enveloped; the
+  readiness envelope carries its publish time and no legacy fields. The stream-filter refusal is change 3's.
 - `component-registration` (ADDED): each component package registers itself; no aggregator; refusals name the
   per-package call; `component` reaches no agentic or graph package; unknown configuration keys are refused.
 - `harness-boundaries` (MODIFIED): in Go files the image-pin check matches a tag that starts with a digit or a

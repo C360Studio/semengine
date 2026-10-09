@@ -24,11 +24,6 @@ write method of the entity bucket.
   only in `Timestamp`, `Confidence` or `ExpiresAt`
 - **THEN** the replaced set holds the repeated statement once and the third beside it
 
-#### Scenario: Append agrees across lanes
-
-- **WHEN** the same statement is appended through a mutation request and through graph-ingest's in-process append
-- **THEN** both leave the same stored statements, and a second append of it on either lane stores nothing
-
 #### Scenario: An append that adds nothing
 
 - **WHEN** an entity is at revision R and an append request carries only statements it already holds
@@ -138,7 +133,10 @@ not applied SHALL leave its stored statements as they are, the message's other s
 not applied SHALL be counted and logged with the entity, predicate and source. The entity's message type and storage
 reference SHALL take the message's values only when none of its sets was skipped. A message with at least one set, none
 of which applies, SHALL write nothing, unless the stored entity has no indexing profile, which the write then stamps
-(ADR-054). A conditional replace SHALL be fenced by its expected revision, not ordered by `Timestamp`.
+(ADR-054). On an entity with an indexing profile, an arriving indexing-profile statement SHALL be dropped, and a message
+with no statement left after that SHALL write nothing, whatever its time, its message type and storage reference
+included, and SHALL count no set as not applied. A conditional replace SHALL be fenced by its expected revision, not
+ordered by `Timestamp`.
 
 #### Scenario: An older arrival
 
@@ -163,16 +161,30 @@ of which applies, SHALL write nothing, unless the stored entity has no indexing 
   stored statements of its predicate from its source
 - **THEN** nothing is written, the entity stays at revision R, and each set not applied is counted
 
+#### Scenario: A profile-only arrival
+
+- **WHEN** a stored entity with an indexing profile is at revision R, and a message carries only an
+  indexing-profile statement, older or newer than the stored one
+- **THEN** nothing is written, the entity stays at revision R, and no set is counted as not applied
+
 ### Requirement: The write path refuses a stored value it cannot change
 
 A stored value that is empty at a nonzero revision, that does not decode as an entity, or that names another entity
 than its key, and a change whose result the canonical contract refuses because of statements it keeps from the stored
-value, SHALL be refused: nothing SHALL be written, and the refusal SHALL be recorded at the revision read.
+value, SHALL be refused: nothing SHALL be written, and the refusal SHALL be recorded at the revision read. A delete
+SHALL NOT be refused for its stored value: it removes the entity at the caller's expected revision, the revision check
+being the fence (ruled O, #91 comment 6080973822; #148).
 
 #### Scenario: A stored value under another key
 
 - **WHEN** the value stored at entity A's key names entity B, and a stream message or an append request writes to A
 - **THEN** the write is refused, nothing is written, and the refusal is recorded at the revision read
+
+#### Scenario: A stored value that cannot be read is deleted
+
+- **WHEN** the value stored at entity A's key does not decode as an entity, and a delete request names A's current
+  revision
+- **THEN** A is deleted and a later create births it; a delete naming an older revision is refused
 
 ### Requirement: The revision is the only fence
 
@@ -199,10 +211,11 @@ consumer need.
 ### Requirement: Birth with hierarchy fails closed
 
 With hierarchy inference enabled, an entity born on a lane that infers hierarchy (the stream lane and the in-process
-lane) SHALL be stored with its hierarchy statements or not at all. When the inference fails for any part (a
-container, a forward edge, an inverse edge), graph-ingest SHALL store nothing for the entity and
+lane) SHALL be stored with its hierarchy statements or not at all. When the inference fails for any part (a container or
+a forward edge), graph-ingest SHALL store nothing for the entity and
 return the failure classified as transient; on the stream lane the message SHALL not be acknowledged, so it is
-delivered again. An entity created through a mutation request SHALL get no hierarchy statements.
+delivered again. An entity created through a mutation request SHALL get no hierarchy statements. A birth SHALL leave an
+existing container entity unchanged.
 
 #### Scenario: The inference fails once
 
@@ -213,3 +226,9 @@ delivered again. An entity created through a mutation request SHALL get no hiera
 
 - **WHEN** hierarchy inference is enabled and an entity is created through a mutation request
 - **THEN** the stored entity carries the request's statements and its indexing profile, and no hierarchy statement
+
+#### Scenario: A member's birth leaves its container unchanged
+
+- **WHEN** hierarchy inference is enabled, a container entity exists at revision R, and an entity of that
+  container is born from a stream message
+- **THEN** the container is still at revision R

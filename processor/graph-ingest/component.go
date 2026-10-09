@@ -2004,13 +2004,17 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 	// update pays no inference. If another writer creates the entity between this
 	// read and the CAS, the callback's merge branch does not apply them: that
 	// writer's birth is the birth. If the entity is deleted between the two, the CAS
-	// births it without hierarchy; this read does not close that window.
+	// finds the key absent after this read found it (readFound), so it writes nothing
+	// and returns a transient error; the redelivery reads again and births the entity
+	// with its hierarchy (design D21).
 	var hierarchyTriples []message.Triple
+	readFound := false
 	if c.hierarchyInference != nil {
 		_, err := c.entityBucket.Get(ctx, entity.ID)
 		switch {
 		case err == nil:
 			// An update: no hierarchy.
+			readFound = true
 		case natsclient.IsKVNotFoundError(err):
 			// A birth: born with its hierarchy statements or not at all (design D21).
 			triples, herr := c.addToContainers(ctx, entity.ID, at)
@@ -2026,7 +2030,7 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 		}
 	}
 
-	revision, bytesWritten, err := c.replaceEntity(ctx, entity, hierarchyTriples, at)
+	revision, bytesWritten, err := c.replaceEntity(ctx, entity, hierarchyTriples, readFound, at)
 	if err != nil {
 		atomic.AddInt64(&c.errors, 1)
 		return errs.Wrap(err, "Component", "mergeEntityOnLane", "CAS update")

@@ -33,7 +33,8 @@ import (
 // The modes, and the lanes on which each is used:
 //
 //   - create (createEntity): mutation create; in-process create (hierarchy containers).
-//   - replace (replaceEntity): the stream lane. A birth when the key is absent, else
+//   - replace (replaceEntity): the stream lane. A birth when the key is absent (refused when the
+//     lane's read before the hierarchy inference found the key; design D21), else
 //     graph.ReplaceBySource: each (predicate, source) set the arrival carries replaces the stored
 //     set of the same key, unless it is older, under the KV revision.
 //   - conditional replace (reconcileCandidate, then replaceEntityAtRevision): mutation reconcile,
@@ -104,7 +105,12 @@ func (c *Component) createEntity(ctx context.Context, entityID string, encoded [
 // replaceEntity is the stream lane's write: a read-modify-write under the KV revision
 // (compare-and-set), so concurrent arrivals on the same subject converge without racing.
 // When the key is absent the arrival is a birth: a copy of entity is written with
-// hierarchyTriples appended and its profile stamped. Otherwise each (predicate, source) set of
+// hierarchyTriples appended and its profile stamped, unless readFound is set. readFound means
+// the caller read the key before the hierarchy inference and found the entity, so it ran no
+// inference; finding the key absent now means the entity was deleted in between, and a birth
+// would lack its hierarchy. Nothing is written and the error is classified transient: the
+// stream lane leaves the arrival unacknowledged, and its redelivery reads the key again (design
+// D21). Otherwise each (predicate, source) set of
 // entity's statements replaces the stored set of the same key (graph.ReplaceBySource), except a
 // set older than the stored one, which is left out, counted on stale_sets_total and logged at
 // debug level once the write commits or is declined (design D15, "Timestamp orders a replace").
@@ -117,7 +123,7 @@ func (c *Component) createEntity(ctx context.Context, entityID string, encoded [
 // refuses for a statement kept from it, writes nothing and is recorded at the revision read
 // (design D23). It returns the revision it committed, or 0 when it wrote nothing, and the size
 // of the value written.
-func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState, hierarchyTriples []message.Triple, at time.Time) (uint64, int, error) {
+func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState, hierarchyTriples []message.Triple, readFound bool, at time.Time) (uint64, int, error) {
 	var bytesWritten int
 	// stale is the last attempt's sets not applied as older: the one that committed or declined.
 	// It is assigned on each run of the callback, never accumulated, so a lost compare-and-set
@@ -142,6 +148,13 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 		// D23). Apply hierarchy triples (deterministic-per-ID so safe to apply once on create),
 		// then store verbatim.
 		if read == 0 {
+			if readFound {
+				// Not retried by the bucket (a callback error ends the call): the redelivery's
+				// read runs the inference before the birth.
+				return nil, errs.WrapTransient(
+					fmt.Errorf("entity %s was deleted after the read that found it, so its hierarchy was not inferred", entity.ID),
+					"Component", "replaceEntity", "birth entity")
+			}
 			if birth == nil {
 				// A copy with its own statements: reconcileIndexingProfile filters in place.
 				born := *entity

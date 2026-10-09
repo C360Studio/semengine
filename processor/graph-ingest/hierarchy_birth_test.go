@@ -226,4 +226,56 @@ func TestHierarchyFailureFailsTheBirth(t *testing.T) {
 		}
 		assertBornWithContainers(t, c)
 	})
+
+	// The birth check finds the entity, so the arrival is an update and no inference runs; the
+	// entity is then deleted before the write reads the key. A birth there would have no
+	// hierarchy, so the write stores nothing and the arrival is delivered again; the redelivery's
+	// birth check finds no entity, and the birth carries its container edges.
+	t.Run("stream lane, the entity is deleted after the birth check", func(t *testing.T) {
+		c, bucket := hierarchyBirthComponent(t, false)
+		seedEntityState(t, c, hierarchyBirth())
+		// The first read of the entity's key answers from the stored entity, and the key is
+		// deleted before that read returns, so every later read finds it absent.
+		var deleted atomic.Bool
+		bucket.getFunc = func(_ context.Context, key string) (jetstream.KeyValueEntry, error) {
+			bucket.mu.Lock()
+			defer bucket.mu.Unlock()
+			data, ok := bucket.data[key]
+			if !ok {
+				return nil, jetstream.ErrKeyNotFound
+			}
+			if key == hierarchyBirthID && deleted.CompareAndSwap(false, true) {
+				delete(bucket.data, key)
+			}
+			return &mockKVEntry{data: data.value, revision: data.revision, key: key}, nil
+		}
+
+		first := &keyedIngestTestMsg{}
+		err := c.processIngest(t.Context(), 0, hierarchyBirthWork(first))
+		if err == nil {
+			t.Fatal("processIngest returned nil for an arrival whose entity was deleted after the birth check")
+		}
+		// The class is read from the error, not with errs.IsTransient, which also matches an
+		// unclassified error by its text ("non-retryable" contains "retry").
+		var classified *errs.ClassifiedError
+		if !errors.As(err, &classified) || classified.Class != errs.ErrorTransient {
+			t.Fatalf("processIngest error is not classified transient: %v", err)
+		}
+		assertNakOnly(t, first)
+		bucket.mu.Lock()
+		keys := len(bucket.data)
+		bucket.mu.Unlock()
+		if keys != 0 {
+			t.Fatalf("the bucket holds %d keys after the refused write, want none", keys)
+		}
+
+		redelivery := &keyedIngestTestMsg{}
+		if err := c.processIngest(t.Context(), 0, hierarchyBirthWork(redelivery)); err != nil {
+			t.Fatalf("redelivery: %v", err)
+		}
+		if !redelivery.ack.Load() {
+			t.Fatal("the redelivery was not acknowledged")
+		}
+		assertBornWithContainers(t, c)
+	})
 }

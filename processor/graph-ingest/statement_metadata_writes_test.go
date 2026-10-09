@@ -4,8 +4,8 @@ package graphingest
 // carrying a statement without a Source or a Timestamp is refused, a create or stream merge
 // carrying no statement is refused, and a reconcile names its source and carries no other. Each
 // refusal is invalid_request and stores nothing. The writes go through the lanes' production
-// entries: the canonical mutation handlers, and the CreateEntity and AddTriple hierarchy
-// inference calls; the stream lane's merge, where the rule is a second line, is called directly.
+// entries: the canonical mutation handlers, and the CreateEntity hierarchy inference calls; the
+// stream lane's merge, where the rule is a second line, is called directly.
 
 import (
 	"bytes"
@@ -110,11 +110,6 @@ func TestWriteRefusesStatementWithoutSourceOrTimestamp(t *testing.T) {
 			return c.mergeEntityOnLane(context.Background(), entity, false)
 		}
 	}
-	inProcessAppend := func(triple message.Triple) func(*testing.T, *Component) error {
-		return func(_ *testing.T, c *Component) error {
-			return (&hierarchyStore{component: c}).AddTriple(context.Background(), triple)
-		}
-	}
 
 	tests := []struct {
 		name  string
@@ -133,8 +128,6 @@ func TestWriteRefusesStatementWithoutSourceOrTimestamp(t *testing.T) {
 		{"in-process create without source", inProcessCreate(inProcess, noSource(inProcess)), []string{"triple[1]", "source"}},
 		{"in-process create without timestamp", inProcessCreate(inProcess, noTimestamp(inProcess)), []string{"triple[1]", "timestamp"}},
 		{"in-process create with no statement", inProcessCreate(), nil},
-		{"in-process append without source", inProcessAppend(noSource(statementB)), []string{"triple[0]", "source"}},
-		{"in-process append without timestamp", inProcessAppend(noTimestamp(statementB)), []string{"triple[0]", "timestamp"}},
 		{"stream merge without source", streamMerge(inProcess, noSource(inProcess)), []string{"triple[1]", "source"}},
 		{"stream merge without timestamp", streamMerge(inProcess, noTimestamp(inProcess)), []string{"triple[1]", "timestamp"}},
 		{"stream merge with no statement", streamMerge(), nil},

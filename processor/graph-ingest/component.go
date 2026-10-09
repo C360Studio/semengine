@@ -188,7 +188,7 @@ func newGuardRecordRefusalsMetric() prometheus.Counter {
 // lost the CAS and retried. This is a **cross-entity contention-observability**
 // signal, NOT a proof of keying correctness: an entity's own key is
 // never written concurrently under keying, but legitimate cross-entity
-// hierarchy container and inverse writes do touch shared keys and retry. Expect ~0 on workloads
+// hierarchy container writes do touch shared keys and retry. Expect ~0 on workloads
 // without hierarchy / dense relationships / entity-birth churn; a spike is a
 // workload signal, not necessarily a bug.
 func newCasRetriesMetric() prometheus.Counter {
@@ -220,15 +220,9 @@ func newStaleSetsMetric() prometheus.Counter {
 // label cardinality is bounded by this list no matter what a producer sends.
 type dedupLane string
 
-const (
-	// dedupLaneAddBatch is the canonical append mutation lane.
-	dedupLaneAddBatch dedupLane = "append"
-	// dedupLaneHierarchy is hierarchy inference's in-process adder
-	// (hierarchyStore), the lane that produced gh#713: createEntity calls
-	// AddToContainers unconditionally, and its container-inverse edges
-	// commit through here on every re-registration.
-	dedupLaneHierarchy dedupLane = "hierarchy"
-)
+// dedupLaneAddBatch is the canonical append mutation lane, the one append lane
+// (ruling M, #91 comment 6080973822, removed hierarchy's in-process append).
+const dedupLaneAddBatch dedupLane = "append"
 
 // newDuplicateTriplesSuppressedMetric builds the counter of
 // append triples suppressed because the target entity already carried an
@@ -245,7 +239,7 @@ func newDuplicateTriplesSuppressedMetric() *prometheus.CounterVec {
 		Namespace: "semengine",
 		Subsystem: "graph_ingest",
 		Name:      "duplicate_triples_suppressed_total",
-		Help:      "Append triples not written because the entity already carried an identical six-field tuple. Label: lane (append|hierarchy), a closed enum.",
+		Help:      "Append triples not written because the entity already carried an identical six-field tuple. Label: lane (append), a closed enum.",
 	}, []string{"lane"})
 	return duplicateTriplesSuppressedVec
 }
@@ -348,34 +342,14 @@ const (
 var schema = component.GenerateConfigSchema(reflect.TypeOf(Config{}))
 
 // hierarchyStore is graph-ingest as hierarchy inference's inference.EntityStore:
-// the existence check reads the entity bucket, the create is the in-process
-// create, and the append is the hierarchy lane.
+// the create is the in-process create, which refuses a key the bucket holds with
+// natsclient.ErrKVKeyExists.
 type hierarchyStore struct {
 	component *Component
 }
 
-func (a *hierarchyStore) ExistsEntity(ctx context.Context, id string) (bool, error) {
-	_, err := a.component.entityBucket.Get(ctx, id)
-	if err != nil {
-		if natsclient.IsKVNotFoundError(err) {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
-}
-
 func (a *hierarchyStore) CreateEntity(ctx context.Context, entity *graph.EntityState) error {
 	return a.component.CreateEntity(ctx, entity)
-}
-
-// AddTriple routes hierarchy inference's container-inverse edges through the
-// shared append implementation, labelled so their suppressed duplicates are
-// attributable to hierarchy rather than to an operator-issued mutation
-// (gh#713: createEntity re-derives these on every re-registration).
-func (a *hierarchyStore) AddTriple(ctx context.Context, triple message.Triple) error {
-	_, _, err := a.component.addTripleLane(ctx, triple, dedupLaneHierarchy)
-	return err
 }
 
 // Component implements the graph-ingest processor
@@ -1980,7 +1954,7 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 	// than the stored one, are not validated — they are left out, not
 	// committed, so the store contract is unaffected; (2) with EnableHierarchy set, an invalid candidate with a
 	// valid ID reaches the pre-closure hierarchy step below, whose
-	// AddToContainers COMMITS container entities + inverse contains-edges
+	// AddToContainers COMMITS container entities
 	// before the write gate rejects the candidate itself — that
 	// pre-committed content is contract-valid and identical to what a later
 	// legitimate birth of the same ID would create. References to absent entities
@@ -2066,12 +2040,12 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 // addToContainers adds an entity being born to its containers and returns the
 // membership statements its birth carries; with hierarchy off it returns none. The
 // stream lane and the in-process create call it, and only for a birth. A failure of
-// any part (a container, an inverse edge) is returned classified transient, and the
+// any part (a container's birth) is returned classified transient, and the
 // caller stores nothing for the entity (design D21): the stream lane leaves the
 // input unacknowledged, so it is delivered again, and the in-process caller gets the
 // error. The class is transient whatever class the store gave its refusal: the
-// arrival is not at fault, and what committed before the failure is what the next
-// attempt commits again. The inference's one refusal of its own, a zero time, is
+// arrival is not at fault, and the containers born before the failure are found by
+// the next attempt, which births only those still absent. The inference's one refusal of its own, a zero time, is
 // not reached: both callers have run requireOwnStatements, so at is set.
 func (c *Component) addToContainers(ctx context.Context, entityID string, at time.Time) ([]message.Triple, error) {
 	if c.hierarchyInference == nil {
@@ -2274,67 +2248,6 @@ func (c *Component) recordSuppressedDuplicates(lane dedupLane, suppressed int) {
 		return
 	}
 	c.duplicateTriplesSuppressed.WithLabelValues(string(lane)).Add(float64(suppressed))
-}
-
-// addTripleLane applies one hierarchy append, carrying the lane label for the
-// suppressed-duplicate metric. deduplicated=true means the write was a no-op:
-// this call wrote nothing, and err is nil.
-//
-// committedRevision is the EXACT revision this call's CAS produced, and is 0
-// whenever the call attributes no commit to itself (suppressed, or an error; an
-// error does not mean nothing committed: a write cut short by an infrastructure
-// error may have committed, design D23). It is deliberately not
-// a post-hoc read: another writer can commit between the CAS and a re-read, and
-// a caller attributing that writer's revision to its own write would suppress
-// the writer's genuine change (Codex C2).
-func (c *Component) addTripleLane(ctx context.Context, triple message.Triple, lane dedupLane) (deduplicated bool, committedRevision uint64, err error) {
-	// Deliberately KEPT under the gh#562 write-cost dedup (unlike mergeEntityOnLane's
-	// removed candidate pass): this is an O(1-triple) caller-blaming preflight
-	// that runs BEFORE any KV I/O. Without it a malformed Subject would drive
-	// the CAS Get on a nonexistent key and misclassify as entity-not-found
-	// instead of invalid (and the pre-I/O contract test pins the ordering).
-	// The MarshalEntityState write gate below remains the authoritative
-	// full-pass over the committed union.
-	if contractErr := graph.ValidateEntityStateContract(&graph.EntityState{
-		ID: triple.Subject, Triples: []message.Triple{triple},
-	}); contractErr != nil {
-		return false, 0, errs.WrapInvalid(contractErr, "Component", "AddTriple", "validate triple contract")
-	}
-	// Same seam, same lane: an in-process append names its own subject, so a
-	// foreign one would be the framework annotating an imported mirror
-	// (ADR-102 d5, ruled O-12(a)). This body has no RPC caller — hierarchy
-	// inference's inverse edges are its only entry — so the rejection is the
-	// direct lane's to meter.
-	if authErr := c.authorizeSubject(triple.Subject, false); authErr != nil {
-		return false, 0, c.recordDirectAuthorityRejection(authErr)
-	}
-	if err := requireStatementMetadata([]message.Triple{triple}); err != nil {
-		return false, 0, err
-	}
-
-	// Check context
-	if ctxErr := ctx.Err(); ctxErr != nil {
-		return false, 0, errs.Wrap(ctxErr, "Component", "AddTriple", "context cancelled")
-	}
-
-	// appendEntityTriples: atomic read-modify-write with CAS, returning the exact
-	// revision the commit produced (see the committedRevision doc above).
-	appended, casErr := c.appendEntityTriples(ctx, triple.Subject, []message.Triple{triple})
-	if casErr != nil {
-		atomic.AddInt64(&c.errors, 1)
-		return false, 0, errs.Wrap(casErr, "Component", "AddTriple", "CAS update")
-	}
-	if appended.outcome == graph.MutationUnchanged {
-		// Duplicate suppression is a SUCCESS that wrote nothing, so it is not
-		// metered as a component error: that would make every restart replay look
-		// like a fault. The committed revision stays 0: the call attributes no
-		// commit to itself.
-		c.recordSuppressedDuplicates(lane, 1)
-		return true, 0, nil
-	}
-	// appendEntityTriples cleared the key's poison record and invalidated its
-	// cache entry, so the next query reads the appended state.
-	return false, appended.revision, nil
 }
 
 // addTriplesResult is one internal append batch's outcome. Grouped into a struct

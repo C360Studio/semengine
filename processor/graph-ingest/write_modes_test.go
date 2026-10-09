@@ -3,7 +3,7 @@ package graphingest
 // The write modes through graph-ingest's lanes (design D15, #100 and #98; task 4.8;
 // graph-entity-writes, "One rule per write mode" and "Timestamp orders a replace"). Each test
 // writes through the lanes' production entries: the stream lane's consume closure, the canonical
-// mutation handlers, and the in-process create and append. The expected statements are written
+// mutation handlers, and the in-process create. The expected statements are written
 // out in each test, never computed by the rule under test.
 
 import (
@@ -163,18 +163,15 @@ func TestWriteModesAgreeAcrossLanes(t *testing.T) {
 		}
 	})
 
-	t.Run("append through the mutation and in-process lanes", func(t *testing.T) {
+	// Append has one lane, the mutation request: ruling M (#91 comment 6080973822) removed the
+	// in-process append.
+	t.Run("append through the mutation lane", func(t *testing.T) {
 		lane := newWriteModesLane(t)
-		const viaMutation, viaInProcess = "c360.test.write.append.mutation.001", "c360.test.write.append.process.001"
-		for _, id := range []string{viaMutation, viaInProcess} {
-			createCanonicalEntity(t, lane.c, id, []message.Triple{canonicalTriple(id, "test.state.other", "seed")})
-		}
+		const viaMutation = "c360.test.write.append.mutation.001"
+		createCanonicalEntity(t, lane.c, viaMutation, []message.Triple{canonicalTriple(viaMutation, "test.state.other", "seed")})
 
 		for attempt := 1; attempt <= 2; attempt++ {
 			outcomes := appendOnMutationLane(t, lane.c, wmStatement(viaMutation, "v", "source-a", wmTime(1)))
-			if _, _, err := lane.c.addTripleLane(context.Background(), wmStatement(viaInProcess, "v", "source-a", wmTime(1)), dedupLaneHierarchy); err != nil {
-				t.Fatalf("append %d on the in-process lane: %v", attempt, err)
-			}
 			wantOutcome := graph.MutationApplied
 			if attempt == 2 {
 				wantOutcome = graph.MutationUnchanged
@@ -182,9 +179,7 @@ func TestWriteModesAgreeAcrossLanes(t *testing.T) {
 			if !slices.Equal(outcomes, []graph.MutationOutcome{wantOutcome}) {
 				t.Errorf("append %d on the mutation lane: outcomes %v, want [%s]", attempt, outcomes, wantOutcome)
 			}
-			for _, id := range []string{viaMutation, viaInProcess} {
-				assertHeld(t, lane.c, id, writeModesPredicate, "v/source-a/1")
-			}
+			assertHeld(t, lane.c, viaMutation, writeModesPredicate, "v/source-a/1")
 		}
 	})
 

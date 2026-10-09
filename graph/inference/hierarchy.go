@@ -3,7 +3,6 @@ package inference
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"time"
 
@@ -44,7 +43,7 @@ var errHierarchyTimeUnset = errors.New("hierarchy inference has no triggering ti
 // A caller with hierarchy off builds none: there is no disabled inference.
 // This is a stateless utility - no lifecycle methods (Start/Stop).
 type HierarchyInference struct {
-	// store checks and creates containers and writes their inverse edges.
+	// store creates containers.
 	store EntityStore
 
 	// platform is the deployment's own authority, positions 1-2 of every
@@ -56,25 +55,19 @@ type HierarchyInference struct {
 	logger *slog.Logger
 }
 
-// EntityStore is the entity storage the inference creates containers in and
-// writes their inverse edges to. graph-ingest implements it, and it refuses
-// what graph-ingest refuses: CreateEntity of a key the store holds returns
-// natsclient.ErrKVKeyExists, and AddTriple to an absent entity fails.
+// EntityStore is the entity storage the inference creates containers in.
+// graph-ingest implements it.
 type EntityStore interface {
-	TripleAdder
-
-	// ExistsEntity reports whether the store holds an entity under id.
-	ExistsEntity(ctx context.Context, id string) (bool, error)
-
 	// CreateEntity writes entity under its ID, refusing an ID the store holds
-	// with natsclient.ErrKVKeyExists.
+	// with natsclient.ErrKVKeyExists. The inference reads that refusal as the
+	// container existing.
 	CreateEntity(ctx context.Context, entity *gtypes.EntityState) error
 }
 
 // NewHierarchyInference builds the inference over store for the deployment
 // whose authority is platform, graph-ingest's deps.Platform. An entity whose
 // positions 1-2 differ is an imported mirror, and AddToContainers mints
-// NOTHING for it (no container, no membership triple, no inverse edge),
+// NOTHING for it (no container, no membership triple),
 // because the framework never mints under a foreign authority (ADR-102). An
 // empty pair could only read every entity as foreign and mint nothing,
 // forever, so it is refused here rather than on every call. A nil logger is
@@ -106,24 +99,27 @@ func isContainerEntity(entityID string) bool {
 // AddToContainers adds an entity being born to its three containers (type,
 // taxonomy, source). For each one it:
 //  1. creates the container if storage does not hold it (a write);
-//  2. writes the container's inverse edge, container → contains → entity (a
-//     write);
-//  3. returns the entity's membership statement, entity → member → container,
+//  2. returns the entity's membership statement, entity → member → container,
 //     which it does not write: the caller writes the returned statements with
 //     the entity.
+//
+// It writes nothing to a container that exists, so a container's stored value
+// does not change when a member is born: there is no inverse contains edge
+// (ruling M, #91 comment 6080973822; #145), and membership is read from the
+// forward edges on each member. Nor does it write a sibling edge between
+// entities of one type (ruling G, #91 comment 6062681355). The
+// hierarchy.*.contains predicates and vocabulary.HierarchyTypeSibling stay
+// registered in vocabulary.
 //
 // Every statement it returns or writes, a new container's type statement
 // included, names graph.SourceHierarchy as its source and carries at, the time
 // of the write that triggered the inference, never the clock (design D15). A
 // zero at is refused.
 //
-// It writes no sibling edge between entities of one type (ruling G, #91
-// comment 6062681355); vocabulary.HierarchyTypeSibling stays registered.
-//
-// If any part fails (a container's existence check or birth, or an inverse
-// edge), it returns every failure joined and no statements, so the caller
-// refuses the birth (design D21). Containers and inverse edges written before
-// the failure are what the next attempt writes again.
+// If any part fails (a container's birth), it returns every failure joined and
+// no statements, so the caller refuses the birth (design D21). Containers born
+// before the failure are found by the next attempt, which births only those
+// still absent.
 //
 // It returns no statements, and writes nothing, for an invalid entity ID, a
 // container, or an entity carrying a FOREIGN authority (an imported mirror,
@@ -228,48 +224,24 @@ func buildSourceContainerID(eid semtypes.EntityID) string {
 
 // ensureContainerAndReturnEdge creates the container entity if needed, then returns
 // the membership edge triple WITHOUT adding it to the entity (caller must do that).
-// Also adds inverse edge to container (container → contains → entity) for bidirectional
-// traversal; a failure of either write is returned.
 func (h *HierarchyInference) ensureContainerAndReturnEdge(ctx context.Context, entityID, containerID, predicate string, at time.Time) (message.Triple, error) {
-	// Ensure the container exists, asking storage.
 	if err := h.ensureContainerExists(ctx, containerID, at); err != nil {
 		return message.Triple{}, err
 	}
 
-	// Create forward membership edge: entity → predicate → container.
+	// Forward membership edge: entity → predicate → container.
 	// The object is a real 6-part entity ID, so IsRelationship() returns true.
-	forwardTriple := hierarchyTriple(entityID, predicate, containerID, at)
-
-	// Create inverse edge: container → contains → entity
-	// This enables direct traversal from container to its members without using IncomingIndex
-	// NOTE: This IS a side effect - we're updating the container entity
-	inversePredicate := vocabulary.GetInversePredicate(predicate)
-	if inversePredicate != "" {
-		// e.g., hierarchy.type.contains
-		inverseTriple := hierarchyTriple(containerID, inversePredicate, entityID, at)
-		if err := h.store.AddTriple(ctx, inverseTriple); err != nil {
-			return message.Triple{}, fmt.Errorf("add hierarchy inverse edge %s %s %s: %w",
-				containerID, inversePredicate, entityID, err)
-		}
-	}
-
-	return forwardTriple, nil
+	return hierarchyTriple(entityID, predicate, containerID, at), nil
 }
 
-// ensureContainerExists creates a minimal container entity if storage does not
-// hold it, its type statement carrying the triggering time at. It keeps no record
-// of which containers exist: each call asks storage, so a container deleted since
-// an earlier birth is created again, and a birth delivered again commits what the
-// first attempt did (#130, design D21).
+// ensureContainerExists creates a minimal container entity unless storage holds
+// it, its type statement carrying the triggering time at. Storage answers through
+// the create: natsclient.ErrKVKeyExists means the container exists, whether it was
+// born earlier or by another writer a moment ago, and leaves it untouched. It keeps
+// no record of which containers exist: each call asks storage, so a container
+// deleted since an earlier birth is created again, and a birth delivered again
+// commits what the first attempt did (#130, design D21).
 func (h *HierarchyInference) ensureContainerExists(ctx context.Context, containerID string, at time.Time) error {
-	exists, err := h.store.ExistsEntity(ctx, containerID)
-	if err != nil {
-		return err
-	}
-	if exists {
-		return nil
-	}
-
 	// Create minimal container entity, stamped with the registered framework
 	// type so it passes graph-ingest's registered-type gate (ADR-103, O-16 (a)).
 	containerEntity := &gtypes.EntityState{
@@ -281,9 +253,6 @@ func (h *HierarchyInference) ensureContainerExists(ctx context.Context, containe
 	}
 
 	if err := h.store.CreateEntity(ctx, containerEntity); err != nil {
-		// Another writer may win the same atomic container birth between the
-		// check above and this create. That definite conflict means the desired
-		// container exists; no string matching needed.
 		if errors.Is(err, natsclient.ErrKVKeyExists) {
 			return nil
 		}

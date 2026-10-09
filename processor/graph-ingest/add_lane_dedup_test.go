@@ -69,10 +69,13 @@ func countDedupTriples(stored graph.EntityState, predicate string) int {
 	return count
 }
 
+// appendDedupTriple appends one triple through the append lane's body, as a mutation append
+// carrying that one triple does.
 func appendDedupTriple(ctx context.Context, t *testing.T, comp *Component, triple message.Triple) {
 	t.Helper()
-	_, _, err := comp.addTripleLane(ctx, triple, dedupLaneAddBatch)
+	result, err := comp.addTriplesLane(ctx, []message.Triple{triple}, dedupLaneAddBatch)
 	require.NoError(t, err)
+	require.Empty(t, result.FailedSubjects)
 }
 
 // Task 3.1 + the zero-write requirement: a duplicate add commits NOTHING.
@@ -169,12 +172,13 @@ func TestAddTriple_ConcurrentIdenticalAppendsStoreOneTuple(t *testing.T) {
 	var wg sync.WaitGroup
 	start := make(chan struct{})
 	errsOut := make([]error, writers)
+	results := make([]addTriplesResult, writers)
 	for i := range writers {
 		wg.Add(1)
 		go func(index int) {
 			defer wg.Done()
 			<-start // explicit synchronization, no sleeps
-			_, _, errsOut[index] = comp.addTripleLane(ctx, triple, dedupLaneAddBatch)
+			results[index], errsOut[index] = comp.addTriplesLane(ctx, []message.Triple{triple}, dedupLaneAddBatch)
 		}(i)
 	}
 	close(start)
@@ -182,6 +186,7 @@ func TestAddTriple_ConcurrentIdenticalAppendsStoreOneTuple(t *testing.T) {
 
 	for i, err := range errsOut {
 		assert.NoError(t, err, "writer %d must report success", i)
+		assert.Empty(t, results[i].FailedSubjects, "writer %d must report no failed subject", i)
 	}
 	stored, _ := readDedupEntity(t, comp, dedupSubject)
 	assert.Equal(t, 1, countDedupTriples(stored, triple.Predicate),
@@ -307,28 +312,6 @@ func TestAddTriples_SuppressionDoesNotMisclassifyMixedBatch(t *testing.T) {
 	require.Len(t, result.FailedSubjects, 1, "only the absent subject failed")
 	assert.Contains(t, result.FailedSubjects, absentSubject)
 	assert.NotContains(t, result.FailedSubjects, dedupSubject, "a suppressed subject is not a failed subject")
-}
-
-// Task 6.1/6.2: the counter is labelled by a CLOSED lane enum, and the
-// hierarchy lane is attributable separately from operator mutations.
-func TestSuppressedDuplicateCounter_IsLaneAttributed(t *testing.T) {
-	comp, _ := seedDedupEntity(t, dedupSubject)
-	ctx := context.Background()
-	triple := dedupTriple(dedupSubject)
-	appendDedupTriple(ctx, t, comp, triple)
-
-	adder := &hierarchyStore{component: comp}
-	hierarchyBefore := testutil.ToFloat64(comp.duplicateTriplesSuppressed.WithLabelValues(string(dedupLaneHierarchy)))
-	addBefore := testutil.ToFloat64(comp.duplicateTriplesSuppressed.WithLabelValues(string(dedupLaneAddBatch)))
-
-	require.NoError(t, adder.AddTriple(ctx, triple))
-
-	assert.InDelta(t, hierarchyBefore+1,
-		testutil.ToFloat64(comp.duplicateTriplesSuppressed.WithLabelValues(string(dedupLaneHierarchy))), 0.0001,
-		"hierarchy inference's in-process adder must be attributable to its own lane")
-	assert.InDelta(t, addBefore,
-		testutil.ToFloat64(comp.duplicateTriplesSuppressed.WithLabelValues(string(dedupLaneAddBatch))), 0.0001,
-		"and must not be charged to the operator-mutation lane")
 }
 
 // The canonical append outcome is the wire-level dedup discriminator. A real

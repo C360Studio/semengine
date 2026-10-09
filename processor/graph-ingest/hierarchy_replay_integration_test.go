@@ -4,18 +4,18 @@
 // append already-present triples or advance entity revisions when nothing in
 // the world changed.
 //
-// The trigger is NOT in hierarchy.go. createEntity calls AddToContainers
-// UNCONDITIONALLY (component.go, before the KV write), and that call is not a
-// pure read: it commits container-inverse edges as side effects through
-// hierarchyStore.AddTriple. On an already-present ID the subsequent atomic
-// Create returns natsclient.ErrKVKeyExists and createEntity returns early —
-// but the inverse edges have ALREADY committed. mergeEntityOnLane (the pin's
-// MergeEntity, design D6), by contrast, gates hierarchy behind an absence probe,
-// which is why the fact lane does not re-fire and the request lane does.
+// createEntity calls AddToContainers UNCONDITIONALLY (component.go, before the
+// KV write), so a re-registration of an already-present ID runs the inference
+// again before the atomic Create returns natsclient.ErrKVKeyExists.
+// mergeEntityOnLane (the pin's MergeEntity, design D6), by contrast, gates
+// hierarchy behind an absence probe. At the pin that inference committed
+// container-inverse edges as side effects, which is what re-fired on the request
+// lane; since ruling M (#91 comment 6080973822) it writes nothing to a container
+// that exists, so the replay must move nothing at all.
 //
 // A test that only re-submits triples through add_batch never reaches that
-// trigger, so this test replays through CreateEntity — the same conflict path
-// a re-registering producer takes.
+// path, so this test replays through CreateEntity — the same conflict path a
+// re-registering producer takes.
 
 package graphingest
 
@@ -44,7 +44,7 @@ var replayEntityIDs = []string{
 }
 
 // replayContainerIDs are the three containers hierarchy inference materialises
-// for that type, each of which accumulates an inverse `contains` edge per child.
+// for that type.
 var replayContainerIDs = []string{
 	"c360.platform.robotics.mav1.drone.group",
 	"c360.platform.robotics.mav1.group.container",
@@ -150,20 +150,20 @@ func TestComponent_HierarchyReplay_UnchangedEntitiesAdvanceNoRevision(t *testing
 
 	// Seed sanity — WITHOUT these the comparison below could pass vacuously on
 	// an empty or degenerate store. These are the counts gh#713's arithmetic
-	// depends on: 3 entities + 3 containers; the type container holds one
-	// inverse `contains` edge per child. No entity holds a sibling edge (ruling
-	// G, #91 comment 6062681355).
+	// depends on: 3 entities + 3 containers. No container holds a `contains`
+	// edge (ruling M, #91 comment 6080973822) and no entity a sibling edge
+	// (ruling G, #91 comment 6062681355).
 	require.Len(t, before, len(replayEntityIDs)+len(replayContainerIDs),
 		"seed must have produced 3 entities and 3 containers")
-	require.Equal(t, 3, countStoredPredicate(t, ctx, replay, replayContainerIDs[0], vocabulary.HierarchyTypeContains),
-		"the type container must hold one inverse contains edge per child")
+	contains := []string{vocabulary.HierarchyTypeContains, vocabulary.HierarchySystemContains, vocabulary.HierarchyDomainContains}
+	for i, predicate := range contains {
+		require.Zero(t, countStoredPredicate(t, ctx, replay, replayContainerIDs[i], predicate),
+			"%s must hold no %s edge", replayContainerIDs[i], predicate)
+	}
 	for _, id := range replayEntityIDs {
 		require.Zero(t, countStoredPredicate(t, ctx, replay, id, vocabulary.HierarchyTypeSibling),
 			"%s must hold no sibling edge", id)
 	}
-
-	suppressedBefore := testutil.ToFloat64(
-		replay.duplicateTriplesSuppressed.WithLabelValues(string(dedupLaneHierarchy)))
 
 	// ---- Replay the UNCHANGED entities through the 409 path. -------------
 	for _, id := range replayEntityIDs {
@@ -189,12 +189,9 @@ func TestComponent_HierarchyReplay_UnchangedEntitiesAdvanceNoRevision(t *testing
 	require.Equal(t, len(replayEntityIDs)+len(replayContainerIDs), compared,
 		"every seeded key must have been compared — a skipped comparison proves nothing")
 
-	// Task 6.3: a suppression that is invisible is indistinguishable from a lane
-	// that never ran. Each re-registration re-derives 3 container-inverse edges
-	// (type, system, domain) = 3 suppressed tuples per entity, 9 across the
-	// three.
-	suppressedAfter := testutil.ToFloat64(
-		replay.duplicateTriplesSuppressed.WithLabelValues(string(dedupLaneHierarchy)))
-	assert.InDelta(t, suppressedBefore+9, suppressedAfter, 0.0001,
-		"the hierarchy lane's suppressed duplicates must be observable and attributable")
+	// Task 6.3: a re-registration re-derives no container edge, so the replay
+	// suppresses nothing; the suppressed-duplicates counter, whose one lane is
+	// append, holds no series.
+	assert.Zero(t, testutil.CollectAndCount(replay.duplicateTriplesSuppressed),
+		"the replay must suppress nothing on any lane: it re-derives no container edge")
 }

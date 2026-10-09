@@ -39,9 +39,9 @@ import (
 //     set of the same key, unless it is older, under the KV revision.
 //   - conditional replace (reconcileCandidate, then replaceEntityAtRevision): mutation reconcile,
 //     at the caller's expected revision.
-//   - append (appendEntityTriples): mutation append; in-process append (hierarchy's inverse
-//     edges). Identity is message.AppendIdentityKey, under the KV revision. An append that adds
-//     nothing writes nothing and is unchanged at the revision it read.
+//   - append (appendEntityTriples): mutation append, its one lane (ruling M removed the
+//     in-process append). Identity is message.AppendIdentityKey, under the KV revision. An
+//     append that adds nothing writes nothing and is unchanged at the revision it read.
 //   - delete (deleteEntity): mutation delete, at the caller's expected revision.
 
 // requireStatementMetadata is the seam's statement-metadata rule (design D15, #98): every
@@ -53,10 +53,10 @@ import (
 // authority gate, before its first read or write of the bucket and before graph-ingest adds the
 // statements it derives, so a refused write stores nothing and the index is the caller's: the
 // mutation create, append and reconcile (handleCanonicalCreate, handleCanonicalAppend,
-// handleCanonicalReconcile), the in-process create and append (createEntityWithReceipt,
-// addTripleLane), and the stream lane (mergeEntityOnLane). A check inside the write methods below
-// would come too late for both: an in-process create's hierarchy inference stores containers and
-// edges before its write, and an append batch commits one subject at a time. On the stream lane,
+// handleCanonicalReconcile), the in-process create (createEntityWithReceipt), and the stream
+// lane (mergeEntityOnLane). A check inside the write methods below would come too late for both:
+// an in-process create's hierarchy inference stores containers before its write, and an append
+// batch commits one subject at a time. On the stream lane,
 // stampFromEnvelope has already filled both or refused the message, so the rule is a second line
 // there.
 func requireStatementMetadata(triples []message.Triple) error {

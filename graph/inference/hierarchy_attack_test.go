@@ -271,9 +271,10 @@ func TestAttack_LargeEntityBurst(t *testing.T) {
 }
 
 // TestAttack_ManyBirthsOfOneTypeCreateThreeContainers: ten thousand births of
-// one type, one after another, each ask storage for the type's three containers;
-// the first creates them and every later birth finds them, so the store saw three
-// creates. The inference keeps nothing per birth (#130).
+// one type, one after another, each ask storage for the type's three containers
+// through the create; the first creates them and every later birth's create is
+// refused because they exist, so three creates commit. The inference keeps
+// nothing per birth (#130).
 func TestAttack_ManyBirthsOfOneTypeCreateThreeContainers(t *testing.T) {
 	store := newFakeStore()
 
@@ -288,7 +289,7 @@ func TestAttack_ManyBirthsOfOneTypeCreateThreeContainers(t *testing.T) {
 
 	createdEntities := store.getCreatedEntities()
 	assert.Len(t, createdEntities, 3, "one type's three containers, each created once")
-	assert.Len(t, store.createCalls(), 3, "no birth after the first asked for a create")
+	assert.Len(t, store.createCalls(), 3*entityCount, "every birth asked storage for each container")
 }
 
 // TestAttack_GoroutineCount checks that AddToContainers leaves no

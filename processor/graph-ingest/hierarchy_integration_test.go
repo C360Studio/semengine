@@ -103,9 +103,8 @@ func TestComponent_HierarchyContainerDeletedIsBornAgain(t *testing.T) {
 	container := stored(containerID)
 	assert.Equal(t, 1, statementCount(container.Triples, "entity.type.class", "hierarchy.container"),
 		"the container exists again")
-	assert.Equal(t, 1, statementCount(container.Triples, vocabulary.HierarchyTypeContains, second))
-	assert.Zero(t, statementCount(container.Triples, vocabulary.HierarchyTypeContains, first),
-		"the deleted container's statements went with it")
+	assert.Zero(t, statementCount(container.Triples, vocabulary.HierarchyTypeContains, second),
+		"a birth writes no inverse edge (ruling M, #91 comment 6080973822)")
 }
 
 // ====================================================================================

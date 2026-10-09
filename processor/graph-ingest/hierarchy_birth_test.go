@@ -27,31 +27,31 @@ const (
 
 var errInjectedRefusal = errors.New("injected refusal")
 
-// refuseFirstEdge is the inference's store: graph-ingest's own adapter, except that the first
-// inverse edge it is asked to write is refused, once, with an error classified invalid. A
+// refuseFirstContainer is the inference's store: graph-ingest's own adapter, except that the
+// first container it is asked to create is refused, once, with an error classified invalid. A
 // refusal the store classifies invalid must still leave the birth retryable (design D21).
-type refuseFirstEdge struct {
+type refuseFirstContainer struct {
 	inference.EntityStore
 	refused atomic.Bool
 }
 
-func (s *refuseFirstEdge) AddTriple(ctx context.Context, triple message.Triple) error {
+func (s *refuseFirstContainer) CreateEntity(ctx context.Context, entity *graph.EntityState) error {
 	if s.refused.CompareAndSwap(false, true) {
-		return errs.WrapInvalid(errInjectedRefusal, "refuseFirstEdge", "AddTriple", "write inverse edge")
+		return errs.WrapInvalid(errInjectedRefusal, "refuseFirstContainer", "CreateEntity", "create container")
 	}
-	return s.EntityStore.AddTriple(ctx, triple)
+	return s.EntityStore.CreateEntity(ctx, entity)
 }
 
 // hierarchyBirthComponent is graph-ingest over a mock bucket with hierarchy on, its inference
 // built by the production constructor over the production adapter. With refuse set, the
-// adapter refuses the first inverse edge once.
+// adapter refuses the first container's birth once.
 func hierarchyBirthComponent(t *testing.T, refuse bool) (*Component, *mockKVBucket) {
 	t.Helper()
 	c, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
 	c.config.EnableHierarchy = true
 	var store inference.EntityStore = &hierarchyStore{component: c}
 	if refuse {
-		store = &refuseFirstEdge{EntityStore: store}
+		store = &refuseFirstContainer{EntityStore: store}
 	}
 	hi, err := inference.NewHierarchyInference(store, c.platform, c.logger)
 	if err != nil {
@@ -64,11 +64,17 @@ func hierarchyBirthComponent(t *testing.T, refuse bool) (*Component, *mockKVBuck
 
 // hierarchyBirth is a fresh arrival for the entity, as a redelivery decodes it again.
 func hierarchyBirth() *graph.EntityState {
+	return hierarchyBirthOf(hierarchyBirthID)
+}
+
+// hierarchyBirthOf is a fresh arrival for the entity id, a member of the same three containers
+// when id differs from hierarchyBirthID only in its instance.
+func hierarchyBirthOf(id string) *graph.EntityState {
 	return &graph.EntityState{
-		ID:          hierarchyBirthID,
+		ID:          id,
 		MessageType: testEntityType(),
 		Triples: withTestMetadata(message.Triple{
-			Subject: hierarchyBirthID, Predicate: hierarchyBirthPredicate, Object: "ready",
+			Subject: id, Predicate: hierarchyBirthPredicate, Object: "ready",
 			Timestamp: time.Now(), Confidence: 1.0,
 		}),
 	}
@@ -89,8 +95,8 @@ func assertEntityAbsent(t *testing.T, bucket *mockKVBucket) {
 }
 
 // assertBornWithContainers checks the entity carries one membership edge to each of its three
-// containers, and each container one inverse edge back: a repeat from the failed attempt was
-// suppressed, not stored twice.
+// containers, and each container is stored with no statement naming the entity: a birth writes
+// no inverse edge (ruling M, #91 comment 6080973822).
 func assertBornWithContainers(t *testing.T, c *Component) {
 	t.Helper()
 	stored := storedEntity(t, c, hierarchyBirthID)
@@ -116,20 +122,11 @@ func assertBornWithContainers(t *testing.T, c *Component) {
 			t.Errorf("%s edges = %v, want exactly [%s]", predicate, objects, container)
 		}
 	}
-	inverse := map[string]string{
-		hierarchyBirthType:     "hierarchy.type.contains",
-		hierarchyBirthTaxonomy: "hierarchy.system.contains",
-		hierarchyBirthSource:   "hierarchy.domain.contains",
-	}
-	for container, predicate := range inverse {
-		edges := 0
+	for _, container := range want {
 		for _, tr := range storedEntity(t, c, container).Triples {
-			if tr.Predicate == predicate && tr.Object == hierarchyBirthID {
-				edges++
+			if tr.Object == hierarchyBirthID {
+				t.Errorf("container %s holds %s %v: a birth writes no inverse edge", container, tr.Predicate, tr.Object)
 			}
-		}
-		if edges != 1 {
-			t.Errorf("container %s holds %d %s edges to the entity, want 1", container, edges, predicate)
 		}
 	}
 }
@@ -278,4 +275,80 @@ func TestHierarchyFailureFailsTheBirth(t *testing.T) {
 		}
 		assertBornWithContainers(t, c)
 	})
+}
+
+// containerRevisions reads the stored revision of each container; each must be stored.
+func containerRevisions(t *testing.T, bucket *mockKVBucket, containers []string) map[string]uint64 {
+	t.Helper()
+	bucket.mu.Lock()
+	defer bucket.mu.Unlock()
+	revisions := make(map[string]uint64, len(containers))
+	for _, container := range containers {
+		data, stored := bucket.data[container]
+		if !stored {
+			t.Fatalf("container %s is not stored", container)
+		}
+		revisions[container] = data.revision
+	}
+	return revisions
+}
+
+// TestMemberBirthKeepsContainerRevisions holds design D21's hierarchy paragraph (ruled M, #91
+// comment 6080973822; #145): a birth writes no inverse edge into its containers, so an existing
+// container's stored value does not change when a member is born. The first member's birth
+// creates the three containers; the second member's birth, on each lane that infers hierarchy,
+// leaves each container at the revision it had. Before ruling M each birth appended a contains
+// edge to each container, so a container's value grew with every member until the bucket's value
+// limit refused the append and every later birth under that container failed.
+func TestMemberBirthKeepsContainerRevisions(t *testing.T) {
+	const secondID = "acme.ops.robotics.gcs.drone.002"
+	births := map[string]func(*testing.T, *Component){
+		"stream lane": func(t *testing.T, c *Component) {
+			msg := &keyedIngestTestMsg{}
+			work := ingestWork{entity: hierarchyBirthOf(secondID), msg: msg, entityID: secondID, stream: "ENTITY", seq: 2}
+			if err := c.processIngest(t.Context(), 0, work); err != nil {
+				t.Fatalf("processIngest: %v", err)
+			}
+			if !msg.ack.Load() {
+				t.Fatal("the second member's arrival was not acknowledged")
+			}
+		},
+		"in-process lane": func(t *testing.T, c *Component) {
+			if err := c.CreateEntity(t.Context(), hierarchyBirthOf(secondID)); err != nil {
+				t.Fatalf("CreateEntity: %v", err)
+			}
+		},
+	}
+	containers := []string{hierarchyBirthType, hierarchyBirthTaxonomy, hierarchyBirthSource}
+
+	for lane, birth := range births {
+		t.Run(lane, func(t *testing.T) {
+			c, bucket := hierarchyBirthComponent(t, false)
+			if err := c.CreateEntity(t.Context(), hierarchyBirth()); err != nil {
+				t.Fatalf("the first member's birth: %v", err)
+			}
+			before := containerRevisions(t, bucket, containers)
+
+			birth(t, c)
+
+			// The second member carries its membership edge to the type container, so the
+			// inference ran for its birth.
+			members := 0
+			for _, tr := range storedEntity(t, c, secondID).Triples {
+				if tr.Predicate == "hierarchy.type.member" && tr.Object == hierarchyBirthType {
+					members++
+				}
+			}
+			if members != 1 {
+				t.Fatalf("the second member holds %d hierarchy.type.member edges to %s, want 1", members, hierarchyBirthType)
+			}
+			after := containerRevisions(t, bucket, containers)
+			for _, container := range containers {
+				if after[container] != before[container] {
+					t.Errorf("container %s is at revision %d after a member's birth, want %d: the birth wrote to it",
+						container, after[container], before[container])
+				}
+			}
+		})
+	}
 }

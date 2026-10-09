@@ -578,10 +578,9 @@ func TestAuthorityGateRejectsDeleteOfImportedSubject(t *testing.T) {
 // their log stream both read as if nothing had been refused.
 //
 // It enumerates the direct seams from the guard sites rather than from the two
-// public methods, because three of the five are reached through an adapter or a
-// shared body and a test covering only the public pair would leave them open:
-// the hierarchy inverse-edge adapter, the batch-append body, and the delete
-// body all carry their own guard.
+// public methods, because two of the four are reached through a shared body and
+// a test covering only the public pair would leave them open: the batch-append
+// body and the delete body both carry their own guard.
 //
 // The counter belongs to the component and every subtest adds to it, so every
 // assertion is a DELTA. (At the pin it was process-wide, behind a sync.Once.)
@@ -613,9 +612,6 @@ func TestAuthorityGateMetersDirectPersistenceRejectionsOnEveryDirectSeam(t *test
 		// design D6 removes.
 		{name: "mergeEntityOnLane", call: func() error {
 			return h.component.mergeEntityOnLane(h.ctx, foreignEntity(), false)
-		}},
-		{name: "hierarchy inverse-edge adapter", call: func() error {
-			return (&hierarchyStore{component: h.component}).AddTriple(h.ctx, foreignTriple)
 		}},
 		{name: "batch append body", call: func() error {
 			_, err := h.component.addTriplesLane(h.ctx, []message.Triple{foreignTriple}, dedupLaneAddBatch)

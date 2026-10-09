@@ -2,7 +2,6 @@ package inference
 
 import (
 	"context"
-	"fmt"
 	"slices"
 	"sync"
 	"testing"
@@ -49,22 +48,15 @@ func newTestInference(t *testing.T, store EntityStore) *HierarchyInference {
 	return hi
 }
 
-// addHierarchy does what the pin's OnEntityCreated did once the entity existed:
-// it asks for the entity's hierarchy statements and writes them through the
-// store's AddTriple, so a test can count every edge, forward and inverse, in one
-// place. AddTriple refuses an absent subject, as graph-ingest does, so the entity
-// the forward edges belong to is put in the store first.
+// addHierarchy does what graph-ingest does at a birth: it asks for the entity's
+// hierarchy statements and writes the entity with them, so a test can count
+// every statement a birth stores in one place.
 func addHierarchy(ctx context.Context, hi *HierarchyInference, store *fakeStore, entityID string) error {
 	triples, err := hi.AddToContainers(ctx, entityID, hierarchyTestTime)
 	if err != nil {
 		return err
 	}
-	store.addExistingEntity(entityID)
-	for _, triple := range triples {
-		if err := store.AddTriple(ctx, triple); err != nil {
-			return err
-		}
-	}
+	store.writeEntity(entityID, triples)
 	return nil
 }
 
@@ -80,32 +72,21 @@ func statementCount(triples []message.Triple, predicate string, object any) int 
 }
 
 // fakeStore is graph-ingest as the inference sees it through EntityStore, and it
-// refuses what graph-ingest refuses (#134 item 4):
-//   - CreateEntity of a key the store holds returns natsclient.ErrKVKeyExists
-//     as is, as graph-ingest's create does (createEntityWithReceipt returns the
-//     bucket's conflict sentinel unwrapped).
-//   - AddTriple to a subject the store does not hold returns an error wrapping
-//     natsclient.ErrKVKeyNotFound, as graph-ingest's append does
-//     (appendEntityTriples refuses revision 0 with that sentinel, and AddTriple
-//     wraps it).
+// refuses what graph-ingest refuses (#134 item 4): CreateEntity of a key the
+// store holds returns natsclient.ErrKVKeyExists as is, as graph-ingest's create
+// does (createEntityWithReceipt returns the bucket's conflict sentinel
+// unwrapped).
 //
-// Each error field, when set, is what its method returns; failOn, when set,
-// limits them to calls about that ID (the entity checked or created, or the
-// subject a statement is added to).
+// createErr, when set, is what CreateEntity returns; failOn, when set, limits it
+// to creates of that ID.
 type fakeStore struct {
-	mu       sync.Mutex
-	entities map[string]*gtypes.EntityState // what the store holds, by ID
-	created  []*gtypes.EntityState          // each create that committed, as given
-	creates  []string                       // the ID of every create, refused or not
-	triples  []message.Triple               // each statement AddTriple committed
-	// afterExists, when set, runs after ExistsEntity has read the store: a test
-	// uses it to land another writer's create between the inference's
-	// existence check and its own create.
-	afterExists func(id string)
-	existsErr   error
-	createErr   error
-	addErr      error
-	failOn      string
+	mu        sync.Mutex
+	entities  map[string]*gtypes.EntityState // what the store holds, by ID
+	created   []*gtypes.EntityState          // each create that committed, as given
+	creates   []string                       // the ID of every create, refused or not
+	triples   []message.Triple               // each statement writeEntity stored
+	createErr error
+	failOn    string
 }
 
 func newFakeStore() *fakeStore {
@@ -119,19 +100,6 @@ func (s *fakeStore) injected(err error, id string) error {
 		return nil
 	}
 	return err
-}
-
-func (s *fakeStore) ExistsEntity(_ context.Context, id string) (bool, error) {
-	if err := s.injected(s.existsErr, id); err != nil {
-		return false, err
-	}
-	s.mu.Lock()
-	_, exists := s.entities[id]
-	s.mu.Unlock()
-	if s.afterExists != nil {
-		s.afterExists(id)
-	}
-	return exists, nil
 }
 
 func (s *fakeStore) CreateEntity(_ context.Context, entity *gtypes.EntityState) error {
@@ -149,19 +117,18 @@ func (s *fakeStore) CreateEntity(_ context.Context, entity *gtypes.EntityState) 
 	return nil
 }
 
-func (s *fakeStore) AddTriple(_ context.Context, triple message.Triple) error {
-	if err := s.injected(s.addErr, triple.Subject); err != nil {
-		return err
-	}
+// writeEntity stores the entity id with triples, as graph-ingest writes a born
+// entity with the statements the inference returned, and records each one.
+func (s *fakeStore) writeEntity(id string, triples []message.Triple) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	entity, exists := s.entities[triple.Subject]
+	entity, exists := s.entities[id]
 	if !exists {
-		return fmt.Errorf("add triple to %s: %w", triple.Subject, natsclient.ErrKVKeyNotFound)
+		entity = &gtypes.EntityState{ID: id}
+		s.entities[id] = entity
 	}
-	entity.Triples = append(entity.Triples, triple)
-	s.triples = append(s.triples, triple)
-	return nil
+	entity.Triples = append(entity.Triples, triples...)
+	s.triples = append(s.triples, triples...)
 }
 
 func (s *fakeStore) getCreatedEntities() []*gtypes.EntityState {
@@ -265,10 +232,8 @@ func TestAddToContainersSkipsForeignAuthority(t *testing.T) {
 
 	require.NoError(t, err, "a foreign entity is skipped, not rejected")
 	assert.Empty(t, triples, "no membership triple may be minted for an imported entity")
-	assert.Empty(t, store.getCreatedEntities(),
+	assert.Empty(t, store.createCalls(),
 		"no container entity may be born under a peer's authority")
-	assert.Empty(t, store.getTriples(),
-		"no inverse edge may be written for an imported entity")
 
 	// The same shape under THIS deployment's authority still mints, so the skip
 	// is authority-scoped rather than a blanket disable.
@@ -315,9 +280,9 @@ func TestHierarchyInference_AllLevels(t *testing.T) {
 	assert.True(t, containerIDs["c360.semstreams-hierarchy-test.sensor.document.group.container"])   // System
 	assert.True(t, containerIDs["c360.semstreams-hierarchy-test.sensor.group.container.level"])      // Domain
 
-	// Should create 6 edges: 3 forward (member) + 3 inverse (contains)
+	// Should store 3 edges, the forward (member) ones, with the entity
 	triples := store.getTriples()
-	assert.Len(t, triples, 6)
+	assert.Len(t, triples, 3)
 	for _, tr := range triples {
 		assert.Equal(t, "inference.hierarchy", tr.Context, "%s %s", tr.Subject, tr.Predicate)
 		assert.Equal(t, 1.0, tr.Confidence, "%s %s", tr.Subject, tr.Predicate)
@@ -335,17 +300,24 @@ func TestHierarchyInference_AllLevels(t *testing.T) {
 	assert.Equal(t, "c360.semstreams-hierarchy-test.sensor.document.group.container", forwardPredicates[vocabulary.HierarchySystemMember])
 	assert.Equal(t, "c360.semstreams-hierarchy-test.sensor.group.container.level", forwardPredicates[vocabulary.HierarchyDomainMember])
 
-	// Extract inverse edges (container → contains → entity)
-	inversePredicates := make(map[string]string) // predicate-audit:unrelated {"column":23,"surface":"go-assignment:inversePredicates","value":"","basis":"reviewed output map populated from inferred triples"}
-	for _, tr := range triples {
-		if tr.Object == entityID {
-			inversePredicates[tr.Predicate] = tr.Subject
-		}
+	// No inverse edge (ruling M, #91 comment 6080973822): each container holds
+	// only the type statement it was born with.
+	assertContainersHoldOnlyTheirType(t, store, "c360.semstreams-hierarchy-test.sensor.document.temperature.group",
+		"c360.semstreams-hierarchy-test.sensor.document.group.container",
+		"c360.semstreams-hierarchy-test.sensor.group.container.level")
+}
+
+// assertContainersHoldOnlyTheirType checks that each container is stored with
+// the one statement it was born with, its type: a member's birth wrote nothing
+// to it.
+func assertContainersHoldOnlyTheirType(t *testing.T, store *fakeStore, containerIDs ...string) {
+	t.Helper()
+	for _, containerID := range containerIDs {
+		container, exists := store.entity(containerID)
+		require.True(t, exists, "container %s is stored", containerID)
+		assert.Equal(t, 1, statementCount(container.Triples, "entity.type.class", "hierarchy.container"), containerID)
+		assert.Len(t, container.Triples, 1, "container %s holds a statement besides its type", containerID)
 	}
-	assert.Len(t, inversePredicates, 3)
-	assert.Equal(t, "c360.semstreams-hierarchy-test.sensor.document.temperature.group", inversePredicates[vocabulary.HierarchyTypeContains])
-	assert.Equal(t, "c360.semstreams-hierarchy-test.sensor.document.group.container", inversePredicates[vocabulary.HierarchySystemContains])
-	assert.Equal(t, "c360.semstreams-hierarchy-test.sensor.group.container.level", inversePredicates[vocabulary.HierarchyDomainContains])
 }
 
 func TestHierarchyInference_ContainerReuse(t *testing.T) {
@@ -365,32 +337,48 @@ func TestHierarchyInference_ContainerReuse(t *testing.T) {
 	createdEntities := store.getCreatedEntities()
 	assert.Len(t, createdEntities, 3)
 
-	// Should have 12 edges: 2 x (3 forward (member) + 3 inverse (contains))
+	// Should have 6 edges: 2 x 3 forward (member), stored with each entity; the
+	// second birth wrote nothing to the containers the first one created
 	triples := store.getTriples()
-	assert.Len(t, triples, 12)
+	assert.Len(t, triples, 6)
+	assertContainersHoldOnlyTheirType(t, store, "c360.semstreams-hierarchy-test.sensor.document.temperature.group",
+		"c360.semstreams-hierarchy-test.sensor.document.group.container",
+		"c360.semstreams-hierarchy-test.sensor.group.container.level")
 }
 
+// TestHierarchyInference_ContainerExistsInStorage: the type container is already
+// stored, born by an earlier birth or by another writer a moment before this
+// one's create. The inference asks storage through the create; graph-ingest
+// refuses it with natsclient.ErrKVKeyExists, and that refusal is the container
+// existing, so the birth goes on, carries its edge to the container, and writes
+// nothing to it (#134 items 4 and 7).
 func TestHierarchyInference_ContainerExistsInStorage(t *testing.T) {
-	store := newFakeStore()
-
-	// Pre-existing type container in storage
+	const entityID = "c360.semstreams-hierarchy-test.sensor.document.temperature.sensor-001"
 	const typeContainerID = "c360.semstreams-hierarchy-test.sensor.document.temperature.group"
+	store := newFakeStore()
 	store.addExistingEntity(typeContainerID)
-
 	hi := newTestInference(t, store)
 
-	err := addHierarchy(context.Background(), hi, store, "c360.semstreams-hierarchy-test.sensor.document.temperature.sensor-001")
-	require.NoError(t, err)
+	triples, err := hi.AddToContainers(context.Background(), entityID, hierarchyTestTime)
+	require.NoError(t, err, "a create refused because the container exists is the container existing")
 
-	// Should NOT create the type container (already exists), only the other two
+	// Every container's create runs; the type container's is refused, the other
+	// two commit.
 	assert.Equal(t, []string{
+		typeContainerID,
 		"c360.semstreams-hierarchy-test.sensor.document.group.container",
 		"c360.semstreams-hierarchy-test.sensor.group.container.level",
 	}, store.createCalls())
+	for _, created := range store.getCreatedEntities() {
+		assert.NotEqual(t, typeContainerID, created.ID, "the container the store holds is the earlier one")
+	}
 
-	// Should create 6 edges: 3 forward (member) + 3 inverse (contains)
-	triples := store.getTriples()
-	assert.Len(t, triples, 6)
+	assert.Len(t, triples, 3)
+	assert.Equal(t, 1, statementCount(triples, vocabulary.HierarchyTypeMember, typeContainerID),
+		"the birth carries its container edge")
+	container, exists := store.entity(typeContainerID)
+	require.True(t, exists)
+	assert.Empty(t, container.Triples, "the birth wrote nothing to the existing container")
 }
 
 func TestHierarchyInference_ContainerEntityProperties(t *testing.T) {
@@ -440,38 +428,6 @@ func TestBuildContainerIDs(t *testing.T) {
 	assert.Equal(t, "org.platform.src.group.container.level", buildSourceContainerID(eid))
 }
 
-// TestHierarchyInference_RaceConditionOnContainerCreate: another writer births
-// the container between the inference's existence check and its own create.
-// graph-ingest refuses the second create with natsclient.ErrKVKeyExists; the
-// container the inference wanted exists, so the birth goes on and writes its
-// inverse edge to it. The pin's version put the container in the store first, so
-// its create was never reached (#134 item 4).
-func TestHierarchyInference_RaceConditionOnContainerCreate(t *testing.T) {
-	const entityID = "c360.semstreams-hierarchy-test.sensor.document.temperature.sensor-001"
-	const containerID = "c360.semstreams-hierarchy-test.sensor.document.temperature.group"
-	store := newFakeStore()
-	store.afterExists = func(id string) {
-		if id == containerID {
-			store.addExistingEntity(containerID)
-		}
-	}
-	hi := newTestInference(t, store)
-
-	triples, err := hi.AddToContainers(context.Background(), entityID, hierarchyTestTime)
-	require.NoError(t, err, "a create refused because the container exists is the container existing")
-
-	assert.Contains(t, store.createCalls(), containerID, "the inference's own create ran and was refused")
-	for _, created := range store.getCreatedEntities() {
-		assert.NotEqual(t, containerID, created.ID, "the container the store holds is the other writer's")
-	}
-	assert.Equal(t, 1, statementCount(triples, vocabulary.HierarchyTypeMember, containerID),
-		"the birth carries its container edge")
-	container, exists := store.entity(containerID)
-	require.True(t, exists)
-	assert.Equal(t, 1, statementCount(container.Triples, vocabulary.HierarchyTypeContains, entityID),
-		"the inverse edge is written to the other writer's container")
-}
-
 // TestHierarchyInference_DeletedContainerIsBornAgain holds #130 and design D21:
 // the inference keeps no record of which containers exist, so each birth asks
 // storage, and a container deleted since an earlier birth of its type is created
@@ -496,12 +452,9 @@ func TestHierarchyInference_DeletedContainerIsBornAgain(t *testing.T) {
 
 	assert.Equal(t, 1, statementCount(triples, vocabulary.HierarchyTypeMember, containerID),
 		"the birth carries its container edge")
-	container, exists := store.entity(containerID)
-	require.True(t, exists, "the container exists again")
-	assert.Equal(t, 1, statementCount(container.Triples, "entity.type.class", "hierarchy.container"))
-	assert.Equal(t, 1, statementCount(container.Triples, vocabulary.HierarchyTypeContains, second))
-	assert.Zero(t, statementCount(container.Triples, vocabulary.HierarchyTypeContains, first),
-		"the deleted container's statements went with it")
+	// The container exists again, with only the statement it is born with: the
+	// deleted container's statements went with it.
+	assertContainersHoldOnlyTheirType(t, store, containerID)
 }
 
 // TestHierarchyInference_BirthWritesNoSiblingEdge holds ruling G (#91 comment

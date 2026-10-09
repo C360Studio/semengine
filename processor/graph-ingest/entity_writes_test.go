@@ -264,15 +264,6 @@ func canonicalAppendWrite(t *testing.T, c *Component, triple message.Triple) {
 	}
 }
 
-func inProcessAppendWrite(t *testing.T, c *Component, triple message.Triple) {
-	t.Helper()
-	deduplicated, committed, err := c.addTripleLane(t.Context(), triple, dedupLaneHierarchy)
-	assertIngestResetRequired(t, err)
-	if deduplicated || committed != 0 {
-		t.Fatalf("in-process append: deduplicated %v, committed revision %d; want neither", deduplicated, committed)
-	}
-}
-
 // assertWriteSeamRefuses runs each write over stored, planted at seamKey, and checks that it
 // wrote nothing and that the refusal is recorded for reason at seamReadRevision.
 func assertWriteSeamRefuses(t *testing.T, stored []byte, reason graph.StateResetReason, writes []seamWrite) {
@@ -333,18 +324,15 @@ func TestWriteSeamRefusesValueUnderAnotherKey(t *testing.T) {
 		{name: "stream lane", triple: seamAdded, write: streamLaneWrite},
 		{name: "canonical append", triple: seamAdded, write: canonicalAppendWrite},
 		{name: "canonical append that adds nothing", triple: seamHeld, write: canonicalAppendWrite},
-		{name: "in-process append", triple: seamAdded, write: inProcessAppendWrite},
-		{name: "in-process append that adds nothing", triple: seamHeld, write: inProcessAppendWrite},
 	})
 }
 
 // Absence is revision 0. An empty value at a nonzero revision is no birth on the stream lane and
-// no absent entity on the append lanes. It carries no statement, so no append over it adds nothing.
+// no absent entity on the append lane. It carries no statement, so no append over it adds nothing.
 func TestWriteSeamRefusesEmptyStoredValue(t *testing.T) {
 	assertWriteSeamRefuses(t, []byte{}, graph.GraphStateReasonUnreadableEntity, []seamWrite{
 		{name: "stream lane", triple: seamAdded, write: streamLaneWrite},
 		{name: "canonical append", triple: seamAdded, write: canonicalAppendWrite},
-		{name: "in-process append", triple: seamAdded, write: inProcessAppendWrite},
 	})
 }
 
@@ -356,7 +344,6 @@ func TestWriteSeamRecordsStoredPoisonAtTheRevisionRead(t *testing.T) {
 	writes := []seamWrite{
 		{name: "stream lane", triple: seamAdded, write: streamLaneWrite},
 		{name: "canonical append", triple: seamAdded, write: canonicalAppendWrite},
-		{name: "in-process append", triple: seamAdded, write: inProcessAppendWrite},
 	}
 	t.Run("value that does not decode", func(t *testing.T) {
 		assertWriteSeamRefuses(t, []byte(`{"id":`), graph.GraphStateReasonUnreadableEntity, writes)

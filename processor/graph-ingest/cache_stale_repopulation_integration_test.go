@@ -94,18 +94,19 @@ func TestIntegration_CacheStaleRepopulationRace(t *testing.T) {
 		t.Fatalf("cache reader did not reach the post-Get hook: %v", ctx.Err())
 	}
 
-	// rev2: commit the marker while the reader is paused. AddTriple commits a new
+	// rev2: commit the marker while the reader is paused. The append commits a new
 	// revision AND invalidates the cache (bumps the coherence generation) — this
 	// is the concurrent write W2 the paused reader's rev1 read did not see.
-	_, _, err := c.addTripleLane(ctx, message.Triple{
+	appended, err := c.addTriplesLane(ctx, []message.Triple{{
 		Subject:    id,
 		Predicate:  semantictest.Predicate(t, "test", "stale", "marker"),
 		Object:     "committed",
 		Source:     fixtureSource,
 		Timestamp:  time.Now(),
 		Confidence: 1.0,
-	}, dedupLaneAddBatch)
+	}}, dedupLaneAddBatch)
 	require.NoError(t, err)
+	require.Contains(t, appended.CommittedRevisions, id, "the marker append must commit")
 
 	// Release the paused reader so it attempts its (now stale) repopulating Set.
 	release()
@@ -119,7 +120,7 @@ func TestIntegration_CacheStaleRepopulationRace(t *testing.T) {
 
 	// A fresh read MUST observe rev2 (the marker), never a resurrected rev1.
 	// Without the guard the paused reader's Set writes rev1 back into the cache
-	// after AddTriple's invalidate, so this read hits stale state and fails.
+	// after the append's invalidate, so this read hits stale state and fails.
 	got, _, err := c.fetchEntitiesConcurrent(ctx, []string{id}, 1)
 	require.NoError(t, err)
 	require.Len(t, got, 1)

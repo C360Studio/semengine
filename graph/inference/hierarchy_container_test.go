@@ -239,9 +239,9 @@ func TestHierarchyInference_NoCascade(t *testing.T) {
 	assert.Equal(t, len(expectedContainers), len(containerIDs),
 		"Created unexpected containers")
 
-	// Verify 6 edges: 3 forward (member) + 3 inverse (contains)
+	// Verify 3 edges, the forward (member) ones
 	triples := store.getTriples()
-	require.Len(t, triples, 6, "Should create exactly 6 edges (3 forward + 3 inverse), got %d", len(triples))
+	require.Len(t, triples, 3, "Should create exactly 3 edges (3 forward), got %d", len(triples))
 
 	// Now simulate what would happen if containers were processed (BUG scenario)
 	// If the bug exists, processing a container would create more containers
@@ -287,10 +287,10 @@ func TestHierarchyInference_MultipleEntitiesSameType(t *testing.T) {
 	assert.Len(t, createdEntities, 3,
 		"Should create exactly 3 containers regardless of entity count, got %d", len(createdEntities))
 
-	// Verify 60 edges: 10 entities × (3 forward + 3 inverse) = 60
+	// Verify 30 edges: 10 entities × 3 forward = 30
 	triples := store.getTriples()
-	assert.Len(t, triples, 60,
-		"Should create 60 edges (10 entities × 6 edges each), got %d", len(triples))
+	assert.Len(t, triples, 30,
+		"Should create 30 edges (10 entities × 3 edges each), got %d", len(triples))
 
 	// Verify all entities reference the same containers
 	typeContainerID := "c360.semstreams-hierarchy-test.sensor.environmental.temperature.group"
@@ -335,7 +335,7 @@ func TestHierarchyInference_ContainerEntityWithNonStandardSuffix(t *testing.T) {
 	assert.Len(t, createdEntities, 3, "Should create containers for non-container entity")
 
 	triples := store.getTriples()
-	assert.Len(t, triples, 6, "Should create edges for non-container entity")
+	assert.Len(t, triples, 3, "Should create edges for non-container entity")
 }
 
 // entity-id-audit:classify intentional-malformed "c360.semstreams-hierarchy-test.sensor.environmental.temperature" line=80 column=21 surface=go-field:.entityID entity_id_invalid:arity verifies five-position IDs are not containers

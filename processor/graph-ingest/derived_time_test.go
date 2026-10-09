@@ -77,8 +77,8 @@ func assertBirthDerivations(t *testing.T, c *Component, id string, at time.Time,
 			continue
 		}
 		containers++
-		// A container's statements are all graph-ingest's: its type statement and the inverse
-		// edges under graph-ingest-hierarchy, and its profile.
+		// A container's statements are all graph-ingest's: its type statement under
+		// graph-ingest-hierarchy, and its profile.
 		if profile, _ := assertDerivedStatements(t, storedEntity(t, c, key), at); profile != 1 {
 			t.Errorf("container %s carries %d profile statements, want 1", key, profile)
 		}

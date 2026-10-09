@@ -302,20 +302,15 @@ func TestComponent_SynchronousHierarchy_ContainerCreation(t *testing.T) {
 			// Verify container ID format
 			assert.Equal(t, tt.containerID, containerEntity.ID)
 
-			// Verify the container took its one inverse contains edge, to the entity.
-			// The pin asserted Version == 1, which counted the inverse edge's bump on
-			// a container born at Version 0 (pin hierarchy.go:482 sets no Version;
-			// addTripleLane bumps it). Design D15 removes Version, so what that one
-			// append leaves is checked: one contains edge, and it names the entity.
-			assert.Equal(t, 1, statementCount(containerEntity.Triples, tt.contains, entityID),
-				"container should hold its inverse %s edge to the entity once", tt.contains)
-			members := 0
+			// The pin asserted Version == 1, which counted the inverse contains edge's
+			// bump on a container born at Version 0. Ruling M (#91 comment 6080973822)
+			// drops that edge: the container holds no contains edge, and membership is
+			// read from the entity's forward edge.
+			assert.Zero(t, statementCount(containerEntity.Triples, tt.contains, entityID),
+				"container should hold no %s edge: a birth writes no inverse edge", tt.contains)
 			for _, triple := range containerEntity.Triples {
-				if triple.Predicate == tt.contains {
-					members++
-				}
+				assert.NotEqual(t, tt.contains, triple.Predicate, "container should hold no %s edge", tt.contains)
 			}
-			assert.Equal(t, 1, members, "container should hold one %s edge: the entity is its only member", tt.contains)
 			assertEachStatementOnce(t, containerEntity)
 		})
 	}
@@ -376,40 +371,28 @@ func TestComponent_SynchronousHierarchy_MultipleEntitiesSameType(t *testing.T) {
 		assert.True(t, hasTypeTriple, "container should have type classification")
 	})
 
-	t.Run("all_inverse_edges_present", func(t *testing.T) {
-		// Verify container has inverse edges to ALL entities
-		// This tests that synchronous updates don't lose edges due to race conditions
+	t.Run("membership_read_from_each_member", func(t *testing.T) {
+		// Membership is read from the forward edge on each member, and the shared
+		// container holds no contains edge (ruling M, #91 comment 6080973822): every
+		// member names the container once, so no birth lost its membership.
 		typeContainerID := "c360.platform.robotics.mav1.drone.group"
-		entry, err := comp.entityBucket.Get(ctx, typeContainerID)
-		require.NoError(t, err)
-
-		var containerEntity graph.EntityState
-		err = json.Unmarshal(entry.Value, &containerEntity)
-		require.NoError(t, err)
-
-		// Count inverse edges (hierarchy.type.contains)
-		inverseEdgeCount := 0
-		foundEntities := make(map[string]bool)
-		for _, triple := range containerEntity.Triples {
-			if triple.Predicate == vocabulary.HierarchyTypeContains {
-				// Verify object is one of our entities
-				for _, entityID := range entities {
-					if triple.Object == entityID {
-						foundEntities[entityID] = true
-						inverseEdgeCount++
-						break
-					}
-				}
-			}
+		for _, entityID := range entities {
+			entry, err := comp.entityBucket.Get(ctx, entityID)
+			require.NoError(t, err)
+			var member graph.EntityState
+			require.NoError(t, json.Unmarshal(entry.Value, &member))
+			assert.Equal(t, 1, statementCount(member.Triples, vocabulary.HierarchyTypeMember, typeContainerID),
+				"%s should name the type container once", entityID)
 		}
 
-		// CRITICAL: All 3 entities should have inverse edges
-		// Async watcher pattern loses edges due to concurrent updates
-		// Synchronous pattern preserves all edges
-		assert.Equal(t, 3, inverseEdgeCount,
-			"container should have 3 inverse edges (one per entity)")
-		assert.Equal(t, 3, len(foundEntities),
-			"all 3 entities should be found in inverse edges")
+		entry, err := comp.entityBucket.Get(ctx, typeContainerID)
+		require.NoError(t, err)
+		var containerEntity graph.EntityState
+		require.NoError(t, json.Unmarshal(entry.Value, &containerEntity))
+		for _, triple := range containerEntity.Triples {
+			assert.NotEqual(t, vocabulary.HierarchyTypeContains, triple.Predicate,
+				"the container should hold no contains edge: a birth writes no inverse edge")
+		}
 	})
 }
 

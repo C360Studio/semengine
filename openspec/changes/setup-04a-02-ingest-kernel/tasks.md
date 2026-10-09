@@ -145,9 +145,10 @@ posted on this pull request.
       `Gauges.Register` returns the registry's refusal, and with a nil registry registers nothing (the pin fell back
       to Prometheus' global registry). `TestComputeIndexStatus_PreExistingFieldsUnchanged` asserts `IndexedRevision`
       where it asserted the removed `Revision` string. Six `task mutate:check` detections are quoted in the commit body.
-      Later: ruled P (#91 comment 6080973822), task 3.12k removes the `Watcher`, the gate, `ComputeIndexStatus` and
-      `WithRevisionGauges` with their tests. Of the six mutation records, the three on `Run` leave with it, and 3.12k
-      re-runs the three on `Register`. What stays from this task: the publisher with `published_at`, the gauges through
+      Later: ruled P (#91 comment 6080973822), narrowed (#91 comment 6085720598): task 3.12k removes
+      `ComputeIndexStatus` and `WithRevisionGauges` with their tests; the `Watcher` and the gate stay. Of the six
+      mutation records, the three on `Run` stand, and 3.12k re-runs the three on `Register`. What stays from this task:
+      the `Watcher` in its `Run(ctx)` shape, the gate, the publisher with `published_at`, the gauges through
       `RegisterOrGet`, `ComputeBacklogStatus`, and the drop of `Set`.
 - [x] 3.5 (D) `internal/graphmutation` (`InterfaceType` becomes `semengine.graph.mutation`, design D9) and
       `storage/storeregistry` (the `pkg/fusion` assertion removed, noted for change 5).
@@ -403,40 +404,43 @@ posted on this pull request.
       "(append|hierarchy)") drops `hierarchy`; #134 items 5 (the run-time inverse lookup), 7 (`ExistsEntity`) and 11 are
       settled by removal, as the ruling says. A test written first, failing on the current code: each container keeps
       its revision across a member's birth.
-- [ ] 3.12k (D) Ruled P (#91 comment 6080973822; design D6, D16, D18): remove the surface nothing in production reads
-      (`gopls references` at `6102b75`). Hold: the owner's re-check of ruling P against the pin's ADR-083 and
-      ADR-088 and 03B's "Readiness" row (#91 comment 6084907233).
+- [ ] 3.12k (D) Ruled P (#91 comment 6080973822), narrowed (#91 comment 6085720598; design D6, D16, D18): remove
+      `ComputeIndexStatus`, the revision gauges and the query envelope, which return with their first readers in change
+      4. The readiness gate and the `Watcher` stay, with their tests.
       **Removed:**
-      - `graph/readiness/watcher.go`, `watcher_test.go`, `readiness_gate.go` and `readiness_gate_test.go`;
       - `ComputeIndexStatus`, `IndexStatusInputs` and the three `TestComputeIndexStatus_*` tests;
       - `GaugeOption`, `WithRevisionGauges`, the revision-gauge fields, and the revision branches in `NewGauges`,
         `MetricNames`, `Register` (`:159-166`) and `Set`;
-      - `TestBootstrapScope_GateVerdictInvariant`;
       - in `graph`: `query_contracts.go`, `query_contracts_test.go` and `query_response_types.go` (the data types it
         aliases stay).
-      **Moved unchanged out of `watcher.go`:** `BucketGraphStatus`, `KeyGraphIndex`, `KeyGraphEmbedding`,
-      `KeyGraphIngest`, `KeyRule` and `DefaultHeartbeat`. The package comment moves too, rewritten for the producer
-      half.
+      **Kept:** `watcher.go`, `watcher_test.go`, `readiness_gate.go`, `readiness_gate_test.go` and
+      `TestBootstrapScope_GateVerdictInvariant` (ADR-088:73).
       **Rewritten:**
-      - `TestPublisher_ValueIsPlainEnvelopeJSON` decodes with `json.Unmarshal` into `graph.IndexStatusResponse`;
-      - the two `TestIndexStatusResponse_*WireRoundTrip` tests build their envelope as a literal;
-      - `TestComputeBacklogStatus_ObservationFailureCannotReportReady` asserts `Ready` is false where it asked the gate;
+      - `TestIndexStatusResponse_StalenessWireRoundTrip` and
+        `TestIndexStatusResponse_BootstrapCompleteWireRoundTrip` build their envelope as a literal; the second's
+        first assertion, that `ComputeIndexStatus` invents no bootstrap verdict, leaves with `ComputeIndexStatus`
+        (#135 (b), fixed when it returns);
       - `registeredGauges` and the five gauge tests run without options, and their name lists drop `indexed_revision`
         and `target_revision`;
       - `graph/README.md`'s envelope paragraph keeps only "Replies on `graph.ingest.query.*` are not enveloped.";
-      - every comment that names a removed symbol or test, `graph/index_status.go:123-124` included.
+      - every comment that names a removed symbol or test, `graph/index_status.go:76` and the package comment at
+        `graph/readiness/watcher.go:23` included; `graph/index_status.go:123-124` names the kept gate and its test and
+        stays.
       **Added:** an under-1 ms row in `TestComputeBacklogStatus_Staleness` (`StalenessMs` 1), and a `Publisher.Key`
       test, nil and set (graph-ingest reads it at `readiness.go:341`).
       **Proof:**
       - `git grep -n -w -E
-        'ComputeIndexStatus|IndexStatusInputs|EvaluateReadinessGate|StatusReading|DeferReason|WithRevisionGauges|GaugeOption|NewWatcher|FreshnessWindow|FreshnessMultiplier|QueryResponse|NewQueryResponse|MinRevisionField|AllDeferReasons|BucketSource|WaitForFirst'
+        'ComputeIndexStatus|IndexStatusInputs|WithRevisionGauges|GaugeOption|QueryResponse|NewQueryResponse|MinRevisionField'
         -- graph processor/graph-ingest` lists nothing;
       - `TestPublishStampsPublishedAt`, `TestIndexStatusResponseHasNoLegacyFields`,
         `TestExactEntityReaderReturnsValidatedEntityAndRevision` and the `TestComputeBacklogStatus_*` tests are green;
+      - `watcher_test.go` and `readiness_gate_test.go` are unchanged and green, and so are
+        `TestBootstrapScope_GateVerdictInvariant`, `TestComputeBacklogStatus_ObservationFailureCannotReportReady` and
+        `TestPublisher_ValueIsPlainEnvelopeJSON`, which still call the gate and the `Watcher`;
       - 3.4's three `Register` mutation records, re-run on the rewritten gauge tests, are each a detection;
       - the five tests in `processor/graph-ingest/readiness_integration_test.go` and
         `TestIntegration_ReadinessGaugesAreEmitted` are green and unchanged;
-      - `go test -cover ./graph/readiness/` is at or above 80% (84.6% expected), quoted.
+      - `go test -cover ./graph/readiness/` is at or above 80% (91.2% expected, 165 of 181 statements), quoted.
       Gate: `task verify`.
 - [ ] 3.13 (D) graph-ingest under the lifecycle suite: an in-package adapter whose `Observe` lists consumers, request
       subscriptions, ingest lanes and the status loop; failing factory = a refused broker; `lifecycletest.Run` green;
@@ -492,10 +496,10 @@ posted on this pull request.
       `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop`, the `lifecycle-suite` exception's proof) and
       its `known_risks` (graph-ingest: #75's shared gauges, and `ENTITY_STATES` kept at one revision per key (#99);
       `component`: a consumer can call the three registry methods directly, review only; `graph/readiness`: `Set`
-      dropped, read by `gateway/graph-gateway` and needed back by #110, design D6; the consumer half not carried (ruled
-      P, design D16), each piece named with the change that brings its first reader and the last commit holding its
-      adapted code, #135 (b) to be fixed on return; `graph`: the query envelope and its three aliases not carried (ruled
-      P, design D18), returning with change 4). Adapt items that name adopters:
+      dropped, read by `gateway/graph-gateway` and needed back by #110, design D6; `ComputeIndexStatus` and the
+      revision gauges not carried (ruled P, design D16), each named with the change that brings its first reader and
+      the last commit holding its adapted code, #135 (b) to be fixed on return; `graph`: the query envelope and its
+      three aliases not carried (ruled P, design D18), returning with change 4). Adapt items that name adopters:
       `component`'s `LifecycleManager` drop names semboids `internal/sim/component.go:255-256` and
       `cmd/semboids/main.go:190` and semteams `cmd/semteams/main.go:209` (ruling D, design D17); `graph`'s readiness
       envelope names semsource's reads of `revision` and `last_synced`, a silent change (ruling F, design D16); the
@@ -504,11 +508,11 @@ posted on this pull request.
       notes for later changes: rule (change 6: `events.go` emission, the `version` read, the lifecycle manager at
       registration), `service` (change 3: no lifecycle manager copied into component dependencies), graph-query
       (change 4: partial-ID resolution without the suffix verb, the envelope type, its constructor, `min_revision` and
-      their producers, the verb table), `fusionnats` (change 5: no `UnwrapQueryResponse`; the readiness `Watcher`, in
-      design D5's `Run(ctx)` shape), graph-index (change 4: the readiness gate, `ComputeIndexStatus`,
-      `WithRevisionGauges`), graph-embedding (change 5: `ComputeIndexStatus`, `WithRevisionGauges`), graph-clustering
-      (change 7: the `Watcher` and the gate), `pkg/fusion` (change 5: its envelope copy without the legacy fields,
-      #110; the readiness gate). The `internal/lifecyclecleanup` package row is `adapt` to
+      their producers, the verb table), `fusionnats` (change 5: no `UnwrapQueryResponse`; the readiness `Watcher`
+      through `Run(ctx)`, design D5), graph-index (change 4: `ComputeIndexStatus`, `WithRevisionGauges`),
+      graph-embedding (change 5: `ComputeIndexStatus`, `WithRevisionGauges`), graph-clustering (change 7: the readiness
+      `Watcher` through `Run(ctx)`, design D5), `pkg/fusion` (change 5: its envelope copy without the legacy fields,
+      #110). The `internal/lifecyclecleanup` package row is `adapt` to
       `pkg/lifecyclecleanup` (public home, nil rollback refused), naming the harness copy; the file row's
       `known_risks` names the production home and why the copy stays (design D7.4); Q13's row cites PR #1437 head
       `0ea823a6`; #29 and #33 rows name `class:port-refactor`. The `graph/inference` row also records the inverse-edge
@@ -516,7 +520,7 @@ posted on this pull request.
 - [ ] 5.2 (D) `scripts/cover-check.sh` gains the ten targets of design D11, `graph/inference` and `graph/kvcatalog`
       among them; the tests design D11 names for `internal/graphmutation`, `pkg/projection`, `component` and
       `pkg/lifecycle` are added; each target's figure is posted. `graph/readiness` at or above 80% after task 3.12k
-      (84.6% expected, design D11). Ticked only on a green `task cover:check`. Hold: task
+      (91.2% expected, 165 of 181 statements, design D11). Ticked only on a green `task cover:check`. Hold: task
       1.12.
 - [x] 5.3 (D) `go.mod`: `golang.org/x/net` at a version that downgrades nothing, and no `go-openai`; `task vuln` and
       `task tidy:check` green. Done in `074c800`: v0.59.0 → v0.60.0 for five HTTP/2 advisories, nothing else moved,

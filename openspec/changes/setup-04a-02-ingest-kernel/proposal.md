@@ -47,9 +47,9 @@ graph-ingest); a **statement** is one stored triple with its source, time, confi
   (rulings 1–5, #91 comment 6037604840). The typed mutation client stops reading the clock.
 - **One stored revision** (#99): `ENTITY_STATES` keeps one revision per key, written down as a constraint.
 - **The `graph` root** (#101) holds the data model and wire types and imports no NATS package: the bucket catalog
-  moves to a new `graph/kvcatalog`, the readiness computation's producer half to `graph/readiness` (its consumer half
-  returns with changes 4 and 5, ruling P), and `events.go` (a second mutation
-  grammar with no subscriber) is not ported; the catalog loses the `TOOL_CALL_OUTCOMES` row.
+  moves to a new `graph/kvcatalog`, the readiness gate and the backlog computation to `graph/readiness`
+  (`ComputeIndexStatus` returns with change 4, ruling P; where the gate finally lives is #110's), and `events.go` (a
+  second mutation grammar with no subscriber) is not ported; the catalog loses the `TOOL_CALL_OUTCOMES` row.
 - **`component` reaches no graph package** (#102): `Dependencies.LifecycleManager` goes, as #29's tool registry does
   (ruling D);
   `ModelRegistry` and `StoreRegistry` stay, since neither reaches a graph package.
@@ -77,8 +77,8 @@ graph-ingest); a **statement** is one stored triple with its source, time, confi
   other.
 - One owner-lifecycle guard, `internal/lifecycleguard`, composed by graph-ingest; the 11 later copies adopt it when
   ported.
-- Helpers that run background work take the standing shapes (`Run(ctx)`, `Shutdown(ctx)`): the keyed dispatch pool and
-  the lifecycle manager's two watches; the readiness watcher returns with change 5 (ruling P).
+- Helpers that run background work take the standing shapes (`Run(ctx)`, `Shutdown(ctx)`): the keyed dispatch pool,
+  the readiness watcher, and the lifecycle manager's two watches.
 - Metrics register through `metric.RegisterOrGet`, under the `semengine` namespace (after #92), on the registry the
   component is given, never on Prometheus' process-global registry. The configuration bucket and the mutation
   interface type are renamed to `semengine` under #69.

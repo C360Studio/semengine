@@ -104,7 +104,7 @@ otherwise `pkg/<name>` moves to `internal/<name>`.
 | 0 | `storage` | `storage` | consumers import it (20) | carry |
 | 1 | `pkg/worker` | — | no reader once `BoundedDispatcher` goes (§2) | not ported (ruling E); `defer-exclude` row |
 | 1 | `graph` | `graph`, with its catalog moved to `graph/kvcatalog` and its readiness computation to `graph/readiness` (D16) | consumers import it (72 + 11) | adapt (D3, D6, D9, D15, D16, D18, D20) |
-| 2 | `graph/readiness` | `graph/readiness` | consumers import it (2) | adapt (D4, D6, D16; the consumer half returns with changes 4 and 5, ruled P) |
+| 2 | `graph/readiness` | `graph/readiness` | consumers import it (2) | adapt (D4, D5, D6, D16; `ComputeIndexStatus` and the revision gauges return with change 4, ruled P) |
 | 2 | `graph/structural` | — | its readers are the detectors and graph-clustering, both in change 7 (D1a, P-11) | not ported in change 2; `defer-exclude` row naming change 7 |
 | 2 | `internal/componentadmission` | — | its only reader is the token parameter ruling C removes (D14) | not ported (ruling C); `defer-exclude` row |
 | 2 | `internal/graphmutation` | `internal/graphmutation` | internal at the pin | adapt (D6, D9) |
@@ -247,13 +247,12 @@ audit drops (D6) needs no shape. Per remaining helper, what the caller observes,
 | Helper | Pin | After the port | What the caller observes |
 | --- | --- | --- | --- |
 | `dispatch.KeyedPool` | `Stop(ctx)` | `Shutdown(ctx)` | returns nil once every lane has drained and exited, or `ctx.Err()` first; with no deadline it waits for the join; a later `Shutdown` returns nil; `SubmitBlocking` after `Shutdown` began is refused with `ErrStopped`, which `internal/dispatch` now declares itself (ruling E; at the pin it re-exported `worker.ErrPoolStopped`, `pkg/dispatch/errors.go:24`) |
+| `readiness.Watcher` | `Start(ctx)`, `Stop()` waiting unbounded on a goroutine doing KV watch I/O | `Run(ctx)` | the caller runs `Run` on its own goroutine; `Run` returns `ctx.Err()` when the context ends and leaves nothing running (`TestWatcherRunReturnsContextErrorAndLeavesNothingRunning`); a nil context, a nil source or an empty key is refused before any I/O (`TestWatcher_RunValidatesWiring`); `Read` keeps its pin behavior, except that an undecodable value revokes the held envelope's freshness at once and the next decoded update restores it (`TestWatcher_UndecodableValueRevokesFreshness`; checkpoint-2 review, PR #93 comment 6048386249) |
 | `lifecycle.Manager.Watch`, `.WatchEvents` | return a channel; the goroutine ends when ctx ends and is never joined | a watch whose callback runs on the caller's goroutine; returning is the join | no goroutine left after return |
 
 Dropped, so no shape: `dispatch.BoundedDispatcher` (and with it its fixed 30 s default wait, `dispatcher.go:226-231`)
-and `readiness.Set` (D6); the readiness `Watcher` is not carried (ruled P, D6) and takes `Run(ctx)` when it returns with
-change 5 (`Run` returns `ctx.Err()` when its context ends and leaves nothing running; an undecodable value revokes the
-held envelope's freshness until the next decoded update, PR #93 comment 6048386249); `worker.Pool[T]`, whose second
-`Stop` after a timed-out one panics at the pin (P-6), is not ported (ruling E). Not ported in change 2, so their shape
+and `readiness.Set` (D6); `worker.Pool[T]`, whose second `Stop` after a timed-out one panics at the pin (P-6), is not
+ported (ruling E). Not ported in change 2, so their shape
 is change 7's: `inference.ReviewWorker` and `inference.NATSAnomalyStorage.Watch` (#97, D1a). `lifecycle.Manager.Watch`
 and `WatchEvents` have **no reader in the admitted set** (§2: `Watch` is read only by
 `processor/gated-dag/executor.go:119` and `gateway/lifecycle-gateway/handlers.go:475`; `WatchEvents` by nobody); they
@@ -278,12 +277,15 @@ reads is removed (#9 comment 5968830525).
   (`worker.WithMetricsRegistry`, `Pool.SubmitBlocking`); `internal/componentadmission` whole (ruling C, D14);
   `graph/inference` outside its hierarchy slice (#97, D1a), whose 21 appendix rows are audited again in change 7;
   `graph/llm`, `model/wire` and `graph/structural` (D1a), the last with its six appendix rows. By ruling P (#91 comment
-  6080973822), surface that returns with its first reader instead of being carried: `graph/readiness`'s consumer half,
-  that is, the `Watcher` with `Reading`, `BucketSource`, `Option`, `WithHeartbeat`, `WithLogger`, `FreshnessWindow` and
-  `FreshnessMultiplier`; the gate with `StatusReading`, `DeferReason` and `AllDeferReasons`; `ComputeIndexStatus` with
-  `IndexStatusInputs`; and `WithRevisionGauges` with `GaugeOption`. Also `graph`'s `QueryResponse`, `NewQueryResponse`
-  and `MinRevisionField`, with the three aliases of `query_response_types.go` (D16, D18). The data types those aliases
-  wrap stay, because graph-index reads them at the pin (`processor/graph-index/query.go:141`, `:326`, `:356`).
+  6080973822, narrowed by comment 6085720598), surface that returns with its first reader in change 4 instead of being
+  carried: `ComputeIndexStatus` with `IndexStatusInputs`, and `WithRevisionGauges` with `GaugeOption` (D16); also
+  `graph`'s `QueryResponse`, `NewQueryResponse` and `MinRevisionField`, with the three aliases of
+  `query_response_types.go` (D18). The data types those aliases wrap stay, because graph-index reads them at the pin
+  (`processor/graph-index/query.go:141`, `:326`, `:356`). The readiness gate and the `Watcher` are carried, with their
+  tests: admitted packages read them at the pin (graph-clustering `processor/graph-clustering/component.go:1509`,
+  `:1524`, `:1629`, `:1666`; `pkg/fusion/engine_lens.go:147` and `pkg/fusion/fusionnats/client.go:139`; graph-index
+  `processor/graph-index/query.go:237`), and the surface audit counts a reader in an admitted package (#9 comment
+  5968830525; the re-check, #91 comment 6085229588).
 - **Dropped (the rest of the 134 plus the transitive drops of §2):** among them `component.NewProcessorMetrics` and
   `ProcessorMetrics`; the 20 `graph/errors.go` sentinels;
   `graph.IncomingEdges` and its methods;
@@ -297,7 +299,11 @@ reads is removed (#9 comment 5968830525).
   `readiness.Set`'s one reader, `gateway/graph-gateway`, is deferred as consumer-owned (03B D4), not abandoned, and
   #110's fix shape needs it back ("`Health()` reports from the same `readiness.Set` the bucket is written from",
   change 7). The readiness ledger row's `known_risks` names both, so `Set` returns as returning surface with #110 and
-  the drop forecloses nothing.
+  the drop forecloses nothing. The drop departs from the second decision of the pin's ADR-088 (`:42-48`: aggregation
+  is "a client-side fold over a consumer-declared key list (`graph/readiness.Set`), delegating each key to the
+  existing `graph.EvaluateReadinessGate`"). The owner kept the drop (#91 comment 6085720598) for three reasons: no
+  starter consumer calls `Set`; its one pin reader, graph-gateway, is deferred; and a consumer can loop over its keys
+  through the gate, which this change carries.
 - **Removed by a port-refactor, not as dead surface** (each read by something, each with its decision): `graph`'s
   `events.go` (D16), the `TOOL_CALL_OUTCOMES` catalog row and constant (D16), `EntityState.Version` (D15),
   `UnwrapQueryResponse` (D18), `component.Dependencies.LifecycleManager` (D17), and graph-ingest's suffix index with
@@ -560,8 +566,10 @@ Recommendation **(d)**, as a `harness-boundaries` modification with a sensitivit
   - Already over the floor after the drop: graph-ingest 84.7% (its suffix code removed, D19), `graph` 80.9% (the root
     after D16; a two-statement margin), `graph/kvcatalog` 80.3% merged, `graph/inference` 82.8% (the slice),
     `storage/storeregistry` 100%.
-  - `graph/readiness` 78.5% unit after ruling P's removal (51 of 65 statements), one statement short; task 3.12k's two
-    added tests bring it to 84.6% (55 of 65).
+  - `graph/readiness`, also over the floor: 89.0% unit after ruling P's removal as narrowed (161 of 181 statements,
+    the gate and the `Watcher` kept); task 3.12k's two added tests bring it to 91.2% (165 of 181). Measured with
+    `go test -race -cpu=1 -cover ./graph/readiness/` on a copy of `08988f1` outside the repository, task 3.12k as
+    narrowed applied (local only).
   - `internal/graphmutation` 69.7%, 10 statements short: tests that the client refuses a malformed append response
     (`validateAppendResponse`) and that `Reconcile` and `Delete` send their requests and read their replies.
   - `pkg/projection` 66.5%, 31 short (its unread surface is kept, K1, so the drop buys nothing): the typed client's
@@ -919,16 +927,19 @@ At the pin the root carries six jobs (P-14, §9.5) and four of its files import 
   `config.Manager` (change 3) (§9.5). They stay: the surface audit keeps what an admitted package reads (#9 comment
   5968830525), and the catalog is the one home their owners would otherwise re-add them to. #101 is a port-refactor
   issue, not a ruling, so this is not an owner question; the reviewer may weigh it.
-- **`graph/readiness`** receives the producer half of the readiness computation: `ComputeBacklogStatus` and
-  `BacklogStatusInputs` from `index_status.go`, with their tests, beside the publisher and the gauges graph-ingest
-  writes through. The wire type stays in the root, so a reader of GRAPH_STATUS needs no NATS import. The consumer half
-  has no reader in this change and is not carried (ruled P, #91 comment 6080973822; D6); each piece returns with its
-  first reader. The gate, `ComputeIndexStatus` and `WithRevisionGauges` return with graph-index in change 4 (pin
-  `processor/graph-index/query.go:237`, `watermark.go:93`, `metrics.go:97`). The `Watcher` returns with
-  `pkg/fusion/fusionnats` in change 5 (pin `client.go:139`). Removal settles #135 items 1, 2, (a)–(d) and (g) here
-  (ruled P). The returning change fixes (b), that `ComputeIndexStatus` never sets `BootstrapComplete`, rather than carry
-  it (#9 comment 5968830525, rule 4). The `graph/readiness` row's `known_risks` names each piece, its change, and the
-  last commit that holds the adapted code.
+- **`graph/readiness`** receives the readiness gate, `readiness_gate.go` whole (`EvaluateReadinessGate`,
+  `StatusReading`, `DeferReason`), and from `index_status.go` `ComputeBacklogStatus` and `BacklogStatusInputs`, with
+  their tests, beside the publisher, the gauges graph-ingest writes through, and the `Watcher` (D5). The wire type stays
+  in the root, so a reader of GRAPH_STATUS needs no NATS import. Where the gate lives, `graph` as at the pin and in
+  ADR-083 or `graph/readiness` as here, is left to the readiness ADR (#110); this change leaves it in `graph/readiness`
+  (ruling P as narrowed, #91 comment 6085720598). `ComputeIndexStatus` and `WithRevisionGauges` are graph-index's
+  producer code and are not carried (ruled P, #91 comment 6080973822; D6); they return with graph-index in change 4 (pin
+  `processor/graph-index/watermark.go:93`, `metrics.go:97`). Their removal settles #135 item (d); item (a) asked the
+  question ruling P answers. The returning change fixes (b), that `ComputeIndexStatus` never sets `BootstrapComplete`,
+  rather than carry it (#9 comment 5968830525, rule 4). #135 items 1, 2, (c) and (g) concern the kept gate and `Watcher`
+  and stay open on #135; this change does not take them up (scope frozen, epic #9 comment 6085243841). The
+  `graph/readiness` row's `known_risks` names each piece not carried, its change, and the last commit that holds the
+  adapted code.
 - **The readiness envelope (#110's change-2 part; ruled F, #91 comment 6037287957).** `IndexStatusResponse` ports
   without `Phase`, `Revision` and `LastSynced` (`graph/index_status.go:134-138`), and gains `published_at`. P-20
   (§9.15): `Revision` is `IndexedRevision` as a string (`index_status.go:249-251`) and `LastSynced` the last apply time
@@ -939,8 +950,10 @@ At the pin the root carries six jobs (P-14, §9.5) and four of its files import 
   (`graph/readiness/publisher.go:90-107`) on every write, whatever the caller passed, so no producer can leave it out:
   UTC, RFC 3339 with nanoseconds, from the wall clock. The clock is right here: the field states when the producer
   wrote, not when anything in the graph was asserted, so #98's
-  rule does not apply. What a reader does with it (stale to unknown in the gate, #110's fix shape) is change 7's; this
-  change ships the field. The doc comment's "the two structs change together" with `pkg/fusion.IndexStatus` becomes a
+  rule does not apply. This change ships the field, and nothing in it reads the field: the `Watcher` judges freshness
+  by local arrival time (ADR-083:74-78 at the pin). What a reader may do with it is #110's question: ADR-083:111-112
+  rejects comparing `published_at` against the consumer's clock (#110 comment 6085234022). The doc comment's "the two
+  structs change together" with `pkg/fusion.IndexStatus` becomes a
   `class:port-refactor` note on the `pkg/fusion` row (change 5, #110). Consumer: semsource decodes `GRAPH_STATUS` into
   its own struct and reads `revision` and `last_synced` (`processor/source-manifest/workbench_capabilities.go:110-118`,
   `readiness.go:42-43` at `e4febc0d`); after the port both arrive absent and its browser contract carries them empty. No
@@ -1295,11 +1308,13 @@ These issues belong to changes 4, 5 and 7. This change forecloses none of them:
 - **#109** (follower and processor shell): D17's test forbids `component` from importing a graph package, so an
   `ENTITY_STATES` follower cannot live in `component`; change 4 homes it in a graph package. The processor shell
   imports no graph package and can live in `component`, holding an `internal/lifecycleguard.Guard` unexported (D13).
-- **#110** (readiness envelope): its envelope fields land here (ruling F, D16); the fusion copy is change 5's and
-  the gate's use of `published_at`, the single consumer entry and `Health()` from the readiness set are change 7's.
-  `readiness.Set` is dropped here as dead surface and returns with #110 as returning surface, named on the readiness
-  row's `known_risks` (D6), so the drop forecloses nothing. The readiness consumer half (the gate, the `Watcher`,
-  `ComputeIndexStatus`) is not carried either (ruled P, D6) and returns with changes 4 and 5, before change 7 reads it.
+- **#110** (readiness envelope): its envelope fields land here (ruling F, D16); the fusion copy is change 5's, and what
+  a reader does with `published_at` (D16; ADR-083:111-112 rejects comparing it against the consumer's clock), the
+  single consumer entry and `Health()` from the readiness set are change 7's. `readiness.Set` is dropped here as dead
+  surface, a departure from ADR-088's second decision (D6), and returns with #110 as returning surface, named on the
+  readiness row's `known_risks` (D6), so the drop forecloses nothing. The gate and the `Watcher` are carried, and where
+  the gate lives is the readiness ADR's to decide (ruling P as narrowed, D16). `ComputeIndexStatus` is not carried
+  (ruled P, D6) and returns with change 4, before change 7 reads it.
 - **#111 items 2–4**: changes 4 and 7.
 - **The indexing profile's reader** (ruling 4): with sources side by side, an entity's profile predicate can hold
   graph-ingest's statement and a producer's. Change 4's design says how graph-index reads the profile (the
@@ -1399,8 +1414,9 @@ D9.
 - P11. `graph/inference` is public by signature (`processor/graph-clustering/component.go:77`); `pkg/dispatch` is not.
   — §2, §8.
 - P12. Coverage after the drops, regrouped by D16: graph-ingest 84.7%, `graph` 80.9%, `graph/kvcatalog` 80.3%,
-  `graph/readiness` 86.4% (84.6%, 55 of 65 statements, after ruling P's removal with task 3.12k's two tests; measured on
-  a scratch copy of `6102b75` with task 3.12k applied (local only)), `graph/inference` (slice) 82.8%,
+  `graph/readiness` 86.4% (89.0%, 161 of 181 statements, after ruling P's removal as narrowed, and 91.2%, 165 of 181,
+  with task 3.12k's two tests; measured on a copy of `08988f1` with task 3.12k as narrowed applied (local only)),
+  `graph/inference` (slice) 82.8%,
   `storage/storeregistry` 100%; four packages short by 10, 31, 81 and 97 statements. — P-7, P-8, P-10, P-19 (local-only
   profiles; commands in §1 and §9).
 - P13. The owner-lifecycle state has 12 copies in the admitted set and none in the four consumers. — §3 category 2.
@@ -1509,11 +1525,11 @@ with the change that implements it, and #100–#104 land whole here, so PR #93 c
   reads of the two it uses go empty without a compile error, and it changes on adoption (ruling F).
 - Later changes inherit port-refactor items: rule's event emission, its `version` read and its lifecycle-manager wiring
   (change 6); `service`'s dependency copy (change 3); graph-query's suffix resolution, the envelope type with its
-  constructor, `min_revision` and their producers, and the verb table's generalisation (change 4); the readiness gate,
-  `ComputeIndexStatus` and the revision gauges (change 4) and the `Watcher` (change 5), ruled P; `fusionnats`' unwrap
-  (change 5).
-- `graph/readiness` clears the 80% floor by three statements after ruling P (55 of 65, D11). Ruling M removes the
-  `lane="hierarchy"` series of `semengine_graph_ingest_duplicate_triples_suppressed_total`.
+  constructor, `min_revision` and their producers, and the verb table's generalisation (change 4); `ComputeIndexStatus`
+  and the revision gauges (change 4), ruled P; `fusionnats`' unwrap (change 5).
+- `graph/readiness` carries the gate and the `Watcher` with #135 items 1, 2, (c) and (g) open on them (ruling P as
+  narrowed, D16). Ruling M removes the `lane="hierarchy"` series of
+  `semengine_graph_ingest_duplicate_triples_suppressed_total`.
 - A profile-only arrival on a profiled entity no longer updates its message type or storage reference (#150, task 3.12e).
 - Consumers edit imports for what moved out of `graph` (D16), semboids' sim takes the lifecycle manager through its
   constructor (D17), semteams acquires `TOOL_CALL_OUTCOMES` itself (D16), and raw-wire mutation callers stamp `source`

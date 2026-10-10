@@ -33,16 +33,16 @@ starts, `task merge:check -- 156` and the merge are recorded on this pull reques
       and `go test -race -cpu=1 -count=5 -shuffle=on -v ./natsclient/` run 20 times, all 20 passing, with each run's
       `-test.shuffle` seed recorded on this pull request (`go test` prints a passing package's seed only with `-v`).
       A run that fails is recorded with its seed and output, not replaced by a rerun.
-- [ ] 2.3 (D) Shown able to fail: M1 to M10 of `design.md`, D7, one at a time with `task mutate:check`, each report
+- [x] 2.3 (D) Shown able to fail: M1 to M10 of `design.md`, D7, one at a time with `task mutate:check`, each report
       pasted on this pull request with the system it ran on, beside the record of `docs/testing.md`, "What the pull
       request records"; and, by hand (`docs/testing.md`, "Run it by hand"), the helper's two refusals in D7: called
       from a subtest, and given a pattern that selects no test, it fails the test. Gate: detection for each by the
       assertion D7 names, a survivor or an inconclusive run reported as such; for each refusal, the command and the
       helper's failure line, pasted on this pull request.
-- [ ] 2.4 (D) natsclient's row in `docs/admission-ledger.yaml`: adapt item `(13) natsclient-subscribe-registers-interest`
+- [x] 2.4 (D) natsclient's row in `docs/admission-ledger.yaml`: adapt item `(13) natsclient-subscribe-registers-interest`
       at the end of `contract` (what changed, the pin's `natsclient/client.go:834-849` and `request.go:359`, #144 and
       the ruling), and T1 to T8 with the M1 to M10 record at the end of `proving_tests`. Gate: `task ledger:check`.
-- [ ] 2.5 (D) The #144 reproduction ("Known flakes" in `.agents/protocol.md`). In a detached worktree at PR #93's head,
+- [x] 2.5 (D) The #144 reproduction ("Known flakes" in `.agents/protocol.md`). In a detached worktree at PR #93's head,
       run the #144 command from #144's reproduction comment with `-count=300 -cpu=1`; then merge this pull request's
       head into that worktree, without pushing, and run it again. Gate: both counts of
       `TestGraphIngestServesExactlyTheDeclaredVerbs` and `TestGraphIngestProvisionsNoSuffixIndex` failures, the command,

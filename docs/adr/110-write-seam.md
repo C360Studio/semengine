@@ -2,9 +2,10 @@
 
 ## Status
 
-**Proposed (2026-10-09), for the owner's ruling on #9.** Drafted on PR #164 (`Addresses #141`) under the owner's
-ruling of 2026-10-09 (epic #9 comment 6085243841, "Ruled 2"): one of four records ruled before change 3's design is
-written, which cites all four. #141 stays open as the adoption list.
+**Accepted (2026-10-10).** Ruled by the owner on #9 (comment 6097814764): every decision, and Q1, Q3 and Q4 as
+recommended. Drafted on PR #164 (`Addresses #141`) under the owner's ruling of 2026-10-09 (epic #9 comment 6085243841,
+"Ruled 2"): one of four records ruled before change 3's design is written, which cites all four. #141 stays open as the
+adoption list.
 
 Lines in this repository are cited on `main` at `9d1dd87` or on PR #93's branch at `3d66c91`
 (`claude/setup-04a-02-ingest-kernel`, change 2, not yet merged), which establishes the seam; design D15, D21 and D23
@@ -150,6 +151,9 @@ side effect was attempted so a replay does not repeat it, with the journal and t
 `AGENT_LOOPS` is not a catalog bucket and is out of scope.
 
 ### Open for the owner
+
+**Ruled 2026-10-10 (owner, #9 comment 6097814764): Q1, Q3 and Q4 as recommended.** The questions and their costs stay
+below as the record of what was weighed.
 
 Q2 of the inventory, whether `pkg/lifecycle` is a writer, is settled in Decision 1 (keeps ADR-049 and
 ADR-091 §1) and is not open; the numbering below keeps the inventory's.

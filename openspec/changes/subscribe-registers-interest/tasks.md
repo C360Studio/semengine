@@ -49,9 +49,9 @@ starts, `task merge:check -- 156` and the merge are recorded on this pull reques
       and the two input SHAs (PR #93's head and this pull request's head; the local merge's SHA exists on one machine
       only), recorded on this pull request and on #144, with the logs named as local only; the second count is 0 of
       300 for each test. A failure in the second run sends the design back to review.
-- [ ] 2.6 (D) `task verify` passes on the commit that carries 2.2 and 2.4, and that commit's CI run passes. Gate: CI
+- [x] 2.6 (D) `task verify` passes on the commit that carries 2.2 and 2.4, and that commit's CI run passes. Gate: CI
       `Required` on that commit, its run link recorded on this pull request.
-- [ ] 2.7 `design.md`, "Conformance", maps each decision to the `file:line` that carries it out at the commit of 2.6,
+- [x] 2.7 `design.md`, "Conformance", maps each decision to the `file:line` that carries it out at the commit of 2.6,
       and to the test or record that shows it. Gate: every row filled, in a commit that changes no other file.
 - [x] 2.8 (W) The rule of O1 (`design.md`, "Owner decisions"): its bullet in `docs/testing.md`, "Concurrency and
       cleanup", and its row in `AGENTS.md`'s rule table after the child-process row; and `docs/testing.md`, "How

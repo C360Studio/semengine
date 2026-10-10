@@ -109,21 +109,25 @@ Four obligations ride on every slice design in addition to its ledger row:
 From Slice 04A change 3 (`setup-04a-03-boot`) on, a porting pull request carries one package, or one lifecycle owner
 (defined in the archived Slice 04A design, `openspec/changes/archive/2026-10-01-setup-04a-foundation/design.md:84-97`)
 with its package: about 3,000 pin lines at most, with a design of about one page. A package that alone exceeds that
-bound is named to the repository owner, with its line count, before its design is written, and the owner's ruling is
-recorded on the package's issue. Pin lines are the package's non-test Go lines at the pin, the count in the Lines
-column of D2's table in the same design (`:145-151`); D2's package lists (`:155-178`) name the lifecycle owners in
-each change.
+bound is ported as one pull request per lifecycle owner where it has several. Where one owner's pull request still
+exceeds the bound, its design states the line count, and the repository owner waives the bound for that number on
+that pull request. In change 3, `service` splits by lifecycle owner and `config`, with one owner, takes a waiver. Pin
+lines are the package's non-test Go lines at the pin, the count in the Lines column of D2's table in the same design
+(`:145-151`); D2's package lists (`:155-178`) name the lifecycle owners in each change.
 
 From change 3 on, each change in D2's table becomes a group of pull requests under the Slice 04A milestone, not one
-pull request and one OpenSpec change. "An admitted package is ported whole" (Surface audit, above) holds for each
-package. A group's closure is the package list D2 gives its change: the change's root packages, such as `service`
+pull request and one OpenSpec change: each pull request is its own OpenSpec change, holding its design of about one
+page, and the group shares the Slice 04A milestone, not a change. "An admitted package is ported whole" (Surface
+audit, above) holds for each package; a package split by lifecycle owner is whole when its last pull request lands.
+A group's closure is the package list D2 gives its change: the change's root packages, such as `service`
 for change 3, and every package they import that an earlier change did not port. The group ends when its closure
 compiles. Every pull request passes `task verify`, which builds every package in the tree, so a package is ported
 after the packages it imports. A package that nothing ported so far imports is carried in the tree: it builds, keeps
 its ledger row, its tests and its coverage floor where it has one, and waits for its importer. D8 of the same design
 (`:437-451`) is the precedent for carrying a package across changes.
 
-Source: owner ruling 2026-10-09, epic #9 comment 6085243841, ruling 1; issue #159.
+Source: owner ruling 2026-10-09, epic #9 comment 6085243841, ruling 1; issue #159. The split by lifecycle owner, the
+waiver by number and one OpenSpec change per pull request: owner rulings 2026-10-09, #159 comment 6091894475.
 
 ### The shape sweep
 

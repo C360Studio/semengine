@@ -15,6 +15,7 @@ func TestOneImagePin(t *testing.T) {
 	requireNoViolations(t, "image pin", imagePinViolations(t, root, repoFiles(t, root)))
 }
 
+// Requirement: harness-boundaries/One image pin
 func TestOneImagePinSensitivity(t *testing.T) {
 	pin := img(":2.14.7-alpine@sha256:" + sixtyFourHex)
 	clean := map[string]string{
@@ -23,6 +24,9 @@ func TestOneImagePinSensitivity(t *testing.T) {
 		"docs/design.md":  "Prose may cite " + img(":2.14-alpine") + " when explaining the pin.\n",
 		"docs/notes.txt":  "Not a Docker configuration file: " + img(":2.14-alpine") + "\n",
 		"compose/app.yml": "services:\n  nats:\n    image: ${SEMENGINE_NATS_IMAGE}\n",
+		// A component port identifier is `nats:<subject>` (component/port_nats.go); in Go, a
+		// `nats:` followed by a letter is not an image.
+		"component/port_test.go": "package component\n\nvar ports = []string{\"" + img(":in") + "\", \"" + img(":sensor.data") + "\"}\n",
 	}
 	root, files := writeTree(t, clean)
 	requireNoViolations(t, "clean fixture", imagePinViolations(t, root, files))
@@ -36,6 +40,10 @@ func TestOneImagePinSensitivity(t *testing.T) {
 			[]string{"scripts/x.sh:1", img(":2.14-alpine")}},
 		{"digest literal in Go", map[string]string{"internal/x/x.go": "package x\n\nconst image = \"" + img("@sha256:"+sixtyFourHex) + "\"\n"},
 			[]string{"internal/x/x.go:3", img("@sha256:")}},
+		{"numeric tag in Go", map[string]string{"internal/x/x.go": "package x\n\nconst image = \"" + img(":2.10") + "\"\n"},
+			[]string{"internal/x/x.go:3", img(":2.10")}},
+		{"variable tag in Go", map[string]string{"internal/x/x.go": "package x\n\nconst image = \"" + img(":${TAG}") + "\"\n"},
+			[]string{"internal/x/x.go:3", img(":${TAG}")}},
 		{"latest in yaml", map[string]string{"docker/a.yml": "services:\n  n:\n    image: " + img(":latest") + "\n"},
 			[]string{"docker/a.yml:3", img(":latest")}},
 		{"registry-qualified", map[string]string{"Taskfile.yml": "cmd: docker run docker.io/library/" + img(":2.14") + "\n"},
@@ -76,6 +84,11 @@ var (
 	// do not match.
 	// A tag may be a shell or Compose variable (`:${TAG}`, `:$TAG`).
 	imageLiteral = regexp.MustCompile(`(^|[^A-Za-z0-9_.-])nats(:([A-Za-z0-9]|\$\{?[A-Za-z_])[A-Za-z0-9._${}-]*|@sha256:)`)
+	// goImageLiteral is imageLiteral for Go files: a tag must start with a digit or a variable.
+	// Go spells component port identifiers `nats:<subject>` (component/port_nats.go), so a tag
+	// that starts with a letter (`nats:latest`) is review only in Go (design D10 of
+	// setup-04a-02-ingest-kernel).
+	goImageLiteral = regexp.MustCompile(`(^|[^A-Za-z0-9_.-])nats(:([0-9]|\$\{?[A-Za-z_])[A-Za-z0-9._${}-]*|@sha256:)`)
 	// pinShape is the one accepted form of the pin: a tag for humans, a digest for Docker.
 	pinShape = regexp.MustCompile(`^nats:[A-Za-z0-9][A-Za-z0-9._-]*@sha256:[0-9a-f]{64}$`)
 )
@@ -118,8 +131,12 @@ func imagePinViolations(t *testing.T, root string, files []string) []string {
 		if !configuresDocker(name) {
 			continue
 		}
+		pattern := imageLiteral
+		if strings.HasSuffix(name, ".go") {
+			pattern = goImageLiteral
+		}
 		for i, line := range readLines(t, root, name) {
-			if m := imageLiteral.FindStringSubmatch(line); m != nil {
+			if m := pattern.FindStringSubmatch(line); m != nil {
 				violations = append(violations, fmt.Sprintf("%s:%d: NATS image literal %q outside .nats-image",
 					name, i+1, strings.TrimLeft(m[0], " \t\"'=/")))
 			}

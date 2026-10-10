@@ -493,8 +493,20 @@
     type; SemSource imports it (3 files, design P16)
   destination: pkg/errs
   contract: >-
-    classification, wrapping and errors.Is/As behavior as at the pin; ErrAlreadyStopped
-    (errs.go:47) is the one already-stopped sentinel (SS#1218)
+    classification, wrapping and errors.Is/As behavior as at the pin, less the adapt item below;
+    ErrAlreadyStopped (errs.go:47) is the one already-stopped sentinel (SS#1218). Changed behavior, task 3.12h
+    (design D23, "Classification"; owner ruling N, #91 comment 6080973822, extended to IsFatal in comment
+    6083704900; #146), one adapt item. errs-classify-by-class-and-sentinel: IsTransient and IsFatal read the
+    class (errors.As on *ClassifiedError), then their sentinels, never the error's text; the pin also matched
+    the lowered text against "timeout", "connection", "network", "temporary", "unavailable", "busy" and
+    "retry" (errs.go:177-193) and "fatal", "panic", "corrupted", "invalid config", "missing config", "out of
+    memory" and "disk full" (:220-236), so a word in an entity ID or a peer's message could decide the class.
+    Consequences: Classify gives an unclassified error with no listed sentinel ErrorTransient, its default,
+    whatever its text (the pin gave ErrorFatal to one holding only a fatal word), and an unclassified error
+    that wraps an invalid or fatal sentinel beside a transient word takes the sentinel's class;
+    RetryConfig.ShouldRetry, which no production code calls, no longer retries an error for its text. doc.go's
+    two passages on classification say so. Present consumers: Classify's callers (natsclient's X-Error-Class
+    header, pkg/projection's and pkg/lifecycle's mutation errors) and graph-ingest's keyed ingest (IsFatal)
   dependencies_and_side_effects: pkg/retry (in-set); stdlib; no goroutine, no I/O
   known_risks: >-
     SS#1218: the duplicate service.ErrAlreadyStopped (pin service/base.go:28) is removed in change 3,
@@ -502,9 +514,15 @@
     doc comments (doc.go:173, :297), not executable; the package has no production root. Doc-comment
     sleeps (doc.go:48, :111, :288) carried as they are (owner ruling Q4, task 1.5)
   proving_tests: >-
-    pkg/errs/errs_test.go, pkg/errs/classified_is_test.go, pkg/errs/shutdown_test.go
+    pkg/errs/errs_test.go, pkg/errs/classified_is_test.go, pkg/errs/shutdown_test.go. Task 3.12h, design D23
+    (classify_by_type_test.go): TestIsTransientClassifiesByClassAndSentinel and
+    TestIsFatalClassifiesByClassAndSentinel, each failing first at 5e4c009 on every word; the carried rows of
+    TestIsTransient, TestIsFatal and TestRetryConfig_ShouldRetry that asserted a text match now assert false,
+    and TestClassify gains two rows (a fatal word alone gives ErrorTransient; ErrInvalidData beside transient
+    words gives ErrorInvalid). Mutation (task mutate:check), the pin's text match put back after the
+    sentinels: detection for each of the two tests
   owner: setup-04a-01-floor developer
-  disposition: carry
+  disposition: adapt
 
 - source_path: vocabulary
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
@@ -1595,7 +1613,29 @@
     the pin both calls returned the subscription straight after nats.go's
     Subscribe (client.go:834-850, request.go:359-428), while the SUB could still be in nats.go's write
     buffer, so a request sent from another connection could get "no responders" (#144: PR #93's
-    TestGraphIngestServesExactlyTheDeclaredVerbs). No exported name is added
+    TestGraphIngestServesExactlyTheDeclaredVerbs). No exported name is added.
+    Changed surface, task 3.12a
+    (design D23; owner ruling #91 comment 6065395072), three adapt items.
+    natsclient-update-callback-reads-revision: KVStore.UpdateWithRetryRead and ErrKVSkipWrite are
+    new; UpdateWithRetryRead holds the loop that is UpdateWithRetryRev's at the pin (kv.go:300),
+    passes its callback the revision it read (0 when absent), and on its ErrKVSkipWrite writes
+    nothing and returns (0, nil). natsclient-update-skip-through-wrappers: UpdateWithRetryRev,
+    UpdateWithRetry and UpdateJSON now return no error for that sentinel, writing nothing, where the
+    pin returned it. natsclient-update-commit-attribution: the pin's 'nothing committed' now reads
+    'attributes no commit to itself'. Present consumer: the write seam.
+    Changed behavior, task 3.12h (design D23, "Classification"; owner ruling N, #91 comment 6080973822; #146),
+    two adapt items. natsclient-kv-not-found-by-type: IsKVNotFoundError reads only the error's type: errors.Is
+    on ErrKVKeyNotFound, jetstream.ErrKeyNotFound and jetstream.ErrKeyDeleted, and errors.As on
+    *jetstream.APIError with code 10037; the pin also matched the text "key not found", "key was deleted" and
+    "10037" (kv.go:700-703). natsclient-kv-conflict-by-type: IsKVConflictError reads only the error's type:
+    errors.Is on ErrKVRevisionMismatch, ErrKVKeyExists and jetstream.ErrKeyExists, and errors.As on
+    *jetstream.APIError with code 10071, 10164 or 10058; the pin also matched the text "wrong last sequence",
+    "10071", "key exists" and "10058" (kv.go:716-720). 10164 is the code a replicated stream reports for a
+    wrong last sequence, with the server description "wrong last sequence" the pin's text match read (nats.go
+    v1.54.0 jetstream/errors.go:61-64). An error whose text alone holds one of those strings, such as a
+    refusal naming an entity whose ID holds 10071 or 10037, is no longer a conflict or an absence. Present
+    consumers: KVStore's Get, Create, Update, UpdateWithRetryRead's loop, Delete and DeleteAtRevision, and
+    graph-ingest's not-found branches.
   dependencies_and_side_effects: >-
     metric, pkg/errs, pkg/retry, internal/resource (in-set); github.com/nats-io/nats.go v1.54.0
     and nats.go/jetstream; prometheus/client_golang; stdlib. Test-only:
@@ -2236,7 +2276,17 @@
     Close check (T7 :456); M8, the Close case after the lost-connection case (T8 :496); M9 and M10, the
     call waiting for its handler on a failed round trip and once Close has begun (T6 :406, T7 :454).
     The first M1 check was inconclusive (the tree changed during it) and was run again. Not mutated:
-    the own-process helper's other requirements (its two refusals were run by hand, same comments)
+    the own-process helper's other requirements (its two refusals were run by hand, same comments).
+    Task 3.12a, design D23
+    (kv_update_revision_integration_test.go): TestUpdateWithRetryRead_PassesTheRevisionItRead,
+    TestUpdateWithRetryRead_SkipWritesNothing, TestUpdateWithRetryRead_ConflictPassesTheNewerRevision
+    and TestUpdateWithRetryRead_ErrorsAttributeNoCommit.
+    Task 3.12h, design D23 (kv_classify_test.go): TestIsKVNotFoundErrorClassifiesByType and
+    TestIsKVConflictErrorClassifiesByType, each failing first at 5e4c009 on every string; the carried
+    TestKVStore_ErrorHelpers (kv_integration_test.go) asserts false for the two text-only errors it asserted
+    true, and the revision-mismatch fakes of TestKVStoreDeleteAtRevisionMapsTypedErrors and graph-ingest's
+    mockKVBucket return the server's API error, code 10071, where they returned its text. Mutation (task
+    mutate:check), the pin's text match put back after the type checks: detection for each of the two tests
   owner: setup-04a-01-floor developer
   disposition: adapt
 

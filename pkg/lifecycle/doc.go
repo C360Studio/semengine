@@ -1,0 +1,111 @@
+// Package lifecycle provides a substrate convention layer for
+// workflow-shaped entities — named instances with declared phases,
+// restart recovery, operator visibility, and rule integration.
+//
+// # What this is (and is not)
+//
+// This package is a SUBSTRATE CONVENTION LAYER, not a workflow engine.
+// It provides:
+//   - A Participant interface apps implement on their domain state structs
+//   - A Manager harness that projects exact graph authority reads, emits
+//     canonical graph mutations, supports restart recovery, and integrates
+//     with operator APIs
+//   - A Transitions table that declares valid phase transitions per workflow
+//   - Struct-tag-based operator-writability declaration (default-deny)
+//
+// It does NOT provide:
+//   - A runtime, DSL, or state-machine interpreter (apps own work logic)
+//   - A separate event bus (uses existing NATS KV primitives)
+//   - A process orchestrator (orchestration stays in the rule engine)
+//   - A replacement for components (components remain the execution layer)
+//
+// See ADR-047 for the full rationale.
+//
+// # Authority poison locality
+//
+// Lifecycle is a scoped authoritative reader, not a cached derived-view owner.
+// Exact operations validate only the requested entity. List narrows keys to the
+// registered workflow before decoding; poison in that workflow fails the whole
+// call with no partial result, while nonmatching poison is irrelevant. A failed
+// mutation precondition emits no graph mutation.
+//
+// Watch and WatchEvents each own one workflow-pattern subscription, and call the
+// caller's function on the caller's goroutine; returning ends the subscription,
+// with nothing left running. Poison in a matching entry emits no participant or
+// event, logs the workflow, entity, revision, reset code, and reason once, then
+// closes only that subscription, and the call returns the decode error.
+// Unexpected transport closure is likewise subscription-local, and the call
+// returns a transient index-not-ready error. Context cancellation is quiet: the
+// call returns the context's error. There is no lifecycle poison status, metric,
+// or configuration surface.
+//
+// # Participation is per-entity, not per-deployment
+//
+// The lifecycle harness has ZERO dependencies on agentic-loop or any
+// other consumer class. Apps that ship no agentic features get the
+// full harness benefit. This package MUST NOT import any
+// processor/agentic-* package — verified by import lint.
+//
+// Participant is opt-in per ENTITY-TYPE within a single app:
+//   - Drone missions, sensor lifecycles, manufacturing batches,
+//     scenario executions implement Participant
+//   - Raw telemetry, log entries, agent loops, and transient inputs
+//     stay outside the harness and pay zero cost
+//
+// # Usage
+//
+// Apps annotate state-struct fields with the lifecycle struct tag:
+//
+//	type SystemState struct {
+//	    EntityID_   string `json:"entity_id"    lifecycle:"id"`
+//	    Phase_      string `json:"phase"        lifecycle:"phase,readonly"`
+//	    OwnerOrgID  string `json:"owner_org_id" lifecycle:"operator_writable"`
+//	    InternalState string `json:"internal_state,omitempty"`
+//	    // no tag = not operator-writable (default-deny)
+//	}
+//
+// Tag values:
+//   - id                — marks the EntityID field (one per struct)
+//   - phase             — marks the Phase field (one per struct)
+//   - readonly          — never operator-writable
+//   - operator_writable — opt-in operator-writability via Manager.UpdateFromOperator
+//   - indexable         — flagged for v2 secondary indexing (v1 ignores)
+//
+// Apps register a Workflow type at startup with its valid transitions:
+//
+//	transitions := lifecycle.Transitions{
+//	    "planning":   {"flying", "aborted"},
+//	    "flying":     {"capturing", "landing", "aborted"},
+//	    "capturing":  {"flying"},
+//	    "landing":    {"completed", "failed"},
+//	    "completed":  {},  // terminal — no out-edges
+//	    "failed":     {},
+//	    "aborted":    {},
+//	}
+//	mgr.Register("drone-survey", func() Participant {
+//	    return &MissionState{}
+//	}, transitions)
+//
+// See ADR-047 for the complete worked example.
+//
+// # Reclamation and delete-visible observation
+//
+// A terminal entity is not automatically removed — terminal phase and
+// reclamation are distinct. To reclaim (delete from ENTITY_STATES):
+//
+//   - Manager.Despawn(ctx, workflow, entityID) — bare reclaim; idempotent
+//     (already-absent is a no-op success). Does NOT transition to terminal
+//     first, so Complete/Fail beforehand if an audit trail is wanted.
+//   - Manager.DespawnWith(ctx, workflow, entityID, source, note) — the cull
+//     path: transitions to the workflow's terminal phase (with an audit
+//     TransitionEvent), then reclaims. The two ops are not atomic; a partial
+//     failure leaves the entity terminal-but-present, reclaimable by a later
+//     Despawn.
+//
+// Reclaim is NOT derived-index GC (gh#433/ADR-068): Despawn removes the entity
+// but does not clean PREDICATE/NAME/ALIAS/CONTEXT/spatial/embedding index rows.
+//
+// To observe reclaims, use Manager.WatchEvents (the delete-visible sibling of
+// Watch): it delivers Events carrying Upserted (with the projected
+// Participant) or Deleted (EntityID only). Watch stays upsert-only.
+package lifecycle

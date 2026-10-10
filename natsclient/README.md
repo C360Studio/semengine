@@ -251,6 +251,7 @@ var (
     ErrKVKeyNotFound      = errors.New("kv: key not found")
     ErrKVRevisionMismatch = errors.New("kv: revision mismatch (concurrent update)")
     ErrKVMaxRetriesExceeded = errors.New("kv: max retries exceeded")
+    ErrKVSkipWrite        = errors.New("kv: update callback skipped the write")
 )
 ```
 
@@ -271,6 +272,29 @@ if errors.Is(err, natsclient.ErrKVRevisionMismatch) {
 if natsclient.IsKVNotFoundError(err) {
     // Key doesn't exist
 }
+```
+
+### Skipping a write
+
+`ErrKVSkipWrite` is not returned by the client. An update callback returns it, wrapped or not, to say that the read
+value needs no change. That run writes nothing, the value returned beside the error is ignored, and the call returns
+no error: `UpdateWithRetryRead` and `UpdateWithRetryRev` return revision 0, and `UpdateWithRetry` and `UpdateJSON`
+return nil. No write ever commits at revision 0, so `(0, nil)` means the callback skipped.
+
+`UpdateWithRetryRead`'s callback also gets the revision the bytes were read at, or 0 when the key is absent (never
+written, deleted or purged). A caller that decides to skip keeps that revision from the callback's argument; the
+call's result is only ever the revision of its own write.
+
+```go
+var readAt uint64
+committed, err := kv.UpdateWithRetryRead(ctx, key, func(current []byte, revision uint64) ([]byte, error) {
+    readAt = revision
+    if alreadyApplied(current) {
+        return nil, natsclient.ErrKVSkipWrite
+    }
+    return apply(current), nil
+})
+// committed is 0 after a skip or an error; readAt is the revision the last run read.
 ```
 
 ## Testing

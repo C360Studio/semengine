@@ -116,7 +116,7 @@ func CheckOrdinaryStreamName(name, source string) error {
 	case ResourceKeyValue:
 		return fmt.Errorf(
 			"%w: %q (declared by %s) is the backing stream for KV bucket %q — a framework-owned KV bucket is "+
-				"acquired through the bucket descriptor catalog's acquisition seam (graph.EnsureCatalogBucket "+
+				"acquired through the bucket descriptor catalog's acquisition seam (kvcatalog.EnsureCatalogBucket "+
 				"/ natsclient.EnsureFrameworkBucket); a product bucket outside that catalog is provisioned by "+
 				"the component that owns it. Either way its retention contract belongs to graph-retention "+
 				"(ADR-068/073), not to stream provisioning; remove this stream declaration",

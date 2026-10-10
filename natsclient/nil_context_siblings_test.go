@@ -230,6 +230,10 @@ func TestExportedNilContextRefusedOnEveryOtherEntry(t *testing.T) {
 			return kv.UpdateJSON(ctx, "k", func(map[string]any) error { return nil })
 		}},
 		{"KVStore.UpdateWithRetry", func(ctx context.Context) error { return kv.UpdateWithRetry(ctx, "k", updateBytes) }},
+		{"KVStore.UpdateWithRetryRead", func(ctx context.Context) error {
+			_, err := kv.UpdateWithRetryRead(ctx, "k", func(b []byte, _ uint64) ([]byte, error) { return b, nil })
+			return err
+		}},
 		{"KVStore.UpdateWithRetryRev", func(ctx context.Context) error {
 			_, err := kv.UpdateWithRetryRev(ctx, "k", updateBytes)
 			return err

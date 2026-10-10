@@ -47,8 +47,8 @@ func TestIsTransient(t *testing.T) {
 		{"context canceled", context.Canceled, true},
 		{"invalid data", ErrInvalidData, false},
 		{"fatal error", ErrResourceExhausted, false},
-		{"timeout in message", fmt.Errorf("operation timeout occurred"), true},
-		{"network error", fmt.Errorf("network connection failed"), true},
+		{"timeout in message only", fmt.Errorf("operation timeout occurred"), false},
+		{"network in message only", fmt.Errorf("network connection failed"), false},
 		{"classified transient", &ClassifiedError{Class: ErrorTransient, Err: fmt.Errorf("test")}, true},
 		{"classified fatal", &ClassifiedError{Class: ErrorFatal, Err: fmt.Errorf("test")}, false},
 	}
@@ -78,8 +78,8 @@ func TestIsFatal(t *testing.T) {
 		{"quota exceeded", ErrQuotaExceeded, true},
 		{"connection timeout", ErrConnectionTimeout, false},
 		{"invalid data", ErrInvalidData, false},
-		{"fatal in message", fmt.Errorf("fatal system error occurred"), true},
-		{"panic in message", fmt.Errorf("panic: system failure"), true},
+		{"fatal in message only", fmt.Errorf("fatal system error occurred"), false},
+		{"panic in message only", fmt.Errorf("panic: system failure"), false},
 		{"classified fatal", &ClassifiedError{Class: ErrorFatal, Err: fmt.Errorf("test")}, true},
 		{"classified transient", &ClassifiedError{Class: ErrorTransient, Err: fmt.Errorf("test")}, false},
 	}
@@ -132,6 +132,10 @@ func TestClassify(t *testing.T) {
 		{"invalid data", ErrInvalidData, ErrorInvalid},
 		{"unknown error", fmt.Errorf("unknown error"), ErrorTransient},
 		{"classified error", &ClassifiedError{Class: ErrorFatal, Err: fmt.Errorf("test")}, ErrorFatal},
+		// Text never decides the class (ruling N, #146): an unclassified error with no
+		// listed sentinel takes the default, and a wrapped sentinel decides.
+		{"fatal word in message only", fmt.Errorf("entity c360.ops.fatal.drone.001 refused"), ErrorTransient},
+		{"invalid sentinel beside transient words", fmt.Errorf("network timeout: %w", ErrInvalidData), ErrorInvalid},
 	}
 
 	for _, test := range tests {
@@ -406,7 +410,7 @@ func TestRetryConfig_ShouldRetry(t *testing.T) {
 		{"transient error within limit", ErrConnectionTimeout, 1, true},
 		{"fatal error", ErrInvalidConfig, 1, false},
 		{"invalid error", ErrInvalidData, 1, false},
-		{"custom transient", fmt.Errorf("connection timeout"), 1, true},
+		{"transient words in message only", fmt.Errorf("connection timeout"), 1, false},
 	}
 
 	for _, test := range tests {

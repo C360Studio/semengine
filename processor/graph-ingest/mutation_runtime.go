@@ -1,0 +1,273 @@
+package graphingest
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+
+	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/message"
+	"github.com/c360studio/semengine/pkg/errs"
+	semtypes "github.com/c360studio/semengine/pkg/types"
+	"github.com/c360studio/semengine/vocabulary"
+)
+
+// setupMutationHandlers registers exactly the four operations exposed by the
+// component's required typed mutation-provider port.
+func (c *Component) setupMutationHandlers(ctx context.Context) error {
+	routes, err := c.canonicalMutationRoutes()
+	if err != nil {
+		return fmt.Errorf("resolve mutation provider routes: %w", err)
+	}
+
+	subjects := make([]string, 0, len(routes))
+	for _, route := range routes {
+		sub, subscribeErr := c.natsClient.SubscribeForRequests(
+			ctx, route.subject, c.meteredCanonicalMutation(route),
+		)
+		if subscribeErr != nil {
+			return fmt.Errorf("subscribe graph mutation %s: %w", route.operation, subscribeErr)
+		}
+		c.subscriptions = append(c.subscriptions, sub)
+		subjects = append(subjects, route.subject)
+	}
+
+	c.logger.Info("mutation handlers registered", "subjects", subjects)
+	return nil
+}
+
+type mutationHandler = func(context.Context, []byte) ([]byte, error)
+
+// meteredMutation records typed rejections without altering the handler verdict.
+func (c *Component) meteredMutation(subject string, handler mutationHandler) mutationHandler {
+	return func(ctx context.Context, data []byte) ([]byte, error) {
+		response, err := handler(ctx, data)
+		if err == nil {
+			return response, nil
+		}
+		c.recordPredicateContractRejections(subject, err)
+		// An authority rejection meters under its own operator-facing reason
+		// (authority_foreign / authority_claimed) and logs WITHOUT the identity;
+		// everything else keeps metering under its classified code. Routing both
+		// through this one wrapper is what keeps "metered exactly once" true.
+		if authorityReason, isAuthority := authorityMetricReason(err); isAuthority {
+			c.recordAuthorityRejection(subject, authorityReason, err)
+			return response, err
+		}
+		reason := graph.ErrorCodeInternal
+		var classified *errs.ClassifiedError
+		if errors.As(err, &classified) && classified.Code != "" {
+			reason = classified.Code
+		}
+		c.recordMutationRejection(subject, reason, err.Error())
+		return response, err
+	}
+}
+
+func (c *Component) recordPredicateContractRejections(lane string, err error) {
+	if c.predicateContractRejections == nil {
+		return
+	}
+	var refusal *statementRefusal
+	if errors.As(err, &refusal) {
+		c.predicateContractRejections.WithLabelValues(lane, refusal.reason).Inc()
+		return
+	}
+	var contractErr *graph.EntityPredicateContractError
+	if !errors.As(err, &contractErr) {
+		return
+	}
+	reasons := make(map[vocabulary.PredicateValidationReason]struct{}, len(contractErr.Violations))
+	for _, violation := range contractErr.Violations {
+		reasons[violation.Reason] = struct{}{}
+	}
+	for reason := range reasons {
+		c.predicateContractRejections.WithLabelValues(lane, string(reason)).Inc()
+	}
+}
+
+const (
+	entityStateReasonObjectType = "object_type"
+	contractReasonUnknown       = "unknown"
+	contractFieldPredicate      = "predicate"
+)
+
+func (c *Component) recordEntityStateContractRejection(lane string, err error) {
+	if c.entityStateContractRejections == nil {
+		return
+	}
+	field, reason, _, ok := entityStateContractRejectionLabels(err)
+	if ok {
+		c.entityStateContractRejections.WithLabelValues(lane, field, reason).Inc()
+	}
+}
+
+func entityStateContractRejectionLabels(err error) (field, reason string, tripleIndex int, ok bool) {
+	var contractErr *graph.EntityStateContractError
+	if !errors.As(err, &contractErr) {
+		return "", "", -1, false
+	}
+	switch contractErr.Field {
+	case graph.EntityStateContractFieldID, graph.EntityStateContractFieldSubject, graph.EntityStateContractFieldReference:
+		field = string(contractErr.Field)
+	default:
+		return "", "", -1, false
+	}
+	reason = entityIDContractReason(contractErr.Err)
+	if reason == contractReasonUnknown && contractErr.Field == graph.EntityStateContractFieldReference {
+		reason = entityStateReasonObjectType
+	}
+	return field, reason, contractErr.TripleIndex, true
+}
+
+func entityIDContractReason(err error) string {
+	var classified *errs.ClassifiedError
+	if !errors.As(err, &classified) {
+		return contractReasonUnknown
+	}
+	reason, _ := classified.Detail[semtypes.EntityIDDetailReason].(string)
+	switch reason {
+	case semtypes.EntityIDReasonEmpty,
+		semtypes.EntityIDReasonBytes,
+		semtypes.EntityIDReasonArity,
+		semtypes.EntityIDReasonEmptySegment,
+		semtypes.EntityIDReasonFirstByte,
+		semtypes.EntityIDReasonAlphabet:
+		return reason
+	default:
+		return contractReasonUnknown
+	}
+}
+
+func predicateContractReason(err error) (string, bool) {
+	var contractErr *graph.EntityPredicateContractError
+	if !errors.As(err, &contractErr) || len(contractErr.Violations) == 0 {
+		return "", false
+	}
+	reason := contractErr.Violations[0].Reason
+	switch reason {
+	case vocabulary.PredicateReasonEmpty,
+		vocabulary.PredicateReasonLength,
+		vocabulary.PredicateReasonArity,
+		vocabulary.PredicateReasonSegmentEmpty,
+		vocabulary.PredicateReasonSegmentLength,
+		vocabulary.PredicateReasonSegmentStart,
+		vocabulary.PredicateReasonSegmentCharacter,
+		vocabulary.PredicateReasonSegmentHyphen:
+		return string(reason), true
+	default:
+		return contractReasonUnknown, true
+	}
+}
+
+func (c *Component) recordMutationRejection(subject, reason, detail string) {
+	if c.mutationRejections != nil {
+		c.mutationRejections.WithLabelValues(subject, reason).Inc()
+	}
+	if c.logger != nil {
+		c.logger.Warn("graph mutation rejected",
+			slog.String("subject", subject),
+			slog.String("reason", reason),
+			slog.String("error", detail))
+	}
+}
+
+func (c *Component) validateTriplePredicates(triples []message.Triple) error {
+	for _, triple := range triples {
+		if vocabulary.IsValidPredicate(triple.Predicate) {
+			continue
+		}
+		return rejectInvalid(graph.ErrorCodeStructuralInvalid,
+			fmt.Errorf("predicate %q is not a valid 3-part predicate (domain.category.property) on entity %q",
+				triple.Predicate, triple.Subject))
+	}
+	return nil
+}
+
+// readEntity is the one validated read of one authority value: every site that
+// reads an entity by its key (the entity, batch and prefix verbs, reconcile,
+// append and delete) calls it and keeps its own reply. It returns the entity and
+// the revision of the entry it decoded. An absent key is the KV not-found error.
+// Refusal derives only from the stored bytes; the poison inventory is never
+// consulted. A value decodeStoredEntity refuses is recorded in the inventory at
+// that revision and returned as its graph-state error; a valid value clears any
+// stale record at or below it (D3c), so an out-of-band repair recovers Health
+// on its next read.
+func (c *Component) readEntity(ctx context.Context, entityID string) (graph.EntityState, uint64, error) {
+	entry, err := c.entityBucket.Get(ctx, entityID)
+	if err != nil {
+		return graph.EntityState{}, 0, err
+	}
+	state, err := decodeStoredEntity(entityID, entry.Value)
+	if err != nil {
+		var contractErr *graph.StateContractError
+		if errors.As(err, &contractErr) {
+			c.inventoryEntityPoison(ctx, contractErr, entry.Revision)
+		}
+		return graph.EntityState{}, 0, err
+	}
+	c.clearEntityPoisonOnValidRead(entityID, entry.Revision)
+	return state, entry.Revision, nil
+}
+
+// decodeStoredEntity is the rule for the bytes stored under one key. They must
+// decode under the canonical contract, so an empty value is unreadable poison,
+// never absence (a deleted key is already not-found at the KV), and the entity
+// they hold must be the one the key names. A refusal is a graph-state error
+// whose entity ID is the key.
+func decodeStoredEntity(key string, value []byte) (graph.EntityState, error) {
+	var state graph.EntityState
+	if err := graph.UnmarshalEntityState(value, &state); err != nil {
+		var contractErr *graph.StateContractError
+		if errors.As(err, &contractErr) {
+			contractErr.EntityID = key
+		}
+		return graph.EntityState{}, err
+	}
+	if err := checkStoredEntityKey(key, state.ID); err != nil {
+		return graph.EntityState{}, err
+	}
+	return state, nil
+}
+
+// checkStoredEntityKey is decodeStoredEntity's key check, which the write seam's read check
+// also runs (decodeStoredForWrite; design D23): storedID, the entity a value stored under key
+// holds, must be the one key names. A refusal is a graph-state error whose entity ID is the key.
+func checkStoredEntityKey(key, storedID string) error {
+	if storedID == key {
+		return nil
+	}
+	return graph.ClassifyStateContractError(&graph.StateContractError{
+		Reason:   graph.GraphStateReasonNoncanonicalEntityID,
+		EntityID: key,
+		Err:      fmt.Errorf("authority key contains entity %q", storedID),
+	})
+}
+
+func rejectInvalid(code string, err error) error {
+	return errs.ClassifiedCode(errs.ErrorInvalid, code, err)
+}
+
+func rejectInvalidDetail(code string, detail map[string]any, err error) error {
+	return errs.ClassifiedCodeDetail(errs.ErrorInvalid, code, detail, err)
+}
+
+func rejectInternal(err error) error {
+	return errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal, err)
+}
+
+func rejectFromError(err error) error {
+	var stateErr *graph.StateContractError
+	if errors.As(err, &stateErr) {
+		return errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired, err)
+	}
+	if errs.IsInvalid(err) {
+		return rejectInvalid(graph.ErrorCodeInvalidRequest, err)
+	}
+	return rejectInternal(err)
+}
+
+func rejectRevisionMismatch(detail map[string]any, err error) error {
+	return errs.ClassifiedCodeDetail(errs.ErrorInvalid, graph.ErrorCodeRevisionMismatch, detail, err)
+}

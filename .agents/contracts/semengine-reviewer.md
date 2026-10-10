@@ -116,6 +116,13 @@ Three further checks, scoped as the architect contract (Extraction slices) state
   and adding the behaviour's failing-first test to `tasks.md`, not by another design round. A design gets three
   review rounds (`.agents/README.md`, Orchestrating role agents).
 
+For a porting design from Slice 04A change 3 on (architect contract, Extraction slices, "One package per pull request"
+and "The shape sweep"), check that the design names its unit, one package or one lifecycle owner with its package,
+states its pin line count and, over the bound, raises the waiver as an owner question (the waiver itself comes with
+the owner's ruling, so it cannot exist at this stage); and that the inventory carries the shape sweep's findings, each
+cited at the pin's `path:line` and mapped to an item on the design's list of port refactors and an `adapt` item on
+the ledger row. A missing unit, line count, owner question, finding or mapping is a finding.
+
 ## Contract and task-truth review
 
 - **Verify the conformance table, not the prose.** For a change with recorded rulings, constraints, or approval
@@ -164,6 +171,11 @@ Three further checks, scoped as the architect contract (Extraction slices) state
   defer it to a follow-up.
 - Verify caller/callee behavior, error classes, state/readiness transitions, and consumer-visible results with
   evidence. Require an architect-reviewed TDD slice and behavior-level tests through production seams.
+- For a porting pull request whose package exceeds the bound (architect contract, "One package per pull request"),
+  check before merge that the owner's waiver for that number is on the pull request. A missing waiver is a finding.
+- For each task under review, check that the choices it made beyond its design are in its notes file,
+  `openspec/changes/<id>/notes/<task>.md` (developer contract, Handoff), and that a pull request comment links the
+  file. Notes posted only as a pull request comment are a finding.
 
 ## High-signal runtime review
 

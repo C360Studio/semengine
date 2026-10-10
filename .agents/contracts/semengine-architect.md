@@ -148,8 +148,8 @@ copy of the pin that the pin probe runs on, as part of the inventory and before 
 the owner's (2026-10-07): "clean, idiomatic and pragmatic Go, simple yet detailed". The sweep looks for five shapes:
 
 1. **A second spelling of one thing:** one fact computed, declared or encoded in two places, such as two error
-   vocabularies for one failure or three ways to resolve one endpoint. Inventory category 2's rule applies: more than
-   one home is a defect to consolidate toward one.
+   vocabularies for one failure or three ways to resolve one endpoint. Inventory category 2 finds each spelling;
+   [Bounded port scope](../protocol.md#bounded-port-scope) decides whether inherited consolidation is required.
 2. **A copied shell:** the same scaffolding (`Start`, `Stop`, `Health`, a watch loop) written out again in each
    package that needs it instead of once.
 3. **A layered interface with one implementation:** an interface, or a stack of them, that only one type implements,
@@ -161,11 +161,14 @@ the owner's (2026-10-07): "clean, idiomatic and pragmatic Go, simple yet detaile
    such as an entity ID, gets the wrong class.
 
 Each finding is an inventory entry, pinned at the pin's `path:line` with the line's text. The design turns each one
-into an item on its list of port refactors (the changes made to the pin's code as it is ported) and an `adapt` item
-on the package's ledger row. The findings are design text, not issues: the sweep runs before there is ported code to
-file them against.
+into either a required correction with its binding basis or retained structure with the reason changing it is
+optional, under [Bounded port scope](../protocol.md#bounded-port-scope). Required corrections get the appropriate
+ledger disposition; optional findings do not force port refactors or `adapt` items. Record retained costs in existing
+design and ledger fields where applicable, and use the protocol's finding-routing rule. The sweep itself remains
+mandatory.
 
-Source: issue #159, filed with ruling 1 in epic #9 comment 6085243841.
+Source: issue #159, filed with ruling 1 in epic #9 comment 6085243841; the bounded disposition supersedes its
+unconditional refactor and `adapt` mapping (epic #9 comment 6101771664).
 
 ## The surface inventory (mandatory first deliverable)
 
@@ -182,8 +185,9 @@ each either cited at `file:line` or closed with the exact searches that came up 
    is a claim to check, not a fact to build on.
 2. **Every current spelling of the fact being modeled.** A new field, resolver, classifier, channel, or index models
    some fact about the system. Enumerate every place that fact is already computed, declared, interpreted, or
-   persisted. More than one home is a defect to consolidate toward ONE shared primitive, never a pattern to extend. A
-   design that adds another spelling is wrong at birth.
+   persisted. A design that adds another spelling is wrong at birth. For inherited multiple homes, record the cost
+   and apply [Bounded port scope](../protocol.md#bounded-port-scope) to decide whether consolidation is required;
+   do not extend the duplication.
 3. **Adjacent claims on the territory.** Current specs, ADRs, active changes, filed issues, admission-ledger rows,
    open pull requests (drafts included: a draft is a claim), and consumer asks that already cover or constrain the
    touched surface. List every open pull request whose changed files or OpenSpec capabilities overlap the planned

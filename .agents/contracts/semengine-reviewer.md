@@ -129,8 +129,10 @@ For a porting design from Slice 04A change 3 on (architect contract, Extraction 
 and "The shape sweep"), check that the design names its unit, one package or one lifecycle owner with its package,
 states its pin line count and, over the bound, raises the waiver as an owner question (the waiver itself comes with
 the owner's ruling, so it cannot exist at this stage); and that the inventory carries the shape sweep's findings, each
-cited at the pin's `path:line` and mapped to an item on the design's list of port refactors and an `adapt` item on
-the ledger row. A missing unit, line count, owner question, finding or mapping is a finding.
+cited at the pin's `path:line`. Check each finding's disposition under
+[Bounded port scope](../protocol.md#bounded-port-scope): a required correction names its binding basis and receives
+the appropriate ledger disposition; retained structure says why changing it is optional. A missing unit, line count,
+owner question, finding, or supported disposition is a finding.
 
 ## Contract and task-truth review
 
@@ -159,13 +161,17 @@ the ledger row. A missing unit, line count, owner question, finding or mapping i
 - **Name the diff's problem shape yourself, then search for it elsewhere in the tree.** Categories 1-4 scope to the
   fact being modeled, so re-deriving them inherits the same blind spot the author had. State the shape the diff
   implements (admit-or-refuse at a seam, create-vs-exists, read-through over a cache, classified refusal plus
-  observed signal, authority delegation, bounded dispatch) and cite the nearest existing instance. A diff that
-  reimplements a shape the repository already owns is a finding at the reimplementation; the fix is adopting the
-  existing home.
-- For everything the diff ADDS (exported or not: symbols, fields, channels, resolvers, classifiers, ports,
-  subjects, buckets, config keys): run the owner-exists search yourself. An addition beside an existing owner of
-  the same responsibility is a finding even when the design's inventory missed it; the fix is consolidation into
-  one home, never a sibling.
+  observed signal, authority delegation, bounded dispatch) and cite the nearest existing instance. Newly introduced
+  code that reimplements a shape the repository already owns is a finding at the reimplementation; the fix is adopting the
+  existing home. Inherited structure is assessed under Bounded port scope below.
+- For every addition beyond the retained pin surface (exported or not: symbols, fields, channels, resolvers,
+  classifiers, ports, subjects, buckets, config keys): run the owner-exists search yourself. An addition beside an
+  existing owner of the same responsibility is a finding even when the design's inventory missed it; the fix is
+  consolidation into one home, never a sibling.
+- For inherited structure retained from the pin, apply
+  [Bounded port scope](../protocol.md#bounded-port-scope). Inventory its shape and assess the stated disposition;
+  do not require consolidation solely because inherited duplication or indirection exists. A binding requirement,
+  accepted commitment, or demonstrated defect still requires the smallest complete correction and its proof.
 - A doc that breaks the owner's documentation rule (technical-writer contract, rule 9: human-dev friendly, no
   jargon, no marketing) is a review finding.
 - Confirm checked tasks are fully complete as worded. Split mixed tasks instead of treating partial evidence as done.
@@ -377,6 +383,11 @@ Use `BLOCKING` for silent corruption, data loss, invalid readiness, contract bre
 a likely functional defect or known project discipline failure, `MEDIUM` for a non-blocking correction, and `NIT` for
 style only. End with `APPROVE` when there are no blocking/high findings, otherwise `CHANGES REQUESTED` and the exact
 blocking list. State explicitly when evidence was unavailable rather than guessing.
+
+Under [Bounded port scope](../protocol.md#bounded-port-scope), an optional inherited maintenance finding cannot veto
+approval or become `BLOCKING` or `HIGH` solely by invoking a generic consolidation rule. Name the binding obligation
+and concrete evidence when requesting required work. Missing proof of a required guarantee calls for targeted
+qualification, not an assumed rewrite or a passing verdict.
 
 A PASS or `APPROVE` names the commit it rests on and the `task verify` run behind it: one the reviewer made on that
 commit, or else the implementer's local result, recorded as reported by the implementer, never as passed. It never

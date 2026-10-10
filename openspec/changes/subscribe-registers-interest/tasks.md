@@ -17,6 +17,21 @@ starts, `task merge:check -- 156` and the merge are recorded on this pull reques
 - [x] 1.4 The independent pre-owner review of `design.md` revision 4 (D7, L6, L7, "Files", "Overlaps and order",
       "Owner decisions") and of this file's revision 4 changes: `DESIGN REVIEW PASS`, recorded on this pull request.
 - [x] 1.5 The owner's answers to O1 and O2 (`design.md`, "Owner decisions"), recorded on #144 or this pull request.
+- [x] 1.6 The write-bound issue filed (#168: `Close`, `Request`, `Publish` and `Subscribe` held past their context on
+      `main` when the server stops reading with a full send buffer; not `class:flake`) and its number written into
+      `design.md` D2 and L8 and into the delta (task 2.9 writes it into the ledger item); revision 5's probes posted on
+      this pull request (comments 6098409783 and 6098410018), each output beside the source and the command that
+      produced it: P6's round-3 outputs and `write-ft.out`, P7's and P8's round-3 outputs, P9 and the reviewer's P6
+      runs (round 1's `write-tcp.out` is not posted: its source was not kept). Gate: the issue's number and the
+      comments' ids recorded on this pull request.
+- [x] 1.7 The independent pre-owner review of `design.md` revision 5 (Status, Context, option 2's cost, D2, D4, I1, I3,
+      L8, L9, Files, Not in this change, Owner decisions O3 and O4), `proposal.md` revision 5, the delta's changes and
+      this file's revision 5 tasks: `DESIGN REVIEW PASS`, recorded on this pull request (comment 6098414315).
+- [x] 1.8 The owner's answers to O3 and O4, recorded on #144 or this pull request (comment 6098388350).
+- [x] 1.9 L9's follow-up: when O4 is answered yes, the refusal issue (#169: a refused SUB reported as an error, and a
+      metric for it) filed and its number written into L9; when O4 is answered no, the design returns to review with
+      option 2A as a new revision, which replaces this task. Gate: the issue's number, or the new revision's review,
+      recorded on this pull request.
 
 ## 2. The fix and its tests
 
@@ -28,7 +43,8 @@ starts, `task merge:check -- 156` and the merge are recorded on this pull reques
       on.
 - [x] 2.2 (D) The round trip in natsclient's core subscribe, as `design.md`, D1 to D5 state, and the doc comments of
       `Subscribe` and `SubscribeForRequests` saying that the subscription is registered with the server when the call
-      returns, what bounds the wait, which errors a failed round trip returns, and that a failed call does not wait
+      returns (revision 5 replaces that wording, task 2.9: the server has read the SUB, which it may have refused),
+      what bounds the wait, which errors a failed round trip returns, and that a failed call does not wait
       for a running handler of it, which Close joins. Gate: `task test:unit` and `task test:repeat`, T1 to T8 passing;
       and `go test -race -cpu=1 -count=5 -shuffle=on -v ./natsclient/` run 20 times, all 20 passing, with each run's
       `-test.shuffle` seed recorded on this pull request (`go test` prints a passing package's seed only with `-v`).
@@ -57,6 +73,13 @@ starts, `task merge:check -- 156` and the merge are recorded on this pull reques
       cleanup", and its row in `AGENTS.md`'s rule table after the child-process row; and `docs/testing.md`, "How
       reach is judged" (`:295-296`), no longer says that a child process the test starts writes no coverage. Gate:
       `task docs:check`.
+- [ ] 2.9 (D) The doc comments of `Subscribe`, `SubscribeForRequests` and `subscribeOwned` and the ledger items as
+      revision 5 states. Gate: `task verify`, and CI `Required` on that commit, its run link recorded on this pull
+      request.
+- [ ] 2.10 `design.md`, "Conformance", re-pinned at 2.9's commit; the D2 row adds "Not shown by a test: the waits for
+      nats.go's connection lock (L8); P6 and P9 are their evidence", and a row for L9 says that its log line is not
+      shown by a test in this change and is `main`'s behaviour (#169). Gate: every row filled, in a commit that changes
+      no other file.
 
 ## 3. Review
 
@@ -68,7 +91,10 @@ starts, `task merge:check -- 156` and the merge are recorded on this pull reques
 ## 4. In the archive commit
 
 - [ ] 4.1 (W) In the same commit as `openspec archive subscribe-registers-interest` and the spec sync: the
-      `transport-client` Purpose names the new guarantee; `natsclient/README.md` says, beside the Subscribe example
-      (`:85-86`), that a subscription is registered with the server when `Subscribe` returns; `docs/repository-map.md`
-      gains a row for the archived change and its specs row says `transport-client` is amended by it. Gate:
+      `transport-client` Purpose names the new guarantee, that `Subscribe` and `SubscribeForRequests` return a
+      subscription only after the server has read its SUB; `natsclient/README.md` says, beside the Subscribe example
+      (`:85-86`), that when `Subscribe` returns, the server has read the subscription, so a request from another
+      connection finds it unless the server refused it, which a client that connected with `Connect` logs and which is
+      not returned as an error; `docs/repository-map.md` gains a row for the archived change and its specs row says
+      `transport-client` is amended by it. Gate:
       `task spec:check` and `task docs:check` on that commit.

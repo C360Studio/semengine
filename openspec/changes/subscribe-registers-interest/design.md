@@ -1,13 +1,17 @@
 # Design: subscribe-registers-interest
 
-Status: revision 4, accepted by the owner (PR #156 comment 6091034659). Review rounds 1 and 2 asked for changes (round
-2: one MEDIUM, on D4's wait for running handlers); revision 3 answered each finding, passed review and was accepted by
-the owner (PR #156 comment 6085722854). Revision 4 changes D7's test plan, adds L6 and L7, and adds one rule, in
-`docs/testing.md` and `AGENTS.md` (O1), after task 2.1 found that T2 to T8 cannot share a test process (PR #156 comment
-6086018979). The owner answered both of its questions ("Owner decisions"). It rests on `inventory.md` revision 2, which
-passed inventory review. Issue #144 (`class:flake`); owner ruling 2026-10-09 (fix it once, in natsclient's subscribe, as
-its own pull request on `main`); claim PR #156. Pins are at base `805ace8`, and revision 4's at `c4b61ec`; probes P1 to
-P5 are in `inventory.md`.
+Status: revision 5, draft, after Codex's implementation review; revision 4 was accepted by the owner (PR #156 comment
+6091034659). Review rounds 1 and 2 asked for changes (round 2: one MEDIUM, on D4's wait for running handlers); revision
+3 answered each finding, passed review and was accepted by the owner (PR #156 comment 6085722854). Revision 4 changes
+D7's test plan, adds L6 and L7, and adds one rule, in `docs/testing.md` and `AGENTS.md` (O1), after task 2.1 found that
+T2 to T8 cannot share a test process (PR #156 comment 6086018979). The owner answered both of its questions ("Owner
+decisions"). It rests on `inventory.md` revision 2, which passed inventory review. Issue #144 (`class:flake`); owner
+ruling 2026-10-09 (fix it once, in natsclient's subscribe, as its own pull request on `main`); claim PR #156. Pins are
+at base `805ace8`, revision 4's at `c4b61ec`, and revision 5's at `a85947d`; probes P1 to P5 are in `inventory.md`.
+Revision 5 answers Codex's implementation review (PR #156 comment 6097783327). D2's bound is narrowed to the wait for
+the server's PONG, and the waits for nats.go's connection lock are declared as L8 (owner question O3); the guarantee is
+narrowed to a SUB the server has read, which it may have refused, declared as L9 (O4). Revision 5's probes, P6 to P9,
+are posted with their sources and outputs on this pull request (comments 6098409783 and 6098410018; task 1.6).
 
 ## Context
 
@@ -18,7 +22,8 @@ that return and the server reading the SUB **window 1**. A request sent from ano
 responders"; a publish sent then is dropped without an error. P1: 831 of 2,000 requests from a second connection,
 sent right after the subscribe, found no responder at `-cpu=1`; 0 of 2,000 did after a round trip. A **round trip**
 means a PING written on the connection and its PONG read back; the server handles one connection's lines in order, so
-the PONG proves it has read the SUB.
+the PONG proves it has read the SUB. It does not prove the server accepted it: a SUB refused for permissions or for the
+connection's limit on subscriptions gets a `-ERR` line, sent before the PONG, and the PONG still comes (P7; L9).
 
 This change closes window 1 for every core subscription natsclient makes. It does not say when a component may rely
 on another component's responder (not started yet, after a reconnect, across a cluster): the pin's ADR-083 and
@@ -35,8 +40,8 @@ returning is not that signal". No requester-side retry is added.
    The owner ruled against keeping it per caller.
 2. **The round trip inside natsclient's core subscribe** (recommended; the ruling). Every `Subscribe` and
    `SubscribeForRequests` makes one round trip before it returns. Cost: one round trip per call (D6); a subscribe can
-   now fail for a reason it could not before (D4), and waits at most `DefaultRequestTimeout` when the server does not
-   answer.
+   now fail for a reason it could not before (D4), and waits at most `DefaultRequestTimeout` for a server that reads
+   but does not answer; a server that stops reading can hold it longer, as it holds every call (L8).
 3. **Only `SubscribeForRequests`.** Covers "no responders" but leaves `Subscribe`'s window, where the loss is
    silent: a message published from another connection in the window is dropped with no error. Rejected for that
    reason.
@@ -62,11 +67,12 @@ refusals stay where they are, at the two exported calls (`client.go:1255-1257`, 
 
 ### D2. The bound: the caller's context or 5 s, whichever ends first
 
-The round trip ends when the server answers, when the call's context ends, or when `DefaultRequestTimeout`
-(`request.go:18`, 5 s) has passed since it began, whichever comes first. This follows the repository's own shape for
-a bounded wait inside a call, `stream.go:344-345`: "bounded by the caller's context AND the budget, whichever ends
-first". PR #93's D20 rule ("the caller's deadline when there is one, otherwise 5 s") was a mechanism note on #144,
-not an owner ruling, and this change replaces it.
+The wait for the server's PONG ends when the server answers, when the call's context ends, or when
+`DefaultRequestTimeout` (`request.go:18`, 5 s) has passed since the round trip began, whichever comes first. The bound
+is for that wait only: the waits for nats.go's connection lock are L8's (last bullet below). This follows the
+repository's own shape for a bounded wait inside a call, `stream.go:344-345`: "bounded by the caller's context AND the
+budget, whichever ends first". PR #93's D20 rule ("the caller's deadline when there is one, otherwise 5 s") was a
+mechanism note on #144, not an owner ruling, and this change replaces it.
 
 - A bound is needed because the context a caller passes to `Subscribe` is the parent of every handler's context
   (`client.go:1280`, `request.go:387`, `:396`), so callers pass a lifecycle context, which usually has no deadline,
@@ -76,7 +82,22 @@ not an owner ruling, and this change replaces it.
   same value. A healthy round trip took 21 µs at the median and 179 µs at most on loopback (P5). nats.go's own 10 s
   (`nats.go:6074-6076`) would double the wait of a boot that will fail anyway. No new name and no setting.
 - A deadline on `Subscribe`'s context is a deadline for its handlers; "whichever ends first" keeps a long one from
-  holding a boot on a stalled server longer than one round trip's bound.
+  holding a boot longer than `DefaultRequestTimeout` on a server that reads but does not answer. A server that stops
+  reading can hold the call longer (next bullet).
+- The bound does not cover waits for nats.go's connection lock. nats.go takes one lock for every write on a
+  connection, and each step of the call takes it without looking at the context: the connection check
+  (`client.go:1340`; `nats.go:6286`), made while natsclient's own lock is held (`client.go:1328`; read, not probed);
+  the native subscribe that writes the SUB (`nats.go:5097`); the PING (`context.go:186-195`, written in place by
+  `sendPing`, `nats.go:5983-5988`); and, on a call that fails, clearing the pending PONG once the context has ended
+  (`removeFlushEntry`, `context.go:211`, `nats.go:5968`) and the UNSUB (`client.go:1379`; `nats.go:5512`). While the
+  server is not reading and the send buffer is full, a write on that connection (the call's own SUB or PING, or
+  another goroutine's) holds that lock until the held write completes or nats.go's write timeout (`FlusherTimeout`,
+  one minute by default, `nats.go:68`) ends it, and the call waits for each held write ahead of it in turn. P6 saw
+  writes last to the timeout after the server read again (still held 1.45 s past a 50 ms context, returned at 59.7 s
+  and once at 1m4.9s; with a 1 s timeout, two timeouts back to back); P9: held after the server had read the PING,
+  returned at the write timeout. `Close`, `Request`, `Publish` and `Subscribe` are held the same way on `main` (P6),
+  which breaks `Close`'s accepted bound (#168). This change sets no write timeout: it would apply to every write and
+  drop a timed-out write's bytes while the connection reports connected (L8; owner question O3).
 
 ### D3. A context that has already ended returns its error without acting
 
@@ -87,10 +108,11 @@ one at random (`context.go:199-208`), so without this check the result would dep
 handler an ended context. The nil check stays first (spec, "An exported call refuses a nil context before it acts"),
 and the Close check stays before this one (spec, "Close refuses new work").
 
-### D4. A failed round trip fails closed and returns at once
+### D4. A failed round trip fails closed and does not wait for handlers
 
 When the call returns no subscription after the native subscribe (the round trip did not complete, or Close had
-begun), it first ends the subscription, then returns at once:
+begun), it first ends the subscription, then returns without waiting for a running handler (ending the subscription
+takes nats.go's connection lock, so it can wait behind a held write, L8):
 
 - it unsubscribes it, so the subscription leaves the client's set of subscriptions and nats.go does not restore it on
   a reconnect (P2), and on a connected client its UNSUB is queued to the server (`nats.go:5544-5552`); the server
@@ -117,8 +139,8 @@ three reasons:
    subscription's handlers only. Close joins them all, as it already does for every subscription of a failed `Start`.
 3. **A wait could block without limit.** With a context that has no deadline, which is the normal case (D2), a wait
    for a handler that never returns never ends: for example a handler waiting on a lock its caller holds across
-   `Subscribe`, a pattern that was safe before this change. Returning at once keeps the call within D2's bound and
-   adds no hazard to the call.
+   `Subscribe`, a pattern that was safe before this change. Not waiting keeps a handler from holding the call: the
+   call takes D2's bound plus the lock waits L8 declares, and no handler adds to that.
 
 The core subscription's handlers also differ in their context: it descends from the call's context (`client.go:1280`,
 `request.go:396`), where a consumer's handlers do not descend from its setup context (spec, "A consumer's setup
@@ -268,9 +290,9 @@ event orders would explore the same few endings.
 
 | Invariant | Spec home |
 | --- | --- |
-| I1. A call that returned a subscription returned it after the server read its SUB. | delta, "A subscription is registered with the server when Subscribe returns", first sentence; scenario "A request from another connection right after the call" |
+| I1. A call that returned a subscription returned it after the server read its SUB; the server may have refused it (L9). | delta, "Subscribe returns after the server has read the SUB", first sentence; scenario "A request from another connection right after the call", on a subject the server permits |
 | I2. A call that returned an error after the native subscribe has removed the subscription from the connection's set, and on a connected client has queued its UNSUB; the server drops it when it reads that line. | delta, same requirement; scenarios "The server does not answer", "The caller's context ends during the round trip", "The connection is lost during the round trip" |
-| I3. The call returns by the time its context ends or `DefaultRequestTimeout` has passed, whichever is first; it never waits for a handler. | delta, same requirement; scenarios "The server does not answer", "The caller's context ends during the round trip", "A handler is running when the call fails" |
+| I3. The call's wait for the server's PONG ends by the time its context ends or `DefaultRequestTimeout` has passed, whichever is first; the call never waits for a handler. Its waits for nats.go's connection lock are bounded by neither (L8). | delta, same requirement; scenarios "The server does not answer", "The caller's context ends during the round trip", "A handler is running when the call fails" |
 | I4. A handler still running when a failed call returns is joined by Close; a nil Close means every handler returned. | delta, same requirement; scenarios "A handler is running when the call fails", "Close begins during the round trip"; existing "A nil Close means everything the client owns has finished" |
 | I5. A call whose round trip ends after Close began returns `nats.ErrConnectionClosed`, decided by Close having begun. | delta, same requirement; scenarios "Close begins during the round trip", "Close ends the connection during the round trip"; existing "Close refuses new work" |
 
@@ -291,11 +313,30 @@ event orders would explore the same few endings.
 - L7. When Close closes the connection itself (its context ended, or the drain timed out), nats.go's drain goroutine
   runs for up to 5 s more (`nats.go:6355`, `:6380-6390`) and Close does not wait for it; nothing signals its end.
   Unchanged by this change, and the reason T8 runs on real time (D7). Out of scope: upstream.
+- L8. The call's context and `DefaultRequestTimeout` bound the wait for the server's PONG, not the waits for nats.go's
+  connection lock (D2, last bullet): checking the connection, writing the SUB and the PING, and on a failed call
+  clearing the pending PONG and writing the UNSUB. While the server is not reading and the connection's send buffer is
+  full, a write on the connection, the call's own SUB or PING or another goroutine's, holds that lock until it
+  completes or nats.go's write timeout (`FlusherTimeout`, one minute by default) ends it, and the call waits for each
+  such write ahead of it. In P6 every such call was still held 1.45 s past its 50 ms deadline; after the server began
+  reading again, some returned 3.3 s to 3.5 s later and others only once the write timeout had ended the held write
+  (at 59.7 s, once at 1m4.9s), for a reason not explained. Every natsclient call that writes on the connection shares
+  this limit, and on `main` it breaks `Close`'s accepted bound (`openspec/specs/transport-client/spec.md:7`, `:51-65`,
+  `:89`). Out of scope: the connection-wide fix, #168 (owner question O3).
+- L9. A SUB the server refuses (for permissions, or for the connection's limit on subscriptions) is not reported by the
+  call: it returns the subscription and nil, and the server holds no subscription for it. nats.go v1.54.0 records the
+  refusal only as the connection's last error, which another error can replace before the PONG (P8: 433 of 800 missed
+  with 16 subscribers at once), and a limit refusal names no subject. On a client that connected with `Connect`,
+  natsclient's error handler (`handleError`) logs the refusal at error level (`NATS error`, the error naming the
+  subject); a limit refusal's record does not say which subscription it was, and no metric counts refusals. That log
+  line is `main`'s behaviour and is not shown by a test in this change (#169). A connection given through
+  `SetConnection` reports a refusal only to the error handler its caller gave it. Out of scope: making a refusal an
+  error, and a metric for it, #169 (owner question O4).
 
 ## Files
 
-- `natsclient/client.go` (`subscribeOwned` and the doc comment of `Subscribe`), `natsclient/request.go` (the doc
-  comment of `SubscribeForRequests`).
+- `natsclient/client.go` (`subscribeOwned`, its doc comment and the doc comment of `Subscribe`),
+  `natsclient/request.go` (the doc comment of `SubscribeForRequests`).
 - New tests in `natsclient` (T1 to T8) and the unexported helper that runs each of T2 to T7 in a test process of its
   own, in a new `_test.go` file; no integration file.
 - `docs/testing.md`, "How reach is judged" (`:295-296`): the sentence that says a child process the test starts
@@ -313,7 +354,8 @@ event orders would explore the same few endings.
 
 When a component may rely on another's responder; anything after a reconnect or across a cluster; a requester-side
 retry; a new exported method (PR #93's `Client.Flush` is not needed); the fifteen test flushes (D8); anything in
-SemStreams; the ADR-094 observation in the inventory.
+SemStreams; the ADR-094 observation in the inventory; a bound on waits for nats.go's connection lock, which every call
+shares (L8, #168); reporting a refused SUB as an error (L9).
 
 ## Overlaps and order
 
@@ -350,6 +392,38 @@ Revision 4 asked two, answered by the owner at task 1.5 (PR #156 comment 6091034
   6091034659).
 - O2. Revision 4 replaces D7's test plan, which the owner accepted in revision 3. Does the owner accept revision 4,
   after its pre-owner review (task 1.4)? Answered: accepted at `a88b190` (comment 6091034659).
+
+Revision 5 asks two (PR #156 comment 6097783327's findings):
+
+- O3. Should #156 promise only that `Subscribe`'s context ends its wait for the server's answer, and leave the waits for
+  nats.go's connection lock, which no natsclient call's context ends today, to #168? Recommended: yes. Why: every step
+  of a subscribe (the connection check, the SUB, the PING, and on failure the cleanup and the UNSUB) takes nats.go's
+  one connection lock without looking at the context, and a write held by a server that stopped reading, the call's
+  own SUB or PING or another goroutine's, keeps that lock until it completes or nats.go's one-minute write timeout ends
+  it; P6 saw writes last to the timeout after the server read again. `Close`, `Request`, `Publish` and `Subscribe` are
+  held this way on `main` already (P6: still held 1.45 s past a 50 ms deadline, returned at 59.7 s and once at
+  1m4.9s), so fixing `Subscribe` alone leaves the caller's next call, usually `Close`, held. And #156 closes the flake
+  every other pull request waits on. If no: #156 must change how every connection writes, with a shorter write timeout
+  that drops a timed-out write's bytes while the connection reports connected and still returns after the timeout, not
+  at the context (1.7 s for a 50 ms context with 1 s set: two timeouts back to back); or run each subscribe in a
+  goroutine `Close` joins, which reverses D1, which you accepted, and moves the wait into `Close`. Closing the socket
+  ends a held write too, but only by ending the connection: that suits `Close`, not one `Subscribe`. Your cost: this
+  answer now, and later a ruling on #168, which also covers `Close` breaking its accepted bound on `main`. Answered:
+  yes (PR #156 comment 6098388350).
+- O4. When the server refuses a subscription (permissions, or its limit on subscriptions), should #156 keep `main`'s
+  behaviour, the subscription and nil returned and the refusal logged, and leave making it an error to a follow-up
+  issue? Recommended: yes. Why: nats.go v1.54.0 reports a refusal only as the connection's last error, one slot any
+  later error overwrites; a check of it caught 500 of 500 refusals one at a time but missed 433 of 800 with 16
+  subscribers at once, and a limit refusal names no subject (P7, P8), so the check cannot be promised. Nothing gets
+  worse than on `main`, and the spec's promise is narrowed to subjects the server permits. What yes leaves: a refusal
+  gets one error-level log line and no metric, where the reviewer contract asks for both
+  (`.agents/contracts/semengine-reviewer.md:296-299`); a limit refusal's line does not say which subscription; a
+  `SetConnection` connection logs only through its caller's handler; a caller who reads no logs sees "no responders".
+  If no: #156 adds the check now, about 25 lines that parse nats.go's error text, a new error row in D4, two tests, a
+  declared limit for the misses, and another review round on the pull request every other one waits for. Your cost:
+  this answer now, and later a ruling on the follow-up issue, filed only if you answer yes. Answered: yes (PR #156
+  comment 6098388350); no T9 (the planned test of the refusal's log line) or new log requirement in this change. The
+  follow-up issue is #169.
 
 ## Conformance
 

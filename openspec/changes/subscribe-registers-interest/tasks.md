@@ -26,7 +26,7 @@ starts, `task merge:check -- 156` and the merge are recorded on this pull reques
       with those failures, not with a `fatal error` or a time-out. The first run (PR #156 comment 6086018979) settled
       T1's miss count and the dial seam. Gate: the run's output recorded on this pull request with the system it ran
       on.
-- [ ] 2.2 (D) The round trip in natsclient's core subscribe, as `design.md`, D1 to D5 state, and the doc comments of
+- [x] 2.2 (D) The round trip in natsclient's core subscribe, as `design.md`, D1 to D5 state, and the doc comments of
       `Subscribe` and `SubscribeForRequests` saying that the subscription is registered with the server when the call
       returns, what bounds the wait, which errors a failed round trip returns, and that a failed call does not wait
       for a running handler of it, which Close joins. Gate: `task test:unit` and `task test:repeat`, T1 to T8 passing;
@@ -53,7 +53,7 @@ starts, `task merge:check -- 156` and the merge are recorded on this pull reques
       `Required` on that commit, its run link recorded on this pull request.
 - [ ] 2.7 `design.md`, "Conformance", maps each decision to the `file:line` that carries it out at the commit of 2.6,
       and to the test or record that shows it. Gate: every row filled, in a commit that changes no other file.
-- [ ] 2.8 (W) The rule of O1 (`design.md`, "Owner decisions"): its bullet in `docs/testing.md`, "Concurrency and
+- [x] 2.8 (W) The rule of O1 (`design.md`, "Owner decisions"): its bullet in `docs/testing.md`, "Concurrency and
       cleanup", and its row in `AGENTS.md`'s rule table after the child-process row; and `docs/testing.md`, "How
       reach is judged" (`:295-296`), no longer says that a child process the test starts writes no coverage. Gate:
       `task docs:check`.

@@ -20,8 +20,8 @@
 //
 // This package holds the bucket/key identifiers for BOTH sides of the contract, so
 // producers and consumers cannot drift onto different names, with the computation
-// that fills the envelope (ComputeIndexStatus, ComputeBacklogStatus) and the gate that
-// interprets it (EvaluateReadinessGate). The envelope type itself stays in graph. The
+// that fills the envelope (ComputeBacklogStatus) and the gate that interprets it
+// (EvaluateReadinessGate). The envelope type itself stays in graph. The
 // Watcher takes a BucketSource, the narrow method set *natsclient.Client already
 // satisfies, rather than the client, which keeps its unit tests free of a live NATS.
 package readiness

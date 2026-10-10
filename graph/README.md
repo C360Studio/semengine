@@ -31,10 +31,7 @@ transport"; `TestGraphImportsNoTransport`).
   (`ReconcilePredicatesRequest` names the one source it reconciles), `ExactEntity` and `ExactEntityReader` for the
   authority read, and `IndexStatusResponse`, the readiness envelope a producer writes to `GRAPH_STATUS`, with its
   `IndexState*` constants. The computation that fills the envelope is in `graph/readiness`.
-- **The query reply envelope.** `QueryResponse` is the reply of the `graph.query.*` family: the answer, the
-  `ENTITY_STATES` revision it reflects (`indexed_revision`) and the component instance that produced it (`producer`).
-  `NewQueryResponse` refuses an empty producer. `MinRevisionField` is the `min_revision` field a request on that
-  family may embed. Replies on `graph.ingest.query.*` are not enveloped.
+- **The query reply envelope.** Replies on `graph.ingest.query.*` are not enveloped.
 - **The verb table.** `QueryVerbs` declares the request/reply verbs graph-ingest answers (`entity`, `batch` and
   `prefix` on `graph.ingest.query.*`), each with its subject, request type and reply type.
 

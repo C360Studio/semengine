@@ -6,98 +6,12 @@ import (
 	"github.com/c360studio/semengine/graph"
 )
 
-// IndexStatusInputs are the observations ComputeIndexStatus projects into the
-// readiness envelope. It is a struct rather than a positional argument list
-// because two of the inputs are time.Time (IndexedAt, Now) and adjacent
-// same-typed parameters are a silent-swap footgun in a projection whose output
-// gates authoritative-absence claims.
-type IndexStatusInputs struct {
-	// Indexed is the low-water-of-pending watermark (revlag.Watermark.Indexed).
-	Indexed uint64
-	// Target is the query-time ENTITY_STATES stream LastSeq the index must reach.
-	Target uint64
-	// Stuck is the caller's own stuck-watermark detector verdict (-> degraded).
-	Stuck bool
-	// IndexedAt is the KV COMMIT time of the newest revision Indexed covers
-	// (revlag.Watermark.IndexedAt). ZERO means "not computable" — the projection
-	// then leaves StalenessMs at 0 rather than fabricating a fresh-looking view.
-	IndexedAt time.Time
-	// Now is the compute instant; the zero value means time.Now(). Tests set it to
-	// keep the staleness projection deterministic instead of asserting on the wall
-	// clock.
-	Now time.Time
-	// FailedCount is the number of index entries the producer CURRENTLY holds in a
-	// failed terminal state. When > 0 it projects to State=degraded BEFORE the "ready
-	// wins" branch, UNCONDITIONALLY (not gated on Ready): a producer whose watermark
-	// has reached its target while holding failures is COVERED (Ready stays accurate)
-	// but NOT healthy (a failed record is not a usable index entry). This makes the
-	// shared projection finally enforce the graph-index-readiness `FailedCount > 0 →
-	// degraded` rule for a producer (graph-embedding) whose watermark advances past
-	// failures. graph-index leaves this 0 — it enforces the same rule caller-side via
-	// its watermark hole + applyKnownIncompleteOverrides — so its projection output is
-	// byte-unchanged (ADR-085, #613).
-	FailedCount uint64
-}
-
-// ComputeIndexStatus builds the honest revision-lag readiness envelope (ADR-066,
-// extended with age-of-view staleness by ADR-083) from an indexed watermark, the
-// query-time target (a stream LastSeq), a stuck flag (the caller's stuck-watermark
-// detector), and the commit time of the indexed floor. It is the shared PROJECTION
-// over pkg/revlag.Watermark used by every revision-lag producer (graph-index,
-// graph-embedding); the watermark mechanism and the per-producer stuck-detector live
-// elsewhere.
-//
-//   - Ready = target > 0 && indexed >= target (no max(0,…) clamp — indexed <= target
-//     is structural in the watermark, so Lag cannot underflow).
-//   - State = failedCount>0 ? "degraded" : (ready ? "ready" : (stuck ? "degraded" :
-//     "building")). The failure check is FIRST and unconditional, so a producer
-//     caught up over failures reports degraded, not ready — Ready still reports the
-//     (accurate) coverage, but health lives in State (#613, ADR-085). With
-//     failedCount==0 the switch is identical to the prior "ready wins" behavior, so
-//     graph-index (which passes 0) is byte-unchanged.
-//   - StalenessMs = 0 when Ready or when IndexedAt is unknown, else now-IndexedAt
-//     clamped to a 1ms minimum (see the presence encoding on the field).
-//
-// The staleness subtraction is the ONE place a NATS server commit timestamp meets
-// a local clock; under skew it is off by the skew. That is accepted (ADR-083 D3)
-// because the alternative — a revision count — is wrong by 2-4x under a coalesce
-// change alone. Consumer-side FRESHNESS deliberately does not compare clocks
-// (the Watcher judges arrival locally).
-func ComputeIndexStatus(in IndexStatusInputs) graph.IndexStatusResponse {
-	ready := in.Target > 0 && in.Indexed >= in.Target
-	var lag uint64
-	if in.Target > in.Indexed {
-		lag = in.Target - in.Indexed
-	}
-	state := graph.IndexStateBuilding
-	switch {
-	case in.FailedCount > 0:
-		// Unconditional, BEFORE "ready wins": a known-incomplete index (a producer
-		// holding failed entries) defers on HEALTH regardless of coverage. Ready stays
-		// coverage-accurate below; the health verdict is here (#613, ADR-085).
-		state = graph.IndexStateDegraded
-	case ready:
-		state = graph.IndexStateReady
-	case in.Stuck:
-		state = graph.IndexStateDegraded
-	}
-	return graph.IndexStatusResponse{
-		Ready:           ready,
-		State:           state,
-		IndexedRevision: in.Indexed,
-		TargetRevision:  in.Target,
-		Lag:             lag,
-		StalenessMs:     stalenessMs(ready, in.IndexedAt, in.Now),
-		FailedCount:     in.FailedCount,
-	}
-}
-
 // BacklogStatusInputs are the observations ComputeBacklogStatus projects into the
-// readiness envelope. It is SEPARATE from IndexStatusInputs on purpose: the two
-// producer shapes have disjoint inputs (a revision watermark vs. a message backlog),
-// and merging them would make mutually-exclusive fields co-resident — an invalid
-// state made representable in the one projection whose output gates
-// authoritative-absence claims.
+// readiness envelope. It is SEPARATE from the inputs of graph-index's revision-lag
+// projection on purpose: the two producer shapes have disjoint inputs (a revision
+// watermark vs. a message backlog), and merging them would make mutually-exclusive
+// fields co-resident — an invalid state made representable in the one projection
+// whose output gates authoritative-absence claims.
 type BacklogStatusInputs struct {
 	// Outstanding is total un-applied work across every bound consumer, IN MESSAGES —
 	// the sum of NumPending (server-side, undelivered) and NumAckPending
@@ -137,7 +51,7 @@ type BacklogStatusInputs struct {
 	// (processor/graph-index/watermark.go:69-80): a backend fault cannot honestly
 	// confirm caught-up, and "building" would read as ordinary progress rather than a
 	// fault. See the divergence note in ComputeBacklogStatus for why this is stronger
-	// than ComputeIndexStatus's FailedCount handling.
+	// than the revision-lag projection's FailedCount handling.
 	//
 	// Outstanding may still be a PARTIAL sum when this is set (some consumers read,
 	// one failed). That partial is kept on Lag as an honest lower bound rather than
@@ -155,8 +69,8 @@ type BacklogStatusInputs struct {
 
 // ComputeBacklogStatus builds the readiness envelope for a BACKLOG producer — one
 // whose "caught up" is the absence of un-applied messages rather than a revision
-// watermark. It is the second named projection beside ComputeIndexStatus, not a mode
-// of it.
+// watermark. It is a projection of its own beside graph-index's revision-lag
+// projection, not a mode of it.
 //
 //   - Ready = Outstanding == 0 && BootstrapComplete.
 //   - State = observationFailed ? "degraded" : (ready ? "ready" : "building").
@@ -165,7 +79,7 @@ type BacklogStatusInputs struct {
 //   - StalenessMs = 0 when Ready or when OldestOutstandingAt is unknown, else
 //     now-OldestOutstandingAt with a 1ms floor (shared presence encoding).
 //
-// WHY NOT ComputeIndexStatus: it computes Ready = target > 0 && indexed >= target,
+// WHY NOT the revision-lag projection: it computes Ready = target > 0 && indexed >= target,
 // which is FALSE at 0/0 — exactly the steady state of an idle backlog producer with
 // nothing to do. Bending it to accommodate that would also risk byte-drift in
 // graph-index's published output, which the current spec protects.
@@ -182,8 +96,8 @@ type BacklogStatusInputs struct {
 // here by construction: BootstrapComplete is a conjunct of Ready.
 func ComputeBacklogStatus(in BacklogStatusInputs) graph.IndexStatusResponse {
 	// ObservationFailed forces Ready false — it does NOT merely degrade State. This is
-	// where this projection deliberately DIVERGES from ComputeIndexStatus's FailedCount
-	// handling, and the difference is what is known:
+	// where this projection deliberately DIVERGES from the revision-lag projection's
+	// FailedCount handling, and the difference is what is known:
 	//
 	//   - FailedCount > 0: the watermark WAS read and coverage IS accurate; only health
 	//     is bad, so Ready stays coverage-accurate and State carries the verdict.

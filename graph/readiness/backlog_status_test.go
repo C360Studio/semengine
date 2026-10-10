@@ -10,9 +10,9 @@ import (
 
 // TestComputeBacklogStatus_ReadyAndState pins the backlog projection's two verdicts.
 //
-// The 0/0 row is the reason this projection exists at all: ComputeIndexStatus computes
-// Ready = target > 0 && indexed >= target, which is FALSE with nothing to do — the
-// steady state of an idle backlog producer.
+// The 0/0 row is the reason this projection exists at all: graph-index's revision-lag
+// projection computes Ready = target > 0 && indexed >= target, which is FALSE with
+// nothing to do — the steady state of an idle backlog producer.
 func TestComputeBacklogStatus_ReadyAndState(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -161,6 +161,16 @@ func TestComputeBacklogStatus_Staleness(t *testing.T) {
 				OldestOutstandingAt: computeBase.Add(-2 * time.Second), Now: computeBase,
 			},
 			want: 2000,
+		},
+		{
+			// Under 1 ms is still a computed age: it reports the 1 ms floor, because 0
+			// would read as "no information".
+			name: "an age under 1 ms reports the 1 ms floor",
+			in: BacklogStatusInputs{
+				Outstanding: 3, BootstrapComplete: true,
+				OldestOutstandingAt: computeBase.Add(-500 * time.Microsecond), Now: computeBase,
+			},
+			want: 1,
 		},
 		{
 			name: "unknown oldest-outstanding reports no information, not fresh",

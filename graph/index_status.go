@@ -73,8 +73,8 @@ type IndexStatusResponse struct {
 	// emits none, so the wire is byte-unchanged. FailedReasons is bounded to a fixed
 	// reason enum (a handful of keys), keeping the watched key compact on the hot KV
 	// path. FirstFailureAt is RFC3339. FailedCount is echoed from the projection input
-	// (it also drives State=degraded, see readiness.ComputeIndexStatus); the other two
-	// are set by the producer after the projection.
+	// (in graph-index's revision-lag projection it also drives State=degraded); the
+	// other two are set by the producer after the projection.
 	FailedCount    uint64            `json:"failed_count,omitempty"`
 	FailedReasons  map[string]uint64 `json:"failed_reasons,omitempty"`
 	FirstFailureAt string            `json:"first_failure_at,omitempty"`

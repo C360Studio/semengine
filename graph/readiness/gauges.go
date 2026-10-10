@@ -12,10 +12,9 @@ import (
 // A struct rather than two string parameters: they differ only in punctuation
 // ("graph-index" vs "graph_index"), so positional arguments are a silent-swap footgun
 // whose failure mode is renaming EVERY metric the producer emits — with no error
-// raised anywhere and dashboards simply going dark. That is the same reasoning
-// graph.IndexStatusInputs carries, and the same reason this package refuses to DERIVE
-// one spelling from the other: guessing wrong fails silently, so the caller states
-// both.
+// raised anywhere and dashboards simply going dark. It is also the reason this package
+// refuses to DERIVE one spelling from the other: guessing wrong fails silently, so the
+// caller states both.
 type ProducerNames struct {
 	// Service is the metrics-registry key, hyphenated: "graph-index".
 	Service string
@@ -42,36 +41,6 @@ type Gauges struct {
 	bootstrapComplete prometheus.Gauge
 	state             *prometheus.GaugeVec
 	publishFailures   prometheus.Counter
-
-	// Revision gauges are OPT-IN (WithRevisionGauges). The graph-index-readiness
-	// spec states a backlog producer SHALL NOT be required to expose them and SHALL
-	// NOT synthesize a value, because a fabricated revision is worse than an absent
-	// one. Nil for backlog producers, and Set skips them.
-	indexedRevision prometheus.Gauge
-	targetRevision  prometheus.Gauge
-}
-
-// GaugeOption configures the set at construction.
-type GaugeOption func(*Gauges)
-
-// WithRevisionGauges adds indexed_revision and target_revision. Only revision-lag
-// producers (graph-index, graph-embedding) may pass it: their Lag is in ENTITY_STATES
-// revisions and the two fields are meaningful. A backlog producer must not.
-func WithRevisionGauges() GaugeOption {
-	return func(g *Gauges) {
-		g.indexedRevision = prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: metricNamespace,
-			Subsystem: g.names.Subsystem,
-			Name:      "indexed_revision",
-			Help:      "Low-water-of-pending watermark: every delivered ENTITY_STATES revision at or below this has been applied (ADR-066)",
-		})
-		g.targetRevision = prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: metricNamespace,
-			Subsystem: g.names.Subsystem,
-			Name:      "target_revision",
-			Help:      "ENTITY_STATES stream LastSeq the producer must catch up to (ADR-066)",
-		})
-	}
 }
 
 // metricNamespace is the shared Prometheus namespace. Held as a constant so the
@@ -85,8 +54,8 @@ const metricNamespace = "semengine"
 // published output. They are therefore reproduced here exactly as the two hand-rolled
 // sets emitted them; MetricNames pins that, and a test compares it against the live
 // registry.
-func NewGauges(names ProducerNames, opts ...GaugeOption) *Gauges {
-	g := &Gauges{
+func NewGauges(names ProducerNames) *Gauges {
+	return &Gauges{
 		names: names,
 		readiness: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: metricNamespace,
@@ -119,21 +88,13 @@ func NewGauges(names ProducerNames, opts ...GaugeOption) *Gauges {
 			Help:      "Readiness heartbeat writes to the GRAPH_STATUS KV key that failed (ADR-083): consumers go status_unknown and fail closed while this rises",
 		}),
 	}
-	for _, opt := range opts {
-		opt(g)
-	}
-	return g
 }
 
 // MetricNames returns the registry metric names this set emits, in registration order.
 // Exported so a producer's test can pin its external contract without reaching into
 // unexported fields.
 func (g *Gauges) MetricNames() []string {
-	names := []string{"readiness", "lag", "bootstrap_complete"}
-	if g.indexedRevision != nil {
-		names = append(names, "indexed_revision", "target_revision")
-	}
-	return append(names, "readiness_state", "status_publish_failures_total")
+	return []string{"readiness", "lag", "bootstrap_complete", "readiness_state", "status_publish_failures_total"}
 }
 
 // Register registers every collector on registry through metric.RegisterOrGet and
@@ -155,14 +116,6 @@ func (g *Gauges) Register(registry *metric.MetricsRegistry) error {
 	}
 	if g.bootstrapComplete, err = metric.RegisterOrGet(registry, service, "bootstrap_complete", g.bootstrapComplete); err != nil {
 		return err
-	}
-	if g.indexedRevision != nil {
-		if g.indexedRevision, err = metric.RegisterOrGet(registry, service, "indexed_revision", g.indexedRevision); err != nil {
-			return err
-		}
-		if g.targetRevision, err = metric.RegisterOrGet(registry, service, "target_revision", g.targetRevision); err != nil {
-			return err
-		}
 	}
 	if g.state, err = metric.RegisterOrGet(registry, service, "readiness_state", g.state); err != nil {
 		return err
@@ -187,13 +140,6 @@ func (g *Gauges) Set(resp graph.IndexStatusResponse) {
 	g.readiness.Set(boolGauge(resp.Ready))
 	g.lag.Set(float64(resp.Lag))
 	g.bootstrapComplete.Set(boolGauge(resp.BootstrapComplete))
-
-	// Skipped, not zeroed, for a backlog producer: publishing 0 would assert a
-	// revision the producer does not have.
-	if g.indexedRevision != nil {
-		g.indexedRevision.Set(float64(resp.IndexedRevision))
-		g.targetRevision.Set(float64(resp.TargetRevision))
-	}
 
 	for _, s := range graph.AllIndexStates {
 		g.state.WithLabelValues(s).Set(boolGauge(s == resp.State))

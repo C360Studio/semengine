@@ -178,6 +178,27 @@ func TestNewPublisher_RejectsIncompleteWiring(t *testing.T) {
 	}
 }
 
+// TestPublisherKey: Key reports the key the publisher was built for, and "" for the nil
+// publisher NewPublisher returns on incomplete wiring. graph-ingest's publish-failure log
+// reads it (processor/graph-ingest/readiness.go:341).
+func TestPublisherKey(t *testing.T) {
+	tests := []struct {
+		name string
+		pub  *Publisher
+		want string
+	}{
+		{name: "nil publisher", pub: NewPublisher(nil, KeyGraphIngest), want: ""},
+		{name: "set", pub: NewPublisher(&fakeWriter{}, KeyGraphIngest), want: KeyGraphIngest},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.pub.Key(); got != tt.want {
+				t.Errorf("Key() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestPublishStampsPublishedAt: every write's stored value carries published_at, the
 // wall-clock time of the write in UTC, RFC 3339 with nanoseconds, whatever the caller
 // passed (design D16; graph-transport-boundary, "The readiness envelope carries its

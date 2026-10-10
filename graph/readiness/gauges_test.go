@@ -14,32 +14,9 @@ import (
 // Emitted metric names are consumed by dashboards and operator alerts, and the
 // graph-index-readiness spec explicitly protects graph-index's published output. This
 // pins the EXACT set the two hand-rolled implementations emitted before the shared set
-// replaced them, so "we preserved the names" is a gate rather than a claim.
-//
-// The revision-lag list is transcribed from the pre-existing registration blocks
-// (processor/graph-index/metrics.go and processor/graph-embedding/metrics.go), which
-// registered an identical set for both producers.
+// replaced them, less their two revision gauges, which return with graph-index's
+// revision-lag projection, so "we preserved the names" is a gate rather than a claim.
 func TestGauges_MetricNamesArePinned(t *testing.T) {
-	t.Run("revision-lag producer", func(t *testing.T) {
-		// Exactly what graph-index and graph-embedding registered before, PLUS
-		// bootstrap_complete — the field both independently omitted and the one
-		// unmet spec requirement this closes.
-		want := []string{
-			"readiness",
-			"lag",
-			"bootstrap_complete",
-			"indexed_revision",
-			"target_revision",
-			"readiness_state",
-			"status_publish_failures_total",
-		}
-		got := NewGauges(
-			ProducerNames{Service: "graph-index", Subsystem: "graph_index"},
-			WithRevisionGauges(),
-		).MetricNames()
-		assertNames(t, got, want)
-	})
-
 	t.Run("backlog producer omits revision gauges", func(t *testing.T) {
 		// A backlog producer SHALL NOT expose revision gauges and SHALL NOT
 		// synthesize a value — a fabricated revision is worse than an absent one.
@@ -73,8 +50,7 @@ func assertNames(t *testing.T, got, want []string) {
 // actually EXPOSES, not just the registry keys. A correct registry key with a wrong
 // namespace or subsystem would still rename the series a dashboard queries.
 func TestGauges_FullyQualifiedNamesPreserveTheWireContract(t *testing.T) {
-	g, reg := registeredGauges(t, ProducerNames{Service: "graph-index", Subsystem: "graph_index"},
-		WithRevisionGauges())
+	g, reg := registeredGauges(t, ProducerNames{Service: "graph-index", Subsystem: "graph_index"})
 	g.Set(graph.IndexStatusResponse{State: graph.IndexStateReady})
 
 	families, err := reg.Gather()
@@ -90,8 +66,6 @@ func TestGauges_FullyQualifiedNamesPreserveTheWireContract(t *testing.T) {
 	for _, want := range []string{
 		"semengine_graph_index_readiness",
 		"semengine_graph_index_lag",
-		"semengine_graph_index_indexed_revision",
-		"semengine_graph_index_target_revision",
 		"semengine_graph_index_readiness_state",
 		"semengine_graph_index_status_publish_failures_total",
 		// New, and the point of the exercise.
@@ -115,7 +89,7 @@ func keys(m map[string]bool) []string {
 // TestGauges_SetProjectsTheEnvelope pins the projection, including the two things that
 // are easy to get subtly wrong.
 func TestGauges_SetProjectsTheEnvelope(t *testing.T) {
-	g, reg := registeredGauges(t, ProducerNames{Service: "t", Subsystem: "t"}, WithRevisionGauges())
+	g, reg := registeredGauges(t, ProducerNames{Service: "t", Subsystem: "t"})
 
 	g.Set(graph.IndexStatusResponse{
 		Ready:             true,
@@ -214,10 +188,10 @@ func labeledValues(t *testing.T, reg *prometheus.Registry, name, label string) m
 
 // registeredGauges builds a gauge set and registers it the production way, on a
 // metric.MetricsRegistry, returning the Prometheus registry that gathers it.
-func registeredGauges(t *testing.T, names ProducerNames, opts ...GaugeOption) (*Gauges, *prometheus.Registry) {
+func registeredGauges(t *testing.T, names ProducerNames) (*Gauges, *prometheus.Registry) {
 	t.Helper()
 	registry := metric.NewMetricsRegistry()
-	g := NewGauges(names, opts...)
+	g := NewGauges(names)
 	if err := g.Register(registry); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
@@ -230,28 +204,20 @@ func registeredGauges(t *testing.T, names ProducerNames, opts ...GaugeOption) (*
 func TestGaugesWriteTheRegisteredCollector(t *testing.T) {
 	names := ProducerNames{Service: "t", Subsystem: "t"}
 	registry := metric.NewMetricsRegistry()
-	first := NewGauges(names, WithRevisionGauges())
-	second := NewGauges(names, WithRevisionGauges())
+	first := NewGauges(names)
+	second := NewGauges(names)
 	for _, g := range []*Gauges{first, second} {
 		if err := g.Register(registry); err != nil {
 			t.Fatalf("Register: %v", err)
 		}
 	}
 
-	second.Set(graph.IndexStatusResponse{
-		State: graph.IndexStateDegraded, Lag: 7, IndexedRevision: 100, TargetRevision: 107,
-	})
+	second.Set(graph.IndexStatusResponse{State: graph.IndexStateDegraded, Lag: 7})
 	second.RecordPublishFailure()
 
 	reg := registry.PrometheusRegistry()
-	for name, want := range map[string]float64{
-		"semengine_t_lag":              7,
-		"semengine_t_indexed_revision": 100,
-		"semengine_t_target_revision":  107,
-	} {
-		if got := gaugeValue(t, reg, name); got != want {
-			t.Errorf("%s = %v, want %v from the second set's write", name, got, want)
-		}
+	if got := gaugeValue(t, reg, "semengine_t_lag"); got != 7 {
+		t.Errorf("semengine_t_lag = %v, want 7 from the second set's write", got)
 	}
 	if states := labeledValues(t, reg, "semengine_t_readiness_state", "state"); states[graph.IndexStateDegraded] != 1 {
 		t.Errorf("readiness_state = %v, want degraded=1 from the second set's write", states)
@@ -264,7 +230,7 @@ func TestGaugesWriteTheRegisteredCollector(t *testing.T) {
 // TestGaugesNilRegistryRegistersNothing: with no registry the set registers nowhere,
 // not on Prometheus' global registry as the pin did, and still takes writes.
 func TestGaugesNilRegistryRegistersNothing(t *testing.T) {
-	g := NewGauges(ProducerNames{Service: "nil-registry", Subsystem: "nil_registry"}, WithRevisionGauges())
+	g := NewGauges(ProducerNames{Service: "nil-registry", Subsystem: "nil_registry"})
 	if err := g.Register(nil); err != nil {
 		t.Fatalf("Register(nil) = %v, want nil", err)
 	}

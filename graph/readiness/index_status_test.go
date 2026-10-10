@@ -13,195 +13,6 @@ import (
 // exactly rather than against the wall clock.
 var computeBase = time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
 
-// TestComputeIndexStatus_Staleness pins the age-of-view projection (ADR-083 D3),
-// including the presence encoding that keeps an ABSENT staleness from reading as a
-// perfectly fresh view in a bounded-staleness gate.
-func TestComputeIndexStatus_Staleness(t *testing.T) {
-	tests := []struct {
-		name string
-		in   IndexStatusInputs
-		want uint64
-	}{
-		{
-			name: "caught up reports zero staleness",
-			in: IndexStatusInputs{
-				Indexed: 100, Target: 100,
-				IndexedAt: computeBase.Add(-90 * time.Second), Now: computeBase,
-			},
-			want: 0, // Ready: there is no staleness to report, however old the floor is
-		},
-		{
-			name: "building reports the age of the covered floor",
-			in: IndexStatusInputs{
-				Indexed: 40, Target: 100,
-				IndexedAt: computeBase.Add(-1500 * time.Millisecond), Now: computeBase,
-			},
-			want: 1500,
-		},
-		{
-			name: "unknown floor commit time stays absent, never zero-as-fresh",
-			in: IndexStatusInputs{
-				Indexed: 40, Target: 100,
-				IndexedAt: time.Time{}, Now: computeBase,
-			},
-			want: 0,
-		},
-		{
-			name: "sub-millisecond age is clamped to the 1ms presence floor",
-			in: IndexStatusInputs{
-				Indexed: 40, Target: 100,
-				IndexedAt: computeBase.Add(-200 * time.Microsecond), Now: computeBase,
-			},
-			want: 1,
-		},
-		{
-			name: "a floor committed in the future (clock skew) still reports 1ms, not absent",
-			in: IndexStatusInputs{
-				Indexed: 40, Target: 100,
-				IndexedAt: computeBase.Add(2 * time.Second), Now: computeBase,
-			},
-			want: 1,
-		},
-		{
-			name: "degraded still carries the age of what it has covered",
-			in: IndexStatusInputs{
-				Indexed: 40, Target: 100, Stuck: true,
-				IndexedAt: computeBase.Add(-45 * time.Second), Now: computeBase,
-			},
-			want: 45000,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := ComputeIndexStatus(tt.in).StalenessMs; got != tt.want {
-				t.Errorf("StalenessMs = %d, want %d", got, tt.want)
-			}
-		})
-	}
-}
-
-// TestComputeIndexStatus_PreExistingFieldsUnchanged is the value-compatibility guard
-// from the spec: adding staleness must not move Ready/State/Lag/IndexedRevision for any
-// pre-existing input.
-func TestComputeIndexStatus_PreExistingFieldsUnchanged(t *testing.T) {
-	tests := []struct {
-		name        string
-		in          IndexStatusInputs
-		wantReady   bool
-		wantState   string
-		wantLag     uint64
-		wantIndexed uint64
-	}{
-		{
-			name:      "empty graph is not ready",
-			in:        IndexStatusInputs{Indexed: 0, Target: 0},
-			wantState: graph.IndexStateBuilding,
-		},
-		{
-			name:        "caught up is ready",
-			in:          IndexStatusInputs{Indexed: 100, Target: 100},
-			wantReady:   true,
-			wantState:   graph.IndexStateReady,
-			wantIndexed: 100,
-		},
-		{
-			name:        "behind target is building with lag",
-			in:          IndexStatusInputs{Indexed: 40, Target: 100},
-			wantState:   graph.IndexStateBuilding,
-			wantLag:     60,
-			wantIndexed: 40,
-		},
-		{
-			name:        "stuck and behind is degraded",
-			in:          IndexStatusInputs{Indexed: 40, Target: 100, Stuck: true},
-			wantState:   graph.IndexStateDegraded,
-			wantLag:     60,
-			wantIndexed: 40,
-		},
-		{
-			name:        "ready wins over stuck",
-			in:          IndexStatusInputs{Indexed: 100, Target: 100, Stuck: true},
-			wantReady:   true,
-			wantState:   graph.IndexStateReady,
-			wantIndexed: 100,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := ComputeIndexStatus(tt.in)
-			if got.Ready != tt.wantReady || got.State != tt.wantState ||
-				got.Lag != tt.wantLag || got.IndexedRevision != tt.wantIndexed {
-				t.Errorf("got Ready=%v State=%q Lag=%d IndexedRevision=%d; want %v/%q/%d/%d",
-					got.Ready, got.State, got.Lag, got.IndexedRevision,
-					tt.wantReady, tt.wantState, tt.wantLag, tt.wantIndexed)
-			}
-		})
-	}
-}
-
-// TestComputeIndexStatus_FailedCountDegrades is the #613 statement: FailedCount>0
-// projects to State=degraded BEFORE "ready wins", so a producer caught up over
-// failures (Indexed>=Target) reports degraded while Ready stays coverage-accurate.
-// It also pins graph-index parity: FailedCount==0 is byte-identical to the prior
-// projection.
-func TestComputeIndexStatus_FailedCountDegrades(t *testing.T) {
-	t.Run("caught up with failures is degraded, Ready still true", func(t *testing.T) {
-		got := ComputeIndexStatus(IndexStatusInputs{Indexed: 100, Target: 100, FailedCount: 3})
-		if got.State != graph.IndexStateDegraded {
-			t.Errorf("State = %q, want %q: FailedCount>0 must win over the ready branch (#613)", got.State, graph.IndexStateDegraded)
-		}
-		if !got.Ready {
-			t.Error("Ready = false, want true: coverage is complete, only health is degraded (#613)")
-		}
-		if got.FailedCount != 3 {
-			t.Errorf("FailedCount = %d, want 3: the input must echo to the envelope", got.FailedCount)
-		}
-	})
-
-	t.Run("failed with small lag is degraded, not building", func(t *testing.T) {
-		got := ComputeIndexStatus(IndexStatusInputs{Indexed: 99, Target: 100, FailedCount: 1})
-		if got.State != graph.IndexStateDegraded {
-			t.Errorf("State = %q, want %q: a failed entry defers regardless of lag", got.State, graph.IndexStateDegraded)
-		}
-		if got.Ready {
-			t.Error("Ready = true, want false: not caught up")
-		}
-	})
-
-	t.Run("FailedCount==0 is byte-identical to today (graph-index parity)", func(t *testing.T) {
-		// Every pre-existing input shape, computed with the field left at its zero value,
-		// must marshal identically to a run that never knew the field existed.
-		for _, in := range []IndexStatusInputs{
-			{Indexed: 0, Target: 0},
-			{Indexed: 100, Target: 100},
-			{Indexed: 40, Target: 100},
-			{Indexed: 40, Target: 100, Stuck: true},
-			{Indexed: 100, Target: 100, Stuck: true},
-		} {
-			got := ComputeIndexStatus(in)
-			raw, err := json.Marshal(got)
-			if err != nil {
-				t.Fatalf("marshal: %v", err)
-			}
-			// failed_count must be OMITTED (not emitted as 0) when there are no failures,
-			// so an envelope from a producer that never fails is wire-unchanged.
-			var decoded map[string]any
-			if err := json.Unmarshal(raw, &decoded); err != nil {
-				t.Fatalf("unmarshal: %v", err)
-			}
-			if _, present := decoded["failed_count"]; present {
-				t.Errorf("failed_count present in %s: it must be omitted when zero (graph-index parity)", raw)
-			}
-			if _, present := decoded["failed_reasons"]; present {
-				t.Errorf("failed_reasons present in %s: it must be omitted when empty", raw)
-			}
-			if _, present := decoded["first_failure_at"]; present {
-				t.Errorf("first_failure_at present in %s: it must be omitted when empty", raw)
-			}
-		}
-	})
-}
-
 // TestIndexStatusResponse_FailedDetailWireRoundTrip proves the three additive
 // failure-detail fields survive the production JSON encode/decode under the exact
 // keys consumers read, and are omitted when zero (wire compatibility). The
@@ -236,10 +47,13 @@ func TestIndexStatusResponse_FailedDetailWireRoundTrip(t *testing.T) {
 // payload-registry envelope: readiness is operational KV state, not a published
 // message payload).
 func TestIndexStatusResponse_StalenessWireRoundTrip(t *testing.T) {
-	src := ComputeIndexStatus(IndexStatusInputs{
-		Indexed: 40, Target: 100,
-		IndexedAt: computeBase.Add(-2500 * time.Millisecond), Now: computeBase,
-	})
+	src := graph.IndexStatusResponse{
+		State:           graph.IndexStateBuilding,
+		IndexedRevision: 40,
+		TargetRevision:  100,
+		Lag:             60,
+		StalenessMs:     2500,
+	}
 	raw, err := json.Marshal(src)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
@@ -263,7 +77,12 @@ func TestIndexStatusResponse_StalenessWireRoundTrip(t *testing.T) {
 
 	// Ready envelopes omit the key entirely, so an old decoder sees exactly what it
 	// saw before and a new one cannot mistake an absent value for a present zero.
-	readyRaw, err := json.Marshal(ComputeIndexStatus(IndexStatusInputs{Indexed: 100, Target: 100}))
+	readyRaw, err := json.Marshal(graph.IndexStatusResponse{
+		Ready:           true,
+		State:           graph.IndexStateReady,
+		IndexedRevision: 100,
+		TargetRevision:  100,
+	})
 	if err != nil {
 		t.Fatalf("marshal ready: %v", err)
 	}
@@ -282,16 +101,14 @@ func TestIndexStatusResponse_StalenessWireRoundTrip(t *testing.T) {
 // a pre-ADR-084 producer that never emits the key at all. Both decode to false — fail
 // closed either way — but only one of them is a bug an operator can fix by upgrading.
 func TestIndexStatusResponse_BootstrapCompleteWireRoundTrip(t *testing.T) {
-	// The shared projection never sets the bit; producers stamp it from their own
-	// latch. Pin that, so a future edit that folds a guess into ComputeIndexStatus
-	// (where no bootstrap fact is in scope) fails here.
-	if ComputeIndexStatus(IndexStatusInputs{Indexed: 100, Target: 100}).BootstrapComplete {
-		t.Error("ComputeIndexStatus invented a bootstrap verdict it has no input for")
-	}
-
 	for _, bootstrapped := range []bool{false, true} {
-		src := ComputeIndexStatus(IndexStatusInputs{Indexed: 40, Target: 100})
-		src.BootstrapComplete = bootstrapped
+		src := graph.IndexStatusResponse{
+			State:             graph.IndexStateBuilding,
+			IndexedRevision:   40,
+			TargetRevision:    100,
+			Lag:               60,
+			BootstrapComplete: bootstrapped,
+		}
 
 		raw, err := json.Marshal(src)
 		if err != nil {

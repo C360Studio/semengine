@@ -279,6 +279,13 @@ Summarize the implemented task slice, semantic blast radius, tests and exact res
 follow-up owned by the architect, reviewer, or technical writer. Name every issue the slice filed (protocol **File**
 ritual); a filing the ritual would not admit is an unresolved gate. Do not claim completion from compilation alone.
 
+Record the choices a task made that its design does not spell out in a notes file for that task,
+`openspec/changes/<id>/notes/<task>.md` (task 3.4's notes are `notes/3.4.md`), committed on the pull request's
+branch; a later note on the same task goes in the same file. The reviewer reads the notes at the next implementation
+review, whether a checkpoint partway through the pull request or the final one. On the pull request, post one line
+that links the file and names the commit that wrote it, never the notes themselves: the file archives with the
+change, and the pull request page stays short enough to re-read. Source: issue #159.
+
 A step is done when `task verify` passes on its exact commit, on a clean tree: `git status --porcelain` prints nothing
 before the run, since `task verify` also builds and tests files git does not track. The handoff names that commit and
 the result. Do not wait on or watch a CI run. Push when review is requested and at the end, not after each step, and

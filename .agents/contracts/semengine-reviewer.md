@@ -357,6 +357,7 @@ a likely functional defect or known project discipline failure, `MEDIUM` for a n
 style only. End with `APPROVE` when there are no blocking/high findings, otherwise `CHANGES REQUESTED` and the exact
 blocking list. State explicitly when evidence was unavailable rather than guessing.
 
-A PASS or `APPROVE` names the CI run and the commit it rests on: a step is done only when the CI run for its pushed
-commit has passed. A local `task verify` is evidence, not the gate. A cancelled or superseded run is unverified, never
-green.
+A PASS or `APPROVE` names the commit it rests on and the `task verify` run behind it: one the reviewer made on that
+commit, or a CI run on that commit that has finished. When neither exists, the verdict records the implementer's
+local result as reported by the implementer, never as passed. A step is done when `task verify` passes on its commit;
+CI is checked once, before merge, and that run is the independent check (owner ruling of 2026-10-10, issue #171).

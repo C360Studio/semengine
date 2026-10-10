@@ -497,8 +497,21 @@ posted on this pull request.
 
 ## 4. Repair and port-refactor evidence (design D8, D15–D21)
 
-- [ ] 4.1 (D) #20: `FaultKV.FailAfter(Update, …)` in graph-ingest's entity bucket → the typed client reports
+- [x] 4.1 (D) #20: `FaultKV.FailAfter(Update, …)` in graph-ingest's entity bucket → the typed client reports
       commit-unknown; conflict and not-found stay not-committed. Fails first on the pin's classification.
+      Done in `7f00244`: the typed client's `isDefiniteFailure` reports not-committed only for a class-invalid reply or
+      `graph_state_reset_required` (graph-ingest sends it before its write), the two transport cases unchanged; append's
+      per-subject failure follows the same rule; a commit-unknown error keeps the reply's class, code and detail;
+      graph-ingest itself is unchanged (it already answers a transient `internal`; whether that meets #20's server half
+      is the owner's call). The integration test (`processor/graph-ingest/commit_ambiguity_integration_test.go`) builds
+      graph-ingest without `Start`, wraps `ENTITY_STATES` in a `FaultKV` that fails after the update, subscribes the
+      handlers and drives the typed client over the wire: commit-unknown with the write standing, then conflict and
+      not-found as not-committed; it failed first at `:124` on `b6f968c`. Unit tests in
+      `pkg/projection/commit_ambiguity_test.go` (`:93`, `:152`, `:177`); five `task mutate:check` detections and the
+      integration mutant by hand with checksums (commit body). Follow-ups filed: #173 (`response_too_large` after a
+      commit reads as not-committed) and #174 (the append retry loop after an unconfirmed write). Not covered: failures
+      before the write that graph-ingest answers transient now read commit-unknown (safe, less exact). `task verify` on
+      `7f00244` ended `verify: ok`. Notes: `notes/4.1.md`.
 - [ ] 4.2 (D) #19: `ReconcileMutation` gains the expected revision; the two `projection-mutation` scenarios as tests.
 - [ ] 4.3 (D) #15: memory stream + `Fixture.Restart` + retained guard bucket: re-ingestion at lower sequences is
       applied and queried back; a same-generation redelivery is a no-op; the no-bucket degrade of design D8 is logged

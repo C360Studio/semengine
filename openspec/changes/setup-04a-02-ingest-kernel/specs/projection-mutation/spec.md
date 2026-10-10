@@ -28,10 +28,10 @@ do; the reconcile replaces only that source's statements of the named predicates
 
 ### Requirement: Commit ambiguity is preserved
 
-graph-ingest SHALL classify a mutation failure as not committed only when the failure is proven to precede any
-storage effect: an invalid request, a revision conflict, or an entity not found. Every other failure, including a
-key-value write whose outcome the server did not confirm, SHALL reach the caller of the typed client as
-commit-unknown.
+graph-ingest SHALL classify a mutation failure as not committed only when the failure is proven to precede any storage
+effect: an invalid request, a revision conflict, an entity not found, or a stored value refused as graph state
+(`graph_state_reset_required`, raised before the write). Every other failure, including a key-value write whose outcome
+the server did not confirm, SHALL reach the caller of the typed client as commit-unknown.
 
 #### Scenario: Backend write timeout
 

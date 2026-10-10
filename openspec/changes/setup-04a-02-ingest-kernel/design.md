@@ -441,7 +441,7 @@ ported components (comment 6035317931, item 2). The `lifecycle-suite` delta:
 
 This replaces round 3's `known_risks` treatment: graph-ingest's retained branch is now specified behavior, proven by
 the pin's own test carried on the in-package adapter,
-`TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop` (`processor/graph-ingest/lifecycle_owner_test.go:134`),
+`TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop` (`processor/graph-ingest/lifecycle_owner_test.go`),
 tagged with the new requirement. The suite's failed-start check runs on graph-ingest with a failing factory whose
 cleanup succeeds, and passes as written.
 

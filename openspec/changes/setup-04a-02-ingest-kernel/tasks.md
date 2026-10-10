@@ -475,12 +475,25 @@ posted on this pull request.
       -cpu=1 -cover ./graph/readiness/` 91.1% (163 of 179; D11's 165 of 181 counted one more statement each in
       `NewGauges` and `MetricNames`, both covered); the six graph-ingest readiness integration tests green at package
       level. `task verify` on `64e705d` ended `verify: ok`. Notes: PR #93 comment 6099387563.
-- [ ] 3.13 (D) graph-ingest under the lifecycle suite: an in-package adapter whose `Observe` lists consumers, request
+- [x] 3.13 (D) graph-ingest under the lifecycle suite: an in-package adapter whose `Observe` lists consumers, request
       subscriptions, ingest lanes and the status loop; failing factory = a refused broker; `lifecycletest.Run` green;
       `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop` carried on the adapter, green, driving the
       guard through its methods (design D22), and citing `lifecycle-suite`/"Failed start whose own cleanup fails"
       (design D7.3); the "Cleanup succeeds after a failed start" scenario is the suite's failed-start check on the
       refused-broker factory.
+      Done in `e05afbc`: `suiteOwner` (`processor/graph-ingest/lifecycle_adapter_test.go`) lists the ten handles
+      `clearLifecycleHandles` clears plus the readiness bound consumers, no guard entry (D22), and counts consumer bind,
+      drain and stop through the `consumeStream` seam (subscriptions, the pool and the cache have no seam and are not
+      counted); `TestGraphIngestLifecycleSuite` (integration lane, one fixture broker, a client per owner, `Promise{}`:
+      one-shot) runs the eight checks and a ninth subtest, `StartedOwnerReportsItsHandles`, since the suite cannot see
+      an omitted kind; the must-fail owner's `Start` fails on the transport and its rollback succeeds, so
+      `FailedStartHoldsNothing` is "Cleanup succeeds after a failed start"; the carried test drives the guard's `Start`
+      with a failing start and `release` under an ended context as its rollback, reads what is held through the adapter
+      and cites "Failed start whose own cleanup fails"; a `release` that clears the handles after a failed cleanup
+      survives the old test and is detected by the carried one (`lifecycle_owner_test.go:153`); the consumers line
+      removed from `Observe` is caught by the ninth subtest and the carried test. Not covered: the real `Start` failing
+      with a real rollback that fails. `proving_tests` in graph-ingest's ledger row names the carried test with task
+      5.1. `task verify` on `e05afbc` ended `verify: ok`. Notes: `notes/3.13.md`.
 
 ## 4. Repair and port-refactor evidence (design D8, D15–D21)
 

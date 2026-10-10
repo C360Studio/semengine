@@ -250,7 +250,7 @@ posted on this pull request.
       in the bodies of `b95e790` and `97d9ac6`): lifecycle's registration skipped, the birth is refused at
       graph-ingest's registered-type gate; the phase statement's source taken from the `TransitionSource`, the source
       assertion fails; graph-ingest's reconcile keeping the earlier phase statements, the count assertion fails.
-- [ ] 3.11 (D) `component`: `ToolRegistry` and `ToolRegistryReader` removed (#29) and `LifecycleManager` removed
+- [x] 3.11 (D) `component`: `ToolRegistry` and `ToolRegistryReader` removed (#29) and `LifecycleManager` removed
       (#102, design D17); `lifecycle_test_suite.go` and its self-test not ported; `ProcessorMetrics`,
       `config_validator.go`, `Registry.Snapshot` and the other dead rows removed; `CreateComponent`,
       `SealComposition` and `Snapshots` without the access-token parameter, their doc comments directing callers to
@@ -291,6 +291,8 @@ posted on this pull request.
       `TestSchemaOrdering`, three `TestSchemaFallback` subtests); the `ConsumerName`, `ZeroIsOmitted` and `Factory`
       checks were cut from tests that check other facts, the `Factory` one now reading `Declaration().FactoryIdentity`.
       `component/README.md`'s Registry list names only `ListFactories`.
+      Done in `2799632` (the rows above): `task verify` green on `c6515e9` (this branch after `main` at `b58d5fb` was
+      merged in, `370b384`). Notes: PR #93 comment 6087157769.
 - [x] 3.12 (D) `processor/graph-ingest`: metrics per design D4 (`TestGraphIngestMetricsRegisterOnItsRegistry`,
       `TestGraphIngestNilRegistryRegistersNothing`, written first); the authority as one `types.PlatformMeta`; unknown
       configuration keys refused by strict decoding (`TestCreateGraphIngestRefusesUnknownKey`); the owner-lifecycle
@@ -387,24 +389,47 @@ posted on this pull request.
       Done in `8504a73` (CI 37942461597 green): `NewExactEntityReader` returns `(ExactEntityReader, error)`;
       `NewManager` panics on the refusal its 5 s constant cannot cause; mutation records and choices in PR #93 comment
       6082801917.
-- [ ] 3.12h (D) #146, ruled N (#91 comment 6080973822): `natsclient.IsKVConflictError` and `IsKVNotFoundError`
+- [x] 3.12h (D) #146, ruled N (#91 comment 6080973822): `natsclient.IsKVConflictError` and `IsKVNotFoundError`
       classify by type only (`errors.Is` on natsclient's sentinels and on jetstream's `ErrKeyNotFound`, `ErrKeyDeleted`
       and `ErrKeyExists`, and `errors.As` on `*jetstream.APIError` with its error code), and `errs.IsTransient` and
       `errs.IsFatal` (N extended, #91 comment 6083704900) by class and sentinel, never by text; a test per function,
       written first, with an error whose text holds each string the old match read and whose type does not match;
       natsclient's ledger row gains the `adapt` items, and `pkg/errs`'s row (`docs/admission-ledger.yaml:489-507`, now
       `carry`) becomes `adapt` with the `IsTransient` and `IsFatal` item (design D23, "Classification").
-- [ ] 3.12i (D) #148, ruled O (#91 comment 6080973822): when `handleCanonicalDelete`'s pre-read refuses with a
+      Done in `08988f1`: `TestIsKVNotFoundErrorClassifiesByType` and `TestIsKVConflictErrorClassifiesByType`
+      (`natsclient/kv_classify_test.go`), `TestIsTransientClassifiesByClassAndSentinel` and
+      `TestIsFatalClassifiesByClassAndSentinel` (`pkg/errs/classify_by_type_test.go`), each failing first at `5e4c009`
+      on every string the pin matched; `task mutate:check` with the pin's text match put back as a fallback: a detection
+      for each of the four, 3 of 3 runs. `IsKVConflictError` also matches API code 10164 (a replicated stream's wrong
+      last sequence). No production caller changes its verdict for an error the code, nats.go or the server produces.
+      Ledger: natsclient gains `natsclient-kv-not-found-by-type` and `natsclient-kv-conflict-by-type`; `pkg/errs`
+      becomes `adapt` with `errs-classify-by-class-and-sentinel`. `task verify` green on `c6515e9` (this branch after
+      `main` at `b58d5fb` was merged in, `370b384`). Notes: PR #93 comment 6085641996.
+- [x] 3.12i (D) #148, ruled O (#91 comment 6080973822): when `handleCanonicalDelete`'s pre-read refuses with a
       graph-state error, the handler proceeds to `DeleteAtRevision` at the caller's expected revision, the KV's
       revision check being the fence; the repair test drives the wire handler. A test written first, failing on the
       current code: a poisoned entity is deleted over the wire at its current revision and a later create births it;
       a stale expected revision is still refused.
-- [ ] 3.12j (D) #145, ruled M (#91 comment 6080973822): a birth writes no inverse `contains` edge into its containers;
+      Done in `3d66c91`: `TestPoisonRepairRecoveryWithoutRestart`'s repair drives the wire handlers, and
+      `TestCanonicalDeleteRemovesAValueTheReadRefuses` (`processor/graph-ingest/poison_scoping_test.go`), both failing
+      first (`:94`, `:473`); the refusal is told apart by type, `errors.As` on `*graph.StateContractError`;
+      `deleteEntityAtRevision` no longer counts the fence's `ErrKVRevisionMismatch` in the counter `Health` reads; four
+      `task mutate:check` mutants (the old refusal put back, the fence removed, every read error letting the delete
+      proceed, the mismatch counted again), each a detection, 3 of 3 runs. `task verify` green on `c6515e9` (this branch
+      after `main` at `b58d5fb` was merged in, `370b384`). Notes: PR #93 comment 6086661797.
+- [x] 3.12j (D) #145, ruled M (#91 comment 6080973822): a birth writes no inverse `contains` edge into its containers;
       `AddTriple` leaves the inference's `EntityStore`, and `TripleAdder` and graph-ingest's hierarchy dedup lane
       (`addTripleLane`) go; the duplicate-suppression metric's Help text (`processor/graph-ingest/component.go:248`,
       "(append|hierarchy)") drops `hierarchy`; #134 items 5 (the run-time inverse lookup), 7 (`ExistsEntity`) and 11 are
       settled by removal, as the ruling says. A test written first, failing on the current code: each container keeps
       its revision across a member's birth.
+      Done in `ccdbcdb`: `TestMemberBirthKeepsContainerRevisions` (`processor/graph-ingest/hierarchy_birth_test.go`), on
+      the stream and in-process lanes, failing first at `08988f1` (`:357`); `AddToContainers` creates only absent
+      containers and returns the forward edges; `ExistsEntity`, `TripleAdder` (`graph/inference/applier.go`),
+      `addTripleLane` and the hierarchy dedup lane are gone; the metric's Help names one lane, `append`; `task
+      mutate:check` with the inverse write put back at graph-ingest's seam: a detection, 3 of 3 runs. `task verify`
+      green on `c6515e9` (this branch after `main` at `b58d5fb` was merged in, `370b384`). Notes: PR #93 comment
+      6086376487.
 - [ ] 3.12k (D) Ruled P (#91 comment 6080973822), narrowed (#91 comment 6085720598; design D6, D16, D18): remove
       `ComputeIndexStatus`, the revision gauges and the query envelope, which return with their first readers in change
       4. The readiness gate and the `Watcher` stay, with their tests.

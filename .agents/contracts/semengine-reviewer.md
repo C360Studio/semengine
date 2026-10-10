@@ -16,7 +16,7 @@ under `.claude/agents/`) the reviewer of record belongs to the agent that wrote 
 fix that changes documents only, and the archive/spec sync, take either agent's reviewer (owner, 2026-10-03). The
 [shared protocol](../protocol.md), "Cross-agent review", says which pull requests, what the owner ruled, and how the
 review is asked for and answered on the pull request. A review record there names the commit it read, what it ran and
-what it could not run. Its evidence comes from the tree and from CI, never from the implementer's account, and the
+what it could not run. Its evidence comes from the tree and its own runs, never from the implementer's account, and the
 reviewer does not write on the branch. A reviewer run by the implementing session on such a change is an early
 check, not the gate.
 
@@ -125,6 +125,13 @@ Four further checks, scoped as the architect contract (Extraction slices) states
   and adding the behaviour's failing-first test to `tasks.md`, not by another design round. A design gets three
   review rounds (`.agents/README.md`, Orchestrating role agents).
 
+For a porting design from Slice 04A change 3 on (architect contract, Extraction slices, "One package per pull request"
+and "The shape sweep"), check that the design names its unit, one package or one lifecycle owner with its package,
+states its pin line count and, over the bound, raises the waiver as an owner question (the waiver itself comes with
+the owner's ruling, so it cannot exist at this stage); and that the inventory carries the shape sweep's findings, each
+cited at the pin's `path:line` and mapped to an item on the design's list of port refactors and an `adapt` item on
+the ledger row. A missing unit, line count, owner question, finding or mapping is a finding.
+
 ## Contract and task-truth review
 
 - **Verify the conformance table, not the prose.** For a change with recorded rulings, constraints, or approval
@@ -173,6 +180,11 @@ Four further checks, scoped as the architect contract (Extraction slices) states
   defer it to a follow-up.
 - Verify caller/callee behavior, error classes, state/readiness transitions, and consumer-visible results with
   evidence. Require an architect-reviewed TDD slice and behavior-level tests through production seams.
+- For a porting pull request whose package exceeds the bound (architect contract, "One package per pull request"),
+  check before merge that the owner's waiver for that number is on the pull request. A missing waiver is a finding.
+- For each task under review, check that the choices it made beyond its design are in its notes file,
+  `openspec/changes/<id>/notes/<task>.md` (developer contract, Handoff), and that a pull request comment links the
+  file. Notes posted only as a pull request comment are a finding.
 
 ## High-signal runtime review
 
@@ -366,6 +378,7 @@ a likely functional defect or known project discipline failure, `MEDIUM` for a n
 style only. End with `APPROVE` when there are no blocking/high findings, otherwise `CHANGES REQUESTED` and the exact
 blocking list. State explicitly when evidence was unavailable rather than guessing.
 
-A PASS or `APPROVE` names the CI run and the commit it rests on: a step is done only when the CI run for its pushed
-commit has passed. A local `task verify` is evidence, not the gate. A cancelled or superseded run is unverified, never
-green.
+A PASS or `APPROVE` names the commit it rests on and the `task verify` run behind it: one the reviewer made on that
+commit, or else the implementer's local result, recorded as reported by the implementer, never as passed. It never
+rests on a CI run: a step is done when `task verify` passes on its commit, and CI is checked once, before merge, where
+that run is the independent check (owner ruling of 2026-10-10, issue #171).

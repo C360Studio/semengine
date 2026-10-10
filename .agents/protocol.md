@@ -62,6 +62,9 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
   semengine-developer)`). Bring a pushed branch up to date by merging `origin/main` into it; do not rebase or force-push
   it. A review record names the commit it read, and a rebase leaves that record pointing at a commit the branch no
   longer has. The squash merge keeps `main` linear either way.
+  The developer's notes for an implementation review, the choices a task made that its design does not spell out, are
+  a file per task, `openspec/changes/<id>/notes/<task>.md`, with a one-line pull request comment that links it
+  (developer contract § Handoff); they archive with the change.
 - **Cross-agent review:** on a code pull request the implementation review, and the re-review of a fix that changes
   code, are done by the agent that wrote none of the commits under review, as the pull request's `implemented-by:` line
   records; the re-review of a fix that changes documents only, and the check of the archive/spec sync, are either
@@ -83,14 +86,15 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
   already open included. The implementing session may run its own reviewer as it works; those reviews, past or future,
   find defects early and are not the gate. Neither agent can start the other, so the pull request carries both halves:
   - The implementer asks with a PR comment headed `Review request`. It names the kind of review, the commit to read,
-    the diff range, that commit's CI run, and the issue or ruling the change answers. It does not say what the
-    reviewer should conclude.
+    the diff range, the implementer's `task verify` result on that commit (run on a clean tree), and the issue or
+    ruling the change answers. It does not say what the reviewer should conclude.
   - The reviewing session answers with a PR comment headed `Review record`: its reviewer's report as written, in the
     reviewer contract's format, not a summary. It names the commit read, what was run, and what could not be run.
-  - Evidence comes from the tree and from CI, not from the implementer's account. For anything `task verify` runs,
-    the CI run of the named commit is the evidence. A check the reviewer could not run and CI does not run is
-    recorded as not run; output the implementer supplies for it is recorded as reported by the implementer, never as
-    passed.
+  - Evidence comes from the tree and the reviewer's own runs, not from the implementer's account. For anything
+    `task verify` runs, the evidence is the reviewer's run on the named commit; without one, the implementer's result
+    is recorded as reported by the implementer, never as passed. The implementer does not wait on or watch a CI run
+    before asking, and the record does not rest on one: the CI run before merge is the check (owner ruling of
+    2026-10-10, issue #171). A check the reviewer could not run and CI does not run is recorded as not run.
   - A record covers the commit it names. A later content commit, one that changes the pull request's own diff against
     `main`, needs a re-review, and the archive commit needs the archive check. The other agent's review covers code:
     a later commit that changes code (any file that is not Markdown or under `openspec/`, or a role adapter under

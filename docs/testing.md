@@ -293,10 +293,12 @@ When the wrong change is in several places (the report's hunks), one place reach
 reached and one cannot be measured, reach could not be measured.
 
 The reach run shows one path through the unchanged code. A line that runs only on some schedules, or only in a child
-process the test starts (which writes no coverage), can read as not reached, and the outcome is then invalid. A
-coverage block counts as run once it is entered, not line by line, so a line after a call that panics, or right after
-a `return`, can read as reached although it never ran, and the outcome is then survivor. The report lists the coverage
-blocks that decided reach.
+process the test starts that writes no coverage, can read as not reached, and the outcome is then invalid. A child
+writes coverage only when it is told where: natsclient's `ownProcessBubble` passes on the parent's `-test.gocoverdir`,
+and a `prochost` helper inherits `GOCOVERDIR` from `go test -cover` and writes it when it exits. A child killed by a
+signal, or one that runs the test main with no `-test.gocoverdir`, writes none. A coverage block counts as run once it
+is entered, not line by line, so a line after a call that panics, or right after a `return`, can read as reached
+although it never ran, and the outcome is then survivor. The report lists the coverage blocks that decided reach.
 
 ### Tests that generate their inputs
 
@@ -469,6 +471,14 @@ including those.
   cause named instead of a misleading error. In `internal/harness/prochost`, a helper process parked on a bare
   `select {}` was killed by Go's deadlock detector, so the test's `ps` call failed intermittently (CI runs
   37005148521, 37006036797 and 37013932497; fixed in 89395c2).
+- Give a `testing/synctest` bubble that runs a nats.go connection a test process of its own. A bubble is the set of
+  goroutines `synctest.Test` runs on a fake clock. nats.go v1.54.0 keeps one pool of timers for the whole process
+  (`timer.go:22`), so a timer made in one bubble can be taken by code outside it or by another bubble: the run then
+  ends with a `fatal error` that names a synctest timer or channel used from outside its bubble, or a bubble waits on
+  a timer its clock does not drive and the run hangs. Whether either happens depends on the shuffle order, so it
+  reads as a flake. natsclient's `ownProcessBubble` (`natsclient/subscribe_registration_test.go`) does this: the test
+  runs the test binary again for itself alone and fails unless that run reports it passed. Bubbles that drive only
+  fakes, as natsclient's others do, need no process of their own.
 
 ## Services and the lifecycle suite
 

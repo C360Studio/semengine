@@ -360,6 +360,39 @@ func (c *Client) ReplyWithHeaders(ctx context.Context, replyTo string, data []by
 // This is a convenience method for implementing request/reply services.
 // Once Close has begun it returns nats.ErrConnectionClosed and subscribes
 // nothing. Close joins every running invocation of handler.
+//
+// When SubscribeForRequests returns a subscription, the server has read its
+// SUB: the call sends a PING on the connection it subscribed on and waits for
+// the PONG, which the server sends once it has read the SUB, so a request sent
+// to that server from any connection after the call returns finds the handler,
+// unless the server refused the SUB (for permissions, or for the connection's
+// limit on subscriptions). A refused SUB is not reported here: the call returns
+// the subscription and nil, and a client that connected with Connect logs the
+// refusal at error level. The wait for the PONG ends when the server answers,
+// when ctx ends, or when DefaultRequestTimeout has passed, whichever comes
+// first. ctx does not end a wait for the connection itself: while the server is
+// not reading and the connection's send buffer is full, the call, like every
+// call that writes on the connection, waits for each held write on the
+// connection, its own or another goroutine's, until that write completes or
+// nats.go's write timeout (one minute by default) ends it, so it can be held a
+// minute or more. If ctx has already ended, the call sends no SUB and returns a
+// transient error matching ctx's error. Nothing here says when a responder in
+// another component has subscribed, or what holds after a reconnect or across
+// the servers of a cluster.
+//
+// When the wait does not complete, or Close has begun when it ends, the call
+// ends the subscription (it unsubscribes it, so it is not restored on a
+// reconnect; on a connection Close is draining or has closed, Close ends it) and
+// returns no subscription and the first of these errors that holds:
+//   - nats.ErrConnectionClosed, if Close has begun;
+//   - a transient error matching context.Canceled or context.DeadlineExceeded,
+//     if ctx ended or DefaultRequestTimeout passed;
+//   - a transient error matching ErrNotConnected, and not
+//     nats.ErrConnectionClosed, if the connection was lost or closed by anything
+//     but Close.
+//
+// It does not wait for a running invocation of handler; Close joins that
+// invocation.
 func (c *Client) SubscribeForRequests(
 	ctx context.Context,
 	subject string,
@@ -369,7 +402,7 @@ func (c *Client) SubscribeForRequests(
 	if ctx == nil {
 		return nil, nilContextError("SubscribeForRequests")
 	}
-	return c.subscribeOwned("SubscribeForRequests", subject, func(conn *nats.Conn) nats.MsgHandler {
+	return c.subscribeOwned(ctx, "SubscribeForRequests", subject, func(conn *nats.Conn) nats.MsgHandler {
 		return c.requestCallback(ctx, conn, subject, handler)
 	}, nativeSubscribe)
 }

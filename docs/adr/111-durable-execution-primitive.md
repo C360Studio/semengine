@@ -2,13 +2,14 @@
 
 ## Status
 
-**Proposed (2026-10-09, round 2), for the owner's ruling on #9.** Drafted by the semengine-architect on draft PR #165
-(`Addresses #24`) under epic #9's "Ruled 2" (comment 6085243841): one of four records change 3's design cites. The
-record is the decision, not the implementation: mechanics go to the epic's capability spec. It decides only what a
-change-3 or change-4 package needs now, generalised from what the pin has; everything else is an owner question with
-options and costs. SemStreams facts are read at **the pin**, the frozen SemStreams commit `8b99efe9`, cited
-`path:line`; SemEngine facts are on `main` at `522bf3a` or on PR #93's branch at `3d66c91` (cited `#93:path:line`).
-The inventory behind it is the claim's inventory file on PR #165.
+**Accepted (2026-10-10).** Ruled by the owner on #9 (comment 6097814764): Decisions 1 to 6, and all eight owner
+questions as recommended (the journal's home deferred to a qualifying tier-0 consumer). Drafted by the
+semengine-architect on draft PR #165 (`Addresses #24`) under epic #9's "Ruled 2" (comment 6085243841): one of four
+records change 3's design cites. The record is the decision, not the implementation: mechanics go to the epic's
+capability spec. It decides only what a change-3 or change-4 package needs now, generalised from what the pin has;
+everything else is an owner question with options and costs. SemStreams facts are read at **the pin**, the frozen
+SemStreams commit `8b99efe9`, cited `path:line`; SemEngine facts are on `main` at `522bf3a` or on PR #93's branch at
+`3d66c91` (cited `#93:path:line`). The inventory behind it is the claim's inventory file on PR #165.
 
 ## Context
 
@@ -138,6 +139,9 @@ result that may have had an effect (Decision 3). A delivery parked after `MaxDel
 (`internal/maxdelivery/observer.go:1-6`; `docs/contract.md:85-89`), a blocker sink and not a journal.
 
 ### Owner questions (each with options and costs; recommendation first)
+
+**Ruled 2026-10-10 (owner, #9 comment 6097814764): all eight as recommended.** The questions, options and costs stay
+below as the record of what was weighed.
 
 1. **The journal's home.** The 2026-10-01 ruling names `pkg/lifecycle` + `pkg/projection`. Options: (a) **defer**
    (foundation `design.md:653-654`, option 2; recommended): Decisions 1–6 bind now, both packages stay as carried, and

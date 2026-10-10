@@ -1581,15 +1581,18 @@
     fix it once in natsclient's subscribe, design accepted in PR #156 comments 6085722854 and
     6091034659, in place of the round trip in graph-ingest's Start that #144 comment 6083704443 ruled):
     Subscribe and SubscribeForRequests return a subscription only once the server has read its SUB.
-    subscribeOwned (client.go:1324) refuses an ended context before the SUB (:1335-1338), then sends a
-    PING on the connection it subscribed on and waits for the PONG (FlushWithContext, :1362-1364),
-    bounded by the call's context and DefaultRequestTimeout, whichever ends first. When the round trip
-    does not complete, or Close has begun, it unsubscribes the subscription (:1379) and returns no
-    subscription and the first error that holds (:1380-1396): nats.ErrConnectionClosed once Close has
-    begun; a transient error matching context.Canceled or context.DeadlineExceeded when the context
-    ended or DefaultRequestTimeout passed; a transient ErrNotConnected when the connection was lost. It
-    does not wait for a running handler, which Close joins. The doc comments say so (client.go:1254-1276,
-    request.go:364-386). At the pin both calls returned the subscription straight after nats.go's
+    subscribeOwned (client.go:1335) refuses an ended context before the SUB (:1346-1349), then sends a
+    PING on the connection it subscribed on and waits for the PONG (FlushWithContext, :1373-1375); the
+    wait for the PONG is bounded by the call's context and DefaultRequestTimeout, whichever ends first,
+    and the waits for nats.go's connection lock are not (design L8, #168). A SUB the server refuses is
+    returned as a subscription and nil, and logged by handleError on a client that connected with
+    Connect (design L9, #169). When the round trip does not complete, or Close has begun, it
+    unsubscribes the subscription (:1390) and returns no subscription and the first error that holds
+    (:1391-1407): nats.ErrConnectionClosed once Close has begun; a transient error matching
+    context.Canceled or context.DeadlineExceeded when the context ended or DefaultRequestTimeout
+    passed; a transient ErrNotConnected when the connection was lost. It does not wait for a running
+    handler, which Close joins. The doc comments say so (client.go:1254-1285, request.go:364-395). At
+    the pin both calls returned the subscription straight after nats.go's
     Subscribe (client.go:834-850, request.go:359-428), while the SUB could still be in nats.go's write
     buffer, so a request sent from another connection could get "no responders" (#144: PR #93's
     TestGraphIngestServesExactlyTheDeclaredVerbs). No exported name is added
@@ -2221,9 +2224,10 @@
     TestSubscribeRegistrationCloseBeginsDuringRoundTrip (:434) and T8
     TestSubscribeRegistrationCloseEndsConnectionDuringRoundTrip (:479). T2 to T7 run against a scripted
     server on net.Pipe in a synctest bubble, each in a test process of its own (docs/testing.md,
-    "Concurrency and cleanup"); T8 runs on real time. Mutation (PR #156 comments 6091577433 and
-    6091577987; task mutate:check on client.go at 718f700, -cpu 1 -race, seed 1): ten wrong changes to
-    subscribeOwned, each detected by the assertion design D7 names. M1, the round trip removed (T1
+    "Concurrency and cleanup"); T8 runs on real time. The log line of a refused SUB (design L9) is not
+    shown by a test in this change; it is main's behaviour (#169). Mutation (PR #156 comments
+    6091577433 and 6091577987; task mutate:check on client.go at 718f700, -cpu 1 -race, seed 1): ten
+    wrong changes to subscribeOwned, each detected by the assertion design D7 names. M1, the round trip removed (T1
     :287; 68 of 200 requests per call got "no responders", so this detection is probabilistic); M2,
     the bound fifty times DefaultRequestTimeout (T2 :306); M3, the fail-closed Unsubscribe removed (T2
     :312, T3 :339, T5 :384); M4, finish() called after the fail-closed Unsubscribe, so Close no longer

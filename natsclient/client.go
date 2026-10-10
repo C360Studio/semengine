@@ -1251,15 +1251,24 @@ func (s *Subscription) Drain(ctx context.Context) error {
 // begun it returns nats.ErrConnectionClosed and subscribes nothing. Close joins
 // every running invocation of handler.
 //
-// The subscription is registered with the server when Subscribe returns it:
+// When Subscribe returns a subscription, the server has read its SUB:
 // Subscribe sends a PING on the connection it subscribed on and waits for the
 // PONG, which the server sends once it has read the SUB, so a message or request
 // sent to that server from any connection after the call returns finds the
-// subscription. The wait ends when the server answers, when ctx ends, or when
-// DefaultRequestTimeout has passed, whichever comes first. If ctx has already
-// ended, Subscribe sends no SUB and returns a transient error matching ctx's
-// error. Nothing here says when a responder in another component has subscribed,
-// or what holds after a reconnect or across the servers of a cluster.
+// subscription, unless the server refused the SUB (for permissions, or for the
+// connection's limit on subscriptions). A refused SUB is not reported here:
+// Subscribe returns the subscription and nil, and a client that connected with
+// Connect logs the refusal at error level. The wait for the PONG ends when the
+// server answers, when ctx ends, or when DefaultRequestTimeout has passed,
+// whichever comes first. ctx does not end a wait for the connection itself:
+// while the server is not reading and the connection's send buffer is full,
+// Subscribe, like every call that writes on the connection, waits for each held
+// write on the connection, its own or another goroutine's, until that write
+// completes or nats.go's write timeout (one minute by default) ends it, so it
+// can be held a minute or more. If ctx has already ended, Subscribe sends no
+// SUB and returns a transient error matching ctx's error. Nothing here says
+// when a responder in another component has subscribed, or what holds after a
+// reconnect or across the servers of a cluster.
 //
 // When the wait does not complete, or Close has begun when it ends, Subscribe
 // ends the subscription (it unsubscribes it, so it is not restored on a
@@ -1272,8 +1281,8 @@ func (s *Subscription) Drain(ctx context.Context) error {
 //     nats.ErrConnectionClosed, if the connection was lost or closed by anything
 //     but Close.
 //
-// It returns at once, without waiting for a running invocation of handler;
-// Close joins that invocation.
+// It does not wait for a running invocation of handler; Close joins that
+// invocation.
 func (m *Client) Subscribe(ctx context.Context, subject string, handler func(context.Context, *nats.Msg)) (*Subscription, error) {
 	// Refused here, not in the callback, which hands ctx to handler for every message.
 	if ctx == nil {
@@ -1319,8 +1328,10 @@ func (m *Client) subscribeWith(
 // ended, with each handler invocation observed (design D3,
 // natsclient-close-is-final). build makes the native callback for the connection
 // the subscription is made on. It returns the subscription only once the server
-// has read its SUB: a PING on that connection and its PONG, bounded by ctx and
-// DefaultRequestTimeout (design subscribe-registers-interest, D1 to D5).
+// has read its SUB: a PING on that connection and its PONG. ctx and
+// DefaultRequestTimeout bound the wait for the PONG, not the waits for
+// nats.go's connection lock that each step here makes (design
+// subscribe-registers-interest, D1 to D5, L8).
 func (m *Client) subscribeOwned(
 	ctx context.Context, operation, subject string, build func(conn *nats.Conn) nats.MsgHandler,
 	subscribe subscribeFunc,

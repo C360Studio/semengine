@@ -5,7 +5,8 @@
 The shape sweep currently turns every inherited maintenance finding into a required refactor and ledger adaptation.
 That expands port scope even when the carried structure meets the admitted contract. The owner approved a bounded
 replacement in this conversation on 2026-10-10: "Implement this draft as one documents-only PR, preserving the
-existing correctness gates and approved commitments."
+existing correctness gates and approved commitments." The direction is
+[recorded on epic #9](https://github.com/C360Studio/semengine/issues/9#issuecomment-6101771664).
 
 ## What Changes
 

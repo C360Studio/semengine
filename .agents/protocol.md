@@ -28,6 +28,54 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
 - **Why:** an ADR, or the owner's ruling comment on the issue. Owner rulings of 2026-09-30 on the plan are recorded
   on PR #1.
 
+## Bounded port scope
+
+A port implements the admitted capability and its accepted contract. Its reviewed design establishes the work to
+deliver. A finding adds required work only when the correction is necessary to satisfy a binding requirement, an
+admission or verification gate, an explicit owner ruling, an accepted design commitment, or the dependency and
+packaging changes needed to build the admitted package. Name that obligation and the concrete failure, conflicting
+implementation, or missing required evidence. A maintenance preference alone does not establish required work.
+
+Correct broken integrity, silent-loss prevention, context ownership, completed joins, authority and readiness,
+acknowledged durability, and metadata or content preservation. All other explicit correctness, language, surface,
+testing, and repository requirements remain binding, except the generic inherited-cleanup mandates this section
+expressly supersedes. Missing proof of a required guarantee calls for targeted qualification; it is neither a
+passing gate nor automatic evidence that a rewrite is necessary. A scope freeze cannot excuse a broken contract, a
+newly introduced defect, or an unproved admission gate.
+
+Use the retained contract, code path, existing reproduction, failing regression, or required qualification result.
+State what it proves and what remains unknown. Whether a defect began at the source pin or during the port may remain
+unknown; attribution is not a prerequisite to correcting a demonstrated defect. This rule adds no pin experiment per
+finding. Existing pin-probe obligations and evidence requirements still apply to claims about pin behavior.
+
+Inherited duplication, copied scaffolding, unnecessary indirection, naming, and similar maintenance findings are
+optional unless they meet the required-work rule above. "Inherited" means structure retained from the source package,
+not every addition first made in this repository. This exception does not permit newly introduced duplicate owners,
+unconsumed new exports, or parallel spellings. The surface audit remains required: truly dead surface is not protected
+by this exception, and admitted packages and consumers still count when identifying readers.
+
+The inventory records every shape-sweep finding. For each, the design records either the required correction and its
+binding basis, or the retained structure and why changing it is optional. Required corrections receive the
+appropriate ledger disposition; an optional finding does not force a refactor or an `adapt` item. Record retained
+costs through existing design and ledger fields where applicable. Route findings under Work lifecycle, "File"; do
+not create a separate cleanup ledger.
+
+An optional finding cannot veto design or implementation approval, become a blocking or high finding merely by
+invoking a generic consolidation rule, or add a prerequisite to the MVP path. Present optional work as optional
+before design acceptance. Scheduling it as additional work requires an explicit owner decision identifying that
+work; a general instruction to keep code simple is insufficient. Required corrections use the smallest complete
+change that meets the obligation; unrelated cleanup does not join that correction automatically.
+
+This rule supersedes generic wording that makes every inherited shape finding a mandatory consolidation, port
+refactor, or `adapt` item, including that part of issue #159. The sweep, package-size rules, and specifically directed
+adoption work from #159 remain binding. Stronger explicit requirements, package-specific ADR decisions, other owner
+rulings, and accepted tasks remain binding; only the owner can change those commitments. Apply this rule to future
+port designs and newly raised findings on open ports. Existing approved tasks, including PR #93's tasks, the #170
+prerequisite, and package-specific ADR adoption, remain commitments; changing them requires a separate explicit owner
+ruling. This rule adds no prerequisite to PR #93. Enforcement is review only: the independent reviewer checks the
+obligation and evidence supporting required work within the existing finding and verdict format and does not block
+on optional maintenance.
+
 ## Work lifecycle
 
 - **Start:** `gh issue list --state open` · `gh pr list` (drafts are claims; skip them) · `task spec:queue` ·

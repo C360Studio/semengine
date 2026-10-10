@@ -1,6 +1,7 @@
 # Bounded port scope design
 
-Status: approved target, owner instruction of 2026-10-10. Based on main `0e118245154a6e3bd8b77f632ca22374d919c494`.
+Status: approved target, [owner instruction of 2026-10-10][owner-ruling]. Based on main
+ `0e118245154a6e3bd8b77f632ca22374d919c494`.
 
 The change is to stop automatically converting inherited maintenance findings into required port refactors.
 Correctness obligations and deliberate product requirements continue to govern admission.
@@ -98,3 +99,5 @@ contract](https://github.com/C360Studio/semengine/blob/0e118245154a6e3bd8b77f632
 contract](https://github.com/C360Studio/semengine/blob/0e118245154a6e3bd8b77f632ca22374d919c494/.agents/contracts/semengine-reviewer.md#L129),
 [existing developer
 restraint](https://github.com/C360Studio/semengine/blob/0e118245154a6e3bd8b77f632ca22374d919c494/.agents/contracts/semengine-developer.md#L35).
+
+[owner-ruling]: https://github.com/C360Studio/semengine/issues/9#issuecomment-6101771664

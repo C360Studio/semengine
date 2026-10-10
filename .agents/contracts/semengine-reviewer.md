@@ -16,7 +16,7 @@ under `.claude/agents/`) the reviewer of record belongs to the agent that wrote 
 fix that changes documents only, and the archive/spec sync, take either agent's reviewer (owner, 2026-10-03). The
 [shared protocol](../protocol.md), "Cross-agent review", says which pull requests, what the owner ruled, and how the
 review is asked for and answered on the pull request. A review record there names the commit it read, what it ran and
-what it could not run. Its evidence comes from the tree and from CI, never from the implementer's account, and the
+what it could not run. Its evidence comes from the tree and its own runs, never from the implementer's account, and the
 reviewer does not write on the branch. A reviewer run by the implementing session on such a change is an early
 check, not the gate.
 
@@ -357,6 +357,7 @@ a likely functional defect or known project discipline failure, `MEDIUM` for a n
 style only. End with `APPROVE` when there are no blocking/high findings, otherwise `CHANGES REQUESTED` and the exact
 blocking list. State explicitly when evidence was unavailable rather than guessing.
 
-A PASS or `APPROVE` names the CI run and the commit it rests on: a step is done only when the CI run for its pushed
-commit has passed. A local `task verify` is evidence, not the gate. A cancelled or superseded run is unverified, never
-green.
+A PASS or `APPROVE` names the commit it rests on and the `task verify` run behind it: one the reviewer made on that
+commit, or else the implementer's local result, recorded as reported by the implementer, never as passed. It never
+rests on a CI run: a step is done when `task verify` passes on its commit, and CI is checked once, before merge, where
+that run is the independent check (owner ruling of 2026-10-10, issue #171).

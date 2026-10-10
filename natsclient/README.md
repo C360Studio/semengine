@@ -89,6 +89,9 @@ sub, err := client.Subscribe(ctx, "subject.*", func(msgCtx context.Context, msg 
 })
 ```
 
+When `Subscribe` returns, the server has read the subscription, so a request from another connection finds it, unless
+the server refused it. A refusal is not returned as an error; a client that connected with `Connect` logs it.
+
 ### Advanced Usage
 
 ```go

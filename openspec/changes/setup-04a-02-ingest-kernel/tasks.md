@@ -430,7 +430,7 @@ posted on this pull request.
       mutate:check` with the inverse write put back at graph-ingest's seam: a detection, 3 of 3 runs. `task verify`
       green on `c6515e9` (this branch after `main` at `b58d5fb` was merged in, `370b384`). Notes: PR #93 comment
       6086376487.
-- [ ] 3.12k (D) Ruled P (#91 comment 6080973822), narrowed (#91 comment 6085720598; design D6, D16, D18): remove
+- [x] 3.12k (D) Ruled P (#91 comment 6080973822), narrowed (#91 comment 6085720598; design D6, D16, D18): remove
       `ComputeIndexStatus`, the revision gauges and the query envelope, which return with their first readers in change
       4. The readiness gate and the `Watcher` stay, with their tests.
       **Removed:**
@@ -468,6 +468,13 @@ posted on this pull request.
         `TestIntegration_ReadinessGaugesAreEmitted` are green and unchanged;
       - `go test -cover ./graph/readiness/` is at or above 80% (91.2% expected, 165 of 181 statements), quoted.
       Gate: `task verify`.
+      Done in `64e705d`: the removals as listed; `watcher_test.go`, `readiness_gate.go` and `readiness_gate_test.go`
+      unchanged (`watcher.go:23`'s comment edited, as the task says); the proof grep lists nothing; the under-1 ms row
+      (a mutant dropping the floor at `index_status.go:143` survives without it and is detected with it, 3 of 3) and
+      `TestPublisherKey` (two detections); 3.4's three `Register` records re-run, each a detection; `go test -race
+      -cpu=1 -cover ./graph/readiness/` 91.1% (163 of 179; D11's 165 of 181 counted one more statement each in
+      `NewGauges` and `MetricNames`, both covered); the six graph-ingest readiness integration tests green at package
+      level. `task verify` on `64e705d` ended `verify: ok`. Notes: PR #93 comment 6099387563.
 - [ ] 3.13 (D) graph-ingest under the lifecycle suite: an in-package adapter whose `Observe` lists consumers, request
       subscriptions, ingest lanes and the status loop; failing factory = a refused broker; `lifecycletest.Run` green;
       `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop` carried on the adapter, green, driving the
@@ -546,8 +553,8 @@ posted on this pull request.
 - [ ] 5.2 (D) `scripts/cover-check.sh` gains the ten targets of design D11, `graph/inference` and `graph/kvcatalog`
       among them; the tests design D11 names for `internal/graphmutation`, `pkg/projection`, `component` and
       `pkg/lifecycle` are added; each target's figure is posted. `graph/readiness` at or above 80% after task 3.12k
-      (91.2% expected, 165 of 181 statements, design D11). Ticked only on a green `task cover:check`. Hold: task
-      1.12.
+      (91.1%, 163 of 179 statements, measured at `64e705d`; design D11). Ticked only on a green `task cover:check`.
+      Hold: task 1.12.
 - [x] 5.3 (D) `go.mod`: `golang.org/x/net` at a version that downgrades nothing, and no `go-openai`; `task vuln` and
       `task tidy:check` green. Done in `074c800`: v0.59.0 → v0.60.0 for five HTTP/2 advisories, nothing else moved,
       no `go-openai` in `go.mod` or `go.sum`; both gates green there, locally and in CI run 37926039654.

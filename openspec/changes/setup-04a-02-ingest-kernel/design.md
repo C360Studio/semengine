@@ -567,9 +567,9 @@ Recommendation **(d)**, as a `harness-boundaries` modification with a sensitivit
     after D16; a two-statement margin), `graph/kvcatalog` 80.3% merged, `graph/inference` 82.8% (the slice),
     `storage/storeregistry` 100%.
   - `graph/readiness`, also over the floor: 89.0% unit after ruling P's removal as narrowed (161 of 181 statements,
-    the gate and the `Watcher` kept); task 3.12k's two added tests bring it to 91.2% (165 of 181). Measured with
-    `go test -race -cpu=1 -cover ./graph/readiness/` on a copy of `08988f1` outside the repository, task 3.12k as
-    narrowed applied (local only).
+    the gate and the `Watcher` kept); task 3.12k's two added tests bring it to 91.1% (163 of 179, measured at
+    `64e705d` with `go test -race -cpu=1 -cover ./graph/readiness/`; the design's earlier figure, 165 of 181 on a copy
+    of `08988f1` outside the repository, counted one more covered statement each in `NewGauges` and `MetricNames`).
   - `internal/graphmutation` 69.7%, 10 statements short: tests that the client refuses a malformed append response
     (`validateAppendResponse`) and that `Reconcile` and `Delete` send their requests and read their replies.
   - `pkg/projection` 66.5%, 31 short (its unread surface is kept, K1, so the drop buys nothing): the typed client's
@@ -1412,8 +1412,8 @@ D9.
 - P11. `graph/inference` is public by signature (`processor/graph-clustering/component.go:77`); `pkg/dispatch` is not.
   — §2, §8.
 - P12. Coverage after the drops, regrouped by D16: graph-ingest 84.7%, `graph` 80.9%, `graph/kvcatalog` 80.3%,
-  `graph/readiness` 86.4% (89.0%, 161 of 181 statements, after ruling P's removal as narrowed, and 91.2%, 165 of 181,
-  with task 3.12k's two tests; measured on a copy of `08988f1` with task 3.12k as narrowed applied (local only)),
+  `graph/readiness` 86.4% (89.0%, 161 of 181 statements, after ruling P's removal as narrowed, and 91.1%, 163 of 179,
+  with task 3.12k's two tests at `64e705d`; the copy of `08988f1` with 3.12k applied measured 165 of 181, D11),
   `graph/inference` (slice) 82.8%,
   `storage/storeregistry` 100%; four packages short by 10, 31, 81 and 97 statements. — P-7, P-8, P-10, P-19 (local-only
   profiles; commands in §1 and §9).

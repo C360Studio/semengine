@@ -226,8 +226,7 @@ func (c *MutationClient) Append(ctx context.Context, request AppendMutation) (Mu
 	}
 	result := response.Results[0]
 	if result.Outcome == graph.MutationFailed {
-		classified := classifiedAppendFailure(result.Error)
-		return notCommitted(), newMutationError(MutationOperationAppend, classified, CommitNotCommitted)
+		return mutationFailure(MutationOperationAppend, classifiedAppendFailure(result.Error))
 	}
 	switch result.Outcome {
 	case graph.MutationApplied, graph.MutationUnchanged:
@@ -264,6 +263,12 @@ func (c *MutationClient) ReadAuthoritative(ctx context.Context, entityID string)
 	}
 	exact, err := c.reader.ReadExactEntity(ctx, entityID)
 	if err != nil {
+		// A read writes nothing, so a classified reply to it is not committed, whatever its
+		// class; the commit rule for a mutation's reply (isDefiniteFailure) is not asked.
+		var classified *errs.ClassifiedError
+		if errors.As(err, &classified) {
+			return nil, newMutationError(MutationOperationReadAuthoritative, err, CommitNotCommitted)
+		}
 		_, mapped := mutationFailure(MutationOperationReadAuthoritative, err)
 		return nil, mapped
 	}
@@ -417,17 +422,28 @@ func mutationFailure(operation MutationOperation, err error) (MutationReceipt, e
 	return unknownMutation(operation, err)
 }
 
+// unknownMutation reports a mutation that may have committed. A classified reply keeps its class,
+// code and detail on the error.
 func unknownMutation(operation MutationOperation, err error) (MutationReceipt, error) {
-	receipt := MutationReceipt{Commit: CommitUnknown}
-	return receipt, &MutationError{
-		Operation: operation, Kind: MutationCommitUnknown, Class: errs.Classify(err),
-		Commit: CommitUnknown, Err: err,
-	}
+	mapped := newMutationError(operation, err, CommitUnknown)
+	mapped.Kind = MutationCommitUnknown
+	return MutationReceipt{Commit: CommitUnknown}, mapped
 }
 
+// isDefiniteFailure reports a failure that proves the mutation did not commit: a transport
+// outcome that proves no request was delivered, or a reply graph-ingest sends when it refused the
+// request before its write. Those replies are class invalid (an invalid request, a revision
+// conflict, an entity not found or already present) or code graph_state_reset_required (the
+// entity's state failed the state contract). Any other classified reply, transient internal
+// included, can follow a write whose outcome the bucket did not confirm. One invalid reply can
+// follow a commit and is still read as not committed: natsclient's response_too_large, sent in
+// place of a success response larger than the broker's payload limit.
 func isDefiniteFailure(err error) bool {
 	var classified *errs.ClassifiedError
-	return errors.As(err, &classified) || graphmutation.IsDefinitelyNotCommitted(err) || natsclient.IsNoResponders(err)
+	if errors.As(err, &classified) {
+		return classified.Class == errs.ErrorInvalid || classified.Code == graph.ErrorCodeGraphStateResetRequired
+	}
+	return graphmutation.IsDefinitelyNotCommitted(err) || natsclient.IsNoResponders(err)
 }
 
 func newMutationError(operation MutationOperation, err error, commit CommitState) *MutationError {

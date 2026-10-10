@@ -73,7 +73,8 @@ type CommitState string
 const (
 	// CommitNotCommitted proves the mutation did not commit.
 	CommitNotCommitted CommitState = "not-committed"
-	// CommitUnknown reports that delivery occurred without a valid reply.
+	// CommitUnknown reports that the mutation may have committed: it was delivered, and neither
+	// its reply nor its absence proves the outcome.
 	CommitUnknown CommitState = "unknown"
 	// CommitVerified reports a valid authoritative mutation response.
 	CommitVerified CommitState = "verified"
@@ -116,7 +117,7 @@ const (
 	MutationRevisionConflict MutationErrorKind = "revision-conflict"
 	// MutationUnavailable reports no available mutation responder.
 	MutationUnavailable MutationErrorKind = "unavailable"
-	// MutationCommitUnknown reports delivery without a valid response.
+	// MutationCommitUnknown reports a mutation that may have committed (CommitUnknown).
 	MutationCommitUnknown MutationErrorKind = "commit-unknown"
 	// MutationInternal reports an unclassified framework failure.
 	MutationInternal MutationErrorKind = "internal"

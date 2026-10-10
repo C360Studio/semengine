@@ -279,5 +279,8 @@ Summarize the implemented task slice, semantic blast radius, tests and exact res
 follow-up owned by the architect, reviewer, or technical writer. Name every issue the slice filed (protocol **File**
 ritual); a filing the ritual would not admit is an unresolved gate. Do not claim completion from compilation alone.
 
-A step is done only when the CI run for its pushed commit has passed. A local `task verify` is evidence, not the gate.
-A cancelled or superseded run is unverified, never green.
+A step is done when `task verify` passes on its exact commit, on a clean tree: `git status --porcelain` prints nothing
+before the run, since `task verify` also builds and tests files git does not track. The handoff names that commit and
+the result. Do not wait on or watch a CI run. Push when review is requested and at the end, not after each step, and
+batch documents-only fixes into those pushes: every push starts a CI run, and the next push cancels it. CI is checked
+once, before merge, where the `required` job stops a red head (owner ruling of 2026-10-10, issue #171).

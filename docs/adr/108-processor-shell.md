@@ -2,11 +2,12 @@
 
 ## Status
 
-**Proposed (2026-10-09), for the owner's ruling on #9.** Drafted on draft PR #163 (`Addresses #109`) under "Ruled 2"
-(#9 comment 6085243841). It does not close #109, which stays the refactor. Change 3's design and the follower ports
-(changes 4, 5 and 7) cite it. Mechanics (what each call returns, lock and join order, test names) belong to the
-capability spec the first port writes, not here (pin `docs/adr/README.md`). Pin cites are `path:line` at SemStreams
-`8b99efe9`; PR #93 cites are at its head `3d66c91`; the inventory accompanies this record on PR #163.
+**Accepted (2026-10-10).** Ruled by the owner on #9 (comment 6097814764): every decision, and each of the three owner
+questions as recommended. Drafted on draft PR #163 (`Addresses #109`) under "Ruled 2" (#9 comment 6085243841). It does
+not close #109, which stays the refactor. Change 3's design and the follower ports (changes 4, 5 and 7) cite it.
+Mechanics (what each call returns, lock and join order, test names) belong to the capability spec the first port writes,
+not here (pin `docs/adr/README.md`). Pin cites are `path:line` at SemStreams `8b99efe9`; PR #93 cites are at its head
+`3d66c91`; the inventory accompanies this record on PR #163.
 
 ## Context
 
@@ -166,6 +167,9 @@ as the design gap; this is owner question 1, not a rejection.
   behaviour changes; a configuration carrying `workers` for spatial or temporal fails at boot. - Not decided here:
   method and package names, locks and join order (the developer's, under `-race` and `synctest`), the pool's bounds
   (#107, #136), the projection's content and `Health()`'s reading of it (ADR-109).
+
+**Ruled 2026-10-10 (owner, #9 comment 6097814764): each of the three as recommended.** The questions and their costs
+stay below as the record of what was weighed.
 
 **Owner questions.** (1) Is the shell public in `component`? Recommended yes: an outside component author composes one
 type and supplies two functions, instead of seven facts found out nowhere. This reopens ADR-095 `:53-55` and #77 item 1.

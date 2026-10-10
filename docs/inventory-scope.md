@@ -21,7 +21,7 @@ rest of the portfolio is archived, folded into semteams, or post-MVP, and is not
 | semdev | beta.160 | folding into semteams | only where semteams' code does not yet show a need semdev carries |
 | semstreams-ui | not a Go consumer | reference only | whether it consumes `output/websocket` (#8 Q11); nothing else |
 | semmem | not a Go consumer | reference for identity rows | the federation identity context ADR-102 cites, if an identity row needs it |
-| semstreams | — | the source, at the pin | code facts only from the `8b99efe9` snapshot with path:line; `main` beyond the pin only to find unmerged work touching port-set packages |
+| semstreams | — | the source, at the pin | code facts and decision records (`docs/adr`) only from the `8b99efe9` snapshot with path:line; `main` beyond the pin only to find unmerged work touching port-set packages |
 | semsage, semspec, semspec-ui | archived / archiving | none | none |
 | semmachina, semdragon, semops, semlink | post-MVP or not returning | none | none |
 | semsim, semdocs, semstreams-poly, servicesim, semdev-test, semdev-test-sub, semmem-test | not consumers | none | none |
@@ -34,5 +34,7 @@ rest of the portfolio is archived, folded into semteams, or post-MVP, and is not
    names.
 3. One inventory per question, reviewed once by the independent reviewer. A second inventory on the same question
    needs the owner's word.
-4. SemStreams code facts come from the pin snapshot. Sister checkouts under the owner's workspace may be live work
-   areas: never modified, never the target of `git` commands; cite with `gh api … ?ref=<sha>`.
+4. SemStreams code facts and decision records come from the pin snapshot; the decision records (`docs/adr`) were
+   added by the owner's decision on [#157](https://github.com/C360Studio/semengine/issues/157) (2026-10-09). Sister
+   checkouts under the owner's workspace may be live work areas: never modified, never the target of `git` commands;
+   cite with `gh api … ?ref=<sha>`.

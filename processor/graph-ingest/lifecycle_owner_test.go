@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"sync"
 	"testing"
 
@@ -112,12 +113,22 @@ func TestLifecycleOwnerRunningStopPreservesEffectSettlementOrder(t *testing.T) {
 	}
 }
 
+// TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop proves graph-ingest's
+// branch of lifecycle-suite, "Failed start whose own cleanup fails" (design D7.3), which
+// the suite's failed-start check does not judge: a Start that fails after acquiring
+// resources, and whose own cleanup then fails too, returns both failures, keeps what it
+// could not release on record, and a later Stop that can complete the cleanup returns nil
+// and leaves nothing. What is held is read through the suite's adapter, suiteOwner.
+//
+// The guard is reached through its Start (design D22): a start function that fails, and a
+// rollback that is the component's own release under a context that has already ended,
+// as a rollback budget that expires before the consumer reports Closed would leave it.
 func TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop(t *testing.T) {
 	consumer := &graphIngestLifecycleConsumeContext{
 		closed: make(chan struct{}), drainSeen: make(chan struct{}),
 	}
 	runCtx, runCancel := context.WithCancel(t.Context())
-	owner := withTestRegistry(t, &Component{
+	component := withTestRegistry(t, &Component{
 		logger:      slog.Default(),
 		initialized: true,                 // passed Initialize, so Start reaches the guard (design D13)
 		natsClient:  newTestNATSClient(t), // never connected
@@ -126,19 +137,23 @@ func TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop(t *testing.T
 			handle: consumer,
 		}},
 	})
-	leaveGuardCleanupPending(t, owner) // the pin set lifecycleUsed and cleanupPending (design D22)
+	owner := newSuiteOwner(component)
 
+	errStart := errors.New("start fails after acquiring")
 	expired, expire := context.WithCancel(t.Context())
 	expire()
-	if err := owner.cleanup(expired); !errors.Is(err, context.Canceled) {
-		t.Fatalf("expired cleanup error = %v, want context.Canceled", err)
+	err := component.lifecycle.Start(t.Context(),
+		func(context.Context) error { return errStart },
+		func(context.Context) error { return component.release(expired) })
+	if !errors.Is(err, errStart) || !errors.Is(err, context.Canceled) {
+		t.Fatalf("failed Start whose cleanup fails = %v, want the start failure and context.Canceled", err)
 	}
 	<-consumer.drainSeen
-	if consumer.drains.Load() != 1 || len(owner.consumers) != 1 || !owner.consumers[0].drainIssued {
-		t.Fatalf("failed cleanup lost exact handle: drains=%d consumers=%d", consumer.drains.Load(), len(owner.consumers))
+	if got, want := owner.Observe().Unresolved, []string{"runtime cancel", "consumers"}; !slices.Equal(got, want) {
+		t.Fatalf("held after the failed cleanup = %v, want %v", got, want)
 	}
-	if owner.cancel == nil {
-		t.Fatal("failed cleanup discarded runtime cancellation authority")
+	if consumer.drains.Load() != 1 {
+		t.Fatalf("native Drain calls after the failed cleanup = %d, want 1", consumer.drains.Load())
 	}
 	if !errors.Is(runCtx.Err(), context.Canceled) {
 		t.Fatalf("failed cleanup runtime context = %v, want canceled", runCtx.Err())
@@ -150,6 +165,9 @@ func TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop(t *testing.T
 	close(consumer.closed)
 	if err := owner.Stop(t.Context()); err != nil {
 		t.Fatalf("later Stop: %v", err)
+	}
+	if got := owner.Observe().Unresolved; len(got) != 0 {
+		t.Fatalf("held after the later Stop = %v, want nothing", got)
 	}
 	if consumer.drains.Load() != 1 {
 		t.Fatalf("native Drain replayed: calls=%d", consumer.drains.Load())

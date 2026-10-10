@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,6 +16,8 @@ import (
 
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/internal/harness/lifecycletest"
+	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/nats-io/nats.go/jetstream"
@@ -288,4 +292,120 @@ func TestGraphIngest_FailedBootSweepFailsStart(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestGraphIngestLifecycleSuite runs the lifecycle suite on graph-ingest through its
+// adapter, suiteOwner. Each healthy owner is a fresh component on a client of its own,
+// connected to one fixture broker that holds the ENTITY stream. The must-fail owner's
+// client dials a listener that closes every connection before the handshake, so Start
+// fails on its connection, before the component binds anything, and the cleanup Start
+// runs succeeds: this is the
+// "Cleanup succeeds after a failed start" scenario of lifecycle-suite's "Failed start
+// whose own cleanup fails". The branch where that cleanup fails is
+// TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop's. graph-ingest is
+// one-shot (design D13: a Start after Stop is refused), so no restart is promised.
+func TestGraphIngestLifecycleSuite(t *testing.T) {
+	f := natsfixture.New(t)
+	if err := f.Start(t.Context()); err != nil {
+		t.Fatalf("natsfixture Start: %v", err)
+	}
+	if _, err := f.CreateStream(t.Context(), entityStream.name, entityStream.subjects...); err != nil {
+		t.Fatalf("CreateStream %s: %v", entityStream.name, err)
+	}
+	configJSON, err := json.Marshal(DefaultConfig())
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	newOwner := func(client *natsclient.Client) lifecycletest.Owner {
+		created, err := CreateGraphIngest(configJSON, testDependencies(t, client))
+		if err != nil {
+			t.Fatalf("CreateGraphIngest: %v", err)
+		}
+		comp := created.(*Component)
+		if err := comp.Initialize(); err != nil {
+			t.Fatalf("Initialize: %v", err)
+		}
+		return newSuiteOwner(comp)
+	}
+	refused := refusingBrokerURL(t)
+	factory := func() lifecycletest.Owner {
+		return newOwner(natsfixture.Open(t, f, openFixtureClient))
+	}
+	mustFail := func() lifecycletest.Owner {
+		client, err := natsclient.NewClient(refused,
+			natsclient.WithMaxReconnects(0),
+			natsclient.WithHealthInterval(0),
+		)
+		if err != nil {
+			t.Fatalf("NewClient: %v", err)
+		}
+		return newOwner(client)
+	}
+	lifecycletest.Run(t, factory, mustFail, lifecycletest.Promise{})
+
+	// lifecycle-suite, "Started owner reports its handles". The suite judges only what is
+	// left after a Stop, so an adapter that omitted a kind would pass it; this names every
+	// kind a started component holds.
+	t.Run("StartedOwnerReportsItsHandles", func(t *testing.T) {
+		owner := factory()
+		startCtx, cancelStart := context.WithCancel(t.Context())
+		defer cancelStart()
+		if err := owner.Start(startCtx); err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+		started := owner.Observe()
+		want := []string{
+			"runtime cancel", "ingest submit cancel", "ingest pool cancel", "ingest pool lanes",
+			"consumers", "request subscriptions", "status loop", "status publisher", "entity cache",
+			"readiness bound consumers",
+		}
+		if !slices.Equal(started.Unresolved, want) {
+			t.Errorf("held while started = %v, want %v", started.Unresolved, want)
+		}
+		binds := started.Calls["consumer bind"]
+		if binds == 0 || started.Calls["consumer drain"] != 0 {
+			t.Errorf("calls while started = %v, want consumer binds and no drain", started.Calls)
+		}
+		stopCtx, cancelStop := context.WithTimeout(t.Context(), 30*time.Second)
+		defer cancelStop()
+		if err := owner.Stop(stopCtx); err != nil {
+			t.Fatalf("Stop: %v", err)
+		}
+		stopped := owner.Observe()
+		if len(stopped.Unresolved) != 0 {
+			t.Errorf("held after a nil Stop = %v, want nothing", stopped.Unresolved)
+		}
+		if stopped.Calls["consumer drain"] != binds || stopped.Calls["consumer stop"] != 0 {
+			t.Errorf("calls after Stop = %v, want one drain per bound consumer and no force stop", stopped.Calls)
+		}
+	})
+}
+
+// refusingBrokerURL returns the NATS URL of a loopback listener that stays bound for the
+// test's life and closes every connection it accepts before sending the server's INFO, so
+// a client's Connect to it fails on the handshake. A port that was bound and released can
+// be handed to another process, whose broker would accept the dial (#89). The listener is
+// closed, and its accept loop joined, on cleanup.
+func refusingBrokerURL(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	accepting := make(chan struct{})
+	go func() {
+		defer close(accepting)
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return // the listener is closed
+			}
+			_ = conn.Close()
+		}
+	}()
+	t.Cleanup(func() {
+		_ = listener.Close()
+		<-accepting
+	})
+	return "nats://" + listener.Addr().String()
 }

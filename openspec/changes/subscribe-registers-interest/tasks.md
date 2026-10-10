@@ -73,13 +73,13 @@ starts, `task merge:check -- 156` and the merge are recorded on this pull reques
       cleanup", and its row in `AGENTS.md`'s rule table after the child-process row; and `docs/testing.md`, "How
       reach is judged" (`:295-296`), no longer says that a child process the test starts writes no coverage. Gate:
       `task docs:check`.
-- [ ] 2.9 (D) The doc comments of `Subscribe`, `SubscribeForRequests` and `subscribeOwned` and the ledger items as
+- [x] 2.9 (D) The doc comments of `Subscribe`, `SubscribeForRequests` and `subscribeOwned` and the ledger items as
       revision 5 states. Gate: `task verify`, and CI `Required` on that commit, its run link recorded on this pull
       request.
-- [ ] 2.10 `design.md`, "Conformance", re-pinned at 2.9's commit; the D2 row adds "Not shown by a test: the waits for
+- [x] 2.10 `design.md`, "Conformance", re-pinned at 2.9's commit; the D2 row adds "Not shown by a test: the waits for
       nats.go's connection lock (L8); P6 and P9 are their evidence", and a row for L9 says that its log line is not
-      shown by a test in this change and is `main`'s behaviour (#169). Gate: every row filled, in a commit that changes
-      no other file.
+      shown by a test in this change and is `main`'s behaviour (#169). Gate: every row filled (committed with the ticks
+      of 2.9 and 2.10, to save a CI run; owner, 2026-10-10).
 
 ## 3. Review
 

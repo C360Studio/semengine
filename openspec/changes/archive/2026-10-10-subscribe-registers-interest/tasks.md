@@ -83,14 +83,14 @@ starts, `task merge:check -- 156` and the merge are recorded on this pull reques
 
 ## 3. Review
 
-- [ ] 3.1 Codex's implementation review of this pull request, recorded on it, naming the commit it read. Each finding
+- [x] 3.1 Codex's implementation review of this pull request, recorded on it, naming the commit it read. Each finding
       is fixed or answered before 4.1.
-- [ ] 3.2 The description has one line `implemented-by:` that names `claude` and one line `reviewed-by:` that names
+- [x] 3.2 The description has one line `implemented-by:` that names `claude` and one line `reviewed-by:` that names
       `codex`, written once Codex's newest review record approves.
 
 ## 4. In the archive commit
 
-- [ ] 4.1 (W) In the same commit as `openspec archive subscribe-registers-interest` and the spec sync: the
+- [x] 4.1 (W) In the same commit as `openspec archive subscribe-registers-interest` and the spec sync: the
       `transport-client` Purpose names the new guarantee, that `Subscribe` and `SubscribeForRequests` return a
       subscription only after the server has read its SUB; `natsclient/README.md` says, beside the Subscribe example
       (`:85-86`), that when `Subscribe` returns, the server has read the subscription, so a request from another

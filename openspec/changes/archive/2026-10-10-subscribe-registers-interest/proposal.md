@@ -1,9 +1,10 @@
 # subscribe-registers-interest
 
-Status: revision 5, draft. Revision 3 was accepted with the design (PR #156 comment 6085722854); revision 5 narrows
-two promises after Codex's implementation review (comment 6097783327). It rests on `inventory.md` (revision 2) and
-`design.md` (revision 5). Issue #144 (`class:flake`); owner ruling 2026-10-09 (fix it once, in natsclient's
-subscribe, as its own pull request on `main`); claim PR #156.
+Status: revision 5, accepted (Codex's approval, PR #156 comment 6098757365). Revision 3 was accepted with the
+design (PR #156 comment 6085722854); revision 5 narrows two promises after Codex's implementation review
+(comment 6097783327). It rests on `inventory.md` (revision 2) and `design.md` (revision 5). Issue #144
+(`class:flake`); owner ruling 2026-10-09 (fix it once, in natsclient's subscribe, as its own pull request on
+`main`); claim PR #156.
 
 ## Why
 

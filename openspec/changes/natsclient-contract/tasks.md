@@ -83,7 +83,7 @@ the reference for every production change.
   `README.md:236-241` and `doc.go:290-294`, with their defaults (technical writer).
 - [ ] 5.3 Add `docs/adr/112-natsclient-contract.md` from `adr-112.md`, with T1 to T9 named as they landed (technical
   writer).
-- [ ] 5.4 Insert the rule's row into `AGENTS.md`, and its text into the four role contracts, exactly as `rule.md`
+- [x] 5.4 Insert the rule's row into `AGENTS.md`, and its text into the four role contracts, exactly as `rule.md`
   gives them.
 - [ ] 5.5 Append an `adapt` item to the natsclient row's contract text in `docs/admission-ledger.yaml`. It covers
   `socket.go`, the two options, the two sentinels and the typed bucket check. Run `task ledger:check`.

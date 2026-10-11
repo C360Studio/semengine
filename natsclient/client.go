@@ -794,8 +794,9 @@ func (m *Client) connectWith(
 	// bridges failed async acks into the circuit breaker so a broken ack
 	// path opens the breaker exactly as a failed synchronous publish does
 	// (see publishToStreamAsync). Keep both candidates local until admission.
-	// nats.go v1.54.0 fails jetstream.New only when an option does, and this
-	// option never does; the error is still returned, never dropped.
+	// Whether jetstream.New can fail here is not promised: a read of nats.go
+	// v1.54.0, not a test, found that it fails only when an option does, and
+	// that this option never does. The error is still returned, never dropped.
 	js, err := jetstream.New(conn, jetstream.WithPublishAsyncErrHandler(m.asyncPublishErrHandler))
 	if err != nil {
 		m.discardCandidate(conn)
@@ -1110,11 +1111,11 @@ func (m *Client) join(joined chan struct{}, conn *nats.Conn) {
 // must stay EXACTLY `Info(context.Context) (*jetstream.ConsumerInfo, error)` — a
 // divergent signature would silently stop overriding and reopen the race.
 //
-// STILL PRESENT UPSTREAM in nats.go v1.54.0, the version go.mod pins (checked 2026-10-04
-// against v1.48.0: jetstream/consumer.go:209 and :242 unchanged, still unsynchronized).
-// The assignment is byte-identical across versions, so a dependency bump does NOT retire
-// this guard — do not delete it on upgrade. Filing it upstream is tracked in the
-// change's follow-ups.
+// Whether nats.go v1.54.0, the version go.mod pins, still writes the field without
+// synchronization is not promised: it is a read of its source, not a test (checked
+// 2026-10-04 against v1.48.0: jetstream/consumer.go:209 and :242 unchanged). The guard
+// stays either way, so a dependency bump does NOT retire it — do not delete it on
+// upgrade. Filing it upstream is tracked in the change's follow-ups.
 type guardedConsumer struct {
 	jetstream.Consumer
 	infoMu sync.Mutex
@@ -1124,7 +1125,8 @@ type guardedConsumer struct {
 }
 
 // Info serializes the underlying call. The lock is held across the network round trip
-// because the unsynchronized write happens at the END of the library's Info().
+// because, by the same read of v1.54.0 (not promised), the library's Info() makes its
+// unsynchronized write at the END.
 func (g *guardedConsumer) Info(ctx context.Context) (*jetstream.ConsumerInfo, error) {
 	g.infoMu.Lock()
 	defer g.infoMu.Unlock()
@@ -1274,7 +1276,8 @@ func (s *Subscription) Unsubscribe() error {
 // Drain stops new deliveries and returns once the subscription's delivery
 // goroutine has exited, so every callback has returned. If the connection
 // closes before or during the drain, Drain still returns nil after the
-// in-flight callback returns; messages queued but not yet delivered are
+// in-flight callback returns (TestSubscriptionDrainConnectionClosesMidDrain,
+// with a stand-in subscription); messages queued but not yet delivered may be
 // discarded, because core NATS is at-most-once. If ctx ends first, Drain
 // returns ctx's error and a later call rejoins the same native drain; it never
 // starts a second one.
@@ -1795,16 +1798,24 @@ func (m *Client) publishToStreamAsync(ctx context.Context, subject string, data 
 }
 
 // PublishBatchToStream publishes every message in msgs to one subject via the
-// async path, waits for all acks (bounded by ctx), and returns a single aggregate
-// error. Per-subject ordering from this single calling goroutine is preserved
-// (jetstream-go async is in-order per connection, absent a NoResponders retry —
-// see design.md §1). It is the convenience path for bursty producers that do not
-// need per-message futures (gh#470).
+// async path, waits for all acks, and returns a single aggregate error.
+// Per-subject ordering from this single calling goroutine is preserved: the
+// async path stores messages in publish order
+// (TestIntegration_PublishToStreamAsync_Ordering); the order after nats.go
+// retries a publish that met no responders is not promised. It is the
+// convenience path for bursty producers that do not need per-message futures
+// (gh#470).
+//
+// ctx does not end a wait behind a write the server is not reading: each publish
+// is written under nats.go's connection lock, so such a write holds the batch
+// until it completes or nats.go's write timeout (one minute by default,
+// WithWriteTimeout) ends it (P13; ADR-112).
 //
 // The drain waits on THIS batch's own futures, not the JetStream context's
 // connection-global PublishAsyncComplete, so a concurrent async producer on the same Client cannot
 // make this batch over-wait. If ctx is cancelled before all acks arrive, it
-// returns the context error rather than hanging; the already-enqueued publishes
+// returns the context error rather than hanging
+// (TestIntegration_PublishBatchToStream_CtxCancel); the already-enqueued publishes
 // still resolve in the background (and feed the circuit breaker via the async
 // error handler on a connection fault). An enqueue error stops further enqueuing
 // but already-enqueued messages are still drained. Ack failures are accounted
@@ -1878,8 +1889,9 @@ func (m *Client) PublishBatchToStream(ctx context.Context, subject string, msgs 
 // GetStream gets an existing JetStream stream.
 //
 // Its jetstream.ErrStreamNotFound means "not on this connection, now" — it is a
-// point-in-time probe, not durable evidence of absence, because a clustered node
-// that has not applied the meta assignment answers it for a stream that exists.
+// point-in-time probe, not durable evidence of absence. A clustered node that
+// has not applied the meta assignment may also answer it for a stream that
+// exists; that is not measured, since no test here runs a cluster.
 // A caller deciding something for the process lifetime wants ErrStreamNotVisible
 // out of the guarded consumer setup instead; see that sentinel and the package doc.
 func (m *Client) GetStream(ctx context.Context, name string) (jetstream.Stream, error) {
@@ -2032,7 +2044,10 @@ func (m *Client) GetKeyValueBucket(ctx context.Context, name string) (jetstream.
 }
 
 // WaitForBucket waits for a KV bucket to become available, retrying until
-// the timeout expires or the context is cancelled. Use this when a component
+// the timeout expires or the context is cancelled. Neither ends a wait behind a
+// write the server is not reading: each attempt is a JetStream request, and such
+// a write holds it until the write completes or nats.go's write timeout (one
+// minute by default, WithWriteTimeout) ends it (P13). Use this when a component
 // depends on a bucket created by another component with unpredictable startup timing.
 //
 // For more advanced patterns (background recovery, loss detection), use

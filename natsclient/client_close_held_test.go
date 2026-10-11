@@ -200,11 +200,11 @@ const heldSubject = "natsclient.held"
 const heldPayload = 16 << 20
 
 // newHeldClient starts an embedded server whose max_payload admits
-// heldPayload, and a client connected to it through a heldProxy. The proxy's
-// cleanup runs before the client's Close: it closes both of its sockets, which
-// ends a held write at once, so a test that finds Close held does not wait a
-// minute for the write timeout.
-func newHeldClient(t *testing.T) (*Client, *heldProxy) {
+// heldPayload, and a client connected to it through a heldProxy, with opts
+// after WithHealthInterval(0). The proxy's cleanup runs before the client's
+// Close: it closes both of its sockets, which ends a held write at once, so a
+// test that finds Close held does not wait a minute for the write timeout.
+func newHeldClient(t *testing.T, opts ...ClientOption) (*Client, *heldProxy) {
 	t.Helper()
 	server, err := natsserver.NewServer(&natsserver.Options{
 		Host: "127.0.0.1", Port: -1, NoLog: true, NoSigs: true, MaxPayload: 32 << 20,
@@ -218,7 +218,7 @@ func newHeldClient(t *testing.T) (*Client, *heldProxy) {
 	require.True(t, server.ReadyForConnections(lifecycleBound), "embedded server not ready")
 
 	proxy := startHeldProxy(t, server.Addr().String())
-	client, err := NewClient(proxy.url, WithHealthInterval(0))
+	client, err := NewClient(proxy.url, append([]ClientOption{WithHealthInterval(0)}, opts...)...)
 	require.NoError(t, err)
 	closeInCleanup(t, client)
 	t.Cleanup(proxy.close) // registered after the client's Close, so it runs first
@@ -275,15 +275,18 @@ func within[T any](t *testing.T, ch <-chan T, wait time.Duration, what string) T
 // heldProxy forwards each connection it accepts to the server. Once a client
 // has sent the first bytes of a publish on heldSubject, the proxy reads nothing
 // more from that client, as a server that has stopped reading, and closes held.
+// It reads again after resume (T9) or close.
 type heldProxy struct {
-	url       string
-	ln        net.Listener
-	server    string
-	held      chan struct{}
-	holdOnce  sync.Once
-	accepting chan struct{} // closed when the accept loop has returned
-	closeOnce sync.Once
-	pumps     sync.WaitGroup
+	url        string
+	ln         net.Listener
+	server     string
+	held       chan struct{}
+	holdOnce   sync.Once
+	resumed    chan struct{}
+	resumeOnce sync.Once
+	accepting  chan struct{} // closed when the accept loop has returned
+	closeOnce  sync.Once
+	pumps      sync.WaitGroup
 
 	mu     sync.Mutex
 	closed bool
@@ -302,6 +305,7 @@ func startHeldProxy(t *testing.T, server string) *heldProxy {
 		ln:        ln,
 		server:    server,
 		held:      make(chan struct{}),
+		resumed:   make(chan struct{}),
 		accepting: make(chan struct{}),
 	}
 	t.Cleanup(p.close)
@@ -336,8 +340,9 @@ func (p *heldProxy) track(c net.Conn) bool {
 	return true
 }
 
-// forward copies the server's bytes to c, and c's bytes to the server until c
-// sends heldSubject. The sockets of a held client stay open until close.
+// forward copies the server's bytes to c, and c's bytes to the server. Once c
+// sends heldSubject it stops reading from c until resume or close; a later
+// heldSubject does not stop it again.
 func (p *heldProxy) forward(c net.Conn) {
 	s, err := net.Dial("tcp", p.server)
 	if err != nil {
@@ -361,7 +366,7 @@ func (p *heldProxy) forward(c net.Conn) {
 			window := append(tail, buf[:n]...)
 			if bytes.Contains(window, marker) {
 				p.holdOnce.Do(func() { close(p.held) })
-				return
+				<-p.resumed
 			}
 			tail = window[max(0, len(window)-len(marker)+1):]
 		}
@@ -373,8 +378,14 @@ func (p *heldProxy) forward(c net.Conn) {
 	}
 }
 
+// resume makes the proxy read again from a client it holds.
+func (p *heldProxy) resume() {
+	p.resumeOnce.Do(func() { close(p.resumed) })
+}
+
 // close closes the listener and every socket the proxy holds, and waits for
-// its goroutines.
+// its goroutines. It closes the sockets before it releases a held forward, so
+// the forward's next read fails rather than reaching the server.
 func (p *heldProxy) close() {
 	p.closeOnce.Do(func() {
 		_ = p.ln.Close()
@@ -386,6 +397,7 @@ func (p *heldProxy) close() {
 		for _, c := range conns {
 			_ = c.Close()
 		}
+		p.resume()
 		p.pumps.Wait()
 	})
 }

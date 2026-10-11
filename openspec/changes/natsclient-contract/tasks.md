@@ -7,7 +7,7 @@ the reference for every production change.
 
 ## 1. Record
 
-- [ ] 1.1 Copy `inventory.md` (revision 3), `design.md`, `cleanup.md` and the two spec deltas into
+- [x] 1.1 Copy `inventory.md` (revision 3), `design.md`, `cleanup.md` and the two spec deltas into
   `openspec/changes/natsclient-contract/`.
 - [ ] 1.2 Post the P17 to P25 READMEs on PR #177. Record the comment ids in ADR-112's Status (orchestrator).
 - [ ] 1.3 Correct #168's body to the fix this change makes (orchestrator).
@@ -48,7 +48,7 @@ the reference for every production change.
 
 ## 4. Options, error classes and the classifiers (design D4, D5, D6)
 
-- [ ] 4.1 Write T9 `TestWriteTimeoutAndPingIntervalOptions`, with both options at 300 ms. It shows two things: the
+- [x] 4.1 Write T9 `TestWriteTimeoutAndPingIntervalOptions`, with both options at 300 ms. It shows two things: the
   held publish fails, then the connection carries an echo once the proxy reads again; and each option refuses 0 and
   a negative value. Record it failing to build on `main`'s code.
 - [ ] 4.2 Add `WithWriteTimeout` and `WithPingInterval` to `options.go`, and pass `nats.FlusherTimeout` in

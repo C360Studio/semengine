@@ -51,8 +51,11 @@ func (s ConnectionStatus) String() string {
 
 // Error messages
 var (
-	ErrNotConnected = stderrors.New("not connected to NATS")
-	ErrCircuitOpen  = stderrors.New("circuit breaker is open")
+	// ErrNotConnected wraps errs.ErrConnectionLost, so errs.IsTransient and
+	// errs.Classify both call it transient (T7).
+	ErrNotConnected = fmt.Errorf("not connected to NATS: %w", errs.ErrConnectionLost)
+	// ErrCircuitOpen is errs.ErrCircuitOpen: one sentinel for one fact (T7).
+	ErrCircuitOpen = errs.ErrCircuitOpen
 )
 
 // Status holds runtime status information for the NATS manager

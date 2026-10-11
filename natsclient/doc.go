@@ -244,8 +244,8 @@
 // The package defines specific error types for different failure scenarios:
 //
 //	var (
-//	    ErrCircuitOpen        = errors.New("circuit breaker is open")
-//	    ErrNotConnected       = errors.New("not connected to NATS")
+//	    ErrCircuitOpen        = errs.ErrCircuitOpen
+//	    ErrNotConnected       = fmt.Errorf("not connected to NATS: %w", errs.ErrConnectionLost)
 //	)
 //
 // Error detection patterns:

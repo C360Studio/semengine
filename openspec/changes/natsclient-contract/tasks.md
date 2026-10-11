@@ -55,7 +55,7 @@ the reference for every production change.
   `buildConnectionOptions`. Each doc comment names the other. T9 passes.
 - [x] 4.3 Write T7 `TestClientSentinelsAreTransient` (`ErrNotConnected` and `ErrCircuitOpen` only), and record it
   failing on `main`'s code.
-- [ ] 4.4 Make `ErrNotConnected` wrap `errs.ErrConnectionLost`, and set `ErrCircuitOpen = errs.ErrCircuitOpen`. T7
+- [x] 4.4 Make `ErrNotConnected` wrap `errs.ErrConnectionLost`, and set `ErrCircuitOpen = errs.ErrCircuitOpen`. T7
   passes. Then:
   - correct the printed definitions in `README.md:249-250` and `doc.go:247-248` (M105, M106);
   - change `request_integration_test.go:70-74` and `:429-434` from text to `errors.Is(err, nats.ErrNoResponders)`.

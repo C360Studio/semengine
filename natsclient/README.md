@@ -246,8 +246,8 @@ WithLogger(logger)                  // Enable debug logging
 
 ```go
 var (
-    ErrCircuitOpen        = errors.New("circuit breaker is open")
-    ErrNotConnected       = errors.New("not connected to NATS")
+    ErrCircuitOpen        = errs.ErrCircuitOpen
+    ErrNotConnected       = fmt.Errorf("not connected to NATS: %w", errs.ErrConnectionLost)
     ErrKVKeyNotFound      = errors.New("kv: key not found")
     ErrKVRevisionMismatch = errors.New("kv: revision mismatch (concurrent update)")
     ErrKVMaxRetriesExceeded = errors.New("kv: max retries exceeded")

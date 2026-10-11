@@ -85,7 +85,7 @@ the reference for every production change.
   writer).
 - [x] 5.4 Insert the rule's row into `AGENTS.md`, and its text into the four role contracts, exactly as `rule.md`
   gives them.
-- [ ] 5.5 Append an `adapt` item to the natsclient row's contract text in `docs/admission-ledger.yaml`. It covers
+- [x] 5.5 Append an `adapt` item to the natsclient row's contract text in `docs/admission-ledger.yaml`. It covers
   `socket.go`, the two options, the two sentinels and the typed bucket check. Run `task ledger:check`.
 
 ## 6. Gates

@@ -688,6 +688,8 @@ posted on this pull request.
       clause dropped. Ledger item `natsclient-update-unconfirmed-write-ends`; ADR-110 counts four `adapt` items. #174
       stays open for the bookkeeping skipped after an unconfirmed write. Notes: `notes/cp4i-R2.md`.
       Done in `1873b26`; `task verify` on it ended `verify: ok`. Notes: `notes/cp4i-R2.md`.
+- [x] 4.19 (D) Codex review F1 and F2 (PR #93 comment 6113507239): declared limitations (owner rulings, #91 comment
+      6113959050); design D8 and D23, the projection-mutation delta and notes/4.3.md say so. Documents only.
 
 ## 5. Ledger, gates and boundaries
 

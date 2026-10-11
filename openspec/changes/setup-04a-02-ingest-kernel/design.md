@@ -577,8 +577,11 @@ creation time before it binds the port's consumer. It reads it again after the c
 rollback and before the consumer is registered for readiness. A consumer is deleted with its stream (nats-server
 v2.14.7 `server/stream.go:8545-8553`), and every stream the server creates gets a fresh creation time (`:989`;
 clustered, `jetstream_cluster.go:8543-8547`). So two equal reads mean the stream was not deleted and created again in
-between, and the consumer belongs to that generation. Nothing the broker sends a consumer names it (nats.go v1.54.0
-`jetstream/message.go:91-114`, `consumer_config.go:24-88`).
+between, and the consumer belongs to that generation when `Start` binds it. Nothing the broker sends a consumer names
+it (nats.go v1.54.0 `jetstream/message.go:91-114`, `consumer_config.go:24-88`). Deleting the stream later does not
+always end that consumer's delivery: after a reconnect, nats.go's `Consume` pulls again by the same stream and consumer
+names (`jetstream/pull.go:348-390`). So if the stream and graph-ingest's durable consumer are both created again while
+graph-ingest is disconnected, the new stream's input is delivered under the old generation (Not covered, below).
 
 - **Equal reads.** `Start` proceeds, and every input carries that generation.
 - **Different reads, or a second read that fails.** `Start` fails naming the stream, with both creation times when
@@ -596,7 +599,11 @@ Not covered (`notes/4.3.md`):
 - a single-server restore inside the window, which keeps the creation time (`stream.go:9331-9333`); a declared
   limitation by the owner's ruling (#91 comment 6112550268);
 - a pull that outlives its consumer's deletion and is later answered by a same-named consumer on a new stream
-  (`jetstream/pull.go:225`, `:740`).
+  (`jetstream/pull.go:225`, `:740`);
+- a stream and graph-ingest's durable consumer both created again while graph-ingest is disconnected: after the
+  reconnect, `Consume` pulls by the same names (`jetstream/pull.go:348-390`), new input carries the old generation, and
+  the guard record can take it for a redelivery and acknowledge it without applying it; a declared limitation by the
+  owner's ruling (#91 comment 6113959050).
 
 Rejected: a negative acknowledgement while waiting (each is another delivery, and `max_deliver` can run out); retrying
 the bind inside `Start` (a loop, a drain inside setup and an attempt limit); a check per message (no broker field names
@@ -1347,10 +1354,15 @@ was stored; nats.go `publish.go:248-263`; probe P-R2a, `notes/cp4i-R2.md`) rerun
 committed, and no later run can show whether it did (R2, PR #93 comment 6112098987; #174). 0 means no commit is
 attributed to the call, not that nothing committed: a write cut short may have committed, and the call then returns that
 write's error. A rerun follows only a write the server refused or never received, or a failed read, so on the `Update`
-path, the append's only write, a refusal from any run proves no run of this call wrote. nats.go's `Create` writes again
-when its first write fails and the key then reads as deleted (`jetstream/kv.go:1072-1079`), so the claim does not hold
-for a stream-lane birth, which sends no receipt. The `kv.go:323` doc says so. A caller must know two facts (0 is absent;
-the sentinel skips), only to use what is new.
+path, the append's only write, a refusal from any run proves no run of this call wrote. The `kv.go:323` doc says so.
+nats.go's `Create` writes again when its first write fails and the key then reads as deleted (nats.go v1.54.0
+`jetstream/kv.go:1072-1079`), so the claim does not hold where a key is created: not for a stream-lane birth (this
+loop's create), and not for the canonical mutation Create (`handleCanonicalCreate` → `createEntity` →
+`KVStore.Create`), which sends a receipt. That is a declared limitation (owner ruling, #91 comment 6113959050): when a
+create's first write is stored but its acknowledgement is malformed, and other writers then delete the key and create
+it again, nats.go's second write is refused as "already exists", graph-ingest replies `entity_already_exists`, and the
+receipt reports not-committed for a write that stood (`projection-mutation`, "Commit ambiguity is preserved"). No code
+changes for it. A caller must know two facts (0 is absent; the sentinel skips), only to use what is new.
 
 **Tests**, written first in `kv_update_revision_integration_test.go`; mutants via `task mutate:check` with
 `GOFLAGS=-tags=integration`, records posted; examples suffice (one interleaving, driven by a put in the callback):

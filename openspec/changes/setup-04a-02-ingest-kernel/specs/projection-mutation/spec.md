@@ -36,6 +36,12 @@ effect: an invalid request, a revision conflict, an entity not found, or a store
 (`graph_state_reset_required`, raised before the write). Every other failure, including a key-value write whose outcome
 the server did not confirm, SHALL reach the caller of the typed client as commit-unknown.
 
+One exception is a declared limitation (owner ruling, #91 comment 6113959050). A create refused with
+`entity_already_exists` is reported not committed, even though nats.go's own `Create` may have stored an earlier write
+in the same call. That happens when the first write was stored but its acknowledgement was malformed, and other writers
+then deleted the key and created it again: nats.go writes a second time when its first write fails and the key reads
+as deleted (nats.go v1.54.0 `jetstream/kv.go:1072-1079`), and that second write is refused because the key exists.
+
 #### Scenario: Backend write timeout
 
 - **WHEN** the entity bucket's update reaches the server and its reply is lost or times out

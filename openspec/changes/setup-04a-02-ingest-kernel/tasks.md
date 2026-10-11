@@ -520,9 +520,9 @@ posted on this pull request.
       first half of `TestCanonicalReconcileAtTheCallersRevision` (`processor/graph-ingest/canonical_mutations_test.go`);
       unchanged revision: `TestReconcileAtTheCurrentRevisionIsVerifiedAtTheNewRevision` and that test's second half.
       Failed first at `conditional_reconcile_test.go:89` on `f3d5ae5`; two `task mutate:check` detections (commit
-      body). Open for the owner: the bucket's compare-and-set refusal (`canonical_mutations.go:350`), for a write
-      landing after graph-ingest's read, names only the expected revision, while the requirement's text names both.
-      `task verify` on `12b2b9d` ended `verify: ok`. Notes: `notes/4.2.md`.
+      body). Ruled 2026-10-11 (#91 comment 6109278240, item 2): narrowed; the requirement names the current
+      revision only when graph-ingest's own read found it. `task verify` on `12b2b9d` ended `verify: ok`. Notes:
+      `notes/4.2.md`.
 - [x] 4.3 (D) #15: memory stream + `Fixture.Restart` + retained guard bucket: re-ingestion at lower sequences is
       applied and queried back; a same-generation redelivery is a no-op; the no-bucket degrade of design D8 is logged
       and counted. Fails first on the pin's guard key.
@@ -537,11 +537,16 @@ posted on this pull request.
       body). A bucket holding 8-byte records from SemStreams is refused key by key until deleted (notes). Not
       covered: a stream recreated while graph-ingest runs. `task verify` on `abb302f` ended `verify: ok`. Notes:
       `notes/4.3.md`.
-- [ ] 4.4 (D) Settlement (Q18): the process-kill test of design D8 (a `prochost.Helper` in graph-ingest's
-      `TestHelperProcess`; the guard-record write held open by a `_test.go` wrapper in the first run; the entity write
-      and the pending acknowledgement confirmed from the buckets and the consumer's info; the helper confirmed alive,
-      then killed; redelivery acknowledged in the second run and the state equal to one application); the long-apply
-      test; the durable-record failure test.
+- [ ] 4.4 (D) Settlement (Q18), in two parts. Part 1: the process-kill test of design D8 (a `prochost.Helper` in
+      graph-ingest's `TestHelperProcess`; the guard-record write held open by a `_test.go` wrapper in the first run;
+      the entity write and the pending acknowledgement confirmed from the buckets and the consumer's info; the helper
+      confirmed alive, then killed; redelivery acknowledged in the second run and the state equal to one
+      application) and the durable-record failure test. Part 2, the long apply (design D8, "Long apply"; #91
+      comment 6109278240, item 1): commit A brings the port's `ack_wait` to the consumer and reads
+      `heartbeat_interval`, with their defaults and the configuration test, and the long-apply test's failing-first
+      run on it is recorded in `notes/4.4.md`; commit B runs each lane's input through
+      `ConsumeDeliveryWithHeartbeat`, with the long-apply test green, the `keyed_ingest` decision tests and the
+      interrupted-application test ("An interrupted application is redelivered, not a stop").
 - [ ] 4.5 (D) Q13: SemStreams PR #1437's graph-ingest half (head `0ea823a6`) with its two test files on a
       test-registered payload type; the "Payload panics while giving its entity ID" scenario green.
 - [ ] 4.6 (D) #33: the hierarchy refusal names `inference.RegisterPayloads` (`component-registration`).

@@ -29,7 +29,9 @@ or broker restart, and applying it again SHALL leave the entity state equal to t
 
 graph-ingest SHALL acknowledge an input only after the input's effect and its applied-sequence record are committed,
 and SHALL tell the transport that an input is still in progress while its application outlasts the consumer's
-acknowledgement wait.
+acknowledgement wait. The signal starts when the application starts: an input that waits in its lane for half the
+acknowledgement wait or longer before its application starts MAY be delivered again, and replay protection (below)
+keeps that copy from applying twice.
 
 #### Scenario: Durable record fails
 
@@ -38,7 +40,8 @@ acknowledgement wait.
 
 #### Scenario: Long apply
 
-- **WHEN** applying one input takes longer than the consumer's acknowledgement wait
+- **WHEN** an input's application starts before half the consumer's acknowledgement wait has passed since delivery,
+  and takes longer than the consumer's acknowledgement wait
 - **THEN** the input is not delivered again while it is still being applied
 
 ### Requirement: Replay protection is generation-aware
@@ -79,3 +82,24 @@ SHALL NOT be returned for redelivery and SHALL NOT stop the consumer.
 - **WHEN** a registered payload type's entity method panics on a delivered message
 - **THEN** the message is terminated, the poison count rises by one, the panic is reported as a classified error, and
   the next message on the stream is applied
+
+### Requirement: An interrupted application is redelivered, not a stop
+
+When applying an input panics, its in-progress signal cannot be sent, or the settlement helper finds the delivery's
+metadata or decision invalid, graph-ingest SHALL leave the input unsettled, so that it is delivered again after the
+acknowledgement wait; SHALL log it, and count it once in the error count its health reads and once in an
+interrupted-work count labelled by its cause (`panic`, `heartbeat_failed` or `invalid`); and SHALL keep taking input
+on the same lane. A panic in a payload's own code while the message is decoded, validated or asked for its entity is
+poison instead (the requirement above).
+
+#### Scenario: Application panics
+
+- **WHEN** applying an input panics
+- **THEN** the input is neither acknowledged, negatively acknowledged nor terminated, the interrupted-work count for
+  `panic` and the health error count each rise by one, and the next input on the same lane is acknowledged
+
+#### Scenario: In-progress signal fails
+
+- **WHEN** sending `InProgress` fails while an input is being applied
+- **THEN** the application is cancelled, the input is not settled, and the interrupted-work count for
+  `heartbeat_failed` rises by one

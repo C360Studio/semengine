@@ -497,6 +497,72 @@ application and nothing else changed. No production failpoint is added. Rejected
 the entity write appears — the guard write and the acknowledgement follow within the same call, so the pause can land
 after the acknowledgement and the test would need retries to catch the window.
 
+**Long apply.** graph-ingest becomes the first non-agentic caller of `natsclient`'s delivery settlement, as Q18's
+approved row says (#8 comment 5930855353, approved in 5930898291; ADR-111 Decision 6,
+`docs/adr/111-durable-execution-primitive.md:131-139`): each lane applies one input inside
+`natsclient.ConsumeDeliveryWithHeartbeat`, with `ImmediateDeliveryRetry()`. What a caller can observe, and its test:
+
+- *While an apply runs*, the server receives `InProgress` every heartbeat interval and does not deliver the input
+  again; when it returns, the input is settled once, by today's rules, and an applied input (not a stale one) ages
+  the readiness view. Tests: the long-apply integration test (a 2 s ack wait; the apply held open by the
+  process-kill test's guard-record wrapper while a test consumer on the same stream is redelivered the input twice;
+  graph-ingest's consumer then shows one delivery, none redelivered, one acknowledgement pending and `InProgress`
+  counted; once released, the input is acknowledged and the state equals one application; no sleeps), and the
+  existing `keyed_ingest` unit tests, one per settlement.
+- *Configuration.* graph-ingest passes its input port's `ack_wait` to its consumer and reads `heartbeat_interval`.
+  Today both are parsed and ignored (Surface audit class (b)), so the consumer always gets natsclient's 30 s
+  fallback, and the long-apply test can shorten the wait only through them. graph-ingest owns the defaults
+  (`component/port_jetstream.go:26`): 30 s, and an interval of a quarter of the ack wait in effect, so `ack_wait`
+  alone never fails `Start`; an interval above half the ack wait (natsclient's ceiling,
+  `natsclient/delivery_settlement.go:181-186`) or a negative ack wait fails `Start`. Test: a unit test of the
+  defaults, a declared `ack_wait` alone, a declared pair and both failures.
+- *Time in the lane's queue is not covered.* The heartbeat starts with the apply, so an apply that starts before
+  half the ack wait has passed signals in time; an input that waits longer may be delivered again, and the copy,
+  queued behind it on its lane, is acknowledged without changing state. This keeps ADR-072 B1
+  (`pin:docs/adr/072-keyed-concurrent-entity-ingest.md:157-165`): queue time is answered by the applied-sequence
+  guard, not by ack-wait sizing. The "Long apply" scenario is narrowed to match.
+- *An interrupted apply does not stop ingest* (owner ruling, #91 comment 6109278240, item 1). When the helper
+  reports that the owner must stop (the apply panicked, an `InProgress` could not be sent, or the delivery's
+  metadata or decision was invalid), the input stays unsettled and is delivered again after its ack wait;
+  graph-ingest logs it at ERROR, adds one to the error count `Health` reads and to
+  `semengine_graph_ingest_work_interrupted_total` under its cause (`panic`, `heartbeat_failed` or `invalid`, told
+  apart with `errors.Is` and `errors.As`), and the lane keeps taking input. The guard record makes a redelivery
+  apply once (ADR-111 Decisions 3 and 4), and `MaxDeliver` bounds the attempts. A panic is quarantined (ADR-111
+  Decision 6; `transport-client` "Work panics"), no longer negatively acknowledged as ADR-072 H2 had it (same
+  record, `:166-170`); H2's live lane holds. The counter is the only new surface: the declared signal for this
+  degrade. Test: a `synctest` unit test with one case per cause.
+- *At `Stop`*, an input that reaches its lane after the lane's context has ended applies nothing and is negatively
+  acknowledged, today's shutdown disposition, with a WARN log. Test: a case of the same unit test.
+
+The settlements made before a lane holds the input, and the keyed pool's panic `Nak` for lane code outside the apply,
+stay as they are; moving them to `SettleDelivery` is optional under Bounded port scope.
+
+Two departures are recorded here; `natsclient` is not edited and its ledger row stays `carry`:
+
+- From `OwnerStopRequired`'s "the exact delivery owner must stop its lane" (`natsclient/delivery_settlement.go:248`)
+  and the pin's "control loss shuts down through the existing exact owner"
+  (`pin:openspec/specs/jetstream-consumer-policy/spec.md:595-613`), accepted by the ruling: `internal/deliverylane`
+  stays `defer-exclude` (`docs/admission-ledger.yaml:2341-2353`), and graph-ingest declares no stop latch.
+- From `ValidateHeartbeatDeliveryPolicy`'s doc comment (`natsclient/delivery_settlement.go:147-154`), which
+  describes one call before the consumer is acquired. A `DeliveryWork` receives only the body, and the apply also
+  needs the decoded entity and the guard's stream, generation and sequence, so the lane builds a policy per input,
+  whose closure holds nothing that can settle. `Start` still validates each port's pair once, before it creates the
+  consumer.
+
+**Order of work.** The pin cannot shorten its ack wait, so "failing first on the pin's code" (the table above) means
+failing with only the configuration honored. Commit A: the port's `ack_wait` reaches the consumer and
+`heartbeat_interval` is read, with their defaults and the configuration test; settlement is unchanged. The long-apply
+test, run on commit A, must fail with graph-ingest's delivery redelivered and no `InProgress` counted; the run is
+recorded in `notes/4.4.md`. Commit B: the heartbeat, the per-input policy, the interrupted-apply reaction and the
+counter; the long-apply test passes. Two premises about the server, against the pinned image (`.nats-image`):
+`InProgress` restarts a delivery's redelivery timer (measured with a BackOff schedule by
+`natsclient/delivery_settlement_integration_test.go:18-138`; commit B's test confirms it for a plain ack wait); and
+without it, graph-ingest's delivery is redelivered no later than the test consumer, created after it with the same
+ack wait, is redelivered twice (commit A's run measures it). Rejected: a policy per lane built at `Start`, a
+hand-written ticker, a new `natsclient` entry, the input in a context value, and covering queue time, which reverses
+ADR-072 B1. Cost: one goroutine and one ticker per input, not measured. No background work is added: the helper
+returns only after its work has (`openspec/specs/background-work/spec.md:12-14`).
+
 The "delivery limit exhausted → parked and visible" scenario needs `internal/maxdelivery` (change 7). Under ruling (g)
 it is not in this change's delta; the row names change 7.
 
@@ -1386,6 +1452,14 @@ admit" is a design decision, not a ruling (three of its four owners are admitted
   - **5** (reserved sources refused on the stream): a stream statement may name its own source, and the stream lane
     refuses the reserved names graph-ingest and `pkg/lifecycle` write under, in this change. Applied in D15 and
     `graph-entity-writes`.
+- **#91 comment 6109278240, item 1** (2026-10-11, "keep running"): when delivery settlement says graph-ingest must
+  stop, graph-ingest leaves the input unsettled, logs it at ERROR, counts it in `Health`'s error count and by cause,
+  and keeps the lane running; `internal/deliverylane` stays `defer-exclude`. Applied in D8, "Long apply", and
+  `graph-ingest-recovery`.
+- **#91 comment 6109278240, item 2** (2026-10-11, "narrow the requirement"): a reconcile's revision conflict names
+  the expected revision, and the current revision only when graph-ingest's own read found a different one;
+  graph-ingest does not read the entity again after the bucket refuses its compare-and-set. Applied in
+  `projection-mutation` and `docs/contract.md`.
 
 The port-refactors #100–#104, #106's pattern and #111 item 1 are owner-ordered for this change (PR #93 comment
 6036316289) and applied in D15–D21. Round 1's question D, the wire and storage names, is answered by #69 and applied in

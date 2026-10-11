@@ -6,9 +6,12 @@
 
 `projection.ReconcileMutation` SHALL carry an expected revision, sent through the typed `MutationClient`. When it is
 set, graph-ingest SHALL apply the mutation only if that revision is the entity's current revision, and otherwise
-SHALL return a revision-conflict error naming the expected and the current revision and SHALL change nothing. The
-request SHALL name its source, taken from the mutation's metadata, which `Reconcile` requires as `Create` and `Append`
-do; the reconcile replaces only that source's statements of the named predicates.
+SHALL return a revision-conflict error and SHALL change nothing. The error SHALL name the expected revision, and
+SHALL also name the current revision when graph-ingest's own read of the entity found a different one; when the
+bucket refuses the write because another write landed after that read, the error SHALL name only the expected
+revision, and graph-ingest SHALL NOT read the entity again to learn the current one. The request SHALL name its
+source, taken from the mutation's metadata, which `Reconcile` requires as `Create` and `Append` do; the reconcile
+replaces only that source's statements of the named predicates.
 
 #### Scenario: Concurrent update between read and reconcile
 

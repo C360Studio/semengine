@@ -33,7 +33,7 @@ the reference for every production change.
   - The test owns a proxy on `127.0.0.1:0`. The proxy stops reading after the first bytes of a 16 MiB publish.
   - The proxy registers its cleanup after the client's, so it closes both of its sockets first.
   - The embedded server's `max_payload` is 32 MiB.
-- [ ] 3.2 In `Close`, take the dialer only for a connection the client dialled. `cleanup` arms the cut first, and stops
+- [x] 3.2 In `Close`, take the dialer only for a connection the client dialled. `cleanup` arms the cut first, and stops
   and joins it before it returns. T1 passes.
 - [ ] 3.3 Write T8 `TestCloseEndsAReconnectDial`, and record it failing on 3.2's code with `Cancel` removed from the
   dial.

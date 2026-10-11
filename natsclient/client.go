@@ -167,11 +167,13 @@ type Client struct {
 	// draining is the connection the first Close drains; drainTimedOut
 	// records that nats.go reported nats.ErrDrainTimeout for it. dialled is
 	// the connection connectWith installed, the only one that carries the
-	// client's event handlers. awaitingClosed is set while the joiner waits
-	// for that connection's closed handler, for the lifecycle adapter.
+	// client's event handlers, and socket is its dialer, which Close cuts.
+	// awaitingClosed is set while the joiner waits for that connection's
+	// closed handler, for the lifecycle adapter.
 	draining       *nats.Conn
 	drainTimedOut  bool
 	dialled        *nats.Conn
+	socket         *socketDialer
 	awaitingClosed *nats.Conn
 
 	// closingSignal is closed when Close begins, so each client-owned core
@@ -756,12 +758,9 @@ func (m *Client) connectWith(
 	// the context touches nothing once Connect returns (T5).
 	socket := newSocketDialer(m.timeout, m.netDial)
 	opts := append(m.buildConnectionOptions(), nats.SetCustomDialer(socket))
-	cut := make(chan struct{})
-	stopCut := context.AfterFunc(ctx, func() { socket.cut(); close(cut) })
+	stopCut := socket.cutWhenDone(ctx)
 	conn, err := dial(m.urls, opts...)
-	if !stopCut() {
-		<-cut
-	}
+	stopCut()
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		m.discardCandidate(conn)
 		m.connectFailed()
@@ -818,6 +817,7 @@ func (m *Client) connectWith(
 	m.conn = conn
 	m.js = js
 	m.dialled = conn
+	m.socket = socket
 	m.setStatus(StatusConnected)
 	m.resetCircuitLocked()
 	m.mu.Unlock()
@@ -911,14 +911,18 @@ func (m *Client) startMetricsPoller() bool {
 // the connection's event handlers. It returns nil only then. When ctx ends
 // first, or has already ended, Close returns ctx.Err() at once, even while
 // another Close is draining, and the cleanup continues; a later Close waits for
-// the same completion. Once Close has begun the client starts no new work:
-// background work offered after that is dropped and logged at debug level, and
-// Connect, Subscribe, SubscribeForRequests and the Consume methods return
-// nats.ErrConnectionClosed. Work admitted before Close began may still run while
-// Close waits for it; message handlers keep handling messages already delivered
-// during the drain. Status keeps its value while Close drains and reports
-// Disconnected once the cleanup has finished. A drain that runs out of time is
-// reported by the first Close as a transient error wrapping
+// the same completion. On a connection the client dialled, an ended ctx also
+// closes the socket and ends a reconnect dial nats.go has in progress, so a
+// write the server is not reading does not hold Close (T1; P17, P23); a message
+// still buffered then is not promised to reach the server. A connection
+// installed through SetConnection is not cut. Once Close has begun the client
+// starts no new work: background work offered after that is dropped and logged
+// at debug level, and Connect, Subscribe, SubscribeForRequests and the Consume
+// methods return nats.ErrConnectionClosed. Work admitted before Close began may
+// still run while Close waits for it; message handlers keep handling messages
+// already delivered during the drain. Status keeps its value while Close drains
+// and reports Disconnected once the cleanup has finished. A drain that runs out
+// of time is reported by the first Close as a transient error wrapping
 // nats.ErrDrainTimeout. A Close called from inside one of the client's callbacks
 // waits on a join that includes its own invocation, so it returns ctx.Err() when
 // its context ends and never returns nil. Close refuses a nil context with an
@@ -935,6 +939,7 @@ func (m *Client) Close(ctx context.Context) error {
 	first := !m.closing
 	var (
 		conn         *nats.Conn
+		socket       *socketDialer
 		drainTimeout time.Duration
 		cancelPoller context.CancelFunc
 	)
@@ -942,6 +947,9 @@ func (m *Client) Close(ctx context.Context) error {
 		m.closing = true
 		m.joined = make(chan struct{})
 		conn = m.conn
+		if conn != nil && conn == m.dialled {
+			socket = m.socket
+		}
 		m.draining = conn
 		close(m.closingSignalLocked())
 		drainTimeout = m.drainTimeout
@@ -953,7 +961,7 @@ func (m *Client) Close(ctx context.Context) error {
 
 	var closeErr error
 	if first {
-		closeErr = m.cleanup(ctx, conn, drainTimeout, cancelPoller, joined)
+		closeErr = m.cleanup(ctx, conn, socket, drainTimeout, cancelPoller, joined)
 	}
 
 	select {
@@ -983,14 +991,24 @@ func (m *Client) Close(ctx context.Context) error {
 
 // cleanup is the first Close's work: stop the monitor, the timers and the
 // poller; drain and close the connection; clear it; write Disconnected; and
-// start the joiner that closes joined.
+// start the joiner that closes joined. socket is conn's dialer when the client
+// dialled conn, and nil otherwise.
 func (m *Client) cleanup(
 	ctx context.Context,
 	conn *nats.Conn,
+	socket *socketDialer,
 	drainTimeout time.Duration,
 	cancelPoller context.CancelFunc,
 	joined chan struct{},
 ) error {
+	if socket != nil {
+		// A write the server is not reading, or a reconnect dial, holds
+		// nats.go's connection lock, which the drain and the close below wait
+		// for; the cut releases it when ctx ends (T1; P17, P23). It is armed
+		// first, so no step waits before the cut can end the wait.
+		stopCut := socket.cutWhenDone(ctx)
+		defer stopCut()
+	}
 	m.stopHealthMonitoring()
 	m.stopTimers()
 	if cancelPoller != nil {

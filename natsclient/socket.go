@@ -1,6 +1,7 @@
 package natsclient
 
 import (
+	"context"
 	"net"
 	"sync"
 	"time"
@@ -43,6 +44,19 @@ func (d *socketDialer) Dial(network, address string) (net.Conn, error) {
 	}
 	d.conn = c
 	return c, nil
+}
+
+// cutWhenDone arms a cut for when ctx ends. The stop it returns, called once,
+// disarms it, or waits for a cut that has begun, so ctx touches nothing once
+// stop has returned (T5).
+func (d *socketDialer) cutWhenDone(ctx context.Context) (stop func()) {
+	cut := make(chan struct{})
+	stopCut := context.AfterFunc(ctx, func() { d.cut(); close(cut) })
+	return func() {
+		if !stopCut() {
+			<-cut
+		}
+	}
 }
 
 // cut closes the socket, ends a dial in progress, and refuses every later dial.

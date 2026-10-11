@@ -9,7 +9,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/c360studio/semengine/internal/harness/probe"
 	natsserver "github.com/nats-io/nats-server/v2/server"
+	"github.com/nats-io/nats.go"
 	"github.com/stretchr/testify/require"
 )
 
@@ -29,7 +31,21 @@ func TestCloseEndsAHeldWrite(t *testing.T) {
 
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	require.Error(t, within(t, published, lifecycleBound, "the held publish"), "the held publish succeeded")
-	require.True(t, conn.IsClosed(), "the connection is still open after Close returned")
+	requireClosed(t, conn)
+}
+
+// requireClosed requires conn to reach CLOSED. It is awaited, not read once:
+// when Close's drain had begun, nats.go's drain goroutine can set DRAINING_PUBS
+// after natsclient's close, and closes the connection again only once a flush
+// of up to 5 s has failed (nats.go:6377-6388). Seen in 2 of 160 runs of T1.
+func requireClosed(t *testing.T, conn *nats.Conn) {
+	t.Helper()
+	wait, cancel := context.WithTimeout(t.Context(), lifecycleBound)
+	defer cancel()
+	status, err := probe.Await(wait, func(context.Context) (nats.Status, error) {
+		return conn.Status(), nil
+	}, func(s nats.Status) bool { return s == nats.CLOSED })
+	require.NoError(t, err, "the connection was not closed: status %v", status)
 }
 
 // heldSubject is the subject of the publish heldProxy holds.

@@ -11,10 +11,11 @@ import (
 
 // HierarchyContainerMessageType returns the message.Type graph-ingest stamps on
 // the hierarchy container entities it births — key "graph.hierarchy_container.v1".
-// Registered by RegisterPayloads (via payloadbuiltins.Register) with floor
-// control (ADR-103, O-16 (a)): the framework's own in-process writer passes
-// the same registered-type gate as every other birth. Transitional until
-// gh606 retires containers; the registration retires with them.
+// Registered by RegisterPayloads, which a consumer or test calls on its payload
+// registry, with floor control (ADR-103, O-16 (a)): the framework's own
+// in-process writer passes the same registered-type gate as every other birth.
+// Transitional until gh606 retires containers; the registration retires with
+// them.
 func HierarchyContainerMessageType() message.Type {
 	return message.Type{
 		Domain:   "graph",
@@ -56,9 +57,9 @@ func (e *ContainerEntity) UnmarshalJSON(data []byte) error {
 }
 
 // RegisterPayloads registers graph.hierarchy_container.v1 with the supplied
-// registry. Called from payloadbuiltins.Register at process bootstrap;
-// graph-ingest refuses to construct with hierarchy enabled unless its registry
-// holds this type.
+// registry. A consumer calls it on the registry it gives graph-ingest, at
+// process bootstrap, and a test on the registry it builds; graph-ingest refuses
+// to construct with hierarchy enabled unless its registry holds this type.
 func RegisterPayloads(reg *payloadregistry.Registry) error {
 	return reg.Register(&payloadregistry.Registration{
 		Domain:          "graph",

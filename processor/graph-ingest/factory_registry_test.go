@@ -113,14 +113,18 @@ func TestInProcessCreateRejectsUnregisteredType(t *testing.T) {
 	assert.InDelta(t, before, testutil.ToFloat64(counter), 0.0001, "the in-process lane is not metered")
 }
 
-// TestFactoryRejectsHierarchyWithoutContainerType (O-16 (a), F7): hierarchy on
-// with a registry that lacks graph.hierarchy_container.v1 is a construction
-// error naming the type; with inference's RegisterPayloads (the pin registered the
-// whole builtin set; design D2) it constructs.
+// TestFactoryRejectsHierarchyWithoutContainerType (O-16 (a), F7, #33): hierarchy
+// on with a registry that lacks graph.hierarchy_container.v1 is a construction
+// error naming the type and the call that registers it, inference.RegisterPayloads,
+// and never the pin's payloadbuiltins.Register, which this module does not have;
+// with inference's RegisterPayloads (the pin registered the whole builtin set;
+// design D2) it constructs.
 func TestFactoryRejectsHierarchyWithoutContainerType(t *testing.T) {
 	_, err := CreateGraphIngest(factoryTestConfig(t, true), factoryTestDeps(t, payloadfixture.NewForTest(t)))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "graph.hierarchy_container.v1")
+	assert.Contains(t, err.Error(), "inference.RegisterPayloads", "the refusal names the call that fixes it")
+	assert.NotContains(t, err.Error(), "payloadbuiltins", "the refusal names no symbol this module lacks")
 
 	_, err = CreateGraphIngest(factoryTestConfig(t, true), factoryTestDeps(t, payloadfixture.NewWithSubset(t, inference.RegisterPayloads)))
 	require.NoError(t, err, "with the hierarchy container type registered, hierarchy constructs")

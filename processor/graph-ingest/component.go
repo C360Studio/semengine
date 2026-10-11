@@ -636,7 +636,7 @@ func CreateGraphIngest(rawConfig json.RawMessage, deps component.Dependencies) (
 		containerType := inference.HierarchyContainerMessageType().Key()
 		if _, ok := deps.PayloadRegistry.GetRegistration(containerType); !ok {
 			return nil, errs.WrapInvalid(
-				fmt.Errorf("enable_hierarchy requires %s in the payload registry (register it with payloadbuiltins.Register)", containerType),
+				fmt.Errorf("enable_hierarchy requires %s in the payload registry (register it with inference.RegisterPayloads)", containerType),
 				"CreateGraphIngest", "factory", "hierarchy container type")
 		}
 	}

@@ -4,10 +4,12 @@ Status: draft for pre-owner review. Issue #170; claim PR #177; addresses #168. I
 2026-10-11 (#170 comment 6109833136) and his answer to Q1 (comment 6110309758). It rests on `inventory.md` revision
 3.
 
-**Probes.** All of them ran on darwin/arm64 against nats.go v1.54.0 and nats-server v2.14.7:
+**Probes.** All of them ran on darwin/arm64 against nats.go v1.54.0, first at nats-server v2.14.7. After #118 moved
+the pin to nats-server v2.15.0, the quick probes were re-run there on 2026-10-11, with the same results (PR #177
+comment 6111119623). P11, P14, P16, P19, P21 and P22 were measured at v2.14.7 only.
 
-- P17 to P22 and P25: `/tmp/pr177/probes/P17/README.md`;
-- P23 and P24: `/tmp/pr177/probes/P23/README.md`.
+- P17 to P22 and P25: `/tmp/pr177/probes/P17/README.md` (local only), posted as PR #177 comment 6110634199;
+- P23 and P24: `/tmp/pr177/probes/P23/README.md` (local only), posted as PR #177 comment 6110634423.
 
 **Prototype.** `fix-prototype.diff` holds every production change below, with the text-fed unit test it retires.
 
@@ -136,7 +138,8 @@ because `Close` began in that gap, it returns `nats.ErrConnectionClosed`, not `E
 
 The owner answered "lean no, but it should be something we can control": the default stays at one minute, and no
 test waits for it. Calls other than `Close` and `Connect` still wait behind a write the server is not reading, up to
-the write timeout for each write ahead of them (P17: still held at the 5 s cap).
+the write timeout for each write ahead of them (P17: held until the write ends: past the 5 s cap, or 1.6-2.0 s when
+darwin's buffers took it; never at the call's deadline).
 
 natsclient gains two options. Both refuse a value that is not positive (P24):
 
@@ -244,7 +247,7 @@ sockets. A failing-first run on `main` therefore ends its held publish at once r
 | T3 `TestConnectRefusesAnEndedContext` | a transient error matching `context.Canceled`, and the listener accepts nothing | P18 ended | `Connect` dials |
 | T4 `TestConnectEndsWithItsContext` | against a listener that accepts and never answers, each case returns the context's error before the test's 3 s wait: a 100 ms deadline, a cancel sent once the listener has accepted, and two such URLs | P18 silent, two-silent | they take 5 s and 10 s |
 | T5 `TestReconnectAfterConnectContextEnded` | after the server drops the client, a request to an echo responder succeeds | P18 reconnect-after | passes on `main`; a mutant that leaves Connect's `AfterFunc` armed fails it (`task mutate:check`) |
-| T6 `TestCreateKeyValueOfAnExistingBucketIsErrBucketExists` | a second create with a different config matches `jetstream.ErrBucketExists` | nats.go read | passes; it pins the library fact for #118 |
+| T6 `TestCreateKeyValueOfAnExistingBucketIsErrBucketExists` | a second create with a different config matches `jetstream.ErrBucketExists` | nats.go read | passes; it pins the library fact for an upgrade. #118 merged on 2026-10-11 at 14:37Z, before T6 was written, so T6 runs at nats-server v2.15.0 |
 | T7 `TestClientSentinelsAreTransient` | `ErrNotConnected` and `ErrCircuitOpen`: `IsTransient` and `Classify` agree; `errors.Is` matches `errs.ErrConnectionLost` and `errs.ErrCircuitOpen` | P10 | `IsTransient` is false |
 | T8 `TestCloseEndsAReconnectDial` | `netDial` blocks every dial after the first until its `Cancel` closes, and signals when it is entered; the server drops the client; once the dial is entered, `Close` with 50 ms returns before the test's 3 s wait | P23, P25 blackhole-cancel | the dial is not cancelled |
 | T9 `TestWriteTimeoutAndPingIntervalOptions` | with both at 300 ms, the held publish fails, then the connection reconnects and carries an echo after the proxy reads again; with a value that is not positive, each option is refused | P22, P24 | the options do not exist |
@@ -252,7 +255,8 @@ sockets. A failing-first run on `main` therefore ends its held publish at once r
 The unroutable-address case has no in-tree test: whether an address is unroutable depends on the host. T8 tests the
 same cut through the seam.
 
-Before #118's upgrade merges, T1 to T9 re-run under `task verify`, so the probes need not be re-run.
+T1 to T9 were written after #118 merged (2026-10-11, 14:37Z), so they run under `task verify` at nats-server
+v2.15.0. The quick probes were re-run there too, with the same results (PR #177 comment 6111119623).
 
 **Generated checks.** None. The outcome depends on the order of Connect, a context's end, a disconnect, a reconnect,
 repeated cuts and Close, and `notes/2.3.md`, "Generated checks", names the example test for each stage of that history
@@ -270,4 +274,4 @@ three unchanged lines from #93's insertion after `:253`, so the merge is clean. 
 ledger row's contract text at `docs/admission-ledger.yaml:1695`, and the second to merge keeps both. Either can merge
 first.
 
-**Other work.** #176 has merged, and #118 holds (comment on #118).
+**Other work.** #176 has merged, and #118 merged on 2026-10-11 at 14:37Z (nats-server v2.15.0).

@@ -4,6 +4,9 @@
   (draft PR #177) over `origin/main` `c713840e3cc7991e0bd8b81297a899a15d43ec3b`; every `main` pin below holds on both.
   PR #93's head is `f3d5ae56ef62b7caacf0a1bf7f63f0869ab2b047` (merge base with `main` `0e11824`, one commit behind:
   #175, which touches no file this inventory pins). Pins marked "#93" are at that head.
+- after revision 3 (2026-10-11): #118 merged at 14:37Z and moved nats-server to v2.15.0, in `go.mod:12` and
+  `.nats-image:5`; nats.go stays at v1.54.0. The quick probes, re-run at v2.15.0, gave the same results (PR #177
+  comment 6111119623), so no row changed. Where a row names v2.14.7, that is the version it measured.
 - revision 3 (2026-10-11): rows changed by probes P17 to P25. Design revision 2 ran P17 to P22 after the owner's
   ruling on #170 (comment 6109833136), and design revision 3 ran P23 to P25 after its review; see "Revision 3" in §2.
   Nothing else changed. Revision 2 passed review
@@ -14,9 +17,9 @@
   reviewer's. N-P1 to N-P19 stay listed as the record of what is unmeasured; the time-box drops those probes, and the
   design promises nothing they would have measured. Revision 1 was the inventory only (workflow step 2).
 - question: what does natsclient say, on `main` and at #93's head, about how nats.go v1.54.0 and nats-server v2.14.7
-  time, order, bound and fail, and what natsclient promises in those terms; which of those statements a probe at the
-  pinned versions backs, contradicts or leaves unmeasured; where the existing probe-citation rule lives and where a
-  library-probe rule would go; and how a `transport-client` delta here meets #93's at archive.
+  (v2.15.0 since #118) time, order, bound and fail, and what natsclient promises in those terms; which of those
+  statements a probe at the pinned versions backs, contradicts or leaves unmeasured; where the existing probe-citation
+  rule lives and where a library-probe rule would go; and how a `transport-client` delta here meets #93's at archive.
 - repositories read: this one (worktree, the `git archive` copies below, GitHub issues and PR comments through `gh`);
   SemStreams at the pin `8b99efe9` through `gh api 'repos/C360Studio/semstreams/contents/docs/adr?ref=8b99efe9'` only
   (`docs/inventory-scope.md:31-34`, rule 4). No sister checkout was read or touched; no consumer repository was read
@@ -29,8 +32,10 @@
   `.nats-image:5` — `nats:2.14.7-alpine@sha256:4063edae…` (the container the integration lane runs; same server
   version as the embedded one). The pin used nats.go v1.52.0 and nats-server v2.12.4
   (`docs/admission-ledger.yaml:1618-1619` — `regression evidence: nats.go v1.52.0 at the pin (go.mod:12) is v1.54.0
-  here; the embedded test` / `broker nats-server/v2 v2.12.4 at the pin`). Open Dependabot PR #118 would move
-  nats-server to 2.15.0 (`go.mod`, `go.sum`; head `d933fe32`); PR #117 would move OpenSpec 1.13.2 → 1.14.0.
+  here; the embedded test` / `broker nats-server/v2 v2.12.4 at the pin`). These are the base's pins. Dependabot PR
+  #118, open at the base (head `d933fe32`), merged on 2026-10-11 at 14:37Z and moved nats-server to v2.15.0 in
+  `go.mod`, `go.sum` and `.nats-image` (`nats:2.15.0-alpine@sha256:ac8f88a6…`). PR #117 merged on 2026-10-11 at
+  13:24Z and moved OpenSpec 1.13.2 → 1.14.0.
 - system for every probe: darwin/arm64, Apple M3 Pro (12 CPUs), macOS (Darwin 25.5.0), `go version go1.26.9
   darwin/arm64`, nats.go v1.54.0, nats-server v2.14.7 (embedded, from the module cache), OpenSpec 1.13.2.
 
@@ -89,8 +94,9 @@ ends at nats.go's write timeout. Nothing in this inventory has edited #168 or th
 
 Statuses. **probe**: a probe at the pinned versions backs it (P1 to P16, or Codex's two probes in PR #156 comment
 6097783327, here "C-bw" blocked-write and "C-ds" denied-subscribe). **test**: no posted probe, but a test in the tree
-drives the real library at the pinned version (embedded nats-server v2.14.7 through `embeddedServerURL`,
-`natsclient/client_lifecycle_test.go:108`, or the `nats:2.14.7` container through `startFixture`) and asserts it.
+drives the real library at the pinned version (at the base, embedded nats-server v2.14.7 through `embeddedServerURL`,
+`natsclient/client_lifecycle_test.go:108`, or the `nats:2.14.7` container through `startFixture`; v2.15.0 for both
+since #118) and asserts it.
 **contradicted**: a measurement shows it false in a condition the sentence does not exclude. **unmeasured**: neither;
 "fake only" marks a test that drives natsclient's logic over a fake, which measures natsclient, not the library.
 "own" marks a promise about natsclient's own code with no library behaviour in it (listed because #170 asks for
@@ -959,7 +965,7 @@ number,title,isDraft,changedFiles,headRefName,files`; the 308 files of #93 read 
 | --- | --- | --- | --- |
 | #93 | draft, 308 files, head `f3d5ae56` | `natsclient/` (13 files), `pkg/errs/` (4), `openspec/changes/setup-04a-02-ingest-kernel/specs/transport-client/spec.md`, `…/specs/nats-fixture/spec.md`, `internal/harness/natsfixture/{open.go,open_test.go,fixture_integration_test.go}`, `go.mod` (`golang.org/x/net v0.60.0`) | §1b, §4; frozen per #167's text ("Not in PR #93, which is frozen") |
 | #176 | draft, head `e5475855` (updated 2026-10-11T12:51Z), 7 files | `docs/adr/066`, `083`, `084`, `085`, `088` (new), `docs/admission-ledger.yaml` (+97), `docs/repository-map.md` (+2 -2) | the map's `docs/adr/` row (`docs/repository-map.md:29`), the line an ADR-112 entry edits: a textual conflict, so whichever merges second merges `main` first; ADR-066 brings nats.go v1.48.0 statements into `docs/adr` (`:69`, `:183`, `:216-217`, `:408-409`, `:484-485`), which the new rule reaches and one of which contradicts M98 (revision 2: the row read "0 files") |
-| #118 | ready (Dependabot) | `go.mod`, `go.sum`: nats-server 2.14.7 → 2.15.0 | every probe here measures 2.14.7; the embedded server would move, `.nats-image` would not |
+| #118 | ready (Dependabot) at the base; merged on 2026-10-11 at 14:37Z | `go.mod`, `go.sum`: nats-server 2.14.7 → 2.15.0 | every probe here measures 2.14.7. As merged, it moved both the embedded server and `.nats-image` (`nats:2.15.0-alpine`); the quick probes re-run on it gave the same results (PR #177 comment 6111119623) |
 | #117 | ready (Dependabot) | `package.json`, `package-lock.json`: OpenSpec 1.13.2 → 1.14.0 | §4's results are for 1.13.2 |
 | #116, #119, #120 | ready (Dependabot) | `go.mod` | textual only; no NATS module |
 
@@ -1033,7 +1039,7 @@ The change proposes no new primitive; the table records who already states or ow
 
 | Dimension | Evidence |
 | --- | --- |
-| Semantic class | what a natsclient call promises about time, nil, errors, ownership and reconnect over nats.go v1.54.0 and nats-server v2.14.7 |
+| Semantic class | what a natsclient call promises about time, nil, errors, ownership and reconnect over nats.go v1.54.0 and nats-server v2.14.7 (v2.15.0 since #118) |
 | Owners | `natsclient` (code and doc comments); `transport-client` spec; the ledger row; ADR-110 and ADR-111 for two calls; pin ADR-060 for wire errors (category 6) |
 | Catalogs | the nine homes of category 2; no generated registry (`git grep -n -i 'nats.go' -- '*.yaml' '*.json'` hits only the ledger) |
 | Status | `Client.Status()` / `GetStatus()` (`client.go:380`, `:661`); `natsfixture` phase records |

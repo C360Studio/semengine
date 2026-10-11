@@ -63,4 +63,6 @@ nats.go's write timeout, but asked that it be settable so no test waits a minute
     by `IsTransient`.
 - **#93.** It rewrites `pkg/errs`, and changes three natsclient files this pull request also edits. The hunks do not
   overlap except at `kv.go:323`, which is left to #93 (`design.md`, "Order with #93").
-- **#118.** The nats.go and nats-server upgrade waits. The in-tree tests T1 to T9 replace the probes it would re-run.
+- **#118.** It moved nats-server from v2.14.7 to v2.15.0, with nats.go staying at v1.54.0, and merged on 2026-10-11
+  at 14:37Z. The quick probes re-run on it gave the same results (PR #177 comment 6111119623), and T1 to T9 run on it
+  under `task verify`.

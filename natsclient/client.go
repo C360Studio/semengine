@@ -406,17 +406,21 @@ func (m *Client) GetConnection() *nats.Conn {
 // callers must treat the result of an actual publish as authoritative.
 func (m *Client) MaxPayload() (int64, error) {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if m.conn == nil || !m.conn.IsConnected() {
+	conn := m.conn
+	m.mu.RUnlock()
+	if conn == nil || !conn.IsConnected() {
 		return 0, ErrNotConnected
 	}
-	return m.conn.MaxPayload(), nil
+	return conn.MaxPayload(), nil
 }
 
 // SetConnection sets the NATS connection (for testing). The connection it
 // replaces belongs to the caller: Close neither closes it nor waits for its
 // event handlers. Once Close has begun it changes nothing and logs at warn level.
 func (m *Client) SetConnection(conn *nats.Conn) {
+	// IsConnected waits for the connection's lock, which a held write keeps,
+	// so it is called before this client's lock is taken (T2; P21).
+	connected := conn != nil && conn.IsConnected()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.closing {
@@ -424,7 +428,7 @@ func (m *Client) SetConnection(conn *nats.Conn) {
 		return
 	}
 	m.conn = conn
-	if conn != nil && conn.IsConnected() {
+	if connected {
 		m.setStatus(StatusConnected)
 	}
 }
@@ -1389,7 +1393,7 @@ func (m *Client) subscribeOwned(
 		return nil, errs.WrapTransient(err, "Client", operation, "subscribe")
 	}
 	conn := m.conn
-	if conn == nil || !conn.IsConnected() {
+	if conn == nil {
 		m.mu.Unlock()
 		return nil, ErrNotConnected
 	}
@@ -1397,6 +1401,17 @@ func (m *Client) subscribeOwned(
 	finish := m.admitLocked(workSubscription)
 	closing := m.closingSignalLocked()
 	m.mu.Unlock()
+	// Called after mu is released: IsConnected waits for the connection's
+	// lock, which a held write keeps, and Close needs mu to begin (T2; P21).
+	if !conn.IsConnected() {
+		finish()
+		select {
+		case <-closing:
+			return nil, errs.Wrap(nats.ErrConnectionClosed, "Client", operation, "client closed")
+		default:
+			return nil, ErrNotConnected
+		}
+	}
 
 	cb := build(conn)
 	sub, err := subscribe(conn, subject, func(msg *nats.Msg) {

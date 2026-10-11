@@ -64,23 +64,11 @@ func TestCloseIsNotHeldByAHeldSubscribe(t *testing.T) {
 		_, err := client.Subscribe(t.Context(), "natsclient.t2", func(context.Context, *nats.Msg) {})
 		subscribed <- err
 	}()
-	// Admitted means counted as running work. The count is read under
-	// TryRLock, so a Subscribe that keeps the lock fails this wait instead of
-	// holding it.
-	wait, cancelWait := context.WithTimeout(t.Context(), lifecycleBound)
-	defer cancelWait()
-	_, err := probe.Await(wait, func(context.Context) (int, error) {
-		if !client.mu.TryRLock() {
-			return 0, errors.New("natsclient's lock is held")
-		}
-		defer client.mu.RUnlock()
-		return client.running[workSubscription], nil
-	}, func(n int) bool { return n > 0 })
-	require.NoError(t, err, "the Subscribe was never admitted")
+	awaitSubscribeAdmitted(t, client)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
-	err = within(t, startClose(ctx, client), lifecycleBound, "Close")
+	err := within(t, startClose(ctx, client), lifecycleBound, "Close")
 
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	require.Error(t, within(t, subscribed, lifecycleBound, "the held Subscribe"), "the held Subscribe succeeded")
@@ -92,6 +80,65 @@ func TestCloseIsNotHeldByAHeldSubscribe(t *testing.T) {
 // connection lock, as a held write does (P23); Close must end the dial through
 // the dialer's Cancel rather than wait for it.
 func TestCloseEndsAReconnectDial(t *testing.T) {
+	client := newReconnectDialClient(t)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	// The test's own wait, under nats.go's 5 s default dial timeout, which
+	// bounded Close before the cut ended the dial (P23: 4.69 s).
+	err := within(t, startClose(ctx, client), 3*time.Second, "Close")
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
+// Design D3: a Subscribe admitted before Close began, whose connection check
+// then finds the connection not connected, returns nats.ErrConnectionClosed,
+// not ErrNotConnected (transport-client, the Subscribe's error order). The
+// reconnect dial holds nats.go's lock until Close cuts it, and no reconnect
+// succeeds after the cut, so the check runs after Close has begun and fails.
+func TestSubscribeEndedByCloseIsConnectionClosed(t *testing.T) {
+	client := newReconnectDialClient(t)
+
+	subscribed := make(chan error, 1)
+	go func() {
+		_, err := client.Subscribe(t.Context(), "natsclient.d3", func(context.Context, *nats.Msg) {})
+		subscribed <- err
+	}()
+	awaitSubscribeAdmitted(t, client)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	require.ErrorIs(t, within(t, startClose(ctx, client), lifecycleBound, "Close"), context.DeadlineExceeded)
+
+	err := within(t, subscribed, lifecycleBound, "the held Subscribe")
+	require.ErrorIs(t, err, nats.ErrConnectionClosed)
+	require.NotErrorIs(t, err, ErrNotConnected)
+}
+
+// awaitSubscribeAdmitted waits until a Subscribe is counted as client-owned
+// work. The count is read under TryRLock, so a Subscribe that keeps
+// natsclient's lock while it waits for nats.go's fails this wait instead of
+// holding it.
+func awaitSubscribeAdmitted(t *testing.T, client *Client) {
+	t.Helper()
+	wait, cancel := context.WithTimeout(t.Context(), lifecycleBound)
+	defer cancel()
+	_, err := probe.Await(wait, func(context.Context) (int, error) {
+		if !client.mu.TryRLock() {
+			return 0, errors.New("natsclient's lock is held")
+		}
+		defer client.mu.RUnlock()
+		return client.running[workSubscription], nil
+	}, func(n int) bool { return n > 0 })
+	require.NoError(t, err, "the Subscribe was never admitted")
+}
+
+// newReconnectDialClient returns a client whose connection the server has
+// dropped, once nats.go's reconnect dial has begun. The first dial reaches the
+// server. Every later one waits for the dialer's Cancel, as a dial to an
+// address that drops every packet would, or for the end of the test, so a run
+// that fails does not hold nats.go's lock for the rest of the binary.
+func newReconnectDialClient(t *testing.T) *Client {
+	t.Helper()
 	server, err := natsserver.NewServer(&natsserver.Options{Host: "127.0.0.1", Port: -1, NoLog: true, NoSigs: true})
 	require.NoError(t, err)
 	server.Start()
@@ -103,10 +150,6 @@ func TestCloseEndsAReconnectDial(t *testing.T) {
 
 	client, err := NewClient(server.ClientURL(), WithHealthInterval(0), WithReconnectWait(10*time.Millisecond))
 	require.NoError(t, err)
-	// The first dial reaches the server. Every later one is entered, then
-	// waits for the dialer's Cancel, as a dial to an address that drops every
-	// packet would, or for the end of the test, so a run that fails does not
-	// hold nats.go's lock for the rest of the binary.
 	entered := make(chan struct{}, 1)
 	testEnded := make(chan struct{})
 	var dials atomic.Int32
@@ -135,13 +178,7 @@ func TestCloseEndsAReconnectDial(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, server.DisconnectClientByID(cid))
 	within(t, entered, lifecycleBound, "the reconnect dial")
-
-	closeCtx, cancelClose := context.WithTimeout(t.Context(), 50*time.Millisecond)
-	defer cancelClose()
-	// The test's own wait, under nats.go's 5 s default dial timeout, which
-	// bounded Close before the cut ended the dial (P23: 4.69 s).
-	err = within(t, startClose(closeCtx, client), 3*time.Second, "Close")
-	require.ErrorIs(t, err, context.DeadlineExceeded)
+	return client
 }
 
 // heldSubject is the subject of the publish heldProxy holds.

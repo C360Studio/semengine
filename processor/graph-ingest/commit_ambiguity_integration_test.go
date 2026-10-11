@@ -4,6 +4,7 @@ package graphingest
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -166,6 +167,88 @@ func TestIntegration_TypedClientPreservesCommitAmbiguity(t *testing.T) {
 	assert.Equal(t, projection.MutationNotFound, mutationErr.Kind)
 	assert.Equal(t, projection.CommitNotCommitted, mutationErr.Commit)
 	assert.Equal(t, graph.ErrorCodeEntityNotFound, mutationErr.Code)
+}
+
+// TestIntegration_OversizedResponseAfterCommitIsCommitUnknown is task 4.16, the defect #173
+// describes (Codex interim review R1, PR #93 comment 6112098987; projection-mutation, "Commit
+// ambiguity is preserved"). A reconcile commits, and its success response, which echoes the
+// request's RequestID beside the stored entity, is larger than the broker's payload limit, so
+// natsclient answers with its class-invalid response_too_large reply in its place. The typed client
+// reads that reply as commit-unknown: the write stands.
+func TestIntegration_OversizedResponseAfterCommitIsCommitUnknown(t *testing.T) {
+	// The bound covers the fixture's setup as well as the requests: in Codex's probe a 30-second
+	// bound ran out before the reconcile was sent.
+	ctx, cancelOperation := context.WithTimeout(t.Context(), 120*time.Second)
+	defer cancelOperation()
+	t.Cleanup(vocabulary.SnapshotRegistry())
+	vocabulary.Register("test.identity.name")
+	vocabulary.Register("test.state.value")
+
+	client := newFixtureClient(t)
+	comp := createTestComponent(t, withAuthority("c360", "test"))
+	comp.natsClient = client
+	entityStates, err := kvcatalog.EnsureCatalogBucket(ctx, client, graph.BucketEntityStates)
+	require.NoError(t, err)
+	comp.entityBucket = client.NewKVStore(entityStates)
+	// The test stands in for a Start that completed, so the handlers serve (checkpoint 3 B2).
+	comp.startCompleted.Store(true)
+	require.NoError(t, comp.setupQueryHandlers(ctx))
+	require.NoError(t, comp.setupMutationHandlers(ctx))
+	require.NoError(t, client.GetConnection().Flush())
+
+	contract := projection.Contract{
+		Name: "oversized-response", MessageType: testMutationType, EntityPattern: "*.*.mutation.system.widget.*",
+		BirthPredicates: []string{"test.identity.name"},
+		Groups: []projection.PredicateGroup{
+			{Name: "state", Mode: projection.ModeReconcile, Predicates: []string{"test.state.value"}},
+		},
+	}
+	mutations, err := projection.NewMutationClient(projection.MutationClientConfig{
+		NATS: client, Contracts: []projection.Contract{contract}, Timeout: wireRequestTimeout,
+	})
+	require.NoError(t, err)
+
+	const id = "c360.test.mutation.system.widget.oversized"
+	created, err := mutations.Create(ctx, projection.CreateMutation{
+		Contract: contract.Name, Entity: &graph.EntityState{ID: id},
+		Triples: []message.Triple{
+			{Subject: id, Predicate: "test.identity.name", Object: strings.Repeat("identity", 1024)},
+			{Subject: id, Predicate: "test.state.value", Object: "created"},
+		},
+		Metadata: projection.MutationMetadata{RequestID: "create-oversized", Source: fixtureSource, Timestamp: fixtureTime},
+	})
+	require.NoError(t, err)
+	require.Equal(t, projection.CommitVerified, created.Commit)
+
+	// The request fits under the payload limit; the response adds the stored 8 KiB identity
+	// statement to the echoed RequestID and crosses it. Desired is empty, so the reconcile clears
+	// the state statement and stores nothing of the RequestID.
+	maxPayload := int(client.GetConnection().MaxPayload())
+	receipt, err := mutations.Reconcile(ctx, projection.ReconcileMutation{
+		Contract: contract.Name, Group: "state", EntityID: id, ExpectedRevision: created.KVRevision,
+		Metadata: projection.MutationMetadata{
+			Source: fixtureSource, Timestamp: fixtureTime.Add(time.Minute), RequestID: strings.Repeat("r", maxPayload-2048),
+		},
+	})
+
+	// The reconcile committed: a later revision, without the state statement, and the stored value
+	// alone is far below the limit.
+	stored, getErr := entityStates.Get(ctx, id)
+	require.NoError(t, getErr)
+	require.Greater(t, stored.Revision(), created.KVRevision, "the reconcile's write stands")
+	for _, triple := range decodeEntity(t, stored.Value()).Triples {
+		require.NotEqual(t, "test.state.value", triple.Predicate, "the reconcile cleared the state statement")
+	}
+	require.Less(t, len(stored.Value()), maxPayload/2, "the echoed RequestID, not the stored value, crosses the limit")
+
+	var mutationErr *projection.MutationError
+	require.ErrorAs(t, err, &mutationErr)
+	assert.Equal(t, errs.ErrorInvalid, mutationErr.Class, "natsclient's reply in place of the oversized response")
+	// natsclient's own code (errorCodeResponseTooLarge), spelled as the wire carries it.
+	assert.Equal(t, "response_too_large", mutationErr.Code)
+	assert.Equal(t, projection.CommitUnknown, receipt.Commit, "receipt of a reconcile that committed")
+	assert.Equal(t, projection.CommitUnknown, mutationErr.Commit)
+	assert.Equal(t, projection.MutationCommitUnknown, mutationErr.Kind)
 }
 
 // stateValue is the object of the one test.state.value statement in a stored entity.

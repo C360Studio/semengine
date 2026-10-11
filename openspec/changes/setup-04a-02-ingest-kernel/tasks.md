@@ -643,6 +643,21 @@ posted on this pull request.
       (`resident_stamp_integration_test.go`, `merge_entity_bench_test.go`); seven `task mutate:check` detections.
       Notes: `notes/cp3-H3.md`.
       Done in `6a377e3`; `task verify` on it ended `verify: ok`. Notes: `notes/cp3-H3.md`.
+- [ ] 4.16 (D) Codex interim review R1 and R4 (PR #93 comment 6112098987): R1, the typed client's
+      `isDefiniteFailure` reads a classified reply as not committed only for a code graph-ingest sends when it refused
+      the request before its write (`invalid_request`, `structural_invalid`, `message_type_unregistered`,
+      `entity_id_invalid`, `entity_id_authority_invalid`, `revision_mismatch`, `entity_already_exists`,
+      `entity_not_found`, `graph_state_reset_required`); any other reply, natsclient's class-invalid
+      `response_too_large` after a commit included, is commit-unknown (`projection-mutation`, "Commit ambiguity is
+      preserved"; the defect #173 describes). Three rows of
+      `TestClassifiedReplyIsNotCommittedOnlyWhenRefusedBeforeWrite` (`response_too_large`, an unfamiliar invalid code,
+      invalid without a code) and
+      `TestIntegration_OversizedResponseAfterCommitIsCommitUnknown`, written first and failing on `409c671`; two rows
+      for the entity ID codes, which hold on `409c671`. Three `task mutate:check` detections: the class-invalid rule
+      restored, `entity_id_authority_invalid` dropped, `graph_state_reset_required` dropped; the integration test, by
+      hand, fails with the class-invalid rule restored. R4, `graph-ingest-recovery` "Settlement order": the failed-start
+      Nak is promised only for an input that decodes, is accepted, and is submitted after the rollback. Notes:
+      `notes/cp4i-R1.md`.
 
 ## 5. Ledger, gates and boundaries
 

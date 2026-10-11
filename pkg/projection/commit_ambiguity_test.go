@@ -10,14 +10,21 @@ import (
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/pkg/errs"
+	semtypes "github.com/c360studio/semengine/pkg/types"
 )
 
 // These tests are the typed client's half of projection-mutation's "Commit ambiguity is preserved"
-// (task 4.1, #20). graph-ingest refuses an invalid request, a revision conflict, an entity not
-// found or present, and a stored value it cannot read before it writes; any other classified reply
-// can follow a write whose outcome the bucket did not confirm. The wire is a double, so each
-// reply is the one the test names; processor/graph-ingest's
-// TestIntegration_TypedClientPreservesCommitAmbiguity drives the same path over a broker.
+// (task 4.1, #20; task 4.16). graph-ingest refuses an invalid request, a revision conflict, an
+// entity not found or present, and a stored value it cannot read before it writes, each with its
+// own code; any other classified reply, an invalid one included, can follow a write whose outcome
+// the bucket did not confirm. The wire is a double, so each reply is the one the test names;
+// processor/graph-ingest's TestIntegration_TypedClientPreservesCommitAmbiguity and
+// TestIntegration_OversizedResponseAfterCommitIsCommitUnknown drive the same path over a broker.
+
+// responseTooLarge is the code of natsclient's reply in place of a success response larger than
+// the broker's payload limit (errorCodeResponseTooLarge, natsclient/request.go), spelled as the
+// wire carries it. The reply is class invalid and follows the handler's commit.
+const responseTooLarge = "response_too_large"
 
 type writeOutcome struct {
 	receipt MutationReceipt
@@ -76,10 +83,16 @@ func TestClassifiedReplyIsNotCommittedOnlyWhenRefusedBeforeWrite(t *testing.T) {
 		{"invalid request", errs.ErrorInvalid, graph.ErrorCodeInvalidRequest, CommitNotCommitted, MutationInvalid},
 		{"structural invalid", errs.ErrorInvalid, graph.ErrorCodeStructuralInvalid, CommitNotCommitted, MutationInvalid},
 		{"message type unregistered", errs.ErrorInvalid, graph.ErrorCodeMessageTypeUnregistered, CommitNotCommitted, MutationInvalid},
+		{"entity ID invalid", errs.ErrorInvalid, semtypes.ErrorCodeEntityIDInvalid, CommitNotCommitted, MutationInvalid},
+		{"entity ID authority refused", errs.ErrorInvalid, semtypes.ErrorCodeEntityIDAuthorityInvalid, CommitNotCommitted, MutationInvalid},
 		{"revision mismatch", errs.ErrorInvalid, graph.ErrorCodeRevisionMismatch, CommitNotCommitted, MutationRevisionConflict},
 		{"entity not found", errs.ErrorInvalid, graph.ErrorCodeEntityNotFound, CommitNotCommitted, MutationNotFound},
 		{"entity already exists", errs.ErrorInvalid, graph.ErrorCodeEntityExists, CommitNotCommitted, MutationConflict},
 		{"stored value refused", errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired, CommitNotCommitted, MutationInternal},
+		// Class invalid, and none is a code graph-ingest sends for a refusal before its write.
+		{"response too large after a commit", errs.ErrorInvalid, responseTooLarge, CommitUnknown, MutationCommitUnknown},
+		{"invalid with an unfamiliar code", errs.ErrorInvalid, "unfamiliar_refusal", CommitUnknown, MutationCommitUnknown},
+		{"invalid without code", errs.ErrorInvalid, "", CommitUnknown, MutationCommitUnknown},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

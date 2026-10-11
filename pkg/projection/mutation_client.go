@@ -440,17 +440,24 @@ func unknownMutation(operation MutationOperation, err error) (MutationReceipt, e
 }
 
 // isDefiniteFailure reports a failure that proves the mutation did not commit: a transport
-// outcome that proves no request was delivered, or a reply graph-ingest sends when it refused the
-// request before its write. Those replies are class invalid (an invalid request, a revision
-// conflict, an entity not found or already present) or code graph_state_reset_required (the
-// entity's state failed the state contract). Any other classified reply, transient internal
-// included, can follow a write whose outcome the bucket did not confirm. One invalid reply can
-// follow a commit and is still read as not committed: natsclient's response_too_large, sent in
-// place of a success response larger than the broker's payload limit.
+// outcome that proves no request was delivered, or a reply whose code graph-ingest sends only when
+// it refused the request before its write: an invalid request, a revision conflict (an entity
+// already present included, a create being a write on the condition that there is none), an
+// entity not found, or a stored value the read before the write refused as graph state. Any other
+// classified reply, whatever its class, can follow a write whose outcome the bucket did not
+// confirm: natsclient's reply in place of a success response larger than the broker's payload
+// limit is class invalid and follows the commit.
 func isDefiniteFailure(err error) bool {
 	var classified *errs.ClassifiedError
 	if errors.As(err, &classified) {
-		return classified.Class == errs.ErrorInvalid || classified.Code == graph.ErrorCodeGraphStateResetRequired
+		switch classified.Code {
+		case graph.ErrorCodeInvalidRequest, graph.ErrorCodeStructuralInvalid, graph.ErrorCodeMessageTypeUnregistered,
+			semtypes.ErrorCodeEntityIDInvalid, semtypes.ErrorCodeEntityIDAuthorityInvalid,
+			graph.ErrorCodeRevisionMismatch, graph.ErrorCodeEntityExists, graph.ErrorCodeEntityNotFound,
+			graph.ErrorCodeGraphStateResetRequired:
+			return true
+		}
+		return false
 	}
 	return graphmutation.IsDefinitelyNotCommitted(err) || natsclient.IsNoResponders(err)
 }

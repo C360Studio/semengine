@@ -160,6 +160,10 @@ BEFORE implementation.
   metric naming what was skipped and why continuing is safe, or it refuses loudly; write the decision at the site.
   Write the test that observes the signal and mutation-check it like a refusal (skip the emit, and the test MUST
   fail).
+- **A library claim in code names its test.** A doc comment or README line you add or edit that says how a library
+  (nats.go, nats-server or any other) times, orders, bounds or fails names the test in the tree that drives the
+  pinned library, not a fake, or the probe posted on the pull request; without one it says the behaviour is not
+  promised. When a fix changes such behaviour, that test is the failing-first test (#170; ADR-112).
 
 ## Runtime footguns
 

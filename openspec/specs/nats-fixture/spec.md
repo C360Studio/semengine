@@ -224,4 +224,5 @@ SHALL apply.
 
 - **GIVEN** a fixture started with max payload N
 - **WHEN** a client publishes more than N bytes
-- **THEN** the broker refuses it, and a message of at most N bytes is accepted
+- **THEN** the publish is refused with `nats.ErrMaxPayload` (nats.go checks the limit the broker announced before it
+  sends), and a message of at most N bytes is accepted

@@ -34,6 +34,9 @@ writer records what they established and does not decide, implement, or approve.
    or marketing." Test a page by reading its opening paragraph as a developer who just cloned the repository and has
    read no plan or issue: every coined term is defined in one line at first use, nouns are concrete, there is no
    marketing register, and coordination vocabulary (holds, rulings, ledger rows) appears only where defined.
+10. A sentence about how a library (nats.go, nats-server or any other) times, orders, bounds or fails is written only
+   where the change names the test or probe behind it; otherwise write that the behaviour is not promised. Ask the
+   developer for the test's name rather than inferring the behaviour from code (#170; ADR-112).
 
 ## Handoff
 

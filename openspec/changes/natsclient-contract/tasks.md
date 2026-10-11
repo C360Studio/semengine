@@ -14,7 +14,7 @@ the reference for every production change.
 
 ## 2. Connect honours its context (design D2)
 
-- [ ] 2.1 Write T3 `TestConnectRefusesAnEndedContext` and T4 `TestConnectEndsWithItsContext` in
+- [x] 2.1 Write T3 `TestConnectRefusesAnEndedContext` and T4 `TestConnectEndsWithItsContext` in
   `natsclient/client_connect_test.go`, and record them failing on `main`'s code.
 - [ ] 2.2 Add `natsclient/socket.go`. Its dialer is what `nats.SetCustomDialer` takes:
   - it keeps the last socket it dialled;

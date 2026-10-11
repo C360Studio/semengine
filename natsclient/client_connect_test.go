@@ -2,9 +2,12 @@ package natsclient
 
 import (
 	"context"
+	"net"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/c360studio/semengine/pkg/errs"
 	natsserver "github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
 	"github.com/stretchr/testify/require"
@@ -121,4 +124,135 @@ func newConnectCandidate(t *testing.T) *nats.Conn {
 	require.NoError(t, err)
 	t.Cleanup(candidate.Close)
 	return candidate
+}
+
+// connectWait bounds how long a test waits for Connect against a server that
+// does not answer. Before design D2, Connect waited for nats.go's connect
+// timeout instead (5 s per address, P18), so a Connect that honours its
+// context returns well inside it.
+const connectWait = 3 * time.Second
+
+// T3, design "Tests that replace the probes".
+func TestConnectRefusesAnEndedContext(t *testing.T) {
+	url, accepted := silentListener(t)
+	client, err := NewClient(url)
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	err = client.Connect(ctx)
+
+	require.ErrorIs(t, err, context.Canceled)
+	require.True(t, errs.IsTransient(err), "an ended context is transient: %v", err)
+	select {
+	case <-accepted:
+		t.Error("Connect dialled with an ended context: the listener accepted a connection")
+	default:
+	}
+}
+
+// T4, design "Tests that replace the probes".
+func TestConnectEndsWithItsContext(t *testing.T) {
+	t.Run("deadline", func(t *testing.T) {
+		url, _ := silentListener(t)
+		client, err := NewClient(url)
+		require.NoError(t, err)
+		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+		defer cancel()
+
+		err = awaitConnect(t, startConnect(ctx, client))
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+	})
+
+	t.Run("cancel once accepted", func(t *testing.T) {
+		url, accepted := silentListener(t)
+		client, err := NewClient(url)
+		require.NoError(t, err)
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+
+		result := startConnect(ctx, client)
+		select {
+		case <-accepted:
+		case err := <-result:
+			t.Fatalf("Connect returned before the listener accepted: %v", err)
+		}
+		cancel()
+		require.ErrorIs(t, awaitConnect(t, result), context.Canceled)
+	})
+
+	t.Run("two addresses", func(t *testing.T) {
+		first, _ := silentListener(t)
+		second, _ := silentListener(t)
+		client, err := NewClient(first + "," + second)
+		require.NoError(t, err)
+		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+		defer cancel()
+
+		err = awaitConnect(t, startConnect(ctx, client))
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+	})
+}
+
+// startConnect runs Connect in its own goroutine; awaitConnect receives its
+// result.
+func startConnect(ctx context.Context, client *Client) <-chan error {
+	result := make(chan error, 1)
+	go func() { result <- client.Connect(ctx) }()
+	return result
+}
+
+// awaitConnect returns the result of a Connect started by startConnect, and
+// fails the test when it is not there within connectWait. It then still waits
+// for it, so no Connect outlives the test; nats.go's connect timeout bounds
+// that wait.
+func awaitConnect(t *testing.T, result <-chan error) error {
+	t.Helper()
+	start := time.Now()
+	wait := time.NewTimer(connectWait)
+	defer wait.Stop()
+	select {
+	case err := <-result:
+		return err
+	case <-wait.C:
+		err := <-result
+		t.Errorf("Connect did not return within %v; it returned after %v with %v",
+			connectWait, time.Since(start).Round(time.Millisecond), err)
+		return err
+	}
+}
+
+// silentListener listens on an ephemeral loopback port and accepts connections
+// without ever answering, as a NATS server that does not respond. A value is
+// ready on accepted once it has accepted a connection. Cleanup closes the
+// listener and every connection it accepted.
+func silentListener(t *testing.T) (url string, accepted <-chan struct{}) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	signal := make(chan struct{}, 1)
+	done := make(chan struct{})
+	var conns []net.Conn // written by the accept loop; read after done is closed
+	go func() {
+		defer close(done)
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			conns = append(conns, c)
+			select {
+			case signal <- struct{}{}:
+			default:
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		_ = ln.Close()
+		<-done
+		for _, c := range conns {
+			_ = c.Close()
+		}
+	})
+	return "nats://" + ln.Addr().String(), signal
 }

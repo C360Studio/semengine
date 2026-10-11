@@ -114,7 +114,7 @@
 //
 //	// Create a stream. An ordinary stream MUST declare a finite MaxAge and a
 //	// finite MaxBytes, and creation is refused without them. MaxBytes 0 and -1
-//	// both mean unlimited to JetStream (P16), so neither is a declaration. Set
+//	// both mean unlimited to JetStream (P16, at nats-server v2.14.7), so neither is a declaration. Set
 //	// Discard explicitly too — it cannot be required (DiscardOld is the field's
 //	// zero value) but at a finite MaxBytes it decides whether the oldest
 //	// messages are evicted or the newest are refused.
@@ -259,12 +259,6 @@
 //
 //	err := client.Publish(ctx, "subject", data)
 //	if err != nil {
-//	    // Check for circuit breaker
-//	    if errors.Is(err, natsclient.ErrCircuitOpen) {
-//	        // Back off and retry later
-//	        return
-//	    }
-//
 //	    // Check for connection issues
 //	    if errors.Is(err, natsclient.ErrNotConnected) {
 //	        // Trigger reconnection
@@ -500,15 +494,11 @@
 //	    }
 //	    defer client.Close(ctx)
 //
-//	    // Publish with automatic reconnection handling
+//	    // While nats.go reconnects, Publish returns ErrNotConnected at once, and the
+//	    // loop tries again on its next tick. A nil error means the message is in
+//	    // nats.go's buffer, not that the server has it (ADR-112).
 //	    for {
-//	        err := client.Publish(ctx, "telemetry.data", []byte("sensor reading"))
-//	        if err != nil {
-//	            if errors.Is(err, natsclient.ErrCircuitOpen) {
-//	                log.Println("Circuit open, waiting...")
-//	                time.Sleep(5 * time.Second)
-//	                continue
-//	            }
+//	        if err := client.Publish(ctx, "telemetry.data", []byte("sensor reading")); err != nil {
 //	            log.Printf("Publish error: %v", err)
 //	        }
 //	        time.Sleep(time.Second)

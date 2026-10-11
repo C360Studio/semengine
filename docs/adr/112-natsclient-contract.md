@@ -42,7 +42,9 @@ the quick probes (P10, P12, P13, P15, p15b, P17, P18, P20, and P23 to P25) were 
   | T8 | `TestCloseEndsAReconnectDial` | `client_close_held_test.go` |
   | T9 | `TestWriteTimeoutAndPingIntervalOptions` | `client_write_timeout_test.go` |
 
-  Three of them depart from that definition in part. T8, and T4's cases "deadline while dialling" and "host name resolved
+  Some depart from that definition in part. T3 never reaches a server, and T4's cases "deadline", "cancel once
+  accepted" and "two addresses" run against a test listener that accepts and never answers, in place of a server. T8,
+  and T4's cases "deadline while dialling" and "host name resolved
   inside the dial", dial through a stand-in for the network dial (see Alternatives). T7 checks natsclient's own two
   sentinels and drives no server.
 
@@ -82,7 +84,8 @@ Each line below names its backing. Anything not backed is not promised.
   ends the dial or the handshake. Backed by T3 and T4, and by P18 and P25: 301-302 ms, where `main` took 5 s or 10 s.
   A hostname reaches natsclient's dialer unresolved (`nats.SkipHostLookup`), so its lookup ends with the context too
   (T4; PR #177 comments 6111641674 and 6111684071). A hostname's addresses are then dialled in the resolver's order,
-  within each address family: nats.go's shuffle of them is gone, and its shuffle of separate URLs remains. The context
+  within each address family: nats.go's shuffle of them is gone, and its shuffle of separate URLs remains (read, not measured:
+  `nats.go:2484-2513`, `net/dial.go:539-557`). The context
   does not bound later reconnects (T5).
 - **Every other call does not end with its context while a write is held.** This covers `Publish`, `Request`,
   `Subscribe`, the JetStream and key-value calls, and a consumer's setup.

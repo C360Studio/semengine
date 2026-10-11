@@ -26,7 +26,7 @@ type KVEntry struct {
 type KVOptions struct {
 	MaxRetries            int           // Maximum CAS retry attempts
 	RetryDelay            time.Duration // Initial delay between retries
-	Timeout               time.Duration // Ends the wait for the server's answer, not a held write (P14; ADR-112)
+	Timeout               time.Duration // Ends the wait for the server's answer, not a held write (P13, P14; ADR-112)
 	MaxValueSize          int           // Maximum size for values (default: 1MB)
 	UseExponentialBackoff bool          // Enable exponential backoff with jitter
 	MaxRetryDelay         time.Duration // Maximum delay between retries

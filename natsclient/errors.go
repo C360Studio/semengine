@@ -299,8 +299,9 @@ func (c *Client) RequestReadyClassified(
 }
 
 // IsNoResponders reports whether err is (or wraps) the NATS "no responders"
-// transport error — the responder is not subscribed. This is TRANSIENT at
-// startup / after a reconnect (retry via a readiness-gated read), and distinct
+// transport error — the responder is not subscribed. The condition is
+// temporary at startup / after a reconnect (retry via a readiness-gated read);
+// its errs class is not promised (ADR-112). It is distinct
 // from a timeout of an EXISTING responder (which signals it is hung — surface,
 // don't retry). On nats-server's default configuration a request with no
 // subscriber gets no responders at once (P15; TestIntegration_Request_Timeout

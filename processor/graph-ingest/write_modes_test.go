@@ -208,6 +208,71 @@ func TestWriteModesAgreeAcrossLanes(t *testing.T) {
 	})
 }
 
+// heldStatement describes one stored statement as object/source/second/confidence/expiry, the
+// expiry as a time of day or "-" when the statement has none.
+func heldStatement(tr message.Triple) string {
+	expiry := "-"
+	if tr.ExpiresAt != nil {
+		expiry = tr.ExpiresAt.UTC().Format(time.TimeOnly)
+	}
+	return fmt.Sprintf("%v/%s/%d/%g/%s", tr.Object, tr.Source, tr.Timestamp.Second(), tr.Confidence, expiry)
+}
+
+// TestBirthCountsEqualStatementsOnce: a birth on each lane carries a statement twice, equal in
+// every field, and three that each differ from it in one field: Timestamp, Confidence, ExpiresAt.
+// The entity is born with the repeated statement once and the three beside it (graph-entity-writes,
+// "One rule per write mode": within one write, statements equal in every field count once;
+// checkpoint 3 H1, PR #93 comment 6099921473). On the stream lane the same arrival, sent again to
+// the entity it bore, leaves the same statements, so the birth and the replace agree.
+func TestBirthCountsEqualStatementsOnce(t *testing.T) {
+	expires := wmTime(1).Add(time.Hour)
+	statements := func(subject string) []message.Triple {
+		repeated := wmStatement(subject, "v", "source-a", wmTime(1))
+		later, lessSure, expiring := repeated, repeated, repeated
+		later.Timestamp = wmTime(2)
+		lessSure.Confidence = 0.5
+		expiring.ExpiresAt = &expires
+		return []message.Triple{repeated, repeated, later, lessSure, expiring}
+	}
+	want := []string{"v/source-a/1/1/-", "v/source-a/2/1/-", "v/source-a/1/0.5/-", "v/source-a/1/1/13:00:01"}
+	assertBorn := func(t *testing.T, c *Component, entityID string) {
+		t.Helper()
+		var got []string
+		for _, triple := range storedEntity(t, c, entityID).Triples {
+			if triple.Predicate == writeModesPredicate {
+				got = append(got, heldStatement(triple))
+			}
+		}
+		slices.Sort(got)
+		if want := slices.Sorted(slices.Values(want)); !slices.Equal(got, want) {
+			t.Errorf("%s holds %v, want %v", entityID, got, want)
+		}
+	}
+
+	lane := newWriteModesLane(t)
+	t.Run("mutation", func(t *testing.T) {
+		const id = "c360.test.write.repeat.mutation.001"
+		createCanonicalEntity(t, lane.c, id, statements(id))
+		assertBorn(t, lane.c, id)
+	})
+	t.Run("in-process", func(t *testing.T) {
+		const id = "c360.test.write.repeat.process.001"
+		entity := canonicalMutationEntity(id)
+		entity.Triples = statements(id)
+		if err := lane.c.CreateEntity(context.Background(), entity); err != nil {
+			t.Fatalf("CreateEntity: %v", err)
+		}
+		assertBorn(t, lane.c, id)
+	})
+	t.Run("stream", func(t *testing.T) {
+		const id = "c360.test.write.repeat.stream.001"
+		lane.send(id, "source-a", statements(id)...)
+		assertBorn(t, lane.c, id)
+		lane.send(id, "source-a", statements(id)...)
+		assertBorn(t, lane.c, id)
+	})
+}
+
 func TestReplaceKeepsOtherSourcesStatements(t *testing.T) {
 	lane := newWriteModesLane(t)
 	const id = "c360.test.write.sources.entity.001"

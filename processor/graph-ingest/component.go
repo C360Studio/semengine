@@ -2060,7 +2060,8 @@ func (c *Component) CreateEntity(ctx context.Context, entity *graph.EntityState)
 // by extractEntityFromMessage from a Graphable arriving on the
 // JetStream input) WITHOUT clobbering pre-existing triples on the
 // entity. First write behaves like CreateEntity (the entity didn't
-// exist; its fields land verbatim); subsequent writes replace each
+// exist; its fields land as given, a statement repeated equal in every
+// field stored once); subsequent writes replace each
 // (predicate, source) set the arrival carries, unless it is older than the
 // stored set, keeping every other source's statements (graph.ReplaceBySource,
 // design D15; the create-time indexing profile is preserved), and take the
@@ -2260,6 +2261,7 @@ func (c *Component) createEntityWithReceipt(
 	// explicit declaration (envelope/Graphable, already on entity.Triples) and
 	// otherwise applies the fallback floor + default metric.
 	c.reconcileIndexingProfile(entity, at)
+	entity.Triples = distinctStatements(entity.Triples)
 
 	// Serialize entity (now includes hierarchy triples if enabled)
 	data, err := graph.MarshalEntityState(entity)

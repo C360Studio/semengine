@@ -131,6 +131,12 @@ func TestWriteRefusesStatementWithoutSourceOrTimestamp(t *testing.T) {
 		{"stream merge without source", streamMerge(inProcess, noSource(inProcess)), []string{"triple[1]", "source"}},
 		{"stream merge without timestamp", streamMerge(inProcess, noTimestamp(inProcess)), []string{"triple[1]", "timestamp"}},
 		{"stream merge with no statement", streamMerge(), nil},
+		// A birth stores a repeated statement once (checkpoint 3 H1), and the rule runs on the
+		// statements as the caller gave them, before the repeat is dropped, so the index is the
+		// caller's: the statement without a source is the request's third.
+		{"mutation create, a repeat before a statement without source", mutationCreate(inProcess, inProcess, noSource(inProcess)), []string{"triple[2]", "source"}},
+		{"in-process create, a repeat before a statement without source", inProcessCreate(inProcess, inProcess, noSource(inProcess)), []string{"triple[2]", "source"}},
+		{"stream merge, a repeat before a statement without source", streamMerge(inProcess, inProcess, noSource(inProcess)), []string{"triple[2]", "source"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

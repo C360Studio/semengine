@@ -275,6 +275,7 @@ func (c *Component) handleCanonicalCreate(ctx context.Context, data []byte) ([]b
 	if err := graph.ValidateEntityStateContract(entity); err != nil {
 		return nil, rejectInvalid(graph.ErrorCodeInvalidRequest, err)
 	}
+	entity.Triples = distinctStatements(entity.Triples)
 	encoded, err := graph.MarshalEntityState(entity)
 	if err != nil {
 		return nil, rejectInvalid(graph.ErrorCodeInvalidRequest, err)

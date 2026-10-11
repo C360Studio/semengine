@@ -28,7 +28,8 @@ import (
 // returns the revision it committed (where the caller uses it) and the bucket's error unwrapped,
 // so callers classify it as before.
 // Every lane that writes statements first applies the seam's statement-metadata rule,
-// requireStatementMetadata, to the statements its caller gave.
+// requireStatementMetadata, to the statements its caller gave. Every birth, on each of the three
+// lanes, stores a statement repeated equal in every field once (distinctStatements).
 //
 // The modes, and the lanes on which each is used:
 //
@@ -90,6 +91,17 @@ func refuseMissingMetadata(index int, field string) error {
 		fmt.Errorf("triple[%d] has no %s", index, field))
 }
 
+// distinctStatements is a birth's statements with each one equal in every field to an earlier
+// one left out, the first kept, in order: within one write such statements count once (design
+// D15). Each birth applies it last, to the statements it encodes, after its lane has checked the
+// statements its caller gave, so a refusal still names the caller's index (checkpoint 3 H1). It
+// is the replace rule's own comparison: over no stored statement, graph.ReplaceBySource applies
+// every set the write carries and keeps each such statement once, so a birth and a later replace
+// with the same statements store the same ones.
+func distinctStatements(triples []message.Triple) []message.Triple {
+	return graph.ReplaceBySource(nil, triples).Triples
+}
+
 // createEntity is the create mode: the bucket's atomic create-or-fail, the only admitted birth
 // primitive. An existing key is refused with natsclient.ErrKVKeyExists, which is returned as is
 // so each lane makes its own decision (entity_already_exists on the mutation lane).
@@ -105,7 +117,8 @@ func (c *Component) createEntity(ctx context.Context, entityID string, encoded [
 // replaceEntity is the stream lane's write: a read-modify-write under the KV revision
 // (compare-and-set), so concurrent arrivals on the same subject converge without racing.
 // When the key is absent the arrival is a birth: a copy of entity is written with
-// hierarchyTriples appended and its profile stamped, unless readFound is set. readFound means
+// hierarchyTriples appended, its profile stamped and each statement repeated equal in every field
+// stored once (distinctStatements), unless readFound is set. readFound means
 // the caller read the key before the hierarchy inference and found the entity, so it ran no
 // inference; finding the key absent now means the entity was deleted in between, and a birth
 // would lack its hierarchy. Nothing is written and the error is classified transient: the
@@ -146,7 +159,7 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 		stale = nil
 		// First write: entity didn't exist (absence is revision 0, never an empty value; design
 		// D23). Apply hierarchy triples (deterministic-per-ID so safe to apply once on create),
-		// then store verbatim.
+		// then store each statement once.
 		if read == 0 {
 			if readFound {
 				// Not retried by the bucket (a callback error ends the call): the redelivery's
@@ -162,6 +175,7 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 				// ADR-054: first write is entity birth — stamp the profile
 				// (explicit-if-declared via IndexingProfiler, else floor).
 				c.reconcileIndexingProfile(&born, at)
+				born.Triples = distinctStatements(born.Triples)
 				data, err := graph.MarshalEntityState(&born)
 				if err != nil {
 					return nil, err

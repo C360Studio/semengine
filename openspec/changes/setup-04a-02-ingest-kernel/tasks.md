@@ -597,6 +597,15 @@ posted on this pull request.
       `TestDeleteCleanupKeepsNewerPoison` (`poison_scoping_test.go`), each written first and failing on `8c09644`;
       three `task mutate:check` detections: the record read after the verify's `Get`, and the absence clear unbounded,
       fail the first; the delete clear unbounded fails the second. Notes: `notes/cp3-B1.md`.
+- [ ] 4.12 (D) Checkpoint 3 H1 (PR #93 comment 6099921473; design D15): a birth on every lane stores a statement
+      repeated equal in every field once, and keeps those that differ in `Timestamp`, `Confidence` or `ExpiresAt`;
+      each lane checks its caller's statements before the repeat is dropped, so a refusal names the caller's index.
+      `TestBirthCountsEqualStatementsOnce` (`write_modes_test.go`; `graph-entity-writes`, "One rule per write
+      mode"), written first and failing on `19d021f` on all three lanes; three rows of
+      `TestWriteRefusesStatementWithoutSourceOrTimestamp` (a repeat before a statement without a source, one per
+      lane), which already hold on `19d021f`. Six `task mutate:check` detections: each lane's step removed fails
+      that lane's subtest, and each lane's step moved ahead of its validation fails that lane's row. Notes:
+      `notes/cp3-H1.md`.
 
 ## 5. Ledger, gates and boundaries
 

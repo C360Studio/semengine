@@ -405,14 +405,18 @@ func TestAddTriple_PreExistingStoredDuplicatesAreKeptAndStillSuppress(t *testing
 	ctx := context.Background()
 	triple := dedupTriple(dedupSubject)
 
-	// Write the poisoned-by-history shape directly: two identical stored copies.
+	// Write the poisoned-by-history shape directly: two identical stored copies. It is planted in
+	// the bucket, since a create stores each statement once (checkpoint 3 H1).
 	entity := &graph.EntityState{
 		ID:          dedupSubject,
 		MessageType: testEntityType(),
 		Triples:     []message.Triple{triple, triple},
 		UpdatedAt:   time.Now(),
 	}
-	require.NoError(t, comp.CreateEntity(ctx, entity))
+	encoded, err := graph.MarshalEntityState(entity)
+	require.NoError(t, err)
+	_, err = comp.entityBucket.Create(ctx, dedupSubject, encoded)
+	require.NoError(t, err)
 	before, revBefore := readDedupEntity(t, comp, dedupSubject)
 	require.Equal(t, 2, countDedupTriples(before, triple.Predicate),
 		"the pre-existing duplicates must survive the read unchanged")

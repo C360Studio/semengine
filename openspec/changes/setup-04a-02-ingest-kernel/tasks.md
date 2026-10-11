@@ -537,7 +537,7 @@ posted on this pull request.
       body). A bucket holding 8-byte records from SemStreams is refused key by key until deleted (notes). Not
       covered: a stream recreated while graph-ingest runs. `task verify` on `abb302f` ended `verify: ok`. Notes:
       `notes/4.3.md`.
-- [ ] 4.4 (D) Settlement (Q18), in two parts. Part 1: the process-kill test of design D8 (a `prochost.Helper` in
+- [x] 4.4 (D) Settlement (Q18), in two parts. Part 1: the process-kill test of design D8 (a `prochost.Helper` in
       graph-ingest's `TestHelperProcess`; the guard-record write held open by a `_test.go` wrapper in the first run;
       the entity write and the pending acknowledgement confirmed from the buckets and the consumer's info; the helper
       confirmed alive, then killed; redelivery acknowledged in the second run and the state equal to one
@@ -547,6 +547,15 @@ posted on this pull request.
       run on it is recorded in `notes/4.4.md`; commit B runs each lane's input through
       `ConsumeDeliveryWithHeartbeat`, with the long-apply test green, the `keyed_ingest` decision tests and the
       interrupted-application test ("An interrupted application is redelivered, not a stop").
+      Done: part 1 in `54893c7`, commit A in `2fe8e32`, commit B in `08a8fb2`. Commit B runs each input through
+      `ConsumeDeliveryWithHeartbeat` with a policy built per input on the lane context; `applyIngest` returns a
+      decision and holds no message; when the helper reports that the owner must stop, the input is left unsettled,
+      logged at ERROR and counted in Health's error count and `work_interrupted_total{cause}`, and the lane keeps
+      running. The long-apply test (`long_apply_integration_test.go`) failed first on `2fe8e32` and passes 4 of 4 on
+      `08a8fb2` (one delivery, none redelivered, 8 in-progress signals); `TestProcessIngest_DecisionsSettleAsBefore`
+      and `TestInterruptedApplicationIsRedeliveredNotAStop` failed first on the base's `processIngest`. Five
+      `task mutate:check` detections and one long-apply mutant by hand. `task verify` on `08a8fb2` ended
+      `verify: ok`. Notes: `notes/4.4.md`.
 - [x] 4.5 (D) Q13: SemStreams PR #1437's graph-ingest half (head `0ea823a6`) with its two test files on a
       test-registered payload type; the "Payload panics while giving its entity ID" scenario green.
       Done in `f6e8506`: `decodeEntity` validates the envelope before extraction and turns a panic in payload code into
@@ -565,8 +574,12 @@ posted on this pull request.
       name and that no `payloadbuiltins` remains; it failed first at `factory_registry_test.go:126-127`; one
       `task mutate:check` detection (commit body). `task verify` on `e70e177` ended `verify: ok`. Notes:
       `notes/4.6.md`.
-- [ ] 4.7 (D) #29 and #102: the `component` contract test of task 3.11 green on the ported tree, with its package
+- [x] 4.7 (D) #29 and #102: the `component` contract test of task 3.11 green on the ported tree, with its package
       count posted.
+      Done: on `802aa87` the contract test and its sensitivity test (eight cases) pass; `go list -deps ./component`
+      lists 289 packages, 17 from this module, none of them `agentic`, `graph`, `graph/…`, `internal/graphmutation`,
+      `pkg/lifecycle` or `pkg/projection`; `pkg/projection/contract` is the one allowed path. Posted as PR comment
+      6115233258.
 - [x] 4.8 (D) #100 and #98, the `graph-entity-writes` scenarios through graph-ingest, each written first and failing on
       the pin's code: `TestWriteModesAgreeAcrossLanes`, `TestReplaceKeepsOtherSourcesStatements`,
       `TestStreamLaneGroupsByStampedSource`, `TestReconcileReplacesOnlyItsSource`,

@@ -213,9 +213,12 @@ func ClassifyReply(msg *nats.Msg) ([]byte, error) {
 // runs the reply through ClassifyReply so the returned error covers
 // both transport and handler failure modes uniformly.
 //
-// Transport failures (no responders, timeout) are returned as the underlying
-// error and classify as ErrorTransient via pkg/errs.IsTransient. Classification
-// does not authorize a retry; the operation's contract owns that decision.
+// Transport failures are returned as the underlying error. A timeout returns
+// context.DeadlineExceeded, which classifies as ErrorTransient via
+// pkg/errs.IsTransient (P10). No responders returns nats.ErrNoResponders, matched
+// by errors.Is or IsNoResponders; its class is not promised until #93 settles how
+// raw nats.go errors classify (ADR-112). Classification does not authorize a
+// retry; the operation's contract owns that decision.
 //
 // Handler failures arrive as a *errs.ClassifiedError reconstructed
 // from the X-Error-Class / X-Error-Code headers + {message, detail} body.
@@ -249,9 +252,10 @@ func (c *Client) RequestClassified(ctx context.Context, subject string, data []b
 // Use this only where an operation-specific contract explicitly authorizes
 // redelivery after transport ambiguity. The classified contract round-trips per
 // the same rules as RequestClassified: transport failures arrive as
-// the underlying error after the retry budget exhausts (classifies
-// as ErrorTransient via pkg/errs.IsTransient); handler failures
-// arrive as *errs.ClassifiedError reconstructed from the
+// the underlying error after the retry budget exhausts, a timeout as
+// context.DeadlineExceeded (transient by pkg/errs.IsTransient, P10) and
+// no responders as nats.ErrNoResponders (class not promised, ADR-112);
+// handler failures arrive as *errs.ClassifiedError reconstructed from the
 // X-Error-Class / X-Error-Code headers + {message, detail} body.
 // Caller branches on errs.IsInvalid / IsTransient / IsFatal.
 //
@@ -298,10 +302,12 @@ func (c *Client) RequestReadyClassified(
 // transport error — the responder is not subscribed. This is TRANSIENT at
 // startup / after a reconnect (retry via a readiness-gated read), and distinct
 // from a timeout of an EXISTING responder (which signals it is hung — surface,
-// don't retry). Note (per request_integration_test.go): whether an absent
-// responder surfaces as ErrNoResponders vs a plain timeout is server-config
-// dependent, so a false here does NOT prove a responder exists — it only
-// confirms the fast-fail no-responders signal when the server sends it.
+// don't retry). On nats-server's default configuration a request with no
+// subscriber gets no responders at once (P15; TestIntegration_Request_Timeout
+// asserts the error). Whether another server configuration answers with a
+// plain timeout instead is not promised, so a false here does NOT prove a
+// responder exists — it only confirms the fast-fail no-responders signal when
+// the server sends it.
 func IsNoResponders(err error) bool {
 	return errors.Is(err, nats.ErrNoResponders)
 }

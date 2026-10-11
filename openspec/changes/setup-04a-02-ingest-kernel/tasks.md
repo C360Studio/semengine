@@ -523,9 +523,20 @@ posted on this pull request.
       body). Open for the owner: the bucket's compare-and-set refusal (`canonical_mutations.go:350`), for a write
       landing after graph-ingest's read, names only the expected revision, while the requirement's text names both.
       `task verify` on `12b2b9d` ended `verify: ok`. Notes: `notes/4.2.md`.
-- [ ] 4.3 (D) #15: memory stream + `Fixture.Restart` + retained guard bucket: re-ingestion at lower sequences is
+- [x] 4.3 (D) #15: memory stream + `Fixture.Restart` + retained guard bucket: re-ingestion at lower sequences is
       applied and queried back; a same-generation redelivery is a no-op; the no-bucket degrade of design D8 is logged
       and counted. Fails first on the pin's guard key.
+      Done in `abb302f`: the generation is the input stream's creation time (`StreamInfo.Created`), read from the
+      server once per input port in `Start` before the consumer binds (a stream with none fails `Start`); the record
+      keeps its key `<entity>/<stream>` and stores 16 bytes, generation then sequence, so a new generation replaces
+      the old record (D21 refuses any other length). With no guard bucket each input is logged and counted
+      (`semengine_graph_ingest_unguarded_inputs_total`). Tests: `guard_generation_test.go` and
+      `guard_generation_integration_test.go` (`TestIntegration_IngestGuard_StreamRecreatedWithLowerSequences` failed
+      first at `:146` with `older-3` read back); same-generation redelivery by `TestGuardRecordIsPerGeneration` and
+      the file-stream restart test. Three `task mutate:check` detections and two integration mutants by hand (commit
+      body). A bucket holding 8-byte records from SemStreams is refused key by key until deleted (notes). Not
+      covered: a stream recreated while graph-ingest runs. `task verify` on `abb302f` ended `verify: ok`. Notes:
+      `notes/4.3.md`.
 - [ ] 4.4 (D) Settlement (Q18): the process-kill test of design D8 (a `prochost.Helper` in graph-ingest's
       `TestHelperProcess`; the guard-record write held open by a `_test.go` wrapper in the first run; the entity write
       and the pending acknowledgement confirmed from the buckets and the consumer's info; the helper confirmed alive,

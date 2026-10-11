@@ -727,6 +727,103 @@
   owner: setup-04a-01-floor technical writer
   disposition: adapt
 
+- source_path: docs/adr/066-honest-graph-index-readiness.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's decision record for honest graph-index readiness, the revision-lag caught-up signal;
+    carried without code so the readiness ADR (ADR-109, issue #110) can cite it (#157 owner ruling,
+    comment 6085722578)
+  destination: docs/adr/066-honest-graph-index-readiness.md
+  contract: the decision text as at the pin
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    lint fixes only: pin lines 219-220 and 284-285 rewrapped so that no line starts with "+", which
+    markdownlint reads as a bullet (MD004, MD032); on GitHub the pin renders those two lines as
+    bullets, here they read as part of their sentences. A markdownlint-disable-next-line MD018
+    comment added above pin line 121, which starts with "#430". No decision wording changed. Port
+    note added under the title: carried without code for #157; issue, pull request and release
+    numbers are SemStreams' or a sister repository's; ADR-083 and ADR-084 are ported with it;
+    ADR-062, ADR-065, the graph-index-readiness spec and the code it names other than natsclient
+    (BucketLastSeq, CreateKeyValueBucket) are not yet ported; file and line references are the pin's;
+    the semsource code and decisions it names are that repository's
+  proving_tests: n/a (task docs:check lints it)
+  owner: "#157 carry-in technical writer"
+  disposition: adapt
+
+- source_path: docs/adr/083-readiness-as-distributed-state.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's decision record for readiness published as KV state and view staleness measured in
+    time; carried without code so the readiness ADR (ADR-109, issue #110) can cite it (#157 owner ruling,
+    comment 6085722578)
+  destination: docs/adr/083-readiness-as-distributed-state.md
+  contract: the decision text as at the pin
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    no edits to the pin's text; the 81-column title is kept, since MD013 does not flag a heading
+    whose only text past column 80 is its last word. Port note added under the title: carried
+    without code for #157; issue numbers are SemStreams' or a sister repository's and the OpenSpec
+    change it names is SemStreams'; ADR-066, ADR-084 and ADR-085 are ported with it; ADR-055,
+    ADR-081, ADR-082 and the code it names are not yet ported; no code here creates the
+    GRAPH_STATUS bucket
+  proving_tests: n/a (task docs:check lints it)
+  owner: "#157 carry-in technical writer"
+  disposition: adapt
+
+- source_path: docs/adr/084-readiness-licenses-health-not-absence.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's decision record that readiness licenses health, never absence; carried without code
+    so the readiness ADR (ADR-109, issue #110) can cite it (#157 owner ruling, comment 6085722578)
+  destination: docs/adr/084-readiness-licenses-health-not-absence.md
+  contract: the decision text as at the pin
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    no edits to the pin's text. Port note added under the title: carried without code for #157;
+    issue numbers are SemStreams' or a sister repository's, and the OpenSpec change it names and
+    that change's design.md are SemStreams'; ADR-066, ADR-083 and ADR-085 are ported with it;
+    ADR-081, ADR-082 and the code it names are not yet ported; file and line references are the
+    pin's
+  proving_tests: n/a (task docs:check lints it)
+  owner: "#157 carry-in technical writer"
+  disposition: adapt
+
+- source_path: docs/adr/085-gate-on-health-report-freshness.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's decision record for gating on health and reporting freshness; carried without code so
+    the readiness ADR (ADR-109, issue #110) can cite it (#157 owner ruling, comment 6085722578)
+  destination: docs/adr/085-gate-on-health-report-freshness.md
+  contract: the decision text as at the pin
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    lint fix only: a markdownlint-disable-next-line MD029 comment added above pin line 122, decision
+    7, a numbered list that starts at 7 after a paragraph; no decision wording changed. Port note
+    added under the title: carried without code for #157; issue numbers are SemStreams' or a sister
+    repository's and the OpenSpec change it names is SemStreams'; ADR-066, ADR-083 and ADR-084 are
+    ported with it; ADR-081, ADR-082 and the code it names are not yet ported
+  proving_tests: n/a (task docs:check lints it)
+  owner: "#157 carry-in technical writer"
+  disposition: adapt
+
+- source_path: docs/adr/088-readiness-is-per-producer-aggregation-is-the-consumers.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's decision record that readiness is published per producer and aggregation belongs to
+    the consumer; carried without code so the readiness ADR (ADR-109, issue #110) can cite it (#157 owner
+    ruling, comment 6085722578)
+  destination: docs/adr/088-readiness-is-per-producer-aggregation-is-the-consumers.md
+  contract: the decision text as at the pin
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    no edits to the pin's text. Port note added under the title: carried without code for #157;
+    issue numbers are SemStreams' or a sister repository's and the OpenSpec change it names is
+    SemStreams'; ADR-066, ADR-083, ADR-084 and ADR-085 are ported with it; the
+    graph-index-readiness spec and the code it names are not yet ported
+  proving_tests: n/a (task docs:check lints it)
+  owner: "#157 carry-in technical writer"
+  disposition: adapt
+
 - source_path: docs/concepts/16-federation.md
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
@@ -1643,7 +1740,7 @@
   dependencies_and_side_effects: >-
     metric, pkg/errs, pkg/retry, internal/resource (in-set); github.com/nats-io/nats.go v1.54.0
     and nats.go/jetstream; prometheus/client_golang; stdlib. Test-only:
-    github.com/nats-io/nats-server/v2 v2.14.7 (embedded broker, client_connect_test.go:104),
+    github.com/nats-io/nats-server/v2 v2.15.0 (embedded broker, client_connect_test.go:104),
     stretchr/testify, prometheus client_model and testutil; the integration lane imports
     internal/harness/natsfixture and internal/harness/probe and no natsclient test imports
     testcontainers (task 3.7b). Dials NATS; runs the health monitor, the metrics poller,
@@ -1660,7 +1757,7 @@
     proof, and the three Consume doc comments say so (owner answer 1, #9 comment 5980296112).
     Import paths differ from the pin: pkg/resource is internal/resource (design D5). Pin differences carried with the carried tests as the only
     regression evidence: nats.go v1.52.0 at the pin (go.mod:12) is v1.54.0 here; the embedded test
-    broker nats-server/v2 v2.12.4 at the pin (go.mod:11) is v2.14.7 here, the .nats-image line
+    broker nats-server/v2 v2.12.4 at the pin (go.mod:11) is v2.15.0 here, the .nats-image line
     (owner ruling, #9 comment 5969776736); T-B3 cannot see an embedded server, so one broker
     version across both lanes is review only. Context roots (design D1 re-measured: the pin's nine
     are two live production roots, the rest are doc.go comments at :35, :151, :245, :524 or

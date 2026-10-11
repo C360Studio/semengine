@@ -288,19 +288,55 @@ func maps(a, b map[string]int) bool {
 	return true
 }
 
-// S1-2: cancelling the test context while a phase is in I/O fails Start with context.Canceled,
-// records the parent state, removes the container, and does not retry.
+// S1-2: cancelling the test context while a phase is in I/O fails Start with
+// context.Canceled, records the parent state, removes every attempted container,
+// and does not start another attempt after cancellation. A mapped-port failure
+// may already have earned one replacement while the parent was live.
 func TestS1_2CancellationDuringIO(t *testing.T) {
-	for _, phase := range []Phase{PhaseStart, PhaseConnect} {
-		t.Run(string(phase), func(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		phase          Phase
+		failMappedPort bool
+	}{
+		{name: string(PhaseStart), phase: PhaseStart},
+		{name: string(PhaseConnect), phase: PhaseConnect},
+		{name: "connect after mapped-port failure", phase: PhaseConnect, failMappedPort: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			f := New(t)
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			var startedAfterCancel, signaled atomic.Bool
+			realStart := f.deps.start
+			f.deps.start = func(startCtx context.Context, req testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
+				if ctx.Err() != nil {
+					startedAfterCancel.Store(true)
+				}
+				return realStart(startCtx, req)
+			}
+			if tc.failMappedPort {
+				real := f.deps.mappedPort
+				failed := false
+				f.deps.mappedPort = func(ctx context.Context, c testcontainers.Container) (string, error) {
+					if !failed {
+						failed = true
+						return "", errors.New("injected mapped-port failure")
+					}
+					return real(ctx, c)
+				}
+			}
 			entered, release := make(chan struct{}), make(chan struct{})
-			switch phase {
+			signal := func() {
+				if signaled.CompareAndSwap(false, true) {
+					close(entered)
+				}
+			}
+			switch tc.phase {
 			case PhaseStart:
 				real := f.deps.start
 				f.deps.start = func(ctx context.Context, req testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
 					c, err := real(ctx, req)
-					close(entered)
+					signal()
 					<-release
 					return c, err
 				}
@@ -308,33 +344,68 @@ func TestS1_2CancellationDuringIO(t *testing.T) {
 				real := f.deps.connect
 				f.deps.connect = func(ctx context.Context, url string) (*nats.Conn, error) {
 					nc, err := real(ctx, url)
-					close(entered)
+					signal()
 					<-release
 					return nc, err
 				}
 			}
-			ctx, cancel := context.WithCancel(t.Context())
 			result := make(chan error, 1)
 			go func() { result <- f.Start(ctx) }()
-			<-entered
+			select {
+			case <-entered:
+			case err := <-result:
+				t.Fatalf("Start ended before phase %s: %v", tc.phase, err)
+			}
 			cancel()
 			close(release)
 			err := <-result
+			r := readRecord(t, f)
+			if !errors.Is(err, context.Canceled) {
+				t.Fatalf("Start = %v, want context.Canceled", err)
+			}
+			if len(r.Attempts) < 1 || len(r.Attempts) > 2 ||
+				tc.phase == PhaseStart && len(r.Attempts) != 1 ||
+				tc.failMappedPort && len(r.Attempts) != 2 {
+				t.Fatalf("unexpected attempts: %+v", r.Attempts)
+			}
+			failures := []error{err}
+			if _, single := err.(*Error); !single {
+				joined, ok := err.(interface{ Unwrap() []error })
+				if !ok {
+					t.Fatalf("Start = %T, want joined attempt errors", err)
+				}
+				failures = joined.Unwrap()
+			}
+			if len(failures) != len(r.Attempts) {
+				t.Fatalf("%d error(s), %d recorded attempt(s): %v", len(failures), len(r.Attempts), err)
+			}
+			for i, a := range r.Attempts {
+				if a.Attempt != i+1 || a.Container == "" {
+					t.Fatalf("attempt %d has incomplete record: %+v", i+1, a)
+				}
+				if containerExists(t, a.Container) {
+					t.Fatalf("attempt %d container %s survives cancellation", a.Attempt, a.Container)
+				}
+				if i < len(r.Attempts)-1 {
+					if len(a.Phases) == 0 || a.Phases[len(a.Phases)-1].Phase != string(PhaseMappedPort) ||
+						a.Error == "" || a.ParentErr != "" || a.Cleanup != "" {
+						t.Fatalf("attempt %d was not a cleaned-up mapped-port failure with live parent: %+v", a.Attempt, a)
+					}
+				}
+			}
 			var fe *Error
-			if !errors.Is(err, context.Canceled) || !errors.As(err, &fe) || fe.Phase != phase {
-				t.Fatalf("Start = %v, want context.Canceled at phase %s", err, phase)
+			if !errors.As(failures[len(failures)-1], &fe) ||
+				fe.Attempt != len(r.Attempts) || fe.Phase != tc.phase ||
+				fe.ContainerID != r.Attempts[len(r.Attempts)-1].Container {
+				t.Fatalf("terminal attempt = %v, want cancellation at phase %s", failures[len(failures)-1], tc.phase)
 			}
-			if !errors.Is(fe.ParentErr, context.Canceled) || fe.Cleanup != nil {
-				t.Fatalf("parent state %v cleanup %v", fe.ParentErr, fe.Cleanup)
+			if !errors.Is(fe.ParentErr, context.Canceled) || fe.Cleanup != nil ||
+				r.Attempts[len(r.Attempts)-1].ParentErr != context.Canceled.Error() {
+				t.Fatalf("terminal parent state %v cleanup %v record %+v",
+					fe.ParentErr, fe.Cleanup, r.Attempts[len(r.Attempts)-1])
 			}
-			if containerExists(t, fe.ContainerID) {
-				t.Fatalf("container %s survives a cancelled Start", fe.ContainerID)
-			}
-			if r := readRecord(t, f); len(r.Attempts) != 1 || r.Attempts[0].ParentErr == "" {
-				t.Fatalf("want one attempt recording the parent state, got %+v", r.Attempts)
-			}
-			if n := f.callCounts()["start"]; n != 1 {
-				t.Fatalf("start called %d times; a cancelled Start must not retry", n)
+			if startedAfterCancel.Load() {
+				t.Fatal("Start called the container start hook after cancellation")
 			}
 		})
 	}

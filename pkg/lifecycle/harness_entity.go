@@ -11,9 +11,10 @@ import (
 
 // HarnessMessageType returns the message.Type stamped on every entity the
 // harness Manager births — key "lifecycle.harness.v1". Registered by
-// RegisterPayloads (via payloadbuiltins.Register) with floor control
-// (ADR-103), so a harness birth passes graph-ingest's registered-type gate and
-// a harness entity can arrive on the fact lane as itself.
+// RegisterPayloads, which a consumer or test calls on its payload registry,
+// with floor control (ADR-103), so a harness birth passes graph-ingest's
+// registered-type gate and a harness entity can arrive on the fact lane as
+// itself.
 func HarnessMessageType() message.Type {
 	return message.Type{
 		Domain:   "lifecycle",
@@ -60,8 +61,9 @@ func (e *HarnessEntity) UnmarshalJSON(data []byte) error {
 }
 
 // RegisterPayloads registers lifecycle.harness.v1 with the supplied registry.
-// Called from payloadbuiltins.Register at process bootstrap; a product that
-// builds its own registry and births lifecycle participants must call it too.
+// A consumer that births lifecycle participants calls it on the registry it
+// gives graph-ingest, at process bootstrap, and a test on the registry it
+// builds.
 func RegisterPayloads(reg *payloadregistry.Registry) error {
 	return reg.Register(&payloadregistry.Registration{
 		Domain:          "lifecycle",

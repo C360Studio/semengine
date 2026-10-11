@@ -42,8 +42,8 @@ const (
 )
 
 // Failure bounds for the settlement tests' waits; none paces a run. A redelivery comes once the consumer's
-// acknowledgement wait has passed since the first delivery, and graph-ingest's consumer keeps the server's 30-second
-// default, so that wait is bounded at twice it.
+// acknowledgement wait has passed since the first delivery, and graph-ingest's consumer keeps its own 30-second
+// default (these tests declare no ack_wait), so that wait is bounded at twice it.
 const (
 	settlementStartBound      = 30 * time.Second
 	settlementApplyBound      = 20 * time.Second

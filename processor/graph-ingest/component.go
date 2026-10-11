@@ -1353,6 +1353,29 @@ func (c *Component) setupSubscriptions(ctx, submitCtx context.Context) error {
 	return nil
 }
 
+// defaultIngestAckWait is the acknowledgement wait graph-ingest's consumer is created with
+// when its input port declares no ack_wait. It is passed to the consumer, so natsclient's
+// own fallback is never reached; it is the same 30 s, so a port that declares nothing keeps
+// the wait it had before graph-ingest read the port (design D8, "Long apply").
+const defaultIngestAckWait = 30 * time.Second
+
+// ingestDeliveryTiming returns the acknowledgement wait for an input port's consumer and
+// the interval at which an application is to tell the server it is still in progress: the
+// port's ack_wait and heartbeat_interval, or graph-ingest's defaults, 30 s and a quarter of
+// the wait in effect. A quarter leaves half the wait as margin under natsclient's ceiling,
+// which is half the wait, so a declared ack_wait alone never fails Start.
+func ingestDeliveryTiming(declared component.ConsumerConfig) (ackWait, heartbeat time.Duration) {
+	ackWait = declared.AckWait
+	if ackWait == 0 {
+		ackWait = defaultIngestAckWait
+	}
+	heartbeat = declared.HeartbeatInterval
+	if heartbeat == 0 {
+		heartbeat = ackWait / 4
+	}
+	return ackWait, heartbeat
+}
+
 // setupJetStreamConsumer creates a JetStream consumer for an input port
 func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port component.Port) error {
 	facts, err := port.Facts()
@@ -1413,6 +1436,7 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 		consumerCfg.DeliverPolicy = "all"
 	}
 
+	ackWait, heartbeat := ingestDeliveryTiming(consumerCfg)
 	cfg := natsclient.StreamConsumerConfig{
 		StreamName:    streamName,
 		ConsumerName:  consumerName,
@@ -1420,8 +1444,19 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 		DeliverPolicy: consumerCfg.DeliverPolicy,
 		AckPolicy:     consumerCfg.AckPolicy,
 		MaxDeliver:    consumerCfg.MaxDeliver,
+		AckWait:       ackWait,
 		MaxAckPending: consumerCfg.MaxAckPending, // gh#480: 0 leaves inherited/default/capped policy to NATS
 		AutoCreate:    false,
+	}
+	// The pair is checked by natsclient's own rules for heartbeat delivery, once, before
+	// the consumer is created, so a pair those rules refuse fails Start. The policy the
+	// check builds is discarded; its work never runs.
+	checkOnly := func(context.Context, []byte) (natsclient.DeliveryDecision, error) {
+		return natsclient.DeliveryDecisionInvalid, errors.New("graph-ingest: the start-time timing check runs no work")
+	}
+	if _, err := natsclient.ValidateHeartbeatDeliveryPolicy(ctx, cfg, heartbeat,
+		natsclient.ImmediateDeliveryRetry(), checkOnly); err != nil {
+		return fmt.Errorf("port %s: ack_wait %s and heartbeat_interval %s: %w", port.Name, ackWait, heartbeat, err)
 	}
 
 	consumeStream := c.natsClient.ConsumeStreamWithConfig

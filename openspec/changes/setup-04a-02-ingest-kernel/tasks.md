@@ -606,6 +606,15 @@ posted on this pull request.
       lane), which already hold on `19d021f`. Six `task mutate:check` detections: each lane's step removed fails
       that lane's subtest, and each lane's step moved ahead of its validation fails that lane's row. Notes:
       `notes/cp3-H1.md`.
+- [ ] 4.13 (D) Checkpoint 3 H2 (PR #93 comment 6099921473): configuration validation refuses, as invalid and naming
+      the port, every output graph-ingest does not write: a `kv-write` output on a bucket other than `ENTITY_STATES`,
+      and an output of any other kind (`jetstream`, `nats`, `nats-request`, `network`, `file`, `store-provide`), in
+      place of the `ENTITY_STATES` output or beside it. `TestConfigRefusesOutputsGraphIngestDoesNotWrite`
+      (`config_strict_test.go`), written first and failing on `d4772ef` in all 14 subtests. Six `task mutate:check`
+      detections: the check removed, the check on `kv-write` outputs only, the check on the first output only, the
+      refusal unclassified, the refusal not naming the port, and the check refusing the default. The carried case
+      "valid full config" of `TestConfig_Validate_ValidConfig` no longer declares an unwritten `jetstream` output.
+      Notes: `notes/cp3-H2.md`.
 
 ## 5. Ledger, gates and boundaries
 

@@ -280,6 +280,19 @@ func (c *Config) Validate() error {
 	if len(c.Ports.Outputs) == 0 {
 		return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate", "at least one output port required")
 	}
+	// graph-ingest writes entity state to ENTITY_STATES only (initStorage opens it by
+	// its fixed name) and publishes nowhere else, so any other output would be
+	// declared and reported while nothing is written there (checkpoint 3 H2).
+	for _, definition := range c.Ports.Outputs {
+		port, err := definition.Resolve(component.DirectionOutput)
+		if err != nil {
+			return errs.WrapInvalid(err, "Config", "Validate", "resolve output port")
+		}
+		if kv, ok := port.Config.(component.KVWritePort); !ok || kv.Bucket != graph.BucketEntityStates {
+			return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate", fmt.Sprintf(
+				"check output port %q (graph-ingest writes only a kv-write output on %s)", definition.Name, graph.BucketEntityStates))
+		}
+	}
 	if _, err := canonicalMutationProvider(c.Ports); err != nil {
 		return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate", err.Error())
 	}

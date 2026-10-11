@@ -373,7 +373,6 @@ func TestConfig_Validate_ValidConfig(t *testing.T) {
 					},
 					Outputs: []component.PortDefinition{
 						{Name: "entity_states", Config: component.KVWritePort{Bucket: "ENTITY_STATES"}},
-						{Name: "entity_events", Config: component.JetStreamPort{StreamName: "GRAPH", Subjects: []string{"graph.entity.created"}}},
 					},
 				},
 				EnableHierarchy: true,

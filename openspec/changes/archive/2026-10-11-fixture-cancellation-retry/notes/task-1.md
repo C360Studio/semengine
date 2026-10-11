@@ -46,5 +46,22 @@ passed. The other failure was a separate Docker mapped-port lookup in the restar
 test, recorded in [#180](https://github.com/C360Studio/semengine/issues/180);
 coverage correctly refused that failed integration run. The remaining gates,
 including unit tests and the five shuffled repetitions, passed. Full verification
-has not passed, and independent implementation review has not started. The
+had not passed at that checkpoint, and independent implementation review had not started. The
 failed full-run log `.enjoy-logs/pr118-e9b58fa-verify.log` is local only.
+
+On 2026-10-11 the owner directed "do a scoped review; add reviewed by and push"
+after raising possible contention between local workloads or Docker resource exhaustion.
+Those causes remain hypotheses. The
+[review request](https://github.com/C360Studio/semengine/pull/118#issuecomment-6109988135)
+records the instruction and the narrowed verification scope: no new local Docker or
+full-suite run, source/configuration review using attributed existing evidence,
+and final execution verification by GitHub CI.
+
+The independent Claude semengine-reviewer (claude-opus-5-5) approved the source and
+configuration at `ea010c915cffd8dfe51704a85668f3b31d06fd1f` without running tests;
+[its complete record](https://github.com/C360Studio/semengine/pull/118#issuecomment-6110037781)
+states that limit and the earlier failed full run. Its nonblocking stale-version
+comment finding was corrected by referring to the canonical `.nats-image` file.
+The final documentation checks are `task docs:check`, `task spec:check`,
+`task fmt:check`, and `git diff --check`. No full local verification pass or
+resolution of #180 is claimed. The archive introduces no spec delta.

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/c360studio/semengine/graph"
@@ -16,21 +17,27 @@ import (
 )
 
 // ingestWork is one unit submitted to the keyed ingest pool: a decoded entity
-// plus the JetStream message (for ack/nak) and the (stream, generation, sequence)
-// the redelivery guard keys on. Partitioned by entityID so same-entity updates
-// serialize on one lane in arrival order (ADR-072, gh#480).
+// plus the JetStream message, which only the delivery helper settles, and the
+// (stream, generation, sequence) the redelivery guard keys on. Partitioned by
+// entityID so same-entity updates serialize on one lane in arrival order
+// (ADR-072, gh#480).
 type ingestWork struct {
-	entity   *graph.EntityState
-	msg      jetstream.Msg
-	entityID string
-	stream   string
-	seq      uint64
+	entity *graph.EntityState
+	msg    jetstream.Msg
+	// consumer is the configuration the input's consumer was created with, and heartbeat the
+	// interval at which its application tells the server it is still in progress: what
+	// processIngest builds the input's delivery policy from (design D8, "Long apply").
+	consumer  natsclient.StreamConsumerConfig
+	heartbeat time.Duration
+	entityID  string
+	stream    string
+	seq       uint64
 	// generation is the input stream's generation: its creation time on the server, in
 	// nanoseconds, read when the consumer was bound (design D8, #15).
 	generation uint64
 	// deliveredAt is the JetStream timestamp of this message, carried from the
-	// consume closure so the ack path can age the readiness view without a second
-	// Metadata() call on a per-message hot path.
+	// consume closure, which read it, so the application, which holds no message,
+	// can age the readiness view.
 	deliveredAt time.Time
 	// subject is the arrival port's filter subject — the lane label the
 	// authority rejection is metered under, so an operator reading
@@ -82,8 +89,11 @@ func (r guardRecord) covers(work ingestWork) bool {
 }
 
 // laneGuard is one lane's in-memory applied-sequence cache — tier 1 of the
-// redelivery guard. It is accessed only by that lane's single goroutine, so it
-// needs no locking. Bounded: past max, one arbitrary entry is evicted — a cache
+// redelivery guard. It is touched by one goroutine at a time, so it needs no
+// locking: an input's application, which runs on a goroutine of its own that
+// natsclient.ConsumeDeliveryWithHeartbeat starts after the lane calls it and joins
+// before it returns, so the lane's inputs are applied one after another.
+// Bounded: past max, one arbitrary entry is evicted — a cache
 // miss just falls through to the durable tier, so which entry leaves the cache
 // never affects correctness (ADR-072 B3).
 type laneGuard struct {
@@ -167,8 +177,10 @@ func (c *Component) buildIngestPool(poolCtx context.Context) error {
 		KeyOf:      func(w ingestWork) string { return w.entityID },
 		Process:    c.processIngest,
 		OnPanic: func(w ingestWork, _ any) {
-			// The lane recovered a panic in processIngest; Nak so the server
-			// redelivers rather than silently losing the message.
+			// The lane recovered a panic in processIngest's own code; Nak so the
+			// server redelivers rather than silently losing the message. A panic in
+			// the application is recovered by the delivery helper instead and is
+			// answered by recordInterruptedWork.
 			if err := w.msg.Nak(); err != nil {
 				c.logger.Error("Failed to Nak after ingest panic", slog.Any("error", err))
 			}
@@ -182,10 +194,53 @@ func (c *Component) buildIngestPool(poolCtx context.Context) error {
 }
 
 // processIngest is the keyed pool's per-item handler, run on lane `lane`'s
-// single goroutine. It applies the redelivery guard, ingests the entity, then
-// stamps the guard (durable first, then in-memory) and acks — the ADR-072
-// two-tier guard, updated AFTER side effects and BEFORE ack.
+// goroutine with the lane context, the pool context Start derives. It runs the
+// input's application (applyIngest) inside natsclient.ConsumeDeliveryWithHeartbeat
+// (design D8, "Long apply"): while the application runs, the server is told every
+// heartbeat interval that the input is still in progress, and when it returns,
+// the helper settles the input once, by the decision the application returned.
 func (c *Component) processIngest(ctx context.Context, lane int, work ingestWork) error {
+	// The application holds the input without its message: only the helper settles it.
+	input := work
+	input.msg = nil
+	policy, err := natsclient.ValidateHeartbeatDeliveryPolicy(ctx, work.consumer, work.heartbeat,
+		natsclient.ImmediateDeliveryRetry(),
+		func(applyCtx context.Context, _ []byte) (natsclient.DeliveryDecision, error) {
+			return c.applyIngest(applyCtx, lane, input)
+		})
+	if err != nil {
+		// Start checked the port's pair before it created the consumer, so the policy is
+		// refused once the lane context has ended: at Stop, when the pool's Shutdown runs
+		// out of time while lanes drain. Nothing is applied; the input is negatively
+		// acknowledged, the shutdown disposition, and delivered again.
+		c.logger.Warn("graph-ingest: input not applied, its delivery policy was refused; redelivering",
+			slog.String("entity_id", work.entityID), slog.Any("error", err))
+		result := natsclient.SettleDelivery(work.msg, natsclient.DeliveryDecisionRetry, err)
+		if result.SettlementMethodFailed() {
+			c.logger.Error("Failed to Nak an input whose delivery policy was refused", slog.Any("error", result.Err()))
+		}
+		return result.Err()
+	}
+	result := natsclient.ConsumeDeliveryWithHeartbeat(ctx, work.msg, policy)
+	if result.OwnerStopRequired() {
+		c.recordInterruptedWork(work, result.Err())
+		return result.Err()
+	}
+	if result.SettlementMethodFailed() {
+		c.logger.Error("Failed to settle ingest",
+			slog.String("entity_id", work.entityID), slog.Any("error", result.Err()))
+	}
+	return result.Err()
+}
+
+// applyIngest is one input's application, the delivery work processIngest runs. It
+// applies the redelivery guard, ingests the entity, then stamps the guard (durable
+// first, then in-memory) and ages the readiness view — the ADR-072 two-tier guard,
+// updated AFTER side effects and BEFORE the ack. It settles nothing: work carries no
+// message. It returns the settlement it calls for: Terminate for an input that can
+// never apply, Retry (a plain Nak) for a failure a redelivery can outlive, Ack for a
+// stale redelivery or an applied input. It never returns Quarantine.
+func (c *Component) applyIngest(ctx context.Context, lane int, work ingestWork) (natsclient.DeliveryDecision, error) {
 	// Validate and prepare the complete Graphable candidate before its identity
 	// participates in the idempotency guard. Structural failures are terminal
 	// for this immutable stream message and must not create a guard key/Get or a
@@ -200,10 +255,7 @@ func (c *Component) processIngest(ctx context.Context, lane int, work ingestWork
 		} else {
 			c.recordStructuralRejection("graphable", validationErr)
 		}
-		if termErr := work.msg.Term(); termErr != nil {
-			c.logger.Error("Failed to terminate structurally invalid ingest", slog.Any("error", termErr))
-		}
-		return validationErr
+		return natsclient.DeliveryDecisionTerminate, validationErr
 	}
 
 	// Redelivery guard (ADR-072 B1/B2/B3): drop a stale re-delivery whose stream
@@ -219,17 +271,11 @@ func (c *Component) processIngest(ctx context.Context, lane int, work ingestWork
 			c.logger.Warn("graph-ingest: redelivery-guard read failed; redelivering",
 				slog.String("entity_id", work.entityID), slog.Any("error", err))
 		}
-		if nakErr := work.msg.Nak(); nakErr != nil {
-			c.logger.Error("Failed to Nak after guard-read error", slog.Any("error", nakErr))
-		}
-		return err
+		return natsclient.DeliveryDecisionRetry, err
 	}
 	if stale {
 		c.redeliveriesDropped.Inc()
-		if ackErr := work.msg.Ack(); ackErr != nil {
-			c.logger.Error("Failed to ack stale redelivery", slog.Any("error", ackErr))
-		}
-		return nil
+		return natsclient.DeliveryDecisionAck, nil
 	}
 
 	// Apply. Structural contract violations are terminal for this immutable
@@ -251,29 +297,21 @@ func (c *Component) processIngest(ctx context.Context, lane int, work ingestWork
 			// once-per-entity ERROR happened in the write seam's callback
 			// (decodeStoredForWrite or classifyStoredStateRMWError), so a
 			// redelivery loop cannot spam the log.
-			if nakErr := work.msg.Nak(); nakErr != nil {
-				c.logger.Error("Failed to Nak ingest blocked by resident poisoned state", slog.Any("error", nakErr))
-			}
-		} else {
-			c.recordEntityStateContractRejection("graphable", ingestErr)
-			c.recordPredicateContractRejections("graphable", ingestErr)
-			if errs.IsInvalid(ingestErr) {
-				if termErr := work.msg.Term(); termErr != nil {
-					c.logger.Error("Failed to terminate structurally invalid ingest", slog.Any("error", termErr))
-				}
-			} else if errs.IsFatal(ingestErr) {
-				if c.logger != nil {
-					c.logger.Error("graph-ingest: fatal ingest failure; terminating",
-						slog.String("class", errs.ErrorFatal.String()))
-				}
-				if termErr := work.msg.Term(); termErr != nil {
-					c.logger.Error("Failed to terminate fatal ingest", slog.Any("error", termErr))
-				}
-			} else if nakErr := work.msg.Nak(); nakErr != nil {
-				c.logger.Error("Failed to Nak after transient ingest error", slog.Any("error", nakErr))
-			}
+			return natsclient.DeliveryDecisionRetry, ingestErr
 		}
-		return ingestErr
+		c.recordEntityStateContractRejection("graphable", ingestErr)
+		c.recordPredicateContractRejections("graphable", ingestErr)
+		if errs.IsInvalid(ingestErr) {
+			return natsclient.DeliveryDecisionTerminate, ingestErr
+		}
+		if errs.IsFatal(ingestErr) {
+			if c.logger != nil {
+				c.logger.Error("graph-ingest: fatal ingest failure; terminating",
+					slog.String("class", errs.ErrorFatal.String()))
+			}
+			return natsclient.DeliveryDecisionTerminate, ingestErr
+		}
+		return natsclient.DeliveryDecisionRetry, ingestErr
 	}
 
 	// Guard stamp AFTER side effects, BEFORE ack — durable FIRST, then in-memory.
@@ -283,26 +321,56 @@ func (c *Component) processIngest(ctx context.Context, lane int, work ingestWork
 	if derr := c.ingestGuardStampDurable(ctx, work); derr != nil {
 		c.logger.Warn("graph-ingest: redelivery-guard durable stamp failed; redelivering",
 			slog.String("entity_id", work.entityID), slog.Any("error", derr))
-		if nakErr := work.msg.Nak(); nakErr != nil {
-			c.logger.Error("Failed to Nak after guard-stamp error", slog.Any("error", nakErr))
-		}
-		return derr
+		return natsclient.DeliveryDecisionRetry, derr
 	}
 	c.ingestGuardMem[lane].set(guardKey(work.entityID, work.stream), guardRecord{generation: work.generation, seq: work.seq})
 
-	if ackErr := work.msg.Ack(); ackErr != nil {
-		c.logger.Error("Failed to ack JetStream message", slog.Any("error", ackErr))
-	}
-	// Age the readiness view from the newest message whose graph write is durable.
-	// Stamped AFTER the ack attempt, on the success path only: an un-acked message
-	// has not been applied, and stamping earlier would age the view from work that
-	// may still Nak.
+	// Age the readiness view from the newest message whose graph write and guard
+	// record are durable: on the applied path only, before the helper's Ack. A
+	// stale redelivery applied nothing and does not age it.
 	c.recordApplied(work.deliveredAt)
-	return nil
+	return natsclient.DeliveryDecisionAck, nil
+}
+
+// recordInterruptedWork answers an input whose application the delivery helper reports
+// the owner must stop for: the application panicked, an in-progress signal could not be
+// sent, or the delivery's metadata or the application's decision was invalid. The
+// helper settled nothing, so the server delivers the input again after its ack wait;
+// the applied-sequence record makes the redelivery apply once, and MaxDeliver bounds
+// the attempts. The lane keeps taking input (owner ruling, #91 comment 6109278240,
+// item 1): graph-ingest is the only writer of entity state, so one bad input must not
+// stop ingest. This departs from OwnerStopRequired's "must stop its lane" (design D8,
+// "Long apply"). The interruption is declared: an ERROR line, one in the error count
+// Health reads, and one in work_interrupted_total under its cause.
+func (c *Component) recordInterruptedWork(work ingestWork, err error) {
+	cause := interruptedWorkCause(err)
+	atomic.AddInt64(&c.errors, 1)
+	c.workInterrupted.WithLabelValues(cause).Inc()
+	c.logger.Error("graph-ingest: input's application interrupted; left unsettled for redelivery",
+		slog.String("cause", cause),
+		slog.String("entity_id", work.entityID),
+		slog.String("stream", work.stream),
+		slog.Uint64("seq", work.seq),
+		slog.Any("error", err))
+}
+
+// interruptedWorkCause names the cause of an interrupted application, the label of
+// work_interrupted_total: heartbeat_failed when an in-progress signal could not be
+// sent, otherwise panic when the application panicked, otherwise invalid.
+func interruptedWorkCause(err error) string {
+	var panicked *natsclient.DeliveryWorkPanicError
+	switch {
+	case errors.Is(err, natsclient.ErrHeartbeatFailed):
+		return "heartbeat_failed"
+	case errors.As(err, &panicked):
+		return "panic"
+	default:
+		return "invalid"
+	}
 }
 
 // recordStructuralRejection counts and logs one stream message refused because its candidate
-// is structurally invalid: processIngest's record for a candidate that fails its contract, and
+// is structurally invalid: applyIngest's record for a candidate that fails its contract, and
 // the consume closure's for a refused statement (design D15). The caller terminates the message.
 func (c *Component) recordStructuralRejection(lane string, err error) {
 	c.recordEntityStateContractRejection(lane, err)
@@ -392,7 +460,7 @@ func (c *Component) recordUnguardedInput(work ingestWork) {
 }
 
 // errUndecodableGuardRecord marks an input refused because its stored applied-sequence record
-// cannot be decoded. processIngest Naks it without its per-delivery warning: the refusal was
+// cannot be decoded. applyIngest asks for a Nak without its per-delivery warning: the refusal was
 // counted and logged once for its key where the record was read.
 var errUndecodableGuardRecord = errors.New("applied-sequence record cannot be decoded")
 
@@ -413,8 +481,8 @@ func (c *Component) refuseUndecodableGuardRecord(lane int, key string, size int)
 
 // ingestGuardStampDurable persists the stream generation and last-applied
 // sequence for (entity, stream) in the durable guard bucket. A plain Put
-// (last-writer-wins) is safe: (entity, stream) is only ever written by one lane's
-// goroutine (entity → one lane), so there is no concurrent writer to race.
+// (last-writer-wins) is safe: (entity, stream) is only ever written by one lane,
+// one input at a time (entity → one lane), so there is no concurrent writer to race.
 func (c *Component) ingestGuardStampDurable(ctx context.Context, work ingestWork) error {
 	if c.ingestGuardBucket == nil {
 		return nil

@@ -55,7 +55,7 @@ func generationWork(id string, generation, seq uint64, value string, msg *keyedI
 			Subject: id, Predicate: "test.state.value", Object: value, Timestamp: time.Now(), Confidence: 1.0,
 		}),
 	}
-	return ingestWork{entity: entity, msg: msg, entityID: id, stream: "ENTITY", generation: generation, seq: seq}
+	return ingestWork{entity: entity, msg: msg, consumer: testConsumer, heartbeat: testHeartbeat, entityID: id, stream: "ENTITY", generation: generation, seq: seq}
 }
 
 // storedValue reads id's test.state.value and the revision of its stored entry.

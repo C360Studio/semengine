@@ -21,26 +21,60 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// keyedIngestTestMsg is a delivery the unit tests hand processIngest. It records how it was settled
+// and counts the in-progress signals sent for it. Its metadata is a first delivery, as the server
+// reports one; with noMetadata it reports none, a delivery the settlement helper refuses.
 type keyedIngestTestMsg struct {
-	ack  atomic.Bool
-	nak  atomic.Bool
-	term atomic.Bool
+	ack        atomic.Bool
+	nak        atomic.Bool
+	term       atomic.Bool
+	inProgress atomic.Int32
+	// inProgressErr is what InProgress returns.
+	inProgressErr error
+	noMetadata    bool
+	// onAck, when set, runs as the message is acknowledged, and onInProgress as an
+	// in-progress signal is sent for it.
+	onAck        func()
+	onInProgress func()
 }
 
 // entity-id-audit:classify intentional-malformed "bad" line=164 column=61 surface=go-field:EntityState.ID entity_id_invalid:arity malformed keyed-ingest state rejection fixture
 
-func (*keyedIngestTestMsg) Metadata() (*jetstream.MsgMetadata, error) { return nil, nil }
-func (*keyedIngestTestMsg) Data() []byte                              { return nil }
-func (*keyedIngestTestMsg) Headers() nats.Header                      { return nil }
-func (*keyedIngestTestMsg) Subject() string                           { return "entity.test" }
-func (*keyedIngestTestMsg) Reply() string                             { return "" }
-func (m *keyedIngestTestMsg) Ack() error                              { m.ack.Store(true); return nil }
-func (*keyedIngestTestMsg) DoubleAck(context.Context) error           { return nil }
-func (m *keyedIngestTestMsg) Nak() error                              { m.nak.Store(true); return nil }
-func (m *keyedIngestTestMsg) NakWithDelay(time.Duration) error        { m.nak.Store(true); return nil }
-func (*keyedIngestTestMsg) InProgress() error                         { return nil }
-func (m *keyedIngestTestMsg) Term() error                             { m.term.Store(true); return nil }
-func (m *keyedIngestTestMsg) TermWithReason(string) error             { m.term.Store(true); return nil }
+func (m *keyedIngestTestMsg) Metadata() (*jetstream.MsgMetadata, error) {
+	if m.noMetadata {
+		return nil, nil
+	}
+	return &jetstream.MsgMetadata{NumDelivered: 1}, nil
+}
+func (*keyedIngestTestMsg) Data() []byte         { return nil }
+func (*keyedIngestTestMsg) Headers() nats.Header { return nil }
+func (*keyedIngestTestMsg) Subject() string      { return "entity.test" }
+func (*keyedIngestTestMsg) Reply() string        { return "" }
+func (m *keyedIngestTestMsg) Ack() error {
+	if m.onAck != nil {
+		m.onAck()
+	}
+	m.ack.Store(true)
+	return nil
+}
+func (*keyedIngestTestMsg) DoubleAck(context.Context) error    { return nil }
+func (m *keyedIngestTestMsg) Nak() error                       { m.nak.Store(true); return nil }
+func (m *keyedIngestTestMsg) NakWithDelay(time.Duration) error { m.nak.Store(true); return nil }
+func (m *keyedIngestTestMsg) InProgress() error {
+	m.inProgress.Add(1)
+	if m.onInProgress != nil {
+		m.onInProgress()
+	}
+	return m.inProgressErr
+}
+func (m *keyedIngestTestMsg) Term() error                 { m.term.Store(true); return nil }
+func (m *keyedIngestTestMsg) TermWithReason(string) error { m.term.Store(true); return nil }
+
+// testConsumer and testHeartbeat are the consumer configuration and in-progress interval of the
+// inputs the unit tests hand processIngest: graph-ingest's defaults for a port that declares neither.
+var testConsumer = natsclient.StreamConsumerConfig{StreamName: "ENTITY", AckWait: defaultIngestAckWait}
+
+const testHeartbeat = defaultIngestAckWait / 4
 
 // --- laneGuard (in-memory guard tier, ADR-072) ---
 
@@ -214,7 +248,7 @@ func TestProcessIngest_InvalidGraphableTerminatesBeforeGuardIO(t *testing.T) {
 			component.ingestGuardBucket = component.natsClient.NewKVStore(guardBucket)
 			component.ingestGuardMem = []*laneGuard{newLaneGuard(16)}
 			msg := &keyedIngestTestMsg{}
-			work := ingestWork{entity: tt.entity, msg: msg, entityID: tt.entity.ID, stream: "ENTITY", seq: 1}
+			work := ingestWork{entity: tt.entity, msg: msg, consumer: testConsumer, heartbeat: testHeartbeat, entityID: tt.entity.ID, stream: "ENTITY", seq: 1}
 			errorsBefore := atomic.LoadInt64(&component.errors)
 
 			var before float64
@@ -294,7 +328,7 @@ func TestProcessIngest_DirtyStoredStateNaksAndInventoriesPerEntity(t *testing.T)
 				entity: &graph.EntityState{ID: tt.entityID, Triples: withTestMetadata(message.Triple{
 					Subject: tt.entityID, Predicate: "test.state.value", Object: "new",
 				})},
-				msg: msg, entityID: tt.entityID, stream: "ENTITY", seq: 2,
+				msg: msg, consumer: testConsumer, heartbeat: testHeartbeat, entityID: tt.entityID, stream: "ENTITY", seq: 2,
 			}
 			predicateBefore := testutil.ToFloat64(component.predicateContractRejections.WithLabelValues("graphable", "arity"))
 			entityBefore := testutil.ToFloat64(component.entityStateContractRejections.WithLabelValues("graphable", "subject", "arity"))
@@ -349,7 +383,7 @@ func TestProcessIngest_GenericFatalApplyErrorTerminatesWithoutPoison(t *testing.
 		entity: &graph.EntityState{ID: entityID, Triples: withTestMetadata(message.Triple{
 			Subject: entityID, Predicate: "test.state.value", Object: "new",
 		})},
-		msg: msg, entityID: entityID, stream: "ENTITY", seq: 1,
+		msg: msg, consumer: testConsumer, heartbeat: testHeartbeat, entityID: entityID, stream: "ENTITY", seq: 1,
 	})
 
 	require.Error(t, err)
@@ -371,11 +405,121 @@ func TestProcessIngest_FillsEmptyFactSubjectBeforeStaleGuard(t *testing.T) {
 	msg := &keyedIngestTestMsg{}
 
 	err := component.processIngest(context.Background(), 0, ingestWork{
-		entity: entity, msg: msg, entityID: validID, stream: "ENTITY", seq: 1,
+		entity: entity, msg: msg, consumer: testConsumer, heartbeat: testHeartbeat, entityID: validID, stream: "ENTITY", seq: 1,
 	})
 	require.NoError(t, err)
 	require.Equal(t, validID, entity.Triples[0].Subject, "fact projection fill must precede stale-drop guard")
 	require.True(t, msg.ack.Load())
 	require.False(t, msg.term.Load())
 	require.False(t, msg.nak.Load())
+}
+
+// settledAs names how msg was settled: "ack", "nak" or "term", "none", or "mixed" for more than one.
+func settledAs(msg *keyedIngestTestMsg) string {
+	ack, nak, term := msg.ack.Load(), msg.nak.Load(), msg.term.Load()
+	switch {
+	case ack && !nak && !term:
+		return "ack"
+	case nak && !ack && !term:
+		return "nak"
+	case term && !ack && !nak:
+		return "term"
+	case !ack && !nak && !term:
+		return "none"
+	}
+	return "mixed"
+}
+
+// TestProcessIngest_DecisionsSettleAsBefore holds design D8, "Long apply": an input's application
+// returns a decision, and the delivery helper settles it once, as processIngest settled each branch
+// before it ran through the helper. An applied input has aged the readiness view by the time it is
+// acknowledged; a stale redelivery, and an input left for redelivery, do not age it. The branches
+// that terminate, and resident poison, are held by the tests above.
+func TestProcessIngest_DecisionsSettleAsBefore(t *testing.T) {
+	const entityID = "acme.ops.test.system.widget.decision"
+	deliveredAt := time.Date(2026, 10, 11, 9, 0, 0, 0, time.UTC)
+	unavailable := errors.New("test: bucket unavailable")
+	tests := []struct {
+		name    string
+		arrange func(c *Component, entities, guard *mockKVBucket)
+		want    string
+		aged    bool
+		dropped float64
+	}{
+		{name: "applied", want: "ack", aged: true},
+		{
+			name: "stale redelivery",
+			arrange: func(c *Component, _, _ *mockKVBucket) {
+				c.ingestGuardMem[0].set(guardKey(entityID, "ENTITY"), guardRecord{seq: 2})
+			},
+			want: "ack", dropped: 1,
+		},
+		{
+			name: "guard read fails",
+			arrange: func(_ *Component, _, guard *mockKVBucket) {
+				guard.getFunc = func(context.Context, string) (jetstream.KeyValueEntry, error) { return nil, unavailable }
+			},
+			want: "nak",
+		},
+		{
+			name: "apply fails transiently",
+			arrange: func(c *Component, entities, _ *mockKVBucket) {
+				entities.getFunc = func(context.Context, string) (jetstream.KeyValueEntry, error) {
+					return nil, errs.WrapTransient(unavailable, "test", "entityGet", "bucket unavailable")
+				}
+				c.entityBucket = c.natsClient.NewKVStore(entities, func(options *natsclient.KVOptions) {
+					options.MaxRetries = 0
+				})
+			},
+			want: "nak",
+		},
+		{
+			name: "durable stamp fails",
+			arrange: func(_ *Component, _, guard *mockKVBucket) {
+				guard.putFunc = func(context.Context, string, []byte) (uint64, error) { return 0, unavailable }
+			},
+			want: "nak",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, entities := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
+			guard := newMockKVBucket()
+			c.ingestGuardBucket = c.natsClient.NewKVStore(guard)
+			c.ingestGuardMem = []*laneGuard{newLaneGuard(16)}
+			if tt.arrange != nil {
+				tt.arrange(c, entities, guard)
+			}
+			msg := &keyedIngestTestMsg{}
+			var agedAtAck time.Time
+			msg.onAck = func() { agedAtAck = c.oldestOutstandingAt(1) }
+			droppedBefore := testutil.ToFloat64(c.redeliveriesDropped)
+
+			_ = c.processIngest(t.Context(), 0, ingestWork{
+				entity: &graph.EntityState{ID: entityID, MessageType: testEntityType(), Triples: withTestMetadata(message.Triple{
+					Subject: entityID, Predicate: "test.state.value", Object: "decided", Timestamp: fixtureTime, Confidence: 1.0,
+				})},
+				msg: msg, consumer: testConsumer, heartbeat: testHeartbeat,
+				entityID: entityID, stream: "ENTITY", seq: 2, deliveredAt: deliveredAt,
+			})
+
+			if got := settledAs(msg); got != tt.want {
+				t.Errorf("settlement = %s, want %s", got, tt.want)
+			}
+			aged := c.oldestOutstandingAt(1)
+			if tt.aged {
+				if !aged.Equal(deliveredAt) {
+					t.Errorf("readiness view aged from %v after the input applied, want its delivery time %v", aged, deliveredAt)
+				}
+				if !agedAtAck.Equal(deliveredAt) {
+					t.Errorf("readiness view at the acknowledgement aged from %v, want the applied input's %v", agedAtAck, deliveredAt)
+				}
+			} else if !aged.IsZero() {
+				t.Errorf("readiness view aged from %v by an input that was not applied, want no age", aged)
+			}
+			if got := testutil.ToFloat64(c.redeliveriesDropped) - droppedBefore; got != tt.dropped {
+				t.Errorf("stale redeliveries dropped = %v, want %v", got, tt.dropped)
+			}
+		})
+	}
 }

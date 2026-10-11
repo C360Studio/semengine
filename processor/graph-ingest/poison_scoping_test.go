@@ -543,7 +543,7 @@ func TestProcessIngestResidentPoisonNakThenAppliesAfterRepair(t *testing.T) {
 		entity: &graph.EntityState{ID: id, MessageType: testEntityType(), Triples: withTestMetadata(message.Triple{
 			Subject: id, Predicate: "test.state.value", Object: "survivor", Timestamp: time.Now(), Confidence: 1.0,
 		})},
-		msg: &keyedIngestTestMsg{}, entityID: id, stream: "ENTITY", seq: 7,
+		msg: &keyedIngestTestMsg{}, consumer: testConsumer, heartbeat: testHeartbeat, entityID: id, stream: "ENTITY", seq: 7,
 	}
 
 	// Poison window: Nak, never Term.

@@ -24,7 +24,7 @@ const (
 // source (graph.IsReservedSource). It is also the refusal of a payload that carries no
 // statement, which leaves the statements graph-ingest derives no time to take; that refusal
 // names no index. Such a message can never be admitted, so the consume closure terminates,
-// counts and logs it as processIngest does a structurally invalid candidate.
+// counts and logs it as applyIngest does a structurally invalid candidate.
 type statementRefusal struct {
 	index  int    // -1 when reason is statementReasonNoStatement
 	field  string // "source", "timestamp", or "triples" for statementReasonNoStatement

@@ -40,9 +40,12 @@ func newStreamLaneMsg(data []byte, seq uint64) *streamLaneMsg {
 
 func (m *streamLaneMsg) Metadata() (*jetstream.MsgMetadata, error) {
 	return &jetstream.MsgMetadata{
-		Stream:    "ENTITY",
-		Sequence:  jetstream.SequencePair{Stream: m.seq, Consumer: m.seq},
-		Timestamp: time.Now(),
+		Stream:   "ENTITY",
+		Sequence: jetstream.SequencePair{Stream: m.seq, Consumer: m.seq},
+		// A first delivery: the server counts deliveries from one, and the settlement helper
+		// refuses a delivery reporting none.
+		NumDelivered: 1,
+		Timestamp:    time.Now(),
 	}, nil
 }
 func (m *streamLaneMsg) Data() []byte                     { return m.data }

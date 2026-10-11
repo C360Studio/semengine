@@ -45,7 +45,7 @@ func guardRecordWork(id string, seq uint64, msg *keyedIngestTestMsg) ingestWork 
 			Subject: id, Predicate: "test.state.value", Object: "ready", Timestamp: time.Now(), Confidence: 1.0,
 		}),
 	}
-	return ingestWork{entity: entity, msg: msg, entityID: id, stream: guardRecordStream, seq: seq}
+	return ingestWork{entity: entity, msg: msg, consumer: testConsumer, heartbeat: testHeartbeat, entityID: id, stream: guardRecordStream, seq: seq}
 }
 
 // TestCorruptGuardRecordIsRefused holds graph-ingest-recovery, "A record that cannot be decoded"

@@ -229,8 +229,8 @@ func streamLaneWrite(t *testing.T, c *Component, triple message.Triple) {
 	c.ingestGuardMem = []*laneGuard{newLaneGuard(16)}
 	msg := &keyedIngestTestMsg{}
 	err := c.processIngest(t.Context(), 0, ingestWork{
-		entity:   &graph.EntityState{ID: seamKey, MessageType: testEntityType(), Triples: []message.Triple{triple}},
-		msg:      msg,
+		entity: &graph.EntityState{ID: seamKey, MessageType: testEntityType(), Triples: []message.Triple{triple}},
+		msg:    msg, consumer: testConsumer, heartbeat: testHeartbeat,
 		entityID: seamKey,
 		stream:   "ENTITY",
 		seq:      1,
@@ -463,7 +463,7 @@ func TestStreamArrivalReplacesStoredStatementWithoutTimestamp(t *testing.T) {
 			msg := &keyedIngestTestMsg{}
 			err = c.processIngest(t.Context(), 0, ingestWork{
 				entity: &graph.EntityState{ID: id, MessageType: testEntityType(), Triples: []message.Triple{arrival}},
-				msg:    msg, entityID: id, stream: "ENTITY", seq: 1,
+				msg:    msg, consumer: testConsumer, heartbeat: testHeartbeat, entityID: id, stream: "ENTITY", seq: 1,
 			})
 			if err != nil {
 				t.Fatalf("processIngest: %v", err)
@@ -558,7 +558,7 @@ func TestStreamArrivalAllOlderWritesNothing(t *testing.T) {
 		err = c.processIngest(t.Context(), 0, ingestWork{
 			entity: &graph.EntityState{ID: id, MessageType: testEntityType(), Triples: slices.Clone(arrival),
 				StorageRef: &message.StorageReference{StorageInstance: "store", Key: "ref-arrival"}},
-			msg: msg, entityID: id, stream: "ENTITY", seq: 1,
+			msg: msg, consumer: testConsumer, heartbeat: testHeartbeat, entityID: id, stream: "ENTITY", seq: 1,
 		})
 		if err != nil {
 			t.Fatalf("processIngest: %v", err)
@@ -686,7 +686,7 @@ func TestStreamArrivalOnlyProfileWritesNothing(t *testing.T) {
 			err = c.processIngest(t.Context(), 0, ingestWork{
 				entity: &graph.EntityState{ID: id, MessageType: testEntityType(), Triples: []message.Triple{profileAt(tc.at)},
 					StorageRef: &message.StorageReference{StorageInstance: "store", Key: "ref-arrival"}},
-				msg: msg, entityID: id, stream: "ENTITY", seq: 1,
+				msg: msg, consumer: testConsumer, heartbeat: testHeartbeat, entityID: id, stream: "ENTITY", seq: 1,
 			})
 			if err != nil {
 				t.Fatalf("processIngest: %v", err)

@@ -280,7 +280,7 @@ func (c *Component) latchBootstrap(outstanding uint64, observationFailed bool) (
 // insertion and removal on every submit and ack. This reports the AGE OF THE VIEW
 // instead — now minus the JetStream timestamp of the most recently APPLIED message —
 // which is graph-index's established semantic for the same field (its IndexedAt) and
-// costs one atomic store on the ack path.
+// costs one atomic store on the applied path.
 //
 // The two coincide closely because delivery is approximately stream-ordered: the
 // oldest outstanding message is the one just after the newest applied one. It is a
@@ -310,8 +310,8 @@ func (c *Component) statusNow() time.Time {
 }
 
 // recordApplied stamps the JetStream timestamp of a message whose graph write is
-// durable. Called on the ack path only — an un-acked message has not been applied,
-// and stamping earlier would age the view from work that may still Nak.
+// durable. Called once the write and its guard record are durable, on the applied
+// path only: an input left for redelivery, or a stale redelivery, has applied nothing.
 func (c *Component) recordApplied(deliveredAt time.Time) {
 	if deliveredAt.IsZero() {
 		return

@@ -108,7 +108,7 @@ func (c *Component) recordAuthorityRejection(arrival, reason string, err error) 
 // guard reads `return c.recordDirectAuthorityRejection(err)`.
 //
 // It is the direct lane's counterpart to meteredMutation (mutation_runtime.go)
-// and to processIngest's authority branch (keyed_ingest.go). All three route
+// and to applyIngest's authority branch (keyed_ingest.go). All three route
 // through recordAuthorityRejection, which is what makes "metered exactly once"
 // a property of the code rather than of a convention.
 //

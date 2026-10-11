@@ -81,7 +81,7 @@ func hierarchyBirthOf(id string) *graph.EntityState {
 }
 
 func hierarchyBirthWork(msg *keyedIngestTestMsg) ingestWork {
-	return ingestWork{entity: hierarchyBirth(), msg: msg, entityID: hierarchyBirthID, stream: "ENTITY", seq: 1}
+	return ingestWork{entity: hierarchyBirth(), msg: msg, consumer: testConsumer, heartbeat: testHeartbeat, entityID: hierarchyBirthID, stream: "ENTITY", seq: 1}
 }
 
 func assertEntityAbsent(t *testing.T, bucket *mockKVBucket) {
@@ -305,7 +305,7 @@ func TestMemberBirthKeepsContainerRevisions(t *testing.T) {
 	births := map[string]func(*testing.T, *Component){
 		"stream lane": func(t *testing.T, c *Component) {
 			msg := &keyedIngestTestMsg{}
-			work := ingestWork{entity: hierarchyBirthOf(secondID), msg: msg, entityID: secondID, stream: "ENTITY", seq: 2}
+			work := ingestWork{entity: hierarchyBirthOf(secondID), msg: msg, consumer: testConsumer, heartbeat: testHeartbeat, entityID: secondID, stream: "ENTITY", seq: 2}
 			if err := c.processIngest(t.Context(), 0, work); err != nil {
 				t.Fatalf("processIngest: %v", err)
 			}

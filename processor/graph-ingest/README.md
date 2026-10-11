@@ -151,6 +151,7 @@ each collector.
 | `semengine_graph_ingest_redeliveries_dropped_total` | counter | |
 | `semengine_graph_ingest_guard_record_refusals_total` | counter | |
 | `semengine_graph_ingest_unguarded_inputs_total` | counter | |
+| `semengine_graph_ingest_work_interrupted_total` | counter | `cause` |
 | `semengine_graph_ingest_cas_retries_total` | counter | |
 | `semengine_graph_ingest_stale_sets_total` | counter | |
 | `semengine_graph_ingest_duplicate_triples_suppressed_total` | counter | `lane` |

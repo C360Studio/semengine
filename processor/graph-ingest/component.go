@@ -194,6 +194,21 @@ func newUnguardedInputsMetric() prometheus.Counter {
 	})
 }
 
+// newWorkInterruptedMetric builds the counter of stream inputs whose application was interrupted and
+// left unsettled, so the server delivers them again after the ack wait (design D8, "Long apply"; #91
+// comment 6109278240, item 1). Its cause label is a closed enum: panic (the application panicked),
+// heartbeat_failed (an in-progress signal could not be sent) or invalid (the delivery's metadata or
+// the application's decision was invalid). Each such input is also logged at ERROR and counted in
+// the error count Health reads; the lane keeps taking input.
+func newWorkInterruptedMetric() *prometheus.CounterVec {
+	return prometheus.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "semengine",
+		Subsystem: "graph_ingest",
+		Name:      "work_interrupted_total",
+		Help:      "Stream inputs whose application was interrupted and left unsettled, to be delivered again after the ack wait. Label: cause (panic, heartbeat_failed, invalid), a closed enum.",
+	}, []string{"cause"})
+}
+
 // newCasRetriesMetric builds the counter of CAS-conflict retries
 // during entity merge (ADR-072). Incremented each time mergeEntityOnLane's CAS
 // callback re-runs (attempt > 1) — the previous attempt's revision-checked Put
@@ -458,7 +473,7 @@ type Component struct {
 	// during ordinary operation.
 	bootBacklogDrained atomic.Bool
 	// lastAppliedAt is the JetStream timestamp of the most recently APPLIED message
-	// (stamped on the ack path). It ages the reported staleness.
+	// (stamped on the applied path, before the Ack). It ages the reported staleness.
 	lastAppliedAt atomic.Value // stores time.Time
 	// statusInterval and statusNowFn are TEST SEAMS only, so an integration test can
 	// observe successive heartbeats and assert staleness without racing the clock.
@@ -525,6 +540,7 @@ type Component struct {
 	redeliveriesDropped           prometheus.Counter     // ADR-072 stale redeliveries dropped by the applied-sequence guard
 	guardRecordRefusals           prometheus.Counter     // inputs refused for an undecodable applied-sequence record (design D21)
 	unguardedInputs               prometheus.Counter     // inputs applied as first seen with no applied-sequence bucket (design D8)
+	workInterrupted               *prometheus.CounterVec // inputs whose application was interrupted and left unsettled, by cause (design D8)
 	casRetries                    prometheus.Counter     // ADR-072 entity-merge CAS-conflict retries (contention observability)
 	staleSets                     prometheus.Counter     // stream-lane sets not applied as older (design D15, #98)
 	duplicateTriplesSuppressed    *prometheus.CounterVec // append duplicates not stored, by lane (closed enum)
@@ -543,7 +559,7 @@ type Component struct {
 
 	// Redelivery guard (ADR-072 B1/B2/B3), two-tier. ingestGuardMem is the
 	// in-memory fast path, one map per lane (lane-local → lock-free, since a
-	// lane is drained by a single goroutine). ingestGuardBucket is the durable
+	// lane's inputs are applied one at a time). ingestGuardBucket is the durable
 	// backstop `(entityID/streamName) → last-applied stream seq`; it survives
 	// restart and cache eviction so correctness does not depend on the in-memory
 	// retention policy or MaxDeliver/AckWait sizing.
@@ -719,6 +735,7 @@ func (c *Component) registerMetrics(registry *metric.MetricsRegistry) error {
 	c.redeliveriesDropped = newRedeliveriesDroppedMetric()
 	c.guardRecordRefusals = newGuardRecordRefusalsMetric()
 	c.unguardedInputs = newUnguardedInputsMetric()
+	c.workInterrupted = newWorkInterruptedMetric()
 	c.casRetries = newCasRetriesMetric()
 	c.staleSets = newStaleSetsMetric()
 	c.duplicateTriplesSuppressed = newDuplicateTriplesSuppressedMetric()
@@ -771,6 +788,9 @@ func (c *Component) registerMetrics(registry *metric.MetricsRegistry) error {
 		return err
 	}
 	if c.unguardedInputs, err = metric.RegisterOrGet(registry, metricService, "unguarded_inputs_total", c.unguardedInputs); err != nil {
+		return err
+	}
+	if c.workInterrupted, err = metric.RegisterOrGet(registry, metricService, "work_interrupted_total", c.workInterrupted); err != nil {
 		return err
 	}
 	if c.casRetries, err = metric.RegisterOrGet(registry, metricService, "cas_retries_total", c.casRetries); err != nil {
@@ -1503,7 +1523,8 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 	}
 	// The pair is checked by natsclient's own rules for heartbeat delivery, once, before
 	// the consumer is created, so a pair those rules refuse fails Start. The policy the
-	// check builds is discarded; its work never runs.
+	// check builds is discarded; its work never runs. Each input carries cfg and the
+	// interval to its lane, which builds the input's own policy (processIngest).
 	checkOnly := func(context.Context, []byte) (natsclient.DeliveryDecision, error) {
 		return natsclient.DeliveryDecisionInvalid, errors.New("graph-ingest: the start-time timing check runs no work")
 	}
@@ -1553,7 +1574,7 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 		entity, derr := c.decodeEntity(msg.Subject(), msg.Data())
 		if derr != nil {
 			// A refused statement (design D15) is this message's own fault and can never be
-			// admitted: it is terminated, counted and logged as processIngest does a
+			// admitted: it is terminated, counted and logged as applyIngest does a
 			// structurally invalid candidate, in the contract-rejection counts, not as poison.
 			var refusal *statementRefusal
 			if errors.As(derr, &refusal) {
@@ -1593,6 +1614,8 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 		work := ingestWork{
 			entity:      entity,
 			msg:         msg,
+			consumer:    cfg,
+			heartbeat:   heartbeat,
 			entityID:    entity.ID,
 			stream:      meta.Stream,
 			seq:         meta.Sequence.Stream,
@@ -1791,7 +1814,7 @@ func (c *Component) ingestEntity(ctx context.Context, entity *graph.EntityState,
 }
 
 // prepareFactProjection applies the Graphable lane's single projection
-// convenience and validates the complete candidate. processIngest calls this
+// convenience and validates the complete candidate. applyIngest calls this
 // before its redelivery guard so malformed identity cannot become a guard key
 // or trigger guard I/O; ingestEntity calls it as the reusable direct-entry
 // safety net. The operation is idempotent.

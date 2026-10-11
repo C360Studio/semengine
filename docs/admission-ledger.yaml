@@ -1576,7 +1576,26 @@
     (:525), is returned by Connect
     with the dialled connection closed (:747-756); no failing-first test exists, because nats.go
     v1.54.0 jetstream.New fails only when an option does and WithPublishAsyncErrHandler never
-    does (jetstream/jetstream.go:471-492, jetstream_options.go:41-46)
+    does (jetstream/jetstream.go:471-492, jetstream_options.go:41-46).
+    (13) natsclient-subscribe-registers-interest (#144, the class:flake issue; owner ruling 2026-10-09,
+    fix it once in natsclient's subscribe, design accepted in PR #156 comments 6085722854 and
+    6091034659, in place of the round trip in graph-ingest's Start that #144 comment 6083704443 ruled):
+    Subscribe and SubscribeForRequests return a subscription only once the server has read its SUB.
+    subscribeOwned (client.go:1335) refuses an ended context before the SUB (:1346-1349), then sends a
+    PING on the connection it subscribed on and waits for the PONG (FlushWithContext, :1373-1375); the
+    wait for the PONG is bounded by the call's context and DefaultRequestTimeout, whichever ends first,
+    and the waits for nats.go's connection lock are not (design L8, #168). A SUB the server refuses is
+    returned as a subscription and nil, and logged by handleError on a client that connected with
+    Connect (design L9, #169). When the round trip does not complete, or Close has begun, it
+    unsubscribes the subscription (:1390) and returns no subscription and the first error that holds
+    (:1391-1407): nats.ErrConnectionClosed once Close has begun; a transient error matching
+    context.Canceled or context.DeadlineExceeded when the context ended or DefaultRequestTimeout
+    passed; a transient ErrNotConnected when the connection was lost. It does not wait for a running
+    handler, which Close joins. The doc comments say so (client.go:1254-1285, request.go:364-395). At
+    the pin both calls returned the subscription straight after nats.go's
+    Subscribe (client.go:834-850, request.go:359-428), while the SUB could still be in nats.go's write
+    buffer, so a request sent from another connection could get "no responders" (#144: PR #93's
+    TestGraphIngestServesExactlyTheDeclaredVerbs). No exported name is added
   dependencies_and_side_effects: >-
     metric, pkg/errs, pkg/retry, internal/resource (in-set); github.com/nats-io/nats.go v1.54.0
     and nats.go/jetstream; prometheus/client_golang; stdlib. Test-only:
@@ -2192,7 +2211,32 @@
     (native Consume delivers before returning its handle and Close begins in that window). Mutation:
     the cancel removed from owned_delivery.go ownConsumer's closing case before the handle (it
     survived the whole unit suite at 5ecc016), and from the closing case while it waits for the last
-    handler: each fails its test on both paths; restored, they pass
+    handler: each fails its test on both paths; restored, they pass. Item (13),
+    natsclient-subscribe-registers-interest, in subscribe_registration_test.go, each test written first
+    and shown failing on the base code (PR #156 comment 6091149322): T1
+    TestSubscribeRegistrationAnswersAnotherConnection (:240; for each call, 200 requests from a second,
+    raw nats.go connection, each sent right after the call returns, all answered), T2
+    TestSubscribeRegistrationBoundedByDefaultRequestTimeout (:296), T3
+    TestSubscribeRegistrationCancelledDuringRoundTrip (:318), T4
+    TestSubscribeRegistrationEndedContextSendsNoSub (:345), T5
+    TestSubscribeRegistrationConnectionLostDuringRoundTrip (:364), T6
+    TestSubscribeRegistrationReturnsWhileHandlerHeld (:390), T7
+    TestSubscribeRegistrationCloseBeginsDuringRoundTrip (:434) and T8
+    TestSubscribeRegistrationCloseEndsConnectionDuringRoundTrip (:479). T2 to T7 run against a scripted
+    server on net.Pipe in a synctest bubble, each in a test process of its own (docs/testing.md,
+    "Concurrency and cleanup"); T8 runs on real time. The log line of a refused SUB (design L9) is not
+    shown by a test in this change; it is main's behaviour (#169). Mutation (PR #156 comments
+    6091577433 and 6091577987; task mutate:check on client.go at 718f700, -cpu 1 -race, seed 1): ten
+    wrong changes to subscribeOwned, each detected by the assertion design D7 names. M1, the round trip removed (T1
+    :287; 68 of 200 requests per call got "no responders", so this detection is probabilistic); M2,
+    the bound fifty times DefaultRequestTimeout (T2 :306); M3, the fail-closed Unsubscribe removed (T2
+    :312, T3 :339, T5 :384); M4, finish() called after the fail-closed Unsubscribe, so Close no longer
+    joins the handler (T6 :418); M5, the ended-context check removed (T4 :358); M6, a lost
+    connection's error passed through in place of ErrNotConnected (T5 :381); M7, success without the
+    Close check (T7 :456); M8, the Close case after the lost-connection case (T8 :496); M9 and M10, the
+    call waiting for its handler on a failed round trip and once Close has begun (T6 :406, T7 :454).
+    The first M1 check was inconclusive (the tree changed during it) and was run again. Not mutated:
+    the own-process helper's other requirements (its two refusals were run by hand, same comments)
   owner: setup-04a-01-floor developer
   disposition: adapt
 

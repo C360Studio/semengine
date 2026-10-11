@@ -415,6 +415,9 @@ Owner: Go developer for extraction and consumer integration, independent Go revi
 for contract changes, technical writer for current docs and extraction ledger. Dependency: SETUP 03B sign-off.
 
 Port small slices using the admission heuristic, mapping each dependency closure to the contract and ledger.
+From Slice 04A change 3 on, the unit of a porting pull request, and how a dependency closure becomes a group of them
+under the Slice 04A milestone, are set by the architect contract, Extraction slices, "One package per pull request"
+(owner ruling 2026-10-09, epic #9 comment 6085243841).
 Shared contract planning may look ahead; do not port the next slice until the current slice passes its architect and
 independent reviewer gates. Record the exact qualified engine commit, SemSource SHA, configuration, and admitted tier.
 Keep the accepted lower tier deployable and retain every promised lower-tier regression suite at each stage,

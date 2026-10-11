@@ -16,7 +16,7 @@ under `.claude/agents/`) the reviewer of record belongs to the agent that wrote 
 fix that changes documents only, and the archive/spec sync, take either agent's reviewer (owner, 2026-10-03). The
 [shared protocol](../protocol.md), "Cross-agent review", says which pull requests, what the owner ruled, and how the
 review is asked for and answered on the pull request. A review record there names the commit it read, what it ran and
-what it could not run. Its evidence comes from the tree and from CI, never from the implementer's account, and the
+what it could not run. Its evidence comes from the tree and its own runs, never from the implementer's account, and the
 reviewer does not write on the branch. A reviewer run by the implementing session on such a change is an early
 check, not the gate.
 
@@ -95,7 +95,11 @@ prompted mechanism, proposed symbol, issue claim, prior design, and briefing ass
    current specs, ADRs, and active changes. Run the open-pull-request listing yourself, as the architect contract's
    inventory category 3 gives it (including its 100-file limit): an open pull request, draft or not, whose changed
    files or OpenSpec capabilities overlap the change and that the inventory does not list is a finding.
-5. Return `INVENTORY PASS` only when the inventory is sufficiently complete to begin design. Any missing same-class
+5. For a change that carries packages from the SemStreams pin, check the ADR list (architect contract, inventory
+   category 6) against the pin's `docs/adr`: list the records and search their text yourself, with the commands that
+   category gives, and read each listed ADR to confirm it decides what the inventory says. A carried package whose
+   governing ADR the inventory does not list is a finding.
+6. Return `INVENTORY PASS` only when the inventory is sufficiently complete to begin design. Any missing same-class
    owner or incomplete triggered collision table is `BLOCKING`; return `INVENTORY CHANGES REQUESTED` and do not review
    or suggest a target state.
 
@@ -107,14 +111,28 @@ premise, and introduces no phantom consumer or unreviewed surface. Independently
 its claimed costs. Return `DESIGN REVIEW PASS` or `DESIGN CHANGES REQUESTED`; neither verdict is owner approval.
 Runtime implementation and spec promotion remain blocked until the owner explicitly accepts the reviewed design.
 
-Three further checks, scoped as the architect contract (Extraction slices) states:
+Four further checks, scoped as the architect contract (Extraction slices) states:
 
 - A design statement about how the SemStreams pin behaves, with no pin-probe result behind it, is a finding.
+- A decision that a listed ADR records and the design keeps, changes or drops without citing that ADR is a finding;
+  check each cited decision against the ADR's text. A change or drop that neither names the ADR in an owner question
+  the handoff raises nor cites the owner ruling that already covers it is a finding, and so is a binding ADR (one
+  whose decision the ported code implements) that is neither ported with its package nor given a reason in the
+  design.
 - A design that does not state, for each overlapping open pull request in its inventory, which merges first is a
   finding.
 - A finding about a lock, a join or a race between two calls is resolved by removing the mechanism from the design
   and adding the behaviour's failing-first test to `tasks.md`, not by another design round. A design gets three
   review rounds (`.agents/README.md`, Orchestrating role agents).
+
+For a porting design from Slice 04A change 3 on (architect contract, Extraction slices, "One package per pull request"
+and "The shape sweep"), check that the design names its unit, one package or one lifecycle owner with its package,
+states its pin line count and, over the bound, raises the waiver as an owner question (the waiver itself comes with
+the owner's ruling, so it cannot exist at this stage); and that the inventory carries the shape sweep's findings, each
+cited at the pin's `path:line`. Check each finding's disposition under
+[Bounded port scope](../protocol.md#bounded-port-scope): a required correction names its binding basis and receives
+the appropriate ledger disposition; retained structure says why changing it is optional. A missing unit, line count,
+owner question, finding, or supported disposition is a finding.
 
 ## Contract and task-truth review
 
@@ -138,18 +156,22 @@ Three further checks, scoped as the architect contract (Extraction slices) state
   authority and readiness, acknowledged durability, metadata and content preservation) is proven, not waived by an
   issue, an elapsed budget, or a coverage number. Changed behavior needs a failing-first test.
 - A proposal or design that introduces a new symbol, field, channel, resolver, or classifier without a cited
-  existing-surface inventory (architect contract, five categories) is a finding. Spot-check the inventory's searches
+  existing-surface inventory (architect contract, six categories) is a finding. Spot-check the inventory's searches
   (gopls and grep alike) yourself on the seams the diff touches; an asserted inventory is a claim, not evidence.
 - **Name the diff's problem shape yourself, then search for it elsewhere in the tree.** Categories 1-4 scope to the
   fact being modeled, so re-deriving them inherits the same blind spot the author had. State the shape the diff
   implements (admit-or-refuse at a seam, create-vs-exists, read-through over a cache, classified refusal plus
-  observed signal, authority delegation, bounded dispatch) and cite the nearest existing instance. A diff that
-  reimplements a shape the repository already owns is a finding at the reimplementation; the fix is adopting the
-  existing home.
-- For everything the diff ADDS (exported or not: symbols, fields, channels, resolvers, classifiers, ports,
-  subjects, buckets, config keys): run the owner-exists search yourself. An addition beside an existing owner of
-  the same responsibility is a finding even when the design's inventory missed it; the fix is consolidation into
-  one home, never a sibling.
+  observed signal, authority delegation, bounded dispatch) and cite the nearest existing instance. Newly introduced
+  code that reimplements a shape the repository already owns is a finding at the reimplementation; the fix is adopting the
+  existing home. Inherited structure is assessed under Bounded port scope below.
+- For every addition beyond the retained pin surface (exported or not: symbols, fields, channels, resolvers,
+  classifiers, ports, subjects, buckets, config keys): run the owner-exists search yourself. An addition beside an
+  existing owner of the same responsibility is a finding even when the design's inventory missed it; the fix is
+  consolidation into one home, never a sibling.
+- For inherited structure retained from the pin, apply
+  [Bounded port scope](../protocol.md#bounded-port-scope). Inventory its shape and assess the stated disposition;
+  do not require consolidation solely because inherited duplication or indirection exists. A binding requirement,
+  accepted commitment, or demonstrated defect still requires the smallest complete correction and its proof.
 - A doc that breaks the owner's documentation rule (technical-writer contract, rule 9: human-dev friendly, no
   jargon, no marketing) is a review finding.
 - Confirm checked tasks are fully complete as worded. Split mixed tasks instead of treating partial evidence as done.
@@ -164,6 +186,11 @@ Three further checks, scoped as the architect contract (Extraction slices) state
   defer it to a follow-up.
 - Verify caller/callee behavior, error classes, state/readiness transitions, and consumer-visible results with
   evidence. Require an architect-reviewed TDD slice and behavior-level tests through production seams.
+- For a porting pull request whose package exceeds the bound (architect contract, "One package per pull request"),
+  check before merge that the owner's waiver for that number is on the pull request. A missing waiver is a finding.
+- For each task under review, check that the choices it made beyond its design are in its notes file,
+  `openspec/changes/<id>/notes/<task>.md` (developer contract, Handoff), and that a pull request comment links the
+  file. Notes posted only as a pull request comment are a finding.
 
 ## High-signal runtime review
 
@@ -357,6 +384,12 @@ a likely functional defect or known project discipline failure, `MEDIUM` for a n
 style only. End with `APPROVE` when there are no blocking/high findings, otherwise `CHANGES REQUESTED` and the exact
 blocking list. State explicitly when evidence was unavailable rather than guessing.
 
-A PASS or `APPROVE` names the CI run and the commit it rests on: a step is done only when the CI run for its pushed
-commit has passed. A local `task verify` is evidence, not the gate. A cancelled or superseded run is unverified, never
-green.
+Under [Bounded port scope](../protocol.md#bounded-port-scope), an optional inherited maintenance finding cannot veto
+approval or become `BLOCKING` or `HIGH` solely by invoking a generic consolidation rule. Name the binding obligation
+and concrete evidence when requesting required work. Missing proof of a required guarantee calls for targeted
+qualification, not an assumed rewrite or a passing verdict.
+
+A PASS or `APPROVE` names the commit it rests on and the `task verify` run behind it: one the reviewer made on that
+commit, or else the implementer's local result, recorded as reported by the implementer, never as passed. It never
+rests on a CI run: a step is done when `task verify` passes on its commit, and CI is checked once, before merge, where
+that run is the independent check (owner ruling of 2026-10-10, issue #171).

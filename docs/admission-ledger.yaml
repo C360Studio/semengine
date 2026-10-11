@@ -713,7 +713,7 @@
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
     the pin's decision record for honest graph-index readiness, the revision-lag caught-up signal;
-    carried without code so the readiness ADR (ADR-109, #110) can cite it (#157 owner ruling,
+    carried without code so the readiness ADR (ADR-109, issue #110) can cite it (#157 owner ruling,
     comment 6085722578)
   destination: docs/adr/066-honest-graph-index-readiness.md
   contract: the decision text as at the pin
@@ -726,7 +726,8 @@
     note added under the title: carried without code for #157; issue, pull request and release
     numbers are SemStreams' or a sister repository's; ADR-083 and ADR-084 are ported with it;
     ADR-062, ADR-065, the graph-index-readiness spec and the code it names other than natsclient
-    (BucketLastSeq, CreateKeyValueBucket) are not yet ported; file and line references are the pin's
+    (BucketLastSeq, CreateKeyValueBucket) are not yet ported; file and line references are the pin's;
+    the semsource code and decisions it names are that repository's
   proving_tests: n/a (task docs:check lints it)
   owner: "#157 carry-in technical writer"
   disposition: adapt
@@ -735,7 +736,7 @@
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
     the pin's decision record for readiness published as KV state and view staleness measured in
-    time; carried without code so the readiness ADR (ADR-109, #110) can cite it (#157 owner ruling,
+    time; carried without code so the readiness ADR (ADR-109, issue #110) can cite it (#157 owner ruling,
     comment 6085722578)
   destination: docs/adr/083-readiness-as-distributed-state.md
   contract: the decision text as at the pin
@@ -755,7 +756,7 @@
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
     the pin's decision record that readiness licenses health, never absence; carried without code
-    so the readiness ADR (ADR-109, #110) can cite it (#157 owner ruling, comment 6085722578)
+    so the readiness ADR (ADR-109, issue #110) can cite it (#157 owner ruling, comment 6085722578)
   destination: docs/adr/084-readiness-licenses-health-not-absence.md
   contract: the decision text as at the pin
   dependencies_and_side_effects: none; a document
@@ -773,7 +774,7 @@
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
     the pin's decision record for gating on health and reporting freshness; carried without code so
-    the readiness ADR (ADR-109, #110) can cite it (#157 owner ruling, comment 6085722578)
+    the readiness ADR (ADR-109, issue #110) can cite it (#157 owner ruling, comment 6085722578)
   destination: docs/adr/085-gate-on-health-report-freshness.md
   contract: the decision text as at the pin
   dependencies_and_side_effects: none; a document
@@ -791,7 +792,7 @@
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
     the pin's decision record that readiness is published per producer and aggregation belongs to
-    the consumer; carried without code so the readiness ADR (ADR-109, #110) can cite it (#157 owner
+    the consumer; carried without code so the readiness ADR (ADR-109, issue #110) can cite it (#157 owner
     ruling, comment 6085722578)
   destination: docs/adr/088-readiness-is-per-producer-aggregation-is-the-consumers.md
   contract: the decision text as at the pin

@@ -2,8 +2,8 @@
 
 > **Ported from SemStreams.** This record is `docs/adr/083-readiness-as-distributed-state.md` at SemStreams commit
 > `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`. It was carried without code for SemEngine issue #157 (owner ruling,
-> comment 6085722578), with ADR-066, ADR-084, ADR-085 and ADR-088, so that SemEngine's readiness ADR (ADR-109, #110; not
-> yet written) can cite it. Its admission-ledger row is `docs/adr/083-readiness-as-distributed-state.md` in
+> comment 6085722578), with ADR-066, ADR-084, ADR-085 and ADR-088, so that SemEngine's readiness ADR (ADR-109, issue
+> #110; not yet written) can cite it. Its admission-ledger row is `docs/adr/083-readiness-as-distributed-state.md` in
 > `docs/admission-ledger.yaml`. The decision text is unchanged. Read it with these facts about this repository:
 >
 > - Issue numbers in the text below (`#590`, `#592`) are SemStreams' or a sister repository's, not SemEngine's; the

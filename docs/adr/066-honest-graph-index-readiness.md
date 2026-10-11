@@ -2,14 +2,14 @@
 
 > **Ported from SemStreams.** This record is `docs/adr/066-honest-graph-index-readiness.md` at SemStreams commit
 > `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`. It was carried without code for SemEngine issue #157 (owner ruling,
-> comment 6085722578), with ADR-083, ADR-084, ADR-085 and ADR-088, so that SemEngine's readiness ADR (ADR-109, #110; not
-> yet written) can cite it. Its admission-ledger row is `docs/adr/066-honest-graph-index-readiness.md` in
+> comment 6085722578), with ADR-083, ADR-084, ADR-085 and ADR-088, so that SemEngine's readiness ADR (ADR-109, issue
+> #110; not yet written) can cite it. Its admission-ledger row is `docs/adr/066-honest-graph-index-readiness.md` in
 > `docs/admission-ledger.yaml`. The decision text is unchanged apart from line wrapping and a comment that keeps
 > markdownlint from reading `#430` at the start of a line as a heading. Read it with these facts about this repository:
 >
 > - Issue and pull request numbers in the text below (`#397`, `#420`, `#430`, `#431`, `#435`, `#524`, `#614`, `#628`,
->   `semstreams#431`) and release names (`beta.125`, `beta.127`, `beta.128`) are SemStreams' or a sister repository's,
->   not SemEngine's.
+>   `gh#431`, `semstreams#431`) and release names (`beta.125`, `beta.127`, `beta.128`) are SemStreams' or a sister
+>   repository's, not SemEngine's.
 > - Of the records and specs named here, ADR-083 and ADR-084 are ported with this one. ADR-062, ADR-065 and the
 >   `graph-index-readiness` spec are not yet ported.
 > - Of the code named here, `natsclient` is ported, with `BucketLastSeq` and `CreateKeyValueBucket`; file paths and line

@@ -123,9 +123,11 @@ func WithWriteTimeout(d time.Duration) ClientOption {
 // finds the connection stale, closes it and reconnects: at 300 ms that took
 // 1.2 s (P20, P24); the timing at other values is not promised.
 //
-// Set it with WithWriteTimeout, whose partly written write leaves the connection
-// unable to carry anything until this check ends it (T9; P24). d must be
-// positive: NewClient refuses any other value as invalid (T9).
+// Set it with WithWriteTimeout. While a write is held this check does not fire
+// (P20), so only the write timeout ends that write, and a write it ends partway
+// leaves the connection unable to carry anything until this check closes it
+// (T9; P24). d must be positive: NewClient refuses any other value as invalid
+// (T9).
 func WithPingInterval(d time.Duration) ClientOption {
 	return func(c *Client) error {
 		if d <= 0 {

@@ -103,7 +103,7 @@ otherwise `pkg/<name>` moves to `internal/<name>`.
 | 0 | `graph/llm` | — | nothing ported here reads it once `graph/inference` is its hierarchy slice (D1a, P-11) | not ported; `defer-exclude` row naming changes 4 and 7 |
 | 0 | `storage` | `storage` | consumers import it (20) | carry |
 | 1 | `pkg/worker` | — | no reader once `BoundedDispatcher` goes (§2) | not ported (ruling E); `defer-exclude` row |
-| 1 | `graph` | `graph`, with its catalog moved to `graph/kvcatalog` and its readiness computation to `graph/readiness` (D16) | consumers import it (72 + 11) | adapt (D3, D6, D9, D15, D16, D18, D20) |
+| 1 | `graph` | `graph`, with its catalog moved to `graph/kvcatalog` and its readiness computation to `graph/readiness` (D16) | consumers import it (72 + 11) | adapt (D3, D6, D9, D15 with checkpoint 3 H3's reason `GraphStateReasonMissingStatementMetadata`, D16, D18, D20) |
 | 2 | `graph/readiness` | `graph/readiness` | consumers import it (2) | adapt (D4, D5, D6, D16; `ComputeIndexStatus` and the revision gauges return with change 4, ruled P) |
 | 2 | `graph/structural` | — | its readers are the detectors and graph-clustering, both in change 7 (D1a, P-11) | not ported in change 2; `defer-exclude` row naming change 7 |
 | 2 | `internal/componentadmission` | — | its only reader is the token parameter ruling C removes (D14) | not ported (ruling C); `defer-exclude` row |
@@ -857,7 +857,11 @@ mutation lane gets no hierarchy statements, as at the pin (`canonical_mutations.
 
 - Every statement the seam stores has a non-empty `Source` and a non-zero `Timestamp`. A write that carries a
   statement without them is refused as `invalid_request`, naming the statement's index and the missing field, on every
-  lane; nothing is defaulted from the clock.
+  lane; nothing is defaulted from the clock. A statement the write keeps from the stored value is held to the same
+  rule: the stream lane's merge and the append check their complete candidate before `MarshalEntityState`, and a kept
+  statement without `Source` or `Timestamp` is the stored value's fault, refused and recorded as D23 states, never the
+  write's `invalid_request`, and never filled from the arrival or the clock; a reconcile reads through `readEntity`,
+  which refuses such a value first (checkpoint 3 H3; ADR-110 Decision 5).
 - On the stream lane, a statement from a `Graphable` payload that lacks `Source` or `Timestamp` gets it from the
   message envelope: the envelope's source (`Meta().Source()`) and creation time (`Meta().CreatedAt()`). A statement
   that carries its own keeps it. When the envelope has no source or no creation time either, the message is refused
@@ -975,8 +979,12 @@ timestamp, in both stored orders; the source; the stored order) and a later time
 first.
 
 **Not changed** (the audit's "port untouched" list): acknowledgement order (KV write, durable guard stamp, ack,
-`keyed_ingest.go:208-224`); `authorizeSubject` at every lane before any I/O; `MarshalEntityState` as the one validating
-write gate and `UnmarshalEntityState`'s poison classification; `projection.MutationClient`'s commit-state model over
+`keyed_ingest.go:208-224`); `authorizeSubject` at every lane before any I/O; `MarshalEntityState` as graph's validating
+gate on every commit, which the stream lane's merge and the append precede with graph-ingest's statement-metadata check
+of their complete candidate (checkpoint 3 H3); graph's encoder and `UnmarshalEntityState`'s poison classification do
+not check statement metadata, so a consumer may check with the encoder statements it leaves for graph-ingest to stamp
+(semconnect `systems_post.go:436`, at its main `d0d06e0`); graph-ingest's stored-value rule does (D23);
+`projection.MutationClient`'s commit-state model over
 `graphmutation`; append deduplication inside the compare-and-set closure; `internal/dispatch.KeyedPool`;
 `graph.mutation.>` with one subject home, typed requests and one client.
 
@@ -1328,16 +1336,25 @@ SHALL be the call's own commit, or 0 (scenarios "A skip writes nothing", "A conf
 and report unchanged at the revision it read"; "Timestamp orders a replace" (`:120-128`) adds "A message with at least
 one set, none of which applies, SHALL write nothing, unless the stored entity has no indexing profile, which the write
 then stamps (ADR-054)"; new requirement "The write path refuses a stored value it cannot change": a value empty at a
-nonzero revision, not decodable as an entity, or naming another entity than its key, and a change whose result the
-canonical contract refuses because of statements it keeps from the stored value, SHALL be refused, nothing written, and
-recorded at the revision read. A scenario each.
+nonzero revision, not decodable as an entity, or naming another entity than its key, and a change whose result keeps
+from the stored value a statement the canonical contract refuses, or one with no `Source` or no `Timestamp` (ADR-110
+Decisions 5 and 6), SHALL be refused, nothing written, and recorded at the revision read. A scenario each.
 
 **graph-ingest's side (run 3b-ii).** Absence is revision 0, never an empty value. The read check is the trusted decode
 plus `decodeStoredEntity`'s key check (`mutation_runtime.go:228`); `MarshalEntityState` still gates every commit
-(`graph/entity_predicate_contract.go:265-286`). Declared cost: a no-op canonical append over a value only the full rule
+(`graph/entity_predicate_contract.go:265-286`). `decodeStoredEntity`, which `readEntity`, the boot sweep, the record's
+verify and `classifyStoredStateRMWError` share, also refuses a value holding a statement with no `Source` or no
+`Timestamp` (`GraphStateReasonMissingStatementMetadata`); the stream lane's merge and the append check their complete
+candidate for it before `MarshalEntityState`. The write path's read check stays the trusted decode plus the key check
+(ADR-110 Decision 6), so a write declined before that check is not refused for it, and an arrival that replaces that
+statement's set applies. Declared cost: a no-op canonical append over a value only the full rule
 refuses reports unchanged, where today's re-read (`canonical_mutations.go:425-433`) fails it; and a stream arrival whose
 every set is older, over such a value, is acknowledged with nothing written, where today its write fails and records it;
-the full rule before every skip has an unmeasured cost on restart replay (gh#713). Refusals go to
+the full rule before every skip has an unmeasured cost on restart replay (gh#713); and, for a stored statement with no
+`Source` or `Timestamp` (H3), graph-ingest's reads refuse the entity where they served it, a reconcile that would
+replace the statement is refused at its read, a stream arrival that keeps it is redelivered until the consumer's limit
+and then dropped unless the entity is repaired, and the check's cost per read and per merge is not measured (costs the
+owner accepted, #91 comment 6111530424). Refusals go to
 `inventoryEntityPoison` at the callback's revision. A skip clears no poison record or cache entry; the next valid read
 or commit does (D3c). The append returns revision, outcome (`graph.MutationApplied`/`MutationUnchanged`) and suppressed
 in an unexported struct. On an entity with an indexing profile, an arrival's profile statement is dropped before the

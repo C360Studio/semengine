@@ -211,9 +211,11 @@ func (c *Component) readEntity(ctx context.Context, entityID string) (graph.Enti
 
 // decodeStoredEntity is the rule for the bytes stored under one key. They must
 // decode under the canonical contract, so an empty value is unreadable poison,
-// never absence (a deleted key is already not-found at the KV), and the entity
-// they hold must be the one the key names. A refusal is a graph-state error
-// whose entity ID is the key.
+// never absence (a deleted key is already not-found at the KV), the entity
+// they hold must be the one the key names, and each of its statements must
+// carry a Source and a Timestamp, the statement-metadata rule
+// (missingStatementMetadata; ADR-110 Decision 5; checkpoint 3 H3). A refusal is
+// a graph-state error whose entity ID is the key.
 func decodeStoredEntity(key string, value []byte) (graph.EntityState, error) {
 	var state graph.EntityState
 	if err := graph.UnmarshalEntityState(value, &state); err != nil {
@@ -225,6 +227,13 @@ func decodeStoredEntity(key string, value []byte) (graph.EntityState, error) {
 	}
 	if err := checkStoredEntityKey(key, state.ID); err != nil {
 		return graph.EntityState{}, err
+	}
+	if err := missingStatementMetadata(state.Triples); err != nil {
+		return graph.EntityState{}, graph.ClassifyStateContractError(&graph.StateContractError{
+			Reason:   graph.GraphStateReasonMissingStatementMetadata,
+			EntityID: key,
+			Err:      err,
+		})
 	}
 	return state, nil
 }

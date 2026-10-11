@@ -157,6 +157,7 @@ func BenchmarkMergeEntityCycle(b *testing.B) {
 				Subject:    benchEntityID,
 				Predicate:  semantictest.Predicate(b, parts[0], parts[1], parts[2]),
 				Object:     object,
+				Source:     fixtureSource,
 				Timestamp:  residentTime,
 				Confidence: 1.0,
 			})
@@ -174,6 +175,7 @@ func BenchmarkMergeEntityCycle(b *testing.B) {
 				Subject:    benchEntityID,
 				Predicate:  semantictest.Predicate(b, parts[0], parts[1], parts[2]),
 				Object:     fmt.Sprintf("value-%d", len(deltaTriples)),
+				Source:     fixtureSource,
 				Timestamp:  deltaTime,
 				Confidence: 1.0,
 			})

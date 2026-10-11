@@ -357,9 +357,10 @@ type storedPoisonCase struct {
 	reason graph.StateResetReason
 }
 
-// storedPoison lists the refused values beside guardTestPoisonBytes' noncanonical
-// predicate: a value whose entity ID is not its key, and an empty value.
-func storedPoison() []storedPoisonCase {
+// storedPoison lists the values stored under key that are refused beside guardTestPoisonBytes'
+// noncanonical predicate: a value whose entity ID is not its key, an empty value, and a value
+// holding a statement with no source or no timestamp (checkpoint 3 H3).
+func storedPoison(key string) []storedPoisonCase {
 	return []storedPoisonCase{
 		{
 			name:   "entity ID is not its key",
@@ -367,13 +368,41 @@ func storedPoison() []storedPoisonCase {
 			reason: graph.GraphStateReasonNoncanonicalEntityID,
 		},
 		{name: "empty value", value: []byte{}, reason: graph.GraphStateReasonUnreadableEntity},
+		{
+			name:   "statement without a source",
+			value:  storedStatementWithout(key, "source"),
+			reason: graph.GraphStateReasonMissingStatementMetadata,
+		},
+		{
+			name:   "statement without a timestamp",
+			value:  storedStatementWithout(key, "timestamp"),
+			reason: graph.GraphStateReasonMissingStatementMetadata,
+		},
 	}
+}
+
+// storedStatementWithout is a value of the entity key holding one statement with no field,
+// "source" or "timestamp", written as JSON the way a writer outside graph-ingest could store it
+// (checkpoint 3 H3).
+func storedStatementWithout(key, field string) []byte {
+	var metadata string
+	switch field {
+	case "source":
+		metadata = `"timestamp":"2026-09-01T12:00:00Z"`
+	case "timestamp":
+		metadata = `"source":"` + fixtureSource + `"`
+	default:
+		panic("storedStatementWithout: field " + field + " is neither source nor timestamp")
+	}
+	return []byte(`{"id":"` + key + `","triples":[{"subject":"` + key +
+		`","predicate":"test.state.value","object":"v",` + metadata + `,"confidence":1}]}`)
 }
 
 // TestEveryEntityReadRefusesTheSameStoredPoison holds one read rule on the four
 // sites that read one authority value and answer with it (#139 B): the entity
 // verb, batch, prefix and reconcile. A stored value whose entity ID is not its
-// key, and an empty value, are graph-state poison to every one of them: refused,
+// key, an empty value, and a value holding a statement with no source or no
+// timestamp, are graph-state poison to every one of them: refused,
 // inventoried at the revision read, never served, cached, reported absent or
 // deleted. The delete reads the same way but is not refused for the value
 // (TestCanonicalDeleteRemovesAValueTheReadRefuses).
@@ -409,7 +438,7 @@ func TestEveryEntityReadRefusesTheSameStoredPoison(t *testing.T) {
 		}},
 	}
 
-	for _, value := range storedPoison() {
+	for _, value := range storedPoison(key) {
 		for _, site := range reads {
 			t.Run(value.name+"/"+site.name, func(t *testing.T) {
 				c, bucket := poisonScopingTestComponent(t)
@@ -465,7 +494,7 @@ func TestCanonicalDeleteRemovesAValueTheReadRefuses(t *testing.T) {
 		return err
 	}
 
-	for _, value := range storedPoison() {
+	for _, value := range storedPoison(key) {
 		t.Run(value.name, func(t *testing.T) {
 			c, bucket := poisonScopingTestComponent(t)
 			bucket.data[key] = mockKVData{value: value.value, revision: revision}

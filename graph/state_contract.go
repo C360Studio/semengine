@@ -55,6 +55,9 @@ const (
 	// subject, or an explicitly marked entity reference violates the canonical
 	// entity identity contract.
 	GraphStateReasonNoncanonicalEntityID StateResetReason = "noncanonical_entity_id"
+	// GraphStateReasonMissingStatementMetadata means a stored statement has no Source or no Timestamp, which every
+	// stored statement carries (ADR-110 Decision 5).
+	GraphStateReasonMissingStatementMetadata StateResetReason = "missing_statement_metadata"
 )
 
 // StateContractError means the authoritative graph cannot be safely read

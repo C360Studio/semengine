@@ -336,10 +336,38 @@ func TestWriteSeamRefusesEmptyStoredValue(t *testing.T) {
 	})
 }
 
-// A value that does not decode, and a write whose result the write gate refuses for a statement it
-// keeps from the stored value, are refused as before; the record is now at the revision the seam
-// read, not at a later read's. An append that adds nothing over a value only the full rule
-// refuses is not here: it reports unchanged, the cost design D23 declares.
+// seamStoredWithout is a value at seamKey holding seamHeld and a statement of another predicate
+// with no field, "source" or "timestamp", as a writer outside graph-ingest could store it: graph's
+// encoder, which plants it, does not check statement metadata (checkpoint 3 H3).
+func seamStoredWithout(t *testing.T, field string) []byte {
+	t.Helper()
+	bare := message.Triple{
+		Subject: seamKey, Predicate: "test.state.legacy", Object: "old",
+		Source: fixtureSource, Timestamp: fixtureTime, Confidence: 1.0,
+	}
+	switch field {
+	case "source":
+		bare.Source = ""
+	case "timestamp":
+		bare.Timestamp = time.Time{}
+	default:
+		t.Fatalf("seamStoredWithout: field %q is neither source nor timestamp", field)
+	}
+	value, err := graph.MarshalEntityState(&graph.EntityState{
+		ID: seamKey, MessageType: testEntityType(), Triples: []message.Triple{seamHeld, bare},
+	})
+	if err != nil {
+		t.Fatalf("encode the stored value: %v", err)
+	}
+	return value
+}
+
+// A value that does not decode, a write whose result the write gate refuses for a statement it
+// keeps from the stored value, and one whose result keeps a statement with no source or no
+// timestamp (checkpoint 3 H3), are refused; the record is at the revision the seam read, not at a
+// later read's. An append that adds nothing over a value only the full rule refuses is not here:
+// it reports unchanged, the cost design D23 declares
+// (TestAppendAddingNothingOverStatementWithoutMetadataIsUnchanged).
 func TestWriteSeamRecordsStoredPoisonAtTheRevisionRead(t *testing.T) {
 	writes := []seamWrite{
 		{name: "stream lane", triple: seamAdded, write: streamLaneWrite},
@@ -351,6 +379,122 @@ func TestWriteSeamRecordsStoredPoisonAtTheRevisionRead(t *testing.T) {
 	t.Run("statement the write gate refuses", func(t *testing.T) {
 		assertWriteSeamRefuses(t, guardTestPoisonBytes(seamKey), graph.GraphStateReasonNoncanonicalPredicate, writes)
 	})
+	for _, field := range []string{"source", "timestamp"} {
+		t.Run("statement without a "+field, func(t *testing.T) {
+			assertWriteSeamRefuses(t, seamStoredWithout(t, field), graph.GraphStateReasonMissingStatementMetadata, writes)
+		})
+	}
+}
+
+// An append whose every statement is already stored writes nothing and is unchanged at the
+// revision it read, even over a value holding a statement with no source or no timestamp: the
+// write path's read check stays the trusted decode plus the key check, so a write declined before
+// the metadata check of its result is not refused for it, and nothing is recorded (design D23;
+// ADR-110 Decision 6; checkpoint 3 H3).
+func TestAppendAddingNothingOverStatementWithoutMetadataIsUnchanged(t *testing.T) {
+	for _, field := range []string{"source", "timestamp"} {
+		t.Run("statement without a "+field, func(t *testing.T) {
+			c, bucket := poisonScopingTestComponent(t)
+			stored := seamStoredWithout(t, field)
+			bucket.data[seamKey] = mockKVData{value: stored, revision: seamReadRevision}
+
+			data, err := c.handleCanonicalAppend(t.Context(), mustCanonicalJSON(t, graph.AppendTriplesRequest{
+				Triples: []message.Triple{seamHeld},
+			}))
+			if err != nil {
+				t.Fatalf("handleCanonicalAppend: %v", err)
+			}
+			var response graph.AppendTriplesResponse
+			if err := json.Unmarshal(data, &response); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if len(response.Results) != 1 || response.Results[0].Outcome != graph.MutationUnchanged ||
+				response.Results[0].KVRevision != seamReadRevision {
+				t.Fatalf("results = %#v, want one unchanged at revision %d", response.Results, seamReadRevision)
+			}
+			bucket.mu.Lock()
+			after := bucket.data[seamKey]
+			bucket.mu.Unlock()
+			if !bytes.Equal(after.value, stored) || after.revision != seamReadRevision {
+				t.Fatalf("the append wrote: revision %d, want the planted value at %d", after.revision, seamReadRevision)
+			}
+			if _, recorded := poisonInventoryEntry(c, seamKey); recorded {
+				t.Fatal("an append that wrote nothing recorded the stored value")
+			}
+		})
+	}
+}
+
+// A stream arrival from a statement's own source, carrying its predicate, replaces the stored set
+// of that predicate and source whole, so a stored statement with no timestamp in that set is
+// replaced and the write applies: the metadata check is of the merge's result, never of the
+// stored statements before the replace (design D23; checkpoint 3 H3). A stored set with no
+// timestamp is older than any arrival's. On an unprofiled entity the write also stamps the profile
+// (ADR-054).
+func TestStreamArrivalReplacesStoredStatementWithoutTimestamp(t *testing.T) {
+	const (
+		id      = "acme.ops.test.system.widget.no-time"
+		source  = "source-a"
+		planted = uint64(41)
+	)
+	bare := wmStatement(id, "p0", source, time.Time{})
+	arrival := wmStatement(id, "p2", source, wmTime(2))
+	profile := message.Triple{
+		Subject: id, Predicate: vocabulary.EntityIndexingProfile, Object: vocabulary.IndexingProfileControl,
+		Source: "graph-ingest-indexing-profile", Timestamp: wmTime(1), Confidence: 1,
+	}
+	for _, tc := range []struct {
+		name   string
+		stored []message.Triple
+	}{
+		{name: "profiled entity", stored: []message.Triple{bare, profile}},
+		{name: "unprofiled entity", stored: []message.Triple{bare}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
+			value, err := graph.MarshalEntityState(&graph.EntityState{ID: id, MessageType: testEntityType(), Triples: tc.stored})
+			if err != nil {
+				t.Fatalf("encode the stored entity: %v", err)
+			}
+			bucket.data[id] = mockKVData{value: value, revision: planted}
+
+			c.ingestGuardMem = []*laneGuard{newLaneGuard(16)}
+			msg := &keyedIngestTestMsg{}
+			err = c.processIngest(t.Context(), 0, ingestWork{
+				entity: &graph.EntityState{ID: id, MessageType: testEntityType(), Triples: []message.Triple{arrival}},
+				msg:    msg, entityID: id, stream: "ENTITY", seq: 1,
+			})
+			if err != nil {
+				t.Fatalf("processIngest: %v", err)
+			}
+			if !msg.ack.Load() || msg.nak.Load() || msg.term.Load() {
+				t.Fatalf("settlement: ack %v, nak %v, term %v; want only an acknowledgement",
+					msg.ack.Load(), msg.nak.Load(), msg.term.Load())
+			}
+			bucket.mu.Lock()
+			after := bucket.data[id]
+			bucket.mu.Unlock()
+			if after.revision != planted+1 {
+				t.Fatalf("stored at revision %d, want %d: the arrival applies", after.revision, planted+1)
+			}
+			var stored graph.EntityState
+			if err := json.Unmarshal(after.value, &stored); err != nil {
+				t.Fatalf("decode the stored entity: %v", err)
+			}
+			var held []string
+			for _, triple := range stored.Triples {
+				if triple.Timestamp.IsZero() {
+					t.Errorf("stored statement %+v has no timestamp", triple)
+				}
+				if triple.Predicate == writeModesPredicate {
+					held = append(held, heldEntry(triple.Object, triple.Source, triple.Timestamp))
+				}
+			}
+			if want := []string{"p2/source-a/2"}; !slices.Equal(held, want) {
+				t.Errorf("stored statements of %s: %v, want %v", writeModesPredicate, held, want)
+			}
+		})
+	}
 }
 
 // An arrival whose every set is older than the stored set of its predicate and source applies

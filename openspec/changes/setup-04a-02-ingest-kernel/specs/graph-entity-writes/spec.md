@@ -73,7 +73,9 @@ reads of `graph` (`EntityState.GetTriple`, `EntityState.GetPropertyValue`) SHALL
 Every statement graph-ingest stores SHALL carry a non-empty `Source` and a non-zero `Timestamp`, and neither SHALL be
 taken from the clock by graph-ingest, or as a default for a value the writer left out; a writer that originates a
 statement MAY assert its own time. A write carrying a statement without them SHALL be refused as `invalid_request`,
-naming the statement's index and the missing field, and SHALL store nothing. On the stream lane, a statement that lacks
+naming the statement's index and the missing field, and SHALL store nothing. A statement a write keeps from the stored
+value is not the write's; one without them is refused as "The write path refuses a stored value it cannot change"
+states, never as `invalid_request`. On the stream lane, a statement that lacks
 `Source` or `Timestamp` SHALL take the message envelope's source or creation time before its replace set is formed; a
 message whose envelope lacks the needed value SHALL be terminated as poison and counted. The stream lane SHALL refuse a
 message any of whose statements, once stamped, carries a reserved source, the names graph-ingest and `pkg/lifecycle`
@@ -170,15 +172,29 @@ ordered by `Timestamp`.
 ### Requirement: The write path refuses a stored value it cannot change
 
 A stored value that is empty at a nonzero revision, that does not decode as an entity, or that names another entity
-than its key, and a change whose result the canonical contract refuses because of statements it keeps from the stored
-value, SHALL be refused: nothing SHALL be written, and the refusal SHALL be recorded at the revision read. A delete
-SHALL NOT be refused for its stored value: it removes the entity at the caller's expected revision, the revision check
-being the fence (ruled O, #91 comment 6080973822; #148).
+than its key, and a change whose result keeps from the stored value a statement the canonical contract refuses or a
+statement with no `Source` or no `Timestamp`, SHALL be refused: nothing SHALL be written, and the refusal SHALL be
+recorded at the revision read. A delete SHALL NOT be refused for its stored value: it removes the entity at the
+caller's expected revision, the revision check being the fence (ruled O, #91 comment 6080973822; #148). A graph-ingest
+read of an entity whose stored value holds a statement with no `Source` or no `Timestamp` SHALL be refused with
+`graph_state_reset_required` and recorded at the revision read; the value SHALL NOT be served or cached.
 
 #### Scenario: A stored value under another key
 
 - **WHEN** the value stored at entity A's key names entity B, and a stream message or an append request writes to A
 - **THEN** the write is refused, nothing is written, and the refusal is recorded at the revision read
+
+#### Scenario: A stored statement without a source
+
+- **WHEN** A's value at revision R, written outside graph-ingest, holds a statement with no `Source`, and a stream
+  message or an append adds a statement to A
+- **THEN** the write is refused, A stays at R, the refusal is recorded at R, and a read of A is refused with
+  `graph_state_reset_required`
+
+#### Scenario: An arrival replaces a stored statement without a time
+
+- **WHEN** A holds a statement of predicate P from source S with no `Timestamp`, and a stream message from S carries P
+- **THEN** S's statements of P are replaced, and A holds no statement without a `Timestamp`
 
 #### Scenario: A stored value that cannot be read is deleted
 

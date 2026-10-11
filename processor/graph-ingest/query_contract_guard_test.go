@@ -145,6 +145,56 @@ func TestBootSweepLastRevisionWins(t *testing.T) {
 	}
 }
 
+// bootSweep boots over entries, which the bucket also holds (the last one per
+// key), so the sweep's re-read of a recorded key sees the same bytes.
+func bootSweep(t *testing.T, entries ...jetstream.KeyValueEntry) *Component {
+	t.Helper()
+	watcher := newIngestGuardWatcher(len(entries) + 1)
+	bucket := newMockKVBucket()
+	for _, entry := range entries {
+		watcher.updates <- entry
+		bucket.data[entry.Key()] = mockKVData{value: entry.Value(), revision: entry.Revision()}
+	}
+	watcher.updates <- nil
+	bucket.watchAllFactory = func() (jetstream.KeyWatcher, error) { return watcher, nil }
+	c := newIngestGuardTestComponent(bucket)
+	if err := c.startEntityStateGuard(context.Background(), c.entityBucket); err != nil {
+		t.Fatalf("boot sweep: %v", err)
+	}
+	return c
+}
+
+// TestBootSweepInventoriesStatementWithoutMetadata: a value holding a
+// statement with no source or no timestamp, which only a writer outside
+// graph-ingest can store, is inventoried by the boot sweep under its key at its
+// revision as missing_statement_metadata, refused as the first read of the key
+// refuses it, and the record survives the sweep's re-read of the same bytes
+// (checkpoint 3 H3).
+func TestBootSweepInventoriesStatementWithoutMetadata(t *testing.T) {
+	t.Parallel()
+
+	for _, field := range []string{"source", "timestamp"} {
+		t.Run("statement without a "+field, func(t *testing.T) {
+			t.Parallel()
+			c := bootSweep(t, &mockKVEntry{key: guardTestPoisonID, revision: 3, data: storedStatementWithout(guardTestPoisonID, field)})
+
+			rec, ok := poisonInventoryEntry(c, guardTestPoisonID)
+			if !ok {
+				t.Fatal("value with a statement without metadata not inventoried by the boot sweep")
+			}
+			if rec.revision != 3 || rec.contractErr.EntityID != guardTestPoisonID ||
+				rec.contractErr.Reason != graph.GraphStateReasonMissingStatementMetadata {
+				t.Fatalf("record for %q at revision %d with reason %q, want %q at 3 with %q",
+					rec.contractErr.EntityID, rec.revision, rec.contractErr.Reason,
+					guardTestPoisonID, graph.GraphStateReasonMissingStatementMetadata)
+			}
+			if got := testutil.ToFloat64(c.poisonedEntities); got != 1 {
+				t.Fatalf("poisoned-entities gauge = %v, want 1", got)
+			}
+		})
+	}
+}
+
 // TestBootSweepInventoriesMisKeyedValue: a value stored under one key that
 // names another entity is inventoried by the boot sweep under its key, refused
 // as the first read of the key refuses it (gh#147), and a later valid revision
@@ -156,28 +206,10 @@ func TestBootSweepInventoriesMisKeyedValue(t *testing.T) {
 	misKeyed := func() *mockKVEntry {
 		return &mockKVEntry{key: guardTestPoisonID, revision: 3, data: guardTestValidBytes(guardTestValidID)}
 	}
-	// sweep boots over entries, which the bucket also holds (the last one per
-	// key), so the sweep's re-read of a recorded key sees the same bytes.
-	sweep := func(t *testing.T, entries ...jetstream.KeyValueEntry) *Component {
-		t.Helper()
-		watcher := newIngestGuardWatcher(len(entries) + 1)
-		bucket := newMockKVBucket()
-		for _, entry := range entries {
-			watcher.updates <- entry
-			bucket.data[entry.Key()] = mockKVData{value: entry.Value(), revision: entry.Revision()}
-		}
-		watcher.updates <- nil
-		bucket.watchAllFactory = func() (jetstream.KeyWatcher, error) { return watcher, nil }
-		c := newIngestGuardTestComponent(bucket)
-		if err := c.startEntityStateGuard(context.Background(), c.entityBucket); err != nil {
-			t.Fatalf("boot sweep: %v", err)
-		}
-		return c
-	}
 
 	t.Run("inventoried at boot", func(t *testing.T) {
 		t.Parallel()
-		c := sweep(t, misKeyed())
+		c := bootSweep(t, misKeyed())
 
 		rec, ok := poisonInventoryEntry(c, guardTestPoisonID)
 		if !ok {
@@ -199,7 +231,7 @@ func TestBootSweepInventoriesMisKeyedValue(t *testing.T) {
 
 	t.Run("a later valid revision erases it", func(t *testing.T) {
 		t.Parallel()
-		c := sweep(t, misKeyed(),
+		c := bootSweep(t, misKeyed(),
 			&mockKVEntry{key: guardTestPoisonID, revision: 4, data: guardTestValidBytes(guardTestPoisonID)})
 
 		if _, ok := poisonInventoryEntry(c, guardTestPoisonID); ok {

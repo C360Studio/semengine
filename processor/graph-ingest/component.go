@@ -1333,10 +1333,12 @@ func (c *Component) recordBootSweepPoison(ctx context.Context, sweep map[string]
 // classifyStoredStateRMWError re-attributes a read-modify-write failure to
 // resident stored-state poison (gh#562). The owner's own RMW reads check only
 // the trusted decode and the key (decodeStoredForWrite, design D23), so a
-// noncanonical STORED statement does not fail on the read — it surfaces either
-// as a trusted-decode failure (unreadable JSON) or as a MarshalEntityState
-// write-gate rejection that would otherwise blame the merged CANDIDATE the
-// caller submitted. On this slow path (the write is already failing)
+// noncanonical STORED statement, or one with no Source or no Timestamp
+// (checkpoint 3 H3), does not fail on the read — it surfaces either as a
+// trusted-decode failure (unreadable JSON) or as a rejection by the merge's
+// metadata check or MarshalEntityState write gate (encodeMerge) that would
+// otherwise blame the merged CANDIDATE the caller submitted. On this slow path
+// (the write is already failing)
 // re-validate the stored bytes under decodeStoredEntity, the rule readEntity
 // and the boot sweep apply: when the poison predates the merge, record it,
 // stamped with the RMW target's entity ID, in the per-entity poison inventory
@@ -1344,7 +1346,8 @@ func (c *Component) recordBootSweepPoison(ctx context.Context, sweep map[string]
 // graph-state-reset-required classification instead of a candidate-invalid
 // error. A canonical stored state returns cycleErr unchanged — the candidate
 // really was at fault. Every caller's bytes have already failed the decode or
-// passed the key check, so only the decode can refuse them here.
+// passed the key check, so only the decode or the statement-metadata rule can
+// refuse them here.
 //
 // entityID is the RMW target (the CAS key) — the closures are the only place
 // the identity is reliably in scope, so stamping happens here rather than at

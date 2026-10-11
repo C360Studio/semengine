@@ -60,13 +60,29 @@ import (
 // batch commits one subject at a time. On the stream lane,
 // stampFromEnvelope has already filled both or refused the message, so the rule is a second line
 // there.
+//
+// The stream lane's merge and the append also apply it to their complete result (encodeMerge),
+// where a statement it refuses was kept from the stored value, so the refusal is the stored
+// value's (design D23; checkpoint 3 H3); the lanes' check is the one that names the caller's
+// index.
 func requireStatementMetadata(triples []message.Triple) error {
+	if err := missingStatementMetadata(triples); err != nil {
+		return errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeInvalidRequest, err)
+	}
+	return nil
+}
+
+// missingStatementMetadata is the statement-metadata rule itself: it names the first of triples
+// with no Source or no Timestamp, by its index and the missing field, or returns nil. Each caller
+// classifies it: requireStatementMetadata as the write's invalid_request, decodeStoredEntity as
+// stored graph state (GraphStateReasonMissingStatementMetadata).
+func missingStatementMetadata(triples []message.Triple) error {
 	for index := range triples {
 		switch {
 		case triples[index].Source == "":
-			return refuseMissingMetadata(index, "source")
+			return fmt.Errorf("triple[%d] has no source", index)
 		case triples[index].Timestamp.IsZero():
-			return refuseMissingMetadata(index, "timestamp")
+			return fmt.Errorf("triple[%d] has no timestamp", index)
 		}
 	}
 	return nil
@@ -86,9 +102,22 @@ func requireOwnStatements(triples []message.Triple) error {
 	return requireStatementMetadata(triples)
 }
 
-func refuseMissingMetadata(index int, field string) error {
-	return errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeInvalidRequest,
-		fmt.Errorf("triple[%d] has no %s", index, field))
+// encodeMerge is the commit gate of a merge over current, the value stored under key and read at
+// revision: the stream lane's replace and the append. candidate, the merge's complete result,
+// must pass the statement-metadata rule and then MarshalEntityState; nothing missing is filled
+// from the arrival or the clock. The statements the write brings have passed the rule at its lane,
+// so one that fails it here was kept from current (checkpoint 3 H3). Either refusal goes to
+// classifyStoredStateRMWError, which blames current and records it at revision when
+// decodeStoredEntity refuses it (design D23).
+func (c *Component) encodeMerge(ctx context.Context, key string, current []byte, revision uint64, candidate *graph.EntityState) ([]byte, error) {
+	if err := requireStatementMetadata(candidate.Triples); err != nil {
+		return nil, c.classifyStoredStateRMWError(ctx, key, current, revision, err)
+	}
+	data, err := graph.MarshalEntityState(candidate)
+	if err != nil {
+		return nil, c.classifyStoredStateRMWError(ctx, key, current, revision, err)
+	}
+	return data, nil
 }
 
 // distinctStatements is a birth's statements with each one equal in every field to an earlier
@@ -132,9 +161,9 @@ func (c *Component) createEntity(ctx context.Context, entityID string, encoded [
 // re-runs the callback after a create conflict or a retryable create error, so the birth never
 // changes entity: a retry that finds the key present merges from the arrival as it came (#91,
 // PR #93 comment 6060120246). A profile it stamps carries at, the arrival's triggeringTime. A
-// stored value the seam's read check refuses (decodeStoredForWrite), or a merge the write gate
-// refuses for a statement kept from it, writes nothing and is recorded at the revision read
-// (design D23). It returns the revision it committed, or 0 when it wrote nothing, and the size
+// stored value the seam's read check refuses (decodeStoredForWrite), or a merge the metadata check
+// or the write gate refuses for a statement kept from it (encodeMerge), writes nothing and is
+// recorded at the revision read (design D23). It returns the revision it committed, or 0 when it wrote nothing, and the size
 // of the value written.
 func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState, hierarchyTriples []message.Triple, readFound bool, at time.Time) (uint64, int, error) {
 	var bytesWritten int
@@ -191,9 +220,9 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 		// original create and would only produce duplicates here.
 		//
 		// gh#562: the read check is the trusted decode plus the key check, on the
-		// per-key-serialized ingest hot path; MarshalEntityState below re-validates the merged
-		// candidate, so a poisoned statement kept from the stored value still fails the write
-		// (classified via classifyStoredStateRMWError).
+		// per-key-serialized ingest hot path; the metadata check and MarshalEntityState below
+		// re-validate the merged candidate (encodeMerge), so a poisoned statement kept from the
+		// stored value still fails the write (classified via classifyStoredStateRMWError).
 		existing, err := c.decodeStoredForWrite(ctx, entity.ID, current, read)
 		if err != nil {
 			return nil, err // non-retryable
@@ -237,9 +266,9 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 		// create-time value), so a re-arrival never re-profiles.
 		c.reconcileIndexingProfile(&existing, at)
 		existing.UpdatedAt = time.Now()
-		data, err := graph.MarshalEntityState(&existing)
+		data, err := c.encodeMerge(ctx, entity.ID, current, read, &existing)
 		if err != nil {
-			return nil, c.classifyStoredStateRMWError(ctx, entity.ID, current, read, err)
+			return nil, err
 		}
 		bytesWritten = len(data)
 		return data, nil
@@ -370,7 +399,7 @@ func (c *Component) appendEntityTriples(ctx context.Context, subject string, tri
 			return nil, retry.NonRetryable(natsclient.ErrKVKeyNotFound)
 		}
 		// gh#562: the read check is the trusted decode plus the key check;
-		// MarshalEntityState below re-validates the final candidate.
+		// the metadata check and MarshalEntityState below re-validate the final candidate.
 		entity, err := c.decodeStoredForWrite(ctx, subject, current, currentRevision)
 		if err != nil {
 			return nil, err // non-retryable
@@ -404,11 +433,7 @@ func (c *Component) appendEntityTriples(ctx context.Context, subject string, tri
 		entity.Triples = append(entity.Triples, survivors...)
 		entity.UpdatedAt = time.Now()
 
-		data, err := graph.MarshalEntityState(&entity)
-		if err != nil {
-			return nil, c.classifyStoredStateRMWError(ctx, subject, current, currentRevision, err)
-		}
-		return data, nil
+		return c.encodeMerge(ctx, subject, current, currentRevision, &entity)
 	})
 	if err != nil {
 		return appendResult{}, err

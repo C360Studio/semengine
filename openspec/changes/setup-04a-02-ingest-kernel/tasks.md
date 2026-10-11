@@ -626,6 +626,17 @@ posted on this pull request.
       skips. M2: an overlay probe, not committed, found the cache's cleanup goroutine alive after the test on `385c244`
       and none after the fix. M3, by hand: under a forced deschedule the base test fails and the new one passes; the
       barrier removed, and outstanding work without ack-pending messages, each fail it. Notes: `notes/cp3-M.md`.
+- [ ] 4.15 (D) Checkpoint 3 H3 (PR #93 comment 6099921473; design D15, D23; ADR-110 Decisions 5, 6; owner ruling,
+      #91 comment 6111530424): graph-ingest refuses and records, as `missing_statement_metadata`, a stored value
+      holding a statement without `Source` or `Timestamp`: the stream merge and the append check their complete
+      candidate, and reads refuse it; declined writes and a replacing arrival are unchanged; graph's encoder is not
+      changed. `TestWriteSeamRecordsStoredPoisonAtTheRevisionRead` (4 rows), `storedPoison` in
+      `TestEveryEntityReadRefusesTheSameStoredPoison` (8) and `TestCanonicalDeleteRemovesAValueTheReadRefuses` (2),
+      and `TestBootSweepInventoriesStatementWithoutMetadata` (2), written first and failing on `03aeb05`; the two
+      holding tests, `TestStreamArrivalReplacesStoredStatementWithoutTimestamp` and
+      `TestAppendAddingNothingOverStatementWithoutMetadataIsUnchanged`; two fixtures
+      (`resident_stamp_integration_test.go`, `merge_entity_bench_test.go`); seven `task mutate:check` detections.
+      Notes: `notes/cp3-H3.md`.
 
 ## 5. Ledger, gates and boundaries
 

@@ -36,7 +36,9 @@ func TestResidentUnregisteredStampIsNotPoison(t *testing.T) {
 	resident := &graph.EntityState{
 		ID: id, MessageType: message.Type{Domain: "legacy", Category: "gone", Version: "v1"},
 		UpdatedAt: now,
-		Triples:   []message.Triple{{Subject: id, Predicate: "test.state.value", Object: "resident", Timestamp: now, Confidence: 1}},
+		Triples: []message.Triple{{
+			Subject: id, Predicate: "test.state.value", Object: "resident", Source: fixtureSource, Timestamp: now, Confidence: 1,
+		}},
 	}
 	encoded, err := graph.MarshalEntityState(resident)
 	require.NoError(t, err)

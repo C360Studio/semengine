@@ -2,8 +2,9 @@
 
 ## Status
 
-**Proposed (2026-10-11).** Drafted on draft PR #178 (`Addresses #110`), ruled on #9 with the other records change 3's
-design cites (#9 comment 6085243841). Scope: the owner's direction on #110 (comment 6109914179), "Rescope it to
+**Accepted (2026-10-11).** Ruled on #9, comment 6111608867, as written at `039e13c`, with Q1 ruled as recommended.
+Drafted on draft PR #178 (`Addresses #110`), ruled on #9 with the other records change 3's design cites (#9 comment
+6085243841). Scope: the owner's direction on #110 (comment 6109914179), "Rescope it to
 ready-after-boot only: one 'finished startup' flag per worker, broken states go to health, catch-up and my-write-landed
 stay per request", and the owner's challenge there: a streaming knowledge graph is never done catching up, how far
 behind is acceptable depends on the use, and "when a question is asked we give the asker the current state". The owner
@@ -213,6 +214,10 @@ revision comparison. Both return with graph-index in change 4.
 | ADR-088 :117-119 (no readiness in `/readyz`) | Kept: `/readyz` reads boot committed and `Healthy`, never the envelope | D2 |
 
 ## Open for the owner
+
+Ruled on #9, comment 6111608867: Q1 as recommended. `published_at` is removed in the follow-up after #93, with
+graph-ingest's backlog latch and its `Health()` terms; nothing is filed until #93 lands. The question stays below as
+the record of the options.
 
 - **Q1. What happens to `published_at` on #93?** *Recommended: remove it in the follow-up after #93; leave the `Watcher`
   and the gate as they are.* `published_at` has no reader (`#93:graph/readiness/watcher.go:18`), fails "New surface

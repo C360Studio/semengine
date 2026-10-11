@@ -95,8 +95,8 @@ type Client struct {
 	drainTimeout  time.Duration
 
 	// netDial opens each socket the client dials: (*net.Dialer).Dial, unless a
-	// test replaces it before Connect to hold a dial open, which no portable
-	// address does.
+	// test replaces it before Connect to hold a dial open (T4), which no
+	// portable address does.
 	netDial func(*net.Dialer, string, string) (net.Conn, error)
 
 	// requestHandlerTimeout bounds a single SubscribeForRequests handler
@@ -690,16 +690,17 @@ func (m *Client) GetStatus() *Status {
 
 // Connect establishes connection to NATS server. It refuses a nil context, an
 // ended context and a client that is already connected, with an error and
-// before any dial. When its context ends while it dials or waits for the
-// server's answer, it closes the socket and returns a transient error matching
-// the context's error (T3, T4). The context does not bound the connection's
-// later reconnects (T5). Once Close has begun it returns
-// nats.ErrConnectionClosed before dialling, whether or not its context has
-// ended (T3). Connect returns an error when Close has begun before it finished;
-// the connection it dialled is then closed and nothing it would have started
-// runs. A Connect that returns an error has no event handler of the connection
-// it dialled still running, and changes neither the status, the failure count
-// nor the circuit of a connection another Connect installed (design D3).
+// before any dial (T3). When its context ends during the attempt, it ends the
+// dial, or closes the socket while it waits for the server's answer, and
+// returns a transient error matching the context's error (T4). The context
+// does not bound the connection's later reconnects (T5). Once Close has begun
+// it returns nats.ErrConnectionClosed before dialling, whether or not its
+// context has ended (T3). Connect returns an error when Close has begun before
+// it finished; the connection it dialled is then closed and nothing it would
+// have started runs. A Connect that returns an error has no event handler of
+// the connection it dialled still running, and changes neither the status, the
+// failure count nor the circuit of a connection another Connect installed
+// (design D3).
 func (m *Client) Connect(ctx context.Context) error {
 	return m.connectWith(ctx, nats.Connect)
 }

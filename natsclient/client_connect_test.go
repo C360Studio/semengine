@@ -2,6 +2,7 @@ package natsclient
 
 import (
 	"context"
+	"errors"
 	"net"
 	"sync"
 	"testing"
@@ -206,6 +207,29 @@ func TestConnectEndsWithItsContext(t *testing.T) {
 		second, _ := silentListener(t)
 		client, err := NewClient(first + "," + second)
 		require.NoError(t, err)
+		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+		defer cancel()
+
+		err = awaitConnect(t, startConnect(ctx, client))
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+	})
+
+	// The context ends while the dial itself is in progress, as with an address
+	// that drops every packet. Only the dialer's Cancel can end it before the
+	// dial's timeout.
+	t.Run("deadline while dialling", func(t *testing.T) {
+		client, err := NewClient(refusedNATSURL(t))
+		require.NoError(t, err)
+		client.netDial = func(d *net.Dialer, _, _ string) (net.Conn, error) {
+			timeout := time.NewTimer(d.Timeout) // as a real dial nobody answers ends
+			defer timeout.Stop()
+			select {
+			case <-d.Cancel:
+				return nil, errors.New("dial cancelled")
+			case <-timeout.C:
+				return nil, errors.New("dial timed out")
+			}
+		}
 		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 		defer cancel()
 

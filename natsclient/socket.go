@@ -24,8 +24,9 @@ func newSocketDialer(timeout time.Duration, dial func(*net.Dialer, string, strin
 }
 
 // Dial implements nats.CustomDialer. That interface carries no context, and a
-// callback may not invent one, so cut ends a dial in progress through
-// net.Dialer's Cancel channel, which the net package still honours (design D1).
+// callback may not invent one, so cut ends a dial in progress by closing the
+// net.Dialer's Cancel channel (T4). The net package still honours that
+// deprecated field (P23, P25; design D1).
 func (d *socketDialer) Dial(network, address string) (net.Conn, error) {
 	if d.isCut() {
 		return nil, net.ErrClosed

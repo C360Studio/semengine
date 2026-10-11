@@ -558,7 +558,13 @@ posted on this pull request.
       applied; both failed first (`:80`, "the broker reported no terminated message"). Six `task mutate:check`
       detections and three integration mutants by hand (commit body). Not covered: a panic in `StorageRef` or
       `IndexingProfile`. `task verify` on `f6e8506` ended `verify: ok`. Notes: `notes/4.5.md`.
-- [ ] 4.6 (D) #33: the hierarchy refusal names `inference.RegisterPayloads` (`component-registration`).
+- [x] 4.6 (D) #33: the hierarchy refusal names `inference.RegisterPayloads` (`component-registration`).
+      Done in `e70e177`: the refusal (`processor/graph-ingest/component.go:639`) names the missing type and
+      `inference.RegisterPayloads`; the two doc comments in `graph/inference/container_entity.go` say a consumer or a
+      test calls `RegisterPayloads` on its registry. `TestFactoryRejectsHierarchyWithoutContainerType` asserts the
+      name and that no `payloadbuiltins` remains; it failed first at `factory_registry_test.go:126-127`; one
+      `task mutate:check` detection (commit body). `task verify` on `e70e177` ended `verify: ok`. Notes:
+      `notes/4.6.md`.
 - [ ] 4.7 (D) #29 and #102: the `component` contract test of task 3.11 green on the ported tree, with its package
       count posted.
 - [x] 4.8 (D) #100 and #98, the `graph-entity-writes` scenarios through graph-ingest, each written first and failing on

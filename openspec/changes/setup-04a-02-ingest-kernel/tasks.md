@@ -547,8 +547,17 @@ posted on this pull request.
       run on it is recorded in `notes/4.4.md`; commit B runs each lane's input through
       `ConsumeDeliveryWithHeartbeat`, with the long-apply test green, the `keyed_ingest` decision tests and the
       interrupted-application test ("An interrupted application is redelivered, not a stop").
-- [ ] 4.5 (D) Q13: SemStreams PR #1437's graph-ingest half (head `0ea823a6`) with its two test files on a
+- [x] 4.5 (D) Q13: SemStreams PR #1437's graph-ingest half (head `0ea823a6`) with its two test files on a
       test-registered payload type; the "Payload panics while giving its entity ID" scenario green.
+      Done in `f6e8506`: `decodeEntity` validates the envelope before extraction and turns a panic in payload code into
+      a classified invalid error naming the payload type and subject; the stream lane terminates every such failure
+      (the PR kept ack-drop; the spec says terminated), counts it in `c.errors` and logs it. Malformed envelopes and
+      unregistered types are terminated too, on every lane that shares the closure (notes). Tests on
+      `fenceTestPayload` (`test.fence.v1`), no `agentic` import: `fact_lane_fence_test.go` and
+      `fact_lane_fence_integration_test.go`, which read the broker's terminated advisory and see the next message
+      applied; both failed first (`:80`, "the broker reported no terminated message"). Six `task mutate:check`
+      detections and three integration mutants by hand (commit body). Not covered: a panic in `StorageRef` or
+      `IndexingProfile`. `task verify` on `f6e8506` ended `verify: ok`. Notes: `notes/4.5.md`.
 - [ ] 4.6 (D) #33: the hierarchy refusal names `inference.RegisterPayloads` (`component-registration`).
 - [ ] 4.7 (D) #29 and #102: the `component` contract test of task 3.11 green on the ported tree, with its package
       count posted.

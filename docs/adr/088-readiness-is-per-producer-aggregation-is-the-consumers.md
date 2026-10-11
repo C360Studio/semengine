@@ -117,3 +117,10 @@ the field.
 - **Fold readiness into `/readyz`.** That is the orchestrator's "can this process
   serve" contract; adding data-plane coverage makes a healthy binary flap unready
   under ordinary write load.
+
+## SemEngine disposition (ADR-109)
+
+ADR-109 (`docs/adr/109-ready-after-boot.md`, its table "The pin's records: kept, changed or dropped") keeps D1 and D3
+(one key per producer, no aggregate, no mandatory list) as information, drops D2's `Set` fold (a consumer asks each
+worker and reads its reply), keeps D4 and D6, keeps D5's per-generation flag as information, and keeps the rule that
+`/readyz` reads no readiness envelope (:117-119): it reads boot committed and `Healthy`.

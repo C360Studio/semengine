@@ -234,3 +234,11 @@ framework support for saying so, and would have to compare `staleness_ms` itself
 That is the correct place for the decision to live until a second such consumer
 proves the abstraction, and it is a deliberate reversal of the instinct that
 produced `Freshness` in the first place.
+
+## SemEngine disposition (ADR-109)
+
+ADR-109 (`docs/adr/109-ready-after-boot.md`, its table "The pin's records: kept, changed or dropped") keeps D2
+(staleness reported, never gating) and the fixed-target definition of "done bootstrapping" (:167-189) as what the
+responder checks in process. It changes D1: the gate is not a cross-process contract; graph-index asks its conditions
+in process, and nothing asks them across a process. D4's defer reasons ship on PR #93 and are logged by that reader
+only.

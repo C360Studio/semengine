@@ -190,3 +190,11 @@ lesson stands for future work: moving a signal from computed-per-request to
 published-on-a-tick silently breaks anything that inferred a fact by comparing
 two samples — sweep for such inferences when changing a signal's publication
 cadence.
+
+## SemEngine disposition (ADR-109)
+
+ADR-109 (`docs/adr/109-ready-after-boot.md`, its table "The pin's records: kept, changed or dropped") changes D1: the
+state stays published, one key per producer, as information, and what a consumer acts on is the reply (:80-81). It
+drops D2's arrival-time freshness from SemEngine's contract (the `Watcher` ships on PR #93 with no SemEngine reader),
+changes D4 (the one evaluator stays, read in process by graph-index only), keeps D3 and the rule against a producer
+timestamp compared with the consumer's clock (:124-125), and drops the one shared consumer code path (:136-137).

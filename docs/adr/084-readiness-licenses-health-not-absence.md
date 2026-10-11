@@ -195,3 +195,11 @@ adoption reviews must watch for it.
 Thirteen-odd concepts become four: healthy?, how stale?, is my write
 visible?, and what failed to hydrate. Everything deleted was an
 implementation of the question this ADR rules unanswerable.
+
+## SemEngine disposition (ADR-109)
+
+ADR-109 (`docs/adr/109-ready-after-boot.md`, its table "The pin's records: kept, changed or dropped") keeps D4 as the
+mechanism: `index_not_ready` in the reply means not built or broken, never ordinary catch-up, which also bounds #103.
+It keeps D1 (lag never defers) and D3 (no absence from a miss; read-your-writes by revision, #103), changes D2
+(`bootstrap_complete` stays in the envelope as information; the fact it encodes is what the responder checks before it
+answers) and changes D7 (hard stops bind through the reply and `Health()`, not the envelope).

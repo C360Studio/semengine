@@ -112,6 +112,13 @@ func TestSubscribeEndedByCloseIsConnectionClosed(t *testing.T) {
 	err := within(t, subscribed, lifecycleBound, "the held Subscribe")
 	require.ErrorIs(t, err, nats.ErrConnectionClosed)
 	require.NotErrorIs(t, err, ErrNotConnected)
+
+	// The refused Subscribe is no longer owned work, so a later Close under a
+	// live context sees the join end and returns nil (transport-client, "Close
+	// under an ended context").
+	live, cancelLive := context.WithTimeout(t.Context(), lifecycleBound)
+	defer cancelLive()
+	require.NoError(t, within(t, startClose(live, client), lifecycleBound, "the second Close"))
 }
 
 // awaitSubscribeAdmitted waits until a Subscribe is counted as client-owned

@@ -21,7 +21,7 @@ the reference for every production change.
   - it dials through `netDial` with `net.Dialer{Timeout, Cancel: done}`;
   - its `cut` closes the socket, closes `done`, and refuses later dials.
 
-  In `connectWith`, refuse an ended context before anything else, pass the dialer, and arm
+  In `connectWith`, after the `closing` and `started` checks, refuse an ended context, pass the dialer, and arm
   `context.AfterFunc(ctx, cut)` around the dial. Then stop and join it. T3 and T4 pass.
 - [x] 2.3 Write T5 `TestReconnectAfterConnectContextEnded`. It passes. Run `task mutate:check` with the `AfterFunc`
   left armed after Connect returns, and record the detection.

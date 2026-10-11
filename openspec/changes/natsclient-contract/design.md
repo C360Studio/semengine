@@ -67,8 +67,10 @@ the write is held (P20, 2 of 2), and `ForceReconnect` takes the same lock (`nats
   Context ownership forbids.
 - Leaving the window open means `Close` waits up to `WithTimeout` (5 s by default) for each dial (P23).
 
-`revive.toml` has no deprecation rule, so `task lint` passes (run on the prototype). T8 pins the behaviour, so a Go
-release that stopped honouring the field would fail it.
+`revive.toml` has no deprecation rule, so `task lint` passes (run on the prototype). No test here shows Go's `net`
+package honours `Cancel`: T4 and T8 dial through a stand-in, so they show only that natsclient closes `Cancel` on a
+cut. P23 and P25 measured the real behaviour with go1.26.9 on darwin; Go's own `TestDialCancel` covers the field, and
+the Go 1 compatibility promise keeps it. After a Go toolchain upgrade, re-run P23.
 
 **Costs.**
 
@@ -83,7 +85,7 @@ release that stopped honouring the field would fail it.
   promised, with no mechanism.
 - **`SetConnection`.** A connection installed through `SetConnection` was not dialled by the client, so it is not cut.
 
-**Size.** `socket.go`, 64 lines including the `netDial` test seam; about 20 lines in `client.go`.
+**Size.** `socket.go`, 67 lines; about 20 lines in `client.go`, where the `netDial` test seam is a field on `Client`.
 
 ### D2. `Connect` honours its context
 

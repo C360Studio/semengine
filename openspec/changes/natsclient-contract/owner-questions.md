@@ -33,7 +33,7 @@ behavior."
 
 The reviewer found that `Close` could still be held while nats.go dials a reconnect. A probe measured 4.69 s (P23).
 The fix closes a channel that the dial watches; with it, `Close` returns in 51 ms. "Deprecated" here means Go
-recommends a newer way, `DialContext`. Go still supports the field, and will keep doing so.
+recommends a newer way, `DialContext`. Go still supports the field, and the Go 1 compatibility promise keeps it.
 
 The newer way needs a context: Go's standard value that carries a deadline and a cancel signal. nats.go's dialer
 hands natsclient none. Our rules forbid both workarounds:
@@ -42,5 +42,6 @@ hands natsclient none. Our rules forbid both workarounds:
 - making a fresh one inside the dialer.
 
 So the choice is between the deprecated field and leaving `Close` waiting up to 5 s per address. The field is
-smaller, and it also closes the same gap in `Connect`. A test (T8) fails if Go ever stops honouring it. It is not
+smaller, and it also closes the same gap in `Connect`. No test here would catch Go dropping it (the tests use a
+stand-in); probe P23 is re-run after a Go upgrade instead. It is not
 close enough to ask you. Say so if you see it otherwise.

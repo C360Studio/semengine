@@ -2,9 +2,13 @@
 // automatic reconnection, and comprehensive JetStream/KV support for distributed edge systems.
 //
 // The natsclient package wraps the standard NATS Go client with additional reliability
-// features including circuit breaker pattern for failure protection, exponential backoff
-// for reconnection, and proper context propagation throughout all operations. It serves
-// as the foundation for all of SemEngine's NATS communication.
+// features: a circuit breaker for failure protection, and nats.go's automatic
+// reconnection with natsclient's settings (see Connection Lifecycle below). Every call
+// that waits for the server takes a context, which ends that wait. It does not end a
+// wait behind a write the server is not reading, which lasts until the write completes
+// or nats.go's write timeout (WithWriteTimeout) ends it (P13, P14); Close, on a
+// connection the client dialled, and Connect are the exception (T1, T4; ADR-112). It
+// serves as the foundation for all of SemEngine's NATS communication.
 //
 // # Core Features
 //
@@ -73,17 +77,20 @@
 //	}
 //
 // One probe's not-found is NOT durable evidence that the declaring component is
-// absent. On a clustered deployment it is equally what a node that has not applied
-// the meta assignment says about a stream that exists. So a decision taken for the
-// PROCESS LIFETIME on that answer — disabling a subscriber, skipping a component,
-// reporting a deployment shape — is decided by cluster timing, and it fails in the
-// worst direction: boot SUCCEEDS and the work silently never happens.
+// absent. On a clustered deployment it may also be what a node that has not applied
+// the meta assignment says about a stream that exists; that is not measured, since
+// no test here runs a cluster. So a decision taken for the PROCESS LIFETIME on that
+// answer — disabling a subscriber, skipping a component, reporting a deployment
+// shape — can be decided by cluster timing, and then it fails in the worst
+// direction: boot SUCCEEDS and the work silently never happens.
 //
 // Take that decision from the guarded consumer setup instead.
 // ConsumeStreamWithConfig, ConsumeStreamWithConfigContexts and
-// ConsumeInternalStreamWithConfig wait out the propagation window, and the error
-// they return carries ErrStreamNotVisible only when the stream stayed absent for
-// the framework's whole visibility budget. Branch on that sentinel — never on a
+// ConsumeInternalStreamWithConfig re-observe an absent stream for the framework's
+// visibility budget, meant to wait out that cluster window (not measured, as
+// above), and the error they return carries ErrStreamNotVisible only when the
+// stream stayed absent for the whole budget (stream_visibility_test.go, with a
+// stand-in for JetStream). Branch on that sentinel — never on a
 // bare jetstream.ErrStreamNotFound, which those same operations also return for
 // a consumer-creation or consumer-observation fault against a stream that is
 // present.
@@ -106,11 +113,11 @@
 // Working with JetStream streams and consumers:
 //
 //	// Create a stream. An ordinary stream MUST declare a finite MaxAge and a
-//	// finite MaxBytes: 0 and -1 both mean unlimited to JetStream, so neither is a
-//	// declaration, and creation is refused without them. Set Discard explicitly
-//	// too — it cannot be required (DiscardOld is the field's zero value) but at a
-//	// finite MaxBytes it decides whether the oldest messages are evicted or the
-//	// newest are refused.
+//	// finite MaxBytes, and creation is refused without them. MaxBytes 0 and -1
+//	// both mean unlimited to JetStream (P16), so neither is a declaration. Set
+//	// Discard explicitly too — it cannot be required (DiscardOld is the field's
+//	// zero value) but at a finite MaxBytes it decides whether the oldest
+//	// messages are evicted or the newest are refused.
 //	stream, err := client.CreateStream(ctx, jetstream.StreamConfig{
 //	    Name:     "EVENTS",
 //	    Subjects: []string{"events.>"},
@@ -290,6 +297,8 @@
 //	WithMaxReconnects(n int)              // Maximum reconnection attempts (-1 = infinite)
 //	WithReconnectWait(d time.Duration)    // Wait between reconnection attempts
 //	WithTimeout(d time.Duration)          // Connection timeout
+//	WithWriteTimeout(d time.Duration)     // How long a write may wait for the server to read it (default: one minute, nats.go's)
+//	WithPingInterval(d time.Duration)     // How often to PING the server (default: 30 s)
 //	WithLogger(logger *slog.Logger)       // Custom logger for debug output
 //	WithName(name string)                 // Client identification
 //
@@ -349,8 +358,11 @@
 // Throughput: Limited primarily by network latency and NATS server performance. Circuit
 // breaker adds negligible overhead in normal operation and fails fast when open.
 //
-// Connection Lifecycle: Reconnection uses exponential backoff to avoid overwhelming the
-// server during failures. Maximum backoff is one minute.
+// Connection Lifecycle: natsclient asks nats.go to wait ReconnectWait between reconnect
+// attempts: 2 s by default, natsclient's setting (WithReconnectWait). How nats.go paces
+// the attempts is not promised (ADR-112). The exponential backoff of up to one minute is
+// the circuit breaker's, not the reconnect's: while the circuit is open, Connect and
+// other calls return ErrCircuitOpen.
 //
 // # Distributed Tracing
 //
@@ -445,8 +457,10 @@
 // failures in distributed systems. After threshold failures, the circuit opens to fail
 // fast rather than continuously retry, giving the system time to recover.
 //
-// Context-First API: Every I/O operation requires context.Context as first parameter
-// for proper cancellation and timeout support, essential for production systems.
+// Context-First API: every call that waits for the server takes a context.Context as
+// its first parameter, and the context ends that wait. It does not end a wait behind a
+// write the server is not reading (P13); Close and Connect are the exception (T1, T4;
+// P18; ADR-112). RTT takes no context.
 //
 // KVStore Abstraction: Created high-level KV abstraction with built-in CAS retry logic
 // to eliminate code duplication across services. Centralizes revision conflict handling

@@ -146,7 +146,7 @@ func KVCatalog() []natsclient.BucketSpec {
 		// Authoritative domain state + graph-ingest's operational tiers.
 		entityStates,
 		owned(graph.BucketGraphIngestAppliedSeq, "graph-ingest",
-			"graph-ingest redelivery guard: (entityID/streamName) -> last-applied stream sequence (ADR-072)",
+			"graph-ingest redelivery guard: (entityID/streamName) -> stream generation and last-applied sequence (ADR-072)",
 			natsclient.ClassOperational),
 
 		// graph-index's four config-declared output indexes + the name lookup internal.

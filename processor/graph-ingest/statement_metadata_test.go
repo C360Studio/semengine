@@ -76,7 +76,8 @@ func startStreamLane(t *testing.T, opts ...testComponentOption) (*Component, fun
 	})
 
 	var handler func(context.Context, jetstream.Msg)
-	c.waitForStreamInput = func(context.Context, string) error { return nil }
+	// The stream's creation time on the server: any time that is not zero.
+	c.waitForStreamInput = func(context.Context, string) (time.Time, error) { return time.Unix(1, 0), nil }
 	c.consumeStream = func(
 		_ context.Context,
 		_ natsclient.PortConsumerContext,

@@ -182,6 +182,18 @@ func newGuardRecordRefusalsMetric() prometheus.Counter {
 	})
 }
 
+// newUnguardedInputsMetric builds the counter of stream inputs applied as first seen because
+// graph-ingest has no applied-sequence bucket (design D8), which only a component built without
+// Start can lack. Each such input counts once and is logged.
+func newUnguardedInputsMetric() prometheus.Counter {
+	return prometheus.NewCounter(prometheus.CounterOpts{
+		Namespace: "semengine",
+		Subsystem: "graph_ingest",
+		Name:      "unguarded_inputs_total",
+		Help:      "Stream inputs applied as first seen because graph-ingest has no applied-sequence bucket to check them against.",
+	})
+}
+
 // newCasRetriesMetric builds the counter of CAS-conflict retries
 // during entity merge (ADR-072). Incremented each time mergeEntityOnLane's CAS
 // callback re-runs (attempt > 1) — the previous attempt's revision-checked Put
@@ -370,7 +382,7 @@ type Component struct {
 	logger          *slog.Logger
 	// Test-only acquisition seams. Production falls through to the exact Client
 	// methods; no exported or adopter-facing lifecycle surface is introduced.
-	waitForStreamInput func(context.Context, string) error
+	waitForStreamInput func(context.Context, string) (time.Time, error)
 	consumeStream      func(
 		context.Context,
 		natsclient.PortConsumerContext,
@@ -488,6 +500,7 @@ type Component struct {
 	ingestLag                     prometheus.Histogram   // gh#480 message age at processing start (queue-wait half)
 	redeliveriesDropped           prometheus.Counter     // ADR-072 stale redeliveries dropped by the applied-sequence guard
 	guardRecordRefusals           prometheus.Counter     // inputs refused for an undecodable applied-sequence record (design D21)
+	unguardedInputs               prometheus.Counter     // inputs applied as first seen with no applied-sequence bucket (design D8)
 	casRetries                    prometheus.Counter     // ADR-072 entity-merge CAS-conflict retries (contention observability)
 	staleSets                     prometheus.Counter     // stream-lane sets not applied as older (design D15, #98)
 	duplicateTriplesSuppressed    *prometheus.CounterVec // append duplicates not stored, by lane (closed enum)
@@ -681,6 +694,7 @@ func (c *Component) registerMetrics(registry *metric.MetricsRegistry) error {
 	c.ingestLag = newIngestLagMetric()
 	c.redeliveriesDropped = newRedeliveriesDroppedMetric()
 	c.guardRecordRefusals = newGuardRecordRefusalsMetric()
+	c.unguardedInputs = newUnguardedInputsMetric()
 	c.casRetries = newCasRetriesMetric()
 	c.staleSets = newStaleSetsMetric()
 	c.duplicateTriplesSuppressed = newDuplicateTriplesSuppressedMetric()
@@ -730,6 +744,9 @@ func (c *Component) registerMetrics(registry *metric.MetricsRegistry) error {
 		return err
 	}
 	if c.guardRecordRefusals, err = metric.RegisterOrGet(registry, metricService, "guard_record_refusals_total", c.guardRecordRefusals); err != nil {
+		return err
+	}
+	if c.unguardedInputs, err = metric.RegisterOrGet(registry, metricService, "unguarded_inputs_total", c.unguardedInputs); err != nil {
 		return err
 	}
 	if c.casRetries, err = metric.RegisterOrGet(registry, metricService, "cas_retries_total", c.casRetries); err != nil {
@@ -1115,11 +1132,12 @@ func (c *Component) initStorage(ctx context.Context) error {
 	c.entityCache = entityCache
 
 	// ADR-072 redelivery-guard durable tier: graph-ingest-owned bucket mapping
-	// `(entityID/streamName) → last-applied stream sequence`. Operational state
-	// graph-ingest owns (bucket-ownership rubric), a bare uint64 value — no
-	// cross-repo/EntityState schema change. No TTL: correct for MaxDeliver=0
-	// (unlimited redelivery), and the key set is bounded by entity cardinality
-	// (same order as ENTITY_STATES).
+	// `(entityID/streamName) → (stream generation, last-applied stream sequence)`
+	// (#15). Operational state graph-ingest owns (bucket-ownership rubric), a
+	// sixteen-byte value — no cross-repo/EntityState schema change. No TTL:
+	// correct for MaxDeliver=0 (unlimited redelivery), and the key set is bounded
+	// by entity cardinality (same order as ENTITY_STATES); a recreated stream's
+	// apply replaces its predecessor's record under the same key.
 	guardBucket, err := kvcatalog.EnsureCatalogBucket(ctx, c.natsClient, graph.BucketGraphIngestAppliedSeq)
 	if err != nil {
 		return errs.Wrap(err, "Component", "Start", "redelivery guard bucket creation")
@@ -1355,9 +1373,19 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 	if c.waitForStreamInput != nil {
 		waitForStream = c.waitForStreamInput
 	}
-	if err := waitForStream(ctx, streamName); err != nil {
+	// The stream's generation is its creation time on the server, from the stream info the wait
+	// reads (design D8, #15), never from configuration. It is read before the consumer is bound, a
+	// consumer is deleted with its stream, and graph-ingest binds none while it runs, so every input
+	// this consumer delivers comes from this generation. The exception is a stream deleted and
+	// created again between this read and the bind (openspec notes/4.3.md).
+	created, err := waitForStream(ctx, streamName)
+	if err != nil {
 		return fmt.Errorf("stream %s not available: %w", streamName, err)
 	}
+	if created.IsZero() {
+		return fmt.Errorf("stream %s reports no creation time; its generations cannot be told apart", streamName)
+	}
+	generation := uint64(created.UnixNano())
 
 	// Generate unique consumer name
 	sanitizedSubject := strings.ReplaceAll(subject, ".", "-")
@@ -1453,6 +1481,7 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 			entityID:    entity.ID,
 			stream:      meta.Stream,
 			seq:         meta.Sequence.Stream,
+			generation:  generation,
 			deliveredAt: meta.Timestamp,
 			subject:     subject,
 			importLane:  importLane,
@@ -1486,11 +1515,12 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 	return nil
 }
 
-// waitForStream waits for a JetStream stream to be available
-func (c *Component) waitForStream(ctx context.Context, streamName string) error {
+// waitForStream waits for a JetStream stream to be available and returns its
+// creation time as the server reports it, which is the stream's generation (#15).
+func (c *Component) waitForStream(ctx context.Context, streamName string) (time.Time, error) {
 	js, err := c.natsClient.JetStream()
 	if err != nil {
-		return fmt.Errorf("failed to get JetStream context: %w", err)
+		return time.Time{}, fmt.Errorf("failed to get JetStream context: %w", err)
 	}
 
 	maxRetries := 30
@@ -1498,10 +1528,10 @@ func (c *Component) waitForStream(ctx context.Context, streamName string) error 
 	maxInterval := 2 * time.Second
 
 	for i := 0; i < maxRetries; i++ {
-		_, err := js.Stream(ctx, streamName)
+		stream, err := js.Stream(ctx, streamName)
 		if err == nil {
 			c.logger.Debug("Stream available", slog.String("stream", streamName))
-			return nil
+			return stream.CachedInfo().Created, nil
 		}
 
 		// Exponential backoff
@@ -1512,7 +1542,7 @@ func (c *Component) waitForStream(ctx context.Context, streamName string) error 
 
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return time.Time{}, ctx.Err()
 		case <-time.After(retryInterval):
 			retryInterval = time.Duration(float64(retryInterval) * 1.5)
 			if retryInterval > maxInterval {
@@ -1521,7 +1551,7 @@ func (c *Component) waitForStream(ctx context.Context, streamName string) error 
 		}
 	}
 
-	return fmt.Errorf("stream %s not available after %d retries", streamName, maxRetries)
+	return time.Time{}, fmt.Errorf("stream %s not available after %d retries", streamName, maxRetries)
 }
 
 // handleMessage processes an incoming message and creates/updates entity state

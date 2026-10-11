@@ -39,7 +39,8 @@ const (
 	BucketAnomalyIndex       = "ANOMALY_INDEX"
 
 	// BucketGraphIngestAppliedSeq is graph-ingest's ADR-072 redelivery-guard
-	// durable tier: `(entityID/streamName) → last-applied stream sequence`.
+	// durable tier: `(entityID/streamName) → (stream generation, last-applied
+	// stream sequence)`.
 	// Created and owned exclusively by graph-ingest (processor/graph-ingest);
 	// a member of FrameworkOwnedBuckets so a generic rule update_kv cannot forge
 	// a sequence stamp and silently reopen the redelivery overwrite the guard

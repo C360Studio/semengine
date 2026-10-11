@@ -134,7 +134,7 @@ func TestIntegration_IngestGuard_DurableSurvivesRestart(t *testing.T) {
 
 	// Apply-time stamp: durable first, then in-memory (as processIngest does).
 	require.NoError(t, c.ingestGuardStampDurable(ctx, work))
-	c.ingestGuardMem[0].set(guardKey(work.entityID, work.stream), work.seq)
+	c.ingestGuardMem[0].set(guardKey(work.entityID, work.stream), guardRecord{generation: work.generation, seq: work.seq})
 
 	// Simulate a restart / full eviction: the in-memory tier for this lane is
 	// empty. Only the durable stamp remains.
@@ -149,7 +149,7 @@ func TestIntegration_IngestGuard_DurableSurvivesRestart(t *testing.T) {
 	// The durable miss-read warmed the in-memory tier back up.
 	v, ok := c.ingestGuardMem[0].get(guardKey(work.entityID, work.stream))
 	assert.True(t, ok, "a durable read warms the in-memory cache")
-	assert.Equal(t, uint64(5), v)
+	assert.Equal(t, uint64(5), v.seq)
 
 	// A genuinely newer sequence is applied (not stale).
 	newer := ingestWork{entityID: work.entityID, stream: work.stream, seq: 6}

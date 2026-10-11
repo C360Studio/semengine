@@ -16,8 +16,8 @@ import (
 )
 
 // ingestWork is one unit submitted to the keyed ingest pool: a decoded entity
-// plus the JetStream message (for ack/nak) and the (stream, sequence) the
-// redelivery guard keys on. Partitioned by entityID so same-entity updates
+// plus the JetStream message (for ack/nak) and the (stream, generation, sequence)
+// the redelivery guard keys on. Partitioned by entityID so same-entity updates
 // serialize on one lane in arrival order (ADR-072, gh#480).
 type ingestWork struct {
 	entity   *graph.EntityState
@@ -25,6 +25,9 @@ type ingestWork struct {
 	entityID string
 	stream   string
 	seq      uint64
+	// generation is the input stream's generation: its creation time on the server, in
+	// nanoseconds, read when the consumer was bound (design D8, #15).
+	generation uint64
 	// deliveredAt is the JetStream timestamp of this message, carried from the
 	// consume closure so the ack path can age the readiness view without a second
 	// Metadata() call on a per-message hot path.
@@ -39,13 +42,52 @@ type ingestWork struct {
 	importLane bool
 }
 
+// guardRecord is what the redelivery guard keeps for one entity and stream: the stream
+// generation the last applied input came from, and that input's sequence. Stored, it is
+// sixteen bytes: the generation, then the sequence, each big-endian.
+type guardRecord struct {
+	generation uint64
+	seq        uint64
+}
+
+const guardRecordSize = 16
+
+func (r guardRecord) encode() []byte {
+	buf := make([]byte, guardRecordSize)
+	binary.BigEndian.PutUint64(buf[:8], r.generation)
+	binary.BigEndian.PutUint64(buf[8:], r.seq)
+	return buf
+}
+
+// decodeGuardRecord reads a stored record. A value of any other length than the one format
+// is not a record graph-ingest can read (design D21).
+func decodeGuardRecord(value []byte) (guardRecord, bool) {
+	if len(value) != guardRecordSize {
+		return guardRecord{}, false
+	}
+	return guardRecord{
+		generation: binary.BigEndian.Uint64(value[:8]),
+		seq:        binary.BigEndian.Uint64(value[8:]),
+	}, true
+}
+
+// covers reports whether work is a redelivery of an input this record has seen: it comes
+// from the same stream generation, at a sequence not newer than the last applied. An input
+// from any other generation is not covered, so a recreated stream, whose sequences restart
+// at 1, is never suppressed by the sequences of the stream it replaced (#15). Generations
+// are compared for equality, never order: they are creation times, and two servers'
+// clocks need not agree.
+func (r guardRecord) covers(work ingestWork) bool {
+	return r.generation == work.generation && work.seq <= r.seq
+}
+
 // laneGuard is one lane's in-memory applied-sequence cache — tier 1 of the
 // redelivery guard. It is accessed only by that lane's single goroutine, so it
 // needs no locking. Bounded: past max, one arbitrary entry is evicted — a cache
 // miss just falls through to the durable tier, so which entry leaves the cache
 // never affects correctness (ADR-072 B3).
 type laneGuard struct {
-	seq      map[string]uint64
+	seq      map[string]guardRecord
 	capacity int
 	// refused holds the keys whose durable record this lane refused as undecodable and logged,
 	// so a redelivery loop logs once per key (design D21). A key leaves when its record is next
@@ -55,7 +97,7 @@ type laneGuard struct {
 }
 
 func newLaneGuard(capacity int) *laneGuard {
-	return &laneGuard{seq: make(map[string]uint64), capacity: capacity, refused: make(map[string]struct{})}
+	return &laneGuard{seq: make(map[string]guardRecord), capacity: capacity, refused: make(map[string]struct{})}
 }
 
 // markRefused records key as refused and reports whether it was not recorded already.
@@ -77,12 +119,12 @@ func (g *laneGuard) forgetRefused(key string) {
 	delete(g.refused, key)
 }
 
-func (g *laneGuard) get(key string) (uint64, bool) {
+func (g *laneGuard) get(key string) (guardRecord, bool) {
 	v, ok := g.seq[key]
 	return v, ok
 }
 
-func (g *laneGuard) set(key string, v uint64) {
+func (g *laneGuard) set(key string, v guardRecord) {
 	if _, exists := g.seq[key]; !exists && len(g.seq) >= g.capacity {
 		// Evict one arbitrary entry (map iteration order). The durable tier backs
 		// correctness, so which entry leaves the cache is immaterial.
@@ -96,7 +138,10 @@ func (g *laneGuard) set(key string, v uint64) {
 
 // guardKey composes the durable/in-memory guard key. entityID is dotted and
 // stream is uppercase alphanumeric; "/" separates them and is a valid NATS KV
-// key character, so the composite is a valid durable-bucket key.
+// key character, so the composite is a valid durable-bucket key. The stream's
+// generation is in the record, not the key, so a recreated stream's first apply
+// replaces the record its predecessor left and the key set stays one per entity
+// and stream.
 func guardKey(entityID, stream string) string {
 	return entityID + "/" + stream
 }
@@ -163,7 +208,7 @@ func (c *Component) processIngest(ctx context.Context, lane int, work ingestWork
 
 	// Redelivery guard (ADR-072 B1/B2/B3): drop a stale re-delivery whose stream
 	// sequence is not newer than the last already applied to this entity from the
-	// same stream.
+	// same stream generation (#15).
 	stale, err := c.ingestGuardStale(ctx, lane, work)
 	if err != nil {
 		// Transient durable-guard read failure, or a stored record that cannot be
@@ -243,7 +288,7 @@ func (c *Component) processIngest(ctx context.Context, lane int, work ingestWork
 		}
 		return derr
 	}
-	c.ingestGuardMem[lane].set(guardKey(work.entityID, work.stream), work.seq)
+	c.ingestGuardMem[lane].set(guardKey(work.entityID, work.stream), guardRecord{generation: work.generation, seq: work.seq})
 
 	if ackErr := work.msg.Ack(); ackErr != nil {
 		c.logger.Error("Failed to ack JetStream message", slog.Any("error", ackErr))
@@ -294,17 +339,19 @@ func (c *Component) logStructuralContractRejection(lane string, err error) {
 }
 
 // ingestGuardStale reports whether work is a stale redelivery — its stream
-// sequence is not newer than the last already applied to (entity, stream). It
-// checks the in-memory tier first (lane-local, no KV op), falling back to the
-// durable tier on a miss (cold / evicted / post-restart) and warming the cache.
+// sequence is not newer than the last already applied to (entity, stream) from
+// the same stream generation. It checks the in-memory tier first (lane-local, no
+// KV op), falling back to the durable tier on a miss (cold / evicted /
+// post-restart) and warming the cache.
 func (c *Component) ingestGuardStale(ctx context.Context, lane int, work ingestWork) (bool, error) {
 	key := guardKey(work.entityID, work.stream)
 
 	if last, ok := c.ingestGuardMem[lane].get(key); ok {
-		return work.seq <= last, nil
+		return last.covers(work), nil
 	}
 	if c.ingestGuardBucket == nil {
-		return false, nil // no durable tier provisioned → treat as first-seen
+		c.recordUnguardedInput(work)
+		return false, nil
 	}
 	entry, err := c.ingestGuardBucket.Get(ctx, key)
 	if err != nil {
@@ -314,18 +361,34 @@ func (c *Component) ingestGuardStale(ctx context.Context, lane int, work ingestW
 		}
 		return false, err
 	}
-	// ingestGuardStampDurable writes the one format: the sequence as eight big-endian bytes. A
-	// record of any other length cannot be decoded. Reading it as first seen would reopen the
-	// overwrite the record prevents, and reading a prefix of a longer one would be a guess, so the
+	// ingestGuardStampDurable writes the one format, guardRecord's. A value of any other length,
+	// the pin's eight-byte sequence among them, cannot be decoded. Reading it as first seen would
+	// reopen the overwrite the record prevents, and reading part of it would be a guess, so the
 	// input is refused until the key is deleted (design D21).
-	if len(entry.Value) != 8 {
+	last, ok := decodeGuardRecord(entry.Value)
+	if !ok {
 		c.refuseUndecodableGuardRecord(lane, key, len(entry.Value))
 		return false, fmt.Errorf("%w: key %s holds %d bytes", errUndecodableGuardRecord, key, len(entry.Value))
 	}
 	c.ingestGuardMem[lane].forgetRefused(key)
-	last := binary.BigEndian.Uint64(entry.Value)
 	c.ingestGuardMem[lane].set(key, last) // warm the cache
-	return work.seq <= last, nil
+	return last.covers(work), nil
+}
+
+// recordUnguardedInput declares the degrade of design D8: with no applied-sequence bucket,
+// which only a component built without Start can lack (Start fails when it cannot acquire
+// one), an input the lane's cache has not seen is applied as first seen. Each such input is
+// counted and logged, naming it: nothing redelivers it in a loop, since it is applied and
+// acknowledged, so a line per input is a line per apply the guard did not check.
+func (c *Component) recordUnguardedInput(work ingestWork) {
+	c.unguardedInputs.Inc()
+	if c.logger == nil {
+		return
+	}
+	c.logger.Warn("graph-ingest: no applied-sequence bucket; applying the input as first seen",
+		slog.String("entity_id", work.entityID),
+		slog.String("stream", work.stream),
+		slog.Uint64("seq", work.seq))
 }
 
 // errUndecodableGuardRecord marks an input refused because its stored applied-sequence record
@@ -348,16 +411,15 @@ func (c *Component) refuseUndecodableGuardRecord(lane int, key string, size int)
 		slog.Int("bytes", size))
 }
 
-// ingestGuardStampDurable persists the last-applied sequence for (entity,
-// stream) in the durable guard bucket. A plain Put (last-writer-wins) is safe:
-// (entity, stream) is only ever written by one lane's goroutine (entity → one
-// lane), so there is no concurrent writer to race.
+// ingestGuardStampDurable persists the stream generation and last-applied
+// sequence for (entity, stream) in the durable guard bucket. A plain Put
+// (last-writer-wins) is safe: (entity, stream) is only ever written by one lane's
+// goroutine (entity → one lane), so there is no concurrent writer to race.
 func (c *Component) ingestGuardStampDurable(ctx context.Context, work ingestWork) error {
 	if c.ingestGuardBucket == nil {
 		return nil
 	}
-	var buf [8]byte
-	binary.BigEndian.PutUint64(buf[:], work.seq)
-	_, err := c.ingestGuardBucket.Put(ctx, guardKey(work.entityID, work.stream), buf[:])
+	record := guardRecord{generation: work.generation, seq: work.seq}
+	_, err := c.ingestGuardBucket.Put(ctx, guardKey(work.entityID, work.stream), record.encode())
 	return err
 }

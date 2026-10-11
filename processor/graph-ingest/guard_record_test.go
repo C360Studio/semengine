@@ -134,7 +134,8 @@ func TestCorruptGuardRecordIsRefused(t *testing.T) {
 	guard.mu.Lock()
 	stamped := guard.data[guardRecordKey].value
 	guard.mu.Unlock()
-	if want := []byte{0, 0, 0, 0, 0, 0, 0, 1}; !bytes.Equal(stamped, want) {
+	// Generation 0 (the work names none), then sequence 1, each as eight big-endian bytes.
+	if want := []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}; !bytes.Equal(stamped, want) {
 		t.Errorf("guard record after the apply = %v, want %v", stamped, want)
 	}
 	if got := guardRecordRefusals(t, registry); got != 2 {
@@ -155,7 +156,7 @@ func TestCorruptGuardRecordIsRefused(t *testing.T) {
 
 	// Repaired this time by writing a record that decodes: the arrival applies, and the key's next
 	// corruption is again a new refusal, logged again.
-	if _, err := guard.Put(context.Background(), guardRecordKey, []byte{0, 0, 0, 0, 0, 0, 0, 1}); err != nil {
+	if _, err := guard.Put(context.Background(), guardRecordKey, []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}); err != nil {
 		t.Fatalf("write a decodable guard record: %v", err)
 	}
 	applied("arrival after a decodable record is written", guardRecordID, 3)
@@ -168,10 +169,11 @@ func TestCorruptGuardRecordIsRefused(t *testing.T) {
 }
 
 // TestGuardRecordOfAnyOtherLengthIsRefused: graph-ingest writes its applied-sequence record as
-// eight bytes, so a record of any other length, shorter or longer, cannot be decoded and is
-// refused; a longer one is not read by its first eight bytes.
+// sixteen bytes, the stream generation and the sequence (#15), so a record of any other length,
+// shorter or longer, cannot be decoded and is refused. The pin's eight-byte record, a sequence with
+// no generation, is among them; a longer one is not read by its first sixteen bytes.
 func TestGuardRecordOfAnyOtherLengthIsRefused(t *testing.T) {
-	for _, size := range []int{0, 7, 9, 16} {
+	for _, size := range []int{0, 8, 15, 17} {
 		registry := metric.NewMetricsRegistry()
 		c, entities := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"), withMetricsRegistry(registry))
 		guard := newMockKVBucket()

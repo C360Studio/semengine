@@ -49,43 +49,43 @@ func TestLaneGuard_GetSet(t *testing.T) {
 	_, ok := g.get("k")
 	assert.False(t, ok, "absent key is a miss")
 
-	g.set("k", 5)
+	g.set("k", guardRecord{seq: 5})
 	v, ok := g.get("k")
 	assert.True(t, ok)
-	assert.Equal(t, uint64(5), v)
+	assert.Equal(t, uint64(5), v.seq)
 
-	g.set("k", 9) // update in place
+	g.set("k", guardRecord{seq: 9}) // update in place
 	v, _ = g.get("k")
-	assert.Equal(t, uint64(9), v)
+	assert.Equal(t, uint64(9), v.seq)
 }
 
 func TestLaneGuard_BoundedEviction(t *testing.T) {
 	g := newLaneGuard(2)
-	g.set("a", 1)
-	g.set("b", 2)
+	g.set("a", guardRecord{seq: 1})
+	g.set("b", guardRecord{seq: 2})
 	require.Len(t, g.seq, 2)
 
 	// Inserting a third distinct key evicts one arbitrary entry (durable tier
 	// backs correctness, so which one is immaterial) — the map stays bounded.
-	g.set("c", 3)
+	g.set("c", guardRecord{seq: 3})
 	assert.Len(t, g.seq, 2, "map stays bounded at max")
 	v, ok := g.get("c")
 	assert.True(t, ok, "the just-inserted key is present")
-	assert.Equal(t, uint64(3), v)
+	assert.Equal(t, uint64(3), v.seq)
 }
 
 func TestLaneGuard_UpdateAtCapDoesNotEvict(t *testing.T) {
 	g := newLaneGuard(2)
-	g.set("a", 1)
-	g.set("b", 2)
+	g.set("a", guardRecord{seq: 1})
+	g.set("b", guardRecord{seq: 2})
 	// Updating an EXISTING key at capacity must not evict (no new entry).
-	g.set("a", 10)
+	g.set("a", guardRecord{seq: 10})
 	assert.Len(t, g.seq, 2)
 	va, _ := g.get("a")
 	vb, okb := g.get("b")
-	assert.Equal(t, uint64(10), va)
+	assert.Equal(t, uint64(10), va.seq)
 	assert.True(t, okb, "existing sibling not evicted by an in-place update")
-	assert.Equal(t, uint64(2), vb)
+	assert.Equal(t, uint64(2), vb.seq)
 }
 
 // TestLaneGuard_RefusedKeysAreBounded: a key is reported new once, again after it is forgotten,
@@ -124,6 +124,7 @@ func TestIngestGuardStale_MemoryTierAndFirstSeen(t *testing.T) {
 		ingestGuardMem:    []*laneGuard{newLaneGuard(16)},
 		ingestGuardBucket: nil, // no durable tier in this unit test
 	})
+	require.NoError(t, c.registerMetrics(nil)) // the first-seen input is counted (design D8)
 	ctx := context.Background()
 	work := ingestWork{entityID: "c360.a.b.c.d.001", stream: "SENSOR", seq: 5}
 
@@ -133,7 +134,7 @@ func TestIngestGuardStale_MemoryTierAndFirstSeen(t *testing.T) {
 	assert.False(t, stale, "an unseen (entity,stream) is not stale")
 
 	// Stamp the in-memory tier at seq 5, then re-check.
-	c.ingestGuardMem[0].set(guardKey(work.entityID, work.stream), 5)
+	c.ingestGuardMem[0].set(guardKey(work.entityID, work.stream), guardRecord{seq: 5})
 
 	older := work
 	older.seq = 3
@@ -161,11 +162,12 @@ func TestIngestGuardStale_PerStreamIndependence(t *testing.T) {
 		ingestGuardMem:    []*laneGuard{newLaneGuard(16)},
 		ingestGuardBucket: nil,
 	})
+	require.NoError(t, c.registerMetrics(nil)) // the first-seen input is counted (design D8)
 	ctx := context.Background()
 	entity := "c360.a.b.c.d.001"
 
 	// Stream A applied a high sequence.
-	c.ingestGuardMem[0].set(guardKey(entity, "STREAM_A"), 1000)
+	c.ingestGuardMem[0].set(guardKey(entity, "STREAM_A"), guardRecord{seq: 1000})
 
 	// A low sequence from stream B is a DIFFERENT key → not stale.
 	fromB := ingestWork{entityID: entity, stream: "STREAM_B", seq: 5}
@@ -364,7 +366,7 @@ func TestProcessIngest_FillsEmptyFactSubjectBeforeStaleGuard(t *testing.T) {
 	component, _ := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
 	component.ingestGuardMem = []*laneGuard{newLaneGuard(16)}
 	validID := "acme.ops.test.system.widget.001"
-	component.ingestGuardMem[0].set(guardKey(validID, "ENTITY"), 1)
+	component.ingestGuardMem[0].set(guardKey(validID, "ENTITY"), guardRecord{seq: 1})
 	entity := &graph.EntityState{ID: validID, Triples: []message.Triple{{Subject: "", Predicate: "test.state.value"}}}
 	msg := &keyedIngestTestMsg{}
 

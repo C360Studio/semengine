@@ -10,7 +10,8 @@ the reference for every production change.
 - [x] 1.1 Copy `inventory.md` (revision 3), `design.md`, `cleanup.md` and the two spec deltas into
   `openspec/changes/natsclient-contract/`.
 - [x] 1.2 Post the P17 to P25 READMEs on PR #177. Record the comment ids in ADR-112's Status (orchestrator).
-- [ ] 1.3 Correct #168's body to the fix this change makes (orchestrator).
+- [x] 1.3 Correct #168's body to the fix this change makes (orchestrator). Done 2026-10-11: #168's description
+  replaced; the original preserved in #168 comment 6114951256.
 
 ## 2. Connect honours its context (design D2)
 
@@ -91,8 +92,10 @@ the reference for every production change.
 ## 6. Gates
 
 - [ ] 6.1 Run `task verify` on a clean tree at the final content commit. Record the commit and the result.
-- [ ] 6.2 Get Codex's review of record on PR #177. The PR body names `implemented-by: claude (opus)` and
-  `reviewed-by: codex`.
+- [x] 6.2 Get Codex's review of record on PR #177. The PR body names `implemented-by: claude (opus)` and
+  `reviewed-by: codex`. Codex: stop 1 6111641674 (findings fixed in stop 2), stop 2 APPROVE 6112599798, stop 3
+  APPROVE 6114018992 at 111a71a; stop 4 changes Go comments only (proof and the owner's waiver of a re-review: PR
+  comment 6114954888).
 - [ ] 6.3 Archive and sync the specs as the last content commit. In the same commit, edit `transport-client`'s Purpose
   so that `Close` stays within the caller's deadline "on a connection it dialled": a `SetConnection` connection is not
   cut.

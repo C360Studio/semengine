@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -1959,8 +1958,9 @@ func (m *Client) CreateKeyValueBucket(ctx context.Context, cfg jetstream.KeyValu
 	// Bucket doesn't exist, try to create it
 	bucket, err = js.CreateKeyValue(ctx, cfg)
 	if err != nil {
-		// Check if error is "already exists" (race condition)
-		if isAlreadyExistsError(err) {
+		// nats.go joins ErrBucketExists to a create that finds the bucket's
+		// stream already there: a race with another creator (T6).
+		if stderrors.Is(err, jetstream.ErrBucketExists) {
 			m.logger.Info("KV bucket already exists (race condition), attempting to get existing bucket",
 				slog.String("bucket", cfg.Bucket),
 			)
@@ -2405,15 +2405,4 @@ func (m *Client) stopHealthMonitoring() {
 		close(m.healthDone)
 		m.healthDone = nil
 	}
-}
-
-// isAlreadyExistsError checks if an error indicates a KV bucket already exists
-func isAlreadyExistsError(err error) bool {
-	if err == nil {
-		return false
-	}
-	errStr := err.Error()
-	return strings.Contains(errStr, "bucket name already in use") ||
-		strings.Contains(errStr, "already exists") ||
-		strings.Contains(errStr, "stream name already in use")
 }

@@ -61,7 +61,7 @@ the reference for every production change.
   - change `request_integration_test.go:70-74` and `:429-434` from text to `errors.Is(err, nats.ErrNoResponders)`.
 
   No responders is not wrapped (design D5).
-- [ ] 4.5 Write T6 `TestCreateKeyValueOfAnExistingBucketIsErrBucketExists`, then make the change below. This is a
+- [x] 4.5 Write T6 `TestCreateKeyValueOfAnExistingBucketIsErrBucketExists`, then make the change below. This is a
   refactor: T6 pins the nats.go error it relies on, and passes before and after.
   - Replace `isAlreadyExistsError` at `client.go:1887` with `errors.Is(err, jetstream.ErrBucketExists)`.
   - Delete the function and its text-fed test (`client_test.go:560-583`).

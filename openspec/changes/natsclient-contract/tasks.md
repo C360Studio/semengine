@@ -16,7 +16,7 @@ the reference for every production change.
 
 - [x] 2.1 Write T3 `TestConnectRefusesAnEndedContext` and T4 `TestConnectEndsWithItsContext` in
   `natsclient/client_connect_test.go`, and record them failing on `main`'s code.
-- [ ] 2.2 Add `natsclient/socket.go`. Its dialer is what `nats.SetCustomDialer` takes:
+- [x] 2.2 Add `natsclient/socket.go`. Its dialer is what `nats.SetCustomDialer` takes:
   - it keeps the last socket it dialled;
   - it dials through `netDial` with `net.Dialer{Timeout, Cancel: done}`;
   - its `cut` closes the socket, closes `done`, and refuses later dials.

@@ -6,6 +6,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -92,6 +93,11 @@ type Client struct {
 	pingInterval  time.Duration
 	timeout       time.Duration
 	drainTimeout  time.Duration
+
+	// netDial opens each socket the client dials: (*net.Dialer).Dial, unless a
+	// test replaces it before Connect to hold a dial open, which no portable
+	// address does.
+	netDial func(*net.Dialer, string, string) (net.Conn, error)
 
 	// requestHandlerTimeout bounds a single SubscribeForRequests handler
 	// invocation. Defaults to DefaultRequestHandlerTimeout (30s); raised per
@@ -349,6 +355,7 @@ func NewClient(urls string, opts ...ClientOption) (*Client, error) {
 		maxBackoff:       time.Minute,
 		timeout:          5 * time.Second,
 		drainTimeout:     30 * time.Second,
+		netDial:          (*net.Dialer).Dial,
 		metricsInterval:  30 * time.Second, // Poll JetStream stats every 30s
 		// Env-resolved default (30s unless SEMENGINE_NATS_REQUEST_HANDLER_TIMEOUT
 		// overrides). No option sets it (env > framework default).
@@ -681,14 +688,17 @@ func (m *Client) GetStatus() *Status {
 	return status
 }
 
-// Connect establishes connection to NATS server. It refuses a nil context and a
-// client that is already connected, with an error and before any dial. Once
-// Close has begun it returns nats.ErrConnectionClosed before dialling. Connect
-// returns an error when Close has begun before it finished; the connection it
-// dialled is then closed and nothing it would have started runs. A Connect that
-// returns an error has no event handler of the connection it dialled still
-// running, and changes neither the status, the failure count nor the circuit of
-// a connection another Connect installed (design D3).
+// Connect establishes connection to NATS server. It refuses a nil context, an
+// ended context and a client that is already connected, with an error and
+// before any dial. When its context ends while it dials or waits for the
+// server's answer, it closes the socket and returns a transient error matching
+// the context's error (T3, T4). Once Close has begun it returns
+// nats.ErrConnectionClosed before dialling. Connect returns an error when Close
+// has begun before it finished; the connection it dialled is then closed and
+// nothing it would have started runs. A Connect that returns an error has no
+// event handler of the connection it dialled still running, and changes neither
+// the status, the failure count nor the circuit of a connection another Connect
+// installed (design D3).
 func (m *Client) Connect(ctx context.Context) error {
 	return m.connectWith(ctx, nats.Connect)
 }
@@ -702,6 +712,9 @@ func (m *Client) connectWith(
 ) error {
 	if ctx == nil {
 		return errs.WrapInvalid(stderrors.New("nil context"), "Client", "Connect", "missing context")
+	}
+	if err := ctx.Err(); err != nil {
+		return errs.WrapTransient(err, "Client", "Connect", "connection cancelled")
 	}
 	m.mu.RLock()
 	started, closing := m.conn != nil, m.closing
@@ -735,10 +748,18 @@ func (m *Client) connectWith(
 	m.mu.Unlock()
 	m.logger.Info("Connecting to NATS", slog.String("urls", m.urls))
 
-	// Build connection options
-	opts := m.buildConnectionOptions()
-
+	// nats.Connect takes no context, so the context reaches the dial through
+	// the dialer: when it ends, cut closes the socket and ends the dial (T4).
+	// The cut is stopped, or joined if it began, before the result is read, so
+	// the context touches nothing once Connect returns.
+	socket := newSocketDialer(m.timeout, m.netDial)
+	opts := append(m.buildConnectionOptions(), nats.SetCustomDialer(socket))
+	cut := make(chan struct{})
+	stopCut := context.AfterFunc(ctx, func() { socket.cut(); close(cut) })
 	conn, err := dial(m.urls, opts...)
+	if !stopCut() {
+		<-cut
+	}
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		m.discardCandidate(conn)
 		m.connectFailed()

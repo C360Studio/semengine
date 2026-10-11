@@ -23,7 +23,7 @@ the reference for every production change.
 
   In `connectWith`, refuse an ended context before anything else, pass the dialer, and arm
   `context.AfterFunc(ctx, cut)` around the dial. Then stop and join it. T3 and T4 pass.
-- [ ] 2.3 Write T5 `TestReconnectAfterConnectContextEnded`. It passes. Run `task mutate:check` with the `AfterFunc`
+- [x] 2.3 Write T5 `TestReconnectAfterConnectContextEnded`. It passes. Run `task mutate:check` with the `AfterFunc`
   left armed after Connect returns, and record the detection.
 
 ## 3. Close cuts the socket and any reconnect dial (design D1, D3)

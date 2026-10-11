@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/c360studio/semengine/pkg/errs"
 	natsserver "github.com/nats-io/nats-server/v2/server"
 	"github.com/nats-io/nats.go"
@@ -192,6 +193,56 @@ func TestConnectEndsWithItsContext(t *testing.T) {
 		err = awaitConnect(t, startConnect(ctx, client))
 		require.ErrorIs(t, err, context.DeadlineExceeded)
 	})
+}
+
+// T5, design "Tests that replace the probes". Connect's context must not reach
+// the connection once Connect has returned: a cut left armed would close the
+// socket when the context ends and refuse every reconnect.
+func TestReconnectAfterConnectContextEnded(t *testing.T) {
+	server, err := natsserver.NewServer(&natsserver.Options{Host: "127.0.0.1", Port: -1, NoLog: true, NoSigs: true})
+	require.NoError(t, err)
+	server.Start()
+	t.Cleanup(func() {
+		server.Shutdown()
+		server.WaitForShutdown()
+	})
+	require.True(t, server.ReadyForConnections(lifecycleBound), "embedded server not ready")
+
+	responder, err := nats.Connect(server.ClientURL())
+	require.NoError(t, err)
+	t.Cleanup(responder.Close)
+	_, err = responder.Subscribe("t5.echo", func(m *nats.Msg) { _ = m.Respond(m.Data) })
+	require.NoError(t, err)
+	require.NoError(t, responder.Flush())
+
+	client, err := NewClient(server.ClientURL(), WithHealthInterval(0), WithReconnectWait(10*time.Millisecond))
+	require.NoError(t, err)
+	ctx, cancel := context.WithCancel(t.Context())
+	require.NoError(t, client.Connect(ctx))
+	closeInCleanup(t, client)
+	conn := client.GetConnection()
+	cid, err := conn.GetClientID()
+	require.NoError(t, err)
+
+	cancel()
+	// A drop error is reported with the wait below, so that a client that
+	// never reconnects fails there whatever the server still held.
+	dropErr := server.DisconnectClientByID(cid)
+
+	type connState struct {
+		Reconnects uint64
+		Connected  bool
+	}
+	wait, cancelWait := context.WithTimeout(t.Context(), lifecycleBound)
+	defer cancelWait()
+	_, err = probe.Await(wait, func(context.Context) (connState, error) {
+		return connState{conn.Stats().Reconnects, conn.IsConnected()}, nil
+	}, func(s connState) bool { return s.Reconnects > 0 && s.Connected })
+	require.NoError(t, err, "no reconnect after the server dropped the client (drop error: %v)", dropErr)
+
+	reply, err := client.Request(t.Context(), "t5.echo", []byte("ping"), lifecycleBound)
+	require.NoError(t, err)
+	require.Equal(t, "ping", string(reply))
 }
 
 // startConnect runs Connect in its own goroutine; awaitConnect receives its

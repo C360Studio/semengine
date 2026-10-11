@@ -692,7 +692,8 @@ func (m *Client) GetStatus() *Status {
 // ended context and a client that is already connected, with an error and
 // before any dial. When its context ends while it dials or waits for the
 // server's answer, it closes the socket and returns a transient error matching
-// the context's error (T3, T4). Once Close has begun it returns
+// the context's error (T3, T4). The context does not bound the connection's
+// later reconnects (T5). Once Close has begun it returns
 // nats.ErrConnectionClosed before dialling. Connect returns an error when Close
 // has begun before it finished; the connection it dialled is then closed and
 // nothing it would have started runs. A Connect that returns an error has no
@@ -751,7 +752,7 @@ func (m *Client) connectWith(
 	// nats.Connect takes no context, so the context reaches the dial through
 	// the dialer: when it ends, cut closes the socket and ends the dial (T4).
 	// The cut is stopped, or joined if it began, before the result is read, so
-	// the context touches nothing once Connect returns.
+	// the context touches nothing once Connect returns (T5).
 	socket := newSocketDialer(m.timeout, m.netDial)
 	opts := append(m.buildConnectionOptions(), nats.SetCustomDialer(socket))
 	cut := make(chan struct{})

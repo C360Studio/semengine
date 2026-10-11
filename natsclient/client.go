@@ -913,8 +913,8 @@ func (m *Client) startMetricsPoller() bool {
 // another Close is draining, and the cleanup continues; a later Close waits for
 // the same completion. On a connection the client dialled, an ended ctx also
 // closes the socket and ends a reconnect dial nats.go has in progress, so a
-// write the server is not reading does not hold Close (T1; P17, P23); a message
-// still buffered then is not promised to reach the server. A connection
+// write the server is not reading does not hold Close (T1, T8; P17, P23); a
+// message still buffered then is not promised to reach the server. A connection
 // installed through SetConnection is not cut. Once Close has begun the client
 // starts no new work: background work offered after that is dropped and logged
 // at debug level, and Connect, Subscribe, SubscribeForRequests and the Consume
@@ -1004,7 +1004,7 @@ func (m *Client) cleanup(
 	if socket != nil {
 		// A write the server is not reading, or a reconnect dial, holds
 		// nats.go's connection lock, which the drain and the close below wait
-		// for; the cut releases it when ctx ends (T1; P17, P23). It is armed
+		// for; the cut releases it when ctx ends (T1, T8; P17, P23). It is armed
 		// first, so no step waits before the cut can end the wait.
 		stopCut := socket.cutWhenDone(ctx)
 		defer stopCut()

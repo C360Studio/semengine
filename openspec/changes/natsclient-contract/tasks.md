@@ -35,7 +35,7 @@ the reference for every production change.
   - The embedded server's `max_payload` is 32 MiB.
 - [x] 3.2 In `Close`, take the dialer only for a connection the client dialled. `cleanup` arms the cut first, and stops
   and joins it before it returns. T1 passes.
-- [ ] 3.3 Write T8 `TestCloseEndsAReconnectDial`, and record it failing on 3.2's code with `Cancel` removed from the
+- [x] 3.3 Write T8 `TestCloseEndsAReconnectDial`, and record it failing on 3.2's code with `Cancel` removed from the
   dial.
   - `netDial` blocks every dial after the first until the dialer's `Cancel` closes, and signals when it is entered.
   - The server drops the client.

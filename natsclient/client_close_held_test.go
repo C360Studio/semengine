@@ -3,9 +3,11 @@ package natsclient
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -46,6 +48,62 @@ func requireClosed(t *testing.T, conn *nats.Conn) {
 		return conn.Status(), nil
 	}, func(s nats.Status) bool { return s == nats.CLOSED })
 	require.NoError(t, err, "the connection was not closed: status %v", status)
+}
+
+// T8, design "Tests that replace the probes". A reconnect dial holds nats.go's
+// connection lock, as a held write does (P23); Close must end the dial through
+// the dialer's Cancel rather than wait for it.
+func TestCloseEndsAReconnectDial(t *testing.T) {
+	server, err := natsserver.NewServer(&natsserver.Options{Host: "127.0.0.1", Port: -1, NoLog: true, NoSigs: true})
+	require.NoError(t, err)
+	server.Start()
+	t.Cleanup(func() {
+		server.Shutdown()
+		server.WaitForShutdown()
+	})
+	require.True(t, server.ReadyForConnections(lifecycleBound), "embedded server not ready")
+
+	client, err := NewClient(server.ClientURL(), WithHealthInterval(0), WithReconnectWait(10*time.Millisecond))
+	require.NoError(t, err)
+	// The first dial reaches the server. Every later one is entered, then
+	// waits for the dialer's Cancel, as a dial to an address that drops every
+	// packet would, or for the end of the test, so a run that fails does not
+	// hold nats.go's lock for the rest of the binary.
+	entered := make(chan struct{}, 1)
+	testEnded := make(chan struct{})
+	var dials atomic.Int32
+	client.netDial = func(d *net.Dialer, network, address string) (net.Conn, error) {
+		if dials.Add(1) == 1 {
+			return d.Dial(network, address)
+		}
+		select {
+		case entered <- struct{}{}:
+		default:
+		}
+		select {
+		case <-d.Cancel:
+			return nil, errors.New("dial cancelled")
+		case <-testEnded:
+			return nil, errors.New("test ended")
+		}
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), lifecycleBound)
+	defer cancel()
+	require.NoError(t, client.Connect(ctx))
+	closeInCleanup(t, client)
+	t.Cleanup(func() { close(testEnded) }) // registered after the client's Close, so it runs first
+
+	cid, err := client.GetConnection().GetClientID()
+	require.NoError(t, err)
+	require.NoError(t, server.DisconnectClientByID(cid))
+	within(t, entered, lifecycleBound, "the reconnect dial")
+
+	closeCtx, cancelClose := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancelClose()
+	// The test's own wait, under nats.go's 5 s default dial timeout, which
+	// bounded Close before the cut ended the dial (P23: 4.69 s).
+	err = within(t, startClose(closeCtx, client), 3*time.Second, "Close")
+	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
 // heldSubject is the subject of the publish heldProxy holds.

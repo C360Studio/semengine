@@ -100,7 +100,7 @@ during Close ("A consumer refused during Close keeps its claim"), which waits fo
 holds no claim, its handlers' context descends from the call's own context, and Close's join already covers every
 subscription of a failed setup.
 
-The error SHALL be decided in this order. If Close has begun when the round trip ends, the call SHALL return
+The error SHALL be decided in this order. If Close has begun when the call fails, the call SHALL return
 `nats.ErrConnectionClosed`, whatever the round trip's outcome and whether or not the call's context has ended, decided
 by Close having begun and not by `Status()`. Otherwise the error SHALL be transient and match `context.Canceled` or
 `context.DeadlineExceeded` when the context ended or the bound passed, and SHALL be transient and match
@@ -207,7 +207,8 @@ answer. The client does not promise when that happens, nor that the connection i
 
 - **GIVEN** a `Subscribe` held behind a write the server is not reading
 - **WHEN** Close is called with a 50 ms deadline
-- **THEN** Close returns the context's error within the deadline, and the `Subscribe` returns an error
+- **THEN** Close returns the context's error within the deadline, and the `Subscribe` returns an error matching
+  `nats.ErrConnectionClosed`
 
 ### Requirement: The write timeout and the PING interval are settable
 

@@ -71,7 +71,10 @@ func TestCloseIsNotHeldByAHeldSubscribe(t *testing.T) {
 	err := within(t, startClose(ctx, client), lifecycleBound, "Close")
 
 	require.ErrorIs(t, err, context.DeadlineExceeded)
-	require.Error(t, within(t, subscribed, lifecycleBound, "the held Subscribe"), "the held Subscribe succeeded")
+	// Held until Close cuts the socket, the Subscribe fails after Close has
+	// begun, whichever step fails it: the connection check, nats.go's subscribe
+	// or the round trip.
+	require.ErrorIs(t, within(t, subscribed, lifecycleBound, "the held Subscribe"), nats.ErrConnectionClosed)
 	require.Error(t, within(t, published, lifecycleBound, "the held publish"), "the held publish succeeded")
 	requireClosed(t, conn)
 }

@@ -1422,7 +1422,15 @@ func (m *Client) subscribeOwned(
 	})
 	if err != nil {
 		finish()
-		return nil, err
+		// Once Close has begun, nats.go refuses with ErrConnectionDraining or
+		// ErrConnectionClosed (nats.go:5114-5119); Close having begun decides,
+		// as at the connection check above.
+		select {
+		case <-closing:
+			return nil, errs.Wrap(nats.ErrConnectionClosed, "Client", operation, "client closed")
+		default:
+			return nil, err
+		}
 	}
 	s := newSubscription(sub, d.end)
 	go m.watchOwnedSubscription(conn, sub, d, closing, finish)

@@ -50,6 +50,44 @@ func requireClosed(t *testing.T, conn *nats.Conn) {
 	require.NoError(t, err, "the connection was not closed: status %v", status)
 }
 
+// T2, design "Tests that replace the probes". A Subscribe held behind a write
+// the server is not reading must not hold natsclient's own lock while it waits
+// for nats.go's, or Close cannot begin, and so cannot cut the socket (design D3;
+// P21).
+func TestCloseIsNotHeldByAHeldSubscribe(t *testing.T) {
+	client, proxy := newHeldClient(t)
+	conn := client.GetConnection()
+	published := holdPublish(t, client, proxy)
+
+	subscribed := make(chan error, 1)
+	go func() {
+		_, err := client.Subscribe(t.Context(), "natsclient.t2", func(context.Context, *nats.Msg) {})
+		subscribed <- err
+	}()
+	// Admitted means counted as running work. The count is read under
+	// TryRLock, so a Subscribe that keeps the lock fails this wait instead of
+	// holding it.
+	wait, cancelWait := context.WithTimeout(t.Context(), lifecycleBound)
+	defer cancelWait()
+	_, err := probe.Await(wait, func(context.Context) (int, error) {
+		if !client.mu.TryRLock() {
+			return 0, errors.New("natsclient's lock is held")
+		}
+		defer client.mu.RUnlock()
+		return client.running[workSubscription], nil
+	}, func(n int) bool { return n > 0 })
+	require.NoError(t, err, "the Subscribe was never admitted")
+
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	err = within(t, startClose(ctx, client), lifecycleBound, "Close")
+
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	require.Error(t, within(t, subscribed, lifecycleBound, "the held Subscribe"), "the held Subscribe succeeded")
+	require.Error(t, within(t, published, lifecycleBound, "the held publish"), "the held publish succeeded")
+	requireClosed(t, conn)
+}
+
 // T8, design "Tests that replace the probes". A reconnect dial holds nats.go's
 // connection lock, as a held write does (P23); Close must end the dial through
 // the dialer's Cancel rather than wait for it.

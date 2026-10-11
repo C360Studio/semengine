@@ -40,7 +40,7 @@ the reference for every production change.
   - `netDial` blocks every dial after the first until the dialer's `Cancel` closes, and signals when it is entered.
   - The server drops the client.
   - Once the dial is entered, `Close` with 50 ms returns before the test's 3 s wait.
-- [ ] 3.4 Write T2 `TestCloseIsNotHeldByAHeldSubscribe`, and record it failing on 3.2's code. It calls `Close` once
+- [x] 3.4 Write T2 `TestCloseIsNotHeldByAHeldSubscribe`, and record it failing on 3.2's code. It calls `Close` once
   the `Subscribe` has been admitted, as seen by `probe.Await` reading the count of running work under `TryRLock`.
 - [ ] 3.5 Move `conn.IsConnected()` out of natsclient's lock in `subscribeOwned`, `MaxPayload` and `SetConnection`.
   When `subscribeOwned`'s check fails after `Close` has begun, return `nats.ErrConnectionClosed`. T2 passes.

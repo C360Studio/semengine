@@ -167,10 +167,10 @@ across servers in a cluster.
 ### Requirement: Connect is bounded by its context
 
 `Client.Connect(ctx)` SHALL return a transient error matching the context's error, without dialling, when the
-context has already ended. While Connect dials and while the server's answer to the connection is pending, the
-context's deadline and its cancellation SHALL end the attempt: Connect ends the dial or closes the socket it dialled,
-and returns a transient error matching the context's error. The context SHALL NOT bound the connection's later
-reconnects.
+context has already ended, unless Close has begun (Close refuses new work). While Connect dials and while the
+server's answer to the connection is pending, the context's deadline and its cancellation SHALL end the attempt:
+Connect ends the dial or closes the socket it dialled, and returns a transient error matching the context's error. The
+context SHALL NOT bound the connection's later reconnects.
 
 #### Scenario: An ended context
 

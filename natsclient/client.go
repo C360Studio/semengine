@@ -694,12 +694,12 @@ func (m *Client) GetStatus() *Status {
 // server's answer, it closes the socket and returns a transient error matching
 // the context's error (T3, T4). The context does not bound the connection's
 // later reconnects (T5). Once Close has begun it returns
-// nats.ErrConnectionClosed before dialling. Connect returns an error when Close
-// has begun before it finished; the connection it dialled is then closed and
-// nothing it would have started runs. A Connect that returns an error has no
-// event handler of the connection it dialled still running, and changes neither
-// the status, the failure count nor the circuit of a connection another Connect
-// installed (design D3).
+// nats.ErrConnectionClosed before dialling, whether or not its context has
+// ended (T3). Connect returns an error when Close has begun before it finished;
+// the connection it dialled is then closed and nothing it would have started
+// runs. A Connect that returns an error has no event handler of the connection
+// it dialled still running, and changes neither the status, the failure count
+// nor the circuit of a connection another Connect installed (design D3).
 func (m *Client) Connect(ctx context.Context) error {
 	return m.connectWith(ctx, nats.Connect)
 }
@@ -714,9 +714,6 @@ func (m *Client) connectWith(
 	if ctx == nil {
 		return errs.WrapInvalid(stderrors.New("nil context"), "Client", "Connect", "missing context")
 	}
-	if err := ctx.Err(); err != nil {
-		return errs.WrapTransient(err, "Client", "Connect", "connection cancelled")
-	}
 	m.mu.RLock()
 	started, closing := m.conn != nil, m.closing
 	m.mu.RUnlock()
@@ -725,6 +722,9 @@ func (m *Client) connectWith(
 	}
 	if started {
 		return errs.WrapInvalid(errs.ErrAlreadyStarted, "Client", "Connect", "already connected")
+	}
+	if err := ctx.Err(); err != nil {
+		return errs.WrapTransient(err, "Client", "Connect", "connection cancelled")
 	}
 
 	// Check circuit breaker first

@@ -135,21 +135,37 @@ const connectWait = 3 * time.Second
 
 // T3, design "Tests that replace the probes".
 func TestConnectRefusesAnEndedContext(t *testing.T) {
-	url, accepted := silentListener(t)
-	client, err := NewClient(url)
-	require.NoError(t, err)
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
+	t.Run("no dial", func(t *testing.T) {
+		url, accepted := silentListener(t)
+		client, err := NewClient(url)
+		require.NoError(t, err)
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
 
-	err = client.Connect(ctx)
+		err = client.Connect(ctx)
 
-	require.ErrorIs(t, err, context.Canceled)
-	require.True(t, errs.IsTransient(err), "an ended context is transient: %v", err)
-	select {
-	case <-accepted:
-		t.Error("Connect dialled with an ended context: the listener accepted a connection")
-	default:
-	}
+		require.ErrorIs(t, err, context.Canceled)
+		require.True(t, errs.IsTransient(err), "an ended context is transient: %v", err)
+		select {
+		case <-accepted:
+			t.Error("Connect dialled with an ended context: the listener accepted a connection")
+		default:
+		}
+	})
+
+	// Close refuses new work whatever the context, as Subscribe does
+	// (transport-client, "Close refuses new work").
+	t.Run("after Close", func(t *testing.T) {
+		client, err := NewClient("nats://unused")
+		require.NoError(t, err)
+		closeCtx, cancelClose := context.WithTimeout(t.Context(), closeBudget)
+		defer cancelClose()
+		require.NoError(t, client.Close(closeCtx))
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+
+		require.ErrorIs(t, client.Connect(ctx), nats.ErrConnectionClosed)
+	})
 }
 
 // T4, design "Tests that replace the probes".

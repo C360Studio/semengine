@@ -512,7 +512,17 @@ posted on this pull request.
       commit reads as not-committed) and #174 (the append retry loop after an unconfirmed write). Not covered: failures
       before the write that graph-ingest answers transient now read commit-unknown (safe, less exact). `task verify` on
       `7f00244` ended `verify: ok`. Notes: `notes/4.1.md`.
-- [ ] 4.2 (D) #19: `ReconcileMutation` gains the expected revision; the two `projection-mutation` scenarios as tests.
+- [x] 4.2 (D) #19: `ReconcileMutation` gains the expected revision; the two `projection-mutation` scenarios as tests.
+      Done in `12b2b9d`: `ReconcileMutation.ExpectedRevision` (zero keeps the client's own read as the fence);
+      `Reconcile` sends the caller's revision when it is set and still reads the entity for `validateEntity`;
+      graph-ingest is unchanged (its comparison on its own read already names both revisions). Concurrent update:
+      `TestReconcileAtAStaleRevisionIsARevisionConflict` (`pkg/projection/conditional_reconcile_test.go`) and the
+      first half of `TestCanonicalReconcileAtTheCallersRevision` (`processor/graph-ingest/canonical_mutations_test.go`);
+      unchanged revision: `TestReconcileAtTheCurrentRevisionIsVerifiedAtTheNewRevision` and that test's second half.
+      Failed first at `conditional_reconcile_test.go:89` on `f3d5ae5`; two `task mutate:check` detections (commit
+      body). Open for the owner: the bucket's compare-and-set refusal (`canonical_mutations.go:350`), for a write
+      landing after graph-ingest's read, names only the expected revision, while the requirement's text names both.
+      `task verify` on `12b2b9d` ended `verify: ok`. Notes: `notes/4.2.md`.
 - [ ] 4.3 (D) #15: memory stream + `Fixture.Restart` + retained guard bucket: re-ingestion at lower sequences is
       applied and queried back; a same-generation redelivery is a no-op; the no-bucket degrade of design D8 is logged
       and counted. Fails first on the pin's guard key.

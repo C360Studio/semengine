@@ -7,20 +7,33 @@
 `Subscription.Drain(ctx)` SHALL refuse a nil context (kept from the pin). `Client.Close(ctx)` and `Client.Connect(ctx)`
 SHALL refuse a nil context without touching the connection (changed behaviour: at the pin `Close(nil)` panics on a
 connected client, and `Connect(nil)` dials, then panics, leaking the dialled connection; design P13). `Close` SHALL
-end its wait for the drain when the caller's context ends, reporting the drain outcome, and a later
+bound its drain by the caller's context deadline and return within it, reporting the drain outcome, and a later
 `Close` SHALL make no server call, and SHALL return nil once the first
 `Close`'s cleanup and the join are complete; none of these SHALL be
-repeated or retried by the client on the caller's behalf. The caller's context does not bound a write on the
-connection that the server is not reading: `Close` waits for each such write until it completes or nats.go's write
-timeout (one minute by default) ends it. The write timeout ends each held write; nothing bounds the wait as a whole,
-and this requirement does not (ADR-112 §1).
+repeated or retried by the client on the caller's behalf. When the context ends before the drain has finished,
+`Close` SHALL close the socket of a connection this client dialled and end any dial nats.go has in progress to
+reconnect it. That ends at once a write the server is not reading, and closes the connection; the drain is cut short.
+A connection installed through `SetConnection` was not dialled by the client, and a write held on it holds `Close` as
+"A write the server is not reading holds the connection" states (ADR-112).
 
 #### Scenario: Close under an ended context
 
-- **GIVEN** a connection whose server is reading
 - **WHEN** Close is called with a deadline shorter than the drain needs
 - **THEN** Close returns within the deadline, the connection is closed, and a second Close with a live context returns
   nil once no handler of the client is still running (see "A nil Close means every handler returned")
+
+#### Scenario: Close while the server is not reading
+
+- **GIVEN** a connection the client dialled, whose server has stopped reading, with a publish held in the write
+- **WHEN** Close is called with a 50 ms deadline
+- **THEN** Close returns the context's error within the deadline, the connection is closed, and the held publish
+  returns an error
+
+#### Scenario: Close while a reconnect is dialling
+
+- **GIVEN** a client whose connection the server dropped, while nats.go dials a reconnect that is not answered
+- **WHEN** Close is called with a 50 ms deadline
+- **THEN** Close returns the context's error within the deadline
 
 #### Scenario: Nil Close context
 
@@ -37,63 +50,11 @@ and this requirement does not (ADR-112 §1).
 - **WHEN** Drain is called with a nil context
 - **THEN** Drain returns an error naming the nil context and makes no server call
 
-### Requirement: A nil Close means everything the client owns has finished
-
-`Client.Close` SHALL return nil only after every piece of work the client owns has finished: its background work,
-every running invocation of a message handler passed to `Subscribe`, `SubscribeForRequests` or a Consume method,
-the event handlers of the connection it closes when this client dialled it, and its async publish error handler as
-far as nats.go lets the client observe it (D3 declares the one residual). This SHALL hold on every Close path, a
-drain that runs out of time included, which Close SHALL report as a transient error wrapping
-`nats.ErrDrainTimeout` whichever timer ran out first. Each Close SHALL end its wait when its own context ends and
-SHALL NOT wait on another caller's drain; a write the server is not reading holds it as "Close and Drain are bounded
-by the caller's context" states. A Close called from inside one of the client's callbacks SHALL return its context's
-error and never nil. A client-owned subscription left on a connection that `SetConnection` replaced SHALL be
-unsubscribed and its running handler joined; the replaced connection itself belongs to the `SetConnection` caller.
-A client-created consumer whose connection, the one its JetStream handle was made on, was replaced through
-`SetConnection` SHALL be stopped when Close begins and its handlers joined, and its claim SHALL be released only after
-they return.
-
-#### Scenario: A nil Close means every handler returned
-
-- **WHEN** a message handler passed to Subscribe or a Consume method is running and Close is called, first with an
-  ended context and then with a live one
-- **THEN** the first Close returns the context's error, and the second returns nil only after the handler returned
-
-#### Scenario: A drain that runs out of time is reported
-
-- **WHEN** a message handler is still running when the drain timeout passes, and Close's context is live
-- **THEN** the first Close returns an error wrapping the drain timeout, after the handler has returned
-
-#### Scenario: Each Close observes its own context
-
-- **GIVEN** a connection whose server is reading
-- **WHEN** one Close is draining and a second Close is called with an ended context
-- **THEN** the second Close returns the context's error without waiting for the drain
-
-#### Scenario: Close from inside a client callback
-
-- **WHEN** a client callback calls Close with a bounded context
-- **THEN** Close returns that context's error and never nil
-
-#### Scenario: A subscription on a replaced connection
-
-- **WHEN** a client subscription's connection has been replaced through SetConnection and its handler is running
-  when Close is called with a live context
-- **THEN** Close unsubscribes it and returns nil only after the handler returned, and the replaced connection stays
-  open
-
-#### Scenario: A consumer on a replaced connection
-
-- **WHEN** a client-created consumer's connection, the one its JetStream handle was made on, has been replaced through
-  SetConnection, and Close is called with a live context
-- **THEN** Close stops the consumer, returns nil only after its handlers returned and its claim was released, and the
-  replaced connection stays open
-
 ### Requirement: A consumer's setup context does not parent its handlers
 
 `ConsumeStreamWithConfig` and `ConsumeInternalStreamWithConfig` SHALL use their context for setup only and SHALL
-NOT retain it; the context ends setup's waits for the server, not a write the server is not reading (ADR-112).
-Each handler's context SHALL descend from a context the client owns for that consumer, which the
+NOT retain it; a write the server is not reading holds the setup as "A write the server is not reading holds the
+connection" states. Each handler's context SHALL descend from a context the client owns for that consumer, which the
 client SHALL cancel when `Close` begins; `Close` SHALL still join every handler invocation (owner ruling, #9 comment
 5994720412 item 2). `ConsumeStreamWithConfigContexts` keeps the caller's `handlerCtx` as the handlers' parent.
 
@@ -127,8 +88,7 @@ the pending PONG and writing the UNSUB) first waits for any write in progress on
 not reading and the connection's send buffer is full, a write on that connection, the call's own SUB or PING or
 another goroutine's, is held, and so is the call, until that write completes or nats.go's write timeout (one minute by
 default) ends it; a call behind more than one held write waits for each in turn. This requirement does not bound
-those waits: nats.go's write timeout ends each held write, and nothing bounds the wait as a whole, for every call the
-client makes, Close included (ADR-112 §1).
+those waits; "A write the server is not reading holds the connection" states them for every call the client makes.
 
 When the call returns no subscription after subscribing (the round trip did not complete, or Close had begun), it
 SHALL first end the subscription: it unsubscribes it, so the subscription leaves the client's set of subscriptions and
@@ -201,3 +161,85 @@ across servers in a cluster.
 - **WHEN** Close begins while the round trip waits, the server never answers, and Close closes the connection when its
   context ends
 - **THEN** the call returns an error matching `nats.ErrConnectionClosed` and not `ErrNotConnected`
+
+## ADDED Requirements
+
+### Requirement: Connect is bounded by its context
+
+`Client.Connect(ctx)` SHALL return a transient error matching the context's error, without dialling, when the
+context has already ended. While Connect dials and while the server's answer to the connection is pending, the
+context's deadline and its cancellation SHALL end the attempt: Connect ends the dial or closes the socket it dialled,
+and returns a transient error matching the context's error. The context SHALL NOT bound the connection's later
+reconnects.
+
+#### Scenario: An ended context
+
+- **WHEN** Connect is called with a context that has already ended
+- **THEN** Connect returns an error matching the context's error, and the server sees no connection
+
+#### Scenario: A server that does not answer
+
+- **GIVEN** a server address that accepts the connection and never answers
+- **WHEN** Connect is called with a 100 ms deadline
+- **THEN** Connect returns an error matching `context.DeadlineExceeded` within the deadline
+
+#### Scenario: A reconnect after Connect's context has ended
+
+- **GIVEN** a client connected with a context that has since ended
+- **WHEN** the server drops the connection
+- **THEN** the client reconnects, and a request answered by a responder succeeds
+
+### Requirement: A write the server is not reading holds the connection
+
+nats.go takes one lock for every write on a connection. While the server is not reading and the connection's send buffer
+is full, a write holds that lock until it completes or nats.go's write timeout (one minute by default,
+`WithWriteTimeout`) ends it, and every call that needs the lock waits, whatever its context: `Publish`, `Request`,
+`Subscribe`, the JetStream and key-value calls, and a consumer's setup. A call behind more than one held write waits for
+each in turn. The client does not bound these waits (ADR-112). `Close` is the exception: on a connection the client
+dialled it closes the socket when its context ends ("Close and Drain are bounded by the caller's context"), and every
+held call then returns an error. The client SHALL NOT hold its own lock while it calls into nats.go, so a call held this
+way does not hold `Close` or `Connect`. When the write timeout ends a write that was partly sent, the connection can
+stay connected and carry nothing until nats.go's stale-connection check closes it and reconnects. That check sends a
+PING every 30 s by default (`WithPingInterval`), and nats.go declares the connection stale at the third PING with no
+answer. The client does not promise when that happens, nor that the connection is usable sooner.
+
+#### Scenario: A held call does not hold Close
+
+- **GIVEN** a `Subscribe` held behind a write the server is not reading
+- **WHEN** Close is called with a 50 ms deadline
+- **THEN** Close returns the context's error within the deadline, and the `Subscribe` returns an error
+
+### Requirement: The write timeout and the PING interval are settable
+
+`WithWriteTimeout(d)` SHALL set nats.go's write timeout, and `WithPingInterval(d)` SHALL set the interval of nats.go's
+PINGs, for every connection the client dials. `NewClient` SHALL refuse either option with a value that is not
+positive, returning an invalid-class error. Without them, the client SHALL use nats.go's one-minute write timeout and
+a 30 s PING interval.
+
+#### Scenario: A held write ends at the write timeout
+
+- **GIVEN** a client with `WithWriteTimeout(300 * time.Millisecond)` and `WithPingInterval(300 * time.Millisecond)`,
+  whose server has stopped reading, with a publish held in the write
+- **WHEN** 300 ms pass
+- **THEN** the held publish returns an error, and once the server reads again the client reconnects and a request
+  answered by a responder succeeds
+
+#### Scenario: A value that is not positive
+
+- **WHEN** `NewClient` is called with `WithWriteTimeout(0)` or `WithPingInterval(-time.Second)`
+- **THEN** it returns an error for which `errs.IsInvalid` reports true, and no client
+
+### Requirement: The client's refusals carry the transient class
+
+`ErrNotConnected` SHALL be transient by `errs.IsTransient` and by `errs.Classify`. `natsclient.ErrCircuitOpen` SHALL be
+the sentinel `errs.ErrCircuitOpen`, so one `errors.Is` check matches it and both functions call it transient.
+
+#### Scenario: Not connected
+
+- **WHEN** a call returns `ErrNotConnected`
+- **THEN** `errs.IsTransient` reports true and `errs.Classify` returns `ErrorTransient`
+
+#### Scenario: Circuit open
+
+- **WHEN** a call returns `natsclient.ErrCircuitOpen`
+- **THEN** it matches `errs.ErrCircuitOpen` with `errors.Is`, and `errs.IsTransient` reports true

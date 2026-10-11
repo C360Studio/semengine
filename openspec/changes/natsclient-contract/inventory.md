@@ -4,6 +4,10 @@
   (draft PR #177) over `origin/main` `c713840e3cc7991e0bd8b81297a899a15d43ec3b`; every `main` pin below holds on both.
   PR #93's head is `f3d5ae56ef62b7caacf0a1bf7f63f0869ab2b047` (merge base with `main` `0e11824`, one commit behind:
   #175, which touches no file this inventory pins). Pins marked "#93" are at that head.
+- revision 3 (2026-10-11): rows changed by probes P17 to P25. Design revision 2 ran P17 to P22 after the owner's
+  ruling on #170 (comment 6109833136), and design revision 3 ran P23 to P25 after its review; see "Revision 3" in §2.
+  Nothing else changed. Revision 2 passed review
+  (`INVENTORY PASS`, `/tmp/pr177/review/design-r1.md`, sha256 `68df2d7b…`).
 - revision 2 (2026-10-11): the fixes for inventory review r1 (`/tmp/pr177/review/inventory-r1.md`: 2 HIGH, 6 MEDIUM,
   1 NIT), made in one pass with the design under the owner's time-box. No new probe was run. The reviewer's p15b
   (source `/tmp/pr177/review/trees/c713840/rvprobe/p15b/main.go`, the reviewer's runs, 3 of 3) is cited as the
@@ -586,6 +590,24 @@ that forwards both ways and can stop reading the client's side; a goroutine publ
 `ConsumeInternalStreamWithConfig`, `RTT`, `Close`. P6's caveat applies: a fake or proxied server on loopback, darwin
 socket buffers (autotuned); P14's two short holds show the buffer is not always full when the count stops.
 
+### Revision 3: probes P17 to P25
+
+Source, outputs and commands for P17 to P22 and P25 are in `/tmp/pr177/probes/P17/README.md` (one program, sha256
+`3f789247…`; earlier runs used `74a4f3e0…` and `e2436bf1…`, which differ only in the case each later probe added). P23
+and P24 are in `/tmp/pr177/probes/P23/README.md`. Trees: `0e13a73`, the branch merged with `main`, whose `natsclient/`
+is `main`'s; `fix`, design revision 2's prototype; and `fix-r3-probe`, design revision 3's,
+`/tmp/pr177/design-r2/fix-prototype.diff`. Every wait is capped at 5 s, or 8 s for P23.
+
+| Row or item | Changed by | Result |
+| --- | --- | --- |
+| M2, M6, M8, M61 (`Close` within its context) | P17, P23, P25 | `0e13a73`: a 50 ms `Close` behind a held write is still held at the 5 s cap (4 of 4 runs). `fix`: it returns at 51-52 ms, and the native connection is closed (4 of 4). Revision 3 (P25): 51-52 ms, 4 of 4. During a reconnect dial to an address that does not answer (P23): `0e13a73` 4.69 s and revision 2 4.69 s, 3 of 3 each; revision 3, with `net.Dialer.Cancel`, 51-52 ms, 3 of 3. |
+| M42, M59, M60 (`Connect` and its context) | P18, P25 | `0e13a73`: 5.0 s against a silent server, whether by deadline or by cancel; 10.0 s for two URLs; 5.0 s to an unroutable address; an ended context still dials (1 accept). `fix`: 300 ms or 301 ms in each case; an ended context returns at once, with 0 accepts. A reconnect after Connect's context has ended works on both trees. Revision 3 (P25): every case 301-302 ms, an ended context 0 s with no accept, and a reconnect after Connect works. A cancel with no deadline during the dial to the unroutable address: `0e13a73` 5.0 s, revision 2 5.0 s, revision 3 302 ms. |
+| N-P2 (`Close` while a `Subscribe` is held) | P17, P21 | `fix`: 51 ms (2 of 2). `fix-nosub`, which is `fix` without the change that stops `subscribeOwned` holding natsclient's lock across `IsConnected`: past the 5 s cap twice, and 1.4 s and 1.5 s twice, when darwin's buffers took the write. |
+| N-P3 (the connection after a write timeout) | P19, P22 | With a 1 s write timeout and the server reading again at 3 s, a request failed in 1 of 2 runs; with `ReconnectOnFlusherError` it worked in 2 of 2, after a reconnect that lost 19 of 71 and 20 of 48 accepted publishes (P19). With 300 ms and the server reading again at 1.5 s, the timeout ended the publisher's own write, and the connection stayed connected but carried no request for 5 s: 3 of 3 with no other change, and 3 of 3 with `ReconnectOnFlusherError`, which acts only when nats.go's background flusher fails. With the stale-connection check at 300 ms x 2 it reconnected and carried a request within 7 ms, 3 of 3 (P22, echo on the native connection; the first `ReconnectOnFlusherError` runs did not set it and are not evidence). |
+| N-P4 (the stale-connection check while a write is held) | P20, P24 | It never fires while a write is held (2 of 2 at 5 s). With no write held, status goes to reconnecting at 1.21 s (2 of 2). Through `WithPingInterval(300ms)` with no write held (P24 idle): 1.209 s, 1.209 s, 1.205 s. The probes' proxy finishes a read in progress when it stops, so the first PING after the stop is answered; nats.go declares the connection stale at the third unanswered tick (`nats.go:5993-6013`, read). At the default 30 s: not measured. |
+| Area 1 option list (`FlusherTimeout`, `ReconnectOnFlusherError`) | P19, P21 | A 1 s write timeout ends `Publish`, `Request` and `KVStore.Put` at about 0.6 s, and `Subscribe` at 1.6-2.0 s. With `ReconnectOnFlusherError`, `Subscribe` was held past 5 s in 1 of 2 runs, because the reconnect handshake through the stopped proxy held the lock. On a paced link, shorter timeouts fail more writes: 16 KB/s gave 5 per run at 1 s, 1 at 5 s, 0 at the default; 8 KB/s gave 3 per run at 2 s, 1 at 10 s, and 0 or 1 at the default (the 1 came after 60 s). No delivered payload was damaged. The pacing proxy's stalls on darwin exceed its rate, so the counts show the direction only. |
+| Options `WithWriteTimeout` and `WithPingInterval` (design revision 3) | P24 | Both at 300 ms: the held publish failed with "i/o timeout", and the echo succeeded 3 ms after the server read again, after one reconnect (3 of 3). The write timeout alone: the same failure, then no echo within 5 s, `CONNECTED`, 0 reconnects (3 of 3). Each option refuses 0 and -1 s with an invalid-class error. |
+
 ### Area 1 — time bounds per call
 
 Measured today:
@@ -619,6 +641,8 @@ natsclient`: no match):
   and 300 ms and by P9 at 3 s: the hold ends at that timeout per held write. That the timed-out bytes are dropped while
   the connection stays connected is read, not measured (`nats.go:2369-2372`; #168 body `:104-106`); P6's posted 1 s
   runs lost nothing (43 of 43, 40 of 40). Corrected by the orchestrator after INVENTORY PASS (design review r1).
+  Revision 3: after the timeout the connection can stay connected and unusable (P22: 0 of 3 runs answered a request
+  within 5 s of the server reading again).
 - `ReconnectOnFlusherError()` (`nats.go:1393`): when the background flusher's write fails, reconnect, or close if
   reconnecting is not allowed (`:4209-4215`). A publish that flushes inline because the buffer reached its limit
   returns the error to the caller instead (`:2346-2347`).
@@ -676,9 +700,7 @@ Not measured:
 - N-P10 — `Subscription.Drain` nil against nats.go (M62 is fake only), and a core subscription's queued messages at
   Close; `main`.
 
-### Area 3 — error classes
-
-By type and sentinel only: ruling N, #91 comment 6080973822; #146.
+### Area 3 — error classes (by type and sentinel only: ruling N; #146)
 
 Measured today (P10, both trees; P15):
 
@@ -902,7 +924,7 @@ Issue #170 claims three absences; each was searched.
 1. `openspec/specs/transport-client/spec.md` — 13 requirements (M1-M31).
 2. `natsclient/doc.go` and `natsclient/README.md` — M36-M59.
 3. Exported doc comments — M60-M89 and M100-M104 (revision 2); unexported comments citing nats.go source lines — 20
-   lines (M90-M92 and the
+lines (M90-M92 and the
    mechanism notes listed there).
 4. `docs/admission-ledger.yaml:1424-2242`, the natsclient row — 17 lines naming nats.go; restates M9, M16, M26-M28,
    M54, M90.
@@ -930,9 +952,8 @@ class of "no responders", "transient" in prose (M73) and not transient by `errs.
 ### Category 3 — adjacent claims on the territory
 
 Open pull requests (`gh pr list --state open --limit 100 --json
-number,title,isDraft,changedFiles,headRefName,files`; #93's 308 files read in full with `gh api --paginate
-repos/C360Studio/semengine/pulls/93/files --jq
-'.[].filename'`):
+number,title,isDraft,changedFiles,headRefName,files`; the 308 files of #93 read in full with
+`gh api --paginate repos/C360Studio/semengine/pulls/93/files --jq '.[].filename'`):
 
 | PR | State | Overlapping files | Overlap |
 | --- | --- | --- | --- |
@@ -1032,8 +1053,8 @@ author who has never opened `natsclient/`.
    hold ends when the server reads again or as each held write reaches nats.go's one-minute timeout, with no ceiling
    observed (P13, P14). (b) `Connect`'s dial is bounded by `WithTimeout` once per URL, not by the context, and an
    ended context still dials (P12). (c) A nil `Publish` means "buffered" (P14). (d) A KV write that returned an error
-   may have committed (P15 for `Put`; p15b for `Create` and `Update`). (e) A nil `Subscribe` may be a refused SUB
-   (P8). (f) `errs.IsTransient` is false for
+   may have committed (P15 for `Put`; p15b for `Create` and `Update`). (e) A nil `Subscribe` may be a refused SUB (P8).
+   (f) `errs.IsTransient` is false for
    `ErrNotConnected`, `ErrCircuitOpen` and `ErrNoResponders`, which natsclient returns bare, and `errs.Classify` says
    transient for everything (P10); eight more sentinels change class when #93 lands. (g) While reconnecting, core
    calls refuse at once with `ErrNotConnected` while KV calls wait for their context and may commit later (P15). That

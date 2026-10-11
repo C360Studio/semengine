@@ -1,6 +1,7 @@
 package natsclient
 
 import (
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -94,6 +95,43 @@ func WithName(name string) ClientOption {
 func WithTimeout(d time.Duration) ClientOption {
 	return func(c *Client) error {
 		c.timeout = d
+		return nil
+	}
+}
+
+// WithWriteTimeout sets how long one write may wait for the server to read it
+// before nats.go fails the write (nats.FlusherTimeout). The default is nats.go's,
+// one minute. Other calls on the connection wait behind a held write (T2; P17).
+//
+// Set WithPingInterval with it. A write the timeout ends partway leaves the
+// connection connected but unable to carry anything, until the stale-connection
+// check that PINGs drive closes it and reconnects (T9; P24). With the default
+// 30 s ping, when that happens is not promised. d must be positive: NewClient
+// refuses any other value as invalid (T9).
+func WithWriteTimeout(d time.Duration) ClientOption {
+	return func(c *Client) error {
+		if d <= 0 {
+			return fmt.Errorf("write timeout %v is not positive", d)
+		}
+		c.writeTimeout = d
+		return nil
+	}
+}
+
+// WithPingInterval sets how often nats.go sends the server a PING
+// (nats.PingInterval). The default is 30 s. When PINGs go unanswered, nats.go
+// finds the connection stale, closes it and reconnects: at 300 ms that took
+// 1.2 s (P20, P24); the timing at other values is not promised.
+//
+// Set it with WithWriteTimeout, whose partly written write leaves the connection
+// unable to carry anything until this check ends it (T9; P24). d must be
+// positive: NewClient refuses any other value as invalid (T9).
+func WithPingInterval(d time.Duration) ClientOption {
+	return func(c *Client) error {
+		if d <= 0 {
+			return fmt.Errorf("ping interval %v is not positive", d)
+		}
+		c.pingInterval = d
 		return nil
 	}
 }

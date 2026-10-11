@@ -51,7 +51,7 @@ the reference for every production change.
 - [x] 4.1 Write T9 `TestWriteTimeoutAndPingIntervalOptions`, with both options at 300 ms. It shows two things: the
   held publish fails, then the connection carries an echo once the proxy reads again; and each option refuses 0 and
   a negative value. Record it failing to build on `main`'s code.
-- [ ] 4.2 Add `WithWriteTimeout` and `WithPingInterval` to `options.go`, and pass `nats.FlusherTimeout` in
+- [x] 4.2 Add `WithWriteTimeout` and `WithPingInterval` to `options.go`, and pass `nats.FlusherTimeout` in
   `buildConnectionOptions`. Each doc comment names the other. T9 passes.
 - [ ] 4.3 Write T7 `TestClientSentinelsAreTransient` (`ErrNotConnected` and `ErrCircuitOpen` only), and record it
   failing on `main`'s code.

@@ -91,6 +91,7 @@ type Client struct {
 	maxReconnects int
 	reconnectWait time.Duration
 	pingInterval  time.Duration
+	writeTimeout  time.Duration
 	timeout       time.Duration
 	drainTimeout  time.Duration
 
@@ -352,6 +353,7 @@ func NewClient(urls string, opts ...ClientOption) (*Client, error) {
 		maxReconnects:    -1, // infinite by default
 		reconnectWait:    2 * time.Second,
 		pingInterval:     30 * time.Second,
+		writeTimeout:     nats.DefaultFlusherTimeout,
 		healthInterval:   10 * time.Second,
 		circuitThreshold: 15, // Increased from 5 for resilience to transient failures
 		maxBackoff:       time.Minute,
@@ -649,6 +651,7 @@ func (m *Client) buildConnectionOptions() []nats.Option {
 		nats.MaxReconnects(m.maxReconnects),
 		nats.ReconnectWait(m.reconnectWait),
 		nats.PingInterval(m.pingInterval),
+		nats.FlusherTimeout(m.writeTimeout),
 		nats.Timeout(m.timeout),
 		nats.DrainTimeout(m.drainTimeout),
 		nats.DisconnectErrHandler(m.handleDisconnect),

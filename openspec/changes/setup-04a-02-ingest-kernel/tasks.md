@@ -643,7 +643,7 @@ posted on this pull request.
       (`resident_stamp_integration_test.go`, `merge_entity_bench_test.go`); seven `task mutate:check` detections.
       Notes: `notes/cp3-H3.md`.
       Done in `6a377e3`; `task verify` on it ended `verify: ok`. Notes: `notes/cp3-H3.md`.
-- [ ] 4.16 (D) Codex interim review R1 and R4 (PR #93 comment 6112098987): R1, the typed client's
+- [x] 4.16 (D) Codex interim review R1 and R4 (PR #93 comment 6112098987): R1, the typed client's
       `isDefiniteFailure` reads a classified reply as not committed only for a code graph-ingest sends when it refused
       the request before its write (`invalid_request`, `structural_invalid`, `message_type_unregistered`,
       `entity_id_invalid`, `entity_id_authority_invalid`, `revision_mismatch`, `entity_already_exists`,
@@ -658,7 +658,8 @@ posted on this pull request.
       hand, fails with the class-invalid rule restored. R4, `graph-ingest-recovery` "Settlement order": the failed-start
       Nak is promised only for an input that decodes, is accepted, and is submitted after the rollback. Notes:
       `notes/cp4i-R1.md`.
-- [ ] 4.17 (D) Codex interim review R3 (PR #93 comment 6112098987; design D8, D13): `setupJetStreamConsumer` reads
+      Done in `f9ac34f`; `task verify` on it ended `verify: ok`. Notes: `notes/cp4i-R1.md`.
+- [x] 4.17 (D) Codex interim review R3 (PR #93 comment 6112098987; design D8, D13): `setupJetStreamConsumer` reads
       the input stream's creation time again after the consumer's handle is recorded, and `Start` fails naming the
       stream when the read fails or differs; an input the callback accepts is held until that read returns or its
       delivery context ends, and is negatively acknowledged unless the generation was confirmed
@@ -672,7 +673,8 @@ posted on this pull request.
       (`TestFailedConsumerSetupCallbackNaksAfterRollback`, at its 60 s bound), M5 the second read before the handle
       is recorded (generation changed: no drain) and M1 (the broker test). The single-server restore is a declared
       limitation (#91 comment 6112550268). Notes: `notes/cp4i-R3.md`; `notes/4.3.md`, "What is not covered".
-- [ ] 4.18 (D) Codex interim review R2 (PR #93 comment 6112098987; owner ruling #91 comment 6112779037; design D23):
+      Done in `7e07fea`; `task verify` on it ended `verify: ok`. Notes: `notes/cp4i-R3.md`.
+- [x] 4.18 (D) Codex interim review R2 (PR #93 comment 6112098987; owner ruling #91 comment 6112779037; design D23):
       `natsclient.KVStore.UpdateWithRetryRead` runs its callback again only after a revision conflict, a failed read or
       `jetstream.ErrNoStreamResponse`; any other write error ends the call with that error and revision 0, so an append
       whose write stood reports commit-unknown (`transport-client`, "An unconfirmed write ends a retried update";
@@ -685,6 +687,7 @@ posted on this pull request.
       update's write error retryable again, M2 the create's, M3 a conflict ends the call, M4 the `ErrNoStreamResponse`
       clause dropped. Ledger item `natsclient-update-unconfirmed-write-ends`; ADR-110 counts four `adapt` items. #174
       stays open for the bookkeeping skipped after an unconfirmed write. Notes: `notes/cp4i-R2.md`.
+      Done in `1873b26`; `task verify` on it ended `verify: ok`. Notes: `notes/cp4i-R2.md`.
 
 ## 5. Ledger, gates and boundaries
 

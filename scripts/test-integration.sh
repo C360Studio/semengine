@@ -2,8 +2,9 @@
 # The one admitted entry to SemEngine's Docker-backed tests (openspec change
 # setup-02-isolated-harness, capability integration-test-runner). Adapted from
 # SemStreams scripts/run-integration-tests.sh at 5457b345 (ledger row L6):
-#   - the host lock is SemStreams' own, byte-compatible, so the two repositories
-#     serialise on one daemon and each sees the other as an ordinary owner;
+#   - the host lock is SemStreams' own, and its owner record is SemStreams' plus
+#     one key SemStreams ignores (identity_utc), so the two repositories serialise
+#     on one daemon and each sees the other as an ordinary owner;
 #   - go test runs in its own process group and INT/TERM reach every process in
 #     it (SemStreams' traps never forward, so test binaries outlive an interrupt);
 #   - after the group is reaped, containers labelled with this run's
@@ -100,6 +101,8 @@ owner_pid=$$
 owner_started=$(date +%s)
 owner_identity=$(ps -o lstart= -p "$owner_pid" 2>/dev/null | sed 's/^[[:space:]]*//' || true)
 [ -n "$owner_identity" ] || owner_identity="unknown"
+owner_identity_utc=$(TZ=UTC LC_ALL=C ps -o lstart= -p "$owner_pid" 2>/dev/null | sed 's/^[[:space:]]*//' || true)
+[ -n "$owner_identity_utc" ] || owner_identity_utc="unknown"
 owner_token="${owner_host}:${owner_pid}:${owner_started}:${RANDOM:-0}"
 owner_command="semengine $root/scripts/test-integration.sh"
 
@@ -131,11 +134,12 @@ signalled_at_ms=""
 leak_status=0
 status=0
 
-# ---- lock (byte-compatible with SemStreams run-integration-tests.sh:78-242) ----
+# ---- lock (SemStreams run-integration-tests.sh:78-242's protocol, plus identity_utc) ----
 
 read_owner() {
   observed_host=unknown observed_pid=unknown observed_started=0
   observed_identity=unknown observed_token=unknown observed_command=unknown
+  observed_identity_utc=""
   [ -f "$lock_dir/owner" ] || return 0
   while IFS='=' read -r key value; do
     case "$key" in
@@ -145,6 +149,7 @@ read_owner() {
       identity) observed_identity=$value ;;
       token) observed_token=$value ;;
       command) observed_command=$value ;;
+      identity_utc) observed_identity_utc=$value ;;
     esac
   done < "$lock_dir/owner"
 }
@@ -164,13 +169,21 @@ describe_owner() {
 
 # Stale only when provably dead on this host: the pid is gone, or it now names a
 # process with a different start time. Another host's owner is never judged here.
+# A record with identity_utc is read in UTC and the C locale, as it was written, so
+# an owner started from a shell in another time zone or locale reads as live; a
+# record without it (SemStreams', or an older SemEngine's) is read as before.
 owner_is_stale() {
   [ "$observed_host" = "$owner_host" ] || return 1
   [[ "$observed_pid" =~ ^[0-9]+$ ]] || return 1
   kill -0 "$observed_pid" 2>/dev/null || return 0
-  local live
-  live=$(ps -o lstart= -p "$observed_pid" 2>/dev/null | sed 's/^[[:space:]]*//' || true)
-  [ "$observed_identity" != "unknown" ] && [ -n "$live" ] && [ "$live" != "$observed_identity" ]
+  local live compared=$observed_identity
+  if [ -n "$observed_identity_utc" ]; then
+    compared=$observed_identity_utc
+    live=$(TZ=UTC LC_ALL=C ps -o lstart= -p "$observed_pid" 2>/dev/null | sed 's/^[[:space:]]*//' || true)
+  else
+    live=$(ps -o lstart= -p "$observed_pid" 2>/dev/null | sed 's/^[[:space:]]*//' || true)
+  fi
+  [ "$compared" != "unknown" ] && [ -n "$live" ] && [ "$live" != "$compared" ]
 }
 
 clean_stale_lock() {
@@ -188,18 +201,37 @@ clean_stale_lock() {
   return 1
 }
 
+# Publish the owner record whole (D7). It is written beside the lock directory, on
+# its filesystem and outside the .stale. quarantine name, then renamed into it, so a
+# reader finds no owner file or the complete record. mktemp creates mode 0600; chmod
+# gives the mode a redirection would, so another user's runner can read it. On any
+# failure the file and the lock directory, which holds nothing else, are removed. An
+# mv stopped after its rename leaves the record naming this runner; rmdir then fails.
+publish_owner() {
+  local tmp=""
+  tmp=$(mktemp "${lock_dir}.owner.XXXXXX") &&
+    {
+      printf 'host=%s\n' "$owner_host" &&
+        printf 'pid=%s\n' "$owner_pid" &&
+        printf 'started=%s\n' "$owner_started" &&
+        printf 'identity=%s\n' "$owner_identity" &&
+        printf 'token=%s\n' "$owner_token" &&
+        printf 'command=%s\n' "$owner_command" &&
+        printf 'identity_utc=%s\n' "$owner_identity_utc"
+    } > "$tmp" &&
+    chmod "$(printf '%o' $((0666 & ~$(umask))))" "$tmp" &&
+    mv "$tmp" "$lock_dir/owner" && return 0
+  echo "[INTEGRATION] could not publish the owner record; removing $lock_dir" >&2
+  [ -z "$tmp" ] || rm -f "$tmp"
+  rmdir "$lock_dir"
+  return 1
+}
+
 acquire_lock() {
   local deadline=$((owner_started + wait_seconds)) announced=false
   while true; do
     if mkdir "$lock_dir" 2>/dev/null; then
-      {
-        printf 'host=%s\n' "$owner_host"
-        printf 'pid=%s\n' "$owner_pid"
-        printf 'started=%s\n' "$owner_started"
-        printf 'identity=%s\n' "$owner_identity"
-        printf 'token=%s\n' "$owner_token"
-        printf 'command=%s\n' "$owner_command"
-      } > "$lock_dir/owner"
+      publish_owner || return 1
       lock_held=true
       cp "$lock_dir/owner" "$evidence_dir/lock-owner"
       record lock_wait_s "$(($(date +%s) - owner_started))"

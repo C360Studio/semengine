@@ -44,7 +44,7 @@
 # tasks.md's first "## " heading that lies in no task's block, ticked tasks
 # included, is one the queue cannot show: each is printed as <path>:<line>:
 # and the exit is 1. With none it prints "holds: ok (<n> tasks.md read)" and
-# exits 0. An unreadable change list exits 2, as for the queue.
+# exits 0. An unreadable change list or tasks.md exits 2, as for the queue.
 #
 # Run from repo root:
 #   scripts/openspec-queue.sh [--strict] [--stale-days N]

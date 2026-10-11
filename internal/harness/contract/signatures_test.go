@@ -460,7 +460,8 @@ type Wraps interface{ dep.Identity }
 	"dep/dep.go": "package dep\n\ntype Record struct{ GlobalID string }\n\nfunc (Record) FederationOrigin() string { return \"\" }\n\n" +
 		"type Identity interface{ GlobalID() string }\n\n" +
 		"type Client struct{}\n\nfunc (*Client) GlobalID() string { return \"\" }\n\nfunc (Client) FederationOrigin() string { return \"\" }\n\n" +
-		"type Other struct{ GlobalID string }\n",
+		"type Other struct{ GlobalID string }\n\n" +
+		"type G[T any] struct{}\n\nfunc (G[T]) GlobalID() string { return \"\" }\n",
 	"pub/pub.go": `package pub
 
 type FederationMeta interface{ Platform() string }
@@ -544,6 +545,50 @@ type Shadow struct {
 	"cross/b/b.go":            "package b\n\ntype Base struct{}\n\nfunc (Base) GlobalID() string { return \"\" }\n",
 	"internal/inner/inner.go": "package inner\n\nfunc NewFederationMeta() {}\n",
 	"cmd/tool/main.go":        "package main\n\nfunc EntityIRI() {}\n\nfunc main() {}\n",
+	// Members promoted from an instantiated generic type (Codex F5, PR #73 comment 6019262509; issue
+	// #87). An instantiation has its own copy of every method and interface method, and of each field
+	// whose type uses the type parameter: one the module declares is reported once, at the generic
+	// declaration; one declared outside the module, at each type that embeds an instance.
+	"pub/generic.go": `package pub
+
+import "example.com/dep"
+
+type Base[T any] struct{}
+
+func (Base[T]) GlobalID() string { return "" }
+
+type Derived struct{ Base[int] }
+
+type Box[T any] struct{ GlobalID T }
+
+type Boxed struct{ Box[int] }
+
+type Getter[T any] interface{ GlobalID() T }
+
+type IntGetter interface{ Getter[int] }
+
+type Tagged struct{ dep.G[int] }
+
+type AlsoTagged struct{ dep.G[int] }
+`,
+	// A defined type built on a module type shares that type's fields or interface methods, but
+	// does not declare them: each is reported once, at its declaration, named by whichever type the
+	// walk reaches first (in a package, by sorted name).
+	"pub/defined.go": `package pub
+
+type Account struct{ GlobalID string }
+
+type Profile Account
+
+type Locator interface{ EntityIRI() string }
+
+type Resolver Locator
+
+// Ints is reached before Wrapped, and its field is the instantiation's copy of Wrapped's.
+type Ints Wrapped[int]
+
+type Wrapped[T any] struct{ GlobalID T }
+`,
 }
 
 func TestNoDeploymentAuthorityNamesSensitivity(t *testing.T) {
@@ -599,6 +644,17 @@ func TestNoDeploymentAuthorityNamesSensitivity(t *testing.T) {
 		at("pub/embed.go:26", "pub.Shadow.FederationOrigin"),
 		at("pub/embed.go:27", "pub.Shadow.GlobalID"),
 		at("cross/b/b.go:5", "cross/b.Base.GlobalID"),
+		// Generic instantiations (issue #87): Derived, Boxed and IntGetter add nothing; dep.G's
+		// method is reported at each embedder.
+		at("pub/generic.go:7", "pub.Base.GlobalID"),
+		at("pub/generic.go:11", "pub.Box.GlobalID"),
+		at("pub/generic.go:15", "pub.Getter.GlobalID"),
+		at("pub/generic.go:19", "pub.Tagged.GlobalID"),
+		at("pub/generic.go:21", "pub.AlsoTagged.GlobalID"),
+		// Defined types: Profile and Resolver add nothing; Wrapped's field is named by Ints.
+		at("pub/defined.go:3", "pub.Account.GlobalID"),
+		at("pub/defined.go:7", "pub.Locator.EntityIRI"),
+		at("pub/defined.go:14", "pub.Ints.GlobalID"),
 	}
 	sort.Strings(want)
 	if strings.Join(violations, "\n") != strings.Join(want, "\n") {
@@ -615,9 +671,10 @@ const authoritySuffix = " spells the deployment authority outside the entity-ID 
 // unexported type is still callable through an exported function that returns it), including the
 // members a type gains by embedding. An alias is a package-level type too: its own name is
 // checked, and so are the members of the type it stands for. A member the module declares is
-// reported once, at its own declaration; a member declared outside the module is reported at each
-// module type that exposes it, since nowhere else will. Each line names the file, line, qualified
-// identifier and rule; the count is the number of module packages checked.
+// reported once, at its own declaration, under the first qualified name the walk reaches it by
+// (sorted package paths, then sorted names); a member declared outside the module is reported
+// at each module type that exposes it, since nowhere else will. Each line names the file, line,
+// qualified identifier and rule; the count is the number of module packages checked.
 func authorityNameViolations(t *testing.T, root string) ([]string, int) {
 	t.Helper()
 	modulePath := modulePathOf(t, root)
@@ -625,16 +682,22 @@ func authorityNameViolations(t *testing.T, root string) ([]string, int) {
 		return pkg != nil && (pkg.Path() == modulePath || strings.HasPrefix(pkg.Path(), modulePath+"/"))
 	}
 	var violations []string
-	reported := map[types.Object]bool{} // module-declared members already reported
+	reported := map[types.Object]bool{} // module-declared names already reported, by declaration
 	// report names obj, a candidate, at pos: obj's own position when the module declares it,
-	// else the position of the module type that exposes it.
+	// else the position of the module type that exposes it. The module's own declaration is
+	// reported once, under the first name that reaches it: a defined type (type T2 T1), an
+	// instantiation and an embedder all reach members they do not declare.
 	report := func(fset *token.FileSet, pos token.Pos, qualified string, obj types.Object) {
 		if !obj.Exported() || !authorityNames.MatchString(obj.Name()) {
 			return
 		}
 		if inModule(obj.Pkg()) {
+			decl := declaration(obj)
+			if reported[decl] {
+				return
+			}
+			reported[decl] = true
 			pos = obj.Pos()
-			reported[obj] = true
 		}
 		position := fset.Position(pos)
 		path, err := filepath.Rel(root, position.Filename)
@@ -653,8 +716,12 @@ func authorityNameViolations(t *testing.T, root string) ([]string, int) {
 	}
 	var exposers []exposer
 	checked := 0
+	// packages.Load documents no order, and the first name to reach a declaration is the one
+	// reported, so the walk sorts the packages itself.
+	pkgs := loadModuleTypes(t, root)
+	sort.Slice(pkgs, func(i, j int) bool { return pkgs[i].PkgPath < pkgs[j].PkgPath })
 	// Pass 1: each package-level name, and the members a type declares itself.
-	for _, pkg := range loadModuleTypes(t, root) {
+	for _, pkg := range pkgs {
 		if pkg.Types == nil || !inModule(pkg.Types) {
 			continue
 		}
@@ -704,8 +771,8 @@ func authorityNameViolations(t *testing.T, root string) ([]string, int) {
 	// Pass 2, after every declared member is reported: the members a type gains by embedding.
 	for _, e := range exposers {
 		for _, member := range promotedMembers(e.typ) {
-			if e.direct[member] || (inModule(member.Pkg()) && reported[member]) {
-				continue
+			if e.direct[member] {
+				continue // reported with the type's own members in pass 1
 			}
 			report(e.fset, e.pos, e.qualified+"."+member.Name(), member)
 		}
@@ -716,6 +783,19 @@ func authorityNameViolations(t *testing.T, root string) ([]string, int) {
 	}
 	sort.Strings(violations)
 	return violations, checked
+}
+
+// declaration returns the object a member was declared as. An instantiation of a generic type
+// has its own copy of every method and interface method, and of each field whose type uses the
+// type parameter; Origin maps the copy back to the generic declaration.
+func declaration(obj types.Object) types.Object {
+	switch member := obj.(type) {
+	case *types.Func:
+		return member.Origin()
+	case *types.Var:
+		return member.Origin()
+	}
+	return obj
 }
 
 // promotedMembers returns the methods and fields a value of typ can select that typ does not

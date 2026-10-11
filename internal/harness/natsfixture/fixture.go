@@ -126,7 +126,7 @@ func (f *Fixture) Start(ctx context.Context) error {
 	if used {
 		return ErrAlreadyUsed
 	}
-	adm, err := admit()
+	adm, err := admit(ctx)
 	if err != nil {
 		return err
 	}

@@ -250,6 +250,10 @@ same cut through the seam.
 
 Before #118's upgrade merges, T1 to T9 re-run under `task verify`, so the probes need not be re-run.
 
+**Generated checks.** None. The outcome depends on the order of Connect, a context's end, a disconnect, a reconnect,
+repeated cuts and Close, and `notes/2.3.md`, "Generated checks", names the example test for each stage of that history
+and says why examples suffice (`docs/testing.md`, "Decide whether generated checks are needed").
+
 ## Order with #93 and other work
 
 Both orders archive cleanly with OpenSpec 1.14.0 (`archive-177-then-93.txt`, `archive-93-then-177.txt`): the two

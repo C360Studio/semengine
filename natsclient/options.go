@@ -100,8 +100,10 @@ func WithTimeout(d time.Duration) ClientOption {
 }
 
 // WithWriteTimeout sets how long one write may wait for the server to read it
-// before nats.go fails the write (nats.FlusherTimeout). The default is nats.go's,
-// one minute. Other calls on the connection wait behind a held write (T2; P17).
+// before nats.go fails the write (nats.FlusherTimeout). One deadline covers a
+// whole flush, so at 10 s a 1 MB message needs about 100 KB/s (design D4). The
+// default is nats.go's, one minute. Other calls on the connection wait behind a
+// held write (T2; P17).
 //
 // Set WithPingInterval with it. A write the timeout ends partway leaves the
 // connection connected but unable to carry anything, until the stale-connection

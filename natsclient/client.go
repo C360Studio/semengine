@@ -531,10 +531,14 @@ func (m *Client) recordFailureLocked() (arm bool, backoff time.Duration) {
 }
 
 // recordStreamPublishFailure accounts a failed JetStream publish against the
-// connection circuit unless the server's typed PubAck says only that the target
-// stream reached one of its configured admission ceilings. Capacity refusal is
-// a healthy connection reporting durable-resource state, not connection loss.
-// The exact typed API error remains caller-visible at each publish seam.
+// connection circuit unless the target stream refused it at one of its
+// configured limits: maximum bytes, messages, or messages per subject. Capacity
+// refusal is a healthy connection reporting durable-resource state, not
+// connection loss. The server sends one code, 10077, for every store failure and
+// names the limit only in the error's description, for which nats.go has no
+// code, so isCircuitNeutralStreamCapacityError reads the code and then the
+// description (TestIntegration_StreamCapacityRejectionIsCircuitNeutral). The
+// exact typed API error remains caller-visible at each publish seam.
 func (m *Client) recordStreamPublishFailure(err error) {
 	if isCircuitNeutralStreamCapacityError(err) {
 		return

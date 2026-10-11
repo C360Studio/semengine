@@ -65,7 +65,7 @@ the reference for every production change.
   refactor: T6 pins the nats.go error it relies on, and passes before and after.
   - Replace `isAlreadyExistsError` at `client.go:1887` with `errors.Is(err, jetstream.ErrBucketExists)`.
   - Delete the function and its text-fed test (`client_test.go:560-583`).
-- [ ] 4.6 Correct `isCircuitNeutralStreamCapacityError`'s comment (`client.go:516-519`), as row M100 of `cleanup.md`
+- [x] 4.6 Correct `isCircuitNeutralStreamCapacityError`'s comment (`client.go:516-519`), as row M100 of `cleanup.md`
   says.
 
 ## 5. Statements, the record and the rule

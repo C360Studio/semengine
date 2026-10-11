@@ -78,11 +78,15 @@ the Go 1 compatibility promise keeps it. After a Go toolchain upgrade, re-run P2
   (`nats.go:6190-6191`). The cut can win that race. On a healthy server whose drain outlasts the context, bytes that
   `main` would have flushed are lost. This is ADR-112 §2's "a message still buffered when the connection closes is
   lost".
-- **No timeout split across addresses.** Without a custom dialer, nats.go divides `WithTimeout` among the addresses a
-  hostname resolves to (`nats.go:2496-2504`). With one, each address gets the whole timeout. A reconnect attempt to a
-  hostname with n addresses that do not answer can therefore hold the connection's lock for up to n x 5 s, instead of
-  5 s. `Close` and `Connect` cut it; other calls wait. A dialer cannot know n, so this is stated in ADR-112 as not
-  promised, with no mechanism.
+- **A hostname's addresses are tried in the resolver's order.** Without a custom dialer, nats.go resolves a hostname
+  itself, shuffles its addresses and divides `WithTimeout` among them (`nats.go:2484-2511`). With D2's
+  `SkipHostLookup`, nats.go hands the dialer the name, and Go's `net.Dialer` resolves it and dials its addresses in
+  the resolver's order. nats.go's shuffle of one hostname's addresses is gone; its shuffle of the server list across
+  separate URLs (`nats.go:2158-2159`) remains. `net.Dialer` puts the lookup and every address under one `Timeout`,
+  giving each address an equal share of what is left, at least 2 s (`net/dial.go:270-290`, `:539`, `:560`). So one
+  dial holds the connection's lock for up to `WithTimeout` (5 s by default), the lookup included. That is Go's code,
+  read; no test here measures it, and ADR-112 states it as not promised. `Close` and `Connect` cut the dial; other
+  calls wait.
 - **`SetConnection`.** A connection installed through `SetConnection` was not dialled by the client, so it is not cut.
 
 **Size.** `socket.go`, 67 lines; about 20 lines in `client.go`, where the `netDial` test seam is a field on `Client`.
@@ -92,6 +96,14 @@ the Go 1 compatibility promise keeps it. After a Go toolchain upgrade, re-run P2
 `Connect` refuses an ended context before it dials. While it runs, `context.AfterFunc(ctx, cut)` cuts the dial or the
 handshake when the context ends, whether by deadline or by cancel. Once Connect has connected it stops and joins the
 `AfterFunc`, so the context no longer touches the connection. Reconnects are then bounded by `WithTimeout` alone.
+
+nats.go looks a hostname up before it calls a custom dialer, and nothing ends that lookup (`nats.go:2484-2485`). In
+Codex's stop-1 finding F1 (PR #177 comment 6111641674, reproduced 3 of 3 in comment 6111684071), `Connect` was still
+blocked 500 ms after the cancel, until the probe released the lookup. So `Connect` also passes
+`nats.SkipHostLookup()`. The name reaches the dialer, and `net.Dialer` resolves it under the dial's `Timeout` and
+`Cancel` (T4, "host name resolved inside the dial"). The cost: a hostname that resolves to several addresses is
+dialled in the resolver's order, and nats.go's shuffle of those addresses is gone; its shuffle of the server list
+across separate URLs remains (D1, "Costs").
 
 | Piece | `main` (P18, P25) | Fix (P18 revision 2, P25 revision 3) |
 | --- | --- | --- |

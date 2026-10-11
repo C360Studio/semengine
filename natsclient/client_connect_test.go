@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -235,6 +236,47 @@ func TestConnectEndsWithItsContext(t *testing.T) {
 
 		err = awaitConnect(t, startConnect(ctx, client))
 		require.ErrorIs(t, err, context.DeadlineExceeded)
+	})
+
+	// A host name must reach the dialer unresolved, so that its lookup runs
+	// inside the dial, under the dialer's Cancel. Otherwise nats.go looks the
+	// name up first (nats.go:2484-2485), and nothing ends that lookup when the
+	// context does (PR #177, Codex stop-1 F1).
+	t.Run("host name resolved inside the dial", func(t *testing.T) {
+		_, port, err := net.SplitHostPort(strings.TrimPrefix(refusedNATSURL(t), "nats://"))
+		require.NoError(t, err)
+		// Built from the ephemeral port: the URL names no fixed address.
+		hostPort := net.JoinHostPort("localhost", port)
+		client, err := NewClient("nats://" + hostPort)
+		require.NoError(t, err)
+		dialled := make(chan string, 1)
+		client.netDial = func(d *net.Dialer, _, address string) (net.Conn, error) {
+			select {
+			case dialled <- address:
+			default:
+			}
+			timeout := time.NewTimer(d.Timeout) // as a lookup nobody answers ends
+			defer timeout.Stop()
+			select {
+			case <-d.Cancel:
+				return nil, errors.New("dial cancelled")
+			case <-timeout.C:
+				return nil, errors.New("dial timed out")
+			}
+		}
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+
+		result := startConnect(ctx, client)
+		var address string
+		select {
+		case address = <-dialled:
+		case err := <-result:
+			t.Fatalf("Connect returned before it dialled: %v", err)
+		}
+		cancel()
+		require.ErrorIs(t, awaitConnect(t, result), context.Canceled)
+		require.Equal(t, hostPort, address, "nats.go resolved the host name before the dialer")
 	})
 }
 

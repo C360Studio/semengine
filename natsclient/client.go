@@ -697,13 +697,13 @@ func (m *Client) GetStatus() *Status {
 // Connect establishes connection to NATS server. It refuses a nil context, an
 // ended context and a client that is already connected, with an error and
 // before any dial (T3). When its context ends during the attempt, it ends the
-// dial, or closes the socket while it waits for the server's answer, and
-// returns a transient error matching the context's error (T4). The context
-// does not bound the connection's later reconnects (T5). Once Close has begun
-// it returns nats.ErrConnectionClosed before dialling, whether or not its
-// context has ended (T3). Connect returns an error when Close has begun before
-// it finished; the connection it dialled is then closed and nothing it would
-// have started runs. A Connect that returns an error has no event handler of
+// dial, a host name's lookup included, or closes the socket while it waits for
+// the server's answer, and returns a transient error matching the context's
+// error (T4). The context does not bound the connection's later reconnects
+// (T5). Once Close has begun it returns nats.ErrConnectionClosed before
+// dialling, whether or not its context has ended (T3). Connect returns an error
+// when Close has begun before it finished; the connection it dialled is then
+// closed and nothing it would have started runs. A Connect that returns an error has no event handler of
 // the connection it dialled still running, and changes neither the status, the
 // failure count nor the circuit of a connection another Connect installed
 // (design D3).
@@ -759,9 +759,12 @@ func (m *Client) connectWith(
 	// nats.Connect takes no context, so the context reaches the dial through
 	// the dialer: when it ends, cut closes the socket and ends the dial (T4).
 	// The cut is stopped, or joined if it began, before the result is read, so
-	// the context touches nothing once Connect returns (T5).
+	// the context touches nothing once Connect returns (T5). nats.go would look
+	// a host name up before calling the dialer, where nothing ends the lookup
+	// (nats.go:2484-2485); SkipHostLookup hands the name to the dialer, whose
+	// net.Dialer resolves it under the same cut (T4).
 	socket := newSocketDialer(m.timeout, m.netDial)
-	opts := append(m.buildConnectionOptions(), nats.SetCustomDialer(socket))
+	opts := append(m.buildConnectionOptions(), nats.SetCustomDialer(socket), nats.SkipHostLookup())
 	stopCut := socket.cutWhenDone(ctx)
 	conn, err := dial(m.urls, opts...)
 	stopCut()

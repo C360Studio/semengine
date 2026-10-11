@@ -18,10 +18,11 @@
 //     listing that returns both together, never from a describe call per
 //     resource. The cost bound forbids O(N) round-trips, not a second PAGED
 //     listing — and one is required for correctness, see reconcile below.
-//  2. ACCOUNT-COMPLETE, including what cannot be read. The server moves any
-//     stream carrying an offlineReason out of the info listing and into
-//     Missing/Offline, which the Go client drops on the floor; the NAME listing
-//     does not filter them. Names-minus-infos is therefore exactly the
+//  2. ACCOUNT-COMPLETE, including what cannot be read. By a read of
+//     nats-server's and nats.go's source, not a test, so not promised: the
+//     server moves any stream carrying an offlineReason out of the info listing
+//     and into Missing/Offline, which the Go client drops on the floor; the NAME
+//     listing does not filter them. Names-minus-infos is therefore taken as the
 //     unreadable set, and it is published named rather than silently omitted.
 //  3. Attribution is a READ of the descriptor catalog, never a copy. The owner
 //     resolver is a function called at collection time, so a bucket removed
@@ -418,8 +419,9 @@ func (c *StorageInventoryCollector) enumerate(
 	return resources, DeriveAccountReport(resources, readAccountTierLimits(ctx, lister)), nil
 }
 
-// listNames walks the account name listing. The server does NOT exclude offline
-// streams here, so this is the complete membership set.
+// listNames walks the account name listing. By the read in rule 2 above (not
+// promised), the server does NOT exclude offline streams here, so this is taken
+// as the complete membership set.
 func (c *StorageInventoryCollector) listNames(
 	ctx context.Context, lister StreamLister,
 ) (map[string]struct{}, error) {
@@ -453,11 +455,13 @@ func (c *StorageInventoryCollector) listNames(
 // listInfos walks the account info listing, which carries configuration and
 // state together.
 //
-// Rows are keyed by name, which also DEDUPLICATES. The client advances its page
-// offset by the number of entries a page returned, while the server's cursor
-// also moved past the entries it excluded for being offline — so an account
-// with more than one page plus one offline stream serves overlapping pages, and
-// a slice would carry the same resource twice.
+// Rows are keyed by name, which also DEDUPLICATES. By a read of nats-server's
+// and nats.go's source, not a test, so not promised: the client advances its
+// page offset by the number of entries a page returned, while the server's
+// cursor also moved past the entries it excluded for being offline — so an
+// account with more than one page plus one offline stream serves overlapping
+// pages, and a slice would carry the same resource twice. Keying by name holds
+// either way.
 func (c *StorageInventoryCollector) listInfos(
 	ctx context.Context, lister StreamLister,
 ) (map[string]StorageResource, error) {

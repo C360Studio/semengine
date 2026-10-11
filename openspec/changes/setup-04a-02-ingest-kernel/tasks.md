@@ -591,6 +591,12 @@ posted on this pull request.
       `2fe8e32` (the first with only its `subscribeRequests` seam added); two mutation checks by hand, three runs
       each: the wrapper's flag check removed fails the first, and the closure reading `c.ingestPool` fails the
       second. Notes: `notes/cp3-B2.md`.
+- [ ] 4.11 (D) Checkpoint 3 B1 (PR #93 comment 6099921473): a poison record is cleared only up to the revision its
+      clear proves. An absent key proves the revision recorded before the read; a delete proves the revision it
+      removed; every clear goes through the revision guard. `TestStaleAbsenceKeepsNewerPoison` and
+      `TestDeleteCleanupKeepsNewerPoison` (`poison_scoping_test.go`), each written first and failing on `8c09644`;
+      three `task mutate:check` detections: the record read after the verify's `Get`, and the absence clear unbounded,
+      fail the first; the delete clear unbounded fails the second. Notes: `notes/cp3-B1.md`.
 
 ## 5. Ledger, gates and boundaries
 

@@ -415,8 +415,8 @@ func (c *Component) deleteEntity(ctx context.Context, entityID string, revision 
 	if err := c.entityBucket.DeleteAtRevision(ctx, entityID, revision); err != nil {
 		return err
 	}
-	// The poisoned bytes, if any, are gone with the key.
-	c.clearEntityPoisonOnDelete(entityID)
+	// The poisoned bytes, if any, are gone with the key, up to the revision the delete removed.
+	c.clearEntityPoisonOnDelete(entityID, revision)
 	c.invalidateEntityCacheEntry(entityID)
 	return nil
 }

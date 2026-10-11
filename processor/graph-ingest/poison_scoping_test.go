@@ -643,6 +643,97 @@ func TestVerifyAfterRecordDropsStaleRecordAfterCompletedRepair(t *testing.T) {
 		"resident poison keeps its record through verification")
 }
 
+// assertNewerPoisonKept checks that the poison recorded at revision is still inventoried and
+// still reported: Health degraded and the gauge at one.
+func assertNewerPoisonKept(t *testing.T, c *Component, id string, revision uint64) {
+	t.Helper()
+	record, inventoried := poisonInventoryEntry(c, id)
+	assert.True(t, inventoried, "the newer poison record must survive the older clear")
+	assert.Equal(t, revision, record.revision)
+	assert.Equal(t, float64(1), testutil.ToFloat64(c.poisonedEntities))
+	health := c.Health()
+	assert.False(t, health.Healthy, "Health must stay degraded while poison is resident: %+v", health)
+	assert.Equal(t, graph.IndexStateDegraded, health.Status)
+}
+
+// TestStaleAbsenceKeepsNewerPoison (checkpoint 3 B1): a detection's verify read finds the key
+// absent; before that read returns, the key is re-created with poisoned bytes at revision 3 and
+// a second read inventories them. The absence proves only the revision recorded before the
+// verify read (1), so the revision-3 record stays.
+func TestStaleAbsenceKeepsNewerPoison(t *testing.T) {
+	const id = "acme.ops.test.system.widget.stale-absence"
+	c, bucket := poisonScopingTestComponent(t)
+	seedPoisonBytes(bucket, id, 1)
+
+	observed, resume, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var gets atomic.Int32
+	bucket.getFunc = func(ctx context.Context, key string) (jetstream.KeyValueEntry, error) {
+		if gets.Add(1) == 2 { // the first detection's verify read
+			close(observed)
+			select {
+			case <-resume:
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			}
+			return nil, jetstream.ErrKeyNotFound // the key read absent when this read was served
+		}
+		entry, ok := storedEntry(bucket, key)
+		if !ok {
+			return nil, jetstream.ErrKeyNotFound
+		}
+		return &mockKVEntry{key: key, data: entry.value, revision: entry.revision}, nil
+	}
+
+	var firstErr error
+	go func() {
+		defer close(done)
+		_, firstErr = c.handleQueryEntityNATS(t.Context(), []byte(`{"id":"`+id+`"}`))
+	}()
+	select {
+	case <-observed:
+	case <-done:
+		t.Fatal("the first detection never made its verify read")
+	}
+
+	bucket.mu.Lock()
+	bucket.data[id] = mockKVData{value: guardTestPoisonBytes(id), revision: 3}
+	bucket.mu.Unlock()
+	_, err := queryEntity(t, c, id)
+	assertIngestResetRequired(t, err)
+
+	close(resume)
+	<-done
+	assertIngestResetRequired(t, firstErr)
+	assertNewerPoisonKept(t, c, id, 3)
+}
+
+// TestDeleteCleanupKeepsNewerPoison (checkpoint 3 B1): a delete at revision 4 succeeds; before
+// its cleanup runs, the key is re-created with poisoned bytes at revision 6 and a read
+// inventories them. The delete removed revision 4 only, so the revision-6 record stays.
+func TestDeleteCleanupKeepsNewerPoison(t *testing.T) {
+	const id = "acme.ops.test.system.widget.stale-delete"
+	c, bucket := poisonScopingTestComponent(t)
+	seedPoisonBytes(bucket, id, 4)
+
+	bucket.deleteFunc = func(_ context.Context, key string, _ ...jetstream.KVDeleteOpt) error {
+		// The delete at revision 4 has removed the key; a writer outside the mutation API
+		// re-creates it with poisoned bytes, and a read detects them, before deleteEntity's
+		// cleanup runs.
+		bucket.mu.Lock()
+		bucket.data[key] = mockKVData{value: guardTestPoisonBytes(key), revision: 6}
+		bucket.mu.Unlock()
+		_, err := queryEntity(t, c, key)
+		assertIngestResetRequired(t, err)
+		return nil
+	}
+
+	_, err := c.handleCanonicalDelete(t.Context(), mustCanonicalJSON(t, graph.DeleteEntityRequest{
+		EntityID: id, ExpectedRevision: 4,
+	}))
+	require.NoError(t, err)
+	assertNewerPoisonKept(t, c, id, 6)
+}
+
 // TestDetectionInvalidatesCachedEntry pins the spec scenario "detection
 // invalidates the cached entry": a warm query-cache entry for an entity whose
 // stored bytes were poisoned out-of-band must not outlive detection — the

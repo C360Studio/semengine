@@ -10,7 +10,8 @@ package graphingest
 //
 // Each record carries the KV revision whose decode failed. Clear paths (D3):
 //
-//	(a) DeleteEntity — the poisoned bytes are gone;
+//	(a) DeleteEntity — the poisoned bytes are gone, up to the revision the
+//	    delete removed;
 //	(b) a successful commit to the key at a revision newer than the recorded
 //	    one — the revision guard closes the record-after-clear interleaving
 //	    (concurrent repair Put vs in-flight RMW classification);
@@ -139,17 +140,25 @@ func (c *Component) inventoryEntityPoison(ctx context.Context, contractErr *grap
 // if the CURRENT bytes prove repair: absent key (repaired by delete) or bytes
 // that pass readEntity's rule, decodeStoredEntity (repaired by commit or
 // out-of-band overwrite, at that revision — the revision guard keeps a
-// re-poison newer than the proof). A transient KV read error keeps the record;
-// it self-heals on the key's next touch (D3c). One extra KV Get, only on the
-// already-failing detection path.
+// re-poison newer than the proof). An absent key proves repair only up to the
+// revision recorded before the read: a newer poisoned revision recorded while
+// the read was in flight stays (checkpoint 3 B1). A transient KV read error
+// keeps the record; it self-heals on the key's next touch (D3c). One extra KV
+// Get, only on the already-failing detection path.
 func (c *Component) verifyEntityPoisonRecord(ctx context.Context, entityID string) {
 	if c.entityBucket == nil {
 		return
 	}
+	c.entityPoisonMu.Lock()
+	recorded, ok := c.entityPoison[entityID]
+	c.entityPoisonMu.Unlock()
+	if !ok {
+		return // already cleared; a later record verifies itself
+	}
 	entry, err := c.entityBucket.Get(ctx, entityID)
 	if err != nil {
 		if natsclient.IsKVNotFoundError(err) {
-			c.dropEntityPoisonRecord(entityID, 0) // bytes are gone — repaired by delete
+			c.dropEntityPoisonRecord(entityID, recorded.revision) // bytes are gone — repaired by delete
 		}
 		return // transient read error: keep the record; next touch resolves it
 	}
@@ -158,13 +167,14 @@ func (c *Component) verifyEntityPoisonRecord(ctx context.Context, entityID strin
 	}
 }
 
-// dropEntityPoisonRecord removes an inventory entry. proofRev == 0 clears
-// unconditionally (the delete path — the bytes are gone). A non-zero proofRev
-// is the revision at which the key was PROVEN valid (a committed write or a
-// validating read); the entry is kept when its recorded poisoned revision is
+// dropEntityPoisonRecord removes an inventory entry. proofRev is the revision
+// up to which the key is PROVEN repaired: valid at it (a committed write or a
+// validating read), or gone with it (a delete, or an absent key read after the
+// record at it). The entry is kept when its recorded poisoned revision is
 // newer than the proof — a re-poison after the proof must not be erased. A
 // revision's bytes are immutable, so proofRev == recorded means the recorded
-// revision validated and the entry is stale.
+// revision is repaired and the entry is stale. Every clear goes through this
+// guard (checkpoint 3 B1).
 func (c *Component) dropEntityPoisonRecord(entityID string, proofRev uint64) {
 	c.entityPoisonMu.Lock()
 	defer c.entityPoisonMu.Unlock()
@@ -172,7 +182,7 @@ func (c *Component) dropEntityPoisonRecord(entityID string, proofRev uint64) {
 	if !ok {
 		return
 	}
-	if proofRev != 0 && rec.revision > proofRev {
+	if rec.revision > proofRev {
 		return
 	}
 	delete(c.entityPoison, entityID)
@@ -180,13 +190,15 @@ func (c *Component) dropEntityPoisonRecord(entityID string, proofRev uint64) {
 	c.setEntityPoisonGauge()
 }
 
-// clearEntityPoisonOnDelete is clear path (a): a successful DeleteEntity
-// removed the poisoned bytes. Steady-state cost is the single atomic load.
-func (c *Component) clearEntityPoisonOnDelete(entityID string) {
+// clearEntityPoisonOnDelete is clear path (a): a successful delete at
+// deletedRev removed the poisoned bytes up to that revision. A record newer
+// than deletedRev is a re-poison after the delete and stays. Steady-state cost
+// is the single atomic load.
+func (c *Component) clearEntityPoisonOnDelete(entityID string, deletedRev uint64) {
 	if c.entityPoisonSize.Load() == 0 {
 		return
 	}
-	c.dropEntityPoisonRecord(entityID, 0)
+	c.dropEntityPoisonRecord(entityID, deletedRev)
 }
 
 // clearEntityPoisonOnCommit is clear path (b): a write-gate-validated commit

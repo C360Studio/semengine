@@ -28,7 +28,7 @@ the reference for every production change.
 
 ## 3. Close cuts the socket and any reconnect dial (design D1, D3)
 
-- [ ] 3.1 Write T1 `TestCloseEndsAHeldWrite` in `natsclient/client_close_held_test.go`, and record it failing on
+- [x] 3.1 Write T1 `TestCloseEndsAHeldWrite` in `natsclient/client_close_held_test.go`, and record it failing on
   `main`'s code (its own 10 s wait).
   - The test owns a proxy on `127.0.0.1:0`. The proxy stops reading after the first bytes of a 16 MiB publish.
   - The proxy registers its cleanup after the client's, so it closes both of its sockets first.

@@ -583,7 +583,7 @@ posted on this pull request.
       closed") and `TestCorruptGuardRecordIsRefused` (`graph-ingest-recovery`, "A record that cannot be decoded"),
       each written first and failing on the pin's code (design D21). Done with task 3.12b, in `c4a885f`, `ecf00a7` and
       `36e370d`.
-- [ ] 4.10 (D) Checkpoint 3 B2 (PR #93 comment 6099921473; design D13): request handlers do no work until `Start`
+- [x] 4.10 (D) Checkpoint 3 B2 (PR #93 comment 6099921473; design D13): request handlers do no work until `Start`
       completes, and the consume closure submits only to the pool and submit context its `Start` built.
       `TestFailedRegistrationRunsNoRequestWork` (`graph-transport-boundary`, "A query during a failed Start" and "A
       mutation during a failed Start") and `TestFailedConsumerSetupCallbackNaksAfterRollback`
@@ -591,13 +591,15 @@ posted on this pull request.
       `2fe8e32` (the first with only its `subscribeRequests` seam added); two mutation checks by hand, three runs
       each: the wrapper's flag check removed fails the first, and the closure reading `c.ingestPool` fails the
       second. Notes: `notes/cp3-B2.md`.
-- [ ] 4.11 (D) Checkpoint 3 B1 (PR #93 comment 6099921473): a poison record is cleared only up to the revision its
+      Done in `8c09644`; `task verify` on it ended `verify: ok`. Notes: `notes/cp3-B2.md`.
+- [x] 4.11 (D) Checkpoint 3 B1 (PR #93 comment 6099921473): a poison record is cleared only up to the revision its
       clear proves. An absent key proves the revision recorded before the read; a delete proves the revision it
       removed; every clear goes through the revision guard. `TestStaleAbsenceKeepsNewerPoison` and
       `TestDeleteCleanupKeepsNewerPoison` (`poison_scoping_test.go`), each written first and failing on `8c09644`;
       three `task mutate:check` detections: the record read after the verify's `Get`, and the absence clear unbounded,
       fail the first; the delete clear unbounded fails the second. Notes: `notes/cp3-B1.md`.
-- [ ] 4.12 (D) Checkpoint 3 H1 (PR #93 comment 6099921473; design D15): a birth on every lane stores a statement
+      Done in `19d021f`; `task verify` on it ended `verify: ok`. Notes: `notes/cp3-B1.md`.
+- [x] 4.12 (D) Checkpoint 3 H1 (PR #93 comment 6099921473; design D15): a birth on every lane stores a statement
       repeated equal in every field once, and keeps those that differ in `Timestamp`, `Confidence` or `ExpiresAt`;
       each lane checks its caller's statements before the repeat is dropped, so a refusal names the caller's index.
       `TestBirthCountsEqualStatementsOnce` (`write_modes_test.go`; `graph-entity-writes`, "One rule per write
@@ -606,7 +608,8 @@ posted on this pull request.
       lane), which already hold on `19d021f`. Six `task mutate:check` detections: each lane's step removed fails
       that lane's subtest, and each lane's step moved ahead of its validation fails that lane's row. Notes:
       `notes/cp3-H1.md`.
-- [ ] 4.13 (D) Checkpoint 3 H2 (PR #93 comment 6099921473): configuration validation refuses, as invalid and naming
+      Done in `d4772ef`; `task verify` on it ended `verify: ok`. Notes: `notes/cp3-H1.md`.
+- [x] 4.13 (D) Checkpoint 3 H2 (PR #93 comment 6099921473): configuration validation refuses, as invalid and naming
       the port, every output graph-ingest does not write: a `kv-write` output on a bucket other than `ENTITY_STATES`,
       and an output of any other kind (`jetstream`, `nats`, `nats-request`, `network`, `file`, `store-provide`), in
       place of the `ENTITY_STATES` output or beside it. `TestConfigRefusesOutputsGraphIngestDoesNotWrite`
@@ -615,7 +618,8 @@ posted on this pull request.
       refusal unclassified, the refusal not naming the port, and the check refusing the default. The carried case
       "valid full config" of `TestConfig_Validate_ValidConfig` no longer declares an unwritten `jetstream` output.
       Notes: `notes/cp3-H2.md`.
-- [ ] 4.14 (D) Checkpoint 3 M1, M2 and M3 (PR #93 comment 6099921473): `CreateEntity` and
+      Done in `385c244`; `task verify` on it ended `verify: ok`. Notes: `notes/cp3-H2.md`.
+- [x] 4.14 (D) Checkpoint 3 M1, M2 and M3 (PR #93 comment 6099921473): `CreateEntity` and
       `HierarchyInference.AddToContainers` refuse a nil context as invalid before any processing or storage call;
       `TestDetectionInvalidatesCachedEntry` closes its hybrid cache;
       `TestIntegration_ReadinessEnvelope_BacklogIsNotReady` holds the first delivered message behind a test barrier (the
@@ -626,7 +630,8 @@ posted on this pull request.
       skips. M2: an overlay probe, not committed, found the cache's cleanup goroutine alive after the test on `385c244`
       and none after the fix. M3, by hand: under a forced deschedule the base test fails and the new one passes; the
       barrier removed, and outstanding work without ack-pending messages, each fail it. Notes: `notes/cp3-M.md`.
-- [ ] 4.15 (D) Checkpoint 3 H3 (PR #93 comment 6099921473; design D15, D23; ADR-110 Decisions 5, 6; owner ruling,
+      Done in `03aeb05`; `task verify` on it ended `verify: ok`. Notes: `notes/cp3-M.md`.
+- [x] 4.15 (D) Checkpoint 3 H3 (PR #93 comment 6099921473; design D15, D23; ADR-110 Decisions 5, 6; owner ruling,
       #91 comment 6111530424): graph-ingest refuses and records, as `missing_statement_metadata`, a stored value
       holding a statement without `Source` or `Timestamp`: the stream merge and the append check their complete
       candidate, and reads refuse it; declined writes and a replacing arrival are unchanged; graph's encoder is not
@@ -637,6 +642,7 @@ posted on this pull request.
       `TestAppendAddingNothingOverStatementWithoutMetadataIsUnchanged`; two fixtures
       (`resident_stamp_integration_test.go`, `merge_entity_bench_test.go`); seven `task mutate:check` detections.
       Notes: `notes/cp3-H3.md`.
+      Done in `6a377e3`; `task verify` on it ended `verify: ok`. Notes: `notes/cp3-H3.md`.
 
 ## 5. Ledger, gates and boundaries
 

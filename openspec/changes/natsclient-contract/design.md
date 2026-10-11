@@ -82,11 +82,15 @@ the Go 1 compatibility promise keeps it. After a Go toolchain upgrade, re-run P2
   itself, shuffles its addresses and divides `WithTimeout` among them (`nats.go:2484-2511`). With D2's
   `SkipHostLookup`, nats.go hands the dialer the name, and Go's `net.Dialer` resolves it and dials its addresses in
   the resolver's order. nats.go's shuffle of one hostname's addresses is gone; its shuffle of the server list across
-  separate URLs (`nats.go:2158-2159`) remains. `net.Dialer` puts the lookup and every address under one `Timeout`,
-  giving each address an equal share of what is left, at least 2 s (`net/dial.go:270-290`, `:539`, `:560`). So one
-  dial holds the connection's lock for up to `WithTimeout` (5 s by default), the lookup included. That is Go's code,
-  read; no test here measures it, and ADR-112 states it as not promised. `Close` and `Connect` cut the dial; other
-  calls wait.
+  separate URLs (`nats.go:2158-2159`) remains. `net.Dialer` puts the lookup and every address under one `Timeout`
+  (Go 1.26 `net/dial.go:539`, `:560`). Each address gets an equal share of what is left, raised to 2 s only while
+  2 s remain; otherwise it gets what remains, and once nothing remains the rest are not dialled in that attempt
+  (`:270-290`). With the default 5 s that is 2 s, 2 s, about 1 s, then none, so when the resolver always returns the
+  same order, every reconnect tries the same first addresses. For `"tcp"`, Go dials IPv4 and IPv6 addresses as two
+  lists, the second starting 300 ms after the first or as soon as the first fails (`:655-725`), so the resolver's
+  order holds within each family. One dial holds the connection's lock for up to `WithTimeout` (5 s by default), the
+  lookup included. All of this is read from Go's source, not measured; ADR-112 states it as not promised. `Close` and
+  `Connect` cut the dial; other calls wait.
 - **`SetConnection`.** A connection installed through `SetConnection` was not dialled by the client, so it is not cut.
 
 **Size.** `socket.go`, 67 lines; about 20 lines in `client.go`, where the `netDial` test seam is a field on `Client`.

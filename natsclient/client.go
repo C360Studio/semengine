@@ -703,10 +703,10 @@ func (m *Client) GetStatus() *Status {
 // (T5). Once Close has begun it returns nats.ErrConnectionClosed before
 // dialling, whether or not its context has ended (T3). Connect returns an error
 // when Close has begun before it finished; the connection it dialled is then
-// closed and nothing it would have started runs. A Connect that returns an error has no event handler of
-// the connection it dialled still running, and changes neither the status, the
-// failure count nor the circuit of a connection another Connect installed
-// (design D3).
+// closed and nothing it would have started runs. A Connect that returns an
+// error has no event handler of the connection it dialled still running, and
+// changes neither the status, the failure count nor the circuit of a
+// connection another Connect installed (design D3).
 func (m *Client) Connect(ctx context.Context) error {
 	return m.connectWith(ctx, nats.Connect)
 }
@@ -928,12 +928,15 @@ func (m *Client) startMetricsPoller() bool {
 // methods return nats.ErrConnectionClosed. Work admitted before Close began may
 // still run while Close waits for it; message handlers keep handling messages
 // already delivered during the drain. Status keeps its value while Close drains
-// and reports Disconnected once the cleanup has finished. A drain that runs out
-// of time is reported by the first Close as a transient error wrapping
-// nats.ErrDrainTimeout. A Close called from inside one of the client's callbacks
-// waits on a join that includes its own invocation, so it returns ctx.Err() when
-// its context ends and never returns nil. Close refuses a nil context with an
-// error and touches nothing.
+// and reports Disconnected once the cleanup has finished. After a Close whose
+// context cut the drain short, the native connection GetConnection returned can
+// report DRAINING_PUBS, and IsConnected true, for up to 5 s before it reports
+// CLOSED again: that is nats.go v1.54.0's drain, and no event handler of the
+// client runs then. A drain that runs out of time is reported by the first
+// Close as a transient error wrapping nats.ErrDrainTimeout. A Close called from
+// inside one of the client's callbacks waits on a join that includes its own
+// invocation, so it returns ctx.Err() when its context ends and never returns
+// nil. Close refuses a nil context with an error and touches nothing.
 func (m *Client) Close(ctx context.Context) error {
 	if ctx == nil {
 		return errs.WrapInvalid(stderrors.New("nil context"), "Client", "Close", "missing context")

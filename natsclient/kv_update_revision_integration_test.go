@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -367,5 +368,90 @@ func TestUpdateWithRetryRead_ErrorsAttributeNoCommit(t *testing.T) {
 		require.ErrorIs(t, err, context.Canceled)
 		assert.Zero(t, committed)
 		assert.Zero(t, runs, "an ended context starts no run")
+	})
+}
+
+// A write error other than a conflict or jetstream.ErrNoStreamResponse ends the call after that run,
+// with the error and revision 0: the write may have been stored, and a later run's refusal could
+// not show whether it was. nats.go returns ErrNoStreamResponse only when no stream stored the
+// write, so the callback runs again (task 4.18; Codex interim review R2, PR #93 comment
+// 6112098987; owner ruling, #91 comment 6112779037).
+func TestUpdateWithRetryRead_UnconfirmedWriteEndsTheCall(t *testing.T) {
+	ctx := t.Context()
+	testClient := newFixtureClient(t)
+	bucket, err := testClient.Client.CreateKeyValueBucket(ctx, jetstream.KeyValueConfig{
+		Bucket: "test-update-read-unconfirmed", History: 5,
+	})
+	require.NoError(t, err)
+	// newStore wraps the bucket in a FaultKV of its own. MaxRetries 2 allows three runs, so a run
+	// the call must not make shows.
+	newStore := func() (*KVStore, *natsfixture.FaultKV) {
+		faults := natsfixture.NewFaultKV(bucket)
+		return testClient.Client.NewKVStore(faults, func(o *KVOptions) { o.MaxRetries = 2 }), faults
+	}
+	errLost := errors.New("reply lost after the write")
+
+	t.Run("update", func(t *testing.T) {
+		kv, faults := newStore()
+		readAt, err := kv.Put(ctx, "update", []byte(`{"v":0}`))
+		require.NoError(t, err)
+		faults.FailAfter(natsfixture.KVUpdate, errLost)
+
+		runs := 0
+		committed, err := kv.UpdateWithRetryRead(ctx, "update", func([]byte, uint64) ([]byte, error) {
+			runs++
+			return fmt.Appendf(nil, `{"v":%d}`, runs), nil
+		})
+		require.ErrorIs(t, err, errLost)
+		assert.Zero(t, committed, "the call attributes no commit to itself")
+		assert.Equal(t, 1, runs, "the write may have been stored, so the callback does not run again")
+		assert.Equal(t, 1, faults.Calls()[natsfixture.KVUpdate], "updates that reached the bucket")
+		entry, err := bucket.Get(ctx, "update")
+		require.NoError(t, err)
+		assert.Greater(t, entry.Revision(), readAt)
+		assert.Equal(t, []byte(`{"v":1}`), entry.Value(), "the first run's write stood")
+	})
+
+	t.Run("create", func(t *testing.T) {
+		kv, faults := newStore()
+		faults.FailAfter(natsfixture.KVCreate, errLost)
+
+		runs := 0
+		committed, err := kv.UpdateWithRetryRead(ctx, "create", func([]byte, uint64) ([]byte, error) {
+			runs++
+			return fmt.Appendf(nil, `{"v":%d}`, runs), nil
+		})
+		require.ErrorIs(t, err, errLost)
+		assert.Zero(t, committed, "the call attributes no commit to itself")
+		assert.Equal(t, 1, runs, "the create may have been stored, so the callback does not run again")
+		assert.Equal(t, 1, faults.Calls()[natsfixture.KVCreate], "creates that reached the bucket")
+		assert.Zero(t, faults.Calls()[natsfixture.KVUpdate], "updates that reached the bucket")
+		entry, err := bucket.Get(ctx, "create")
+		require.NoError(t, err)
+		assert.Equal(t, []byte(`{"v":1}`), entry.Value(), "the first run's create stood")
+	})
+
+	t.Run("no stream response", func(t *testing.T) {
+		kv, faults := newStore()
+		_, err := kv.Put(ctx, "unanswered", []byte(`{"v":0}`))
+		require.NoError(t, err)
+		lastSeq := requireLastSeq(t, bucket)
+		faults.FailBefore(natsfixture.KVUpdate, jetstream.ErrNoStreamResponse)
+
+		runs := 0
+		committed, err := kv.UpdateWithRetryRead(ctx, "unanswered", func([]byte, uint64) ([]byte, error) {
+			runs++
+			if runs == 2 {
+				faults.FailBefore(natsfixture.KVUpdate, nil)
+			}
+			return fmt.Appendf(nil, `{"v":%d}`, runs), nil
+		})
+		require.NoError(t, err)
+		assert.Equal(t, 2, runs, "no stream stored the first run's write, so the callback runs again")
+		assert.Equal(t, lastSeq+1, requireLastSeq(t, bucket), "the key was written once")
+		entry, err := bucket.Get(ctx, "unanswered")
+		require.NoError(t, err)
+		assert.Equal(t, entry.Revision(), committed)
+		assert.Equal(t, []byte(`{"v":2}`), entry.Value())
 	})
 }

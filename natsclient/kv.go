@@ -322,8 +322,10 @@ func (kv *KVStore) UpdateWithRetry(ctx context.Context, key string,
 //
 // On any non-nil error, and on a callback's ErrKVSkipWrite, the returned
 // revision is 0 — the call attributes no commit to itself. That does not mean
-// nothing committed: a write cut short by an infrastructure error may have
-// committed, and the next run then reads it.
+// nothing committed: a write that returns an error may have committed. So the
+// callback runs again only after a failed read, a revision conflict, or
+// jetstream.ErrNoStreamResponse (no stream received the write); any other write
+// error ends the call, errors.Is reaching it.
 func (kv *KVStore) UpdateWithRetryRev(ctx context.Context, key string,
 	updateFn func(current []byte) ([]byte, error)) (uint64, error) {
 	if ctx == nil {
@@ -364,10 +366,15 @@ func (kv *KVStore) UpdateWithRetryRead(ctx context.Context, key string,
 	attemptNum := 0
 
 	// Use the retry package for automatic retry with exponential backoff
-	// Note: All errors will be retried except when max attempts is reached.
-	// We use consistent error message formatting to indicate error types:
-	// - Retryable errors (conflicts): returned as-is to trigger retry
-	// - Non-retryable errors: wrapped with context about why they failed
+	// rerun reports whether a write error lets the callback run again: the bucket refused the
+	// write as a revision conflict, or nats.go returned jetstream.ErrNoStreamResponse, which it
+	// does only when every publish attempt got no responders, so no stream stored the write
+	// (publish.go:248-263). Any other write error may follow a stored write, and a later run's
+	// refusal could not show whether it was stored, so it ends the call (Codex interim review
+	// R2, PR #93 comment 6112098987). A failed read stores nothing and is retried.
+	rerun := func(err error) bool {
+		return IsKVConflictError(err) || errors.Is(err, jetstream.ErrNoStreamResponse)
+	}
 	err := retry.Do(ctx, retryConfig, func() error {
 		attemptNum++
 
@@ -425,7 +432,7 @@ func (kv *KVStore) UpdateWithRetryRead(ctx context.Context, key string,
 				return nil // Success!
 			}
 			// Conflict error - WILL be retried (this is the intended retry case)
-			if IsKVConflictError(err) {
+			if rerun(err) {
 				if kv.logger != nil {
 					kv.logger.Debug("KV create conflict, retrying",
 						slog.String("key", key),
@@ -436,9 +443,9 @@ func (kv *KVStore) UpdateWithRetryRead(ctx context.Context, key string,
 				// Return conflict error as-is for retry
 				return err
 			}
-			// Infrastructure error - will retry but may not succeed
-			// Wrapped to provide context about the operation
-			return fmt.Errorf("kv create failed: %w", err)
+			// The create may have been stored, and no later run could show whether it was:
+			// end the call (rerun).
+			return retry.NonRetryable(fmt.Errorf("kv create failed: %w", err))
 		}
 
 		// Key exists - update with CAS
@@ -449,7 +456,7 @@ func (kv *KVStore) UpdateWithRetryRead(ctx context.Context, key string,
 			return nil // Success!
 		}
 		// Conflict error - WILL be retried (this is the intended retry case)
-		if IsKVConflictError(err) {
+		if rerun(err) {
 			if kv.logger != nil {
 				kv.logger.Debug("KV update conflict, retrying",
 					slog.String("key", key),
@@ -460,9 +467,9 @@ func (kv *KVStore) UpdateWithRetryRead(ctx context.Context, key string,
 			// Return conflict error as-is for retry
 			return err
 		}
-		// Infrastructure error - will retry but may not succeed
-		// Wrapped to provide context about the operation
-		return fmt.Errorf("kv update failed: %w", err)
+		// The update may have been stored, and no later run could show whether it was:
+		// end the call (rerun).
+		return retry.NonRetryable(fmt.Errorf("kv update failed: %w", err))
 	})
 
 	// Check if we exceeded max retries on a conflict error

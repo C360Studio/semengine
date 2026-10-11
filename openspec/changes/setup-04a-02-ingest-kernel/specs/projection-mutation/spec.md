@@ -46,6 +46,12 @@ the server did not confirm, SHALL reach the caller of the typed client as commit
 - **WHEN** the entity bucket refuses the update for a revision mismatch
 - **THEN** the receipt reports not-committed with the conflict classification
 
+#### Scenario: An append's write stands and the entity then changes
+
+- **WHEN** an append's update is stored but returns an error, and another writer then deletes the entity or stores a
+  value graph-ingest refuses
+- **THEN** the typed client's receipt reports commit-unknown, never not-committed
+
 ### Requirement: The typed client never reads the clock
 
 `projection.MutationClient` SHALL send a statement's `Timestamp` only as the caller gave it, on the statement or in the

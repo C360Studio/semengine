@@ -4,12 +4,15 @@ package graphingest
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -249,6 +252,138 @@ func TestIntegration_OversizedResponseAfterCommitIsCommitUnknown(t *testing.T) {
 	assert.Equal(t, projection.CommitUnknown, receipt.Commit, "receipt of a reconcile that committed")
 	assert.Equal(t, projection.CommitUnknown, mutationErr.Commit)
 	assert.Equal(t, projection.MutationCommitUnknown, mutationErr.Kind)
+}
+
+// lostReplyBucket is the entity bucket of TestIntegration_AppendAfterUnconfirmedWriteIsCommitUnknown,
+// adapted from Codex's probe (PR #93 comment 6112098987, R2). Once armed, its next Update is stored
+// by the real bucket, the stored bytes are kept, another writer then changes the key (interfere),
+// and the caller sees nats.ErrTimeout: a write that stood and whose reply was lost.
+type lostReplyBucket struct {
+	jetstream.KeyValue
+	interfere func(ctx context.Context, real jetstream.KeyValue, key string) error
+
+	armed   atomic.Bool
+	mu      sync.Mutex
+	written []byte
+}
+
+func (b *lostReplyBucket) Update(ctx context.Context, key string, value []byte, revision uint64) (uint64, error) {
+	if !b.armed.CompareAndSwap(true, false) {
+		return b.KeyValue.Update(ctx, key, value, revision)
+	}
+	if _, err := b.KeyValue.Update(ctx, key, value, revision); err != nil {
+		return 0, err
+	}
+	if err := b.interfere(ctx, b.KeyValue, key); err != nil {
+		return 0, err
+	}
+	b.mu.Lock()
+	b.written = slices.Clone(value)
+	b.mu.Unlock()
+	return 0, nats.ErrTimeout
+}
+
+// stored is the value the armed Update stored, or nil if it did not store one and interfere.
+func (b *lostReplyBucket) stored() []byte {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.written
+}
+
+// TestIntegration_AppendAfterUnconfirmedWriteIsCommitUnknown is task 4.18 (Codex interim review R2,
+// PR #93 comment 6112098987; owner ruling, #91 comment 6112779037; projection-mutation, "Commit
+// ambiguity is preserved"). An append's update is stored and its reply is lost, and another writer
+// then deletes the entity or stores a value graph-ingest refuses (an entity under another ID). The
+// receipt reports commit-unknown: the append's write stood, and a refusal of the entity as it is
+// now says nothing about it. The handlers are subscribed after the bucket is set (notes/4.1.md,
+// choice 5).
+func TestIntegration_AppendAfterUnconfirmedWriteIsCommitUnknown(t *testing.T) {
+	const (
+		id    = "c360.test.mutation.system.widget.unconfirmed"
+		other = "c360.test.mutation.system.widget.other"
+	)
+	foreign, err := graph.MarshalEntityState(&graph.EntityState{ID: other, Triples: []message.Triple{
+		{Subject: other, Predicate: "test.identity.name", Object: "other", Source: fixtureSource, Timestamp: fixtureTime},
+	}})
+	require.NoError(t, err)
+
+	for _, tc := range []struct {
+		name      string
+		interfere func(ctx context.Context, real jetstream.KeyValue, key string) error
+	}{
+		{"deleted", func(ctx context.Context, real jetstream.KeyValue, key string) error {
+			return real.Delete(ctx, key)
+		}},
+		{"refused value", func(ctx context.Context, real jetstream.KeyValue, key string) error {
+			_, err := real.Put(ctx, key, foreign)
+			return err
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancelOperation := context.WithTimeout(t.Context(), 120*time.Second)
+			defer cancelOperation()
+			t.Cleanup(vocabulary.SnapshotRegistry())
+			vocabulary.Register("test.identity.name")
+			vocabulary.Register("test.event.seen")
+
+			client := newFixtureClient(t)
+			comp := createTestComponent(t, withAuthority("c360", "test"))
+			comp.natsClient = client
+			entityStates, err := kvcatalog.EnsureCatalogBucket(ctx, client, graph.BucketEntityStates)
+			require.NoError(t, err)
+			bucket := &lostReplyBucket{KeyValue: entityStates, interfere: tc.interfere}
+			comp.entityBucket = client.NewKVStore(bucket)
+			// The test stands in for a Start that completed, so the handlers serve (checkpoint 3 B2).
+			comp.startCompleted.Store(true)
+			require.NoError(t, comp.setupQueryHandlers(ctx))
+			require.NoError(t, comp.setupMutationHandlers(ctx))
+			require.NoError(t, client.GetConnection().Flush())
+
+			contract := projection.Contract{
+				Name: "unconfirmed-append", MessageType: testMutationType, EntityPattern: "*.*.mutation.system.widget.*",
+				BirthPredicates: []string{"test.identity.name"},
+				Groups: []projection.PredicateGroup{
+					{Name: "events", Mode: projection.ModeAppend, Predicates: []string{"test.event.seen"}},
+				},
+			}
+			mutations, err := projection.NewMutationClient(projection.MutationClientConfig{
+				NATS: client, Contracts: []projection.Contract{contract}, Timeout: wireRequestTimeout,
+			})
+			require.NoError(t, err)
+			created, err := mutations.Create(ctx, projection.CreateMutation{
+				Contract: contract.Name, Entity: &graph.EntityState{ID: id},
+				Triples:  []message.Triple{{Subject: id, Predicate: "test.identity.name", Object: "widget"}},
+				Metadata: projection.MutationMetadata{RequestID: "create-unconfirmed", Source: fixtureSource, Timestamp: fixtureTime},
+			})
+			require.NoError(t, err)
+			require.Equal(t, projection.CommitVerified, created.Commit)
+
+			bucket.armed.Store(true)
+			receipt, err := mutations.Append(ctx, projection.AppendMutation{
+				Contract: contract.Name, Group: "events", EntityID: id,
+				Triples:  []message.Triple{{Subject: id, Predicate: "test.event.seen", Object: "unconfirmed-event"}},
+				Metadata: projection.MutationMetadata{RequestID: "append-unconfirmed", Source: fixtureSource, Timestamp: fixtureTime.Add(time.Minute)},
+			})
+
+			written := bucket.stored()
+			require.NotNil(t, written, "the append's update must be stored, and the other writer's change made, before the reply is lost")
+			assert.True(t, slices.ContainsFunc(decodeEntity(t, written).Triples, func(triple message.Triple) bool {
+				return triple.Predicate == "test.event.seen" && triple.Object == "unconfirmed-event"
+			}), "the stored update holds the appended statement")
+
+			assert.Equal(t, projection.CommitUnknown, receipt.Commit, "receipt of an append whose write stood")
+			var mutationErr *projection.MutationError
+			require.ErrorAs(t, err, &mutationErr)
+			t.Logf("receipt %s; kind %s, class %s, code %q: %v",
+				receipt.Commit, mutationErr.Kind, mutationErr.Class, mutationErr.Code, err)
+			assert.Equal(t, projection.MutationCommitUnknown, mutationErr.Kind)
+			assert.Equal(t, projection.CommitUnknown, mutationErr.Commit)
+			var classified *errs.ClassifiedError
+			require.ErrorAs(t, err, &classified, "the reply's classification stays on the error")
+			assert.Equal(t, errs.ErrorTransient, classified.Class)
+			assert.Equal(t, graph.ErrorCodeInternal, classified.Code)
+		})
+	}
 }
 
 // stateValue is the object of the one test.state.value statement in a stored entity.

@@ -672,6 +672,19 @@ posted on this pull request.
       (`TestFailedConsumerSetupCallbackNaksAfterRollback`, at its 60 s bound), M5 the second read before the handle
       is recorded (generation changed: no drain) and M1 (the broker test). The single-server restore is a declared
       limitation (#91 comment 6112550268). Notes: `notes/cp4i-R3.md`; `notes/4.3.md`, "What is not covered".
+- [ ] 4.18 (D) Codex interim review R2 (PR #93 comment 6112098987; owner ruling #91 comment 6112779037; design D23):
+      `natsclient.KVStore.UpdateWithRetryRead` runs its callback again only after a revision conflict, a failed read or
+      `jetstream.ErrNoStreamResponse`; any other write error ends the call with that error and revision 0, so an append
+      whose write stood reports commit-unknown (`transport-client`, "An unconfirmed write ends a retried update";
+      `projection-mutation`, "Commit ambiguity is preserved"). Tests, written first:
+      `TestUpdateWithRetryRead_UnconfirmedWriteEndsTheCall`, its update and create rows failing on `7e07fea` and its
+      no-stream-response row holding there, and `TestIntegration_AppendAfterUnconfirmedWriteIsCommitUnknown`, its
+      deleted row failing on `7e07fea` with not-committed (`entity_not_found`) and its refused-value row with
+      not-committed (`graph_state_reset_required`); `TestReplaceEntityRetryAfterCreateErrorStoresNoStatementTwice` now
+      fails the birth's create with `ErrNoStreamResponse`. Mutants by hand (`cp` backup, SHA-256), each detected: M1 the
+      update's write error retryable again, M2 the create's, M3 a conflict ends the call, M4 the `ErrNoStreamResponse`
+      clause dropped. Ledger item `natsclient-update-unconfirmed-write-ends`; ADR-110 counts four `adapt` items. #174
+      stays open for the bookkeeping skipped after an unconfirmed write. Notes: `notes/cp4i-R2.md`.
 
 ## 5. Ledger, gates and boundaries
 

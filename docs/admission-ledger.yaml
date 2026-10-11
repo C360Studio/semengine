@@ -1636,6 +1636,10 @@
     refusal naming an entity whose ID holds 10071 or 10037, is no longer a conflict or an absence. Present
     consumers: KVStore's Get, Create, Update, UpdateWithRetryRead's loop, Delete and DeleteAtRevision, and
     graph-ingest's not-found branches.
+    Changed behavior, task 4.18 (design D23; owner ruling #91 comment 6112779037; Codex interim review R2, PR #93
+    comment 6112098987), one adapt item. natsclient-update-unconfirmed-write-ends: a write error other than a conflict
+    or jetstream.ErrNoStreamResponse ends UpdateWithRetryRead and its three wrappers with that error; the pin reran the
+    callback (8b99efe9:natsclient/kv.go:387-389 and :411-413). Consumer: the write seam (R2).
   dependencies_and_side_effects: >-
     metric, pkg/errs, pkg/retry, internal/resource (in-set); github.com/nats-io/nats.go v1.54.0
     and nats.go/jetstream; prometheus/client_golang; stdlib. Test-only:
@@ -2287,6 +2291,12 @@
     true, and the revision-mismatch fakes of TestKVStoreDeleteAtRevisionMapsTypedErrors and graph-ingest's
     mockKVBucket return the server's API error, code 10071, where they returned its text. Mutation (task
     mutate:check), the pin's text match put back after the type checks: detection for each of the two tests
+    Task 4.18, design D23 (kv_update_revision_integration_test.go): TestUpdateWithRetryRead_UnconfirmedWriteEndsTheCall,
+    its update and create rows failing first at 7e07fea (three runs and three writes; no error after a second run),
+    its no-stream-response row passing there. Mutations by hand (cp backup, SHA-256 equal before and after), each
+    detected: the update's write error retryable again (the update row), the create's (the create row), a conflict
+    ending the call (TestUpdateWithRetryRead_ConflictPassesTheNewerRevision), the ErrNoStreamResponse clause dropped
+    (the no-stream-response row).
   owner: setup-04a-01-floor developer
   disposition: adapt
 

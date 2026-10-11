@@ -1336,15 +1336,21 @@ an entity ID's, changes a class.
 absent (never written, deleted or purged). A callback error `errors.Is` matches to `ErrKVSkipWrite` ends the call after
 that run: nothing written, the value beside it ignored, `(0, nil)`, and no error through the three wrappers. No commit
 is revision 0, so `(0, nil)` means a skip. Unchanged from `UpdateWithRetryRev` at `930bf49`: absent is created, present
-is written only if still at the revision read, the result being the commit's revision; a conflict, or an infrastructure
-error from `Get`, `Create` or `Update` (`kv.go:369`, `:417`, `:439`), reruns the callback; `MaxRetries`+1 conflicts give
+is written only if still at the revision read, the result being the commit's revision; `MaxRetries`+1 conflicts give
 `(0, ErrKVMaxRetriesExceeded)`, as does, after one run, a callback error that `IsKVConflictError` matches (`kv.go:469`
 at `dc7f08a`; predates D23), by type only since ruling N; any other callback error, or a value over `MaxValueSize`,
 gives `(0, err)` after one run, `errors.Is` reaching it; a nil context is refused before any read; an ended context
-starts no further run, `errors.Is(err, ctx.Err())`. 0 means no commit is attributed to the call, not that nothing
-committed: a write cut short may have committed and be read by the next run, where a skip attributes nothing (#20, task
-4.1); the `kv.go:323` doc says so. A caller must know two facts (0 is absent; the sentinel skips), only to use what is
-new.
+starts no further run, `errors.Is(err, ctx.Err())`. Changed by task 4.18 (owner ruling, #91 comment 6112779037): a
+conflict, an error from `Get`, or `jetstream.ErrNoStreamResponse` (every publish attempt got no responders, so nothing
+was stored; nats.go `publish.go:248-263`; probe P-R2a, `notes/cp4i-R2.md`) reruns the callback; any other error from
+`Create` or `Update` ends the call after that run with `(0, err)`, `errors.Is` reaching it: that write may have
+committed, and no later run can show whether it did (R2, PR #93 comment 6112098987; #174). 0 means no commit is
+attributed to the call, not that nothing committed: a write cut short may have committed, and the call then returns that
+write's error. A rerun follows only a write the server refused or never received, or a failed read, so on the `Update`
+path, the append's only write, a refusal from any run proves no run of this call wrote. nats.go's `Create` writes again
+when its first write fails and the key then reads as deleted (`jetstream/kv.go:1072-1079`), so the claim does not hold
+for a stream-lane birth, which sends no receipt. The `kv.go:323` doc says so. A caller must know two facts (0 is absent;
+the sentinel skips), only to use what is new.
 
 **Tests**, written first in `kv_update_revision_integration_test.go`; mutants via `task mutate:check` with
 `GOFLAGS=-tags=integration`, records posted; examples suffice (one interleaving, driven by a put in the callback):

@@ -158,7 +158,7 @@ func (c *Component) createEntity(ctx context.Context, entityID string, encoded [
 // debug level once the write commits or is declined (design D15, "Timestamp orders a replace").
 // An arrival none of whose sets applies writes nothing over a profiled entity (design D23); over
 // an unprofiled one it writes once, to stamp the profile (ADR-054). The bucket
-// re-runs the callback after a create conflict or a retryable create error, so the birth never
+// re-runs the callback after a create conflict or a create no stream received, so the birth never
 // changes entity: a retry that finds the key present merges from the arrival as it came (#91,
 // PR #93 comment 6060120246). A profile it stamps carries at, the arrival's triggeringTime. A
 // stored value the seam's read check refuses (decodeStoredForWrite), or a merge the metadata check

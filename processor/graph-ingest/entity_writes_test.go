@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -22,9 +21,9 @@ import (
 )
 
 // The stream lane's write (replaceEntity) is a compare-and-set that the bucket retries after a
-// create conflict or a create error it does not mark non-retryable. Each retry must start from
-// the arrival as it came and the stored state it reads (PR #93 comment 6060120246). These tests
-// make the entity's first create fail once and read what the retry stored.
+// create conflict or a create no stream received (jetstream.ErrNoStreamResponse). Each retry must
+// start from the arrival as it came and the stored state it reads (PR #93 comment 6060120246).
+// These tests make the entity's first create fail once and read what the retry stored.
 
 // createFailsOnce is the in-memory entity bucket with one failing create: the first create of
 // key runs beforeFail, when set (another lane's write), keeps the value it was given and returns
@@ -97,10 +96,12 @@ func isHierarchyPredicate(predicate string) bool {
 }
 
 // TestReplaceEntityRetryAfterCreateErrorStoresNoStatementTwice: the birth's create fails once
-// with an error that is not a conflict, so the key is still absent and the bucket retries the
-// birth. The entity is born with each statement once, hierarchy statements included.
+// with jetstream.ErrNoStreamResponse, the one error other than a conflict after which the bucket
+// runs the callback again (no stream stored the write; task 4.18), so the key is still absent and
+// the bucket retries the birth. The entity is born with each statement once, hierarchy statements
+// included.
 func TestReplaceEntityRetryAfterCreateErrorStoresNoStatementTwice(t *testing.T) {
-	c, bucket, arrival := newRetryingStreamLane(t, errors.New("nats: stream temporarily unavailable"))
+	c, bucket, arrival := newRetryingStreamLane(t, jetstream.ErrNoStreamResponse)
 
 	if err := c.mergeEntityOnLane(t.Context(), arrival, false); err != nil {
 		t.Fatalf("mergeEntityOnLane: %v", err)

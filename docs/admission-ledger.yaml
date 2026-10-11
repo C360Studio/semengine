@@ -1580,7 +1580,7 @@
   dependencies_and_side_effects: >-
     metric, pkg/errs, pkg/retry, internal/resource (in-set); github.com/nats-io/nats.go v1.54.0
     and nats.go/jetstream; prometheus/client_golang; stdlib. Test-only:
-    github.com/nats-io/nats-server/v2 v2.14.7 (embedded broker, client_connect_test.go:104),
+    github.com/nats-io/nats-server/v2 v2.15.0 (embedded broker, client_connect_test.go:104),
     stretchr/testify, prometheus client_model and testutil; the integration lane imports
     internal/harness/natsfixture and internal/harness/probe and no natsclient test imports
     testcontainers (task 3.7b). Dials NATS; runs the health monitor, the metrics poller,
@@ -1597,7 +1597,7 @@
     proof, and the three Consume doc comments say so (owner answer 1, #9 comment 5980296112).
     Import paths differ from the pin: pkg/resource is internal/resource (design D5). Pin differences carried with the carried tests as the only
     regression evidence: nats.go v1.52.0 at the pin (go.mod:12) is v1.54.0 here; the embedded test
-    broker nats-server/v2 v2.12.4 at the pin (go.mod:11) is v2.14.7 here, the .nats-image line
+    broker nats-server/v2 v2.12.4 at the pin (go.mod:11) is v2.15.0 here, the .nats-image line
     (owner ruling, #9 comment 5969776736); T-B3 cannot see an embedded server, so one broker
     version across both lanes is review only. Context roots (design D1 re-measured: the pin's nine
     are two live production roots, the rest are doc.go comments at :35, :151, :245, :524 or

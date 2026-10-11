@@ -751,6 +751,7 @@ func TestDetectionInvalidatesCachedEntry(t *testing.T) {
 		CleanupInterval: time.Minute,
 	})
 	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, entityCache.Close()) })
 	c.entityCache = entityCache
 
 	id := "acme.ops.test.system.widget.cache-a"

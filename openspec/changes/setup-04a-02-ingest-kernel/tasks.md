@@ -615,6 +615,17 @@ posted on this pull request.
       refusal unclassified, the refusal not naming the port, and the check refusing the default. The carried case
       "valid full config" of `TestConfig_Validate_ValidConfig` no longer declares an unwritten `jetstream` output.
       Notes: `notes/cp3-H2.md`.
+- [ ] 4.14 (D) Checkpoint 3 M1, M2 and M3 (PR #93 comment 6099921473): `CreateEntity` and
+      `HierarchyInference.AddToContainers` refuse a nil context as invalid before any processing or storage call;
+      `TestDetectionInvalidatesCachedEntry` closes its hybrid cache;
+      `TestIntegration_ReadinessEnvelope_BacklogIsNotReady` holds the first delivered message behind a test barrier (the
+      `consumeStream` seam) while it observes `!Ready` with `Lag > 0`, then releases it and waits for catch-up.
+      `TestComponent_CreateEntity_RefusesNilContext` and `TestAddToContainersRefusesNilContext` (4 rows), written first
+      and failing on `385c244` (a nil-pointer panic; success in every row). Five `task mutate:check` detections: the
+      create guard returning nil, unclassified, or after a write; the inference guard returning nil, or moved after the
+      skips. M2: an overlay probe, not committed, found the cache's cleanup goroutine alive after the test on `385c244`
+      and none after the fix. M3, by hand: under a forced deschedule the base test fails and the new one passes; the
+      barrier removed, and outstanding work without ack-pending messages, each fail it. Notes: `notes/cp3-M.md`.
 
 ## 5. Ledger, gates and boundaries
 

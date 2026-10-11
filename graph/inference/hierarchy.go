@@ -123,8 +123,11 @@ func isContainerEntity(entityID string) bool {
 //
 // It returns no statements, and writes nothing, for an invalid entity ID, a
 // container, or an entity carrying a FOREIGN authority (an imported mirror,
-// ADR-102).
+// ADR-102). A nil context is refused as invalid before the ID is read.
 func (h *HierarchyInference) AddToContainers(ctx context.Context, entityID string, at time.Time) ([]message.Triple, error) {
+	if ctx == nil {
+		return nil, errs.WrapInvalid(errs.ErrInvalidData, "HierarchyInference", "AddToContainers", "nil context")
+	}
 	// A statement with no time is refused by graph-ingest's write rules; refusing
 	// here names the cause instead of minting statements stamped with the zero time.
 	if at.IsZero() {

@@ -2063,8 +2063,12 @@ func validateEntityID(id string) error {
 
 // CreateEntity atomically creates a new entity. Existing keys are never
 // overwritten; callers observe natsclient.ErrKVKeyExists and decide whether
-// that conflict is acceptable for their operation.
+// that conflict is acceptable for their operation. A nil context is refused as
+// invalid before anything is read or written.
 func (c *Component) CreateEntity(ctx context.Context, entity *graph.EntityState) error {
+	if ctx == nil {
+		return errs.WrapInvalid(errs.ErrInvalidData, "Component", "CreateEntity", "nil context")
+	}
 	_, _, err := c.createEntityWithReceipt(ctx, entity)
 	return err
 }

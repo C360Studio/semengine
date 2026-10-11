@@ -2,6 +2,7 @@ package inference
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"sync"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	gtypes "github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/natsclient"
+	"github.com/c360studio/semengine/pkg/errs"
 	semtypes "github.com/c360studio/semengine/pkg/types"
 	"github.com/c360studio/semengine/types"
 	"github.com/c360studio/semengine/vocabulary"
@@ -241,6 +243,34 @@ func TestAddToContainersSkipsForeignAuthority(t *testing.T) {
 	localTriples, err := hi.AddToContainers(context.Background(), local, hierarchyTestTime)
 	require.NoError(t, err)
 	assert.NotEmpty(t, localTriples, "a local entity still receives hierarchy triples")
+}
+
+// TestAddToContainersRefusesNilContext: a nil context is refused as invalid at the
+// call, before the entity ID is read and before any storage call, whichever path
+// the ID would take (checkpoint 3 M1; developer contract § Context ownership).
+func TestAddToContainersRefusesNilContext(t *testing.T) {
+	const prefix = hierarchyTestOrg + "." + hierarchyTestPlatform + ".sensor.document.temperature."
+	for _, tc := range []struct{ name, entityID string }{
+		{"local entity, which births containers", prefix + "sensor-001"},
+		{"container, which is skipped", prefix + "group"},
+		{"foreign entity, which is skipped", hierarchyTestOrg + ".dep9.sensor.document.temperature.sensor-001"},
+		{"invalid entity ID, which is skipped", "not-an-entity-id"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := newFakeStore()
+			hi := newTestInference(t, store)
+
+			var nilCtx context.Context // the nil context is the input under test
+			triples, err := hi.AddToContainers(nilCtx, tc.entityID, hierarchyTestTime)
+
+			var classified *errs.ClassifiedError
+			if !errors.As(err, &classified) || classified.Class != errs.ErrorInvalid {
+				t.Fatalf("AddToContainers(nil, %q) = %v, want an error classified invalid", tc.entityID, err)
+			}
+			assert.Empty(t, triples, "a refused call returns no statements")
+			assert.Empty(t, store.createCalls(), "a refused call reaches no storage")
+		})
+	}
 }
 
 func TestHierarchyInference_InvalidEntityID(t *testing.T) {

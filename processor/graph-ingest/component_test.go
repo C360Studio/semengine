@@ -20,6 +20,7 @@ import (
 	"github.com/c360studio/semengine/internal/graphmutation"
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/natsclient"
+	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -799,6 +800,31 @@ func TestComponent_CreateEntity_EmptyID(t *testing.T) {
 	err := comp.CreateEntity(ctx, entity)
 
 	assert.Error(t, err, "CreateEntity should fail with empty ID")
+}
+
+// TestComponent_CreateEntity_RefusesNilContext: a nil context is refused as invalid
+// at the call, before any processing or storage, for an entity the same call stores
+// under a real context (checkpoint 3 M1; developer contract § Context ownership).
+func TestComponent_CreateEntity_RefusesNilContext(t *testing.T) {
+	c, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
+	entity := canonicalMutationEntity(canonicalEntityA)
+	entity.Triples = []message.Triple{canonicalTriple(canonicalEntityA, "test.state.value", "v")}
+
+	var nilCtx context.Context // the nil context is the input under test
+	err := c.CreateEntity(nilCtx, entity)
+	var classified *errs.ClassifiedError
+	if !errors.As(err, &classified) || classified.Class != errs.ErrorInvalid {
+		t.Fatalf("CreateEntity(nil, entity) = %v, want an error classified invalid", err)
+	}
+	bucket.mu.Lock()
+	keys := len(bucket.data)
+	bucket.mu.Unlock()
+	if keys != 0 {
+		t.Fatalf("the bucket holds %d keys after the refused create, want none", keys)
+	}
+
+	// The refusal is about the context: the same entity is stored under a real one.
+	require.NoError(t, c.CreateEntity(t.Context(), entity))
 }
 
 func TestComponent_CreateEntity_TriggersHierarchy(t *testing.T) {

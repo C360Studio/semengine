@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -177,19 +178,50 @@ func TestIntegration_ReadinessEnvelope_BacklogIsNotReady(t *testing.T) {
 	c.statusInterval = 100 * time.Millisecond
 	require.NoError(t, c.Initialize())
 	registerMergeTestPayload(t, c)
+
+	// Hold the first delivered message behind a test barrier until the not-ready
+	// window has been observed (checkpoint 3 M3). A held message is not acked, so the
+	// consumer counts it as outstanding and no envelope can read caught-up, however
+	// the goroutines are scheduled; the backlog's size alone gave no such ordering.
+	// The barrier wraps the real handler through the consumeStream acquisition seam
+	// (component.go), which lifecycle_integration_test.go also wraps. The deferred
+	// release runs before owner.finish, so a failed assertion cannot hold Stop.
+	held := make(chan struct{})
+	release := make(chan struct{})
+	var holdOnce, releaseOnce sync.Once
+	releaseHeld := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseHeld()
+	c.consumeStream = func(
+		ctx context.Context,
+		port natsclient.PortConsumerContext,
+		cfg natsclient.StreamConsumerConfig,
+		handler func(context.Context, jetstream.Msg),
+	) (jetstream.ConsumeContext, error) {
+		return c.natsClient.ConsumeStreamWithConfig(ctx, port, cfg, func(msgCtx context.Context, msg jetstream.Msg) {
+			holdOnce.Do(func() {
+				close(held)
+				<-release
+			})
+			handler(msgCtx, msg)
+		})
+	}
 	require.NoError(t, c.Start(owner.startContext(ctx)))
 
 	// FIRST assert the not-ready window this test is named for. Without it the test
 	// only proved eventual readiness plus a non-zero scope — the gh#732 case — while
-	// its name promised gh#712's "nonempty and healthy read as settled". A backlog
-	// of 200 pre-bind messages cannot be drained instantly, so an envelope reporting
-	// caught-up before any work was applied is the defect this must catch.
-	//
-	// The pin polled here with two 20ms sleeps. probe.Await polls at the same cadence and
-	// stops at the first published envelope that is either not ready with work
-	// outstanding, or ready. A key not published yet means the producer's first tick has
-	// not landed (the iteration that failed in CI): unpublished is not not-ready, it is
-	// not-yet-observed, so the wait goes on.
+	// its name promised gh#712's "nonempty and healthy read as settled". An envelope
+	// reporting caught-up while a message is held is the defect this must catch.
+	select {
+	case <-held:
+	case <-ctx.Done():
+		t.Fatalf("no message reached the test barrier: %v", ctx.Err())
+	}
+
+	// probe.Await stops at the first published envelope that is either not ready with work
+	// outstanding, or ready; while the message is held, ready is the defect. A key not
+	// published yet means the producer's first tick has not landed (the iteration that
+	// failed in CI): unpublished is not not-ready, it is not-yet-observed, so the wait
+	// goes on.
 	type envelopeRead struct {
 		status graph.IndexStatusResponse
 		ok     bool
@@ -204,8 +236,9 @@ func TestIntegration_ReadinessEnvelope_BacklogIsNotReady(t *testing.T) {
 	cancelNotReady()
 	sawNotReady := last.ok && last.status.Lag > 0 && !last.status.Ready
 	require.True(t, sawNotReady,
-		"producer never reported outstanding work while draining a %d-message backlog (last read %+v; wait: %v)",
+		"producer never reported outstanding work while a message of a %d-message backlog was held (last read %+v; wait: %v)",
 		backlog, last, waitErr)
+	releaseHeld()
 
 	// ...and it must eventually catch up.
 	require.Eventually(t, func() bool {

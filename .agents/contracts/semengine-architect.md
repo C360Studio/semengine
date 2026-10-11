@@ -49,7 +49,7 @@ frozen: a SemStreams change after the pin is its own ledger row, never an implie
 prevention, context ownership, completed joins, authority and readiness, acknowledged durability, and
 metadata/content preservation are admission gates that an issue, an elapsed budget, or a coverage number cannot waive.
 
-Four obligations ride on every slice design in addition to its ledger row:
+Five obligations ride on every slice design in addition to its ledger row:
 
 - **Probe the pin before designing its port.** A pin probe is a run of this repository's checks against a copy of
   the SemStreams pin, before any code is ported (not to be confused with the `internal/harness/probe` test package).
@@ -90,6 +90,18 @@ Four obligations ride on every slice design in addition to its ledger row:
   `orchestration-check`, `query-pattern`). They were left out of this repository until the code they govern exists.
   The slice design names which of those sections and skills apply to the package, read at the pin, and carries the
   adapted text as part of the change. A package that lands without its guidance has lost the lessons learned on it.
+- **Cite the pin's decision records.** The design cites the ADR, from inventory category 6, wherever it keeps,
+  changes or drops a decision that ADR records. A change or drop names the ADR in the owner question the handoff
+  raises, or cites the owner ruling that already covers it. An ADR is binding on a package when the package's code
+  implements what it decides. A binding ADR is ported with the package it governs, or the design states why not.
+  ADR-102 and ADR-104 came with `pkg/types` this way: each sits in `docs/adr/` with a port note under its title (the
+  pin path and SHA, the packages it came with, its admission-ledger row, and what it names that is not ported here)
+  and has its own row in `docs/admission-ledger.yaml`.
+
+  This rule and inventory category 6 come from the owner's decision on #157 (2026-10-09). They bind every porting
+  design written or edited from then on, including edits to the design of Slice 04A change 2 (PR #93) while that
+  pull request is open; they do not reopen decisions that design made before #157 (whether ruling P stands is the
+  re-check on #91, not this rule's).
 - **A known shape leaves the generic payload.** `message.GenericJSON` is the fallback for JSON whose shape is not
   known when the code is written: outside input and user-configured transforms. Code that builds a shape it knows
   registers a payload type. A ported package that builds a `GenericJSON` from fields its own code knows gets an
@@ -104,12 +116,67 @@ Four obligations ride on every slice design in addition to its ledger row:
   `rule` or `input/http` port) and is not built before then; until it exists this rule is review only. Source:
   owner ruling 2026-10-03, #9 comment 5972208367, item 2.
 
+### One package per pull request
+
+From Slice 04A change 3 (`setup-04a-03-boot`) on, a porting pull request carries one package, or one lifecycle owner
+(defined in the archived Slice 04A design, `openspec/changes/archive/2026-10-01-setup-04a-foundation/design.md:84-97`)
+with its package: about 3,000 pin lines at most, with a design of about one page. A package that alone exceeds that
+bound is ported as one pull request per lifecycle owner where it has several. Where one owner's pull request still
+exceeds the bound, its design states the line count, and the repository owner waives the bound for that number on
+that pull request. In change 3, `service` splits by lifecycle owner and `config`, with one owner, takes a waiver. Pin
+lines are the package's non-test Go lines at the pin, the count in the Lines column of D2's table in the same design
+(`:145-151`); D2's package lists (`:155-178`) name the lifecycle owners in each change.
+
+From change 3 on, each change in D2's table becomes a group of pull requests under the Slice 04A milestone, not one
+pull request and one OpenSpec change: each pull request is its own OpenSpec change, holding its design of about one
+page, and the group shares the Slice 04A milestone, not a change. "An admitted package is ported whole" (Surface
+audit, above) holds for each package; a package split by lifecycle owner is whole when its last pull request lands.
+A group's closure is the package list D2 gives its change: the change's root packages, such as `service`
+for change 3, and every package they import that an earlier change did not port. The group ends when its closure
+compiles. Every pull request passes `task verify`, which builds every package in the tree, so a package is ported
+after the packages it imports. A package that nothing ported so far imports is carried in the tree: it builds, keeps
+its ledger row, its tests and its coverage floor where it has one, and waits for its importer. D8 of the same design
+(`:437-451`) is the precedent for carrying a package across changes.
+
+Source: owner ruling 2026-10-09, epic #9 comment 6085243841, ruling 1; issue #159. The split by lifecycle owner, the
+waiver by number and one OpenSpec change per pull request: owner rulings 2026-10-09, #159 comment 6091894475.
+
+### The shape sweep
+
+From Slice 04A change 3 on, the shape sweep is a read of each package a porting pull request carries, made on the
+copy of the pin that the pin probe runs on, as part of the inventory and before the design is written. The bar is
+the owner's (2026-10-07): "clean, idiomatic and pragmatic Go, simple yet detailed". The sweep looks for five shapes:
+
+1. **A second spelling of one thing:** one fact computed, declared or encoded in two places, such as two error
+   vocabularies for one failure or three ways to resolve one endpoint. Inventory category 2 finds each spelling;
+   [Bounded port scope](../protocol.md#bounded-port-scope) decides whether inherited consolidation is required.
+2. **A copied shell:** the same scaffolding (`Start`, `Stop`, `Health`, a watch loop) written out again in each
+   package that needs it instead of once.
+3. **A layered interface with one implementation:** an interface, or a stack of them, that only one type implements,
+   so the layer gives callers nothing to choose between.
+4. **Exported surface with no reader:** the Surface audit's list (a), above; an item that audit keeps, with its
+   reason, is not a finding.
+5. **Classification by error text:** code that decides what kind of error it holds by searching the error's message
+   instead of using `errors.Is`, `errors.As` or a typed code, so a value that happens to contain the searched text,
+   such as an entity ID, gets the wrong class.
+
+Each finding is an inventory entry, pinned at the pin's `path:line` with the line's text. The design turns each one
+into either a required correction with its binding basis or retained structure with the reason changing it is
+optional, under [Bounded port scope](../protocol.md#bounded-port-scope). Required corrections get the appropriate
+ledger disposition; optional findings do not force port refactors or `adapt` items. Record retained costs in existing
+design and ledger fields where applicable, and use the protocol's finding-routing rule. The sweep itself remains
+mandatory.
+
+Source: issue #159, filed with ruling 1 in epic #9 comment 6085243841; the bounded disposition supersedes its
+unconditional refactor and `adapt` mapping (epic #9 comment 6101771664).
+
 ## The surface inventory (mandatory first deliverable)
 
 The inventory is a file, `openspec/changes/<id>/inventory.md`, with a `base: <sha>` header and every entry pinned as
-`` `path:line` — `<the line's text>` `` so the reviewer can re-check each pin after commits. Enumerate from the
+`` `path:line` — `<the line's text>` `` so the reviewer can re-check each pin after commits. A porting change's
+inventory also lists the shape sweep's findings (Extraction slices, "The shape sweep"). Enumerate from the
 repository, never from the briefing: a briefing's list is a set of hypotheses, and a directed check inherits the
-director's blind spots. The reviewer's independent re-derivation is the check on your blind spots. Five categories,
+director's blind spots. The reviewer's independent re-derivation is the check on your blind spots. Six categories,
 each either cited at `file:line` or closed with the exact searches that came up empty:
 
 1. **The claimed gap.** If the change says X is missing, search for X under every plausible spelling: exported and
@@ -118,8 +185,9 @@ each either cited at `file:line` or closed with the exact searches that came up 
    is a claim to check, not a fact to build on.
 2. **Every current spelling of the fact being modeled.** A new field, resolver, classifier, channel, or index models
    some fact about the system. Enumerate every place that fact is already computed, declared, interpreted, or
-   persisted. More than one home is a defect to consolidate toward ONE shared primitive, never a pattern to extend. A
-   design that adds another spelling is wrong at birth.
+   persisted. A design that adds another spelling is wrong at birth. For inherited multiple homes, record the cost
+   and apply [Bounded port scope](../protocol.md#bounded-port-scope) to decide whether consolidation is required;
+   do not extend the duplication.
 3. **Adjacent claims on the territory.** Current specs, ADRs, active changes, filed issues, admission-ledger rows,
    open pull requests (drafts included: a draft is a claim), and consumer asks that already cover or constrain the
    touched surface. List every open pull request whose changed files or OpenSpec capabilities overlap the planned
@@ -137,6 +205,26 @@ each either cited at `file:line` or closed with the exact searches that came up 
    does: admit-or-refuse at a seam, create-vs-exists, read-through over a cache, classified refusal plus observed
    signal, authority delegation, bounded dispatch. Then search for the closest existing instance of that shape
    anywhere in the tree, cite it at `file:line`, and state either that this design adopts it or why it does not.
+6. **The pin's decision records for each carried package.** An ADR (architecture decision record) records one
+   settled design question and its answer; SemStreams keeps them in `docs/adr`. For every package the change carries
+   from the pin, list each ADR that governs it: the ADR's number and title, and what it decides. Whether the port
+   keeps, changes or drops that decision belongs to the design (Extraction slices), not here. Fetch every record at
+   the pin, then search them for the package's path and its exported names; for `graph/readiness`:
+
+   ```bash
+   dir=$(mktemp -d)
+   for name in $(gh api 'repos/C360Studio/semstreams/contents/docs/adr?ref=8b99efe9' --jq '.[].name'); do
+     gh api "repos/C360Studio/semstreams/contents/docs/adr/$name?ref=8b99efe9" \
+       -H 'Accept: application/vnd.github.raw' > "$dir/$name"
+   done
+   grep -l -e 'graph/readiness' -e 'ComputeIndexStatus' "$dir"/*.md
+   ```
+
+   Then read any record whose title names what the package does: a record can govern a package without naming it
+   (ADR-083, readiness as distributed state, names neither string above). A package that no record governs is
+   written as "none" with the searches that found nothing; a change that carries no package from the pin says so in
+   one line. Source: owner decision 2026-10-09, #157, after PR #93's design ported `graph/readiness` without reading
+   ADR-083 and ADR-088 and re-derived the question they answer: when one component may rely on another.
 
 An inventory that is genuinely empty in a category says so with the searches that prove it; that is a real and useful
 result, not a formality to skip.

@@ -28,6 +28,54 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
 - **Why:** an ADR, or the owner's ruling comment on the issue. Owner rulings of 2026-09-30 on the plan are recorded
   on PR #1.
 
+## Bounded port scope
+
+A port implements the admitted capability and its accepted contract. Its reviewed design establishes the work to
+deliver. A finding adds required work only when the correction is necessary to satisfy a binding requirement, an
+admission or verification gate, an explicit owner ruling, an accepted design commitment, or the dependency and
+packaging changes needed to build the admitted package. Name that obligation and the concrete failure, conflicting
+implementation, or missing required evidence. A maintenance preference alone does not establish required work.
+
+Correct broken integrity, silent-loss prevention, context ownership, completed joins, authority and readiness,
+acknowledged durability, and metadata or content preservation. All other explicit correctness, language, surface,
+testing, and repository requirements remain binding, except the generic inherited-cleanup mandates this section
+expressly supersedes. Missing proof of a required guarantee calls for targeted qualification; it is neither a
+passing gate nor automatic evidence that a rewrite is necessary. A scope freeze cannot excuse a broken contract, a
+newly introduced defect, or an unproved admission gate.
+
+Use the retained contract, code path, existing reproduction, failing regression, or required qualification result.
+State what it proves and what remains unknown. Whether a defect began at the source pin or during the port may remain
+unknown; attribution is not a prerequisite to correcting a demonstrated defect. This rule adds no pin experiment per
+finding. Existing pin-probe obligations and evidence requirements still apply to claims about pin behavior.
+
+Inherited duplication, copied scaffolding, unnecessary indirection, naming, and similar maintenance findings are
+optional unless they meet the required-work rule above. "Inherited" means structure retained from the source package,
+not every addition first made in this repository. This exception does not permit newly introduced duplicate owners,
+unconsumed new exports, or parallel spellings. The surface audit remains required: truly dead surface is not protected
+by this exception, and admitted packages and consumers still count when identifying readers.
+
+The inventory records every shape-sweep finding. For each, the design records either the required correction and its
+binding basis, or the retained structure and why changing it is optional. Required corrections receive the
+appropriate ledger disposition; an optional finding does not force a refactor or an `adapt` item. Record retained
+costs through existing design and ledger fields where applicable. Route findings under Work lifecycle, "File"; do
+not create a separate cleanup ledger.
+
+An optional finding cannot veto design or implementation approval, become a blocking or high finding merely by
+invoking a generic consolidation rule, or add a prerequisite to the MVP path. Present optional work as optional
+before design acceptance. Scheduling it as additional work requires an explicit owner decision identifying that
+work; a general instruction to keep code simple is insufficient. Required corrections use the smallest complete
+change that meets the obligation; unrelated cleanup does not join that correction automatically.
+
+This rule supersedes generic wording that makes every inherited shape finding a mandatory consolidation, port
+refactor, or `adapt` item, including that part of issue #159. The sweep, package-size rules, and specifically directed
+adoption work from #159 remain binding. Stronger explicit requirements, package-specific ADR decisions, other owner
+rulings, and accepted tasks remain binding; only the owner can change those commitments. Apply this rule to future
+port designs and newly raised findings on open ports. Existing approved tasks, including PR #93's tasks, the #170
+prerequisite, and package-specific ADR adoption, remain commitments; changing them requires a separate explicit owner
+ruling. This rule adds no prerequisite to PR #93. Enforcement is review only: the independent reviewer checks the
+obligation and evidence supporting required work within the existing finding and verdict format and does not block
+on optional maintenance.
+
 ## Work lifecycle
 
 - **Start:** `gh issue list --state open` · `gh pr list` (drafts are claims; skip them) · `task spec:queue` ·
@@ -62,6 +110,9 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
   semengine-developer)`). Bring a pushed branch up to date by merging `origin/main` into it; do not rebase or force-push
   it. A review record names the commit it read, and a rebase leaves that record pointing at a commit the branch no
   longer has. The squash merge keeps `main` linear either way.
+  The developer's notes for an implementation review, the choices a task made that its design does not spell out, are
+  a file per task, `openspec/changes/<id>/notes/<task>.md`, with a one-line pull request comment that links it
+  (developer contract § Handoff); they archive with the change.
 - **Cross-agent review:** on a code pull request the implementation review, and the re-review of a fix that changes
   code, are done by the agent that wrote none of the commits under review, as the pull request's `implemented-by:` line
   records; the re-review of a fix that changes documents only, and the check of the archive/spec sync, are either
@@ -83,14 +134,15 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
   already open included. The implementing session may run its own reviewer as it works; those reviews, past or future,
   find defects early and are not the gate. Neither agent can start the other, so the pull request carries both halves:
   - The implementer asks with a PR comment headed `Review request`. It names the kind of review, the commit to read,
-    the diff range, that commit's CI run, and the issue or ruling the change answers. It does not say what the
-    reviewer should conclude.
+    the diff range, the implementer's `task verify` result on that commit (run on a clean tree), and the issue or
+    ruling the change answers. It does not say what the reviewer should conclude.
   - The reviewing session answers with a PR comment headed `Review record`: its reviewer's report as written, in the
     reviewer contract's format, not a summary. It names the commit read, what was run, and what could not be run.
-  - Evidence comes from the tree and from CI, not from the implementer's account. For anything `task verify` runs,
-    the CI run of the named commit is the evidence. A check the reviewer could not run and CI does not run is
-    recorded as not run; output the implementer supplies for it is recorded as reported by the implementer, never as
-    passed.
+  - Evidence comes from the tree and the reviewer's own runs, not from the implementer's account. For anything
+    `task verify` runs, the evidence is the reviewer's run on the named commit; without one, the implementer's result
+    is recorded as reported by the implementer, never as passed. The implementer does not wait on or watch a CI run
+    before asking, and the record does not rest on one: the CI run before merge is the check (owner ruling of
+    2026-10-10, issue #171). A check the reviewer could not run and CI does not run is recorded as not run.
   - A record covers the commit it names. A later content commit, one that changes the pull request's own diff against
     `main`, needs a re-review, and the archive commit needs the archive check. The other agent's review covers code:
     a later commit that changes code (any file that is not Markdown or under `openspec/`, or a role adapter under

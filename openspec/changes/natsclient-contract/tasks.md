@@ -53,7 +53,7 @@ the reference for every production change.
   a negative value. Record it failing to build on `main`'s code.
 - [x] 4.2 Add `WithWriteTimeout` and `WithPingInterval` to `options.go`, and pass `nats.FlusherTimeout` in
   `buildConnectionOptions`. Each doc comment names the other. T9 passes.
-- [ ] 4.3 Write T7 `TestClientSentinelsAreTransient` (`ErrNotConnected` and `ErrCircuitOpen` only), and record it
+- [x] 4.3 Write T7 `TestClientSentinelsAreTransient` (`ErrNotConnected` and `ErrCircuitOpen` only), and record it
   failing on `main`'s code.
 - [ ] 4.4 Make `ErrNotConnected` wrap `errs.ErrConnectionLost`, and set `ErrCircuitOpen = errs.ErrCircuitOpen`. T7
   passes. Then:

@@ -21,7 +21,7 @@ import (
 )
 
 // This conformance test runs against the fixture's broker, the one NATS image
-// SemEngine's integration tests use (.nats-image, NATS server 2.14.7 by digest;
+// SemEngine's integration tests use (the digest-pinned .nats-image;
 // owner ruling, #9 comment 5969522395, item 6). The pin ran it on its own
 // digest-pinned 2.14.4 image through a version override, which is gone. The
 // KV grammar is unchanged across the move: upstream's validBucketRe /

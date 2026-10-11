@@ -31,7 +31,8 @@ graph-ingest SHALL acknowledge an input only after the input's effect and its ap
 and SHALL tell the transport that an input is still in progress while its application outlasts the consumer's
 acknowledgement wait. The signal starts when the application starts: an input that waits in its lane for half the
 acknowledgement wait or longer before its application starts MAY be delivered again, and replay protection (below)
-keeps that copy from applying twice.
+keeps that copy from applying twice. An input that the callback of a consumer whose setup failed handles after the
+failed `Start`'s rollback SHALL be negatively acknowledged, never acknowledged or terminated.
 
 #### Scenario: Durable record fails
 
@@ -43,6 +44,13 @@ keeps that copy from applying twice.
 - **WHEN** an input's application starts before half the consumer's acknowledgement wait has passed since delivery,
   and takes longer than the consumer's acknowledgement wait
 - **THEN** the input is not delivered again while it is still being applied
+
+#### Scenario: A delivery after a failed consumer setup
+
+- **WHEN** a consumer's setup runs its callback on an input that decodes and is accepted, the setup then fails, and
+  the callback reaches its submit to the ingest pool after the failed `Start`'s rollback has returned
+- **THEN** the input is negatively acknowledged, not acknowledged or terminated, and the callback returns without
+  panicking
 
 ### Requirement: Replay protection is generation-aware
 

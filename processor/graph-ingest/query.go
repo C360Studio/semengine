@@ -49,7 +49,7 @@ func (c *Component) setupQueryHandlers(ctx context.Context) error {
 		if !ok {
 			return fmt.Errorf("query verb %q (%s) is declared for graph-ingest but has no handler", verb.Name, verb.Subject)
 		}
-		sub, err := c.natsClient.SubscribeForRequests(ctx, verb.Subject, handler)
+		sub, err := c.subscribeForRequests(ctx, verb.Subject, handler)
 		if err != nil {
 			return fmt.Errorf("subscribe %s query: %w", verb.Name, err)
 		}

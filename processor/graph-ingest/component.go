@@ -391,6 +391,13 @@ type Component struct {
 	) (jetstream.ConsumeContext, error)
 	// watchEntityStates stands in for the entity bucket's Watch in the boot sweep.
 	watchEntityStates func(context.Context, string) (jetstream.KeyWatcher, error)
+	// subscribeRequests stands in for the Client's SubscribeForRequests at the query and
+	// mutation registrations (subscribeForRequests).
+	subscribeRequests func(
+		context.Context,
+		string,
+		func(context.Context, []byte) ([]byte, error),
+	) (*natsclient.Subscription, error)
 
 	// Domain resources
 	entityBucket *natsclient.KVStore            // authoritative KV operations, snapshot watch, and CAS support
@@ -406,6 +413,10 @@ type Component struct {
 	startTime   time.Time
 	// lifecycle is the owner-lifecycle state (design D13); Start and Stop go through it.
 	lifecycle lifecycleguard.Guard
+	// startCompleted is set as start's last step and never cleared, since graph-ingest is
+	// one-shot (D13). Request handlers refuse until it is set (subscribeForRequests).
+	// running cannot stand in: release clears it before Stop's drain, which still serves.
+	startCompleted atomic.Bool
 	// handlesMu guards the handles Start records for release: the cancel functions,
 	// statusDone and consumers.
 	handlesMu  sync.Mutex
@@ -998,7 +1009,34 @@ func (c *Component) start(ctx context.Context) error {
 	c.logger.Info("component started",
 		slog.String("component", "graph-ingest"),
 		slog.Time("start_time", startTime))
+	// The last step: nothing between here and the guard's commit can fail.
+	c.startCompleted.Store(true)
 	return nil
+}
+
+// subscribeForRequests registers handler for the requests on subject. Every request
+// subscription graph-ingest makes goes through it, and handler does no work until start
+// has completed: before that, a request gets a transient error matching
+// errs.ErrNotStarted. natsclient can run a handler during a registration that then fails
+// and returns no subscription, which a failed Start's rollback cannot drain (checkpoint 3
+// B2); the check keeps that handler off what the rollback clears. The requester receives
+// the refusal as a transient error with no code (ADR-060's code set is closed). The check
+// wraps the metering wrappers, so a refused mutation records no outcome or rejection.
+func (c *Component) subscribeForRequests(
+	ctx context.Context,
+	subject string,
+	handler func(context.Context, []byte) ([]byte, error),
+) (*natsclient.Subscription, error) {
+	subscribe := c.natsClient.SubscribeForRequests
+	if c.subscribeRequests != nil {
+		subscribe = c.subscribeRequests
+	}
+	return subscribe(ctx, subject, func(ctx context.Context, data []byte) ([]byte, error) {
+		if !c.startCompleted.Load() {
+			return nil, errs.WrapTransient(errs.ErrNotStarted, "Component", "request", "serve "+subject)
+		}
+		return handler(ctx, data)
+	})
 }
 
 func (c *Component) startStatusMetricsLoop(ctx context.Context) {
@@ -1459,6 +1497,11 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 		return fmt.Errorf("port %s: ack_wait %s and heartbeat_interval %s: %w", port.Name, ackWait, heartbeat, err)
 	}
 
+	// The closure submits to this pool and submitCtx, both from this Start, never to
+	// c.ingestPool. A consumer whose setup fails is not recorded for the rollback to drain,
+	// and its callback can run after the rollback cleared c.ingestPool (checkpoint 3 B2).
+	// By then this pool has shut down, so the submit is refused and the message is Nak'd.
+	pool := c.ingestPool
 	consumeStream := c.natsClient.ConsumeStreamWithConfig
 	if c.consumeStream != nil {
 		consumeStream = c.consumeStream
@@ -1524,7 +1567,7 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 			subject:     subject,
 			importLane:  importLane,
 		}
-		if serr := c.ingestPool.SubmitBlocking(submitCtx, work); serr != nil {
+		if serr := pool.SubmitBlocking(submitCtx, work); serr != nil {
 			if nakErr := msg.Nak(); nakErr != nil {
 				c.logger.Error("Failed to Nak after submit failure", slog.Any("error", nakErr))
 			}

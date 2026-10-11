@@ -23,9 +23,7 @@ func (c *Component) setupMutationHandlers(ctx context.Context) error {
 
 	subjects := make([]string, 0, len(routes))
 	for _, route := range routes {
-		sub, subscribeErr := c.natsClient.SubscribeForRequests(
-			ctx, route.subject, c.meteredCanonicalMutation(route),
-		)
+		sub, subscribeErr := c.subscribeForRequests(ctx, route.subject, c.meteredCanonicalMutation(route))
 		if subscribeErr != nil {
 			return fmt.Errorf("subscribe graph mutation %s: %w", route.operation, subscribeErr)
 		}

@@ -583,6 +583,14 @@ posted on this pull request.
       closed") and `TestCorruptGuardRecordIsRefused` (`graph-ingest-recovery`, "A record that cannot be decoded"),
       each written first and failing on the pin's code (design D21). Done with task 3.12b, in `c4a885f`, `ecf00a7` and
       `36e370d`.
+- [ ] 4.10 (D) Checkpoint 3 B2 (PR #93 comment 6099921473; design D13): request handlers do no work until `Start`
+      completes, and the consume closure submits only to the pool and submit context its `Start` built.
+      `TestFailedRegistrationRunsNoRequestWork` (`graph-transport-boundary`, "A query during a failed Start" and "A
+      mutation during a failed Start") and `TestFailedConsumerSetupCallbackNaksAfterRollback`
+      (`graph-ingest-recovery`, "A delivery after a failed consumer setup"), each written first and failing on
+      `2fe8e32` (the first with only its `subscribeRequests` seam added); two mutation checks by hand, three runs
+      each: the wrapper's flag check removed fails the first, and the closure reading `c.ingestPool` fails the
+      second. Notes: `notes/cp3-B2.md`.
 
 ## 5. Ledger, gates and boundaries
 

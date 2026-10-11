@@ -712,6 +712,17 @@ was never initialized they are reported ahead of `ErrAlreadyStarted` (PR #93 com
 check reaches; graph-ingest's suite run; the carried pin test of D7. Spec home: the existing `lifecycle-suite` "Portable
 floor" requirement, whose checks are these behaviors except that retry; no delta.
 
+Holding nothing includes a callback that a failed acquisition leaves running, which the rollback has no handle to drain
+or join (PR #93, checkpoint 3 B2, comment 6099921473). natsclient can run a request handler during a registration that
+then fails and returns no subscription, and a consumer's callback during a setup that then fails. So graph-ingest's
+request handlers do no work until `Start` completes: until then a request gets a transient error matching
+`errs.ErrNotStarted`, which the requester receives with no code (ADR-060's code set is closed). The check wraps the
+metering, so a refused mutation records no outcome or rejection. The consume closure submits only to the pool and
+submit context of the `Start` that bound it, never to `c.ingestPool`, so a delivery after the rollback is refused at
+the submit and Nak'd. Tests: `TestFailedRegistrationRunsNoRequestWork` and
+`TestFailedConsumerSetupCallbackNaksAfterRollback`. Spec homes: `graph-transport-boundary`, "graph-ingest does no
+request work before Start completes", and `graph-ingest-recovery`, "Settlement order".
+
 Adoption sweep (D13 establishes a reusable primitive; one tracking issue, task 6.3): `service/component_manager.go:102`,
 `service/message_logger.go:234` (change 3); `processor/graph-query/component.go:177`,
 `storage/objectstore/component.go:49` (4); `processor/graph-embedding/component.go:298`,

@@ -81,6 +81,8 @@ func TestIntegration_TypedClientPreservesCommitAmbiguity(t *testing.T) {
 	require.NoError(t, err)
 	bucket := &foreignWriteBucket{FaultKV: natsfixture.NewFaultKV(entityStates)}
 	comp.entityBucket = client.NewKVStore(bucket)
+	// The test stands in for a Start that completed, so the handlers serve (checkpoint 3 B2).
+	comp.startCompleted.Store(true)
 	require.NoError(t, comp.setupQueryHandlers(ctx))
 	require.NoError(t, comp.setupMutationHandlers(ctx))
 	require.NoError(t, client.GetConnection().Flush())

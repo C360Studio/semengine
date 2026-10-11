@@ -145,6 +145,8 @@ func TestIntegration_PrefixQuery_IndivisibleEntityTooLarge(t *testing.T) {
 		UpdatedAt: time.Now(),
 	}
 	require.NoError(t, comp.CreateEntity(ctx, entity))
+	// The test stands in for a Start that completed, so the handlers serve (checkpoint 3 B2).
+	comp.startCompleted.Store(true)
 	require.NoError(t, comp.setupQueryHandlers(ctx))
 	require.NoError(t, client.GetConnection().Flush())
 

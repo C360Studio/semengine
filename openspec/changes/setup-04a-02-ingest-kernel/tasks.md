@@ -658,6 +658,20 @@ posted on this pull request.
       hand, fails with the class-invalid rule restored. R4, `graph-ingest-recovery` "Settlement order": the failed-start
       Nak is promised only for an input that decodes, is accepted, and is submitted after the rollback. Notes:
       `notes/cp4i-R1.md`.
+- [ ] 4.17 (D) Codex interim review R3 (PR #93 comment 6112098987; design D8, D13): `setupJetStreamConsumer` reads
+      the input stream's creation time again after the consumer's handle is recorded, and `Start` fails naming the
+      stream when the read fails or differs; an input the callback accepts is held until that read returns or its
+      delivery context ends, and is negatively acknowledged unless the generation was confirmed
+      (`graph-ingest-recovery`, "Settlement order" and "Replay protection is generation-aware"). Tests, written first
+      and failing on `f9ac34f`: `TestConsumerInputHeldUntilGenerationConfirmed` (confirmed, changed, delivery context
+      ends), `TestFailedStartDrainsAndNaksHeldInput` (generation changed; its second case, a later registration
+      fails, holds on `f9ac34f`) and `TestIntegration_IngestGuard_StreamRecreatedBeforeBindFailsStart`;
+      `TestFailedConsumerSetupCallbackNaksAfterRollback` now hands its callback a context the rollback does not end.
+      Mutants: four `task mutate:check` detections (M1 the comparison always passes, M2 no hold, M3 a mismatch
+      releases the held input, M6 the hold ignores its context); by hand, M4 an error return leaves the hold open
+      (`TestFailedConsumerSetupCallbackNaksAfterRollback`, at its 60 s bound), M5 the second read before the handle
+      is recorded (generation changed: no drain) and M1 (the broker test). The single-server restore is a declared
+      limitation (#91 comment 6112550268). Notes: `notes/cp4i-R3.md`; `notes/4.3.md`, "What is not covered".
 
 ## 5. Ledger, gates and boundaries
 

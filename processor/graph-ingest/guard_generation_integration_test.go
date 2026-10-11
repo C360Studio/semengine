@@ -209,3 +209,93 @@ func TestIntegration_IngestGuard_FileStreamKeepsItsGenerationAcrossRestart(t *te
 	}
 	require.Equal(t, []any{"v2"}, contents)
 }
+
+// TestIntegration_IngestGuard_StreamRecreatedBeforeBindFailsStart holds graph-ingest-recovery, "Stream
+// recreated while graph-ingest binds its consumer" (design D8; Codex interim review R3, its probe
+// TestReviewGenerationChangesBeforeBind adapted). The stream is deleted and created again after Start's
+// first read of its creation time and before the consumer is created, and the new stream holds the
+// current state at sequence 1, which the old generation's record (sequence 3) would cover. Start fails
+// naming the stream and acknowledges nothing; a later Start binds the new generation and applies it.
+func TestIntegration_IngestGuard_StreamRecreatedBeforeBindFailsStart(t *testing.T) {
+	ctx, cancelOperation := context.WithTimeout(t.Context(), 180*time.Second)
+	defer cancelOperation()
+	const (
+		entityID = "c360.test.wire.restart.entity.003"
+		content  = "test.content.body"
+	)
+	now := time.Now()
+	f := natsfixture.New(t)
+	require.NoError(t, f.Start(ctx))
+	_, err := f.CreateMemoryStream(ctx, entityStream.name, entityStream.subjects...)
+	require.NoError(t, err)
+	client := natsfixture.Open(t, f, openFixtureClient)
+
+	// The old generation: three states of the entity at sequences 1 to 3, applied and acknowledged.
+	firstOwner := startIngestOn(ctx, t, client)
+	defer firstOwner.finish(ctx, t)
+	var recorded uint64
+	for _, value := range []string{"old-one", "old-two", "old-three"} {
+		recorded = publishTriples(ctx, t, client, entityID,
+			message.Triple{Subject: entityID, Predicate: content, Object: value, Timestamp: now, Confidence: 1.0})
+	}
+	waitSettled(ctx, t, f, recorded)
+	require.NoError(t, firstOwner.stop(ctx))
+
+	raw, err := json.Marshal(DefaultConfig())
+	require.NoError(t, err)
+	created, err := CreateGraphIngest(raw, testDependencies(t, client, withAuthority("c360", "test")))
+	require.NoError(t, err)
+	c := created.(*Component)
+	owner := newGraphIngestTestOwner(c)
+	defer owner.provisionalFinish(ctx, t)
+	require.NoError(t, c.Initialize())
+	registerMergeTestPayload(t, c)
+	var current uint64
+	reads := 0
+	c.waitForStreamInput = func(ctx context.Context, stream string) (time.Time, error) {
+		observed, err := c.waitForStream(ctx, stream)
+		reads++
+		if err != nil || reads > 1 {
+			return observed, err
+		}
+		// The first read has returned the old stream's creation time; the consumer is not created yet.
+		if err := f.JetStream().DeleteStream(ctx, stream); err != nil {
+			return time.Time{}, err
+		}
+		if _, err := f.CreateMemoryStream(ctx, stream, entityStream.subjects...); err != nil {
+			return time.Time{}, err
+		}
+		current = publishTriples(ctx, t, client, entityID,
+			message.Triple{Subject: entityID, Predicate: content, Object: "current", Timestamp: now, Confidence: 1.0})
+		return observed, nil
+	}
+	startErr := c.Start(owner.startContext(ctx))
+	require.Error(t, startErr, "Start must fail: the stream was deleted and created again while its consumer was bound")
+	require.ErrorContains(t, startErr, entityStream.name)
+	require.NoError(t, owner.stop(ctx))
+	require.Less(t, current, recorded, "the recreated stream must restart its sequences")
+
+	consumer, err := f.JetStream().Consumer(ctx, entityStream.name, restartConsumer)
+	require.NoError(t, err)
+	info, err := consumer.Info(ctx)
+	require.NoError(t, err)
+	require.Zero(t, info.AckFloor.Stream, "the Start that failed acknowledged an input of the new stream")
+
+	secondOwner := startIngestOn(ctx, t, client)
+	defer secondOwner.finish(ctx, t)
+	waitSettled(ctx, t, f, current)
+	req, err := json.Marshal(map[string]string{"id": entityID})
+	require.NoError(t, err)
+	body, err := client.RequestClassified(ctx, "graph.ingest.query.entity", req, wireRequestTimeout)
+	require.NoError(t, err)
+	var exact graph.ExactEntity
+	require.NoError(t, json.Unmarshal(body, &exact))
+	require.NotNil(t, exact.Entity)
+	var contents []any
+	for _, tr := range exact.Entity.Triples {
+		if tr.Predicate == content {
+			contents = append(contents, tr.Object)
+		}
+	}
+	require.Equal(t, []any{"current"}, contents, "the new generation's input must be applied")
+}

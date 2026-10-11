@@ -31,10 +31,10 @@ graph-ingest SHALL acknowledge an input only after the input's effect and its ap
 and SHALL tell the transport that an input is still in progress while its application outlasts the consumer's
 acknowledgement wait. The signal starts when the application starts: an input that waits in its lane for half the
 acknowledgement wait or longer before its application starts MAY be delivered again, and replay protection (below)
-keeps that copy from applying twice. An input that decodes and is accepted by the callback of a consumer whose setup
-failed, and that the callback submits to the ingest pool after the failed `Start`'s rollback has returned, SHALL be
-negatively acknowledged, never acknowledged or terminated; an input the callback settles before that submit keeps its
-own settlement.
+keeps that copy from applying twice. An input the callback accepts (it decodes and passes the callback's checks) SHALL
+be negatively acknowledged, never acknowledged, terminated or applied, when its consumer's setup fails for any cause,
+or when the callback reaches its submit to the ingest pool after a failed `Start`'s rollback has returned. An input
+the callback settles before accepting it keeps its own settlement.
 
 #### Scenario: Durable record fails
 
@@ -49,17 +49,18 @@ own settlement.
 
 #### Scenario: A delivery after a failed consumer setup
 
-- **WHEN** a consumer's setup runs its callback on an input that decodes and is accepted, the setup then fails, and
-  the callback reaches its submit to the ingest pool after the failed `Start`'s rollback has returned
-- **THEN** the input is negatively acknowledged, not acknowledged or terminated, and the callback returns without
-  panicking
+- **WHEN** a consumer's setup runs its callback on an input that decodes and is accepted, and the setup then fails
+- **THEN** the input is negatively acknowledged, not acknowledged, terminated or applied, and the callback returns
+  without panicking
 
 ### Requirement: Replay protection is generation-aware
 
 The applied-sequence record SHALL be keyed by stream generation, learned from the server and never from
 configuration. Within one generation, an input whose sequence is not newer than the last applied SHALL be dropped
 as a redelivery and acknowledged without changing state. An input from a newer generation SHALL never be dropped
-because of a sequence recorded in an older one. An input with no stored record SHALL be applied as first seen; when
+because of a sequence recorded in an older one. An input SHALL carry the generation of the stream its consumer is
+bound to. When the input stream is deleted and created again between graph-ingest's read of its generation and its
+consumer's creation, `Start` SHALL fail. An input with no stored record SHALL be applied as first seen; when
 graph-ingest has no applied-sequence bucket at all, it SHALL log and count that it is treating the input as first
 seen. A stored record graph-ingest cannot decode SHALL be refused: the input SHALL NOT be applied or acknowledged, the
 refusal SHALL be counted and logged once per key with the key, and the input SHALL be delivered again.
@@ -69,6 +70,13 @@ refusal SHALL be counted and logged once per key with the key, and the input SHA
 - **WHEN** the input stream is recreated and re-ingestion publishes the current source at sequences lower than the
   recorded ones
 - **THEN** the current relationships and content are applied and the entity queries return them
+
+#### Scenario: Stream recreated while graph-ingest binds its consumer
+
+- **WHEN** the stream is deleted and created again in that window, and the new stream holds an input at a sequence an
+  older generation's record covers
+- **THEN** `Start` fails naming the stream, the input is not acknowledged, and after a later `Start` it is applied and
+  the entity query returns it
 
 #### Scenario: Redelivery within one generation
 

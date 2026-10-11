@@ -572,6 +572,37 @@ hand-built component can have (the bucket's acquisition failure fails `Start`, `
 message is first seen (`keyed_ingest.go:267`), now with a log line, a counter and a test. A stored value graph-ingest
 cannot decode, which the pin read as first seen (`:277-278`), is refused (D21, #111 item 1).
 
+**The generation belongs to the bound consumer (R3, PR #93 comment 6112098987).** `Start` reads each input stream's
+creation time before it binds the port's consumer. It reads it again after the consumer's handle is recorded for the
+rollback and before the consumer is registered for readiness. A consumer is deleted with its stream (nats-server
+v2.14.7 `server/stream.go:8545-8553`), and every stream the server creates gets a fresh creation time (`:989`;
+clustered, `jetstream_cluster.go:8543-8547`). So two equal reads mean the stream was not deleted and created again in
+between, and the consumer belongs to that generation. Nothing the broker sends a consumer names it (nats.go v1.54.0
+`jetstream/message.go:91-114`, `consumer_config.go:24-88`).
+
+- **Equal reads.** `Start` proceeds, and every input carries that generation.
+- **Different reads, or a second read that fails.** `Start` fails naming the stream, with both creation times when
+  both were read. The rollback drains the consumer (D13), and a later `Start` binds the new generation. The second
+  read is the stream wait, so a stream missing at that read is waited for up to about 49 s (`component.go:1647-1682`).
+- **Accepted inputs.** An input the callback accepts is neither submitted nor settled until the second read returns
+  or the input's delivery context ends. If the read confirmed the generation, the input is submitted with it. If the
+  check failed, or the context ended, the input is negatively acknowledged. The context ends when the client's
+  `Close` begins and at the 30 s message timeout (`natsclient/owned_delivery.go:146,154,171`; `stream.go:676`). So a
+  held input never deadlocks with `commitConsumer`, which waits for running handlers when `Close` begins during setup
+  (`owned_delivery.go:193-206`).
+
+Not covered (`notes/4.3.md`):
+
+- a single-server restore inside the window, which keeps the creation time (`stream.go:9331-9333`); a declared
+  limitation by the owner's ruling (#91 comment 6112550268);
+- a pull that outlives its consumer's deletion and is later answered by a same-named consumer on a new stream
+  (`jetstream/pull.go:225`, `:740`).
+
+Rejected: a negative acknowledgement while waiting (each is another delivery, and `max_deliver` can run out); retrying
+the bind inside `Start` (a loop, a drain inside setup and an attempt limit); a check per message (no broker field names
+the generation); binding first and reading after (unsound); a paused consumer (a `natsclient` edit, dependent on
+clocks, and the server keeps an existing consumer's pause on update); comparing creation times across servers' clocks.
+
 The audit's port-refactors are D15–D21; each names its own failing-first test.
 
 ### D9. Deployment authority, names and literals
@@ -721,7 +752,8 @@ metering, so a refused mutation records no outcome or rejection. The consume clo
 submit context of the `Start` that bound it, never to `c.ingestPool`, so a delivery after the rollback is refused at
 the submit and Nak'd. Tests: `TestFailedRegistrationRunsNoRequestWork` and
 `TestFailedConsumerSetupCallbackNaksAfterRollback`. Spec homes: `graph-transport-boundary`, "graph-ingest does no
-request work before Start completes", and `graph-ingest-recovery`, "Settlement order".
+request work before Start completes", and `graph-ingest-recovery`, "Settlement order". An input held at a consumer
+whose setup failed is negatively acknowledged the same way (D8).
 
 Adoption sweep (D13 establishes a reusable primitive; one tracking issue, task 6.3): `service/component_manager.go:102`,
 `service/message_logger.go:234` (change 3); `processor/graph-query/component.go:177`,

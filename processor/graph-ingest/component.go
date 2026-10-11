@@ -1452,10 +1452,9 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 		waitForStream = c.waitForStreamInput
 	}
 	// The stream's generation is its creation time on the server, from the stream info the wait
-	// reads (design D8, #15), never from configuration. It is read before the consumer is bound, a
-	// consumer is deleted with its stream, and graph-ingest binds none while it runs, so every input
-	// this consumer delivers comes from this generation. The exception is a stream deleted and
-	// created again between this read and the bind (openspec notes/4.3.md).
+	// reads (design D8, #15), never from configuration. It is read before the consumer is bound and
+	// again after, below: a consumer is deleted with its stream, and graph-ingest binds none while it
+	// runs, so when the two reads agree every input this consumer delivers comes from this generation.
 	created, err := waitForStream(ctx, streamName)
 	if err != nil {
 		return fmt.Errorf("stream %s not available: %w", streamName, err)
@@ -1518,11 +1517,16 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 	// and its callback can run after the rollback cleared c.ingestPool (checkpoint 3 B2).
 	// By then this pool has shut down, so the submit is refused and the message is Nak'd.
 	pool := c.ingestPool
+	// An input the closure accepts waits for the second read of the generation (design D8, R3).
+	// confirmed closes when this function returns, after generationConfirmed is set, or not.
+	confirmed := make(chan struct{})
+	defer close(confirmed)
+	generationConfirmed := false
 	consumeStream := c.natsClient.ConsumeStreamWithConfig
 	if c.consumeStream != nil {
 		consumeStream = c.consumeStream
 	}
-	handle, err := consumeStream(ctx, natsclient.PortConsumerContext{Component: c.Meta().Name, Port: port.Name}, cfg, func(_ context.Context, msg jetstream.Msg) {
+	handle, err := consumeStream(ctx, natsclient.PortConsumerContext{Component: c.Meta().Name, Port: port.Name}, cfg, func(msgCtx context.Context, msg jetstream.Msg) {
 		// ADR-072: the consume closure decodes ONCE and submits to the keyed pool;
 		// the redelivery guard, apply, and ack move into processIngest (run on a
 		// pool lane, not this consumer goroutine). Metadata carries the stream name
@@ -1568,6 +1572,20 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 			}
 			return
 		}
+		// Held until Start has read the generation again, or the delivery's context ends: the
+		// client's Close waits for this callback during setup (natsclient commitConsumer).
+		sameGeneration := false
+		select {
+		case <-confirmed:
+			sameGeneration = generationConfirmed
+		case <-msgCtx.Done():
+		}
+		if !sameGeneration {
+			if nakErr := msg.Nak(); nakErr != nil {
+				c.logger.Error("Failed to Nak an input whose stream generation was not confirmed", slog.Any("error", nakErr))
+			}
+			return
+		}
 		// Submit on the dedicated submit ctx (NOT msgCtx — a block past AckWait would
 		// otherwise surface as an ignored error → message neither enqueued nor acked).
 		// A submit failure MUST Nak so the server redelivers (ADR-072 B1), never
@@ -1595,6 +1613,18 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 	c.handlesMu.Lock()
 	c.consumers = append(c.consumers, graphIngestConsumerBinding{handle: handle})
 	c.handlesMu.Unlock()
+
+	// The second read, once the rollback can drain the consumer: a stream deleted and created again
+	// since the first read has a new creation time, and this consumer belongs to it (design D8, R3).
+	again, err := waitForStream(ctx, streamName)
+	if err != nil {
+		return fmt.Errorf("stream %s: read its creation time again after binding: %w", streamName, err)
+	}
+	if !again.Equal(created) {
+		return fmt.Errorf("stream %s was deleted and created again while its consumer was bound "+
+			"(created %s, then %s)", streamName, created.Format(time.RFC3339Nano), again.Format(time.RFC3339Nano))
+	}
+	generationConfirmed = true
 
 	// Record the consumer for the readiness tick ONLY after the bind committed, so
 	// the backlog sum never asks about a consumer that failed to bind (which would

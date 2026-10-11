@@ -79,7 +79,7 @@ func startIngestForReadiness(ctx context.Context, t *testing.T) (*natsclient.Cli
 	c.statusInterval = 200 * time.Millisecond
 	require.NoError(t, c.Initialize())
 	// Register the test payload decoder BEFORE Start. Without it every published
-	// message fails decode and is ack-DROPPED as poison — the backlog "drains"
+	// message fails decode and is TERMINATED as poison — the backlog "drains"
 	// without one entity reaching ENTITY_STATES, and a readiness assertion passes
 	// vacuously.
 	registerMergeTestPayload(t, c)
@@ -92,7 +92,7 @@ func startIngestForReadiness(ctx context.Context, t *testing.T) (*natsclient.Cli
 //
 // It wraps a Graphable in a BaseMessage, because that is what the consume closure's
 // decodeEntity expects. Publishing a bare graph.EntityState — which an earlier version
-// of this helper did — is not decodable: every message is ack-DROPPED as poison, so the
+// of this helper did — is not decodable: every message is TERMINATED as poison, so the
 // backlog "drains" without a single entity ever reaching ENTITY_STATES. That made a
 // readiness test pass vacuously (caught-up was true because everything was discarded),
 // which is exactly the "a green new gate may have skipped everything" failure. The

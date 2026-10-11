@@ -1134,10 +1134,11 @@ func (c *Component) initStorage(ctx context.Context) error {
 	// ADR-072 redelivery-guard durable tier: graph-ingest-owned bucket mapping
 	// `(entityID/streamName) → (stream generation, last-applied stream sequence)`
 	// (#15). Operational state graph-ingest owns (bucket-ownership rubric), a
-	// sixteen-byte value — no cross-repo/EntityState schema change. No TTL:
-	// correct for MaxDeliver=0 (unlimited redelivery), and the key set is bounded
-	// by entity cardinality (same order as ENTITY_STATES); a recreated stream's
-	// apply replaces its predecessor's record under the same key.
+	// sixteen-byte value — no cross-repo/EntityState schema change. No TTL: a
+	// record must outlive every redelivery or re-publish of its input, whatever
+	// the consumer's delivery limit, and the key set is bounded by entity
+	// cardinality (same order as ENTITY_STATES); a recreated stream's apply
+	// replaces its predecessor's record under the same key.
 	guardBucket, err := kvcatalog.EnsureCatalogBucket(ctx, c.natsClient, graph.BucketGraphIngestAppliedSeq)
 	if err != nil {
 		return errs.Wrap(err, "Component", "Start", "redelivery guard bucket creation")
@@ -1448,13 +1449,14 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 			c.ingestLag.Observe(time.Since(meta.Timestamp).Seconds())
 		}
 		// Decode + extract ONCE (KeyOf reads the already-parsed entity.ID; the lane
-		// reuses the parsed entity — no double parse). A decode/extract failure is a
-		// poison message: count + ack-drop (today's behavior).
-		entity, derr := c.decodeEntity(subject, msg.Data())
+		// reuses the parsed entity — no double parse). A decode/validate/extract
+		// failure, a fenced payload panic included, is a poison message: counted,
+		// logged and terminated, never returned for redelivery (design D8 Q13).
+		entity, derr := c.decodeEntity(msg.Subject(), msg.Data())
 		if derr != nil {
 			// A refused statement (design D15) is this message's own fault and can never be
 			// admitted: it is terminated, counted and logged as processIngest does a
-			// structurally invalid candidate, not acked as an undecodable message is.
+			// structurally invalid candidate, in the contract-rejection counts, not as poison.
 			var refusal *statementRefusal
 			if errors.As(derr, &refusal) {
 				c.recordStructuralRejection("graphable", derr)
@@ -1463,11 +1465,12 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 				}
 				return
 			}
-			c.logger.Warn("graph-ingest: decode/extract failed; dropping",
-				slog.String("subject", subject), slog.Any("error", derr))
+			// The error names the payload type where the message has one.
+			c.logger.Warn("graph-ingest: poison message; terminating",
+				slog.String("subject", msg.Subject()), slog.Any("error", derr))
 			atomic.AddInt64(&c.errors, 1)
-			if ackErr := msg.Ack(); ackErr != nil {
-				c.logger.Error("Failed to ack poison message", slog.Any("error", ackErr))
+			if termErr := msg.Term(); termErr != nil {
+				c.logger.Error("Failed to terminate poison message", slog.Any("error", termErr))
 			}
 			return
 		}
@@ -1573,19 +1576,56 @@ func (c *Component) handleMessage(ctx context.Context, subject string, data []by
 }
 
 // decodeEntity decodes a message's bytes into an EntityState: unmarshal the
-// BaseMessage envelope, then extract the Graphable payload's entity. Shared by
-// the consume closure (decode-once, then submit to the keyed pool) and
-// handleMessage (the synchronous test/compat path).
-func (c *Component) decodeEntity(subject string, data []byte) (*graph.EntityState, error) {
+// BaseMessage envelope, validate it, then extract the Graphable payload's
+// entity. Shared by the consume closure (decode-once, then submit to the keyed
+// pool) and handleMessage (the synchronous test/compat path); every error it
+// returns is a poison message on both (counted and logged; the stream lane also
+// terminates it).
+//
+// Validate is the consumer half of BaseMessage.MarshalJSON: what a producer's
+// envelope refuses to emit, the lane refuses to ingest, before any identity
+// method runs. One fence covers the whole entry because every step runs
+// producer-registered payload code on wire content: the type's UnmarshalJSON
+// inside Decode, its Validate, and its EntityID/Triples/StorageRef/
+// IndexingProfile during extraction. A panic there becomes a classified error
+// on the poison path instead of escaping to the stream handler's Nak and an
+// endless redelivery (SemStreams #1112, PR #1437; design D8 Q13).
+func (c *Component) decodeEntity(subject string, data []byte) (entity *graph.EntityState, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			entity = nil
+			err = errs.WrapInvalid(
+				fmt.Errorf("payload %s (subject %s) panicked on the Graphable lane: %v",
+					wireMessageType(data), subject, recovered),
+				"graph-ingest", "decodeEntity", "fence payload panic")
+		}
+	}()
+
 	baseMsg, err := c.decoder.Decode(data)
 	if err != nil {
 		return nil, fmt.Errorf("decode base message (subject %s): %w", subject, err)
 	}
-	entity, err := c.extractEntityFromMessage(baseMsg)
+	if err := baseMsg.Validate(); err != nil {
+		return nil, fmt.Errorf("validate payload %s (subject %s): %w", baseMsg.Type(), subject,
+			errs.WrapInvalid(err, "graph-ingest", "decodeEntity", "payload validation failed"))
+	}
+	entity, err = c.extractEntityFromMessage(baseMsg)
 	if err != nil {
 		return nil, fmt.Errorf("extract entity (subject %s): %w", subject, err)
 	}
 	return entity, nil
+}
+
+// wireMessageType reads the message type from an envelope's wire form, for a
+// payload that panicked: a panic inside Decode leaves no decoded message to ask.
+func wireMessageType(data []byte) string {
+	var envelope struct {
+		Type message.Type `json:"type"`
+	}
+	if err := json.Unmarshal(data, &envelope); err != nil || !envelope.Type.IsValid() {
+		return "of unknown type"
+	}
+	return envelope.Type.String()
 }
 
 // ingestEntity merges one Graphable projection into its authority entity.

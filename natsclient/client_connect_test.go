@@ -146,6 +146,9 @@ func TestConnectRefusesAnEndedContext(t *testing.T) {
 
 		require.ErrorIs(t, err, context.Canceled)
 		require.True(t, errs.IsTransient(err), "an ended context is transient: %v", err)
+		// Connect made no attempt, so it records no failure. This holds whatever
+		// the scheduling; the accept check below depends on it.
+		require.Zero(t, client.GetStatus().FailureCount, "Connect recorded a failure for an ended context")
 		select {
 		case <-accepted:
 			t.Error("Connect dialled with an ended context: the listener accepted a connection")

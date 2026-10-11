@@ -70,7 +70,7 @@ the reference for every production change.
 
 ## 5. Statements, the record and the rule
 
-- [ ] 5.1 Correct the Go comments in `cleanup.md`, row by row (developer):
+- [x] 5.1 Correct the Go comments in `cleanup.md`, row by row (developer):
   - `doc.go`: M47, M50-M52, M57, M59;
   - `client.go`: M61, M62, M67-M69, M90, M92;
   - `request.go`: M71, M72;

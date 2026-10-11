@@ -306,6 +306,65 @@ func TestCanonicalReconcileFenceHoldsAgainstAWriteAfterItsRead(t *testing.T) {
 	assertStoredUnder(t, bucket, other, created.KVRevision+1)
 }
 
+// TestCanonicalReconcileAtTheCallersRevision is the projection-mutation scenarios "Concurrent
+// update between read and reconcile" and "Unchanged revision" at graph-ingest (design D8, #19):
+// the caller read revision R, another writer committed R+1, and a reconcile at R is refused with
+// a revision conflict naming R and R+1 and changes nothing; a reconcile at the current revision
+// R+1 then applies at R+2.
+func TestCanonicalReconcileAtTheCallersRevision(t *testing.T) {
+	c, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
+	read := createCanonicalEntity(t, c, canonicalEntityA, []message.Triple{
+		canonicalTriple(canonicalEntityA, "test.state.value", "before"),
+	}).KVRevision
+	state, _, err := c.readEntity(context.Background(), canonicalEntityA)
+	if err != nil {
+		t.Fatalf("readEntity: %v", err)
+	}
+	state.Triples = []message.Triple{canonicalTriple(canonicalEntityA, "test.state.value", "other writer")}
+	other, err := graph.MarshalEntityState(&state)
+	if err != nil {
+		t.Fatalf("MarshalEntityState: %v", err)
+	}
+	if revision, err := bucket.Update(context.Background(), canonicalEntityA, other, read); err != nil || revision != read+1 {
+		t.Fatalf("other writer's update = %d, %v; want revision %d", revision, err, read+1)
+	}
+	reconcileAt := func(revision uint64) []byte {
+		return mustCanonicalJSON(t, graph.ReconcilePredicatesRequest{
+			EntityID: canonicalEntityA, ExpectedRevision: revision, Source: "canonical-test",
+			Predicates: []string{"test.state.value"},
+			Desired:    []message.Triple{canonicalTriple(canonicalEntityA, "test.state.value", "reconciled")},
+		})
+	}
+
+	_, err = c.handleCanonicalReconcile(context.Background(), reconcileAt(read))
+	assertLostRace(t, err)
+	var classified *errs.ClassifiedError
+	errors.As(err, &classified)
+	if classified.Detail["expected_revision"] != read || classified.Detail["current_revision"] != read+1 {
+		t.Fatalf("detail = %v, want expected_revision %d and current_revision %d", classified.Detail, read, read+1)
+	}
+	assertStoredUnder(t, bucket, other, read+1)
+
+	data, err := c.handleCanonicalReconcile(context.Background(), reconcileAt(read+1))
+	if err != nil {
+		t.Fatalf("reconcile at the current revision: %v", err)
+	}
+	var applied graph.ReconcilePredicatesResponse
+	if err := json.Unmarshal(data, &applied); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if applied.Outcome != graph.MutationApplied || applied.KVRevision != read+2 {
+		t.Fatalf("response = %#v, want applied at revision %d", applied, read+2)
+	}
+	stored, revision, err := c.readEntity(context.Background(), canonicalEntityA)
+	if err != nil {
+		t.Fatalf("readEntity: %v", err)
+	}
+	if value, ok := stored.GetPropertyValue("test.state.value"); !ok || value != "reconciled" || revision != read+2 {
+		t.Fatalf("stored value = %#v (present %v) at revision %d, want %q at %d", value, ok, revision, "reconciled", read+2)
+	}
+}
+
 func TestCanonicalAppendRacesGraphableMergeWithoutLosingFacts(t *testing.T) {
 	c, _ := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
 	created := createCanonicalEntity(t, c, canonicalEntityA, []message.Triple{

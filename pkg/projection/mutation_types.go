@@ -47,8 +47,14 @@ type ReconcileMutation struct {
 	Contract string
 	Group    string
 	EntityID string
-	Desired  []message.Triple
-	Metadata MutationMetadata
+	// ExpectedRevision is the entity's revision the caller read. graph-ingest applies the
+	// reconcile only while the entity is still at that revision, and otherwise refuses it with a
+	// revision conflict and changes nothing. Zero means the caller names no revision: the client
+	// fences at the revision of its own read, so a write between the caller's read and the
+	// client's goes undetected.
+	ExpectedRevision uint64
+	Desired          []message.Triple
+	Metadata         MutationMetadata
 }
 
 // AppendMutation requests set-valued addition to one declared predicate group.

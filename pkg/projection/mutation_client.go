@@ -184,7 +184,8 @@ func (c *MutationClient) Create(ctx context.Context, request CreateMutation) (Mu
 	return MutationReceipt{Entity: response.Entity.Clone(), KVRevision: response.KVRevision, Commit: CommitVerified}, nil
 }
 
-// Reconcile replaces one complete reconcile-mode predicate group.
+// Reconcile replaces one complete reconcile-mode predicate group, at the request's
+// ExpectedRevision or, when that is zero, at the revision the client reads.
 func (c *MutationClient) Reconcile(ctx context.Context, request ReconcileMutation) (MutationReceipt, error) {
 	binding, group, desired, metadata, err := c.canonicalizeGroupMutation(
 		MutationOperationReconcile, request.Contract, request.Group, request.EntityID, request.Desired, request.Metadata, ModeReconcile,
@@ -192,6 +193,10 @@ func (c *MutationClient) Reconcile(ctx context.Context, request ReconcileMutatio
 	if err != nil {
 		return notCommitted(), err
 	}
+	// The read stays when the caller names a revision: graph-ingest's reconcile checks no
+	// contract, so only this check holds the stored entity to the contract's message type.
+	// Whether the caller's revision is still current is graph-ingest's to decide; the client
+	// does not compare it with this read.
 	exact, err := c.ReadAuthoritative(ctx, request.EntityID)
 	if err != nil {
 		return notCommitted(), err
@@ -199,8 +204,12 @@ func (c *MutationClient) Reconcile(ctx context.Context, request ReconcileMutatio
 	if err := validateEntity(binding.contract, exact.Entity); err != nil {
 		return notCommitted(), invalidMutationError(MutationOperationReconcile, err)
 	}
+	expected := request.ExpectedRevision
+	if expected == 0 {
+		expected = exact.KVRevision
+	}
 	response, err := c.wire.Reconcile(ctx, graph.ReconcilePredicatesRequest{
-		EntityID: request.EntityID, ExpectedRevision: exact.KVRevision, Source: metadata.Source,
+		EntityID: request.EntityID, ExpectedRevision: expected, Source: metadata.Source,
 		Predicates: append([]string(nil), group.Predicates...), Desired: desired,
 		TraceID: metadata.TraceID, RequestID: metadata.RequestID,
 	})

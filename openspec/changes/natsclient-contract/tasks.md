@@ -9,7 +9,7 @@ the reference for every production change.
 
 - [x] 1.1 Copy `inventory.md` (revision 3), `design.md`, `cleanup.md` and the two spec deltas into
   `openspec/changes/natsclient-contract/`.
-- [ ] 1.2 Post the P17 to P25 READMEs on PR #177. Record the comment ids in ADR-112's Status (orchestrator).
+- [x] 1.2 Post the P17 to P25 READMEs on PR #177. Record the comment ids in ADR-112's Status (orchestrator).
 - [ ] 1.3 Correct #168's body to the fix this change makes (orchestrator).
 
 ## 2. Connect honours its context (design D2)
@@ -79,9 +79,9 @@ the reference for every production change.
   - `stream.go`: M85, M86, M104;
   - `delivery_settlement.go`: M87;
   - `storage_inventory.go`: M101-M103.
-- [ ] 5.2 Correct the README rows M36, M39, M41, M42 and M46. Add the two options to the option lists at
+- [x] 5.2 Correct the README rows M36, M39, M41, M42 and M46. Add the two options to the option lists at
   `README.md:236-241` and `doc.go:290-294`, with their defaults (technical writer).
-- [ ] 5.3 Add `docs/adr/112-natsclient-contract.md` from `adr-112.md`, with T1 to T9 named as they landed (technical
+- [x] 5.3 Add `docs/adr/112-natsclient-contract.md` from `adr-112.md`, with T1 to T9 named as they landed (technical
   writer).
 - [x] 5.4 Insert the rule's row into `AGENTS.md`, and its text into the four role contracts, exactly as `rule.md`
   gives them.

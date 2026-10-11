@@ -2,20 +2,49 @@
 
 ## Status
 
-**Proposed (2026-10-11)** on draft PR #177 (`Addresses #170`, `Addresses #168`), under the owner's rulings:
+**Accepted (2026-10-11).** The owner accepted design revision 3, and this record with it, on PR #177 (comment
+6111038987). Drafted on PR #177, for #170 and #168, under the owner's rulings:
 
 - 2026-10-10, epic #9 comment 6098388541: a record of natsclient's contract over nats.go;
 - 2026-10-11, #170 comment 6109833136: fix natsclient so its calls do not sit for minutes, without rewriting nats.go;
 - 2026-10-11, #170 comment 6110309758: keep nats.go's write timeout, but make it settable, so no test waits a minute.
 
-The record was measured at nats.go v1.54.0 and nats-server v2.14.7 (`go.mod:12-13`, `.nats-image:5`).
+The record was measured at nats.go v1.54.0 and nats-server v2.15.0, re-run on 2026-10-11 (`go.mod:12-13`,
+`.nats-image:5`). The first measurement was at nats-server v2.14.7. #118 moved the pin to v2.15.0 on 2026-10-11, and
+the quick probes (P10, P12, P13, P15, p15b, P17, P18, P20, and P23 to P25) were run again there with the same results
+(PR #177 comment 6111119623). P11, P14, P16, P19, P21 and P22 were measured at v2.14.7 only.
 
 **How each line is backed.**
 
-- **Probe.** A probe is a program posted on PR #177 with its source, command, versions and output: P10 to P25, and the
-  reviewer's p15b. Probes ran on darwin/arm64, and a line backed by a probe alone describes those versions.
+- **Probe.** A probe is a program posted on PR #177 with its source, command, versions and output. Probes ran on
+  darwin/arm64, and a line backed by a probe alone describes those versions. The PR #177 comments that hold them:
+  - P10 to P16, one comment each, in order: 6109196968, 6109197143, 6109197294, 6109197438, 6109197611, 6109197772,
+    6109197927;
+  - the reviewer's p15b: 6109378036;
+  - P17 to P22, and P25: 6110634199;
+  - P23 and P24: 6110634423;
+  - the re-run at nats-server v2.15.0: 6111119623.
+
+  P7 and P8, cited in section 2, are PR #156's (comment 6098410018). The experiment that archives this change's
+  `transport-client` delta and #93's in both orders is PR #177 comment 6109434169.
 - **Test.** A test is in the tree and drives the pinned nats.go against the pinned server: embedded, or the
-  `.nats-image` container. T1 to T9 are the tests this change adds.
+  `.nats-image` container. T1 to T9 are the tests this change adds, all in `natsclient/`:
+
+  | Test | Name | File |
+  | --- | --- | --- |
+  | T1 | `TestCloseEndsAHeldWrite` | `client_close_held_test.go` |
+  | T2 | `TestCloseIsNotHeldByAHeldSubscribe` | `client_close_held_test.go` |
+  | T3 | `TestConnectRefusesAnEndedContext` | `client_connect_test.go` |
+  | T4 | `TestConnectEndsWithItsContext` | `client_connect_test.go` |
+  | T5 | `TestReconnectAfterConnectContextEnded` | `client_connect_test.go` |
+  | T6 | `TestCreateKeyValueOfAnExistingBucketIsErrBucketExists` | `kv_bucket_exists_test.go` |
+  | T7 | `TestClientSentinelsAreTransient` | `client_sentinels_test.go` |
+  | T8 | `TestCloseEndsAReconnectDial` | `client_close_held_test.go` |
+  | T9 | `TestWriteTimeoutAndPingIntervalOptions` | `client_write_timeout_test.go` |
+
+  Three of them depart from that definition in part. T8, and T4's cases "deadline while dialling" and "host name resolved
+  inside the dial", dial through a stand-in for the network dial (see Alternatives). T7 checks natsclient's own two
+  sentinels and drives no server.
 
 ## Context
 
@@ -48,7 +77,7 @@ Each line below names its backing. Anything not backed is not promised.
 - **`Close` returns within its context** on a connection the client dialled. That holds even when the server has
   stopped reading, and while nats.go dials a reconnect. When the context ends, `Close` closes the socket, ends the
   dial, and refuses later dials; the connection closes, and every held call returns an error. Backed by T1, T2 and T8,
-  and by P17, P23 and P25: 51-52 ms in every run.
+  and by P17, P23 and P25: 50-52 ms in every run, at both server versions.
 - **`Connect` returns within its context.** An ended context is refused before any dial. A deadline or a cancellation
   ends the dial or the handshake. Backed by T3 and T4, and by P18 and P25: 301-302 ms, where `main` took 5 s or 10 s.
   A hostname reaches natsclient's dialer unresolved (`nats.SkipHostLookup`), so its lookup ends with the context too
@@ -60,13 +89,14 @@ Each line below names its backing. Anything not backed is not promised.
   - The context ends their wait for the server's answer (P13 idle; tests `subscribe_registration_test.go:296`,
     `:318`), not their wait for nats.go's lock.
   - Behind a write the server is not reading, each call waits for every write ahead of it, up to the write timeout
-    each. `Close` ends the wait (P17: still held at the 5 s cap; P13: released 0 to 29 ms after the server reads
-    again).
+    each, and `Close` ends the wait. In P17 each held call was held until the write ended: past the 5 s cap, or
+    1.6-2.0 s when darwin's buffers took it; never at the call's deadline. In P13 each returned 0 to 29 ms after the
+    server read again.
 - **The write timeout and the PING interval are the caller's to set.**
   - `WithWriteTimeout` and `WithPingInterval` default to one minute and 30 s, and refuse a value that is not positive
     (T9; P24).
   - With both at 300 ms, a held publish failed at the write timeout, and the connection reconnected and carried a
-    request 3 ms after the server read again (P24, 3 of 3).
+    request 1 to 3 ms after the server read again (P24, 3 of 3 at each server version).
   - With the write timeout alone, it stayed connected and carried nothing for 5 s (P22, P24: 6 of 6). So set them
     together.
 - **Not promised:**
@@ -120,13 +150,14 @@ Each line below names its backing. Anything not backed is not promised.
   includes one on a connection that `SetConnection` replaced. The replaced connection stays the caller's, and `Close`
   does not cut its socket (tests `client_close_final_test.go:1399`, `:1442`).
 - **Once `Close` begins, new work is refused** (test `client_close_final_test.go:960`). A `Subscribe` that `Close`
-  overtakes returns `nats.ErrConnectionClosed`.
+  overtakes returns `nats.ErrConnectionClosed` (T2; `TestSubscribeEndedByCloseIsConnectionClosed`,
+  `client_close_held_test.go`).
 - **natsclient holds no lock of its own while it calls nats.go**, so a held call cannot hold `Close` (T2, P21).
 
 ### 5. Reconnect
 
 - **natsclient keeps nats.go's automatic reconnect,** with natsclient's settings: unlimited attempts, and
-  `ReconnectWait` of 2 s (`client.go:344-345`). A reconnect after `Connect`'s context has ended works (T5).
+  `ReconnectWait` of 2 s (`client.go:355-356`). A reconnect after `Connect`'s context has ended works (T5).
 - **While reconnecting,** `Publish`, `Request`, `RequestClassified`, `Subscribe`, `PublishToStream` and `GetStream`
   return `ErrNotConnected` at once (P15). KV calls wait for their context.
 - **Not promised:**
@@ -175,8 +206,9 @@ Each alternative that needed a timeout was measured with a short one, so no prob
 - **A retry keyed on `errs.IsTransient` now retries `ErrNotConnected` and a circuit refusal.** No responders is
   unchanged. A KV write's error is commit-unknown, so re-read before retrying a write that is not compare-and-set.
 - **Re-check after a nats.go or nats-server upgrade.** T1 to T9 run under `task verify` and pin the library facts this
-  record rests on. A probe line is re-run before an upgrade merges (#118). After a Go toolchain upgrade, P23 is re-run
-  (the dialer's `Cancel`).
+  record rests on. A probe line is re-run before an upgrade merges. #118 (nats-server v2.15.0) merged on 2026-10-11
+  at 14:37Z, while this record was in review, and the re-run after it found no change (comment 6111119623). After a
+  Go toolchain upgrade, P23 is re-run (the dialer's `Cancel`).
 - **Covered elsewhere:**
   - ADR-110:192 (a watcher sees every revision) is for ADR-109 (#110).
   - ADR-111's redelivery after a restart is for the change that relies on it.

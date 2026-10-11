@@ -3,7 +3,7 @@
 > **Ported from SemStreams.** This record is `docs/adr/088-readiness-is-per-producer-aggregation-is-the-consumers.md` at
 > SemStreams commit `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`. It was carried without code for SemEngine issue #157
 > (owner ruling, comment 6085722578), with ADR-066, ADR-083, ADR-084 and ADR-085, so that SemEngine's readiness ADR
-> (ADR-109, issue #110; not yet written) can cite it. Its admission-ledger row is
+> (ADR-109, issue #110) can cite it. Its admission-ledger row is
 > `docs/adr/088-readiness-is-per-producer-aggregation-is-the-consumers.md` in `docs/admission-ledger.yaml`. The decision
 > text is unchanged. Read it with these facts about this repository:
 >

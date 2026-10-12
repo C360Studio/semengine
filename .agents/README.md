@@ -88,10 +88,20 @@ metadata and argument handling, not another rule set. Repository protocol and ro
 - [semengine-pickup](skills/semengine-pickup/SKILL.md): reconcile current state and verify worktree ownership. Claude
   command `/semengine-pickup`.
 
+Engine-capability skills, carried from SemStreams with the packages they govern (change
+`setup-04a-02-ingest-kernel`, design D12):
+
+- [entity-or-bucket](skills/entity-or-bucket/SKILL.md): decide whether a fact lives in `ENTITY_STATES` or a bucket of
+  its own. Claude command `/entity-or-bucket`.
+- [kv-or-stream](skills/kv-or-stream/SKILL.md): choose a KV watch or a JetStream stream. Claude command
+  `/kv-or-stream`.
+- [new-payload](skills/new-payload/SKILL.md): add a payload type to the registry. Claude command `/new-payload`.
+- [query-pattern](skills/query-pattern/SKILL.md): choose how code reads the graph. Claude command `/query-pattern`.
+
 Codex can invoke the canonical names with `$`, or read their paths directly. Claude uses the command names above;
 its adapters live in `.claude/skills/<command-name>/SKILL.md`. The `preflight` adapter deliberately maps to the
-canonical `semengine-preflight` name. There are no engine-capability helper skills yet: add one only when its
-capability is admitted. A private memory reference cannot be required to interpret a shared rule.
+canonical `semengine-preflight` name. Add an engine-capability skill only when its capability is admitted. A private
+memory reference cannot be required to interpret a shared rule.
 
 ## Manual read-only parity smoke
 

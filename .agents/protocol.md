@@ -56,7 +56,7 @@ not every addition first made in this repository. This exception does not permit
 new exports with no reader and no contract line, or parallel spellings. The surface audit remains required: truly dead
 surface is not protected by this exception, and admitted packages, consumers, and the pin's consumer adapters (pin
 packages outside both halves, `AGENTS.md` § What this is for, or named consumer-owned by a ruling, as SETUP 03B design
-D4 names `gateway` and `gateway/graph-gateway`:
+D4 excludes `gateway` and `gateway/graph-gateway` under D5's layer 4:
 `openspec/changes/archive/2026-10-01-setup-03b-contract-boundary/design.md:223`) still count when identifying readers.
 A symbol with a production caller at the pin in a consumer adapter is framework API, offered to products built on
 SemEngine: it is kept with its contract line, and a defect in it is fixed or tracked, not removed with it (owner ruling

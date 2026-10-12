@@ -330,7 +330,7 @@ its first two bullets; the rest govern graph state, the `storage` package and cu
   from the pin that has no contract line and no reader in the surface audit's reader set stays `BLOCKING` too: dead
   surface is not protected (protocol, Bounded port scope). That reader set counts the pin's consumer adapters: packages
   outside both halves of SemEngine (`AGENTS.md` § What this is for), or ones a ruling names consumer-owned, as
-  SETUP 03B design D4 names `gateway` and `gateway/graph-gateway`
+  SETUP 03B design D4 excludes `gateway` and `gateway/graph-gateway` under D5's layer 4
   (`openspec/changes/archive/2026-10-01-setup-03b-contract-boundary/design.md:223`; architect contract § Extraction
   slices, "Surface audit"). Unexported code that only a test calls, carried unchanged from the pin, is a shape-sweep
   finding, disposed under the protocol's Bounded port scope. The rule adds no prerequisite to PR #93, whose scope is

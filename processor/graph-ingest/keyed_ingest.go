@@ -203,10 +203,11 @@ func (c *Component) processIngest(ctx context.Context, lane int, work ingestWork
 	// The application holds the input without its message: only the helper settles it.
 	input := work
 	input.msg = nil
+	held := &heldErrors{}
 	policy, err := natsclient.ValidateHeartbeatDeliveryPolicy(ctx, work.consumer, work.heartbeat,
 		natsclient.ImmediateDeliveryRetry(),
 		func(applyCtx context.Context, _ []byte) (natsclient.DeliveryDecision, error) {
-			return c.applyIngest(applyCtx, lane, input)
+			return c.applyIngest(context.WithValue(applyCtx, heldErrorsKey{}, held), lane, input)
 		})
 	if err != nil {
 		// Start checked the port's pair before it created the consumer, so the policy is
@@ -223,9 +224,12 @@ func (c *Component) processIngest(ctx context.Context, lane int, work ingestWork
 	}
 	result := natsclient.ConsumeDeliveryWithHeartbeat(ctx, work.msg, policy)
 	if result.OwnerStopRequired() {
+		// The interruption is the input's one count; the errors its application held are dropped.
 		c.recordInterruptedWork(work, result.Err())
 		return result.Err()
 	}
+	// The helper joined the application before it returned, so nothing adds to held after this.
+	atomic.AddInt64(&c.errors, held.n.Load())
 	if result.SettlementMethodFailed() {
 		c.logger.Error("Failed to settle ingest",
 			slog.String("entity_id", work.entityID), slog.Any("error", result.Err()))
@@ -352,6 +356,30 @@ func (c *Component) recordInterruptedWork(work ingestWork, err error) {
 		slog.String("stream", work.stream),
 		slog.Uint64("seq", work.seq),
 		slog.Any("error", err))
+}
+
+// heldErrors is what one input's application would add to the error count Health reads,
+// held back while the delivery helper runs it. Once the helper returns, processIngest adds
+// it, unless the input was interrupted: an interrupted input counts once, as its
+// interruption, however far its application got, and a write the interruption failed is not
+// counted again (graph-ingest-recovery, "An interrupted application is redelivered, not a
+// stop"; Codex B1 on PR #93). It travels in the application's context because the
+// application reaches the counted writes through hierarchy inference, whose store calls
+// CreateEntity with only a context.
+type heldErrors struct{ n atomic.Int64 }
+
+// heldErrorsKey is the context key processIngest gives an application its heldErrors under.
+type heldErrorsKey struct{}
+
+// countError adds one to the error count Health reads, or, inside an input's application, to
+// the heldErrors processIngest gave it. Every other caller, a direct call included, counts at
+// once.
+func (c *Component) countError(ctx context.Context) {
+	if held, ok := ctx.Value(heldErrorsKey{}).(*heldErrors); ok {
+		held.n.Add(1)
+		return
+	}
+	atomic.AddInt64(&c.errors, 1)
 }
 
 // interruptedWorkCause names the cause of an interrupted application, the label of

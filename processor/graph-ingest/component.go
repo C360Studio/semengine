@@ -2236,7 +2236,7 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 
 	revision, bytesWritten, err := c.replaceEntity(ctx, entity, hierarchyTriples, readFound, at)
 	if err != nil {
-		atomic.AddInt64(&c.errors, 1)
+		c.countError(ctx)
 		return errs.Wrap(err, "Component", "mergeEntityOnLane", "CAS update")
 	}
 
@@ -2339,7 +2339,7 @@ func (c *Component) createEntityWithReceipt(
 	// Serialize entity (now includes hierarchy triples if enabled)
 	data, err := graph.MarshalEntityState(entity)
 	if err != nil {
-		atomic.AddInt64(&c.errors, 1)
+		c.countError(ctx)
 		return nil, 0, errs.Wrap(err, "Component", "CreateEntity", "entity serialization")
 	}
 
@@ -2350,7 +2350,7 @@ func (c *Component) createEntityWithReceipt(
 		return nil, 0, writeErr
 	}
 	if writeErr != nil {
-		atomic.AddInt64(&c.errors, 1)
+		c.countError(ctx)
 		return nil, 0, errs.Wrap(writeErr, "Component", "CreateEntity", "KV store")
 	}
 

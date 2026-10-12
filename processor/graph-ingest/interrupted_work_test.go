@@ -58,15 +58,24 @@ func entityStored(bucket *mockKVBucket, id string) bool {
 // in-progress signal could not be sent, or the delivery has no metadata), the input is left
 // unsettled, the error count Health reads and the interrupted-work count under that cause each rise
 // by one, one ERROR line names the cause, and the next input on the same lane is applied and
-// acknowledged. The lane is one lane of a keyed pool on a context of its own, as Start runs it.
+// acknowledged. Where the interruption lands in the entity's write (its read inside the
+// compare-and-set, or a container's birth), the count still rises by one, not once for the failed
+// write and again for the interruption, and the failed write's own ERROR line is logged beside the
+// cause's (Codex B1 on PR #93). The lane is one lane of a keyed pool on a context of its own, as
+// Start runs it.
 // The last case holds the design's "At Stop": an input that reaches its lane after the lane's
 // context has ended is negatively acknowledged, applies nothing, and is logged at WARN.
 func TestInterruptedApplicationIsRedeliveredNotAStop(t *testing.T) {
 	cases := []struct {
 		name  string
 		cause string
-		// arrange interrupts the first input's application, through the applied-sequence bucket or
-		// its message.
+		// hierarchy turns on hierarchy inference, so the first input's birth creates its containers.
+		hierarchy bool
+		// writeLogged is set where the interruption fails the entity's write, which logs its own
+		// ERROR line, "Failed to merge entity", beside the one naming the cause.
+		writeLogged bool
+		// arrange interrupts the first input's application, through the applied-sequence bucket,
+		// the entity bucket or its message.
 		arrange func(it *interruption)
 		// check holds what else the cause leaves behind, once the first input has been handled.
 		check func(t *testing.T, it *interruption)
@@ -100,14 +109,56 @@ func TestInterruptedApplicationIsRedeliveredNotAStop(t *testing.T) {
 					return nil, jetstream.ErrKeyNotFound
 				}
 			},
-			check: func(t *testing.T, it *interruption) {
-				if got := it.msg.inProgress.Load(); got != 1 {
-					t.Errorf("in-progress signals = %d, want 1, the one that failed", got)
-				}
-				if !it.heldCancelled.Load() {
-					t.Error("the held application was not cancelled when its in-progress signal failed")
+			check: checkHeartbeatInterruption,
+		},
+		{
+			name:        "in-progress signal fails during the entity write",
+			cause:       "heartbeat_failed",
+			writeLogged: true,
+			arrange: func(it *interruption) {
+				it.msg.inProgressErr = errors.New("test: the in-progress signal is refused")
+				it.signalled = make(chan struct{})
+				it.msg.onInProgress = func() { close(it.signalled) }
+				it.entities.getFunc = func(ctx context.Context, key string) (jetstream.KeyValueEntry, error) {
+					if key == interruptedEntity {
+						// The compare-and-set's read, held until the application is cancelled.
+						<-ctx.Done()
+						it.heldCancelled.Store(true)
+						return nil, ctx.Err()
+					}
+					return nil, jetstream.ErrKeyNotFound
 				}
 			},
+			check: checkHeartbeatInterruption,
+		},
+		{
+			name:        "in-progress signal fails during a container birth",
+			cause:       "heartbeat_failed",
+			hierarchy:   true,
+			writeLogged: true,
+			arrange: func(it *interruption) {
+				it.msg.inProgressErr = errors.New("test: the in-progress signal is refused")
+				it.signalled = make(chan struct{})
+				it.msg.onInProgress = func() { close(it.signalled) }
+				var held atomic.Bool
+				it.entities.createFunc = func(ctx context.Context, key string, value []byte, _ ...jetstream.KVCreateOpt) (uint64, error) {
+					if held.CompareAndSwap(false, true) {
+						// The first create is the first container's birth, which runs before the
+						// entity's own write; held until the application is cancelled.
+						<-ctx.Done()
+						it.heldCancelled.Store(true)
+						return 0, ctx.Err()
+					}
+					it.entities.mu.Lock()
+					defer it.entities.mu.Unlock()
+					if _, exists := it.entities.data[key]; exists {
+						return 0, jetstream.ErrKeyExists
+					}
+					it.entities.data[key] = mockKVData{value: value, revision: 1}
+					return 1, nil
+				}
+			},
+			check: checkHeartbeatInterruption,
 		},
 		{
 			name:  "delivery has no metadata",
@@ -132,8 +183,12 @@ func TestInterruptedApplicationIsRedeliveredNotAStop(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				c, entities, guard, logs := interruptedWorkComponent(t)
+				if tc.hierarchy {
+					c.config.EnableHierarchy = true
+					buildHierarchyInference(t, c)
+				}
 				first := &keyedIngestTestMsg{}
-				it := &interruption{guard: guard, msg: first}
+				it := &interruption{guard: guard, entities: entities, msg: first}
 				tc.arrange(it)
 				errorsBefore := c.Health().ErrorCount
 
@@ -164,8 +219,14 @@ func TestInterruptedApplicationIsRedeliveredNotAStop(t *testing.T) {
 				if got := c.Health().ErrorCount - errorsBefore; got != 1 {
 					t.Errorf("Health's error count rose by %d, want 1", got)
 				}
-				errorLines := 0
+				errorLines, writeLines := 0, 0
 				for _, line := range strings.Split(logs.String(), "\n") {
+					if tc.writeLogged && strings.Contains(line, "level=ERROR") &&
+						strings.Contains(line, `msg="Failed to merge entity"`) &&
+						strings.Contains(line, "entity_id="+interruptedEntity) {
+						writeLines++
+						continue
+					}
 					if strings.Contains(line, "level=ERROR") {
 						errorLines++
 						if !strings.Contains(line, "cause="+tc.cause) || !strings.Contains(line, "entity_id="+interruptedEntity) {
@@ -174,7 +235,14 @@ func TestInterruptedApplicationIsRedeliveredNotAStop(t *testing.T) {
 					}
 				}
 				if errorLines != 1 {
-					t.Errorf("ERROR lines = %d, want 1:\n%s", errorLines, logs.String())
+					t.Errorf("ERROR lines naming the cause = %d, want 1:\n%s", errorLines, logs.String())
+				}
+				wantWrite := 0
+				if tc.writeLogged {
+					wantWrite = 1
+				}
+				if writeLines != wantWrite {
+					t.Errorf("the failed write's ERROR lines = %d, want %d:\n%s", writeLines, wantWrite, logs.String())
 				}
 				if tc.check != nil {
 					tc.check(t, it)
@@ -236,12 +304,26 @@ func TestInterruptedApplicationIsRedeliveredNotAStop(t *testing.T) {
 	})
 }
 
-// interruption is one case's first input: its message and the applied-sequence bucket its
-// application reads, with what the case records of it. heldCancelled records that a held application
-// saw its context end; guardReads counts the applied-sequence reads of the interrupted entity; when
-// set, signalled is closed as the input's in-progress signal is sent, and the test waits for it.
+// checkHeartbeatInterruption holds what an in-progress signal that fails leaves behind: the one
+// signal sent, which failed, and the held application cancelled.
+func checkHeartbeatInterruption(t *testing.T, it *interruption) {
+	t.Helper()
+	if got := it.msg.inProgress.Load(); got != 1 {
+		t.Errorf("in-progress signals = %d, want 1, the one that failed", got)
+	}
+	if !it.heldCancelled.Load() {
+		t.Error("the held application was not cancelled when its in-progress signal failed")
+	}
+}
+
+// interruption is one case's first input: its message and the applied-sequence and entity buckets
+// its application reads and writes, with what the case records of it. heldCancelled records that a
+// held application saw its context end; guardReads counts the applied-sequence reads of the
+// interrupted entity; when set, signalled is closed as the input's in-progress signal is sent, and
+// the test waits for it.
 type interruption struct {
 	guard         *mockKVBucket
+	entities      *mockKVBucket
 	msg           *keyedIngestTestMsg
 	heldCancelled atomic.Bool
 	guardReads    atomic.Int32
@@ -274,4 +356,72 @@ func interruptedWorkComponent(t *testing.T) (*Component, *mockKVBucket, *mockKVB
 		poolCancel()
 	})
 	return c, entities, guard, logs
+}
+
+// refuseEntityCreate makes bucket refuse every create with an ordinary error: a write failure that
+// is not an interruption, which ends the entity's compare-and-set at once, with no retry.
+func refuseEntityCreate(bucket *mockKVBucket) {
+	bucket.createFunc = func(context.Context, string, []byte, ...jetstream.KVCreateOpt) (uint64, error) {
+		return 0, errors.New("test: the entity bucket refuses the create")
+	}
+}
+
+// TestOrdinaryLaneWriteErrorCountsOnce holds the other side of TestInterruptedApplicationIsRedeliveredNotAStop
+// (Codex B1 on PR #93): an entity write that fails on the lane with no interruption raises the error
+// count Health reads by one, as it did before the interruption was counted, counts nothing as
+// interrupted work, and its input is negatively acknowledged.
+func TestOrdinaryLaneWriteErrorCountsOnce(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		c, entities, _, _ := interruptedWorkComponent(t)
+		refuseEntityCreate(entities)
+		errorsBefore := c.Health().ErrorCount
+		msg := &keyedIngestTestMsg{}
+
+		if err := c.ingestPool.SubmitBlocking(t.Context(), interruptedInput(interruptedEntity, 1, msg)); err != nil {
+			t.Fatalf("submit the input: %v", err)
+		}
+		synctest.Wait()
+
+		if got := settledAs(msg); got != "nak" {
+			t.Errorf("the input whose write failed was settled %s, want nak", got)
+		}
+		if got := c.Health().ErrorCount - errorsBefore; got != 1 {
+			t.Errorf("Health's error count rose by %d, want 1", got)
+		}
+		for _, cause := range interruptedWorkCauses {
+			if got := testutil.ToFloat64(c.workInterrupted.WithLabelValues(cause)); got != 0 {
+				t.Errorf("work_interrupted_total{cause=%q} = %v, want 0", cause, got)
+			}
+		}
+	})
+}
+
+// TestDirectWriteErrorCountsAtOnce holds that a write called outside the delivery helper counts its
+// error in Health's error count before it returns, as before Codex B1's fix on PR #93: ingestEntity,
+// the synchronous entry handleMessage uses, and the exported CreateEntity.
+func TestDirectWriteErrorCountsAtOnce(t *testing.T) {
+	t.Run("ingestEntity", func(t *testing.T) {
+		c, entities := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
+		refuseEntityCreate(entities)
+		errorsBefore := c.Health().ErrorCount
+
+		if err := c.ingestEntity(t.Context(), interruptedInput(interruptedEntity, 1, nil).entity, false); err == nil {
+			t.Fatal("ingestEntity succeeded, want the refused create's error")
+		}
+		if got := c.Health().ErrorCount - errorsBefore; got != 1 {
+			t.Errorf("Health's error count rose by %d, want 1", got)
+		}
+	})
+	t.Run("CreateEntity", func(t *testing.T) {
+		c, entities := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
+		refuseEntityCreate(entities)
+		errorsBefore := c.Health().ErrorCount
+
+		if err := c.CreateEntity(t.Context(), interruptedInput(interruptedEntity, 1, nil).entity); err == nil {
+			t.Fatal("CreateEntity succeeded, want the refused create's error")
+		}
+		if got := c.Health().ErrorCount - errorsBefore; got != 1 {
+			t.Errorf("Health's error count rose by %d, want 1", got)
+		}
+	})
 }

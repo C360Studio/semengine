@@ -163,6 +163,10 @@ BEFORE implementation.
   metric naming what was skipped and why continuing is safe, or it refuses loudly; write the decision at the site.
   Write the test that observes the signal and mutation-check it like a refusal (skip the emit, and the test MUST
   fail).
+- **A failure nobody's deployment reaches is fixed by saying so.** When a finding's failure needs a condition the code
+  does not choose (a library's timing, a rare network or operating-system state, an injected fault, a call only a
+  test makes) and names no real-world trigger, its fix is a doc line that stops promising the behaviour or a declared
+  degrade, never new mechanism (reviewer contract § Finding and verdict format, #185).
 - **A library claim in code names its test.** A doc comment or README line you add or edit that says how a library
   (nats.go, nats-server or any other) times, orders, bounds or fails names the test in the tree that drives the
   pinned library, not a fake, or the probe posted on the pull request; without one it says the behaviour is not

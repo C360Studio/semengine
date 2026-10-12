@@ -310,10 +310,13 @@ its first two bullets; the rest govern graph state, the `storage` package and cu
   map, internal context) where callers need a value, is a finding; require the collapsed signature.
 - Three or more correlated non-error returns without a named struct is a finding.
 - New exported surface without the architect-approved consumer contract is a `BLOCKING` finding.
-- Production code whose only caller is a test (a method, field, option, constructor or hook, such as a setter that
-  swaps a dependency under a running object) is a finding: `BLOCKING` when exported, since a test is not a consumer,
-  and `HIGH` when not. The fix is a design the test can drive through the calls production code makes; never review
-  or specify how the back door behaves (owner ruling of 2026-10-12, #186).
+- Production code whose only caller is a test, a `_test.go` file or `internal/harness` (a method, field, option,
+  constructor or hook, such as a setter that swaps a dependency under a running object), is a finding: `BLOCKING`
+  when exported, since a test is not a consumer, and `HIGH` when not. The fix is a design the test can drive through
+  the calls production code makes; never review or specify how the back door behaves (owner ruling of 2026-10-12,
+  #186). These severities bind code a change adds. An unexported hook carried unchanged from the pin is a shape-sweep
+  finding, disposed under the protocol's Bounded port scope. The rule adds no prerequisite to PR #93, whose scope is
+  frozen (epic #9 comment 6085243841); test-only code it carries is filed after it lands.
 
 ## Guarantee, signal, and revision review
 
@@ -395,14 +398,17 @@ blocking list. State explicitly when evidence was unavailable rather than guessi
 **Severity needs a real-world trigger** (owner ruling of 2026-10-12, issue #185). Some failures happen only under a
 condition the code does not choose: a library (nats.go, nats-server, the Go runtime) timing or ordering things one way,
 a network or operating-system state (a server that stops reading an open connection, full socket buffers), a fault
-injected partway through an operation, or a call sequence that only a test makes. Whichever rule in this contract calls
-such a finding blocking, it is `BLOCKING` or `HIGH` only when it names a real-world trigger: a routine event (a
-restart, a redeploy, a NATS server restart, a dropped connection, a slow consumer, a misconfigured permission) or a
-named consumer or qualifying workload that reaches the condition in normal operation. Without one it is `MEDIUM` at
-most and says which trigger it would need. Its fix is the smallest honest one: a doc comment or spec sentence that
-stops promising the behaviour, a log line, or a metric; never new mechanism to make the promise true. When the broken
-contract is itself a sentence about such a condition, cutting or narrowing the sentence is the fix. Whether a trigger
-is real, when the implementer disputes it, goes to the owner.
+injected partway through an operation, or a call sequence that only a test makes. Such a finding is `BLOCKING` or
+`HIGH` only when it names a real-world trigger: a routine event (a restart, a redeploy, a NATS server restart, a
+dropped connection, a slow consumer, a misconfigured permission) or a named consumer or qualifying workload that
+reaches the condition in normal operation. Without one it is `MEDIUM` at most, is not required work, and says which
+trigger it would need. Its fix is the smallest honest one: a doc comment or spec sentence that stops promising the
+behaviour, or a declared degrade (the log line, metric and test the silent-degrade rule asks for); never new mechanism
+to make the promise true. When the broken contract is itself a sentence about such a condition, cutting or narrowing
+the sentence is the fix. This rule governs every other rule in the contracts and the protocol for such a finding, the
+admission gates and the protocol's list of corrections included. Whether a trigger is real, when the implementer
+disputes it, goes to the owner. The rule applies to findings raised from its merge on; PR #93's B1 proceeds as
+reviewed.
 
 Under [Bounded port scope](../protocol.md#bounded-port-scope), an optional inherited maintenance finding cannot veto
 approval or become `BLOCKING` or `HIGH` solely by invoking a generic consolidation rule. Name the binding obligation

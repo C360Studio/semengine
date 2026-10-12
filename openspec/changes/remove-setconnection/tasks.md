@@ -70,9 +70,10 @@ on choices the design does not spell out go in `notes/<task>.md`, with a one-lin
 
 ## 4. Review stop (Codex)
 
-- [ ] 4.1 Mark PR #188 ready and request Codex's review of record at the section 3 commit, naming that commit and its
+- [x] 4.1 Request Codex's review of record at the section 3 commit, naming that commit and its
   `task verify` run. The ledger is not Markdown, so the review covers the code, the ledger and the text together. Fix
   findings, and re-request after any content commit. Stop for the owner after three rounds with findings open.
+  Codex: APPROVE at `4f91838` (PR #188 comment 6127066190), one NIT on this task's wording, fixed in the next commit.
 
 ## 5. Close
 

@@ -13,7 +13,8 @@ The developer runs on Opus. Run `task test:unit` after each code task and `task 
 - [x] 1.3 The spec deltas: every scenario or requirement in `openspec/specs/integration-test-runner/spec.md` and
   `openspec/specs/nats-fixture/spec.md` that treats an owner on another host specially, as MODIFIED requirements
   under `specs/` in this change. Check: `task spec:check`.
-- [ ] 1.4 `task verify` on a clean tree at the last commit.
+- [x] 1.4 `task verify` on a clean tree at the last commit: `verify: ok` at `ca74490` (2026-10-12), the last code
+  commit; this tick changes `tasks.md` only.
 
 ## 2. Close
 

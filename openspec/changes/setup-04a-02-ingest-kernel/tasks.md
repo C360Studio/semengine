@@ -46,9 +46,14 @@ heading>` (#81's form). No task asserts a fact that exists only after merge.
 
 ## 2. Probes and harness
 
-- [ ] 2.1 (D) Re-run inventory P-1, P-4 and P-7, and §9.1's slice runs, on the branch's copy at the first port commit
-      and post the seeds, the hit list and the coverage figures; any difference from `inventory.md` is a finding on
-      this pull request.
+- [x] 2.1 (D) Re-run inventory P-1, P-4 and P-7, and §9.1's slice runs, on the ported tree at the head (owner ruling,
+      #91 comment 6115579503; the first port commit carried only `types`, `storage` and `model`) and post the seeds,
+      the hit list and the coverage figures; any difference from `inventory.md` is a finding on this pull request.
+      Done at `f0b0bad` (PR comment 6115574888): every run exits 0; P-1 has no unit flake over three shuffle seeds;
+      no P-4 pin hit remains, each traced to the task that removed it; P-7's figures put graph-ingest at 90.2% merged,
+      `graph/inference` and `graph/kvcatalog` exactly on 80%, and `internal/graphmutation`, `pkg/projection`,
+      `component` and `pkg/lifecycle` under it, the four task 5.2 adds tests for. 13 differences are listed there;
+      none is a defect, and five coverage changes are left unexplained in detail.
 - [x] 2.2 (D) `TestOneImagePin` in Go files matches `nats:` followed by a digit or a variable, or `nats@sha256:` (design
       D10): sensitivity cases, written first, plant `"nats:in"` in a Go file (passes), `"nats:2.10"` and
       `"nats:${TAG}"` in a Go file (fail), and keep "digest literal in Go" failing. Gate: `task test:unit`.
@@ -62,9 +67,12 @@ heading>` (#81's form). No task asserts a fact that exists only after merge.
       Done: `internal/harness/contract/reservedsubjects_test.go`, red on `986953c` naming `graph/exact_entity.go:14`
       and green in task 3.7's commit. The reserved subjects are read from `graph.QueryVerbs` and
       `graphmutation.SubjectFamily`, so a verb added to the table is held from the commit that adds it.
-- [ ] 2.5 (D) `TestPublicSignatures` and `TestNoSecondAuthorityField` pass over the ported tree with no new exception
+- [x] 2.5 (D) `TestPublicSignatures` and `TestNoSecondAuthorityField` pass over the ported tree with no new exception
       and no change to either check (rulings B and C; design D9, D14); the pass is posted with each check's package
-      count. Gate: `task test:unit`. Hold: tasks 3.1–3.13 (the ported tree).
+      count. Gate: `task test:unit`.
+      Done at `e4011b8` (PR comment 6115897271): `TestPublicSignatures` passes over 24 public packages and
+      `TestNoSecondAuthorityField` over 41; both files are unchanged from `main`, so neither check nor its exceptions
+      changed.
 - [x] 2.6 (D) The `natsfixture` helper of design D3 (`nats-fixture`, "Connected value for a package's tests"), its three
       scenarios as tests, written first. Gate: `task test:integration`.
 - [x] 2.7 (D) `internal/lifecycleguard` (design D13): `lifecycletest.Run` over a test owner built only from the guard,
@@ -94,7 +102,7 @@ posted on this pull request.
       Done: checked at `6cbb88e`, after task 3.8. The five directories are absent; `graph/inference` holds the slice
       and its own `doc.go`; neither `go.mod` nor `go.sum` names `go-openai`. The listing (37 packages) is PR #93
       comment 6045139429.
-- [ ] 3.3 (D) `graph`, the root (design D16, D15, D9): the data model and wire types only; `EntityState` without
+- [x] 3.3 (D) `graph`, the root (design D16, D15, D9): the data model and wire types only; `EntityState` without
       `Version` (`TestStoredEntityHasNoVersion`, written first); the write-mode rules as pure functions, with
       `TestReplaceOrderedByTimestamp`, `TestConfidenceAndContextNeverOrder` and
       `TestSingleValueReadPicksLatestAcrossSources` at rule level, written first (design D15);
@@ -110,9 +118,16 @@ posted on this pull request.
       #69 rename of the configuration bucket constant (`semengine_config`); 11 fixture-client sites.
       `TestGraphImportsNoTransport` and its sensitivity test
       (`graph-transport-boundary`, "The graph root imports no transport"), written first and red on the pin-shaped root,
-      land in this task's commit. Gate: `task test:unit`. Hold: the sweep of test-only exports waits for their readers
-      (tasks 3.4–3.12k), since `gopls references` on the tree sees none before they are ported. The rest landed in the
+      land in this task's commit. Gate: `task test:unit`. The sweep of test-only exports waited for their readers (tasks
+      3.4–3.12k), since `gopls references` on the tree saw none before they were ported. The rest landed in the
       root's port commit, and the 11 fixture-client sites, in the catalog's test files, with task 3.3a.
+      Done: the sweep in `e4011b8`. Of the root's 144 exported names and methods, 138 are kept, each on a non-test
+      reader in this tree, an admitted package at the pin (`graph.Provider`: `graph/clustering`, `graph/structural`)
+      or its own package's code, or as a standard-library interface method; 6 are removed: `QueryDirection` with its
+      three constants and `String` (no reader anywhere; `query_types.go` deleted) and the function `GetPropertyValue`
+      (read only by its own test; #132 item 7), whose one other test caller now reads the method. Nothing the design
+      or a spec names was removed. `task verify` on `e4011b8` ended `verify: ok`. Notes: `notes/3.3.md`. #132's items
+      1–6 stay with #132 (scope freeze, epic #9 comment 6085243841).
 - [x] 3.3a (D) `graph/kvcatalog` (design D16): `kvcatalog.go`, `owned_bucket_retention.go` and `IsKVTombstone` from
       the pin's `graph`, with their tests; no `TOOL_CALL_OUTCOMES` or `ENTITY_SUFFIX_INDEX` row or constant; the
       configuration bucket's description names SemEngine (design D9); `TestEntityStatesKeepsOneRevision`
@@ -741,7 +756,6 @@ posted on this pull request.
       among them; the tests design D11 names for `internal/graphmutation`, `pkg/projection`, `component` and
       `pkg/lifecycle` are added; each target's figure is posted. `graph/readiness` at or above 80% after task 3.12k
       (91.1%, 163 of 179 statements, measured at `64e705d`; design D11). Ticked only on a green `task cover:check`.
-      Hold: task 1.12.
 - [x] 5.3 (D) `go.mod`: `golang.org/x/net` at a version that downgrades nothing, and no `go-openai`; `task vuln` and
       `task tidy:check` green. Done in `074c800`: v0.59.0 → v0.60.0 for five HTTP/2 advisories, nothing else moved,
       no `go-openai` in `go.mod` or `go.sum`; both gates green there, locally and in CI run 37926039654.

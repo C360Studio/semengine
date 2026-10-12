@@ -18,7 +18,7 @@ before the review stop. Choices the design does not spell out go in `notes/<task
 - [x] 2.3 Text: the doc comments in `restart.go` and `fixture.go` (`maxAttempts`), and any line in `docs/testing.md`
   or the natsfixture row of `docs/admission-ledger.yaml` that says Restart never tries again. Check: `task
   docs:check`, `task ledger:check`.
-- [ ] 2.4 `task verify` on a clean tree at the last commit; record the commit and result in a PR comment.
+- [x] 2.4 `task verify` on a clean tree at the last commit; record the commit and result in a PR comment.
 
 ## 3. Review and close
 

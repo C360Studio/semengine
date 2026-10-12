@@ -210,8 +210,10 @@ under a bound, register a bounded `Close` on test cleanup. Options:
 Recommendation: **(d)**. It is the only option with one home for the cleanup rule the `harness-boundaries` "Bounded
 cleanup roots" requirement polices, without weakening the import rule (b) would relax. Spec home: the `nats-fixture`
 delta, "Connected value for a package's tests". Adoption sweep (D3 establishes a reusable primitive): natsclient's own
-`newFixtureClient` (`natsclient/test_helpers_integration_test.go:47`) and the 20 later packages foundation D4 lists;
-one tracking issue (task 6.3). The establishing change converts only its own five packages.
+`newFixtureClient` (`natsclient/test_helpers_integration_test.go:47`) and the 15 other packages that call
+`natsclient.NewTestClient` at the pin (the foundation design's P15 counts 278 sites in 21 packages; natsclient is
+change 1's and five are this change's); one tracking issue, #195, holds the list (task 6.3). The establishing change
+converts only its own five packages.
 
 ### D4. Metrics: one collector per key, `semengine`, no global registry
 
@@ -303,7 +305,10 @@ reads is removed (#9 comment 5968830525).
   is "a client-side fold over a consumer-declared key list (`graph/readiness.Set`), delegating each key to the
   existing `graph.EvaluateReadinessGate`"). The owner kept the drop (#91 comment 6085720598) for three reasons: no
   starter consumer calls `Set`; its one pin reader, graph-gateway, is deferred; and a consumer can loop over its keys
-  through the gate, which this change carries.
+  through the gate, which this change carries. *Superseded 2026-10-12:* that #110's fix shape needs `Set` back, and
+  that `Set` returns with #110, no longer hold. ADR-109 (ruled on #9, comment 6111608867) and #110's rewrite of that
+  day withdraw the fix shape: `Health()` derives from nothing in the envelope, so `Set` does not return. The owner's
+  three reasons for the drop stand.
 - **Removed by a port-refactor, not as dead surface** (each read by something, each with its decision): `graph`'s
   `events.go` (D16), the `TOOL_CALL_OUTCOMES` catalog row and constant (D16), `EntityState.Version` (D15),
   `UnwrapQueryResponse` (D18), `component.Dependencies.LifecycleManager` (D17), and graph-ingest's suffix index with
@@ -1087,7 +1092,10 @@ At the pin the root carries six jobs (P-14, §9.5) and four of its files import 
   `phase`, `revision` or `last_synced` key) and `TestPublishStampsPublishedAt` (`graph/readiness`: the stored value's
   `published_at` lies between the clock read before and after `Publish`, and a caller's value is replaced), each written
   first and failing on the pin's code. Spec home: `graph-transport-boundary`, "The readiness envelope carries its
-  publish time and no legacy fields".
+  publish time and no legacy fields". *Superseded 2026-10-12:* "what a reader may do with it is #110's question" is
+  answered. ADR-109 (question 1, ruled on #9, comment 6111608867) and #110's rewrite of that day remove the field:
+  `published_at` leaves in #183, after this change merges, with `TestPublishStampsPublishedAt` and the publish-time
+  sentence of that requirement.
 - **`events.go` is not ported.** It is a second mutation grammar (`map[string]any` payloads on `graph.events.*`) with
   no subscriber at the pin; its one admitted producer is `processor/rule` (`expression_factory.go:353`,
   `publisher.go:151-152`), whose port moves that emission to the mutation-request protocol or drops it (a
@@ -1457,7 +1465,11 @@ These issues belong to changes 4, 5 and 7. This change forecloses none of them:
   surface, a departure from ADR-088's second decision (D6), and returns with #110 as returning surface, named on the
   readiness row's `known_risks` (D6), so the drop forecloses nothing. The gate and the `Watcher` are carried, and where
   the gate lives is the readiness ADR's to decide (ruling P as narrowed, D16). `ComputeIndexStatus` is not carried
-  (ruled P, D6) and returns with change 4, before change 7 reads it.
+  (ruled P, D6) and returns with change 4, before change 7 reads it. *Superseded 2026-10-12:* ADR-109 (ruled on #9,
+  comment 6111608867) and #110's rewrite of that day replace the change-7 part of this entry. `published_at` leaves
+  in #183, after this change merges; `Health()` derives from nothing in the envelope, so `Set` does not return; the
+  gate's one SemEngine reader is graph-index, in process, and the gate stays in `graph/readiness` (ADR-109's row for
+  ADR-083 D4).
 - **#111 items 2–4**: changes 4 and 7.
 - **The indexing profile's reader** (ruling 4): with sources side by side, an entity's profile predicate can hold
   graph-ingest's statement and a producer's. Change 4's design says how graph-index reads the profile (the

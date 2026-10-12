@@ -781,7 +781,7 @@ posted on this pull request.
 
 ## 6. Docs and guidance
 
-- [ ] 6.1 (W) The developer and reviewer contract sections and the four skills of design D12, adapted (`new-payload`
+- [x] 6.1 (W) The developer and reviewer contract sections and the four skills of design D12, adapted (`new-payload`
       with SS PR #1437's two lines); AGENTS.md rows: "One NATS image pin" names its new review-only part (a Go
       literal whose tag starts with a letter); new rows for `TestNoProcessGlobalRegistration`,
       `TestReservedSubjectsDeclaredOnce`, the `component` contract test (no agentic or graph-family package),
@@ -793,26 +793,34 @@ posted on this pull request.
       only; ruling C), and a ported component whose failed `Start` cleanup fails reporting both errors and keeping
       what is left for a later `Stop` (`lifecycle-suite`, "Failed start whose own cleanup fails"; each component's own
       named test; that a newly ported component has one is review only). Gate: `task docs:check`.
-- [ ] 6.2 (W) `docs/repository-map.md` lists the ported packages and the three new ones (`internal/lifecycleguard`,
+      Done in `21056e1`; the choices per section and skill are in `notes/6.1.md`. The commit that ticks this task adds
+      the AGENTS.md row `21056e1` left out (no state in a `context` value), and `task docs:check` passes on it.
+- [x] 6.2 (W) `docs/repository-map.md` lists the ported packages and the three new ones (`internal/lifecycleguard`,
       `pkg/lifecyclecleanup`, `graph/kvcatalog`), and `docs/tier1-cross-check.md:68` records the change-2
       dispositions of `internal/componentadmission` (dropped, ruling C), `internal/lifecyclecleanup` (public as
       `pkg/lifecyclecleanup`, #77 ruling), `graph/structural` (change 7) and `graph/inference` (its hierarchy slice,
-      #97); READMEs carried with their claims checked (tasks 3.x).
-- [ ] 6.3 (W) Tracking issues filed and linked here: the adoption sweeps of design D3 (the `natsfixture` helper), D13
+      #97); READMEs carried with their claims checked (tasks 3.x). Done in `699bff5`; the README check per package is
+      in `notes/6.2.md`.
+- [x] 6.3 (W) Tracking issues filed and linked here: the adoption sweeps of design D3 (the `natsfixture` helper), D13
       (the guard) and D20 (the responder-owned verb table), and the `component.Discoverable.ConfigSchema` question
-      (design D6, K4).
-- [ ] 6.4 (W) #77 gets a comment naming the public helper (`pkg/lifecyclecleanup.RollbackFailedStart`), the
+      (design D6, K4). Done: D3 is #195 and D13 is #196; D20's list is #106 comment 6126674959, since #106 is already
+      the verb-table issue; the K4 question is #197.
+- [x] 6.4 (W) #77 gets a comment naming the public helper (`pkg/lifecyclecleanup.RollbackFailedStart`), the
       `lifecycle-suite` requirement and graph-ingest's test that carry its ruling (design D7), for SemTeams' proving
       case. The comment names the one change to a pin behavior, a nil rollback now refused with an error (design D7.2),
       and the inverted test `TestRollbackFailedStartNilRollback`, so SemTeams can review it as #77's body asks.
-- [ ] 6.5 (W) A tracking issue filed and linked here for the rest of `graph/inference`, which ports with
+      Done: #77 comment 6126671819.
+- [x] 6.5 (W) A tracking issue filed and linked here for the rest of `graph/inference`, which ports with
       graph-clustering in change 7 into a package already under the 80% gate (ruling F re-read, design D11): the
       tests that rest of the package owes (451 statements short at the pin for the whole package, design D11's
       figure), a test per configuration field it reads (37), the drop of its six unread fields with `review.llm`, and
-      the review worker's `Shutdown(ctx)` shape with its `synctest` test.
-- [ ] 6.6 (W) PR #93's body names `Closes` for #97, #98 and #99 (their rulings close with the implementing change) and
+      the review worker's `Shutdown(ctx)` shape with its `synctest` test. Done: #198.
+- [x] 6.6 (W) PR #93's body names `Closes` for #97, #98 and #99 (their rulings close with the implementing change) and
       for #100–#104, and `Addresses` #106, #110 and #111 (this change lands a part of each); each issue gets a comment
-      naming the design decision and the tests that carry it.
+      naming the design decision and the tests that carry it. Done: the PR body's `Closes` and `Addresses` lines are
+      unchanged and `closingIssuesReferences` agrees. Comments, by issue: #97 6126672340, #98 6126672848,
+      #99 6126673236, #100 6126673631, #101 6126673987, #102 6126674309, #103 6126706001, #104 6126674632,
+      #106 6126674959, #110 6126675319, #111 6126675599.
 
 ## 7. Review and archive
 

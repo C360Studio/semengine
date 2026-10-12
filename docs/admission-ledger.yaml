@@ -2720,7 +2720,10 @@
     the mutation-request protocol or drops it (#101), and loses its EntityState.Version read
     (message_handler.go:380; design D15); processor/graph-query (change 4) resolves a partial ID without the
     suffix verb (entity_resolver.go:102; #104, design D19), and brings the envelope type, its constructor,
-    min_revision and their producers and generalises the verb table (design D18, D20); pkg/fusion/fusionnats
+    min_revision and their producers and generalises the verb table (design D18, D20); change 4's design also
+    decides the generation marker beside indexed_revision that #103's addendum asks for, so that a revision
+    from a recreated bucket is detectable (#103 comment 6038196148; this change closes #103, so the question
+    lives here afterwards); pkg/fusion/fusionnats
     (change 5) decodes by the verb's declared reply type, with no UnwrapQueryResponse (design D18); pkg/fusion
     (change 5) carries its copy of the envelope, IndexStatus, without the three legacy fields, since the doc
     comment's "the two structs change together" is no longer kept in this change (#110, design D16)
@@ -2755,7 +2758,8 @@
     gone (design D5). (2) An undecodable value revokes the held envelope's freshness at once, and the next
     decoded update restores it (PR #93 comment 6048386249). (3) Publisher.Publish sets published_at on every
     write, UTC RFC 3339 with nanoseconds, replacing any caller value (design D16, ruled F); nothing in this
-    change reads it, and what a reader may do with it is #110's question. (4) BacklogStatusInputs loses
+    change reads it, and ADR-109 (question 1, docs/adr/109-ready-after-boot.md; ruled on #9, comment
+    6111608867) removes it in #183, after this change merges. (4) BacklogStatusInputs loses
     LastSynced (design D16). (5) The gauges register through metric.RegisterOrGet under the semengine
     namespace (gauges.go:48, :100; design D4); Register returns the registry's refusal, and a nil registry
     registers nothing, where the pin fell back to Prometheus' global registry (task 3.4)
@@ -2768,11 +2772,13 @@
     moved gate and backlog files among them). Not carried, each with the change that brings its first reader
     and the last commit holding its adapted code: Set with NewSet, Dump and Verdict (set.go, set_test.go; its
     two sleeps left with set_test.go:85, :302): read at the pin only by gateway/graph-gateway, which is
-    deferred as consumer-owned (its row), and needed back by #110's fix ("Health() reports from the same
-    readiness.Set the bucket is written from", change 7), so Set returns with #110 (design D6); never ported,
-    so the pin holds it. The drop departs from the pin's ADR-088 (:42-48: aggregation is a client-side fold
-    over readiness.Set); the owner kept the drop (#91 comment 6085720598): no starter consumer calls Set, its
-    one pin reader is deferred, and a consumer can loop over its keys through the gate. ComputeIndexStatus
+    deferred as consumer-owned (its row); never ported, so the pin holds it. Nothing now brings Set back: #110
+    was rewritten on 2026-10-12 under ADR-109 (its "Superseded (history)" paragraph withdraws the fix shape
+    "Health() reports from the same readiness.Set the bucket is written from"), and Health() derives from
+    nothing in the envelope (ADR-109 Decision 2). The drop departs from the pin's ADR-088 (:42-48:
+    aggregation is a client-side fold over readiness.Set); the owner kept the drop (#91 comment 6085720598):
+    no starter consumer calls Set, its one pin reader is deferred, and a consumer can loop over its keys
+    through the gate. ComputeIndexStatus
     with IndexStatusInputs, and WithRevisionGauges with GaugeOption and the revision gauges (ruled P, #91
     comment 6080973822, narrowed by comment 6085720598; design D16): graph-index's producer code, returning
     with graph-index in change 4 (pin processor/graph-index/watermark.go:93, metrics.go:97); last held,
@@ -2879,7 +2885,7 @@
 - source_path: graph/inference
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    hierarchy inference: graph-ingest creates an entity's absent type, system and domain containers at its
+    hierarchy inference: graph-ingest creates an entity's absent type, taxonomy and source containers at its
     birth and writes its membership statements; public because processor/graph-clustering.Config names
     inference.Config (pin component.go:77, change 7; design D1)
   destination: >-

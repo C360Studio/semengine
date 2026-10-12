@@ -3,10 +3,12 @@
 ## Purpose
 Component registration is how a consumer's program makes SemEngine's components and their payload types known. Each
 component package exports its own `Register`, and `RegisterPayloads` where it owns payload types; the consumer calls
-each one it uses, and no package registers a whole family of components for it. When graph-ingest needs a payload
-type nobody registered, its error names the call that registers it. The capability also keeps the `component`
-package from importing the graph, agentic, lifecycle or projection packages, and requires a component ported from
-SemStreams to refuse a configuration key it does not define.
+each one it uses, and no package registers a whole family of components for it. When graph-ingest is built with
+hierarchy inference enabled and the payload registry lacks the hierarchy container type, construction fails with an
+error naming that type and the call that registers it (`inference.RegisterPayloads`). The capability also keeps the
+`component` package, directly or through its dependencies, from importing any agentic package, `graph` or a package
+under it, `internal/graphmutation`, `pkg/lifecycle`, or any `pkg/projection` package but `pkg/projection/contract`,
+and requires a component ported from SemStreams to refuse a configuration key it does not define.
 
 ## Requirements
 

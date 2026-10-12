@@ -10,7 +10,7 @@ before the review stop. Choices the design does not spell out go in `notes/<task
 
 ## 2. Code (developer)
 
-- [ ] 2.1 Unit tests first, with the fixture's fakes (design table rows 1, 2, 3 and 5); show each fails on `main`'s
+- [x] 2.1 Unit tests first, with the fixture's fakes (design table rows 1, 2, 3 and 5); show each fails on `main`'s
   code, then make them pass: Restart's one more stop, start and port read on a mapped-port failure with a live
   context, and the inspect detail on the mapped-port error (Start and Restart).
 - [ ] 2.2 The integration test (design table row 4): hold the next port on all addresses, Restart, dial `URL()`.

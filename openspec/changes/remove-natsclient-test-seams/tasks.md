@@ -10,8 +10,10 @@ revises tasks 2.2 and 2.3 before section 2 starts.
 
 - [x] 1.1 Copy `.openspec.yaml` (`skip_specs: true`), `inventory.md`, `design.md`, `proposal.md` and `tasks.md` into
   `openspec/changes/remove-natsclient-test-seams/`. Run `task spec:check`.
-- [ ] 1.2 Hold: the owner's acceptance of this design and rulings on Q1 and Q2, on #192; and PR #188 merged into
-  `main`. Section 2 starts after them, on a branch that has merged `origin/main`.
+- [x] 1.2 Hold: the owner's acceptance of this design and rulings on Q1 and Q2, on #192; and PR #188 merged into
+  `main`. Section 2 starts after them, on a branch that has merged `origin/main`. Accepted with Q1 remove `commitHook`
+  and Q2 keep `netDial` (#192 comment 6127721456); #188 merged as `993fd1f` (2026-10-12); `d231fc7` merges
+  `origin/main` at `993fd1f`. Line numbers below stay on `a5020db`: the developer maps them on the merged head.
 
 ## 2. Code, part 1 (developer)
 

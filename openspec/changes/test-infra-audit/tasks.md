@@ -19,7 +19,7 @@ review stop. Choices the design does not spell out go in `notes/<task>.md`.
   `Taskfile.yml` (`integration-test-runner`, "Integration test command").
 - [x] 2.2 Replace `test:integration` with the `go test` command and the coverage fingerprint; `cover-check.sh` reads
   `coverage/` and refuses a missing or different fingerprint, with a test for each refusal.
-- [ ] 2.3 In natsfixture's once-per-process step: set `TESTCONTAINERS_RYUK_DISABLED=true` first, then sweep labelled
+- [x] 2.3 In natsfixture's once-per-process step: set `TESTCONTAINERS_RYUK_DISABLED=true` first, then sweep labelled
   containers older than 30 minutes; label every container. Tests: "Ryuk is off" and "Only old labelled containers are
   swept" (`nats-fixture`, "Ryuk off, labelled containers and the sweep"). The Ryuk test sets no environment itself,
   `t.Setenv` included.
@@ -33,7 +33,7 @@ review stop. Choices the design does not spell out go in `notes/<task>.md`.
 - [ ] 2.6 Remove `scripts/test-integration.sh`, `scripts/admission-lock.sh`, `internal/harness/runner`, the lock lines
   in `scripts/doctor.sh`, its Ryuk lines (`:77-83`, the Ryuk environment and properties-file report, and `:95-105`, the
   Ryuk image check), the evidence upload in `.github/workflows/ci.yml`, and the lock note in `scripts/verify.sh:9`.
-- [ ] 2.7 Remove the fixture's name generator and the SemStreams substring list; `TestSemEngineAssignedNames` keeps the
+- [x] 2.7 Remove the fixture's name generator and the SemStreams substring list; `TestSemEngineAssignedNames` keeps the
   `semengine-` prefix rule; the two `Fixture.Name` callers use literal names.
 - [ ] 2.8 Update every file that names the runner, the lock, the evidence directory or `SEMENGINE_NATS_IMAGE`:
   `docs/setup-plan.md` (the text in `drafts/setup-plan-change.md`); `docs/testing.md` (`:57-69`, `:554-569`, `:572`);

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"gopkg.in/yaml.v3"
 )
 
@@ -66,9 +65,8 @@ func TestNoBroadDockerCleanupSensitivity(t *testing.T) {
 	}
 }
 
-// T-B5: every Docker name SemEngine assigns is namespaced and invisible to SemStreams' substring
-// destroyers. Docker's name filter matches any part of a name, so `ops` inside `stops` is selected
-// by `--filter name=ops`; the rule is a substring rule (natsfixture.CheckName), not a segment rule.
+// T-B5: every Docker name a script, task, workflow or Compose file assigns starts with semengine-
+// and uses only [a-z0-9-] (harness-boundaries › "Docker names this repository assigns").
 func TestSemEngineAssignedNames(t *testing.T) {
 	root := repoRoot(t)
 	requireNoViolations(t, "Docker names", dockerNameViolations(t, root, repoFiles(t, root)))
@@ -94,36 +92,32 @@ func TestSemEngineAssignedNamesSensitivity(t *testing.T) {
 		name, file, content string
 		fragments           []string
 	}{
-		{"destroyer segment in a volume", "scripts/x.sh", "docker volume create semengine-ops-cache\n",
-			[]string{"scripts/x.sh:1", "semengine-ops-cache", "ops"}},
-		{"destroyer inside a longer word: stops", "scripts/x.sh", "docker run --name semengine-stops-lane img\n",
-			[]string{"scripts/x.sh:1", "semengine-stops-lane", "ops"}},
-		{"destroyer inside a longer word: loops", "scripts/x.sh", "docker run -v semengine-loops:/d img\n",
-			[]string{"scripts/x.sh:1", "semengine-loops", "ops"}},
-		{"missing prefix", "scripts/x.sh", "docker network create lane-net\n",
+		{"volume without the prefix", "scripts/x.sh", "docker volume create cache\n",
+			[]string{"scripts/x.sh:1", "cache", "semengine-"}},
+		{"network without the prefix", "scripts/x.sh", "docker network create lane-net\n",
 			[]string{"scripts/x.sh:1", "lane-net", "semengine-"}},
 		{"uppercase", "scripts/x.sh", "docker run --name=semengine-Lane img\n",
 			[]string{"scripts/x.sh:1", "semengine-Lane"}},
-		{"compose project flag", "scripts/x.sh", "docker compose -p semengine-agentic up -d\n",
-			[]string{"scripts/x.sh:1", "agentic"}},
-		{"compose project env", "Taskfile.yml", "env:\n  COMPOSE_PROJECT_NAME: semstreams\n",
-			[]string{"Taskfile.yml:2", "semstreams"}},
-		{"compose top-level name", "docker/compose.yml", "name: semengine-research-graph\nservices: {}\n",
-			[]string{"docker/compose.yml", "research-graph"}},
-		{"compose container_name", "docker/compose.yml", "services:\n  a:\n    container_name: semengine-crud-tools\n",
-			[]string{"docker/compose.yml", "crud-tools"}},
-		{"compose volume key", "docker/compose.yml", "volumes:\n  semembed-cache: {}\n",
-			[]string{"docker/compose.yml", "semembed-cache"}},
-		{"compose network name", "docker/compose.yml", "networks:\n  n:\n    name: semengine-deep-research\n",
-			[]string{"docker/compose.yml", "deep-research"}},
-		{"variable name with unsafe literal part", "scripts/x.sh", "docker run --name \"semengine-ops-$x\" img\n",
-			[]string{"scripts/x.sh:1", "ops"}},
+		{"compose project flag", "scripts/x.sh", "docker compose -p lane up -d\n",
+			[]string{"scripts/x.sh:1", "lane", "semengine-"}},
+		{"compose project env", "Taskfile.yml", "env:\n  COMPOSE_PROJECT_NAME: lane\n",
+			[]string{"Taskfile.yml:2", "lane", "semengine-"}},
+		{"compose top-level name", "docker/compose.yml", "name: stack\nservices: {}\n",
+			[]string{"docker/compose.yml", "stack", "semengine-"}},
+		{"compose container_name", "docker/compose.yml", "services:\n  a:\n    container_name: broker\n",
+			[]string{"docker/compose.yml", "broker", "semengine-"}},
+		{"compose volume key", "docker/compose.yml", "volumes:\n  cache: {}\n",
+			[]string{"docker/compose.yml", "cache", "semengine-"}},
+		{"compose network name", "docker/compose.yml", "networks:\n  n:\n    name: semengine-net_1\n",
+			[]string{"docker/compose.yml", "semengine-net_1", "outside"}},
+		{"variable name with a bad literal part", "scripts/x.sh", "docker run --name \"lane-$x\" img\n",
+			[]string{"scripts/x.sh:1", "lane-$x", "semengine-"}},
 		{"variable-only name", "scripts/x.sh", "docker run --name \"$name\" img\n",
 			[]string{"scripts/x.sh:1", "$name", "literal"}},
-		{"name after a continuation", "scripts/x.sh", "docker run -d \\\n  --name ops-x \\\n  img\n",
-			[]string{"scripts/x.sh:1", "ops-x", "ops"}},
-		{"volume after a continuation", "scripts/x.sh", "docker run \\\n  -v semengine-stops:/d img\n",
-			[]string{"scripts/x.sh:1", "semengine-stops", "ops"}},
+		{"name after a continuation", "scripts/x.sh", "docker run -d \\\n  --name lane-x \\\n  img\n",
+			[]string{"scripts/x.sh:1", "lane-x", "semengine-"}},
+		{"volume after a continuation", "scripts/x.sh", "docker run \\\n  -v cache:/d img\n",
+			[]string{"scripts/x.sh:1", "cache", "semengine-"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			files := map[string]string{}
@@ -240,6 +234,19 @@ var (
 	shellVariable      = regexp.MustCompile(`\$\{[^}]*\}|\$[A-Za-z_][A-Za-z0-9_]*`)
 )
 
+// checkDockerName reports why name is not a name this repository may assign, or nil.
+func checkDockerName(name string) error {
+	if !strings.HasPrefix(name, "semengine-") {
+		return fmt.Errorf("docker name %q: must start with %q", name, "semengine-")
+	}
+	for _, r := range name {
+		if (r < 'a' || r > 'z') && (r < '0' || r > '9') && r != '-' {
+			return fmt.Errorf("docker name %q: %q is outside [a-z0-9-]", name, r)
+		}
+	}
+	return nil
+}
+
 // dockerNameViolations is the T-B5 check over literal names in scripts, Taskfile, workflows, and
 // the structure of Compose files under docker/.
 func dockerNameViolations(t *testing.T, root string, files []string) []string {
@@ -251,9 +258,9 @@ func dockerNameViolations(t *testing.T, root string, files []string) []string {
 			violations = append(violations, fmt.Sprintf("%s: name %s is not a literal; start it with semengine-", at, value))
 			return
 		}
-		// A variable part cannot be checked here; replacing it with a hyphen still exposes any
-		// destroyer or bad character in the literal parts around it.
-		if err := natsfixture.CheckName(shellVariable.ReplaceAllString(value, "-")); err != nil {
+		// A variable part cannot be checked here; replacing it with a hyphen still exposes a
+		// missing prefix or a bad character in the literal parts around it.
+		if err := checkDockerName(shellVariable.ReplaceAllString(value, "-")); err != nil {
 			violations = append(violations, fmt.Sprintf("%s: %s: %v", at, value, err))
 		}
 	}

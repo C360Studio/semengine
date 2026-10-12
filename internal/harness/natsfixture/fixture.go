@@ -79,10 +79,9 @@ func pinnedImage(file string) (string, error) {
 // context.Context: callback contexts live in the goroutines nats.go runs, and the fixture keeps
 // only their cancel functions.
 type Fixture struct {
-	testName string
-	errorf   func(format string, args ...any)
-	logf     func(format string, args ...any) // the test log, for a failed attempt's container log
-	deps     deps
+	errorf func(format string, args ...any)
+	logf   func(format string, args ...any) // the test log, for a failed attempt's container log
+	deps   deps
 
 	// op is a one-slot semaphore serialising Start, Stop, and resource creation. It is a channel,
 	// not a mutex, so a caller waiting for it still answers to its own context.
@@ -120,7 +119,7 @@ func WithMaxPayload(n int64) Option {
 // test's cleanup. It makes no Docker call.
 func New(t testing.TB, opts ...Option) *Fixture {
 	t.Helper()
-	f := &Fixture{testName: t.Name(), errorf: t.Errorf, logf: t.Logf, deps: defaultDeps(), calls: map[string]int{}}
+	f := &Fixture{errorf: t.Errorf, logf: t.Logf, deps: defaultDeps(t.Logf), calls: map[string]int{}}
 	for _, opt := range opts {
 		opt(f)
 	}
@@ -284,7 +283,7 @@ func (f *Fixture) attempt(ctx context.Context, n int) error {
 	req := testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
 			Image:        image,
-			Name:         f.Name("nats"),
+			Labels:       map[string]string{testLabel: labelValue()},
 			ExposedPorts: []string{clientPort},
 			Cmd:          cmd,
 			Files:        files,
@@ -539,11 +538,11 @@ func (f *Fixture) CreateKeyValue(ctx context.Context, bucket string) (jetstream.
 	return kv, nil
 }
 
-// Consume creates a durable consumer named Name(base) on stream and delivers each message to
+// Consume creates a durable consumer named name on stream and delivers each message to
 // handler with a context derived from ctx. Stop stops delivery, waits for every running handler to
 // return, and only then cancels that context and deletes the consumer: a callback's context stays
 // live until its handler has been joined.
-func (f *Fixture) Consume(ctx context.Context, stream, base string, handler func(context.Context, jetstream.Msg)) (jetstream.Consumer, error) {
+func (f *Fixture) Consume(ctx context.Context, stream, name string, handler func(context.Context, jetstream.Msg)) (jetstream.Consumer, error) {
 	if ctx == nil || handler == nil {
 		return nil, errors.New("natsfixture: Consume needs a context and a handler")
 	}
@@ -552,7 +551,7 @@ func (f *Fixture) Consume(ctx context.Context, stream, base string, handler func
 		return nil, err
 	}
 	defer f.release()
-	c := &consumer{stream: stream, name: f.Name(base), idle: make(chan struct{})}
+	c := &consumer{stream: stream, name: name, idle: make(chan struct{})}
 	f.mu.Lock()
 	f.consumers = append(f.consumers, c)
 	f.mu.Unlock()

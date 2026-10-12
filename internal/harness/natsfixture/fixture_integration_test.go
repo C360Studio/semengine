@@ -88,21 +88,6 @@ func (l *logTB) containerLogs() int {
 	return n
 }
 
-// sessionLabel is the label testcontainers puts on every container this process starts, read from
-// the labels it applies rather than spelled here: its deprecated exported constant names another
-// key than the one the pinned v0.44 applies.
-func sessionLabel(t *testing.T) string {
-	t.Helper()
-	sid := testcontainers.SessionID()
-	for k, v := range testcontainers.GenericLabels() {
-		if v == sid && sid != "" {
-			return k + "=" + v
-		}
-	}
-	t.Fatalf("testcontainers applies no label carrying session %q", sid)
-	return ""
-}
-
 // conn is the fixture's own connection, read in-package: the fixture exports no accessor for it,
 // because Stop closes it.
 func conn(f *Fixture) *nats.Conn {
@@ -128,14 +113,14 @@ func TestFixtureRoundTrip(t *testing.T) {
 	if !strings.HasPrefix(f.URL(), "nats://") || conn(f).Status() != nats.CONNECTED {
 		t.Fatalf("URL %q status %v", f.URL(), conn(f).Status())
 	}
-	stream := f.Name("orders")
+	stream := "orders"
 	if _, err := f.CreateStream(ctx, stream, stream+".>"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.JetStream().Publish(ctx, stream+".1", []byte("one")); err != nil {
 		t.Fatal(err)
 	}
-	kv, err := f.CreateKeyValue(ctx, f.Name("kv"))
+	kv, err := f.CreateKeyValue(ctx, "kv")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -401,7 +386,7 @@ func consumeBlocked(t *testing.T) (*Fixture, *probe.Callback, jetstream.Consumer
 	f := startFixture(t)
 	cb := probe.NewCallback()
 	t.Cleanup(cb.Release) // runs before the fixture's own cleanup Stop
-	stream := f.Name("work")
+	stream := "work"
 	if _, err := f.CreateStream(t.Context(), stream, stream+".>"); err != nil {
 		t.Fatal(err)
 	}
@@ -491,7 +476,7 @@ func TestS1_3BlockedCallbackDelaysFinalisation(t *testing.T) {
 // publish future with the server's acknowledgement.
 func TestS1_4GracefulFinalisation(t *testing.T) {
 	f := startFixture(t)
-	stream := f.Name("events")
+	stream := "events"
 	if _, err := f.CreateStream(t.Context(), stream, stream+".>"); err != nil {
 		t.Fatal(err)
 	}
@@ -636,13 +621,8 @@ func (o owner) Observe() lifecycletest.Observation {
 // S1-8: two fixtures in one test are disjoint, and each Stop removes only its own.
 func TestS1_8Isolation(t *testing.T) {
 	a, b := startFixture(t), startFixture(t)
-	if a.containerID == b.containerID || a.URL() == b.URL() || a.Name("x") == b.Name("x") {
+	if a.containerID == b.containerID || a.URL() == b.URL() {
 		t.Fatalf("fixtures collide: %s %s / %s %s", a.containerID, a.URL(), b.containerID, b.URL())
-	}
-	for _, n := range []string{a.Name("x"), b.Name("x")} {
-		if err := CheckName(n); err != nil {
-			t.Fatal(err)
-		}
 	}
 	aID, aURL, bID := a.containerID, a.URL(), b.containerID
 	if err := stop(t, a); err != nil {
@@ -696,7 +676,7 @@ func TestStopJoinsHandlersOnAClosedConnection(t *testing.T) {
 	f := startFixture(t)
 	cb := probe.NewCallback()
 	t.Cleanup(cb.Release)
-	stream := f.Name("work")
+	stream := "work"
 	if _, err := f.CreateStream(t.Context(), stream, stream+".>"); err != nil {
 		t.Fatal(err)
 	}
@@ -760,7 +740,7 @@ func restart(t *testing.T, f *Fixture) {
 func TestRestartKeepsFileStreamLosesMemoryStream(t *testing.T) {
 	f := startFixture(t)
 	ctx := t.Context()
-	file, mem := f.Name("file"), f.Name("mem")
+	file, mem := "file", "mem"
 	if _, err := f.CreateStream(ctx, file, file+".>"); err != nil {
 		t.Fatal(err)
 	}
@@ -855,7 +835,7 @@ func TestRestartEndsConsumers(t *testing.T) {
 	f := startFixture(t)
 	cb := probe.NewCallback()
 	t.Cleanup(cb.Release)
-	stream := f.Name("work")
+	stream := "work"
 	if _, err := f.CreateStream(t.Context(), stream, stream+".>"); err != nil {
 		t.Fatal(err)
 	}
@@ -926,31 +906,6 @@ func TestRestartEndsConsumers(t *testing.T) {
 	}
 }
 
-// sessionContainersLike lists the containers of this run's testcontainers session whose name
-// shares the fixture container's name up to its random suffix: every container this fixture could
-// have created, read from Docker rather than from the fixture.
-func sessionContainersLike(t *testing.T, id string) []string {
-	t.Helper()
-	out, err := exec.Command("docker", "inspect", "--format", "{{.Name}}", id).Output()
-	if err != nil {
-		t.Fatalf("docker inspect %s: %v", id, err)
-	}
-	name := strings.TrimPrefix(strings.TrimSpace(string(out)), "/")
-	prefix := name[:strings.LastIndex(name, "-")+1]
-	label := sessionLabel(t)
-	out, err = exec.Command("docker", "ps", "-a", "--no-trunc", "--filter", "label="+label, "--format", "{{.ID}} {{.Names}}").Output()
-	if err != nil {
-		t.Fatalf("docker ps --filter label=%s: %v", label, err)
-	}
-	var ids []string
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		if fields := strings.Fields(line); len(fields) == 2 && strings.HasPrefix(fields[1], prefix) {
-			ids = append(ids, fields[0])
-		}
-	}
-	return ids
-}
-
 // Restart fault matrix (task 2.2): each container hook fails in turn, before and after its real
 // call. Restart returns an *Error naming exactly that phase, runs no later phase, creates no second
 // container, and Stop still removes the one container and observes it gone.
@@ -995,7 +950,7 @@ func TestRestartFaultMatrix(t *testing.T) {
 			if calls["start"] != 1 {
 				t.Fatalf("start called %d times; Restart must not replace the container", calls["start"])
 			}
-			if got := sessionContainersLike(t, id); len(got) != 1 || got[0] != id {
+			if got := processContainers(t); len(got) != 1 || got[0] != id {
 				t.Fatalf("containers of this fixture after a failed Restart: %v, want only %s", got, id)
 			}
 			if err := f.Restart(ctx); !errors.Is(err, errNotStarted) {
@@ -1016,7 +971,7 @@ func TestRestartFaultMatrix(t *testing.T) {
 func TestFaultKVOverARealBucket(t *testing.T) {
 	f := startFixture(t)
 	ctx := t.Context()
-	bucket, err := f.CreateKeyValue(ctx, f.Name("faults"))
+	bucket, err := f.CreateKeyValue(ctx, "faults")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1054,7 +1009,7 @@ func TestFaultKVOverARealBucket(t *testing.T) {
 func TestNoCreationOnceStopBegins(t *testing.T) {
 	f, cb, _, _ := consumeBlocked(t)
 	result := stopRunning(t, f)
-	late := f.Name("late")
+	late := "late"
 	// Refused at once, not queued behind Stop: Stop is parked on a handler only the test releases.
 	_, err := f.CreateStream(t.Context(), late, late+".>")
 	cb.Release()
@@ -1067,7 +1022,7 @@ func TestNoCreationOnceStopBegins(t *testing.T) {
 	if rem := f.remaining(); len(rem) != 0 {
 		t.Fatalf("Stop returned nil while still owning %v", rem)
 	}
-	if _, err := f.CreateKeyValue(t.Context(), f.Name("after")); err == nil {
+	if _, err := f.CreateKeyValue(t.Context(), "after"); err == nil {
 		t.Fatal("CreateKeyValue succeeded after Stop")
 	}
 	if rem := f.remaining(); len(rem) != 0 {

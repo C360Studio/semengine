@@ -19,13 +19,13 @@ import (
 // calls captured instead of sent: enough to prove what the fixture asks the broker for.
 func startedWith(t *testing.T) *Fixture {
 	t.Helper()
-	f := &Fixture{testName: t.Name(), deps: defaultDeps(), calls: map[string]int{}, containerID: "c0ffee"}
+	f := &Fixture{deps: defaultDeps(t.Logf), calls: map[string]int{}, containerID: "c0ffee"}
 	f.js = struct{ jetstream.JetStream }{} // never called: every JetStream use below goes through deps
 	return f
 }
 
-// Every stream and bucket the fixture creates declares its bounds (nats-fixture › "Run-unique
-// ownership and safe names"); the values are restated here, not read from the implementation.
+// Every stream and bucket the fixture creates declares its bounds (nats-fixture › "Bounded test
+// streams"); the values are restated here, not read from the implementation.
 func TestCreateStreamDeclaresBounds(t *testing.T) {
 	f := startedWith(t)
 	var got jetstream.StreamConfig
@@ -319,7 +319,7 @@ func TestConnectHonoursItsContext(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 	began := time.Now()
-	nc, err := defaultDeps().connect(ctx, "nats://"+ln.Addr().String())
+	nc, err := defaultDeps(t.Logf).connect(ctx, "nats://"+ln.Addr().String())
 	if nc != nil {
 		nc.Close()
 	}
@@ -356,7 +356,7 @@ func TestConnectJoinsItsDial(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		nc, err := defaultDeps().connect(ctx, "nats://"+ln.Addr().String())
+		nc, err := defaultDeps(t.Logf).connect(ctx, "nats://"+ln.Addr().String())
 		done <- result{nc, err}
 	}()
 	srv, ok := <-accepted

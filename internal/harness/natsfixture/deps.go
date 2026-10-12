@@ -45,9 +45,11 @@ type deps struct {
 	absent         func(context.Context, string) (bool, error)
 }
 
-func defaultDeps() deps {
+// defaultDeps calls Docker and NATS. Its start runs prepareDocker first, writing to logf.
+func defaultDeps(logf func(format string, args ...any)) deps {
 	return deps{
 		start: func(ctx context.Context, req testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
+			prepareDocker(ctx, logf)
 			return testcontainers.GenericContainer(ctx, req)
 		},
 		host: func(ctx context.Context, c testcontainers.Container) (string, error) { return c.Host(ctx) },
@@ -156,8 +158,7 @@ func drainAndObserveClosed(ctx context.Context, nc *nats.Conn) error {
 }
 
 // containerAbsent asks the daemon directly: after Terminate, testcontainers closes the container's
-// own client, so absence is observed through a fresh one, reached through testcontainers' exported
-// types so the Docker client packages stay indirect dependencies.
+// own client, so absence is observed through a fresh one.
 func containerAbsent(ctx context.Context, id string) (bool, error) {
 	cli, err := testcontainers.NewDockerClientWithOpts(ctx)
 	if err != nil {
@@ -172,10 +173,8 @@ func containerAbsent(ctx context.Context, id string) (bool, error) {
 	if err == nil {
 		return false, nil
 	}
-	// The daemon's not-found error is recognisable only through containerd's errdefs sentinel,
-	// which would make another module a direct dependency. Its message has been stable since
-	// Docker 1.x; if it ever changes, this fails closed: Stop reports the error instead of claiming
-	// the container absent.
+	// The daemon's not-found message has been stable since Docker 1.x; if it ever changes, this
+	// fails closed: Stop reports the error instead of claiming the container absent.
 	if strings.Contains(err.Error(), "No such container") {
 		return true, nil
 	}

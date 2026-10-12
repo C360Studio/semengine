@@ -107,11 +107,20 @@ into the handoff:
 2. **Is the premise true?** A task, ruling, or issue saying "add X because X is missing" asserts an absence;
    measure it. If the search finds X, stop and escalate with `file:line`; implementing as written re-commits the
    defect the instruction meant to prevent.
-3. **Who consumes it at birth?** Name the present consumer of every new surface. "For observability" or "for
-   future use" with zero present consumers is a phantom; do not add it. A test is not a consumer: production code
-   carries no method, field, option, constructor or hook, exported or not, whose only caller is a test. A test that
-   cannot reach what it must prove through the calls production code makes is telling you the design is wrong;
-   change the design, never add a back door (owner ruling of 2026-10-12, #186).
+3. **Who is it for?** Name, for every new surface, one of three: a production caller in this repository, at
+   `file:line`; a consumer `docs/inventory-scope.md` names, with the symbol it uses; or the contract line that offers
+   it to products built on SemEngine (a spec requirement, the package `README.md`, or the admission ledger's `contract`
+   field). An exported symbol that production code here calls is plumbing: exported so another SemEngine package can
+   call it. One a contract line offers is framework API: its callers are products, which live outside this repository,
+   so a test here may be its only caller, and that test calls it the way a product would. An unexported symbol has only
+   the first answer. Surface with none of the three is a phantom; do not add it. "For observability" or "for future
+   use" is the phantom's shape: it names no contract line a reviewer can hold the code to. A test is not a reader, but
+   a test is the proof of an API (owner ruling of 2026-10-12, #190). Production code carries no back door, exported or
+   not and whatever calls it: a method, field, option, constructor or hook that lets a caller do to a framework object
+   what no production caller, in this repository or in a consumer, ever does, such as swapping a dependency under a
+   running object, reading private state or skipping a lifecycle step. A contract line does not make a back door
+   framework API. A test that cannot reach what it must prove through the calls production code makes is telling you
+   the design is wrong; change the design, never add a back door (owner rulings of 2026-10-12, #186 and #190).
 4. **Am I asking a caller to predict something the framework could observe?** A new knob, threshold, limit, name, or
    "remember to call X first" hands the caller a fact the framework already holds; they will get it wrong, and
    silently. Prefer acting and handling the real outcome over making them compute it in advance. If the slice cannot

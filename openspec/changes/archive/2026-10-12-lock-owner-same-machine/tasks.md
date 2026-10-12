@@ -18,6 +18,6 @@ The developer runs on Opus. Run `task test:unit` after each code task and `task 
 
 ## 2. Close
 
-- [ ] 2.1 Archive this change with `natsfixture-restart-port` as the last content commit. Check: `task spec:check`.
+- [x] 2.1 Archive this change with `natsfixture-restart-port` as the last content commit. Check: `task spec:check`.
 
 Task 2.1 is completed by the archive commit; the review, CI and `task merge:check -- 200` are recorded on PR #200.

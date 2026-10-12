@@ -22,9 +22,11 @@ before the review stop. Choices the design does not spell out go in `notes/<task
 
 ## 3. Review and close
 
-- [ ] 3.1 Hold: Claude's early check, then Codex's review of record on the 2.4 commit; fix findings and re-request
-  after any content commit.
-- [ ] 3.2 Archive the change and sync `openspec/specs/nats-fixture/spec.md` as the last content commit. Check: `task
+- [x] 3.1 Hold: Claude's early check, then Codex's review of record on the 2.4 commit; fix findings and re-request
+  after any content commit. Claude's early check APPROVE at `fc484ae` (6131041626). Codex at `2a55505` (6131420732):
+  CHANGES REQUESTED, H1 and M1, fixed in `0f884fe` and `5ae5625` (notes/3.1.md); re-review APPROVE at `5ae5625`
+  (6131964041), with Codex's own `task verify` ok on that commit.
+- [x] 3.2 Archive the change and sync `openspec/specs/nats-fixture/spec.md` as the last content commit. Check: `task
   spec:check`.
 
 Task 3.2 is completed by the archive commit. The archive check, CI before merging and `task merge:check -- 200` are

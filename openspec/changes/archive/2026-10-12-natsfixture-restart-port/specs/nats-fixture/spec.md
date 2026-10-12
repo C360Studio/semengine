@@ -50,5 +50,5 @@ Restart, so a file-backed stream keeps its messages and a memory-backed stream d
 
 - **WHEN** the mapped-port read after the restart fails and the caller's context is still live
 - **THEN** Restart stops and starts the same container once more and reads the port again; if that read succeeds,
-  Restart returns nil, and if it fails, Restart returns a `FixtureError` whose phase is mapped-port, with no third
-  try and no second container
+  Restart goes on to connect, and if it fails, Restart returns a `FixtureError` whose phase is mapped-port, with no
+  third try and no second container

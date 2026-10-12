@@ -53,7 +53,7 @@ matches; and SHALL read no SEMSTREAMS_* variable.
   differs from its identity
 - **THEN** the runner moves the directory to `.stale.<pid>.<started>`, removes it, and acquires
 
-#### Scenario: Foreign or live owner is respected
+#### Scenario: Live owner is respected
 
 - **WHEN** the owner record names a live pid with unchanged identity_utc, or, for a record without identity_utc,
   unchanged identity, under this machine's host name or another

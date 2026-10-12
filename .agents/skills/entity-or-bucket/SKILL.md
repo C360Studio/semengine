@@ -30,9 +30,13 @@ defends the choice on these grounds.
 5. **Bulky content** that does not belong in the graph. Store the content elsewhere and put a triple in the graph
    that holds its key.
 6. **Bootstrap circularity**: the fact says whether the graph may be read at all, so it cannot live in the graph.
-   graph-ingest's readiness record in `GRAPH_STATUS` is the case (`processor/graph-ingest/readiness.go`).
+   That was SemStreams' case for `GRAPH_STATUS`, whose readiness records a consumer could wait on before it read. It
+   is history here: in SemEngine the worker that answers a query says in its reply whether it can answer yet, and no
+   consumer reads a bucket before it asks ([ADR-109](../../../docs/adr/109-ready-after-boot.md), Decision 1).
 
-Ground 6 is SemStreams' addition to ADR-049's first five: `GRAPH_STATUS` fits none of them.
+Ground 6 is SemStreams' addition to ADR-049's first five: `GRAPH_STATUS` fits none of them. The bucket stays, as
+information for operators and tools; graph-ingest writes its record there (`processor/graph-ingest/readiness.go`).
+Nothing in SemEngine waits on it, and no value in it changes what a query returns (ADR-109, Decision 3).
 
 ## Keep it in ENTITY_STATES when
 

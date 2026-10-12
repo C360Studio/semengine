@@ -824,8 +824,10 @@ posted on this pull request.
 
 ## 7. Review and archive
 
-- [ ] 7.1 (R) Cross-agent review of record by the other agent on the last implementation commit, the head before task
-      7.2's archive commit, named in the PR body's `reviewed-by:` line; the CI run and commit named in the verdict.
-      Hold: tasks 2.1–6.6.
+- [ ] 7.1 (R) Cross-agent review of record by the other agent on the last commit that changes code, named in the PR
+      body's `reviewed-by:` line (`.agents/protocol.md` § Work lifecycle, "Cross-agent review"); a later
+      documents-only commit is re-reviewed by either agent's reviewer before task 7.2. Each verdict names the commit it
+      read and the local `task verify` run on that commit it rests on, not a CI run (#171). The archive/spec sync is
+      checked by either agent's reviewer after task 7.2, as the protocol says; that check is not this task's evidence.
 - [ ] 7.2 (W) Specs synced from the deltas, the change archived; the archive commit is the last content commit. Hold:
       task 7.1.

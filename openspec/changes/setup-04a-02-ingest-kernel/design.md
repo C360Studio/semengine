@@ -1179,6 +1179,9 @@ stay (D6). The `graph` row's `known_risks` and graph-query's `class:port-refacto
   `graph.ingest.query.*`, which is off the envelope, and the `graph.query.*` request types arrive with graph-query in
   change 4. A producer whose indexed revision is below it answers with the classified `index_not_ready`
   (`graph/mutation_responses.go:79`) or after a bounded wait; that producer behavior is change 4's to specify and prove.
+  *Superseded 2026-10-12:* the `index_not_ready` answer no longer holds. ADR-109 (ruled on #9, comment 6111608867,
+  Decision 4) reserves `index_not_ready` for the startup replay and graph-index's unresolved write failures; a
+  `min_revision` the index has not reached is ordinary catch-up, which change 4 answers another way and proves (#103).
 - `UnwrapQueryResponse` is not ported: a reply's shape is its verb's declared reply type (D20), never sniffed. Its one
   admitted reader, `pkg/fusion/fusionnats/client.go` (change 5), decodes by the declared type (a
   `class:port-refactor` note on its row).

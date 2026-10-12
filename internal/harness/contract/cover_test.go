@@ -226,6 +226,60 @@ func TestTreeStateSeesUntrackedContent(t *testing.T) {
 	}
 }
 
+// TestCoverCheckRefusesAnUnmeasuredTree (integration-test-runner › "A failed run's profile is
+// refused"): with no arguments, scripts/cover-check.sh reads coverage/integration.coverprofile only
+// when coverage/integration.tree, which task test:integration writes after a passing go test, holds
+// the fingerprint of the tree as it is now. A copy of the script runs in a throwaway root, with a
+// fake go that passes and a fake scripts/tree-state.sh that prints a fixed fingerprint.
+func TestCoverCheckRefusesAnUnmeasuredTree(t *testing.T) {
+	const refusal = "no passing integration run measured this tree"
+	run := func(t *testing.T, fingerprint *string) (string, error) {
+		t.Helper()
+		root := copyScript(t, "cover-check.sh")
+		if err := os.WriteFile(filepath.Join(root, "scripts", "tree-state.sh"), []byte("#!/bin/sh\necho 0123456789ab\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Join(root, "coverage"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, "coverage", "integration.coverprofile"), []byte("mode: atomic\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if fingerprint != nil {
+			if err := os.WriteFile(filepath.Join(root, "coverage", "integration.tree"), []byte(*fingerprint+"\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		cmd := exec.Command("bash", filepath.Join(root, "scripts", "cover-check.sh"))
+		cmd.Dir = root
+		cmd.Env = fakeBin(t, map[string]string{"go": "#!/bin/sh\nexit 0\n"})
+		out, err := cmd.CombinedOutput()
+		return string(out), err
+	}
+	other, same := "ba9876543210", "0123456789ab"
+	for _, tc := range []struct {
+		name        string
+		fingerprint *string
+	}{
+		{"no fingerprint: the last run failed or never ran", nil},
+		{"another tree's fingerprint", &other},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			out, err := run(t, tc.fingerprint)
+			if err == nil || !strings.Contains(out, refusal) {
+				t.Fatalf("err=%v, want a refusal saying %q\n%s", err, refusal, out)
+			}
+		})
+	}
+	// The refusal is not unconditional: this tree's fingerprint gets past it. Coverage itself then
+	// fails, since the fake go wrote no unit profile; only the refusal matters here.
+	t.Run("this tree's fingerprint", func(t *testing.T) {
+		if out, _ := run(t, &same); strings.Contains(out, refusal) {
+			t.Fatalf("refused a profile measured on this tree:\n%s", out)
+		}
+	})
+}
+
 // TestCoverCheckUnitRunCoversUnitAndMergedTargets: in its no-argument mode scripts/cover-check.sh
 // writes the unit profile with one go test run, over every target measured from the unit profile
 // alone or merged (natsclient, and design D11's ten targets), and not over an integration-only

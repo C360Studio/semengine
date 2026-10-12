@@ -6,10 +6,6 @@ import (
 	"strings"
 )
 
-// ErrNotAdmitted is returned by Start when the test was not launched by the integration runner:
-// Docker work on the shared daemon is admitted only through the host lock it holds.
-var ErrNotAdmitted = errors.New("natsfixture: not admitted to Docker; run it through `task test:integration -- <package>`")
-
 // ErrAlreadyUsed is returned by a second Start. A fixture is one container's lifetime: Restart
 // stops and starts that same container, and a second Start never creates another.
 var ErrAlreadyUsed = errors.New("natsfixture: fixture already started; use Restart to restart its container")

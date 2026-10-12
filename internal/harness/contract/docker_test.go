@@ -81,7 +81,7 @@ func TestSemEngineAssignedNamesSensitivity(t *testing.T) {
 			"docker run --name \"semengine-run-$suffix\" img\n" +
 			"go test -p 2 ./...\n" +
 			"docker run -v /abs/path:/data -v ./rel:/x img\n" +
-			"pin=$(grep -v '^[[:space:]]*#' .nats-image)\n" +
+			"pin=$(grep -v '^[[:space:]]*#' internal/harness/natsfixture/nats-image)\n" +
 			"git config --name value\n",
 		"docker/compose.yml": "name: semengine-stack\nservices:\n  broker:\n    container_name: semengine-broker\n" +
 			"volumes:\n  semengine-data: {}\nnetworks:\n  semengine-net:\n    name: semengine-net\n",

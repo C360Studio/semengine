@@ -15,19 +15,19 @@ review stop. Choices the design does not spell out go in `notes/<task>.md`.
 
 ## 2. Plain `go test` (pull request 1)
 
-- [ ] 2.1 Extend `TestUnitInvocationsPinned` to the `test:integration` command, failing first on today's
+- [x] 2.1 Extend `TestUnitInvocationsPinned` to the `test:integration` command, failing first on today's
   `Taskfile.yml` (`integration-test-runner`, "Integration test command").
-- [ ] 2.2 Replace `test:integration` with the `go test` command and the coverage fingerprint; `cover-check.sh` reads
+- [x] 2.2 Replace `test:integration` with the `go test` command and the coverage fingerprint; `cover-check.sh` reads
   `coverage/` and refuses a missing or different fingerprint, with a test for each refusal.
 - [ ] 2.3 In natsfixture's once-per-process step: set `TESTCONTAINERS_RYUK_DISABLED=true` first, then sweep labelled
   containers older than 30 minutes; label every container. Tests: "Ryuk is off" and "Only old labelled containers are
   swept" (`nats-fixture`, "Ryuk off, labelled containers and the sweep"). The Ryuk test sets no environment itself,
   `t.Setenv` included.
-- [ ] 2.4 Move the image pin to `internal/harness/natsfixture/nats-image`, embedded, refused without a digest;
+- [x] 2.4 Move the image pin to `internal/harness/natsfixture/nats-image`, embedded, refused without a digest;
   `TestOneImagePin` and `doctor.sh` read it; remove `SEMENGINE_NATS_IMAGE` and its override, and drop the image from
   the log lines at `natsclient/kv_key_contract_integration_test.go:55` and
   `natsclient/kv_watcher_ownership_integration_test.go:61` (they log the server version already).
-- [ ] 2.5 Remove admission (`admission.go`, `ErrNotAdmitted`, their tests) and the evidence records; a failed start
+- [x] 2.5 Remove admission (`admission.go`, `ErrNotAdmitted`, their tests) and the evidence records; a failed start
   writes the container log to the test output; prochost writes to the test's temporary directory and logs a child's
   output when its test fails (`process-host`).
 - [ ] 2.6 Remove `scripts/test-integration.sh`, `scripts/admission-lock.sh`, `internal/harness/runner`, the lock lines

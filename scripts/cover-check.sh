@@ -7,9 +7,10 @@
 # need Docker), or both merged (natsclient: its unit and integration lanes test
 # different code). A package missing from its profile fails: no statements is not coverage.
 # Usage: cover-check.sh [unit-profile integration-profile]
-#   With no arguments it measures the unit profile itself and reads the integration
-#   profile of the last `task test:integration` run in this worktree, which must have
-#   passed and must have run against the tree as it is now.
+#   With no arguments it measures the unit profile itself and reads
+#   coverage/integration.coverprofile, the profile of the last `task test:integration`
+#   run in this worktree, which must have passed and must have run against the tree as
+#   it is now.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
@@ -60,19 +61,14 @@ else
   unit=coverage/unit.coverprofile
   # Its output is printed: a test that fails here must be named, not discarded.
   go test -count=1 -coverprofile="$unit" "${unit_packages[@]}"
-  if [ ! -f .evidence/last-run ]; then
-    echo "cover: no integration run recorded in this worktree; run task test:integration first" >&2
-    exit 1
-  fi
-  run=$(cat .evidence/last-run)
-  integration="$run/integration.coverprofile"
-  if ! grep -qx 'go_test_status=0' "$run/runner.env" 2>/dev/null; then
-    echo "cover: the last integration run ($run) did not pass; its profile is not evidence" >&2
-    exit 1
-  fi
-  # The runner recorded the same fingerprint; a stale profile is refused, not trusted.
-  if ! grep -qx "tree_state=$(scripts/tree-state.sh)" "$run/runner.env"; then
-    echo "cover: the last integration run ($run) measured a different tree; run task test:integration again" >&2
+  integration=coverage/integration.coverprofile
+  # task test:integration removes coverage/integration.tree before go test and writes the
+  # tree's fingerprint there only after go test passed: a profile without that file, or with
+  # another tree's fingerprint, is refused, not trusted. A failing tree-state.sh ends the
+  # script here (set -e), so an empty fingerprint never matches an empty file.
+  now=$(scripts/tree-state.sh)
+  if [ ! -f coverage/integration.tree ] || [ "$(cat coverage/integration.tree)" != "$now" ]; then
+    echo "cover: no passing integration run measured this tree; run task test:integration" >&2
     exit 1
   fi
 fi

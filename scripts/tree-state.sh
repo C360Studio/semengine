@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Print a short fingerprint of the working tree: HEAD, the status listing, the
 # tracked diff, and the content of every untracked, unignored file (the status
-# listing names them but does not see an edit to one). The integration runner
-# records it with its evidence and cover-check.sh compares it, so coverage is never
-# read from a run of another tree.
+# listing names them but does not see an edit to one). task test:integration writes
+# it to coverage/integration.tree after a passing run and cover-check.sh compares it,
+# so coverage is never read from a run of another tree.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 {

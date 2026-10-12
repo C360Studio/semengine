@@ -133,37 +133,85 @@ func TestHelperIsANoOpWithoutItsMarker(t *testing.T) {
 	}
 }
 
-// (b) A started helper runs in its own process group, and its output goes under the evidence
-// directory when SEMENGINE_EVIDENCE_DIR is set and under the test's temporary directory otherwise.
+// (b) A started helper runs in its own process group, and its output goes under the test's
+// temporary directory.
 func TestStartedHelperHasItsOwnGroupAndCapturedOutput(t *testing.T) {
-	for _, evidence := range []bool{true, false} {
-		t.Run(fmt.Sprintf("evidence=%t", evidence), func(t *testing.T) {
-			want := filepath.Dir(t.TempDir()) // t.TempDir's siblings share this parent
-			evidenceDir := ""
-			if evidence {
-				evidenceDir = t.TempDir()
-				want = evidenceDir
-			}
-			t.Setenv(evidenceEnv, evidenceDir)
-			p, err := Start(t, "hello")
+	want := filepath.Dir(t.TempDir()) // t.TempDir's siblings share this parent
+	p, err := Start(t, "hello")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !p.Alive() {
+		stderr, _ := os.ReadFile(p.stderr)
+		t.Fatalf("helper %d exited before its group was read; stderr:\n%s", p.pid, stderr)
+	}
+	out, err := exec.Command("ps", "-o", "pgid=", "-p", strconv.Itoa(p.pid)).Output()
+	if err != nil {
+		t.Fatalf("ps pgid: %v", err)
+	}
+	if pgid, _ := strconv.Atoi(strings.TrimSpace(string(out))); pgid != p.pid || pgid == syscall.Getpgrp() {
+		t.Fatalf("helper pgid %d, pid %d, test's group %d: want its own group", pgid, p.pid, syscall.Getpgrp())
+	}
+	for stream, file := range map[string]string{"hello from the helper": p.stdout, "hello on stderr": p.stderr} {
+		if !strings.HasPrefix(file, want+string(filepath.Separator)) {
+			t.Fatalf("output file %s is not under %s", file, want)
+		}
+		ctx, cancel := context.WithTimeout(t.Context(), failureBound)
+		_, err := probe.Await(ctx, func(context.Context) (string, error) {
+			data, err := os.ReadFile(file)
+			return string(data), err
+		}, func(s string) bool { return strings.Contains(s, stream) })
+		cancel()
+		if err != nil {
+			t.Fatalf("%q never reached %s: %v", stream, file, err)
+		}
+	}
+	// The helper stayed parked until now: it ends on SIGTERM, cleanly, and says so.
+	if err := p.Signal(syscall.SIGTERM); err != nil {
+		t.Fatalf("SIGTERM: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), failureBound)
+	defer cancel()
+	status, err := p.Wait(ctx)
+	if err != nil {
+		t.Fatalf("wait after SIGTERM: %v", err)
+	}
+	data, _ := os.ReadFile(p.stdout)
+	if status != (ExitStatus{}) || !strings.Contains(string(data), helloTerminated) {
+		stderr, _ := os.ReadFile(p.stderr)
+		t.Fatalf("helper status %+v, stdout %q, stderr %q: want exit 0 after printing %q",
+			status, data, stderr, helloTerminated)
+	}
+
+}
+
+// failedTB is a test that reports itself failed when failed is set, and records what is logged to
+// it. Its cleanups run on the embedded test.
+type failedTB struct {
+	testing.TB
+	failed bool
+	logs   []string
+}
+
+func (f *failedTB) Failed() bool { return f.failed || f.TB.Failed() }
+
+func (f *failedTB) Logf(format string, args ...any) {
+	f.logs = append(f.logs, fmt.Sprintf(format, args...))
+}
+
+// process-host › "Helper is started": when its test has failed by the time the cleanup reaps the
+// child, the child's stdout and stderr are written to the test log; a passing test's log does not
+// carry them. The subtest's cleanup has run when t.Run returns.
+func TestFailedTestLogsTheHelperOutput(t *testing.T) {
+	for _, failed := range []bool{true, false} {
+		tb := &failedTB{failed: failed}
+		t.Run(fmt.Sprintf("failed=%t", failed), func(t *testing.T) {
+			tb.TB = t
+			p, err := Start(tb, "hello")
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !p.Alive() {
-				stderr, _ := os.ReadFile(p.stderr)
-				t.Fatalf("helper %d exited before its group was read; stderr:\n%s", p.pid, stderr)
-			}
-			out, err := exec.Command("ps", "-o", "pgid=", "-p", strconv.Itoa(p.pid)).Output()
-			if err != nil {
-				t.Fatalf("ps pgid: %v", err)
-			}
-			if pgid, _ := strconv.Atoi(strings.TrimSpace(string(out))); pgid != p.pid || pgid == syscall.Getpgrp() {
-				t.Fatalf("helper pgid %d, pid %d, test's group %d: want its own group", pgid, p.pid, syscall.Getpgrp())
-			}
 			for stream, file := range map[string]string{"hello from the helper": p.stdout, "hello on stderr": p.stderr} {
-				if !strings.HasPrefix(file, want+string(filepath.Separator)) {
-					t.Fatalf("output file %s is not under %s", file, want)
-				}
 				ctx, cancel := context.WithTimeout(t.Context(), failureBound)
 				_, err := probe.Await(ctx, func(context.Context) (string, error) {
 					data, err := os.ReadFile(file)
@@ -174,23 +222,13 @@ func TestStartedHelperHasItsOwnGroupAndCapturedOutput(t *testing.T) {
 					t.Fatalf("%q never reached %s: %v", stream, file, err)
 				}
 			}
-			// The helper stayed parked until now: it ends on SIGTERM, cleanly, and says so.
-			if err := p.Signal(syscall.SIGTERM); err != nil {
-				t.Fatalf("SIGTERM: %v", err)
-			}
-			ctx, cancel := context.WithTimeout(t.Context(), failureBound)
-			defer cancel()
-			status, err := p.Wait(ctx)
-			if err != nil {
-				t.Fatalf("wait after SIGTERM: %v", err)
-			}
-			data, _ := os.ReadFile(p.stdout)
-			if status != (ExitStatus{}) || !strings.Contains(string(data), helloTerminated) {
-				stderr, _ := os.ReadFile(p.stderr)
-				t.Fatalf("helper status %+v, stdout %q, stderr %q: want exit 0 after printing %q",
-					status, data, stderr, helloTerminated)
-			}
 		})
+		logged := strings.Join(tb.logs, "\n")
+		for _, want := range []string{"hello from the helper", "hello on stderr"} {
+			if strings.Contains(logged, want) != failed {
+				t.Errorf("failed=%t: test log %q, want %q in it only when the test failed", failed, logged, want)
+			}
+		}
 	}
 }
 
@@ -304,10 +342,9 @@ func awaitState(t *testing.T, p *Process, done func(string) bool) {
 	}
 }
 
-// startIdentity is ps's start time for pid, the identity runner_test.go records (psStartIdentity,
-// runner_test.go:255): a pid reused by a later process has another. lstart has one-second
-// resolution, so a pid reused within the same second reads as the same identity; that makes the
-// check fail loudly, never pass wrongly, as in runner_test.go.
+// startIdentity is ps's start time for pid: a pid reused by a later process has another. lstart
+// has one-second resolution, so a pid reused within the same second reads as the same identity;
+// that makes the check fail loudly, never pass wrongly.
 func startIdentity(pid int) (string, error) {
 	out, err := exec.Command("ps", "-o", "lstart=", "-p", strconv.Itoa(pid)).Output()
 	return strings.TrimLeft(strings.TrimSuffix(string(out), "\n"), " \t"), err

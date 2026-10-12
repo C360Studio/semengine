@@ -21,7 +21,7 @@ const (
 	// dialTimeout bounds one TCP dial to a container already past its ready log; the caller's
 	// context still bounds Start as a whole and is checked when the dial returns.
 	dialTimeout = 5 * time.Second
-	// maxLogBytes caps the container log copied into evidence on failure.
+	// maxLogBytes caps the container log a failed attempt writes to the test log.
 	maxLogBytes = 256 << 10
 )
 

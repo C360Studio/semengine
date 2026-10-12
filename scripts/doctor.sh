@@ -83,14 +83,16 @@ if [ -f "$HOME/.testcontainers.properties" ]; then
   warn tc-properties "present: $HOME/.testcontainers.properties (runner env overrides ryuk.disabled)"
 else ok tc-properties "absent"; fi
 
-# .nats-image is the one image pin; the cache is checked by digest, never by tag.
-pin=$(grep -v '^[[:space:]]*#' .nats-image 2>/dev/null | grep -v '^[[:space:]]*$' || true)
+# internal/harness/natsfixture/nats-image is the one image pin, embedded by natsfixture; the cache
+# is checked by digest, never by tag.
+pin_file=internal/harness/natsfixture/nats-image
+pin=$(grep -v '^[[:space:]]*#' "$pin_file" 2>/dev/null | grep -v '^[[:space:]]*$' || true)
 if [[ "$pin" =~ ^nats:[A-Za-z0-9][A-Za-z0-9._-]*@(sha256:[0-9a-f]{64})$ ]]; then
   digest=${BASH_REMATCH[1]}
   if $daemon && docker image inspect "nats@$digest" >/dev/null 2>&1; then ok nats-image "cached by digest: $pin"
-  elif $daemon; then warn nats-image "not cached; the runner pulls it under the lock: $pin"
+  elif $daemon; then warn nats-image "not cached; testcontainers pulls it on first use: $pin"
   else ok nats-image "$pin (daemon not reachable; cache unknown)"; fi
-else bad nats-image ".nats-image does not hold one nats:<tag>@sha256:<digest> line"; fi
+else bad nats-image "$pin_file does not hold one nats:<tag>@sha256:<digest> line"; fi
 
 # Ryuk's image is whatever the required testcontainers-go names as its default,
 # read from the module source so doctor does not keep a second spelling of it.

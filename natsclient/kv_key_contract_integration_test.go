@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"os"
 	"runtime"
 	"sort"
 	"strings"
@@ -21,7 +20,7 @@ import (
 )
 
 // This conformance test runs against the fixture's broker, the one NATS image
-// SemEngine's integration tests use (the digest-pinned .nats-image;
+// SemEngine's integration tests use (the digest pin in internal/harness/natsfixture/nats-image;
 // owner ruling, #9 comment 5969522395, item 6). The pin ran it on its own
 // digest-pinned 2.14.4 image through a version override, which is gone. The
 // KV grammar is unchanged across the move: upstream's validBucketRe /
@@ -51,9 +50,8 @@ func TestKVKeyContractNormativeNATS(t *testing.T) {
 		t.Fatalf("connect recorded SDK client: %v", err)
 	}
 	defer recordedConn.Close()
-	t.Logf("server=%s image=%s sdk=%s platform=%s/%s config=default",
-		recordedConn.ConnectedServerVersion(), os.Getenv("SEMENGINE_NATS_IMAGE"), pinnedNATSGoVersion,
-		runtime.GOOS, runtime.GOARCH)
+	t.Logf("server=%s sdk=%s platform=%s/%s config=default",
+		recordedConn.ConnectedServerVersion(), pinnedNATSGoVersion, runtime.GOOS, runtime.GOARCH)
 	currentJS, err := jetstream.New(recordedConn)
 	if err != nil {
 		t.Fatalf("current JetStream: %v", err)

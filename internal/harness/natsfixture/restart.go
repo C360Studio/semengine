@@ -61,9 +61,7 @@ func (f *Fixture) Restart(ctx context.Context) error {
 		return err
 	}
 	f.count("restart")
-	err = f.restart(ctx, c, id)
-	f.writeEvidence()
-	return err
+	return f.restart(ctx, c, id)
 }
 
 // restartable reports the container to restart, or why there is none.
@@ -191,7 +189,7 @@ func (f *Fixture) restart(ctx context.Context, c testcontainers.Container, id st
 		f.count("jsReady")
 		if err == nil {
 			f.mu.Lock()
-			f.js, f.url, f.rec.MappedPort = js, url, port
+			f.js, f.url = js, url
 			f.mu.Unlock()
 		}
 		return err

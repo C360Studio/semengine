@@ -1,4 +1,4 @@
-// Package natsfixture gives one test one disposable, admitted, real NATS server in a container
+// Package natsfixture gives one test one disposable, real NATS server in a container
 // (openspec change setup-02-isolated-harness, capability nats-fixture). The pattern is adapted from
 // SemStreams natsclient/test_client.go at 5457b345 (ledger row L1) over nats.go and
 // testcontainers-go directly, without its eleven caller knobs (ledger row L2).
@@ -10,8 +10,10 @@ package natsfixture
 
 import (
 	"context"
+	_ "embed"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -45,12 +47,41 @@ const (
 	maxPayloadConfig = "/etc/nats/semengine-fixture.conf"
 )
 
+// imagePin is the pin file, the one spelling of the NATS image (harness-boundaries › "One image
+// pin"); pinnedImage reads it.
+//
+//go:embed nats-image
+var imagePin string
+
+// digestImage is a NATS image named by its content digest, with or without a tag.
+var digestImage = regexp.MustCompile(`^nats(:[A-Za-z0-9][A-Za-z0-9._-]*)?@sha256:[0-9a-f]{64}$`)
+
+// pinnedImage returns the one image line of a pin file, skipping blank lines and # comments, and
+// refuses a file without exactly one, or one that is not a digest reference: a tag alone can be
+// re-pointed under a running repository.
+func pinnedImage(file string) (string, error) {
+	var images []string
+	for line := range strings.SplitSeq(file, "\n") {
+		if line = strings.TrimSpace(line); line != "" && !strings.HasPrefix(line, "#") {
+			images = append(images, line)
+		}
+	}
+	if len(images) != 1 {
+		return "", fmt.Errorf("the image pin holds %d image lines, want exactly one", len(images))
+	}
+	if !digestImage.MatchString(images[0]) {
+		return "", fmt.Errorf("the image pin %q is not a digest reference (nats[:tag]@sha256:<64 hex>)", images[0])
+	}
+	return images[0], nil
+}
+
 // Fixture is one test's NATS server and the resources it creates on it. It holds no
 // context.Context: callback contexts live in the goroutines nats.go runs, and the fixture keeps
 // only their cancel functions.
 type Fixture struct {
 	testName string
 	errorf   func(format string, args ...any)
+	logf     func(format string, args ...any) // the test log, for a failed attempt's container log
 	deps     deps
 
 	// op is a one-slot semaphore serialising Start, Stop, and resource creation. It is a channel,
@@ -61,7 +92,6 @@ type Fixture struct {
 	used          bool
 	stopping      bool          // set when Stop begins on owned resources; creation is refused from then on
 	stopBegun     chan struct{} // closed with stopping set, so a creation queued for the slot is refused too
-	adm           admission
 	container     testcontainers.Container
 	containerID   string
 	url           string
@@ -72,9 +102,8 @@ type Fixture struct {
 	buckets       []string
 	calls         map[string]int
 	slotWaits     map[string]int // operations that found the slot taken, by kind; read by tests
-	rec           record
-	maxPayload    int64 // broker max_payload in bytes, from WithMaxPayload
-	maxPayloadSet bool  // unset leaves the broker default
+	maxPayload    int64          // broker max_payload in bytes, from WithMaxPayload
+	maxPayloadSet bool           // unset leaves the broker default
 }
 
 // Option configures a fixture's broker; New applies it before any Docker call.
@@ -91,7 +120,7 @@ func WithMaxPayload(n int64) Option {
 // test's cleanup. It makes no Docker call.
 func New(t testing.TB, opts ...Option) *Fixture {
 	t.Helper()
-	f := &Fixture{testName: t.Name(), errorf: t.Errorf, deps: defaultDeps(), calls: map[string]int{}}
+	f := &Fixture{testName: t.Name(), errorf: t.Errorf, logf: t.Logf, deps: defaultDeps(), calls: map[string]int{}}
 	for _, opt := range opts {
 		opt(f)
 	}
@@ -105,7 +134,7 @@ func New(t testing.TB, opts ...Option) *Fixture {
 	return f
 }
 
-// Start admits the test, starts one NATS container with JetStream, connects, and returns once
+// Start starts one NATS container with JetStream from the pinned image, connects, and returns once
 // JetStream answers. Every operation runs under ctx. A failure returns an *Error per attempt,
 // after removing whatever the attempt created. A second Start returns ErrAlreadyUsed.
 func (f *Fixture) Start(ctx context.Context) error {
@@ -129,30 +158,14 @@ func (f *Fixture) Start(ctx context.Context) error {
 	if used {
 		return ErrAlreadyUsed
 	}
-	adm, err := admit(ctx)
-	if err != nil {
-		return err
-	}
-	name := f.Name("fixture")
 	f.mu.Lock()
-	f.used, f.adm = true, adm
-	f.rec = record{Test: f.testName, Name: name, Image: adm.image, Owned: []string{}, Remaining: []string{}}
+	f.used = true
 	f.mu.Unlock()
-	// The session id must be on disk before any container exists, or the runner's leak check
-	// could not see what this process leaves behind.
-	sid, err := recordSession(adm.evidenceDir)
-	f.mu.Lock()
-	f.rec.SessionID = sid
-	f.mu.Unlock()
-	if err != nil {
-		return fmt.Errorf("natsfixture: record testcontainers session before starting: %w", err)
-	}
 
 	var failures []error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		err := f.attempt(ctx, attempt)
 		if err == nil {
-			f.writeEvidence()
 			return nil
 		}
 		failures = append(failures, err)
@@ -160,7 +173,6 @@ func (f *Fixture) Start(ctx context.Context) error {
 			break
 		}
 	}
-	f.writeEvidence()
 	if len(failures) == 1 {
 		return failures[0]
 	}
@@ -224,47 +236,32 @@ func (f *Fixture) release() { <-f.op }
 
 // attempt runs the Start phases once. On failure it rolls back what it created and returns *Error.
 func (f *Fixture) attempt(ctx context.Context, n int) error {
-	ar := attemptRecord{Attempt: n}
-	defer func() {
-		f.mu.Lock()
-		f.rec.Attempts = append(f.rec.Attempts, ar)
-		f.mu.Unlock()
-	}()
-	phase := func(p Phase, started time.Time, err error) {
-		ar.Phases = append(ar.Phases, phaseRecord{Phase: string(p), ElapsedMS: since(started), Error: errString(err)})
-	}
 	fail := func(p Phase, cause error) error {
 		f.mu.Lock()
 		id := f.containerID
 		f.mu.Unlock()
 		fe := &Error{Attempt: n, Phase: p, ContainerID: id, ParentErr: ctx.Err(), Cause: cause}
-		ar.Logs, fe.Cleanup = f.rollbackAttempt(ctx, n)
-		ar.Container, ar.Error, ar.ParentErr, ar.Cleanup = id, errString(cause), errString(fe.ParentErr), errString(fe.Cleanup)
+		fe.Cleanup = f.rollbackAttempt(ctx, n)
 		return fe
 	}
-	// run times one phase and turns a cancelled parent into that phase's failure even when the
+	// run runs one phase and turns a cancelled parent into that phase's failure even when the
 	// operation itself returned success: work finished after cancellation is not accepted.
 	run := func(p Phase, op func() error) error {
-		started := time.Now()
 		err := op()
 		if err == nil {
 			err = ctx.Err()
 		}
-		phase(p, started, err)
 		if err != nil {
 			return fail(p, err)
 		}
 		return nil
 	}
 
-	f.mu.Lock()
-	image := f.adm.image
-	f.mu.Unlock()
+	var image string
 	if err := run(PhaseImage, func() error {
-		if !digestImage.MatchString(image) {
-			return fmt.Errorf("SEMENGINE_NATS_IMAGE %q is not a digest reference", image)
-		}
-		return nil
+		var err error
+		image, err = pinnedImage(imagePin)
+		return err
 	}); err != nil {
 		return err
 	}
@@ -291,7 +288,7 @@ func (f *Fixture) attempt(ctx context.Context, n int) error {
 			ExposedPorts: []string{clientPort},
 			Cmd:          cmd,
 			Files:        files,
-			WaitingFor:   wait.ForLog("Server is ready"),
+			WaitingFor:   wait.ForLog(readyLog),
 		},
 		Started: true,
 	}
@@ -364,7 +361,6 @@ func (f *Fixture) attempt(ctx context.Context, n int) error {
 
 	f.mu.Lock()
 	f.url = url
-	f.rec.Container, f.rec.MappedPort = f.containerID, port
 	f.mu.Unlock()
 	return nil
 }
@@ -395,28 +391,24 @@ func (f *Fixture) mappedPort(ctx context.Context, c testcontainers.Container) (s
 }
 
 // rollbackAttempt removes what a failed attempt created, each operation under its own fresh
-// bounded context, and records the container's log first. It returns the log file name and a nil
-// error only when the container has been observed absent; otherwise the handles stay owned for a
-// later Stop.
-func (f *Fixture) rollbackAttempt(ctx context.Context, n int) (string, error) {
+// bounded context, and writes the container's log to the test log first. It returns nil only when
+// the container has been observed absent; otherwise the handles stay owned for a later Stop.
+func (f *Fixture) rollbackAttempt(ctx context.Context, n int) error {
 	f.mu.Lock()
-	nc, c, id, dir, name := f.nc, f.container, f.containerID, f.adm.evidenceDir, f.rec.Name
+	nc, c, id := f.nc, f.container, f.containerID
 	f.nc = nil
 	f.mu.Unlock()
 	if nc != nil {
 		nc.Close() // nothing of the test's is in flight on a connection Start never returned
 	}
 	if c == nil {
-		return "", nil
+		return nil
 	}
-	logsFile := ""
 	logErr := rollback(ctx, func(rctx context.Context) error {
 		logs, err := f.deps.logs(rctx, c)
 		f.count("logs")
-		if len(logs) > 0 {
-			var werr error
-			logsFile, werr = writeLogs(dir, name, n, logs)
-			err = errors.Join(err, werr)
+		if len(logs) > 0 && f.logf != nil {
+			f.logf("natsfixture: attempt %d, container %s log:\n%s", n, shortID(id), logs)
 		}
 		return err
 	})
@@ -432,12 +424,12 @@ func (f *Fixture) rollbackAttempt(ctx context.Context, n int) (string, error) {
 		err = rollback(ctx, func(rctx context.Context) error { return f.observeAbsent(rctx, id) })
 	}
 	if err != nil {
-		return logsFile, fmt.Errorf("container %s: %w", shortID(id), err)
+		return fmt.Errorf("container %s: %w", shortID(id), err)
 	}
 	f.mu.Lock()
 	f.container, f.containerID = nil, ""
 	f.mu.Unlock()
-	return logsFile, nil
+	return nil
 }
 
 // URL is the broker's client URL on a Docker-assigned host port.
@@ -516,7 +508,7 @@ func (f *Fixture) createStream(ctx context.Context, storage jetstream.StorageTyp
 	defer f.release()
 	// Owned before the call: a create that times out may still have happened, and Stop treats a
 	// stream that turns out not to exist as absent.
-	f.own(&f.streams, name, "stream "+name)
+	f.own(&f.streams, name)
 	s, err := f.deps.createStream(ctx, js, jetstream.StreamConfig{
 		Name: name, Subjects: subjects, Storage: storage,
 		MaxAge: resourceMaxAge, MaxBytes: resourceMaxBytes, Discard: jetstream.DiscardOld,
@@ -538,7 +530,7 @@ func (f *Fixture) CreateKeyValue(ctx context.Context, bucket string) (jetstream.
 		return nil, err
 	}
 	defer f.release()
-	f.own(&f.buckets, bucket, "bucket "+bucket)
+	f.own(&f.buckets, bucket)
 	kv, err := f.deps.createKV(ctx, js, jetstream.KeyValueConfig{Bucket: bucket, TTL: resourceMaxAge, MaxBytes: resourceMaxBytes})
 	f.count("createKV")
 	if err != nil {
@@ -563,7 +555,6 @@ func (f *Fixture) Consume(ctx context.Context, stream, base string, handler func
 	c := &consumer{stream: stream, name: f.Name(base), idle: make(chan struct{})}
 	f.mu.Lock()
 	f.consumers = append(f.consumers, c)
-	f.rec.Owned = append(f.rec.Owned, "consumer "+stream+"/"+c.name)
 	f.mu.Unlock()
 	fail := func(err error) error {
 		return &Error{Attempt: 1, Phase: PhaseConsume, ContainerID: id, ParentErr: ctx.Err(), Cause: err}
@@ -640,12 +631,11 @@ func (c *consumer) stopDelivery() {
 }
 
 // own records a stream or bucket name before it is created.
-func (f *Fixture) own(list *[]string, name, label string) {
+func (f *Fixture) own(list *[]string, name string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if !slices.Contains(*list, name) {
 		*list = append(*list, name)
-		f.rec.Owned = append(f.rec.Owned, label)
 	}
 }
 
@@ -674,23 +664,10 @@ func (f *Fixture) totalCalls() int {
 	return n
 }
 
-// report surfaces a degraded evidence path as a test error: evidence that silently fails to
-// land is the failure the evidence directory exists to prevent.
+// report surfaces a failed attempt's container log that could not be read as a test error: the
+// log is how a developer learns why the container failed.
 func (f *Fixture) report(format string, args ...any) {
 	if f.errorf != nil {
 		f.errorf(format, args...)
-	}
-}
-
-func (f *Fixture) writeEvidence() {
-	f.mu.Lock()
-	f.rec.Remaining = f.remainingLocked()
-	r, dir := f.rec, f.adm.evidenceDir
-	f.mu.Unlock()
-	if dir == "" {
-		return
-	}
-	if err := writeRecord(dir, r.Name, r); err != nil {
-		f.report("natsfixture: evidence record not written: %v", err)
 	}
 }

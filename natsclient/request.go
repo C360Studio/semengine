@@ -83,7 +83,10 @@ const (
 	// full query timeout per attempt.
 	DefaultReadinessProbeTimeout = 2 * time.Second
 	// DefaultReadinessBudget bounds the TOTAL wall-clock spent waiting for the
-	// responder to come up before the error surfaces.
+	// responder to come up before the error surfaces. Neither bounds a wait
+	// behind a write the server is not reading: such a write holds an attempt
+	// until it completes or nats.go's write timeout (one minute by default,
+	// WithWriteTimeout) ends it (P13; ADR-112).
 	DefaultReadinessBudget = 30 * time.Second
 
 	readinessInitialBackoff = 100 * time.Millisecond
@@ -173,8 +176,11 @@ func (c *Client) requestMsgReady(
 
 // Request performs a synchronous request/reply operation.
 // It publishes a message to the subject and waits for a response.
-// The timeout parameter controls how long to wait for a response.
-// If timeout is 0, DefaultRequestTimeout is used.
+// The timeout parameter controls how long to wait for a response (P13). If
+// timeout is 0, DefaultRequestTimeout is used. Neither the timeout nor ctx ends
+// a wait behind a write the server is not reading: such a write holds the
+// request until it completes or nats.go's write timeout (one minute by default,
+// WithWriteTimeout) ends it (P13, P14; ADR-112).
 //
 // Request is the right call for QUERIES (read paths) — failures
 // surface to the caller, who decides whether to retry, fall back, or

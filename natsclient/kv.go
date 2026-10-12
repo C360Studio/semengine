@@ -26,7 +26,7 @@ type KVEntry struct {
 type KVOptions struct {
 	MaxRetries            int           // Maximum CAS retry attempts
 	RetryDelay            time.Duration // Initial delay between retries
-	Timeout               time.Duration // Operation timeout
+	Timeout               time.Duration // Ends the wait for the server's answer, not a held write (P13, P14; ADR-112)
 	MaxValueSize          int           // Maximum size for values (default: 1MB)
 	UseExponentialBackoff bool          // Enable exponential backoff with jitter
 	MaxRetryDelay         time.Duration // Maximum delay between retries
@@ -557,7 +557,7 @@ func (kv *KVStore) Keys(ctx context.Context) ([]string, error) {
 }
 
 // KeysByPrefix returns all keys matching the given prefix.
-// Uses JetStream KV's native key filtering for efficient server-side filtering.
+// Uses JetStream KV's native key filtering (TestKVStore_KeysByPrefix).
 // The prefix is automatically converted to a NATS wildcard pattern (prefix + ">").
 func (kv *KVStore) KeysByPrefix(ctx context.Context, prefix string) ([]string, error) {
 	if ctx == nil {
@@ -580,8 +580,9 @@ var (
 // KeysByFilter returns all keys matching an exact NATS subject filter. Unlike
 // KeysByPrefix, this supports fixed-position wildcards such as
 // "*.org.platform.system.domain.type.instance" (ADR-102 canonical order).
-// A returned native watcher owns delivery until its Updates channel closes;
-// cancellation must not turn a partial owner snapshot into successful keys.
+// A returned native watcher owns delivery until its Updates channel closes
+// (TestIntegration_KVStoreFilteredNativeDeliveryClosure); cancellation must not
+// turn a partial owner snapshot into successful keys.
 func (kv *KVStore) KeysByFilter(ctx context.Context, pattern string) ([]string, error) {
 	if ctx == nil {
 		return nil, nilContextErrorOf("KVStore", "KeysByFilter")

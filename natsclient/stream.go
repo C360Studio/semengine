@@ -99,8 +99,9 @@ type StreamAutoCreateConfig struct {
 
 	// Duplicates is the server-side duplicate-detection window for the
 	// Nats-Msg-Id header (ADR-055 §5 "T1"). Zero leaves the NATS server
-	// default (2m). Must be <= MaxAge or the server rejects creation;
-	// ensureStreamForConsumer clamps it down to MaxAge when it exceeds it.
+	// default (2m). ensureStreamForConsumer clamps it down to MaxAge when it
+	// exceeds it; the clamp is natsclient's own. That the server rejects
+	// creation when it exceeds MaxAge is not measured, and not promised.
 	Duplicates time.Duration
 
 	// MaxBytes is the maximum total size. REQUIRED and must be positive, for the
@@ -311,12 +312,14 @@ const (
 // deciding anything for the process lifetime — disabling a subscriber, skipping
 // a component, reporting a deployment shape — branches on THIS. A bare
 // jetstream.ErrStreamNotFound is not evidence of absence: on a clustered
-// deployment it is equally what a node that has not applied the meta assignment
-// says about a stream that exists, and it also reaches a consumer-setup caller
-// from consumer CREATION and consumer OBSERVATION, neither of which is a
-// statement about the stream's existence at all.
+// deployment it may also be what a node that has not applied the meta
+// assignment says about a stream that exists (not measured: no test here runs a
+// cluster), and it also reaches a consumer-setup caller from consumer CREATION
+// and consumer OBSERVATION, neither of which is a statement about the stream's
+// existence at all.
 //
-// The contract, in three parts:
+// The contract, in three parts, is natsclient's own logic, tested with a
+// stand-in for JetStream (stream_visibility_test.go):
 //   - Produced only when the visibility budget was spent re-observing a stream
 //     reported absent on this connection.
 //   - Always joined with the absent classification, so
@@ -432,10 +435,13 @@ func streamNotVisible(ctx context.Context, absent error) error {
 // nats.ErrConnectionClosed. The handler receives the raw jetstream.Msg and must
 // settle it with Ack, Nak, or Term.
 //
-// ctx bounds the setup only and is not retained (owner ruling, #9 comment
-// 5994720412 item 2). Each handler's context descends from a context the client
-// owns for this consumer: it is cancelled when Close begins, and Close joins every
-// handler invocation. A caller that wants its own parent for the handlers uses
+// ctx is used for the setup only and is not retained (owner ruling, #9 comment
+// 5994720412 item 2). It does not end a wait behind a write the server is not
+// reading: such a write holds the setup until it completes or nats.go's write
+// timeout (one minute by default, WithWriteTimeout) ends it (P13; ADR-112).
+// Each handler's context descends from a context the client owns for this
+// consumer: it is cancelled when Close begins, and Close joins every handler
+// invocation. A caller that wants its own parent for the handlers uses
 // ConsumeStreamWithConfigContexts.
 func (c *Client) ConsumeStreamWithConfig(
 	ctx context.Context,
@@ -471,10 +477,11 @@ func clientOwnedHandlerContext() (context.Context, context.CancelFunc) {
 // Client.Close stops and joins this consumer if the caller has not. Once Close
 // has begun this method returns nats.ErrConnectionClosed.
 //
-// As with ConsumeStreamWithConfig, ctx bounds the setup only and is not retained:
-// each handler's context descends from a context the client owns for this
-// consumer, cancelled when Close begins (owner ruling, #9 comment 5994720412
-// item 2).
+// As with ConsumeStreamWithConfig, ctx is used for the setup only and is not
+// retained: each handler's context descends from a context the client owns for
+// this consumer, cancelled when Close begins (owner ruling, #9 comment
+// 5994720412 item 2). A write the server is not reading holds the setup, as
+// there (P13; ADR-112).
 func (c *Client) ConsumeInternalStreamWithConfig(
 	ctx context.Context,
 	cfg StreamConsumerConfig,
@@ -727,9 +734,11 @@ func (c *Client) startPortConsumer(
 // Client.Close stops and joins this consumer if the caller has not. Once Close
 // has begun this method returns nats.ErrConnectionClosed.
 //
-// setupCtx bounds only the setup and is not retained. handlerCtx is the parent
-// of every handler's context for as long as the consumer runs; its end does not
-// stop delivery, it only ends the context each later handler receives.
+// setupCtx is used only for the setup and is not retained; as with
+// ConsumeStreamWithConfig, a write the server is not reading holds the setup
+// (P13; ADR-112). handlerCtx is the parent of every handler's context for as
+// long as the consumer runs; its end does not stop delivery, it only ends the
+// context each later handler receives.
 func (c *Client) ConsumeStreamWithConfigContexts(
 	setupCtx context.Context,
 	handlerCtx context.Context,

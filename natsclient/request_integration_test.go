@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semengine/internal/harness/probe"
+	"github.com/nats-io/nats.go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -60,18 +61,10 @@ func TestIntegration_Request_Timeout(t *testing.T) {
 	require.NoError(t, err)
 	defer closeClient(t, client)
 
-	// Send request to non-existent subject (no responder)
-	// NATS may return "no responders" immediately or timeout depending on server config
+	// Send request to non-existent subject (no responder). natsclient returns
+	// nats.go's no-responders error unwrapped (design D5).
 	_, err = client.Request(ctx, "nonexistent.subject", []byte("test"), 100*time.Millisecond)
-
-	// Should return an error (either timeout or "no responders")
-	assert.Error(t, err)
-	// The error should be either a timeout or "no responders" error
-	errStr := err.Error()
-	assert.True(t, errStr == "nats: no responders available for request" ||
-		errStr == "context deadline exceeded" ||
-		errStr == "nats: timeout",
-		"Expected timeout or no responders error, got: %s", errStr)
+	require.ErrorIs(t, err, nats.ErrNoResponders)
 }
 
 // TestIntegration_Request_DefaultTimeout tests default timeout is applied
@@ -424,14 +417,8 @@ func TestIntegration_RequestWithRetry_NoResponder(t *testing.T) {
 		config,
 	)
 
-	// Should fail with "no responders" or timeout error
-	require.Error(t, err)
-	errStr := err.Error()
-	assert.True(t,
-		errStr == "nats: no responders available for request" ||
-			errStr == "context deadline exceeded" ||
-			errStr == "nats: timeout",
-		"Expected no responders or timeout error, got: %s", errStr)
+	// Fails with nats.go's no-responders error, unwrapped (design D5)
+	require.ErrorIs(t, err, nats.ErrNoResponders)
 
 	// Note: NATS returns "no responders" immediately (no wait), so with retries
 	// and backoff the timing is: retry backoffs (20ms + 40ms + 60ms) ~120ms

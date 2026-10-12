@@ -1,14 +1,24 @@
 # natsclient
 
-NATS client with circuit breaker protection, automatic reconnection, and comprehensive JetStream/KV support for
-distributed edge systems.
+A NATS client for SemEngine. It wraps nats.go with a circuit breaker, keeps nats.go's automatic reconnection, and adds
+helpers for JetStream streams, consumers and key-value buckets.
 
 ## Overview
 
-The natsclient package provides a robust NATS client implementation designed for resilient operation in edge computing
-environments. It wraps the standard NATS Go client with additional reliability features including circuit breaker
-pattern for failure protection, exponential backoff for reconnection, and proper context propagation throughout all
-operations.
+The natsclient package wraps the NATS Go client (nats.go) with a circuit breaker, and keeps nats.go's automatic
+reconnection with natsclient's settings: unlimited attempts (`WithMaxReconnects`) and a `ReconnectWait` of 2 s
+(`WithReconnectWait`). How soon each attempt comes is not promised. While nats.go reconnects, `Publish`, `Request` and
+`Subscribe` return `ErrNotConnected` at once, and key-value calls wait for their context (probe P15).
+
+Every call that waits for the server takes a context, and the context ends that wait (P13). It does not end a call
+held behind a write the server is not reading. Such a call waits up to nats.go's write timeout for each write ahead of
+it (one minute by default; `WithWriteTimeout` sets it), or until `Close` closes the socket (P13, P14, P17). `Connect`
+returns within its context, and so does `Close` on a connection the client dialled (`TestConnectEndsWithItsContext`,
+`TestCloseEndsAHeldWrite`).
+
+[ADR-112](../docs/adr/112-natsclient-contract.md) records what natsclient promises over nats.go, and the test or probe
+behind each promise. A probe is a program posted on PR #177 with its source, command, versions and output; ADR-112's
+Status names the comment that holds each one.
 
 This package is the foundation for all NATS communication in SemEngine, providing both core pub/sub
 functionality and advanced features like JetStream streams, consumers, and Key-Value stores. The client handles
@@ -47,9 +57,13 @@ begins; `Close` still waits for every handler to return. `ConsumeStreamWithConfi
 `handlerCtx`, when the caller wants to choose the handlers' parent itself.
 
 A panic in a message handler is recovered: it is logged at error level with the message's subject, counted on the
-JetStream error metric as operation `handler_panic`, and the message is Nak'd so the server redelivers it. A Nak that
-fails is logged with the panic. A handler that returns without settling its message is not Nak'd for it; the server
-redelivers the message when its AckWait expires.
+JetStream error metric as operation `handler_panic`, and the message is Nak'd
+(`TestSafeHandleMessageRecoversPanicNaksLogsAndCounts`). A Nak that fails is logged with the panic. The server
+redelivers a Nak'd message (`TestIntegration_ConsumeStreamWithConfig_Nak`).
+
+A handler that returns without settling its message is not Nak'd for it. The server redelivers such a message when
+its ack wait ends, as `TestIntegrationConsumeDeliveryWithHeartbeatStoppedRenewalUsesBackOff` shows for a consumer with
+`BackOff`. For a plain consumer handler, that redelivery is not measured here.
 
 ### Distributed Tracing
 
@@ -172,7 +186,7 @@ Configuration for KV operations behavior.
 type KVOptions struct {
     MaxRetries            int           // Maximum CAS retry attempts (default: 10)
     RetryDelay            time.Duration // Initial delay between retries (default: 10ms)
-    Timeout               time.Duration // Operation timeout (default: 5s)
+    Timeout               time.Duration // Ends the wait for the server's answer, not a held write (default: 5s)
     MaxValueSize          int           // Maximum size for values (default: 1MB)
     UseExponentialBackoff bool          // Enable exponential backoff with jitter (default: true)
     MaxRetryDelay         time.Duration // Maximum delay between retries (default: 1s)
@@ -217,8 +231,8 @@ Performs CAS update on JSON data with automatic retry on conflicts.
 After threshold failures, the circuit opens to fail fast rather than continuously retry, giving the system time to
 recover.
 
-**Context-First API**: Every I/O operation requires context.Context as first parameter for proper cancellation and
-timeout support, essential for production systems.
+**Context-First API**: every call that waits for the server, except `RTT`, takes a `context.Context` first, and the
+context ends that wait (P13, P18). It does not end a write the server is not reading (see the overview).
 
 **KVStore Abstraction**: Created high-level KV abstraction with built-in CAS retry logic to eliminate code duplication
 across services. Centralizes revision conflict handling and retry logic.
@@ -237,8 +251,15 @@ across services. Centralizes revision conflict handling and retry logic.
 WithMaxReconnects(-1)              // Infinite reconnects (default: -1)
 WithReconnectWait(2*time.Second)   // Wait between reconnects (default: 2s)
 WithTimeout(10*time.Second)        // Connection timeout (default: 5s)
+WithWriteTimeout(10*time.Second)   // How long one write may wait for the server to read it (default: 1m, nats.go's)
+WithPingInterval(10*time.Second)   // How often nats.go sends the server a PING (default: 30s)
 WithLogger(logger)                  // Enable debug logging
 ```
+
+Set `WithWriteTimeout` and `WithPingInterval` together. A write the timeout ends partway leaves the connection
+connected but unable to carry anything. It recovers when its PINGs go unanswered: nats.go then finds the connection
+stale, closes it and reconnects (`TestWriteTimeoutAndPingIntervalOptions`; probe P24). Each option refuses a value
+that is not positive.
 
 ## Error Handling
 
@@ -246,8 +267,8 @@ WithLogger(logger)                  // Enable debug logging
 
 ```go
 var (
-    ErrCircuitOpen        = errors.New("circuit breaker is open")
-    ErrNotConnected       = errors.New("not connected to NATS")
+    ErrCircuitOpen        = errs.ErrCircuitOpen
+    ErrNotConnected       = fmt.Errorf("not connected to NATS: %w", errs.ErrConnectionLost)
     ErrKVKeyNotFound      = errors.New("kv: key not found")
     ErrKVRevisionMismatch = errors.New("kv: revision mismatch (concurrent update)")
     ErrKVMaxRetriesExceeded = errors.New("kv: max retries exceeded")
@@ -337,15 +358,11 @@ func main() {
     }
     defer client.Close(ctx)
     
-    // Publish with automatic reconnection handling
+    // While nats.go reconnects, Publish returns ErrNotConnected at once, and the
+    // loop tries again on its next tick. A nil error means the message is in
+    // nats.go's buffer, not that the server has it (ADR-112).
     for {
-        err := client.Publish(ctx, "telemetry.data", []byte("sensor reading"))
-        if err != nil {
-            if errors.Is(err, natsclient.ErrCircuitOpen) {
-                log.Println("Circuit open, waiting...")
-                time.Sleep(5 * time.Second)
-                continue
-            }
+        if err := client.Publish(ctx, "telemetry.data", []byte("sensor reading")); err != nil {
             log.Printf("Publish error: %v", err)
         }
         time.Sleep(time.Second)

@@ -264,14 +264,13 @@ the record of the options.
 - What moves to #103: the watcher-delivery conflict (ADR-110 :192 against ADR-066 :408-409; #110 comment 6109839042),
   `min_revision` and the reply's `indexed_revision` under Decision 4's constraint (inventory C8), and a revision across
   bucket generations (#15).
-- Merge order with draft PR #177: #177 is in implementation on an accepted design and merges first; its draft ADR-112
-  still routes ADR-110 :192 "for ADR-109 (#110)" (`openspec/changes/natsclient-contract/adr-112.md:174` at `786c1f6`,
-  re-read). The pull request that lands second changes that one line to #103: this record's (#178) if ADR-112 is in
-  `docs/adr/` by then, #177 before it merges if this record lands first.
+- Merge order with PR #177: #177 merged first (`d71df33`), carrying ADR-112 into `docs/adr/` with its pointer for
+  ADR-110 :192 still reading "for ADR-109 (#110)". This record's pull request (#178), landing second, changes that
+  line to #103 (`docs/adr/112-natsclient-contract.md:216`).
 
 ## Related
 
 Carried in `docs/adr/`: `066-honest-graph-index-readiness.md`, `083-readiness-as-distributed-state.md`,
 `084-readiness-licenses-health-not-absence.md`, `085-gate-on-health-report-freshness.md`,
 `088-readiness-is-per-producer-aggregation-is-the-consumers.md` · pin ADR-074, ADR-079 (not carried) · ADR-108, ADR-110,
-ADR-111, draft ADR-112 (#177) · #110, #103, #135, #101, #15
+ADR-111, ADR-112 (#177) · #110, #103, #135, #101, #15

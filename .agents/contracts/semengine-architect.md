@@ -155,7 +155,8 @@ the owner's (2026-10-07): "clean, idiomatic and pragmatic Go, simple yet detaile
 3. **A layered interface with one implementation:** an interface, or a stack of them, that only one type implements,
    so the layer gives callers nothing to choose between.
 4. **Exported surface with no reader:** the Surface audit's list (a), above; an item that audit keeps, with its
-   reason, is not a finding.
+   reason, is not a finding. A test is not a reader: a method, field, option, constructor or hook whose only caller
+   is a test, exported or not, is this finding (#186).
 5. **Classification by error text:** code that decides what kind of error it holds by searching the error's message
    instead of using `errors.Is`, `errors.As` or a typed code, so a value that happens to contain the searched text,
    such as an entity ID, gets the wrong class.

@@ -310,6 +310,10 @@ its first two bullets; the rest govern graph state, the `storage` package and cu
   map, internal context) where callers need a value, is a finding; require the collapsed signature.
 - Three or more correlated non-error returns without a named struct is a finding.
 - New exported surface without the architect-approved consumer contract is a `BLOCKING` finding.
+- Production code whose only caller is a test (a method, field, option, constructor or hook, such as a setter that
+  swaps a dependency under a running object) is a finding: `BLOCKING` when exported, since a test is not a consumer,
+  and `HIGH` when not. The fix is a design the test can drive through the calls production code makes; never review
+  or specify how the back door behaves (owner ruling of 2026-10-12, #186).
 
 ## Guarantee, signal, and revision review
 

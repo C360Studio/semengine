@@ -108,7 +108,10 @@ into the handoff:
    measure it. If the search finds X, stop and escalate with `file:line`; implementing as written re-commits the
    defect the instruction meant to prevent.
 3. **Who consumes it at birth?** Name the present consumer of every new surface. "For observability" or "for
-   future use" with zero present consumers is a phantom; do not add it.
+   future use" with zero present consumers is a phantom; do not add it. A test is not a consumer: production code
+   carries no method, field, option, constructor or hook, exported or not, whose only caller is a test. A test that
+   cannot reach what it must prove through the calls production code makes is telling you the design is wrong;
+   change the design, never add a back door (owner ruling of 2026-10-12, #186).
 4. **Am I asking a caller to predict something the framework could observe?** A new knob, threshold, limit, name, or
    "remember to call X first" hands the caller a fact the framework already holds; they will get it wrong, and
    silently. Prefer acting and handling the real outcome over making them compute it in advance. If the slice cannot

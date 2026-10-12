@@ -32,9 +32,10 @@ var errNotStarted = errors.New("natsfixture: Restart needs a fixture whose Start
 // Restart refuses, with no Docker call, before a successful Start and once Stop has begun. A
 // failure in a phase returns an *Error naming it, with one exception: when the mapped-port read
 // fails and ctx is still live, Restart stops and starts the same container once more and reads the
-// port again, and a second failure returns both. Docker Desktop on macOS leaves the port list empty
-// when a Mac process holds the host port it picked, and the next start gets the next port (#180;
-// TestRestartPastAHeldPort). No replacement container is created; after a failure the fixture can
+// port again. A failure in that second stop, start or port read returns both errors; a connect or
+// JetStream failure after a good second read returns that error alone. Docker Desktop on macOS
+// leaves the port list empty when a Mac process holds the host port it picked, and the next start
+// gets the next port (#180; TestRestartPastAHeldPort). No replacement container is created; after a failure the fixture can
 // no longer be restarted, and Stop removes what it still owns. Do not call Restart from a Consume
 // handler: it waits for that handler to return.
 //

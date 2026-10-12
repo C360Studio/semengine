@@ -17,7 +17,8 @@ From PR #200: the diagnosis (comment 6128094108) and probes (comments 6128508133
 
 1. **Restart tries once more.** In `restart.go`, when the mapped-port phase fails and the caller's context is still
    live, Restart runs the stop-container and start-container phases once more on the same container, then the
-   mapped-port phase again. A second failure is returned joined with the first, as Start joins its attempts. This is
+   mapped-port phase again. A failure in that second stop, start or port read is returned joined with the first, as
+   Start joins its attempts; a connect or JetStream failure after a good second read is returned alone. This is
    the same condition Start uses for its one replacement (`fixture.go:28-31`, `:148-161`): which phase failed and
    whether the parent is live, never the error's text. The container, its writable layer and the fixture's ownership
    record are kept, so the spec's "no replacement container during Restart" still holds.

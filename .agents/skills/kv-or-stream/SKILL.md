@@ -17,9 +17,9 @@ Apply them in order; the first clear answer usually settles it.
 1. **Restart.** If the component restarted, should it reload current facts, or resume work it had not acknowledged?
    Reload facts: **KV watch**. Resume unacknowledged work: **stream**. A stream redelivers what was not
    acknowledged, not what was not finished: work done before a crash cut off its acknowledgement is delivered again,
-   so the owner makes the work safe to repeat or detects the repeat. graph-ingest detects it with its replay
-   protection (`graph-ingest-recovery` spec, "Recovery on a file stream is redelivery";
-   `TestIntegration_Settlement_ProcessKilledBetweenApplyAndAck`).
+   so the owner makes the work safe to repeat or detects the repeat. The cited graph-ingest recovery test demonstrates
+   that reapplying the input preserves the graph's statements (`graph-ingest-recovery` spec, "Recovery on a file
+   stream is redelivery"; `TestIntegration_Settlement_ProcessKilledBetweenApplyAndAck`).
 2. **Fan-out or queue.** Should every interested component react, or only one? Every one: **KV watch**. One:
    **stream**.
 3. **Processing time.** Is the reaction fast and idempotent (safe to repeat), or slow with side effects? Fast and

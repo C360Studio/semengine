@@ -8,9 +8,11 @@ Read it before you write a test that talks to NATS, or before you add code under
 - **Container**: a process Docker runs from an image, here the NATS server image pinned in
   `internal/harness/natsfixture/nats-image`.
 - **testcontainers**: the Go library (`testcontainers-go`) our test code calls to start and remove containers.
-- **Ryuk**: a helper container testcontainers starts to remove a test process's containers after it dies. We turn it
+- **Ryuk**: a helper container testcontainers can start to remove a test process's containers after it dies. Ours is
   off; see "How cleanup works".
 - **Host port**: the port on your machine that Docker forwards to the container's NATS port. Docker picks it.
+- **Account**: NATS keeps every stream, bucket and connection in an account. Our servers have one account for tests,
+  so "the account" means everything a test can create or open on that server.
 - **Shared server**: one NATS container that all the integration tests of one Go package use, one test at a time.
 - **Own server**: a NATS container that one test starts for itself, because it does something the others must not
   see, such as restarting the server.
@@ -30,8 +32,9 @@ that needs NATS uses a container.
 
 ## Writing an integration test
 
-Each package that has integration tests starts one shared server in `TestMain`. Each test calls the reset once, before
-it connects, and connects only to the address the reset returns.
+Each package that has integration tests declares one shared server and stops it in `TestMain`. The server starts the
+first time a test calls the reset, so a run that selects no such test starts nothing. Each test calls the reset once,
+before it connects, and connects only to the address the reset returns.
 
 ```go
 //go:build integration
@@ -48,24 +51,16 @@ import (
     "github.com/c360studio/semengine/internal/harness/natsfixture"
 )
 
-// shared is this package's NATS server. TestMain starts it before the tests and removes it after them.
-var shared *natsfixture.Shared
+// shared is this package's NATS server. It starts at the first reset; TestMain removes it after the tests.
+var shared natsfixture.Shared
 
 func TestMain(m *testing.M) { os.Exit(run(m)) }
 
 func run(m *testing.M) int {
-    startCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-    s, err := natsfixture.StartShared(startCtx)
-    cancel()
-    if err != nil {
-        fmt.Fprintln(os.Stderr, err)
-        return 1
-    }
-    shared = s
     code := m.Run()
-    stopCtx, cancel := context.WithTimeout(context.Background(), time.Minute)
+    ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
     defer cancel()
-    if err := s.Stop(stopCtx); err != nil { // fails the package if a test left a connection open
+    if err := shared.Stop(ctx); err != nil {
         fmt.Fprintln(os.Stderr, err)
         return 1
     }
@@ -73,14 +68,15 @@ func run(m *testing.M) int {
 }
 
 func TestWidgetStoresAFact(t *testing.T) {
-    url := shared.Reset(t) // no stream, no consumer, no other connection, or the test fails here
+    url := shared.Reset(t) // no stream, consumer, stored byte or other connection, or the test fails here
     client := natsfixture.Open(t, url, openClient) // closed when the test ends, before the connection check
     // ... use client; create the streams and buckets the code under test needs, with their real names
 }
 ```
 
 You may use the same stream and bucket names as production code, such as graph-ingest's `ENTITY` stream: the reset
-deletes every stream before each test, so nothing a previous test wrote is left.
+deletes every stream before each test, and checks the account holds no stream, consumer or stored byte, so nothing a
+previous test wrote is left.
 
 ## When a test gets its own server
 
@@ -88,7 +84,7 @@ Use `natsfixture.New(t)` instead of the reset only when the test:
 
 - restarts or stops the server (`Restart`, `Stop`);
 - needs a server setting the shared one does not have, such as `natsfixture.WithMaxPayload`;
-- reads totals for the whole account, such as storage used, which other tests' leftovers would change.
+- reads a running total the reset cannot clear, such as the account's count of API calls since the server started.
 
 Write the reason on the line above the call: `// Own server: restarts the server mid-test.` A check fails without it.
 
@@ -96,23 +92,24 @@ Write the reason on the line above the call: `// Own server: restarts the server
 
 | Rule | What enforces it |
 | --- | --- |
-| A test reaches the shared server only through the reset | The shared server returns its address from nowhere else |
-| A test starts on a server with no stream, consumer or client connection | The reset fails the test otherwise |
-| A test closes every connection it opens before it ends | The reset's cleanup fails the test; the package's `Stop` fails the package |
-| Integration tests in a package run one at a time: no `t.Parallel` | `TestNoParallelIntegrationTests` |
-| A test with its own server says why | `TestOwnServerReason`; whether the reason holds is checked in review |
+| A test reaches the shared server only through the reset | Review: the server returns its address only from the reset, but a test could keep an address in a variable |
+| A test starts on a server with no stream, consumer, stored byte or other connection | The reset fails the test otherwise |
+| A test closes every connection it opens before it ends | The reset's cleanup fails the test; a test on its own server is review only |
+| Integration tests in a package run one at a time: no `t.Parallel` | `TestNoParallelIntegrationTests`; a call in an untagged helper is review only |
+| A test with its own server says why | `TestOwnServerReason` at each `natsfixture.New` call; a helper that calls it for many tests, and whether the reason holds, are review only |
 | No sleeps, no fixed ports, no skipped tests, bounded cleanup contexts | `docs/testing.md` and their checks in `task verify` |
 
-What the reset does not reset: server settings and the server's uptime. A test that changes or needs either takes its
-own server.
+When a test leaves a connection open, that test fails, and so does every later test in its package, each saying a
+connection from an earlier test is still open. Look for the first failure.
 
 ## Running the tests
 
-- `task test:integration` runs every package, integration tests included, in a random order it prints as
-  `-test.shuffle <seed>`. Rerun one order with `go test -tags integration -shuffle=<seed> ./<package>`.
+- `task test:integration` runs every package, integration tests included, each package in a random order it prints
+  as `-test.shuffle <seed>`. Rerun one package's order with
+  `go test -tags integration -shuffle=<seed> ./<package>`.
 - `task test:integration -- ./natsclient` runs one package.
-- Plain `go test -tags integration ./natsclient` works too. Task turns Ryuk off; plain `go test` uses your own
-  testcontainers setting, which is on unless you add `ryuk.disabled=true` to `~/.testcontainers.properties`.
+- Plain `go test -tags integration ./natsclient` works too, with the same behaviour: natsfixture turns Ryuk off
+  itself.
 - Two runs at the same time, from two worktrees, are fine. Nothing waits for another run.
 
 ## Sharing with other runs and other repositories
@@ -125,17 +122,17 @@ our label, and never runs `docker … prune` or removes anything by name.
 
 1. An own server is removed by the test's cleanup when the test ends.
 2. A shared server is removed by `TestMain` after the package's tests.
-3. A test process that is killed (Ctrl-C, a crash, or its `-timeout`) runs no cleanup, so its containers stay. The next
-   test process to start a container removes labelled containers that Docker created more than 30 minutes ago. No run
-   lasts that long, so a container that old is a leftover. To see leftovers now:
+3. A test process that is killed (Ctrl-C, a crash, or its `-timeout`) runs no cleanup, so its containers stay. The
+   next test process to start a container removes labelled containers that Docker created more than 30 minutes ago.
+   No test binary outlives its `-timeout` of 10 minutes, so a container that old is a leftover. To see leftovers now:
    `docker ps -a --filter label=org.c360studio.semengine.test`.
 
 ## Known problem: Docker Desktop on macOS loses a host port
 
 When a Mac program already listens on the host port Docker picks, Docker Desktop reports the container's port as
-missing (#180). The fixture handles that once: Start tries one replacement container and Restart tries one more stop
-and start. Fewer containers mean fewer chances, which is one reason packages share a server. Linux CI is not known to
-be affected.
+missing (#180). The fixture handles that once: a start tries one replacement container and Restart tries one more
+stop and start. Fewer containers mean fewer chances, which is one reason packages share a server. Whether Linux CI is
+affected is not known.
 
 ## When we write harness code
 

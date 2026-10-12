@@ -131,10 +131,11 @@ to source.
     (`go:src/cmd/go/internal/base/signal.go:13-24`).
   - SIGTERM is not in `signalsToIgnore` (`go:…/base/signal_unix.go:14` — `os.Interrupt, syscall.SIGQUIT`), so
     SIGTERM ends `go` and leaves its test binaries running.
-  - `go` passes `-test.timeout` to each test binary (`go:…/test/test.go:1849`), and the binary ends itself when it
-    passes (`go:src/testing/testing.go:2782-2802`, "test timed out after"). `go` also kills a binary at the timeout
-    plus the longer of one minute and timeout/10 (`go:…/test/test.go:826-844`): at 10m, the timeout plus one minute.
-    That backup needs `go` alive.
+  - `go` hands each test binary `-test.timeout`: the explicit `-timeout` is "set (and forwarded) explicitly", and
+    otherwise `go` adds its default (`go:src/cmd/go/internal/test/testflag.go:385-390`). The binary ends itself when
+    the timeout passes (`go:src/testing/testing.go:2782-2802`, "test timed out after"). `go` also kills a binary at
+    the timeout plus the longer of one minute and timeout/10 (`go:…/test/test.go:826-844`): at 10m, the timeout plus
+    one minute. That backup needs `go` alive.
   - Whether a terminal Ctrl-C reaches every test binary: **unmeasured**. Task 3.51.1 (`.task-version`) sits between
     the shell and `go`, and how Task passes signals on was not read.
   - What Ryuk does with the containers of a binary that died: L5, unmeasured.
@@ -341,7 +342,9 @@ to source.
 
 **Facts.**
 
-- testcontainers gives each `go test` invocation its own session and its own Ryuk container (L2 stock).
+- testcontainers gives each `go test` invocation its own session and its own Ryuk container (L2 stock). The Ryuk
+  container carries the session label too (`tc:reaper.go:396`, `Labels: core.DefaultLabels(sessionID)`;
+  `tc:internal/core/labels.go:38-50`).
 - The fixture creates no volume or network (`nats-fixture/spec.md:83-84`).
 - Container names carry a random suffix (`names.go:121-134`).
 - Host ports come from Docker.
@@ -357,92 +360,110 @@ to source.
 **Bypass without a code change.** The runner reads `SEMENGINE_DOCKER_ADMISSION_LOCK_DIR` at
 `scripts/test-integration.sh:49`, and refuses only the signal-grace knob on the shared lock (`:37-42`). The fixture
 admits against whatever lock directory it is handed (`admission.go:40,45`). So a private lock directory per run
-bypasses the shared lock, and nothing in the repository changes. That same bypass would let another session's runner
-in beside the experiment. The driver below therefore holds the shared lock itself for the whole experiment, so every
-other runner (SemEngine's, and SemStreams' at pin `run-integration-tests.sh:8`) finds a live owner and refuses or
-waits. #202 records that several sessions run `task verify` and integration runs at once on this machine.
+bypasses the shared lock, and nothing in the repository changes.
 
-**What the shared lock cannot keep out.** SemStreams' e2e, services, dev and release stacks start Docker without the
-lock (`design.md:176-180`). So does any unit-test run, including the wildcard listeners in section 4's #180 row. The
-driver cannot refuse those. It records `docker ps -a` before every slot and samples load all through it, so a slot
-run beside them can be found and set aside.
+**No lock for the experiment.** The driver takes no lock. A driver that wrote its own owner record into the shared
+lock would rebuild the machinery under audit (L2), with token-checked release and stale-owner judgement. A SemStreams
+runner in another time zone or locale would also read that record as stale (`admission-ledger.yaml:210-212`, #126).
+The experiment relies on a quiet window and on checks that fail closed instead.
 
-**Driver.** Run it once, at a time the owner picks. It writes only under `/tmp` and stops at the first failed check:
+**Preconditions.**
+
+1. The owner grants a quiet window: no other session runs integration tests or unit tests on this machine for its
+   length. #202 records several sessions running `task verify` and integration runs at once here.
+2. Before every slot the driver fails closed, stopping the whole experiment without running that slot, if any of
+   these hold:
+   - `/tmp/semstreams-integration.lock` exists;
+   - a `test-integration.sh`, `run-integration-tests.sh` or `go test` process is running. Between slots the driver
+     has none of its own running, so any match is another's;
+   - a testcontainers-labelled container exists whose `org.testcontainers.sessionId` is not one of this experiment's
+     sessions, read from each run's `testcontainers-session` file (`natsfixture/evidence.go:59-85`);
+   - the NATS image or the Ryuk image is not cached, so that a pull is not counted as saturation.
+3. What the checks cannot see: a Docker stack that starts without a lock (SemStreams' e2e, services, dev and release,
+   `design.md:176-180`), or a test run that starts after a slot has begun. The driver records `docker ps -a` before
+   every slot and samples load all through it, so a slot run beside them can be found and reported apart.
+
+**Driver.**
+
+- It writes only under `/tmp`.
+- On INT, TERM, HUP or EXIT, it sends SIGTERM to every runner still in flight (one with a pid file and no exit-status
+  file yet). It then stops the sampler and waits.
+- A runner started as an `&` job ignores SIGINT and answers SIGTERM (`runner:16-19`). A foreground serial runner gets
+  a terminal Ctrl-C itself, and the driver's INT trap then ends the experiment rather than going on.
 
 ```bash
 #!/usr/bin/env bash
-set -euo pipefail
-LOCK=/tmp/semstreams-integration.lock                    # scripts/admission-lock.sh:8
+# #205 item 2. Run once, in a quiet window the owner grants. Takes no lock.
+set -u
 BASE=<main after #93 and #200 merge>
 X=$(mktemp -d /tmp/semengine-par.XXXX); mkdir -p "$X/a" "$X/b" "$X/c" "$X/ev"
 for d in a b c; do git -C /Users/coby/Code/c360/semengine archive "$BASE" | tar -x -C "$X/$d"; done
-sed -i '' 's/ -p 2 / -p 4 /' "$X/c/scripts/test-integration.sh"   # control copy only (runner :434)
-grep -q -- '-p 4 ' "$X/c/scripts/test-integration.sh"
-
-# Hold the shared lock for the whole experiment, in the runner's owner format
-# (integration-test-runner/spec.md:11-19). mkdir fails, and the driver stops, if anyone holds it now.
-mkdir "$LOCK"
-trap 'rm -f "$LOCK/owner"; rmdir "$LOCK"' EXIT
-tok="semengine-par:$$:$(date +%s)"
-id=$(ps -o lstart= -p $$ | sed 's/^ *//'); id_utc=$(TZ=UTC LC_ALL=C ps -o lstart= -p $$ | sed 's/^ *//')
-printf 'host=%s\npid=%s\nstarted=%s\nidentity=%s\ntoken=%s\ncommand=%s\nidentity_utc=%s\n' \
-  "$(hostname)" $$ "$(date +%s)" "$id" "$tok" "semengine #205 item 2 experiment $X" "$id_utc" > "$X/owner.tmp"
-mv "$X/owner.tmp" "$LOCK/owner"
-docker info --format 'ncpu={{.NCPU}} mem={{.MemTotal}}' > "$X/ev/daemon.txt"
+sed -i '' 's/ -p 2 / -p 4 /' "$X/c/scripts/test-integration.sh"     # -p 4 control copy only (runner :434)
 digest=$(grep -v '^[[:space:]]*#' "$X/a/.nats-image" | grep -v '^[[:space:]]*$' | sed 's/.*@//')
+docker info --format 'ncpu={{.NCPU}} mem={{.MemTotal}}' > "$X/ev/daemon.txt"
+s=""                                                      # the sampler's pid while a slot runs
 
-# Checks before every slot. Any failure ends the experiment (fail closed).
-pre() {  # $1 = slot
-  grep -qx "token=$tok" "$LOCK/owner" || { echo "shared lock lost before $1"; exit 1; }
-  for _ in $(seq 1 60); do   # let the previous slot's Ryuk finish; bounded
-    [ -z "$(docker ps -aq --filter label=org.testcontainers=true)" ] && break; sleep 1
+stop() {  # INT, TERM, HUP, EXIT: SIGTERM runners in flight, stop the sampler, wait
+  trap - INT TERM HUP EXIT
+  for f in "$X"/ev/*.pid; do
+    [ -s "$f" ] && [ ! -e "${f%.pid}.rc" ] && kill -TERM "$(cat "$f")" 2> /dev/null
   done
-  [ -z "$(docker ps -aq --filter label=org.testcontainers=true)" ] || { echo "testcontainers left before $1"; exit 1; }
-  docker image inspect "nats@$digest" > /dev/null || { echo "NATS image not cached"; exit 1; }
-  docker image inspect testcontainers/ryuk:0.14.0 > /dev/null || { echo "Ryuk image not cached"; exit 1; }
-  docker ps -a --no-trunc --format '{{.ID}} {{.Names}} {{.Status}} {{.Labels}}' > "$X/ev/$1.docker-ps.txt"
+  [ -n "$s" ] && kill "$s" 2> /dev/null
+  wait
 }
-# Load every 30 s while a slot runs: macOS load average, and CPU and memory of every container.
-sample() { while :; do echo "t=$(date +%s) load=$(sysctl -n vm.loadavg)"
-  docker stats --no-stream --format '{{.Name}} {{.CPUPerc}} {{.MemUsage}}'; sleep 30; done; }
-# One runner: its own private lock directory and evidence directory; records its pid and exit status.
-run() {  # $1 = copy, $2 = run name
-  if (cd "$X/$1" && SEMENGINE_DOCKER_ADMISSION_LOCK_DIR="$X/$2.lock" SEMENGINE_EVIDENCE_DIR="$X/ev/$2" \
-      sh -c 'echo $$ > "$0"; exec scripts/test-integration.sh ./...' "$X/ev/$2.pid") > "$X/ev/$2.out" 2>&1
-  then echo 0 > "$X/ev/$2.rc"; else echo $? > "$X/ev/$2.rc"; fi
-}
+trap 'stop; exit 130' INT; trap 'stop; exit 143' TERM; trap 'stop; exit 129' HUP; trap stop EXIT
+die() { echo "stopped before $1: $2" | tee "$X/ev/stopped.txt" >&2; exit 1; }
 
-for i in $(seq 1 10); do                                 # serial baseline
-  pre "serial-$i"; sample > "$X/ev/serial-$i.load.txt" 2>&1 & s=$!
-  run a "serial-$i"; kill "$s"
+sample() { while :; do echo "t=$(date +%s) load=$(sysctl -n vm.loadavg || true)"
+  docker stats --no-stream --format '{{.Name}} {{.CPUPerc}} {{.MemUsage}}' || true; sleep 30; done; }
+pre() {  # $1 = slot; fails closed
+  [ -e /tmp/semstreams-integration.lock ] && die "$1" "the shared lock exists"
+  pgrep -fl 'test-integration\.sh|run-integration-tests\.sh|go test' > "$X/ev/$1.foreign.txt" &&
+    die "$1" "another runner or go test is running"
+  ours=$(cat "$X"/ev/*/testcontainers-session 2> /dev/null | sed 's/.*=//' | sort -u)
+  for id in $(docker ps -aq --filter label=org.testcontainers=true); do
+    sid=$(docker inspect --format '{{index .Config.Labels "org.testcontainers.sessionId"}}' "$id")
+    { [ -n "$sid" ] && printf '%s\n' "$ours" | grep -qxF "$sid"; } || die "$1" "container $id of another session"
+  done
+  docker image inspect "nats@$digest" > /dev/null 2>&1 || die "$1" "NATS image not cached"
+  docker image inspect testcontainers/ryuk:0.14.0 > /dev/null 2>&1 || die "$1" "Ryuk image not cached"
+  docker ps -a --no-trunc --format '{{.ID}} {{.Names}} {{.Status}} {{.Labels}}' > "$X/ev/$1.docker-ps.txt"
+  sample > "$X/ev/$1.load.txt" 2>&1 & s=$!
+}
+post() { [ -n "$s" ] && kill "$s" 2> /dev/null; s=""; }
+run() {  # $1 = copy, $2 = run: private lock and evidence directories; pid file first, exit status last
+  (cd "$X/$1" && SEMENGINE_DOCKER_ADMISSION_LOCK_DIR="$X/$2.lock" SEMENGINE_EVIDENCE_DIR="$X/ev/$2" \
+    sh -c 'echo $$ > "$0"; exec scripts/test-integration.sh ./...' "$X/ev/$2.pid") > "$X/ev/$2.out" 2>&1
+  echo $? > "$X/ev/$2.rc"
+}
+started() { ls "$X/ev/$1/fixtures/"*.json > /dev/null 2>&1; }
+ended() { [ -e "$X/ev/$1.rc" ]; }
+
+for i in $(seq 1 10); do pre "serial-$i"; run a "serial-$i"; post; done
+for i in $(seq 1 30); do
+  pre "pair-$i"; run a "pair-$i-a" & ja=$!; run b "pair-$i-b" & jb=$!; wait "$ja" "$jb"; post
 done
-for i in $(seq 1 30); do                                 # pairs
-  pre "pair-$i"; sample > "$X/ev/pair-$i.load.txt" 2>&1 & s=$!
-  run a "pair-$i-a" & ja=$!; run b "pair-$i-b" & jb=$!; wait "$ja" "$jb"; kill "$s"
+for i in $(seq 1 5); do                   # run a gets SIGTERM once both runs have a fixture record
+  pre "int-$i"; run a "int-$i-a" & ja=$!; run b "int-$i-b" & jb=$!
+  until { started "int-$i-a" && started "int-$i-b"; } || ended "int-$i-a" || ended "int-$i-b"; do sleep 1; done
+  ended "int-$i-a" || kill -TERM "$(cat "$X/ev/int-$i-a.pid")"
+  wait "$ja" "$jb"; post
 done
-for i in $(seq 1 5); do                                  # pairs with run a interrupted
-  pre "int-$i"; sample > "$X/ev/int-$i.load.txt" 2>&1 & s=$!
-  run a "int-$i-a" & ja=$!; run b "int-$i-b" & jb=$!
-  until [ -s "$X/ev/int-$i-a.pid" ]; do sleep 1; done
-  pa=$(cat "$X/ev/int-$i-a.pid")
-  # once a's first fixture has started, or a has ended; a runner started from a script answers SIGTERM (runner :16-19)
-  until ls "$X/ev/int-$i-a/fixtures/"*.json > /dev/null 2>&1 || ! kill -0 "$pa" 2> /dev/null; do sleep 1; done
-  kill -TERM "$pa" 2> /dev/null || true
-  wait "$ja" "$jb"; kill "$s"
-done
-for i in $(seq 1 5); do                                  # -p 4 control: one run, twice the package concurrency
-  pre "p4-$i"; sample > "$X/ev/p4-$i.load.txt" 2>&1 & s=$!
-  run c "p4-$i"; kill "$s"
-done
+for i in $(seq 1 5); do pre "p4-$i"; run c "p4-$i"; post; done
 ```
 
-**Run count.**
+**Run count and wall time.**
 
 - 10 serial runs, 30 pairs (60 runs), 5 interrupted pairs and 5 `-p 4` runs: 85 runs in 50 slots.
 - If none of F1 to F5 appears in 30 pairs, the per-pair failure rate is bounded below about 10% at 95% (rule of
   three).
-- How long a full run takes after #93 is unmeasured. Main's `./...` took 11:02:10 to 11:05:46 in PR #200's run A
-  (comment 6128094108).
+- **Expected wall time: about 50 × T**, where T is one full `./...` run, plus seconds of checks per slot. A pair takes
+  at least T, and longer if the pair saturates; an interrupted slot and a `-p 4` run take less.
+  - Main's `./...` took 3 minutes 36 seconds in PR #200's run A (11:02:10 to 11:05:46, comment 6128094108). At that
+    T it comes to about 3 hours.
+  - T after #93 (71 files) is unmeasured. The first serial slot measures it, and the window is set from it.
+  - CI bounds it: the whole of `task verify`, integration included, runs inside the `verify` job's 15-minute limit
+    (`merge-gate/spec.md:205-207`).
 
 **Failures.**
 
@@ -453,11 +474,11 @@ done
 - F4: one run's container vanishes while that run still uses it (`No such container`, or the connection closed, in
   its `go-test.log`).
 - F5, interrupted pairs:
-  - run b does not pass, or b's fixture records show an error;
-  - run a's `leak_check` is not `clean`;
-  - a container carrying a's session label remains after a's runner exits.
-  - Also recorded: a's exit status (143 per `integration-test-runner/spec.md:100-103`) and b's own listings
-    (`listing-before.txt`, `listing-after.txt`).
+  - a slot counts only if run a's exit status is 143 and its `runner.env` records `signal=TERM` (`runner:319`);
+  - in a counted slot, it is a failure if b does not pass, or b's fixture records show an error;
+  - or if a's `leak_check` is not `clean`;
+  - or if a container carrying a's session label remains after a's runner exits.
+  - b's own listings (`listing-before.txt`, `listing-after.txt`) are kept with the slot.
 - A slot whose `docker-ps.txt`, or whose load samples, show a container that is not the experiment's (a SemStreams
   stack, a dev service) is reported apart, not counted.
 
@@ -483,8 +504,9 @@ package concurrency", which is gh#736's mechanism (pin `run-integration-tests.sh
 - A SemEngine pair does not answer the plan's SemEngine-beside-SemStreams clause (`setup-plan.md:267-268`).
   SemStreams' runner has the same bypass (`SEMSTREAMS_INTEGRATION_LOCK_DIR`, pin `run-integration-tests.sh:9-11`),
   but running SemStreams' suite goes beyond its row in `docs/inventory-scope.md`. That needs the owner's word.
-- Linux: the same driver inside one throwaway CI job (no shared lock to hold there), 10 pairs and 2 interrupted
-  pairs. It needs a branch and a workflow, so it is an owner question.
+- Linux: the same driver inside one throwaway CI job, where the job's VM is the quiet window, 10 pairs and 2
+  interrupted pairs (`sed -i ''` becomes `sed -i`, and `sysctl -n vm.loadavg` becomes `cat /proc/loadavg`). It needs
+  a branch and a workflow, so it is an owner question.
 
 **Runner notes.** In a git-less copy, `tree_state` and `git_head` record `unknown` (`runner:124-125`). `cover:check`
 is not part of the experiment.

@@ -145,7 +145,7 @@ func TestIntegration_MergeEntity_SamePredicateReplaces(t *testing.T) {
 
 	// Reader sees the newest value: the one statement left is the last arrival's
 	// (pre-fix append served the STALE first-written value).
-	v, ok := graph.GetPropertyValue(&stored, "flock.position.x")
+	v, ok := stored.GetPropertyValue("flock.position.x")
 	require.True(t, ok)
 	assert.Equal(t, "3", v, "newest value wins after merge")
 }

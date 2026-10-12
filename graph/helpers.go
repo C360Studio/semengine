@@ -6,22 +6,6 @@ import (
 	"github.com/c360studio/semengine/message"
 )
 
-// GetPropertyValue returns the value of one property statement (a statement that
-// is not a relationship) of the given predicate, picked by EntityState.GetTriple's
-// rule, and true; or nil and false when the entity holds none.
-func GetPropertyValue(entity *EntityState, predicate string) (any, bool) {
-	if entity == nil {
-		return nil, false
-	}
-	t := pickLatest(entity.Triples, func(t *message.Triple) bool {
-		return t.Predicate == predicate && !t.IsRelationship()
-	})
-	if t == nil {
-		return nil, false
-	}
-	return t.Object, true
-}
-
 // StaleSet names one (subject, predicate, source) set of an arrival that
 // ReplaceBySource did not apply because it was older than the stored set.
 type StaleSet struct {

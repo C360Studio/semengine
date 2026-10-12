@@ -16,10 +16,9 @@ transport"; `TestGraphImportsNoTransport`).
   predicate, source) as one set: an arriving set replaces only the stored set of its own key, and a set older than the
   stored one (by `Timestamp`) is not applied and is reported in `ReplaceResult.Stale`. `Confidence` and `Context`
   never decide whether a write applies.
-- **The single-value reads.** A predicate may hold statements from several sources. `EntityState.GetTriple`,
-  `EntityState.GetPropertyValue` and `GetPropertyValue` pick the same statement every time: the latest `Timestamp`;
-  on equal timestamps, the `Source` that sorts first; on equal sources, the first stored. A reader that wants another
-  choice reads `Triples`.
+- **The single-value reads.** A predicate may hold statements from several sources. `EntityState.GetTriple` and
+  `EntityState.GetPropertyValue` pick the same statement every time: the latest `Timestamp`; on equal timestamps, the
+  `Source` that sorts first; on equal sources, the first stored. A reader that wants another choice reads `Triples`.
 - **The reserved sources.** `SourceIndexingProfile`, `SourceHierarchy` and `SourceLifecycle` are the names
   graph-ingest and `pkg/lifecycle` write their own statements under; `IsReservedSource` recognises them.
 - **The state contract.** `MarshalEntityState` is the validating encoder for stored entities and

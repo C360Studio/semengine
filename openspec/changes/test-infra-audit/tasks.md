@@ -40,7 +40,8 @@ review stop. Choices the design does not spell out go in `notes/<task>.md`.
   `.agents/skills/semengine-handoff/SKILL.md:28`; `.gitignore:15-16`; the admission-ledger rows whose destination
   this change removes (`docs/admission-ledger.yaml:211,244`), so `task ledger:check` passes. Finish with `git grep -n
   -e test-integration.sh -e admission-lock -e SEMENGINE_NATS_IMAGE -e SEMENGINE_EVIDENCE_DIR -e '\.evidence/'`
-  finding nothing outside `openspec/changes/`, `docs/provenance.md` and `docs/admission-ledger.yaml:2191` (history),
+  finding nothing outside `openspec/changes/`, `docs/provenance.md`, the history note in `docs/admission-ledger.yaml`
+  that reads "the broker's reported version and SEMENGINE_NATS_IMAGE",
   and the planted inputs of `internal/harness/contract/imagepin_test.go:23,26`.
 - [ ] 2.9 Add `AGENTS.md` rows 1 and 2 and replace the image-pin row (`drafts/agents-rows.md`).
 - [ ] 2.10 Record the short check on the pull request (`design.md` § Short check, steps 1 to 3).

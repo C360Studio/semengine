@@ -73,11 +73,11 @@ on choices the design does not spell out go in `notes/<task>.md`, with a one-lin
 - [x] 4.1 Request Codex's review of record at the section 3 commit, naming that commit and its
   `task verify` run. The ledger is not Markdown, so the review covers the code, the ledger and the text together. Fix
   findings, and re-request after any content commit. Stop for the owner after three rounds with findings open.
-  Codex: APPROVE at `4f91838` (PR #188 comment 6127066190), one NIT on this task's wording, fixed in the next commit.
+  Codex: APPROVE at `4f91838` (PR #188 comment 6127066190), one NIT on this task's wording, fixed in `e34868c`.
 
 ## 5. Close
 
-- [ ] 5.1 Archive the change and sync `openspec/specs/transport-client/spec.md` as the last content commit. Run
+- [x] 5.1 Archive the change and sync `openspec/specs/transport-client/spec.md` as the last content commit. Run
   `task spec:check`.
 
 Task 5 is completed by the archive commit. The archive review, the CI check before merging and `task merge:check --

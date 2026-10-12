@@ -11,7 +11,8 @@ on choices the design does not spell out go in `notes/<task>.md`, with a one-lin
   `specs/transport-client/spec.md` into `openspec/changes/remove-setconnection/`. Run `task spec:check`.
 - [x] 1.2 Post probe P-184-1 on PR #188: `README.md`, `main.go`, `go.mod` and the output. Record the comment id in
   design premise P6.
-- [ ] 1.3 Hold: the owner's acceptance of this design and rulings on Q1 and Q2, on #184. Section 2 starts after them.
+- [x] 1.3 Hold: the owner's acceptance of this design and rulings on Q1 and Q2, on #184. Section 2 starts after them.
+  Accepted 2026-10-12, Q1 delete, Q2 filed as #192 (#184 comment 6125883814).
 
 ## 2. Code (developer)
 
@@ -56,9 +57,9 @@ on choices the design does not spell out go in `notes/<task>.md`, with a one-lin
 
 ## 3. Text (developer)
 
-- [ ] 3.1 ADR-112: the dated note and the struck sentence in §4 (draft `docs/adr/112-natsclient-contract.md.diff`).
+- [x] 3.1 ADR-112: the dated note and the struck sentence in §4 (draft `docs/adr/112-natsclient-contract.md.diff`).
   Check: `task docs:check`.
-- [ ] 3.2 Ledger, natsclient row (draft `docs/admission-ledger.yaml.diff`):
+- [x] 3.2 Ledger, natsclient row (draft `docs/admission-ledger.yaml.diff`):
   - item (9) of `contract` becomes a one-line removal record;
   - `SetConnection` leaves the IsConnected sentence at `:1706`;
   - a "pin → deleted" entry is added after `:1772`;

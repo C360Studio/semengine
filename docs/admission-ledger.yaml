@@ -1639,17 +1639,9 @@
     way whichever timer ran out first: the first Close returns a transient error wrapping
     nats.ErrDrainTimeout (the client's own timer branch did not wrap it), where the pin and 7ce1940
     returned nil once the native drain gave up and closed (TestClientCloseReportsDrainTimeout); (9)
-    Close unsubscribes a client-owned subscription on a connection replaced through SetConnection
-    and joins its handler, discarding its buffered messages, and treats an Unsubscribe error there
-    as the subscription already ending; likewise, when Close
-    begins, it stops through its native handle a client-created consumer whose connection (the
-    one its JetStream handle was made on, read with that handle) was replaced, and releases its claim and observation once its handlers have returned (Codex F26,
-    PR #48 comment 5981562076; TestClientCloseEndsConsumerOnReplacedConnection and
-    TestClientCloseAttributesConsumerToItsHandlesConnection, internal and port);
-    the replaced connection itself belongs to the SetConnection
-    caller and Close neither closes nor waits for it; SetConnection after Close has begun changes
-    nothing and logs at warn (TestClientLifecycleOperationTable,
-    TestClientCloseEndsSubscriptionOnReplacedConnection); (10) natsclient-handler-panic-recovered
+    removed by #184 (owner, 2026-10-12) with SetConnection: it recorded how Close treated a
+    subscription or consumer left on a connection SetConnection had replaced, and the tests that
+    proved it; (10) natsclient-handler-panic-recovered
     (owner ruling 3, #9 comment 5985697767): a panic in a consumer's message handler is recovered,
     the message is Nak'd, and the panic is logged at error level with the message's subject and
     counted as handler_panic on the JetStream error metric; a failed Nak is logged with the panic
@@ -1703,7 +1695,7 @@
     joined before it returns (TestConnectRefusesAnEndedContext, TestConnectEndsWithItsContext,
     TestReconnectAfterConnectContextEnded). Close arms the cut for its context on a connection the
     client dialled, so a held write and a reconnect dial end with it (TestCloseEndsAHeldWrite,
-    TestCloseEndsAReconnectDial). subscribeOwned, MaxPayload and SetConnection call nats.go's
+    TestCloseEndsAReconnectDial). subscribeOwned and MaxPayload call nats.go's
     IsConnected outside the client's lock (TestCloseIsNotHeldByAHeldSubscribe,
     TestSubscribeEndedByCloseIsConnectionClosed). Before #170, Close waited behind nats.go's write
     lock and Connect dialled without its context. New exported surface: WithWriteTimeout
@@ -1770,6 +1762,8 @@
     DeliveryResult.ControlError :240-241, SettlementError :243-244, SettlementAttempted :246-247,
     SettlementMethodSucceeded :249-252; storage_resource.go StorageResource.Undescribable
     :195-206; trace.go DetachContextWithTrace :51-65 with its context.Background root at :56.
+    Dropped by #184 (owner, 2026-10-12; PR #188), an adapt item, pin → deleted: client.go
+    SetConnection :223-231, a setter "(for testing)" whose only callers at the pin are tests.
     PublishBatchToStream stays (semboids boidgraph/publisher.go:32). State the drops left written
     by nothing, deleted: the client.go fields token :107, tlsEnabled, tlsCertFile, tlsKeyFile and
     tlsCAFile :110-113, compression :117, onDisconnect, onReconnect and onHealthChange :125-127;
@@ -2205,7 +2199,8 @@
     :73, :123, :193 → :196, :206 → :209, FetchMaxWait :285 → :287; integration_test.go :176 → :164,
     :230 → :217; kv :248 → :256; kv_key_contract :424 → :415, :448 → :439, :468 → :459,
     FlushTimeout :522 → :513, :744 → :735; kv_watcher_ownership :128 → :111;
-    request_response_bounds :122 → :124, :169 → :171, :176 → :178; request :43 → :45, :128 →
+    request_response_bounds :122 → :124, :169 → :171, :176 → :178 (the last two in a test #184
+    removed); request :43 → :45, :128 →
     :130, :228 → :230, :236 → :238, :273 → :277, :309 → :313; storage_inventory collector
     Timeout :241 → :236; stream_visibility :58 → :59; stream :214 → :215, :644 → :652; and the
     5 s cleanup bounds client_async_error :34, stream_capacity_circuit :121, subscription :28 →

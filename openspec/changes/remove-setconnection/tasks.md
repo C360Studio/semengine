@@ -27,7 +27,7 @@ on choices the design does not spell out go in `notes/<task>.md`, with a one-lin
 - [x] 2.2 Delete `TestIntegration_SubscribeForRequestsUsesSubscriptionConnectionForOversizeDiagnostic`
   (`request_response_bounds_integration_test.go:144`; owner Q1). Test:
   `TestIntegration_SubscribeForRequestsPublishesBeforeClassifyingResponseLimit` passes under `task test:integration`.
-- [ ] 2.3 Remove `SetConnection` and the code that exists only for it (design, "What goes"). Test: `task build`, and
+- [x] 2.3 Remove `SetConnection` and the code that exists only for it (design, "What goes"). Test: `task build`, and
   every test in the design's table of observable behaviour passes under `task test:unit` and `task test:integration`.
 - [ ] 2.4 Rewrite the comments that name the swap (inventory §2d, and the `closedSignals` sentence at
   `client.go:195`-`:199`) so each states what the code does now. Check: `git grep -n SetConnection -- '*.go'` prints

@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
+	"slices"
 	"time"
 
 	"github.com/c360studio/semengine/pkg/errs"
@@ -320,11 +320,33 @@ func (kv *KVStore) UpdateWithRetry(ctx context.Context, key string,
 // because revisions are monotonic. Two consumers, two properties; do not
 // generalize from the tolerant one.
 //
-// On any non-nil error the returned revision is 0 — nothing committed.
+// On any non-nil error, and on a callback's ErrKVSkipWrite, the returned
+// revision is 0 — the call attributes no commit to itself. That does not mean
+// nothing committed: a write that returns an error may have committed. So the
+// callback runs again only after a failed read, a revision conflict, or
+// jetstream.ErrNoStreamResponse (no stream received the write); any other write
+// error ends the call, errors.Is reaching it.
 func (kv *KVStore) UpdateWithRetryRev(ctx context.Context, key string,
 	updateFn func(current []byte) ([]byte, error)) (uint64, error) {
 	if ctx == nil {
 		return 0, nilContextErrorOf("KVStore", "UpdateWithRetryRev")
+	}
+	return kv.UpdateWithRetryRead(ctx, key, func(current []byte, _ uint64) ([]byte, error) {
+		return updateFn(current)
+	})
+}
+
+// UpdateWithRetryRead is UpdateWithRetryRev whose callback also gets the revision it read.
+//
+// revision is the revision of current, or 0 when the key is absent (never
+// written, deleted or purged); no commit is revision 0. A callback error that
+// errors.Is matches to ErrKVSkipWrite ends the call after that run: nothing is
+// written, the value returned beside it is ignored, and the call returns
+// (0, nil). Everything else is as UpdateWithRetryRev documents.
+func (kv *KVStore) UpdateWithRetryRead(ctx context.Context, key string,
+	updateFn func(current []byte, revision uint64) ([]byte, error)) (uint64, error) {
+	if ctx == nil {
+		return 0, nilContextErrorOf("KVStore", "UpdateWithRetryRead")
 	}
 
 	// Apply timeout to the entire retry operation
@@ -344,10 +366,15 @@ func (kv *KVStore) UpdateWithRetryRev(ctx context.Context, key string,
 	attemptNum := 0
 
 	// Use the retry package for automatic retry with exponential backoff
-	// Note: All errors will be retried except when max attempts is reached.
-	// We use consistent error message formatting to indicate error types:
-	// - Retryable errors (conflicts): returned as-is to trigger retry
-	// - Non-retryable errors: wrapped with context about why they failed
+	// rerun reports whether a write error lets the callback run again: the bucket refused the
+	// write as a revision conflict, or nats.go returned jetstream.ErrNoStreamResponse, which it
+	// does only when every publish attempt got no responders, so no stream stored the write
+	// (publish.go:248-263). Any other write error may follow a stored write, and a later run's
+	// refusal could not show whether it was stored, so it ends the call (Codex interim review
+	// R2, PR #93 comment 6112098987). A failed read stores nothing and is retried.
+	rerun := func(err error) bool {
+		return IsKVConflictError(err) || errors.Is(err, jetstream.ErrNoStreamResponse)
+	}
 	err := retry.Do(ctx, retryConfig, func() error {
 		attemptNum++
 
@@ -374,8 +401,13 @@ func (kv *KVStore) UpdateWithRetryRev(ctx context.Context, key string,
 			revision = entry.Revision
 		}
 
-		// Apply update function to current value
-		newValue, err := updateFn(currentValue)
+		// Apply update function to current value and the revision it was read at
+		newValue, err := updateFn(currentValue, revision)
+		if errors.Is(err, ErrKVSkipWrite) {
+			// The callback declined: this run writes nothing, and committedRevision
+			// is still 0, because a run that commits ends the loop.
+			return nil
+		}
 		if err != nil {
 			// User logic error - should not retry as it will fail again
 			// Wrapped as non-retryable to fail fast
@@ -400,7 +432,7 @@ func (kv *KVStore) UpdateWithRetryRev(ctx context.Context, key string,
 				return nil // Success!
 			}
 			// Conflict error - WILL be retried (this is the intended retry case)
-			if IsKVConflictError(err) {
+			if rerun(err) {
 				if kv.logger != nil {
 					kv.logger.Debug("KV create conflict, retrying",
 						slog.String("key", key),
@@ -411,9 +443,9 @@ func (kv *KVStore) UpdateWithRetryRev(ctx context.Context, key string,
 				// Return conflict error as-is for retry
 				return err
 			}
-			// Infrastructure error - will retry but may not succeed
-			// Wrapped to provide context about the operation
-			return fmt.Errorf("kv create failed: %w", err)
+			// The create may have been stored, and no later run could show whether it was:
+			// end the call (rerun).
+			return retry.NonRetryable(fmt.Errorf("kv create failed: %w", err))
 		}
 
 		// Key exists - update with CAS
@@ -424,7 +456,7 @@ func (kv *KVStore) UpdateWithRetryRev(ctx context.Context, key string,
 			return nil // Success!
 		}
 		// Conflict error - WILL be retried (this is the intended retry case)
-		if IsKVConflictError(err) {
+		if rerun(err) {
 			if kv.logger != nil {
 				kv.logger.Debug("KV update conflict, retrying",
 					slog.String("key", key),
@@ -435,9 +467,9 @@ func (kv *KVStore) UpdateWithRetryRev(ctx context.Context, key string,
 			// Return conflict error as-is for retry
 			return err
 		}
-		// Infrastructure error - will retry but may not succeed
-		// Wrapped to provide context about the operation
-		return fmt.Errorf("kv update failed: %w", err)
+		// The update may have been stored, and no later run could show whether it was:
+		// end the call (rerun).
+		return retry.NonRetryable(fmt.Errorf("kv update failed: %w", err))
 	})
 
 	// Check if we exceeded max retries on a conflict error
@@ -736,37 +768,37 @@ func (kv *KVStore) Watch(ctx context.Context, pattern string) (jetstream.KeyWatc
 // branch defends paths that bypass that mapping (Watch handler entry-error chains,
 // GetRevision wrappers, future SDK changes). See issue #122 and
 // feedback_jetstream_sentinel_set_coverage.
+//
+// The class is read from the error's type, never its text (#146): a refusal's
+// text can name a stored entity, and an ID holding "10037" is not an absence.
 func IsKVNotFoundError(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, ErrKVKeyNotFound) {
-		return true
-	}
-	if errors.Is(err, jetstream.ErrKeyNotFound) || errors.Is(err, jetstream.ErrKeyDeleted) {
-		return true
-	}
-	errMsg := err.Error()
-	return strings.Contains(errMsg, "key not found") ||
-		strings.Contains(errMsg, "key was deleted") ||
-		strings.Contains(errMsg, "10037")
+	return errors.Is(err, ErrKVKeyNotFound) ||
+		errors.Is(err, jetstream.ErrKeyNotFound) ||
+		errors.Is(err, jetstream.ErrKeyDeleted) ||
+		hasJetStreamErrorCode(err, jetstream.JSErrCodeMessageNotFound)
 }
 
-// IsKVConflictError checks if error indicates a conflict (key exists or wrong revision)
+// IsKVConflictError checks if error indicates a conflict (key exists or wrong revision).
+// Like IsKVNotFoundError it reads the error's type, never its text (#146). A
+// replicated stream reports a wrong last sequence as 10164 where a single
+// replica reports 10071.
 func IsKVConflictError(err error) bool {
-	if err == nil {
+	return errors.Is(err, ErrKVRevisionMismatch) ||
+		errors.Is(err, ErrKVKeyExists) ||
+		errors.Is(err, jetstream.ErrKeyExists) ||
+		hasJetStreamErrorCode(err,
+			jetstream.JSErrCodeStreamWrongLastSequence,
+			jetstream.JSErrCodeStreamWrongLastSequenceConstant,
+			jetstream.JSErrCodeStreamNameInUse)
+}
+
+// hasJetStreamErrorCode reports whether err wraps a JetStream API error with one of codes.
+func hasJetStreamErrorCode(err error, codes ...jetstream.ErrorCode) bool {
+	var apiErr *jetstream.APIError
+	if !errors.As(err, &apiErr) {
 		return false
 	}
-	// Check for our custom errors
-	if errors.Is(err, ErrKVRevisionMismatch) || errors.Is(err, ErrKVKeyExists) {
-		return true
-	}
-	// Check for raw NATS errors
-	errMsg := err.Error()
-	return strings.Contains(errMsg, "wrong last sequence") ||
-		strings.Contains(errMsg, "10071") ||
-		strings.Contains(errMsg, "key exists") ||
-		strings.Contains(errMsg, "10058")
+	return slices.Contains(codes, apiErr.ErrorCode)
 }
 
 // Well-known errors matching Graph processor patterns
@@ -775,4 +807,6 @@ var (
 	ErrKVKeyExists          = errors.New("kv: key already exists")
 	ErrKVRevisionMismatch   = errors.New("kv: revision mismatch (concurrent update)")
 	ErrKVMaxRetriesExceeded = errors.New("kv: max retries exceeded")
+	// ErrKVSkipWrite, returned by an update callback (wrapped or not), makes the update write nothing.
+	ErrKVSkipWrite = errors.New("kv: update callback skipped the write")
 )

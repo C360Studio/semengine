@@ -116,19 +116,13 @@ type consumerOwnership struct {
 // Closed(), records the end, waits for the running invocation, and then calls release. It reports
 // false, and admits nothing, once Close has begun.
 //
-// Close drains the installed connection, which ends the consumers made on it gracefully. A consumer
-// whose connection SetConnection has since replaced is the client's but its connection is the
-// caller's (design D3): when Close begins, its goroutine stops it, leaving that connection open.
-// After Stop the native Closed() can report the end early, so the handler count decides completion.
-//
-// conn is the connection the consumer's JetStream handle was made on, read together with that
-// handle when the setup began (jetStreamWithConn), whatever SetConnection has installed since.
+// Close drains the client's connection, which ends the consumers made on it gracefully.
 //
 // cancelHandlers, when not nil, cancels the context the client owns for this consumer's handlers
 // (owner ruling, #9 comment 5994720412 item 2). The goroutine calls it as soon as Close begins, and
 // once every handler invocation has returned. When ownConsumer reports false the caller cancels.
 func (c *Client) ownConsumer(
-	conn *nats.Conn, d *ownedDelivery, cancelHandlers context.CancelFunc, release func(started bool),
+	d *ownedDelivery, cancelHandlers context.CancelFunc, release func(started bool),
 ) (*consumerOwnership, bool) {
 	if cancelHandlers == nil {
 		cancelHandlers = func() {}
@@ -152,12 +146,6 @@ func (c *Client) ownConsumer(
 			case <-closed:
 			case <-closing:
 				cancelHandlers()
-				c.mu.RLock()
-				replaced := conn != c.draining
-				c.mu.RUnlock()
-				if replaced {
-					h.Stop()
-				}
 				<-closed
 			}
 		}

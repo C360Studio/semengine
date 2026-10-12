@@ -556,8 +556,12 @@ A test of a feature that the port removes is deleted with it, and the deletion i
 What the repository enforces today:
 
 - `task cover:check` fails below 80% statement coverage on each package in its target list
-  (`scripts/cover-check.sh`): `natsfixture` (from the last integration run); `lifecycletest`, `probe`, `message` and
-  `payloadregistry` (from the unit run); and `natsclient` (the unit and integration runs merged).
+  (`scripts/cover-check.sh`, which names each package's profile): `natsfixture` (from the last integration run);
+  `lifecycletest`, `probe`, `message`, `payloadregistry`, `graph/readiness`, `graph/inference`, `pkg/projection`,
+  `internal/graphmutation` and `storage/storeregistry` (from the unit run); and `natsclient`,
+  `processor/graph-ingest`, `graph`, `graph/kvcatalog`, `component` and `pkg/lifecycle` (the unit and integration runs
+  merged). `TestCoverCheckSensitivity` (`internal/harness/contract/cover_test.go`) holds that each target is
+  checked, from its profile.
 - The integration runner caps a run at a 10-minute `go test` timeout and records per-package wall time.
 - One NATS fixture is one container. The fixture's cleanup gets 60 seconds.
 - `task verify` prints the wall time of each step.

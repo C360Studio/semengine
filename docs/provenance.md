@@ -73,9 +73,10 @@ byte-identical (`scripts/lint-test-ports.sh` and its fixture test). Change `flak
 scripts: the inline exemption marker is gone and the guidance names no SemStreams file, so both rows read `adapt`.
 `task ledger:check` (contract test T-B7, `internal/harness/contract/ledger_test.go`) machine-checks the schema inside
 `task verify`, then compares every `carry` row with the pin (rule 5). The ledger has
-four `carry` rows, so the check fetches the pin: three of the fifteen ported packages (`pkg/timestamp`, `pkg/errs`,
-`pkg/projection/contract`) and the test helpers `internal/semantictest`, which moved to `internal/harness/semantictest`.
-The other twelve ported packages are `adapt`; `vocabulary` and `pkg/types` were first among them only because their
+five `carry` rows, so the check fetches the pin: two of the fifteen ported packages (`pkg/timestamp` and
+`pkg/projection/contract`), the test helpers `internal/semantictest`, which moved to `internal/harness/semantictest`,
+and change `setup-04a-02-ingest-kernel`'s `model` and `storage`. The other thirteen of the fifteen are `adapt`, `pkg/errs`
+since that change's task 3.12h; `vocabulary` and `pkg/types` were first among them only because their
 `README.md` files include markdownlint fixes, and the check compares `.go` and `testdata` files, not READMEs. A ported
 README or `doc.go` keeps the pin's text except for these edits: the fixes markdownlint requires; changes to passages
 that describe behavior the ported code no longer has (owner ruling, [#9 comment 5957221949][readme-ruling], which

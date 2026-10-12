@@ -168,20 +168,18 @@ type Client struct {
 	idleWait chan struct{}
 
 	// draining is the connection the first Close drains; drainTimedOut
-	// records that nats.go reported nats.ErrDrainTimeout for it. dialled is
-	// the connection connectWith installed, the only one that carries the
-	// client's event handlers, and socket is its dialer, which Close cuts.
+	// records that nats.go reported nats.ErrDrainTimeout for it. socket is the
+	// dialer of the connection Connect installed, which Close cuts.
 	// awaitingClosed is set while the joiner waits for that connection's
 	// closed handler, for the lifecycle adapter.
 	draining       *nats.Conn
 	drainTimedOut  bool
-	dialled        *nats.Conn
 	socket         *socketDialer
 	awaitingClosed *nats.Conn
 
-	// closingSignal is closed when Close begins, so each client-owned core
-	// subscription's watcher can end one left on a connection SetConnection
-	// replaced. The client keeps no catalog of its subscriptions.
+	// closingSignal is closed when Close begins. subscribeOwned reads it to
+	// report a failed setup as nats.ErrConnectionClosed once Close has begun,
+	// and ownConsumer's goroutine to cancel its consumer's handler context.
 	closingSignal chan struct{}
 
 	// handlersRunning counts message handler invocations in flight, for the
@@ -193,10 +191,10 @@ type Client struct {
 	// ClosedHandler last, nats.go:6236-6252, :3637-3660). The waiter deletes
 	// its entry. handleClosed cannot delete an entry nobody has asked for yet,
 	// because a waiter may ask after the handler ran (a dialled connection that
-	// closed by itself before Close). So an entry outlives its use when no one
-	// ever waits: a connection replaced through SetConnection (a test hook), or
-	// the dialled connection of a client that is never closed. That is one
-	// entry, holding no goroutine, per such connection the client dialled.
+	// closed by itself before Close). So an entry outlives its use only when
+	// no one ever waits: the installed connection of a client that is never
+	// closed, once that connection has closed by itself. A client installs at
+	// most one connection, so that is at most one entry, holding no goroutine.
 	closedSignalsMu sync.Mutex
 	closedSignals   map[*nats.Conn]chan struct{}
 
@@ -416,25 +414,6 @@ func (m *Client) MaxPayload() (int64, error) {
 		return 0, ErrNotConnected
 	}
 	return conn.MaxPayload(), nil
-}
-
-// SetConnection sets the NATS connection (for testing). The connection it
-// replaces belongs to the caller: Close neither closes it nor waits for its
-// event handlers. Once Close has begun it changes nothing and logs at warn level.
-func (m *Client) SetConnection(conn *nats.Conn) {
-	// IsConnected waits for the connection's lock, which a held write keeps,
-	// so it is called before this client's lock is taken (T2; P21).
-	connected := conn != nil && conn.IsConnected()
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.closing {
-		m.logger.Warn("NATS client closing; SetConnection ignored")
-		return
-	}
-	m.conn = conn
-	if connected {
-		m.setStatus(StatusConnected)
-	}
 }
 
 // setStatus stores the connection status. Production writers hold mu and have
@@ -833,7 +812,6 @@ func (m *Client) connectWith(
 	}
 	m.conn = conn
 	m.js = js
-	m.dialled = conn
 	m.socket = socket
 	m.setStatus(StatusConnected)
 	m.resetCircuitLocked()
@@ -931,22 +909,22 @@ func (m *Client) startMetricsPoller() bool {
 // the same completion. On a connection the client dialled, an ended ctx also
 // closes the socket and ends a reconnect dial nats.go has in progress, so a
 // write the server is not reading does not hold Close (T1, T8; P17, P23); a
-// message still buffered then is not promised to reach the server. A connection
-// installed through SetConnection is not cut. Once Close has begun the client
-// starts no new work: background work offered after that is dropped and logged
-// at debug level, and Connect, Subscribe, SubscribeForRequests and the Consume
-// methods return nats.ErrConnectionClosed. Work admitted before Close began may
-// still run while Close waits for it; message handlers keep handling messages
-// already delivered during the drain. Status keeps its value while Close drains
-// and reports Disconnected once the cleanup has finished. After a Close whose
-// context cut the drain short, the native connection GetConnection returned can
-// report DRAINING_PUBS, and IsConnected true, for up to 5 s before it reports
-// CLOSED again: that is nats.go v1.54.0's drain, and no event handler of the
-// client runs then. A drain that runs out of time is reported by the first
-// Close as a transient error wrapping nats.ErrDrainTimeout. A Close called from
-// inside one of the client's callbacks waits on a join that includes its own
-// invocation, so it returns ctx.Err() when its context ends and never returns
-// nil. Close refuses a nil context with an error and touches nothing.
+// message still buffered then is not promised to reach the server. Once Close
+// has begun the client starts no new work: background work offered after that is
+// dropped and logged at debug level, and Connect, Subscribe,
+// SubscribeForRequests and the Consume methods return nats.ErrConnectionClosed.
+// Work admitted before Close began may still run while Close waits for it;
+// message handlers keep handling messages already delivered during the drain.
+// Status keeps its value while Close drains and reports Disconnected once the
+// cleanup has finished. After a Close whose context cut the drain short, the
+// native connection GetConnection returned can report DRAINING_PUBS, and
+// IsConnected true, for up to 5 s before it reports CLOSED again: that is
+// nats.go v1.54.0's drain, and no event handler of the client runs then. A drain
+// that runs out of time is reported by the first Close as a transient error
+// wrapping nats.ErrDrainTimeout. A Close called from inside one of the client's
+// callbacks waits on a join that includes its own invocation, so it returns
+// ctx.Err() when its context ends and never returns nil. Close refuses a nil
+// context with an error and touches nothing.
 func (m *Client) Close(ctx context.Context) error {
 	if ctx == nil {
 		return errs.WrapInvalid(stderrors.New("nil context"), "Client", "Close", "missing context")
@@ -967,9 +945,7 @@ func (m *Client) Close(ctx context.Context) error {
 		m.closing = true
 		m.joined = make(chan struct{})
 		conn = m.conn
-		if conn != nil && conn == m.dialled {
-			socket = m.socket
-		}
+		socket = m.socket
 		m.draining = conn
 		close(m.closingSignalLocked())
 		drainTimeout = m.drainTimeout
@@ -1011,8 +987,8 @@ func (m *Client) Close(ctx context.Context) error {
 
 // cleanup is the first Close's work: stop the monitor, the timers and the
 // poller; drain and close the connection; clear it; write Disconnected; and
-// start the joiner that closes joined. socket is conn's dialer when the client
-// dialled conn, and nil otherwise.
+// start the joiner that closes joined. socket is conn's dialer, nil when conn
+// is.
 func (m *Client) cleanup(
 	ctx context.Context,
 	conn *nats.Conn,
@@ -1039,14 +1015,7 @@ func (m *Client) cleanup(
 
 	awaitHandlers := carriesClientHandlers(conn)
 	m.mu.Lock()
-	// Only a connection connectWith installed carries the client's handlers;
-	// one installed through SetConnection is closed without a handler join.
-	if conn != m.dialled {
-		awaitHandlers = false
-	}
-	if m.conn == conn {
-		m.conn = nil
-	}
+	m.conn = nil
 	m.js = nil
 
 	// Clear sensitive credentials from memory
@@ -1119,9 +1088,6 @@ func (m *Client) join(joined chan struct{}, conn *nats.Conn) {
 type guardedConsumer struct {
 	jetstream.Consumer
 	infoMu sync.Mutex
-	// conn is the connection the consumer's JetStream handle was made on, read with the handle
-	// (jetStreamWithConn); nil for a handle that did not come from Connect.
-	conn *nats.Conn
 }
 
 // Info serializes the underlying call. The lock is held across the network round trip
@@ -1448,10 +1414,9 @@ func (m *Client) subscribeOwned(
 		}
 	}
 	s := newSubscription(sub, d.end)
-	go m.watchOwnedSubscription(conn, sub, d, closing, finish)
+	go m.watchOwnedSubscription(d, finish)
 
-	// The round trip runs on conn, the connection the SUB went to, never on one
-	// SetConnection installed since.
+	// The round trip runs on conn, the connection the SUB went to.
 	roundTrip, cancel := context.WithTimeout(ctx, DefaultRequestTimeout)
 	rtErr := conn.FlushWithContext(roundTrip)
 	cancel()
@@ -1492,28 +1457,9 @@ func (m *Client) subscribeOwned(
 // watchOwnedSubscription is a client-owned subscription's share of Close's join;
 // it was admitted with the subscription and finishes once the subscription's
 // delivery has ended and its last handler invocation has returned. Close drains
-// the installed connection, which ends the subscriptions made on it. One left on
-// a connection SetConnection replaced is unsubscribed here once Close begins:
-// that connection belongs to the SetConnection caller, the subscription to the
-// client (design D3). An Unsubscribe error means the subscription is already
-// ending (its connection is closed or draining, or it was unsubscribed): its
-// closed handler still fires once its delivery goroutine exits
-// (nats.go:5391-5413, :5501-5530), so the wait below still ends.
-func (m *Client) watchOwnedSubscription(
-	conn *nats.Conn, sub nativeSubscription, d *ownedDelivery, closing <-chan struct{}, finish func(),
-) {
+// the client's connection, which ends the subscriptions made on it.
+func (m *Client) watchOwnedSubscription(d *ownedDelivery, finish func()) {
 	defer finish()
-	select {
-	case <-d.done:
-		return
-	case <-closing:
-	}
-	m.mu.RLock()
-	replaced := conn != m.draining
-	m.mu.RUnlock()
-	if replaced {
-		_ = sub.Unsubscribe()
-	}
 	<-d.done
 }
 
@@ -1551,24 +1497,16 @@ func (m *Client) Publish(ctx context.Context, subject string, data []byte) error
 
 // JetStream returns the JetStream context
 func (m *Client) JetStream() (jetstream.JetStream, error) {
-	js, _, err := m.jetStreamWithConn()
-	return js, err
-}
-
-// jetStreamWithConn returns the JetStream handle and the connection it was made on, read in one
-// critical section: connectWith installs both together, so a consumer made from this handle is
-// attributed to the connection it runs on even if SetConnection and a new Connect run meanwhile.
-func (m *Client) jetStreamWithConn() (jetstream.JetStream, *nats.Conn, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	if m.js == nil {
-		return nil, nil, errs.WrapTransient(
+		return nil, errs.WrapTransient(
 			fmt.Errorf("JetStream not initialized"),
 			"Client", "JetStream", "get JetStream context")
 	}
 
-	return m.js, m.dialled, nil
+	return m.js, nil
 }
 
 // CreateStream creates a JetStream stream

@@ -196,6 +196,26 @@ owner question, finding, or supported disposition is a finding.
   `openspec/changes/<id>/notes/<task>.md` (developer contract, Handoff), and that a pull request comment links the
   file. Notes posted only as a pull request comment are a finding.
 
+## Semantic identity and graph review
+
+Carried with `graph`, `pkg/types`, `vocabulary` and graph-ingest from SemStreams' reviewer contract at the pin
+(§ Semantic identity and graph review).
+
+- A predicate has exactly three parts (`vocabulary.ParsePredicate`). A hash, hex or other encoding never makes an
+  invalid predicate acceptable.
+- A literal entity ID has exactly six parts and at most 256 bytes. Declaration patterns and query prefixes are
+  separate languages, each with its own validator and its own meaning for empty (`pkg/types/entity_id.go`).
+- A complete NATS key or wildcard filter goes through the shared validators in `natsclient/kv_key_contract.go` and is
+  rejected before any lister, watcher, request, `Put`, `Get`, `Delete`, retry, callback or metric runs.
+- A complete result set is sorted and deduplicated before a limit or a sample; established tie-breaks remain.
+- Readiness and authoritative watermarks report not ready during initial replay, repair, or a failed projection the
+  owner requires.
+- The longest supported key or filter and its exact match set are proven against a real NATS server; unit
+  arithmetic or representative data is not enough.
+- For a change to an index (graph-index arrives in change 4): each fixed token position matches its semantic owner,
+  each forward and owner filter has its longest-key and exact-match proof, `[A] -> []` is checked where a query can
+  see it, and `[A] -> [B] -> []` across every read surface the change affects.
+
 ## High-signal runtime review
 
 ### Context ownership
@@ -263,6 +283,45 @@ its first two bullets; the rest govern graph state, the `storage` package and cu
   ceiling on that state is acceptable only as a `DiscardNew` limit with typed rejection, through a new
   `RetentionKind`.
 
+### Payload registry
+
+Carried with `message`, `payloadregistry` and graph-ingest from SemStreams' reviewer contract at the pin
+(§ Payload registry).
+
+- Every polymorphic publish wraps `message.BaseMessage`, even when the one known consumer reads it raw.
+- A new payload has a factory, alias-based `MarshalJSON` and `UnmarshalJSON` over its own fields, and a
+  `RegisterPayloads` in its own package that the consumer's composition root calls. An import is not registration
+  evidence; trace the call ([new-payload](../skills/new-payload/SKILL.md)). A package of this module that calls two
+  packages' registrations is an aggregator (`TestNoAggregatorPackage`).
+- Round-trip tests use the production decoder (`message.NewDecoder`), not a cast to an anonymous struct.
+
+### Graph and state ownership
+
+Carried with graph-ingest from SemStreams' reviewer contract at the pin (§ Graph and state ownership). Its rules on
+`$entity.triple.*` substitution and on what rules carry return with the rule processor (change 6).
+
+- Only graph-ingest writes domain entities to `ENTITY_STATES`. Operational state belongs in a bucket its owner
+  declares (`graph/kvcatalog` for a bucket whose ownership or retention the framework guarantees).
+- A lifecycle phase or other single-valued predicate replaces the old triple. An append is a finding: a reader may
+  pick the first value or the last.
+- State carried in a `context` value (`context.WithValue`, `ctx.Value`) is `BLOCKING` (owner ruling, #91 comment
+  6124130342).
+
+### Component and schema wiring
+
+Carried with `component` and graph-ingest from SemStreams' reviewer contract at the pin (§ Component and schema
+wiring). Its `internal/boot`, schema-generation and OpenAPI rules are not carried: this module has none of the three.
+
+- A consumer that calls `Registry.CreateComponent`, `SealComposition` or `Snapshots` directly instead of going
+  through the component manager (`service.ComponentManager`, change 3) is a finding (ruling C, #91 comment
+  6035477895). Nothing refuses the call at run time; `component`'s own tests call them.
+- A ported component without its own test that it refuses an unknown configuration key, naming the key
+  (`component-registration` spec), is a finding. Configuration a consumer can set has a round-trip test through the
+  production JSON path that keeps each field's destination type.
+- A ported component that keeps its own owner-lifecycle state instead of composing `internal/lifecycleguard` is a
+  finding. One whose failed `Start` can fail to clean up needs its own test that `Start` reports both errors and that
+  a later `Stop` releases what was left (`lifecycle-suite` spec, "Failed start whose own cleanup fails").
+
 ### Test fidelity
 
 - `docs/testing.md` is the developer-facing long form of these checks. A diff that contradicts it is a finding
@@ -303,19 +362,36 @@ its first two bullets; the rest govern graph state, the `storage` package and cu
 
 ## Exported-surface review
 
-- For every NEW exported symbol: name its present consumer. Zero present consumers is a finding (phantom surface).
-  NEW means the SemStreams pin does not have it; surface ported from an admitted package is checked by the surface
-  audit under Port-time and pattern review instead.
+- For every NEW exported symbol: name who it is for. Plumbing, exported so another SemEngine package can call it,
+  has a production caller in this repository, at `file:line`. Framework API, offered to products built on SemEngine,
+  whose callers live outside this repository, has a contract line that offers it (a spec requirement, the package
+  `README.md`, or the admission ledger's `contract` field) and a test that calls it the way a product would; a test
+  being its only caller here is normal, not a finding. The third answer is a consumer `docs/inventory-scope.md`
+  names that uses it, at symbol level. None of the three is a finding (phantom surface); "for observability" and
+  "for future use" are that shape, since they name no contract line to hold the code to. Review a contract line as a
+  product need, not as a label (owner ruling of 2026-10-12, #190). NEW means the SemStreams pin does not have it;
+  surface ported from an admitted package is checked by the surface audit under Port-time and pattern review instead.
 - A return whose doc comment warns against part of its own affordance, or a capability return (handle, connection,
   map, internal context) where callers need a value, is a finding; require the collapsed signature.
 - Three or more correlated non-error returns without a named struct is a finding.
 - New exported surface without the architect-approved consumer contract is a `BLOCKING` finding.
-- Production code whose only caller is a test, a `_test.go` file or `internal/harness` (a method, field, option,
-  constructor or hook, such as a setter that swaps a dependency under a running object), is a finding: `BLOCKING`
-  when exported, since a test is not a consumer, and `HIGH` when not. The fix is a design the test can drive through
-  the calls production code makes; never review or specify how the back door behaves (owner ruling of 2026-10-12,
-  #186). These severities bind code a change adds. An exported one carried from the pin stays `BLOCKING`: dead surface
-  is not protected (protocol, Bounded port scope). An unexported hook carried unchanged from the pin is a shape-sweep
+- A back door is a finding, whatever calls it: production code (a method, field, option, constructor or hook) that lets
+  a caller do to a framework object what no production caller, in this repository or in a consumer, ever does, such as
+  a setter that swaps a dependency under a running object, a read of private state, or a way to skip a lifecycle step.
+  A contract line does not make a back door framework API. It is `BLOCKING` when exported and `HIGH` when not. The fix
+  is a design the test can drive through the calls production code makes; never review or specify how the back door
+  behaves (owner ruling of 2026-10-12, #186). The finding is the shape, not the caller count (owner ruling of
+  2026-10-12, #190). Other production code whose only caller is a test, a `_test.go` file or `internal/harness` is
+  judged by who it is for: an exported symbol a contract line offers, which the test drives as a product would, is
+  framework API and not a finding; one with no production reader and no contract line is dead surface, a finding at the
+  same severities (an unexported symbol has no contract line). These severities bind code a change adds. An exported
+  back door carried from the pin stays `BLOCKING` under #186, whatever contract line it has. An exported symbol carried
+  from the pin that has no contract line and no reader in the surface audit's reader set stays `BLOCKING` too: dead
+  surface is not protected (protocol, Bounded port scope). That reader set counts the pin's consumer adapters: packages
+  outside both halves of SemEngine (`AGENTS.md` § What this is for), or ones a ruling names consumer-owned, as
+  SETUP 03B design D4 excludes `gateway` and `gateway/graph-gateway` under D5's layer 4
+  (`openspec/changes/archive/2026-10-01-setup-03b-contract-boundary/design.md:223`; architect contract § Extraction
+  slices, "Surface audit"). Unexported code that only a test calls, carried unchanged from the pin, is a shape-sweep
   finding, disposed under the protocol's Bounded port scope. The rule adds no prerequisite to PR #93, whose scope is
   frozen (epic #9 comment 6085243841); the test-only code it carries is #135 and #184.
 
@@ -345,12 +421,17 @@ its first two bullets; the rest govern graph state, the `storage` package and cu
   Do not require the migrations.
 - **Check the surface audit on every extraction slice.** Run the three searches yourself on the ported package:
   exported symbols that nothing reads, searched pin-wide (no caller in SemEngine, in any package of the pin's
-  admitted set, ported or not, or, at symbol level, in a consumer `docs/inventory-scope.md` names); config fields
-  with no behavioral reader, and whether an unknown key is refused; described behavior with no implementation. An
-  admitted package is ported whole: a symbol whose only caller is in an admitted package not ported yet is not dead
-  surface, and keeping it is not a finding. A defect found in ported surface that is neither fixed nor tracked as an
-  issue is a finding. An item the slice design did not list is a finding. A kept config field without a test that fails
-  when the field is ignored is a finding.
+  admitted set, ported or not, in a pin package that is a consumer adapter, or, at symbol level, in a consumer
+  `docs/inventory-scope.md` names); config fields with no behavioral reader, and whether an unknown key is refused;
+  described behavior with no implementation. An admitted package is ported whole: a symbol whose only caller is in an
+  admitted package not ported yet is not dead surface, and keeping it is not a finding. A symbol with a production
+  caller at the pin in a consumer adapter is framework API (offered to products built on SemEngine): a slice design
+  that removes it, or keeps it without naming its contract line, is a finding; a defect in it is fixed or tracked,
+  never a reason to remove it. Review that contract line as a product need, with those callers as its evidence (owner
+  ruling of 2026-10-12, #190). The contract-line finding binds slice designs from this rule's merge on; PR #93's
+  `component` package takes it through #189 item 2. A defect found in ported surface that is neither fixed nor tracked
+  as an issue is a finding. An item the slice design did not list is a finding. A kept config field without a test that
+  fails when the field is ignored is a finding.
 - **Check that the package's guidance came with it.** The slice names the SemStreams contract sections and skills
   that apply to the package and carries the adapted text. A ported package whose known footguns are documented only
   in SemStreams is a finding.

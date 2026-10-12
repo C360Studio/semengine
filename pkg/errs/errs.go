@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/c360studio/semengine/pkg/retry"
@@ -151,7 +150,9 @@ func (ce *ClassifiedError) Is(target error) bool {
 	return t.Code != "" && t.Err == nil && ce.Code == t.Code
 }
 
-// IsTransient checks if an error is transient and should be retried
+// IsTransient checks if an error is transient and should be retried. It reads the
+// error's class, then its sentinels, never its text (#146): the text can carry an
+// entity ID or a peer's message, and a word in it must not decide a retry.
 func IsTransient(err error) bool {
 	if err == nil {
 		return false
@@ -164,38 +165,17 @@ func IsTransient(err error) bool {
 	}
 
 	// Check for known transient errors
-	if errors.Is(err, ErrConnectionTimeout) ||
+	return errors.Is(err, ErrConnectionTimeout) ||
 		errors.Is(err, ErrConnectionLost) ||
 		errors.Is(err, ErrStorageUnavailable) ||
 		errors.Is(err, ErrRateLimited) ||
 		errors.Is(err, ErrCircuitOpen) ||
 		errors.Is(err, context.DeadlineExceeded) ||
-		errors.Is(err, context.Canceled) {
-		return true
-	}
-
-	// Check error message for common transient patterns
-	errStr := strings.ToLower(err.Error())
-	transientPatterns := []string{
-		"timeout",
-		"connection",
-		"network",
-		"temporary",
-		"unavailable",
-		"busy",
-		"retry",
-	}
-
-	for _, pattern := range transientPatterns {
-		if strings.Contains(errStr, pattern) {
-			return true
-		}
-	}
-
-	return false
+		errors.Is(err, context.Canceled)
 }
 
-// IsFatal checks if an error is fatal and should stop processing
+// IsFatal checks if an error is fatal and should stop processing. Like
+// IsTransient it reads the error's class, then its sentinels, never its text (#146).
 func IsFatal(err error) bool {
 	if err == nil {
 		return false
@@ -208,34 +188,12 @@ func IsFatal(err error) bool {
 	}
 
 	// Check for known fatal errors
-	if errors.Is(err, ErrInvalidConfig) ||
+	return errors.Is(err, ErrInvalidConfig) ||
 		errors.Is(err, ErrMissingConfig) ||
 		errors.Is(err, ErrDataCorrupted) ||
 		errors.Is(err, ErrStorageFull) ||
 		errors.Is(err, ErrResourceExhausted) ||
-		errors.Is(err, ErrQuotaExceeded) {
-		return true
-	}
-
-	// Check error message for fatal patterns
-	errStr := strings.ToLower(err.Error())
-	fatalPatterns := []string{
-		"fatal",
-		"panic",
-		"corrupted",
-		"invalid config",
-		"missing config",
-		"out of memory",
-		"disk full",
-	}
-
-	for _, pattern := range fatalPatterns {
-		if strings.Contains(errStr, pattern) {
-			return true
-		}
-	}
-
-	return false
+		errors.Is(err, ErrQuotaExceeded)
 }
 
 // IsInvalid checks if an error is due to invalid input

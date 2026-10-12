@@ -1,0 +1,349 @@
+package inference
+
+import (
+	"context"
+	"strconv"
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// TestIsContainerEntity_Detection verifies that container entities are correctly identified.
+// Container entities end with .group, .container, or .level and have 6 parts.
+func TestIsContainerEntity_Detection(t *testing.T) {
+	tests := []struct {
+		name            string
+		entityID        string
+		wantIsContainer bool
+	}{
+		// Type containers (end with .group)
+		{
+			name:            "type container",
+			entityID:        "c360.semstreams-hierarchy-test.sensor.environmental.temperature.group",
+			wantIsContainer: true,
+		},
+		{
+			name:            "type container different prefix",
+			entityID:        "acme.iot.sensors.hvac.temperature.group",
+			wantIsContainer: true,
+		},
+
+		// System containers (end with .container)
+		{
+			name:            "system container",
+			entityID:        "c360.semstreams-hierarchy-test.sensor.environmental.group.container",
+			wantIsContainer: true,
+		},
+		{
+			name:            "system container different org",
+			entityID:        "other.platform.domain.system.group.container",
+			wantIsContainer: true,
+		},
+
+		// Domain containers (end with .level)
+		{
+			name:            "domain container",
+			entityID:        "c360.semstreams-hierarchy-test.sensor.group.container.level",
+			wantIsContainer: true,
+		},
+		{
+			name:            "domain container different domain",
+			entityID:        "c360.manufacturing.automation.group.container.level",
+			wantIsContainer: true,
+		},
+
+		// Real entities (not containers)
+		{
+			name:            "real entity",
+			entityID:        "c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-001",
+			wantIsContainer: false,
+		},
+		{
+			name:            "real entity with numeric instance",
+			entityID:        "c360.semstreams-hierarchy-test.sensor.environmental.temperature.001",
+			wantIsContainer: false,
+		},
+		{
+			name:            "real entity with UUID instance",
+			entityID:        "c360.semstreams-hierarchy-test.sensor.environmental.temperature.abc-123-def",
+			wantIsContainer: false,
+		},
+
+		// Short entity IDs (< 6 parts) - cannot be containers
+		{
+			name:            "5-part entity",
+			entityID:        "c360.semstreams-hierarchy-test.sensor.environmental.temperature",
+			wantIsContainer: false,
+		},
+		{
+			name:            "4-part entity",
+			entityID:        "c360.semstreams-hierarchy-test.sensor.environmental",
+			wantIsContainer: false,
+		},
+		{
+			name:            "3-part entity",
+			entityID:        "c360.semstreams-hierarchy-test.environmental",
+			wantIsContainer: false,
+		},
+		{
+			name:            "2-part entity",
+			entityID:        "c360.logistics",
+			wantIsContainer: false,
+		},
+		{
+			name:            "1-part entity",
+			entityID:        "c360",
+			wantIsContainer: false,
+		},
+
+		// Non-c360 entities
+		{
+			name:            "non-c360 real entity",
+			entityID:        "other.org.system.domain.type.instance",
+			wantIsContainer: false,
+		},
+		{
+			name:            "non-c360 container",
+			entityID:        "other.org.system.domain.type.group",
+			wantIsContainer: true,
+		},
+
+		// Edge cases
+		{
+			name:            "empty string",
+			entityID:        "",
+			wantIsContainer: false,
+		},
+		{
+			name:            "single dot",
+			entityID:        ".",
+			wantIsContainer: false,
+		},
+		{
+			name:            "ends with group but wrong part count",
+			entityID:        "a.b.c.d.group",
+			wantIsContainer: false, // Only 5 parts
+		},
+		{
+			name:            "contains group but not at end",
+			entityID:        "c360.semstreams-hierarchy-test.group.sensor.temperature.temp-001",
+			wantIsContainer: false,
+		},
+		{
+			name:            "7-part entity ending with group",
+			entityID:        "c360.semstreams-hierarchy-test.sensor.environmental.temperature.instance.group",
+			wantIsContainer: false, // Too many parts
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := isContainerEntity(tt.entityID)
+			assert.Equal(t, tt.wantIsContainer, got,
+				"isContainerEntity(%q) = %v, want %v", tt.entityID, got, tt.wantIsContainer)
+		})
+	}
+}
+
+// TestHierarchyInference_SkipContainerEntities verifies that container entities
+// are not processed by hierarchy inference, preventing infinite cascades.
+func TestHierarchyInference_SkipContainerEntities(t *testing.T) {
+	tests := []struct {
+		name       string
+		entityID   string
+		shouldSkip bool
+	}{
+		{
+			name:       "skip type container",
+			entityID:   "c360.semstreams-hierarchy-test.sensor.environmental.temperature.group",
+			shouldSkip: true,
+		},
+		{
+			name:       "skip system container",
+			entityID:   "c360.semstreams-hierarchy-test.sensor.environmental.group.container",
+			shouldSkip: true,
+		},
+		{
+			name:       "skip domain container",
+			entityID:   "c360.semstreams-hierarchy-test.sensor.group.container.level",
+			shouldSkip: true,
+		},
+		{
+			name:       "process real entity",
+			entityID:   "c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-001",
+			shouldSkip: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			store := newFakeStore()
+
+			hi := newTestInference(t, store)
+
+			err := addHierarchy(context.Background(), hi, store, tt.entityID)
+			require.NoError(t, err)
+
+			if tt.shouldSkip {
+				// Container entities should NOT create any containers or edges
+				assert.Empty(t, store.getCreatedEntities(),
+					"Container entity %q should not create any containers", tt.entityID)
+				assert.Empty(t, store.getTriples(),
+					"Container entity %q should not create any edges", tt.entityID)
+			} else {
+				// Real entities should create containers and edges
+				assert.NotEmpty(t, store.getCreatedEntities(),
+					"Real entity %q should create containers", tt.entityID)
+				assert.NotEmpty(t, store.getTriples(),
+					"Real entity %q should create edges", tt.entityID)
+			}
+		})
+	}
+}
+
+// TestHierarchyInference_NoCascade verifies that creating a real entity
+// results in exactly 3 containers (type, system, domain), not exponential growth.
+func TestHierarchyInference_NoCascade(t *testing.T) {
+	store := newFakeStore()
+
+	hi := newTestInference(t, store)
+
+	// Create a real entity
+	entityID := "c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-001"
+	err := addHierarchy(context.Background(), hi, store, entityID)
+	require.NoError(t, err)
+
+	// Verify exactly 3 containers created
+	createdEntities := store.getCreatedEntities()
+	require.Len(t, createdEntities, 3, "Should create exactly 3 containers, got %d", len(createdEntities))
+
+	// Verify container IDs
+	containerIDs := make(map[string]bool)
+	for _, e := range createdEntities {
+		containerIDs[e.ID] = true
+	}
+
+	expectedContainers := []string{
+		"c360.semstreams-hierarchy-test.sensor.environmental.temperature.group", // Type
+		"c360.semstreams-hierarchy-test.sensor.environmental.group.container",   // System
+		"c360.semstreams-hierarchy-test.sensor.group.container.level",           // Domain
+	}
+
+	for _, expectedID := range expectedContainers {
+		assert.True(t, containerIDs[expectedID],
+			"Expected container %q not created", expectedID)
+	}
+
+	// Verify no additional containers beyond the expected 3
+	assert.Equal(t, len(expectedContainers), len(containerIDs),
+		"Created unexpected containers")
+
+	// Verify 3 edges, the forward (member) ones
+	triples := store.getTriples()
+	require.Len(t, triples, 3, "Should create exactly 3 edges (3 forward), got %d", len(triples))
+
+	// Now simulate what would happen if containers were processed (BUG scenario)
+	// If the bug exists, processing a container would create more containers
+	typeContainer := "c360.semstreams-hierarchy-test.sensor.environmental.temperature.group"
+
+	// Clear state to test container processing in isolation
+	store.mu.Lock()
+	store.triples = nil
+	store.mu.Unlock()
+
+	// Try to process the type container
+	err = addHierarchy(context.Background(), hi, store, typeContainer)
+	require.NoError(t, err)
+
+	// After fix: container should be skipped, no new entities or triples
+	newCreatedEntities := store.getCreatedEntities()
+	assert.Len(t, newCreatedEntities, 3, "Processing container should not create additional entities")
+
+	newTriples := store.getTriples()
+	assert.Empty(t, newTriples, "Processing container should not create additional edges")
+}
+
+// TestHierarchyInference_MultipleEntitiesSameType verifies that multiple
+// entities of the same type share containers without cascade.
+func TestHierarchyInference_MultipleEntitiesSameType(t *testing.T) {
+	store := newFakeStore()
+
+	hi := newTestInference(t, store)
+
+	// Create 10 entities of the same type
+	baseID := "c360.semstreams-hierarchy-test.sensor.environmental.temperature"
+	for i := 1; i <= 10; i++ {
+		// strconv, not string(rune('0'+i)): at i=10 that yields ':' — not a
+		// canonical entity-ID segment, so the tenth entity was silently
+		// ungrammatical and every count below was one short of its claim.
+		entityID := baseID + ".temp-" + strconv.Itoa(i)
+		err := addHierarchy(context.Background(), hi, store, entityID)
+		require.NoError(t, err, "Failed to create entity %q", entityID)
+	}
+
+	// Verify exactly 3 containers created (shared by all entities)
+	createdEntities := store.getCreatedEntities()
+	assert.Len(t, createdEntities, 3,
+		"Should create exactly 3 containers regardless of entity count, got %d", len(createdEntities))
+
+	// Verify 30 edges: 10 entities × 3 forward = 30
+	triples := store.getTriples()
+	assert.Len(t, triples, 30,
+		"Should create 30 edges (10 entities × 3 edges each), got %d", len(triples))
+
+	// Verify all entities reference the same containers
+	typeContainerID := "c360.semstreams-hierarchy-test.sensor.environmental.temperature.group"
+	systemContainerID := "c360.semstreams-hierarchy-test.sensor.environmental.group.container"
+	domainContainerID := "c360.semstreams-hierarchy-test.sensor.group.container.level"
+
+	typeMemberCount := 0
+	systemMemberCount := 0
+	domainMemberCount := 0
+
+	for _, triple := range triples {
+		switch triple.Object {
+		case typeContainerID:
+			typeMemberCount++
+		case systemContainerID:
+			systemMemberCount++
+		case domainContainerID:
+			domainMemberCount++
+		}
+	}
+
+	// Each of the 10 entities should have 1 edge to each container
+	assert.Equal(t, 10, typeMemberCount, "All entities should reference type container")
+	assert.Equal(t, 10, systemMemberCount, "All entities should reference system container")
+	assert.Equal(t, 10, domainMemberCount, "All entities should reference domain container")
+}
+
+// TestHierarchyInference_ContainerEntityWithNonStandardSuffix verifies that
+// entities with non-standard suffixes are processed normally.
+func TestHierarchyInference_ContainerEntityWithNonStandardSuffix(t *testing.T) {
+	store := newFakeStore()
+
+	hi := newTestInference(t, store)
+
+	// Entity that contains "group" but doesn't end with it
+	entityID := "c360.semstreams-hierarchy-test.group.sensor.temperature.temp-001"
+	err := addHierarchy(context.Background(), hi, store, entityID)
+	require.NoError(t, err)
+
+	// Should process normally (not skipped as container)
+	createdEntities := store.getCreatedEntities()
+	assert.Len(t, createdEntities, 3, "Should create containers for non-container entity")
+
+	triples := store.getTriples()
+	assert.Len(t, triples, 3, "Should create edges for non-container entity")
+}
+
+// entity-id-audit:classify intentional-malformed "c360.semstreams-hierarchy-test.sensor.environmental.temperature" line=80 column=21 surface=go-field:.entityID entity_id_invalid:arity verifies five-position IDs are not containers
+// entity-id-audit:classify intentional-malformed "c360.semstreams-hierarchy-test.sensor.environmental" line=85 column=21 surface=go-field:.entityID entity_id_invalid:arity verifies four-position IDs are not containers
+// entity-id-audit:classify intentional-malformed "c360.semstreams-hierarchy-test.environmental" line=90 column=21 surface=go-field:.entityID entity_id_invalid:arity verifies three-position IDs are not containers
+// entity-id-audit:classify intentional-malformed "c360.logistics" line=95 column=21 surface=go-field:.entityID entity_id_invalid:arity verifies two-position IDs are not containers
+// entity-id-audit:classify intentional-malformed "c360" line=100 column=21 surface=go-field:.entityID entity_id_invalid:arity verifies one-position IDs are not containers
+// entity-id-audit:classify intentional-malformed "" line=119 column=21 surface=go-field:.entityID entity_id_invalid:empty verifies empty input is not a container
+// entity-id-audit:classify intentional-malformed "." line=124 column=21 surface=go-field:.entityID entity_id_invalid:arity verifies a dot-only value is not a container
+// entity-id-audit:classify intentional-malformed "a.b.c.d.group" line=129 column=21 surface=go-field:.entityID entity_id_invalid:arity verifies a five-position group suffix is not a container
+// entity-id-audit:classify intentional-malformed "c360.semstreams-hierarchy-test.sensor.environmental.temperature.instance.group" line=139 column=21 surface=go-field:.entityID entity_id_invalid:arity verifies a seven-position group suffix is not a container

@@ -1,12 +1,13 @@
 # transport-client Specification
 
 ## Purpose
-The transport client is `natsclient`, the package that connects to NATS and wraps subscriptions, JetStream
-consumers and requests. This capability states what a caller can rely on: what a publish acknowledgement does and
-does not promise, when a consumed message is settled, that a nil context is refused before a call acts, that a
-handler panic is recovered, that `Subscribe` and `SubscribeForRequests` return a subscription only after the server
-has read its SUB, and how the storage report view changes. `Close` stays within the caller's deadline on a connection it dialled, refuses new work once it
-begins, and returns nil only after every handler and background goroutine the client owns has returned.
+The transport client is `natsclient`, the package that connects to NATS and wraps subscriptions, JetStream consumers
+and requests. This capability states what a caller can rely on: what a publish acknowledgement does and does not
+promise, when a consumed message is settled, that a nil context is refused before a call acts, that a handler panic
+is recovered, that `Subscribe` and `SubscribeForRequests` return a subscription only after the server has read its
+SUB, how the storage report view changes, and what the callback of a retried `KVStore` update is given and when it
+runs again. `Close` stays within the caller's deadline on a connection it dialled, refuses new work once it begins,
+and returns nil only after every handler and background goroutine the client owns has returned.
 
 ## Requirements
 
@@ -60,8 +61,6 @@ bound its drain by the caller's context deadline and return within it, reporting
 repeated or retried by the client on the caller's behalf. When the context ends before the drain has finished,
 `Close` SHALL close the socket of a connection this client dialled and end any dial nats.go has in progress to
 reconnect it. That ends at once a write the server is not reading, and closes the connection; the drain is cut short.
-A connection installed through `SetConnection` was not dialled by the client, and a write held on it holds `Close` as
-"A write the server is not reading holds the connection" states (ADR-112).
 
 #### Scenario: Close under an ended context
 
@@ -97,62 +96,12 @@ A connection installed through `SetConnection` was not dialled by the client, an
 - **WHEN** Drain is called with a nil context
 - **THEN** Drain returns an error naming the nil context and makes no server call
 
-### Requirement: A nil Close means everything the client owns has finished
-
-`Client.Close` SHALL return nil only after every piece of work the client owns has finished: its background work,
-every running invocation of a message handler passed to `Subscribe`, `SubscribeForRequests` or a Consume method,
-the event handlers of the connection it closes when this client dialled it, and its async publish error handler as
-far as nats.go lets the client observe it (D3 declares the one residual). This SHALL hold on every Close path, a
-drain that runs out of time included, which Close SHALL report as a transient error wrapping
-`nats.ErrDrainTimeout` whichever timer ran out first. Each Close SHALL return within its own context and SHALL NOT
-wait on another caller's drain. A Close called from inside one of the client's callbacks SHALL return its context's
-error and never nil. A client-owned subscription left on a connection that `SetConnection` replaced SHALL be
-unsubscribed and its running handler joined; the replaced connection itself belongs to the `SetConnection` caller.
-A client-created consumer whose connection, the one its JetStream handle was made on, was replaced through
-`SetConnection` SHALL be stopped when Close begins and its handlers joined, and its claim SHALL be released only after
-they return.
-
-#### Scenario: A nil Close means every handler returned
-
-- **WHEN** a message handler passed to Subscribe or a Consume method is running and Close is called, first with an
-  ended context and then with a live one
-- **THEN** the first Close returns the context's error, and the second returns nil only after the handler returned
-
-#### Scenario: A drain that runs out of time is reported
-
-- **WHEN** a message handler is still running when the drain timeout passes, and Close's context is live
-- **THEN** the first Close returns an error wrapping the drain timeout, after the handler has returned
-
-#### Scenario: Each Close observes its own context
-
-- **WHEN** one Close is draining and a second Close is called with an ended context
-- **THEN** the second Close returns the context's error without waiting for the drain
-
-#### Scenario: Close from inside a client callback
-
-- **WHEN** a client callback calls Close with a bounded context
-- **THEN** Close returns that context's error and never nil
-
-#### Scenario: A subscription on a replaced connection
-
-- **WHEN** a client subscription's connection has been replaced through SetConnection and its handler is running
-  when Close is called with a live context
-- **THEN** Close unsubscribes it and returns nil only after the handler returned, and the replaced connection stays
-  open
-
-#### Scenario: A consumer on a replaced connection
-
-- **WHEN** a client-created consumer's connection, the one its JetStream handle was made on, has been replaced through
-  SetConnection, and Close is called with a live context
-- **THEN** Close stops the consumer, returns nil only after its handlers returned and its claim was released, and the
-  replaced connection stays open
-
 ### Requirement: Close refuses new work
 
 Once `Close` has begun, `Connect`, `Subscribe`, `SubscribeForRequests` and the three Consume methods SHALL return
 `nats.ErrConnectionClosed`, decided by Close having begun, not by `Status()`. `Connect` SHALL refuse before it
 dials. A consumer setup admitted before Close began SHALL keep its claim until its handler invocations have
-returned. `SetConnection` SHALL change nothing once Close has begun.
+returned.
 
 #### Scenario: Connect after Close
 
@@ -479,3 +428,70 @@ the sentinel `errs.ErrCircuitOpen`, so one `errors.Is` check matches it and both
 
 - **WHEN** a call returns `natsclient.ErrCircuitOpen`
 - **THEN** it matches `errs.ErrCircuitOpen` with `errors.Is`, and `errs.IsTransient` reports true
+
+### Requirement: Close returns nil only after everything the client owns has finished
+
+`Client.Close` SHALL return nil only after every piece of work the client owns has finished: its background work,
+every running invocation of a message handler passed to `Subscribe`, `SubscribeForRequests` or a Consume method,
+the event handlers of the connection it closes when this client dialled it, and its async publish error handler as
+far as nats.go lets the client observe it (D3 declares the one residual). This SHALL hold on every Close path, a
+drain that runs out of time included, which Close SHALL report as a transient error wrapping
+`nats.ErrDrainTimeout` whichever timer ran out first. Each Close SHALL return within its own context and SHALL NOT
+wait on another caller's drain. A Close called from inside one of the client's callbacks SHALL return its context's
+error and never nil.
+
+#### Scenario: A nil Close means every handler returned
+
+- **WHEN** a message handler passed to Subscribe or a Consume method is running and Close is called, first with an
+  ended context and then with a live one
+- **THEN** the first Close returns the context's error, and the second returns nil only after the handler returned
+
+#### Scenario: A drain that runs out of time is reported
+
+- **WHEN** a message handler is still running when the drain timeout passes, and Close's context is live
+- **THEN** the first Close returns an error wrapping the drain timeout, after the handler has returned
+
+#### Scenario: Each Close observes its own context
+
+- **WHEN** one Close is draining and a second Close is called with an ended context
+- **THEN** the second Close returns the context's error without waiting for the drain
+
+#### Scenario: Close from inside a client callback
+
+- **WHEN** a client callback calls Close with a bounded context
+- **THEN** Close returns that context's error and never nil
+
+### Requirement: A retried update passes the revision it read
+
+The callback of `natsclient.KVStore.UpdateWithRetryRead` SHALL get the stored bytes and the revision read, 0 for an
+absent key. A callback error matching `ErrKVSkipWrite` SHALL make that run write nothing, and the call SHALL return 0
+and no error. The returned revision SHALL be the call's own commit, or 0.
+
+#### Scenario: A skip writes nothing
+
+- **WHEN** a key is at revision R and the update callback returns a value with an error wrapping `ErrKVSkipWrite`
+- **THEN** the call returns 0 and no error after one run, and the key keeps its value at revision R
+
+#### Scenario: A conflict passes the newer revision
+
+- **WHEN** the callback's first run reads revision R, and the key is written at revision E before that run's value
+  commits
+- **THEN** the second run gets the bytes written at E and the revision E
+
+### Requirement: An unconfirmed write ends a retried update
+
+`natsclient.KVStore.UpdateWithRetryRead` SHALL run its callback again only after the bucket refused the previous run's
+write as a revision conflict, after the write returned `jetstream.ErrNoStreamResponse`, or after its read failed. Any
+other error from the create or the update SHALL end the call with that error and revision 0. `UpdateWithRetryRev`,
+`UpdateWithRetry` and `UpdateJSON` SHALL behave the same.
+
+#### Scenario: A write that stood but returned an error
+
+- **WHEN** the callback returns a value, the bucket stores it, and the write returns an error that is neither a
+  conflict nor `ErrNoStreamResponse`
+- **THEN** the call returns that error (`errors.Is`) and revision 0 after one run, and the key holds the value written
+
+#### Scenario: A write no stream answered is retried
+
+- **WHEN** the first run's write returns `ErrNoStreamResponse` and the second run's write is stored
+- **THEN** the call returns that write's revision and no error, and the key was written once

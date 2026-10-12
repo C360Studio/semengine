@@ -107,11 +107,20 @@ into the handoff:
 2. **Is the premise true?** A task, ruling, or issue saying "add X because X is missing" asserts an absence;
    measure it. If the search finds X, stop and escalate with `file:line`; implementing as written re-commits the
    defect the instruction meant to prevent.
-3. **Who consumes it at birth?** Name the present consumer of every new surface. "For observability" or "for
-   future use" with zero present consumers is a phantom; do not add it. A test is not a consumer: production code
-   carries no method, field, option, constructor or hook, exported or not, whose only caller is a test. A test that
-   cannot reach what it must prove through the calls production code makes is telling you the design is wrong;
-   change the design, never add a back door (owner ruling of 2026-10-12, #186).
+3. **Who is it for?** Name, for every new surface, one of three: a production caller in this repository, at
+   `file:line`; a consumer `docs/inventory-scope.md` names, with the symbol it uses; or the contract line that offers
+   it to products built on SemEngine (a spec requirement, the package `README.md`, or the admission ledger's `contract`
+   field). An exported symbol that production code here calls is plumbing: exported so another SemEngine package can
+   call it. One a contract line offers is framework API: its callers are products, which live outside this repository,
+   so a test here may be its only caller, and that test calls it the way a product would. An unexported symbol has only
+   the first answer. Surface with none of the three is a phantom; do not add it. "For observability" or "for future
+   use" is the phantom's shape: it names no contract line a reviewer can hold the code to. A test is not a reader, but
+   a test is the proof of an API (owner ruling of 2026-10-12, #190). Production code carries no back door, exported or
+   not and whatever calls it: a method, field, option, constructor or hook that lets a caller do to a framework object
+   what no production caller, in this repository or in a consumer, ever does, such as swapping a dependency under a
+   running object, reading private state or skipping a lifecycle step. A contract line does not make a back door
+   framework API. A test that cannot reach what it must prove through the calls production code makes is telling you
+   the design is wrong; change the design, never add a back door (owner rulings of 2026-10-12, #186 and #190).
 4. **Am I asking a caller to predict something the framework could observe?** A new knob, threshold, limit, name, or
    "remember to call X first" hands the caller a fact the framework already holds; they will get it wrong, and
    silently. Prefer acting and handling the real outcome over making them compute it in advance. If the slice cannot
@@ -123,6 +132,30 @@ implementation-time re-run, scoped to the slice you touch: slices grow symbols t
 If question 1 finds no owner and what you are adding is meant for reuse across packages, you are establishing a
 pattern. List in the handoff every other package or seam that should adopt it, each at `file:line`. Listing is the
 whole obligation; migrating them is not part of this slice (architect contract, the adoption sweep).
+
+## Semantic identity and graph contracts
+
+Carried with `graph`, `pkg/types`, `vocabulary` and graph-ingest from SemStreams' developer contract at the pin
+(§ Semantic identity and graph contracts).
+
+- A predicate has exactly three parts (`vocabulary.ParsePredicate`). Validate it where it enters; a hash or an
+  encoding never decides whether a predicate is accepted.
+- A literal entity ID has exactly six parts and at most 256 bytes (`types.MaxEntityIDBytes`). A literal ID, a
+  six-position declaration pattern and a one-to-six-position query prefix are three languages with three validators
+  (`ValidateEntityID`, `ValidateEntityIDPattern`, `ValidateEntityIDPrefix` in `pkg/types/entity_id.go`); keep them
+  apart.
+- Check a NATS key or filter with the shared validators (`natsclient.ValidateKVLiteralToken`, `ValidateKVLiteralKey`,
+  `ValidateKVWildcardFilter`) and reject it before any lister, watcher, request, `Put`, `Get`, `Delete`, callback,
+  retry or metric runs.
+- Sort and deduplicate a complete result set before applying a limit or a sample, and keep established tie-breaks.
+  graph-ingest's `prefix` verb sorts the keys before it pages (`processor/graph-ingest/query.go`).
+- Never report partial replay, repair or index state as ready. graph-ingest's readiness latches bootstrap only on a
+  complete observation (`processor/graph-ingest/readiness.go`).
+- Prove the longest supported key or filter and its exact match set against a real NATS server (`natsfixture`), as
+  `natsclient/kv_key_contract_integration_test.go` does. Arithmetic and representative data are not proof.
+- For the indexes graph-index brings in change 4 (none is written in this tree yet): a token's position in an index
+  key belongs to a named owner; prove the owner and the exact forward and owner filters before relying on it. Every
+  index a query can see implements replacement, including `[A] -> [B] -> []`, tested through every public read of it.
 
 ## Exported-surface contracts
 
@@ -245,6 +278,42 @@ ported).
   foreign retention instead of stripping it. A finite ceiling on such state may only be a `DiscardNew` limit that
   refuses writes honestly; `natsclient` has no retention kind for one yet, so adding it means a new `RetentionKind`
   with its reconcile arm (`kvspec.go`).
+
+### Payload registry
+
+Carried with `message`, `payloadregistry` and graph-ingest from SemStreams' developer contract at the pin
+(§ Payload registry). The steps are in [new-payload](../skills/new-payload/SKILL.md).
+
+- Every polymorphic payload is published inside a `message.BaseMessage`.
+- A new payload type has a factory, a `MarshalJSON` and `UnmarshalJSON` that marshal only its own fields through a
+  type alias, and a `RegisterPayloads(*payloadregistry.Registry) error` in its own package. An import never registers
+  a payload, and no package of this module calls two packages' registrations (`TestNoAggregatorPackage`): the
+  consumer's composition root calls each `RegisterPayloads` it needs.
+- A round-trip test goes through the production decoder (`message.NewDecoder`), never a cast to an anonymous struct.
+
+### State ownership and component wiring
+
+Carried with graph-ingest and `component` from SemStreams' developer contract at the pin (§ State ownership and
+component wiring). The pin's rules for `internal/boot`, schema generation and OpenAPI types are not carried: this
+module has no binary, no schema generator and no OpenAPI registry.
+
+- Only graph-ingest writes domain entities to `ENTITY_STATES`. Other code emits a `graph.Graphable` payload or uses a
+  bucket it owns, declared in `graph/kvcatalog` when the framework guarantees its ownership or retention.
+- A single-valued fact, such as a lifecycle phase, replaces the old triple; it never appends a competing value
+  (`graph-entity-writes` spec, "One rule per write mode").
+- State travels as an argument, a field or a stored entry, never as a `context` value (`context.WithValue`,
+  `ctx.Value`) (owner ruling, #91 comment 6124130342).
+- A component package exports `Register(*component.Registry) error`. A consumer creates components, seals the
+  composition and reads admitted components through the component manager (`service.ComponentManager`, change 3),
+  never by calling `Registry.CreateComponent`, `SealComposition` or `Snapshots` itself (their doc comments; ruling
+  C, #91 comment 6035477895).
+- A ported component refuses, at construction, a configuration key it does not define, naming the key, and proves it
+  with its own test (`component-registration` spec, "Unknown configuration keys are refused";
+  `TestCreateGraphIngestRefusesUnknownKey`). Test a configuration through its production JSON path.
+- A ported component keeps its `Start`, `Stop` and failed-start state in `internal/lifecycleguard`, never in its own
+  copy of that state machine. When its failed `Start` cannot clean up, `Start` reports both errors and keeps what is
+  left for a later `Stop`, proven by the component's own test (`lifecycle-suite` spec, "Failed start whose own cleanup
+  fails"; `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop`).
 
 ## Test and operational fidelity
 

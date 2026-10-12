@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Enforce 80% statement coverage on the packages listed in targets below: the three
-# harness packages every later proof rests on (owner ruling Q3, 2026-09-30), and each
-# package on the critical list (SETUP 03B design D10) once it is ported. A package is
+# harness packages every later proof rests on (owner ruling Q3, 2026-09-30), each
+# package on the critical list (SETUP 03B design D10) once it is ported, and the
+# packages a porting change's design names (setup-04a-02 design D11). A package is
 # measured from the unit profile, the integration profile (natsfixture: its owner tests
 # need Docker), or both merged (natsclient: its unit and integration lanes test
 # different code). A package missing from its profile fails: no statements is not coverage.
@@ -25,6 +26,17 @@ readonly targets=(
   "message unit"
   "payloadregistry unit"
   "natsclient merged"
+  # setup-04a-02 design D11.
+  "processor/graph-ingest merged"
+  "graph merged"
+  "graph/kvcatalog merged"
+  "graph/readiness unit"
+  "graph/inference unit"
+  "pkg/projection unit"
+  "internal/graphmutation unit"
+  "component merged"
+  "storage/storeregistry unit"
+  "pkg/lifecycle merged"
 )
 
 # The unit profile's packages: every target measured from it, alone or merged.

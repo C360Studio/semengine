@@ -44,6 +44,8 @@ func TestNoAggregatorPackage(t *testing.T) {
 // natsfixture imports no package of this module outside internal/harness/ (harness-boundaries ›
 // "The fixture imports a ported package"): natsclient's tests use the fixture, so the reverse edge
 // would be a cycle.
+//
+// Requirement: nats-fixture/Connected value for a package's tests; Scenario: Import bound
 func TestFixtureImportsNoPortedPackage(t *testing.T) {
 	root := repoRoot(t)
 	requireNoViolations(t, "fixture import", fixtureImportViolations(t, root, repoFiles(t, root)))

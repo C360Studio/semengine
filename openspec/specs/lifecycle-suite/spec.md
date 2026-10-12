@@ -2,7 +2,11 @@
 
 ## Purpose
 The lifecycle suite is the portable owner-lifecycle floor every SemEngine owner is tested against, plus the probes
-that let a test observe joins and retained state instead of inferring them from timing or goroutine counts.
+that let a test observe joins and retained state instead of inferring them from timing or goroutine counts. It also
+covers a failed `Start` whose own cleanup fails: a component this module ports may then keep what it could not
+release, and proves with its own test that a later `Stop` releases it. And it covers
+`pkg/lifecyclecleanup.RollbackFailedStart`, which runs a failed `Start`'s rollback under a fresh five-second
+deadline that keeps the caller's context values.
 
 ## Requirements
 
@@ -19,7 +23,9 @@ factory, mustFail, promise)` SHALL drive them as subtests, where `mustFail` is a
 whose Start returns an error; Run SHALL fail before any check, naming the argument, when `mustFail` is nil. The
 failed-start check SHALL require that Start returns a non-nil error, that the owner then reports nothing unresolved,
 and that a following Stop returns nil and changes no call count. No check SHALL count a panic as a refusal. The suite
-SHALL NOT use aggregate goroutine or memory counts as proof of joins, and SHALL NOT read readiness from the owner.
+SHALL NOT use aggregate goroutine or memory counts as proof of joins, and SHALL NOT read readiness from the owner. The
+failed-start check judges a failed Start whose own cleanup succeeded; a failed Start whose own cleanup also fails is
+governed by "Failed start whose own cleanup fails" and is not judged by this check.
 
 #### Scenario: Suite detects each violation
 
@@ -117,3 +123,62 @@ is provable.
 
 - **WHEN** an adapted owner has started against the fixture
 - **THEN** Observe lists each connection, subscription and goroutine the owner holds, and after a nil Stop lists none
+
+### Requirement: Failed start whose own cleanup fails
+
+A component this module ports MAY return from a failed Start still holding what its own cleanup could not release,
+provided that Start's error reports both the start failure and the cleanup failure, and that the component keeps what is
+left on record so that a later Stop tries again to release it. A Stop that then completes the cleanup SHALL return nil
+and leave nothing unresolved. Each such component SHALL prove this branch with its own test, named in that component's
+admission-ledger row under `proving_tests`; the shared failed-start check of "Portable floor" is not run on it. This
+requirement binds the components this module ports; a component outside this module is proven by its own tests (#77
+ruling, comment 6035317931).
+
+#### Scenario: graph-ingest's cleanup fails after a failed start
+
+- **WHEN** graph-ingest's Start fails after acquiring resources and the cleanup it runs then also fails
+- **THEN** Start returns an error that reports both failures, the adapter lists what is still held, and a following
+  Stop that can complete the cleanup returns nil and leaves nothing listed, as
+  `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop` proves
+
+#### Scenario: Cleanup succeeds after a failed start
+
+- **WHEN** graph-ingest's failing factory makes Start fail and the cleanup it runs succeeds
+- **THEN** the shared failed-start check passes: Start returned an error and nothing is unresolved
+
+### Requirement: Failed-start rollback helper
+
+`pkg/lifecyclecleanup.RollbackFailedStart(parent, rollback)` SHALL run `rollback` synchronously, before it returns,
+under a context that keeps the parent's values, does not inherit the parent's cancellation or deadline, and has a
+deadline five seconds after the call. It SHALL return the rollback's error joined with that context's error, and nil
+only when the rollback returned nil within the budget. It SHALL return an error, without running anything, when the
+parent is nil or the rollback is nil. It SHALL start no goroutine that outlives the call and import only the standard
+library.
+
+#### Scenario: Cancelled parent
+
+- **WHEN** the parent context is already cancelled and carries a value, and the rollback reads its own context
+- **THEN** the rollback sees a live context with a deadline and the parent's value, and its nil result makes the
+  helper return nil
+
+#### Scenario: Expired parent
+
+- **WHEN** the parent context's deadline has already passed and it carries a value, and the rollback reads its own
+  context
+- **THEN** the rollback sees a live context with a fresh deadline and the parent's value, and its nil result makes the
+  helper return nil
+
+#### Scenario: Rollback outlives the budget
+
+- **WHEN** the rollback returns only after its context's deadline has passed
+- **THEN** the helper returns an error that includes the deadline error
+
+#### Scenario: Nil rollback
+
+- **WHEN** the helper is called with a live parent and a nil rollback
+- **THEN** it returns an error naming the nil rollback
+
+#### Scenario: Nil parent
+
+- **WHEN** the helper is called with a nil parent
+- **THEN** it returns an error and does not call the rollback

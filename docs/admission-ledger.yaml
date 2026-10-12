@@ -2734,8 +2734,8 @@
     suffix verb (entity_resolver.go:102; #104, design D19), and brings the envelope type, its constructor,
     min_revision and their producers and generalises the verb table (design D18, D20); change 4's design also
     decides the generation marker beside indexed_revision that #103's addendum asks for, so that a revision
-    from a recreated bucket is detectable (#103 comment 6038196148; this change closes #103, so the question
-    lives here afterwards); pkg/fusion/fusionnats
+    from a recreated bucket is detectable (#103 comment 6038196148; #103 stays open for change 4 and holds
+    this question with the two others ADR-109 routes there, #103 comment 6128216308); pkg/fusion/fusionnats
     (change 5) decodes by the verb's declared reply type, with no UnwrapQueryResponse (design D18); pkg/fusion
     (change 5) carries its copy of the envelope, IndexStatus, without the three legacy fields, since the doc
     comment's "the two structs change together" is no longer kept in this change (#110, design D16)

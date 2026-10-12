@@ -821,6 +821,12 @@ posted on this pull request.
       unchanged and `closingIssuesReferences` agrees. Comments, by issue: #97 6126672340, #98 6126672848,
       #99 6126673236, #100 6126673631, #101 6126673987, #102 6126674309, #103 6126706001, #104 6126674632,
       #106 6126674959, #110 6126675319, #111 6126675599.
+      *Amended 2026-10-12:* #103 moved from `Closes` to `Addresses` by the owner's ruling (#103 comment
+      6128216308): PR #93 leaves #103 open for change 4, because ADR-109 ("What moves to #103"; Decision 4) and
+      ADR-112 (`docs/adr/112-natsclient-contract.md:216`) route three open questions there: the answer to an unmet
+      `min_revision`, whether a watcher of `ENTITY_STATES` sees every revision, and a revision across bucket
+      generations. The PR body reads `Addresses #103`, `closingIssuesReferences` no longer lists it, and comment
+      6126706001 is edited to match.
 
 ## 7. Review and archive
 

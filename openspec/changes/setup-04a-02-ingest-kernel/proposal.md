@@ -141,7 +141,8 @@ graph-ingest); a **statement** is one stored triple with its source, time, confi
   `AGENTS.md` rows change.
 - Every owner question is ruled (`design.md`, "Ruled"): B, C, E and F on #91; A on #77 (comment 6035317931); #97,
   #98 and #99 on their issues; A–F on the audit's review (#91 comment 6037287957). PR #93 closes #91, #77 and
-  #97–#104.
+  #97–#104. *Superseded 2026-10-12:* PR #93 addresses #103 and leaves it open for change 4, which holds the three
+  questions ADR-109 and ADR-112 route there (owner ruling, #103 comment 6128216308); it closes #97–#102 and #104.
 - SemTeams' components change one import path, `internal/lifecyclecleanup` to `pkg/lifecyclecleanup`, and their
   proving case compiles against it from this change on.
 - Out of scope: the composition refusal of overlapping stream filters (#16, change 3); the parked-delivery scenario

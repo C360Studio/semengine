@@ -1664,6 +1664,11 @@ touched), #105, #107, #108 and #109 (changes 4, 5 and 7; "Left open for #105–#
 lands #106's pattern, #110's envelope fields (ruling F) and #111's item 1; the rest is changes 4, 5 and 7). #77 is ruled
 and this change closes it (comment 6035358884); D7 applies the ruling. The rulings on #97, #98 and #99 say each closes
 with the change that implements it, and #100–#104 land whole here, so PR #93 closes #97–#104 (task 6.6).
+*Superseded 2026-10-12:* #103 stays open. By the owner's ruling (#103 comment 6128216308), PR #93 addresses #103 and
+leaves it open for change 4, because ADR-109 ("What moves to #103"; Decision 4) and ADR-112
+(`docs/adr/112-natsclient-contract.md:216`) route three open questions there: the answer to an unmet `min_revision`,
+whether a watcher of `ENTITY_STATES` sees every revision, and a revision across bucket generations. So PR #93
+closes #97–#102 and #104.
 
 ## Declared costs
 

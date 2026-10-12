@@ -53,8 +53,14 @@ finding. Existing pin-probe obligations and evidence requirements still apply to
 Inherited duplication, copied scaffolding, unnecessary indirection, naming, and similar maintenance findings are
 optional unless they meet the required-work rule above. "Inherited" means structure retained from the source package,
 not every addition first made in this repository. This exception does not permit newly introduced duplicate owners,
-unconsumed new exports, or parallel spellings. The surface audit remains required: truly dead surface is not protected
-by this exception, and admitted packages and consumers still count when identifying readers.
+new exports with no reader and no contract line, or parallel spellings. The surface audit remains required: truly dead
+surface is not protected by this exception, and admitted packages, consumers, and the pin's consumer adapters (pin
+packages outside both halves, `AGENTS.md` § What this is for, or named consumer-owned by a ruling, as SETUP 03B design
+D4 names `gateway` and `gateway/graph-gateway`:
+`openspec/changes/archive/2026-10-01-setup-03b-contract-boundary/design.md:223`) still count when identifying readers.
+A symbol with a production caller at the pin in a consumer adapter is framework API, offered to products built on
+SemEngine: it is kept with its contract line, and a defect in it is fixed or tracked, not removed with it (owner ruling
+of 2026-10-12, #190).
 
 The inventory records every shape-sweep finding. For each, the design records either the required correction and its
 binding basis, or the retained structure and why changing it is optional. Required corrections receive the

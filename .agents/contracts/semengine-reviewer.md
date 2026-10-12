@@ -303,19 +303,36 @@ its first two bullets; the rest govern graph state, the `storage` package and cu
 
 ## Exported-surface review
 
-- For every NEW exported symbol: name its present consumer. Zero present consumers is a finding (phantom surface).
-  NEW means the SemStreams pin does not have it; surface ported from an admitted package is checked by the surface
-  audit under Port-time and pattern review instead.
+- For every NEW exported symbol: name who it is for. Plumbing, exported so another SemEngine package can call it,
+  has a production caller in this repository, at `file:line`. Framework API, offered to products built on SemEngine,
+  whose callers live outside this repository, has a contract line that offers it (a spec requirement, the package
+  `README.md`, or the admission ledger's `contract` field) and a test that calls it the way a product would; a test
+  being its only caller here is normal, not a finding. The third answer is a consumer `docs/inventory-scope.md`
+  names that uses it, at symbol level. None of the three is a finding (phantom surface); "for observability" and
+  "for future use" are that shape, since they name no contract line to hold the code to. Review a contract line as a
+  product need, not as a label (owner ruling of 2026-10-12, #190). NEW means the SemStreams pin does not have it;
+  surface ported from an admitted package is checked by the surface audit under Port-time and pattern review instead.
 - A return whose doc comment warns against part of its own affordance, or a capability return (handle, connection,
   map, internal context) where callers need a value, is a finding; require the collapsed signature.
 - Three or more correlated non-error returns without a named struct is a finding.
 - New exported surface without the architect-approved consumer contract is a `BLOCKING` finding.
-- Production code whose only caller is a test, a `_test.go` file or `internal/harness` (a method, field, option,
-  constructor or hook, such as a setter that swaps a dependency under a running object), is a finding: `BLOCKING`
-  when exported, since a test is not a consumer, and `HIGH` when not. The fix is a design the test can drive through
-  the calls production code makes; never review or specify how the back door behaves (owner ruling of 2026-10-12,
-  #186). These severities bind code a change adds. An exported one carried from the pin stays `BLOCKING`: dead surface
-  is not protected (protocol, Bounded port scope). An unexported hook carried unchanged from the pin is a shape-sweep
+- A back door is a finding, whatever calls it: production code (a method, field, option, constructor or hook) that lets
+  a caller do to a framework object what no production caller, in this repository or in a consumer, ever does, such as
+  a setter that swaps a dependency under a running object, a read of private state, or a way to skip a lifecycle step.
+  A contract line does not make a back door framework API. It is `BLOCKING` when exported and `HIGH` when not. The fix
+  is a design the test can drive through the calls production code makes; never review or specify how the back door
+  behaves (owner ruling of 2026-10-12, #186). The finding is the shape, not the caller count (owner ruling of
+  2026-10-12, #190). Other production code whose only caller is a test, a `_test.go` file or `internal/harness` is
+  judged by who it is for: an exported symbol a contract line offers, which the test drives as a product would, is
+  framework API and not a finding; one with no production reader and no contract line is dead surface, a finding at the
+  same severities (an unexported symbol has no contract line). These severities bind code a change adds. An exported
+  back door carried from the pin stays `BLOCKING` under #186, whatever contract line it has. An exported symbol carried
+  from the pin that has no contract line and no reader in the surface audit's reader set stays `BLOCKING` too: dead
+  surface is not protected (protocol, Bounded port scope). That reader set counts the pin's consumer adapters: packages
+  outside both halves of SemEngine (`AGENTS.md` § What this is for), or ones a ruling names consumer-owned, as
+  SETUP 03B design D4 names `gateway` and `gateway/graph-gateway`
+  (`openspec/changes/archive/2026-10-01-setup-03b-contract-boundary/design.md:223`; architect contract § Extraction
+  slices, "Surface audit"). Unexported code that only a test calls, carried unchanged from the pin, is a shape-sweep
   finding, disposed under the protocol's Bounded port scope. The rule adds no prerequisite to PR #93, whose scope is
   frozen (epic #9 comment 6085243841); the test-only code it carries is #135 and #184.
 
@@ -345,12 +362,17 @@ its first two bullets; the rest govern graph state, the `storage` package and cu
   Do not require the migrations.
 - **Check the surface audit on every extraction slice.** Run the three searches yourself on the ported package:
   exported symbols that nothing reads, searched pin-wide (no caller in SemEngine, in any package of the pin's
-  admitted set, ported or not, or, at symbol level, in a consumer `docs/inventory-scope.md` names); config fields
-  with no behavioral reader, and whether an unknown key is refused; described behavior with no implementation. An
-  admitted package is ported whole: a symbol whose only caller is in an admitted package not ported yet is not dead
-  surface, and keeping it is not a finding. A defect found in ported surface that is neither fixed nor tracked as an
-  issue is a finding. An item the slice design did not list is a finding. A kept config field without a test that fails
-  when the field is ignored is a finding.
+  admitted set, ported or not, in a pin package that is a consumer adapter, or, at symbol level, in a consumer
+  `docs/inventory-scope.md` names); config fields with no behavioral reader, and whether an unknown key is refused;
+  described behavior with no implementation. An admitted package is ported whole: a symbol whose only caller is in an
+  admitted package not ported yet is not dead surface, and keeping it is not a finding. A symbol with a production
+  caller at the pin in a consumer adapter is framework API (offered to products built on SemEngine): a slice design
+  that removes it, or keeps it without naming its contract line, is a finding; a defect in it is fixed or tracked,
+  never a reason to remove it. Review that contract line as a product need, with those callers as its evidence (owner
+  ruling of 2026-10-12, #190). The contract-line finding binds slice designs from this rule's merge on; PR #93's
+  `component` package takes it through #189 item 2. A defect found in ported surface that is neither fixed nor tracked
+  as an issue is a finding. An item the slice design did not list is a finding. A kept config field without a test that
+  fails when the field is ignored is a finding.
 - **Check that the package's guidance came with it.** The slice names the SemStreams contract sections and skills
   that apply to the package and carries the adapted text. A ported package whose known footguns are documented only
   in SemStreams is a finding.

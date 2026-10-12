@@ -67,23 +67,33 @@ Five obligations ride on every slice design in addition to its ledger row:
 - **Surface audit.** Admission is per package: an admitted package is ported whole, and whether a symbol is wanted
   is settled by the package's admission, not by whether its caller is in the same change. The audit removes only
   dead surface, meaning surface that nothing reads. For the package being ported, list (a) exported symbols that
-  nothing reads: no caller in SemEngine, in any package of the pin's admitted set, or, at symbol level, in a consumer
-  `docs/inventory-scope.md` names; a caller in an admitted package that is not ported yet counts as a caller, so one
-  pin-wide search settles each symbol; (b) config fields that are parsed, defaulted, or validated but read by no
-  behavior, and unknown keys that are accepted silently; (c) behavior a doc comment, README, or schema describes that
-  no code implements. Each item is dropped, moved under `internal/`, or kept with its reason stated in the slice
-  design. A config field that stays has a test that fails when the field is ignored. These were SemStreams' largest
-  open defect classes on 2026-10-01: 57 distinct issues labelled `class:advertised-absent`,
-  `class:silent-noop-surface`, `class:phantom-config`, or `class:dead-surface`, 45 of them still open.
+  nothing reads: no caller in SemEngine, in any package of the pin's admitted set, in a pin package that is a consumer
+  adapter (next paragraph), or, at symbol level, in a consumer `docs/inventory-scope.md` names; a caller in an admitted
+  package that is not ported yet counts as a caller, so one pin-wide search settles each symbol; (b) config fields that
+  are parsed, defaulted, or validated but read by no behavior, and unknown keys that are accepted silently; (c) behavior
+  a doc comment, README, or schema describes that no code implements. Each item is dropped, moved under `internal/`, or
+  kept with its reason stated in the slice design. A config field that stays has a test that fails when the field is
+  ignored. These were SemStreams' largest open defect classes on 2026-10-01: 57 distinct issues labelled
+  `class:advertised-absent`, `class:silent-noop-surface`, `class:phantom-config`, or `class:dead-surface`, 45 of them
+  still open.
 
   A capability admitted by owner mandate is wanted even before it has a caller: "no caller" answers whether
   something is wired, never whether it is wanted. An owner ruling can still remove admitted surface by name; the
-  eviction callbacks are the example (#9 comment 5950725772). Defects found in ported surface are fixed in the port
-  or tracked as an issue, never carried silently: porting a package whole does not admit its defects. Surface that
-  SemEngine adds and the pin does not have still needs a present consumer (inventory category 4 below). Source: owner
-  ruling 2026-10-03, #9 comment 5968830525. It replaced a reading that judged each symbol by whether its caller was
-  in the same change; on PR #48 that reading cascaded through most of `internal/cache`, and each round cost an
-  inventory pass, a review, and an owner decision.
+  eviction callbacks are the example (#9 comment 5950725772). A consumer adapter is a pin package outside both halves
+  (`AGENTS.md` § What this is for: everything outside both halves is a consumer adapter; an input, output or gateway
+  component is the common case), or one a ruling names consumer-owned: SETUP 03B design D4 excludes `gateway` and
+  `gateway/graph-gateway` because D5's layer 4, public adapters, is consumer-owned
+  (`openspec/changes/archive/2026-10-01-setup-03b-contract-boundary/design.md:223`, D5 at `:338-356`). A symbol with a
+  production caller at the pin in a consumer adapter is framework API, offered to products built on SemEngine, whose
+  callers live outside this repository: it is kept, the slice design names its contract line (a spec requirement, the
+  package `README.md`, or the admission ledger's `contract` field), and a defect in it is fixed or tracked, never
+  removed with the symbol (owner ruling of 2026-10-12, #190). Naming the contract line binds slice designs from this
+  rule's merge on; PR #93's `component` package takes it through #189 item 2. Defects found in ported surface are fixed
+  in the port or tracked as an issue, never carried silently: porting a package whole does not admit its defects.
+  Surface that SemEngine adds and the pin does not have still needs someone it is for (inventory category 4 below).
+  Source: owner ruling 2026-10-03, #9 comment 5968830525. It replaced a reading that judged each symbol by whether its
+  caller was in the same change; on PR #48 that reading cascaded through most of `internal/cache`, and each round cost
+  an inventory pass, a review, and an owner decision.
 - **Guidance returns with the package.** SemStreams' developer and reviewer contracts carry package-specific
   sections (semantic identity and graph, storage and retention, NATS RPC, payload registry, state ownership and
   component wiring, orchestration) and skills (`entity-or-bucket`, `kv-or-stream`, `new-payload`,
@@ -154,9 +164,15 @@ the owner's (2026-10-07): "clean, idiomatic and pragmatic Go, simple yet detaile
    package that needs it instead of once.
 3. **A layered interface with one implementation:** an interface, or a stack of them, that only one type implements,
    so the layer gives callers nothing to choose between.
-4. **Exported surface with no reader:** the Surface audit's list (a), above; an item that audit keeps, with its
-   reason, is not a finding. A test is not a reader: a method, field, option, constructor or hook whose only caller
-   is a test, exported or not, is this finding (#186).
+4. **Exported surface with no reader:** the Surface audit's list (a), above; an item that audit keeps, with its reason,
+   is not a finding. A test is not a reader, but a test is the proof of an API. Plumbing, exported so another SemEngine
+   package can call it, needs a production reader. Framework API, offered to products built on SemEngine, needs a
+   contract line that offers it and a test that calls it as a product would; a test being its only caller here is not
+   this finding. A back door, which lets a caller do to a framework object what no production caller, in this
+   repository or in a consumer, ever does (such as swapping a dependency under a running object), is this finding
+   whatever calls it; a contract line does not make a back door framework API. So is an exported symbol whose only
+   caller is a test and that no contract line offers, and unexported code whose only caller is a test (#186; owner
+   ruling of 2026-10-12, #190).
 5. **Classification by error text:** code that decides what kind of error it holds by searching the error's message
    instead of using `errors.Is`, `errors.As` or a typed code, so a value that happens to contain the searched text,
    such as an entity ID, gets the wrong class.
@@ -197,10 +213,14 @@ each either cited at `file:line` or closed with the exact searches that came up 
    `gh api --paginate repos/C360Studio/semengine/pulls/<n>/files --jq '.[].filename'`. A capability overlap shows in
    the file list as a delta under `openspec/changes/<id>/specs/<capability>/`. Name overlaps and conflicts explicitly
    rather than designing around them silently; the design then states, for each overlap, which merges first.
-4. **The consumer at birth.** For every new exported symbol, port, subject, bucket, or config field the design
-   introduces: name its present consumer. Zero present consumers removes it from the design; "for observability"
-   and "for future use" are the phantom-surface shape. New means the pin does not have it; surface ported from an
-   admitted package goes through the surface audit under Extraction slices instead.
+4. **Who it is for.** For every new exported symbol, port, subject, bucket, or config field the design introduces,
+   name one of three: a production caller in this repository at `file:line` (plumbing), a consumer
+   `docs/inventory-scope.md` names with the symbol it uses, or the contract line that offers it to products
+   (framework API: a spec requirement, the package `README.md`, or the admission ledger's `contract` field, with a
+   test that calls it as a product would). None of the three removes it from the design; "for observability" and
+   "for future use" are the phantom-surface shape, since they name no contract line a reviewer can hold the code to
+   (owner ruling of 2026-10-12, #190). New means the pin does not have it; surface ported from an admitted package
+   goes through the surface audit under Extraction slices instead.
 5. **The problem shape.** Categories 1-4 all scope to *the fact being modeled*. A pattern is not a fact; it is a
    problem shape, so no question above reaches it. Independently of the fact, name the shape of what this design
    does: admit-or-refuse at a seam, create-vs-exists, read-through over a cache, classified refusal plus observed

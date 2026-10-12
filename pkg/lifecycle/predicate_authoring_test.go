@@ -7,6 +7,8 @@ func init() {
 	vocabulary.Register("fixture.value.x")
 	vocabulary.Register("mission.annotation.note")
 	vocabulary.Register("mission.assignment.drone")
+	vocabulary.Register("mission.child.orphan")
+	vocabulary.Register("mission.child.submission")
 	vocabulary.Register("mission.child.subtask")
 	vocabulary.Register("mission.control.command")
 	vocabulary.Register("mission.identity.owner-org-id")
@@ -18,6 +20,9 @@ func init() {
 	vocabulary.Register("phaseonly.lifecycle.phase")
 	vocabulary.Register("sensor.lifecycle.phase")
 	vocabulary.Register("some.other.predicate")
+	vocabulary.Register("subtask.assignment.owner")
+	vocabulary.Register("subtask.lifecycle.phase")
+	vocabulary.Register("subtask.transition.note")
 	vocabulary.Register("workflow.lifecycle.phase")
 	vocabulary.Register("x.y.z")
 }

@@ -24,7 +24,7 @@ on choices the design does not spell out go in `notes/<task>.md`, with a one-lin
   Drop `t.Cleanup(dialled.Close)` (`:1065`): without the swap, the client's own Close (the test's first Close at `:1078`,
   or `closeInCleanup`'s) closes the dialled connection and cuts it when its budget ends; record that in
   `notes/2.1.md`. Test: `TestClientLifecycleOperationTable` runs 28 cells and passes.
-- [ ] 2.2 Delete `TestIntegration_SubscribeForRequestsUsesSubscriptionConnectionForOversizeDiagnostic`
+- [x] 2.2 Delete `TestIntegration_SubscribeForRequestsUsesSubscriptionConnectionForOversizeDiagnostic`
   (`request_response_bounds_integration_test.go:144`; owner Q1). Test:
   `TestIntegration_SubscribeForRequestsPublishesBeforeClassifyingResponseLimit` passes under `task test:integration`.
 - [ ] 2.3 Remove `SetConnection` and the code that exists only for it (design, "What goes"). Test: `task build`, and

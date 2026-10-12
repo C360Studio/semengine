@@ -3,7 +3,7 @@
 > **Ported from SemStreams.** This record is `docs/adr/085-gate-on-health-report-freshness.md` at SemStreams commit
 > `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`. It was carried without code for SemEngine issue #157 (owner ruling,
 > comment 6085722578), with ADR-066, ADR-083, ADR-084 and ADR-088, so that SemEngine's readiness ADR (ADR-109, issue
-> #110; not yet written) can cite it. Its admission-ledger row is `docs/adr/085-gate-on-health-report-freshness.md` in
+> #110) can cite it. Its admission-ledger row is `docs/adr/085-gate-on-health-report-freshness.md` in
 > `docs/admission-ledger.yaml`. The decision text is unchanged apart from a comment that keeps markdownlint from
 > flagging decision 7, a list that starts at 7. Read it with these facts about this repository:
 >
@@ -234,3 +234,11 @@ framework support for saying so, and would have to compare `staleness_ms` itself
 That is the correct place for the decision to live until a second such consumer
 proves the abstraction, and it is a deliberate reversal of the instinct that
 produced `Freshness` in the first place.
+
+## SemEngine disposition (ADR-109)
+
+ADR-109 (`docs/adr/109-ready-after-boot.md`, its table "The pin's records: kept, changed or dropped") keeps D2
+(staleness reported, never gating) and the fixed-target definition of "done bootstrapping" (:167-189) as what the
+responder checks in process. It changes D1: the gate is not a cross-process contract; graph-index asks its conditions
+in process, and nothing asks them across a process. D4's defer reasons ship on PR #93 and are logged by that reader
+only.

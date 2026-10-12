@@ -3,7 +3,7 @@
 > **Ported from SemStreams.** This record is `docs/adr/084-readiness-licenses-health-not-absence.md` at SemStreams
 > commit `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`. It was carried without code for SemEngine issue #157 (owner ruling,
 > comment 6085722578), with ADR-066, ADR-083, ADR-085 and ADR-088, so that SemEngine's readiness ADR (ADR-109, issue
-> #110; not yet written) can cite it. Its admission-ledger row is
+> #110) can cite it. Its admission-ledger row is
 > `docs/adr/084-readiness-licenses-health-not-absence.md` in `docs/admission-ledger.yaml`. The decision text is
 > unchanged. Read it with these facts about this repository:
 >
@@ -195,3 +195,11 @@ adoption reviews must watch for it.
 Thirteen-odd concepts become four: healthy?, how stale?, is my write
 visible?, and what failed to hydrate. Everything deleted was an
 implementation of the question this ADR rules unanswerable.
+
+## SemEngine disposition (ADR-109)
+
+ADR-109 (`docs/adr/109-ready-after-boot.md`, its table "The pin's records: kept, changed or dropped") keeps D4 as the
+mechanism: `index_not_ready` in the reply means not built or broken, never ordinary catch-up, which also bounds #103.
+It keeps D1 (lag never defers) and D3 (no absence from a miss; read-your-writes by revision, #103), changes D2
+(`bootstrap_complete` stays in the envelope as information; the fact it encodes is what the responder checks before it
+answers) and changes D7 (hard stops bind through the reply and `Health()`, not the envelope).

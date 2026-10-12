@@ -3,7 +3,7 @@
 > **Ported from SemStreams.** This record is `docs/adr/083-readiness-as-distributed-state.md` at SemStreams commit
 > `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`. It was carried without code for SemEngine issue #157 (owner ruling,
 > comment 6085722578), with ADR-066, ADR-084, ADR-085 and ADR-088, so that SemEngine's readiness ADR (ADR-109, issue
-> #110; not yet written) can cite it. Its admission-ledger row is `docs/adr/083-readiness-as-distributed-state.md` in
+> #110) can cite it. Its admission-ledger row is `docs/adr/083-readiness-as-distributed-state.md` in
 > `docs/admission-ledger.yaml`. The decision text is unchanged. Read it with these facts about this repository:
 >
 > - Issue numbers in the text below (`#590`, `#592`) are SemStreams' or a sister repository's, not SemEngine's; the
@@ -190,3 +190,11 @@ lesson stands for future work: moving a signal from computed-per-request to
 published-on-a-tick silently breaks anything that inferred a fact by comparing
 two samples — sweep for such inferences when changing a signal's publication
 cadence.
+
+## SemEngine disposition (ADR-109)
+
+ADR-109 (`docs/adr/109-ready-after-boot.md`, its table "The pin's records: kept, changed or dropped") changes D1: the
+state stays published, one key per producer, as information, and what a consumer acts on is the reply (:80-81). It
+drops D2's arrival-time freshness from SemEngine's contract (the `Watcher` ships on PR #93 with no SemEngine reader),
+changes D4 (the one evaluator stays, read in process by graph-index only), keeps D3 and the rule against a producer
+timestamp compared with the consumer's clock (:124-125), and drops the one shared consumer code path (:136-137).

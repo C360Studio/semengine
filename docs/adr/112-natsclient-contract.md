@@ -213,7 +213,8 @@ Each alternative that needed a timeout was measured with a short one, so no prob
   at 14:37Z, while this record was in review, and the re-run after it found no change (comment 6111119623). After a
   Go toolchain upgrade, P23 is re-run (the dialer's `Cancel`).
 - **Covered elsewhere:**
-  - ADR-110:192 (a watcher sees every revision) is for ADR-109 (#110).
+  - ADR-110:192 (a watcher sees every revision) is for #103, by ADR-109's ruling (#9 comment 6111608867); it was for
+    ADR-109 (#110) when this record was drafted.
   - ADR-111's redelivery after a restart is for the change that relies on it.
 
 ## Related

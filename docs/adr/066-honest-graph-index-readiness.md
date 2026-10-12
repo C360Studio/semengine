@@ -3,7 +3,7 @@
 > **Ported from SemStreams.** This record is `docs/adr/066-honest-graph-index-readiness.md` at SemStreams commit
 > `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`. It was carried without code for SemEngine issue #157 (owner ruling,
 > comment 6085722578), with ADR-083, ADR-084, ADR-085 and ADR-088, so that SemEngine's readiness ADR (ADR-109, issue
-> #110; not yet written) can cite it. Its admission-ledger row is `docs/adr/066-honest-graph-index-readiness.md` in
+> #110) can cite it. Its admission-ledger row is `docs/adr/066-honest-graph-index-readiness.md` in
 > `docs/admission-ledger.yaml`. The decision text is unchanged apart from line wrapping and a comment that keeps
 > markdownlint from reading `#430` at the start of a line as a heading. Read it with these facts about this repository:
 >
@@ -495,3 +495,11 @@ type IndexStatusResponse struct {
 - `configs/hello-world.json`, `e2e-structural.json`, `statistical.json` (`workers` 2/4;
   none set `coalesce_ms` → coalescer dormant in shipped configs).
 - `semsource/processor/source-manifest/status.go`; `semsource/processor/mcp-gateway/tools.go`.
+
+## SemEngine disposition (ADR-109)
+
+ADR-109 (`docs/adr/109-ready-after-boot.md`, its table "The pin's records: kept, changed or dropped") keeps the
+diagnosis here (:118-134) as the reason a boot window exists and answers that window with the classified
+`index_not_ready` reply; `ready` (:89-92) is information, never a gate; `allow_ungated_reads` (:85) is dropped;
+fusion's copy of the envelope (:338-339) is fusion's port's question; the sparse-delivery claim (:408-409) against
+ADR-110 :192 goes to #103.

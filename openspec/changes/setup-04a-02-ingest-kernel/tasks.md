@@ -730,7 +730,7 @@ posted on this pull request.
 
 ## 5. Ledger, gates and boundaries
 
-- [ ] 5.1 (W) Rows at the full pin SHA, written on top of #92's ledger: 14 package rows, the `graph/inference` row
+- [x] 5.1 (W) Rows at the full pin SHA, written on top of #92's ledger: 14 package rows, the `graph/inference` row
       `adapt` to the hierarchy slice, naming the files left for change 7 and #97; the `graph` row's destination note
       naming `graph/kvcatalog` and `graph/readiness` as the homes of the moved files (design D16). Five
       `defer-exclude` rows: `pkg/worker` (ruling E), `internal/componentadmission` (ruling C), `model/wire` (change
@@ -761,10 +761,20 @@ posted on this pull request.
       `known_risks` names the production home and why the copy stays (design D7.4); Q13's row cites PR #1437 head
       `0ea823a6`; #29 and #33 rows name `class:port-refactor`. The `graph/inference` row also records the inverse-edge
       write's removal (ruled M); the `pkg/errs` row is `adapt` (ruled N, task 3.12h). Gate: `task ledger:check`.
-- [ ] 5.2 (D) `scripts/cover-check.sh` gains the ten targets of design D11, `graph/inference` and `graph/kvcatalog`
+      Done in `fe7d877` (the technical writer's commit `02a50b6` from a side worktree, cherry-picked, same patch ID):
+      14 package rows (`carry`: `model`, `storage`; `repair-before-port`: `pkg/projection`, graph-ingest; the rest
+      `adapt`), the five `defer-exclude` rows, and a file row for SemStreams PR #1437's graph-ingest change (provenance
+      rule 4). Where the tree and the design differ, the rows follow the tree (`notes/5.1.md`). `task ledger:check`
+      passes; `task verify` ended `verify: ok` on the side worktree's commit and again on `10f6312`.
+- [x] 5.2 (D) `scripts/cover-check.sh` gains the ten targets of design D11, `graph/inference` and `graph/kvcatalog`
       among them; the tests design D11 names for `internal/graphmutation`, `pkg/projection`, `component` and
       `pkg/lifecycle` are added; each target's figure is posted. `graph/readiness` at or above 80% after task 3.12k
       (91.1%, 163 of 179 statements, measured at `64e705d`; design D11). Ticked only on a green `task cover:check`.
+      Done: tests in `938a46f` (`internal/graphmutation`, `pkg/projection`), `e05c294` (`component`) and `c9b1adf`
+      (`pkg/lifecycle`); the ten targets in `10f6312`, with `TestCoverCheckSensitivity`'s case for each. Figures (PR
+      comment 6126228685): every target at or above 80%, `graph/kvcatalog` and `graph/inference` by one statement;
+      `task cover:check` green inside `task verify` on `10f6312`. Defects the tests found are #189 and #193 (follow-ups
+      after this pull request). Notes: `notes/5.2.md`.
 - [x] 5.3 (D) `go.mod`: `golang.org/x/net` at a version that downgrades nothing, and no `go-openai`; `task vuln` and
       `task tidy:check` green. Done in `074c800`: v0.59.0 → v0.60.0 for five HTTP/2 advisories, nothing else moved,
       no `go-openai` in `go.mod` or `go.sum`; both gates green there, locally and in CI run 37926039654.

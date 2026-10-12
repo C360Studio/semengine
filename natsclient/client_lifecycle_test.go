@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"maps"
+	"net"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -33,32 +34,19 @@ const lifecycleBound = 10 * time.Second
 // metrics poller, the claim-release goroutines, the two timer callbacks, client-owned
 // subscriptions and the async publish error handler), the two timers while armed, message handler
 // invocations still running, and the connection event handlers Close is still waiting for. The
-// last two are visible after Close has cleared the connection. Calls counts the external operations the client reports through its opHook seam:
-// each dial and each drain.
+// last two are visible after Close has cleared the connection. It reports no Calls: Client does
+// not report its dials or drains, so the suite's call counts do not cover Client, and the suite's
+// check that Stop after a failed Start makes no call compares nil with nil.
 type clientOwner struct {
-	c     *Client
-	mu    sync.Mutex
-	calls map[string]int
+	c *Client
 }
 
-func newClientOwner(c *Client) *clientOwner {
-	o := &clientOwner{c: c, calls: map[string]int{}}
-	c.opHook = func(op string) {
-		o.mu.Lock()
-		defer o.mu.Unlock()
-		o.calls[op]++
-	}
-	return o
-}
+func newClientOwner(c *Client) *clientOwner { return &clientOwner{c: c} }
 
 func (o *clientOwner) Start(ctx context.Context) error { return o.c.Connect(ctx) }
 func (o *clientOwner) Stop(ctx context.Context) error  { return o.c.Close(ctx) }
 
 func (o *clientOwner) Observe() lifecycletest.Observation {
-	o.mu.Lock()
-	calls := maps.Clone(o.calls)
-	o.mu.Unlock()
-
 	c := o.c
 	var held []string
 	c.mu.RLock()
@@ -100,7 +88,7 @@ func (o *clientOwner) Observe() lifecycletest.Observation {
 		held = append(held, "internal consumer claims")
 	}
 	c.internalClaimsMu.Unlock()
-	return lifecycletest.Observation{Unresolved: held, Calls: calls}
+	return lifecycletest.Observation{Unresolved: held}
 }
 
 // embeddedServerURL starts an in-process NATS server on an ephemeral loopback port and returns
@@ -253,33 +241,26 @@ func TestClientCloseRefusesNilContext(t *testing.T) {
 // TestClientConnectRefusesNilContext is natsclient-nil-context-refused for Connect: Connect(nil)
 // returns an error and never dials.
 func TestClientConnectRefusesNilContext(t *testing.T) {
-	url := embeddedServerURL(t)
+	url, accepted := silentListener(t)
 	c, err := NewClient(url, WithHealthInterval(0))
 	require.NoError(t, err)
-	var dials atomic.Int32
-	var dialled *nats.Conn
-	dial := func(u string, opts ...nats.Option) (*nats.Conn, error) {
-		dials.Add(1)
-		conn, err := nats.Connect(u, opts...)
-		dialled = conn
-		return conn, err
-	}
-	t.Cleanup(func() {
-		if dialled != nil {
-			dialled.Close()
-		}
-	})
 
 	var nilCtx context.Context
-	panicked, err := recoverCall(func() error { return c.connectWith(nilCtx, dial) })
+	panicked, err := recoverCall(func() error { return c.Connect(nilCtx) })
 	require.Nil(t, panicked, "Connect(nil) panicked")
 	require.Error(t, err, "Connect(nil) returned nil")
-	require.Zero(t, dials.Load(), "Connect(nil) dialled")
+	// A Connect that dialled the listener would have waited for an answer that never comes, so
+	// the accept is in by the time it returns.
+	select {
+	case <-accepted:
+		t.Error("Connect(nil) dialled: the listener accepted a connection")
+	default:
+	}
 	require.Nil(t, c.GetConnection())
 }
 
 // TestClientSecondConnectRefused is natsclient-connect-refuses-second-start: a second Connect on
-// a connected client returns an error, never dials, and leaves the first connection in place.
+// a connected client returns an error and leaves the first connection in place.
 func TestClientSecondConnectRefused(t *testing.T) {
 	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
 	require.NoError(t, err)
@@ -291,34 +272,18 @@ func TestClientSecondConnectRefused(t *testing.T) {
 	})
 	first := c.GetConnection()
 
-	var dials atomic.Int32
-	var dialled []*nats.Conn
-	t.Cleanup(func() {
-		for _, conn := range dialled {
-			conn.Close()
-		}
-	})
-	err = c.connectWith(t.Context(), func(u string, opts ...nats.Option) (*nats.Conn, error) {
-		dials.Add(1)
-		conn, err := nats.Connect(u, opts...)
-		if conn != nil {
-			dialled = append(dialled, conn)
-		}
-		return conn, err
-	})
+	err = c.Connect(t.Context())
 	require.Error(t, err, "a second Connect returned nil")
-	require.Zero(t, dials.Load(), "a second Connect dialled")
 	require.Same(t, first, c.GetConnection(), "a second Connect replaced the connection")
 	require.True(t, first.IsConnected(), "a second Connect closed the first connection")
 	require.Equal(t, StatusConnected, c.Status())
 }
 
-// TestClientConnectThatLosesAdmissionLeavesStatus: two Connects pass the started check; the one
-// held at its opHook "dial" report, after that check and before it writes the status, resumes
-// only once the other has connected. It must be refused and leave the status the winner set:
-// writing Connecting over a connected client is a silent wrong state, and so is its rejected
-// connection's closed handler writing Disconnected. The loser's dial runs the client's own
-// closed handler and then signals, so the check waits for that handler, not for luck.
+// TestClientConnectThatLosesAdmissionLeavesStatus: two Connects pass the started check; the
+// first is held in its socket dial, after it wrote Connecting, and dials only once the other has
+// connected. It must be refused with ErrAlreadyStarted and leave the winner's connection and
+// status: its rejected connection replacing the winner's, closing it, or leaving its own status
+// is a silent wrong state.
 func TestClientConnectThatLosesAdmissionLeavesStatus(t *testing.T) {
 	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
 	require.NoError(t, err)
@@ -329,32 +294,23 @@ func TestClientConnectThatLosesAdmissionLeavesStatus(t *testing.T) {
 	})
 	held, release := make(chan struct{}), make(chan struct{})
 	var releaseOnce, holdOnce sync.Once
-	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
-	c.opHook = func(op string) {
-		if op != "dial" {
-			return
-		}
+	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) }) // runs before the Close above
+	c.netDial = func(d *net.Dialer, network, address string) (net.Conn, error) {
 		first := false
 		holdOnce.Do(func() { first = true })
 		if first {
 			close(held)
 			<-release
 		}
+		return d.Dial(network, address)
 	}
 
-	loserClosed := make(chan struct{})
-	loserDial := func(url string, opts ...nats.Option) (*nats.Conn, error) {
-		return nats.Connect(url, append(opts, nats.ClosedHandler(func(nc *nats.Conn) {
-			c.handleClosed(nc)
-			close(loserClosed)
-		}))...)
-	}
 	loser := make(chan error, 1)
-	go func() { loser <- c.connectWith(t.Context(), loserDial) }()
+	go func() { loser <- c.Connect(t.Context()) }()
 	select {
 	case <-held:
 	case <-time.After(lifecycleBound):
-		t.Fatal("the first Connect never reached its dial report")
+		t.Fatal("the first Connect never reached its dial")
 	}
 	require.NoError(t, c.Connect(t.Context()), "the Connect that wins admission")
 	winner := c.GetConnection()
@@ -366,11 +322,6 @@ func TestClientConnectThatLosesAdmissionLeavesStatus(t *testing.T) {
 		require.ErrorIs(t, err, errs.ErrAlreadyStarted, "the Connect that lost admission")
 	case <-time.After(lifecycleBound):
 		t.Fatal("the losing Connect did not return")
-	}
-	select {
-	case <-loserClosed:
-	case <-time.After(lifecycleBound):
-		t.Fatal("the rejected connection's closed handler never ran")
 	}
 	require.Same(t, winner, c.GetConnection(), "the losing Connect replaced the connection")
 	require.True(t, winner.IsConnected(), "the losing Connect closed the winner's connection")

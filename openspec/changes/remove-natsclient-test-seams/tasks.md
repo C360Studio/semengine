@@ -17,7 +17,7 @@ revises tasks 2.2 and 2.3 before section 2 starts.
 
 ## 2. Code, part 1 (developer)
 
-- [ ] 2.1 Remove `opHook`.
+- [x] 2.1 Remove `opHook`.
   - Rows 3 and 14 assert no dial through `silentListener`'s `accepted` channel.
   - Row 17 asserts `Failures()` stays 15.
   - Rows 15 and 25 drop their dial assertions.

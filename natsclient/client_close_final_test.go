@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -459,9 +458,8 @@ func TestClientCloseHonoursItsContextDuringAnotherDrain(t *testing.T) {
 }
 
 // 4. Codex TestReviewerLosingDialPreservesWinner (dial-error, canceled-dial, assertions
-// unchanged), plus two cases: a loser held after its started check and before its Connecting
-// write, and a loser whose failure write is held at the commit seam. In every case the winner's
-// status, failure count and circuit stand.
+// unchanged), plus a loser whose failure write is held at the commit seam. In every case the
+// winner's status, failure count and circuit stand.
 func TestClientLosingConnectLeavesWinnerStatus(t *testing.T) {
 	for _, mode := range []string{"dial-error", "canceled-dial"} {
 		t.Run(mode, func(t *testing.T) {
@@ -507,51 +505,6 @@ func TestClientLosingConnectLeavesWinnerStatus(t *testing.T) {
 			require.Equal(t, StatusConnected, c.Status(), "losing dial changed the winner's status")
 		})
 	}
-
-	t.Run("held-before-connecting", func(t *testing.T) {
-		c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
-		require.NoError(t, err)
-		closeInCleanup(t, c)
-		held, release := make(chan struct{}), make(chan struct{})
-		var holdOnce, releaseOnce sync.Once
-		t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
-		c.opHook = func(op string) {
-			first := false
-			holdOnce.Do(func() { first = op == "dial" })
-			if first {
-				close(held)
-				<-release
-			}
-		}
-		dialEntered, dialRelease := make(chan struct{}), make(chan struct{})
-		var dialOnce sync.Once
-		t.Cleanup(func() { dialOnce.Do(func() { close(dialRelease) }) })
-		loser := make(chan error, 1)
-		go func() {
-			loser <- c.connectWith(t.Context(), func(string, ...nats.Option) (*nats.Conn, error) {
-				close(dialEntered)
-				<-dialRelease
-				return nil, errors.New("controlled dial failure")
-			})
-		}()
-		await(t, held, "the loser reaching its dial report")
-		require.NoError(t, c.Connect(t.Context()), "the winner")
-		require.Equal(t, StatusConnected, c.Status())
-
-		releaseOnce.Do(func() { close(release) })
-		select {
-		case <-dialEntered:
-		case err := <-loser:
-			loser <- err
-		case <-time.After(lifecycleBound):
-			t.Fatal("the loser neither dialled nor returned")
-		}
-		require.Equal(t, StatusConnected, c.Status(), "the loser showed its own status over the winner's")
-		dialOnce.Do(func() { close(dialRelease) })
-		require.Error(t, awaitErr(t, loser, "the loser"))
-		require.Equal(t, StatusConnected, c.Status())
-		require.Zero(t, c.Failures(), "the loser recorded a failure against the winner's connection")
-	})
 
 	t.Run("held-before-failure-write", func(t *testing.T) {
 		c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
@@ -714,19 +667,19 @@ func TestClientCloseJoinsConsumerHandlerWhenClosedReportsEarly(t *testing.T) {
 
 // 7. H2: a Connect after Close refuses before it dials and writes no status.
 func TestClientConnectAfterCloseRefusesBeforeDial(t *testing.T) {
-	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
+	url, accepted := silentListener(t)
+	c, err := NewClient(url, WithHealthInterval(0))
 	require.NoError(t, err)
-	owner := newClientOwner(c)
 	requireLiveCloseNil(t, c, "Close on a new client")
 
-	var dialled []ConnectionStatus
-	err = c.connectWith(t.Context(), func(string, ...nats.Option) (*nats.Conn, error) {
-		dialled = append(dialled, c.Status())
-		return nil, errors.New("dial after Close")
-	})
-	require.ErrorIs(t, err, nats.ErrConnectionClosed, "Connect after Close")
-	require.Empty(t, dialled, "Connect after Close dialled (status during the dial: %v)", dialled)
-	require.Zero(t, owner.Observe().Calls["dial"], "Connect after Close reported a dial")
+	require.ErrorIs(t, c.Connect(t.Context()), nats.ErrConnectionClosed, "Connect after Close")
+	// A Connect that dialled the listener would have waited for an answer that never comes, so
+	// the accept is in by the time it returns.
+	select {
+	case <-accepted:
+		t.Error("Connect after Close dialled: the listener accepted a connection")
+	default:
+	}
 	require.Equal(t, StatusDisconnected, c.Status())
 }
 
@@ -742,52 +695,6 @@ func TestClientFailuresAfterCloseLeaveStatusDisconnected(t *testing.T) {
 	}
 	require.Equal(t, StatusDisconnected, c.Status(), "failures after Close changed the status")
 	require.Empty(t, owner.Observe().Unresolved)
-}
-
-// 9. H4: a Connect that passed its started check before the winner installed is released while
-// Close drains that connection with a native callback held. It returns at once.
-func TestClientConnectDuringCloseDrainReturnsPromptly(t *testing.T) {
-	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
-	require.NoError(t, err)
-	closeInCleanup(t, c)
-	held, release := make(chan struct{}), make(chan struct{})
-	var holdOnce, releaseOnce sync.Once
-	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
-	c.opHook = func(op string) {
-		first := false
-		holdOnce.Do(func() { first = op == "dial" })
-		if first {
-			close(held)
-			<-release
-		}
-	}
-	late := make(chan error, 1)
-	go func() { late <- c.Connect(t.Context()) }()
-	await(t, held, "the late Connect reaching its dial report")
-	require.NoError(t, c.Connect(t.Context()), "the winner")
-
-	callback := newHeldCall(t)
-	nc := c.GetConnection()
-	_, err = nc.Subscribe("drain.held", func(*nats.Msg) { callback.hold() })
-	require.NoError(t, err)
-	require.NoError(t, nc.FlushTimeout(lifecycleBound))
-	require.NoError(t, nc.Publish("drain.held", nil))
-	await(t, callback.entered, "the native callback entering")
-	draining := nc.StatusChanged(nats.DRAINING_SUBS)
-	defer nc.RemoveStatusListener(draining)
-	firstCtx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel()
-	first := closeAsync(firstCtx, c)
-	select {
-	case <-draining:
-	case <-time.After(lifecycleBound):
-		t.Fatal("the first Close did not begin its drain")
-	}
-
-	releaseOnce.Do(func() { close(release) })
-	require.ErrorIs(t, awaitErr(t, late, "Connect during the drain"), nats.ErrConnectionClosed)
-	callback.Release()
-	_ = awaitErr(t, first, "the first Close")
 }
 
 // 10. H5: a connection event handler is held after its connection check; Close runs. The handler's
@@ -856,70 +763,6 @@ func TestClientCloseJoinsConnectionEventHandlers(t *testing.T) {
 	requireLiveCloseNil(t, c, "Close after the error handler returned")
 }
 
-// 12. Ownership by call: a Connect that loses to an installed connection does not return while
-// its candidate connection's closed handler runs. Extends
-// TestClientConnectThatLosesAdmissionLeavesStatus; the hold is the test's own closed handler.
-func TestClientLosingConnectLeavesNoCandidateHandler(t *testing.T) {
-	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
-	require.NoError(t, err)
-	closeInCleanup(t, c)
-	held, release := make(chan struct{}), make(chan struct{})
-	var holdOnce, releaseOnce sync.Once
-	t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
-	c.opHook = func(op string) {
-		first := false
-		holdOnce.Do(func() { first = op == "dial" })
-		if first {
-			close(held)
-			<-release
-		}
-	}
-	candidateClosed := newHeldCall(t)
-	candidates := make(chan *nats.Conn, 1)
-	loserDial := func(url string, opts ...nats.Option) (*nats.Conn, error) {
-		nc, err := nats.Connect(url, append(opts, nats.ClosedHandler(func(nc *nats.Conn) {
-			candidateClosed.hold()
-			c.handleClosed(nc)
-		}))...)
-		if nc != nil {
-			candidates <- nc
-		}
-		return nc, err
-	}
-	loser := make(chan error, 1)
-	var loserReturned atomic.Bool
-	go func() {
-		err := c.connectWith(t.Context(), loserDial)
-		loserReturned.Store(true)
-		loser <- err
-	}()
-	await(t, held, "the loser reaching its dial report")
-	require.NoError(t, c.Connect(t.Context()), "the winner")
-
-	releaseOnce.Do(func() { close(release) })
-	await(t, candidateClosed.entered, "the candidate's closed handler entering")
-	candidate := awaitValue(t, candidates, "the loser reporting its candidate")
-	// The synchronization point: the loser has asked for its candidate's closed-handler signal,
-	// or has returned. A correct loser is then blocked on that signal, which the held closed
-	// handler has not yet given.
-	ctx, cancel := context.WithTimeout(t.Context(), lifecycleBound)
-	defer cancel()
-	_, err = probe.Await(ctx, func(context.Context) (bool, error) {
-		if loserReturned.Load() {
-			return true, nil
-		}
-		c.closedSignalsMu.Lock()
-		defer c.closedSignalsMu.Unlock()
-		_, waiting := c.closedSignals[candidate]
-		return waiting, nil
-	}, func(ready bool) bool { return ready })
-	require.NoError(t, err, "the losing Connect neither returned nor waited for its candidate")
-	require.False(t, loserReturned.Load(), "the losing Connect returned while its candidate's closed handler runs")
-	candidateClosed.Release()
-	require.ErrorIs(t, awaitErr(t, loser, "the losing Connect"), errs.ErrAlreadyStarted)
-	require.Equal(t, StatusConnected, c.Status())
-}
-
 // jsErrors reads the JetStream error metric for one operation.
 func jsErrors(c *Client, operation string) float64 {
 	return testutil.ToFloat64(c.jsMetrics.errors.WithLabelValues(operation))
@@ -947,7 +790,6 @@ func TestClientAsyncPublishErrorAfterCloseRecordsMetricOnly(t *testing.T) {
 // tableState builds a client in one lifecycle state and returns what the operations need.
 type tableClient struct {
 	c          *Client
-	owner      *clientOwner
 	release    func()       // releases the held drain in the closing state
 	firstClose <-chan error // the draining Close in the closing state
 }
@@ -990,9 +832,6 @@ func TestClientLifecycleOperationTable(t *testing.T) {
 			"ConsumeInternalStreamWithConfig": {closed, StatusDisconnected},
 		},
 	}
-	// Connect dials only before Close has begun.
-	dials := map[string]bool{"new": true, "connected": false, "closing": false, "closed": false}
-
 	stateNames := []string{"new", "connected", "closing", "closed"}
 	opNames := []string{"Connect", "CloseLive", "CloseEnded", "Subscribe", "SubscribeForRequests",
 		"ConsumeStreamWithConfig", "ConsumeInternalStreamWithConfig"}
@@ -1003,7 +842,6 @@ func TestClientLifecycleOperationTable(t *testing.T) {
 			id := n
 			t.Run(state+"/"+op, func(t *testing.T) {
 				tc := buildTableClient(t, url, state)
-				dialsBefore := tc.owner.Observe().Calls["dial"]
 				err := runTableOp(t, tc, op, id)
 				exp := want[state][op]
 				if exp.err == nil {
@@ -1012,10 +850,6 @@ func TestClientLifecycleOperationTable(t *testing.T) {
 					require.ErrorIs(t, err, exp.err)
 				}
 				require.Equal(t, exp.status, tc.c.Status(), "status after %s in state %s", op, state)
-				if op == "Connect" {
-					dialled := tc.owner.Observe().Calls["dial"] > dialsBefore
-					require.Equal(t, dials[state], dialled, "Connect dialled in state %s", state)
-				}
 				if tc.release != nil {
 					tc.release()
 					_ = awaitErr(t, tc.firstClose, "the draining Close")
@@ -1029,7 +863,7 @@ func buildTableClient(t *testing.T, url, state string) *tableClient {
 	t.Helper()
 	c, err := NewClient(url, WithHealthInterval(0))
 	require.NoError(t, err)
-	tc := &tableClient{c: c, owner: newClientOwner(c)}
+	tc := &tableClient{c: c}
 	closeInCleanup(t, c)
 	if state == "new" {
 		return tc

@@ -198,10 +198,6 @@ type Client struct {
 	closedSignalsMu sync.Mutex
 	closedSignals   map[*nats.Conn]chan struct{}
 
-	// opHook, when set, is told of each external operation the client
-	// performs ("dial", "drain"); the lifecycle adapter counts them.
-	opHook func(op string)
-
 	// commitHook, when set, is called at a status commit, with its site:
 	// "connect failure" and "event handler" inside the commit's critical
 	// section, "health monitor" between the health check and the commit.
@@ -296,12 +292,6 @@ func (m *Client) isClosing() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.closing
-}
-
-func (m *Client) recordOp(op string) {
-	if m.opHook != nil {
-		m.opHook(op)
-	}
 }
 
 func (m *Client) commitSeam(site string) {
@@ -728,9 +718,6 @@ func (m *Client) connectWith(
 		return ErrCircuitOpen
 	}
 
-	// Reported before this call first writes the status, so a test can hold
-	// a Connect between its started check and its dial.
-	m.recordOp("dial")
 	// Connecting is a status commit like any other: written only while no
 	// connection is installed and Close has not begun.
 	m.mu.Lock()
@@ -1135,7 +1122,6 @@ func (m *Client) drainAndCloseConnection(ctx context.Context, conn *nats.Conn, d
 	closed := conn.StatusChanged(nats.CLOSED)
 	defer conn.RemoveStatusListener(closed)
 
-	m.recordOp("drain")
 	if err := conn.Drain(); err != nil {
 		if isBenignDrainError(err) {
 			return nil

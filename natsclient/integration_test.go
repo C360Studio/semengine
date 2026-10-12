@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -166,13 +165,6 @@ func TestIntegration_CircuitBreakerWithRealConnection(t *testing.T) {
 	// Try to connect to an invalid NATS server
 	manager, err := NewClient(refusedNATSURL(t))
 	require.NoError(t, err)
-	// Counts the dials Connect reports through its opHook seam; set before any Connect runs.
-	var dials atomic.Int32
-	manager.opHook = func(op string) {
-		if op == "dial" {
-			dials.Add(1)
-		}
-	}
 
 	// Try 14 times - should not open circuit (threshold is 15)
 	for i := 0; i < 14; i++ {
@@ -190,14 +182,13 @@ func TestIntegration_CircuitBreakerWithRealConnection(t *testing.T) {
 	assert.Equal(t, int32(15), manager.Failures())
 
 	// Further attempts should fail immediately with circuit open error. "Immediately" is observed
-	// as no dial, where the pin asserted under 10 ms of wall time (design D8 R1b).
-	dialsBefore := dials.Load()
-	require.Equal(t, int32(15), dialsBefore, "the 15 failed Connects each reported a dial through opHook")
+	// as no failed dial, where the pin asserted under 10 ms of wall time (design D8 R1b): a dial
+	// to the refused port fails, and a failed dial adds a failure even while the circuit is open.
 	err = manager.Connect(ctx)
 
 	assert.Error(t, err)
 	assert.Equal(t, ErrCircuitOpen, err)
-	assert.Equal(t, dialsBefore, dials.Load(), "Connect with the circuit open dialled") // Should fail fast
+	assert.Equal(t, int32(15), manager.Failures(), "Connect with the circuit open dialled") // Should fail fast
 }
 
 // TestIntegration_PublishSubscribe tests basic pub/sub functionality

@@ -388,6 +388,18 @@ a likely functional defect or known project discipline failure, `MEDIUM` for a n
 style only. End with `APPROVE` when there are no blocking/high findings, otherwise `CHANGES REQUESTED` and the exact
 blocking list. State explicitly when evidence was unavailable rather than guessing.
 
+**Severity needs a real-world trigger** (owner ruling of 2026-10-12, issue #185). Some failures happen only under a
+condition the code does not choose: a library (nats.go, nats-server, the Go runtime) timing or ordering things one way,
+a network or operating-system state (a server that stops reading an open connection, full socket buffers), a fault
+injected partway through an operation, or a call sequence that only a test makes. Whichever rule in this contract calls
+such a finding blocking, it is `BLOCKING` or `HIGH` only when it names a real-world trigger: a routine event (a
+restart, a redeploy, a NATS server restart, a dropped connection, a slow consumer, a misconfigured permission) or a
+named consumer or qualifying workload that reaches the condition in normal operation. Without one it is `MEDIUM` at
+most and says which trigger it would need. Its fix is the smallest honest one: a doc comment or spec sentence that
+stops promising the behaviour, a log line, or a metric; never new mechanism to make the promise true. When the broken
+contract is itself a sentence about such a condition, cutting or narrowing the sentence is the fix. Whether a trigger
+is real, when the implementer disputes it, goes to the owner.
+
 Under [Bounded port scope](../protocol.md#bounded-port-scope), an optional inherited maintenance finding cannot veto
 approval or become `BLOCKING` or `HIGH` solely by invoking a generic consolidation rule. Name the binding obligation
 and concrete evidence when requesting required work. Missing proof of a required guarantee calls for targeted

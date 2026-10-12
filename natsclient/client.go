@@ -177,9 +177,9 @@ type Client struct {
 	socket         *socketDialer
 	awaitingClosed *nats.Conn
 
-	// closingSignal is closed when Close begins, so each client-owned core
-	// subscription's watcher can end one left on a connection SetConnection
-	// replaced. The client keeps no catalog of its subscriptions.
+	// closingSignal is closed when Close begins. subscribeOwned reads it to
+	// report a failed setup as nats.ErrConnectionClosed once Close has begun,
+	// and ownConsumer's goroutine to cancel its consumer's handler context.
 	closingSignal chan struct{}
 
 	// handlersRunning counts message handler invocations in flight, for the
@@ -191,10 +191,10 @@ type Client struct {
 	// ClosedHandler last, nats.go:6236-6252, :3637-3660). The waiter deletes
 	// its entry. handleClosed cannot delete an entry nobody has asked for yet,
 	// because a waiter may ask after the handler ran (a dialled connection that
-	// closed by itself before Close). So an entry outlives its use when no one
-	// ever waits: a connection replaced through SetConnection (a test hook), or
-	// the dialled connection of a client that is never closed. That is one
-	// entry, holding no goroutine, per such connection the client dialled.
+	// closed by itself before Close). So an entry outlives its use only when
+	// no one ever waits: the installed connection of a client that is never
+	// closed, once that connection has closed by itself. A client installs at
+	// most one connection, so that is at most one entry, holding no goroutine.
 	closedSignalsMu sync.Mutex
 	closedSignals   map[*nats.Conn]chan struct{}
 
@@ -909,22 +909,22 @@ func (m *Client) startMetricsPoller() bool {
 // the same completion. On a connection the client dialled, an ended ctx also
 // closes the socket and ends a reconnect dial nats.go has in progress, so a
 // write the server is not reading does not hold Close (T1, T8; P17, P23); a
-// message still buffered then is not promised to reach the server. A connection
-// installed through SetConnection is not cut. Once Close has begun the client
-// starts no new work: background work offered after that is dropped and logged
-// at debug level, and Connect, Subscribe, SubscribeForRequests and the Consume
-// methods return nats.ErrConnectionClosed. Work admitted before Close began may
-// still run while Close waits for it; message handlers keep handling messages
-// already delivered during the drain. Status keeps its value while Close drains
-// and reports Disconnected once the cleanup has finished. After a Close whose
-// context cut the drain short, the native connection GetConnection returned can
-// report DRAINING_PUBS, and IsConnected true, for up to 5 s before it reports
-// CLOSED again: that is nats.go v1.54.0's drain, and no event handler of the
-// client runs then. A drain that runs out of time is reported by the first
-// Close as a transient error wrapping nats.ErrDrainTimeout. A Close called from
-// inside one of the client's callbacks waits on a join that includes its own
-// invocation, so it returns ctx.Err() when its context ends and never returns
-// nil. Close refuses a nil context with an error and touches nothing.
+// message still buffered then is not promised to reach the server. Once Close
+// has begun the client starts no new work: background work offered after that is
+// dropped and logged at debug level, and Connect, Subscribe,
+// SubscribeForRequests and the Consume methods return nats.ErrConnectionClosed.
+// Work admitted before Close began may still run while Close waits for it;
+// message handlers keep handling messages already delivered during the drain.
+// Status keeps its value while Close drains and reports Disconnected once the
+// cleanup has finished. After a Close whose context cut the drain short, the
+// native connection GetConnection returned can report DRAINING_PUBS, and
+// IsConnected true, for up to 5 s before it reports CLOSED again: that is
+// nats.go v1.54.0's drain, and no event handler of the client runs then. A drain
+// that runs out of time is reported by the first Close as a transient error
+// wrapping nats.ErrDrainTimeout. A Close called from inside one of the client's
+// callbacks waits on a join that includes its own invocation, so it returns
+// ctx.Err() when its context ends and never returns nil. Close refuses a nil
+// context with an error and touches nothing.
 func (m *Client) Close(ctx context.Context) error {
 	if ctx == nil {
 		return errs.WrapInvalid(stderrors.New("nil context"), "Client", "Close", "missing context")
@@ -1416,8 +1416,7 @@ func (m *Client) subscribeOwned(
 	s := newSubscription(sub, d.end)
 	go m.watchOwnedSubscription(d, finish)
 
-	// The round trip runs on conn, the connection the SUB went to, never on one
-	// SetConnection installed since.
+	// The round trip runs on conn, the connection the SUB went to.
 	roundTrip, cancel := context.WithTimeout(ctx, DefaultRequestTimeout)
 	rtErr := conn.FlushWithContext(roundTrip)
 	cancel()

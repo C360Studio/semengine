@@ -29,7 +29,7 @@ on choices the design does not spell out go in `notes/<task>.md`, with a one-lin
   `TestIntegration_SubscribeForRequestsPublishesBeforeClassifyingResponseLimit` passes under `task test:integration`.
 - [x] 2.3 Remove `SetConnection` and the code that exists only for it (design, "What goes"). Test: `task build`, and
   every test in the design's table of observable behaviour passes under `task test:unit` and `task test:integration`.
-- [ ] 2.4 Rewrite the comments that name the swap (inventory §2d, and the `closedSignals` sentence at
+- [x] 2.4 Rewrite the comments that name the swap (inventory §2d, and the `closedSignals` sentence at
   `client.go:195`-`:199`) so each states what the code does now. Check: `git grep -n SetConnection -- '*.go'` prints
   nothing.
 - [ ] 2.5 Show that the remaining tests guard the simplified paths. Run `task mutate:check` once per mutant, with

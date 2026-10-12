@@ -314,9 +314,10 @@ its first two bullets; the rest govern graph state, the `storage` package and cu
   constructor or hook, such as a setter that swaps a dependency under a running object), is a finding: `BLOCKING`
   when exported, since a test is not a consumer, and `HIGH` when not. The fix is a design the test can drive through
   the calls production code makes; never review or specify how the back door behaves (owner ruling of 2026-10-12,
-  #186). These severities bind code a change adds. An unexported hook carried unchanged from the pin is a shape-sweep
+  #186). These severities bind code a change adds. An exported one carried from the pin stays `BLOCKING`: dead surface
+  is not protected (protocol, Bounded port scope). An unexported hook carried unchanged from the pin is a shape-sweep
   finding, disposed under the protocol's Bounded port scope. The rule adds no prerequisite to PR #93, whose scope is
-  frozen (epic #9 comment 6085243841); test-only code it carries is filed after it lands.
+  frozen (epic #9 comment 6085243841); the test-only code it carries is #135 and #184.
 
 ## Guarantee, signal, and revision review
 

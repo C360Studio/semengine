@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/message"
@@ -24,6 +25,17 @@ const (
 	missionPrefix = "c360.platform1.gcs.lifecycle.mission."
 	subtaskPrefix = "c360.platform1.gcs.lifecycle.subtask."
 )
+
+// fixtureSource and fixtureTime stamp every statement this package's
+// integration tests store themselves, as another producer's write would carry
+// them. graph-ingest's
+// stored-value reader refuses a statement with no Source or no Timestamp
+// (decodeStoredEntity, processor/graph-ingest/mutation_runtime.go) with
+// graph_state_reset_required, so an unstamped value is a state the real
+// authority would never answer with a success.
+const fixtureSource = "lifecycle-test-producer"
+
+var fixtureTime = time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
 
 // appendTriples adds triples to a stored entity at its current revision, as an
 // upstream emitter's write would: lifecycle itself writes no child link.
@@ -40,11 +52,12 @@ func appendTriples(t *testing.T, kv jetstream.KeyValue, entityID string, triples
 	require.NoError(t, err)
 }
 
-// putRawEntity stores an entity no workflow created: it has no phase triple.
+// putRawEntity stores an entity no workflow created: a valid stored value with
+// no phase triple.
 func putRawEntity(t *testing.T, kv jetstream.KeyValue, entityID string) {
 	t.Helper()
 	body, err := graph.MarshalEntityState(&graph.EntityState{ID: entityID, Triples: []message.Triple{
-		{Subject: entityID, Predicate: "some.other.predicate", Object: "raw"},
+		{Subject: entityID, Predicate: "some.other.predicate", Object: "raw", Source: fixtureSource, Timestamp: fixtureTime},
 	}})
 	require.NoError(t, err)
 	_, err = kv.Create(t.Context(), entityID, body)
@@ -221,7 +234,9 @@ func TestIntegration_ChildrenLoadsLinkedChildrenAcrossWorkflows(t *testing.T) {
 		require.NoError(t, mgr.Create(ctx, s))
 	}
 	link := func(predicate string, object any) message.Triple {
-		return message.Triple{Subject: parentID, Predicate: predicate, Object: object}
+		return message.Triple{
+			Subject: parentID, Predicate: predicate, Object: object, Source: fixtureSource, Timestamp: fixtureTime,
+		}
 	}
 	appendTriples(t, kv, parentID,
 		link("mission.child.subtask", subtaskPrefix+"b"),

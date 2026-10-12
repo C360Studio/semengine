@@ -255,6 +255,7 @@ func TestIntegration_DespawnWith_DoesNotDeleteNewerStateAfterTerminalCommit(t *t
 		}
 		state.Triples = append(state.Triples, message.Triple{
 			Subject: entityID, Predicate: "test.concurrent.value", Object: "newer",
+			Source: fixtureSource, Timestamp: fixtureTime,
 		})
 		body, err := graph.MarshalEntityState(&state)
 		if err != nil {

@@ -26,7 +26,7 @@ revises tasks 2.2 and 2.3 before section 2 starts.
   - Remove `opHook`, `recordOp` and its calls.
 
   Test: the rows above pass; row 17 passes under `task test:integration`.
-- [ ] 2.2 Remove `commitHook` (Q1). Delete rows 2 and 6, row 1's `held-before-failure-write`, and `runIfCommitFree`.
+- [x] 2.2 Remove `commitHook` (Q1). Delete rows 2 and 6, row 1's `held-before-failure-write`, and `runIfCommitFree`.
   Add a check to `TestClientCloseDropsLateDisconnect`: after the late disconnect, `Status()` is still Disconnected,
   because Close's cleanup has finished (spec `:176`-`:177`). Remove `commitHook`, `commitSeam` and its calls.
   - Test: `TestClientCloseDropsLateDisconnect` passes.

@@ -368,6 +368,9 @@ func TestClientCloseJoinsConnectionLossCallback(t *testing.T) {
 // TestClientCloseDropsLateDisconnect is natsclient-close-joins-its-goroutines (b): once Close
 // has begun, a disconnect arms no connection-loss timer and the drop is logged at debug level.
 // Close is held open by a planted callback, so the disconnect races a Close that is waiting.
+// Close's cleanup has already written Disconnected, and the disconnect leaves it: once Close
+// has begun, only Close changes the status (transport-client, "Only Close changes the status
+// once Close begins").
 func TestClientCloseDropsLateDisconnect(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		cb := plantBlockingLossCallback(t)
@@ -390,11 +393,13 @@ func TestClientCloseDropsLateDisconnect(t *testing.T) {
 		closed := make(chan error, 1)
 		go func() { closed <- c.Close(live) }()
 		synctest.Wait()
+		require.Equal(t, StatusDisconnected, c.Status(), "Close's cleanup has not written Disconnected")
 
 		c.handleDisconnect(nil, errors.New("loss after Close began"))
 		require.NotContains(t, owner.Observe().Unresolved, "connection-loss timer armed",
 			"a disconnect after Close began armed the connection-loss timer")
 		require.Len(t, h.droppedWork("connection-loss timer"), 1, "the dropped disconnect was not logged at debug level")
+		require.Equal(t, StatusDisconnected, c.Status(), "a disconnect after Close's cleanup changed the status")
 
 		// A loss timer that fires once Close has begun: its body is refused, not run and not counted.
 		c.connectionLossFired(func() bool { return false }, errors.New("timer fired after Close began"))

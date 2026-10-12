@@ -197,12 +197,6 @@ type Client struct {
 	// most one connection, so that is at most one entry, holding no goroutine.
 	closedSignalsMu sync.Mutex
 	closedSignals   map[*nats.Conn]chan struct{}
-
-	// commitHook, when set, is called at a status commit, with its site:
-	// "connect failure" and "event handler" inside the commit's critical
-	// section, "health monitor" between the health check and the commit.
-	// Tests hold it to force an ordering.
-	commitHook func(site string)
 }
 
 // Kinds of background work, the six sites of design D3. Each starts through
@@ -292,12 +286,6 @@ func (m *Client) isClosing() bool {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	return m.closing
-}
-
-func (m *Client) commitSeam(site string) {
-	if m.commitHook != nil {
-		m.commitHook(site)
-	}
 }
 
 // closedSignal returns the channel handleClosed closes once it has run for nc.
@@ -835,7 +823,6 @@ func (m *Client) connectFailed() bool {
 		m.mu.Unlock()
 		return false
 	}
-	m.commitSeam("connect failure")
 	arm, backoff := m.recordFailureLocked()
 	if m.Status() != StatusCircuitOpen {
 		m.setStatus(StatusDisconnected)
@@ -2117,7 +2104,6 @@ func (m *Client) handleDisconnect(nc *nats.Conn, err error) {
 		return
 	}
 	if !m.closing {
-		m.commitSeam("event handler")
 		m.setStatus(StatusReconnecting)
 	}
 	m.mu.Unlock()
@@ -2133,7 +2119,6 @@ func (m *Client) handleReconnect(nc *nats.Conn) {
 		m.mu.Unlock()
 		return
 	}
-	m.commitSeam("event handler")
 	m.setStatus(StatusConnected)
 	m.resetCircuitLocked()
 	m.mu.Unlock()
@@ -2313,8 +2298,6 @@ func (m *Client) startHealthMonitoring() bool {
 				if _, err := conn.RTT(); err != nil {
 					healthy = false
 				}
-				m.commitSeam("health monitor")
-
 				// Update status based on health, only while conn is still the
 				// installed connection and Close has not begun.
 				m.mu.Lock()

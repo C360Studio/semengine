@@ -206,19 +206,6 @@ func claimCount(c *Client) int {
 	return len(c.internalClaims)
 }
 
-// runIfCommitFree runs fn to completion when the client's critical section is free at the
-// moment the commit seam fires. The seam is called by the code under test between its ownership
-// check and its status write; if that check and write are one step, the section is held by the
-// seam's caller and fn cannot run in between, so it is left for the test to run afterwards.
-func runIfCommitFree(c *Client, fn func()) bool {
-	if !c.mu.TryLock() {
-		return false
-	}
-	c.mu.Unlock()
-	fn()
-	return true
-}
-
 // 1. Codex TestReviewerForceCloseKeepsNativeCallbackJoin, extended to SubscribeForRequests: a
 // handler passed to Subscribe or SubscribeForRequests is running when Close force-closes the
 // connection under an ended context. A later Close with a live context must not return nil until
@@ -458,8 +445,7 @@ func TestClientCloseHonoursItsContextDuringAnotherDrain(t *testing.T) {
 }
 
 // 4. Codex TestReviewerLosingDialPreservesWinner (dial-error, canceled-dial, assertions
-// unchanged), plus a loser whose failure write is held at the commit seam. In every case the
-// winner's status, failure count and circuit stand.
+// unchanged): a Connect whose dial loses to a winner leaves the winner's status standing.
 func TestClientLosingConnectLeavesWinnerStatus(t *testing.T) {
 	for _, mode := range []string{"dial-error", "canceled-dial"} {
 		t.Run(mode, func(t *testing.T) {
@@ -505,61 +491,6 @@ func TestClientLosingConnectLeavesWinnerStatus(t *testing.T) {
 			require.Equal(t, StatusConnected, c.Status(), "losing dial changed the winner's status")
 		})
 	}
-
-	t.Run("held-before-failure-write", func(t *testing.T) {
-		c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
-		require.NoError(t, err)
-		closeInCleanup(t, c)
-		var hookOnce sync.Once
-		winnerRan := false
-		var winnerErr error
-		c.commitHook = func(site string) {
-			if site != "connect failure" {
-				return
-			}
-			hookOnce.Do(func() {
-				winnerRan = runIfCommitFree(c, func() { winnerErr = c.Connect(t.Context()) })
-			})
-		}
-		err = c.connectWith(t.Context(), func(string, ...nats.Option) (*nats.Conn, error) {
-			return nil, errors.New("controlled dial failure")
-		})
-		require.Error(t, err, "the loser")
-		if !winnerRan {
-			winnerErr = c.Connect(t.Context())
-		}
-		require.NoError(t, winnerErr, "the winner")
-		require.Equal(t, StatusConnected, c.Status(), "the loser's failure write landed after the winner installed")
-		require.Zero(t, c.Failures(), "the loser's failure was counted against the winner's connection")
-	})
-}
-
-// 5. Codex F23 monitor ordering: the health monitor is held between its health check and its
-// commit; Close finishes its cleanup and writes Disconnected; the monitor is released. The
-// status must stay Disconnected.
-func TestClientHealthMonitorCannotOverwriteClosedStatus(t *testing.T) {
-	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(time.Millisecond))
-	require.NoError(t, err)
-	held := newHeldCall(t)
-	var holdOnce sync.Once
-	c.commitHook = func(site string) {
-		if site == "health monitor" {
-			holdOnce.Do(held.hold)
-		}
-	}
-	require.NoError(t, c.Connect(t.Context()))
-	closeInCleanup(t, c)
-	await(t, held.entered, "the monitor reaching its commit")
-
-	ctx, cancel := context.WithTimeout(t.Context(), lifecycleBound)
-	defer cancel()
-	closed := closeAsync(ctx, c)
-	_, err = probe.Await(ctx, func(context.Context) (ConnectionStatus, error) { return c.Status(), nil },
-		func(s ConnectionStatus) bool { return s == StatusDisconnected })
-	require.NoError(t, err, "Close did not finish its cleanup")
-	held.Release()
-	require.NoError(t, awaitErr(t, closed, "Close"))
-	require.Equal(t, StatusDisconnected, c.Status(), "the monitor committed a status after Close")
 }
 
 // keptHandlerConsumer keeps the handler native Consume was given and returns handle; the test
@@ -695,45 +626,6 @@ func TestClientFailuresAfterCloseLeaveStatusDisconnected(t *testing.T) {
 	}
 	require.Equal(t, StatusDisconnected, c.Status(), "failures after Close changed the status")
 	require.Empty(t, owner.Observe().Unresolved)
-}
-
-// 10. H5: a connection event handler is held after its connection check; Close runs. The handler's
-// status write must not land after Close.
-func TestClientEventHandlerCannotCommitAfterClose(t *testing.T) {
-	for _, tc := range []struct {
-		name    string
-		handler func(*Client)
-	}{
-		{"handleReconnect", func(c *Client) { c.handleReconnect(nil) }},
-		{"handleDisconnect", func(c *Client) { c.handleDisconnect(nil, errors.New("gone")) }},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			c, err := NewClient("nats://unused")
-			require.NoError(t, err)
-			closed := false
-			var closeErr error
-			var hookOnce sync.Once
-			c.commitHook = func(site string) {
-				if site != "event handler" {
-					return
-				}
-				hookOnce.Do(func() {
-					closed = runIfCommitFree(c, func() {
-						ctx, cancel := context.WithTimeout(t.Context(), lifecycleBound)
-						defer cancel()
-						closeErr = c.Close(ctx)
-					})
-				})
-			}
-			tc.handler(c)
-			if !closed {
-				requireLiveCloseNil(t, c, "Close after the handler")
-			} else {
-				require.NoError(t, closeErr)
-			}
-			require.Equal(t, StatusDisconnected, c.Status(), "the handler committed a status after Close")
-		})
-	}
 }
 
 // 11. H6: the connection's error handler is running (held on its "NATS error" record, raised by a

@@ -1532,9 +1532,10 @@ admit" is a design decision, not a ruling (three of its four owners are admitted
     refuses the reserved names graph-ingest and `pkg/lifecycle` write under, in this change. Applied in D15 and
     `graph-entity-writes`.
 - **#91 comment 6109278240, item 1** (2026-10-11, "keep running"): when delivery settlement says graph-ingest must
-  stop, graph-ingest leaves the input unsettled, logs it at ERROR, counts it in `Health`'s error count and by cause,
-  and keeps the lane running; `internal/deliverylane` stays `defer-exclude`. Applied in D8, "Long apply", and
-  `graph-ingest-recovery`.
+  stop, graph-ingest leaves the input unsettled, logs it at ERROR, counts it by cause, and keeps the lane running;
+  `internal/deliverylane` stays `defer-exclude`. Applied in D8, "Long apply", and `graph-ingest-recovery`. The
+  item's clause that also counted it in `Health`'s error count is superseded by #91 comment 6124130342 (2026-10-12,
+  Codex B1): an interruption adds only to `work_interrupted_total{cause}`, and a write it cut keeps its own count.
 - **#91 comment 6109278240, item 2** (2026-10-11, "narrow the requirement"): a reconcile's revision conflict names
   the expected revision, and the current revision only when graph-ingest's own read found a different one;
   graph-ingest does not read the entity again after the bucket refuses its compare-and-set. Applied in

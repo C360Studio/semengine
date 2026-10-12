@@ -336,10 +336,10 @@ func deadPID(t *testing.T) (int, string) {
 
 func pidAlive(pid int) bool { return syscall.Kill(pid, 0) == nil }
 
-// R1: a live same-host owner refuses the run before any Docker call, and SEMSTREAMS_* variables
-// (here a wait budget and a different lock path) are not read. Both records name this process
-// with its real identity: SemStreams' six keys are judged by it, and a record whose identity_utc
-// is unknown is judged by that, which is never stale.
+// R1: a live owner refuses the run before any Docker call, and SEMSTREAMS_* variables (here a
+// wait budget and a different lock path) are not read. Both records name this process with its
+// real identity: SemStreams' six keys are judged by it, and a record whose identity_utc is unknown
+// is judged by that, which is never stale.
 func TestR1BusyLockRefusesBeforeDocker(t *testing.T) {
 	t.Parallel()
 	for name, extra := range map[string][]string{
@@ -349,12 +349,14 @@ func TestR1BusyLockRefusesBeforeDocker(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			h := newHarness(t, "SEMSTREAMS_INTEGRATION_LOCK_WAIT_SECONDS=30", "SEMSTREAMS_INTEGRATION_LOCK_DIR=/nonexistent/semstreams.lock")
-			h.writeOwner(t, hostname(t), os.Getpid(), startIdentity(t, os.Getpid()), extra...)
+			// One read of the host name: on macOS a second read can differ (#201).
+			host := hostname(t)
+			h.writeOwner(t, host, os.Getpid(), startIdentity(t, os.Getpid()), extra...)
 			r := h.run(t, "./internal/harness/natsfixture/")
 			if r.status != 1 {
 				t.Fatalf("status %d, want 1\nstdout:\n%s\nstderr:\n%s", r.status, r.stdout, r.stderr)
 			}
-			for _, want := range []string{"lock owner host=" + hostname(t), fmt.Sprintf("pid=%d", os.Getpid()), "command=scripts/run-integration-tests.sh"} {
+			for _, want := range []string{"lock owner host=" + host, fmt.Sprintf("pid=%d", os.Getpid()), "command=scripts/run-integration-tests.sh"} {
 				if !strings.Contains(r.stderr, want) {
 					t.Errorf("stderr does not report the owner (%q):\n%s", want, r.stderr)
 				}
@@ -372,18 +374,20 @@ func TestR1BusyLockRefusesBeforeDocker(t *testing.T) {
 	}
 }
 
-// R1 (foreign host): an owner on another host is never judged stale here, whatever its pid.
-func TestR1ForeignHostOwnerIsRespected(t *testing.T) {
+// R1 (#201): a live owner whose record names another host is respected. The lock is in this
+// machine's /tmp, so its owner ran here whatever name its record holds (macOS's hostname changes
+// with the network), and it is judged by its pid and start time alone: this process's, here.
+// TestR2StaleLockIsQuarantined's "dead pid under another host name" is the other half.
+func TestR1LiveOwnerUnderAnotherHostNameIsRespected(t *testing.T) {
 	t.Parallel()
 	h := newHarness(t)
-	pid, identity := deadPID(t)
-	h.writeOwner(t, "some-other-host.invalid", pid, identity)
+	h.writeOwner(t, "some-other-host.invalid", os.Getpid(), startIdentity(t, os.Getpid()))
 	r := h.run(t, "./internal/harness/natsfixture/")
 	if r.status != 1 || !strings.Contains(r.stderr, "host=some-other-host.invalid") {
-		t.Fatalf("status %d, want 1 naming the foreign owner\nstderr:\n%s", r.status, r.stderr)
+		t.Fatalf("status %d, want 1 naming the owner\nstderr:\n%s", r.status, r.stderr)
 	}
 	if _, err := os.Stat(filepath.Join(h.lock, "owner")); err != nil {
-		t.Errorf("the foreign lock was removed: %v", err)
+		t.Errorf("the live owner's lock was removed: %v", err)
 	}
 }
 
@@ -666,8 +670,8 @@ func TestR1OwnerRecordThatCannotBePublishedReleasesTheLock(t *testing.T) {
 	}
 }
 
-// R2: a same-host owner whose pid is dead, or whose pid now belongs to a different process, is
-// quarantined and removed; the run then acquires, completes, and releases.
+// R2: an owner whose pid is dead, or whose pid now belongs to a different process, is quarantined
+// and removed; the run then acquires, completes, and releases.
 func TestR2StaleLockIsQuarantined(t *testing.T) {
 	t.Parallel()
 	// plant takes the subtest's t: it runs inside a parallel subtest, where a failure reported
@@ -676,6 +680,13 @@ func TestR2StaleLockIsQuarantined(t *testing.T) {
 		"dead pid": func(t *testing.T, h *harness) {
 			pid, identity := deadPID(t)
 			h.writeOwner(t, hostname(t), pid, identity)
+		},
+		// The lock is in this machine's /tmp, so its owner ran here whatever host name its record
+		// holds: macOS's hostname changes with the network, and a dead owner must not hold the
+		// lock for good after the name changed (#201).
+		"dead pid under another host name": func(t *testing.T, h *harness) {
+			pid, identity := deadPID(t)
+			h.writeOwner(t, "some-other-host.invalid", pid, identity)
 		},
 		"changed identity": func(t *testing.T, h *harness) {
 			h.writeOwner(t, hostname(t), os.Getpid(), "Mon Jan  1 00:00:00 1990")
@@ -827,8 +838,10 @@ func TestR4CanonicalInvocationAndOwnerFormat(t *testing.T) {
 	if wantCmd := "semengine " + filepath.Join(h.root, "scripts", "test-integration.sh"); owner["command"] != wantCmd {
 		t.Errorf("owner command %q, want %q", owner["command"], wantCmd)
 	}
-	if owner["host"] != hostname(t) {
-		t.Errorf("owner host %q, want %q", owner["host"], hostname(t))
+	// The host is information for the runner's messages, and no judge reads it. It is not compared
+	// with a second hostname read: on macOS the name changes with the network (#201).
+	if owner["host"] == "" {
+		t.Error("owner host is empty, want the host name the runner read")
 	}
 	if _, err := os.Stat(h.lock); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("lock not released after a clean run: %v", err)

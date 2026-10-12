@@ -167,13 +167,14 @@ describe_owner() {
   echo "[INTEGRATION] lock owner host=$observed_host pid=$observed_pid elapsed=$(owner_elapsed)s command=$observed_command" >&2
 }
 
-# Stale only when provably dead on this host: the pid is gone, or it now names a
-# process with a different start time. Another host's owner is never judged here.
+# Stale only when provably dead: the pid is gone, or it now names a process with a
+# different start time. The recorded host is not compared: the lock is in this
+# machine's /tmp, so its owner ran here, and macOS's hostname changes with the
+# network (#201).
 # A record with identity_utc is read in UTC and the C locale, as it was written, so
 # an owner started from a shell in another time zone or locale reads as live; a
 # record without it (SemStreams', or an older SemEngine's) is read as before.
 owner_is_stale() {
-  [ "$observed_host" = "$owner_host" ] || return 1
   [[ "$observed_pid" =~ ^[0-9]+$ ]] || return 1
   kill -0 "$observed_pid" 2>/dev/null || return 0
   local live compared=$observed_identity

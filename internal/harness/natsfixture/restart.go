@@ -30,9 +30,14 @@ var errNotStarted = errors.New("natsfixture: Restart needs a fixture whose Start
 // Restart and starts it on the new one after.
 //
 // Restart refuses, with no Docker call, before a successful Start and once Stop has begun. A
-// failure in a phase returns an *Error naming it; no replacement container is created, the fixture
-// can no longer be restarted, and Stop removes what it still owns. Do not call Restart from a
-// Consume handler: it waits for that handler to return.
+// failure in a phase returns an *Error naming it, with one exception: when the mapped-port read
+// fails and ctx is still live, Restart stops and starts the same container once more and reads the
+// port again. A failure in that second stop, start or port read returns both errors; a connect or
+// JetStream failure after a good second read returns that error alone. Docker Desktop on macOS
+// leaves the port list empty when a Mac process holds the host port it picked, and the next start
+// gets the next port (#180; TestRestartPastAHeldPort). No replacement container is created; after a failure the fixture can
+// no longer be restarted, and Stop removes what it still owns. Do not call Restart from a Consume
+// handler: it waits for that handler to return.
 //
 // The caller must bound ctx. Readiness after the start is one more ready line in the container's
 // log than before it; if Docker log rotation drops earlier lines the count can fall, and the wait
@@ -105,49 +110,60 @@ func (f *Fixture) restart(ctx context.Context, c testcontainers.Container, id st
 
 	// run times one phase and turns a cancelled parent into that phase's failure even when the
 	// operation itself returned success, as Start's phases do.
+	attempt := 1
 	run := func(p Phase, op func() error) error {
 		err := op()
 		if err == nil {
 			err = ctx.Err()
 		}
 		if err != nil {
-			return &Error{Attempt: 1, Phase: p, ContainerID: id, ParentErr: ctx.Err(), Cause: err}
+			return &Error{Attempt: attempt, Phase: p, ContainerID: id, ParentErr: ctx.Err(), Cause: err}
 		}
 		return nil
 	}
-	if err := run(PhaseStopContainer, func() error {
-		err := f.deps.stopContainer(ctx, c)
-		f.count("stopContainer")
-		return err
-	}); err != nil {
-		return err
-	}
-	if err := run(PhaseStartContainer, func() error {
-		// The container's log keeps every boot's lines, so the ready log of the last boot is
-		// already there: readiness is one more ready line than before the start.
-		before, err := f.readyLines(ctx, c)
-		if err != nil {
-			return err
-		}
-		err = f.deps.startContainer(ctx, c)
-		f.count("startContainer")
-		if err != nil {
-			return err
-		}
-		// If Docker log rotation drops old lines the count can fall; the wait then runs until ctx ends (loud, not silent).
-		_, err = probe.Await(ctx, func(ctx context.Context) (int, error) { return f.readyLines(ctx, c) },
-			func(n int) bool { return n > before })
-		return err
-	}); err != nil {
-		return err
-	}
+	// bounce stops and starts the container, then reads the host port Docker mapped for it.
 	var port string
-	if err := run(PhaseMappedPort, func() error {
-		var err error
-		port, err = f.deps.mappedPort(ctx, c)
-		f.count("mappedPort")
-		return err
-	}); err != nil {
+	bounce := func() error {
+		if err := run(PhaseStopContainer, func() error {
+			err := f.deps.stopContainer(ctx, c)
+			f.count("stopContainer")
+			return err
+		}); err != nil {
+			return err
+		}
+		if err := run(PhaseStartContainer, func() error {
+			// The container's log keeps every boot's lines, so the ready log of the last boot is
+			// already there: readiness is one more ready line than before the start.
+			before, err := f.readyLines(ctx, c)
+			if err != nil {
+				return err
+			}
+			err = f.deps.startContainer(ctx, c)
+			f.count("startContainer")
+			if err != nil {
+				return err
+			}
+			// If Docker log rotation drops old lines the count can fall; the wait then runs until ctx ends (loud, not silent).
+			_, err = probe.Await(ctx, func(ctx context.Context) (int, error) { return f.readyLines(ctx, c) },
+				func(n int) bool { return n > before })
+			return err
+		}); err != nil {
+			return err
+		}
+		return run(PhaseMappedPort, func() error {
+			var err error
+			port, err = f.mappedPort(ctx, c)
+			return err
+		})
+	}
+	if err := bounce(); retryable(err) {
+		// One more stop and start, decided as Start decides its one more container: see Restart's
+		// doc for the Docker Desktop case this covers. Both failures are returned.
+		attempt = 2
+		if again := bounce(); again != nil {
+			return errors.Join(err, again)
+		}
+	} else if err != nil {
 		return err
 	}
 	url := fmt.Sprintf("nats://%s:%s", host, port)

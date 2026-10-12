@@ -25,9 +25,12 @@ import (
 )
 
 const (
-	// maxAttempts allows one replacement container, and only after a mapped-port failure with a
-	// live parent and a clean rollback: the one transient SemStreams observed under Docker API
-	// pressure (gh#736). Every other failure is reported, not retried.
+	// maxAttempts allows Start one replacement container, and only after a mapped-port failure
+	// with a live parent and a clean rollback (retryable): the one transient SemStreams observed
+	// under Docker API pressure (gh#736), and what Docker Desktop on macOS does when a Mac process
+	// holds the host port it picked (#180; the probe on PR #200, comment 6128094108). Restart's one
+	// more stop and start of the same container is decided the same way. Every other failure is
+	// reported, not retried.
 	maxAttempts = 2
 	// cleanupBudget is the fresh finite authority New's t.Cleanup gives Stop. The test's own
 	// context is already cancelled when cleanups run.
@@ -153,8 +156,7 @@ func (f *Fixture) Start(ctx context.Context) error {
 			return nil
 		}
 		failures = append(failures, err)
-		var fe *Error
-		if !errors.As(err, &fe) || fe.Phase != PhaseMappedPort || fe.ParentErr != nil || fe.Cleanup != nil {
+		if !retryable(err) {
 			break
 		}
 	}
@@ -321,8 +323,7 @@ func (f *Fixture) attempt(ctx context.Context, n int) error {
 	}
 	if err := run(PhaseMappedPort, func() error {
 		var err error
-		port, err = f.deps.mappedPort(ctx, c)
-		f.count("mappedPort")
+		port, err = f.mappedPort(ctx, c)
 		return err
 	}); err != nil {
 		return err
@@ -366,6 +367,31 @@ func (f *Fixture) attempt(ctx context.Context, n int) error {
 	f.rec.Container, f.rec.MappedPort = f.containerID, port
 	f.mu.Unlock()
 	return nil
+}
+
+// retryable reports whether a failure earns the one more try Start and Restart allow: the
+// mapped-port phase failed with the caller's context live and, for Start, a clean rollback.
+func retryable(err error) bool {
+	var fe *Error
+	return errors.As(err, &fe) && fe.Phase == PhaseMappedPort && fe.ParentErr == nil && fe.Cleanup == nil
+}
+
+// mappedPort reads the host port Docker mapped to the container's client port. A failed read also
+// says what an inspect of the container showed, or why the inspect failed: Docker Desktop leaves
+// the port list empty when a Mac process holds the host port it picked (#180;
+// TestRestartPastAHeldPort).
+func (f *Fixture) mappedPort(ctx context.Context, c testcontainers.Container) (string, error) {
+	port, err := f.deps.mappedPort(ctx, c)
+	f.count("mappedPort")
+	if err == nil {
+		return port, nil
+	}
+	shown, ierr := f.deps.inspect(ctx, c)
+	f.count("inspect")
+	if ierr != nil {
+		return "", fmt.Errorf("%w (inspect failed: %v)", err, ierr)
+	}
+	return "", fmt.Errorf("%w (inspect: %s)", err, shown)
 }
 
 // rollbackAttempt removes what a failed attempt created, each operation under its own fresh

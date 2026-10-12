@@ -427,7 +427,7 @@ func TestConsumerInputHeldUntilGenerationConfirmed(t *testing.T) {
 			var ended string
 			// natsclient's commitConsumer when the client's Close begins during setup: the running
 			// handlers' context is cancelled, and setup waits until they have returned, or until its
-			// own context ends (natsclient/owned_delivery.go:193-206).
+			// own context ends (natsclient/owned_delivery.go:181-194).
 			c.consumeStream = func(
 				ctx context.Context,
 				_ natsclient.PortConsumerContext,

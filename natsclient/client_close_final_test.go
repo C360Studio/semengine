@@ -948,11 +948,8 @@ func TestClientAsyncPublishErrorAfterCloseRecordsMetricOnly(t *testing.T) {
 type tableClient struct {
 	c          *Client
 	owner      *clientOwner
-	logs       *recordingHandler
-	url        string
 	release    func()       // releases the held drain in the closing state
 	firstClose <-chan error // the draining Close in the closing state
-	conn       *nats.Conn   // GetConnection() before the operation
 }
 
 // 14. F25: every lifecycle state against every operation. Expected returns and statuses are
@@ -972,37 +969,33 @@ func TestClientLifecycleOperationTable(t *testing.T) {
 			"SubscribeForRequests":            {notConnected, StatusDisconnected},
 			"ConsumeStreamWithConfig":         {notConnected, StatusDisconnected},
 			"ConsumeInternalStreamWithConfig": {notConnected, StatusDisconnected},
-			"SetConnection":                   {nil, StatusConnected},
 		},
 		"connected": {
 			"Connect": {errs.ErrAlreadyStarted, StatusConnected}, "CloseLive": {nil, StatusDisconnected},
 			"CloseEnded": {context.Canceled, StatusDisconnected}, "Subscribe": {nil, StatusConnected},
 			"SubscribeForRequests": {nil, StatusConnected}, "ConsumeStreamWithConfig": {nil, StatusConnected},
-			"ConsumeInternalStreamWithConfig": {nil, StatusConnected}, "SetConnection": {nil, StatusConnected},
+			"ConsumeInternalStreamWithConfig": {nil, StatusConnected},
 		},
 		"closing": {
 			"Connect": {closed, StatusConnected}, "CloseLive": {nil, StatusDisconnected},
 			"CloseEnded": {context.Canceled, StatusConnected}, "Subscribe": {closed, StatusConnected},
 			"SubscribeForRequests": {closed, StatusConnected}, "ConsumeStreamWithConfig": {closed, StatusConnected},
-			"ConsumeInternalStreamWithConfig": {closed, StatusConnected}, "SetConnection": {nil, StatusConnected},
+			"ConsumeInternalStreamWithConfig": {closed, StatusConnected},
 		},
 		"closed": {
 			"Connect": {closed, StatusDisconnected}, "CloseLive": {nil, StatusDisconnected},
 			"CloseEnded": {context.Canceled, StatusDisconnected}, "Subscribe": {closed, StatusDisconnected},
 			"SubscribeForRequests":            {closed, StatusDisconnected},
 			"ConsumeStreamWithConfig":         {closed, StatusDisconnected},
-			"ConsumeInternalStreamWithConfig": {closed, StatusDisconnected}, "SetConnection": {nil, StatusDisconnected},
+			"ConsumeInternalStreamWithConfig": {closed, StatusDisconnected},
 		},
 	}
-	// SetConnection installs the given connection only before Close has begun (owner answer 3);
-	// once Close has begun it changes nothing and logs at warn level.
-	installs := map[string]bool{"new": true, "connected": true, "closing": false, "closed": false}
 	// Connect dials only before Close has begun.
 	dials := map[string]bool{"new": true, "connected": false, "closing": false, "closed": false}
 
 	stateNames := []string{"new", "connected", "closing", "closed"}
 	opNames := []string{"Connect", "CloseLive", "CloseEnded", "Subscribe", "SubscribeForRequests",
-		"ConsumeStreamWithConfig", "ConsumeInternalStreamWithConfig", "SetConnection"}
+		"ConsumeStreamWithConfig", "ConsumeInternalStreamWithConfig"}
 	n := 0
 	for _, state := range stateNames {
 		for _, op := range opNames {
@@ -1011,14 +1004,7 @@ func TestClientLifecycleOperationTable(t *testing.T) {
 			t.Run(state+"/"+op, func(t *testing.T) {
 				tc := buildTableClient(t, url, state)
 				dialsBefore := tc.owner.Observe().Calls["dial"]
-				var other *nats.Conn
-				if op == "SetConnection" {
-					var err error
-					other, err = nats.Connect(url)
-					require.NoError(t, err)
-					t.Cleanup(other.Close)
-				}
-				err := runTableOp(t, tc, op, id, other)
+				err := runTableOp(t, tc, op, id)
 				exp := want[state][op]
 				if exp.err == nil {
 					require.NoError(t, err)
@@ -1029,16 +1015,6 @@ func TestClientLifecycleOperationTable(t *testing.T) {
 				if op == "Connect" {
 					dialled := tc.owner.Observe().Calls["dial"] > dialsBefore
 					require.Equal(t, dials[state], dialled, "Connect dialled in state %s", state)
-				}
-				if op == "SetConnection" {
-					if installs[state] {
-						require.Same(t, other, tc.c.GetConnection())
-					} else {
-						require.NotSame(t, other, tc.c.GetConnection(), "SetConnection installed once Close had begun")
-						require.NotEmpty(t, tc.logs.find(func(r loggedRecord) bool {
-							return r.level == slog.LevelWarn && r.msg == "NATS client closing; SetConnection ignored"
-						}), "SetConnection once Close had begun was not logged at warn level")
-					}
 				}
 				if tc.release != nil {
 					tc.release()
@@ -1051,18 +1027,15 @@ func TestClientLifecycleOperationTable(t *testing.T) {
 
 func buildTableClient(t *testing.T, url, state string) *tableClient {
 	t.Helper()
-	h := newRecordingHandler("")
-	c, err := NewClient(url, WithHealthInterval(0), WithLogger(slog.New(h)))
+	c, err := NewClient(url, WithHealthInterval(0))
 	require.NoError(t, err)
-	tc := &tableClient{c: c, owner: newClientOwner(c), logs: h, url: url}
+	tc := &tableClient{c: c, owner: newClientOwner(c)}
 	closeInCleanup(t, c)
 	if state == "new" {
 		return tc
 	}
 	require.NoError(t, c.Connect(t.Context()))
-	// The test owns the connection the client dialled once SetConnection may replace it.
 	dialled := c.GetConnection()
-	t.Cleanup(dialled.Close)
 	switch state {
 	case "closing":
 		held := newHeldCall(t)
@@ -1081,7 +1054,6 @@ func buildTableClient(t *testing.T, url, state string) *tableClient {
 	case "closed":
 		requireLiveCloseNil(t, c, "Close")
 	}
-	tc.conn = c.GetConnection()
 	return tc
 }
 
@@ -1095,7 +1067,7 @@ func onceClosed(ch chan nats.Status) <-chan struct{} {
 	return out
 }
 
-func runTableOp(t *testing.T, tc *tableClient, op string, id int, other *nats.Conn) error {
+func runTableOp(t *testing.T, tc *tableClient, op string, id int) error {
 	c := tc.c
 	ctx := t.Context()
 	stream := "TABLE_" + string(rune('A'+id%26)) + string(rune('A'+id/26))
@@ -1132,9 +1104,6 @@ func runTableOp(t *testing.T, tc *tableClient, op string, id int, other *nats.Co
 	case "ConsumeInternalStreamWithConfig":
 		_, err := c.ConsumeInternalStreamWithConfig(ctx, cfg, noop)
 		return err
-	case "SetConnection":
-		c.SetConnection(other)
-		return nil
 	}
 	t.Fatalf("unknown operation %s", op)
 	return nil
@@ -1388,209 +1357,6 @@ func TestClientCloseReportsDrainTimeout(t *testing.T) {
 			err = awaitErr(t, first, "the first Close")
 			require.ErrorIs(t, err, nats.ErrDrainTimeout, "the first Close did not report the drain timeout")
 			require.True(t, errs.IsTransient(err), "the drain timeout is not classified transient: %v", err)
-		})
-	}
-}
-
-// 20. M-2, R3-2: a client-owned subscription left on a connection replaced through SetConnection
-// is ended and joined by Close, which leaves the replaced connection open (it belongs to the
-// caller of SetConnection) and does not wait for that connection's event handlers. A replaced
-// connection that is already closed makes Unsubscribe fail; Close still waits for the handler.
-func TestClientCloseEndsSubscriptionOnReplacedConnection(t *testing.T) {
-	for _, alreadyClosed := range []bool{false, true} {
-		name := "replaced-connection-open"
-		if alreadyClosed {
-			name = "replaced-connection-closed"
-		}
-		t.Run(name, func(t *testing.T) {
-			url := embeddedServerURL(t)
-			c, err := NewClient(url, WithHealthInterval(0))
-			require.NoError(t, err)
-			require.NoError(t, c.Connect(t.Context()))
-			closeInCleanup(t, c)
-			first := c.GetConnection()
-			t.Cleanup(first.Close)
-			held := newHeldCall(t)
-			_, err = c.Subscribe(t.Context(), "replaced.held", func(context.Context, *nats.Msg) { held.hold() })
-			require.NoError(t, err)
-			require.NoError(t, first.FlushTimeout(lifecycleBound))
-			require.NoError(t, first.Publish("replaced.held", nil))
-			await(t, held.entered, "the handler entering")
-
-			second, err := nats.Connect(url)
-			require.NoError(t, err)
-			t.Cleanup(second.Close)
-			c.SetConnection(second)
-			if alreadyClosed {
-				first.Close()
-			}
-
-			require.ErrorIs(t, c.Close(endedContext(t)), context.Canceled)
-			requireJoinPending(t, c, joinOnOwnedWork, "the handler on the replaced connection returned")
-			held.Release()
-			requireLiveCloseNil(t, c, "Close after the handler returned")
-			require.Zero(t, first.NumSubscriptions(), "the subscription on the replaced connection is still open")
-			require.Equal(t, !alreadyClosed, !first.IsClosed(), "Close closed the connection the SetConnection caller owns")
-		})
-	}
-}
-
-// 21. Codex F26 (PR #48 comment 5981562076), its TestReviewerCloseEndsConsumerOnReplacedConnection
-// with assertions unchanged, for the internal and the port API: an idle client-created consumer
-// left on a connection replaced through SetConnection is stopped and joined by Close, which leaves
-// that connection, the caller's, open.
-func TestClientCloseEndsConsumerOnReplacedConnection(t *testing.T) {
-	for _, port := range []bool{false, true} {
-		name := "internal"
-		if port {
-			name = "port"
-		}
-		t.Run(name, func(t *testing.T) {
-			url := embeddedJetStreamURL(t)
-			c, err := NewClient(url, WithHealthInterval(0))
-			require.NoError(t, err)
-			require.NoError(t, c.Connect(t.Context()))
-			old := c.GetConnection()
-			var handle jetstream.ConsumeContext
-			defer func() {
-				if handle != nil {
-					handle.Stop()
-				}
-				old.Close()
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				defer cancel()
-				if err := c.Close(ctx); err != nil {
-					t.Errorf("cleanup Close: %v", err)
-				}
-			}()
-			cfg := StreamConsumerConfig{StreamName: "REVIEW_REPLACED", ConsumerName: "replaced", FilterSubject: "review.replaced.>",
-				AckPolicy: "explicit", AutoCreate: true, AutoCreateConfig: boundedAutoCreate()}
-			handle, err = consumeVia(t.Context(), c, port, cfg, func(context.Context, jetstream.Msg) {
-				t.Error("idle diagnostic received an unexpected message")
-			})
-			require.NoError(t, err)
-			closed := handle.Closed()
-			replacement, err := nats.Connect(url)
-			require.NoError(t, err)
-			defer replacement.Close()
-			c.SetConnection(replacement)
-
-			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-			closeErr := c.Close(ctx)
-			cancel()
-			stillOpen := false
-			select {
-			case <-closed:
-			default:
-				stillOpen = true
-			}
-			t.Logf("Close=%v; original connection closed=%v; idle client-created consumer still open=%v; claims=%d", closeErr, old.IsClosed(), stillOpen, claimCount(c))
-			if closeErr != nil {
-				t.Errorf("Client.Close failed to finish its idle consumer on the replaced connection: %v", closeErr)
-			}
-			if stillOpen {
-				t.Error("client-created consumer survives Client.Close on the caller-owned replaced connection")
-			}
-			require.False(t, old.IsClosed(), "Client must preserve the caller-owned replaced connection")
-
-			handle.Stop()
-			joinedCtx, joinedCancel := context.WithTimeout(t.Context(), 10*time.Second)
-			defer joinedCancel()
-			select {
-			case <-closed:
-			case <-joinedCtx.Done():
-				t.Fatal("explicit caller Stop did not end consumer")
-			}
-			require.NoError(t, c.Close(joinedCtx), "explicit caller Stop releases Client.Close's join")
-			require.False(t, old.IsClosed(), "stopping the consumer must leave the old connection open")
-		})
-	}
-}
-
-// gatedStream holds CreateOrUpdateConsumer until release, then returns consumer.
-type gatedStream struct {
-	jetstream.Stream
-	consumer jetstream.Consumer
-	entered  chan struct{}
-	release  chan struct{}
-}
-
-func (s *gatedStream) CreateOrUpdateConsumer(context.Context, jetstream.ConsumerConfig) (jetstream.Consumer, error) {
-	close(s.entered)
-	<-s.release
-	return s.consumer, nil
-}
-
-// 22. Review nit N-d: a consumer is attributed to the connection its JetStream handle was made
-// on, read with that handle, not to whatever connection is dialled by the time the setup admits
-// it. A setup holds a handle made on the first dialled connection; meanwhile SetConnection(nil)
-// and a second Connect install another. Close drains the second, so it must stop the consumer
-// running on the first, the caller's, connection, for the internal and the port API.
-func TestClientCloseAttributesConsumerToItsHandlesConnection(t *testing.T) {
-	for _, port := range []bool{false, true} {
-		name := "internal"
-		if port {
-			name = "port"
-		}
-		t.Run(name, func(t *testing.T) {
-			url := embeddedJetStreamURL(t)
-			c, err := NewClient(url, WithHealthInterval(0))
-			require.NoError(t, err)
-			require.NoError(t, c.Connect(t.Context()))
-			first := c.GetConnection()
-			t.Cleanup(first.Close)
-			closeInCleanup(t, c)
-
-			native := newKeptHandlerConsumer("S_ATTRIBUTED", "attributed", jetstream.AckExplicitPolicy)
-			gate := &gatedStream{consumer: native, entered: make(chan struct{}), release: make(chan struct{})}
-			c.mu.Lock()
-			c.js = &streamOnlyJetStream{fakeJetStream: &fakeJetStream{}, stream: gate}
-			c.mu.Unlock()
-
-			type result struct {
-				handle jetstream.ConsumeContext
-				err    error
-			}
-			setup := make(chan result, 1)
-			setupDone := make(chan struct{})
-			// On failure: the fake holds are released first (cleanups run last-registered first),
-			// then the setup goroutine is joined under lifecycleBound, then closeInCleanup's
-			// bounded Close joins the ownership goroutine.
-			t.Cleanup(func() {
-				select {
-				case <-setupDone:
-				case <-time.After(lifecycleBound):
-					t.Errorf("cleanup: the consumer setup did not return within %v", lifecycleBound)
-				}
-			})
-			releaseSetup := releaseInCleanup(t, gate.release)
-			endNative := releaseInCleanup(t, native.handle.closed)
-			go func() {
-				defer close(setupDone)
-				h, err := consumeVia(t.Context(), c, port,
-					StreamConsumerConfig{StreamName: "S_ATTRIBUTED", ConsumerName: "attributed"},
-					func(context.Context, jetstream.Msg) {})
-				setup <- result{h, err}
-			}()
-			await(t, gate.entered, "the setup holding the first connection's JetStream handle")
-
-			c.SetConnection(nil)
-			require.NoError(t, c.Connect(t.Context()), "a second Connect after SetConnection(nil)")
-			require.NotSame(t, first, c.GetConnection(), "the second Connect dialled a new connection")
-			releaseSetup()
-			got := awaitValue(t, setup, "the consumer setup returning")
-			require.NoError(t, got.err)
-
-			ctx, cancel := context.WithTimeout(t.Context(), lifecycleBound)
-			defer cancel()
-			closed := closeAsync(ctx, c)
-			stopped, err := probe.Await(ctx, func(context.Context) (bool, error) { return native.handle.stopped.Load(), nil },
-				func(s bool) bool { return s })
-			require.NoError(t, err, "Close did not stop the consumer on the first connection (stopped=%v)", stopped)
-			endNative()
-			require.NoError(t, awaitErr(t, closed, "Close"))
-			require.False(t, first.IsClosed(), "Close closed the first connection, which SetConnection gave back")
-			require.Zero(t, claimCount(c), "the claim outlived a nil Close")
 		})
 	}
 }

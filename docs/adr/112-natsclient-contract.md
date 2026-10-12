@@ -2,8 +2,8 @@
 
 ## Status
 
-**Accepted (2026-10-11).** The owner accepted design revision 3, and this record with it, on PR #177 (comment
-6111038987). Drafted on PR #177, for #170 and #168, under the owner's rulings:
+**Accepted (2026-10-11); §4 amended 2026-10-12 (#184).** The owner accepted design revision 3, and this record with
+it, on PR #177 (comment 6111038987). Drafted on PR #177, for #170 and #168, under the owner's rulings:
 
 - 2026-10-10, epic #9 comment 6098388541: a record of natsclient's contract over nats.go;
 - 2026-10-11, #170 comment 6109833136: fix natsclient so its calls do not sit for minutes, without rewriting nats.go;
@@ -13,6 +13,11 @@ The record was measured at nats.go v1.54.0 and nats-server v2.15.0, re-run on 20
 `.nats-image:5`). The first measurement was at nats-server v2.14.7. #118 moved the pin to v2.15.0 on 2026-10-11, and
 the quick probes (P10, P12, P13, P15, p15b, P17, P18, P20, and P23 to P25) were run again there with the same results
 (PR #177 comment 6111119623). P11, P14, P16, P19, P21 and P22 were measured at v2.14.7 only.
+
+**Amendment, 2026-10-12 (#184).** `Client.SetConnection` is removed, with the code and tests that served it (owner,
+2026-10-12: "I have no idea why we have a setter in Go for SetConnection — this is not Java"). §4's sentence about a
+connection it replaced is struck where it stands. §2's `Close` line still cites `:1399` and `:1442`, tests removed
+with it. Line numbers in `client_close_final_test.go` are as of `d71df33`.
 
 **How each line is backed.**
 
@@ -149,9 +154,10 @@ Each line below names its backing. Anything not backed is not promised.
 
 ### 4. Ownership
 
-- **A subscription or consumer the client created is the client's.** `Close` stops it and joins its handlers. That
+- **A subscription or consumer the client created is the client's.** `Close` stops it and joins its handlers. ~~That
   includes one on a connection that `SetConnection` replaced. The replaced connection stays the caller's, and `Close`
-  does not cut its socket (tests `client_close_final_test.go:1399`, `:1442`).
+  does not cut its socket (tests `client_close_final_test.go:1399`, `:1442`).~~ Struck 2026-10-12 (#184; see Status):
+  the sentence before rests on tests `client_close_final_test.go:227` and `:654`.
 - **Once `Close` begins, new work is refused** (test `client_close_final_test.go:960`). A `Subscribe` that `Close`
   overtakes returns `nats.ErrConnectionClosed` (T2; `TestSubscribeEndedByCloseIsConnectionClosed`,
   `client_close_held_test.go`).

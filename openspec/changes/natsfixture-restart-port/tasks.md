@@ -15,7 +15,7 @@ before the review stop. Choices the design does not spell out go in `notes/<task
   context, and the inspect detail on the mapped-port error (Start and Restart).
 - [x] 2.2 The integration test (design table row 4): hold the next port on all addresses, Restart, dial `URL()`.
   Record its result on `main` and on the fix, five runs each, with the command, in `notes/2.2.md`.
-- [ ] 2.3 Text: the doc comments in `restart.go` and `fixture.go` (`maxAttempts`), and any line in `docs/testing.md`
+- [x] 2.3 Text: the doc comments in `restart.go` and `fixture.go` (`maxAttempts`), and any line in `docs/testing.md`
   or the natsfixture row of `docs/admission-ledger.yaml` that says Restart never tries again. Check: `task
   docs:check`, `task ledger:check`.
 - [ ] 2.4 `task verify` on a clean tree at the last commit; record the commit and result in a PR comment.

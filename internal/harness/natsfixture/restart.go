@@ -30,9 +30,13 @@ var errNotStarted = errors.New("natsfixture: Restart needs a fixture whose Start
 // Restart and starts it on the new one after.
 //
 // Restart refuses, with no Docker call, before a successful Start and once Stop has begun. A
-// failure in a phase returns an *Error naming it; no replacement container is created, the fixture
-// can no longer be restarted, and Stop removes what it still owns. Do not call Restart from a
-// Consume handler: it waits for that handler to return.
+// failure in a phase returns an *Error naming it, with one exception: when the mapped-port read
+// fails and ctx is still live, Restart stops and starts the same container once more and reads the
+// port again, and a second failure returns both. Docker Desktop on macOS leaves the port list empty
+// when a Mac process holds the host port it picked, and the next start gets the next port (#180;
+// TestRestartPastAHeldPort). No replacement container is created; after a failure the fixture can
+// no longer be restarted, and Stop removes what it still owns. Do not call Restart from a Consume
+// handler: it waits for that handler to return.
 //
 // The caller must bound ctx. Readiness after the start is one more ready line in the container's
 // log than before it; if Docker log rotation drops earlier lines the count can fall, and the wait
@@ -152,9 +156,8 @@ func (f *Fixture) restart(ctx context.Context, c testcontainers.Container, id st
 		})
 	}
 	if err := bounce(); retryable(err) {
-		// Docker Desktop leaves the port list empty when a Mac process holds the host port it
-		// picked, and the next start of the same container gets the next port (#180): one more
-		// stop and start, as Start allows one more container. Both failures are returned.
+		// One more stop and start, decided as Start decides its one more container: see Restart's
+		// doc for the Docker Desktop case this covers. Both failures are returned.
 		attempt = 2
 		if again := bounce(); again != nil {
 			return errors.Join(err, again)

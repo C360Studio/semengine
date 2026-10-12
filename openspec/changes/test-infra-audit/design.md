@@ -117,10 +117,13 @@ checks (about 60 with their sensitivity tests). Removed: about 3,000 lines (an e
   that Docker created more than 30 minutes earlier. Every container it starts carries that label, valued with its
   package and process ID. Nothing is chosen by name or by whether a process is alive. A removal error never fails a
   test: not-found is ignored, anything else goes to the test output. Proofs: after natsfixture's first container,
-  `testcontainers.GenericLabels()` has no `org.testcontainers.reap` key; the sweep's test, over a label value of its
-  own, keeps a young container under a one-hour age, removes it under age zero, and leaves an unlabelled one running.
-- B4. A package's shared server starts at its first reset, so a process that never resets (a prochost child, P14, or
-  a `-run` that selects no NATS test) starts nothing. `TestMain` stops it after `m.Run` if it started, removing the
+  `testcontainers.GenericLabels()` has no `org.testcontainers.reap` key (that a caller's own value is overridden is
+  review only, since the configuration is read once per process and the test order is shuffled); the sweep's test,
+  over a label value of its own, keeps a young container under a one-hour age, removes it under age zero, and leaves
+  an unlabelled one running.
+- B4. A package's shared server starts at its first reset, under five minutes so a cold image pull on CI fits, and
+  closes its start connection before the reset counts; a process that never resets (a prochost child, P14, or a
+  `-run` that selects no NATS test) starts nothing. `TestMain` stops it after `m.Run` if it started, removing the
   container. A failed start fails that test; every later reset in the process fails at once with the same error.
 - B5. The reset is the one call that returns the shared server's URL. Under a bounded context it waits until STATZ
   reports one connection, its own, and otherwise fails the test saying a connection from an earlier test is still
@@ -129,8 +132,8 @@ checks (about 60 with their sensitivity tests). Removed: about 3,000 lines (an e
   while connections other than the asking one remain after a bounded wait. Proofs, in natsfixture's tests: what test A
   creates is gone for test B; a connection test A leaves open fails A's cleanup; a reset while one is open fails.
 - B6. A test with its own server calls `natsfixture.New` with `// Own server: <reason>` on the line above.
-  `TestOwnServerReason` checks call sites with that text; a call behind a helper (`natsclient`'s `startFixture` serves
-  many tests from one call), a renamed import or a function value escapes it, and is review only.
+  `TestOwnServerReason` checks call sites with that text, and the 8 own-server tests call `New` themselves so it
+  reads each reason; a call behind a helper, a renamed import or a function value escapes it, and is review only.
 - B7. `TestNoParallelIntegrationTests` fails on `t.Parallel()` in an integration-tagged Go file; a call in an untagged
   helper or on a receiver not named `t` escapes it, and is review only.
 - B8. Two runs at once from two worktrees both pass. Proof: § Short check, step 1, in pull requests 1 and 3.

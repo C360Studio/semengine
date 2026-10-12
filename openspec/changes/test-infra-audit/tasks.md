@@ -20,7 +20,8 @@ review stop. Choices the design does not spell out go in `notes/<task>.md`.
   `coverage/` and refuses a missing or different fingerprint, with a test for each refusal.
 - [ ] 2.3 In natsfixture's once-per-process step: set `TESTCONTAINERS_RYUK_DISABLED=true` first, then sweep labelled
   containers older than 30 minutes; label every container. Tests: "Ryuk is off" and "Only old labelled containers are
-  swept" (`nats-fixture`, "Ryuk off, labelled containers and the sweep").
+  swept" (`nats-fixture`, "Ryuk off, labelled containers and the sweep"). The Ryuk test sets no environment itself,
+  `t.Setenv` included.
 - [ ] 2.4 Move the image pin to `internal/harness/natsfixture/nats-image`, embedded, refused without a digest;
   `TestOneImagePin` and `doctor.sh` read it; remove `SEMENGINE_NATS_IMAGE` and its override, and drop the image from
   the log lines at `natsclient/kv_key_contract_integration_test.go:55` and
@@ -29,7 +30,8 @@ review stop. Choices the design does not spell out go in `notes/<task>.md`.
   writes the container log to the test output; prochost writes to the test's temporary directory and logs a child's
   output when its test fails (`process-host`).
 - [ ] 2.6 Remove `scripts/test-integration.sh`, `scripts/admission-lock.sh`, `internal/harness/runner`, the lock lines
-  in `scripts/doctor.sh`, the evidence upload in `.github/workflows/ci.yml`, and the lock note in `scripts/verify.sh:9`.
+  in `scripts/doctor.sh`, its Ryuk lines (`:77-83`, the Ryuk environment and properties-file report, and `:95-105`, the
+  Ryuk image check), the evidence upload in `.github/workflows/ci.yml`, and the lock note in `scripts/verify.sh:9`.
 - [ ] 2.7 Remove the fixture's name generator and the SemStreams substring list; `TestSemEngineAssignedNames` keeps the
   `semengine-` prefix rule; the two `Fixture.Name` callers use literal names.
 - [ ] 2.8 Update every file that names the runner, the lock, the evidence directory or `SEMENGINE_NATS_IMAGE`:
@@ -38,7 +40,8 @@ review stop. Choices the design does not spell out go in `notes/<task>.md`.
   `.agents/skills/semengine-handoff/SKILL.md:28`; `.gitignore:15-16`; the admission-ledger rows whose destination
   this change removes (`docs/admission-ledger.yaml:211,244`), so `task ledger:check` passes. Finish with `git grep -n
   -e test-integration.sh -e admission-lock -e SEMENGINE_NATS_IMAGE -e SEMENGINE_EVIDENCE_DIR -e '\.evidence/'`
-  finding nothing outside `openspec/changes/` and `docs/provenance.md` (history).
+  finding nothing outside `openspec/changes/`, `docs/provenance.md` and `docs/admission-ledger.yaml:2191` (history),
+  and the planted inputs of `internal/harness/contract/imagepin_test.go:23,26`.
 - [ ] 2.9 Add `AGENTS.md` rows 1 and 2 and replace the image-pin row (`drafts/agents-rows.md`).
 - [ ] 2.10 Record the short check on the pull request (`design.md` § Short check, steps 1 to 3).
 - [ ] 2.11 Sync into `openspec/specs/`: all of `integration-test-runner` and `process-host`; from `nats-fixture` the
@@ -57,7 +60,8 @@ review stop. Choices the design does not spell out go in `notes/<task>.md`.
 - [ ] 3.4 Remove the fixture's lifecycle-floor test; the stream helpers become functions carrying the bounds.
 - [ ] 3.5 natsfixture's 80% coverage floor holds.
 - [ ] 3.6 Sync into `openspec/specs/` the rest of `nats-fixture` except "Shared server per package", "Reset to a
-  verified-empty server" and "Connected value for a package's tests".
+  verified-empty server" and "Connected value for a package's tests", and `harness-boundaries` "Bounded cleanup
+  roots".
 
 ## 4. One server per package (pull request 3)
 
@@ -67,7 +71,8 @@ review stop. Choices the design does not spell out go in `notes/<task>.md`.
   takes a URL.
 - [ ] 4.3 Add `TestNoParallelIntegrationTests` and `TestOwnServerReason`, each with its sensitivity test.
 - [ ] 4.4 Add `TestMain` to natsclient, processor/graph-ingest, graph/kvcatalog, pkg/lifecycle and component; their
-  helpers call the reset; mark the 8 own-server tests (`design.md` P7).
+  helpers call the reset; the 8 own-server tests (`design.md` P7) call `natsfixture.New` themselves, each with its
+  `// Own server:` line, so `TestOwnServerReason` reads every reason and `startFixture` serves shared tests only.
 - [ ] 4.5 Write `docs/test-infrastructure.md` (`drafts/test-infrastructure.md`), add `AGENTS.md` rows 3 to 7, and point
   `docs/testing.md` at the page.
 - [ ] 4.6 Record the short check's steps 1 and 3 again on shared servers, including a full run's container count.

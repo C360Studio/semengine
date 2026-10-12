@@ -40,8 +40,8 @@ that starts with a letter in Go is review only.
 
 `task verify` SHALL fail when any `*_test.go` file calls Stop, Close, or Terminate with context.Background() or
 context.TODO(). The harness's own cleanup roots (`natsfixture.New`'s cleanup Stop and the removal of a failed start's
-container, each under a fresh bounded context) live in non-test files, and a package's `TestMain` stops its shared
-server under `context.WithTimeout`, so the check has no allowlist.
+container, each under a fresh bounded context) live in non-test files, and a package's `TestMain` that stops a shared
+server does so under `context.WithTimeout`, so the check has no allowlist.
 
 #### Scenario: Unbounded defer
 

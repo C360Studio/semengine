@@ -164,9 +164,11 @@ called from the test's own goroutine. The fixture SHALL retain no `context.Conte
 ### Requirement: Shared server per package
 
 `natsfixture` SHALL provide a server shared by a package's tests. It SHALL start at the first reset in the process,
-as Start does (the phases, the one replacement container, the container log on failure), so a process that never
-resets starts no container. When that start fails, the reset SHALL fail its test with the start error, and every later
-reset in the process SHALL fail at once with the same error. A package's `TestMain` SHALL stop the server after
+as Start does (the phases, the one replacement container, the container log on failure), under a context bounded at
+five minutes so that a cold image pull fits (the removed runner's pull budget was 300 s), and SHALL close the
+connection its start made before the reset counts connections. A process that never resets starts no container.
+When that start fails, the reset SHALL fail its test with the start error, and every later reset in the process
+SHALL fail at once with the same error. A package's `TestMain` SHALL stop the server after
 `m.Run`; Stop SHALL remove the container when the server started, and SHALL return nil without a Docker call when it
 did not. The server SHALL return its URL only from the reset, and SHALL retain no `context.Context`.
 
@@ -223,12 +225,13 @@ the process environment, whatever it held before. Every container natsfixture st
 step, natsfixture SHALL remove, with force, every container carrying that label that Docker created more than 30
 minutes earlier, running or not. It SHALL choose containers by that label and Docker's creation time only, never by
 name or by whether a process is alive. A removal error SHALL NOT fail the test: a container already gone is ignored,
-and any other error is written to the test output.
+and any other error is written to the test output. That natsfixture overrides a value the caller set, rather than
+only an unset one, is review only: testcontainers reads its configuration once per process, so a test of it would
+depend on which test reached that step first.
 
 #### Scenario: Ryuk is off
 
-- **WHEN** natsfixture has started its first container in a process whose environment set
-  `TESTCONTAINERS_RYUK_DISABLED=false`
+- **WHEN** natsfixture has started its first container in a process
 - **THEN** `testcontainers.GenericLabels()` has no `org.testcontainers.reap` key
 
 #### Scenario: Only old labelled containers are swept

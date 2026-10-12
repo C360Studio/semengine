@@ -186,9 +186,10 @@ now (Q3).
 - Readers inherit the single-value pick (changes 4, 6 and 7). Three declared costs: a no-op over a value only the
   full contract refuses reports unchanged; an all-older arrival over such a value is acknowledged; an equal
   re-arrival rewrites (Q4).
-- `natsclient`'s ledger row carries three `adapt` items (the callback reads the revision; a skip passes through
-  `UpdateWithRetryRev`, `UpdateWithRetry` and `UpdateJSON` as no error; commit attribution;
-  `docs/admission-ledger.yaml:1599-1605` on #93).
+- `natsclient`'s ledger row carries four `adapt` items (the callback reads the revision; a skip passes through
+  `UpdateWithRetryRev`, `UpdateWithRetry` and `UpdateJSON` as no error; commit attribution; a write error other than a
+  conflict or `jetstream.ErrNoStreamResponse` ends the call, task 4.18; `docs/admission-ledger.yaml:1617-1625` and
+  `:1639-1642` on #93).
 - A watcher sees one revision per applied write and none for a declined one; that unit is available to ADR-109.
 
 ## Related

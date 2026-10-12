@@ -448,11 +448,11 @@ func TestKVStore_ErrorHelpers(t *testing.T) {
 		assert.True(t, IsKVNotFoundError(fmt.Errorf("get failed: %w", jetstream.ErrKeyNotFound)),
 			"wrapped ErrKeyNotFound must be recognized via errors.Is")
 
-		// String-match fallback — for errors that don't conform to errors.Is.
-		assert.True(t, IsKVNotFoundError(errors.New("kv get foo: nats: key was deleted")),
-			"raw 'key was deleted' substring must be recognized")
-		assert.True(t, IsKVNotFoundError(errors.New("kv get foo: nats: key not found")),
-			"raw 'key not found' substring must be recognized")
+		// No text match: the class is read from the type (ruling N, #146).
+		assert.False(t, IsKVNotFoundError(errors.New("kv get foo: nats: key was deleted")),
+			"'key was deleted' in the text alone must not classify")
+		assert.False(t, IsKVNotFoundError(errors.New("kv get foo: nats: key not found")),
+			"'key not found' in the text alone must not classify")
 	})
 
 	t.Run("IsKVConflictError", func(t *testing.T) {

@@ -2,7 +2,8 @@
 
 This is a record, not a rule. It compares SemEngine's tier-0 port set with SemStreams' Tier 1 list and changes no
 admission-ledger row. Task 5.2 of `setup-04a-01-floor` records it, carrying #9 "Carried to 04A" item 1 and
-SETUP 03B task 2.2.
+SETUP 03B task 2.2. Task 6.2 of `setup-04a-02-ingest-kernel` adds what that change did with four tier-0-only
+packages and with `model/wire`.
 
 Two terms first:
 
@@ -70,13 +71,25 @@ Package paths are relative to `github.com/c360studio/semstreams/`.
 `pkg/projection/contract`, `pkg/resource`, `pkg/revlag`, `pkg/rulepack`, `pkg/security`, `pkg/timestamp`,
 `pkg/tlsutil`, `pkg/worker`, `processor/graph-index-spatial`, `processor/graph-index-temporal`.
 
+**What change 2 did with four of the tier-0-only packages.** The Slice 04A design splits the port into seven
+changes, `setup-04a-01-floor` to `setup-04a-07-substrate-seam`, called change 1 to change 7 here. Change 2 is
+`setup-04a-02-ingest-kernel` (PR #93). Each package below has an admission-ledger row, and none leaves the ruled 65,
+so the counts above do not change:
+
+| Package | What change 2 did | Source |
+| --- | --- | --- |
+| `internal/componentadmission` | not ported: its only reader is the access-token parameter of `component.Registry`'s `CreateComponent`, `SealComposition` and `Snapshots`, which the ruling removes; `defer-exclude` row | ruling C, #91 comment 6035477895; change 2 design D14 |
+| `internal/lifecyclecleanup` | ported and made public as `pkg/lifecyclecleanup`, because SemTeams' components call its `RollbackFailedStart`; `adapt` row | #77 ruling, comment 6035317931; change 2 design D7 |
+| `graph/structural` | not ported in change 2: it moves to change 7 with its only readers, `graph/inference`'s detectors and `processor/graph-clustering`; `defer-exclude` row naming change 7 | ruling E, #91 comment 6037287957; change 2 design D1a |
+| `graph/inference` | ported as its hierarchy slice only (`hierarchy.go`, `container_entity.go` and a new `doc.go`); the rest of the package ports with `processor/graph-clustering` in change 7; `adapt` row | #97 ruling, comment 6036308092; change 2 design D1a |
+
 **In Tier 1 only (23)**, each with its disposition and where that comes from:
 
 | Package | Disposition | Source |
 | --- | --- | --- |
 | `agentic`, `agentic/agentrun`, `vocabulary/agentic` | separated: `defer-exclude` row | 03B D4 (agentic domain); task 5.1 |
 | `gateway`, `gateway/graph-gateway` | separated: `defer-exclude` row | 03B D4 (layer 4 is consumer-owned); task 5.1 |
-| `model/wire` | behind the seam: carried dormant in change 2, leaves in change 7 | 03B D4; foundation D8 |
+| `model/wire` | behind the seam: not ported in change 2, which ports nothing that reads it; `defer-exclude` row naming change 7, which ports its first reader | 03B D4; change 2 design D1a, which replaces foundation D8's dormant carriage |
 | `componentregistry`, `payloadbuiltins`, `vocabulary/builtins` | not ported: aggregators; each consumer registers per package | 03B Q1 ruling (#3) |
 | `processor/gated-dag` | not ported: reached only through the aggregators | 03B Q1 ruling, measured consequence |
 | `processor/agentic-dispatch`, `processor/agentic-loop`, `processor/agentic-loop/lessonmatch`, `processor/agentic-model`, `processor/agentic-tools`, `processor/agentic-tools/executors`, `processor/agentic-tools/runner`, `persona` | not ported: agentic domain | 03B D4 ("`governance` and `processor/agentic-*`"); no tier-0 package imports `persona` |
@@ -112,7 +125,7 @@ The counts are the same, 39 / 23 / 26, but the membership changed:
 
 The six that left "both" are now Tier-1-only, and the six that joined came from Tier-1-only. This is the change
 SETUP 03B design D2 predicted. Every package that left tier 0 is a separated package with a ledger row: task 5.1,
-or the carried-dormant rows of change 2.
+or change 2's `defer-exclude` rows for `model/wire` and `graph/llm`.
 
 ## Do the first-wave consumers import a Tier-1-only package?
 

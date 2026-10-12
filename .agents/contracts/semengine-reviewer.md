@@ -196,6 +196,26 @@ owner question, finding, or supported disposition is a finding.
   `openspec/changes/<id>/notes/<task>.md` (developer contract, Handoff), and that a pull request comment links the
   file. Notes posted only as a pull request comment are a finding.
 
+## Semantic identity and graph review
+
+Carried with `graph`, `pkg/types`, `vocabulary` and graph-ingest from SemStreams' reviewer contract at the pin
+(§ Semantic identity and graph review).
+
+- A predicate has exactly three parts (`vocabulary.ParsePredicate`). A hash, hex or other encoding never makes an
+  invalid predicate acceptable.
+- A literal entity ID has exactly six parts and at most 256 bytes. Declaration patterns and query prefixes are
+  separate languages, each with its own validator and its own meaning for empty (`pkg/types/entity_id.go`).
+- A complete NATS key or wildcard filter goes through the shared validators in `natsclient/kv_key_contract.go` and is
+  rejected before any lister, watcher, request, `Put`, `Get`, `Delete`, retry, callback or metric runs.
+- A complete result set is sorted and deduplicated before a limit or a sample; established tie-breaks remain.
+- Readiness and authoritative watermarks report not ready during initial replay, repair, or a failed projection the
+  owner requires.
+- The longest supported key or filter and its exact match set are proven against a real NATS server; unit
+  arithmetic or representative data is not enough.
+- For a change to an index (graph-index arrives in change 4): each fixed token position matches its semantic owner,
+  each forward and owner filter has its longest-key and exact-match proof, `[A] -> []` is checked where a query can
+  see it, and `[A] -> [B] -> []` across every read surface the change affects.
+
 ## High-signal runtime review
 
 ### Context ownership
@@ -262,6 +282,45 @@ its first two bullets; the rest govern graph state, the `storage` package and cu
   path that bypasses `CheckNoLifecycleRetention` or `AssertNoLifecycleRetention` for such a bucket, is `BLOCKING`. A
   ceiling on that state is acceptable only as a `DiscardNew` limit with typed rejection, through a new
   `RetentionKind`.
+
+### Payload registry
+
+Carried with `message`, `payloadregistry` and graph-ingest from SemStreams' reviewer contract at the pin
+(§ Payload registry).
+
+- Every polymorphic publish wraps `message.BaseMessage`, even when the one known consumer reads it raw.
+- A new payload has a factory, alias-based `MarshalJSON` and `UnmarshalJSON` over its own fields, and a
+  `RegisterPayloads` in its own package that the consumer's composition root calls. An import is not registration
+  evidence; trace the call ([new-payload](../skills/new-payload/SKILL.md)). A package of this module that calls two
+  packages' registrations is an aggregator (`TestNoAggregatorPackage`).
+- Round-trip tests use the production decoder (`message.NewDecoder`), not a cast to an anonymous struct.
+
+### Graph and state ownership
+
+Carried with graph-ingest from SemStreams' reviewer contract at the pin (§ Graph and state ownership). Its rules on
+`$entity.triple.*` substitution and on what rules carry return with the rule processor (change 6).
+
+- Only graph-ingest writes domain entities to `ENTITY_STATES`. Operational state belongs in a bucket its owner
+  declares (`graph/kvcatalog` for a bucket whose ownership or retention the framework guarantees).
+- A lifecycle phase or other single-valued predicate replaces the old triple. An append is a finding: a reader may
+  pick the first value or the last.
+- State carried in a `context` value (`context.WithValue`, `ctx.Value`) is `BLOCKING` (owner ruling, #91 comment
+  6124130342).
+
+### Component and schema wiring
+
+Carried with `component` and graph-ingest from SemStreams' reviewer contract at the pin (§ Component and schema
+wiring). Its `internal/boot`, schema-generation and OpenAPI rules are not carried: this module has none of the three.
+
+- A consumer that calls `Registry.CreateComponent`, `SealComposition` or `Snapshots` directly instead of going
+  through the component manager (`service.ComponentManager`, change 3) is a finding (ruling C, #91 comment
+  6035477895). Nothing refuses the call at run time; `component`'s own tests call them.
+- A ported component without its own test that it refuses an unknown configuration key, naming the key
+  (`component-registration` spec), is a finding. Configuration a consumer can set has a round-trip test through the
+  production JSON path that keeps each field's destination type.
+- A ported component that keeps its own owner-lifecycle state instead of composing `internal/lifecycleguard` is a
+  finding. One whose failed `Start` can fail to clean up needs its own test that `Start` reports both errors and that
+  a later `Stop` releases what was left (`lifecycle-suite` spec, "Failed start whose own cleanup fails").
 
 ### Test fidelity
 

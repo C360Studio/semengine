@@ -8,9 +8,10 @@ review stop. Choices the design does not spell out go in `notes/<task>.md`.
 
 - [x] 1.1 Inventory passed independent review, round 3, at c5787fe; owner rulings on #205: comment 6132580576
   (no SemStreams coordination; minutes, not hours) and comment 6132995614 (Ryuk off; label, remove, sweep).
-- [ ] 1.2 Pre-owner design review passes.
-- [ ] 1.3 Post the probe's source, command, versions and output (`design.md` § Probe) on PR #206.
-- [ ] 1.4 Owner accepts the design and answers its questions on #205. Hold: owner ruling on #205.
+- [x] 1.2 Pre-owner design review passes: round 2 at 69868ce, confirmed round 3 at a91c080.
+- [x] 1.3 Post the probe's source, command, versions and output (`design.md` § Probe) on PR #206: comment
+  6133623880.
+- [x] 1.4 Owner accepts the design and answers its questions on #205: comment 6134269684.
 
 ## 2. Plain `go test` (pull request 1)
 

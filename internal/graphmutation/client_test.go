@@ -228,3 +228,214 @@ func mustJSON(t *testing.T, value any) []byte {
 	}
 	return data
 }
+
+// TestClientAppendRefusesMalformedResponse: an append reply is valid only when it answers the
+// request subject for subject: one result for each distinct subject asked, none other and none
+// twice, a failure carrying its class and code and no revision, an applied or unchanged result
+// carrying a revision, a not-found result carrying none, and no outcome the protocol does not
+// name. Any other reply follows a request that reached graph-ingest, so the client returns
+// commit_unknown after its one request and never hands the reply on as a success.
+func TestClientAppendRefusesMalformedResponse(t *testing.T) {
+	other := "acme.ops.test.system.widget.002"
+	stranger := "acme.ops.test.system.widget.003"
+	// Two statements on one subject and one on another: two distinct subjects.
+	request := graph.AppendTriplesRequest{Triples: []message.Triple{
+		{Subject: clientTestEntity, Predicate: "test.value.name", Object: "one"},
+		{Subject: clientTestEntity, Predicate: "test.value.name", Object: "two"},
+		{Subject: other, Predicate: "test.value.name", Object: "three"},
+	}}
+	applied := graph.AppendSubjectResult{EntityID: clientTestEntity, Outcome: graph.MutationApplied, KVRevision: 3}
+	failure := &graph.MutationFailure{Class: "fatal", Code: graph.ErrorCodeGraphStateResetRequired}
+	tests := []struct {
+		name    string
+		results []graph.AppendSubjectResult
+		valid   bool
+	}{
+		{name: "one result per subject", valid: true, results: []graph.AppendSubjectResult{
+			applied, {EntityID: other, Outcome: graph.MutationEntityNotFound},
+		}},
+		{name: "unchanged and failed", valid: true, results: []graph.AppendSubjectResult{
+			{EntityID: clientTestEntity, Outcome: graph.MutationUnchanged, KVRevision: 3},
+			{EntityID: other, Outcome: graph.MutationFailed, Error: failure},
+		}},
+		{name: "no results"},
+		{name: "fewer results than subjects", results: []graph.AppendSubjectResult{applied}},
+		{name: "one result per statement", results: []graph.AppendSubjectResult{
+			applied, applied, {EntityID: other, Outcome: graph.MutationApplied, KVRevision: 4},
+		}},
+		{name: "a subject not asked", results: []graph.AppendSubjectResult{
+			applied, {EntityID: stranger, Outcome: graph.MutationApplied, KVRevision: 4},
+		}},
+		{name: "a subject twice", results: []graph.AppendSubjectResult{
+			applied, {EntityID: clientTestEntity, Outcome: graph.MutationApplied, KVRevision: 4},
+		}},
+		{name: "failure without an error", results: []graph.AppendSubjectResult{
+			applied, {EntityID: other, Outcome: graph.MutationFailed},
+		}},
+		{name: "failure without a class", results: []graph.AppendSubjectResult{
+			applied, {EntityID: other, Outcome: graph.MutationFailed, Error: &graph.MutationFailure{Code: failure.Code}},
+		}},
+		{name: "failure without a code", results: []graph.AppendSubjectResult{
+			applied, {EntityID: other, Outcome: graph.MutationFailed, Error: &graph.MutationFailure{Class: "fatal"}},
+		}},
+		{name: "failure with a revision", results: []graph.AppendSubjectResult{
+			applied, {EntityID: other, Outcome: graph.MutationFailed, Error: failure, KVRevision: 4},
+		}},
+		{name: "applied without a revision", results: []graph.AppendSubjectResult{
+			applied, {EntityID: other, Outcome: graph.MutationApplied},
+		}},
+		{name: "unchanged without a revision", results: []graph.AppendSubjectResult{
+			applied, {EntityID: other, Outcome: graph.MutationUnchanged},
+		}},
+		{name: "not found with a revision", results: []graph.AppendSubjectResult{
+			applied, {EntityID: other, Outcome: graph.MutationEntityNotFound, KVRevision: 4},
+		}},
+		{name: "an outcome append does not report", results: []graph.AppendSubjectResult{
+			applied, {EntityID: other, Outcome: graph.MutationRevisionMismatch, KVRevision: 4},
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			reply := graph.AppendTriplesResponse{Results: test.results}
+			fake := &fakeRequester{reply: mustJSON(t, reply)}
+			client, err := NewClient(fake, time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := client.Append(context.Background(), request)
+			if len(fake.calls) != 1 {
+				t.Fatalf("calls = %d, want 1", len(fake.calls))
+			}
+			if test.valid {
+				if err != nil || got == nil || !reflect.DeepEqual(*got, reply) {
+					t.Fatalf("response = %#v, error = %v; want the reply %#v", got, err, reply)
+				}
+				return
+			}
+			assertCommitUnknown(t, got == nil, err, AppendTriples)
+		})
+	}
+}
+
+// TestClientReconcileAndDeleteSendOneRequestAndReadTheReply: Reconcile and Delete each send the
+// request they are given, unchanged, as one request on their own subject, and return the reply
+// when it answers that request: for a reconcile, applied or unchanged for the same entity at a
+// revision; for a delete, applied for the same entity at the same fence. A reply that answers
+// something else follows a request that reached graph-ingest, so it is commit_unknown, never a
+// success.
+func TestClientReconcileAndDeleteSendOneRequestAndReadTheReply(t *testing.T) {
+	entity := &graph.EntityState{ID: clientTestEntity}
+	otherEntity := &graph.EntityState{ID: "acme.ops.test.system.widget.002"}
+	t.Run("reconcile", func(t *testing.T) {
+		request := graph.ReconcilePredicatesRequest{
+			EntityID: clientTestEntity, ExpectedRevision: 7, Source: "test-source",
+			Predicates: []string{"test.value.name"},
+			Desired:    []message.Triple{{Subject: clientTestEntity, Predicate: "test.value.name", Object: "one"}},
+			TraceID:    "trace-1", RequestID: "request-1",
+		}
+		tests := []struct {
+			name  string
+			reply graph.ReconcilePredicatesResponse
+			valid bool
+		}{
+			{name: "applied", valid: true,
+				reply: graph.ReconcilePredicatesResponse{Outcome: graph.MutationApplied, Entity: entity, KVRevision: 8}},
+			{name: "unchanged", valid: true,
+				reply: graph.ReconcilePredicatesResponse{Outcome: graph.MutationUnchanged, Entity: entity, KVRevision: 7}},
+			{name: "another outcome",
+				reply: graph.ReconcilePredicatesResponse{Outcome: graph.MutationRevisionMismatch, Entity: entity, KVRevision: 8}},
+			{name: "no entity",
+				reply: graph.ReconcilePredicatesResponse{Outcome: graph.MutationApplied, KVRevision: 8}},
+			{name: "another entity",
+				reply: graph.ReconcilePredicatesResponse{Outcome: graph.MutationApplied, Entity: otherEntity, KVRevision: 8}},
+			{name: "no revision",
+				reply: graph.ReconcilePredicatesResponse{Outcome: graph.MutationApplied, Entity: entity}},
+		}
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				fake := &fakeRequester{reply: mustJSON(t, test.reply)}
+				client, err := NewClient(fake, time.Second)
+				if err != nil {
+					t.Fatal(err)
+				}
+				got, err := client.Reconcile(context.Background(), request)
+				var sent graph.ReconcilePredicatesRequest
+				assertOneRequest(t, fake, "graph.mutation.entity.reconcile", &sent)
+				if !reflect.DeepEqual(sent, request) {
+					t.Fatalf("sent %#v, want the request %#v", sent, request)
+				}
+				if test.valid {
+					if err != nil || got == nil || !reflect.DeepEqual(*got, test.reply) {
+						t.Fatalf("response = %#v, error = %v; want the reply %#v", got, err, test.reply)
+					}
+					return
+				}
+				assertCommitUnknown(t, got == nil, err, ReconcilePredicates)
+			})
+		}
+	})
+	t.Run("delete", func(t *testing.T) {
+		request := graph.DeleteEntityRequest{
+			EntityID: clientTestEntity, ExpectedRevision: 7, TraceID: "trace-2", RequestID: "request-2",
+		}
+		tests := []struct {
+			name  string
+			reply graph.DeleteEntityResponse
+			valid bool
+		}{
+			{name: "applied", valid: true,
+				reply: graph.DeleteEntityResponse{EntityID: clientTestEntity, Outcome: graph.MutationApplied, ExpectedRevision: 7}},
+			{name: "another outcome",
+				reply: graph.DeleteEntityResponse{EntityID: clientTestEntity, Outcome: graph.MutationUnchanged, ExpectedRevision: 7}},
+			{name: "another entity",
+				reply: graph.DeleteEntityResponse{EntityID: otherEntity.ID, Outcome: graph.MutationApplied, ExpectedRevision: 7}},
+			{name: "another fence",
+				reply: graph.DeleteEntityResponse{EntityID: clientTestEntity, Outcome: graph.MutationApplied, ExpectedRevision: 8}},
+		}
+		for _, test := range tests {
+			t.Run(test.name, func(t *testing.T) {
+				fake := &fakeRequester{reply: mustJSON(t, test.reply)}
+				client, err := NewClient(fake, time.Second)
+				if err != nil {
+					t.Fatal(err)
+				}
+				got, err := client.Delete(context.Background(), request)
+				var sent graph.DeleteEntityRequest
+				assertOneRequest(t, fake, "graph.mutation.entity.delete", &sent)
+				if sent != request {
+					t.Fatalf("sent %#v, want the request %#v", sent, request)
+				}
+				if test.valid {
+					if err != nil || got == nil || *got != test.reply {
+						t.Fatalf("response = %#v, error = %v; want the reply %#v", got, err, test.reply)
+					}
+					return
+				}
+				assertCommitUnknown(t, got == nil, err, DeleteEntity)
+			})
+		}
+	})
+}
+
+// assertOneRequest checks that exactly one request was sent, on subject, and decodes it into sent.
+func assertOneRequest(t *testing.T, fake *fakeRequester, subject string, sent any) {
+	t.Helper()
+	if len(fake.calls) != 1 || fake.calls[0].subject != subject {
+		t.Fatalf("calls = %#v, want one on %s", fake.calls, subject)
+	}
+	if err := json.Unmarshal(fake.calls[0].payload, sent); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// assertCommitUnknown checks that a call returned no response and a commit_unknown transport error
+// for operation.
+func assertCommitUnknown(t *testing.T, noResponse bool, err error, operation Operation) {
+	t.Helper()
+	var transport *TransportError
+	if !noResponse || !errors.As(err, &transport) || transport.Operation != operation ||
+		transport.Outcome != TransportCommitUnknown {
+		t.Fatalf("response returned = %t, error = %#v; want no response and a %s commit_unknown",
+			!noResponse, err, operation)
+	}
+}

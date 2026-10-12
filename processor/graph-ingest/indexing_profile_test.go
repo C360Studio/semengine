@@ -1,0 +1,440 @@
+package graphingest
+
+import (
+	"context"
+	"encoding/json"
+	"testing"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/internal/harness/semantictest"
+	"github.com/c360studio/semengine/message"
+	"github.com/c360studio/semengine/payloadregistry"
+	"github.com/c360studio/semengine/pkg/errs"
+	"github.com/c360studio/semengine/vocabulary"
+)
+
+// ADR-054 Phase 1: graph-ingest stamps a single-valued entity.indexing.profile
+// triple at every entity-CREATION seam (canonical create and Graphable arrival),
+// resolving via precedence envelope > Graphable
+// IndexingProfiler > fallback floor (default control). It is NEVER stamped on a
+// re-arrival (immutable after create). These tests drive the production
+// mutation handlers and create seams against the mock KV bucket.
+
+const testProfileEntityID = "c360.platform.test.sys.widget.001"
+
+func testWidgetMessageType() message.Type {
+	return message.Type{Domain: "test", Category: "widget", Version: "v1"}
+}
+
+func storedEntity(t *testing.T, comp *Component, id string) *graph.EntityState {
+	t.Helper()
+	entry, err := comp.entityBucket.Get(context.Background(), id)
+	require.NoError(t, err, "entity %s should be stored", id)
+	var es graph.EntityState
+	require.NoError(t, json.Unmarshal(entry.Value, &es))
+	return &es
+}
+
+// nonProfileTripleCount counts an entity's triples EXCLUDING the framework-
+// stamped entity.indexing.profile (ADR-054). Count-based assertions that
+// predate the stamp use it so they stay robust to the reserved triple instead
+// of hard-coding "+1". Shared with the integration tests (same package).
+func nonProfileTripleCount(es *graph.EntityState) int {
+	n := 0
+	for _, tr := range es.Triples {
+		if tr.Predicate != vocabulary.EntityIndexingProfile {
+			n++
+		}
+	}
+	return n
+}
+
+// profileValues returns every entity.indexing.profile object on the entity, so
+// tests can assert the single-valued invariant (len must be exactly 1).
+func profileValues(es *graph.EntityState) []string {
+	var out []string
+	for _, tr := range es.Triples {
+		if tr.Predicate == vocabulary.EntityIndexingProfile {
+			if s, ok := tr.Object.(string); ok {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
+}
+
+// --- canonical create (production handler) ---
+
+func TestIndexingProfile_Create_DefaultsToControlFloor(t *testing.T) {
+	comp := createTestComponentWithMockKV(t)
+	req := graph.CreateEntityRequest{
+		Entity:  &graph.EntityState{ID: testProfileEntityID, MessageType: testWidgetMessageType()},
+		Triples: withTestMetadata(message.Triple{Subject: testProfileEntityID, Predicate: semantictest.Predicate(t, "robotics", "status", "armed"), Object: true, Timestamp: time.Now()}),
+	}
+	data, _ := json.Marshal(req)
+
+	respData, err := comp.handleCanonicalCreate(context.Background(), data)
+	require.NoError(t, err)
+	var resp graph.CreateEntityResponse
+	require.NoError(t, json.Unmarshal(respData, &resp))
+
+	es := storedEntity(t, comp, testProfileEntityID)
+	assert.Equal(t, []string{vocabulary.IndexingProfileControl}, profileValues(es),
+		"undeclared entity must default to exactly one control-floor profile")
+	assert.Equal(t, 1, nonProfileTripleCount(es), "the stamp must not displace the user triple")
+}
+
+func TestIndexingProfile_Create_EnvelopeProfileWins(t *testing.T) {
+	comp := createTestComponentWithMockKV(t)
+	req := graph.CreateEntityRequest{
+		Entity:          &graph.EntityState{ID: testProfileEntityID, MessageType: testWidgetMessageType()},
+		Triples:         withTestMetadata(message.Triple{Subject: testProfileEntityID, Predicate: semantictest.Predicate(t, "doc", "body", "text"), Object: "hello", Timestamp: time.Now()}),
+		IndexingProfile: vocabulary.IndexingProfileContent,
+	}
+	data, _ := json.Marshal(req)
+
+	respData, err := comp.handleCanonicalCreate(context.Background(), data)
+	require.NoError(t, err)
+	var resp graph.CreateEntityResponse
+	require.NoError(t, json.Unmarshal(respData, &resp))
+
+	es := storedEntity(t, comp, testProfileEntityID)
+	assert.Equal(t, []string{vocabulary.IndexingProfileContent}, profileValues(es),
+		"explicit envelope profile must win over the floor")
+}
+
+func TestIndexingProfile_Create_InvalidEnvelopeRejected(t *testing.T) {
+	comp := createTestComponentWithMockKV(t)
+	req := graph.CreateEntityRequest{
+		Entity:          &graph.EntityState{ID: testProfileEntityID, MessageType: testWidgetMessageType()},
+		IndexingProfile: "not-a-real-profile",
+	}
+	data, _ := json.Marshal(req)
+
+	respData, err := comp.handleCanonicalCreate(context.Background(), data)
+	require.Error(t, err, "an invalid explicit override must be rejected (not silently dropped)")
+	assert.Nil(t, respData, "a hard failure returns no body")
+	var ce *errs.ClassifiedError
+	require.ErrorAs(t, err, &ce)
+	assert.Equal(t, graph.ErrorCodeInvalidRequest, ce.Code)
+	assert.True(t, errs.IsInvalid(err))
+}
+
+// --- Graphable arrival (channel a) via mergeEntityOnLane ---
+
+type testGraphablePayload struct {
+	id      string
+	triples []message.Triple
+	profile string // empty => does not implement a meaningful profile
+}
+
+func (p *testGraphablePayload) EntityID() string             { return p.id }
+func (p *testGraphablePayload) Triples() []message.Triple    { return p.triples }
+func (p *testGraphablePayload) IndexingProfile() string      { return p.profile }
+func (p *testGraphablePayload) Validate() error              { return nil }
+func (p *testGraphablePayload) MarshalJSON() ([]byte, error) { return []byte("{}"), nil }
+func (p *testGraphablePayload) UnmarshalJSON([]byte) error   { return nil }
+func (p *testGraphablePayload) Schema() message.Type {
+	return message.Type{Domain: "test", Category: "graphable", Version: "v1"}
+}
+
+func TestIndexingProfile_Graphable_IndexingProfilerWins(t *testing.T) {
+	comp := createTestComponentWithMockKV(t)
+	payload := &testGraphablePayload{
+		id:      testProfileEntityID,
+		triples: []message.Triple{{Subject: testProfileEntityID, Predicate: semantictest.Predicate(t, "doc", "body", "text"), Object: "content here", Timestamp: time.Now()}},
+		profile: vocabulary.IndexingProfileContent,
+	}
+	msg := message.NewBaseMessage(payload.Schema(), payload, "test")
+
+	entity, err := comp.extractEntityFromMessage(msg)
+	require.NoError(t, err)
+	require.NoError(t, comp.mergeEntityOnLane(context.Background(), entity, false))
+
+	es := storedEntity(t, comp, testProfileEntityID)
+	assert.Equal(t, []string{vocabulary.IndexingProfileContent}, profileValues(es),
+		"a Graphable IndexingProfiler declaration must be stamped at the merge create seam")
+}
+
+func TestIndexingProfile_Graphable_NoProfilerFallsToFloor(t *testing.T) {
+	comp := createTestComponentWithMockKV(t)
+	// Payload returns "" from IndexingProfile() => treated as absent.
+	payload := &testGraphablePayload{id: testProfileEntityID, triples: []message.Triple{{Subject: testProfileEntityID, Predicate: semantictest.Predicate(t, "test", "fixture", "value"), Object: "v", Timestamp: time.Now()}}}
+	msg := message.NewBaseMessage(payload.Schema(), payload, "test")
+
+	entity, err := comp.extractEntityFromMessage(msg)
+	require.NoError(t, err)
+	require.NoError(t, comp.mergeEntityOnLane(context.Background(), entity, false))
+
+	es := storedEntity(t, comp, testProfileEntityID)
+	assert.Equal(t, []string{vocabulary.IndexingProfileControl}, profileValues(es),
+		"a Graphable that declares no profile falls to the control floor")
+}
+
+// --- single-valued invariant: re-arrival must not accumulate or re-profile ---
+
+func TestIndexingProfile_ReArrival_DoesNotAccumulateOrReProfile(t *testing.T) {
+	comp := createTestComponentWithMockKV(t)
+	ctx := context.Background()
+
+	// First arrival: declares content.
+	first := &testGraphablePayload{id: testProfileEntityID, triples: []message.Triple{{Subject: testProfileEntityID, Predicate: semantictest.Predicate(t, "doc", "body", "text"), Object: "v1", Timestamp: time.Now()}}, profile: vocabulary.IndexingProfileContent}
+	e1, err := comp.extractEntityFromMessage(message.NewBaseMessage(first.Schema(), first, "test"))
+	require.NoError(t, err)
+	require.NoError(t, comp.mergeEntityOnLane(ctx, e1, false))
+
+	// Second arrival of the SAME entity declaring a DIFFERENT profile (trace):
+	// the profile is immutable after create, so this must NOT re-profile and
+	// must NOT add a second profile triple.
+	second := &testGraphablePayload{id: testProfileEntityID, triples: []message.Triple{{Subject: testProfileEntityID, Predicate: semantictest.Predicate(t, "doc", "body", "text"), Object: "v2", Timestamp: time.Now()}}, profile: vocabulary.IndexingProfileTrace}
+	e2, err := comp.extractEntityFromMessage(message.NewBaseMessage(second.Schema(), second, "test"))
+	require.NoError(t, err)
+	require.NoError(t, comp.mergeEntityOnLane(ctx, e2, false))
+
+	es := storedEntity(t, comp, testProfileEntityID)
+	assert.Equal(t, []string{vocabulary.IndexingProfileContent}, profileValues(es),
+		"re-arrival must keep the create-time profile and stay single-valued")
+}
+
+// --- ADR-054 §1 invariant: the structural graph is NEVER gated by profile ---
+
+func TestIndexingProfile_StructuralGraphNeverGated_TraceEntityStaysQueryable(t *testing.T) {
+	comp := createTestComponentWithMockKV(t)
+	ctx := context.Background()
+
+	req := graph.CreateEntityRequest{
+		Entity:          &graph.EntityState{ID: testProfileEntityID, MessageType: testWidgetMessageType()},
+		Triples:         withTestMetadata(message.Triple{Subject: testProfileEntityID, Predicate: semantictest.Predicate(t, "audit", "event", "kind"), Object: "trace-line", Timestamp: time.Now()}),
+		IndexingProfile: vocabulary.IndexingProfileTrace,
+	}
+	createData, _ := json.Marshal(req)
+	_, err := comp.handleCanonicalCreate(ctx, createData)
+	require.NoError(t, err)
+
+	// A 'trace' entity is excluded from EMBEDDING (Phase 3) but must remain
+	// fully queryable/traversable: the query path must not filter on profile.
+	queryReq, _ := json.Marshal(map[string]any{"prefix": "c360", "limit": 10})
+	respData, err := comp.handleQueryPrefixWithMaxPayload(ctx, queryReq, 1<<20)
+	require.NoError(t, err)
+	var resp struct {
+		Entities []graph.EntityState `json:"entities"`
+	}
+	require.NoError(t, json.Unmarshal(respData, &resp))
+	require.Len(t, resp.Entities, 1, "trace entity must still be returned by structural query")
+	assert.Equal(t, []string{vocabulary.IndexingProfileTrace}, profileValues(&resp.Entities[0]))
+}
+
+// --- helper-level unit tests ---
+
+func TestReconcileIndexingProfile_DedupesToFirst(t *testing.T) {
+	comp := createTestComponentWithMockKV(t)
+	es := &graph.EntityState{ID: testProfileEntityID, MessageType: testWidgetMessageType()}
+	es.Triples = []message.Triple{
+		{Subject: es.ID, Predicate: semantictest.Predicate(t, "entity", "indexing", "profile"), Object: vocabulary.IndexingProfileContent},
+		{Subject: testProfileEntityID, Predicate: semantictest.Predicate(t, "test", "fixture", "value"), Object: "v", Timestamp: time.Now()},
+		{Subject: es.ID, Predicate: semantictest.Predicate(t, "entity", "indexing", "profile"), Object: vocabulary.IndexingProfileTrace},
+	}
+	comp.reconcileIndexingProfile(es, fixtureTime)
+	assert.Equal(t, []string{vocabulary.IndexingProfileContent}, profileValues(es),
+		"reconcile keeps the FIRST profile and drops duplicates (single-valued)")
+}
+
+// TestIndexingProfile_FloorMetric_FiresExactlyOnFloor proves the operator-
+// load-bearing indexing_profile_default_total counter increments EXACTLY when
+// the floor is applied (no producer declaration) and NOT when a profile is
+// declared or on a re-arrival of an already-profiled entity. The Phase-3
+// strict-exclusion flip is gated on a cost-ledger built from this counter, so
+// an unconditional or mislabeled increment must fail a test, not ship silently.
+func TestIndexingProfile_FloorMetric_FiresExactlyOnFloor(t *testing.T) {
+	comp := createTestComponentWithMockKV(t)
+	ctx := context.Background()
+
+	// A unique message_type isolates this counter label. The vec is now the
+	// component's own (design D4), so no other test touches it.
+	mt := message.Type{Domain: "metrictest", Category: "widget", Version: "v1"}
+	counter := comp.indexingProfileDefault.WithLabelValues(mt.Key())
+
+	create := func(id, profile string) {
+		req := graph.CreateEntityRequest{
+			Entity:          &graph.EntityState{ID: id, MessageType: mt},
+			Triples:         withTestMetadata(message.Triple{Subject: id, Predicate: "test.fixture.value", Object: "v"}),
+			IndexingProfile: profile,
+		}
+		data, _ := json.Marshal(req)
+		_, err := comp.handleCanonicalCreate(ctx, data)
+		require.NoError(t, err)
+	}
+
+	// (a) No declaration → floor applied → metric increments by exactly 1.
+	before := testutil.ToFloat64(counter)
+	create("c360.platform.metrictest.sys.widget.001", "")
+	assert.InDelta(t, before+1, testutil.ToFloat64(counter), 0.0001,
+		"floor fallback must increment indexing_profile_default_total exactly once")
+
+	// (b) Explicit declaration → floor NOT applied → metric unchanged.
+	before = testutil.ToFloat64(counter)
+	create("c360.platform.metrictest.sys.widget.002", vocabulary.IndexingProfileContent)
+	assert.InDelta(t, before, testutil.ToFloat64(counter), 0.0001,
+		"a declared profile must NOT increment the default-floor metric")
+
+	// (c) Re-arrival of the floor-stamped entity (001) → profile already present
+	//     → keep-first, no floor → metric unchanged (immutability is not a default).
+	before = testutil.ToFloat64(counter)
+	payload := &testGraphablePayload{id: "c360.platform.metrictest.sys.widget.001", triples: []message.Triple{{Subject: testProfileEntityID, Predicate: semantictest.Predicate(t, "test", "fixture", "value"), Object: "v2", Timestamp: time.Now()}}}
+	entity, err := comp.extractEntityFromMessage(message.NewBaseMessage(mt, payload, "test"))
+	require.NoError(t, err)
+	require.NoError(t, comp.mergeEntityOnLane(ctx, entity, false))
+	assert.InDelta(t, before, testutil.ToFloat64(counter), 0.0001,
+		"re-arrival of an already-profiled entity must NOT increment the default-floor metric")
+}
+
+func TestIndexingProfileMetricLabel(t *testing.T) {
+	cases := []struct {
+		name string
+		mt   message.Type
+		want string
+	}{
+		{"zero", message.Type{}, "unknown"},
+		{"missing-domain", message.Type{Category: "widget", Version: "v1"}, "unknown"},
+		{"missing-version", message.Type{Domain: "test", Category: "widget"}, "unknown"},
+		{"complete", message.Type{Domain: "test", Category: "widget", Version: "v1"}, "test.widget.v1"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, indexingProfileMetricLabel(tc.mt))
+		})
+	}
+}
+
+func TestStampExplicitIndexingProfile_IgnoresInvalid(t *testing.T) {
+	es := &graph.EntityState{ID: testProfileEntityID}
+	stampExplicitIndexingProfile(es, "garbage", fixtureTime)
+	assert.Empty(t, profileValues(es), "invalid explicit profile must be ignored (fall through to floor)")
+
+	stampExplicitIndexingProfile(es, vocabulary.IndexingProfileSignal, fixtureTime)
+	assert.Equal(t, []string{vocabulary.IndexingProfileSignal}, profileValues(es))
+
+	// Re-stamping replaces (single-valued).
+	stampExplicitIndexingProfile(es, vocabulary.IndexingProfileContent, fixtureTime)
+	assert.Equal(t, []string{vocabulary.IndexingProfileContent}, profileValues(es))
+}
+
+// TestIndexingProfile_RegistryFloor_RegisteredTypeNoMetric is kept from the
+// pin's indexing_profile_registry_test.go, which design D2 does not port (it
+// asserts the agentic and research payloads' floors, the agentic domain's
+// contract). Graph-ingest's part is kept: through the production create
+// handler, a type registered with a floor takes it (trace, not the
+// always-control default) and, because a registered floor is a deliberate
+// classification rather than an operator gap, the default-fallback metric does
+// not fire. The pin used agentic's request type; here a test-registered type
+// carries the same floor (D2).
+func TestIndexingProfile_RegistryFloor_RegisteredTypeNoMetric(t *testing.T) {
+	comp := createTestComponentWithMockKV(t)
+	ctx := context.Background()
+
+	mt := message.Type{Domain: "test", Category: "floored", Version: "v1"}
+	require.NoError(t, comp.payloadRegistry.Register(&payloadregistry.Registration{
+		Domain: mt.Domain, Category: mt.Category, Version: mt.Version,
+		Description:     "test type registered with the trace floor",
+		IndexingProfile: vocabulary.IndexingProfileTrace,
+		Factory:         func() any { return &struct{}{} },
+	}))
+	counter := comp.indexingProfileDefault.WithLabelValues(mt.Key())
+	before := testutil.ToFloat64(counter)
+
+	const id = "c360.platform.test.sys.floored.001"
+	req := graph.CreateEntityRequest{
+		Entity:  &graph.EntityState{ID: id, MessageType: mt},
+		Triples: withTestMetadata(message.Triple{Subject: id, Predicate: "test.fixture.value", Object: "v"}),
+	}
+	data, err := json.Marshal(req)
+	require.NoError(t, err)
+	_, err = comp.handleCanonicalCreate(ctx, data)
+	require.NoError(t, err)
+
+	es := storedEntity(t, comp, id)
+	assert.Equal(t, []string{vocabulary.IndexingProfileTrace}, profileValues(es),
+		"a type with a registered floor must take it (trace), not the old always-control")
+	assert.InDelta(t, before, testutil.ToFloat64(counter), 0.0001,
+		"a registered floor is NOT a gap → the default metric must NOT fire")
+}
+
+// TestIndexingProfile_Append_DoesNotStamp and
+// TestIndexingProfile_RegistryFloor_RegisteredNoFloorFiresMetric also come from the
+// pin's indexing_profile_registry_test.go (:126-160, :187-209). Design D2 excludes that
+// file for its agentic and research floors; neither test touches that domain, so they
+// are kept here unchanged except for imports and the metric (below).
+
+// TestIndexingProfile_Append_DoesNotStamp locks the indexing invariant:
+// append is NOT a stamp seam. An entity updated via append carries no
+// additional profile triple — reconcileIndexingProfile is not on this path.
+// The entity must be pre-created (ADR-055 deleted the auto-vivify path);
+// Appending to a pre-existing entity must NOT re-stamp indexing metadata.
+func TestIndexingProfile_Append_DoesNotStamp(t *testing.T) {
+	comp := createTestComponentWithMockKV(t)
+	ctx := context.Background()
+
+	const id = "c360.platform.test.sys.widget.addtriple1"
+	// Pre-create the entity via the create seam so it exists in ENTITY_STATES.
+	req := graph.CreateEntityRequest{
+		Entity:  &graph.EntityState{ID: id, MessageType: testWidgetMessageType()},
+		Triples: withTestMetadata(message.Triple{Subject: id, Predicate: "test.fixture.value", Object: "v"}),
+	}
+	data, err := json.Marshal(req)
+	require.NoError(t, err)
+	_, err = comp.handleCanonicalCreate(ctx, data)
+	require.NoError(t, err)
+
+	// Record the profile triples stamped at create time so we can assert
+	// that append does NOT add more.
+	esBefore := storedEntity(t, comp, id)
+	profilesBefore := profileValues(esBefore)
+
+	// Now add a user triple via the append path.
+	tr := message.Triple{Subject: id, Predicate: "evidence.note.value", Object: "v", Confidence: 1.0}
+	appendData, err := json.Marshal(graph.AppendTriplesRequest{Triples: withTestMetadata(tr)})
+	require.NoError(t, err)
+	_, err = comp.handleCanonicalAppend(ctx, appendData)
+	require.NoError(t, err)
+
+	esAfter := storedEntity(t, comp, id)
+	assert.Equal(t, profilesBefore, profileValues(esAfter),
+		"append must NOT stamp or change the indexing profile (only the create seam stamps)")
+	assert.Equal(t, nonProfileTripleCount(esBefore)+1, nonProfileTripleCount(esAfter),
+		"the entity holds exactly one additional user triple after append")
+}
+
+// The complement: a REGISTERED type that declares no floor falls to control AND
+// fires the metric — its new meaning under ADR-103: the label names a
+// Registration literal whose IndexingProfile is empty.
+//
+// The pin read getIndexingProfileDefaultMetric(nil); the counter is the component's
+// own now (design D4).
+func TestIndexingProfile_RegistryFloor_RegisteredNoFloorFiresMetric(t *testing.T) {
+	comp := createTestComponentWithMockKV(t)
+	ctx := context.Background()
+
+	mt := message.Type{Domain: "test", Category: "nofloor", Version: "v1"}
+	counter := comp.indexingProfileDefault.WithLabelValues(mt.Key())
+	before := testutil.ToFloat64(counter)
+
+	const id = "c360.platform.test.sys.nofloor.001"
+	req := graph.CreateEntityRequest{
+		Entity:  &graph.EntityState{ID: id, MessageType: mt},
+		Triples: withTestMetadata(message.Triple{Subject: id, Predicate: "test.fixture.value", Object: "v"}),
+	}
+	data, _ := json.Marshal(req)
+	_, err := comp.handleCanonicalCreate(ctx, data)
+	require.NoError(t, err)
+
+	es := storedEntity(t, comp, id)
+	assert.Equal(t, []string{vocabulary.IndexingProfileControl}, profileValues(es),
+		"a registered type with no floor falls to control (fail-safe)")
+	assert.InDelta(t, before+1, testutil.ToFloat64(counter), 0.0001,
+		"a registered type with no floor IS the metered gap → the default metric must fire exactly once")
+}

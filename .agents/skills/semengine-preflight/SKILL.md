@@ -40,7 +40,7 @@ with current CI.
 | `task ledger:check` | Validates `docs/admission-ledger.yaml` against its schema |
 | `task test:unit` | Unit tests once with the race detector at one CPU |
 | `task test:integration` | Docker-backed tests through the admitted runner (host lock, process group, leak check) |
-| `task cover:check` | Fails below 80% coverage on `natsfixture`, `lifecycletest`, `probe`; each package on the SETUP 03B critical list (`setup-03b-contract-boundary` `design.md` D10) joins when it is ported |
+| `task cover:check` | Fails below 80% coverage on each target in `scripts/cover-check.sh` (16 today: the harness's `natsfixture`, `lifecycletest`, `probe`, and each ported package on the SETUP 03B critical list, `setup-03b-contract-boundary` `design.md` D10); a package on that list joins when it is ported |
 | `task test:repeat` | Unit tests five times at one CPU without the race detector, in shuffled order; `-- <pkgs>` to focus |
 | `task mutate:check -- -pkg … -test … -file … -mutant … -expect …` | Run by hand: applies one wrong change to a Go source file through `go test -overlay` and prints detection, survivor, invalid or inconclusive (the `mutation-check` spec); fails unless the verdict is detection; writes nothing in the repository |
 | `task merge:check -- <n>` | Fails while an open `class:flake` issue is not closed by PR `n`, or while the rules on `main` do not require an up-to-date head, or while PR `n` is a code pull request, not a draft, whose `implemented-by:` and `reviewed-by:` lines do not name the two agents; reads GitHub |

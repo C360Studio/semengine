@@ -1,8 +1,10 @@
 # nats-fixture Specification
 
 ## Purpose
-The NATS fixture gives one test one disposable, admitted, real NATS server in a container, with typed start failures,
-run-unique safe names, and a cleanup that returns success only after it has observed every owned resource gone.
+The NATS fixture gives one test one disposable, admitted, real NATS server in a container, with typed start
+failures, run-unique safe names, and a cleanup that returns success only after it has observed every owned resource
+gone. `natsfixture.Open` lets a package's tests open a value connected to that server, such as a client, and closes
+it under a deadline before the server stops.
 
 ## Requirements
 
@@ -14,11 +16,12 @@ owner is live as `integration-test-runner` › "Shared host lock" defines it: by
 LC_ALL=C, when the record has a non-empty identity_utc, and otherwise by its identity, read in the test process's
 environment. Only SemEngine's runner exports the admission token, so a record without identity_utc reaches admission
 only from a SemEngine runner older than identity_utc or from a test. Where the runner respects an owner it cannot
-prove dead, admission SHALL refuse one it cannot prove live: an owner on another host, a pid that is not a number, a
-compared value that is `unknown`, a pid for which ps prints no start time, and a start time that differs from the
-compared value are each refused, and the refusal names the reason. Admission reads the start time under Start's
-context: if that context has ended when the read fails, Start SHALL return the context's error. Neither a refusal nor
-that return SHALL make a Docker call.
+prove dead, admission SHALL refuse one it cannot prove live: a pid that is not a number, a compared value that is
+`unknown`, a pid for which ps prints no start time, and a start time that differs from the compared value are each
+refused, and the refusal names the reason. As in the runner, the record's host is not compared with this machine's
+host name: the lock is in this machine's `/tmp`, so its owner ran on this machine. Admission reads the start time under
+Start's context: if that context has ended when the read fails, Start SHALL return the context's error. Neither a
+refusal nor that return SHALL make a Docker call.
 
 #### Scenario: Direct go test is refused
 
@@ -27,30 +30,30 @@ that return SHALL make a Docker call.
 
 #### Scenario: A reused pid is refused
 
-- **WHEN** the owner file holds the test's token and names this host and a running pid whose start time, read with
-  TZ=UTC and LC_ALL=C, differs from the file's identity_utc
+- **WHEN** the owner file holds the test's token and names a running pid whose start time, read with TZ=UTC and
+  LC_ALL=C, differs from the file's identity_utc
 - **THEN** Start returns ErrNotAdmitted naming that identity_utc, and makes no Docker call
 
 #### Scenario: An unknown identity is refused
 
-- **WHEN** the owner file holds the test's token and names this host, a running pid, and the identity_utc `unknown`
+- **WHEN** the owner file holds the test's token and names a running pid and the identity_utc `unknown`
 - **THEN** Start returns ErrNotAdmitted naming `unknown`, and makes no Docker call
 
 #### Scenario: A live owner admits
 
-- **WHEN** the owner file holds the test's token and names this host, a running pid, and as identity_utc that pid's
-  start time as ps prints it with TZ=UTC and LC_ALL=C
+- **WHEN** the owner file holds the test's token and names a running pid, under this machine's host name or another,
+  and as identity_utc that pid's start time as ps prints it with TZ=UTC and LC_ALL=C
 - **THEN** admission passes and Start goes on to start the container
 
 #### Scenario: A test process in another time zone is admitted
 
-- **WHEN** the owner file holds the test's token, this host, a running pid and that pid's identity_utc, and the test
+- **WHEN** the owner file holds the test's token, a running pid and that pid's identity_utc, and the test
   process's time zone and locale differ from those its identity was read in
 - **THEN** admission passes
 
 #### Scenario: A record without identity_utc is judged by identity
 
-- **WHEN** the owner file holds the test's token and names this host and a running pid, and has no identity_utc
+- **WHEN** the owner file holds the test's token and names a running pid, and has no identity_utc
 - **THEN** admission passes when its identity is that pid's start time as ps prints it in the test process's
   environment, and Start returns ErrNotAdmitted naming the identity otherwise
 
@@ -143,9 +146,11 @@ mapped-port, connect and JetStream-ready phases in that order deriving every ope
 and on success SHALL make `URL()` and `JetStream()` return the new binding. Streams and buckets the fixture owns
 SHALL stay in its ownership record, and Stop SHALL treat one that no longer exists after the restart as observed
 absent. Restart SHALL return an error and make no Docker call before Start has succeeded or once Stop has begun. A
-phase failure SHALL return a `FixtureError` carrying the phase; the fixture SHALL NOT create a replacement
-container during Restart. The container's writable layer SHALL survive a Restart, so a file-backed stream keeps its
-messages and a memory-backed stream does not.
+phase failure SHALL return a `FixtureError` carrying the phase, with one exception: when the mapped-port phase fails
+and the caller's context is still live, Restart SHALL run the stop-container and start-container phases once more on
+the same container and read the mapped port again, and SHALL return a second failure as a `FixtureError`. The
+fixture SHALL NOT create a replacement container during Restart. The container's writable layer SHALL survive a
+Restart, so a file-backed stream keeps its messages and a memory-backed stream does not.
 
 #### Scenario: File stream survives, memory stream does not
 
@@ -175,6 +180,13 @@ messages and a memory-backed stream does not.
 - **WHEN** the start-container hook returns an error
 - **THEN** Restart returns a `FixtureError` whose phase is start-container, no second container exists, and Stop
   still observes the container gone
+
+#### Scenario: Mapped-port failure after a restart
+
+- **WHEN** the mapped-port read after the restart fails and the caller's context is still live
+- **THEN** Restart stops and starts the same container once more and reads the port again; if that read succeeds,
+  Restart goes on to connect, and if it fails, Restart returns a `FixtureError` whose phase is mapped-port, with no
+  third try and no second container
 
 ### Requirement: Memory-backed owned stream
 
@@ -226,3 +238,30 @@ SHALL apply.
 - **WHEN** a client publishes more than N bytes
 - **THEN** the publish is refused with `nats.ErrMaxPayload` (nats.go checks the limit the broker announced before it
   sends), and a message of at most N bytes is accepted
+
+### Requirement: Connected value for a package's tests
+
+`natsfixture` SHALL provide one helper that, given a test, a started fixture and an open function supplied by the
+caller (called with a context and the fixture's URL, and returning the opened value and a close function that takes a
+context), calls the open function under a bounded context and returns the value. When the open function returns an
+error, the helper SHALL fail the test with a message naming the fixture's URL and that error. On success it SHALL
+register the close function on the test's cleanup so that it runs before the fixture's own Stop, under a context with
+a deadline, and SHALL report a close error as a test error. The helper SHALL import no package of this module outside
+`internal/harness`, SHALL start no goroutine, and SHALL hold nothing after it returns beyond the cleanup it
+registered.
+
+#### Scenario: Opening fails
+
+- **WHEN** the open function returns an error
+- **THEN** the test fails with a message naming the fixture's URL and the error, and no close is registered
+
+#### Scenario: Close runs first, bounded
+
+- **WHEN** a test that opened a value through the helper ends
+- **THEN** the close function runs before the fixture stops, with a context that has a deadline, and a close error is
+  reported as a test error
+
+#### Scenario: Import bound
+
+- **WHEN** the harness import check lists the helper's package imports
+- **THEN** no package of this module outside `internal/harness` is among them

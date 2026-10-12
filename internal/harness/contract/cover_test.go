@@ -37,11 +37,27 @@ const (
 // blocks drops the mode line of a rendered profile, so profiles can be concatenated.
 func blocks(p string) string { return strings.TrimPrefix(p, "mode: atomic\n") }
 
+// d11Targets are the coverage targets setup-04a-02 design D11 adds (task 5.2d), each with the
+// profile scripts/cover-check.sh measures it from.
+var d11Targets = []struct{ dir, kind string }{
+	{"processor/graph-ingest", "merged"},
+	{"graph", "merged"},
+	{"graph/kvcatalog", "merged"},
+	{"graph/readiness", "unit"},
+	{"graph/inference", "unit"},
+	{"pkg/projection", "unit"},
+	{"internal/graphmutation", "unit"},
+	{"component", "merged"},
+	{"storage/storeregistry", "unit"},
+	{"pkg/lifecycle", "merged"},
+}
+
 // TestCoverCheckSensitivity: scripts/cover-check.sh (task cover:check) fails when any enforced
-// package is below 80% or missing from its profile, and passes at 80%: the three harness packages,
-// and message, payloadregistry and natsclient (setup-04a-01-floor task 5.4), which lie outside
-// internal/harness. natsclient is measured from the unit and integration profiles merged. Blocks
-// repeated across a merged profile count once, covered if any copy was.
+// package is below 80% or missing from its profile, and passes at 80%: the three harness packages;
+// message, payloadregistry and natsclient (setup-04a-01-floor task 5.4), which lie outside
+// internal/harness; and design D11's ten targets. natsclient and D11's merged targets are measured
+// from the unit and integration profiles merged, D11's unit targets from the unit profile alone.
+// Blocks repeated across a merged profile count once, covered if any copy was.
 func TestCoverCheckSensitivity(t *testing.T) {
 	script := filepath.Join(repoRoot(t), "scripts", "cover-check.sh")
 	run := func(t *testing.T, unit, integration string) (string, error) {
@@ -61,7 +77,23 @@ func TestCoverCheckSensitivity(t *testing.T) {
 	harnessUnitOK := profile(harness+"lifecycletest", eighty...) + blocks(profile(harness+"probe", eighty...))
 	portedUnitOK := blocks(profile(module+"message", eighty...)) + blocks(profile(module+"payloadregistry", eighty...))
 	natsclientOK := blocks(profile(module+"natsclient", eighty...))
-	unitOK := harnessUnitOK + portedUnitOK + natsclientOK
+	// d11Unit renders D11's targets into a unit profile at 80%, but for skip (left out) and
+	// below (at 70%).
+	d11Unit := func(skip, below string) string {
+		var b strings.Builder
+		for _, tg := range d11Targets {
+			switch tg.dir {
+			case skip:
+			case below:
+				b.WriteString(blocks(profile(module+tg.dir, [2]int{7, 1}, [2]int{3, 0})))
+			default:
+				b.WriteString(blocks(profile(module+tg.dir, eighty...)))
+			}
+		}
+		return b.String()
+	}
+	d11OK := d11Unit("", "")
+	unitOK := harnessUnitOK + portedUnitOK + natsclientOK + d11OK
 	fixtureOK := profile(harness+"natsfixture", eighty...)
 
 	if out, err := run(t, unitOK, fixtureOK); err != nil {
@@ -82,7 +114,7 @@ func TestCoverCheckSensitivity(t *testing.T) {
 		return b.String()
 	}
 	t.Run("natsclient merged from both profiles", func(t *testing.T) {
-		out, err := run(t, harnessUnitOK+portedUnitOK+natsclientHalf(1), fixtureOK+natsclientHalf(2))
+		out, err := run(t, harnessUnitOK+portedUnitOK+natsclientHalf(1)+d11OK, fixtureOK+natsclientHalf(2))
 		if err != nil || !strings.Contains(out, "natsclient 80.0%") {
 			t.Fatalf("natsclient not measured from the merged profiles: %v\n%s", err, out)
 		}
@@ -91,19 +123,50 @@ func TestCoverCheckSensitivity(t *testing.T) {
 		name, unit, integration, want string
 	}{
 		{"natsfixture below", unitOK, profile(harness+"natsfixture", [2]int{7, 1}, [2]int{3, 0}), "natsfixture 70.0%"},
-		{"probe below", profile(harness+"lifecycletest", eighty...) + blocks(profile(harness+"probe", [2]int{1, 1}, [2]int{1, 0})) + portedUnitOK + natsclientOK, fixtureOK, "probe 50.0%"},
+		{"probe below", profile(harness+"lifecycletest", eighty...) + blocks(profile(harness+"probe", [2]int{1, 1}, [2]int{1, 0})) + portedUnitOK + natsclientOK + d11OK, fixtureOK, "probe 50.0%"},
 		{"lifecycletest missing", strings.Replace(unitOK, "lifecycletest", "other", -1), fixtureOK, "lifecycletest: no statements"},
 		{"natsfixture only in the unit profile", unitOK + blocks(fixtureOK), profile(harness+"probe", eighty...), "natsfixture: no statements"},
 		// Packages outside internal/harness (task 5.4), written before the script read them.
-		{"message below", harnessUnitOK + blocks(profile(module+"message", [2]int{7, 1}, [2]int{3, 0})) + blocks(profile(module+"payloadregistry", eighty...)) + natsclientOK, fixtureOK, "message 70.0%"},
-		{"payloadregistry missing", harnessUnitOK + blocks(profile(module+"message", eighty...)) + natsclientOK, fixtureOK, "payloadregistry: no statements"},
-		{"natsclient below in both profiles", harnessUnitOK + portedUnitOK + blocks(profile(module+"natsclient", [2]int{7, 1}, [2]int{3, 0})), fixtureOK, "natsclient 70.0%"},
-		{"natsclient missing from both profiles", harnessUnitOK + portedUnitOK, fixtureOK, "natsclient: no statements"},
+		{"message below", harnessUnitOK + blocks(profile(module+"message", [2]int{7, 1}, [2]int{3, 0})) + blocks(profile(module+"payloadregistry", eighty...)) + natsclientOK + d11OK, fixtureOK, "message 70.0%"},
+		{"payloadregistry missing", harnessUnitOK + blocks(profile(module+"message", eighty...)) + natsclientOK + d11OK, fixtureOK, "payloadregistry: no statements"},
+		{"natsclient below in both profiles", harnessUnitOK + portedUnitOK + blocks(profile(module+"natsclient", [2]int{7, 1}, [2]int{3, 0})) + d11OK, fixtureOK, "natsclient 70.0%"},
+		{"natsclient missing from both profiles", harnessUnitOK + portedUnitOK + d11OK, fixtureOK, "natsclient: no statements"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			out, err := run(t, tc.unit, tc.integration)
 			if err == nil || !strings.Contains(out, tc.want) {
 				t.Fatalf("err=%v, want a failure naming %q\n%s", err, tc.want, out)
+			}
+		})
+	}
+	// Design D11's targets (task 5.2d), written before the script read them: each fails below the
+	// floor and when absent from both profiles, and is read from the profile its kind names: a merged
+	// target found only in the integration profile is measured, a unit target there is not.
+	others := harnessUnitOK + portedUnitOK + natsclientOK
+	for _, tg := range d11Targets {
+		t.Run(tg.dir+" below", func(t *testing.T) {
+			out, err := run(t, others+d11Unit("", tg.dir), fixtureOK)
+			if want := "cover: " + tg.dir + " 70.0%"; err == nil || !strings.Contains(out, want) {
+				t.Fatalf("err=%v, want a failure naming %q\n%s", err, want, out)
+			}
+		})
+		t.Run(tg.dir+" missing from both profiles", func(t *testing.T) {
+			out, err := run(t, others+d11Unit(tg.dir, ""), fixtureOK)
+			if want := "cover: " + tg.dir + ": no statements"; err == nil || !strings.Contains(out, want) {
+				t.Fatalf("err=%v, want a failure naming %q\n%s", err, want, out)
+			}
+		})
+		t.Run(tg.dir+" only in the integration profile", func(t *testing.T) {
+			out, err := run(t, others+d11Unit(tg.dir, ""), fixtureOK+blocks(profile(module+tg.dir, eighty...)))
+			switch tg.kind {
+			case "merged":
+				if want := "cover: " + tg.dir + " 80.0%"; err != nil || !strings.Contains(out, want) {
+					t.Fatalf("merged target not measured from the integration profile: err=%v, want %q\n%s", err, want, out)
+				}
+			default:
+				if want := "cover: " + tg.dir + ": no statements"; err == nil || !strings.Contains(out, want) {
+					t.Fatalf("unit target measured from the integration profile: err=%v, want %q\n%s", err, want, out)
+				}
 			}
 		})
 	}
@@ -165,8 +228,9 @@ func TestTreeStateSeesUntrackedContent(t *testing.T) {
 
 // TestCoverCheckUnitRunCoversUnitAndMergedTargets: in its no-argument mode scripts/cover-check.sh
 // writes the unit profile with one go test run, over every target measured from the unit profile
-// alone or merged (natsclient), and not over an integration-only target (natsfixture), whose owner
-// tests need Docker. A fake go records its arguments and fails, which ends the script there.
+// alone or merged (natsclient, and design D11's ten targets), and not over an integration-only
+// target (natsfixture), whose owner tests need Docker. A fake go records its arguments and fails,
+// which ends the script there.
 func TestCoverCheckUnitRunCoversUnitAndMergedTargets(t *testing.T) {
 	root := copyScript(t, "cover-check.sh")
 	argsFile := filepath.Join(t.TempDir(), "args")
@@ -190,7 +254,11 @@ func TestCoverCheckUnitRunCoversUnitAndMergedTargets(t *testing.T) {
 		}
 		return false
 	}
-	for _, pkg := range []string{"./internal/harness/lifecycletest/", "./internal/harness/probe/", "./message/", "./payloadregistry/", "./natsclient/"} {
+	want := []string{"./internal/harness/lifecycletest/", "./internal/harness/probe/", "./message/", "./payloadregistry/", "./natsclient/"}
+	for _, tg := range d11Targets {
+		want = append(want, "./"+tg.dir+"/")
+	}
+	for _, pkg := range want {
 		if !has(pkg) {
 			t.Errorf("the unit run does not cover %s: go %s", pkg, raw)
 		}

@@ -53,7 +53,9 @@ The rest of this page is about tier 0, because that is what every deployment get
 - Writes go through a typed client with three operations: create, reconcile (set an entity's facts to a given
   state), and delete.
 - A reconcile can carry the **revision** you last read. It applies only if the entity is still at that revision.
-  Otherwise you get a `revision-conflict` error that names both revisions, and nothing changes.
+  Otherwise you get a `revision-conflict` error, and nothing changes. The error always names the revision you
+  sent. It also names the entity's current revision when the engine saw that revision as it read the entity; when
+  another write lands just after that read, the error names only the revision you sent.
 - Every write reports one of three outcomes:
   - **committed:** the change is stored;
   - **not committed:** it was rejected before anything was stored (invalid request, revision conflict, entity not

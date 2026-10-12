@@ -133,6 +133,30 @@ If question 1 finds no owner and what you are adding is meant for reuse across p
 pattern. List in the handoff every other package or seam that should adopt it, each at `file:line`. Listing is the
 whole obligation; migrating them is not part of this slice (architect contract, the adoption sweep).
 
+## Semantic identity and graph contracts
+
+Carried with `graph`, `pkg/types`, `vocabulary` and graph-ingest from SemStreams' developer contract at the pin
+(§ Semantic identity and graph contracts).
+
+- A predicate has exactly three parts (`vocabulary.ParsePredicate`). Validate it where it enters; a hash or an
+  encoding never decides whether a predicate is accepted.
+- A literal entity ID has exactly six parts and at most 256 bytes (`types.MaxEntityIDBytes`). A literal ID, a
+  six-position declaration pattern and a one-to-six-position query prefix are three languages with three validators
+  (`ValidateEntityID`, `ValidateEntityIDPattern`, `ValidateEntityIDPrefix` in `pkg/types/entity_id.go`); keep them
+  apart.
+- Check a NATS key or filter with the shared validators (`natsclient.ValidateKVLiteralToken`, `ValidateKVLiteralKey`,
+  `ValidateKVWildcardFilter`) and reject it before any lister, watcher, request, `Put`, `Get`, `Delete`, callback,
+  retry or metric runs.
+- Sort and deduplicate a complete result set before applying a limit or a sample, and keep established tie-breaks.
+  graph-ingest's `prefix` verb sorts the keys before it pages (`processor/graph-ingest/query.go`).
+- Never report partial replay, repair or index state as ready. graph-ingest's readiness latches bootstrap only on a
+  complete observation (`processor/graph-ingest/readiness.go`).
+- Prove the longest supported key or filter and its exact match set against a real NATS server (`natsfixture`), as
+  `natsclient/kv_key_contract_integration_test.go` does. Arithmetic and representative data are not proof.
+- For the indexes graph-index brings in change 4 (none is written in this tree yet): a token's position in an index
+  key belongs to a named owner; prove the owner and the exact forward and owner filters before relying on it. Every
+  index a query can see implements replacement, including `[A] -> [B] -> []`, tested through every public read of it.
+
 ## Exported-surface contracts
 
 These bind every NEW exported symbol. A new exported surface also needs the architect-approved consumer contract
@@ -254,6 +278,42 @@ ported).
   foreign retention instead of stripping it. A finite ceiling on such state may only be a `DiscardNew` limit that
   refuses writes honestly; `natsclient` has no retention kind for one yet, so adding it means a new `RetentionKind`
   with its reconcile arm (`kvspec.go`).
+
+### Payload registry
+
+Carried with `message`, `payloadregistry` and graph-ingest from SemStreams' developer contract at the pin
+(§ Payload registry). The steps are in [new-payload](../skills/new-payload/SKILL.md).
+
+- Every polymorphic payload is published inside a `message.BaseMessage`.
+- A new payload type has a factory, a `MarshalJSON` and `UnmarshalJSON` that marshal only its own fields through a
+  type alias, and a `RegisterPayloads(*payloadregistry.Registry) error` in its own package. An import never registers
+  a payload, and no package of this module calls two packages' registrations (`TestNoAggregatorPackage`): the
+  consumer's composition root calls each `RegisterPayloads` it needs.
+- A round-trip test goes through the production decoder (`message.NewDecoder`), never a cast to an anonymous struct.
+
+### State ownership and component wiring
+
+Carried with graph-ingest and `component` from SemStreams' developer contract at the pin (§ State ownership and
+component wiring). The pin's rules for `internal/boot`, schema generation and OpenAPI types are not carried: this
+module has no binary, no schema generator and no OpenAPI registry.
+
+- Only graph-ingest writes domain entities to `ENTITY_STATES`. Other code emits a `graph.Graphable` payload or uses a
+  bucket it owns, declared in `graph/kvcatalog` when the framework guarantees its ownership or retention.
+- A single-valued fact, such as a lifecycle phase, replaces the old triple; it never appends a competing value
+  (`graph-entity-writes` spec, "One rule per write mode").
+- State travels as an argument, a field or a stored entry, never as a `context` value (`context.WithValue`,
+  `ctx.Value`) (owner ruling, #91 comment 6124130342).
+- A component package exports `Register(*component.Registry) error`. A consumer creates components, seals the
+  composition and reads admitted components through the component manager (`service.ComponentManager`, change 3),
+  never by calling `Registry.CreateComponent`, `SealComposition` or `Snapshots` itself (their doc comments; ruling
+  C, #91 comment 6035477895).
+- A ported component refuses, at construction, a configuration key it does not define, naming the key, and proves it
+  with its own test (`component-registration` spec, "Unknown configuration keys are refused";
+  `TestCreateGraphIngestRefusesUnknownKey`). Test a configuration through its production JSON path.
+- A ported component keeps its `Start`, `Stop` and failed-start state in `internal/lifecycleguard`, never in its own
+  copy of that state machine. When its failed `Start` cannot clean up, `Start` reports both errors and keeps what is
+  left for a later `Stop`, proven by the component's own test (`lifecycle-suite` spec, "Failed start whose own cleanup
+  fails"; `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop`).
 
 ## Test and operational fidelity
 

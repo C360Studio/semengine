@@ -138,9 +138,9 @@ are for operators and for semsource's MCP gateway, which surfaces graph-index's 
 (inventory 5.3), are each port's question when ported. The gate (`#93:graph/readiness/readiness_gate.go`) has one
 SemEngine reader from change 4, graph-index, which asks it in process about the status it has just computed
 (`query.go:236-237`; #93 carries the gate for that reader,
-`#93:openspec/changes/setup-04a-02-ingest-kernel/design.md:284-287`, re-read); no SemEngine reader asks it across a
-process (semconnect's conformance probe does, Consequences). A key nobody writes, or a worker that died after writing
-its key, is not readiness's problem: a consumer that asks gets a
+`#93:openspec/changes/archive/2026-10-12-setup-04a-02-ingest-kernel/design.md:286-289`, re-read); no SemEngine
+reader asks it across a process (semconnect's conformance probe does, Consequences). A key nobody writes, or a
+worker that died after writing its key, is not readiness's problem: a consumer that asks gets a
 reply or a transport error.
 
 graph-ingest's flag: its boot work is the ENTITY_STATES sweep, which `Start` waits on

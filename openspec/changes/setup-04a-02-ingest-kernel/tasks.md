@@ -565,12 +565,12 @@ posted on this pull request.
       Done: part 1 in `54893c7`, commit A in `2fe8e32`, commit B in `08a8fb2`. Commit B runs each input through
       `ConsumeDeliveryWithHeartbeat` with a policy built per input on the lane context; `applyIngest` returns a
       decision and holds no message; when the helper reports that the owner must stop, the input is left unsettled,
-      logged at ERROR and counted in Health's error count and `work_interrupted_total{cause}`, and the lane keeps
-      running. The long-apply test (`long_apply_integration_test.go`) failed first on `2fe8e32` and passes 4 of 4 on
-      `08a8fb2` (one delivery, none redelivered, 8 in-progress signals); `TestProcessIngest_DecisionsSettleAsBefore`
-      and `TestInterruptedApplicationIsRedeliveredNotAStop` failed first on the base's `processIngest`. Five
-      `task mutate:check` detections and one long-apply mutant by hand. `task verify` on `08a8fb2` ended
-      `verify: ok`. Notes: `notes/4.4.md`.
+      logged at ERROR and counted in `work_interrupted_total{cause}` (and, until task 4.20, in Health's error count),
+      and the lane keeps running. The long-apply test (`long_apply_integration_test.go`) failed first on `2fe8e32`
+      and passes 4 of 4 on `08a8fb2` (one delivery, none redelivered, 8 in-progress signals);
+      `TestProcessIngest_DecisionsSettleAsBefore` and `TestInterruptedApplicationIsRedeliveredNotAStop` failed first
+      on the base's `processIngest`. Five `task mutate:check` detections and one long-apply mutant by hand.
+      `task verify` on `08a8fb2` ended `verify: ok`. Notes: `notes/4.4.md`.
 - [x] 4.5 (D) Q13: SemStreams PR #1437's graph-ingest half (head `0ea823a6`) with its two test files on a
       test-registered payload type; the "Payload panics while giving its entity ID" scenario green.
       Done in `f6e8506`: `decodeEntity` validates the envelope before extraction and turns a panic in payload code into
@@ -719,14 +719,14 @@ posted on this pull request.
 - [x] 4.19 (D) Codex review F1 and F2 (PR #93 comment 6113507239): declared limitations (owner rulings, #91 comment
       6113959050); design D8 and D23, the projection-mutation delta and notes/4.3.md say so. Documents only.
 - [x] 4.20 (D) Codex review B1 (PR #93 comment 6123602840; `graph-ingest-recovery`, "An interrupted application is
-      redelivered, not a stop"): an interrupted input counts once in the error count Health reads. Done in `9fc8b0c`:
-      `processIngest` gives each application a held error count in its context; the three writes the application can
-      reach (the compare-and-set, and a container birth's encoding and create) add to it through `countError`, and
-      `processIngest` adds it once the helper returns, unless the input was interrupted, whose one count is
-      `recordInterruptedWork`'s; a direct call counts at once. `TestInterruptedApplicationIsRedeliveredNotAStop`'s two
-      new cases (the entity write, a container birth) failed first ("rose by 2, want 1");
-      `TestOrdinaryLaneWriteErrorCountsOnce` and `TestDirectWriteErrorCountsAtOnce` hold the other side; three
-      `task mutate:check` detections. `task verify` on `9fc8b0c` ended `verify: ok`. Notes: `notes/cp4k-B1.md`.
+      redelivered, not a stop"): one interruption raised Health's error count by two. Resolved by the owner's ruling
+      (#91 comment 6124130342): an interrupted input is logged at ERROR and counted once in
+      `work_interrupted_total{cause}`, not in the error count, which counts failed writes only. `9fc8b0c`'s fix (a
+      per-input count carried as a `context` value) was rejected by the owner and removed in `c59e5fb`, which also
+      drops `recordInterruptedWork`'s error count and states the ruling in the spec delta and design D8.
+      `TestInterruptedApplicationIsRedeliveredNotAStop` failed first on `e362446` ("rose by 1, want 0") and now holds
+      the error count unchanged for an interruption and up by one for a write it cut; two `task mutate:check`
+      detections. `task verify` on `c59e5fb` ended `verify: ok`. Notes: `notes/cp4k-B1.md`.
 
 ## 5. Ledger, gates and boundaries
 

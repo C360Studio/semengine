@@ -16,7 +16,7 @@ on choices the design does not spell out go in `notes/<task>.md`, with a one-lin
 
 ## 2. Code (developer)
 
-- [ ] 2.1 Delete the tests that prove only the swap (inventory §4): `TestClientCloseEndsSubscriptionOnReplacedConnection`,
+- [x] 2.1 Delete the tests that prove only the swap (inventory §4): `TestClientCloseEndsSubscriptionOnReplacedConnection`,
   `TestClientCloseEndsConsumerOnReplacedConnection`, `TestClientCloseAttributesConsumerToItsHandlesConnection`
   and `gatedStream`. Also delete the `SetConnection` column of `TestClientLifecycleOperationTable` and the scaffolding
   that serves only it: `installs`, the `other` connection, `runTableOp`'s parameter and case, `tableClient.logs` with

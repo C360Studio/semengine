@@ -270,9 +270,10 @@ type deliveryWorkResult struct {
 // SettleDelivery validates one joined semantic outcome and attempts at most
 // one immediate terminal method. It owns no work or delivery lifecycle.
 //
-// Retry here is a bare Nak, which JetStream redelivers as fast as it can. That
-// is right only for a lane whose Retry is rare and whose consumer bounds the
-// attempts. A lane that classifies ordinary transient errors as Retry wants
+// Retry here is a bare Nak, which asks for no delay; JetStream redelivers the
+// message (TestIntegrationSemanticRetryProducesDurableRedelivery), and how soon
+// is not promised. That is right only for a lane whose Retry is rare and whose
+// consumer bounds the attempts. A lane that classifies ordinary transient errors as Retry wants
 // SettleDeliveryWithRetry instead.
 func SettleDelivery(msg jetstream.Msg, decision DeliveryDecision, cause error) DeliveryResult {
 	return SettleDeliveryWithRetry(msg, ImmediateDeliveryRetry(), decision, cause)

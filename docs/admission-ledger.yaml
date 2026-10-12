@@ -1711,6 +1711,29 @@
     Subscribe (client.go:834-850, request.go:359-428), while the SUB could still be in nats.go's write
     buffer, so a request sent from another connection could get "no responders" (#144: PR #93's
     TestGraphIngestServesExactlyTheDeclaredVerbs). No exported name is added.
+    (14) natsclient-contract (#170 and #168; ADR-112; owner rulings, #170 comments 6109833136 and
+    6110309758; design accepted in PR #177 comment 6111038987): Close and Connect end with their
+    context when a server stops reading. socket.go adds socketDialer, the dialer Connect passes to
+    nats.SetCustomDialer with nats.SkipHostLookup: it dials through the client's netDial with a
+    net.Dialer whose Timeout is WithTimeout's and whose Cancel its cut closes, and keeps the socket
+    it dialled last; its cut closes that socket and refuses every later dial. Connect refuses an
+    ended context before any dial, and arms the cut for its context around the dial, stopped or
+    joined before it returns (TestConnectRefusesAnEndedContext, TestConnectEndsWithItsContext,
+    TestReconnectAfterConnectContextEnded). Close arms the cut for its context on a connection the
+    client dialled, so a held write and a reconnect dial end with it (TestCloseEndsAHeldWrite,
+    TestCloseEndsAReconnectDial). subscribeOwned, MaxPayload and SetConnection call nats.go's
+    IsConnected outside the client's lock (TestCloseIsNotHeldByAHeldSubscribe,
+    TestSubscribeEndedByCloseIsConnectionClosed). Before #170, Close waited behind nats.go's write
+    lock and Connect dialled without its context. New exported surface: WithWriteTimeout
+    (nats.FlusherTimeout; default nats.DefaultFlusherTimeout, one minute, which nats.go used before)
+    and WithPingInterval (nats.PingInterval; default 30 s, natsclient's setting before), each
+    refusing a value that is not positive (TestWriteTimeoutAndPingIntervalOptions). ErrNotConnected
+    wraps errs.ErrConnectionLost, and ErrCircuitOpen is errs.ErrCircuitOpen, so both are transient
+    by errs.IsTransient (TestClientSentinelsAreTransient); before #170 both were plain errors.New
+    values. CreateKeyValueBucket recognises an existing bucket with errors.Is(err,
+    jetstream.ErrBucketExists), in place of isAlreadyExistsError, which matched the error's text
+    (TestCreateKeyValueOfAnExistingBucketIsErrBucketExists,
+    TestCreateKeyValueBucketGetsAgainWhenItsStreamExists)
     Changed surface, task 3.12a
     (design D23; owner ruling #91 comment 6065395072), three adapt items.
     natsclient-update-callback-reads-revision: KVStore.UpdateWithRetryRead and ErrKVSkipWrite are

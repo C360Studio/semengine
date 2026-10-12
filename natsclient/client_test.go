@@ -557,31 +557,6 @@ func TestManagerScenarios(t *testing.T) {
 	}
 }
 
-// Test graceful KV bucket already exists handling
-func TestCreateKeyValueBucket_AlreadyExists(t *testing.T) {
-	t.Run("isAlreadyExistsError recognizes error patterns", func(t *testing.T) {
-		// Test error patterns that should be recognized as "already exists"
-		testCases := []struct {
-			name     string
-			err      error
-			expected bool
-		}{
-			{"bucket name already in use", errors.New("nats: bucket name already in use"), true},
-			{"already exists", errors.New("bucket already exists"), true},
-			{"stream name already in use", errors.New("nats: stream name already in use"), true},
-			{"other error", errors.New("connection failed"), false},
-			{"nil error", nil, false},
-		}
-
-		for _, tc := range testCases {
-			t.Run(tc.name, func(t *testing.T) {
-				result := isAlreadyExistsError(tc.err)
-				assert.Equal(t, tc.expected, result)
-			})
-		}
-	})
-}
-
 // TestConnectionLossTimeout_FiresAfterGrace verifies the watchdog fires
 // onConnectionLost once the broker has been continuously absent for grace.
 func TestConnectionLossTimeout_FiresAfterGrace(t *testing.T) {

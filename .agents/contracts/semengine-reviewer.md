@@ -149,6 +149,10 @@ owner question, finding, or supported disposition is a finding.
   any excess re-enters the gate before merge.
 - **Reject artifact-free evidence.** A gate/measurement claim with no in-tree or CI artifact is recorded UNVERIFIED;
   flag any such claim asserted as fact. Evidence must name the tested SHA or a reproducible dirty snapshot.
+- **A library claim with no probe is a finding.** A statement the change adds or edits about how a library times,
+  orders, bounds or fails, with no probe of that library at the pinned version behind it and no "not promised" in
+  its place (architect contract § Design discipline), is a finding; so is a cited test that drives a fake. Text
+  carried unchanged from the pin is reviewed under `.agents/protocol.md` § Bounded port scope.
 - Confirm code matches the active OpenSpec target, and the target is consistent with current specs and approved ADRs.
 - **Extraction slices:** confirm the package has an admission-ledger row (source path and full SHA, contract, proving
   tests, disposition), that the diff stays inside it, that no SemStreams change after the pin entered outside its own

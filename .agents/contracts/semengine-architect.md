@@ -348,6 +348,13 @@ yes, the framework absorbing the failure IS the design, and the adopter-facing k
   proves each. It does not choose the mutex, the wait group or the order of joins; the developer does, settled by a
   failing-first test under `-race`. The context rules above are prohibitions on what code may hold, not mechanism
   choices, and still bind the design.
+- **Measure a library's behaviour; do not assume it.** A statement that a design, spec requirement, ADR or doc
+  comment adds or edits about how a library (nats.go, nats-server or any other) times, orders, bounds or fails cites
+  a probe of that library at the version the tree pins: a test in the tree that drives the pinned library, not a
+  fake, or a program posted on the pull request with its source, command, versions and output. Without one, the text
+  says the behaviour is not promised. Text carried unchanged from the pin falls under `.agents/protocol.md` § Bounded
+  port scope, which adds no experiment per finding. PR #48's `Close` bound and PR #156's first specs promised more
+  than nats.go gives (#170; ADR-112).
 - Extend the model, never build a channel beside it. A parallel declaration buys a resolution layer whose whole job
   is re-deriving a linkage the model already had. The tell: a design note admitting the linkage rests on a naming
   coincidence.

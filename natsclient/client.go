@@ -6,7 +6,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"log/slog"
-	"strings"
+	"net"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -50,8 +50,11 @@ func (s ConnectionStatus) String() string {
 
 // Error messages
 var (
-	ErrNotConnected = stderrors.New("not connected to NATS")
-	ErrCircuitOpen  = stderrors.New("circuit breaker is open")
+	// ErrNotConnected wraps errs.ErrConnectionLost, so errs.IsTransient and
+	// errs.Classify both call it transient (T7).
+	ErrNotConnected = fmt.Errorf("not connected to NATS: %w", errs.ErrConnectionLost)
+	// ErrCircuitOpen is errs.ErrCircuitOpen: one sentinel for one fact (T7).
+	ErrCircuitOpen = errs.ErrCircuitOpen
 )
 
 // Status holds runtime status information for the NATS manager
@@ -90,8 +93,14 @@ type Client struct {
 	maxReconnects int
 	reconnectWait time.Duration
 	pingInterval  time.Duration
+	writeTimeout  time.Duration
 	timeout       time.Duration
 	drainTimeout  time.Duration
+
+	// netDial opens each socket the client dials: (*net.Dialer).Dial, unless a
+	// test replaces it before Connect to hold a dial open (T4), which no
+	// portable address does.
+	netDial func(*net.Dialer, string, string) (net.Conn, error)
 
 	// requestHandlerTimeout bounds a single SubscribeForRequests handler
 	// invocation. Defaults to DefaultRequestHandlerTimeout (30s); raised per
@@ -161,11 +170,13 @@ type Client struct {
 	// draining is the connection the first Close drains; drainTimedOut
 	// records that nats.go reported nats.ErrDrainTimeout for it. dialled is
 	// the connection connectWith installed, the only one that carries the
-	// client's event handlers. awaitingClosed is set while the joiner waits
-	// for that connection's closed handler, for the lifecycle adapter.
+	// client's event handlers, and socket is its dialer, which Close cuts.
+	// awaitingClosed is set while the joiner waits for that connection's
+	// closed handler, for the lifecycle adapter.
 	draining       *nats.Conn
 	drainTimedOut  bool
 	dialled        *nats.Conn
+	socket         *socketDialer
 	awaitingClosed *nats.Conn
 
 	// closingSignal is closed when Close begins, so each client-owned core
@@ -344,11 +355,13 @@ func NewClient(urls string, opts ...ClientOption) (*Client, error) {
 		maxReconnects:    -1, // infinite by default
 		reconnectWait:    2 * time.Second,
 		pingInterval:     30 * time.Second,
+		writeTimeout:     nats.DefaultFlusherTimeout,
 		healthInterval:   10 * time.Second,
 		circuitThreshold: 15, // Increased from 5 for resilience to transient failures
 		maxBackoff:       time.Minute,
 		timeout:          5 * time.Second,
 		drainTimeout:     30 * time.Second,
+		netDial:          (*net.Dialer).Dial,
 		metricsInterval:  30 * time.Second, // Poll JetStream stats every 30s
 		// Env-resolved default (30s unless SEMENGINE_NATS_REQUEST_HANDLER_TIMEOUT
 		// overrides). No option sets it (env > framework default).
@@ -397,17 +410,21 @@ func (m *Client) GetConnection() *nats.Conn {
 // callers must treat the result of an actual publish as authoritative.
 func (m *Client) MaxPayload() (int64, error) {
 	m.mu.RLock()
-	defer m.mu.RUnlock()
-	if m.conn == nil || !m.conn.IsConnected() {
+	conn := m.conn
+	m.mu.RUnlock()
+	if conn == nil || !conn.IsConnected() {
 		return 0, ErrNotConnected
 	}
-	return m.conn.MaxPayload(), nil
+	return conn.MaxPayload(), nil
 }
 
 // SetConnection sets the NATS connection (for testing). The connection it
 // replaces belongs to the caller: Close neither closes it nor waits for its
 // event handlers. Once Close has begun it changes nothing and logs at warn level.
 func (m *Client) SetConnection(conn *nats.Conn) {
+	// IsConnected waits for the connection's lock, which a held write keeps,
+	// so it is called before this client's lock is taken (T2; P21).
+	connected := conn != nil && conn.IsConnected()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.closing {
@@ -415,7 +432,7 @@ func (m *Client) SetConnection(conn *nats.Conn) {
 		return
 	}
 	m.conn = conn
-	if conn != nil && conn.IsConnected() {
+	if connected {
 		m.setStatus(StatusConnected)
 	}
 }
@@ -514,10 +531,14 @@ func (m *Client) recordFailureLocked() (arm bool, backoff time.Duration) {
 }
 
 // recordStreamPublishFailure accounts a failed JetStream publish against the
-// connection circuit unless the server's typed PubAck says only that the target
-// stream reached one of its configured admission ceilings. Capacity refusal is
-// a healthy connection reporting durable-resource state, not connection loss.
-// The exact typed API error remains caller-visible at each publish seam.
+// connection circuit unless the target stream refused it at one of its
+// configured limits: maximum bytes, messages, or messages per subject. Capacity
+// refusal is a healthy connection reporting durable-resource state, not
+// connection loss. The server sends one code, 10077, for every store failure and
+// names the limit only in the error's description, for which nats.go has no
+// code, so isCircuitNeutralStreamCapacityError reads the code and then the
+// description (TestIntegration_StreamCapacityRejectionIsCircuitNeutral). The
+// exact typed API error remains caller-visible at each publish seam.
 func (m *Client) recordStreamPublishFailure(err error) {
 	if isCircuitNeutralStreamCapacityError(err) {
 		return
@@ -636,6 +657,7 @@ func (m *Client) buildConnectionOptions() []nats.Option {
 		nats.MaxReconnects(m.maxReconnects),
 		nats.ReconnectWait(m.reconnectWait),
 		nats.PingInterval(m.pingInterval),
+		nats.FlusherTimeout(m.writeTimeout),
 		nats.Timeout(m.timeout),
 		nats.DrainTimeout(m.drainTimeout),
 		nats.DisconnectErrHandler(m.handleDisconnect),
@@ -681,14 +703,19 @@ func (m *Client) GetStatus() *Status {
 	return status
 }
 
-// Connect establishes connection to NATS server. It refuses a nil context and a
-// client that is already connected, with an error and before any dial. Once
-// Close has begun it returns nats.ErrConnectionClosed before dialling. Connect
-// returns an error when Close has begun before it finished; the connection it
-// dialled is then closed and nothing it would have started runs. A Connect that
-// returns an error has no event handler of the connection it dialled still
-// running, and changes neither the status, the failure count nor the circuit of
-// a connection another Connect installed (design D3).
+// Connect establishes connection to NATS server. It refuses a nil context, an
+// ended context and a client that is already connected, with an error and
+// before any dial (T3). When its context ends during the attempt, it ends the
+// dial, a host name's lookup included, or closes the socket while it waits for
+// the server's answer, and returns a transient error matching the context's
+// error (T4). The context does not bound the connection's later reconnects
+// (T5). Once Close has begun it returns nats.ErrConnectionClosed before
+// dialling, whether or not its context has ended (T3). Connect returns an error
+// when Close has begun before it finished; the connection it dialled is then
+// closed and nothing it would have started runs. A Connect that returns an
+// error has no event handler of the connection it dialled still running, and
+// changes neither the status, the failure count nor the circuit of a
+// connection another Connect installed (design D3).
 func (m *Client) Connect(ctx context.Context) error {
 	return m.connectWith(ctx, nats.Connect)
 }
@@ -711,6 +738,9 @@ func (m *Client) connectWith(
 	}
 	if started {
 		return errs.WrapInvalid(errs.ErrAlreadyStarted, "Client", "Connect", "already connected")
+	}
+	if err := ctx.Err(); err != nil {
+		return errs.WrapTransient(err, "Client", "Connect", "connection cancelled")
 	}
 
 	// Check circuit breaker first
@@ -735,10 +765,18 @@ func (m *Client) connectWith(
 	m.mu.Unlock()
 	m.logger.Info("Connecting to NATS", slog.String("urls", m.urls))
 
-	// Build connection options
-	opts := m.buildConnectionOptions()
-
+	// nats.Connect takes no context, so the context reaches the dial through
+	// the dialer: when it ends, cut closes the socket and ends the dial (T4).
+	// The cut is stopped, or joined if it began, before the result is read, so
+	// the context touches nothing once Connect returns (T5). nats.go would look
+	// a host name up before calling the dialer, where nothing ends the lookup
+	// (nats.go:2484-2485); SkipHostLookup hands the name to the dialer, whose
+	// net.Dialer resolves it under the same cut (T4).
+	socket := newSocketDialer(m.timeout, m.netDial)
+	opts := append(m.buildConnectionOptions(), nats.SetCustomDialer(socket), nats.SkipHostLookup())
+	stopCut := socket.cutWhenDone(ctx)
 	conn, err := dial(m.urls, opts...)
+	stopCut()
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		m.discardCandidate(conn)
 		m.connectFailed()
@@ -756,8 +794,9 @@ func (m *Client) connectWith(
 	// bridges failed async acks into the circuit breaker so a broken ack
 	// path opens the breaker exactly as a failed synchronous publish does
 	// (see publishToStreamAsync). Keep both candidates local until admission.
-	// nats.go v1.54.0 fails jetstream.New only when an option does, and this
-	// option never does; the error is still returned, never dropped.
+	// Whether jetstream.New can fail here is not promised: a read of nats.go
+	// v1.54.0, not a test, found that it fails only when an option does, and
+	// that this option never does. The error is still returned, never dropped.
 	js, err := jetstream.New(conn, jetstream.WithPublishAsyncErrHandler(m.asyncPublishErrHandler))
 	if err != nil {
 		m.discardCandidate(conn)
@@ -795,6 +834,7 @@ func (m *Client) connectWith(
 	m.conn = conn
 	m.js = js
 	m.dialled = conn
+	m.socket = socket
 	m.setStatus(StatusConnected)
 	m.resetCircuitLocked()
 	m.mu.Unlock()
@@ -888,18 +928,25 @@ func (m *Client) startMetricsPoller() bool {
 // the connection's event handlers. It returns nil only then. When ctx ends
 // first, or has already ended, Close returns ctx.Err() at once, even while
 // another Close is draining, and the cleanup continues; a later Close waits for
-// the same completion. Once Close has begun the client starts no new work:
-// background work offered after that is dropped and logged at debug level, and
-// Connect, Subscribe, SubscribeForRequests and the Consume methods return
-// nats.ErrConnectionClosed. Work admitted before Close began may still run while
-// Close waits for it; message handlers keep handling messages already delivered
-// during the drain. Status keeps its value while Close drains and reports
-// Disconnected once the cleanup has finished. A drain that runs out of time is
-// reported by the first Close as a transient error wrapping
-// nats.ErrDrainTimeout. A Close called from inside one of the client's callbacks
-// waits on a join that includes its own invocation, so it returns ctx.Err() when
-// its context ends and never returns nil. Close refuses a nil context with an
-// error and touches nothing.
+// the same completion. On a connection the client dialled, an ended ctx also
+// closes the socket and ends a reconnect dial nats.go has in progress, so a
+// write the server is not reading does not hold Close (T1, T8; P17, P23); a
+// message still buffered then is not promised to reach the server. A connection
+// installed through SetConnection is not cut. Once Close has begun the client
+// starts no new work: background work offered after that is dropped and logged
+// at debug level, and Connect, Subscribe, SubscribeForRequests and the Consume
+// methods return nats.ErrConnectionClosed. Work admitted before Close began may
+// still run while Close waits for it; message handlers keep handling messages
+// already delivered during the drain. Status keeps its value while Close drains
+// and reports Disconnected once the cleanup has finished. After a Close whose
+// context cut the drain short, the native connection GetConnection returned can
+// report DRAINING_PUBS, and IsConnected true, for up to 5 s before it reports
+// CLOSED again: that is nats.go v1.54.0's drain, and no event handler of the
+// client runs then. A drain that runs out of time is reported by the first
+// Close as a transient error wrapping nats.ErrDrainTimeout. A Close called from
+// inside one of the client's callbacks waits on a join that includes its own
+// invocation, so it returns ctx.Err() when its context ends and never returns
+// nil. Close refuses a nil context with an error and touches nothing.
 func (m *Client) Close(ctx context.Context) error {
 	if ctx == nil {
 		return errs.WrapInvalid(stderrors.New("nil context"), "Client", "Close", "missing context")
@@ -912,6 +959,7 @@ func (m *Client) Close(ctx context.Context) error {
 	first := !m.closing
 	var (
 		conn         *nats.Conn
+		socket       *socketDialer
 		drainTimeout time.Duration
 		cancelPoller context.CancelFunc
 	)
@@ -919,6 +967,9 @@ func (m *Client) Close(ctx context.Context) error {
 		m.closing = true
 		m.joined = make(chan struct{})
 		conn = m.conn
+		if conn != nil && conn == m.dialled {
+			socket = m.socket
+		}
 		m.draining = conn
 		close(m.closingSignalLocked())
 		drainTimeout = m.drainTimeout
@@ -930,7 +981,7 @@ func (m *Client) Close(ctx context.Context) error {
 
 	var closeErr error
 	if first {
-		closeErr = m.cleanup(ctx, conn, drainTimeout, cancelPoller, joined)
+		closeErr = m.cleanup(ctx, conn, socket, drainTimeout, cancelPoller, joined)
 	}
 
 	select {
@@ -960,14 +1011,24 @@ func (m *Client) Close(ctx context.Context) error {
 
 // cleanup is the first Close's work: stop the monitor, the timers and the
 // poller; drain and close the connection; clear it; write Disconnected; and
-// start the joiner that closes joined.
+// start the joiner that closes joined. socket is conn's dialer when the client
+// dialled conn, and nil otherwise.
 func (m *Client) cleanup(
 	ctx context.Context,
 	conn *nats.Conn,
+	socket *socketDialer,
 	drainTimeout time.Duration,
 	cancelPoller context.CancelFunc,
 	joined chan struct{},
 ) error {
+	if socket != nil {
+		// A write the server is not reading, or a reconnect dial, holds
+		// nats.go's connection lock, which the drain and the close below wait
+		// for; the cut releases it when ctx ends (T1, T8; P17, P23). It is armed
+		// first, so no step waits before the cut can end the wait.
+		stopCut := socket.cutWhenDone(ctx)
+		defer stopCut()
+	}
 	m.stopHealthMonitoring()
 	m.stopTimers()
 	if cancelPoller != nil {
@@ -1050,11 +1111,11 @@ func (m *Client) join(joined chan struct{}, conn *nats.Conn) {
 // must stay EXACTLY `Info(context.Context) (*jetstream.ConsumerInfo, error)` — a
 // divergent signature would silently stop overriding and reopen the race.
 //
-// STILL PRESENT UPSTREAM in nats.go v1.54.0, the version go.mod pins (checked 2026-10-04
-// against v1.48.0: jetstream/consumer.go:209 and :242 unchanged, still unsynchronized).
-// The assignment is byte-identical across versions, so a dependency bump does NOT retire
-// this guard — do not delete it on upgrade. Filing it upstream is tracked in the
-// change's follow-ups.
+// Whether nats.go v1.54.0, the version go.mod pins, still writes the field without
+// synchronization is not promised: it is a read of its source, not a test (checked
+// 2026-10-04 against v1.48.0: jetstream/consumer.go:209 and :242 unchanged). The guard
+// stays either way, so a dependency bump does NOT retire it — do not delete it on
+// upgrade. Filing it upstream is tracked in the change's follow-ups.
 type guardedConsumer struct {
 	jetstream.Consumer
 	infoMu sync.Mutex
@@ -1064,7 +1125,8 @@ type guardedConsumer struct {
 }
 
 // Info serializes the underlying call. The lock is held across the network round trip
-// because the unsynchronized write happens at the END of the library's Info().
+// because, by the same read of v1.54.0 (not promised), the library's Info() makes its
+// unsynchronized write at the END.
 func (g *guardedConsumer) Info(ctx context.Context) (*jetstream.ConsumerInfo, error) {
 	g.infoMu.Lock()
 	defer g.infoMu.Unlock()
@@ -1214,7 +1276,8 @@ func (s *Subscription) Unsubscribe() error {
 // Drain stops new deliveries and returns once the subscription's delivery
 // goroutine has exited, so every callback has returned. If the connection
 // closes before or during the drain, Drain still returns nil after the
-// in-flight callback returns; messages queued but not yet delivered are
+// in-flight callback returns (TestSubscriptionDrainConnectionClosesMidDrain,
+// with a stand-in subscription); messages queued but not yet delivered may be
 // discarded, because core NATS is at-most-once. If ctx ends first, Drain
 // returns ctx's error and a later call rejoins the same native drain; it never
 // starts a second one.
@@ -1348,7 +1411,7 @@ func (m *Client) subscribeOwned(
 		return nil, errs.WrapTransient(err, "Client", operation, "subscribe")
 	}
 	conn := m.conn
-	if conn == nil || !conn.IsConnected() {
+	if conn == nil {
 		m.mu.Unlock()
 		return nil, ErrNotConnected
 	}
@@ -1356,6 +1419,17 @@ func (m *Client) subscribeOwned(
 	finish := m.admitLocked(workSubscription)
 	closing := m.closingSignalLocked()
 	m.mu.Unlock()
+	// Called after mu is released: IsConnected waits for the connection's
+	// lock, which a held write keeps, and Close needs mu to begin (T2; P21).
+	if !conn.IsConnected() {
+		finish()
+		select {
+		case <-closing:
+			return nil, errs.Wrap(nats.ErrConnectionClosed, "Client", operation, "client closed")
+		default:
+			return nil, ErrNotConnected
+		}
+	}
 
 	cb := build(conn)
 	sub, err := subscribe(conn, subject, func(msg *nats.Msg) {
@@ -1363,7 +1437,15 @@ func (m *Client) subscribeOwned(
 	})
 	if err != nil {
 		finish()
-		return nil, err
+		// Once Close has begun, nats.go refuses with ErrConnectionDraining or
+		// ErrConnectionClosed (nats.go:5114-5119); Close having begun decides,
+		// as at the connection check above.
+		select {
+		case <-closing:
+			return nil, errs.Wrap(nats.ErrConnectionClosed, "Client", operation, "client closed")
+		default:
+			return nil, err
+		}
 	}
 	s := newSubscription(sub, d.end)
 	go m.watchOwnedSubscription(conn, sub, d, closing, finish)
@@ -1716,16 +1798,24 @@ func (m *Client) publishToStreamAsync(ctx context.Context, subject string, data 
 }
 
 // PublishBatchToStream publishes every message in msgs to one subject via the
-// async path, waits for all acks (bounded by ctx), and returns a single aggregate
-// error. Per-subject ordering from this single calling goroutine is preserved
-// (jetstream-go async is in-order per connection, absent a NoResponders retry —
-// see design.md §1). It is the convenience path for bursty producers that do not
-// need per-message futures (gh#470).
+// async path, waits for all acks, and returns a single aggregate error.
+// Per-subject ordering from this single calling goroutine is preserved: the
+// async path stores messages in publish order
+// (TestIntegration_PublishToStreamAsync_Ordering); the order after nats.go
+// retries a publish that met no responders is not promised. It is the
+// convenience path for bursty producers that do not need per-message futures
+// (gh#470).
+//
+// ctx does not end a wait behind a write the server is not reading: each publish
+// is written under nats.go's connection lock, so such a write holds the batch
+// until it completes or nats.go's write timeout (one minute by default,
+// WithWriteTimeout) ends it (P13; ADR-112).
 //
 // The drain waits on THIS batch's own futures, not the JetStream context's
 // connection-global PublishAsyncComplete, so a concurrent async producer on the same Client cannot
 // make this batch over-wait. If ctx is cancelled before all acks arrive, it
-// returns the context error rather than hanging; the already-enqueued publishes
+// returns the context error rather than hanging
+// (TestIntegration_PublishBatchToStream_CtxCancel); the already-enqueued publishes
 // still resolve in the background (and feed the circuit breaker via the async
 // error handler on a connection fault). An enqueue error stops further enqueuing
 // but already-enqueued messages are still drained. Ack failures are accounted
@@ -1799,8 +1889,9 @@ func (m *Client) PublishBatchToStream(ctx context.Context, subject string, msgs 
 // GetStream gets an existing JetStream stream.
 //
 // Its jetstream.ErrStreamNotFound means "not on this connection, now" — it is a
-// point-in-time probe, not durable evidence of absence, because a clustered node
-// that has not applied the meta assignment answers it for a stream that exists.
+// point-in-time probe, not durable evidence of absence. A clustered node that
+// has not applied the meta assignment may also answer it for a stream that
+// exists; that is not measured, since no test here runs a cluster.
 // A caller deciding something for the process lifetime wants ErrStreamNotVisible
 // out of the guarded consumer setup instead; see that sentinel and the package doc.
 func (m *Client) GetStream(ctx context.Context, name string) (jetstream.Stream, error) {
@@ -1883,8 +1974,9 @@ func (m *Client) CreateKeyValueBucket(ctx context.Context, cfg jetstream.KeyValu
 	// Bucket doesn't exist, try to create it
 	bucket, err = js.CreateKeyValue(ctx, cfg)
 	if err != nil {
-		// Check if error is "already exists" (race condition)
-		if isAlreadyExistsError(err) {
+		// nats.go joins ErrBucketExists to a create that finds the bucket's
+		// stream already there: a race with another creator (T6).
+		if stderrors.Is(err, jetstream.ErrBucketExists) {
 			m.logger.Info("KV bucket already exists (race condition), attempting to get existing bucket",
 				slog.String("bucket", cfg.Bucket),
 			)
@@ -1952,7 +2044,10 @@ func (m *Client) GetKeyValueBucket(ctx context.Context, name string) (jetstream.
 }
 
 // WaitForBucket waits for a KV bucket to become available, retrying until
-// the timeout expires or the context is cancelled. Use this when a component
+// the timeout expires or the context is cancelled. Neither ends a wait behind a
+// write the server is not reading: each attempt is a JetStream request, and such
+// a write holds it until the write completes or nats.go's write timeout (one
+// minute by default, WithWriteTimeout) ends it (P13). Use this when a component
 // depends on a bucket created by another component with unpredictable startup timing.
 //
 // For more advanced patterns (background recovery, loss detection), use
@@ -2329,15 +2424,4 @@ func (m *Client) stopHealthMonitoring() {
 		close(m.healthDone)
 		m.healthDone = nil
 	}
-}
-
-// isAlreadyExistsError checks if an error indicates a KV bucket already exists
-func isAlreadyExistsError(err error) bool {
-	if err == nil {
-		return false
-	}
-	errStr := err.Error()
-	return strings.Contains(errStr, "bucket name already in use") ||
-		strings.Contains(errStr, "already exists") ||
-		strings.Contains(errStr, "stream name already in use")
 }

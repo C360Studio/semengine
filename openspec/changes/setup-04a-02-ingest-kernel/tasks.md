@@ -718,6 +718,15 @@ posted on this pull request.
       Done in `1873b26`; `task verify` on it ended `verify: ok`. Notes: `notes/cp4i-R2.md`.
 - [x] 4.19 (D) Codex review F1 and F2 (PR #93 comment 6113507239): declared limitations (owner rulings, #91 comment
       6113959050); design D8 and D23, the projection-mutation delta and notes/4.3.md say so. Documents only.
+- [x] 4.20 (D) Codex review B1 (PR #93 comment 6123602840; `graph-ingest-recovery`, "An interrupted application is
+      redelivered, not a stop"): an interrupted input counts once in the error count Health reads. Done in `9fc8b0c`:
+      `processIngest` gives each application a held error count in its context; the three writes the application can
+      reach (the compare-and-set, and a container birth's encoding and create) add to it through `countError`, and
+      `processIngest` adds it once the helper returns, unless the input was interrupted, whose one count is
+      `recordInterruptedWork`'s; a direct call counts at once. `TestInterruptedApplicationIsRedeliveredNotAStop`'s two
+      new cases (the entity write, a container birth) failed first ("rose by 2, want 1");
+      `TestOrdinaryLaneWriteErrorCountsOnce` and `TestDirectWriteErrorCountsAtOnce` hold the other side; three
+      `task mutate:check` detections. `task verify` on `9fc8b0c` ended `verify: ok`. Notes: `notes/cp4k-B1.md`.
 
 ## 5. Ledger, gates and boundaries
 

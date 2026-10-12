@@ -65,7 +65,7 @@ func admit(ctx context.Context) (admission, error) {
 		return admission{}, fmt.Errorf("%w (SEMENGINE_DOCKER_ADMISSION_TOKEN is not in %s/owner; the lock is not held for this run)",
 			ErrNotAdmitted, lockDir)
 	}
-	if err := ownerLive(ctx, fields["host"], fields["pid"], fields["identity"], fields["identity_utc"]); err != nil {
+	if err := ownerLive(ctx, fields["pid"], fields["identity"], fields["identity_utc"]); err != nil {
 		// ownerLive returns ctx's own error when ctx ended before ps answered: the caller was
 		// cancelled, not refused.
 		if errors.Is(err, ctx.Err()) {
@@ -77,7 +77,7 @@ func admit(ctx context.Context) (admission, error) {
 }
 
 // ownerLive requires the recorded owner to be live as the integration runner's spec defines it
-// ("Shared host lock"): on this host, with ps printing the recorded start time for its pid. A
+// ("Shared host lock"): ps prints the recorded start time for its pid. A
 // record whose identity_utc is not empty is judged by it, read with TZ=UTC and LC_ALL=C as the
 // runner wrote it, so a test process in another time zone or locale reads a live owner as live.
 // Otherwise the record is judged by its identity, read in this process's environment. Only
@@ -88,15 +88,9 @@ func admit(ctx context.Context) (admission, error) {
 // A runner killed with SIGKILL never runs its EXIT trap, so its owner file, token included,
 // outlives it, and its pid may be given to another process, whose start time is not the record's;
 // the next runner will quarantine that lock. An `unknown` value is never live, since ps never
-// prints it. The runner and its tests always share a host, so an owner elsewhere admits nothing.
-func ownerLive(ctx context.Context, host, pid, identity, identityUTC string) error {
-	here, err := os.Hostname()
-	if err != nil {
-		return fmt.Errorf("hostname: %w", err)
-	}
-	if host != here {
-		return fmt.Errorf("owner host %q is another host (this is %q)", host, here)
-	}
+// prints it. The record's host is not read: the lock is in this machine's /tmp, so its owner ran
+// on this machine, and macOS's host name changes with the network (#201).
+func ownerLive(ctx context.Context, pid, identity, identityUTC string) error {
 	n, err := strconv.Atoi(pid)
 	if err != nil || n <= 0 {
 		return fmt.Errorf("owner pid %q is not a process id", pid)

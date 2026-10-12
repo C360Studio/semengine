@@ -183,8 +183,9 @@ func TestAdmissionRequiresALiveOwner(t *testing.T) {
 	}
 	self := func(*testing.T) string { return strconv.Itoa(os.Getpid()) }
 	// The first five cases are SemStreams' six keys, judged by identity: each differs from a live
-	// six-key owner (this host, this process, its start time) in one field. The last two add
-	// identity_utc, and each differs from a live seven-key owner in identity_utc alone.
+	// six-key owner (this process, its start time) in one field; the second also names another
+	// host, which admission does not judge (#201), so it is refused for its pid alone. The last
+	// two add identity_utc, and each differs from a live seven-key owner in identity_utc alone.
 	live := runnerIdentity(t, os.Getpid())
 	for _, tc := range []struct {
 		name, host  string
@@ -194,7 +195,7 @@ func TestAdmissionRequiresALiveOwner(t *testing.T) {
 		want        string
 	}{
 		{"owner pid is not a running process", host, func(t *testing.T) string { return strconv.Itoa(absentPID(t)) }, live, "", "not live"},
-		{"owner on another host", host + "-elsewhere", self, live, "", "another host"},
+		{"owner pid is not a running process, under another host name", host + "-elsewhere", func(t *testing.T) string { return strconv.Itoa(absentPID(t)) }, live, "", "not live"},
 		{"owner pid unreadable", host, func(*testing.T) string { return "x" }, live, "", "pid"},
 		{"owner pid names a process with another start time", host, self, "Mon Jan  1 00:00:00 1990", "", "Mon Jan  1 00:00:00 1990"},
 		{"owner identity unknown", host, self, "unknown", "", "unknown"},
@@ -266,6 +267,16 @@ func TestAdmissionAdmitsALiveOwner(t *testing.T) {
 		cancel()
 		if _, err := admit(ctx); !errors.Is(err, context.Canceled) {
 			t.Errorf("admit with a cancelled context = %v, want context.Canceled", err)
+		}
+	})
+	// The lock is in this machine's /tmp, so its owner ran here whatever host name its record holds:
+	// macOS's hostname changes with the network (#201). This process, live, admits under any name.
+	t.Run("a live owner whose record names another host", func(t *testing.T) {
+		plantLock(t, "tok", "tok")
+		replaceOwner(t, fmt.Sprintf("host=some-other-host.invalid\npid=%d\nstarted=1\nidentity=%s\ntoken=tok\ncommand=semengine /x/scripts/test-integration.sh\nidentity_utc=%s\n",
+			os.Getpid(), runnerIdentity(t, os.Getpid()), runnerIdentityUTC(t, os.Getpid())))
+		if _, err := admit(t.Context()); err != nil {
+			t.Fatalf("admit = %v, want the live owner admitted", err)
 		}
 	})
 	// The runner wrote its identity in one time zone, and the test process reads in another with a

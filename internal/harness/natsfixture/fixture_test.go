@@ -183,18 +183,7 @@ func TestRestartLaterPhaseFailuresAreNamed(t *testing.T) {
 		}, ""},
 	} {
 		t.Run(string(tc.phase), func(t *testing.T) {
-			f := startedWith(t)
-			f.container, f.nc, f.url = struct{ testcontainers.Container }{}, &nats.Conn{}, "nats://fixture-host:1"
-			boots := 1
-			f.deps.drain = func(context.Context, *nats.Conn) error { return nil }
-			f.deps.stopContainer = func(context.Context, testcontainers.Container) error { return nil }
-			f.deps.startContainer = func(context.Context, testcontainers.Container) error { boots++; return nil }
-			f.deps.logs = func(context.Context, testcontainers.Container) ([]byte, error) {
-				return []byte(strings.Repeat(readyLog+"\n", boots)), nil
-			}
-			f.deps.mappedPort = func(context.Context, testcontainers.Container) (string, error) { return "2", nil }
-			f.deps.connect = func(context.Context, string) (*nats.Conn, error) { return &nats.Conn{}, nil }
-			f.deps.jsReady = func(context.Context, jetstream.JetStream) error { return nil }
+			f := restartOnFakes(t, 0)
 			tc.set(&f.deps)
 
 			err := f.Restart(t.Context())

@@ -3,6 +3,7 @@ package natsfixture
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	neturl "net/url"
@@ -30,6 +31,7 @@ type deps struct {
 	start        func(context.Context, testcontainers.GenericContainerRequest) (testcontainers.Container, error)
 	host         func(context.Context, testcontainers.Container) (string, error)
 	mappedPort   func(context.Context, testcontainers.Container) (string, error)
+	inspect      func(context.Context, testcontainers.Container) (string, error) // state and published ports, for a failed port read
 	connect      func(context.Context, string) (*nats.Conn, error)
 	jsReady      func(context.Context, jetstream.JetStream) error
 	createStream func(context.Context, jetstream.JetStream, jetstream.StreamConfig) (jetstream.Stream, error)
@@ -52,6 +54,20 @@ func defaultDeps() deps {
 		mappedPort: func(ctx context.Context, c testcontainers.Container) (string, error) {
 			p, err := c.MappedPort(ctx, clientPort)
 			return p.Port(), err
+		},
+		inspect: func(ctx context.Context, c testcontainers.Container) (string, error) {
+			info, err := c.Inspect(ctx)
+			if err != nil {
+				return "", err
+			}
+			var state, ports any = "unknown", "unknown"
+			if info.State != nil {
+				state = info.State.Status
+			}
+			if info.NetworkSettings != nil {
+				ports = info.NetworkSettings.Ports
+			}
+			return fmt.Sprintf("state %v, ports %v", state, ports), nil
 		},
 		connect: connect,
 		jsReady: func(ctx context.Context, js jetstream.JetStream) error {

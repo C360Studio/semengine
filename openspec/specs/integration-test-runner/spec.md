@@ -21,22 +21,24 @@ having removed the lock directory and the file it wrote beside it, unless the co
 lock directory, as when an interrupt stops `mv` after it has renamed the file; that record names the exiting runner,
 and the next runner quarantines it once that pid is dead. An interrupt that stops `mktemp` after it created its file
 leaves that file beside the lock directory, where no reader reads it. A lock directory without an owner file is
-respected by every reader, since its host reads as unknown; a runner killed between creating the lock directory and
+respected by every reader, since its pid reads as unknown; a runner killed between creating the lock directory and
 the rename leaves one, which stays until it is removed by hand.
 The identity SHALL be the runner's start time as `ps -o lstart= -p <pid>` prints it in the runner's
 environment, and identity_utc the same read made with TZ=UTC and LC_ALL=C set for ps; each with leading blanks removed
-and trailing blanks kept, or `unknown` when that read prints nothing. An owner record is live when its host is this
-host and, if its identity_utc is present and not empty, `ps -o lstart= -p <pid>` read with TZ=UTC and LC_ALL=C prints
-that identity_utc; if its identity_utc is absent or empty, as in a record SemStreams' runner or a SemEngine runner
-older than identity_utc wrote, the same read made in the reader's environment prints its identity. An `unknown` value
-is never live. ps reports start times to the second, so a pid reused within the second its owner started reads as that
-owner. A record judged by its identity is misread when the writer's and the reader's time zone or locale differ: a live
-owner then reads as changed. The runner SHALL fail fast reporting the owner when the lock is busy unless
-SEMENGINE_DOCKER_ADMISSION_WAIT_SECONDS (1–3600) is set; SHALL quarantine only a same-host owner whose pid `kill -0`
-cannot signal (another user's process included) or whose start time, read as the liveness rule above reads it,
-differs from the value that rule compares (identity_utc, or identity for a record without one) when that value is not
-`unknown`, and SHALL respect every other owner; SHALL release only while the owner token still matches; and SHALL read
-no SEMSTREAMS_* variable.
+and trailing blanks kept, or `unknown` when that read prints nothing. An owner record is live when, if its
+identity_utc is present and not empty, `ps -o lstart= -p <pid>` read with TZ=UTC and LC_ALL=C prints that
+identity_utc; if its identity_utc is absent or empty, as in a record SemStreams' runner or a SemEngine runner older
+than identity_utc wrote, the same read made in the reader's environment prints its identity. An `unknown` value is
+never live. No reader compares the record's host with this machine's host name: the lock is in this machine's `/tmp`,
+so every owner it names ran on this machine, and on macOS `hostname` prints a name that changes with the network. The
+host stays in the record and in the runner's messages. ps reports start times to the second, so a pid reused within
+the second its owner started reads as that owner. A record judged by its identity is misread when the writer's and the
+reader's time zone or locale differ: a live owner then reads as changed. The runner SHALL fail fast reporting the owner
+when the lock is busy unless SEMENGINE_DOCKER_ADMISSION_WAIT_SECONDS (1–3600) is set; SHALL quarantine only an owner
+whose pid `kill -0` cannot signal (another user's process included) or whose start time, read as the liveness rule
+above reads it, differs from the value that rule compares (identity_utc, or identity for a record without one) when
+that value is not `unknown`, and SHALL respect every other owner; SHALL release only while the owner token still
+matches; and SHALL read no SEMSTREAMS_* variable.
 
 #### Scenario: Busy lock refuses before Docker
 
@@ -45,20 +47,20 @@ no SEMSTREAMS_* variable.
 
 #### Scenario: Provably stale lock is quarantined
 
-- **WHEN** the owner record names this host and a pid that is not running
+- **WHEN** the owner record names a pid that is not running, under this machine's host name or another
 - **THEN** the runner moves the directory to `.stale.<pid>.<started>`, removes it, and acquires
 
 #### Scenario: Changed start time is quarantined
 
-- **WHEN** the owner record names this host and a running pid whose start time, read with TZ=UTC and LC_ALL=C, differs
-  from the record's identity_utc, or, for a record without identity_utc, whose start time read in the runner's
-  environment differs from its identity
+- **WHEN** the owner record names a running pid whose start time, read with TZ=UTC and LC_ALL=C, differs from the
+  record's identity_utc, or, for a record without identity_utc, whose start time read in the runner's environment
+  differs from its identity
 - **THEN** the runner moves the directory to `.stale.<pid>.<started>`, removes it, and acquires
 
-#### Scenario: Foreign or live owner is respected
+#### Scenario: Live owner is respected
 
-- **WHEN** the owner record names another host, or a live pid with unchanged identity_utc, or, for a record without
-  identity_utc, unchanged identity
+- **WHEN** the owner record names a live pid with unchanged identity_utc, or, for a record without identity_utc,
+  unchanged identity, under this machine's host name or another
 - **THEN** the runner refuses and reports the owner without removing anything
 
 #### Scenario: Owner in another time zone or locale is respected

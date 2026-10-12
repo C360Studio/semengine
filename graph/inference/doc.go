@@ -1,0 +1,19 @@
+// Package inference derives an entity's hierarchy statements from its 6-part
+// ID (org.platform.system.domain.type.instance, ADR-102).
+//
+// HierarchyInference is called by graph-ingest when an entity is born, and
+// built only when graph-ingest's enable_hierarchy is set. For each of the
+// three levels (type, taxonomy, source) AddToContainers makes sure the level's
+// container entity exists, creating it through an EntityStore when it does
+// not, and returns the entity's membership statement for the caller to write
+// with the entity. A container that exists is not written: its stored value
+// does not change when a member is born. Every statement names graph-ingest's
+// hierarchy producer
+// (graph.SourceHierarchy) as its source and carries the time of the write
+// that triggered it. If any part fails, AddToContainers returns an error and
+// no statements, so the caller can refuse the birth. An entity of another
+// deployment, and a container, get no hierarchy.
+//
+// ContainerEntity is the payload a container entity is born with; its type,
+// graph.hierarchy_container.v1, is registered by RegisterPayloads.
+package inference

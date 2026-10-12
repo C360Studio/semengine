@@ -23,10 +23,11 @@ type asyncErrorCallbackObservation struct {
 }
 
 func TestIntegration_ClientHandleErrorLogsObservedSlowConsumerDropCount(t *testing.T) {
+	// The fixture starts first: a Docker start can outlast this test's operation budget.
+	natsURL := startFixture(t).URL()
 	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 	defer cancel()
 
-	natsURL := startFixture(t).URL()
 	handler := newAsyncErrorLogHandler()
 	client, err := NewClient(natsURL, WithLogger(slog.New(handler)))
 	require.NoError(t, err)

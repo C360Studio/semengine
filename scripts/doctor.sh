@@ -104,17 +104,16 @@ elif ! $daemon; then ok ryuk-image "$ryuk (daemon not reachable; cache unknown)"
 elif docker image inspect "$ryuk" >/dev/null 2>&1; then ok ryuk-image "cached: $ryuk"
 else warn ryuk-image "not cached; testcontainers pulls it on first use: $ryuk"; fi
 
-# The shared admission lock, judged by host and pid only: a pid reused by another process reads as
-# busy here, though the runner, which also compares the owner's start time, would quarantine it.
+# The shared admission lock, judged by pid only: a pid reused by another process reads as busy
+# here, though the runner, which also compares the owner's start time, would quarantine it. The
+# recorded host is not compared, as the runner does not: the lock is in this machine's /tmp, and
+# macOS's hostname changes with the network (#201).
 # shellcheck source=scripts/admission-lock.sh
 . scripts/admission-lock.sh
 if [ -f "$admission_lock_default/owner" ]; then
   owner=$(tr '\n' ' ' < "$admission_lock_default/owner")
-  o_host=$(sed -n 's/^host=//p' "$admission_lock_default/owner")
   o_pid=$(sed -n 's/^pid=//p' "$admission_lock_default/owner")
-  if [ "$o_host" != "$(hostname)" ]; then
-    warn admission "held from another host (manual recovery if stale): $owner"
-  elif [[ "$o_pid" =~ ^[0-9]+$ ]] && ! kill -0 "$o_pid" 2>/dev/null; then
+  if [[ "$o_pid" =~ ^[0-9]+$ ]] && ! kill -0 "$o_pid" 2>/dev/null; then
     warn admission "stale (dead pid; the next runner quarantines it): $owner"
   else ok admission "busy: $owner"; fi
 elif [ -e "$admission_lock_default" ]; then

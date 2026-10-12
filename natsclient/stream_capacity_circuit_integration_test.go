@@ -111,9 +111,11 @@ func testBatchCapacityCircuitNeutral(t *testing.T) {
 
 func newCapacityTestClient(t *testing.T) (context.Context, *Client, jetstream.JetStream) {
 	t.Helper()
+	// The fixture starts first: a Docker start can outlast this test's operation budget.
+	natsURL := startFixture(t).URL()
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	t.Cleanup(cancel)
-	client, err := NewClient(startFixture(t).URL(), WithMaxReconnects(0))
+	client, err := NewClient(natsURL, WithMaxReconnects(0))
 	require.NoError(t, err)
 	require.NoError(t, client.Connect(ctx))
 	t.Cleanup(func() {

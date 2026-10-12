@@ -2715,19 +2715,19 @@
     #132. Consumers that read the catalog, IsKVTombstone, the backlog computation or the gate from graph
     import the new home, a compile error each (design D16; inventory §9.13 (h)). README.md rewritten for what
     the root holds and where the catalog and readiness computation went (design D6 (c), D16; task 3.3, trimmed
-    in task 3.12k; dbeb5fe, e4011b8, 64e705d), by group of pin lines; only the title (:1) is kept. :3 named
-    SemStreams (#9 comment 5984291337); tree :3-5 names SemEngine and says the root imports no transport,
+    in task 3.12k; dbeb5fe, e4011b8, 64e705d), by group of pin lines; the title (:1) and the groups restored
+    below are kept. :3 named SemStreams (#9 comment 5984291337); tree :3-5 names SemEngine and says the root
+    imports no transport,
     which the port changed (design D16). :5-8 said the package held no runtime logic, false at the pin, which
     held the catalog and the readiness gate (design D6 (c)); replaced by a list of what it holds (tree :7-35).
     :10-25 and :27-35, EntityState's Version field and GetTriple's "first matching triple": behavior the port
-    no longer has (design D15, #100, #98), restated as prose (tree :9-21). :37-59, entity identification: the
-    6-part format is kept (tree :9-10); :42's fence had no language (MD040); the example ID and the
-    message.ParseEntityID example, true of the tree (message/types.go:27), are removed, an edit no ruling
-    names. :61-97, the Graphable interface and its example, true of the tree (graph/graphable.go:54), and
-    :99-122, the design principles, are removed, edits no ruling names. :124-133, processor/graph/ and four
-    sub-packages, which SemEngine does not have (#9 comment 5984291337); tree :37-41 names where the moved
-    code went. :135-144, package ownership: an ADR, message.FederationMeta and processor/graph/, none of them
-    in SemEngine (same ruling). Tree :43-47, the import line, is new. class:port-refactor notes for later changes:
+    no longer has (design D15, #100, #98), restated as prose (tree :9-21). :37-59, entity identification with
+    the message.ParseEntityID example, restored at tree :37-59 with one edit: :42's fence gains a language
+    (MD040). :61-97, the Graphable interface and its example, and :99-122, the design principles, restored
+    unchanged at tree :61-97 and :99-122. :124-133, processor/graph/ and four sub-packages, which SemEngine
+    does not have (#9 comment 5984291337); tree :124-128 names where the moved code went. :135-144, package
+    ownership: an ADR, message.FederationMeta and processor/graph/, none of them in SemEngine (same ruling).
+    Tree :130-134, the import line, is new. class:port-refactor notes for later changes:
     processor/rule (change 6) moves events.go's emission (expression_factory.go:353, publisher.go:151-152) to
     the mutation-request protocol or drops it (#101), and loses its EntityState.Version read
     (message_handler.go:380; design D15); processor/graph-query (change 4) resolves a partial ID without the
@@ -3124,19 +3124,21 @@
     MD040 errors. :128-144, boot composition through componentregistry and the token, as :22-95 and :3-14.
     :146-227, the example: the import path (:154), no port declarer, which RegisterWithConfig refuses
     (registry.go:158), and an undefined schema variable, corrected (tree :42-122); tree :124-126,
-    LifecycleComponent, is new. :229-243, a componentregistry file SemEngine does not have. :245-260 and
-    :323-331, the Discoverable interface and the Factory type, true of the tree, are restated in prose (tree
-    :12-20), an edit no ruling names. :262-274, Dependencies: an ObjectStore field the code does not have,
-    and four fields the code has were missing (tree :130-151). :276-301, the ports: JetStreamPort's Stream
-    and Subject and NetworkPort's Bind are fields the code does not have (StreamName, Subjects, Host; tree
-    :153-178). :303-321, the Registry: ListAvailable, removed as dead surface (#153 item 1), and the token
-    (ruling C) (tree :180-194). :333-351, four error sentinels the code does not have, replaced by
-    errs.IsInvalid (tree :196-207). :353-378, testing: ListAvailable and natsclient.NewTestClient, which the
-    code does not have (tree :215-220). :380-396, a lock table and concurrency claims the code does not
-    match: a factory runs with no lock held, and sealing stops CreateComponent, not RegisterWithConfig (tree
-    :209-213). :398-437, the decision records: the registration reasons are kept (tree :38-40), and the rest
-    is removed, an edit no ruling names. :439-445, links to componentregistry and service, not in SemEngine
-    (tree :222-230). Review only: a consumer can call the three registry methods
+    LifecycleComponent, is new. :229-243, a componentregistry file SemEngine does not have. :245-260, the
+    section heading and the Discoverable interface, restored unchanged at tree :128-143, and :323-331, the
+    Factory type, restored unchanged at tree :211-219. :262-274, Dependencies: an ObjectStore field the code
+    does not have, and four fields the code has were missing (tree :145-166). :276-301, the ports:
+    JetStreamPort's Stream and Subject and NetworkPort's Bind are fields the code does not have (StreamName,
+    Subjects, Host; tree :168-193). :303-321, the Registry: ListAvailable, removed as dead surface (#153 item
+    1), and the token (ruling C) (tree :195-209). :333-351, four error sentinels the code does not have,
+    replaced by errs.IsInvalid (tree :221-232). :353-378, testing: ListAvailable and natsclient.NewTestClient,
+    which the code does not have (tree :240-245). :380-396, a lock table and concurrency claims the code does
+    not match: a factory runs with no lock held, and sealing stops CreateComponent, not RegisterWithConfig
+    (tree :234-238). :398-437, the decision records, restored at tree :247-286 with three edits, each a line
+    that named componentregistry, which SemEngine does not have (#9 comment 5984291337), now naming the
+    host's list of Register calls: :407, :414 and :416 (tree :256, :263, :265); they hold no link, so none
+    was removed. :439-445, links to componentregistry and service, not in SemEngine (tree :288-296). Review
+    only: a consumer can call the three registry methods
     directly, since nothing refuses it (design D14); semboids' integration tests do
     (internal/zone/ingest_integration_test.go:52 and eight more sites in six files) and add the pin's prepare
     argument. The LifecycleManager drop's adopters (ruling D; design D17, inventory §9.4): semboids

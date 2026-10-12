@@ -125,7 +125,22 @@ A component that does work also implements `LifecycleComponent`: `Initialize() e
 `Stop(ctx) error` beside `Discoverable`. `Start` and `Stop` refuse a nil context, and `Stop` joins the work `Start`
 began. `AsLifecycleComponent` reports whether a `Discoverable` implements it.
 
-## Core types
+## core Concepts
+
+### Discoverable Interface
+
+Every component must implement:
+
+```go
+type Discoverable interface {
+    Meta() Metadata                  // Component metadata
+    InputPorts() []Port              // Input port definitions
+    OutputPorts() []Port             // Output port definitions
+    ConfigSchema() ConfigSchema      // Configuration schema
+    Health() HealthStatus            // Current health status
+    DataFlow() FlowMetrics          // Data flow metrics
+}
+```
 
 ### Dependencies
 
@@ -193,6 +208,16 @@ The other port types are `NATSRequestPort` (request and reply), `KVReadPort`, `H
   name already admitted, an exclusive resource another instance holds, and any call after `SealComposition`. `prepare`
   may be nil.
 
+### Types
+
+#### `Factory`
+
+```go
+type Factory func(rawConfig json.RawMessage, deps Dependencies) (Discoverable, error)
+```
+
+Factory function signature for component creation.
+
 ### Errors
 
 Every refusal from `RegisterWithConfig` is a `pkg/errs` error of the invalid class:
@@ -218,6 +243,47 @@ stop `RegisterWithConfig`.
   process-global.
 - A test in this module that needs NATS opens a server through `internal/harness/natsfixture` (`natsfixture.Open`).
 - Test a component through its `Discoverable` and `LifecycleComponent` methods, not its private fields.
+
+## Architecture Decisions
+
+### Explicit Registration vs init()
+
+**Decision**: Use explicit Register() functions
+
+**Rationale**:
+
+- **Testability**: Can create isolated registries without global state
+- **Explicitness**: Clear component dependency graph in the host's list of `Register` calls
+- **Control**: Application controls what gets registered and when
+- **No side effects**: Package imports don't modify global state
+- **Deterministic**: Registration order is explicit and controllable
+
+**Tradeoffs**:
+
+- Requires the host to keep a list of `Register` calls
+- Registration must be explicitly called in main()
+- New components must be added to the host's list of `Register` calls
+
+### Dependency Injection via Struct
+
+**Decision**: Use Dependencies struct
+
+**Rationale**:
+
+- Avoids parameter proliferation
+- Easy to add dependencies without breaking factories
+- Enables testing with mock dependencies
+- Follows service architecture patterns
+
+### Factory Pattern
+
+**Decision**: Components parse their own configuration
+
+**Rationale**:
+
+- Enables flexible validation per component
+- Matches service constructor patterns
+- Centralizes configuration knowledge in component packages
 
 ## Related packages
 

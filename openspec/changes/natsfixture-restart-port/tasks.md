@@ -13,7 +13,7 @@ before the review stop. Choices the design does not spell out go in `notes/<task
 - [x] 2.1 Unit tests first, with the fixture's fakes (design table rows 1, 2, 3 and 5); show each fails on `main`'s
   code, then make them pass: Restart's one more stop, start and port read on a mapped-port failure with a live
   context, and the inspect detail on the mapped-port error (Start and Restart).
-- [ ] 2.2 The integration test (design table row 4): hold the next port on all addresses, Restart, dial `URL()`.
+- [x] 2.2 The integration test (design table row 4): hold the next port on all addresses, Restart, dial `URL()`.
   Record its result on `main` and on the fix, five runs each, with the command, in `notes/2.2.md`.
 - [ ] 2.3 Text: the doc comments in `restart.go` and `fixture.go` (`maxAttempts`), and any line in `docs/testing.md`
   or the natsfixture row of `docs/admission-ledger.yaml` that says Restart never tries again. Check: `task

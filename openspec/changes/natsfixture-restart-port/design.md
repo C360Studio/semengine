@@ -17,13 +17,13 @@ From PR #200: the diagnosis (comment 6128094108) and probes (comments 6128508133
 
 1. **Restart tries once more.** In `restart.go`, when the mapped-port phase fails and the caller's context is still
    live, Restart runs the stop-container and start-container phases once more on the same container, then the
-   mapped-port phase again. A second failure is returned as today. This is the same condition Start uses for its one
-   replacement (`fixture.go:28-31`, `:148-161`): which phase failed and whether the parent is live, never the error's
-   text. The container, its writable layer and the fixture's ownership record are kept, so the spec's "no
-   replacement container during Restart" still holds.
+   mapped-port phase again. A second failure is returned joined with the first, as Start joins its attempts. This is
+   the same condition Start uses for its one replacement (`fixture.go:28-31`, `:148-161`): which phase failed and
+   whether the parent is live, never the error's text. The container, its writable layer and the fixture's ownership
+   record are kept, so the spec's "no replacement container during Restart" still holds.
 2. **The error says what Docker showed.** When the mapped-port phase fails (Start or Restart), the fixture inspects the
-   container once more under a bounded context and adds its state and published ports to the error's detail. If that
-   inspect fails, the detail says so.
+   container once more under the caller's context (the contract detaches a context only for cleanup) and adds its
+   state and published ports to the error's detail. If that inspect fails, the detail says so.
 
 Nothing else changes: the request, the URL's host, Start's attempts and the port guard stay as they are.
 

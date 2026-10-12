@@ -830,10 +830,14 @@ posted on this pull request.
 
 ## 7. Review and archive
 
-- [ ] 7.1 (R) Cross-agent review of record by the other agent on the last commit that changes code, named in the PR
+- [x] 7.1 (R) Cross-agent review of record by the other agent on the last commit that changes code, named in the PR
       body's `reviewed-by:` line (`.agents/protocol.md` § Work lifecycle, "Cross-agent review"); a later
       documents-only commit is re-reviewed by either agent's reviewer before task 7.2. Each verdict names the commit it
       read and the local `task verify` run on that commit it rests on, not a CI run (#171). The archive/spec sync is
       checked by either agent's reviewer after task 7.2, as the protocol says; that check is not this task's evidence.
-- [ ] 7.2 (W) Specs synced from the deltas, the change archived; the archive commit is the last content commit. Hold:
+      Done: Codex's review of record, PR #93 comment 6127914840, APPROVE at `47ca8c3` on its local `task verify` run
+      on that commit; kept at `6670ffc`, the last commit that changes code, by comment 6128978085 (APPROVE, local
+      `task verify` exit 0 on `6670ffc`). The documents-only commit after it, `d718726`, re-reviewed by Claude's
+      `semengine-reviewer` in PR #93 comment 6130779984.
+- [x] 7.2 (W) Specs synced from the deltas, the change archived; the archive commit is the last content commit. Hold:
       task 7.1.

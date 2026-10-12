@@ -1,8 +1,10 @@
 # nats-fixture Specification
 
 ## Purpose
-The NATS fixture gives one test one disposable, admitted, real NATS server in a container, with typed start failures,
-run-unique safe names, and a cleanup that returns success only after it has observed every owned resource gone.
+The NATS fixture gives one test one disposable, admitted, real NATS server in a container, with typed start
+failures, run-unique safe names, and a cleanup that returns success only after it has observed every owned resource
+gone. `natsfixture.Open` lets a package's tests open a value connected to that server, such as a client, and closes
+it under a deadline before the server stops.
 
 ## Requirements
 
@@ -226,3 +228,30 @@ SHALL apply.
 - **WHEN** a client publishes more than N bytes
 - **THEN** the publish is refused with `nats.ErrMaxPayload` (nats.go checks the limit the broker announced before it
   sends), and a message of at most N bytes is accepted
+
+### Requirement: Connected value for a package's tests
+
+`natsfixture` SHALL provide one helper that, given a test, a started fixture and an open function supplied by the
+caller (called with a context and the fixture's URL, and returning the opened value and a close function that takes a
+context), calls the open function under a bounded context and returns the value. When the open function returns an
+error, the helper SHALL fail the test with a message naming the fixture's URL and that error. On success it SHALL
+register the close function on the test's cleanup so that it runs before the fixture's own Stop, under a context with
+a deadline, and SHALL report a close error as a test error. The helper SHALL import no package of this module outside
+`internal/harness`, SHALL start no goroutine, and SHALL hold nothing after it returns beyond the cleanup it
+registered.
+
+#### Scenario: Opening fails
+
+- **WHEN** the open function returns an error
+- **THEN** the test fails with a message naming the fixture's URL and the error, and no close is registered
+
+#### Scenario: Close runs first, bounded
+
+- **WHEN** a test that opened a value through the helper ends
+- **THEN** the close function runs before the fixture stops, with a context that has a deadline, and a close error is
+  reported as a test error
+
+#### Scenario: Import bound
+
+- **WHEN** the harness import check lists the helper's package imports
+- **THEN** no package of this module outside `internal/harness` is among them

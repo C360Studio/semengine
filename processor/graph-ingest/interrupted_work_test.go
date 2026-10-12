@@ -56,13 +56,13 @@ func entityStored(bucket *mockKVBucket, id string) bool {
 // application is redelivered, not a stop" (design D8, "Long apply"; #91 comment 6109278240, item 1).
 // When the delivery helper reports that the owner must stop (the application panicked, an
 // in-progress signal could not be sent, or the delivery has no metadata), the input is left
-// unsettled, the error count Health reads and the interrupted-work count under that cause each rise
-// by one, one ERROR line names the cause, and the next input on the same lane is applied and
-// acknowledged. Where the interruption lands in the entity's write (its read inside the
-// compare-and-set, or a container's birth), the count still rises by one, not once for the failed
-// write and again for the interruption, and the failed write's own ERROR line is logged beside the
-// cause's (Codex B1 on PR #93). The lane is one lane of a keyed pool on a context of its own, as
-// Start runs it.
+// unsettled, the interrupted-work count under that cause rises by one, one ERROR line names the
+// cause, and the next input on the same lane is applied and acknowledged. The interruption adds
+// nothing to the error count Health reads (#91 comment 6124130342): where it lands outside the
+// entity's write, that count is unchanged; where it lands in the entity's write (its read inside the
+// compare-and-set, or a container's birth), the write it cut counts once, at its own site, and logs
+// its own ERROR line beside the cause's (Codex B1 on PR #93). The lane is one lane of a keyed pool
+// on a context of its own, as Start runs it.
 // The last case holds the design's "At Stop": an input that reaches its lane after the lane's
 // context has ended is negatively acknowledged, applies nothing, and is logged at WARN.
 func TestInterruptedApplicationIsRedeliveredNotAStop(t *testing.T) {
@@ -71,9 +71,10 @@ func TestInterruptedApplicationIsRedeliveredNotAStop(t *testing.T) {
 		cause string
 		// hierarchy turns on hierarchy inference, so the first input's birth creates its containers.
 		hierarchy bool
-		// writeLogged is set where the interruption fails the entity's write, which logs its own
-		// ERROR line, "Failed to merge entity", beside the one naming the cause.
-		writeLogged bool
+		// writeFailed is set where the interruption fails the entity's write, which counts once in
+		// the error count Health reads and logs its own ERROR line, "Failed to merge entity", beside
+		// the one naming the cause.
+		writeFailed bool
 		// arrange interrupts the first input's application, through the applied-sequence bucket,
 		// the entity bucket or its message.
 		arrange func(it *interruption)
@@ -114,7 +115,7 @@ func TestInterruptedApplicationIsRedeliveredNotAStop(t *testing.T) {
 		{
 			name:        "in-progress signal fails during the entity write",
 			cause:       "heartbeat_failed",
-			writeLogged: true,
+			writeFailed: true,
 			arrange: func(it *interruption) {
 				it.msg.inProgressErr = errors.New("test: the in-progress signal is refused")
 				it.signalled = make(chan struct{})
@@ -135,7 +136,7 @@ func TestInterruptedApplicationIsRedeliveredNotAStop(t *testing.T) {
 			name:        "in-progress signal fails during a container birth",
 			cause:       "heartbeat_failed",
 			hierarchy:   true,
-			writeLogged: true,
+			writeFailed: true,
 			arrange: func(it *interruption) {
 				it.msg.inProgressErr = errors.New("test: the in-progress signal is refused")
 				it.signalled = make(chan struct{})
@@ -216,12 +217,17 @@ func TestInterruptedApplicationIsRedeliveredNotAStop(t *testing.T) {
 						t.Errorf("work_interrupted_total{cause=%q} = %v, want %v", cause, got, want)
 					}
 				}
-				if got := c.Health().ErrorCount - errorsBefore; got != 1 {
-					t.Errorf("Health's error count rose by %d, want 1", got)
+				// The write the interruption cut, if any: its one count and its one ERROR line.
+				cutWrites := 0
+				if tc.writeFailed {
+					cutWrites = 1
+				}
+				if got := c.Health().ErrorCount - errorsBefore; got != cutWrites {
+					t.Errorf("Health's error count rose by %d, want %d", got, cutWrites)
 				}
 				errorLines, writeLines := 0, 0
 				for _, line := range strings.Split(logs.String(), "\n") {
-					if tc.writeLogged && strings.Contains(line, "level=ERROR") &&
+					if tc.writeFailed && strings.Contains(line, "level=ERROR") &&
 						strings.Contains(line, `msg="Failed to merge entity"`) &&
 						strings.Contains(line, "entity_id="+interruptedEntity) {
 						writeLines++
@@ -237,12 +243,8 @@ func TestInterruptedApplicationIsRedeliveredNotAStop(t *testing.T) {
 				if errorLines != 1 {
 					t.Errorf("ERROR lines naming the cause = %d, want 1:\n%s", errorLines, logs.String())
 				}
-				wantWrite := 0
-				if tc.writeLogged {
-					wantWrite = 1
-				}
-				if writeLines != wantWrite {
-					t.Errorf("the failed write's ERROR lines = %d, want %d:\n%s", writeLines, wantWrite, logs.String())
+				if writeLines != cutWrites {
+					t.Errorf("the failed write's ERROR lines = %d, want %d:\n%s", writeLines, cutWrites, logs.String())
 				}
 				if tc.check != nil {
 					tc.check(t, it)
@@ -367,8 +369,8 @@ func refuseEntityCreate(bucket *mockKVBucket) {
 }
 
 // TestOrdinaryLaneWriteErrorCountsOnce holds the other side of TestInterruptedApplicationIsRedeliveredNotAStop
-// (Codex B1 on PR #93): an entity write that fails on the lane with no interruption raises the error
-// count Health reads by one, as it did before the interruption was counted, counts nothing as
+// (Codex B1 on PR #93; #91 comment 6124130342): an entity write that fails on the lane with no
+// interruption raises the error count Health reads by one, at the write's own site, counts nothing as
 // interrupted work, and its input is negatively acknowledged.
 func TestOrdinaryLaneWriteErrorCountsOnce(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -397,8 +399,8 @@ func TestOrdinaryLaneWriteErrorCountsOnce(t *testing.T) {
 }
 
 // TestDirectWriteErrorCountsAtOnce holds that a write called outside the delivery helper counts its
-// error in Health's error count before it returns, as before Codex B1's fix on PR #93: ingestEntity,
-// the synchronous entry handleMessage uses, and the exported CreateEntity.
+// error once in Health's error count before it returns: ingestEntity, the synchronous entry
+// handleMessage uses, and the exported CreateEntity.
 func TestDirectWriteErrorCountsAtOnce(t *testing.T) {
 	t.Run("ingestEntity", func(t *testing.T) {
 		c, entities := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))

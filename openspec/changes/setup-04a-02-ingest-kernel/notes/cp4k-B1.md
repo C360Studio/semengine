@@ -1,5 +1,88 @@
 # Codex B1 notes: an interrupted input counts once in Health's error count
 
+## Replaced (owner ruling, #91 comment 6124130342)
+
+The fix recorded below, `9fc8b0c`, was rejected. It carried a per-input count (`heldErrors`) to the write sites as a
+`context` value, and the owner ruled: "ctx as bag of values is an anti pattern we are not going to start now." No
+`context.WithValue` or `ctx.Value` carries state in graph-ingest: `git grep -n 'WithValue\|ctx.Value' --
+processor/graph-ingest/` prints nothing.
+
+The ruling settles B1 another way: an interruption is counted in `work_interrupted_total{cause}`, not in the error
+count `Health` reads. The commit that replaces `9fc8b0c`, on `e362446`:
+
+- removes `heldErrors`, `heldErrorsKey`, `countError` and their use in `processIngest`; the three write sites count
+  with `atomic.AddInt64(&c.errors, 1)` again (`component.go:2240`, `:2343`, `:2354`), as on `93dfe06`;
+- removes `recordInterruptedWork`'s `atomic.AddInt64(&c.errors, 1)` (`keyed_ingest.go:346`). It still logs the
+  interruption at ERROR and adds one to `work_interrupted_total` under its cause; the input is still left unsettled
+  and the lane keeps running (ruling 6109278240, item 1, which otherwise stands);
+- so a write the interruption cut counts once, at its own site, and an interruption anywhere else adds nothing. Until
+  #183 lands, an interruption alone no longer makes graph-ingest report unhealthy, and `DataFlow`'s `ErrorRate`, which
+  reads the same counter (`component.go:905`), no longer sees it;
+- changes the texts that stated the old count: the `graph-ingest-recovery` delta's requirement and its "Application
+  panics" scenario, design D8's "*An interrupted apply does not stop ingest*", and the doc comments of
+  `recordInterruptedWork` and `newWorkInterruptedMetric`. `processor/graph-ingest/README.md` never said an
+  interruption raises the error count, so it is unchanged. `tasks.md` (task 4.20, and the line of task 4.4's
+  description that names the count) is not edited here.
+
+### Tests
+
+`TestInterruptedApplicationIsRedeliveredNotAStop` (`processor/graph-ingest/interrupted_work_test.go:68`): in every
+case `work_interrupted_total` rises by exactly one under the case's cause and the input is unsettled, as before. The
+error-count assertion (`:226`) now wants no rise for "application panics", "in-progress signal fails" (the guard-read
+case) and "delivery has no metadata", and a rise of one for "in-progress signal fails during the entity write" and
+"during a container birth": the cut write's own count, beside its own ERROR line. The case field `writeLogged` is
+renamed `writeFailed`, since it now sets both.
+
+`TestOrdinaryLaneWriteErrorCountsOnce` (`:375`) and `TestDirectWriteErrorCountsAtOnce` (`:404`) are kept: each
+still holds behaviour the code has (an ordinary write failure on the lane counts once and is not interrupted work; a
+write called directly counts its failure once before it returns). Their doc comments no longer speak of a held count.
+
+Fail before, on `e362446` with only the test changed:
+
+```text
+$ go test -race -count=1 -timeout=60s -run '^(TestInterruptedApplicationIsRedeliveredNotAStop|TestOrdinaryLaneWriteErrorCountsOnce|TestDirectWriteErrorCountsAtOnce)$' ./processor/graph-ingest/
+--- FAIL: TestInterruptedApplicationIsRedeliveredNotAStop (0.02s)
+    --- FAIL: TestInterruptedApplicationIsRedeliveredNotAStop/application_panics (0.01s)
+        interrupted_work_test.go:226: Health's error count rose by 1, want 0
+    --- FAIL: TestInterruptedApplicationIsRedeliveredNotAStop/in-progress_signal_fails (0.00s)
+        interrupted_work_test.go:226: Health's error count rose by 1, want 0
+    --- FAIL: TestInterruptedApplicationIsRedeliveredNotAStop/delivery_has_no_metadata (0.00s)
+        interrupted_work_test.go:226: Health's error count rose by 1, want 0
+FAIL
+FAIL    github.com/c360studio/semengine/processor/graph-ingest    0.379s
+FAIL
+```
+
+Exit 1. The two write cases passed on the base, where the held count made them rise by one.
+
+### Mutation records
+
+Each `task mutate:check` ran the named subtest three times on the unchanged code, three times on the wrong change
+(copied to `/tmp/cp4k-b1b-mutants/`, outside the repository, on this machine only) and once on the unchanged code
+again. Both exited 0 with the verdict `detection: each of the 3 mutant runs failed the named test with an expected
+line, and the after-run passed`.
+
+1. `count-interruption.go` puts `atomic.AddInt64(&c.errors, 1)` back in `recordInterruptedWork`.
+   `-file processor/graph-ingest/keyed_ingest.go -test
+   'TestInterruptedApplicationIsRedeliveredNotAStop/in-progress_signal_fails' -expect interrupted_work_test.go:226`.
+   Each mutant run printed `interrupted_work_test.go:226: Health's error count rose by 1, want 0`.
+2. `uncount-cut-write.go` removes the count at the compare-and-set's failure (`component.go:2240`).
+   `-file processor/graph-ingest/component.go -test
+   'TestInterruptedApplicationIsRedeliveredNotAStop/in-progress_signal_fails_during_the_entity_write' -expect
+   interrupted_work_test.go:226`. Each mutant run printed `interrupted_work_test.go:226: Health's error count rose by
+   0, want 1`.
+
+No survivors and no inconclusive runs.
+
+### Not covered
+
+- The encoding failure at `component.go:2343` still has no test of its own; the container-birth case holds `:2354`.
+- The race in which the application returns a cut write's error in the same tick the heartbeat fails has no test.
+  It no longer changes the count: the write counts once at its site whichever case the helper's `select` takes, and
+  the interruption adds nothing.
+
+The sections below are the record of the rejected fix, unchanged.
+
 The finding is Codex's review record on PR #93, comment 6123602840, B1 (blocking). The base is `93dfe06`. The
 contract is the change's `specs/graph-ingest-recovery/spec.md`, "An interrupted application is redelivered, not a
 stop" (`:105-110`): an interrupted input is counted once in the error count its health reads.

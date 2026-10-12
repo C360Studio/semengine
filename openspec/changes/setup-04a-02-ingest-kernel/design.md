@@ -524,13 +524,14 @@ approved row says (#8 comment 5930855353, approved in 5930898291; ADR-111 Decisi
 - *An interrupted apply does not stop ingest* (owner ruling, #91 comment 6109278240, item 1). When the helper
   reports that the owner must stop (the apply panicked, an `InProgress` could not be sent, or the delivery's
   metadata or decision was invalid), the input stays unsettled and is delivered again after its ack wait;
-  graph-ingest logs it at ERROR, adds one to the error count `Health` reads and to
-  `semengine_graph_ingest_work_interrupted_total` under its cause (`panic`, `heartbeat_failed` or `invalid`, told
-  apart with `errors.Is` and `errors.As`), and the lane keeps taking input. The guard record makes a redelivery
-  apply once (ADR-111 Decisions 3 and 4), and `MaxDeliver` bounds the attempts. A panic is quarantined (ADR-111
-  Decision 6; `transport-client` "Work panics"), no longer negatively acknowledged as ADR-072 H2 had it (same
-  record, `:166-170`); H2's live lane holds. The counter is the only new surface: the declared signal for this
-  degrade. Test: a `synctest` unit test with one case per cause.
+  graph-ingest logs it at ERROR, adds one to `semengine_graph_ingest_work_interrupted_total` under its cause
+  (`panic`, `heartbeat_failed` or `invalid`, told apart with `errors.Is` and `errors.As`), and the lane keeps taking
+  input. The interruption adds nothing to the error count `Health` reads: a write it cut counts there once, at its
+  own site, and an interruption anywhere else leaves that count unchanged (owner ruling, #91 comment 6124130342). The
+  guard record makes a redelivery apply once (ADR-111 Decisions 3 and 4), and `MaxDeliver` bounds the attempts. A
+  panic is quarantined (ADR-111 Decision 6; `transport-client` "Work panics"), no longer negatively acknowledged as
+  ADR-072 H2 had it (same record, `:166-170`); H2's live lane holds. The counter is the only new surface: the declared
+  signal for this degrade. Test: a `synctest` unit test with one case per cause.
 - *At `Stop`*, an input that reaches its lane after the lane's context has ended applies nothing and is negatively
   acknowledged, today's shutdown disposition, with a WARN log. Test: a case of the same unit test.
 

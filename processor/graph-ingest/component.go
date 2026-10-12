@@ -198,8 +198,9 @@ func newUnguardedInputsMetric() prometheus.Counter {
 // left unsettled, so the server delivers them again after the ack wait (design D8, "Long apply"; #91
 // comment 6109278240, item 1). Its cause label is a closed enum: panic (the application panicked),
 // heartbeat_failed (an in-progress signal could not be sent) or invalid (the delivery's metadata or
-// the application's decision was invalid). Each such input is also logged at ERROR and counted in
-// the error count Health reads; the lane keeps taking input.
+// the application's decision was invalid). Each such input is also logged at ERROR, and the lane
+// keeps taking input. The interruption adds nothing to the error count Health reads (#91 comment
+// 6124130342).
 func newWorkInterruptedMetric() *prometheus.CounterVec {
 	return prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "semengine",
@@ -2236,7 +2237,7 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 
 	revision, bytesWritten, err := c.replaceEntity(ctx, entity, hierarchyTriples, readFound, at)
 	if err != nil {
-		c.countError(ctx)
+		atomic.AddInt64(&c.errors, 1)
 		return errs.Wrap(err, "Component", "mergeEntityOnLane", "CAS update")
 	}
 
@@ -2339,7 +2340,7 @@ func (c *Component) createEntityWithReceipt(
 	// Serialize entity (now includes hierarchy triples if enabled)
 	data, err := graph.MarshalEntityState(entity)
 	if err != nil {
-		c.countError(ctx)
+		atomic.AddInt64(&c.errors, 1)
 		return nil, 0, errs.Wrap(err, "Component", "CreateEntity", "entity serialization")
 	}
 
@@ -2350,7 +2351,7 @@ func (c *Component) createEntityWithReceipt(
 		return nil, 0, writeErr
 	}
 	if writeErr != nil {
-		c.countError(ctx)
+		atomic.AddInt64(&c.errors, 1)
 		return nil, 0, errs.Wrap(writeErr, "Component", "CreateEntity", "KV store")
 	}
 

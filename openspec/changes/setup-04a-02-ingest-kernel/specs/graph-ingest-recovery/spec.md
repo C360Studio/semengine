@@ -105,16 +105,17 @@ SHALL NOT be returned for redelivery and SHALL NOT stop the consumer.
 
 When applying an input panics, its in-progress signal cannot be sent, or the settlement helper finds the delivery's
 metadata or decision invalid, graph-ingest SHALL leave the input unsettled, so that it is delivered again after the
-acknowledgement wait; SHALL log it, and count it once in the error count its health reads and once in an
-interrupted-work count labelled by its cause (`panic`, `heartbeat_failed` or `invalid`); and SHALL keep taking input
-on the same lane. A panic in a payload's own code while the message is decoded, validated or asked for its entity is
-poison instead (the requirement above).
+acknowledgement wait; SHALL log it, and count it once in an interrupted-work count labelled by its cause (`panic`,
+`heartbeat_failed` or `invalid`); and SHALL keep taking input on the same lane. The interruption SHALL NOT add to the
+error count its health reads: a write the interruption cut counts there once, at its own site, and an interruption
+anywhere else leaves that count unchanged (owner ruling, #91 comment 6124130342). A panic in a payload's own code while
+the message is decoded, validated or asked for its entity is poison instead (the requirement above).
 
 #### Scenario: Application panics
 
 - **WHEN** applying an input panics
 - **THEN** the input is neither acknowledged, negatively acknowledged nor terminated, the interrupted-work count for
-  `panic` and the health error count each rise by one, and the next input on the same lane is acknowledged
+  `panic` rises by one, the health error count is unchanged, and the next input on the same lane is acknowledged
 
 #### Scenario: In-progress signal fails
 

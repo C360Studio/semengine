@@ -32,7 +32,7 @@ on choices the design does not spell out go in `notes/<task>.md`, with a one-lin
 - [x] 2.4 Rewrite the comments that name the swap (inventory §2d, and the `closedSignals` sentence at
   `client.go:195`-`:199`) so each states what the code does now. Check: `git grep -n SetConnection -- '*.go'` prints
   nothing.
-- [ ] 2.5 Show that the remaining tests guard the simplified paths. Run `task mutate:check` once per mutant, with
+- [x] 2.5 Show that the remaining tests guard the simplified paths. Run `task mutate:check` once per mutant, with
   `-test` naming the test and `-expect` or `-expect-text` naming the failure line it should print. Record each
   verdict in `notes/2.5.md`. Report a survivor or an inconclusive run as
   such.
@@ -65,7 +65,7 @@ on choices the design does not spell out go in `notes/<task>.md`, with a one-lin
   - a "pin → deleted" entry is added after `:1772`;
   - the `request_response_bounds` line map at `:2208` records that test's removal.
   Check: `task ledger:check`.
-- [ ] 3.3 Run `task verify` on a clean tree at this commit. `cover:check` keeps natsclient at 80% or more merged
+- [x] 3.3 Run `task verify` on a clean tree at this commit. `cover:check` keeps natsclient at 80% or more merged
   (design P7: about 89%). Record the commit and the run's result in a PR comment.
 
 ## 4. Review stop (Codex)

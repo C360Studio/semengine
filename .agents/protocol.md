@@ -41,7 +41,9 @@ acknowledged durability, and metadata or content preservation. All other explici
 testing, and repository requirements remain binding, except the generic inherited-cleanup mandates this section
 expressly supersedes. Missing proof of a required guarantee calls for targeted qualification; it is neither a
 passing gate nor automatic evidence that a rewrite is necessary. A scope freeze cannot excuse a broken contract, a
-newly introduced defect, or an unproved admission gate.
+newly introduced defect, or an unproved admission gate. A failure that needs a condition the code does not choose and
+names no real-world trigger is not required work under this list; the reviewer contract § Finding and verdict format
+(#185) sets its severity and its fix.
 
 Use the retained contract, code path, existing reproduction, failing regression, or required qualification result.
 State what it proves and what remains unknown. Whether a defect began at the source pin or during the port may remain

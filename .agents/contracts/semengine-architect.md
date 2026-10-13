@@ -194,7 +194,8 @@ repository that names a package the pull request carries, and the design says fo
 retires it or why it stays. A pull request retires an issue when it does the issue's work and closes it, with
 `Closes #n` in the pull request body. An issue names a package when it gives the package's import path, a `path:line`
 under it, or the package's admission-ledger row, in its title, its body or a comment. Rulings are recorded as
-comments: open adoption issue #141 names `graph/inference/storage.go:159` only in its ruling comment of 2026-10-10.
+comments: adoption issue #141, open on 2026-10-13, names `graph/inference/storage.go:159` only in its ruling comment
+of 2026-10-10.
 Every label counts: `class:port-refactor`, `bug`, `enhancement`, adoption issues and decisions alike. The duty is to
 face everything still open against the package, not to lower one label's count, so filing an issue under another
 label changes nothing. The listing is part of the inventory, beside the shape sweep's findings.
@@ -217,12 +218,13 @@ each issue kept, the design records one of two dispositions:
 2. **Stays,** with two things said. First, what the work is, as
    [Bounded port scope](../protocol.md#bounded-port-scope) classes it: a required correction with its binding basis,
    or optional inherited maintenance with why changing it now is optional. Second, where the work will be done, which
-   is this repository's scheduling and not the protocol's: a named later pull request for the same package (another
-   lifecycle owner's), the named pull request that ports a package importing it, or another named package, when the
-   issue's work lies there. Optional maintenance may have no place yet, because only an explicit owner decision
-   schedules optional work (Bounded port scope); the design then says so. A correction that one of the carried
-   package's own admission gates needs (the list at the top of this section) is never scheduled later: this pull
-   request retires it.
+   is this repository's scheduling and not the protocol's: a later pull request for the same package (another
+   lifecycle owner's), the pull request that ports a package importing it, or another named package, when the
+   issue's work lies there. A pull request nobody has claimed yet has no number, so it is named by its package and
+   lifecycle owner, as D2 of the archived Slice 04A design lists them. Optional maintenance may have no place yet,
+   because only an explicit owner decision schedules optional work (Bounded port scope); the design then says so. A
+   correction that an admission gate (Extraction slices, first paragraph) needs in the code this pull request carries
+   is never scheduled later: this pull request retires it.
 
 A "stays" with a supported basis is not a finding against the design, and neither is a design that retires nothing.
 No command compares the number of open issues before and after a merge, and nothing gates on that number:

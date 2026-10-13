@@ -82,8 +82,9 @@ revises tasks 2.2 and 2.3 before section 2 starts.
 - [x] 5.1 Ledger, natsclient row. Each sentence that names a deleted test or a removed hook records the removal
   (`docs/admission-ledger.yaml:1625`-`:1638`, `:2001`, `:2222`, `:2271`, `:2296` on `a5020db`). Check:
   `task ledger:check`.
-- [ ] 5.2 Run `task verify` on a clean tree at this commit. `cover:check` keeps natsclient at its floor. Record the
-  commit and the run's result in a PR comment.
+- [x] 5.2 Run `task verify` on a clean tree at this commit. `cover:check` keeps natsclient at its floor. Record the
+  commit and the run's result in a PR comment. `verify: ok` at `3a7ffe3`, the section 5 commit, on a clean tree;
+  natsclient 88.9% against its 80% floor. This tick changes `tasks.md` only.
 
 ## 6. Review stop (Codex), part 2
 

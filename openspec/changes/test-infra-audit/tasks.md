@@ -36,7 +36,8 @@ review stop. Choices the design does not spell out go in `notes/<task>.md`.
 - [x] 2.7 Remove the fixture's name generator and the SemStreams substring list; `TestSemEngineAssignedNames` keeps the
   `semengine-` prefix rule; the two `Fixture.Name` callers use literal names.
 - [ ] 2.8 Update every file that names the runner, the lock, the evidence directory or `SEMENGINE_NATS_IMAGE`:
-  `docs/setup-plan.md` (the text in `drafts/setup-plan-change.md`); `docs/testing.md` (`:57-69`, `:554-569`, `:572`);
+  `docs/setup-plan.md` (the text in `drafts/setup-plan-change.md`); `docs/testing.md` (`:29-31`, `:57-69`, `:76`,
+  `:358`, `:554-569`, `:572`; the first three name `FuzzCheckName`, `CheckName` and `Name(base)`, removed by 2.7);
   `docs/repository-map.md:47,50,51`; `.agents/skills/semengine-preflight/SKILL.md:42,61-64,84`;
   `.agents/skills/semengine-handoff/SKILL.md:28`; `.gitignore:15-16`; the admission-ledger rows whose destination
   this change removes (`docs/admission-ledger.yaml:211,244`), so `task ledger:check` passes. Finish with `git grep -n

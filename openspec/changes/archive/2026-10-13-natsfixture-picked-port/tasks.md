@@ -19,9 +19,9 @@ out go in `notes/1.md`.
 
 ## 2. Review and close
 
-- [ ] 2.1 Hold: Codex's review of record on the commit whose `task verify` run is recorded on PR #210; fix findings,
-  and re-request after any content commit.
-- [ ] 2.2 Archive the change and sync `openspec/specs/nats-fixture/spec.md` as the last content commit. Check:
+- [x] 2.1 Codex's review of record on the commit whose `task verify` run is recorded on PR #210; fix findings,
+  and re-request after any content commit. Codex: APPROVE at `7472976` (PR #210 comment 6153808904), no findings.
+- [x] 2.2 Archive the change and sync `openspec/specs/nats-fixture/spec.md` as the last content commit. Check:
   `task spec:check`.
 
 Task 2.2 is completed by the archive commit. The archive check, CI before merging and `task merge:check -- 210` are

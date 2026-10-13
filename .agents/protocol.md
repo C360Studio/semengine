@@ -101,18 +101,24 @@ on optional maintenance.
   (`git worktree add ../semengine-wt/<branch> -b <branch> origin/main`), never under `/private/tmp`, which a reboot
   purges; `git worktree remove` it when the PR merges. Heavy local gates run one agent at a time on a shared host:
   worktrees fix the git collision, not the CPU one. CI is the arbiter; a local red under contention is not a finding.
-- **File:** a defect found in carried or ported code (code brought over from the SemStreams pin, unchanged or
-  adapted) that the change does not fix is always filed as an issue (owner ruling of 2026-10-13, #212, which writes
-  down the owner's word of 2026-10-12 recorded on #189). A defect is a behaviour that breaks what the code promises: a
-  contract line (a package `README.md` or its admission-ledger `contract` field), a doc comment, a spec requirement,
-  or a reasonable reading of the code. It is filed whether a test, a review, the port or a coverage pass found it,
-  and whether it began at the pin or during the port; attribution is not a prerequisite ("Bounded port scope" above).
-  Check for an existing issue first (`gh issue list --search`). One issue per package, its defects as numbered items,
-  is the accepted shape (#189, #193). When the defect's code exists only on a pull request's branch, the issue is
-  labelled `status:blocked` with that pull request named as its blocker, and the pull request body links it as a
-  follow-up with no closing keyword (`Follow-up after this pull request merges: #n`): a `Closes`, `Fixes` or
-  `Resolves` there would close the issue when the pull request merges. Filing tracks a defect; it does not satisfy a
-  guarantee the pull request claims, and it does not change a review finding's severity (#185).
+- **File:** a defect in code in this repository that the change does not fix is always filed as an issue, whether
+  the code was carried or ported (brought over from the SemStreams pin, unchanged or adapted) or written here, such as
+  the test harness or a script (owner ruling of 2026-10-13, #212, which writes down the owner's word of 2026-10-12,
+  quoted on #193 and #212). A defect is a behaviour that breaks what the code promises: a contract line (a spec
+  requirement, a package `README.md` or its admission-ledger `contract` field), a doc comment, or a reasonable
+  reading of the code. It is filed whatever found it: a test, a review, a port or a coverage pass. In carried or
+  ported code, whether the defect began at the pin or during the port may stay unknown; attribution is not a
+  prerequisite ("Bounded port scope" above). Check for an existing issue first (`gh issue list --search`). #189 and
+  #193 bundle one package's defects as numbered items in one issue; a defect that a pull request can retire on its
+  own is better filed alone, so `Closes #n` can close it. When the defect's code exists only on a pull request's
+  branch, the issue is labelled `status:blocked` with that pull request named as its blocker, and the pull request
+  body links it as a follow-up with no closing keyword (`Follow-up after this pull request merges: #n`): a `Closes`,
+  `Fixes` or `Resolves` there would close the issue when the pull request merges. The label stays until that pull
+  request merges and then comes off, removed by whoever merges it or by the next session that reads the issue; after
+  PR #93 merged, #189 kept the label until the owner's word removed it (#189 comment 6152552748). Filing tracks a
+  defect; it does not satisfy a guarantee the pull request claims, and a finding about the defect keeps the severity
+  the reviewer contract gives it (#185).
+
   Route every other finding before opening an issue. A defect is not a residual: a residual is a cost or loose end of
   a decision this change just made deliberately, not code that behaves wrongly, and it belongs in a doc comment at
   the line or in the change's `design.md`. A consequence an owner ruling already states needs nothing; the ruling is

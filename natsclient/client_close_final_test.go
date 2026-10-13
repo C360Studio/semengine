@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -445,7 +446,9 @@ func TestClientCloseHonoursItsContextDuringAnotherDrain(t *testing.T) {
 }
 
 // 4. Codex TestReviewerLosingDialPreservesWinner (dial-error, canceled-dial, assertions
-// unchanged): a Connect whose dial loses to a winner leaves the winner's status standing.
+// unchanged): a Connect whose dial loses to a winner leaves the winner's status standing. The
+// losing Connect's socket dial is held (netDial) while the winner connects, then fails; in
+// canceled-dial the losing Connect's context ends before the dial fails.
 func TestClientLosingConnectLeavesWinnerStatus(t *testing.T) {
 	for _, mode := range []string{"dial-error", "canceled-dial"} {
 		t.Run(mode, func(t *testing.T) {
@@ -457,18 +460,22 @@ func TestClientLosingConnectLeavesWinnerStatus(t *testing.T) {
 				_ = c.Close(ctx)
 			}()
 			entered, release := make(chan struct{}), make(chan struct{})
-			var once sync.Once
+			var once, holdOnce sync.Once
 			defer once.Do(func() { close(release) })
+			c.netDial = func(d *net.Dialer, network, address string) (net.Conn, error) {
+				first := false
+				holdOnce.Do(func() { first = true })
+				if !first {
+					return d.Dial(network, address)
+				}
+				close(entered)
+				<-release
+				return nil, errors.New("controlled dial failure")
+			}
 			dialCtx, cancelDial := context.WithCancel(t.Context())
 			defer cancelDial()
 			answer := make(chan error, 1)
-			go func() {
-				answer <- c.connectWith(dialCtx, func(string, ...nats.Option) (*nats.Conn, error) {
-					close(entered)
-					<-release
-					return nil, errors.New("controlled dial failure")
-				})
-			}()
+			go func() { answer <- c.Connect(dialCtx) }()
 			select {
 			case <-entered:
 			case <-time.After(10 * time.Second):

@@ -314,12 +314,6 @@ func (m *Client) awaitClosedHandler(nc *nats.Conn) {
 	m.closedSignalsMu.Unlock()
 }
 
-// carriesClientHandlers reports whether conn's closed handler can be awaited: a
-// connection dialled with options that dropped the client's handlers has none.
-func carriesClientHandlers(conn *nats.Conn) bool {
-	return conn != nil && conn.ClosedHandler() != nil
-}
-
 // NewClient creates a new NATS client with optional configuration.
 // The urls parameter accepts comma-separated NATS server URLs for clustering support
 // (e.g., "nats://server1:4222,nats://server2:4222").
@@ -674,16 +668,6 @@ func (m *Client) GetStatus() *Status {
 // changes neither the status, the failure count nor the circuit of a
 // connection another Connect installed (design D3).
 func (m *Client) Connect(ctx context.Context) error {
-	return m.connectWith(ctx, nats.Connect)
-}
-
-// connectWith keeps the native connection candidate private until Connect wins
-// admission against terminal Close. dial is a test seam; production uses
-// nats.Connect synchronously with the timeout in buildConnectionOptions.
-func (m *Client) connectWith(
-	ctx context.Context,
-	dial func(string, ...nats.Option) (*nats.Conn, error),
-) error {
 	if ctx == nil {
 		return errs.WrapInvalid(stderrors.New("nil context"), "Client", "Connect", "missing context")
 	}
@@ -729,7 +713,7 @@ func (m *Client) connectWith(
 	socket := newSocketDialer(m.timeout, m.netDial)
 	opts := append(m.buildConnectionOptions(), nats.SetCustomDialer(socket), nats.SkipHostLookup())
 	stopCut := socket.cutWhenDone(ctx)
-	conn, err := dial(m.urls, opts...)
+	conn, err := nats.Connect(m.urls, opts...)
 	stopCut()
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		m.discardCandidate(conn)
@@ -842,11 +826,8 @@ func (m *Client) discardCandidate(conn *nats.Conn) {
 	if conn == nil {
 		return
 	}
-	await := carriesClientHandlers(conn)
 	conn.Close()
-	if await {
-		m.awaitClosedHandler(conn)
-	}
+	m.awaitClosedHandler(conn)
 }
 
 // startMetricsPoller starts the JetStream metrics poller. It reports false when
@@ -987,7 +968,6 @@ func (m *Client) cleanup(
 
 	closeErr := m.drainAndCloseConnection(ctx, conn, drainTimeout)
 
-	awaitHandlers := carriesClientHandlers(conn)
 	m.mu.Lock()
 	m.conn = nil
 	m.js = nil
@@ -999,11 +979,7 @@ func (m *Client) cleanup(
 	m.setStatus(StatusDisconnected)
 	m.mu.Unlock()
 
-	var handlersOf *nats.Conn
-	if awaitHandlers {
-		handlersOf = conn
-	}
-	go m.join(joined, handlersOf)
+	go m.join(joined, conn)
 	return closeErr
 }
 

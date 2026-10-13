@@ -32,7 +32,7 @@ revises tasks 2.2 and 2.3 before section 2 starts.
   - Test: `TestClientCloseDropsLateDisconnect` passes.
   - Show it can fail: run `task mutate:check` with `-expect-text` on `handleDisconnect` writing the status even once
     Close has begun (`if !m.closing`, `client.go:2195`). Record the verdict in `notes/2.2.md`.
-- [ ] 2.3 Remove `connectWith`'s `dial` and `carriesClientHandlers` (Q2: `netDial` stays).
+- [x] 2.3 Remove `connectWith`'s `dial` and `carriesClientHandlers` (Q2: `netDial` stays).
   - Move rows 1 (`dial-error`, `canceled-dial`), 11 and 13 onto `netDial` (design, "Recommendation"). Row 13's
     comment no longer claims the Connecting-write window it stops testing.
   - Move `connectScripted` onto `netDial`, so T2 to T7 keep their bubble. Reword T8's comment

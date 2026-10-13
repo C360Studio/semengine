@@ -101,11 +101,24 @@ on optional maintenance.
   (`git worktree add ../semengine-wt/<branch> -b <branch> origin/main`), never under `/private/tmp`, which a reboot
   purges; `git worktree remove` it when the PR merges. Heavy local gates run one agent at a time on a shared host:
   worktrees fix the git collision, not the CPU one. CI is the arbiter; a local red under contention is not a finding.
-- **File:** before opening an issue, route the finding. A residual of a decision this change just made deliberately
-  belongs in a doc comment at the line or in the change's `design.md`. A consequence an owner ruling already states
-  needs nothing; the ruling is the record. An unmeasured cost becomes a *Declared cost* section in the design. Only an
-  architectural finding (it crosses files, would need its evidence re-collected to re-derive, or changes what someone
-  should not do next) becomes an issue. Ask the owner before filing when placement is a genuine scheduling call.
+- **File:** a defect found in carried or ported code (code brought over from the SemStreams pin, unchanged or
+  adapted) that the change does not fix is always filed as an issue (owner ruling of 2026-10-13, #212, which writes
+  down the owner's word of 2026-10-12 recorded on #189). A defect is a behaviour that breaks what the code promises: a
+  contract line (a package `README.md` or its admission-ledger `contract` field), a doc comment, a spec requirement,
+  or a reasonable reading of the code. It is filed whether a test, a review, the port or a coverage pass found it,
+  and whether it began at the pin or during the port; attribution is not a prerequisite ("Bounded port scope" above).
+  Check for an existing issue first (`gh issue list --search`). One issue per package, its defects as numbered items,
+  is the accepted shape (#189, #193). When the defect's code exists only on a pull request's branch, the issue is
+  labelled `status:blocked` with that pull request named as its blocker, and the pull request body links it as a
+  follow-up with no closing keyword (`Follow-up after this pull request merges: #n`): a `Closes`, `Fixes` or
+  `Resolves` there would close the issue when the pull request merges. Filing tracks a defect; it does not satisfy a
+  guarantee the pull request claims, and it does not change a review finding's severity (#185).
+  Route every other finding before opening an issue. A defect is not a residual: a residual is a cost or loose end of
+  a decision this change just made deliberately, not code that behaves wrongly, and it belongs in a doc comment at
+  the line or in the change's `design.md`. A consequence an owner ruling already states needs nothing; the ruling is
+  the record. An unmeasured cost becomes a *Declared cost* section in the design. Of the rest, only an architectural
+  finding (it crosses files, would need its evidence re-collected to re-derive, or changes what someone should not do
+  next) becomes an issue. Ask the owner before filing when placement is a genuine scheduling call.
 - **Land:** implementation review (the other agent's for a code pull request: "Cross-agent review" below), then, for a
   documents-only change, the owner-run cross-agent round where the owner asks for it, then fixes and re-review, then
   archive as the final content commit, then a narrow reviewer check of the archive/spec sync (either agent's reviewer),

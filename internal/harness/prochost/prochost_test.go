@@ -211,13 +211,22 @@ func TestFailedTestLogsTheHelperOutput(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			type seen struct {
+				out   string
+				alive bool
+			}
 			for stream, file := range map[string]string{"hello from the helper": p.stdout, "hello on stderr": p.stderr} {
 				ctx, cancel := context.WithTimeout(t.Context(), failureBound)
-				_, err := probe.Await(ctx, func(context.Context) (string, error) {
+				got, err := probe.Await(ctx, func(context.Context) (seen, error) {
+					alive := p.Alive() // read before the file: output written before an exit is still seen
 					data, err := os.ReadFile(file)
-					return string(data), err
-				}, func(s string) bool { return strings.Contains(s, stream) })
+					return seen{string(data), alive}, err
+				}, func(s seen) bool { return strings.Contains(s.out, stream) || !s.alive })
 				cancel()
+				if err == nil && !strings.Contains(got.out, stream) {
+					stderr, _ := os.ReadFile(p.stderr)
+					t.Fatalf("helper %d exited before %q reached %s; stderr:\n%s", p.pid, stream, file, stderr)
+				}
 				if err != nil {
 					t.Fatalf("%q never reached %s: %v", stream, file, err)
 				}

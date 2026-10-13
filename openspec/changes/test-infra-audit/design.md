@@ -150,10 +150,12 @@ Packages: natsclient, graph-ingest and natsfixture (P5: 94, 103 and 47 s).
 1. Two worktrees on the pull request's head run `task test:integration -- ./natsclient ./processor/graph-ingest
    ./internal/harness/natsfixture` at the same time, three times. Pass: six green runs. Once, run `go test -tags
    integration ./natsclient` without Task.
-2. Start one run and press Ctrl-C after 30 s. `docker ps -a --filter label=org.c360studio.semengine.test` lists what
-   it left, every container labelled.
-3. Record each run's wall time and its container count (`docker events --since <start> --filter
-   label=org.c360studio.semengine.test --filter event=create`).
+2. Start one run and press Ctrl-C after 30 s (a signal to Task's process alone does not stop its children; send it to
+   the process group, as a terminal's Ctrl-C does). `docker ps -a --filter label=org.c360studio.semengine.test` lists
+   what it left, every container labelled.
+3. Record each run's wall time and its container count (`docker events --filter label=org.c360studio.semengine.test
+   --filter event=create`, streamed for the whole run; replayed afterwards with `--since` it undercounts, PR #206
+   comment 6136509092).
 
 About 12 minutes (estimate, about 3 min a run). Pull request 1 runs steps 1 to 3; pull request 3 runs steps 1 and 3
 again, on shared servers. The check does not show the leftovers removed: that takes 30 minutes, and the sweep's own

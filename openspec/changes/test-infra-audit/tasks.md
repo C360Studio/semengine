@@ -48,7 +48,9 @@ review stop. Choices the design does not spell out go in `notes/<task>.md`.
   (`docs/adr/112-natsclient-contract.md:13`) is a dated record and is left as written. `docs/setup-plan.md`'s "one NATS
   server per package" becomes true with pull request 3 (4.4).
 - [x] 2.9 Add `AGENTS.md` rows 1 and 2 and replace the image-pin row (`drafts/agents-rows.md`).
-- [ ] 2.10 Record the short check on the pull request (`design.md` § Short check, steps 1 to 3).
+- [x] 2.10 Record the short check on the pull request (`design.md` § Short check, steps 1 to 3): PR #206 comment
+  6136509092. Six paired runs passed; the one plain `go test` run failed on Docker Desktop's port fault in `Start`
+  (both attempts); the interrupted run left two labelled containers and a helper process (#208).
 - [x] 2.11 Sync into `openspec/specs/`: all of `integration-test-runner` except "Concurrent runs on one daemon", whose
   scenario cites pull request 3's short check and so syncs at 4.7, and all of `process-host`; from `nats-fixture` the
   removed "Admission before Docker" and "Run-unique ownership and safe names", the modified "Phased start with typed

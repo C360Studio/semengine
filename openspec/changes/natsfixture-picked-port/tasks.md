@@ -13,8 +13,9 @@ out go in `notes/1.md`.
 - [x] 1.3 Text: the comments in `fixture.go` and `restart.go`, `restart_test.go`, `docs/testing.md`, and
   `natsclient/integration_test.go` that said the restart port may move or cited `TestRestartPastAHeldPort`, which is
   removed. The header of `scripts/lint-test-ports.sh` says how `freePort` applies its rule. Check: `task lint`.
-- [ ] 1.4 `task verify` passes on a clean tree at the last commit of section 1. At `2b36ba7` every step passed but
-  `test:unit`, which failed only #202's `TestEscapedWriterDoesNotHoldTheLock` (`notes/1.md`).
+- [x] 1.4 `task verify` passes on a clean tree at the last commit of section 1: exit 0 at `7e2c678`, the tree clean
+  after (log local only). An earlier run at `2b36ba7` failed only #202's `TestEscapedWriterDoesNotHoldTheLock`
+  (`notes/1.md`), a known pass/fail in the runner package this change does not touch.
 
 ## 2. Review and close
 

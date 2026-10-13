@@ -30,7 +30,7 @@ review stop. Choices the design does not spell out go in `notes/<task>.md`.
 - [x] 2.5 Remove admission (`admission.go`, `ErrNotAdmitted`, their tests) and the evidence records; a failed start
   writes the container log to the test output; prochost writes to the test's temporary directory and logs a child's
   output when its test fails (`process-host`).
-- [ ] 2.6 Remove `scripts/test-integration.sh`, `scripts/admission-lock.sh`, `internal/harness/runner`, the lock lines
+- [x] 2.6 Remove `scripts/test-integration.sh`, `scripts/admission-lock.sh`, `internal/harness/runner`, the lock lines
   in `scripts/doctor.sh`, its Ryuk lines (`:77-83`, the Ryuk environment and properties-file report, and `:95-105`, the
   Ryuk image check), the evidence upload in `.github/workflows/ci.yml`, and the lock note in `scripts/verify.sh:9`.
 - [x] 2.7 Remove the fixture's name generator and the SemStreams substring list; `TestSemEngineAssignedNames` keeps the

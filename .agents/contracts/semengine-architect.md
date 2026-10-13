@@ -221,10 +221,10 @@ each issue kept, the design records one of two dispositions:
    is this repository's scheduling and not the protocol's: a later pull request for the same package (another
    lifecycle owner's), the pull request that ports a package importing it, or another named package, when the
    issue's work lies there. A pull request nobody has claimed yet has no number, so it is named by its package and
-   lifecycle owner, as D2 of the archived Slice 04A design lists them. Optional maintenance may have no place yet,
-   because only an explicit owner decision schedules optional work (Bounded port scope); the design then says so. A
-   correction that an admission gate (Extraction slices, first paragraph) needs in the code this pull request carries
-   is never scheduled later: this pull request retires it.
+   lifecycle owner, as the slice's design lists them (for Slice 04A, D2 of the archived `setup-04a-foundation`
+   design). Optional maintenance may have no place yet, because only an explicit owner decision schedules optional
+   work (Bounded port scope); the design then says so. A correction that an admission gate (Extraction slices, first
+   paragraph) needs in the code this pull request carries is never scheduled later: this pull request retires it.
 
 A "stays" with a supported basis is not a finding against the design, and neither is a design that retires nothing.
 No command compares the number of open issues before and after a merge, and nothing gates on that number:

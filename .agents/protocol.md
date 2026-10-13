@@ -103,8 +103,9 @@ on optional maintenance.
   worktrees fix the git collision, not the CPU one. CI is the arbiter; a local red under contention is not a finding.
 - **File:** a defect in code in this repository that the change does not fix is always filed as an issue, whether
   the code was carried or ported (brought over from the SemStreams pin, unchanged or adapted) or written here, such as
-  the test harness or a script (owner ruling of 2026-10-13, #212, which writes down the owner's word of 2026-10-12,
-  quoted on #193 and #212). A defect is a behaviour that breaks what the code promises: a contract line (a spec
+  the test harness or a script (two owner rulings of 2026-10-13 on #212, comments 6156218594 and 6156601031: the
+  first writes down the owner's word of 2026-10-12 on carried code, quoted on #193 and #212; the second extends it to
+  code written here). A defect is a behaviour that breaks what the code promises: a contract line (a spec
   requirement, a package `README.md` or its admission-ledger `contract` field), a doc comment, or a reasonable
   reading of the code. It is filed whatever found it: a test, a review, a port or a coverage pass. In carried or
   ported code, whether the defect began at the pin or during the port may stay unknown; attribution is not a

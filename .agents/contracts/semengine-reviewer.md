@@ -414,9 +414,13 @@ wiring). Its `internal/boot`, schema-generation and OpenAPI rules are not carrie
 - A CAS whose reported revision comes from a post-hoc read, a mark cleared non-causally, or a baseline mutated before
   its publish succeeds is a blocking finding.
 - An in-PR guarantee "satisfied" by a filed issue is a finding: the guarantee holds here or the claim is removed.
-- Every issue this change filed passes the protocol's **File** ritual: its content is architectural, not a residual of
-  a decision the change itself made, not a consequence a ruling already states, not an unmeasured cost. A residual
-  filed as an issue is a finding; the remedy is relocation into a doc comment or `design.md`.
+- Every issue this change filed passes the protocol's **File** ritual: its content is a defect in code in this
+  repository (carried, ported or written here), or architectural; it is not a residual of a decision the change
+  itself made, a consequence a ruling already states, or an unmeasured cost. A residual filed as an issue is a
+  finding; the remedy is relocation into a doc comment or `design.md`. A filed defect is never that finding: a defect
+  is code that behaves wrongly, not a loose end of the change's own decision. A defect the change found in code in
+  this repository, did not fix, and did not file as an issue (named only in a comment, a note or a review request) is
+  a finding; the remedy is filing it (owner ruling of 2026-10-13, #212).
 - Review fix commits as adversarially as the original diff; remedies are where new blockers enter.
 - **A silent skip, drop, or degrade is a finding at any severity.** Any path that continues past a failure, takes a
   fallback, drops an element, or runs with less than was asked either refuses loudly or emits BOTH a log line and a

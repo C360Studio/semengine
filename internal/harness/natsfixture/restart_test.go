@@ -55,10 +55,8 @@ func fixtureErrors(err error) []*Error {
 	return out
 }
 
-// Docker Desktop leaves a container's port list empty when a Mac process holds the host port it
-// picked, and the next start of the same container gets the next port (#180; against Docker:
-// TestRestartPastAHeldPort). A mapped-port failure after a restart, with the caller's context still
-// live, earns one more stop, start and port read on the same container; a second failure, or a
+// A mapped-port failure after a restart, with the caller's context still live, earns one more
+// stop, start and port read on the same container (maxAttempts says why); a second failure, or a
 // cancelled context, is returned, and no container is replaced (nats-fixture › "Mapped-port failure
 // after a restart").
 func TestRestartTriesOnceMoreAfterAMappedPortFailure(t *testing.T) {

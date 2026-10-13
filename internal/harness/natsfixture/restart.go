@@ -26,16 +26,16 @@ var errNotStarted = errors.New("natsfixture: Restart needs a fixture whose Start
 // or observes them absent.
 //
 // URL and JetStream return the new binding once Restart returns nil, and stay valid until the next
-// Restart; Docker may map a different host port. A caller stops what it built on the old URL before
-// Restart and starts it on the new one after.
+// Restart. The host port is the one Start gave Docker, so URL is unchanged (TestRestartURLDials),
+// but every connection to the container is lost. A caller stops what it built on the URL before
+// Restart and starts it again after.
 //
 // Restart refuses, with no Docker call, before a successful Start and once Stop has begun. A
 // failure in a phase returns an *Error naming it, with one exception: when the mapped-port read
 // fails and ctx is still live, Restart stops and starts the same container once more and reads the
 // port again. A failure in that second stop, start or port read returns both errors; a connect or
-// JetStream failure after a good second read returns that error alone. Docker Desktop on macOS
-// leaves the port list empty when a Mac process holds the host port it picked, and the next start
-// gets the next port (#180; TestRestartPastAHeldPort). No replacement container is created; after a failure the fixture can
+// JetStream failure after a good second read returns that error alone (maxAttempts says why the
+// one more try is kept). No replacement container is created; after a failure the fixture can
 // no longer be restarted, and Stop removes what it still owns. Do not call Restart from a Consume
 // handler: it waits for that handler to return.
 //

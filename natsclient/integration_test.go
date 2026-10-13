@@ -45,10 +45,10 @@ func TestIntegration_ConnectToRealNATS(t *testing.T) {
 // TestIntegration_ReconnectionIsRedial proves re-dial, not nats.go's automatic reconnect: when the
 // broker restarts, a client on it observes the loss (its connection-lost callback fires and its
 // Status leaves connected), and a client dialled from the restarted broker's URL is healthy.
-// Docker may map the restarted broker to another host port, so the first client's URL can point
-// nowhere; that is why the pin skipped this test (integration_test.go:63-65) and why the first
-// client here has no reconnects. Rewritten on natsfixture.Restart (owner ruling, #9 comment
-// 5941920346, Q2; comment 5969522395, item 2).
+// The pin skipped this test because Docker could map the restarted broker to another host port
+// (integration_test.go:63-65). natsfixture keeps the host port across a restart (#209); the first
+// client here has no reconnects because the test proves a re-dial, not a reconnect. Rewritten on
+// natsfixture.Restart (owner ruling, #9 comment 5941920346, Q2; comment 5969522395, item 2).
 func TestIntegration_ReconnectionIsRedial(t *testing.T) {
 	ctx := t.Context()
 	f := startFixture(t)

@@ -134,6 +134,14 @@ cited at the pin's `path:line`. Check each finding's disposition under
 the appropriate ledger disposition; retained structure says why changing it is optional. A missing unit, line count,
 owner question, finding, or supported disposition is a finding.
 
+For the same porting designs (architect contract, Extraction slices, "Open issues against the package"), re-run the
+candidate queries yourself: one `gh issue list --state open --search "<spelling> in:title,body" --limit 200` for each
+spelling of each carried package's name, its import path below the module root and its last path segment. Read the
+hits; do not count them. An open issue that names the package and is missing from the listing, a listed issue
+without a disposition, or a "stays" whose basis [Bounded port scope](../protocol.md#bounded-port-scope) does not
+support, is a finding. A rise in the number of open issues is not a finding, and neither is a design that retires
+nothing, when each "stays" has a supported basis.
+
 ## Contract and task-truth review
 
 - **Verify the conformance table, not the prose.** For a change with recorded rulings, constraints, or approval

@@ -187,14 +187,56 @@ mandatory.
 Source: issue #159, filed with ruling 1 in epic #9 comment 6085243841; the bounded disposition supersedes its
 unconditional refactor and `adapt` mapping (epic #9 comment 6101771664).
 
+### Open issues against the package
+
+From Slice 04A change 3 on, before a porting design is written, the architect lists every open issue in this
+repository that names a package the pull request carries, and the design says for each one whether this pull request
+retires it or why it stays. An issue names a package when it gives the package's import path, a `path:line` under
+it, or the package's admission-ledger row. Every label counts: `class:port-refactor`, `bug`, `enhancement`, adoption
+issues and decisions alike. The duty is to face everything still open against the package, not to lower one label's
+count, so filing an issue under another label changes nothing. The listing is part of the inventory, beside the
+shape sweep's findings.
+
+The candidates come from one query per spelling of the package's name: its import path below the module root (such as
+`graph/inference`) and its last path segment (`inference`).
+
+```bash
+gh issue list --state open --search "<spelling> in:title,body" --limit 200
+```
+
+Read the hits; do not count them. GitHub's search matches words, not packages, so it also returns issues that only use
+the word. Measured on 2026-10-13 for change 3's packages: `config` matched nine open `class:port-refactor` issues, most
+about a config field in another package, and `health` matched five, most about a `Health()` method. Keep the hits
+that name the package; the rest may be listed on one line as "names the word, not the package". For each issue kept,
+the design records one disposition:
+
+1. **Retired by this pull request:** the pull request body carries `Closes #n`, and the design names the task in
+   `tasks.md` that does the work.
+2. **Stays,** with the disposition [Bounded port scope](../protocol.md#bounded-port-scope) gives it: required work
+   that belongs to a named later pull request, and why it belongs there; or optional inherited maintenance, and why
+   changing it now is optional.
+3. **Not this package's:** the issue names the package, but its work lies elsewhere; one line says where.
+
+A "stays" with a supported basis is not a finding against the design, and neither is a design that retires nothing.
+No command compares the number of open issues before and after a merge, nothing gates on that number, and
+`scripts/merge-check.sh` does not read it. A number that is checked becomes a number that is managed: a gate on the
+open count would reward an agent for leaving a defect unfiled, or for filing it under a label the gate does not count.
+Under this rule, filing an issue costs a pull request nothing; an open issue missing from the listing is what the
+reviewer looks for, re-running the same queries (reviewer contract § Pre-owner design review). The open
+`class:port-refactor` count stays a figure reported in status comments on epic #9. This rule is review only.
+
+Source: owner ruling of 2026-10-13, #160, which replaced the merge check that issue first asked for (fail a pull
+request that raises the open `class:port-refactor` count) with this listing.
+
 ## The surface inventory (mandatory first deliverable)
 
 The inventory is a file, `openspec/changes/<id>/inventory.md`, with a `base: <sha>` header and every entry pinned as
 `` `path:line` — `<the line's text>` `` so the reviewer can re-check each pin after commits. A porting change's
-inventory also lists the shape sweep's findings (Extraction slices, "The shape sweep"). Enumerate from the
-repository, never from the briefing: a briefing's list is a set of hypotheses, and a directed check inherits the
-director's blind spots. The reviewer's independent re-derivation is the check on your blind spots. Six categories,
-each either cited at `file:line` or closed with the exact searches that came up empty:
+inventory also lists the shape sweep's findings and the open issues against each package it carries (Extraction
+slices, "The shape sweep" and "Open issues against the package"). Enumerate from the repository, never from the
+briefing: a briefing's list is a set of hypotheses, and a directed check inherits the director's blind spots. The
+reviewer's independent re-derivation is the check on your blind spots. Six categories, each either cited at
+`file:line` or closed with the exact searches that came up empty:
 
 1. **The claimed gap.** If the change says X is missing, search for X under every plausible spelling: exported and
    unexported names, config keys, port types, payload kinds, subject grammars, CLI flags. "Add field X" silently

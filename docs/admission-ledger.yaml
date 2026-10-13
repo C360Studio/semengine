@@ -205,22 +205,14 @@
 
 - source_path: scripts/run-integration-tests.sh
   source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67
-  consumer_purpose: >-
-    host lock protocol (path, owner keys, stale rule, quarantine, token-checked release), Docker
-    preflight, cached-or-bounded image pull, canonical go test flags
-  destination: scripts/test-integration.sh
-  contract: >-
-    lock protocol at /tmp/semstreams-integration.lock that SemStreams' runner reads as an ordinary
-    owner: its six owner keys unchanged, plus identity_utc, which it ignores;
-    -race -failfast -tags=integration -count=1 -p 2
-  dependencies_and_side_effects: >-
-    bash, ps, mkdir, docker CLI; creates the lock dir; may quarantine stale dirs; pulls images
-  known_risks: >-
-    upstream traps do not forward INT/TERM to go test (repaired: process group); -p 2 inherited
-    unmeasured; upstream reads SEMSTREAMS_* env (not carried; SEMENGINE_* namespace); a SemEngine
-    runner and a SemStreams runner whose shells differ in time zone or locale still read each
-    other's live owner as changed (#126, accepted)
-  proving_tests: runner contract tests R1–R4; pass-evidence items 1–3
+  consumer_purpose: canonical go test flags for the integration run
+  destination: >-
+    Taskfile.yml (test:integration keeps the pin's go test flags; openspec change test-infra-audit,
+    #205, removed the runner script that carried the pin's host lock, Docker preflight and image pull)
+  contract: -race -failfast -tags=integration -count=1 -p 2
+  dependencies_and_side_effects: go test only
+  known_risks: -p 2 inherited unmeasured
+  proving_tests: TestUnitInvocationsPinned (the test:integration command line)
   owner: setup-02 developer
   disposition: adapt
 
@@ -240,12 +232,14 @@
 
 - source_path: test/testinfra/integration_runner_contract_test.go
   source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67
-  consumer_purpose: pattern only — fake-toolchain runner tests
-  destination: internal/harness/runner (four focused tests written fresh)
+  consumer_purpose: >-
+    none now; it was the pattern for the runner tests in internal/harness/runner, which openspec
+    change test-infra-audit (#205) removed with the runner script
+  destination: none
   contract: n/a (no code carried)
   dependencies_and_side_effects: n/a
   known_risks: 1566 lines upstream; not carried
-  proving_tests: R1–R4
+  proving_tests: n/a
   owner: setup-02 developer
   disposition: defer-exclude
 
@@ -1782,9 +1776,10 @@
     proof, and the three Consume doc comments say so (owner answer 1, #9 comment 5980296112).
     Import paths differ from the pin: pkg/resource is internal/resource (design D5). Pin differences carried with the carried tests as the only
     regression evidence: nats.go v1.52.0 at the pin (go.mod:12) is v1.54.0 here; the embedded test
-    broker nats-server/v2 v2.12.4 at the pin (go.mod:11) is v2.15.0 here, the .nats-image line
-    (owner ruling, #9 comment 5969776736); T-B3 cannot see an embedded server, so one broker
-    version across both lanes is review only. Context roots (design D1 re-measured: the pin's nine
+    broker nats-server/v2 v2.12.4 at the pin (go.mod:11) is v2.15.0 here, the
+    internal/harness/natsfixture/nats-image line (owner ruling, #9 comment 5969776736); T-B3 cannot
+    see an embedded server, so one broker version across both lanes is review only. Context roots
+    (design D1 re-measured: the pin's nine
     are two live production roots, the rest are doc.go comments at :35, :151, :245, :524 or
     test_client.go): client.go:566, the metrics poller started under context.Background(), triaged
     in task 3.7c as a root the Client owns and kept: startMetricsPoller (client.go:677) creates it

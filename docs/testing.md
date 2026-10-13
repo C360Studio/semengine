@@ -26,9 +26,9 @@ The expected value in an assertion must come from a source independent of the co
 external specification, or a small model written in the test. If the test computes its expectation with the same
 algorithm as the implementation, it repeats the implementation's mistakes and cannot fail.
 
-`FuzzCheckName` in `internal/harness/natsfixture/names_test.go` shows the pattern. Its oracle (the independent source
-of the expected answer) is a regular expression and a list of forbidden substrings declared in the test file, and it
-fails whenever `CheckName` disagrees with them.
+`FuzzKVValidatorsNeverPanic` in `natsclient/kv_key_contract_test.go` shows the pattern. Its oracle (the independent
+source of the expected answer) is the key and filter grammar, written as regular expressions in the test file, and it
+fails whenever `ValidateKVLiteralKey` or `ValidateKVWildcardFilter` accepts a string that grammar refuses.
 
 ## Pick the lowest level that can show it
 
@@ -56,26 +56,43 @@ go test -race -count=1 -run '^TestAwait' ./internal/harness/probe/
 
 ### Integration tests
 
-Integration tests live in `*_integration_test.go` files that start with `//go:build integration`, so plain
-`go test` does not build them. Run them only through the runner:
+Integration tests live in `*_integration_test.go` files that start with `//go:build integration`, so `go test`
+without the tag does not build them. They need a running Docker daemon. Run them with Task:
 
 ```bash
 task test:integration -- ./internal/harness/natsfixture/
 ```
 
-The runner (`scripts/test-integration.sh`) takes a host-wide lock so two runs never share a Docker daemon at the same
-time, runs `go test -race -failfast -tags=integration -count=1 -p 2 -timeout 10m`, forwards interrupts to every test
-process, and after the run removes any container left behind by that run, by ID. If you call `natsfixture.Start`
-outside the runner it refuses with `ErrNotAdmitted` before touching Docker.
+`task test:integration` is plain `go test` with its flags pinned:
+`go test -race -failfast -tags=integration -count=1 -p 2 -shuffle=on -timeout 10m`, writing a coverage profile to
+`coverage/`. On a pass it also records which tree it measured, so `task cover:check` can refuse a profile taken from
+a different tree. Any `go test -tags integration` command runs the same tests, which is the quick way to run one test
+while you work on it:
+
+```bash
+go test -race -count=1 -tags integration -run '^TestFixtureRoundTrip$' ./internal/harness/natsfixture/
+```
+
+Every container `natsfixture` starts carries the Docker label `org.c360studio.semengine.test`. A run killed before its
+cleanup leaves its containers running; the first fixture start in a later test process removes every labelled
+container that Docker created more than 30 minutes earlier, so a run still going keeps its own. `natsfixture` also
+turns off Ryuk, the extra cleanup container testcontainers would otherwise start beside the tests. To see what is left
+on your machine:
+
+```bash
+docker ps -a --filter label=org.c360studio.semengine.test
+```
 
 ### Helper packages
 
 The packages under `internal/harness/` are test-only; a contract test refuses any import of them from production code.
 
 - `natsfixture` gives one test one disposable NATS server with JetStream in a container. `New(t)` registers cleanup;
-  `Start(ctx)` returns only once JetStream answers. `Name(base)` produces run-unique resource names, and the fixture
-  creates streams, buckets and consumers for you and records each one. `Stop` returns nil only after it has seen every
-  owned resource, the connection and the container gone.
+  `Start(ctx)` returns only once JetStream answers. Each test has its own server, so streams and buckets can take
+  plain literal names. The fixture creates streams, buckets and consumers for you and records each one. `Stop`
+  returns nil only after it has seen every owned resource, the connection and the container gone. The image is the
+  one line in `internal/harness/natsfixture/nats-image`, named by its digest; the fixture refuses a line without one.
+  To try another image, edit that line in a branch.
 - `natsfixture.Restart(ctx)` stops and starts the same container, so a file-backed stream keeps its messages and a
   memory-backed one does not. Docker may map a new host port, so `URL()` and `JetStream()` are valid only until the
   next `Restart`. Stop whatever you built on the old URL (a client, a consumer) before calling `Restart`, and start
@@ -355,7 +372,7 @@ strings. Seed it with examples of every input class it must accept and every cla
 `go test` and `task test:unit` replay only the seeds. To explore new inputs, run the fuzzer yourself:
 
 ```bash
-go test -run '^$' -fuzz '^FuzzCheckName$' -fuzztime 30s ./internal/harness/natsfixture/
+go test -run '^$' -fuzz '^FuzzKVValidatorsNeverPanic$' -fuzztime 30s ./natsclient/
 ```
 
 In the pull request, report the two kinds of run separately: the seed replay that `task test:unit` did, and any
@@ -562,15 +579,16 @@ What the repository enforces today:
   `processor/graph-ingest`, `graph`, `graph/kvcatalog`, `component` and `pkg/lifecycle` (the unit and integration runs
   merged). `TestCoverCheckSensitivity` (`internal/harness/contract/cover_test.go`) holds that each target is
   checked, from its profile.
-- The integration runner caps a run at a 10-minute `go test` timeout and records per-package wall time.
+- `task test:integration` runs `go test` with `-timeout 10m` (`go help testflag` says what the flag bounds).
 - One NATS fixture is one container. The fixture's cleanup gets 60 seconds.
 - `task verify` prints the wall time of each step.
 
 When a test waits on asynchronous or external state and fails, its message should name the condition, the elapsed
 time, the attempts, the last value seen and the last error. `probe.Await` reports all of those except the condition;
-name the condition yourself when you report its error. The NATS fixture writes a record of each start phase, the
-container logs on failure, and what it still held after `Stop` to the run's evidence directory (`.evidence/` by
-default). A test that uses randomness prints its seed.
+name the condition yourself when you report its error. The NATS fixture writes a failed start attempt's container log
+to the test output, and a cleanup `Stop` that fails names what the fixture still held. A `prochost` helper's output
+goes to files in the test's temporary directory and is written to the test output when the test fails. A test that
+uses randomness prints its seed.
 
 ## What the pull request records
 

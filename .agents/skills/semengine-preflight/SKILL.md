@@ -39,7 +39,7 @@ with current CI.
 | `task cleanup-roots:check` | Fails if a test stops, closes, or terminates under `context.Background()` or `TODO()` |
 | `task ledger:check` | Validates `docs/admission-ledger.yaml` against its schema |
 | `task test:unit` | Unit tests once with the race detector at one CPU |
-| `task test:integration` | Docker-backed tests through the admitted runner (host lock, process group, leak check) |
+| `task test:integration` | Docker-backed tests: plain `go test -tags=integration` with pinned flags (race detector, two packages at a time, shuffled, 10-minute timeout) and the coverage profile `task cover:check` reads; `-- <pkgs>` to focus |
 | `task cover:check` | Fails below 80% coverage on each target in `scripts/cover-check.sh` (16 today: the harness's `natsfixture`, `lifecycletest`, `probe`, and each ported package on the SETUP 03B critical list, `setup-03b-contract-boundary` `design.md` D10); a package on that list joins when it is ported |
 | `task test:repeat` | Unit tests five times at one CPU without the race detector, in shuffled order; `-- <pkgs>` to focus |
 | `task mutate:check -- -pkg … -test … -file … -mutant … -expect …` | Run by hand: applies one wrong change to a Go source file through `go test -overlay` and prints detection, survivor, invalid or inconclusive (the `mutation-check` spec); fails unless the verdict is detection; writes nothing in the repository |
@@ -58,10 +58,11 @@ Select by what the diff changes:
   `task spec:check` when `openspec/` changed.
 - **An OpenSpec change:** `task spec:check`, then read `task spec:queue` in this worktree.
 - **Go behavior:** `task test:unit`, `task vet`, `task lint`, `task build`; focused tests first during iteration.
-- **Docker-backed behavior (`internal/harness/natsfixture`, `scripts/test-integration.sh`):**
-  `task test:integration -- <pkgs>` to focus, then `task cover:check`; never `go test` directly, since the fixture
-  refuses to start without the runner's admission token. `SEMENGINE_NATS_IMAGE` is accepted only with a non-empty
-  `SEMENGINE_NATS_IMAGE_OVERRIDE_REASON` and is recorded in the run's evidence.
+- **Docker-backed behavior (`internal/harness/natsfixture`, any `*_integration_test.go`):**
+  `task test:integration -- <pkgs>` to focus, then `task cover:check`, which reads the profile of the last passing
+  integration run and refuses one taken on a different tree. A plain `go test -tags integration` run is fine while
+  iterating. The NATS image is the one line in `internal/harness/natsfixture/nats-image`; to try another, edit that
+  line in a branch.
 - **`docs/admission-ledger.yaml`:** `task ledger:check`.
 - **Dependencies or `go.mod`:** `task tidy:check` and `task vuln` in addition to the Go gates.
 - **Before any implementation push:** `task verify`.
@@ -72,7 +73,7 @@ Do not hand-run a narrower command in place of a gate CI runs: the task owns fla
 
 ## Protect shared test infrastructure
 
-Serialize heavy work on a shared host and do not bypass a lock a task reports. Docker inspection is diagnostic:
+Serialize heavy work on a shared host. Docker inspection is diagnostic:
 container age, a timeout signature, or a name pattern does not establish that a resource is abandoned or that a
 failure is infrastructure-only. Preserve other sessions' resources. Cleanup is limited to an identified completed or
 abandoned run this session is authorized to clean up; host-wide pruning and stopping an unknown port holder are not
@@ -81,7 +82,7 @@ preflight steps.
 ## Report evidence and remaining gates
 
 Record the tested HEAD (or dirty snapshot), exact command, exit status, assertions/tests actually exercised,
-and log/artifact location. A log under a path git ignores (`.evidence/`, `coverage/`) is on this host only: say so,
+and log/artifact location. A log under a path git ignores (such as `coverage/`) is on this host only: say so,
 and put the output a reader needs in the PR. Separate failure, skip, no selected tests and compilation-only results.
 When the implementation changes, older green results remain evidence for the older revision. Preserve the command's
 failure status when filtering output; do not infer success from a quiet log.

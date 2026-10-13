@@ -12,12 +12,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/testcontainers/testcontainers-go"
@@ -27,10 +31,11 @@ import (
 const (
 	// maxAttempts allows Start one replacement container, and only after a mapped-port failure
 	// with a live parent and a clean rollback (retryable): the one transient SemStreams observed
-	// under Docker API pressure (gh#736), and what Docker Desktop on macOS does when a Mac process
-	// holds the host port it picked (#180; the probe on PR #200, comment 6128094108). Restart's one
-	// more stop and start of the same container is decided the same way. Every other failure is
-	// reported, not retried.
+	// under Docker API pressure (gh#736). Restart's one more stop and start of the same container
+	// is decided the same way. Both were also kept for Docker Desktop on macOS picking a host port
+	// a Mac process held (#180), which the start phase now prevents by giving Docker the port
+	// (freePort, #209); whether they stay is the test-infra audit's question (#205). Every other
+	// failure is reported, not retried.
 	maxAttempts = 2
 	// cleanupBudget is the fresh finite authority New's t.Cleanup gives Stop. The test's own
 	// context is already cancelled when cleanups run.
@@ -297,7 +302,13 @@ func (f *Fixture) attempt(ctx context.Context, n int) error {
 	}
 	var c testcontainers.Container
 	if err := run(PhaseStart, func() error {
-		var err error
+		hostPort, err := freePort()
+		if err != nil {
+			return err
+		}
+		req.HostConfigModifier = func(hc *container.HostConfig) {
+			hc.PortBindings = network.PortMap{network.MustParsePort(clientPort): {{HostPort: hostPort}}}
+		}
 		c, err = f.deps.start(ctx, req)
 		f.count("start")
 		// GenericContainer can return a live container together with its error (generic.go:89,94);
@@ -369,6 +380,23 @@ func (f *Fixture) attempt(ctx context.Context, n int) error {
 	return nil
 }
 
+// freePort asks the operating system for a free TCP port on all addresses and releases it, so the
+// start phase can give Docker that exact host port. Left to pick, Docker Desktop for Mac takes the
+// next port of a counter of its own, which does not see the Mac's listeners, and a container whose
+// port a Mac process holds runs with an empty port list (#209; the probe on PR #210, comment
+// 6151736554; TestStartPastHeldPorts). The macOS kernel hands ports out in sequence (the same
+// probe), so a port-0 listener does not get this port back until the range wraps; a process that
+// binds it by number before Docker does fails the start phase with "address already in use" (the
+// same probe). Restart keeps the binding (TestRestartURLDials).
+func freePort() (string, error) {
+	l, err := net.Listen("tcp", ":0")
+	if err != nil {
+		return "", err
+	}
+	port := strconv.Itoa(l.Addr().(*net.TCPAddr).Port)
+	return port, l.Close()
+}
+
 // retryable reports whether a failure earns the one more try Start and Restart allow: the
 // mapped-port phase failed with the caller's context live and, for Start, a clean rollback.
 func retryable(err error) bool {
@@ -377,9 +405,8 @@ func retryable(err error) bool {
 }
 
 // mappedPort reads the host port Docker mapped to the container's client port. A failed read also
-// says what an inspect of the container showed, or why the inspect failed: Docker Desktop leaves
-// the port list empty when a Mac process holds the host port it picked (#180;
-// TestRestartPastAHeldPort).
+// says what an inspect of the container showed, or why the inspect failed, so an empty port list
+// is named in the error (#180, #209).
 func (f *Fixture) mappedPort(ctx context.Context, c testcontainers.Container) (string, error) {
 	port, err := f.deps.mappedPort(ctx, c)
 	f.count("mappedPort")
@@ -440,7 +467,8 @@ func (f *Fixture) rollbackAttempt(ctx context.Context, n int) (string, error) {
 	return logsFile, nil
 }
 
-// URL is the broker's client URL on a Docker-assigned host port.
+// URL is the broker's client URL, on the host port the start phase picked (freePort); Restart keeps
+// it.
 func (f *Fixture) URL() string {
 	f.mu.Lock()
 	defer f.mu.Unlock()

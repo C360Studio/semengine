@@ -1649,21 +1649,31 @@
     (TestClientLifecycleOperationTable); setup that already started delivery keeps its claim until
     its handlers return (TestClientRefusedConsumerKeepsOwnershipUntilHandlersReturn,
     TestClientRefusedConsumerSetupContextEndsWhileHandlerRuns); (3) a losing Connect returns only
-    after its candidate connection's event handlers have returned
-    (TestClientLosingConnectLeavesNoCandidateHandler); (4) a late delivery after the recorded end is
-    refused, logged at warn level and counted as the JetStream error metric's late_delivery_refused
-    operation; AckNone and core lose it (TestClientRefusesLateDeliveryAfterRecordedEnd); (5) Status
-    is frozen once Close has begun and Disconnected after the cleanup
-    (TestClientHealthMonitorCannotOverwriteClosedStatus,
-    TestClientFailuresAfterCloseLeaveStatusDisconnected,
-    TestClientEventHandlerCannotCommitAfterClose,
-    TestClientAsyncPublishErrorAfterCloseRecordsMetricOnly); (6) the async publish error handler,
+    after its candidate connection's event handlers have returned (its test,
+    TestClientLosingConnectLeavesNoCandidateHandler, was removed by #192 with opHook, owner ruling,
+    #192 comment 6127721456; no test observes this wait now); (4) a late delivery after the recorded
+    end is refused, logged at warn level and counted as the JetStream error metric's
+    late_delivery_refused operation; AckNone and core lose it
+    (TestClientRefusesLateDeliveryAfterRecordedEnd, for a consumer; its core subtest and
+    fakeInvalidSubscription were removed by #192 with subscribeWith's subscribe seam, owner ruling,
+    #192 comment 6127721456, so a core subscription's late delivery, refused by the same
+    ownedDelivery.run, has no test of its own); (5) Status is frozen once Close has begun and
+    Disconnected after the cleanup (TestClientFailuresAfterCloseLeaveStatusDisconnected,
+    TestClientAsyncPublishErrorAfterCloseRecordsMetricOnly, and TestClientCloseDropsLateDisconnect,
+    whose late disconnect leaves Status Disconnected;
+    TestClientHealthMonitorCannotOverwriteClosedStatus and
+    TestClientEventHandlerCannotCommitAfterClose, which held the health monitor between its health
+    check and its status write, and an event handler after its connection check, while Close ran,
+    were removed by #192 with commitHook, owner ruling, #192 comment 6127721456, and neither hold
+    has a test now); (6) the async publish error handler,
     once Close has begun, records its metric and log but no failure
     (TestClientAsyncPublishErrorAfterCloseRecordsMetricOnly,
     TestClientCloseJoinsRunningAsyncPublishErrorHandler); (7) Connect after Close refuses before
     dialling (TestClientConnectAfterCloseRefusesBeforeDial); a Close or Connect never waits on
-    another caller's drain (TestClientCloseHonoursItsContextDuringAnotherDrain,
-    TestClientConnectDuringCloseDrainReturnsPromptly); (8) Close reports a drain timeout the same
+    another caller's drain (TestClientCloseHonoursItsContextDuringAnotherDrain; the Connect half's
+    test, TestClientConnectDuringCloseDrainReturnsPromptly, was removed by #192 with opHook, owner
+    ruling, #192 comment 6127721456, and that half has no test now); (8) Close reports a drain
+    timeout the same
     way whichever timer ran out first: the first Close returns a transient error wrapping
     nats.ErrDrainTimeout (the client's own timer branch did not wrap it), where the pin and 7ce1940
     returned nil once the native drain gave up and closed (TestClientCloseReportsDrainTimeout); (9)
@@ -2048,7 +2058,9 @@
     (it also no longer spends 5 s of wall time per entry point). Dials a broker (4):
     client_connect_test.go TestConnectRejectsCandidateWhenContextCanceledDuringDial,
     _RejectsCandidateWhenCloseWinsAdmission and _CommitsCandidateWhenAdmissionRemainsOpen (an in-process
-    nats-server, newConnectCandidate :106-125); client_test.go TestContextAwareMethods (a refused
+    nats-server, newConnectCandidate :106-125; #192 removed the first and third, with
+    newConnectCandidate and connectWith's dial, owner ruling, #192 comment 6127721456, and the second
+    now dials through Connect, its dial held by netDial); client_test.go TestContextAwareMethods (a refused
     loopback port). Never arms the site on a correct run (33; the instrumented run agrees): every call
     returns at a validation, connection, bounds or owner check before the site, and where recordFailure
     runs it runs fewer than 15 times, so its AfterFunc is not armed: backing_stream_prefix_test.go
@@ -2268,8 +2280,10 @@
     the late responders' 2 s per-attempt timeouts at errors :318 → :320 and request :376 → :378
     (a timed-out attempt is retried) stay; each is a row of D8's table (task 3.10 re-check).
     Wall-clock upper bounds on a correct operation (task 3.10 re-check, HIGH-R1): integration_test
-    :142 → :199, under 10 ms after the circuit opened, is now no dial reported through opHook
-    beside ErrCircuitOpen (:170-175, :197-199); readiness :52 → :72 and :114 → :137, under 5 s and 3 s
+    :142 → :191, under 10 ms after the circuit opened, is now no failed dial beside ErrCircuitOpen:
+    Failures() stays 15, since a failed dial counts a failure even with the circuit open (:184-191;
+    it was no dial reported through opHook until #192 removed opHook, owner ruling, #192 comment
+    6127721456); readiness :52 → :72 and :114 → :137, under 5 s and 3 s
     against a 10 s budget, are now under failureBound against a 60 s budget (:65, :128);
     readiness :68 → :90, under 3 s with a 1 s budget and a 300 ms query timeout, is now under
     failureBound with the query timeout at 60 s (:85); delivery_settlement :224 → :230, under the
@@ -2317,7 +2331,9 @@
     client_lifecycle_test.go: the test-side adapter clientOwner (:28-94) lists the nats.Conn, the
     JetStream handle, subscriptions, internal consumer claims, each running kind of background
     work, both timers while armed, and what the monitor and the poller publish before they start,
-    and counts dials and drains through the opHook seam; TestClientLifecycleSuite (:685) runs the
+    and counted dials and drains through the opHook seam until #192 removed opHook (owner ruling,
+    #192 comment 6127721456); it now reports no calls, so the suite's call counts do not cover
+    Client; TestClientLifecycleSuite (:685) runs the
     suite with a refused-URL must-fail factory. Written first and shown failing on the code as
     task 3.7b left it (implementer-reported, PR #48): TestClientCloseRefusesNilContext (Close(nil)
     panicked), TestClientConnectRefusesNilContext (Connect(nil) panicked),
@@ -2342,11 +2358,15 @@
     timers; either timer armed after Close began; the drop log removed; the helper ignoring
     closing; Connect returning nil when its work was refused; Close leaving the JetStream handle;
     a refused port consumer not stopped. go test -race -count=20 on the 13 tests passes, also at
-    -cpu 1. TestClientConnectThatLosesAdmissionLeavesStatus holds the losing Connect at its opHook
-    "dial" report, now made before the status write, until the winner has connected, and waits
+    -cpu 1. TestClientConnectThatLosesAdmissionLeavesStatus held the losing Connect at its opHook
+    "dial" report, then made before the status write, until the winner had connected, and waited
     for the rejected connection's closed handler; it failed first (status Disconnected, want
-    Connected), and both mutants are detected 10 of 10: the status restore removed (Connecting)
-    and handleClosed's current-connection check removed (Disconnected). Task 4.3 found two gaps:
+    Connected), and both mutants were detected 10 of 10: the status restore removed (Connecting)
+    and handleClosed's current-connection check removed (Disconnected). Since #192 removed opHook
+    (owner ruling, #192 comment 6127721456), netDial holds the losing Connect's socket dial, after
+    the Connecting write, until the winner has connected; the losing Connect must return
+    ErrAlreadyStarted, the test no longer waits for the closed handler, and neither mutant was run
+    again. Task 4.3 found two gaps:
     the pin has no test of Drain(nil) (its refusal, client.go:798 at the pin, is kept) and none of
     a Close whose context ends while the drain is held. Both are new and passed on first run,
     since the behaviour was already in place: TestSubscriptionDrainRefusesNilContext

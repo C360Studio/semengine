@@ -191,39 +191,47 @@ unconditional refactor and `adapt` mapping (epic #9 comment 6101771664).
 
 From Slice 04A change 3 on, before a porting design is written, the architect lists every open issue in this
 repository that names a package the pull request carries, and the design says for each one whether this pull request
-retires it or why it stays. An issue names a package when it gives the package's import path, a `path:line` under
-it, or the package's admission-ledger row. Every label counts: `class:port-refactor`, `bug`, `enhancement`, adoption
-issues and decisions alike. The duty is to face everything still open against the package, not to lower one label's
-count, so filing an issue under another label changes nothing. The listing is part of the inventory, beside the
-shape sweep's findings.
+retires it or why it stays. A pull request retires an issue when it does the issue's work and closes it, with
+`Closes #n` in the pull request body. An issue names a package when it gives the package's import path, a `path:line`
+under it, or the package's admission-ledger row, in its title, its body or a comment. Rulings are recorded as
+comments: open adoption issue #141 names `graph/inference/storage.go:159` only in its ruling comment of 2026-10-10.
+Every label counts: `class:port-refactor`, `bug`, `enhancement`, adoption issues and decisions alike. The duty is to
+face everything still open against the package, not to lower one label's count, so filing an issue under another
+label changes nothing. The listing is part of the inventory, beside the shape sweep's findings.
 
-The candidates come from one query per spelling of the package's name: its import path below the module root (such as
-`graph/inference`) and its last path segment (`inference`).
+The candidates come from one query per package, on the last segment of its import path (`inference` for
+`graph/inference`). GitHub's default search, which this query uses, reads titles, bodies and comments.
 
 ```bash
-gh issue list --state open --search "<spelling> in:title,body" --limit 200
+gh issue list --state open --search "<last path segment>" --limit 200
 ```
 
-Read the hits; do not count them. GitHub's search matches words, not packages, so it also returns issues that only use
-the word. Measured on 2026-10-13 for change 3's packages: `config` matched nine open `class:port-refactor` issues, most
-about a config field in another package, and `health` matched five, most about a `Health()` method. Keep the hits
-that name the package; the rest may be listed on one line as "names the word, not the package". For each issue kept,
-the design records one disposition:
+Read the hits; do not count them. The search matches words, not packages, so it also returns issues that only use the
+word. Measured on 2026-10-13 with this query: `config` returned 16 open issues, of which two, #17 and #74, are about
+the `config` package by their titles; `inference` returned 12, four of them, #141 among them, through a comment only.
+Keep the hits that name the package; the rest may be listed on one line as "names the word, not the package". For
+each issue kept, the design records one of two dispositions:
 
 1. **Retired by this pull request:** the pull request body carries `Closes #n`, and the design names the task in
    `tasks.md` that does the work.
-2. **Stays,** with the disposition [Bounded port scope](../protocol.md#bounded-port-scope) gives it: required work
-   that belongs to a named later pull request, and why it belongs there; or optional inherited maintenance, and why
-   changing it now is optional.
-3. **Not this package's:** the issue names the package, but its work lies elsewhere; one line says where.
+2. **Stays,** with two things said. First, what the work is, as
+   [Bounded port scope](../protocol.md#bounded-port-scope) classes it: a required correction with its binding basis,
+   or optional inherited maintenance with why changing it now is optional. Second, where the work will be done, which
+   is this repository's scheduling and not the protocol's: a named later pull request for the same package (another
+   lifecycle owner's), the named pull request that ports a package importing it, or another named package, when the
+   issue's work lies there. Optional maintenance may have no place yet, because only an explicit owner decision
+   schedules optional work (Bounded port scope); the design then says so. A correction that one of the carried
+   package's own admission gates needs (the list at the top of this section) is never scheduled later: this pull
+   request retires it.
 
 A "stays" with a supported basis is not a finding against the design, and neither is a design that retires nothing.
-No command compares the number of open issues before and after a merge, nothing gates on that number, and
-`scripts/merge-check.sh` does not read it. A number that is checked becomes a number that is managed: a gate on the
-open count would reward an agent for leaving a defect unfiled, or for filing it under a label the gate does not count.
-Under this rule, filing an issue costs a pull request nothing; an open issue missing from the listing is what the
-reviewer looks for, re-running the same queries (reviewer contract § Pre-owner design review). The open
-`class:port-refactor` count stays a figure reported in status comments on epic #9. This rule is review only.
+No command compares the number of open issues before and after a merge, and nothing gates on that number:
+`scripts/merge-check.sh` reads no port-refactor count (it reads the open `class:flake` list, for the known-flake
+rule). A number that is checked becomes a number that is managed: a gate on the open count would reward an agent for
+leaving a defect unfiled, or for filing it under a label the gate does not count. Under this rule, filing an issue
+costs a pull request nothing; an open issue missing from the listing is what the reviewer looks for, re-running the
+same query (reviewer contract § Pre-owner design review). The open `class:port-refactor` count stays a figure
+reported in status comments on epic #9. This rule is review only.
 
 Source: owner ruling of 2026-10-13, #160, which replaced the merge check that issue first asked for (fail a pull
 request that raises the open `class:port-refactor` count) with this listing.

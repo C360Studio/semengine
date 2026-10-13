@@ -98,8 +98,9 @@ type Client struct {
 	drainTimeout  time.Duration
 
 	// netDial opens each socket the client dials: (*net.Dialer).Dial, unless a
-	// test replaces it before Connect to hold a dial open (T4), which no
-	// portable address does.
+	// test replaces it before Connect: to hold a dial open, which no portable
+	// address does (T4), or to hand over one end of a net.Pipe to a scripted
+	// server, which binds no address and can run in a synctest bubble.
 	netDial func(*net.Dialer, string, string) (net.Conn, error)
 
 	// requestHandlerTimeout bounds a single SubscribeForRequests handler

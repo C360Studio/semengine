@@ -686,7 +686,8 @@ func TestClientAsyncPublishErrorAfterCloseRecordsMetricOnly(t *testing.T) {
 	})
 }
 
-// tableState builds a client in one lifecycle state and returns what the operations need.
+// tableClient is a client in one lifecycle state, with what the operations need in that state;
+// buildTableClient builds it.
 type tableClient struct {
 	c          *Client
 	release    func()       // releases the held drain in the closing state

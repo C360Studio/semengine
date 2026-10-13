@@ -62,7 +62,7 @@ revises tasks 2.2 and 2.3 before section 2 starts.
   is. Test: `TestClientRefusesLateDeliveryAfterRecordedEnd` passes.
   - Hold: #169's merge, only if #169 has a claim pull request when this task starts (design, "Order"). It did not
     apply: when this task started, #169 had no claim pull request (only #194 mentions it).
-- [ ] 4.2 Comments.
+- [x] 4.2 Comments.
   - The comment at `client_close_final_test.go:947` describes the struct `tableClient`; `buildTableClient` builds it.
   - Rewrite every comment that names a removed hook or `connectWith`, including `netDial`'s own
     (`client.go:100`-`:102`) if it does.

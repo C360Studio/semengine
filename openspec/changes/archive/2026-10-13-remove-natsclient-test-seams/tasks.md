@@ -88,10 +88,12 @@ revises tasks 2.2 and 2.3 before section 2 starts.
 
 ## 6. Review stop (Codex), part 2
 
-- [ ] 6.1 Mark PR #194 ready and request Codex's review of record at the section 5 commit, naming that commit and its
+- [x] 6.1 Mark PR #194 ready and request Codex's review of record at the section 5 commit, naming that commit and its
   `task verify` run. Fix findings, and re-request after any content commit. Stop for the owner after three rounds with
   findings open.
+  Request 6136011484 at `5f43d06` (`task verify` ok at `3a7ffe3`); Codex APPROVE at `5f43d06`, no findings, with its own
+  `task verify` ok (6151729261). Marked ready on the owner's word (2026-10-13).
 
 ## 7. Close
 
-- [ ] 7.1 Archive the change (no spec to sync) as the last content commit. Run `task spec:check`.
+- [x] 7.1 Archive the change (no spec to sync) as the last content commit. Run `task spec:check`.

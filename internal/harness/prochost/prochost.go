@@ -4,9 +4,8 @@
 // is built. The child runs in its own process group with stdout and stderr in files under the test's
 // temporary directory, and the test can signal, pause, resume, kill and wait for it. No helper
 // outlives its test: Start registers a cleanup that kills the group, joins the child and, when the
-// test has failed, writes the child's output to the test log. The start, group and signal paths are
-// generalised from the integration runner's contract tests, since removed. Test-only: contract test
-// T-B1 refuses any production import.
+// test has failed, writes the child's output to the test log. Test-only: contract test T-B1 refuses
+// any production import.
 //
 // A helper that must stay up parks on a signal (signal.Notify for SIGTERM, then receive), never on
 // a bare select{}. The child runs with only -test.run, so no test-timeout timer keeps the runtime

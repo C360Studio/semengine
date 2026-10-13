@@ -1,100 +1,40 @@
 # nats-fixture Specification
 
 ## Purpose
-The NATS fixture gives one test one disposable, admitted, real NATS server in a container, with typed start
-failures, run-unique safe names, and a cleanup that returns success only after it has observed every owned resource
-gone. `natsfixture.Open` lets a package's tests open a value connected to that server, such as a client, and closes
-it under a deadline before the server stops.
+The NATS fixture gives one test one disposable, real NATS server in a container, with typed start failures, a
+label on every container it starts so leftovers can be found and removed, and a cleanup that returns success only
+after it has observed every owned resource gone. `natsfixture.Open` lets a package's tests open a value connected to
+that server, such as a client, and closes it under a deadline before the server stops.
 
 ## Requirements
 
-### Requirement: Admission before Docker
-
-`natsfixture.Start` SHALL refuse with ErrNotAdmitted, naming `task test:integration`, unless
-SEMENGINE_DOCKER_ADMISSION_TOKEN is present in the lock owner file at SEMENGINE_DOCKER_ADMISSION_LOCK_DIR and that
-owner is live as `integration-test-runner` › "Shared host lock" defines it: by its identity_utc, read with TZ=UTC and
-LC_ALL=C, when the record has a non-empty identity_utc, and otherwise by its identity, read in the test process's
-environment. Only SemEngine's runner exports the admission token, so a record without identity_utc reaches admission
-only from a SemEngine runner older than identity_utc or from a test. Where the runner respects an owner it cannot
-prove dead, admission SHALL refuse one it cannot prove live: a pid that is not a number, a compared value that is
-`unknown`, a pid for which ps prints no start time, and a start time that differs from the compared value are each
-refused, and the refusal names the reason. As in the runner, the record's host is not compared with this machine's
-host name: the lock is in this machine's `/tmp`, so its owner ran on this machine. Admission reads the start time under
-Start's context: if that context has ended when the read fails, Start SHALL return the context's error. Neither a
-refusal nor that return SHALL make a Docker call.
-
-#### Scenario: Direct go test is refused
-
-- **WHEN** a test calls Start without the runner's environment
-- **THEN** Start returns ErrNotAdmitted and no container is created
-
-#### Scenario: A reused pid is refused
-
-- **WHEN** the owner file holds the test's token and names a running pid whose start time, read with TZ=UTC and
-  LC_ALL=C, differs from the file's identity_utc
-- **THEN** Start returns ErrNotAdmitted naming that identity_utc, and makes no Docker call
-
-#### Scenario: An unknown identity is refused
-
-- **WHEN** the owner file holds the test's token and names a running pid and the identity_utc `unknown`
-- **THEN** Start returns ErrNotAdmitted naming `unknown`, and makes no Docker call
-
-#### Scenario: A live owner admits
-
-- **WHEN** the owner file holds the test's token and names a running pid, under this machine's host name or another,
-  and as identity_utc that pid's start time as ps prints it with TZ=UTC and LC_ALL=C
-- **THEN** admission passes and Start goes on to start the container
-
-#### Scenario: A test process in another time zone is admitted
-
-- **WHEN** the owner file holds the test's token, a running pid and that pid's identity_utc, and the test
-  process's time zone and locale differ from those its identity was read in
-- **THEN** admission passes
-
-#### Scenario: A record without identity_utc is judged by identity
-
-- **WHEN** the owner file holds the test's token and names a running pid, and has no identity_utc
-- **THEN** admission passes when its identity is that pid's start time as ps prints it in the test process's
-  environment, and Start returns ErrNotAdmitted naming the identity otherwise
-
 ### Requirement: Phased start with typed failure
 
-Start SHALL proceed image → create/start → internal ready log → host → mapped client port → connect → JetStream ready,
-deriving every operation context from the test context; a failure SHALL return an error carrying attempt, phase,
-container id when one exists, parent-context state, cause, and cleanup outcome, and matching the parent context's
-error under errors.Is whenever the parent had ended; SHALL terminate any container returned
-with the failure under a fresh bounded context; and SHALL write the phase record and container logs to the evidence
-directory. At most one replacement attempt is permitted, only for the mapped-port phase with a live parent and
-successful cleanup. The fixture SHALL NOT expose start, connect, or bucket-prefix knobs.
+Start SHALL proceed image → create and start → internal ready log → host → mapped client port → connect → JetStream
+ready, deriving every operation context from the caller's. A failure SHALL return an error that names the phase, the
+container ID when a container exists, and the cause, and that matches the caller's context error under `errors.Is`
+whenever that context had ended. Before returning it SHALL remove any container the attempt created, under a fresh
+bounded context, and report a removal failure in the error, and it SHALL write that container's log to the test
+output. At most one replacement container is permitted, only after the mapped-port phase failed with the caller's
+context live and the first container removed. The fixture SHALL NOT expose start, connect or bucket-prefix knobs.
 
 #### Scenario: Failure after the container exists
 
 - **WHEN** connect fails after the container is running
-- **THEN** the error names phase connect and the container id, the container is absent, its logs are in the evidence
-  dir
+- **THEN** the error names the connect phase and the container ID, the container is gone, and its log is in the test
+  output
 
 #### Scenario: Cancellation during start
 
 - **WHEN** the test context is cancelled while the container is starting
-- **THEN** Start returns an error satisfying errors.Is(err, context.Canceled), no replacement is attempted, no
+- **THEN** Start returns an error satisfying `errors.Is(err, context.Canceled)`, no replacement is attempted, and no
   container remains
 
-### Requirement: Run-unique ownership and safe names
+#### Scenario: One replacement after a missing mapped port
 
-The fixture SHALL provide Name(base) yielding `semengine-<sanitized test segment>-<base>-<hex>` over `[a-z0-9-]`, free
-of every SemStreams destroyer substring (a segment containing one is replaced by its hash); SHALL record every stream,
-bucket, and consumer it creates; created streams SHALL declare MaxAge, MaxBytes, and DiscardOld. The fixture creates
-no volumes or networks.
-
-#### Scenario: Two fixtures do not collide
-
-- **WHEN** two fixtures start in one test
-- **THEN** their container ids, host ports, and Name values are disjoint
-
-#### Scenario: Adversarial test name
-
-- **WHEN** the calling test is named TestOpsResearchGraph
-- **THEN** Name output contains neither `ops` nor `research-graph`
+- **WHEN** the mapped-port read fails once with the caller's context live
+- **THEN** the first container is removed, a second one starts and Start succeeds; if the second read fails too, the
+  error names the mapped-port phase and no third container starts
 
 ### Requirement: Checked cleanup
 
@@ -265,3 +205,27 @@ registered.
 
 - **WHEN** the harness import check lists the helper's package imports
 - **THEN** no package of this module outside `internal/harness` is among them
+
+### Requirement: Ryuk off, labelled containers and the sweep
+
+Once per process, before its first testcontainers call, natsfixture SHALL set `TESTCONTAINERS_RYUK_DISABLED=true` in
+the process environment, whatever it held before. Every container natsfixture starts SHALL carry the label
+`org.c360studio.semengine.test`, valued with the test process's package and process ID. In the same once-per-process
+step, natsfixture SHALL remove, with force, every container carrying that label that Docker created more than 30
+minutes earlier, running or not. It SHALL choose containers by that label and Docker's creation time only, never by
+name or by whether a process is alive. A removal error SHALL NOT fail the test: a container already gone is ignored,
+and any other error is written to the test output. That natsfixture overrides a value the caller set, rather than
+only an unset one, is review only: testcontainers reads its configuration once per process, so a test of it would
+depend on which test reached that step first.
+
+#### Scenario: Ryuk is off
+
+- **WHEN** natsfixture has started its first container in a process
+- **THEN** `testcontainers.GenericLabels()` has no `org.testcontainers.reap` key
+
+#### Scenario: Only old labelled containers are swept
+
+- **WHEN** the sweep runs over a label value the test chose, first with an age of one hour and then with an age of
+  zero, while the test also runs an unlabelled container
+- **THEN** the labelled container survives the first sweep and is gone after the second, and the unlabelled one is
+  still running

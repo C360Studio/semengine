@@ -35,7 +35,7 @@ review stop. Choices the design does not spell out go in `notes/<task>.md`.
   Ryuk image check), the evidence upload in `.github/workflows/ci.yml`, and the lock note in `scripts/verify.sh:9`.
 - [x] 2.7 Remove the fixture's name generator and the SemStreams substring list; `TestSemEngineAssignedNames` keeps the
   `semengine-` prefix rule; the two `Fixture.Name` callers use literal names.
-- [ ] 2.8 Update every file that names the runner, the lock, the evidence directory or `SEMENGINE_NATS_IMAGE`:
+- [x] 2.8 Update every file that names the runner, the lock, the evidence directory or `SEMENGINE_NATS_IMAGE`:
   `docs/setup-plan.md` (the text in `drafts/setup-plan-change.md`); `docs/testing.md` (`:29-31`, `:57-69`, `:76`,
   `:358`, `:554-569`, `:572`; the first three name `FuzzCheckName`, `CheckName` and `Name(base)`, removed by 2.7);
   `docs/repository-map.md:47,50,51`; `.agents/skills/semengine-preflight/SKILL.md:42,61-64,84`;
@@ -44,10 +44,13 @@ review stop. Choices the design does not spell out go in `notes/<task>.md`.
   -e test-integration.sh -e admission-lock -e SEMENGINE_NATS_IMAGE -e SEMENGINE_EVIDENCE_DIR -e '\.evidence/'`
   finding nothing outside `openspec/changes/`, `docs/provenance.md`, the history note in `docs/admission-ledger.yaml`
   that reads "the broker's reported version and SEMENGINE_NATS_IMAGE",
-  and the planted inputs of `internal/harness/contract/imagepin_test.go:23,26`.
+  and the planted inputs of `internal/harness/contract/imagepin_test.go:24,27`. ADR-112's `.nats-image:5` citation
+  (`docs/adr/112-natsclient-contract.md:13`) is a dated record and is left as written. `docs/setup-plan.md`'s "one NATS
+  server per package" becomes true with pull request 3 (4.4).
 - [x] 2.9 Add `AGENTS.md` rows 1 and 2 and replace the image-pin row (`drafts/agents-rows.md`).
 - [ ] 2.10 Record the short check on the pull request (`design.md` § Short check, steps 1 to 3).
-- [ ] 2.11 Sync into `openspec/specs/`: all of `integration-test-runner` and `process-host`; from `nats-fixture` the
+- [x] 2.11 Sync into `openspec/specs/`: all of `integration-test-runner` except "Concurrent runs on one daemon", whose
+  scenario cites pull request 3's short check and so syncs at 4.7, and all of `process-host`; from `nats-fixture` the
   removed "Admission before Docker" and "Run-unique ownership and safe names", the modified "Phased start with typed
   failure" and the added "Ryuk off, labelled containers and the sweep"; from `harness-boundaries` "One image pin" and
   the removed and added name requirements.
@@ -76,7 +79,7 @@ review stop. Choices the design does not spell out go in `notes/<task>.md`.
 - [ ] 4.4 Add `TestMain` to natsclient, processor/graph-ingest, graph/kvcatalog, pkg/lifecycle and component; their
   helpers call the reset; the 8 own-server tests (`design.md` P7) call `natsfixture.New` themselves, each with its
   `// Own server:` line, so `TestOwnServerReason` reads every reason and `startFixture` serves shared tests only.
-- [ ] 4.5 Write `docs/test-infrastructure.md` (`drafts/test-infrastructure.md`), add `AGENTS.md` rows 3 to 7, and point
-  `docs/testing.md` at the page.
+- [ ] 4.5 Write `docs/test-infrastructure.md` (`drafts/test-infrastructure.md`), add it to the canonical home of
+  `AGENTS.md` rows 1 and 2, add rows 3 to 7, and point `docs/testing.md` at the page.
 - [ ] 4.6 Record the short check's steps 1 and 3 again on shared servers, including a full run's container count.
 - [ ] 4.7 Sync the remaining deltas into `openspec/specs/` and archive the change.

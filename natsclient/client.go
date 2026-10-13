@@ -1266,25 +1266,6 @@ func (m *Client) Subscribe(ctx context.Context, subject string, handler func(con
 	if ctx == nil {
 		return nil, nilContextError("Subscribe")
 	}
-	return m.subscribeWith(ctx, subject, handler, nativeSubscribe)
-}
-
-// subscribeFunc subscribes cb to subject on conn. Subscribe and
-// SubscribeForRequests pass nativeSubscribe; it is a seam the way connectWith's
-// dial is.
-type subscribeFunc func(conn *nats.Conn, subject string, cb nats.MsgHandler) (nativeSubscription, error)
-
-func nativeSubscribe(conn *nats.Conn, subject string, cb nats.MsgHandler) (nativeSubscription, error) {
-	sub, err := conn.Subscribe(subject, cb)
-	if err != nil {
-		return nil, err
-	}
-	return sub, nil
-}
-
-func (m *Client) subscribeWith(
-	ctx context.Context, subject string, handler func(context.Context, *nats.Msg), subscribe subscribeFunc,
-) (*Subscription, error) {
 	return m.subscribeOwned(ctx, "Subscribe", subject, func(*nats.Conn) nats.MsgHandler {
 		return func(msg *nats.Msg) {
 			// Create per-message context with timeout
@@ -1298,7 +1279,7 @@ func (m *Client) subscribeWith(
 
 			handler(msgCtx, msg)
 		}
-	}, subscribe)
+	})
 }
 
 // subscribeOwned makes a client-owned core subscription: admitted before the
@@ -1312,7 +1293,6 @@ func (m *Client) subscribeWith(
 // subscribe-registers-interest, D1 to D5, L8).
 func (m *Client) subscribeOwned(
 	ctx context.Context, operation, subject string, build func(conn *nats.Conn) nats.MsgHandler,
-	subscribe subscribeFunc,
 ) (*Subscription, error) {
 	m.mu.Lock()
 	if m.closing {
@@ -1347,7 +1327,7 @@ func (m *Client) subscribeOwned(
 	}
 
 	cb := build(conn)
-	sub, err := subscribe(conn, subject, func(msg *nats.Msg) {
+	sub, err := conn.Subscribe(subject, func(msg *nats.Msg) {
 		d.run(func() string { return msg.Subject }, func() { cb(msg) })
 	})
 	if err != nil {

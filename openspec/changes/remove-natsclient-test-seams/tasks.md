@@ -50,16 +50,18 @@ revises tasks 2.2 and 2.3 before section 2 starts.
 
 ## 3. Review stop (Codex), part 1
 
-- [ ] 3.1 Run `task verify` on a clean tree at the commit that ends 2.3. Request Codex's review of that commit on PR
+- [x] 3.1 Run `task verify` on a clean tree at the commit that ends 2.3. Request Codex's review of that commit on PR
   #194, still a draft, naming the commit and the run. Fix findings and re-request after any content commit. Section 4
-  starts once Codex records no open finding; stop for the owner after three rounds with findings open.
+  starts once Codex records no open finding; stop for the owner after three rounds with findings open. Codex APPROVE
+  at `1b75749`, no findings (PR #194 comment 6135230181); request 6135124209.
 
 ## 4. Code, part 2 (developer)
 
-- [ ] 4.1 Remove `subscribeWith`'s `subscribe`. Delete row 33's `core` subtest and `fakeInvalidSubscription`. Fold
+- [x] 4.1 Remove `subscribeWith`'s `subscribe`. Delete row 33's `core` subtest and `fakeInvalidSubscription`. Fold
   `subscribeWith` into `Subscribe`; remove `subscribeFunc` and `nativeSubscribe`. Leave `nativeSubscription` as it
   is. Test: `TestClientRefusesLateDeliveryAfterRecordedEnd` passes.
-  - Hold: #169's merge, only if #169 has a claim pull request when this task starts (design, "Order").
+  - Hold: #169's merge, only if #169 has a claim pull request when this task starts (design, "Order"). It did not
+    apply: when this task started, #169 had no claim pull request (only #194 mentions it).
 - [ ] 4.2 Comments.
   - The comment at `client_close_final_test.go:947` describes the struct `tableClient`; `buildTableClient` builds it.
   - Rewrite every comment that names a removed hook or `connectWith`, including `netDial`'s own

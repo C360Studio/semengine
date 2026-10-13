@@ -873,18 +873,10 @@ func lateRefusals(h *recordingHandler) []loggedRecord {
 	})
 }
 
-// fakeInvalidSubscription reports itself invalid from creation, as a subscription that ended
-// before the client set its closed handler does.
-type fakeInvalidSubscription struct{}
-
-func (fakeInvalidSubscription) Drain() error                  { return nil }
-func (fakeInvalidSubscription) IsValid() bool                 { return false }
-func (fakeInvalidSubscription) SetClosedHandler(func(string)) {}
-func (fakeInvalidSubscription) Unsubscribe() error            { return nil }
-
 // 16. F-4(a), F-2: a delivery the native library hands over after the client recorded that
-// consumer's or subscription's end does not run the handler. It is not settled, it is logged at
-// warn level with the subject and ack policy, and it is counted as late_delivery_refused.
+// consumer's end does not run the handler. It is not settled, it is logged at warn level with the
+// subject and ack policy, and it is counted as late_delivery_refused. A core subscription's late
+// delivery takes the same refusal (ownedDelivery.run) and has no test of its own.
 func TestClientRefusesLateDeliveryAfterRecordedEnd(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -925,30 +917,6 @@ func TestClientRefusesLateDeliveryAfterRecordedEnd(t *testing.T) {
 			})
 		})
 	}
-
-	t.Run("core", func(t *testing.T) {
-		h := newRecordingHandler("")
-		c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0), WithLogger(slog.New(h)),
-			WithMetrics(metric.NewMetricsRegistry()))
-		require.NoError(t, err)
-		require.NoError(t, c.Connect(t.Context()))
-		closeInCleanup(t, c)
-		var kept nats.MsgHandler
-		ran := false
-		_, err = c.subscribeWith(t.Context(), "late.core", func(context.Context, *nats.Msg) { ran = true },
-			func(_ *nats.Conn, _ string, cb nats.MsgHandler) (nativeSubscription, error) {
-				kept = cb
-				return fakeInvalidSubscription{}, nil
-			})
-		require.NoError(t, err)
-		kept(&nats.Msg{Subject: "late.core"})
-		require.False(t, ran, "a delivery after the recorded end ran the handler")
-		refusals := lateRefusals(h)
-		require.Len(t, refusals, 1, "the refusal was not logged at warn level")
-		assert.Equal(t, "late.core", refusals[0].attrs["subject"])
-		assert.Equal(t, "core", refusals[0].attrs["ack_policy"])
-		require.Equal(t, float64(1), jsErrors(c, "late_delivery_refused"))
-	})
 }
 
 // 17. F-4(b): as test 2, but the setup context ends while the handler is held after Close began.

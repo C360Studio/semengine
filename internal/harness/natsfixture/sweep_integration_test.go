@@ -32,7 +32,9 @@ func processContainers(t *testing.T) []string {
 }
 
 // dockerRun starts a container from the pinned image with the docker CLI, an oracle independent
-// of natsfixture, and removes it when the test ends.
+// of natsfixture, and removes it when the test ends. A failed removal fails the test: no sweep
+// reaches a container without the label. `docker rm -f` exits zero for a container already gone,
+// as the swept one in TestOnlyOldLabelledContainersAreSwept is by then.
 func dockerRun(t *testing.T, args ...string) string {
 	t.Helper()
 	image, err := pinnedImage(imagePin)
@@ -47,7 +49,9 @@ func dockerRun(t *testing.T, args ...string) string {
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), stopBound)
 		defer cancel()
-		_ = exec.CommandContext(ctx, "docker", "rm", "-f", id).Run()
+		if out, err := exec.CommandContext(ctx, "docker", "rm", "-f", id).CombinedOutput(); err != nil {
+			t.Errorf("removing control container %s: docker rm -f: %v\n%s", id, err, out)
+		}
 	})
 	return id
 }

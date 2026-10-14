@@ -309,7 +309,7 @@ func TestGraphIngestLifecycleSuite(t *testing.T) {
 	if err := f.Start(t.Context()); err != nil {
 		t.Fatalf("natsfixture Start: %v", err)
 	}
-	if _, err := f.CreateStream(t.Context(), entityStream.name, entityStream.subjects...); err != nil {
+	if _, err := natsfixture.CreateStream(t.Context(), f.JetStream(), jetstream.FileStorage, entityStream.name, entityStream.subjects...); err != nil {
 		t.Fatalf("CreateStream %s: %v", entityStream.name, err)
 	}
 	configJSON, err := json.Marshal(DefaultConfig())

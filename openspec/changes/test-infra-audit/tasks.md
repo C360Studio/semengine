@@ -59,15 +59,17 @@ review stop. Choices the design does not spell out go in `notes/<task>.md`.
 
 ## 3. Smaller natsfixture (pull request 2)
 
-- [ ] 3.1 Stop closes the connection and removes the container, nothing more; a repeated Stop is a no-op; tests first
+- [x] 3.1 Stop closes the connection and removes the container, nothing more; a repeated Stop is a no-op; tests first
   (`nats-fixture`, "Own server per test").
-- [ ] 3.2 Remove `Consume`, `CreateKeyValue`, the consumer joins and the operation slot; Restart keeps #200's retry
-  (`nats-fixture`, "Restart keeps the container").
-- [ ] 3.3 Keep one test seam, the mapped-port read, for the replacement-container test; remove the other 12; the error
+- [x] 3.2 Remove `Consume`, `CreateKeyValue`, the consumer joins and the operation slot; Restart keeps its phases
+  (`nats-fixture`, "Restart keeps the container"). #200's retry is removed with Start's replacement container
+  (owner ruling, #205 comment 6173171452; `notes/3.3-retries.md`).
+- [x] 3.3 Keep one test seam, the mapped-port read, for the inspect in a mapped-port failure; remove the other 12; the error
   type becomes unexported, with the phase in its text.
-- [ ] 3.4 Remove the fixture's lifecycle-floor test; the stream helpers become functions carrying the bounds.
-- [ ] 3.5 natsfixture's 80% coverage floor holds.
-- [ ] 3.6 Sync into `openspec/specs/` the rest of `nats-fixture` except "Shared server per package", "Reset to a
+- [x] 3.4 Remove the fixture's lifecycle-floor test; the stream helpers become functions carrying the bounds.
+- [x] 3.5 natsfixture's 80% coverage floor holds. `task verify` at 3f75b32 passed `cover:check` with natsfixture at
+  91.6% (exit 0, 571 s; PR #230 comment 6174931749).
+- [x] 3.6 Sync into `openspec/specs/` the rest of `nats-fixture` except "Shared server per package", "Reset to a
   verified-empty server" and "Connected value for a package's tests", and `harness-boundaries` "Bounded cleanup
   roots".
 

@@ -12,6 +12,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/require"
 
+	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
@@ -65,7 +66,7 @@ func TestConsumerSetupWaitsForStreamThatBecomesVisible(t *testing.T) {
 						return
 					}
 				}
-				_, createErr := testClient.Fixture.CreateStream(ctx, streamName, subject)
+				_, createErr := natsfixture.CreateStream(ctx, testClient.Fixture.JetStream(), jetstream.FileStorage, streamName, subject)
 				created <- createErr
 			}()
 

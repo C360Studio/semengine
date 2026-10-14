@@ -690,11 +690,10 @@ func directConsumerCreationCensusViolations(files []productionGoFile) []string {
 		})
 	}
 
-	// SemEngine's tree at task 3.7: natsclient's two policy-checked creations, and the test
-	// fixture's probe consumer (internal/harness/natsfixture/fixture.go, a non-test file).
+	// SemEngine's tree: natsclient's two policy-checked creations. The test fixture's consumer
+	// went with natsfixture's Consume (test-infra-audit task 3.2).
 	want := map[string]int{
-		"internal/harness/natsfixture/fixture.go:CreateConsumer/args=2": 1,
-		"natsclient/stream.go:CreateOrUpdateConsumer/args=2":            2,
+		"natsclient/stream.go:CreateOrUpdateConsumer/args=2": 2,
 	}
 	if !reflect.DeepEqual(got, want) {
 		return []string{fmt.Sprintf("direct consumer creation census = %#v, want %#v", got, want)}

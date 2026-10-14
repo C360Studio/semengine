@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/require"
 
 	"github.com/c360studio/semengine/graph"
@@ -80,7 +81,7 @@ func TestIntegration_IngestGuard_StreamRecreatedWithLowerSequences(t *testing.T)
 
 	f := natsfixture.New(t)
 	require.NoError(t, f.Start(ctx))
-	_, err := f.CreateMemoryStream(ctx, entityStream.name, entityStream.subjects...)
+	_, err := natsfixture.CreateStream(ctx, f.JetStream(), jetstream.MemoryStorage, entityStream.name, entityStream.subjects...)
 	require.NoError(t, err)
 
 	// The first generation: three older states of the entity, at sequences 1 to 3.
@@ -113,7 +114,7 @@ func TestIntegration_IngestGuard_StreamRecreatedWithLowerSequences(t *testing.T)
 	firstClosed = true
 	require.NoError(t, closeFirst(ctx))
 	require.NoError(t, f.Restart(ctx))
-	_, err = f.CreateMemoryStream(ctx, entityStream.name, entityStream.subjects...)
+	_, err = natsfixture.CreateStream(ctx, f.JetStream(), jetstream.MemoryStorage, entityStream.name, entityStream.subjects...)
 	require.NoError(t, err)
 	second := natsfixture.Open(t, f, openFixtureClient)
 	secondOwner := startIngestOn(ctx, t, second)
@@ -160,7 +161,7 @@ func TestIntegration_IngestGuard_FileStreamKeepsItsGenerationAcrossRestart(t *te
 
 	f := natsfixture.New(t)
 	require.NoError(t, f.Start(ctx))
-	_, err := f.CreateStream(ctx, entityStream.name, entityStream.subjects...)
+	_, err := natsfixture.CreateStream(ctx, f.JetStream(), jetstream.FileStorage, entityStream.name, entityStream.subjects...)
 	require.NoError(t, err)
 
 	first, closeFirst, err := openFixtureClient(ctx, f.URL())

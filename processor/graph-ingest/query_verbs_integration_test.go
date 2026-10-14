@@ -79,7 +79,7 @@ func startGraphIngestOnFixture(t *testing.T) (*natsfixture.Fixture, *recordingHa
 	client := natsfixture.Open(t, f, openFixtureClient)
 
 	config := DefaultConfig()
-	if _, err := f.CreateStream(t.Context(), "ENTITY", "entity.>"); err != nil {
+	if _, err := natsfixture.CreateStream(t.Context(), f.JetStream(), jetstream.FileStorage, "ENTITY", "entity.>"); err != nil {
 		t.Fatalf("create entity stream: %v", err)
 	}
 	rawConfig, err := json.Marshal(config)

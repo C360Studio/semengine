@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -74,7 +75,7 @@ func ingestClient(t *testing.T) *natsclient.Client {
 	if err := f.Start(t.Context()); err != nil {
 		t.Fatalf("natsfixture Start: %v", err)
 	}
-	if _, err := f.CreateStream(t.Context(), "ENTITY", "entity.>"); err != nil {
+	if _, err := natsfixture.CreateStream(t.Context(), f.JetStream(), jetstream.FileStorage, "ENTITY", "entity.>"); err != nil {
 		t.Fatalf("CreateStream ENTITY: %v", err)
 	}
 	return natsfixture.Open(t, f, openClient)

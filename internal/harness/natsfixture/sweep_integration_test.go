@@ -41,11 +41,10 @@ func dockerRun(t *testing.T, args ...string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := exec.CommandContext(t.Context(), "docker", append(append([]string{"run", "-d"}, args...), image)...).CombinedOutput()
+	id, err := stdout(exec.CommandContext(t.Context(), "docker", append(append([]string{"run", "-d"}, args...), image)...))
 	if err != nil {
-		t.Fatalf("docker run: %v\n%s", err, out)
+		t.Fatalf("docker run: %v", err)
 	}
-	id := strings.TrimSpace(string(out))
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), stopBound)
 		defer cancel()
@@ -93,9 +92,9 @@ func TestOnlyOldLabelledContainersAreSwept(t *testing.T) {
 		t.Fatalf("a sweep with an age of zero kept the labelled container, created %s by Docker; host time %s",
 			strings.TrimSpace(string(created)), time.Now().UTC().Format(time.RFC3339Nano))
 	}
-	out, err := exec.Command("docker", "inspect", "--format", "{{.State.Running}}", unlabelled).CombinedOutput()
-	if err != nil || strings.TrimSpace(string(out)) != "true" {
-		t.Fatalf("the unlabelled container after the sweeps: running %q, %v; want it still running", out, err)
+	running, err := stdout(exec.Command("docker", "inspect", "--format", "{{.State.Running}}", unlabelled))
+	if err != nil || running != "true" {
+		t.Fatalf("the unlabelled container after the sweeps: running %q, %v; want it still running", running, err)
 	}
 }
 

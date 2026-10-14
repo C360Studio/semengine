@@ -42,48 +42,22 @@ natsfixture uses.
 ### Requirement: Restart keeps the container and its host port
 
 **Reason**: Two of its scenarios go: "Consumer across a restart", with `Consume`, and "Start-container phase fails",
-with the start-container hook (one test seam stays, the mapped-port read). Its other rules move unchanged to "Restart
-keeps the container".
+with the start-container hook (one test seam stays, the mapped-port read). Its other rules move to "Restart keeps the
+container", without the one more stop, start and port read after a mapped-port failure (owner ruling, #205 comment
+6173171452).
+
+**Migration**: None for callers.
+
+### Requirement: Phased start with typed failure
+
+**Reason**: Its scenario "One replacement after a missing mapped port" goes: Start no longer replaces a container
+whose mapped port cannot be read (owner ruling, #205 comment 6173171452). Every recorded missing port came from Docker
+picking the host port, which the fixture now picks itself (#209, #210). Its other rules move to "Phased start in one
+container", which also states that a failed mapped-port read carries the container's inspect (owner ruling on #180).
 
 **Migration**: None for callers.
 
 ## MODIFIED Requirements
-
-### Requirement: Phased start with typed failure
-
-Start SHALL proceed image → create and start → internal ready log → host → mapped client port → connect → JetStream
-ready, deriving every operation context from the caller's. A failure SHALL return an error that names the phase, the
-container ID when a container exists, and the cause, and that matches the caller's context error under `errors.Is`
-whenever that context had ended. Before returning it SHALL remove any container the attempt created, under a fresh
-bounded context, and report a removal failure in the error, and it SHALL write that container's log to the test
-output. The create and start phase of each attempt SHALL publish the client port on a host port the fixture took from
-the operating system with a port-0 listener and closed, and SHALL NOT leave the host port to Docker to choose; a
-failure to take a port SHALL fail that phase. At most one replacement container is permitted, only after the
-mapped-port phase failed with the caller's context live and the first container removed. The fixture SHALL NOT expose
-start, connect or bucket-prefix knobs.
-
-#### Scenario: Failure after the container exists
-
-- **WHEN** connect fails after the container is running
-- **THEN** the error names the connect phase and the container ID, the container is gone, and its log is in the test
-  output
-
-#### Scenario: Cancellation during start
-
-- **WHEN** the test context is cancelled while the container is starting
-- **THEN** Start returns an error satisfying `errors.Is(err, context.Canceled)`, no replacement is attempted, and no
-  container remains
-
-#### Scenario: Ports after a running fixture's own are held
-
-- **WHEN** a fixture is running and the host ports after its own are held by listeners on all addresses
-- **THEN** a second fixture's Start returns nil, with JetStream answering on its `URL()`
-
-#### Scenario: One replacement after a missing mapped port
-
-- **WHEN** the mapped-port read fails once with the caller's context live
-- **THEN** the first container is removed, a second one starts and Start succeeds; if the second read fails too, the
-  error names the mapped-port phase and no third container starts
 
 ### Requirement: Connected value for a package's tests
 
@@ -114,18 +88,54 @@ after it returns beyond the cleanup it registered.
 
 ## ADDED Requirements
 
+### Requirement: Phased start in one container
+
+Start SHALL proceed image → create and start → internal ready log → host → mapped client port → connect → JetStream
+ready, deriving every operation context from the caller's. A failure SHALL return an error that names the phase, the
+container ID when a container exists, and the cause, and that matches the caller's context error under `errors.Is`
+whenever that context had ended. Before returning it SHALL remove any container Start created, under a fresh bounded
+context, and report a removal failure in the error, and it SHALL write that container's log to the test output. The
+create and start phase SHALL publish the client port on a host port the fixture took from the operating system with a
+port-0 listener and closed, and SHALL NOT leave the host port to Docker to choose; a failure to take a port SHALL fail
+that phase. Start SHALL start at most one container: after a failure in any phase it SHALL NOT start another. A failed
+mapped-port read SHALL say what an inspect of the container showed, or why the inspect failed. The fixture SHALL NOT
+expose start, connect or bucket-prefix knobs.
+
+#### Scenario: Failure after the container exists
+
+- **WHEN** connect fails after the container is running
+- **THEN** the error names the connect phase and the container ID, the container is gone, and its log is in the test
+  output
+
+#### Scenario: Cancellation during start
+
+- **WHEN** the test context is cancelled while the container is starting
+- **THEN** Start returns an error satisfying `errors.Is(err, context.Canceled)`, no other container is started, and no
+  container remains
+
+#### Scenario: Ports after a running fixture's own are held
+
+- **WHEN** a fixture is running and the host ports after its own are held by listeners on all addresses
+- **THEN** a second fixture's Start returns nil, with JetStream answering on its `URL()`
+
+#### Scenario: A missing mapped port fails Start
+
+- **WHEN** the mapped-port read fails
+- **THEN** Start returns an error naming the mapped-port phase and what the inspect of the container showed, the
+  container is gone, and no second container starts
+
 ### Requirement: Restart keeps the container
 
 `Fixture.Restart(ctx)` SHALL stop and start the same container, drain the fixture's own connection, and run the
 stop-container, start-container, mapped-port, connect and JetStream-ready phases in that order, deriving every operation
 context from the caller's; on success `URL()` and `JetStream()` SHALL return the new binding. The container SHALL keep
-the host port Start gave it, so `URL()` after a successful Restart SHALL equal `URL()` before it. Restart SHALL return
-an error and start nothing before Start has succeeded or once Stop has begun. A phase failure SHALL return an error
-naming the phase, with one exception: when the mapped-port phase fails and the caller's context is still live, Restart
-SHALL stop and start the same container once more and read the mapped port again, and SHALL return a second failure as
-an error naming the mapped-port phase. The fixture SHALL NOT create a replacement container during Restart. The
-container's writable layer SHALL survive a Restart, so a file-backed stream keeps its messages and a memory-backed
-stream does not.
+the host port Start gave it, so `URL()` after a successful Restart SHALL equal `URL()` before it. Docker does not
+promise that a container keeps an explicit host-port binding across a stop and start: one probe on macOS (Docker Desktop
+29.8.2, testcontainers v0.44.0, PR #210 comment 6151736554) showed it kept, and the binding test checks it on every run.
+Restart SHALL return an error and start nothing before Start has succeeded or once Stop has begun. A phase failure
+SHALL return an error naming the phase; Restart SHALL NOT stop, start or read the port a second time, and SHALL NOT
+create a replacement container. The container's writable layer SHALL survive a Restart, so a file-backed stream keeps
+its messages and a memory-backed stream does not.
 
 #### Scenario: File stream survives, memory stream does not
 
@@ -145,12 +155,11 @@ stream does not.
 - **WHEN** Restart is called on a fixture whose Start has not succeeded, or once Stop has begun
 - **THEN** Restart returns an error and starts no container
 
-#### Scenario: Mapped-port failure after a restart
+#### Scenario: A missing mapped port fails Restart
 
-- **WHEN** the mapped-port read after the restart fails and the caller's context is still live
-- **THEN** Restart stops and starts the same container once more and reads the port again; if that read succeeds,
-  Restart goes on to connect, and if it fails, Restart returns an error naming the mapped-port phase, with no third
-  try and no second container
+- **WHEN** the mapped-port read after the restart fails
+- **THEN** Restart returns an error naming the mapped-port phase and what the inspect of the container showed, with
+  no second stop, start or port read and no second container
 
 ### Requirement: Own server per test
 
@@ -174,7 +183,7 @@ called from the test's own goroutine. The fixture SHALL retain no `context.Conte
 ### Requirement: Shared server per package
 
 `natsfixture` SHALL provide a server shared by a package's tests. It SHALL start at the first reset in the process,
-as Start does (the phases, the one replacement container, the container log on failure), under a context bounded at
+as Start does (the phases, one container, the container log on failure), under a context bounded at
 five minutes so that a cold image pull fits (the removed runner's pull budget was 300 s), and SHALL close the
 connection its start made before the reset counts connections. A process that never resets starts no container.
 When that start fails, the reset SHALL fail its test with the start error, and every later reset in the process

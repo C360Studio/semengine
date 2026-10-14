@@ -132,10 +132,13 @@ our label, and never runs `docker … prune` or removes anything by name.
 
 ## Known problem: Docker Desktop on macOS loses a host port
 
-When a Mac program already listens on the host port Docker picks, Docker Desktop reports the container's port as
-missing (#180). The fixture handles that once: a start tries one replacement container and Restart tries one more
-stop and start. Fewer containers mean fewer chances, which is one reason packages share a server. Whether Linux CI is
-affected is not known.
+When Docker picks the host port and a Mac program already listens on it, Docker Desktop reports the container's port
+as missing (#180, #209). The fixture no longer lets Docker pick: it asks the operating system for a free port and
+gives Docker that exact port (#209, #210), so Docker's pick no longer applies. That Docker then publishes the port, and
+keeps it across a stop and start, is not promised by Docker: it rests on one macOS probe (Docker Desktop 29.8.2,
+testcontainers v0.44.0, PR #210 comment 6151736554) and on every run since, and `TestRestartURLDials` checks it. A
+port another program takes in the moment before Docker binds it fails the start with "address already in use".
+Linux has not been measured. When a mapped port is missing, the error says what an inspect of the container showed.
 
 ## When we write harness code
 
@@ -148,5 +151,6 @@ command, and only then code of our own, kept to the fewest lines.
 
 When the failure a piece of harness code names can no longer happen (the upstream bug is fixed, the test that needed
 it is gone), remove the code in its own pull request and cite the evidence: a release note, a measurement, or the
-removed test. The replacement container for #180 is the next candidate, once a Docker Desktop release fixes the
-defect and a recorded run shows it.
+removed test. Start's replacement container and Restart's extra stop and start for #180 went this way: once the
+fixture picked the port, #210's probe (PR #210 comment 6151736554) showed a picked port coming up and a held port
+failing at the start, where neither retry ran, and the owner ruled both out (#205 comment 6173171452).

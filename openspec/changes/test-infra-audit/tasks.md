@@ -61,9 +61,10 @@ review stop. Choices the design does not spell out go in `notes/<task>.md`.
 
 - [x] 3.1 Stop closes the connection and removes the container, nothing more; a repeated Stop is a no-op; tests first
   (`nats-fixture`, "Own server per test").
-- [x] 3.2 Remove `Consume`, `CreateKeyValue`, the consumer joins and the operation slot; Restart keeps #200's retry
-  (`nats-fixture`, "Restart keeps the container").
-- [ ] 3.3 Keep one test seam, the mapped-port read, for the replacement-container test; remove the other 12; the error
+- [x] 3.2 Remove `Consume`, `CreateKeyValue`, the consumer joins and the operation slot; Restart keeps its phases
+  (`nats-fixture`, "Restart keeps the container"). #200's retry is removed with Start's replacement container
+  (owner ruling, #205 comment 6173171452; `notes/3.3-retries.md`).
+- [ ] 3.3 Keep one test seam, the mapped-port read, for the inspect in a mapped-port failure; remove the other 12; the error
   type becomes unexported, with the phase in its text.
 - [ ] 3.4 Remove the fixture's lifecycle-floor test; the stream helpers become functions carrying the bounds.
 - [ ] 3.5 natsfixture's 80% coverage floor holds.

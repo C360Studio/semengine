@@ -75,9 +75,11 @@ go test -race -count=1 -tags integration -run '^TestFixtureRoundTrip$' ./interna
 
 Every container `natsfixture` starts carries the Docker label `org.c360studio.semengine.test`. A run killed before its
 cleanup leaves its containers running; the first fixture start in a later test process removes every labelled
-container that Docker created more than 30 minutes earlier, so a run still going keeps its own. `natsfixture` also
-turns off Ryuk, the extra cleanup container testcontainers would otherwise start beside the tests. To see what is left
-on your machine:
+container that Docker created more than 30 minutes earlier. The sweep looks at age alone, not at whether the run that
+started a container is still going: a run under the default ten-minute `go test` timeout ends long before its
+containers reach 30 minutes, but a longer run (`-timeout 0` while debugging, say) can lose its containers to another
+test process's sweep. `natsfixture` also turns off Ryuk, the extra cleanup container testcontainers would otherwise
+start beside the tests. To see what is left on your machine:
 
 ```bash
 docker ps -a --filter label=org.c360studio.semengine.test

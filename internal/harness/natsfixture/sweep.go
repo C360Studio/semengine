@@ -20,7 +20,8 @@ const (
 	testLabel = "org.c360studio.semengine.test"
 	// sweepAge is how long ago Docker must have created a labelled container before the sweep
 	// removes it (owner ruling, #205 comment 6132995614): three times go test's default 10-minute
-	// -timeout, so a run still going keeps its containers.
+	// -timeout, so a run under that timeout has ended before its containers qualify. Age is the only
+	// test: a run with a longer or disabled -timeout gets no protection while it is still going.
 	sweepAge = 30 * time.Minute
 )
 

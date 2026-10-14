@@ -55,9 +55,6 @@ redelivery is:
 - The input stream is restored from a backup (owner ruling, #91 comment 6112550268).
 - The input stream and graph-ingest's durable consumer are both created again while graph-ingest is disconnected from
   the server (owner ruling, #91 comment 6113959050).
-- The input stream and a consumer with graph-ingest's consumer name are created again while graph-ingest runs, and
-  graph-ingest receives the new stream's input through a request its consumer made before the stream was deleted
-  (a doc line under the owner's rule of 2026-10-12, #185; not measured).
 
 Except after a restore, a later `Start` reads the recreated stream's generation, and an input its producer
 publishes again after that `Start` is applied. After a restore, recovery is not promised.

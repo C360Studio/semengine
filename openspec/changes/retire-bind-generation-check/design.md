@@ -102,9 +102,9 @@ measured. Recovery after a restored stream is "not promised".
 ## Not covered
 
 - A pull that outlives its consumer's deletion and is later answered by a same-named consumer on a new stream
-  (archived `design.md:607-608`). It has no ruling, no probe and no named trigger. The spec delta drafts it as the
-  last declared-limitation bullet (a doc line, by #185), labelled not measured. **Owner question:** keep that bullet,
-  or decline it. Declining deletes the one bullet, and the case stays recorded here only.
+  (archived `design.md:607-608`). It has no ruling, no probe and no named trigger: it needs another party to create
+  a consumer under graph-ingest's own name. The owner declined a spec bullet for it when accepting this design
+  (2026-10-13, PR #215); it is recorded here only.
 - A stream recreated while graph-ingest runs (archived `notes/4.3.md:58-59`): graph-ingest stops receiving. This was
   filed as #216 in design review. This change does no work on #216 and does not edit the spec scenario "Memory
   transport lost at broker restart" (`spec.md:21-25`) or `docs/contract.md:75`; #216 names them.

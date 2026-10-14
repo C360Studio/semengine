@@ -7,8 +7,8 @@ the design does not spell out go in `notes/<task>.md`, each with a one-line PR c
 
 ## 1. Record (orchestrator)
 
-- [ ] 1.1 Owner ruling #214 comment 6157056960; inventory revision 2 with INVENTORY PASS; the design's pre-owner
-  review. Hold: the owner's acceptance of `design.md`.
+- [x] 1.1 Owner ruling #214 comment 6157056960; inventory revision 2 with INVENTORY PASS; the design's pre-owner
+  review. The owner accepted `design.md` on 2026-10-13, declining the fourth limitation bullet (PR #215).
 
 ## 2. Code and text (developer)
 

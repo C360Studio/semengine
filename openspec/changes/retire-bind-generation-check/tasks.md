@@ -12,7 +12,7 @@ the design does not spell out go in `notes/<task>.md`, each with a one-line PR c
 
 ## 2. Code and text (developer)
 
-- [ ] 2.1 Remove the check and the tests that assert it (design D1, D2). In `processor/graph-ingest/component.go`:
+- [x] 2.1 Remove the check and the tests that assert it (design D1, D2). In `processor/graph-ingest/component.go`:
   - delete `:1542-1546`, `:1597-1610` and `:1641-1651`;
   - make the callback's `msgCtx` `_` (`:1551`);
   - rewrite the first-read comment (`:1475-1478`) with no claim about nats-server or nats.go.

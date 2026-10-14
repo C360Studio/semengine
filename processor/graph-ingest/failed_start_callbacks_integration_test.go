@@ -13,7 +13,6 @@ package graphingest
 import (
 	"context"
 	"errors"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -321,131 +320,91 @@ func (h *drainedConsumeContext) Drain() {
 	h.once.Do(func() { close(h.closed) })
 }
 
-// TestFailedStartDrainsAndNaksHeldInput: an input the entity consumer's callback accepts during
-// Start is held until Start has read the stream's creation time again (design D8, Codex interim
-// review R3). The callback runs on goroutine G with a context the rollback does not end, as
-// natsclient's is. When the two reads differ, Start fails, the rollback drains the consumer whose
-// handle was recorded before the second read, and G negatively acknowledges the input. When they
-// agree and a later registration fails, G, released after the rollback, reaches the pool Start
-// captured, which refuses it, and negatively acknowledges the input (checkpoint 3 B2).
+// onlyDisposition returns msg's one disposition, or "none" when it has none yet. A second
+// disposition fails the test.
+func onlyDisposition(t *testing.T, msg *streamLaneMsg) string {
+	t.Helper()
+	select {
+	case disposition := <-msg.settled:
+		select {
+		case extra := <-msg.settled:
+			t.Errorf("a second disposition after %s: %s", disposition, extra)
+		default:
+		}
+		return disposition
+	default:
+		return "none"
+	}
+}
+
+// TestFailedStartDrainsAndNaksHeldInput: the entity consumer binds while its callback is running on
+// an input, and a later registration fails Start. The callback runs on goroutine G with a context
+// the rollback does not end, as natsclient's is, and is held in Metadata until the rollback has
+// drained the consumer. Released, G accepts the input and reaches the pool Start captured, which
+// refuses it, and G negatively acknowledges the input (checkpoint 3 B2).
 func TestFailedStartDrainsAndNaksHeldInput(t *testing.T) {
 	payload := &mergeTestGraphable{entityID: failedStartEntityID, triples: []message.Triple{
 		{Subject: failedStartEntityID, Predicate: "test.state.value", Object: "streamed", Confidence: 1},
 	}}
 
-	t.Run("generation changed", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
-		defer cancel()
-		comp := createTestComponentForLifecycle(t)
-		registerMergeTestPayload(t, comp)
-		if err := comp.Initialize(); err != nil {
-			t.Fatalf("Initialize: %v", err)
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancel()
+	comp := createTestComponentForLifecycle(t)
+	registerMergeTestPayload(t, comp)
+	if err := comp.Initialize(); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	msg := &heldMetadataMsg{
+		streamLaneMsg: newStreamLaneMsg(streamLaneData(t, payload, "r3-producer"), 1),
+		entered:       make(chan struct{}),
+		release:       make(chan struct{}),
+	}
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(msg.release) }) }
+	defer release()
+	comp.waitForStreamInput = func(context.Context, string) (time.Time, error) { return time.Unix(1, 0), nil }
+	handle := newDrainedConsumeContext()
+	gReturned := make(chan struct{})
+	var gPanic any
+	comp.consumeStream = func(
+		_ context.Context,
+		_ natsclient.PortConsumerContext,
+		_ natsclient.StreamConsumerConfig,
+		handler func(context.Context, jetstream.Msg),
+	) (jetstream.ConsumeContext, error) {
+		go func() {
+			defer close(gReturned)
+			defer func() { gPanic = recover() }()
+			handler(t.Context(), msg)
+		}()
+		select {
+		case <-msg.entered:
+		case <-ctx.Done():
 		}
-		msg := newStreamLaneMsg(streamLaneData(t, payload, "r3-producer"), 1)
-		reads := 0
-		comp.waitForStreamInput = func(context.Context, string) (time.Time, error) {
-			reads++
-			return time.Unix(int64(reads), 0), nil // each read a different creation time
-		}
-		handle := newDrainedConsumeContext()
-		gReturned := make(chan struct{})
-		var gPanic any
-		comp.consumeStream = func(
-			_ context.Context,
-			_ natsclient.PortConsumerContext,
-			_ natsclient.StreamConsumerConfig,
-			handler func(context.Context, jetstream.Msg),
-		) (jetstream.ConsumeContext, error) {
-			go func() {
-				defer close(gReturned)
-				defer func() { gPanic = recover() }()
-				handler(t.Context(), msg)
-			}()
-			return handle, nil
-		}
+		return handle, nil
+	}
+	registrationErr := errs.WrapTransient(context.DeadlineExceeded,
+		"test", "SubscribeForRequests", "registration round trip")
+	comp.subscribeRequests = func(
+		context.Context, string, func(context.Context, []byte) ([]byte, error),
+	) (*natsclient.Subscription, error) {
+		return nil, registrationErr
+	}
 
-		startErr := comp.Start(ctx)
-		if startErr == nil {
-			if err := comp.Stop(ctx); err != nil {
-				t.Errorf("Stop: %v", err)
-			}
-			t.Fatal("Start returned nil, want a failure: the stream's creation time changed while its consumer was bound")
-		}
-		if !strings.Contains(startErr.Error(), "ENTITY") {
-			t.Errorf("Start error = %v, want it to name the stream ENTITY", startErr)
-		}
-		if n := handle.drains.Load(); n != 1 {
-			t.Errorf("the rollback drained the consumer %d times, want 1", n)
-		}
-		awaitClosed(ctx, t, gReturned, "the callback returning")
-		if gPanic != nil {
-			t.Fatalf("the callback panicked: %v", gPanic)
-		}
-		if got := onlyDisposition(t, msg); got != "nak" {
-			t.Errorf("disposition = %s, want nak", got)
-		}
-	})
+	startErr := comp.Start(ctx)
+	if !errors.Is(startErr, registrationErr) {
+		t.Fatalf("Start error = %v, want it to wrap the registration's error", startErr)
+	}
+	if n := handle.drains.Load(); n != 1 {
+		t.Errorf("the rollback drained the consumer %d times, want 1", n)
+	}
 
-	t.Run("a later registration fails", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
-		defer cancel()
-		comp := createTestComponentForLifecycle(t)
-		registerMergeTestPayload(t, comp)
-		if err := comp.Initialize(); err != nil {
-			t.Fatalf("Initialize: %v", err)
-		}
-		msg := &heldMetadataMsg{
-			streamLaneMsg: newStreamLaneMsg(streamLaneData(t, payload, "r3-producer"), 1),
-			entered:       make(chan struct{}),
-			release:       make(chan struct{}),
-		}
-		var releaseOnce sync.Once
-		release := func() { releaseOnce.Do(func() { close(msg.release) }) }
-		defer release()
-		comp.waitForStreamInput = func(context.Context, string) (time.Time, error) { return time.Unix(1, 0), nil }
-		handle := newDrainedConsumeContext()
-		gReturned := make(chan struct{})
-		var gPanic any
-		comp.consumeStream = func(
-			_ context.Context,
-			_ natsclient.PortConsumerContext,
-			_ natsclient.StreamConsumerConfig,
-			handler func(context.Context, jetstream.Msg),
-		) (jetstream.ConsumeContext, error) {
-			go func() {
-				defer close(gReturned)
-				defer func() { gPanic = recover() }()
-				handler(t.Context(), msg)
-			}()
-			select {
-			case <-msg.entered:
-			case <-ctx.Done():
-			}
-			return handle, nil
-		}
-		registrationErr := errs.WrapTransient(context.DeadlineExceeded,
-			"test", "SubscribeForRequests", "registration round trip")
-		comp.subscribeRequests = func(
-			context.Context, string, func(context.Context, []byte) ([]byte, error),
-		) (*natsclient.Subscription, error) {
-			return nil, registrationErr
-		}
-
-		startErr := comp.Start(ctx)
-		if !errors.Is(startErr, registrationErr) {
-			t.Fatalf("Start error = %v, want it to wrap the registration's error", startErr)
-		}
-		if n := handle.drains.Load(); n != 1 {
-			t.Errorf("the rollback drained the consumer %d times, want 1", n)
-		}
-
-		release()
-		awaitClosed(ctx, t, gReturned, "the callback returning")
-		if gPanic != nil {
-			t.Fatalf("the callback panicked after the rollback: %v", gPanic)
-		}
-		if got := onlyDisposition(t, msg.streamLaneMsg); got != "nak" {
-			t.Errorf("disposition = %s, want nak", got)
-		}
-	})
+	release()
+	awaitClosed(ctx, t, gReturned, "the callback returning")
+	if gPanic != nil {
+		t.Fatalf("the callback panicked after the rollback: %v", gPanic)
+	}
+	if got := onlyDisposition(t, msg.streamLaneMsg); got != "nak" {
+		t.Errorf("disposition = %s, want nak", got)
+	}
 }

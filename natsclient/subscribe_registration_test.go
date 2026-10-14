@@ -157,30 +157,34 @@ func (s *scriptedServer) subLines() []string {
 	return subs
 }
 
-// pipeDialer hands nats.go the client end of the pipe once; every later dial, a reconnect's,
-// fails, so a hung-up connection stays lost.
+// pipeDialer hands the client's socket dialer the client end of the pipe once; every later
+// dial, a reconnect's, fails, so a hung-up connection stays lost. It never looks the address up:
+// the resolver's shared state, made inside the first bubble that looks a name up, may not be
+// used from another bubble, and the pipe has no host to look up.
 type pipeDialer struct {
 	conn net.Conn
 	used atomic.Bool
 }
 
-func (d *pipeDialer) Dial(string, string) (net.Conn, error) {
+func (d *pipeDialer) Dial(*net.Dialer, string, string) (net.Conn, error) {
 	if d.used.Swap(true) {
 		return nil, errors.New("scripted server: no second connection")
 	}
 	return d.conn, nil
 }
 
-// connectScripted returns a client connected, through connectWith's dial seam, to a scripted
-// server that withholds every PING after the handshake. Health monitoring is off, so the only
-// PINGs are the ones the test causes. Cleanup answers every PING and closes the client.
+// connectScripted returns a client connected, through netDial, to a scripted server that
+// withholds every PING after the handshake. The pipe is the socket of the client's own dialer,
+// so Connect's and Close's cuts close it, as they close a TCP socket. Health monitoring is off,
+// so the only PINGs are the ones the test causes. Cleanup answers every PING and closes the
+// client.
 func connectScripted(t *testing.T) (*Client, *scriptedServer) {
 	t.Helper()
 	cli, srv := net.Pipe()
 	server := serveScripted(srv)
 	c, err := NewClient("nats://scripted", WithHealthInterval(0), WithLogger(slog.New(slog.DiscardHandler)))
 	require.NoError(t, err)
-	dialer := &pipeDialer{conn: cli}
+	c.netDial = (&pipeDialer{conn: cli}).Dial
 	t.Cleanup(func() {
 		server.answerPings()
 		ctx, cancel := context.WithTimeout(context.Background(), closeBudget)
@@ -188,11 +192,7 @@ func connectScripted(t *testing.T) (*Client, *scriptedServer) {
 		_ = c.Close(ctx)
 		_ = cli.Close()
 	})
-	require.NoError(t, c.connectWith(t.Context(), func(url string, opts ...nats.Option) (*nats.Conn, error) {
-		// SkipHostLookup: the resolver's shared state, made inside the first bubble that looks a
-		// name up, may not be used from another bubble, and the pipe has no host to look up.
-		return nats.Connect(url, append(opts, nats.SetCustomDialer(dialer), nats.SkipHostLookup())...)
-	}))
+	require.NoError(t, c.Connect(t.Context()))
 	return c, server
 }
 
@@ -471,11 +471,11 @@ func TestSubscribeRegistrationCloseBeginsDuringRoundTrip(t *testing.T) {
 	})
 }
 
-// T8. Close begins while the round trip waits, with a context that has already ended, so Close
-// closes the connection at once: the call reports Close's nats.ErrConnectionClosed, not
-// ErrNotConnected. It runs on real time, outside a bubble: nats.go's drain goroutine outlives a
-// Close that closes the connection itself, by up to 5 s (nats.go:6355, :6384), and nothing
-// signals its end.
+// T8. Close begins while the round trip waits, with a context that has already ended, so Close's
+// cut closes the pipe, the connection's socket, at once, as it closes a TCP socket in production:
+// the call reports Close's nats.ErrConnectionClosed, not ErrNotConnected. It runs on real time,
+// outside a bubble: nats.go's drain goroutine outlives a Close that closes the connection
+// itself, by up to 5 s (nats.go:6355, :6384), and nothing signals its end.
 func TestSubscribeRegistrationCloseEndsConnectionDuringRoundTrip(t *testing.T) {
 	c, server := connectScripted(t)
 

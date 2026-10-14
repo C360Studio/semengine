@@ -8,9 +8,7 @@ produced on the current `main`, and that every CI job runs on one pinned runner 
 runs of one commit get the same Ubuntu release. It also covers the review check: a code pull request that is not a
 draft fails `merge-check` unless its description names the implementing agent and the other agent as its reviewer,
 and marking a draft ready starts the run that applies it.
-
 ## Requirements
-
 ### Requirement: Varied and repeated unit runs
 
 `task test:unit` SHALL run `scripts/gopkgs.sh go test -race -count=1 -cpu 1 ./...`. `task test:repeat` SHALL run
@@ -257,7 +255,7 @@ these ways: the permissions of `merge-check`, a write permission on any job, the
 ### Requirement: Cross-agent review check
 
 On a pull-request run `scripts/merge-check.sh` SHALL apply a review check. A code pull request that is not a draft
-passes only when its description says which agent implemented it and names the other agent as its reviewer. A
+passes only when its description says which agent implemented it and names another agent as its reviewer. A
 documents-only pull request passes without that. The script SHALL exit zero only when the review check, the
 known-flake check and the up-to-date rule all pass. There SHALL be no waiver: no label, no comment and no
 environment variable SHALL change the result, other than the two variables that select the kind of run. On a push
@@ -266,19 +264,19 @@ run the script SHALL NOT apply the check, SHALL say so, and SHALL NOT read a pul
 **Documents only.** The script SHALL read every page of the pull request's list of changed files, and the number of
 changed files GitHub reports for it. Each entry gives one name, and a renamed file gives two: its new name and its
 previous name. A name is a document name when it ends in `.md` or starts with `openspec/`, and does not start with
-`.claude/agents/`. Every other name is a code name, including the name of a file the pull request deletes. A pull
-request with at least one code name is a code pull request. Every other pull request is documents only, one that
-changes no file included. When the entries read are not as many as GitHub reports, the script SHALL exit non-zero,
-say the list is incomplete and give both numbers, whatever the names it read.
+`.claude/agents/` or `.agents/contracts/`. Every other name is a code name, including the name of a file the pull
+request deletes. A pull request with at least one code name is a code pull request. Every other pull request is
+documents only, one that changes no file included. When the entries read are not as many as GitHub reports, the script
+SHALL exit non-zero, say the list is incomplete and give both numbers, whatever the names it read.
 
 **The two lines.** The description of a code pull request SHALL have exactly one line that starts `reviewed-by:`
 and, unless GitHub reports the pull request's author as a bot, exactly one line that starts `implemented-by:`. A
-line starts in the first column. An agent name is the word `claude` or the word `codex`, in any letter case, with no
-letter or digit directly before or after it. The `implemented-by:` line SHALL name at least one agent. The
-`reviewed-by:` line SHALL name exactly one agent, and not an agent the `implemented-by:` line names, unless that
-line names both. For a bot's pull request the `implemented-by:` line is not read, and the `reviewed-by:` line may
-name either agent. Nothing else in either line is read. A carriage return at the end of a line SHALL NOT change any
-of this.
+line starts in the first column. An agent name is the word `claude`, the word `codex`, or the word `gemini`, in any
+letter case, with no letter or digit directly before or after it. The `implemented-by:` line SHALL name at least one
+agent. The `reviewed-by:` line SHALL name exactly one agent, and not an agent the `implemented-by:` line names, unless
+that line names more than one agent. For a bot's pull request the `implemented-by:` line is not read, and the
+`reviewed-by:` line may name any of the three agents. Nothing else in either line is read. A carriage return at the end
+of a line SHALL NOT change any of this.
 
 **Drafts.** While the pull request is a draft the script SHALL make the same reads and print the same findings,
 SHALL say that they do not fail a draft, and SHALL NOT exit non-zero because of them.
@@ -308,11 +306,12 @@ reviewing agent.
 #### Scenario: Names near the rule
 
 - **WHEN** one pull request changes `AGENTS.md`, `.claude/skills/preflight/SKILL.md`, `x/.claude/agents/a.md`,
-  `openspec/changes/x/.openspec.yaml` and `openspec/x.sh`, and a second changes those five and also `README.MD`,
-  `docs/a.md.txt`, `openspecs/a.yaml`, `docs/openspec/a.yaml`, `Taskfile.yml`, `docs/admission-ledger.yaml`,
-  `.claude/agents/semengine-reviewer.md`, `.codex/agents/semengine-reviewer.toml`, and deletes `scripts/x.sh`
+  `x/.agents/contracts/a.md`, `openspec/changes/x/.openspec.yaml` and `openspec/x.sh`, and a second changes those six
+  and also `README.MD`, `docs/a.md.txt`, `openspecs/a.yaml`, `docs/openspec/a.yaml`, `Taskfile.yml`,
+  `docs/admission-ledger.yaml`, `.claude/agents/semengine-reviewer.md`, `.agents/contracts/semengine-reviewer.md`,
+  `.codex/agents/semengine-reviewer.toml`, and deletes `scripts/x.sh`
 - **THEN** the script says the first is documents only, and treats the second as a code pull request and names each
-  of the nine files that the first does not change
+  of the ten files that the first does not change
 
 #### Scenario: Renamed file
 
@@ -338,33 +337,37 @@ reviewing agent.
 #### Scenario: The other agent is named
 
 - **WHEN** a code pull request that is not a draft has the line `implemented-by: claude (opus)` and the line
-  `reviewed-by: codex semengine-reviewer — targeted (3.1–3.3 fixes) APPROVE at 0a86a9a; full-diff review pending.`
-- **THEN** the script exits zero and prints `codex` as the reviewing agent; what follows the agent's name is not
-  read
+  `reviewed-by: codex semengine-reviewer — targeted (3.1–3.3 fixes) APPROVE at 0a86a9a; full-diff review pending.`, or
+  has the line `implemented-by: gemini (pro)` and the line `reviewed-by: claude (opus)`
+- **THEN** the script exits zero and prints `codex` in the first case and `claude` in the second as the reviewing
+  agent; what follows the agent's name is not read
 
 #### Scenario: No reviewed-by line
 
 - **WHEN** a code pull request that is not a draft has the line `implemented-by: claude (opus)` and no
   `reviewed-by:` line
-- **THEN** the script exits non-zero, says to add a line `reviewed-by: codex`, and says that editing the description
-  starts no run
+- **THEN** the script exits non-zero, says to add a line `reviewed-by: codex (or reviewed-by: gemini)`, and says that
+  editing the description starts no run
 
 #### Scenario: Implementer line missing or naming no agent
 
 - **WHEN** a code pull request whose author is a user has no `implemented-by:` line, or has the line
   `implemented-by: opus (semengine-developer); fable (orchestrating session)`
-- **THEN** the script exits non-zero and says the `implemented-by:` line must name `claude` or `codex`
+- **THEN** the script exits non-zero and says the `implemented-by:` line must name `claude`, `codex`, or `gemini`
 
 #### Scenario: Same agent implements and reviews
 
-- **WHEN** a code pull request has the lines `implemented-by: claude-fable-5-1` and `reviewed-by: Claude (opus)`
-- **THEN** the script exits non-zero and says the other agent, `codex`, reviews
+- **WHEN** a code pull request has the lines `implemented-by: claude-fable-5-1` and `reviewed-by: Claude (opus)`, or
+  has the lines `implemented-by: gemini (pro)` and `reviewed-by: Gemini (pro)`
+- **THEN** the script exits non-zero and says another agent (`codex or gemini` in the first case, `claude or codex` in
+  the second) reviews
 
 #### Scenario: Reviewer line names no agent, both, or a longer word
 
 - **WHEN** a code pull request has the line `implemented-by: claude`, and its `reviewed-by:` line reads
-  `gpt-6-astra`, or `codex, then claude`, or `codex2`
-- **THEN** the script exits non-zero each time and says the line must name exactly one of `claude` and `codex`
+  `gpt-6-astra`, or `codex, then claude`, or `codex2`, or `gemini2`
+- **THEN** the script exits non-zero each time and says the line must name exactly one of `claude`, `codex`, and
+  `gemini`
 
 #### Scenario: Both agents implemented
 
@@ -464,3 +467,4 @@ than the one label `ubuntu-24.04`.
 
 - **WHEN** a job's `runs-on` is a list of labels that includes `ubuntu-24.04`, a runner group, or an expression
 - **THEN** the contract test fails naming the job and what it runs on
+

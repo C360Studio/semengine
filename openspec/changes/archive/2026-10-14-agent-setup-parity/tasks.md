@@ -23,8 +23,8 @@ Each task names the outcome and the gate that proves it.
 
 ## 3. Review and close
 
-- [ ] 3.1 Cross-agent review of record on the implementation commit; record `reviewed-by:` in the PR body once the
-  reviewing agent's newest review record approves.
-  Hold: cross-agent review of record.
-- [ ] 3.2 Archive the change and sync `openspec/specs/merge-gate/spec.md` and
+- [x] 3.1 Cross-agent review of record on the implementation commit; record `reviewed-by:` in the PR body once the
+  reviewing agent's newest review record approves (PR #227, `APPROVE` at `f4dded94f90bbfea9237bfcbef29066f0d560ec6` by
+  `codex / semengine-reviewer` in `#issuecomment-6169822760`).
+- [x] 3.2 Archive the change and sync `openspec/specs/merge-gate/spec.md` and
   `openspec/specs/harness-boundaries/spec.md` as the last content commit. Gate: `task spec:check`.

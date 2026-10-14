@@ -23,9 +23,9 @@ contract test suite enforce those rules automatically.
 - **Automated agent setup and rule-index parity check**:
   - `internal/harness/contract/agentsetup_test.go` adds `TestAgentSetupParity` and `TestAgentSetupParitySensitivity`,
     enforcing Steps 1–8 of `.agents/README.md` (canonical contracts and adapters, tool lists and sandbox modes,
-    `CLAUDE.md` import-only structure, `len(AGENTS.md) < 24000`, 1-to-1 rule row parity between `AGENTS.md` and
-    `.agents/rules-index.md`, adapter line limits and no copied checklists, skill adapter parity, and pinned model and
-    effort values).
+    `CLAUDE.md` import-only structure, `len(AGENTS.md) < 24000`, numbered rule-domain heading and per-domain row-count
+    parity between `AGENTS.md` and `.agents/rules-index.md` with semantic correspondence of individual rows remaining
+    review-only, adapter line limits and no copied checklists, skill adapter parity, and pinned model and effort values).
 - **Ignore desktop worktree and process-log directories**:
   - `.gitignore` ignores `.worktrees/` and `.enjoy-logs/`.
 

@@ -39,7 +39,7 @@ natsfixture uses.
 
 **Migration**: None.
 
-### Requirement: Restart keeps the container and re-reads its binding
+### Requirement: Restart keeps the container and its host port
 
 **Reason**: Two of its scenarios go: "Consumer across a restart", with `Consume`, and "Start-container phase fails",
 with the start-container hook (one test seam stays, the mapped-port read). Its other rules move unchanged to "Restart
@@ -56,8 +56,11 @@ ready, deriving every operation context from the caller's. A failure SHALL retur
 container ID when a container exists, and the cause, and that matches the caller's context error under `errors.Is`
 whenever that context had ended. Before returning it SHALL remove any container the attempt created, under a fresh
 bounded context, and report a removal failure in the error, and it SHALL write that container's log to the test
-output. At most one replacement container is permitted, only after the mapped-port phase failed with the caller's
-context live and the first container removed. The fixture SHALL NOT expose start, connect or bucket-prefix knobs.
+output. The create and start phase of each attempt SHALL publish the client port on a host port the fixture took from
+the operating system with a port-0 listener and closed, and SHALL NOT leave the host port to Docker to choose; a
+failure to take a port SHALL fail that phase. At most one replacement container is permitted, only after the
+mapped-port phase failed with the caller's context live and the first container removed. The fixture SHALL NOT expose
+start, connect or bucket-prefix knobs.
 
 #### Scenario: Failure after the container exists
 
@@ -70,6 +73,11 @@ context live and the first container removed. The fixture SHALL NOT expose start
 - **WHEN** the test context is cancelled while the container is starting
 - **THEN** Start returns an error satisfying `errors.Is(err, context.Canceled)`, no replacement is attempted, and no
   container remains
+
+#### Scenario: Ports after a running fixture's own are held
+
+- **WHEN** a fixture is running and the host ports after its own are held by listeners on all addresses
+- **THEN** a second fixture's Start returns nil, with JetStream answering on its `URL()`
 
 #### Scenario: One replacement after a missing mapped port
 
@@ -109,14 +117,15 @@ after it returns beyond the cleanup it registered.
 ### Requirement: Restart keeps the container
 
 `Fixture.Restart(ctx)` SHALL stop and start the same container, drain the fixture's own connection, and run the
-stop-container, start-container, mapped-port, connect and JetStream-ready phases in that order, deriving every
-operation context from the caller's; on success `URL()` and `JetStream()` SHALL return the new binding. Restart SHALL
-return an error and start nothing before Start has succeeded or once Stop has begun. A phase failure SHALL return an
-error naming the phase, with one exception: when the mapped-port phase fails and the caller's context is still live,
-Restart SHALL stop and start the same container once more and read the mapped port again, and SHALL return a second
-failure as an error naming the mapped-port phase. The fixture SHALL NOT create a replacement container during Restart.
-The container's writable layer SHALL survive a Restart, so a file-backed stream keeps its messages and a
-memory-backed stream does not.
+stop-container, start-container, mapped-port, connect and JetStream-ready phases in that order, deriving every operation
+context from the caller's; on success `URL()` and `JetStream()` SHALL return the new binding. The container SHALL keep
+the host port Start gave it, so `URL()` after a successful Restart SHALL equal `URL()` before it. Restart SHALL return
+an error and start nothing before Start has succeeded or once Stop has begun. A phase failure SHALL return an error
+naming the phase, with one exception: when the mapped-port phase fails and the caller's context is still live, Restart
+SHALL stop and start the same container once more and read the mapped port again, and SHALL return a second failure as
+an error naming the mapped-port phase. The fixture SHALL NOT create a replacement container during Restart. The
+container's writable layer SHALL survive a Restart, so a file-backed stream keeps its messages and a memory-backed
+stream does not.
 
 #### Scenario: File stream survives, memory stream does not
 
@@ -125,10 +134,11 @@ memory-backed stream does not.
 - **THEN** the file-backed message is readable at its sequence through the new `JetStream()` and the memory-backed
   stream reports the message or the stream absent
 
-#### Scenario: Binding changes across a restart
+#### Scenario: Binding kept across a restart
 
-- **WHEN** Docker maps the container's client port to a different host port after the restart
-- **THEN** `URL()` returns the new address and a dial to it succeeds
+- **WHEN** the fixture is restarted
+- **THEN** `URL()` returns the address it returned before the restart, that address is the container's binding as
+  Docker reports it, and a dial to it succeeds
 
 #### Scenario: Restart before Start
 

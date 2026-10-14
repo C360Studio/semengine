@@ -10,7 +10,6 @@
 //   - All timestamps are Unix milliseconds (ms since epoch, UTC)
 //   - Zero value (0) means "not set" or "unknown"
 //   - Functions handle zero values gracefully
-//   - Automatic detection of seconds vs milliseconds input
 //
 // # Why Milliseconds?
 //
@@ -47,20 +46,6 @@
 // Formatting for display:
 //
 //	s := timestamp.Format(ts)  // Returns "2024-01-15T10:30:00Z"
-//
-// Parsing various inputs:
-//
-//	// RFC3339 string
-//	ts := timestamp.Parse("2024-01-15T10:30:00Z")
-//
-//	// Unix seconds (auto-detected)
-//	ts := timestamp.Parse(1705315800)
-//
-//	// Unix milliseconds (auto-detected)
-//	ts := timestamp.Parse(1705315800000)
-//
-//	// time.Time
-//	ts := timestamp.Parse(time.Now())
 //
 // Time arithmetic:
 //
@@ -100,21 +85,9 @@
 //	// New:
 //	t := timestamp.FromUnixMs(sec * 1000)
 //
-//	// Old: time.Parse(time.RFC3339, s)
-//	// New:
-//	ts := timestamp.Parse(s)
-//
 //	// Old: t.Format(time.RFC3339)
 //	// New:
 //	s := timestamp.Format(ts)
-//
-// # Auto-Detection Logic
-//
-// Parse() automatically detects seconds vs milliseconds:
-//   - Values > 1e12 (year ~2001 in ms) are treated as milliseconds
-//   - Values ≤ 1e12 are treated as seconds and converted
-//
-// This handles both JavaScript (milliseconds) and Unix (seconds) conventions.
 //
 // # Thread Safety
 //

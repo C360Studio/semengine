@@ -328,32 +328,18 @@
 - source_path: pkg/platform
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    platform identity (platform.Config). At the pin seven message symbols (the federation family)
-    and vocabulary.EntityIRI named it; the surface audit removed both (task 3.6b: #72 comment
-    5969293525, and ruling 1 as extended, #72 comment 5969505488), so nothing in this change
-    imports it. Its reader in the port set is config (change 3): pin config/config.go:29 (the
-    PlatformConfig alias), :49 (Config.Platform), :226-244 (the org and id validators) and
-    config/manager.go:88-101 (the platform_identity record). Surface whose caller is ported later:
-    it stays public at pkg/platform, because config's exported Config names it (design D5)
+    platform identity (platform.Config); read by config (change 3) and stays public at pkg/platform
+    because config's exported Config names it (design D5)
   destination: pkg/platform
   contract: Config carries the platform identity fields as at the pin; no behavior beyond the type
   dependencies_and_side_effects: stdlib only; no goroutine, no I/O
   known_risks: >-
-    no tests at the pin, none invented (design D1); no context roots. No package in the module
-    imports it until config is ported (change 3). Adapt item, doc comment corrected (#72 ruling D,
-    comment 5969505488): pin platform/platform.go:27-28 said Config "round-trips cleanly through
-    config files and embedded message metadata"; the second half described message.FederationMeta,
-    which never round-tripped (BaseMessage.MarshalJSON never wrote it) and is removed, so the
-    sentence now stops at config files. Adapt item, package comment corrected (#72 ruling D, relayed
-    in PR #48 comment 5969508639): pin platform/platform.go:1-4 said the package serves "leaf
-    packages (message, vocabulary)" that reference platform identity, false once the federation
-    family and vocabulary.EntityIRI were removed (task 3.6b); it now names config as the reader and
-    says positions 1-2 of an entity ID are the only carrier (ADR-102, ADR-104). No code changed
+    no context roots; no code changed from the pin. Doc comments updated to remove references to the
+    dropped message.FederationMeta and vocabulary.EntityIRI surface (#72 ruling D) and to state that
+    positions 1-2 of an entity ID are the only authority carrier (ADR-102, ADR-104)
   proving_tests: >-
-    none at the pin and none in this change: no test in the module names platform.Config once
-    vocabulary.EntityIRI's tests are removed (task 3.6b); go build and go vet type-check the package,
-    and TestPublicSignatures and TestNoDeploymentAuthorityNames (internal/harness/contract) load it.
-    config's tests are its proving tests when config is ported (change 3)
+    type-checked by go build, go vet, TestPublicSignatures, and TestNoDeploymentAuthorityNames;
+    exercised by config's tests when config is ported (change 3)
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -361,34 +347,21 @@
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
     resource.Watcher, bounded startup wait and periodic availability check for KV buckets and
-    streams; imported by natsclient (client.go WaitForStartup); no consumer imports it (design P21)
+    streams; imported by natsclient; no consumer imports it (design P21)
   destination: internal/resource
   contract: >-
     WaitForStartup retries up to StartupAttempts at StartupInterval and stops on ctx; IsAvailable,
-    Name and the Config defaults as at the pin. Changed behavior (design D7, background-work shape
-    1): Run(ctx) error replaces StartBackgroundCheck and Stop; Run checks on each tick
-    (HealthInterval while available, else RecheckInterval), runs OnAvailable and OnLost on the
-    caller's goroutine, returns ctx.Err() when ctx ends, refuses a nil context with an error before
-    any check, and refuses a second Run while one is in progress (the pin's StartBackgroundCheck
-    "already running" guard); the cancel and wg fields and the doc references to the removed
-    methods (pin watcher.go:108, :138-140; doc.go:14, :21, :57, :66, :85, :149, :151, :159) are gone
+    Name, and Config defaults as at the pin. Changed behavior (design D7, background-work shape 1):
+    Run(ctx) error replaces StartBackgroundCheck and Stop, runs on the caller's goroutine, returns
+    ctx.Err() when ctx ends, refuses a nil context, and refuses a concurrent second Run
   dependencies_and_side_effects: stdlib only; Run blocks its caller's goroutine and starts none
   known_risks: >-
-    no context roots. StartBackgroundCheck and Stop have no caller outside their own tests at the
-    pin (design P10); the WaitForStartup callers the later changes port are unaffected (design D5).
-    Deleted with the removed methods: TestWatcher_BackgroundCheck_Idempotent (pin
-    watcher_test.go:222-242, replaced by TestWatcher_Run_SecondRunRefused) and
-    TestWatcher_Stop_Idempotent (:244-261; Run has no Stop to repeat)
+    no context roots; StartBackgroundCheck and Stop removed along with their cancel/wg fields (no
+    caller outside their own tests at the pin)
   proving_tests: >-
-    internal/resource/watcher_test.go, every test inside synctest.Test except Name and
-    ConfigDefaults, which use no clock; new, written first: TestWatcher_Run_ReturnsOnCancelAndLeavesNothing,
-    TestWatcher_Run_NilContextRefused, TestWatcher_Run_SecondRunRefused. D8 repairs (R1a, sleep to
-    the bubble's clock): pin watcher_test.go:151 → watcher_test.go:179-180; :208 → :233-234; :324 →
-    :356; :333 → :367; :335 → :369; :363 → :399-400; the real-clock 500 ms elapsed bound (:104) →
-    an exact 100 ms on the bubble's clock (:119); the unjoined toggler goroutine (:330) joins (:361).
-    Task 3.10 review HIGH-1 (PR #48 comment 5984567497): ImmediateSuccess's real-clock 5 s deadline
-    (pin :20), below D8 R1b's 10 s, → the test runs inside synctest.Test (:20-38), where that
-    deadline is on the bubble's clock and cannot end a correct run (R1a)
+    internal/resource/watcher_test.go (synctest-based unit tests, including
+    TestWatcher_Run_ReturnsOnCancelAndLeavesNothing, TestWatcher_Run_NilContextRefused,
+    TestWatcher_Run_SecondRunRefused)
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -398,27 +371,14 @@
   destination: pkg/retry
   contract: >-
     Do and DoWithResult retry up to MaxAttempts with exponential backoff capped at MaxDelay,
-    optional jitter, stop on ctx and on NonRetryable; DefaultConfig, Quick, Persistent as at the pin
+    optional jitter, stop on ctx and on NonRetryable; DefaultConfig, Quick, Persistent as at the pin.
+    Changed behavior: Do refuses a nil context before the operation runs and checks ctx before every
+    attempt; jitter() skips rand.Int63n when a quarter of the delay is under 1 ns
   dependencies_and_side_effects: stdlib only; process-global jitter source seeded at init
   known_risks: >-
-    no context roots; production code unchanged from the pin. The pin's timing tests asserted
-    real-clock elapsed bounds (< 150 ms) that a slow host can fail on a correct implementation.
-    README lint fixes (owner ruling, #9 comment 5957221949): pkg/retry/README.md is ported with only the edits
-    markdownlint requires: line 7 wrapped at 120 columns (MD013), a blank line before the lists at
-    :115, :123, :130 (MD032), the trailing newline (MD047); no wording changed. README import path
-    (owner ruling, #9 comment 5968665464), an adapt item "import path changed to the SemEngine
-    module": pin README.md:12, github.com/c360/semstreams/pkg/retry →
-    github.com/c360studio/semengine/pkg/retry
-    Adapt item (Codex review of record, PR #48 comment 5996819933, F32 and F34; commit 0c46833): Do refuses a
-    nil context before the operation runs and checks the context before every attempt, so an ended context never
-    runs it; jitter() gives no jitter when a quarter of the delay is under 1 ns, instead of passing zero to
-    Int63n, and releases randMu with defer. README.md tree line 3: "the SemStreams framework" now reads
-    SemEngine (owner ruling, #9 comment 5984291337).
-  proving_tests: >-
-    pkg/retry/retry_test.go, the six timer-driven tests inside synctest.Test. D8 repair (R1a): pin
-    retry_test.go:68 (time.Sleep 50 ms) → retry_test.go:74 (<-time.After on the bubble's clock);
-    Success, AllAttemptsFail, ContextCancellation, BackoffTiming, MaxDelay and WithResult wrapped in
-    synctest.Test, so their delays and elapsed bounds run on the fake clock
+    no context roots; timer-driven tests moved into synctest.Test bubbles; README updated for
+    SemEngine module path and markdownlint
+  proving_tests: pkg/retry/retry_test.go (synctest-based unit tests)
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -430,48 +390,17 @@
   destination: pkg/security
   contract: >-
     the seven configuration types (Config, TLSConfig, ServerTLSConfig, ClientTLSConfig,
-    ServerMTLSConfig, ClientMTLSConfig, ACMEConfig) and their field semantics and JSON keys as at
-    the pin; no behavior beyond the types: internal/tlsutil checks a configuration when it builds
-    a tls.Config
-  dependencies_and_side_effects: >-
-    no imports; no goroutine, no I/O. Corrected (owner ruling, #9 comment 5985900154, item 3): at
-    the pin the seven Validate methods called os.Stat (pin config.go:104, :158, :161, :189, :192,
-    :231), so the pin's package did file I/O and this row's earlier "stdlib only; no I/O" was
-    wrong; with the methods removed (known_risks) the package has neither
+    ServerMTLSConfig, ClientMTLSConfig, ACMEConfig) and their JSON keys as at the pin, except
+    ServerMTLSConfig.ClientCertOptional (JSON client_cert_optional, default false) replaces
+    RequireClientCert so the zero value requires a client certificate when mTLS is enabled;
+    internal/tlsutil validates configurations when building a tls.Config
+  dependencies_and_side_effects: no imports; no goroutine, no I/O
   known_risks: >-
-    no context roots. doc.go's See Also names pkg/tlsutil and pkg/acme by module path; pkg/acme is
-    not ported (change 5), so the doc.go:139 link points at a package that does not exist here,
-    left as the pin's text; pkg/tlsutil moved to internal/tlsutil (task 3.4, f1cc210), which
-    rewrote the doc.go:138 link to internal/tlsutil. Adapt item, dead surface removed (owner
-    rulings, #9 comments 5985697767 item 2 and 5985900154 item 3; evidence: the surface audit,
-    openspec/changes/archive/2026-10-05-setup-04a-01-floor/surface-audit.md §3): 11 of the 18 exported identifiers,
-    with no caller in SemEngine, the pin, semsource or semconnect. Removed, pin lines: config.go
-    :4-8 (the fmt, os and time imports only they used), :15-26 (DefaultConfig, Config.Validate),
-    :34-51 (DefaultTLSConfig, TLSConfig.Validate), :65-85 (ACMEConfig.Validate), :95-109
-    (ServerMTLSConfig.Validate), :126-169 (DefaultServerTLSConfig, ServerTLSConfig.Validate),
-    :178-196 (ClientMTLSConfig.Validate) and :213-244 (DefaultClientTLSConfig,
-    ClientTLSConfig.Validate). The pin's boot path never ran them: its config loader validated
-    the fields itself (pin config/config.go:303-364). Doc edits (owner rulings, #9 comments
-    5957221949 and 5984291337), pin lines of doc.go: :14 (the validation feature bullet), :44-47
-    (an example calling cfg.Validate()), :116-120 (the Validation section now says the types carry
-    no validation and internal/tlsutil checks files and MinVersion), :124 (the defaults are the
-    zero values, not DefaultConfig()), :132-133 (the sentence on validation methods). Adapt item,
-    exported field changed (owner ruling, #9 comment 5994720412, item 4; task 3.12a): pin
-    config.go:91's ServerMTLSConfig.RequireClientCert (JSON require_client_cert, schema tag
-    default:true) is replaced by ClientCertOptional (JSON client_cert_optional, default:false), so
-    the zero value requires a client certificate. At the pin the Go zero value was false while the
-    tag said true, and internal/tlsutil mapped false to tls.VerifyClientCertIfGiven: with mTLS
-    enabled and no AllowedClientCNs, a client with no certificate was admitted. Optional mode stays
-    when ClientCertOptional is set. A configuration that still sets require_client_cert is refused
-    by a decoder that refuses unknown fields, and its key is otherwise ignored; no consumer imports
-    this package (audit §3.2). doc.go pin lines :66 (the example's RequireClientCert line, now the
-    default) and :101 (the field list)
+    no context roots. Dead surface removed (#9 surface audit §3): 11 unused Default* and Validate
+    functions (which performed os.Stat file I/O at the pin) removed; doc.go updated to match
   proving_tests: >-
-    none at the pin. Added: pkg/security/config_test.go, TestConfigDecodesEveryKey (a JSON
-    document naming every key decodes, unknown fields refused, into the expected Config; a mutant
-    renaming client_cert_optional fails it) and TestConfigDocumentCoversEveryField (every field of
-    the expected Config is non-zero, so a field added without a key fails; a mutant adding a field
-    fails it). Field behavior is proven through internal/tlsutil's tests and metric's (task 3.5)
+    pkg/security/config_test.go (TestConfigDecodesEveryKey, TestConfigDocumentCoversEveryField) and
+    internal/tlsutil's and metric's TLS tests
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -480,15 +409,19 @@
   consumer_purpose: >-
     int64 millisecond timestamp helpers; imported by message; no consumer imports it (design P21)
   destination: internal/timestamp
-  contract: conversion, parsing and formatting of millisecond timestamps as at the pin
+  contract: >-
+    Now, ToUnixMs, FromUnixMs, ToTime, Format, IsZero, Since, Add, Sub, Between, Min, Max, and
+    Validate for millisecond timestamps as at the pin, less dead Parse(input any) int64 (#217)
   dependencies_and_side_effects: stdlib only; no goroutine, no I/O
   known_risks: >-
-    no context roots; import path differs from the pin (pkg/ → internal/, design D5). doc.go:127 links
-    github.com/c360studio/semengine/graph, which does not exist here; left as the pin's text, because
-    changing it would break this row's carry check
+    no context roots; import path moved from pkg/timestamp to internal/timestamp (design D5).
+    Adapt item (#217): removed dead Parse(input any) int64 (which silently returned 0 on malformed
+    inputs and misclassified pre-2001 millisecond timestamps under the 1e12 heuristic; its last
+    caller in message was removed in setup-04a-01-floor), along with its doc comments, ExampleParse,
+    and Parse unit/benchmark tests
   proving_tests: internal/timestamp/timestamp_test.go, internal/timestamp/example_test.go
   owner: setup-04a-01-floor developer
-  disposition: carry
+  disposition: adapt
 
 - source_path: pkg/errs
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
@@ -497,159 +430,41 @@
     type; SemSource imports it (3 files, design P16)
   destination: pkg/errs
   contract: >-
-    classification, wrapping and errors.Is/As behavior as at the pin, less the adapt item below;
-    ErrAlreadyStopped (errs.go:47) is the one already-stopped sentinel (SS#1218). Changed behavior, task 3.12h
-    (design D23, "Classification"; owner ruling N, #91 comment 6080973822, extended to IsFatal in comment
-    6083704900; #146), one adapt item. errs-classify-by-class-and-sentinel: IsTransient and IsFatal read the
-    class (errors.As on *ClassifiedError), then their sentinels, never the error's text; the pin also matched
-    the lowered text against "timeout", "connection", "network", "temporary", "unavailable", "busy" and
-    "retry" (errs.go:177-193) and "fatal", "panic", "corrupted", "invalid config", "missing config", "out of
-    memory" and "disk full" (:220-236), so a word in an entity ID or a peer's message could decide the class.
-    Consequences: Classify gives an unclassified error with no listed sentinel ErrorTransient, its default,
-    whatever its text (the pin gave ErrorFatal to one holding only a fatal word), and an unclassified error
-    that wraps an invalid or fatal sentinel beside a transient word takes the sentinel's class;
-    RetryConfig.ShouldRetry, which no production code calls, no longer retries an error for its text. doc.go's
-    two passages on classification say so. Present consumers: Classify's callers (natsclient's X-Error-Class
-    header, pkg/projection's and pkg/lifecycle's mutation errors) and graph-ingest's keyed ingest (IsFatal)
+    classification, wrapping, errors.Is/As behavior, and ErrAlreadyStopped as at the pin, except
+    IsTransient and IsFatal classify strictly by *ClassifiedError class and known sentinels, never
+    by substring matching on error text (#146, owner ruling N)
   dependencies_and_side_effects: pkg/retry (in-set); stdlib; no goroutine, no I/O
   known_risks: >-
-    SS#1218: the duplicate service.ErrAlreadyStopped (pin service/base.go:28) is removed in change 3,
-    where its proof lives (design D4). Context roots, the two D1 counts: both are example code inside
-    doc comments (doc.go:173, :297), not executable; the package has no production root. Doc-comment
-    sleeps (doc.go:48, :111, :288) carried as they are (owner ruling Q4, task 1.5)
+    no production context roots. Classify defaults unclassified errors without a listed sentinel to
+    ErrorTransient regardless of error text; doc.go updated to match
   proving_tests: >-
-    pkg/errs/errs_test.go, pkg/errs/classified_is_test.go, pkg/errs/shutdown_test.go. Task 3.12h, design D23
-    (classify_by_type_test.go): TestIsTransientClassifiesByClassAndSentinel and
-    TestIsFatalClassifiesByClassAndSentinel, each failing first at 5e4c009 on every word; the carried rows of
-    TestIsTransient, TestIsFatal and TestRetryConfig_ShouldRetry that asserted a text match now assert false,
-    and TestClassify gains two rows (a fatal word alone gives ErrorTransient; ErrInvalidData beside transient
-    words gives ErrorInvalid). Mutation (task mutate:check), the pin's text match put back after the
-    sentinels: detection for each of the two tests
+    pkg/errs/errs_test.go, pkg/errs/classified_is_test.go, pkg/errs/shutdown_test.go,
+    pkg/errs/classify_by_type_test.go
   owner: setup-04a-01-floor developer
   disposition: adapt
 
 - source_path: vocabulary
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    predicate vocabulary, registry, IRI mapping and the declared-predicate check; SemSource imports it (20
-    files, design P16). Only the package directory is ported; its sub-packages (agentic, bfo,
-    builtins, cco, examples, export, governance, rulepacks) are not in the floor
+    predicate vocabulary, registry, IRI mapping and the declared-predicate check; SemSource imports
+    it (20 files, design P16). Only the root package directory is ported here
   destination: vocabulary
   contract: >-
-    predicate registration and lookup, dotted-name and namespace validation and the
-    declared-predicate check (RequireDeclaredPredicate) as at the pin, less the dead surface and
-    PredicateAuthority (known_risks)
+    predicate registration and lookup, dotted-name and namespace validation, and
+    RequireDeclaredPredicate as at the pin, with SemEngineBase ("https://semengine.semanticstream.ing")
+    replacing SemStreamsBase (#69) and dead surface removed
   dependencies_and_side_effects: >-
-    stdlib; a process-global predicate registry mutated at registration (pkg/platform was imported
-    only by vocabulary.EntityIRI, removed below)
+    stdlib; a process-global predicate registry mutated at registration
   known_risks: >-
-    no context roots; the IRI base is renamed (adapt item, outward names, below). README lint fixes
-    (owner ruling, #9 comment 5957221949): vocabulary/README.md is ported with only the edits
-    markdownlint requires: lines 7, 224, 263, 441, 582, 586, 671, 673 and 688 wrapped at 120 columns
-    (MD013); no wording changed. README import paths (owner ruling, #9 comment 5968665464), each an
-    adapt item "import path changed to the SemEngine module", pin lines: :111, :444 and :515
-    vocabulary/export; :390 vocabulary/bfo; :407 vocabulary/cco; :424 vocabulary/agentic; :645
-    vocabulary; from github.com/c360studio/semstreams to github.com/c360studio/semengine. The four
-    sub-packages are not ported yet (this row ports the package directory only). Adapt item, dead
-    surface removed (#72 ruling 1 as extended, comment 5969505488, under #9 comment 5968830525):
-    vocabulary.EntityIRI, a second IRI grammar for an entity built from platform.Config (it carries
-    platform.ID and Region and drops Org) with no production caller at the pin or in the four
-    starter consumers; the export IRI built from the entity ID (pin vocabulary/export/export.go:127-130,
-    change 7) is the one that stays. Removed, pin lines: vocabulary/iris.go:66-84 (its doc comment,
-    with the {platform_id}[/{region}]/{domain}/{type}/{local_id} grammar at :70 and the doc example
-    at :80-84), :85-111 (the function) and the pkg/platform import :9; vocabulary/iris_test.go
-    TestEntityIRI :76-142 (the call at :138), BenchmarkEntityIRI :291-300 (the call at :298) and
-    the pkg/platform import :7. TestNoDeploymentAuthorityNames (internal/harness/contract) failed
-    first naming vocabulary.EntityIRI and now holds the name out of every production package.
-    Adapt item, dead surface removed (owner rulings, #9 comments 5985697767 item 1 and 5985900154
-    item 1, under #9 comment 5968830525; evidence: the surface audit,
-    openspec/changes/archive/2026-10-05-setup-04a-01-floor/surface-audit.md §1, which lists each identifier's readers in
-    SemEngine, the pin's admitted and not-admitted packages, semsource and semconnect): 162 of the 258
-    exported identifiers, which nothing reads in SemEngine production, an admitted pin package, or
-    semsource or semconnect production code; 92 stay (57 pattern, 29 base terms, 4 consumer-read, 2
-    test helpers). Removed, pin lines: predicates.go :27-71 (the 17 Sensor constants), :82-104 (10 Geo
-    constants; latitude, longitude and altitude stay), :107-188 (10 Time, 10 Network, 9 Quality),
-    :196-239 (11 GraphRel constants; graph.rel.contains stays), :545-551 (the PredicateMetadata.Role
-    field) and :561-584 (PredicateRole and its 7 constants), and the NOTE at :435-439 corrected: the
-    remaining constants are base terms, not examples, and vocabulary/examples is not here;
-    standards.go: the 7 OWL, 3 SKOS (prefLabel, altLabel, hiddenLabel), 3 RDFS, 2 DC (alternative,
-    source), 2 DCTerms dotted (creator, identifier), 4 Schema.org, 40 PROV-O, 7 DC relation, 3
-    Schema.org relation and 3 FOAF constants (pin :20-51, :54-67, :88-100, :111-117, :127-134,
-    :137-155, :165-220, :227-270, :276-285, :292-360, :364-371, :375-382, :384-459), leaving
-    SkosNotation, SkosBroader, SkosNarrower, SkosRelated, DcIdentifier, DcTitle, DCTermsTitle,
-    ProvNamespace, ProvWasAttributedTo, ProvHadMember and ProvGeneratedAtTime; relationships.go
-    :12-60 (the 11 registrations of the cut graph.rel.* terms, so ListRegisteredPredicates no
-    longer returns them and RequireDeclaredPredicate refuses them; no consumer filter matches
-    graph.rel., audit inventory review); iris.go :4-8 (imports), :15-16 (GraphNamespace,
-    SystemNamespace), :19-65 (EntityTypeIRI) and :113-198 (RelationshipIRI, SubjectIRI and
-    toKebabCase, whose only caller was RelationshipIRI); registry.go :253-272 (WithRole), :382-410
-    (RegisterPredicate, a second registration spelling with no production caller) and :579-638
-    (IsSymmetricPredicate, HasInverse, DiscoverInversePredicates: query spellings of what
-    GetInversePredicate answers, no reader). Doc comments corrected to the remaining API:
-    registry.go :309-310 (Register's pointer to RegisterPredicate for replace semantics: a
-    registration cannot now be replaced), :416-419 (the one enforcement seam is reached by
-    Register only) and :497 (alias registration uses Register). doc.go (owner rulings, #9
-    comments 5957221949 and 5984291337), pin lines: :93-97 (an IRI import example calling
-    vocabulary.LookupByIRI, which never existed), :141-144 and :150 (OWL_SAME_AS, SKOS_PREF_LABEL
-    and SCHEMA_NAME, which never existed, replaced by kept constants), :219-235 (the colon-notation
-    migration section, built on EntityTypeIRI). README.md behaviour edits, same rulings, pin lines:
-    :199 (SkosPrefLabel → DcTitle); :230, :237, :251, :258 (Go-constant lines naming only cut
-    constants) and :244 (SchemaIdentifier dropped); :263 (the example constant is DcIdentifier);
-    :272-273 and :286-287 (WithIRI of FoafAccountName and RdfsLabel dropped); :302-378 (the OWL,
-    Schema.org, PROV-O, SSN/SOSA and FOAF sections removed, the SSN/SOSA constants never having
-    existed at the pin; the SKOS and Dublin Core blocks keep SkosBroader, SkosNarrower,
-    DcIdentifier and DcTitle); :460-462 (RegisterPredicate); :586 (mappings sentence: PROV-O
-    only), :592, :596 and :598-641 (the cut graph.rel.* terms); :647-651 (the usage example uses
-    GraphRelContains); :663, :665 (Dublin Core and Schema.org bullets); :671, :673 (the
-    predicates are framework terms, not examples; the examples/ files are not here); :678
-    (standards.go's families) and :683 (examples/). Removed (owner ruling, #9 comment 5994720412, item 5: sections and links for
-    packages SemEngine does not have go, applying 5984291337 over 5968665464), pin lines: :108-120
-    (Quick Start's export example), :381-452 (the bfo/, cco/, agentic/ and export/ sections and the
-    docs/vocabulary/ link), :510-531 (the export IRI-mapping example) and :679-682, :686 (the
-    Related Documentation entries); this supersedes the import-path items at :111, :390, :407,
-    :424, :444 and :515. Tests of the removed names,
-    pin lines: iris_test.go :11-75, :144-246 and :262-312 (TestNamespaceConstants keeps its
-    SemStreamsBase assertion); registry_test.go :39-64 (two RegisterPredicate tests), :190-271
-    (DiscoverInversePredicates, HasInverse, IsSymmetricPredicate) and the Role assertions of
-    :376-395 and :489-525 (renamed TestRegisterAmend_WeightRetained and TestRegisterWithWeight),
-    with :65-76 kept on Register (TestRegisterRejectsInvalidAliasMetadata); hierarchy_test.go
-    :153-160, :202-228, :235-246 (the symmetric and inverse assertions stay through
-    GetInversePredicate and the metadata) and :249, :261 (an unregistered sensor literal replaces
-    the cut constant); relationships_test.go the 11 cut terms' rows, and :137-139 now asserts that
-    graph.rel.contains is the only graph.rel.* predicate registered; predicate_datatype_test.go the
-    RegisterPredicate halves of five tests (two renamed TestRegistrationRefusesALegacySpelling and
-    TestRegistrationRefusalNamesTheValueAndTheVocabulary). Readers left behind (audit §1.8): the
-    not-admitted vocabulary/examples, vocabulary/agentic and processor/agentic-tools/executors at
-    the pin; processor/rule/config_validation_test.go:122,127 switches to Register when rule is
-    ported. A consumer that needs a cut term declares a local constant and registers it.
-    Adapt item, PredicateAuthority removed (owner ruling, #9 comment 5985900154, item 2; surface
-    audit §1.4): a producer-to-namespace write authorization whose only caller is the excluded
-    agentic package (pin agentic/tools.go:443-459), and which trusts a producer name the caller
-    supplies, so it authorizes without authenticating; it is named as prior art in the security
-    epic. Removed, pin lines: namespace_authority.go :24-40 (NamespaceDelegation,
-    PredicateAuthority), :57-75 (NewPredicateAuthority) and :96-124 (PredicateAuthority.Authorize);
-    PredicateNamespace, ParsePredicateNamespace and RequireDeclaredPredicate stay.
-    namespace_authority_test.go :45-102 (TestPredicateAuthority,
-    TestNewPredicateAuthorityRejectsInvalidDelegation) and the errors import :4
-    Adapt item, product prose (owner ruling, #9 comment 5984291337): doc.go tree line :1 says SemEngine, not the
-    SemStreams platform.
-    Adapt item, README (owner ruling, #9 comment 5984291337), tree lines at commit 47b120d: after :137 a
-    sentence says no SemEngine code renders the RDF or JSON Schema column, since vocabulary/export is not
-    ported, so those columns, the semstreams-entity-id format name included, state SemStreams' mapping (the
-    outward name itself is left for #69, #9 comment 5969776736 item 4); :153-154, the link to
-    docs/operations/migration-predicate-datatype.md, which this repository does not have, is plain text naming
-    it as SemStreams'.
-    Adapt item, outward names (owner ruling, #69 comments of 2026-10-06; supersedes "left for #69" above):
-    SemStreamsBase = "https://semstreams.semanticstream.ing" (pin iris.go:14) is SemEngineBase =
-    "https://semengine.semanticstream.ing" (iris.go:6), its comment names the SemEngine vocabulary, and
-    iris_test.go TestNamespaceConstants asserts the new name and value; README.md's JSON Schema format name
-    is semengine-entity-id, not semstreams-entity-id. Consumer impact: stored IRIs under the old base do not
-    match new ones; a consumer clears its NATS volume (owner, #69).
+    no context roots. Dead surface removed (#72 ruling 1; #9 surface audit §1): EntityIRI,
+    PredicateAuthority/NamespaceDelegation, and 162 unused predicate/IRI/registry identifiers
+    (Sensor, Time, Network, Quality, unused Geo/GraphRel/OWL/SKOS/RDFS/DC/Schema.org/PROV-O/FOAF
+    constants, PredicateRole/WithRole, EntityTypeIRI, RelationshipIRI, SubjectIRI,
+    RegisterPredicate, IsSymmetricPredicate, HasInverse, DiscoverInversePredicates); doc.go and
+    README.md updated to match
   proving_tests: >-
-    the 11 test files in vocabulary/ at the pin, less TestEntityIRI and BenchmarkEntityIRI (removed
-    with EntityIRI, above) and the tests of the dead surface removed above;
-    relationships_test.go TestGetRelationshipPredicates asserts graph.rel.contains is the only
-    graph.rel.* registration (a mutant re-registering graph.rel.near fails it)
+    vocabulary/*_test.go (11 test files covering predicate syntax, registration, hierarchy,
+    relationships, and namespace authority)
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -661,31 +476,16 @@
   destination: pkg/types
   contract: >-
     entity ID parsing, the 256-byte bound (MaxEntityIDBytes), pattern matching, type and domain
-    authority validation as at the pin; Type.Validate also refuses a component that is not valid
-    UTF-8 (known_risks)
+    authority validation as at the pin; Type.Validate also refuses a domain, category, or version
+    that is not valid UTF-8 (#9 comment 5970334875)
   dependencies_and_side_effects: >-
-    pkg/errs (in-set); stdlib; pgregory.net/rapid v1.3.0 in tests only (owner ruling, PR #48 comment
-    5951926492); no goroutine, no I/O
+    pkg/errs (in-set); stdlib; pgregory.net/rapid v1.3.0 in tests only; no goroutine, no I/O
   known_risks: >-
-    no context roots. testdata/rapid carries the pin's curated seed for TestPropEntityIDByteBound (a
-    mutation-kill witness registered in testdata/rapid/README.md); any other .fail file Rapid writes
-    there is local debris and shows in task ledger:diff as "only in the tree". README lint fixes (owner
-    ruling, #9 comment 5957221949): pkg/types/README.md is ported with only the edits markdownlint
-    requires: lines 7 and 83 wrapped at 120 columns (MD013), the fence at :90 given the language text
-    (MD040); no wording changed. README import paths (owner ruling, #9 comment 5968665464), each an
-    adapt item "import path changed to the SemEngine module", pin lines: :74 pkg/types and :77 message,
-    from github.com/c360studio/semstreams to github.com/c360studio/semengine. Comment edit: the
-    requirement citations in entity_id_prop_test.go (:46, :60, :61, :88, :113, :145) name
-    docs/specs/entity-id-contract.md, where the pin's entity-id-contract capability now lives (#72,
-    comment 5970020197); no code changed. Behaviour change (owner ruling, #9 comment
-    5970334875, extending ruling 2 of #9 comment 5969776736): Type.Validate (type.go) refuses a
-    domain, category or version that is not valid UTF-8, so the payload registry and a projection
-    contract refuse such a type too; recorded with its encoding refusals on the message row
+    no context roots; README and test comments updated for SemEngine module paths and
+    docs/specs/entity-id-contract.md
   proving_tests: >-
-    the 6 test files in pkg/types/ at the pin, including entity_id_prop_test.go (Rapid properties
-    TestPropEntityIDRoundTrip, TestPropEntityIDByteBound, TestPropEntityIDPatternMatch; design P23)
-    and its testdata/rapid seed. Added: TestTypeValidateRefusesInvalidUTF8 in type_validate_test.go
-    (failed first: all four invalid components accepted)
+    pkg/types/*_test.go (including Rapid properties in entity_id_prop_test.go and
+    TestTypeValidateRefusesInvalidUTF8 in type_validate_test.go)
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -698,12 +498,8 @@
   contract: the decision text as at the pin
   dependencies_and_side_effects: none; a document
   known_risks: >-
-    lint fixes only: the title is shortened to fit MD013's 80-column heading limit (the pin's full
-    title is quoted in the port note) and pin lines 58 and 77-79 are rewrapped at 120 columns; no
-    decision wording changed. Port note added under the title: SemStreams issue numbers, and records,
-    specs and packages it names that are not yet ported; it also says the entity-ID spec, named in the
-    text by its pin path, is docs/specs/entity-id-contract.md here (#72 ruling of 2026-10-03, comment
-    5970020197)
+    markdownlint line-length fixes and a port note under the title pointing to
+    docs/specs/entity-id-contract.md (#72)
   proving_tests: n/a (task docs:check lints it)
   owner: setup-04a-01-floor technical writer
   disposition: adapt
@@ -717,16 +513,8 @@
   contract: decisions 1-6 as at the pin; decision 7 kept as history and marked superseded
   dependencies_and_side_effects: none; a document
   known_risks: >-
-    corrections, each marked in the document with the pin line it supersedes: :94-100 decision 7 (the
-    (org, id, environment) guard) superseded, citing SemStreams #1188, the ADR's own :127-128 and pin
-    openspec/specs/component-runtime-config/spec.md:369-371 (environment separates nothing; a pin
-    probe finds no environment read in config/manager*.go); the restatements of decision 7 at :115-118
-    (consequence), :123 ("lost environment claim") and :145 ("one environment per bucket") marked
-    superseded with it. Lint fixes: pin lines 5 and 91 rewrapped at 120 columns. Port note added: issue
-    numbers are SemStreams'; config.Manager.Start, the component-runtime-config and
-    framework-bucket-catalog specs and the proposals inventory are not yet ported; it also says the
-    entity-id-contract spec the text calls a capability spec is the reference contract
-    docs/specs/entity-id-contract.md here (#72 ruling of 2026-10-03, comment 5970020197)
+    decision 7 and its restatements marked superseded (SemStreams #1188); markdownlint fixes and a
+    port note pointing to docs/specs/entity-id-contract.md (#72)
   proving_tests: n/a (task docs:check lints it)
   owner: setup-04a-01-floor technical writer
   disposition: adapt
@@ -741,15 +529,8 @@
   contract: the decision text as at the pin
   dependencies_and_side_effects: none; a document
   known_risks: >-
-    lint fixes only: pin lines 219-220 and 284-285 rewrapped so that no line starts with "+", which
-    markdownlint reads as a bullet (MD004, MD032); on GitHub the pin renders those two lines as
-    bullets, here they read as part of their sentences. A markdownlint-disable-next-line MD018
-    comment added above pin line 121, which starts with "#430". No decision wording changed. Port
-    note added under the title: carried without code for #157; issue, pull request and release
-    numbers are SemStreams' or a sister repository's; ADR-083 and ADR-084 are ported with it;
-    ADR-062, ADR-065, the graph-index-readiness spec and the code it names other than natsclient
-    (BucketLastSeq, CreateKeyValueBucket) are not yet ported; file and line references are the pin's;
-    the semsource code and decisions it names are that repository's
+    markdownlint fixes and a port note under the title recording that the ADR is carried without
+    code for #157
   proving_tests: n/a (task docs:check lints it)
   owner: "#157 carry-in technical writer"
   disposition: adapt
@@ -764,12 +545,7 @@
   contract: the decision text as at the pin
   dependencies_and_side_effects: none; a document
   known_risks: >-
-    no edits to the pin's text; the 81-column title is kept, since MD013 does not flag a heading
-    whose only text past column 80 is its last word. Port note added under the title: carried
-    without code for #157; issue numbers are SemStreams' or a sister repository's and the OpenSpec
-    change it names is SemStreams'; ADR-066, ADR-084 and ADR-085 are ported with it; ADR-055,
-    ADR-081, ADR-082 and the code it names are not yet ported; no code here creates the
-    GRAPH_STATUS bucket
+    no edits to the pin's decision text; port note added under the title for #157
   proving_tests: n/a (task docs:check lints it)
   owner: "#157 carry-in technical writer"
   disposition: adapt
@@ -783,11 +559,7 @@
   contract: the decision text as at the pin
   dependencies_and_side_effects: none; a document
   known_risks: >-
-    no edits to the pin's text. Port note added under the title: carried without code for #157;
-    issue numbers are SemStreams' or a sister repository's, and the OpenSpec change it names and
-    that change's design.md are SemStreams'; ADR-066, ADR-083 and ADR-085 are ported with it;
-    ADR-081, ADR-082 and the code it names are not yet ported; file and line references are the
-    pin's
+    no edits to the pin's decision text; port note added under the title for #157
   proving_tests: n/a (task docs:check lints it)
   owner: "#157 carry-in technical writer"
   disposition: adapt
@@ -801,11 +573,7 @@
   contract: the decision text as at the pin
   dependencies_and_side_effects: none; a document
   known_risks: >-
-    lint fix only: a markdownlint-disable-next-line MD029 comment added above pin line 122, decision
-    7, a numbered list that starts at 7 after a paragraph; no decision wording changed. Port note
-    added under the title: carried without code for #157; issue numbers are SemStreams' or a sister
-    repository's and the OpenSpec change it names is SemStreams'; ADR-066, ADR-083 and ADR-084 are
-    ported with it; ADR-081, ADR-082 and the code it names are not yet ported
+    markdownlint disable comment on numbered list item 7 and a port note under the title for #157
   proving_tests: n/a (task docs:check lints it)
   owner: "#157 carry-in technical writer"
   disposition: adapt
@@ -820,10 +588,7 @@
   contract: the decision text as at the pin
   dependencies_and_side_effects: none; a document
   known_risks: >-
-    no edits to the pin's text. Port note added under the title: carried without code for #157;
-    issue numbers are SemStreams' or a sister repository's and the OpenSpec change it names is
-    SemStreams'; ADR-066, ADR-083, ADR-084 and ADR-085 are ported with it; the
-    graph-index-readiness spec and the code it names are not yet ported
+    no edits to the pin's decision text; port note added under the title for #157
   proving_tests: n/a (task docs:check lints it)
   owner: "#157 carry-in technical writer"
   disposition: adapt
@@ -837,17 +602,8 @@
   contract: the page as at the pin except the corrections below
   dependencies_and_side_effects: none; a document
   known_risks: >-
-    corrections, each marked in the page with the pin line it supersedes: :56-58 (nothing coordinates
-    the authority pair; same pair mints colliding identities) rewritten to ADR-104 decisions 1 and 4,
-    the minted suffix; :60-64 (the boundary enforces only the lexical contract; a foreign authority is
-    accepted as local truth) rewritten to the pin's authority gate, authorizeSubject
-    (processor/graph-ingest/authority_gate.go:51-52) at ten call sites (canonical_mutations.go:244,
-    :307, :383, :474; component.go:1743, :2065, :2224, :2306, :2449, :2591). Product name (#9 comment
-    5968665464): :3, :190 and :194 say SemEngine for SemStreams. :190 link to 15-payload-registry.md
-    (not ported) reworded to the payloadregistry package. Port note added: graph, graph-ingest, the
-    WebSocket input, flow configuration and config.Manager.Start are not yet ported. :26 links the
-    entity-ID spec at its SemEngine path, docs/specs/entity-id-contract.md, in place of the pin's
-    openspec/specs/entity-id-contract/spec.md (#72 ruling of 2026-10-03, comment 5970020197)
+    updated for ADR-104 minted-suffix and authority-gate semantics, SemEngine naming, and the
+    docs/specs/entity-id-contract.md reference path (#72)
   proving_tests: n/a (task docs:check lints it)
   owner: setup-04a-01-floor technical writer
   disposition: adapt
@@ -856,25 +612,13 @@
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
     the reference contract for entity identity that pkg/types implements; ported with pkg/types (#72
-    ruling D, comment 5969505488). :490 keeps DeploymentPrefix as MUST export (its in-package caller
-    is SourcePrefix)
+    ruling D, comment 5969505488)
   destination: docs/specs/entity-id-contract.md
   contract: the requirements and scenarios as at the pin
   dependencies_and_side_effects: none; a document, linted by task docs:check
   known_risks: >-
-    :211 "SemStreams MUST NOT" reads "SemEngine MUST NOT" (#9 comment 5968665464). A port note in
-    Purpose names the seven pkg/types tests the spec cites that exist and pass here, the packages and
-    tests it names that are not yet ported (graph-ingest, graph-index, ObjectStore, config, agentic and
-    its processors, the example processors, the research pipeline, internal/entityidaudit), and three
-    test names (TestNewConversationMintsCanonicalUUID, TestCanonicalReplyToPassesFormCheck,
-    TestUnmintedCanonicalReplyToIsRefusedAsNotFound) that name no test function at the pin either.
-    Most requirements describe code not yet ported, so it is a reference contract, not current truth:
-    it lives at docs/specs/, not openspec/specs/, and each requirement moves into an openspec/specs/
-    capability when the code it describes is ported (#72 ruling of 2026-10-03, comment 5970020197). Its title
-    (:1) is "Entity-ID contract (reference)" with an opening note saying so. Lint fixes, now that
-    task docs:check lints it: blank lines around :20 "## Requirements"; :412, :592, :639 and :643
-    rewrapped at 120 columns; the trailing blank line :785 dropped; the file raises MD013's heading
-    limit to 120 so the requirement headings tests cite stay word for word
+    stored at docs/specs/entity-id-contract.md as a reference contract until the remaining packages
+    it names are ported (#72); updated for SemEngine naming and markdownlint
   proving_tests: >-
     pkg/types: TestEntityIDKeyOrderIsSystemBeforeDomain, TestFrameworkEntityDomainsIsTheClosedReservedSet,
     TestEntityDomainDelegationIsADeclarationNotAPolicy, TestAuthorityRejectionIsCodedAndIdentityFree,
@@ -908,62 +652,21 @@
     (handler.go); no consumer imports it and no public signature names its types (design D5, P21, P22)
   destination: internal/tlsutil
   contract: >-
-    LoadServerTLSConfig, LoadClientTLSConfig, LoadServerTLSConfigWithMTLS and
-    LoadClientTLSConfigWithMTLS as at the pin: disabled config returns nil, an empty MinVersion
-    means TLS 1.2, client CA pools and the CN whitelist are enforced, file and PEM failures are
-    errs fatal errors; a client certificate is required unless ServerMTLSConfig.ClientCertOptional
-    is set (changed behavior, owner ruling #9 comment 5994720412 item 4; pkg/security row). Changed
-    (owner ruling, #9 comment 5950752741; design D1): the ACME loaders
-    are not ported. Changed behavior (owner ruling, #9 comment 5985900154, item 3): a MinVersion
-    other than "1.2", "1.3" or empty is refused with an errs invalid error naming the value; the
-    pin's parseTLSVersion mapped it to TLS 1.2, and only the pin's config loader, not ported,
-    refused it at boot (pin config/config.go:324-326, :348-350, :358-364)
+    LoadServerTLSConfig, LoadClientTLSConfig, LoadServerTLSConfigWithMTLS, and
+    LoadClientTLSConfigWithMTLS as at the pin, except: (1) a client certificate is required under
+    server mTLS unless ServerMTLSConfig.ClientCertOptional is set; (2) LoadServerTLSConfigWithMTLS
+    refuses mTLS when server TLS is disabled (ErrInvalidConfig); (3) MinVersion values other than
+    "1.2", "1.3", or empty are refused with an invalid error; (4) ACME loaders are not ported here
+    (deferred to change 5)
   dependencies_and_side_effects: >-
-    pkg/errs, pkg/security (in-set); stdlib; reads certificate and key files; no goroutine. The pin's
-    pkg/acme and go-acme/lego/v4 dependencies leave with the ACME loaders
+    pkg/errs, pkg/security (in-set); stdlib; reads certificate and key files; no goroutine
   known_risks: >-
-    no context roots; import path differs from the pin (pkg/ → internal/, design D5), so pin
-    pkg/security/doc.go:138 links internal/tlsutil here. Adapt items, all removals: tlsutil.go:186-365
-    (LoadServerTLSConfigWithACME, LoadClientTLSConfigWithACME, initACMEClient) and the context, time
-    and pkg/acme imports only they use (:5, :10, :12); in doc.go the ACME clauses of :7 and :10, and
-    lines :13-14, :27, :93-126, :151-154 (the transient-error bullet and ACME fallback paragraph, with
-    the blank line between them), :160 and :166. No tlsutil test calls the cut functions (pin grep of
-    WithACME and initACMEClient over pkg/tlsutil: tlsutil.go and doc.go only). Deferred to change 5
-    (setup-04a-05-first-consumer, which ports output/websocket, the first caller in the chain; #9
-    comment 5950752741 and its clarification; design D1, D7): the loaders, pkg/acme, go-acme/lego/v4
-    and two defects at the pin: the renewal goroutines' stop (tlsutil.go:253, :331) can block inside
-    legoClient.Certificate.Renew, which takes no context (pkg/acme/client.go:352), so it needs
-    Shutdown(ctx) and a renewal test seam; and the renewal callback writes tlsConfig.Certificates
-    while the config may be serving handshakes (tlsutil.go:258, :336), a data race.
-    input/websocket and output/httppost also call the loaders and are in no change of the chain.
-    Behaviour change, MinVersion refusal (owner ruling, #9 comment 5985900154, item 3; surface
-    audit §3.3 item 5 and inventory review MEDIUM-I2, the port opened it): pin tlsutil.go :173-184
-    (parseTLSVersion returns an error for any value but "1.2", "1.3" or empty), :30 and :40 (both
-    loaders parse MinVersion first and wrap a refusal with errs.WrapInvalid). doc.go pin lines :145
-    (unspecified means 1.2; anything else is refused) and :150 (the invalid error class). Tests,
-    pin lines of tlsutil_test.go: :88-93, :111-112, :122-123 and :167-169 (TestLoadServerTLSConfig
-    asserts the version constant itself instead of calling parseTLSVersion, its own oracle),
-    :260-277 (TestParseTLSVersion: "invalid" and "1.1" are refused)
-    Adapt item (Codex review of record, PR #48 comment 5996819933, F35; commit f79f6e9):
-    LoadServerTLSConfigWithMTLS refuses mTLS with server TLS disabled with errs.ErrInvalidConfig, where the pin
-    dereferenced the nil config.
+    no context roots; moved from pkg/tlsutil to internal/tlsutil (design D5). ACME loaders
+    (LoadServerTLSConfigWithACME, LoadClientTLSConfigWithACME, initACMEClient) and pkg/acme
+    dependency dropped until change 5
   proving_tests: >-
-    internal/tlsutil/tlsutil_test.go (unit lane); internal/tlsutil/mtls_integration_test.go
-    (integration-tagged, run by task test:integration: real TLS handshakes over httptest servers for
-    required, optional and whitelisted client certificates); internal/tlsutil/minversion_test.go,
-    added: TestLoadServerTLSConfigRefusesUnknownMinVersion and
-    TestLoadClientTLSConfigRefusesUnknownMinVersion (nine near-miss spellings, through the plain
-    and the mTLS loaders; failed first: all 18 subtests accepted the value; a mutant restoring the
-    1.2 fallback fails both, and one wrapping the client refusal as fatal fails the client test)
-    and TestLoadersAcceptTheThreeMinVersionSpellings; internal/tlsutil/mtls_default_test.go, added:
-    TestServerMTLSRequiresClientCertificateByDefault (mTLS enabled, no optional flag, no CN
-    allowlist: a client with no certificate is refused and one the client CA signed is served, in
-    real handshakes on TLS 1.2 and 1.3; failed first on both versions, the client was served; a
-    mutant inverting the default fails it). Edits for the field change, pin lines: tlsutil.go
-    :116-120 (ClientAuth); doc.go :62; tlsutil_test.go :410 (renamed
-    TestLoadServerTLSConfigWithMTLS_ClientCertRequiredByDefault), :423, :448, :473, :498;
-    mtls_integration_test.go :52, :132, :205, :284, :359, :438 (the required cases drop the
-    field, the optional cases set ClientCertOptional)
+    internal/tlsutil/tlsutil_test.go, internal/tlsutil/minversion_test.go,
+    internal/tlsutil/mtls_default_test.go, internal/tlsutil/mtls_integration_test.go
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -974,162 +677,26 @@
     it (design P16)
   destination: metric
   contract: >-
-    MetricsRegistry registration and conflict detection, CoreMetrics, and Server as at the pin: Start
-    and StartWithListener bind synchronously and refuse a nil or ended context, a used instance and
-    a nil registry; Address; a repeated completed Stop is a nil no-op; concurrent Stop is a typed
-    transient error. Changed behavior (design D3), each written first: Stop returns its context's
-    error whenever that context has ended, including after an idle server's Shutdown returned nil
-    (metric-abort-stop-reports-context, pin handler.go:222-228); after a forced close Stop waits on
-    the serve goroutine with no timer (metric-forced-join-without-timer: forcedServeJoinTimeout, pin
-    :23, :243-249, removed). Changed behavior (PR #48 review finding, owner-approved), written first:
-    Start applies the server mTLS configuration through tlsutil.LoadServerTLSConfigWithMTLS, so
-    a required client certificate refuses a client with no certificate; at the pin Start called
-    LoadServerTLSConfig (pin handler.go:154) and no metric file names MTLS (pin grep), so the policy
-    was dropped; Start refuses mTLS enabled with server TLS disabled (ErrInvalidConfig) instead of
-    serving plain HTTP. Changed behavior (PR #48 review finding, owner-approved), written first: a
-    request the handler admitted, with the collection it runs, is the Server's work until the
-    handler returns; Stop waits for it within ctx after the serve join, returns ctx's error and
-    leaves it pending when ctx ends first, and a repeated Stop waits again and returns nil only once
-    it has finished; at the pin the forced path cleared its state after the serve join and the
-    repeated Stop returned nil at once (pin handler.go:202-206). Changed behavior (Codex review of
-    PR #48, comment 5959412053, finding 1), written first: Stop closes admission before it shuts
-    down, so a request that reaches the handler after Stop has begun is refused with 503 and its
-    handler never runs; admission closed and no request running are observed under one lock, so a
-    nil Stop is final. Changed behavior (design D9; Codex
-    review finding 4, PR #48 comment 5956732582; owner-accepted 2026-10-02), written first:
-    RegisterOrGet[C] keeps one canonical collector per logical key, of the exact concrete type and
-    descriptors; a nil candidate, a type or descriptor mismatch, and a cross-key alias are refused
-    with a fatal error and nothing stored. A caller uses the returned collector, never its own
-    candidate (AGENTS.md rule index, review only)
+    MetricsRegistry, CoreMetrics (under the semengine namespace, #69), and Server as at the pin,
+    with these adaptations: (1) RegisterOrGet[C] is the single generic registration primitive keeping
+    one canonical collector per logical key and refusing nil candidates, type/descriptor mismatches,
+    and cross-key aliases with a fatal error; a caller uses the returned collector, never its own
+    candidate (AGENTS.md rule index, review only); (2) Server.Start applies server mTLS via
+    tlsutil.LoadServerTLSConfigWithMTLS and refuses mTLS when TLS is disabled; (3) Server.Stop
+    closes admission first (refusing new requests with 503), joins the serve goroutine without a
+    fixed timer, waits for admitted requests within ctx, and reports ctx.Err() whenever ctx ended
   dependencies_and_side_effects: >-
-    pkg/errs, pkg/security, internal/tlsutil (in-set); prometheus/client_golang v1.23.2 (the pin's
-    version, now a direct requirement); prometheus/client_model v0.6.2 direct, for the D9 tests that
-    read gathered values (direct at the pin too, pin go.mod:14); binds a TCP listener and runs one serve goroutine per started
-    Server, joined by Stop; registry.go:76 starts a Describe goroutine drained by the range at :79-81
-    before the call returns (not background work, design D3)
+    pkg/errs, pkg/security, internal/tlsutil (in-set); prometheus/client_golang v1.23.2;
+    prometheus/client_model v0.6.2; binds a TCP listener and runs one serve goroutine per started
+    Server, joined by Stop
   known_risks: >-
-    Context roots, the two D1 counts: both are example code inside doc comments (doc.go:357, :362),
-    not executable; the package has no production root. Doc-comment sleep (doc.go:386) carried as it
-    is (owner ruling Q4, task 1.5). Registration adapt items (design D9), pin lines: registry.go:16-25
-    (MetricsRegistrar) removed; :27-60 (RegisterOrGetGaugeVec) generalised into RegisterOrGet;
-    :127-278 (RegisterCounter, RegisterGauge, RegisterHistogram, RegisterCounterVec,
-    RegisterGaugeVec, RegisterHistogramVec) removed, with :246, where RegisterGaugeVec threw away the
-    canonical collector; Unregister unchanged. doc.go:14, :75-97, :111, :125, :136, :196-209 and
-    :236-253 (the design's :245, widened: the error list beside it described the removed duplicate
-    handling) and :372-377 (the design's :373-378) restated for RegisterOrGet. Consumer impact:
-    semsource internal/entitypub/metrics.go:99-106 and semboids (internal/boidgraph/metrics.go,
-    internal/sim/lifecycle.go, internal/api/graphstream_metrics.go) stop compiling on their next pin
-    bump, and the semsource comment at :99-101 has to be rewritten. At run time, a consumer that
-    registers one descriptor under two keys now gets a fatal error at startup instead of silent
-    success; the pin's registry_test.go:254-275 encoded that pattern for "component recreation from
-    stale KV data". Later in-change callers adopt it in tasks 3.6 (pkg/cache) and 3.7 (natsclient).
-    Adapt items besides the behavior changes above: doc.go:331-333
-    restates Stop's forced join, admitted-request wait and context error in place of the one-second
-    bound. README behavior edits (owner ruling, #9 comment 5957221949: a passage describing behavior
-    the ported code no longer has is corrected, listed by line): pin README.md:318-320 (tree
-    :335-340), the Stop paragraph, rewritten for the graceful attempt within shutdownCtx, the forced
-    join without a timer, the wait for admitted requests, the context error and the 503 refusal once
-    Stop has begun; the registration
-    passages rewritten for RegisterOrGet (design D9): pin README.md:107-119, :151-154, :207-218 (the
-    MetricsRegistrar section, replaced by a RegisterOrGet entry under Functions), :286-293, :333-336,
-    :343-344, :367-372, :464-475 and :653-668. README import paths (#9 comment 5957221949; not a
-    behavior edit): pin README.md:19-20, :51, :419 and :596, import path changed to the SemEngine
-    module (github.com/c360/semstreams/metric and /pkg/security to
-    github.com/c360studio/semengine/metric and /pkg/security). doc.go:214, "testing with mock
-    registrars", which the removed MetricsRegistrar provided, rewritten to the actual test seam: a
-    registry from NewMetricsRegistry, read through PrometheusRegistry().Gather(). README lint fixes
-    (#9 comment 5957221949): lines 7, 9, 11, 27, 30, 33, 40,
-    233, 237 and 241 wrapped at 120 columns (MD013); a blank line after the headings at :26, :29,
-    :32, :39, :139, :158, :193, :209, :223 and :226 (MD022) and before the lists at :234, :238 and
-    :242 (MD032); the heading at :226, longer than 80 columns (MD013), becomes `NewServer` with the
-    signature on the line below it; no other wording changed
-    Adapt item, doc corrections (Codex review of record, PR #48 comment 5996819933, F38; owner ruling #9 comment
-    5984291337; commit 5463f93), tree lines at that commit: doc.go :1-2, :37-38, :41-42, :46-47, :49-60, :62,
-    :68, :71-74, :77-80, :89-92, :129-131, :165, :186-188, :197, :205-206, :249-251, :277, :280-281, :296-297,
-    :302-305, :329-331, :372, :414; README.md :36, :43-44, :48-49, :58, :62, :118-119, :122, :127, :132,
-    :159-160, :165, :172, :174, :177, :186, :190, :196-206, :220, :271-272, :277-279, :406, :422, :429, :606,
-    :613, :817-819. RegisterOrGet examples stop on a refusal; recording examples use the methods Metrics has;
-    /health answers plain-text OK. README.md tree lines :3, :7 and :16 describe SemEngine, not the SemStreams
-    platform.
-    Adapt item, outward names (owner ruling, #69 comments of 2026-10-06): the Prometheus namespace of the 12
-    core collectors (core.go) is semengine, not semstreams, and the root page served by Server (handler.go:144,
-    :146) is titled "SemEngine Metrics" and "SemEngine Metrics Server"; doc.go and README.md state the new
-    namespace, and the tests that state the names follow, with TestServerRootPageNamesSemEngine new
-    (handler_test.go). Consumer impact: a dashboard or alert on semstreams_* must use semengine_*; no
-    consumer pins SemEngine yet.
+    no production context roots. Legacy registration methods (MetricsRegistrar, RegisterCounter,
+    RegisterGauge, RegisterHistogram, RegisterCounterVec, RegisterGaugeVec, RegisterHistogramVec)
+    removed in favor of RegisterOrGet[C] (design D9); doc.go and README.md updated to match
   proving_tests: >-
-    the 3 test files in metric/ at the pin (handler_test.go, integration_test.go, registry_test.go);
-    new, written first, in metric/lifecycle_test.go: TestServerAbortStopReportsContext (30 servers
-    whose serveDone already holds a result, Stop with an ended context; at the pin 13, 12, 11 and 16
-    of 30 returned nil over four runs) and TestServerForcedStopJoinsServeWithoutTimer (inside
-    synctest.Test the serve result is withheld for an hour of the bubble's clock; at the pin Stop
-    returned "wait for forced metrics serve completion: context deadline exceeded");
-    TestServerLifecycleSuite runs lifecycletest.Run with an adapter listing the listener, the
-    http.Server, the serve goroutine and admitted requests, and counting in Calls the Server's own
-    external operations (listen, serve, shutdown, close server, close listener) through the
-    unexported opHook seam at each call site, and a must-fail factory whose Server is configured on a
-    port the test holds, so Start returns the bind error; an extra close on Stop's no-op path fails
-    RepeatedStopIsNoOp and FailedStartHoldsNothing, and passes both with Calls left nil (PR #48
-    review finding); in metric/tls_test.go, written first and failing
-    at the pin's Start ("An error is expected but got nil"): TestServerRequiredMTLSRejectsClientWithoutCertificate
-    (through StartWithListener, temporary certificates, an ephemeral listener: no client
-    certificate refused, a certificate the client CA signed served) and TestServerRefusesMTLSWithoutTLS
-    (their securityCfg.Validate() precondition calls removed with that method, pkg/security row);
-    in metric/lifecycle_test.go, written first and failing at the pre-fix Stop (the repeated Stop returned
-    nil where context.Canceled was expected):
-    TestServerRepeatedStopWaitsForAdmittedRequest (a real request whose collector blocks; Stop with
-    an ended context, then a repeat, both context.Canceled; the adapter reports the admitted
-    request; a live Stop returns nil only after the collection exited); handler_test.go's
-    in metric/admission_test.go: TestServerRefusesRequestAfterStopReportedCompletion (implementer-
-    reported failing first: "a request reached collection after Stop had reported completion"; a
-    real ephemeral listener whose connection pauses at net/http's second SetReadDeadline, after the
-    shutdown check and before the handler, while Stop with an ended context and a repeated Stop
-    run; on release the collector never starts) and TestAdmittedRequestsRefuseAfterClose (503, the
-    handler not run); handler_test.go's
-    TestServerStopIsCallerBounded asserted the pin's nil repeat before the release (pin
-    handler_test.go:461) and now asserts context.Canceled, with the nil Stop after the release;
-    in metric/registerorget_test.go, design D9 tests 1-8, each written first, with the oracle D9
-    lists: TestRegisterOrGetSameKeyReturnsCanonicalCollector (gathered 2 over six kinds),
-    ...RefusesSameKeyOfAnotherType, ...SameKeyWithDifferentHelp, ...CrossKeyAlias,
-    ...CoreMetricCollision and ...DirectRegistrationCollision (fatal error, zero collector and the
-    gathered value of the collector already registered), ...RefusesNilCandidates (fatal error, zero
-    collector, no panic, nothing in the key map; no gathered value) and
-    TestRegisterOrGetConcurrentCallersShareOneCollector (one identity, gathered as the worker count).
-    Failing first, implementer-reported, against the pin's registration methods behind the new
-    signature (a temporary shim, removed): all six same-key kinds gathered 1; the type, help,
-    nil-Counter, alias and direct-collision cases were accepted; the typed-nil *GaugeVec and the
-    core collision were already refused at the pin, the core test failing only on the returned
-    candidate; the concurrent callers got different collectors. Guard mutations, implementer-
-    reported: the type check, the descriptor check and the alias branch storing each fail a named
-    test; removing the nil guard fails no assertion but crashes the run with a nil-pointer panic
-    inside Prometheus' Register. In metric/registerorget_prop_test.go, D9's generated check
-    TestPropRegisterOrGetHistory: a Rapid state machine over RegisterOrGet, Unregister and writes
-    through returned handles, compared after every step with a test-owned reference model and
-    through Gather; it logs how often each assertion ran; implementer-reported, a planted removal of
-    the type check is found after 3 tests (seed 1320 run, shrunk to two registrations of k0: a
-    gauge, then a counter of the same name and help, accepted) and storing in the alias branch
-    after 0 tests (a gauge vector with the core status descriptor under a free key, accepted). Tests replaced, pin registry_test.go: TestMetricsRegistrar_Interface
-    (:360) and TestMetricsRegistry_IdempotentDuplicateRegistration (:254-275) deleted;
-    RegisterCounter (:22), RegisterGauge (:50) and RegisterHistogram (:225) replaced by test 1's
-    Counter, Gauge and Histogram cases; RegisterOrGetGaugeVecReturnsCanonicalCollector (:78) by test
-    1's GaugeVec case; ...RejectsIncompatibleCollector (:107) by test 2;
-    ...RejectsSameKeyDifferentDescriptor (:124) by test 3; ...RejectsCrossKeyDescriptorAlias (:140)
-    by test 5; GaugeVecAPIsShareCanonicalOwnership (:154, the legacy API) by tests 1 and 5;
-    ...ConcurrentCompatibleIdentity (:188) by test 8; UnregisterMetric (:277) and ThreadSafety
-    (:320) rewritten on RegisterOrGet. Pin integration_test.go: MockService.RegisterMetrics
-    (:29-52) takes *MetricsRegistry and keeps the returned collectors;
-    IdempotentRegistration (:90) and MultipleServicesSameNames (:210) now assert the summed
-    gathered value; MultipleServicesWithUniqueMetrics (:193) asserted the alias succeeded and now
-    asserts the fatal refusal. Real-clock bounds, design D8 R1b (task 3.10 review, PR #48 comment
-    5984567497, HIGH-1 and MEDIUM-2): handler_test.go gains failureBound, 10 s (:83). The 5 s
-    failure bounds carried from the pin take it: the cleanup Stop contexts pin :95, :345, :422 →
-    :100, :350, :427, and the cleanup waits pin :336, :342, :419 → :341, :347, :424. So do the
-    HTTP client timeouts on requests the tests expect to succeed: testServerGET's default client,
-    pin :87 (2 s) → :92; the TLS test's client, pin :308 (2 s) → :313; the mTLS test's client in
-    the new file tls_test.go:75 (5 s); and the dial that must succeed once Start returns, pin :155
-    (250 ms) → :160. Kept, because their expiry can only miss a defect and never fail a correct
-    run: the three dials that must be refused after Stop, pin :115, :168, :456 (100 ms) → :120,
-    :173, :461; a timeout there also returns the error the test asserts
+    metric/handler_test.go, metric/lifecycle_test.go, metric/admission_test.go, metric/tls_test.go,
+    metric/registerorget_test.go, metric/registerorget_prop_test.go, metric/registry_test.go,
+    metric/integration_test.go
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -1140,23 +707,13 @@
     projection contracts); SemSource imports it (run.go, design P16); imported by message
   destination: payloadregistry
   contract: >-
-    New, Register, lookups and the registration validation (projection contracts through
+    New, Register, lookups and registration validation (projection contracts through
     pkg/projection/contract) as at the pin
   dependencies_and_side_effects: >-
     pkg/errs, pkg/projection/contract, pkg/types, vocabulary (in-set); stdlib; no goroutine, no I/O
   known_risks: >-
-    no context roots. Adapt item: testing.go (NewForTest, NewWithSubset, RegisterTestType) is not
-    ported into the package; it is a non-test file importing testing, which TestImportGraph refuses
-    in production code, and no payloadregistry test calls it (pin grep). Task 2.8 rehomed it to
-    internal/harness/payloadfixture/testing.go, the pin's text except these adapt items, by pin
-    testing.go line: :1 package payloadregistry → payloadfixture; :6 the pkg/types import path
-    rewritten, with an import of payloadregistry added beside it; New qualified as
-    payloadregistry.New at :20 and :34; Registry as payloadregistry.Registry at :18, :32 (twice) and
-    :53; Registration as payloadregistry.Registration at :55. A new doc.go gives payloadfixture
-    the package comment revive requires. T-B1 admits the file only under
-    internal/harness/ (TestImportGraphRejectsHarnessHelpersOutsideTheHarness). The package doc names ADR-103,
-    ADR-054, ADR-029, component.Dependencies and agentic, which do not exist here; left as the pin's
-    text
+    no context roots. testing.go (NewForTest, NewWithSubset, RegisterTestType) moved to
+    internal/harness/payloadfixture/testing.go so production code imports no test package (T-B1)
   proving_tests: payloadregistry/registry_test.go, payloadregistry/attributes_test.go
   owner: setup-04a-01-floor developer
   disposition: adapt
@@ -1168,198 +725,27 @@
     imports it (28 files, design P16), so it stays public at its pin path (design D5)
   destination: message
   contract: >-
-    BaseMessage, the payload and behavior interfaces, the JSON codecs, triple construction and
-    identity, entity-ID parsing and Meta as at the pin, less the federation family and ten
-    capability interfaces (dead surface, known_risks). Changed behavior (owner ruling 7, #9 comment 5969522395): BaseMessage decodes
-    meta.created_at and meta.received_at strictly as the integer Unix milliseconds MarshalJSON
-    writes; absent, null or 0 is the zero time; any other value (a string, a fraction, an exponent
-    form, a bool, an object, an integer outside int64) is refused with an invalid-data error.
-    Changed behavior (owner ruling 2, #9 comment 5969776736): BaseMessage.MarshalJSON refuses a
-    meta source that is not valid UTF-8 with an invalid-data error. Changed behavior (owner ruling,
-    #9 comment 5970334875, extending ruling 2): BaseMessage.MarshalJSON refuses a message type
-    whose domain, category or version is not valid UTF-8, with an invalid-data error;
-    message.Type.Validate (pkg/types row) refuses such a component. Changed behavior (owner
-    rulings, #9 comments 5972117486 and 5972208367): GenericJSONPayload.Data holds JSON-shaped
-    values only (map[string]any, []any, string, a Go number, json.Number, bool, nil, nested);
-    MarshalJSON refuses any other value, time.Time included, with an invalid-data error naming its
-    type and path (data.a[2].b), as well as a string or map key that is not valid UTF-8 and a map or
-    list that contains itself. No other
-    behavior changed
+    BaseMessage, payload and behavior interfaces (Storable, ContentStorable, BinaryStorable,
+    RuleReadable, IndexingProfiler), JSON codecs, triple construction, entity-ID parsing, and Meta
+    as at the pin, with these adaptations: (1) meta.created_at and meta.received_at decode strictly
+    as int64 Unix milliseconds (null/0/absent -> zero time; strings, floats, and out-of-range values
+    refused); (2) BaseMessage.MarshalJSON refuses non-UTF-8 meta.source or message type components;
+    (3) GenericJSONPayload.MarshalJSON accepts only JSON-shaped values (map[string]any, []any,
+    string, Go numbers, json.Number, bool, nil) with valid UTF-8 and no cycles, and UnmarshalJSON
+    decodes numbers via UseNumber into a JSON object or null body
   dependencies_and_side_effects: >-
-    payloadregistry, pkg/errs, pkg/types, internal/timestamp (in-set);
-    github.com/google/uuid v1.6.0 (the pin's version, now a direct requirement); stdlib; no
-    goroutine, no I/O
+    payloadregistry, pkg/errs, pkg/types, internal/timestamp (in-set); github.com/google/uuid v1.6.0;
+    stdlib; no goroutine, no I/O
   known_risks: >-
-    no context roots. Import paths differ from the pin: pkg/timestamp is internal/timestamp (design D5;
-    gofmt then moves its import line in base_message.go into sorted order), and the tests'
-    internal/semantictest is internal/harness/semantictest (task 2.8). Adapt item (owner ruling, #9
-    comment 5957221949): message/README.md is ported with only the edit markdownlint requires: line 7
-    wrapped at 120 columns (MD013); no wording changed by that item (the decode-path item below
-    changes wording). README import paths (owner ruling, #9 comment
-    5968665464), each an adapt item "import path changed to the SemEngine module", pin lines: :20 and
-    :204 message → github.com/c360studio/semengine/message; :203 component →
-    github.com/c360studio/semengine/component, a package not ported yet; :466 errors →
-    github.com/c360studio/semengine/pkg/errs (the example's errors. identifiers are left as the pin's
-    text: the ruling covers import paths only). Adapt item, dead surface removed (owner ruling, #72
-    comment 5969293525, under #9 comment 5968830525; evidence SemStreams #1187, class:dead-surface,
-    and the pin's docs/proposals/gh1168-federation-identity-inventory.md:307-312, seam S8): the
-    message-level federation family, which no caller at the pin or in any sister uses and whose
-    origin fields BaseMessage.MarshalJSON never writes (pin base_message.go:233-238), so a decoded
-    message lost them. Removed, pin lines: message/federation.go whole (110 lines): FederationMeta
-    :22, DefaultFederationMeta :36 with its UID :73 and Platform :78, NewFederationMeta :50,
-    NewFederationMetaWithTime :60, GetPlatform :95, GetUID :105, and the BuildGlobalID example
-    :88-94 (a function that exists nowhere); base_message.go WithFederation :79-88 and
-    WithFederationAndTime :90-97, the pkg/platform import :12, and the examples that advertise them
-    :35-41 and :115-120; doc.go the federated-message example :330-332, and :463's WithFederation()
-    is now WithMeta(). The pin's message tests named none of these, so no carried test is removed.
-    Entity-ID federation prose (doc.go, storable.go, triple.go, types.go; pkg/types/entity_id.go,
-    ADR-102) stays. pkg/platform stays in the port set for config (its row). Adapt item, documented decode path
-    corrected (Codex F9, PR #48 comment 5969256728; owner ruling #9 comment 5968665464): the pin's
-    examples decode with json.Unmarshal into a zero-value BaseMessage, which always refuses (no
-    registry: BaseMessage.UnmarshalJSON's missing-registry error), and describe a global payload registry and a package-level
-    payloadregistry.Register, neither of which exists. Rewritten to build a payloadregistry.Registry,
-    register on it and call message.NewDecoder(reg).Decode(data) with its error handled; no code
-    changed. Pin lines: README.md :11, :13 (principles); :85, :89 (NewBaseMessage's signature and the
-    wire shape the decode example reads); :95-98 (decode example); :159, :169-174 (registry
-    explanation); :255-260 (init registration → a RegisterPayloads function); :372-383 (test example:
-    registration dropped, signature); :402-414 (round-trip example); :432-435 (thread safety);
-    :574-594 (migration example: the envelope's type was a dotted string, which the decoder refuses);
-    :600-612 (troubleshooting: the error text is "unregistered payload type"); :640; :687. doc.go
-    :366-367, :375-377 (serialization and the global-registry note); :407-408 (handler example).
-    README :329's NewBaseMessage(payload) call is left as the pin's text (not on the decode path).
-    Adapt item, generic payload documented as the fallback (owner ruling, #9 comment 5972208367,
-    item 2): README :314-316 (the section, retitled "GenericJSON as the Fallback", says core.json.v1
-    is for JSON whose shape is not known when the code is written, outside input or a user-configured
-    transform, that code building a known shape registers a payload type, and states the JSON-shaped
-    refusal), :345-356 (when to use it, rewritten to match), :515 (the enrichment example's
-    time.Now(), which encoding now refuses, formatted as RFC 3339 text); doc.go after :377 (the same
-    fallback and refusal, one paragraph). No code changed by this item.
-    Behaviour change, timestamp decode (owner ruling 7, #9 comment 5969522395): the pin decoded both
-    timestamps through timestamp.Parse (base_message.go:272-284), which reads a number up to 10^12 as
-    seconds and also accepts RFC 3339 and numeric strings, so every instant before 2001-09-09, which
-    MarshalJSON writes as fewer than 10^12 milliseconds, decoded wrong (1999-01-01 as year 30969, any
-    pre-1970 instant thousands of years earlier), and an unreadable value silently became the zero
-    time. Replaced by wireMillis: the wire is decoded with json.Decoder.UseNumber (pin :263's
-    json.Unmarshal) so the literal is read exactly, and anything but an integer in int64's range is
-    refused. internal/timestamp is unchanged; timestamp.Parse has no caller left in the module.
-    Behaviour change, source encoding (owner ruling 2, #9 comment 5969776736): the pin's
-    MarshalJSON wrote meta.source through encoding/json, which replaces each byte of a string that
-    is not valid UTF-8 with U+FFFD, so the wire carried a different source and nothing said so.
-    MarshalJSON now refuses such a source with an invalid-data error, checked at encoding because
-    NewBaseMessage returns no error and WithMeta accepts any Meta. Decoding is unchanged: JSON
-    text is UTF-8, so a decoded source is always valid. Behaviour change, type and generic payload
-    encoding (owner ruling, #9 comment 5970334875, extending ruling 2; Codex F12, comment
-    5970321028): the pin wrote the message type (base_message.go wireFormat.Type) and core.json.v1's
-    Data (generic_json.go MarshalJSON) through encoding/json in the same way, so an invalid byte in a
-    type component or in any string of Data reached the wire as U+FFFD with no error, and
-    Type.Validate accepted such a component. BaseMessage.MarshalJSON now refuses a type component
-    that is not valid UTF-8 (BaseMessage.Validate checks only that each component is non-empty, so
-    the check is at encoding, beside the source's). Behaviour change, generic payload shapes (owner
-    rulings, #9 comments 5972117486 and 5972208367; Codex F15 and F16, PR #48 comment 5970889953):
-    the pin's GenericJSONPayload.MarshalJSON passed Data to encoding/json, which accepts any Go
-    value and runs its custom methods, so a check copying encoding/json's dispatch kept missing
-    cases (a named key type, a byte-element or changing TextMarshaler, shadowed and ambiguous
-    struct fields, a self-embedding struct that recursed without end). MarshalJSON now checks Data
-    before encoding over the ruled kinds alone, by exact type, so no custom method runs and no
-    struct is walked: a value of any other type, typed maps and slices and named types included, is
-    refused with its type and path; a string, json.Number or key that is not valid UTF-8 is refused
-    with its path; a map[string]any or []any that contains itself is refused. A NaN or an infinity
-    passes the check and json.Marshal refuses it, as at the pin. The check is at encoding only:
-    NewGenericJSON and Data are unchanged, so a message held and evaluated in memory is unaffected.
-    Measured callers (2026-10-03, tarballs; NewGenericJSON calls and Data writes): the pin has 28
-    calls, 6 in production and 22 in tests, and one production site stores a value outside the
-    ruled kinds, processor/rule/message_handler.go:376-384 (entityStateToMinimalMessage: time.Time
-    in "timestamp" and "updated_at"), named on #9 (comment 5972208367) for the rule port; every
-    other site stores what json.Unmarshal produced or map[string]any literals of strings, numbers,
-    bools and nested maps and lists. semboids (8c03cc53) has 2 production sites
-    (internal/sim/component.go:653, :696; strings, uint32, uint64); semsource (e4febc0d),
-    semconnect (d0d06e00) and semteams (d5ee6325) have none. Hash() ignores a payload marshal error, as at
-    the pin, so a payload refused here hashes as its type alone; tracked by #78.
-    Adapt item, dead surface removed (owner rulings, #9 comments 5985697767 item 2 and 5985900154;
-    evidence: the surface audit, openspec/changes/archive/2026-10-05-setup-04a-01-floor/surface-audit.md §2): ten
-    capability interfaces that nothing type-asserts and no production type implements in SemEngine,
-    the pin, semsource or semconnect. Removed, pin lines: behaviors.go :19-137 (Locatable, Timeable,
-    Observable, Correlatable, Measurable, Deployable, Processable, Traceable, Expirable; IndexingProfiler,
-    which admitted processor/graph-ingest asserts, stays) with the time import :2-3, and the header
-    :8-16 corrected (the runtime-discovery example asserted Locatable, and RuleReadable no longer
-    lives apart for revive's per-file cap); triple.go :102-136 (TripleGenerator, a third spelling of
-    Triples() beside graph.Graphable and message.Storable, asserted nowhere). Doc comments corrected
-    to the remaining interfaces: rule_readable.go :3-6, :13; message.go :30 and payload.go :10
-    (Identifiable, Locatable and Observable → Storable, RuleReadable, IndexingProfiler);
-    payload_test.go comments :78, :86, :245, :251 (the methods stay; no interface names them).
-    doc.go (owner rulings, #9 comments 5957221949 and 5984291337), pin lines: :36-98 (the spatial,
-    temporal, observational, correlation and processing interface sections), :119-124 and :130-135
-    (the Locatable and Timeable discovery examples), :414-416 (the Locatable branch of the handler
-    example), :431-432 and :474 (best-practice lines naming Locatable and Timeable). README.md
-    behaviour edits, same rulings, pin lines: :12 and :41-42 (the capabilities named are RuleReadable
-    and Storable); :63-68 (the interface table lists IndexingProfiler, RuleReadable and Storable; the
-    pin's Identifiable and Targetable never existed); :111-129 (the behavioural example asserts
-    RuleReadable); :239-246 (the example payload's Location and Timestamp methods); :277-312 (the
-    Locatable geofence processor), :359-391 (its test) and :523-546 (the Observable transformation
-    pattern) removed; :551, :554 (the filtering pattern asserts Storable); :630-633 (the
-    troubleshooting check asserts Storable). The pin's message tests named none of the ten
-    interfaces, so no carried test is removed. README.md pin lines :668-670 removed (owner ruling, #9 comment
-    5994720412, item 5): the References links to ../component/, ../errors/ and ../composition/,
-    packages SemEngine does not have at those paths; the natsclient link stays. Adapt item, doc
-    comments only (owner ruling, #9 comment 5984291337; Codex review of PR #48, F39 round):
-    storable.go pin lines :11-14, :38-52, :66 and :70 named graph.Graphable, ObjectStore and
-    GraphProcessor, which SemEngine does not have; Storable is now described by its own methods,
-    with graph.Graphable marked as SemStreams'. No code changed.
-    Adapt item (Codex review of record, PR #48 comment 5996819933, F30; commit 344044c):
-    GenericJSONPayload.UnmarshalJSON accepts a body that is a JSON object or null (on a fresh receiver Data stays nil
-    when data is null or absent; a populated receiver keeps its Data for {} and null, and data:null clears it); it refuses malformed JSON and non-whitespace bytes after the JSON value (json.Valid), a
-    body that is neither an object nor null, and a data that is neither an object nor null; it decodes with
-    UseNumber, so every number keeps its exact literal as a json.Number, 1e400 included (Codex F41); at the pin
-    each became a float64. Two carried
-    pin tests and three README examples that read float64 read json.Number. Malformed input and a well-formed
-    body whose data is neither an object nor null are both refused with an invalid-data error; at the pin both returned the
-    standard library's unclassified error (early check E7). README examples (early check E3; owner stance,
-    #9 comment 5972208367, core.json.v1 is a fallback only), tree lines: :114-139 read a number through a
-    checked helper, number, that takes a json.Number or a Go number; :298-330 replace the pin's "Quick
-    prototype" createTestMessage/processTestData pair (a one-argument NewBaseMessage that does not compile, and
-    an unchecked assertion) with wrapExternal, which decodes outside JSON with UseNumber, and cpuAbove, which
-    reads it with checked assertions; the pin's "Tests and prototypes" use is gone; :367-368 and :463-466
-    check their assertions; :475 calls the three-argument NewBaseMessage. Doc comments, same rulings (commit
-    5463f93): generic_json.go tree lines :31-32, :38, :53-58, :60-63, :75-76 and :87-88 at that commit describe
-    core.json.v1 as the fallback for JSON of unknown shape, decoded only after RegisterPayloads. Product prose
-    (#9 comment 5984291337), tree lines: doc.go :1 and README.md :3, :7, :30 name SemEngine, not SemStreams;
-    README.md :54 says core.json.v1 is registered by RegisterPayloads; README.md :395 names pkg/errs.
-    Adapt item, doc comments only (owner ruling, #9 comment 5984291337): no Graphable type exists in SemEngine,
-    so the passages that asserted msg.Payload().(Graphable) now use what message has. Tree lines at commit
-    47b120d: doc.go :28-34 (the entity interface is Storable, with ContentStorable and BinaryStorable), :57-60
-    (discovery asserts Storable), :164, :167-168 (Storable, not Graphable), :210-212 (the example's Timestamp
-    method, which collided with its field and named the removed Timeable, is a RuleFields method, and the
-    example registers its type with payloadregistry), :229-237 (the decoded payload is read by its concrete type
-    and as RuleReadable), :351-352, :368, :420-421 and :423 (Storable); behaviors.go :8 and :11; payload.go
-    :9-10 (Storable, RuleReadable, IndexingProfiler). No code changed.
+    no context roots. Hash() ignores a payload marshal error, as at the pin, so a refused payload
+    hashes as its type alone (tracked by #78). Dead surface removed (#72; #9 surface audit §2):
+    message/federation.go (FederationMeta family and WithFederation*) and ten unused capability
+    interfaces (Locatable, Timeable, Observable, Correlatable, Measurable, Deployable, Processable,
+    Traceable, Expirable, TripleGenerator); doc.go and README.md updated for NewDecoder(reg) and
+    fallback GenericJSON
   proving_tests: >-
-    the 9 test files in message/ at the pin, carried unchanged except import paths and four comments
-    in payload_test.go (known_risks); payload_test.go and triple_helpers_test.go use
-    internal/harness/semantictest. Added (task 3.6b):
-    meta_wire_test.go, TestMetaCarriesOnlyWhatTheWireCarries (every exported type implementing Meta
-    has only Meta's exported methods; failed first on the tree before the removal, naming
-    DefaultFederationMeta and FederationMeta) and TestBaseMessageMetaSurvivesTheWire;
-    TestBaseMessageTimestampsAreMilliseconds (1999-01-01, 1960-01-01, the epoch and a 2024 instant
-    round-trip at millisecond precision; failed first: 1999 decoded as year 30969, 1960 as -8032) and
-    TestBaseMessageRefusesTimestampsThatAreNotMilliseconds (failed first: all eight non-millisecond
-    forms accepted); TestBaseMessageRefusesSourceThatIsNotUTF8 (four invalid sources through
-    NewBaseMessage and WithMeta refused, five valid ones kept across the wire; failed first: all
-    eight marshals succeeded with U+FFFD on the wire); decoder_fuzz_test.go (Codex F8, design
-    D7): FuzzDecoderDecode, FuzzDecoderRoundTrip and FuzzGenericJSONPayloadUnmarshalJSON, through NewDecoder with a real
-    registry, against a standard-library oracle that predicts acceptance and refusal.
-    TestBaseMessageRefusesTypeThatIsNotUTF8 (owner ruling, #9 comment 5970334875; failed first:
-    all three invalid types marshalled with U+FFFD on the wire); generic_json_shape_test.go (owner
-    rulings, #9 comments 5972117486 and 5972208367, replacing the walk's
-    TestGenericJSONRefusesStringsThatAreNotUTF8): TestGenericJSONRefusesValuesThatAreNotJSONShaped
-    (a refusal per other kind, time.Time with its path, and Codex's F15 and F16 probes),
-    TestGenericJSONRefusesInvalidUTF8AtDepth, TestGenericJSONRefusesCycles (in a child process
-    under a stack cap and a 10 s deadline) and TestGenericJSONAcceptsJSONShapedValues (every ruled
-    kind, against the standard library's encoding); generic_json_fuzz_test.go,
-    FuzzGenericJSONShapes (nested maps and lists of every ruled kind and three refused ones,
-    asserting refusal or a round trip equal at each number's literal); and
-    FuzzDecoderStrings, which generates the
-    three type components and a generic key and value and asserts refusal or full equality through
-    NewDecoder, with seeds holding an invalid byte in each of the five positions
+    message/*_test.go (including meta_wire_test.go, generic_json_shape_test.go,
+    generic_json_fuzz_test.go, decoder_fuzz_test.go)
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -1367,176 +753,28 @@
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
     generic caches (simple, LRU, TTL, hybrid) and CoalescingSet; admitted whole because six
-    admitted packages import it at the pin (design D1); nothing in this change imports it, since
-    natsclient's one importer, TemporalResolver, is dropped as dead surface (owner ruling, #9
-    comment 5969522395, item 1); no consumer imports it and no public signature names its types
-    (design D5, P21, P22)
+    admitted packages import it at the pin (design D1); moved to internal/cache (design D5)
   destination: internal/cache
   contract: >-
-    Cache[V] get, set, delete, clear, size, keys, statistics and close as at the pin; LRU size
-    eviction, TTL expiry on read and in the background cleanup; NewFromConfig validation; WithMetrics
-    exports the statistics as Prometheus collectors; CoalescingSet add, remove, prefix removal,
-    drain and one deduplicated batch per window as at the pin. Changed behavior, each written
-    first. Design D9: newCacheMetrics registers its six collectors through metric.RegisterOrGet and
-    keeps the collectors it returns, so caches sharing a prefix on one registry share one collector
-    per metric (the collectors are interface-typed; RegisterOrGet compares the concrete type).
-    Design D7, background-work shape 3: CoalescingSet.Shutdown(ctx) replaces Close(); it returns nil
-    once the goroutine has exited, ctx.Err() if ctx ends while the caller's callback still runs, and
-    nil on a later call once the callback has returned; Shutdown(nil) is refused with an error;
-    NewCoalescingSet refuses a nil context with an error before it starts the goroutine. Design D7, shape 2: the
-    TTL and hybrid Close signal the cleanup goroutine and wait for it with no fixed bound; NewTTL and
-    NewFromConfig refuse a nil context with an error, for every strategy. Every constructor that
-    returns Cache[V] with an error (NewSimple, NewLRU, NewTTL, the hybrid constructor, and
-    NewFromConfig through them) returns a nil Cache on error; at the pin each returned its nil
-    pointer inside a non-nil Cache (pin config.go:152, :159, :170, :177). Owner ruling (#9 comment 5950725772): no eviction
-    callback. Changed behavior, task 3.6a (Codex review, PR #48 comment 5968489295; owner rulings,
-    #9 comments 5968830525 and 5968665464), each written first: a nil callback is refused at the call
-    with an error (a panic in task 3.6a; an error once NewCoalescingSet returned one, task 3.13)
-    before the goroutine starts (F1; F1's other half, a callback panic ending the process, is
-    replaced below); concurrent Close calls on the TTL and hybrid caches are safe and each returns only
-    once the cleanup goroutine has exited (F2); NewLRU, NewTTL and the hybrid constructor refuse a
-    zero or negative size, TTL or cleanup interval with a classified invalid error, a nil Cache and
-    no goroutine started, as Config.Validate already did for NewFromConfig (F3); Config's JSON
-    decoder refuses unknown keys, stats_interval included, and treats a JSON null as a no-op (F4,
-    F5). Removed as dead surface (owner ruling #9 comment 5968830525, after a pin-wide reference
-    search): Config.StatsInterval and WithStatsInterval, Entry with IsExpired and Touch, WithStats,
-    StatsFromContext, ContextKeyStats, and Statistics.MemoryUsage, UpdateMemoryUsage and
-    StatsSummary.MemoryUsage
+    Cache[V] (simple, LRU, TTL, hybrid) and CoalescingSet as at the pin, with these adaptations:
+    (1) metrics register through metric.RegisterOrGet under the semengine namespace (#69);
+    (2) CoalescingSet.Shutdown(ctx) replaces Close(), and NewCoalescingSet returns (*CoalescingSet,
+    error), refuses nil ctx or callback, and recovers/logs/counts callback panics via
+    WithPanicLogger and WithCoalescingMetrics; (3) TTL and hybrid Close join their cleanup goroutine
+    without a fixed timeout and are safe under concurrent Close; (4) constructors refuse nil ctx or
+    non-positive dimensions and return a nil Cache interface on error; (5) Config.UnmarshalJSON
+    refuses unknown keys and handles JSON null as a no-op
   dependencies_and_side_effects: >-
     metric, pkg/errs (in-set); prometheus/client_golang; stdlib; pgregory.net/rapid in tests only.
-    The TTL and hybrid caches run one cleanup goroutine each, joined by Close; CoalescingSet runs
-    one goroutine that calls the caller's callback, joined by Shutdown within its context
+    TTL/hybrid caches and CoalescingSet each run one background goroutine joined by Close/Shutdown
   known_risks: >-
-    Context roots, the one D1 count: example code inside a doc comment (pin doc.go:255), not
-    executable; the package has no production root. Port-refactor rows for later callers (design
-    D5): CoalescingSet.Close becomes Shutdown(ctx) (pin processor/graph-embedding/component.go:875,
-    processor/rule/entity_watcher.go:980); WithEvictionCallback is deleted (pin
-    processor/rule/expression/regex_cache.go:21, a no-op callback; the pin's natsclient/kv_temporal.go:27,
-    :59 leave with TemporalResolver, task 3.7). Shared collectors: two caches under one prefix share the size gauge, which shows
-    whichever cache wrote last, not a sum (at the pin the second cache's gauge was not gathered at
-    all). Removed with the eviction callback (owner
-    ruling, #9 comment 5950725772; design D7): WithEvictionCallback (pin options.go:42-48, with the
-    evictCallback field :23-24), EvictCallback (cache.go:51-53), and the evictFn plumbing in
-    simple.go, lru.go, ttl.go and hybrid.go; TestEvictCallback (cache_test.go:444-503, 60 lines, two
-    subtests, two of the package's 26 sleeps) is deleted with it (design D8). Removed by shape 3:
-    CoalescingSet.Close (coalescing_set.go:114-126). Removed by shape 2: the fixed 5 s wait in the
-    TTL and hybrid Close (ttl.go:258-264, hybrid.go:285-291). doc.go adapt items, pin lines: the
-    eviction examples and prose at :39-41, :157, :162, :179 and :234-236 removed; the "Context and
-    Cleanup" section (:250-261) gains Close's join, the nil-context refusals and CoalescingSet's
-    Shutdown. README behavior edits (owner ruling, #9 comment 5957221949), pin lines: the eviction
-    callback examples at :64-66, :200-202 and :410-412 and the WithEvictionCallback section
-    :117-125 removed. README import paths (not a behavior edit, as on the metric row): :17 and :41
-    changed to github.com/c360studio/semengine/internal/cache and /metric. README lint fix: line 3
-    wrapped at 120 columns (MD013); no other wording changed. Task 3.6a (Codex PR #48 comment 5968489295; owner
-    rulings #9 comments 5968830525, 5968665464). Changed behavior (owner ruling, #9 comment
-    5994720412 item 3, applying 5985697767 item 3 in place of the F1 reading of 5968830525 that let
-    a callback panic end the process): fireBatch recovers a callback panic, as the pin did (pin
-    coalescing_set.go:167-180), but where the pin discarded it (`_ = r`) the batch is now dropped
-    with an error log naming the panic and the batch size and an increment of
-    semengine_cache_coalescing_callback_panics_total{component=prefix}; later batches still fire.
-    New surface for it: CoalescingOption, WithPanicLogger (default slog.Default(); the package has
-    no other logger path) and WithCoalescingMetrics(registry, prefix), which follows WithMetrics'
-    registry-and-prefix convention (design D7), the variadic options of NewCoalescingSet; no present
-    production consumer. NewCoalescingSet now returns (*CoalescingSet, error), like the cache
-    constructors: a counter the registry refuses is a transient metrics-registration error, and a
-    nil context or nil callback an invalid-argument error, with no goroutine started (design D7).
-    Removed, pin lines: the
-    check-then-close in the TTL and hybrid Close (ttl.go:251-256, hybrid.go:278-283), replaced by a
-    sync.Once; StatsInterval (config.go:46-47, :58, :103-106, :123-126, :232, :260-267; options.go:26-27,
-    :50-59, :66; ttl.go:34, :67; hybrid.go:38, :73; doc.go:163; README.md:67, :127-133, :194); Entry,
-    IsExpired, Touch, contextKey, ContextKeyStats, WithStats and StatsFromContext (cache.go:55-94);
-    memoryUsage, UpdateMemoryUsage, MemoryUsage and StatsSummary.MemoryUsage (stats.go:23, :68-72,
-    :114-119, :172, :185, :202). Pin-wide reference search (the pin and the four consumers named in
-    docs/inventory-scope.md): none of the removed symbols has a reader outside pkg/cache; the one
-    other reference is a setter, processor/rule/config.go:245 (StatsInterval: 30s), with
-    processor/rule/docs/configuration.md:219, :231 documenting stats_interval: a port-refactor item
-    for processor/rule, whose stats_interval key now fails to decode. Config.UnmarshalJSON decoded
-    into &aux (config.go:238), so a JSON null set aux to nil and panicked; it now decodes into aux.
-    doc.go behavior edits (rule 2(c)), pin lines: cache.NewHybrid, which the package does not have,
-    replaced by NewFromConfig with StrategyHybrid at :37-39, :72, :216 and :227-229; :267 and :271
-    name ./internal/cache; :286 no longer points at a nonexistent examples_test.go. README behavior
-    edits: cache.NewHybrid replaced the same way at :35, :102 and :403-411
-    Adapt item, doc corrections (Codex review of record, PR #48 comment 5996819933, F38; owner ruling #9 comment
-    5984291337; commit 5463f93), tree lines at that commit: doc.go :18-20, :23-30, :34, :36, :41-44, :48,
-    :52-54, :63, :70, :77, :84, :89-91, :172, :175-177, :227-230, :239-240, :243, :250, :252, :254-261, :265,
-    :277-280, :308-313, :315-317, :321; README.md :25-27, :30-33, :36-39, :42-45, :48, :52-54, :66, :69-71, :84,
-    :87-89, :94-95, :101, :109, :117, :149-156, :162-163, :166, :423, :425-430, :432-439, :441. Every two-result
-    constructor's error is checked before use; the Cache interface shown is the real one; the nonexistent
-    average-lifetime statistic is gone.
-    Adapt item, outward names (owner ruling, #69 comments of 2026-10-06): the Prometheus namespace of the 7
-    collectors (metrics.go, 6; coalescing_set.go, 1) is semengine, not semstreams; README.md's metric table and
-    example, and the tests that state the names (metrics_test.go, background_test.go,
-    coalescing_panic_test.go), follow. No consumer pins SemEngine yet.
+    no production context roots. Dead surface removed (#9 rulings): eviction callbacks
+    (WithEvictionCallback, EvictCallback), Config.StatsInterval/WithStatsInterval, Entry/IsExpired/
+    Touch, ContextKeyStats/WithStats/StatsFromContext, and MemoryUsage/UpdateMemoryUsage; doc.go and
+    README.md updated to match
   proving_tests: >-
-    the 6 test files in pkg/cache/ at the pin, carried to internal/cache/ and repaired. New, written
-    first, in internal/cache/metrics_test.go: TestCacheMetricsTwoCachesOnePrefixGatherTheSum (two LRU
-    caches under one prefix on one registry; oracle: the operations the test performs, counted by hand,
-    each gathered on one series; at the pin the second cache's writes were not gathered,
-    implementer-reported). In internal/cache/background_test.go, each run inside synctest.Test:
-    TestCoalescingSetShutdownLeavesNothingRunning, TestTTLCacheCloseLeavesNothingRunning and
-    TestHybridCacheCloseLeavesNothingRunning (start, use, stop; oracle: the stop returns nil within an
-    hour of the bubble's clock with the goroutine's done channel already closed, and the bubble returns;
-    at the pin's behavior the TTL and hybrid tests pass, because the fixed wait shows only when the
-    goroutine does not exit), TestCoalescingSetNilContextRefusedAtTheCall and
-    TestCacheConstructorsRefuseNilContext (at the pin the goroutine panicked: coalescing_set.go:136,
-    ttl.go:276), TestCoalescingSetShutdownUnderABlockedCallback (oracle: context.DeadlineExceeded while
-    the callback is held, nil after it returns; at the pin's Close the bubble deadlocked) and
-    TestCoalescingSetShutdownRefusesNilContext; TestCacheCloseAfterContextEndAndAgain (a Close after the
-    context ended the goroutine, then a second Close, both nil; not a changed behavior, it passes at the
-    pin's behavior too); TestCacheConstructorsReturnNilCacheOnError (each constructor above,
-    NewFromConfig for every strategy, refused by a metrics registration collision; oracle: err != nil
-    and the returned Cache == nil; implementer-reported, it failed first for NewSimple, NewLRU and
-    NewFromConfig's simple and lru paths with a nil *simpleCache or *lruCache inside the Cache).
-    Generated check, in internal/cache/coalescing_set_prop_test.go: TestPropCoalescingSetHistory, a
-    Rapid history of Add, Remove, RemovePrefix, Drain, window ticks and Shutdown, each run in its own
-    bubble and compared after every step with a test-owned model; it logs how often each assertion ran;
-    and TestCoalescingSetRemovePrefixMatchesOnlyAtTheStart, the boundary the generator reaches only by
-    chance. D8 repairs (R1a, sleep to the bubble's clock, unless named), pin → SemEngine:
-    coalescing_set_test.go:137 → :143; :148 → :158; :257 → :271; :308 → :323; :318 → :334; :339 → :356;
-    :348 → :366; :428 → :447; :446 → :465; :516 → :537; :522 → :543; :527 → :548; the 10 ms not-yet
-    window (:89-94) → :94-100, after synctest.Wait; :586, :592 and :611 went with
-    TestCoalescingSet_CallbackPanic and TestCoalescingSet_NilCallback, replaced in task 3.6a;
-    coalescing_set_attack_test.go:105 → :114 (R1b: the callback is held on a channel the test releases;
-    the test stays on the real clock, because an Add blocked on the set's mutex would stall a bubble
-    instead of failing it; 10 s failure bound at :142); :177 → :200; :223 → :245-256 (a sentinel key:
-    the pin asserted a callback after a fixed 300 ms, which failed whenever the removers had emptied the
-    set; now one window, one callback, nothing pending); :241 → :270; :298 → :334-335 (wait for the
-    first delivery: a zero window ticks every nanosecond of the bubble's clock); cache_test.go:294 →
-    :306; :317 → :332; :368 → :388; benchmark_test.go:183 → :183-191 (R1b: probe.Await until no key is
-    live, 10 s failure bound). The 30 t.Parallel calls (coalescing_set_test.go 20,
-    coalescing_set_attack_test.go 10) are removed: t.Parallel cannot be called in a bubble. Other test
-    edits: TestCoalescingSet_CallbackPanic asserted nothing at the pin and is gone, replaced in task
-    3.6a by a process-ending test that owner ruling #9 comment 5994720412 item 3 replaced in turn
-    (below); BatchCleared and AddDuringCallback assert after releasing the test's mutex (at the pin a
-    failed require held it and the deferred Close waited forever); the carried CoalescingSet tests call
-    Shutdown(t.Context()) for Close(); the two test files' "Code generated ... DO NOT EDIT" headers,
-    which made tools treat them as generated, are replaced by a note of their origin, and the 11 unused
-    parameters revive then reports are named _ (coalescing_set_test.go 6, coalescing_set_attack_test.go
-    5). Task 3.6a, each written first (implementer-reported failing first): in coalescing_set_test.go,
-    TestCoalescingSet_NilCallbackRefusedAtTheCall replaces TestCoalescingSet_NilCallback (the error, and
-    no run goroutine in the bubble's stack dump); the tests that passed a nil callback pass a no-op one.
-    Owner ruling #9 comment 5994720412 item 3: coalescing_panic_test.go,
-    TestCoalescingSet_CallbackPanicIsRecoveredAndLaterBatchesFire replaces task 3.6a's
-    TestCoalescingSet_CallbackPanicEndsTheProcess and its helper file helper_process_test.go (the
-    error log with the panic value and batch size, the series gathered at 1 from the registry
-    WithCoalescingMetrics names, and the next batch delivered, each under a bound in a synctest
-    bubble). Failed first: without the recover the test binary died with the callback's panic in
-    fireBatch; mutants that skip the count, skip the log, drop the recover or ignore the registry
-    each fail it. TestCoalescingSet_RefusesARegistryThatRefusesThePanicCounter (a gauge already
-    owns the counter's key: a transient error, a nil set, no run goroutine) failed first against
-    the logged degrade it replaces; a mutant that swallows the refusal fails it. The two nil tests
-    failed first against the panics (the test binary panicked); a mutant that accepts a nil
-    callback fails its test.
-    In background_test.go, TestCacheConcurrentCloseJoinsEveryCaller (2,000 rounds of 32 Close calls per
-    strategy; each returns nil with the goroutine's done channel closed) and
-    TestCacheConstructorsRefuseInvalidDimensions (errs.IsInvalid, a nil Cache, no cleanup goroutine in
-    the bubble's stack dump). In config_test.go, TestConfig_UnmarshalJSON_RefusesUnknownKeys,
-    TestConfig_UnmarshalJSON_RefusesStatsInterval and TestConfig_UnmarshalJSON_NullIsANoOp; the
-    duration-string table no longer sets stats_interval. In config_fuzz_test.go,
-    FuzzConfigUnmarshalJSON, a native fuzz target whose invariants are derived with the standard library
-    (no panic; only Config's keys; each duration from time.ParseDuration or the integer; a Marshal round
-    trip). TestAttack_CallbackLatency releases its callback and joins its adds on every exit path (F6).
-    Repeat runs (D8 R4; implementer-reported, PR #48): see task 3.6
+    internal/cache/*_test.go (synctest-based unit, property, and fuzz tests in background_test.go,
+    coalescing_set_prop_test.go, coalescing_panic_test.go, metrics_test.go, config_fuzz_test.go)
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -2567,63 +1805,39 @@
 - source_path: internal/lifecyclecleanup
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    the helper a component calls to clean up its own failed Start (#77 ruling, comment 6035317931): SemTeams'
-    components call it at the pin as lifecyclecleanup.RollbackFailedStart (#77 inventory §3), and
-    internal/lifecycleguard calls it for SemEngine's own components (internal/lifecycleguard/guard.go:15);
-    public because a starter consumer imports it (design D7.1, option (a))
+    the helper a component calls to clean up its own failed Start (#77 ruling); SemTeams and
+    internal/lifecycleguard call RollbackFailedStart, so it is public at pkg/lifecyclecleanup
   destination: >-
     pkg/lifecyclecleanup (moved from internal/ to pkg/; the function keeps its name)
   contract: >-
-    RollbackFailedStart(parent, rollback) runs rollback synchronously under a context that keeps parent's
-    values but not its cancellation or deadline, with a fresh five-second budget per call, and returns
-    rollback's error joined with that context's error, as at the pin (lifecycle-suite, "Failed-start rollback
-    helper"; design D7.2). A nil parent is refused, as at the pin. Changed behavior, one adapt item (design
-    D7.2): a nil rollback is refused with an error naming it (lifecyclecleanup.go:48-49), where the pin
-    returned nil (pin lifecyclecleanup.go:29-30), which told a failed Start that a rollback ran when none did.
-    No pin caller passes nil (#77 inventory §3)
+    RollbackFailedStart(parent, rollback) runs rollback synchronously under a context that keeps
+    parent's values without its cancellation or deadline under a fresh 5 s budget, returning
+    rollback's error joined with that context's error, and refusing a nil parent or nil rollback
+    (lifecycle-suite, "Failed-start rollback helper"; design D7.2)
   dependencies_and_side_effects: stdlib only; no goroutine, no I/O
   known_risks: >-
-    two homes for one policy, on purpose (design D7.4, option (b)): the harness keeps its own unexported copy,
-    natsfixture.rollback (internal/harness/natsfixture/rollback.go:18, 15 s budget at :12; the file row
-    internal/lifecyclecleanup/lifecyclecleanup.go), because natsfixture imports nothing of this module outside
-    internal/harness/ (harness-boundaries, "Import graph") and Docker teardown under concurrent package
-    cleanup needs more than five seconds (rollback.go:9-11). Adapt items besides the nil rollback, as task
-    ledger:diff prints them: the package and function doc comments are rewritten to state the five things a
-    calling component must do (#77 inventory §10, task 3.1a), the timeout gets a doc comment, and the
-    nil-parent error uses errors.New for fmt.Errorf (same text). That a component outside this repository
-    follows the five is checked only by its own tests (accepted cost, #77 comment 6035317931)
+    internal/harness/natsfixture keeps its own unexported rollback with a 15 s budget for Docker
+    teardown (design D7.4); doc comments updated to state the five failed-start contract rules (#77)
   proving_tests: >-
-    pkg/lifecyclecleanup/lifecyclecleanup_test.go: TestRollbackFailedStartNilRollback (inverted to expect the
-    error, failing first on the pin's code; task 3.1a), TestRollbackFailedStartRejectsNilParentBeforeCallback,
-    TestRollbackFailedStartDetachesCancellationPreservesValuesAndBoundsWork,
-    TestRollbackFailedStartDeadlineIsFiveSecondsAfterTheCall,
-    TestRollbackFailedStartJoinsCallbackAndExpiryErrors, TestFailedStartRollbackTimeoutIsFrameworkOwned
+    pkg/lifecyclecleanup/lifecyclecleanup_test.go (TestRollbackFailedStartNilRollback and the pin's
+    rollback tests)
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 
 - source_path: types
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    shared component and service configuration types (ComponentConfig, ComponentType); consumers import it (54
-    + 20 sites, design D1); component, storage/storeregistry and graph-ingest import it
+    shared component and service configuration types (ComponentConfig, ComponentType); consumers,
+    component, storage/storeregistry, and graph-ingest import it (design D1)
   destination: types
   contract: >-
-    the types, their JSON codecs and Validate as at the pin, less one adapt item. Changed behavior (design D1;
-    PR #93 comment 6039549363; 9f40bd4): ComponentConfig.Equal treats a Config with anything but whitespace
-    after its first JSON value as malformed, so it falls back to a byte compare and does not equal the valid
-    value; the pin checked json.Decoder.More, which reports false at a stray closing delimiter, so `{}]` and
-    `{}}` compared equal to `{}`. Trailing whitespace is still accepted, as at the pin
+    ComponentConfig, ComponentType, ServiceConfig, their JSON codecs, and Validate as at the pin,
+    except ComponentConfig.Equal treats trailing non-whitespace bytes after the first JSON value as
+    malformed and falls back to byte comparison (design D1)
   dependencies_and_side_effects: pkg/errs (in-set); stdlib; no goroutine, no I/O
   known_risks: >-
-    no context roots. Adapt items, as task ledger:diff prints them: component.go's Equal (above) and its test
-    cases in component_test.go; service.go is the pin's. README edits (provenance status: markdownlint and
-    false claims), pin lines: :3 "the SemStreams platform" becomes "SemEngine"; :7 and :105 wrapped at 120
-    columns (MD013), and :7 notes that config and service arrive with setup change 3 (task 3.1); :73 the
-    import path becomes the SemEngine module
-  proving_tests: >-
-    types/component_test.go (TestComponentConfigEqual, whose trailing-input cases failed first on the pin's
-    code; TestComponentConfigValidate, TestComponentConfig_JSONRoundTrip, TestComponentTypeString);
-    types/service_test.go
+    no context roots; README updated for SemEngine module path and markdownlint
+  proving_tests: types/component_test.go, types/service_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 
@@ -2668,220 +1882,113 @@
 - source_path: graph
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    the graph's data model and wire types (EntityState, Graphable, the state-contract and predicate codecs,
-    the mutation and query request and reply types, the GRAPH_STATUS envelope); consumers import it (72 + 11,
-    design D1)
+    the graph's data model and wire types (EntityState, Graphable, state-contract and predicate
+    codecs, mutation and query request/reply types, GRAPH_STATUS envelope); consumers import it
+    (72 + 11, design D1)
   destination: >-
-    graph (the data model and wire types only; the pin's kvcatalog.go, owned_bucket_retention.go and
-    IsKVTombstone moved to graph/kvcatalog, a new package recorded on this row; the pin's readiness_gate.go
-    and ComputeBacklogStatus with BacklogStatusInputs moved to graph/readiness, recorded on that row; design
-    D16, #101)
+    graph (the data model and wire types only; kvcatalog.go, owned_bucket_retention.go, and
+    IsKVTombstone moved to graph/kvcatalog; readiness_gate.go and ComputeBacklogStatus moved to
+    graph/readiness; design D16, #101)
   contract: >-
-    the data model, codecs, bucket-name constants, StateContractError and its classifiers, the mutation and
-    query wire types and ExactEntity as at the pin, less the adapt items. The root imports no transport
-    (TestGraphImportsNoTransport, design D16). Changed behavior, each an adapt item: (1) EntityState has no
-    Version and a stored value no version key; the KV revision is the only fence, and decoding stays lenient,
-    so a value the pin wrote still decodes (design D15, #100). (2) The write modes are pure functions in graph
-    (ReplaceBySource, helpers.go:37; the single-value reads, types.go:52-79): a replace keys a set on its
-    source, Timestamp orders a replace and Confidence and Context never do, and a single-value read picks the
-    latest statement across sources (design D15, #98). (3) ReconcilePredicatesRequest gains a required source
-    (mutation_requests.go:34); a reconcile with no source, or with a desired statement whose Source differs,
-    is refused as invalid_request (ruling 1, #91 comment 6037604840; design D15). (4) Three reserved sources,
-    graph-ingest-indexing-profile, graph-ingest-hierarchy and semengine-lifecycle, and IsReservedSource
-    (sources.go, new; ruling 5, #91 comment 6037604840). (5) IndexStatusResponse loses Phase, Revision and
-    LastSynced and gains published_at (design D16, ruled F, #91 comment 6037287957). (6) ExactEntityReader no
-    longer imports natsclient: a zero timeout passes through to the requester's default and a negative one is
-    refused at construction (#151, task 3.12g); it takes its subject from the verb table (task 3.7). (7) A
-    verb table, QueryVerbs (query_verbs.go, new): entity, batch and prefix on graph.ingest.query.*, responder
-    graph-ingest (design D20, #106). (8) The state-reset reason GraphStateReasonMissingStatementMetadata
-    (state_contract.go:60; checkpoint 3 H3, design D15)
+    data model, codecs, bucket-name constants (BucketSemEngineConfig = "semengine_config", #69),
+    StateContractError, mutation/query wire types, and ExactEntityReader as at the pin, with zero
+    transport imports in the root package (TestGraphImportsNoTransport) and these adaptations:
+    (1) EntityState has no Version field (KV revision is the only fence, #100); (2) ReplaceBySource
+    orders each (subject, predicate, source) set by Timestamp, and single-value reads choose the
+    latest statement across sources (#98); (3) ReconcilePredicatesRequest requires a non-empty
+    matching Source (design D15); (4) reserved sources and IsReservedSource declared in sources.go;
+    (5) IndexStatusResponse drops legacy Phase/Revision/LastSynced and adds published_at (design D16);
+    (6) ExactEntityReader refuses negative timeouts and reads its subject from QueryVerbs (#106,
+    #151); (7) GraphStateReasonMissingStatementMetadata added
   dependencies_and_side_effects: >-
-    message, pkg/errs, pkg/types, vocabulary (in-set); stdlib; no NATS import, no goroutine, no I/O.
-    graph/kvcatalog imports natsclient and nats.go's jetstream and acquires buckets for its caller
+    message, pkg/errs, pkg/types, vocabulary (in-set); stdlib; no NATS import in graph root;
+    graph/kvcatalog imports natsclient and nats.go/jetstream
   known_risks: >-
-    no context roots in the root. Adapt items, as task ledger:diff prints them (14 files differ, 23 only at
-    the pin, 5 only in the tree): #69's rename (design D9): BucketSemStreamsConfig = "semstreams_config" (pin
-    constants.go:74) is BucketSemEngineConfig = "semengine_config" (constants.go:64), and the configuration
-    bucket's description names SemEngine (graph/kvcatalog/kvcatalog.go:136); consumers who spell either edit
-    them on adoption (design D9): semsource cmd/semsource/run.go:788, internal/cutover/buckets.go:58 and three
-    test files; semconnect gateway/cs-api/component.go:227 and two deploy configs; semboids configs/flock.json
-    and seven integration test files; semteams' flow configs; a running deployment clears its NATS volume
-    (#69). The readiness envelope's three fields go silently for semsource, which decodes GRAPH_STATUS into
-    its own struct and reads revision and last_synced
-    (processor/source-manifest/workbench_capabilities.go:110-118, readiness.go:42-43 at e4febc0d): both arrive
-    absent, no compile error says so, and semsource changes once, on adoption (ruling F, design D16). The
-    write rules' raw-wire reconcile callers send source: semconnect gateway/cs-api/graph_mutations.go:214-217
-    builds ReconcilePredicatesRequest itself, and pkg/lifecycle's three reconcile builders send
-    semengine-lifecycle (design D15; inventory §9.13 (g2)). Not carried: the query envelope QueryResponse,
-    NewQueryResponse, MinRevisionField and the three aliases of query_response_types.go (ruled P, #91 comment
-    6080973822; design D18), returning with change 4, its first readers (graph-index, graph-query); last held
-    at a35b123 (graph/query_contracts.go:24, :38) and removed in 64e705d (task 3.12k); the data types the
-    aliases wrap stay. Removed by a port-refactor: events.go (design D16; alertDigestDomain goes with it),
-    UnwrapQueryResponse (design D18), the TOOL_CALL_OUTCOMES row and constant (semteams acquires it with its
-    own descriptor) and ENTITY_SUFFIX_INDEX (design D16, D19). Dead surface removed (design D6): errors.go's
-    20 sentinels, incoming.go (IncomingEdges), query_types.go (QueryDirection, no reader anywhere) and the
-    function GetPropertyValue, not the method (#132 item 7; e4011b8), and the appendix's other dead graph
-    rows, among them MissingUnknown, ContextEntry and NameIndexEntry (task 3.3); #132 items 1-6 stay open on
-    #132. Consumers that read the catalog, IsKVTombstone, the backlog computation or the gate from graph
-    import the new home, a compile error each (design D16; inventory §9.13 (h)). README.md rewritten for what
-    the root holds and where the catalog and readiness computation went (design D6 (c), D16; task 3.3, trimmed
-    in task 3.12k; dbeb5fe, e4011b8, 64e705d), by group of pin lines; the title (:1) and the groups restored
-    below are kept. :3 named SemStreams (#9 comment 5984291337); tree :3-5 names SemEngine and says the root
-    imports no transport,
-    which the port changed (design D16). :5-8 said the package held no runtime logic, false at the pin, which
-    held the catalog and the readiness gate (design D6 (c)); replaced by a list of what it holds (tree :7-35).
-    :10-25 and :27-35, EntityState's Version field and GetTriple's "first matching triple": behavior the port
-    no longer has (design D15, #100, #98), restated as prose (tree :9-21). :37-59, entity identification with
-    the message.ParseEntityID example, restored at tree :37-59 with one edit: :42's fence gains a language
-    (MD040). :61-97, the Graphable interface and its example, and :99-122, the design principles, restored
-    unchanged at tree :61-97 and :99-122. :124-133, processor/graph/ and four sub-packages, which SemEngine
-    does not have (#9 comment 5984291337); tree :124-128 names where the moved code went. :135-144, package
-    ownership: an ADR, message.FederationMeta and processor/graph/, none of them in SemEngine (same ruling).
-    Tree :130-134, the import line, is new. class:port-refactor notes for later changes:
-    processor/rule (change 6) moves events.go's emission (expression_factory.go:353, publisher.go:151-152) to
-    the mutation-request protocol or drops it (#101), and loses its EntityState.Version read
-    (message_handler.go:380; design D15); processor/graph-query (change 4) resolves a partial ID without the
-    suffix verb (entity_resolver.go:102; #104, design D19), and brings the envelope type, its constructor,
-    min_revision and their producers and generalises the verb table (design D18, D20); change 4's design also
-    decides the generation marker beside indexed_revision that #103's addendum asks for, so that a revision
-    from a recreated bucket is detectable (#103 comment 6038196148; #103 stays open for change 4 and holds
-    this question with the two others ADR-109 routes there, #103 comment 6128216308); pkg/fusion/fusionnats
-    (change 5) decodes by the verb's declared reply type, with no UnwrapQueryResponse (design D18); pkg/fusion
-    (change 5) carries its copy of the envelope, IndexStatus, without the three legacy fields, since the doc
-    comment's "the two structs change together" is no longer kept in this change (#110, design D16)
+    no context roots. Deferred to change 4: QueryResponse/NewQueryResponse/MinRevisionField aliases
+    (ruled P, design D18) and the generation marker beside indexed_revision so a revision from a
+    recreated bucket is detectable (#103 stays open for change 4; ADR-109). pkg/fusion (change 5)
+    carries its IndexStatus copy without the three legacy fields removed from IndexStatusResponse
+    (#110, design D16). Removed: events.go (#101), UnwrapQueryResponse, TOOL_CALL_OUTCOMES,
+    ENTITY_SUFFIX_INDEX (#104), and dead sentinels/types (errors.go, incoming.go, query_types.go,
+    GetPropertyValue function, MissingUnknown, ContextEntry, NameIndexEntry; #132); README updated
   proving_tests: >-
-    graph/write_rules_test.go (TestStoredEntityHasNoVersion, TestReplaceOrderedByTimestamp,
-    TestConfidenceAndContextNeverOrder, TestSingleValueReadPicksLatestAcrossSources,
-    TestIsReservedSourceNamesAll, TestIndexStatusResponseHasNoLegacyFields, each written first),
-    graph/write_rules_prop_test.go (TestPropReplaceBySourceMatchesModel), graph/helpers_test.go,
-    graph/exact_entity_test.go (TestExactEntityReaderReturnsValidatedEntityAndRevision),
-    graph/query_verbs_test.go (TestQueryVerbsDeclareGraphIngestVerbs), graph/mutation_protocol_test.go and the
-    pin's other graph tests; internal/harness/contract/graphtransport_test.go (TestGraphImportsNoTransport and
-    its sensitivity test); graph/kvcatalog's tests, TestEntityStatesKeepsOneRevision (kvcatalog_test.go:205)
-    among them; pkg/projection's TestMutationClientReconcileRequiresSource and graph-ingest's
-    TestReconcileRefusesForeignSourceStatement for the required source
+    graph/write_rules_test.go, graph/write_rules_prop_test.go, graph/exact_entity_test.go,
+    graph/query_verbs_test.go, graph/mutation_protocol_test.go, graph/kvcatalog/*_test.go,
+    internal/harness/contract/graphtransport_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 
 - source_path: graph/readiness
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    publishing and reading a producer's GRAPH_STATUS readiness envelope, its gauges, and the readiness gate;
-    graph-ingest publishes through it; consumers import it (2, design D1); admitted packages read the gate and
-    the Watcher at the pin (graph-clustering, pkg/fusion, graph-index; design D6)
+    publishing and reading a producer's GRAPH_STATUS readiness envelope, its gauges, and the
+    readiness gate; graph-ingest and consumers import it (design D1, D6)
   destination: >-
-    graph/readiness (also receives the pin's graph/readiness_gate.go whole and ComputeBacklogStatus with
-    BacklogStatusInputs from graph/index_status.go, with their tests; design D16)
+    graph/readiness (also receives graph/readiness_gate.go and ComputeBacklogStatus with
+    BacklogStatusInputs from graph/index_status.go; design D16)
   contract: >-
-    Publisher, the gauges, the Watcher's reads and freshness, EvaluateReadinessGate, StatusReading and
-    ComputeBacklogStatus as at the pin, less the adapt items (design D5, D6, D16). Changed behavior: (1) the
-    Watcher runs as Run(ctx) on its caller's goroutine, returns ctx.Err() when the context ends and leaves
-    nothing running; a nil context, a nil source or an empty key is refused before any I/O; Start and Stop are
-    gone (design D5). (2) An undecodable value revokes the held envelope's freshness at once, and the next
-    decoded update restores it (PR #93 comment 6048386249). (3) Publisher.Publish sets published_at on every
-    write, UTC RFC 3339 with nanoseconds, replacing any caller value (design D16, ruled F); nothing in this
-    change reads it, and ADR-109 (question 1, docs/adr/109-ready-after-boot.md; ruled on #9, comment
-    6111608867) removes it in #183, after this change merges. (4) BacklogStatusInputs loses
-    LastSynced (design D16). (5) The gauges register through metric.RegisterOrGet under the semengine
-    namespace (gauges.go:48, :100; design D4); Register returns the registry's refusal, and a nil registry
-    registers nothing, where the pin fell back to Prometheus' global registry (task 3.4)
+    Publisher, gauges, Watcher, EvaluateReadinessGate, StatusReading, and ComputeBacklogStatus as at
+    the pin, with these adaptations: (1) Watcher.Run(ctx) runs on the caller's goroutine and refuses
+    nil ctx, nil source, or empty key (Start/Stop removed, design D5); (2) an undecodable KV value
+    revokes freshness immediately until the next valid update; (3) Publisher.Publish stamps
+    published_at in UTC RFC3339Nano (design D16; ADR-109 removes it in #183); (4) BacklogStatusInputs
+    drops LastSynced; (5) gauges register via metric.RegisterOrGet under the semengine namespace and a
+    nil registry is a no-op (design D4)
   dependencies_and_side_effects: >-
-    graph, graph/kvcatalog, metric, natsclient (in-set); github.com/nats-io/nats.go/jetstream,
-    github.com/prometheus/client_golang/prometheus; KV reads and writes on GRAPH_STATUS; the Watcher's watch
-    runs on the goroutine that calls Run
+    graph, graph/kvcatalog, metric, natsclient (in-set); nats.go/jetstream,
+    prometheus/client_golang; KV reads/writes on GRAPH_STATUS; Watcher.Run runs on caller goroutine
   known_risks: >-
-    adapt items, as task ledger:diff prints them (6 files differ, 2 only at the pin, 5 only in the tree, the
-    moved gate and backlog files among them). Not carried, each with the change that brings its first reader
-    and the last commit holding its adapted code: Set with NewSet, Dump and Verdict (set.go, set_test.go; its
-    two sleeps left with set_test.go:85, :302): read at the pin only by gateway/graph-gateway, which is
-    deferred as consumer-owned (its row); never ported, so the pin holds it. Nothing now brings Set back: #110
-    was rewritten on 2026-10-12 under ADR-109 (its "Superseded (history)" paragraph withdraws the fix shape
-    "Health() reports from the same readiness.Set the bucket is written from"), and Health() derives from
-    nothing in the envelope (ADR-109 Decision 2). The drop departs from the pin's ADR-088 (:42-48:
-    aggregation is a client-side fold over readiness.Set); the owner kept the drop (#91 comment 6085720598):
-    no starter consumer calls Set, its one pin reader is deferred, and a consumer can loop over its keys
-    through the gate. ComputeIndexStatus
-    with IndexStatusInputs, and WithRevisionGauges with GaugeOption and the revision gauges (ruled P, #91
-    comment 6080973822, narrowed by comment 6085720598; design D16): graph-index's producer code, returning
-    with graph-index in change 4 (pin processor/graph-index/watermark.go:93, metrics.go:97); last held,
-    adapted, at a35b123 (graph/readiness/index_status.go:66, gauges.go:60) and removed in 64e705d (task
-    3.12k); the change that brings ComputeIndexStatus back fixes #135 (b), that it never sets
-    BootstrapComplete, rather than carry it. #135 items 1, 2, (c) and (g), on the kept gate and Watcher, stay
-    open on #135 (scope frozen, #9 comment 6085243841). Where the gate lives (graph at the pin and in ADR-083):
-    ADR-109 keeps it in graph/readiness, with one SemEngine reader, graph-index, in process (change 4), and no
-    SemEngine consumer across a process reads it (docs/adr/109-ready-after-boot.md:201, its row for ADR-083
-    D4; ruled on #9, comment 6111608867). class:port-refactor notes for later changes:
-    pkg/fusion/fusionnats (change 5) runs the Watcher through Run(ctx) (pin client.go:140 start, :103 stop;
-    design D5); processor/graph-clustering (change 7) does the same (pin component.go:1512, :1527 start,
-    :1260, :1266 stop; design D5); processor/graph-index (change 4) and processor/graph-embedding (change 5)
-    bring back ComputeIndexStatus and WithRevisionGauges, which they read at the pin (inventory §9.5)
+    Set/NewSet/Dump/Verdict dropped (no starter consumer caller; ADR-109; #110 rewritten under
+    ADR-109 so Health() derives from nothing in the envelope). ComputeIndexStatus and
+    WithRevisionGauges deferred to change 4 with graph-index (ruled P, design D16), which fixes
+    #135 (b) (BootstrapComplete never set); #135 items 1, 2, (c), and (g) on the kept gate and
+    Watcher stay open on #135
   proving_tests: >-
-    graph/readiness/watcher_test.go (TestWatcherRunReturnsContextErrorAndLeavesNothingRunning,
-    TestWatcher_RunValidatesWiring, TestWatcher_UndecodableValueRevokesFreshness and the pin's Watcher tests),
-    publisher_test.go (TestPublishStampsPublishedAt, written first; TestPublisherKey), gauges_test.go
-    (TestGaugesNilRegistryRegistersNothing, TestGaugesRegisterReturnsARefusal,
-    TestGaugesWriteTheRegisteredCollector), readiness_gate_test.go, backlog_status_test.go,
-    index_status_test.go, bucket_alias_test.go; graph-ingest's readiness integration tests
+    graph/readiness/watcher_test.go, publisher_test.go, gauges_test.go, readiness_gate_test.go,
+    backlog_status_test.go, index_status_test.go, bucket_alias_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 
 - source_path: internal/graphmutation
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    the graph.mutation.> request protocol and its client, which pkg/projection's typed client and
-    pkg/lifecycle send through; internal at the pin and here (design D1)
+    the graph.mutation.> request protocol and client used by pkg/projection and pkg/lifecycle
+    (design D1)
   destination: internal/graphmutation
   contract: >-
-    the protocol constants, SubjectFamily (protocol.go:16, its one home; design D20) and the client's request,
-    reply and transport-error classification as at the pin, less the adapt items
+    protocol constants, SubjectFamily (protocol.go:16; design D20), and client request/reply and
+    transport-error classification as at the pin, with InterfaceType renamed to
+    "semengine.graph.mutation" (#69), dead IsCommitUnknown removed (design D6), and nil context
+    refused before any request
   dependencies_and_side_effects: >-
-    graph, natsclient, pkg/errs (in-set); stdlib; NATS requests on graph.mutation.>; no goroutine of its own
+    graph, natsclient, pkg/errs (in-set); stdlib; NATS requests on graph.mutation.>; no goroutine
   known_risks: >-
-    adapt items (task 3.5), as task ledger:diff prints them (all 4 files differ): (1) #69's rename (design
-    D9): InterfaceType "semstreams.graph.mutation" (pin protocol.go:12) is "semengine.graph.mutation"; the
-    consumers design D9 lists edit it on adoption (semsource, semconnect, semboids configs, semteams' flow
-    configs). (2) IsCommitUnknown removed as dead surface (design D6); the three tests that called it assert
-    errors.As to *TransportError with TransportCommitUnknown. (3) Not in the design: the client refuses a nil
-    context before any request (developer contract, "Context ownership"; task 3.5)
+    consumers spelling "semstreams.graph.mutation" update to "semengine.graph.mutation" on adoption
   proving_tests: >-
-    internal/graphmutation/protocol_test.go (TestInterfaceTypeNamesSemEngine, written first),
-    internal/graphmutation/client_test.go (TestClientRefusesNilContext, written first, and the pin's client
-    tests)
+    internal/graphmutation/protocol_test.go (TestInterfaceTypeNamesSemEngine),
+    internal/graphmutation/client_test.go (TestClientRefusesNilContext and pin client tests)
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 
 - source_path: pkg/dispatch
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    the keyed worker pool graph-ingest runs its ingest lanes on; no consumer imports it and no public
-    signature names it, so it moves to internal/ (design D1)
+    the keyed worker pool graph-ingest runs its ingest lanes on; moved to internal/dispatch because
+    no consumer or public signature names it (design D1)
   destination: internal/dispatch
   contract: >-
-    KeyedPool's per-key ordering, lanes and SubmitBlocking as at the pin, less the adapt items. Changed
-    behavior: Stop(ctx) is Shutdown(ctx), which returns nil once every lane has drained and exited, or
-    ctx.Err() first; with no deadline it waits for the join, with no fixed default wait; a later Shutdown
-    returns nil; it refuses a nil context; the drain starts at the first Shutdown, so cancelling the run
-    context leaves nothing running; SubmitBlocking after Shutdown began is refused with ErrStopped, which
-    internal/dispatch declares itself (errors.go:15; ruling E), where the pin re-exported
-    worker.ErrPoolStopped (pkg/dispatch/errors.go:24). NewKeyedPool returns a metric-registration refusal, and
-    its metrics register through metric.RegisterOrGet (design D4, D5)
+    KeyedPool per-key ordering, lanes, and SubmitBlocking as at the pin, except Stop(ctx) becomes
+    Shutdown(ctx) (waits for lane drain without a fixed default timeout, refuses nil ctx, refuses
+    post-Shutdown SubmitBlocking with internal/dispatch.ErrStopped), and NewKeyedPool registers
+    metrics via metric.RegisterOrGet and returns registration refusals (design D4, D5)
   dependencies_and_side_effects: >-
-    metric (in-set); github.com/prometheus/client_golang/prometheus; stdlib; no pkg/worker import (ruling E);
-    one goroutine per lane and a metrics updater, both joined by Shutdown (keyed_pool.go:179, :183, :325)
+    metric (in-set); prometheus/client_golang; stdlib; one goroutine per lane and a metrics updater,
+    all joined by Shutdown
   known_risks: >-
-    adapt items (task 3.6), as task ledger:diff prints them (4 files differ, 5 only at the pin, 1 only in the
-    tree): dead surface removed (design D6): BoundedDispatcher with New, Config, Deps, ErrQueueFull and its
-    fixed 30 s default wait (pin dispatcher.go:226-231), KeyedPool.Submit and Stats; ErrLaneFull and
-    dispatch_dropped_total leave with Submit, ErrNATSClientRequired with New; completion_watcher.go leaves as
-    a transitive drop (its only reader was dispatcher.go:138); with them go dispatcher_test.go,
-    completion_watcher_test.go and integration_test.go, which read no KeyedPool, and the pin's five sleeps and
-    one fixture-client site that were all in them. doc.go rewritten for KeyedPool alone. pkg/worker, whose
-    second Stop after a timed-out one panics at the pin (design P-6), is not ported (its row)
+    dead surface removed (design D6): BoundedDispatcher, completion_watcher.go, KeyedPool.Submit,
+    and KeyedPool.Stats removed along with the pkg/worker dependency (ruling E)
   proving_tests: >-
-    internal/dispatch/shutdown_test.go (TestKeyedPoolShutdownWithoutDeadlineWaitsForJoin,
-    TestKeyedPoolShutdownUnderABlockedProcess, TestKeyedPoolRunContextCancelLeavesNothingRunning, failing
-    first; synctest), internal/dispatch/keyed_pool_test.go (TestKeyedPoolReturnsARegistrationRefusal, failing
-    first, and the pin's KeyedPool tests)
+    internal/dispatch/shutdown_test.go, internal/dispatch/keyed_pool_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 
@@ -2891,435 +1998,196 @@
     the named-store registry consumers resolve stores through; consumers import it (4, design D1)
   destination: storage/storeregistry
   contract: >-
-    Register, Deregister and lookup as at the pin, less Registry.Instances
+    Register, Deregister, and lookup as at the pin, less dead Registry.Instances (design D6)
   dependencies_and_side_effects: storage (in-set); stdlib; no goroutine, no I/O
   known_risks: >-
-    adapt items (task 3.5), as task ledger:diff prints them (both files differ): Registry.Instances removed as
-    dead surface (design D6); TestInstancesSnapshot becomes TestDistinctInstancesResolveTheirOwnStores and its
-    copy half leaves with the method; the no-op Deregister test reads Streamable for the name. The test's
-    compile-time assertion var _ fusion.StoreResolver = (*storeregistry.Registry)(nil) (pin
-    storeregistry_test.go:30) is removed because pkg/fusion is not ported; class:port-refactor note for
-    pkg/fusion (change 5): the assertion returns with it (design D2)
+    Registry.Instances removed as dead surface; compile-time fusion.StoreResolver assertion deferred
+    until pkg/fusion is ported in change 5 (design D2)
   proving_tests: >-
-    storage/storeregistry/storeregistry_test.go (TestDistinctInstancesResolveTheirOwnStores and the pin's
-    other tests)
+    storage/storeregistry/storeregistry_test.go (TestDistinctInstancesResolveTheirOwnStores and pin
+    tests)
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 
 - source_path: graph/inference
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    hierarchy inference: graph-ingest creates an entity's absent type, taxonomy and source containers at its
-    birth and writes its membership statements; public because processor/graph-clustering.Config names
-    inference.Config (pin component.go:77, change 7; design D1)
+    hierarchy inference: graph-ingest creates an entity's absent type, taxonomy, and source
+    containers at birth and writes membership statements; public because graph-clustering names
+    inference.Config in change 7 (#97, design D1, D1a)
   destination: >-
-    graph/inference (the hierarchy slice only: hierarchy.go, container_entity.go and a new doc.go; #97, design
-    D1a)
+    graph/inference (hierarchy slice only: hierarchy.go, container_entity.go, doc.go; #97, design D1a)
   contract: >-
-    the slice of the package, not the package (ruling on #97, comment 6036308092): container detection, the
-    container IDs, and container birth and membership as at the pin, less the adapt items. Changed behavior:
-    (1) the inverse contains edge into each container is no longer written at a member's birth, so a container
-    keeps its revision across a member's birth (ruled M, #91 comment 6080973822; #145; task 3.12j, ccdbcdb);
-    with it go TripleAdder (applier.go) and the store's AddTriple and ExistsEntity. (2) GetHierarchyTriples is
-    AddToContainers(ctx, entityID, at) (hierarchy.go:127): it creates only absent containers, returns every
-    failure joined and no statements on any failure (design D21), stamps every statement with
-    graph.SourceHierarchy and the triggering time it is given, and refuses a zero time or a nil context
-    (design D15). (3) NewHierarchyInference(store, platform, logger) (hierarchy.go:75) takes the authority as
-    types.PlatformMeta and refuses an empty one (design D9; #134 item 1, f58d311); a nil inference means
-    hierarchy is off. (4) Sibling edges, ListWithPrefix and enable_type_siblings are gone (ruled G, #91
-    comment 6062681355; #134 item 3); hierarchy.type.sibling stays registered in vocabulary. (5) Each birth
-    asks storage whether a container exists; the never-invalidated container cache is gone (#130, 999f3f5)
+    container detection, container IDs, and container birth/membership as at the pin, with these
+    adaptations: (1) member birth no longer writes inverse contains edges into containers (#145,
+    ruled M); (2) AddToContainers(ctx, entityID, at) replaces GetHierarchyTriples, creates only
+    absent containers without an in-memory cache (#130), stamps graph.SourceHierarchy and at,
+    refuses nil ctx or zero time, and returns joined failures with no statements on error (design
+    D15, D21); (3) NewHierarchyInference takes types.PlatformMeta and refuses empty authority (#134);
+    (4) sibling edges and enable_type_siblings are dropped (ruled G, #134)
   dependencies_and_side_effects: >-
-    graph, message, natsclient, payloadregistry, pkg/errs, pkg/types, types, vocabulary (in-set); stdlib; its
-    reads and writes go through the EntityStore its caller passes; no goroutine of its own
+    graph, message, natsclient, payloadregistry, pkg/errs, pkg/types, types, vocabulary (in-set);
+    stdlib; reads/writes through caller-supplied EntityStore; no goroutine
   known_risks: >-
-    where the tree and design D9 differ, the tree wins: D9 has HierarchyConfig lose Org and Platform; in the
-    tree HierarchyConfig is gone entirely (#134 item 1, f58d311), so the authority is only the constructor's
-    platform argument. Adapt items, as task ledger:diff prints them (6 files differ, 20 only at the pin, 1
-    only in the tree): the slice's dead surface removed (design D1a, D6): DefaultHierarchyConfig,
-    OnEntityCreated, ClearCache, GetMetrics and GetCacheStats, with the three counters only GetMetrics read
-    and the tests of that surface (TestDefaultHierarchyConfig, TestHierarchyInference_ClearCache and
-    _GetMetrics, TestAttack_ClearCacheDuringOperations, TestAttack_MetricsConcurrency); the tests that called
-    OnEntityCreated call AddToContainers; TestHierarchyInference_InverseEdgeWriteFailureIsNonFatal gives way
-    to TestAddToContainersReportsEveryFailure; the sleep in TestAttack_GoroutineCount gives way to a synctest
-    bubble; doc.go is rewritten to describe the slice, since the pin's describes anomaly detection, review and
-    storage. RegisterPayloads is kept: graph-ingest's hierarchy refusal names it (#33, design D6 K3). Left for
-    change 7, ported with graph-clustering (#97, design D1a): detector.go, the three detectors
-    (core_anomaly.go, semantic_gap.go, transitivity.go), storage.go, review_worker.go, http_handlers.go,
-    applier.go (the appliers, NATSRelationshipApplier among them), config.go (Config with its six unread
-    fields and ReviewConfig.LLM), metrics.go and types.go, with their tests; with them go the review worker's
-    Shutdown(ctx) shape and its synctest test, and the Config field drop (design D1a). graph/llm and
-    graph/structural, which those files read, have their own rows
+    dead hierarchy surface removed (DefaultHierarchyConfig, HierarchyConfig, OnEntityCreated,
+    ClearCache, GetMetrics, GetCacheStats). Anomaly detectors, review worker, storage, and HTTP
+    handlers deferred to change 7 with graph-clustering (#97, design D1a)
   proving_tests: >-
-    graph/inference/hierarchy_statements_test.go (TestAddToContainersReportsEveryFailure,
-    TestAddToContainersStampsSourceAndTime, TestAddToContainersRefusesZeroTime, each failing first),
-    hierarchy_test.go (TestNewHierarchyInferenceRefusesEmptyAuthority, TestAddToContainersRefusesNilContext,
-    TestHierarchyInference_BirthWritesNoSiblingEdge, TestHierarchyInference_DeletedContainerIsBornAgain and
-    the pin's tests), hierarchy_container_test.go, hierarchy_attack_test.go; graph-ingest's
-    TestMemberBirthKeepsContainerRevisions (hierarchy_birth_test.go:303, failing first at 08988f1) and
-    TestHierarchyFailureFailsTheBirth (hierarchy_birth_test.go:150)
+    graph/inference/hierarchy_statements_test.go, hierarchy_test.go, hierarchy_container_test.go,
+    hierarchy_attack_test.go, and processor/graph-ingest/hierarchy_birth_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 
 - source_path: pkg/projection
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    the typed mutation client (Create, Append, Reconcile, Delete) through which a projection writes the graph,
-    part of the durable-execution primitive the owner admitted (#8 Q16; foundation (a)); consumers import it
-    (11 + 12, design D1); #24 waits for it, and #19 and #20 are proven through it (design D1)
+    the typed mutation client (Create, Append, Reconcile, Delete) through which a projection writes
+    the graph (#8 Q16); consumers import it (11 + 12, design D1)
   destination: pkg/projection
   contract: >-
-    the client's surface whole (design D6, K1: #24 decides it) and its validation as at the pin, less the
-    repair and adapt items. Repair #20 (design D8; 7f00244, f9ac34f): a classified reply reads as not
-    committed only for a code graph-ingest sends when it refused the request before its write
-    (invalid_request, structural_invalid, message_type_unregistered, entity_id_invalid,
-    entity_id_authority_invalid, revision_mismatch, entity_already_exists, entity_not_found,
-    graph_state_reset_required); any other reply, an update failure after the write and natsclient's
-    response_too_large after a commit included, is commit-unknown and keeps the reply's class, code and
-    detail; append's per-subject failure follows the same rule (projection-mutation, "Commit ambiguity is
-    preserved"). Repair #19 (design D8; 12b2b9d): ReconcileMutation.ExpectedRevision (mutation_types.go:55); a
-    reconcile at a stale revision is a revision conflict naming both and changes nothing; zero keeps the
-    client's own read as the fence; narrowed by ruling (#91 comment 6109278240, item 2): the requirement names
-    the current revision only when graph-ingest's own read found it. Changed behavior (design D15; task 3.9):
-    Create, Append and Reconcile refuse, before sending, a statement with no Timestamp under metadata with
-    none, and metadata with no Source, as MutationInvalid, not committed; the client never reads the clock
-    (projection-mutation, "The typed client never reads the clock"); Reconcile sends Metadata.Source as the
-    request's source
+    typed mutation client surface and validation as at the pin, with repairs #19 and #20 and design
+    D15: (1) classified replies read as not committed only for pre-write refusal codes; any other
+    reply (including post-write update failure or response_too_large) preserves commit ambiguity
+    with class, code, and detail (#20); (2) ReconcileMutation.ExpectedRevision fences reconcile at
+    the caller's revision (#19); (3) Create, Append, and Reconcile require statement Timestamp and
+    Metadata.Source before sending and never read the clock (design D15)
   dependencies_and_side_effects: >-
-    graph, internal/graphmutation, message, natsclient, pkg/errs, pkg/projection/contract, pkg/types (in-set);
-    NATS requests on graph.mutation.> and the exact-entity read; no goroutine of its own
+    graph, internal/graphmutation, message, natsclient, pkg/errs, pkg/projection/contract, pkg/types
+    (in-set); NATS requests on graph.mutation.> and exact-entity reads; no goroutine
   known_risks: >-
-    adapt items, as task ledger:diff prints them (3 files differ, 3 test files only in the tree): EntityState
-    has no Version, so the carried code and tests build it without one (design D15, #100); the carried tests
-    give their statements a time and their reconciles a source. Open follow-up: #174 (graph-ingest's
-    bookkeeping after an unconfirmed append write). The defect #173 describes (response_too_large after a
-    commit read as not committed) is fixed by task 4.16 (f9ac34f); #173 is still open. Not covered (task 4.1):
-    failures before the write that graph-ingest answers as transient now read commit-unknown, which is safe
-    and less exact. pkg/lifecycle sends its reconciles on the raw wire, not through this client (its row)
+    EntityState built without Version (#100). Pre-write transient errors from graph-ingest read as
+    commit-unknown (safe, conservative); follow-up #174 tracks post-append bookkeeping
   proving_tests: >-
-    pkg/projection/mutation_client_refusals_test.go (TestMutationClientRefusesMissingTimestamp,
-    TestMutationClientReconcileRequiresSource, each failing first), commit_ambiguity_test.go
-    (TestClassifiedReplyIsNotCommittedOnlyWhenRefusedBeforeWrite, TestTransportOutcomesKeepTheirCommitState,
-    TestAppendSubjectFailureAfterPossibleWriteIsCommitUnknown, TestReconcileReadFailureIsNotCommitted),
-    conditional_reconcile_test.go (TestReconcileAtAStaleRevisionIsARevisionConflict, failing first at :89 on
-    f3d5ae5; TestReconcileAtTheCurrentRevisionIsVerifiedAtTheNewRevision), mutation_client_test.go,
-    contract_test.go; graph-ingest's commit_ambiguity_integration_test.go
-    (TestIntegration_TypedClientPreservesCommitAmbiguity, failing first at :124 on b6f968c;
-    TestIntegration_OversizedResponseAfterCommitIsCommitUnknown;
-    TestIntegration_AppendAfterUnconfirmedWriteIsCommitUnknown) and TestCanonicalReconcileAtTheCallersRevision
-    (canonical_mutations_test.go:314)
+    pkg/projection/mutation_client_refusals_test.go, commit_ambiguity_test.go,
+    conditional_reconcile_test.go, mutation_client_test.go, contract_test.go, and
+    processor/graph-ingest/commit_ambiguity_integration_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: repair-before-port
 
 - source_path: pkg/lifecycle
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    the workflow-entity lifecycle manager (participants, transitions, phase history), the durable-execution
-    primitive the owner admitted (#8 Q16; foundation (a)); semteams and semboids import it (12, design D1);
-    #24 waits for it (foundation (d)). It leaves graph-ingest's closure once component drops its lifecycle
-    slot (design D17) and stays in this change for those reasons (design D1)
+    the workflow-entity lifecycle manager (participants, transitions, phase history) (#8 Q16);
+    semteams and semboids import it (12, design D1)
   destination: pkg/lifecycle
   contract: >-
-    the manager's surface whole (design D6, K1: #24 decides it) and its transitions, queries and phase records
-    as at the pin, less the adapt items. Changed behavior: (1) Watch and WatchEvents take a callback that runs
-    on the caller's goroutine and return when the watch ends, with nothing left running; a nil context is
-    refused before a subscription opens (manager_query.go:146, :176; design D5); an entry the watch cannot
-    project ends it with an error naming the entity and revision, where the pin logged and skipped it (pin
-    manager_query.go:337; PR #93 comment 6048386249; 167aec4); a poisoned entry ends it with the entry's
-    state-contract error (manager_query.go:264), and a watch that closes while the context is live with a
-    transient index_not_ready error (:246), where the pin closed its channel in both cases; a nil callback is
-    refused, as a nil context is (:151, :181). (2) Every statement the manager writes carries
-    the constant source semengine-lifecycle (graph.SourceLifecycle), and its three raw-wire reconcile builders
-    (pin manager.go:419, :619, :739) send it as the request's source, so a transition's reconcile replaces the
-    phase statement it wrote before (design D15). (3) No Version: 1 on the entity it creates (pin
-    manager.go:395; design D15, #100). (4) With no NATS client the manager holds no emitter and every emit
-    returns ErrEmitFailed naming the missing client; the pin discarded graphmutation.NewClient's error
-    (graph_emit.go:31) and its first emit panicked (design D17, #102; b3c219a). (5) CreateFromOperator refuses
-    an initial state with anything but whitespace after its first JSON value, with ErrInvalidInitialState and
-    no create request, where the pin decoded the first value and dropped the rest (manager.go:1036-1042; #152,
-    task 3.12g; 8504a73). (6) When Create's attach reconcile meets a revision mismatch and the reread that
-    decides it fails, Create returns the reread's own error with its chain and class (manager.go:440-444),
-    where the pin reported ErrUpdateRetriesExhausted; a reread with no phase statement is still
-    ErrUpdateRetriesExhausted, now with the mismatch in its text, not wrapped, so the error stays transient
-    (:453-454; PR #93 comment 6049038706; 5dab84f). (7) Where the manager turns the graph's entity_not_found
-    or entity_already_exists refusal into ErrEntityNotFound or ErrAlreadyExists, the error also wraps the
-    refusal, so its invalid class, code and detail survive, where the pin kept the sentinel and the refusal's
-    text: the emitter's mapping (graph_emit.go:95, :97), the exact read's (manager.go:213) and Create's remap
-    of a lost create race (manager.go:412) (PR #93 comment 6048386249; 4df8590)
+    lifecycle manager transitions, queries, and phase records as at the pin, with these adaptations:
+    (1) Watch and WatchEvents run callback on caller's goroutine, refuse nil ctx or callback, and
+    fail closed on projection/poison/premature-close errors (design D5); (2) statements and raw-wire
+    reconciles carry graph.SourceLifecycle ("semengine-lifecycle", design D15); (3) created entities
+    carry no Version (#100); (4) nil NATS client returns ErrEmitFailed without panicking (#102);
+    (5) CreateFromOperator refuses trailing non-whitespace JSON (#152); (6) Create attach-reconcile
+    reread failures preserve their error chain and class; (7) ErrEntityNotFound and
+    ErrAlreadyExists mappings wrap the classified refusal
   dependencies_and_side_effects: >-
     graph, graph/kvcatalog, internal/graphmutation, message, natsclient, payloadregistry, pkg/errs,
-    pkg/projection, pkg/types, vocabulary (in-set); github.com/google/uuid, nats.go jetstream; NATS requests
-    on graph.mutation.> and KV watches on the caller's goroutine
+    pkg/projection, pkg/types, vocabulary (in-set); github.com/google/uuid, nats.go/jetstream
   known_risks: >-
-    adapt items, as task ledger:diff prints them (15 files differ, 6 test files only in the tree): the seven
-    above; doc.go's Watch paragraph and harness_entity.go's RegisterPayloads comments rewritten for the
-    changed behavior and for per-package registration (#33); NewManager takes the error
-    graph.NewExactEntityReader now returns (the graph row's item 6) and panics on the refusal its constant
-    5 s timeout cannot cause (manager.go:87-92; task 3.12g), and getEntity opens its bucket through
-    graph/kvcatalog (manager.go:194; design D16), neither a change of behavior; workflow_surface_test.go and
-    query_transition_integration_test.go are new tests of the pin's behavior for the coverage floor (task
-    5.2, notes/5.2.md); the 7 fixture-client sites open through
-    natsfixture.Open (design D3); harness_gate_integration_test.go registers payloads per package with
-    payloadfixture.NewWithSubset(t, RegisterPayloads) (design D2) and builds graph-ingest on its own metrics
-    registry (design D4). Watch and WatchEvents have no reader in the admitted set (design D5: Watch is read
-    only by processor/gated-dag/executor.go:119 and gateway/lifecycle-gateway/handlers.go:475 at the pin,
-    WatchEvents by nobody); they are adapted because the surface is kept whole (K1).
-    TestTransitionReplacesItsPhaseStatement was written after the manager's change, so its red runs are wrong
-    changes made by hand (records in b95e790 and 97d9ac6; task 3.10). graph-ingest refuses a reserved source
-    on the stream lane (TestStreamLaneRefusesReservedSource). Item (1)'s nil-callback refusal has no test
+    Watch and WatchEvents kept whole until #24 decides the durable-execution surface (design D6 K1)
   proving_tests: >-
-    pkg/lifecycle/source_test.go (TestManagerWritesUnderTheLifecycleSource, written first),
-    transition_phase_integration_test.go (TestTransitionReplacesItsPhaseStatement), graph_emit_test.go
-    (TestManagerWithoutClientRefusesEmit, written first; on the pin's code it panics), watch_test.go
-    (TestWatchReturnsTheCallbackErrorAndLeavesNothingRunning,
-    TestWatchEventsReturnsTheCallbackErrorAndLeavesNothingRunning, TestWatchReturnsWhenItsContextEnds,
-    TestWatchReturnsProjectionFailure, TestWatchRefusesANilContext; synctest), watch_atomic_bootstrap_test.go
-    (TestLifecyclePoisonClosesOnlyMatchingSubscription,
-    TestLifecycleWatchTransportCloseIsLocalAndLaterSubscriptionWorks) for item (1); manager_test.go
-    (TestCreateFromOperator_RejectsTrailingContent for item (5); TestCreateAttachKeepsAFailedReread and
-    TestCreateAttachRereadDecidesTheOutcome for item (6)) and graph_emit_contract_test.go
-    (TestEmitMappingsKeepTheClassifiedCause, one case per mapping, for item (7)), each failing before its fix
-    (8504a73, 5dab84f, 4df8590); harness_gate_integration_test.go, manager_test.go,
-    manager_integration_test.go and the pin's other tests
+    pkg/lifecycle/source_test.go, transition_phase_integration_test.go, graph_emit_test.go,
+    graph_emit_contract_test.go, watch_test.go, watch_atomic_bootstrap_test.go, manager_test.go,
+    manager_integration_test.go, harness_gate_integration_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 
 - source_path: component
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    the component model: the Discoverable and lifecycle interfaces, ports and their codecs, schema tags, the
-    registry and Dependencies; consumers import it (76 + 23, design D1); graph-ingest is a component
+    the component model: Discoverable and lifecycle interfaces, ports, schema tags, registry, and
+    Dependencies; consumers import it (76 + 23, design D1)
   destination: component
   contract: >-
-    the component interfaces, ports, schema and registry behavior as at the pin, less the adapt items. The
-    package reaches no agentic or graph-family package: go list -deps ./component lists no agentic, graph,
-    graph/..., internal/graphmutation, pkg/lifecycle or pkg/projection path (pkg/projection/contract is
-    allowed) (component-registration, "The component model reaches no agentic or graph package"; design D17).
-    Changed surface, each an adapt item: (1) Dependencies.ToolRegistry and ToolRegistryReader dropped
-    (class:port-refactor #29). (2) Dependencies.LifecycleManager dropped, not narrowed (ruling D, #91 comment
-    6037287957; class:port-refactor #102; design D17); the host passes the manager to the packages that use
-    it. (3) Registry.CreateComponent, SealComposition and Snapshots take no access token (registry.go:181,
-    :454, :699; ruling C, #91 comment 6035477895; design D14); their doc comments say they exist for the
-    component manager (service.ComponentManager, change 3) and that a direct call bypasses its bookkeeping;
-    otherwise their behavior is the pin's
+    component interfaces, ports, schema, and registry as at the pin, reaching no agentic or
+    graph-family package outside pkg/projection/contract (TestComponentReachesNoAgenticOrGraphPackage,
+    design D17), with these adaptations: (1) Dependencies.ToolRegistry and ToolRegistryReader
+    dropped (#29); (2) Dependencies.LifecycleManager dropped (#102, ruling D); (3) CreateComponent,
+    SealComposition, and Snapshots take no internal/componentadmission access token (ruling C,
+    design D14)
   dependencies_and_side_effects: >-
     internal/cache, metric, model, natsclient, payloadregistry, pkg/errs, pkg/security, storage,
     storage/storeregistry, types (in-set); stdlib
   known_risks: >-
-    adapt items, as task ledger:diff prints them (17 files differ, 9 only at the pin): not ported:
-    lifecycle_test_suite.go and lifecycle_test_support_test.go (the harness has the suite, its file row,
-    internal/harness/lifecycletest), config_validator.go and its test, metrics.go (ProcessorMetrics),
-    registerable.go, logging.go and its test, and main_test.go, whose TestMain opened a NATS client no test
-    read; component/flowgraph/ is a separate package that only composition/ imports. Dead surface removed
-    (design D6; task 3.11; #153 item 1, 2799632): GetString, GetInt, GetBool, GetFloat64 with MaxInt and
-    MinInt, ValidateJSONSize, ValidateComponentConfig, ValidateAndPersistComponentConfig,
-    IsLifecycleComponent, Registerable, LogLevel*, LogEntry, Registry.Snapshot, MergePortConfig with
-    mergePortDirection, Registry.ListComponentTypes, GetFactory, ListAvailable with Info, GetComponentSchema,
-    declarationSnapshot.Factory, PortFacts.KVReadBucket, StreamFacts.ConsumerName, GetPropertyValue,
-    GetProperties, IsComplexType, SortedPropertyNames, PortFieldInfo.ZeroIsOmitted, ValidateNetworkConfig and
-    ValidateConfigKey, with ValidatePortNumber, MinPort and MaxPort, and the tests whose only subject they
-    were. doc.go names SemEngine and the component manager (service.ComponentManager) in place of the token.
-    The token's 19 test uses dropped; 3 fixture-client sites open through natsfixture.Open; the pin's sleep
-    (attack_test.go:62) is a synctest bubble. The six nats:<subject> port identifiers in the tests stay:
-    TestOneImagePin matches nats: in Go files only before a digit, a variable or @sha256: (design D10; task
-    2.2). README.md read claim by claim and rewritten to what the code does (task 3.11; 10a9118, 2799632), by
-    group of pin lines. :3-14, the summary and overview: they name SemStreams (#9 comment 5984291337), run
-    over 120 characters (MD013) and describe ComponentManager, not in SemEngine until change 3, and an
-    admission token the port removed (ruling C, design D14); rewritten with the README's terms defined (tree
-    :3-30). :16-20, the import path (tree :6-8). :22-95, the registration flowchart, sequence diagram and
-    table: they name packages and functions SemEngine does not have (componentregistry, pkg/input,
-    pkg/processor/graph, RegisterInput, RegisterProcessor), so prose states the registration and keeps the
-    table's reasons (tree :32-40). :97-126, FlowGraph and the flow service: component/flowgraph/ is not
-    ported (above), and the flow service and engine are not in SemEngine; :99-114 carried MD013, MD032 and
-    MD040 errors. :128-144, boot composition through componentregistry and the token, as :22-95 and :3-14.
-    :146-227, the example: the import path (:154), no port declarer, which RegisterWithConfig refuses
-    (registry.go:158), and an undefined schema variable, corrected (tree :42-122); tree :124-126,
-    LifecycleComponent, is new. :229-243, a componentregistry file SemEngine does not have. :245-260, the
-    section heading and the Discoverable interface, restored unchanged at tree :128-143, and :323-331, the
-    Factory type, restored unchanged at tree :211-219. :262-274, Dependencies: an ObjectStore field the code
-    does not have, and four fields the code has were missing (tree :145-166). :276-301, the ports:
-    JetStreamPort's Stream and Subject and NetworkPort's Bind are fields the code does not have (StreamName,
-    Subjects, Host; tree :168-193). :303-321, the Registry: ListAvailable, removed as dead surface (#153 item
-    1), and the token (ruling C) (tree :195-209). :333-351, four error sentinels the code does not have,
-    replaced by errs.IsInvalid (tree :221-232). :353-378, testing: ListAvailable and natsclient.NewTestClient,
-    which the code does not have (tree :240-245). :380-396, a lock table and concurrency claims the code does
-    not match: a factory runs with no lock held, and sealing stops CreateComponent, not RegisterWithConfig
-    (tree :234-238). :398-437, the decision records, restored at tree :247-286 with three edits, each a line
-    that named componentregistry, which SemEngine does not have (#9 comment 5984291337), now naming the
-    host's list of Register calls: :407, :414 and :416 (tree :256, :263, :265); they hold no link, so none
-    was removed. :439-445, links to componentregistry and service, not in SemEngine (tree :288-296). Review
-    only: a consumer can call the three registry methods
-    directly, since nothing refuses it (design D14); semboids' integration tests do
-    (internal/zone/ingest_integration_test.go:52 and eight more sites in six files) and add the pin's prepare
-    argument. The LifecycleManager drop's adopters (ruling D; design D17, inventory §9.4): semboids
-    internal/sim/component.go:255-256 reads the field and cmd/semboids/main.go:190 sets it; semteams
-    cmd/semteams/main.go:209 sets it; semboids' sim component takes the manager through its own constructor;
-    each finds out from a compile error. class:port-refactor notes for later changes: processor/rule (change
-    6) takes the lifecycle manager at registration (design D17); service (change 3) no longer copies a
-    lifecycle manager into every component's dependencies (design D17), and its token call sites
-    (component_manager.go:290, :384, :397, :1108; message_logger.go:347) drop the argument (design D14)
+    not ported: lifecycle_test_suite.go (in internal/harness/lifecycletest), config_validator.go,
+    metrics.go, registerable.go, logging.go, and component/flowgraph/. Dead surface removed (design
+    D6, #153): unused property/config helpers, Registry.Snapshot/ListComponentTypes/GetFactory/
+    ListAvailable/GetComponentSchema, MergePortConfig, PortFacts.KVReadBucket, and
+    StreamFacts.ConsumerName; doc.go and README.md updated to match
   proving_tests: >-
-    internal/harness/contract/componentdeps_test.go (TestComponentReachesNoAgenticOrGraphPackage and its
-    sensitivity test, failing first on the pin's dependencies.go), component/registry_boot_admission_test.go,
-    registry_test.go, registry_integration_test.go, attack_test.go and the pin's other component tests
+    internal/harness/contract/componentdeps_test.go (TestComponentReachesNoAgenticOrGraphPackage),
+    component/registry_boot_admission_test.go, registry_test.go, registry_integration_test.go,
+    attack_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 
 - source_path: processor/graph-ingest
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    the graph's one writer: it consumes Graphable payloads from JetStream, serves graph.mutation.> and
-    graph.ingest.query.*, and keeps ENTITY_STATES, its guard bucket and its readiness envelope; consumers
-    import it (3 + 8, design D1)
+    the graph's one writer: consumes Graphable payloads from JetStream, serves graph.mutation.> and
+    graph.ingest.query.*, and maintains ENTITY_STATES, its guard bucket, and its readiness envelope;
+    consumers import it (3 + 8, design D1)
   destination: processor/graph-ingest
   contract: >-
-    ingest, the mutation and query handlers, the guard record, poison accounting and readiness as at the pin,
-    less the repair and adapt items (specs graph-entity-writes, graph-ingest-recovery,
-    graph-transport-boundary, component-registration, lifecycle-suite). Repair items (design D8): #15, the
-    guard record keys on the input stream's generation, its creation time on the server, and stores
-    generation then sequence in 16 bytes (abb302f); Start reads the creation time once, before it binds the
-    input's consumer (component.go:1480), and every input that consumer delivers carries it; the owner retired
-    task 4.17's second read after the bind, which failed Start when the two reads differed and held an accepted
-    input until it returned (7e07fea; #214 comment 6157056960), so a stream deleted and created again between
-    the read and the bind is a declared limitation (graph-ingest-recovery, "Replay protection uses the
-    generation read before the bind"); #16 (graph half), the verbs are declared once in
-    graph's verb table and graph-ingest subscribes by walking it (design D20); #20, the client half is the
-    pkg/projection row's, and graph-ingest is unchanged: it already answers a failed update after its write as
-    a transient internal error, and whether that meets #20's server half is the owner's call (task 4.1);
-    settlement (Q18), an input is acknowledged only after its effect and its durable guard stamp, and a long
-    apply signals progress through ConsumeDeliveryWithHeartbeat (54893c7, 2fe8e32, 08a8fb2); an interrupted
-    input is left unsettled, logged at ERROR and counted once in work_interrupted_total{cause}, not in
-    Health's error count (owner ruling, #91 comment 6124130342; c59e5fb); Q13 (SemStreams PR #1437 head
-    0ea823a6, its own row), a payload that fails validation or panics in its own code on the Graphable lane is
-    terminated, counted and logged, never a redelivery loop (f6e8506); #33 (class:port-refactor), the
-    hierarchy refusal names inference.RegisterPayloads (component.go:680; e70e177); SS#1411, the
-    owner-lifecycle state is the new internal/lifecycleguard (design D13), which calls
-    pkg/lifecyclecleanup.RollbackFailedStart on a failed Start; the 11 later admitted copies adopt it when
-    ported (design D8). Port-refactor items: one write seam for the seven write sites (#100; design D15),
-    statement metadata on every stored statement, with the envelope's source and creation time on the stream
-    lane and no clock default (#98, ruled), write modes keyed on source (ruling A, #91 comment 6037287957),
-    births that fail closed on a hierarchy or guard-record failure (#111 item 1, design D21), the suffix index
-    and graph.ingest.query.suffix not ported (#104, design D19). Bugs fixed in the port: #130, #145 (ruled M),
-    #147, #148 (ruled O), #149, #150 (tasks 3.12b to 3.12j)
+    ingest, mutation/query handlers, guard record, poison accounting, and readiness as at the pin,
+    with repairs and adaptations (specs graph-entity-writes, graph-ingest-recovery,
+    graph-transport-boundary, component-registration, lifecycle-suite): (1) 16-byte per-generation
+    guard record keyed on stream creation time read before bind (#15, #214); (2) query verbs bound
+    from graph.QueryVerbs (#16, design D20); (3) input settled only after effect + durable guard
+    stamp with heartbeat progress, and interrupted work left unsettled and counted in
+    work_interrupted_total (Q18, #91); (4) poison/panicking Graphable inputs terminated and counted
+    (Q13); (5) hierarchy refusal names inference.RegisterPayloads (#33); (6) owner lifecycle guarded
+    by internal/lifecycleguard with RollbackFailedStart (SS#1411, design D13); (7) single entity
+    write seam (#100), required statement metadata and source-keyed write modes (#98), fail-closed
+    hierarchy/guard births (#111), suffix index/verb dropped (#104), strict config validation, and
+    metrics registered only on the injected registry under the semengine namespace (#69, design D4)
   dependencies_and_side_effects: >-
-    component, graph, graph/inference, graph/kvcatalog, graph/readiness, internal/cache, internal/dispatch,
-    internal/graphmutation, internal/lifecycleguard, message, metric, natsclient, payloadregistry, pkg/errs,
-    pkg/retry, pkg/types, types, vocabulary (in-set); nats.go jetstream, prometheus client; JetStream
-    consumers, KV reads and writes, request subscriptions, a keyed lane pool and a status loop, all started in
-    Start and released by Stop through the guard
+    component, graph, graph/inference, graph/kvcatalog, graph/readiness, internal/cache,
+    internal/dispatch, internal/graphmutation, internal/lifecycleguard, message, metric, natsclient,
+    payloadregistry, pkg/errs, pkg/retry, pkg/types, types, vocabulary (in-set); nats.go/jetstream,
+    prometheus/client_golang; JetStream consumers, KV reads/writes, request subscriptions, keyed
+    lane pool, and status loop started in Start and released by Stop
   known_risks: >-
-    ENTITY_STATES keeps one revision per key (History 1), as at the pin; SemEngine offers no point-in-time
-    read of an entity, and the boot sweep's arithmetic depends on it (#99, ruled; design D15;
-    graph-entity-writes, "One stored revision per entity"). #75's class: graph-ingest's gauges are set from
-    its own state, so two instances on one metrics registry share each collector and overwrite each other's
-    values; recorded here and not fixed (design D4). Adapt items, as task ledger:diff prints them (58 files
-    differ, 1 only at the pin, 26 only in the tree; component.go too changed to compare line by line): metrics
-    on the component's own registry, none on Prometheus' default with a nil one (design D4); the authority as
-    one unexported types.PlatformMeta (design D9); unknown configuration keys refused at construction, and an
-    ingest_lanes of 0 taking the default of 8 and a negative one clamped to 1, as at the pin (design D6, owner
-    ruling #91 comment 6059144952); configuration refuses every output graph-ingest does not write (task
-    4.13); request handlers do no work until Start completes (task 4.10); a poison record is cleared only up
-    to the revision its clear proves (task 4.11); lastSyncedRFC3339 and its test not ported (design D16);
-    MergeEntity removed and its 27 test call sites call mergeEntityOnLane (design D6); TEST_DISPUTE.md not
-    ported; 21 fixture-client sites, 10 sleeps, 6 skips (rewritten as integration tests), 11 fixed addresses
-    and 5 unbounded cleanups repaired (task 3.12). Not ported, with its reason (design D2):
-    indexing_profile_registry_test.go asserts the indexing profile of 20 agentic and research payloads, the
-    agentic domain's contract; three of its tests moved into indexing_profile_test.go on a test-registered
-    type. README.md read claim by claim (18e6a77; later edits in 6ed84b2, 6c8c2cd, c12dbbf, 36e370d, 8e0ecd1,
-    abb302f, 385c244, 08a8fb2), by group of pin lines. Kept unchanged: :1-5, :9, :26, :64-66, :73, :103,
-    :113, :122, the example's JSON skeleton and the hierarchy diagram's body (:84-93). :7, the overview, is
-    over 120 characters (MD013) and now also names the mutation requests and the query verbs of graph's verb
-    table (design D20; tree :7-10). :11-17, :28-55, :68-71 and :75-77, the diagram, the configuration example
-    and the port tables: the example's two inputs leave out the graph.mutation.> request port the code
-    requires (canonical_mutations.go:160), so all four follow the default ports, a nats-request port and
-    entity.> (pin component.go:395-404; tree :14-20, :38-70, :82-95); the diagram's fence gains a language
-    (MD040). :21-24, the features: no read or update mutation exists, a reconcile replaces one source's
-    statements (ruling A, #91 comment 6037287957; design D15), and the applied-sequence guard keys on the
-    stream generation and refuses a record it cannot decode (#15, design D21; tree :24-34). :57-62, the
-    options table: the heading is recased, ports states the input the code requires and the outputs it
-    refuses (checkpoint 3 H2), ingest_lanes, which the pin's code reads and its README left out, is added
-    with its default (owner ruling, #91 comment 6059144952), and an unknown key is refused (design D6; tree
-    :72-80). Tree :97-106, the request/reply verbs, is new (design D20; the suffix verb is not ported, #104).
-    :79-96, the hierarchy section: the heading is recased; :81 is over 120 characters (MD013) and :83's fence
-    gains a language (MD040); :96's gh#606 and ADR-099 are a SemStreams issue and an ADR SemEngine does not
-    have (#9 comment 5984291337); added: containers are minted only under the deployment's own authority
-    (graph/inference/hierarchy.go:68-71), and the factory refuses a registry without the container type (#33;
-    tree :124-127). :98-102, what the edges enable, removed: queries served by packages SemEngine does not
-    have yet; :99 lacked blank lines (MD032). :105-112, the downstream packages, none in SemEngine yet
-    (tree :129-132); :105-109 lacked blank lines (MD022, MD032). :115-120, the metrics: the pin's code
-    registers no collector named as :117-119 are, and :120's name lacks its namespace; replaced by the
-    collectors the code registers, under the semengine namespace (#69) and on the component's registry
-    (design D4; tree :134-162). :124-127, health: the pin's three conditions are not what its Health checked
-    (pin component.go:840-874), replaced by what Health checks now (task 3.12c, 8e0ecd1; tree :164-168); :125
-    lacked blank lines (MD032).
-    Declared limitations (owner rulings, #91 comments 6112550268 and 6113959050 and #214 comment 6157056960;
-    graph-ingest-recovery, "Replay protection uses the generation read before the bind", and design D23):
-    cases where a recreated stream or key is not told apart from a
-    redelivery or a refused create; not covered by a test: a stream recreated while graph-ingest runs (task
-    4.3), and the real Start failing with a real rollback that fails (task 3.13). A guard bucket holding
-    SemStreams' 8-byte records is refused key by key until deleted (notes/4.3.md). Open follow-up: #174
-    (bookkeeping skipped after an unconfirmed append write)
+    ENTITY_STATES keeps History 1 (#99); two instances on one metrics registry share gauge collectors
+    (#75); a stream recreated between the pre-bind generation read and bind is a declared limitation
+    (#214); follow-up #174 tracks bookkeeping after an unconfirmed append write. Removed:
+    lastSyncedRFC3339, MergeEntity, TEST_DISPUTE.md, and agentic indexing_profile_registry_test.go;
+    README updated to match
   proving_tests: >-
     processor/graph-ingest/lifecycle_owner_test.go
-    (TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop, the proof of the lifecycle-suite
+    (TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop, proving the lifecycle-suite
     exception "Failed start whose own cleanup fails", design D7.3), lifecycle_integration_test.go
-    (TestGraphIngestLifecycleSuite), guard_generation_integration_test.go
-    (TestIntegration_IngestGuard_StreamRecreatedWithLowerSequences), guard_generation_test.go
-    (TestGuardRecordIsPerGeneration), guard_record_test.go (TestCorruptGuardRecordIsRefused),
-    settlement_integration_test.go (TestIntegration_Settlement_ProcessKilledBetweenApplyAndAck,
-    TestIntegration_Settlement_FailedGuardWriteIsRedelivered), long_apply_integration_test.go
-    (TestIntegration_Settlement_LongApplyIsNotRedelivered), interrupted_work_test.go
-    (TestInterruptedApplicationIsRedeliveredNotAStop), keyed_ingest_test.go
-    (TestProcessIngest_DecisionsSettleAsBefore), fact_lane_fence_test.go and
-    fact_lane_fence_integration_test.go (Q13), factory_registry_test.go
-    (TestFactoryRejectsHierarchyWithoutContainerType), query_verbs_integration_test.go
-    (TestGraphIngestProvisionsNoSuffixIndex, TestGraphIngestServesExactlyTheDeclaredVerbs),
-    entity_writes_seam_test.go (TestEntityWritesHaveOneSeam), write_modes_test.go
-    (TestWriteModesAgreeAcrossLanes and the graph-entity-writes scenarios), hierarchy_birth_test.go
-    (TestHierarchyFailureFailsTheBirth, TestMemberBirthKeepsContainerRevisions), metrics_registry_test.go
-    (TestGraphIngestMetricsRegisterOnItsRegistry, TestGraphIngestNilRegistryRegistersNothing),
-    config_strict_test.go (TestCreateGraphIngestRefusesUnknownKey), config_fields_test.go
-    (TestConfigIngestLanesBelowOne), failed_start_callbacks_integration_test.go
-    (TestFailedRegistrationRunsNoRequestWork), poison_scoping_test.go (TestStaleAbsenceKeepsNewerPoison),
-    commit_ambiguity_integration_test.go, and the pin's other tests; internal/lifecycleguard/guard_test.go
-    (TestGuardOwnerPassesTheLifecycleSuite and the guard's tests) for the SS#1411 item
+    (TestGraphIngestLifecycleSuite), guard_generation_integration_test.go, guard_generation_test.go,
+    guard_record_test.go, settlement_integration_test.go, long_apply_integration_test.go,
+    interrupted_work_test.go, fact_lane_fence_test.go, fact_lane_fence_integration_test.go,
+    query_verbs_integration_test.go, entity_writes_seam_test.go, write_modes_test.go,
+    hierarchy_birth_test.go, metrics_registry_test.go, config_strict_test.go,
+    failed_start_callbacks_integration_test.go, poison_scoping_test.go,
+    commit_ambiguity_integration_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: repair-before-port
 
 - source_path: processor/graph-ingest/component.go
   source_sha: 0ea823a6ba205a4009a7d802bc7d2762b32b0a7a
   consumer_purpose: >-
-    Q13 (design D8): the graph-ingest half of SemStreams PR #1437 (open, not merged; head 0ea823a6, base
-    1b1accf4, an ancestor of the pin), a change made after the pin, so it enters as its own row
-    (docs/provenance.md rule 4): the Graphable lane validates a decoded payload and fences a panic in payload
-    code. The package row processor/graph-ingest records the rest of the file at the pin
+    Q13 (design D8): the graph-ingest half of SemStreams PR #1437 (head 0ea823a6, after the pin,
+    entering as its own row per docs/provenance.md rule 4): validates a decoded payload and fences
+    panics in payload code on the Graphable lane
   destination: >-
-    processor/graph-ingest/component.go (decodeEntity, :1711, and its call in the consume closure, :1571),
-    with the PR's two test files, processor/graph-ingest/fact_lane_fence_test.go and
-    fact_lane_fence_integration_test.go, adapted
+    processor/graph-ingest/component.go (decodeEntity and consume closure), with
+    processor/graph-ingest/fact_lane_fence_test.go and fact_lane_fence_integration_test.go
   contract: >-
-    decodeEntity runs the envelope's Validate before extraction and turns a panic in payload code (its
-    UnmarshalJSON, Validate, EntityID, Triples, StorageRef or IndexingProfile) into a classified invalid error
-    naming the payload type and the subject; the stream lane terminates every such failure, counts it in the
-    error count Health reads (c.errors) and logs it (graph-ingest-recovery, "A failing payload is poison, not
-    a redelivery loop"; task 4.5, f6e8506)
+    decodeEntity runs envelope Validate before extraction and converts panics in payload methods
+    into a classified invalid error naming the payload type and subject; the stream lane terminates,
+    counts, and logs every such failure (graph-ingest-recovery, "A failing payload is poison, not a
+    redelivery loop")
   dependencies_and_side_effects: as the processor/graph-ingest row; no new import
   known_risks: >-
-    adapt items against the PR (notes/4.5.md): a panic names the payload type in every case (the PR named only
-    the subject when the panic came from inside Decode); the validation error names the payload type; the
-    stream lane terminates where the PR acknowledged and dropped, and so terminates an undecodable envelope
-    and an unregistered type too, on every input port the closure serves; the closure logs the delivered
-    message's subject, not the port's filter subject. Tests: three of the PR's four unit tests adapted to a
-    test-registered payload type (fenceTestPayload, test.fence.v1) with no agentic import, plus one new test;
-    TestDecodeEntity_MalformedLoopExecutionEntityIsInvalid left out (it needs agentic); both integration tests
-    adapted to assert termination. Not carried: the PR's agentic/, docs/, .agents/skills/new-payload/SKILL.md
-    and openspec/ files. Not covered: a panic in StorageRef or IndexingProfile (task 4.5)
+    adapted from SemStreams PR #1437 to name the payload type on every panic/validation error,
+    terminate on the stream lane instead of ack-and-drop, and test with a local payload type rather
+    than agentic
   proving_tests: >-
-    processor/graph-ingest/fact_lane_fence_test.go (TestDecodeEntity_ValidateFailureRejectsBeforeIdentity,
-    TestDecodeEntity_FencesPayloadPanics, TestHandleMessage_RejectionsLandOnPoisonAccounting,
-    TestStreamLane_FailingPayloadIsTerminated), fact_lane_fence_integration_test.go
-    (TestIntegration_FactLane_InvalidPayloadIsTerminated,
-    TestIntegration_FactLane_PanickingEntityIDIsTerminated), both failing first (:80)
+    processor/graph-ingest/fact_lane_fence_test.go,
+    processor/graph-ingest/fact_lane_fence_integration_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 

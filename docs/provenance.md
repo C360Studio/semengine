@@ -73,17 +73,19 @@ byte-identical (`scripts/lint-test-ports.sh` and its fixture test). Change `flak
 scripts: the inline exemption marker is gone and the guidance names no SemStreams file, so both rows read `adapt`.
 `task ledger:check` (contract test T-B7, `internal/harness/contract/ledger_test.go`) machine-checks the schema inside
 `task verify`, then compares every `carry` row with the pin (rule 5). The ledger has
-five `carry` rows, so the check fetches the pin: two of the fifteen ported packages (`pkg/timestamp` and
-`pkg/projection/contract`), the test helpers `internal/semantictest`, which moved to `internal/harness/semantictest`,
-and change `setup-04a-02-ingest-kernel`'s `model` and `storage`. The other thirteen of the fifteen are `adapt`, `pkg/errs`
-since that change's task 3.12h; `vocabulary` and `pkg/types` were first among them only because their
+four `carry` rows, so the check fetches the pin: one of the fifteen ported floor packages
+(`pkg/projection/contract`), the test helpers `internal/semantictest`, which moved to `internal/harness/semantictest`,
+and change `setup-04a-02-ingest-kernel`'s `model` and `storage`. The other fourteen of the fifteen floor packages are
+`adapt` (`pkg/timestamp` since #217 dropped dead `timestamp.Parse`, and `pkg/errs` since `setup-04a-02-ingest-kernel`
+task 3.12h); `vocabulary` and `pkg/types` were first among them only because their
 `README.md` files include markdownlint fixes, and the check compares `.go` and `testdata` files, not READMEs. A ported
 README or `doc.go` keeps the pin's text except for these edits: the fixes markdownlint requires; changes to passages
 that describe behavior the ported code no longer has (owner ruling, [#9 comment 5957221949][readme-ruling], which
 replaced the lint-only rule of comment 5955265930); and corrections of passages that describe API the code does not
 have, including API that never existed even at the pin, with links to packages SemEngine does not have removed (owner
-ruling, [#9 comment 5984291337][readme-false-api-ruling]). Each edit is listed by line as an `adapt` item on the
-package's row; nothing is reworded beyond what the correction needs.
+ruling, [#9 comment 5984291337][readme-false-api-ruling]). Nothing is reworded beyond what the correction needs; the
+package's row summarizes the behavioral differences and dropped surface, while `task ledger:diff` and git history hold
+the line-by-line diffs.
 
 [setup-02-rulings]: https://github.com/C360Studio/semengine/issues/6#issuecomment-5921046663
 [readme-ruling]: https://github.com/C360Studio/semengine/issues/9#issuecomment-5957221949

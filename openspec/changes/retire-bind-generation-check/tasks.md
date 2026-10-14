@@ -53,7 +53,7 @@ the design does not spell out go in `notes/<task>.md`, each with a one-line PR c
   - the line pins `:3166`, and `:3283` in row `processor/graph-ingest/component.go`, re-pinned to the code after 2.1.
 
   Check: `task ledger:check`.
-- [ ] 2.4 Run `task verify` on a clean tree at the last commit; record the commit and the result in a PR comment. In
+- [x] 2.4 Run `task verify` on a clean tree at the last commit; record the commit and the result in a PR comment. In
   the PR body:
   - keep `Closes #214`;
   - add the design's "Flake evidence" table (the protocol's "A pull request that closes a flake shows the

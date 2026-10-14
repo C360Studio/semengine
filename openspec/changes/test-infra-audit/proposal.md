@@ -20,7 +20,8 @@ test data can be a huge issue".
   process-group runner, the leak check and the evidence directory are removed. `go test -tags integration
   ./natsclient` runs on its own (#129).
 - natsfixture turns Ryuk off for its process, labels every container it starts, and, before its first container,
-  removes labelled containers older than 30 minutes, which only a killed or crashed run leaves behind.
+  removes labelled containers older than 30 minutes. It checks age alone: a run under the default ten-minute
+  `-timeout` has ended by then, but a longer or timeout-disabled run gets no protection.
 - Each package's integration tests share one NATS server, started at the first test that asks for it. A test reaches
   it only through a reset that leaves the server with no stream, consumer, stored byte or other client connection, and
   fails the test when it cannot. A test that needs its own server (restart, stop, a server option) says why in the

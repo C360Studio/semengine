@@ -19,7 +19,8 @@ Read it before you write a test that talks to NATS, or before you add code under
 - **Reset**: the call each test makes to get the shared server's address. It empties the server first and checks that
   it is empty.
 - **Label**: a key and value Docker stores on a container. Ours is `org.c360studio.semengine.test`.
-- **Sweep**: the step that removes labelled containers older than 30 minutes, which only a killed run leaves behind.
+- **Sweep**: the step that removes labelled containers older than 30 minutes, judged by age alone (see
+  [How cleanup works](#how-cleanup-works) for what that means for a long run).
 
 ## Unit test or integration test
 
@@ -124,7 +125,9 @@ our label, and never runs `docker … prune` or removes anything by name.
 2. A shared server is removed by `TestMain` after the package's tests.
 3. A test process that is killed (Ctrl-C, a crash, or its `-timeout`) runs no cleanup, so its containers stay. The
    next test process to start a container removes labelled containers that Docker created more than 30 minutes ago.
-   No test binary outlives its `-timeout` of 10 minutes, so a container that old is a leftover. To see leftovers now:
+   The sweep looks at age alone: a run under the default ten-minute `-timeout` has ended long before its containers
+   are 30 minutes old, but a longer run (`-timeout 0` while debugging, say) gets no protection and can lose its
+   containers to another test process's sweep. To see leftovers now:
    `docker ps -a --filter label=org.c360studio.semengine.test`.
 
 ## Known problem: Docker Desktop on macOS loses a host port

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 // Restart refuses before a successful Start and holds nothing afterwards (nats-fixture › "Restart
@@ -28,19 +29,25 @@ func TestRestartRefusesBeforeStart(t *testing.T) {
 	}
 }
 
-func TestResourceMethodsRefuseBeforeStartAndNilContexts(t *testing.T) {
+// A nil context and a nil JetStream are each refused by name, and the refusals leave the fixture
+// unused. The nil-context call passes the nil JetStream too, so only the text tells the two apart.
+func TestNilContextsAndUnstartedJetStreamAreRefused(t *testing.T) {
 	f := New(t)
 	var nilCtx context.Context
-	checks := map[string]error{}
-	_, checks["CreateStream before Start"] = f.CreateStream(t.Context(), "s")
-	_, checks["CreateStream nil ctx"] = f.CreateStream(nilCtx, "s")
-	_, checks["CreateMemoryStream before Start"] = f.CreateMemoryStream(t.Context(), "s")
-	_, checks["CreateMemoryStream nil ctx"] = f.CreateMemoryStream(nilCtx, "s")
-	checks["Start nil ctx"] = f.Start(nilCtx)
-	checks["Stop nil ctx"] = f.Stop(nilCtx)
-	for name, err := range checks {
-		if err == nil {
-			t.Errorf("%s returned nil", name)
+	_, createNilJS := CreateStream(t.Context(), f.JetStream(), jetstream.FileStorage, "s")
+	_, createNilCtx := CreateStream(nilCtx, f.JetStream(), jetstream.FileStorage, "s")
+	for _, tc := range []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"CreateStream on an unstarted fixture's JetStream", createNilJS, "nil JetStream"},
+		{"CreateStream nil ctx", createNilCtx, "nil context"},
+		{"Start nil ctx", f.Start(nilCtx), "nil context"},
+		{"Stop nil ctx", f.Stop(nilCtx), "nil context"},
+	} {
+		if tc.err == nil || !strings.Contains(tc.err.Error(), tc.want) {
+			t.Errorf("%s = %v, want an error naming %q", tc.name, tc.err, tc.want)
 		}
 	}
 	if f.used || len(f.remaining()) != 0 {

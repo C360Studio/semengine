@@ -66,7 +66,7 @@ review stop. Choices the design does not spell out go in `notes/<task>.md`.
   (owner ruling, #205 comment 6173171452; `notes/3.3-retries.md`).
 - [x] 3.3 Keep one test seam, the mapped-port read, for the inspect in a mapped-port failure; remove the other 12; the error
   type becomes unexported, with the phase in its text.
-- [ ] 3.4 Remove the fixture's lifecycle-floor test; the stream helpers become functions carrying the bounds.
+- [x] 3.4 Remove the fixture's lifecycle-floor test; the stream helpers become functions carrying the bounds.
 - [ ] 3.5 natsfixture's 80% coverage floor holds.
 - [ ] 3.6 Sync into `openspec/specs/` the rest of `nats-fixture` except "Shared server per package", "Reset to a
   verified-empty server" and "Connected value for a package's tests", and `harness-boundaries` "Bounded cleanup

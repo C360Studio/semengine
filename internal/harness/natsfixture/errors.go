@@ -10,14 +10,13 @@ import (
 // stops and starts that same container, and a second Start never creates another.
 var ErrAlreadyUsed = errors.New("natsfixture: fixture already started; use Restart to restart its container")
 
-// phaseError is a failed phase of Start or Restart, or a failed resource operation. Its text
-// carries what a reader needs to tell a slow daemon from a dead container from a cancelled test,
-// and whether cleanup completed.
+// phaseError is a failed phase of Start or Restart. Its text carries what a reader needs to tell a
+// slow daemon from a dead container from a cancelled test, and whether cleanup completed.
 //
 // Start's phases, in order: image, start (create and start the container, then wait for its ready
 // log), host, mapped-port, connect, jetstream-ready. Restart's: stop-container, start-container
 // (start the same container, then wait for a new ready log), mapped-port, connect,
-// jetstream-ready. CreateStream and CreateMemoryStream report create-stream.
+// jetstream-ready.
 type phaseError struct {
 	phase       string
 	containerID string // empty when no container existed yet

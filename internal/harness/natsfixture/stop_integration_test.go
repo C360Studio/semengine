@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"testing"
 	"time"
+
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 // nats-fixture › "Own server per test", scenario "Container gone after the test": the Stop New
@@ -33,7 +35,7 @@ func TestContainerGoneAfterTheTest(t *testing.T) {
 // the server: a paused container answers nothing, and Stop still removes it.
 func TestStopNeedsNoAnswerFromTheServer(t *testing.T) {
 	f := startFixture(t)
-	if _, err := f.CreateStream(t.Context(), "orders", "orders.>"); err != nil {
+	if _, err := CreateStream(t.Context(), f.JetStream(), jetstream.FileStorage, "orders", "orders.>"); err != nil {
 		t.Fatal(err)
 	}
 	id, nc := f.containerID, conn(f)

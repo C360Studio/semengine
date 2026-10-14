@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/c360studio/semengine/internal/harness/lifecycletest"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/testcontainers/testcontainers-go"
@@ -106,7 +105,7 @@ func TestFixtureRoundTrip(t *testing.T) {
 		t.Fatalf("URL %q status %v", f.URL(), conn(f).Status())
 	}
 	stream := "orders"
-	if _, err := f.CreateStream(ctx, stream, stream+".>"); err != nil {
+	if _, err := CreateStream(ctx, f.JetStream(), jetstream.FileStorage, stream, stream+".>"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.JetStream().Publish(ctx, stream+".1", []byte("one")); err != nil {
@@ -134,17 +133,17 @@ func TestFixtureRoundTrip(t *testing.T) {
 	}
 }
 
-// Every stream the fixture creates declares its bounds, as the broker reports them (nats-fixture ›
+// Every stream CreateStream creates declares its bounds, as the broker reports them (nats-fixture ›
 // "Bounded test streams"); the values are restated here, not read from the implementation. Only
 // the storage differs between the two.
 func TestStreamsDeclareBounds(t *testing.T) {
 	f := startFixture(t)
 	ctx := t.Context()
-	file, err := f.CreateStream(ctx, "orders", "orders.>")
+	file, err := CreateStream(ctx, f.JetStream(), jetstream.FileStorage, "orders", "orders.>")
 	if err != nil {
 		t.Fatal(err)
 	}
-	mem, err := f.CreateMemoryStream(ctx, "scratch", "scratch.>")
+	mem, err := CreateStream(ctx, f.JetStream(), jetstream.MemoryStorage, "scratch", "scratch.>")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,26 +239,6 @@ func TestS1_1PartialStartupCleanup(t *testing.T) {
 		})
 	}
 
-	// A resource operation after a successful Start reports its own phase and leaves the fixture
-	// owned; Stop then removes everything. The broker refuses a second stream on the first one's
-	// subjects.
-	t.Run("create-stream", func(t *testing.T) {
-		f := startFixture(t)
-		if _, err := f.CreateStream(t.Context(), "first", "orders.>"); err != nil {
-			t.Fatal(err)
-		}
-		id := f.containerID
-		_, err := f.CreateStream(t.Context(), "second", "orders.>")
-		if err == nil || !strings.Contains(err.Error(), "phase create-stream") || !strings.Contains(err.Error(), "container "+shortID(id)) {
-			t.Fatalf("CreateStream = %v, want an error naming phase create-stream and container %s", err, shortID(id))
-		}
-		if err := stop(t, f); err != nil {
-			t.Fatalf("Stop: %v", err)
-		}
-		if containerExists(t, id) {
-			t.Fatal("container survives Stop after a failed CreateStream")
-		}
-	})
 }
 
 // S1-2: cancelling the test context while Start is in I/O fails Start with context.Canceled,
@@ -323,8 +302,7 @@ func TestS1_6RepeatedStop(t *testing.T) {
 	}
 }
 
-// S1-7: a second Start is refused and leaves the running fixture untouched; the portable floor
-// passes over the fixture with no restart promised.
+// S1-7: a second Start is refused and leaves the running fixture untouched.
 func TestS1_7Restart(t *testing.T) {
 	f := startFixture(t)
 	id, before := f.containerID, f.remaining()
@@ -337,45 +315,6 @@ func TestS1_7Restart(t *testing.T) {
 	if got := processContainers(t); !slices.Equal(got, []string{id}) {
 		t.Fatalf("containers of this process after a refused second Start: %v, want only %s", got, id)
 	}
-	t.Run("lifecycletest", func(t *testing.T) {
-		lifecycletest.Run(t, func() lifecycletest.Owner { return owner{New(t)} }, mustFailFixture(t), lifecycletest.Promise{Restart: false})
-	})
-}
-
-// mustFailFixture is the fixture's must-fail factory: a fixture whose mapped-port read fails after
-// the real container exists, so the failed-start check judges the rollback, not a start that never
-// reached Docker.
-func mustFailFixture(t *testing.T) lifecycletest.Factory {
-	return func() lifecycletest.Owner {
-		f := New(t)
-		f.readPort = func(context.Context, testcontainers.Container) (string, error) { return "", errNotFound }
-		return owner{f}
-	}
-}
-
-// The must-fail factory's Start fails at the mapped-port phase after removing the container it
-// created, the fixture holds nothing, and a following Stop returns nil with no call.
-func TestMustFailFixture(t *testing.T) {
-	o := mustFailFixture(t)().(owner)
-	err := o.f.Start(t.Context())
-	if !errors.Is(err, errNotFound) || !strings.Contains(err.Error(), "phase mapped-port") || strings.Contains(err.Error(), "cleanup:") {
-		t.Fatalf("Start = %v, want a mapped-port failure with a clean rollback", err)
-	}
-	if got := processContainers(t); len(got) != 0 {
-		t.Fatalf("containers of this process survive the failed Start: %v", got)
-	}
-	if !stopHoldsNothing(t, o.f) {
-		t.Fatalf("failed Start holds %v", o.f.remaining())
-	}
-}
-
-// owner adapts a fixture to the lifecycle floor, reporting its retained state.
-type owner struct{ f *Fixture }
-
-func (o owner) Start(ctx context.Context) error { return o.f.Start(ctx) }
-func (o owner) Stop(ctx context.Context) error  { return o.f.Stop(ctx) }
-func (o owner) Observe() lifecycletest.Observation {
-	return lifecycletest.Observation{Unresolved: o.f.remaining()}
 }
 
 // S1-8: two fixtures in one test are disjoint, and each Stop removes only its own.
@@ -414,10 +353,10 @@ func TestRestartKeepsFileStreamLosesMemoryStream(t *testing.T) {
 	f := startFixture(t)
 	ctx := t.Context()
 	file, mem := "file", "mem"
-	if _, err := f.CreateStream(ctx, file, file+".>"); err != nil {
+	if _, err := CreateStream(ctx, f.JetStream(), jetstream.FileStorage, file, file+".>"); err != nil {
 		t.Fatal(err)
 	}
-	ms, err := f.CreateMemoryStream(ctx, mem, mem+".>")
+	ms, err := CreateStream(ctx, f.JetStream(), jetstream.MemoryStorage, mem, mem+".>")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -33,10 +33,6 @@ const (
 	// cleanupBudget is the fresh finite authority New's t.Cleanup gives Stop. The test's own
 	// context is already cancelled when cleanups run.
 	cleanupBudget = 60 * time.Second
-	// Stream bounds: every stream the fixture creates declares them, so a runaway
-	// test fails on a ceiling instead of filling the broker (SemStreams test_client.go:911-927).
-	resourceMaxAge   = time.Hour
-	resourceMaxBytes = 64 << 20
 	// readyLog is the line nats-server logs once per boot when it accepts clients.
 	readyLog = "Server is ready"
 	// maxPayloadConfig is where WithMaxPayload's config file lands in the container.
@@ -366,48 +362,6 @@ func (f *Fixture) JetStream() jetstream.JetStream {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.js
-}
-
-func (f *Fixture) started() (jetstream.JetStream, string, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.js == nil {
-		return nil, "", errors.New("natsfixture: fixture not started, or stopped")
-	}
-	return f.js, f.containerID, nil
-}
-
-// CreateStream creates a file-backed stream with the fixture's MaxAge, MaxBytes, and DiscardOld
-// bounds. Its messages survive Restart; Stop's removal of the container removes it.
-func (f *Fixture) CreateStream(ctx context.Context, name string, subjects ...string) (jetstream.Stream, error) {
-	if ctx == nil {
-		return nil, errors.New("natsfixture: CreateStream with a nil context")
-	}
-	return f.createStream(ctx, jetstream.FileStorage, name, subjects)
-}
-
-// CreateMemoryStream creates a memory-backed stream with the same bounds as CreateStream. Its
-// messages do not survive Restart; Stop's removal of the container removes it.
-func (f *Fixture) CreateMemoryStream(ctx context.Context, name string, subjects ...string) (jetstream.Stream, error) {
-	if ctx == nil {
-		return nil, errors.New("natsfixture: CreateMemoryStream with a nil context")
-	}
-	return f.createStream(ctx, jetstream.MemoryStorage, name, subjects)
-}
-
-func (f *Fixture) createStream(ctx context.Context, storage jetstream.StorageType, name string, subjects []string) (jetstream.Stream, error) {
-	js, id, err := f.started()
-	if err != nil {
-		return nil, err
-	}
-	s, err := js.CreateStream(ctx, jetstream.StreamConfig{
-		Name: name, Subjects: subjects, Storage: storage,
-		MaxAge: resourceMaxAge, MaxBytes: resourceMaxBytes, Discard: jetstream.DiscardOld,
-	})
-	if err != nil {
-		return nil, &phaseError{phase: "create-stream", containerID: id, parentErr: ctx.Err(), cause: err}
-	}
-	return s, nil
 }
 
 // report surfaces a failed Start's container log that could not be read as a test error: the

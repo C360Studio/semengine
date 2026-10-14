@@ -380,7 +380,9 @@
     no context roots; timer-driven tests moved into synctest.Test bubbles; lock-free math/rand/v2
     jitter replaces mutex-guarded math/rand source (#218); README updated for SemEngine module path
     and markdownlint
-  proving_tests: pkg/retry/retry_test.go (synctest-based unit tests)
+  proving_tests: >-
+    pkg/retry/retry_test.go (synctest-based unit tests, including TestRetry_JitterBounds and
+    TestRetry_ConcurrentWithJitter), pkg/retry/reviewer_retry_probe_test.go
   owner: setup-04a-01-floor developer
   disposition: adapt
 

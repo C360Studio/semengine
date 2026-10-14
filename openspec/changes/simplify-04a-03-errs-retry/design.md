@@ -9,7 +9,8 @@ scoping decisions under the Clarify gate:
    `WrapFatal`, and `WrapInvalid`; delete duplicate `errs.RetryConfig` and `pkg/errs`'s import of `pkg/retry`; replace
    mutex-guarded `math/rand` jitter in `pkg/retry` with `math/rand/v2`), leaving companion Issue #167
    (`errs.Classify` fallback for unclassified errors and `MutationCommitUnknown` non-retryability) for its own PR under
-   Bounded port scope.
+   Bounded port scope (recorded at [#218 comment](https://github.com/C360Studio/semengine/issues/218#issuecomment-6179108969)
+   and reconciled in #218 and #223).
 2. **Stop boundary**: run autonomously through worktree claim, OpenSpec change, implementation, local `task verify`,
    push, and posting the cross-agent `Review request` comment.
 
@@ -17,11 +18,10 @@ scoping decisions under the Clarify gate:
 
 `gh pr list --state open --json number,title,headRefName` shows two open PRs:
 
-- **#230 (`claude/test-infra-smaller-fixture`)**: touches `internal/harness/natsfixture/*`, `natsclient/*_test.go`,
-  `pkg/lifecycle/harness_gate_integration_test.go`, `processor/graph-ingest/*_integration_test.go`, and the
-  `internal/harness/natsfixture` section of `docs/admission-ledger.yaml`.
 - **#235 (`gemini/vocab-export-packs`)**: touches `vocabulary/*` and the `vocabulary` / `vocabulary/export` rows in
   `docs/admission-ledger.yaml`.
+- **#240 (`claude/test-infra-shared-server`)**: touches `internal/harness/natsfixture/*`, `internal/harness/contract/*`,
+  and integration test suites.
 
 Neither open PR overlaps with `pkg/errs/*`, `pkg/retry/*`, or the `pkg/errs` / `pkg/retry` /
 `internal/harness/semantictest` rows in `docs/admission-ledger.yaml`. These PRs can merge in any order.
@@ -31,8 +31,9 @@ Neither open PR overlaps with `pkg/errs/*`, `pkg/retry/*`, or the `pkg/errs` / `
 - **#218 (`port-refactor: pkg/errs & pkg/retry — nil-safe Wrap*, drop duplicate RetryConfig, and math/rand/v2 jitter`)**:
   retired by this PR (`Closes #218`).
 - **#167 (`defect: errs.Classify defaults an unclassified error to Transient, so a commit-unknown is spelled retryable`)**:
-  stays open for its own PR per owner Clarify selection (`docs/admission-ledger.yaml` `pkg/errs` `known_risks` cites
-  `#167`).
+  stays open for its own PR per owner Clarify selection
+  ([#218 comment](https://github.com/C360Studio/semengine/issues/218#issuecomment-6179108969); `docs/admission-ledger.yaml`
+  `pkg/errs` `known_risks` cites `#167`).
 
 ### Caller inventory (SemEngine, SemStreams pin `8b99efe9`, and sister repositories)
 
@@ -57,7 +58,7 @@ Neither open PR overlaps with `pkg/errs/*`, `pkg/retry/*`, or the `pkg/errs` / `
 - **Change**: Replace the `if err == nil { if action == "" { return nil } err = errors.New(action) }` block in
   `WrapTransient`, `WrapFatal`, and `WrapInvalid` with `if err == nil { return nil }`, and update their doc comments and
   `pkg/errs/doc.go`.
-- **Proving test**: `TestWrapClassified_NilInnerAlwaysReturnsNil` (and `TestWrapErrors` nil checks) in
+- **Proving test**: `TestWrapClassified_NilInnerAlwaysReturnsNil` (and `TestWrap` nil checks) in
   `pkg/errs/errs_test.go`.
 
 ### D2 Delete duplicate `errs.RetryConfig` and `pkg/errs`'s import of `pkg/retry`
@@ -76,11 +77,14 @@ Neither open PR overlaps with `pkg/errs/*`, `pkg/retry/*`, or the `pkg/errs` / `
   on every jittered backoff computation.
 - **Change**: Import `"math/rand/v2"`, remove `"math/rand"`, `"sync"`, `randMu`, and `randSource`, and call
   `rand.Int64N(limit)` in `jitter(delay time.Duration)`.
-- **Proving tests**: `TestJitter` and `TestConcurrentRetries` in `pkg/retry/retry_test.go` (`go test -race -cpu=1 ./pkg/retry/...`).
+- **Proving tests**: `TestRetry_JitterBounds` and `TestRetry_ConcurrentWithJitter` in `pkg/retry/retry_test.go`, plus
+  `TestReviewerRetryJitterTinyDelayDoesNotPanic` in `pkg/retry/reviewer_retry_probe_test.go`
+  (`go test -race -cpu=1 ./pkg/retry/...`).
 
 ### D4 Generated checks
 
 `WrapTransient`, `WrapFatal`, and `WrapInvalid` nil handling is a total two-branch check (`err == nil` vs. non-nil) and
-`jitter(delay)` is covered by deterministic range bounds across 100 iterations in `TestJitter` plus concurrent
-`synctest` execution in `TestConcurrentRetries`; table-driven unit tests suffice (`docs/testing.md`, "Decide whether
-generated checks are needed").
+`jitter(delay)` is covered through `retry.Do` by 100 `synctest` range and non-zero-variance iterations in
+`TestRetry_JitterBounds`, 16 concurrent `synctest` workers in `TestRetry_ConcurrentWithJitter`, and the tiny-delay
+guard in `TestReviewerRetryJitterTinyDelayDoesNotPanic`; table-driven and `synctest` unit tests suffice
+(`docs/testing.md`, "Decide whether generated checks are needed").

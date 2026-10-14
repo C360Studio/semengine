@@ -3162,12 +3162,12 @@
     less the repair and adapt items (specs graph-entity-writes, graph-ingest-recovery,
     graph-transport-boundary, component-registration, lifecycle-suite). Repair items (design D8): #15, the
     guard record keys on the input stream's generation, its creation time on the server, and stores
-    generation then sequence in 16 bytes (abb302f); Start reads the creation time before it binds the input's
-    consumer and again after (component.go:1479, :1643) and fails, naming the stream, when the two differ, and
-    an input accepted before the second read waits for it and is applied only when the reads agree, else
-    negatively acknowledged; it reads twice so that a stream deleted and created again while Start binds is
-    not read as the generation before it (design D8, "The generation belongs to the bound consumer"; PR #93
-    comment 6112098987, R3; 7e07fea); #16 (graph half), the verbs are declared once in
+    generation then sequence in 16 bytes (abb302f); Start reads the creation time once, before it binds the
+    input's consumer (component.go:1480), and every input that consumer delivers carries it; the owner retired
+    task 4.17's second read after the bind, which failed Start when the two reads differed and held an accepted
+    input until it returned (7e07fea; #214 comment 6157056960), so a stream deleted and created again between
+    the read and the bind is a declared limitation (graph-ingest-recovery, "Replay protection uses the
+    generation read before the bind"); #16 (graph half), the verbs are declared once in
     graph's verb table and graph-ingest subscribes by walking it (design D20); #20, the client half is the
     pkg/projection row's, and graph-ingest is unchanged: it already answers a failed update after its write as
     a transient internal error, and whether that meets #20's server half is the owner's call (task 4.1);
@@ -3177,7 +3177,7 @@
     Health's error count (owner ruling, #91 comment 6124130342; c59e5fb); Q13 (SemStreams PR #1437 head
     0ea823a6, its own row), a payload that fails validation or panics in its own code on the Graphable lane is
     terminated, counted and logged, never a redelivery loop (f6e8506); #33 (class:port-refactor), the
-    hierarchy refusal names inference.RegisterPayloads (component.go:639; e70e177); SS#1411, the
+    hierarchy refusal names inference.RegisterPayloads (component.go:680; e70e177); SS#1411, the
     owner-lifecycle state is the new internal/lifecycleguard (design D13), which calls
     pkg/lifecyclecleanup.RollbackFailedStart on a failed Start; the 11 later admitted copies adopt it when
     ported (design D8). Port-refactor items: one write seam for the seven write sites (#100; design D15),
@@ -3237,8 +3237,9 @@
     (design D4; tree :134-162). :124-127, health: the pin's three conditions are not what its Health checked
     (pin component.go:840-874), replaced by what Health checks now (task 3.12c, 8e0ecd1; tree :164-168); :125
     lacked blank lines (MD032).
-    Declared limitations (owner rulings, #91 comments 6112550268 and 6113959050; design D8, "The generation
-    belongs to the bound consumer", and D23): cases where a recreated stream or key is not told apart from a
+    Declared limitations (owner rulings, #91 comments 6112550268 and 6113959050 and #214 comment 6157056960;
+    graph-ingest-recovery, "Replay protection uses the generation read before the bind", and design D23):
+    cases where a recreated stream or key is not told apart from a
     redelivery or a refused create; not covered by a test: a stream recreated while graph-ingest runs (task
     4.3), and the real Start failing with a real rollback that fails (task 3.13). A guard bucket holding
     SemStreams' 8-byte records is refused key by key until deleted (notes/4.3.md). Open follow-up: #174
@@ -3248,10 +3249,8 @@
     (TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop, the proof of the lifecycle-suite
     exception "Failed start whose own cleanup fails", design D7.3), lifecycle_integration_test.go
     (TestGraphIngestLifecycleSuite), guard_generation_integration_test.go
-    (TestIntegration_IngestGuard_StreamRecreatedWithLowerSequences,
-    TestIntegration_IngestGuard_StreamRecreatedBeforeBindFailsStart for the two reads),
-    guard_generation_test.go (TestGuardRecordIsPerGeneration, TestConsumerInputHeldUntilGenerationConfirmed
-    for the held input), guard_record_test.go (TestCorruptGuardRecordIsRefused),
+    (TestIntegration_IngestGuard_StreamRecreatedWithLowerSequences), guard_generation_test.go
+    (TestGuardRecordIsPerGeneration), guard_record_test.go (TestCorruptGuardRecordIsRefused),
     settlement_integration_test.go (TestIntegration_Settlement_ProcessKilledBetweenApplyAndAck,
     TestIntegration_Settlement_FailedGuardWriteIsRedelivered), long_apply_integration_test.go
     (TestIntegration_Settlement_LongApplyIsNotRedelivered), interrupted_work_test.go
@@ -3280,7 +3279,7 @@
     (docs/provenance.md rule 4): the Graphable lane validates a decoded payload and fences a panic in payload
     code. The package row processor/graph-ingest records the rest of the file at the pin
   destination: >-
-    processor/graph-ingest/component.go (decodeEntity, :1741, and its call in the consume closure, :1575),
+    processor/graph-ingest/component.go (decodeEntity, :1711, and its call in the consume closure, :1571),
     with the PR's two test files, processor/graph-ingest/fact_lane_fence_test.go and
     fact_lane_fence_integration_test.go, adapted
   contract: >-

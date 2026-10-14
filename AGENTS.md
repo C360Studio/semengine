@@ -151,9 +151,9 @@ A new repo-wide or agent-conduct rule updates both this file and `.agents/rules-
 | `review` | A new rule names what enforces it and adds its row to `AGENTS.md` and `.agents/rules-index.md` | `rev` |
 | `review` | Before claiming work, mutating state, or spawning role subagents on an underspecified prompt, check any named issue/PR/file first, then confirm Deliverable, Scope/non-goals, Definition of Done/verification, and Stop boundary; when ambiguous, propose a 3–4 bullet Definition of Done and ask 1–3 targeted questions (#224) | `protocol`; `.agents/README.md` |
 | `review` | Role-agent briefs carry the owner's intent and the artifact itself, not a paraphrase; resume for continuity, start fresh for mechanics | `.agents/README.md` |
-| `review` | Architect, developer, and reviewer run on the frontier model tier (`opus` / `gpt-6-astra` or `gpt-6-sol` / `pro`); architect and developer default to `medium` effort (escalating to `high` for cross-cutting concurrency/boundary work or failed-review rounds), reviewer runs at `high` effort, and technical-writer may use a lighter model (`sonnet` / `flash`) and `low`/`medium` effort (#224, #225) | `.agents/README.md` |
-| `review` | `AGENTS.md` stays under 24,000 bytes so rule loaders with a 24 KB per-file cap never truncate it (#224, #225) | `.agents/README.md`; this file |
-| `merge:check+review` | Code PRs (any non-`.md`/non-`openspec/` file, or `.claude/agents/*`) require review by an agent that wrote no commits (`implemented-by:` and `reviewed-by:` in PR body); docs-only/archive commits take any agent's reviewer (#64, #66, #225) | `protocol`; `rev`; `merge-gate` spec |
+| `verify+review` | Architect, developer, and reviewer run on the frontier model tier (`opus` / `gpt-6-astra` or `gpt-6-sol` / `pro`); architect and developer default to `medium` effort (escalating to `high` for cross-cutting concurrency/boundary work or failed-review rounds), reviewer runs at `high` effort, and technical-writer uses `sonnet` / `flash` and `low`/`medium` effort (#224, #225) | `.agents/README.md`; `harness-boundaries` spec |
+| `verify+review` | `AGENTS.md` stays under 24,000 bytes, matches `.agents/rules-index.md` in numbered rule domains and row counts (`verify`) with 1-to-1 rule correspondence (`review`), and all agent/skill adapters match their canonical contracts (#224, #225) | `.agents/README.md`; `harness-boundaries` spec |
+| `merge:check+review` | Code PRs (any non-`.md`/non-`openspec/` file, or `.claude/agents/*` or `.agents/contracts/*`) require review by an agent that wrote no commits (`implemented-by:` and `reviewed-by:` naming `claude`, `codex`, or `gemini`); docs-only/archive commits take any agent's reviewer (#64, #66, #225) | `protocol`; `rev`; `merge-gate` spec |
 | `review` | Pushed claim branches update by merging `origin/main`, never by rebase or force-push | `protocol` |
 | `review` | Evidence cited in a PR or task can be opened on another machine; git-ignored paths are named as local only | `.agents/skills/semengine-handoff`, `semengine-preflight` |
 | `review` | Docs are written for a working developer: coined terms defined at first use, no jargon, no marketing | `writer`, `rev` |
@@ -188,10 +188,9 @@ never become a pointer:
 - **Merge:** CI green on a head up to date with `main`; no known flake open (an open `class:flake` issue) unless the PR
   closes every open one; `task merge:check -- <n>` immediately before merging (`GITHUB_ACTIONS` unset);
   `implemented-by:` in the PR body (`claude`, `codex`, or `gemini` beside the model/persona); archive/spec sync as the
-  last content commit; squash merge. A code PR (any changed file not Markdown or under `openspec/`, or a role adapter
-  under `.claude/agents/`) also needs another agent's review and `reviewed-by:` in the PR body, without which
-  `merge-check` fails once non-draft (today `scripts/merge-check.sh` checks `claude` and `codex`; #225 tracks adding
-  `gemini`); a documents-only PR does not.
+  last content commit; squash merge. A code PR (any changed file not Markdown or under `openspec/`, or a file under
+  `.claude/agents/` or `.agents/contracts/`) also needs another agent's review and `reviewed-by:` in the PR body,
+  without which `merge-check` fails once non-draft; a documents-only PR does not.
 - **Close:** the squash merge of a PR that declared `Closes #n` is the authorization. A close with no merged PR behind
   it takes the owner's word on the issue.
 
@@ -204,7 +203,7 @@ Role agents are the default path for nontrivial work. Contracts: `.agents/contra
 - `semengine-architect` designs, inventory first; read-only.
 - `semengine-developer` implements: failing test, implementation, evidence.
 - `semengine-reviewer` reviews every nontrivial change independently before integration; read-only. For a code
-  pull request the review of record is the other agent's (`.agents/protocol.md`, "Cross-agent review").
+  pull request the review of record is another agent's (`.agents/protocol.md`, "Cross-agent review").
 - `semengine-technical-writer` updates current docs and task truth with the approved code.
 
 Binding rulings stay with the owner, on the issue. Provenance and license rules for ported code: `docs/provenance.md`.

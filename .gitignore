@@ -16,7 +16,7 @@ coverage.*
 .evidence/
 
 # Node
-node_modules/
+node_modules
 
 # Editors and OS
 .idea/
@@ -24,3 +24,5 @@ node_modules/
 *.swp
 *~
 .DS_Store
+.worktrees/
+.enjoy-logs/

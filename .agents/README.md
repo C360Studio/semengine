@@ -38,31 +38,31 @@ reviewer runs on a weaker model tier than the developer.
 
 | Role | Claude | Codex | Gemini (Antigravity) | Target effort |
 | --- | --- | --- | --- | --- |
-| Architect | inherits (`opus` required; read-only tools) | `gpt-6-astra`, resolved effort inherited (`medium` default) | `inherit` or `pro` (`enable_write_tools = false`) | `medium` default; escalate to `high` for cross-cutting concurrency/boundary designs |
-| Developer | `opus` | `gpt-6-sol`, `high` (`medium` default eligible) | `inherit` or `pro` (`enable_write_tools = true`) | `medium` default for bounded work; escalate to `high` for complex/failed-review rounds |
+| Architect | `opus` | `gpt-6-astra`, `medium` | `inherit` or `pro` (`enable_write_tools = false`) | `medium` default; escalate to `high` for cross-cutting concurrency/boundary designs |
+| Developer | `opus` | `gpt-6-sol`, `medium` | `inherit` or `pro` (`enable_write_tools = true`) | `medium` default for bounded work; escalate to `high` for complex/failed-review rounds |
 | Reviewer | `opus` | `gpt-6-astra`, `high` | `inherit` or `pro` (`enable_write_tools = false`) | `high` (single-pass audit of record against review-only rules) |
-| Technical writer | `opus` (`sonnet` eligible) | `gpt-6-sol`, `high` (`low`/`medium` eligible) | `flash` or `inherit` (`enable_write_tools = true`) | `low` or `medium` (mechanical doc and task-truth sync) |
+| Technical writer | `sonnet` | `gpt-6-sol`, `medium` | `flash` or `inherit` (`enable_write_tools = true`) | `low` or `medium` (mechanical doc and task-truth sync) |
 
 - **Model tier:** `semengine-architect`, `semengine-developer`, and `semengine-reviewer` run on the frontier model
   (`opus` on Claude, `gpt-6-astra` / `gpt-6-sol` on Codex, `inherit` / `pro` on Gemini). `semengine-technical-writer`
-  is non-decision-making (doc sync, `task docs:check`, and conservative task ticking) and may run on a lighter tier
-  (`sonnet` on Claude, `flash` on Gemini).
+  is non-decision-making (doc sync, `task docs:check`, and conservative task ticking) and runs on a lighter tier where
+  supported (`sonnet` on Claude, `flash` on Gemini).
 - **Reasoning effort (`low -> medium -> high`):** Start `semengine-architect` and `semengine-developer` at `medium`
   effort by default and escalate to `high` only when a change crosses module boundaries, designs a concurrency or
   durable-execution primitive, or fails a review round. Keep `semengine-reviewer` at `high` effort because it runs once
   per ready diff as the independent audit against the repository's review-only rules. Run `semengine-technical-writer`
-  at `low` or `medium` effort. Updating the tracked `.claude/agents/` and `.codex/agents/` adapter files (which
-  `scripts/merge-check.sh` classifies as code files) to match these defaults is tracked in #225.
+  at `low` or `medium` effort. The tracked `.claude/agents/` and `.codex/agents/` adapter files pin these defaults and
+  are checked by `TestAgentSetupParity` (`internal/harness/contract/agentsetup_test.go`).
 
 On Gemini (Antigravity), role subagents are registered with `define_subagent` pointing at the matching
 `.agents/contracts/semengine-*.md` contract and invoked with `invoke_subagent`; `Model` defaults to `"inherit"` (for
 example, Gemini 4 Argon High) unless `"pro"` or `"flash"` is explicitly requested.
 
 The table does not rank one platform's models against another's; across agents the pairing is the owner's decision.
-For a code pull request the reviewer of record is the other agent's reviewer from the table above; a documents-only
+For a code pull request the reviewer of record is another agent's reviewer from the table above; a documents-only
 pull request keeps this repository's reviewer (owner rulings of 2026-10-02 on issue #64, and this repository's reading
-of them: `.agents/protocol.md`, "Cross-agent review"). Extending `scripts/merge-check.sh` to recognize `gemini`
-alongside `claude` and `codex` on code pull requests is tracked in #225.
+of them: `.agents/protocol.md`, "Cross-agent review"). `scripts/merge-check.sh` recognizes `claude`, `codex`, and
+`gemini` on code pull requests.
 
 ## Orchestrating role agents
 
@@ -130,28 +130,28 @@ live in `.claude/skills/<command-name>/SKILL.md`. The `preflight` adapter delibe
 `semengine-preflight` name. Add an engine-capability skill only when its capability is admitted. A private memory
 reference cannot be required to interpret a shared rule.
 
-## Manual read-only parity smoke
+## Read-only parity smoke
 
-Run this procedure after changing a contract, adapter, or repository routing rule. It only reads tracked files.
-Automating Steps 1–8 and the `AGENTS.md` 24,000-byte rule cap as a contract test under `internal/harness/contract/` is
-tracked in #225.
+Steps 1–8 are enforced automatically by `TestAgentSetupParity` and `TestAgentSetupParitySensitivity`
+(`internal/harness/contract/agentsetup_test.go`, run by `task test:unit`). Run Step 9 after changing a contract,
+adapter, or repository routing rule.
 
 1. Confirm all four canonical contracts and all eight agent adapters exist, and that `.agents/protocol.md` and
    `.agents/rules-index.md` exist.
-2. Confirm each adapter names exactly its matching `.agents/contracts/...` path and says to read it fully first.
-3. Confirm the Claude reviewer and architect tool lists contain `Read`, `Bash`, `Grep`, `Glob`, `Skill`, but not
-   `Edit`, `Write`, `Task`, or another delegation tool. `gopls` is reached through `Bash`; do not add an `LSP` tool
-   name, because an unresolved tool name makes Claude Code refuse to launch the agent.
+2. Confirm each adapter names-and-links only its matching `.agents/contracts/...` path and says to read it fully first.
+3. Confirm the Claude reviewer and architect tool lists contain `Read`, `Bash`, `Grep`, `Glob`, `Skill`, and that
+   write adapters add `Edit` and `Write`, with no `Task`, `LSP`, or other delegation tool (`gopls` is reached through
+   `Bash`; an unresolved tool name makes Claude Code refuse to launch the agent).
 4. Confirm the Codex reviewer and architect set `sandbox_mode = "read-only"`; the developer and the technical writer
    have no sandbox override and inherit the parent workspace permissions.
-5. Confirm `CLAUDE.md` only imports `AGENTS.md` and carries no rules of its own, that `AGENTS.md` stays under
+5. Confirm `CLAUDE.md` only imports `AGENTS.md` and carries no rules of its own, that `AGENTS.md` stays strictly under
    24,000 bytes (`wc -c AGENTS.md`) so rule loaders with a 24 KB per-file cap do not truncate it, and that every rule
-   row in `AGENTS.md` has its corresponding audit row in `.agents/rules-index.md`.
-6. Inspect adapter size with `wc -l .claude/agents/semengine-*.md .codex/agents/semengine-*.toml`; adapters should
-   remain short and contain no copied checklist.
+   row in `AGENTS.md` has its corresponding audit row in `.agents/rules-index.md` (`TestAgentSetupParity` checks
+   numbered domain headings and per-domain row counts; semantic correspondence of individual rows is review only).
+6. Confirm role adapters stay within 20 lines and contain no copied checklist (`- [ ]` or `- [x]`).
 7. For every skill in the shared-skills list, confirm the canonical file and Claude adapter exist, the adapter points
    to that canonical file and says to read it fully, and it contains no copied checklist.
-8. Confirm the Codex model and effort settings match the table above.
+8. Confirm the Claude and Codex model and effort settings match the table above.
 9. Validate changed skill frontmatter and relative links. A structurally valid adapter does not prove its
    instructions make the right decisions; walk the applicable scenarios below without private memory.
 

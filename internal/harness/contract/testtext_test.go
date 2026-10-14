@@ -283,3 +283,158 @@ func bareSelectViolations(t *testing.T, root string, files []string) []string {
 	}
 	return violations
 }
+
+// harness-boundaries › "Integration tests in a package run one at a time": no Go file carrying
+// //go:build integration calls t.Parallel(), so tests sharing a package's NATS server never run at
+// the same time. No allowlist or inline exemption. A Parallel() call in an untagged helper, or on
+// a receiver not named t, escapes the check and is review only.
+var parallelCall = "t." + "Parallel("
+
+func TestNoParallelIntegrationTests(t *testing.T) {
+	root := repoRoot(t)
+	requireNoViolations(t, "parallel integration test", parallelIntegrationViolations(t, root, repoFiles(t, root)))
+}
+
+func TestNoParallelIntegrationTestsSensitivity(t *testing.T) {
+	clean := map[string]string{
+		"x/x_integration_test.go": "//go:build integration\n\npackage x\n\n// Tests sharing a server do not call " + parallelCall + ").\nfunc TestX(t *testing.T) {}\n",
+		"x/x_test.go":             "package x\n\nfunc TestUnit(t *testing.T) {\n\t" + parallelCall + ")\n}\n",
+	}
+	root, files := writeTree(t, clean)
+	requireNoViolations(t, "clean fixture", parallelIntegrationViolations(t, root, files))
+
+	t.Run("parallel integration test", func(t *testing.T) {
+		root, files := writeTree(t, map[string]string{
+			"x/x_integration_test.go": "//go:build integration\n\npackage x\n\nfunc TestX(t *testing.T) {\n\t" + parallelCall + ")\n}\n",
+		})
+		requireViolation(t, parallelIntegrationViolations(t, root, files), "x/x_integration_test.go:6", "t.Parallel()")
+	})
+	t.Run("no integration-tagged file", func(t *testing.T) {
+		root, files := writeTree(t, map[string]string{
+			"x/x_test.go": "package x\n\nfunc TestUnit(t *testing.T) {}\n",
+		})
+		requireViolation(t, parallelIntegrationViolations(t, root, files), "scanned no integration-tagged Go file")
+	})
+}
+
+func parallelIntegrationViolations(t *testing.T, root string, files []string) []string {
+	t.Helper()
+	var violations []string
+	tagged := 0
+	for _, name := range files {
+		if !strings.HasSuffix(name, ".go") {
+			continue
+		}
+		lines := readLines(t, root, name)
+		if !hasIntegrationBuildTag(lines) {
+			continue
+		}
+		tagged++
+		for i, line := range lines {
+			if strings.Contains(codeBeforeLineComment(line), parallelCall) {
+				violations = append(violations, fmt.Sprintf("%s:%d: `t.Parallel()` in an integration-tagged file; "+
+					"tests sharing a package's NATS server run one at a time", name, i+1))
+			}
+		}
+	}
+	if tagged == 0 {
+		violations = append(violations, fmt.Sprintf("scanned no integration-tagged Go file among %d file(s)", len(files)))
+	}
+	return violations
+}
+
+func hasIntegrationBuildTag(lines []string) bool {
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "package ") {
+			return false
+		}
+		if trimmed == "//go:build integration" {
+			return true
+		}
+	}
+	return false
+}
+
+func codeBeforeLineComment(line string) string {
+	if idx := strings.Index(line, "//"); idx >= 0 {
+		return line[:idx]
+	}
+	return line
+}
+
+// harness-boundaries › "A test with its own server says why": every call to natsfixture.New in a
+// *_test.go file outside internal/harness/natsfixture has, on the line above it, a comment
+// beginning "// Own server:" followed by a reason.
+var ownServerCall = "natsfixture." + "New("
+
+func TestOwnServerReason(t *testing.T) {
+	root := repoRoot(t)
+	requireNoViolations(t, "own server reason", ownServerViolations(t, root, repoFiles(t, root)))
+}
+
+func TestOwnServerReasonSensitivity(t *testing.T) {
+	clean := map[string]string{
+		"x/x_integration_test.go": "//go:build integration\n\npackage x\n\nfunc TestX(t *testing.T) {\n" +
+			"\t// Own server: restarts the server mid-test.\n" +
+			"\tf := " + ownServerCall + "t)\n" +
+			"\t_ = natsfixture.NewFaultKV(nil)\n" +
+			"\t// A comment naming " + ownServerCall + "t) is not a call.\n" +
+			"\t_ = f\n}\n",
+		"internal/harness/natsfixture/fixture_integration_test.go": "//go:build integration\n\npackage natsfixture\n\nfunc TestOwn(t *testing.T) {\n" +
+			"\tf := " + ownServerCall + "t)\n\t_ = f\n}\n",
+	}
+	root, files := writeTree(t, clean)
+	requireNoViolations(t, "clean fixture", ownServerViolations(t, root, files))
+
+	for _, tc := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{"no comment above", "\tf := " + ownServerCall + "t)\n", "x/x_integration_test.go:4"},
+		{"other comment above", "\t// Starts a broker.\n\tf := " + ownServerCall + "t)\n", "x/x_integration_test.go:5"},
+		{"empty reason", "\t// Own server:   \n\tf := " + ownServerCall + "t)\n", "x/x_integration_test.go:5"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, files := writeTree(t, map[string]string{
+				"x/x_integration_test.go": "package x\n\nfunc TestX(t *testing.T) {\n" + tc.body + "}\n",
+			})
+			requireViolation(t, ownServerViolations(t, root, files), tc.want, "// Own server:")
+		})
+	}
+	t.Run("no test file", func(t *testing.T) {
+		root, files := writeTree(t, map[string]string{"x/x.go": "package x\n"})
+		requireViolation(t, ownServerViolations(t, root, files), "scanned no test file")
+	})
+}
+
+func ownServerViolations(t *testing.T, root string, files []string) []string {
+	t.Helper()
+	var violations []string
+	tests := 0
+	for _, name := range files {
+		if !strings.HasSuffix(name, "_test.go") || strings.HasPrefix(name, "internal/harness/natsfixture/") {
+			continue
+		}
+		tests++
+		lines := readLines(t, root, name)
+		for i, line := range lines {
+			if !strings.Contains(codeBeforeLineComment(line), ownServerCall) {
+				continue
+			}
+			prev := ""
+			if i > 0 {
+				prev = strings.TrimSpace(lines[i-1])
+			}
+			reason, ok := strings.CutPrefix(prev, "// Own server:")
+			if !ok || strings.TrimSpace(reason) == "" {
+				violations = append(violations, fmt.Sprintf("%s:%d: `natsfixture.New` without `// Own server: <reason>` on the line above", name, i+1))
+			}
+		}
+	}
+	if tests == 0 {
+		violations = append(violations, fmt.Sprintf("scanned no test file outside internal/harness/natsfixture among %d file(s)", len(files)))
+	}
+	return violations
+}

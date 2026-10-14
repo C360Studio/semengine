@@ -79,7 +79,7 @@ review stop. Choices the design does not spell out go in `notes/<task>.md`.
   (`nats-fixture`, "Shared server per package", "Reset to a verified-empty server").
 - [x] 4.2 Build the shared server and its reset, counting connections through `$SYS.REQ.ACCOUNT.PING.STATZ`; `Open`
   takes a URL.
-- [ ] 4.3 Add `TestNoParallelIntegrationTests` and `TestOwnServerReason`, each with its sensitivity test.
+- [x] 4.3 Add `TestNoParallelIntegrationTests` and `TestOwnServerReason`, each with its sensitivity test.
 - [ ] 4.4 Add `TestMain` to natsclient, processor/graph-ingest, graph/kvcatalog, pkg/lifecycle and component; their
   helpers call the reset; the 8 own-server tests (`design.md` P7) call `natsfixture.New` themselves, each with its
   `// Own server:` line, so `TestOwnServerReason` reads every reason and `startFixture` serves shared tests only.

@@ -7,9 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
-
-	"github.com/c360studio/semengine/pkg/retry"
 )
 
 // ErrorClass represents the classification of errors for handling purposes
@@ -356,126 +353,29 @@ func Wrap(err error, component, method, action string) error {
 	return fmt.Errorf("%s.%s: %s failed: %w", component, method, action, err)
 }
 
-// WrapTransient wraps an error as transient with context.
-// When err is nil and action is non-empty, synthesizes the error from action
-// so synchronous validation paths emit a non-nil classified error rather than
-// silently returning nil. nil+empty-action still returns nil.
+// WrapTransient wraps an error as transient with context. Returns nil when err is nil.
 func WrapTransient(err error, component, method, action string) error {
 	if err == nil {
-		if action == "" {
-			return nil
-		}
-		err = errors.New(action)
+		return nil
 	}
 	wrappedErr := Wrap(err, component, method, action)
 	return inheritMachineContract(newClassified(ErrorTransient, wrappedErr, component, method, wrappedErr.Error()), err)
 }
 
-// WrapFatal wraps an error as fatal with context.
-// When err is nil and action is non-empty, synthesizes the error from action
-// so synchronous validation paths emit a non-nil classified error rather than
-// silently returning nil. nil+empty-action still returns nil.
+// WrapFatal wraps an error as fatal with context. Returns nil when err is nil.
 func WrapFatal(err error, component, method, action string) error {
 	if err == nil {
-		if action == "" {
-			return nil
-		}
-		err = errors.New(action)
+		return nil
 	}
 	wrappedErr := Wrap(err, component, method, action)
 	return inheritMachineContract(newClassified(ErrorFatal, wrappedErr, component, method, wrappedErr.Error()), err)
 }
 
-// WrapInvalid wraps an error as invalid with context.
-// When err is nil and action is non-empty, synthesizes the error from action
-// so synchronous validation paths emit a non-nil classified error rather than
-// silently returning nil. nil+empty-action still returns nil.
+// WrapInvalid wraps an error as invalid with context. Returns nil when err is nil.
 func WrapInvalid(err error, component, method, action string) error {
 	if err == nil {
-		if action == "" {
-			return nil
-		}
-		err = errors.New(action)
+		return nil
 	}
 	wrappedErr := Wrap(err, component, method, action)
 	return inheritMachineContract(newClassified(ErrorInvalid, wrappedErr, component, method, wrappedErr.Error()), err)
-}
-
-// RetryConfig defines configuration for retry operations
-type RetryConfig struct {
-	MaxRetries      int
-	InitialDelay    time.Duration
-	MaxDelay        time.Duration
-	BackoffFactor   float64
-	RetryableErrors []error
-}
-
-// DefaultRetryConfig returns a sensible default retry configuration
-func DefaultRetryConfig() RetryConfig {
-	return RetryConfig{
-		MaxRetries:      3,
-		InitialDelay:    100 * time.Millisecond,
-		MaxDelay:        5 * time.Second,
-		BackoffFactor:   2.0,
-		RetryableErrors: nil, // Empty list means retry all transient errors
-	}
-}
-
-// ShouldRetry determines if an error should be retried based on config
-func (rc RetryConfig) ShouldRetry(err error, attempt int) bool {
-	if err == nil || attempt >= rc.MaxRetries {
-		return false
-	}
-
-	// Check if error is transient
-	if !IsTransient(err) {
-		return false
-	}
-
-	// Check specific retryable errors if configured
-	if len(rc.RetryableErrors) > 0 {
-		for _, retryableErr := range rc.RetryableErrors {
-			if errors.Is(err, retryableErr) {
-				return true
-			}
-		}
-		return false
-	}
-
-	return true
-}
-
-// ToRetryConfig converts the errors package RetryConfig to the retry framework's
-// Config type for framework consistency. This enables seamless integration with
-// the streamkit/retry package while maintaining error classification logic.
-//
-// The conversion adds 1 to MaxRetries (converting "additional attempts" to "total attempts")
-// and enables jitter by default for production resilience.
-func (rc RetryConfig) ToRetryConfig() retry.Config {
-	return retry.Config{
-		MaxAttempts:  rc.MaxRetries + 1, // MaxRetries is additional attempts beyond first
-		InitialDelay: rc.InitialDelay,
-		MaxDelay:     rc.MaxDelay,
-		Multiplier:   rc.BackoffFactor,
-		AddJitter:    true, // Enable jitter for production use
-	}
-}
-
-// BackoffDelay calculates the delay for a retry attempt using framework logic
-func (rc RetryConfig) BackoffDelay(attempt int) time.Duration {
-	if attempt <= 0 {
-		return rc.InitialDelay
-	}
-
-	// Use framework calculation for consistency
-	delay := rc.InitialDelay
-	for i := 0; i < attempt; i++ {
-		delay = time.Duration(float64(delay) * rc.BackoffFactor)
-		if delay > rc.MaxDelay {
-			delay = rc.MaxDelay
-			break
-		}
-	}
-
-	return delay
 }

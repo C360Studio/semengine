@@ -9,11 +9,11 @@ Each task names the outcome and the gate that proves it.
 
 ## 2. Implementation and tests
 
-- [ ] 2.1 Make `WrapTransient`, `WrapFatal`, and `WrapInvalid` return `nil` whenever `err == nil` in `pkg/errs/errs.go`,
+- [x] 2.1 Make `WrapTransient`, `WrapFatal`, and `WrapInvalid` return `nil` whenever `err == nil` in `pkg/errs/errs.go`,
   delete `RetryConfig`, `DefaultRetryConfig()`, `ShouldRetry`, `ToRetryConfig`, `BackoffDelay`, and the `pkg/retry` /
   `time` imports from `pkg/errs/errs.go`, switch `pkg/retry/retry.go` jitter from mutex-guarded `math/rand` to
   `math/rand/v2`, and update `pkg/errs/errs_test.go`. Gate: `task test:unit` and `task test:repeat`.
-- [ ] 2.2 Update `pkg/errs/doc.go` and the `pkg/errs`, `pkg/retry`, and `internal/harness/semantictest` rows in
+- [x] 2.2 Update `pkg/errs/doc.go` and the `pkg/errs`, `pkg/retry`, and `internal/harness/semantictest` rows in
   `docs/admission-ledger.yaml`. Gate: `task docs:check`, `task ledger:check`, and `task verify`.
 
 ## 3. Review and close

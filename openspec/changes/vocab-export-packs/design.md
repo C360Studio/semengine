@@ -71,9 +71,11 @@ Adopters of the new primitives: `semvocab` (`RegisterPack`, `LoadPackJSON`, `Loa
   `RegisterPack(pack PackSpec, opts ...PackOption)` validates every prefix, predicate (`ParsePredicate`, datatype,
   IRI, inverse, aliases, projection), and entity type (`ParseEntityTypeKey`, class IRI, superclasses) **before**
   mutating any state (fail-closed: a single invalid entry leaves the registry unchanged), then registers predicates,
-  entity types, and (when a prefix callback `WithPrefixRegistrar` is supplied) prefixes.
-- **Proving tests**: `TestLoadPackJSON`, `TestLoadPackYAML`, `TestRegisterPackAtomicOnFailure`,
-  `TestPropPackRoundTrip`, `FuzzLoadPackJSON`, and `FuzzLoadPackYAML`.
+  entity types, and (when a prefix callback `WithPrefixRegistrar` is supplied) prefixes. `internal/harness/contract`
+  (`imports_test.go`) and `harness-boundaries` permit `vocabulary/pack.go` to import `gopkg.in/yaml.v3` while continuing
+  to reject `gopkg.in/yaml.v3` in other non-test production files.
+- **Proving tests**: `TestLoadPackJSON`, `TestLoadPackYAML`, `TestRegisterPackAndAtomicOnFailure`,
+  `TestPropPackRoundTrip`, `FuzzLoadPackJSON`, `FuzzLoadPackYAML`, and `TestImportGraphSensitivity`.
 
 ### D6 Generated checks
 

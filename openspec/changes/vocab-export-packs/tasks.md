@@ -45,5 +45,6 @@ and fuzz runs in `notes/<task>.md`.
 
 - [ ] 5.1 Cross-agent review of record on the implementation commit.
   Hold: waiting for implementation tasks 2.1–4.1 and cross-agent review.
-- [ ] 5.2 Archive `vocab-export-packs` and sync `openspec/specs/vocabulary-packs/spec.md` as the final content commit.
+- [ ] 5.2 Archive `vocab-export-packs` and sync `openspec/specs/vocabulary-packs/spec.md` and
+  `openspec/specs/harness-boundaries/spec.md` as the final content commit.
   Hold: waiting for task 5.1 approval.

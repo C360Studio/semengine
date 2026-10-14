@@ -48,7 +48,9 @@ addition, `vocabulary/export` was scheduled for Slice 04A Change 7 even though a
 ## Impact
 
 `vocabulary/` (new `entity_type.go`, `pack.go`, `projection.go`, updates to `predicates.go`, `registry.go`, `doc.go`,
-`README.md`, and tests), `vocabulary/export/` (ported package), `docs/adr/107-semantic-web-vocabulary-lives-at-the-export-edge.md`,
+`README.md`, and tests), `vocabulary/export/` (ported package), `internal/harness/contract/imports_test.go` (permitting
+`vocabulary/pack.go` to import `gopkg.in/yaml.v3`), `docs/adr/107-semantic-web-vocabulary-lives-at-the-export-edge.md`,
 `docs/adr/102-entity-id-segment-semantics.md`, `docs/admission-ledger.yaml`, `docs/inventory-scope.md`,
-`docs/tier1-cross-check.md`, `docs/repository-map.md`, and new capability spec `openspec/specs/vocabulary-packs/spec.md`.
+`docs/tier1-cross-check.md`, `docs/repository-map.md`, new capability spec `openspec/specs/vocabulary-packs/spec.md`,
+and modified `openspec/specs/harness-boundaries/spec.md`.
 Closes #234. Addresses #9.

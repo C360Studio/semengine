@@ -11,9 +11,9 @@
 #   3. On a pull-request run, before rule 2 (openspec change review-gate-check;
 #      spec merge-gate, "Cross-agent review check"): a code pull request that is
 #      not a draft fails unless its description has one implemented-by: line
-#      naming claude or codex (not read for a bot's) and one reviewed-by: line
-#      naming the other (either one for a bot's, or when both are named); a
-#      draft's findings are printed and fail nothing.
+#      naming claude, codex, or gemini (not read for a bot's) and one reviewed-by:
+#      line naming another agent (any of the three for a bot's, or when more than
+#      one is named); a draft's findings are printed and fail nothing.
 #
 # Usage: merge-check.sh <pr-number>
 #   The kind of run comes from GITHUB_EVENT_NAME only when GITHUB_ACTIONS is
@@ -138,12 +138,12 @@ if ! printf '%s' "$pull" | jq -e --argjson n "$entries" '.changed_files == $n' >
   exit 2
 fi
 # A document name ends in .md or starts with openspec/, and is not under
-# .claude/agents/; every other name is a code name. A renamed file's previous
-# name counts too. A failed jq leaves an empty list, which would read as
-# documents only. The names stay a JSON list: printed one per line, a name that
-# is empty or only line feeds would vanish.
+# .claude/agents/ or .agents/contracts/; every other name is a code name. A
+# renamed file's previous name counts too. A failed jq leaves an empty list,
+# which would read as documents only. The names stay a JSON list: printed one
+# per line, a name that is empty or only line feeds would vanish.
 if ! code=$(printf '%s' "$files" | jq -c '[.[] | .filename, (.previous_filename // empty)]
-  | map(select(((endswith(".md") or startswith("openspec/")) and (startswith(".claude/agents/") | not)) | not))
+  | map(select(((endswith(".md") or startswith("openspec/")) and (startswith(".claude/agents/") | not) and (startswith(".agents/contracts/") | not)) | not))
   | unique'); then
   echo "merge-check: unavailable: jq failed sorting the changed files of pull request #${pr} into code names" >&2
   exit 2
@@ -154,10 +154,10 @@ else
   echo "merge-check: pull request #${pr} is a code pull request; its code files ($(printf '%s' "$code" | jq length), up to ten shown):"
   printf '%s' "$code" | jq -r '.[:10][] | "merge-check: code file: \(.)"'
   # The two lines: each starts in the first column; a carriage return before the
-  # line feed is dropped. An agent name is claude or codex in any letter case,
-  # with no letter or digit directly before or after it. Nothing else is read.
+  # line feed is dropped. An agent name is claude, codex, or gemini in any letter
+  # case, with no letter or digit directly before or after it. Nothing else is read.
   if ! lines=$(printf '%s' "$pull" | jq -r '
-    def agents: [scan("(?i)(?:^|[^\\p{L}\\p{N}])(claude|codex)(?=[^\\p{L}\\p{N}]|$)") | .[0] | ascii_downcase] | unique | join(" ");
+    def agents: [scan("(?i)(?:^|[^\\p{L}\\p{N}])(claude|codex|gemini)(?=[^\\p{L}\\p{N}]|$)") | .[0] | ascii_downcase] | unique | join(" ");
     [(.body // "") | split("\n")[] | rtrimstr("\r")] as $l
     | ($l | map(select(startswith("implemented-by:")))) as $i
     | ($l | map(select(startswith("reviewed-by:")))) as $r
@@ -171,33 +171,38 @@ else
     *[!0-9:]* | :* | *:) echo "merge-check: unavailable: the description of pull request #${pr} was read as '${lines}'" >&2; exit 2 ;;
   esac
 
-  # The reviewer the implemented-by: line calls for; empty when either agent may
-  # review: a bot's pull request, both agents named, or no valid line.
-  want=
+  # The single implementing agent when implemented-by: names one; empty when any
+  # agent may review: a bot's pull request, more than one agent named, or no valid line.
+  impl_single=
+  others=
+  wantline="reviewed-by: claude, reviewed-by: codex, or reviewed-by: gemini"
   if [ "$author" != Bot ] && [ "$icount" -eq 1 ]; then
-    case "$iagents" in claude) want=codex ;; codex) want=claude ;; esac
+    case "$iagents" in
+      claude) impl_single=claude others="codex or gemini" wantline="reviewed-by: codex (or reviewed-by: gemini)" ;;
+      codex)  impl_single=codex  others="claude or gemini" wantline="reviewed-by: claude (or reviewed-by: gemini)" ;;
+      gemini) impl_single=gemini others="claude or codex"  wantline="reviewed-by: claude (or reviewed-by: codex)" ;;
+    esac
   fi
-  if [ -n "$want" ]; then wantline="reviewed-by: ${want}"; else wantline="reviewed-by: claude, or reviewed-by: codex"; fi
-  implline="implemented-by: claude (<model or persona>), or implemented-by: codex (<model or persona>)"
+  implline="implemented-by: claude (<model or persona>), implemented-by: codex (<model or persona>), or implemented-by: gemini (<model or persona>)"
   findings=0
   finding() { echo "merge-check: review finding: $1; the line to write: $2"; findings=$((findings + 1)); }
   if [ "$author" != Bot ]; then
     if [ "$icount" -eq 0 ]; then
-      finding "no line starts implemented-by:, and the implemented-by: line must name claude or codex, the agent that wrote the commits" "$implline"
+      finding "no line starts implemented-by:, and the implemented-by: line must name claude, codex, or gemini, the agent that wrote the commits" "$implline"
     elif [ "$icount" -gt 1 ]; then
       finding "${icount} lines start implemented-by:, and exactly one may" "$implline"
     elif [ -z "$iagents" ]; then
-      finding "the implemented-by: line must name claude or codex, the agent that wrote the commits" "$implline"
+      finding "the implemented-by: line must name claude, codex, or gemini, the agent that wrote the commits" "$implline"
     fi
   fi
   if [ "$rcount" -eq 0 ]; then
     finding "no line starts reviewed-by:" "$wantline"
   elif [ "$rcount" -gt 1 ]; then
     finding "${rcount} lines start reviewed-by:, and exactly one may" "$wantline"
-  elif [ "$ragents" != claude ] && [ "$ragents" != codex ]; then
-    finding "the reviewed-by: line must name exactly one of claude and codex" "$wantline"
-  elif [ -n "$want" ] && [ "$ragents" != "$want" ]; then
-    finding "the reviewed-by: line names ${ragents}, which the implemented-by: line names; the other agent, ${want}, reviews" "$wantline"
+  elif [ "$ragents" != claude ] && [ "$ragents" != codex ] && [ "$ragents" != gemini ]; then
+    finding "the reviewed-by: line must name exactly one of claude, codex, and gemini" "$wantline"
+  elif [ -n "$impl_single" ] && [ "$ragents" = "$impl_single" ]; then
+    finding "the reviewed-by: line names ${ragents}, which the implemented-by: line names; another agent (${others}) reviews" "$wantline"
   fi
   if [ "$findings" -eq 0 ]; then
     echo "merge-check: the review check passes; reviewing agent: ${ragents}"

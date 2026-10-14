@@ -443,13 +443,14 @@ func TestMergeCheckReview(t *testing.T) {
 	})
 	t.Run("names near the rule", func(t *testing.T) {
 		docs := []string{"AGENTS.md", ".claude/skills/preflight/SKILL.md", "x/.claude/agents/a.md",
-			"openspec/changes/x/.openspec.yaml", "openspec/x.sh"}
+			"x/.agents/contracts/a.md", "openspec/changes/x/.openspec.yaml", "openspec/x.sh"}
 		first := runMergeCheck(t, review(false, "User", "", docs...), "12")
 		first.requirePass(t, "documents only")
 		first.requireCodeNames(t)
 
 		code := []string{"README.MD", "docs/a.md.txt", "openspecs/a.yaml", "docs/openspec/a.yaml", "Taskfile.yml",
-			"docs/admission-ledger.yaml", ".claude/agents/semengine-reviewer.md", ".codex/agents/semengine-reviewer.toml"}
+			"docs/admission-ledger.yaml", ".claude/agents/semengine-reviewer.md",
+			".agents/contracts/semengine-reviewer.md", ".codex/agents/semengine-reviewer.toml"}
 		st := review(false, "User", "", append(slices.Clone(docs), code...)...)
 		entries := strings.TrimSuffix(st.files, "]") + `,{"filename":"scripts/x.sh","status":"removed","additions":0,"deletions":9}]`
 		st.files = entries
@@ -508,13 +509,18 @@ func TestMergeCheckReview(t *testing.T) {
 	code := func(author, body string) ghState { return review(false, author, body, "docs/a.md", "scripts/x.sh") }
 	const (
 		noRun      = "editing the description starts no run"
-		mustName   = "the implemented-by: line must name claude or codex"
-		exactlyOne = "the reviewed-by: line must name exactly one of claude and codex"
+		mustName   = "the implemented-by: line must name claude, codex, or gemini"
+		exactlyOne = "the reviewed-by: line must name exactly one of claude, codex, and gemini"
 	)
 	t.Run("the other agent is named", func(t *testing.T) {
-		r := runMergeCheck(t, code("User", implClaude+"reviewed-by: codex semengine-reviewer — targeted (3.1–3.3 fixes) APPROVE at 0a86a9a; full-diff review pending.\n"), "12")
-		r.requirePass(t, "reviewing agent: codex")
-		r.requireNotInOutput(t, noRun)
+		for _, tc := range []struct{ body, reviewer string }{
+			{implClaude + "reviewed-by: codex semengine-reviewer — targeted (3.1–3.3 fixes) APPROVE at 0a86a9a; full-diff review pending.\n", "codex"},
+			{"Summary.\n\nimplemented-by: gemini (pro)\nreviewed-by: claude (opus)\n", "claude"},
+		} {
+			r := runMergeCheck(t, code("User", tc.body), "12")
+			r.requirePass(t, "reviewing agent: "+tc.reviewer)
+			r.requireNotInOutput(t, noRun)
+		}
 	})
 	t.Run("no reviewed-by line", func(t *testing.T) {
 		runMergeCheck(t, code("User", implClaude), "12").
@@ -531,11 +537,15 @@ func TestMergeCheckReview(t *testing.T) {
 		}
 	})
 	t.Run("same agent implements and reviews", func(t *testing.T) {
-		runMergeCheck(t, code("User", "implemented-by: claude-fable-5-1\nreviewed-by: Claude (opus)\n"), "12").
-			requireFail(t, "the other agent, codex, reviews")
+		for _, tc := range []struct{ body, says string }{
+			{"implemented-by: claude-fable-5-1\nreviewed-by: Claude (opus)\n", "another agent (codex or gemini) reviews"},
+			{"implemented-by: gemini (pro)\nreviewed-by: Gemini (pro)\n", "another agent (claude or codex) reviews"},
+		} {
+			runMergeCheck(t, code("User", tc.body), "12").requireFail(t, tc.says)
+		}
 	})
 	t.Run("reviewer line names no agent, both, or a longer word", func(t *testing.T) {
-		for _, reviewer := range []string{"gpt-6-astra", "codex, then claude", "codex2"} {
+		for _, reviewer := range []string{"gpt-6-astra", "codex, then claude", "codex2", "gemini2"} {
 			t.Run(reviewer, func(t *testing.T) {
 				r := runMergeCheck(t, code("User", "implemented-by: claude\nreviewed-by: "+reviewer+"\n"), "12")
 				r.requireFail(t, exactlyOne)

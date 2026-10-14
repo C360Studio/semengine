@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -45,10 +44,10 @@ func TestIntegration_ConnectToRealNATS(t *testing.T) {
 // TestIntegration_ReconnectionIsRedial proves re-dial, not nats.go's automatic reconnect: when the
 // broker restarts, a client on it observes the loss (its connection-lost callback fires and its
 // Status leaves connected), and a client dialled from the restarted broker's URL is healthy.
-// Docker may map the restarted broker to another host port, so the first client's URL can point
-// nowhere; that is why the pin skipped this test (integration_test.go:63-65) and why the first
-// client here has no reconnects. Rewritten on natsfixture.Restart (owner ruling, #9 comment
-// 5941920346, Q2; comment 5969522395, item 2).
+// The pin skipped this test because Docker could map the restarted broker to another host port
+// (integration_test.go:63-65). natsfixture keeps the host port across a restart (#209); the first
+// client here has no reconnects because the test proves a re-dial, not a reconnect. Rewritten on
+// natsfixture.Restart (owner ruling, #9 comment 5941920346, Q2; comment 5969522395, item 2).
 func TestIntegration_ReconnectionIsRedial(t *testing.T) {
 	ctx := t.Context()
 	f := startFixture(t)
@@ -166,13 +165,6 @@ func TestIntegration_CircuitBreakerWithRealConnection(t *testing.T) {
 	// Try to connect to an invalid NATS server
 	manager, err := NewClient(refusedNATSURL(t))
 	require.NoError(t, err)
-	// Counts the dials Connect reports through its opHook seam; set before any Connect runs.
-	var dials atomic.Int32
-	manager.opHook = func(op string) {
-		if op == "dial" {
-			dials.Add(1)
-		}
-	}
 
 	// Try 14 times - should not open circuit (threshold is 15)
 	for i := 0; i < 14; i++ {
@@ -190,14 +182,13 @@ func TestIntegration_CircuitBreakerWithRealConnection(t *testing.T) {
 	assert.Equal(t, int32(15), manager.Failures())
 
 	// Further attempts should fail immediately with circuit open error. "Immediately" is observed
-	// as no dial, where the pin asserted under 10 ms of wall time (design D8 R1b).
-	dialsBefore := dials.Load()
-	require.Equal(t, int32(15), dialsBefore, "the 15 failed Connects each reported a dial through opHook")
+	// as no failed dial, where the pin asserted under 10 ms of wall time (design D8 R1b): a dial
+	// to the refused port fails, and a failed dial adds a failure even while the circuit is open.
 	err = manager.Connect(ctx)
 
 	assert.Error(t, err)
 	assert.Equal(t, ErrCircuitOpen, err)
-	assert.Equal(t, dialsBefore, dials.Load(), "Connect with the circuit open dialled") // Should fail fast
+	assert.Equal(t, int32(15), manager.Failures(), "Connect with the circuit open dialled") // Should fail fast
 }
 
 // TestIntegration_PublishSubscribe tests basic pub/sub functionality

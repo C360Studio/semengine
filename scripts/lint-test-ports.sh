@@ -21,7 +21,13 @@
 #   - Bind-then-close-then-bind: net.Listen("tcp", ":0"), read the port,
 #     close the listener, and bind that port again. Another process can
 #     take the port in between; SemStreams removed its freePort helper
-#     for this race (its #1120).
+#     for this race (its #1120). natsfixture's freePort (fixture.go, not
+#     a test file, so not scanned) is the one deliberate use here, and
+#     it is this guard's rule applied: the kernel picks the port. It
+#     closes the listener because Docker, another process, can be given
+#     only the number; a process that takes the port in between fails
+#     Docker's start loudly (SemEngine #209; measured on macOS by the
+#     probe on PR #210, comment 6151736554).
 #
 # Adapted in SemEngine (openspec change flake-defense, design D7): the
 # inline exemption marker is gone, and the failure message says to hand

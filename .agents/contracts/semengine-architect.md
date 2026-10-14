@@ -187,14 +187,66 @@ mandatory.
 Source: issue #159, filed with ruling 1 in epic #9 comment 6085243841; the bounded disposition supersedes its
 unconditional refactor and `adapt` mapping (epic #9 comment 6101771664).
 
+### Open issues against the package
+
+From Slice 04A change 3 on, before a porting design is written, the architect lists every open issue in this
+repository that names a package the pull request carries, and the design says for each one whether this pull request
+retires it or why it stays. A pull request retires an issue when it does the issue's work and closes it, with
+`Closes #n` in the pull request body. An issue names a package when it gives the package's import path, a `path:line`
+under it, or the package's admission-ledger row, in its title, its body or a comment. Rulings are recorded as
+comments: adoption issue #141, open on 2026-10-13, names `graph/inference/storage.go:159` only in its ruling comment
+of 2026-10-10.
+Every label counts: `class:port-refactor`, `bug`, `enhancement`, adoption issues and decisions alike. The duty is to
+face everything still open against the package, not to lower one label's count, so filing an issue under another
+label changes nothing. The listing is part of the inventory, beside the shape sweep's findings.
+
+The candidates come from one query per package, on the last segment of its import path (`inference` for
+`graph/inference`). GitHub's default search, which this query uses, reads titles, bodies and comments.
+
+```bash
+gh issue list --state open --search "<last path segment>" --limit 200
+```
+
+Read the hits; do not count them. The search matches words, not packages, so it also returns issues that only use the
+word. Measured on 2026-10-13 with this query: `config` returned 16 open issues, of which two, #17 and #74, are about
+the `config` package by their titles; `inference` returned 12, four of them, #141 among them, through a comment only.
+Keep the hits that name the package; the rest may be listed on one line as "names the word, not the package". For
+each issue kept, the design records one of two dispositions:
+
+1. **Retired by this pull request:** the pull request body carries `Closes #n`, and the design names the task in
+   `tasks.md` that does the work.
+2. **Stays,** with two things said. First, what the work is, as
+   [Bounded port scope](../protocol.md#bounded-port-scope) classes it: a required correction with its binding basis,
+   or optional inherited maintenance with why changing it now is optional. Second, where the work will be done, which
+   is this repository's scheduling and not the protocol's: a later pull request for the same package (another
+   lifecycle owner's), the pull request that ports a package importing it, or another named package, when the
+   issue's work lies there. A pull request nobody has claimed yet has no number, so it is named by its package and
+   lifecycle owner, as the slice's design lists them (for Slice 04A, D2 of the archived `setup-04a-foundation`
+   design). Optional maintenance may have no place yet, because only an explicit owner decision schedules optional
+   work (Bounded port scope); the design then says so. A correction that an admission gate (Extraction slices, first
+   paragraph) needs in the code this pull request carries is never scheduled later: this pull request retires it.
+
+A "stays" with a supported basis is not a finding against the design, and neither is a design that retires nothing.
+No command compares the number of open issues before and after a merge, and nothing gates on that number:
+`scripts/merge-check.sh` reads no port-refactor count (it reads the open `class:flake` list, for the known-flake
+rule). A number that is checked becomes a number that is managed: a gate on the open count would reward an agent for
+leaving a defect unfiled, or for filing it under a label the gate does not count. Under this rule, filing an issue
+costs a pull request nothing; an open issue missing from the listing is what the reviewer looks for, re-running the
+same query (reviewer contract § Pre-owner design review). The open `class:port-refactor` count stays a figure
+reported in status comments on epic #9. This rule is review only.
+
+Source: owner ruling of 2026-10-13, #160, which replaced the merge check that issue first asked for (fail a pull
+request that raises the open `class:port-refactor` count) with this listing.
+
 ## The surface inventory (mandatory first deliverable)
 
 The inventory is a file, `openspec/changes/<id>/inventory.md`, with a `base: <sha>` header and every entry pinned as
 `` `path:line` — `<the line's text>` `` so the reviewer can re-check each pin after commits. A porting change's
-inventory also lists the shape sweep's findings (Extraction slices, "The shape sweep"). Enumerate from the
-repository, never from the briefing: a briefing's list is a set of hypotheses, and a directed check inherits the
-director's blind spots. The reviewer's independent re-derivation is the check on your blind spots. Six categories,
-each either cited at `file:line` or closed with the exact searches that came up empty:
+inventory also lists the shape sweep's findings and the open issues against each package it carries (Extraction
+slices, "The shape sweep" and "Open issues against the package"). Enumerate from the repository, never from the
+briefing: a briefing's list is a set of hypotheses, and a directed check inherits the director's blind spots. The
+reviewer's independent re-derivation is the check on your blind spots. Six categories, each either cited at
+`file:line` or closed with the exact searches that came up empty:
 
 1. **The claimed gap.** If the change says X is missing, search for X under every plausible spelling: exported and
    unexported names, config keys, port types, payload kinds, subject grammars, CLI flags. "Add field X" silently

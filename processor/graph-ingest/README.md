@@ -27,11 +27,15 @@ graph.mutation.> ───────┼─►│ graph-ingest ├──► ENT
 - **At-least-once delivery:** JetStream consumption with explicit acknowledgment; a redelivery the applied-sequence
   guard has already seen is dropped and counted. The guard keeps, for each entity and stream, the stream's generation
   and the last sequence applied from it in `GRAPH_INGEST_APPLIED_SEQ`, as sixteen bytes. The generation is the
-  stream's creation time on the server, read when graph-ingest binds its consumer: a stream deleted and created again
-  is a new generation whose sequences restart at 1, and its inputs are never dropped because of the sequences of the
-  stream it replaced. A stored value of any other length, including the eight-byte sequence SemStreams wrote, cannot
-  be decoded, so the input is neither applied nor acknowledged: it is delivered again, each refusal is counted, and
-  the key is logged once. Deleting the key repairs it, and the next delivery is applied as first seen.
+  stream's creation time on the server, which `Start` reads before it binds the stream's consumer; every input that
+  consumer delivers carries it. An input from a generation other than the stored one is not dropped because of the
+  stored sequence. In some cases an input from a stream that was deleted and created again, or restored, still carries
+  the stored generation, and is then dropped and counted as a redelivery when its sequence is not newer; the
+  [`graph-ingest-recovery` spec](../../openspec/specs/graph-ingest-recovery/spec.md) lists those cases under "Replay
+  protection uses the generation read before the bind". A stored value of any other length, including the eight-byte
+  sequence SemStreams wrote, cannot be decoded, so the input is neither applied nor acknowledged: it is delivered
+  again, each refusal is counted, and the key is logged once. Deleting the key repairs it, and the next delivery is
+  applied as first seen.
 
 ## Configuration
 

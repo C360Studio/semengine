@@ -794,7 +794,8 @@ func TestRestartKeepsFileStreamLosesMemoryStream(t *testing.T) {
 }
 
 // After Restart, URL() is the container's current binding, read from Docker independently of the
-// fixture, and a fresh dial to it reaches the restarted broker.
+// fixture, on the host port it had before the restart, and a fresh dial to it reaches the restarted
+// broker.
 func TestRestartURLDials(t *testing.T) {
 	f := startFixture(t)
 	old := f.URL()
@@ -812,7 +813,9 @@ func TestRestartURLDials(t *testing.T) {
 	if !slices.ContainsFunc(ports, func(p string) bool { return strings.HasSuffix(f.URL(), ":"+p) }) {
 		t.Fatalf("URL %q is not the container's current binding %v", f.URL(), ports)
 	}
-	t.Logf("binding %s -> %s", old, f.URL())
+	if f.URL() != old {
+		t.Fatalf("URL %s -> %s across Restart, want the host port kept", old, f.URL())
+	}
 	nc, err := nats.Connect(f.URL(), nats.MaxReconnects(0))
 	if err != nil {
 		t.Fatalf("dial %s after restart: %v", f.URL(), err)

@@ -94,11 +94,11 @@ The packages under `internal/harness/` are test-only; a contract test refuses an
   one line in `internal/harness/natsfixture/nats-image`, named by its digest; the fixture refuses a line without one.
   To try another image, edit that line in a branch.
 - `natsfixture.Restart(ctx)` stops and starts the same container, so a file-backed stream keeps its messages and a
-  memory-backed one does not. Docker may map a new host port, so `URL()` and `JetStream()` are valid only until the
-  next `Restart`. Stop whatever you built on the old URL (a client, a consumer) before calling `Restart`, and start
-  it again from the new `URL()` afterwards. `Restart` first ends every consumer the fixture's `Consume` created and
-  waits for its handlers, so never call it from inside a `Consume` handler. Handles taken from the old connection
-  are dead afterwards.
+  memory-backed one does not. The fixture gives Docker the host port, so `URL()` is the same after a `Restart`, but
+  every connection to the container is lost, and `JetStream()` is valid only until the next `Restart`. Stop whatever
+  you built on the fixture (a client, a consumer) before calling `Restart`, and start it again from `URL()`
+  afterwards. `Restart` first ends every consumer the fixture's `Consume` created and waits for its handlers, so
+  never call it from inside a `Consume` handler. Handles taken from the old connection are dead afterwards.
 - `natsfixture.FaultKV` wraps a real key-value bucket so a write fails on demand. `FailBefore(op, err)` returns
   `err` without calling the server, so nothing is written. `FailAfter(op, err)` makes the real write and then returns
   `err`, the case where the server applied the write but the caller saw an error. `op` is one of `KVPut` (which

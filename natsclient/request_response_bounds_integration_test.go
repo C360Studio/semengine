@@ -66,7 +66,10 @@ func (r *responseBoundsLogRecorder) containsError(parts ...string) bool {
 }
 
 func TestIntegration_ClientMaxPayloadObservesActiveConnection(t *testing.T) {
-	testClient := newFixtureClient(t, natsfixture.WithMaxPayload(responseBoundsTestMaxPayload))
+	// Own server: configures WithMaxPayload on the server.
+	f := natsfixture.New(t, natsfixture.WithMaxPayload(responseBoundsTestMaxPayload))
+	require.NoError(t, f.Start(t.Context()))
+	testClient := newFixtureClientAt(t, f.URL())
 
 	maxPayload, err := testClient.Client.MaxPayload()
 	require.NoError(t, err)
@@ -74,7 +77,10 @@ func TestIntegration_ClientMaxPayloadObservesActiveConnection(t *testing.T) {
 }
 
 func TestIntegration_SubscribeForRequestsPublishesBeforeClassifyingResponseLimit(t *testing.T) {
-	testClient := newFixtureClient(t, natsfixture.WithMaxPayload(responseBoundsTestMaxPayload))
+	// Own server: configures WithMaxPayload on the server.
+	f := natsfixture.New(t, natsfixture.WithMaxPayload(responseBoundsTestMaxPayload))
+	require.NoError(t, f.Start(t.Context()))
+	testClient := newFixtureClientAt(t, f.URL())
 	client := testClient.Client
 	ctx := context.Background()
 
@@ -143,7 +149,10 @@ func TestIntegration_SubscribeForRequestsPublishesBeforeClassifyingResponseLimit
 
 func TestIntegration_SubscribeForRequestsLogsResponseLimitRefusalPublishFailure(t *testing.T) {
 	const tinyMaxPayload int64 = 64
-	testClient := newFixtureClient(t, natsfixture.WithMaxPayload(tinyMaxPayload))
+	// Own server: configures WithMaxPayload on the server.
+	f := natsfixture.New(t, natsfixture.WithMaxPayload(tinyMaxPayload))
+	require.NoError(t, f.Start(t.Context()))
+	testClient := newFixtureClientAt(t, f.URL())
 	client := testClient.Client
 	recorder := &responseBoundsLogRecorder{}
 	client.logger = slog.New(recorder)

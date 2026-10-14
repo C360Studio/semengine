@@ -135,11 +135,11 @@ func startSettlementIngest(ctx context.Context, t *testing.T, client *natsclient
 	return owner
 }
 
-// startSettlementHelper starts the helper name against f and waits until it reports graph-ingest started.
-func startSettlementHelper(ctx context.Context, t *testing.T, f *natsfixture.Fixture, name string) *prochost.Process {
+// startSettlementHelper starts the helper name against url and waits until it reports graph-ingest started.
+func startSettlementHelper(ctx context.Context, t *testing.T, url, name string) *prochost.Process {
 	t.Helper()
 	ready := filepath.Join(t.TempDir(), "ready")
-	p, err := prochost.Start(t, name, helperNATSURL+"="+f.URL(), helperReady+"="+ready)
+	p, err := prochost.Start(t, name, helperNATSURL+"="+url, helperReady+"="+ready)
 	require.NoError(t, err)
 	awaitSettlement(ctx, t, p, "graph-ingest started in helper "+name, settlementStartBound,
 		func(context.Context) (bool, error) {
@@ -184,8 +184,8 @@ type ingestDelivery struct {
 }
 
 // ingestConsumer reads graph-ingest's durable consumer on the ENTITY stream from the broker.
-func ingestConsumer(ctx context.Context, f *natsfixture.Fixture) (ingestDelivery, error) {
-	consumer, err := f.JetStream().Consumer(ctx, entityStream.name, restartConsumer)
+func ingestConsumer(ctx context.Context, js jetstream.JetStream) (ingestDelivery, error) {
+	consumer, err := js.Consumer(ctx, entityStream.name, restartConsumer)
 	if err != nil {
 		return ingestDelivery{}, err
 	}
@@ -251,16 +251,17 @@ func TestIntegration_Settlement_ProcessKilledBetweenApplyAndAck(t *testing.T) {
 		guardKey = "c360.test.wire.settlement.entity.001/ENTITY" // entity ID, "/", stream name
 	)
 
-	f := natsfixture.New(t)
-	require.NoError(t, f.Start(ctx))
-	_, err := natsfixture.CreateStream(ctx, f.JetStream(), jetstream.FileStorage, entityStream.name, entityStream.subjects...)
+	url := shared.Reset(t)
+	publisher := natsfixture.Open(t, url, openFixtureClient)
+	js, err := publisher.JetStream()
 	require.NoError(t, err)
-	publisher := natsfixture.Open(t, f.URL(), openFixtureClient)
+	_, err = natsfixture.CreateStream(ctx, js, jetstream.FileStorage, entityStream.name, entityStream.subjects...)
+	require.NoError(t, err)
 
-	first := startSettlementHelper(ctx, t, f, settlementHeld)
-	entities, err := f.JetStream().KeyValue(ctx, graph.BucketEntityStates)
+	first := startSettlementHelper(ctx, t, url, settlementHeld)
+	entities, err := js.KeyValue(ctx, graph.BucketEntityStates)
 	require.NoError(t, err)
-	guardRecords, err := f.JetStream().KeyValue(ctx, graph.BucketGraphIngestAppliedSeq)
+	guardRecords, err := js.KeyValue(ctx, graph.BucketGraphIngestAppliedSeq)
 	require.NoError(t, err)
 	seq := publishTriples(ctx, t, publisher, entityID, message.Triple{
 		Subject: entityID, Predicate: settlementPredicate, Object: settlementObject, Timestamp: fixtureTime, Confidence: 1.0,
@@ -269,7 +270,7 @@ func TestIntegration_Settlement_ProcessKilledBetweenApplyAndAck(t *testing.T) {
 	awaitSettlement(ctx, t, first, "the entity's write", settlementApplyBound,
 		func(ctx context.Context) (jetstream.KeyValueEntry, error) { return entities.Get(ctx, entityID) },
 		func(entry jetstream.KeyValueEntry) bool { return entry != nil })
-	delivery, err := ingestConsumer(ctx, f)
+	delivery, err := ingestConsumer(ctx, js)
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, delivery.DeliveredStream, seq, "the input must have been delivered")
 	require.Less(t, delivery.AckFloor, seq, "the input must not be acknowledged while its record is held")
@@ -287,9 +288,9 @@ func TestIntegration_Settlement_ProcessKilledBetweenApplyAndAck(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, syscall.SIGKILL, status.Signal, "the first helper must have ended by the kill")
 
-	second := startSettlementHelper(ctx, t, f, settlementPlain)
+	second := startSettlementHelper(ctx, t, url, settlementPlain)
 	delivery = awaitSettlement(ctx, t, second, "the redelivery's acknowledgement", settlementRedeliveryBound,
-		func(ctx context.Context) (ingestDelivery, error) { return ingestConsumer(ctx, f) },
+		func(ctx context.Context) (ingestDelivery, error) { return ingestConsumer(ctx, js) },
 		func(d ingestDelivery) bool { return d.AckFloor >= seq && d.AckPending == 0 })
 	require.GreaterOrEqual(t, delivery.Deliveries, uint64(2), "the input must have been delivered again")
 	_, err = guardRecords.Get(ctx, guardKey)
@@ -333,11 +334,9 @@ func TestIntegration_Settlement_FailedGuardWriteIsRedelivered(t *testing.T) {
 		guardKey = "c360.test.wire.settlement.entity.002/ENTITY" // entity ID, "/", stream name
 	)
 
-	f := natsfixture.New(t)
-	require.NoError(t, f.Start(ctx))
-	_, err := natsfixture.CreateStream(ctx, f.JetStream(), jetstream.FileStorage, entityStream.name, entityStream.subjects...)
+	client := newFixtureClient(t, entityStream)
+	js, err := client.JetStream()
 	require.NoError(t, err)
-	client := natsfixture.Open(t, f.URL(), openFixtureClient)
 
 	var guard *refusedGuardWrite
 	owner := startSettlementIngest(ctx, t, client, func(bucket jetstream.KeyValue) jetstream.KeyValue {
@@ -352,9 +351,9 @@ func TestIntegration_Settlement_FailedGuardWriteIsRedelivered(t *testing.T) {
 	var releaseOnce sync.Once
 	releaseRefused := func() { releaseOnce.Do(func() { close(guard.release) }) }
 	defer releaseRefused() // before owner.finish: Stop must not wait on a held write
-	entities, err := f.JetStream().KeyValue(ctx, graph.BucketEntityStates)
+	entities, err := js.KeyValue(ctx, graph.BucketEntityStates)
 	require.NoError(t, err)
-	guardRecords, err := f.JetStream().KeyValue(ctx, graph.BucketGraphIngestAppliedSeq)
+	guardRecords, err := js.KeyValue(ctx, graph.BucketGraphIngestAppliedSeq)
 	require.NoError(t, err)
 	seq := publishTriples(ctx, t, client, entityID, message.Triple{
 		Subject: entityID, Predicate: settlementPredicate, Object: settlementObject, Timestamp: fixtureTime, Confidence: 1.0,
@@ -369,7 +368,7 @@ func TestIntegration_Settlement_FailedGuardWriteIsRedelivered(t *testing.T) {
 	}
 	_, err = entities.Get(ctx, entityID)
 	require.NoError(t, err, "the entity write must precede the applied-sequence write")
-	delivery, err := ingestConsumer(ctx, f)
+	delivery, err := ingestConsumer(ctx, js)
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), delivery.Deliveries, "the input must have been delivered once")
 	require.Less(t, delivery.AckFloor, seq, "the input must not be acknowledged while its record is refused")
@@ -379,7 +378,7 @@ func TestIntegration_Settlement_FailedGuardWriteIsRedelivered(t *testing.T) {
 
 	releaseRefused()
 	delivery = awaitSettlement(ctx, t, nil, "the redelivery's acknowledgement", settlementApplyBound,
-		func(ctx context.Context) (ingestDelivery, error) { return ingestConsumer(ctx, f) },
+		func(ctx context.Context) (ingestDelivery, error) { return ingestConsumer(ctx, js) },
 		func(d ingestDelivery) bool { return d.AckFloor >= seq && d.AckPending == 0 })
 	require.Equal(t, uint64(2), delivery.Deliveries, "the input must have been delivered again, once")
 	require.Equal(t, 1, guard.Calls()[natsfixture.KVPut], "only the redelivery's record write must reach the bucket")

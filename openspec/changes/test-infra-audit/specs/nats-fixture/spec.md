@@ -262,8 +262,9 @@ depend on which test reached that step first.
 
 ### Requirement: Bounded test streams
 
-`natsfixture` SHALL provide functions that create a file-backed or a memory-backed stream on a given JetStream, each
-declaring `MaxAge`, `MaxBytes` and `DiscardOld`, so a runaway test fails on a ceiling instead of filling the server.
+`natsfixture.CreateStream` SHALL be a function, not a fixture method, that creates a stream on a given JetStream with
+the storage type the caller passes (file or memory), declaring `MaxAge`, `MaxBytes` and `DiscardOld`, so a runaway test
+fails on a ceiling instead of filling the server.
 
 #### Scenario: Memory stream is bounded
 

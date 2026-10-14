@@ -161,7 +161,6 @@ func TestMappedPortFailureCarriesTheInspect(t *testing.T) {
 		f.deps.mappedPort = func(context.Context, testcontainers.Container) (string, error) { return "", errNotFound }
 		f.deps.logs = func(context.Context, testcontainers.Container) ([]byte, error) { return nil, nil }
 		f.deps.terminate = func(context.Context, testcontainers.Container) error { return nil }
-		f.deps.absent = func(context.Context, string) (bool, error) { return true, nil }
 		inspectOnce(f)
 		check(t, "Start", f.Start(t.Context()))
 	})

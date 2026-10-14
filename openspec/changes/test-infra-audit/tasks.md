@@ -59,7 +59,7 @@ review stop. Choices the design does not spell out go in `notes/<task>.md`.
 
 ## 3. Smaller natsfixture (pull request 2)
 
-- [ ] 3.1 Stop closes the connection and removes the container, nothing more; a repeated Stop is a no-op; tests first
+- [x] 3.1 Stop closes the connection and removes the container, nothing more; a repeated Stop is a no-op; tests first
   (`nats-fixture`, "Own server per test").
 - [ ] 3.2 Remove `Consume`, `CreateKeyValue`, the consumer joins and the operation slot; Restart keeps #200's retry
   (`nats-fixture`, "Restart keeps the container").

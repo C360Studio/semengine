@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	neturl "net/url"
-	"strings"
 	"time"
 
 	"github.com/c360studio/semengine/internal/harness/probe"
@@ -42,7 +41,6 @@ type deps struct {
 	startContainer func(context.Context, testcontainers.Container) error
 	drain          func(context.Context, *nats.Conn) error
 	logs           func(context.Context, testcontainers.Container) ([]byte, error)
-	absent         func(context.Context, string) (bool, error)
 }
 
 // defaultDeps calls Docker and NATS. Its start runs prepareDocker first, writing to logf.
@@ -96,7 +94,6 @@ func defaultDeps(logf func(format string, args ...any)) deps {
 			defer func() { _ = rc.Close() }()
 			return io.ReadAll(io.LimitReader(rc, maxLogBytes))
 		},
-		absent: containerAbsent,
 	}
 }
 
@@ -155,28 +152,4 @@ func drainAndObserveClosed(ctx context.Context, nc *nats.Conn) error {
 	_, err := probe.Await(ctx, func(context.Context) (bool, error) { return nc.IsClosed(), nil },
 		func(closed bool) bool { return closed })
 	return err
-}
-
-// containerAbsent asks the daemon directly: after Terminate, testcontainers closes the container's
-// own client, so absence is observed through a fresh one.
-func containerAbsent(ctx context.Context, id string) (bool, error) {
-	cli, err := testcontainers.NewDockerClientWithOpts(ctx)
-	if err != nil {
-		return false, err
-	}
-	provider := &testcontainers.DockerProvider{}
-	provider.SetClient(cli)
-	defer func() { _ = provider.Close() }()
-	probe := &testcontainers.DockerContainer{ID: id}
-	probe.SetProvider(provider)
-	_, err = probe.Inspect(ctx)
-	if err == nil {
-		return false, nil
-	}
-	// The daemon's not-found message has been stable since Docker 1.x; if it ever changes, this
-	// fails closed: Stop reports the error instead of claiming the container absent.
-	if strings.Contains(err.Error(), "No such container") {
-		return true, nil
-	}
-	return false, err
 }

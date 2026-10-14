@@ -39,9 +39,6 @@ func TestCreateStreamDeclaresBounds(t *testing.T) {
 	if got.Name != "orders" || len(got.Subjects) != 1 || got.MaxAge != time.Hour || got.MaxBytes != 64<<20 || got.Discard != jetstream.DiscardOld {
 		t.Fatalf("stream config %+v lacks the declared bounds", got)
 	}
-	if rem := f.remaining(); len(rem) != 1 || rem[0] != "stream orders" {
-		t.Fatalf("created stream not owned: %v", rem)
-	}
 }
 
 func TestCreateKeyValueDeclaresBounds(t *testing.T) {
@@ -57,13 +54,10 @@ func TestCreateKeyValueDeclaresBounds(t *testing.T) {
 	if got.Bucket != "state" || got.TTL != time.Hour || got.MaxBytes != 64<<20 {
 		t.Fatalf("bucket config %+v lacks the declared bounds", got)
 	}
-	if rem := f.remaining(); len(rem) != 1 || rem[0] != "bucket state" {
-		t.Fatalf("created bucket not owned: %v", rem)
-	}
 }
 
-// A memory-backed stream is owned and bounded like a file-backed one (nats-fixture › "Memory-backed
-// owned stream"); only the storage differs.
+// A memory-backed stream is bounded like a file-backed one (nats-fixture › "Bounded test
+// streams"); only the storage differs.
 func TestCreateMemoryStreamDeclaresBoundsAndMemoryStorage(t *testing.T) {
 	f := startedWith(t)
 	var got jetstream.StreamConfig
@@ -77,9 +71,6 @@ func TestCreateMemoryStreamDeclaresBoundsAndMemoryStorage(t *testing.T) {
 	if got.Name != "scratch" || len(got.Subjects) != 1 || got.MaxAge != time.Hour || got.MaxBytes != 64<<20 ||
 		got.Discard != jetstream.DiscardOld || got.Storage != jetstream.MemoryStorage {
 		t.Fatalf("stream config %+v lacks memory storage or the declared bounds", got)
-	}
-	if rem := f.remaining(); len(rem) != 1 || rem[0] != "stream scratch" {
-		t.Fatalf("created memory stream not owned: %v", rem)
 	}
 	var nilCtx context.Context
 	if _, err := f.CreateMemoryStream(nilCtx, "s"); err == nil {
@@ -208,9 +199,8 @@ func TestRestartLaterPhaseFailuresAreNamed(t *testing.T) {
 	}
 }
 
-// A create that fails is still owned: it may have happened on the broker, and Stop treats a
-// resource that turns out not to exist as absent.
-func TestFailedCreateIsOwnedAndTyped(t *testing.T) {
+// A create that fails returns a typed error naming the phase and the container.
+func TestFailedCreateIsTyped(t *testing.T) {
 	f := startedWith(t)
 	cause := errors.New("timeout")
 	f.deps.createStream = func(context.Context, jetstream.JetStream, jetstream.StreamConfig) (jetstream.Stream, error) {
@@ -220,9 +210,6 @@ func TestFailedCreateIsOwnedAndTyped(t *testing.T) {
 	var fe *Error
 	if !errors.As(err, &fe) || fe.Phase != PhaseCreateStream || !errors.Is(err, cause) || fe.ContainerID != "c0ffee" {
 		t.Fatalf("CreateStream = %v, want a typed create-stream error", err)
-	}
-	if rem := f.remaining(); len(rem) != 1 {
-		t.Fatalf("failed create not owned: %v", rem)
 	}
 }
 
@@ -412,7 +399,6 @@ func TestQueuedCreationRefusedWhenStopBegins(t *testing.T) {
 		<-stopGo
 		return nil
 	}
-	f.deps.absent = func(context.Context, string) (bool, error) { return true, nil }
 
 	first := make(chan error, 1)
 	go func() { _, err := f.CreateStream(t.Context(), "first"); first <- err }()

@@ -39,8 +39,8 @@ type Error struct {
 	// ParentErr is the caller's context error at the moment of failure; nil means it was live.
 	ParentErr error
 	Cause     error
-	// Cleanup is the outcome of rolling back what the attempt created; nil means every resource
-	// was observed absent.
+	// Cleanup is the outcome of rolling back what the attempt created; nil means Docker reported
+	// the container removed.
 	Cleanup error
 }
 

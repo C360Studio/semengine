@@ -3,9 +3,9 @@
 // SemStreams natsclient/test_client.go at 5457b345 (ledger row L1) over nats.go and
 // testcontainers-go directly, without its eleven caller knobs (ledger row L2).
 //
-// Start succeeds only after JetStream answers; Stop succeeds only after it has observed every
-// owned consumer, stream, bucket, the connection, and the container absent. Test-only: contract
-// test T-B1 refuses any production import.
+// Start succeeds only after JetStream answers; Stop closes the connection and removes the
+// container, which removes everything in it. Test-only: contract test T-B1 refuses any production
+// import.
 package natsfixture
 
 import (
@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"net"
 	"regexp"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -94,7 +93,7 @@ type Fixture struct {
 	mu sync.Mutex // guards everything below; never held across a Docker or NATS call
 
 	used          bool
-	stopping      bool          // set when Stop begins on owned resources; creation is refused from then on
+	stopping      bool          // set when Stop begins on a started fixture; creation is refused from then on
 	stopBegun     chan struct{} // closed with stopping set, so a creation queued for the slot is refused too
 	container     testcontainers.Container
 	containerID   string
@@ -102,8 +101,6 @@ type Fixture struct {
 	nc            *nats.Conn
 	js            jetstream.JetStream
 	consumers     []*consumer
-	streams       []string
-	buckets       []string
 	calls         map[string]int
 	slotWaits     map[string]int // operations that found the slot taken, by kind; read by tests
 	maxPayload    int64          // broker max_payload in bytes, from WithMaxPayload
@@ -418,7 +415,7 @@ func (f *Fixture) mappedPort(ctx context.Context, c testcontainers.Container) (s
 
 // rollbackAttempt removes what a failed attempt created, each operation under its own fresh
 // bounded context, and writes the container's log to the test log first. It returns nil only when
-// the container has been observed absent; otherwise the handles stay owned for a later Stop.
+// Docker reported the container removed; otherwise the container stays held for a later Stop.
 func (f *Fixture) rollbackAttempt(ctx context.Context, n int) error {
 	f.mu.Lock()
 	nc, c, id := f.nc, f.container, f.containerID
@@ -446,9 +443,6 @@ func (f *Fixture) rollbackAttempt(ctx context.Context, n int) error {
 		f.count("terminate")
 		return err
 	})
-	if err == nil {
-		err = rollback(ctx, func(rctx context.Context) error { return f.observeAbsent(rctx, id) })
-	}
 	if err != nil {
 		return fmt.Errorf("container %s: %w", shortID(id), err)
 	}
@@ -466,9 +460,9 @@ func (f *Fixture) URL() string {
 	return f.url
 }
 
-// JetStream is the JetStream context on the fixture's own connection, which Stop drains and
-// closes; there is deliberately no accessor for that connection. Tests needing a connection of
-// their own dial URL and close it themselves. Stop waits for in-flight async publishes.
+// JetStream is the JetStream context on the fixture's own connection, which Stop closes; there is
+// deliberately no accessor for that connection. Tests needing a connection of their own dial URL
+// and close it themselves. Stop does not wait for in-flight async publishes.
 func (f *Fixture) JetStream() jetstream.JetStream {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -490,7 +484,7 @@ func (f *Fixture) started() (jetstream.JetStream, string, error) {
 var errStopping = errors.New("natsfixture: Stop has begun; the fixture creates nothing more")
 
 // beginCreate admits one resource creation: refused at once once Stop has begun, otherwise it
-// holds the operation slot so Stop cannot snapshot ownership while a creation is in flight. A
+// holds the operation slot so Stop cannot snapshot the consumers while a creation is in flight. A
 // handler that creates while Stop waits to join it is refused, not deadlocked. The caller releases
 // the slot.
 func (f *Fixture) beginCreate(ctx context.Context) (jetstream.JetStream, string, error) {
@@ -508,8 +502,8 @@ func (f *Fixture) beginCreate(ctx context.Context) (jetstream.JetStream, string,
 	return js, id, nil
 }
 
-// CreateStream creates a file-backed stream the fixture owns, with the fixture's MaxAge, MaxBytes,
-// and DiscardOld bounds. Its messages survive Restart. Stop deletes it and observes it absent.
+// CreateStream creates a file-backed stream with the fixture's MaxAge, MaxBytes, and DiscardOld
+// bounds. Its messages survive Restart; Stop's removal of the container removes it.
 func (f *Fixture) CreateStream(ctx context.Context, name string, subjects ...string) (jetstream.Stream, error) {
 	if ctx == nil {
 		return nil, errors.New("natsfixture: CreateStream with a nil context")
@@ -517,9 +511,8 @@ func (f *Fixture) CreateStream(ctx context.Context, name string, subjects ...str
 	return f.createStream(ctx, jetstream.FileStorage, name, subjects)
 }
 
-// CreateMemoryStream creates a memory-backed stream the fixture owns, with the same bounds as
-// CreateStream. Its messages do not survive Restart; Stop deletes it, or observes it absent when
-// the restart took it.
+// CreateMemoryStream creates a memory-backed stream with the same bounds as CreateStream. Its
+// messages do not survive Restart; Stop's removal of the container removes it.
 func (f *Fixture) CreateMemoryStream(ctx context.Context, name string, subjects ...string) (jetstream.Stream, error) {
 	if ctx == nil {
 		return nil, errors.New("natsfixture: CreateMemoryStream with a nil context")
@@ -533,9 +526,6 @@ func (f *Fixture) createStream(ctx context.Context, storage jetstream.StorageTyp
 		return nil, err
 	}
 	defer f.release()
-	// Owned before the call: a create that times out may still have happened, and Stop treats a
-	// stream that turns out not to exist as absent.
-	f.own(&f.streams, name)
 	s, err := f.deps.createStream(ctx, js, jetstream.StreamConfig{
 		Name: name, Subjects: subjects, Storage: storage,
 		MaxAge: resourceMaxAge, MaxBytes: resourceMaxBytes, Discard: jetstream.DiscardOld,
@@ -547,7 +537,7 @@ func (f *Fixture) createStream(ctx context.Context, storage jetstream.StorageTyp
 	return s, nil
 }
 
-// CreateKeyValue creates a bucket the fixture owns, bounded like a stream (TTL as MaxAge).
+// CreateKeyValue creates a bucket bounded like a stream (TTL as MaxAge).
 func (f *Fixture) CreateKeyValue(ctx context.Context, bucket string) (jetstream.KeyValue, error) {
 	if ctx == nil {
 		return nil, errors.New("natsfixture: CreateKeyValue with a nil context")
@@ -557,7 +547,6 @@ func (f *Fixture) CreateKeyValue(ctx context.Context, bucket string) (jetstream.
 		return nil, err
 	}
 	defer f.release()
-	f.own(&f.buckets, bucket)
 	kv, err := f.deps.createKV(ctx, js, jetstream.KeyValueConfig{Bucket: bucket, TTL: resourceMaxAge, MaxBytes: resourceMaxBytes})
 	f.count("createKV")
 	if err != nil {
@@ -654,15 +643,6 @@ func (c *consumer) stopDelivery() {
 	}
 	if c.inflight == 0 {
 		c.idleOnce.Do(func() { close(c.idle) })
-	}
-}
-
-// own records a stream or bucket name before it is created.
-func (f *Fixture) own(list *[]string, name string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if !slices.Contains(*list, name) {
-		*list = append(*list, name)
 	}
 }
 

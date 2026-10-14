@@ -22,8 +22,8 @@ var errNotStarted = errors.New("natsfixture: Restart needs a fixture whose Start
 // stops, Restart waits for its running handlers, then cancels their context. Restart does not
 // re-create consumers; a test that needs one afterwards calls Consume again. The fixture's
 // connection is then drained, so the JetStream context and any stream, bucket or consumer handle
-// taken from it before the restart are dead. Streams and buckets stay owned, and Stop removes them
-// or observes them absent.
+// taken from it before the restart are dead. Streams and buckets stay on the server; Stop's removal
+// of the container removes them.
 //
 // URL and JetStream return the new binding once Restart returns nil, and stay valid until the next
 // Restart. The host port is the one Start gave Docker, so URL is unchanged (TestRestartURLDials),
@@ -36,7 +36,7 @@ var errNotStarted = errors.New("natsfixture: Restart needs a fixture whose Start
 // port again. A failure in that second stop, start or port read returns both errors; a connect or
 // JetStream failure after a good second read returns that error alone (maxAttempts says why the
 // one more try is kept). No replacement container is created; after a failure the fixture can
-// no longer be restarted, and Stop removes what it still owns. Do not call Restart from a Consume
+// no longer be restarted, and Stop removes the container. Do not call Restart from a Consume
 // handler: it waits for that handler to return.
 //
 // The caller must bound ctx. Readiness after the start is one more ready line in the container's
@@ -83,11 +83,10 @@ func (f *Fixture) restart(ctx context.Context, c testcontainers.Container, id st
 	nc, oldURL := f.nc, f.url
 	f.mu.Unlock()
 
-	// Consumers are joined while the connection is still up, so a handler's ack still lands. They
-	// stay owned: the durable consumer may outlive the restart on a file-backed stream, and Stop
-	// deletes it, or observes it absent, over the new connection.
+	// Consumers are joined while the connection is still up, so a handler's ack still lands. The
+	// durable consumer may outlive the restart on a file-backed stream; it goes with the container.
 	for _, cs := range consumers {
-		if err := f.stopConsumer(ctx, nil, cs, false); err != nil {
+		if err := f.stopConsumer(ctx, cs); err != nil {
 			return fmt.Errorf("natsfixture: restart: end consumer %s/%s: %w", cs.stream, cs.name, err)
 		}
 	}

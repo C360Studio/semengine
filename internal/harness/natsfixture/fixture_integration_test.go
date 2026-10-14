@@ -27,7 +27,7 @@ import (
 // stopBound is the fresh finite authority these tests give a controlled Stop.
 const stopBound = 60 * time.Second
 
-// containerExists asks the Docker CLI, an oracle independent of the fixture's own absence check.
+// containerExists asks the Docker CLI, an oracle independent of the fixture.
 func containerExists(t *testing.T, id string) bool {
 	t.Helper()
 	if id == "" {
@@ -430,7 +430,7 @@ func awaitDeliveryStopped(t *testing.T, f *Fixture) {
 
 // S1-3: Stop under live Start authority waits for a blocked callback. While it waits the
 // callback's context is live, the consumer exists, and the connection is up; the join completes
-// before Stop returns, and only then are consumer, stream, connection, and container removed.
+// before Stop returns, and only then are the connection closed and the container removed.
 func TestS1_3BlockedCallbackDelaysFinalisation(t *testing.T) {
 	f, cb, jc, _ := consumeBlocked(t)
 	id, nc := f.containerID, conn(f)
@@ -472,37 +472,6 @@ func TestS1_3BlockedCallbackDelaysFinalisation(t *testing.T) {
 	}
 }
 
-// S1-4: Stop waits for in-flight async publishes: when it returns, nats.go has resolved every
-// publish future with the server's acknowledgement.
-func TestS1_4GracefulFinalisation(t *testing.T) {
-	f := startFixture(t)
-	stream := "events"
-	if _, err := f.CreateStream(t.Context(), stream, stream+".>"); err != nil {
-		t.Fatal(err)
-	}
-	const n = 200
-	futures := make([]jetstream.PubAckFuture, 0, n)
-	for i := range n {
-		fut, err := f.JetStream().PublishAsync(fmt.Sprintf("%s.%d", stream, i), []byte("e"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		futures = append(futures, fut)
-	}
-	if err := stop(t, f); err != nil {
-		t.Fatalf("Stop: %v", err)
-	}
-	for i, fut := range futures {
-		select {
-		case <-fut.Ok():
-		case err := <-fut.Err():
-			t.Fatalf("publish %d failed: %v", i, err)
-		default:
-			t.Fatalf("publish %d still unacknowledged when Stop returned", i)
-		}
-	}
-}
-
 // S1-5: a Stop whose deadline expires while a callback is blocked returns DeadlineExceeded,
 // retains every handle, and leaves the container; after release a later Stop completes.
 func TestS1_5DeadlineIsNotAJoin(t *testing.T) {
@@ -515,7 +484,7 @@ func TestS1_5DeadlineIsNotAJoin(t *testing.T) {
 		t.Fatalf("Stop = %v, want context.DeadlineExceeded", err)
 	}
 	rem := f.remaining()
-	for _, want := range []string{"consumer " + stream + "/", "stream " + stream, "connection", "container "} {
+	for _, want := range []string{"consumer " + stream + "/", "connection", "container "} {
 		if !slices.ContainsFunc(rem, func(s string) bool { return strings.HasPrefix(s, want) }) {
 			t.Errorf("remaining %v lacks %q", rem, want)
 		}
@@ -671,7 +640,7 @@ func stopRunning(t *testing.T, f *Fixture) <-chan error {
 
 // H1: with the connection already closed (the broker went away; the fixture connects with
 // MaxReconnects(0)), Stop still stops delivery, joins the running handler, and only then cancels
-// its context. Only the server-side deletes are skipped: the container's removal takes them.
+// its context.
 func TestStopJoinsHandlersOnAClosedConnection(t *testing.T) {
 	f := startFixture(t)
 	cb := probe.NewCallback()
@@ -911,7 +880,7 @@ func TestRestartEndsConsumers(t *testing.T) {
 
 // Restart fault matrix (task 2.2): each container hook fails in turn, before and after its real
 // call. Restart returns an *Error naming exactly that phase, runs no later phase, creates no second
-// container, and Stop still removes the one container and observes it gone.
+// container, and Stop still removes the one container.
 func TestRestartFaultMatrix(t *testing.T) {
 	injected := errors.New("injected failure")
 	hook := func(real func(context.Context, testcontainers.Container) error, after bool) func(context.Context, testcontainers.Container) error {

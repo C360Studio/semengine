@@ -9,11 +9,11 @@ Each task names the outcome and the gate that proves it.
 
 ## 2. Implementation and tests
 
-- [ ] 2.1 Remove dead `timestamp.Parse(input any) int64` from `internal/timestamp/timestamp.go`, its doc-comment
+- [x] 2.1 Remove dead `timestamp.Parse(input any) int64` from `internal/timestamp/timestamp.go`, its doc-comment
   passages in `internal/timestamp/timestamp.go` and `internal/timestamp/doc.go`, `ExampleParse` in
   `internal/timestamp/example_test.go`, and `TestParse*` / `BenchmarkParse*` in `internal/timestamp/timestamp_test.go`.
   Gate: `task test:unit`.
-- [ ] 2.2 Convert `pkg/timestamp` from `carry` to `adapt` in `docs/admission-ledger.yaml`, trim verbose `adapt` /
+- [x] 2.2 Convert `pkg/timestamp` from `carry` to `adapt` in `docs/admission-ledger.yaml`, trim verbose `adapt` /
   `repair-before-port` rows across `docs/admission-ledger.yaml` (leaving the three entries touched by PR #206
   byte-identical), and update `docs/provenance.md:75-80`. Gate: `task ledger:check` and `task verify`.
 

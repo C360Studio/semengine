@@ -7,9 +7,8 @@ import (
 
 // Test constants
 var (
-	testTime       = time.Date(2023, 1, 15, 12, 30, 45, 123000000, time.UTC) // Use exact milliseconds
-	testTimeMs     = int64(1673785845123)                                    // Correct timestamp for the date above
-	testTimeString = "2023-01-15T12:30:45Z"
+	testTime   = time.Date(2023, 1, 15, 12, 30, 45, 123000000, time.UTC) // Use exact milliseconds
+	testTimeMs = int64(1673785845123)                                    // Correct timestamp for the date above
 )
 
 func TestNow(t *testing.T) {
@@ -126,139 +125,6 @@ func TestFormat(t *testing.T) {
 			result := Format(tt.input)
 			if result != tt.expected {
 				t.Errorf("Format(%d) = %q, expected %q", tt.input, result, tt.expected)
-			}
-		})
-	}
-}
-
-func TestParse(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    any
-		expected int64
-	}{
-		// int64 tests
-		{
-			name:     "int64 milliseconds",
-			input:    int64(1673785845123),
-			expected: 1673785845123,
-		},
-		{
-			name:     "int64 seconds",
-			input:    int64(1673784645),
-			expected: 1673784645000,
-		},
-		{
-			name:     "int64 zero",
-			input:    int64(0),
-			expected: 0,
-		},
-
-		// float64 tests
-		{
-			name:     "float64 milliseconds",
-			input:    float64(1673785845123),
-			expected: 1673785845123,
-		},
-		{
-			name:     "float64 seconds",
-			input:    float64(1673784645),
-			expected: 1673784645000,
-		},
-		{
-			name:     "float64 zero",
-			input:    float64(0),
-			expected: 0,
-		},
-
-		// int tests
-		{
-			name:     "int seconds",
-			input:    int(1673784645),
-			expected: 1673784645000,
-		},
-
-		// int32 tests
-		{
-			name:     "int32 seconds",
-			input:    int32(1673784645),
-			expected: 1673784645000,
-		},
-
-		// string tests
-		{
-			name:     "RFC3339 string",
-			input:    "2023-01-15T12:30:45Z",
-			expected: 1673785845000,
-		},
-		{
-			name:     "RFC3339 with milliseconds",
-			input:    "2023-01-15T12:30:45.123Z",
-			expected: 1673785845123,
-		},
-		{
-			name:     "unix timestamp string seconds",
-			input:    "1673784645",
-			expected: 1673784645000,
-		},
-		{
-			name:     "unix timestamp string milliseconds",
-			input:    "1673785845123",
-			expected: 1673785845123,
-		},
-		{
-			name:     "empty string",
-			input:    "",
-			expected: 0,
-		},
-		{
-			name:     "invalid string",
-			input:    "invalid",
-			expected: 0,
-		},
-
-		// time.Time tests
-		{
-			name:     "time.Time",
-			input:    time.UnixMilli(1673785845123),
-			expected: 1673785845123,
-		},
-		{
-			name:     "zero time.Time",
-			input:    time.Time{},
-			expected: 0,
-		},
-
-		// *time.Time tests
-		{
-			name:     "*time.Time",
-			input:    &testTime,
-			expected: testTimeMs,
-		},
-		{
-			name:     "nil *time.Time",
-			input:    (*time.Time)(nil),
-			expected: 0,
-		},
-
-		// nil and unsupported types
-		{
-			name:     "nil",
-			input:    nil,
-			expected: 0,
-		},
-		{
-			name:     "unsupported type",
-			input:    []int{1, 2, 3},
-			expected: 0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := Parse(tt.input)
-			if result != tt.expected {
-				t.Errorf("Parse(%v) = %d, expected %d", tt.input, result, tt.expected)
 			}
 		})
 	}
@@ -609,46 +475,6 @@ func TestRoundTripAccuracy(t *testing.T) {
 	}
 }
 
-func TestParseEdgeCases(t *testing.T) {
-	// Test boundary between seconds and milliseconds interpretation
-	boundary := int64(1e12)
-
-	// Just under boundary should be treated as seconds
-	result := Parse(boundary - 1)
-	expected := (boundary - 1) * 1000
-	if result != expected {
-		t.Errorf("Parse(%d) = %d, expected %d", boundary-1, result, expected)
-	}
-
-	// Just over boundary should be treated as milliseconds
-	result = Parse(boundary + 1)
-	expected = boundary + 1
-	if result != expected {
-		t.Errorf("Parse(%d) = %d, expected %d", boundary+1, result, expected)
-	}
-}
-
-func TestFormatRoundTrip(t *testing.T) {
-	// Test that Format and Parse are inverse operations (with precision loss)
-	original := testTimeMs
-	formatted := Format(original)
-	parsed := Parse(formatted)
-
-	// Allow for some precision loss due to RFC3339 format limitations
-	diff := original - parsed
-	if diff < 0 {
-		diff = -diff
-	}
-	if diff >= 1000 { // Allow up to 1 second difference due to format precision
-		t.Errorf(
-			"Format/Parse round trip lost too much precision: original=%d, parsed=%d, diff=%d",
-			original,
-			parsed,
-			diff,
-		)
-	}
-}
-
 // Benchmark tests
 func BenchmarkNow(b *testing.B) {
 	for i := 0; i < b.N; i++ {
@@ -677,21 +503,5 @@ func BenchmarkFormat(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		Format(ts)
-	}
-}
-
-func BenchmarkParseString(b *testing.B) {
-	s := "2023-01-15T12:30:45Z"
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		Parse(s)
-	}
-}
-
-func BenchmarkParseInt64(b *testing.B) {
-	ts := testTimeMs
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		Parse(ts)
 	}
 }

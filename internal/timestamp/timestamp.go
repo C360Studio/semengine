@@ -11,7 +11,6 @@
 // Migration Guide:
 //   - Replace time.Now().Unix() with timestamp.Now()
 //   - Replace time.Unix(sec, 0) with timestamp.FromUnixMs(sec * 1000)
-//   - Replace RFC3339 string parsing with timestamp.Parse()
 //
 // Usage Examples:
 //
@@ -27,15 +26,10 @@
 //
 //	// Format for display
 //	display := timestamp.Format(ts)
-//
-//	// Parse various formats
-//	ts := timestamp.Parse("2023-01-01T12:00:00Z")
-//	ts := timestamp.Parse(1672574400000)
 package timestamp
 
 import (
 	"fmt"
-	"strconv"
 	"time"
 )
 
@@ -73,84 +67,6 @@ func Format(ms int64) string {
 		return ""
 	}
 	return time.UnixMilli(ms).UTC().Format(time.RFC3339)
-}
-
-// Parse converts various timestamp formats to Unix milliseconds.
-// Supports:
-//   - int64 (assumed to be milliseconds if > 1e12, otherwise seconds)
-//   - float64 (converted to int64, same logic as int64)
-//   - string (RFC3339 or Unix timestamp string)
-//   - time.Time
-//   - nil/zero values (returns 0)
-//
-// Returns 0 for invalid input or parsing errors.
-func Parse(input any) int64 {
-	if input == nil {
-		return 0
-	}
-
-	switch v := input.(type) {
-	case int64:
-		if v == 0 {
-			return 0
-		}
-		// If value is greater than 1e12 (year 2001 in seconds), assume milliseconds
-		// Otherwise assume seconds and convert
-		if v > 1e12 {
-			return v
-		}
-		return v * 1000
-
-	case float64:
-		if v == 0 {
-			return 0
-		}
-		// Same logic as int64
-		if v > 1e12 {
-			return int64(v)
-		}
-		return int64(v * 1000)
-
-	case int:
-		return Parse(int64(v))
-
-	case int32:
-		return Parse(int64(v))
-
-	case string:
-		if v == "" {
-			return 0
-		}
-
-		// Try parsing as RFC3339 first
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			return ToUnixMs(t)
-		}
-
-		// Try parsing as Unix timestamp string
-		if ts, err := strconv.ParseInt(v, 10, 64); err == nil {
-			return Parse(ts)
-		}
-
-		// Try parsing as float string
-		if ts, err := strconv.ParseFloat(v, 64); err == nil {
-			return Parse(ts)
-		}
-
-		return 0
-
-	case time.Time:
-		return ToUnixMs(v)
-
-	case *time.Time:
-		if v == nil {
-			return 0
-		}
-		return ToUnixMs(*v)
-
-	default:
-		return 0
-	}
 }
 
 // IsZero checks if a timestamp is unset (zero).

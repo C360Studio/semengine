@@ -37,7 +37,7 @@ the design does not spell out go in `notes/<task>.md`, each with a one-line PR c
     submit-failure branch (`component.go:1629-1631` before the edit) deleted, one run of
     `TestFailedConsumerSetupCallbackNaksAfterRollback` and `TestFailedStartDrainsAndNaksHeldInput` fails both.
   Record the commands and results in `notes/2.1.md`.
-- [ ] 2.2 Correct the promises (design D3). Write nothing that restates the spec's list: point to `graph-ingest-recovery`,
+- [x] 2.2 Correct the promises (design D3). Write nothing that restates the spec's list: point to `graph-ingest-recovery`,
   "Replay protection uses the generation read before the bind".
   - `processor/graph-ingest/README.md:27-34`: say the generation is read before `Start` binds the consumer. Replace
     "never dropped" with the pointer.

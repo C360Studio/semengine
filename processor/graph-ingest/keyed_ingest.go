@@ -32,7 +32,7 @@ type ingestWork struct {
 	stream    string
 	seq       uint64
 	// generation is the input stream's generation: its creation time on the server, in
-	// nanoseconds, read when the consumer was bound (design D8, #15).
+	// nanoseconds, read once before Start binds the consumer (design D8, #15).
 	generation uint64
 	// deliveredAt is the JetStream timestamp of this message, carried from the
 	// consume closure, which read it, so the application, which holds no message,
@@ -79,10 +79,11 @@ func decodeGuardRecord(value []byte) (guardRecord, bool) {
 
 // covers reports whether work is a redelivery of an input this record has seen: it comes
 // from the same stream generation, at a sequence not newer than the last applied. An input
-// from any other generation is not covered, so a recreated stream, whose sequences restart
-// at 1, is never suppressed by the sequences of the stream it replaced (#15). Generations
-// are compared for equality, never order: they are creation times, and two servers'
-// clocks need not agree.
+// from any other generation is not covered, whatever its sequence (#15). An input from a
+// stream that was deleted and created again, or restored, can still carry this record's
+// generation; those cases are declared limitations (graph-ingest-recovery, "Replay
+// protection uses the generation read before the bind"). Generations are compared for
+// equality, never order: they are creation times, and two servers' clocks need not agree.
 func (r guardRecord) covers(work ingestWork) bool {
 	return r.generation == work.generation && work.seq <= r.seq
 }

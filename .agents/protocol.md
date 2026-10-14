@@ -1,9 +1,10 @@
-# Shared work protocol (Claude and Codex)
+# Shared work protocol (Claude, Codex, and Gemini)
 
-Canonical. `CLAUDE.md` and `AGENTS.md` point to this file and carry the three gates (claim, merge, close) inline; edit
-the protocol here only. Read it before taking, landing, or closing work; the pickup and handoff skills read it.
+Canonical. `CLAUDE.md` and `AGENTS.md` point to this file and carry the four gates (clarify, claim, merge, close)
+inline; edit the protocol here only. Read it before taking, landing, or closing work; the pickup and handoff skills
+read it.
 
-State that both agents must see lives in the repository's tools, never in a prose document or either agent's private
+State that all agents must see lives in the repository's tools, never in a prose document or an agent's private
 memory. Each question has one home, and each home is a `gh` or `task` query. There is no `/tickets` state.
 
 - **What is wanted, what kind, is it decided:** a GitHub issue with labels `type:epic`, `status:needs-decision`,
@@ -13,9 +14,9 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
   the progress; there is no separate epic document.
 - **What gates a release:** a GitHub milestone. Setup work (SETUP 01 to 03B) shares one milestone; each provisional
   tier release (SETUP 04A, 04B, 04C) has its own. An epic sits in exactly one milestone.
-- **Who has claimed what:** a **draft PR** on an agent-prefixed branch (`claude/…`, `codex/…`) opened at the start
-  of the work, with `Closes #n` for a leaf issue or `Addresses #n` for an epic. No draft PR, no claim. Design-phase
-  work claims the same way; the OpenSpec change is its
+- **Who has claimed what:** a **draft PR** on an agent-prefixed branch (`claude/…`, `codex/…`, `gemini/…`) opened at the
+  start of the work, with `Closes #n` for a leaf issue or `Addresses #n` for an epic. No draft PR, no claim.
+  Design-phase work claims the same way; the OpenSpec change is its
   first content commit. A stop-point goes in the PR description.
 - **Target state, task truth, holds:** the OpenSpec change inside that PR; `task spec:queue`, run in the claim's
   worktree, shows its holds. The archive (`openspec archive <id>` + spec sync) is the landing PR's last commit,
@@ -88,19 +89,29 @@ on optional maintenance.
 
 - **Start:** `gh issue list --state open` · `gh pr list` (drafts are claims; skip them) · `task spec:queue` ·
   `gh run list --branch main --limit 3` · `gh issue list --label status:needs-decision`.
+- **Clarify:** before claiming work, mutating state, or spawning role subagents, read any named issue, PR, or file so
+  you never ask a question the repository already answers, then verify four boundaries are clear: (1) **Deliverable**
+  (answer/audit, issue, OpenSpec design, docs-only PR, or code PR), (2) **Scope and non-goals** (in-bounds
+  packages/files and what must not change), (3) **Definition of Done and verification** (observable completion criteria
+  and `task` gates), and (4) **Stop boundary** (pause after inventory/design for an owner decision vs run through to a
+  ready PR). When a prompt leaves any of the four ambiguous, stop first, propose a concise 3–4 bullet recommended
+  Definition of Done the owner can approve or adjust in one reply, and ask at most 1–3 targeted questions; once set,
+  run autonomously to that stop boundary without pausing on routine steps.
 - **Take work:** an unclaimed issue, then a dedicated worktree on an agent-prefixed branch (`claude/<topic>`,
-  `codex/<topic>`; the prefix names who claimed it), then push, then a draft PR with `Closes #n` or `Addresses #n`,
-  then work. One claimed PR owns one worktree. When multiple agents share a host, the primary checkout is
-  discovery-only and no agent commits from it. Immediately before every commit and push, verify that the worktree's
+  `codex/<topic>`, `gemini/<topic>`; the prefix names who claimed it), then push, then a draft PR with `Closes #n` or
+  `Addresses #n`, then work. One claimed PR owns one worktree. When multiple agents share a host, the primary checkout
+  is discovery-only and no agent commits from it. Immediately before every commit and push, verify that the worktree's
   current branch is the draft PR head; a mismatch stops the operation. The prefix says who claimed the work, never
   whether that agent's worktree is idle.
 - **Bootstrap exception:** while the repository has no base protocol, SETUP 01 (epic #5, claim PR #12, branch
   `setup-01-foundation`, unprefixed) is claimed under the plan's bounded exception. The exception ends when that PR
   merges; every later claim follows the rules above.
-- **Worktree hygiene:** the claim's worktree lives at a durable sibling path
+- **Worktree hygiene:** for standalone CLI sessions, the claim's worktree lives at a durable sibling path
   (`git worktree add ../semengine-wt/<branch> -b <branch> origin/main`), never under `/private/tmp`, which a reboot
-  purges; `git worktree remove` it when the PR merges. Heavy local gates run one agent at a time on a shared host:
-  worktrees fix the git collision, not the CPU one. CI is the arbiter; a local red under contention is not a finding.
+  purges; Enjoy desktop sessions use `move_to_worktree`, which creates `.worktrees/<branch>` (excluded in
+  `.git/info/exclude` alongside `.enjoy-logs/`; `.gitignore` tracked in #225). Run `git worktree remove` when the PR
+  merges. Heavy local gates run one agent at a time on a shared host: worktrees fix the git collision, not the CPU one.
+  CI is the arbiter; a local red under contention is not a finding.
 - **File:** a defect in code in this repository that the change does not fix is always filed as an issue, whether
   the code was carried or ported (brought over from the SemStreams pin, unchanged or adapted) or written here, such as
   the test harness or a script (two owner rulings of 2026-10-13 on #212, comments 6156218594 and 6156601031: the
@@ -134,10 +145,10 @@ on optional maintenance.
   squash merge. A green run while a known flake is open is not a fix: a re-run or a new push only rolls the dice again.
   Fix the flake; there is no other way past it. A correction after archive re-enters reconciliation and final review; no
   later content commit bypasses the archive/spec-sync check. State `implemented-by:` in the PR body, naming the
-  implementing agent with the word `claude` or `codex` beside the model or persona (`implemented-by: claude (opus
-  semengine-developer)`). Bring a pushed branch up to date by merging `origin/main` into it; do not rebase or force-push
-  it. A review record names the commit it read, and a rebase leaves that record pointing at a commit the branch no
-  longer has. The squash merge keeps `main` linear either way.
+  implementing agent with the word `claude`, `codex`, or `gemini` beside the model or persona (`implemented-by: claude
+  (opus semengine-developer)`). Bring a pushed branch up to date by merging `origin/main` into it; do not rebase or
+  force-push it. A review record names the commit it read, and a rebase leaves that record pointing at a commit the
+  branch no longer has. The squash merge keeps `main` linear either way.
   The developer's notes for an implementation review, the choices a task made that its design does not spell out, are
   a file per task, `openspec/changes/<id>/notes/<task>.md`, with a one-line pull request comment that links it
   (developer contract § Handoff); they archive with the change.
@@ -183,22 +194,23 @@ on optional maintenance.
   - The reviewer does not write on the branch. Findings go back to the implementer, who keeps write ownership. If
     the two agents disagree on a finding, it goes to the owner on the issue, labelled `status:needs-decision`.
   - The implementer writes one `reviewed-by:` line in the PR body, beside `implemented-by:`, once the reviewing
-    agent's newest review record approves; it names that agent with the word `claude` or `codex`, beside the model or
-    persona taken from the record.
+    agent's newest review record approves; it names that agent with the word `claude`, `codex`, or `gemini`, beside the
+    model or persona taken from the record.
   - The check: `scripts/merge-check.sh`, run by CI's `merge-check` job and by `task merge:check -- <n>`, reads the
     pull request's description and its list of changed files. On a code pull request the description must have
     exactly one line starting `implemented-by:` that names at least one agent (not read when GitHub reports the
     author as a bot) and exactly one line starting `reviewed-by:` that names exactly one agent: the one
     `implemented-by:` does not name, or either when it names both or the author is a bot. A line starts in the first
-    column; an agent name is `claude` or `codex` in any letter case, not part of a longer word such as `codex2`;
-    nothing else in either line is read. On a draft the findings are printed and fail nothing; on a pull request that
-    is not a draft they fail `merge-check`, and `Required` with it. Marking a draft ready starts the CI run that
-    applies the check; editing the description or adding a comment starts no run, so after the edit run the failed
-    `merge-check` job again.
-  - What stays review only: whether the lines are true (the owner and both agents use one GitHub login, so the script
+    column; today `scripts/merge-check.sh` recognizes `claude` and `codex` in any letter case, not part of a longer word
+    such as `codex2` (extending the script and `merge-gate` spec to recognize `gemini` and to classify
+    `.agents/contracts/` alongside `.claude/agents/` is tracked in #225); nothing else in either line is read. On a draft
+    the findings are printed and fail nothing; on a pull request that is not a draft they fail `merge-check`, and
+    `Required` with it. Marking a draft ready starts the CI run that applies the check; editing the description or
+    adding a comment starts no run, so after the edit run the failed `merge-check` job again.
+  - What stays review only: whether the lines are true (the owner and the agents use one GitHub login, so the script
     cannot tell who wrote a commit, a description or a comment); that a review record exists, the commit it read,
     and the re-review after a later content commit (once written, the line satisfies the check through every later
-    push); the record's verdict, scope and content; that the owner named the reviewer when both agents wrote
+    push); the record's verdict, scope and content; that the owner named the reviewer when multiple agents wrote
     commits; a pull request that changes the script, the workflow or their tests, which runs its own copies; and the
     moment after marking ready before the new run registers, when a draft's green `Required` may still be the newest
     result, which the Land steps of waiting for CI and `task merge:check -- <n>` cover.

@@ -763,15 +763,19 @@
     WithPanicLogger and WithCoalescingMetrics; (3) TTL and hybrid Close join their cleanup goroutine
     without a fixed timeout and are safe under concurrent Close; (4) constructors refuse nil ctx or
     non-positive dimensions and return a nil Cache interface on error; (5) Config.UnmarshalJSON
-    refuses unknown keys and handles JSON null as a no-op
+    refuses unknown keys and handles JSON null as a no-op; (6) simpleCache, lruCache, ttlCache, and
+    hybridCache collapse into a single parameterized memCache[V] in cache.go, Statistics uses
+    lock-free atomic fields (atomic.Int64 counters/sizes and atomic.Pointer[time.Time] startTime)
+    with UpdateSize called under c.mu.Lock(), and Cache[V].Clear() drops its unused error return (#220, #233)
   dependencies_and_side_effects: >-
     metric, pkg/errs (in-set); prometheus/client_golang; stdlib; pgregory.net/rapid in tests only.
     TTL/hybrid caches and CoalescingSet each run one background goroutine joined by Close/Shutdown
   known_risks: >-
-    no production context roots. Dead surface removed (#9 rulings): eviction callbacks
+    no production context roots. Dead surface removed (#9, #220): eviction callbacks
     (WithEvictionCallback, EvictCallback), Config.StatsInterval/WithStatsInterval, Entry/IsExpired/
-    Touch, ContextKeyStats/WithStats/StatsFromContext, and MemoryUsage/UpdateMemoryUsage; doc.go and
-    README.md updated to match
+    Touch, ContextKeyStats/WithStats/StatsFromContext, MemoryUsage/UpdateMemoryUsage, and the dead
+    error return on Cache[V].Clear(); separate simple.go, lru.go, ttl.go, and hybrid.go files
+    collapsed into cache.go; doc.go and README.md updated to match
   proving_tests: >-
     internal/cache/*_test.go (synctest-based unit, property, and fuzz tests in background_test.go,
     coalescing_set_prop_test.go, coalescing_panic_test.go, metrics_test.go, config_fuzz_test.go)

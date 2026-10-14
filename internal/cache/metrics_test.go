@@ -97,11 +97,11 @@ func TestCachePreferMetricsOverStats(t *testing.T) {
 
 	cache, err := NewLRU[string](10, WithMetrics[string](metricsRegistry, "test_cache"))
 	require.NoError(t, err)
-	lruCache := cache.(*lruCache[string])
+	memCache := cache.(*memCache[string])
 
 	// Both metrics and stats should be enabled (stats are always on)
-	assert.NotNil(t, lruCache.metrics, "metrics should be enabled")
-	assert.NotNil(t, lruCache.stats, "stats should always be enabled")
+	assert.NotNil(t, memCache.metrics, "metrics should be enabled")
+	assert.NotNil(t, memCache.stats, "stats should always be enabled")
 }
 
 // TestCacheMetricsTwoCachesOnePrefixGatherTheSum holds design D9 for pkg/cache: two caches built

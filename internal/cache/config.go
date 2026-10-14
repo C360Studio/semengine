@@ -143,9 +143,9 @@ func NewLRU[V any](maxSize int, options ...Option[V]) (Cache[V], error) {
 		return nil, err
 	}
 	opts := applyOptions(options...)
-	c, err := newLRUCache[V](maxSize, opts)
+	c, err := newMemCache[V](nil, maxSize, 0, 0, opts)
 	if err != nil {
-		// A nil *lruCache returned as Cache[V] would be a non-nil interface.
+		// A nil *memCache returned as Cache[V] would be a non-nil interface.
 		return nil, err
 	}
 	return c, nil
@@ -159,9 +159,9 @@ func NewTTL[V any](ctx context.Context, ttl, cleanupInterval time.Duration, opti
 		return nil, err
 	}
 	opts := applyOptions(options...)
-	c, err := newTTLCache[V](ctx, ttl, cleanupInterval, opts)
+	c, err := newMemCache[V](ctx, 0, ttl, cleanupInterval, opts)
 	if err != nil {
-		// A nil *ttlCache returned as Cache[V] would be a non-nil interface.
+		// A nil *memCache returned as Cache[V] would be a non-nil interface.
 		return nil, err
 	}
 	return c, nil
@@ -179,9 +179,9 @@ func newHybrid[V any](
 		return nil, err
 	}
 	opts := applyOptions(options...)
-	c, err := newHybridCache[V](ctx, maxSize, ttl, cleanupInterval, opts)
+	c, err := newMemCache[V](ctx, maxSize, ttl, cleanupInterval, opts)
 	if err != nil {
-		// A nil *hybridCache returned as Cache[V] would be a non-nil interface.
+		// A nil *memCache returned as Cache[V] would be a non-nil interface.
 		return nil, err
 	}
 	return c, nil
@@ -191,9 +191,9 @@ func newHybrid[V any](
 // Stats are always enabled for observability. Use WithMetrics() to also export as Prometheus metrics.
 func NewSimple[V any](options ...Option[V]) (Cache[V], error) {
 	opts := applyOptions(options...)
-	c, err := newSimpleCache[V](opts)
+	c, err := newMemCache[V](nil, 0, 0, 0, opts)
 	if err != nil {
-		// A nil *simpleCache returned as Cache[V] would be a non-nil interface.
+		// A nil *memCache returned as Cache[V] would be a non-nil interface.
 		return nil, err
 	}
 	return c, nil
@@ -221,9 +221,7 @@ func (c *noopCache[V]) Delete(_ string) (bool, error) {
 	return false, nil
 }
 
-func (c *noopCache[V]) Clear() error {
-	return nil
-}
+func (c *noopCache[V]) Clear() {}
 
 func (c *noopCache[V]) Size() int {
 	return 0

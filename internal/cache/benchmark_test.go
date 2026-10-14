@@ -279,7 +279,7 @@ func BenchmarkMemoryUsage(b *testing.B) {
 					value := fmt.Sprintf("value%d_%d", i, j)
 					_, _ = cache.Set(key, value)
 				}
-				_ = cache.Clear()
+				cache.Clear()
 			}
 		})
 	}

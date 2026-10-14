@@ -23,17 +23,15 @@ var errNotStarted = errors.New("natsfixture: Restart needs a fixture whose Start
 // buckets stay on the server; Stop's removal of the container removes them.
 //
 // URL and JetStream return the new binding once Restart returns nil, and stay valid until the next
-// Restart. The host port is the one Start gave Docker, so URL is unchanged (TestRestartURLDials),
-// but every connection to the container is lost. A caller stops what it built on the URL before
+// Restart. The host port is the one Start gave Docker, and URL has stayed unchanged in every run
+// so far (TestRestartURLDials; Docker does not promise it), but every connection to the container
+// is lost. A caller stops what it built on the URL before
 // Restart and starts it again after.
 //
 // Restart refuses, with no Docker call, before a successful Start and once Stop has begun. A
-// failure in a phase returns an *Error naming it, with one exception: when the mapped-port read
-// fails and ctx is still live, Restart stops and starts the same container once more and reads the
-// port again. A failure in that second stop, start or port read returns both errors; a connect or
-// JetStream failure after a good second read returns that error alone (maxAttempts says why the
-// one more try is kept). No replacement container is created; after a failure the fixture can
-// no longer be restarted, and Stop removes the container.
+// failure in a phase returns an *Error naming it; nothing is tried again and no replacement
+// container is created. After a failure the fixture can no longer be restarted, and Stop removes
+// the container.
 //
 // The caller must bound ctx. Readiness after the start is one more ready line in the container's
 // log than before it; if Docker log rotation drops earlier lines the count can fall, and the wait
@@ -85,60 +83,50 @@ func (f *Fixture) restart(ctx context.Context, c testcontainers.Container, id st
 
 	// run times one phase and turns a cancelled parent into that phase's failure even when the
 	// operation itself returned success, as Start's phases do.
-	attempt := 1
 	run := func(p Phase, op func() error) error {
 		err := op()
 		if err == nil {
 			err = ctx.Err()
 		}
 		if err != nil {
-			return &Error{Attempt: attempt, Phase: p, ContainerID: id, ParentErr: ctx.Err(), Cause: err}
+			return &Error{Phase: p, ContainerID: id, ParentErr: ctx.Err(), Cause: err}
 		}
 		return nil
 	}
-	// bounce stops and starts the container, then reads the host port Docker mapped for it.
-	var port string
-	bounce := func() error {
-		if err := run(PhaseStopContainer, func() error {
-			err := f.deps.stopContainer(ctx, c)
-			f.count("stopContainer")
-			return err
-		}); err != nil {
-			return err
-		}
-		if err := run(PhaseStartContainer, func() error {
-			// The container's log keeps every boot's lines, so the ready log of the last boot is
-			// already there: readiness is one more ready line than before the start.
-			before, err := f.readyLines(ctx, c)
-			if err != nil {
-				return err
-			}
-			err = f.deps.startContainer(ctx, c)
-			f.count("startContainer")
-			if err != nil {
-				return err
-			}
-			// If Docker log rotation drops old lines the count can fall; the wait then runs until ctx ends (loud, not silent).
-			_, err = probe.Await(ctx, func(ctx context.Context) (int, error) { return f.readyLines(ctx, c) },
-				func(n int) bool { return n > before })
-			return err
-		}); err != nil {
-			return err
-		}
-		return run(PhaseMappedPort, func() error {
-			var err error
-			port, err = f.mappedPort(ctx, c)
-			return err
-		})
+	if err := run(PhaseStopContainer, func() error {
+		err := f.deps.stopContainer(ctx, c)
+		f.count("stopContainer")
+		return err
+	}); err != nil {
+		return err
 	}
-	if err := bounce(); retryable(err) {
-		// One more stop and start, decided as Start decides its one more container: see Restart's
-		// doc for the Docker Desktop case this covers. Both failures are returned.
-		attempt = 2
-		if again := bounce(); again != nil {
-			return errors.Join(err, again)
+	if err := run(PhaseStartContainer, func() error {
+		// The container's log keeps every boot's lines, so the ready log of the last boot is
+		// already there: readiness is one more ready line than before the start.
+		before, err := f.readyLines(ctx, c)
+		if err != nil {
+			return err
 		}
-	} else if err != nil {
+		err = f.deps.startContainer(ctx, c)
+		f.count("startContainer")
+		if err != nil {
+			return err
+		}
+		// If Docker log rotation drops old lines the count can fall; the wait then runs until ctx ends (loud, not silent).
+		_, err = probe.Await(ctx, func(ctx context.Context) (int, error) { return f.readyLines(ctx, c) },
+			func(n int) bool { return n > before })
+		return err
+	}); err != nil {
+		return err
+	}
+	// The host port is the one Start gave Docker; it is read back rather than assumed, so a lost
+	// binding fails here with the inspect output instead of at connect.
+	var port string
+	if err := run(PhaseMappedPort, func() error {
+		var err error
+		port, err = f.mappedPort(ctx, c)
+		return err
+	}); err != nil {
 		return err
 	}
 	url := fmt.Sprintf("nats://%s:%s", host, port)

@@ -31,7 +31,6 @@ const (
 // Error is a failed Start attempt or resource operation, carrying what a reader needs to tell a
 // slow daemon from a dead container from a cancelled test, and whether cleanup completed.
 type Error struct {
-	Attempt     int
 	Phase       Phase
 	ContainerID string // empty when no container existed yet
 	// ParentErr is the caller's context error at the moment of failure; nil means it was live.
@@ -44,7 +43,7 @@ type Error struct {
 
 func (e *Error) Error() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "natsfixture: attempt %d phase %s", e.Attempt, e.Phase)
+	fmt.Fprintf(&b, "natsfixture: phase %s", e.Phase)
 	if e.ContainerID != "" {
 		fmt.Fprintf(&b, " container %s", shortID(e.ContainerID))
 	}

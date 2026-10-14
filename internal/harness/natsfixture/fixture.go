@@ -30,14 +30,6 @@ import (
 )
 
 const (
-	// maxAttempts allows Start one replacement container, and only after a mapped-port failure
-	// with a live parent and a clean rollback (retryable): the one transient SemStreams observed
-	// under Docker API pressure (gh#736). Restart's one more stop and start of the same container
-	// is decided the same way. Both were also kept for Docker Desktop on macOS picking a host port
-	// a Mac process held (#180), which the start phase now prevents by giving Docker the port
-	// (freePort, #209); whether they stay is the test-infra audit's question (#205). Every other
-	// failure is reported, not retried.
-	maxAttempts = 2
 	// cleanupBudget is the fresh finite authority New's t.Cleanup gives Stop. The test's own
 	// context is already cancelled when cleanups run.
 	cleanupBudget = 60 * time.Second
@@ -83,7 +75,7 @@ func pinnedImage(file string) (string, error) {
 // holds no context.Context.
 type Fixture struct {
 	errorf func(format string, args ...any)
-	logf   func(format string, args ...any) // the test log, for a failed attempt's container log
+	logf   func(format string, args ...any) // the test log, for a failed Start's container log
 	deps   deps
 
 	mu sync.Mutex // guards everything below; never held across a Docker or NATS call
@@ -128,8 +120,9 @@ func New(t testing.TB, opts ...Option) *Fixture {
 }
 
 // Start starts one NATS container with JetStream from the pinned image, connects, and returns once
-// JetStream answers. Every operation runs under ctx. A failure returns an *Error per attempt,
-// after removing whatever the attempt created. A second Start returns ErrAlreadyUsed.
+// JetStream answers. Every operation runs under ctx. A failure returns an *Error naming the phase,
+// after removing whatever Start created; no second container is started. A second Start returns
+// ErrAlreadyUsed.
 func (f *Fixture) Start(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("natsfixture: Start with a nil context")
@@ -151,31 +144,17 @@ func (f *Fixture) Start(ctx context.Context) error {
 	f.used = true
 	f.mu.Unlock()
 
-	var failures []error
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		err := f.attempt(ctx, attempt)
-		if err == nil {
-			return nil
-		}
-		failures = append(failures, err)
-		if !retryable(err) {
-			break
-		}
-	}
-	if len(failures) == 1 {
-		return failures[0]
-	}
-	return errors.Join(failures...)
+	return f.attempt(ctx)
 }
 
 // attempt runs the Start phases once. On failure it rolls back what it created and returns *Error.
-func (f *Fixture) attempt(ctx context.Context, n int) error {
+func (f *Fixture) attempt(ctx context.Context) error {
 	fail := func(p Phase, cause error) error {
 		f.mu.Lock()
 		id := f.containerID
 		f.mu.Unlock()
-		fe := &Error{Attempt: n, Phase: p, ContainerID: id, ParentErr: ctx.Err(), Cause: cause}
-		fe.Cleanup = f.rollbackAttempt(ctx, n)
+		fe := &Error{Phase: p, ContainerID: id, ParentErr: ctx.Err(), Cause: cause}
+		fe.Cleanup = f.rollbackAttempt(ctx)
 		return fe
 	}
 	// run runs one phase and turns a cancelled parent into that phase's failure even when the
@@ -322,13 +301,6 @@ func freePort() (string, error) {
 	return port, l.Close()
 }
 
-// retryable reports whether a failure earns the one more try Start and Restart allow: the
-// mapped-port phase failed with the caller's context live and, for Start, a clean rollback.
-func retryable(err error) bool {
-	var fe *Error
-	return errors.As(err, &fe) && fe.Phase == PhaseMappedPort && fe.ParentErr == nil && fe.Cleanup == nil
-}
-
 // mappedPort reads the host port Docker mapped to the container's client port. A failed read also
 // says what an inspect of the container showed, or why the inspect failed, so an empty port list
 // is named in the error (#180, #209).
@@ -346,10 +318,10 @@ func (f *Fixture) mappedPort(ctx context.Context, c testcontainers.Container) (s
 	return "", fmt.Errorf("%w (inspect: %s)", err, shown)
 }
 
-// rollbackAttempt removes what a failed attempt created, each operation under its own fresh
+// rollbackAttempt removes what a failed Start created, each operation under its own fresh
 // bounded context, and writes the container's log to the test log first. It returns nil only when
 // Docker reported the container removed; otherwise the container stays held for a later Stop.
-func (f *Fixture) rollbackAttempt(ctx context.Context, n int) error {
+func (f *Fixture) rollbackAttempt(ctx context.Context) error {
 	f.mu.Lock()
 	nc, c, id := f.nc, f.container, f.containerID
 	f.nc = nil
@@ -364,12 +336,12 @@ func (f *Fixture) rollbackAttempt(ctx context.Context, n int) error {
 		logs, err := f.deps.logs(rctx, c)
 		f.count("logs")
 		if len(logs) > 0 && f.logf != nil {
-			f.logf("natsfixture: attempt %d, container %s log:\n%s", n, shortID(id), logs)
+			f.logf("natsfixture: failed Start, container %s log:\n%s", shortID(id), logs)
 		}
 		return err
 	})
 	if logErr != nil {
-		f.report("natsfixture: container log for attempt %d not captured: %v", n, logErr)
+		f.report("natsfixture: container log of the failed Start not captured: %v", logErr)
 	}
 	err := rollback(ctx, func(rctx context.Context) error {
 		err := f.deps.terminate(rctx, c)
@@ -440,7 +412,7 @@ func (f *Fixture) createStream(ctx context.Context, storage jetstream.StorageTyp
 	})
 	f.count("createStream")
 	if err != nil {
-		return nil, &Error{Attempt: 1, Phase: PhaseCreateStream, ContainerID: id, ParentErr: ctx.Err(), Cause: err}
+		return nil, &Error{Phase: PhaseCreateStream, ContainerID: id, ParentErr: ctx.Err(), Cause: err}
 	}
 	return s, nil
 }
@@ -470,7 +442,7 @@ func (f *Fixture) totalCalls() int {
 	return n
 }
 
-// report surfaces a failed attempt's container log that could not be read as a test error: the
+// report surfaces a failed Start's container log that could not be read as a test error: the
 // log is how a developer learns why the container failed.
 func (f *Fixture) report(format string, args ...any) {
 	if f.errorf != nil {

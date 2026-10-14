@@ -148,7 +148,7 @@ func TestRestartLaterPhaseFailuresAreNamed(t *testing.T) {
 		}, ""},
 	} {
 		t.Run(string(tc.phase), func(t *testing.T) {
-			f := restartOnFakes(t, 0)
+			f := restartOnFakes(t)
 			tc.set(&f.deps)
 
 			err := f.Restart(t.Context())
@@ -219,9 +219,9 @@ func TestPreCancelledStartIsRefusedWithoutConsuming(t *testing.T) {
 
 func TestErrorReportsEveryField(t *testing.T) {
 	cause, cleanup := errors.New("dial refused"), errors.New("terminate: daemon gone")
-	e := &Error{Attempt: 2, Phase: PhaseConnect, ContainerID: "0123456789abcdef", ParentErr: context.Canceled, Cause: cause, Cleanup: cleanup}
+	e := &Error{Phase: PhaseConnect, ContainerID: "0123456789abcdef", ParentErr: context.Canceled, Cause: cause, Cleanup: cleanup}
 	msg := e.Error()
-	for _, want := range []string{"attempt 2", "phase connect", "container 0123456789ab", "parent context context canceled", "dial refused", "cleanup: terminate: daemon gone"} {
+	for _, want := range []string{"phase connect", "container 0123456789ab", "parent context context canceled", "dial refused", "cleanup: terminate: daemon gone"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("%q lacks %q", msg, want)
 		}
@@ -229,7 +229,7 @@ func TestErrorReportsEveryField(t *testing.T) {
 	if !errors.Is(e, cause) || !errors.Is(e, cleanup) || !errors.Is(e, context.Canceled) {
 		t.Error("Unwrap hides the cause, the cleanup error, or the parent context's error")
 	}
-	live := (&Error{Attempt: 1, Phase: PhaseStart, Cause: cause}).Error()
+	live := (&Error{Phase: PhaseStart, Cause: cause}).Error()
 	if !strings.Contains(live, "parent context live") || strings.Contains(live, "container") {
 		t.Errorf("%q", live)
 	}

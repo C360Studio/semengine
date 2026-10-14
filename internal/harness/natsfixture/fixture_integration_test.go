@@ -143,18 +143,16 @@ func failAfter[T any](real func(context.Context, testcontainers.Container) (T, e
 }
 
 // S1-1: a failure at each phase after the container exists removes it, names the phase and the
-// container, writes the container's log to the test log, terminates exactly once per attempt, and
-// leaves Stop nothing to do (nats-fixture › "Failure after the container exists").
+// container, writes the container's log to the test log, starts and terminates exactly one
+// container, and leaves Stop nothing to do (nats-fixture › "Failure after the container exists").
 func TestS1_1PartialStartupCleanup(t *testing.T) {
 	injected := errors.New("injected failure")
 	for _, tc := range []struct {
-		phase    Phase
-		inject   func(d *deps)
-		attempts int
+		phase  Phase
+		inject func(d *deps)
 	}{
-		{PhaseHost, func(d *deps) { d.host = failAfter(d.host, injected) }, 1},
-		// A persistent mapped-port failure earns exactly one replacement, then fails.
-		{PhaseMappedPort, func(d *deps) { d.mappedPort = failAfter(d.mappedPort, injected) }, 2},
+		{PhaseHost, func(d *deps) { d.host = failAfter(d.host, injected) }},
+		{PhaseMappedPort, func(d *deps) { d.mappedPort = failAfter(d.mappedPort, injected) }},
 		{PhaseConnect, func(d *deps) {
 			real := d.connect
 			d.connect = func(ctx context.Context, url string) (*nats.Conn, error) {
@@ -164,8 +162,8 @@ func TestS1_1PartialStartupCleanup(t *testing.T) {
 				}
 				return nil, injected
 			}
-		}, 1},
-		{PhaseJetStream, func(d *deps) { d.jsReady = func(context.Context, jetstream.JetStream) error { return injected } }, 1},
+		}},
+		{PhaseJetStream, func(d *deps) { d.jsReady = func(context.Context, jetstream.JetStream) error { return injected } }},
 	} {
 		t.Run(string(tc.phase), func(t *testing.T) {
 			tb := &logTB{TB: t}
@@ -179,23 +177,15 @@ func TestS1_1PartialStartupCleanup(t *testing.T) {
 			if fe.ContainerID == "" || fe.ParentErr != nil || fe.Cleanup != nil {
 				t.Fatalf("error fields: container %q parent %v cleanup %v", fe.ContainerID, fe.ParentErr, fe.Cleanup)
 			}
-			attempts := fixtureErrors(err)
-			if len(attempts) != tc.attempts {
-				t.Fatalf("%d attempt error(s), want %d: %v", len(attempts), tc.attempts, err)
+			if containerExists(t, fe.ContainerID) {
+				t.Errorf("container %s still exists", fe.ContainerID)
 			}
-			for i, a := range attempts {
-				if a.Attempt != i+1 || a.Phase != tc.phase || a.ContainerID == "" {
-					t.Errorf("attempt %d error: attempt %d phase %s container %q", i+1, a.Attempt, a.Phase, a.ContainerID)
-				} else if containerExists(t, a.ContainerID) {
-					t.Errorf("attempt %d container %s still exists", a.Attempt, a.ContainerID)
-				}
-			}
-			if got := tb.containerLogs(); got != tc.attempts {
-				t.Errorf("%d container log(s) in the test log, want one per attempt (%d)", got, tc.attempts)
+			if got := tb.containerLogs(); got != 1 {
+				t.Errorf("%d container log(s) in the test log, want one", got)
 			}
 			calls := f.callCounts()
-			if calls["terminate"] != tc.attempts || calls["start"] != tc.attempts {
-				t.Errorf("calls %v, want start and terminate %d each", calls, tc.attempts)
+			if calls["terminate"] != 1 || calls["start"] != 1 {
+				t.Errorf("calls %v, want start and terminate once each", calls)
 			}
 			if err := stop(t, f); err != nil || !maps(calls, f.callCounts()) {
 				t.Errorf("Stop after a rolled-back Start = %v, calls %v -> %v; want nil with no call", err, calls, f.callCounts())
@@ -223,39 +213,6 @@ func TestS1_1PartialStartupCleanup(t *testing.T) {
 			t.Fatal("container survives Stop after a failed CreateStream")
 		}
 	})
-
-	// A transient mapped-port failure is the one case replaced: the second container serves, and
-	// the first is gone with its log in the test log.
-	t.Run("mapped-port replacement", func(t *testing.T) {
-		tb := &logTB{TB: t}
-		f := New(tb)
-		var started []string
-		realStart := f.deps.start
-		f.deps.start = func(ctx context.Context, req testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
-			c, err := realStart(ctx, req)
-			if c != nil {
-				started = append(started, c.GetContainerID())
-			}
-			return c, err
-		}
-		real, failed := f.deps.mappedPort, false
-		f.deps.mappedPort = func(ctx context.Context, c testcontainers.Container) (string, error) {
-			if !failed {
-				failed = true
-				return "", injected
-			}
-			return real(ctx, c)
-		}
-		if err := f.Start(t.Context()); err != nil {
-			t.Fatalf("Start with one transient mapped-port failure: %v", err)
-		}
-		if len(started) != 2 || started[1] != f.containerID || containerExists(t, started[0]) {
-			t.Fatalf("containers started %v, serving %s: want a replacement serving and the first gone", started, f.containerID)
-		}
-		if got := tb.containerLogs(); got != 1 {
-			t.Fatalf("%d container log(s) in the test log, want the first attempt's", got)
-		}
-	})
 }
 
 func maps(a, b map[string]int) bool {
@@ -271,18 +228,15 @@ func maps(a, b map[string]int) bool {
 }
 
 // S1-2: cancelling the test context while a phase is in I/O fails Start with
-// context.Canceled, reports the parent state, removes every attempted container,
-// and does not start another attempt after cancellation. A mapped-port failure
-// may already have earned one replacement while the parent was live.
+// context.Canceled, reports the parent state, removes the container, and starts
+// no container after cancellation.
 func TestS1_2CancellationDuringIO(t *testing.T) {
 	for _, tc := range []struct {
-		name           string
-		phase          Phase
-		failMappedPort bool
+		name  string
+		phase Phase
 	}{
 		{name: string(PhaseStart), phase: PhaseStart},
 		{name: string(PhaseConnect), phase: PhaseConnect},
-		{name: "connect after mapped-port failure", phase: PhaseConnect, failMappedPort: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := New(t)
@@ -295,17 +249,6 @@ func TestS1_2CancellationDuringIO(t *testing.T) {
 					startedAfterCancel.Store(true)
 				}
 				return realStart(startCtx, req)
-			}
-			if tc.failMappedPort {
-				real := f.deps.mappedPort
-				failed := false
-				f.deps.mappedPort = func(ctx context.Context, c testcontainers.Container) (string, error) {
-					if !failed {
-						failed = true
-						return "", errors.New("injected mapped-port failure")
-					}
-					return real(ctx, c)
-				}
 			}
 			entered, release := make(chan struct{}), make(chan struct{})
 			signal := func() {
@@ -344,25 +287,13 @@ func TestS1_2CancellationDuringIO(t *testing.T) {
 			if !errors.Is(err, context.Canceled) {
 				t.Fatalf("Start = %v, want context.Canceled", err)
 			}
-			attempts := fixtureErrors(err)
-			if len(attempts) < 1 || len(attempts) > 2 ||
-				tc.phase == PhaseStart && len(attempts) != 1 ||
-				tc.failMappedPort && len(attempts) != 2 {
-				t.Fatalf("unexpected attempts: %v", err)
+			var fe *Error
+			if !errors.As(err, &fe) || fe.Phase != tc.phase || fe.ContainerID == "" ||
+				!errors.Is(fe.ParentErr, context.Canceled) || fe.Cleanup != nil {
+				t.Fatalf("Start = %v, want one *Error at phase %s naming the container, the cancelled parent and a clean rollback", err, tc.phase)
 			}
-			for i, a := range attempts {
-				if a.Attempt != i+1 || a.ContainerID == "" {
-					t.Fatalf("attempt %d error is incomplete: %v", i+1, a)
-				}
-				if containerExists(t, a.ContainerID) {
-					t.Fatalf("attempt %d container %s survives cancellation", a.Attempt, a.ContainerID)
-				}
-				if i < len(attempts)-1 && (a.Phase != PhaseMappedPort || a.ParentErr != nil || a.Cleanup != nil) {
-					t.Fatalf("attempt %d was not a cleaned-up mapped-port failure with live parent: %v", a.Attempt, a)
-				}
-			}
-			if last := attempts[len(attempts)-1]; last.Phase != tc.phase || !errors.Is(last.ParentErr, context.Canceled) || last.Cleanup != nil {
-				t.Fatalf("terminal attempt = %v (parent %v, cleanup %v), want cancellation at phase %s", last, last.ParentErr, last.Cleanup, tc.phase)
+			if containerExists(t, fe.ContainerID) {
+				t.Fatalf("container %s survives cancellation", fe.ContainerID)
 			}
 			if startedAfterCancel.Load() {
 				t.Fatal("Start called the container start hook after cancellation")

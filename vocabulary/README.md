@@ -134,9 +134,8 @@ vocabulary.Register("sensor.temperature.celsius",
 
 One declaration renders three ways. The Go column is what the serializer typically sees, **not** what you declare;
 the RDF column is owned by `vocabulary/export` (ADR-107 keeps semantic-web vocabulary at the export edge, never on
-the declaration surface). No code in SemEngine renders the RDF or JSON Schema column yet: `vocabulary/export` is a
-SemStreams package that is not ported here, so those two columns state SemStreams' mapping, not output of this
-repository, except that the entity-ID format is named `semengine-entity-id`, the name SemEngine will emit:
+the declaration surface). `vocabulary/export` renders the RDF column in Turtle, N-Triples, and JSON-LD; the JSON
+Schema column states the schema mapping (`semengine-entity-id` is the entity-ID format name):
 
 | Constant | Value | Typical Go value | RDF (Turtle / N-Triples) | JSON Schema |
 |---|---|---|---|---|
@@ -310,11 +309,18 @@ See `standards.go` for the complete list of standard vocabulary IRIs.
 ### Registration
 
 ```go
-// Register with functional options
+// Register a predicate with functional options (including WithProjection)
 vocabulary.Register(name string, opts ...Option)
+
+// Register an entity-type (<domain>.<type>) class mapping
+vocabulary.RegisterEntityType(domainType string, opts ...EntityTypeOption)
+
+// Load and fail-closed register a declarative JSON or YAML vocabulary pack
+pack, err := vocabulary.LoadPackYAML(r)
+err = vocabulary.RegisterPack(pack, vocabulary.WithPrefixRegistrar(export.Register))
 ```
 
-### Retrieval
+### Retrieval and Reverse Lookup
 
 ```go
 // Get metadata for a predicate
@@ -324,8 +330,16 @@ if meta != nil {
     fmt.Println(meta.StandardIRI)
 }
 
-// List all registered predicates
+// Reverse-lookup canonical predicates by standard IRI (sorted)
+preds := vocabulary.LookupByIRI("http://schema.org/batteryLevel")
+
+// Look up entity-type metadata or reverse-lookup domain.type keys by class/superclass IRI
+etMeta := vocabulary.GetEntityTypeMetadata("uxs.uas")
+types := vocabulary.LookupEntityTypesByClassIRI("https://confirm.mil/diekm/UnmannedAerialSystem")
+
+// List all registered predicates and entity types
 predicates := vocabulary.ListRegisteredPredicates()
+entityTypes := vocabulary.ListRegisteredEntityTypes()
 
 // Discover alias predicates
 aliases := vocabulary.DiscoverAliasPredicates()
@@ -334,7 +348,8 @@ aliases := vocabulary.DiscoverAliasPredicates()
 ### Testing
 
 ```go
-// Clear registry (testing only)
+// Snapshot and restore registry state around a test
+defer vocabulary.SnapshotRegistry()()
 vocabulary.ClearRegistry()
 ```
 

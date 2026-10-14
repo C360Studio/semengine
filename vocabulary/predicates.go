@@ -352,6 +352,12 @@ type PredicateMetadata struct {
 	// that carries the same boosted predicates as the real thing, without
 	// hard-coding a per-product table.
 	Weight float64
+
+	// Projection declares an optional reified ontology projection chain (for
+	// example, a BFO/CCO ActOfMeasuring intermediate node and value predicate)
+	// used by external RDF/SPARQL projection adapters without storing blank
+	// nodes in ENTITY_STATES.
+	Projection *ProjectionSpec
 }
 
 // IsValidPredicate reports whether predicate satisfies the canonical lower-kebab

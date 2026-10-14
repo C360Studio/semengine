@@ -11,7 +11,7 @@ and fuzz runs in `notes/<task>.md`.
 
 ## 2. Port `vocabulary/export` and `ADR-107` (developer)
 
-- [ ] 2.1 Port `vocabulary/export` from the SemStreams pin (`8b99efe9c66a4faa4fa509f9f62cc6bad8392128`) and
+- [x] 2.1 Port `vocabulary/export` from the SemStreams pin (`8b99efe9c66a4faa4fa509f9f62cc6bad8392128`) and
   `docs/adr/107-semantic-web-vocabulary-lives-at-the-export-edge.md` (design D1):
   - adapt `vocabulary.SemStreamsBase` to `vocabulary.SemEngineBase` in `export.go`, `prefix.go`, and the 5 test files;
   - add `defer vocabulary.SnapshotRegistry()()` before `vocabulary.ClearRegistry()` in `export_test.go`,
@@ -22,7 +22,7 @@ and fuzz runs in `notes/<task>.md`.
 
 ## 3. Extend `vocabulary` for IRI lookup, classes, projection, and packs (developer)
 
-- [ ] 3.1 Write failing unit, property, and fuzz tests in `vocabulary/` for `LookupByIRI`, `ParseEntityTypeKey` /
+- [x] 3.1 Write failing unit, property, and fuzz tests in `vocabulary/` for `LookupByIRI`, `ParseEntityTypeKey` /
   `RegisterEntityType` / `LookupEntityTypesByClassIRI`, `WithProjection`, and `LoadPackJSON` / `LoadPackYAML` /
   `RegisterPack` (design D2–D6), then implement `entity_type.go`, `projection.go`, `pack.go`, and the registry updates
   in `predicates.go` and `registry.go`.
@@ -37,7 +37,7 @@ and fuzz runs in `notes/<task>.md`.
 
 ## 4. Update documentation and run full verification (technical writer / developer)
 
-- [ ] 4.1 Update `docs/inventory-scope.md`, `docs/tier1-cross-check.md`, `docs/repository-map.md`,
+- [x] 4.1 Update `docs/inventory-scope.md`, `docs/tier1-cross-check.md`, `docs/repository-map.md`,
   `docs/adr/102-entity-id-segment-semantics.md`, `docs/admission-ledger.yaml` (`vocabulary` row), `vocabulary/doc.go`,
   and `vocabulary/README.md`. Run `task verify` on a clean tree.
 

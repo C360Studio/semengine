@@ -48,21 +48,38 @@ var (
 // is safe to call at runtime as well, but mid-export registrations will
 // only affect prefix maps constructed after the call returns.
 func Register(prefix, namespace string) error {
-	if prefix == "" {
-		return fmt.Errorf("vocabulary/export: prefix must not be empty")
-	}
-	if namespace == "" {
-		return fmt.Errorf("vocabulary/export: namespace must not be empty for prefix %q", prefix)
-	}
+	return RegisterPrefixes([]vocabulary.PrefixSpec{{
+		Prefix:    prefix,
+		Namespace: namespace,
+	}})
+}
+
+// RegisterPrefixes atomically validates and registers a batch of prefix →
+// namespace bindings. Every entry is validated against vocabulary.PrefixSpec.Validate
+// (Turtle PN_PREFIX grammar and non-empty namespace IRI), intra-batch
+// consistency, and existing bindings before any binding is committed. If any
+// entry is invalid or conflicts with an existing binding, the prefix table is
+// left unchanged.
+func RegisterPrefixes(prefixes []vocabulary.PrefixSpec) error {
 	defaultPrefixesMu.Lock()
 	defer defaultPrefixesMu.Unlock()
-	if existing, ok := defaultPrefixes[prefix]; ok {
-		if existing == namespace {
-			return nil
+
+	staged := make(map[string]string, len(prefixes))
+	for i, pfx := range prefixes {
+		if err := pfx.Validate(); err != nil {
+			return fmt.Errorf("vocabulary/export: prefixes[%d]: %w", i, err)
 		}
-		return fmt.Errorf("vocabulary/export: prefix %q already bound to %q, cannot rebind to %q", prefix, existing, namespace)
+		if existing, ok := defaultPrefixes[pfx.Prefix]; ok && existing != pfx.Namespace {
+			return fmt.Errorf("vocabulary/export: prefix %q already bound to %q, cannot rebind to %q", pfx.Prefix, existing, pfx.Namespace)
+		}
+		if existing, ok := staged[pfx.Prefix]; ok && existing != pfx.Namespace {
+			return fmt.Errorf("vocabulary/export: prefix %q bound to conflicting namespaces %q and %q in batch", pfx.Prefix, existing, pfx.Namespace)
+		}
+		staged[pfx.Prefix] = pfx.Namespace
 	}
-	defaultPrefixes[prefix] = namespace
+	for prefix, ns := range staged {
+		defaultPrefixes[prefix] = ns
+	}
 	return nil
 }
 
@@ -102,11 +119,16 @@ func newPrefixMap(base string) *prefixMap {
 // Returns the compacted form (e.g., "owl:sameAs") and true if successful,
 // or the original IRI and false if no prefix matches.
 func (pm *prefixMap) compact(iri string) (string, bool) {
-	// Try each prefix, preferring the longest namespace match
+	// Try each prefix, preferring the longest namespace match; break equal-length
+	// namespace ties by lexicographically smallest prefix so namespace aliases
+	// select the same prefix across scanPrefixes and rendering.
 	var bestPrefix string
 	var bestNS string
 	for prefix, ns := range pm.prefixes {
-		if strings.HasPrefix(iri, ns) && len(ns) > len(bestNS) {
+		if !strings.HasPrefix(iri, ns) {
+			continue
+		}
+		if len(ns) > len(bestNS) || (len(ns) == len(bestNS) && (bestPrefix == "" || prefix < bestPrefix)) {
 			bestPrefix = prefix
 			bestNS = ns
 		}

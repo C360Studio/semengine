@@ -317,7 +317,7 @@ vocabulary.RegisterEntityType(domainType string, opts ...EntityTypeOption)
 
 // Load and fail-closed register a declarative JSON or YAML vocabulary pack
 pack, err := vocabulary.LoadPackYAML(r)
-err = vocabulary.RegisterPack(pack, vocabulary.WithPrefixRegistrar(export.Register))
+err = vocabulary.RegisterPack(pack, vocabulary.WithPrefixRegistrar(export.RegisterPrefixes))
 ```
 
 ### Retrieval and Reverse Lookup

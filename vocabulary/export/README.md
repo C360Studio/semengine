@@ -108,8 +108,8 @@ err := export.Serialize(w, triples, export.JSONLD,
 ## Prefix Management
 
 Turtle and JSON-LD output automatically compact IRIs using well-known prefixes (OWL, SKOS, Dublin Core, PROV-O,
-Schema.org, FOAF, SSN/SOSA, XSD) and any prefixes registered via `export.Register(prefix, namespace)`. Only prefixes
-that appear in the output are declared.
+Schema.org, FOAF, SSN/SOSA, XSD) and any prefixes registered via `export.Register(prefix, namespace)` or
+`export.RegisterPrefixes(prefixes)`. Only prefixes that appear in the output are declared.
 
 ## API
 
@@ -118,6 +118,7 @@ that appear in the output are declared.
 | `Serialize(w, triples, format, ...opts)` | Write triples to an `io.Writer` |
 | `SerializeToString(triples, format, ...opts)` | Return serialized output as a string |
 | `Register(prefix, namespace)` | Register a prefix → namespace binding for Turtle and JSON-LD compaction |
+| `RegisterPrefixes(prefixes)` | Atomically validate and register a batch of `vocabulary.PrefixSpec` bindings |
 
 ## Related Documentation
 

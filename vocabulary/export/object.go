@@ -254,13 +254,13 @@ func floatValue(obj any) (float64, bool) {
 func dateTimeLexical(obj any) (string, bool) {
 	switch v := obj.(type) {
 	case time.Time:
-		return v.Format(time.RFC3339), true
+		return v.Format(time.RFC3339Nano), true
 	case string:
-		parsed, err := time.Parse(time.RFC3339, v)
+		parsed, err := time.Parse(time.RFC3339Nano, v)
 		if err != nil {
 			return "", false
 		}
-		return parsed.Format(time.RFC3339), true
+		return parsed.Format(time.RFC3339Nano), true
 	default:
 		return "", false
 	}
@@ -287,7 +287,7 @@ func classifyByGoType(obj any, opts *options) classifiedObject {
 	case time.Time:
 		return classifiedObject{
 			kind:     objectLiteral,
-			lexical:  v.Format(time.RFC3339),
+			lexical:  v.Format(time.RFC3339Nano),
 			datatype: xsdDateTime,
 		}
 	default:

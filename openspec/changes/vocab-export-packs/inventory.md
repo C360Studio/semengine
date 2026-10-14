@@ -30,6 +30,12 @@ Checked via `gh issue list --state open` for `vocabulary` and `vocabulary/export
 
 - **#234** (`vocabulary: port vocabulary/export and add ontology pack & projection metadata seams`): **retired by this
   PR** (`Closes #234`).
+- **#237** (`vocabulary, vocabulary/export: enforce Turtle PN_PREFIX syntax and fail-closed batch prefix registration`):
+  **retired by this PR** (`Closes #237`).
+- **#238** (`vocabulary/export: namespace aliases can emit undeclared Turtle prefixes`): **retired by this PR**
+  (`Closes #238`).
+- **#239** (`vocabulary/export: xsd:dateTime serialization truncates fractional seconds`): **retired by this PR**
+  (`Closes #239`).
 - **#90** (`vocabulary: remaining domain predicates in predicates.go`, `status:needs-decision`): **stays** under
   Bounded port scope (scheduled in `#223` PR 3).
 - **#219** (`port-refactor: pkg/types, message, payloadregistry & vocabulary`): **stays** under Bounded port scope
@@ -41,9 +47,9 @@ Checked via `gh issue list --state open` for `vocabulary` and `vocabulary/export
 
 1. **Line counts (non-test `.go`)**: `doc.go` (28) + `export.go` (217) + `jsonld.go` (119) + `ntriples.go` (51) +
    `object.go` (410) + `prefix.go` (163) + `turtle.go` (119) = **1,107 lines** across 7 files (well under the 3,000-line
-   single-PR bound). 8 test files (`datatype_roundtrip_test.go`, `export_test.go`, `jsonld_test.go`, `ntriples_test.go`,
-   `object_iri_test.go`, `object_test.go`, `prefix_test.go`, `turtle_test.go`) plus 2 Rapid seed files under
-   `testdata/rapid/TestPropDeclaredIntegerNeverFabricates/`.
+   single-PR bound). 8 test files (`datatype_prop_test.go`, `datatype_roundtrip_test.go`, `export_test.go`,
+   `jsonld_test.go`, `ntriples_test.go`, `object_test.go`, `prefix_test.go`, `turtle_test.go`) plus 2 Rapid seed files
+   under `testdata/rapid/TestPropDeclaredIntegerNeverFabricates/`.
 2. **Test-text check (`time.Sleep`, `.Skip(`, `//go:build`)**: 0 matches across `vocabulary/export/`.
 3. **Unit tests under `-race -count=1 -cpu 1`**: `ok github.com/c360studio/semstreams/vocabulary/export 4.123s`.
 4. **Shuffled 5x repeat (`-count=5 -cpu 1 -shuffle=on`)**:
@@ -66,7 +72,8 @@ Checked via `gh issue list --state open` for `vocabulary` and `vocabulary/export
 | --- | --- | --- | --- |
 | S1 | `export.go:55,118`, `prefix.go:36,95`, and 5 test files | References `vocabulary.SemStreamsBase` (`https://semstreams.semanticstream.ing`), renamed in SemEngine (`#69`) to `vocabulary.SemEngineBase` (`https://semengine.semanticstream.ing`). | **Required** (build/verify gate): update to `vocabulary.SemEngineBase` and update default base IRI strings in tests. |
 | S2 | `export_test.go:174,258,270`, `jsonld_test.go:72`, `turtle_test.go:175` | Calls `vocabulary.ClearRegistry()` without restoring built-in `init()` registrations. | **Required** (test isolation): precede `ClearRegistry()` with `defer vocabulary.SnapshotRegistry()()`. |
-| S3 | `vocabulary/export/*.go` | Checked for context roots, goroutines, I/O, `GenericJSON` payload construction, and dead exported surface. | **None needed**: 0 context roots, 0 goroutines, 0 I/O, 0 `GenericJSONPayload` uses (`jsonld.go` serializes a standard JSON-LD document map), and all exported symbols (`SerializeEntity`, `SerializeEntities`, `Format`, options, and `prefix.go` helpers) are live contract surface. |
+| S3 | `vocabulary/export/*.go` | Checked for context roots, goroutines, I/O, `GenericJSON` payload construction, and dead exported surface. | **None needed**: 0 context roots, 0 goroutines, 0 I/O, 0 `GenericJSONPayload` uses (`jsonld.go` serializes a standard JSON-LD document map), and all exported symbols (`Serialize`, `SerializeToString`, `Format` (`NTriples`, `Turtle`, `JSONLD`), `Option` (`WithBaseIRI`, `WithSubjectIRIFunc`), and `Register`) are live contract surface. |
+| S4 | `prefix.go:47,108`, `object.go:257,290` | Review findings `#237` (Turtle `PN_PREFIX` validation and atomic batch prefix registration `RegisterPrefixes`), `#238` (deterministic prefix tie-breaking in `compact` for namespace aliases), and `#239` (`time.RFC3339Nano` fractional-second preservation for `xsd:dateTime`). | **Required** (closes `#237`, `#238`, `#239` in this PR). |
 
 ## Disposition of `vocabulary/bfo` and `vocabulary/cco`
 

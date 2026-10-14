@@ -25,7 +25,8 @@ SHALL clear and restore the reverse index alongside predicates and aliases.
 ### Requirement: Entity-type class metadata registration and reverse lookup
 
 `vocabulary.ParseEntityTypeKey(domainType string)` SHALL accept only a two-segment lower-kebab ASCII string
-`<domain>.<type>` where each segment obeys the entity-ID segment grammar, returning an error otherwise.
+`<domain>.<type>` where each segment obeys the vocabulary predicate segment grammar (`[a-z][a-z0-9-]*`, maximum 64
+bytes, no trailing or consecutive hyphens), returning an error otherwise.
 `vocabulary.RegisterEntityType(domainType string, opts ...EntityTypeOption)` SHALL panic on an invalid `domain.type`
 key or an option with an empty or whitespace-containing IRI, and SHALL otherwise register or amend
 `EntityTypeMetadata` (preserving existing fields and deduplicating `Superclasses`). `LookupEntityTypesByClassIRI(iri)`
@@ -61,19 +62,21 @@ SHALL preserve its existing `Projection`.
 ### Requirement: Declarative JSON and YAML vocabulary packs load and register fail-closed
 
 `vocabulary.LoadPackJSON` and `vocabulary.LoadPackYAML` SHALL decode a `PackSpec` from JSON or YAML while refusing
-unknown fields, malformed syntax, or trailing data. `vocabulary.RegisterPack` SHALL validate every prefix, predicate,
-and entity type in the `PackSpec` before mutating registry state; if any entry is invalid, `RegisterPack` SHALL return
-an error and leave the vocabulary and prefix registries unchanged.
+unknown fields, malformed syntax, or trailing data. `vocabulary.RegisterPack` SHALL validate every prefix (including
+W3C Turtle `PN_PREFIX` syntax via `PrefixSpec.Validate`), predicate, and entity type in the `PackSpec` before mutating
+registry state; if any entry or batch prefix registration is invalid, `RegisterPack` SHALL return an error and leave
+the vocabulary and prefix registries unchanged.
 
 #### Scenario: Valid pack registers predicates, entity types, and prefixes
 
 - **WHEN** a `PackSpec` decoded by `LoadPackJSON` or `LoadPackYAML` is passed to `RegisterPack` with
-  `WithPrefixRegistrar(export.Register)`
+  `WithPrefixRegistrar(export.RegisterPrefixes)`
 - **THEN** its predicates, aliases, inverses, projections, entity types, and export prefixes are all registered and
   resolvable
 
 #### Scenario: Invalid entry in a pack leaves registry unchanged
 
-- **WHEN** `RegisterPack` is called with a `PackSpec` whose first predicate is valid and whose second predicate or
-  entity type is invalid
-- **THEN** `RegisterPack` returns an error and the first predicate is not registered in the vocabulary registry
+- **WHEN** `RegisterPack` is called with a `PackSpec` whose first predicate is valid and whose second predicate,
+  entity type, or late prefix binding is invalid
+- **THEN** `RegisterPack` returns an error and neither the first predicate nor any earlier prefix in the pack is
+  registered

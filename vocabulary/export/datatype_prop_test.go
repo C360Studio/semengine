@@ -190,7 +190,9 @@ func TestPropDeclaredEntityIDNeverFabricatesAnIRI(t *testing.T) {
 
 // TestPropDeclaredDateTimeNeverFabricatesAnInstant asserts that the datetime
 // declaration is applied only to values that ARE instants, and that the emitted
-// lexical form parses back to the same instant.
+// lexical form parses back to the same instant (including nonzero fractional
+// seconds) across public output formats and after the authoritative
+// EntityState JSON round trip.
 //
 // spec: predicate-contract / RDF export honors the declared datatype and never fabricates a value
 func TestPropDeclaredDateTimeNeverFabricatesAnInstant(t *testing.T) {
@@ -201,30 +203,70 @@ func TestPropDeclaredDateTimeNeverFabricatesAnInstant(t *testing.T) {
 
 	rapid.Check(t, func(rt *rapid.T) {
 		unix := rapid.Int64Range(-62135596800, 253402300799).Draw(rt, "unix")
-		instant := time.Unix(unix, 0).UTC()
+		nanos := rapid.OneOf(
+			rapid.Just(int64(0)),
+			rapid.Int64Range(1, 999_999_999),
+		).Draw(rt, "nanos")
+		instant := time.Unix(unix, nanos).UTC()
 
-		asString := rapid.Bool().Draw(rt, "asString")
-		var object any = instant
-		if asString {
-			object = instant.Format(time.RFC3339)
+		mode := rapid.IntRange(0, 2).Draw(rt, "mode")
+		var triple message.Triple
+		switch mode {
+		case 0:
+			triple = message.Triple{Subject: roundTripEntityID, Predicate: pred, Object: instant}
+		case 1:
+			triple = message.Triple{Subject: roundTripEntityID, Predicate: pred, Object: instant.Format(time.RFC3339Nano)}
+		default:
+			triple = roundTripThroughEntityStates(t, []message.Triple{{
+				Subject: roundTripEntityID, Predicate: pred, Object: instant,
+			}})[0]
 		}
 
-		classified := classifyObject(message.Triple{
-			Subject: roundTripEntityID, Predicate: pred, Object: object,
-		}, &opts)
-
+		classified := classifyObject(triple, &opts)
 		if classified.datatype != xsdDateTime {
-			rt.Fatalf("observed %v (string=%v) emitted datatype %q, want xsd:dateTime",
-				object, asString, classified.datatype)
+			rt.Fatalf("observed %v (mode=%d) emitted datatype %q, want xsd:dateTime",
+				triple.Object, mode, classified.datatype)
 		}
-		back, err := time.Parse(time.RFC3339, classified.lexical)
+		back, err := time.Parse(time.RFC3339Nano, classified.lexical)
 		if err != nil {
 			rt.Fatalf("emitted %q does not parse as RFC 3339: %v", classified.lexical, err)
 		}
 		if !back.Equal(instant) {
 			rt.Fatalf("observed %v emitted %q, which round-trips to %v", instant, classified.lexical, back)
 		}
+
+		wantLexical := instant.Format(time.RFC3339Nano)
+		for _, format := range []Format{NTriples, Turtle, JSONLD} {
+			out, err := SerializeToString([]message.Triple{triple}, format)
+			if err != nil {
+				rt.Fatalf("SerializeToString(%v) failed: %v", format, err)
+			}
+			if !strings.Contains(out, `"`+wantLexical+`"`) {
+				rt.Fatalf("SerializeToString(%v) output missing exact instant %q:\n%s", format, wantLexical, out)
+			}
+		}
 	})
+}
+
+// TestDateTimeObservationPreservesFractionalSeconds verifies that an undeclared
+// time.Time value with nonzero nanoseconds also preserves fractional seconds
+// when classified by Go type observation (#239).
+func TestDateTimeObservationPreservesFractionalSeconds(t *testing.T) {
+	instant := time.Date(2026, 10, 14, 12, 0, 0, 123456789, time.UTC)
+	triple := message.Triple{
+		Subject:   roundTripEntityID,
+		Predicate: "undeclared.time.instant",
+		Object:    instant,
+	}
+	for _, format := range []Format{NTriples, Turtle, JSONLD} {
+		out, err := SerializeToString([]message.Triple{triple}, format)
+		if err != nil {
+			t.Fatalf("SerializeToString(%v) error: %v", format, err)
+		}
+		if !strings.Contains(out, `"2026-10-14T12:00:00.123456789Z"`) {
+			t.Errorf("SerializeToString(%v) dropped fractional seconds:\n%s", format, out)
+		}
+	}
 }
 
 // TestPropNonInstantStringUnderDateTimeDeclarationFallsBack is the refusal half

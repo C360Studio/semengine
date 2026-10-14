@@ -16,6 +16,65 @@ type PrefixSpec struct {
 	Namespace string `json:"namespace" yaml:"namespace"`
 }
 
+// Validate checks that Prefix is a non-empty W3C Turtle PN_PREFIX label
+// (starting with a PN_CHARS_BASE letter, containing only PN_CHARS or '.', and
+// not ending in '.' or containing ':' or whitespace) and Namespace is a
+// non-empty IRI without whitespace.
+func (p PrefixSpec) Validate() error {
+	if err := validatePNPrefix(p.Prefix); err != nil {
+		return err
+	}
+	return validateNonEmptyIRI(p.Namespace, fmt.Sprintf("namespace for prefix %q", p.Prefix))
+}
+
+func validatePNPrefix(prefix string) error {
+	if prefix == "" {
+		return errors.New("prefix must not be empty")
+	}
+	var lastRune rune
+	for i, r := range prefix {
+		if i == 0 {
+			if !isPNCharsBase(r) {
+				return fmt.Errorf("prefix %q must start with a letter (Turtle PN_CHARS_BASE)", prefix)
+			}
+		} else if r != '.' && !isPNChars(r) {
+			return fmt.Errorf("prefix %q contains invalid Turtle PN_PREFIX character %q", prefix, r)
+		}
+		lastRune = r
+	}
+	if lastRune == '.' {
+		return fmt.Errorf("prefix %q must not end with '.'", prefix)
+	}
+	return nil
+}
+
+func isPNCharsBase(r rune) bool {
+	return (r >= 'A' && r <= 'Z') ||
+		(r >= 'a' && r <= 'z') ||
+		(r >= 0x00C0 && r <= 0x00D6) ||
+		(r >= 0x00D8 && r <= 0x00F6) ||
+		(r >= 0x00F8 && r <= 0x02FF) ||
+		(r >= 0x0370 && r <= 0x037D) ||
+		(r >= 0x037F && r <= 0x1FFF) ||
+		(r >= 0x200C && r <= 0x200D) ||
+		(r >= 0x2070 && r <= 0x218F) ||
+		(r >= 0x2C00 && r <= 0x2FEF) ||
+		(r >= 0x3001 && r <= 0xD7FF) ||
+		(r >= 0xF900 && r <= 0xFDCF) ||
+		(r >= 0xFDF0 && r <= 0xFFFD) ||
+		(r >= 0x10000 && r <= 0xEFFFF)
+}
+
+func isPNChars(r rune) bool {
+	return isPNCharsBase(r) ||
+		r == '_' ||
+		r == '-' ||
+		(r >= '0' && r <= '9') ||
+		r == 0x00B7 ||
+		(r >= 0x0300 && r <= 0x036F) ||
+		(r >= 0x203F && r <= 0x2040)
+}
+
 // PredicateSpec declares a canonical 3-part dotted predicate and its metadata
 // in a declarative vocabulary pack.
 type PredicateSpec struct {
@@ -56,16 +115,16 @@ type PackSpec struct {
 }
 
 type packConfig struct {
-	prefixRegistrar func(prefix, namespace string) error
+	prefixRegistrar func(prefixes []PrefixSpec) error
 }
 
 // PackOption configures how RegisterPack applies a PackSpec.
 type PackOption func(*packConfig)
 
-// WithPrefixRegistrar supplies a callback (such as export.Register) that
-// RegisterPack invokes for each PrefixSpec after all pack entries pass
-// validation.
-func WithPrefixRegistrar(fn func(prefix, namespace string) error) PackOption {
+// WithPrefixRegistrar supplies an atomic batch callback (such as
+// export.RegisterPrefixes) that RegisterPack invokes with the pack's PrefixSpec
+// slice after all pack entries pass validation.
+func WithPrefixRegistrar(fn func(prefixes []PrefixSpec) error) PackOption {
 	return func(c *packConfig) {
 		c.prefixRegistrar = fn
 	}
@@ -117,9 +176,9 @@ func LoadPackYAML(r io.Reader) (PackSpec, error) {
 	return pack, nil
 }
 
-// ValidatePack checks that every prefix, predicate, and entity type in pack is
+// validatePack checks that every prefix, predicate, and entity type in pack is
 // well-formed without mutating registry state.
-func ValidatePack(pack PackSpec) error {
+func validatePack(pack PackSpec) error {
 	registryMu.RLock()
 	defer registryMu.RUnlock()
 
@@ -128,9 +187,9 @@ func ValidatePack(pack PackSpec) error {
 }
 
 // RegisterPack validates every prefix, predicate, and entity type in pack
-// before mutating state. If any entry is invalid or if the optional prefix
-// registrar returns an error, RegisterPack leaves the predicate and entity-type
-// registries unchanged.
+// before mutating state. If any entry is invalid or if the optional batch
+// prefix registrar returns an error, RegisterPack leaves the predicate and
+// entity-type registries unchanged.
 func RegisterPack(pack PackSpec, opts ...PackOption) error {
 	var cfg packConfig
 	for _, opt := range opts {
@@ -147,11 +206,9 @@ func RegisterPack(pack PackSpec, opts ...PackOption) error {
 		return err
 	}
 
-	if cfg.prefixRegistrar != nil {
-		for _, pfx := range pack.Prefixes {
-			if err := cfg.prefixRegistrar(pfx.Prefix, pfx.Namespace); err != nil {
-				return fmt.Errorf("register pack %q prefix %q: %w", pack.Name, pfx.Prefix, err)
-			}
+	if cfg.prefixRegistrar != nil && len(pack.Prefixes) > 0 {
+		if err := cfg.prefixRegistrar(slices.Clone(pack.Prefixes)); err != nil {
+			return fmt.Errorf("register pack %q prefixes: %w", pack.Name, err)
 		}
 	}
 
@@ -163,11 +220,8 @@ func RegisterPack(pack PackSpec, opts ...PackOption) error {
 func stagePackLocked(pack PackSpec) (map[string]PredicateMetadata, map[string]EntityTypeMetadata, error) {
 	seenPrefixes := make(map[string]string, len(pack.Prefixes))
 	for i, pfx := range pack.Prefixes {
-		if err := validateNonEmptyIRI(pfx.Prefix, fmt.Sprintf("prefixes[%d].prefix", i)); err != nil {
-			return nil, nil, err
-		}
-		if err := validateNonEmptyIRI(pfx.Namespace, fmt.Sprintf("prefixes[%d].namespace", i)); err != nil {
-			return nil, nil, err
+		if err := pfx.Validate(); err != nil {
+			return nil, nil, fmt.Errorf("prefixes[%d]: %w", i, err)
 		}
 		if existing, ok := seenPrefixes[pfx.Prefix]; ok && existing != pfx.Namespace {
 			return nil, nil, fmt.Errorf("prefixes[%d]: duplicate prefix %q with conflicting namespace", i, pfx.Prefix)
@@ -183,6 +237,11 @@ func stagePackLocked(pack PackSpec) (map[string]PredicateMetadata, map[string]En
 	for i, spec := range pack.Predicates {
 		if err := stagePredicateSpec(i, spec, stagedPredicates); err != nil {
 			return nil, nil, err
+		}
+	}
+	for i, spec := range pack.Predicates {
+		if err := validatePredicateMetadataIn(stagedPredicates[spec.Name], stagedPredicates); err != nil {
+			return nil, nil, fmt.Errorf("predicates[%d] (%q): %w", i, spec.Name, err)
 		}
 	}
 
@@ -256,7 +315,7 @@ func stagePredicateSpec(i int, spec PredicateSpec, staged map[string]PredicateMe
 		meta.Projection = cloned
 	}
 
-	if err := validateStagedPredicateMetadata(meta, staged); err != nil {
+	if err := validatePredicateMetadataIn(meta, staged); err != nil {
 		return fmt.Errorf("predicates[%d] (%q): %w", i, spec.Name, err)
 	}
 	staged[spec.Name] = meta
@@ -293,35 +352,5 @@ func stageEntityTypeSpec(i int, spec EntityTypeSpec, staged map[string]EntityTyp
 		return fmt.Errorf("entity_types[%d] (%q): %w", i, spec.DomainType, err)
 	}
 	staged[spec.DomainType] = meta
-	return nil
-}
-
-func validateStagedPredicateMetadata(meta PredicateMetadata, staged map[string]PredicateMetadata) error {
-	if err := validateDataType(meta.DataType); err != nil {
-		return err
-	}
-	if err := validateProjectionSpec(meta.Projection); err != nil {
-		return err
-	}
-	if meta.InverseOf != "" {
-		if _, err := ParsePredicate(meta.InverseOf); err != nil {
-			return fmt.Errorf("inverse predicate %q: %w", meta.InverseOf, err)
-		}
-	}
-	if meta.IsSymmetric && meta.InverseOf != "" {
-		return fmt.Errorf("symmetric predicate cannot also declare inverse %q", meta.InverseOf)
-	}
-	if meta.IsAlias {
-		if !validAliasType(meta.AliasType) {
-			return fmt.Errorf("invalid alias type %q", meta.AliasType)
-		}
-	} else if meta.AliasType != "" || meta.AliasPriority != 0 {
-		return fmt.Errorf("alias metadata requires IsAlias=true")
-	}
-	if inverse, ok := staged[meta.InverseOf]; meta.InverseOf != "" && ok &&
-		inverse.InverseOf != "" && inverse.InverseOf != meta.Name {
-		return fmt.Errorf("inverse predicate %q points to %q, not %q",
-			meta.InverseOf, inverse.InverseOf, meta.Name)
-	}
 	return nil
 }

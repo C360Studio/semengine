@@ -1,7 +1,11 @@
 package export
 
 import (
+	"strings"
 	"testing"
+
+	"github.com/c360studio/semengine/message"
+	"github.com/c360studio/semengine/vocabulary"
 )
 
 func TestPrefixMap_Compact(t *testing.T) {
@@ -113,6 +117,68 @@ func TestRegister_RejectsEmpty(t *testing.T) {
 	}
 	if err := Register("foo", ""); err == nil {
 		t.Fatalf("expected error for empty namespace")
+	}
+}
+
+func TestRegister_RejectsInvalidPNPrefix(t *testing.T) {
+	for _, bad := range []string{"bad:", ":bad", ".bad", "bad.", "1bad", "-bad", "_bad", "bad prefix"} {
+		if err := Register(bad, "https://example.org/test/"); err == nil {
+			t.Errorf("Register(%q) succeeded, expected Turtle PN_PREFIX validation error", bad)
+		}
+	}
+}
+
+func TestTurtleNamespaceAliasEveryPrefixedTermDeclared(t *testing.T) {
+	defer vocabulary.SnapshotRegistry()()
+	vocabulary.ClearRegistry()
+
+	if err := Register("dcterms", "http://purl.org/dc/terms/"); err != nil {
+		t.Fatalf("Register dcterms: %v", err)
+	}
+	t.Cleanup(func() {
+		defaultPrefixesMu.Lock()
+		delete(defaultPrefixes, "dcterms")
+		defaultPrefixesMu.Unlock()
+	})
+
+	vocabulary.Register("review.prefix.alias", vocabulary.WithIRI("http://purl.org/dc/terms/title"))
+	triples := []message.Triple{
+		{Subject: "a.b.c.d.e.f", Predicate: "review.prefix.alias", Object: "value"},
+	}
+
+	for i := range 100 {
+		out, err := SerializeToString(triples, Turtle)
+		if err != nil {
+			t.Fatalf("iteration %d: SerializeToString(Turtle) error: %v", i, err)
+		}
+		declared := make(map[string]bool)
+		var bodyLines []string
+		for _, line := range strings.Split(out, "\n") {
+			trimmed := strings.TrimSpace(line)
+			if trimmed == "" {
+				continue
+			}
+			if strings.HasPrefix(trimmed, "@prefix ") {
+				rest := strings.TrimPrefix(trimmed, "@prefix ")
+				colon := strings.IndexByte(rest, ':')
+				if colon <= 0 {
+					t.Fatalf("iteration %d: malformed @prefix line %q", i, line)
+				}
+				declared[rest[:colon]] = true
+			} else {
+				bodyLines = append(bodyLines, trimmed)
+			}
+		}
+		body := strings.Join(bodyLines, " ")
+		if !strings.Contains(body, " dc:title ") {
+			t.Fatalf("iteration %d: expected deterministic lexicographic prefix dc:title in body, got:\n%s", i, out)
+		}
+		if !declared["dc"] {
+			t.Fatalf("iteration %d: used prefix dc not declared in Turtle header:\n%s", i, out)
+		}
+		if declared["dcterms"] {
+			t.Fatalf("iteration %d: unused alias dcterms declared in Turtle header:\n%s", i, out)
+		}
 	}
 }
 

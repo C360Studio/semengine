@@ -128,11 +128,23 @@ func TestRegisterPackAndAtomicOnFailure(t *testing.T) {
 	ClearRegistry()
 
 	registeredPrefixes := make(map[string]string)
-	recordPrefix := func(prefix, namespace string) error {
-		if existing, ok := registeredPrefixes[prefix]; ok && existing != namespace {
-			return fmt.Errorf("prefix %q conflict", prefix)
+	recordPrefixes := func(prefixes []PrefixSpec) error {
+		staged := make(map[string]string, len(prefixes))
+		for _, pfx := range prefixes {
+			if err := pfx.Validate(); err != nil {
+				return err
+			}
+			if existing, ok := registeredPrefixes[pfx.Prefix]; ok && existing != pfx.Namespace {
+				return fmt.Errorf("prefix %q conflict", pfx.Prefix)
+			}
+			if existing, ok := staged[pfx.Prefix]; ok && existing != pfx.Namespace {
+				return fmt.Errorf("prefix %q intra-batch conflict", pfx.Prefix)
+			}
+			staged[pfx.Prefix] = pfx.Namespace
 		}
-		registeredPrefixes[prefix] = namespace
+		for k, v := range staged {
+			registeredPrefixes[k] = v
+		}
 		return nil
 	}
 
@@ -169,7 +181,7 @@ func TestRegisterPackAndAtomicOnFailure(t *testing.T) {
 		},
 	}
 
-	require.NoError(t, RegisterPack(validPack, WithPrefixRegistrar(recordPrefix)))
+	require.NoError(t, RegisterPack(validPack, WithPrefixRegistrar(recordPrefixes)))
 	assert.Equal(t, "https://confirm.mil/diekm/", registeredPrefixes["diekm"])
 	assert.Equal(t, []string{"uxs.telemetry.altitude"}, LookupByIRI("https://confirm.mil/diekm/hasAltitude"))
 	assert.Equal(t, []string{"uxs.uas"}, LookupEntityTypesByClassIRI("https://confirm.mil/diekm/UnmannedAerialSystem"))
@@ -201,11 +213,52 @@ func TestRegisterPackAndAtomicOnFailure(t *testing.T) {
 		},
 	}
 
-	err := RegisterPack(badPack, WithPrefixRegistrar(recordPrefix))
+	err := RegisterPack(badPack, WithPrefixRegistrar(recordPrefixes))
 	require.Error(t, err)
 	assert.Nil(t, GetPredicateMetadata("uxs.telemetry.speed"), "valid entry before invalid predicate must not be committed")
 	assert.Nil(t, GetEntityTypeMetadata("uxs.ugv"), "entity type in rejected pack must not be committed")
 	assert.NotContains(t, registeredPrefixes, "newpfx", "prefix in rejected pack must not be committed")
+
+	// Atomic failure on late prefix conflict: first prefix in pack is new,
+	// second conflicts with existing "diekm" binding.
+	lateConflictPack := PackSpec{
+		Name: "late-prefix-conflict",
+		Prefixes: []PrefixSpec{
+			{Prefix: "review235", Namespace: "https://example.org/first/"},
+			{Prefix: "diekm", Namespace: "https://example.org/conflict/"},
+		},
+		Predicates: []PredicateSpec{
+			{Name: "review.pack.first"},
+		},
+	}
+	require.Error(t, RegisterPack(lateConflictPack, WithPrefixRegistrar(recordPrefixes)))
+	assert.NotContains(t, registeredPrefixes, "review235", "earlier prefix in rejected batch must not remain installed")
+	assert.Nil(t, GetPredicateMetadata("review.pack.first"))
+
+	// Malformed Turtle PN_PREFIX labels are rejected before any state changes.
+	for _, badPrefix := range []string{"", "bad:", ":lead", ".dot", "dot.", "1digit", "-dash", "_under", "has space"} {
+		err := RegisterPack(PackSpec{
+			Name:     "bad-prefix-pack",
+			Prefixes: []PrefixSpec{{Prefix: badPrefix, Namespace: "https://example.org/ns/"}},
+			Predicates: []PredicateSpec{
+				{Name: "review.prefix.pred"},
+			},
+		}, WithPrefixRegistrar(recordPrefixes))
+		require.Error(t, err, "expected error for invalid prefix %q", badPrefix)
+		assert.Nil(t, GetPredicateMetadata("review.prefix.pred"))
+	}
+
+	// Intra-pack asymmetric inverse declarations are rejected regardless of order.
+	inconsistentInversePack := PackSpec{
+		Name: "inconsistent-inverse",
+		Predicates: []PredicateSpec{
+			{Name: "review.rel.first", InverseOf: "review.rel.second"},
+			{Name: "review.rel.second", InverseOf: "review.rel.third"},
+		},
+	}
+	require.Error(t, RegisterPack(inconsistentInversePack))
+	assert.Nil(t, GetPredicateMetadata("review.rel.first"))
+	assert.Nil(t, GetPredicateMetadata("review.rel.second"))
 }
 
 func TestPropPackRoundTrip(t *testing.T) {
@@ -291,12 +344,15 @@ func FuzzLoadPackJSON(f *testing.F) {
 		f.Add(seed)
 	}
 
-	f.Fuzz(func(_ *testing.T, input string) {
+	f.Fuzz(func(t *testing.T, input string) {
 		pack, err := LoadPackJSON(strings.NewReader(input))
 		if err != nil {
 			return
 		}
-		_ = ValidatePack(pack)
+		defer SnapshotRegistry()()
+		if err := validatePack(pack); err == nil {
+			require.NoError(t, RegisterPack(pack))
+		}
 	})
 }
 
@@ -310,11 +366,14 @@ func FuzzLoadPackYAML(f *testing.F) {
 		f.Add(seed)
 	}
 
-	f.Fuzz(func(_ *testing.T, input string) {
+	f.Fuzz(func(t *testing.T, input string) {
 		pack, err := LoadPackYAML(strings.NewReader(input))
 		if err != nil {
 			return
 		}
-		_ = ValidatePack(pack)
+		defer SnapshotRegistry()()
+		if err := validatePack(pack); err == nil {
+			require.NoError(t, RegisterPack(pack))
+		}
 	})
 }

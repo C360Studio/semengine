@@ -373,6 +373,10 @@ func parseDomainCategory(name string) (domain, category string) {
 // is why it takes the metadata by value: it has no reason to reach back into
 // the caller's copy, and a pointer would invite one.
 func validatePredicateMetadataLocked(meta PredicateMetadata) error {
+	return validatePredicateMetadataIn(meta, predicateRegistry)
+}
+
+func validatePredicateMetadataIn(meta PredicateMetadata, reg map[string]PredicateMetadata) error {
 	if err := validateDataType(meta.DataType); err != nil {
 		return err
 	}
@@ -396,7 +400,7 @@ func validatePredicateMetadataLocked(meta PredicateMetadata) error {
 		return fmt.Errorf("alias metadata requires IsAlias=true")
 	}
 
-	if inverse, ok := predicateRegistry[meta.InverseOf]; meta.InverseOf != "" && ok &&
+	if inverse, ok := reg[meta.InverseOf]; meta.InverseOf != "" && ok &&
 		inverse.InverseOf != "" && inverse.InverseOf != meta.Name {
 		return fmt.Errorf("inverse predicate %q points to %q, not %q",
 			meta.InverseOf, inverse.InverseOf, meta.Name)

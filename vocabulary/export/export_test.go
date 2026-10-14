@@ -313,6 +313,7 @@ func TestRegisterPackWithExportPrefixRegistrar(t *testing.T) {
 	t.Cleanup(func() {
 		defaultPrefixesMu.Lock()
 		delete(defaultPrefixes, "diekm")
+		delete(defaultPrefixes, "review235")
 		defaultPrefixesMu.Unlock()
 	})
 
@@ -333,7 +334,7 @@ func TestRegisterPackWithExportPrefixRegistrar(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadPackJSON() error = %v", err)
 	}
-	if err := vocabulary.RegisterPack(pack, vocabulary.WithPrefixRegistrar(Register)); err != nil {
+	if err := vocabulary.RegisterPack(pack, vocabulary.WithPrefixRegistrar(RegisterPrefixes)); err != nil {
 		t.Fatalf("RegisterPack() error = %v", err)
 	}
 
@@ -349,5 +350,26 @@ func TestRegisterPackWithExportPrefixRegistrar(t *testing.T) {
 	}
 	if !strings.Contains(turtleOut, "diekm:hasAltitude") {
 		t.Errorf("expected compact diekm:hasAltitude predicate in Turtle output, got:\n%s", turtleOut)
+	}
+
+	// Late prefix conflict in a pack must not install earlier prefixes or predicates (#237).
+	conflictingPack := vocabulary.PackSpec{
+		Name: "conflicting-pack",
+		Prefixes: []vocabulary.PrefixSpec{
+			{Prefix: "review235", Namespace: "https://example.org/first/"},
+			{Prefix: "rdf", Namespace: "https://example.org/conflict/"},
+		},
+		Predicates: []vocabulary.PredicateSpec{
+			{Name: "review.pack.first"},
+		},
+	}
+	if err := vocabulary.RegisterPack(conflictingPack, vocabulary.WithPrefixRegistrar(RegisterPrefixes)); err == nil {
+		t.Fatalf("expected error from conflicting rdf prefix in pack")
+	}
+	if got := vocabulary.GetPredicateMetadata("review.pack.first"); got != nil {
+		t.Fatalf("expected predicate from rejected pack to remain unregistered, got %+v", got)
+	}
+	if err := Register("review235", "https://example.org/second/"); err != nil {
+		t.Fatalf("expected review235 prefix to be unbound after rejected pack, got error: %v", err)
 	}
 }

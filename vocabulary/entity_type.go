@@ -9,17 +9,17 @@ import (
 
 const maxEntityTypeKeyBytes = 2*MaxPredicateSegmentBytes + 1
 
-// EntityTypeMetadata maps a two-segment entity-type key (<domain>.<type>,
-// corresponding to positions 4 and 5 of a 6-part entity ID) to its RDF/OWL
-// class IRI and superclass IRIs.
+// EntityTypeMetadata maps a two-segment lower-kebab entity-type key
+// (<domain>.<type>, naming the domain and type segments at 0-indexed positions
+// 2 and 4 of a 6-part entity ID) to its RDF/OWL class IRI and superclass IRIs.
 type EntityTypeMetadata struct {
 	// DomainType is the canonical "<domain>.<type>" key (for example, "uxs.uas").
 	DomainType string
 
-	// Domain is the first segment of DomainType (position 4 of an entity ID).
+	// Domain is the first segment of DomainType (0-indexed segment 2 of an entity ID).
 	Domain string
 
-	// Type is the second segment of DomainType (position 5 of an entity ID).
+	// Type is the second segment of DomainType (0-indexed segment 4 of an entity ID).
 	Type string
 
 	// Description provides human-readable documentation for the entity type.
@@ -73,8 +73,10 @@ func WithSuperclass(iri string) EntityTypeOption {
 }
 
 // ParseEntityTypeKey validates and decomposes a two-segment lower-kebab ASCII
-// entity-type key "<domain>.<type>" matching the segment grammar of entity ID
-// positions 4 and 5.
+// entity-type key "<domain>.<type>". Each segment follows the vocabulary
+// predicate segment grammar ([a-z][a-z0-9-]* with no trailing '-', at most
+// MaxPredicateSegmentBytes bytes), which is deliberately narrower than the
+// general segment grammar accepted by pkg/types.ValidateEntityID.
 func ParseEntityTypeKey(domainType string) (domain, entityType string, err error) {
 	if domainType == "" {
 		return "", "", fmt.Errorf("entity type key must not be empty")
@@ -96,7 +98,7 @@ func ParseEntityTypeKey(domainType string) (domain, entityType string, err error
 }
 
 // RegisterEntityType registers or amends metadata for a "<domain>.<type>"
-// entity-type key. It panics if domainType is not a canonical two-segment key
+// entity-type key. It panics if domainType does not satisfy ParseEntityTypeKey
 // or if any option supplies an empty or whitespace-containing IRI.
 func RegisterEntityType(domainType string, opts ...EntityTypeOption) {
 	domain, entityType, err := ParseEntityTypeKey(domainType)

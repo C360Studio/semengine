@@ -1,9 +1,9 @@
 # SemEngine
 
 Guidance for coding agents. Codex and Antigravity (Gemini) load this file as `AGENTS.md`; `CLAUDE.md` imports it, so
-there is one copy (kept under 24,000 bytes so rule loaders with a 24 KB per-file cap never truncate it). It carries
-the facts an agent cannot derive from the tree and names where each rule lives. Per-platform command names and model
-routing: `.agents/README.md`.
+there is one copy (kept well under 24,000 bytes so rule loaders with a 24 KB per-file cap never truncate it). It
+carries the facts an agent cannot derive from the tree and names where each rule lives. Per-platform command names and
+model routing: `.agents/README.md`. Full test-by-test enforcement audit matrix: `.agents/rules-index.md`.
 
 ## What this is for
 
@@ -57,83 +57,106 @@ lines); `required` fails if either failed, is missing, or was skipped/cancelled.
 
 ## Rules and what enforces them
 
-The linked file is the rule; this table is only its index. Short names in "Canonical home": `arch` (`architect`),
-`dev` (`developer`), `rev` (`reviewer`), `writer` (`technical-writer`) -> `.agents/contracts/semengine-<role>.md`;
-`protocol` -> `.agents/protocol.md`; `<name> spec` -> `openspec/specs/<name>/spec.md`. "Review only" means no command
-fails when broken. A change adding a repo-wide or agent-conduct rule adds its row here; a spec requirement gets a row
-only when it binds every change. Turn "review only" rows into failing commands where practical. Keep `AGENTS.md` <24,000B.
+Domain-grouped working reference. `.agents/rules-index.md` carries the full 3-column enforcement audit matrix (exact
+contract sections, spec requirements, test names, and review-only coverage gaps). Short names in "Where": `arch`,
+`dev`, `rev`, `writer` -> `.agents/contracts/semengine-<role>.md`; `protocol` -> `.agents/protocol.md`; `<name> spec` ->
+`openspec/specs/<name>/spec.md`. In "Gate": `review` means review only (no command fails when broken); `verify` means
+enforced by `task verify` (`verify+review` when structural guards cover the core rule and edge cases remain review-only).
+A new repo-wide or agent-conduct rule updates both this file and `.agents/rules-index.md`.
 
-| Rule | Canonical home | Enforced by |
+### 1. Go, state, and component lifecycle
+
+| Gate | Rule | Where |
 | --- | --- | --- |
-| Production structs never retain `context.Context` | `dev` § Context ownership; `harness-boundaries` spec | `TestNoRetainedContext`; invented roots/nil defaults: review only |
-| State travels as an argument, field, or stored entry, never `context.WithValue` / `ctx.Value` (#91) | `dev` § State ownership; `rev` § Graph and state ownership (`BLOCKING`) | review only |
-| Deployment authority is spelled once (`config.Manager.Start` -> `deps.Platform` -> `FrameworkIdentityFamily.EntityID`); no exported `Federation\|GlobalID\|EntityIRI` or second `Org`/`Platform` field (#72) | `harness-boundaries` spec; ADR-102, ADR-104 | `TestNoDeploymentAuthorityNames`, `TestNoSecondAuthorityField` (+ sensitivity); unexported copies, re-joins, ordering, sole composer: review only |
-| Background work outside a service uses `Run(ctx)`, joining `Close()`, or `Shutdown(ctx)`: no fixed shutdown timeout, nil ctx refused | `background-work` spec; `dev`, `rev` § Background work | each site's `synctest` test; new goroutines/timers: review only |
-| Classified NATS RPC handlers use `RequestClassified` / `RequestWithRetryClassified`, propagating class, code, detail | `dev` § NATS RPC; `rev` § NATS RPC error contract | review only |
-| Non-evictable buckets have no TTL or binding `MaxBytes`; stream bounds protect capacity, not entity lifecycle | `dev`, `rev` § Storage and retention | `CheckNoLifecycleRetention`, `AssertNoLifecycleRetention`, `CheckStreamBounds` (`natsclient`); unchosen `DiscardOld`/bypass: review only |
-| Public packages' exported signatures name no `internal/` type | `harness-boundaries` spec | `TestPublicSignatures` (+ sensitivity); public-package list (D5): review only |
-| Test cleanup never stops, closes, or terminates under an unbounded context | `harness-boundaries` spec | `task cleanup-roots:check` (same-line); other unbounded roots: review only |
-| No bare `select {}` | `harness-boundaries` spec | `TestNoBareSelect` (+ sensitivity) |
-| Tests confirm a child process is still running before inspecting it (`ps`, signal, output) | `docs/testing.md` § Concurrency and cleanup | review only (`prochost` `Signal`/`Pause`/`Resume` error after exit) |
-| A test running a `nats.go` connection inside `testing/synctest` runs in its own test process (#156) | `docs/testing.md` § Concurrency and cleanup | review only |
-| Tests bind no fixed address or port | `harness-boundaries` spec | `TestNoFixedAddressesInTests`; `scripts/lint-test-ports.sh` (`task lint`) |
-| No `time.Sleep` in a test file or under `internal/harness/` | `harness-boundaries` spec | `TestNoSleepsInTests`; renamed imports/timers: review only |
-| No test calls `Skip`/`Skipf`/`SkipNow`; no test file carries a build tag other than `integration` | `harness-boundaries` spec | `TestNoSkippedTests`, `TestNoHiddenTests`; helper skips: review only |
-| Unit tests also run five times at one CPU, without `-race`, shuffled | `merge-gate` spec | `task test:repeat` (last in `task verify`), `TestUnitInvocationsPinned` |
-| Production code imports no test library and nothing under `internal/harness` | `harness-boundaries` spec | `TestImportGraph` |
-| One NATS image pin; Docker cleanup touches only SemEngine-assigned names | `harness-boundaries` spec | `TestOneImagePin`, `TestSemEngineAssignedNames`, `TestNoBroadDockerCleanup`; letter tags (`nats:latest`): review only |
-| Components register collectors only on the injected `metric.MetricsRegistry`, never Prometheus' global registry | `metric-registry` spec | `TestNoProcessGlobalRegistration` (+ sensitivity); self-built registries: review only |
-| `graph.ingest.query.*` and `graph.mutation.` subjects are spelled only in `graph/query_verbs.go` and `internal/graphmutation/protocol.go` | `graph-transport-boundary` spec | `TestReservedSubjectsDeclaredOnce` (+ sensitivity); assembled strings: review only |
-| `component` reaches no agentic or graph-family package (`graph`, `internal/graphmutation`, `pkg/lifecycle`, `pkg/projection` outside `contract`) | `component-registration` spec | `TestComponentReachesNoAgenticOrGraphPackage` (+ sensitivity) |
-| The `graph` root package imports no NATS client, directly or transitively | `graph-transport-boundary` spec | `TestGraphImportsNoTransport` (+ sensitivity) |
-| Ported components refuse unknown config keys at construction, naming the key | `component-registration` spec; `dev` § State ownership | each component's test (`TestCreateGraphIngestRefusesUnknownKey`); new ports: review only |
-| Ported components keep owner-lifecycle state in `internal/lifecycleguard`, not a local copy | `dev` § State ownership; `rev` § Component wiring; `internal/lifecycleguard` | review only |
-| Consumers call `CreateComponent`, `SealComposition`, and `Snapshots` only via `service.ComponentManager` (#91 ruling C) | `component/registry.go`; `dev` § State ownership | review only |
-| Ported components whose failed `Start` cannot clean up report both errors and retain handles for `Stop` | `lifecycle-suite` spec | each component's `proving_tests` (`TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop`); new ports: review only |
-| Every polymorphic payload is published inside a `message.BaseMessage` | `dev`, `rev` § Payload registry | review only |
-| Payload packages export `RegisterPayloads`, component packages `Register`, imports register nothing, only `main` aggregates registrations, and round-trip tests decode via `message.NewDecoder` | `component-registration`, `harness-boundaries` specs; `dev`, `rev` § Payload registry; `.agents/skills/new-payload/SKILL.md` | `TestNoAggregatorPackage`, `TestBoundarySensitivity`; missing funcs, import side effects, non-decoder tests: review only |
-| Predicates (3 parts), literal entity IDs (6 parts, <=256B), entity patterns/prefixes, and NATS KV keys/filters pass shared validators at entry | `dev`, `rev` § Semantic identity and graph | `TestParsePredicate`, `TestValidateEntityIDContract`/`Pattern`/`Prefix`, `TestValidateKVLiteralKey`/`WildcardFilter`, `TestKVKeyContractNormativeNATS`; entry sites, sort/dedup before limit, readiness: review only |
-| Only `graph-ingest` writes domain entities to `ENTITY_STATES`; other code emits `graph.Graphable` or writes its own `graph/kvcatalog` bucket; single-valued predicates replace | `dev` § State ownership; `rev` § Graph and state ownership; `graph-entity-writes` spec | `TestEntityWritesHaveOneSeam` (+ sensitivity), `TestCatalogReader_ExportedSurfaceIsReadOnly`; bypassing `OpenCatalogReader` or appending single-valued predicates: review only |
-| Ported packages have an admission-ledger row; `carry` rows match the SemStreams pin (`source_sha`) | `arch` § Extraction slices; `docs/provenance.md` rule 5; `docs/admission-ledger.yaml` | `task ledger:check` (`TestCheckSensitivity`, `TestCommandExitStatus`, `TestLedgerCheckWiring`); row presence, `README.md`, `adapt` rows (`task ledger:diff`): review only |
-| Critical packages hold their coverage floor | `.agents/skills/semengine-preflight/SKILL.md` | `task cover:check` |
-| OpenSpec changes and specs are well formed | "Where state lives" below | `task spec:check` (shape); truth against code: review only |
-| Steps end when `task verify` passes locally on a clean tree; pushes batch at review/end; CI is checked once before merge; reviewer `PASS` cites commit + local `task verify`, never CI (#171) | `dev` § Handoff; `rev` § Verdict format; `protocol` § Cross-agent review | CI job `required` at merge; clean-tree runs, batched pushes, verdict citations: review only |
-| A merge needs CI green | `protocol` § Work lifecycle | CI job `required`; claim before work and close by merged PR: review only |
-| No merge while a known flake (`class:flake` issue) is open, unless the PR closes every open one | `protocol` § Known flakes; `merge-gate` spec | `scripts/merge-check.sh` (`merge-check` job, `task merge:check -- <n>`), `TestMergeCheckKnownFlake`, `TestCIWorkflowPinned`; filing/labelling: review only |
-| A failure path fails closed; a skip, drop, or degrade is declared | `dev` § Guarantee, signal, and revision contracts | review only |
-| Any defect found in repo code (carried, ported, or written here) not fixed in the change is filed as an issue (`status:blocked`, linked without closing keyword while on a PR branch), never routed as a residual or left in comments (#212, #193) | `protocol` § File; `rev` § Guarantee, signal, and revision review | review only |
-| New surface needs a repo caller, a named consumer caller (`docs/inventory-scope.md`), or a framework-API contract line (with a product test); admitted packages port whole, pin consumer-adapter callers count as readers, and only dead surface is dropped (#190) | `dev` § Before adding anything new, Q3; `rev` § Exported-surface review; `arch` § Surface audit; `protocol` § Bounded port scope | review only until #161's check lands |
-| Production code carries no back door (hook/method/option used only by tests to swap deps, read private state, or skip lifecycle steps); unexported test-only code carried unchanged from the pin follows Bounded port scope (#186, #190) | `dev` § Before adding anything new, Q3; `rev` § Exported-surface review; `arch` § The shape sweep, item 4 | review only |
-| A caller uses the collector `metric.RegisterOrGet` returns, never its own candidate | `metric/registry.go`; ledger `metric` row | review only |
-| A change establishing a reusable primitive lists who should adopt it | `arch` § The adoption sweep | review only |
-| A porting design cites a pin probe for every statement on how the SemStreams pin behaves | `arch` § Extraction slices; `rev` § Pre-owner design review | review only |
-| Added/edited statements on how a library (`nats.go`, `nats-server`, etc.) times, orders, bounds, or fails cite a probe at the pinned version or state the behaviour is not promised (#170) | `arch` § Design discipline; `rev` § Contract review; `dev` § Guarantee contracts; `writer` rule 10; ADR-112 | review only |
-| A finding needing an unchosen condition (library timing/ordering, OS/network state, mid-op fault injection, or test-only call sequence) is `BLOCKING`/`HIGH` only with a named real-world trigger; else `MEDIUM` at most (#185) | `rev` § Verdict format; `dev` § Guarantee contracts; `protocol` § Bounded port scope | review only |
-| Porting designs list/cite the pin's governing ADRs per carried package, port binding ADRs (or state why not), and name changed/dropped ADR decisions in an owner question or ruling citation (#157) | `arch` § Surface inventory cat. 6, § Extraction slices; `rev` § Inventory, Pre-owner design review | review only |
-| Designs state observable behaviour and proving test, not lock/wait-group/join mechanics; open findings after three review rounds go to the owner | `arch` § Design discipline; `.agents/README.md` § Orchestrating role agents | review only |
-| Inventories list every overlapping open PR (drafts included), and designs state merge order | `arch` § Surface inventory cat. 3; `rev` § Inventory review | review only |
-| A boundary change is checked against the stated purpose | `arch` § Intent check | review only |
-| Ported packages bring their SemStreams guidance (contract sections and skills) with them | `arch` § Extraction slices | review only |
-| Ported packages building `GenericJSON` from known fields get an `adapt` item (registered payload or stated reason) (#9) | `arch` § Extraction slices; `rev` § Port-time and pattern review | review only until first ported caller |
-| A new rule names what enforces it and adds its row to this table | `rev` § Port-time and pattern review | review only |
-| Role-agent briefs carry the owner's intent and the artifact itself, not a paraphrase; resume for continuity, start fresh for mechanics | `.agents/README.md` § Orchestrating role agents | review only |
-| Neither `semengine-architect` nor `semengine-reviewer` runs on a weaker model/effort than `semengine-developer`; `semengine-technical-writer` may use a lighter tier (#224) | `.agents/README.md` § Model routing | `.claude/agents/`, `.codex/agents/`; review only until #225 pins architect adapters + contract test |
-| `AGENTS.md` stays under 24,000 bytes so rule loaders with a 24 KB per-file cap never truncate it (#224) | `.agents/README.md` § Manual read-only parity smoke, item 5; this file | review only until #225 adds contract test |
-| Code PRs (any non-`.md`/non-`openspec/` file, or `.claude/agents/*`) require review by an agent that wrote no commits (`implemented-by:` and `reviewed-by:` in PR body); docs-only/archive commits take any agent's reviewer (#64, #66) | `protocol` § Cross-agent review; `rev` § Purpose and authority; `merge-gate` spec | `scripts/merge-check.sh` (`merge-check` job, `task merge:check -- <n>`), `TestMergeCheckReview`, `TestCIWorkflowPinned` (#225 tracks `gemini`, `.agents/contracts/`); review record truth/re-reviews: review only |
-| Every OpenSpec task can be ticked in or before the archive commit; a hold is written as `Hold:` inside the unticked task it stops | `protocol`, "Target state, task truth, holds"; `spec-queue` spec; `rev` § Contract and task-truth review | `task spec:check` (`TestSpecQueueCheck`, `TestSpecCheckWiring`), `task spec:queue` (`TestSpecQueueHolds`); archive tickability, alternate spellings: review only |
-| Pushed claim branches update by merging `origin/main`, never by rebase or force-push | `protocol` § Land | review only |
-| Evidence cited in a PR or task can be opened on another machine; git-ignored paths are named as local only | `.agents/skills/semengine-handoff/SKILL.md`; `.agents/skills/semengine-preflight/SKILL.md` | review only |
-| Tests use an independent oracle and are shown able to fail | `docs/testing.md`; `dev`, `rev`, test fidelity | structural guards carry paired sensitivity tests (`internal/harness/contract`); elsewhere: review only |
-| Changes with interacting inputs, a stated law, or order-dependent history record whether generated checks are used or why examples suffice | `docs/testing.md` § Decide whether generated checks are needed; `dev`, `rev` | review only |
-| Generated runs record seed, completed checks, and replayable failure; assertions are shown to run; histories check against a test-owned reference model | `docs/testing.md` § Fuzz targets and property-based tests; `dev`, `rev` | review only |
-| Mutation checks report survivors/inconclusive runs as such, never as detections; fuzz seed replay and exploration report apart; PRs record uncovered cases | `docs/testing.md` § Show that the test can fail; `dev` § Handoff | review only (`task mutate:check` prints the record) |
-| Sister repositories are read-only and inventoried only as scoped | `docs/inventory-scope.md` | review only |
-| Docs are written for a working developer: coined terms defined at first use, no jargon, no marketing | `writer` rule 9; `rev` § Contract and task-truth review | review only |
-| From Slice 04A change 3 on, a porting PR carries one package or lifecycle owner (<= ~3,000 non-test pin lines, ~1-page design, own OpenSpec change) unless the owner waives by count (#159) | `arch` § One package per pull request; `rev` § Pre-owner design, Contract review | review only |
-| From Slice 04A change 3 on, before a porting design is written, the shape sweep reads each carried package on the pin copy and records each finding with its required/optional disposition (#159, #9) | `arch` § The shape sweep; `protocol` § Bounded port scope; `rev` § Pre-owner design review | review only |
-| From Slice 04A change 3 on, the inventory lists every open issue naming a carried package and the design states whether the PR retires it (`Closes #n`) or it stays under Bounded port scope (#160) | `arch` § Open issues against the package; `rev` § Pre-owner design review; `protocol` § Bounded port scope | review only |
-| Porting findings add required work only when tied to a binding requirement, admission/verify gate, owner ruling, accepted design commitment, or needed build/packaging change | `protocol` § Bounded port scope | review only |
-| Developer notes on task choices not spelled out in the design go in `openspec/changes/<id>/notes/<task>.md`, linked from a PR comment (#159) | `dev` § Handoff; `protocol` § Land; `rev` § Contract and task-truth review | review only |
+| `verify+review` | Production structs never retain `context.Context`; never invent roots or nil defaults | `dev`; `harness-boundaries` spec |
+| `review` | State travels as an argument, field, or stored entry, never `context.WithValue` / `ctx.Value` (#91) | `dev`, `rev` (`BLOCKING`) |
+| `verify+review` | Deployment authority is spelled once (`config.Manager.Start` -> `deps.Platform` -> `FrameworkIdentityFamily.EntityID`); no `Federation\|GlobalID\|EntityIRI` or second `Org`/`Platform` field (#72) | `harness-boundaries` spec; ADR-102, ADR-104 |
+| `verify+review` | Background work outside a service uses `Run(ctx)`, joining `Close()`, or `Shutdown(ctx)`: no fixed timeout, nil ctx refused | `background-work` spec; `dev`, `rev` |
+| `verify` | No bare `select {}` | `harness-boundaries` spec |
+| `verify+review` | Public packages' exported signatures name no `internal/` type | `harness-boundaries` spec |
+| `verify` | Production code imports no test library and nothing under `internal/harness` | `harness-boundaries` spec |
+| `verify` | `component` reaches no agentic or graph-family package (`graph`, `internal/graphmutation`, `pkg/lifecycle`, `pkg/projection` outside `contract`) | `component-registration` spec |
+| `verify+review` | Components register collectors only on the injected `metric.MetricsRegistry`, never Prometheus' global or a self-built registry | `metric-registry` spec |
+| `review` | Callers use the collector `metric.RegisterOrGet` returns, never their own candidate | `metric/registry.go`; ledger `metric` |
+| `verify+review` | Ported components refuse unknown config keys at construction, naming the key | `component-registration` spec; `dev` |
+| `review` | Ported components keep owner-lifecycle state in `internal/lifecycleguard`, not a local copy | `dev`, `rev`; `internal/lifecycleguard` |
+| `review` | Consumers call `CreateComponent`, `SealComposition`, and `Snapshots` only via `service.ComponentManager` (#91) | `component/registry.go`; `dev` |
+| `verify+review` | Ported components whose failed `Start` cannot clean up report both errors and retain handles for `Stop` | `lifecycle-suite` spec |
+| `review` | Every polymorphic payload is published inside a `message.BaseMessage` | `dev`, `rev` |
+| `verify+review` | Payload packages export `RegisterPayloads`, component packages `Register`, imports register nothing, only `main` aggregates, and tests decode via `message.NewDecoder` | `component-registration`, `harness-boundaries` specs; `dev`, `rev` |
+| `review` | Failure paths fail closed; any skip, drop, or degrade is declared | `dev` |
+
+### 2. Graph, identity, and NATS storage
+
+| Gate | Rule | Where |
+| --- | --- | --- |
+| `review` | Classified NATS RPC handlers use `RequestClassified` / `RequestWithRetryClassified`, propagating class, code, detail | `dev`, `rev` |
+| `verify+review` | Non-evictable buckets have no TTL or binding `MaxBytes`; stream bounds protect capacity, not entity lifecycle | `dev`, `rev` |
+| `verify+review` | `graph.ingest.query.*` and `graph.mutation.` subjects are spelled only in `graph/query_verbs.go` and `internal/graphmutation/protocol.go` | `graph-transport-boundary` spec |
+| `verify` | The `graph` root package imports no NATS client, directly or transitively | `graph-transport-boundary` spec |
+| `verify+review` | Predicates (3 parts), literal entity IDs (6 parts, <=256B), entity patterns/prefixes, and NATS KV keys/filters pass shared validators at entry; sort/dedup before limit; no partial readiness | `dev`, `rev` |
+| `verify+review` | Only `graph-ingest` writes domain entities to `ENTITY_STATES`; other code emits `graph.Graphable` or writes its own `graph/kvcatalog` bucket; single-valued predicates replace | `dev`, `rev`; `graph-entity-writes` spec |
+
+### 3. Testing and verification
+
+| Gate | Rule | Where |
+| --- | --- | --- |
+| `verify+review` | Test cleanup never stops, closes, or terminates under an unbounded context | `harness-boundaries` spec |
+| `review` | Tests confirm a child process is still running before inspecting it (`ps`, signal, output) | `docs/testing.md` |
+| `review` | A test running a `nats.go` connection inside `testing/synctest` runs in its own test process (#156) | `docs/testing.md` |
+| `verify` | Tests bind no fixed address or port | `harness-boundaries` spec |
+| `verify+review` | No `time.Sleep` in a test file or under `internal/harness/` | `harness-boundaries` spec |
+| `verify+review` | No test calls `Skip`/`Skipf`/`SkipNow`; no test file carries a build tag other than `integration` | `harness-boundaries` spec |
+| `verify` | Unit tests also run five times at one CPU, without `-race`, shuffled | `merge-gate` spec |
+| `verify+review` | One NATS image pin; Docker cleanup touches only SemEngine-assigned names | `harness-boundaries` spec |
+| `verify` | Critical packages hold their coverage floor | `.agents/skills/semengine-preflight/SKILL.md` |
+| `verify+review` | Tests use an independent oracle and are shown able to fail (structural guards carry paired sensitivity tests) | `docs/testing.md`; `dev`, `rev` |
+| `review` | Changes with interacting inputs, a stated law, or order-dependent history record whether generated checks are used or why examples suffice | `docs/testing.md`; `dev`, `rev` |
+| `review` | Generated runs record seed, completed checks, and replayable failure; assertions are shown to run; histories check against a reference model | `docs/testing.md`; `dev`, `rev` |
+| `review` | Mutation checks report survivors/inconclusive runs as such, never as detections; fuzz seed replay and exploration report apart; PRs record uncovered cases | `docs/testing.md`; `dev` |
+
+### 4. Porting and architecture
+
+| Gate | Rule | Where |
+| --- | --- | --- |
+| `verify+review` | Ported packages have an admission-ledger row; `carry` rows match the SemStreams pin (`source_sha`) | `arch`; `docs/provenance.md`; `docs/admission-ledger.yaml` |
+| `review` | New surface needs a repo caller, named consumer caller (`docs/inventory-scope.md`), or framework-API contract line + product test; admitted packages port whole and only dead surface is dropped (#190, #161) | `dev`, `rev`, `arch`; `protocol` |
+| `review` | Production code carries no back door (test-only hook/method/option to swap deps, read private state, or skip lifecycle steps); unexported pin test-only code follows Bounded port scope (#186, #190) | `dev`, `rev`, `arch` |
+| `review` | A change establishing a reusable primitive lists who should adopt it | `arch` |
+| `review` | A porting design cites a pin probe for every statement on how the SemStreams pin behaves | `arch`, `rev` |
+| `review` | Added/edited statements on how a library (`nats.go`, `nats-server`, etc.) times, orders, bounds, or fails cite a probe at the pinned version or state it is not promised (#170) | `arch`, `rev`, `dev`, `writer`; ADR-112 |
+| `review` | Porting designs list/cite the pin's governing ADRs per carried package, port binding ADRs (or state why not), and name changed/dropped ADR decisions for the owner (#157) | `arch`, `rev` |
+| `review` | Designs state observable behaviour and proving test, not lock/wait-group/join mechanics; open findings after three review rounds go to the owner | `arch`; `.agents/README.md` |
+| `review` | Inventories list every overlapping open PR (drafts included), and designs state merge order | `arch`, `rev` |
+| `review` | A boundary change is checked against the stated purpose | `arch` |
+| `review` | Ported packages bring their SemStreams guidance (contract sections and skills) with them | `arch` |
+| `review` | Ported packages building `GenericJSON` from known fields get an `adapt` item (registered payload or stated reason) (#9) | `arch`, `rev` |
+| `review` | Sister repositories are read-only and inventoried only as scoped | `docs/inventory-scope.md` |
+| `review` | A porting PR carries one package or lifecycle owner (<= ~3,000 non-test pin lines, ~1-page design, own OpenSpec change) unless the owner waives by count (#159) | `arch`, `rev` |
+| `review` | Before a porting design is written, the shape sweep reads each carried package on the pin copy and records each finding with its required/optional disposition (#159, #9) | `arch`, `rev`; `protocol` |
+| `review` | Before a porting design is written, the inventory lists every open issue naming a carried package and the design states whether the PR retires it (`Closes #n`) or it stays under Bounded port scope (#160) | `arch`, `rev`; `protocol` |
+| `review` | Porting findings add required work only when tied to a binding requirement, admission/verify gate, owner ruling, accepted design commitment, or needed build/packaging change | `protocol` |
+
+### 5. Workflow, review, and merge gates
+
+| Gate | Rule | Where |
+| --- | --- | --- |
+| `spec:check+review` | OpenSpec changes and specs are well formed and truthful against code | "Where state lives" below |
+| `spec:check+review` | Every OpenSpec task can be ticked in or before the archive commit; a hold is written as `Hold:` inside the unticked task it stops | `protocol`; `spec-queue` spec; `rev` |
+| `verify+review` | Steps end when `task verify` passes locally on a clean tree; pushes batch at review/end; CI is checked once before merge; reviewer `PASS` cites commit + local `task verify`, never CI (#171) | `dev`, `rev`; `protocol` |
+| `CI required` | A merge needs CI green | `protocol` |
+| `merge:check` | No merge while a known flake (`class:flake` issue) is open, unless the PR closes every open one | `protocol`; `merge-gate` spec |
+| `review` | Any defect found in repo code (carried, ported, or written here) not fixed in the change is filed as an issue (`status:blocked`, linked without closing keyword while on a PR branch), never routed as a residual or left in comments (#212, #193) | `protocol`; `rev` |
+| `review` | A finding needing an unchosen condition (library timing/ordering, OS/network state, mid-op fault injection, or test-only call sequence) is `BLOCKING`/`HIGH` only with a named real-world trigger; else `MEDIUM` at most (#185) | `rev`, `dev`; `protocol` |
+| `review` | A new rule names what enforces it and adds its row to `AGENTS.md` and `.agents/rules-index.md` | `rev` |
+| `review` | Role-agent briefs carry the owner's intent and the artifact itself, not a paraphrase; resume for continuity, start fresh for mechanics | `.agents/README.md` |
+| `review` | Neither `semengine-architect` nor `semengine-reviewer` runs on a weaker model/effort than `semengine-developer`; `semengine-technical-writer` may use a lighter tier (#224, #225) | `.agents/README.md` |
+| `review` | `AGENTS.md` stays under 24,000 bytes so rule loaders with a 24 KB per-file cap never truncate it (#224, #225) | `.agents/README.md`; this file |
+| `merge:check+review` | Code PRs (any non-`.md`/non-`openspec/` file, or `.claude/agents/*`) require review by an agent that wrote no commits (`implemented-by:` and `reviewed-by:` in PR body); docs-only/archive commits take any agent's reviewer (#64, #66, #225) | `protocol`; `rev`; `merge-gate` spec |
+| `review` | Pushed claim branches update by merging `origin/main`, never by rebase or force-push | `protocol` |
+| `review` | Evidence cited in a PR or task can be opened on another machine; git-ignored paths are named as local only | `.agents/skills/semengine-handoff`, `semengine-preflight` |
+| `review` | Docs are written for a working developer: coined terms defined at first use, no jargon, no marketing | `writer`, `rev` |
+| `review` | Developer notes on task choices not spelled out in the design go in `openspec/changes/<id>/notes/<task>.md`, linked from a PR comment (#159) | `dev`, `rev`; `protocol` |
 
 ## Where state lives
 

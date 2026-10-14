@@ -459,8 +459,8 @@ wiring). Its `internal/boot`, schema-generation and OpenAPI rules are not carrie
   owner ruling cited is `BLOCKING` at inventory review.
 - **A new rule names what enforces it.** A change that adds a repository-wide rule or a rule of agent conduct (in a
   contract, the protocol, `.agents/README.md`, or `AGENTS.md`) states the command or test that fails when the rule is
-  broken, or says "review only", and adds its row to the `AGENTS.md` rule index in the same change. A capability
-  spec's requirements are indexed by that spec.
+  broken, or says "review only", and adds its row to the `AGENTS.md` rule summary and `.agents/rules-index.md` in the
+  same change. A capability spec's requirements are indexed by that spec.
 
 ## Coverage review
 

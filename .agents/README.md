@@ -84,11 +84,12 @@ where to cut, and the avoidable cost was in the briefs.
 - **Scope an inventory before it starts.** `docs/inventory-scope.md` says which repositories may be read and for what
   question. An inventory names its question and its repositories first.
 
-## Shared work protocol
+## Shared work protocol and rule index
 
 `.agents/protocol.md` is the canonical shared work protocol (state homes, rituals, worktree hygiene). `CLAUDE.md` and
 `AGENTS.md` point to it and carry the three gates (claim, merge, close) inline; edit the protocol only in
-`.agents/protocol.md`.
+`.agents/protocol.md`. `.agents/rules-index.md` is the full test-by-test enforcement audit matrix backing the
+domain-grouped rule summary in `AGENTS.md`.
 
 ## Shared skills
 
@@ -124,15 +125,17 @@ Run this procedure after changing a contract, adapter, or repository routing rul
 Automating Steps 1–8 and the `AGENTS.md` 24,000-byte rule cap as a contract test under `internal/harness/contract/` is
 tracked in #225.
 
-1. Confirm all four canonical contracts and all eight agent adapters exist, and that `.agents/protocol.md` exists.
+1. Confirm all four canonical contracts and all eight agent adapters exist, and that `.agents/protocol.md` and
+   `.agents/rules-index.md` exist.
 2. Confirm each adapter names exactly its matching `.agents/contracts/...` path and says to read it fully first.
 3. Confirm the Claude reviewer and architect tool lists contain `Read`, `Bash`, `Grep`, `Glob`, `Skill`, but not
    `Edit`, `Write`, `Task`, or another delegation tool. `gopls` is reached through `Bash`; do not add an `LSP` tool
    name, because an unresolved tool name makes Claude Code refuse to launch the agent.
 4. Confirm the Codex reviewer and architect set `sandbox_mode = "read-only"`; the developer and the technical writer
    have no sandbox override and inherit the parent workspace permissions.
-5. Confirm `CLAUDE.md` only imports `AGENTS.md` and carries no rules of its own, and that `AGENTS.md` stays under
-   24,000 bytes (`wc -c AGENTS.md`) so rule loaders with a 24 KB per-file cap do not truncate it.
+5. Confirm `CLAUDE.md` only imports `AGENTS.md` and carries no rules of its own, that `AGENTS.md` stays under
+   24,000 bytes (`wc -c AGENTS.md`) so rule loaders with a 24 KB per-file cap do not truncate it, and that every rule
+   row in `AGENTS.md` has its corresponding audit row in `.agents/rules-index.md`.
 6. Inspect adapter size with `wc -l .claude/agents/semengine-*.md .codex/agents/semengine-*.toml`; adapters should
    remain short and contain no copied checklist.
 7. For every skill in the shared-skills list, confirm the canonical file and Claude adapter exist, the adapter points

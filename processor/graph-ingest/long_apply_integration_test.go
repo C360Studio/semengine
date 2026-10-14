@@ -110,7 +110,7 @@ func TestIntegration_Settlement_LongApplyIsNotRedelivered(t *testing.T) {
 
 	f := natsfixture.New(t)
 	require.NoError(t, f.Start(ctx))
-	_, err := f.CreateStream(ctx, entityStream.name, entityStream.subjects...)
+	_, err := natsfixture.CreateStream(ctx, f.JetStream(), jetstream.FileStorage, entityStream.name, entityStream.subjects...)
 	require.NoError(t, err)
 	client := natsfixture.Open(t, f, openFixtureClient)
 

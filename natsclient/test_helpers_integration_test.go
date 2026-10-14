@@ -9,6 +9,7 @@ import (
 
 	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
 )
 
 // This file is the integration lane's half of the helpers that replace the pin's test_client.go
@@ -79,7 +80,7 @@ func newFixtureClient(t *testing.T, opts ...natsfixture.Option) *fixtureClient {
 // WithStreams(TestStreamConfig{...}).
 func (tc *fixtureClient) stream(t *testing.T, name string, subjects ...string) {
 	t.Helper()
-	if _, err := tc.Fixture.CreateStream(t.Context(), name, subjects...); err != nil {
+	if _, err := natsfixture.CreateStream(t.Context(), tc.Fixture.JetStream(), jetstream.FileStorage, name, subjects...); err != nil {
 		t.Fatalf("CreateStream %s: %v", name, err)
 	}
 }

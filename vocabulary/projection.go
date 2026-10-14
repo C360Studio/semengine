@@ -92,8 +92,28 @@ func validateNonEmptyIRI(iri, field string) error {
 	if iri == "" || strings.TrimSpace(iri) == "" {
 		return fmt.Errorf("%s must not be empty", field)
 	}
-	if strings.IndexFunc(iri, unicode.IsSpace) >= 0 {
-		return fmt.Errorf("%s %q must not contain whitespace", field, iri)
+	for _, r := range iri {
+		if r <= 0x20 || unicode.IsSpace(r) || unicode.IsControl(r) {
+			return fmt.Errorf("%s %q must not contain whitespace or control characters", field, iri)
+		}
+		if strings.ContainsRune("<>\"{}|^`\\", r) {
+			return fmt.Errorf("%s %q contains invalid Turtle IRIREF character %q", field, iri, r)
+		}
+	}
+	colon := strings.IndexByte(iri, ':')
+	if colon <= 0 || colon == len(iri)-1 {
+		return fmt.Errorf("%s %q must be an absolute IRI with a scheme", field, iri)
+	}
+	for i := 0; i < colon; i++ {
+		b := iri[i]
+		isAlpha := (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z')
+		isDigit := b >= '0' && b <= '9'
+		if i == 0 && !isAlpha {
+			return fmt.Errorf("%s %q has invalid IRI scheme", field, iri)
+		}
+		if i > 0 && !isAlpha && !isDigit && b != '+' && b != '-' && b != '.' {
+			return fmt.Errorf("%s %q has invalid IRI scheme", field, iri)
+		}
 	}
 	return nil
 }

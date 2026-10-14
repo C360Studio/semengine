@@ -3,6 +3,7 @@ package export
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -299,5 +300,111 @@ func TestWriteJSONLD_MultipleSamePredicate(t *testing.T) {
 		if len(arr) != 2 {
 			t.Errorf("expected 2 values, got %d", len(arr))
 		}
+	}
+}
+
+// expandJSONLDTerm implements the W3C JSON-LD 1.1 Create Term Definition
+// (step 14.2.5) and IRI Expansion (§5.2.2) rules as an independent test oracle:
+// a simple string term definition only sets _prefix=true when its IRI ends with
+// an RFC 3986 gen-delim (':', '/', '?', '#', '[', ']', '@'). An expanded term
+// definition map sets _prefix=true only when "@prefix": true is present.
+func expandJSONLDTerm(ctx map[string]any, term string) string {
+	type termDef struct {
+		iri    string
+		prefix bool
+	}
+	defs := make(map[string]termDef, len(ctx))
+	for k, raw := range ctx {
+		switch v := raw.(type) {
+		case string:
+			isPrefix := len(v) > 0 && strings.ContainsRune(":/?#[]@", rune(v[len(v)-1]))
+			defs[k] = termDef{iri: v, prefix: isPrefix}
+		case map[string]any:
+			iri, _ := v["@id"].(string)
+			isPrefix, _ := v["@prefix"].(bool)
+			defs[k] = termDef{iri: iri, prefix: isPrefix}
+		}
+	}
+	if def, ok := defs[term]; ok && def.iri != "" {
+		return def.iri
+	}
+	colon := strings.IndexByte(term, ':')
+	if colon <= 0 {
+		return term
+	}
+	prefix := term[:colon]
+	suffix := term[colon+1:]
+	if strings.HasPrefix(suffix, "//") {
+		return term
+	}
+	if def, ok := defs[prefix]; ok && def.prefix {
+		return def.iri + suffix
+	}
+	return term
+}
+
+func TestWriteJSONLD_BFOPredicatePreservesExpandedIRI(t *testing.T) {
+	defer vocabulary.SnapshotRegistry()()
+	vocabulary.ClearRegistry()
+
+	const bfoNS = "http://purl.obolibrary.org/obo/BFO_"
+	const bfoPartOfIRI = "http://purl.obolibrary.org/obo/BFO_0000050"
+
+	// Sensitivity check on the oracle: a bare string context definition ending
+	// in '_' leaves _prefix=false and fails to expand "bfo:0000050".
+	brokenExpanded := expandJSONLDTerm(map[string]any{"bfo": bfoNS}, "bfo:0000050")
+	if brokenExpanded == bfoPartOfIRI {
+		t.Fatalf("oracle sensitivity failure: bare string context unexpectedly expanded bfo:0000050 to %q", brokenExpanded)
+	}
+
+	if err := Register("bfo", bfoNS); err != nil {
+		t.Fatalf("Register bfo: %v", err)
+	}
+	t.Cleanup(func() {
+		defaultPrefixesMu.Lock()
+		delete(defaultPrefixes, "bfo")
+		defaultPrefixesMu.Unlock()
+	})
+
+	vocabulary.Register("review.bfo.part-of", vocabulary.WithIRI(bfoPartOfIRI))
+	triples := []message.Triple{
+		{Subject: "a.b.c.d.e.f", Predicate: "review.bfo.part-of", Object: "value"},
+	}
+
+	jsonldOut, err := SerializeToString(triples, JSONLD)
+	if err != nil {
+		t.Fatalf("SerializeToString(JSONLD): %v", err)
+	}
+	ntOut, err := SerializeToString(triples, NTriples)
+	if err != nil {
+		t.Fatalf("SerializeToString(NTriples): %v", err)
+	}
+
+	var doc map[string]any
+	if err := json.Unmarshal([]byte(jsonldOut), &doc); err != nil {
+		t.Fatalf("json.Unmarshal: %v\n%s", err, jsonldOut)
+	}
+	ctx, ok := doc["@context"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected @context map in JSON-LD output:\n%s", jsonldOut)
+	}
+
+	var propKey string
+	for k := range doc {
+		if k != "@context" && k != "@id" && k != "@graph" {
+			propKey = k
+			break
+		}
+	}
+	if propKey == "" {
+		t.Fatalf("missing property key in JSON-LD output:\n%s", jsonldOut)
+	}
+
+	expandedPredIRI := expandJSONLDTerm(ctx, propKey)
+	if expandedPredIRI != bfoPartOfIRI {
+		t.Fatalf("expanded JSON-LD predicate IRI = %q, want %q\nJSON-LD:\n%s", expandedPredIRI, bfoPartOfIRI, jsonldOut)
+	}
+	if !strings.Contains(ntOut, "<"+expandedPredIRI+">") {
+		t.Fatalf("N-Triples output %q does not contain expanded JSON-LD predicate IRI <%s>", ntOut, expandedPredIRI)
 	}
 }

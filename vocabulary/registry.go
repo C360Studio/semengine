@@ -380,6 +380,11 @@ func validatePredicateMetadataIn(meta PredicateMetadata, reg map[string]Predicat
 	if err := validateDataType(meta.DataType); err != nil {
 		return err
 	}
+	if meta.StandardIRI != "" {
+		if err := validateNonEmptyIRI(meta.StandardIRI, "iri"); err != nil {
+			return err
+		}
+	}
 	if err := validateProjectionSpec(meta.Projection); err != nil {
 		return err
 	}

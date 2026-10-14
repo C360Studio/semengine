@@ -36,6 +36,12 @@ Checked via `gh issue list --state open` for `vocabulary` and `vocabulary/export
   (`Closes #238`).
 - **#239** (`vocabulary/export: xsd:dateTime serialization truncates fractional seconds`): **retired by this PR**
   (`Closes #239`).
+- **#249** (`vocabulary/export: JSON-LD compaction changes BFO predicate identity`): **retired by this PR**
+  (`Closes #249`).
+- **#250** (`vocabulary/export: Turtle compaction emits invalid local names for valid IRIs`): **retired by this PR**
+  (`Closes #250`).
+- **#251** (`vocabulary: pack registration discards incompatible alias priority`): **retired by this PR**
+  (`Closes #251`).
 - **#90** (`vocabulary: remaining domain predicates in predicates.go`, `status:needs-decision`): **stays** under
   Bounded port scope (scheduled in `#223` PR 3).
 - **#219** (`port-refactor: pkg/types, message, payloadregistry & vocabulary`): **stays** under Bounded port scope
@@ -73,7 +79,7 @@ Checked via `gh issue list --state open` for `vocabulary` and `vocabulary/export
 | S1 | `export.go:55,118`, `prefix.go:36,95`, and 5 test files | References `vocabulary.SemStreamsBase` (`https://semstreams.semanticstream.ing`), renamed in SemEngine (`#69`) to `vocabulary.SemEngineBase` (`https://semengine.semanticstream.ing`). | **Required** (build/verify gate): update to `vocabulary.SemEngineBase` and update default base IRI strings in tests. |
 | S2 | `export_test.go:174,258,270`, `jsonld_test.go:72`, `turtle_test.go:175` | Calls `vocabulary.ClearRegistry()` without restoring built-in `init()` registrations. | **Required** (test isolation): precede `ClearRegistry()` with `defer vocabulary.SnapshotRegistry()()`. |
 | S3 | `vocabulary/export/*.go` | Checked for context roots, goroutines, I/O, `GenericJSON` payload construction, and dead exported surface. | **None needed**: 0 context roots, 0 goroutines, 0 I/O, 0 `GenericJSONPayload` uses (`jsonld.go` serializes a standard JSON-LD document map), and all exported symbols (`Serialize`, `SerializeToString`, `Format` (`NTriples`, `Turtle`, `JSONLD`), `Option` (`WithBaseIRI`, `WithSubjectIRIFunc`), and `Register`) are live contract surface. |
-| S4 | `prefix.go:47,108`, `object.go:257,290` | Review findings `#237` (Turtle `PN_PREFIX` validation and atomic batch prefix registration `RegisterPrefixes`), `#238` (deterministic prefix tie-breaking in `compact` for namespace aliases), and `#239` (`time.RFC3339Nano` fractional-second preservation for `xsd:dateTime`). | **Required** (closes `#237`, `#238`, `#239` in this PR). |
+| S4 | `prefix.go:47,108,139`, `jsonld.go:71`, `object.go:257,290` | Review findings `#237` (Turtle `PN_PREFIX`/`IRIREF` validation and atomic batch prefix registration `RegisterPrefixes`), `#238` (deterministic prefix tie-breaking in `compact` for namespace aliases), `#239` (`time.RFC3339Nano` fractional-second preservation for `xsd:dateTime`), `#249` (JSON-LD `@prefix: true` context definitions for non-`gen-delim` namespaces), and `#250` (Turtle `PN_LOCAL` local-name validation before compaction). | **Required** (closes `#237`, `#238`, `#239`, `#249`, `#250` in this PR). |
 
 ## Disposition of `vocabulary/bfo` and `vocabulary/cco`
 

@@ -128,6 +128,14 @@ func TestRegister_RejectsInvalidPNPrefix(t *testing.T) {
 	}
 }
 
+func TestRegister_RejectsInvalidNamespaceIRIREF(t *testing.T) {
+	for _, badNS := range []string{"https://bad.example/>", "https://bad.example/<", `https://bad.example/"`, "not-an-iri", "http://example.org/space here"} {
+		if err := Register("badns", badNS); err == nil {
+			t.Errorf("Register(badns, %q) succeeded, expected Turtle IRIREF validation error", badNS)
+		}
+	}
+}
+
 func TestTurtleNamespaceAliasEveryPrefixedTermDeclared(t *testing.T) {
 	defer vocabulary.SnapshotRegistry()()
 	vocabulary.ClearRegistry()

@@ -240,3 +240,133 @@ func TestWriteTurtle_MultipleSubjects(t *testing.T) {
 		t.Errorf("expected blank line between subjects, got:\n%s", got)
 	}
 }
+
+// parseSingleTripleTurtleResourceObject extracts the expanded object IRI from a
+// single-triple Turtle document, stripping '#' comments outside '<...>' and
+// '"..."' and expanding '@prefix' declarations.
+func parseSingleTripleTurtleResourceObject(t *testing.T, turtleDoc string) string {
+	t.Helper()
+	prefixes := make(map[string]string)
+	var stmtLines []string
+	for _, rawLine := range strings.Split(turtleDoc, "\n") {
+		line := stripTurtleComment(rawLine)
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "@prefix ") {
+			rest := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(line, "@prefix "), "."))
+			colon := strings.IndexByte(rest, ':')
+			openIdx := strings.IndexByte(rest, '<')
+			closeIdx := strings.LastIndexByte(rest, '>')
+			if colon <= 0 || openIdx <= colon || closeIdx <= openIdx {
+				t.Fatalf("malformed @prefix declaration: %q", rawLine)
+			}
+			prefixes[strings.TrimSpace(rest[:colon])] = rest[openIdx+1 : closeIdx]
+			continue
+		}
+		stmtLines = append(stmtLines, line)
+	}
+	stmt := strings.TrimSpace(strings.Join(stmtLines, " "))
+	if !strings.HasSuffix(stmt, " .") {
+		t.Fatalf("Turtle statement does not end with ' .': %q", stmt)
+	}
+	stmt = strings.TrimSpace(strings.TrimSuffix(stmt, "."))
+	fields := strings.Fields(stmt)
+	if len(fields) != 3 {
+		t.Fatalf("expected 3 Turtle terms, got %d in %q", len(fields), stmt)
+	}
+	objTerm := fields[2]
+	if strings.HasPrefix(objTerm, "<") && strings.HasSuffix(objTerm, ">") {
+		return objTerm[1 : len(objTerm)-1]
+	}
+	colon := strings.IndexByte(objTerm, ':')
+	if colon <= 0 {
+		t.Fatalf("unexpected Turtle object term %q", objTerm)
+	}
+	pfx := objTerm[:colon]
+	local := objTerm[colon+1:]
+	if !isValidPNLocal(local) {
+		t.Fatalf("Turtle object term %q has invalid PN_LOCAL %q", objTerm, local)
+	}
+	ns, ok := prefixes[pfx]
+	if !ok {
+		t.Fatalf("Turtle object term %q uses undeclared prefix %q", objTerm, pfx)
+	}
+	return ns + local
+}
+
+func stripTurtleComment(line string) string {
+	inIRI := false
+	inQuotes := false
+	escaped := false
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if inQuotes {
+			if c == '\\' {
+				escaped = true
+			} else if c == '"' {
+				inQuotes = false
+			}
+			continue
+		}
+		if inIRI {
+			if c == '>' {
+				inIRI = false
+			}
+			continue
+		}
+		switch c {
+		case '<':
+			inIRI = true
+		case '"':
+			inQuotes = true
+		case '#':
+			return line[:i]
+		}
+	}
+	return line
+}
+
+func TestWriteTurtle_ResourceObjectsWithQueryFragmentOrTrailingDotStayFullIRIs(t *testing.T) {
+	if err := Register("review", "https://example.org/"); err != nil {
+		t.Fatalf("Register review: %v", err)
+	}
+	t.Cleanup(func() {
+		defaultPrefixesMu.Lock()
+		delete(defaultPrefixes, "review")
+		defaultPrefixesMu.Unlock()
+	})
+
+	for _, iri := range []string{
+		"https://example.org/item?revision=1",
+		"https://example.org/item#section",
+		"https://example.org/item.",
+	} {
+		triple := []message.Triple{{
+			Subject:   "a.b.c.d.e.f",
+			Predicate: "review.link.value",
+			Object:    iri,
+		}}
+		turtleOut, err := SerializeToString(triple, Turtle)
+		if err != nil {
+			t.Fatalf("SerializeToString(Turtle) for %q: %v", iri, err)
+		}
+		ntOut, err := SerializeToString(triple, NTriples)
+		if err != nil {
+			t.Fatalf("SerializeToString(NTriples) for %q: %v", iri, err)
+		}
+
+		parsedTurtleObj := parseSingleTripleTurtleResourceObject(t, turtleOut)
+		if parsedTurtleObj != iri {
+			t.Fatalf("parsed Turtle object IRI = %q, want %q\nTurtle:\n%s", parsedTurtleObj, iri, turtleOut)
+		}
+		if !strings.Contains(ntOut, "<"+parsedTurtleObj+">") {
+			t.Fatalf("N-Triples output %q disagrees with Turtle object IRI <%s>", ntOut, parsedTurtleObj)
+		}
+	}
+}

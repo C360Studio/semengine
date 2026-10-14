@@ -348,11 +348,29 @@ func classifyString(s string, opts *options) classifiedObject {
 }
 
 // isAbsoluteIRI reports whether s carries one of the schemes this serializer
-// emits as an IRI node rather than as a literal.
+// emits as an IRI node rather than as a literal, and contains no characters
+// forbidden in a Turtle/N-Triples IRIREF.
 func isAbsoluteIRI(s string) bool {
-	return strings.HasPrefix(s, "http://") ||
-		strings.HasPrefix(s, "https://") ||
-		strings.HasPrefix(s, "urn:")
+	var rest string
+	switch {
+	case strings.HasPrefix(s, "http://"):
+		rest = s[len("http://"):]
+	case strings.HasPrefix(s, "https://"):
+		rest = s[len("https://"):]
+	case strings.HasPrefix(s, "urn:"):
+		rest = s[len("urn:"):]
+	default:
+		return false
+	}
+	if rest == "" {
+		return false
+	}
+	for _, r := range s {
+		if r <= 0x20 || strings.ContainsRune("<>\"{}|^`\\", r) {
+			return false
+		}
+	}
+	return true
 }
 
 // formatFloat renders a float64 for RDF output.

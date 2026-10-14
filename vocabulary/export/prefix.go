@@ -137,12 +137,59 @@ func (pm *prefixMap) compact(iri string) (string, bool) {
 		return iri, false
 	}
 	local := iri[len(bestNS):]
-	// Only compact if local part is a valid CURIE local name (no slashes)
-	if strings.Contains(local, "/") {
+	// Only compact if the local part is a valid unescaped Turtle PN_LOCAL (#250).
+	if !isValidPNLocal(local) {
 		return iri, false
 	}
 	pm.used[bestPrefix] = true
 	return bestPrefix + ":" + local, true
+}
+
+func isValidPNLocal(local string) bool {
+	if local == "" {
+		return false
+	}
+	var lastRune rune
+	for i, r := range local {
+		if i == 0 {
+			if !isPNLocalStart(r) {
+				return false
+			}
+		} else if r != '.' && !isPNLocalChar(r) {
+			return false
+		}
+		lastRune = r
+	}
+	return lastRune != '.'
+}
+
+func isPNLocalStart(r rune) bool {
+	return isPNLocalBase(r) || r == '_' || (r >= '0' && r <= '9')
+}
+
+func isPNLocalChar(r rune) bool {
+	return isPNLocalStart(r) ||
+		r == '-' ||
+		r == 0x00B7 ||
+		(r >= 0x0300 && r <= 0x036F) ||
+		(r >= 0x203F && r <= 0x2040)
+}
+
+func isPNLocalBase(r rune) bool {
+	return (r >= 'A' && r <= 'Z') ||
+		(r >= 'a' && r <= 'z') ||
+		(r >= 0x00C0 && r <= 0x00D6) ||
+		(r >= 0x00D8 && r <= 0x00F6) ||
+		(r >= 0x00F8 && r <= 0x02FF) ||
+		(r >= 0x0370 && r <= 0x037D) ||
+		(r >= 0x037F && r <= 0x1FFF) ||
+		(r >= 0x200C && r <= 0x200D) ||
+		(r >= 0x2070 && r <= 0x218F) ||
+		(r >= 0x2C00 && r <= 0x2FEF) ||
+		(r >= 0x3001 && r <= 0xD7FF) ||
+		(r >= 0xF900 && r <= 0xFDCF) ||
+		(r >= 0xFDF0 && r <= 0xFFFD) ||
+		(r >= 0x10000 && r <= 0xEFFFF)
 }
 
 // markUsed records a prefix as used without compacting.
@@ -165,13 +212,48 @@ func (pm *prefixMap) namespaceFor(prefix string) string {
 	return pm.prefixes[prefix]
 }
 
-// usedPrefixMap returns a map of used prefix -> namespace, for JSON-LD @context.
+// usedPrefixMap returns a map of used prefix -> namespace.
 func (pm *prefixMap) usedPrefixMap() map[string]string {
 	result := make(map[string]string, len(pm.used))
 	for p := range pm.used {
 		result[p] = pm.prefixes[p]
 	}
 	return result
+}
+
+// jsonldContext returns the JSON-LD @context map for all used prefixes.
+// Per W3C JSON-LD 1.1 Processing Algorithms (Create Term Definition, step 14.2.5),
+// a simple string term definition is only treated as a prefix when its IRI ends
+// with an RFC 3986 gen-delim character (':', '/', '?', '#', '[', ']', '@').
+// Namespaces ending in other characters (such as OBO/BFO's '_') require an
+// expanded term definition with "@prefix": true so compact IRIs expand back to
+// their original IRI (#249).
+func (pm *prefixMap) jsonldContext() map[string]any {
+	result := make(map[string]any, len(pm.used))
+	for p := range pm.used {
+		ns := pm.prefixes[p]
+		if hasJSONLDGenDelimSuffix(ns) {
+			result[p] = ns
+		} else {
+			result[p] = map[string]any{
+				"@id":     ns,
+				"@prefix": true,
+			}
+		}
+	}
+	return result
+}
+
+func hasJSONLDGenDelimSuffix(ns string) bool {
+	if ns == "" {
+		return false
+	}
+	switch ns[len(ns)-1] {
+	case ':', '/', '?', '#', '[', ']', '@':
+		return true
+	default:
+		return false
+	}
 }
 
 func ensureTrailingSlash(s string) string {

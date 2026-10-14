@@ -372,4 +372,21 @@ func TestRegisterPackWithExportPrefixRegistrar(t *testing.T) {
 	if err := Register("review235", "https://example.org/second/"); err != nil {
 		t.Fatalf("expected review235 prefix to be unbound after rejected pack, got error: %v", err)
 	}
+
+	// Malformed namespace IRI (such as trailing '>') in a pack is rejected before mutating state (#237).
+	malformedNSPack := vocabulary.PackSpec{
+		Name: "malformed-ns-pack",
+		Prefixes: []vocabulary.PrefixSpec{
+			{Prefix: "badns", Namespace: "https://bad.example/>"},
+		},
+		Predicates: []vocabulary.PredicateSpec{
+			{Name: "review.bad.namespace", IRI: "https://bad.example/>term"},
+		},
+	}
+	if err := vocabulary.RegisterPack(malformedNSPack, vocabulary.WithPrefixRegistrar(RegisterPrefixes)); err == nil {
+		t.Fatalf("expected error from malformed namespace IRI in pack")
+	}
+	if got := vocabulary.GetPredicateMetadata("review.bad.namespace"); got != nil {
+		t.Fatalf("expected predicate from malformed-ns pack to remain unregistered, got %+v", got)
+	}
 }

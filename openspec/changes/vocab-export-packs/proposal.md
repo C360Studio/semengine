@@ -53,4 +53,4 @@ addition, `vocabulary/export` was scheduled for Slice 04A Change 7 even though a
 `docs/adr/102-entity-id-segment-semantics.md`, `docs/admission-ledger.yaml`, `docs/inventory-scope.md`,
 `docs/tier1-cross-check.md`, `docs/repository-map.md`, new capability spec `openspec/specs/vocabulary-packs/spec.md`,
 and modified `openspec/specs/harness-boundaries/spec.md`.
-Closes #234, #237, #238, #239. Addresses #9.
+Closes #234, #237, #238, #239, #249, #250, #251. Addresses #9.

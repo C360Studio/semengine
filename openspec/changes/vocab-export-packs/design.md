@@ -5,7 +5,8 @@
 Issue #234 implements Stage 1 of the three-repo ontology and SPARQL architecture (`semengine` -> `semvocab` ->
 `semsparql`) confirmed by the owner on 2026-10-14:
 
-1. Full code PR in `semengine` (`Closes #234`, `Closes #237`, `Closes #238`, `Closes #239`, `Addresses #9`).
+1. Full code PR in `semengine` (`Closes #234`, `Closes #237`, `Closes #238`, `Closes #239`, `Closes #249`,
+   `Closes #250`, `Closes #251`, `Addresses #9`).
 2. Port `vocabulary/export` and `ADR-107` now rather than waiting for Change 7.
 3. Support both JSON and YAML in `vocabulary`'s declarative pack loader (`PackSpec`).
 
@@ -23,15 +24,19 @@ Adopters of the new primitives: `semvocab` (`RegisterPack`, `LoadPackJSON`, `Loa
   N-Triples (`export.NTriples`), Turtle (`export.Turtle`), and JSON-LD (`export.JSONLD`), using
   `vocabulary.SemEngineBase` (`https://semengine.semanticstream.ing`) when `WithBaseIRI` is unset.
   `export.Register(prefix, namespace)` and `export.RegisterPrefixes(prefixes)` validate prefix labels against W3C
-  Turtle `PN_PREFIX` (`PrefixSpec.Validate`, `#237`) and register namespace prefixes atomically for compact IRIs;
-  equal-length namespace aliases break ties deterministically by lexicographically smallest prefix (`#238`); and
-  `xsd:dateTime` formatting preserves fractional seconds via `time.RFC3339Nano` (`#239`).
+  Turtle `PN_PREFIX` and namespaces against `IRIREF` (`PrefixSpec.Validate`, `#237`) and register namespace prefixes
+  atomically for compact IRIs; `compact` only compacts when the local part satisfies unescaped W3C Turtle `PN_LOCAL`
+  (`#250`); equal-length namespace aliases break ties deterministically by lexicographically smallest prefix (`#238`);
+  JSON-LD `@context` emits explicit `{"@id": namespace, "@prefix": true}` definitions for namespaces that do not end in
+  an RFC 3986 `gen-delim` such as `BFO_` (`#249`); and `xsd:dateTime` formatting preserves fractional seconds via
+  `time.RFC3339Nano` (`#239`).
 - **Adaptations from pin (`8b99efe9`)**: replace `vocabulary.SemStreamsBase` with `vocabulary.SemEngineBase` in
-  `export.go` and `prefix.go` and in 5 test files; add `RegisterPrefixes` and `PN_PREFIX` validation (`#237`),
-  deterministic alias tie-breaking in `compact` (`#238`), and `time.RFC3339Nano` in `dateTimeLexical` and
-  `classifyByGoType` (`#239`); add `defer vocabulary.SnapshotRegistry()()` before `vocabulary.ClearRegistry()` in test
-  files; port `docs/adr/107-semantic-web-vocabulary-lives-at-the-export-edge.md` with a SemEngine port header; record
-  `vocabulary/bfo` and `vocabulary/cco` as `defer-exclude` (homed in `semvocab`).
+  `export.go` and `prefix.go` and in 5 test files; add `RegisterPrefixes` and `PN_PREFIX`/`IRIREF` validation (`#237`),
+  deterministic alias tie-breaking in `compact` (`#238`), `time.RFC3339Nano` in `dateTimeLexical` and
+  `classifyByGoType` (`#239`), expanded `@prefix: true` JSON-LD context entries for non-`gen-delim` namespaces (`#249`),
+  and `PN_LOCAL` local-name validation in `compact` (`#250`); add `defer vocabulary.SnapshotRegistry()()` before
+  `vocabulary.ClearRegistry()` in test files; port `docs/adr/107-semantic-web-vocabulary-lives-at-the-export-edge.md`
+  with a SemEngine port header; record `vocabulary/bfo` and `vocabulary/cco` as `defer-exclude` (homed in `semvocab`).
 - **Proving tests**: `go test -race -count=1 ./vocabulary/export/...`, `task test:repeat`, and `task ledger:check`.
 
 ### D2 Reverse predicate IRI lookup (`LookupByIRI`)
@@ -75,14 +80,15 @@ Adopters of the new primitives: `semvocab` (`RegisterPack`, `LoadPackJSON`, `Loa
 
 - **Observable behavior**: `PackSpec` carries `Name`, `Version`, `Prefixes []PrefixSpec`, `Predicates []PredicateSpec`,
   and `EntityTypes []EntityTypeSpec` with `json` and `yaml` tags. `PrefixSpec.Validate()` enforces W3C Turtle
-  `PN_PREFIX` syntax on `Prefix` and non-empty whitespace-free `Namespace` (`#237`). `LoadPackJSON(r io.Reader)` and
-  `LoadPackYAML(r io.Reader)` decode strictly (refusing unknown fields, trailing documents, or invalid syntax).
+  `PN_PREFIX` syntax on `Prefix` and valid absolute `IRIREF` syntax on `Namespace` (`#237`). `LoadPackJSON(r io.Reader)`
+  and `LoadPackYAML(r io.Reader)` decode strictly (refusing unknown fields, trailing documents, or invalid syntax).
   `RegisterPack(pack PackSpec, opts ...PackOption)` validates every prefix (`PrefixSpec.Validate`), predicate
-  (`ParsePredicate` and shared `validatePredicateMetadataIn`, including post-staging inverse consistency), and entity
-  type (`ParseEntityTypeKey`, class IRI, superclasses) **before** mutating any state, and invokes any configured batch
-  prefix registrar (`WithPrefixRegistrar(func([]PrefixSpec) error)`, such as `export.RegisterPrefixes`) before committing
-  staged predicates and entity types (fail-closed: a single invalid entry or prefix conflict leaves both the vocabulary
-  and prefix registries unchanged). `internal/harness/contract` (`imports_test.go`) and `harness-boundaries` permit
+  (`ParsePredicate`, incompatible `alias_priority` without `is_alias` or `alias_type` `#251`, and shared
+  `validatePredicateMetadataIn`, including post-staging inverse consistency), and entity type (`ParseEntityTypeKey`,
+  class IRI, superclasses) **before** mutating any state, and invokes any configured batch prefix registrar
+  (`WithPrefixRegistrar(func([]PrefixSpec) error)`, such as `export.RegisterPrefixes`) before committing staged
+  predicates and entity types (fail-closed: a single invalid entry or prefix conflict leaves both the vocabulary and
+  prefix registries unchanged). `internal/harness/contract` (`imports_test.go`) and `harness-boundaries` permit
   `vocabulary/pack.go` to import `gopkg.in/yaml.v3` while continuing to reject `gopkg.in/yaml.v3` in other non-test
   production files.
 - **Proving tests**: `TestLoadPackJSON`, `TestLoadPackYAML`, `TestRegisterPackAndAtomicOnFailure`,
@@ -93,6 +99,7 @@ Adopters of the new primitives: `semvocab` (`RegisterPack`, `LoadPackJSON`, `Loa
 Per `docs/testing.md` and `.agents/contracts/semengine-developer.md`:
 
 - Rapid property tests (`TestPropLookupByIRIRoundTrip`, `TestPropPackRoundTrip`) verify round-trip laws over generated
-  predicates, IRIs, entity types, and projections.
+  prefixes, predicates, IRIs, projections, and entity types.
 - Fuzz targets (`FuzzParseEntityTypeKey`, `FuzzLoadPackJSON`, `FuzzLoadPackYAML`) exercise the three new parse/decode
-  entry points with valid and invalid seed inputs.
+  entry points and `RegisterPack` directly with valid and invalid seed inputs (including prefixes, projections,
+  incompatible alias priorities, and malformed namespaces), asserting fail-closed registry state on error.

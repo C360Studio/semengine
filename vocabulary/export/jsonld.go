@@ -68,7 +68,7 @@ func buildJSONLDGraph(groups map[string][]resolvedTriple, subjectOrder []string,
 func assembleJSONLDDocument(graph []map[string]any, pm *prefixMap) map[string]any {
 	doc := map[string]any{}
 
-	context := pm.usedPrefixMap()
+	context := pm.jsonldContext()
 	if len(context) > 0 {
 		doc["@context"] = context
 	}

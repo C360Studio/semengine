@@ -248,6 +248,27 @@ func TestRegisterPackAndAtomicOnFailure(t *testing.T) {
 		assert.Nil(t, GetPredicateMetadata("review.prefix.pred"))
 	}
 
+	// Malformed Turtle IRIREF namespaces and predicate IRIs are rejected (#237).
+	for _, badNS := range []string{"", "https://bad.example/>", "https://bad.example/<", `https://bad.example/"`, "not-an-iri", ":noscheme"} {
+		require.Error(t, (PrefixSpec{Prefix: "badns", Namespace: badNS}).Validate(), "expected error for invalid namespace %q", badNS)
+		err := RegisterPack(PackSpec{
+			Name:     "bad-ns-pack",
+			Prefixes: []PrefixSpec{{Prefix: "badns", Namespace: badNS}},
+			Predicates: []PredicateSpec{
+				{Name: "review.bad.namespace", IRI: "https://example.org/valid"},
+			},
+		}, WithPrefixRegistrar(recordPrefixes))
+		require.Error(t, err, "expected error for invalid pack namespace %q", badNS)
+		assert.NotContains(t, registeredPrefixes, "badns")
+		assert.Nil(t, GetPredicateMetadata("review.bad.namespace"))
+	}
+
+	// Incompatible supplied alias_priority without is_alias or alias_type is rejected (#251).
+	aliasPriorityPack, err := LoadPackJSON(strings.NewReader(`{"name":"alias-pack","predicates":[{"name":"review.alias.priority","alias_priority":42}]}`))
+	require.NoError(t, err)
+	require.Error(t, RegisterPack(aliasPriorityPack))
+	assert.Nil(t, GetPredicateMetadata("review.alias.priority"))
+
 	// Intra-pack asymmetric inverse declarations are rejected regardless of order.
 	inconsistentInversePack := PackSpec{
 		Name: "inconsistent-inverse",
@@ -278,20 +299,40 @@ func TestPropPackRoundTrip(t *testing.T) {
 	})
 
 	rapid.Check(t, func(t *rapid.T) {
+		prefixes := rapid.SliceOfNDistinct(segmentGen, 1, 3, func(s string) string { return s }).Draw(t, "prefixes")
 		preds := rapid.SliceOfNDistinct(predicateGen, 1, 4, func(s string) string { return s }).Draw(t, "preds")
 		etypes := rapid.SliceOfNDistinct(entityTypeGen, 1, 4, func(s string) string { return s }).Draw(t, "etypes")
+		withProj := rapid.Bool().Draw(t, "with_proj")
 
 		pack := PackSpec{
 			Name:    "prop-" + segmentGen.Draw(t, "pack_name"),
 			Version: "1.0.0",
 		}
+		for _, pfx := range prefixes {
+			pack.Prefixes = append(pack.Prefixes, PrefixSpec{
+				Prefix:    pfx,
+				Namespace: "https://example.org/ns/" + pfx + "/",
+			})
+		}
 		for _, p := range preds {
-			pack.Predicates = append(pack.Predicates, PredicateSpec{
+			spec := PredicateSpec{
 				Name:        p,
 				Description: "desc " + p,
 				DataType:    DataTypeString,
 				IRI:         "https://example.org/pred/" + p,
-			})
+			}
+			if withProj {
+				spec.Projection = &ProjectionSpec{
+					Steps: []ProjectionStep{
+						{
+							PredicateIRI:      "https://example.org/proj/step/" + p,
+							NodeClassIRI:      "https://example.org/proj/Node",
+							ValuePredicateIRI: "https://example.org/proj/value",
+						},
+					},
+				}
+			}
+			pack.Predicates = append(pack.Predicates, spec)
 		}
 		for _, et := range etypes {
 			pack.EntityTypes = append(pack.EntityTypes, EntityTypeSpec{
@@ -309,9 +350,17 @@ func TestPropPackRoundTrip(t *testing.T) {
 		require.NoError(t, err)
 
 		ClearRegistry()
-		require.NoError(t, RegisterPack(fromJSON))
+		var gotJSONPrefixes []PrefixSpec
+		require.NoError(t, RegisterPack(fromJSON, WithPrefixRegistrar(func(pfxs []PrefixSpec) error {
+			gotJSONPrefixes = pfxs
+			return nil
+		})))
+		assert.Equal(t, pack.Prefixes, gotJSONPrefixes)
 		for _, p := range pack.Predicates {
 			assert.Contains(t, LookupByIRI(p.IRI), p.Name)
+			meta := GetPredicateMetadata(p.Name)
+			require.NotNil(t, meta)
+			assert.Equal(t, p.Projection, meta.Projection)
 		}
 		for _, et := range pack.EntityTypes {
 			assert.Contains(t, LookupEntityTypesByClassIRI(et.ClassIRI), et.DomainType)
@@ -324,9 +373,17 @@ func TestPropPackRoundTrip(t *testing.T) {
 		require.NoError(t, err)
 
 		ClearRegistry()
-		require.NoError(t, RegisterPack(fromYAML))
+		var gotYAMLPrefixes []PrefixSpec
+		require.NoError(t, RegisterPack(fromYAML, WithPrefixRegistrar(func(pfxs []PrefixSpec) error {
+			gotYAMLPrefixes = pfxs
+			return nil
+		})))
+		assert.Equal(t, pack.Prefixes, gotYAMLPrefixes)
 		for _, p := range pack.Predicates {
 			assert.Contains(t, LookupByIRI(p.IRI), p.Name)
+			meta := GetPredicateMetadata(p.Name)
+			require.NotNil(t, meta)
+			assert.Equal(t, p.Projection, meta.Projection)
 		}
 		for _, et := range pack.EntityTypes {
 			assert.Contains(t, LookupEntityTypesByClassIRI(et.ClassIRI), et.DomainType)
@@ -336,7 +393,9 @@ func TestPropPackRoundTrip(t *testing.T) {
 
 func FuzzLoadPackJSON(f *testing.F) {
 	for _, seed := range []string{
-		`{"name":"bfo","version":"2020","predicates":[{"name":"bfo.rel.part-of","iri":"http://purl.obolibrary.org/obo/BFO_0000050"}]}`,
+		`{"name":"bfo","version":"2020","prefixes":[{"prefix":"bfo","namespace":"http://purl.obolibrary.org/obo/BFO_"}],"predicates":[{"name":"bfo.rel.part-of","iri":"http://purl.obolibrary.org/obo/BFO_0000050","projection":{"steps":[{"predicate_iri":"http://purl.obolibrary.org/obo/RO_0000056","node_class_iri":"http://www.ontologyrepository.com/CommonCoreOntologies/ActOfMeasuring","value_predicate_iri":"http://www.ontologyrepository.com/CommonCoreOntologies/has_decimal_value"}]}}]}`,
+		`{"name":"alias-pack","predicates":[{"name":"review.alias.priority","alias_priority":42}]}`,
+		`{"name":"bad-ns","prefixes":[{"prefix":"badns","namespace":"https://bad.example/>"}]}`,
 		`{"name":"bad","unknown":1}`,
 		`{}`,
 		``,
@@ -350,15 +409,29 @@ func FuzzLoadPackJSON(f *testing.F) {
 			return
 		}
 		defer SnapshotRegistry()()
-		if err := validatePack(pack); err == nil {
-			require.NoError(t, RegisterPack(pack))
+		ClearRegistry()
+		if err := RegisterPack(pack); err != nil {
+			assert.Empty(t, ListRegisteredPredicates(), "rejected pack must leave predicate registry unchanged")
+			assert.Empty(t, ListRegisteredEntityTypes(), "rejected pack must leave entity-type registry unchanged")
+			return
+		}
+		for _, pfx := range pack.Prefixes {
+			require.NoError(t, pfx.Validate())
+		}
+		for _, p := range pack.Predicates {
+			require.NotNil(t, GetPredicateMetadata(p.Name))
+		}
+		for _, et := range pack.EntityTypes {
+			require.NotNil(t, GetEntityTypeMetadata(et.DomainType))
 		}
 	})
 }
 
 func FuzzLoadPackYAML(f *testing.F) {
 	for _, seed := range []string{
-		"name: bfo\nversion: \"2020\"\npredicates:\n  - name: bfo.rel.part-of\n    iri: http://purl.obolibrary.org/obo/BFO_0000050\n",
+		"name: bfo\nversion: \"2020\"\nprefixes:\n  - prefix: bfo\n    namespace: http://purl.obolibrary.org/obo/BFO_\npredicates:\n  - name: bfo.rel.part-of\n    iri: http://purl.obolibrary.org/obo/BFO_0000050\n",
+		"name: alias-pack\npredicates:\n  - name: review.alias.priority\n    alias_priority: 42\n",
+		"name: bad-ns\nprefixes:\n  - prefix: badns\n    namespace: https://bad.example/>\n",
 		"name: bad\nunknown: 1\n",
 		"{}",
 		"",
@@ -372,8 +445,20 @@ func FuzzLoadPackYAML(f *testing.F) {
 			return
 		}
 		defer SnapshotRegistry()()
-		if err := validatePack(pack); err == nil {
-			require.NoError(t, RegisterPack(pack))
+		ClearRegistry()
+		if err := RegisterPack(pack); err != nil {
+			assert.Empty(t, ListRegisteredPredicates(), "rejected pack must leave predicate registry unchanged")
+			assert.Empty(t, ListRegisteredEntityTypes(), "rejected pack must leave entity-type registry unchanged")
+			return
+		}
+		for _, pfx := range pack.Prefixes {
+			require.NoError(t, pfx.Validate())
+		}
+		for _, p := range pack.Predicates {
+			require.NotNil(t, GetPredicateMetadata(p.Name))
+		}
+		for _, et := range pack.EntityTypes {
+			require.NotNil(t, GetEntityTypeMetadata(et.DomainType))
 		}
 	})
 }

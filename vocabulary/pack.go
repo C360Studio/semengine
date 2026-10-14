@@ -176,16 +176,6 @@ func LoadPackYAML(r io.Reader) (PackSpec, error) {
 	return pack, nil
 }
 
-// validatePack checks that every prefix, predicate, and entity type in pack is
-// well-formed without mutating registry state.
-func validatePack(pack PackSpec) error {
-	registryMu.RLock()
-	defer registryMu.RUnlock()
-
-	_, _, err := stagePackLocked(pack)
-	return err
-}
-
 // RegisterPack validates every prefix, predicate, and entity type in pack
 // before mutating state. If any entry is invalid or if the optional batch
 // prefix registrar returns an error, RegisterPack leaves the predicate and
@@ -267,6 +257,9 @@ func stagePredicateSpec(i int, spec PredicateSpec, staged map[string]PredicateMe
 		if err := validateNonEmptyIRI(spec.IRI, fmt.Sprintf("predicates[%d].iri", i)); err != nil {
 			return err
 		}
+	}
+	if !spec.IsAlias && spec.AliasType == "" && spec.AliasPriority != 0 {
+		return fmt.Errorf("predicates[%d] (%q): alias metadata requires IsAlias=true", i, spec.Name)
 	}
 
 	meta := staged[spec.Name]

@@ -416,8 +416,8 @@
     int64 millisecond timestamp helpers; imported by message; no consumer imports it (design P21)
   destination: internal/timestamp
   contract: >-
-    Now, ToUnixMillis, FromUnixMillis, Format, ParseRFC3339, IsZero, and DurationMillis for
-    millisecond timestamps as at the pin, less dead Parse(input any) int64 (#217)
+    Now, ToUnixMs, FromUnixMs, ToTime, Format, IsZero, Since, Add, Sub, Between, Min, Max, and
+    Validate for millisecond timestamps as at the pin, less dead Parse(input any) int64 (#217)
   dependencies_and_side_effects: stdlib only; no goroutine, no I/O
   known_risks: >-
     no context roots; import path moved from pkg/timestamp to internal/timestamp (design D5).
@@ -743,10 +743,12 @@
     payloadregistry, pkg/errs, pkg/types, internal/timestamp (in-set); github.com/google/uuid v1.6.0;
     stdlib; no goroutine, no I/O
   known_risks: >-
-    no context roots. Dead surface removed (#72; #9 surface audit §2): message/federation.go
-    (FederationMeta family and WithFederation*) and ten unused capability interfaces (Locatable,
-    Timeable, Observable, Correlatable, Measurable, Deployable, Processable, Traceable, Expirable,
-    TripleGenerator); doc.go and README.md updated for NewDecoder(reg) and fallback GenericJSON
+    no context roots. Hash() ignores a payload marshal error, as at the pin, so a refused payload
+    hashes as its type alone (tracked by #78). Dead surface removed (#72; #9 surface audit §2):
+    message/federation.go (FederationMeta family and WithFederation*) and ten unused capability
+    interfaces (Locatable, Timeable, Observable, Correlatable, Measurable, Deployable, Processable,
+    Traceable, Expirable, TripleGenerator); doc.go and README.md updated for NewDecoder(reg) and
+    fallback GenericJSON
   proving_tests: >-
     message/*_test.go (including meta_wire_test.go, generic_json_shape_test.go,
     generic_json_fuzz_test.go, decoder_fuzz_test.go)
@@ -1897,17 +1899,21 @@
     StateContractError, mutation/query wire types, and ExactEntityReader as at the pin, with zero
     transport imports in the root package (TestGraphImportsNoTransport) and these adaptations:
     (1) EntityState has no Version field (KV revision is the only fence, #100); (2) ReplaceBySource
-    and single-value reads order by Timestamp across sources (#98); (3) ReconcilePredicatesRequest
-    requires a non-empty matching Source (design D15); (4) reserved sources and IsReservedSource
-    declared in sources.go; (5) IndexStatusResponse drops legacy Phase/Revision/LastSynced and adds
-    published_at (design D16); (6) ExactEntityReader refuses negative timeouts and reads its subject
-    from QueryVerbs (#106, #151); (7) GraphStateReasonMissingStatementMetadata added
+    orders each (subject, predicate, source) set by Timestamp, and single-value reads choose the
+    latest statement across sources (#98); (3) ReconcilePredicatesRequest requires a non-empty
+    matching Source (design D15); (4) reserved sources and IsReservedSource declared in sources.go;
+    (5) IndexStatusResponse drops legacy Phase/Revision/LastSynced and adds published_at (design D16);
+    (6) ExactEntityReader refuses negative timeouts and reads its subject from QueryVerbs (#106,
+    #151); (7) GraphStateReasonMissingStatementMetadata added
   dependencies_and_side_effects: >-
     message, pkg/errs, pkg/types, vocabulary (in-set); stdlib; no NATS import in graph root;
     graph/kvcatalog imports natsclient and nats.go/jetstream
   known_risks: >-
     no context roots. Deferred to change 4: QueryResponse/NewQueryResponse/MinRevisionField aliases
-    (ruled P, design D18). Removed: events.go, UnwrapQueryResponse, TOOL_CALL_OUTCOMES,
+    (ruled P, design D18) and the generation marker beside indexed_revision so a revision from a
+    recreated bucket is detectable (#103 stays open for change 4; ADR-109). pkg/fusion (change 5)
+    carries its IndexStatus copy without the three legacy fields removed from IndexStatusResponse
+    (#110, design D16). Removed: events.go (#101), UnwrapQueryResponse, TOOL_CALL_OUTCOMES,
     ENTITY_SUFFIX_INDEX (#104), and dead sentinels/types (errors.go, incoming.go, query_types.go,
     GetPropertyValue function, MissingUnknown, ContextEntry, NameIndexEntry; #132); README updated
   proving_tests: >-
@@ -1930,15 +1936,18 @@
     the pin, with these adaptations: (1) Watcher.Run(ctx) runs on the caller's goroutine and refuses
     nil ctx, nil source, or empty key (Start/Stop removed, design D5); (2) an undecodable KV value
     revokes freshness immediately until the next valid update; (3) Publisher.Publish stamps
-    published_at in UTC RFC3339Nano (design D16); (4) BacklogStatusInputs drops LastSynced;
-    (5) gauges register via metric.RegisterOrGet under the semengine namespace and a nil registry is
-    a no-op (design D4)
+    published_at in UTC RFC3339Nano (design D16; ADR-109 removes it in #183); (4) BacklogStatusInputs
+    drops LastSynced; (5) gauges register via metric.RegisterOrGet under the semengine namespace and a
+    nil registry is a no-op (design D4)
   dependencies_and_side_effects: >-
     graph, graph/kvcatalog, metric, natsclient (in-set); nats.go/jetstream,
     prometheus/client_golang; KV reads/writes on GRAPH_STATUS; Watcher.Run runs on caller goroutine
   known_risks: >-
-    Set/NewSet/Dump/Verdict dropped (no starter consumer caller; ADR-109). ComputeIndexStatus and
-    WithRevisionGauges deferred to change 4 with graph-index (ruled P, design D16)
+    Set/NewSet/Dump/Verdict dropped (no starter consumer caller; ADR-109; #110 rewritten under
+    ADR-109 so Health() derives from nothing in the envelope). ComputeIndexStatus and
+    WithRevisionGauges deferred to change 4 with graph-index (ruled P, design D16), which fixes
+    #135 (b) (BootstrapComplete never set); #135 items 1, 2, (c), and (g) on the kept gate and
+    Watcher stay open on #135
   proving_tests: >-
     graph/readiness/watcher_test.go, publisher_test.go, gauges_test.go, readiness_gate_test.go,
     backlog_status_test.go, index_status_test.go, bucket_alias_test.go

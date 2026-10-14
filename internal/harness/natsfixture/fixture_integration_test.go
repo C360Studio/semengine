@@ -4,14 +4,12 @@ package natsfixture
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -23,8 +21,8 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 )
 
-// These are the owner tests S1-1..S1-8 of design "Lifecycle ownership proof". They need the
-// integration runner: `task test:integration -- ./internal/harness/natsfixture/`.
+// These are the owner tests S1-1..S1-8 of design "Lifecycle ownership proof". They need Docker:
+// `go test -tags integration ./internal/harness/natsfixture/`.
 
 // stopBound is the fresh finite authority these tests give a controlled Stop.
 const stopBound = 60 * time.Second
@@ -62,20 +60,32 @@ func stop(t *testing.T, f *Fixture) error {
 	return f.Stop(ctx)
 }
 
-func readRecord(t *testing.T, f *Fixture) record {
-	t.Helper()
-	f.mu.Lock()
-	dir, name := f.adm.evidenceDir, f.rec.Name
-	f.mu.Unlock()
-	data, err := os.ReadFile(filepath.Join(dir, "fixtures", name+".json"))
-	if err != nil {
-		t.Fatalf("evidence record: %v", err)
+// logTB records what the fixture writes to the test log, and passes it on.
+type logTB struct {
+	testing.TB
+	mu   sync.Mutex
+	logs []string
+}
+
+func (l *logTB) Logf(format string, args ...any) {
+	l.mu.Lock()
+	l.logs = append(l.logs, fmt.Sprintf(format, args...))
+	l.mu.Unlock()
+	l.TB.Logf(format, args...)
+}
+
+// containerLogs counts the container logs written to the test log, each a log holding the
+// server's ready line.
+func (l *logTB) containerLogs() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	n := 0
+	for _, line := range l.logs {
+		if strings.Contains(line, readyLog) {
+			n++
+		}
 	}
-	var r record
-	if err := json.Unmarshal(data, &r); err != nil {
-		t.Fatalf("evidence record: %v", err)
-	}
-	return r
+	return n
 }
 
 // conn is the fixture's own connection, read in-package: the fixture exports no accessor for it,
@@ -96,22 +106,21 @@ func closed(ch <-chan struct{}) bool {
 }
 
 // TestFixtureRoundTrip is the adopter's path: start, use JetStream and KV, stop, and find
-// everything gone and recorded.
+// everything gone.
 func TestFixtureRoundTrip(t *testing.T) {
 	f := startFixture(t)
 	ctx := t.Context()
 	if !strings.HasPrefix(f.URL(), "nats://") || conn(f).Status() != nats.CONNECTED {
 		t.Fatalf("URL %q status %v", f.URL(), conn(f).Status())
 	}
-	requireLeakCheckSees(t, f)
-	stream := f.Name("orders")
+	stream := "orders"
 	if _, err := f.CreateStream(ctx, stream, stream+".>"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.JetStream().Publish(ctx, stream+".1", []byte("one")); err != nil {
 		t.Fatal(err)
 	}
-	kv, err := f.CreateKeyValue(ctx, f.Name("kv"))
+	kv, err := f.CreateKeyValue(ctx, "kv")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,37 +140,6 @@ func TestFixtureRoundTrip(t *testing.T) {
 	if containerExists(t, id) {
 		t.Fatalf("container %s exists after Stop", id)
 	}
-	r := readRecord(t, f)
-	if r.Container != id || r.MappedPort == "" || len(r.Stops) != 1 || r.Stops[0].Result != "ok" || len(r.Owned) != 2 {
-		t.Fatalf("evidence record incomplete: %+v", r)
-	}
-	for _, p := range r.Attempts[0].Phases {
-		t.Logf("start phase %-16s %5dms", p.Phase, p.ElapsedMS)
-	}
-}
-
-// requireLeakCheckSees proves the session labels the fixture recorded, applied exactly as the
-// runner's leak check applies them, select this fixture's live container. A label key that
-// testcontainers does not use would make the leak check pass on anything; this is the check that
-// fails instead.
-func requireLeakCheckSees(t *testing.T, f *Fixture) {
-	t.Helper()
-	data, err := os.ReadFile(filepath.Join(f.adm.evidenceDir, "testcontainers-session"))
-	if err != nil {
-		t.Fatalf("session labels: %v", err)
-	}
-	var seen []string
-	for _, label := range strings.Fields(string(data)) {
-		out, err := exec.Command("docker", "ps", "-aq", "--no-trunc", "--filter", "label="+label).Output()
-		if err != nil {
-			t.Fatalf("docker ps --filter label=%s: %v", label, err)
-		}
-		seen = append(seen, strings.Fields(string(out))...)
-	}
-	if !slices.Contains(seen, f.containerID) {
-		t.Fatalf("the runner's session filter %q does not select the fixture's container %s (selected %v)",
-			strings.Fields(string(data)), f.containerID, seen)
-	}
 }
 
 // failpoints wrap a real dependency: fail returns an error after the real call, so the resource
@@ -173,8 +151,9 @@ func failAfter[T any](real func(context.Context, testcontainers.Container) (T, e
 	}
 }
 
-// S1-1: a failure at each phase after the container exists removes it, records the phase, the
-// container, and its log, terminates exactly once per attempt, and leaves Stop nothing to do.
+// S1-1: a failure at each phase after the container exists removes it, names the phase and the
+// container, writes the container's log to the test log, terminates exactly once per attempt, and
+// leaves Stop nothing to do (nats-fixture › "Failure after the container exists").
 func TestS1_1PartialStartupCleanup(t *testing.T) {
 	injected := errors.New("injected failure")
 	for _, tc := range []struct {
@@ -198,7 +177,8 @@ func TestS1_1PartialStartupCleanup(t *testing.T) {
 		{PhaseJetStream, func(d *deps) { d.jsReady = func(context.Context, jetstream.JetStream) error { return injected } }, 1},
 	} {
 		t.Run(string(tc.phase), func(t *testing.T) {
-			f := New(t)
+			tb := &logTB{TB: t}
+			f := New(tb)
 			tc.inject(&f.deps)
 			err := f.Start(t.Context())
 			var fe *Error
@@ -208,21 +188,19 @@ func TestS1_1PartialStartupCleanup(t *testing.T) {
 			if fe.ContainerID == "" || fe.ParentErr != nil || fe.Cleanup != nil {
 				t.Fatalf("error fields: container %q parent %v cleanup %v", fe.ContainerID, fe.ParentErr, fe.Cleanup)
 			}
-			r := readRecord(t, f)
-			if len(r.Attempts) != tc.attempts {
-				t.Fatalf("%d attempt(s) recorded, want %d", len(r.Attempts), tc.attempts)
+			attempts := fixtureErrors(err)
+			if len(attempts) != tc.attempts {
+				t.Fatalf("%d attempt error(s), want %d: %v", len(attempts), tc.attempts, err)
 			}
-			for _, a := range r.Attempts {
-				if containerExists(t, a.Container) {
-					t.Errorf("attempt %d container %s still exists", a.Attempt, a.Container)
+			for i, a := range attempts {
+				if a.Attempt != i+1 || a.Phase != tc.phase || a.ContainerID == "" {
+					t.Errorf("attempt %d error: attempt %d phase %s container %q", i+1, a.Attempt, a.Phase, a.ContainerID)
+				} else if containerExists(t, a.ContainerID) {
+					t.Errorf("attempt %d container %s still exists", a.Attempt, a.ContainerID)
 				}
-				last := a.Phases[len(a.Phases)-1]
-				if last.Phase != string(tc.phase) || last.Error == "" || a.Logs == "" {
-					t.Errorf("attempt %d record: last phase %+v logs %q", a.Attempt, last, a.Logs)
-				}
-				if logs, err := os.ReadFile(filepath.Join(f.adm.evidenceDir, "fixtures", a.Logs)); err != nil || !strings.Contains(string(logs), "Server is ready") {
-					t.Errorf("attempt %d container log not captured: %v", a.Attempt, err)
-				}
+			}
+			if got := tb.containerLogs(); got != tc.attempts {
+				t.Errorf("%d container log(s) in the test log, want one per attempt (%d)", got, tc.attempts)
 			}
 			calls := f.callCounts()
 			if calls["terminate"] != tc.attempts || calls["start"] != tc.attempts {
@@ -255,9 +233,20 @@ func TestS1_1PartialStartupCleanup(t *testing.T) {
 		}
 	})
 
-	// A transient mapped-port failure is the one case replaced: the second container serves.
+	// A transient mapped-port failure is the one case replaced: the second container serves, and
+	// the first is gone with its log in the test log.
 	t.Run("mapped-port replacement", func(t *testing.T) {
-		f := New(t)
+		tb := &logTB{TB: t}
+		f := New(tb)
+		var started []string
+		realStart := f.deps.start
+		f.deps.start = func(ctx context.Context, req testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
+			c, err := realStart(ctx, req)
+			if c != nil {
+				started = append(started, c.GetContainerID())
+			}
+			return c, err
+		}
 		real, failed := f.deps.mappedPort, false
 		f.deps.mappedPort = func(ctx context.Context, c testcontainers.Container) (string, error) {
 			if !failed {
@@ -269,9 +258,11 @@ func TestS1_1PartialStartupCleanup(t *testing.T) {
 		if err := f.Start(t.Context()); err != nil {
 			t.Fatalf("Start with one transient mapped-port failure: %v", err)
 		}
-		r := readRecord(t, f)
-		if len(r.Attempts) != 2 || r.Attempts[0].Error == "" || containerExists(t, r.Attempts[0].Container) {
-			t.Fatalf("replacement not recorded or first container kept: %+v", r.Attempts)
+		if len(started) != 2 || started[1] != f.containerID || containerExists(t, started[0]) {
+			t.Fatalf("containers started %v, serving %s: want a replacement serving and the first gone", started, f.containerID)
+		}
+		if got := tb.containerLogs(); got != 1 {
+			t.Fatalf("%d container log(s) in the test log, want the first attempt's", got)
 		}
 	})
 }
@@ -289,7 +280,7 @@ func maps(a, b map[string]int) bool {
 }
 
 // S1-2: cancelling the test context while a phase is in I/O fails Start with
-// context.Canceled, records the parent state, removes every attempted container,
+// context.Canceled, reports the parent state, removes every attempted container,
 // and does not start another attempt after cancellation. A mapped-port failure
 // may already have earned one replacement while the parent was live.
 func TestS1_2CancellationDuringIO(t *testing.T) {
@@ -359,50 +350,28 @@ func TestS1_2CancellationDuringIO(t *testing.T) {
 			cancel()
 			close(release)
 			err := <-result
-			r := readRecord(t, f)
 			if !errors.Is(err, context.Canceled) {
 				t.Fatalf("Start = %v, want context.Canceled", err)
 			}
-			if len(r.Attempts) < 1 || len(r.Attempts) > 2 ||
-				tc.phase == PhaseStart && len(r.Attempts) != 1 ||
-				tc.failMappedPort && len(r.Attempts) != 2 {
-				t.Fatalf("unexpected attempts: %+v", r.Attempts)
+			attempts := fixtureErrors(err)
+			if len(attempts) < 1 || len(attempts) > 2 ||
+				tc.phase == PhaseStart && len(attempts) != 1 ||
+				tc.failMappedPort && len(attempts) != 2 {
+				t.Fatalf("unexpected attempts: %v", err)
 			}
-			failures := []error{err}
-			if _, single := err.(*Error); !single {
-				joined, ok := err.(interface{ Unwrap() []error })
-				if !ok {
-					t.Fatalf("Start = %T, want joined attempt errors", err)
+			for i, a := range attempts {
+				if a.Attempt != i+1 || a.ContainerID == "" {
+					t.Fatalf("attempt %d error is incomplete: %v", i+1, a)
 				}
-				failures = joined.Unwrap()
-			}
-			if len(failures) != len(r.Attempts) {
-				t.Fatalf("%d error(s), %d recorded attempt(s): %v", len(failures), len(r.Attempts), err)
-			}
-			for i, a := range r.Attempts {
-				if a.Attempt != i+1 || a.Container == "" {
-					t.Fatalf("attempt %d has incomplete record: %+v", i+1, a)
+				if containerExists(t, a.ContainerID) {
+					t.Fatalf("attempt %d container %s survives cancellation", a.Attempt, a.ContainerID)
 				}
-				if containerExists(t, a.Container) {
-					t.Fatalf("attempt %d container %s survives cancellation", a.Attempt, a.Container)
-				}
-				if i < len(r.Attempts)-1 {
-					if len(a.Phases) == 0 || a.Phases[len(a.Phases)-1].Phase != string(PhaseMappedPort) ||
-						a.Error == "" || a.ParentErr != "" || a.Cleanup != "" {
-						t.Fatalf("attempt %d was not a cleaned-up mapped-port failure with live parent: %+v", a.Attempt, a)
-					}
+				if i < len(attempts)-1 && (a.Phase != PhaseMappedPort || a.ParentErr != nil || a.Cleanup != nil) {
+					t.Fatalf("attempt %d was not a cleaned-up mapped-port failure with live parent: %v", a.Attempt, a)
 				}
 			}
-			var fe *Error
-			if !errors.As(failures[len(failures)-1], &fe) ||
-				fe.Attempt != len(r.Attempts) || fe.Phase != tc.phase ||
-				fe.ContainerID != r.Attempts[len(r.Attempts)-1].Container {
-				t.Fatalf("terminal attempt = %v, want cancellation at phase %s", failures[len(failures)-1], tc.phase)
-			}
-			if !errors.Is(fe.ParentErr, context.Canceled) || fe.Cleanup != nil ||
-				r.Attempts[len(r.Attempts)-1].ParentErr != context.Canceled.Error() {
-				t.Fatalf("terminal parent state %v cleanup %v record %+v",
-					fe.ParentErr, fe.Cleanup, r.Attempts[len(r.Attempts)-1])
+			if last := attempts[len(attempts)-1]; last.Phase != tc.phase || !errors.Is(last.ParentErr, context.Canceled) || last.Cleanup != nil {
+				t.Fatalf("terminal attempt = %v (parent %v, cleanup %v), want cancellation at phase %s", last, last.ParentErr, last.Cleanup, tc.phase)
 			}
 			if startedAfterCancel.Load() {
 				t.Fatal("Start called the container start hook after cancellation")
@@ -417,7 +386,7 @@ func consumeBlocked(t *testing.T) (*Fixture, *probe.Callback, jetstream.Consumer
 	f := startFixture(t)
 	cb := probe.NewCallback()
 	t.Cleanup(cb.Release) // runs before the fixture's own cleanup Stop
-	stream := f.Name("work")
+	stream := "work"
 	if _, err := f.CreateStream(t.Context(), stream, stream+".>"); err != nil {
 		t.Fatal(err)
 	}
@@ -501,34 +470,36 @@ func TestS1_3BlockedCallbackDelaysFinalisation(t *testing.T) {
 	if !nc.IsClosed() || containerExists(t, id) || len(f.remaining()) != 0 {
 		t.Fatalf("after Stop: conn closed %t, container exists, remaining %v", nc.IsClosed(), f.remaining())
 	}
-	var order []string
-	for _, p := range readRecord(t, f).Stops[0].Phases {
-		order = append(order, strings.Fields(p.Phase)[0])
-	}
-	if want := []string{"publish-complete", "consumer", "stream", "connection", "container"}; !slices.Equal(order, want) {
-		t.Fatalf("stop order %v, want %v", order, want)
-	}
 }
 
-// S1-4: Stop waits for in-flight async publishes and records what the stream held before it
-// deleted it.
+// S1-4: Stop waits for in-flight async publishes: when it returns, nats.go has resolved every
+// publish future with the server's acknowledgement.
 func TestS1_4GracefulFinalisation(t *testing.T) {
 	f := startFixture(t)
-	stream := f.Name("events")
+	stream := "events"
 	if _, err := f.CreateStream(t.Context(), stream, stream+".>"); err != nil {
 		t.Fatal(err)
 	}
 	const n = 200
+	futures := make([]jetstream.PubAckFuture, 0, n)
 	for i := range n {
-		if _, err := f.JetStream().PublishAsync(fmt.Sprintf("%s.%d", stream, i), []byte("e")); err != nil {
+		fut, err := f.JetStream().PublishAsync(fmt.Sprintf("%s.%d", stream, i), []byte("e"))
+		if err != nil {
 			t.Fatal(err)
 		}
+		futures = append(futures, fut)
 	}
 	if err := stop(t, f); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
-	if got := readRecord(t, f).StreamMsgs[stream]; got != n {
-		t.Fatalf("stream held %d messages when finalisation reached it, want %d", got, n)
+	for i, fut := range futures {
+		select {
+		case <-fut.Ok():
+		case err := <-fut.Err():
+			t.Fatalf("publish %d failed: %v", i, err)
+		default:
+			t.Fatalf("publish %d still unacknowledged when Stop returned", i)
+		}
 	}
 }
 
@@ -650,15 +621,10 @@ func (o owner) Observe() lifecycletest.Observation {
 // S1-8: two fixtures in one test are disjoint, and each Stop removes only its own.
 func TestS1_8Isolation(t *testing.T) {
 	a, b := startFixture(t), startFixture(t)
-	if a.containerID == b.containerID || a.URL() == b.URL() || a.Name("x") == b.Name("x") {
+	if a.containerID == b.containerID || a.URL() == b.URL() {
 		t.Fatalf("fixtures collide: %s %s / %s %s", a.containerID, a.URL(), b.containerID, b.URL())
 	}
-	for _, n := range []string{a.Name("x"), b.Name("x")} {
-		if err := CheckName(n); err != nil {
-			t.Fatal(err)
-		}
-	}
-	bID := b.containerID
+	aID, aURL, bID := a.containerID, a.URL(), b.containerID
 	if err := stop(t, a); err != nil {
 		t.Fatal(err)
 	}
@@ -668,7 +634,7 @@ func TestS1_8Isolation(t *testing.T) {
 	if _, err := b.JetStream().AccountInfo(t.Context()); err != nil {
 		t.Fatalf("the other fixture stopped answering: %v", err)
 	}
-	t.Logf("isolated: %s at %s and %s at %s", shortID(a.rec.Container), a.rec.MappedPort, shortID(bID), b.rec.MappedPort)
+	t.Logf("isolated: %s at %s and %s at %s", shortID(aID), aURL, shortID(bID), b.URL())
 }
 
 // stopRunning starts Stop in the background and returns its result channel once Stop has stopped
@@ -710,7 +676,7 @@ func TestStopJoinsHandlersOnAClosedConnection(t *testing.T) {
 	f := startFixture(t)
 	cb := probe.NewCallback()
 	t.Cleanup(cb.Release)
-	stream := f.Name("work")
+	stream := "work"
 	if _, err := f.CreateStream(t.Context(), stream, stream+".>"); err != nil {
 		t.Fatal(err)
 	}
@@ -774,7 +740,7 @@ func restart(t *testing.T, f *Fixture) {
 func TestRestartKeepsFileStreamLosesMemoryStream(t *testing.T) {
 	f := startFixture(t)
 	ctx := t.Context()
-	file, mem := f.Name("file"), f.Name("mem")
+	file, mem := "file", "mem"
 	if _, err := f.CreateStream(ctx, file, file+".>"); err != nil {
 		t.Fatal(err)
 	}
@@ -872,7 +838,7 @@ func TestRestartEndsConsumers(t *testing.T) {
 	f := startFixture(t)
 	cb := probe.NewCallback()
 	t.Cleanup(cb.Release)
-	stream := f.Name("work")
+	stream := "work"
 	if _, err := f.CreateStream(t.Context(), stream, stream+".>"); err != nil {
 		t.Fatal(err)
 	}
@@ -943,36 +909,6 @@ func TestRestartEndsConsumers(t *testing.T) {
 	}
 }
 
-// sessionContainersLike lists the containers of this run's testcontainers session whose name
-// shares the fixture container's name up to its random suffix: every container this fixture could
-// have created, read from Docker rather than from the fixture.
-func sessionContainersLike(t *testing.T, f *Fixture, id string) []string {
-	t.Helper()
-	out, err := exec.Command("docker", "inspect", "--format", "{{.Name}}", id).Output()
-	if err != nil {
-		t.Fatalf("docker inspect %s: %v", id, err)
-	}
-	name := strings.TrimPrefix(strings.TrimSpace(string(out)), "/")
-	prefix := name[:strings.LastIndex(name, "-")+1]
-	data, err := os.ReadFile(filepath.Join(f.adm.evidenceDir, "testcontainers-session"))
-	if err != nil {
-		t.Fatalf("session labels: %v", err)
-	}
-	var ids []string
-	for _, label := range strings.Fields(string(data)) {
-		out, err := exec.Command("docker", "ps", "-a", "--no-trunc", "--filter", "label="+label, "--format", "{{.ID}} {{.Names}}").Output()
-		if err != nil {
-			t.Fatalf("docker ps --filter label=%s: %v", label, err)
-		}
-		for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-			if fields := strings.Fields(line); len(fields) == 2 && strings.HasPrefix(fields[1], prefix) && !slices.Contains(ids, fields[0]) {
-				ids = append(ids, fields[0])
-			}
-		}
-	}
-	return ids
-}
-
 // Restart fault matrix (task 2.2): each container hook fails in turn, before and after its real
 // call. Restart returns an *Error naming exactly that phase, runs no later phase, creates no second
 // container, and Stop still removes the one container and observes it gone.
@@ -1017,7 +953,7 @@ func TestRestartFaultMatrix(t *testing.T) {
 			if calls["start"] != 1 {
 				t.Fatalf("start called %d times; Restart must not replace the container", calls["start"])
 			}
-			if got := sessionContainersLike(t, f, id); len(got) != 1 || got[0] != id {
+			if got := processContainers(t); len(got) != 1 || got[0] != id {
 				t.Fatalf("containers of this fixture after a failed Restart: %v, want only %s", got, id)
 			}
 			if err := f.Restart(ctx); !errors.Is(err, errNotStarted) {
@@ -1038,7 +974,7 @@ func TestRestartFaultMatrix(t *testing.T) {
 func TestFaultKVOverARealBucket(t *testing.T) {
 	f := startFixture(t)
 	ctx := t.Context()
-	bucket, err := f.CreateKeyValue(ctx, f.Name("faults"))
+	bucket, err := f.CreateKeyValue(ctx, "faults")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1076,7 +1012,7 @@ func TestFaultKVOverARealBucket(t *testing.T) {
 func TestNoCreationOnceStopBegins(t *testing.T) {
 	f, cb, _, _ := consumeBlocked(t)
 	result := stopRunning(t, f)
-	late := f.Name("late")
+	late := "late"
 	// Refused at once, not queued behind Stop: Stop is parked on a handler only the test releases.
 	_, err := f.CreateStream(t.Context(), late, late+".>")
 	cb.Release()
@@ -1089,7 +1025,7 @@ func TestNoCreationOnceStopBegins(t *testing.T) {
 	if rem := f.remaining(); len(rem) != 0 {
 		t.Fatalf("Stop returned nil while still owning %v", rem)
 	}
-	if _, err := f.CreateKeyValue(t.Context(), f.Name("after")); err == nil {
+	if _, err := f.CreateKeyValue(t.Context(), "after"); err == nil {
 		t.Fatal("CreateKeyValue succeeded after Stop")
 	}
 	if rem := f.remaining(); len(rem) != 0 {

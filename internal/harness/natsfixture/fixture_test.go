@@ -19,13 +19,13 @@ import (
 // calls captured instead of sent: enough to prove what the fixture asks the broker for.
 func startedWith(t *testing.T) *Fixture {
 	t.Helper()
-	f := &Fixture{testName: t.Name(), deps: defaultDeps(), calls: map[string]int{}, containerID: "c0ffee"}
+	f := &Fixture{deps: defaultDeps(t.Logf), calls: map[string]int{}, containerID: "c0ffee"}
 	f.js = struct{ jetstream.JetStream }{} // never called: every JetStream use below goes through deps
 	return f
 }
 
-// Every stream and bucket the fixture creates declares its bounds (nats-fixture › "Run-unique
-// ownership and safe names"); the values are restated here, not read from the implementation.
+// Every stream and bucket the fixture creates declares its bounds (nats-fixture › "Bounded test
+// streams"); the values are restated here, not read from the implementation.
 func TestCreateStreamDeclaresBounds(t *testing.T) {
 	f := startedWith(t)
 	var got jetstream.StreamConfig
@@ -319,7 +319,7 @@ func TestConnectHonoursItsContext(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 	began := time.Now()
-	nc, err := defaultDeps().connect(ctx, "nats://"+ln.Addr().String())
+	nc, err := defaultDeps(t.Logf).connect(ctx, "nats://"+ln.Addr().String())
 	if nc != nil {
 		nc.Close()
 	}
@@ -356,7 +356,7 @@ func TestConnectJoinsItsDial(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		nc, err := defaultDeps().connect(ctx, "nats://"+ln.Addr().String())
+		nc, err := defaultDeps(t.Logf).connect(ctx, "nats://"+ln.Addr().String())
 		done <- result{nc, err}
 	}()
 	srv, ok := <-accepted
@@ -468,12 +468,117 @@ func awaitWaiting(t *testing.T, f *Fixture, who string) {
 func TestNonPositiveMaxPayloadIsRefused(t *testing.T) {
 	for _, n := range []int64{0, -1} {
 		f := New(t, WithMaxPayload(n))
-		// Outside the integration runner admission refuses too, so the refusal must name its cause.
+		// The refusal must name its cause.
 		if err := f.Start(t.Context()); err == nil || !strings.Contains(err.Error(), "max payload") {
 			t.Errorf("Start with max payload %d = %v, want a refusal naming the max payload", n, err)
 		}
 		if f.totalCalls() != 0 || f.used {
 			t.Errorf("max payload %d: the refusal made calls %v or consumed the fixture", n, f.callCounts())
 		}
+	}
+}
+
+// harness-boundaries › "One image pin": the fixture takes its image from the pin file it embeds,
+// which must hold exactly one digest reference, and refuses any other before a Docker call. Image
+// strings are assembled so that this file spells no image (TestOneImagePin).
+func TestImagePin(t *testing.T) {
+	digest := "@sha256:" + strings.Repeat("0", 64)
+	image, err := pinnedImage(imagePin)
+	if err != nil || !strings.HasPrefix(image, "nats:") || !strings.Contains(image, "@sha256:") {
+		t.Fatalf("the embedded pin: image %q, err %v; want one digest reference", image, err)
+	}
+	for _, tc := range []struct{ name, file, want string }{
+		{"tag without a digest", "nats" + ":2.15.0-alpine\n", "not a digest reference"},
+		{"another repository", "natsio/nats-server" + ":2.15.0" + digest + "\n", "not a digest reference"},
+		{"two images", "nats" + ":1" + digest + "\nnats" + ":2" + digest + "\n", "holds 2"},
+		{"comments only", "# nothing pinned\n\n", "holds 0"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got, err := pinnedImage(tc.file); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("pinnedImage = %q, %v; want an error naming %q", got, err, tc.want)
+			}
+		})
+	}
+	// Start reads the pin before any Docker call: a pin without a digest fails the image phase
+	// with no dependency called. The embedded value is swapped for this test only; no test in this
+	// package runs in parallel.
+	t.Run("Start refuses before Docker", func(t *testing.T) {
+		embedded := imagePin
+		imagePin = "nats" + ":2.15.0-alpine\n"
+		t.Cleanup(func() { imagePin = embedded })
+		f := New(t)
+		noDocker(t, f)
+		err := f.Start(t.Context())
+		var fe *Error
+		if !errors.As(err, &fe) || fe.Phase != PhaseImage || !strings.Contains(err.Error(), "not a digest reference") {
+			t.Fatalf("Start = %v, want an image-phase *Error naming the missing digest", err)
+		}
+		if calls := f.totalCalls(); calls != 0 {
+			t.Fatalf("a refused image made %d dependency call(s): %v", calls, f.callCounts())
+		}
+	})
+}
+
+// noDocker replaces every dependency with one that fails the test: these tests prove what the
+// fixture does before, or instead of, touching Docker.
+func noDocker(t *testing.T, f *Fixture) {
+	t.Helper()
+	f.deps.start = func(context.Context, testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
+		t.Error("unexpected Docker start")
+		return nil, errors.New("unexpected Docker start")
+	}
+}
+
+// M2: Stop waits for the fixture's operation slot under its own context. A Start parked in a
+// Docker call does not make a bounded Stop unbounded.
+func TestStopHonoursItsContextWhileStartHoldsTheFixture(t *testing.T) {
+	f := New(t)
+	entered, release := make(chan struct{}), make(chan struct{})
+	f.deps.start = func(context.Context, testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
+		close(entered)
+		<-release
+		return nil, errors.New("start released by the test")
+	}
+	started := make(chan error, 1)
+	go func() { started <- f.Start(t.Context()) }()
+	<-entered
+	defer func() {
+		close(release)
+		<-started
+	}()
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	stopped := make(chan error, 1)
+	go func() { stopped <- f.Stop(ctx) }()
+	// The bound below is a watchdog for the failure, not a synchronisation: a correct Stop returns
+	// as soon as its 100ms context ends.
+	watchdog := time.NewTimer(10 * time.Second)
+	defer watchdog.Stop()
+	select {
+	case err := <-stopped:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("Stop = %v, want context.DeadlineExceeded", err)
+		}
+	case <-watchdog.C:
+		t.Fatal("Stop ignored its context while Start held the fixture")
+	}
+}
+
+// M5: a Start whose context is cancelled while a dependency fails for its own reason still
+// reports the cancellation to errors.Is: a caller asking "was I cancelled?" gets the truth.
+func TestCancelledStartIsRecognisable(t *testing.T) {
+	f := New(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	f.deps.start = func(context.Context, testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
+		cancel()
+		return nil, errors.New("daemon: request aborted")
+	}
+	err := f.Start(ctx)
+	var fe *Error
+	if !errors.As(err, &fe) || fe.Phase != PhaseStart {
+		t.Fatalf("Start = %v, want a start-phase *Error", err)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("errors.Is(%v, context.Canceled) = false", err)
 	}
 }

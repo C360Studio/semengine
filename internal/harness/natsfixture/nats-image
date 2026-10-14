@@ -1,0 +1,6 @@
+# The one spelling of the NATS image for SemEngine integration tests (owner ruling Q6, 2026-09-30;
+# harness-boundaries spec, "One image pin"). Tag: nats:2.15.0-alpine (NATS_SERVER=2.15.0). The
+# digest is the multi-arch index, so the pull is content-addressed and a re-pointed tag cannot
+# change what runs. natsfixture embeds this file and refuses a line without a digest; doctor.sh
+# reads it. To run another image, edit the line below in a branch.
+nats:2.15.0-alpine@sha256:ac8f88a6494bffc2c2a5289a0ca61cb28a9145c11ba5677cf24265d07f46d8d4

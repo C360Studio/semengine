@@ -153,7 +153,6 @@ func TestMappedPortFailureCarriesTheInspect(t *testing.T) {
 		check(t, "Restart", f.Restart(t.Context()))
 	})
 	t.Run("Start", func(t *testing.T) {
-		plantLock(t, "tok", "tok")
 		f := New(t)
 		f.deps.start = func(context.Context, testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
 			return idContainer{}, nil

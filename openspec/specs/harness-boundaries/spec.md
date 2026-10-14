@@ -2,10 +2,12 @@
 
 ## Purpose
 Harness boundaries are the machine-checked rules that keep test machinery out of production code, keep SemEngine's
-Docker footprint invisible to SemStreams' substring cleanup, keep every reused SemStreams file traceable in the
-admission ledger, and hold the machine-checked shape rules over ported production code, such as the one spelling of
-a deployment's authority.
+Docker names and cleanup narrow enough that they never select another repository's resources, keep every reused
+SemStreams file traceable in the admission ledger, and hold the machine-checked shape rules over ported production
+code, such as the one spelling of a deployment's authority.
+
 ## Requirements
+
 ### Requirement: Import graph
 
 No non-test Go file outside `internal/harness/` SHALL import `internal/harness/...`, `testcontainers-go`, `testing`,
@@ -65,17 +67,19 @@ closure is invisible to it, and those shapes are out of its scope by constructio
 
 ### Requirement: One image pin
 
-The NATS image SHALL be spelled only in `.nats-image` as `nats:<tag>@sha256:<digest>`; scripts and Go SHALL receive it
-through SEMENGINE_NATS_IMAGE. The check covers every tracked file that configures or runs Docker (`*.go`, `*.sh`,
-`Taskfile.yml`, `*.yaml`/`*.yml`, Dockerfiles, CI workflows), including variable tags such as `nats:${TAG}`; Markdown
-and other prose may cite the tag. In a `*.go` file the check reports `nats:` only when a digit or a variable (`$`,
-`${`) follows it, and reports every `nats@sha256:`; a Go literal `nats:` followed by a letter, such as a component port
-identifier `nats:<subject>` or a tag such as `nats:latest`, is not reported, and an image tag that starts with a letter
-in Go is review only.
+The NATS image SHALL be spelled only in `internal/harness/natsfixture/nats-image` as `nats:<tag>@sha256:<digest>`;
+natsfixture SHALL embed that file, SHALL refuse a reference without `@sha256:<digest>` before any Docker call, and
+`scripts/doctor.sh` SHALL read that file. The check covers every tracked file that configures or runs Docker
+(`*.go`, `*.sh`, `Taskfile.yml`, `*.yaml`/`*.yml`, Dockerfiles, CI workflows), including variable tags such as
+`nats:${TAG}`; Markdown and other prose may cite the tag. In a `*.go` file the check reports `nats:` only when a digit
+or a variable (`$`, `${`) follows it, and reports every `nats@sha256:`; a Go literal `nats:` followed by a letter,
+such as a component port identifier `nats:<subject>` or a tag such as `nats:latest`, is not reported, and an image tag
+that starts with a letter in Go is review only.
 
 #### Scenario: Literal elsewhere
 
-- **WHEN** a tracked file that configures or runs Docker, other than .nats-image, contains a `nats:` image literal
+- **WHEN** a tracked file that configures or runs Docker, other than `internal/harness/natsfixture/nats-image`,
+  contains a `nats:` image literal
 - **THEN** the contract test fails
 
 #### Scenario: A port identifier in a Go file
@@ -89,28 +93,24 @@ in Go is review only.
   file with no imports
 - **THEN** the contract test fails naming the file and line
 
-### Requirement: SemEngine-assigned names
+#### Scenario: Digest pin ignores tag movement
 
-Every Docker name assigned by this repository (container `--name`/`container_name`, volume, network, Compose project
-via `-p`/`--project-name`/`COMPOSE_PROJECT_NAME`/top-level `name:`) SHALL start with `semengine-`, use only
-`[a-z0-9-]`, and contain none of `semstreams`, `nats-semstreams`, `semembed`, `agentic`, `crud-tools`,
-`deep-research`, `ops`, `research-graph` anywhere in the name, including inside a longer word; generated names SHALL
-satisfy the same rule by construction. Compose invocations SHALL always pass an explicit project name.
+- **WHEN** another repository re-pulls the mutable `nats:2.15.0-alpine` tag
+- **THEN** natsfixture's containers still run the image the pin's digest names, because the pin is a digest reference
+  and natsfixture refuses one without a digest
 
-#### Scenario: Destroyer substring in a literal
+### Requirement: Docker names this repository assigns
 
-- **WHEN** a script names a volume `semengine-ops-cache`
-- **THEN** the contract test fails citing `ops`
+Every Docker name a script, task or Compose file in this repository assigns (container `--name`/`container_name`,
+volume, network, Compose project via `-p`/`--project-name`/`COMPOSE_PROJECT_NAME`/top-level `name:`) SHALL start with
+`semengine-` and use only `[a-z0-9-]`. Compose invocations SHALL always pass an explicit project name. natsfixture
+assigns no container name; its containers are found by their label (`nats-fixture`, "Ryuk off, labelled containers
+and the sweep").
 
-#### Scenario: Destroyer substring inside an allow-listed-looking word
+#### Scenario: Name without the prefix
 
-- **WHEN** a lane segment is a word such as `stops` or `loops`
-- **THEN** the contract test fails citing `ops`, because Docker's `--filter name=ops` matches any part of a name
-
-#### Scenario: SemStreams routine cleanup cannot select SemEngine resources
-
-- **WHEN** `docker volume ls -q --filter name=<each destroyer>` is evaluated while SemEngine resources exist
-- **THEN** no SemEngine resource is listed
+- **WHEN** a script names a volume `cache`
+- **THEN** the contract test fails naming the line
 
 ### Requirement: No fixed addresses in tests
 

@@ -264,8 +264,8 @@ also covers NATS streams, buckets, and consumers when sharing a broker.
 Prefer testcontainers for small Go integration fixtures and a scoped Compose project for a full consumer stack.
 Wait for authoritative readiness and expected state with deadlines. Avoid fixed sleeps and shared default ports.
 Start with conservative concurrency limits. Dynamic ports prevent collisions but do not prevent CPU or memory
-saturation. During extraction, admission control for a shared Docker daemon must coordinate SemEngine and SemStreams;
-independent repository locks must not each claim exclusive use of the same daemon.
+saturation; SemEngine bounds its own load with `go test -p` and one NATS server per package, and does not
+coordinate its use of a Docker daemon with another repository (#205, comment 6132580576).
 
 Propagate cancellation to child processes. Capture exit status, logs, readiness failures, versions, and owned resource
 identities before cleanup on success, failure, cancellation, or partial startup. Never use broad Docker prune commands.
@@ -359,8 +359,8 @@ satisfy empty checks. Once introduced, these lanes remain required according to 
 Owner: Go developer, reviewed by an independent Go reviewer. Dependency: SETUP 01 sign-off.
 
 Build the initial helper kit, owned disposable NATS fixtures, cancellation, bounded readiness, checked cleanup, and
-failure capture before porting slices. Separate persistent development commands. Bound Docker concurrency and
-coordinate admission across the repos sharing the daemon. Prove lifecycle ownership before expanding the service stack.
+failure capture before porting slices. Separate persistent development commands. Bound Docker concurrency within a
+run. Prove lifecycle ownership before expanding the service stack.
 
 Pass evidence: two worktrees run without resource collisions; interrupting one leaves the other intact; a forced
 startup failure captures evidence and cleans partially created resources. Prove that persistent development data and

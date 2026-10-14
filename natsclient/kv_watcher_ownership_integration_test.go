@@ -6,7 +6,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -57,8 +56,8 @@ func TestIntegration_KVStoreFilteredNativeDeliveryClosure(t *testing.T) {
 		_, putErr := bucket.Put(setupCtx, fmt.Sprintf("diag.%04d", i), []byte("v"))
 		require.NoError(t, putErr)
 	}
-	t.Logf("native fixture keys=5000 storage=file image=%s server=%s sdk=%s",
-		os.Getenv("SEMENGINE_NATS_IMAGE"), dial(t, testClient.URL).ConnectedServerVersion(), pinnedNATSGoVersion)
+	t.Logf("native fixture keys=5000 storage=file server=%s sdk=%s",
+		dial(t, testClient.URL).ConnectedServerVersion(), pinnedNATSGoVersion)
 
 	gate := &nativeWatchReturnGate{KeyValue: bucket, constructed: make(chan nativeWatchConstruction, 1), release: make(chan struct{})}
 	callDone := make(chan struct{})

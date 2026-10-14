@@ -3,16 +3,17 @@
 ## Purpose
 The process host, `internal/harness/prochost`, lets a test run part of itself as a separate child process by
 re-running the test binary, so a test can kill, pause or signal that process at a chosen point and check what
-survived. The child's output is kept in files for evidence, and no child outlives the test that started it.
+survived. The child's output is kept in files and written to the test log when the test fails, and no child outlives
+the test that started it.
 
 ## Requirements
 
 ### Requirement: Helper process from the test binary
 
 `internal/harness/prochost` SHALL start a child process by re-executing the running test binary with a named helper
-selected through an environment marker, in its own process group, with stdout and stderr captured under the
-evidence directory when `SEMENGINE_EVIDENCE_DIR` is set (the integration lane) and under the test's temporary
-directory otherwise (the unit lane); a helper SHALL run only when its marker is set and SHALL be a no-op in a
+selected through an environment marker, in its own process group, with stdout and stderr captured in files under the
+test's temporary directory; when the test has failed by the time its cleanup reaps the child, prochost SHALL write the
+child's stdout and stderr to the test log. A helper SHALL run only when its marker is set and SHALL be a no-op in a
 normal test run. No runtime binary SHALL be required.
 
 #### Scenario: Helper runs only under its marker
@@ -23,8 +24,8 @@ normal test run. No runtime binary SHALL be required.
 #### Scenario: Helper is started
 
 - **WHEN** a test starts the helper named by the marker
-- **THEN** a child process exists in its own process group and its output is written under the evidence directory
-  or, when none is set, under the test's temporary directory
+- **THEN** a child process exists in its own process group and its output is written under the test's temporary
+  directory, and into the test log when the test fails
 
 ### Requirement: Signals and bounded wait
 

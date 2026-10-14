@@ -1,10 +1,10 @@
 // Package prochost hosts a helper process for process-kill proofs (openspec change
 // setup-04a-01-floor, capability process-host). A helper is a function in the test binary: the
 // test binary re-executes itself with an environment marker that selects it, so no runtime binary
-// is built. The child runs in its own process group with stdout and stderr in files, and the test
-// can signal, pause, resume, kill and wait for it. No helper outlives its test: Start registers a
-// cleanup that kills the group and joins the child. The start, group and signal paths are
-// generalised from internal/harness/runner/runner_test.go. Test-only: contract test T-B1 refuses
+// is built. The child runs in its own process group with stdout and stderr in files under the test's
+// temporary directory, and the test can signal, pause, resume, kill and wait for it. No helper
+// outlives its test: Start registers a cleanup that kills the group, joins the child and, when the
+// test has failed, writes the child's output to the test log. Test-only: contract test T-B1 refuses
 // any production import.
 //
 // A helper that must stay up parks on a signal (signal.Notify for SIGTERM, then receive), never on
@@ -29,8 +29,6 @@ import (
 const (
 	// markerEnv names the helper a re-executed test binary runs.
 	markerEnv = "SEMENGINE_HELPER"
-	// evidenceEnv is the integration lane's evidence directory.
-	evidenceEnv = "SEMENGINE_EVIDENCE_DIR"
 	// cleanupBudget is the fresh finite authority the test cleanup gives its wait for a killed
 	// group. A SIGKILLed child is reaped at once; the budget only decides when the cleanup reports
 	// a child that is not, and the cleanup still joins it afterwards.
@@ -67,23 +65,16 @@ type Process struct {
 }
 
 // Start re-executes the test binary to run the helper name, with env added to this process's
-// environment, in a new process group. Output goes to files under SEMENGINE_EVIDENCE_DIR when it is
-// set and under t.TempDir() otherwise. t's cleanup kills the group and waits for the child.
+// environment, in a new process group. Output goes to files under t.TempDir(). t's cleanup kills
+// the group, waits for the child and, if t has failed by then, writes the child's stdout and stderr
+// to the test log.
 func Start(t testing.TB, name string, env ...string) (*Process, error) {
 	t.Helper()
 	if name == "" {
 		return nil, errors.New("prochost: Start with an empty helper name")
 	}
-	dir := os.Getenv(evidenceEnv)
-	if dir == "" {
-		dir = t.TempDir()
-	}
-	dir = filepath.Join(dir, "prochost")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil, fmt.Errorf("prochost: output directory: %w", err)
-	}
 	base := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()) + "-" + name + "-"
-	stdout, err := os.CreateTemp(dir, base+"*.stdout")
+	stdout, err := os.CreateTemp(t.TempDir(), base+"*.stdout")
 	if err != nil {
 		return nil, fmt.Errorf("prochost: stdout file: %w", err)
 	}
@@ -114,6 +105,17 @@ func Start(t testing.TB, name string, env ...string) (*Process, error) {
 			t.Errorf("prochost: helper %s not reaped after SIGKILL: %v", name, err)
 		}
 		<-p.done
+		// t.TempDir's own cleanup was registered before this one, so the files are still there.
+		if t.Failed() {
+			for _, file := range []string{p.stdout, p.stderr} {
+				data, err := os.ReadFile(file)
+				if err != nil {
+					t.Errorf("prochost: helper %s output: %v", name, err)
+					continue
+				}
+				t.Logf("prochost: helper %s (pid %d) %s:\n%s", name, p.pid, filepath.Ext(file)[1:], data)
+			}
+		}
 	})
 	return p, nil
 }

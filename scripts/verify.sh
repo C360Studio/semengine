@@ -6,7 +6,7 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 # Order is the contract: cheapest first. test:integration needs a reachable Docker
-# daemon and takes the shared host lock; cover:check reads the profile it just wrote.
+# daemon; cover:check reads the profile it just wrote.
 # test:repeat is the most expensive step and runs last (merge-gate spec, pinned by
 # contract test TestUnitInvocationsPinned).
 steps=(spec:check docs:check fmt:check tidy:check cleanup-roots:check build vet lint vuln ledger:check test:unit

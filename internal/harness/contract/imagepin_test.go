@@ -8,7 +8,8 @@ import (
 	"testing"
 )
 
-// T-B3: the NATS image is spelled once, in .nats-image, by digest (owner ruling Q6). A second
+// T-B3: the NATS image is spelled once, in internal/harness/natsfixture/nats-image, by digest
+// (owner ruling Q6; harness-boundaries › "One image pin"). natsfixture embeds the file. A second
 // spelling is how SemStreams came to re-point a shared mutable tag from one repository's task.
 func TestOneImagePin(t *testing.T) {
 	root := repoRoot(t)
@@ -19,7 +20,7 @@ func TestOneImagePin(t *testing.T) {
 func TestOneImagePinSensitivity(t *testing.T) {
 	pin := img(":2.14.7-alpine@sha256:" + sixtyFourHex)
 	clean := map[string]string{
-		".nats-image":     "# comment naming " + img(":2.14.7-alpine") + " is fine here\n" + pin + "\n",
+		pinFile:           "# comment naming " + img(":2.14.7-alpine") + " is fine here\n" + pin + "\n",
 		"scripts/run.sh":  "url=nats://host:4222\nimage=\"$SEMENGINE_NATS_IMAGE\"\n",
 		"docs/design.md":  "Prose may cite " + img(":2.14-alpine") + " when explaining the pin.\n",
 		"docs/notes.txt":  "Not a Docker configuration file: " + img(":2.14-alpine") + "\n",
@@ -54,10 +55,12 @@ func TestOneImagePinSensitivity(t *testing.T) {
 			[]string{"Taskfile.yml:1", img(":$TAG")}},
 		{"Dockerfile", map[string]string{"docker/broker/Dockerfile": "FROM " + img(":2.14-alpine") + "\n"},
 			[]string{"docker/broker/Dockerfile:1", img(":2.14-alpine")}},
-		{"pin not digest-addressed", map[string]string{".nats-image": img(":2.14.7-alpine") + "\n"},
-			[]string{".nats-image", "digest"}},
-		{"pin file with two images", map[string]string{".nats-image": pin + "\n" + pin + "\n"},
-			[]string{".nats-image", "exactly one"}},
+		{"pin not digest-addressed", map[string]string{pinFile: img(":2.14.7-alpine") + "\n"},
+			[]string{pinFile, "digest"}},
+		{"pin file with two images", map[string]string{pinFile: pin + "\n" + pin + "\n"},
+			[]string{pinFile, "exactly one"}},
+		{"pin left at the old path", map[string]string{".nats-image": pin + "\n", pinFile: "# moved\n"},
+			[]string{pinFile, "holds 0"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			files := map[string]string{}
@@ -72,6 +75,9 @@ func TestOneImagePinSensitivity(t *testing.T) {
 		})
 	}
 }
+
+// pinFile is the one file that may spell the NATS image.
+const pinFile = "internal/harness/natsfixture/nats-image"
 
 // img builds an image reference at run time so this file never contains the literal it hunts for.
 func img(rest string) string { return "nats" + rest }
@@ -115,7 +121,7 @@ func imagePinViolations(t *testing.T, root string, files []string) []string {
 	var violations []string
 	pins := 0
 	for _, name := range files {
-		if name == ".nats-image" {
+		if name == pinFile {
 			for i, line := range readLines(t, root, name) {
 				line = strings.TrimSpace(line)
 				if line == "" || strings.HasPrefix(line, "#") {
@@ -123,7 +129,7 @@ func imagePinViolations(t *testing.T, root string, files []string) []string {
 				}
 				pins++
 				if !pinShape.MatchString(line) {
-					violations = append(violations, fmt.Sprintf(".nats-image:%d: %q is not nats:<tag>@sha256:<64 hex> (digest-addressed)", i+1, line))
+					violations = append(violations, fmt.Sprintf("%s:%d: %q is not nats:<tag>@sha256:<64 hex> (digest-addressed)", pinFile, i+1, line))
 				}
 			}
 			continue
@@ -137,13 +143,13 @@ func imagePinViolations(t *testing.T, root string, files []string) []string {
 		}
 		for i, line := range readLines(t, root, name) {
 			if m := pattern.FindStringSubmatch(line); m != nil {
-				violations = append(violations, fmt.Sprintf("%s:%d: NATS image literal %q outside .nats-image",
-					name, i+1, strings.TrimLeft(m[0], " \t\"'=/")))
+				violations = append(violations, fmt.Sprintf("%s:%d: NATS image literal %q outside %s",
+					name, i+1, strings.TrimLeft(m[0], " \t\"'=/"), pinFile))
 			}
 		}
 	}
 	if pins != 1 {
-		violations = append(violations, fmt.Sprintf(".nats-image: holds %d image line(s), want exactly one", pins))
+		violations = append(violations, fmt.Sprintf("%s: holds %d image line(s), want exactly one", pinFile, pins))
 	}
 	return violations
 }

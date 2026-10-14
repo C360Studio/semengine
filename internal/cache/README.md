@@ -149,7 +149,7 @@ type Cache[V any] interface {
     Get(key string) (V, bool)                // Retrieve value by key
     Set(key string, value V) (bool, error)   // Store; true when a new entry was created
     Delete(key string) (bool, error)         // Remove; true when the key existed
-    Clear() error                            // Remove all entries
+    Clear()                                  // Remove all entries
     Size() int                               // Current number of entries
     Keys() []string                          // All keys currently in cache
     Stats() *Statistics                      // Cache statistics; nil for the no-op cache
@@ -446,9 +446,9 @@ func handleRequest(keys []string) error {
 
 All cache operations are thread-safe. The implementation uses:
 
-- Fine-grained locking with `sync.RWMutex`
-- Atomic operations for statistics
-- Lock-free reads where possible
+- Per-cache `sync.Mutex` protecting map state, LRU ordering, and `Stats().UpdateSize`
+- Lock-free `atomic.Int64` fields in `Statistics` (including CAS `maxSize` tracking)
+- Background cleanup goroutine lifecycle joined by `Close()`
 
 ## Contributing
 

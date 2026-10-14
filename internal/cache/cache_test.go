@@ -113,7 +113,7 @@ func testClearOperation(t *testing.T, cache Cache[string]) {
 	_, _ = cache.Set("key1", "value1")
 	_, _ = cache.Set("key2", "value2")
 
-	_ = cache.Clear()
+	cache.Clear()
 
 	if cache.Size() != 0 {
 		t.Errorf("Expected size 0 after clear, got %d", cache.Size())
@@ -519,6 +519,91 @@ func TestStatistics(t *testing.T) {
 
 	if stats.CurrentSize() != 1 {
 		t.Errorf("Expected current size 1, got %d", stats.CurrentSize())
+	}
+}
+
+// TestConcurrentSetDeleteStatsCurrentSizeMatchesSize proves that after concurrent Set and Delete
+// bursts settle across all four strategies, stats.CurrentSize() always equals int64(cache.Size()),
+// and stats.MaxSize() is at least stats.CurrentSize(). Before #220, simpleCache and ttlCache
+// released c.mu before calling c.stats.UpdateSize(size), so an earlier mutation's UpdateSize could
+// overwrite a later mutation's UpdateSize out of order.
+func TestConcurrentSetDeleteStatsCurrentSizeMatchesSize(t *testing.T) {
+	const (
+		rounds  = 250
+		workers = 16
+	)
+	for _, cfg := range []Config{
+		{Enabled: true, Strategy: StrategySimple},
+		{Enabled: true, Strategy: StrategyLRU, MaxSize: rounds * workers},
+		{Enabled: true, Strategy: StrategyTTL, TTL: time.Hour, CleanupInterval: time.Minute},
+		{Enabled: true, Strategy: StrategyHybrid, MaxSize: rounds * workers, TTL: time.Hour, CleanupInterval: time.Minute},
+	} {
+		t.Run(string(cfg.Strategy), func(t *testing.T) {
+			c, err := NewFromConfig[int](context.Background(), cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer c.Close()
+
+			for r := range rounds {
+				start := make(chan struct{})
+				var wg sync.WaitGroup
+				wg.Add(workers * 2)
+				for w := range workers {
+					key := fmt.Sprintf("k-%d-%d", r, w)
+					go func() {
+						defer wg.Done()
+						<-start
+						_, _ = c.Set(key, w)
+					}()
+					go func() {
+						defer wg.Done()
+						<-start
+						_, _ = c.Delete(key)
+					}()
+				}
+				close(start)
+				wg.Wait()
+
+				want := int64(c.Size())
+				got := c.Stats().CurrentSize()
+				if got != want {
+					t.Fatalf("round %d: stats.CurrentSize() = %d after concurrent Set/Delete settled, want cache.Size() = %d", r, got, want)
+				}
+				if maxSeen := c.Stats().MaxSize(); maxSeen < want {
+					t.Fatalf("round %d: stats.MaxSize() = %d < stats.CurrentSize() = %d", r, maxSeen, want)
+				}
+			}
+		})
+	}
+}
+
+// TestStatisticsConcurrentUpdateSizeTracksMax proves that concurrent UpdateSize calls preserve the
+// highest observed size via the lock-free CAS loop in Statistics.UpdateSize.
+func TestStatisticsConcurrentUpdateSizeTracksMax(t *testing.T) {
+	stats := NewStatistics()
+	const (
+		workers = 32
+		steps   = 200
+		wantMax = int64(workers * steps)
+	)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for w := range workers {
+		go func(id int) {
+			defer wg.Done()
+			<-start
+			for s := 1; s <= steps; s++ {
+				stats.UpdateSize(int64(id*steps + s))
+			}
+		}(w)
+	}
+	close(start)
+	wg.Wait()
+
+	if got := stats.MaxSize(); got != wantMax {
+		t.Fatalf("stats.MaxSize() = %d, want %d", got, wantMax)
 	}
 }
 

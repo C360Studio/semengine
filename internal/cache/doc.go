@@ -4,13 +4,14 @@
 //
 // # Overview
 //
-// The cache package offers four cache implementations with different eviction strategies:
+// The cache package offers one stateful in-memory cache implementation (plus a no-op cache)
+// supporting four eviction strategies:
 //   - Simple: No eviction (manual cleanup only)
 //   - LRU: Least Recently Used eviction
 //   - TTL: Time-To-Live expiration
 //   - Hybrid: Combines LRU and TTL policies
 //
-// All implementations are generic, thread-safe, and provide comprehensive observability
+// All strategies are generic, thread-safe, and provide comprehensive observability
 // through always-on statistics and optional metrics.
 //
 // # Quick Start
@@ -188,11 +189,11 @@
 // # Thread Safety
 //
 // All cache operations are thread-safe for concurrent use:
-//   - Multiple goroutines can read concurrently (RWMutex for reads)
-//   - Writes are serialized with mutex protection
-//   - Statistics use atomic operations (lock-free)
+//   - Cache map, LRU list, and size transitions are synchronized under a per-cache mutex
+//   - Size updates to Statistics happen under the cache mutex so Stats().CurrentSize() matches Size()
+//   - Statistics fields use lock-free atomic.Int64 operations (counters, currentSize, CAS maxSize)
 //   - Metrics use Prometheus atomic types
-//   - TTL cleanup runs in background goroutine
+//   - TTL and hybrid cleanup runs in a background goroutine joined by Close()
 //
 // # Performance Characteristics
 //

@@ -9,13 +9,13 @@ Each task names the outcome and the gate that proves it.
 
 ## 2. Implementation and tests
 
-- [ ] 2.1 Replace `Statistics.mu` (`sync.RWMutex`) in `internal/cache/stats.go` with lock-free `atomic.Int64` fields
+- [x] 2.1 Replace `Statistics.mu` (`sync.RWMutex`) in `internal/cache/stats.go` with lock-free `atomic.Int64` fields
   (`currentSize`, `maxSize` via CAS loop, `startNano`), collapse `simpleCache`, `lruCache`, `ttlCache`, and
   `hybridCache` into `memCache[V]` in `internal/cache/cache.go` (deleting `simple.go`, `lru.go`, `ttl.go`, and
   `hybrid.go`), update `UpdateSize` under `c.mu.Lock()`, drop the `error` return from `Clear()`, and update
   `internal/cache/*_test.go` with a concurrent `Statistics` / `CurrentSize` regression test. Gate: `task test:unit` and
   `task test:repeat`.
-- [ ] 2.2 Update `internal/cache/doc.go`, `internal/cache/README.md`, `docs/testing.md`, and the `pkg/cache` row in
+- [x] 2.2 Update `internal/cache/doc.go`, `internal/cache/README.md`, `docs/testing.md`, and the `pkg/cache` row in
   `docs/admission-ledger.yaml`. Gate: `task docs:check`, `task ledger:check`, and `task verify`.
 
 ## 3. Review and close

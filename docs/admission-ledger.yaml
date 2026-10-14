@@ -3177,7 +3177,7 @@
     Health's error count (owner ruling, #91 comment 6124130342; c59e5fb); Q13 (SemStreams PR #1437 head
     0ea823a6, its own row), a payload that fails validation or panics in its own code on the Graphable lane is
     terminated, counted and logged, never a redelivery loop (f6e8506); #33 (class:port-refactor), the
-    hierarchy refusal names inference.RegisterPayloads (component.go:639; e70e177); SS#1411, the
+    hierarchy refusal names inference.RegisterPayloads (component.go:680; e70e177); SS#1411, the
     owner-lifecycle state is the new internal/lifecycleguard (design D13), which calls
     pkg/lifecyclecleanup.RollbackFailedStart on a failed Start; the 11 later admitted copies adopt it when
     ported (design D8). Port-refactor items: one write seam for the seven write sites (#100; design D15),

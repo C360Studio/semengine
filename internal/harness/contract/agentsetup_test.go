@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/BurntSushi/toml"
 	"gopkg.in/yaml.v3"
 )
 
@@ -102,6 +103,12 @@ func TestAgentSetupParitySensitivity(t *testing.T) {
 		{"write codex adapter sets sandbox_mode", edit(".codex/agents/semengine-developer.toml", func(s string) string {
 			return s + "sandbox_mode = \"read-only\"\n"
 		}), []string{".codex/agents/semengine-developer.toml", "sandbox_mode"}},
+		{"write codex adapter sets literal-string sandbox_mode", edit(".codex/agents/semengine-developer.toml", func(s string) string {
+			return s + "sandbox_mode = 'read-only'\n"
+		}), []string{".codex/agents/semengine-developer.toml", "sandbox_mode"}},
+		{"write codex adapter sets sandbox_mode with inline comment", edit(".codex/agents/semengine-developer.toml", func(s string) string {
+			return s + "sandbox_mode = \"read-only\" # override\n"
+		}), []string{".codex/agents/semengine-developer.toml", "sandbox_mode"}},
 		{"CLAUDE.md drops @AGENTS.md import", edit("CLAUDE.md", func(string) string {
 			return "# SemEngine\n\nCustom rules here.\n"
 		}), []string{"CLAUDE.md", "@AGENTS.md"}},
@@ -123,6 +130,9 @@ func TestAgentSetupParitySensitivity(t *testing.T) {
 		{"skill adapter points to wrong canonical skill", edit(".claude/skills/preflight/SKILL.md", func(s string) string {
 			return strings.Replace(s, "semengine-preflight/SKILL.md", "semengine-handoff/SKILL.md", 1)
 		}), []string{".claude/skills/preflight/SKILL.md", "../../../.agents/skills/semengine-preflight/SKILL.md"}},
+		{"new canonical skill missing claude adapter", edit(".agents/skills/new-review-skill/SKILL.md", func(string) string {
+			return "# New Skill\n"
+		}), []string{".claude/skills/new-review-skill/SKILL.md", "missing Claude skill adapter"}},
 		{"claude model mismatch", edit(".claude/agents/semengine-technical-writer.md", func(s string) string {
 			return strings.Replace(s, "model: sonnet", "model: opus", 1)
 		}), []string{".claude/agents/semengine-technical-writer.md", "model", "sonnet"}},
@@ -153,7 +163,7 @@ func copyAgentSetupFixture(t *testing.T, root string) map[string]string {
 			".codex/agents/"+r.name+".toml",
 		)
 	}
-	for _, s := range sharedSkills {
+	for _, s := range discoverSkills(root) {
 		rels = append(rels,
 			".agents/skills/"+s.canonical+"/SKILL.md",
 			".claude/skills/"+s.claude+"/SKILL.md",
@@ -257,8 +267,6 @@ func checkClaudeRoleAdapter(root string, role agentRoleSpec) []string {
 	return out
 }
 
-var tomlKVPattern = regexp.MustCompile(`(?m)^([a-z_]+)\s*=\s*"([^"\n]*)"\s*$`)
-
 func checkCodexRoleAdapter(root string, role agentRoleSpec) []string {
 	rel := ".codex/agents/" + role.name + ".toml"
 	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
@@ -269,31 +277,30 @@ func checkCodexRoleAdapter(root string, role agentRoleSpec) []string {
 	var out []string
 	out = append(out, checkAdapterCommon(rel, role.name, text)...)
 
-	before, rest, ok := strings.Cut(text, `developer_instructions = """`)
-	header := before
-	if ok {
-		if _, after, ok2 := strings.Cut(rest, `"""`); ok2 {
-			header = before + "\n" + after
-		}
+	var cfg struct {
+		Name                 string `toml:"name"`
+		Model                string `toml:"model"`
+		ModelReasoningEffort string `toml:"model_reasoning_effort"`
+		SandboxMode          string `toml:"sandbox_mode"`
 	}
-	kv := map[string]string{}
-	for _, m := range tomlKVPattern.FindAllStringSubmatch(header, -1) {
-		kv[m[1]] = m[2]
+	md, err := toml.Decode(text, &cfg)
+	if err != nil {
+		return append(out, fmt.Sprintf("%s: invalid TOML: %v", rel, err))
 	}
-	if kv["name"] != role.name {
-		out = append(out, fmt.Sprintf("%s: name = %q, want %q", rel, kv["name"], role.name))
+	if cfg.Name != role.name {
+		out = append(out, fmt.Sprintf("%s: name = %q, want %q", rel, cfg.Name, role.name))
 	}
-	if kv["model"] != role.codexModel {
-		out = append(out, fmt.Sprintf("%s: model = %q, want %q", rel, kv["model"], role.codexModel))
+	if cfg.Model != role.codexModel {
+		out = append(out, fmt.Sprintf("%s: model = %q, want %q", rel, cfg.Model, role.codexModel))
 	}
-	if kv["model_reasoning_effort"] != role.codexEffort {
-		out = append(out, fmt.Sprintf("%s: model_reasoning_effort = %q, want %q", rel, kv["model_reasoning_effort"], role.codexEffort))
+	if cfg.ModelReasoningEffort != role.codexEffort {
+		out = append(out, fmt.Sprintf("%s: model_reasoning_effort = %q, want %q", rel, cfg.ModelReasoningEffort, role.codexEffort))
 	}
-	if role.readOnly && kv["sandbox_mode"] != "read-only" {
-		out = append(out, fmt.Sprintf("%s: read-only role must set sandbox_mode = \"read-only\" (got %q)", rel, kv["sandbox_mode"]))
+	if role.readOnly && cfg.SandboxMode != "read-only" {
+		out = append(out, fmt.Sprintf("%s: read-only role must set sandbox_mode = \"read-only\" (got %q)", rel, cfg.SandboxMode))
 	}
-	if !role.readOnly && kv["sandbox_mode"] != "" {
-		out = append(out, fmt.Sprintf("%s: write role must not set sandbox_mode (got %q)", rel, kv["sandbox_mode"]))
+	if !role.readOnly && md.IsDefined("sandbox_mode") {
+		out = append(out, fmt.Sprintf("%s: write role must not set sandbox_mode (got %q)", rel, cfg.SandboxMode))
 	}
 	return out
 }
@@ -393,9 +400,33 @@ func parseRuleSectionCounts(text, prefix string) []ruleSectionCount {
 	return sections
 }
 
+func discoverSkills(root string) []struct{ canonical, claude string } {
+	skills := make([]struct{ canonical, claude string }, 0, len(sharedSkills))
+	seen := make(map[string]bool, len(sharedSkills))
+	for _, s := range sharedSkills {
+		skills = append(skills, s)
+		seen[s.canonical] = true
+	}
+	entries, err := os.ReadDir(filepath.Join(root, ".agents", "skills"))
+	if err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() || seen[entry.Name()] {
+				continue
+			}
+			claudeName := entry.Name()
+			if claudeName == "semengine-preflight" {
+				claudeName = "preflight"
+			}
+			skills = append(skills, struct{ canonical, claude string }{entry.Name(), claudeName})
+			seen[entry.Name()] = true
+		}
+	}
+	return skills
+}
+
 func checkSkillAdapters(root string) []string {
 	var out []string
-	for _, s := range sharedSkills {
+	for _, s := range discoverSkills(root) {
 		canonRel := ".agents/skills/" + s.canonical + "/SKILL.md"
 		if info, err := os.Stat(filepath.Join(root, filepath.FromSlash(canonRel))); err != nil || info.IsDir() || info.Size() == 0 {
 			out = append(out, fmt.Sprintf("%s: missing canonical skill", canonRel))

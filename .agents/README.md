@@ -146,7 +146,8 @@ adapter, or repository routing rule.
    have no sandbox override and inherit the parent workspace permissions.
 5. Confirm `CLAUDE.md` only imports `AGENTS.md` and carries no rules of its own, that `AGENTS.md` stays strictly under
    24,000 bytes (`wc -c AGENTS.md`) so rule loaders with a 24 KB per-file cap do not truncate it, and that every rule
-   row in `AGENTS.md` has its corresponding audit row in `.agents/rules-index.md`.
+   row in `AGENTS.md` has its corresponding audit row in `.agents/rules-index.md` (`TestAgentSetupParity` checks
+   numbered domain headings and per-domain row counts; semantic correspondence of individual rows is review only).
 6. Confirm role adapters stay within 20 lines and contain no copied checklist (`- [ ]` or `- [x]`).
 7. For every skill in the shared-skills list, confirm the canonical file and Claude adapter exist, the adapter points
    to that canonical file and says to read it fully, and it contains no copied checklist.

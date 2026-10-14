@@ -15,13 +15,13 @@ import (
 	"time"
 
 	"github.com/c360studio/semengine/internal/harness/lifecycletest"
-	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/testcontainers/testcontainers-go"
 )
 
-// These are the owner tests S1-1..S1-8 of design "Lifecycle ownership proof". They need Docker:
+// These include the owner tests S1-1, S1-2 and S1-6..S1-8 of design "Lifecycle ownership proof"
+// (S1-3 and S1-5 went with Consume, test-infra-audit task 3.2). They need Docker:
 // `go test -tags integration ./internal/harness/natsfixture/`.
 
 // stopBound is the fresh finite authority these tests give a controlled Stop.
@@ -96,15 +96,6 @@ func conn(f *Fixture) *nats.Conn {
 	return f.nc
 }
 
-func closed(ch <-chan struct{}) bool {
-	select {
-	case <-ch:
-		return true
-	default:
-		return false
-	}
-}
-
 // TestFixtureRoundTrip is the adopter's path: start, use JetStream and KV, stop, and find
 // everything gone.
 func TestFixtureRoundTrip(t *testing.T) {
@@ -120,7 +111,7 @@ func TestFixtureRoundTrip(t *testing.T) {
 	if _, err := f.JetStream().Publish(ctx, stream+".1", []byte("one")); err != nil {
 		t.Fatal(err)
 	}
-	kv, err := f.CreateKeyValue(ctx, "kv")
+	kv, err := f.JetStream().CreateKeyValue(ctx, jetstream.KeyValueConfig{Bucket: "kv"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -380,127 +371,6 @@ func TestS1_2CancellationDuringIO(t *testing.T) {
 	}
 }
 
-// consumeBlocked starts a fixture with one stream and one consumer whose handler blocks in cb.
-func consumeBlocked(t *testing.T) (*Fixture, *probe.Callback, jetstream.Consumer, string) {
-	t.Helper()
-	f := startFixture(t)
-	cb := probe.NewCallback()
-	t.Cleanup(cb.Release) // runs before the fixture's own cleanup Stop
-	stream := "work"
-	if _, err := f.CreateStream(t.Context(), stream, stream+".>"); err != nil {
-		t.Fatal(err)
-	}
-	jc, err := f.Consume(t.Context(), stream, "worker", func(ctx context.Context, msg jetstream.Msg) {
-		cb.Block(ctx)
-		_ = msg.Ack()
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.JetStream().Publish(t.Context(), stream+".1", []byte("job")); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case <-cb.Entered():
-	case <-t.Context().Done():
-		t.Fatal("callback never entered")
-	}
-	return f, cb, jc, stream
-}
-
-// awaitDeliveryStopped waits until Stop has stopped the consumer's delivery, the step just before
-// it waits to join the handler.
-func awaitDeliveryStopped(t *testing.T, f *Fixture) {
-	t.Helper()
-	_, err := probe.Await(t.Context(), func(context.Context) (bool, error) {
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		if len(f.consumers) == 0 {
-			return false, errors.New("no consumer owned")
-		}
-		c := f.consumers[0]
-		c.mu.Lock()
-		defer c.mu.Unlock()
-		return c.stopping, nil
-	}, func(stopping bool) bool { return stopping })
-	if err != nil {
-		t.Fatal(err)
-	}
-}
-
-// S1-3: Stop under live Start authority waits for a blocked callback. While it waits the
-// callback's context is live, the consumer exists, and the connection is up; the join completes
-// before Stop returns, and only then are the connection closed and the container removed.
-func TestS1_3BlockedCallbackDelaysFinalisation(t *testing.T) {
-	f, cb, jc, _ := consumeBlocked(t)
-	id, nc := f.containerID, conn(f)
-	stopCtx, cancel := context.WithTimeout(t.Context(), stopBound)
-	defer cancel()
-	result := make(chan error, 1)
-	go func() { result <- f.Stop(stopCtx) }()
-	awaitDeliveryStopped(t, f)
-
-	if _, err := jc.Info(t.Context()); err != nil {
-		t.Fatalf("consumer gone while its callback is blocked: %v", err)
-	}
-	if nc.Status() != nats.CONNECTED {
-		t.Fatalf("connection %v while the callback is blocked", nc.Status())
-	}
-	if !containerExists(t, id) {
-		t.Fatal("container gone while the callback is blocked")
-	}
-	select {
-	case err := <-result:
-		t.Fatalf("Stop returned %v before the callback was released", err)
-	default:
-	}
-
-	cb.Release()
-	err := <-result
-	joined := closed(cb.Joined())
-	if err != nil {
-		t.Fatalf("Stop: %v", err)
-	}
-	if !joined {
-		t.Fatal("Stop returned before the callback had joined")
-	}
-	if cbErr := cb.ContextErrAtRelease(); cbErr != nil {
-		t.Fatalf("callback context ended before its release: %v", cbErr)
-	}
-	if !nc.IsClosed() || containerExists(t, id) || len(f.remaining()) != 0 {
-		t.Fatalf("after Stop: conn closed %t, container exists, remaining %v", nc.IsClosed(), f.remaining())
-	}
-}
-
-// S1-5: a Stop whose deadline expires while a callback is blocked returns DeadlineExceeded,
-// retains every handle, and leaves the container; after release a later Stop completes.
-func TestS1_5DeadlineIsNotAJoin(t *testing.T) {
-	f, cb, _, stream := consumeBlocked(t)
-	id := f.containerID
-	short, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
-	defer cancel()
-	err := f.Stop(short)
-	if !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("Stop = %v, want context.DeadlineExceeded", err)
-	}
-	rem := f.remaining()
-	for _, want := range []string{"consumer " + stream + "/", "connection", "container "} {
-		if !slices.ContainsFunc(rem, func(s string) bool { return strings.HasPrefix(s, want) }) {
-			t.Errorf("remaining %v lacks %q", rem, want)
-		}
-	}
-	if !containerExists(t, id) {
-		t.Fatal("container removed although Stop did not complete")
-	}
-	cb.Release()
-	if err := stop(t, f); err != nil {
-		t.Fatalf("second Stop: %v", err)
-	}
-	if len(f.remaining()) != 0 || containerExists(t, id) {
-		t.Fatalf("after second Stop: remaining %v", f.remaining())
-	}
-}
-
 // S1-6: a Stop after a successful Stop is a no-op: nil, and no dependency call.
 func TestS1_6RepeatedStop(t *testing.T) {
 	f := startFixture(t)
@@ -604,93 +474,6 @@ func TestS1_8Isolation(t *testing.T) {
 		t.Fatalf("the other fixture stopped answering: %v", err)
 	}
 	t.Logf("isolated: %s at %s and %s at %s", shortID(aID), aURL, shortID(bID), b.URL())
-}
-
-// stopRunning starts Stop in the background and returns its result channel once Stop has stopped
-// the consumer's delivery, or fails if Stop returns first: a Stop that never reaches the join
-// cannot be observed waiting on it.
-func stopRunning(t *testing.T, f *Fixture) <-chan error {
-	t.Helper()
-	stopCtx, cancel := context.WithTimeout(t.Context(), stopBound)
-	t.Cleanup(cancel)
-	result := make(chan error, 1)
-	go func() { result <- f.Stop(stopCtx) }()
-	stopping := make(chan struct{})
-	go func() {
-		_, _ = probe.Await(stopCtx, func(context.Context) (bool, error) {
-			f.mu.Lock()
-			defer f.mu.Unlock()
-			if len(f.consumers) == 0 {
-				return false, nil
-			}
-			c := f.consumers[0]
-			c.mu.Lock()
-			defer c.mu.Unlock()
-			return c.stopping, nil
-		}, func(stopping bool) bool { return stopping })
-		close(stopping)
-	}()
-	select {
-	case err := <-result:
-		t.Fatalf("Stop returned %v without stopping the consumer's delivery while its handler was blocked", err)
-	case <-stopping:
-	}
-	return result
-}
-
-// H1: with the connection already closed (the broker went away; the fixture connects with
-// MaxReconnects(0)), Stop still stops delivery, joins the running handler, and only then cancels
-// its context.
-func TestStopJoinsHandlersOnAClosedConnection(t *testing.T) {
-	f := startFixture(t)
-	cb := probe.NewCallback()
-	t.Cleanup(cb.Release)
-	stream := "work"
-	if _, err := f.CreateStream(t.Context(), stream, stream+".>"); err != nil {
-		t.Fatal(err)
-	}
-	handlerCtx := make(chan context.Context, 1)
-	if _, err := f.Consume(t.Context(), stream, "worker", func(ctx context.Context, msg jetstream.Msg) {
-		handlerCtx <- ctx
-		cb.Block(ctx)
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.JetStream().Publish(t.Context(), stream+".1", []byte("job")); err != nil {
-		t.Fatal(err)
-	}
-	<-cb.Entered()
-	hctx := <-handlerCtx
-	id := f.containerID
-	conn(f).Close()
-
-	result := stopRunning(t, f)
-	select {
-	case err := <-result:
-		t.Fatalf("Stop returned %v while the handler was still running", err)
-	default:
-	}
-	if err := hctx.Err(); err != nil {
-		t.Fatalf("handler context ended before its handler returned: %v", err)
-	}
-	cb.Release()
-	err := <-result
-	joined := closed(cb.Joined())
-	if err != nil {
-		t.Fatalf("Stop: %v", err)
-	}
-	if !joined {
-		t.Fatal("Stop returned before the handler had joined")
-	}
-	if cbErr := cb.ContextErrAtRelease(); cbErr != nil {
-		t.Fatalf("handler context ended before its release: %v", cbErr)
-	}
-	if hctx.Err() == nil {
-		t.Fatal("Stop returned nil with the joined handler's context still live")
-	}
-	if rem := f.remaining(); len(rem) != 0 || containerExists(t, id) {
-		t.Fatalf("after Stop: remaining %v", rem)
-	}
 }
 
 // restart restarts the fixture under a bounded context and fails the test on error.
@@ -800,85 +583,6 @@ func TestRestartURLDials(t *testing.T) {
 	}
 }
 
-// A consumer whose handler is running is ended before Restart returns: Restart waits for the
-// handler, no handler of that consumer runs afterwards, and only a new Consume delivers again.
-// Stop still succeeds and removes the consumer.
-func TestRestartEndsConsumers(t *testing.T) {
-	f := startFixture(t)
-	cb := probe.NewCallback()
-	t.Cleanup(cb.Release)
-	stream := "work"
-	if _, err := f.CreateStream(t.Context(), stream, stream+".>"); err != nil {
-		t.Fatal(err)
-	}
-	var calls atomic.Int32
-	if _, err := f.Consume(t.Context(), stream, "worker", func(ctx context.Context, msg jetstream.Msg) {
-		calls.Add(1)
-		cb.Block(ctx)
-		_ = msg.Ack()
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := f.JetStream().Publish(t.Context(), stream+".1", []byte("job")); err != nil {
-		t.Fatal(err)
-	}
-	<-cb.Entered()
-
-	ctx, cancel := context.WithTimeout(t.Context(), stopBound)
-	defer cancel()
-	result := make(chan error, 1)
-	go func() { result <- f.Restart(ctx) }()
-	awaitDeliveryStopped(t, f)
-	select {
-	case err := <-result:
-		t.Fatalf("Restart returned %v while the handler was running", err)
-	default:
-	}
-	cb.Release()
-	err := <-result
-	joined := closed(cb.Joined())
-	if err != nil {
-		t.Fatalf("Restart: %v", err)
-	}
-	if !joined {
-		t.Fatal("Restart returned before the handler had joined")
-	}
-
-	// A fresh consumer receiving a message published after the restart is the positive control:
-	// once it has, the ended consumer has had every chance to run its handler too.
-	fresh := make(chan struct{}, 1)
-	if _, err := f.Consume(t.Context(), stream, "fresh", func(_ context.Context, msg jetstream.Msg) {
-		if string(msg.Data()) == "after" {
-			select {
-			case fresh <- struct{}{}:
-			default:
-			}
-		}
-		_ = msg.Ack()
-	}); err != nil {
-		t.Fatalf("Consume after restart: %v", err)
-	}
-	if _, err := f.JetStream().Publish(t.Context(), stream+".2", []byte("after")); err != nil {
-		t.Fatal(err)
-	}
-	select {
-	case <-fresh:
-	case <-t.Context().Done():
-		t.Fatal("the new consumer never received the message published after the restart")
-	}
-	if n := calls.Load(); n != 1 {
-		t.Fatalf("the ended consumer's handler ran %d times, want 1 (before the restart only)", n)
-	}
-	id := f.containerID
-	if err := stop(t, f); err != nil {
-		t.Fatalf("Stop after Restart: %v", err)
-	}
-	if rem := f.remaining(); len(rem) != 0 || containerExists(t, id) {
-		t.Fatalf("after Stop: remaining %v", rem)
-	}
-}
-
-// Restart fault matrix (task 2.2): each container hook fails in turn, before and after its real
 // call. Restart returns an *Error naming exactly that phase, runs no later phase, creates no second
 // container, and Stop still removes the one container.
 func TestRestartFaultMatrix(t *testing.T) {
@@ -938,12 +642,55 @@ func TestRestartFaultMatrix(t *testing.T) {
 	}
 }
 
+// nats-fixture › "Restart before Start", its second half: once Stop has begun, Restart refuses
+// with no dependency call. A Stop whose container removal fails has begun and keeps the container
+// for a later Stop; Restart must not stop and start that container again. Docker's start time for
+// the container is the oracle that it was not restarted.
+func TestRestartRefusedOnceStopHasBegun(t *testing.T) {
+	f := startFixture(t)
+	id := f.containerID
+	startedAt := func() string {
+		t.Helper()
+		out, err := exec.Command("docker", "inspect", "--format", "{{.State.StartedAt}}", id).Output()
+		if err != nil {
+			t.Fatalf("docker inspect %s: %v", shortID(id), err)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	first := startedAt()
+	terminate := f.deps.terminate
+	refused := errors.New("removal refused by the test")
+	f.deps.terminate = func(context.Context, testcontainers.Container) error { return refused }
+	if err := stop(t, f); !errors.Is(err, refused) {
+		t.Fatalf("Stop with a refused removal = %v, want the refusal", err)
+	}
+	before := f.callCounts()
+	ctx, cancel := context.WithTimeout(t.Context(), stopBound)
+	defer cancel()
+	if err := f.Restart(ctx); err == nil {
+		t.Fatal("Restart after Stop began returned nil")
+	}
+	if calls := f.callCounts(); !maps(calls, before) {
+		t.Fatalf("refused Restart made calls: %v -> %v", before, calls)
+	}
+	if got := startedAt(); got != first {
+		t.Fatalf("container %s restarted after Stop began: started at %s, then %s", shortID(id), first, got)
+	}
+	f.deps.terminate = terminate
+	if err := stop(t, f); err != nil {
+		t.Fatalf("second Stop: %v", err)
+	}
+	if containerExists(t, id) {
+		t.Fatalf("container %s exists after the second Stop", shortID(id))
+	}
+}
+
 // FaultKV over a real bucket (nats-fixture › "Fault-injecting key-value double"): a fail-after
 // Update stands on the broker at the next revision; a fail-before Create leaves no key.
 func TestFaultKVOverARealBucket(t *testing.T) {
 	f := startFixture(t)
 	ctx := t.Context()
-	bucket, err := f.CreateKeyValue(ctx, "faults")
+	bucket, err := f.JetStream().CreateKeyValue(ctx, jetstream.KeyValueConfig{Bucket: "faults"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -976,33 +723,6 @@ func TestFaultKVOverARealBucket(t *testing.T) {
 	}
 }
 
-// M1: once Stop has begun, the fixture refuses to create anything; a resource created behind
-// Stop's back would be owned by nobody when Stop returned nil.
-func TestNoCreationOnceStopBegins(t *testing.T) {
-	f, cb, _, _ := consumeBlocked(t)
-	result := stopRunning(t, f)
-	late := "late"
-	// Refused at once, not queued behind Stop: Stop is parked on a handler only the test releases.
-	_, err := f.CreateStream(t.Context(), late, late+".>")
-	cb.Release()
-	if stopErr := <-result; stopErr != nil {
-		t.Fatalf("Stop: %v", stopErr)
-	}
-	if err == nil {
-		t.Fatal("CreateStream succeeded after Stop began")
-	}
-	if rem := f.remaining(); len(rem) != 0 {
-		t.Fatalf("Stop returned nil while still owning %v", rem)
-	}
-	if _, err := f.CreateKeyValue(t.Context(), "after"); err == nil {
-		t.Fatal("CreateKeyValue succeeded after Stop")
-	}
-	if rem := f.remaining(); len(rem) != 0 {
-		t.Fatalf("a refused creation is owned: %v", rem)
-	}
-}
-
-// nats-fixture › "Broker max payload is settable". The oracle is the broker: the limit it announces
 // to a client dialled from URL, and what it delivers. nats.go refuses a publish above the announced
 // limit before writing it, so the larger publish is refused on the broker's own figure.
 func TestMaxPayloadIsSettable(t *testing.T) {

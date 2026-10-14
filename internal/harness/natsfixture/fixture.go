@@ -41,7 +41,7 @@ const (
 	// cleanupBudget is the fresh finite authority New's t.Cleanup gives Stop. The test's own
 	// context is already cancelled when cleanups run.
 	cleanupBudget = 60 * time.Second
-	// Stream and bucket bounds: every resource the fixture creates declares them, so a runaway
+	// Stream bounds: every stream the fixture creates declares them, so a runaway
 	// test fails on a ceiling instead of filling the broker (SemStreams test_client.go:911-927).
 	resourceMaxAge   = time.Hour
 	resourceMaxBytes = 64 << 20
@@ -79,32 +79,24 @@ func pinnedImage(file string) (string, error) {
 	return images[0], nil
 }
 
-// Fixture is one test's NATS server and the resources it creates on it. It holds no
-// context.Context: callback contexts live in the goroutines nats.go runs, and the fixture keeps
-// only their cancel functions.
+// Fixture is one test's NATS server. Its methods are called from the test's own goroutine. It
+// holds no context.Context.
 type Fixture struct {
 	errorf func(format string, args ...any)
 	logf   func(format string, args ...any) // the test log, for a failed attempt's container log
 	deps   deps
 
-	// op is a one-slot semaphore serialising Start, Stop, and resource creation. It is a channel,
-	// not a mutex, so a caller waiting for it still answers to its own context.
-	op chan struct{}
 	mu sync.Mutex // guards everything below; never held across a Docker or NATS call
 
 	used          bool
-	stopping      bool          // set when Stop begins on a started fixture; creation is refused from then on
-	stopBegun     chan struct{} // closed with stopping set, so a creation queued for the slot is refused too
 	container     testcontainers.Container
 	containerID   string
 	url           string
 	nc            *nats.Conn
 	js            jetstream.JetStream
-	consumers     []*consumer
 	calls         map[string]int
-	slotWaits     map[string]int // operations that found the slot taken, by kind; read by tests
-	maxPayload    int64          // broker max_payload in bytes, from WithMaxPayload
-	maxPayloadSet bool           // unset leaves the broker default
+	maxPayload    int64 // broker max_payload in bytes, from WithMaxPayload
+	maxPayloadSet bool  // unset leaves the broker default
 }
 
 // Option configures a fixture's broker; New applies it before any Docker call.
@@ -149,10 +141,6 @@ func (f *Fixture) Start(ctx context.Context) error {
 	if f.maxPayloadSet && f.maxPayload < 1 {
 		return fmt.Errorf("natsfixture: max payload %d bytes: the broker needs at least 1", f.maxPayload)
 	}
-	if err := f.acquire(ctx, "start"); err != nil {
-		return err
-	}
-	defer f.release()
 	f.mu.Lock()
 	used := f.used
 	f.mu.Unlock()
@@ -179,61 +167,6 @@ func (f *Fixture) Start(ctx context.Context) error {
 	}
 	return errors.Join(failures...)
 }
-
-// acquire takes the operation slot for an operation of kind who, or returns ctx's error if ctx
-// ends first. A creation or a restart also gives up when Stop begins: it may be queued behind Stop,
-// and Stop may be waiting to join the very handler that called it.
-func (f *Fixture) acquire(ctx context.Context, who string) error {
-	f.mu.Lock()
-	if f.op == nil {
-		f.op = make(chan struct{}, 1)
-	}
-	if f.stopBegun == nil {
-		f.stopBegun = make(chan struct{})
-	}
-	op := f.op
-	var stopBegun <-chan struct{} // nil, never ready, except for creations and restarts
-	if who == "create" || who == "restart" {
-		stopBegun = f.stopBegun
-	}
-	f.mu.Unlock()
-	select {
-	case op <- struct{}{}:
-		return nil
-	default:
-	}
-	f.mu.Lock()
-	if f.slotWaits == nil {
-		f.slotWaits = map[string]int{}
-	}
-	f.slotWaits[who]++
-	f.mu.Unlock()
-	select {
-	case op <- struct{}{}:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-stopBegun:
-		return errStopping
-	}
-}
-
-// beginStop marks the fixture stopping and wakes every creation queued for the slot. The caller
-// holds the slot.
-func (f *Fixture) beginStop() {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.stopping {
-		return
-	}
-	f.stopping = true
-	if f.stopBegun == nil {
-		f.stopBegun = make(chan struct{})
-	}
-	close(f.stopBegun)
-}
-
-func (f *Fixture) release() { <-f.op }
 
 // attempt runs the Start phases once. On failure it rolls back what it created and returns *Error.
 func (f *Fixture) attempt(ctx context.Context, n int) error {
@@ -472,34 +405,10 @@ func (f *Fixture) JetStream() jetstream.JetStream {
 func (f *Fixture) started() (jetstream.JetStream, string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.stopping {
-		return nil, "", errStopping
-	}
 	if f.js == nil {
-		return nil, "", errors.New("natsfixture: fixture not started")
+		return nil, "", errors.New("natsfixture: fixture not started, or stopped")
 	}
 	return f.js, f.containerID, nil
-}
-
-var errStopping = errors.New("natsfixture: Stop has begun; the fixture creates nothing more")
-
-// beginCreate admits one resource creation: refused at once once Stop has begun, otherwise it
-// holds the operation slot so Stop cannot snapshot the consumers while a creation is in flight. A
-// handler that creates while Stop waits to join it is refused, not deadlocked. The caller releases
-// the slot.
-func (f *Fixture) beginCreate(ctx context.Context) (jetstream.JetStream, string, error) {
-	if _, _, err := f.started(); err != nil {
-		return nil, "", err
-	}
-	if err := f.acquire(ctx, "create"); err != nil {
-		return nil, "", err
-	}
-	js, id, err := f.started() // Stop may have begun and ended while this waited
-	if err != nil {
-		f.release()
-		return nil, "", err
-	}
-	return js, id, nil
 }
 
 // CreateStream creates a file-backed stream with the fixture's MaxAge, MaxBytes, and DiscardOld
@@ -521,11 +430,10 @@ func (f *Fixture) CreateMemoryStream(ctx context.Context, name string, subjects 
 }
 
 func (f *Fixture) createStream(ctx context.Context, storage jetstream.StorageType, name string, subjects []string) (jetstream.Stream, error) {
-	js, id, err := f.beginCreate(ctx)
+	js, id, err := f.started()
 	if err != nil {
 		return nil, err
 	}
-	defer f.release()
 	s, err := f.deps.createStream(ctx, js, jetstream.StreamConfig{
 		Name: name, Subjects: subjects, Storage: storage,
 		MaxAge: resourceMaxAge, MaxBytes: resourceMaxBytes, Discard: jetstream.DiscardOld,
@@ -535,115 +443,6 @@ func (f *Fixture) createStream(ctx context.Context, storage jetstream.StorageTyp
 		return nil, &Error{Attempt: 1, Phase: PhaseCreateStream, ContainerID: id, ParentErr: ctx.Err(), Cause: err}
 	}
 	return s, nil
-}
-
-// CreateKeyValue creates a bucket bounded like a stream (TTL as MaxAge).
-func (f *Fixture) CreateKeyValue(ctx context.Context, bucket string) (jetstream.KeyValue, error) {
-	if ctx == nil {
-		return nil, errors.New("natsfixture: CreateKeyValue with a nil context")
-	}
-	js, id, err := f.beginCreate(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer f.release()
-	kv, err := f.deps.createKV(ctx, js, jetstream.KeyValueConfig{Bucket: bucket, TTL: resourceMaxAge, MaxBytes: resourceMaxBytes})
-	f.count("createKV")
-	if err != nil {
-		return nil, &Error{Attempt: 1, Phase: PhaseCreateKV, ContainerID: id, ParentErr: ctx.Err(), Cause: err}
-	}
-	return kv, nil
-}
-
-// Consume creates a durable consumer named name on stream and delivers each message to
-// handler with a context derived from ctx. Stop stops delivery, waits for every running handler to
-// return, and only then cancels that context and deletes the consumer: a callback's context stays
-// live until its handler has been joined.
-func (f *Fixture) Consume(ctx context.Context, stream, name string, handler func(context.Context, jetstream.Msg)) (jetstream.Consumer, error) {
-	if ctx == nil || handler == nil {
-		return nil, errors.New("natsfixture: Consume needs a context and a handler")
-	}
-	js, id, err := f.beginCreate(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer f.release()
-	c := &consumer{stream: stream, name: name, idle: make(chan struct{})}
-	f.mu.Lock()
-	f.consumers = append(f.consumers, c)
-	f.mu.Unlock()
-	fail := func(err error) error {
-		return &Error{Attempt: 1, Phase: PhaseConsume, ContainerID: id, ParentErr: ctx.Err(), Cause: err}
-	}
-	s, err := js.Stream(ctx, stream)
-	if err != nil {
-		return nil, fail(err)
-	}
-	jc, err := s.CreateConsumer(ctx, jetstream.ConsumerConfig{Durable: c.name, AckPolicy: jetstream.AckExplicitPolicy})
-	if err != nil {
-		return nil, fail(err)
-	}
-	cbCtx, cancel := context.WithCancel(ctx)
-	cc, err := jc.Consume(c.wrap(cbCtx, handler))
-	if err != nil {
-		cancel()
-		return nil, fail(err)
-	}
-	c.mu.Lock()
-	c.cc, c.cancel = cc, cancel
-	c.mu.Unlock()
-	return jc, nil
-}
-
-// consumer is one owned consumer and the join state of its handlers.
-type consumer struct {
-	stream, name string
-
-	mu       sync.Mutex
-	cc       jetstream.ConsumeContext
-	cancel   context.CancelFunc
-	inflight int
-	stopping bool
-	idle     chan struct{} // closed once stopping and no handler is running
-	idleOnce sync.Once
-}
-
-// wrap admits a handler call only until Stop begins and counts it until it returns.
-func (c *consumer) wrap(ctx context.Context, handler func(context.Context, jetstream.Msg)) jetstream.MessageHandler {
-	return func(msg jetstream.Msg) {
-		c.mu.Lock()
-		if c.stopping {
-			c.mu.Unlock()
-			return // delivered after Stop began: left unacked, deleted with the consumer
-		}
-		c.inflight++
-		c.mu.Unlock()
-		defer func() {
-			c.mu.Lock()
-			c.inflight--
-			if c.stopping && c.inflight == 0 {
-				c.idleOnce.Do(func() { close(c.idle) })
-			}
-			c.mu.Unlock()
-		}()
-		handler(ctx, msg)
-	}
-}
-
-// stopDelivery stops new deliveries; idle closes when the last running handler returns.
-func (c *consumer) stopDelivery() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.stopping {
-		return
-	}
-	c.stopping = true
-	if c.cc != nil {
-		c.cc.Stop()
-	}
-	if c.inflight == 0 {
-		c.idleOnce.Do(func() { close(c.idle) })
-	}
 }
 
 func (f *Fixture) count(dep string) {

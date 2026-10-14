@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/testcontainers/testcontainers-go"
@@ -24,7 +23,7 @@ func startedWith(t *testing.T) *Fixture {
 	return f
 }
 
-// Every stream and bucket the fixture creates declares its bounds (nats-fixture › "Bounded test
+// Every stream the fixture creates declares its bounds (nats-fixture › "Bounded test
 // streams"); the values are restated here, not read from the implementation.
 func TestCreateStreamDeclaresBounds(t *testing.T) {
 	f := startedWith(t)
@@ -38,21 +37,6 @@ func TestCreateStreamDeclaresBounds(t *testing.T) {
 	}
 	if got.Name != "orders" || len(got.Subjects) != 1 || got.MaxAge != time.Hour || got.MaxBytes != 64<<20 || got.Discard != jetstream.DiscardOld {
 		t.Fatalf("stream config %+v lacks the declared bounds", got)
-	}
-}
-
-func TestCreateKeyValueDeclaresBounds(t *testing.T) {
-	f := startedWith(t)
-	var got jetstream.KeyValueConfig
-	f.deps.createKV = func(_ context.Context, _ jetstream.JetStream, cfg jetstream.KeyValueConfig) (jetstream.KeyValue, error) {
-		got = cfg
-		return nil, nil
-	}
-	if _, err := f.CreateKeyValue(t.Context(), "state"); err != nil {
-		t.Fatal(err)
-	}
-	if got.Bucket != "state" || got.TTL != time.Hour || got.MaxBytes != 64<<20 {
-		t.Fatalf("bucket config %+v lacks the declared bounds", got)
 	}
 }
 
@@ -78,8 +62,8 @@ func TestCreateMemoryStreamDeclaresBoundsAndMemoryStorage(t *testing.T) {
 	}
 }
 
-// Restart refuses before a successful Start and once Stop has begun, with no Docker call
-// (nats-fixture › "Restart before Start").
+// Restart refuses before a successful Start with no Docker call (nats-fixture › "Restart before
+// Start"); TestRestartRefusedOnceStopHasBegun covers the other half against Docker.
 func TestRestartRefusesWithoutDockerCall(t *testing.T) {
 	var nilCtx context.Context
 	t.Run("before Start", func(t *testing.T) {
@@ -89,16 +73,6 @@ func TestRestartRefusesWithoutDockerCall(t *testing.T) {
 		}
 		if err := f.Restart(nilCtx); err == nil {
 			t.Fatal("Restart with a nil context returned nil")
-		}
-		if f.totalCalls() != 0 {
-			t.Fatalf("refused Restart made calls: %v", f.callCounts())
-		}
-	})
-	t.Run("once Stop has begun", func(t *testing.T) {
-		f := startedWith(t)
-		f.beginStop()
-		if err := f.Restart(t.Context()); !errors.Is(err, errStopping) {
-			t.Fatalf("Restart after Stop began = %v, want the stopping refusal", err)
 		}
 		if f.totalCalls() != 0 {
 			t.Fatalf("refused Restart made calls: %v", f.callCounts())
@@ -218,11 +192,7 @@ func TestResourceMethodsRefuseBeforeStartAndNilContexts(t *testing.T) {
 	var nilCtx context.Context
 	checks := map[string]error{}
 	_, checks["CreateStream before Start"] = f.CreateStream(t.Context(), "s")
-	_, checks["CreateKeyValue before Start"] = f.CreateKeyValue(t.Context(), "b")
-	_, checks["Consume before Start"] = f.Consume(t.Context(), "s", "c", func(context.Context, jetstream.Msg) {})
 	_, checks["CreateStream nil ctx"] = f.CreateStream(nilCtx, "s")
-	_, checks["CreateKeyValue nil ctx"] = f.CreateKeyValue(nilCtx, "b")
-	_, checks["Consume nil handler"] = f.Consume(t.Context(), "s", "c", nil)
 	checks["Start nil ctx"] = f.Start(nilCtx)
 	checks["Stop nil ctx"] = f.Stop(nilCtx)
 	for name, err := range checks {
@@ -376,79 +346,6 @@ func TestConnectJoinsItsDial(t *testing.T) {
 	}
 }
 
-// R2 (round 2): a creation already queued for the operation slot when Stop takes it is refused
-// as soon as Stop begins, not after Stop finishes. A handler creating while Stop waits to join it
-// would otherwise wait for the slot Stop holds, until Stop's context ends.
-//
-// Order is made deterministic: a first creation holds the slot; Stop queues for it; a second
-// creation, which passes the not-stopping check because Stop has not begun, queues behind Stop.
-// Stop then takes the slot and parks in container termination; the second creation must return
-// while Stop is still parked.
-func TestQueuedCreationRefusedWhenStopBegins(t *testing.T) {
-	f := startedWith(t)
-	f.container = struct{ testcontainers.Container }{}
-	firstIn, firstOut := make(chan struct{}), make(chan struct{})
-	f.deps.createStream = func(context.Context, jetstream.JetStream, jetstream.StreamConfig) (jetstream.Stream, error) {
-		close(firstIn)
-		<-firstOut
-		return nil, nil
-	}
-	stopParked, stopGo := make(chan struct{}), make(chan struct{})
-	f.deps.terminate = func(context.Context, testcontainers.Container) error {
-		close(stopParked)
-		<-stopGo
-		return nil
-	}
-
-	first := make(chan error, 1)
-	go func() { _, err := f.CreateStream(t.Context(), "first"); first <- err }()
-	<-firstIn
-	stopped := make(chan error, 1)
-	go func() { stopped <- f.Stop(t.Context()) }()
-	awaitWaiting(t, f, "stop")
-	second := make(chan error, 1)
-	go func() { _, err := f.CreateStream(t.Context(), "second"); second <- err }()
-	awaitWaiting(t, f, "create")
-	close(firstOut)
-	if err := <-first; err != nil {
-		t.Fatalf("first CreateStream: %v", err)
-	}
-	<-stopParked
-
-	// A watchdog for the failure, not a synchronisation.
-	watchdog := time.NewTimer(5 * time.Second)
-	defer watchdog.Stop()
-	select {
-	case err := <-second:
-		if err == nil {
-			t.Fatal("a creation queued behind Stop succeeded")
-		}
-	case <-watchdog.C:
-		t.Fatal("a creation queued behind Stop was not refused while Stop ran")
-	}
-	close(stopGo)
-	if err := <-stopped; err != nil {
-		t.Fatalf("Stop: %v", err)
-	}
-	if rem := f.remaining(); len(rem) != 0 {
-		t.Fatalf("remaining after Stop: %v", rem)
-	}
-}
-
-// awaitWaiting waits until an operation of kind who is queued for the operation slot.
-func awaitWaiting(t *testing.T, f *Fixture, who string) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
-	if _, err := probe.Await(ctx, func(context.Context) (int, error) {
-		f.mu.Lock()
-		defer f.mu.Unlock()
-		return f.slotWaits[who], nil
-	}, func(n int) bool { return n > 0 }); err != nil {
-		t.Fatalf("no %s queued for the operation slot: %v", who, err)
-	}
-}
-
 // A max payload the broker cannot honour is refused by Start before any Docker call, not silently
 // replaced by the broker default.
 func TestNonPositiveMaxPayloadIsRefused(t *testing.T) {
@@ -512,41 +409,6 @@ func noDocker(t *testing.T, f *Fixture) {
 	f.deps.start = func(context.Context, testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
 		t.Error("unexpected Docker start")
 		return nil, errors.New("unexpected Docker start")
-	}
-}
-
-// M2: Stop waits for the fixture's operation slot under its own context. A Start parked in a
-// Docker call does not make a bounded Stop unbounded.
-func TestStopHonoursItsContextWhileStartHoldsTheFixture(t *testing.T) {
-	f := New(t)
-	entered, release := make(chan struct{}), make(chan struct{})
-	f.deps.start = func(context.Context, testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
-		close(entered)
-		<-release
-		return nil, errors.New("start released by the test")
-	}
-	started := make(chan error, 1)
-	go func() { started <- f.Start(t.Context()) }()
-	<-entered
-	defer func() {
-		close(release)
-		<-started
-	}()
-	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
-	defer cancel()
-	stopped := make(chan error, 1)
-	go func() { stopped <- f.Stop(ctx) }()
-	// The bound below is a watchdog for the failure, not a synchronisation: a correct Stop returns
-	// as soon as its 100ms context ends.
-	watchdog := time.NewTimer(10 * time.Second)
-	defer watchdog.Stop()
-	select {
-	case err := <-stopped:
-		if !errors.Is(err, context.DeadlineExceeded) {
-			t.Fatalf("Stop = %v, want context.DeadlineExceeded", err)
-		}
-	case <-watchdog.C:
-		t.Fatal("Stop ignored its context while Start held the fixture")
 	}
 }
 

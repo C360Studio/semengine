@@ -13,7 +13,7 @@ var ErrAlreadyUsed = errors.New("natsfixture: fixture already started; use Resta
 // Phase names one step of Start, in order, or a resource operation after it.
 type Phase string
 
-// Start runs these phases in this order; CreateStream and CreateKeyValue report their own.
+// Start runs these phases in this order; CreateStream and CreateMemoryStream report PhaseCreateStream.
 // Restart runs PhaseStopContainer and PhaseStartContainer, then PhaseMappedPort, PhaseConnect and
 // PhaseJetStream again.
 const (
@@ -24,8 +24,6 @@ const (
 	PhaseConnect        Phase = "connect"
 	PhaseJetStream      Phase = "jetstream-ready"
 	PhaseCreateStream   Phase = "create-stream"
-	PhaseCreateKV       Phase = "create-kv"
-	PhaseConsume        Phase = "consume"
 	PhaseStopContainer  Phase = "stop-container"
 	PhaseStartContainer Phase = "start-container" // start the same container, then wait for a new ready log
 )

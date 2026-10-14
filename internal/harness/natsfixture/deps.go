@@ -34,7 +34,6 @@ type deps struct {
 	connect      func(context.Context, string) (*nats.Conn, error)
 	jsReady      func(context.Context, jetstream.JetStream) error
 	createStream func(context.Context, jetstream.JetStream, jetstream.StreamConfig) (jetstream.Stream, error)
-	createKV     func(context.Context, jetstream.JetStream, jetstream.KeyValueConfig) (jetstream.KeyValue, error)
 	terminate    func(context.Context, testcontainers.Container) error
 	// stopContainer and startContainer stop and start the same container, for Restart.
 	stopContainer  func(context.Context, testcontainers.Container) error
@@ -76,9 +75,6 @@ func defaultDeps(logf func(format string, args ...any)) deps {
 		},
 		createStream: func(ctx context.Context, js jetstream.JetStream, cfg jetstream.StreamConfig) (jetstream.Stream, error) {
 			return js.CreateStream(ctx, cfg)
-		},
-		createKV: func(ctx context.Context, js jetstream.JetStream, cfg jetstream.KeyValueConfig) (jetstream.KeyValue, error) {
-			return js.CreateKeyValue(ctx, cfg)
 		},
 		terminate: func(ctx context.Context, c testcontainers.Container) error { return c.Terminate(ctx) },
 		// A nil timeout leaves the stop grace period to Docker (the container's StopTimeout, else

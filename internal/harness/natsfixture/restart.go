@@ -12,18 +12,15 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 )
 
-var errNotStarted = errors.New("natsfixture: Restart needs a fixture whose Start succeeded")
+var errNotStarted = errors.New("natsfixture: Restart needs a fixture whose Start succeeded and whose Stop has not begun")
 
 // Restart stops and starts the fixture's own container and reconnects to it, under ctx. The
 // container's writable layer survives, so a file-backed stream keeps its messages and a
 // memory-backed one does not.
 //
-// Before the container stops, every consumer Consume created is ended as Stop ends it: delivery
-// stops, Restart waits for its running handlers, then cancels their context. Restart does not
-// re-create consumers; a test that needs one afterwards calls Consume again. The fixture's
-// connection is then drained, so the JetStream context and any stream, bucket or consumer handle
-// taken from it before the restart are dead. Streams and buckets stay on the server; Stop's removal
-// of the container removes them.
+// Before the container stops, the fixture's connection is drained, so the JetStream context and
+// any stream, bucket or consumer handle taken from it before the restart are dead. Streams and
+// buckets stay on the server; Stop's removal of the container removes them.
 //
 // URL and JetStream return the new binding once Restart returns nil, and stay valid until the next
 // Restart. The host port is the one Start gave Docker, so URL is unchanged (TestRestartURLDials),
@@ -36,8 +33,7 @@ var errNotStarted = errors.New("natsfixture: Restart needs a fixture whose Start
 // port again. A failure in that second stop, start or port read returns both errors; a connect or
 // JetStream failure after a good second read returns that error alone (maxAttempts says why the
 // one more try is kept). No replacement container is created; after a failure the fixture can
-// no longer be restarted, and Stop removes the container. Do not call Restart from a Consume
-// handler: it waits for that handler to return.
+// no longer be restarted, and Stop removes the container.
 //
 // The caller must bound ctx. Readiness after the start is one more ready line in the container's
 // log than before it; if Docker log rotation drops earlier lines the count can fall, and the wait
@@ -46,18 +42,11 @@ func (f *Fixture) Restart(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("natsfixture: Restart with a nil context")
 	}
-	if _, _, err := f.restartable(); err != nil {
+	c, id, err := f.restartable()
+	if err != nil {
 		return err
 	}
 	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := f.acquire(ctx, "restart"); err != nil {
-		return err
-	}
-	defer f.release()
-	c, id, err := f.restartable() // Stop may have begun and ended while this waited
-	if err != nil {
 		return err
 	}
 	f.count("restart")
@@ -68,9 +57,6 @@ func (f *Fixture) Restart(ctx context.Context) error {
 func (f *Fixture) restartable() (testcontainers.Container, string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.stopping {
-		return nil, "", errStopping
-	}
 	if f.container == nil || f.nc == nil || f.js == nil {
 		return nil, "", errNotStarted
 	}
@@ -79,17 +65,9 @@ func (f *Fixture) restartable() (testcontainers.Container, string, error) {
 
 func (f *Fixture) restart(ctx context.Context, c testcontainers.Container, id string) error {
 	f.mu.Lock()
-	consumers := append([]*consumer(nil), f.consumers...)
 	nc, oldURL := f.nc, f.url
 	f.mu.Unlock()
 
-	// Consumers are joined while the connection is still up, so a handler's ack still lands. The
-	// durable consumer may outlive the restart on a file-backed stream; it goes with the container.
-	for _, cs := range consumers {
-		if err := f.stopConsumer(ctx, cs); err != nil {
-			return fmt.Errorf("natsfixture: restart: end consumer %s/%s: %w", cs.stream, cs.name, err)
-		}
-	}
 	err := f.deps.drain(ctx, nc)
 	f.count("drain")
 	if err != nil {

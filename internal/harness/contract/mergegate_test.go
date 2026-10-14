@@ -24,6 +24,15 @@ const (
 	requiredRepeatCmd = `scripts/gopkgs.sh go test -count=5 -cpu 1 -shuffle=on {{.CLI_ARGS | default "./..."}}`
 )
 
+// integration-test-runner › "Integration test command": test:integration is plain go test over
+// ./... or the packages given after --. The fingerprint cover:check compares is written only after
+// go test passed, because Task runs a task's commands in order and stops at the first that fails.
+var requiredIntegrationCmds = []string{
+	"rm -f coverage/integration.tree && mkdir -p coverage",
+	`go test -race -failfast -tags=integration -count=1 -p 2 -shuffle=on -timeout 10m -coverprofile=coverage/integration.coverprofile {{.CLI_ARGS | default "./..."}}`,
+	"scripts/tree-state.sh > coverage/integration.tree",
+}
+
 func TestUnitInvocationsPinned(t *testing.T) {
 	root := repoRoot(t)
 	read := func(name string) []byte {
@@ -37,15 +46,26 @@ func TestUnitInvocationsPinned(t *testing.T) {
 }
 
 func TestUnitInvocationsPinnedSensitivity(t *testing.T) {
-	taskfile := func(unit, repeat string) []byte {
+	integrationTask := func(cmds ...string) string {
+		s := "  test:integration:\n    cmds:\n"
+		for _, c := range cmds {
+			s += "      - '" + c + "'\n"
+		}
+		return s
+	}
+	taskfile := func(unit, repeat string, integration ...string) []byte {
+		if integration == nil {
+			integration = requiredIntegrationCmds
+		}
 		return []byte("version: '3'\ntasks:\n  test:unit:\n    cmds:\n      - " + unit +
-			"\n  test:repeat:\n    cmds:\n      - '" + repeat + "'\n")
+			"\n  test:repeat:\n    cmds:\n      - '" + repeat + "'\n" + integrationTask(integration...))
 	}
 	verify := func(steps string) []byte {
 		return []byte("#!/usr/bin/env bash\nsteps=(spec:check build\n  test:unit test:integration " + steps + ")\n")
 	}
 	goodTaskfile, goodVerify := taskfile(requiredUnitCmd, requiredRepeatCmd), verify("cover:check test:repeat")
 	requireNoViolations(t, "clean fixture", unitInvocationViolations(goodTaskfile, goodVerify))
+	rm, goTest, fingerprint := requiredIntegrationCmds[0], requiredIntegrationCmds[1], requiredIntegrationCmds[2]
 
 	for _, tc := range []struct {
 		name             string
@@ -58,8 +78,20 @@ func TestUnitInvocationsPinnedSensitivity(t *testing.T) {
 			[]string{"test:unit", requiredUnitCmd}},
 		{"race added to repeat", taskfile(requiredUnitCmd, strings.Replace(requiredRepeatCmd, "go test", "go test -race", 1)), goodVerify,
 			[]string{"test:repeat", requiredRepeatCmd}},
-		{"repeat task missing", []byte("version: '3'\ntasks:\n  test:unit:\n    cmds:\n      - " + requiredUnitCmd + "\n"), goodVerify,
+		{"repeat task missing", []byte("version: '3'\ntasks:\n  test:unit:\n    cmds:\n      - " + requiredUnitCmd + "\n" +
+			integrationTask(requiredIntegrationCmds...)), goodVerify,
 			[]string{"test:repeat", "no such task"}},
+		{"integration shuffle dropped", taskfile(requiredUnitCmd, requiredRepeatCmd, rm, strings.Replace(goTest, " -shuffle=on", "", 1), fingerprint),
+			goodVerify, []string{"test:integration", "integration-test-runner", goTest}},
+		{"integration fingerprint written before go test", taskfile(requiredUnitCmd, requiredRepeatCmd, rm, fingerprint, goTest),
+			goodVerify, []string{"test:integration", fingerprint}},
+		{"integration fingerprint not removed first", taskfile(requiredUnitCmd, requiredRepeatCmd, goTest, fingerprint),
+			goodVerify, []string{"test:integration", rm}},
+		{"integration through a wrapper", taskfile(requiredUnitCmd, requiredRepeatCmd, rm, "scripts/run.sh "+goTest, fingerprint),
+			goodVerify, []string{"test:integration", goTest}},
+		{"integration task missing", []byte("version: '3'\ntasks:\n  test:unit:\n    cmds:\n      - " + requiredUnitCmd +
+			"\n  test:repeat:\n    cmds:\n      - '" + requiredRepeatCmd + "'\n"), goodVerify,
+			[]string{"test:integration", "no such task"}},
 		{"step removed from verify", goodTaskfile, verify("cover:check"),
 			[]string{"scripts/verify.sh", "test:repeat", "missing"}},
 		{"repeat step not last", goodTaskfile, verify("test:repeat cover:check"),
@@ -73,7 +105,7 @@ func TestUnitInvocationsPinnedSensitivity(t *testing.T) {
 
 var verifySteps = regexp.MustCompile(`(?s)\bsteps=\(([^)]*)\)`)
 
-// unitInvocationViolations checks the two task commands in a Taskfile and the step list of a
+// unitInvocationViolations checks the three test task commands in a Taskfile and the step list of a
 // verify.sh against the spec.
 func unitInvocationViolations(taskfile, verify []byte) []string {
 	var violations []string
@@ -85,14 +117,22 @@ func unitInvocationViolations(taskfile, verify []byte) []string {
 	if err := yaml.Unmarshal(taskfile, &tf); err != nil {
 		return []string{fmt.Sprintf("Taskfile.yml: %v", err)}
 	}
-	for _, want := range []struct{ task, cmd string }{{"test:unit", requiredUnitCmd}, {"test:repeat", requiredRepeatCmd}} {
+	for _, want := range []struct {
+		task, spec string
+		cmds       []string
+	}{
+		{"test:unit", "merge-gate", []string{requiredUnitCmd}},
+		{"test:repeat", "merge-gate", []string{requiredRepeatCmd}},
+		{"test:integration", "integration-test-runner", requiredIntegrationCmds},
+	} {
+		required := "`" + strings.Join(want.cmds, "`, then `") + "`"
 		task, ok := tf.Tasks[want.task]
 		if !ok {
-			violations = append(violations, fmt.Sprintf("Taskfile.yml: no such task %s; the merge-gate spec requires it to run `%s`", want.task, want.cmd))
+			violations = append(violations, fmt.Sprintf("Taskfile.yml: no such task %s; the %s spec requires it to run %s", want.task, want.spec, required))
 			continue
 		}
-		if len(task.Cmds) != 1 || task.Cmds[0] != want.cmd {
-			violations = append(violations, fmt.Sprintf("Taskfile.yml: task %s runs %v; the merge-gate spec requires exactly `%s`", want.task, task.Cmds, want.cmd))
+		if !slices.EqualFunc(task.Cmds, want.cmds, func(got any, cmd string) bool { return got == cmd }) {
+			violations = append(violations, fmt.Sprintf("Taskfile.yml: task %s runs %v; the %s spec requires exactly %s", want.task, task.Cmds, want.spec, required))
 		}
 	}
 

@@ -4,15 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
 )
 
 // Stop finalises the fixture under the caller's context, in order: wait for in-flight async
 // publishes; for each consumer stop delivery, join its running handlers, then cancel their context
-// and delete it; record each stream's message count, then delete streams and buckets; drain and
-// close the connection; terminate the container. Each resource leaves the fixture's ownership only
+// and delete it; delete streams and buckets; drain and close the connection; terminate the
+// container. Each resource leaves the fixture's ownership only
 // once observed absent, so a nil return means everything is gone. Once Stop begins, the fixture
 // refuses to create anything more.
 //
@@ -39,25 +38,12 @@ func (f *Fixture) Stop(ctx context.Context) error {
 		return fmt.Errorf("natsfixture: stop not begun: %w", err)
 	}
 	f.beginStop()
-	sr := stopRecord{}
-	err := f.stop(ctx, &sr)
-	sr.Result = "ok"
-	if err != nil {
-		sr.Result = err.Error()
-	}
-	f.mu.Lock()
-	f.rec.Stops = append(f.rec.Stops, sr)
-	f.mu.Unlock()
-	f.writeEvidence()
-	return err
+	return f.stop(ctx)
 }
 
-func (f *Fixture) stop(ctx context.Context, sr *stopRecord) error {
+func (f *Fixture) stop(ctx context.Context) error {
 	step := func(name string, op func() error) error {
-		started := time.Now()
-		err := op()
-		sr.Phases = append(sr.Phases, phaseRecord{Phase: name, ElapsedMS: since(started), Error: errString(err)})
-		if err != nil {
+		if err := op(); err != nil {
 			return fmt.Errorf("natsfixture: stop %s: %w", name, err)
 		}
 		return nil
@@ -199,18 +185,6 @@ func (f *Fixture) stopConsumer(ctx context.Context, js jetstream.JetStream, c *c
 }
 
 func (f *Fixture) deleteStream(ctx context.Context, js jetstream.JetStream, name string) error {
-	// The message count is recorded before deletion, so evidence shows what the stream held when
-	// finalisation reached it (graceful-finalisation proof, S1-4).
-	if s, err := js.Stream(ctx, name); err == nil {
-		if info, err := s.Info(ctx); err == nil {
-			f.mu.Lock()
-			if f.rec.StreamMsgs == nil {
-				f.rec.StreamMsgs = map[string]uint64{}
-			}
-			f.rec.StreamMsgs[name] = info.State.Msgs
-			f.mu.Unlock()
-		}
-	}
 	if err := js.DeleteStream(ctx, name); err != nil && !errors.Is(err, jetstream.ErrStreamNotFound) {
 		return err
 	}

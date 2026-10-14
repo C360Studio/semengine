@@ -62,10 +62,10 @@ if command -v docker >/dev/null; then
 else bad docker "not found"; fi
 
 # Everything below reads Docker and host state for the integration lane and changes
-# none of it: no pull, no container, no lock taken or removed.
+# none of it: no pull, no container.
 
 # The effective daemon: DOCKER_HOST wins over the current context, as it does for
-# both the docker CLI and testcontainers. The /tmp lock does not follow a remote host.
+# both the docker CLI and testcontainers.
 if $daemon; then
   context=$(docker context show 2>/dev/null || echo unknown)
   endpoint=$(docker context inspect --format '{{.Endpoints.docker.Host}}' 2>/dev/null || echo unknown)
@@ -73,52 +73,16 @@ if $daemon; then
   if [ -n "${DOCKER_HOST:-}" ]; then warn docker-host "DOCKER_HOST=$DOCKER_HOST overrides the context"; fi
 fi
 
-# Host-level testcontainers state other repositories can set. The runner exports
-# TESTCONTAINERS_RYUK_DISABLED=false, which wins over the environment and the file.
-for v in TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE; do
-  if [ -n "${!v:-}" ]; then warn "${v#TESTCONTAINERS_}" "$v=${!v} in this shell"; fi
-done
-ok ryuk-env "TESTCONTAINERS_RYUK_DISABLED=${TESTCONTAINERS_RYUK_DISABLED:-unset} here; the runner forces false"
-if [ -f "$HOME/.testcontainers.properties" ]; then
-  warn tc-properties "present: $HOME/.testcontainers.properties (runner env overrides ryuk.disabled)"
-else ok tc-properties "absent"; fi
-
-# .nats-image is the one image pin; the cache is checked by digest, never by tag.
-pin=$(grep -v '^[[:space:]]*#' .nats-image 2>/dev/null | grep -v '^[[:space:]]*$' || true)
+# internal/harness/natsfixture/nats-image is the one image pin, embedded by natsfixture; the cache
+# is checked by digest, never by tag.
+pin_file=internal/harness/natsfixture/nats-image
+pin=$(grep -v '^[[:space:]]*#' "$pin_file" 2>/dev/null | grep -v '^[[:space:]]*$' || true)
 if [[ "$pin" =~ ^nats:[A-Za-z0-9][A-Za-z0-9._-]*@(sha256:[0-9a-f]{64})$ ]]; then
   digest=${BASH_REMATCH[1]}
   if $daemon && docker image inspect "nats@$digest" >/dev/null 2>&1; then ok nats-image "cached by digest: $pin"
-  elif $daemon; then warn nats-image "not cached; the runner pulls it under the lock: $pin"
+  elif $daemon; then warn nats-image "not cached; testcontainers pulls it on first use: $pin"
   else ok nats-image "$pin (daemon not reachable; cache unknown)"; fi
-else bad nats-image ".nats-image does not hold one nats:<tag>@sha256:<digest> line"; fi
-
-# Ryuk's image is whatever the required testcontainers-go names as its default,
-# read from the module source so doctor does not keep a second spelling of it.
-tc_dir=$(go list -m -f '{{.Dir}}' github.com/testcontainers/testcontainers-go 2>/dev/null || true)
-ryuk=""
-if [ -n "$tc_dir" ]; then
-  ryuk=$(sed -n 's/^const ReaperDefaultImage = "\(.*\)"$/\1/p' "$tc_dir/internal/config/config.go" 2>/dev/null || true)
-fi
-if [ -z "$ryuk" ]; then warn ryuk-image "unknown (testcontainers-go not required or not downloaded)"
-elif ! $daemon; then ok ryuk-image "$ryuk (daemon not reachable; cache unknown)"
-elif docker image inspect "$ryuk" >/dev/null 2>&1; then ok ryuk-image "cached: $ryuk"
-else warn ryuk-image "not cached; testcontainers pulls it on first use: $ryuk"; fi
-
-# The shared admission lock, judged by pid only: a pid reused by another process reads as busy
-# here, though the runner, which also compares the owner's start time, would quarantine it. The
-# recorded host is not compared, as the runner does not: the lock is in this machine's /tmp, and
-# macOS's hostname changes with the network (#201).
-# shellcheck source=scripts/admission-lock.sh
-. scripts/admission-lock.sh
-if [ -f "$admission_lock_default/owner" ]; then
-  owner=$(tr '\n' ' ' < "$admission_lock_default/owner")
-  o_pid=$(sed -n 's/^pid=//p' "$admission_lock_default/owner")
-  if [[ "$o_pid" =~ ^[0-9]+$ ]] && ! kill -0 "$o_pid" 2>/dev/null; then
-    warn admission "stale (dead pid; the next runner quarantines it): $owner"
-  else ok admission "busy: $owner"; fi
-elif [ -e "$admission_lock_default" ]; then
-  warn admission "$admission_lock_default exists without an owner file (being written, or foreign)"
-else ok admission "free ($admission_lock_default)"; fi
+else bad nats-image "$pin_file does not hold one nats:<tag>@sha256:<digest> line"; fi
 
 if [ "$fail" -ne 0 ]; then echo "doctor: FAILED"; exit 1; fi
 echo "doctor: ok"

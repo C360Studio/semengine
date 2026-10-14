@@ -108,7 +108,9 @@ A new repo-wide or agent-conduct rule updates both this file and `.agents/rules-
 | `verify+review` | No `time.Sleep` in a test file or under `internal/harness/` | `harness-boundaries` spec |
 | `verify+review` | No test calls `Skip`/`Skipf`/`SkipNow`; no test file carries a build tag other than `integration` | `harness-boundaries` spec |
 | `verify` | Unit tests also run five times at one CPU, without `-race`, shuffled | `merge-gate` spec |
-| `verify+review` | One NATS image pin; Docker cleanup touches only SemEngine-assigned names | `harness-boundaries` spec |
+| `verify+review` | One NATS image pin, a digest reference; no broad Docker cleanup; script/Compose Docker names start `semengine-` | `harness-boundaries` spec |
+| `verify+review` | Integration tests run under plain `go test -tags integration`; `task test:integration` only pins flags; nothing takes a lock or refuses a run (#205) | `integration-test-runner` spec |
+| `verify+review` | natsfixture turns Ryuk off, labels its containers `org.c360studio.semengine.test`, sweeps labelled leftovers older than 30 min; never by name or liveness | `nats-fixture` spec |
 | `verify` | Critical packages hold their coverage floor | `.agents/skills/semengine-preflight/SKILL.md` |
 | `verify+review` | Tests use an independent oracle and are shown able to fail (structural guards carry paired sensitivity tests) | `docs/testing.md`; `dev`, `rev` |
 | `review` | Changes with interacting inputs, a stated law, or order-dependent history record whether generated checks are used or why examples suffice | `docs/testing.md`; `dev`, `rev` |

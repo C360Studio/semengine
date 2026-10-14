@@ -93,9 +93,13 @@ tasks:
       - 'scripts/gopkgs.sh go test -count=5 -cpu 1 -shuffle=on {{.CLI_ARGS | default "./..."}}'
 
   test:integration:
-    desc: Run Docker-backed tests through the admitted runner (host lock, process group, leak check); -- <pkgs> to focus
+    desc: Run Docker-backed tests with plain go test, shuffled, two packages at a time; on a pass, record the tree it measured for cover:check; -- <pkgs> to focus
     cmds:
-      - scripts/test-integration.sh {{.CLI_ARGS}}
+      # Pinned by contract test TestUnitInvocationsPinned (integration-test-runner spec). Task stops
+      # at the first failing command, so the fingerprint exists only after go test passed.
+      - rm -f coverage/integration.tree && mkdir -p coverage
+      - 'go test -race -failfast -tags=integration -count=1 -p 2 -shuffle=on -timeout 10m -coverprofile=coverage/integration.coverprofile {{.CLI_ARGS | default "./..."}}'
+      - scripts/tree-state.sh > coverage/integration.tree
 
   merge:check:
     desc: Fail while a class:flake issue is open that PR <n> does not close, main's rules lack the up-to-date setting, or PR <n> is a code PR, not a draft, without implemented-by and reviewed-by lines naming the agents; -- <n>. Reads GitHub, so not in verify

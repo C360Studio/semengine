@@ -108,7 +108,7 @@ func TestIntegration_ReconnectionIsRedial(t *testing.T) {
 func TestIntegration_AcknowledgedIsNotDurableOnMemoryStream(t *testing.T) {
 	ctx := t.Context()
 	f := startFixture(t)
-	file, mem := f.Name("file"), f.Name("mem")
+	file, mem := "file", "mem"
 	_, err := f.CreateStream(ctx, file, file+".>")
 	require.NoError(t, err)
 	_, err = f.CreateMemoryStream(ctx, mem, mem+".>")

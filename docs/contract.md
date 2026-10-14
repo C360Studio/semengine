@@ -76,8 +76,10 @@ What happens to messages in flight depends on how your input reaches the engine.
 | NATS stream on disk | unacknowledged messages are delivered again; the final state is the same as if each was applied once | nothing |
 | request/reply (no stream) | you have the reply, or a *commit unknown* | handle *commit unknown* as above |
 
-If a stream is deleted and recreated, re-sending your current data applies it. Old sequence numbers do not cause it
-to be skipped.
+If a stream is deleted and recreated, re-sending your current data after the ingest component has started again
+applies it; sequence numbers the old stream already used do not cause it to be skipped. There are a few exceptions:
+the [`graph-ingest-recovery` spec](../openspec/specs/graph-ingest-recovery/spec.md) lists them under "Replay
+protection uses the generation read before the bind".
 
 ### Delivery and parked input
 

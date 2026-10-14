@@ -4,8 +4,11 @@ package natsclient
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,21 +24,20 @@ import (
 // shared.Reset(t); tests that restart, stop, or reconfigure the broker start their own via
 // natsfixture.New.
 
+// shared is this package's NATS server. It starts at the first reset; TestMain removes it after the tests.
 var shared natsfixture.Shared
 
-func TestMain(m *testing.M) {
-	os.Exit(run(m))
-}
+func TestMain(m *testing.M) { os.Exit(run(m)) }
 
 func run(m *testing.M) int {
-	defer func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-		defer cancel()
-		if err := shared.Stop(ctx); err != nil {
-			fmt.Fprintf(os.Stderr, "natsfixture Stop: %v\n", err)
-		}
-	}()
-	return m.Run()
+	code := m.Run()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if err := shared.Stop(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return code
 }
 
 // fixtureClientTimeout is the Client's dial timeout (WithTimeout sets nothing else) and the bound on
@@ -163,5 +165,43 @@ func flushClient(t *testing.T, c *Client) {
 	defer cancel()
 	if err := c.GetConnection().FlushWithContext(ctx); err != nil {
 		t.Fatalf("flush: %v", err)
+	}
+}
+
+func TestIntegration_SharedServerStopFailureExitsNonZero(t *testing.T) {
+	const helperEnv = "SEMENGINE_TEST_MAIN_STOP_FAILURE"
+	if os.Getenv(helperEnv) == "1" {
+		// Registered before shared.Reset so it runs after shared.Reset's post-test connection
+		// check: the test itself passes (m.Run() == 0), then TestMain's shared.Stop fails trying
+		// to remove the container that was already removed here.
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), stopBound)
+			defer cancel()
+			label := fmt.Sprintf("org.c360studio.semengine.test=github.com/c360studio/semengine/natsclient pid %d", os.Getpid())
+			out, err := exec.CommandContext(ctx, "docker", "ps", "-a", "--no-trunc", "--filter", "label="+label, "--format", "{{.ID}}").Output()
+			if err != nil {
+				t.Fatalf("docker ps: %v", err)
+			}
+			id := strings.TrimSpace(string(out))
+			if id == "" {
+				t.Fatalf("no container found for label %q", label)
+			}
+			if rmOut, err := exec.CommandContext(ctx, "docker", "rm", "-f", id).CombinedOutput(); err != nil {
+				t.Fatalf("docker rm -f %s: %v\n%s", id, err, rmOut)
+			}
+		})
+		shared.Reset(t)
+		return
+	}
+
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestIntegration_SharedServerStopFailureExitsNonZero$")
+	cmd.Env = append(os.Environ(), helperEnv+"=1")
+	out, err := cmd.CombinedOutput()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+		t.Fatalf("child exited %v (want exit status 1 when shared.Stop fails):\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "natsfixture: stop container") {
+		t.Fatalf("child output missing stop error:\n%s", out)
 	}
 }

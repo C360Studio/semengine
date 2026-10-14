@@ -66,10 +66,10 @@ the design does not spell out go in `notes/<task>.md`, each with a one-line PR c
 
 ## 3. Review and close
 
-- [ ] 3.1 Hold: Codex's review of record on the 2.4 commit. Fix the findings, and request again after any content
+- [x] 3.1 Codex's review of record on the 2.4 commit. Fix the findings, and request again after any content
   commit. Once Codex's newest review record approves, add the `reviewed-by:` line to the PR body, naming `codex` and
-  the persona from the record.
-- [ ] 3.2 Archive the change and sync `openspec/specs/graph-ingest-recovery/spec.md` as the last content commit.
+  the persona from the record. Done: APPROVE at `10793be` with no findings (PR #215 comment 6166718455).
+- [x] 3.2 Archive the change and sync `openspec/specs/graph-ingest-recovery/spec.md` as the last content commit.
   Check: `task spec:check`.
 
 Task 3.2 is completed by the archive commit. The archive check, the CI run before merging and

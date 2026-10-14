@@ -112,7 +112,7 @@ func TestIntegration_Settlement_LongApplyIsNotRedelivered(t *testing.T) {
 	require.NoError(t, f.Start(ctx))
 	_, err := natsfixture.CreateStream(ctx, f.JetStream(), jetstream.FileStorage, entityStream.name, entityStream.subjects...)
 	require.NoError(t, err)
-	client := natsfixture.Open(t, f, openFixtureClient)
+	client := natsfixture.Open(t, f.URL(), openFixtureClient)
 
 	held := &heldApplyBucket{entered: make(chan struct{}), release: make(chan struct{})}
 	var inProgress atomic.Int64

@@ -75,9 +75,9 @@ review stop. Choices the design does not spell out go in `notes/<task>.md`.
 
 ## 4. One server per package (pull request 3)
 
-- [ ] 4.1 Failing tests first for the shared server's lazy start and Stop, and for the reset's four scenarios
+- [x] 4.1 Failing tests first for the shared server's lazy start and Stop, and for the reset's four scenarios
   (`nats-fixture`, "Shared server per package", "Reset to a verified-empty server").
-- [ ] 4.2 Build the shared server and its reset, counting connections through `$SYS.REQ.ACCOUNT.PING.STATZ`; `Open`
+- [x] 4.2 Build the shared server and its reset, counting connections through `$SYS.REQ.ACCOUNT.PING.STATZ`; `Open`
   takes a URL.
 - [ ] 4.3 Add `TestNoParallelIntegrationTests` and `TestOwnServerReason`, each with its sensitivity test.
 - [ ] 4.4 Add `TestMain` to natsclient, processor/graph-ingest, graph/kvcatalog, pkg/lifecycle and component; their

@@ -73,7 +73,7 @@ func newFixtureClient(t *testing.T, streams ...fixtureStream) *natsclient.Client
 			t.Fatalf("CreateStream %s: %v", s.name, err)
 		}
 	}
-	return natsfixture.Open(t, f, openFixtureClient)
+	return natsfixture.Open(t, f.URL(), openFixtureClient)
 }
 
 // startBatchTestComponent starts graph-ingest with its default configuration on a

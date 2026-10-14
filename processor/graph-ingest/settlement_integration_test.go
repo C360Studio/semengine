@@ -255,7 +255,7 @@ func TestIntegration_Settlement_ProcessKilledBetweenApplyAndAck(t *testing.T) {
 	require.NoError(t, f.Start(ctx))
 	_, err := natsfixture.CreateStream(ctx, f.JetStream(), jetstream.FileStorage, entityStream.name, entityStream.subjects...)
 	require.NoError(t, err)
-	publisher := natsfixture.Open(t, f, openFixtureClient)
+	publisher := natsfixture.Open(t, f.URL(), openFixtureClient)
 
 	first := startSettlementHelper(ctx, t, f, settlementHeld)
 	entities, err := f.JetStream().KeyValue(ctx, graph.BucketEntityStates)
@@ -337,7 +337,7 @@ func TestIntegration_Settlement_FailedGuardWriteIsRedelivered(t *testing.T) {
 	require.NoError(t, f.Start(ctx))
 	_, err := natsfixture.CreateStream(ctx, f.JetStream(), jetstream.FileStorage, entityStream.name, entityStream.subjects...)
 	require.NoError(t, err)
-	client := natsfixture.Open(t, f, openFixtureClient)
+	client := natsfixture.Open(t, f.URL(), openFixtureClient)
 
 	var guard *refusedGuardWrite
 	owner := startSettlementIngest(ctx, t, client, func(bucket jetstream.KeyValue) jetstream.KeyValue {

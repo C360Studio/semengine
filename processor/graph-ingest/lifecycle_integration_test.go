@@ -329,7 +329,7 @@ func TestGraphIngestLifecycleSuite(t *testing.T) {
 	}
 	refused := refusingBrokerURL(t)
 	factory := func() lifecycletest.Owner {
-		return newOwner(natsfixture.Open(t, f, openFixtureClient))
+		return newOwner(natsfixture.Open(t, f.URL(), openFixtureClient))
 	}
 	mustFail := func() lifecycletest.Owner {
 		client, err := natsclient.NewClient(refused,

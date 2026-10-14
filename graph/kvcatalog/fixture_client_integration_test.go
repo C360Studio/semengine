@@ -26,7 +26,7 @@ func fixtureClient(t *testing.T) *natsclient.Client {
 	if err := f.Start(t.Context()); err != nil {
 		t.Fatalf("natsfixture Start: %v", err)
 	}
-	return natsfixture.Open(t, f, openClient)
+	return natsfixture.Open(t, f.URL(), openClient)
 }
 
 func openClient(ctx context.Context, url string) (*natsclient.Client, func(context.Context) error, error) {

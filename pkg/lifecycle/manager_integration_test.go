@@ -42,7 +42,7 @@ func fixtureClient(t *testing.T) *natsclient.Client {
 	if err := f.Start(t.Context()); err != nil {
 		t.Fatalf("natsfixture Start: %v", err)
 	}
-	client := natsfixture.Open(t, f, openClient)
+	client := natsfixture.Open(t, f.URL(), openClient)
 	if _, err := client.CreateKeyValueBucket(t.Context(), jetstream.KeyValueConfig{Bucket: graph.BucketEntityStates}); err != nil {
 		t.Fatalf("create %s: %v", graph.BucketEntityStates, err)
 	}

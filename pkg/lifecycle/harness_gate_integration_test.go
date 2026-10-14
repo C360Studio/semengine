@@ -78,7 +78,7 @@ func ingestClient(t *testing.T) *natsclient.Client {
 	if _, err := natsfixture.CreateStream(t.Context(), f.JetStream(), jetstream.FileStorage, "ENTITY", "entity.>"); err != nil {
 		t.Fatalf("CreateStream ENTITY: %v", err)
 	}
-	return natsfixture.Open(t, f, openClient)
+	return natsfixture.Open(t, f.URL(), openClient)
 }
 
 // startGraphIngest starts a real graph-ingest with its default configuration on client, under

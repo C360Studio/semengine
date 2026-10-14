@@ -10,180 +10,21 @@ import (
 	"time"
 
 	"github.com/nats-io/nats.go"
-	"github.com/nats-io/nats.go/jetstream"
-	"github.com/testcontainers/testcontainers-go"
 )
 
-// startedWith returns a fixture that looks started to its resource methods, with dependency
-// calls captured instead of sent: enough to prove what the fixture asks the broker for.
-func startedWith(t *testing.T) *Fixture {
-	t.Helper()
-	f := &Fixture{deps: defaultDeps(t.Logf), calls: map[string]int{}, containerID: "c0ffee"}
-	f.js = struct{ jetstream.JetStream }{} // never called: every JetStream use below goes through deps
-	return f
-}
-
-// Every stream the fixture creates declares its bounds (nats-fixture › "Bounded test
-// streams"); the values are restated here, not read from the implementation.
-func TestCreateStreamDeclaresBounds(t *testing.T) {
-	f := startedWith(t)
-	var got jetstream.StreamConfig
-	f.deps.createStream = func(_ context.Context, _ jetstream.JetStream, cfg jetstream.StreamConfig) (jetstream.Stream, error) {
-		got = cfg
-		return nil, nil
-	}
-	if _, err := f.CreateStream(t.Context(), "orders", "orders.>"); err != nil {
-		t.Fatal(err)
-	}
-	if got.Name != "orders" || len(got.Subjects) != 1 || got.MaxAge != time.Hour || got.MaxBytes != 64<<20 || got.Discard != jetstream.DiscardOld {
-		t.Fatalf("stream config %+v lacks the declared bounds", got)
-	}
-}
-
-// A memory-backed stream is bounded like a file-backed one (nats-fixture › "Bounded test
-// streams"); only the storage differs.
-func TestCreateMemoryStreamDeclaresBoundsAndMemoryStorage(t *testing.T) {
-	f := startedWith(t)
-	var got jetstream.StreamConfig
-	f.deps.createStream = func(_ context.Context, _ jetstream.JetStream, cfg jetstream.StreamConfig) (jetstream.Stream, error) {
-		got = cfg
-		return nil, nil
-	}
-	if _, err := f.CreateMemoryStream(t.Context(), "scratch", "scratch.>"); err != nil {
-		t.Fatal(err)
-	}
-	if got.Name != "scratch" || len(got.Subjects) != 1 || got.MaxAge != time.Hour || got.MaxBytes != 64<<20 ||
-		got.Discard != jetstream.DiscardOld || got.Storage != jetstream.MemoryStorage {
-		t.Fatalf("stream config %+v lacks memory storage or the declared bounds", got)
-	}
+// Restart refuses before a successful Start and holds nothing afterwards (nats-fixture › "Restart
+// before Start"); TestRestartRefusedOnceStopHasBegun covers the other half against Docker.
+func TestRestartRefusesBeforeStart(t *testing.T) {
 	var nilCtx context.Context
-	if _, err := f.CreateMemoryStream(nilCtx, "s"); err == nil {
-		t.Fatal("CreateMemoryStream accepted a nil context")
-	}
-}
-
-// Restart refuses before a successful Start with no Docker call (nats-fixture › "Restart before
-// Start"); TestRestartRefusedOnceStopHasBegun covers the other half against Docker.
-func TestRestartRefusesWithoutDockerCall(t *testing.T) {
-	var nilCtx context.Context
-	t.Run("before Start", func(t *testing.T) {
-		f := New(t)
-		if err := f.Restart(t.Context()); err == nil {
-			t.Fatal("Restart before Start returned nil")
-		}
-		if err := f.Restart(nilCtx); err == nil {
-			t.Fatal("Restart with a nil context returned nil")
-		}
-		if f.totalCalls() != 0 {
-			t.Fatalf("refused Restart made calls: %v", f.callCounts())
-		}
-	})
-}
-
-// The container's log keeps every boot's lines, and testcontainers' own wait counts them all
-// (wait/log.go:210), so it passes at once on a restart. Restart connects only after the restarted
-// server has logged one more ready line than before, and reports a later phase's failure by name
-// without replacing the container.
-func TestRestartConnectsOnlyAfterANewReadyLine(t *testing.T) {
-	f := startedWith(t)
-	f.container, f.nc, f.url = struct{ testcontainers.Container }{}, &nats.Conn{}, "nats://fixture-host:1"
-	boots, booting, reads := 1, false, 0
-	f.deps.drain = func(context.Context, *nats.Conn) error { return nil }
-	f.deps.stopContainer = func(context.Context, testcontainers.Container) error { return nil }
-	f.deps.startContainer = func(context.Context, testcontainers.Container) error {
-		booting = true // started, but not yet ready: the line comes on the third read
-		return nil
-	}
-	f.deps.logs = func(context.Context, testcontainers.Container) ([]byte, error) {
-		if booting {
-			if reads++; reads == 3 {
-				boots, booting = boots+1, false
-			}
-		}
-		return []byte(strings.Repeat(readyLog+"\n", boots)), nil
-	}
-	f.deps.mappedPort = func(context.Context, testcontainers.Container) (string, error) { return "2", nil }
-	refused := errors.New("connection refused")
-	bootsAtConnect, dialled := 0, ""
-	f.deps.connect = func(_ context.Context, url string) (*nats.Conn, error) {
-		bootsAtConnect, dialled = boots, url
-		return nil, refused
-	}
-	err := f.Restart(t.Context())
-	var fe *Error
-	if !errors.As(err, &fe) || fe.Phase != PhaseConnect || !errors.Is(err, refused) || fe.ContainerID != "c0ffee" {
-		t.Fatalf("Restart = %v, want an *Error at phase %s wrapping the cause", err, PhaseConnect)
-	}
-	if bootsAtConnect != 2 {
-		t.Fatalf("connect ran with %d ready line(s) in the log; want 2, the restarted server's included", bootsAtConnect)
-	}
-	if dialled != "nats://fixture-host:2" {
-		t.Fatalf("dialled %q, want the re-read mapped port on the same host", dialled)
-	}
-	if calls := f.callCounts(); calls["start"] != 0 || calls["terminate"] != 0 || calls["restart"] != 1 {
-		t.Fatalf("calls %v: a failed Restart replaced or removed the container", calls)
-	}
+	f := New(t)
 	if err := f.Restart(t.Context()); !errors.Is(err, errNotStarted) {
-		t.Fatalf("Restart after a failed Restart = %v, want the not-started refusal", err)
+		t.Fatalf("Restart before Start = %v, want the not-started refusal", err)
 	}
-}
-
-// The Restart fault matrix's later phases (task 2.2; TestRestartFaultMatrix covers the container
-// hooks against Docker): a failure re-reading the mapped port or waiting for JetStream returns an
-// *Error naming that phase and wrapping the cause, runs no later phase, publishes no new binding,
-// replaces no container, and leaves the fixture refusing a further Restart.
-func TestRestartLaterPhaseFailuresAreNamed(t *testing.T) {
-	injected := errors.New("injected failure")
-	for _, tc := range []struct {
-		phase Phase
-		set   func(d *deps)
-		// later is the dependency count that must stay zero: the next phase never ran.
-		later string
-	}{
-		{PhaseMappedPort, func(d *deps) {
-			d.mappedPort = func(context.Context, testcontainers.Container) (string, error) { return "", injected }
-		}, "connect"},
-		{PhaseJetStream, func(d *deps) {
-			d.jsReady = func(context.Context, jetstream.JetStream) error { return injected }
-		}, ""},
-	} {
-		t.Run(string(tc.phase), func(t *testing.T) {
-			f := restartOnFakes(t)
-			tc.set(&f.deps)
-
-			err := f.Restart(t.Context())
-			var fe *Error
-			if !errors.As(err, &fe) || fe.Phase != tc.phase || !errors.Is(err, injected) || fe.ContainerID != "c0ffee" || fe.ParentErr != nil {
-				t.Fatalf("Restart = %v, want an *Error at phase %s wrapping the injected cause", err, tc.phase)
-			}
-			calls := f.callCounts()
-			if tc.later != "" && calls[tc.later] != 0 {
-				t.Fatalf("a phase after %s ran: %s called %d times", tc.phase, tc.later, calls[tc.later])
-			}
-			if calls["start"] != 0 || calls["terminate"] != 0 || calls["restart"] != 1 {
-				t.Fatalf("calls %v: a failed Restart replaced or removed the container", calls)
-			}
-			if f.URL() != "" || f.JetStream() != nil {
-				t.Fatalf("after a failed Restart: URL %q, JetStream %v; want no binding published", f.URL(), f.JetStream())
-			}
-			if err := f.Restart(t.Context()); !errors.Is(err, errNotStarted) {
-				t.Fatalf("Restart after a failed Restart = %v, want the not-started refusal", err)
-			}
-		})
+	if err := f.Restart(nilCtx); err == nil {
+		t.Fatal("Restart with a nil context returned nil")
 	}
-}
-
-// A create that fails returns a typed error naming the phase and the container.
-func TestFailedCreateIsTyped(t *testing.T) {
-	f := startedWith(t)
-	cause := errors.New("timeout")
-	f.deps.createStream = func(context.Context, jetstream.JetStream, jetstream.StreamConfig) (jetstream.Stream, error) {
-		return nil, cause
-	}
-	_, err := f.CreateStream(t.Context(), "s")
-	var fe *Error
-	if !errors.As(err, &fe) || fe.Phase != PhaseCreateStream || !errors.Is(err, cause) || fe.ContainerID != "c0ffee" {
-		t.Fatalf("CreateStream = %v, want a typed create-stream error", err)
+	if rem := f.remaining(); len(rem) != 0 {
+		t.Fatalf("a refused Restart holds %v", rem)
 	}
 }
 
@@ -193,6 +34,8 @@ func TestResourceMethodsRefuseBeforeStartAndNilContexts(t *testing.T) {
 	checks := map[string]error{}
 	_, checks["CreateStream before Start"] = f.CreateStream(t.Context(), "s")
 	_, checks["CreateStream nil ctx"] = f.CreateStream(nilCtx, "s")
+	_, checks["CreateMemoryStream before Start"] = f.CreateMemoryStream(t.Context(), "s")
+	_, checks["CreateMemoryStream nil ctx"] = f.CreateMemoryStream(nilCtx, "s")
 	checks["Start nil ctx"] = f.Start(nilCtx)
 	checks["Stop nil ctx"] = f.Stop(nilCtx)
 	for name, err := range checks {
@@ -200,8 +43,8 @@ func TestResourceMethodsRefuseBeforeStartAndNilContexts(t *testing.T) {
 			t.Errorf("%s returned nil", name)
 		}
 	}
-	if f.totalCalls() != 0 {
-		t.Errorf("refusals made calls: %v", f.callCounts())
+	if f.used || len(f.remaining()) != 0 {
+		t.Errorf("refusals consumed the fixture or left it holding %v", f.remaining())
 	}
 }
 
@@ -212,14 +55,14 @@ func TestPreCancelledStartIsRefusedWithoutConsuming(t *testing.T) {
 	if err := f.Start(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("Start = %v, want context.Canceled", err)
 	}
-	if f.used || f.totalCalls() != 0 {
-		t.Fatal("a pre-cancelled Start consumed the fixture or made a call")
+	if f.used {
+		t.Fatal("a pre-cancelled Start consumed the fixture")
 	}
 }
 
 func TestErrorReportsEveryField(t *testing.T) {
 	cause, cleanup := errors.New("dial refused"), errors.New("terminate: daemon gone")
-	e := &Error{Phase: PhaseConnect, ContainerID: "0123456789abcdef", ParentErr: context.Canceled, Cause: cause, Cleanup: cleanup}
+	e := &phaseError{phase: "connect", containerID: "0123456789abcdef", parentErr: context.Canceled, cause: cause, cleanup: cleanup}
 	msg := e.Error()
 	for _, want := range []string{"phase connect", "container 0123456789ab", "parent context context canceled", "dial refused", "cleanup: terminate: daemon gone"} {
 		if !strings.Contains(msg, want) {
@@ -229,7 +72,7 @@ func TestErrorReportsEveryField(t *testing.T) {
 	if !errors.Is(e, cause) || !errors.Is(e, cleanup) || !errors.Is(e, context.Canceled) {
 		t.Error("Unwrap hides the cause, the cleanup error, or the parent context's error")
 	}
-	live := (&Error{Phase: PhaseStart, Cause: cause}).Error()
+	live := (&phaseError{phase: "start", cause: cause}).Error()
 	if !strings.Contains(live, "parent context live") || strings.Contains(live, "container") {
 		t.Errorf("%q", live)
 	}
@@ -256,7 +99,7 @@ func TestRollbackIgnoresParentCancellationButStaysBounded(t *testing.T) {
 	}
 }
 
-// M5: the connect dependency honours its context. A broker that accepts the TCP connection and
+// M5: connect honours its context. A broker that accepts the TCP connection and
 // never speaks would otherwise hold Start for the whole dial timeout after the caller gave up.
 func TestConnectHonoursItsContext(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -276,7 +119,7 @@ func TestConnectHonoursItsContext(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
 	began := time.Now()
-	nc, err := defaultDeps(t.Logf).connect(ctx, "nats://"+ln.Addr().String())
+	nc, err := connect(ctx, "nats://"+ln.Addr().String())
 	if nc != nil {
 		nc.Close()
 	}
@@ -313,7 +156,7 @@ func TestConnectJoinsItsDial(t *testing.T) {
 	}
 	done := make(chan result, 1)
 	go func() {
-		nc, err := defaultDeps(t.Logf).connect(ctx, "nats://"+ln.Addr().String())
+		nc, err := connect(ctx, "nats://"+ln.Addr().String())
 		done <- result{nc, err}
 	}()
 	srv, ok := <-accepted
@@ -355,8 +198,8 @@ func TestNonPositiveMaxPayloadIsRefused(t *testing.T) {
 		if err := f.Start(t.Context()); err == nil || !strings.Contains(err.Error(), "max payload") {
 			t.Errorf("Start with max payload %d = %v, want a refusal naming the max payload", n, err)
 		}
-		if f.totalCalls() != 0 || f.used {
-			t.Errorf("max payload %d: the refusal made calls %v or consumed the fixture", n, f.callCounts())
+		if f.used {
+			t.Errorf("max payload %d: the refusal consumed the fixture", n)
 		}
 	}
 }
@@ -382,51 +225,20 @@ func TestImagePin(t *testing.T) {
 			}
 		})
 	}
-	// Start reads the pin before any Docker call: a pin without a digest fails the image phase
-	// with no dependency called. The embedded value is swapped for this test only; no test in this
+	// Start reads the pin first, before any Docker call: a pin without a digest fails the image
+	// phase holding nothing. The embedded value is swapped for this test only; no test in this
 	// package runs in parallel.
 	t.Run("Start refuses before Docker", func(t *testing.T) {
 		embedded := imagePin
 		imagePin = "nats" + ":2.15.0-alpine\n"
 		t.Cleanup(func() { imagePin = embedded })
 		f := New(t)
-		noDocker(t, f)
 		err := f.Start(t.Context())
-		var fe *Error
-		if !errors.As(err, &fe) || fe.Phase != PhaseImage || !strings.Contains(err.Error(), "not a digest reference") {
-			t.Fatalf("Start = %v, want an image-phase *Error naming the missing digest", err)
+		if err == nil || !strings.Contains(err.Error(), "phase image") || !strings.Contains(err.Error(), "not a digest reference") {
+			t.Fatalf("Start = %v, want an image-phase error naming the missing digest", err)
 		}
-		if calls := f.totalCalls(); calls != 0 {
-			t.Fatalf("a refused image made %d dependency call(s): %v", calls, f.callCounts())
+		if rem := f.remaining(); len(rem) != 0 {
+			t.Fatalf("a refused image left the fixture holding %v", rem)
 		}
 	})
-}
-
-// noDocker replaces every dependency with one that fails the test: these tests prove what the
-// fixture does before, or instead of, touching Docker.
-func noDocker(t *testing.T, f *Fixture) {
-	t.Helper()
-	f.deps.start = func(context.Context, testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
-		t.Error("unexpected Docker start")
-		return nil, errors.New("unexpected Docker start")
-	}
-}
-
-// M5: a Start whose context is cancelled while a dependency fails for its own reason still
-// reports the cancellation to errors.Is: a caller asking "was I cancelled?" gets the truth.
-func TestCancelledStartIsRecognisable(t *testing.T) {
-	f := New(t)
-	ctx, cancel := context.WithCancel(t.Context())
-	f.deps.start = func(context.Context, testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
-		cancel()
-		return nil, errors.New("daemon: request aborted")
-	}
-	err := f.Start(ctx)
-	var fe *Error
-	if !errors.As(err, &fe) || fe.Phase != PhaseStart {
-		t.Fatalf("Start = %v, want a start-phase *Error", err)
-	}
-	if !errors.Is(err, context.Canceled) {
-		t.Fatalf("errors.Is(%v, context.Canceled) = false", err)
-	}
 }

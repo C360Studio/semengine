@@ -29,7 +29,7 @@ var errNotStarted = errors.New("natsfixture: Restart needs a fixture whose Start
 // Restart and starts it again after.
 //
 // Restart refuses, with no Docker call, before a successful Start and once Stop has begun. A
-// failure in a phase returns an *Error naming it; nothing is tried again and no replacement
+// failure in a phase returns an error naming it; nothing is tried again and no replacement
 // container is created. After a failure the fixture can no longer be restarted, and Stop removes
 // the container.
 //
@@ -47,7 +47,6 @@ func (f *Fixture) Restart(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	f.count("restart")
 	return f.restart(ctx, c, id)
 }
 
@@ -66,9 +65,7 @@ func (f *Fixture) restart(ctx context.Context, c testcontainers.Container, id st
 	nc, oldURL := f.nc, f.url
 	f.mu.Unlock()
 
-	err := f.deps.drain(ctx, nc)
-	f.count("drain")
-	if err != nil {
+	if err := drainAndObserveClosed(ctx, nc); err != nil {
 		return fmt.Errorf("natsfixture: restart: drain connection: %w", err)
 	}
 	f.mu.Lock()
@@ -83,37 +80,35 @@ func (f *Fixture) restart(ctx context.Context, c testcontainers.Container, id st
 
 	// run times one phase and turns a cancelled parent into that phase's failure even when the
 	// operation itself returned success, as Start's phases do.
-	run := func(p Phase, op func() error) error {
+	run := func(phase string, op func() error) error {
 		err := op()
 		if err == nil {
 			err = ctx.Err()
 		}
 		if err != nil {
-			return &Error{Phase: p, ContainerID: id, ParentErr: ctx.Err(), Cause: err}
+			return &phaseError{phase: phase, containerID: id, parentErr: ctx.Err(), cause: err}
 		}
 		return nil
 	}
-	if err := run(PhaseStopContainer, func() error {
-		err := f.deps.stopContainer(ctx, c)
-		f.count("stopContainer")
-		return err
+	if err := run("stop-container", func() error {
+		// A nil timeout leaves the stop grace period to Docker (the container's StopTimeout, else
+		// the engine default); ctx bounds the call.
+		return c.Stop(ctx, nil)
 	}); err != nil {
 		return err
 	}
-	if err := run(PhaseStartContainer, func() error {
+	if err := run("start-container", func() error {
 		// The container's log keeps every boot's lines, so the ready log of the last boot is
 		// already there: readiness is one more ready line than before the start.
-		before, err := f.readyLines(ctx, c)
+		before, err := readyLines(ctx, c)
 		if err != nil {
 			return err
 		}
-		err = f.deps.startContainer(ctx, c)
-		f.count("startContainer")
-		if err != nil {
+		if err := c.Start(ctx); err != nil {
 			return err
 		}
 		// If Docker log rotation drops old lines the count can fall; the wait then runs until ctx ends (loud, not silent).
-		_, err = probe.Await(ctx, func(ctx context.Context) (int, error) { return f.readyLines(ctx, c) },
+		_, err = probe.Await(ctx, func(ctx context.Context) (int, error) { return readyLines(ctx, c) },
 			func(n int) bool { return n > before })
 		return err
 	}); err != nil {
@@ -122,7 +117,7 @@ func (f *Fixture) restart(ctx context.Context, c testcontainers.Container, id st
 	// The host port is the one Start gave Docker; it is read back rather than assumed, so a lost
 	// binding fails here with the inspect output instead of at connect.
 	var port string
-	if err := run(PhaseMappedPort, func() error {
+	if err := run("mapped-port", func() error {
 		var err error
 		port, err = f.mappedPort(ctx, c)
 		return err
@@ -130,9 +125,8 @@ func (f *Fixture) restart(ctx context.Context, c testcontainers.Container, id st
 		return err
 	}
 	url := fmt.Sprintf("nats://%s:%s", host, port)
-	if err := run(PhaseConnect, func() error {
-		nc, err := f.deps.connect(ctx, url)
-		f.count("connect")
+	if err := run("connect", func() error {
+		nc, err := connect(ctx, url)
 		if nc != nil {
 			f.mu.Lock()
 			f.nc = nc
@@ -142,7 +136,7 @@ func (f *Fixture) restart(ctx context.Context, c testcontainers.Container, id st
 	}); err != nil {
 		return err
 	}
-	return run(PhaseJetStream, func() error {
+	return run("jetstream-ready", func() error {
 		f.mu.Lock()
 		nc := f.nc
 		f.mu.Unlock()
@@ -150,8 +144,7 @@ func (f *Fixture) restart(ctx context.Context, c testcontainers.Container, id st
 		if err != nil {
 			return err
 		}
-		err = f.deps.jsReady(ctx, js)
-		f.count("jsReady")
+		err = jetStreamReady(ctx, js)
 		if err == nil {
 			f.mu.Lock()
 			f.js, f.url = js, url
@@ -162,9 +155,8 @@ func (f *Fixture) restart(ctx context.Context, c testcontainers.Container, id st
 }
 
 // readyLines counts the ready lines in the container's log.
-func (f *Fixture) readyLines(ctx context.Context, c testcontainers.Container) (int, error) {
-	logs, err := f.deps.logs(ctx, c)
-	f.count("logs")
+func readyLines(ctx context.Context, c testcontainers.Container) (int, error) {
+	logs, err := containerLogs(ctx, c)
 	if err != nil {
 		return 0, err
 	}

@@ -6,11 +6,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os/exec"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -133,79 +134,125 @@ func TestFixtureRoundTrip(t *testing.T) {
 	}
 }
 
-// failpoints wrap a real dependency: fail returns an error after the real call, so the resource
-// the call creates exists; block runs the real call, then parks until released.
-func failAfter[T any](real func(context.Context, testcontainers.Container) (T, error), err error) func(context.Context, testcontainers.Container) (T, error) {
-	return func(ctx context.Context, c testcontainers.Container) (T, error) {
-		v, _ := real(ctx, c)
-		return v, err
+// Every stream the fixture creates declares its bounds, as the broker reports them (nats-fixture ›
+// "Bounded test streams"); the values are restated here, not read from the implementation. Only
+// the storage differs between the two.
+func TestStreamsDeclareBounds(t *testing.T) {
+	f := startFixture(t)
+	ctx := t.Context()
+	file, err := f.CreateStream(ctx, "orders", "orders.>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mem, err := f.CreateMemoryStream(ctx, "scratch", "scratch.>")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		stream  jetstream.Stream
+		storage jetstream.StorageType
+	}{{file, jetstream.FileStorage}, {mem, jetstream.MemoryStorage}} {
+		info, err := tc.stream.Info(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c := info.Config; c.Storage != tc.storage || c.MaxAge != time.Hour || c.MaxBytes != 64<<20 || c.Discard != jetstream.DiscardOld {
+			t.Errorf("stream %s as the broker reports it: storage %v max age %v max bytes %d discard %v; want %v, 1h, 64 MiB, old",
+				c.Name, c.Storage, c.MaxAge, c.MaxBytes, c.Discard, tc.storage)
+		}
 	}
 }
 
-// S1-1: a failure at each phase after the container exists removes it, names the phase and the
-// container, writes the container's log to the test log, starts and terminates exactly one
-// container, and leaves Stop nothing to do (nats-fixture › "Failure after the container exists").
+// errNotFound is the error testcontainers' MappedPort returns when Docker Desktop has left the
+// container's port list empty (#180).
+var errNotFound = errors.New(`port "4222/tcp" not found`)
+
+// stopHoldsNothing reports whether Stop under an ended context returns nil. Stop returns nil with
+// no Docker call when the fixture holds nothing, and refuses with the context's error when it
+// holds anything, so nil means nothing was held and no call was made.
+func stopHoldsNothing(t *testing.T, f *Fixture) bool {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	return f.Stop(ctx) == nil
+}
+
+// deadPort returns a port nothing listens on: the operating system handed it out and it was
+// closed again at once.
+func deadPort(t *testing.T) string {
+	t.Helper()
+	l, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := strconv.Itoa(l.Addr().(*net.TCPAddr).Port)
+	if err := l.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return port
+}
+
+// S1-1: a failure in a phase after the container exists removes it, names the phase and the
+// container, writes the container's log to the test log once, and leaves Stop nothing to do
+// (nats-fixture › "Failure after the container exists", "A missing mapped port fails Start"). The
+// fixture's one test seam, the mapped-port read, drives both rows: it fails the read, or it reports
+// a port nothing listens on, so the real connect fails.
 func TestS1_1PartialStartupCleanup(t *testing.T) {
-	injected := errors.New("injected failure")
 	for _, tc := range []struct {
-		phase  Phase
-		inject func(d *deps)
+		phase string
+		read  func(t *testing.T) (string, error)
 	}{
-		{PhaseHost, func(d *deps) { d.host = failAfter(d.host, injected) }},
-		{PhaseMappedPort, func(d *deps) { d.mappedPort = failAfter(d.mappedPort, injected) }},
-		{PhaseConnect, func(d *deps) {
-			real := d.connect
-			d.connect = func(ctx context.Context, url string) (*nats.Conn, error) {
-				nc, err := real(ctx, url)
-				if err == nil {
-					nc.Close()
-				}
-				return nil, injected
-			}
-		}},
-		{PhaseJetStream, func(d *deps) { d.jsReady = func(context.Context, jetstream.JetStream) error { return injected } }},
+		{"mapped-port", func(*testing.T) (string, error) { return "", errNotFound }},
+		{"connect", func(t *testing.T) (string, error) { return deadPort(t), nil }},
 	} {
-		t.Run(string(tc.phase), func(t *testing.T) {
+		t.Run(tc.phase, func(t *testing.T) {
 			tb := &logTB{TB: t}
 			f := New(tb)
-			tc.inject(&f.deps)
+			var id string
+			f.readPort = func(_ context.Context, c testcontainers.Container) (string, error) {
+				id = c.GetContainerID()
+				return tc.read(t)
+			}
 			err := f.Start(t.Context())
-			var fe *Error
-			if !errors.As(err, &fe) || fe.Phase != tc.phase || !errors.Is(err, injected) {
-				t.Fatalf("Start = %v, want an *Error at phase %s wrapping the injected cause", err, tc.phase)
+			if err == nil || id == "" {
+				t.Fatalf("Start = %v with container %q, want a failure after the container exists", err, id)
 			}
-			if fe.ContainerID == "" || fe.ParentErr != nil || fe.Cleanup != nil {
-				t.Fatalf("error fields: container %q parent %v cleanup %v", fe.ContainerID, fe.ParentErr, fe.Cleanup)
+			for _, want := range []string{"phase " + tc.phase, "container " + shortID(id), "(parent context live)"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("Start error %q lacks %q", err, want)
+				}
 			}
-			if containerExists(t, fe.ContainerID) {
-				t.Errorf("container %s still exists", fe.ContainerID)
+			if strings.Contains(err.Error(), "cleanup:") {
+				t.Errorf("Start error %q reports a failed cleanup", err)
+			}
+			if containerExists(t, id) {
+				t.Errorf("container %s still exists", id)
+			}
+			if got := processContainers(t); len(got) != 0 {
+				t.Errorf("containers of this process after the failed Start: %v, want none", got)
 			}
 			if got := tb.containerLogs(); got != 1 {
-				t.Errorf("%d container log(s) in the test log, want one", got)
+				t.Errorf("%d container log(s) in the test log, want one: one container started", got)
 			}
-			calls := f.callCounts()
-			if calls["terminate"] != 1 || calls["start"] != 1 {
-				t.Errorf("calls %v, want start and terminate once each", calls)
-			}
-			if err := stop(t, f); err != nil || !maps(calls, f.callCounts()) {
-				t.Errorf("Stop after a rolled-back Start = %v, calls %v -> %v; want nil with no call", err, calls, f.callCounts())
+			if !stopHoldsNothing(t, f) {
+				t.Errorf("after a rolled-back Start the fixture still holds %v", f.remaining())
 			}
 		})
 	}
 
 	// A resource operation after a successful Start reports its own phase and leaves the fixture
-	// owned; Stop then removes everything.
-	t.Run(string(PhaseCreateStream), func(t *testing.T) {
+	// owned; Stop then removes everything. The broker refuses a second stream on the first one's
+	// subjects.
+	t.Run("create-stream", func(t *testing.T) {
 		f := startFixture(t)
-		f.deps.createStream = func(context.Context, jetstream.JetStream, jetstream.StreamConfig) (jetstream.Stream, error) {
-			return nil, injected
-		}
-		_, err := f.CreateStream(t.Context(), "never", "never.>")
-		var fe *Error
-		if !errors.As(err, &fe) || fe.Phase != PhaseCreateStream || fe.ContainerID == "" {
-			t.Fatalf("CreateStream = %v, want an *Error at phase %s", err, PhaseCreateStream)
+		if _, err := f.CreateStream(t.Context(), "first", "orders.>"); err != nil {
+			t.Fatal(err)
 		}
 		id := f.containerID
+		_, err := f.CreateStream(t.Context(), "second", "orders.>")
+		if err == nil || !strings.Contains(err.Error(), "phase create-stream") || !strings.Contains(err.Error(), "container "+shortID(id)) {
+			t.Fatalf("CreateStream = %v, want an error naming phase create-stream and container %s", err, shortID(id))
+		}
 		if err := stop(t, f); err != nil {
 			t.Fatalf("Stop: %v", err)
 		}
@@ -215,105 +262,64 @@ func TestS1_1PartialStartupCleanup(t *testing.T) {
 	})
 }
 
-func maps(a, b map[string]int) bool {
-	if len(a) != len(b) {
-		return false
+// S1-2: cancelling the test context while Start is in I/O fails Start with context.Canceled,
+// reports the parent state, removes the container, and starts no other container. The mapped-port
+// read succeeds and is then held until the test has cancelled: work that finishes after
+// cancellation is not accepted, so Start fails in that phase rather than the next.
+func TestS1_2CancellationDuringIO(t *testing.T) {
+	tb := &logTB{TB: t}
+	f := New(tb)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	entered, release := make(chan struct{}), make(chan struct{})
+	var id string
+	f.readPort = func(ctx context.Context, c testcontainers.Container) (string, error) {
+		id = c.GetContainerID()
+		port, err := readMappedPort(ctx, c)
+		close(entered)
+		<-release
+		return port, err
 	}
-	for k, v := range a {
-		if b[k] != v {
-			return false
+	result := make(chan error, 1)
+	go func() { result <- f.Start(ctx) }()
+	select {
+	case <-entered:
+	case err := <-result:
+		t.Fatalf("Start ended before the mapped-port read: %v", err)
+	}
+	cancel()
+	close(release)
+	err := <-result
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Start = %v, want context.Canceled", err)
+	}
+	for _, want := range []string{"phase mapped-port", "container " + shortID(id), "(parent context context canceled)"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Start error %q lacks %q", err, want)
 		}
 	}
-	return true
-}
-
-// S1-2: cancelling the test context while a phase is in I/O fails Start with
-// context.Canceled, reports the parent state, removes the container, and starts
-// no container after cancellation.
-func TestS1_2CancellationDuringIO(t *testing.T) {
-	for _, tc := range []struct {
-		name  string
-		phase Phase
-	}{
-		{name: string(PhaseStart), phase: PhaseStart},
-		{name: string(PhaseConnect), phase: PhaseConnect},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			f := New(t)
-			ctx, cancel := context.WithCancel(t.Context())
-			defer cancel()
-			var startedAfterCancel, signaled atomic.Bool
-			realStart := f.deps.start
-			f.deps.start = func(startCtx context.Context, req testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
-				if ctx.Err() != nil {
-					startedAfterCancel.Store(true)
-				}
-				return realStart(startCtx, req)
-			}
-			entered, release := make(chan struct{}), make(chan struct{})
-			signal := func() {
-				if signaled.CompareAndSwap(false, true) {
-					close(entered)
-				}
-			}
-			switch tc.phase {
-			case PhaseStart:
-				real := f.deps.start
-				f.deps.start = func(ctx context.Context, req testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
-					c, err := real(ctx, req)
-					signal()
-					<-release
-					return c, err
-				}
-			case PhaseConnect:
-				real := f.deps.connect
-				f.deps.connect = func(ctx context.Context, url string) (*nats.Conn, error) {
-					nc, err := real(ctx, url)
-					signal()
-					<-release
-					return nc, err
-				}
-			}
-			result := make(chan error, 1)
-			go func() { result <- f.Start(ctx) }()
-			select {
-			case <-entered:
-			case err := <-result:
-				t.Fatalf("Start ended before phase %s: %v", tc.phase, err)
-			}
-			cancel()
-			close(release)
-			err := <-result
-			if !errors.Is(err, context.Canceled) {
-				t.Fatalf("Start = %v, want context.Canceled", err)
-			}
-			var fe *Error
-			if !errors.As(err, &fe) || fe.Phase != tc.phase || fe.ContainerID == "" ||
-				!errors.Is(fe.ParentErr, context.Canceled) || fe.Cleanup != nil {
-				t.Fatalf("Start = %v, want one *Error at phase %s naming the container, the cancelled parent and a clean rollback", err, tc.phase)
-			}
-			if containerExists(t, fe.ContainerID) {
-				t.Fatalf("container %s survives cancellation", fe.ContainerID)
-			}
-			if startedAfterCancel.Load() {
-				t.Fatal("Start called the container start hook after cancellation")
-			}
-		})
+	if strings.Contains(err.Error(), "cleanup:") {
+		t.Errorf("Start error %q reports a failed cleanup", err)
+	}
+	if containerExists(t, id) {
+		t.Fatalf("container %s survives cancellation", id)
+	}
+	if got := processContainers(t); len(got) != 0 {
+		t.Fatalf("containers of this process after the cancelled Start: %v, want none", got)
+	}
+	if got := tb.containerLogs(); got != 1 {
+		t.Fatalf("%d container log(s) in the test log, want one: one container started", got)
 	}
 }
 
-// S1-6: a Stop after a successful Stop is a no-op: nil, and no dependency call.
+// S1-6: a Stop after a successful Stop is a no-op: nil, and no Docker call.
 func TestS1_6RepeatedStop(t *testing.T) {
 	f := startFixture(t)
 	if err := stop(t, f); err != nil {
 		t.Fatal(err)
 	}
-	before := f.callCounts()
-	if err := stop(t, f); err != nil {
-		t.Fatalf("repeated Stop = %v", err)
-	}
-	if after := f.callCounts(); !maps(before, after) {
-		t.Fatalf("repeated Stop made calls: %v -> %v", before, after)
+	if !stopHoldsNothing(t, f) {
+		t.Fatalf("after Stop the fixture still holds %v", f.remaining())
 	}
 }
 
@@ -321,61 +327,45 @@ func TestS1_6RepeatedStop(t *testing.T) {
 // passes over the fixture with no restart promised.
 func TestS1_7Restart(t *testing.T) {
 	f := startFixture(t)
-	before, calls := f.remaining(), f.callCounts()
+	id, before := f.containerID, f.remaining()
 	if err := f.Start(t.Context()); !errors.Is(err, ErrAlreadyUsed) {
 		t.Fatalf("second Start = %v, want ErrAlreadyUsed", err)
 	}
-	if !slices.Equal(before, f.remaining()) || !maps(calls, f.callCounts()) || conn(f).Status() != nats.CONNECTED {
+	if !slices.Equal(before, f.remaining()) || conn(f).Status() != nats.CONNECTED {
 		t.Fatal("refused second Start changed the fixture")
+	}
+	if got := processContainers(t); !slices.Equal(got, []string{id}) {
+		t.Fatalf("containers of this process after a refused second Start: %v, want only %s", got, id)
 	}
 	t.Run("lifecycletest", func(t *testing.T) {
 		lifecycletest.Run(t, func() lifecycletest.Owner { return owner{New(t)} }, mustFailFixture(t), lifecycletest.Promise{Restart: false})
 	})
 }
 
-// errStartRefused is the start hook's injected failure in the fixture's must-fail factory.
-var errStartRefused = errors.New("injected: container start refused")
-
-// mustFailFixture is the fixture's must-fail factory: a fixture whose start hook creates the real
-// container and then returns an error, as GenericContainer can (generic.go:89,94). Start must fail
-// at PhaseStart and roll the container back, so the failed-start check judges that rollback, not a
-// start that never reached Docker.
+// mustFailFixture is the fixture's must-fail factory: a fixture whose mapped-port read fails after
+// the real container exists, so the failed-start check judges the rollback, not a start that never
+// reached Docker.
 func mustFailFixture(t *testing.T) lifecycletest.Factory {
 	return func() lifecycletest.Owner {
 		f := New(t)
-		realStart := f.deps.start
-		f.deps.start = func(ctx context.Context, req testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
-			c, err := realStart(ctx, req)
-			if c == nil {
-				// No container means no rollback to judge: the check would pass on a start that
-				// never reached Docker.
-				t.Errorf("must-fail factory: the real start created no container: %v", err)
-			}
-			return c, errors.Join(err, errStartRefused)
-		}
+		f.readPort = func(context.Context, testcontainers.Container) (string, error) { return "", errNotFound }
 		return owner{f}
 	}
 }
 
-// nats-fixture › "Start hook fails": Start returns an *Error at PhaseStart naming the container it
-// rolled back, the fixture reports nothing unresolved, and a following Stop returns nil with no
-// call.
+// The must-fail factory's Start fails at the mapped-port phase after removing the container it
+// created, the fixture holds nothing, and a following Stop returns nil with no call.
 func TestMustFailFixture(t *testing.T) {
 	o := mustFailFixture(t)().(owner)
 	err := o.f.Start(t.Context())
-	var fe *Error
-	if !errors.As(err, &fe) || fe.Phase != PhaseStart || !errors.Is(err, errStartRefused) || fe.ContainerID == "" || fe.Cleanup != nil {
-		t.Fatalf("Start = %v, want an *Error at phase %s with a clean rollback", err, PhaseStart)
+	if !errors.Is(err, errNotFound) || !strings.Contains(err.Error(), "phase mapped-port") || strings.Contains(err.Error(), "cleanup:") {
+		t.Fatalf("Start = %v, want a mapped-port failure with a clean rollback", err)
 	}
-	if containerExists(t, fe.ContainerID) {
-		t.Fatalf("container %s survives the failed Start", fe.ContainerID)
+	if got := processContainers(t); len(got) != 0 {
+		t.Fatalf("containers of this process survive the failed Start: %v", got)
 	}
-	if rem := o.f.remaining(); len(rem) != 0 {
-		t.Fatalf("failed Start holds %v", rem)
-	}
-	calls := o.f.callCounts()
-	if err := stop(t, o.f); err != nil || !maps(calls, o.f.callCounts()) {
-		t.Fatalf("Stop after the failed Start = %v, calls %v -> %v; want nil with no call", err, calls, o.f.callCounts())
+	if !stopHoldsNothing(t, o.f) {
+		t.Fatalf("failed Start holds %v", o.f.remaining())
 	}
 }
 
@@ -385,7 +375,7 @@ type owner struct{ f *Fixture }
 func (o owner) Start(ctx context.Context) error { return o.f.Start(ctx) }
 func (o owner) Stop(ctx context.Context) error  { return o.f.Stop(ctx) }
 func (o owner) Observe() lifecycletest.Observation {
-	return lifecycletest.Observation{Unresolved: o.f.remaining(), Calls: o.f.callCounts()}
+	return lifecycletest.Observation{Unresolved: o.f.remaining()}
 }
 
 // S1-8: two fixtures in one test are disjoint, and each Stop removes only its own.
@@ -447,8 +437,8 @@ func TestRestartKeepsFileStreamLosesMemoryStream(t *testing.T) {
 
 	restart(t, f)
 
-	if f.containerID != id || f.callCounts()["start"] != 1 {
-		t.Fatalf("Restart replaced the container: %s -> %s, start calls %d", id, f.containerID, f.callCounts()["start"])
+	if got := processContainers(t); f.containerID != id || !slices.Equal(got, []string{id}) {
+		t.Fatalf("Restart replaced the container: %s -> %s, containers of this process %v", id, f.containerID, got)
 	}
 	js := f.JetStream()
 	fs, err := js.Stream(ctx, file)
@@ -514,108 +504,35 @@ func TestRestartURLDials(t *testing.T) {
 	}
 }
 
-// call. Restart returns an *Error naming exactly that phase, runs no later phase, creates no second
-// container, and Stop still removes the one container.
-func TestRestartFaultMatrix(t *testing.T) {
-	injected := errors.New("injected failure")
-	hook := func(real func(context.Context, testcontainers.Container) error, after bool) func(context.Context, testcontainers.Container) error {
-		return func(ctx context.Context, c testcontainers.Container) error {
-			if after {
-				_ = real(ctx, c)
-			}
-			return injected
-		}
-	}
-	for _, tc := range []struct {
-		name  string
-		phase Phase
-		set   func(d *deps)
-		// later is the dependency count that must not move: the next phase never ran.
-		later string
-	}{
-		{"stop-container before", PhaseStopContainer, func(d *deps) { d.stopContainer = hook(d.stopContainer, false) }, "startContainer"},
-		{"stop-container after", PhaseStopContainer, func(d *deps) { d.stopContainer = hook(d.stopContainer, true) }, "startContainer"},
-		{"start-container before", PhaseStartContainer, func(d *deps) { d.startContainer = hook(d.startContainer, false) }, "mappedPort"},
-		{"start-container after", PhaseStartContainer, func(d *deps) { d.startContainer = hook(d.startContainer, true) }, "mappedPort"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			f := startFixture(t)
-			id := f.containerID
-			tc.set(&f.deps)
-			before := f.callCounts()
-			ctx, cancel := context.WithTimeout(t.Context(), stopBound)
-			defer cancel()
-			err := f.Restart(ctx)
-			var fe *Error
-			if !errors.As(err, &fe) || fe.Phase != tc.phase || !errors.Is(err, injected) || fe.ContainerID != id || fe.ParentErr != nil {
-				t.Fatalf("Restart = %v, want an *Error at phase %s on container %s wrapping the injected cause", err, tc.phase, shortID(id))
-			}
-			calls := f.callCounts()
-			if calls[tc.later] != before[tc.later] {
-				t.Fatalf("a phase after %s ran: %s calls %d -> %d", tc.phase, tc.later, before[tc.later], calls[tc.later])
-			}
-			if calls["start"] != 1 {
-				t.Fatalf("start called %d times; Restart must not replace the container", calls["start"])
-			}
-			if got := processContainers(t); len(got) != 1 || got[0] != id {
-				t.Fatalf("containers of this fixture after a failed Restart: %v, want only %s", got, id)
-			}
-			if err := f.Restart(ctx); !errors.Is(err, errNotStarted) {
-				t.Fatalf("Restart after a failed Restart = %v, want the not-started refusal", err)
-			}
-			if err := stop(t, f); err != nil {
-				t.Fatalf("Stop after a failed Restart: %v", err)
-			}
-			if rem := f.remaining(); len(rem) != 0 || containerExists(t, id) {
-				t.Fatalf("after Stop: remaining %v, container exists %t", rem, containerExists(t, id))
-			}
-		})
-	}
-}
-
-// nats-fixture › "Restart before Start", its second half: once Stop has begun, Restart refuses
-// with no dependency call. A Stop whose container removal fails has begun and keeps the container
-// for a later Stop; Restart must not stop and start that container again. Docker's start time for
-// the container is the oracle that it was not restarted.
+// nats-fixture › "Restart before Start", its second half: once Stop has begun, Restart refuses and
+// starts no container. The container is removed behind the fixture's back with the Docker CLI, so
+// Stop's own removal fails: Stop has begun, and keeps the container handle for a later Stop.
 func TestRestartRefusedOnceStopHasBegun(t *testing.T) {
 	f := startFixture(t)
 	id := f.containerID
-	startedAt := func() string {
-		t.Helper()
-		out, err := exec.Command("docker", "inspect", "--format", "{{.State.StartedAt}}", id).Output()
-		if err != nil {
-			t.Fatalf("docker inspect %s: %v", shortID(id), err)
-		}
-		return strings.TrimSpace(string(out))
+	if out, err := exec.Command("docker", "rm", "-f", id).CombinedOutput(); err != nil {
+		t.Fatalf("docker rm -f %s: %v\n%s", shortID(id), err, out)
 	}
-	first := startedAt()
-	terminate := f.deps.terminate
-	// Registered after New's cleanup, so it runs first: a failed assertion below must not leave
-	// New's Stop with the refusing terminate, which would keep the real container running (#232).
-	t.Cleanup(func() { f.deps.terminate = terminate })
-	refused := errors.New("removal refused by the test")
-	f.deps.terminate = func(context.Context, testcontainers.Container) error { return refused }
-	if err := stop(t, f); !errors.Is(err, refused) {
-		t.Fatalf("Stop with a refused removal = %v, want the refusal", err)
+	// Registered after New's cleanup, so it runs first: the container is gone, and New's Stop
+	// would otherwise fail the test trying to remove it again.
+	t.Cleanup(func() {
+		f.mu.Lock()
+		f.container, f.containerID = nil, ""
+		f.mu.Unlock()
+	})
+	if err := stop(t, f); err == nil {
+		t.Fatal("Stop of a container already removed returned nil")
 	}
-	before := f.callCounts()
+	if rem := f.remaining(); !slices.Equal(rem, []string{"container " + shortID(id)}) {
+		t.Fatalf("after the failed Stop the fixture holds %v, want only the container", rem)
+	}
 	ctx, cancel := context.WithTimeout(t.Context(), stopBound)
 	defer cancel()
-	if err := f.Restart(ctx); err == nil {
-		t.Fatal("Restart after Stop began returned nil")
+	if err := f.Restart(ctx); !errors.Is(err, errNotStarted) {
+		t.Fatalf("Restart after Stop began = %v, want the not-started refusal", err)
 	}
-	if calls := f.callCounts(); !maps(calls, before) {
-		t.Fatalf("refused Restart made calls: %v -> %v", before, calls)
-	}
-	if got := startedAt(); got != first {
-		t.Fatalf("container %s restarted after Stop began: started at %s, then %s", shortID(id), first, got)
-	}
-	f.deps.terminate = terminate
-	if err := stop(t, f); err != nil {
-		t.Fatalf("second Stop: %v", err)
-	}
-	if containerExists(t, id) {
-		t.Fatalf("container %s exists after the second Stop", shortID(id))
+	if got := processContainers(t); len(got) != 0 {
+		t.Fatalf("containers of this process after the refused Restart: %v, want none", got)
 	}
 }
 

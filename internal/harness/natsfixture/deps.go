@@ -24,73 +24,44 @@ const (
 	maxLogBytes = 256 << 10
 )
 
-// deps is every call the fixture makes to Docker or NATS. Tests replace entries to fail or block
-// a phase; every call is counted, so a test can prove a path made none.
-type deps struct {
-	start        func(context.Context, testcontainers.GenericContainerRequest) (testcontainers.Container, error)
-	host         func(context.Context, testcontainers.Container) (string, error)
-	mappedPort   func(context.Context, testcontainers.Container) (string, error)
-	inspect      func(context.Context, testcontainers.Container) (string, error) // state and published ports, for a failed port read
-	connect      func(context.Context, string) (*nats.Conn, error)
-	jsReady      func(context.Context, jetstream.JetStream) error
-	createStream func(context.Context, jetstream.JetStream, jetstream.StreamConfig) (jetstream.Stream, error)
-	terminate    func(context.Context, testcontainers.Container) error
-	// stopContainer and startContainer stop and start the same container, for Restart.
-	stopContainer  func(context.Context, testcontainers.Container) error
-	startContainer func(context.Context, testcontainers.Container) error
-	drain          func(context.Context, *nats.Conn) error
-	logs           func(context.Context, testcontainers.Container) ([]byte, error)
+// readMappedPort reads the host port Docker mapped to the container's client port. It is the
+// fixture's one test seam (Fixture.readPort): a test replaces it to fail the mapped-port phase
+// and see the inspect in the error (#180).
+func readMappedPort(ctx context.Context, c testcontainers.Container) (string, error) {
+	p, err := c.MappedPort(ctx, clientPort)
+	return p.Port(), err
 }
 
-// defaultDeps calls Docker and NATS. Its start runs prepareDocker first, writing to logf.
-func defaultDeps(logf func(format string, args ...any)) deps {
-	return deps{
-		start: func(ctx context.Context, req testcontainers.GenericContainerRequest) (testcontainers.Container, error) {
-			prepareDocker(ctx, logf)
-			return testcontainers.GenericContainer(ctx, req)
-		},
-		host: func(ctx context.Context, c testcontainers.Container) (string, error) { return c.Host(ctx) },
-		mappedPort: func(ctx context.Context, c testcontainers.Container) (string, error) {
-			p, err := c.MappedPort(ctx, clientPort)
-			return p.Port(), err
-		},
-		inspect: func(ctx context.Context, c testcontainers.Container) (string, error) {
-			info, err := c.Inspect(ctx)
-			if err != nil {
-				return "", err
-			}
-			var state, ports any = "unknown", "unknown"
-			if info.State != nil {
-				state = info.State.Status
-			}
-			if info.NetworkSettings != nil {
-				ports = info.NetworkSettings.Ports
-			}
-			return fmt.Sprintf("state %v, ports %v", state, ports), nil
-		},
-		connect: connect,
-		jsReady: func(ctx context.Context, js jetstream.JetStream) error {
-			_, err := js.AccountInfo(ctx)
-			return err
-		},
-		createStream: func(ctx context.Context, js jetstream.JetStream, cfg jetstream.StreamConfig) (jetstream.Stream, error) {
-			return js.CreateStream(ctx, cfg)
-		},
-		terminate: func(ctx context.Context, c testcontainers.Container) error { return c.Terminate(ctx) },
-		// A nil timeout leaves the stop grace period to Docker (the container's StopTimeout, else
-		// the engine default); ctx bounds the call.
-		stopContainer:  func(ctx context.Context, c testcontainers.Container) error { return c.Stop(ctx, nil) },
-		startContainer: func(ctx context.Context, c testcontainers.Container) error { return c.Start(ctx) },
-		drain:          drainAndObserveClosed,
-		logs: func(ctx context.Context, c testcontainers.Container) ([]byte, error) {
-			rc, err := c.Logs(ctx)
-			if err != nil {
-				return nil, err
-			}
-			defer func() { _ = rc.Close() }()
-			return io.ReadAll(io.LimitReader(rc, maxLogBytes))
-		},
+// inspect describes the container's state and published ports, for a failed port read.
+func inspect(ctx context.Context, c testcontainers.Container) (string, error) {
+	info, err := c.Inspect(ctx)
+	if err != nil {
+		return "", err
 	}
+	var state, ports any = "unknown", "unknown"
+	if info.State != nil {
+		state = info.State.Status
+	}
+	if info.NetworkSettings != nil {
+		ports = info.NetworkSettings.Ports
+	}
+	return fmt.Sprintf("state %v, ports %v", state, ports), nil
+}
+
+// containerLogs reads the container's log, up to maxLogBytes.
+func containerLogs(ctx context.Context, c testcontainers.Container) ([]byte, error) {
+	rc, err := c.Logs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rc.Close() }()
+	return io.ReadAll(io.LimitReader(rc, maxLogBytes))
+}
+
+// jetStreamReady returns once JetStream answers an account request.
+func jetStreamReady(ctx context.Context, js jetstream.JetStream) error {
+	_, err := js.AccountInfo(ctx)
+	return err
 }
 
 // connect dials the broker under the caller's context and leaves nothing running when it returns.

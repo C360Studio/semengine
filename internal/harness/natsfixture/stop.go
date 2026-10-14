@@ -37,9 +37,7 @@ func (f *Fixture) Stop(ctx context.Context) error {
 	if c == nil {
 		return nil
 	}
-	err := f.deps.terminate(ctx, c)
-	f.count("terminate")
-	if err != nil {
+	if err := c.Terminate(ctx); err != nil {
 		return fmt.Errorf("natsfixture: stop container %s: %w", shortID(id), err)
 	}
 	f.mu.Lock()

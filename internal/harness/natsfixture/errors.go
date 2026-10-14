@@ -10,69 +10,57 @@ import (
 // stops and starts that same container, and a second Start never creates another.
 var ErrAlreadyUsed = errors.New("natsfixture: fixture already started; use Restart to restart its container")
 
-// Phase names one step of Start, in order, or a resource operation after it.
-type Phase string
-
-// Start runs these phases in this order; CreateStream and CreateMemoryStream report PhaseCreateStream.
-// Restart runs PhaseStopContainer and PhaseStartContainer, then PhaseMappedPort, PhaseConnect and
-// PhaseJetStream again.
-const (
-	PhaseImage          Phase = "image"
-	PhaseStart          Phase = "start" // create and start the container, then wait for its ready log
-	PhaseHost           Phase = "host"
-	PhaseMappedPort     Phase = "mapped-port"
-	PhaseConnect        Phase = "connect"
-	PhaseJetStream      Phase = "jetstream-ready"
-	PhaseCreateStream   Phase = "create-stream"
-	PhaseStopContainer  Phase = "stop-container"
-	PhaseStartContainer Phase = "start-container" // start the same container, then wait for a new ready log
-)
-
-// Error is a failed Start attempt or resource operation, carrying what a reader needs to tell a
-// slow daemon from a dead container from a cancelled test, and whether cleanup completed.
-type Error struct {
-	Phase       Phase
-	ContainerID string // empty when no container existed yet
-	// ParentErr is the caller's context error at the moment of failure; nil means it was live.
-	ParentErr error
-	Cause     error
-	// Cleanup is the outcome of rolling back what the attempt created; nil means Docker reported
-	// the container removed.
-	Cleanup error
+// phaseError is a failed phase of Start or Restart, or a failed resource operation. Its text
+// carries what a reader needs to tell a slow daemon from a dead container from a cancelled test,
+// and whether cleanup completed.
+//
+// Start's phases, in order: image, start (create and start the container, then wait for its ready
+// log), host, mapped-port, connect, jetstream-ready. Restart's: stop-container, start-container
+// (start the same container, then wait for a new ready log), mapped-port, connect,
+// jetstream-ready. CreateStream and CreateMemoryStream report create-stream.
+type phaseError struct {
+	phase       string
+	containerID string // empty when no container existed yet
+	// parentErr is the caller's context error at the moment of failure; nil means it was live.
+	parentErr error
+	cause     error
+	// cleanup is the outcome of rolling back what a failed Start created; nil means Docker
+	// reported the container removed.
+	cleanup error
 }
 
-func (e *Error) Error() string {
+func (e *phaseError) Error() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "natsfixture: phase %s", e.Phase)
-	if e.ContainerID != "" {
-		fmt.Fprintf(&b, " container %s", shortID(e.ContainerID))
+	fmt.Fprintf(&b, "natsfixture: phase %s", e.phase)
+	if e.containerID != "" {
+		fmt.Fprintf(&b, " container %s", shortID(e.containerID))
 	}
-	if e.ParentErr == nil {
+	if e.parentErr == nil {
 		b.WriteString(" (parent context live)")
 	} else {
-		fmt.Fprintf(&b, " (parent context %v)", e.ParentErr)
+		fmt.Fprintf(&b, " (parent context %v)", e.parentErr)
 	}
-	fmt.Fprintf(&b, ": %v", e.Cause)
-	if e.Cleanup != nil {
-		fmt.Fprintf(&b, " (cleanup: %v)", e.Cleanup)
+	fmt.Fprintf(&b, ": %v", e.cause)
+	if e.cleanup != nil {
+		fmt.Fprintf(&b, " (cleanup: %v)", e.cleanup)
 	}
 	return b.String()
 }
 
-// Unwrap exposes the cause, the parent context's error, and the cleanup error to errors.Is and
-// errors.As. The parent's error is included because a dependency interrupted by cancellation often
-// reports something else (an aborted request, a closed socket), and a caller asking
-// errors.Is(err, context.Canceled) must still learn that it cancelled the Start.
-func (e *Error) Unwrap() []error {
+// Unwrap exposes the cause, the parent context's error, and the cleanup error to errors.Is. The
+// parent's error is included because a call interrupted by cancellation often reports something
+// else (an aborted request, a closed socket), and a caller asking errors.Is(err, context.Canceled)
+// must still learn that it cancelled the Start.
+func (e *phaseError) Unwrap() []error {
 	var errs []error
-	if e.Cause != nil {
-		errs = append(errs, e.Cause)
+	if e.cause != nil {
+		errs = append(errs, e.cause)
 	}
-	if e.ParentErr != nil {
-		errs = append(errs, e.ParentErr)
+	if e.parentErr != nil {
+		errs = append(errs, e.parentErr)
 	}
-	if e.Cleanup != nil {
-		errs = append(errs, e.Cleanup)
+	if e.cleanup != nil {
+		errs = append(errs, e.cleanup)
 	}
 	return errs
 }

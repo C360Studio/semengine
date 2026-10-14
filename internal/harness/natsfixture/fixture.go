@@ -76,7 +76,9 @@ func pinnedImage(file string) (string, error) {
 type Fixture struct {
 	errorf func(format string, args ...any)
 	logf   func(format string, args ...any) // the test log, for a failed Start's container log
-	deps   deps
+	// readPort reads the container's mapped client port: readMappedPort, or a test's replacement
+	// that fails the mapped-port phase. It is the fixture's one test seam (#180).
+	readPort func(context.Context, testcontainers.Container) (string, error)
 
 	mu sync.Mutex // guards everything below; never held across a Docker or NATS call
 
@@ -86,7 +88,6 @@ type Fixture struct {
 	url           string
 	nc            *nats.Conn
 	js            jetstream.JetStream
-	calls         map[string]int
 	maxPayload    int64 // broker max_payload in bytes, from WithMaxPayload
 	maxPayloadSet bool  // unset leaves the broker default
 }
@@ -105,7 +106,7 @@ func WithMaxPayload(n int64) Option {
 // test's cleanup. It makes no Docker call.
 func New(t testing.TB, opts ...Option) *Fixture {
 	t.Helper()
-	f := &Fixture{errorf: t.Errorf, logf: t.Logf, deps: defaultDeps(t.Logf), calls: map[string]int{}}
+	f := &Fixture{errorf: t.Errorf, logf: t.Logf, readPort: readMappedPort}
 	for _, opt := range opts {
 		opt(f)
 	}
@@ -120,9 +121,9 @@ func New(t testing.TB, opts ...Option) *Fixture {
 }
 
 // Start starts one NATS container with JetStream from the pinned image, connects, and returns once
-// JetStream answers. Every operation runs under ctx. A failure returns an *Error naming the phase,
-// after removing whatever Start created; no second container is started. A second Start returns
-// ErrAlreadyUsed.
+// JetStream answers. Every operation runs under ctx. A failure returns an error naming the phase
+// (phaseError lists them), after removing whatever Start created; no second container is started.
+// A second Start returns ErrAlreadyUsed.
 func (f *Fixture) Start(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("natsfixture: Start with a nil context")
@@ -147,31 +148,32 @@ func (f *Fixture) Start(ctx context.Context) error {
 	return f.attempt(ctx)
 }
 
-// attempt runs the Start phases once. On failure it rolls back what it created and returns *Error.
+// attempt runs the Start phases once. On failure it rolls back what it created and returns a
+// *phaseError.
 func (f *Fixture) attempt(ctx context.Context) error {
-	fail := func(p Phase, cause error) error {
+	fail := func(phase string, cause error) error {
 		f.mu.Lock()
 		id := f.containerID
 		f.mu.Unlock()
-		fe := &Error{Phase: p, ContainerID: id, ParentErr: ctx.Err(), Cause: cause}
-		fe.Cleanup = f.rollbackAttempt(ctx)
+		fe := &phaseError{phase: phase, containerID: id, parentErr: ctx.Err(), cause: cause}
+		fe.cleanup = f.rollbackAttempt(ctx)
 		return fe
 	}
 	// run runs one phase and turns a cancelled parent into that phase's failure even when the
 	// operation itself returned success: work finished after cancellation is not accepted.
-	run := func(p Phase, op func() error) error {
+	run := func(phase string, op func() error) error {
 		err := op()
 		if err == nil {
 			err = ctx.Err()
 		}
 		if err != nil {
-			return fail(p, err)
+			return fail(phase, err)
 		}
 		return nil
 	}
 
 	var image string
-	if err := run(PhaseImage, func() error {
+	if err := run("image", func() error {
 		var err error
 		image, err = pinnedImage(imagePin)
 		return err
@@ -206,7 +208,7 @@ func (f *Fixture) attempt(ctx context.Context) error {
 		Started: true,
 	}
 	var c testcontainers.Container
-	if err := run(PhaseStart, func() error {
+	if err := run("start", func() error {
 		hostPort, err := freePort()
 		if err != nil {
 			return err
@@ -214,8 +216,8 @@ func (f *Fixture) attempt(ctx context.Context) error {
 		req.HostConfigModifier = func(hc *container.HostConfig) {
 			hc.PortBindings = network.PortMap{network.MustParsePort(clientPort): {{HostPort: hostPort}}}
 		}
-		c, err = f.deps.start(ctx, req)
-		f.count("start")
+		prepareDocker(ctx, f.logf)
+		c, err = testcontainers.GenericContainer(ctx, req)
 		// GenericContainer can return a live container together with its error (generic.go:89,94);
 		// it is owned from this moment either way.
 		if c != nil {
@@ -229,15 +231,14 @@ func (f *Fixture) attempt(ctx context.Context) error {
 	}
 
 	var host, port string
-	if err := run(PhaseHost, func() error {
+	if err := run("host", func() error {
 		var err error
-		host, err = f.deps.host(ctx, c)
-		f.count("host")
+		host, err = c.Host(ctx)
 		return err
 	}); err != nil {
 		return err
 	}
-	if err := run(PhaseMappedPort, func() error {
+	if err := run("mapped-port", func() error {
 		var err error
 		port, err = f.mappedPort(ctx, c)
 		return err
@@ -246,9 +247,8 @@ func (f *Fixture) attempt(ctx context.Context) error {
 	}
 	url := fmt.Sprintf("nats://%s:%s", host, port)
 
-	if err := run(PhaseConnect, func() error {
-		nc, err := f.deps.connect(ctx, url)
-		f.count("connect")
+	if err := run("connect", func() error {
+		nc, err := connect(ctx, url)
 		if nc != nil {
 			f.mu.Lock()
 			f.nc = nc
@@ -258,7 +258,7 @@ func (f *Fixture) attempt(ctx context.Context) error {
 	}); err != nil {
 		return err
 	}
-	if err := run(PhaseJetStream, func() error {
+	if err := run("jetstream-ready", func() error {
 		f.mu.Lock()
 		nc := f.nc
 		f.mu.Unlock()
@@ -266,8 +266,7 @@ func (f *Fixture) attempt(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		err = f.deps.jsReady(ctx, js)
-		f.count("jsReady")
+		err = jetStreamReady(ctx, js)
 		if err == nil {
 			f.mu.Lock()
 			f.js = js
@@ -305,13 +304,11 @@ func freePort() (string, error) {
 // says what an inspect of the container showed, or why the inspect failed, so an empty port list
 // is named in the error (#180, #209).
 func (f *Fixture) mappedPort(ctx context.Context, c testcontainers.Container) (string, error) {
-	port, err := f.deps.mappedPort(ctx, c)
-	f.count("mappedPort")
+	port, err := f.readPort(ctx, c)
 	if err == nil {
 		return port, nil
 	}
-	shown, ierr := f.deps.inspect(ctx, c)
-	f.count("inspect")
+	shown, ierr := inspect(ctx, c)
 	if ierr != nil {
 		return "", fmt.Errorf("%w (inspect failed: %v)", err, ierr)
 	}
@@ -333,8 +330,7 @@ func (f *Fixture) rollbackAttempt(ctx context.Context) error {
 		return nil
 	}
 	logErr := rollback(ctx, func(rctx context.Context) error {
-		logs, err := f.deps.logs(rctx, c)
-		f.count("logs")
+		logs, err := containerLogs(rctx, c)
 		if len(logs) > 0 && f.logf != nil {
 			f.logf("natsfixture: failed Start, container %s log:\n%s", shortID(id), logs)
 		}
@@ -344,9 +340,7 @@ func (f *Fixture) rollbackAttempt(ctx context.Context) error {
 		f.report("natsfixture: container log of the failed Start not captured: %v", logErr)
 	}
 	err := rollback(ctx, func(rctx context.Context) error {
-		err := f.deps.terminate(rctx, c)
-		f.count("terminate")
-		return err
+		return c.Terminate(rctx)
 	})
 	if err != nil {
 		return fmt.Errorf("container %s: %w", shortID(id), err)
@@ -406,40 +400,14 @@ func (f *Fixture) createStream(ctx context.Context, storage jetstream.StorageTyp
 	if err != nil {
 		return nil, err
 	}
-	s, err := f.deps.createStream(ctx, js, jetstream.StreamConfig{
+	s, err := js.CreateStream(ctx, jetstream.StreamConfig{
 		Name: name, Subjects: subjects, Storage: storage,
 		MaxAge: resourceMaxAge, MaxBytes: resourceMaxBytes, Discard: jetstream.DiscardOld,
 	})
-	f.count("createStream")
 	if err != nil {
-		return nil, &Error{Phase: PhaseCreateStream, ContainerID: id, ParentErr: ctx.Err(), Cause: err}
+		return nil, &phaseError{phase: "create-stream", containerID: id, parentErr: ctx.Err(), cause: err}
 	}
 	return s, nil
-}
-
-func (f *Fixture) count(dep string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.calls[dep]++
-}
-
-// callCounts is a copy of the per-dependency call counts.
-func (f *Fixture) callCounts() map[string]int {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	out := make(map[string]int, len(f.calls))
-	for k, v := range f.calls {
-		out[k] = v
-	}
-	return out
-}
-
-func (f *Fixture) totalCalls() int {
-	n := 0
-	for _, v := range f.callCounts() {
-		n += v
-	}
-	return n
 }
 
 // report surfaces a failed Start's container log that could not be read as a test error: the

@@ -590,6 +590,9 @@ func TestRestartRefusedOnceStopHasBegun(t *testing.T) {
 	}
 	first := startedAt()
 	terminate := f.deps.terminate
+	// Registered after New's cleanup, so it runs first: a failed assertion below must not leave
+	// New's Stop with the refusing terminate, which would keep the real container running (#232).
+	t.Cleanup(func() { f.deps.terminate = terminate })
 	refused := errors.New("removal refused by the test")
 	f.deps.terminate = func(context.Context, testcontainers.Container) error { return refused }
 	if err := stop(t, f); !errors.Is(err, refused) {

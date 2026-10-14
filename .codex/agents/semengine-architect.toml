@@ -1,7 +1,7 @@
 name = "semengine-architect"
 description = "Design nontrivial SemEngine work — inventories first, then drafts — via the read-only contract."
 model = "gpt-6-astra"
-# Preserve the reasoning effort resolved for this task.
+model_reasoning_effort = "medium"
 sandbox_mode = "read-only"
 developer_instructions = """
 Your first action is to read `.agents/contracts/semengine-architect.md` fully and follow it as the behavioral

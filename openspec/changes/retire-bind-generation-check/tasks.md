@@ -46,7 +46,7 @@ the design does not spell out go in `notes/<task>.md`, each with a one-line PR c
   - `processor/graph-ingest/keyed_ingest.go:34-35` and `:81-84`: the same two corrections as doc comments.
 
   Check: `task docs:check`.
-- [ ] 2.3 Admission ledger, row `processor/graph-ingest` (design D3). Edit four places:
+- [x] 2.3 Admission ledger, row `processor/graph-ingest` (design D3). Edit four places:
   - the contract sentence at `:3165-3170`: one read before the bind; 4.17's check retired by #214 comment 6157056960;
   - the declared limitations at `:3240-3242`: add #214 comment 6157056960 and point to the spec instead of design D8;
   - `proving_tests` at `:3251-3254`: drop the two deleted tests;

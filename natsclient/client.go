@@ -98,8 +98,9 @@ type Client struct {
 	drainTimeout  time.Duration
 
 	// netDial opens each socket the client dials: (*net.Dialer).Dial, unless a
-	// test replaces it before Connect to hold a dial open (T4), which no
-	// portable address does.
+	// test replaces it before Connect: to hold a dial open, which no portable
+	// address does (T4), or to hand over one end of a net.Pipe to a scripted
+	// server, which binds no address and can run in a synctest bubble.
 	netDial func(*net.Dialer, string, string) (net.Conn, error)
 
 	// requestHandlerTimeout bounds a single SubscribeForRequests handler
@@ -197,16 +198,6 @@ type Client struct {
 	// most one connection, so that is at most one entry, holding no goroutine.
 	closedSignalsMu sync.Mutex
 	closedSignals   map[*nats.Conn]chan struct{}
-
-	// opHook, when set, is told of each external operation the client
-	// performs ("dial", "drain"); the lifecycle adapter counts them.
-	opHook func(op string)
-
-	// commitHook, when set, is called at a status commit, with its site:
-	// "connect failure" and "event handler" inside the commit's critical
-	// section, "health monitor" between the health check and the commit.
-	// Tests hold it to force an ordering.
-	commitHook func(site string)
 }
 
 // Kinds of background work, the six sites of design D3. Each starts through
@@ -298,18 +289,6 @@ func (m *Client) isClosing() bool {
 	return m.closing
 }
 
-func (m *Client) recordOp(op string) {
-	if m.opHook != nil {
-		m.opHook(op)
-	}
-}
-
-func (m *Client) commitSeam(site string) {
-	if m.commitHook != nil {
-		m.commitHook(site)
-	}
-}
-
 // closedSignal returns the channel handleClosed closes once it has run for nc.
 func (m *Client) closedSignal(nc *nats.Conn) chan struct{} {
 	m.closedSignalsMu.Lock()
@@ -334,12 +313,6 @@ func (m *Client) awaitClosedHandler(nc *nats.Conn) {
 	m.closedSignalsMu.Lock()
 	delete(m.closedSignals, nc)
 	m.closedSignalsMu.Unlock()
-}
-
-// carriesClientHandlers reports whether conn's closed handler can be awaited: a
-// connection dialled with options that dropped the client's handlers has none.
-func carriesClientHandlers(conn *nats.Conn) bool {
-	return conn != nil && conn.ClosedHandler() != nil
 }
 
 // NewClient creates a new NATS client with optional configuration.
@@ -696,16 +669,6 @@ func (m *Client) GetStatus() *Status {
 // changes neither the status, the failure count nor the circuit of a
 // connection another Connect installed (design D3).
 func (m *Client) Connect(ctx context.Context) error {
-	return m.connectWith(ctx, nats.Connect)
-}
-
-// connectWith keeps the native connection candidate private until Connect wins
-// admission against terminal Close. dial is a test seam; production uses
-// nats.Connect synchronously with the timeout in buildConnectionOptions.
-func (m *Client) connectWith(
-	ctx context.Context,
-	dial func(string, ...nats.Option) (*nats.Conn, error),
-) error {
 	if ctx == nil {
 		return errs.WrapInvalid(stderrors.New("nil context"), "Client", "Connect", "missing context")
 	}
@@ -728,9 +691,6 @@ func (m *Client) connectWith(
 		return ErrCircuitOpen
 	}
 
-	// Reported before this call first writes the status, so a test can hold
-	// a Connect between its started check and its dial.
-	m.recordOp("dial")
 	// Connecting is a status commit like any other: written only while no
 	// connection is installed and Close has not begun.
 	m.mu.Lock()
@@ -754,7 +714,7 @@ func (m *Client) connectWith(
 	socket := newSocketDialer(m.timeout, m.netDial)
 	opts := append(m.buildConnectionOptions(), nats.SetCustomDialer(socket), nats.SkipHostLookup())
 	stopCut := socket.cutWhenDone(ctx)
-	conn, err := dial(m.urls, opts...)
+	conn, err := nats.Connect(m.urls, opts...)
 	stopCut()
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		m.discardCandidate(conn)
@@ -848,7 +808,6 @@ func (m *Client) connectFailed() bool {
 		m.mu.Unlock()
 		return false
 	}
-	m.commitSeam("connect failure")
 	arm, backoff := m.recordFailureLocked()
 	if m.Status() != StatusCircuitOpen {
 		m.setStatus(StatusDisconnected)
@@ -868,11 +827,8 @@ func (m *Client) discardCandidate(conn *nats.Conn) {
 	if conn == nil {
 		return
 	}
-	await := carriesClientHandlers(conn)
 	conn.Close()
-	if await {
-		m.awaitClosedHandler(conn)
-	}
+	m.awaitClosedHandler(conn)
 }
 
 // startMetricsPoller starts the JetStream metrics poller. It reports false when
@@ -1013,7 +969,6 @@ func (m *Client) cleanup(
 
 	closeErr := m.drainAndCloseConnection(ctx, conn, drainTimeout)
 
-	awaitHandlers := carriesClientHandlers(conn)
 	m.mu.Lock()
 	m.conn = nil
 	m.js = nil
@@ -1025,11 +980,7 @@ func (m *Client) cleanup(
 	m.setStatus(StatusDisconnected)
 	m.mu.Unlock()
 
-	var handlersOf *nats.Conn
-	if awaitHandlers {
-		handlersOf = conn
-	}
-	go m.join(joined, handlersOf)
+	go m.join(joined, conn)
 	return closeErr
 }
 
@@ -1135,7 +1086,6 @@ func (m *Client) drainAndCloseConnection(ctx context.Context, conn *nats.Conn, d
 	closed := conn.StatusChanged(nats.CLOSED)
 	defer conn.RemoveStatusListener(closed)
 
-	m.recordOp("drain")
 	if err := conn.Drain(); err != nil {
 		if isBenignDrainError(err) {
 			return nil
@@ -1317,25 +1267,6 @@ func (m *Client) Subscribe(ctx context.Context, subject string, handler func(con
 	if ctx == nil {
 		return nil, nilContextError("Subscribe")
 	}
-	return m.subscribeWith(ctx, subject, handler, nativeSubscribe)
-}
-
-// subscribeFunc subscribes cb to subject on conn. Subscribe and
-// SubscribeForRequests pass nativeSubscribe; it is a seam the way connectWith's
-// dial is.
-type subscribeFunc func(conn *nats.Conn, subject string, cb nats.MsgHandler) (nativeSubscription, error)
-
-func nativeSubscribe(conn *nats.Conn, subject string, cb nats.MsgHandler) (nativeSubscription, error) {
-	sub, err := conn.Subscribe(subject, cb)
-	if err != nil {
-		return nil, err
-	}
-	return sub, nil
-}
-
-func (m *Client) subscribeWith(
-	ctx context.Context, subject string, handler func(context.Context, *nats.Msg), subscribe subscribeFunc,
-) (*Subscription, error) {
 	return m.subscribeOwned(ctx, "Subscribe", subject, func(*nats.Conn) nats.MsgHandler {
 		return func(msg *nats.Msg) {
 			// Create per-message context with timeout
@@ -1349,7 +1280,7 @@ func (m *Client) subscribeWith(
 
 			handler(msgCtx, msg)
 		}
-	}, subscribe)
+	})
 }
 
 // subscribeOwned makes a client-owned core subscription: admitted before the
@@ -1363,7 +1294,6 @@ func (m *Client) subscribeWith(
 // subscribe-registers-interest, D1 to D5, L8).
 func (m *Client) subscribeOwned(
 	ctx context.Context, operation, subject string, build func(conn *nats.Conn) nats.MsgHandler,
-	subscribe subscribeFunc,
 ) (*Subscription, error) {
 	m.mu.Lock()
 	if m.closing {
@@ -1398,7 +1328,7 @@ func (m *Client) subscribeOwned(
 	}
 
 	cb := build(conn)
-	sub, err := subscribe(conn, subject, func(msg *nats.Msg) {
+	sub, err := conn.Subscribe(subject, func(msg *nats.Msg) {
 		d.run(func() string { return msg.Subject }, func() { cb(msg) })
 	})
 	if err != nil {
@@ -2131,7 +2061,6 @@ func (m *Client) handleDisconnect(nc *nats.Conn, err error) {
 		return
 	}
 	if !m.closing {
-		m.commitSeam("event handler")
 		m.setStatus(StatusReconnecting)
 	}
 	m.mu.Unlock()
@@ -2147,7 +2076,6 @@ func (m *Client) handleReconnect(nc *nats.Conn) {
 		m.mu.Unlock()
 		return
 	}
-	m.commitSeam("event handler")
 	m.setStatus(StatusConnected)
 	m.resetCircuitLocked()
 	m.mu.Unlock()
@@ -2327,8 +2255,6 @@ func (m *Client) startHealthMonitoring() bool {
 				if _, err := conn.RTT(); err != nil {
 					healthy = false
 				}
-				m.commitSeam("health monitor")
-
 				// Update status based on health, only while conn is still the
 				// installed connection and Close has not begun.
 				m.mu.Lock()

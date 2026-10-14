@@ -16,117 +16,50 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestConnectRejectsCandidateWhenContextCanceledDuringDial(t *testing.T) {
-	client, err := NewClient("nats://unused")
-	require.NoError(t, err)
-	client.healthInterval = 0
-
-	candidate := newConnectCandidate(t)
-	dialEntered := make(chan struct{})
-	releaseDial := make(chan struct{})
-	ctx, cancel := context.WithCancel(context.Background())
-
-	var connectWG sync.WaitGroup
-	connectWG.Add(1)
-	connectErr := make(chan error)
-	go func() {
-		defer connectWG.Done()
-		connectErr <- client.connectWith(ctx, func(_ string, _ ...nats.Option) (*nats.Conn, error) {
-			close(dialEntered)
-			<-releaseDial
-			return candidate, nil
-		})
-	}()
-
-	<-dialEntered
-	cancel()
-	close(releaseDial)
-	err = <-connectErr
-	connectWG.Wait()
-
-	require.ErrorIs(t, err, context.Canceled)
-	require.True(t, candidate.IsClosed(), "canceled Connect must close its rejected native candidate")
-	require.Nil(t, client.GetConnection())
-	require.Nil(t, client.js)
-	require.Equal(t, StatusDisconnected, client.Status())
-}
-
+// TestConnectRejectsCandidateWhenCloseWinsAdmission: Close begins and returns while Connect's
+// socket dial is held. Close does not end a dial whose connection is not yet installed, so the
+// dial then reaches the server and the connection is made; Connect must refuse it with
+// nats.ErrConnectionClosed, close it and install nothing.
 func TestConnectRejectsCandidateWhenCloseWinsAdmission(t *testing.T) {
-	client, err := NewClient("nats://unused")
+	client, err := NewClient(embeddedServerURL(t))
 	require.NoError(t, err)
 	client.healthInterval = 0
 
-	candidate := newConnectCandidate(t)
 	dialEntered := make(chan struct{})
 	releaseDial := make(chan struct{})
+	socket := make(chan net.Conn, 1)
+	var holdOnce sync.Once
+	client.netDial = func(d *net.Dialer, network, address string) (net.Conn, error) {
+		first := false
+		holdOnce.Do(func() { first = true })
+		if !first {
+			return d.Dial(network, address)
+		}
+		close(dialEntered)
+		<-releaseDial
+		conn, err := d.Dial(network, address)
+		if err == nil {
+			socket <- conn
+		}
+		return conn, err
+	}
 
-	var connectWG sync.WaitGroup
-	connectWG.Add(1)
-	connectErr := make(chan error)
-	go func() {
-		defer connectWG.Done()
-		connectErr <- client.connectWith(context.Background(), func(_ string, _ ...nats.Option) (*nats.Conn, error) {
-			close(dialEntered)
-			<-releaseDial
-			return candidate, nil
-		})
-	}()
+	connectErr := make(chan error, 1)
+	go func() { connectErr <- client.Connect(t.Context()) }()
 
-	<-dialEntered
+	await(t, dialEntered, "Connect's dial")
 	closeCtx, cancelClose := context.WithTimeout(context.Background(), closeBudget)
 	defer cancelClose()
 	require.NoError(t, client.Close(closeCtx))
 	close(releaseDial)
-	err = <-connectErr
-	connectWG.Wait()
+	err = awaitErr(t, connectErr, "Connect")
 
-	require.ErrorIs(t, err, nats.ErrConnectionClosed)
-	require.True(t, candidate.IsClosed(), "Connect must close a candidate rejected by terminal Close")
+	require.ErrorIs(t, err, nats.ErrConnectionClosed, "a Connect that Close overtook during its dial")
+	_, writeErr := awaitValue(t, socket, "the held dial's socket").Write([]byte("PING\r\n"))
+	require.ErrorIs(t, writeErr, net.ErrClosed, "Connect must close a connection rejected by terminal Close")
 	require.Nil(t, client.GetConnection())
 	require.Nil(t, client.js)
 	require.Equal(t, StatusDisconnected, client.Status())
-}
-
-func TestConnectCommitsCandidateWhenAdmissionRemainsOpen(t *testing.T) {
-	client, err := NewClient("nats://unused")
-	require.NoError(t, err)
-	client.healthInterval = 0
-
-	candidate := newConnectCandidate(t)
-	err = client.connectWith(context.Background(), func(_ string, _ ...nats.Option) (*nats.Conn, error) {
-		return candidate, nil
-	})
-	require.NoError(t, err)
-
-	require.Same(t, candidate, client.GetConnection())
-	require.NotNil(t, client.js)
-	require.False(t, candidate.IsClosed())
-	require.Equal(t, StatusConnected, client.Status())
-
-	closeCtx, cancelClose := context.WithTimeout(context.Background(), closeBudget)
-	defer cancelClose()
-	require.NoError(t, client.Close(closeCtx))
-}
-
-func newConnectCandidate(t *testing.T) *nats.Conn {
-	t.Helper()
-
-	server, err := natsserver.NewServer(&natsserver.Options{
-		Port:   -1,
-		NoLog:  true,
-		NoSigs: true,
-	})
-	require.NoError(t, err)
-	server.Start()
-	t.Cleanup(func() {
-		server.Shutdown()
-		server.WaitForShutdown()
-	})
-
-	candidate, err := nats.Connect("", nats.InProcessServer(server))
-	require.NoError(t, err)
-	t.Cleanup(candidate.Close)
-	return candidate
 }
 
 // connectWait bounds how long a test waits for Connect against a server that

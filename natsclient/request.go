@@ -410,7 +410,7 @@ func (c *Client) SubscribeForRequests(
 	}
 	return c.subscribeOwned(ctx, "SubscribeForRequests", subject, func(conn *nats.Conn) nats.MsgHandler {
 		return c.requestCallback(ctx, conn, subject, handler)
-	}, nativeSubscribe)
+	})
 }
 
 // requestCallback is SubscribeForRequests' native callback for a subscription

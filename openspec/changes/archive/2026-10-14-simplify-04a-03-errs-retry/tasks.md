@@ -19,7 +19,7 @@ Each task names the outcome and the gate that proves it.
 
 ## 3. Review and close
 
-- [ ] 3.1 Cross-agent review of record on the implementation commit; record `reviewed-by:` in the PR body once the
+- [x] 3.1 Cross-agent review of record on the implementation commit; record `reviewed-by:` in the PR body once the
   reviewing agent's newest review record approves.
-- [ ] 3.2 Archive the change (`openspec archive simplify-04a-03-errs-retry`) as the last content commit. Gate:
+- [x] 3.2 Archive the change (`openspec archive simplify-04a-03-errs-retry`) as the last content commit. Gate:
   `task spec:check`.

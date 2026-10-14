@@ -149,8 +149,9 @@ A new repo-wide or agent-conduct rule updates both this file and `.agents/rules-
 | `review` | Any defect found in repo code (carried, ported, or written here) not fixed in the change is filed as an issue (`status:blocked`, linked without closing keyword while on a PR branch), never routed as a residual or left in comments (#212, #193) | `protocol`; `rev` |
 | `review` | A finding needing an unchosen condition (library timing/ordering, OS/network state, mid-op fault injection, or test-only call sequence) is `BLOCKING`/`HIGH` only with a named real-world trigger; else `MEDIUM` at most (#185) | `rev`, `dev`; `protocol` |
 | `review` | A new rule names what enforces it and adds its row to `AGENTS.md` and `.agents/rules-index.md` | `rev` |
+| `review` | Before claiming work, mutating state, or spawning role subagents on an underspecified prompt, check any named issue/PR/file first, then confirm Deliverable, Scope/non-goals, Definition of Done/verification, and Stop boundary; when ambiguous, propose a 3–4 bullet Definition of Done and ask 1–3 targeted questions (#224) | `protocol`; `.agents/README.md` |
 | `review` | Role-agent briefs carry the owner's intent and the artifact itself, not a paraphrase; resume for continuity, start fresh for mechanics | `.agents/README.md` |
-| `review` | Neither `semengine-architect` nor `semengine-reviewer` runs on a weaker model/effort than `semengine-developer`; `semengine-technical-writer` may use a lighter tier (#224, #225) | `.agents/README.md` |
+| `review` | Architect, developer, and reviewer run on the frontier model tier (`opus` / `gpt-6-astra` or `gpt-6-sol` / `pro`); architect and developer default to `medium` effort (escalating to `high` for cross-cutting concurrency/boundary work or failed-review rounds), reviewer runs at `high` effort, and technical-writer may use a lighter model (`sonnet` / `flash`) and `low`/`medium` effort (#224, #225) | `.agents/README.md` |
 | `review` | `AGENTS.md` stays under 24,000 bytes so rule loaders with a 24 KB per-file cap never truncate it (#224, #225) | `.agents/README.md`; this file |
 | `merge:check+review` | Code PRs (any non-`.md`/non-`openspec/` file, or `.claude/agents/*`) require review by an agent that wrote no commits (`implemented-by:` and `reviewed-by:` in PR body); docs-only/archive commits take any agent's reviewer (#64, #66, #225) | `protocol`; `rev`; `merge-gate` spec |
 | `review` | Pushed claim branches update by merging `origin/main`, never by rebase or force-push | `protocol` |
@@ -172,9 +173,15 @@ There is no `/tickets` state and no handoff document. Non-trivial work starts wi
 
 ## Working here (Claude, Codex, and Gemini)
 
-The shared protocol is `.agents/protocol.md`. Read it before filing, taking, landing, or closing work. Three gates
+The shared protocol is `.agents/protocol.md`. Read it before filing, taking, landing, or closing work. Four gates
 never become a pointer:
 
+- **Clarify:** before claiming work, mutating state, or spawning role subagents, read any named issue, PR, or file so
+  you never ask what the repository already answers, then verify four boundaries are clear: **Deliverable** (answer,
+  issue, OpenSpec design, docs-only PR, or code PR), **Scope/non-goals**, **Definition of Done/verification**, and
+  **Stop boundary**. When a prompt leaves any of the four ambiguous, stop first, propose a concise 3–4 bullet
+  recommended Definition of Done, and ask at most 1–3 targeted questions; once confirmed, run autonomously to that
+  finish line without pausing on routine steps.
 - **Claim:** a draft PR opened before the work, in its own worktree on an agent-prefixed branch
   (`git worktree add ../semengine-wt/claude/<topic> -b claude/<topic> origin/main`; Codex uses `codex/`, Gemini uses
   `gemini/`, and Enjoy desktop sessions use `move_to_worktree` under `.worktrees/<branch>`). No draft PR, no claim.

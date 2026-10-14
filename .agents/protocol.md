@@ -1,7 +1,8 @@
 # Shared work protocol (Claude, Codex, and Gemini)
 
-Canonical. `CLAUDE.md` and `AGENTS.md` point to this file and carry the three gates (claim, merge, close) inline; edit
-the protocol here only. Read it before taking, landing, or closing work; the pickup and handoff skills read it.
+Canonical. `CLAUDE.md` and `AGENTS.md` point to this file and carry the four gates (clarify, claim, merge, close)
+inline; edit the protocol here only. Read it before taking, landing, or closing work; the pickup and handoff skills
+read it.
 
 State that all agents must see lives in the repository's tools, never in a prose document or an agent's private
 memory. Each question has one home, and each home is a `gh` or `task` query. There is no `/tickets` state.
@@ -88,6 +89,14 @@ on optional maintenance.
 
 - **Start:** `gh issue list --state open` · `gh pr list` (drafts are claims; skip them) · `task spec:queue` ·
   `gh run list --branch main --limit 3` · `gh issue list --label status:needs-decision`.
+- **Clarify:** before claiming work, mutating state, or spawning role subagents, read any named issue, PR, or file so
+  you never ask a question the repository already answers, then verify four boundaries are clear: (1) **Deliverable**
+  (answer/audit, issue, OpenSpec design, docs-only PR, or code PR), (2) **Scope and non-goals** (in-bounds
+  packages/files and what must not change), (3) **Definition of Done and verification** (observable completion criteria
+  and `task` gates), and (4) **Stop boundary** (pause after inventory/design for an owner decision vs run through to a
+  ready PR). When a prompt leaves any of the four ambiguous, stop first, propose a concise 3–4 bullet recommended
+  Definition of Done the owner can approve or adjust in one reply, and ask at most 1–3 targeted questions; once set,
+  run autonomously to that stop boundary without pausing on routine steps.
 - **Take work:** an unclaimed issue, then a dedicated worktree on an agent-prefixed branch (`claude/<topic>`,
   `codex/<topic>`, `gemini/<topic>`; the prefix names who claimed it), then push, then a draft PR with `Closes #n` or
   `Addresses #n`, then work. One claimed PR owns one worktree. When multiple agents share a host, the primary checkout

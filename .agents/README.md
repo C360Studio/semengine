@@ -33,23 +33,26 @@ work to justify them yet. Add one only with a recorded owner decision.
 
 ## Model routing
 
-Adapters carry the model choices SemStreams uses for the equivalent role. Neither the architect nor the reviewer is
-weaker than the developer.
+Adapters separate **model tier** from **reasoning effort** (`low -> medium -> high`). Neither the architect nor the
+reviewer runs on a weaker model tier than the developer.
 
-| Role | Claude | Codex | Gemini (Antigravity) |
-| --- | --- | --- | --- |
-| Architect | inherits (`opus` required; read-only tools) | `gpt-6-astra`, resolved effort inherited (`high` required) | `inherit` or `pro` (`enable_write_tools = false`) |
-| Developer | `opus` | `gpt-6-sol`, `high` | `inherit` or `pro` (`enable_write_tools = true`) |
-| Reviewer | `opus` | `gpt-6-astra`, `high` | `inherit` or `pro` (`enable_write_tools = false`) |
-| Technical writer | `opus` (`sonnet` eligible) | `gpt-6-sol`, `high` (`medium` eligible) | `flash` or `inherit` (`enable_write_tools = true`) |
+| Role | Claude | Codex | Gemini (Antigravity) | Target effort |
+| --- | --- | --- | --- | --- |
+| Architect | inherits (`opus` required; read-only tools) | `gpt-6-astra`, resolved effort inherited (`medium` default) | `inherit` or `pro` (`enable_write_tools = false`) | `medium` default; escalate to `high` for cross-cutting concurrency/boundary designs |
+| Developer | `opus` | `gpt-6-sol`, `high` (`medium` default eligible) | `inherit` or `pro` (`enable_write_tools = true`) | `medium` default for bounded work; escalate to `high` for complex/failed-review rounds |
+| Reviewer | `opus` | `gpt-6-astra`, `high` | `inherit` or `pro` (`enable_write_tools = false`) | `high` (single-pass audit of record against review-only rules) |
+| Technical writer | `opus` (`sonnet` eligible) | `gpt-6-sol`, `high` (`low`/`medium` eligible) | `flash` or `inherit` (`enable_write_tools = true`) | `low` or `medium` (mechanical doc and task-truth sync) |
 
-While `.claude/agents/semengine-architect.md` omits `model:` and `.codex/agents/semengine-architect.toml` inherits
-reasoning effort, an orchestrating Claude session invokes `semengine-architect` on `opus` and an orchestrating Codex
-session invokes it at `high` reasoning effort so design work never runs below the developer or reviewer tier.
-SemStreams has no technical-writer adapter; the writer is non-decision-making (doc sync, `task docs:check`, and
-conservative task ticking) and may be routed to a lighter tier (`sonnet` on Claude, `medium` effort on Codex
-`gpt-6-sol`, `flash` on Gemini). Pinning those adapter fields in `.claude/agents/` and `.codex/agents/` (which
-`scripts/merge-check.sh` classifies as code files) is tracked in #225.
+- **Model tier:** `semengine-architect`, `semengine-developer`, and `semengine-reviewer` run on the frontier model
+  (`opus` on Claude, `gpt-6-astra` / `gpt-6-sol` on Codex, `inherit` / `pro` on Gemini). `semengine-technical-writer`
+  is non-decision-making (doc sync, `task docs:check`, and conservative task ticking) and may run on a lighter tier
+  (`sonnet` on Claude, `flash` on Gemini).
+- **Reasoning effort (`low -> medium -> high`):** Start `semengine-architect` and `semengine-developer` at `medium`
+  effort by default and escalate to `high` only when a change crosses module boundaries, designs a concurrency or
+  durable-execution primitive, or fails a review round. Keep `semengine-reviewer` at `high` effort because it runs once
+  per ready diff as the independent audit against the repository's review-only rules. Run `semengine-technical-writer`
+  at `low` or `medium` effort. Updating the tracked `.claude/agents/` and `.codex/agents/` adapter files (which
+  `scripts/merge-check.sh` classifies as code files) to match these defaults is tracked in #225.
 
 On Gemini (Antigravity), role subagents are registered with `define_subagent` pointing at the matching
 `.agents/contracts/semengine-*.md` contract and invoked with `invoke_subagent`; `Model` defaults to `"inherit"` (for
@@ -63,11 +66,19 @@ alongside `claude` and `codex` on code pull requests is tracked in #225.
 
 ## Orchestrating role agents
 
-These rules bind the session that spawns and briefs role agents. They come from the SETUP 03B orchestrating
-session's own account of where its cost went (2026-10-01), relayed by the owner and recorded on issue #37; its
-figures were not re-measured. By that account every review round found something real, so the review loop is not
-where to cut, and the avoidable cost was in the briefs.
+These rules bind the session that intakes owner requests and spawns/briefs role agents. They come from the SETUP 03B
+orchestrating session's own account of where its cost went (2026-10-01), relayed by the owner and recorded on issue #37;
+its figures were not re-measured. By that account every review round found something real, so the review loop is not
+where to cut, and the avoidable cost was in the briefs and unclarified scope.
 
+- **Clarify Definition of Done before starting or delegating work.** Before mutating state or spawning a role agent on
+  an underspecified prompt, do a quick read-only check of any named issue, PR, or file (never asking what the tree
+  already answers), then verify four boundaries are clear: (1) **Deliverable** (answer/audit, issue, OpenSpec design,
+  docs-only PR, or code PR), (2) **Scope and non-goals** (in-bounds packages/files and what must not change),
+  (3) **Definition of Done and verification** (observable completion criteria and `task` gates), and (4) **Stop
+  boundary** (pause after inventory/design for an owner decision vs run through to a ready PR). If any of the four is
+  missing or ambiguous, stop, propose a concise 3–4 bullet recommended Definition of Done, and ask at most 1–3 targeted
+  questions; once confirmed, run autonomously to that finish line without stopping for routine steps.
 - **A brief carries the owner's intent, not only the approved document.** State what the product is for
   (`AGENTS.md`, "What this is for") and any owner statement that bears on the question. An architect briefed with the
   plan's admission heuristic alone drew a boundary that left out the rule engine (issue #8), and correcting it took
@@ -87,7 +98,7 @@ where to cut, and the avoidable cost was in the briefs.
 ## Shared work protocol and rule index
 
 `.agents/protocol.md` is the canonical shared work protocol (state homes, rituals, worktree hygiene). `CLAUDE.md` and
-`AGENTS.md` point to it and carry the three gates (claim, merge, close) inline; edit the protocol only in
+`AGENTS.md` point to it and carry the four gates (clarify, claim, merge, close) inline; edit the protocol only in
 `.agents/protocol.md`. `.agents/rules-index.md` is the full test-by-test enforcement audit matrix backing the
 domain-grouped rule summary in `AGENTS.md`.
 

@@ -1,25 +1,44 @@
 # nats-fixture Specification
 
 ## Purpose
-The NATS fixture gives one test one disposable, real NATS server in a container, with typed start failures, a
-label on every container it starts so leftovers can be found and removed, and a cleanup that returns success only
-after it has observed every owned resource gone. `natsfixture.Open` lets a package's tests open a value connected to
-that server, such as a client, and closes it under a deadline before the server stops.
+The NATS fixture gives one test one disposable, real NATS server in a container, with start failures that name the
+phase, a label on every container it starts so leftovers can be found and removed, and a Stop that removes the
+container, which removes every stream, bucket and consumer in it. `natsfixture.Open` lets a package's tests open a
+value connected to that server, such as a client, and closes it under a deadline before the server stops.
 
 ## Requirements
 
-### Requirement: Phased start with typed failure
+### Requirement: Own server per test
+
+`natsfixture.New(t, opts...)` SHALL give one test its own NATS server: Start starts it, Restart and Stop act on it,
+and `URL()` and `JetStream()` reach it. New SHALL make no Docker call and SHALL register, as the test's cleanup, a Stop
+under a fresh 60-second context whose failure is reported as a test error. Stop SHALL close the fixture's connection
+and remove the container, and SHALL return nil only when Docker reported the removal; a Stop after a successful Stop
+SHALL return nil and make no Docker call. A second Start SHALL return `ErrAlreadyUsed`. The fixture's methods are
+called from the test's own goroutine. The fixture SHALL retain no `context.Context`.
+
+#### Scenario: Container gone after the test
+
+- **WHEN** a test that started its own server ends
+- **THEN** Docker lists no container with that server's container ID
+
+#### Scenario: Repeated Stop
+
+- **WHEN** Stop is called again after it succeeded
+- **THEN** it returns nil and makes no Docker call
+
+### Requirement: Phased start in one container
 
 Start SHALL proceed image → create and start → internal ready log → host → mapped client port → connect → JetStream
 ready, deriving every operation context from the caller's. A failure SHALL return an error that names the phase, the
 container ID when a container exists, and the cause, and that matches the caller's context error under `errors.Is`
-whenever that context had ended. Before returning it SHALL remove any container the attempt created, under a fresh
-bounded context, and report a removal failure in the error, and it SHALL write that container's log to the test
-output. The create and start phase of each attempt SHALL publish the client port on a host port the fixture took from
-the operating system with a port-0 listener and closed, and SHALL NOT leave the host port to Docker to choose; a
-failure to take a port SHALL fail that phase. At most one replacement container is permitted, only after the
-mapped-port phase failed with the caller's context live and the first container removed. The fixture SHALL NOT expose
-start, connect or bucket-prefix knobs.
+whenever that context had ended. Before returning it SHALL remove any container Start created, under a fresh bounded
+context, and report a removal failure in the error, and it SHALL write that container's log to the test output. The
+create and start phase SHALL publish the client port on a host port the fixture took from the operating system with a
+port-0 listener and closed, and SHALL NOT leave the host port to Docker to choose; a failure to take a port SHALL fail
+that phase. Start SHALL start at most one container: after a failure in any phase it SHALL NOT start another. A failed
+mapped-port read SHALL say what an inspect of the container showed, or why the inspect failed. The fixture SHALL NOT
+expose start, connect or bucket-prefix knobs.
 
 #### Scenario: Failure after the container exists
 
@@ -30,7 +49,7 @@ start, connect or bucket-prefix knobs.
 #### Scenario: Cancellation during start
 
 - **WHEN** the test context is cancelled while the container is starting
-- **THEN** Start returns an error satisfying `errors.Is(err, context.Canceled)`, no replacement is attempted, and no
+- **THEN** Start returns an error satisfying `errors.Is(err, context.Canceled)`, no other container is started, and no
   container remains
 
 #### Scenario: Ports after a running fixture's own are held
@@ -38,62 +57,48 @@ start, connect or bucket-prefix knobs.
 - **WHEN** a fixture is running and the host ports after its own are held by listeners on all addresses
 - **THEN** a second fixture's Start returns nil, with JetStream answering on its `URL()`
 
-#### Scenario: One replacement after a missing mapped port
+#### Scenario: A missing mapped port fails Start
 
-- **WHEN** the mapped-port read fails once with the caller's context live
-- **THEN** the first container is removed, a second one starts and Start succeeds; if the second read fails too, the
-  error names the mapped-port phase and no third container starts
+- **WHEN** the mapped-port read fails
+- **THEN** Start returns an error naming the mapped-port phase and what the inspect of the container showed, the
+  container is gone, and no second container starts
 
-### Requirement: Checked cleanup
+### Requirement: Restart keeps the container
 
-Stop(ctx) SHALL, under the caller's context and in order, wait for in-flight publishes, delete owned consumers,
-streams, and buckets while observing their absence, drain and close the connection, terminate the container, and
-observe it absent; a Stop returning nil SHALL have observed every owned resource absent. When ctx ends first, Stop
-SHALL return ctx.Err(), retain the unresolved handles, and a later Stop SHALL retry them. Repeated Stop after success
-SHALL be a no-op. Start after Start SHALL be refused. The fixture SHALL retain no context.Context. Every consumer's
-delivery SHALL be stopped, its running handlers joined, and only then their context cancelled, even when the
-connection is already closed; only the server-side deletes are then skipped, and those resources are released with
-the container observed absent. Once Stop begins on owned resources the fixture SHALL refuse every new stream, bucket,
-and consumer. Start, Stop, and resource creation SHALL wait for one another only under their own context.
+`Fixture.Restart(ctx)` SHALL stop and start the same container, drain the fixture's own connection, and run the
+stop-container, start-container, mapped-port, connect and JetStream-ready phases in that order, deriving every operation
+context from the caller's; on success `URL()` and `JetStream()` SHALL return the new binding. The container SHALL keep
+the host port Start gave it, so `URL()` after a successful Restart SHALL equal `URL()` before it. Docker does not
+promise that a container keeps an explicit host-port binding across a stop and start: one probe on macOS (Docker Desktop
+29.8.2, testcontainers v0.44.0, PR #210 comment 6151736554) showed it kept, and the binding test checks it on every run.
+Restart SHALL return an error and start nothing before Start has succeeded or once Stop has begun. A phase failure
+SHALL return an error naming the phase; Restart SHALL NOT stop, start or read the port a second time, and SHALL NOT
+create a replacement container. The container's writable layer SHALL survive a Restart, so a file-backed stream keeps
+its messages and a memory-backed stream does not.
 
-#### Scenario: Blocked callback delays finalisation
+#### Scenario: File stream survives, memory stream does not
 
-- **WHEN** a consumer callback is blocked during Stop
-- **THEN** the callback's context is live until released, the join completes before Stop returns, and only then are
-  the consumer, stream, connection, and container removed
+- **WHEN** one message is acknowledged on a file-backed stream and one on a memory-backed stream, and the fixture is
+  restarted
+- **THEN** the file-backed message is readable at its sequence through the new `JetStream()` and the memory-backed
+  stream reports the message or the stream absent
 
-#### Scenario: Closed connection still joins handlers
+#### Scenario: Binding kept across a restart
 
-- **WHEN** the fixture's connection is closed while a consumer callback is blocked, and Stop runs
-- **THEN** Stop stops delivery and waits for the callback; the callback's context is live until it is released and
-  cancelled before Stop returns nil, and the container is observed absent
+- **WHEN** the fixture is restarted
+- **THEN** `URL()` returns the address it returned before the restart, that address is the container's binding as
+  Docker reports it, and a dial to it succeeds
 
-#### Scenario: No creation once Stop begins
+#### Scenario: Restart before Start
 
-- **WHEN** CreateStream, CreateKeyValue, or Consume is called after Stop has begun, or is already waiting for the
-  fixture when Stop begins
-- **THEN** it returns an error at once, creates nothing, and Stop's nil return still means nothing is owned
+- **WHEN** Restart is called on a fixture whose Start has not succeeded, or once Stop has begun
+- **THEN** Restart returns an error and starts no container
 
-#### Scenario: Stop waits for a running Start only under its own context
+#### Scenario: A missing mapped port fails Restart
 
-- **WHEN** Stop is called with a short context while Start is parked in a Docker call
-- **THEN** Stop returns context.DeadlineExceeded when its context ends
-
-#### Scenario: Deadline is not a join
-
-- **WHEN** Stop's context expires while a callback is blocked
-- **THEN** Stop returns context.DeadlineExceeded, the container still exists, remaining() lists the handles, and a
-  later bounded Stop completes with everything absent
-
-### Requirement: Memory-backed owned stream
-
-`CreateMemoryStream(ctx, name, subjects...)` SHALL create a stream the fixture owns with memory storage and the same
-MaxAge, MaxBytes and DiscardOld bounds as `CreateStream`; Stop SHALL delete it or observe it absent.
-
-#### Scenario: Memory stream is owned and bounded
-
-- **WHEN** a test creates a memory-backed stream through the fixture
-- **THEN** the stream's configuration reports memory storage and the fixture's bounds, and Stop observes it gone
+- **WHEN** the mapped-port read after the restart fails
+- **THEN** Restart returns an error naming the mapped-port phase and what the inspect of the container showed, with
+  no second stop, start or port read and no second container
 
 ### Requirement: Fault-injecting key-value double
 
@@ -112,17 +117,6 @@ the injected error), and SHALL report how many real calls each operation made. T
 
 - **WHEN** `Create` is set to fail before the call and a caller creates a key
 - **THEN** the caller receives the injected error, the key does not exist, and the call count for Create is zero
-
-### Requirement: Fixture satisfies the lifecycle floor
-
-The fixture SHALL pass the lifecycle suite, including the failed-start check, with a `mustFail` factory whose start
-hook returns an error.
-
-#### Scenario: Start hook fails
-
-- **WHEN** the suite starts a fixture whose start hook returns an error
-- **THEN** Start returns a `FixtureError`, the fixture reports nothing unresolved, and a following Stop returns nil
-  without a Docker call
 
 ### Requirement: Broker max payload is settable
 
@@ -163,59 +157,6 @@ registered.
 - **WHEN** the harness import check lists the helper's package imports
 - **THEN** no package of this module outside `internal/harness` is among them
 
-### Requirement: Restart keeps the container and its host port
-
-`Fixture.Restart(ctx)` SHALL stop and start the same container under the fixture's one-slot semaphore, SHALL first
-stop every consumer the fixture created (cancelling it and waiting for its handler to be idle, as Stop does) and
-record it ended, SHALL drain the fixture's own connection, SHALL run the stop-container, start-container,
-mapped-port, connect and JetStream-ready phases in that order deriving every operation context from the caller's,
-and on success SHALL make `URL()` and `JetStream()` return the new binding. The container SHALL keep the host port
-Start gave it, so `URL()` after a successful Restart SHALL equal `URL()` before it. Streams and buckets the fixture
-owns SHALL stay in its ownership record, and Stop SHALL treat one that no longer exists after the restart as observed
-absent. Restart SHALL return an error and make no Docker call before Start has succeeded or once Stop has begun. A
-phase failure SHALL return a `FixtureError` carrying the phase, with one exception: when the mapped-port phase fails
-and the caller's context is still live, Restart SHALL run the stop-container and start-container phases once more on
-the same container and read the mapped port again, and SHALL return a second failure as a `FixtureError`. The
-fixture SHALL NOT create a replacement container during Restart. The container's writable layer SHALL survive a
-Restart, so a file-backed stream keeps its messages and a memory-backed stream does not.
-
-#### Scenario: File stream survives, memory stream does not
-
-- **WHEN** one message is acknowledged on a file-backed stream and one on a memory-backed stream, and the fixture is
-  restarted
-- **THEN** the file-backed message is readable at its sequence through the new `JetStream()` and the memory-backed
-  stream reports the message or the stream absent
-
-#### Scenario: Binding kept across a restart
-
-- **WHEN** the fixture is restarted
-- **THEN** `URL()` returns the address it returned before the restart, that address is the container's binding as
-  Docker reports it, and a dial to it succeeds
-
-#### Scenario: Consumer across a restart
-
-- **WHEN** a consumer created by Consume has a handler running and the fixture is restarted
-- **THEN** Restart returns only after that handler has returned, the consumer is recorded ended, no handler runs
-  after the restart until Consume is called again, and Stop still succeeds
-
-#### Scenario: Restart before Start
-
-- **WHEN** Restart is called on a fixture whose Start has not succeeded, or once Stop has begun
-- **THEN** Restart returns an error and the Docker call count is unchanged
-
-#### Scenario: Start-container phase fails
-
-- **WHEN** the start-container hook returns an error
-- **THEN** Restart returns a `FixtureError` whose phase is start-container, no second container exists, and Stop
-  still observes the container gone
-
-#### Scenario: Mapped-port failure after a restart
-
-- **WHEN** the mapped-port read after the restart fails and the caller's context is still live
-- **THEN** Restart stops and starts the same container once more and reads the port again; if that read succeeds,
-  Restart goes on to connect, and if it fails, Restart returns a `FixtureError` whose phase is mapped-port, with no
-  third try and no second container
-
 ### Requirement: Ryuk off, labelled containers and the sweep
 
 Once per process, before its first testcontainers call, natsfixture SHALL set `TESTCONTAINERS_RYUK_DISABLED=true` in
@@ -239,3 +180,14 @@ depend on which test reached that step first.
   zero, while the test also runs an unlabelled container
 - **THEN** the labelled container survives the first sweep and is gone after the second, and the unlabelled one is
   still running
+
+### Requirement: Bounded test streams
+
+`natsfixture.CreateStream` SHALL be a function, not a fixture method, that creates a stream on a given JetStream with
+the storage type the caller passes (file or memory), declaring `MaxAge`, `MaxBytes` and `DiscardOld`, so a runaway test
+fails on a ceiling instead of filling the server.
+
+#### Scenario: Memory stream is bounded
+
+- **WHEN** a test creates a memory-backed stream through the function
+- **THEN** the stream's configuration reports memory storage and the bounds

@@ -1161,10 +1161,10 @@
     TestConsumerPolicyProductionCallsiteCensus consumer_policy_callsite_test.go:217-292 → :222-229
     with the check in consumerPolicyCallsiteCensusViolations :279-336 (the pin expected 2 internal,
     15 port and 1 split-context SemStreams callers and 17 GetConsumerConfig files; SemEngine has
-    none of them); TestConsumerPolicyDirectCreationCallCensus :588-618 → :635-642 with the check in
-    directConsumerCreationCensusViolations :669-700 (the pin's output/otel and test/e2e entries are
-    replaced by internal/harness/natsfixture/fixture.go:CreateConsumer/args=2; natsclient/stream.go's
-    two stay). New, each adding a caller written in a t.TempDir() tree to the measured tree:
+    none of them); TestConsumerPolicyDirectCreationCallCensus :588-618 → :638-643 with the check in
+    directConsumerCreationCensusViolations :672-702 (the pin's output/otel and test/e2e entries were
+    replaced by internal/harness/natsfixture/fixture.go:CreateConsumer/args=2, which went with
+    natsfixture's Consume in test-infra-audit task 3.2; natsclient/stream.go's two stay). New, each adding a caller written in a t.TempDir() tree to the measured tree:
     TestConsumerPolicyProductionCallsiteCensusRejectsPlantedCaller :231-277 (one caller per entry
     point; each names planted.go) and TestConsumerPolicyDirectCreationCallCensusRejectsPlantedCaller
     :644-667 (one per creation method). Mutation (implementer-reported, PR #48): both check

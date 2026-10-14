@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/require"
 
 	"github.com/c360studio/semengine/graph"
@@ -68,7 +69,7 @@ func newFixtureClient(t *testing.T, streams ...fixtureStream) *natsclient.Client
 		t.Fatalf("natsfixture Start: %v", err)
 	}
 	for _, s := range streams {
-		if _, err := f.CreateStream(t.Context(), s.name, s.subjects...); err != nil {
+		if _, err := natsfixture.CreateStream(t.Context(), f.JetStream(), jetstream.FileStorage, s.name, s.subjects...); err != nil {
 			t.Fatalf("CreateStream %s: %v", s.name, err)
 		}
 	}

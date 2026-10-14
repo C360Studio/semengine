@@ -6,22 +6,26 @@ thin and must point to exactly one canonical contract. Adapted from SemStreams a
 
 ## Role and platform mapping
 
-- SemEngine architect
+- SemEngine architect (read-only)
   - Canonical: `.agents/contracts/semengine-architect.md`
   - Claude: `.claude/agents/semengine-architect.md`
   - Codex: `.codex/agents/semengine-architect.toml`
+  - Gemini (Antigravity): `define_subagent` (`name = "semengine-architect"`, `enable_write_tools = false`)
 - SemEngine developer
   - Canonical: `.agents/contracts/semengine-developer.md`
   - Claude: `.claude/agents/semengine-developer.md`
   - Codex: `.codex/agents/semengine-developer.toml`
+  - Gemini (Antigravity): `define_subagent` (`name = "semengine-developer"`, `enable_write_tools = true`)
 - SemEngine reviewer (independent; read-only)
   - Canonical: `.agents/contracts/semengine-reviewer.md`
   - Claude: `.claude/agents/semengine-reviewer.md`
   - Codex: `.codex/agents/semengine-reviewer.toml`
+  - Gemini (Antigravity): `define_subagent` (`name = "semengine-reviewer"`, `enable_write_tools = false`)
 - SemEngine technical writer
   - Canonical: `.agents/contracts/semengine-technical-writer.md`
   - Claude: `.claude/agents/semengine-technical-writer.md`
   - Codex: `.codex/agents/semengine-technical-writer.toml`
+  - Gemini (Antigravity): `define_subagent` (`name = "semengine-technical-writer"`, `enable_write_tools = true`)
 
 SemStreams also has explorer and judge contracts. They are deliberately left out for now: the plan names four roles,
 and their cost and independence rules (judge model routing, inventory files written by an explorer) have no SemEngine
@@ -29,23 +33,33 @@ work to justify them yet. Add one only with a recorded owner decision.
 
 ## Model routing
 
-Adapters carry the model choices SemStreams uses for the equivalent role. The reviewer is never weaker than the
-developer.
+Adapters carry the model choices SemStreams uses for the equivalent role. Neither the architect nor the reviewer is
+weaker than the developer.
 
-| Role | Claude | Codex |
-| --- | --- | --- |
-| Architect | inherits (read-only tools) | `gpt-6-astra`, resolved effort inherited |
-| Developer | `opus` | `gpt-6-sol`, `high` |
-| Reviewer | `opus` | `gpt-6-astra`, `high` |
-| Technical writer | `opus` | `gpt-6-sol`, `high` |
+| Role | Claude | Codex | Gemini (Antigravity) |
+| --- | --- | --- | --- |
+| Architect | inherits (`opus` required; read-only tools) | `gpt-6-astra`, resolved effort inherited (`high` required) | `inherit` or `pro` (`enable_write_tools = false`) |
+| Developer | `opus` | `gpt-6-sol`, `high` | `inherit` or `pro` (`enable_write_tools = true`) |
+| Reviewer | `opus` | `gpt-6-astra`, `high` | `inherit` or `pro` (`enable_write_tools = false`) |
+| Technical writer | `opus` (`sonnet` eligible) | `gpt-6-sol`, `high` (`medium` eligible) | `flash` or `inherit` (`enable_write_tools = true`) |
 
-SemStreams has no technical-writer adapter; the writer follows the developer's routing because it edits files under
-the parent workspace permissions. This is a SemEngine choice, open to owner override.
+While `.claude/agents/semengine-architect.md` omits `model:` and `.codex/agents/semengine-architect.toml` inherits
+reasoning effort, an orchestrating Claude session invokes `semengine-architect` on `opus` and an orchestrating Codex
+session invokes it at `high` reasoning effort so design work never runs below the developer or reviewer tier.
+SemStreams has no technical-writer adapter; the writer is non-decision-making (doc sync, `task docs:check`, and
+conservative task ticking) and may be routed to a lighter tier (`sonnet` on Claude, `medium` effort on Codex
+`gpt-6-sol`, `flash` on Gemini). Pinning those adapter fields in `.claude/agents/` and `.codex/agents/` (which
+`scripts/merge-check.sh` classifies as code files) is tracked in #225.
 
-The table does not rank Claude's models against Codex's; across agents the pairing is the owner's decision. For a
-code pull request the reviewer of record is the other agent's reviewer from the table above; a documents-only pull
-request keeps this repository's reviewer (owner rulings of 2026-10-02 on issue #64, and this repository's reading of
-them: `.agents/protocol.md`, "Cross-agent review").
+On Gemini (Antigravity), role subagents are registered with `define_subagent` pointing at the matching
+`.agents/contracts/semengine-*.md` contract and invoked with `invoke_subagent`; `Model` defaults to `"inherit"` (for
+example, Gemini 4 Argon High) unless `"pro"` or `"flash"` is explicitly requested.
+
+The table does not rank one platform's models against another's; across agents the pairing is the owner's decision.
+For a code pull request the reviewer of record is the other agent's reviewer from the table above; a documents-only
+pull request keeps this repository's reviewer (owner rulings of 2026-10-02 on issue #64, and this repository's reading
+of them: `.agents/protocol.md`, "Cross-agent review"). Extending `scripts/merge-check.sh` to recognize `gemini`
+alongside `claude` and `codex` on code pull requests is tracked in #225.
 
 ## Orchestrating role agents
 
@@ -98,14 +112,17 @@ Engine-capability skills, carried from SemStreams with the packages they govern 
 - [new-payload](skills/new-payload/SKILL.md): add a payload type to the registry. Claude command `/new-payload`.
 - [query-pattern](skills/query-pattern/SKILL.md): choose how code reads the graph. Claude command `/query-pattern`.
 
-Codex can invoke the canonical names with `$`, or read their paths directly. Claude uses the command names above;
-its adapters live in `.claude/skills/<command-name>/SKILL.md`. The `preflight` adapter deliberately maps to the
-canonical `semengine-preflight` name. Add an engine-capability skill only when its capability is admitted. A private
-memory reference cannot be required to interpret a shared rule.
+Codex can invoke the canonical names with `$`, or read their paths directly. Antigravity (Gemini) automatically
+discovers `.agents/skills/<name>/SKILL.md` from the workspace root. Claude uses the command names above; its adapters
+live in `.claude/skills/<command-name>/SKILL.md`. The `preflight` adapter deliberately maps to the canonical
+`semengine-preflight` name. Add an engine-capability skill only when its capability is admitted. A private memory
+reference cannot be required to interpret a shared rule.
 
 ## Manual read-only parity smoke
 
 Run this procedure after changing a contract, adapter, or repository routing rule. It only reads tracked files.
+Automating Steps 1–8 and the `AGENTS.md` 24,000-byte rule cap as a contract test under `internal/harness/contract/` is
+tracked in #225.
 
 1. Confirm all four canonical contracts and all eight agent adapters exist, and that `.agents/protocol.md` exists.
 2. Confirm each adapter names exactly its matching `.agents/contracts/...` path and says to read it fully first.
@@ -114,7 +131,8 @@ Run this procedure after changing a contract, adapter, or repository routing rul
    name, because an unresolved tool name makes Claude Code refuse to launch the agent.
 4. Confirm the Codex reviewer and architect set `sandbox_mode = "read-only"`; the developer and the technical writer
    have no sandbox override and inherit the parent workspace permissions.
-5. Confirm `CLAUDE.md` only imports `AGENTS.md` and carries no rules of its own.
+5. Confirm `CLAUDE.md` only imports `AGENTS.md` and carries no rules of its own, and that `AGENTS.md` stays under
+   24,000 bytes (`wc -c AGENTS.md`) so rule loaders with a 24 KB per-file cap do not truncate it.
 6. Inspect adapter size with `wc -l .claude/agents/semengine-*.md .codex/agents/semengine-*.toml`; adapters should
    remain short and contain no copied checklist.
 7. For every skill in the shared-skills list, confirm the canonical file and Claude adapter exist, the adapter points
@@ -135,4 +153,5 @@ Use these semantic fixtures when reading the routing text:
 - "The previous revision was green" preserves that evidence as historical, not current-head proof.
 - "Continue without private memory" resolves shared state and verifies ownership through pickup/protocol.
 
-The smoke passes only when Claude and Codex resolve the same logical role and canonical contract for every fixture.
+The smoke passes only when Claude, Codex, and Gemini resolve the same logical role and canonical contract for every
+fixture.

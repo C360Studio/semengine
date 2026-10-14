@@ -765,8 +765,8 @@
     non-positive dimensions and return a nil Cache interface on error; (5) Config.UnmarshalJSON
     refuses unknown keys and handles JSON null as a no-op; (6) simpleCache, lruCache, ttlCache, and
     hybridCache collapse into a single parameterized memCache[V] in cache.go, Statistics uses
-    lock-free atomic.Int64 fields with UpdateSize called under c.mu.Lock(), and Cache[V].Clear()
-    drops its unused error return (#220)
+    lock-free atomic fields (atomic.Int64 counters/sizes and atomic.Pointer[time.Time] startTime)
+    with UpdateSize called under c.mu.Lock(), and Cache[V].Clear() drops its unused error return (#220, #233)
   dependencies_and_side_effects: >-
     metric, pkg/errs (in-set); prometheus/client_golang; stdlib; pgregory.net/rapid in tests only.
     TTL/hybrid caches and CoalescingSet each run one background goroutine joined by Close/Shutdown

@@ -66,15 +66,17 @@ scoping decisions under the Clarify gate:
   size could reach `UpdateSize` in the opposite order from their map mutations, leaving `stats.CurrentSize()` holding
   the older size after both operations settled.
 - **Change**:
-  - Replace `hits`, `misses`, `sets`, `deletes`, `evictions`, `currentSize`, `maxSize`, and `startNano` on `Statistics`
-    with `atomic.Int64` fields, removing `mu sync.RWMutex` completely.
+  - Replace `currentSize` and `maxSize` on `Statistics` with `atomic.Int64` fields and `startTime` with
+    `atomic.Pointer[time.Time]` (preserving Go's monotonic clock reading across `time.Since(*start)`), removing
+    `mu sync.RWMutex` completely. Document on `Reset()` that callers must ensure cache mutations (`UpdateSize`) are
+    quiescent when resetting statistics.
   - In `UpdateSize(size int64)`, store `s.currentSize.Store(size)` and advance `s.maxSize` with a compare-and-swap loop
     whenever `size > s.maxSize.Load()`.
   - In `memCache[V]`, call `c.stats.UpdateSize(int64(len(c.items)))` (and `c.metrics.updateSize(len(c.items))`) while
     still holding `c.mu.Lock()` on every size-changing path (`Set`, `Delete`, `Clear`, `Get` expired eviction, and
-    `cleanup`).
-- **Proving test**: `TestConcurrentSetDeleteStatsCurrentSizeMatchesSize` in `internal/cache/cache_test.go` (and
-  `TestStatisticsConcurrentUpdateSizeTracksMax` in `internal/cache/cache_test.go`).
+    `cleanup`), and snapshot `entry.value` and `entry.expiresAt` under `c.mu.RLock()` on non-LRU `Get` reads (#233).
+- **Proving test**: `TestConcurrentSetDeleteStatsCurrentSizeMatchesSize`,
+  `TestStatisticsConcurrentUpdateSizeTracksMax`, and `TestConcurrentSameKeyGetSet` in `internal/cache/cache_test.go`.
 
 ### D3 Drop dead `error` return from `Clear()`
 

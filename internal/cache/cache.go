@@ -134,6 +134,14 @@ func (c *memCache[V]) Get(key string) (V, bool) {
 	if c.order == nil {
 		c.mu.RLock()
 		entry, exists := c.items[key]
+		var (
+			val       V
+			expiresAt time.Time
+		)
+		if exists {
+			val = entry.value
+			expiresAt = entry.expiresAt
+		}
 		c.mu.RUnlock()
 
 		if !exists {
@@ -142,7 +150,7 @@ func (c *memCache[V]) Get(key string) (V, bool) {
 			return zero, false
 		}
 
-		if c.ttl > 0 && entry.isExpired(time.Now()) {
+		if c.ttl > 0 && !expiresAt.IsZero() && time.Now().After(expiresAt) {
 			c.mu.Lock()
 			if cur, stillExists := c.items[key]; stillExists && cur.isExpired(time.Now()) {
 				c.removeEntry(cur)
@@ -162,7 +170,7 @@ func (c *memCache[V]) Get(key string) (V, bool) {
 		}
 
 		c.recordHit()
-		return entry.value, true
+		return val, true
 	}
 
 	c.mu.Lock()

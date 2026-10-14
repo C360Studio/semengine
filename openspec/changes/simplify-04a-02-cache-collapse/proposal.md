@@ -31,7 +31,8 @@ the cache mutex, and drops the dead `error` return from `Clear()`.
     `storage/objectstore` callers require zero changes.
 - **Lock-free atomic `Statistics` and serialized `UpdateSize` (`internal/cache/stats.go`, `internal/cache/cache.go`)**:
   - Replace `Statistics.mu` (`sync.RWMutex`), `currentSize`, `maxSize`, and `startTime` in `internal/cache/stats.go`
-    with `atomic.Int64` fields (`currentSize`, `maxSize` updated via CAS loop, and `startNano` storing `UnixNano`).
+    with lock-free atomics (`currentSize` and `maxSize` `atomic.Int64` updated via CAS loop, and `startTime`
+    `atomic.Pointer[time.Time]` preserving monotonic elapsed time).
   - Call `c.stats.UpdateSize(int64(len(c.items)))` and `c.metrics.updateSize(len(c.items))` while holding `c.mu.Lock()`
     on every size-changing path (`Set`, `Delete`, `Clear`, `Get` expired eviction, and `cleanup`) so `CurrentSize()`
     never lags behind a concurrent mutation.
@@ -40,7 +41,7 @@ the cache mutex, and drops the dead `error` return from `Clear()`.
     for `io.Closer`, `background-work` spec (`Close() error`), `processor/graph-ingest/component.go:1161`, and
     `storage/objectstore/store.go:428`.
 - **Documentation and ledger sync**:
-  - Update `internal/cache/doc.go`, `internal/cache/README.md`, `docs/testing.md`, and the `pkg/cache` row in
+  - Update `internal/cache/doc.go`, `internal/cache/README.md`, and the `pkg/cache` row in
     `docs/admission-ledger.yaml`.
 
 ## Capabilities
@@ -52,5 +53,5 @@ No normative capability spec requirements change (`skip_specs: true`). `backgrou
 
 - `internal/cache/cache.go`, `internal/cache/config.go`, `internal/cache/stats.go`, `internal/cache/doc.go`,
   `internal/cache/README.md`, `internal/cache/*_test.go` (and removal of `simple.go`, `lru.go`, `ttl.go`, `hybrid.go`).
-- `docs/admission-ledger.yaml`, `docs/testing.md`.
-- Closes #220; addresses #223.
+- `docs/admission-ledger.yaml`.
+- Closes #220, Closes #233; addresses #223.

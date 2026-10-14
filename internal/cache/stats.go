@@ -14,13 +14,14 @@ type Statistics struct {
 	evictions   atomic.Int64
 	currentSize atomic.Int64
 	maxSize     atomic.Int64
-	startNano   atomic.Int64
+	startTime   atomic.Pointer[time.Time]
 }
 
 // NewStatistics creates a new statistics tracker.
 func NewStatistics() *Statistics {
 	s := &Statistics{}
-	s.startNano.Store(time.Now().UnixNano())
+	now := time.Now()
+	s.startTime.Store(&now)
 	return s
 }
 
@@ -124,19 +125,25 @@ func (s *Statistics) RequestsPerSecond() float64 {
 	return float64(totalRequests) / elapsed.Seconds()
 }
 
-// Uptime returns how long the cache has been running.
+// Uptime returns how long the cache has been running using the stored start time's monotonic clock reading.
 func (s *Statistics) Uptime() time.Duration {
-	return time.Since(time.Unix(0, s.startNano.Load()))
+	start := s.startTime.Load()
+	if start == nil {
+		return 0
+	}
+	return time.Since(*start)
 }
 
-// Reset resets all statistics to zero.
+// Reset resets all statistics to zero. Callers must ensure cache mutations (UpdateSize) are quiescent
+// when calling Reset; Reset does not provide an atomic multi-field reset across concurrent size updates.
 func (s *Statistics) Reset() {
 	s.hits.Store(0)
 	s.misses.Store(0)
 	s.sets.Store(0)
 	s.deletes.Store(0)
 	s.evictions.Store(0)
-	s.startNano.Store(time.Now().UnixNano())
+	now := time.Now()
+	s.startTime.Store(&now)
 	s.currentSize.Store(0)
 	s.maxSize.Store(0)
 }

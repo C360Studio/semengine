@@ -447,7 +447,8 @@ func handleRequest(keys []string) error {
 All cache operations are thread-safe. The implementation uses:
 
 - Per-cache `sync.Mutex` protecting map state, LRU ordering, and `Stats().UpdateSize`
-- Lock-free `atomic.Int64` fields in `Statistics` (including CAS `maxSize` tracking)
+- Lock-free atomic fields in `Statistics` (`atomic.Int64` counters/sizes with CAS `maxSize`, and
+  `atomic.Pointer[time.Time]` `startTime`)
 - Background cleanup goroutine lifecycle joined by `Close()`
 
 ## Contributing

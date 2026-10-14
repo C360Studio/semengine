@@ -607,6 +607,58 @@ func TestStatisticsConcurrentUpdateSizeTracksMax(t *testing.T) {
 	}
 }
 
+// TestConcurrentSameKeyGetSet proves that concurrent Get and Set on the same key across all four
+// strategies return coherent values without data races on entry value or expiration fields (#233).
+func TestConcurrentSameKeyGetSet(t *testing.T) {
+	strategies := []Config{
+		{Enabled: true, Strategy: StrategySimple},
+		{Enabled: true, Strategy: StrategyLRU, MaxSize: 16},
+		{Enabled: true, Strategy: StrategyTTL, TTL: time.Hour, CleanupInterval: time.Minute},
+		{Enabled: true, Strategy: StrategyHybrid, MaxSize: 16, TTL: time.Hour, CleanupInterval: time.Minute},
+	}
+
+	for _, cfg := range strategies {
+		t.Run(string(cfg.Strategy), func(t *testing.T) {
+			c, err := NewFromConfig[[2]int](context.Background(), cfg)
+			if err != nil {
+				t.Fatalf("NewFromConfig(%s): %v", cfg.Strategy, err)
+			}
+			defer c.Close()
+
+			if _, err := c.Set("shared", [2]int{}); err != nil {
+				t.Fatalf("Set initial: %v", err)
+			}
+
+			start := make(chan struct{})
+			var wg sync.WaitGroup
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				<-start
+				for i := range 10000 {
+					if _, err := c.Set("shared", [2]int{i, i}); err != nil {
+						t.Errorf("Set(%d): %v", i, err)
+						return
+					}
+				}
+			}()
+			go func() {
+				defer wg.Done()
+				<-start
+				for range 10000 {
+					v, ok := c.Get("shared")
+					if !ok || v[0] != v[1] {
+						t.Errorf("incoherent Get: %v, ok=%v", v, ok)
+						return
+					}
+				}
+			}()
+			close(start)
+			wg.Wait()
+		})
+	}
+}
+
 // testValidConfigs tests valid cache configurations.
 func testValidConfigs(t *testing.T) {
 	configs := []Config{

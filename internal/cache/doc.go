@@ -191,7 +191,7 @@
 // All cache operations are thread-safe for concurrent use:
 //   - Cache map, LRU list, and size transitions are synchronized under a per-cache mutex
 //   - Size updates to Statistics happen under the cache mutex so Stats().CurrentSize() matches Size()
-//   - Statistics fields use lock-free atomic.Int64 operations (counters, currentSize, CAS maxSize)
+//   - Statistics fields use lock-free atomic operations (counters, currentSize, CAS maxSize, atomic.Pointer[time.Time] startTime)
 //   - Metrics use Prometheus atomic types
 //   - TTL and hybrid cleanup runs in a background goroutine joined by Close()
 //

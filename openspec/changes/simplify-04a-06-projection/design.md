@@ -1,6 +1,6 @@
 # Design: simplify-04a-06-projection
 
-Status: draft. Inventory review passed (`INVENTORY PASS`, findings applied); pre-owner design review pending.
+Status: accepted. Inventory and design reviews passed; owner answers on #138 (comment 6201479528, 2026-10-15).
 Inventory: `inventory.md` (base `a9aaf68`).
 
 ## Context

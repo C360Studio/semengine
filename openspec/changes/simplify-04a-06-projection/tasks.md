@@ -56,6 +56,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 ## 5. Verify, review and close
 
 - [x] 5.1 `task verify` passes on a clean tree at the implementation head (exit 0 at `c7d0047`).
-- [ ] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
+- [x] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body (Codex APPROVE at
+  `14fc2d0`, PR #265 comment, 2026-10-15).
 - [ ] 5.3 Archive the change (`openspec archive simplify-04a-06-projection`) as the last content commit. Gate:
   `task spec:check`.

@@ -12,7 +12,7 @@ failing output in `notes/<task>.md`.
 
 ## 2. metric
 
-- [ ] 2.1 D1: `registry_test.go` asserts that a fresh registry gathers no `semengine_nats_*` family (shown failing on
+- [x] 2.1 D1: `registry_test.go` asserts that a fresh registry gathers no `semengine_nats_*` family (shown failing on
   the base). Then remove the four fields, their registration and the four `Record*` methods, and the test lines that
   name them (`registry_test.go:132-135`, `:188-191`, `:215-219`). Gate: `go test -race ./metric/`.
 - [ ] 2.2 D2: remove `opHook`, `recordOp` and its five calls. The lifecycle adapter reports no `Calls`, and its doc

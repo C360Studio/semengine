@@ -6,7 +6,7 @@ Issue #234 implements Stage 1 of the three-repo ontology and SPARQL architecture
 `semsparql`) confirmed by the owner on 2026-10-14:
 
 1. Full code PR in `semengine` (`Closes #234`, `Closes #237`, `Closes #238`, `Closes #239`, `Closes #249`,
-   `Closes #250`, `Closes #251`, `Addresses #9`).
+   `Closes #250`, `Closes #251`, `Closes #252`, `Addresses #9`).
 2. Port `vocabulary/export` and `ADR-107` now rather than waiting for Change 7.
 3. Support both JSON and YAML in `vocabulary`'s declarative pack loader (`PackSpec`).
 
@@ -28,15 +28,17 @@ Adopters of the new primitives: `semvocab` (`RegisterPack`, `LoadPackJSON`, `Loa
   atomically for compact IRIs; `compact` only compacts when the local part satisfies unescaped W3C Turtle `PN_LOCAL`
   (`#250`); equal-length namespace aliases break ties deterministically by lexicographically smallest prefix (`#238`);
   JSON-LD `@context` emits explicit `{"@id": namespace, "@prefix": true}` definitions for namespaces that do not end in
-  an RFC 3986 `gen-delim` such as `BFO_` (`#249`); and `xsd:dateTime` formatting preserves fractional seconds via
-  `time.RFC3339Nano` (`#239`).
+  an RFC 3986 `gen-delim` such as `BFO_` (`#249`); JSON-LD literal formatting preserves explicit `@value`/`@type`
+  objects whenever native JSON boolean/number conversion cannot preserve the supplied lexical form and datatype (`#252`);
+  and `xsd:dateTime` formatting preserves fractional seconds via `time.RFC3339Nano` (`#239`).
 - **Adaptations from pin (`8b99efe9`)**: replace `vocabulary.SemStreamsBase` with `vocabulary.SemEngineBase` in
   `export.go` and `prefix.go` and in 5 test files; add `RegisterPrefixes` and `PN_PREFIX`/`IRIREF` validation (`#237`),
   deterministic alias tie-breaking in `compact` (`#238`), `time.RFC3339Nano` in `dateTimeLexical` and
   `classifyByGoType` (`#239`), expanded `@prefix: true` JSON-LD context entries for non-`gen-delim` namespaces (`#249`),
-  and `PN_LOCAL` local-name validation in `compact` (`#250`); add `defer vocabulary.SnapshotRegistry()()` before
-  `vocabulary.ClearRegistry()` in test files; port `docs/adr/107-semantic-web-vocabulary-lives-at-the-export-edge.md`
-  with a SemEngine port header; record `vocabulary/bfo` and `vocabulary/cco` as `defer-exclude` (homed in `semvocab`).
+  `PN_LOCAL` local-name validation in `compact` (`#250`), and `@value`/`@type` preservation in `jsonldLiteralValue`
+  (`#252`); add `defer vocabulary.SnapshotRegistry()()` before `vocabulary.ClearRegistry()` in test files; port
+  `docs/adr/107-semantic-web-vocabulary-lives-at-the-export-edge.md` with a SemEngine port header; record
+  `vocabulary/bfo` and `vocabulary/cco` as `defer-exclude` (homed in `semvocab`).
 - **Proving tests**: `go test -race -count=1 ./vocabulary/export/...`, `task test:repeat`, and `task ledger:check`.
 
 ### D2 Reverse predicate IRI lookup (`LookupByIRI`)

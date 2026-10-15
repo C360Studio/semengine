@@ -2306,8 +2306,9 @@
     IRI (#69, #234), W3C Turtle PN_PREFIX and IRIREF validation and atomic batch prefix
     registration (#237), deterministic namespace-alias compaction (#238), time.RFC3339Nano
     fractional-second preservation on xsd:dateTime literals (#239), explicit JSON-LD @prefix term
-    definitions for non-gen-delim namespaces (#249), and Turtle PN_LOCAL local-name validation
-    before compaction (#250)
+    definitions for non-gen-delim namespaces (#249), Turtle PN_LOCAL local-name validation before
+    compaction (#250), and JSON-LD typed @value/@type preservation for explicit boolean/numeric
+    literals (#252)
   dependencies_and_side_effects: >-
     message, vocabulary (in-set); graph and pgregory.net/rapid v1.3.0 in tests; stdlib;
     mutex-guarded defaultPrefixes table mutated by Register and RegisterPrefixes; no goroutine, no
@@ -2317,8 +2318,9 @@
     export.go, prefix.go, and test expectations; added RegisterPrefixes and PN_PREFIX/IRIREF
     validation (#237), lexicographic prefix tie-breaking for equal-length namespaces in compact
     (#238), time.RFC3339Nano formatting in dateTimeLexical and classifyByGoType (#239), expanded
-    JSON-LD @context entries with @prefix:true for non-gen-delim namespaces (#249), and PN_LOCAL
-    validation in compact (#250); tests calling vocabulary.ClearRegistry() snapshot and restore the
+    JSON-LD @context entries with @prefix:true for non-gen-delim namespaces (#249), PN_LOCAL
+    validation in compact (#250), and JSON-LD @value/@type preservation for non-canonical explicit
+    typed literals (#252); tests calling vocabulary.ClearRegistry() snapshot and restore the
     global registry via defer vocabulary.SnapshotRegistry()(); README updated for SemEngine module
     path and ADR-107 link
   proving_tests: >-

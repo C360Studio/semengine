@@ -286,7 +286,7 @@ func parseSingleTripleTurtleResourceObject(t *testing.T, turtleDoc string) strin
 	}
 	pfx := objTerm[:colon]
 	local := objTerm[colon+1:]
-	if !isValidPNLocal(local) {
+	if local == "" || strings.HasSuffix(local, ".") || strings.ContainsAny(local, "?#/\\ \t\r\n<>\"{}|^`") {
 		t.Fatalf("Turtle object term %q has invalid PN_LOCAL %q", objTerm, local)
 	}
 	ns, ok := prefixes[pfx]
@@ -365,8 +365,12 @@ func TestWriteTurtle_ResourceObjectsWithQueryFragmentOrTrailingDotStayFullIRIs(t
 		if parsedTurtleObj != iri {
 			t.Fatalf("parsed Turtle object IRI = %q, want %q\nTurtle:\n%s", parsedTurtleObj, iri, turtleOut)
 		}
-		if !strings.Contains(ntOut, "<"+parsedTurtleObj+">") {
-			t.Fatalf("N-Triples output %q disagrees with Turtle object IRI <%s>", ntOut, parsedTurtleObj)
+		wantToken := "<" + iri + ">"
+		if !strings.Contains(turtleOut, wantToken+" .") {
+			t.Fatalf("Turtle output missing full IRI object token %s:\n%s", wantToken, turtleOut)
+		}
+		if !strings.Contains(ntOut, wantToken) {
+			t.Fatalf("N-Triples output %q disagrees with Turtle object IRI %s", ntOut, wantToken)
 		}
 	}
 }

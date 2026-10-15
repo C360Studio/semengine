@@ -408,3 +408,114 @@ func TestWriteJSONLD_BFOPredicatePreservesExpandedIRI(t *testing.T) {
 		t.Fatalf("N-Triples output %q does not contain expanded JSON-LD predicate IRI <%s>", ntOut, expandedPredIRI)
 	}
 }
+
+// expandJSONLDLiteral converts a single-triple JSON-LD property value (decoded
+// with json.Decoder.UseNumber) into its W3C JSON-LD 1.1 RDF literal (lexical,
+// datatypeIRI) pair as an independent test oracle (#252).
+func expandJSONLDLiteral(t *testing.T, ctx map[string]any, val any) (string, string) {
+	t.Helper()
+	switch v := val.(type) {
+	case bool:
+		if v {
+			return "true", xsdBoolean
+		}
+		return "false", xsdBoolean
+	case json.Number:
+		raw := v.String()
+		if strings.ContainsAny(raw, ".eE") {
+			return raw, xsdDouble
+		}
+		return raw, xsdInteger
+	case string:
+		return v, xsdString
+	case map[string]any:
+		lex, ok := v["@value"].(string)
+		if !ok {
+			t.Fatalf("expected string @value in typed JSON-LD object, got %T (%v)", v["@value"], v["@value"])
+		}
+		rawType, ok := v["@type"].(string)
+		if !ok || rawType == "" {
+			t.Fatalf("expected non-empty string @type in typed JSON-LD object, got %T (%v)", v["@type"], v["@type"])
+		}
+		return lex, expandJSONLDTerm(ctx, rawType)
+	default:
+		t.Fatalf("unexpected JSON-LD property value %T (%v)", val, val)
+		return "", ""
+	}
+}
+
+func TestWriteJSONLD_ExplicitTypedLiteralsPreserveValueAndDatatype(t *testing.T) {
+	tests := []struct {
+		name     string
+		value    string
+		datatype string
+		wantType string
+	}{
+		{"bool_true", "true", "xsd:boolean", xsdBoolean},
+		{"bool_false", "false", "xsd:boolean", xsdBoolean},
+		{"bool_one", "1", "xsd:boolean", xsdBoolean},
+		{"bool_zero", "0", "xsd:boolean", xsdBoolean},
+		{"bool_full_iri_one", "1", xsdBoolean, xsdBoolean},
+		{"bool_unrecognized_not_coerced_to_false", "yes", "xsd:boolean", xsdBoolean},
+		{"int_canonical", "42", "xsd:integer", xsdInteger},
+		{"int_negative", "-42", "xsd:integer", xsdInteger},
+		{"int_leading_plus", "+1", "xsd:integer", xsdInteger},
+		{"int_zero_padded", "007", "xsd:integer", xsdInteger},
+		{"int_negative_zero_padded", "-007", "xsd:integer", xsdInteger},
+		{"int_negative_zero", "-0", "xsd:integer", xsdInteger},
+		{"double_canonical", "85.5", "xsd:double", xsdDouble},
+		{"double_whole_decimal", "1.0", "xsd:double", xsdDouble},
+		{"double_integer_lexical", "1", "xsd:double", xsdDouble},
+		{"double_leading_plus", "+1.5", "xsd:double", xsdDouble},
+		{"double_leading_dot", ".5", "xsd:double", xsdDouble},
+		{"double_trailing_dot", "1.", "xsd:double", xsdDouble},
+		{"double_zero_padded", "01.5", "xsd:double", xsdDouble},
+		{"double_inf", "INF", "xsd:double", xsdDouble},
+		{"double_neg_inf", "-INF", "xsd:double", xsdDouble},
+		{"double_nan", "NaN", "xsd:double", xsdDouble},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			triples := []message.Triple{{
+				Subject:   "a.b.c.d.e.f",
+				Predicate: "review.typed.value",
+				Object:    tc.value,
+				Datatype:  tc.datatype,
+			}}
+			jsonldOut, err := SerializeToString(triples, JSONLD)
+			if err != nil {
+				t.Fatalf("SerializeToString(JSONLD) failed for (%q, %q): %v", tc.value, tc.datatype, err)
+			}
+			ntOut, err := SerializeToString(triples, NTriples)
+			if err != nil {
+				t.Fatalf("SerializeToString(NTriples) failed for (%q, %q): %v", tc.value, tc.datatype, err)
+			}
+
+			dec := json.NewDecoder(strings.NewReader(jsonldOut))
+			dec.UseNumber()
+			var doc map[string]any
+			if err := dec.Decode(&doc); err != nil {
+				t.Fatalf("Decode JSON-LD failed: %v\n%s", err, jsonldOut)
+			}
+			ctx, _ := doc["@context"].(map[string]any)
+
+			var propVal any
+			for k, v := range doc {
+				if k != "@context" && k != "@id" && k != "@graph" {
+					propVal = v
+					break
+				}
+			}
+			gotLex, gotType := expandJSONLDLiteral(t, ctx, propVal)
+			if gotLex != tc.value || gotType != tc.wantType {
+				t.Fatalf("expanded JSON-LD literal = (%q, %q), want (%q, %q)\nJSON-LD:\n%s",
+					gotLex, gotType, tc.value, tc.wantType, jsonldOut)
+			}
+			wantNTLiteral := `"` + tc.value + `"^^<` + tc.wantType + `>`
+			if !strings.Contains(ntOut, wantNTLiteral) {
+				t.Fatalf("N-Triples output %q missing expected literal %s", ntOut, wantNTLiteral)
+			}
+		})
+	}
+}

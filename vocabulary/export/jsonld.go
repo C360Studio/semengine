@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"sort"
+	"strconv"
 
 	"github.com/c360studio/semengine/message"
 )
@@ -96,24 +98,50 @@ func jsonldObjectValue(obj classifiedObject, pm *prefixMap) any {
 }
 
 // jsonldLiteralValue formats a literal value for JSON-LD.
-// Uses native JSON types where possible, typed values with @value/@type otherwise.
+// Uses native JSON types only when they are syntactically valid JSON and
+// preserve the supplied lexical form and datatype; otherwise emits an explicit
+// "@value"/"@type" object (#252).
 func jsonldLiteralValue(obj classifiedObject, pm *prefixMap) any {
 	switch obj.datatype {
 	case xsdBoolean:
-		return obj.lexical == "true"
+		if obj.lexical == "true" {
+			return true
+		}
+		if obj.lexical == "false" {
+			return false
+		}
 	case xsdInteger:
-		return json.Number(obj.lexical)
+		if isCanonicalJSONInteger(obj.lexical) {
+			return json.Number(obj.lexical)
+		}
 	case xsdDouble:
-		return json.Number(obj.lexical)
+		if isCanonicalJSONDouble(obj.lexical) {
+			return json.Number(obj.lexical)
+		}
 	case "", xsdString:
 		return obj.lexical
-	default:
-		typed := map[string]any{"@value": obj.lexical}
-		if compacted, ok := pm.compact(obj.datatype); ok {
-			typed["@type"] = compacted
-		} else {
-			typed["@type"] = obj.datatype
-		}
-		return typed
 	}
+	typed := map[string]any{"@value": obj.lexical}
+	if compacted, ok := pm.compact(obj.datatype); ok {
+		typed["@type"] = compacted
+	} else {
+		typed["@type"] = obj.datatype
+	}
+	return typed
+}
+
+func isCanonicalJSONInteger(s string) bool {
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return false
+	}
+	return strconv.FormatInt(n, 10) == s
+}
+
+func isCanonicalJSONDouble(s string) bool {
+	f, err := strconv.ParseFloat(s, 64)
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
+		return false
+	}
+	return formatFloat(f) == s
 }

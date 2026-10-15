@@ -13,7 +13,7 @@ before any production line changes; record the failing output in `notes/<task>.m
 
 ## 2. Failing tests
 
-- [ ] 2.1 `internal/harness/prochost/prochost_test.go`: the table-driven test of design D1, with four rows (killed,
+- [x] 2.1 `internal/harness/prochost/prochost_test.go`: the table-driven test of design D1, with four rows (killed,
   interrupted, returned, panicked):
   - The outer test starts the helper-parent with `TMPDIR=<outer t.TempDir()>` in its environment.
   - The helper-parent starts a grandchild helper and records its pid, start identity and stderr file.
@@ -28,7 +28,7 @@ before any production line changes; record the failing output in `notes/<task>.m
   Gate: every row fails on the base commit, the grandchild still running. After that run, `ps` shows no
   `TestHelperProcess` child left and `$TMPDIR` holds no new `TestHelperProcess` directory. Record both in
   `notes/2.1.md`.
-- [ ] 2.2 The early-exit guard (design D1) is shown able to fail. Use `task mutate:check` with a mutant of the
+- [x] 2.2 The early-exit guard (design D1) is shown able to fail. Use `task mutate:check` with a mutant of the
   implementation from 3.1 that leaves the helper's stdin as the null device, run against
   `TestStartedHelperHasItsOwnGroupAndCapturedOutput`. Name its early-exit checks by their failure text, which task 2.1's
   edits to the file do not move: `-expect-text "exited before its group was read" -expect-text "ps pgid" -expect-text
@@ -37,7 +37,7 @@ before any production line changes; record the failing output in `notes/<task>.m
 
 ## 3. Implementation
 
-- [ ] 3.1 `prochost.Start` and `prochost.Helper`: a helper exits on its own once its test process has ended, writing
+- [x] 3.1 `prochost.Start` and `prochost.Helper`: a helper exits on its own once its test process has ended, writing
   the reason to its stderr and exiting non-zero. The write end stays open while the test process lives (design D1:
   `cmd.StdinPipe`, held through `cmd` by the reaper; or kept by `Process` if built with `os.Pipe`). The process group,
   `Signal`, `Pause`, `Resume`, `Kill`, `Wait`, `Alive` and the cleanup are unchanged. Gate: 2.1 passes;

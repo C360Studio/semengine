@@ -82,6 +82,8 @@ so the counts above do not change:
 | `internal/lifecyclecleanup` | ported and made public as `pkg/lifecyclecleanup`, because SemTeams' components call its `RollbackFailedStart`; `adapt` row | #77 ruling, comment 6035317931; change 2 design D7 |
 | `graph/structural` | not ported in change 2: it moves to change 7 with its only readers, `graph/inference`'s detectors and `processor/graph-clustering`; `defer-exclude` row naming change 7 | ruling E, #91 comment 6037287957; change 2 design D1a |
 | `graph/inference` | ported as its hierarchy slice only (`hierarchy.go`, `container_entity.go` and a new `doc.go`); the rest of the package ports with `processor/graph-clustering` in change 7; `adapt` row | #97 ruling, comment 6036308092; change 2 design D1a |
+| `vocabulary/export` | ported ahead of change 7 by `vocab-export-packs` (#234) with `docs/adr/107-semantic-web-vocabulary-lives-at-the-export-edge.md` so `semvocab` and `semsparql` can consume RDF/JSON-LD serialization and prefix registration; `adapt` row | #234; `vocab-export-packs` design D1 |
+| `vocabulary/bfo`, `vocabulary/cco` | not ported into `semengine`: domain and upper-ontology packs live in external repository `semvocab`, registering through `vocabulary`'s declarative/Go pack seams; `defer-exclude` rows | #234; `vocab-export-packs` design D1 |
 
 **In Tier 1 only (23)**, each with its disposition and where that comes from:
 

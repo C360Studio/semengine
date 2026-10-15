@@ -37,3 +37,13 @@ differs from this requirement.
 
 - **WHEN** the `test:integration` command in `Taskfile.yml` lacks `-shuffle=on`
 - **THEN** the contract test fails naming the task and the required command
+
+### Requirement: Concurrent runs on one daemon
+
+Two worktrees running `task test:integration` at the same time on one machine and one Docker daemon SHALL both run
+and pass without interfering with each other's containers or ports.
+
+#### Scenario: Two worktrees at once
+
+- **WHEN** two worktrees start `task test:integration` at the same time against one Docker daemon
+- **THEN** neither blocks the other, neither sweeps the other's live containers, and both exit zero

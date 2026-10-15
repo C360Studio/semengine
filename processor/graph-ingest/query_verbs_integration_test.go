@@ -14,8 +14,8 @@ import (
 
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/graph"
-	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/c360studio/semengine/metric"
+	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/payloadregistry"
 	"github.com/c360studio/semengine/types"
 	"github.com/nats-io/nats.go"
@@ -67,21 +67,15 @@ func (h *recordingHandler) listedQuerySubjects(t *testing.T) []string {
 	return nil
 }
 
-// startGraphIngestOnFixture starts graph-ingest with its default configuration on a
-// fresh broker, its entity stream created first, and stops it on cleanup under a bounded
-// context. It returns the fixture and the log records the component wrote.
-func startGraphIngestOnFixture(t *testing.T) (*natsfixture.Fixture, *recordingHandler) {
+// startGraphIngestOnFixture starts graph-ingest with its default configuration on the
+// package's shared broker reset for t, its entity stream created first, and stops it on
+// cleanup under a bounded context. It returns the connected client and the log records
+// the component wrote.
+func startGraphIngestOnFixture(t *testing.T) (*natsclient.Client, *recordingHandler) {
 	t.Helper()
-	f := natsfixture.New(t)
-	if err := f.Start(t.Context()); err != nil {
-		t.Fatalf("natsfixture Start: %v", err)
-	}
-	client := natsfixture.Open(t, f, openFixtureClient)
+	client := newFixtureClient(t, entityStream)
 
 	config := DefaultConfig()
-	if _, err := natsfixture.CreateStream(t.Context(), f.JetStream(), jetstream.FileStorage, "ENTITY", "entity.>"); err != nil {
-		t.Fatalf("create entity stream: %v", err)
-	}
 	rawConfig, err := json.Marshal(config)
 	if err != nil {
 		t.Fatalf("marshal config: %v", err)
@@ -111,7 +105,7 @@ func startGraphIngestOnFixture(t *testing.T) (*natsfixture.Fixture, *recordingHa
 			t.Errorf("Stop: %v", err)
 		}
 	})
-	return f, logs
+	return client, logs
 }
 
 // hasResponder reports whether a request on subject reaches a subscriber: any reply,
@@ -133,18 +127,21 @@ func hasResponder(t *testing.T, nc *nats.Conn, subject string) bool {
 // responder (design D19). ENTITY_STATES exists and the entity verb answers, so Start did
 // provision and subscribe.
 func TestGraphIngestProvisionsNoSuffixIndex(t *testing.T) {
-	f, _ := startGraphIngestOnFixture(t)
-	js := f.JetStream()
+	client, _ := startGraphIngestOnFixture(t)
+	js, err := client.JetStream()
+	if err != nil {
+		t.Fatalf("JetStream: %v", err)
+	}
 
 	if _, err := js.KeyValue(t.Context(), graph.BucketEntityStates); err != nil {
 		t.Fatalf("ENTITY_STATES after Start: %v", err)
 	}
-	_, err := js.KeyValue(t.Context(), "ENTITY_SUFFIX_INDEX")
+	_, err = js.KeyValue(t.Context(), "ENTITY_SUFFIX_INDEX")
 	if !errors.Is(err, jetstream.ErrBucketNotFound) {
 		t.Errorf("ENTITY_SUFFIX_INDEX after Start: err = %v, want jetstream.ErrBucketNotFound", err)
 	}
 
-	nc := js.Conn()
+	nc := client.GetConnection()
 	if !hasResponder(t, nc, "graph.ingest.query.entity") {
 		t.Fatal("graph.ingest.query.entity has no responder after Start")
 	}
@@ -158,7 +155,7 @@ func TestGraphIngestProvisionsNoSuffixIndex(t *testing.T) {
 // responder graph-ingest, and each listed subject has a responder (design D20;
 // graph-transport-boundary, "Subscriptions match the table").
 func TestGraphIngestServesExactlyTheDeclaredVerbs(t *testing.T) {
-	f, logs := startGraphIngestOnFixture(t)
+	client, logs := startGraphIngestOnFixture(t)
 
 	var declared []string
 	for _, verb := range graph.QueryVerbs() {
@@ -175,7 +172,7 @@ func TestGraphIngestServesExactlyTheDeclaredVerbs(t *testing.T) {
 	if !slices.Equal(listed, declared) {
 		t.Fatalf("graph-ingest lists query subscriptions %v, the table declares %v", listed, declared)
 	}
-	nc := f.JetStream().Conn()
+	nc := client.GetConnection()
 	for _, subject := range listed {
 		if !hasResponder(t, nc, subject) {
 			t.Errorf("listed subject %s has no responder", subject)

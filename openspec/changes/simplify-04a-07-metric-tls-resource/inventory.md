@@ -52,7 +52,7 @@ Every pin caller of a `WithMTLS` loader passes the embedded block (`websocket_in
 `output/websocket/websocket.go:778-781`, `httppost.go:230-233`). One pin caller of the base client loader does not
 mean the MTLS block it carries: `pkg/tlsutil/tlsutil.go:286` — `tlsConfig, err := LoadClientTLSConfig(cfg)` — in
 `LoadClientTLSConfigWithACME`'s ACME branch, where `cfg.MTLS` names a manual key pair kept only as a fallback
-(`:294`, `:311`) and the ACME certificate replaces `Certificates` later. That loader is admitted but deferred to
+(`:295`, `:312`) and the ACME certificate replaces `Certificates` later. That loader is admitted but deferred to
 change 5 (ledger `pkg/tlsutil` known_risks), so it has no caller here. Once folded, a port that keeps line 286 would
 load the fallback pair first, and fail fatal if those files are missing. The server ACME loader builds its own
 `tls.Config` and calls `applyMTLSConfig` directly (`:239-245`), so it is unaffected.

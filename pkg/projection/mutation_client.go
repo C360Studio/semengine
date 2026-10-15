@@ -434,7 +434,8 @@ func mutationFailure(operation MutationOperation, err error) (MutationReceipt, e
 // unknownMutation reports a mutation that may have committed. It is fatal whatever class the
 // reply carried: retrying a write that may have committed can apply it twice. The cause is held in
 // a fatal *errs.ClassifiedError so errs.IsTransient, errs.Classify and errors.As read the same class
-// as the Class field; a classified reply keeps its code and detail on the error and on the wrapper.
+// as the Class field. The error keeps the reply's code and detail; the wrapper keeps the code, and
+// the detail only when the code is not empty (errs.Classified).
 func unknownMutation(operation MutationOperation, err error) (MutationReceipt, error) {
 	mapped := newMutationError(operation, err, CommitUnknown)
 	mapped.Kind = MutationCommitUnknown

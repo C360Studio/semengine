@@ -40,7 +40,7 @@ before any production line changes; record the failing output in `notes/<task>.m
 
 ## 4. Documentation
 
-- [ ] 4.1 `pkg/errs/doc.go` (unclassified → fatal; `IsFatal` stays strict), `docs/contract.md` (a commit-unknown error
+- [x] 4.1 `pkg/errs/doc.go` (unclassified → fatal; `IsFatal` stays strict), `docs/contract.md` (a commit-unknown error
   is fatal, and `errs.IsTransient` reports false for it), the `pkg/errs` row of `docs/admission-ledger.yaml` (contract
   and `known_risks`), and a dated amendment (owner ruling 4 on #167) to ADR-112 § 3 bullets `:144-146` (no
   responders' class) and `:152` (the unknown-error default). Gate: `task docs:check` and `task ledger:check`.

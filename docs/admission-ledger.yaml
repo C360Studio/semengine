@@ -436,13 +436,15 @@
   contract: >-
     classification, wrapping, errors.Is/As behavior, and ErrAlreadyStopped as at the pin, except
     IsTransient and IsFatal classify strictly by *ClassifiedError class and known sentinels, never
-    by substring matching on error text (#146, owner ruling N); WrapTransient, WrapFatal, and
+    by substring matching on error text (#146, owner ruling N); Classify returns ErrorFatal for an
+    unclassified error, while IsTransient, IsFatal, and IsInvalid report false for it (#167); WrapTransient, WrapFatal, and
     WrapInvalid return nil when err == nil regardless of action (#218); duplicate RetryConfig,
     DefaultRetryConfig, ShouldRetry, ToRetryConfig, and BackoffDelay removed (#218)
   dependencies_and_side_effects: stdlib only; no goroutine, no I/O
   known_risks: >-
     no production context roots. Classify defaults unclassified errors without a listed sentinel to
-    ErrorTransient regardless of error text (#167); duplicate RetryConfig removed and
+    ErrorFatal regardless of error text, a change from the pin's transient default (#167); a caller
+    that retried on Classify now stops on an error it did not classify; duplicate RetryConfig removed and
     WrapTransient/WrapFatal/WrapInvalid made nil-safe (#218); doc.go updated to match
   proving_tests: >-
     pkg/errs/errs_test.go, pkg/errs/classified_is_test.go, pkg/errs/shutdown_test.go,
@@ -2059,7 +2061,8 @@
     typed mutation client surface and validation as at the pin, with repairs #19 and #20 and design
     D15: (1) classified replies read as not committed only for pre-write refusal codes; any other
     reply (including post-write update failure or response_too_large) preserves commit ambiguity
-    with class, code, and detail (#20); (2) ReconcileMutation.ExpectedRevision fences reconcile at
+    with its code and detail and class fatal, so errs.IsTransient is false (#20, #167); a request
+    no responder took is not committed with class transient (#167); (2) ReconcileMutation.ExpectedRevision fences reconcile at
     the caller's revision (#19); (3) Create, Append, and Reconcile require statement Timestamp and
     Metadata.Source before sending and never read the clock (design D15)
   dependencies_and_side_effects: >-
@@ -2067,7 +2070,7 @@
     (in-set); NATS requests on graph.mutation.> and exact-entity reads; no goroutine
   known_risks: >-
     EntityState built without Version (#100). Pre-write transient errors from graph-ingest read as
-    commit-unknown (safe, conservative); follow-up #174 tracks post-append bookkeeping
+    commit-unknown with class fatal (safe, conservative; #167); follow-up #174 tracks post-append bookkeeping
   proving_tests: >-
     pkg/projection/mutation_client_refusals_test.go, commit_ambiguity_test.go,
     conditional_reconcile_test.go, mutation_client_test.go, contract_test.go, and

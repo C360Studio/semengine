@@ -39,10 +39,10 @@ func TestServerMTLSRequiresClientCertificateByDefault(t *testing.T) {
 			require.NoError(t, os.WriteFile(serverKeyFile, serverKeyPEM, 0600))
 			require.NoError(t, os.WriteFile(clientCAFile, clientCertPEM, 0600))
 
-			serverTLS, err := LoadServerTLSConfigWithMTLS(
-				security.ServerTLSConfig{Enabled: true, CertFile: serverCertFile, KeyFile: serverKeyFile, MinVersion: v.config},
-				security.ServerMTLSConfig{Enabled: true, ClientCAFiles: []string{clientCAFile}},
-			)
+			serverTLS, err := LoadServerTLSConfig(security.ServerTLSConfig{
+				Enabled: true, CertFile: serverCertFile, KeyFile: serverKeyFile, MinVersion: v.config,
+				MTLS: security.ServerMTLSConfig{Enabled: true, ClientCAFiles: []string{clientCAFile}},
+			})
 			require.NoError(t, err)
 
 			server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

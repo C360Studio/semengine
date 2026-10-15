@@ -587,20 +587,19 @@ func TestLoadClientTLSConfigWithMTLS_Enabled(t *testing.T) {
 
 	clientCfg := security.ClientTLSConfig{
 		CAFiles: []string{caFile},
+		MTLS: security.ClientMTLSConfig{
+			Enabled:  true,
+			CertFile: certFile,
+			KeyFile:  keyFile,
+		},
 	}
 
-	mtlsCfg := security.ClientMTLSConfig{
-		Enabled:  true,
-		CertFile: certFile,
-		KeyFile:  keyFile,
-	}
-
-	tlsCfg, err := LoadClientTLSConfigWithMTLS(clientCfg, mtlsCfg)
+	tlsCfg, err := LoadClientTLSConfig(clientCfg)
 	require.NoError(t, err)
 	require.NotNil(t, tlsCfg)
 
 	// Should have client certificate
-	assert.Len(t, tlsCfg.Certificates, 1)
+	require.Len(t, tlsCfg.Certificates, 1)
 	assert.NotEmpty(t, tlsCfg.Certificates[0].Certificate)
 }
 

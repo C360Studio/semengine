@@ -29,7 +29,7 @@ failing output in `notes/<task>.md`.
 
 ## 4. tlsutil and resource
 
-- [ ] 4.1 D4 failing tests: `mtls_default_test.go` through `LoadServerTLSConfig` with the MTLS block embedded;
+- [x] 4.1 D4 failing tests: `mtls_default_test.go` through `LoadServerTLSConfig` with the MTLS block embedded;
   `reviewer_tls_probe_test.go` refusing mTLS without TLS through `LoadServerTLSConfig`; `LoadClientTLSConfig` with
   the client MTLS block yields one certificate. Gate: all three fail on the base; output in `notes/4.1.md`.
 - [ ] 4.2 D4: `LoadServerTLSConfig` and `LoadClientTLSConfig` apply `cfg.MTLS`. Remove both `WithMTLS` functions.

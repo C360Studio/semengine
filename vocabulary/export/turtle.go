@@ -82,8 +82,12 @@ func writeTurtleBody(w io.Writer, groups map[string][]resolvedTriple, subjectOrd
 	return nil
 }
 
-// formatTurtleTerm formats an IRI for Turtle, compacting with prefix if possible.
+// formatTurtleTerm formats an IRI (or blank-node label) for Turtle, compacting
+// with prefix if possible.
 func formatTurtleTerm(iri string, pm *prefixMap) string {
+	if isValidBlankNodeLabel(iri) {
+		return iri
+	}
 	if compacted, ok := pm.compact(iri); ok {
 		return compacted
 	}
@@ -95,6 +99,8 @@ func formatTurtleObject(obj classifiedObject, pm *prefixMap) string {
 	switch obj.kind {
 	case objectResource:
 		return formatTurtleTerm(obj.iri, pm)
+	case objectBlankNode:
+		return obj.iri
 	case objectLiteral:
 		return formatTurtleLiteral(obj, pm)
 	default:

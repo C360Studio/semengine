@@ -343,11 +343,18 @@ func TestPropPackRoundTrip(t *testing.T) {
 			})
 		}
 
+		// Standalone validation must succeed with zero registry side effects.
+		ClearRegistry()
+		require.NoError(t, pack.Validate())
+		assert.Empty(t, ListRegisteredPredicates())
+		assert.Empty(t, ListRegisteredEntityTypes())
+
 		// Round-trip through JSON.
 		jsonBytes, err := json.Marshal(pack)
 		require.NoError(t, err)
 		fromJSON, err := LoadPackJSON(bytes.NewReader(jsonBytes))
 		require.NoError(t, err)
+		require.NoError(t, fromJSON.Validate())
 
 		ClearRegistry()
 		var gotJSONPrefixes []PrefixSpec
@@ -371,6 +378,7 @@ func TestPropPackRoundTrip(t *testing.T) {
 		require.NoError(t, err)
 		fromYAML, err := LoadPackYAML(bytes.NewReader(yamlBytes))
 		require.NoError(t, err)
+		require.NoError(t, fromYAML.Validate())
 
 		ClearRegistry()
 		var gotYAMLPrefixes []PrefixSpec
@@ -389,6 +397,152 @@ func TestPropPackRoundTrip(t *testing.T) {
 			assert.Contains(t, LookupEntityTypesByClassIRI(et.ClassIRI), et.DomainType)
 		}
 	})
+}
+
+func TestPackSpecValidate_PureNoSideEffects(t *testing.T) {
+	defer SnapshotRegistry()()
+	ClearRegistry()
+
+	var nilPack *PackSpec
+	require.Error(t, nilPack.Validate())
+
+	validPack := PackSpec{
+		Name:    "diekm-pure-test",
+		Version: "1.0.0",
+		Prefixes: []PrefixSpec{
+			{Prefix: "bfo", Namespace: "http://purl.obolibrary.org/obo/"},
+			{Prefix: "cco", Namespace: "http://www.ontologyrepository.com/CommonCoreOntologies/"},
+			{Prefix: "diekm", Namespace: "https://confirm.mil/diekm/"},
+		},
+		Predicates: []PredicateSpec{
+			{
+				Name:        "uxs.telemetry.altitude",
+				Description: "Altitude",
+				DataType:    DataTypeFloat,
+				IRI:         "https://confirm.mil/diekm/hasAltitude",
+				Projection: &ProjectionSpec{
+					Steps: []ProjectionStep{
+						{
+							PredicateIRI:      "http://purl.obolibrary.org/obo/RO_0000056",
+							NodeClassIRI:      "http://www.ontologyrepository.com/CommonCoreOntologies/ActOfMeasuring",
+							ValuePredicateIRI: "http://www.ontologyrepository.com/CommonCoreOntologies/has_decimal_value",
+						},
+					},
+				},
+			},
+			{
+				Name:      "uxs.rel.parent",
+				DataType:  DataTypeEntityID,
+				InverseOf: "uxs.rel.child",
+			},
+			{
+				Name:      "uxs.rel.child",
+				DataType:  DataTypeEntityID,
+				InverseOf: "uxs.rel.parent",
+			},
+		},
+		EntityTypes: []EntityTypeSpec{
+			{
+				DomainType:   "uxs.uas",
+				Description:  "Unmanned Aerial System",
+				ClassIRI:     "https://confirm.mil/diekm/UnmannedAerialSystem",
+				Superclasses: []string{"http://www.ontologyrepository.com/CommonCoreOntologies/Aircraft"},
+			},
+		},
+	}
+
+	beforeBytes, err := json.Marshal(validPack)
+	require.NoError(t, err)
+
+	require.NoError(t, validPack.Validate())
+	assert.Empty(t, ListRegisteredPredicates(), "PackSpec.Validate must not write to predicateRegistry")
+	assert.Empty(t, ListRegisteredEntityTypes(), "PackSpec.Validate must not write to entityTypeRegistry")
+
+	afterBytes, err := json.Marshal(validPack)
+	require.NoError(t, err)
+	assert.Equal(t, string(beforeBytes), string(afterBytes), "PackSpec.Validate must not mutate caller PackSpec")
+
+	// Pre-populating global registry with a conflicting inverse must not affect pure pack.Validate().
+	Register("uxs.rel.parent", WithInverseOf("uxs.rel.other"))
+	require.NoError(t, validPack.Validate(), "PackSpec.Validate must not read global predicateRegistry")
+	ClearRegistry()
+
+	invalidPacks := []struct {
+		name string
+		pack PackSpec
+	}{
+		{
+			name: "empty pack name",
+			pack: PackSpec{Name: "   "},
+		},
+		{
+			name: "duplicate prefix in pack",
+			pack: PackSpec{
+				Name: "dup-prefix",
+				Prefixes: []PrefixSpec{
+					{Prefix: "diekm", Namespace: "https://confirm.mil/diekm/"},
+					{Prefix: "diekm", Namespace: "https://confirm.mil/diekm/"},
+				},
+			},
+		},
+		{
+			name: "duplicate predicate in pack",
+			pack: PackSpec{
+				Name: "dup-pred",
+				Predicates: []PredicateSpec{
+					{Name: "uxs.telemetry.altitude"},
+					{Name: "uxs.telemetry.altitude"},
+				},
+			},
+		},
+		{
+			name: "duplicate entity_type in pack",
+			pack: PackSpec{
+				Name: "dup-etype",
+				EntityTypes: []EntityTypeSpec{
+					{DomainType: "uxs.uas"},
+					{DomainType: "uxs.uas"},
+				},
+			},
+		},
+		{
+			name: "invalid projection missing terminal value_predicate_iri",
+			pack: PackSpec{
+				Name: "bad-proj",
+				Predicates: []PredicateSpec{
+					{
+						Name: "uxs.telemetry.altitude",
+						Projection: &ProjectionSpec{
+							Steps: []ProjectionStep{
+								{
+									PredicateIRI: "http://purl.obolibrary.org/obo/RO_0000056",
+									NodeClassIRI: "http://www.ontologyrepository.com/CommonCoreOntologies/ActOfMeasuring",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "intra-pack asymmetric inverse",
+			pack: PackSpec{
+				Name: "bad-inverse",
+				Predicates: []PredicateSpec{
+					{Name: "uxs.rel.a", InverseOf: "uxs.rel.b"},
+					{Name: "uxs.rel.b", InverseOf: "uxs.rel.c"},
+				},
+			},
+		},
+	}
+
+	for _, tc := range invalidPacks {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Error(t, tc.pack.Validate())
+			assert.Empty(t, ListRegisteredPredicates())
+			assert.Empty(t, ListRegisteredEntityTypes())
+		})
+	}
 }
 
 func FuzzLoadPackJSON(f *testing.F) {
@@ -460,5 +614,35 @@ func FuzzLoadPackYAML(f *testing.F) {
 		for _, et := range pack.EntityTypes {
 			require.NotNil(t, GetEntityTypeMetadata(et.DomainType))
 		}
+	})
+}
+
+func FuzzValidatePack(f *testing.F) {
+	for _, seed := range []string{
+		`{"name":"bfo","version":"2020","prefixes":[{"prefix":"bfo","namespace":"http://purl.obolibrary.org/obo/BFO_"}],"predicates":[{"name":"bfo.rel.part-of","iri":"http://purl.obolibrary.org/obo/BFO_0000050","projection":{"steps":[{"predicate_iri":"http://purl.obolibrary.org/obo/RO_0000056","node_class_iri":"http://www.ontologyrepository.com/CommonCoreOntologies/ActOfMeasuring","value_predicate_iri":"http://www.ontologyrepository.com/CommonCoreOntologies/has_decimal_value"}]}}]}`,
+		`{"name":"dup-pred","predicates":[{"name":"bfo.rel.part-of"},{"name":"bfo.rel.part-of"}]}`,
+		`{"name":"bad-proj","predicates":[{"name":"bfo.rel.part-of","projection":{"steps":[{"predicate_iri":"http://purl.obolibrary.org/obo/RO_0000056"}]}}]}`,
+		`{}`,
+	} {
+		f.Add(seed)
+	}
+
+	f.Fuzz(func(t *testing.T, input string) {
+		pack, err := LoadPackJSON(strings.NewReader(input))
+		if err != nil {
+			return
+		}
+		defer SnapshotRegistry()()
+		ClearRegistry()
+		before, err := json.Marshal(pack)
+		require.NoError(t, err)
+
+		_ = pack.Validate()
+
+		assert.Empty(t, ListRegisteredPredicates(), "PackSpec.Validate must not touch predicateRegistry")
+		assert.Empty(t, ListRegisteredEntityTypes(), "PackSpec.Validate must not touch entityTypeRegistry")
+		after, err := json.Marshal(pack)
+		require.NoError(t, err)
+		assert.Equal(t, string(before), string(after), "PackSpec.Validate must not mutate caller PackSpec")
 	})
 }

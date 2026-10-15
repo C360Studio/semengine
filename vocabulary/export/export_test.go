@@ -390,3 +390,258 @@ func TestRegisterPackWithExportPrefixRegistrar(t *testing.T) {
 		t.Fatalf("expected predicate from malformed-ns pack to remain unregistered, got %+v", got)
 	}
 }
+
+func TestSubjectIRI_MatchesDefaultExporter(t *testing.T) {
+	t.Parallel()
+
+	entityID := "acme.ops.robotics.gcs.drone.001"
+	wantDefault := "https://semengine.semanticstream.ing/entities/acme/ops/robotics/gcs/drone/001"
+	if got := SubjectIRI(entityID, ""); got != wantDefault {
+		t.Fatalf("SubjectIRI(%q, \"\") = %q, want %q", entityID, got, wantDefault)
+	}
+	if got := SubjectIRI(entityID, vocabulary.SemEngineBase+"/"); got != wantDefault {
+		t.Fatalf("SubjectIRI(%q, trailing slash) = %q, want %q", entityID, got, wantDefault)
+	}
+
+	customBase := "https://example.org///"
+	wantCustom := "https://example.org/entities/acme/ops/robotics/gcs/drone/001"
+	if got := SubjectIRI(entityID, customBase); got != wantCustom {
+		t.Fatalf("SubjectIRI(%q, %q) = %q, want %q", entityID, customBase, got, wantCustom)
+	}
+
+	nonEntity := "some.topic.name"
+	wantFallback := "https://example.org/subjects/some/topic/name"
+	if got := SubjectIRI(nonEntity, "https://example.org/"); got != wantFallback {
+		t.Fatalf("SubjectIRI(%q, \"https://example.org/\") = %q, want %q", nonEntity, got, wantFallback)
+	}
+
+	if got := SubjectIRI("", "https://example.org"); got != "" {
+		t.Fatalf("SubjectIRI(\"\", base) = %q, want \"\"", got)
+	}
+
+	// Verify exact match with SerializeToString(NTriples).
+	ntOut, err := SerializeToString([]message.Triple{
+		{Subject: entityID, Predicate: "robotics.battery.level", Object: 85.5},
+	}, NTriples, WithBaseIRI("https://example.org/"))
+	if err != nil {
+		t.Fatalf("SerializeToString(NTriples) error = %v", err)
+	}
+	if !strings.HasPrefix(ntOut, "<"+wantCustom+"> ") {
+		t.Fatalf("SerializeToString subject prefix mismatch: got %q, want prefix <%s>", ntOut, wantCustom)
+	}
+}
+
+func FuzzSubjectIRI(f *testing.F) {
+	for _, seed := range []struct {
+		subject string
+		base    string
+	}{
+		{"acme.ops.robotics.gcs.drone.001", ""},
+		{"acme.ops.robotics.gcs.drone.001", "https://example.org/"},
+		{"some.topic.name", "https://example.org///"},
+		{"", "https://example.org"},
+	} {
+		f.Add(seed.subject, seed.base)
+	}
+
+	f.Fuzz(func(t *testing.T, subject, base string) {
+		got := SubjectIRI(subject, base)
+		if subject == "" {
+			if got != "" {
+				t.Fatalf("SubjectIRI(\"\", %q) = %q, want empty", base, got)
+			}
+			return
+		}
+		trimmed := strings.TrimRight(base, "/")
+		if gotTrimmed := SubjectIRI(subject, trimmed); got != gotTrimmed {
+			t.Fatalf("SubjectIRI(%q, %q) = %q != SubjectIRI(%q, %q) = %q", subject, base, got, subject, trimmed, gotTrimmed)
+		}
+		if trimmed == "" {
+			if gotDefault := SubjectIRI(subject, vocabulary.SemEngineBase); got != gotDefault {
+				t.Fatalf("SubjectIRI(%q, %q) = %q != default %q", subject, base, got, gotDefault)
+			}
+		}
+		if message.IsValidEntityID(subject) {
+			if !strings.Contains(got, "/entities/") {
+				t.Fatalf("valid entity ID %q produced non-entity IRI %q", subject, got)
+			}
+		} else {
+			if !strings.Contains(got, "/subjects/") {
+				t.Fatalf("non-entity subject %q produced non-fallback IRI %q", subject, got)
+			}
+		}
+	})
+}
+
+func TestSerialize_UnfoldedReifiedBlankNodeChain(t *testing.T) {
+	defer vocabulary.SnapshotRegistry()()
+	vocabulary.ClearRegistry()
+	t.Cleanup(func() {
+		defaultPrefixesMu.Lock()
+		delete(defaultPrefixes, "bfo")
+		delete(defaultPrefixes, "cco")
+		defaultPrefixesMu.Unlock()
+	})
+
+	if err := Register("bfo", "http://purl.obolibrary.org/obo/"); err != nil {
+		t.Fatalf("Register(bfo) error = %v", err)
+	}
+	if err := Register("cco", "http://www.ontologyrepository.com/CommonCoreOntologies/"); err != nil {
+		t.Fatalf("Register(cco) error = %v", err)
+	}
+
+	vocabulary.Register("uxs.rel.measurement-node",
+		vocabulary.WithDataType(vocabulary.DataTypeEntityID),
+		vocabulary.WithIRI("http://purl.obolibrary.org/obo/RO_0000056"))
+
+	triples := []message.Triple{
+		{
+			Subject:   "acme.ops.robotics.gcs.drone.001",
+			Predicate: "http://purl.obolibrary.org/obo/RO_0000056",
+			Object:    "_:b_1",
+		},
+		{
+			Subject:   "acme.ops.robotics.gcs.drone.001",
+			Predicate: "uxs.rel.measurement-node",
+			Object:    "_:b_explicit",
+			Datatype:  message.EntityReferenceDatatype,
+		},
+		{
+			Subject:   "acme.ops.robotics.gcs.drone.001",
+			Predicate: "uxs.rel.measurement-node",
+			Object:    "_:b_declared",
+		},
+		{
+			Subject:   "_:b_1",
+			Predicate: "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+			Object:    "http://www.ontologyrepository.com/CommonCoreOntologies/ActOfMeasuring",
+		},
+		{
+			Subject:   "_:b_1",
+			Predicate: "http://www.ontologyrepository.com/CommonCoreOntologies/has_decimal_value",
+			Object:    85.5,
+		},
+	}
+
+	t.Run("NTriples", func(t *testing.T) {
+		out, err := SerializeToString(triples, NTriples)
+		if err != nil {
+			t.Fatalf("SerializeToString(NTriples) error = %v", err)
+		}
+		wantLines := []string{
+			`<https://semengine.semanticstream.ing/entities/acme/ops/robotics/gcs/drone/001> <http://purl.obolibrary.org/obo/RO_0000056> _:b_1 .`,
+			`<https://semengine.semanticstream.ing/entities/acme/ops/robotics/gcs/drone/001> <http://purl.obolibrary.org/obo/RO_0000056> _:b_explicit .`,
+			`<https://semengine.semanticstream.ing/entities/acme/ops/robotics/gcs/drone/001> <http://purl.obolibrary.org/obo/RO_0000056> _:b_declared .`,
+			`_:b_1 <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.ontologyrepository.com/CommonCoreOntologies/ActOfMeasuring> .`,
+			`_:b_1 <http://www.ontologyrepository.com/CommonCoreOntologies/has_decimal_value> "85.5"^^<http://www.w3.org/2001/XMLSchema#double> .`,
+		}
+		for _, line := range wantLines {
+			if !strings.Contains(out, line) {
+				t.Errorf("N-Triples missing expected line:\n  want: %s\n  got:\n%s", line, out)
+			}
+		}
+		if strings.Contains(out, "<_:") || strings.Contains(out, "\"_:") || strings.Contains(out, "/subjects/_:") || strings.Contains(out, "/predicates/http") {
+			t.Errorf("N-Triples contains improperly escaped blank node or predicate IRI:\n%s", out)
+		}
+	})
+
+	t.Run("Turtle", func(t *testing.T) {
+		out, err := SerializeToString(triples, Turtle)
+		if err != nil {
+			t.Fatalf("SerializeToString(Turtle) error = %v", err)
+		}
+		if !strings.Contains(out, "bfo:RO_0000056 _:b_1") {
+			t.Errorf("Turtle expected compacted predicate with blank node object, got:\n%s", out)
+		}
+		if !strings.Contains(out, "\n_:b_1 ") {
+			t.Errorf("Turtle expected blank node subject _:b_1, got:\n%s", out)
+		}
+		if !strings.Contains(out, "cco:has_decimal_value \"85.5\"^^xsd:double") {
+			t.Errorf("Turtle expected compacted cco:has_decimal_value on blank node subject, got:\n%s", out)
+		}
+		if strings.Contains(out, "<_:") || strings.Contains(out, "\"_:") || strings.Contains(out, "/subjects/_:") || strings.Contains(out, "/predicates/http") {
+			t.Errorf("Turtle contains improperly escaped blank node or predicate IRI:\n%s", out)
+		}
+	})
+
+	t.Run("JSONLD", func(t *testing.T) {
+		out, err := SerializeToString(triples, JSONLD)
+		if err != nil {
+			t.Fatalf("SerializeToString(JSONLD) error = %v", err)
+		}
+		var doc map[string]any
+		if err := json.Unmarshal([]byte(out), &doc); err != nil {
+			t.Fatalf("JSON-LD unmarshal error: %v\noutput:\n%s", err, out)
+		}
+		graph, ok := doc["@graph"].([]any)
+		if !ok || len(graph) != 2 {
+			t.Fatalf("expected 2 nodes in JSON-LD @graph, got: %#v", doc["@graph"])
+		}
+		bnode, ok := graph[1].(map[string]any)
+		if !ok || bnode["@id"] != "_:b_1" {
+			t.Fatalf("expected second node @id to be _:b_1, got: %#v", graph[1])
+		}
+		if bnode["cco:has_decimal_value"] != 85.5 {
+			t.Errorf("expected cco:has_decimal_value = 85.5 on _:b_1, got: %#v", bnode["cco:has_decimal_value"])
+		}
+	})
+}
+
+func TestBlankNodeValidation_MalformedFallback(t *testing.T) {
+	t.Parallel()
+
+	for _, bad := range []string{"_:", "_:bad.", "_:has space", "_:bad:colon"} {
+		out, err := SerializeToString([]message.Triple{
+			{
+				Subject:   "acme.ops.robotics.gcs.drone.001",
+				Predicate: "robotics.status.mode",
+				Object:    bad,
+			},
+		}, NTriples)
+		if err != nil {
+			t.Fatalf("SerializeToString(%q) error = %v", bad, err)
+		}
+		wantLiteral := `"` + bad + `" .`
+		if !strings.Contains(out, wantLiteral) {
+			t.Errorf("malformed blank-node object %q must fall back to string literal, got:\n%s", bad, out)
+		}
+	}
+
+	// Valid blank-node string with explicit xsd:string datatype must remain a string literal.
+	explicitOut, err := SerializeToString([]message.Triple{
+		{
+			Subject:   "acme.ops.robotics.gcs.drone.001",
+			Predicate: "robotics.status.mode",
+			Object:    "_:b_1",
+			Datatype:  "xsd:string",
+		},
+	}, NTriples)
+	if err != nil {
+		t.Fatalf("SerializeToString(explicit xsd:string) error = %v", err)
+	}
+	if !strings.Contains(explicitOut, `"_:b_1" .`) {
+		t.Errorf("explicit xsd:string blank-node string must remain a string literal, got:\n%s", explicitOut)
+	}
+}
+
+func TestResolvePredicateIRI_FullIRIPassThrough(t *testing.T) {
+	defer vocabulary.SnapshotRegistry()()
+	vocabulary.ClearRegistry()
+
+	base := "https://semengine.semanticstream.ing"
+	httpPred := "http://purl.obolibrary.org/obo/RO_0000056"
+	httpsPred := "https://confirm.mil/diekm/hasAltitude"
+
+	if got := resolvePredicateIRI(httpPred, base); got != httpPred {
+		t.Errorf("resolvePredicateIRI(%q) = %q, want unchanged", httpPred, got)
+	}
+	if got := resolvePredicateIRI(httpsPred, base+"/"); got != httpsPred {
+		t.Errorf("resolvePredicateIRI(%q) = %q, want unchanged", httpsPred, got)
+	}
+
+	// Malformed HTTP IRI with forbidden IRIREF character falls back to /predicates/.
+	badPred := "http://example.org/bad>iri"
+	if got := resolvePredicateIRI(badPred, base); got == badPred {
+		t.Errorf("resolvePredicateIRI(%q) must not pass through malformed IRIREF unchanged", badPred)
+	}
+}

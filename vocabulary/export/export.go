@@ -102,27 +102,35 @@ func SerializeToString(triples []message.Triple, format Format, opts ...Option) 
 	return buf.String(), nil
 }
 
-// defaultSubjectIRI converts an entity ID or arbitrary subject string to an IRI.
+// defaultSubjectIRI converts an entity ID or arbitrary subject string to an IRI
+// using vocabulary.SemEngineBase.
+func defaultSubjectIRI(subject string) string {
+	return SubjectIRI(subject, vocabulary.SemEngineBase)
+}
+
+// SubjectIRI converts a canonical 6-part entity ID or arbitrary subject string
+// to a full IRI using base. Trailing '/' characters on base are trimmed, and an
+// empty base defaults to vocabulary.SemEngineBase.
+//
 // For valid 6-part entity IDs, it produces:
 //
 //	{base}/entities/{org}/{platform}/{system}/{domain}/{type}/{instance}
 //
 // The path follows the canonical entity-ID order from the named fields
-// (owner item O-10 on #1095): the exporter is not a second interpreter of
-// position order.
+// (ADR-102, owner item O-10 on #1095): the exporter is not a second interpreter
+// of position order.
 //
-// For other subjects, it falls back to dot-to-slash conversion:
+// For other non-empty subjects, it falls back to dot-to-slash conversion:
 //
 //	{base}/subjects/{dots→slashes}
-func defaultSubjectIRI(subject string) string {
-	return subjectToIRI(subject, vocabulary.SemEngineBase)
-}
-
-// subjectToIRI converts a subject string to an IRI using the given base.
-func subjectToIRI(subject, base string) string {
+//
+// SubjectIRI returns "" when subject is empty.
+func SubjectIRI(subject, base string) string {
 	if subject == "" {
 		return ""
 	}
+
+	base = normalizeBaseIRI(base)
 
 	eid, err := message.ParseEntityID(subject)
 	if err == nil {
@@ -135,12 +143,29 @@ func subjectToIRI(subject, base string) string {
 	return fmt.Sprintf("%s/subjects/%s", base, path)
 }
 
-// resolveSubjectIRI resolves a subject string to an IRI using the configured options.
+// subjectToIRI converts a subject string to an IRI using the given base.
+func subjectToIRI(subject, base string) string {
+	return SubjectIRI(subject, base)
+}
+
+func normalizeBaseIRI(base string) string {
+	base = strings.TrimRight(base, "/")
+	if base == "" {
+		return vocabulary.SemEngineBase
+	}
+	return base
+}
+
+// resolveSubjectIRI resolves a subject string to an IRI (or blank-node label)
+// using the configured options.
 func resolveSubjectIRI(subject string, opts *options) string {
+	if isValidBlankNodeLabel(subject) {
+		return subject
+	}
 	if opts.customSubjectIRIFn {
 		return opts.subjectIRIFn(subject)
 	}
-	return subjectToIRI(subject, opts.baseIRI)
+	return SubjectIRI(subject, opts.baseIRI)
 }
 
 // resolvedTriple holds a triple that has been resolved to IRIs.
@@ -184,7 +209,9 @@ func groupTriples(triples []message.Triple, opts *options) (map[string][]resolve
 // which prefixes need to be declared.
 func scanPrefixes(groups map[string][]resolvedTriple, pm *prefixMap) {
 	for subIRI, rts := range groups {
-		pm.compact(subIRI)
+		if !isValidBlankNodeLabel(subIRI) {
+			pm.compact(subIRI)
+		}
 		for _, rt := range rts {
 			pm.compact(rt.predicateIRI)
 			if rt.obj.kind == objectResource {
@@ -197,9 +224,10 @@ func scanPrefixes(groups map[string][]resolvedTriple, pm *prefixMap) {
 	}
 }
 
-// resolvePredicateIRI converts a dotted predicate string to a full IRI.
-// It first checks the vocabulary registry for a StandardIRI mapping.
-// If not found, it generates a SemEngine predicate IRI from the dotted notation.
+// resolvePredicateIRI converts a dotted predicate string (or full HTTP/HTTPS
+// predicate IRI) to a full IRI. It first checks the vocabulary registry for a
+// StandardIRI mapping, then passes through valid http:// or https:// IRIs, and
+// otherwise generates a SemEngine predicate IRI from the dotted notation.
 func resolvePredicateIRI(predicate, base string) string {
 	if predicate == "" {
 		return ""
@@ -210,6 +238,12 @@ func resolvePredicateIRI(predicate, base string) string {
 	if meta != nil && meta.StandardIRI != "" {
 		return meta.StandardIRI
 	}
+
+	if isHTTPIRI(predicate) {
+		return predicate
+	}
+
+	base = normalizeBaseIRI(base)
 
 	// Generate from dotted notation: domain.category.property -> {base}/predicates/domain/category/property
 	path := strings.ReplaceAll(predicate, ".", "/")

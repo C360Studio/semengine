@@ -24,13 +24,21 @@ func writeNTriples(w io.Writer, triples []message.Triple, opts *options) error {
 		subjectIRI := resolveSubjectIRI(t.Subject, opts)
 		predicateIRI := resolvePredicateIRI(t.Predicate, opts.baseIRI)
 
+		subjectStr := formatNTriplesSubject(subjectIRI)
 		objStr := formatNTriplesObject(obj)
 
-		if _, err := fmt.Fprintf(w, "<%s> <%s> %s .\n", subjectIRI, predicateIRI, objStr); err != nil {
+		if _, err := fmt.Fprintf(w, "%s <%s> %s .\n", subjectStr, predicateIRI, objStr); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func formatNTriplesSubject(subjectIRI string) string {
+	if isValidBlankNodeLabel(subjectIRI) {
+		return subjectIRI
+	}
+	return fmt.Sprintf("<%s>", subjectIRI)
 }
 
 // formatNTriplesObject formats a classified object for N-Triples output.
@@ -39,6 +47,8 @@ func formatNTriplesObject(obj classifiedObject) string {
 	switch obj.kind {
 	case objectResource:
 		return fmt.Sprintf("<%s>", obj.iri)
+	case objectBlankNode:
+		return obj.iri
 	case objectLiteral:
 		escaped := escapeTurtleString(obj.lexical)
 		if obj.datatype == "" || obj.datatype == xsdString {

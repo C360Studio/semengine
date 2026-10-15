@@ -81,3 +81,124 @@ func TestRegisterWithProjection(t *testing.T) {
 	})
 	assert.Nil(t, GetPredicateMetadata("sensor.temperature.empty-proj"))
 }
+
+func TestProjectionSpecValidate(t *testing.T) {
+	t.Parallel()
+
+	validOneStep := ProjectionSpec{
+		Steps: []ProjectionStep{
+			{
+				PredicateIRI:      "http://purl.obolibrary.org/obo/RO_0000056",
+				NodeClassIRI:      "http://www.ontologyrepository.com/CommonCoreOntologies/ActOfMeasuring",
+				ValuePredicateIRI: "http://www.ontologyrepository.com/CommonCoreOntologies/has_decimal_value",
+			},
+		},
+	}
+	require.NoError(t, validOneStep.Validate())
+
+	validTwoStep := ProjectionSpec{
+		Steps: []ProjectionStep{
+			{
+				PredicateIRI: "http://purl.obolibrary.org/obo/RO_0000056",
+				NodeClassIRI: "http://www.ontologyrepository.com/CommonCoreOntologies/ActOfMeasuring",
+			},
+			{
+				PredicateIRI:      "https://confirm.mil/diekm/hasOutput",
+				ValuePredicateIRI: "https://confirm.mil/diekm/hasDecimalValue",
+			},
+		},
+	}
+	require.NoError(t, validTwoStep.Validate())
+
+	invalidCases := []struct {
+		name string
+		spec ProjectionSpec
+	}{
+		{
+			name: "empty steps",
+			spec: ProjectionSpec{},
+		},
+		{
+			name: "empty predicate_iri",
+			spec: ProjectionSpec{
+				Steps: []ProjectionStep{
+					{PredicateIRI: "", ValuePredicateIRI: "http://example.org/val"},
+				},
+			},
+		},
+		{
+			name: "non-http predicate_iri scheme",
+			spec: ProjectionSpec{
+				Steps: []ProjectionStep{
+					{PredicateIRI: "urn:example:pred", ValuePredicateIRI: "http://example.org/val"},
+				},
+			},
+		},
+		{
+			name: "non-http node_class_iri scheme",
+			spec: ProjectionSpec{
+				Steps: []ProjectionStep{
+					{
+						PredicateIRI:      "http://example.org/pred",
+						NodeClassIRI:      "urn:example:Class",
+						ValuePredicateIRI: "http://example.org/val",
+					},
+				},
+			},
+		},
+		{
+			name: "intermediate step missing node_class_iri",
+			spec: ProjectionSpec{
+				Steps: []ProjectionStep{
+					{PredicateIRI: "http://example.org/step1"},
+					{PredicateIRI: "http://example.org/step2", ValuePredicateIRI: "http://example.org/val"},
+				},
+			},
+		},
+		{
+			name: "intermediate step with value_predicate_iri",
+			spec: ProjectionSpec{
+				Steps: []ProjectionStep{
+					{
+						PredicateIRI:      "http://example.org/step1",
+						NodeClassIRI:      "http://example.org/Class1",
+						ValuePredicateIRI: "http://example.org/earlyVal",
+					},
+					{
+						PredicateIRI:      "http://example.org/step2",
+						ValuePredicateIRI: "http://example.org/val",
+					},
+				},
+			},
+		},
+		{
+			name: "terminal step missing value_predicate_iri",
+			spec: ProjectionSpec{
+				Steps: []ProjectionStep{
+					{
+						PredicateIRI: "http://example.org/step1",
+						NodeClassIRI: "http://example.org/Class1",
+					},
+				},
+			},
+		},
+		{
+			name: "terminal step non-http value_predicate_iri",
+			spec: ProjectionSpec{
+				Steps: []ProjectionStep{
+					{
+						PredicateIRI:      "http://example.org/step1",
+						NodeClassIRI:      "http://example.org/Class1",
+						ValuePredicateIRI: "urn:example:val",
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range invalidCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Error(t, tc.spec.Validate())
+		})
+	}
+}

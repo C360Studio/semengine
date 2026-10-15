@@ -315,8 +315,9 @@ vocabulary.Register(name string, opts ...Option)
 // Register an entity-type (<domain>.<type>) class mapping
 vocabulary.RegisterEntityType(domainType string, opts ...EntityTypeOption)
 
-// Load and fail-closed register a declarative JSON or YAML vocabulary pack
+// Load, validate (pure, zero global state reads/writes), and fail-closed register a pack
 pack, err := vocabulary.LoadPackYAML(r)
+err = pack.Validate()
 err = vocabulary.RegisterPack(pack, vocabulary.WithPrefixRegistrar(export.RegisterPrefixes))
 ```
 

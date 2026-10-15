@@ -497,13 +497,15 @@ func newMutationError(operation MutationOperation, err error, commit CommitState
 	return mapped
 }
 
+// classifiedAppendFailure treats a class it does not recognise as fatal, the
+// same answer errs.Classify gives an unclassified error.
 func classifiedAppendFailure(failure *graph.MutationFailure) error {
-	class := errs.ErrorTransient
+	class := errs.ErrorFatal
 	switch failure.Class {
 	case errs.ErrorInvalid.String():
 		class = errs.ErrorInvalid
-	case errs.ErrorFatal.String():
-		class = errs.ErrorFatal
+	case errs.ErrorTransient.String():
+		class = errs.ErrorTransient
 	}
 	return errs.ClassifiedCode(class, failure.Code, fmt.Errorf("append failed: %s", failure.Code))
 }

@@ -19,9 +19,10 @@ type ProjectionStep struct {
 	// every non-terminal step in a multi-step chain.
 	NodeClassIRI string `json:"node_class_iri,omitempty" yaml:"node_class_iri,omitempty"`
 
-	// ValuePredicateIRI is the optional datatype- or object-property IRI that
-	// attaches the triple's terminal value to the node reached at the final step
-	// (for example, cco:has_decimal_value).
+	// ValuePredicateIRI is the datatype- or object-property IRI that attaches
+	// the triple's terminal value to the node reached at the final step (for
+	// example, cco:has_decimal_value). Required on the terminal step and
+	// forbidden on non-terminal steps.
 	ValuePredicateIRI string `json:"value_predicate_iri,omitempty" yaml:"value_predicate_iri,omitempty"`
 }
 
@@ -55,35 +56,66 @@ func cloneProjectionSpec(spec *ProjectionSpec) *ProjectionSpec {
 	return &ProjectionSpec{Steps: steps}
 }
 
-func validateProjectionSpec(spec *ProjectionSpec) error {
-	if spec == nil {
-		return nil
-	}
-	if len(spec.Steps) == 0 {
+// Validate checks that Steps is non-empty, every step carries a valid http://
+// or https:// PredicateIRI, any non-empty NodeClassIRI is a valid http:// or
+// https:// IRI (and is present on every non-terminal step), and
+// ValuePredicateIRI is absent on non-terminal steps and set to a valid http://
+// or https:// IRI on the terminal step. Validate does not read or mutate global
+// registry state.
+func (s ProjectionSpec) Validate() error {
+	if len(s.Steps) == 0 {
 		return fmt.Errorf("projection must contain at least one step")
 	}
-	for i, step := range spec.Steps {
-		if err := validateNonEmptyIRI(step.PredicateIRI, fmt.Sprintf("projection step %d predicate_iri", i+1)); err != nil {
+	for i, step := range s.Steps {
+		if err := validateHTTPIRI(step.PredicateIRI, fmt.Sprintf("projection step %d predicate_iri", i+1)); err != nil {
 			return err
 		}
 		if step.NodeClassIRI != "" {
-			if err := validateNonEmptyIRI(step.NodeClassIRI, fmt.Sprintf("projection step %d node_class_iri", i+1)); err != nil {
+			if err := validateHTTPIRI(step.NodeClassIRI, fmt.Sprintf("projection step %d node_class_iri", i+1)); err != nil {
 				return err
 			}
 		}
 		if step.ValuePredicateIRI != "" {
-			if err := validateNonEmptyIRI(step.ValuePredicateIRI, fmt.Sprintf("projection step %d value_predicate_iri", i+1)); err != nil {
+			if err := validateHTTPIRI(step.ValuePredicateIRI, fmt.Sprintf("projection step %d value_predicate_iri", i+1)); err != nil {
 				return err
 			}
 		}
-		if i < len(spec.Steps)-1 {
+		if i < len(s.Steps)-1 {
 			if step.NodeClassIRI == "" {
 				return fmt.Errorf("projection step %d requires node_class_iri for intermediate hop", i+1)
 			}
 			if step.ValuePredicateIRI != "" {
 				return fmt.Errorf("projection step %d cannot set value_predicate_iri on non-terminal hop", i+1)
 			}
+		} else if step.ValuePredicateIRI == "" {
+			return fmt.Errorf("projection step %d requires value_predicate_iri on terminal hop", i+1)
 		}
+	}
+	return nil
+}
+
+func validateProjectionSpec(spec *ProjectionSpec) error {
+	if spec == nil {
+		return nil
+	}
+	return spec.Validate()
+}
+
+func validateHTTPIRI(iri, field string) error {
+	if err := validateNonEmptyIRI(iri, field); err != nil {
+		return err
+	}
+	switch {
+	case strings.HasPrefix(iri, "http://"):
+		if len(iri) <= len("http://") {
+			return fmt.Errorf("%s %q must use http:// or https:// scheme with a non-empty authority/path", field, iri)
+		}
+	case strings.HasPrefix(iri, "https://"):
+		if len(iri) <= len("https://") {
+			return fmt.Errorf("%s %q must use http:// or https:// scheme with a non-empty authority/path", field, iri)
+		}
+	default:
+		return fmt.Errorf("%s %q must use http:// or https:// scheme", field, iri)
 	}
 	return nil
 }

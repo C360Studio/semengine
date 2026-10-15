@@ -31,16 +31,18 @@ s, err := export.SerializeToString(triples, export.NTriples)
 
 The package resolves dotted-notation identifiers to IRIs automatically:
 
-**Subjects** are converted based on entity ID structure:
+**Subjects** are converted based on entity ID structure (`export.SubjectIRI(subject, base)`):
 
 - Valid 6-part entity IDs: `acme.ops.robotics.gcs.drone.001` becomes
   `{base}/entities/acme/ops/robotics/gcs/drone/001`
+- Blank-node labels matching W3C Turtle / N-Triples `BLANK_NODE_LABEL` (`_:label`) are emitted as RDF blank nodes
 - Other subjects: dots are converted to slashes under `{base}/subjects/`
 
 **Predicates** resolve through the vocabulary registry:
 
 - Registered predicates use their `StandardIRI` (e.g., `robotics.battery.level` with a registered IRI maps to that IRI)
-- Unregistered predicates generate `{base}/predicates/domain/category/property`
+- Unregistered predicates that are valid `http://` or `https://` IRIs pass through unchanged
+- Other unregistered predicates generate `{base}/predicates/domain/category/property`
 
 **Objects** are classified by a total order, most specific first (gh#1267):
 
@@ -58,8 +60,8 @@ it here, at the edge, and out of the registry:
 
 | Declared (`vocabulary.DataType*`) | RDF Datatype | Output |
 |---|---|---|
-| `entity_id` | Resource | `<iri>` |
-| `string` | `xsd:string` | `"text"` (datatype omitted) — a **confirmation, not an override**: the classifier falls through to observation, so an entity-ID-shaped or absolute-IRI value under a `string` declaration still emits as a resource |
+| `entity_id` | Resource / Blank node | `<iri>` or `_:label` |
+| `string` | `xsd:string` | `"text"` (datatype omitted) — a **confirmation, not an override**: the classifier falls through to observation, so an entity-ID-shaped, blank-node, or absolute-IRI value under a `string` declaration still emits as a resource/blank node |
 | `int` | `xsd:integer` | `5` |
 | `float` | `xsd:double` | `"85.5"^^xsd:double` |
 | `bool` | `xsd:boolean` | `true` |
@@ -71,6 +73,7 @@ Go type → RDF, for a predicate that declares nothing:
 | Go Type | RDF Datatype | Output |
 |---------|-------------|--------|
 | `string` (entity ID) | Resource | `<iri>` |
+| `string` (blank node `_:label`) | Blank node | `_:label` |
 | `string` (absolute IRI: `http://`, `https://`, `urn:`) | Resource | `<iri>` |
 | `string` (other) | `xsd:string` | `"text"` |
 | `int`, `int64`, etc. | `xsd:integer` | `42` |
@@ -78,9 +81,9 @@ Go type → RDF, for a predicate that declares nothing:
 | `bool` | `xsd:boolean` | `true` |
 | `time.Time` | `xsd:dateTime` | `"2024-01-15T10:30:00Z"^^xsd:dateTime` |
 
-A per-triple `message.EntityReferenceDatatype` (`"@id"`) marks an object as an entity reference and serializes as an
-IRI node, exactly as a predicate declared `entity_id` does. Prefixed datatypes are expanded for `xsd:` and `rdf:`;
-any other prefix reaches the output unexpanded.
+A per-triple `message.EntityReferenceDatatype` (`"@id"`) marks an object as an entity reference or blank node and
+serializes as an IRI or blank node, exactly as a predicate declared `entity_id` does. Prefixed datatypes are expanded
+for `xsd:` and `rdf:`; any other prefix reaches the output unexpanded.
 
 ## Options
 
@@ -117,6 +120,7 @@ Schema.org, FOAF, SSN/SOSA, XSD) and any prefixes registered via `export.Registe
 |----------|-------------|
 | `Serialize(w, triples, format, ...opts)` | Write triples to an `io.Writer` |
 | `SerializeToString(triples, format, ...opts)` | Return serialized output as a string |
+| `SubjectIRI(subject, base)` | Convert a 6-part entity ID or fallback subject string to its canonical IRI |
 | `Register(prefix, namespace)` | Register a prefix → namespace binding for Turtle and JSON-LD compaction |
 | `RegisterPrefixes(prefixes)` | Atomically validate and register a batch of `vocabulary.PrefixSpec` bindings |
 

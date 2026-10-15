@@ -54,15 +54,16 @@ const wholeFloatBound = 1 << 53
 type objectKind int
 
 const (
-	objectLiteral  objectKind = iota // Quoted literal with optional datatype
-	objectResource                   // IRI reference (entity or external)
-	objectInvalid                    // Cannot be serialized
+	objectLiteral   objectKind = iota // Quoted literal with optional datatype
+	objectResource                    // IRI reference (entity or external)
+	objectBlankNode                   // RDF blank node (_:label)
+	objectInvalid                     // Cannot be serialized
 )
 
 // classifiedObject holds the result of classifying a Triple's Object.
 type classifiedObject struct {
 	kind     objectKind
-	iri      string // For objectResource: the resolved IRI
+	iri      string // For objectResource / objectBlankNode: the resolved IRI or _:label
 	lexical  string // For objectLiteral: the lexical form (unescaped)
 	datatype string // For objectLiteral: XSD datatype IRI (empty for plain string)
 	bare     bool   // True if Turtle can emit without quotes (int, bool)
@@ -114,17 +115,22 @@ func classifyObject(t message.Triple, opts *options) classifiedObject {
 // relative reference, so emitting it as a literal's datatype produced
 // `"acme.ops.gcs.robotics.drone.001"^^<@id>` — invalid RDF for the only
 // per-triple marker the authoritative persistence seam validates (gh#1272).
-// It denotes an IRI node, and it is serialized as one.
+// It denotes an IRI or blank node, and it is serialized as one.
 //
-// A marked object that is NOT a canonical entity ID cannot be rendered as an
-// IRI, so it falls through to observation rather than emitting a non-IRI
-// datatype. That state is refused at graph.MarshalEntityState, so it cannot
-// arrive from ENTITY_STATES; the fallback exists because Serialize accepts
-// arbitrary triples.
+// A marked object that is NOT a canonical entity ID or valid blank-node label
+// cannot be rendered as an IRI/blank node, so it falls through to observation
+// rather than emitting a non-IRI datatype. That state is refused at
+// graph.MarshalEntityState, so it cannot arrive from ENTITY_STATES; the
+// fallback exists because Serialize accepts arbitrary triples.
 func classifyWithExplicitDatatype(t message.Triple, opts *options) classifiedObject {
 	if t.Datatype == message.EntityReferenceDatatype {
-		if s, ok := t.Object.(string); ok && message.IsValidEntityID(s) {
-			return classifiedObject{kind: objectResource, iri: resolveSubjectIRI(s, opts)}
+		if s, ok := t.Object.(string); ok {
+			if isValidBlankNodeLabel(s) {
+				return classifiedObject{kind: objectBlankNode, iri: s}
+			}
+			if message.IsValidEntityID(s) {
+				return classifiedObject{kind: objectResource, iri: resolveSubjectIRI(s, opts)}
+			}
 		}
 		return classifyByGoType(t.Object, opts)
 	}
@@ -152,8 +158,13 @@ func classifyWithExplicitDatatype(t message.Triple, opts *options) classifiedObj
 func classifyByDeclaredDataType(declared string, obj any, opts *options) (classifiedObject, bool) {
 	switch declared {
 	case vocabulary.DataTypeEntityID:
-		if s, ok := obj.(string); ok && message.IsValidEntityID(s) {
-			return classifiedObject{kind: objectResource, iri: resolveSubjectIRI(s, opts)}, true
+		if s, ok := obj.(string); ok {
+			if isValidBlankNodeLabel(s) {
+				return classifiedObject{kind: objectBlankNode, iri: s}, true
+			}
+			if message.IsValidEntityID(s) {
+				return classifiedObject{kind: objectResource, iri: resolveSubjectIRI(s, opts)}, true
+			}
 		}
 	case vocabulary.DataTypeInt:
 		if lexical, ok := integerLexical(obj); ok {
@@ -328,6 +339,12 @@ func classifyFloat(f float64) classifiedObject {
 // canonical 6-part entity ID carries no scheme, and a scheme's ":" is not a
 // legal entity-ID character.
 func classifyString(s string, opts *options) classifiedObject {
+	if isValidBlankNodeLabel(s) {
+		return classifiedObject{
+			kind: objectBlankNode,
+			iri:  s,
+		}
+	}
 	if message.IsValidEntityID(s) {
 		return classifiedObject{
 			kind: objectResource,
@@ -345,6 +362,17 @@ func classifyString(s string, opts *options) classifiedObject {
 		lexical: s,
 		// xsd:string is the default and omitted in output
 	}
+}
+
+// isValidBlankNodeLabel reports whether s is a valid W3C Turtle / N-Triples
+// BLANK_NODE_LABEL ("_:" followed by a valid PN_LOCAL label without colons).
+func isValidBlankNodeLabel(s string) bool {
+	return strings.HasPrefix(s, "_:") && isValidPNLocal(s[2:])
+}
+
+// isHTTPIRI reports whether s is a valid http:// or https:// IRIREF.
+func isHTTPIRI(s string) bool {
+	return (strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")) && isAbsoluteIRI(s)
 }
 
 // isAbsoluteIRI reports whether s carries one of the schemes this serializer

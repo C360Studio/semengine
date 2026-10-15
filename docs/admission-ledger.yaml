@@ -462,11 +462,12 @@
   contract: >-
     predicate registration and lookup (including reverse LookupByIRI), entity-type class
     registration and reverse lookup (ParseEntityTypeKey, RegisterEntityType,
-    LookupEntityTypesByClassIRI), reified ontology projection metadata (WithProjection), declarative
-    JSON/YAML pack loading and fail-closed registration (LoadPackJSON, LoadPackYAML, RegisterPack,
-    PrefixSpec.Validate), dotted-name and namespace validation, and RequireDeclaredPredicate as at
-    the pin, with SemEngineBase ("https://semengine.semanticstream.ing") replacing SemStreamsBase
-    (#69, #234, #237, #251) and dead surface removed
+    LookupEntityTypesByClassIRI), reified ontology projection metadata (WithProjection,
+    ProjectionSpec.Validate), declarative JSON/YAML pack loading, pure validation, and fail-closed
+    registration (LoadPackJSON, LoadPackYAML, PackSpec.Validate, RegisterPack, PrefixSpec.Validate),
+    dotted-name and namespace validation, and RequireDeclaredPredicate as at the pin, with
+    SemEngineBase ("https://semengine.semanticstream.ing") replacing SemStreamsBase (#69, #234,
+    #237, #251, #256) and dead surface removed
   dependencies_and_side_effects: >-
     stdlib; gopkg.in/yaml.v3; pgregory.net/rapid v1.3.0 in tests; process-global predicate and
     entity-type registries mutated at registration
@@ -476,9 +477,9 @@
     (Sensor, Time, Network, Quality, unused Geo/GraphRel/OWL/SKOS/RDFS/DC/Schema.org/PROV-O/FOAF
     constants, PredicateRole/WithRole, EntityTypeIRI, RelationshipIRI, SubjectIRI,
     RegisterPredicate, IsSymmetricPredicate, HasInverse, DiscoverInversePredicates); extended in
-    #234, #237, and #251 with LookupByIRI, entity-type class metadata, ProjectionSpec, PackSpec,
-    W3C Turtle PN_PREFIX and IRIREF validation, and strict alias_priority rejection; doc.go and
-    README.md updated to match
+    #234, #237, #251, and #256 with LookupByIRI, entity-type class metadata, ProjectionSpec
+    (and pure ProjectionSpec.Validate), PackSpec (and pure PackSpec.Validate), W3C Turtle PN_PREFIX
+    and IRIREF validation, and strict alias_priority rejection; doc.go and README.md updated to match
   proving_tests: >-
     vocabulary/*_test.go (15 test files covering predicate syntax, registration, reverse IRI lookup,
     entity-type class metadata, projection specs, declarative JSON/YAML packs, hierarchy,
@@ -2316,15 +2317,16 @@
     imported by semconnect, semvocab, and semsparql (#234)
   destination: vocabulary/export
   contract: >-
-    Serialize, SerializeToString, Format (Turtle, NTriples, JSONLD), WithBaseIRI,
+    Serialize, SerializeToString, SubjectIRI, Format (Turtle, NTriples, JSONLD), WithBaseIRI,
     WithSubjectIRIFunc, Register, RegisterPrefixes, and object/datatype classification as at the
     pin, with vocabulary.SemEngineBase ("https://semengine.semanticstream.ing") as the default base
     IRI (#69, #234), W3C Turtle PN_PREFIX and IRIREF validation and atomic batch prefix
     registration (#237), deterministic namespace-alias compaction (#238), time.RFC3339Nano
     fractional-second preservation on xsd:dateTime literals (#239), explicit JSON-LD @prefix term
     definitions for non-gen-delim namespaces (#249), Turtle PN_LOCAL local-name validation before
-    compaction (#250), and JSON-LD typed @value/@type preservation for explicit boolean/numeric
-    literals (#252)
+    compaction (#250), JSON-LD typed @value/@type preservation for explicit boolean/numeric
+    literals (#252), and exported SubjectIRI plus W3C BLANK_NODE_LABEL blank-node subject/object
+    and full http:///https:// predicate IRI pass-through (#256)
   dependencies_and_side_effects: >-
     message, vocabulary (in-set); graph and pgregory.net/rapid v1.3.0 in tests; stdlib;
     mutex-guarded defaultPrefixes table mutated by Register and RegisterPrefixes; no goroutine, no
@@ -2335,10 +2337,12 @@
     validation (#237), lexicographic prefix tie-breaking for equal-length namespaces in compact
     (#238), time.RFC3339Nano formatting in dateTimeLexical and classifyByGoType (#239), expanded
     JSON-LD @context entries with @prefix:true for non-gen-delim namespaces (#249), PN_LOCAL
-    validation in compact (#250), and JSON-LD @value/@type preservation for non-canonical explicit
-    typed literals (#252); tests calling vocabulary.ClearRegistry() snapshot and restore the
-    global registry via defer vocabulary.SnapshotRegistry()(); README updated for SemEngine module
-    path and ADR-107 link
+    validation in compact (#250), JSON-LD @value/@type preservation for non-canonical explicit
+    typed literals (#252), and SubjectIRI, blank-node (_:label) subject/object serialization, and
+    unregistered http:///https:// predicate pass-through (#256); tests calling
+    vocabulary.ClearRegistry() snapshot and restore the global registry via defer
+    vocabulary.SnapshotRegistry()(); doc.go and README updated for SemEngine module path and
+    ADR-107 link
   proving_tests: >-
     vocabulary/export/*_test.go (8 test files, including Rapid property tests in
     datatype_prop_test.go and ENTITY_STATES round-trip tests in datatype_roundtrip_test.go)

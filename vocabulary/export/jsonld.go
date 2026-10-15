@@ -88,7 +88,7 @@ func assembleJSONLDDocument(graph []map[string]any, pm *prefixMap) map[string]an
 // jsonldObjectValue converts a classifiedObject to its JSON-LD representation.
 func jsonldObjectValue(obj classifiedObject, pm *prefixMap) any {
 	switch obj.kind {
-	case objectResource:
+	case objectResource, objectBlankNode:
 		return map[string]any{"@id": obj.iri}
 	case objectLiteral:
 		return jsonldLiteralValue(obj, pm)

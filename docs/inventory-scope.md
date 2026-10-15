@@ -18,6 +18,8 @@ rest of the portfolio is archived, folded into semteams, or post-MVP, and is not
 | semboids | beta.160 | **verification consumer** — the measuring fixture the owner runs against each slice as soon as it can | the workload it drives (streams, rates, entities, lifecycle use); symbol-level use of `pkg/lifecycle`, `processor/rule` |
 | semembed | provider service | support | provider identity (image, model artifact, dimensions, preprocessing) in baseline evidence — never code |
 | seminstruct | service | support | nothing unless a matrix row names it |
+| semvocab | `semengine` (`vocabulary`, `vocabulary/export`) | **vocabulary-pack library** (#234) | ontology pack registrations (`RegisterPack`, `LoadPackJSON`, `LoadPackYAML`, `RegisterEntityType`, `WithProjection`) for BFO 2020, CCO, and DIEKM |
+| semsparql | `semengine` (`vocabulary`, `vocabulary/export`, `graph`) | **SPARQL projection adapter** (#234) | read-only W3C SPARQL 1.1 Protocol `/sparql` projection over `LookupByIRI`, `LookupEntityTypesByClassIRI`, `ProjectionSpec`, and `graph-ingest` query verbs |
 | semdev | beta.160 | folding into semteams | only where semteams' code does not yet show a need semdev carries |
 | semstreams-ui | not a Go consumer | reference only | whether it consumes `output/websocket` (#8 Q11); nothing else |
 | semmem | not a Go consumer | reference for identity rows | the federation identity context ADR-102 cites, if an identity row needs it |

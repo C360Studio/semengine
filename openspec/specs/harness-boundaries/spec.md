@@ -1,6 +1,7 @@
 # harness-boundaries Specification
 
 ## Purpose
+
 Harness boundaries are the machine-checked rules that keep test machinery out of production code, keep SemEngine's
 Docker names and cleanup narrow enough that they never select another repository's resources, keep every reused
 SemStreams file traceable in the admission ledger, and hold the machine-checked shape rules over ported production
@@ -11,13 +12,13 @@ code, such as the one spelling of a deployment's authority.
 ### Requirement: Import graph
 
 No non-test Go file outside `internal/harness/` SHALL import `internal/harness/...`, `testcontainers-go`, `testing`,
-or `gopkg.in/yaml.v3`. No production package SHALL import the component factories of more than one component family;
-the consumer's composition root is the only place factories and payload registrations are aggregated. No Go file in
-the module, test or non-test, SHALL import `github.com/c360studio/semstreams` or any path under it, and `go.mod`
-SHALL NOT require it. `internal/harness/natsfixture` SHALL import no package of this module outside
-`internal/harness/`; any other `internal/harness/` package MAY import a package of this module only when that package
-starts no goroutine and holds no resource beyond a call, and no test of any package in the helper's dependency
-closure imports the helper.
+or (except `vocabulary/pack.go` for declarative YAML vocabulary packs) `gopkg.in/yaml.v3`. No production package SHALL
+import the component factories of more than one component family; the consumer's composition root is the only place
+factories and payload registrations are aggregated. No Go file in the module, test or non-test, SHALL import
+`github.com/c360studio/semstreams` or any path under it, and `go.mod` SHALL NOT require it.
+`internal/harness/natsfixture` SHALL import no package of this module outside `internal/harness/`; any other
+`internal/harness/` package MAY import a package of this module only when that package starts no goroutine and holds no
+resource beyond a call, and no test of any package in the helper's dependency closure imports the helper.
 
 #### Scenario: Production package imports the fixture
 
@@ -44,6 +45,12 @@ closure imports the helper.
 
 - **WHEN** a file under `internal/harness/natsfixture` imports `natsclient`
 - **THEN** the contract test fails naming the file
+
+#### Scenario: Declarative vocabulary pack loader imports yaml.v3
+
+- **WHEN** `vocabulary/pack.go` imports `gopkg.in/yaml.v3` and another non-test file outside `internal/harness/`
+  imports `gopkg.in/yaml.v3`
+- **THEN** the contract test permits `vocabulary/pack.go` and fails naming the other file
 
 ### Requirement: No retained context
 

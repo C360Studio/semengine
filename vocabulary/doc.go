@@ -194,16 +194,28 @@
 //
 // # Registry API
 //
-// The global predicate registry provides:
+// The global predicate and entity-type registry provides:
 //
 //	// Register a predicate
 //	Register(name string, opts ...Option)
 //
-//	// Retrieve metadata
+//	// Retrieve metadata or reverse-lookup canonical predicates by IRI
 //	GetPredicateMetadata(name string) *PredicateMetadata
+//	LookupByIRI(iri string) []string
+//
+//	// Register and look up entity-type (<domain>.<type>) class metadata
+//	RegisterEntityType(domainType string, opts ...EntityTypeOption)
+//	GetEntityTypeMetadata(domainType string) *EntityTypeMetadata
+//	LookupEntityTypesByClassIRI(classIRI string) []string
+//
+//	// Load and fail-closed register declarative JSON/YAML vocabulary packs
+//	LoadPackJSON(r io.Reader) (PackSpec, error)
+//	LoadPackYAML(r io.Reader) (PackSpec, error)
+//	RegisterPack(pack PackSpec, opts ...PackOption) error
 //
 //	// List all registered
 //	ListRegisteredPredicates() []string
+//	ListRegisteredEntityTypes() []string
 //
 //	// Discover aliases
 //	DiscoverAliasPredicates() map[string]int

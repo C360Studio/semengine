@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"strconv"
 	"sync"
-	"syscall"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
@@ -61,7 +60,8 @@ func (s *Server) Start(ctx context.Context) error {
 // StartWithListener starts the one-shot metrics HTTP server on a caller-bound
 // raw TCP listener. A successful return transfers listener ownership to Server;
 // every returned error leaves it with the caller. Server applies configured TLS
-// itself, so callers must not pass a TLS-wrapped listener.
+// itself, so callers must not pass a TLS-wrapped listener. The caller passes an
+// open listener; Start does not check that it is open.
 func (s *Server) StartWithListener(ctx context.Context, listener net.Listener) error {
 	return s.start(ctx, listener, true, "StartWithListener")
 }
@@ -80,15 +80,6 @@ func (s *Server) start(ctx context.Context, supplied net.Listener, provided bool
 		addr, ok := supplied.Addr().(*net.TCPAddr)
 		if !ok || addr.Port <= 0 {
 			return errs.WrapInvalid(errs.ErrInvalidData, "Server", operation, "listener has no assigned TCP endpoint")
-		}
-		if socket, ok := supplied.(syscall.Conn); ok {
-			raw, err := socket.SyscallConn()
-			if err == nil {
-				err = raw.Control(func(uintptr) {})
-			}
-			if err != nil {
-				return errs.WrapInvalid(err, "Server", operation, "listener is closed")
-			}
 		}
 	}
 	s.mu.Lock()

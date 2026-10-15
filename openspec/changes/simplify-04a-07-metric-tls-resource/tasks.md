@@ -18,7 +18,7 @@ failing output in `notes/<task>.md`.
 - [x] 2.2 D2: remove `opHook`, `recordOp` and its five calls. The lifecycle adapter reports no `Calls`, and its doc
   comment no longer describes them. Remove the `Calls` assertion at `lifecycle_test.go:234-235`. Gate:
   `go test -race ./metric/`; `git grep -n -E 'opHook|recordOp' -- '*.go'` is empty.
-- [ ] 2.3 D3: remove the `syscall.Conn` probe and the `syscall` import. Delete the closed-listener case
+- [x] 2.3 D3: remove the `syscall.Conn` probe and the `syscall` import. Delete the closed-listener case
   (`handler_test.go:232-236`). The `StartWithListener` doc comment says the caller passes an open listener and Start
   does not check it. Gate: `go test -race ./metric/`.
 

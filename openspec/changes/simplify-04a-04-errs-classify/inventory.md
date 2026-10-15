@@ -61,7 +61,8 @@ commit-unknown); `agentic/agentrun/milestone_settlement.go:188-198` (`switch sem
 (`unknownMutation`), `:471-473`. Production readers of `MutationError.Class`, `IsTransient` or `IsFatal` on it in this
 repository: none (`git grep -n 'MutationError' -- '*.go' ':!*_test.go'`).
 
-Tests that assert the class of a commit-unknown error (the commit-unknown rows flip under the change; not-committed rows keep the reply's class):
+Tests that assert the class of a commit-unknown error (the commit-unknown rows flip under the change; not-committed
+rows keep the reply's class):
 
 - `pkg/projection/commit_ambiguity_test.go:80-95`, `:109` — `mutationErr.Class != test.class` (the reply's class).
 - `processor/graph-ingest/commit_ambiguity_integration_test.go:135` —

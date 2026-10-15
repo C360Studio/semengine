@@ -29,7 +29,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 - [x] 3.1 Export `ClassifyMutationError`, which computes `Kind` once; every write uses it; `MutationUnavailable`'s doc
   says "not delivered". Gate: 2.1 and 2.2 pass.
-- [ ] 3.2 `MutationReceipt` without `Commit`; tests in `pkg/projection` and
+- [x] 3.2 `MutationReceipt` without `Commit`; tests in `pkg/projection` and
   `processor/graph-ingest/commit_ambiguity_integration_test.go` read the error's `Commit`. Gate: `task test:unit`;
   `go test -tags integration -race -run 'CommitAmbiguity|CommitUnknown' ./processor/graph-ingest/`.
 - [ ] 3.3 Remove the five interfaces and both revive directives. Gate: `task build`, `task lint`.

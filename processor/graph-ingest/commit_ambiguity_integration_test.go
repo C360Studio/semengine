@@ -113,7 +113,6 @@ func TestIntegration_TypedClientPreservesCommitAmbiguity(t *testing.T) {
 		Metadata: projection.MutationMetadata{RequestID: "create-ambiguous", Source: fixtureSource, Timestamp: fixtureTime},
 	})
 	require.NoError(t, err)
-	require.Equal(t, projection.CommitVerified, created.Commit)
 
 	reconcile := func(object string, at time.Time) (projection.MutationReceipt, error) {
 		return mutations.Reconcile(ctx, projection.ReconcileMutation{
@@ -127,7 +126,7 @@ func TestIntegration_TypedClientPreservesCommitAmbiguity(t *testing.T) {
 	// sees nats.ErrTimeout in place of the bucket's reply.
 	bucket.FailAfter(natsfixture.KVUpdate, nats.ErrTimeout)
 	receipt, err := reconcile("unconfirmed", fixtureTime.Add(time.Minute))
-	require.Equal(t, projection.CommitUnknown, receipt.Commit, "receipt of an update the server did not confirm")
+	require.Equal(t, projection.MutationReceipt{}, receipt, "receipt of an update the server did not confirm")
 	var mutationErr *projection.MutationError
 	require.ErrorAs(t, err, &mutationErr)
 	assert.Equal(t, projection.MutationCommitUnknown, mutationErr.Kind)
@@ -149,7 +148,7 @@ func TestIntegration_TypedClientPreservesCommitAmbiguity(t *testing.T) {
 	// Revision conflict: the bucket refuses the update, so nothing of this request is stored.
 	bucket.writeAheadOfNextUpdate()
 	receipt, err = reconcile("conflicted", fixtureTime.Add(2*time.Minute))
-	assert.Equal(t, projection.CommitNotCommitted, receipt.Commit)
+	assert.Equal(t, projection.MutationReceipt{}, receipt)
 	require.ErrorAs(t, err, &mutationErr)
 	assert.Equal(t, projection.MutationRevisionConflict, mutationErr.Kind)
 	assert.Equal(t, projection.CommitNotCommitted, mutationErr.Commit)
@@ -165,7 +164,7 @@ func TestIntegration_TypedClientPreservesCommitAmbiguity(t *testing.T) {
 		EntityID: "c360.test.mutation.system.widget.absent", ExpectedRevision: 1,
 		Metadata: projection.MutationMetadata{RequestID: "delete-absent"},
 	})
-	assert.Equal(t, projection.CommitNotCommitted, receipt.Commit)
+	assert.Equal(t, projection.MutationReceipt{}, receipt)
 	require.ErrorAs(t, err, &mutationErr)
 	assert.Equal(t, projection.MutationNotFound, mutationErr.Kind)
 	assert.Equal(t, projection.CommitNotCommitted, mutationErr.Commit)
@@ -221,7 +220,6 @@ func TestIntegration_OversizedResponseAfterCommitIsCommitUnknown(t *testing.T) {
 		Metadata: projection.MutationMetadata{RequestID: "create-oversized", Source: fixtureSource, Timestamp: fixtureTime},
 	})
 	require.NoError(t, err)
-	require.Equal(t, projection.CommitVerified, created.Commit)
 
 	// The request fits under the payload limit; the response adds the stored 8 KiB identity
 	// statement to the echoed RequestID and crosses it. Desired is empty, so the reconcile clears
@@ -249,7 +247,7 @@ func TestIntegration_OversizedResponseAfterCommitIsCommitUnknown(t *testing.T) {
 	assert.Equal(t, errs.ErrorFatal, mutationErr.Class, "a reconcile that committed is never retryable")
 	// natsclient's own code (errorCodeResponseTooLarge), spelled as the wire carries it.
 	assert.Equal(t, "response_too_large", mutationErr.Code)
-	assert.Equal(t, projection.CommitUnknown, receipt.Commit, "receipt of a reconcile that committed")
+	assert.Equal(t, projection.MutationReceipt{}, receipt, "receipt of a reconcile that committed")
 	assert.Equal(t, projection.CommitUnknown, mutationErr.Commit)
 	assert.Equal(t, projection.MutationCommitUnknown, mutationErr.Kind)
 }
@@ -350,13 +348,12 @@ func TestIntegration_AppendAfterUnconfirmedWriteIsCommitUnknown(t *testing.T) {
 				NATS: client, Contracts: []projection.Contract{contract}, Timeout: wireRequestTimeout,
 			})
 			require.NoError(t, err)
-			created, err := mutations.Create(ctx, projection.CreateMutation{
+			_, err = mutations.Create(ctx, projection.CreateMutation{
 				Contract: contract.Name, Entity: &graph.EntityState{ID: id},
 				Triples:  []message.Triple{{Subject: id, Predicate: "test.identity.name", Object: "widget"}},
 				Metadata: projection.MutationMetadata{RequestID: "create-unconfirmed", Source: fixtureSource, Timestamp: fixtureTime},
 			})
 			require.NoError(t, err)
-			require.Equal(t, projection.CommitVerified, created.Commit)
 
 			bucket.armed.Store(true)
 			receipt, err := mutations.Append(ctx, projection.AppendMutation{
@@ -371,11 +368,11 @@ func TestIntegration_AppendAfterUnconfirmedWriteIsCommitUnknown(t *testing.T) {
 				return triple.Predicate == "test.event.seen" && triple.Object == "unconfirmed-event"
 			}), "the stored update holds the appended statement")
 
-			assert.Equal(t, projection.CommitUnknown, receipt.Commit, "receipt of an append whose write stood")
+			assert.Equal(t, projection.MutationReceipt{}, receipt, "receipt of an append whose write stood")
 			var mutationErr *projection.MutationError
 			require.ErrorAs(t, err, &mutationErr)
-			t.Logf("receipt %s; kind %s, class %s, code %q: %v",
-				receipt.Commit, mutationErr.Kind, mutationErr.Class, mutationErr.Code, err)
+			t.Logf("commit %s; kind %s, class %s, code %q: %v",
+				mutationErr.Commit, mutationErr.Kind, mutationErr.Class, mutationErr.Code, err)
 			assert.Equal(t, projection.MutationCommitUnknown, mutationErr.Kind)
 			assert.Equal(t, projection.CommitUnknown, mutationErr.Commit)
 			var classified *errs.ClassifiedError

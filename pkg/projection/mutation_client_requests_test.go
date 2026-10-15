@@ -72,9 +72,8 @@ func TestCreateSendsItsCanonicalRequestAndReadsTheReply(t *testing.T) {
 			vocabulary.IndexingProfileContent, canonicalMetadata.TraceID, canonicalMetadata.RequestID)
 	}
 	// projectionAcceptingRequester answers a create at revision 1.
-	if receipt.Commit != CommitVerified || receipt.KVRevision != 1 || receipt.Entity == nil ||
-		receipt.Entity.ID != projectionTestEntity {
-		t.Fatalf("receipt = %#v, want the reply's entity verified at revision 1", receipt)
+	if receipt.KVRevision != 1 || receipt.Entity == nil || receipt.Entity.ID != projectionTestEntity {
+		t.Fatalf("receipt = %#v, want the reply's entity at revision 1", receipt)
 	}
 }
 
@@ -119,15 +118,15 @@ func TestAppendSendsItsCanonicalRequestAndReadsTheReply(t *testing.T) {
 				t.Fatalf("requests = %d, sent %#v; want one, %#v", len(requester.requests), sent, want)
 			}
 			if test.found {
-				if err != nil || receipt.Commit != CommitVerified || receipt.KVRevision != 5 {
-					t.Fatalf("receipt = %#v, error = %v; want verified at revision 5", receipt, err)
+				if err != nil || receipt.KVRevision != 5 {
+					t.Fatalf("receipt = %#v, error = %v; want revision 5", receipt, err)
 				}
 				return
 			}
 			var mutationErr *MutationError
 			if !errors.As(err, &mutationErr) || mutationErr.Kind != MutationNotFound ||
 				mutationErr.Code != graph.ErrorCodeEntityNotFound || mutationErr.Class != errs.ErrorInvalid ||
-				mutationErr.Commit != CommitNotCommitted || receipt.Commit != CommitNotCommitted {
+				mutationErr.Commit != CommitNotCommitted || receipt != (MutationReceipt{}) {
 				t.Fatalf("receipt = %#v, error = %#v; want a not-committed entity-not-found", receipt, err)
 			}
 		})
@@ -164,8 +163,8 @@ func TestDeleteSendsItsCanonicalRequestAndReadsTheReply(t *testing.T) {
 	if len(requester.requests) != 1 || sent != want {
 		t.Fatalf("requests = %d, sent %#v; want one, %#v", len(requester.requests), sent, want)
 	}
-	if receipt.Commit != CommitVerified || receipt.KVRevision != fence {
-		t.Fatalf("receipt = %#v, want verified at revision %d", receipt, fence)
+	if receipt.KVRevision != fence {
+		t.Fatalf("receipt = %#v, want revision %d", receipt, fence)
 	}
 }
 
@@ -290,8 +289,8 @@ func TestGroupAndStatementCanonicalizationRefusedBeforeRequest(t *testing.T) {
 				}
 				receipt, err := op.send(client, write)
 				if test.name == "as given" {
-					if err != nil || receipt.Commit != CommitVerified {
-						t.Fatalf("receipt = %#v, error = %v; want the unchanged write verified", receipt, err)
+					if err != nil {
+						t.Fatalf("receipt = %#v, error = %v; want the unchanged write to succeed", receipt, err)
 					}
 					return
 				}

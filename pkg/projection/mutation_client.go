@@ -126,13 +126,13 @@ func (c *MutationClient) binding(operation MutationOperation, name string) (cont
 func (c *MutationClient) Create(ctx context.Context, request CreateMutation) (MutationReceipt, error) {
 	binding, err := c.binding(MutationOperationCreate, request.Contract)
 	if err != nil {
-		return notCommitted(), err
+		return MutationReceipt{}, err
 	}
 	if request.Entity == nil {
-		return notCommitted(), invalidMutationError(MutationOperationCreate, errors.New("entity is required"))
+		return MutationReceipt{}, invalidMutationError(MutationOperationCreate, errors.New("entity is required"))
 	}
 	if len(request.Entity.Triples) != 0 {
-		return notCommitted(), invalidMutationError(MutationOperationCreate,
+		return MutationReceipt{}, invalidMutationError(MutationOperationCreate,
 			errors.New("entity.triples must be empty; CreateMutation.Triples is the sole fact source"))
 	}
 	entity := request.Entity.Clone()
@@ -144,19 +144,19 @@ func (c *MutationClient) Create(ctx context.Context, request CreateMutation) (Mu
 		entity.MessageType = binding.contract.MessageType
 	}
 	if err := validateEntity(binding.contract, entity); err != nil {
-		return notCommitted(), invalidMutationError(MutationOperationCreate, err)
+		return MutationReceipt{}, invalidMutationError(MutationOperationCreate, err)
 	}
 	triples, metadata, err := canonicalizeTriples(MutationOperationCreate, request.Triples, request.Metadata)
 	if err != nil {
-		return notCommitted(), err
+		return MutationReceipt{}, err
 	}
 	for index, triple := range triples {
 		if triple.Subject != entity.ID {
-			return notCommitted(), invalidMutationError(MutationOperationCreate,
+			return MutationReceipt{}, invalidMutationError(MutationOperationCreate,
 				fmt.Errorf("triple[%d] subject %q does not match entity %q", index, triple.Subject, entity.ID))
 		}
 		if _, allowed := binding.allowed[triple.Predicate]; !allowed {
-			return notCommitted(), invalidMutationError(MutationOperationCreate,
+			return MutationReceipt{}, invalidMutationError(MutationOperationCreate,
 				fmt.Errorf("predicate %q is not declared by contract %q", triple.Predicate, binding.contract.Name))
 		}
 	}
@@ -170,7 +170,7 @@ func (c *MutationClient) Create(ctx context.Context, request CreateMutation) (Mu
 	if response.Entity.ID != entity.ID {
 		return mutationFailure(MutationOperationCreate, errors.New("create response entity does not match request"))
 	}
-	return MutationReceipt{Entity: response.Entity.Clone(), KVRevision: response.KVRevision, Commit: CommitVerified}, nil
+	return MutationReceipt{Entity: response.Entity.Clone(), KVRevision: response.KVRevision}, nil
 }
 
 // Reconcile replaces one complete reconcile-mode predicate group, at the request's
@@ -180,7 +180,7 @@ func (c *MutationClient) Reconcile(ctx context.Context, request ReconcileMutatio
 		MutationOperationReconcile, request.Contract, request.Group, request.EntityID, request.Desired, request.Metadata, ModeReconcile,
 	)
 	if err != nil {
-		return notCommitted(), err
+		return MutationReceipt{}, err
 	}
 	// The read stays when the caller names a revision: graph-ingest's reconcile checks no
 	// contract, so only this check holds the stored entity to the contract's message type.
@@ -188,10 +188,10 @@ func (c *MutationClient) Reconcile(ctx context.Context, request ReconcileMutatio
 	// does not compare it with this read.
 	exact, err := c.ReadAuthoritative(ctx, request.EntityID)
 	if err != nil {
-		return notCommitted(), err
+		return MutationReceipt{}, err
 	}
 	if err := validateEntity(binding.contract, exact.Entity); err != nil {
-		return notCommitted(), invalidMutationError(MutationOperationReconcile, err)
+		return MutationReceipt{}, invalidMutationError(MutationOperationReconcile, err)
 	}
 	expected := request.ExpectedRevision
 	if expected == 0 {
@@ -205,7 +205,7 @@ func (c *MutationClient) Reconcile(ctx context.Context, request ReconcileMutatio
 	if err != nil {
 		return mutationFailure(MutationOperationReconcile, err)
 	}
-	return MutationReceipt{Entity: response.Entity.Clone(), KVRevision: response.KVRevision, Commit: CommitVerified}, nil
+	return MutationReceipt{Entity: response.Entity.Clone(), KVRevision: response.KVRevision}, nil
 }
 
 // Append appends triples in one append-mode predicate group to one entity.
@@ -214,7 +214,7 @@ func (c *MutationClient) Append(ctx context.Context, request AppendMutation) (Mu
 		MutationOperationAppend, request.Contract, request.Group, request.EntityID, request.Triples, request.Metadata, ModeAppend,
 	)
 	if err != nil {
-		return notCommitted(), err
+		return MutationReceipt{}, err
 	}
 	response, err := c.wire.Append(ctx, graph.AppendTriplesRequest{
 		Triples: triples, TraceID: metadata.TraceID, RequestID: metadata.RequestID,
@@ -228,7 +228,7 @@ func (c *MutationClient) Append(ctx context.Context, request AppendMutation) (Mu
 	}
 	switch result.Outcome {
 	case graph.MutationApplied, graph.MutationUnchanged:
-		return MutationReceipt{KVRevision: result.KVRevision, Commit: CommitVerified}, nil
+		return MutationReceipt{KVRevision: result.KVRevision}, nil
 	case graph.MutationEntityNotFound:
 		err := errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeEntityNotFound,
 			fmt.Errorf("entity not found: %s", request.EntityID))
@@ -242,7 +242,7 @@ func (c *MutationClient) Append(ctx context.Context, request AppendMutation) (Mu
 // they intend to fence; the client does not hide a read or retry.
 func (c *MutationClient) Delete(ctx context.Context, request DeleteMutation) (MutationReceipt, error) {
 	if request.ExpectedRevision == 0 {
-		return notCommitted(), invalidMutationError(MutationOperationDelete, errors.New("expected revision must be nonzero"))
+		return MutationReceipt{}, invalidMutationError(MutationOperationDelete, errors.New("expected revision must be nonzero"))
 	}
 	response, err := c.wire.Delete(ctx, graph.DeleteEntityRequest{
 		EntityID: request.EntityID, ExpectedRevision: request.ExpectedRevision,
@@ -251,7 +251,7 @@ func (c *MutationClient) Delete(ctx context.Context, request DeleteMutation) (Mu
 	if err != nil {
 		return mutationFailure(MutationOperationDelete, err)
 	}
-	return MutationReceipt{KVRevision: response.ExpectedRevision, Commit: CommitVerified}, nil
+	return MutationReceipt{KVRevision: response.ExpectedRevision}, nil
 }
 
 // ReadAuthoritative returns one validated entity and its same-entry revision.
@@ -398,10 +398,6 @@ func canonicalizeTriples(
 	return triples, metadata, nil
 }
 
-func notCommitted() MutationReceipt {
-	return MutationReceipt{Commit: CommitNotCommitted}
-}
-
 func invalidMutationError(operation MutationOperation, err error) *MutationError {
 	return &MutationError{
 		Operation: operation, Kind: MutationInvalid, Class: errs.ErrorInvalid,
@@ -411,8 +407,7 @@ func invalidMutationError(operation MutationOperation, err error) *MutationError
 
 // mutationFailure reports a write's failure, with the receipt that still carries its commit state.
 func mutationFailure(operation MutationOperation, err error) (MutationReceipt, error) {
-	mapped := ClassifyMutationError(operation, err)
-	return MutationReceipt{Commit: mapped.Commit}, mapped
+	return MutationReceipt{}, ClassifyMutationError(operation, err)
 }
 
 // ClassifyMutationError maps the error of one graph mutation request to the commit state it

@@ -144,8 +144,8 @@ func TestMutationClientRefusesMissingTimestamp(t *testing.T) {
 						assertProjectionRejectedBeforeRequest(t, receipt, err, op.operation, requester)
 						return
 					}
-					if err != nil || receipt.Commit != CommitVerified {
-						t.Fatalf("receipt = %#v, error = %v; want verified", receipt, err)
+					if err != nil {
+						t.Fatalf("receipt = %#v, error = %v; want success", receipt, err)
 					}
 					sent := op.sent(t, requester)
 					if len(sent) != 1 || !sent[0].Timestamp.Equal(given) {
@@ -201,8 +201,8 @@ func TestMutationClientReconcileRequiresSource(t *testing.T) {
 	t.Run("the metadata's source is the request's source", func(t *testing.T) {
 		requester := projectionAcceptingRequester(t)
 		receipt, err := reconcile(t, requester, []message.Triple{statement}, "test-projector")
-		if err != nil || receipt.Commit != CommitVerified {
-			t.Fatalf("receipt = %#v, error = %v; want verified", receipt, err)
+		if err != nil {
+			t.Fatalf("receipt = %#v, error = %v; want success", receipt, err)
 		}
 		var sent graph.ReconcilePredicatesRequest
 		sentRequest(t, requester, "graph.mutation.entity.reconcile", &sent)

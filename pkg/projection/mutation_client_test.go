@@ -184,7 +184,7 @@ func assertProjectionRejectedBeforeRequest(
 	var mutationErr *MutationError
 	if !errors.As(err, &mutationErr) || mutationErr.Operation != operation ||
 		mutationErr.Kind != MutationInvalid || mutationErr.Class != errs.ErrorInvalid ||
-		receipt.Commit != CommitNotCommitted {
+		mutationErr.Commit != CommitNotCommitted || receipt != (MutationReceipt{}) {
 		t.Fatalf("receipt = %#v, error = %#v", receipt, mutationErr)
 	}
 	if len(requester.requests) != 0 {
@@ -227,7 +227,7 @@ func TestReconcileReadsExactRevisionThenMakesOneMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if receipt.Commit != CommitVerified || receipt.KVRevision != 8 || len(requester.requests) != 2 {
+	if receipt.KVRevision != 8 || len(requester.requests) != 2 {
 		t.Fatalf("receipt = %#v, requests = %d", receipt, len(requester.requests))
 	}
 }
@@ -271,7 +271,7 @@ func TestAppendDefiniteSubjectFailureIsNotCommitUnknown(t *testing.T) {
 			})
 			var mutationErr *MutationError
 			if !errors.As(err, &mutationErr) || mutationErr.Kind != c.wantKind ||
-				receipt.Commit != CommitNotCommitted || mutationErr.Commit != CommitNotCommitted {
+				receipt != (MutationReceipt{}) || mutationErr.Commit != CommitNotCommitted {
 				t.Fatalf("receipt = %#v, error = %#v; want %s, not committed", receipt, mutationErr, c.wantKind)
 			}
 			if mutationErr.Class != c.wantClass {
@@ -293,7 +293,7 @@ func TestAppendAmbiguousTransportFailureIsNotRetried(t *testing.T) {
 	})
 	var mutationErr *MutationError
 	if !errors.As(err, &mutationErr) || mutationErr.Kind != MutationCommitUnknown ||
-		receipt.Commit != CommitUnknown || len(requester.requests) != 1 {
+		mutationErr.Commit != CommitUnknown || receipt != (MutationReceipt{}) || len(requester.requests) != 1 {
 		t.Fatalf("receipt = %#v, error = %#v, requests = %d", receipt, mutationErr, len(requester.requests))
 	}
 }
@@ -313,7 +313,8 @@ func TestRevisionMismatchRemainsDefinite(t *testing.T) {
 		Metadata: MutationMetadata{Source: "test-projector"},
 	})
 	var mutationErr *MutationError
-	if !errors.As(err, &mutationErr) || mutationErr.Kind != MutationRevisionConflict || receipt.Commit != CommitNotCommitted {
+	if !errors.As(err, &mutationErr) || mutationErr.Kind != MutationRevisionConflict ||
+		mutationErr.Commit != CommitNotCommitted || receipt != (MutationReceipt{}) {
 		t.Fatalf("receipt = %#v, error = %#v", receipt, mutationErr)
 	}
 	if len(requester.requests) != 2 {
@@ -369,7 +370,7 @@ func TestCreateFillsMessageTypeFromContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	receipt, err := client.Create(context.Background(), CreateMutation{
+	_, err = client.Create(context.Background(), CreateMutation{
 		Contract: contract.Name,
 		Entity:   &graph.EntityState{ID: projectionTestEntity},
 		Triples: []message.Triple{{
@@ -379,9 +380,6 @@ func TestCreateFillsMessageTypeFromContract(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("Create with an empty stamp: %v", err)
-	}
-	if receipt.Commit != CommitVerified {
-		t.Fatalf("receipt = %#v, want verified commit", receipt)
 	}
 	if len(requester.requests) != 1 {
 		t.Fatalf("requests = %d, want 1", len(requester.requests))

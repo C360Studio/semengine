@@ -86,11 +86,11 @@ const (
 	CommitVerified CommitState = "verified"
 )
 
-// MutationReceipt contains the authoritative result and commitment evidence.
+// MutationReceipt contains the authoritative result of a mutation that committed. A method that
+// fails returns a zero receipt, and its *MutationError's Commit reports what is proven.
 type MutationReceipt struct {
 	Entity     *graph.EntityState
 	KVRevision uint64
-	Commit     CommitState
 }
 
 // MutationOperation identifies the client operation that produced a result.

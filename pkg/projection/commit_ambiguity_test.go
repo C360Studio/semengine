@@ -124,9 +124,9 @@ func TestClassifiedReplyIsNotCommittedOnlyWhenRefusedBeforeWrite(t *testing.T) {
 				if !errors.As(outcome.err, &mutationErr) {
 					t.Fatalf("%s: error = %v, want a *MutationError", operation, outcome.err)
 				}
-				if outcome.receipt.Commit != test.want || mutationErr.Commit != test.want || mutationErr.Kind != test.kind {
-					t.Errorf("%s: receipt commit %q, error commit %q, kind %q; want %q, %q, %q",
-						operation, outcome.receipt.Commit, mutationErr.Commit, mutationErr.Kind, test.want, test.want, test.kind)
+				if outcome.receipt != (MutationReceipt{}) || mutationErr.Commit != test.want || mutationErr.Kind != test.kind {
+					t.Errorf("%s: receipt %#v, error commit %q, kind %q; want a zero receipt, %q, %q",
+						operation, outcome.receipt, mutationErr.Commit, mutationErr.Kind, test.want, test.kind)
 				}
 				if mutationErr.Class != wantClass || mutationErr.Code != test.code ||
 					!reflect.DeepEqual(mutationErr.Detail, reply.Detail) {
@@ -193,9 +193,9 @@ func TestTransportOutcomesKeepTheirCommitState(t *testing.T) {
 					continue
 				}
 				var mutationErr *MutationError
-				if !errors.As(outcome.err, &mutationErr) || outcome.receipt.Commit != test.want ||
+				if !errors.As(outcome.err, &mutationErr) || outcome.receipt != (MutationReceipt{}) ||
 					mutationErr.Commit != test.want || mutationErr.Kind != test.kind {
-					t.Errorf("%s: receipt = %#v, error = %#v; want commit %q, kind %q",
+					t.Errorf("%s: receipt = %#v, error = %#v; want a zero receipt, commit %q, kind %q",
 						operation, outcome.receipt, mutationErr, test.want, test.kind)
 					continue
 				}
@@ -254,7 +254,7 @@ func TestAppendSubjectFailureAfterPossibleWriteIsCommitUnknown(t *testing.T) {
 		Metadata: MutationMetadata{RequestID: "append-unconfirmed", Source: "test-projector", Timestamp: projectionTestTime},
 	})
 	var mutationErr *MutationError
-	if !errors.As(err, &mutationErr) || receipt.Commit != CommitUnknown || mutationErr.Commit != CommitUnknown ||
+	if !errors.As(err, &mutationErr) || receipt != (MutationReceipt{}) || mutationErr.Commit != CommitUnknown ||
 		mutationErr.Kind != MutationCommitUnknown || mutationErr.Code != graph.ErrorCodeInternal {
 		t.Fatalf("receipt = %#v, error = %#v", receipt, mutationErr)
 	}
@@ -299,7 +299,7 @@ func TestReconcileReadFailureIsNotCommitted(t *testing.T) {
 				Metadata: MutationMetadata{Source: "test-projector", Timestamp: projectionTestTime},
 			})
 			var mutationErr *MutationError
-			if !errors.As(err, &mutationErr) || receipt.Commit != CommitNotCommitted || mutationErr.Commit != CommitNotCommitted ||
+			if !errors.As(err, &mutationErr) || receipt != (MutationReceipt{}) || mutationErr.Commit != CommitNotCommitted ||
 				mutationErr.Operation != MutationOperationReadAuthoritative {
 				t.Fatalf("receipt = %#v, error = %#v; want not committed from operation %q",
 					receipt, mutationErr, MutationOperationReadAuthoritative)

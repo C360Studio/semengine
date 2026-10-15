@@ -1,20 +1,18 @@
 # Design: simplify-04a-05-prochost-helper-exit
 
-Status: draft, awaiting pre-owner design review and owner acceptance on #208 (inventory review passed, round 2).
-Inventory: `inventory.md` (base `d5ea8f6`).
+Status: accepted by the owner on 2026-10-15 (#208 comment 6198503745), after inventory review and pre-owner design
+review passed (round 2, last fix `268d56d`). Inventory: `inventory.md` (base `d5ea8f6`).
 
-What the owner accepts:
+What the owner accepted:
 
 - A helper exits on its own once the test process that started it is gone, however it went.
 - A helper's standard input is reserved for prochost; helper code does not read it.
 - A helper the test has paused is not promised to exit if the test process dies while it is paused.
 
-Owner questions:
+Owner rulings (2026-10-15, #208 comment 6198503745):
 
-1. A paused helper can survive a test process killed while it is paused. On macOS the operating system ended it
-   anyway, but nothing promises that. Recommended: accept it as "measured, not promised" and add nothing more.
-2. The helper keeps its own process group, so Ctrl-C reaches it through the pipe rather than directly. Recommended:
-   keep the group. Dropping it adds nothing and means rewriting how signals are sent.
+1. A paused helper is accepted as measured on macOS, not promised; no second mechanism (D3).
+2. The helper keeps its own process group (D2).
 
 ## Context
 

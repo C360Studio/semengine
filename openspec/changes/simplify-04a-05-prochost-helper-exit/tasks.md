@@ -5,7 +5,7 @@ before any production line changes; record the failing output in `notes/<task>.m
 
 ## 1. Design
 
-- [ ] 1.1 Inventory, proposal, design and spec delta reviewed (inventory review, pre-owner design review) and accepted
+- [x] 1.1 Inventory, proposal, design and spec delta reviewed (inventory review, pre-owner design review) and accepted
   by the owner on #208, with the owner's answers to the design's two questions. Gate: `task spec:check` and
   `task docs:check`.
 - [x] 1.2 The probes the inventory cites (P1-P3: source, commands, go1.26.9 darwin/arm64, output) are posted as a

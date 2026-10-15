@@ -6,4 +6,4 @@ ignores:
   - node_modules/**
   - "**/node_modules/**"
   - openspec/specs/**
-  - .enjoy-logs/**
+  - "**/.enjoy-logs/**"

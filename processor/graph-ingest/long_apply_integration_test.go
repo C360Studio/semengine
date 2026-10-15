@@ -15,7 +15,6 @@ import (
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/kvcatalog"
-	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/natsclient"
 )
@@ -108,11 +107,9 @@ func TestIntegration_Settlement_LongApplyIsNotRedelivered(t *testing.T) {
 		oracle   = "long-apply-oracle"
 	)
 
-	f := natsfixture.New(t)
-	require.NoError(t, f.Start(ctx))
-	_, err := natsfixture.CreateStream(ctx, f.JetStream(), jetstream.FileStorage, entityStream.name, entityStream.subjects...)
+	client := newFixtureClient(t, entityStream)
+	js, err := client.JetStream()
 	require.NoError(t, err)
-	client := natsfixture.Open(t, f, openFixtureClient)
 
 	held := &heldApplyBucket{entered: make(chan struct{}), release: make(chan struct{})}
 	var inProgress atomic.Int64
@@ -121,9 +118,9 @@ func TestIntegration_Settlement_LongApplyIsNotRedelivered(t *testing.T) {
 	var releaseOnce sync.Once
 	releaseHeld := func() { releaseOnce.Do(func() { close(held.release) }) }
 	defer releaseHeld() // before owner.finish: Stop must not wait on a held write
-	entities, err := f.JetStream().KeyValue(ctx, graph.BucketEntityStates)
+	entities, err := js.KeyValue(ctx, graph.BucketEntityStates)
 	require.NoError(t, err)
-	guardRecords, err := f.JetStream().KeyValue(ctx, graph.BucketGraphIngestAppliedSeq)
+	guardRecords, err := js.KeyValue(ctx, graph.BucketGraphIngestAppliedSeq)
 	require.NoError(t, err)
 
 	// (1) One input, and its application held at the applied-sequence write.
@@ -139,7 +136,7 @@ func TestIntegration_Settlement_LongApplyIsNotRedelivered(t *testing.T) {
 	}
 
 	// (2) and (3) The oracle, created only now, delivers the input three times, never acknowledged.
-	oracleConsumer, err := f.JetStream().CreateOrUpdateConsumer(ctx, entityStream.name, jetstream.ConsumerConfig{
+	oracleConsumer, err := js.CreateOrUpdateConsumer(ctx, entityStream.name, jetstream.ConsumerConfig{
 		Durable: oracle, FilterSubject: entityStream.subjects[0], DeliverPolicy: jetstream.DeliverAllPolicy,
 		AckPolicy: jetstream.AckExplicitPolicy, AckWait: longApplyAckWait, MaxDeliver: 3,
 	})
@@ -157,7 +154,7 @@ func TestIntegration_Settlement_LongApplyIsNotRedelivered(t *testing.T) {
 	}
 
 	// (4) graph-ingest's delivery: one, not redelivered, pending, and kept in progress.
-	delivery, err := ingestConsumer(ctx, f)
+	delivery, err := ingestConsumer(ctx, js)
 	require.NoError(t, err)
 	signals := inProgress.Load()
 	t.Logf("graph-ingest's consumer: %+v; in-progress signals: %d; the oracle's delivery counts: %v",
@@ -174,7 +171,7 @@ func TestIntegration_Settlement_LongApplyIsNotRedelivered(t *testing.T) {
 	// (5) Released, the input is acknowledged after its one delivery.
 	releaseHeld()
 	delivery = awaitSettlement(ctx, t, nil, "the input's acknowledgement", settlementApplyBound,
-		func(ctx context.Context) (ingestDelivery, error) { return ingestConsumer(ctx, f) },
+		func(ctx context.Context) (ingestDelivery, error) { return ingestConsumer(ctx, js) },
 		func(d ingestDelivery) bool { return d.AckFloor >= seq && d.AckPending == 0 })
 	require.Equal(t, uint64(1), delivery.Deliveries, "the input must have been delivered once in total")
 	_, err = guardRecords.Get(ctx, guardKey)

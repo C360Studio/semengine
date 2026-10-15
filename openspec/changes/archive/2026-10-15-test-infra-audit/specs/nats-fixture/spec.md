@@ -113,10 +113,11 @@ expose start, connect or bucket-prefix knobs.
 - **THEN** Start returns an error satisfying `errors.Is(err, context.Canceled)`, no other container is started, and no
   container remains
 
-#### Scenario: Ports after a running fixture's own are held
+#### Scenario: Explicit host-port binding alongside held ephemeral ports
 
-- **WHEN** a fixture is running and the host ports after its own are held by listeners on all addresses
-- **THEN** a second fixture's Start returns nil, with JetStream answering on its `URL()`
+- **WHEN** ephemeral host ports are held by listeners on all addresses and two fixtures start
+- **THEN** both fixtures' Start calls return nil, Docker's inspect for each container reports its `URL()` port as the
+  explicit `HostPort` binding on `4222/tcp`, and JetStream answers on each `URL()`
 
 #### Scenario: A missing mapped port fails Start
 

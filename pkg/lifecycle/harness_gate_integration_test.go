@@ -65,20 +65,21 @@ func gateWorkflow() Workflow {
 }
 
 // ingestClient replaces the pin's natsclient.NewTestClient(t, natsclient.WithKV(),
-// natsclient.WithStreams(ENTITY on entity.>)) (design D3): a broker of this test's own, the
-// ENTITY stream graph-ingest's default input port reads, and a client opened with openClient
-// through natsfixture.Open, which bounds the connect and closes the client on t.Cleanup before
-// the fixture stops. graph-ingest creates ENTITY_STATES itself.
+// natsclient.WithStreams(ENTITY on entity.>)) (design D3): the package's shared broker reset for t,
+// a client opened with openClient through natsfixture.Open (which bounds the connect and closes the
+// client on t.Cleanup before the reset's connection check), and the ENTITY stream graph-ingest's
+// default input port reads. graph-ingest creates ENTITY_STATES itself.
 func ingestClient(t *testing.T) *natsclient.Client {
 	t.Helper()
-	f := natsfixture.New(t)
-	if err := f.Start(t.Context()); err != nil {
-		t.Fatalf("natsfixture Start: %v", err)
+	client := natsfixture.Open(t, shared.Reset(t), openClient)
+	js, err := client.JetStream()
+	if err != nil {
+		t.Fatalf("JetStream: %v", err)
 	}
-	if _, err := natsfixture.CreateStream(t.Context(), f.JetStream(), jetstream.FileStorage, "ENTITY", "entity.>"); err != nil {
+	if _, err := natsfixture.CreateStream(t.Context(), js, jetstream.FileStorage, "ENTITY", "entity.>"); err != nil {
 		t.Fatalf("CreateStream ENTITY: %v", err)
 	}
-	return natsfixture.Open(t, f, openClient)
+	return client
 }
 
 // startGraphIngest starts a real graph-ingest with its default configuration on client, under

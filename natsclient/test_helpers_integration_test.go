@@ -4,6 +4,11 @@ package natsclient
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,8 +20,25 @@ import (
 // This file is the integration lane's half of the helpers that replace the pin's test_client.go
 // (admission ledger row natsclient/test_client.go): the broker is internal/harness/natsfixture,
 // which always runs JetStream, so the pin's WithJetStream, WithKV, WithMinimalFeatures and
-// WithFileStorage have nothing left to choose. Each fixture registers its own Stop on t.Cleanup
-// under a fresh bounded context, which is what the pin's deferred Terminate calls did.
+// WithFileStorage have nothing left to choose. Shared tests reset the package-wide broker via
+// shared.Reset(t); tests that restart, stop, or reconfigure the broker start their own via
+// natsfixture.New.
+
+// shared is this package's NATS server. It starts at the first reset; TestMain removes it after the tests.
+var shared natsfixture.Shared
+
+func TestMain(m *testing.M) { os.Exit(run(m)) }
+
+func run(m *testing.M) int {
+	code := m.Run()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if err := shared.Stop(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return code
+}
 
 // fixtureClientTimeout is the Client's dial timeout (WithTimeout sets nothing else) and the bound on
 // its first connection. It is a failure bound, never reached against a broker whose Start has
@@ -24,32 +46,41 @@ import (
 // kv_key_contract_integration_test.go:47).
 const fixtureClientTimeout = 15 * time.Second
 
-// startFixture starts one broker for t; natsfixture.New registers its Stop on t.Cleanup.
-func startFixture(t *testing.T, opts ...natsfixture.Option) *natsfixture.Fixture {
-	t.Helper()
-	f := natsfixture.New(t, opts...)
-	if err := f.Start(t.Context()); err != nil {
-		t.Fatalf("natsfixture Start: %v", err)
-	}
-	return f
+type sharedFixture struct {
+	url string
 }
 
-// fixtureClient is a started broker and a connected Client on it, the pin's TestClient without the
+func (f sharedFixture) URL() string {
+	return f.url
+}
+
+// startFixture resets the package's shared broker for t and returns its URL handle.
+// Tests that restart, stop, or reconfigure the server call natsfixture.New directly.
+func startFixture(t *testing.T) sharedFixture {
+	t.Helper()
+	return sharedFixture{url: shared.Reset(t)}
+}
+
+// fixtureClient is a connected Client on a started broker, the pin's TestClient without the
 // container handle.
 type fixtureClient struct {
-	Fixture *natsfixture.Fixture
-	Client  *Client
-	URL     string
+	Client *Client
+	URL    string
 }
 
-// newFixtureClient replaces the pin's NewTestClient (test_client.go:854): the Client is built as
-// the pin built it (:777-781: no reconnects, no health monitor) and connected under
-// fixtureClientTimeout. Its Close is registered on t.Cleanup after the fixture's Stop, so it runs
-// first.
-func newFixtureClient(t *testing.T, opts ...natsfixture.Option) *fixtureClient {
+// newFixtureClient replaces the pin's NewTestClient (test_client.go:854): the shared broker is
+// reset via shared.Reset(t), and the Client is built as the pin built it (:777-781: no reconnects,
+// no health monitor) and connected under fixtureClientTimeout. Its Close is registered on t.Cleanup
+// after shared.Reset's post-test check, so it runs first.
+func newFixtureClient(t *testing.T) *fixtureClient {
 	t.Helper()
-	f := startFixture(t, opts...)
-	client, err := NewClient(f.URL(),
+	return newFixtureClientAt(t, shared.Reset(t))
+}
+
+// newFixtureClientAt connects a test Client to url and registers Close on t.Cleanup.
+func newFixtureClientAt(t *testing.T, url string) *fixtureClient {
+	t.Helper()
+	client, err := NewClient(url,
 		WithTimeout(fixtureClientTimeout),
 		WithMaxReconnects(0),
 		WithHealthInterval(0),
@@ -72,15 +103,19 @@ func newFixtureClient(t *testing.T, opts ...natsfixture.Option) *fixtureClient {
 	if err := client.WaitForConnection(ctx); err != nil {
 		t.Fatalf("WaitForConnection: %v", err)
 	}
-	return &fixtureClient{Fixture: f, Client: client, URL: f.URL()}
+	return &fixtureClient{Client: client, URL: url}
 }
 
-// stream creates a stream the fixture owns, with the bounds the pin's testStreamConfig declared
+// stream creates a stream on the broker, with the bounds the pin's testStreamConfig declared
 // (test_client.go:919-930: MaxAge, MaxBytes, DiscardOld; file storage). It replaces the pin's
 // WithStreams(TestStreamConfig{...}).
 func (tc *fixtureClient) stream(t *testing.T, name string, subjects ...string) {
 	t.Helper()
-	if _, err := natsfixture.CreateStream(t.Context(), tc.Fixture.JetStream(), jetstream.FileStorage, name, subjects...); err != nil {
+	js, err := tc.Client.JetStream()
+	if err != nil {
+		t.Fatalf("JetStream: %v", err)
+	}
+	if _, err := natsfixture.CreateStream(t.Context(), js, jetstream.FileStorage, name, subjects...); err != nil {
 		t.Fatalf("CreateStream %s: %v", name, err)
 	}
 }
@@ -130,5 +165,46 @@ func flushClient(t *testing.T, c *Client) {
 	defer cancel()
 	if err := c.GetConnection().FlushWithContext(ctx); err != nil {
 		t.Fatalf("flush: %v", err)
+	}
+}
+
+func TestIntegration_SharedServerStopFailureExitsNonZero(t *testing.T) {
+	const helperEnv = "SEMENGINE_TEST_MAIN_STOP_FAILURE"
+	if os.Getenv(helperEnv) == "1" {
+		// Registered before shared.Reset so it runs after shared.Reset's post-test connection
+		// check: the test itself passes (m.Run() == 0), then TestMain's shared.Stop fails trying
+		// to remove the container that was already removed here.
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.Background(), stopBound)
+			defer cancel()
+			label := fmt.Sprintf("org.c360studio.semengine.test=github.com/c360studio/semengine/natsclient pid %d", os.Getpid())
+			out, err := exec.CommandContext(ctx, "docker", "ps", "-a", "--no-trunc", "--filter", "label="+label, "--format", "{{.ID}}").Output()
+			if err != nil {
+				t.Fatalf("docker ps: %v", err)
+			}
+			id := strings.TrimSpace(string(out))
+			if id == "" {
+				t.Fatalf("no container found for label %q", label)
+			}
+			if rmOut, err := exec.CommandContext(ctx, "docker", "rm", "-f", id).CombinedOutput(); err != nil {
+				t.Fatalf("docker rm -f %s: %v\n%s", id, err, rmOut)
+			}
+		})
+		shared.Reset(t)
+		return
+	}
+
+	cmd := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestIntegration_SharedServerStopFailureExitsNonZero$")
+	cmd.Env = append(os.Environ(), helperEnv+"=1")
+	out, err := cmd.CombinedOutput()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
+		t.Fatalf("child exited %v (want exit status 1 when shared.Stop fails):\n%s", err, out)
+	}
+	text := string(out)
+	passIdx := strings.Index("\n"+text, "\nPASS\n")
+	stopIdx := strings.Index(text, "natsfixture: stop container")
+	if passIdx < 0 || stopIdx < 0 || passIdx >= stopIdx {
+		t.Fatalf("child output must contain an exact PASS line before the stop error:\n%s", out)
 	}
 }

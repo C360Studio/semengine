@@ -66,7 +66,7 @@ func TestConsumerSetupWaitsForStreamThatBecomesVisible(t *testing.T) {
 						return
 					}
 				}
-				_, createErr := natsfixture.CreateStream(ctx, testClient.Fixture.JetStream(), jetstream.FileStorage, streamName, subject)
+				_, createErr := natsfixture.CreateStream(ctx, js, jetstream.FileStorage, streamName, subject)
 				created <- createErr
 			}()
 

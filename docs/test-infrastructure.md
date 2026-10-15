@@ -10,7 +10,8 @@ Read it before you write a test that talks to NATS, or before you add code under
 - **testcontainers**: the Go library (`testcontainers-go`) our test code calls to start and remove containers.
 - **Ryuk**: a helper container testcontainers can start to remove a test process's containers after it dies. Ours is
   off; see "How cleanup works".
-- **Host port**: the port on your machine that Docker forwards to the container's NATS port. Docker picks it.
+- **Host port**: the port on your machine that Docker forwards to the container's NATS port. The fixture asks the
+  operating system for a free one and gives it to Docker.
 - **Account**: NATS keeps every stream, bucket and connection in an account. Our servers have one account for tests,
   so "the account" means everything a test can create or open on that server.
 - **Shared server**: one NATS container that all the integration tests of one Go package use, one test at a time.
@@ -116,8 +117,8 @@ connection from an earlier test is still open. Look for the first failure.
 ## Sharing with other runs and other repositories
 
 A run shares the Docker daemon with every other run and repository on the machine, and coordinates with none of them.
-Docker gives each container its own host port, so runs do not collide. Our code removes only containers that carry
-our label, and never runs `docker … prune` or removes anything by name.
+The fixture asks the operating system for a free host port for each container, so runs do not collide. Our code
+removes only containers that carry our label, and never runs `docker … prune` or removes anything by name.
 
 ## How cleanup works
 

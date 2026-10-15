@@ -79,6 +79,7 @@ func TestIntegration_IngestGuard_StreamRecreatedWithLowerSequences(t *testing.T)
 	)
 	now := time.Now()
 
+	// Own server: restarts the server mid-test.
 	f := natsfixture.New(t)
 	require.NoError(t, f.Start(ctx))
 	_, err := natsfixture.CreateStream(ctx, f.JetStream(), jetstream.MemoryStorage, entityStream.name, entityStream.subjects...)
@@ -116,7 +117,7 @@ func TestIntegration_IngestGuard_StreamRecreatedWithLowerSequences(t *testing.T)
 	require.NoError(t, f.Restart(ctx))
 	_, err = natsfixture.CreateStream(ctx, f.JetStream(), jetstream.MemoryStorage, entityStream.name, entityStream.subjects...)
 	require.NoError(t, err)
-	second := natsfixture.Open(t, f, openFixtureClient)
+	second := natsfixture.Open(t, f.URL(), openFixtureClient)
 	secondOwner := startIngestOn(ctx, t, second)
 	defer secondOwner.finish(ctx, t)
 
@@ -159,6 +160,7 @@ func TestIntegration_IngestGuard_FileStreamKeepsItsGenerationAcrossRestart(t *te
 	const entityID = "c360.test.wire.restart.entity.002"
 	now := time.Now()
 
+	// Own server: restarts the server mid-test.
 	f := natsfixture.New(t)
 	require.NoError(t, f.Start(ctx))
 	_, err := natsfixture.CreateStream(ctx, f.JetStream(), jetstream.FileStorage, entityStream.name, entityStream.subjects...)
@@ -194,7 +196,7 @@ func TestIntegration_IngestGuard_FileStreamKeepsItsGenerationAcrossRestart(t *te
 	require.NoError(t, closeFirst(ctx))
 	require.NoError(t, f.Restart(ctx))
 	require.NoError(t, f.JetStream().DeleteConsumer(ctx, entityStream.name, restartConsumer))
-	second := natsfixture.Open(t, f, openFixtureClient)
+	second := natsfixture.Open(t, f.URL(), openFixtureClient)
 	secondOwner := startIngestOn(ctx, t, second)
 	defer secondOwner.finish(ctx, t)
 	waitSettled(ctx, t, f, last)

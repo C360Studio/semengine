@@ -51,7 +51,9 @@ func TestIntegration_ConnectToRealNATS(t *testing.T) {
 // natsfixture.Restart (owner ruling, #9 comment 5941920346, Q2; comment 5969522395, item 2).
 func TestIntegration_ReconnectionIsRedial(t *testing.T) {
 	ctx := t.Context()
-	f := startFixture(t)
+	// Own server: restarts the server mid-test.
+	f := natsfixture.New(t)
+	require.NoError(t, f.Start(ctx))
 
 	lost := make(chan error, 1)
 	manager, err := NewClient(f.URL(),
@@ -108,7 +110,9 @@ func TestIntegration_ReconnectionIsRedial(t *testing.T) {
 // graph-ingest half of the scenario is change 2's.
 func TestIntegration_AcknowledgedIsNotDurableOnMemoryStream(t *testing.T) {
 	ctx := t.Context()
-	f := startFixture(t)
+	// Own server: restarts the server mid-test.
+	f := natsfixture.New(t)
+	require.NoError(t, f.Start(ctx))
 	file, mem := "file", "mem"
 	_, err := natsfixture.CreateStream(ctx, f.JetStream(), jetstream.FileStorage, file, file+".>")
 	require.NoError(t, err)

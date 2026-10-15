@@ -305,11 +305,13 @@ func TestGraphIngest_FailedBootSweepFailsStart(t *testing.T) {
 // TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop's. graph-ingest is
 // one-shot (design D13: a Start after Stop is refused), so no restart is promised.
 func TestGraphIngestLifecycleSuite(t *testing.T) {
-	f := natsfixture.New(t)
-	if err := f.Start(t.Context()); err != nil {
-		t.Fatalf("natsfixture Start: %v", err)
+	url := shared.Reset(t)
+	setup := natsfixture.Open(t, url, openFixtureClient)
+	js, err := setup.JetStream()
+	if err != nil {
+		t.Fatalf("JetStream: %v", err)
 	}
-	if _, err := natsfixture.CreateStream(t.Context(), f.JetStream(), jetstream.FileStorage, entityStream.name, entityStream.subjects...); err != nil {
+	if _, err := natsfixture.CreateStream(t.Context(), js, jetstream.FileStorage, entityStream.name, entityStream.subjects...); err != nil {
 		t.Fatalf("CreateStream %s: %v", entityStream.name, err)
 	}
 	configJSON, err := json.Marshal(DefaultConfig())
@@ -329,7 +331,7 @@ func TestGraphIngestLifecycleSuite(t *testing.T) {
 	}
 	refused := refusingBrokerURL(t)
 	factory := func() lifecycletest.Owner {
-		return newOwner(natsfixture.Open(t, f, openFixtureClient))
+		return newOwner(natsfixture.Open(t, url, openFixtureClient))
 	}
 	mustFail := func() lifecycletest.Owner {
 		client, err := natsclient.NewClient(refused,

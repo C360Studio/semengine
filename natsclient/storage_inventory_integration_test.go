@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/c360studio/semengine/metric"
 )
 
@@ -213,7 +214,9 @@ func TestIntegration_StorageInventory_EnumeratesTheAccountNotTheClient(t *testin
 // instead of reporting an empty account.
 func TestIntegration_StorageInventory_DegradesToLastGoodWhenNATSGoesAway(t *testing.T) {
 	ctx := context.Background()
-	fixture := startFixture(t)
+	// Own server: stops the server mid-test.
+	fixture := natsfixture.New(t)
+	require.NoError(t, fixture.Start(ctx))
 	natsURL := fixture.URL()
 
 	client, err := NewClient(natsURL, WithMaxReconnects(0))

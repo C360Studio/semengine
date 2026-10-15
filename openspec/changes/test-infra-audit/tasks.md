@@ -83,7 +83,7 @@ review stop. Choices the design does not spell out go in `notes/<task>.md`.
 - [x] 4.4 Add `TestMain` to natsclient, processor/graph-ingest, graph/kvcatalog, pkg/lifecycle and component; their
   helpers call the reset; the 8 own-server tests (`design.md` P7) call `natsfixture.New` themselves, each with its
   `// Own server:` line, so `TestOwnServerReason` reads every reason and `startFixture` serves shared tests only.
-- [ ] 4.5 Write `docs/test-infrastructure.md` (`drafts/test-infrastructure.md`), add it to the canonical home of
+- [x] 4.5 Write `docs/test-infrastructure.md` (`drafts/test-infrastructure.md`), add it to the canonical home of
   `AGENTS.md` rows 1 and 2, add rows 3 to 7, and point `docs/testing.md` at the page.
 - [ ] 4.6 Record the short check's steps 1 and 3 again on shared servers, including a full run's container count.
 - [ ] 4.7 Sync the remaining deltas into `openspec/specs/` and archive the change.

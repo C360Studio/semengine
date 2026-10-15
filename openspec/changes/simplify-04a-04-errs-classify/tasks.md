@@ -24,9 +24,10 @@ before any production line changes; record the failing output in `notes/<task>.m
   integration ones under `go test -tags integration -race -run 'CommitAmbiguity|CommitUnknown'
   ./processor/graph-ingest/`.
 - [ ] 2.3 Transient on purpose (design D3): `TestTransportOutcomesKeepTheirCommitState` asserts the no-responders class
-  field is transient; a new `pkg/lifecycle` test asserts `Update`'s retry-exhaustion error is transient by
-  `errs.IsTransient` and `errs.Classify`. Gate: both pass on the base commit and fail once 3.1 lands alone (record the
-  run).
+  field is transient; a new `pkg/lifecycle` test asserts the retry-exhaustion error of `Transition` and
+  `UpdateFromOperator` (`manager.go:656-657`, `:768-769`) is transient by `errs.IsTransient` and `errs.Classify`.
+  Gate: the class-field and `errs.Classify` checks pass on the base commit and fail once 3.1 lands alone (record the
+  run); the `errs.IsTransient` check fails on the base commit (the error carries no class today) and passes after 3.2.
 
 ## 3. Implementation
 

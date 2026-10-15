@@ -86,7 +86,8 @@ Proving tests:
   `no responders`, asserts the class field.
 - Every error matching `lifecycle.ErrUpdateRetriesExhausted` is transient by `errs.IsTransient` and `errs.Classify`, its
   text unchanged ("retryable contention", `manager.go:449-454`). Tests: `manager_test.go:1745` (fails on the new
-  default without this) and a new test on `Update`'s exhaustion path (`manager.go:656-657`).
+  default without this, `Create`'s attach path) and a new test on the `Transition` and `UpdateFromOperator`
+  exhaustion paths (`manager.go:656-657`, `:768-769`).
 
 ### D4 Generated checks
 

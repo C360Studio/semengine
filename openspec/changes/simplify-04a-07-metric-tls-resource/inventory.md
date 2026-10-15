@@ -1,4 +1,4 @@
-# Inventory: simplify-04a-06-metric-tls-resource
+# Inventory: simplify-04a-07-metric-tls-resource
 
 base: `70513cf6777cc20a851dd90504ac8d804df40069` (main `e3aa72b` plus the empty claim commit of PR #266)
 
@@ -45,10 +45,17 @@ Searches:
 | fd probe | none (no production caller of `StartWithListener` here; at the pin only `service/metrics.go:323-324` through the test field `testListener`) | `handler_test.go:232-236` | none |
 | `LoadServerTLSConfigWithMTLS` | `metric/handler.go:163` | `tlsutil_test.go:409,433,458,483,506,658`; `mtls_default_test.go:42`; `minversion_test.go:49`; `reviewer_tls_probe_test.go:15`; `mtls_integration_test.go:54,133,206,284,358,437,505` | `internal/tlsutil/doc.go:24`, `:52-61`; ledger `:674-678`, `:703-704` |
 | `LoadClientTLSConfigWithMTLS` | none here; pin adapters `input/websocket/websocket_input.go:1103`, `output/httppost/httppost.go:230`, each passing `cfg.MTLS` | `tlsutil_test.go:576,598,621,639,679`; `minversion_test.go:66`; `mtls_integration_test.go:84,155,231,308,389,465,562` | `internal/tlsutil/doc.go:24`, `:78-87`; ledger `:674-678` |
+| base `LoadClientTLSConfig` (fold changes it) | none reading `cfg.MTLS` here; pin `pkg/tlsutil/tlsutil.go:286` (ACME branch, deferred to change 5) expects no client certificate from it | unchanged callers in `tlsutil_test.go`, `minversion_test.go` | ledger `:674-678` |
 | `WaitForStartup` | `natsclient/client.go:1954`, after its own nil refusal at `:1923-1925` | `internal/resource/watcher_test.go:17-139` | `internal/resource/doc.go:21`, `:54`, `:72-86`, `:138`, `:153`; ledger `:353` |
 
 Every pin caller of a `WithMTLS` loader passes the embedded block (`websocket_input.go:836-839`, `:1103-1106`,
-`output/websocket/websocket.go:778-781`, `httppost.go:230-233`), so folding loses no caller's shape.
+`output/websocket/websocket.go:778-781`, `httppost.go:230-233`). One pin caller of the base client loader does not
+mean the MTLS block it carries: `pkg/tlsutil/tlsutil.go:286` — `tlsConfig, err := LoadClientTLSConfig(cfg)` — in
+`LoadClientTLSConfigWithACME`'s ACME branch, where `cfg.MTLS` names a manual key pair kept only as a fallback
+(`:294`, `:311`) and the ACME certificate replaces `Certificates` later. That loader is admitted but deferred to
+change 5 (ledger `pkg/tlsutil` known_risks), so it has no caller here. Once folded, a port that keeps line 286 would
+load the fallback pair first, and fail fatal if those files are missing. The server ACME loader builds its own
+`tls.Config` and calls `applyMTLSConfig` directly (`:239-245`), so it is unaffected.
 
 ## 3. Adjacent claims
 
@@ -61,8 +68,10 @@ Every pin caller of a `WithMTLS` loader passes the embedded block (`websocket_in
   It finds only `harness-boundaries/spec.md:333-334` (a pin-path rewrite example, unaffected). `metric-registry` speaks
   of "a core metric" generically (`:25`, `:49`); no delta.
 - Ledger: `pkg/resource` `:346-366`, `pkg/tlsutil` `:667-690`, `metric` `:692-722`, all `disposition: adapt`.
-- Open PRs (`gh pr list --state open`): #266 (this claim); #265 (PR 9a claim, 0 files; will edit the ledger's
-  `pkg/projection` row); Dependabot #242-#248 touch `go.mod`/`go.sum`/`package*.json`/workflow only. No overlap in
+- Open PRs (`gh pr list --state open`): #266 (this claim); #265 (PR 9a; files:
+  `openspec/changes/simplify-04a-06-projection/{proposal,design,inventory,tasks}.md` and a `projection-mutation` spec
+  delta; it will later edit the ledger's `pkg/projection` row);
+  Dependabot #242-#248 touch `go.mod`/`go.sum`/`package*.json`/workflow only. No overlap in
   files or capabilities.
 - Open issues (`gh issue list --state open --search <metric|tlsutil|resource|mTLS|WaitForStartup>`), read:
   #207, #221 (retired); #68, #84, #196, #135, #136 (name `metric` but their work is elsewhere); #9, #223 (epics);
@@ -107,4 +116,5 @@ Source, command and output: PR #266 comment
 3. **Where do they find out?** For the symbols, a compile error. For the closed listener, nowhere except a failing
    health check. That is Q1.
 4. **What should they have to know?** Nothing, except that `StartWithListener` takes an open listener. The doc
-   comment says so.
+   comment says so. `StartWithListener` stays: `metric/README.md:220` offers it to products, and it is the only way a
+   product gets an ephemeral port, because `NewServer` maps port 0 to 9090 (`metric/handler.go:46-48`).

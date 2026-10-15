@@ -1,4 +1,4 @@
-# Proposal: simplify-04a-06-metric-tls-resource
+# Proposal: simplify-04a-07-metric-tls-resource
 
 ## Why
 

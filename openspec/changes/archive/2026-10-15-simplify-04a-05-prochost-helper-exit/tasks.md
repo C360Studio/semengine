@@ -54,12 +54,12 @@ before any production line changes; record the failing output in `notes/<task>.m
     detector (design D4).
 
   Gate: `task docs:check`.
-- [ ] 4.2 File every defect this change found and did not fix (protocol File step), linked from the PR body without a
+- [x] 4.2 File every defect this change found and did not fix (protocol File step), linked from the PR body without a
   closing keyword. Gate: every such issue number appears in the PR body's follow-up line, or the body says none.
 
 ## 5. Verify, review and close
 
-- [ ] 5.1 `task verify` passes on a clean tree at the implementation head.
-- [ ] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
-- [ ] 5.3 Archive the change (`openspec archive simplify-04a-05-prochost-helper-exit`) as the last content commit. Gate:
+- [x] 5.1 `task verify` passes on a clean tree at the implementation head.
+- [x] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
+- [x] 5.3 Archive the change (`openspec archive simplify-04a-05-prochost-helper-exit`) as the last content commit. Gate:
   `task spec:check`.

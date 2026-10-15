@@ -5,7 +5,7 @@ failing output in `notes/<task>.md`.
 
 ## 1. Design
 
-- [ ] 1.1 Inventory, proposal and design pass inventory review and pre-owner design review, and the owner accepts them
+- [x] 1.1 Inventory, proposal and design pass inventory review and pre-owner design review, and the owner accepts them
   on #221 with answers to Q1-Q4. Gate: `task spec:check` and `task docs:check`.
 - [x] 1.2 Probe P1 (source, command, go1.26.9, output) is posted on PR #266, and `inventory.md` cites the comment's
   URL. Gate: the URL opens.

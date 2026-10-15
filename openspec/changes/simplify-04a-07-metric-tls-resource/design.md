@@ -1,7 +1,8 @@
 # Design: simplify-04a-07-metric-tls-resource
 
-Status: draft for inventory review, pre-owner design review and owner acceptance. Inventory: `inventory.md` (base
-`70513cf`). Issues #207, #221; epic #223 PR 5; one PR for three packages on the owner's word (#159 waived for it).
+Status: accepted by the owner 2026-10-15 with Q1-Q4 answered as recommended (#221 comment 6201492651); inventory
+and design review PASS at c1f3d46. Inventory: `inventory.md` (base `70513cf`). Issues #207, #221; epic #223 PR 5; one
+PR for three packages on the owner's word (#159 waived for it).
 
 ## Options
 

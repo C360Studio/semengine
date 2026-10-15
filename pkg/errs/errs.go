@@ -215,7 +215,11 @@ func IsInvalid(err error) bool {
 	return false
 }
 
-// Classify returns the error class for an error
+// Classify returns the error class for an error. An error nobody classified
+// is fatal, whatever its text says: retrying a failure no one has judged safe
+// to retry can repeat a side effect. IsTransient, IsFatal and IsInvalid stay
+// strict and report false for such an error; a caller that needs one answer
+// branches on Classify.
 func Classify(err error) ErrorClass {
 	if err == nil {
 		return ErrorTransient // Default for nil
@@ -231,8 +235,7 @@ func Classify(err error) ErrorClass {
 		return ErrorInvalid
 	}
 
-	// Default to transient for unknown errors to allow retry
-	return ErrorTransient
+	return ErrorFatal
 }
 
 // newClassified creates a new classified error

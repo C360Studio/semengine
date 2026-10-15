@@ -119,3 +119,37 @@ func TestPrefixQueryLimitConstants(t *testing.T) {
 	assert.Equal(t, DefaultPrefixQueryLimit, MaxPrefixQueryLimit,
 		"MaxPrefixQueryLimit must equal DefaultPrefixQueryLimit until byte-budget refinement")
 }
+
+// TestPrefixQueryRequestPatternJSONRoundTrip verifies that a populated Pattern
+// round-trips through JSON under the "pattern" key.
+func TestPrefixQueryRequestPatternJSONRoundTrip(t *testing.T) {
+	req := PrefixQueryRequest{
+		Pattern: "acme.ops.*.intel.platform.*",
+		Limit:   25,
+	}
+	b, err := json.Marshal(req)
+	require.NoError(t, err)
+
+	var raw map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(b, &raw))
+	assert.Contains(t, raw, "pattern")
+
+	var decoded PrefixQueryRequest
+	require.NoError(t, json.Unmarshal(b, &decoded))
+	assert.Equal(t, req.Pattern, decoded.Pattern)
+	assert.Equal(t, req.Limit, decoded.Limit)
+	assert.Empty(t, decoded.Prefix)
+}
+
+// TestPrefixQueryRequestMarshalOmitsPatternWhenEmpty verifies that marshalling
+// a PrefixQueryRequest with an empty Pattern omits the "pattern" JSON field.
+func TestPrefixQueryRequestMarshalOmitsPatternWhenEmpty(t *testing.T) {
+	req := PrefixQueryRequest{Prefix: "acme.ops", Limit: 10}
+	b, err := json.Marshal(req)
+	require.NoError(t, err)
+
+	var raw map[string]json.RawMessage
+	require.NoError(t, json.Unmarshal(b, &raw))
+	_, hasPattern := raw["pattern"]
+	assert.False(t, hasPattern, "pattern must be absent when empty (omitempty)")
+}

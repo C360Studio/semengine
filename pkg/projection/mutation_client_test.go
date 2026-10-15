@@ -232,28 +232,52 @@ func TestReconcileReadsExactRevisionThenMakesOneMutation(t *testing.T) {
 	}
 }
 
+// TestAppendDefiniteSubjectFailureIsNotCommitUnknown: a per-subject failure whose code proves the
+// write was refused is not committed, and keeps the class the response named. A class string the
+// client does not recognise reads as fatal, the answer errs.Classify gives an unclassified error.
 func TestAppendDefiniteSubjectFailureIsNotCommitUnknown(t *testing.T) {
-	contract := projectionTestContract(t)
-	requester := &projectionRequester{handle: func(subject string, _ []byte) ([]byte, error) {
-		if subject != "graph.mutation.triple.append" {
-			t.Fatalf("subject = %q", subject)
-		}
-		return projectionJSON(t, graph.AppendTriplesResponse{Results: []graph.AppendSubjectResult{{
-			EntityID: projectionTestEntity,
-			Outcome:  graph.MutationFailed,
-			Error:    &graph.MutationFailure{Class: "fatal", Code: graph.ErrorCodeGraphStateResetRequired},
-		}}}), nil
-	}}
-	client, _ := newMutationClient(requester, []Contract{contract}, time.Second)
-	receipt, err := client.Append(context.Background(), AppendMutation{
-		Contract: contract.Name, Group: "events", EntityID: projectionTestEntity,
-		Triples:  []message.Triple{{Subject: projectionTestEntity, Predicate: "test.event.seen", Object: "one"}},
-		Metadata: MutationMetadata{RequestID: "append-definite-failure", Source: "test-projector", Timestamp: projectionTestTime},
-	})
-	var mutationErr *MutationError
-	if !errors.As(err, &mutationErr) || mutationErr.Kind != MutationInternal ||
-		receipt.Commit != CommitNotCommitted || mutationErr.Commit != CommitNotCommitted {
-		t.Fatalf("receipt = %#v, error = %#v", receipt, mutationErr)
+	cases := []struct {
+		name      string
+		failure   graph.MutationFailure
+		wantKind  MutationErrorKind
+		wantClass errs.ErrorClass
+	}{
+		{"fatal reset required", graph.MutationFailure{Class: "fatal", Code: graph.ErrorCodeGraphStateResetRequired},
+			MutationInternal, errs.ErrorFatal},
+		{"unrecognised class", graph.MutationFailure{Class: "bogus", Code: graph.ErrorCodeEntityNotFound},
+			MutationNotFound, errs.ErrorFatal},
+		{"transient revision mismatch", graph.MutationFailure{Class: "transient", Code: graph.ErrorCodeRevisionMismatch},
+			MutationRevisionConflict, errs.ErrorTransient},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			contract := projectionTestContract(t)
+			requester := &projectionRequester{handle: func(subject string, _ []byte) ([]byte, error) {
+				if subject != "graph.mutation.triple.append" {
+					t.Fatalf("subject = %q", subject)
+				}
+				failure := c.failure
+				return projectionJSON(t, graph.AppendTriplesResponse{Results: []graph.AppendSubjectResult{{
+					EntityID: projectionTestEntity,
+					Outcome:  graph.MutationFailed,
+					Error:    &failure,
+				}}}), nil
+			}}
+			client, _ := newMutationClient(requester, []Contract{contract}, time.Second)
+			receipt, err := client.Append(context.Background(), AppendMutation{
+				Contract: contract.Name, Group: "events", EntityID: projectionTestEntity,
+				Triples:  []message.Triple{{Subject: projectionTestEntity, Predicate: "test.event.seen", Object: "one"}},
+				Metadata: MutationMetadata{RequestID: "append-definite-failure", Source: "test-projector", Timestamp: projectionTestTime},
+			})
+			var mutationErr *MutationError
+			if !errors.As(err, &mutationErr) || mutationErr.Kind != c.wantKind ||
+				receipt.Commit != CommitNotCommitted || mutationErr.Commit != CommitNotCommitted {
+				t.Fatalf("receipt = %#v, error = %#v; want %s, not committed", receipt, mutationErr, c.wantKind)
+			}
+			if mutationErr.Class != c.wantClass {
+				t.Errorf("class %q, want %q for response class %q", mutationErr.Class, c.wantClass, c.failure.Class)
+			}
+		})
 	}
 }
 

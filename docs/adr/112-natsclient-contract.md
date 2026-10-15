@@ -2,8 +2,9 @@
 
 ## Status
 
-**Accepted (2026-10-11); §4 amended 2026-10-12 (#184).** The owner accepted design revision 3, and this record with
-it, on PR #177 (comment 6111038987). Drafted on PR #177, for #170 and #168, under the owner's rulings:
+**Accepted (2026-10-11); §4 amended 2026-10-12 (#184); §3 amended 2026-10-15 (#167).** The owner accepted design
+revision 3, and this record with it, on PR #177 (comment 6111038987). Drafted on PR #177,
+for #170 and #168, under the owner's rulings:
 
 - 2026-10-10, epic #9 comment 6098388541: a record of natsclient's contract over nats.go;
 - 2026-10-11, #170 comment 6109833136: fix natsclient so its calls do not sit for minutes, without rewriting nats.go;
@@ -18,6 +19,20 @@ the quick probes (P10, P12, P13, P15, p15b, P17, P18, P20, and P23 to P25) were 
 2026-10-12: "I have no idea why we have a setter in Go for SetConnection — this is not Java"). §4's sentence about a
 connection it replaced is struck where it stands. §2's `Close` line still cites `:1399` and `:1442`, tests removed
 with it. Line numbers in `client_close_final_test.go` are as of `d71df33`.
+
+**Amendment, 2026-10-15 (#167).** Two "not promised" lines in §3 are now promised (owner ruling 4 on #167, comment
+6191970843). The original bullets stay where they are; this note replaces what they leave open.
+
+- **The unknown-error default.** `errs.Classify` returns fatal for an unclassified error: one with no
+  `*errs.ClassifiedError` in its chain and none of the sentinels `errs.IsTransient`, `errs.IsFatal` or `errs.IsInvalid`
+  list, whatever its text says. Those three checks stay strict and report false for it. The
+  `error-classification` spec holds this. `natsclient` sends an unclassified handler error as fatal.
+- **No responders' class.** The raw `nats.ErrNoResponders` is unclassified, so `errs.Classify` returns fatal for it
+  and `errs.IsTransient` reports false. The `projection.MutationError` that `pkg/projection` and `pkg/lifecycle` return
+  for it is *not committed* and carries `Class` transient in its field; `errs.IsTransient` on that error reads through
+  to the raw error and is also false. The `projection-mutation` spec holds the field.
+- **Still not promised:** which other raw nats.go errors become classified sentinels. Until one does, it is
+  unclassified and falls under the default above.
 
 **How each line is backed.**
 
@@ -143,14 +158,14 @@ Each line below names its backing. Anything not backed is not promised.
 - **`natsclient.ErrCircuitOpen` is `errs.ErrCircuitOpen`** (T7).
 - **No responders** comes back as nats.go's `nats.ErrNoResponders`, matched by `errors.Is` or `IsNoResponders`. On the
   default server configuration it comes at once (P15). Not promised:
-  - its class, which waits for #93's handling of raw nats.go errors;
+  - its class, which waits for #93's handling of raw nats.go errors (amended 2026-10-15, #167; see Status);
   - other server configurations.
 - **`CreateKeyValueBucket`** treats `jetstream.ErrBucketExists` as "the bucket exists" (T6).
 - **A stream at its byte or message limit** does not count against the connection circuit
   (`stream_capacity_circuit_integration_test.go:14`). nats-server names the limit only in the description of error
   10077, so natsclient reads that text; nats.go has no code for it.
-- **Not promised here:** `Classify`'s default for unknown errors (#167), and the raw nats.go errors that #93's
-  `pkg/errs` rewrite reclassifies. Both wait for #93.
+- **Not promised here:** `Classify`'s default for unknown errors (#167; amended 2026-10-15, see Status), and the raw
+  nats.go errors that #93's `pkg/errs` rewrite reclassifies. Both wait for #93.
 
 ### 4. Ownership
 

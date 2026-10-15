@@ -436,13 +436,15 @@
   contract: >-
     classification, wrapping, errors.Is/As behavior, and ErrAlreadyStopped as at the pin, except
     IsTransient and IsFatal classify strictly by *ClassifiedError class and known sentinels, never
-    by substring matching on error text (#146, owner ruling N); WrapTransient, WrapFatal, and
+    by substring matching on error text (#146, owner ruling N); Classify returns ErrorFatal for an
+    unclassified error, while IsTransient, IsFatal, and IsInvalid report false for it (#167); WrapTransient, WrapFatal, and
     WrapInvalid return nil when err == nil regardless of action (#218); duplicate RetryConfig,
     DefaultRetryConfig, ShouldRetry, ToRetryConfig, and BackoffDelay removed (#218)
   dependencies_and_side_effects: stdlib only; no goroutine, no I/O
   known_risks: >-
     no production context roots. Classify defaults unclassified errors without a listed sentinel to
-    ErrorTransient regardless of error text (#167); duplicate RetryConfig removed and
+    ErrorFatal regardless of error text, a change from the pin's transient default (#167); a caller
+    that retried on Classify now stops on an error it did not classify; duplicate RetryConfig removed and
     WrapTransient/WrapFatal/WrapInvalid made nil-safe (#218); doc.go updated to match
   proving_tests: >-
     pkg/errs/errs_test.go, pkg/errs/classified_is_test.go, pkg/errs/shutdown_test.go,
@@ -1920,7 +1922,8 @@
     matching Source (design D15); (4) reserved sources and IsReservedSource declared in sources.go;
     (5) IndexStatusResponse drops legacy Phase/Revision/LastSynced and adds published_at (design D16);
     (6) ExactEntityReader refuses negative timeouts and reads its subject from QueryVerbs (#106,
-    #151); (7) GraphStateReasonMissingStatementMetadata added
+    #151); (7) GraphStateReasonMissingStatementMetadata added; (8) PrefixQueryRequest adds optional
+    6-position wildcard Pattern (#259)
   dependencies_and_side_effects: >-
     message, pkg/errs, pkg/types, vocabulary (in-set); stdlib; no NATS import in graph root;
     graph/kvcatalog imports natsclient and nats.go/jetstream
@@ -1934,8 +1937,8 @@
     GetPropertyValue function, MissingUnknown, ContextEntry, NameIndexEntry; #132); README updated
   proving_tests: >-
     graph/write_rules_test.go, graph/write_rules_prop_test.go, graph/exact_entity_test.go,
-    graph/query_verbs_test.go, graph/mutation_protocol_test.go, graph/kvcatalog/*_test.go,
-    internal/harness/contract/graphtransport_test.go
+    graph/query_verbs_test.go, graph/query_prefix_types_test.go, graph/mutation_protocol_test.go,
+    graph/kvcatalog/*_test.go, internal/harness/contract/graphtransport_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 
@@ -2069,7 +2072,8 @@
     typed mutation client surface and validation as at the pin, with repairs #19 and #20 and design
     D15: (1) classified replies read as not committed only for pre-write refusal codes; any other
     reply (including post-write update failure or response_too_large) preserves commit ambiguity
-    with class, code, and detail (#20); (2) ReconcileMutation.ExpectedRevision fences reconcile at
+    with its code and detail and class fatal, so errs.IsTransient is false (#20, #167); a request
+    no responder took is not committed with class transient (#167); (2) ReconcileMutation.ExpectedRevision fences reconcile at
     the caller's revision (#19); (3) Create, Append, and Reconcile require statement Timestamp and
     Metadata.Source before sending and never read the clock (design D15)
   dependencies_and_side_effects: >-
@@ -2077,7 +2081,7 @@
     (in-set); NATS requests on graph.mutation.> and exact-entity reads; no goroutine
   known_risks: >-
     EntityState built without Version (#100). Pre-write transient errors from graph-ingest read as
-    commit-unknown (safe, conservative); follow-up #174 tracks post-append bookkeeping
+    commit-unknown with class fatal (safe, conservative; #167); follow-up #174 tracks post-append bookkeeping
   proving_tests: >-
     pkg/projection/mutation_client_refusals_test.go, commit_ambiguity_test.go,
     conditional_reconcile_test.go, mutation_client_test.go, contract_test.go, and
@@ -2159,8 +2163,9 @@
     (Q13); (5) hierarchy refusal names inference.RegisterPayloads (#33); (6) owner lifecycle guarded
     by internal/lifecycleguard with RollbackFailedStart (SS#1411, design D13); (7) single entity
     write seam (#100), required statement metadata and source-keyed write modes (#98), fail-closed
-    hierarchy/guard births (#111), suffix index/verb dropped (#104), strict config validation, and
-    metrics registered only on the injected registry under the semengine namespace (#69, design D4)
+    hierarchy/guard births (#111), suffix index/verb dropped (#104), strict config validation,
+    metrics registered only on the injected registry under the semengine namespace (#69, design D4),
+    and 6-position wildcard Pattern filtering on graph.ingest.query.prefix (#259)
   dependencies_and_side_effects: >-
     component, graph, graph/inference, graph/kvcatalog, graph/readiness, internal/cache,
     internal/dispatch, internal/graphmutation, internal/lifecycleguard, message, metric, natsclient,
@@ -2180,10 +2185,10 @@
     (TestGraphIngestLifecycleSuite), guard_generation_integration_test.go, guard_generation_test.go,
     guard_record_test.go, settlement_integration_test.go, long_apply_integration_test.go,
     interrupted_work_test.go, fact_lane_fence_test.go, fact_lane_fence_integration_test.go,
-    query_verbs_integration_test.go, entity_writes_seam_test.go, write_modes_test.go,
-    hierarchy_birth_test.go, metrics_registry_test.go, config_strict_test.go,
-    failed_start_callbacks_integration_test.go, poison_scoping_test.go,
-    commit_ambiguity_integration_test.go
+    query_verbs_integration_test.go, query_prefix_unit_test.go, query_prefix_integration_test.go,
+    entity_writes_seam_test.go, write_modes_test.go, hierarchy_birth_test.go,
+    metrics_registry_test.go, config_strict_test.go, failed_start_callbacks_integration_test.go,
+    poison_scoping_test.go, commit_ambiguity_integration_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: repair-before-port
 

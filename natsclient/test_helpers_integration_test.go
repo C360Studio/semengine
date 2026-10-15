@@ -201,7 +201,10 @@ func TestIntegration_SharedServerStopFailureExitsNonZero(t *testing.T) {
 	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 {
 		t.Fatalf("child exited %v (want exit status 1 when shared.Stop fails):\n%s", err, out)
 	}
-	if !strings.Contains(string(out), "natsfixture: stop container") {
-		t.Fatalf("child output missing stop error:\n%s", out)
+	text := string(out)
+	passIdx := strings.Index("\n"+text, "\nPASS\n")
+	stopIdx := strings.Index(text, "natsfixture: stop container")
+	if passIdx < 0 || stopIdx < 0 || passIdx >= stopIdx {
+		t.Fatalf("child output must contain an exact PASS line before the stop error:\n%s", out)
 	}
 }

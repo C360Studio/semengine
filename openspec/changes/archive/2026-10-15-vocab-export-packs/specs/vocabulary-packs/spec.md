@@ -63,9 +63,10 @@ SHALL preserve its existing `Projection`.
 
 `vocabulary.LoadPackJSON` and `vocabulary.LoadPackYAML` SHALL decode a `PackSpec` from JSON or YAML while refusing
 unknown fields, malformed syntax, or trailing data. `vocabulary.RegisterPack` SHALL validate every prefix (including
-W3C Turtle `PN_PREFIX` syntax via `PrefixSpec.Validate`), predicate, and entity type in the `PackSpec` before mutating
-registry state; if any entry or batch prefix registration is invalid, `RegisterPack` SHALL return an error and leave
-the vocabulary and prefix registries unchanged.
+W3C Turtle `PN_PREFIX` syntax and `IRIREF` namespace syntax via `PrefixSpec.Validate`), predicate (including refusing a
+non-zero `alias_priority` when neither `is_alias` nor `alias_type` is set), and entity type in the `PackSpec` before
+mutating registry state; if any entry or batch prefix registration is invalid, `RegisterPack` SHALL return an error and
+leave the vocabulary and prefix registries unchanged.
 
 #### Scenario: Valid pack registers predicates, entity types, and prefixes
 

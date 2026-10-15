@@ -24,7 +24,8 @@ failing output in `notes/<task>.md`.
 
 ## 3. Review stop
 
-- [ ] 3.1 Codex reviews tasks 2.1-2.3 on their commits. Gate: review comment linked from the PR.
+- [x] 3.1 Codex reviews tasks 2.1-2.3 on their commits. Gate: review comment linked from the PR (APPROVE at
+  `9f3c1ed`, <https://github.com/C360Studio/semengine/pull/266#issuecomment-6202143977>).
 
 ## 4. tlsutil and resource
 
@@ -61,7 +62,8 @@ failing output in `notes/<task>.md`.
   - `internal/resource/doc.go`: a nil context returns false.
 
   Gate: `task docs:check`; `git grep -n -E 'WithMTLS|RecordNATS|semengine_nats' -- metric internal docs` is empty
-  outside `docs/admission-ledger.yaml` history prose.
+  outside `docs/admission-ledger.yaml` history prose and the
+  negative assertion in `TestMetricsRegistry_NoNATSCoreMetrics` (`metric/registry_test.go`), which task 2.1 requires.
 - [ ] 6.2 Update the admission-ledger rows, in short bullets:
   - `pkg/tlsutil`: the contract names `LoadServerTLSConfig` and `LoadClientTLSConfig` applying `MTLS`, and the two
     `WithMTLS` loaders are dropped (#221). `known_risks` adds: when change 5 ports `LoadClientTLSConfigWithACME`, its

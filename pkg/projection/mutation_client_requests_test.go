@@ -13,9 +13,10 @@ import (
 )
 
 // The typed client's half of design D11's tests for pkg/projection (task 5.2): each write sends its
-// canonical request and reads its reply, a mutation error keeps the reply's class, code and detail,
-// and a group or statement the contract does not allow is refused before any request. The wire is
-// a double that answers each request as the test names.
+// canonical request and reads its reply, a mutation error keeps the reply's code and detail (and its
+// class when the reply proves nothing was written; a commit-unknown error is fatal), and a group or
+// statement the contract does not allow is refused before any request. The wire is a double that
+// answers each request as the test names.
 
 // canonicalMetadata is the caller's provenance every write below sends.
 var canonicalMetadata = MutationMetadata{

@@ -1,6 +1,10 @@
 package lifecycle
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/c360studio/semengine/pkg/errs"
+)
 
 // Package error sentinels. Callers compare with errors.Is.
 var (
@@ -119,7 +123,12 @@ var (
 	// from the framework's bounded retry can branch on
 	// errors.Is(err, lifecycle.ErrUpdateRetriesExhausted) and apply
 	// their own backoff + retry policy.
-	ErrUpdateRetriesExhausted = errors.New("lifecycle: Update retry budget exhausted (persistent CAS contention)")
+	//
+	// The sentinel carries the transient class itself, so errs.IsTransient
+	// and errs.Classify report retryable contention on every path that
+	// wraps it: an error nobody classified reads as fatal.
+	ErrUpdateRetriesExhausted error = errs.Classified(errs.ErrorTransient,
+		errors.New("lifecycle: Update retry budget exhausted (persistent CAS contention)"))
 
 	// ErrEmitFailed is returned by Manager state-change operations
 	// when the graph-ingest reconcile request fails — typically because

@@ -91,8 +91,8 @@ Proving test (`internal/harness/prochost/prochost_test.go`, new, table-driven):
 - P1 and P2 ran on macOS only. This test, run in CI on Linux by `task verify`, is the Linux proof.
 
 Early-exit guard: `TestStartedHelperHasItsOwnGroupAndCapturedOutput`. If a helper sees end-of-file early, for example
-because stdin was left as the null device, the helper exits at once. One of the test's early checks then fails:
-`prochost_test.go:146`, `:150`, `:166`, `:177` or `:182`.
+because stdin was left as the null device, the helper exits at once. One of the test's early checks then fails
+(today at `prochost_test.go:146-182`; task 2.2 names them by their failure text, since task 2.1 moves the lines).
 
 ### D2 The helper keeps its own process group
 

@@ -30,9 +30,10 @@ before any production line changes; record the failing output in `notes/<task>.m
   `notes/2.1.md`.
 - [ ] 2.2 The early-exit guard (design D1) is shown able to fail. Use `task mutate:check` with a mutant of the
   implementation from 3.1 that leaves the helper's stdin as the null device, run against
-  `TestStartedHelperHasItsOwnGroupAndCapturedOutput`. Pass `-expect prochost_test.go:146 -expect prochost_test.go:150
-  -expect prochost_test.go:166 -expect prochost_test.go:177 -expect prochost_test.go:182`: the mutant fails the test
-  on one of its early-exit checks. Gate: the verdict is detection; record the command and verdict in `notes/2.2.md`.
+  `TestStartedHelperHasItsOwnGroupAndCapturedOutput`. Name its early-exit checks by their failure text, which task 2.1's
+  edits to the file do not move: `-expect-text "exited before its group was read" -expect-text "ps pgid" -expect-text
+  "never reached" -expect-text "wait after SIGTERM" -expect-text "want exit 0 after printing"`. The mutant fails the
+  test on one of those checks. Gate: the verdict is detection; record the command and verdict in `notes/2.2.md`.
 
 ## 3. Implementation
 

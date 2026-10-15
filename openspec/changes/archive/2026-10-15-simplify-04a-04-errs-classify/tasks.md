@@ -44,13 +44,13 @@ before any production line changes; record the failing output in `notes/<task>.m
   is fatal, and `errs.IsTransient` reports false for it), the `pkg/errs` row of `docs/admission-ledger.yaml` (contract
   and `known_risks`), and a dated amendment (owner ruling 4 on #167) to ADR-112 § 3 bullets `:144-146` (no
   responders' class) and `:152` (the unknown-error default). Gate: `task docs:check` and `task ledger:check`.
-- [ ] 4.2 File every defect this change found and did not fix (protocol File step), linked from the PR body without a
+- [x] 4.2 File every defect this change found and did not fix (protocol File step), linked from the PR body without a
   closing keyword. Filed at design: #257 (lifecycle's `ErrEmitFailed` path, fixed with #138 item a) and #258 (the
   `ErrorClass` zero value). Gate: every such issue number appears in the PR body's follow-up line.
 
 ## 5. Verify, review and close
 
-- [ ] 5.1 `task verify` passes on a clean tree at the implementation head.
-- [ ] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
-- [ ] 5.3 Archive the change (`openspec archive simplify-04a-04-errs-classify`) as the last content commit. Gate:
+- [x] 5.1 `task verify` passes on a clean tree at the implementation head.
+- [x] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
+- [x] 5.3 Archive the change (`openspec archive simplify-04a-04-errs-classify`) as the last content commit. Gate:
   `task spec:check`.

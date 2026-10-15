@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/c360studio/semengine/metric"
 	"github.com/nats-io/nats.go"
@@ -109,9 +110,9 @@ func TestIntegration_AcknowledgedIsNotDurableOnMemoryStream(t *testing.T) {
 	ctx := t.Context()
 	f := startFixture(t)
 	file, mem := "file", "mem"
-	_, err := f.CreateStream(ctx, file, file+".>")
+	_, err := natsfixture.CreateStream(ctx, f.JetStream(), jetstream.FileStorage, file, file+".>")
 	require.NoError(t, err)
-	_, err = f.CreateMemoryStream(ctx, mem, mem+".>")
+	_, err = natsfixture.CreateStream(ctx, f.JetStream(), jetstream.MemoryStorage, mem, mem+".>")
 	require.NoError(t, err)
 
 	publisher, err := NewClient(f.URL(), WithMaxReconnects(0), WithHealthInterval(0))

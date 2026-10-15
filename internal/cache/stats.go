@@ -1,106 +1,99 @@
 package cache
 
 import (
-	"sync"
 	"sync/atomic"
 	"time"
 )
 
-// Statistics tracks cache performance metrics.
+// Statistics tracks cache performance metrics using lock-free atomic counters.
 type Statistics struct {
-	// Atomic counters for thread-safe updates
-	hits      int64
-	misses    int64
-	sets      int64
-	deletes   int64
-	evictions int64
-
-	// Protected by mutex
-	mu          sync.RWMutex
-	startTime   time.Time
-	currentSize int64
-	maxSize     int64
+	hits        atomic.Int64
+	misses      atomic.Int64
+	sets        atomic.Int64
+	deletes     atomic.Int64
+	evictions   atomic.Int64
+	currentSize atomic.Int64
+	maxSize     atomic.Int64
+	startTime   atomic.Pointer[time.Time]
 }
 
 // NewStatistics creates a new statistics tracker.
 func NewStatistics() *Statistics {
-	return &Statistics{
-		startTime: time.Now(),
-	}
+	s := &Statistics{}
+	now := time.Now()
+	s.startTime.Store(&now)
+	return s
 }
 
 // Hit records a cache hit.
 func (s *Statistics) Hit() {
-	atomic.AddInt64(&s.hits, 1)
+	s.hits.Add(1)
 }
 
 // Miss records a cache miss.
 func (s *Statistics) Miss() {
-	atomic.AddInt64(&s.misses, 1)
+	s.misses.Add(1)
 }
 
 // Set records a cache set operation.
 func (s *Statistics) Set() {
-	atomic.AddInt64(&s.sets, 1)
+	s.sets.Add(1)
 }
 
 // Delete records a cache delete operation.
 func (s *Statistics) Delete() {
-	atomic.AddInt64(&s.deletes, 1)
+	s.deletes.Add(1)
 }
 
 // Eviction records a cache eviction.
 func (s *Statistics) Eviction() {
-	atomic.AddInt64(&s.evictions, 1)
+	s.evictions.Add(1)
 }
 
-// UpdateSize updates the current cache size.
+// UpdateSize updates the current cache size and advances MaxSize when size exceeds it.
 func (s *Statistics) UpdateSize(size int64) {
-	s.mu.Lock()
-	s.currentSize = size
-	if size > s.maxSize {
-		s.maxSize = size
+	s.currentSize.Store(size)
+	for {
+		prev := s.maxSize.Load()
+		if size <= prev || s.maxSize.CompareAndSwap(prev, size) {
+			return
+		}
 	}
-	s.mu.Unlock()
 }
 
 // Hits returns the total number of cache hits.
 func (s *Statistics) Hits() int64 {
-	return atomic.LoadInt64(&s.hits)
+	return s.hits.Load()
 }
 
 // Misses returns the total number of cache misses.
 func (s *Statistics) Misses() int64 {
-	return atomic.LoadInt64(&s.misses)
+	return s.misses.Load()
 }
 
 // Sets returns the total number of set operations.
 func (s *Statistics) Sets() int64 {
-	return atomic.LoadInt64(&s.sets)
+	return s.sets.Load()
 }
 
 // Deletes returns the total number of delete operations.
 func (s *Statistics) Deletes() int64 {
-	return atomic.LoadInt64(&s.deletes)
+	return s.deletes.Load()
 }
 
 // Evictions returns the total number of evictions.
 func (s *Statistics) Evictions() int64 {
-	return atomic.LoadInt64(&s.evictions)
+	return s.evictions.Load()
 }
 
 // CurrentSize returns the current number of entries in the cache.
 func (s *Statistics) CurrentSize() int64 {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.currentSize
+	return s.currentSize.Load()
 }
 
 // MaxSize returns the maximum number of entries the cache has held.
 func (s *Statistics) MaxSize() int64 {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.maxSize
+	return s.maxSize.Load()
 }
 
 // HitRatio returns the cache hit ratio as a percentage (0.0 to 1.0).
@@ -123,11 +116,8 @@ func (s *Statistics) MissRatio() float64 {
 
 // RequestsPerSecond returns the average number of requests (hits + misses) per second.
 func (s *Statistics) RequestsPerSecond() float64 {
-	s.mu.RLock()
-	elapsed := time.Since(s.startTime)
-	s.mu.RUnlock()
-
-	if elapsed == 0 {
+	elapsed := s.Uptime()
+	if elapsed <= 0 {
 		return 0.0
 	}
 
@@ -135,26 +125,27 @@ func (s *Statistics) RequestsPerSecond() float64 {
 	return float64(totalRequests) / elapsed.Seconds()
 }
 
-// Uptime returns how long the cache has been running.
+// Uptime returns how long the cache has been running using the stored start time's monotonic clock reading.
 func (s *Statistics) Uptime() time.Duration {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return time.Since(s.startTime)
+	start := s.startTime.Load()
+	if start == nil {
+		return 0
+	}
+	return time.Since(*start)
 }
 
-// Reset resets all statistics to zero.
+// Reset resets all statistics to zero. Callers must ensure cache mutations (UpdateSize) are quiescent
+// when calling Reset; Reset does not provide an atomic multi-field reset across concurrent size updates.
 func (s *Statistics) Reset() {
-	atomic.StoreInt64(&s.hits, 0)
-	atomic.StoreInt64(&s.misses, 0)
-	atomic.StoreInt64(&s.sets, 0)
-	atomic.StoreInt64(&s.deletes, 0)
-	atomic.StoreInt64(&s.evictions, 0)
-
-	s.mu.Lock()
-	s.startTime = time.Now()
-	s.currentSize = 0
-	s.maxSize = 0
-	s.mu.Unlock()
+	s.hits.Store(0)
+	s.misses.Store(0)
+	s.sets.Store(0)
+	s.deletes.Store(0)
+	s.evictions.Store(0)
+	now := time.Now()
+	s.startTime.Store(&now)
+	s.currentSize.Store(0)
+	s.maxSize.Store(0)
 }
 
 // StatsSummary returns a snapshot of all statistics.

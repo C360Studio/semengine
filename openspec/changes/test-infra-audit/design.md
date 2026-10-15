@@ -92,10 +92,10 @@ Not probed: the same over Docker's port forwarding, where a close may take longe
 | L7 Image pin | Keep the digest pin; it moves into natsfixture, embedded. Remove pre-pull and override; testcontainers pulls (`tc:docker.go:1220-1244`) |
 | L8 Evidence directory | Remove. A failed start puts the container log in the test log; prochost logs a child's output when its test fails |
 | L9 `go test` flags | Keep; add `-shuffle=on` (go prints the seed per package, `go:src/testing/testing.go:2426`) |
-| L10 Start | Keep the phases (as error text) and the one replacement container for #180; keep one test seam, the mapped-port read; remove 12 seams and the exported `Error` and `Phase` (P11) |
+| L10 Start | Keep the phases (as error text); remove the replacement container (owner ruling, #205 comment 6173171452: the fixture picks the port since #210, and no missing port has been seen since); keep one test seam, the mapped-port read, for the inspect in its error (owner ruling on #180); remove 12 seams and the exported `Error` and `Phase` (P11) |
 | L11 Observed absence | Remove; `Terminate`'s error is the answer. Removes the error-text classification at `deps.go:179` |
 | L12 Owned-resource teardown | Remove; removing the container removes everything in it |
-| L13 Restart | Keep, with #200's retry; drop the consumer clause with `Consume` |
+| L13 Restart | Keep, without #200's retry (owner ruling, #205 comment 6173171452: a retry gets the same fixed port again); drop the consumer clause with `Consume` |
 | L14 Extras | Keep `FaultKV`, `WithMaxPayload`, `Open` (now takes a URL); stream helpers become functions; remove `CreateKeyValue`, `Consume` (P11) |
 | L15 Safe names | Remove the fixture's name generator and the SemStreams substring list (P12); a name a script or Compose file assigns still starts `semengine-` |
 | L16 Lifecycle floor on the fixture | Remove (the fixture is not a component) |

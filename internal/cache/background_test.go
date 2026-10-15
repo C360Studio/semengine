@@ -149,7 +149,7 @@ func TestTTLCacheCloseLeavesNothingRunning(t *testing.T) {
 		synctest.Wait()
 		assert.Zero(t, c.Size())
 
-		requireJoined(t, c.Close, c.(*ttlCache[string]).done, release)
+		requireJoined(t, c.Close, c.(*memCache[string]).done, release)
 	})
 }
 
@@ -167,7 +167,7 @@ func TestHybridCacheCloseLeavesNothingRunning(t *testing.T) {
 		synctest.Wait()
 		assert.Zero(t, c.Size())
 
-		requireJoined(t, c.Close, c.(*hybridCache[string]).done, release)
+		requireJoined(t, c.Close, c.(*memCache[string]).done, release)
 	})
 }
 
@@ -176,7 +176,7 @@ func TestCacheConstructorsRefuseNilContext(t *testing.T) {
 		var nilCtx context.Context // the nil context is the input under test
 		ttl, err := NewTTL[string](nilCtx, time.Minute, time.Second)
 		require.Error(t, err, "NewTTL")
-		assert.True(t, ttl == nil, "NewTTL returns a nil Cache, not a nil *ttlCache inside one")
+		assert.True(t, ttl == nil, "NewTTL returns a nil Cache, not a nil *memCache inside one")
 
 		for _, cfg := range []Config{
 			{Enabled: true, Strategy: StrategyTTL, TTL: time.Minute, CleanupInterval: time.Second},
@@ -269,13 +269,7 @@ func TestCacheConcurrentCloseJoinsEveryCaller(t *testing.T) {
 					TTL: time.Minute, CleanupInterval: time.Second,
 				})
 				require.NoError(t, err)
-				var done <-chan struct{}
-				switch cc := c.(type) {
-				case *ttlCache[int]:
-					done = cc.done
-				case *hybridCache[int]:
-					done = cc.done
-				}
+				done := c.(*memCache[int]).done
 				start := make(chan struct{})
 				results := make(chan string, callers)
 				for range callers {
@@ -321,10 +315,9 @@ func bubbleGoroutinesRunning(frames ...string) int {
 	return n
 }
 
-// bubbleCleanupGoroutines counts goroutines in a synctest bubble running a TTL or hybrid
-// cleanup loop.
+// bubbleCleanupGoroutines counts goroutines in a synctest bubble running a cache cleanup loop.
 func bubbleCleanupGoroutines() int {
-	return bubbleGoroutinesRunning("(*ttlCache[...]).cleanup", "(*hybridCache[...]).cleanup")
+	return bubbleGoroutinesRunning("(*memCache[...]).cleanup")
 }
 
 // TestCacheConstructorsRefuseInvalidDimensions: NewLRU, NewTTL and the hybrid constructor apply

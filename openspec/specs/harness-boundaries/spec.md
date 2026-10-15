@@ -137,9 +137,9 @@ and hand the listener itself to the code under test, naming no file outside this
 ### Requirement: Bounded cleanup roots
 
 `task verify` SHALL fail when any `*_test.go` file calls Stop, Close, or Terminate with context.Background() or
-context.TODO(). The sanctioned harness cleanup roots (`natsfixture.New`'s cleanup Stop under a fresh bounded
-context, and the rollback helper's bounded `WithoutCancel` context) live in non-test files, so the check has no
-allowlist.
+context.TODO(), whatever the receiver, a `TestMain` included. The harness's own cleanup roots (`natsfixture.New`'s
+cleanup Stop and the removal of a failed start's container, each under a fresh bounded context) live in non-test
+files, so the check has no allowlist.
 
 #### Scenario: Unbounded defer
 

@@ -132,11 +132,11 @@ func TestIntegration_TypedClientPreservesCommitAmbiguity(t *testing.T) {
 	require.ErrorAs(t, err, &mutationErr)
 	assert.Equal(t, projection.MutationCommitUnknown, mutationErr.Kind)
 	assert.Equal(t, projection.CommitUnknown, mutationErr.Commit)
-	assert.Equal(t, errs.ErrorTransient, mutationErr.Class)
+	assert.Equal(t, errs.ErrorFatal, mutationErr.Class, "a write that may have committed is never retryable")
 	assert.Equal(t, graph.ErrorCodeInternal, mutationErr.Code)
 	var classified *errs.ClassifiedError
-	require.ErrorAs(t, err, &classified, "the reply's classification stays on the error")
-	assert.Equal(t, errs.ErrorTransient, classified.Class)
+	require.ErrorAs(t, err, &classified, "the error reads fatal with the reply's code")
+	assert.Equal(t, errs.ErrorFatal, classified.Class)
 	assert.Equal(t, graph.ErrorCodeInternal, classified.Code)
 	assert.Equal(t, 1, bucket.Calls()[natsfixture.KVUpdate], "the update reached the real bucket once")
 	applied, err := entityStates.Get(ctx, id)
@@ -246,7 +246,7 @@ func TestIntegration_OversizedResponseAfterCommitIsCommitUnknown(t *testing.T) {
 
 	var mutationErr *projection.MutationError
 	require.ErrorAs(t, err, &mutationErr)
-	assert.Equal(t, errs.ErrorInvalid, mutationErr.Class, "natsclient's reply in place of the oversized response")
+	assert.Equal(t, errs.ErrorFatal, mutationErr.Class, "a reconcile that committed is never retryable")
 	// natsclient's own code (errorCodeResponseTooLarge), spelled as the wire carries it.
 	assert.Equal(t, "response_too_large", mutationErr.Code)
 	assert.Equal(t, projection.CommitUnknown, receipt.Commit, "receipt of a reconcile that committed")
@@ -379,8 +379,8 @@ func TestIntegration_AppendAfterUnconfirmedWriteIsCommitUnknown(t *testing.T) {
 			assert.Equal(t, projection.MutationCommitUnknown, mutationErr.Kind)
 			assert.Equal(t, projection.CommitUnknown, mutationErr.Commit)
 			var classified *errs.ClassifiedError
-			require.ErrorAs(t, err, &classified, "the reply's classification stays on the error")
-			assert.Equal(t, errs.ErrorTransient, classified.Class)
+			require.ErrorAs(t, err, &classified, "the error reads fatal with the reply's code")
+			assert.Equal(t, errs.ErrorFatal, classified.Class)
 			assert.Equal(t, graph.ErrorCodeInternal, classified.Code)
 		})
 	}

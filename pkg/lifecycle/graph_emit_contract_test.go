@@ -2,6 +2,7 @@ package lifecycle
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -61,13 +62,18 @@ func TestMutationAmbiguousReplyReturnsCommitUnknownAfterOneAttempt(t *testing.T)
 			},
 		},
 	}
+	var syntaxErr *json.SyntaxError
 	faults := []struct {
 		name     string
 		response []byte
 		err      error
+		// reachesCause reports whether the returned error still reaches the fault's own cause.
+		reachesCause func(error) bool
 	}{
-		{name: "deadline", err: context.DeadlineExceeded},
-		{name: "malformed response", response: []byte(`{"outcome":`)},
+		{name: "deadline", err: context.DeadlineExceeded,
+			reachesCause: func(err error) bool { return errors.Is(err, context.DeadlineExceeded) }},
+		{name: "malformed response", response: []byte(`{"outcome":`),
+			reachesCause: func(err error) bool { return errors.As(err, &syntaxErr) }},
 	}
 	for _, operation := range operations {
 		for _, fault := range faults {
@@ -91,6 +97,27 @@ func TestMutationAmbiguousReplyReturnsCommitUnknownAfterOneAttempt(t *testing.T)
 				}
 				if requester.subject != operation.subject {
 					t.Fatalf("subject = %q, want %q", requester.subject, operation.subject)
+				}
+				// A write that may have committed is never retryable (design D2). No reply came
+				// back, so there is no reply code to carry: Code stays empty.
+				if mutationErr.Class != errs.ErrorFatal || mutationErr.Code != "" {
+					t.Errorf("class %q, code %q; want fatal with no code", mutationErr.Class, mutationErr.Code)
+				}
+				if errs.IsTransient(err) || !errs.IsFatal(err) || errs.Classify(err) != errs.ErrorFatal {
+					t.Errorf("IsTransient %t, IsFatal %t, Classify %v; want false, true, fatal (err=%v)",
+						errs.IsTransient(err), errs.IsFatal(err), errs.Classify(err), err)
+				}
+				var classified *errs.ClassifiedError
+				found := errors.As(err, &classified)
+				if !found || classified.Class != errs.ErrorFatal || classified.Code != "" {
+					t.Errorf("errors.As *errs.ClassifiedError %t = %#v; want fatal with no code", found, classified)
+				}
+				var transport *graphmutation.TransportError
+				if !errors.As(err, &transport) || transport.Outcome != graphmutation.TransportCommitUnknown {
+					t.Errorf("errors.As *graphmutation.TransportError = %#v; want outcome commit_unknown", transport)
+				}
+				if !fault.reachesCause(err) {
+					t.Errorf("the cause is not reachable: %v", err)
 				}
 			})
 		}

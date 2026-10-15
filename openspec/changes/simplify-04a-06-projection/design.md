@@ -31,11 +31,13 @@ is reported, not what is decided, and ADR-111's `:66` cite is pinned to `522bf3a
 | a classified reply with a pre-write refusal code | not committed | by code (invalid, not-found, conflict, revision-conflict, internal), as today | the reply's |
 | transport `unavailable`, or raw `nats.ErrNoResponders` | not committed | unavailable | transient |
 | transport `deadline` (the context ended before sending) | not committed | unavailable | transient |
-| transport `commit_unknown` wrapping natsclient's `ErrNotConnected` or `ErrCircuitOpen` | unknown | commit-unknown | fatal (unchanged; D-2) |
+| transport `commit_unknown` wrapping natsclient's `ErrNotConnected` or `ErrCircuitOpen` | unknown | commit-unknown | fatal (unchanged until #268) |
 | anything else, including a classified reply with another code | unknown | commit-unknown | fatal, cause held as today |
 
 `Code` and `Detail` are the reply's (`Detail` is copied with `maps.Clone`). `Operation` is the argument. `Kind` is
-computed once. A context that ended before sending stays `MutationUnavailable`, with no new kind. That is what
+computed once. `ReadAuthoritative` keeps its own rule and does not go through D1: a read writes nothing, so a
+classified read reply is not committed as today, and with owner question 3 answered yes every read failure is (#267).
+A context that ended before sending stays `MutationUnavailable`, with no new kind. That is what
 today's code reports, and semboids retries on it (inventory § 4). The constant's doc comment changes to "the request
 was not delivered: no responder took it, or the caller's context ended before it was sent".
 
@@ -105,7 +107,7 @@ covers each one (`docs/testing.md`).
 ## Not in this change
 
 Lifecycle's adoption of D1, its `ErrEmitFailed` path, and the `default:` of `lifecycleMutationOperation` (9b).
-Defect D-2 (inventory § 7; filed). Defect D-1, unless owner question 3 brings it in.
+Defect D-2 (#268). Defect D-1 (#267), unless owner question 3 brings it in.
 
 ## Merge order
 
@@ -124,10 +126,12 @@ same rule: whichever PR lands second merges `origin/main` first. 9b follows this
    `pkg/projection/contract` package means that package no longer matches SemStreams line for line. Its ledger entry
    then changes from "copied as is" to "adapted". The payload registry belongs to the later PR 3, but switching it is
    a two-line change. The alternative is to keep both copies.
-3. **Fix the read defect in this PR.** Recommended: yes, here. When `Reconcile`'s own first read fails (a timeout, a
-   reconnect, the circuit breaker open), the client says the write may have happened, although nothing was sent.
-   Callers then never retry it. It must be filed either way. The fix sits in the function this PR rewrites, so fixing
-   it here costs one test and one spec scenario. A second defect of the same kind affects writes: refusals made
-   before sending, while reconnecting or with the breaker open. Its right home is the internal mutation client
-   (PR 8's package), so that this mapping and lifecycle's get one answer. I recommend its own small PR, landing before
-   or with 9b, not this one.
+3. **Fix the read defect in this PR? (yes or no)** Recommended: yes. When `Reconcile`'s own first read fails (a
+   timeout, a reconnect, the circuit breaker open), the client says the write may have happened, although nothing was
+   sent, so callers never retry it. It is filed as #267. The fix sits in the code this PR rewrites, so fixing it here
+   costs one test and one spec scenario.
+
+For information, not a question: a second defect of the same kind affects writes refused before sending, while
+reconnecting or with the breaker open (#268). Its home is the internal mutation client, because that is where the
+never-sent request is labelled commit-unknown (`internal/graphmutation/client.go:162`). It goes in its own small PR,
+landing before or with 9b.

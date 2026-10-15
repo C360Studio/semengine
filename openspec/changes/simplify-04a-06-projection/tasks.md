@@ -11,8 +11,8 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 ## 2. Failing tests
 
 - [ ] 2.1 `TestClassifyMutationErrorMapsEachOutcome` (package `projection_test`, design D1), including rows for
-  natsclient's `ErrNotConnected` and `ErrCircuitOpen` wrapped as transport `commit_unknown` (they stay unknown). Gate:
-  fails on the base commit (no symbol).
+  natsclient's `ErrNotConnected` and `ErrCircuitOpen` wrapped as transport `commit_unknown` (they stay unknown until
+  #268). Gate: fails on the base commit (no symbol).
 - [ ] 2.2 A "context ended before send" row in `TestTransportOutcomesKeepTheirCommitState` for Create, Append and
   Delete: not committed, `MutationUnavailable`, transient, `errors.Is(err, context.Canceled)`. Gate: it passes on
   the base commit (today's behaviour, now pinned) and fails under a mutant that maps `deadline` to unknown
@@ -26,7 +26,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 ## 3. Implementation
 
-- [ ] 3.1 Export `ClassifyMutationError`, which computes `Kind` once; every method uses it; `MutationUnavailable`'s doc
+- [ ] 3.1 Export `ClassifyMutationError`, which computes `Kind` once; every write uses it; `MutationUnavailable`'s doc
   says "not delivered". Gate: 2.1 and 2.2 pass.
 - [ ] 3.2 `MutationReceipt` without `Commit`; tests in `pkg/projection` and
   `processor/graph-ingest/commit_ambiguity_integration_test.go` read the error's `Commit`. Gate: `task test:unit`;
@@ -36,17 +36,17 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 - [ ] 3.5 `contract.Contract.Clone`; both copies removed (if owner question 2 is accepted). Gate: 2.3 passes;
   `task ledger:check`.
 - [ ] 3.6 Doc comments declare each method's failure outcomes (D7). Gate: review.
-- [ ] 3.7 Only if owner question 3 is answered yes: every `ReadAuthoritative` failure is not committed. Gate: 2.5
-  passes.
+- [ ] 3.7 Only if owner question 3 is answered yes: every `ReadAuthoritative` failure is not committed (#267). Gate:
+  2.5 passes, and the spec delta gains the scenario "A failed read is not committed" (`task spec:check`).
 
 ## 4. Documentation
 
 - [ ] 4.1 `docs/admission-ledger.yaml`: the `pkg/projection` contract (the mapping is exported; no commit state on the
   receipt); the `pkg/projection/contract` row `adapt` with current `known_risks` (owner question 2). Gate:
   `task ledger:check`, `task docs:check`.
-- [ ] 4.2 File D-2, and D-1 unless owner question 3 brings it in (`status:blocked`, linked from the PR body without a
-  closing keyword). Comment on #257 with the two lifecycle items #138 item 4 leaves for 9b once this PR closes #138:
-  a context that ended before sending, which lifecycle reports commit-unknown (`graph_emit.go:108-115`), and
+- [ ] 4.2 Link #268, and #267 unless owner question 3 brings it in, from the PR body without a closing keyword (both
+  filed `status:blocked`). Comment on #257 with the two lifecycle items #138 item 4 leaves for 9b once this PR closes
+  #138: a context that ended before sending, which lifecycle reports commit-unknown (`graph_emit.go:108-115`), and
   `lifecycleMutationOperation`'s `default:` (`graph_emit.go:125-126`), which should return an error, not
   `MutationOperationAppend`. Name `ClassifyMutationError` as the mapping 9b calls. Gate: the issue numbers appear on
   the PR body's follow-up line, and the #257 comment is read back.

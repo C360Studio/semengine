@@ -10,8 +10,9 @@ request's failure through it. The error SHALL be not committed when its chain ho
 graph-ingest sends only before writing (invalid request, structural invalid, message type unregistered, entity ID
 invalid, entity ID authority invalid, revision mismatch, entity exists, entity not found, graph state reset required),
 with that reply's class, code and detail. It SHALL be not committed, `Kind` `MutationUnavailable`, class transient,
-when no responder took the request or the context ended before the request was sent. Every other error SHALL be
-commit-unknown as the requirement "A commit-unknown error is never retryable" states.
+when no responder took the request or the context ended before the request was sent. Every other error, including
+natsclient's refusals before sending until #268 is fixed, SHALL be commit-unknown as the requirement "A commit-unknown
+error is never retryable" states.
 
 #### Scenario: Context ended before the request was sent
 

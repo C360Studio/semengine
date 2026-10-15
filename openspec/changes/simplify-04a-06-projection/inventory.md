@@ -148,8 +148,8 @@ contract data types move to a leaf package with aliases in `pkg/projection`"). A
 
 - **D-1** `pkg/projection/mutation_client.go:281-282` —
   `mutationFailure(MutationOperationReadAuthoritative, err)`: a `Reconcile` whose own read fails with an unclassified
-  error (`nats.ErrTimeout`, or the caller's deadline during the read) reports commit-unknown and fatal although nothing was
-  written. Real trigger: the exact-entity read times out under load. `TestReconcileReadFailureIsNotCommitted`
+  error (`nats.ErrTimeout`, or the caller's deadline during the read) reports commit-unknown and fatal although
+  nothing was written. Real trigger: the exact-entity read times out under load. `TestReconcileReadFailureIsNotCommitted`
   (`commit_ambiguity_test.go:233`) covers only a classified reply.
   Severity HIGH (a write that was never sent is never retried, per ADR-111 D3).
 - **D-2** `internal/graphmutation/client.go:136-152`: a refusal before the request is sent (nil client, nil context,

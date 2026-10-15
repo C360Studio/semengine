@@ -46,7 +46,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 - [x] 4.1 `docs/admission-ledger.yaml`: the `pkg/projection` contract (the mapping is exported; no commit state on the
   receipt); the `pkg/projection/contract` row `adapt` with current `known_risks` (owner question 2). Gate:
   `task ledger:check`, `task docs:check`.
-- [ ] 4.2 Link #268 from the PR body without a closing keyword (filed `status:blocked`); the PR body closes #267.
+- [x] 4.2 Link #268 from the PR body without a closing keyword (filed `status:blocked`); the PR body closes #267.
   Comment on #257 with the two lifecycle items #138 item 4 leaves for 9b once this PR closes #138: a context that
   ended before sending, which lifecycle reports commit-unknown (`graph_emit.go:108-115`), and
   `lifecycleMutationOperation`'s `default:` (`graph_emit.go:125-126`), which should return an error, not
@@ -55,7 +55,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 ## 5. Verify, review and close
 
-- [ ] 5.1 `task verify` passes on a clean tree at the implementation head.
+- [x] 5.1 `task verify` passes on a clean tree at the implementation head (exit 0 at `c7d0047`).
 - [ ] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
 - [ ] 5.3 Archive the change (`openspec archive simplify-04a-06-projection`) as the last content commit. Gate:
   `task spec:check`.

@@ -50,7 +50,8 @@ failing output in `notes/<task>.md`.
 
 ## 5. Review stop
 
-- [ ] 5.1 Codex reviews tasks 4.1-4.3 on their commits. Gate: review comment linked from the PR.
+- [x] 5.1 Codex reviews tasks 4.1-4.3 on their commits. Gate: review comment linked from the PR (APPROVE at
+  `9abe0f7`, <https://github.com/C360Studio/semengine/pull/266#issuecomment-6202866353>).
 
 ## 6. Documentation and ledger
 

@@ -31,7 +31,8 @@ with it. Line numbers in `client_close_final_test.go` are as of `d71df33`.
   and `errs.IsTransient` reports false. The `projection.MutationError` that `pkg/projection` and `pkg/lifecycle` return
   for it is *not committed* and carries `Class` transient in its field; `errs.IsTransient` on that error reads through
   to the raw error and is also false. The `projection-mutation` spec holds the field.
-- **Still not promised:** the raw nats.go errors other than no responders, which this amendment does not classify.
+- **Still not promised:** which other raw nats.go errors become classified sentinels. Until one does, it is
+  unclassified and falls under the default above.
 
 **How each line is backed.**
 

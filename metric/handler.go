@@ -147,7 +147,7 @@ func (s *Server) start(ctx context.Context, supplied net.Listener, provided bool
 
 	// Configure TLS if enabled at platform level
 	if s.security.TLS.Server.Enabled {
-		tlsConfig, err := tlsutil.LoadServerTLSConfigWithMTLS(s.security.TLS.Server, s.security.TLS.Server.MTLS)
+		tlsConfig, err := tlsutil.LoadServerTLSConfig(s.security.TLS.Server)
 		if err != nil {
 			s.server = nil
 			return errs.WrapFatal(err, "Server", operation, "load TLS config")

@@ -1,9 +1,6 @@
 package projection
 
-//revive:disable:max-public-structs Explicit request and result structs keep the API legible.
-
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -156,30 +153,3 @@ func (e *MutationError) Unwrap() error {
 	}
 	return e.Err
 }
-
-// EntityCreator creates one entity through the canonical mutation port.
-type EntityCreator interface {
-	Create(context.Context, CreateMutation) (MutationReceipt, error)
-}
-
-// PredicateReconciler reconciles one declared predicate group.
-type PredicateReconciler interface {
-	Reconcile(context.Context, ReconcileMutation) (MutationReceipt, error)
-}
-
-// TripleAppender appends set-valued triples to an existing entity.
-type TripleAppender interface {
-	Append(context.Context, AppendMutation) (MutationReceipt, error)
-}
-
-// EntityDeleter deletes one entity at an expected authority revision.
-type EntityDeleter interface {
-	Delete(context.Context, DeleteMutation) (MutationReceipt, error)
-}
-
-// AuthoritativeReader reads entity bytes and their same-entry KV revision.
-type AuthoritativeReader interface {
-	ReadAuthoritative(context.Context, string) (*graph.ExactEntity, error)
-}
-
-//revive:enable:max-public-structs

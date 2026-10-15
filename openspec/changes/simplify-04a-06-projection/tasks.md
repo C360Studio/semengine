@@ -32,7 +32,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 - [x] 3.2 `MutationReceipt` without `Commit`; tests in `pkg/projection` and
   `processor/graph-ingest/commit_ambiguity_integration_test.go` read the error's `Commit`. Gate: `task test:unit`;
   `go test -tags integration -race -run 'CommitAmbiguity|CommitUnknown' ./processor/graph-ingest/`.
-- [ ] 3.3 Remove the five interfaces and both revive directives. Gate: `task build`, `task lint`.
+- [x] 3.3 Remove the five interfaces and both revive directives. Gate: `task build`, `task lint`.
 - [ ] 3.4 Remove the dead layers (D4) and use one nil-client refusal shape. Gate: 2.4 and all existing tests pass.
 - [x] 3.5 `contract.Contract.Clone`; both copies removed (owner question 2: accepted). Gate: 2.3 passes;
   `task ledger:check`.

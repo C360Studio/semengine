@@ -81,6 +81,7 @@ failing output in `notes/<task>.md`.
 
 ## 7. Verify, review and close
 
-- [ ] 7.1 `task verify` passes on a clean tree at the implementation head.
+- [x] 7.1 `task verify` passes on a clean tree at the implementation head (exit 0 at `ee28449`, 2026-10-15;
+  log local only).
 - [ ] 7.2 Cross-agent review of record on the implementation head; `reviewed-by:` in the PR body.
 - [ ] 7.3 Archive the change (no spec to sync) as the last content commit. Gate: `task spec:check`.

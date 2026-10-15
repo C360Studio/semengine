@@ -37,9 +37,10 @@ is reported, not what is decided, and ADR-111's `:66` cite is pinned to `522bf3a
 `Code` and `Detail` are the reply's (`Detail` is copied with `maps.Clone`). `Operation` is the argument. `Kind` is
 computed once. `ReadAuthoritative` keeps its own rule and does not go through D1: a read writes nothing, so a
 classified read reply is not committed as today, and every read failure is not committed (#267, owner question 3).
-A context that ended before sending stays `MutationUnavailable`, with no new kind. That is what
-today's code reports, and semboids retries on it (inventory § 4). The constant's doc comment changes to "the request
-was not delivered: no responder took it, or the caller's context ended before it was sent".
+A context that ended before sending stays `MutationUnavailable`, with no new kind. That is what today's code reports,
+and semboids retries on it (inventory § 4). The constant's doc comment says it wrote nothing: for a write, the request
+was not delivered (no responder took it, or the caller's context ended before it was sent); for a read, the request
+may have been delivered, but a read stores nothing (Codex review of `135c49d`).
 
 Proving test: `TestClassifyMutationErrorMapsEachOutcome` in package `projection_test`, one row per table line and per
 refusal code, run the way a product calls it. `TestTransportOutcomesKeepTheirCommitState` gains a row for "context

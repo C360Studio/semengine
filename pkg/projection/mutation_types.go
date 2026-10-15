@@ -121,8 +121,10 @@ const (
 	MutationConflict MutationErrorKind = "conflict"
 	// MutationRevisionConflict reports a stale expected authority revision.
 	MutationRevisionConflict MutationErrorKind = "revision-conflict"
-	// MutationUnavailable reports a request that was not delivered: no responder took it, or the
-	// caller's context ended before it was sent.
+	// MutationUnavailable reports an operation that could not complete and wrote nothing. For a
+	// write, the request was not delivered: no responder took it, or the caller's context ended
+	// before it was sent. For a read (operation read-authoritative), the request may have been
+	// delivered, but a read stores nothing.
 	MutationUnavailable MutationErrorKind = "unavailable"
 	// MutationCommitUnknown reports a mutation that may have committed (CommitUnknown).
 	MutationCommitUnknown MutationErrorKind = "commit-unknown"

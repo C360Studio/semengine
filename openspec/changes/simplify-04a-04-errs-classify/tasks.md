@@ -31,9 +31,9 @@ before any production line changes; record the failing output in `notes/<task>.m
 
 ## 3. Implementation
 
-- [ ] 3.1 `errs.Classify` returns `ErrorFatal` for an unclassified error; `classForHeader`'s default and
+- [x] 3.1 `errs.Classify` returns `ErrorFatal` for an unclassified error; `classForHeader`'s default and
   `classifiedAppendFailure`'s starting class are fatal; doc comments say so. Gate: 2.1 passes.
-- [ ] 3.2 Commit-unknown `MutationError`s in `pkg/projection` and `pkg/lifecycle` carry `ErrorFatal` and hold the cause
+- [x] 3.2 Commit-unknown `MutationError`s in `pkg/projection` and `pkg/lifecycle` carry `ErrorFatal` and hold the cause
   in a fatal `*errs.ClassifiedError`, with no method added to `MutationError`; `projection`'s no-responders error is
   transient; `lifecycle.ErrUpdateRetriesExhausted` is transient. Gate: 2.2 and 2.3 pass; `task test:unit`,
   `task test:integration` and `task test:repeat`.

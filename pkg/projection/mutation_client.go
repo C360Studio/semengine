@@ -4,8 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
-	"sort"
+	"maps"
 	"time"
 
 	"github.com/c360studio/semengine/graph"
@@ -36,7 +35,7 @@ type MutationClient struct {
 // NewMutationClient validates and copies the complete projection contract set.
 func NewMutationClient(cfg MutationClientConfig) (*MutationClient, error) {
 	if cfg.NATS == nil {
-		return nil, invalidMutationError(MutationOperationCreate, errors.New("NATS client is required"))
+		return nil, errors.New("NATS client is required")
 	}
 	timeout := cfg.Timeout
 	if timeout <= 0 {
@@ -50,9 +49,6 @@ func newMutationClient(
 	contracts []Contract,
 	timeout time.Duration,
 ) (*MutationClient, error) {
-	if isNilRequester(requester) {
-		return nil, errors.New("mutation requester is required")
-	}
 	bindings, err := buildContractIndex(contracts)
 	if err != nil {
 		return nil, err
@@ -70,19 +66,6 @@ func newMutationClient(
 		reader:    reader,
 		contracts: bindings,
 	}, nil
-}
-
-func isNilRequester(requester mutationRequester) bool {
-	if requester == nil {
-		return true
-	}
-	value := reflect.ValueOf(requester)
-	switch value.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Ptr, reflect.Slice:
-		return value.IsNil()
-	default:
-		return false
-	}
 }
 
 func buildContractIndex(contracts []Contract) (map[string]contractBinding, error) {
@@ -123,6 +106,10 @@ func (c *MutationClient) binding(operation MutationOperation, name string) (cont
 }
 
 // Create atomically creates an entity with its complete initial triples.
+//
+// A request that is incomplete or outside the contract is refused before it is sent: Kind
+// MutationInvalid, not committed. Any other failure follows ClassifyMutationError. A nil error
+// means the commit is verified.
 func (c *MutationClient) Create(ctx context.Context, request CreateMutation) (MutationReceipt, error) {
 	binding, err := c.binding(MutationOperationCreate, request.Contract)
 	if err != nil {
@@ -146,7 +133,7 @@ func (c *MutationClient) Create(ctx context.Context, request CreateMutation) (Mu
 	if err := validateEntity(binding.contract, entity); err != nil {
 		return MutationReceipt{}, invalidMutationError(MutationOperationCreate, err)
 	}
-	triples, metadata, err := canonicalizeTriples(MutationOperationCreate, request.Triples, request.Metadata)
+	triples, err := canonicalizeTriples(MutationOperationCreate, request.Triples, request.Metadata)
 	if err != nil {
 		return MutationReceipt{}, err
 	}
@@ -162,21 +149,24 @@ func (c *MutationClient) Create(ctx context.Context, request CreateMutation) (Mu
 	}
 	response, err := c.wire.Create(ctx, graph.CreateEntityRequest{
 		Entity: entity, Triples: triples, IndexingProfile: binding.contract.IndexingProfile,
-		TraceID: metadata.TraceID, RequestID: metadata.RequestID,
+		TraceID: request.Metadata.TraceID, RequestID: request.Metadata.RequestID,
 	})
 	if err != nil {
 		return mutationFailure(MutationOperationCreate, err)
-	}
-	if response.Entity.ID != entity.ID {
-		return mutationFailure(MutationOperationCreate, errors.New("create response entity does not match request"))
 	}
 	return MutationReceipt{Entity: response.Entity.Clone(), KVRevision: response.KVRevision}, nil
 }
 
 // Reconcile replaces one complete reconcile-mode predicate group, at the request's
 // ExpectedRevision or, when that is zero, at the revision the client reads.
+//
+// It reads the entity first. A failed read sends no mutation and is not committed, with operation
+// read-authoritative; a stored entity outside the contract is refused as MutationInvalid.
+// A request that is incomplete or outside the contract is refused before it is sent: Kind
+// MutationInvalid, not committed. Any other failure follows ClassifyMutationError. A nil error
+// means the commit is verified.
 func (c *MutationClient) Reconcile(ctx context.Context, request ReconcileMutation) (MutationReceipt, error) {
-	binding, group, desired, metadata, err := c.canonicalizeGroupMutation(
+	binding, group, desired, err := c.canonicalizeGroupMutation(
 		MutationOperationReconcile, request.Contract, request.Group, request.EntityID, request.Desired, request.Metadata, ModeReconcile,
 	)
 	if err != nil {
@@ -198,9 +188,9 @@ func (c *MutationClient) Reconcile(ctx context.Context, request ReconcileMutatio
 		expected = exact.KVRevision
 	}
 	response, err := c.wire.Reconcile(ctx, graph.ReconcilePredicatesRequest{
-		EntityID: request.EntityID, ExpectedRevision: expected, Source: metadata.Source,
+		EntityID: request.EntityID, ExpectedRevision: expected, Source: request.Metadata.Source,
 		Predicates: append([]string(nil), group.Predicates...), Desired: desired,
-		TraceID: metadata.TraceID, RequestID: metadata.RequestID,
+		TraceID: request.Metadata.TraceID, RequestID: request.Metadata.RequestID,
 	})
 	if err != nil {
 		return mutationFailure(MutationOperationReconcile, err)
@@ -209,37 +199,41 @@ func (c *MutationClient) Reconcile(ctx context.Context, request ReconcileMutatio
 }
 
 // Append appends triples in one append-mode predicate group to one entity.
+//
+// A request that is incomplete or outside the contract is refused before it is sent: Kind
+// MutationInvalid, not committed. Any other failure follows ClassifyMutationError. A nil error
+// means the commit is verified.
 func (c *MutationClient) Append(ctx context.Context, request AppendMutation) (MutationReceipt, error) {
-	_, _, triples, metadata, err := c.canonicalizeGroupMutation(
+	_, _, triples, err := c.canonicalizeGroupMutation(
 		MutationOperationAppend, request.Contract, request.Group, request.EntityID, request.Triples, request.Metadata, ModeAppend,
 	)
 	if err != nil {
 		return MutationReceipt{}, err
 	}
 	response, err := c.wire.Append(ctx, graph.AppendTriplesRequest{
-		Triples: triples, TraceID: metadata.TraceID, RequestID: metadata.RequestID,
+		Triples: triples, TraceID: request.Metadata.TraceID, RequestID: request.Metadata.RequestID,
 	})
 	if err != nil {
 		return mutationFailure(MutationOperationAppend, err)
 	}
+	// The wire client has refused any other outcome, so the rest is applied or unchanged.
 	result := response.Results[0]
-	if result.Outcome == graph.MutationFailed {
-		return mutationFailure(MutationOperationAppend, classifiedAppendFailure(result.Error))
-	}
 	switch result.Outcome {
-	case graph.MutationApplied, graph.MutationUnchanged:
-		return MutationReceipt{KVRevision: result.KVRevision}, nil
+	case graph.MutationFailed:
+		return mutationFailure(MutationOperationAppend, classifiedAppendFailure(result.Error))
 	case graph.MutationEntityNotFound:
 		err := errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeEntityNotFound,
 			fmt.Errorf("entity not found: %s", request.EntityID))
 		return mutationFailure(MutationOperationAppend, err)
-	default:
-		return mutationFailure(MutationOperationAppend, fmt.Errorf("unexpected append outcome %q", result.Outcome))
 	}
+	return MutationReceipt{KVRevision: result.KVRevision}, nil
 }
 
 // Delete conditionally deletes one entity. Callers supply the exact revision
 // they intend to fence; the client does not hide a read or retry.
+//
+// A zero ExpectedRevision is refused before it is sent: Kind MutationInvalid, not committed. Any
+// other failure follows ClassifyMutationError. A nil error means the commit is verified.
 func (c *MutationClient) Delete(ctx context.Context, request DeleteMutation) (MutationReceipt, error) {
 	if request.ExpectedRevision == 0 {
 		return MutationReceipt{}, invalidMutationError(MutationOperationDelete, errors.New("expected revision must be nonzero"))
@@ -255,6 +249,8 @@ func (c *MutationClient) Delete(ctx context.Context, request DeleteMutation) (Mu
 }
 
 // ReadAuthoritative returns one validated entity and its same-entry revision.
+//
+// A read writes nothing, so every failure is not committed, with operation read-authoritative.
 func (c *MutationClient) ReadAuthoritative(ctx context.Context, entityID string) (*graph.ExactEntity, error) {
 	if c == nil || c.reader == nil {
 		return nil, invalidMutationError(MutationOperationReadAuthoritative, errors.New("mutation client is nil"))
@@ -277,14 +273,14 @@ func (c *MutationClient) canonicalizeGroupMutation(
 	input []message.Triple,
 	metadata MutationMetadata,
 	wantMode WriteMode,
-) (contractBinding, PredicateGroup, []message.Triple, MutationMetadata, error) {
+) (contractBinding, PredicateGroup, []message.Triple, error) {
 	binding, err := c.binding(operation, contractName)
 	if err != nil {
-		return contractBinding{}, PredicateGroup{}, nil, MutationMetadata{}, err
+		return contractBinding{}, PredicateGroup{}, nil, err
 	}
 	group, ok := binding.groups[groupName]
 	if !ok || group.Mode != wantMode {
-		return contractBinding{}, PredicateGroup{}, nil, MutationMetadata{},
+		return contractBinding{}, PredicateGroup{}, nil,
 			invalidMutationError(operation, fmt.Errorf("contract %q group %q is not %s mode", contractName, groupName, wantMode))
 	}
 	matches, err := semtypes.MatchEntityIDPattern(binding.contract.EntityPattern, entityID)
@@ -292,11 +288,11 @@ func (c *MutationClient) canonicalizeGroupMutation(
 		if err == nil {
 			err = fmt.Errorf("entity %q is outside contract %q pattern", entityID, contractName)
 		}
-		return contractBinding{}, PredicateGroup{}, nil, MutationMetadata{}, invalidMutationError(operation, err)
+		return contractBinding{}, PredicateGroup{}, nil, invalidMutationError(operation, err)
 	}
-	triples, metadata, err := canonicalizeTriples(operation, input, metadata)
+	triples, err := canonicalizeTriples(operation, input, metadata)
 	if err != nil {
-		return contractBinding{}, PredicateGroup{}, nil, MutationMetadata{}, err
+		return contractBinding{}, PredicateGroup{}, nil, err
 	}
 	allowed := make(map[string]struct{}, len(group.Predicates))
 	for _, predicate := range group.Predicates {
@@ -304,15 +300,15 @@ func (c *MutationClient) canonicalizeGroupMutation(
 	}
 	for index, triple := range triples {
 		if triple.Subject != entityID {
-			return contractBinding{}, PredicateGroup{}, nil, MutationMetadata{},
+			return contractBinding{}, PredicateGroup{}, nil,
 				invalidMutationError(operation, fmt.Errorf("triple[%d] subject %q does not match entity %q", index, triple.Subject, entityID))
 		}
 		if _, ok := allowed[triple.Predicate]; !ok {
-			return contractBinding{}, PredicateGroup{}, nil, MutationMetadata{},
+			return contractBinding{}, PredicateGroup{}, nil,
 				invalidMutationError(operation, fmt.Errorf("predicate %q is outside group %q", triple.Predicate, groupName))
 		}
 	}
-	return binding, group, triples, metadata, nil
+	return binding, group, triples, nil
 }
 
 func validateEntity(contract Contract, entity *graph.EntityState) error {
@@ -343,36 +339,36 @@ func canonicalizeTriples(
 	operation MutationOperation,
 	input []message.Triple,
 	metadata MutationMetadata,
-) ([]message.Triple, MutationMetadata, error) {
+) ([]message.Triple, error) {
 	if operation == MutationOperationCreate || operation == MutationOperationAppend {
 		if metadata.RequestID == "" {
-			return nil, MutationMetadata{}, invalidMutationError(operation, errors.New("request ID is required"))
+			return nil, invalidMutationError(operation, errors.New("request ID is required"))
 		}
 	}
 	// Every operation here requires Source; Reconcile also sends it as the
 	// request's source, and graph-ingest replaces only that source's
 	// statements of the group (design D15).
 	if metadata.Source == "" {
-		return nil, MutationMetadata{}, invalidMutationError(operation, errors.New("source is required"))
+		return nil, invalidMutationError(operation, errors.New("source is required"))
 	}
 	if operation == MutationOperationAppend && len(input) == 0 {
-		return nil, MutationMetadata{}, invalidMutationError(operation, errors.New("at least one triple is required"))
+		return nil, invalidMutationError(operation, errors.New("at least one triple is required"))
 	}
 
 	triples := append([]message.Triple(nil), input...)
 	for index := range triples {
 		triple := &triples[index]
 		if triple.Source != "" && triple.Source != metadata.Source {
-			return nil, MutationMetadata{}, invalidMutationError(operation,
+			return nil, invalidMutationError(operation,
 				fmt.Errorf("triple[%d] source conflicts with mutation metadata", index))
 		}
 		if triple.Context != "" && metadata.RequestID != "" && triple.Context != metadata.RequestID {
-			return nil, MutationMetadata{}, invalidMutationError(operation,
+			return nil, invalidMutationError(operation,
 				fmt.Errorf("triple[%d] context conflicts with mutation metadata", index))
 		}
 		if !triple.Timestamp.IsZero() && !metadata.Timestamp.IsZero() &&
 			!triple.Timestamp.Equal(metadata.Timestamp) {
-			return nil, MutationMetadata{}, invalidMutationError(operation,
+			return nil, invalidMutationError(operation,
 				fmt.Errorf("triple[%d] timestamp conflicts with mutation metadata", index))
 		}
 		if triple.Source == "" {
@@ -385,7 +381,7 @@ func canonicalizeTriples(
 		// caller's, on the statement or in the metadata.
 		if triple.Timestamp.IsZero() {
 			if metadata.Timestamp.IsZero() {
-				return nil, MutationMetadata{}, invalidMutationError(operation,
+				return nil, invalidMutationError(operation,
 					fmt.Errorf("triple[%d] has no timestamp and the mutation metadata has none", index))
 			}
 			triple.Timestamp = metadata.Timestamp
@@ -395,7 +391,7 @@ func canonicalizeTriples(
 			triple.ExpiresAt = &expiresAt
 		}
 	}
-	return triples, metadata, nil
+	return triples, nil
 }
 
 func invalidMutationError(operation MutationOperation, err error) *MutationError {
@@ -405,7 +401,7 @@ func invalidMutationError(operation MutationOperation, err error) *MutationError
 	}
 }
 
-// mutationFailure reports a write's failure, with the receipt that still carries its commit state.
+// mutationFailure reports a write's failure: a zero receipt, and the error carrying the commit state.
 func mutationFailure(operation MutationOperation, err error) (MutationReceipt, error) {
 	return MutationReceipt{}, ClassifyMutationError(operation, err)
 }
@@ -444,7 +440,7 @@ func notCommittedError(operation MutationOperation, err error) *MutationError {
 	if errors.As(err, &classified) {
 		mapped.Code = classified.Code
 		mapped.Class = classified.Class
-		mapped.Detail = cloneDetail(classified.Detail)
+		mapped.Detail = maps.Clone(classified.Detail)
 	} else if graphmutation.IsDefinitelyNotCommitted(err) || natsclient.IsNoResponders(err) {
 		mapped.Class = errs.ErrorTransient
 	}
@@ -465,7 +461,7 @@ func commitUnknownError(operation MutationOperation, err error) *MutationError {
 	var classified *errs.ClassifiedError
 	if errors.As(err, &classified) {
 		mapped.Code = classified.Code
-		mapped.Detail = cloneDetail(classified.Detail)
+		mapped.Detail = maps.Clone(classified.Detail)
 	}
 	return mapped
 }
@@ -529,20 +525,4 @@ func classifiedAppendFailure(failure *graph.MutationFailure) error {
 		class = errs.ErrorTransient
 	}
 	return errs.ClassifiedCode(class, failure.Code, fmt.Errorf("append failed: %s", failure.Code))
-}
-
-func cloneDetail(detail map[string]any) map[string]any {
-	if detail == nil {
-		return nil
-	}
-	clone := make(map[string]any, len(detail))
-	keys := make([]string, 0, len(detail))
-	for key := range detail {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		clone[key] = detail[key]
-	}
-	return clone
 }

@@ -41,6 +41,19 @@ func (p *projectionRequester) RequestClassified(
 	return p.handle(subject, payload)
 }
 
+// A nil NATS client is a construction error like every other one, not a write's refusal: no
+// operation was asked for (design D4).
+func TestNewMutationClientRefusesANilNATSClient(t *testing.T) {
+	client, err := NewMutationClient(MutationClientConfig{Contracts: []Contract{projectionTestContract(t)}})
+	if err == nil || client != nil {
+		t.Fatalf("client = %v, error = %v; want a refusal", client, err)
+	}
+	var mutationErr *MutationError
+	if errors.As(err, &mutationErr) {
+		t.Errorf("error = %#v; want a plain constructor error, not a mutation error", mutationErr)
+	}
+}
+
 func TestCreateRejectsMissingRequiredProvenanceBeforeRequest(t *testing.T) {
 	contract := projectionTestContract(t)
 	tests := []struct {

@@ -268,6 +268,33 @@ func TestAppendSubjectFailureAfterPossibleWriteIsCommitUnknown(t *testing.T) {
 	assertCommitUnknownIsFatal(t, MutationOperationAppend, err)
 }
 
+// A create reply that names another entity proves nothing about the request's entity, which may
+// have been written: commit-unknown and fatal (design D4; the wire client refuses the reply).
+func TestCreateReplyNamingAnotherEntityIsCommitUnknown(t *testing.T) {
+	contract := projectionTestContract(t)
+	other := projectionTestState()
+	other.ID = "acme.ops.test.system.widget.002"
+	requester := &projectionRequester{handle: func(string, []byte) ([]byte, error) {
+		return projectionJSON(t, graph.CreateEntityResponse{
+			Outcome: graph.MutationApplied, Entity: other, KVRevision: 1,
+		}), nil
+	}}
+	client, err := newMutationClient(requester, []Contract{contract}, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receipt, err := client.Create(t.Context(), CreateMutation{
+		Contract: contract.Name, Entity: projectionTestState(), Metadata: canonicalMetadata,
+		Triples: []message.Triple{canonicalStatement("test.identity.name")},
+	})
+	var mutationErr *MutationError
+	if !errors.As(err, &mutationErr) || receipt != (MutationReceipt{}) || mutationErr.Commit != CommitUnknown ||
+		mutationErr.Kind != MutationCommitUnknown {
+		t.Fatalf("receipt = %#v, error = %#v; want commit-unknown", receipt, err)
+	}
+	assertCommitUnknownIsFatal(t, MutationOperationCreate, err)
+}
+
 // A read writes nothing, so every failure of Reconcile's exact read is not committed: a
 // classified reply, and an unclassified error such as a timeout or a client that is not
 // connected (#267, design D1).

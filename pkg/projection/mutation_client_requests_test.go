@@ -80,16 +80,20 @@ func TestCreateSendsItsCanonicalRequestAndReadsTheReply(t *testing.T) {
 // TestAppendSendsItsCanonicalRequestAndReadsTheReply: Append sends one request on the append
 // subject carrying its statements, filled from the metadata, and the metadata's trace and request
 // IDs. An applied or unchanged reply is verified at the reply's revision; an entity-not-found
-// reply is a not-committed not-found error with that code, since nothing was written.
+// reply is a not-committed not-found error with that code, since nothing was written. A reply
+// with an outcome graph-ingest never sends proves nothing, so it is commit-unknown and fatal
+// (design D4; the wire client refuses the reply).
 func TestAppendSendsItsCanonicalRequestAndReadsTheReply(t *testing.T) {
 	contract := projectionTestContract(t)
 	tests := []struct {
 		outcome graph.MutationOutcome
 		found   bool
+		unknown bool
 	}{
-		{graph.MutationApplied, true},
-		{graph.MutationUnchanged, true},
-		{graph.MutationEntityNotFound, false},
+		{graph.MutationApplied, true, false},
+		{graph.MutationUnchanged, true, false},
+		{graph.MutationEntityNotFound, false, false},
+		{"unknown_outcome", true, true},
 	}
 	for _, test := range tests {
 		t.Run(string(test.outcome), func(t *testing.T) {
@@ -116,6 +120,15 @@ func TestAppendSendsItsCanonicalRequestAndReadsTheReply(t *testing.T) {
 			}
 			if len(requester.requests) != 1 || !reflect.DeepEqual(sent, want) {
 				t.Fatalf("requests = %d, sent %#v; want one, %#v", len(requester.requests), sent, want)
+			}
+			if test.unknown {
+				var mutationErr *MutationError
+				if !errors.As(err, &mutationErr) || receipt != (MutationReceipt{}) ||
+					mutationErr.Commit != CommitUnknown || mutationErr.Kind != MutationCommitUnknown {
+					t.Fatalf("receipt = %#v, error = %#v; want commit-unknown", receipt, err)
+				}
+				assertCommitUnknownIsFatal(t, MutationOperationAppend, err)
+				return
 			}
 			if test.found {
 				if err != nil || receipt.KVRevision != 5 {

@@ -55,7 +55,7 @@ failing output in `notes/<task>.md`.
 
 ## 6. Documentation and ledger
 
-- [ ] 6.1 Update the docs:
+- [x] 6.1 Update the docs:
   - `metric/README.md`: drop the NATS fields and methods.
   - `metric/doc.go` `:38`, `:59-60`, `:76-80`, `:206`: drop the NATS examples and series names.
   - `internal/tlsutil/doc.go` `:24`, `:52-61`, `:78-87`, `:91-97` (the free-standing `mtlsCfg` example becomes
@@ -66,7 +66,7 @@ failing output in `notes/<task>.md`.
   Gate: `task docs:check`; `git grep -n -E 'WithMTLS|RecordNATS|semengine_nats' -- metric internal docs` is empty
   outside `docs/admission-ledger.yaml` history prose and the
   negative assertion in `TestMetricsRegistry_NoNATSCoreMetrics` (`metric/registry_test.go`), which task 2.1 requires.
-- [ ] 6.2 Update the admission-ledger rows, in short bullets:
+- [x] 6.2 Update the admission-ledger rows, in short bullets:
   - `pkg/tlsutil`: the contract names `LoadServerTLSConfig` and `LoadClientTLSConfig` applying `MTLS`, and the two
     `WithMTLS` loaders are dropped (#221). `known_risks` adds: when change 5 ports `LoadClientTLSConfigWithACME`, its
     ACME branch (pin `tlsutil.go:286`) passes a copy with `MTLS` cleared, so the fallback key pair is not loaded

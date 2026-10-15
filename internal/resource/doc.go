@@ -73,6 +73,8 @@
 //   - checkFn returns nil (resource available), or
 //   - All startup attempts exhausted
 //
+// A nil context makes WaitForStartup return false without calling checkFn.
+//
 // Default timing:
 //   - 10 attempts × 500ms = 5 seconds maximum wait
 //

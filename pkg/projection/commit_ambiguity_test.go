@@ -1,6 +1,7 @@
 package projection
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"testing"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/message"
+	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 	semtypes "github.com/c360studio/semengine/pkg/types"
 )
@@ -36,6 +38,16 @@ type writeOutcome struct {
 // every mutation with fail. Reconcile's exact read is answered with the entity at revision 7.
 func eachWrite(t *testing.T, fail error) map[MutationOperation]writeOutcome {
 	t.Helper()
+	outcomes, _ := eachWriteWithContext(t.Context(), t, fail)
+	return outcomes
+}
+
+// eachWriteWithContext is eachWrite with the caller's context, and it returns the requester so a
+// test can see which requests reached the wire.
+func eachWriteWithContext(
+	ctx context.Context, t *testing.T, fail error,
+) (map[MutationOperation]writeOutcome, *projectionRequester) {
+	t.Helper()
 	contract := projectionTestContract(t)
 	requester := &projectionRequester{handle: func(subject string, _ []byte) ([]byte, error) {
 		if subject == "graph.ingest.query.entity" {
@@ -47,7 +59,6 @@ func eachWrite(t *testing.T, fail error) map[MutationOperation]writeOutcome {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ctx := t.Context()
 	metadata := MutationMetadata{RequestID: "commit-ambiguity", Source: "test-projector", Timestamp: projectionTestTime}
 	outcomes := make(map[MutationOperation]writeOutcome, 4)
 	receipt, err := client.Create(ctx, CreateMutation{
@@ -67,7 +78,7 @@ func eachWrite(t *testing.T, fail error) map[MutationOperation]writeOutcome {
 	outcomes[MutationOperationAppend] = writeOutcome{receipt, err}
 	receipt, err = client.Delete(ctx, DeleteMutation{EntityID: projectionTestEntity, ExpectedRevision: 7, Metadata: metadata})
 	outcomes[MutationOperationDelete] = writeOutcome{receipt, err}
-	return outcomes
+	return outcomes, requester
 }
 
 func TestClassifiedReplyIsNotCommittedOnlyWhenRefusedBeforeWrite(t *testing.T) {
@@ -113,9 +124,9 @@ func TestClassifiedReplyIsNotCommittedOnlyWhenRefusedBeforeWrite(t *testing.T) {
 				if !errors.As(outcome.err, &mutationErr) {
 					t.Fatalf("%s: error = %v, want a *MutationError", operation, outcome.err)
 				}
-				if outcome.receipt.Commit != test.want || mutationErr.Commit != test.want || mutationErr.Kind != test.kind {
-					t.Errorf("%s: receipt commit %q, error commit %q, kind %q; want %q, %q, %q",
-						operation, outcome.receipt.Commit, mutationErr.Commit, mutationErr.Kind, test.want, test.want, test.kind)
+				if outcome.receipt != (MutationReceipt{}) || mutationErr.Commit != test.want || mutationErr.Kind != test.kind {
+					t.Errorf("%s: receipt %#v, error commit %q, kind %q; want a zero receipt, %q, %q",
+						operation, outcome.receipt, mutationErr.Commit, mutationErr.Kind, test.want, test.kind)
 				}
 				if mutationErr.Class != wantClass || mutationErr.Code != test.code ||
 					!reflect.DeepEqual(mutationErr.Detail, reply.Detail) {
@@ -150,34 +161,53 @@ func assertCommitUnknownIsFatal(t *testing.T, operation MutationOperation, err e
 }
 
 func TestTransportOutcomesKeepTheirCommitState(t *testing.T) {
+	ended, cancel := context.WithCancel(t.Context())
+	cancel()
 	tests := []struct {
 		name string
+		// ctx is nil for the test's own context.
+		ctx  context.Context
 		fail error
+		// is is the error errors.Is must reach: the wire's fail, or the context's cause.
+		is   error
 		want CommitState
 		kind MutationErrorKind
 	}{
-		{"no responders", nats.ErrNoResponders, CommitNotCommitted, MutationUnavailable},
-		{"timeout after possible delivery", nats.ErrTimeout, CommitUnknown, MutationCommitUnknown},
+		{"no responders", nil, nats.ErrNoResponders, nats.ErrNoResponders, CommitNotCommitted, MutationUnavailable},
+		{"timeout after possible delivery", nil, nats.ErrTimeout, nats.ErrTimeout, CommitUnknown, MutationCommitUnknown},
+		// Design D1: nothing was sent, so nothing was written and a retry is safe; errors.Is still
+		// tells it apart from a missing responder. The wire's error must never be reached.
+		{"context ended before send", ended, errors.New("the wire must not be reached"), context.Canceled,
+			CommitNotCommitted, MutationUnavailable},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			for operation, outcome := range eachWrite(t, test.fail) {
+			ctx := test.ctx
+			if ctx == nil {
+				ctx = t.Context()
+			}
+			outcomes, requester := eachWriteWithContext(ctx, t, test.fail)
+			for operation, outcome := range outcomes {
+				if test.ctx != nil && operation == MutationOperationReconcile {
+					// Reconcile reads before it writes; its read is the other test's (inventory § 7, D-1).
+					continue
+				}
 				var mutationErr *MutationError
-				if !errors.As(outcome.err, &mutationErr) || outcome.receipt.Commit != test.want ||
+				if !errors.As(outcome.err, &mutationErr) || outcome.receipt != (MutationReceipt{}) ||
 					mutationErr.Commit != test.want || mutationErr.Kind != test.kind {
-					t.Errorf("%s: receipt = %#v, error = %#v; want commit %q, kind %q",
+					t.Errorf("%s: receipt = %#v, error = %#v; want a zero receipt, commit %q, kind %q",
 						operation, outcome.receipt, mutationErr, test.want, test.kind)
 					continue
 				}
-				if !errors.Is(outcome.err, test.fail) {
-					t.Errorf("%s: errors.Is does not reach %v: %v", operation, test.fail, outcome.err)
+				if !errors.Is(outcome.err, test.is) {
+					t.Errorf("%s: errors.Is does not reach %v: %v", operation, test.is, outcome.err)
 				}
 				if test.want != CommitUnknown {
-					// Design D3: no responder took the request, so nothing was written and a retry is
-					// safe. Only the Class field is promised; the raw nats.ErrNoResponders underneath
-					// stays unclassified.
+					// Design D3: no responder took the request, or it was never sent, so nothing was
+					// written and a retry is safe. Only the Class field is promised; the raw
+					// nats.ErrNoResponders underneath stays unclassified.
 					if mutationErr.Class != errs.ErrorTransient {
-						t.Errorf("%s: class %q, want transient: no responder took the request", operation, mutationErr.Class)
+						t.Errorf("%s: class %q, want transient: the request was not delivered", operation, mutationErr.Class)
 					}
 					continue
 				}
@@ -190,6 +220,14 @@ func TestTransportOutcomesKeepTheirCommitState(t *testing.T) {
 						operation, mutationErr.Class, mutationErr.Code, found, classified)
 				}
 				assertCommitUnknownIsFatal(t, operation, outcome.err)
+			}
+			if test.ctx == nil {
+				return
+			}
+			for _, request := range requester.requests {
+				if request.subject != "graph.ingest.query.entity" {
+					t.Errorf("a request reached the wire on %q; a context that ended sends no mutation", request.subject)
+				}
 			}
 		})
 	}
@@ -216,7 +254,7 @@ func TestAppendSubjectFailureAfterPossibleWriteIsCommitUnknown(t *testing.T) {
 		Metadata: MutationMetadata{RequestID: "append-unconfirmed", Source: "test-projector", Timestamp: projectionTestTime},
 	})
 	var mutationErr *MutationError
-	if !errors.As(err, &mutationErr) || receipt.Commit != CommitUnknown || mutationErr.Commit != CommitUnknown ||
+	if !errors.As(err, &mutationErr) || receipt != (MutationReceipt{}) || mutationErr.Commit != CommitUnknown ||
 		mutationErr.Kind != MutationCommitUnknown || mutationErr.Code != graph.ErrorCodeInternal {
 		t.Fatalf("receipt = %#v, error = %#v", receipt, mutationErr)
 	}
@@ -230,27 +268,78 @@ func TestAppendSubjectFailureAfterPossibleWriteIsCommitUnknown(t *testing.T) {
 	assertCommitUnknownIsFatal(t, MutationOperationAppend, err)
 }
 
-// A read writes nothing, so a classified reply to Reconcile's exact read stays not committed.
-func TestReconcileReadFailureIsNotCommitted(t *testing.T) {
+// A create reply that names another entity proves nothing about the request's entity, which may
+// have been written: commit-unknown and fatal (design D4; the wire client refuses the reply).
+func TestCreateReplyNamingAnotherEntityIsCommitUnknown(t *testing.T) {
 	contract := projectionTestContract(t)
-	requester := &projectionRequester{handle: func(subject string, _ []byte) ([]byte, error) {
-		if subject != "graph.ingest.query.entity" {
-			t.Fatalf("subject = %q; a failed read sends no mutation", subject)
-		}
-		return nil, errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal, errors.New("kv get failed"))
+	other := projectionTestState()
+	other.ID = "acme.ops.test.system.widget.002"
+	requester := &projectionRequester{handle: func(string, []byte) ([]byte, error) {
+		return projectionJSON(t, graph.CreateEntityResponse{
+			Outcome: graph.MutationApplied, Entity: other, KVRevision: 1,
+		}), nil
 	}}
 	client, err := newMutationClient(requester, []Contract{contract}, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	receipt, err := client.Reconcile(t.Context(), ReconcileMutation{
-		Contract: contract.Name, Group: "state", EntityID: projectionTestEntity,
-		Desired:  []message.Triple{{Subject: projectionTestEntity, Predicate: "test.value.name", Object: "new"}},
-		Metadata: MutationMetadata{Source: "test-projector", Timestamp: projectionTestTime},
+	receipt, err := client.Create(t.Context(), CreateMutation{
+		Contract: contract.Name, Entity: projectionTestState(), Metadata: canonicalMetadata,
+		Triples: []message.Triple{canonicalStatement("test.identity.name")},
 	})
 	var mutationErr *MutationError
-	if !errors.As(err, &mutationErr) || receipt.Commit != CommitNotCommitted || mutationErr.Commit != CommitNotCommitted ||
-		mutationErr.Operation != MutationOperationReadAuthoritative {
-		t.Fatalf("receipt = %#v, error = %#v", receipt, mutationErr)
+	if !errors.As(err, &mutationErr) || receipt != (MutationReceipt{}) || mutationErr.Commit != CommitUnknown ||
+		mutationErr.Kind != MutationCommitUnknown {
+		t.Fatalf("receipt = %#v, error = %#v; want commit-unknown", receipt, err)
+	}
+	assertCommitUnknownIsFatal(t, MutationOperationCreate, err)
+}
+
+// A read writes nothing, so every failure of Reconcile's exact read is not committed: a
+// classified reply, and an unclassified error such as a timeout or a client that is not
+// connected (#267, design D1).
+func TestReconcileReadFailureIsNotCommitted(t *testing.T) {
+	tests := []struct {
+		name string
+		fail error
+	}{
+		{"classified reply", errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal, errors.New("kv get failed"))},
+		{"timeout", nats.ErrTimeout},
+		{"not connected", natsclient.ErrNotConnected},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			contract := projectionTestContract(t)
+			requester := &projectionRequester{handle: func(subject string, _ []byte) ([]byte, error) {
+				if subject != "graph.ingest.query.entity" {
+					t.Errorf("subject = %q; a failed read sends no mutation", subject)
+				}
+				return nil, test.fail
+			}}
+			client, err := newMutationClient(requester, []Contract{contract}, time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			receipt, err := client.Reconcile(t.Context(), ReconcileMutation{
+				Contract: contract.Name, Group: "state", EntityID: projectionTestEntity,
+				Desired:  []message.Triple{{Subject: projectionTestEntity, Predicate: "test.value.name", Object: "new"}},
+				Metadata: MutationMetadata{Source: "test-projector", Timestamp: projectionTestTime},
+			})
+			var mutationErr *MutationError
+			if !errors.As(err, &mutationErr) || receipt != (MutationReceipt{}) || mutationErr.Commit != CommitNotCommitted ||
+				mutationErr.Operation != MutationOperationReadAuthoritative {
+				t.Fatalf("receipt = %#v, error = %#v; want not committed from operation %q",
+					receipt, mutationErr, MutationOperationReadAuthoritative)
+			}
+			if mutationErr.Kind == MutationCommitUnknown {
+				t.Errorf("kind %q; a read that writes nothing is never commit-unknown", mutationErr.Kind)
+			}
+			if !errors.Is(err, test.fail) {
+				t.Errorf("errors.Is does not reach %v: %v", test.fail, err)
+			}
+			if len(requester.requests) != 1 {
+				t.Errorf("%d requests reached the wire; want the one read", len(requester.requests))
+			}
+		})
 	}
 }

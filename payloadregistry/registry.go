@@ -189,7 +189,7 @@ func bindContracts(registered types.Type, floor string, contracts []contract.Con
 	bound := make([]contract.Contract, 0, len(contracts))
 	names := make(map[string]struct{}, len(contracts))
 	for _, original := range contracts {
-		c := cloneContract(original)
+		c := original.Clone()
 		if c.MessageType == (types.Type{}) {
 			c.MessageType = registered
 		}
@@ -220,25 +220,13 @@ func bindContracts(registered types.Type, floor string, contracts []contract.Con
 	return bound, nil
 }
 
-// cloneContract returns a contract whose slices are independent of the input.
-func cloneContract(c contract.Contract) contract.Contract {
-	clone := c
-	clone.BirthPredicates = append([]string(nil), c.BirthPredicates...)
-	clone.Groups = make([]contract.PredicateGroup, len(c.Groups))
-	for index, group := range c.Groups {
-		clone.Groups[index] = group
-		clone.Groups[index].Predicates = append([]string(nil), group.Predicates...)
-	}
-	return clone
-}
-
 func cloneContracts(contracts []contract.Contract) []contract.Contract {
 	if len(contracts) == 0 {
 		return nil
 	}
 	cloned := make([]contract.Contract, len(contracts))
 	for index, c := range contracts {
-		cloned[index] = cloneContract(c)
+		cloned[index] = c.Clone()
 	}
 	return cloned
 }

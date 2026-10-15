@@ -1,9 +1,6 @@
 package projection
 
-//revive:disable:max-public-structs Explicit request and result structs keep the API legible.
-
 import (
-	"context"
 	"fmt"
 	"time"
 
@@ -86,11 +83,11 @@ const (
 	CommitVerified CommitState = "verified"
 )
 
-// MutationReceipt contains the authoritative result and commitment evidence.
+// MutationReceipt contains the authoritative result of a mutation that committed. A method that
+// fails returns a zero receipt, and its *MutationError's Commit reports what is proven.
 type MutationReceipt struct {
 	Entity     *graph.EntityState
 	KVRevision uint64
-	Commit     CommitState
 }
 
 // MutationOperation identifies the client operation that produced a result.
@@ -121,7 +118,10 @@ const (
 	MutationConflict MutationErrorKind = "conflict"
 	// MutationRevisionConflict reports a stale expected authority revision.
 	MutationRevisionConflict MutationErrorKind = "revision-conflict"
-	// MutationUnavailable reports no available mutation responder.
+	// MutationUnavailable reports an operation that could not complete and wrote nothing. For a
+	// write, the request was not delivered: no responder took it, or the caller's context ended
+	// before it was sent. For a read (operation read-authoritative), the request may have been
+	// delivered, but a read stores nothing.
 	MutationUnavailable MutationErrorKind = "unavailable"
 	// MutationCommitUnknown reports a mutation that may have committed (CommitUnknown).
 	MutationCommitUnknown MutationErrorKind = "commit-unknown"
@@ -153,30 +153,3 @@ func (e *MutationError) Unwrap() error {
 	}
 	return e.Err
 }
-
-// EntityCreator creates one entity through the canonical mutation port.
-type EntityCreator interface {
-	Create(context.Context, CreateMutation) (MutationReceipt, error)
-}
-
-// PredicateReconciler reconciles one declared predicate group.
-type PredicateReconciler interface {
-	Reconcile(context.Context, ReconcileMutation) (MutationReceipt, error)
-}
-
-// TripleAppender appends set-valued triples to an existing entity.
-type TripleAppender interface {
-	Append(context.Context, AppendMutation) (MutationReceipt, error)
-}
-
-// EntityDeleter deletes one entity at an expected authority revision.
-type EntityDeleter interface {
-	Delete(context.Context, DeleteMutation) (MutationReceipt, error)
-}
-
-// AuthoritativeReader reads entity bytes and their same-entry KV revision.
-type AuthoritativeReader interface {
-	ReadAuthoritative(context.Context, string) (*graph.ExactEntity, error)
-}
-
-//revive:enable:max-public-structs

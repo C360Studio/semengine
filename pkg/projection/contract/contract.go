@@ -9,6 +9,7 @@ package contract
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -66,6 +67,19 @@ func (c Contract) Validate() error {
 // populated; predicate declaration stays at mutation-client construction.
 func (c Contract) ValidateShape() error {
 	return c.validate(false)
+}
+
+// Clone returns a copy of c whose groups, group predicates and birth
+// predicates share no backing array with c, so a holder can keep it while the
+// caller goes on changing its own.
+func (c Contract) Clone() Contract {
+	clone := c
+	clone.BirthPredicates = slices.Clone(c.BirthPredicates)
+	clone.Groups = slices.Clone(c.Groups)
+	for index := range clone.Groups {
+		clone.Groups[index].Predicates = slices.Clone(c.Groups[index].Predicates)
+	}
+	return clone
 }
 
 func (c Contract) validate(requireDeclared bool) error {

@@ -482,9 +482,17 @@ func TestQueryPrefix_PatternNoMatches(t *testing.T) {
 		"o.p.*.intel.platform.*",
 		"o.p.sys1.intel.platform.uav-01",
 	} {
-		resp := callPrefixHandler(t, comp, graph.PrefixQueryRequest{
+		reqData, err := json.Marshal(graph.PrefixQueryRequest{
 			Pattern: pattern,
 		})
+		require.NoError(t, err)
+
+		respData, err := comp.handleQueryPrefixWithMaxPayload(context.Background(), reqData, 1<<20)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"entities":null}`, string(respData))
+
+		var resp graph.PrefixQueryResponse
+		require.NoError(t, json.Unmarshal(respData, &resp))
 		assert.Empty(t, resp.Entities)
 		assert.Empty(t, resp.NextCursor)
 		assert.Zero(t, gets.Load(), "pattern query must not fall back to exact-entity Get (%s)", pattern)

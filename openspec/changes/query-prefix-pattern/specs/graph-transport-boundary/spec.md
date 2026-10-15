@@ -42,5 +42,5 @@ clamping, and `max_payload` byte-fitting as literal prefix queries.
 #### Scenario: A pattern with no matches skips exact-key fallback
 
 - **WHEN** a caller sends a valid `Pattern` that matches zero keys in `ENTITY_STATES`
-- **THEN** graph-ingest returns an empty `Entities` slice (`{"entities":[]}`) with no `NextCursor` and performs no
+- **THEN** graph-ingest returns an empty `Entities` result (`{"entities":null}`) with no `NextCursor` and performs no
   exact-key `Get` call on the bucket

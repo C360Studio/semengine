@@ -74,8 +74,8 @@ All underlying primitives already exist in the repository:
   hydration, so paging to exhaustion via `NextCursor` yields the exact sorted set of matching entities with no gaps or
   duplicates (`specs/graph-transport-boundary/spec.md:13-16, 17-21, 36-40`).
 - **I5 (Zero-match empty page without exact-key `Get` fallback):** For every valid `Pattern` that matches zero keys in
-  `ENTITY_STATES`, `handleQueryPrefixWithMaxPayload` returns `{"entities":[]}` without calling `entityBucket.Get`
-  (`specs/graph-transport-boundary/spec.md:13-14, 42-46`).
+  `ENTITY_STATES`, `handleQueryPrefixWithMaxPayload` returns an empty result (`{"entities":null}`) without calling
+  `entityBucket.Get` (`specs/graph-transport-boundary/spec.md:13-14, 42-46`).
 
 ## Options Considered
 

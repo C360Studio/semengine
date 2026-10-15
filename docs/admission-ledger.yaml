@@ -314,9 +314,9 @@
     EntityID joins six positions and Predicate three without rewriting a byte, and each returns the
     value only when pkg/types or vocabulary accepts it, failing the test otherwise, as at the pin
   dependencies_and_side_effects: >-
-    pkg/types, vocabulary (in-set; their closure adds pkg/errs and pkg/retry, neither of which
-    starts a goroutine; pkg/platform left it when vocabulary.EntityIRI was removed, task 3.6b);
-    testing; no goroutine, no I/O
+    pkg/types, vocabulary (in-set; their closure adds pkg/errs, which starts no goroutine;
+    pkg/platform left it when vocabulary.EntityIRI was removed, task 3.6b, and pkg/retry left it
+    when errs.RetryConfig was removed, #218); testing; no goroutine, no I/O
   known_risks: >-
     no context roots. Imports testing from a non-test file, which T-B1 admits only under
     internal/harness/ (TestImportGraphRejectsHarnessHelpersOutsideTheHarness). No test of a package
@@ -373,12 +373,16 @@
     Do and DoWithResult retry up to MaxAttempts with exponential backoff capped at MaxDelay,
     optional jitter, stop on ctx and on NonRetryable; DefaultConfig, Quick, Persistent as at the pin.
     Changed behavior: Do refuses a nil context before the operation runs and checks ctx before every
-    attempt; jitter() skips rand.Int63n when a quarter of the delay is under 1 ns
-  dependencies_and_side_effects: stdlib only; process-global jitter source seeded at init
+    attempt; jitter() uses math/rand/v2 and skips rand.Int64N when a quarter of the delay is under
+    1 ns (#218)
+  dependencies_and_side_effects: stdlib only (math/rand/v2 lock-free jitter); no goroutine, no I/O
   known_risks: >-
-    no context roots; timer-driven tests moved into synctest.Test bubbles; README updated for
-    SemEngine module path and markdownlint
-  proving_tests: pkg/retry/retry_test.go (synctest-based unit tests)
+    no context roots; timer-driven tests moved into synctest.Test bubbles; lock-free math/rand/v2
+    jitter replaces mutex-guarded math/rand source (#218); README updated for SemEngine module path
+    and markdownlint
+  proving_tests: >-
+    pkg/retry/retry_test.go (synctest-based unit tests, including TestRetry_JitterBounds and
+    TestRetry_ConcurrentWithJitter), pkg/retry/reviewer_retry_probe_test.go
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -432,11 +436,14 @@
   contract: >-
     classification, wrapping, errors.Is/As behavior, and ErrAlreadyStopped as at the pin, except
     IsTransient and IsFatal classify strictly by *ClassifiedError class and known sentinels, never
-    by substring matching on error text (#146, owner ruling N)
-  dependencies_and_side_effects: pkg/retry (in-set); stdlib; no goroutine, no I/O
+    by substring matching on error text (#146, owner ruling N); WrapTransient, WrapFatal, and
+    WrapInvalid return nil when err == nil regardless of action (#218); duplicate RetryConfig,
+    DefaultRetryConfig, ShouldRetry, ToRetryConfig, and BackoffDelay removed (#218)
+  dependencies_and_side_effects: stdlib only; no goroutine, no I/O
   known_risks: >-
     no production context roots. Classify defaults unclassified errors without a listed sentinel to
-    ErrorTransient regardless of error text; doc.go updated to match
+    ErrorTransient regardless of error text (#167); duplicate RetryConfig removed and
+    WrapTransient/WrapFatal/WrapInvalid made nil-safe (#218); doc.go updated to match
   proving_tests: >-
     pkg/errs/errs_test.go, pkg/errs/classified_is_test.go, pkg/errs/shutdown_test.go,
     pkg/errs/classify_by_type_test.go

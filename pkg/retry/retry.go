@@ -5,15 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand"
-	"sync"
+	"math/rand/v2"
 	"time"
-)
-
-var (
-	// Thread-safe random source for jitter
-	randMu     sync.Mutex
-	randSource = rand.New(rand.NewSource(time.Now().UnixNano()))
 )
 
 // NonRetryableError wraps errors that should not be retried
@@ -162,16 +155,14 @@ func Do(ctx context.Context, cfg Config, fn func() error) error {
 	return fmt.Errorf("retry failed after %d attempts: %w", cfg.MaxAttempts, lastErr)
 }
 
-// jitter returns a random duration below a quarter of delay, using the thread-safe source. A delay
-// under 4ns has no room for jitter and gets none: Int63n panics on zero (Codex F34).
+// jitter returns a random duration below a quarter of delay. A delay under 4ns has no room for
+// jitter and gets none: Int64N panics on zero (Codex F34).
 func jitter(delay time.Duration) time.Duration {
 	limit := int64(delay / 4)
 	if limit <= 0 {
 		return 0
 	}
-	randMu.Lock()
-	defer randMu.Unlock()
-	return time.Duration(randSource.Int63n(limit))
+	return time.Duration(rand.Int64N(limit))
 }
 
 // DoWithResult executes fn with retry and returns both result and error

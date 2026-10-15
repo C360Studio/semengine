@@ -36,7 +36,7 @@ is reported, not what is decided, and ADR-111's `:66` cite is pinned to `522bf3a
 
 `Code` and `Detail` are the reply's (`Detail` is copied with `maps.Clone`). `Operation` is the argument. `Kind` is
 computed once. `ReadAuthoritative` keeps its own rule and does not go through D1: a read writes nothing, so a
-classified read reply is not committed as today, and with owner question 3 answered yes every read failure is (#267).
+classified read reply is not committed as today, and every read failure is not committed (#267, owner question 3).
 A context that ended before sending stays `MutationUnavailable`, with no new kind. That is what
 today's code reports, and semboids retries on it (inventory § 4). The constant's doc comment changes to "the request
 was not delivered: no responder took it, or the caller's context ended before it was sent".
@@ -107,7 +107,7 @@ covers each one (`docs/testing.md`).
 ## Not in this change
 
 Lifecycle's adoption of D1, its `ErrEmitFailed` path, and the `default:` of `lifecycleMutationOperation` (9b).
-Defect D-2 (#268). Defect D-1 (#267), unless owner question 3 brings it in.
+Defect D-2 (#268). Defect D-1 (#267) is in (owner question 3).
 
 ## Merge order
 
@@ -115,6 +115,8 @@ No open PR shares a code file. #266 also edits `docs/admission-ledger.yaml`, in 
 same rule: whichever PR lands second merges `origin/main` first. 9b follows this PR.
 
 ## Owner questions
+
+Answered 2026-10-15 (#138 comment 6201479528): 1 keep the names; 2 yes, `Clone` here; 3 yes, fix #267 here.
 
 1. **Keep the old names for the contract types.** Recommended: keep them. On 2026-10-10 you released the removal of
    `projection.Contract`, `projection.PredicateGroup` and the other short names, because nothing seemed to use them.

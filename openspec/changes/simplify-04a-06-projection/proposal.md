@@ -15,7 +15,7 @@ possibly-stored write as retryable (#257). 9b fixes lifecycle by calling the map
   mutation request to its commit state, kind, class, code and detail. Every `MutationClient` write uses it.
 - `MutationUnavailable`'s doc says "not delivered": no responder took the request, or the caller's context ended
   before it was sent (what the code already reports).
-- If owner question 3 is answered yes: a `Reconcile` whose own read fails reports not committed (#267).
+- A `Reconcile` whose own read fails reports not committed (#267; owner question 3).
 - `MutationReceipt` loses `Commit`: a failing method returns a zero receipt, and the commit state is on the
   `*MutationError`.
 - Remove `EntityCreator`, `PredicateReconciler`, `TripleAppender`, `EntityDeleter`, `AuthoritativeReader`, and the two
@@ -39,4 +39,4 @@ possibly-stored write as retryable (#257). 9b fixes lifecycle by calling the map
 - `docs/admission-ledger.yaml` (`pkg/projection` contract; `pkg/projection/contract` disposition, owner question 2).
 - Exported surface: two symbols added (`ClassifyMutationError`, `Contract.Clone`); five interfaces and one field removed.
   Consumers measured: none reads what is removed.
-- Closes #138. Addresses #223. 9b (#154, #257) adopts D1.
+- Closes #138 and #267. Addresses #223. 9b (#154, #257) adopts D1.

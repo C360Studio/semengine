@@ -59,6 +59,12 @@ replaces only that source's statements of the named predicates.
 - **WHEN** a `ReconcileMutation`'s metadata has no `Source`
 - **THEN** the client returns an invalid-class error that reports not-committed, and no request reaches the broker
 
+#### Scenario: A failed read is not committed
+
+- **WHEN** `Reconcile`'s own read of the entity fails, with a classified reply or with an unclassified error such as
+  a timeout or a client that is not connected
+- **THEN** the error reports not-committed with operation `read-authoritative`, and no mutation request is sent
+
 #### Scenario: Unchanged revision
 
 - **WHEN** the caller reconciles at the current revision R

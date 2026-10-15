@@ -5,8 +5,9 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 ## 1. Design
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal, design and spec delta pass pre-owner review and are accepted
-  by the owner on #138 (owner questions 1–3). Gate: `task spec:check` and `task docs:check`.
+- [x] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal, design and spec delta pass pre-owner review and are accepted
+  by the owner on #138 (owner questions 1–3; answered 2026-10-15, #138 comment 6201479528: keep the names, add
+  `Clone` here, fix #267 here). Gate: `task spec:check` and `task docs:check`.
 
 ## 2. Failing tests
 
@@ -20,7 +21,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 - [ ] 2.3 `TestContractCloneIsIndependent` (D5). Gate: fails on the base commit.
 - [ ] 2.4 `TestCreateReplyNamingAnotherEntityIsCommitUnknown` and an append unknown-outcome row (D4). Gate: they pass on
   the base commit and after; one `task mutate:check` run each, against graphmutation's check, shows them able to fail.
-- [ ] 2.5 Only if owner question 3 is answered yes: a `Reconcile` whose read fails with `nats.ErrTimeout` or
+- [ ] 2.5 A `Reconcile` whose read fails with `nats.ErrTimeout` or
   `natsclient.ErrNotConnected` reads not committed, sends no mutation, and reports operation `read-authoritative`
   (extends `TestReconcileReadFailureIsNotCommitted`). Gate: fails on the base commit.
 
@@ -33,20 +34,20 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
   `go test -tags integration -race -run 'CommitAmbiguity|CommitUnknown' ./processor/graph-ingest/`.
 - [ ] 3.3 Remove the five interfaces and both revive directives. Gate: `task build`, `task lint`.
 - [ ] 3.4 Remove the dead layers (D4) and use one nil-client refusal shape. Gate: 2.4 and all existing tests pass.
-- [ ] 3.5 `contract.Contract.Clone`; both copies removed (if owner question 2 is accepted). Gate: 2.3 passes;
+- [ ] 3.5 `contract.Contract.Clone`; both copies removed (owner question 2: accepted). Gate: 2.3 passes;
   `task ledger:check`.
 - [ ] 3.6 Doc comments declare each method's failure outcomes (D7). Gate: review.
-- [ ] 3.7 Only if owner question 3 is answered yes: every `ReadAuthoritative` failure is not committed (#267). Gate:
-  2.5 passes, and the spec delta gains the scenario "A failed read is not committed" (`task spec:check`).
+- [ ] 3.7 Every `ReadAuthoritative` failure is not committed (#267). Gate:
+  2.5 passes.
 
 ## 4. Documentation
 
 - [ ] 4.1 `docs/admission-ledger.yaml`: the `pkg/projection` contract (the mapping is exported; no commit state on the
   receipt); the `pkg/projection/contract` row `adapt` with current `known_risks` (owner question 2). Gate:
   `task ledger:check`, `task docs:check`.
-- [ ] 4.2 Link #268, and #267 unless owner question 3 brings it in, from the PR body without a closing keyword (both
-  filed `status:blocked`). Comment on #257 with the two lifecycle items #138 item 4 leaves for 9b once this PR closes
-  #138: a context that ended before sending, which lifecycle reports commit-unknown (`graph_emit.go:108-115`), and
+- [ ] 4.2 Link #268 from the PR body without a closing keyword (filed `status:blocked`); the PR body closes #267.
+  Comment on #257 with the two lifecycle items #138 item 4 leaves for 9b once this PR closes #138: a context that
+  ended before sending, which lifecycle reports commit-unknown (`graph_emit.go:108-115`), and
   `lifecycleMutationOperation`'s `default:` (`graph_emit.go:125-126`), which should return an error, not
   `MutationOperationAppend`. Name `ClassifyMutationError` as the mapping 9b calls. Gate: the issue numbers appear on
   the PR body's follow-up line, and the #257 comment is read back.

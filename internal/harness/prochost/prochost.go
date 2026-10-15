@@ -16,6 +16,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,10 +39,24 @@ const (
 // Helper runs fn and exits the process when the environment marker names this helper, and
 // otherwise returns at once. Call it from the test binary's TestHelperProcess, once per helper;
 // in a normal test run every call is a no-op.
+//
+// While fn runs, the helper watches its stdin, the pipe Start holds the write end of. A test
+// process that ends without its cleanups (killed, interrupted, os.Exit, a panic off the test
+// goroutine) leaves nothing to stop its helpers; the kernel closes the pipe whichever way it
+// ended, so the helper reads end-of-file, says so on stderr and exits 1 (#208). fn must not read
+// stdin.
 func Helper(name string, fn func()) {
 	if name == "" || os.Getenv(markerEnv) != name {
 		return
 	}
+	go func() {
+		how := "stdin reached end-of-file"
+		if _, err := io.Copy(io.Discard, os.Stdin); err != nil {
+			how = "reading stdin: " + err.Error()
+		}
+		fmt.Fprintf(os.Stderr, "prochost: helper %s exiting: test process ended (%s)\n", name, how)
+		os.Exit(1)
+	}()
 	fn()
 	os.Exit(0)
 }
@@ -89,6 +104,12 @@ func Start(t testing.TB, name string, env ...string) (*Process, error) {
 	cmd.Env = append(append(os.Environ(), env...), markerEnv+"="+name)
 	cmd.Stdout, cmd.Stderr = stdout, stderr // files, so Wait copies nothing
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// The helper exits when this pipe reaches end-of-file (see Helper). cmd keeps the write end
+	// open, and the reaper holds cmd until the child has exited, so the end closes only when the
+	// helper is gone or this process is.
+	if _, err := cmd.StdinPipe(); err != nil {
+		return nil, fmt.Errorf("prochost: stdin pipe for helper %s: %w", name, err)
+	}
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("prochost: start helper %s: %w", name, err)
 	}

@@ -5,7 +5,7 @@ before any production line changes; record the failing output in `notes/<task>.m
 
 ## 1. Design
 
-- [ ] 1.1 Inventory, proposal, design and spec deltas reviewed (inventory review, pre-owner design review) and accepted
+- [x] 1.1 Inventory, proposal, design and spec deltas reviewed (inventory review, pre-owner design review) and accepted
   by the owner on #167. Gate: `task spec:check` and `task docs:check`.
 
 ## 2. Failing tests
@@ -41,12 +41,11 @@ before any production line changes; record the failing output in `notes/<task>.m
 
 - [ ] 4.1 `pkg/errs/doc.go` (unclassified → fatal; `IsFatal` stays strict), `docs/contract.md` (a commit-unknown error
   is fatal, and `errs.IsTransient` reports false for it), the `pkg/errs` row of `docs/admission-ledger.yaml` (contract
-  and `known_risks`), and, if the owner agrees on #167, a dated amendment to ADR-112 § 3 bullets `:144-146` (no
+  and `known_risks`), and a dated amendment (owner ruling 4 on #167) to ADR-112 § 3 bullets `:144-146` (no
   responders' class) and `:152` (the unknown-error default). Gate: `task docs:check` and `task ledger:check`.
-- [ ] 4.2 File every defect this change found and did not fix (protocol File step), linked from the PR without a
-  closing keyword. This includes lifecycle's `ErrEmitFailed` path (`pkg/lifecycle/graph_emit.go:98-99`), filed as a
-  defect pointing at #138 item a, and the `ErrorClass` zero value if the owner says so. Gate: issue numbers in a PR
-  comment.
+- [ ] 4.2 File every defect this change found and did not fix (protocol File step), linked from the PR body without a
+  closing keyword. Filed at design: #257 (lifecycle's `ErrEmitFailed` path, fixed with #138 item a) and #258 (the
+  `ErrorClass` zero value). Gate: every such issue number appears in the PR body's follow-up line.
 
 ## 5. Verify, review and close
 

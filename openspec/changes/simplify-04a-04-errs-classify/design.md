@@ -1,7 +1,7 @@
 # Design: simplify-04a-04-errs-classify
 
-Status: draft, pending inventory review, pre-owner design review and owner acceptance. Inventory: `inventory.md`
-(base `db48e5b`).
+Status: accepted by the owner on 2026-10-15 (#167 comment 6191970843), after inventory and pre-owner design review
+passed (round 2, `701dbfd`). Inventory: `inventory.md` (base `db48e5b`).
 
 ## Context
 
@@ -101,9 +101,9 @@ whether generated checks are needed").
   `internal` reply in `ErrEmitFailed`, so a lifecycle write that may be stored reads retryable. Fixing it needs the list
   of reply codes that prove nothing was stored. That list is unexported in `pkg/projection` (`isDefiniteFailure`,
   `mutation_client.go:450-462`). Here the fix would either copy the list into lifecycle (a second spelling) or export a
-  new projection function (new surface). Recommended: file it as its own defect (task 4.2) and fix it in #138 item a's
-  consolidation, where lifecycle calls projection's one mapping. Owner question 2.
-- **The zero value.** `ErrorClass`'s zero value is `ErrorTransient` (`errs.go:17`). Owner question 3.
+  new projection function (new surface). Filed as #257, to be fixed in #138 item a's consolidation, where
+  lifecycle calls projection's one mapping (owner ruling 2).
+- **The zero value.** `ErrorClass`'s zero value is `ErrorTransient` (`errs.go:17`). Filed as #258 (owner ruling 3).
 - **Graph-ingest's own classification of `internal` as transient** (pin ADR-060 `:443-444`; #20).
 
 ## Merge order
@@ -111,20 +111,10 @@ whether generated checks are needed").
 No open PR shares a planned file. #235 edits other rows of `docs/admission-ledger.yaml`; whichever lands second merges
 `origin/main` first.
 
-## Owner questions
+## Owner rulings (2026-10-15, #167 comment 6191970843)
 
-1. **Should an error nobody classified count as fatal?** Recommended: yes. Read in the process that made it, the
-   error is not marked fatal (`errs.IsFatal` is false), but `errs.Classify` calls it fatal. Sent back from a request
-   handler, it arrives marked fatal (`errs.IsFatal` is true). Code that checks only `IsFatal` therefore retries such an
-   error made locally and stops on it when it comes from another process. `IsFatal` stays strict because graph-ingest's
-   stream input drops a message whose error is fatal, and it should keep retrying errors nobody classified. Code that
-   needs one answer in both places asks `errs.Classify`.
-2. **Lifecycle has the same defect on another path: a write that may be stored is reported as retryable. Fix it here
-   or with the projection clean-up?** Recommended: file it now as its own defect, and fix it in the projection
-   clean-up (#138 item a), where lifecycle starts using projection's one rule for "did this write happen". A fix here
-   would either copy that rule into lifecycle or add a new exported function, and this change adds neither.
-3. File a follow-up for `ErrorClass`'s zero value being transient? A `MutationError` or `ClassifiedError` built without
-   a class reads retryable; semteams builds one this way.
-4. May ADR-112 § 3 get a dated amendment on two bullets? `:152` (the default for unknown errors, now set by the
-   `error-classification` spec) and `:144-146` (no responders' class: raw `nats.ErrNoResponders` is now fatal by
-   `errs.Classify`, and the no-responders `MutationError` carries the transient class field).
+1. An error nobody classified counts as fatal (option 1, D1); `errs.IsFatal` stays strict.
+2. Lifecycle's `ErrEmitFailed` path is filed as its own defect, #257, and fixed in #138 item a's consolidation.
+3. The `ErrorClass` zero value being transient is filed as a follow-up, #258.
+4. ADR-112 § 3 gets a dated amendment on bullets `:144-146` (no responders' class) and `:152` (the unknown-error
+   default).

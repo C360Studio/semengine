@@ -118,7 +118,7 @@ mapping split that causes it.
   - #167: retired here.
   - #138 (`pkg/projection` port-refactor), items 4 and a: lifecycle and projection map one transport outcome two ways.
     This change edits the same two functions for class only. The consolidation stays with #138. The `ErrEmitFailed`
-    defect above is filed as its own issue (task 4.2) and fixed with that consolidation (design, owner question 2).
+    defect above is filed as #257 and fixed with that consolidation (owner ruling 2 on #167).
   - #20 (projection commit ambiguity; open question on graph-ingest's `rejectInternal`): stays; graph-ingest's
     classification is unchanged here.
   - #162 (text-classification check): stays; no text classification added.

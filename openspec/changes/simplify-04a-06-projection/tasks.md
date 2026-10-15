@@ -19,7 +19,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
   the base commit (today's behaviour, now pinned) and fails under a mutant that maps `deadline` to unknown
   (`task mutate:check`).
 - [x] 2.3 `TestContractCloneIsIndependent` (D5). Gate: fails on the base commit.
-- [ ] 2.4 `TestCreateReplyNamingAnotherEntityIsCommitUnknown` and an append unknown-outcome row (D4). Gate: they pass on
+- [x] 2.4 `TestCreateReplyNamingAnotherEntityIsCommitUnknown` and an append unknown-outcome row (D4). Gate: they pass on
   the base commit and after; one `task mutate:check` run each, against graphmutation's check, shows them able to fail.
 - [x] 2.5 A `Reconcile` whose read fails with `nats.ErrTimeout` or
   `natsclient.ErrNotConnected` reads not committed, sends no mutation, and reports operation `read-authoritative`
@@ -28,21 +28,22 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 ## 3. Implementation
 
 - [x] 3.1 Export `ClassifyMutationError`, which computes `Kind` once; every write uses it; `MutationUnavailable`'s doc
-  says "not delivered". Gate: 2.1 and 2.2 pass.
+  says it wrote nothing (a write: not delivered; a read: may have been delivered, but stores nothing). Gate: 2.1 and
+  2.2 pass.
 - [x] 3.2 `MutationReceipt` without `Commit`; tests in `pkg/projection` and
   `processor/graph-ingest/commit_ambiguity_integration_test.go` read the error's `Commit`. Gate: `task test:unit`;
   `go test -tags integration -race -run 'CommitAmbiguity|CommitUnknown' ./processor/graph-ingest/`.
 - [x] 3.3 Remove the five interfaces and both revive directives. Gate: `task build`, `task lint`.
-- [ ] 3.4 Remove the dead layers (D4) and use one nil-client refusal shape. Gate: 2.4 and all existing tests pass.
+- [x] 3.4 Remove the dead layers (D4) and use one nil-client refusal shape. Gate: 2.4 and all existing tests pass.
 - [x] 3.5 `contract.Contract.Clone`; both copies removed (owner question 2: accepted). Gate: 2.3 passes;
   `task ledger:check`.
-- [ ] 3.6 Doc comments declare each method's failure outcomes (D7). Gate: review.
+- [x] 3.6 Doc comments declare each method's failure outcomes (D7). Gate: review.
 - [x] 3.7 Every `ReadAuthoritative` failure is not committed (#267). Gate:
   2.5 passes.
 
 ## 4. Documentation
 
-- [ ] 4.1 `docs/admission-ledger.yaml`: the `pkg/projection` contract (the mapping is exported; no commit state on the
+- [x] 4.1 `docs/admission-ledger.yaml`: the `pkg/projection` contract (the mapping is exported; no commit state on the
   receipt); the `pkg/projection/contract` row `adapt` with current `known_risks` (owner question 2). Gate:
   `task ledger:check`, `task docs:check`.
 - [ ] 4.2 Link #268 from the PR body without a closing keyword (filed `status:blocked`); the PR body closes #267.

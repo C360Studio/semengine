@@ -2079,15 +2079,25 @@
     with its code and detail and class fatal, so errs.IsTransient is false (#20, #167); a request
     no responder took is not committed with class transient (#167); (2) ReconcileMutation.ExpectedRevision fences reconcile at
     the caller's revision (#19); (3) Create, Append, and Reconcile require statement Timestamp and
-    Metadata.Source before sending and never read the clock (design D15)
+    Metadata.Source before sending and never read the clock (design D15). Adapted by change
+    simplify-04a-06-projection (#138): (4) the mapping from a mutation request's error to its commit
+    state is exported as ClassifyMutationError, and every write uses it; a request whose context
+    ended before it was sent is not committed with class transient; (5) MutationReceipt carries no
+    commit state: a failing method returns a zero receipt, and the commit state is on the
+    *MutationError; (6) every ReadAuthoritative failure, Reconcile's own read included, is not
+    committed with operation read-authoritative (#267)
   dependencies_and_side_effects: >-
     graph, internal/graphmutation, message, natsclient, pkg/errs, pkg/projection/contract, pkg/types
     (in-set); NATS requests on graph.mutation.> and exact-entity reads; no goroutine
   known_risks: >-
     EntityState built without Version (#100). Pre-write transient errors from graph-ingest read as
-    commit-unknown with class fatal (safe, conservative; #167); follow-up #174 tracks post-append bookkeeping
+    commit-unknown with class fatal (safe, conservative; #167); follow-up #174 tracks post-append bookkeeping.
+    A write natsclient refuses before sending (ErrNotConnected, ErrCircuitOpen) reads commit-unknown
+    (#268). The five unread interfaces (EntityCreator, PredicateReconciler, TripleAppender,
+    EntityDeleter, AuthoritativeReader) are removed (#138 item 1)
   proving_tests: >-
-    pkg/projection/mutation_client_refusals_test.go, commit_ambiguity_test.go,
+    pkg/projection/classify_mutation_error_test.go, mutation_client_refusals_test.go,
+    mutation_client_requests_test.go, commit_ambiguity_test.go,
     conditional_reconcile_test.go, mutation_client_test.go, contract_test.go, and
     processor/graph-ingest/commit_ambiguity_integration_test.go
   owner: setup-04a-02-ingest-kernel developer

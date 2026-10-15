@@ -13,8 +13,9 @@ possibly-stored write as retryable (#257). 9b fixes lifecycle by calling the map
 
 - Export one mapping, `projection.ClassifyMutationError(operation, err) *MutationError`, from the error of a graph
   mutation request to its commit state, kind, class, code and detail. Every `MutationClient` write uses it.
-- `MutationUnavailable`'s doc says "not delivered": no responder took the request, or the caller's context ended
-  before it was sent (what the code already reports).
+- `MutationUnavailable`'s doc says it wrote nothing. For a write, the request was not delivered: no responder took
+  it, or the caller's context ended before it was sent (what the code already reports). For a read, the request may
+  have been delivered, but a read stores nothing.
 - A `Reconcile` whose own read fails reports not committed (#267; owner question 3).
 - `MutationReceipt` loses `Commit`: a failing method returns a zero receipt, and the commit state is on the
   `*MutationError`.

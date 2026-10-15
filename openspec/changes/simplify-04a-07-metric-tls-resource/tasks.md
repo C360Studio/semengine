@@ -45,7 +45,7 @@ failing output in `notes/<task>.md`.
   - `go test -race ./internal/tlsutil/ ./metric/`;
   - `go test -tags integration -race ./internal/tlsutil/`;
   - `git grep -n WithMTLS -- '*.go'` is empty.
-- [ ] 4.3 D5: `TestWatcher_WaitForStartup_NilContextRefused` (shown failing on the base). `WaitForStartup(nil)` then
+- [x] 4.3 D5: `TestWatcher_WaitForStartup_NilContextRefused` (shown failing on the base). `WaitForStartup(nil)` then
   returns false and calls no check. Gate: `go test -race ./internal/resource/ ./natsclient/`.
 
 ## 5. Review stop

@@ -6,8 +6,11 @@
 //   - JSON-LD (.jsonld) — JSON with @context and @graph for web APIs
 //
 // The package uses the existing vocabulary infrastructure for IRI resolution:
-//   - Registered predicates map to their StandardIRI via [vocabulary.GetPredicateMetadata]
+//   - Registered predicates map to their StandardIRI via [vocabulary.GetPredicateMetadata];
+//     unregistered valid http:// and https:// predicate IRIs pass through unchanged
 //   - Entity ID subjects are parsed via [message.ParseEntityID] and converted to hierarchical IRIs
+//     via [SubjectIRI]; W3C Turtle / N-Triples blank-node labels (_:label) are preserved in both
+//     subject and object positions
 //   - Object values are typed using XSD datatypes based on Go type inference
 //
 // Basic usage:

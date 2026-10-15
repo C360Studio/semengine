@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -176,6 +177,59 @@ func LoadPackYAML(r io.Reader) (PackSpec, error) {
 	return pack, nil
 }
 
+// Validate checks that p is non-nil with a non-empty Name, and that every
+// prefix, predicate (including projections, alias rules, and intra-pack
+// inverse symmetry), and entity type is valid and has no intra-pack duplicates.
+// Validate is completely pure: it does not acquire registryMu, does not read
+// or mutate global predicate/entity-type/prefix registries, and does not
+// mutate the caller's PackSpec.
+func (p *PackSpec) Validate() error {
+	if p == nil {
+		return errors.New("vocabulary pack must not be nil")
+	}
+	if strings.TrimSpace(p.Name) == "" {
+		return errors.New("vocabulary pack name must not be empty")
+	}
+
+	seenPrefixes := make(map[string]struct{}, len(p.Prefixes))
+	for i, pfx := range p.Prefixes {
+		if err := pfx.Validate(); err != nil {
+			return fmt.Errorf("prefixes[%d]: %w", i, err)
+		}
+		if _, exists := seenPrefixes[pfx.Prefix]; exists {
+			return fmt.Errorf("prefixes[%d]: duplicate prefix %q in pack", i, pfx.Prefix)
+		}
+		seenPrefixes[pfx.Prefix] = struct{}{}
+	}
+
+	packPredicates := make(map[string]PredicateMetadata, len(p.Predicates))
+	for i, spec := range p.Predicates {
+		if _, exists := packPredicates[spec.Name]; exists {
+			return fmt.Errorf("predicates[%d] (%q): duplicate predicate in pack", i, spec.Name)
+		}
+		if err := stagePredicateSpec(i, spec, packPredicates); err != nil {
+			return err
+		}
+	}
+	for i, spec := range p.Predicates {
+		if err := validatePredicateMetadataIn(packPredicates[spec.Name], packPredicates); err != nil {
+			return fmt.Errorf("predicates[%d] (%q): %w", i, spec.Name, err)
+		}
+	}
+
+	packEntityTypes := make(map[string]EntityTypeMetadata, len(p.EntityTypes))
+	for i, spec := range p.EntityTypes {
+		if _, exists := packEntityTypes[spec.DomainType]; exists {
+			return fmt.Errorf("entity_types[%d] (%q): duplicate entity_type in pack", i, spec.DomainType)
+		}
+		if err := stageEntityTypeSpec(i, spec, packEntityTypes); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // RegisterPack validates every prefix, predicate, and entity type in pack
 // before mutating state. If any entry is invalid or if the optional batch
 // prefix registrar returns an error, RegisterPack leaves the predicate and
@@ -186,6 +240,10 @@ func RegisterPack(pack PackSpec, opts ...PackOption) error {
 		if opt != nil {
 			opt(&cfg)
 		}
+	}
+
+	if err := pack.Validate(); err != nil {
+		return err
 	}
 
 	registryMu.Lock()
@@ -208,17 +266,6 @@ func RegisterPack(pack PackSpec, opts ...PackOption) error {
 }
 
 func stagePackLocked(pack PackSpec) (map[string]PredicateMetadata, map[string]EntityTypeMetadata, error) {
-	seenPrefixes := make(map[string]string, len(pack.Prefixes))
-	for i, pfx := range pack.Prefixes {
-		if err := pfx.Validate(); err != nil {
-			return nil, nil, fmt.Errorf("prefixes[%d]: %w", i, err)
-		}
-		if existing, ok := seenPrefixes[pfx.Prefix]; ok && existing != pfx.Namespace {
-			return nil, nil, fmt.Errorf("prefixes[%d]: duplicate prefix %q with conflicting namespace", i, pfx.Prefix)
-		}
-		seenPrefixes[pfx.Prefix] = pfx.Namespace
-	}
-
 	stagedPredicates := make(map[string]PredicateMetadata, len(predicateRegistry)+len(pack.Predicates))
 	for k, v := range predicateRegistry {
 		v.Projection = cloneProjectionSpec(v.Projection)

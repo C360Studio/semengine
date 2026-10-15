@@ -247,8 +247,17 @@ func (c *Component) handleQueryPrefixWithMaxPayload(
 	if err := json.Unmarshal(data, &req); err != nil {
 		return nil, errs.Classified(errs.ErrorInvalid, fmt.Errorf("invalid request: %w", err))
 	}
+	if req.Prefix != "" && req.Pattern != "" {
+		return nil, errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeInvalidRequest,
+			errors.New("invalid request: prefix and pattern are mutually exclusive"))
+	}
 	if req.Prefix != "" {
 		if err := semtypes.ValidateEntityIDPrefix(req.Prefix); err != nil {
+			return nil, err
+		}
+	}
+	if req.Pattern != "" {
+		if err := semtypes.ValidateEntityIDPattern(req.Pattern); err != nil {
 			return nil, err
 		}
 	}
@@ -262,26 +271,37 @@ func (c *Component) handleQueryPrefixWithMaxPayload(
 		limit = graph.MaxPrefixQueryLimit
 	}
 
-	// Build prefix for server-side filtering.
-	prefixDot := req.Prefix
-	if req.Prefix != "" {
-		prefixDot = req.Prefix + "."
-	}
+	var (
+		keys []string
+		err  error
+	)
+	if req.Pattern != "" {
+		keys, err = c.entityBucket.KeysByFilter(ctx, req.Pattern)
+		if err != nil {
+			return nil, errs.Classified(errs.ErrorTransient, fmt.Errorf("failed to get keys: %w", err))
+		}
+	} else {
+		// Build prefix for server-side filtering.
+		prefixDot := req.Prefix
+		if req.Prefix != "" {
+			prefixDot = req.Prefix + "."
+		}
 
-	// Use server-side prefix filtering instead of loading all keys.
-	keys, err := c.entityBucket.KeysByPrefix(ctx, prefixDot)
-	if err != nil {
-		return nil, errs.Classified(errs.ErrorTransient, fmt.Errorf("failed to get keys: %w", err))
-	}
+		// Use server-side prefix filtering instead of loading all keys.
+		keys, err = c.entityBucket.KeysByPrefix(ctx, prefixDot)
+		if err != nil {
+			return nil, errs.Classified(errs.ErrorTransient, fmt.Errorf("failed to get keys: %w", err))
+		}
 
-	// Also check exact match for full entity ID queries (6-part IDs
-	// where KeysByPrefix("org.plat.dom.sys.type.inst.") finds nothing).
-	if req.Prefix != "" && len(keys) == 0 {
-		if _, getErr := c.entityBucket.Get(ctx, req.Prefix); getErr == nil {
-			keys = []string{req.Prefix}
-		} else if !natsclient.IsKVNotFoundError(getErr) {
-			return nil, errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal,
-				fmt.Errorf("failed to check exact entity key: %w", getErr))
+		// Also check exact match for full entity ID queries (6-part IDs
+		// where KeysByPrefix("org.plat.dom.sys.type.inst.") finds nothing).
+		if req.Prefix != "" && len(keys) == 0 {
+			if _, getErr := c.entityBucket.Get(ctx, req.Prefix); getErr == nil {
+				keys = []string{req.Prefix}
+			} else if !natsclient.IsKVNotFoundError(getErr) {
+				return nil, errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal,
+					fmt.Errorf("failed to check exact entity key: %w", getErr))
+			}
 		}
 	}
 

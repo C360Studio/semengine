@@ -208,9 +208,11 @@
 //	GetEntityTypeMetadata(domainType string) *EntityTypeMetadata
 //	LookupEntityTypesByClassIRI(classIRI string) []string
 //
-//	// Load and fail-closed register declarative JSON/YAML vocabulary packs
+//	// Load, validate (pure), and fail-closed register declarative JSON/YAML vocabulary packs
 //	LoadPackJSON(r io.Reader) (PackSpec, error)
 //	LoadPackYAML(r io.Reader) (PackSpec, error)
+//	(*PackSpec).Validate() error
+//	(ProjectionSpec).Validate() error
 //	RegisterPack(pack PackSpec, opts ...PackOption) error
 //
 //	// List all registered

@@ -314,7 +314,9 @@ func IsNoResponders(err error) bool {
 }
 
 // classForHeader returns the lowercase ErrorClass string that should
-// be stamped in the X-Error-Class header for the given error.
+// be stamped in the X-Error-Class header for the given error. An
+// unrecognised class is fatal, the same answer errs.Classify gives an
+// unclassified error.
 func classForHeader(err error) string {
 	switch errs.Classify(err) {
 	case errs.ErrorInvalid:
@@ -324,7 +326,7 @@ func classForHeader(err error) string {
 	case errs.ErrorTransient:
 		return ErrorClassTransient
 	default:
-		return ErrorClassTransient
+		return ErrorClassFatal
 	}
 }
 

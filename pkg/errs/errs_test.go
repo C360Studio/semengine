@@ -48,6 +48,7 @@ func TestIsTransient(t *testing.T) {
 		{"fatal error", ErrResourceExhausted, false},
 		{"timeout in message only", fmt.Errorf("operation timeout occurred"), false},
 		{"network in message only", fmt.Errorf("network connection failed"), false},
+		{"bare error", errors.New("boom"), false},
 		{"classified transient", &ClassifiedError{Class: ErrorTransient, Err: fmt.Errorf("test")}, true},
 		{"classified fatal", &ClassifiedError{Class: ErrorFatal, Err: fmt.Errorf("test")}, false},
 	}
@@ -79,6 +80,7 @@ func TestIsFatal(t *testing.T) {
 		{"invalid data", ErrInvalidData, false},
 		{"fatal in message only", fmt.Errorf("fatal system error occurred"), false},
 		{"panic in message only", fmt.Errorf("panic: system failure"), false},
+		{"bare error", errors.New("boom"), false},
 		{"classified fatal", &ClassifiedError{Class: ErrorFatal, Err: fmt.Errorf("test")}, true},
 		{"classified transient", &ClassifiedError{Class: ErrorTransient, Err: fmt.Errorf("test")}, false},
 	}
@@ -107,6 +109,7 @@ func TestIsInvalid(t *testing.T) {
 		{"fatal error", ErrResourceExhausted, false},
 		{"classified invalid", &ClassifiedError{Class: ErrorInvalid, Err: fmt.Errorf("test")}, true},
 		{"classified transient", &ClassifiedError{Class: ErrorTransient, Err: fmt.Errorf("test")}, false},
+		{"bare error", errors.New("boom"), false},
 	}
 
 	for _, test := range tests {
@@ -129,12 +132,16 @@ func TestClassify(t *testing.T) {
 		{"connection timeout", ErrConnectionTimeout, ErrorTransient},
 		{"invalid config", ErrInvalidConfig, ErrorFatal},
 		{"invalid data", ErrInvalidData, ErrorInvalid},
-		{"unknown error", fmt.Errorf("unknown error"), ErrorTransient},
+		// An unclassified error is fatal (owner ruling 1, #167 comment 6191970843).
+		{"bare error", errors.New("boom"), ErrorFatal},
 		{"classified error", &ClassifiedError{Class: ErrorFatal, Err: fmt.Errorf("test")}, ErrorFatal},
 		// Text never decides the class (ruling N, #146): an unclassified error with no
-		// listed sentinel takes the default, and a wrapped sentinel decides.
-		{"fatal word in message only", fmt.Errorf("entity c360.ops.fatal.drone.001 refused"), ErrorTransient},
+		// listed sentinel takes the default, whatever its words, and a wrapped sentinel decides.
+		{"timeout and transient words in message only", errors.New("transient timeout reading c360.ops.robotics.gcs.drone.001"), ErrorFatal},
 		{"invalid sentinel beside transient words", fmt.Errorf("network timeout: %w", ErrInvalidData), ErrorInvalid},
+		// A class or sentinel in the chain keeps marking the error.
+		{"wrapped classified transient", fmt.Errorf("handler: %w", &ClassifiedError{Class: ErrorTransient, Err: errors.New("publish")}), ErrorTransient},
+		{"wrapped context deadline", fmt.Errorf("handler: %w", context.DeadlineExceeded), ErrorTransient},
 	}
 
 	for _, test := range tests {

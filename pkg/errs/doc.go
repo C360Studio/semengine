@@ -13,7 +13,10 @@
 // # Error Classification
 //
 // Errors are classified by their class (a ClassifiedError) or a wrapped sentinel, never by
-// their text: an error with neither is unclassified, and Classify gives it ErrorTransient.
+// their text: an error with neither is unclassified, and Classify gives it ErrorFatal, because
+// retrying a failure no one has judged safe to retry can repeat a side effect. IsTransient, IsFatal
+// and IsInvalid stay strict: each reports only the class an error is marked with, so all three are
+// false for an unclassified error. A caller that needs one answer for every error branches on Classify.
 //
 //   - Transient: Network timeouts, connection issues, temporary unavailability (retry recommended)
 //   - Invalid: Malformed input, validation failures, bad configuration (do not retry)

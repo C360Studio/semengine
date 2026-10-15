@@ -58,10 +58,11 @@ func TestIntegration_RequestClassified_RoundTripPreservesClass(t *testing.T) {
 			wantInMsg:  "kv permanently unreachable",
 		},
 		{
-			name:        "unclassified_plain_error_defaults_transient",
-			handlerErr:  errors.New("plain — pkg/errs Classify defaults to transient"),
-			isTransient: true,
-			wantInMsg:   "plain",
+			// An unclassified error is fatal (owner ruling 1, #167 comment 6191970843).
+			name:       "unclassified_plain_error_defaults_fatal",
+			handlerErr: errors.New("marshal failed"),
+			isFatal:    true,
+			wantInMsg:  "marshal failed",
 		},
 	}
 

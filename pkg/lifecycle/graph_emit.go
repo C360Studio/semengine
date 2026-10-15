@@ -105,9 +105,12 @@ func classifyEmitError(operation graphmutation.Operation, err error) error {
 			Class: errs.ErrorTransient, Commit: projection.CommitNotCommitted, Err: err,
 		}
 	}
+	// The request may have been delivered and applied, so a retry can write twice: the error is
+	// fatal, and the cause is held in a fatal *errs.ClassifiedError so errs.IsTransient and
+	// errs.Classify agree with the Class field (projection-mutation spec).
 	return &projection.MutationError{
 		Operation: lifecycleMutationOperation(operation), Kind: projection.MutationCommitUnknown,
-		Class: errs.Classify(err), Commit: projection.CommitUnknown, Err: err,
+		Class: errs.ErrorFatal, Commit: projection.CommitUnknown, Err: errs.Classified(errs.ErrorFatal, err),
 	}
 }
 

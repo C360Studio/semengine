@@ -431,11 +431,16 @@ func mutationFailure(operation MutationOperation, err error) (MutationReceipt, e
 	return unknownMutation(operation, err)
 }
 
-// unknownMutation reports a mutation that may have committed. A classified reply keeps its class,
-// code and detail on the error.
+// unknownMutation reports a mutation that may have committed. It is fatal whatever class the
+// reply carried: retrying a write that may have committed can apply it twice. The cause is held in
+// a fatal *errs.ClassifiedError so errs.IsTransient, errs.Classify and errors.As read the same class
+// as the Class field. The error keeps the reply's code and detail; the wrapper keeps the code, and
+// the detail only when the code is not empty (errs.Classified).
 func unknownMutation(operation MutationOperation, err error) (MutationReceipt, error) {
 	mapped := newMutationError(operation, err, CommitUnknown)
 	mapped.Kind = MutationCommitUnknown
+	mapped.Class = errs.ErrorFatal
+	mapped.Err = errs.Classified(errs.ErrorFatal, err)
 	return MutationReceipt{Commit: CommitUnknown}, mapped
 }
 
@@ -468,6 +473,12 @@ func newMutationError(operation MutationOperation, err error, commit CommitState
 	}
 	var classified *errs.ClassifiedError
 	if !errors.As(err, &classified) {
+		if natsclient.IsNoResponders(err) {
+			// No responder took the request, so nothing was written and a later attempt may
+			// find one. The raw nats.ErrNoResponders is unclassified, which errs.Classify
+			// reads as fatal; the class is set here, as pkg/lifecycle's emitter sets it.
+			mapped.Class = errs.ErrorTransient
+		}
 		if commit == CommitUnknown {
 			mapped.Kind = MutationCommitUnknown
 		}
@@ -497,13 +508,15 @@ func newMutationError(operation MutationOperation, err error, commit CommitState
 	return mapped
 }
 
+// classifiedAppendFailure treats a class it does not recognise as fatal, the
+// same answer errs.Classify gives an unclassified error.
 func classifiedAppendFailure(failure *graph.MutationFailure) error {
-	class := errs.ErrorTransient
+	class := errs.ErrorFatal
 	switch failure.Class {
 	case errs.ErrorInvalid.String():
 		class = errs.ErrorInvalid
-	case errs.ErrorFatal.String():
-		class = errs.ErrorFatal
+	case errs.ErrorTransient.String():
+		class = errs.ErrorTransient
 	}
 	return errs.ClassifiedCode(class, failure.Code, fmt.Errorf("append failed: %s", failure.Code))
 }

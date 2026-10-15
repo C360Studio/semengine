@@ -62,7 +62,10 @@ The rest of this page is about tier 0, because that is what every deployment get
     found);
   - **commit unknown:** the engine cannot tell whether it was stored. A storage timeout is the usual cause.
 - On *commit unknown*, re-read the entity and compare before you retry. The engine does not offer a lookup of past
-  outcomes by request ID.
+  outcomes by request ID. A *commit unknown* error is classed fatal, whatever class the failed reply carried:
+  `errs.IsTransient` reports false for it, so a retry loop keyed on that check does not repeat the write blindly.
+  The reply's error code is kept. A request that no service answered ("no responders") is different: nothing was
+  stored, and its error is *not committed* with class transient.
 - "The stream accepted my message" is not the same as "my data is stored". Data is stored once the entity's state is
   in the `ENTITY_STATES` KV bucket and its content is in the object store.
 

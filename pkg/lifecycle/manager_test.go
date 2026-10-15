@@ -1745,6 +1745,58 @@ func TestCreateAttachRereadDecidesTheOutcome(t *testing.T) {
 			if test.want == ErrUpdateRetriesExhausted && errs.Classify(err) != errs.ErrorTransient {
 				t.Fatalf("class = %v, want transient for retryable contention", errs.Classify(err))
 			}
+			if test.want == ErrUpdateRetriesExhausted && !errs.IsTransient(err) {
+				t.Fatalf("errs.IsTransient = false, want true for retryable contention (err=%v)", err)
+			}
 		})
 	}
+}
+
+// TestUpdateRetriesExhaustedIsTransient pins design D3 of simplify-04a-04-errs-classify: an
+// exhausted CAS retry budget is retryable contention, so the error a write returns when every
+// attempt met a revision mismatch is transient by errs.Classify and errs.IsTransient. Both read
+// the class ErrUpdateRetriesExhausted carries: an unclassified error would be fatal. Create's
+// attach path is TestCreateAttachRereadDecidesTheOutcome.
+func TestUpdateRetriesExhaustedIsTransient(t *testing.T) {
+	const id = "c360.platform1.gcs.lifecycle.mission.exhausted"
+	exhaust := func(t *testing.T) map[string]error {
+		t.Helper()
+		writes := map[string]func(*Manager) error{
+			"transition": func(mgr *Manager) error {
+				return mgr.Transition(context.Background(), "fixture", id, "flying", TransitionSourceRule, "contended")
+			},
+			"operator update": func(mgr *Manager) error {
+				return mgr.UpdateFromOperator(context.Background(), "fixture", id, map[string]any{"note": "contended"})
+			},
+		}
+		results := make(map[string]error, len(writes))
+		for name, write := range writes {
+			mgr, emitter, _ := newTestManager(t)
+			if err := mgr.Create(context.Background(), &fixtureMission{ID: id, PhaseF: "planning"}); err != nil {
+				t.Fatalf("%s: Create: %v", name, err)
+			}
+			emitter.forceRevisionMismatch = true
+			err := write(mgr)
+			if !errors.Is(err, ErrUpdateRetriesExhausted) {
+				t.Fatalf("%s: err = %v, want %v", name, err, ErrUpdateRetriesExhausted)
+			}
+			results[name] = err
+		}
+		return results
+	}
+
+	t.Run("classify", func(t *testing.T) {
+		for name, err := range exhaust(t) {
+			if got := errs.Classify(err); got != errs.ErrorTransient {
+				t.Errorf("%s: errs.Classify = %v, want transient for retryable contention (err=%v)", name, got, err)
+			}
+		}
+	})
+	t.Run("is_transient", func(t *testing.T) {
+		for name, err := range exhaust(t) {
+			if !errs.IsTransient(err) {
+				t.Errorf("%s: errs.IsTransient = false, want true for retryable contention (err=%v)", name, err)
+			}
+		}
+	})
 }

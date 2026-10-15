@@ -2,6 +2,7 @@ package projection
 
 import (
 	"errors"
+	"reflect"
 	"testing"
 	"time"
 
@@ -97,6 +98,16 @@ func TestClassifiedReplyIsNotCommittedOnlyWhenRefusedBeforeWrite(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			reply := errs.ClassifiedCode(test.class, test.code, errors.New("graph-ingest reply"))
+			if test.code != "" {
+				// A reply's detail travels with its code (errs.Classified inherits both or neither).
+				reply.Detail = map[string]any{"entity_id": projectionTestEntity}
+			}
+			// A commit-unknown error is fatal whatever the reply's class (design D2); a refusal
+			// before the write keeps the reply's class.
+			wantClass := test.class
+			if test.want == CommitUnknown {
+				wantClass = errs.ErrorFatal
+			}
 			for operation, outcome := range eachWrite(t, reply) {
 				var mutationErr *MutationError
 				if !errors.As(outcome.err, &mutationErr) {
@@ -106,12 +117,35 @@ func TestClassifiedReplyIsNotCommittedOnlyWhenRefusedBeforeWrite(t *testing.T) {
 					t.Errorf("%s: receipt commit %q, error commit %q, kind %q; want %q, %q, %q",
 						operation, outcome.receipt.Commit, mutationErr.Commit, mutationErr.Kind, test.want, test.want, test.kind)
 				}
-				if mutationErr.Class != test.class || mutationErr.Code != test.code {
-					t.Errorf("%s: class %q, code %q; want the reply's %q, %q",
-						operation, mutationErr.Class, mutationErr.Code, test.class, test.code)
+				if mutationErr.Class != wantClass || mutationErr.Code != test.code ||
+					!reflect.DeepEqual(mutationErr.Detail, reply.Detail) {
+					t.Errorf("%s: class %q, code %q, detail %v; want %q and the reply's %q, %v",
+						operation, mutationErr.Class, mutationErr.Code, mutationErr.Detail, wantClass, test.code, reply.Detail)
+				}
+				var classified *errs.ClassifiedError
+				if !errors.As(outcome.err, &classified) || classified.Class != wantClass || classified.Code != test.code ||
+					!reflect.DeepEqual(classified.Detail, reply.Detail) {
+					t.Errorf("%s: errors.As *errs.ClassifiedError = %#v; want class %q with the reply's code %q and detail %v",
+						operation, classified, wantClass, test.code, reply.Detail)
+				}
+				if !errors.Is(outcome.err, reply) {
+					t.Errorf("%s: errors.Is does not reach the reply: %v", operation, outcome.err)
+				}
+				if test.want == CommitUnknown {
+					assertCommitUnknownIsFatal(t, operation, outcome.err)
 				}
 			}
 		})
+	}
+}
+
+// assertCommitUnknownIsFatal checks how errs reads a commit-unknown error: never retryable
+// (design D2).
+func assertCommitUnknownIsFatal(t *testing.T, operation MutationOperation, err error) {
+	t.Helper()
+	if errs.IsTransient(err) || !errs.IsFatal(err) || errs.Classify(err) != errs.ErrorFatal {
+		t.Errorf("%s: IsTransient %t, IsFatal %t, Classify %v; want false, true, fatal (err=%v)",
+			operation, errs.IsTransient(err), errs.IsFatal(err), errs.Classify(err), err)
 	}
 }
 
@@ -133,7 +167,29 @@ func TestTransportOutcomesKeepTheirCommitState(t *testing.T) {
 					mutationErr.Commit != test.want || mutationErr.Kind != test.kind {
 					t.Errorf("%s: receipt = %#v, error = %#v; want commit %q, kind %q",
 						operation, outcome.receipt, mutationErr, test.want, test.kind)
+					continue
 				}
+				if !errors.Is(outcome.err, test.fail) {
+					t.Errorf("%s: errors.Is does not reach %v: %v", operation, test.fail, outcome.err)
+				}
+				if test.want != CommitUnknown {
+					// Design D3: no responder took the request, so nothing was written and a retry is
+					// safe. Only the Class field is promised; the raw nats.ErrNoResponders underneath
+					// stays unclassified.
+					if mutationErr.Class != errs.ErrorTransient {
+						t.Errorf("%s: class %q, want transient: no responder took the request", operation, mutationErr.Class)
+					}
+					continue
+				}
+				// No reply came back, so there is no reply code: the fatal class carries none.
+				var classified *errs.ClassifiedError
+				found := errors.As(outcome.err, &classified)
+				if mutationErr.Class != errs.ErrorFatal || mutationErr.Code != "" ||
+					!found || classified.Class != errs.ErrorFatal || classified.Code != "" {
+					t.Errorf("%s: class %q, code %q, errors.As *errs.ClassifiedError %t = %#v; want fatal with no code",
+						operation, mutationErr.Class, mutationErr.Code, found, classified)
+				}
+				assertCommitUnknownIsFatal(t, operation, outcome.err)
 			}
 		})
 	}
@@ -164,6 +220,14 @@ func TestAppendSubjectFailureAfterPossibleWriteIsCommitUnknown(t *testing.T) {
 		mutationErr.Kind != MutationCommitUnknown || mutationErr.Code != graph.ErrorCodeInternal {
 		t.Fatalf("receipt = %#v, error = %#v", receipt, mutationErr)
 	}
+	var classified *errs.ClassifiedError
+	found := errors.As(err, &classified)
+	if mutationErr.Class != errs.ErrorFatal || !found ||
+		classified.Class != errs.ErrorFatal || classified.Code != graph.ErrorCodeInternal {
+		t.Errorf("class %q, errors.As *errs.ClassifiedError %t = %#v; want fatal with code %q",
+			mutationErr.Class, found, classified, graph.ErrorCodeInternal)
+	}
+	assertCommitUnknownIsFatal(t, MutationOperationAppend, err)
 }
 
 // A read writes nothing, so a classified reply to Reconcile's exact read stays not committed.

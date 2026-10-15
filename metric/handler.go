@@ -10,7 +10,6 @@ import (
 	"net/url"
 	"strconv"
 	"sync"
-	"syscall"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
@@ -27,15 +26,11 @@ type Server struct {
 	listener  net.Listener
 	serveDone chan error
 	requests  *admittedRequests
-	// opHook, when set before Start, is told each external operation the Server
-	// performs (a bind, the serve goroutine, a shutdown or close); a test seam,
-	// nil in production.
-	opHook   func(op string)
-	registry *MetricsRegistry
-	security security.Config
-	mu       sync.Mutex // serializes server lifecycle fields
-	used     bool
-	stopping bool
+	registry  *MetricsRegistry
+	security  security.Config
+	mu        sync.Mutex // serializes server lifecycle fields
+	used      bool
+	stopping  bool
 }
 
 // NewServer creates a new metrics server with the provided registry
@@ -65,7 +60,8 @@ func (s *Server) Start(ctx context.Context) error {
 // StartWithListener starts the one-shot metrics HTTP server on a caller-bound
 // raw TCP listener. A successful return transfers listener ownership to Server;
 // every returned error leaves it with the caller. Server applies configured TLS
-// itself, so callers must not pass a TLS-wrapped listener.
+// itself, so callers must not pass a TLS-wrapped listener. The caller passes an
+// open listener; Start does not check that it is open.
 func (s *Server) StartWithListener(ctx context.Context, listener net.Listener) error {
 	return s.start(ctx, listener, true, "StartWithListener")
 }
@@ -84,15 +80,6 @@ func (s *Server) start(ctx context.Context, supplied net.Listener, provided bool
 		addr, ok := supplied.Addr().(*net.TCPAddr)
 		if !ok || addr.Port <= 0 {
 			return errs.WrapInvalid(errs.ErrInvalidData, "Server", operation, "listener has no assigned TCP endpoint")
-		}
-		if socket, ok := supplied.(syscall.Conn); ok {
-			raw, err := socket.SyscallConn()
-			if err == nil {
-				err = raw.Control(func(uintptr) {})
-			}
-			if err != nil {
-				return errs.WrapInvalid(err, "Server", operation, "listener is closed")
-			}
 		}
 	}
 	s.mu.Lock()
@@ -160,7 +147,7 @@ func (s *Server) start(ctx context.Context, supplied net.Listener, provided bool
 
 	// Configure TLS if enabled at platform level
 	if s.security.TLS.Server.Enabled {
-		tlsConfig, err := tlsutil.LoadServerTLSConfigWithMTLS(s.security.TLS.Server, s.security.TLS.Server.MTLS)
+		tlsConfig, err := tlsutil.LoadServerTLSConfig(s.security.TLS.Server)
 		if err != nil {
 			s.server = nil
 			return errs.WrapFatal(err, "Server", operation, "load TLS config")
@@ -172,7 +159,6 @@ func (s *Server) start(ctx context.Context, supplied net.Listener, provided bool
 	listener := supplied
 	if !provided {
 		var err error
-		s.recordOp("listen")
 		listener, err = net.Listen("tcp", httpServer.Addr)
 		if err != nil {
 			s.server = nil
@@ -187,7 +173,6 @@ func (s *Server) start(ctx context.Context, supplied net.Listener, provided bool
 	serveDone := make(chan error, 1)
 	s.listener = listener
 	s.serveDone = serveDone
-	s.recordOp("serve")
 	go func() {
 		serveDone <- httpServer.Serve(listener)
 		close(serveDone)
@@ -244,7 +229,6 @@ func (s *Server) Stop(ctx context.Context) error {
 	}
 
 	var stopErr error
-	s.recordOp("shutdown")
 	shutdownErr := httpServer.Shutdown(ctx)
 	if shutdownErr != nil {
 		stopErr = errors.Join(stopErr, errs.WrapTransient(shutdownErr, "Server", "Stop",
@@ -267,13 +251,11 @@ func (s *Server) Stop(ctx context.Context) error {
 	}
 
 	if shutdownErr != nil || !completed {
-		s.recordOp("close server")
 		if err := httpServer.Close(); err != nil && !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
 			stopErr = errors.Join(stopErr, errs.WrapTransient(err, "Server", "Stop",
 				"force close metrics HTTP server"))
 		}
 		if listener != nil {
-			s.recordOp("close listener")
 			if err := listener.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
 				stopErr = errors.Join(stopErr, errs.WrapTransient(err, "Server", "Stop",
 					"force close metrics listener"))
@@ -333,12 +315,6 @@ func (s *Server) Address() string {
 		scheme = "https"
 	}
 	return (&url.URL{Scheme: scheme, Host: net.JoinHostPort(host, strconv.Itoa(port)), Path: s.path}).String()
-}
-
-func (s *Server) recordOp(op string) {
-	if s.opHook != nil {
-		s.opHook(op)
-	}
 }
 
 // admittedRequests counts the requests a Server's handler has admitted and not yet

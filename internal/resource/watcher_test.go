@@ -460,3 +460,21 @@ func TestWatcher_Run_NilContextRefused(t *testing.T) {
 		}
 	})
 }
+
+// TestWatcher_WaitForStartup_NilContextRefused: WaitForStartup(nil) returns false and calls no
+// check, mirroring Run's nil refusal (owner answer Q3 on #221).
+func TestWatcher_WaitForStartup_NilContextRefused(t *testing.T) {
+	var checks atomic.Int32
+	w := NewWatcher("nil", func(context.Context) error {
+		checks.Add(1)
+		return nil
+	}, DefaultConfig())
+
+	var nilCtx context.Context // the nil context is the input under test
+	if w.WaitForStartup(nilCtx) {
+		t.Fatal("WaitForStartup(nil) = true, want false")
+	}
+	if got := checks.Load(); got != 0 {
+		t.Fatalf("checks after WaitForStartup(nil) = %d, want 0", got)
+	}
+}

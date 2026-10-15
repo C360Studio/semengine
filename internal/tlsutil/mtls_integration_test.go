@@ -51,7 +51,8 @@ func TestMTLSHandshake_ServerRequiresClientCert(t *testing.T) {
 		ClientCAFiles: []string{clientCAFile},
 	}
 
-	serverTLSConfig, err := LoadServerTLSConfigWithMTLS(serverCfg, serverMTLSCfg)
+	serverCfg.MTLS = serverMTLSCfg
+	serverTLSConfig, err := LoadServerTLSConfig(serverCfg)
 	require.NoError(t, err)
 
 	// Create test HTTPS server
@@ -81,7 +82,8 @@ func TestMTLSHandshake_ServerRequiresClientCert(t *testing.T) {
 		KeyFile:  clientKeyFile,
 	}
 
-	clientTLSConfig, err := LoadClientTLSConfigWithMTLS(clientCfg, clientMTLSCfg)
+	clientCfg.MTLS = clientMTLSCfg
+	clientTLSConfig, err := LoadClientTLSConfig(clientCfg)
 	require.NoError(t, err)
 
 	// Create HTTP client with mTLS
@@ -130,7 +132,8 @@ func TestMTLSHandshake_ServerRequiresClientCert_NoClientCert(t *testing.T) {
 		ClientCAFiles: []string{clientCAFile},
 	}
 
-	serverTLSConfig, err := LoadServerTLSConfigWithMTLS(serverCfg, serverMTLSCfg)
+	serverCfg.MTLS = serverMTLSCfg
+	serverTLSConfig, err := LoadServerTLSConfig(serverCfg)
 	require.NoError(t, err)
 
 	// Create test HTTPS server
@@ -152,7 +155,8 @@ func TestMTLSHandshake_ServerRequiresClientCert_NoClientCert(t *testing.T) {
 		Enabled: false, // No client cert
 	}
 
-	clientTLSConfig, err := LoadClientTLSConfigWithMTLS(clientCfg, clientMTLSCfg)
+	clientCfg.MTLS = clientMTLSCfg
+	clientTLSConfig, err := LoadClientTLSConfig(clientCfg)
 	require.NoError(t, err)
 
 	// Create HTTP client without mTLS
@@ -203,7 +207,8 @@ func TestMTLSHandshake_CNWhitelist_Allowed(t *testing.T) {
 		AllowedClientCNs: []string{clientCN, "another-allowed-client"},
 	}
 
-	serverTLSConfig, err := LoadServerTLSConfigWithMTLS(serverCfg, serverMTLSCfg)
+	serverCfg.MTLS = serverMTLSCfg
+	serverTLSConfig, err := LoadServerTLSConfig(serverCfg)
 	require.NoError(t, err)
 
 	// Create test HTTPS server
@@ -228,7 +233,8 @@ func TestMTLSHandshake_CNWhitelist_Allowed(t *testing.T) {
 		KeyFile:  clientKeyFile,
 	}
 
-	clientTLSConfig, err := LoadClientTLSConfigWithMTLS(clientCfg, clientMTLSCfg)
+	clientCfg.MTLS = clientMTLSCfg
+	clientTLSConfig, err := LoadClientTLSConfig(clientCfg)
 	require.NoError(t, err)
 
 	// Create HTTP client
@@ -281,7 +287,8 @@ func TestMTLSHandshake_CNWhitelist_Rejected(t *testing.T) {
 		AllowedClientCNs: []string{"authorized-client", "another-allowed-client"},
 	}
 
-	serverTLSConfig, err := LoadServerTLSConfigWithMTLS(serverCfg, serverMTLSCfg)
+	serverCfg.MTLS = serverMTLSCfg
+	serverTLSConfig, err := LoadServerTLSConfig(serverCfg)
 	require.NoError(t, err)
 
 	// Create test HTTPS server
@@ -305,7 +312,8 @@ func TestMTLSHandshake_CNWhitelist_Rejected(t *testing.T) {
 		KeyFile:  clientKeyFile,
 	}
 
-	clientTLSConfig, err := LoadClientTLSConfigWithMTLS(clientCfg, clientMTLSCfg)
+	clientCfg.MTLS = clientMTLSCfg
+	clientTLSConfig, err := LoadClientTLSConfig(clientCfg)
 	require.NoError(t, err)
 
 	// Create HTTP client
@@ -355,7 +363,8 @@ func TestMTLSHandshake_OptionalClientCert_WithCert(t *testing.T) {
 		ClientCertOptional: true, // Optional
 	}
 
-	serverTLSConfig, err := LoadServerTLSConfigWithMTLS(serverCfg, serverMTLSCfg)
+	serverCfg.MTLS = serverMTLSCfg
+	serverTLSConfig, err := LoadServerTLSConfig(serverCfg)
 	require.NoError(t, err)
 
 	// Verify config is set to verify client cert if given
@@ -386,7 +395,8 @@ func TestMTLSHandshake_OptionalClientCert_WithCert(t *testing.T) {
 		KeyFile:  clientKeyFile,
 	}
 
-	clientTLSConfig, err := LoadClientTLSConfigWithMTLS(clientCfg, clientMTLSCfg)
+	clientCfg.MTLS = clientMTLSCfg
+	clientTLSConfig, err := LoadClientTLSConfig(clientCfg)
 	require.NoError(t, err)
 
 	httpClient := &http.Client{
@@ -434,7 +444,8 @@ func TestMTLSHandshake_OptionalClientCert_WithoutCert(t *testing.T) {
 		ClientCertOptional: true, // Optional
 	}
 
-	serverTLSConfig, err := LoadServerTLSConfigWithMTLS(serverCfg, serverMTLSCfg)
+	serverCfg.MTLS = serverMTLSCfg
+	serverTLSConfig, err := LoadServerTLSConfig(serverCfg)
 	require.NoError(t, err)
 
 	// Create test HTTPS server
@@ -462,7 +473,8 @@ func TestMTLSHandshake_OptionalClientCert_WithoutCert(t *testing.T) {
 		Enabled: false, // No client cert
 	}
 
-	clientTLSConfig, err := LoadClientTLSConfigWithMTLS(clientCfg, clientMTLSCfg)
+	clientCfg.MTLS = clientMTLSCfg
+	clientTLSConfig, err := LoadClientTLSConfig(clientCfg)
 	require.NoError(t, err)
 
 	httpClient := &http.Client{
@@ -502,7 +514,8 @@ func TestBackwardCompatibility_ManualTLS_WithoutMTLS(t *testing.T) {
 	// Empty mTLS config (backwards compatible)
 	serverMTLSCfg := security.ServerMTLSConfig{}
 
-	serverTLSConfig, err := LoadServerTLSConfigWithMTLS(serverCfg, serverMTLSCfg)
+	serverCfg.MTLS = serverMTLSCfg
+	serverTLSConfig, err := LoadServerTLSConfig(serverCfg)
 	require.NoError(t, err)
 
 	// Verify no client cert requirement
@@ -559,7 +572,8 @@ func TestClientCertLoading(t *testing.T) {
 		KeyFile:  clientKeyFile,
 	}
 
-	clientTLSConfig, err := LoadClientTLSConfigWithMTLS(clientCfg, clientMTLSCfg)
+	clientCfg.MTLS = clientMTLSCfg
+	clientTLSConfig, err := LoadClientTLSConfig(clientCfg)
 	require.NoError(t, err)
 
 	// Verify client certificate is loaded

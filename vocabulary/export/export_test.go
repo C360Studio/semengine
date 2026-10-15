@@ -577,6 +577,28 @@ func TestSerialize_UnfoldedReifiedBlankNodeChain(t *testing.T) {
 		if !ok || len(graph) != 2 {
 			t.Fatalf("expected 2 nodes in JSON-LD @graph, got: %#v", doc["@graph"])
 		}
+		entityNode, ok := graph[0].(map[string]any)
+		if !ok || entityNode["@id"] != "https://semengine.semanticstream.ing/entities/acme/ops/robotics/gcs/drone/001" {
+			t.Fatalf("expected first node @id to be entity IRI, got: %#v", graph[0])
+		}
+		rawLinks, ok := entityNode["bfo:RO_0000056"].([]any)
+		if !ok {
+			t.Fatalf("expected bfo:RO_0000056 array on entity node, got: %#v", entityNode["bfo:RO_0000056"])
+		}
+		gotTargets := make(map[string]bool, len(rawLinks))
+		for _, item := range rawLinks {
+			ref, ok := item.(map[string]any)
+			if !ok {
+				t.Fatalf("expected bfo:RO_0000056 item to be object, got: %#v", item)
+			}
+			id, _ := ref["@id"].(string)
+			gotTargets[id] = true
+		}
+		for _, wantTarget := range []string{"_:b_1", "_:b_explicit", "_:b_declared"} {
+			if !gotTargets[wantTarget] {
+				t.Errorf("expected bfo:RO_0000056 to contain {@id: %q}, got: %#v", wantTarget, rawLinks)
+			}
+		}
 		bnode, ok := graph[1].(map[string]any)
 		if !ok || bnode["@id"] != "_:b_1" {
 			t.Fatalf("expected second node @id to be _:b_1, got: %#v", graph[1])

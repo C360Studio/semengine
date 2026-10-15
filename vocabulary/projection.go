@@ -19,9 +19,10 @@ type ProjectionStep struct {
 	// every non-terminal step in a multi-step chain.
 	NodeClassIRI string `json:"node_class_iri,omitempty" yaml:"node_class_iri,omitempty"`
 
-	// ValuePredicateIRI is the optional datatype- or object-property IRI that
-	// attaches the triple's terminal value to the node reached at the final step
-	// (for example, cco:has_decimal_value).
+	// ValuePredicateIRI is the datatype- or object-property IRI that attaches
+	// the triple's terminal value to the node reached at the final step (for
+	// example, cco:has_decimal_value). Required on the terminal step and
+	// forbidden on non-terminal steps.
 	ValuePredicateIRI string `json:"value_predicate_iri,omitempty" yaml:"value_predicate_iri,omitempty"`
 }
 

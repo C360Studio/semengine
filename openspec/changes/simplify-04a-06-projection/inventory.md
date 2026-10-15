@@ -17,10 +17,11 @@ This change carries no package from the pin. `pkg/projection` is already ported 
 ## 1. The claimed gaps (#138, re-measured; its cites were at PR #93 head `7bf1eb8`)
 
 - Item 1, five interfaces: `pkg/projection/mutation_types.go:157-180` — `type EntityCreator interface {` …
-  `type AuthoritativeReader interface {`. `git grep -n -E 'EntityCreator|PredicateReconciler|TripleAppender|EntityDeleter|AuthoritativeReader'`
-  finds only this file. None of the four consumers names them (symbol count, § 4). The directives
-  `mutation_types.go:3` — `//revive:disable:max-public-structs …` and `:182` — `//revive:enable:max-public-structs`
-  disable a rule `revive.toml` does not enable (`grep -n max-public-structs revive.toml`: nothing). CONFIRMED.
+  `type AuthoritativeReader interface {`.
+  `git grep -n -E 'EntityCreator|PredicateReconciler|TripleAppender|EntityDeleter|AuthoritativeReader'` finds only
+  this file. None of the four consumers names them (§ 4). The directives `mutation_types.go:3` —
+  `//revive:disable:max-public-structs …` and `:182` — `//revive:enable:max-public-structs` disable a rule
+  `revive.toml` does not enable (`grep -n max-public-structs revive.toml`: nothing). CONFIRMED.
 - Item 2a, aliases: `pkg/projection/contract.go:12-34` — `type WriteMode = contract.WriteMode` …
   `func ValidateContracts(contracts []Contract) error {`. **The premise "no file outside pkg/projection uses the
   aliases" is false**:
@@ -34,11 +35,12 @@ This change carries no package from the pin. `pkg/projection` is already ported 
 - Item 2b, clone: `pkg/projection/mutation_client.go:114-123` — `func cloneContract(contract Contract) Contract {`,
   the same lines as `payloadregistry/registry.go:224-233` — `func cloneContract(c contract.Contract) contract.Contract {`.
   CONFIRMED.
-- Item 2c, receipt commit: `pkg/projection/mutation_types.go:89-94` — `type MutationReceipt struct {` … `Commit CommitState`.
-  Readers of `receipt.Commit`: only tests (`pkg/projection/*_test.go`, 22 reads; `commit_ambiguity_integration_test.go:116`,
-  `:130`, `:152`, `:168`, `:224`, `:252`, `:359`, `:374`). The four consumers read `.Commit` only on `*MutationError`
-  (semteams `approvalpause/projection_test.go:121`, `:297`, `:324`; `projection_integration_test.go:95`), and none builds
-  a `MutationReceipt` that sets `Commit`. The spec reads the receipt: `openspec/specs/projection-mutation/spec.md:32`,
+- Item 2c, receipt commit: `pkg/projection/mutation_types.go:89-94` — `type MutationReceipt struct {` …
+  `Commit CommitState`. Readers of the receipt's `Commit`: only tests (`pkg/projection/*_test.go`, 20 lines;
+  `processor/graph-ingest/commit_ambiguity_integration_test.go:116`, `:130`, `:152`, `:168`, `:224`, `:252`, `:359`,
+  `:374`, `:378`). The four consumers read `.Commit` only on `*MutationError` (semteams
+  `approvalpause/projection_test.go:121`, `:297`, `:324`; `projection_integration_test.go:95`), and none builds a
+  `MutationReceipt` that sets `Commit`. The spec reads the receipt: `openspec/specs/projection-mutation/spec.md:32`,
   `:38`, `:56`, `:61`, `:67`, `:73`, `:78`. CONFIRMED.
 - Item 3, dead layers (all CONFIRMED):
   - `mutation_client.go:413` — `return triples, metadata, nil`: `metadata` is never assigned in `canonicalizeTriples`
@@ -53,16 +55,17 @@ This change carries no package from the pin. `pkg/projection` is already ported 
 - Item 4, two mappings: `mutation_client.go:427-432` (`mutationFailure`), `:455-468` (`isDefiniteFailure`) against
   `pkg/lifecycle/graph_emit.go:88-115` (`classifyEmitError`). Case `TransportDeadline`
   (`internal/graphmutation/client.go:142-143`, the context ended before the request was sent): projection reports
-  not-committed, lifecycle reports commit-unknown. `graph_emit.go:117-128` — `lifecycleMutationOperation`'s `default:`
-  returns `MutationOperationAppend`. CONFIRMED.
+  not-committed, lifecycle reports commit-unknown. `graph_emit.go:117-128` — `lifecycleMutationOperation`'s
+  `default:` (`:125-126`) returns `MutationOperationAppend`. CONFIRMED.
 - Item 5, failure outcomes: none of the exported methods (`:137`, `:189`, `:223`, `:254`, `:269`) says which `Commit`
   or `Kind` its errors carry, and `Reconcile`'s doc (`:187-188`) does not say that a failed read reports operation
   `read-authoritative`. CONFIRMED.
-- Comment item a: `mutation_client.go:470-472` — `Operation: operation, Kind: MutationUnavailable, Class: errs.Classify(err)…`
-  sets `Kind` and patches it later (`:483`, `:490-507`, `:441`). When the caller's context is already done,
-  `request` returns `TransportDeadline` and the error reads `Kind` `MutationUnavailable`, which `mutation_types.go:124`
-  documents as "no available mutation responder". Commit and class are already right: not committed, and
-  transient, because `errs.IsTransient` lists `context.Canceled` and `DeadlineExceeded` at `pkg/errs/errs.go:170-171`.
+- Comment item a: `mutation_client.go:470-472` —
+  `Operation: operation, Kind: MutationUnavailable, Class: errs.Classify(err)…` sets `Kind` and patches it later
+  (`:483`, `:490-507`, `:441`). When the caller's context is already done, `request` returns `TransportDeadline` and
+  the error reads `Kind` `MutationUnavailable`, which `mutation_types.go:124` documents as "no available mutation
+  responder". Commit and class are already: not committed, and transient, because `errs.IsTransient` lists
+  `context.Canceled` and `DeadlineExceeded` at `pkg/errs/errs.go:170-171`.
 - Comment item b: `mutation_client.go:39` —
   `invalidMutationError(MutationOperationCreate, errors.New("NATS client is required"))` against `:54` —
   `return nil, errors.New("mutation requester is required")`. CONFIRMED.
@@ -75,9 +78,10 @@ This change carries no package from the pin. `pkg/projection` is already ported 
 | `pkg/projection/mutation_client.go:470-509` | code/class → `Kind` |
 | `pkg/projection/mutation_client.go:275-282` | read: a classified error → not committed; an unclassified one → `mutationFailure` (commit-unknown; § 7, D-1) |
 | `internal/graphmutation/client.go:55-61` | `IsDefinitelyNotCommitted`: transport `unavailable`/`deadline` |
+| `internal/graphmutation/client.go:162` | any unclassified requester error other than no-responders → transport `commit_unknown`, including natsclient's pre-send refusals (§ 7, D-2) |
 | `pkg/lifecycle/graph_emit.go:88-115` | three codes → lifecycle sentinels; any other classified reply → `ErrEmitFailed` keeping its class (#257); no-responders → not committed; else unknown |
 | semteams `cmd/semteams/approvalpause/projection.go:160-172` | consumer copy: builds `MutationError` by hand, with no `Class` on commit-unknown (#258) |
-| `processor/graph-ingest/canonical_mutations.go:58-75` | server-side metric outcome label from graph-ingest's own error; a different fact (no commit state), not an adopter |
+| `processor/graph-ingest/canonical_mutations.go:58-75` | server-side metric outcome label from graph-ingest's own error; a different fact (no commit state) |
 
 `MutationOperation` (`mutation_types.go:96-110`) repeats `graphmutation.Operation`. It cannot be replaced: a public
 signature may not name an `internal/` type (`harness-boundaries` spec).
@@ -85,15 +89,18 @@ signature may not name an `internal/` type (`harness-boundaries` spec).
 ## 3. Adjacent claims
 
 - Specs: `openspec/specs/projection-mutation/spec.md` (five requirements; three of them read the receipt).
-  `error-classification` is not changed.
+  `error-classification` names no projection symbol.
 - Ledger: `docs/admission-ledger.yaml:2065-2090` (`pkg/projection`, `repair-before-port`) and `:649-664`
-  (`pkg/projection/contract`, **`carry`**: `ledger:check` fails a `carry` row that differs from the pin, `Taskfile.yml:61-62`).
-  The row's `known_risks` (`:659-661`) still says "pkg/projection is ported in a later change".
-- ADR-111 (`docs/adr/111-durable-execution-primitive.md:19-20`, three outcomes; `:66` cites `mutation_types.go:80-83`
-  for the receipt; Decision 3, a commit-unknown is never retried).
+  (`pkg/projection/contract`, **`carry`**: `ledger:check` fails a `carry` row that differs from the pin,
+  `Taskfile.yml:61-62`). The row's `known_risks` (`:659-661`) still says "pkg/projection is ported in a later change".
+- ADR-111 (`docs/adr/111-durable-execution-primitive.md`): `:19-20`, the typed write client "with three outcomes:
+  committed, not committed, commit unknown"; `:66`, the receipt "held for one call (`mutation_types.go:80-83`)", a
+  cite at `522bf3a`, the SHA its `:11` pins SemEngine facts to (today `:89-94`); `:194`, "`pkg/lifecycle` and
+  `pkg/projection` stay what ADR-047, ADR-049 and ADR-091 made them"; Decision 3, a commit-unknown is never retried.
 - Open PRs (`gh pr list --state open --json number,title,changedFiles,files`, 2026-10-15):
-  - #266 (draft, PR 5: `metric`, `internal/tlsutil`, `internal/resource`; 0 files yet; no code overlap; possibly
-    `docs/admission-ledger.yaml`, other rows);
+  - #266 (draft, PR 5, head `4177812`; change `simplify-04a-06-metric-tls-resource`): code in `metric`,
+    `internal/tlsutil`, `internal/resource`. Its task 6.2 edits `docs/admission-ledger.yaml`, other rows: a shared
+    file. Its design `:84-87` states the same rule: whichever lands second merges `origin/main` first;
   - #242–#248 (Dependabot: `go.mod`/`go.sum`, `package*.json`, a workflow);
   - none touches `pkg/projection`, `pkg/projection/contract`, `payloadregistry`, `pkg/lifecycle` or
     `processor/graph-ingest`.
@@ -104,66 +111,84 @@ signature may not name an `internal/` type (`harness-boundaries` spec).
 
 Queries: `gh issue list --state open --search "projection" --limit 200`, and the same for `contract`.
 
-| Issue | Names it by | Disposition |
+| Issue | Names it by | What it asks |
 | --- | --- | --- |
-| #138 | title, body | **Retired** (`Closes #138`), tasks 3.1–3.6. The lifecycle half of item 4 lies in `pkg/lifecycle`, under #154 (`:22`) and #257 (9b) |
-| #257 | `pkg/projection/mutation_client.go:450-462` | Stays, for 9b: lifecycle's switch to the mapping. 9a supplies the mapping (D1) |
-| #258 | `*projection.MutationError` | Stays: the zero class lives in `pkg/errs`; D1's mapping always sets `Class`, and the consumer literal is semteams' own |
-| #20 | `pkg/projection/mutation_client.go` (pin) | Stays: the open question is graph-ingest's server half (comment 2026-10-13); the client half was done by #93 |
-| #132 | item 3, `graph.ExactEntityReader` (`pkg/projection/mutation_client.go:32` holds one) | Stays, for PR 8; if that PR makes the reader a concrete type, projection's field type follows there |
-| #24, #9, #223, #161 | the word, through rulings or examples | #223 is addressed (PR 9a line); the others name the word, not work in this package |
+| #138 | title, body | items 1–5 and comment items a–b (§ 1); item 4 spans `pkg/projection` and `pkg/lifecycle` |
+| #257 | `pkg/projection/mutation_client.go:450-462` | lifecycle reports a possibly-stored write as retryable; fix with #138 item a |
+| #154 | `:22`, `graph_emit.go:88-125` "one of four copies" | lifecycle's half of the mapping, among other lifecycle items |
+| #258 | `*projection.MutationError` | a `MutationError` literal without `Class` reads transient (`pkg/errs` zero value) |
+| #20 | `pkg/projection/mutation_client.go` (pin) | open question on graph-ingest's server half (comment 2026-10-13); the client half was done by #93 |
+| #132 | item 3, `graph.ExactEntityReader` (`pkg/projection/mutation_client.go:32` holds one) | the reader interface has one implementation (PR 8) |
+| #24, #9, #223, #161 | the word, through rulings or examples | #223 lists PR 9; the others carry rulings or examples |
 
-The other hits (#7, #15–#17, #25–#36, #74, #80, #90, #95, #106, #108–#110, #133–#135, #139, #141, #162, #169,
-and #174, #195–#197, #216, #219) name the word, not the package.
+The other hits (#7, #15–#17, #25–#36, #38, #74, #80, #90, #95, #103, #106, #108–#110, #133–#135, #139, #141, #153,
+and #162, #169, #174, #189, #195–#198, #216, #219) name the word, not the package.
 
-## 4. Who it is for (new and changed surface)
-
-- New `projection.ClassifyMutationError` (design D1): framework API. Contract line: the spec delta's new requirement.
-  It gets a test in package `projection_test` that calls it the way a product would. Production readers:
-  `pkg/projection`'s own methods (this change), `pkg/lifecycle/graph_emit.go:88-115` (9b), and semteams
-  `approvalpause/projection.go:160-172` (at cutover).
-- New `contract.Contract.Clone` (D5): plumbing. Readers: `pkg/projection/mutation_client.go:94` and
-  `payloadregistry/registry.go:192` (Q2).
-- Removed: five interfaces (no reader); `MutationReceipt.Commit` (tests only, § 1).
+## 4. Readers of the surface #138 names
 
 Symbol counts across the four consumers (23 files): the aliases `Contract` (15 files), `ModeReconcile` (6),
-`PredicateGroup` (4), `ValidateContracts` (2); the interfaces 0; `MutationReceipt` 4 (tests, none setting `Commit`).
+`PredicateGroup` (4), `ValidateContracts` (2); the five interfaces 0; `MutationReceipt` 4 files, two of them
+production: semboids `internal/boidgraph/publisher.go:45` —
+`Reconcile(ctx context.Context, request projection.ReconcileMutation) (projection.MutationReceipt, error)` and
+`internal/sim/lifecycle.go:68` —
+`Delete(ctx context.Context, request projection.DeleteMutation) (projection.MutationReceipt, error)`. Neither file
+reads the receipt's `Commit`. Both lines are in semboids' own one-method interfaces.
+
+`MutationUnavailable` as a retry signal: semboids `internal/boidgraph/publisher.go:222` and
+`internal/sim/lifecycle.go:182`, `:202` — `case projection.MutationRevisionConflict, projection.MutationUnavailable:`.
+semteams builds one at `approvalpause/projection.go:164`.
+
+`cloneContract` readers: `pkg/projection/mutation_client.go:94`; `payloadregistry/registry.go:192` and `:241`
+(through `cloneContracts`, read at `:257`, `:294`).
 
 ## 5. Problem shape
 
 Classify an error from an observed outcome into a verdict (not committed or commit unknown) plus a class. The closest
-existing instance is `mutationFailure` and `isDefiniteFailure` in this package, built on
-`graphmutation.IsDefinitelyNotCommitted`. The design exports that existing function; it adds no new interpreter.
-Adoption sweep, one line per adopter: `pkg/lifecycle/graph_emit.go:88-115` (9b, #257);
-semteams `cmd/semteams/approvalpause/projection.go:160-172` (consumer, at cutover).
+existing instance is `mutationFailure` and `isDefiniteFailure` in `pkg/projection`, built on
+`graphmutation.IsDefinitelyNotCommitted`. Other hand-built copies of that verdict: `pkg/lifecycle/graph_emit.go:88-115`
+and semteams `cmd/semteams/approvalpause/projection.go:160-172`.
 
 ## 6. Pin decision records
 
 None is carried; this change ports nothing. Search: the pin's ADRs grepped for `pkg/projection`, `MutationClient`,
-`CommitUnknown`, `MutationReceipt`. Hits: ADR-056, ADR-059, ADR-081 (they name the package; none decides
-anything this change touches) and **ADR-103** (`:53`: "`projection.Contract` literals keep compiling"; `:71`: "The
-contract data types move to a leaf package with aliases in `pkg/projection`"). ADR-103 governs the aliases (Q1).
+`CommitUnknown`, `commit_unknown`, `MutationReceipt`. Hits:
 
-## 7. Defects found outside #138 (for filing; not added)
+- **ADR-091** (Graph Mutation Authority Without Semantic Ownership): `:69` — "A lost reply after possible delivery is
+  `commit_unknown`; matching later content does not prove which request wrote it."; `:100` — "`commit_unknown` without
+  automatic retry; the component owns any later operation-specific retry decision." ADR-111 `:194` keeps
+  `pkg/projection` as ADR-091 made it.
+- **ADR-103**: `:53` — "`projection.Contract` literals keep compiling"; `:71` — "The contract data types move to a leaf
+  package with aliases in `pkg/projection`". It governs the aliases.
+- ADR-056, ADR-059, ADR-081 name the package; none decides anything #138 touches.
 
-- **D-1** `pkg/projection/mutation_client.go:281-282` —
-  `mutationFailure(MutationOperationReadAuthoritative, err)`: a `Reconcile` whose own read fails with an unclassified
-  error (`nats.ErrTimeout`, or the caller's deadline during the read) reports commit-unknown and fatal although
-  nothing was written. Real trigger: the exact-entity read times out under load. `TestReconcileReadFailureIsNotCommitted`
+## 7. Defects found outside #138 (for filing)
+
+Both defects below are the same failure: a write that was never sent is reported commit-unknown and fatal, so under
+ADR-111 Decision 3 nobody retries it.
+
+- **D-1, HIGH.** `pkg/projection/mutation_client.go:281-282` —
+  `mutationFailure(MutationOperationReadAuthoritative, err)`. If `Reconcile`'s own read fails with an unclassified
+  error, it reports commit-unknown although nothing was written. Real triggers: the exact-entity read times out under
+  load (`nats.ErrTimeout`); the caller's deadline passes during the read; the client is reconnecting
+  (`ErrNotConnected`) or its breaker is open (`ErrCircuitOpen`). `TestReconcileReadFailureIsNotCommitted`
   (`commit_ambiguity_test.go:233`) covers only a classified reply.
-  Severity HIGH (a write that was never sent is never retried, per ADR-111 D3).
-- **D-2** `internal/graphmutation/client.go:136-152`: a refusal before the request is sent (nil client, nil context,
-  `ResolveSubject`, a `json.Marshal` failure on a statement `Object` that cannot be encoded) leaves `request` unwrapped,
-  and both mappers read it as commit-unknown. It errs on the safe side; MEDIUM. Package belongs to PR 8.
-- **D-3** `docs/admission-ledger.yaml:659-661`: stale `known_risks` text. Fixed in this change only if Q2 changes the row.
+- **D-2, HIGH.** `internal/graphmutation/client.go:162` —
+  `return &TransportError{Operation: operation, Outcome: TransportCommitUnknown, Err: err}`. It wraps natsclient's
+  refusals that happen before sending: `natsclient/request.go:259` — `return nil, ErrNotConnected` and `:264` —
+  `return nil, ErrCircuitOpen`, both reached through `RequestClassified` (`natsclient/errors.go:233`). Both mappers
+  then read them as commit-unknown. Real triggers: a broker reconnect, and the circuit breaker opening. Same file,
+  MEDIUM, because they need a caller bug, not a real-world condition: `:136-152`, refusals made before sending (nil
+  client, nil context, `ResolveSubject`, a `json.Marshal` failure on a statement `Object` that cannot be encoded)
+  are returned unwrapped and also read as commit-unknown. The package belongs to PR 8.
+- **D-3, LOW.** `docs/admission-ledger.yaml:659-661`: stale `known_risks` text.
 
-## Adopter seams
+## Adopter seams (existing surface)
 
-- `ClassifyMutationError`. (1) What they must know: pass the request's error unchanged, or wrapped with `%w`, and name
-  the operation. Two facts. (2) If they do nothing and keep building `MutationError` by hand, they keep #258's
-  unset class. (3) Where they find out: nowhere, for hand-built errors; a typed value, for callers of the mapping.
-  (4) What they should have to know: nothing beyond calling it.
-- Removing `MutationReceipt.Commit`: a reader gets a compile error (the strongest signal). None was measured.
-- Removing the interfaces: a compile error; none was measured. In Go, the consumer declares the interface it needs.
-- Widening `MutationUnavailable` (Q3): callers that branch on it take the same action (not committed, retry is safe).
-  `errors.Is(err, context.Canceled)` still tells the cases apart.
+- The five interfaces: no consumer names them. semboids declares its own interfaces at the call site
+  (`publisher.go:45`, `lifecycle.go:68`), as Go expects.
+- `MutationReceipt.Commit`: no consumer reads it; a reader would find out through a compile error.
+- `MutationError` built by hand: semteams (`approvalpause/projection.go:160-172`) has to know the code list, the
+  transport outcomes and the class rule. It already gets the class wrong (#258) and finds out nowhere.
+- `MutationUnavailable`: semboids retries on it (§ 4). Today a caller's context that ended before sending reads
+  `MutationUnavailable`, not committed, transient (§ 1, comment item a). semboids' retry is therefore safe for it,
+  and `errors.Is(err, context.Canceled)` still tells the cases apart.

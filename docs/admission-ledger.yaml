@@ -351,7 +351,8 @@
   destination: internal/resource
   contract: >-
     WaitForStartup retries up to StartupAttempts at StartupInterval and stops on ctx; IsAvailable,
-    Name, and Config defaults as at the pin. Changed behavior (design D7, background-work shape 1):
+    Name, and Config defaults as at the pin; WaitForStartup returns false on a nil context without
+    calling the check. Changed behavior (design D7, background-work shape 1):
     Run(ctx) error replaces StartBackgroundCheck and Stop, runs on the caller's goroutine, returns
     ctx.Err() when ctx ends, refuses a nil context, and refuses a concurrent second Run
   dependencies_and_side_effects: stdlib only; Run blocks its caller's goroutine and starts none
@@ -675,9 +676,9 @@
     (handler.go); no consumer imports it and no public signature names its types (design D5, P21, P22)
   destination: internal/tlsutil
   contract: >-
-    LoadServerTLSConfig, LoadClientTLSConfig, LoadServerTLSConfigWithMTLS, and
-    LoadClientTLSConfigWithMTLS as at the pin, except: (1) a client certificate is required under
-    server mTLS unless ServerMTLSConfig.ClientCertOptional is set; (2) LoadServerTLSConfigWithMTLS
+    LoadServerTLSConfig and LoadClientTLSConfig apply the MTLS block as at the pin, except: the two
+    WithMTLS loaders are dropped (#221); (1) a client certificate is required under
+    server mTLS unless ServerMTLSConfig.ClientCertOptional is set; (2) LoadServerTLSConfig
     refuses mTLS when server TLS is disabled (ErrInvalidConfig); (3) MinVersion values other than
     "1.2", "1.3", or empty are refused with an invalid error; (4) ACME loaders are not ported here
     (deferred to change 5)
@@ -686,7 +687,9 @@
   known_risks: >-
     no context roots; moved from pkg/tlsutil to internal/tlsutil (design D5). ACME loaders
     (LoadServerTLSConfigWithACME, LoadClientTLSConfigWithACME, initACMEClient) and pkg/acme
-    dependency dropped until change 5
+    dependency dropped until change 5. When change 5 ports LoadClientTLSConfigWithACME, its ACME
+    branch (pin tlsutil.go:286) passes a copy with MTLS cleared, so the fallback key pair is not
+    loaded first
   proving_tests: >-
     internal/tlsutil/tlsutil_test.go, internal/tlsutil/minversion_test.go,
     internal/tlsutil/mtls_default_test.go, internal/tlsutil/mtls_integration_test.go
@@ -705,7 +708,7 @@
     one canonical collector per logical key and refusing nil candidates, type/descriptor mismatches,
     and cross-key aliases with a fatal error; a caller uses the returned collector, never its own
     candidate (AGENTS.md rule index, review only); (2) Server.Start applies server mTLS via
-    tlsutil.LoadServerTLSConfigWithMTLS and refuses mTLS when TLS is disabled; (3) Server.Stop
+    tlsutil.LoadServerTLSConfig and refuses mTLS when TLS is disabled; (3) Server.Stop
     closes admission first (refusing new requests with 503), joins the serve goroutine without a
     fixed timer, waits for admitted requests within ctx, and reports ctx.Err() whenever ctx ended
   dependencies_and_side_effects: >-
@@ -715,7 +718,10 @@
   known_risks: >-
     no production context roots. Legacy registration methods (MetricsRegistrar, RegisterCounter,
     RegisterGauge, RegisterHistogram, RegisterCounterVec, RegisterGaugeVec, RegisterHistogramVec)
-    removed in favor of RegisterOrGet[C] (design D9); doc.go and README.md updated to match
+    removed in favor of RegisterOrGet[C] (design D9); doc.go and README.md updated to match.
+    Dropped NATS collectors (NATSConnected, NATSRTT, NATSReconnects, NATSCircuitBreaker) and methods
+    (RecordNATSStatus, RecordNATSRTT, RecordNATSReconnect, RecordCircuitBreakerState), and the
+    socket probe in StartWithListener: a closed listener is no longer refused (#207, #221)
   proving_tests: >-
     metric/handler_test.go, metric/lifecycle_test.go, metric/admission_test.go, metric/tls_test.go,
     metric/registerorget_test.go, metric/registerorget_prop_test.go, metric/registry_test.go,

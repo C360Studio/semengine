@@ -12,7 +12,7 @@ func TestReviewerMTLSWithoutTLSDoesNotPanic(t *testing.T) {
 			t.Errorf("configuration panicked instead of refusing: %v", p)
 		}
 	}()
-	cfg, err := LoadServerTLSConfigWithMTLS(security.ServerTLSConfig{}, security.ServerMTLSConfig{Enabled: true})
+	cfg, err := LoadServerTLSConfig(security.ServerTLSConfig{MTLS: security.ServerMTLSConfig{Enabled: true}})
 	if err == nil {
 		t.Errorf("mTLS without TLS accepted: cfg=%v", cfg)
 	}

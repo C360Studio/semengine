@@ -9,7 +9,7 @@ that process ended:
 
 - by returning or exiting without running its cleanups;
 - by a signal sent to its process group or to it alone, SIGKILL included;
-- by a panic, the `-timeout` alarm included.
+- by a panic on a goroutine other than the test's own, the `-timeout` alarm included.
 
 On that exit the helper SHALL write a line naming the reason to its stderr and SHALL exit with a non-zero status. While
 the test process runs, prochost SHALL NOT end a helper except by the test's own calls and its cleanup. A helper's
@@ -29,7 +29,8 @@ covered until it is resumed.
 
 #### Scenario: Test process exits without cleanup
 
-- **WHEN** the test process returns through `os.Exit` or panics, so its cleanups do not run
+- **WHEN** the test process exits through `os.Exit`, or panics on a goroutine other than the test's own as the
+  `-timeout` alarm does, so its cleanups do not run
 - **THEN** the helper's pid is gone within the test's failure bound, and its stderr names the reason
 
 #### Scenario: Helper keeps running while its test process runs

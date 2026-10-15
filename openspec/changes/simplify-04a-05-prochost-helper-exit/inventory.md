@@ -9,8 +9,11 @@ change carries no package from the SemStreams pin.
 
 A **helper** is a function in a test binary that `prochost.Start` runs in a child process by re-running the test
 binary. The **test process** is the test binary that called `Start`. A test process **ends without cleanup** when it
-exits by any path that skips `t.Cleanup`: a signal it does not handle, SIGKILL, a panic, `testing`'s `-timeout`
-alarm, or `os.Exit`.
+exits by any path that skips `t.Cleanup`: a signal it does not handle, SIGKILL, `os.Exit`, or a panic on a goroutine
+other than the test's own. `testing`'s `-timeout` alarm is such a panic: it panics inside `time.AfterFunc`
+(go1.26.9 `$GOROOT/src/testing/testing.go:2788-2802`). A panic on the test's own goroutine is not one: `tRunner`'s
+`doPanic` runs the test's cleanups before it re-panics (`testing.go:1954-1956`), so prochost's cleanup already kills
+the helper then.
 
 ## 1. The claimed gap
 
@@ -44,9 +47,9 @@ Nothing in the child observes the test process.
 
 ## 3. Adjacent claims
 
-- Spec `openspec/specs/process-host/spec.md:48-56`, "No orphan survives the test": covers a test that returns
-  (cleanup runs); silent on a test process that ends without cleanup. `:13-17` requires the helper's own process
-  group.
+- Spec `openspec/specs/process-host/spec.md:48-56`, "No orphan survives the test": covers a test that returns, or
+  panics on its own goroutine (cleanup runs); silent on a test process that ends without cleanup. `:13-17` requires
+  the helper's own process group.
 - Spec `openspec/specs/nats-fixture/spec.md:175` — `a prochost child, or a run whose -run selects no test that
   resets, runs the package's TestMain`: a helper starts no container; unaffected.
 - Spec `integration-test-runner`: no process-group or helper requirement remains (`grep -n -i "process group\|helper"`
@@ -58,14 +61,15 @@ Nothing in the child observes the test process.
   cleanup, so its containers stay.` The 30-minute sweep removes containers, not processes.
 - `docs/test-infrastructure.md:146-148`: harness code exists only for a failure on today's tree that `go test`,
   `t.Cleanup`, testcontainers or Task do not handle, and its doc comment names that failure and its issue. `go test`
-  and `t.Cleanup` do not handle this one (probe P1, rows A).
+  and `t.Cleanup` do not handle this one: `t.Cleanup` does not run on the paths defined above (probe P1, column A).
 - Why the group exists: archived `2026-10-05-setup-04a-01-floor/design.md:149-154` — "in its own process group … Reused
   from `runner_test.go`: … `Setpgid` and group signalling". The reuse came from the removed runner's tests, which
   needed group signals to reach a shell script's children (archived `2026-10-01-setup-04a-foundation/inventory.md:
   365`). No stated reason is specific to prochost. Group signalling keeps `Kill` and `Pause` reaching any process a
   helper starts; no helper starts one today (`prochost_test.go:25-34`, `settlement_integration_test.go:64-66`).
 - `docs/testing.md:114-119` and `prochost.go:10-12` explain the SIGTERM park with Go's deadlock detector. Probe P3
-  changes that (below).
+  (shell pipe only) suggests the stdin watch stops that detector from firing in a helper; the new docs drop the
+  explanation and make no claim about it.
 - Open pull requests (`gh pr list --state open --json number,title,changedFiles,files`, 2026-10-15): #264 (this claim,
   no files), #263 (graph-ingest query prefix; touches `processor/graph-ingest/component_test.go`, not the settlement
   test), #261 (vocabulary), Dependabot #242-#248 (`go.mod`, `go.sum`, `package*.json`, `ci.yml`). None touches
@@ -132,11 +136,15 @@ Source, commands and output: PR #264 comment 6198200054
 | SIGINT to the parent's group (Ctrl-C), exit 130 | survives | gone | gone |
 | SIGTERM to the parent alone, exit 143 | survives | survives | gone |
 | SIGKILL to the parent alone, exit 137 | survives | survives | gone |
-| panic in the test, exit 2 | survives | survives | gone |
+| panic on the test's own goroutine, no cleanup registered (see note), exit 2 | survives | survives | gone |
 | `-test.timeout=2s` alarm panic, exit 2 | survives | survives | gone |
 
 In C, the helper printed `helper: stdin EOF, exiting` each time. The parent's exit code 130 on SIGINT shows that a Go
 test binary does not catch SIGINT, so its cleanups do not run, matching the issue.
+
+Note on the panic row: the probe's `TestParent` registers no cleanup, so that row does not describe prochost. With
+prochost, `Start`'s cleanup (`prochost.go:98`) runs on that panic (`testing.go:1954-1956`) and kills the helper today.
+The row shows only that the stdin exit also works there. The `-timeout` row is the panic that skips cleanup.
 
 **P2. Paused helpers and two helpers.**
 
@@ -147,11 +155,12 @@ test binary does not catch SIGINT, so its cleanups do not run, matching the issu
 - With two helpers started from one parent, `lsof` showed each helper holding only its own pipe's read end. Both
   ended on the parent's SIGKILL and on its SIGTERM.
 
-**P3. The deadlock detector.**
+**P3. The deadlock detector (shell pipe only; not promised).**
 
 - A program whose main goroutine blocks on a nil channel exits 2 with `all goroutines are asleep` when nothing else
   runs.
 - With a goroutine reading stdin until end-of-file, it stayed up until its stdin (a shell pipe) closed, then exited
   through the watcher (status 3).
-- The watcher therefore removes the deadlock exit that `prochost.go:10-12` and `docs/testing.md:117-119` describe.
-  This was measured with a shell pipe, not an `os/exec` pipe.
+- So the deadlock exit that `prochost.go:10-12` and `docs/testing.md:117-119` describe may no longer happen in a
+  helper. This was measured with a shell pipe, not an `os/exec` pipe, and is not promised. The new docs drop the
+  explanation and keep only the advice.

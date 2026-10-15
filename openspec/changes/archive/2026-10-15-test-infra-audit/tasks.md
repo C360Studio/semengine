@@ -85,5 +85,10 @@ review stop. Choices the design does not spell out go in `notes/<task>.md`.
   `// Own server:` line, so `TestOwnServerReason` reads every reason and `startFixture` serves shared tests only.
 - [x] 4.5 Write `docs/test-infrastructure.md` (`drafts/test-infrastructure.md`), add it to the canonical home of
   `AGENTS.md` rows 1 and 2, add rows 3 to 7, and point `docs/testing.md` at the page.
-- [ ] 4.6 Record the short check's steps 1 and 3 again on shared servers, including a full run's container count.
-- [ ] 4.7 Sync the remaining deltas into `openspec/specs/` and archive the change.
+- [x] 4.6 Record the short check's steps 1 and 3 again on shared servers, including a full run's container count:
+  PR #240 comments 6191286188 and 6191626489 (`notes/4.6.md`). After fixing #254 (`1316a77`), all six paired runs passed
+  (40 containers each: `natsclient` 8, `processor/graph-ingest` 3, `internal/harness/natsfixture` 29), plain
+  `go test -tags integration ./natsclient` passed (8 containers, 33.1 s), and full `task test:integration` passed with
+  43 total containers across all 6 integration packages (`component` 1, `graph/kvcatalog` 1, `pkg/lifecycle` 1,
+  `natsclient` 8, `processor/graph-ingest` 3, `internal/harness/natsfixture` 29).
+- [x] 4.7 Sync the remaining deltas into `openspec/specs/` and archive the change (`notes/4.7.md`).

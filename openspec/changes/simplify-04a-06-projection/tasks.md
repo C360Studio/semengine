@@ -18,7 +18,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
   Delete: not committed, `MutationUnavailable`, transient, `errors.Is(err, context.Canceled)`. Gate: it passes on
   the base commit (today's behaviour, now pinned) and fails under a mutant that maps `deadline` to unknown
   (`task mutate:check`).
-- [ ] 2.3 `TestContractCloneIsIndependent` (D5). Gate: fails on the base commit.
+- [x] 2.3 `TestContractCloneIsIndependent` (D5). Gate: fails on the base commit.
 - [ ] 2.4 `TestCreateReplyNamingAnotherEntityIsCommitUnknown` and an append unknown-outcome row (D4). Gate: they pass on
   the base commit and after; one `task mutate:check` run each, against graphmutation's check, shows them able to fail.
 - [x] 2.5 A `Reconcile` whose read fails with `nats.ErrTimeout` or
@@ -34,7 +34,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
   `go test -tags integration -race -run 'CommitAmbiguity|CommitUnknown' ./processor/graph-ingest/`.
 - [ ] 3.3 Remove the five interfaces and both revive directives. Gate: `task build`, `task lint`.
 - [ ] 3.4 Remove the dead layers (D4) and use one nil-client refusal shape. Gate: 2.4 and all existing tests pass.
-- [ ] 3.5 `contract.Contract.Clone`; both copies removed (owner question 2: accepted). Gate: 2.3 passes;
+- [x] 3.5 `contract.Contract.Clone`; both copies removed (owner question 2: accepted). Gate: 2.3 passes;
   `task ledger:check`.
 - [ ] 3.6 Doc comments declare each method's failure outcomes (D7). Gate: review.
 - [x] 3.7 Every `ReadAuthoritative` failure is not committed (#267). Gate:

@@ -91,7 +91,7 @@ func buildContractIndex(contracts []Contract) (map[string]contractBinding, error
 	}
 	index := make(map[string]contractBinding, len(contracts))
 	for _, original := range contracts {
-		contract := cloneContract(original)
+		contract := original.Clone()
 		binding := contractBinding{
 			contract: contract,
 			groups:   make(map[string]PredicateGroup, len(contract.Groups)),
@@ -109,17 +109,6 @@ func buildContractIndex(contracts []Contract) (map[string]contractBinding, error
 		index[contract.Name] = binding
 	}
 	return index, nil
-}
-
-func cloneContract(contract Contract) Contract {
-	clone := contract
-	clone.BirthPredicates = append([]string(nil), contract.BirthPredicates...)
-	clone.Groups = make([]PredicateGroup, len(contract.Groups))
-	for index, group := range contract.Groups {
-		clone.Groups[index] = group
-		clone.Groups[index].Predicates = append([]string(nil), group.Predicates...)
-	}
-	return clone
 }
 
 func (c *MutationClient) binding(operation MutationOperation, name string) (contractBinding, error) {

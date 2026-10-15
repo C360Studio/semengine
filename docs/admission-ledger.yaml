@@ -654,15 +654,19 @@
   destination: pkg/projection/contract
   contract: >-
     Validate, ValidateShape and ValidateContracts accept and reject contracts as at the pin, every
-    rejection wrapping ErrInvalidContract
+    rejection wrapping ErrInvalidContract; Contract.Clone returns a copy that shares no slice with the
+    original
   dependencies_and_side_effects: pkg/types, vocabulary (in-set); stdlib; no goroutine, no I/O
   known_risks: >-
-    no context roots. The package doc (contract.go:1-6) names pkg/projection and ADR-103, which do not
-    exist here (pkg/projection is ported in a later change); left as the pin's text, because changing
-    it would break this row's carry check
-  proving_tests: pkg/projection/contract/contract_test.go
+    no context roots. Adapted by change simplify-04a-06-projection: Contract.Clone is added and
+    replaces the two private copies the pin kept in pkg/projection and payloadregistry (#138 item 2b);
+    validation is unchanged. The package doc (contract.go:1-6) names ADR-103, a pin decision record
+    this repository does not carry
+  proving_tests: >-
+    pkg/projection/contract/contract_test.go (TestContractCloneIsIndependent for Clone),
+    payloadregistry/registry_test.go
   owner: setup-04a-01-floor developer
-  disposition: carry
+  disposition: adapt
 
 - source_path: pkg/tlsutil
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128

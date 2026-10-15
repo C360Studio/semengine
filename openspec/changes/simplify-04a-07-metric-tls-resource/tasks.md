@@ -76,7 +76,7 @@ failing output in `notes/<task>.md`.
   - `pkg/resource`: the contract says `WaitForStartup` returns false on a nil context without calling the check.
 
   Gate: `task ledger:check`.
-- [ ] 6.3 File every defect this change found and did not fix (protocol File step), and link each from the PR body
+- [x] 6.3 File every defect this change found and did not fix (protocol File step), and link each from the PR body
   without a closing keyword. Gate: each number is in the PR body's follow-up line, or the body says none.
 
 ## 7. Verify, review and close

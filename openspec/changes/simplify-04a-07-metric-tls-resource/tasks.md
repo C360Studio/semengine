@@ -59,7 +59,7 @@ failing output in `notes/<task>.md`.
   - `metric/doc.go` `:38`, `:59-60`, `:76-80`, `:206`: drop the NATS examples and series names.
   - `internal/tlsutil/doc.go` `:24`, `:52-61`, `:78-87`, `:91-97` (the free-standing `mtlsCfg` example becomes
     `cfg.MTLS`): the base loaders apply the MTLS block, and mTLS without TLS is refused.
-    (done with task 4.2, commit 98311bcb934076687f09d69b4fbe783344939424)
+    (done after task 4.2, commit 7b388ad60e6f3824eb345a5fad8a3f3d628377a1, so 4.2's grep gate passes)
   - `internal/resource/doc.go`: a nil context returns false.
 
   Gate: `task docs:check`; `git grep -n -E 'WithMTLS|RecordNATS|semengine_nats' -- metric internal docs` is empty

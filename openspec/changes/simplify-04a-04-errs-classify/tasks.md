@@ -15,31 +15,38 @@ before any production line changes; record the failing output in `notes/<task>.m
   `natsclient/errors_test.go`: `classForHeader` row `unclassified_defaults_fatal`, and the round trip shows
   `errs.IsFatal` at the requester. Gate: the new rows fail on the base commit; `go test -race ./pkg/errs/...
   ./natsclient/...` fails only on them.
-- [ ] 2.2 Commit-unknown is not retryable (design D2): `pkg/lifecycle/graph_emit_contract_test.go` (faults `deadline`
-  and `malformed response`, each operation) and `pkg/projection/commit_ambiguity_test.go` assert `Class` fatal,
-  `errs.IsTransient` false, `errs.IsFatal` true, the cause still reachable by `errors.Is`, and `Code` unchanged.
-  Not-committed rows keep the reply's class. Gate: the commit-unknown assertions fail on the base commit.
-- [ ] 2.3 Transient on purpose (design D3): `TestTransportOutcomesKeepTheirCommitState` asserts no-responders is
-  transient; a new `pkg/lifecycle` test asserts `Update`'s retry-exhaustion error is transient by `errs.IsTransient` and
-  `errs.Classify`. Gate: both pass on the base commit and fail once 3.1 lands alone (record the run).
+- [ ] 2.2 Commit-unknown is not retryable (design D2). Unit: `pkg/lifecycle/graph_emit_contract_test.go` (faults
+  `deadline` and `malformed response`, each operation) and `pkg/projection/commit_ambiguity_test.go` assert `Class`
+  fatal, `errs.IsTransient` false, `errs.IsFatal` true, `errors.As` to `*errs.ClassifiedError` yielding fatal with the
+  reply's code, the cause still reachable by `errors.Is`, and `Code` unchanged. Not-committed rows keep the reply's
+  class. Integration: flip `processor/graph-ingest/commit_ambiguity_integration_test.go` `:135`, `:137-139`, `:249` and
+  `:381-383` to expect fatal with the same codes. Gate: the commit-unknown assertions fail on the base commit, the
+  integration ones under `go test -tags integration -race -run 'CommitAmbiguity|CommitUnknown'
+  ./processor/graph-ingest/`.
+- [ ] 2.3 Transient on purpose (design D3): `TestTransportOutcomesKeepTheirCommitState` asserts the no-responders class
+  field is transient; a new `pkg/lifecycle` test asserts `Update`'s retry-exhaustion error is transient by
+  `errs.IsTransient` and `errs.Classify`. Gate: both pass on the base commit and fail once 3.1 lands alone (record the
+  run).
 
 ## 3. Implementation
 
 - [ ] 3.1 `errs.Classify` returns `ErrorFatal` for an unclassified error; `classForHeader`'s default and
   `classifiedAppendFailure`'s starting class are fatal; doc comments say so. Gate: 2.1 passes.
-- [ ] 3.2 Commit-unknown `MutationError`s in `pkg/projection` and `pkg/lifecycle` carry and present `ErrorFatal`;
-  `projection`'s no-responders error is transient; `lifecycle.ErrUpdateRetriesExhausted` is transient. Gate: 2.2 and
-  2.3 pass; `task test:unit` and `task test:repeat`.
+- [ ] 3.2 Commit-unknown `MutationError`s in `pkg/projection` and `pkg/lifecycle` carry `ErrorFatal` and hold the cause
+  in a fatal `*errs.ClassifiedError`, with no method added to `MutationError`; `projection`'s no-responders error is
+  transient; `lifecycle.ErrUpdateRetriesExhausted` is transient. Gate: 2.2 and 2.3 pass; `task test:unit`,
+  `task test:integration` and `task test:repeat`.
 
 ## 4. Documentation
 
-- [ ] 4.1 `pkg/errs/doc.go` (unclassified → fatal), `docs/contract.md` (a commit-unknown error is fatal, and
-  `errs.IsTransient` reports false for it), the `pkg/errs` row of `docs/admission-ledger.yaml` (contract and
-  `known_risks`), and ADR-112 § 3 (dated amendment, if the owner agrees on #167). Gate: `task docs:check` and
-  `task ledger:check`.
-- [ ] 4.2 File every defect this change found and did not fix (protocol File step), and link each from the PR. If the
-  owner rules so on #167, that includes a comment on #138 for lifecycle's `ErrEmitFailed` path. Gate: issue numbers in
-  a PR comment.
+- [ ] 4.1 `pkg/errs/doc.go` (unclassified → fatal; `IsFatal` stays strict), `docs/contract.md` (a commit-unknown error
+  is fatal, and `errs.IsTransient` reports false for it), the `pkg/errs` row of `docs/admission-ledger.yaml` (contract
+  and `known_risks`), and, if the owner agrees on #167, a dated amendment to ADR-112 § 3 bullets `:144-146` (no
+  responders' class) and `:152` (the unknown-error default). Gate: `task docs:check` and `task ledger:check`.
+- [ ] 4.2 File every defect this change found and did not fix (protocol File step), linked from the PR without a
+  closing keyword. This includes lifecycle's `ErrEmitFailed` path (`pkg/lifecycle/graph_emit.go:98-99`), filed as a
+  defect pointing at #138 item a, and the `ErrorClass` zero value if the owner says so. Gate: issue numbers in a PR
+  comment.
 
 ## 5. Verify, review and close
 

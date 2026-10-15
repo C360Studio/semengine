@@ -17,20 +17,22 @@ so a commit-unknown error wrapping `context.DeadlineExceeded` still reads transi
 - `errs.Classify` returns `ErrorFatal` for an unclassified error: one with no `*errs.ClassifiedError` in its chain and
   none of the listed sentinels. The two other places that turn an unrecognised class into transient follow it:
   `natsclient`'s `classForHeader` default branch and `pkg/projection`'s `classifiedAppendFailure`.
-- Every commit-unknown `projection.MutationError` from `pkg/projection` and `pkg/lifecycle` carries `ErrorFatal`, and
-  `errs.IsTransient` reports false for it whatever it wraps. `errors.Is`/`errors.As` still reach the cause; `Code` and
-  `Detail` stay the reply's.
+- Every commit-unknown `projection.MutationError` from `pkg/projection` and `pkg/lifecycle` carries `ErrorFatal`.
+  `errs.IsTransient` reports false for it whatever it wraps, and `errors.As` to `*errs.ClassifiedError` finds class
+  fatal with the reply's `Code` and `Detail`. `errors.Is`, and `errors.As` to any other type, still reach the cause.
+  The error's `Err` field holds the cause wrapped in a fatal `*errs.ClassifiedError`; no method is added to
+  `MutationError`.
 - Errors that relied on the old default to stay retryable are classified explicitly: `projection`'s no-responders
   error (as `pkg/lifecycle` already does) and `lifecycle.ErrUpdateRetriesExhausted`.
 - `pkg/errs/doc.go`, `docs/contract.md`, the `pkg/errs` admission-ledger row and ADR-112 § 3 say the new default.
 
-No exported symbol is added or removed.
+No exported symbol is added or removed, and no method is added to an exported type.
 
 ## Capabilities
 
 - New: `error-classification` (the unclassified-error default).
-- Modified: `projection-mutation` (commit-unknown is not retryable; no-responders stays transient), `transport-client`
-  (an unclassified handler error crosses the wire as fatal).
+- Modified: `projection-mutation` (commit-unknown is not retryable; no-responders keeps the transient class field),
+  `transport-client` (an unclassified handler error crosses the wire as fatal).
 
 ## Impact
 
@@ -39,6 +41,8 @@ No exported symbol is added or removed.
 - `pkg/projection/mutation_client.go`, `pkg/projection/commit_ambiguity_test.go`.
 - `pkg/lifecycle/graph_emit.go`, `pkg/lifecycle/errors.go`, `pkg/lifecycle/graph_emit_contract_test.go`,
   `pkg/lifecycle/manager_test.go`.
+- `processor/graph-ingest/commit_ambiguity_integration_test.go` (integration tests that assert the reply's class on a
+  commit-unknown error).
 - `docs/admission-ledger.yaml`, `docs/contract.md`, `docs/adr/112-natsclient-contract.md`.
 - Wire behaviour: a `SubscribeForRequests` handler error with no class is sent as `fatal`, not `transient`.
 - Closes #167; addresses #223.

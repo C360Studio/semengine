@@ -7,8 +7,8 @@
 `errs.Classify` SHALL return `errs.ErrorFatal` for an unclassified error: a non-nil error whose chain holds no
 `*errs.ClassifiedError` and none of the sentinels that `errs.IsTransient`, `errs.IsFatal` or `errs.IsInvalid` list,
 whatever the error's text says. `errs.IsTransient`, `errs.IsFatal` and `errs.IsInvalid` SHALL each report false for an
-unclassified error. An error whose chain holds a `*errs.ClassifiedError` or a listed sentinel SHALL keep the class that
-marks it.
+unclassified error, because each reports only the class an error is marked with. An error whose chain holds a
+`*errs.ClassifiedError` or a listed sentinel SHALL keep the class that marks it.
 
 #### Scenario: A bare error
 

@@ -179,7 +179,7 @@ func (c *MutationClient) Create(ctx context.Context, request CreateMutation) (Mu
 		return mutationFailure(MutationOperationCreate, err)
 	}
 	if response.Entity.ID != entity.ID {
-		return unknownMutation(MutationOperationCreate, errors.New("create response entity does not match request"))
+		return mutationFailure(MutationOperationCreate, errors.New("create response entity does not match request"))
 	}
 	return MutationReceipt{Entity: response.Entity.Clone(), KVRevision: response.KVRevision, Commit: CommitVerified}, nil
 }
@@ -243,9 +243,9 @@ func (c *MutationClient) Append(ctx context.Context, request AppendMutation) (Mu
 	case graph.MutationEntityNotFound:
 		err := errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeEntityNotFound,
 			fmt.Errorf("entity not found: %s", request.EntityID))
-		return notCommitted(), newMutationError(MutationOperationAppend, err, CommitNotCommitted)
+		return mutationFailure(MutationOperationAppend, err)
 	default:
-		return unknownMutation(MutationOperationAppend, fmt.Errorf("unexpected append outcome %q", result.Outcome))
+		return mutationFailure(MutationOperationAppend, fmt.Errorf("unexpected append outcome %q", result.Outcome))
 	}
 }
 
@@ -272,14 +272,10 @@ func (c *MutationClient) ReadAuthoritative(ctx context.Context, entityID string)
 	}
 	exact, err := c.reader.ReadExactEntity(ctx, entityID)
 	if err != nil {
-		// A read writes nothing, so a classified reply to it is not committed, whatever its
-		// class; the commit rule for a mutation's reply (isDefiniteFailure) is not asked.
-		var classified *errs.ClassifiedError
-		if errors.As(err, &classified) {
-			return nil, newMutationError(MutationOperationReadAuthoritative, err, CommitNotCommitted)
-		}
-		_, mapped := mutationFailure(MutationOperationReadAuthoritative, err)
-		return nil, mapped
+		// A read writes nothing, so every failure of it is not committed (#267): a classified
+		// reply whatever its class, a timeout, a client that is not connected. The commit rule
+		// for a mutation's error (ClassifyMutationError) is not asked.
+		return nil, notCommittedError(MutationOperationReadAuthoritative, err)
 	}
 	return &graph.ExactEntity{Entity: exact.Entity.Clone(), KVRevision: exact.KVRevision}, nil
 }
@@ -424,24 +420,95 @@ func invalidMutationError(operation MutationOperation, err error) *MutationError
 	}
 }
 
+// mutationFailure reports a write's failure, with the receipt that still carries its commit state.
 func mutationFailure(operation MutationOperation, err error) (MutationReceipt, error) {
-	if isDefiniteFailure(err) {
-		return notCommitted(), newMutationError(operation, err, CommitNotCommitted)
-	}
-	return unknownMutation(operation, err)
+	mapped := ClassifyMutationError(operation, err)
+	return MutationReceipt{Commit: mapped.Commit}, mapped
 }
 
-// unknownMutation reports a mutation that may have committed. It is fatal whatever class the
+// ClassifyMutationError maps the error of one graph mutation request to the commit state it
+// proves, and returns nil for a nil error. It is the one mapping every MutationClient write uses.
+//
+// The error is not committed in two cases. Its chain holds a classified reply whose code
+// graph-ingest sends only before it writes (invalid request, structural invalid, message type
+// unregistered, entity ID invalid, entity ID authority invalid, revision mismatch, entity exists,
+// entity not found, graph state reset required): the error keeps that reply's class, code and a
+// copy of its detail. Or the request was not delivered, because no responder took it or the
+// caller's context ended before it was sent: Kind MutationUnavailable, class transient.
+//
+// Every other error, a classified reply with any other code included, is commit-unknown and fatal,
+// so it is never retried: a write that may have committed could apply twice. That includes
+// natsclient's refusals before sending (ErrNotConnected, ErrCircuitOpen), which the wire client
+// reports as an outcome it cannot prove (#268).
+func ClassifyMutationError(operation MutationOperation, err error) *MutationError {
+	if err == nil {
+		return nil
+	}
+	if isDefiniteFailure(err) {
+		return notCommittedError(operation, err)
+	}
+	return commitUnknownError(operation, err)
+}
+
+// notCommittedError reports a failure that wrote nothing. The class and code are a classified
+// reply's; an unclassified request that was not delivered is transient, because a later attempt
+// may find a responder (the raw nats.ErrNoResponders is unclassified, which errs.Classify reads as
+// fatal); any other unclassified cause takes errs.Classify's class.
+func notCommittedError(operation MutationOperation, err error) *MutationError {
+	mapped := &MutationError{Operation: operation, Class: errs.Classify(err), Commit: CommitNotCommitted, Err: err}
+	var classified *errs.ClassifiedError
+	if errors.As(err, &classified) {
+		mapped.Code = classified.Code
+		mapped.Class = classified.Class
+		mapped.Detail = cloneDetail(classified.Detail)
+	} else if graphmutation.IsDefinitelyNotCommitted(err) || natsclient.IsNoResponders(err) {
+		mapped.Class = errs.ErrorTransient
+	}
+	mapped.Kind = notCommittedKind(mapped.Code, mapped.Class)
+	return mapped
+}
+
+// commitUnknownError reports a mutation that may have committed. It is fatal whatever class the
 // reply carried: retrying a write that may have committed can apply it twice. The cause is held in
 // a fatal *errs.ClassifiedError so errs.IsTransient, errs.Classify and errors.As read the same class
 // as the Class field. The error keeps the reply's code and detail; the wrapper keeps the code, and
 // the detail only when the code is not empty (errs.Classified).
-func unknownMutation(operation MutationOperation, err error) (MutationReceipt, error) {
-	mapped := newMutationError(operation, err, CommitUnknown)
-	mapped.Kind = MutationCommitUnknown
-	mapped.Class = errs.ErrorFatal
-	mapped.Err = errs.Classified(errs.ErrorFatal, err)
-	return MutationReceipt{Commit: CommitUnknown}, mapped
+func commitUnknownError(operation MutationOperation, err error) *MutationError {
+	mapped := &MutationError{
+		Operation: operation, Kind: MutationCommitUnknown, Class: errs.ErrorFatal, Commit: CommitUnknown,
+		Err: errs.Classified(errs.ErrorFatal, err),
+	}
+	var classified *errs.ClassifiedError
+	if errors.As(err, &classified) {
+		mapped.Code = classified.Code
+		mapped.Detail = cloneDetail(classified.Detail)
+	}
+	return mapped
+}
+
+// notCommittedKind names a not-committed failure by its reply code, and by its class when the code
+// names no kind.
+func notCommittedKind(code string, class errs.ErrorClass) MutationErrorKind {
+	switch code {
+	case graph.ErrorCodeInvalidRequest, graph.ErrorCodeStructuralInvalid:
+		return MutationInvalid
+	case graph.ErrorCodeEntityNotFound:
+		return MutationNotFound
+	case graph.ErrorCodeEntityExists:
+		return MutationConflict
+	case graph.ErrorCodeRevisionMismatch:
+		return MutationRevisionConflict
+	case graph.ErrorCodeGraphStateResetRequired, graph.ErrorCodeInternal:
+		return MutationInternal
+	}
+	switch class {
+	case errs.ErrorInvalid:
+		return MutationInvalid
+	case errs.ErrorFatal:
+		return MutationInternal
+	default:
+		return MutationUnavailable
+	}
 }
 
 // isDefiniteFailure reports a failure that proves the mutation did not commit: a transport
@@ -465,47 +532,6 @@ func isDefiniteFailure(err error) bool {
 		return false
 	}
 	return graphmutation.IsDefinitelyNotCommitted(err) || natsclient.IsNoResponders(err)
-}
-
-func newMutationError(operation MutationOperation, err error, commit CommitState) *MutationError {
-	mapped := &MutationError{
-		Operation: operation, Kind: MutationUnavailable, Class: errs.Classify(err), Commit: commit, Err: err,
-	}
-	var classified *errs.ClassifiedError
-	if !errors.As(err, &classified) {
-		if natsclient.IsNoResponders(err) {
-			// No responder took the request, so nothing was written and a later attempt may
-			// find one. The raw nats.ErrNoResponders is unclassified, which errs.Classify
-			// reads as fatal; the class is set here, as pkg/lifecycle's emitter sets it.
-			mapped.Class = errs.ErrorTransient
-		}
-		if commit == CommitUnknown {
-			mapped.Kind = MutationCommitUnknown
-		}
-		return mapped
-	}
-	mapped.Code = classified.Code
-	mapped.Class = classified.Class
-	mapped.Detail = cloneDetail(classified.Detail)
-	switch classified.Code {
-	case graph.ErrorCodeInvalidRequest, graph.ErrorCodeStructuralInvalid:
-		mapped.Kind = MutationInvalid
-	case graph.ErrorCodeEntityNotFound:
-		mapped.Kind = MutationNotFound
-	case graph.ErrorCodeEntityExists:
-		mapped.Kind = MutationConflict
-	case graph.ErrorCodeRevisionMismatch:
-		mapped.Kind = MutationRevisionConflict
-	case graph.ErrorCodeGraphStateResetRequired, graph.ErrorCodeInternal:
-		mapped.Kind = MutationInternal
-	default:
-		if classified.Class == errs.ErrorInvalid {
-			mapped.Kind = MutationInvalid
-		} else if classified.Class == errs.ErrorFatal {
-			mapped.Kind = MutationInternal
-		}
-	}
-	return mapped
 }
 
 // classifiedAppendFailure treats a class it does not recognise as fatal, the

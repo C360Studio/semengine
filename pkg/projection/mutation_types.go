@@ -121,7 +121,8 @@ const (
 	MutationConflict MutationErrorKind = "conflict"
 	// MutationRevisionConflict reports a stale expected authority revision.
 	MutationRevisionConflict MutationErrorKind = "revision-conflict"
-	// MutationUnavailable reports no available mutation responder.
+	// MutationUnavailable reports a request that was not delivered: no responder took it, or the
+	// caller's context ended before it was sent.
 	MutationUnavailable MutationErrorKind = "unavailable"
 	// MutationCommitUnknown reports a mutation that may have committed (CommitUnknown).
 	MutationCommitUnknown MutationErrorKind = "commit-unknown"

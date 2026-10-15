@@ -11,23 +11,23 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 ## 2. Failing tests
 
-- [ ] 2.1 `TestClassifyMutationErrorMapsEachOutcome` (package `projection_test`, design D1), including rows for
+- [x] 2.1 `TestClassifyMutationErrorMapsEachOutcome` (package `projection_test`, design D1), including rows for
   natsclient's `ErrNotConnected` and `ErrCircuitOpen` wrapped as transport `commit_unknown` (they stay unknown until
   #268). Gate: fails on the base commit (no symbol).
-- [ ] 2.2 A "context ended before send" row in `TestTransportOutcomesKeepTheirCommitState` for Create, Append and
+- [x] 2.2 A "context ended before send" row in `TestTransportOutcomesKeepTheirCommitState` for Create, Append and
   Delete: not committed, `MutationUnavailable`, transient, `errors.Is(err, context.Canceled)`. Gate: it passes on
   the base commit (today's behaviour, now pinned) and fails under a mutant that maps `deadline` to unknown
   (`task mutate:check`).
 - [ ] 2.3 `TestContractCloneIsIndependent` (D5). Gate: fails on the base commit.
 - [ ] 2.4 `TestCreateReplyNamingAnotherEntityIsCommitUnknown` and an append unknown-outcome row (D4). Gate: they pass on
   the base commit and after; one `task mutate:check` run each, against graphmutation's check, shows them able to fail.
-- [ ] 2.5 A `Reconcile` whose read fails with `nats.ErrTimeout` or
+- [x] 2.5 A `Reconcile` whose read fails with `nats.ErrTimeout` or
   `natsclient.ErrNotConnected` reads not committed, sends no mutation, and reports operation `read-authoritative`
   (extends `TestReconcileReadFailureIsNotCommitted`). Gate: fails on the base commit.
 
 ## 3. Implementation
 
-- [ ] 3.1 Export `ClassifyMutationError`, which computes `Kind` once; every write uses it; `MutationUnavailable`'s doc
+- [x] 3.1 Export `ClassifyMutationError`, which computes `Kind` once; every write uses it; `MutationUnavailable`'s doc
   says "not delivered". Gate: 2.1 and 2.2 pass.
 - [ ] 3.2 `MutationReceipt` without `Commit`; tests in `pkg/projection` and
   `processor/graph-ingest/commit_ambiguity_integration_test.go` read the error's `Commit`. Gate: `task test:unit`;
@@ -37,7 +37,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 - [ ] 3.5 `contract.Contract.Clone`; both copies removed (owner question 2: accepted). Gate: 2.3 passes;
   `task ledger:check`.
 - [ ] 3.6 Doc comments declare each method's failure outcomes (D7). Gate: review.
-- [ ] 3.7 Every `ReadAuthoritative` failure is not committed (#267). Gate:
+- [x] 3.7 Every `ReadAuthoritative` failure is not committed (#267). Gate:
   2.5 passes.
 
 ## 4. Documentation

@@ -1745,16 +1745,18 @@ func TestCreateAttachRereadDecidesTheOutcome(t *testing.T) {
 			if test.want == ErrUpdateRetriesExhausted && errs.Classify(err) != errs.ErrorTransient {
 				t.Fatalf("class = %v, want transient for retryable contention", errs.Classify(err))
 			}
+			if test.want == ErrUpdateRetriesExhausted && !errs.IsTransient(err) {
+				t.Fatalf("errs.IsTransient = false, want true for retryable contention (err=%v)", err)
+			}
 		})
 	}
 }
 
 // TestUpdateRetriesExhaustedIsTransient pins design D3 of simplify-04a-04-errs-classify: an
 // exhausted CAS retry budget is retryable contention, so the error a write returns when every
-// attempt met a revision mismatch is transient by errs.Classify and errs.IsTransient. The
-// classify subtest guards the class the unclassified default gives today; the is_transient
-// subtest needs the class carried on the error itself. Create's attach path is
-// TestCreateAttachRereadDecidesTheOutcome.
+// attempt met a revision mismatch is transient by errs.Classify and errs.IsTransient. Both read
+// the class ErrUpdateRetriesExhausted carries: an unclassified error would be fatal. Create's
+// attach path is TestCreateAttachRereadDecidesTheOutcome.
 func TestUpdateRetriesExhaustedIsTransient(t *testing.T) {
 	const id = "c360.platform1.gcs.lifecycle.mission.exhausted"
 	exhaust := func(t *testing.T) map[string]error {

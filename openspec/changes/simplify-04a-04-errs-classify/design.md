@@ -55,15 +55,17 @@ Every `*projection.MutationError` with `Commit == CommitUnknown` (`Kind == Mutat
 `pkg/projection` or `pkg/lifecycle` returns has `Class == errs.ErrorFatal`. For it and any error wrapping it:
 
 - `errs.IsTransient` is false, `errs.IsFatal` is true, and `errs.Classify` is `ErrorFatal`, whatever the cause is.
-- `errors.As(err, &ce)` with `ce *errs.ClassifiedError` yields class fatal, with the reply's `Code` and `Detail`. This
-  is how semsource reads the class (`processor/code-context/http_error.go:70`). The reply's own class is no longer
-  the first one `errors.As` finds.
+- `errors.As(err, &ce)` with `ce *errs.ClassifiedError` yields class fatal, with the reply's `Code`, and its `Detail`
+  when the code is not empty. This is how semsource reads the class (`processor/code-context/http_error.go:70`). The
+  reply's own class is no longer the first one `errors.As` finds.
 - `errors.Is(err, cause)` and `errors.As` to any other type, `*graphmutation.TransportError` included, still reach the
   cause. `MutationError.Code` and `Detail` are the reply's.
 
 No method is added to `MutationError`. Its `Err` holds the cause wrapped in a fatal `*errs.ClassifiedError`, built
-the way `errs.Classified` builds one: it keeps the text and inherits the inner `Code` and `Detail`
-(`errs.go:251-260`, `:282-287`).
+the way `errs.Classified` builds one: it keeps the text and inherits the inner `Code`, and the inner
+`Detail` only when that code is not empty (`errs.go:251-260`, `:282-287`). A reply with detail but no code is
+representable (`natsclient/errors.go:374-375`), but no graph-ingest handler sends one today; its detail is not promised
+(Codex checkpoint review, PR #255 comment 6193499709).
 
 Proving tests:
 

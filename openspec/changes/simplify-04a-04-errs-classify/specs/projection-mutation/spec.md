@@ -8,9 +8,10 @@ A `*projection.MutationError` that reports commit-unknown (`Commit` is `CommitUn
 `MutationCommitUnknown`), whether `projection.MutationClient` or `pkg/lifecycle`'s graph emitter returns it, SHALL
 carry `Class` `errs.ErrorFatal` whatever error it wraps. For that error, and for any error that wraps it,
 `errs.IsTransient` SHALL report false, `errs.IsFatal` SHALL report true, and `errs.Classify` SHALL return
-`errs.ErrorFatal`. `errors.As` to `*errs.ClassifiedError` SHALL yield class fatal with the reply's `Code` and `Detail`.
-`errors.Is`, and `errors.As` to any other type, SHALL still reach the error it wraps, and the `MutationError`'s `Code`
-and `Detail` SHALL be the reply's.
+`errs.ErrorFatal`. `errors.As` to `*errs.ClassifiedError` SHALL yield class fatal with the reply's `Code`, and with the
+reply's `Detail` when that `Code` is not empty (a reply with no code passes no detail on). `errors.Is`, and
+`errors.As` to any other type, SHALL still reach the error it wraps, and the `MutationError`'s `Code` and `Detail`
+SHALL be the reply's.
 
 #### Scenario: Deadline after the request was sent
 

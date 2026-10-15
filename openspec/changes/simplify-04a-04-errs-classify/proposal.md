@@ -19,9 +19,9 @@ so a commit-unknown error wrapping `context.DeadlineExceeded` still reads transi
   `natsclient`'s `classForHeader` default branch and `pkg/projection`'s `classifiedAppendFailure`.
 - Every commit-unknown `projection.MutationError` from `pkg/projection` and `pkg/lifecycle` carries `ErrorFatal`.
   `errs.IsTransient` reports false for it whatever it wraps, and `errors.As` to `*errs.ClassifiedError` finds class
-  fatal with the reply's `Code` and `Detail`. `errors.Is`, and `errors.As` to any other type, still reach the cause.
-  The error's `Err` field holds the cause wrapped in a fatal `*errs.ClassifiedError`; no method is added to
-  `MutationError`.
+  fatal with the reply's `Code` (and `Detail`, when the code is not empty). `errors.Is`, and `errors.As` to any other
+  type, still reach the cause. The error's `Err` field holds the cause wrapped in a fatal `*errs.ClassifiedError`; no
+  method is added to `MutationError`.
 - Errors that relied on the old default to stay retryable are classified explicitly: `projection`'s no-responders
   error (as `pkg/lifecycle` already does) and `lifecycle.ErrUpdateRetriesExhausted`.
 - `pkg/errs/doc.go`, `docs/contract.md`, the `pkg/errs` admission-ledger row and ADR-112 § 3 say the new default.

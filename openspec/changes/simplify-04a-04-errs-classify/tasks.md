@@ -10,12 +10,12 @@ before any production line changes; record the failing output in `notes/<task>.m
 
 ## 2. Failing tests
 
-- [ ] 2.1 `pkg/errs/errs_test.go` `TestClassify`: a bare `errors.New` is fatal; an error whose text says "timeout" and
+- [x] 2.1 `pkg/errs/errs_test.go` `TestClassify`: a bare `errors.New` is fatal; an error whose text says "timeout" and
   "transient" is fatal; a wrapped transient `ClassifiedError` and `context.DeadlineExceeded` stay transient.
   `natsclient/errors_test.go`: `classForHeader` row `unclassified_defaults_fatal`, and the round trip shows
   `errs.IsFatal` at the requester. Gate: the new rows fail on the base commit; `go test -race ./pkg/errs/...
   ./natsclient/...` fails only on them.
-- [ ] 2.2 Commit-unknown is not retryable (design D2). Unit: `pkg/lifecycle/graph_emit_contract_test.go` (faults
+- [x] 2.2 Commit-unknown is not retryable (design D2). Unit: `pkg/lifecycle/graph_emit_contract_test.go` (faults
   `deadline` and `malformed response`, each operation) and `pkg/projection/commit_ambiguity_test.go` assert `Class`
   fatal, `errs.IsTransient` false, `errs.IsFatal` true, `errors.As` to `*errs.ClassifiedError` yielding fatal with the
   reply's code, the cause still reachable by `errors.Is`, and `Code` unchanged. Not-committed rows keep the reply's
@@ -23,7 +23,7 @@ before any production line changes; record the failing output in `notes/<task>.m
   `:381-383` to expect fatal with the same codes. Gate: the commit-unknown assertions fail on the base commit, the
   integration ones under `go test -tags integration -race -run 'CommitAmbiguity|CommitUnknown'
   ./processor/graph-ingest/`.
-- [ ] 2.3 Transient on purpose (design D3): `TestTransportOutcomesKeepTheirCommitState` asserts the no-responders class
+- [x] 2.3 Transient on purpose (design D3): `TestTransportOutcomesKeepTheirCommitState` asserts the no-responders class
   field is transient; a new `pkg/lifecycle` test asserts the retry-exhaustion error of `Transition` and
   `UpdateFromOperator` (`manager.go:656-657`, `:768-769`) is transient by `errs.IsTransient` and `errs.Classify`.
   Gate: the class-field and `errs.Classify` checks pass on the base commit and fail once 3.1 lands alone (record the

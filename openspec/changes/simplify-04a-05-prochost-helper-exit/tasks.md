@@ -46,7 +46,7 @@ before any production line changes; record the failing output in `notes/<task>.m
 
 ## 4. Documentation
 
-- [ ] 4.1 The `prochost` doc comment (`prochost.go:1-12`) and `docs/testing.md` (the `prochost` paragraph, `:114-119`):
+- [x] 4.1 The `prochost` doc comment (`prochost.go:1-12`) and `docs/testing.md` (the `prochost` paragraph, `:114-119`):
   - a helper ends when its test process ends, naming #208 as the failure this code exists for;
   - stdin is reserved;
   - a paused helper is not promised;

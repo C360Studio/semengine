@@ -109,6 +109,11 @@ other query subject. Replies are bare JSON, not wrapped in an envelope.
 | batch | `graph.ingest.query.batch` | `graph.EntityBatchResponse` |
 | prefix | `graph.ingest.query.prefix` | `graph.PrefixQueryResponse` |
 
+`graph.ingest.query.prefix` accepts `graph.PrefixQueryRequest`, which filters keys either by a 1–6 part literal
+`prefix` (`Prefix`) or by an exact 6-position `*` wildcard `pattern` (`Pattern`, validated by
+`pkg/types.ValidateEntityIDPattern` and evaluated via `KVStore.KeysByFilter`). `prefix` and `pattern` are mutually
+exclusive; omitting both matches all entities.
+
 ## Hierarchy inference
 
 When `enable_hierarchy` is on, the component creates container entities from the 6-part entity ID structure:

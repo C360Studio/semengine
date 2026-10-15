@@ -44,9 +44,15 @@ const MaxPrefixQueryLimit = DefaultPrefixQueryLimit
 //     therefore incur a full key scan on every request.
 type PrefixQueryRequest struct {
 	// Prefix is a dot-delimited entity-ID prefix (e.g. "acme.ops.robotics").
-	// Empty string matches all entities. Do NOT include a trailing dot —
-	// the server appends it automatically when filtering.
+	// Empty string matches all entities when Pattern is also empty. Do NOT
+	// include a trailing dot — the server appends it automatically when
+	// filtering. Mutually exclusive with Pattern.
 	Prefix string `json:"prefix"`
+
+	// Pattern is an optional exact six-position entity-ID pattern in ADR-102
+	// canonical order where any position may be "*". Mutually exclusive with
+	// Prefix. Example: "acme.ops.*.intel.platform.*".
+	Pattern string `json:"pattern,omitempty"`
 
 	// Limit is the maximum number of entities to return on this page.
 	// <=0 means "use server default". Clamped to MaxPrefixQueryLimit.

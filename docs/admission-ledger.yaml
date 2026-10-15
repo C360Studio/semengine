@@ -1921,7 +1921,8 @@
     matching Source (design D15); (4) reserved sources and IsReservedSource declared in sources.go;
     (5) IndexStatusResponse drops legacy Phase/Revision/LastSynced and adds published_at (design D16);
     (6) ExactEntityReader refuses negative timeouts and reads its subject from QueryVerbs (#106,
-    #151); (7) GraphStateReasonMissingStatementMetadata added
+    #151); (7) GraphStateReasonMissingStatementMetadata added; (8) PrefixQueryRequest adds optional
+    6-position wildcard Pattern (#259)
   dependencies_and_side_effects: >-
     message, pkg/errs, pkg/types, vocabulary (in-set); stdlib; no NATS import in graph root;
     graph/kvcatalog imports natsclient and nats.go/jetstream
@@ -1935,8 +1936,8 @@
     GetPropertyValue function, MissingUnknown, ContextEntry, NameIndexEntry; #132); README updated
   proving_tests: >-
     graph/write_rules_test.go, graph/write_rules_prop_test.go, graph/exact_entity_test.go,
-    graph/query_verbs_test.go, graph/mutation_protocol_test.go, graph/kvcatalog/*_test.go,
-    internal/harness/contract/graphtransport_test.go
+    graph/query_verbs_test.go, graph/query_prefix_types_test.go, graph/mutation_protocol_test.go,
+    graph/kvcatalog/*_test.go, internal/harness/contract/graphtransport_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 
@@ -2161,8 +2162,9 @@
     (Q13); (5) hierarchy refusal names inference.RegisterPayloads (#33); (6) owner lifecycle guarded
     by internal/lifecycleguard with RollbackFailedStart (SS#1411, design D13); (7) single entity
     write seam (#100), required statement metadata and source-keyed write modes (#98), fail-closed
-    hierarchy/guard births (#111), suffix index/verb dropped (#104), strict config validation, and
-    metrics registered only on the injected registry under the semengine namespace (#69, design D4)
+    hierarchy/guard births (#111), suffix index/verb dropped (#104), strict config validation,
+    metrics registered only on the injected registry under the semengine namespace (#69, design D4),
+    and 6-position wildcard Pattern filtering on graph.ingest.query.prefix (#259)
   dependencies_and_side_effects: >-
     component, graph, graph/inference, graph/kvcatalog, graph/readiness, internal/cache,
     internal/dispatch, internal/graphmutation, internal/lifecycleguard, message, metric, natsclient,
@@ -2182,10 +2184,10 @@
     (TestGraphIngestLifecycleSuite), guard_generation_integration_test.go, guard_generation_test.go,
     guard_record_test.go, settlement_integration_test.go, long_apply_integration_test.go,
     interrupted_work_test.go, fact_lane_fence_test.go, fact_lane_fence_integration_test.go,
-    query_verbs_integration_test.go, entity_writes_seam_test.go, write_modes_test.go,
-    hierarchy_birth_test.go, metrics_registry_test.go, config_strict_test.go,
-    failed_start_callbacks_integration_test.go, poison_scoping_test.go,
-    commit_ambiguity_integration_test.go
+    query_verbs_integration_test.go, query_prefix_unit_test.go, query_prefix_integration_test.go,
+    entity_writes_seam_test.go, write_modes_test.go, hierarchy_birth_test.go,
+    metrics_registry_test.go, config_strict_test.go, failed_start_callbacks_integration_test.go,
+    poison_scoping_test.go, commit_ambiguity_integration_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: repair-before-port
 

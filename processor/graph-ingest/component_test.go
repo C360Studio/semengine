@@ -299,7 +299,7 @@ func matchesNATSFilters(key string, filters []string) bool {
 			if strings.HasPrefix(key, prefix) {
 				return true
 			}
-		} else if key == filter {
+		} else if key == filter || matchesWildcardPattern(filter, key) {
 			return true
 		}
 	}

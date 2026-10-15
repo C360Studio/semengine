@@ -173,6 +173,12 @@ func TestTransportOutcomesKeepTheirCommitState(t *testing.T) {
 					t.Errorf("%s: errors.Is does not reach %v: %v", operation, test.fail, outcome.err)
 				}
 				if test.want != CommitUnknown {
+					// Design D3: no responder took the request, so nothing was written and a retry is
+					// safe. Only the Class field is promised; the raw nats.ErrNoResponders underneath
+					// stays unclassified.
+					if mutationErr.Class != errs.ErrorTransient {
+						t.Errorf("%s: class %q, want transient: no responder took the request", operation, mutationErr.Class)
+					}
 					continue
 				}
 				// No reply came back, so there is no reply code: the fatal class carries none.

@@ -206,3 +206,65 @@ func TestIntegration_PrefixQuery_ExhaustedPageOmitsCursor(t *testing.T) {
 	require.Len(t, typedResp.Entities, 1)
 	assert.Equal(t, id, typedResp.Entities[0].ID)
 }
+
+// TestIntegration_PrefixQuery_PatternAcrossSystems drives the registered
+// graph.ingest.query.prefix handler over real NATS KV with a 6-position
+// wildcard pattern, verifying server-side KeysByFilter matching across systems,
+// cursor pagination, and classified rejection when Prefix and Pattern are both
+// set.
+func TestIntegration_PrefixQuery_PatternAcrossSystems(t *testing.T) {
+	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancelOperation()
+	c, nc, owner := startPrefixTestComponent(ctx, t, withAuthority("pattest", "ops"))
+	defer owner.finish(ctx, t)
+
+	for _, id := range []string{
+		"pattest.ops.sys2.intel.platform.uav-02",
+		"pattest.ops.sys1.intel.platform.uav-01",
+		"pattest.ops.sys1.intel.sensor.radar-01",
+		"pattest.ops.sys3.intel.platform.uav-03",
+	} {
+		seedPrefixEntity(t, ctx, c, id)
+	}
+
+	var gotIDs []string
+	var cursor string
+	for {
+		reqData, err := json.Marshal(graph.PrefixQueryRequest{
+			Pattern: "pattest.ops.*.intel.platform.*",
+			Limit:   2,
+			Cursor:  cursor,
+		})
+		require.NoError(t, err)
+
+		respData, err := nc.RequestClassified(ctx, "graph.ingest.query.prefix", reqData, wireRequestTimeout)
+		require.NoError(t, err)
+
+		var resp graph.PrefixQueryResponse
+		require.NoError(t, json.Unmarshal(respData, &resp))
+		require.NotEmpty(t, resp.Entities)
+		for _, e := range resp.Entities {
+			gotIDs = append(gotIDs, e.ID)
+		}
+		cursor = resp.NextCursor
+		if cursor == "" {
+			break
+		}
+	}
+
+	assert.Equal(t, []string{
+		"pattest.ops.sys1.intel.platform.uav-01",
+		"pattest.ops.sys2.intel.platform.uav-02",
+		"pattest.ops.sys3.intel.platform.uav-03",
+	}, gotIDs)
+
+	// Both Prefix and Pattern set must fail as classified invalid over NATS wire.
+	bothReq, err := json.Marshal(graph.PrefixQueryRequest{
+		Prefix:  "pattest.ops",
+		Pattern: "pattest.ops.*.intel.platform.*",
+	})
+	require.NoError(t, err)
+	_, bothErr := nc.RequestClassified(ctx, "graph.ingest.query.prefix", bothReq, wireRequestTimeout)
+	require.Error(t, bothErr)
+	assert.True(t, errs.IsInvalid(bothErr))
+}

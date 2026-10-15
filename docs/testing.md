@@ -115,8 +115,11 @@ The packages under `internal/harness/` are test-only; a contract test refuses an
   test binary: register each one with `prochost.Helper(name, fn)` inside a `TestHelperProcess` function, and
   `prochost.Start(t, name)` re-runs the test binary with a marker that selects it. In a normal test run every
   `Helper` call returns at once. The child runs in its own process group, its output goes to files, and the test's
-  cleanup kills and reaps it. A helper that must stay up waits for SIGTERM (`signal.Notify`, then receive), never on
-  a bare `select {}`: Go's deadlock detector kills a process whose goroutines are all blocked.
+  cleanup kills and reaps it. A helper also ends when its test process ends without running cleanups (killed,
+  interrupted, crashed), so a killed run leaves no helper behind (#208). A helper's standard input is reserved for
+  that, so a helper function must not read it, and a helper paused with `Pause` is not promised to end until it is
+  resumed. A helper that must stay up waits for SIGTERM (`signal.Notify`, then receive) and never parks on a bare
+  `select {}`, which the repository refuses.
 - `probe` lets a test observe what a component did instead of guessing from timing. `Callback` exposes entered and
   joined channels and a `Release` method for a blocked callback; `ObservedContext` signals when code first checks
   `ctx.Done()`; `Await` polls under your context and, on timeout, reports the last value and last error it saw.

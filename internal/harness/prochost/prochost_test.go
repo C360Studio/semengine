@@ -22,8 +22,10 @@ import (
 const failureBound = 10 * time.Second
 
 // The helpers this package's tests start. Each runs only in a child started with its marker.
-func TestHelperProcess(_ *testing.T) {
+func TestHelperProcess(t *testing.T) {
 	Helper("checkpoints", checkpoints)
+	Helper("park", block)
+	Helper("parent", func() { helperParent(t) })
 	Helper("hello", func() {
 		terminated := parkUntilSIGTERM()
 		fmt.Println("hello from the helper")
@@ -386,6 +388,138 @@ func TestNoHelperOutlivesItsTest(t *testing.T) {
 	}
 	if err := syscall.Kill(-pid, 0); !errors.Is(err, syscall.ESRCH) {
 		t.Fatalf("process group %d still exists: %v", pid, err)
+	}
+}
+
+// helperExitReason is the text a helper writes to its stderr when it exits because its test process
+// has ended.
+const helperExitReason = "test process ended"
+
+// helperParent is a test process inside a helper: it starts a park helper (the grandchild), writes
+// the grandchild's pid, start identity and stderr file to HELPER_DIR/grandchild, and parks until
+// SIGTERM. A signal it does not catch ends it there; on SIGTERM it ends as HELPER_END says. Neither
+// way runs its cleanups, so nothing it did ends the grandchild.
+func helperParent(t *testing.T) {
+	terminated := parkUntilSIGTERM()
+	g, err := Start(t, "park")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	identity, err := startIdentity(g.pid)
+	if err != nil || identity == "" {
+		fmt.Fprintf(os.Stderr, "start identity of %d: %q %v\n", g.pid, identity, err)
+		os.Exit(2)
+	}
+	record := filepath.Join(os.Getenv("HELPER_DIR"), "grandchild")
+	if err := os.WriteFile(record+".tmp", fmt.Appendf(nil, "%d\n%s\n%s\n", g.pid, identity, g.stderr), 0o644); err != nil {
+		os.Exit(3)
+	}
+	if err := os.Rename(record+".tmp", record); err != nil {
+		os.Exit(4)
+	}
+	<-terminated
+	switch os.Getenv("HELPER_END") {
+	case "returned":
+		return // Helper then exits through os.Exit(0)
+	case "panicked":
+		// Off the test goroutine, as testing's -timeout alarm panics: no cleanup runs.
+		go func() { panic("helper-parent panics on a goroutine of its own") }()
+		block()
+	}
+}
+
+// grandchild is what helperParent recorded about the helper it started.
+type grandchild struct {
+	pid      int
+	identity string
+	stderr   string
+}
+
+func readGrandchild(t *testing.T, dir string) grandchild {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), failureBound)
+	defer cancel()
+	lines, err := probe.Await(ctx, func(context.Context) ([]string, error) {
+		data, err := os.ReadFile(filepath.Join(dir, "grandchild"))
+		return strings.Split(strings.TrimSuffix(string(data), "\n"), "\n"), err
+	}, func([]string) bool { return true })
+	if err != nil || len(lines) != 3 {
+		t.Fatalf("grandchild record never arrived: %q %v", lines, err)
+	}
+	pid, err := strconv.Atoi(lines[0])
+	if err != nil {
+		t.Fatalf("grandchild pid %q: %v", lines[0], err)
+	}
+	return grandchild{pid: pid, identity: lines[1], stderr: lines[2]}
+}
+
+// running reports whether g's pid still names the process helperParent started.
+func (g grandchild) running() bool {
+	now, err := startIdentity(g.pid)
+	return err == nil && now == g.identity
+}
+
+// process-host › "A helper ends when its test process ends": a helper started by a test process that
+// ends without running its cleanups exits on its own and writes why to its stderr. The test process
+// is itself a helper (the helper-parent), so the outer test can end it in each such way; its
+// TMPDIR is the outer test's directory, so what it leaves on disk goes with the outer cleanup.
+func TestHelperEndsWhenItsTestProcessEnds(t *testing.T) {
+	for _, row := range []struct {
+		name string
+		end  func(*Process) error
+		want ExitStatus // how the helper-parent ended
+	}{
+		{"killed", (*Process).Kill, ExitStatus{Code: -1, Signal: syscall.SIGKILL}},
+		{"interrupted", func(p *Process) error { return p.Signal(syscall.SIGINT) }, ExitStatus{Code: -1, Signal: syscall.SIGINT}},
+		{"returned", func(p *Process) error { return p.Signal(syscall.SIGTERM) }, ExitStatus{Code: 0}},
+		{"panicked", func(p *Process) error { return p.Signal(syscall.SIGTERM) }, ExitStatus{Code: 2}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			dir := t.TempDir()
+			parent, err := Start(t, "parent", "TMPDIR="+dir, "HELPER_DIR="+dir, "HELPER_END="+row.name)
+			if err != nil {
+				t.Fatal(err)
+			}
+			g := readGrandchild(t, dir)
+			t.Cleanup(func() {
+				if !g.running() {
+					return
+				}
+				// The grandchild leads a process group of its own.
+				if err := syscall.Kill(-g.pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+					t.Errorf("cleanup kill of grandchild %d: %v", g.pid, err)
+				}
+				ctx, cancel := context.WithTimeout(context.Background(), failureBound)
+				defer cancel()
+				if _, err := probe.Await(ctx, func(context.Context) (bool, error) { return g.running(), nil },
+					func(r bool) bool { return !r }); err != nil {
+					t.Errorf("grandchild %d still running after the cleanup's SIGKILL: %v", g.pid, err)
+				}
+			})
+			if !g.running() {
+				t.Fatalf("grandchild %d (started %s) not running before the helper-parent ended", g.pid, g.identity)
+			}
+
+			if err := row.end(parent); err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), failureBound)
+			defer cancel()
+			if status, err := parent.Wait(ctx); err != nil || status != row.want {
+				t.Fatalf("helper-parent ended %+v %v, want %+v", status, err, row.want)
+			}
+
+			ctx, cancel = context.WithTimeout(t.Context(), failureBound)
+			defer cancel()
+			if _, err := probe.Await(ctx, func(context.Context) (bool, error) { return g.running(), nil },
+				func(r bool) bool { return !r }); err != nil {
+				t.Errorf("grandchild %d (started %s) still running after its test process ended: %v", g.pid, g.identity, err)
+			}
+			if data, err := os.ReadFile(g.stderr); err != nil || !strings.Contains(string(data), helperExitReason) {
+				t.Errorf("grandchild stderr %q %v: want it to name the reason %q", data, err, helperExitReason)
+			}
+		})
 	}
 }
 

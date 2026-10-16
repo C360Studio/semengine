@@ -155,33 +155,44 @@ func TestGetRegistrationCopiesAttributes(t *testing.T) {
 
 func TestContractsReturnsIndependentSortedCopies(t *testing.T) {
 	reg := New()
-	loop := attrRegistration("agentic", "loop_execution", "v1")
 	loopContract := func(name string) contract.Contract {
 		return contract.Contract{
 			Name: name, EntityPattern: "*.*.agentic-loop.agent.execution.*",
 			BirthPredicates: []string{"agent.loop.role"},
 		}
 	}
-	loop.Contracts = []contract.Contract{loopContract("zeta"), loopContract("alpha")}
-	lesson := attrRegistration("agentic", "agent_lesson", "v1")
-	lesson.Contracts = []contract.Contract{lessonLikeContract("agentic.lesson-record", types.Type{})}
-	if err := reg.Register(loop); err != nil {
-		t.Fatalf("Register loop: %v", err)
+	register := func(domain, category string, contracts ...contract.Contract) {
+		t.Helper()
+		r := attrRegistration(domain, category, "v1")
+		r.Contracts = contracts
+		if err := reg.Register(r); err != nil {
+			t.Fatalf("Register %s: %v", r.MessageType(), err)
+		}
 	}
-	if err := reg.Register(lesson); err != nil {
-		t.Fatalf("Register lesson: %v", err)
-	}
+	// Registered out of order. "a-b" and "loop_execution-x" sort before "a" and "loop_execution"
+	// by key, since '-' sorts before '.', but after them by component.
+	register("agentic", "loop_execution", loopContract("zeta"), loopContract("alpha"))
+	register("a", "x", loopContract("a-record"))
+	register("agentic", "agent_lesson", lessonLikeContract("agentic.lesson-record", types.Type{}))
+	register("agentic", "loop_execution-x", loopContract("loop-x"))
+	register("a-b", "x", loopContract("a-b-record"))
 
 	got := reg.Contracts()
-	wantNames := []string{"agentic.lesson-record", "alpha", "zeta"}
-	wantKeys := []string{"agentic.agent_lesson.v1", "agentic.loop_execution.v1", "agentic.loop_execution.v1"}
-	if len(got) != len(wantNames) {
-		t.Fatalf("Contracts() returned %d contracts, want %d", len(got), len(wantNames))
+	want := []struct{ key, name string }{
+		{"a-b.x.v1", "a-b-record"},
+		{"a.x.v1", "a-record"},
+		{"agentic.agent_lesson.v1", "agentic.lesson-record"},
+		{"agentic.loop_execution-x.v1", "loop-x"},
+		{"agentic.loop_execution.v1", "alpha"},
+		{"agentic.loop_execution.v1", "zeta"},
 	}
-	for i := range got {
-		if got[i].Name != wantNames[i] || got[i].MessageType.Key() != wantKeys[i] {
+	if len(got) != len(want) {
+		t.Fatalf("Contracts() returned %d contracts, want %d", len(got), len(want))
+	}
+	for i, w := range want {
+		if got[i].MessageType.Key() != w.key || got[i].Name != w.name {
 			t.Fatalf("Contracts()[%d] = %s/%s, want %s/%s (ordered by key then name)",
-				i, got[i].MessageType.Key(), got[i].Name, wantKeys[i], wantNames[i])
+				i, got[i].MessageType.Key(), got[i].Name, w.key, w.name)
 		}
 	}
 

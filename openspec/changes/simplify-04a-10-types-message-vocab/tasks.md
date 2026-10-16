@@ -52,7 +52,8 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
   `Type.Key()` (owner question 4; otherwise D6′). Gate: 2.4, `TestContractsReturnsIndependentSortedCopies`,
   `TestRegistry_ListPayloads`, `TestRegistry_ListByDomain`, `TestRegistry_BuildPayload_Success` and the graph-ingest
   unit tests pass.
-  Done: all five and `./processor/graph-ingest/...` pass at `8cc4c63` (`notes/2.4.md`).
+  Done: all five and `./processor/graph-ingest/...` pass at `8cc4c63`; the strengthened `Contracts` order test detects a
+  component-order sort mutant (`notes/2.4.md`).
 - [ ] 3.7 `ParsePredicate` with `strings.Cut`; the memo and `predicate_memo_test.go` go. Gate: 2.5 and 2.6 pass;
   one `task mutate:check` run against the new `strings.Cut` code, with a mutant that checks segments before arity,
   is detected by 2.6 (on the `a..b.c` seed); before/after `go test -bench` recorded in `notes/3.7.md` as

@@ -110,3 +110,25 @@ func TestServerRefusesMTLSWithoutTLS(t *testing.T) {
 	require.Nil(t, server.listener)
 	require.Nil(t, server.serveDone)
 }
+
+// TestServerRefusesACMEMode: SemEngine has no ACME loader yet, so a Server whose configuration
+// asks for ACME refuses to start rather than serve the certificate files beside it.
+func TestServerRefusesACMEMode(t *testing.T) {
+	id := newTestIdentity(t)
+	securityCfg := security.Config{TLS: security.TLSConfig{Server: security.ServerTLSConfig{
+		Enabled: true, Mode: "acme", CertFile: id.certFile, KeyFile: id.keyFile,
+	}}}
+	server := NewServer(9090, "/metrics", NewMetricsRegistry(), securityCfg)
+	listener := boundServerListener(t)
+	err := server.StartWithListener(t.Context(), listener)
+	if err == nil {
+		registerServerCleanup(t, server)
+	}
+	require.ErrorContains(t, err, "mode", "ACME mode must be refused, naming the key")
+	require.False(t, listener.closed.Load(), "a refused StartWithListener leaves the listener with the caller")
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Nil(t, server.server)
+	require.Nil(t, server.listener)
+	require.Nil(t, server.serveDone)
+}

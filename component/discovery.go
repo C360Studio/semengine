@@ -52,9 +52,11 @@ type ConfigSchema struct {
 type PropertySchema struct {
 	Type        string `json:"type"` // "string", "int", "bool", "float", "enum", "array", "object", "ports", "cache"
 	Description string `json:"description"`
-	// Default is a JSON value: nil, a string, a bool, a number, []string,
-	// []any or map[string]any. The registry copies these when it stores or
-	// lists a schema; any other value is shared with the caller.
+	// Default is a JSON value: nil, a string, a bool, a number, a []string,
+	// or a []any or map[string]any whose elements are these, at any depth.
+	// The registry copies such a default when it stores or lists a schema. A
+	// default of any other type is stored as is, so a pointer, slice or map
+	// it holds stays shared with the caller.
 	Default     any                       `json:"default,omitempty"`
 	Enum        []string                  `json:"enum,omitempty"`        // Valid string values
 	Minimum     *int                      `json:"minimum,omitempty"`     // For numeric types

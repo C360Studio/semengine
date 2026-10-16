@@ -83,7 +83,10 @@ PR may land first. The second one merges `origin/main` first.
 
 The registry keeps its own copy, made with the same clone `ListFactories` already does (`registry.go:470-482`), moved
 into one helper that both use. A later change to the caller's value, its schema or its dependency list changes
-nothing. Proof: `TestRegisterRefusesATypeOutsideTheFive` (`"procesor"`), `TestRegisterKeepsItsOwnCopy`,
+nothing, with one exception: a schema default is copied when it is a JSON value (nil, a string, a bool, a number, a
+`[]string`, or a `[]any` or `map[string]any` holding these at any depth); a default of any other type is stored as is,
+so a pointer, slice or map it holds stays shared. The callers seen write only JSON values, so no reflection-based copy
+is added. Proof: `TestRegisterRefusesATypeOutsideTheFive` (`"procesor"`), `TestRegisterKeepsItsOwnCopy`,
 `TestRegisterRefusesADuplicateName`, and `TestComponentTypeValidate` (in `types`, the five types pass and `""` and
 `"procesor"` fail). All fail on the base commit, because the methods do not exist. graph-ingest's `Register`,
 `registry_integration_test.go` and the README move to the new call.

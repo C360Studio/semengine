@@ -9,8 +9,11 @@ registration's `Name`. It SHALL refuse, with an error of the invalid class namin
 `ValidateComponentName` refuses, a nil `Factory` or `Ports`, a `Type` that is not one of the five
 `types.ComponentType` constants, and a `Name` already registered. The registry SHALL keep its own copy of the
 registration, so a later change to the caller's value, its schema or its dependency list does not change what is
-registered. The registration SHALL be the one place a factory reports its configuration schema, description and
-version: `Discoverable` SHALL require only `InputPorts`, `OutputPorts`, `Health` and `DataFlow`.
+registered, except inside a schema default that is not a JSON value. A default that is nil, a string, a bool, a number,
+a `[]string`, or a `[]any` or `map[string]any` holding these at any depth SHALL be copied; a default of any other type
+is stored as is and stays shared with the caller. The registration SHALL be the one place a factory reports its
+configuration schema, description and version: `Discoverable` SHALL require only `InputPorts`, `OutputPorts`,
+`Health` and `DataFlow`.
 
 #### Scenario: A misspelled component type
 

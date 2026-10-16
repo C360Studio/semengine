@@ -100,7 +100,9 @@ func NewRegistry() *Registry {
 // ValidateComponentName refuses, a nil Factory or Ports, a Type that is not
 // one of the five types.ComponentType constants, and a name already
 // registered. The registry keeps its own copy: a later change to the caller's
-// value, its schema or its dependency list changes nothing registered.
+// value, its schema or its dependency list changes nothing registered. The one
+// exception is a schema default that is not a JSON value (PropertySchema.Default):
+// it is stored as is, so a pointer, slice or map it holds stays shared.
 func (r *Registry) Register(registration Registration) error {
 	name := registration.Name
 	refuse := func(err error, action string) error {
@@ -432,7 +434,8 @@ func (r *Registry) ListFactories() map[string]*Registration {
 }
 
 // cloneRegistration copies a registration so that no map, slice or pointer is
-// shared with the original. Factory and Ports are functions and are kept.
+// shared with the original, except inside a schema default that is not a JSON
+// value (cloneDefault). Factory and Ports are functions and are kept.
 func cloneRegistration(registration Registration) Registration {
 	clone := registration
 	clone.Schema = cloneConfigSchema(registration.Schema)

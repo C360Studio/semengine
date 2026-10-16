@@ -196,7 +196,10 @@ The other port types are `NATSRequestPort` (request and reply), `KVReadPort`, `H
 
 - `NewRegistry()` returns an empty registry.
 - `Register(Registration)` registers a factory and its static metadata under `Registration.Name`, and keeps its own
-  copy: a later change to the caller's value, its schema or its dependency list changes nothing registered. It refuses
+  copy: a later change to the caller's value, its schema or its dependency list changes nothing registered. The one
+  exception is a schema default (`PropertySchema.Default`) that is not a JSON value: the registry copies nil, a string,
+  a bool, a number, a `[]string`, and a `[]any` or `map[string]any` holding these at any depth; a default of any other
+  type is stored as is, so a pointer, slice or map it holds stays shared with the caller. It refuses
   a name `ValidateComponentName` refuses, a nil factory, a nil port declarer (`Ports`), a `Type` that is not one of the
   five `types.ComponentType` constants (`types.ComponentType.Validate`), and a name already registered.
 - `ListFactories()` returns a copy of each registration's metadata, without its factory function; it returns no live

@@ -11,12 +11,12 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 ## 2. Failing tests
 
-- [ ] 2.1 `TestClientReportsRefusalBeforeSendingAsUnavailable`: four operations × `ErrNotConnected`/`ErrCircuitOpen`
+- [x] 2.1 `TestClientReportsRefusalBeforeSendingAsUnavailable`: four operations × `ErrNotConnected`/`ErrCircuitOpen`
   on the fake, plus a never-connected `natsclient.Client`; outcome `unavailable`, `IsDefinitelyNotCommitted` true,
   `errors.Is` reaches the sentinel (D1). Gate: fails on the base commit.
-- [ ] 2.2 `pkg/projection/commit_ambiguity_test.go`: rows "not connected" and "circuit open" → not committed,
+- [x] 2.2 `pkg/projection/commit_ambiguity_test.go`: rows "not connected" and "circuit open" → not committed,
   unavailable, transient, for every write (D1). Gate: fails on the base commit.
-- [ ] 2.3 `TestClientRefusesNilContext` asserts invalid with code `invalid_request`; new
+- [x] 2.3 `TestClientRefusesNilContext` asserts invalid with code `invalid_request`; new
   `TestClientRefusesUnencodableAndEntitylessRequests` (NaN `Object` on Append, nil `Entity` on Create; no request
   sent) (D2). Gate: fails on the base commit.
 - [ ] 2.4 Callers use `graphmutation.Subject(op)`: `protocol_test.go`, `mutation_port_contract_test.go`,
@@ -24,14 +24,14 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 ## 3. Implementation
 
-- [ ] 3.1 `request` maps the two natsclient sentinels to `TransportUnavailable`; doc comments of `TransportUnavailable`
+- [x] 3.1 `request` maps the two natsclient sentinels to `TransportUnavailable`; doc comments of `TransportUnavailable`
   and `IsDefinitelyNotCommitted` updated (D1, #268). Gate: 2.1, 2.2.
-- [ ] 3.2 The client's own refusals return `errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeInvalidRequest, …)`;
+- [x] 3.2 The client's own refusals return `errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeInvalidRequest, …)`;
   Create checks `Entity` before sending (D2, #268, #137 item a). Gate: 2.3; existing client tests pass.
 - [ ] 3.3 `Subject(op)` replaces `ResolveSubject`; `TestResolveSubjectRejectsNonCanonicalFamily` and the family loop
   removed; graph-ingest `requireMutationProviderPort` and one route table (D3, #137). Gate: 2.4; the three
   graph-ingest route and port tests pass unedited.
-- [ ] 3.4 Flip `pkg/projection/classify_mutation_error_test.go:74-78` to `TransportUnavailable` → not committed,
+- [x] 3.4 Flip `pkg/projection/classify_mutation_error_test.go:74-78` to `TransportUnavailable` → not committed,
   unavailable, transient; drop the "until #268" text there and at `pkg/projection/mutation_client.go:419-422` (D1, D4).
   Gate: `task test:unit`.
 

@@ -413,13 +413,12 @@ func mutationFailure(operation MutationOperation, err error) (MutationReceipt, e
 // graph-ingest sends only before it writes (invalid request, structural invalid, message type
 // unregistered, entity ID invalid, entity ID authority invalid, revision mismatch, entity exists,
 // entity not found, graph state reset required): the error keeps that reply's class, code and a
-// copy of its detail. Or the request was not delivered, because no responder took it or the
-// caller's context ended before it was sent: Kind MutationUnavailable, class transient.
+// copy of its detail. Or the request was not delivered, because no responder took it, natsclient
+// refused it before sending (ErrNotConnected, ErrCircuitOpen), or the caller's context ended
+// before it was sent: Kind MutationUnavailable, class transient.
 //
 // Every other error, a classified reply with any other code included, is commit-unknown and fatal,
-// so it is never retried: a write that may have committed could apply twice. That includes
-// natsclient's refusals before sending (ErrNotConnected, ErrCircuitOpen), which the wire client
-// reports as an outcome it cannot prove (#268).
+// so it is never retried: a write that may have committed could apply twice.
 func ClassifyMutationError(operation MutationOperation, err error) *MutationError {
 	if err == nil {
 		return nil

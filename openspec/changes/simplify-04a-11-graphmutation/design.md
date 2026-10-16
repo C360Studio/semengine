@@ -37,7 +37,8 @@ Tests:
   unavailable, transient, under "Not delivered". Its "until #268" comment goes.
 
 Lifecycle has no "until #268" row and needs no test edit for D1. ADR-091 `:69` is kept: this is not a lost reply after
-possible delivery.
+possible delivery. ADR-111 Decision 3 (`docs/adr/111-durable-execution-primitive.md:86-91`: a commit-unknown is never
+retried) is kept too: the two sentinels were never commit-unknown, and every other error still is.
 
 ## D2. Client refusals are invalid, not committed (#268, #137 item a)
 
@@ -54,6 +55,9 @@ Options:
 
 The cost of (a): a projection-built refusal has no code, while this one carries `invalid_request`; both are invalid
 and not committed.
+
+The `Subject` refusal cannot be reached through the client's API: every method passes one of the four admitted
+operations. Only the protocol test covers it.
 
 Tests:
 

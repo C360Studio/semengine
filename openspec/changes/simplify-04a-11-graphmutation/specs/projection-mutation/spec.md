@@ -7,16 +7,16 @@
 `projection.ClassifyMutationError(operation, err)` SHALL return nil for a nil error. Otherwise it SHALL return a
 `*projection.MutationError` with the given `Operation`, and every `projection.MutationClient` write and every
 `pkg/lifecycle` graph emitter write SHALL report its request's failure through it. The lifecycle emitter MAY wrap the
-result in `lifecycle.ErrEntityNotFound` or `lifecycle.ErrAlreadyExists`, and the wrapped error SHALL still be reached
-by `errors.As`. The error SHALL be not committed when its chain holds a classified error whose code graph-ingest sends
-only before writing (invalid request, structural invalid, message type unregistered, entity ID invalid, entity ID
-authority invalid, revision mismatch, entity exists, entity not found, graph state reset required), with that
-error's class, code and detail. The typed client's own refusals before sending (a missing context, an operation not
-admitted, a request that does not encode as JSON, a create without an entity) SHALL be such an error, with class
-invalid and code `invalid_request`, and SHALL send no request. The error SHALL be not committed, `Kind`
+result in `lifecycle.ErrEntityNotFound` or `lifecycle.ErrAlreadyExists`, and the wrapped error SHALL still be reached by
+`errors.As`. The error SHALL be not committed when its chain holds a classified error whose code graph-ingest sends only
+before writing (invalid request, structural invalid, message type unregistered, entity ID invalid, entity ID authority
+invalid, revision mismatch, entity exists, entity not found, graph state reset required), with that error's class, code
+and detail. The typed client's own refusals before sending (a client that is not initialized, a missing context, an
+operation not admitted, a request that does not encode as JSON, a create without an entity) SHALL be such an error, with
+class invalid and code `invalid_request`, and SHALL send no request. The error SHALL be not committed, `Kind`
 `MutationUnavailable`, class transient, in three cases: no responder took the request; natsclient refused it before
-sending (`natsclient.ErrNotConnected`, `natsclient.ErrCircuitOpen`), with `errors.Is` still reaching that error; or
-the context ended before the request was sent. Every other error SHALL be commit-unknown as the requirement "A
+sending (`natsclient.ErrNotConnected`, `natsclient.ErrCircuitOpen`), with `errors.Is` still reaching that error; or the
+context ended before the request was sent. Every other error SHALL be commit-unknown as the requirement "A
 commit-unknown error is never retryable" states.
 
 #### Scenario: Context ended before the request was sent

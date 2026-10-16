@@ -40,7 +40,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
   (`notes/3.2.md`).
 - [x] 3.3 `GenericJSONPayload.Validate` runs the shape check; `MarshalJSON` and its key sort unchanged; the
   `Validate` doc names the values only encoding refuses (owner question 5). Gate: 2.3 passes.
-  Done: 2.3 passes at `ca8eb5f`; a 20 s `-fuzz` run found no failure (`notes/2.3.md`).
+  Done: 2.3 passes at `c2be504`; a 20 s `-fuzz` run found no failure (`notes/2.3.md`).
 - [ ] 3.4 `Hash` leaves `Message` and `BaseMessage` with its test and the "Content-addressable" doc line (owner
   question 1; under option 2, `Hash() (string, error)` and `TestHashRefusesAPayloadThatCannotEncode`). Gate:
   `task build`, `task lint`.

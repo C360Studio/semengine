@@ -32,8 +32,8 @@ other value (a struct, `time.Time`, a pointer, a named type, or a typed map or s
 an invalid-data error that names its type and its path, and SHALL refuse a map or list that contains itself (#9 comments
 5972117486, 5972208367). `GenericJSONPayload.Validate` SHALL refuse, with an invalid-data error naming the same type and
 path, every non-nil `Data` that this check refuses, including a string or map key that is not valid UTF-8. A NaN or
-infinite float, or a `json.Number` whose text is not a JSON number, passes the check and is refused only by
-encoding.
+infinite float passes the check and is refused only by encoding. The check SHALL refuse a `json.Number` whose text is
+not valid UTF-8; whether its text is a number literal is left to `encoding/json`.
 
 #### Scenario: A value that is not JSON-shaped
 

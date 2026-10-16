@@ -40,17 +40,19 @@ larger part together.
 ## Options for generic JSON validation (#219 item 2)
 
 Today `Validate` checks only `Data != nil`; the shape check (kinds, UTF-8, cycles) runs in `MarshalJSON`, which then
-calls `json.Marshal`. `json.Marshal` refuses three more things the shape check accepts: a NaN or infinite `float32` or
-`float64`, and a `json.Number` whose text is not a JSON number (inventory § 1).
+calls `json.Marshal`. `json.Marshal` also refuses a NaN or infinite `float32` or `float64`, which the shape check
+accepts. The shape check checks a `json.Number`'s text only for valid UTF-8; whether that text is a number literal is
+left to `encoding/json` (inventory § 1).
 
-1. **`Validate` also runs the shape check; `MarshalJSON` keeps it; NaN, infinity and bad number text stay refused
-   only by encoding (recommended).** No behaviour changes except that `Validate` refuses earlier what the shape check
-   refuses. Decoded input never holds these three (JSON has no NaN, and decoded numbers are valid literals), so
-   only in-process code can build them, and generic JSON is for outside input. Cost: `Validate` passing does not
-   promise encoding passes for those three values; the doc says so.
-2. **Also refuse the three in the shape check.** `Validate` passing then promises encoding passes. Cost: new code
-   (a finite check and a number-literal check), and their refusal changes from `encoding/json`'s unclassified error
-   to an invalid-data error naming the path.
+1. **`Validate` also runs the shape check; `MarshalJSON` keeps it; NaN and infinity stay refused only by encoding,
+   and number-literal syntax stays `encoding/json`'s (recommended).** No behaviour changes except that `Validate`
+   refuses earlier what the shape check refuses. Decoded input never holds a NaN, an infinity or a number that is not
+   a literal (JSON has no NaN, and decoded numbers are valid literals), so only in-process code can build them, and
+   generic JSON is for outside input. Cost: `Validate` passing does not promise encoding passes for those values; the
+   doc says so.
+2. **Also refuse NaN, infinity and non-literal number text in the shape check.** `Validate` passing then promises
+   encoding passes. Cost: new code (a finite check and a number-literal check), and their refusal changes from
+   `encoding/json`'s unclassified error to an invalid-data error naming the path.
 3. **Move the check out of `MarshalJSON`, as the epic line says.** Rejected: the spec requires `MarshalJSON` itself to
    refuse (`message-codec` `:41`, `:63`). A caller that encodes without validating would write U+FFFD with no error,
    which breaks the content-preservation gate.
@@ -87,7 +89,8 @@ is refused; it fails on the base commit), and the changed `FuzzDecoderStrings`, 
 ### D3 Generic JSON `Validate` runs the shape check (#219 item 2; question 5)
 
 Option 1 above. `Validate` runs the shape check after the nil check; `MarshalJSON` and the sort are unchanged. The
-`Validate` doc names the three values only encoding refuses. Proof: new
+`Validate` doc names NaN and infinity as refused only by encoding, and says number-literal syntax is left to
+`encoding/json` while the shape check still enforces UTF-8. Proof: new
 `TestGenericJSONValidateRefusesWhatTheShapeCheckRefuses`, built from the shape-test fixtures (a value that is not
 JSON-shaped, a cycle, invalid UTF-8 at depth). It fails on the base commit. `FuzzGenericJSONShapes` gains this law:
 for non-nil `Data`, `Validate` returns an invalid-data error exactly when the generator marked the value `foreign` or
@@ -269,8 +272,9 @@ workflows only. PR 10 (graph-ingest, unclaimed) should start after this PR if qu
    one place.
 5. **Generic JSON: have `Validate` run the same shape check as encoding, keep that check in encoding too, and keep
    its key sort?** Recommended: yes to all three. `Validate` then catches wrong kinds, bad UTF-8 and loops early.
-   Encoding still refuses them for callers that skip `Validate`, which the spec requires. One gap stays: a NaN, an
-   infinity or bad number text still fails only at encoding. Only in-process code can build those. The other answer
+   Encoding still refuses them for callers that skip `Validate`, which the spec requires. One gap stays: a NaN or an
+   infinity still fails only at encoding, and whether a number's text is a valid literal is left to `encoding/json`
+   (`Validate` still checks that text is valid UTF-8). Only in-process code can build those. The other answer
    adds checks for them, and their error class changes. The sort keeps the error naming the same key every time.
    Dropping it saves a sort only on this fallback path and needs a second code path.
 

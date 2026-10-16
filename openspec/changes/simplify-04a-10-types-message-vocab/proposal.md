@@ -16,7 +16,8 @@ owner direction on #223, comment 6214503370).
 - `types.Type.IsValid()` reports `Validate() == nil`, and `BaseMessage.Validate` calls `Type.Validate`, which makes the
   type check in `BaseMessage.MarshalJSON` redundant, so it goes.
 - `GenericJSONPayload.Validate` runs the shape check that `MarshalJSON` runs; `MarshalJSON` keeps it (spec) and its
-  key sort; a NaN, an infinity or bad number text is still refused only by encoding (owner question 5).
+  key sort; a NaN or an infinity is still refused only by encoding, and number-literal syntax is left to `encoding/json`
+  (owner question 5).
 - `Message.Hash` and `BaseMessage.Hash` are removed (owner question 1).
 - Removed with no reader: `message.Keyable`, `message.EntityType`, `message.EntityID`, `Triple.IsExpired`,
   `EntityType.IsValid` (owner question 2). Kept: `message.Type` and `message.ParseEntityID`, which consumers and this

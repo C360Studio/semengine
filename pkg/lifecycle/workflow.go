@@ -119,12 +119,9 @@ type AuditSpec struct {
 // loads each child via the child workflow's projection.
 type ChildSpec struct {
 	// Workflow is the registered child workflow type name. Must
-	// match the Name of a separately-registered Workflow. Children
-	// is best-effort across the registered set: if a workflow named
-	// in ChildSpec.Workflow isn't registered at Children call time,
-	// the child is skipped with a Warn log rather than failing the
-	// whole call (operator dashboards render missing-child
-	// indicators).
+	// match the Name of a separately-registered Workflow. A
+	// Children call that finds a link into a workflow not registered
+	// by then fails with ErrWorkflowNotRegistered.
 	Workflow string
 
 	// LinkPredicate is the triple predicate establishing the
@@ -326,13 +323,14 @@ type ChildOptions struct {
 	// means all child types.
 	Workflow string
 
-	// Limit bounds the result count (after Offset). Zero means
-	// unbounded; operators paginating large subtrees should always
-	// set a Limit.
+	// Limit bounds the result count (after Offset). Zero or less
+	// means unbounded, which reads every linked child; operators
+	// paginating large subtrees should always set a Limit.
 	Limit int
 
-	// Offset skips this many entries before applying Limit. Used
-	// for paged subtree rendering.
+	// Offset skips this many kept children before applying Limit.
+	// Zero or less starts at the first. Used for paged subtree
+	// rendering.
 	Offset int
 }
 

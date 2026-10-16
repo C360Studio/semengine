@@ -181,7 +181,10 @@ func TestHistoryRejectsTransitionRecordDriftFromCurrentPhase(t *testing.T) {
 	bucket.put(entityID, &graph.EntityState{
 		ID: entityID,
 		Triples: append(
-			[]message.Triple{{Subject: entityID, Predicate: "mission.lifecycle.phase", Object: "flying"}},
+			[]message.Triple{{
+				Subject: entityID, Predicate: "mission.lifecycle.phase", Object: "flying",
+				Source: fixtureSource, Timestamp: fixtureTime,
+			}},
 			transitionRecordsToTriples(entityID, []transitionRecord{record})...,
 		),
 	})
@@ -204,5 +207,22 @@ func assertResetReason(t *testing.T, err error, want graph.StateResetReason) {
 	var contractErr *graph.StateContractError
 	if !errors.As(err, &contractErr) || contractErr.Reason != want {
 		t.Fatalf("error = %v, want graph-state reason %q", err, want)
+	}
+}
+
+// TestBucketExactReaderRefusesWhatGraphIngestRefuses: the unit exact-read
+// double refuses each stored value graph-ingest's stored-value rule refuses,
+// as the real exact read does (#199).
+func TestBucketExactReaderRefusesWhatGraphIngestRefuses(t *testing.T) {
+	t.Parallel()
+	const id = "acme.ops.gcs.lifecycle.mission.refused"
+	for _, tc := range refusedStoredValues(t, id) {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mgr, _, bucket := newTestManager(t)
+			bucket.raw[id] = tc.value
+			_, err := mgr.Get(t.Context(), "fixture", id)
+			requireStoredValueRefused(t, err, tc.reason)
+		})
 	}
 }

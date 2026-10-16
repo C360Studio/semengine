@@ -44,10 +44,10 @@ type KeyedPool[W any] struct {
 	laneCh []chan keyedItem[W]
 	wg     sync.WaitGroup
 
-	// drainCh is closed by the drain the first Shutdown starts, once no
-	// submit is in flight: lane goroutines finish their buffered items
-	// then exit.
-	drainCh chan struct{}
+	// stopMetrics is closed by the drain the first Shutdown starts, and
+	// tells the queue-depth updater to exit. It goes with metricsUpdater
+	// (simplify-04a-12-dispatch task 3.3).
+	stopMetrics chan struct{}
 
 	lifecycleMu sync.Mutex
 	stopped     bool
@@ -55,10 +55,10 @@ type KeyedPool[W any] struct {
 
 	// submitWG tracks in-flight SubmitBlocking calls between the
 	// stopped-check (which registers the WG) and the channel send. The
-	// drain waits on it BEFORE closing drainCh, so no submit can land an
-	// item after the lanes begin draining — the accept/stop handoff is
-	// atomic (a submit either lands before the drain starts and is
-	// guaranteed drained, or sees stopped=true and is rejected).
+	// drain waits on it BEFORE closing the lane channels, so no submit
+	// sends on a closed channel — the accept/stop handoff is atomic (a
+	// submit either lands before the drain starts and is guaranteed
+	// processed, or sees stopped=true and is rejected).
 	submitWG sync.WaitGroup
 
 	metrics *keyedMetrics
@@ -121,12 +121,10 @@ type KeyedDeps struct {
 // running and ready to receive SubmitBlocking calls when it returns —
 // callers don't call a separate Start.
 //
-// The ctx is the pool's run context: it is passed to Process, and its
-// cancellation aborts all lanes immediately (in-flight Process calls
-// see the cancellation via their ctx; buffered items are NOT drained);
-// once they return, no goroutine of the pool is left running. For a
-// graceful drain that DOES finish buffered work, call Shutdown. The ctx
-// must be non-nil.
+// The ctx is handed to every Process call and read nowhere else: its
+// end stops no lane, refuses no submit and drops no queued item, so
+// items processed after it ended see the ended ctx. Shutdown is the
+// only stop; the lanes run until it is called. The ctx must be non-nil.
 //
 // Returns ErrInvalidConfig for a nil ctx or a missing or out-of-range
 // required field, and the registry's refusal when one of the pool's
@@ -154,15 +152,15 @@ func NewKeyedPool[W any](ctx context.Context, cfg KeyedConfig[W], deps KeyedDeps
 	}
 
 	p := &KeyedPool[W]{
-		lanes:    cfg.Lanes,
-		keyOf:    cfg.KeyOf,
-		process:  cfg.Process,
-		onPanic:  cfg.OnPanic,
-		logger:   logger,
-		name:     cfg.Name,
-		laneCh:   make([]chan keyedItem[W], cfg.Lanes),
-		drainCh:  make(chan struct{}),
-		stopDone: make(chan struct{}),
+		lanes:       cfg.Lanes,
+		keyOf:       cfg.KeyOf,
+		process:     cfg.Process,
+		onPanic:     cfg.OnPanic,
+		logger:      logger,
+		name:        cfg.Name,
+		laneCh:      make([]chan keyedItem[W], cfg.Lanes),
+		stopMetrics: make(chan struct{}),
+		stopDone:    make(chan struct{}),
 	}
 
 	if deps.MetricsRegistry != nil {
@@ -180,7 +178,7 @@ func NewKeyedPool[W any](ctx context.Context, cfg KeyedConfig[W], deps KeyedDeps
 	}
 	if p.metrics != nil {
 		p.wg.Add(1)
-		go p.metricsUpdater(ctx)
+		go p.metricsUpdater()
 	}
 
 	return p, nil
@@ -239,29 +237,14 @@ func (p *KeyedPool[W]) SubmitBlocking(ctx context.Context, work W) error {
 	}
 }
 
-// lane is one lane's goroutine: it drains its channel in order,
-// running each item through Process. On the pool's ctx cancellation it
-// aborts immediately; on Shutdown (drainCh closed) it finishes buffered
-// items then exits.
+// lane is one lane's goroutine: it runs each item of its channel
+// through Process, in order, and exits once Shutdown's drain has closed
+// the channel and the last item is processed. ctx is only handed to
+// Process.
 func (p *KeyedPool[W]) lane(ctx context.Context, idx int, ch chan keyedItem[W]) {
 	defer p.wg.Done()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case item := <-ch:
-			p.runOne(ctx, idx, item)
-		case <-p.drainCh:
-			// Graceful stop: drain buffered items, then exit.
-			for {
-				select {
-				case item := <-ch:
-					p.runOne(ctx, idx, item)
-				default:
-					return
-				}
-			}
-		}
+	for item := range ch {
+		p.runOne(ctx, idx, item)
 	}
 }
 
@@ -303,18 +286,19 @@ func (p *KeyedPool[W]) runOne(ctx context.Context, lane int, item keyedItem[W]) 
 	}
 }
 
-// Shutdown halts the pool gracefully: it stops accepting new work
-// (SubmitBlocking returns ErrStopped from the first call on), drains
-// each lane's buffered items to completion, and returns nil once every
-// lane has drained and exited. If ctx ends first it returns ctx.Err();
-// the lanes keep draining and exit once Process returns, and a later
-// Shutdown waits for that and returns nil. Given a ctx with no
+// Shutdown is the pool's only stop: it stops accepting new work
+// (SubmitBlocking returns ErrStopped from the first call on), lets each
+// lane process its queued items, and returns nil once every lane has
+// exited, also when ctx has ended by then. If ctx ends first it returns
+// ctx.Err(); the lanes keep processing and exit once their queues are
+// empty, and a later Shutdown returns nil. Given a ctx with no
 // deadline, Shutdown waits for the join however long it takes: it has
 // no wait of its own. A nil ctx is refused with an error and begins no
 // shutdown.
 //
-// Shutdown does NOT cancel the pool's run context, so in-flight and
-// buffered Process calls run to completion.
+// Shutdown does not end the context NewKeyedPool was given; ending it
+// is the owner's, and makes the remaining Process calls see an ended
+// context.
 func (p *KeyedPool[W]) Shutdown(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("dispatch: Shutdown needs a non-nil context")
@@ -326,6 +310,12 @@ func (p *KeyedPool[W]) Shutdown(ctx context.Context) error {
 	}
 	p.lifecycleMu.Unlock()
 
+	// The lanes having exited is the answer even when ctx has also ended.
+	select {
+	case <-p.stopDone:
+		return nil
+	default:
+	}
 	select {
 	case <-p.stopDone:
 		return nil
@@ -337,27 +327,28 @@ func (p *KeyedPool[W]) Shutdown(ctx context.Context) error {
 }
 
 // drain runs once, started by the first Shutdown: it waits for the
-// submits accepted before Shutdown to land, tells the lanes to drain,
-// and closes stopDone once every lane and the metrics updater have
-// exited.
+// submits accepted before Shutdown to land, closes every lane channel
+// so each lane exits after its last item, and closes stopDone once
+// every lane and the metrics updater have exited.
 func (p *KeyedPool[W]) drain() {
 	p.submitWG.Wait()
-	close(p.drainCh)
+	for _, ch := range p.laneCh {
+		close(ch)
+	}
+	close(p.stopMetrics)
 	p.wg.Wait()
 	close(p.stopDone)
 }
 
 // metricsUpdater periodically refreshes the aggregate queue-depth
-// gauge (sum of lane buffer lengths). Exits on ctx cancel or Shutdown.
-func (p *KeyedPool[W]) metricsUpdater(ctx context.Context) {
+// gauge (sum of lane buffer lengths). Exits on Shutdown.
+func (p *KeyedPool[W]) metricsUpdater() {
 	defer p.wg.Done()
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
-		case <-ctx.Done():
-			return
-		case <-p.drainCh:
+		case <-p.stopMetrics:
 			return
 		case <-ticker.C:
 			depth := 0

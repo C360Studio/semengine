@@ -50,8 +50,11 @@ type ConfigSchema struct {
 
 // PropertySchema describes a single configuration property
 type PropertySchema struct {
-	Type        string                    `json:"type"` // "string", "int", "bool", "float", "enum", "array", "object", "ports", "cache"
-	Description string                    `json:"description"`
+	Type        string `json:"type"` // "string", "int", "bool", "float", "enum", "array", "object", "ports", "cache"
+	Description string `json:"description"`
+	// Default is a JSON value: nil, a string, a bool, a number, []string,
+	// []any or map[string]any. The registry copies these when it stores or
+	// lists a schema; any other value is shared with the caller.
 	Default     any                       `json:"default,omitempty"`
 	Enum        []string                  `json:"enum,omitempty"`        // Valid string values
 	Minimum     *int                      `json:"minimum,omitempty"`     // For numeric types

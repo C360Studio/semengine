@@ -453,39 +453,90 @@ func cloneConfigSchema(schema ConfigSchema) ConfigSchema {
 
 func clonePropertySchema(property PropertySchema) PropertySchema {
 	clone := property
-	clone.Enum = append([]string(nil), property.Enum...)
-	clone.Required = append([]string(nil), property.Required...)
-	if property.Minimum != nil {
-		value := *property.Minimum
-		clone.Minimum = &value
-	}
-	if property.Maximum != nil {
-		value := *property.Maximum
-		clone.Maximum = &value
-	}
-	if property.MinLength != nil {
-		value := *property.MinLength
-		clone.MinLength = &value
-	}
-	if property.MaxLength != nil {
-		value := *property.MaxLength
-		clone.MaxLength = &value
-	}
-	if property.AdditionalProperties != nil {
-		value := *property.AdditionalProperties
-		clone.AdditionalProperties = &value
-	}
+	clone.Default = cloneDefault(property.Default)
+	clone.Enum = slices.Clone(property.Enum)
+	clone.Required = slices.Clone(property.Required)
+	clone.Minimum = clonePointer(property.Minimum)
+	clone.Maximum = clonePointer(property.Maximum)
+	clone.MinLength = clonePointer(property.MinLength)
+	clone.MaxLength = clonePointer(property.MaxLength)
+	clone.AdditionalProperties = clonePointer(property.AdditionalProperties)
 	if property.Items != nil {
 		value := clonePropertySchema(*property.Items)
 		clone.Items = &value
 	}
-	if property.Properties != nil {
-		clone.Properties = make(map[string]PropertySchema, len(property.Properties))
-		for name, nested := range property.Properties {
-			clone.Properties[name] = clonePropertySchema(nested)
+	clone.Properties = cloneMap(property.Properties, clonePropertySchema)
+	clone.PortFields = cloneMap(property.PortFields, clonePortFieldInfo)
+	clone.CacheFields = cloneMap(property.CacheFields, func(field CacheFieldInfo) CacheFieldInfo {
+		field.Enum = slices.Clone(field.Enum)
+		field.Min = clonePointer(field.Min)
+		return field
+	})
+	return clone
+}
+
+// cloneDefault copies the default values a schema holds: what schema
+// generation writes (nil, string, int, bool, float64, []string) and what a
+// JSON decode yields ([]any, map[string]any, recursively). Every other value
+// is kept as is, so it stays shared; PropertySchema.Default says so.
+func cloneDefault(value any) any {
+	switch typed := value.(type) {
+	case []string:
+		return slices.Clone(typed)
+	case []any:
+		if typed == nil {
+			return typed
 		}
+		clone := make([]any, len(typed))
+		for index, element := range typed {
+			clone[index] = cloneDefault(element)
+		}
+		return clone
+	case map[string]any:
+		return cloneMap(typed, cloneDefault)
+	default:
+		return value
+	}
+}
+
+func clonePortFieldInfo(field PortFieldInfo) PortFieldInfo {
+	clone := field
+	clone.Minimum = clonePointer(field.Minimum)
+	clone.Enum = slices.Clone(field.Enum)
+	clone.Required = slices.Clone(field.Required)
+	if field.AnyRequired != nil {
+		clone.AnyRequired = cloneStringGroups(field.AnyRequired)
+	}
+	clone.RequiredByDirection = cloneMap(field.RequiredByDirection, slices.Clone[[]string])
+	clone.Directions = slices.Clone(field.Directions)
+	clone.Properties = cloneMap(field.Properties, clonePortFieldInfo)
+	clone.Variants = cloneMap(field.Variants, clonePortFieldInfo)
+	if field.Items != nil {
+		value := clonePortFieldInfo(*field.Items)
+		clone.Items = &value
+	}
+	clone.AdditionalProperties = clonePointer(field.AdditionalProperties)
+	return clone
+}
+
+// cloneMap copies a map, copying each value with cloneValue; nil stays nil.
+func cloneMap[K comparable, V any](values map[K]V, cloneValue func(V) V) map[K]V {
+	if values == nil {
+		return nil
+	}
+	clone := make(map[K]V, len(values))
+	for key, value := range values {
+		clone[key] = cloneValue(value)
 	}
 	return clone
+}
+
+func clonePointer[T any](pointer *T) *T {
+	if pointer == nil {
+		return nil
+	}
+	value := *pointer
+	return &value
 }
 
 // Config validation constants - security limits

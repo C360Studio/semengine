@@ -337,3 +337,23 @@ func TestComponentConfigEqual(t *testing.T) {
 		})
 	}
 }
+
+// TestComponentTypeValidate pins the list of component types: the five
+// constants pass, and an empty or misspelled type is refused as invalid.
+func TestComponentTypeValidate(t *testing.T) {
+	for _, valid := range []types.ComponentType{"input", "processor", "output", "storage", "gateway"} {
+		if err := valid.Validate(); err != nil {
+			t.Errorf("ComponentType(%q).Validate() = %v, want nil", valid, err)
+		}
+	}
+	for _, invalid := range []types.ComponentType{"", "procesor", "Processor"} {
+		err := invalid.Validate()
+		if err == nil {
+			t.Errorf("ComponentType(%q).Validate() = nil, want an invalid-class error", invalid)
+			continue
+		}
+		if !pkgerrs.IsInvalid(err) {
+			t.Errorf("ComponentType(%q).Validate() = %v, want an invalid-class error", invalid, err)
+		}
+	}
+}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/natsclient"
+	"github.com/c360studio/semengine/types"
 )
 
 // Review HIGH-3: the migration note promises three LOUD paths. Deleting all
@@ -32,11 +33,11 @@ func TestCreateGraphIngestRefusesAbsentDeploymentAuthority(t *testing.T) {
 
 	for _, tc := range []struct {
 		name     string
-		platform component.PlatformMeta
+		platform types.PlatformMeta
 	}{
-		{"both absent", component.PlatformMeta{}},
-		{"org absent", component.PlatformMeta{Platform: "dep1"}},
-		{"platform absent", component.PlatformMeta{Org: "acme"}},
+		{"both absent", types.PlatformMeta{}},
+		{"org absent", types.PlatformMeta{Platform: "dep1"}},
+		{"platform absent", types.PlatformMeta{Org: "acme"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			comp, err := CreateGraphIngest(configJSON, component.Dependencies{
@@ -68,5 +69,5 @@ func TestCreateGraphIngestAcceptsAConcreteDeploymentAuthority(t *testing.T) {
 
 	// The authority is one types.PlatformMeta (design D9); the pin held two strings.
 	c := comp.(*Component)
-	assert.Equal(t, component.PlatformMeta{Org: testDeploymentOrg, Platform: testDeploymentPlatform}, c.platform)
+	assert.Equal(t, types.PlatformMeta{Org: testDeploymentOrg, Platform: testDeploymentPlatform}, c.platform)
 }

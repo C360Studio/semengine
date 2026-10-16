@@ -1872,7 +1872,9 @@
   contract: >-
     ComponentConfig, ComponentType, ServiceConfig, their JSON codecs, and Validate as at the pin,
     except ComponentConfig.Equal treats trailing non-whitespace bytes after the first JSON value as
-    malformed and falls back to byte comparison (design D1)
+    malformed and falls back to byte comparison (design D1), and ComponentType.Validate holds the
+    five-type check that ComponentConfig.Validate and component.Registry.Register both call
+    (simplify-04a-09-component D4)
   dependencies_and_side_effects: pkg/errs (in-set); stdlib; no goroutine, no I/O
   known_risks: >-
     no context roots; README updated for SemEngine module path and markdownlint
@@ -2166,7 +2168,18 @@
     design D17), with these adaptations: (1) Dependencies.ToolRegistry and ToolRegistryReader
     dropped (#29); (2) Dependencies.LifecycleManager dropped (#102, ruling D); (3) CreateComponent,
     SealComposition, and Snapshots take no internal/componentadmission access token (ruling C,
-    design D14)
+    design D14); and, in simplify-04a-09-component (#153, #189, #197): (4) the config check refuses
+    data after the first JSON value (D1); (5) SafeUnmarshal refuses a nil or non-pointer target and
+    decodes strictly, refusing unknown keys and trailing data (D2); (6) generated array item schemas
+    use int, float and bool (D3); (7) one Registry.Register(Registration) call replaces
+    RegisterFactory, RegisterWithConfig and RegistrationConfig, Registration.Type is
+    types.ComponentType checked by ComponentType.Validate, and the registry keeps its own copy (D4);
+    (8) Snapshots returns []Declaration (D5); (9) Discoverable has four methods (InputPorts,
+    OutputPorts, Health, DataFlow), ConfigSchema and Meta leave it and Metadata is deleted, so the
+    registration is the one home of a factory's schema, description and version (D6); (10)
+    SimpleMockComponent moves to test code and the PlatformMeta alias is removed, so
+    Dependencies.Platform is types.PlatformMeta (D7, D8); (11) ValidateConfig and ValidationError
+    are deleted (D9)
   dependencies_and_side_effects: >-
     internal/cache, metric, model, natsclient, payloadregistry, pkg/errs, pkg/security, storage,
     storage/storeregistry, types (in-set); stdlib
@@ -2179,7 +2192,8 @@
   proving_tests: >-
     internal/harness/contract/componentdeps_test.go (TestComponentReachesNoAgenticOrGraphPackage),
     component/registry_boot_admission_test.go, registry_test.go, registry_integration_test.go,
-    attack_test.go
+    register_test.go, validation_test.go, schema_words_test.go, discovery_test.go
+    (TestDiscoverableNeedsOnlyPortsHealthAndFlow)
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 

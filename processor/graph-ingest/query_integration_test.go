@@ -11,6 +11,7 @@ import (
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/message"
+	"github.com/c360studio/semengine/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -30,7 +31,7 @@ func TestIntegration_QueryHandlers(t *testing.T) {
 	deps := component.Dependencies{
 		NATSClient:      natsClient,
 		PayloadRegistry: newTestPayloadRegistry(t),
-		Platform:        component.PlatformMeta{Org: testDeploymentOrg, Platform: testDeploymentPlatform},
+		Platform:        types.PlatformMeta{Org: testDeploymentOrg, Platform: testDeploymentPlatform},
 	}
 
 	configJSON, err := json.Marshal(config)

@@ -15,31 +15,17 @@ import (
 // - Output components: Send data to external systems
 // - Storage components: Store and retrieve data (ObjectStore, KV)
 type Discoverable interface {
-	// Meta returns basic component information
-	Meta() Metadata
-
 	// InputPorts returns the ports this component accepts data on
 	InputPorts() []Port
 
 	// OutputPorts returns the ports this component produces data on
 	OutputPorts() []Port
 
-	// ConfigSchema returns the configuration schema for this component
-	ConfigSchema() ConfigSchema
-
 	// Health returns current health status
 	Health() HealthStatus
 
 	// DataFlow returns current data flow metrics
 	DataFlow() FlowMetrics
-}
-
-// Metadata describes what a component is
-type Metadata struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"` // "input", "processor", "output", "storage"
-	Description string `json:"description"`
-	Version     string `json:"version"`
 }
 
 // ConfigSchema describes the configuration parameters for a component
@@ -50,8 +36,13 @@ type ConfigSchema struct {
 
 // PropertySchema describes a single configuration property
 type PropertySchema struct {
-	Type        string                    `json:"type"` // "string", "int", "bool", "float", "enum", "array", "object", "ports", "cache"
-	Description string                    `json:"description"`
+	Type        string `json:"type"` // "string", "int", "bool", "float", "enum", "array", "object", "ports", "cache"
+	Description string `json:"description"`
+	// Default is a JSON value: nil, a string, a bool, a number, a []string,
+	// or a []any or map[string]any whose elements are these, at any depth.
+	// The registry copies such a default when it stores or lists a schema. A
+	// default of any other type is stored as is, so a pointer, slice or map
+	// it holds stays shared with the caller.
 	Default     any                       `json:"default,omitempty"`
 	Enum        []string                  `json:"enum,omitempty"`        // Valid string values
 	Minimum     *int                      `json:"minimum,omitempty"`     // For numeric types

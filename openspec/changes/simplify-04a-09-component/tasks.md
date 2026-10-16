@@ -62,7 +62,7 @@ Review stop C (tasks 5.1–5.4).
 
 ## 6. Documentation and follow-ups
 
-- [ ] 6.1 `component/README.md` and `doc.go` describe one `Register` call, the registration as the one home of a
+- [x] 6.1 `component/README.md` and `doc.go` describe one `Register` call, the registration as the one home of a
   factory's schema, description and version, a four-method `Discoverable`, and `Snapshots`
   returning declarations, and `Dependencies.Platform` as `types.PlatformMeta`; the README's example factory and port
   declarer decode with `SafeUnmarshal`; the `docs/admission-ledger.yaml` `component` row's `contract` lists these

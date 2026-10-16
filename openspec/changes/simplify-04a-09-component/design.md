@@ -107,7 +107,7 @@ A component that still defines either method compiles unchanged; only `component
 compiling. At cutover that is every consumer component's `Meta` method (semsource 26 production lines name
 `component.Metadata`, semconnect 2), and the compiler finds each one. graph-ingest names its consumer with the field
 it already holds, `c.name` (`processor/graph-ingest/component.go:690`, `"graph-ingest"`, the value `Meta().Name`
-returns today), so the consumer context it passes at `:1547` is unchanged.
+returns today), so the consumer context it passes at `:1532` is unchanged.
 
 Proof: `TestDiscoverableNeedsOnlyPortsHealthAndFlow` assigns a type that has only those four methods to a
 `Discoverable`, so it does not compile on the base commit. `component_test.go:603` reads
@@ -137,7 +137,7 @@ The `LifecycleComponent` doc lists ADR-108 Decision 3's rules as the ADR words t
 
 The doc text names no package. The rollback behind the sixth rule is `pkg/lifecyclecleanup`'s. graph-ingest breaks
 the last rule today: it validates in its factory (`processor/graph-ingest/component.go:622`) and again in `Initialize`
-(`:955`). The second validation leaves with PR 10 or the processor shell (#109); this PR does not fix it. Proof:
+(`:940`). The second validation leaves with PR 10 or the processor shell (#109); this PR does not fix it. Proof:
 review only (ADR-108 (e)).
 
 The `PlatformMeta` alias (`dependencies.go:16-18`) is removed. `Dependencies.Platform` is declared as

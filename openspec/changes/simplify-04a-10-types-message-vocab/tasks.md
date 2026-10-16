@@ -69,11 +69,13 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 ## 4. Documentation
 
-- [ ] 4.1 READMEs and doc comments (D5): `pkg/types/README.md:71-98`, `pkg/types/doc.go:6`, `message/doc.go:78`,
+- [x] 4.1 READMEs and doc comments (D5): `pkg/types/README.md:71-98`, `pkg/types/doc.go:6`, `message/doc.go:78`,
   `:155-157`, `message/message.go:11`, `graph/README.md:39`, `vocabulary/README.md:480`, and the `message` README
   line that offers `message.Type`. Gate: `task docs:check`.
-- [ ] 4.2 Comment on #90 with the measurement: `DcIdentifier` is `vocabulary/standards.go:47`, semconnect reads it
+  Done: `4b5c858`; `task docs:check` and `task build` exit 0. `pkg/types/doc.go:6` stays: `Keyable` is still in `pkg/types`.
+- [x] 4.2 Comment on #90 with the measurement: `DcIdentifier` is `vocabulary/standards.go:47`, semconnect reads it
   (`parser/sensorml/predicates.go:129`), and `vocabulary/README.md:300` is accurate. Gate: the comment is read back.
+  Done: posted and read back, #90 comment 6218976490.
 - [x] 4.3 Post the `strings.Cut` allocation probe on the PR with its source, command, Go version and output (D7).
   Gate: the comment is read back.
   Done: posted and read back, #275 comment 6218742351 (Go 1.26.9: `strings.Cut` 0 allocations, `strings.Split` 1).

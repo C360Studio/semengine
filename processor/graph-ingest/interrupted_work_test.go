@@ -193,7 +193,7 @@ func TestInterruptedApplicationIsRedeliveredNotAStop(t *testing.T) {
 				tc.arrange(it)
 				errorsBefore := c.Health().ErrorCount
 
-				if err := c.ingestPool.SubmitBlocking(t.Context(), interruptedInput(interruptedEntity, 1, first)); err != nil {
+				if err := c.ingestPool.SubmitBlocking(t.Context(), interruptedEntity, interruptedInput(interruptedEntity, 1, first)); err != nil {
 					t.Fatalf("submit the first input: %v", err)
 				}
 				if it.signalled != nil {
@@ -251,7 +251,7 @@ func TestInterruptedApplicationIsRedeliveredNotAStop(t *testing.T) {
 				}
 
 				next := &keyedIngestTestMsg{}
-				if err := c.ingestPool.SubmitBlocking(t.Context(), interruptedInput(nextEntity, 2, next)); err != nil {
+				if err := c.ingestPool.SubmitBlocking(t.Context(), nextEntity, interruptedInput(nextEntity, 2, next)); err != nil {
 					t.Fatalf("submit the next input: %v", err)
 				}
 				synctest.Wait()
@@ -379,7 +379,7 @@ func TestOrdinaryLaneWriteErrorCountsOnce(t *testing.T) {
 		errorsBefore := c.Health().ErrorCount
 		msg := &keyedIngestTestMsg{}
 
-		if err := c.ingestPool.SubmitBlocking(t.Context(), interruptedInput(interruptedEntity, 1, msg)); err != nil {
+		if err := c.ingestPool.SubmitBlocking(t.Context(), interruptedEntity, interruptedInput(interruptedEntity, 1, msg)); err != nil {
 			t.Fatalf("submit the input: %v", err)
 		}
 		synctest.Wait()

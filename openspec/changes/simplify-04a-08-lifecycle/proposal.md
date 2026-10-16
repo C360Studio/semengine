@@ -21,7 +21,8 @@ differently from what they do, and tests against doubles that accept stored valu
 - One matcher: `semtypes.MatchEntityIDPattern`.
 - `Complete` picks the first reachable terminal in the current phase's declared edge order (owner question 2). The
   `Fail` doc states the edge it needs.
-- `Children` filters, then pages, as `List` does (owner question 3 adds List's error rule).
+- `Children` reads children in link order until the page is full, so reads stay bounded by the page (ADR-049). It
+  skips and slices as `List` does, and owner question 3 adds List's rule for read errors.
 - Test doubles refuse what graph-ingest's stored-value rule refuses.
 - Docs say what the code does, not what it used to do.
 
@@ -34,5 +35,5 @@ differently from what they do, and tests against doubles that accept stored valu
 - `pkg/lifecycle` (`graph_emit.go`, `manager.go`, `manager_query.go`, `errors.go`, tests);
   `docs/admission-ledger.yaml` (`pkg/lifecycle` contract).
 - Exported surface: no symbol added or removed. Behaviour changes for callers: write errors (#257), Complete's pick,
-  Children's pages, and the Watch logs.
+  Children's pages (a non-nil empty result; no panic on a negative Offset), and the Watch logs.
 - Closes #154, #193, #199, #257. Addresses #223.

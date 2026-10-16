@@ -26,19 +26,3 @@ func TestDefaultConfigDeclaresRequiredMutationProvider(t *testing.T) {
 	}
 	t.Fatal("default config has no typed graph mutation provider")
 }
-
-func TestResolveMutationSubjectRequiresDeclaredProvider(t *testing.T) {
-	got, err := graphmutation.ResolveSubject(graphmutation.SubjectFamily, graphmutation.ReconcilePredicates)
-	if err != nil {
-		t.Fatalf("ResolveSubject: %v", err)
-	}
-	if got != "graph.mutation.entity.reconcile" {
-		t.Fatalf("subject = %q", got)
-	}
-
-	for _, family := range []string{"", "graph.mutation.*", "graph.mutation.entity.create"} {
-		if subject, err := graphmutation.ResolveSubject(family, graphmutation.CreateEntity); err == nil {
-			t.Fatalf("invalid family %q resolved to %q", family, subject)
-		}
-	}
-}

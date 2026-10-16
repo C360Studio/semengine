@@ -9,8 +9,8 @@ matches `[a-z][a-z0-9]*(-[a-z0-9]+)*` and is at most `MaxPredicateSegmentBytes` 
 `MaxPredicateBytes` (194) bytes (pin ADR-074). It SHALL return the three segments as `PredicateParts`. A refusal SHALL
 be a `*PredicateValidationError` naming the first fault in this order: empty, length, arity, then each segment from the
 first, checked for empty, length, first byte, then each later byte (character or hyphen). It SHALL keep no state between
-calls and SHALL NOT allocate when it accepts a predicate. Every other check in `vocabulary` of predicate syntax SHALL
-call it.
+calls and SHALL NOT allocate when it accepts a predicate. Every check in this repository of a whole
+predicate's syntax SHALL call it; a namespace or entity-type key parser shares its segment rule.
 
 #### Scenario: A predicate never seen before
 

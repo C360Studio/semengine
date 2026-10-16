@@ -6,30 +6,33 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 ## 1. Design
 
 - [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal, design and spec deltas pass pre-owner review and are
-  accepted by the owner on #219 (owner questions 1–4). Gate: `task spec:check` and `task docs:check`.
-  Hold: owner answers to questions 1–4 on #219.
+  accepted by the owner on #219 (owner questions 1–5). Gate: `task spec:check` and `task docs:check`.
+  Hold: owner answers to questions 1–5 on #219.
 
 ## 2. Failing tests
 
 - [ ] 2.1 `TestTypeIsValidMatchesValidate` (D1): twelve rows, three components by four classes. Gate: the dotted and
   non-UTF-8 rows fail on the base commit.
-- [ ] 2.2 `TestBaseMessageValidateRefusesTypeGrammar` (D2). Gate: fails on the base commit.
-- [ ] 2.3 `TestGenericJSONValidateRefusesWhatMarshalJSONRefuses` and the `Validate`/`MarshalJSON` law in
-  `FuzzGenericJSONShapes` (D3). Gate: both fail on the base commit.
+- [ ] 2.2 `TestBaseMessageValidateRefusesTypeGrammar` (D2), and `FuzzDecoderStrings`' oracle changed
+  (`message/decoder_fuzz_test.go:345-348`, `:375-381`, `:410-418`): a type holding `.` is refused at marshal with
+  invalid data, and the read-back branch goes. Gate: both fail on the base commit (the fuzz target on its `a.b` seed).
+- [ ] 2.3 `TestGenericJSONValidateRefusesWhatTheShapeCheckRefuses` and the law in `FuzzGenericJSONShapes` (D3):
+  `Validate` refuses with invalid data exactly when the generator marked `foreign` or `badUTF8`, and returns nil for
+  `nonJSON` (NaN, infinity) and valid values (owner question 5, option 1). Gate: both fail on the base commit.
 - [ ] 2.4 `TestRegistryLooksUpByType` (D6). Gate: fails on the base commit (no typed signature).
 - [ ] 2.5 `TestParsePredicateDoesNotAllocate`, with a fresh predicate on every run including the warm-up (D7).
   Gate: fails on the base commit.
 - [ ] 2.6 `FuzzParsePredicateAgreesWithGrammar` (D7, generated checks): a grammar oracle and a copy of the base parse;
   seeds hold one input per reason, a multi-fault input such as `a..b.c`, and the 64/65 and 194/195-byte limits.
-  Gate: passes on the base commit, and fails under one `task mutate:check` mutant that swaps the arity and
-  segment-empty checks.
+  Gate: passes on the base commit. Its ability to fail is shown in task 3.7, on the new code.
 
 ## 3. Implementation
 
 - [ ] 3.1 `Type.IsValid` is `Validate() == nil`. Gate: 2.1 passes.
 - [ ] 3.2 `BaseMessage.Validate` calls `Type.Validate`; the UTF-8 loop in `MarshalJSON` goes. Gate: 2.2 and the
   existing non-UTF-8 type test pass; one `task mutate:check` run that deletes the new call fails that test.
-- [ ] 3.3 `GenericJSONPayload.Validate` runs the shape check; `MarshalJSON` unchanged. Gate: 2.3 passes.
+- [ ] 3.3 `GenericJSONPayload.Validate` runs the shape check; `MarshalJSON` and its key sort unchanged; the
+  `Validate` doc names the values only encoding refuses (owner question 5). Gate: 2.3 passes.
 - [ ] 3.4 `Hash` leaves `Message` and `BaseMessage` with its test and the "Content-addressable" doc line (owner
   question 1; under option 2, `Hash() (string, error)` and `TestHashRefusesAPayloadThatCannotEncode`). Gate:
   `task build`, `task lint`.
@@ -37,17 +40,21 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
   `EntityType.IsValid` (owner question 2); `triple_identity.go`'s hazard note stops citing `IsExpired`. Gate:
   `task build`, `task lint`.
 - [ ] 3.6 Registry keyed by `types.Type`; `GetRegistration` and `IndexingProfileFor` typed; graph-ingest's three calls
-  drop `.Key()`; `Registration.MessageType` spelled with `Type.Key()` (owner question 4; otherwise D6′). Gate: 2.4
-  and the existing registry and graph-ingest unit tests pass.
+  drop `.Key()`; `Contracts` sorts typed keys by `Key()`; `List` and `Registration.MessageType` spell the key with
+  `Type.Key()` (owner question 4; otherwise D6′). Gate: 2.4, `TestContractsReturnsIndependentSortedCopies`,
+  `TestRegistry_ListPayloads`, `TestRegistry_ListByDomain`, `TestRegistry_BuildPayload_Success` and the graph-ingest
+  unit tests pass.
 - [ ] 3.7 `ParsePredicate` with `strings.Cut`; the memo and `predicate_memo_test.go` go. Gate: 2.5 and 2.6 pass;
-  before/after `go test -bench` recorded in `notes/3.7.md` as information.
+  one `task mutate:check` run against the new `strings.Cut` code, with a mutant that checks segments before arity,
+  is detected by 2.6 (on the `a..b.c` seed); before/after `go test -bench` recorded in `notes/3.7.md` as
+  information.
 - [ ] 3.8 Delete `parseDomainCategory`. Gate: `task build`.
 
 ## 4. Documentation
 
 - [ ] 4.1 READMEs and doc comments (D5): `pkg/types/README.md:71-98`, `pkg/types/doc.go:6`, `message/doc.go:78`,
-  `:155-157`, `message/message.go:11`, `vocabulary/README.md:480`, and the `message` README line that offers
-  `message.Type`. Gate: `task docs:check`.
+  `:155-157`, `message/message.go:11`, `graph/README.md:39`, `vocabulary/README.md:480`, and the `message` README
+  line that offers `message.Type`. Gate: `task docs:check`.
 - [ ] 4.2 Comment on #90 with the measurement: `DcIdentifier` is `vocabulary/standards.go:47`, semconnect reads it
   (`parser/sensorml/predicates.go:129`), and `vocabulary/README.md:300` is accurate. Gate: the comment is read back.
 - [ ] 4.3 Post the `strings.Cut` allocation probe on the PR with its source, command, Go version and output (D7).

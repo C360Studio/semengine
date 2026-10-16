@@ -38,7 +38,12 @@ lines today: `pkg/types` 757, `message` 2,003, `payloadregistry` 434, `vocabular
   issue does not name:** `openspec/specs/message-codec/spec.md:41` and `:63` make `GenericJSONPayload.MarshalJSON`
   itself refuse non-UTF-8 strings and non-JSON-shaped values. `encoding/json` would otherwise write each invalid
   byte as U+FFFD (spec `:37-39`, carried text). A payload marshalled without `Validate` first exists in this tree:
-  `message/base_message.go:138` — `if data, err := m.payload.MarshalJSON(); err == nil {` (`Hash`).
+  `message/base_message.go:138` — `if data, err := m.payload.MarshalJSON(); err == nil {` (`Hash`). **What the shape
+check does not refuse:** `generic_json.go:139-143` accepts every `float32` and `float64` without reading its value,
+and `:146-147` checks a `json.Number` for UTF-8 only. `json.Marshal` (`:125`) then refuses a NaN, an infinity, or a
+`json.Number` whose text is not a JSON number. `FuzzGenericJSONShapes` already marks NaN and infinity as `nonJSON`,
+refused by encoding (`generic_json_fuzz_test.go:27`, `:110-116`, `:234-237`; NaN seed `:215`). Its generator only
+builds valid `json.Number` text (`:120`).
 - **#219 item 3, aliases.** `message/types.go:11` — `type Keyable = types.Keyable`, `:16` — `type Type = types.Type`,
   `:20` — `type EntityType = types.EntityType`, `:24` — `type EntityID = types.EntityID`, `:27` —
   `func ParseEntityID(value string) (EntityID, error) {`. **The issue's list is wrong**: `message.Payload`,
@@ -94,7 +99,7 @@ lines today: `pkg/types` 757, `message` 2,003, `payloadregistry` 434, `vocabular
 | message-type grammar | `pkg/types/type.go:63-78` (`Validate`); `:51-53` (`IsValid`, non-empty only); `message/base_message.go:212-220` (a UTF-8 loop in `MarshalJSON`, there because `Validate` at `:152` uses `IsValid`, comment `:210-211`); `payloadregistry/registry.go:117-127` (three non-empty checks before `Validate` at `:134`) |
 | dotted message-type key | `pkg/types/type.go:41`; `payloadregistry/registry.go:77`, `:294`, `:313` |
 | generic JSON shape | `message/generic_json.go:120-225` only; `Validate` (`:99-104`) does not run it |
-| predicate split | `vocabulary/predicate_contract.go:99-130` (`ParsePredicate`, the sole parser by pin ADR-074); `vocabulary/registry.go:332-359` (`parseDomainCategory`, dead); `vocabulary/entity_type.go:87` (`ParseEntityTypeKey`, two segments, same segment rule) |
+| predicate split | `vocabulary/predicate_contract.go:99-130` (`ParsePredicate`, the sole parser by pin ADR-074); `vocabulary/registry.go:332-359` (`parseDomainCategory`, dead); `vocabulary/entity_type.go:87` (`ParseEntityTypeKey`, two segments, same segment rule); `vocabulary/namespace_authority.go:43-60` (`ParsePredicateNamespace`, one or two segments, `strings.Split`, same segment rule) |
 | entity-type grammar | `pkg/types/entity_domain_authority.go:57` (`validateEntityIDSegment`: alphanumeric start, then alphanumeric, `_`, `-`); `vocabulary/entity_type.go:80-98` (`ParseEntityTypeKey`: lower-kebab); `pkg/types/entity_type.go:35-37` (`IsValid`: non-empty). The first two disagree: `Robotics_1` passes the first and fails the second |
 | message content hash | `message/base_message.go:127-147` only. `message/triple_identity.go` keys triples, a different fact |
 
@@ -110,14 +115,18 @@ lines today: `pkg/types` 757, `message` 2,003, `payloadregistry` 434, `vocabular
 - Coverage floors: `scripts/cover-check.sh:27-28` — `"message unit"`, `"payloadregistry unit"` (80%).
 - Docs naming touched symbols: `pkg/types/README.md:71-98` (the aliases), `pkg/types/doc.go:6`,
   `message/doc.go:78`, `:155-157` (`Keyable`), `message/message.go:11` ("Content-addressable: Hash method …"),
-  `vocabulary/README.md:480` — `` - `message/types.go` - EntityID, EntityType, Type patterns ``.
-- Open PRs (`gh pr list --state open --json number,title,changedFiles,files`, 2026-10-16): #275 (this claim, no
-  files); #273 (draft, PR 7, `component`; OpenSpec files only so far; its design edits
-  `processor/graph-ingest/component.go`, the `Register` and `ConfigSchema` sites, and `docs/admission-ledger.yaml`);
-  #272 (draft, PR 9b, `pkg/lifecycle`; OpenSpec files only; its design edits `pkg/lifecycle` and the ledger); #242–#248
-  (Dependabot: `go.mod`/`go.sum`, `package*.json`, one workflow). None touches the four packages' files. If owner
-  question 4 is accepted, this change edits `processor/graph-ingest/component.go:678` and `:2063` and
-  `canonical_mutations.go:218`, a file #273 also edits (other lines).
+  `vocabulary/README.md:480` — `` - `message/types.go` - EntityID, EntityType, Type patterns ``, `graph/README.md:39`
+  — ``All entity IDs use the 6-part federated format defined in `message.EntityID` (canonical order, ADR-102:``.
+- Tests whose oracle a type-grammar change moves: `message/decoder_fuzz_test.go:345-348` ("BaseMessage.Validate
+  does not check the `.`"), `:375-381` (`wantMarshal` ignores `.`), `:410-418` (a dotted type is read back with the
+  standard library), seed `{"a.b",…}`.
+- Open PRs (`gh pr list --state open --json number,title,changedFiles,files`, 2026-10-16): this claim (#275, no files).
+  PR 7 (#273, draft, `component`) has OpenSpec files only so far; its design edits `processor/graph-ingest/component.go`
+  at the `Register` and `ConfigSchema` sites, and `docs/admission-ledger.yaml`. PR 9b (#272, draft, `pkg/lifecycle`) has
+  OpenSpec files only; its design edits `pkg/lifecycle` and the ledger. Dependabot (#242 to #248) touches
+  `go.mod`/`go.sum`, `package*.json` and one workflow. None touches the four packages' files. If owner question 4 is
+  accepted, this change edits `processor/graph-ingest/component.go:678` and `:2063` and `canonical_mutations.go:218`, in
+  a file #273 also edits (other lines).
 - Unclaimed wave PR touching a neighbour: PR 10 (`processor/graph-ingest`, #139).
 
 ### Open issues naming the packages
@@ -154,12 +163,15 @@ Production readers; "tests" means only tests read it. Consumer counts exclude `_
 | `Message.Hash`, `BaseMessage.Hash` | tests | none | none |
 | `BaseMessage.Validate` | `message/base_message.go:193` | many | via `message.Message` |
 | `GenericJSONPayload.Validate` | `message/generic_json.go:23` (`buildGenericJSONPayload`) | yes | not measured (consumers use the pin's type) |
+| `Registry` (every method) | reached by every component through `component.Dependencies.PayloadRegistry` (`component/dependencies.go:53`) | same | through their components |
 | `Registry.GetRegistration` | graph-ingest `canonical_mutations.go:218`, `component.go:678` | graph-ingest | none |
 | `Registry.IndexingProfileFor` | graph-ingest `component.go:2063` | graph-ingest | none |
 | `Registry.Create` | `message/base_message.go:315` | `message` | semteams `scripts/measure-agent-contract-family.go:572` |
 | `Registry.List` | none | none | semteams `scripts/measure-agent-contract-family.go:571` |
-| `Registry.Build` | none | none | none |
-| `Registration.MessageType` | `payloadregistry/registry.go:153` | same | none |
+| `Registry.Build` | none (the only reader of `Registration.Builder`, `registry.go:324`) | none | none call it; semboids fills `Builder` in production (`internal/boidgraph/payload.go:138`, `internal/zone/payload.go:113`) |
+| `Registry.ListByDomain` | tests (`registry_test.go:351`, `attributes_test.go:150`) | none | none |
+| `Registry.Contracts` | none in production (tests); doc `registry.go:265-267` "ordered by message-type key and then by contract name", body `:268-288` sorts string keys | yes | semconnect `cmd/cs-graph-backend/main.go:234` — `payloads.Contracts()...` |
+| `Registration.MessageType` | `payloadregistry/registry.go:153` (in `Register`, same package) | `examples/processors/document/payload.go:291` only | none |
 | `vocabulary.ParsePredicate` | `graph/entity_predicate_contract.go:98`; `vocabulary/namespace_authority.go:31`, `pack.go:299`, `predicates.go:366`, `registry.go:302`, `:393` | many | none directly (they call `vocabulary.Register`) |
 | `vocabulary.DcIdentifier` | none | examples only | semconnect `parser/sensorml/predicates.go:129` |
 
@@ -212,5 +224,6 @@ None is carried; this change ports nothing. Searched in the pin snapshot's `docs
   at encode. Same class, same path in the message.
 - Removed symbols (`Hash`, three aliases, `IsExpired`, `EntityType.IsValid`): no consumer names them; a later reader
   finds out through a compile error.
-- Registry lookups typed: no consumer calls `GetRegistration` or `IndexingProfileFor`; a caller passing a string
+- Registry lookups typed: the registry is framework API (every component holds it), but no consumer calls
+  `GetRegistration` or `IndexingProfileFor`; a caller passing a string
   gets a compile error naming the parameter type.

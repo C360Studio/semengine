@@ -15,14 +15,15 @@ owner direction on #223, comment 6214503370).
 
 - `types.Type.IsValid()` reports `Validate() == nil`, and `BaseMessage.Validate` calls `Type.Validate`, which makes the
   type check in `BaseMessage.MarshalJSON` redundant, so it goes.
-- `GenericJSONPayload.Validate` refuses what `MarshalJSON` refuses; `MarshalJSON` keeps its own check (spec).
+- `GenericJSONPayload.Validate` runs the shape check that `MarshalJSON` runs; `MarshalJSON` keeps it (spec) and its
+  key sort; a NaN, an infinity or bad number text is still refused only by encoding (owner question 5).
 - `Message.Hash` and `BaseMessage.Hash` are removed (owner question 1).
 - Removed with no reader: `message.Keyable`, `message.EntityType`, `message.EntityID`, `Triple.IsExpired`,
   `EntityType.IsValid` (owner question 2). Kept: `message.Type` and `message.ParseEntityID`, which consumers and this
   repository read.
 - Not added: `EntityType.Validate` (owner question 3).
-- The payload registry is keyed by `types.Type`. `GetRegistration` and `IndexingProfileFor` take a `types.Type`
-  (owner question 4).
+- The payload registry is keyed by `types.Type`. `GetRegistration` and `IndexingProfileFor`, framework API through
+  `component.Dependencies.PayloadRegistry`, take a `types.Type` (owner question 4).
 - `ParsePredicate` splits with `strings.Cut`. Its memo and the dead `parseDomainCategory` go. Every verdict and reason
   stays the same.
 - #90: no edit; `vocabulary/README.md:300` is accurate.

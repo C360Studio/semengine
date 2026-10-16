@@ -31,7 +31,9 @@ Go number (`int`, `int8` to `int64`, `uint`, `uint8` to `uint64`, `uintptr`, `fl
 other value (a struct, `time.Time`, a pointer, a named type, or a typed map or slice such as `map[string]string`) with
 an invalid-data error that names its type and its path, and SHALL refuse a map or list that contains itself (#9 comments
 5972117486, 5972208367). `GenericJSONPayload.Validate` SHALL refuse, with an invalid-data error naming the same type and
-path, every non-nil `Data` that `MarshalJSON` refuses, and SHALL accept every non-nil `Data` that `MarshalJSON` encodes.
+path, every non-nil `Data` that this check refuses, including a string or map key that is not valid UTF-8. A NaN or
+infinite float, or a `json.Number` whose text is not a JSON number, passes the check and is refused only by
+encoding.
 
 #### Scenario: A value that is not JSON-shaped
 
@@ -49,8 +51,13 @@ path, every non-nil `Data` that `MarshalJSON` refuses, and SHALL accept every no
 - **THEN** encoding gives the standard library's encoding of the same value, and the message decodes through
   `NewDecoder`
 
-#### Scenario: Validate agrees with encoding
+#### Scenario: Validate runs the shape check
 
-- **WHEN** `Validate` is called on a payload whose non-nil `Data` encoding would refuse
-- **THEN** `Validate` returns an invalid-data error naming the path encoding would name; and for `Data` that
-  encodes, `Validate` returns nil
+- **WHEN** `Validate` is called on a payload whose non-nil `Data` holds a value that is not JSON-shaped, a map or
+  list that contains itself, or a string that is not valid UTF-8, at any depth
+- **THEN** `Validate` returns an invalid-data error naming the path encoding would name
+
+#### Scenario: A value only encoding refuses
+
+- **WHEN** `Data` holds a NaN or an infinite float
+- **THEN** `Validate` returns nil and encoding returns an error

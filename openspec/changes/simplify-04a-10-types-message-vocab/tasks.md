@@ -24,11 +24,13 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
   Done: both fail on `b840587`, the fuzz target on seeds #0, #2 and #19–#26 (`notes/2.3.md`).
 - [x] 2.4 `TestRegistryLooksUpByType` (D6). Gate: fails on the base commit (no typed signature).
   Done: fails to compile on `ca8eb5f`, no typed signature (`notes/2.4.md`).
-- [ ] 2.5 `TestParsePredicateDoesNotAllocate`, with a fresh predicate on every run including the warm-up (D7).
+- [x] 2.5 `TestParsePredicateDoesNotAllocate`, with a fresh predicate on every run including the warm-up (D7).
   Gate: fails on the base commit.
-- [ ] 2.6 `FuzzParsePredicateAgreesWithGrammar` (D7, generated checks): a grammar oracle and a copy of the base parse;
+  Done: fails at `ac02766` (test added, parse unchanged), 4 allocations per run (`notes/2.5.md`).
+- [x] 2.6 `FuzzParsePredicateAgreesWithGrammar` (D7, generated checks): a grammar oracle and a copy of the base parse;
   seeds hold one input per reason, a multi-fault input such as `a..b.c`, and the 64/65 and 194/195-byte limits.
   Gate: passes on the base commit. Its ability to fail is shown in task 3.7, on the new code.
+  Done: passes at `ac02766` (test added, parse unchanged), all 12 seeds (`notes/2.6.md`).
 
 ## 3. Implementation
 
@@ -54,11 +56,14 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
   unit tests pass.
   Done: all five and `./processor/graph-ingest/...` pass at `8cc4c63`; the strengthened `Contracts` order test detects a
   component-order sort mutant (`notes/2.4.md`).
-- [ ] 3.7 `ParsePredicate` with `strings.Cut`; the memo and `predicate_memo_test.go` go. Gate: 2.5 and 2.6 pass;
+- [x] 3.7 `ParsePredicate` with `strings.Cut`; the memo and `predicate_memo_test.go` go. Gate: 2.5 and 2.6 pass;
   one `task mutate:check` run against the new `strings.Cut` code, with a mutant that checks segments before arity,
   is detected by 2.6 (on the `a..b.c` seed); before/after `go test -bench` recorded in `notes/3.7.md` as
   information.
-- [ ] 3.8 Delete `parseDomainCategory`. Gate: `task build`.
+  Done: 2.5 and 2.6 pass at `8a724ce`; mutate:check verdict detection on seed #9 `a..b.c`; bench recorded
+  (`notes/3.7.md`).
+- [x] 3.8 Delete `parseDomainCategory`. Gate: `task build`.
+  Done: `task build` passes at `3914d44`.
 
 ## 4. Documentation
 

@@ -9,7 +9,8 @@ commit.
 it (today `keyed_pool.go:250`, `:358`). `Shutdown(ctx)` is the only stop. Observable:
 
 - `SubmitBlocking` returns nil only for an item that `Process` is called with exactly once before `Shutdown` returns
-  nil. From the first `Shutdown`, it returns `ErrStopped` (unchanged).
+  nil. A call that begins after the first `Shutdown` returns `ErrStopped`; one already waiting on a full lane may
+  still be accepted (unchanged, `TestKeyedPool_ShutdownSubmitRace`, ADR-072 M3).
 - After the constructor's context ends, lanes keep running: queued and later-accepted items reach `Process` with the
   ended context. graph-ingest then naks each at once (inventory § 4: `ValidateHeartbeatDeliveryPolicy` refuses an
   ended context, `keyed_ingest.go:218` naks), where today they wait for AckWait.
@@ -34,8 +35,8 @@ for both ways a context can end; H2 and B1 unchanged.
 Tests (`shutdown_test.go`, each in `synctest.Test`):
 
 - `TestSubmitAfterRunCancelIsProcessed`: #131's reproduction, asserting `Process` saw the item with an ended context.
-- `TestRunCancelProcessesQueuedItems`: one item blocked in `Process`, N queued; cancel; release; all N reach `Process`
-  with the ended context, in order.
+- `TestRunCancelProcessesQueuedItems`: one item blocked in `Process`, 64 queued (`QueueDepth` 64); cancel; release; all
+  64 reach `Process` with the ended context, in order (base processes all 64 with odds 2^-64).
 - `TestKeyedPoolRunContextCancelLeavesNothingRunning` becomes `…CancelThenShutdownLeavesNothingRunning` (+`Shutdown`).
 - `TestShutdownAfterJoinReturnsNilUnderEndedContext`: 64 calls after the join, each nil (base passes all 64 with odds
   2^-64).
@@ -67,7 +68,8 @@ items accepted and not yet passed to `Process`, summed over pools of one `Name` 
 (`metric/registry.go:39-50`), so a second pool of that name, such as a new graph-ingest after a failed `Start`, would
 report the first pool's queues for the registry's lifetime. Test: `TestKeyedPoolQueueDepthCountsWaitingItems`
 (bubble; one item in `Process`, three queued, no clock advance: 3; after `Shutdown`: 0). It fails on base, which
-reads 0 until a tick.
+reads 0 until a tick. Dropping the gauge is not an option: queue depth is part of ADR-072's decision (pin
+`:182-188`).
 
 ## D6. Tests on the bubble clock (#136 item a)
 
@@ -79,9 +81,10 @@ wait must be detected by `TestKeyedPool_Backpressure`.
 
 ## D7. Text follows the code
 
-`doc.go` (one stop, the key argument, no `KeyedDeps`), `errors.go:7-11`, the `processIngest` comment
-(`keyed_ingest.go:212-215`: the context also ends when `Start`'s does), the spec delta `keyed-dispatch`, and the ledger
-row (`docs/admission-ledger.yaml:2025-2032`: the D1–D5 contract; "one goroutine per lane, joined by Shutdown").
+`doc.go` (one stop, the key argument, no `KeyedDeps`), `errors.go:7-11`, the `KeyOf` comment at `component.go:1567`, the
+`processIngest` comment (`keyed_ingest.go:212-215`: the context also ends when `Start`'s does), the spec delta
+`keyed-dispatch`, and the ledger row (`docs/admission-ledger.yaml:2025-2032`: the D1–D5 contract; "one goroutine per
+lane, joined by Shutdown").
 
 ## Open issues and merge order
 
@@ -94,3 +97,5 @@ Issues #131 and #136 are retired (tasks 3.1–3.3). #107, #135 and #195 stay (in
 1. Ending the pool's context no longer stops the pool; only `Shutdown` does (D1 option a), dropping change 2 task
    3.6's "cancelling the run context leaves nothing running". Recommended: accept. It is #131's own proposal, and
    graph-ingest already calls `Shutdown` on every stop and failed start.
+2. FYI, no ruling needed: D5 counts queue depth on submit and pickup instead of #136's suggested `GaugeFunc`, which
+   would read the first pool's queues after a restart under the same name.

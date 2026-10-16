@@ -29,12 +29,12 @@ SHALL go on to its next item.
 ### Requirement: Every accepted item reaches Process, and Shutdown is the only stop
 
 `SubmitBlocking` SHALL return nil only for an item that `Process` is then called with exactly once, before `Shutdown`
-returns nil. From the first `Shutdown` call on, `SubmitBlocking` SHALL return `ErrStopped`. The context given to
-`NewKeyedPool` SHALL reach only `Process`: ending it SHALL NOT stop a lane, refuse a submit, or drop a queued item, and
-each `Process` call after it ended SHALL receive the ended context. `Shutdown(ctx)` SHALL return nil once every
-accepted item has been processed and every lane has exited, also when ctx has ended by then, and SHALL return
-`ctx.Err()` when ctx ends first, as the `background-work` requirement "Background work takes one of three shapes"
-states for `Shutdown`.
+returns nil. A `SubmitBlocking` call that begins after the first `Shutdown` call SHALL return `ErrStopped`. The context
+given to `NewKeyedPool` SHALL reach only `Process`: ending it SHALL NOT stop a lane, refuse a submit, or drop a queued
+item, and each `Process` call after it ended SHALL receive the ended context. `Shutdown(ctx)` SHALL return nil once
+every accepted item has been processed and every lane has exited, also when ctx has ended by then, and SHALL return
+`ctx.Err()` when ctx ends first, as the `background-work` requirement "Background work takes one of three shapes" states
+for `Shutdown`.
 
 #### Scenario: A submit after the run context ended
 

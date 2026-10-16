@@ -23,7 +23,9 @@ starts.
   Gate: passes on the base commit;
   `task mutate:check` runs on mutants A and B (D5) are recorded in `notes/2.1.md` as detected, surviving or
   inconclusive.
-  Done: passes on `3aab575`; mutants A and B both detection at `9d7f118` (`notes/2.1.md`).
+  Done: passes on `3aab575`; mutants A and B both detection at `9d7f118` (`notes/2.1.md`). After main merged
+  (#273), the product type keeps the four `Discoverable` methods (`25f4416`); the CN-allowlist case (Codex
+  batch-1 finding) passes and mutant C is a detection at `7750191` (`notes/2.1.md`).
 - [x] 2.2 (Q1) `TestLoadersRefuseSettingsNotApplied` in `internal/tlsutil`: `mode` `"acme"` and `"amce"`, and
   `acme.enabled` true, are refused with an invalid-class error naming the key, for both loaders; `mode` empty and
   `"manual"` are accepted. Plus the scenario "ACME mode on the metrics server" in `metric/tls_test.go`. Gate: both
@@ -36,20 +38,24 @@ starts.
   answer" paragraph is removed so it does not sync into the published spec. Gate: 2.2 passes; one
   `task mutate:check` run deleting the `mode` check fails it.
   Done: 2.2 passes and the mutation check is a detection at `52e6c18` (`notes/3.1.md`).
-- [ ] 3.2 (Q3) The `schema` tags on `pkg/security`'s 31 fields are removed; the `json` tags are unchanged. Gate:
+- [x] 3.2 (Q3) The `schema` tags on `pkg/security`'s 31 fields are removed; the `json` tags are unchanged. Gate:
   `TestConfigDecodesEveryKey` and `TestConfigDocumentCoversEveryField` pass unchanged.
-- [ ] 3.3 `pkg/security/doc.go`: the ACME usage example (`:65-78`) and the `pkg/acme` link (`:130`) go; `:83`,
+  Done: both pass, `config_test.go` unchanged, at `f7c842c`.
+- [x] 3.3 `pkg/security/doc.go`: the ACME usage example (`:65-78`) and the `pkg/acme` link (`:130`) go; `:83`,
   `:101-106` and `:120` stop advertising ACME as working and say what the spec's requirement 3 says; `:129` stops
   pointing products at `internal/tlsutil` and names `metric.NewServer` as the call that applies the server block;
   the package comment names the `security-config` spec and `component.Dependencies.Security`. Gate: `task lint`,
   `task docs:check`.
-- [ ] 3.4 `metric/tls_test.go:92`: the comment stops naming `security.Config.Validate`. Gate: `task fmt:check`.
+  Done: both exit 0 at `5be39ce` (`notes/3.3.md`).
+- [x] 3.4 `metric/tls_test.go:92`: the comment stops naming `security.Config.Validate`. Gate: `task fmt:check`.
+  Done: exit 0 at `6544c8f`.
 
 ## 4. Docs and ledger
 
-- [ ] 4.1 `docs/admission-ledger.yaml`, row `pkg/security`: `contract` names `openspec/specs/security-config/spec.md`
+- [x] 4.1 `docs/admission-ledger.yaml`, row `pkg/security`: `contract` names `openspec/specs/security-config/spec.md`
   beside the type list; `proving_tests` adds `pkg/security/product_test.go`; `known_risks` records the removed
   `schema` tags (Q3). Row `internal/tlsutil`: `contract` adds the refusal (Q1). Gate: `task ledger:check`.
+  Done: exit 0 at `8edf346`; the `internal/tlsutil` row's `proving_tests` also names `notapplied_test.go`.
 - [ ] 4.2 File the issue owner question 2 asks for (re-judge `internal/tlsutil` under #190, naming #84 so it does
   not decide how authentication hooks onto the engine's servers); cite the `GenerateConfigSchema` silent-skip issue
   (#281) on the PR without a closing keyword; and file the pin's ACME

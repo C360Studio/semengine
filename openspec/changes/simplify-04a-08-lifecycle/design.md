@@ -170,7 +170,7 @@ Answered 2026-10-16 (#154 comment 6214484329): all three yes, as recommended.
 | --- | --- | --- |
 | 1. Keep the no-client manager; one refusal | `pkg/lifecycle/errors.go:156` (`errNoNATSClient`), returned at `manager.go:203` and `:218` (D2, `56f1737`) | `TestManagerWithoutClientRefusesNATSWork` (`graph_emit_test.go:14`) |
 | 2. Complete picks the first declared terminal | `pkg/lifecycle/manager.go:808` (`selectReachableTerminal` walks the current phase's out-edges; Complete calls it at `:776`) (D5) | `TestManager_CompleteFollowsDeclaredEdgeOrder` (`manager_test.go:1282`) |
-| 3. Children fails on an unreadable child | pending: task 3.6 (D6) | pending: task 2.5 |
+| 3. Children fails on an unreadable child | `pkg/lifecycle/manager_query.go:378` (only `ErrEntityNotFound` / `ErrEntityNotLifecycleManaged` are left out; any other read error returns at `:381`), in Children (`:333`) (D6) | `TestChildrenFailsOnAnUnreadableChild` (`children_test.go:176`); paging `TestChildrenPagesKeptChildrenWithinBoundedReads` (`:115`) |
 
 1. **Keep allowing a manager with no NATS client? Recommended: yes.** The issue suggested refusing it. But semboids
    and semteams build one in three tests just to check that a workflow registers, and refusing it would change the

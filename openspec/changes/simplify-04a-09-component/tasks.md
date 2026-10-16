@@ -78,7 +78,7 @@ Review stop D (tasks 6.1–6.2).
 
 ## 7. Verify, review and close
 
-- [ ] 7.1 `task verify` passes on a clean tree at the implementation head.
+- [x] 7.1 `task verify` passes on a clean tree at the implementation head (`92edcda`, exit 0).
 - [ ] 7.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
 - [ ] 7.3 Archive the change (`openspec archive simplify-04a-09-component`) as the last content commit. Gate:
   `task spec:check`.

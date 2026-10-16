@@ -38,6 +38,8 @@ readonly targets=(
   "component merged"
   "storage/storeregistry unit"
   "pkg/lifecycle merged"
+  # simplify-04a-13 design D2: the storage report code moved out of natsclient.
+  "natsclient/storagereport merged"
 )
 
 # The unit profile's packages: every target measured from it, alone or merged.

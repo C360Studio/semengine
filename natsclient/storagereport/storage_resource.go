@@ -18,9 +18,13 @@
 // the same reason: an absent measurement must be ABSENT, never a zero a
 // downstream reader can mistake for one.
 
-package natsclient
+package storagereport
 
-import "time"
+import (
+	"time"
+
+	"github.com/c360studio/semengine/natsclient"
+)
 
 // StorageTier is the JetStream storage tier backing a resource. JetStream keeps
 // SEPARATE memory and file account limits and this repository's own streams
@@ -165,7 +169,7 @@ type StorageResource struct {
 	// Kind is the logical resource the physical name backs. Derived from the
 	// name alone, so it is available even for a resource the server declines to
 	// describe.
-	Kind ResourceKind `json:"kind"`
+	Kind natsclient.ResourceKind `json:"kind"`
 
 	// Bucket is the logical bucket name behind a backing stream, with exactly
 	// one reserved prefix stripped. Empty for an ordinary stream.

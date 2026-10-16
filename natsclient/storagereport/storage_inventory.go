@@ -39,10 +39,11 @@
 // timestamp it was collected at. A monitoring surface that can take down the
 // system it monitors is a worse bug than the blindness it fixes.
 
-package natsclient
+package storagereport
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -54,6 +55,7 @@ import (
 
 	"github.com/nats-io/nats.go/jetstream"
 
+	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
@@ -105,16 +107,18 @@ type StreamListerSource func() (StreamLister, error)
 // the catalog dropped the row.
 type OwnerResolver func(bucket string) string
 
-// AccountStreamLister resolves this client's live JetStream context as the
-// narrow account-listing capability the storage inventory needs. Pass the
-// method value itself as a StreamListerSource so resolution happens per
+// AccountStreamLister returns the source that resolves client's live JetStream
+// context as the narrow account-listing capability the storage inventory needs.
+// The source calls client.JetStream on each call, so resolution happens per
 // collection.
-func (m *Client) AccountStreamLister() (StreamLister, error) {
-	js, err := m.JetStream()
-	if err != nil {
-		return nil, err
+func AccountStreamLister(client *natsclient.Client) StreamListerSource {
+	return func() (StreamLister, error) {
+		js, err := client.JetStream()
+		if err != nil {
+			return nil, err
+		}
+		return js, nil
 	}
-	return js, nil
 }
 
 // StorageInventoryConfig configures account storage collection.
@@ -151,7 +155,7 @@ type StorageInventoryConfig struct {
 }
 
 // InventoryPublisher publishes one collection's inventory.
-// *StorageReportPublisher satisfies it; the interface keeps the collector from
+// *Publisher satisfies it; the interface keeps the collector from
 // depending on the report's whole surface.
 type InventoryPublisher interface {
 	Publish(ctx context.Context, inv StorageInventory) (PublishResult, error)
@@ -512,7 +516,7 @@ func (c *StorageInventoryCollector) walkFailure(err error, operation string) err
 // describe turns one listing entry into a resource row. Configuration and state
 // both come from the entry, so there is no follow-up describe call.
 func (c *StorageInventoryCollector) describe(info *jetstream.StreamInfo) StorageResource {
-	kind, bucket := ClassifyBackingStream(info.Config.Name)
+	kind, bucket := natsclient.ClassifyBackingStream(info.Config.Name)
 	attribution, owner := c.attribute(kind, bucket)
 	return StorageResource{
 		Name:        info.Config.Name,
@@ -535,7 +539,7 @@ func (c *StorageInventoryCollector) describe(info *jetstream.StreamInfo) Storage
 // a KV bucket, its catalog owner, which is a pure catalog read needing no
 // server state. Everything that would have come from the server is unknown.
 func (c *StorageInventoryCollector) undescribable(name string) StorageResource {
-	kind, bucket := ClassifyBackingStream(name)
+	kind, bucket := natsclient.ClassifyBackingStream(name)
 	attribution, owner := c.attribute(kind, bucket)
 	return StorageResource{
 		Name:        name,
@@ -553,8 +557,8 @@ func (c *StorageInventoryCollector) undescribable(name string) StorageResource {
 // attribution state and the owner string are decided together, so the two can
 // never disagree: a non-empty owner outside the attributed state, and an
 // attributed state with no owner, are both unrepresentable.
-func (c *StorageInventoryCollector) attribute(kind ResourceKind, bucket string) (AttributionState, string) {
-	if kind != ResourceKeyValue {
+func (c *StorageInventoryCollector) attribute(kind natsclient.ResourceKind, bucket string) (AttributionState, string) {
+	if kind != natsclient.ResourceKeyValue {
 		// Ownership is not a meaningful question for an ordinary stream or an
 		// ObjectStore: no registry declares one, and this inventory reads the
 		// account rather than any single process's declarations.
@@ -603,4 +607,11 @@ func defaultProducerID() string {
 		host = "unknown-host"
 	}
 	return host + "/" + strconv.Itoa(os.Getpid())
+}
+
+// nilContextErrorOf is the refusal an exported function or method of this package returns for a
+// nil context, before any state or NATS call is reached: the same invalid-data error natsclient's
+// own copy builds, kept private here rather than exported from natsclient.
+func nilContextErrorOf(component, method string) error {
+	return errs.WrapInvalid(errors.New("nil context"), component, method, "missing context")
 }

@@ -26,7 +26,7 @@
 // composition-root construction would apply a stale number successfully and
 // silently after a post-boot edit.
 
-package natsclient
+package storagereport
 
 import (
 	"fmt"

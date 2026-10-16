@@ -21,7 +21,7 @@
 //
 // Nothing here rejects, throttles, or degrades anything. It returns values.
 
-package natsclient
+package storagereport
 
 import (
 	"context"

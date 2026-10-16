@@ -24,7 +24,7 @@
 // extrapolated from one, and unknown suppresses projection rather than
 // producing a fabricated number.
 
-package natsclient
+package storagereport
 
 import "time"
 

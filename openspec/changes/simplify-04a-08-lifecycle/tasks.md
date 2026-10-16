@@ -42,12 +42,12 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 - [x] 4.1 `docs/admission-ledger.yaml` `pkg/lifecycle` contract: item (4) rewritten (owner question 1); the emitter,
   Complete and Children rules added. Merge `origin/main` first if #273 has landed its `component` row. Gate:
   `task ledger:check`, `task docs:check`.
-- [ ] 4.2 File D-2 as `status:blocked`, linked from the PR body without a closing
+- [x] 4.2 File D-2 (filed as #276) as `status:blocked`, linked from the PR body without a closing
   keyword. Gate: issue numbers on the PR body's follow-up line, read back.
 
 ## 5. Verify, review and close
 
-- [ ] 5.1 `task verify` passes on a clean tree at the implementation head.
+- [x] 5.1 `task verify` passes on a clean tree at the implementation head (exit 0 at `0b409da`).
 - [ ] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
 - [ ] 5.3 Archive the change (`openspec archive simplify-04a-08-lifecycle`) as the last content commit. Gate:
   `task spec:check`.

@@ -56,12 +56,13 @@ starts.
   beside the type list; `proving_tests` adds `pkg/security/product_test.go`; `known_risks` records the removed
   `schema` tags (Q3). Row `internal/tlsutil`: `contract` adds the refusal (Q1). Gate: `task ledger:check`.
   Done: exit 0 at `8edf346`; the `internal/tlsutil` row's `proving_tests` also names `notapplied_test.go`.
-- [ ] 4.2 File the issue owner question 2 asks for (re-judge `internal/tlsutil` under #190, naming #84 so it does
+- [x] 4.2 File the issue owner question 2 asks for (re-judge `internal/tlsutil` under #190, naming #84 so it does
   not decide how authentication hooks onto the engine's servers); cite the `GenerateConfigSchema` silent-skip issue
   (#281) on the PR without a closing keyword; and file the pin's ACME
   `renew_before` defect (default 8h against the documented 24h; an unparsable value silently becomes 8h, pin
   `pkg/tlsutil/tlsutil.go:350-354`) for change 5. Gate: all three issue numbers in a PR comment, read
   back.
+  Done: #284 (tlsutil), #281 (schema skip), #285 (renew_before); PR #279 comment 6225757109, read back.
 
 ## 5. Verify and archive
 

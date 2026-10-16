@@ -104,6 +104,9 @@ the seven bools), so `component.GenerateConfigSchema` returns no property for an
   `internal/tlsutil/tlsutil.go:122` (`if mtlsCfg.ClientCertOptional` to `if !mtlsCfg.ClientCertOptional`): the
   no-certificate case must fail. Mutant B makes `metric/handler.go:149` `if false`: the served case must fail. Each is
   reported detected, surviving or inconclusive as it is.
+- Added after Codex's batch-1 review (PR #279): a no-certificate client under `client_cert_optional` with a
+  non-empty `allowed_client_cns` is refused, as the code already does (`internal/tlsutil/tlsutil.go:153-166`).
+  Mutant C (`:154` to `if false`) shows it can fail; recorded in `notes/2.1.md`.
 - Generated checks: not used. The inputs are one switch (`client_cert_optional`), one client choice and one
   version string; four examples cover the table.
 

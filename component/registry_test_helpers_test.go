@@ -15,10 +15,8 @@ type declarationTestComponent struct {
 	outputCalls int
 }
 
-func (c *declarationTestComponent) Meta() Metadata             { return Metadata{Name: "declaration-test"} }
-func (c *declarationTestComponent) ConfigSchema() ConfigSchema { return ConfigSchema{} }
-func (c *declarationTestComponent) Health() HealthStatus       { return HealthStatus{} }
-func (c *declarationTestComponent) DataFlow() FlowMetrics      { return FlowMetrics{} }
+func (c *declarationTestComponent) Health() HealthStatus  { return HealthStatus{} }
+func (c *declarationTestComponent) DataFlow() FlowMetrics { return FlowMetrics{} }
 func (c *declarationTestComponent) InputPorts() []Port {
 	c.inputCalls++
 	return c.inputs

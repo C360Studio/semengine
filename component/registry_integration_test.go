@@ -100,30 +100,12 @@ func NewMockComponent(name, componentType string) *MockComponent {
 	}
 }
 
-func (m *MockComponent) Meta() Metadata {
-	return Metadata{
-		Name:        m.name,
-		Type:        m.componentType,
-		Description: "Mock component for testing",
-		Version:     "1.0.0",
-	}
-}
-
 func (m *MockComponent) InputPorts() []Port {
 	return m.inputPorts
 }
 
 func (m *MockComponent) OutputPorts() []Port {
 	return m.outputPorts
-}
-
-func (m *MockComponent) ConfigSchema() ConfigSchema {
-	return ConfigSchema{
-		Properties: map[string]PropertySchema{
-			"port": {Type: "int", Description: "Port number", Default: 8080},
-		},
-		Required: []string{"port"},
-	}
 }
 
 func (m *MockComponent) Health() HealthStatus {
@@ -387,10 +369,10 @@ func TestCreateComponent(t *testing.T) {
 		t.Error("Instance 'test-instance' not found")
 	}
 
-	// Verify metadata
-	meta := component.Meta()
-	if meta.Name != "test-instance" {
-		t.Errorf("Expected name 'test-instance', got '%s'", meta.Name)
+	// Verify the factory built the component from the configuration's name
+	mock, ok := component.(*MockComponent)
+	if !ok || mock.name != "test-instance" {
+		t.Errorf("Expected a *MockComponent named 'test-instance', got %#v", component)
 	}
 }
 

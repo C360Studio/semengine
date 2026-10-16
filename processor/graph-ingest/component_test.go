@@ -534,17 +534,6 @@ func TestConfig_IngestLanes(t *testing.T) {
 // Discoverable Interface Tests
 // ====================================================================================
 
-func TestComponent_Meta_ReturnsCorrectMetadata(t *testing.T) {
-	comp := createTestComponent(t)
-
-	meta := comp.Meta()
-
-	assert.Equal(t, "processor", meta.Type)
-	assert.Equal(t, "graph-ingest", meta.Name)
-	assert.NotEmpty(t, meta.Description)
-	assert.NotEmpty(t, meta.Version)
-}
-
 func TestComponent_InputPorts_ReturnsJetStreamAndNATSPorts(t *testing.T) {
 	comp := createTestComponent(t)
 	require.NoError(t, comp.Initialize()) // Ports are populated during Initialize
@@ -598,9 +587,12 @@ func TestComponent_OutputPorts_ReturnsKVBucket(t *testing.T) {
 }
 
 func TestComponent_ConfigSchema_ReturnsValidSchema(t *testing.T) {
-	comp := createTestComponent(t)
+	registry := component.NewRegistry()
+	require.NoError(t, Register(registry))
+	registration, ok := registry.ListFactories()["graph-ingest"]
+	require.True(t, ok, "graph-ingest is registered")
 
-	schema := comp.ConfigSchema()
+	schema := registration.Schema
 
 	// Verify schema has required properties
 	assert.NotNil(t, schema.Properties)

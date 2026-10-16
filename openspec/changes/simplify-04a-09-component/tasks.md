@@ -48,7 +48,7 @@ Review stop B (tasks 4.1–4.3).
 ## 5. Interface, test code and prose (#197, #153)
 
 - [x] 5.1 `TestDiscoverableNeedsOnlyPortsHealthAndFlow` (D6). Gate: does not compile on the base commit.
-- [ ] 5.2 `ConfigSchema()` and `Meta()` leave `Discoverable`, graph-ingest and the test components; `Metadata` is
+- [x] 5.2 `ConfigSchema()` and `Meta()` leave `Discoverable`, graph-ingest and the test components; `Metadata` is
   deleted; graph-ingest names its consumer with `c.name`; its schema test reads the registration (D6). Gate: 5.1
   passes; `task test:unit`; `go test -tags integration -race ./component/ ./processor/graph-ingest/`.
 - [ ] 5.3 `SimpleMockComponent` moves into a `_test.go` file; `createSimpleMockComponent`, `attack_test.go`,

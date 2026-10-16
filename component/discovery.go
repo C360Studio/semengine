@@ -15,31 +15,17 @@ import (
 // - Output components: Send data to external systems
 // - Storage components: Store and retrieve data (ObjectStore, KV)
 type Discoverable interface {
-	// Meta returns basic component information
-	Meta() Metadata
-
 	// InputPorts returns the ports this component accepts data on
 	InputPorts() []Port
 
 	// OutputPorts returns the ports this component produces data on
 	OutputPorts() []Port
 
-	// ConfigSchema returns the configuration schema for this component
-	ConfigSchema() ConfigSchema
-
 	// Health returns current health status
 	Health() HealthStatus
 
 	// DataFlow returns current data flow metrics
 	DataFlow() FlowMetrics
-}
-
-// Metadata describes what a component is
-type Metadata struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"` // "input", "processor", "output", "storage"
-	Description string `json:"description"`
-	Version     string `json:"version"`
 }
 
 // ConfigSchema describes the configuration parameters for a component

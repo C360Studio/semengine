@@ -1,20 +1,26 @@
-# The rest of #153: one new issue and two comments
+# The rest of #153: one new issue and one comment
 
 Owner ruling 2 of 2026-10-16 (`design.md`, "Owner rulings"): PR #273 closes #153, and the items outside `component`'s
-scope for this PR go to the places that own that work. Task 6.2 posts these texts. Cites are on `main` at `2422d8f`.
+scope for this PR go to the places that own that work. Task 6.2 posts these texts. Cites are on `main` at `2422d8f`,
+except item 3's, which are on `main` at `e593a28`.
+
+Item 7 of #153 was first routed as a comment on PR #272 (simplification wave PR 9b, `pkg/lifecycle`). That PR merged
+on 2026-10-16 (`c6d006d`) without removing the two structs: on `main` at `e593a28`, `createOutcome` is
+`pkg/lifecycle/manager.go:318` and `transitionOutcome` is `:530`, and neither name appears in `c6d006d`'s diff of
+`manager.go` as removed. A comment on a merged PR reaches no one, so the item is item 3 of the new issue instead.
 
 New issue: **#TBD** (replace with the number once filed).
 
 ## New issue
 
 Title:
-`port-refactor: storage doc shows the unported objectstore; Declaration's parallel port lists (rest of #153)`
+`port-refactor: rest of #153 (objectstore in the storage doc, Declaration's port lists, lifecycle one-field structs)`
 
 Labels: `class:port-refactor`
 
 Body:
 
-> Two items from #153 that PR #273 (simplification wave PR 7, `component`) does not carry. The owner ruled on
+> Three items from #153 that PR #273 (simplification wave PR 7, `component`) does not carry. The owner ruled on
 > 2026-10-16 that #273 closes #153 and that these move here.
 >
 > ### 1. `storage/doc.go` describes `objectstore`, which is not in the tree
@@ -34,8 +40,17 @@ Body:
 > lists is a design change. The two services change 3 ports (`service.ComponentManager` and the message logger) read
 > these lists, so the decision belongs with that port.
 >
-> Done when: the storage doc shows only what is in the tree, and change 3's design decides whether a declaration
-> carries one list of port-and-facts pairs, with its readers updated.
+> ### 3. `pkg/lifecycle` has two one-field structs
+>
+> `createOutcome` (`pkg/lifecycle/manager.go:318`, holding `Entity *graph.EntityState`) and `transitionOutcome`
+> (`:530`, holding `committedRevision uint64`) each wrap one value. Each can be its plain value. Simplification wave
+> PR 9b (#272, `pkg/lifecycle`) merged without them because its inventory read #153 as naming the word, not the
+> package (`openspec/changes/archive/2026-10-16-simplify-04a-08-lifecycle/inventory.md:176-177`). Line numbers are on
+> `main` at `e593a28`.
+>
+> Done when: the storage doc shows only what is in the tree; change 3's design decides whether a declaration carries
+> one list of port-and-facts pairs, with its readers updated; and `createWithSource`, `createWithRegistration` and
+> `transitionWithOutcome` return their plain values, with the two structs deleted.
 >
 > Addresses #9. Split from #153 (owner ruling 2026-10-16, recorded in
 > `openspec/changes/simplify-04a-09-component/design.md` on PR #273).
@@ -49,11 +64,3 @@ Body:
 > `Start` and `Stop`, and graph-ingest passes two different values. The fix: one refusal helper, and the cleanup given
 > once. It belongs with the guard's adoption in change 3. Line numbers are from #153's filing; find the code again by
 > function name.
-
-## Comment for #272
-
-> From #153 item 7, moved to this PR on the owner's word (2026-10-16; PR #273 closes #153). `pkg/lifecycle` has two
-> one-field structs: `createOutcome` (`pkg/lifecycle/manager.go:310`, holding `Entity *graph.EntityState`) and
-> `transitionOutcome` (`:533`, holding `committedRevision uint64`). Each can be its plain value. This PR's inventory
-> (`simplify-04a-08-lifecycle/inventory.md:154-155`) lists #153 under "names the word, not the package", but item 7
-> names this package. Please carry it, or say why it stays.

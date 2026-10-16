@@ -68,9 +68,10 @@ Review stop C (tasks 5.1–5.4).
   declarer decode with `SafeUnmarshal`; the `docs/admission-ledger.yaml` `component` row's `contract` lists these
   adaptations and its `proving_tests` drops `attack_test.go`; the `types` row's `contract` names
   `ComponentType.Validate`. Gate: `task ledger:check`, `task docs:check`.
-- [ ] 6.2 Route the rest of #153 (owner ruling 2): post the two comments in `notes/issue-153-remainder.md` on #196 and
-  #272; file its issue text, replace the placeholder there with the number, and link it from the PR body without a
-  closing keyword. Gate: both comments and the issue are read back, and the PR body's `closingIssuesReferences` is
+- [ ] 6.2 Route the rest of #153 (owner ruling 2): post the comment in `notes/issue-153-remainder.md` on #196 (item 7,
+  first meant for #272, is in the issue text, because #272 merged without it); file its issue text, replace the
+  placeholder there with the number, and link it from the PR body without a closing keyword. Gate: the comment and the
+  issue are read back, and the PR body's `closingIssuesReferences` is
   read back as #153, #189, #197.
 
 Review stop D (tasks 6.1–6.2).

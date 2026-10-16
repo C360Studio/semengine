@@ -9,7 +9,7 @@ on 2026-10-16 (`c6d006d`) without removing the two structs: on `main` at `e593a2
 `pkg/lifecycle/manager.go:318` and `transitionOutcome` is `:530`, and neither name appears in `c6d006d`'s diff of
 `manager.go` as removed. A comment on a merged PR reaches no one, so the item is item 3 of the new issue instead.
 
-New issue: **#TBD** (replace with the number once filed).
+New issue: **#280** (filed 2026-10-16). Comment on #196: 6223455889.
 
 ## New issue
 

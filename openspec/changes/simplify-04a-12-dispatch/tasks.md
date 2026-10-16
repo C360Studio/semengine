@@ -21,18 +21,21 @@ changes the signatures; only 2.4 counts a compile failure as failing.
   `TestShutdownAfterJoinReturnsNilUnderEndedContext` (64 calls, each nil) (D1). Gate: the second fails on the base
   commit. Evidence: it fails by assertion at base `185441e`; the renamed test passes there (commit `39c8d13`,
   `notes/2.2.md`).
-- [ ] 2.3 `TestKeyedPoolQueueDepthCountsWaitingItems` (`synctest`): one item in `Process`, three queued, no clock
+- [x] 2.3 `TestKeyedPoolQueueDepthCountsWaitingItems` (`synctest`): one item in `Process`, three queued, no clock
   advance, gauge 3; after `Shutdown`, 0; and `TestKeyedPoolQueueDepthSumsPoolsOfOneName` (`synctest`): two pools of
   one name on one registry, both queues occupied, combined depth; one drained, the other's count stays; a replacement
   pool of that name then counts alone; 0 after all drain (D5). Gate: both fail by assertion on the base commit.
-- [ ] 2.4 Every caller uses `SubmitBlocking(ctx, key, work)`, `NewKeyedPool(ctx, cfg)` with `Logger` and
+  Evidence: both fail by assertion at base `49327b7` (commit `1df03ef`, `notes/2.3.md`).
+- [x] 2.4 Every caller uses `SubmitBlocking(ctx, key, work)`, `NewKeyedPool(ctx, cfg)` with `Logger` and
   `MetricsRegistry` in `KeyedConfig`, and a `Process` without an error: `keyed_pool_test.go`, `shutdown_test.go`,
   `processor/graph-ingest/lifecycle_owner_test.go`, `interrupted_work_test.go`; the "nil KeyOf" case leaves
-  `TestKeyedPool_RejectsBadConfig` (D2–D4). Gate: fails to compile on the base commit.
-- [ ] 2.5 `keyed_pool_test.go` runs on the bubble clock: no `time.After` watchdog, no 100 ms or 5 s deadline, no
+  `TestKeyedPool_RejectsBadConfig` (D2–D4). Gate: fails to compile on the base commit. Evidence: 53 compile errors,
+  all in those test files, at base `1df03ef` (commit `6155380`, `notes/2.4.md`).
+- [x] 2.5 `keyed_pool_test.go` runs on the bubble clock: no `time.After` watchdog, no 100 ms or 5 s deadline, no
   `context.WithValue`; backpressure shown by `synctest.Wait()` with the submit still blocked (D6). Gate: the package
   tests pass after 3.3; `notes/2.5.md` records the `task mutate:check` run on a `SubmitBlocking` that drops instead of
-  waits, detected by `TestKeyedPool_Backpressure`.
+  waits, detected by `TestKeyedPool_Backpressure`. Evidence: rewrite in commit `6155380`; `task mutate:check` verdict
+  detection, a `default: return nil` arm caught at `keyed_pool_test.go:227` (commit `6574e16`, `notes/2.5.md`).
 
 ## 3. Implementation
 
@@ -41,19 +44,24 @@ changes the signatures; only 2.4 counts a compile failure as failing.
   the other `shutdown_test.go` tests and `TestKeyedPool_ShutdownSubmitRace` pass. Evidence: commit `32960aa`; all pass
   under `go test -race -count=3`; `task mutate:check` detection, lanes given back their context arm, caught by
   `TestSubmitAfterRunCancelIsProcessed` (`notes/3.1.md`).
-- [ ] 3.2 The key argument, one config struct, and `Process` without an error; graph-ingest's `buildIngestPool` logs
+- [x] 3.2 The key argument, one config struct, and `Process` without an error; graph-ingest's `buildIngestPool` logs
   `processIngest`'s error at Debug with the entity ID, and `component.go:1610` passes `work.entityID` (D2–D4, #136
-  items 2–4). Gate: 2.4; `task test:unit`.
-- [ ] 3.3 `metricsUpdater` removed; the queue-depth gauge counts waiting items (D5, #136 item 1). Gate: 2.3;
+  items 2–4). Gate: 2.4; `task test:unit`. Evidence: commit `6155380` (the submit is at `component.go:1595` after
+  the merge of `origin/main`); `go test -race -count=3` of `internal/dispatch` and `processor/graph-ingest/...`
+  pass, and `task test:unit` passes inside `task verify` on the commit that ticks this task (`notes/3.2.md`).
+- [x] 3.3 `metricsUpdater` removed; the queue-depth gauge counts waiting items (D5, #136 item 1). Gate: 2.3;
   `TestKeyedPool_MetricsMove`, `TestKeyedPoolWritesTheRegisteredCollector` and
-  `TestKeyedPoolReturnsARegistrationRefusal` pass.
+  `TestKeyedPoolReturnsARegistrationRefusal` pass. Evidence: commit `6155380`; all five pass under
+  `go test -race -count=3` (`notes/3.3.md`).
 
 ## 4. Documentation
 
-- [ ] 4.1 `internal/dispatch/doc.go` and `errors.go`, the `KeyOf` comment at `component.go:1567`, the `processIngest`
+- [x] 4.1 `internal/dispatch/doc.go` and `errors.go`, the `KeyOf` comment at `component.go:1567`, the `processIngest`
   comment (`keyed_ingest.go:212-215`), and the
   `internal/dispatch` ledger row's contract and `dependencies_and_side_effects` state D1–D5 (D7). Gate:
-  `task ledger:check`, `task docs:check`.
+  `task ledger:check`, `task docs:check`. Evidence: commit `60b0605` (the `KeyOf` comment is at `component.go:1552`
+  after the merge of `origin/main`; `Shutdown`'s comment is fixed there too); both gates pass, also inside
+  `task verify` on the commit that ticks this task.
 
 ## 5. Verify, review and close
 

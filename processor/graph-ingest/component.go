@@ -309,7 +309,7 @@ func (c *Config) Validate() error {
 				"check output port %q (graph-ingest writes only a kv-write output on %s)", definition.Name, graph.BucketEntityStates))
 		}
 	}
-	if _, err := canonicalMutationProvider(c.Ports); err != nil {
+	if err := requireMutationProviderPort(c.Ports); err != nil {
 		return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate", err.Error())
 	}
 	// IngestLanes < 1 clamps to serial (ADR-072). Clamp rather than reject so a

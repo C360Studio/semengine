@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/message"
+	"github.com/c360studio/semengine/natsclient"
 	semerrs "github.com/c360studio/semengine/pkg/errs"
 	"github.com/nats-io/nats.go"
 )
@@ -109,39 +111,149 @@ func TestClientClassifiesDefiniteNonDelivery(t *testing.T) {
 	})
 }
 
-// Each method is an exported boundary that returns an error, so a nil context is refused there,
-// before any request (developer contract, "Context ownership").
-func TestClientRefusesNilContext(t *testing.T) {
-	var nilCtx context.Context
-	calls := map[string]func(*Client) error{
-		"Create": func(c *Client) error {
-			_, err := c.Create(nilCtx, graph.CreateEntityRequest{Entity: &graph.EntityState{ID: clientTestEntity}})
+// clientWrite is one of the client's four writes, called with a well-formed request.
+type clientWrite struct {
+	name      string
+	operation Operation
+	call      func(context.Context, *Client) error
+}
+
+func clientWrites() []clientWrite {
+	return []clientWrite{
+		{"Create", CreateEntity, func(ctx context.Context, c *Client) error {
+			_, err := c.Create(ctx, graph.CreateEntityRequest{Entity: &graph.EntityState{ID: clientTestEntity}})
 			return err
-		},
-		"Reconcile": func(c *Client) error {
-			_, err := c.Reconcile(nilCtx, graph.ReconcilePredicatesRequest{EntityID: clientTestEntity})
+		}},
+		{"Reconcile", ReconcilePredicates, func(ctx context.Context, c *Client) error {
+			_, err := c.Reconcile(ctx, graph.ReconcilePredicatesRequest{EntityID: clientTestEntity})
 			return err
-		},
-		"Append": func(c *Client) error {
-			_, err := c.Append(nilCtx, graph.AppendTriplesRequest{Triples: []message.Triple{{
+		}},
+		{"Append", AppendTriples, func(ctx context.Context, c *Client) error {
+			_, err := c.Append(ctx, graph.AppendTriplesRequest{Triples: []message.Triple{{
 				Subject: clientTestEntity, Predicate: "test.value.name", Object: "one",
 			}}})
 			return err
-		},
-		"Delete": func(c *Client) error {
-			_, err := c.Delete(nilCtx, graph.DeleteEntityRequest{EntityID: clientTestEntity, ExpectedRevision: 1})
+		}},
+		{"Delete", DeleteEntity, func(ctx context.Context, c *Client) error {
+			_, err := c.Delete(ctx, graph.DeleteEntityRequest{EntityID: clientTestEntity, ExpectedRevision: 1})
 			return err
-		},
+		}},
 	}
-	for name, call := range calls {
-		t.Run(name, func(t *testing.T) {
+}
+
+// TestClientReportsRefusalBeforeSendingAsUnavailable: natsclient returns ErrNotConnected and
+// ErrCircuitOpen only before its one send (natsclient/request.go, RequestWithHeaders), so the
+// client reports either as unavailable, not committed, with the sentinel still reachable (design
+// D1, #268). The real never-connected natsclient.Client shows the production requester returns
+// the sentinel this way; it dials nothing.
+func TestClientReportsRefusalBeforeSendingAsUnavailable(t *testing.T) {
+	assertUnavailable := func(t *testing.T, err error, operation Operation, sentinel error) {
+		t.Helper()
+		var transport *TransportError
+		if !errors.As(err, &transport) || transport.Operation != operation ||
+			transport.Outcome != TransportUnavailable || !IsDefinitelyNotCommitted(err) || !errors.Is(err, sentinel) {
+			t.Fatalf("error = %#v; want a %s unavailable transport error reaching %v", err, operation, sentinel)
+		}
+	}
+	for _, sentinel := range []error{natsclient.ErrNotConnected, natsclient.ErrCircuitOpen} {
+		for _, write := range clientWrites() {
+			t.Run(sentinel.Error()+"/"+write.name, func(t *testing.T) {
+				fake := &fakeRequester{err: sentinel}
+				client, err := NewClient(fake, time.Second)
+				if err != nil {
+					t.Fatal(err)
+				}
+				assertUnavailable(t, write.call(context.Background(), client), write.operation, sentinel)
+				if len(fake.calls) != 1 {
+					t.Fatalf("calls = %d, want 1", len(fake.calls))
+				}
+			})
+		}
+	}
+	for _, write := range clientWrites() {
+		t.Run("never connected natsclient/"+write.name, func(t *testing.T) {
+			nc, err := natsclient.NewClient("nats://unused")
+			if err != nil {
+				t.Fatal(err)
+			}
+			client, err := NewClient(nc, time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertUnavailable(t, write.call(context.Background(), client), write.operation, natsclient.ErrNotConnected)
+		})
+	}
+}
+
+// assertInvalidRequest checks that err is the client's own refusal before sending: class invalid,
+// code invalid_request (design D2), so projection reads it as not committed.
+func assertInvalidRequest(t *testing.T, err error) {
+	t.Helper()
+	var classified *semerrs.ClassifiedError
+	if !errors.As(err, &classified) || classified.Class != semerrs.ErrorInvalid ||
+		classified.Code != graph.ErrorCodeInvalidRequest || !semerrs.IsInvalid(err) {
+		t.Fatalf("error = %#v; want class invalid, code %q", err, graph.ErrorCodeInvalidRequest)
+	}
+}
+
+// Each method is an exported boundary that returns an error, so a nil context is refused there,
+// before any request (developer contract, "Context ownership"), as the client's own refusal:
+// invalid, code invalid_request (design D2).
+func TestClientRefusesNilContext(t *testing.T) {
+	var nilCtx context.Context
+	for _, write := range clientWrites() {
+		t.Run(write.name, func(t *testing.T) {
 			fake := &fakeRequester{}
 			client, err := NewClient(fake, time.Second)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := call(client); err == nil || len(fake.calls) != 0 {
-				t.Fatalf("error = %v, calls = %d; want a refusal before any request", err, len(fake.calls))
+			assertInvalidRequest(t, write.call(nilCtx, client))
+			if len(fake.calls) != 0 {
+				t.Fatalf("calls = %d; want a refusal before any request", len(fake.calls))
+			}
+		})
+	}
+}
+
+// TestClientRefusesUnencodableAndEntitylessRequests: a request the client cannot send (a nil
+// client, a value encoding/json refuses, a create with no entity) is refused before sending as
+// invalid with code invalid_request, and no request goes out (design D2, #268, #137 item a).
+func TestClientRefusesUnencodableAndEntitylessRequests(t *testing.T) {
+	t.Run("nil client", func(t *testing.T) {
+		var client *Client
+		for _, write := range clientWrites() {
+			assertInvalidRequest(t, write.call(context.Background(), client))
+		}
+	})
+	tests := []struct {
+		name string
+		call func(*Client) error
+	}{
+		{"append with a NaN object", func(c *Client) error {
+			_, err := c.Append(context.Background(), graph.AppendTriplesRequest{Triples: []message.Triple{{
+				Subject: clientTestEntity, Predicate: "test.value.score", Object: math.NaN(),
+			}}})
+			return err
+		}},
+		{"create with no entity", func(c *Client) error {
+			_, err := c.Create(context.Background(), graph.CreateEntityRequest{})
+			return err
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			// A reply that would pass every check, so only a refusal before sending fails the call.
+			fake := &fakeRequester{reply: mustJSON(t, graph.CreateEntityResponse{
+				Outcome: graph.MutationApplied, Entity: &graph.EntityState{ID: clientTestEntity}, KVRevision: 1,
+			})}
+			client, err := NewClient(fake, time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertInvalidRequest(t, test.call(client))
+			if len(fake.calls) != 0 {
+				t.Fatalf("calls = %d; want a refusal before any request", len(fake.calls))
 			}
 		})
 	}

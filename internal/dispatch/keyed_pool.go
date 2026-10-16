@@ -268,9 +268,10 @@ func (p *KeyedPool[W]) runOne(ctx context.Context, lane int, item keyedItem[W]) 
 
 // Shutdown is the pool's only stop: it stops accepting new work (a
 // SubmitBlocking call that begins after the first Shutdown returns
-// ErrStopped; one already waiting on a full lane may still be accepted,
-// and is processed), lets each lane process its queued items, and returns nil once every lane has
-// exited, also when ctx has ended by then. If ctx ends first it returns
+// ErrStopped; one already waiting on a full lane may still be
+// accepted, and is processed), lets each lane process its queued
+// items, and returns nil once every lane has exited, also when ctx has
+// ended by then. If ctx ends first it returns
 // ctx.Err(); the lanes keep processing and exit once their queues are
 // empty, and a later Shutdown returns nil. Given a ctx with no
 // deadline, Shutdown waits for the join however long it takes: it has

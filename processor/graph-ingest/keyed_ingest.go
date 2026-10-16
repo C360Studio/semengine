@@ -199,8 +199,9 @@ func (c *Component) buildIngestPool(poolCtx context.Context) error {
 	return nil
 }
 
-// processIngest is the keyed pool's per-item handler, run on lane `lane`'s
-// goroutine with the lane context, the pool context Start derives. It runs the
+// processIngest is the keyed pool's per-item handler (buildIngestPool's Process
+// calls it and logs a returned error at Debug), run on lane `lane`'s goroutine
+// with the lane context, the pool context Start derives. It runs the
 // input's application (applyIngest) inside natsclient.ConsumeDeliveryWithHeartbeat
 // (design D8, "Long apply"): while the application runs, the server is told every
 // heartbeat interval that the input is still in progress, and when it returns,
@@ -216,9 +217,11 @@ func (c *Component) processIngest(ctx context.Context, lane int, work ingestWork
 		})
 	if err != nil {
 		// Start checked the port's pair before it created the consumer, so the policy is
-		// refused once the lane context has ended: at Stop, when the pool's Shutdown runs
-		// out of time while lanes drain. Nothing is applied; the input is negatively
-		// acknowledged, the shutdown disposition, and delivered again.
+		// refused only once the lane context has ended: when Start's context ends, or at
+		// Stop, which ends it after the pool's Shutdown returns or runs out of time. Ending
+		// it stops no lane, so every input still queued reaches here. Nothing is applied;
+		// the input is negatively acknowledged, the shutdown disposition, and delivered
+		// again.
 		c.logger.Warn("graph-ingest: input not applied, its delivery policy was refused; redelivering",
 			slog.String("entity_id", work.entityID), slog.Any("error", err))
 		result := natsclient.SettleDelivery(work.msg, natsclient.DeliveryDecisionRetry, err)

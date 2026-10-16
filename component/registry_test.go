@@ -54,7 +54,7 @@ func TestListFactories_PreservesSchemaAndName(t *testing.T) {
 
 	// Mock factory function
 	mockFactory := func(_ json.RawMessage, _ Dependencies) (Discoverable, error) {
-		return &SimpleMockComponent{name: "my-instance", config: map[string]any{"type": "processor"}}, nil
+		return &SimpleMockComponent{name: "my-instance"}, nil
 	}
 
 	reg := Registration{
@@ -163,7 +163,7 @@ func TestRegister_DependenciesMetadata(t *testing.T) {
 	registry := NewRegistry()
 
 	mockFactory := func(_ json.RawMessage, _ Dependencies) (Discoverable, error) {
-		return &SimpleMockComponent{name: "my-instance", config: map[string]any{"type": "processor"}}, nil
+		return &SimpleMockComponent{name: "my-instance"}, nil
 	}
 
 	err := registry.Register(Registration{

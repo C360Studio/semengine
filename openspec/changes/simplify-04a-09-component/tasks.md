@@ -51,7 +51,7 @@ Review stop B (tasks 4.1–4.3).
 - [x] 5.2 `ConfigSchema()` and `Meta()` leave `Discoverable`, graph-ingest and the test components; `Metadata` is
   deleted; graph-ingest names its consumer with `c.name`; its schema test reads the registration (D6). Gate: 5.1
   passes; `task test:unit`; `go test -tags integration -race ./component/ ./processor/graph-ingest/`.
-- [ ] 5.3 `SimpleMockComponent` moves into a `_test.go` file; `createSimpleMockComponent`, `attack_test.go`,
+- [x] 5.3 `SimpleMockComponent` moves into a `_test.go` file; `createSimpleMockComponent`, `attack_test.go`,
   `ValidateConfig`, `ValidationError` and their tests are deleted (D7, D9). Gate: `task build`, `task lint`,
   `task cover:check`.
 - [ ] 5.4 The `LifecycleComponent` doc lists ADR-108 Decision 3's rules as outcomes; the `component.PlatformMeta` alias

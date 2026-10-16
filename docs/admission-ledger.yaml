@@ -2120,10 +2120,17 @@
     (1) Watch and WatchEvents run callback on caller's goroutine, refuse nil ctx or callback, and
     fail closed on projection/poison/premature-close errors (design D5); (2) statements and raw-wire
     reconciles carry graph.SourceLifecycle ("semengine-lifecycle", design D15); (3) created entities
-    carry no Version (#100); (4) nil NATS client returns ErrEmitFailed without panicking (#102);
-    (5) CreateFromOperator refuses trailing non-whitespace JSON (#152); (6) Create attach-reconcile
-    reread failures preserve their error chain and class; (7) ErrEntityNotFound and
-    ErrAlreadyExists mappings wrap the classified refusal
+    carry no Version (#100); (4) a manager built with no NATS client registers and describes
+    workflows, and every call that needs NATS fails at its first read with one unclassified "manager
+    has no NATS client" error, without panicking (#102, #154); (5) CreateFromOperator refuses
+    trailing non-whitespace JSON (#152); (6) Create attach-reconcile reread failures preserve their
+    error chain and class; (7) ErrEntityNotFound and ErrAlreadyExists mappings wrap the classified
+    refusal; (8) emitter create, reconcile, and delete failures report through
+    projection.ClassifyMutationError (#257); (9) Complete and DespawnWith pick the first terminal in
+    the current phase's declared out-edges (#193); (10) Children pages kept children in link order,
+    reading at most Offset + Limit + (children left out) links, leaves out only absent and
+    non-lifecycle children, and fails on any other child read error, including an unregistered child
+    workflow (#193)
   dependencies_and_side_effects: >-
     graph, graph/kvcatalog, internal/graphmutation, message, natsclient, payloadregistry, pkg/errs,
     pkg/projection, pkg/types, vocabulary (in-set); github.com/google/uuid, nats.go/jetstream
@@ -2132,7 +2139,7 @@
   proving_tests: >-
     pkg/lifecycle/source_test.go, transition_phase_integration_test.go, graph_emit_test.go,
     graph_emit_contract_test.go, watch_test.go, watch_atomic_bootstrap_test.go, manager_test.go,
-    manager_integration_test.go, harness_gate_integration_test.go
+    manager_integration_test.go, harness_gate_integration_test.go, children_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 

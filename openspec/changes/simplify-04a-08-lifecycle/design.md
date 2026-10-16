@@ -166,6 +166,12 @@ first. No other open PR shares a file. #268 can land before or after this PR.
 
 Answered 2026-10-16 (#154 comment 6214484329): all three yes, as recommended.
 
+| Ruling (2026-10-16) | Implementation | Proving test |
+| --- | --- | --- |
+| 1. Keep the no-client manager; one refusal | `pkg/lifecycle/errors.go:156` (`errNoNATSClient`), returned at `manager.go:203` and `:218` (D2, `56f1737`) | `TestManagerWithoutClientRefusesNATSWork` (`graph_emit_test.go:14`) |
+| 2. Complete picks the first declared terminal | pending: task 3.5 (D5) | pending: task 2.4 |
+| 3. Children fails on an unreadable child | pending: task 3.6 (D6) | pending: task 2.5 |
+
 1. **Keep allowing a manager with no NATS client? Recommended: yes.** The issue suggested refusing it. But semboids
    and semteams build one in three tests just to check that a workflow registers, and refusing it would change the
    constructor at all seven places their code calls it. Instead, such a manager still registers workflows, and

@@ -161,10 +161,11 @@ func TestNoRespondersIsTransientAndNotCommitted(t *testing.T) {
 	}
 }
 
-// classifiedRefusalRequester answers every request with the graph's classified refusal: class
-// invalid, the given code, and a detail naming the entity. natsclient.ClassifyReply decodes the
-// reply, as RequestClassified does in production.
+// classifiedRefusalRequester answers every request with the graph's classified error reply: the
+// given class (invalid when empty) and code, and a detail naming the entity.
+// natsclient.ClassifyReply decodes the reply, as RequestClassified does in production.
 type classifiedRefusalRequester struct {
+	class    string
 	code     string
 	entityID string
 }
@@ -175,7 +176,11 @@ func (r classifiedRefusalRequester) RequestClassified(context.Context, string, [
 		Data:   []byte(`{"message":"refused by the graph","detail":{"entity_id":"` + r.entityID + `"}}`),
 	}
 	msg.Header.Set(natsclient.HeaderStatus, natsclient.HeaderStatusError)
-	msg.Header.Set(natsclient.HeaderErrorClass, natsclient.ErrorClassInvalid)
+	class := r.class
+	if class == "" {
+		class = natsclient.ErrorClassInvalid
+	}
+	msg.Header.Set(natsclient.HeaderErrorClass, class)
 	msg.Header.Set(natsclient.HeaderErrorCode, r.code)
 	return natsclient.ClassifyReply(msg)
 }
@@ -245,6 +250,104 @@ func TestEmitMappingsKeepTheClassifiedCause(t *testing.T) {
 			}
 			if class := errs.Classify(err); class != errs.ErrorInvalid {
 				t.Errorf("errs.Classify = %v, want invalid", class)
+			}
+		})
+	}
+}
+
+// TestInternalReplyIsCommitUnknownAndNotRetryable: graph-ingest's transient internal reply can
+// follow a write the bucket did not confirm, so for every lifecycle write it is commit-unknown and
+// fatal, never retryable, and is not reported as ErrEmitFailed (projection-mutation spec, "A
+// lifecycle write answered after a possible write"; #257).
+func TestInternalReplyIsCommitUnknownAndNotRetryable(t *testing.T) {
+	t.Parallel()
+	for _, operation := range emitWriteOperations() {
+		t.Run(operation.name, func(t *testing.T) {
+			t.Parallel()
+			requester := classifiedRefusalRequester{
+				class: natsclient.ErrorClassTransient, code: graph.ErrorCodeInternal,
+				entityID: "acme.ops.test.system.widget.001",
+			}
+			client, err := graphmutation.NewClient(requester, time.Second)
+			if err != nil {
+				t.Fatalf("NewClient: %v", err)
+			}
+			err = operation.call(&graphEmitterNATS{client: client})
+			var mutationErr *projection.MutationError
+			if !errors.As(err, &mutationErr) {
+				t.Fatalf("error = %v, want a *projection.MutationError", err)
+			}
+			if mutationErr.Operation != operation.operation ||
+				mutationErr.Kind != projection.MutationCommitUnknown ||
+				mutationErr.Commit != projection.CommitUnknown ||
+				mutationErr.Class != errs.ErrorFatal ||
+				mutationErr.Code != graph.ErrorCodeInternal {
+				t.Errorf("error = %+v; want %s commit_unknown, class fatal, code internal",
+					mutationErr, operation.operation)
+			}
+			if errs.IsTransient(err) {
+				t.Errorf("errs.IsTransient = true; a write that may have committed is never retryable (err=%v)", err)
+			}
+			if errors.Is(err, ErrEmitFailed) {
+				t.Errorf("error matches ErrEmitFailed: %v", err)
+			}
+		})
+	}
+}
+
+// TestCancelledContextSendsNothingAndIsNotCommitted: a write whose context ended before the
+// request was sent reached no broker, so it is not committed, unavailable and transient, and the
+// cancellation stays reachable (projection-mutation spec, "A lifecycle write whose context ended
+// before sending").
+func TestCancelledContextSendsNothingAndIsNotCommitted(t *testing.T) {
+	t.Parallel()
+	entity := &graph.EntityState{ID: "acme.ops.test.system.widget.001"}
+	writes := []struct {
+		name      string
+		operation projection.MutationOperation
+		call      func(context.Context, *graphEmitterNATS) error
+	}{
+		{"create", projection.MutationOperationCreate, func(ctx context.Context, emitter *graphEmitterNATS) error {
+			_, err := emitter.create(ctx, &graph.CreateEntityRequest{Entity: entity})
+			return err
+		}},
+		{"reconcile", projection.MutationOperationReconcile, func(ctx context.Context, emitter *graphEmitterNATS) error {
+			_, err := emitter.reconcile(ctx, &graph.ReconcilePredicatesRequest{
+				EntityID: entity.ID, ExpectedRevision: 9, Predicates: []string{"test.state.value"},
+			})
+			return err
+		}},
+		{"delete", projection.MutationOperationDelete, func(ctx context.Context, emitter *graphEmitterNATS) error {
+			_, err := emitter.delete(ctx, &graph.DeleteEntityRequest{EntityID: entity.ID, ExpectedRevision: 9})
+			return err
+		}},
+	}
+	for _, w := range writes {
+		t.Run(w.name, func(t *testing.T) {
+			t.Parallel()
+			requester := &mutationFaultRequester{}
+			client, err := graphmutation.NewClient(requester, time.Second)
+			if err != nil {
+				t.Fatalf("NewClient: %v", err)
+			}
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			err = w.call(ctx, &graphEmitterNATS{client: client})
+			if requester.calls != 0 {
+				t.Errorf("requester calls = %d, want none: the context ended before sending", requester.calls)
+			}
+			var mutationErr *projection.MutationError
+			if !errors.As(err, &mutationErr) {
+				t.Fatalf("error = %v, want a *projection.MutationError", err)
+			}
+			if mutationErr.Operation != w.operation ||
+				mutationErr.Kind != projection.MutationUnavailable ||
+				mutationErr.Commit != projection.CommitNotCommitted ||
+				mutationErr.Class != errs.ErrorTransient {
+				t.Errorf("error = %+v; want %s unavailable, not committed, class transient", mutationErr, w.operation)
+			}
+			if !errors.Is(err, context.Canceled) {
+				t.Errorf("errors.Is(err, context.Canceled) = false: %v", err)
 			}
 		})
 	}

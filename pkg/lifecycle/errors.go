@@ -130,12 +130,14 @@ var (
 	ErrUpdateRetriesExhausted error = errs.Classified(errs.ErrorTransient,
 		errors.New("lifecycle: Update retry budget exhausted (persistent CAS contention)"))
 
-	// ErrEmitFailed is returned by Manager state-change operations
-	// when the graph-ingest reconcile request fails — typically because
-	// graph-ingest is down, the request handler returns a non-CAS
-	// error, or the NATS transport itself errors. Wraps the
-	// underlying transport / handler error so callers can branch
-	// on transient-vs-permanent.
+	// ErrEmitFailed is returned by CreateFromOperator when graph-ingest
+	// reported the create as applied but its response cannot be read
+	// back: the response has no entity, or the committed entity does not
+	// project into the workflow's Schema. A write request that fails is
+	// not ErrEmitFailed: it is a *projection.MutationError naming its
+	// commit state (projection.ClassifyMutationError), wrapped in
+	// ErrEntityNotFound or ErrAlreadyExists when graph-ingest refused it
+	// for that reason.
 	ErrEmitFailed = errors.New("lifecycle: emit to graph-ingest failed")
 
 	// ErrEntityIDPatternMismatch is returned by Manager.Create (gh#814) and by

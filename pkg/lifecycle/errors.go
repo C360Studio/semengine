@@ -141,9 +141,9 @@ var (
 	ErrEmitFailed = errors.New("lifecycle: emit to graph-ingest failed")
 
 	// ErrEntityIDPatternMismatch is returned by Manager.Create (gh#814) and by
-	// Manager.Despawn / DespawnWith
-	// when the given entityID does not match the named (and registered)
-	// workflow's EntityIDPattern. Distinct from ErrWorkflowNotRegistered (the
+	// Manager.Despawn / DespawnWith when the given entityID is not a valid
+	// entity ID or does not match the named (and registered) workflow's
+	// EntityIDPattern; for a malformed ID the message carries the reason. Distinct from ErrWorkflowNotRegistered (the
 	// workflow itself is known) — this scopes a reclaim to a known workflow and
 	// refuses to emit a delete for an entity that provably belongs to a
 	// different pattern (a caller wire-up bug: wrong workflow for the entity).

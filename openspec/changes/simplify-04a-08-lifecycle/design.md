@@ -85,7 +85,7 @@ Every "is this ID this workflow's" check uses `semtypes.MatchEntityIDPattern`. C
 report a malformed ID as `ErrEntityIDPatternMismatch` with the reason, as Create already does. List, Watch and the
 registration lookup treat a malformed key as not a match. A malformed key cannot be a workflow's entity: only
 graph-ingest writes `ENTITY_STATES`, and it validates every ID before writing (inventory § 1). `matchPattern` and
-`TestMatchPattern` go. Proving test: a Despawn of a six-part ID with an uppercase segment returns
+`TestMatchPattern` go. Proving test: a Despawn of a six-part ID with a segment starting with `-` returns
 `ErrEntityIDPatternMismatch` and sends no delete. Base already sends no delete for it (its read refuses the ID), so
 the test fails on base only on the error type.
 
@@ -169,7 +169,7 @@ Answered 2026-10-16 (#154 comment 6214484329): all three yes, as recommended.
 | Ruling (2026-10-16) | Implementation | Proving test |
 | --- | --- | --- |
 | 1. Keep the no-client manager; one refusal | `pkg/lifecycle/errors.go:156` (`errNoNATSClient`), returned at `manager.go:203` and `:218` (D2, `56f1737`) | `TestManagerWithoutClientRefusesNATSWork` (`graph_emit_test.go:14`) |
-| 2. Complete picks the first declared terminal | pending: task 3.5 (D5) | pending: task 2.4 |
+| 2. Complete picks the first declared terminal | `pkg/lifecycle/manager.go:808` (`selectReachableTerminal` walks the current phase's out-edges; Complete calls it at `:776`) (D5) | `TestManager_CompleteFollowsDeclaredEdgeOrder` (`manager_test.go:1282`) |
 | 3. Children fails on an unreadable child | pending: task 3.6 (D6) | pending: task 2.5 |
 
 1. **Keep allowing a manager with no NATS client? Recommended: yes.** The issue suggested refusing it. But semboids

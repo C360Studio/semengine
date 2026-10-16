@@ -1,10 +1,12 @@
 package lifecycle
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"strings"
 	"sync"
@@ -1239,6 +1241,89 @@ func TestManager_Despawn_RejectsPatternMismatch(t *testing.T) {
 	}
 	if len(emitter.deletes) != 0 {
 		t.Errorf("no delete should be emitted on pattern mismatch, got %d", len(emitter.deletes))
+	}
+}
+
+// TestManager_DespawnRefusesAMalformedEntityIDAsAPatternMismatch: a six-part ID the workflow's
+// glob would accept but that is not a valid entity ID (a segment starting with '-') is refused by
+// Despawn and DespawnWith the way Create refuses it, as ErrEntityIDPatternMismatch, and no
+// delete is sent (design D4).
+func TestManager_DespawnRefusesAMalformedEntityIDAsAPatternMismatch(t *testing.T) {
+	t.Parallel()
+	const malformed = "c360.platform1.gcs.lifecycle.mission.-bad"
+	for _, tt := range []struct {
+		name    string
+		despawn func(*Manager) error
+	}{
+		{"Despawn", func(mgr *Manager) error { return mgr.Despawn(context.Background(), "fixture", malformed) }},
+		{"DespawnWith", func(mgr *Manager) error {
+			return mgr.DespawnWith(context.Background(), "fixture", malformed, TransitionSourceRule, "cull")
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			mgr, emitter, _ := newTestManager(t)
+			err := tt.despawn(mgr)
+			if !errors.Is(err, ErrEntityIDPatternMismatch) {
+				t.Errorf("%s(%q) error = %v, want ErrEntityIDPatternMismatch", tt.name, malformed, err)
+			}
+			if len(emitter.deletes) != 0 || len(emitter.requests) != 0 {
+				t.Errorf("%s(%q) sent deletes %+v and writes %+v, want none", tt.name, malformed,
+					emitter.deletes, emitter.requests)
+			}
+		})
+	}
+}
+
+// TestManager_CompleteFollowsDeclaredEdgeOrder: when several terminal phases are reachable,
+// Complete and DespawnWith pick the first one in the current phase's declared out-edges, not the
+// first by name, and still log the ambiguity (design D5, owner question 2). The fixture declares
+// "flying": {"completed", "aborted"}, so edge order says completed and name order says aborted.
+func TestManager_CompleteFollowsDeclaredEdgeOrder(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name string
+		end  func(context.Context, *Manager, string) error
+	}{
+		{"Complete", func(ctx context.Context, mgr *Manager, id string) error {
+			return mgr.Complete(ctx, "fixture", id)
+		}},
+		{"DespawnWith", func(ctx context.Context, mgr *Manager, id string) error {
+			return mgr.DespawnWith(ctx, "fixture", id, TransitionSourceRule, "cull")
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var logs bytes.Buffer
+			bucket := newFakeBucket()
+			emitter := &fakeEmitter{bucket: bucket}
+			mgr := newManagerForTest(slog.New(slog.NewJSONHandler(&logs, nil)), emitter, bucket)
+			if err := mgr.Register(lifecycle{}.fixtureWorkflow()); err != nil {
+				t.Fatalf("Register: %v", err)
+			}
+			ctx := context.Background()
+			id := "c360.platform1.gcs.lifecycle.mission.edge-order"
+			if err := mgr.Create(ctx, &fixtureMission{ID: id, PhaseF: "flying"}); err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			if err := tt.end(ctx, mgr, id); err != nil {
+				t.Fatalf("%s: %v", tt.name, err)
+			}
+			var phases []any
+			for _, r := range emitter.requests {
+				for _, tr := range r.Desired {
+					if tr.Predicate == "mission.lifecycle.phase" {
+						phases = append(phases, tr.Object)
+					}
+				}
+			}
+			if len(phases) != 1 || phases[0] != "completed" {
+				t.Errorf("%s wrote phases %v, want [completed]", tt.name, phases)
+			}
+			if !strings.Contains(logs.String(), `"from":"flying","picked":"completed","alternatives":["aborted"]`) {
+				t.Errorf("%s logged %s, want the ambiguity Warn naming completed over aborted", tt.name, logs.String())
+			}
+		})
 	}
 }
 

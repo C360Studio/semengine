@@ -184,25 +184,3 @@ func TestProjectPatchToTriples_RejectsNonOperatorWritable(t *testing.T) {
 		t.Errorf("removes wrong: %+v", removes)
 	}
 }
-
-func TestMatchPattern(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		pattern, id string
-		want        bool
-	}{
-		{"*.lifecycle.gcs.mission.*", "c360.lifecycle.gcs.mission.001", true}, // 5 vs 5 parts
-		{"*.lifecycle.gcs.mission.*", "c360.lifecycle.gcs.mission.001.extra", false},
-		{"*.*.gcs.lifecycle.mission.*", "c360.x.gcs.lifecycle.mission.001", true}, // 6 vs 6
-		{"*.lifecycle.gcs.mission.*.*", "c360.lifecycle.gcs.mission.x.001", true},
-		{"*.lifecycle.gcs.mission.*.*", "c360.lifecycle.gcs.drone.x.001", false},
-		{"c360.*.*.*.*.001", "c360.a.b.c.d.001", true},
-		{"c360.*.*.*.*.001", "acme.a.b.c.d.001", false},
-		{"*", "anything", true},
-	}
-	for _, tt := range tests {
-		if got := matchPattern(tt.pattern, tt.id); got != tt.want {
-			t.Errorf("matchPattern(%q, %q) = %v, want %v", tt.pattern, tt.id, got, tt.want)
-		}
-	}
-}

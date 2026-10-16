@@ -18,7 +18,6 @@ import (
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
-	semtypes "github.com/c360studio/semengine/pkg/types"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -369,21 +368,10 @@ func (m *Manager) createWithRegistration(ctx context.Context, reg *registration,
 	// before any KV access, and refused for every caller rather than only the
 	// operator lane: an unreclaimable orphan is not better because app code made
 	// it.
-	// semtypes.MatchEntityIDPattern, not the package-local matchPattern: the
-	// local glob compares segment counts and wildcards and validates NOTHING
-	// about the ID itself, so `..lifecycle.gcs.mission.` and IDs with spaces or
-	// uppercase match it, reach graph-ingest, and come back as a classified
-	// invalid — which surfaces to an operator as a canned 500. Rejecting the
-	// literal here keeps a malformed ID a stable 400 and keeps it away from
-	// every downstream side effect.
-	matched, err := semtypes.MatchEntityIDPattern(reg.workflow.EntityIDPattern, entityID)
-	if err != nil {
-		return createOutcome{}, fmt.Errorf("%w: workflow=%q entity_id=%q pattern=%q: %s",
-			ErrEntityIDPatternMismatch, reg.workflow.Name, entityID, reg.workflow.EntityIDPattern, err.Error())
-	}
-	if !matched {
-		return createOutcome{}, fmt.Errorf("%w: workflow=%q entity_id=%q pattern=%q",
-			ErrEntityIDPatternMismatch, reg.workflow.Name, entityID, reg.workflow.EntityIDPattern)
+	// A malformed ID is refused here too, so it stays a stable 400 and never
+	// reaches graph-ingest.
+	if err := checkWorkflowEntityID(reg, entityID); err != nil {
+		return createOutcome{}, err
 	}
 	// Validate the initial Phase is declared in the transitions
 	// table — typo at Create time is friendlier than typo discovered
@@ -780,10 +768,11 @@ func (m *Manager) UpdateFromOperator(ctx context.Context, workflow, entityID str
 		ErrUpdateRetriesExhausted, reg.workflow.Name, entityID, updateRetries, lastErr)
 }
 
-// Complete transitions the entity to the first terminal phase
-// REACHABLE from its current phase, deterministically. Errors with
-// ErrTerminalPhase if the entity is already terminal, or
-// ErrInvalidTransition if no terminal phase is reachable.
+// Complete transitions the entity to the first terminal phase in its current
+// phase's declared out-edges: a workflow's author chooses the end phase by
+// listing it first. When more than one terminal is reachable it logs a Warn
+// naming the pick. Errors with ErrTerminalPhase if the entity is already
+// terminal, or ErrInvalidTransition if no terminal phase is reachable.
 func (m *Manager) Complete(ctx context.Context, workflow, entityID string) error {
 	reg, err := m.lookupByWorkflow(workflow)
 	if err != nil {
@@ -809,27 +798,21 @@ func (m *Manager) Complete(ctx context.Context, workflow, entityID string) error
 	return m.Transition(ctx, workflow, entityID, terminal, TransitionSourceFramework, "")
 }
 
-// selectReachableTerminal returns the terminal phase deterministically
-// reachable from `from` — the first declared terminal with a direct out-edge
-// from `from`. This is the selection Complete and DespawnWith share. It logs a
-// Warn when the choice is ambiguous (more than one terminal reachable) and
-// returns ErrInvalidTransition when none is. Callers MUST have already
+// selectReachableTerminal returns the first terminal phase in `from`'s
+// declared out-edges. This is the selection Complete and DespawnWith share. It
+// logs a Warn when the choice is ambiguous (more than one terminal reachable)
+// and returns ErrInvalidTransition when none is. Callers MUST have already
 // confirmed `from` is non-terminal.
 func (m *Manager) selectReachableTerminal(reg *registration, entityID, from string) (string, error) {
-	outEdges := reg.workflow.Transitions[from]
-	terminals := reg.workflow.Transitions.TerminalPhases()
 	var reachable []string
-	for _, terminal := range terminals {
-		for _, e := range outEdges {
-			if e == terminal {
-				reachable = append(reachable, terminal)
-				break
-			}
+	for _, to := range reg.workflow.Transitions[from] {
+		if reg.workflow.Transitions.IsTerminal(to) {
+			reachable = append(reachable, to)
 		}
 	}
 	if len(reachable) == 0 {
 		return "", fmt.Errorf("%w: workflow=%q entity_id=%q phase=%q has no edge to any terminal phase (declared terminals: %v)",
-			ErrInvalidTransition, reg.workflow.Name, entityID, from, terminals)
+			ErrInvalidTransition, reg.workflow.Name, entityID, from, reg.workflow.Transitions.TerminalPhases())
 	}
 	if len(reachable) > 1 {
 		m.logger.Warn("lifecycle: terminal selection is ambiguous — multiple terminals reachable from current phase; consider Transition for explicit selection",
@@ -843,7 +826,9 @@ func (m *Manager) selectReachableTerminal(reg *registration, entityID, from stri
 }
 
 // Fail transitions the entity to the "failed" terminal phase,
-// carrying the reason in the audit Note predicate. Errors if no
+// carrying the reason in the audit Note predicate. It is a Transition to
+// "failed": the entity's current phase must declare an out-edge to "failed",
+// or Fail returns ErrInvalidTransition as Transition does. Errors too if no
 // "failed" phase is declared on the workflow (apps must call
 // Transition explicitly with their preferred error-state phase
 // otherwise).
@@ -872,9 +857,10 @@ func (m *Manager) Fail(ctx context.Context, workflow, entityID, reason string) e
 // transition the entity to a terminal phase first; a caller that wants a
 // terminal audit trail should Complete/Fail beforehand, or use DespawnWith.
 //
-// workflow MUST be registered and its EntityIDPattern MUST match entityID; a
-// mismatch returns ErrEntityIDPatternMismatch and emits no delete (scopes the
-// reclaim to a known workflow and refuses a delete for a foreign entity).
+// workflow MUST be registered and entityID MUST be a valid entity ID matching
+// its EntityIDPattern; otherwise Despawn returns ErrEntityIDPatternMismatch and
+// emits no delete (scopes the reclaim to a known workflow and refuses a delete
+// for a foreign entity).
 //
 // RECLAIM ≠ INDEX GC: Despawn removes the entity from ENTITY_STATES but does
 // NOT clean derived indexes (PREDICATE/NAME/ALIAS/CONTEXT/spatial/embedding) —
@@ -886,9 +872,8 @@ func (m *Manager) Despawn(ctx context.Context, workflow, entityID string) error 
 	if err != nil {
 		return err
 	}
-	if !matchPattern(reg.workflow.EntityIDPattern, entityID) {
-		return fmt.Errorf("%w: workflow=%q entity_id=%q pattern=%q",
-			ErrEntityIDPatternMismatch, reg.workflow.Name, entityID, reg.workflow.EntityIDPattern)
+	if err := checkWorkflowEntityID(reg, entityID); err != nil {
+		return err
 	}
 	_, revision, err := m.getEntity(ctx, entityID)
 	if err != nil {
@@ -909,8 +894,8 @@ func (m *Manager) Despawn(ctx context.Context, workflow, entityID string) error 
 // DespawnWith is the common cull: it transitions the entity to its workflow's
 // terminal phase (producing the phase write + audit TransitionEvent with the
 // given source/note), then conditionally reclaims exactly the revision committed
-// by that transition. The terminal is selected like Complete (first reachable
-// terminal from the current phase).
+// by that transition. The terminal is selected like Complete (the first
+// terminal in the current phase's declared out-edges).
 //
 // The two graph-ingest operations are NOT atomic. On partial failure the state
 // is recoverable, never corrupt: if the terminal transition commits but the
@@ -927,9 +912,8 @@ func (m *Manager) DespawnWith(ctx context.Context, workflow, entityID string, so
 	if err != nil {
 		return err
 	}
-	if !matchPattern(reg.workflow.EntityIDPattern, entityID) {
-		return fmt.Errorf("%w: workflow=%q entity_id=%q pattern=%q",
-			ErrEntityIDPatternMismatch, reg.workflow.Name, entityID, reg.workflow.EntityIDPattern)
+	if err := checkWorkflowEntityID(reg, entityID); err != nil {
+		return err
 	}
 	state, revision, err := m.getEntity(ctx, entityID)
 	if errors.Is(err, ErrEntityNotFound) {

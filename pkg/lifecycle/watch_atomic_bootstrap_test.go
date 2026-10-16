@@ -143,7 +143,10 @@ func TestLifecycleWatchEventsPoisonEmitsNoEvent(t *testing.T) {
 	requirePoisonEnded(t, err, "WatchEvents")
 }
 
-func TestLifecycleWatchPoisonWarningNamesSubscriptionAndAuthorityEntryOnce(t *testing.T) {
+// TestLifecycleWatchPoisonErrorNamesTheEntryWithoutAWarn: a poisoned entry ends the watch with an
+// error naming the workflow, the entity and its revision and wrapping the state contract error with
+// its reason; nothing is logged at WARN, since the caller holds the report (design D3).
+func TestLifecycleWatchPoisonErrorNamesTheEntryWithoutAWarn(t *testing.T) {
 	t.Parallel()
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
@@ -159,30 +162,35 @@ func TestLifecycleWatchPoisonWarningNamesSubscriptionAndAuthorityEntryOnce(t *te
 	watcher.updates <- poisonLifecycleWatchEntry(poisonID, 41)
 	watcher.updates <- poisonLifecycleWatchEntry(poisonID, 42)
 	err := mgr.Watch(context.Background(), "fixture", refuseCall(t, "poison subscription"))
-	requirePoisonEnded(t, err, "poison subscription")
 
-	const message = "lifecycle workflow watch encountered poisoned graph state; closing subscription"
-	logged := logs.String()
-	if got := strings.Count(logged, message); got != 1 {
-		t.Fatalf("poison warning count = %d, want 1; logs=%s", got, logged)
+	var contractErr *graph.StateContractError
+	if !errors.As(err, &contractErr) {
+		t.Fatalf("Watch returned %v, want the poisoned entry's state contract error", err)
 	}
-	for _, fragment := range []string{
-		`"level":"WARN"`,
-		`"workflow":"fixture"`,
-		`"entity":"` + poisonID + `"`,
-		`"revision":41`,
-		`"code":"` + graph.ErrorCodeGraphStateResetRequired + `"`,
-		`"reason":"` + string(graph.GraphStateReasonNoncanonicalPredicate) + `"`,
-	} {
-		if !strings.Contains(logged, fragment) {
-			t.Fatalf("poison warning missing %s; logs=%s", fragment, logged)
+	if contractErr.Reason != graph.GraphStateReasonNoncanonicalPredicate {
+		t.Errorf("state contract reason = %q, want %q", contractErr.Reason, graph.GraphStateReasonNoncanonicalPredicate)
+	}
+	for _, fragment := range []string{`workflow "fixture"`, `entity "` + poisonID + `"`, "revision 41:"} {
+		if !strings.Contains(err.Error(), fragment) {
+			t.Errorf("Watch error %q does not name %s", err, fragment)
 		}
+	}
+	if strings.Contains(logs.String(), `"level":"WARN"`) {
+		t.Errorf("poisoned entry logged a WARN: %s", logs.String())
 	}
 }
 
+// TestLifecycleWatchTransportCloseIsLocalAndLaterSubscriptionWorks: a watcher that closes while
+// the context is live ends that watch with a transient error and no WARN (design D3), and a later
+// watch works.
 func TestLifecycleWatchTransportCloseIsLocalAndLaterSubscriptionWorks(t *testing.T) {
 	t.Parallel()
-	mgr, _, bucket := newTestManager(t)
+	var logs bytes.Buffer
+	bucket := newFakeBucket()
+	mgr := newManagerForTest(slog.New(slog.NewJSONHandler(&logs, nil)), &fakeEmitter{bucket: bucket}, bucket)
+	if err := mgr.Register(lifecycle{}.fixtureWorkflow()); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
 	first := newLifecycleAtomicWatcher()
 	second := newLifecycleAtomicWatcher()
 	var calls atomic.Int64
@@ -197,6 +205,9 @@ func TestLifecycleWatchTransportCloseIsLocalAndLaterSubscriptionWorks(t *testing
 	err := mgr.Watch(context.Background(), "fixture", refuseCall(t, "transport-closed subscription"))
 	if err == nil || !serrs.IsTransient(err) {
 		t.Fatalf("transport-closed subscription returned %T %v, want transient", err, err)
+	}
+	if strings.Contains(logs.String(), `"level":"WARN"`) {
+		t.Errorf("transport-closed subscription logged a WARN: %s", logs.String())
 	}
 
 	validID := "acme.ops.gcs.lifecycle.mission.valid-b"

@@ -14,9 +14,9 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
   cancelled context sends nothing and is not committed, unavailable and transient (D1). Gate: fails on the base commit.
 - [x] 2.2 `TestManagerWithoutClientRefusesNATSWork` (D2), with every listed call on `NewManager(nil, nil)` and no
   injection. Gate: fails on the base commit (two messages, not one).
-- [ ] 2.3 Despawn of a malformed six-part ID is `ErrEntityIDPatternMismatch` with no delete (D4). Gate: fails on base
+- [x] 2.3 Despawn of a malformed six-part ID is `ErrEntityIDPatternMismatch` with no delete (D4). Gate: fails on base
   on the error type only (base sends no delete either).
-- [ ] 2.4 `Complete` follows declared edge order (D5). Gate: fails on base.
+- [x] 2.4 `Complete` follows declared edge order (D5). Gate: fails on base.
 - [ ] 2.5 Children's exhaustive paging check (Offset and Limit -1..7, List's slice rule, non-nil empty result, read
   count within Offset + Limit + dropped), and the read-failure and unregistered-child-workflow cases (owner
   question 3: yes) (D6). Gate: fails on base.
@@ -29,9 +29,9 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 - [x] 3.2 One no-client error at the exact read and `ensureBucket`, keyed on the missing dependency; no emitter
   without a client; emitter refusal and dead branches removed (D2). Gate: 2.2; tests built with `newManagerForTest`
   pass unchanged.
-- [ ] 3.3 One watch loop, no Warn logs; the poison-log test becomes an error assertion (D3). Gate: watch tests pass.
-- [ ] 3.4 One matcher (D4). Gate: 2.3; `task lint`.
-- [ ] 3.5 Fail doc; Complete by edge order; rename the subtest at `query_transition_integration_test.go:347` from
+- [x] 3.3 One watch loop, no Warn logs; the poison-log test becomes an error assertion (D3). Gate: watch tests pass.
+- [x] 3.4 One matcher (D4). Gate: 2.3; `task lint`.
+- [x] 3.5 Fail doc; Complete by edge order; rename the subtest at `query_transition_integration_test.go:347` from
   "the first by name" to "the first declared" (D5). Gate: 2.4 and the Complete/Fail integration tests.
 - [ ] 3.6 Children reads until the page is full, with List's skip and slice rules (D6). Gate: 2.5.
 - [ ] 3.7 Doubles refuse; failing tests stamped or re-aimed (D7). Gate: 2.6; `task test:unit`; `task test:integration`.

@@ -321,8 +321,8 @@ func lastEvent(t *testing.T, mgr *Manager, workflow, entityID string) Transition
 
 // TestIntegration_CompleteMovesToTheReachableTerminal proves Complete moves an
 // entity to a terminal phase one transition away, recorded as a framework
-// transition: the only one when one is reachable, and the first by name when
-// several are, with a Warn naming the choice. With no terminal reachable it is
+// transition: the only one when one is reachable, and the first in the current
+// phase's declared out-edges when several are, with a Warn naming the choice. With no terminal reachable it is
 // ErrInvalidTransition; an entity already terminal is ErrTerminalPhase; an
 // absent entity is ErrEntityNotFound; one with no phase triple is
 // ErrEntityNotLifecycleManaged; an unregistered workflow is
@@ -344,7 +344,7 @@ func TestIntegration_CompleteMovesToTheReachableTerminal(t *testing.T) {
 	}
 	putRawEntity(t, kv, subtaskPrefix+"raw")
 
-	t.Run("two terminals reachable: the first by name, with a Warn", func(t *testing.T) {
+	t.Run("two terminals reachable: the first declared, with a Warn", func(t *testing.T) {
 		id := subtaskPrefix + "running"
 		require.NoError(t, mgr.Complete(ctx, "subtask", id))
 		require.Equal(t, "done", storedObject(t, kv, id, "subtask.lifecycle.phase"))

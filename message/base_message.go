@@ -2,8 +2,6 @@ package message
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -120,30 +118,6 @@ func (m *BaseMessage) Payload() Payload {
 // Meta returns the message metadata.
 func (m *BaseMessage) Meta() Meta {
 	return m.meta
-}
-
-// Hash returns a SHA256 hash of the message content.
-// The hash includes the message type and payload data.
-func (m *BaseMessage) Hash() string {
-	h := sha256.New()
-
-	// Include message type in hash
-	if _, err := h.Write([]byte(m.msgType.String())); err != nil {
-		// Hash.Write() implementation in crypto/sha256 never returns an error,
-		// but we handle it for interface compliance and future-proofing
-		return ""
-	}
-
-	// Include payload data
-	if data, err := m.payload.MarshalJSON(); err == nil {
-		if _, err := h.Write(data); err != nil {
-			// Hash.Write() implementation in crypto/sha256 never returns an error,
-			// but we handle it for interface compliance and future-proofing
-			return ""
-		}
-	}
-
-	return hex.EncodeToString(h.Sum(nil))
 }
 
 // Validate performs comprehensive message validation.

@@ -1,4 +1,4 @@
-package natsclient
+package storagereport
 
 import (
 	"testing"
@@ -6,6 +6,8 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/c360studio/semengine/natsclient"
 )
 
 // tierOf finds one tier's comparison in a report. Absence is a test failure
@@ -25,7 +27,7 @@ func tierIn(t *testing.T, report AccountReport, tier StorageTier) TierComparison
 func tieredResource(name string, tier StorageTier, limit, used int64) StorageResource {
 	return StorageResource{
 		Name:        name,
-		Kind:        ResourceOrdinaryStream,
+		Kind:        natsclient.ResourceOrdinaryStream,
 		Attribution: AttributionNotApplicable,
 		Tier:        tier,
 		Bytes:       NewCapacity(limit, used, true),
@@ -40,7 +42,7 @@ func tieredUnboundedResource(name string, tier StorageTier, used int64) StorageR
 func tierlessResource(name string) StorageResource {
 	return StorageResource{
 		Name:        name,
-		Kind:        ResourceOrdinaryStream,
+		Kind:        natsclient.ResourceOrdinaryStream,
 		Attribution: AttributionNotApplicable,
 		Tier:        TierUnknown,
 		Bytes:       UnknownCapacity(),

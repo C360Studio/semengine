@@ -1,6 +1,6 @@
 //go:build integration
 
-package natsclient
+package storagereport
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 
 	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/c360studio/semengine/metric"
+	"github.com/c360studio/semengine/natsclient"
 )
 
 // TestIntegration_StorageInventory_EnumeratesTheAccountNotTheClient is the
@@ -21,11 +22,12 @@ import (
 //
 // The setup is the falsifiable part. Every resource is created through a
 // SEPARATE connection standing in for a prior deploy or a sister process, and
-// the collecting client is built fresh with a metrics registry so its
-// tracked-stream map is a real, empty map. The test asserts that map is empty
-// while the inventory returns the resources anyway — so a regression to the
-// jetstream_metrics.go tracked view fails here rather than silently reporting a
-// subset of the account.
+// the collecting client is built fresh with a metrics registry, so its
+// tracked-stream view (natsclient's jetstream_metrics.go) is live and has seen
+// none of them. The inventory returns the resources anyway, through
+// AccountStreamLister, the collector's only path to the account: this package
+// cannot reach the client's tracked-stream map, so a client-touched view could
+// not have produced them.
 //
 // It also pins, against a real server, the facts a fake cannot establish:
 //   - both account listings return KV_* and OBJ_* backing streams, so KV buckets
@@ -51,7 +53,7 @@ func TestIntegration_StorageInventory_EnumeratesTheAccountNotTheClient(t *testin
 	)
 
 	// --- a prior deploy / sister process, on its own connection ---------------
-	creator, err := NewClient(natsURL, WithMaxReconnects(0))
+	creator, err := natsclient.NewClient(natsURL, natsclient.WithMaxReconnects(0))
 	require.NoError(t, err)
 	require.NoError(t, creator.Connect(ctx))
 	creatorJS, err := creator.JetStream()
@@ -78,21 +80,13 @@ func TestIntegration_StorageInventory_EnumeratesTheAccountNotTheClient(t *testin
 
 	// --- the collecting process: a fresh client that never touched any of them -
 	registry := metric.NewMetricsRegistry()
-	observer, err := NewClient(natsURL, WithMaxReconnects(0), WithMetrics(registry))
+	observer, err := natsclient.NewClient(natsURL, natsclient.WithMaxReconnects(0), natsclient.WithMetrics(registry))
 	require.NoError(t, err)
 	require.NoError(t, observer.Connect(ctx))
 	defer closeClient(t, observer)
 
-	require.NotNil(t, observer.jsMetrics, "test premise: tracked-stream metrics are enabled")
-	observer.jsMetrics.mu.RLock()
-	trackedCount := len(observer.jsMetrics.streams)
-	observer.jsMetrics.mu.RUnlock()
-	require.Equal(t, 0, trackedCount,
-		"test premise: this client has created or accessed no streams, so a client-touched "+
-			"inventory would report nothing")
-
 	collector, err := NewStorageInventoryCollector(
-		observer.AccountStreamLister,
+		AccountStreamLister(observer),
 		StorageInventoryConfig{
 			// Attribution is out of scope here: this test is about enumeration.
 			// The catalog cross-pin lives in graph, where OwnerOf is defined.
@@ -117,7 +111,7 @@ func TestIntegration_StorageInventory_EnumeratesTheAccountNotTheClient(t *testin
 	t.Run("an untouched ordinary stream is enumerated", func(t *testing.T) {
 		res, ok := got[priorStream]
 		require.True(t, ok, "a stream this process never created or touched must still appear")
-		assert.Equal(t, ResourceOrdinaryStream, res.Kind)
+		assert.Equal(t, natsclient.ResourceOrdinaryStream, res.Kind)
 		assert.Equal(t, TierFile, res.Tier)
 		assert.Equal(t, CapacityUnbounded, res.Bytes.State,
 			"the server's no-limit encoding must classify as unbounded, not bounded-zero")
@@ -127,9 +121,9 @@ func TestIntegration_StorageInventory_EnumeratesTheAccountNotTheClient(t *testin
 	})
 
 	t.Run("an untouched KV bucket is enumerated through its backing stream", func(t *testing.T) {
-		res, ok := got[KVStreamPrefix+priorKVBucket]
+		res, ok := got[natsclient.KVStreamPrefix+priorKVBucket]
 		require.True(t, ok, "KV_* backing streams appear in the account listing")
-		assert.Equal(t, ResourceKeyValue, res.Kind)
+		assert.Equal(t, natsclient.ResourceKeyValue, res.Kind)
 		assert.Equal(t, priorKVBucket, res.Bucket)
 		assert.Equal(t, AttributionUnattributed, res.Attribution,
 			"a bucket outside the catalog reports unattributed, not omitted")
@@ -138,9 +132,9 @@ func TestIntegration_StorageInventory_EnumeratesTheAccountNotTheClient(t *testin
 	})
 
 	t.Run("an untouched ObjectStore is enumerated through its backing stream", func(t *testing.T) {
-		res, ok := got[ObjectStoreStreamPrefix+priorObjBucket]
+		res, ok := got[natsclient.ObjectStoreStreamPrefix+priorObjBucket]
 		require.True(t, ok, "OBJ_* backing streams appear in the account listing")
-		assert.Equal(t, ResourceObjectStore, res.Kind)
+		assert.Equal(t, natsclient.ResourceObjectStore, res.Kind)
 		assert.Equal(t, priorObjBucket, res.Bucket)
 		assert.Equal(t, AttributionNotApplicable, res.Attribution,
 			"an ObjectStore has no owner concept — distinct from an escaped KV bucket")
@@ -154,13 +148,6 @@ func TestIntegration_StorageInventory_EnumeratesTheAccountNotTheClient(t *testin
 		limit, ok := res.Bytes.Limit()
 		require.True(t, ok)
 		assert.Equal(t, boundedMaxBytes, limit, "the configured limit comes from the listing itself")
-	})
-
-	t.Run("the tracked-stream view still cannot see them", func(t *testing.T) {
-		observer.jsMetrics.mu.RLock()
-		defer observer.jsMetrics.mu.RUnlock()
-		assert.Empty(t, observer.jsMetrics.streams,
-			"enumeration must not have gone through the tracked-stream map")
 	})
 
 	t.Run("a healthy account produces no undescribable rows", func(t *testing.T) {
@@ -178,7 +165,7 @@ func TestIntegration_StorageInventory_EnumeratesTheAccountNotTheClient(t *testin
 	t.Run("the two account listings agree on a healthy server", func(t *testing.T) {
 		// Pins the assumption the reconciliation rests on: the name listing is a
 		// superset of the info listing, and on a healthy account they are equal.
-		lister, err := observer.AccountStreamLister()
+		lister, err := AccountStreamLister(observer)()
 		require.NoError(t, err)
 
 		infoNames := make(map[string]struct{})
@@ -219,7 +206,7 @@ func TestIntegration_StorageInventory_DegradesToLastGoodWhenNATSGoesAway(t *test
 	require.NoError(t, fixture.Start(ctx))
 	natsURL := fixture.URL()
 
-	client, err := NewClient(natsURL, WithMaxReconnects(0))
+	client, err := natsclient.NewClient(natsURL, natsclient.WithMaxReconnects(0))
 	require.NoError(t, err)
 	require.NoError(t, client.Connect(ctx))
 	defer closeClient(t, client)
@@ -233,7 +220,7 @@ func TestIntegration_StorageInventory_DegradesToLastGoodWhenNATSGoesAway(t *test
 	require.NoError(t, err)
 
 	collector, err := NewStorageInventoryCollector(
-		client.AccountStreamLister,
+		AccountStreamLister(client),
 		StorageInventoryConfig{
 			OwnerResolver: func(string) string { return "" },
 			Timeout:       failureBound,

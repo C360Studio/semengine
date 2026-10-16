@@ -1,4 +1,4 @@
-package natsclient
+package storagereport
 
 import (
 	"bytes"
@@ -146,7 +146,7 @@ func TestReportConsumer_UndecodableValueInAReplacementKeepsTheHeldRow(t *testing
 // added to a row later is covered without editing this test.
 func TestReportConsumer_SnapshotSharesNoMutableMemory(t *testing.T) {
 	store := &fakeWatchStore{}
-	consumer, err := NewStorageReportConsumer(store, StorageReportConsumerConfig{})
+	consumer, err := NewConsumer(store, ConsumerConfig{})
 	require.NoError(t, err)
 
 	var row ResourceReport
@@ -235,12 +235,12 @@ func mutableAddresses(v reflect.Value, path string, into map[uintptr]string) int
 }
 
 // TestReportConsumer_AccountRetractionIsLogged observes the declared signal for the
-// one change StorageReportObserver cannot carry: it has no method that retracts an
+// one change Observer cannot carry: it has no method that retracts an
 // account row, so the retraction is logged.
 func TestReportConsumer_AccountRetractionIsLogged(t *testing.T) {
 	var logs bytes.Buffer
 	store := &fakeWatchStore{}
-	consumer, err := NewStorageReportConsumer(store, StorageReportConsumerConfig{
+	consumer, err := NewConsumer(store, ConsumerConfig{
 		Logger: slog.New(slog.NewTextHandler(&logs, nil)),
 	})
 	require.NoError(t, err)

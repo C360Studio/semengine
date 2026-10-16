@@ -1,4 +1,4 @@
-package natsclient
+package storagereport
 
 import (
 	"context"
@@ -13,6 +13,8 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/c360studio/semengine/natsclient"
 )
 
 // --- fakes -------------------------------------------------------------------
@@ -236,10 +238,10 @@ func TestStorageInventory_Attribution(t *testing.T) {
 	// correct collection.
 	synctest.Test(t, func(t *testing.T) {
 		c := newTestCollector(t, listerOf(
-			streamInfo(KVStreamPrefix+"ENTITY_STATES", jetstream.FileStorage, 0, 10),
-			streamInfo(KVStreamPrefix+"SEMSOURCE_DOCUMENTS", jetstream.FileStorage, 0, 20),
-			streamInfo(KVStreamPrefix+KVStreamPrefix+"FOO", jetstream.FileStorage, 0, 30),
-			streamInfo(ObjectStoreStreamPrefix+"MESSAGES", jetstream.FileStorage, 0, 40),
+			streamInfo(natsclient.KVStreamPrefix+"ENTITY_STATES", jetstream.FileStorage, 0, 10),
+			streamInfo(natsclient.KVStreamPrefix+"SEMSOURCE_DOCUMENTS", jetstream.FileStorage, 0, 20),
+			streamInfo(natsclient.KVStreamPrefix+natsclient.KVStreamPrefix+"FOO", jetstream.FileStorage, 0, 30),
+			streamInfo(natsclient.ObjectStoreStreamPrefix+"MESSAGES", jetstream.FileStorage, 0, 40),
 			streamInfo("LOGS", jetstream.FileStorage, 0, 50),
 		), resolverFrom(catalog))
 
@@ -252,20 +254,20 @@ func TestStorageInventory_Attribution(t *testing.T) {
 
 	tests := []struct {
 		stream          string
-		wantKind        ResourceKind
+		wantKind        natsclient.ResourceKind
 		wantBucket      string
 		wantAttribution AttributionState
 		wantOwner       string
 	}{
-		{KVStreamPrefix + "ENTITY_STATES", ResourceKeyValue, "ENTITY_STATES",
+		{natsclient.KVStreamPrefix + "ENTITY_STATES", natsclient.ResourceKeyValue, "ENTITY_STATES",
 			AttributionAttributed, "graph-ingest"},
-		{KVStreamPrefix + "SEMSOURCE_DOCUMENTS", ResourceKeyValue, "SEMSOURCE_DOCUMENTS",
+		{natsclient.KVStreamPrefix + "SEMSOURCE_DOCUMENTS", natsclient.ResourceKeyValue, "SEMSOURCE_DOCUMENTS",
 			AttributionUnattributed, ""},
-		{KVStreamPrefix + KVStreamPrefix + "FOO", ResourceKeyValue, KVStreamPrefix + "FOO",
+		{natsclient.KVStreamPrefix + natsclient.KVStreamPrefix + "FOO", natsclient.ResourceKeyValue, natsclient.KVStreamPrefix + "FOO",
 			AttributionUnattributed, ""},
-		{ObjectStoreStreamPrefix + "MESSAGES", ResourceObjectStore, "MESSAGES",
+		{natsclient.ObjectStoreStreamPrefix + "MESSAGES", natsclient.ResourceObjectStore, "MESSAGES",
 			AttributionNotApplicable, ""},
-		{"LOGS", ResourceOrdinaryStream, "",
+		{"LOGS", natsclient.ResourceOrdinaryStream, "",
 			AttributionNotApplicable, ""},
 	}
 	for _, tt := range tests {
@@ -293,9 +295,9 @@ func TestStorageInventory_AttributionStatesNeverCollapse(t *testing.T) {
 	// correct collection.
 	synctest.Test(t, func(t *testing.T) {
 		c := newTestCollector(t, listerOf(
-			streamInfo(KVStreamPrefix+"ENTITY_STATES", jetstream.FileStorage, 0, 1),
-			streamInfo(KVStreamPrefix+"ESCAPED_BUCKET", jetstream.FileStorage, 0, 1),
-			streamInfo(ObjectStoreStreamPrefix+"CONTENT", jetstream.FileStorage, 0, 1),
+			streamInfo(natsclient.KVStreamPrefix+"ENTITY_STATES", jetstream.FileStorage, 0, 1),
+			streamInfo(natsclient.KVStreamPrefix+"ESCAPED_BUCKET", jetstream.FileStorage, 0, 1),
+			streamInfo(natsclient.ObjectStoreStreamPrefix+"CONTENT", jetstream.FileStorage, 0, 1),
 			streamInfo("LOGS", jetstream.FileStorage, 0, 1),
 		), resolverFrom(map[string]string{"ENTITY_STATES": "graph-ingest"}))
 
@@ -305,9 +307,9 @@ func TestStorageInventory_AttributionStatesNeverCollapse(t *testing.T) {
 	})
 	got := byName(t, inv)
 
-	attributed := got[KVStreamPrefix+"ENTITY_STATES"]
-	escaped := got[KVStreamPrefix+"ESCAPED_BUCKET"]
-	objectStore := got[ObjectStoreStreamPrefix+"CONTENT"]
+	attributed := got[natsclient.KVStreamPrefix+"ENTITY_STATES"]
+	escaped := got[natsclient.KVStreamPrefix+"ESCAPED_BUCKET"]
+	objectStore := got[natsclient.ObjectStoreStreamPrefix+"CONTENT"]
 	ordinary := got["LOGS"]
 
 	assert.Equal(t, AttributionAttributed, attributed.Attribution)
@@ -353,23 +355,23 @@ func TestStorageInventory_AttributionFollowsCatalogNotACopy(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		catalog := map[string]string{"ENTITY_STATES": "graph-ingest"}
 		c := newTestCollector(t, listerOf(
-			streamInfo(KVStreamPrefix+"ENTITY_STATES", jetstream.FileStorage, 0, 10),
+			streamInfo(natsclient.KVStreamPrefix+"ENTITY_STATES", jetstream.FileStorage, 0, 10),
 		), resolverFrom(catalog))
 
 		first, err := c.Collect(context.Background())
 		require.NoError(t, err)
-		require.Equal(t, "graph-ingest", byName(t, first)[KVStreamPrefix+"ENTITY_STATES"].Owner)
+		require.Equal(t, "graph-ingest", byName(t, first)[natsclient.KVStreamPrefix+"ENTITY_STATES"].Owner)
 
 		delete(catalog, "ENTITY_STATES")
 
 		second, err := c.Collect(context.Background())
 		require.NoError(t, err)
-		res := byName(t, second)[KVStreamPrefix+"ENTITY_STATES"]
+		res := byName(t, second)[natsclient.KVStreamPrefix+"ENTITY_STATES"]
 		assert.Equal(t, AttributionUnattributed, res.Attribution,
 			"attribution must re-read the catalog, not a copy of it")
 		assert.Equal(t, "", res.Owner)
 		assert.False(t, res.Attributed())
-		assert.Equal(t, res, byName(t, c.Latest())[KVStreamPrefix+"ENTITY_STATES"],
+		assert.Equal(t, res, byName(t, c.Latest())[natsclient.KVStreamPrefix+"ENTITY_STATES"],
 			"the published inventory must carry the same unattributed result")
 	})
 }
@@ -504,9 +506,9 @@ func TestStorageInventory_UndescribableResourceIsNamedNotOmitted(t *testing.T) {
 	// correct collection.
 	synctest.Test(t, func(t *testing.T) {
 		lister := accountWithUndescribable(
-			[]string{"OFFLINE_EVENTS", KVStreamPrefix + "ENTITY_STATES"},
+			[]string{"OFFLINE_EVENTS", natsclient.KVStreamPrefix + "ENTITY_STATES"},
 			streamInfo("LOGS", jetstream.FileStorage, 4096, 100),
-			streamInfo(ObjectStoreStreamPrefix+"CONTENT", jetstream.FileStorage, 0, 5),
+			streamInfo(natsclient.ObjectStoreStreamPrefix+"CONTENT", jetstream.FileStorage, 0, 5),
 		)
 		c := newTestCollector(t, lister.source(),
 			resolverFrom(map[string]string{"ENTITY_STATES": "graph-ingest"}))
@@ -522,7 +524,7 @@ func TestStorageInventory_UndescribableResourceIsNamedNotOmitted(t *testing.T) {
 		res, ok := got["OFFLINE_EVENTS"]
 		require.True(t, ok, "a resource the server declines to describe must still be named")
 		assert.Equal(t, "OFFLINE_EVENTS", res.Name, "the name is real, not a placeholder")
-		assert.Equal(t, ResourceOrdinaryStream, res.Kind, "kind is derivable from the name alone")
+		assert.Equal(t, natsclient.ResourceOrdinaryStream, res.Kind, "kind is derivable from the name alone")
 		assert.Equal(t, TierUnknown, res.Tier)
 		assert.Equal(t, CapacityUnknown, res.Bytes.State)
 		assert.Equal(t, CapacityUnknown, res.Messages.State)
@@ -532,9 +534,9 @@ func TestStorageInventory_UndescribableResourceIsNamedNotOmitted(t *testing.T) {
 	})
 
 	t.Run("an undescribable KV bucket is still attributed from its name", func(t *testing.T) {
-		res, ok := got[KVStreamPrefix+"ENTITY_STATES"]
+		res, ok := got[natsclient.KVStreamPrefix+"ENTITY_STATES"]
 		require.True(t, ok)
-		assert.Equal(t, ResourceKeyValue, res.Kind)
+		assert.Equal(t, natsclient.ResourceKeyValue, res.Kind)
 		assert.Equal(t, "ENTITY_STATES", res.Bucket)
 		assert.Equal(t, AttributionAttributed, res.Attribution,
 			"attribution is a catalog read, so it survives the server declining to describe")
@@ -548,7 +550,7 @@ func TestStorageInventory_UndescribableResourceIsNamedNotOmitted(t *testing.T) {
 		assert.Equal(t, CapacityBounded, logs.Bytes.State)
 		assert.Equal(t, TierFile, logs.Tier)
 		assert.False(t, unknownOnEveryAxis(logs))
-		assert.False(t, unknownOnEveryAxis(got[ObjectStoreStreamPrefix+"CONTENT"]))
+		assert.False(t, unknownOnEveryAxis(got[natsclient.ObjectStoreStreamPrefix+"CONTENT"]))
 	})
 }
 
@@ -1143,12 +1145,12 @@ func TestStorageInventory_ResourcesAreDeterministicallyOrdered(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		lister := accountWithUndescribable([]string{"BRAVO"},
 			streamInfo("ZULU", jetstream.FileStorage, 0, 1),
-			streamInfo(KVStreamPrefix+"ALPHA", jetstream.FileStorage, 0, 1),
+			streamInfo(natsclient.KVStreamPrefix+"ALPHA", jetstream.FileStorage, 0, 1),
 			streamInfo("MIKE", jetstream.FileStorage, 0, 1),
 		)
 		c := newTestCollector(t, lister.source(), resolverFrom(nil))
 
-		want := []string{"BRAVO", KVStreamPrefix + "ALPHA", "MIKE", "ZULU"}
+		want := []string{"BRAVO", natsclient.KVStreamPrefix + "ALPHA", "MIKE", "ZULU"}
 		for range 3 {
 			inv, err := c.Collect(context.Background())
 			require.NoError(t, err)
@@ -1200,22 +1202,22 @@ func TestStorageInventory_ListerSourceResolvedPerCollection(t *testing.T) {
 func TestClassifyBackingStream(t *testing.T) {
 	tests := []struct {
 		stream     string
-		wantKind   ResourceKind
+		wantKind   natsclient.ResourceKind
 		wantBucket string
 	}{
-		{KVStreamPrefix + "ENTITY_STATES", ResourceKeyValue, "ENTITY_STATES"},
-		{KVStreamPrefix + KVStreamPrefix + "FOO", ResourceKeyValue, KVStreamPrefix + "FOO"},
-		{ObjectStoreStreamPrefix + "MESSAGES", ResourceObjectStore, "MESSAGES"},
-		{ObjectStoreStreamPrefix + ObjectStoreStreamPrefix + "X", ResourceObjectStore, ObjectStoreStreamPrefix + "X"},
-		{"LOGS", ResourceOrdinaryStream, ""},
-		{"MY_KV_STREAM", ResourceOrdinaryStream, ""},
-		{"SOMEOBJ_THING", ResourceOrdinaryStream, ""},
-		{"KVSTATES", ResourceOrdinaryStream, ""},
-		{"", ResourceOrdinaryStream, ""},
+		{natsclient.KVStreamPrefix + "ENTITY_STATES", natsclient.ResourceKeyValue, "ENTITY_STATES"},
+		{natsclient.KVStreamPrefix + natsclient.KVStreamPrefix + "FOO", natsclient.ResourceKeyValue, natsclient.KVStreamPrefix + "FOO"},
+		{natsclient.ObjectStoreStreamPrefix + "MESSAGES", natsclient.ResourceObjectStore, "MESSAGES"},
+		{natsclient.ObjectStoreStreamPrefix + natsclient.ObjectStoreStreamPrefix + "X", natsclient.ResourceObjectStore, natsclient.ObjectStoreStreamPrefix + "X"},
+		{"LOGS", natsclient.ResourceOrdinaryStream, ""},
+		{"MY_KV_STREAM", natsclient.ResourceOrdinaryStream, ""},
+		{"SOMEOBJ_THING", natsclient.ResourceOrdinaryStream, ""},
+		{"KVSTATES", natsclient.ResourceOrdinaryStream, ""},
+		{"", natsclient.ResourceOrdinaryStream, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.stream, func(t *testing.T) {
-			kind, bucket := ClassifyBackingStream(tt.stream)
+			kind, bucket := natsclient.ClassifyBackingStream(tt.stream)
 			assert.Equal(t, tt.wantKind, kind)
 			assert.Equal(t, tt.wantBucket, bucket)
 		})

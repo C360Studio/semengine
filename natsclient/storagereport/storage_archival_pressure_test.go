@@ -1,4 +1,4 @@
-package natsclient
+package storagereport
 
 import (
 	"context"
@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/c360studio/semengine/natsclient"
 )
 
 // This file covers the one guarantee that makes an ARCHIVAL stream safe to
@@ -28,7 +30,7 @@ import (
 func archivalResource(name string, used int64) StorageResource {
 	return StorageResource{
 		Name:        name,
-		Kind:        ResourceOrdinaryStream,
+		Kind:        natsclient.ResourceOrdinaryStream,
 		Attribution: AttributionNotApplicable,
 		Tier:        TierFile,
 		Bytes:       NewCapacity(0, used, true),
@@ -193,7 +195,7 @@ func TestUndescribableResource_IsNotRoutedThroughTheTierCeiling(t *testing.T) {
 		fillingFileTier(mib(900)),
 		StorageResource{
 			Name:        "OFFLINE",
-			Kind:        ResourceOrdinaryStream,
+			Kind:        natsclient.ResourceOrdinaryStream,
 			Attribution: AttributionNotApplicable,
 			Tier:        TierUnknown,
 			Bytes:       UnknownCapacity(),

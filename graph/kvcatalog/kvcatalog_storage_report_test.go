@@ -8,6 +8,7 @@ import (
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/natsclient"
+	"github.com/c360studio/semengine/natsclient/storagereport"
 )
 
 // TestKVCatalog_StorageReportIsDeclaredNotImprovised pins the STORAGE_REPORT
@@ -54,7 +55,7 @@ func TestKVCatalog_StorageReportHistoryCarriesTheGrowthSeries(t *testing.T) {
 	spec, ok := SpecFor(graph.BucketStorageReport)
 	require.True(t, ok)
 
-	assert.GreaterOrEqual(t, spec.History, natsclient.StorageReportGrowthObservations,
+	assert.GreaterOrEqual(t, spec.History, storagereport.StorageReportGrowthObservations,
 		"History must retain at least the observations the growth derivation consumes")
 	assert.GreaterOrEqual(t, spec.History, uint8(4),
 		"a depth at the bare floor leaves no room to walk past too-close rows in a restart loop")

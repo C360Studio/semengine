@@ -1,4 +1,4 @@
-package natsclient
+package storagereport
 
 import (
 	"context"
@@ -13,6 +13,8 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/c360studio/semengine/natsclient"
 )
 
 // --- fakes -------------------------------------------------------------------
@@ -107,7 +109,7 @@ func (s *fakeReportStore) Put(_ context.Context, key string, value []byte) (uint
 	// A real bucket rejects an illegal key. A fake that accepts anything would
 	// let a publisher that skipped key encoding pass every test here and fail
 	// against a server.
-	if err := ValidateKVLiteralKey(key); err != nil {
+	if err := natsclient.ValidateKVLiteralKey(key); err != nil {
 		return 0, err
 	}
 	if _, ok := s.history[key]; !ok {
@@ -214,7 +216,7 @@ func (s *fakeReportStore) liveResourceKeys() []string {
 func boundedResource(name string, limit, used int64) StorageResource {
 	return StorageResource{
 		Name:        name,
-		Kind:        ResourceOrdinaryStream,
+		Kind:        natsclient.ResourceOrdinaryStream,
 		Attribution: AttributionNotApplicable,
 		Tier:        TierFile,
 		Bytes:       NewCapacity(limit, used, true),
@@ -248,9 +250,9 @@ func inventoryWithAccountAt(
 	}
 }
 
-func newTestPublisher(t *testing.T, store ReportStore, source ThresholdSource) *StorageReportPublisher {
+func newTestPublisher(t *testing.T, store ReportStore, source ThresholdSource) *Publisher {
 	t.Helper()
-	publisher, err := NewStorageReportPublisher(store, StorageReportConfig{Thresholds: source})
+	publisher, err := NewPublisher(store, PublisherConfig{Thresholds: source})
 	require.NoError(t, err)
 	return publisher
 }
@@ -277,8 +279,8 @@ func TestStorageReportPublisher_OneKeyPerResource(t *testing.T) {
 		boundedResource("EVENTS", mib(1000), mib(100)),
 		boundedResource("LOGS", mib(1000), mib(900)),
 		StorageResource{
-			Name:        KVStreamPrefix + "ENTITY_STATES_FAKE",
-			Kind:        ResourceKeyValue,
+			Name:        natsclient.KVStreamPrefix + "ENTITY_STATES_FAKE",
+			Kind:        natsclient.ResourceKeyValue,
 			Bucket:      "ENTITY_STATES_FAKE",
 			Attribution: AttributionAttributed,
 			Owner:       "graph-ingest",
@@ -293,7 +295,7 @@ func TestStorageReportPublisher_OneKeyPerResource(t *testing.T) {
 	assert.False(t, result.Skipped)
 
 	assert.ElementsMatch(t,
-		[]string{"EVENTS", "LOGS", KVStreamPrefix + "ENTITY_STATES_FAKE"},
+		[]string{"EVENTS", "LOGS", natsclient.KVStreamPrefix + "ENTITY_STATES_FAKE"},
 		store.liveResourceKeys(),
 		"ranging the bucket reconstructs the whole report")
 
@@ -309,7 +311,7 @@ func TestStorageReportPublisher_OneKeyPerResource(t *testing.T) {
 
 	// The attribution the inventory resolved is carried through verbatim: the
 	// report is a view of the inventory, not a second opinion about ownership.
-	kvRow := store.liveRow(t, KVStreamPrefix+"ENTITY_STATES_FAKE")
+	kvRow := store.liveRow(t, natsclient.KVStreamPrefix+"ENTITY_STATES_FAKE")
 	assert.Equal(t, "graph-ingest", kvRow.Resource.Owner)
 	assert.Equal(t, AttributionAttributed, kvRow.Resource.Attribution)
 	// This account's tiers carry no ceiling either (a stock server), so the one
@@ -604,7 +606,7 @@ func TestStorageReportPublisher_UnknownCapacityIsPublishedWithoutPressure(t *tes
 
 	undescribable := StorageResource{
 		Name:        "OFFLINE_STREAM",
-		Kind:        ResourceOrdinaryStream,
+		Kind:        natsclient.ResourceOrdinaryStream,
 		Attribution: AttributionNotApplicable,
 		Tier:        TierUnknown,
 		Bytes:       UnknownCapacity(),
@@ -658,22 +660,22 @@ func TestStorageReportPublisher_StaleInventoryIsNotAnObservation(t *testing.T) {
 // omission the inventory exists to end, so an illegal name is addressed through
 // the repository's opaque key codec instead.
 func TestStorageReportKey_AddressesEveryLegalResourceName(t *testing.T) {
-	plain, err := StorageReportKey("KV_ENTITY_STATES")
+	plain, err := ResourceKey("KV_ENTITY_STATES")
 	require.NoError(t, err)
 	assert.Equal(t, "KV_ENTITY_STATES", plain,
 		"an ordinary name is its own key, so `nats kv get` reads naturally")
-	require.NoError(t, ValidateKVLiteralKey(plain))
+	require.NoError(t, natsclient.ValidateKVLiteralKey(plain))
 
-	odd, err := StorageReportKey("weird$stream+name")
+	odd, err := ResourceKey("weird$stream+name")
 	require.NoError(t, err)
-	require.NoError(t, ValidateKVLiteralKey(odd), "the encoded form must be a legal key")
-	decoded, err := DecodeKVOpaqueToken(odd)
+	require.NoError(t, natsclient.ValidateKVLiteralKey(odd), "the encoded form must be a legal key")
+	decoded, err := natsclient.DecodeKVOpaqueToken(odd)
 	require.NoError(t, err)
 	assert.Equal(t, "weird$stream+name", string(decoded))
 
 	// A name that IS itself a canonical opaque token must not collide with the
 	// encoding of the name it decodes to.
-	collision, err := StorageReportKey(odd)
+	collision, err := ResourceKey(odd)
 	require.NoError(t, err)
 	assert.NotEqual(t, odd, collision)
 }
@@ -719,10 +721,10 @@ func TestStorageReportPublisher_PublicationFailureIsReportedNotSwallowed(t *test
 // chose. Failing at construction beats defaulting silently, and the error names
 // the one-line way to take the defaults deliberately.
 func TestNewStorageReportPublisher_FailsClosedOnWiring(t *testing.T) {
-	_, err := NewStorageReportPublisher(nil, StorageReportConfig{Thresholds: defaultSource()})
+	_, err := NewPublisher(nil, PublisherConfig{Thresholds: defaultSource()})
 	require.Error(t, err)
 
-	_, err = NewStorageReportPublisher(newFakeReportStore(10), StorageReportConfig{})
+	_, err = NewPublisher(newFakeReportStore(10), PublisherConfig{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "DefaultStoragePressureThresholds")
 }

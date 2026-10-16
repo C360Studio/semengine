@@ -1,4 +1,4 @@
-package natsclient
+package storagereport
 
 import (
 	"context"
@@ -136,9 +136,9 @@ func reportRow(name string, tier StorageTier, pressure PressureState) ResourceRe
 	return row
 }
 
-func runConsumer(t *testing.T, store *fakeWatchStore, observer StorageReportObserver) *StorageReportConsumer {
+func runConsumer(t *testing.T, store *fakeWatchStore, observer Observer) *Consumer {
 	t.Helper()
-	consumer, err := NewStorageReportConsumer(store, StorageReportConsumerConfig{
+	consumer, err := NewConsumer(store, ConsumerConfig{
 		Observer:     observer,
 		RetryBackoff: time.Millisecond,
 	})
@@ -236,7 +236,7 @@ func TestReportConsumer_DeleteForgetsTheRowWithItsIdentity(t *testing.T) {
 	eventually(t, func() bool { return store.watchCount() == 1 }, "the watch is established")
 	watcher := store.watchers[0]
 
-	key, err := StorageReportKey("weird$stream")
+	key, err := ResourceKey("weird$stream")
 	require.NoError(t, err)
 	watcher.put(key, reportRow("weird$stream", TierFile, PressureNormal))
 	watcher.synced()

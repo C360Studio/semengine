@@ -204,8 +204,6 @@ func TestExportedNilContextRefusedOnEveryOtherEntry(t *testing.T) {
 	require.NoError(t, err)
 	sub, err := c.Subscribe(t.Context(), "nilctx.sub", func(context.Context, *nats.Msg) {})
 	require.NoError(t, err)
-	collector := accountTestCollector(t, (&accountAwareLister{}).source())
-	publisher := newTestPublisher(t, newFakeReportStore(1), defaultSource())
 	owner := PortConsumerContext{Component: "nilctx", Port: "in"}
 	consumerCfg := StreamConsumerConfig{StreamName: "NILCTX_STREAM", ConsumerName: "nilctx", FilterSubject: "nilctx.stream.a"}
 	noop := func(context.Context, jetstream.Msg) {}
@@ -291,12 +289,6 @@ func TestExportedNilContextRefusedOnEveryOtherEntry(t *testing.T) {
 		}},
 		{"Subscription.Drain", func(ctx context.Context) error { return sub.Drain(ctx) }},
 		{"WaitForConnection", func(ctx context.Context) error { return c.WaitForConnection(ctx) }},
-		// Storage reporting
-		{"StorageInventoryCollector.Collect", func(ctx context.Context) error { _, err := collector.Collect(ctx); return err }},
-		{"StorageReportPublisher.Publish", func(ctx context.Context) error {
-			_, err := publisher.Publish(ctx, StorageInventory{})
-			return err
-		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			defer func() {

@@ -2,7 +2,9 @@ package component
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"strings"
 
@@ -49,6 +51,14 @@ func (v *ConfigValidator) ValidateConfig(rawConfig json.RawMessage) error {
 
 	if err := decoder.Decode(&config); err != nil {
 		return errs.WrapInvalid(err, "ConfigValidator", "ValidateConfig", "JSON parsing")
+	}
+	// Only whitespace may follow the value: a configuration pasted twice, or
+	// with a stray token after it, is refused rather than half-read.
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if err == nil {
+			err = errors.New("data after the first JSON value")
+		}
+		return errs.WrapInvalid(err, "ConfigValidator", "ValidateConfig", "trailing data check")
 	}
 
 	// Perform deep validation on the parsed structure

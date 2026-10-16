@@ -38,14 +38,10 @@ type product struct {
 	server   *metric.Server
 }
 
-func (*product) Meta() component.Metadata {
-	return component.Metadata{Name: "security-product", Type: "processor"}
-}
-func (*product) InputPorts() []component.Port         { return nil }
-func (*product) OutputPorts() []component.Port        { return nil }
-func (*product) ConfigSchema() component.ConfigSchema { return component.ConfigSchema{} }
-func (*product) Health() component.HealthStatus       { return component.HealthStatus{Healthy: true} }
-func (*product) DataFlow() component.FlowMetrics      { return component.FlowMetrics{} }
+func (*product) InputPorts() []component.Port    { return nil }
+func (*product) OutputPorts() []component.Port   { return nil }
+func (*product) Health() component.HealthStatus  { return component.HealthStatus{Healthy: true} }
+func (*product) DataFlow() component.FlowMetrics { return component.FlowMetrics{} }
 
 var factory component.Factory = func(_ json.RawMessage, deps component.Dependencies) (component.Discoverable, error) {
 	return &product{

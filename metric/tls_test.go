@@ -89,8 +89,8 @@ func TestServerRequiredMTLSRejectsClientWithoutCertificate(t *testing.T) {
 
 // TestServerRefusesMTLSWithoutTLS: client certificates can only be required over TLS, so a Server
 // whose configuration enables mTLS with server TLS disabled refuses to start rather than serving
-// plain HTTP to every client. security.Config.Validate does not catch it: a disabled server TLS
-// block validates nothing beneath it.
+// plain HTTP to every client. Start does not call the TLS loader while server TLS is disabled, so
+// the server checks the mTLS switch itself.
 func TestServerRefusesMTLSWithoutTLS(t *testing.T) {
 	id := newTestIdentity(t)
 	securityCfg := security.Config{TLS: security.TLSConfig{Server: security.ServerTLSConfig{
@@ -103,6 +103,28 @@ func TestServerRefusesMTLSWithoutTLS(t *testing.T) {
 		registerServerCleanup(t, server)
 	}
 	require.Error(t, err, "mTLS without server TLS must be refused, not served as plain HTTP")
+	require.False(t, listener.closed.Load(), "a refused StartWithListener leaves the listener with the caller")
+	server.mu.Lock()
+	defer server.mu.Unlock()
+	require.Nil(t, server.server)
+	require.Nil(t, server.listener)
+	require.Nil(t, server.serveDone)
+}
+
+// TestServerRefusesACMEMode: SemEngine has no ACME loader yet, so a Server whose configuration
+// asks for ACME refuses to start rather than serve the certificate files beside it.
+func TestServerRefusesACMEMode(t *testing.T) {
+	id := newTestIdentity(t)
+	securityCfg := security.Config{TLS: security.TLSConfig{Server: security.ServerTLSConfig{
+		Enabled: true, Mode: "acme", CertFile: id.certFile, KeyFile: id.keyFile,
+	}}}
+	server := NewServer(9090, "/metrics", NewMetricsRegistry(), securityCfg)
+	listener := boundServerListener(t)
+	err := server.StartWithListener(t.Context(), listener)
+	if err == nil {
+		registerServerCleanup(t, server)
+	}
+	require.ErrorContains(t, err, "mode", "ACME mode must be refused, naming the key")
 	require.False(t, listener.closed.Load(), "a refused StartWithListener leaves the listener with the caller")
 	server.mu.Lock()
 	defer server.mu.Unlock()

@@ -4,11 +4,14 @@ base: `0fb79ad27d8fb6b534180a52753d98ce27f974a1` (origin/main `2422d8f` plus the
 
 Question: what in `component` do #153, #189 and #197 still ask for on `main`, who reads each piece, and what else
 claims the territory. Structural readers come from `gopls references` with `GOFLAGS=-tags=integration` (so
-integration-tagged files count). Consumers are read for symbol use in their local working trees with `git grep`
-(`docs/inventory-scope.md`): semsource `4093d3c`, semconnect `dff1265`; semteams `0f1a20b0` and semboids `37dbdb0` are
-counted too, but for them `component` is outside the question the scope table names, so no decision rests on them
-alone. Every consumer still imports `github.com/c360studio/semstreams/component`. Pin facts are `git grep` and
-`git show` on the commit object `8b99efe9`, not a checkout.
+integration-tagged files count). Consumer facts are plain file reads (`grep -rn --include='*.go'`, no `git` command
+on a sister checkout, `docs/inventory-scope.md` rule 4) of the working trees of semsource (`main` at `4093d3ce`) and
+semconnect (`codex/migrate-semstreams-setup03a` at `dff12657`), the two consumers whose scope row covers imports; the
+commit is the one each checkout's `.git/HEAD` names, read as a file. semboids appears only as a side note: `component`
+is outside its scope row, so no decision rests on it. Every consumer still imports
+`github.com/c360studio/semstreams/component`. Pin facts come from
+`gh api repos/C360Studio/semstreams/tarball/8b99efe9c66a4faa4fa509f9f62cc6bad8392128`, unpacked into a temporary
+directory and read with `grep -rn` (written "pin tarball" below).
 
 This change carries no package from the pin: `component` is already ported (ledger row
 `docs/admission-ledger.yaml:2139-2166`, disposition `adapt`), so no pin probe is owed. `component` has 4,187 non-test
@@ -37,7 +40,6 @@ other `component` row marked `drop` in the archived appendix
 `declarationSnapshot.Factory`. They were removed on PR #93's branch before its squash merge (`d77c597`); `git log -S`
 on `main` finds no commit that adds them. The ledger says so: `docs/admission-ledger.yaml:2157-2160` — "Dead surface
 removed (design D6, #153) …".
-adds them. The ledger says so: `docs/admission-ledger.yaml:2157-2160` — "Dead surface removed (design D6, #153) …".
 
 ### #153 item 2, four models of one component kind: **three remain**
 
@@ -51,8 +53,11 @@ adds them. The ledger says so: `docs/admission-ledger.yaml:2157-2160` — "Dead 
   pointer: `:172` — `r.factories[name] = registration`. CONFIRMED.
 - `Info`: gone (above).
 - `component/discovery.go:38` — `type Metadata struct {`, returned by `Discoverable.Meta()` (`:19`). It is the running
-  instance's self-report, not the registration: graph-ingest reads it in production for its consumer name,
-  `processor/graph-ingest/component.go:1547` — `natsclient.PortConsumerContext{Component: c.Meta().Name, …}`, and its
+  instance's self-report, not the registration. Its reader through the interface is the change 3 service: pin tarball
+  `service/component_manager.go:697` — `cm.logger.Debug("Starting component", "name", name, "type",
+  mc.Component.Meta().Type)` (and `:702`, `:714`, `:720`). graph-ingest's own read,
+  `processor/graph-ingest/component.go:1547` — `natsclient.PortConsumerContext{Component: c.Meta().Name, …}`, is on
+  its concrete type, not through `Discoverable`. Its
   values already differ from the registration's (`component.go:819` — `Description: "Entity and triple ingestion
   processor",` against `:836` — `Description: "Entity and triple ingestion processor for graph system",`).
 
@@ -96,7 +101,8 @@ authority"). ADR-108 Decision 3 (e) (`docs/adr/108-processor-shell.md:83`) binds
 `component/discovery.go:28` — `ConfigSchema() ConfigSchema`. Its one caller through any receiver here is a test,
 `processor/graph-ingest/component_test.go:603` — `schema := comp.ConfigSchema()`. Definers: graph-ingest
 `component.go:860`, `test_helpers.go:57`, `registry_integration_test.go:120`, `registry_test_helpers_test.go:19`. Pin:
-no non-test call (`git grep -n 'ConfigSchema()' 8b99efe9 -- '*.go' ':!*_test.go'`: declarations only).
+no non-test call (pin tarball, `grep -rn 'ConfigSchema()' --include='*.go'` outside `_test.go` and method
+definitions: the two interface declarations `component/discovery.go:28` and `service/configurable.go:16` only).
 
 ### #189: all three CONFIRMED
 
@@ -133,14 +139,20 @@ no non-test call (`git grep -n 'ConfigSchema()' 8b99efe9 -- '*.go' ':!*_test.go'
 - Ledger: `docs/admission-ledger.yaml:2139-2166`; `contract` lists three adaptations; `proving_tests` names
   `attack_test.go`.
 - Open PRs (`gh pr list --state open --json number,title,changedFiles,files`, 2026-10-16):
-  - #273 (this claim, draft, no files yet).
+  - #273 (this claim, draft; its own `openspec/changes/simplify-04a-09-component/` files).
+  - #275 (draft, PR 3, claimed 2026-10-16 after the first draft of this inventory; change
+    `simplify-04a-10-types-message-vocab`): `pkg/types`, `message`, `payloadregistry`, `vocabulary`; no files yet. No
+    shared file: design D4 edits the root `types` package (`types/component.go`), not `pkg/types`. Stays separate;
+    whichever lands second merges `origin/main` first.
   - #272 (draft, PR 9b `pkg/lifecycle`, change `simplify-04a-08-lifecycle`): five `openspec/` files now; its task 4.1
     edits `docs/admission-ledger.yaml` (`pkg/lifecycle` row), a shared file. No shared code file. Its inventory
     (`:154-155`) files #153 under "names the word, not the package", although #153 item 7 names
     `pkg/lifecycle/manager.go:310` and `:533`.
   - #242–#248 (Dependabot: `go.mod`/`go.sum`, `package*.json`, `.github/workflows/ci.yml`): no overlap.
 - Unclaimed wave PRs on neighbours: PR 10 (`processor/graph-ingest`: #139, #174, #183), whose files this change edits
-  (`component.go:814-824`, `:858-862`, `component_test.go:603`, `:757`); PR 3 (`types`, #219), not edited here.
+  (`component.go:814-824`, `:858-862`, `component_test.go:603`, `:757`). Re-read with
+`gh pr list --state open --json number,title,isDraft,files` when this revision was written (2026-10-16): open PRs
+are #242–#248, #272, #273 and #275.
 
 ### Open issues naming the package
 
@@ -155,26 +167,28 @@ Query: `gh issue list --state open --search "component" --limit 200` (40 hits), 
 | #109 | `component/lifecycle.go:55-62`, `component.ProcessorMetrics` | the processor shell, which ADR-108 lands in change 4 |
 | #139 | `component.DebugStatusProvider` | graph-ingest's `DebugStatus` has no reader (PR 10) |
 | #34 | `component.NATSPort` | `output/websocket`'s input port (its port) |
+| #110 | item 3, `component/discovery.go:74-81` (`HealthStatus.Status` is free text) | stays: the fix is at temporal's port (#132) |
+| #274 | `component/dependencies.go:51` (`Dependencies.Security`) | stays: a contract line for `pkg/security`, no shared file |
 
 Names the word, not the package: #7, #9, #90 (`pkg/security` gains `component` as a caller), #17, #27, #30,
-and #33, #35, #36, #38, #68, #95, #96, #103, #105, #106, #108, #110, #111, #114, #131, #133–#137, #141, #161, #183,
+and #33, #35, #36, #38, #68, #95, #96, #103, #105, #106, #108, #111, #114, #131, #133–#137, #141, #161, #183,
 and #195, #196 (`internal/lifecycleguard`), #198 and #223.
 
 ## 4. Readers of the surface the change touches
 
 | Symbol | Here (prod / test) | Consumers, production lines | Pin, production |
 | --- | --- | --- | --- |
-| `RegisterWithConfig` / `RegistrationConfig` | 0 / 10 | semsource 26 / 26 | 33 calls |
-| `RegisterFactory` / `Registration` literal | graph-ingest `component.go:814` / 9 | semboids 2 (`internal/sim/factory.go:16-27`, `componentregistry/register.go:74`) | 13 calls |
-| `ListFactories` (kept) | 0 / 8 | semsource 1, semteams 2, semboids 2 | — |
-| `Discoverable.ConfigSchema` | definer 1, caller 0 | definers: semsource 13, semconnect 1, semboids 1; callers through the interface 0 (semboids `internal/sim/factory.go:23` calls it on `*Component`) | 0 calls |
+| `RegisterWithConfig` / `RegistrationConfig` | 0 / 10 | semsource 26 | 32 calls |
+| `RegisterFactory` / `Registration` literal | graph-ingest `component.go:814` / 9 | 0 (side note: semboids 2) | 12 calls, one of them `RegisterWithConfig`'s own |
+| `ListFactories` (kept) | 0 / 8 | semsource 1 | — |
+| `Discoverable.ConfigSchema` | definer 1, caller 0 | definers: semsource 13, semconnect 1; callers through the interface 0 | 0 calls |
 | `Snapshots` | 0 / 4 | 0 | 2 (change 3's services) |
 | `SafeUnmarshal` | 0 / 7 | 0 | 9 |
 | `component.PlatformMeta` | `dependencies.go:50` / 18 | semsource 9 | — |
 | `ValidateConfig(map, ConfigSchema)` / `ValidationError` (`schema.go:53`, `:17`) | 0 (self-recursion only) / 8 | 0 | 1, `component/config_validator.go:78`, which #93 did not port |
 
-semboids also reads `Registry.GetFactory` in production (`componentregistry/register.go:49`), which #93 dropped; that
-gap is the cutover's, not this change's.
+Side note, no decision rests on it: semboids reads `Registry.GetFactory` in production
+(`componentregistry/register.go:49`), which #93 dropped; that gap is the cutover's, not this change's.
 
 ## 5. Problem shapes
 
@@ -184,10 +198,12 @@ gap is the cutover's, not this change's.
   `func (pr *Registry) Register(registration *Registration) error {` keys by the registration's own type and stores
   `:174` — `pr.registrations[msgType] = &stored`.
 - Defensive clone on read: `cloneComponentDeclaration` (`registry.go:723`), already used by `declarationsLocked`.
+- Defensive clone of a registration: `ListFactories` already copies every field but `Factory`, cloning the schema
+  (`registry.go:470-482`, `cloneConfigSchema` at `:488`).
 
 ## 6. Pin decision records
 
-None is carried (no port). Search over the 85 records at `8b99efe9` for `ConfigSchema|Discoverable|RegisterWithConfig|
+None is carried (no port). Search over the 85 records in the pin tarball's `docs/adr/` for `ConfigSchema|Discoverable|RegisterWithConfig|
 RegistrationConfig|RegisterFactory|SafeUnmarshal|ValidateFactoryConfig|Snapshots|component\.Registration|
 component/registry|component/schema|component/validation`: ADR-042 (`:400`, the word "Discoverable", unrelated) and
 ADR-100 (`:19`). ADR-100 Decision 2: "A registration declares its ports as a pure function of raw configuration and
@@ -202,9 +218,14 @@ instance name, the same way it declares `Schema`", so the registration is the sc
   tag words (§ 2).
 - **F-2, contract conflict.** `component/validation.go:186` — `// Unmarshal config - ignores unknown fields`.
   `SafeUnmarshal` is offered to factories, and the `component-registration` requirement "Unknown configuration keys
-  are refused" binds every ported component. `output/websocket`, admitted at tier 0, calls it at the pin.
+  are refused" binds every ported component. Pin tarball callers (nine): `gateway/http/http.go`,
+  `gateway/lifecycle-gateway/component.go`, `input/file/file.go`, `input/http/register.go`, `input/udp/udp.go`,
+  `input/websocket/register.go`, `output/file/file.go`, `output/httppost/httppost.go`, `output/websocket/websocket.go`;
+  `output/websocket` is admitted at tier 0, the other eight are consumer adapters.
 - **F-3, test-only unexported code (#186).** `Registry.declaration` (`registry.go:675`), six test readers;
-  `createSimpleMockComponent` (`test_helpers.go:8`), none.
+  `createSimpleMockComponent` (`test_helpers.go:8`), none. `Registry.declarationsSnapshot` (`registry.go:687`) has one
+  production reader, `Snapshots` (`:700`), and two test readers (`registry_integration_test.go:385`, `:521`); once
+  `Snapshots` returns `[]Declaration` it is the same function.
 - **F-4, open but done.** #29 (§ 3).
 
 ## Adopter seams (existing surface)

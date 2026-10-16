@@ -13,21 +13,23 @@ with nothing left to hide, test code ships in production files, and the lifecycl
 
 - `ValidateFactoryConfig`, and so `CreateComponent`, `Declare` and `SafeUnmarshal`, refuses data after the first JSON
   value.
-- `SafeUnmarshal` refuses a nil target with an invalid error. Its contract is written in `component/README.md`.
+- `SafeUnmarshal` refuses a nil target with an invalid error, even for empty input. Its contract is written in `component/README.md`.
   Owner question 4: whether it also refuses unknown keys.
 - Generated schemas use `int`, `float` and `bool` for array items too (owner question 3).
 - **BREAKING (Go API):** `Registry.Register(Registration)` replaces `RegisterFactory`, `RegisterWithConfig` and
-  `RegistrationConfig`. `Registration.Type` is `types.ComponentType`, checked at registration. The registry stores a
-  copy (owner question 1).
+  `RegistrationConfig`. `Registration.Type` is `types.ComponentType`, checked at registration through a new
+  `types.ComponentType.Validate()`, which `types.ComponentConfig.Validate` also uses. The registry stores a copy
+  (owner question 1).
 - **BREAKING (Go API):** `Snapshots()` returns `[]Declaration`. `declarationSnapshot` and the test-only
-  `Registry.declaration` go.
+  `Registry.declaration` and `Registry.declarationsSnapshot` go.
+- **BREAKING (Go API):** the `component.PlatformMeta` alias is removed; `Dependencies.Platform` is
+  `types.PlatformMeta`.
 - **BREAKING (Go API):** `Discoverable` loses `ConfigSchema()` (#197, ruled). A component that defines the method
   still compiles.
 - `SimpleMockComponent` moves into a test file. `createSimpleMockComponent` and `attack_test.go` are deleted.
-- The `LifecycleComponent` doc lists the observable rules in plain words, and the `PlatformMeta` comment drops its false
-  reason.
+- The `LifecycleComponent` doc lists ADR-108 Decision 3's rules in plain words.
 - Owner question 5: `ValidateConfig(map, ConfigSchema)` and `ValidationError` are deleted, because nothing reads them.
-- Kept: `Metadata` and `Discoverable.Meta()`, `ListFactories`, the `PlatformMeta` alias.
+- Kept: `Metadata` and `Discoverable.Meta()`, `ListFactories`.
 
 ## Capabilities
 
@@ -38,8 +40,11 @@ with nothing left to hide, test code ships in production files, and the lifecycl
 - `component/registry.go`, `discovery.go`, `lifecycle.go`, `dependencies.go`, `validation.go`, `schema.go`,
   `schema_tags.go`, `test_helpers.go` (moves into a test file), `attack_test.go` (deleted), their tests,
   `component/README.md` and `doc.go`.
+- `types/component.go`: one new exported method, `ComponentType.Validate` (the root `types` package, not `pkg/types`,
+  which #275 owns; no shared file).
 - `processor/graph-ingest/component.go` (`Register`, `ConfigSchema`), `component_test.go`.
 - `docs/admission-ledger.yaml` (`component` row: `contract`, `proving_tests`).
-- Consumers at cutover: semsource renames 26 registration calls, and semboids changes 2. No consumer calls
+- Consumers at cutover: semsource renames 26 registration calls and 9 `component.PlatformMeta` uses. No consumer calls
   `Snapshots`, `SafeUnmarshal`, `ValidateConfig`, or `ConfigSchema()` through the interface (inventory § 4).
-- Closes #153 (owner question 2), #189 and #197. Addresses #223.
+- Closes #153 (owner question 2: item 6 goes to #196, item 7's `pkg/lifecycle` structs to #272, and the storage doc
+  and `Declaration`'s parallel lists to a new issue), #189 and #197. Addresses #223.

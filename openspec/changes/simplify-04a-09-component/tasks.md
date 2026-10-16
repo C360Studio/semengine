@@ -12,8 +12,9 @@ in `notes/<task>.md`. A compile failure on a missing symbol counts as failing. S
 
 - [ ] 2.1 `TestValidateFactoryConfigRefusesDataAfterTheFirstValue`, with a `CreateComponent` row whose factory is never
   called (design D1). Gate: fails on the base commit.
-- [ ] 2.2 `TestSafeUnmarshalRefusesANilTarget` (D2), plus, if owner question 4 is answered yes, an unknown-key row that
-  names the key. Gate: fails (panics) on the base commit.
+- [ ] 2.2 `TestSafeUnmarshalRefusesANilTarget` (D2), with a valid-input row and an empty-input row, plus, if owner
+  question 4 is answered yes, an unknown-key row that names the key. Gate: fails on the base commit (the first row
+  panics, the second returns nil).
 - [ ] 2.3 `TestGeneratedSchemaUsesOneWordPerType` (D3). Gate: fails on the base commit.
 
 ## 3. Implementation, first batch
@@ -28,14 +29,17 @@ Review stop A (tasks 2.1–3.3).
 
 ## 4. Registration and snapshots (#153 items 2–3)
 
-- [ ] 4.1 `TestRegisterRefusesATypeOutsideTheFive`, `TestRegisterKeepsItsOwnCopy`,
-  `TestRegisterRefusesADuplicateName` (D4), and a snapshot-independence test that reads `[]Declaration` (D5). Gate:
-  fail on the base commit (no symbol, or the wrong return type).
-- [ ] 4.2 `Registry.Register(Registration)` replaces `RegisterFactory`, `RegisterWithConfig` and `RegistrationConfig`.
+- [ ] 4.1 `TestComponentTypeValidate` (package `types`), `TestRegisterRefusesATypeOutsideTheFive`,
+  `TestRegisterKeepsItsOwnCopy`, `TestRegisterRefusesADuplicateName` (D4), and a snapshot-independence test that
+  reads `[]Declaration` (D5). Gate: fail on the base commit (no symbol, or the wrong return type).
+- [ ] 4.2 `types.ComponentType.Validate()` holds the five-type switch, and `ComponentConfig.Validate` calls it.
+  `Registry.Register(Registration)` replaces `RegisterFactory`, `RegisterWithConfig` and `RegistrationConfig`, calls
+  `Validate` on the type, and copies the registration with the helper `ListFactories` also uses.
   `Registration.Type` is `types.ComponentType`, and graph-ingest and every test move to the new call (D4). Gate: 4.1's
-  registration tests pass; `task test:unit`; `go test -tags integration -race ./component/ ./processor/graph-ingest/`.
-- [ ] 4.3 `Snapshots() []Declaration`. `declarationSnapshot`, its revive directive and `Registry.declaration` are
-  removed (D5). Gate: 4.1's snapshot test passes; `task lint`.
+  type and registration tests pass; `task test:unit`;
+  `go test -tags integration -race ./component/ ./processor/graph-ingest/`.
+- [ ] 4.3 `Snapshots() []Declaration`. `declarationSnapshot`, its revive directive, `Registry.declaration` and
+  `Registry.declarationsSnapshot` are removed (D5). Gate: 4.1's snapshot test passes; `task lint`.
 
 Review stop B (tasks 4.1–4.3).
 
@@ -47,19 +51,22 @@ Review stop B (tasks 4.1–4.3).
 - [ ] 5.3 `SimpleMockComponent` moves into a `_test.go` file; `createSimpleMockComponent` and `attack_test.go` are
   deleted (D7); if owner question 5 is answered yes, `ValidateConfig`, `ValidationError` and their tests are deleted
   (D9). Gate: `task build`, `task lint`, `task cover:check`.
-- [ ] 5.4 The `LifecycleComponent` doc lists the observable rules, and the `PlatformMeta` comment is corrected (D8).
-  Gate: review.
+- [ ] 5.4 The `LifecycleComponent` doc lists ADR-108 Decision 3's rules; the `component.PlatformMeta` alias is
+  removed and `Dependencies.Platform` is `types.PlatformMeta` (D8). Gate: review for the doc; `task build` and
+  `task test:unit` for the alias.
 
 Review stop C (tasks 5.1–5.4).
 
 ## 6. Documentation and follow-ups
 
 - [ ] 6.1 `component/README.md` and `doc.go` describe one `Register` call, the schema's one home, and `Snapshots`
-  returning declarations; the `docs/admission-ledger.yaml` `component` row's `contract` lists these adaptations and
-  its `proving_tests` drops `attack_test.go`. Gate: `task ledger:check`, `task docs:check`.
-- [ ] 6.2 If owner question 2 is answered yes, file the rest of #153 as one issue (items 6 and 7 outside `component`,
-  and `Declaration`'s parallel lists) and link it from the PR body without a closing keyword. Gate: the issue number is
-  on the PR body's follow-up line, and the PR body's `closingIssuesReferences` is read back as #153, #189, #197.
+  returning declarations, and `Dependencies.Platform` as `types.PlatformMeta`; the `docs/admission-ledger.yaml`
+  `component` row's `contract` lists these adaptations and its `proving_tests` drops `attack_test.go`; the `types`
+  row's `contract` names `ComponentType.Validate`. Gate: `task ledger:check`, `task docs:check`.
+- [ ] 6.2 If owner question 2 is answered yes: comment #153 item 6 onto #196 and item 7's `pkg/lifecycle` structs
+  onto #272; file one issue for the storage doc comment and `Declaration`'s parallel lists, with the reason they wait
+  (`Port.Facts()` can fail), and link it from the PR body without a closing keyword. Gate: each comment and the issue
+  are read back, and the PR body's `closingIssuesReferences` is read back as #153, #189, #197.
 
 ## 7. Verify, review and close
 

@@ -33,8 +33,8 @@ registered. The registration's `Schema` SHALL be the one place a factory reports
 
 `component.ValidateFactoryConfig`, which `Registry.CreateComponent`, `Registry.Declare` and `component.SafeUnmarshal`
 call, SHALL refuse with an invalid-class error a configuration in which anything other than whitespace follows the
-first JSON value. `SafeUnmarshal` SHALL refuse a nil target, or a nil pointer, with an invalid-class error, and SHALL
-NOT panic.
+first JSON value. `SafeUnmarshal` SHALL refuse a nil target, or a nil pointer, with an invalid-class error,
+whether or not the configuration is empty, and SHALL NOT panic.
 
 #### Scenario: A configuration object pasted twice
 
@@ -45,6 +45,11 @@ NOT panic.
 
 - **WHEN** `SafeUnmarshal` is called with a valid configuration and a nil target
 - **THEN** it returns an invalid-class error and does not panic
+
+#### Scenario: A nil target with an empty configuration
+
+- **WHEN** `SafeUnmarshal` is called with an empty configuration and a nil target
+- **THEN** it returns an invalid-class error
 
 ### Requirement: Admission snapshots are declaration values
 

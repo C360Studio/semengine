@@ -215,7 +215,7 @@ func (c *Component) requireRegisteredMessageType(entity *graph.EntityState) erro
 		return rejectInternal(errors.New("graph-ingest holds no payload registry; entity.create refused"))
 	}
 	key := entity.MessageType.Key()
-	if _, ok := c.payloadRegistry.GetRegistration(key); !ok {
+	if _, ok := c.payloadRegistry.GetRegistration(entity.MessageType); !ok {
 		return rejectInvalidDetail(graph.ErrorCodeMessageTypeUnregistered,
 			map[string]any{"message_type": key},
 			fmt.Errorf("entity message_type %q is not registered in this deployment's payload registry", key))

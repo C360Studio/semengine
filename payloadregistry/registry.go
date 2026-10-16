@@ -74,21 +74,21 @@ type Registration struct {
 // MessageType returns the formatted message type string for this registration.
 // Format: "domain.category.version" (e.g., "robotics.heartbeat.v1")
 func (pr *Registration) MessageType() string {
-	return fmt.Sprintf("%s.%s.%s", pr.Domain, pr.Category, pr.Version)
+	return types.Type{Domain: pr.Domain, Category: pr.Category, Version: pr.Version}.Key()
 }
 
 // Registry manages payload factories for message deserialization.
 // It provides thread-safe registration and lookup of payload factories,
 // enabling BaseMessage.UnmarshalJSON to recreate typed payloads from JSON.
 type Registry struct {
-	registrations map[string]*Registration // Registry by message type string
-	mu            sync.RWMutex             // Protects the map
+	registrations map[types.Type]*Registration // Registry by message type
+	mu            sync.RWMutex                 // Protects the map
 }
 
 // New creates a new empty payload registry.
 func New() *Registry {
 	return &Registry{
-		registrations: make(map[string]*Registration),
+		registrations: make(map[types.Type]*Registration),
 	}
 }
 
@@ -150,8 +150,6 @@ func (pr *Registry) Register(registration *Registration) error {
 		)
 	}
 
-	msgType := registration.MessageType()
-
 	contracts, err := bindContracts(registeredType, registration.IndexingProfile, registration.Contracts)
 	if err != nil {
 		return err
@@ -160,9 +158,9 @@ func (pr *Registry) Register(registration *Registration) error {
 	pr.mu.Lock()
 	defer pr.mu.Unlock()
 
-	if _, exists := pr.registrations[msgType]; exists {
+	if _, exists := pr.registrations[registeredType]; exists {
 		return errs.WrapInvalid(
-			fmt.Errorf("payload type '%s' is already registered", msgType),
+			fmt.Errorf("payload type '%s' is already registered", registeredType.Key()),
 			"PayloadRegistry",
 			"Register",
 			"duplicate payload check",
@@ -171,7 +169,7 @@ func (pr *Registry) Register(registration *Registration) error {
 
 	stored := *registration
 	stored.Contracts = contracts
-	pr.registrations[msgType] = &stored
+	pr.registrations[registeredType] = &stored
 	return nil
 }
 
@@ -246,15 +244,15 @@ func (pr *Registration) copyWithoutFactory() *Registration {
 	}
 }
 
-// IndexingProfileFor returns the floor registered with key and whether the key
-// is registered in this registry. A registered type may declare no floor
-// (profile == ""); an unregistered key reports ("", false). Floors exist per
+// IndexingProfileFor returns the floor registered with msgType and whether the
+// type is registered in this registry. A registered type may declare no floor
+// (profile == ""); an unregistered type reports ("", false). Floors exist per
 // binary because registrations do.
-func (pr *Registry) IndexingProfileFor(key string) (profile string, registered bool) {
+func (pr *Registry) IndexingProfileFor(msgType types.Type) (profile string, registered bool) {
 	pr.mu.RLock()
 	defer pr.mu.RUnlock()
 
-	registration, exists := pr.registrations[key]
+	registration, exists := pr.registrations[msgType]
 	if !exists {
 		return "", false
 	}
@@ -269,13 +267,13 @@ func (pr *Registry) Contracts() []contract.Contract {
 	pr.mu.RLock()
 	defer pr.mu.RUnlock()
 
-	keys := make([]string, 0, len(pr.registrations))
+	keys := make([]types.Type, 0, len(pr.registrations))
 	for key, registration := range pr.registrations {
 		if len(registration.Contracts) != 0 {
 			keys = append(keys, key)
 		}
 	}
-	sort.Strings(keys)
+	sort.Slice(keys, func(i, j int) bool { return keys[i].Key() < keys[j].Key() })
 
 	var result []contract.Contract
 	for _, key := range keys {
@@ -291,10 +289,8 @@ func (pr *Registry) Contracts() []contract.Contract {
 // then rejects the payload as unregistered — the fact lane admits only
 // registered types.
 func (pr *Registry) Create(domain, category, version string) any {
-	typeStr := fmt.Sprintf("%s.%s.%s", domain, category, version)
-
 	pr.mu.RLock()
-	registration, exists := pr.registrations[typeStr]
+	registration, exists := pr.registrations[types.Type{Domain: domain, Category: category, Version: version}]
 	pr.mu.RUnlock()
 
 	if !exists {
@@ -310,10 +306,11 @@ func (pr *Registry) Create(domain, category, version string) any {
 //
 // Returns an error if the message type is not registered or if building fails.
 func (pr *Registry) Build(domain, category, version string, fields map[string]any) (any, error) {
-	typeStr := fmt.Sprintf("%s.%s.%s", domain, category, version)
+	msgType := types.Type{Domain: domain, Category: category, Version: version}
+	typeStr := msgType.Key()
 
 	pr.mu.RLock()
-	registration, exists := pr.registrations[typeStr]
+	registration, exists := pr.registrations[msgType]
 	pr.mu.RUnlock()
 
 	if !exists {
@@ -341,7 +338,7 @@ func (pr *Registry) Build(domain, category, version string, fields map[string]an
 
 // GetRegistration returns the payload registration for a specific message type.
 // Returns the registration and true if found, nil and false otherwise.
-func (pr *Registry) GetRegistration(msgType string) (*Registration, bool) {
+func (pr *Registry) GetRegistration(msgType types.Type) (*Registration, bool) {
 	pr.mu.RLock()
 	defer pr.mu.RUnlock()
 
@@ -363,7 +360,7 @@ func (pr *Registry) List() map[string]*Registration {
 	// Return a copy to prevent external modification
 	result := make(map[string]*Registration, len(pr.registrations))
 	for msgType, registration := range pr.registrations {
-		result[msgType] = registration.copyWithoutFactory()
+		result[msgType.Key()] = registration.copyWithoutFactory()
 	}
 
 	return result

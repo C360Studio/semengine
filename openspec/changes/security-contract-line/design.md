@@ -160,7 +160,7 @@ prefix `docs(security)` may become `test(security)` or `fix(security)`; `merge-c
 1. **Should SemEngine refuse `mode: acme` and `acme.enabled` until it can do ACME?** Recommended yes (D3 option 1):
    about 15 lines and a test in `internal/tlsutil`; an operator is told at start instead of being served the wrong
    certificate. Option 2 costs no code, but leaves that case silent and keeps 12 settings with no test that fails when
-   they are ignored, which the surface audit rule forbids unless you waive it.
+   they are ignored, which departs from the surface audit rule (written for ported packages).
 2. **Should the TLS loaders products need become public?** Recommended not in this change: file an issue to re-judge
    `internal/tlsutil` under #190, naming #84 so the re-judgment does not decide how authentication hooks onto the
    engine's servers. Until then a product that reads `deps.Security` rebuilds the fail-closed mTLS rule

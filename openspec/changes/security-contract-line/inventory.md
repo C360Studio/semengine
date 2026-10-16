@@ -99,8 +99,8 @@ Open pull requests (`gh pr list --state open --json number,title,changedFiles,fi
   must implement `Discoverable`, whose method set #273 changes, so whichever PR lands second edits
   `pkg/security/product_test.go`; and both edit the ledger, far apart (`:390`, `:675` here), so a textual conflict
   is unlikely.
-- #278 (draft claim, 0 files), #279 (this claim, 0 files), Dependabot #242-#248 (`go.mod`, `go.sum`,
-  `package*.json`, a workflow): no overlap.
+- #278 (draft claim; 5 files, all under `openspec/changes/simplify-04a-12-dispatch/`, as of round 2), #279 (this
+  claim, 0 files), Dependabot #242-#248 (`go.mod`, `go.sum`, `package*.json`, a workflow): no overlap.
 
 Specs: no current spec names `pkg/security`, `security.Config`, `Dependencies.Security`, TLS or mTLS
 (`git grep -n -i -e security -e tls -e mtls -- openspec/specs`: nothing). Active changes: none names them

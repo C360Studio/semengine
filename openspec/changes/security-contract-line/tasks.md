@@ -17,6 +17,8 @@ starts.
   served, and `min_version` `"1.4"` makes `Start` fail naming `min_version`; and a first case requires the
   `deps.Security` the factory receives, from the decoded `configDocument`, to equal `wantConfig`. The product type
   implements the `Discoverable` methods `main` has when the PR merges main (design, Merge order).
+  `notes/2.1.md` says the arrival case has no mutant: only the decode can change it, and `TestConfigDecodesEveryKey`
+  covers that.
   Gate: passes on the base commit;
   `task mutate:check` runs on mutants A and B (D5) are recorded in `notes/2.1.md` as detected, surviving or
   inconclusive.
@@ -27,8 +29,9 @@ starts.
 
 ## 3. Implementation
 
-- [ ] 3.1 (Q1) The two loaders refuse what 2.2 names. Gate: 2.2 passes; one `task mutate:check` run deleting the
-  `mode` check fails it.
+- [ ] 3.1 (Q1) The two loaders refuse what 2.2 names, and the spec delta's "This requirement follows the owner's
+  answer" paragraph is removed so it does not sync into the published spec. Gate: 2.2 passes; one
+  `task mutate:check` run deleting the `mode` check fails it.
 - [ ] 3.2 (Q3) The `schema` tags on `pkg/security`'s 31 fields are removed; the `json` tags are unchanged. Gate:
   `TestConfigDecodesEveryKey` and `TestConfigDocumentCoversEveryField` pass unchanged.
 - [ ] 3.3 `pkg/security/doc.go`: the ACME usage example (`:65-78`) and the `pkg/acme` link (`:130`) go; `:83`,

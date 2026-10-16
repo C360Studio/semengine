@@ -38,7 +38,7 @@ func newDeclareFixture(t *testing.T) *declareFixture {
 			}},
 		},
 	}
-	requireNoError(t, f.registry.RegisterWithConfig(RegistrationConfig{
+	requireNoError(t, f.registry.Register(Registration{
 		Name: "declared", Type: "processor",
 		Factory: func(json.RawMessage, Dependencies) (Discoverable, error) {
 			f.factoryCalls++
@@ -66,7 +66,7 @@ func TestDeclareReturnsTheAdmittedDeclarationWithoutConstructing(t *testing.T) {
 	if f.factoryCalls != 0 {
 		t.Fatalf("Declare called the factory %d times, want none", f.factoryCalls)
 	}
-	if _, admitted := f.registry.declaration("worker"); admitted {
+	if _, admitted := admittedDeclaration(f.registry, "worker"); admitted {
 		t.Fatal("Declare admitted the instance")
 	}
 	if declared.InstanceName != "worker" || declared.FactoryIdentity != "declared" ||
@@ -89,7 +89,7 @@ func TestDeclareReturnsTheAdmittedDeclarationWithoutConstructing(t *testing.T) {
 
 	_, err = f.registry.CreateComponent("worker", config, declarationTestDeps(), nil)
 	requireNoError(t, err)
-	admitted, ok := f.registry.declaration("worker")
+	admitted, ok := admittedDeclaration(f.registry, "worker")
 	if !ok {
 		t.Fatal("CreateComponent retained no declaration")
 	}
@@ -166,7 +166,7 @@ func TestDeclareRefusesWhatAdmissionWouldRefuse(t *testing.T) {
 			config := declarationTestConfig("declared", `{}`)
 			otherCalls := 0
 			if tt.ports != nil {
-				requireNoError(t, f.registry.RegisterWithConfig(RegistrationConfig{
+				requireNoError(t, f.registry.Register(Registration{
 					Name: "other", Type: "processor",
 					Factory: func(json.RawMessage, Dependencies) (Discoverable, error) {
 						f.factoryCalls++
@@ -197,7 +197,7 @@ func TestDeclareRefusesWhatAdmissionWouldRefuse(t *testing.T) {
 			if tt.ports != nil && otherCalls != 1 {
 				t.Fatalf("declarer ran %d times, want once", otherCalls)
 			}
-			if _, admitted := f.registry.declaration(tt.instance); admitted {
+			if _, admitted := admittedDeclaration(f.registry, tt.instance); admitted {
 				t.Fatal("a refused Declare admitted the instance")
 			}
 		})

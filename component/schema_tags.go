@@ -587,11 +587,11 @@ func generateItemSchema(elemType reflect.Type) *PropertySchema {
 		return &PropertySchema{Type: "string"}
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		return &PropertySchema{Type: "integer"}
+		return &PropertySchema{Type: "int"}
 	case reflect.Float32, reflect.Float64:
-		return &PropertySchema{Type: "number"}
+		return &PropertySchema{Type: "float"}
 	case reflect.Bool:
-		return &PropertySchema{Type: "boolean"}
+		return &PropertySchema{Type: "bool"}
 	case reflect.Slice, reflect.Array:
 		// Nested array - recurse
 		return &PropertySchema{

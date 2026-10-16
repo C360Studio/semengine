@@ -239,3 +239,43 @@ func (m *mockDebugProvider) DebugStatus() interface{} {
 }
 
 type mockNonDebugProvider struct{}
+
+// portsHealthFlowComponent has exactly the four methods a Discoverable needs:
+// no Meta and no ConfigSchema, which a factory's registration reports instead.
+type portsHealthFlowComponent struct{}
+
+func (portsHealthFlowComponent) InputPorts() []Port { return nil }
+func (portsHealthFlowComponent) OutputPorts() []Port {
+	return []Port{declarationTestPort("four.methods")}
+}
+func (portsHealthFlowComponent) Health() HealthStatus  { return HealthStatus{Healthy: true} }
+func (portsHealthFlowComponent) DataFlow() FlowMetrics { return FlowMetrics{} }
+
+// TestDiscoverableNeedsOnlyPortsHealthAndFlow proves a component with only
+// ports, health and flow is a Discoverable the registry creates and admits.
+// On a tree whose Discoverable still requires Meta or ConfigSchema, this file
+// does not compile.
+func TestDiscoverableNeedsOnlyPortsHealthAndFlow(t *testing.T) {
+	var built Discoverable = portsHealthFlowComponent{}
+	registry := NewRegistry()
+	requireNoError(t, registry.Register(Registration{
+		Name: "four-methods", Type: "processor",
+		Factory: func(json.RawMessage, Dependencies) (Discoverable, error) { return built, nil },
+		Ports: func(json.RawMessage, string) (PortConfig, error) {
+			return PortConfigFrom(nil, []Port{declarationTestPort("four.methods")}), nil
+		},
+	}))
+
+	created, err := registry.CreateComponent("four", declarationTestConfig("four-methods", `{}`), declarationTestDeps(), nil)
+	requireNoError(t, err)
+	if created != built {
+		t.Fatalf("CreateComponent returned %#v, want the factory's component", created)
+	}
+	declaration, ok := admittedDeclaration(registry, "four")
+	if !ok {
+		t.Fatal("the four-method component was not admitted")
+	}
+	if len(declaration.OutputPorts) != 1 || declaration.OutputPorts[0].Name != "events" {
+		t.Fatalf("admitted outputs %+v, want the one events port", declaration.OutputPorts)
+	}
+}

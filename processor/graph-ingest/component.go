@@ -825,7 +825,7 @@ func Register(registry *component.Registry) error {
 }
 
 // ============================================================================
-// Discoverable Interface (6 methods)
+// Discoverable Interface
 // ============================================================================
 
 // InputPorts returns input port definitions.

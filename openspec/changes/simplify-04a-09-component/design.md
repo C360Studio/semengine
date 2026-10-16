@@ -125,7 +125,8 @@ and `task cover:check`, which holds the 80% floor. The ledger's `proving_tests` 
 The `LifecycleComponent` doc lists ADR-108 Decision 3's rules as the ADR words them
 (`docs/adr/108-processor-shell.md:74-83`), stated as outcomes:
 
-- nil and ended contexts are refused;
+- `Start` and `Stop` refuse a nil context, and `Start` refuses an ended one (the portable floor ADR-108 adopts,
+  `openspec/specs/lifecycle-suite/spec.md:17-18`);
 - `Stop` before `Start` is safe;
 - `Stop` is controlled while the `Start` context is still live, and ending that context first makes it an abort;
 - a repeated `Stop` is a no-op;

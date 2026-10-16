@@ -200,6 +200,23 @@ func TestBaseMessage_Validate(t *testing.T) {
 	assert.Error(t, invalidTypeMsg.Validate())
 }
 
+// TestBaseMessageValidateRefusesTypeGrammar: BaseMessage.Validate, and so MarshalJSON, refuses
+// with an invalid-data error a type that Type.Validate refuses, a dotted category included
+// (design D2; message-codec spec, "A dotted type component").
+func TestBaseMessageValidateRefusesTypeGrammar(t *testing.T) {
+	msg := NewBaseMessage(
+		Type{Domain: "test", Category: "a.b", Version: "v1"},
+		&TestPayload{Value: `{}`, Valid: true},
+		"source",
+	)
+	if err := msg.Validate(); err == nil || !errs.IsInvalid(err) {
+		t.Errorf("Validate() = %v, want an invalid-data error", err)
+	}
+	if encoded, err := msg.MarshalJSON(); err == nil || !errs.IsInvalid(err) {
+		t.Errorf("MarshalJSON() = %s, %v; want an invalid-data error", encoded, err)
+	}
+}
+
 func TestBaseMessagePreservesCodedPayloadValidationError(t *testing.T) {
 	t.Parallel()
 

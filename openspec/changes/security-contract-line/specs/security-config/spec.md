@@ -49,9 +49,6 @@ other than empty, `1.2` or `1.3`.
 
 ### Requirement: Settings no SemEngine code applies yet are refused
 
-This requirement follows the owner's answer to design question 1 (Q1). Option 2 replaces it with a statement that
-the settings are accepted and have no effect.
-
 Until SemEngine ports its ACME loaders, the loaders that build a TLS configuration from these types SHALL refuse,
 with an invalid-class error naming the key, a `mode` other than empty or `manual` and an `acme` block with `enabled`
 true, and `metric.NewServer`'s `Start` SHALL then return an error naming the key and serve nothing. No exported

@@ -14,7 +14,8 @@ import (
 // LoadServerTLSConfig creates a tls.Config for HTTP/WebSocket servers from platform config,
 // applying cfg.MTLS when it is enabled. Enabling mTLS while server TLS is disabled is refused
 // with errs.ErrInvalidConfig: a plain HTTP server cannot verify a client certificate, so there
-// is no config that honours both.
+// is no config that honours both. An enabled server asking for ACME is refused too
+// (checkManualMode).
 func LoadServerTLSConfig(cfg security.ServerTLSConfig) (*tls.Config, error) {
 	if cfg.MTLS.Enabled && !cfg.Enabled {
 		return nil, errs.WrapInvalid(errs.ErrInvalidConfig, "tlsutil", "LoadServerTLSConfig",
@@ -22,6 +23,9 @@ func LoadServerTLSConfig(cfg security.ServerTLSConfig) (*tls.Config, error) {
 	}
 	if !cfg.Enabled {
 		return nil, nil
+	}
+	if err := checkManualMode(cfg.Mode, cfg.ACME, "LoadServerTLSConfig"); err != nil {
+		return nil, err
 	}
 
 	minVersion, err := parseTLSVersion(cfg.MinVersion)
@@ -50,8 +54,12 @@ func LoadServerTLSConfig(cfg security.ServerTLSConfig) (*tls.Config, error) {
 
 // LoadClientTLSConfig creates a tls.Config for HTTP/WebSocket clients from platform config.
 // Always uses system CA bundle first, CAFiles are additional trusted CAs. When cfg.MTLS is
-// enabled, its key pair is the client certificate.
+// enabled, its key pair is the client certificate. A configuration asking for ACME is refused
+// (checkManualMode).
 func LoadClientTLSConfig(cfg security.ClientTLSConfig) (*tls.Config, error) {
+	if err := checkManualMode(cfg.Mode, cfg.ACME, "LoadClientTLSConfig"); err != nil {
+		return nil, err
+	}
 	minVersion, err := parseTLSVersion(cfg.MinVersion)
 	if err != nil {
 		return nil, errs.WrapInvalid(err, "tlsutil", "LoadClientTLSConfig", "parse min_version")
@@ -90,6 +98,23 @@ func LoadClientTLSConfig(cfg security.ClientTLSConfig) (*tls.Config, error) {
 	}
 
 	return tlsConfig, nil
+}
+
+// checkManualMode refuses a mode other than empty or "manual", and an enabled ACME block, with
+// errs.ErrInvalidConfig naming the key. SemEngine has no ACME loader yet, so serving the
+// certificate files instead would ignore what the operator asked for (security-config spec,
+// "Settings no SemEngine code applies yet are refused"). The other ACME settings act only
+// under acme.enabled, so refusing it covers them.
+func checkManualMode(mode string, acme security.ACMEConfig, method string) error {
+	if mode != "" && mode != "manual" {
+		return errs.WrapInvalid(errs.ErrInvalidConfig, "tlsutil", method,
+			fmt.Sprintf("mode %q is not supported (must be \"\" or \"manual\")", mode))
+	}
+	if acme.Enabled {
+		return errs.WrapInvalid(errs.ErrInvalidConfig, "tlsutil", method,
+			"acme.enabled is true but ACME is not supported")
+	}
+	return nil
 }
 
 // appendCAFiles adds the PEM certificates in files to pool. A file that cannot be read or

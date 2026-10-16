@@ -171,7 +171,8 @@ applies. PR 10 (`processor/graph-ingest`, unclaimed) should start after this PR,
 
 ## Owner rulings (2026-10-16)
 
-Recorded by the coordinating session from the owner's answers to this design's questions (at `2d72c72`).
+Recorded by the coordinating session from the owner's answers to this design's questions (at `2d72c72`), and posted on
+the issues: rulings 1, 2 and 5 on #153 (comment 6214880970), rulings 3 and 4 on #189 (comment 6214881340).
 
 1. **One register path; `Metadata` goes.** The owner's words: "agree that we should have a single register path. i
    am also okay getting rid of metadata if it's not used. but i am pretty sure metadat was deigned for ui/human

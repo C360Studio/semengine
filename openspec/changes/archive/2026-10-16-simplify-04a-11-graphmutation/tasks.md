@@ -47,6 +47,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 - [x] 5.1 `task verify` passes on a clean tree at the implementation head; `internal/graphmutation` holds its
   coverage floor (exit 0 at `c58e551`; cover:check passed).
-- [ ] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
-- [ ] 5.3 Archive the change (`openspec archive simplify-04a-11-graphmutation`) as the last content commit. Gate:
+- [x] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body (Codex
+  APPROVE at `3802a91`, PR comment 6218919045).
+- [x] 5.3 Archive the change (`openspec archive simplify-04a-11-graphmutation`) as the last content commit. Gate:
   `task spec:check`.

@@ -5,8 +5,9 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 ## 1. Design
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal, design and spec delta pass pre-owner review and are accepted
-  by the owner. Gate: `task spec:check` and `task docs:check`.
+- [x] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal, design and spec delta pass pre-owner review and are accepted
+  by the owner (no owner question; built on the owner's 2026-10-16 instruction and split, #223 comment 6216623583;
+  review LOW findings 1–7 folded into tasks 2.x–4.1). Gate: `task spec:check` and `task docs:check`.
 
 ## 2. Failing tests
 

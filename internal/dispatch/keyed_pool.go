@@ -13,7 +13,8 @@ import (
 )
 
 // KeyedPool is the framework's keyed-ordered bounded-concurrency
-// primitive: it partitions work into N lanes by a caller-supplied key.
+// primitive: it partitions work into N lanes by the key each
+// SubmitBlocking call names.
 // All items sharing a key route to the same lane and are processed
 // serially in submit order, while items with different keys spread
 // across lanes and run concurrently.
@@ -35,19 +36,13 @@ import (
 // Process) needs no locking on it.
 type KeyedPool[W any] struct {
 	lanes   int
-	keyOf   func(W) string
-	process func(ctx context.Context, lane int, work W) error
+	process func(ctx context.Context, lane int, work W)
 	onPanic func(work W, recovered any)
 	logger  *slog.Logger
 	name    string
 
 	laneCh []chan keyedItem[W]
 	wg     sync.WaitGroup
-
-	// stopMetrics is closed by the drain the first Shutdown starts, and
-	// tells the queue-depth updater to exit. It goes with metricsUpdater
-	// (simplify-04a-12-dispatch task 3.3).
-	stopMetrics chan struct{}
 
 	lifecycleMu sync.Mutex
 	stopped     bool
@@ -74,7 +69,7 @@ type keyedItem[W any] struct {
 
 // KeyedConfig parameterizes KeyedPool construction. The zero value is
 // NOT valid — NewKeyedPool rejects Lanes <= 0, QueueDepth <= 0, and a
-// missing KeyOf or Process.
+// missing Process.
 type KeyedConfig[W any] struct {
 	// Lanes is the number of parallel serial lanes. Same-key work is
 	// serialized within a lane; different keys spread across lanes.
@@ -86,16 +81,13 @@ type KeyedConfig[W any] struct {
 	// the target lane is at capacity. Must be > 0.
 	QueueDepth int
 
-	// KeyOf maps a work item to its partition key. Items with equal
-	// keys are processed serially in submit order on one lane. Must be
-	// non-nil and pure (called once per submit).
-	KeyOf func(W) string
-
 	// Process handles one work item. It is called by the assigned
 	// lane's single goroutine, with that lane's index — a composer can
 	// use the index to shard per-lane state without locking (the pool
-	// guarantees at most one goroutine per lane). Must be non-nil.
-	Process func(ctx context.Context, lane int, work W) error
+	// guarantees at most one goroutine per lane). Must be non-nil. The
+	// pool reports nothing about the outcome: Process disposes of its own
+	// failures (logs them, settles the message it came from).
+	Process func(ctx context.Context, lane int, work W)
 
 	// OnPanic — optional. When Process panics, the pool recovers it,
 	// keeps the lane goroutine alive, and (if set) calls OnPanic with
@@ -105,16 +97,15 @@ type KeyedConfig[W any] struct {
 	OnPanic func(work W, recovered any)
 
 	// Name labels this pool's metrics (the `pool` label). Optional;
-	// the pool has metrics only when KeyedDeps.MetricsRegistry is set.
+	// the pool has metrics only when MetricsRegistry is set.
 	Name string
-}
 
-// KeyedDeps carries the framework dependencies. Both are optional:
-// MetricsRegistry nil → the pool keeps no metrics; Logger nil →
-// slog.Default.
-type KeyedDeps struct {
+	// MetricsRegistry — optional. When set, the pool registers its
+	// metrics on it; when nil, the pool keeps no metrics.
 	MetricsRegistry *metric.MetricsRegistry
-	Logger          *slog.Logger
+
+	// Logger — optional; nil means slog.Default.
+	Logger *slog.Logger
 }
 
 // NewKeyedPool constructs and starts a KeyedPool. Lane goroutines are
@@ -129,7 +120,7 @@ type KeyedDeps struct {
 // Returns ErrInvalidConfig for a nil ctx or a missing or out-of-range
 // required field, and the registry's refusal when one of the pool's
 // metrics cannot be registered; either way no goroutine is started.
-func NewKeyedPool[W any](ctx context.Context, cfg KeyedConfig[W], deps KeyedDeps) (*KeyedPool[W], error) {
+func NewKeyedPool[W any](ctx context.Context, cfg KeyedConfig[W]) (*KeyedPool[W], error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("%w: context is required", ErrInvalidConfig)
 	}
@@ -139,32 +130,27 @@ func NewKeyedPool[W any](ctx context.Context, cfg KeyedConfig[W], deps KeyedDeps
 	if cfg.QueueDepth <= 0 {
 		return nil, fmt.Errorf("%w: QueueDepth must be > 0 (got %d)", ErrInvalidConfig, cfg.QueueDepth)
 	}
-	if cfg.KeyOf == nil {
-		return nil, fmt.Errorf("%w: KeyOf is required", ErrInvalidConfig)
-	}
 	if cfg.Process == nil {
 		return nil, fmt.Errorf("%w: Process is required", ErrInvalidConfig)
 	}
 
-	logger := deps.Logger
+	logger := cfg.Logger
 	if logger == nil {
 		logger = slog.Default()
 	}
 
 	p := &KeyedPool[W]{
-		lanes:       cfg.Lanes,
-		keyOf:       cfg.KeyOf,
-		process:     cfg.Process,
-		onPanic:     cfg.OnPanic,
-		logger:      logger,
-		name:        cfg.Name,
-		laneCh:      make([]chan keyedItem[W], cfg.Lanes),
-		stopMetrics: make(chan struct{}),
-		stopDone:    make(chan struct{}),
+		lanes:    cfg.Lanes,
+		process:  cfg.Process,
+		onPanic:  cfg.OnPanic,
+		logger:   logger,
+		name:     cfg.Name,
+		laneCh:   make([]chan keyedItem[W], cfg.Lanes),
+		stopDone: make(chan struct{}),
 	}
 
-	if deps.MetricsRegistry != nil {
-		metrics, err := newKeyedMetrics(deps.MetricsRegistry, cfg.Name)
+	if cfg.MetricsRegistry != nil {
+		metrics, err := newKeyedMetrics(cfg.MetricsRegistry, cfg.Name)
 		if err != nil {
 			return nil, fmt.Errorf("dispatch: register the metrics of pool %q: %w", cfg.Name, err)
 		}
@@ -176,24 +162,18 @@ func NewKeyedPool[W any](ctx context.Context, cfg KeyedConfig[W], deps KeyedDeps
 		p.wg.Add(1)
 		go p.lane(ctx, i, p.laneCh[i])
 	}
-	if p.metrics != nil {
-		p.wg.Add(1)
-		go p.metricsUpdater()
-	}
 
 	return p, nil
 }
 
-// laneFor maps a work item to its lane via FNV-1a over the key mod
-// Lanes. Inlined (no hasher allocation) since it is on the submit hot
-// path.
-func (p *KeyedPool[W]) laneFor(work W) int {
+// laneFor maps a key to its lane via FNV-1a over the key mod Lanes.
+// Inlined (no hasher allocation) since it is on the submit hot path.
+func (p *KeyedPool[W]) laneFor(key string) int {
 	const (
 		offset64 = 14695981039346656037
 		prime64  = 1099511628211
 	)
 	h := uint64(offset64)
-	key := p.keyOf(work)
 	for i := 0; i < len(key); i++ {
 		h ^= uint64(key[i])
 		h *= prime64
@@ -201,17 +181,21 @@ func (p *KeyedPool[W]) laneFor(work W) int {
 	return int(h % uint64(p.lanes))
 }
 
-// SubmitBlocking routes work to its lane, blocking until the lane has
-// capacity or the ctx ends (returns ctx.Err()). From the moment
-// Shutdown has begun it returns ErrStopped. This is the backpressure
-// form — a full lane blocks the caller rather than dropping.
+// SubmitBlocking routes work to the lane its key maps to, blocking
+// until the lane has capacity or the ctx ends (returns ctx.Err()).
+// Items submitted with equal keys are processed one at a time, in
+// submit order. A call that begins after Shutdown has begun returns
+// ErrStopped; a call already waiting on a full lane when Shutdown
+// begins may still be accepted, and is then processed before Shutdown
+// returns nil. This is the backpressure form — a full lane blocks the
+// caller rather than dropping.
 //
 // Composer note (ADR-072 M3): Shutdown waits for a call already parked
 // on a full lane, and that call returns only when the lane takes its
 // item or its ctx ends. On shutdown, cancel the ctx passed here BEFORE
 // calling Shutdown, so a synchronous producer (e.g. a NATS consume
 // callback) parked here unblocks and can dispose of its message.
-func (p *KeyedPool[W]) SubmitBlocking(ctx context.Context, work W) error {
+func (p *KeyedPool[W]) SubmitBlocking(ctx context.Context, key string, work W) error {
 	p.lifecycleMu.Lock()
 	if p.stopped {
 		p.lifecycleMu.Unlock()
@@ -224,7 +208,7 @@ func (p *KeyedPool[W]) SubmitBlocking(ctx context.Context, work W) error {
 	p.lifecycleMu.Unlock()
 	defer p.submitWG.Done()
 
-	lane := p.laneFor(work)
+	lane := p.laneFor(key)
 	item := keyedItem[W]{work: work, submitAt: time.Now()}
 	select {
 	case <-ctx.Done():
@@ -232,6 +216,7 @@ func (p *KeyedPool[W]) SubmitBlocking(ctx context.Context, work W) error {
 	case p.laneCh[lane] <- item:
 		if p.metrics != nil {
 			p.metrics.submitted.Inc()
+			p.metrics.queueDepth.Inc()
 		}
 		return nil
 	}
@@ -254,6 +239,7 @@ func (p *KeyedPool[W]) lane(ctx context.Context, idx int, ch chan keyedItem[W]) 
 // invoked, and the lane goroutine continues to the next item.
 func (p *KeyedPool[W]) runOne(ctx context.Context, lane int, item keyedItem[W]) {
 	if p.metrics != nil {
+		p.metrics.queueDepth.Dec()
 		p.metrics.queueWait.Observe(time.Since(item.submitAt).Seconds())
 		p.metrics.inflight.Inc()
 	}
@@ -274,21 +260,16 @@ func (p *KeyedPool[W]) runOne(ctx context.Context, lane int, item keyedItem[W]) 
 	}()
 
 	start := time.Now()
-	err := p.process(ctx, lane, item.work)
+	p.process(ctx, lane, item.work)
 	if p.metrics != nil {
 		p.metrics.processing.Observe(time.Since(start).Seconds())
 	}
-	if err != nil {
-		p.logger.Debug("dispatch: Process returned error",
-			slog.String("pool", p.name),
-			slog.Int("lane", lane),
-			slog.String("error", err.Error()))
-	}
 }
 
-// Shutdown is the pool's only stop: it stops accepting new work
-// (SubmitBlocking returns ErrStopped from the first call on), lets each
-// lane process its queued items, and returns nil once every lane has
+// Shutdown is the pool's only stop: it stops accepting new work (a
+// SubmitBlocking call that begins after the first Shutdown returns
+// ErrStopped; one already waiting on a full lane may still be accepted,
+// and is processed), lets each lane process its queued items, and returns nil once every lane has
 // exited, also when ctx has ended by then. If ctx ends first it returns
 // ctx.Err(); the lanes keep processing and exit once their queues are
 // empty, and a later Shutdown returns nil. Given a ctx with no
@@ -329,35 +310,14 @@ func (p *KeyedPool[W]) Shutdown(ctx context.Context) error {
 // drain runs once, started by the first Shutdown: it waits for the
 // submits accepted before Shutdown to land, closes every lane channel
 // so each lane exits after its last item, and closes stopDone once
-// every lane and the metrics updater have exited.
+// every lane has exited.
 func (p *KeyedPool[W]) drain() {
 	p.submitWG.Wait()
 	for _, ch := range p.laneCh {
 		close(ch)
 	}
-	close(p.stopMetrics)
 	p.wg.Wait()
 	close(p.stopDone)
-}
-
-// metricsUpdater periodically refreshes the aggregate queue-depth
-// gauge (sum of lane buffer lengths). Exits on Shutdown.
-func (p *KeyedPool[W]) metricsUpdater() {
-	defer p.wg.Done()
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-p.stopMetrics:
-			return
-		case <-ticker.C:
-			depth := 0
-			for _, ch := range p.laneCh {
-				depth += len(ch)
-			}
-			p.metrics.queueDepth.Set(float64(depth))
-		}
-	}
 }
 
 // keyedMetrics holds the Prometheus metrics for one KeyedPool,
@@ -393,7 +353,7 @@ func newKeyedMetrics(registry *metric.MetricsRegistry, name string) (*keyedMetri
 		}),
 		queueDepth: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name:        "dispatch_queue_depth",
-			Help:        "Aggregate queued items across all lanes",
+			Help:        "Items accepted and not yet passed to Process, across all lanes of every pool of this name",
 			ConstLabels: labels,
 		}),
 		inflight: prometheus.NewGauge(prometheus.GaugeOpts{

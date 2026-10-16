@@ -174,8 +174,12 @@ func (c *Component) buildIngestPool(poolCtx context.Context) error {
 		Lanes:      lanes,
 		QueueDepth: ingestLaneQueueDepth,
 		Name:       "graph_ingest",
-		KeyOf:      func(w ingestWork) string { return w.entityID },
-		Process:    c.processIngest,
+		Process: func(ctx context.Context, lane int, work ingestWork) {
+			if err := c.processIngest(ctx, lane, work); err != nil {
+				c.logger.Debug("graph-ingest: processIngest returned an error",
+					slog.String("entity_id", work.entityID), slog.Int("lane", lane), slog.Any("error", err))
+			}
+		},
 		OnPanic: func(w ingestWork, _ any) {
 			// The lane recovered a panic in processIngest's own code; Nak so the
 			// server redelivers rather than silently losing the message. A panic in
@@ -185,7 +189,9 @@ func (c *Component) buildIngestPool(poolCtx context.Context) error {
 				c.logger.Error("Failed to Nak after ingest panic", slog.Any("error", err))
 			}
 		},
-	}, dispatch.KeyedDeps{MetricsRegistry: c.metricsRegistry, Logger: c.logger})
+		MetricsRegistry: c.metricsRegistry,
+		Logger:          c.logger,
+	})
 	if err != nil {
 		return errs.Wrap(err, "Component", "buildIngestPool", "keyed pool construction")
 	}

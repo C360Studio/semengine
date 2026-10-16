@@ -1592,7 +1592,7 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 			subject:     subject,
 			importLane:  importLane,
 		}
-		if serr := pool.SubmitBlocking(submitCtx, work); serr != nil {
+		if serr := pool.SubmitBlocking(submitCtx, work.entityID, work); serr != nil {
 			if nakErr := msg.Nak(); nakErr != nil {
 				c.logger.Error("Failed to Nak after submit failure", slog.Any("error", nakErr))
 			}

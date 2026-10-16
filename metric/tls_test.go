@@ -89,8 +89,8 @@ func TestServerRequiredMTLSRejectsClientWithoutCertificate(t *testing.T) {
 
 // TestServerRefusesMTLSWithoutTLS: client certificates can only be required over TLS, so a Server
 // whose configuration enables mTLS with server TLS disabled refuses to start rather than serving
-// plain HTTP to every client. security.Config.Validate does not catch it: a disabled server TLS
-// block validates nothing beneath it.
+// plain HTTP to every client. Start does not call the TLS loader while server TLS is disabled, so
+// the server checks the mTLS switch itself.
 func TestServerRefusesMTLSWithoutTLS(t *testing.T) {
 	id := newTestIdentity(t)
 	securityCfg := security.Config{TLS: security.TLSConfig{Server: security.ServerTLSConfig{

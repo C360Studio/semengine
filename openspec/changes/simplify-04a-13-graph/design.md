@@ -222,6 +222,8 @@ production caller, here or, for the group under owner question 1, at the pin in 
    for these. Ruling P is a precedent for removal: the reply envelope left and returns with change 4.
    **Recommended: keep**, so that each package ported later finds its types already here. Removing them means each
    one comes back with its reader. Item g, and step 4 for the aggregate validators (D1), depend on this answer.
+   **Answered 2026-10-16 (owner): keep (port whole)** (#132 comment, see PR #286). So item g's comment goes to #105, and
+   the aggregate validators gain step 4 (D1).
 
 FYI, no ruling needed:
 

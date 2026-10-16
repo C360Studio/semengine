@@ -7,7 +7,7 @@ a compile failure as failing. Review stops (Codex) after 2.3, 3.3 and 4.2. Each 
 
 ## 1. Design
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal, design and spec deltas pass pre-owner review and are accepted
+- [x] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal, design and spec deltas pass pre-owner review and are accepted
   by the owner, with owner question 1 answered. Gate: `task spec:check` and `task docs:check`.
 
 ## 2. One stored-value rule and the exact reader (batch 1)
@@ -30,7 +30,7 @@ a compile failure as failing. Review stops (Codex) after 2.3, 3.3 and 4.2. Each 
   - the root decoder, `ValidateStatementMetadata`, and the one constructor; `ClassifyStateContractError` removed;
   - graph-ingest's `decodeStoredEntity`, `decodeStoredForWrite`, the sweep, and `rejectFromError` passing a state
     error through;
-  - the aggregate validators running steps 2 and 4 through the shared helpers (if owner question 1 keeps them);
+  - the aggregate validators running steps 2 and 4 through the shared helpers (owner question 1: kept);
   - `pkg/lifecycle` `watchEvent`, with `decodeStoredValue` deleted;
   - the struct reader, with lifecycle's unexported interface and `pkg/projection`'s field.
 

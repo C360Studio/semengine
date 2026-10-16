@@ -7,8 +7,9 @@ starts.
 
 ## 1. Design
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal, design and spec delta pass pre-owner review and the owner
+- [x] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal, design and spec delta pass pre-owner review and the owner
   answers questions 1 to 3 on #274. Gate: `task spec:check` and `task docs:check`.
+  Done: review PASS at `323ce3a`; owner accepted all three on #274 (comment 6223764193).
 
 ## 2. Failing tests
 

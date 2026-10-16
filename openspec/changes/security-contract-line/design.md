@@ -1,7 +1,7 @@
 # Design: security-contract-line
 
-Status: draft. Not for design review until the inventory has `INVENTORY PASS` (architect contract, Required workflow,
-step 3). Inventory: `inventory.md` (base `28454d4`).
+Status: accepted. Review PASS at `323ce3a` (two rounds); the owner accepted questions 1–3 as recommended on #274.
+Inventory: `inventory.md` (base `28454d4`).
 
 ## Context
 

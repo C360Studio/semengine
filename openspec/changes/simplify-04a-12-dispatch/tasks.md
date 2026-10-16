@@ -28,8 +28,8 @@ changes the signatures; only 2.4 counts a compile failure as failing.
   `TestKeyedPool_RejectsBadConfig` (D2–D4). Gate: fails to compile on the base commit.
 - [ ] 2.5 `keyed_pool_test.go` runs on the bubble clock: no `time.After` watchdog, no 100 ms or 5 s deadline, no
   `context.WithValue`; backpressure shown by `synctest.Wait()` with the submit still blocked (D6). Gate: the package
-  tests pass after 3.3; `notes/2.5.md` records the `task mutate:check` run on a `SubmitBlocking` that drops instead of waits,
-  detected by `TestKeyedPool_Backpressure`.
+  tests pass after 3.3; `notes/2.5.md` records the `task mutate:check` run on a `SubmitBlocking` that drops instead of
+  waits, detected by `TestKeyedPool_Backpressure`.
 
 ## 3. Implementation
 

@@ -13,23 +13,24 @@ with nothing left to hide, test code ships in production files, and the lifecycl
 
 - `ValidateFactoryConfig`, and so `CreateComponent`, `Declare` and `SafeUnmarshal`, refuses data after the first JSON
   value.
-- `SafeUnmarshal` refuses a nil target with an invalid error, even for empty input. Its contract is written in `component/README.md`.
-  Owner question 4: whether it also refuses unknown keys.
-- Generated schemas use `int`, `float` and `bool` for array items too (owner question 3).
+- `SafeUnmarshal` refuses a nil target with an invalid error, even for empty input, and refuses a key its target does
+  not define, naming the key (owner ruling 4). Its contract is written in `component/README.md`.
+- Generated schemas use `int`, `float` and `bool` for array items too (owner ruling 3).
 - **BREAKING (Go API):** `Registry.Register(Registration)` replaces `RegisterFactory`, `RegisterWithConfig` and
   `RegistrationConfig`. `Registration.Type` is `types.ComponentType`, checked at registration through a new
   `types.ComponentType.Validate()`, which `types.ComponentConfig.Validate` also uses. The registry stores a copy
-  (owner question 1).
+  (owner ruling 1).
 - **BREAKING (Go API):** `Snapshots()` returns `[]Declaration`. `declarationSnapshot` and the test-only
   `Registry.declaration` and `Registry.declarationsSnapshot` go.
 - **BREAKING (Go API):** the `component.PlatformMeta` alias is removed; `Dependencies.Platform` is
   `types.PlatformMeta`.
-- **BREAKING (Go API):** `Discoverable` loses `ConfigSchema()` (#197, ruled). A component that defines the method
-  still compiles.
+- **BREAKING (Go API):** `Discoverable` loses `ConfigSchema()` (#197, ruled) and `Meta()`, and the `Metadata` type is
+  deleted (owner ruling 1). A component's description and version live once, on its registration. A component that
+  defines either method still compiles; one whose `Meta` returns `component.Metadata` does not.
 - `SimpleMockComponent` moves into a test file. `createSimpleMockComponent` and `attack_test.go` are deleted.
 - The `LifecycleComponent` doc lists ADR-108 Decision 3's rules in plain words.
-- Owner question 5: `ValidateConfig(map, ConfigSchema)` and `ValidationError` are deleted, because nothing reads them.
-- Kept: `Metadata` and `Discoverable.Meta()`, `ListFactories`.
+- `ValidateConfig(map, ConfigSchema)` and `ValidationError` are deleted, because nothing reads them (owner ruling 5).
+- Kept: `ListFactories`.
 
 ## Capabilities
 
@@ -44,7 +45,9 @@ with nothing left to hide, test code ships in production files, and the lifecycl
   which #275 owns; no shared file).
 - `processor/graph-ingest/component.go` (`Register`, `ConfigSchema`), `component_test.go`.
 - `docs/admission-ledger.yaml` (`component` row: `contract`, `proving_tests`).
-- Consumers at cutover: semsource renames 26 registration calls and 9 `component.PlatformMeta` uses. No consumer calls
+- Consumers at cutover: semsource renames 26 registration calls and 9 `component.PlatformMeta` uses, and every
+  consumer component loses its `Meta` method (semsource 26 lines, semconnect 2), all found by the compiler. No consumer
+  calls
   `Snapshots`, `SafeUnmarshal`, `ValidateConfig`, or `ConfigSchema()` through the interface (inventory § 4).
-- Closes #153 (owner question 2: item 6 goes to #196, item 7's `pkg/lifecycle` structs to #272, and the storage doc
+- Closes #153 (owner ruling 2: item 6 goes to #196, item 7's `pkg/lifecycle` structs to #272, and the storage doc
   and `Declaration`'s parallel lists to a new issue), #189 and #197. Addresses #223.

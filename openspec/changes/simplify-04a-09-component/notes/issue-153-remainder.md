@@ -1,0 +1,59 @@
+# The rest of #153: one new issue and two comments
+
+Owner ruling 2 of 2026-10-16 (`design.md`, "Owner rulings"): PR #273 closes #153, and the items outside `component`'s
+scope for this PR go to the places that own that work. Task 6.2 posts these texts. Cites are on `main` at `2422d8f`.
+
+New issue: **#TBD** (replace with the number once filed).
+
+## New issue
+
+Title:
+`port-refactor: storage doc shows the unported objectstore; Declaration's parallel port lists (rest of #153)`
+
+Labels: `class:port-refactor`
+
+Body:
+
+> Two items from #153 that PR #273 (simplification wave PR 7, `component`) does not carry. The owner ruled on
+> 2026-10-16 that #273 closes #153 and that these move here.
+>
+> ### 1. `storage/doc.go` describes `objectstore`, which is not in the tree
+>
+> `storage/doc.go:82` (`store, err := objectstore.NewStoreWithConfig(ctx, natsClient, config)`) and `:114-115`
+> (`component := objectstore.NewComponent(config, deps)`) show a package SemEngine has not ported. A reader who
+> follows the example finds no such package. Fix: describe only what `storage` offers today, and let the
+> `objectstore` port (change 4) add its own example.
+>
+> ### 2. `component.Declaration` keeps ports and their facts in two parallel lists
+>
+> `component/registry.go:80-83` holds `InputPorts []Port` beside `InputFacts []PortFacts`, and the same for outputs.
+> The two lists must stay index-aligned, and a reader such as the pin's message logger
+> (`service/message_logger.go:347-349` at `8b99efe9`) indexes one by the other. `Port.Facts()` exists
+> (`component/port_resolver.go:168`), but it returns an error, so replacing a list with calls to it changes what a
+> declaration promises: today the facts are computed once at admission, and a failure refuses admission. Joining the
+> lists is a design change. The two services change 3 ports (`service.ComponentManager` and the message logger) read
+> these lists, so the decision belongs with that port.
+>
+> Done when: the storage doc shows only what is in the tree, and change 3's design decides whether a declaration
+> carries one list of port-and-facts pairs, with its readers updated.
+>
+> Addresses #9. Split from #153 (owner ruling 2026-10-16, recorded in
+> `openspec/changes/simplify-04a-09-component/design.md` on PR #273).
+
+## Comment for #196
+
+> From #153 item 6, moved here on the owner's word (2026-10-16; PR #273 closes #153). `internal/lifecycleguard`
+> spells one refusal several ways. A nil context gets `ErrInvalidConfig` in `Start` (`guard.go:43`) but
+> `ErrInvalidData` in `Stop` (`:87`). An ended context is wrapped as invalid in `Start` (`:46`) but returned bare in
+> `Stop` (`:89-90`). The refusal of a concurrent `Stop` (`:113-114`) has no test. The cleanup is passed separately to
+> `Start` and `Stop`, and graph-ingest passes two different values. The fix: one refusal helper, and the cleanup given
+> once. It belongs with the guard's adoption in change 3. Line numbers are from #153's filing; find the code again by
+> function name.
+
+## Comment for #272
+
+> From #153 item 7, moved to this PR on the owner's word (2026-10-16; PR #273 closes #153). `pkg/lifecycle` has two
+> one-field structs: `createOutcome` (`pkg/lifecycle/manager.go:310`, holding `Entity *graph.EntityState`) and
+> `transitionOutcome` (`:533`, holding `committedRevision uint64`). Each can be its plain value. This PR's inventory
+> (`simplify-04a-08-lifecycle/inventory.md:154-155`) lists #153 under "names the word, not the package", but item 7
+> names this package. Please carry it, or say why it stays.

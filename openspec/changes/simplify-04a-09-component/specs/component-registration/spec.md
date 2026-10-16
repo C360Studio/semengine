@@ -9,8 +9,8 @@ registration's `Name`. It SHALL refuse, with an error of the invalid class namin
 `ValidateComponentName` refuses, a nil `Factory` or `Ports`, a `Type` that is not one of the five
 `types.ComponentType` constants, and a `Name` already registered. The registry SHALL keep its own copy of the
 registration, so a later change to the caller's value, its schema or its dependency list does not change what is
-registered. The registration's `Schema` SHALL be the one place a factory reports its configuration schema:
-`Discoverable` SHALL NOT require a `ConfigSchema` method.
+registered. The registration SHALL be the one place a factory reports its configuration schema, description and
+version: `Discoverable` SHALL require only `InputPorts`, `OutputPorts`, `Health` and `DataFlow`.
 
 #### Scenario: A misspelled component type
 
@@ -23,9 +23,9 @@ registered. The registration's `Schema` SHALL be the one place a factory reports
   of the value it passed
 - **THEN** `ListFactories` reports the values as they were registered
 
-#### Scenario: A component without a schema method
+#### Scenario: A component with only ports, health and flow
 
-- **WHEN** a type that has `Meta`, `InputPorts`, `OutputPorts`, `Health` and `DataFlow` but no `ConfigSchema` is
+- **WHEN** a type that has `InputPorts`, `OutputPorts`, `Health` and `DataFlow`, and no `Meta` or `ConfigSchema`, is
   assigned to a `component.Discoverable`
 - **THEN** the program compiles
 
@@ -34,7 +34,8 @@ registered. The registration's `Schema` SHALL be the one place a factory reports
 `component.ValidateFactoryConfig`, which `Registry.CreateComponent`, `Registry.Declare` and `component.SafeUnmarshal`
 call, SHALL refuse with an invalid-class error a configuration in which anything other than whitespace follows the
 first JSON value. `SafeUnmarshal` SHALL refuse a nil target, or a nil pointer, with an invalid-class error,
-whether or not the configuration is empty, and SHALL NOT panic.
+whether or not the configuration is empty, and SHALL NOT panic. It SHALL refuse, with an invalid-class error naming
+the key, a configuration key the target struct does not define.
 
 #### Scenario: A configuration object pasted twice
 
@@ -45,6 +46,11 @@ whether or not the configuration is empty, and SHALL NOT panic.
 
 - **WHEN** `SafeUnmarshal` is called with a valid configuration and a nil target
 - **THEN** it returns an invalid-class error and does not panic
+
+#### Scenario: A key the target does not define
+
+- **WHEN** `SafeUnmarshal` decodes `{"prot":7}` into a struct whose only field is tagged `port`
+- **THEN** it returns an invalid-class error naming `prot`
 
 #### Scenario: A nil target with an empty configuration
 

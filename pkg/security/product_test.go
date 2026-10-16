@@ -195,6 +195,17 @@ func TestProductServesTLSFromDependenciesSecurity(t *testing.T) {
 		require.Equal(t, http.StatusOK, response.StatusCode)
 	})
 
+	t.Run("client certificate optional under a CN allowlist", func(t *testing.T) {
+		p := newProduct(t, operatorDocument(t, id, "", `"client_cert_optional": true, "allowed_client_cns": ["service-a"],`))
+		require.NoError(t, startProduct(t, p))
+
+		response, err := get(t, id, p.server.Address())
+		if err == nil {
+			_ = response.Body.Close()
+		}
+		require.Error(t, err, "with a CN allowlist a client with no certificate must be refused, even with client_cert_optional")
+	})
+
 	t.Run("misspelled TLS version", func(t *testing.T) {
 		p := newProduct(t, operatorDocument(t, id, `"min_version": "1.4",`, ""))
 		require.ErrorContains(t, startProduct(t, p), "min_version")

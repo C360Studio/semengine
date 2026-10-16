@@ -10,7 +10,9 @@
 as the field `Security` of the `component.Dependencies` it is called with. No SemEngine code fills that field yet:
 it holds what the code that builds the `Dependencies` set, and is the zero value otherwise. The zero value SHALL leave
 server TLS off, so a server built from it serves plain HTTP, and with server mTLS on SHALL require a client
-certificate unless `client_cert_optional` is true.
+certificate unless `client_cert_optional` is true. `client_cert_optional` admits a client with no certificate only
+when `allowed_client_cns` is empty: a server with a CN allowlist SHALL refuse every client whose certificate does not
+carry an allowed CN, including a client presenting none.
 
 #### Scenario: Every setting arrives unchanged
 
@@ -27,8 +29,13 @@ certificate unless `client_cert_optional` is true.
 
 #### Scenario: Client certificates made optional
 
-- **WHEN** the same document also sets `client_cert_optional` to true
+- **WHEN** the same document also sets `client_cert_optional` to true, and sets no `allowed_client_cns`
 - **THEN** a client presenting no certificate is served
+
+#### Scenario: Optional client certificates under a CN allowlist
+
+- **WHEN** the same document sets `client_cert_optional` to true and `allowed_client_cns` to a nonempty list
+- **THEN** a client presenting no certificate is refused
 
 ### Requirement: The metrics server applies the server TLS block
 

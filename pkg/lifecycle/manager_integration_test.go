@@ -98,7 +98,7 @@ func startKVBackedResponders(
 	kv, err := client.GetKeyValueBucket(ctx, graph.BucketEntityStates)
 	require.NoError(t, err)
 
-	reconcileSubject, err := graphmutation.ResolveSubject(graphmutation.SubjectFamily, graphmutation.ReconcilePredicates)
+	reconcileSubject, err := graphmutation.Subject(graphmutation.ReconcilePredicates)
 	require.NoError(t, err)
 	_, err = client.SubscribeForRequests(ctx, reconcileSubject, func(requestCtx context.Context, data []byte) ([]byte, error) {
 		var req graph.ReconcilePredicatesRequest
@@ -152,7 +152,7 @@ func startKVBackedResponders(
 	require.NoError(t, err)
 	startExactEntityResponder(t, client, kv)
 
-	createSubject, err := graphmutation.ResolveSubject(graphmutation.SubjectFamily, graphmutation.CreateEntity)
+	createSubject, err := graphmutation.Subject(graphmutation.CreateEntity)
 	require.NoError(t, err)
 	_, err = client.SubscribeForRequests(ctx, createSubject, func(_ context.Context, data []byte) ([]byte, error) {
 		var req graph.CreateEntityRequest
@@ -175,7 +175,7 @@ func startKVBackedResponders(
 	})
 	require.NoError(t, err)
 
-	deleteSubject, err := graphmutation.ResolveSubject(graphmutation.SubjectFamily, graphmutation.DeleteEntity)
+	deleteSubject, err := graphmutation.Subject(graphmutation.DeleteEntity)
 	require.NoError(t, err)
 	_, err = client.SubscribeForRequests(ctx, deleteSubject, func(_ context.Context, data []byte) ([]byte, error) {
 		var req graph.DeleteEntityRequest

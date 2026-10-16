@@ -57,7 +57,9 @@ type ReportWatchStore interface {
 // rebuilding every series on every tick. ForgetResource carries the whole last
 // known row rather than a key, because a resource whose name is not a legal KV
 // key is addressed by an opaque token — a bare key cannot say which label set a
-// gauge was registered under.
+// gauge was registered under. ForgetAccount likewise carries the last account
+// row the consumer held, so the surface can retract the per-tier series it
+// registered for it.
 //
 // Implementations are called from the consumer's watch goroutine and must not
 // block on it.
@@ -65,6 +67,7 @@ type Observer interface {
 	ObserveResource(row ResourceReport)
 	ForgetResource(row ResourceReport)
 	ObserveAccount(row AccountReport)
+	ForgetAccount(row AccountReport)
 }
 
 // Snapshot is the whole published report as one in-process view.
@@ -364,6 +367,7 @@ func (c *Consumer) replaceWith(s *reportStage) {
 	sort.Slice(forgotten, func(i, j int) bool { return forgotten[i].Resource.Name < forgotten[j].Resource.Name })
 	c.rows = s.rows
 
+	var retracted AccountReport
 	accountRetracted := false
 	switch {
 	case s.hasAcct:
@@ -371,17 +375,14 @@ func (c *Consumer) replaceWith(s *reportStage) {
 	case s.acctUndecodable:
 		// Keep the held account row, as the live path does for an undecodable value.
 	case c.hasAcct:
+		retracted, accountRetracted = c.account, true
 		c.account, c.hasAcct = AccountReport{}, false
-		accountRetracted = true
 	}
 	c.synced = true
 	c.updated = time.Now()
 	c.rebuildLocked()
 	c.mu.Unlock()
 
-	if accountRetracted {
-		c.logAccountRetracted()
-	}
 	if c.observer == nil {
 		return
 	}
@@ -394,16 +395,9 @@ func (c *Consumer) replaceWith(s *reportStage) {
 	if s.hasAcct {
 		c.observer.ObserveAccount(s.account)
 	}
-}
-
-// logAccountRetracted declares the one change an observer cannot be told:
-// Observer has no method that retracts an account row, so an
-// observer keeps the last account it was given while the snapshot reports
-// AccountKnown false.
-func (c *Consumer) logAccountRetracted() {
-	c.logger.Warn("the storage report's account row is gone; the snapshot no longer reports an account, "+
-		"and observers keep the last account row they were given",
-		slog.String("key", StorageAccountReportKey))
+	if accountRetracted {
+		c.observer.ForgetAccount(retracted)
+	}
 }
 
 func (c *Consumer) logSkip(key string, revision uint64, err error) {
@@ -440,7 +434,8 @@ func (c *Consumer) putAccount(report AccountReport) {
 
 // remove drops a reclaimed row. A tombstone for a key this process never held
 // fans out NOTHING: there is no series to retract and no identity to name.
-// A delete or purge of the reserved account key retracts the account row.
+// A delete or purge of the reserved account key retracts the account row and,
+// when one was held, tells the observer with ForgetAccount.
 func (c *Consumer) remove(key string) {
 	if key == StorageAccountReportKey {
 		c.removeAccount()
@@ -462,7 +457,7 @@ func (c *Consumer) remove(key string) {
 
 func (c *Consumer) removeAccount() {
 	c.mu.Lock()
-	held := c.hasAcct
+	row, held := c.account, c.hasAcct
 	if held {
 		c.account, c.hasAcct = AccountReport{}, false
 		c.updated = time.Now()
@@ -470,8 +465,8 @@ func (c *Consumer) removeAccount() {
 	}
 	c.mu.Unlock()
 
-	if held {
-		c.logAccountRetracted()
+	if held && c.observer != nil {
+		c.observer.ForgetAccount(row)
 	}
 }
 

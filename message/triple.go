@@ -125,14 +125,3 @@ func (t Triple) IsRelationship() bool {
 func IsValidEntityID(s string) bool {
 	return semtypes.IsValidEntityID(s)
 }
-
-// IsExpired returns true if the triple has an expiration time that has passed.
-// Returns false if ExpiresAt is nil (never expires) or if the expiration time
-// has not yet been reached (including exact equality with current time).
-// A triple is only considered expired when time.Now() is strictly after ExpiresAt.
-func (t Triple) IsExpired() bool {
-	if t.ExpiresAt == nil {
-		return false
-	}
-	return time.Now().After(*t.ExpiresAt)
-}

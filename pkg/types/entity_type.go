@@ -30,8 +30,3 @@ func (et EntityType) Key() string {
 func (et EntityType) String() string {
 	return et.Key()
 }
-
-// IsValid checks if the EntityType has required fields populated
-func (et EntityType) IsValid() bool {
-	return et.Domain != "" && et.Type != ""
-}

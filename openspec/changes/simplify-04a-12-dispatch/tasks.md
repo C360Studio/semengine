@@ -65,7 +65,7 @@ changes the signatures; only 2.4 counts a compile failure as failing.
 
 ## 5. Verify, review and close
 
-- [ ] 5.1 `task verify` passes on a clean tree at the implementation head.
+- [x] 5.1 `task verify` passes on a clean tree at the implementation head (exit 0 at `ee73ec1`).
 - [ ] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
 - [ ] 5.3 Archive the change (`openspec archive simplify-04a-12-dispatch`) as the last content commit. Gate:
   `task spec:check`.

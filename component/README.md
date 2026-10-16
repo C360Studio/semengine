@@ -220,8 +220,9 @@ configuration. It checks, in this order, and refuses with an error of the invali
 3. The decode: a key the target struct does not define (the error names the key), a value of the wrong type, or data
    after the first value.
 
-An empty configuration leaves the target's defaults. If the target implements `Validatable`, its `Validate` runs last;
-its error is returned wrapped, keeping whatever class it carries.
+An empty configuration returns at once: it leaves the target's defaults and does not call `Validate`, so a factory
+whose defaults need checking checks them itself. After a nonempty configuration decodes, if the target implements
+`Validatable`, its `Validate` runs last; its error is returned wrapped, keeping whatever class it carries.
 
 ### Types
 

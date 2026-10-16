@@ -176,7 +176,8 @@ func ValidateFactoryConfig(rawConfig json.RawMessage) error {
 // pointer. It checks, in order: the target (nil, a nil pointer or a
 // non-pointer is refused), the configuration (ValidateFactoryConfig), then
 // decodes strictly, refusing a key the target does not define and data after
-// the first value. Empty input leaves the target's defaults. A target that
+// the first value. Empty input returns at once, leaving the target's defaults
+// and without calling Validate. After nonempty input decodes, a target that
 // implements Validatable is validated last. Every refusal but Validate's own
 // error is of the invalid class.
 func SafeUnmarshal(rawConfig json.RawMessage, target any) error {

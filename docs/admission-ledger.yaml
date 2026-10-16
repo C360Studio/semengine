@@ -2025,13 +2025,19 @@
     no consumer or public signature names it (design D1)
   destination: internal/dispatch
   contract: >-
-    KeyedPool per-key ordering, lanes, and SubmitBlocking as at the pin, except Stop(ctx) becomes
-    Shutdown(ctx) (waits for lane drain without a fixed default timeout, refuses nil ctx, refuses
-    post-Shutdown SubmitBlocking with internal/dispatch.ErrStopped), and NewKeyedPool registers
-    metrics via metric.RegisterOrGet and returns registration refusals (design D4, D5)
+    KeyedPool per-key ordering and lanes as at the pin, except: Stop(ctx) becomes Shutdown(ctx), the
+    only stop (waits for lane drain without a fixed default timeout and returns nil once the lanes
+    have exited even under an ended ctx, refuses nil ctx, and a SubmitBlocking that begins after it
+    returns internal/dispatch.ErrStopped); the NewKeyedPool context reaches only Process, and its end
+    stops no lane and drops no queued item (simplify-04a-12-dispatch D1); SubmitBlocking(ctx, key,
+    work) takes the key, KeyOf removed (D2); Logger and MetricsRegistry are KeyedConfig fields,
+    NewKeyedPool(ctx, cfg), KeyedDeps removed (D3); Process returns nothing (D4);
+    dispatch_queue_depth counts items accepted and not yet passed to Process, summed over pools of
+    one name (D5); NewKeyedPool registers metrics via metric.RegisterOrGet and returns registration
+    refusals (setup-04a-02-ingest-kernel design D4, D5)
   dependencies_and_side_effects: >-
-    metric (in-set); prometheus/client_golang; stdlib; one goroutine per lane and a metrics updater,
-    all joined by Shutdown
+    metric (in-set); prometheus/client_golang; stdlib; one goroutine per lane and Shutdown's
+    coordinator, all joined by Shutdown
   known_risks: >-
     dead surface removed (design D6): BoundedDispatcher, completion_watcher.go, KeyedPool.Submit,
     and KeyedPool.Stats removed along with the pkg/worker dependency (ruling E)

@@ -24,7 +24,7 @@ in `notes/<task>.md`. A compile failure on a missing symbol counts as failing. S
 - [x] 3.1 The config check refuses data after the first value (D1). Gate: 2.1 passes; `task test:unit`.
 - [x] 3.2 `SafeUnmarshal` checks the target first, then decodes strictly: unknown keys and data after the first value
   are refused; `component/README.md` states its contract (D2). Gate: 2.2 passes.
-- [ ] 3.3 Array item schemas use `int`, `float` and `bool` (D3). Gate: 2.3 passes; existing schema tests are updated
+- [x] 3.3 Array item schemas use `int`, `float` and `bool` (D3). Gate: 2.3 passes; existing schema tests are updated
   to the one vocabulary.
 
 Review stop A (tasks 2.1–3.3).

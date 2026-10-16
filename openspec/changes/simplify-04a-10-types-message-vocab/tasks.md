@@ -11,11 +11,13 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 ## 2. Failing tests
 
-- [ ] 2.1 `TestTypeIsValidMatchesValidate` (D1): twelve rows, three components by four classes. Gate: the dotted and
+- [x] 2.1 `TestTypeIsValidMatchesValidate` (D1): twelve rows, three components by four classes. Gate: the dotted and
   non-UTF-8 rows fail on the base commit.
-- [ ] 2.2 `TestBaseMessageValidateRefusesTypeGrammar` (D2), and `FuzzDecoderStrings`' oracle changed
+  Done: the six dotted and non-UTF-8 rows fail on `cfba65a`, the rest pass (`notes/2.1.md`).
+- [x] 2.2 `TestBaseMessageValidateRefusesTypeGrammar` (D2), and `FuzzDecoderStrings`' oracle changed
   (`message/decoder_fuzz_test.go:345-348`, `:375-381`, `:410-418`): a type holding `.` is refused at marshal with
   invalid data, and the read-back branch goes. Gate: both fail on the base commit (the fuzz target on its `a.b` seed).
+  Done: both fail on `cfba65a`, the fuzz target on seed #7 `a.b` (`notes/2.2.md`).
 - [ ] 2.3 `TestGenericJSONValidateRefusesWhatTheShapeCheckRefuses` and the law in `FuzzGenericJSONShapes` (D3):
   `Validate` refuses with invalid data exactly when the generator marked `foreign` or `badUTF8`, and returns nil for
   `nonJSON` (NaN, infinity) and valid values (owner question 5, option 1). Gate: both fail on the base commit.
@@ -28,9 +30,12 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 ## 3. Implementation
 
-- [ ] 3.1 `Type.IsValid` is `Validate() == nil`. Gate: 2.1 passes.
-- [ ] 3.2 `BaseMessage.Validate` calls `Type.Validate`; the UTF-8 loop in `MarshalJSON` goes. Gate: 2.2 and the
+- [x] 3.1 `Type.IsValid` is `Validate() == nil`. Gate: 2.1 passes.
+  Done: `TestTypeIsValidMatchesValidate` passes at `a8ace02`.
+- [x] 3.2 `BaseMessage.Validate` calls `Type.Validate`; the UTF-8 loop in `MarshalJSON` goes. Gate: 2.2 and the
   existing non-UTF-8 type test pass; one `task mutate:check` run that deletes the new call fails that test.
+  Done: 2.2 and `TestBaseMessageRefusesTypeThatIsNotUTF8` pass at `a8ace02`; mutate:check verdict detection
+  (`notes/3.2.md`).
 - [ ] 3.3 `GenericJSONPayload.Validate` runs the shape check; `MarshalJSON` and its key sort unchanged; the
   `Validate` doc names the values only encoding refuses (owner question 5). Gate: 2.3 passes.
 - [ ] 3.4 `Hash` leaves `Message` and `BaseMessage` with its test and the "Content-addressable" doc line (owner

@@ -53,6 +53,22 @@ Tests (`shutdown_test.go`, each in `synctest.Test`):
   2^-64).
 - `TestKeyedPool_ShutdownSubmitRace` and the three other shutdown tests pass unedited in substance.
 
+Generated checks are not used (`docs/testing.md` "Decide whether generated checks are needed"; this is a shutdown
+history). The law is conservation: every nil-returning submit reaches `Process` once, in submit order per lane, before
+`Shutdown` returns nil. With one stop path a history has few orderings that matter, and each has an example with an
+independent expected sequence:
+
+- The run context ends before a submit (`TestSubmitAfterRunCancelIsProcessed`), or while items are queued behind a
+  blocked `Process` (`TestRunCancelProcessesQueuedItems`, 64 items in order); it no longer interacts with the stop.
+- A submit races the first `Shutdown`: it either registers before `stopped` is set and is processed, or sees
+  `stopped` and gets `ErrStopped` (`TestKeyedPool_ShutdownSubmitRace`, 8 submitters, accepted count equals processed
+  count; run under `-race` and five times shuffled by `task verify`); a submit after it is refused
+  (`TestKeyedPool_SubmitAfterShutdown`).
+- `Shutdown`'s context ends while `Process` blocks (`TestKeyedPoolShutdownUnderABlockedProcess`), has no deadline
+  (`…WithoutDeadlineWaitsForJoin`), or has ended after the join (`TestShutdownAfterJoinReturnsNilUnderEndedContext`).
+
+The pool has no retry, replay, replacement or deletion, so no longer history adds an ordering these do not cover.
+
 ## D2. The key is an argument (#136 item 3)
 
 `SubmitBlocking(ctx context.Context, key string, work W) error`; `KeyOf` goes, and with it the "missing KeyOf"

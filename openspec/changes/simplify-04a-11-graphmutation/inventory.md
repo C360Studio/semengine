@@ -109,7 +109,7 @@ The spellings of the subject family: `internal/graphmutation/protocol.go:16`, `:
 - Open PRs (`gh pr list --state open --json number,title,changedFiles,files`; none over 100 files):
   - #277 (this claim, 0 files).
   - #275 (draft, PR 3) edits `processor/graph-ingest/canonical_mutations.go:218` (`requireRegisteredMessageType`)
-    and `component.go:674`, `:2060`. Other hunks than this change's `:128-197`.
+    and `component.go:674`, `:2060`, `:2068`. Other hunks than this change's `:128-197`.
   - #273 (draft, PR 7) edits `processor/graph-ingest/component.go:814` (`Register`) and a
     `component-registration` spec delta. That delta does not touch the import-ban lines naming
     `internal/graphmutation`.
@@ -140,7 +140,11 @@ The spellings of the subject family: `internal/graphmutation/protocol.go:16`, `:
 | #106 | body (`graph.mutation.>` keeps its one home, `protocol.go:16`) | stays: a constraint this change keeps; its work is `graph.query.*` |
 | #132 | body item d cites `graphmutation.NewClient` as the good example | names the word, not a defect in this package |
 | #223 | epic lines | `Addresses #223` |
-| #103, #139 | matched `graph.mutation` but name neither the package nor its paths | names the word, not the package |
+| #139 | body: `processor/graph-ingest/canonical_mutations.go:31-126` (section B, the mutation lane's metering), `:303-308` (the pre-write sequence), `:413-430` (the append no-op re-fetch) | stays: its section B covers the metering at `:31-126`; this change edits `:128-197`, none of its cited lines |
+| #103 | comment: `canonical_mutations.go:348` (the reconcile fence `Update(..., request.ExpectedRevision)`) | stays: names a line this change does not edit |
+
+The owner's 8a ruling (#223 comment 6216623583) replaces #137's pairing ("Lands in: with #139's mutation-lane item
+(section B …)"): #137 is retired here, and #139 stays open.
 
 ## 4. Readers of the surface touched
 

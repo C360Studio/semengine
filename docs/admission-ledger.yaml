@@ -1992,15 +1992,21 @@
   contract: >-
     protocol constants, SubjectFamily (protocol.go:16; design D20), and client request/reply and
     transport-error classification as at the pin, with InterfaceType renamed to
-    "semengine.graph.mutation" (#69), dead IsCommitUnknown removed (design D6), and nil context
-    refused before any request
+    "semengine.graph.mutation" (#69) and dead IsCommitUnknown removed (design D6). Changed by
+    simplify-04a-11-graphmutation: a request natsclient refuses before sending (ErrNotConnected,
+    ErrCircuitOpen) is TransportUnavailable, so not committed (D1, #268); the client's own refusals
+    (nil client, nil context, unadmitted operation, unencodable request, Create with no entity) are
+    made before any request and are invalid with code invalid_request (D2); Subject(op) resolves the
+    four admitted operations within SubjectFamily and takes no family argument (D3, #137)
   dependencies_and_side_effects: >-
     graph, natsclient, pkg/errs (in-set); stdlib; NATS requests on graph.mutation.>; no goroutine
   known_risks: >-
     consumers spelling "semstreams.graph.mutation" update to "semengine.graph.mutation" on adoption
   proving_tests: >-
-    internal/graphmutation/protocol_test.go (TestInterfaceTypeNamesSemEngine),
-    internal/graphmutation/client_test.go (TestClientRefusesNilContext and pin client tests)
+    internal/graphmutation/protocol_test.go (TestSubjectAdmitsOnlyFourCanonicalOperations,
+    TestInterfaceTypeNamesSemEngine), internal/graphmutation/client_test.go
+    (TestClientReportsRefusalBeforeSendingAsUnavailable, TestClientRefusesNilContext,
+    TestClientRefusesUnencodableAndEntitylessRequests, and pin client tests)
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 
@@ -2098,8 +2104,7 @@
   known_risks: >-
     EntityState built without Version (#100). Pre-write transient errors from graph-ingest read as
     commit-unknown with class fatal (safe, conservative; #167); follow-up #174 tracks post-append bookkeeping.
-    A write natsclient refuses before sending (ErrNotConnected, ErrCircuitOpen) reads commit-unknown
-    (#268). The five unread interfaces (EntityCreator, PredicateReconciler, TripleAppender,
+    The five unread interfaces (EntityCreator, PredicateReconciler, TripleAppender,
     EntityDeleter, AuthoritativeReader) are removed (#138 item 1)
   proving_tests: >-
     pkg/projection/classify_mutation_error_test.go, mutation_client_refusals_test.go,

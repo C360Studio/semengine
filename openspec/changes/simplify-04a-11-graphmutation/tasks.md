@@ -19,7 +19,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 - [x] 2.3 `TestClientRefusesNilContext` asserts invalid with code `invalid_request`; new
   `TestClientRefusesUnencodableAndEntitylessRequests` (NaN `Object` on Append, nil `Entity` on Create; no request
   sent) (D2). Gate: fails on the base commit.
-- [ ] 2.4 Callers use `graphmutation.Subject(op)`: `protocol_test.go`, `mutation_port_contract_test.go`,
+- [x] 2.4 Callers use `graphmutation.Subject(op)`: `protocol_test.go`, `mutation_port_contract_test.go`,
   `pkg/lifecycle/manager_integration_test.go:101`, `:155`, `:178` (D3). Gate: fails to compile on the base commit.
 
 ## 3. Implementation
@@ -28,7 +28,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
   and `IsDefinitelyNotCommitted` updated (D1, #268). Gate: 2.1, 2.2.
 - [x] 3.2 The client's own refusals return `errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeInvalidRequest, …)`;
   Create checks `Entity` before sending (D2, #268, #137 item a). Gate: 2.3; existing client tests pass.
-- [ ] 3.3 `Subject(op)` replaces `ResolveSubject`; `TestResolveSubjectRejectsNonCanonicalFamily` and the family loop
+- [x] 3.3 `Subject(op)` replaces `ResolveSubject`; `TestResolveSubjectRejectsNonCanonicalFamily` and the family loop
   removed; graph-ingest `requireMutationProviderPort` and one route table (D3, #137). Gate: 2.4; the three
   graph-ingest route and port tests pass unedited.
 - [x] 3.4 Flip `pkg/projection/classify_mutation_error_test.go:74-78` to `TransportUnavailable` → not committed,
@@ -37,7 +37,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 ## 4. Documentation
 
-- [ ] 4.1 `docs/admission-ledger.yaml`: the `internal/graphmutation` contract states D1–D3; the projection
+- [x] 4.1 `docs/admission-ledger.yaml`: the `internal/graphmutation` contract states D1–D3; the projection
   `known_risks` #268 sentence removed. `docs/contract.md`: a write the client refused before sending is not
   committed (D4). Gate: `task ledger:check`, `task docs:check`.
 

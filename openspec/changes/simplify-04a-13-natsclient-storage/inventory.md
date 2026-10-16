@@ -52,9 +52,11 @@ checkouts, file grep only).
   `service`).
 - Coverage: `scripts/cover-check.sh:29` — `"natsclient merged"`; `internal/harness/contract/cover_test.go:42`
   `d11Targets` mirrors the script.
-- Open PRs (`gh pr list --state open`): #278 (ledger hunk `@@ -2025,13`, pkg/dispatch row; graph-ingest,
-  internal/dispatch) — no shared hunk; #279 (pkg/security, `specs/security-config`) — no shared file; #242–#248
-  Dependabot — none. #283 is this claim.
+- Open PRs (`gh pr list --state open`): #279 edits `docs/admission-ledger.yaml` (hunks `-394`, `-684`, `-695`: the
+  pkg/security, pkg/tlsutil and metric rows), the same file as this change, different rows (natsclient row `:820`);
+  its other files are `pkg/security` and `specs/security-config`. #242–#248 Dependabot — none. #283 is this claim.
+  #278 (ledger hunk `@@ -2025,13`, pkg/dispatch row; graph-ingest, internal/dispatch) merged as `838c1fa` after this
+  base; the claim branch merges `origin/main` before implementation.
 - Open issues (`gh issue list --state open --search natsclient`, plus storage_report, StorageReport, "storage report",
   STORAGE_REPORT, "storage inventory", pressure; bodies and comments grepped for file/type names): #85 (the
   observer); #222 (part a); #281 names `natsclient/storage_pressure.go:82`; #9 names #85 only as a word.
@@ -69,6 +71,18 @@ checkouts, file grep only).
   (`NewStorageReportPublisher`); `service/storage_observability_metrics.go:339,:398,:413` implement
   `ObserveResource`, `ForgetResource`, `ObserveAccount`; `:479` `deleteAccountTierSeries`. Pin
   `graph/kvcatalog.go:86,:89` name two constants in comments.
+- Names with no reader outside the seven files, in this repository's production code or in pin `service` (production,
+  method values included: `Growth.Rate` `_metrics.go:360`, `Capacity.Limit`/`Usage` `:356-357,:424-425`,
+  `collector.Latest` `storage_observability.go:237`, `PressureThresholds.Resolve()` `:129`), and named by no exported
+  field or kept signature: `DeriveGrowth`, `Observation`, `UnknownGrowth`, `MinGrowthSampleInterval` (named only in
+  `graph/kvcatalog/kvcatalog.go:91`, a comment), `Project`, `AssessPressure`, `PressureAgainstAccountTier`,
+  `Pressure.AgainstAccountTier`, `DeriveAccountReport`, `AccountReport.TierFor`†, `AccountTierLimits`,
+  `AccountTierLimitsFrom`, `UnknownAccountTierLimits`, `AccountLimitReader`, `UnknownCapacity`, `Capacity.Bounded`,
+  `Default{Warning,High,Critical}{Headroom,Horizon}` (6; pin `service/storage_observability_test.go:189-190` only),
+  `SkipReasonStaleInventory`, `DefaultReportConsumerRetryBackoff`, `DefaultStoragePressureThresholds`†,
+  `StorageReportGrowthObservations`†, `StorageAccountReportKey`†, `StorageReportKey`†, `NewCapacity`†,
+  `StorageResource.Attributed`†. † = read by `graph/kvcatalog` tests (`storage_report_integration_test.go:107,:170,
+  :182`; `kvcatalog_storage_report_test.go:57`; `kvcatalog_attribution_test.go:125`).
 - Consumers (semsource, semconnect, semteams, semboids, local checkouts): no file names `StorageReportObserver`,
   `StorageReportConsumer`, `StorageInventoryCollector`, `StorageReportPublisher`, `AccountStreamLister` or
   `natsclient.{AccountReport,ResourceReport,StorageReportSnapshot,PressureState,StorageTier}`.

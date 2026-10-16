@@ -41,10 +41,9 @@ for an account it does not hold, nor for an account value it cannot decode, whic
 
 ### Requirement: Collect and Publish refuse a nil context
 
-`StorageInventoryCollector.Collect` and `Publisher.Publish` SHALL refuse a nil context with an invalid-data error
-before they list streams, read the bucket or write to it.
+`StorageInventoryCollector.Collect` and `Publisher.Publish` SHALL refuse a nil context with an invalid-data error.
 
 #### Scenario: Nil context
 
 - **WHEN** `Collect` or `Publish` is given a nil context
-- **THEN** it returns an invalid-data error and the lister and the store are never called
+- **THEN** it returns an invalid-data error

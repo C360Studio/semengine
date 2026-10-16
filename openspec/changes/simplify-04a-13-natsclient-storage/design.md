@@ -31,14 +31,19 @@ constructors follow their types (`NewPublisher`, `NewConsumer`). Every other nam
 - `nilContextErrorOf` is one line over `errs.WrapInvalid`. The new package keeps a private copy rather than natsclient
   exporting a helper. The refusal names the new type names.
 - `Client.AccountStreamLister` cannot move as a method. It becomes `func AccountStreamLister(client *natsclient.Client)
-  StreamListerSource`, which returns `client.JetStream()` as a `StreamLister`. A nil client gives a source that returns
-  an invalid-data error.
+  StreamListerSource`. The source calls `client.JetStream()` on each call and returns it as a `StreamLister`, so each
+  collection resolves the live JetStream context, as the method value did (`storage_inventory.go:107-110`). No nil
+  check is added: behaviour is unchanged.
 - `storagereport` imports no `graph` package. `OwnerResolver` stays a function: kvcatalog's in-package tests import
   `storagereport`, so the reverse import would be a cycle.
 - Tests move with their files. The integration test gets the package's own shared fixture (`TestMain`,
   `natsfixture.Shared`, the four helpers it uses), as `graph/kvcatalog/fixture_client_integration_test.go:18-44`
   does. The `// Own server:` comment stays above `natsfixture.New`. The storage rows of
   `nil_context_siblings_test.go` (`:207-208`, `:294-298`) move to a storagereport test of the same name.
+- Test function names do not change, so the ledger's citations of storage tests by name (`admission-ledger.yaml:1229-
+  1293`) stay true. Two comments that name an old path are fixed: `kvcatalog_storage_report_test.go:51` names
+  `storagereport.TestStorageReportPublisher_HistoryDepthSurvivesACrashLoop`, and `storage_report.go:11` names
+  `graph/kvcatalog/kvcatalog.go`.
 - `storagereport` becomes a coverage target, `merged` like natsclient. At base, the storage code's coverage is 94.1%
   merged and 93.4% unit only; natsclient without it is 87.4% merged (inventory § 3; estimate from the base unit profile
   and an integration profile of an identical natsclient tree).
@@ -90,21 +95,25 @@ The new tests fail to compile on the base commit: `recordingObserver` has no `Fo
 
 ## Exports (#190)
 
-Kinds: **Pin plumbing**: no caller in this repo; the pin's admitted `service` (ported in change 3) reads it.
-**Reached**: not named by `service`, but reached through a pin-plumbing type's fields, return values or config.
-**Internal**: read only inside the seven files and tests. No symbol is a back door. Action for every row: moved;
-renames as shown. Owner question 2 covers the Pin plumbing kind.
+Kinds are #190's (owner direction, #223 comment 6214503370). **Plumbing** names its production caller. None of
+these names has a production caller in this repository. For the rows kept, the caller is the pin's `service`, an
+admitted package ported in change 3. The reviewer contract (`.agents/contracts/semengine-reviewer.md:441`) says a
+symbol whose only caller is in an admitted package not yet ported is not dead surface. That departs from the
+direction's "no caller here → unexported or dropped", and owner question 2 asks it. Field, config-field and signature
+types of the names `service` reads, and the value sets of their string fields, are Plumbing for the same reader. No
+symbol is **framework API** (no contract line names one; `docs/contract.md:139` offers the HTTP endpoint, not the Go
+API) and none is a **back door**.
 
-| Symbols | Action | Kind | Pin reader or note |
+| Symbols | Action | Kind | Production caller (pin `service/`) |
 | --- | --- | --- | --- |
-| `NewStorageInventoryCollector`, `StorageInventoryCollector` (`Collect`, `Run`, `Latest`), `StorageInventoryConfig`, `StorageInventory`, `StorageResource`, `DefaultStorageInventoryInterval`, `DefaultStorageInventoryTimeout` | moved | Pin plumbing | `service/storage_observability.go:111,:115,:160,:218,:220,:431` |
-| `Client.AccountStreamLister` | becomes `AccountStreamLister(client)` | Pin plumbing | `service/storage_observability.go:219` |
-| `NewStorageReportPublisher`→`NewPublisher`, `StorageReportPublisher`→`Publisher` (`Publish`), `StorageReportConfig`→`PublisherConfig`, `PublishResult`, `ThresholdSource`, `StoragePressureThresholds` | moved, renamed | Pin plumbing | `:425-451` |
-| `NewStorageReportConsumer`→`NewConsumer`, `StorageReportConsumer`→`Consumer` (`Run`, `Snapshot`), `StorageReportConsumerConfig`→`ConsumerConfig`, `StorageReportSnapshot`→`Snapshot`, `ReportWatchStore` | moved, renamed | Pin plumbing | `:161,:203-205,:405`; `_http.go:123` |
-| `StorageReportObserver`→`Observer` (+ `ForgetAccount`) | moved, renamed, one method added | Pin plumbing | `_metrics.go:339,:398,:413` |
-| `ResourceReport`, `AccountReport`, `StorageTier`, `TierFile`, `TierMemory`, `TierUnknown`, `CapacityState`, `CapacityBounded`, `CapacityUnbounded`, `CapacityUnknown`, `AttributionAttributed`, `AttributionNotApplicable`, `OvercommitmentState`, `OvercommitmentWithin`, `OvercommitmentOver`, `OvercommitmentNotApplicable`, `OvercommitmentUnavailableUnknownLimit`, `PressureState`, `PressureNormal`, `PressureWarning`, `PressureHigh`, `PressureCritical`, `PressureBasisAccountTier` | moved | Pin plumbing | `_metrics.go:73-106,:580-586`; `_http.go:55,:96` |
-| `Capacity` (`Limit`, `Usage`, `Bounded`), `NewCapacity`, `UnknownCapacity`, `AttributionState`, `AttributionUnattributed`, `Growth` (`Rate`), `GrowthState`, `GrowthKnown`, `GrowthUnknown`, `GrowthUnavailable*` (3), `Projection`, `ProjectionUnavailable*` (4), `Pressure` (`AgainstAccountTier`), `PressureInput*` (5), `PressureBasis`, `PressureBasisOwnBound`, `PressureUnavailable*` (5), `TierComparison`, `AccountReport.TierFor`, `StorageResource.Attributed`, `OvercommitmentUnavailableUnboundedLimit`, `OwnerResolver`, `StreamLister`, `StreamListerSource`, `InventoryPublisher`, `ReportStore`, `AccountLimitReader` | moved | Reached | fields of `ResourceReport`/`AccountReport`; config fields of the pin-plumbing constructors |
-| `DeriveGrowth`, `Observation`, `Project`, `AssessPressure`, `PressureAgainstAccountTier`, `DeriveAccountReport`, `AccountTierLimits`, `AccountTierLimitsFrom`, `UnknownAccountTierLimits`, `UnknownGrowth`, `ResolvedPressureThresholds`, `StoragePressureThresholds.Resolve`, `DefaultStoragePressureThresholds`, `Default{Warning,High,Critical}{Headroom,Horizon}` (6), `MinGrowthSampleInterval`, `StorageReportGrowthObservations`, `SkipReasonStaleInventory`, `DefaultReportConsumerRetryBackoff`, `StorageAccountReportKey`, `StorageReportKey`→`ResourceKey` | moved (one renamed) | Internal | kvcatalog test cross-pins the two growth constants (`kvcatalog_storage_report_test.go:57`); owner decides, recommended kept in a move |
+| `NewStorageInventoryCollector`, `StorageInventoryCollector` (`Collect`, `Run`, `Latest`), `StorageInventoryConfig`, `StorageInventory`, `StorageResource`, `DefaultStorageInventoryInterval`, `DefaultStorageInventoryTimeout`, `OwnerResolver`, `StreamLister`, `StreamListerSource`, `InventoryPublisher` | moved | Plumbing | `storage_observability.go:111,:115,:160,:218-220,:237,:431` |
+| `Client.AccountStreamLister` | becomes `AccountStreamLister(client)` | Plumbing | `storage_observability.go:219` |
+| `NewStorageReportPublisher`→`NewPublisher`, `StorageReportPublisher`→`Publisher` (`Publish`), `StorageReportConfig`→`PublisherConfig`, `PublishResult`, `ReportStore`, `ThresholdSource`, `StoragePressureThresholds` (`Resolve`), `ResolvedPressureThresholds` | moved, renamed | Plumbing | `storage_observability.go:96,:105,:129,:425-451` |
+| `NewStorageReportConsumer`→`NewConsumer`, `StorageReportConsumer`→`Consumer` (`Run`, `Snapshot`), `StorageReportConsumerConfig`→`ConsumerConfig`, `StorageReportSnapshot`→`Snapshot`, `ReportWatchStore` | moved, renamed | Plumbing | `storage_observability.go:161,:203-205,:405`; `_http.go:123` |
+| `StorageReportObserver`→`Observer` (+ `ForgetAccount`) | moved, renamed, one method added | Plumbing | `_metrics.go:339,:398,:413` |
+| `ResourceReport`, `AccountReport`, `TierComparison`, `StorageTier` (+3 values), `Capacity` (`Limit`, `Usage`), `CapacityState` (+3), `AttributionState` (+3), `Growth` (`Rate`), `GrowthState` (+2), `GrowthUnavailable*` (3), `Projection`, `ProjectionUnavailable*` (4), `Pressure`, `PressureState` (+4), `PressureInput` (+4), `PressureBasis` (+2), `PressureUnavailable*` (5), `OvercommitmentState` (+3), `OvercommitmentUnavailable*` (2) | moved | Plumbing (types and field values of what `service` reads) | `_metrics.go:73-106,:356-360,:413-455,:580-586`; `_http.go:55,:96` |
+| `DefaultStoragePressureThresholds`, `StorageReportGrowthObservations`, `StorageAccountReportKey`, `StorageReportKey`→`ResourceKey`, `NewCapacity`, `AccountReport.TierFor`, `StorageResource.Attributed` | moved (one renamed) | no production caller; kept by owner question 3 | read by `graph/kvcatalog` tests that check the bucket the catalog declares (inventory § 4) |
+| `DeriveGrowth`, `Observation`, `UnknownGrowth`, `MinGrowthSampleInterval`, `Project`, `AssessPressure`, `PressureAgainstAccountTier`, `Pressure.AgainstAccountTier`, `DeriveAccountReport`, `AccountTierLimits`, `AccountTierLimitsFrom`, `UnknownAccountTierLimits`, `AccountLimitReader`, `UnknownCapacity`, `Capacity.Bounded`, `Default{Warning,High,Critical}{Headroom,Horizon}` (6), `SkipReasonStaleInventory`, `DefaultReportConsumerRetryBackoff` | unexported (owner question 3) | Plumbing with no caller | none, here or at the pin (inventory § 4); `kvcatalog.go:91`'s comment is reworded |
 
 ## Open issues and merge order
 
@@ -113,12 +122,16 @@ renames as shown. Owner question 2 covers the Pin plumbing kind.
 - #281: stays. It is component's `GenerateConfigSchema` defect; its line pin moves (task 4.3).
 - #195: stays. Optional adoption; the moved integration test keeps its own client.
 - #75 and #169: stay (6d).
-- #278 and #279 share no hunk with this change. Either order works; the second to land merges `origin/main`. The
-  later 6b–6d and 8d (kvcatalog, #133) merge after this one.
+- #278 merged (`838c1fa`) after this base; the branch merges `origin/main` before implementation (task 1.2). #279
+  edits other rows of `docs/admission-ledger.yaml`; either order works, and the second to land merges `origin/main`.
+  The later 6b–6d and 8d (kvcatalog, #133) merge after this one.
 
 ## Owner questions
 
-1. The #85 shape (D3).
-2. The Pin plumbing kind moves whole (Exports).
-3. The name and the nine renames (D1).
-4. A count waiver for #159 (3,415 non-test lines moved; a move, not a port).
+1. #85: add `ForgetAccount(row)` to the observer (D3). Recommended: yes.
+2. About 75 names are read only by `service` (ported in change 3). Your rule says no caller here means private or
+   dropped; the reviewer contract says an admitted package not yet ported counts. Recommended: keep them public.
+3. 24 names nothing outside the package reads become private in this move; 7 that kvcatalog's tests read, and
+   `Resolve` with its result type, stay public. Recommended: yes.
+4. Name `natsclient/storagereport` with nine renames (D1); the pin called the capability `storage-observability`.
+   The ~3,000-line limit is for ports and this is a move. Agreed?

@@ -7,6 +7,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 - [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal, design and spec delta pass pre-owner review and are accepted
   by the owner with rulings on owner questions 1–4. Gate: `task spec:check` and `task docs:check`.
+- [ ] 1.2 Merge `origin/main` into the claim branch (#278 merged as `838c1fa`). Gate: `task verify` on the merge.
 
 ## 2. Failing tests
 
@@ -19,18 +20,20 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 - [ ] 2.3 `TestReportConsumer_AccountDeleteReachesObserver` and `TestReportConsumer_ResyncRetractionReachesObserver`;
   `recordingObserver` gains `ForgetAccount`; `TestReportConsumer_AccountRetractionIsLogged` deleted (D3). Gate: fails
   on the base commit.
-- [ ] 2.4 `TestAccountStreamListerRefusesNilClient` (D2). Gate: fails to compile on the base commit.
 
 ## 3. Implementation
 
 - [ ] 3.1 `git mv` the seven files to `natsclient/storagereport/`; package clause, qualifiers, `doc.go` with the
   package comment, private `nilContextErrorOf`, the nine renames (D1, D2). Gate: 2.1, 2.2; `task lint`.
-- [ ] 3.2 `AccountStreamLister(client)` replaces the method; natsclient keeps no storage code (D2). Gate: 2.4;
-  `go build ./...`.
+- [ ] 3.2 `AccountStreamLister(client)` replaces the method and resolves `JetStream()` on each call; natsclient keeps
+  no storage code (D2). Gate: 2.1 (the integration tests call it); `go build ./...`.
 - [ ] 3.3 `Observer.ForgetAccount`; `removeAccount` and `replaceWith` call it with the held row; the Warn log goes
   (D3, #85). Gate: 2.3.
 - [ ] 3.4 Coverage target `natsclient/storagereport merged` in `scripts/cover-check.sh` and `d11Targets` (D2). Gate:
   `task cover:check`; `TestCoverCheckSensitivity`.
+- [ ] 3.5 Unexport the 24 names of the Exports table's last row; in-package tests follow; `kvcatalog.go:91` and
+  `storage_report.go:11` comments, `kvcatalog_storage_report_test.go:51` comment (D2, Exports). Gate: `go build
+  ./...`; `task lint`; `task test:unit`.
 
 ## 4. Documentation
 

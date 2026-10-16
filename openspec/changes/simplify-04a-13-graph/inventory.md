@@ -353,7 +353,7 @@ Titles also read.
    - Outside the package: `processor/graph-ingest/component.go:86` — `Help: "Graph-mutation requests rejected
      (success=false), by subject and reason (MutationResponse ErrorCode; 'unclassified' when absent)"`. The labels are
      subject and reason, but the reason is the classified code or `internal` when absent (`mutation_runtime.go:55-61`),
-     never `unclassified`, and `MutationResponse` no longer exists. Not fixed here: filed for PR 10.
+     never `unclassified`, and `MutationResponse` no longer exists. Not fixed here: filed as #287 (wave PR 10).
 
 ## Adopter seams
 

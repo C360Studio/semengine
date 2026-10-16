@@ -7,7 +7,8 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 - [x] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal, design and spec delta pass pre-owner review and are accepted
   by the owner with rulings on owner questions 1–5 (#223 comment 6226158511). Gate: `task spec:check` and `task docs:check`.
-- [ ] 1.2 Merge `origin/main` into the claim branch (#278 merged as `838c1fa`). Gate: `task verify` on the merge.
+- [x] 1.2 Merge `origin/main` into the claim branch (#278 merged as `838c1fa`; merge `fe52896`). Gate: `task verify`
+  on the merge (exit 0 at `e7074f6`).
 
 ## 2. Failing tests
 

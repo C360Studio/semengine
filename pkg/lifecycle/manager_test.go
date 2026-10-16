@@ -480,6 +480,7 @@ func TestManager_ReferencesReportsSourceRelationshipWithoutTarget(t *testing.T) 
 	state := bucket.get(sourceID)
 	state.Triples = append(state.Triples, message.Triple{
 		Subject: sourceID, Predicate: "mission.assignment.drone", Object: targetID,
+		Source: fixtureSource, Timestamp: fixtureTime,
 	})
 	bucket.put(sourceID, state)
 
@@ -885,7 +886,7 @@ func TestManager_GetReturnsNotLifecycleManagedForRawEntity(t *testing.T) {
 	bucket.put(id, &graph.EntityState{
 		ID: id,
 		Triples: []message.Triple{
-			{Subject: id, Predicate: "mission.control.command", Object: "launch"},
+			{Subject: id, Predicate: "mission.control.command", Object: "launch", Source: fixtureSource, Timestamp: fixtureTime},
 		},
 	})
 	_, err := mgr.Get(ctx, "fixture", id)
@@ -959,7 +960,7 @@ func TestManager_GetRawReturnsAllTriples(t *testing.T) {
 	bucket.put(id, &graph.EntityState{
 		ID: id,
 		Triples: []message.Triple{
-			{Subject: id, Predicate: "x.y.z", Object: "literal"},
+			{Subject: id, Predicate: "x.y.z", Object: "literal", Source: fixtureSource, Timestamp: fixtureTime},
 		},
 	})
 	state, err := mgr.GetRaw(ctx, id)
@@ -1697,7 +1698,10 @@ func TestCreate_UnrelatedConcurrentUpdateIsNotADuplicateBirth(t *testing.T) {
 		ID: id,
 		// Canonical predicate, unrelated to this workflow's lifecycle: the
 		// point is an entity that moved for a reason that is not a birth.
-		Triples: []message.Triple{{Subject: id, Predicate: "mission.identity.owner-org-id", Object: "acme"}},
+		Triples: []message.Triple{{
+			Subject: id, Predicate: "mission.identity.owner-org-id", Object: "acme",
+			Source: fixtureSource, Timestamp: fixtureTime,
+		}},
 	})
 	emitter.forceRevisionMismatch = true
 

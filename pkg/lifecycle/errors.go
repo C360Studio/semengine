@@ -55,11 +55,10 @@ var (
 
 	// ErrInvalidInitialState is returned by Manager.CreateFromOperator when
 	// the supplied initial state cannot be turned into a valid Participant
-	// for the named workflow: empty body, undecodable JSON, or no entity ID.
-	// Deliberately NOT a cause: a body whose Workflow() differs from the
-	// route's — that guard was removed (production Workflow() returns a
-	// constant, so only fakes could ever trip it); CreateFromOperator's doc
-	// records the same.
+	// for the named workflow: an empty body, a body that does not decode, a
+	// field the Schema does not declare, content after the first JSON value,
+	// or no entity ID. A decoded Workflow() that differs from the named
+	// workflow is not a cause.
 	//
 	// Distinct from ErrInvalidTransition (which covers an undeclared initial
 	// PHASE, validated inside Create) so a caller can tell "your payload is

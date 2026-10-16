@@ -266,6 +266,7 @@ func validLifecycleState(entityID string) *graph.EntityState {
 		ID: entityID,
 		Triples: []message.Triple{{
 			Subject: entityID, Predicate: "mission.lifecycle.phase", Object: "planning",
+			Source: fixtureSource, Timestamp: fixtureTime,
 		}},
 	}
 }

@@ -12,7 +12,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"reflect"
 	"sort"
 
@@ -313,16 +312,24 @@ func (m *Manager) History(ctx context.Context, workflow, entityID string) ([]Tra
 	return events, nil
 }
 
-// Children returns ChildResult entries for every child link
-// declared in the parent workflow's ChildWorkflows, optionally
-// narrowed by opts.Workflow + paginated by Limit/Offset.
+// Children returns the children linked from the parent through the parent
+// workflow's ChildWorkflows, optionally narrowed to one child workflow by
+// opts.Workflow.
 //
-// Cross-workflow: the parent and its children may be in different
-// workflows. Manager.Children reads the parent's triples, walks
-// each ChildSpec's LinkPredicate, and loads each linked entity via
-// the child workflow's Get. Children whose child workflow isn't
-// registered, or whose entity is gone, are skipped with a Warn log
-// — one bad child shouldn't kill the whole response.
+// Cross-workflow: the parent and its children may be in different workflows.
+// Children reads the parent, collects each ChildSpec's LinkPredicate objects,
+// sorts the links by child workflow then entity ID, and reads each linked
+// child through its own workflow, in that order. As List does, a child that
+// is gone (ErrEntityNotFound) or has no lifecycle phase
+// (ErrEntityNotLifecycleManaged) is left out, and any other read failure,
+// including ErrWorkflowNotRegistered for a child workflow nobody registered,
+// fails the call.
+//
+// Offset and Limit count the children kept, with List's rule: Offset <= 0
+// starts at the first, Limit <= 0 means no limit, and a page shorter than
+// Limit is the last. Children stops reading once Offset+Limit children are
+// kept, so a page costs at most Offset + Limit + (children left out) reads
+// (ADR-049); with no Limit it reads every link. The result is never nil.
 func (m *Manager) Children(ctx context.Context, parentEntityID string, opts ChildOptions) ([]ChildResult, error) {
 	parentState, _, err := m.getEntity(ctx, parentEntityID)
 	if err != nil {
@@ -359,28 +366,24 @@ func (m *Manager) Children(ctx context.Context, parentEntityID string, opts Chil
 		return refs[i].entityID < refs[j].entityID
 	})
 
-	if opts.Offset >= len(refs) {
-		return nil, nil
-	}
-	end := len(refs)
-	if opts.Limit > 0 && opts.Offset+opts.Limit < end {
-		end = opts.Offset + opts.Limit
-	}
-	page := refs[opts.Offset:end]
-
-	results := make([]ChildResult, 0, len(page))
-	for _, r := range page {
+	offset := max(opts.Offset, 0)
+	results := make([]ChildResult, 0)
+	kept := 0
+	for _, r := range refs {
+		if opts.Limit > 0 && kept == offset+opts.Limit {
+			break
+		}
 		child, err := m.Get(ctx, r.workflow, r.entityID)
 		if err != nil {
-			m.logger.Warn("lifecycle: Children — child load failed; skipping",
-				slog.String("parent", parentEntityID),
-				slog.String("child", r.entityID),
-				slog.String("child_workflow", r.workflow),
-				slog.String("error", err.Error()),
-			)
-			continue
+			if errors.Is(err, ErrEntityNotFound) || errors.Is(err, ErrEntityNotLifecycleManaged) {
+				continue
+			}
+			return nil, fmt.Errorf("lifecycle: Children of %q: child %q: %w", parentEntityID, r.entityID, err)
 		}
-		results = append(results, ChildResult{Workflow: r.workflow, State: child})
+		kept++
+		if kept > offset {
+			results = append(results, ChildResult{Workflow: r.workflow, State: child})
+		}
 	}
 	return results, nil
 }

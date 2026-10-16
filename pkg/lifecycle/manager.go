@@ -138,12 +138,10 @@ func (m *Manager) Register(workflow Workflow) error {
 	// and a non-empty body. That lane also removed the compile-time backstop:
 	// an app whose only creator is the HTTP route never writes a compile-checked
 	// mgr.Create(ctx, &T{}).
-	probe, ok := reflect.New(meta.GoType).Interface().(Participant)
-	if !ok {
+	if _, ok := reflect.New(meta.GoType).Interface().(Participant); !ok {
 		return fmt.Errorf("%w: workflow %q Schema %s does not implement Participant on its pointer",
 			ErrInvalidWorkflow, workflow.Name, meta.GoType)
 	}
-	_ = probe
 	// Disjointness needs the parsed projection predicates, so it runs here
 	// rather than inside validate() (gh#234).
 	if err := workflow.validateDisjointness(meta); err != nil {
@@ -987,20 +985,13 @@ type CreateResult struct {
 // question: it can fail after a durable commit (turning a committed birth into
 // a 500) and it can observe another writer's later state.
 //
-// It does NOT check the decoded state's Workflow() against the argument. That
-// guard existed briefly and was withdrawn: the target type is chosen BY the
-// route, and every production Participant returns Workflow() from a package
-// constant, so a request body cannot declare a workflow at all and the check
-// could never fire. It passed its own test only because the test double had a
-// JSON-decodable workflow field — it tested the double. The real route/body
-// binding is the entity-ID pattern gate inside Create.
-//
-// The wiring invariant it was reaching for (Name == Participant.Workflow()) is
-// NOT enforced anywhere, deliberately — Register permits the mismatch so a
-// partial migration does not brick (see Register, ADR-056 Decision 5). What
-// closes the hazard is that this lane writes against the registration the
-// CALLER selected rather than re-deriving one from the Participant's own
-// constant (TestCreateFromOperator_UsesTheRouteSelectedRegistration).
+// initial is decoded into a new value of the Schema type registered under
+// workflow. ErrInvalidInitialState refuses an empty body, a body that does not
+// decode, a field the Schema does not declare, content after the first JSON
+// value, and a decoded state with no entity ID. The decoded state's Workflow()
+// is not compared with workflow: the create is written against the
+// registration the caller named (TestCreateFromOperator_UsesTheRouteSelectedRegistration),
+// and Create's entity-ID pattern check binds the entity to it.
 //
 // Lost or malformed replies surface as commit-unknown errors and are never
 // retried automatically.

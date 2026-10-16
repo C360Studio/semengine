@@ -5,7 +5,8 @@ claim commit; draft PR #286)
 
 Question: where the `graph` root spells one fact twice, classifies one error more than once, or exports surface with no
 reader, and where a reader of a stored entity skips the stored-value rule. Scope: #132 (body items 1–7, comment items
-a–i, its Tests paragraph) and #276 (epic #223, PR 8c; owner 2026-10-16, #223 comment 6216623583: "**8c — `graph`**: #132,
+a–i, its Tests paragraph) and #276 (epic #223, PR 8c; owner 2026-10-16, #223 comment 6216623583:
+"**8c — `graph`**: #132,
 plus #276 (export graph-ingest's stored-value check; lifecycle's Watch adopts it)."). Not in scope:
 `graph/kvcatalog` (8d, #133), `graph/readiness` (8e, #135), the component Start context (#282).
 
@@ -41,8 +42,29 @@ one named consumer that imports SemEngine's `graph`), at its working tree, witho
   "revision_mismatch"`, `:115` `MutationInvalid`.
 - Their only production reader is `processor/graph-ingest/canonical_mutations.go:58` — `func canonicalErrorOutcome(err
   error) string {`, which maps codes to metric labels. `:70` — `case graph.ErrorCodeInvalidRequest,
-  graph.ErrorCodeStructuralInvalid:` maps both codes to `invalid`. Every other code (`message_type_unregistered`,
-  `graph_state_reset_required`, the entity-ID codes) becomes `internal` (`:72-73`).
+  graph.ErrorCodeStructuralInvalid:` maps both codes to `invalid`. Every other code becomes `internal` (`:72-73`).
+- Which codes reach `canonicalErrorOutcome` as the outer layer (every `return nil, …` in the four handlers,
+  `canonical_mutations.go:215-491`, read by hand; `rejectFromError` at `mutation_runtime.go:267-275` puts
+  `invalid_request` over any invalid error, including the entity-ID codes):
+
+  - `invalid_request` (base label `invalid`): all four handlers: decode failures, `rejectInvalid`,
+    `requireStatementMetadata`, and `rejectFromError` over `entity_id_invalid` (reconcile `:294`, delete `:455`).
+  - `message_type_unregistered` (base `internal`): create, `:208` via `:227`.
+  - `entity_id_invalid` (base `internal`): create only, `authorizeSubject` on an unvalidated ID, returned bare
+    (`:234`).
+  - `entity_id_authority_invalid` (base `internal`): create `:234`, reconcile `:299`, append `:376`, delete `:458`,
+    returned bare.
+  - `entity_already_exists`, `entity_not_found`, `revision_mismatch` (base: the same names): create `:275`;
+    reconcile `:318`, `:324`, `:343`, `:348`; delete `:472`, `:477`, `:483`, `:488`.
+  - `graph_state_reset_required` (base `internal`): `rejectFromError` over a state error, reconcile `:321`, `:338`,
+    `:351`, delete `:475` (and create `:278` if the write returns one).
+  - `internal` (base `internal`): create `:204`, append `:389`, `:416`, delete `:491`, the `rejectFromError` fallback.
+
+  `structural_invalid` never reaches it: its one producer, `validateTriplePredicates` (`mutation_runtime.go:179`), is
+  called only on the stream lane (`component.go:1748`, "this call cannot fire"). A bad predicate on a canonical
+  create fails `ValidateEntityStateContract` and becomes `invalid_request` (`canonical_mutations.go:263-265`).
+  Append's malformed subjects are refused as `invalid_request` before `authorizeSubject` (`:370`), so append never
+  emits `entity_id_invalid`.
 - `:121` — `func isServerMutationOutcome(outcome MutationOutcome) bool {`: no production caller. Its only reader is
   `graph/mutation_protocol_test.go:115` (`TestMutationOutcomeVocabularyIsClosed`).
 - `revision_mismatch` is spelled three times: `mutation_responses.go:16`, `:113`, and `pkg/errs/errs.go:346` — `Code:
@@ -51,12 +73,16 @@ one named consumer that imports SemEngine's `graph`), at its working tree, witho
   emits it." This is false: `index_not_ready` is emitted by `natsclient/kvspec.go:350` and
   `pkg/lifecycle/manager_query.go:204`, `:233`, and nothing in the tree emits `embedding_unavailable` or
   `resource_exhausted`.
+- The same fact already has a label elsewhere: `mutation_rejections_total{subject, reason}` counts every refused
+  mutation by its classified code (`mutation_runtime.go:55-61`, `internal` when absent; authority refusals by their
+  own reason, `:52-54`). After ruling L the failure series of `graph_mutation_outcomes_total` carries the same codes.
 - Test-only readers of the three outcomes that go: `internal/graphmutation/client_test.go:406`, `:458`, and
   `processor/graph-ingest/canonical_mutations_test.go:795`.
 
 ### #132 item 2: one state-contract error classified two or three times
 
-- `graph/entity_predicate_contract.go:247` and `:257` both read `return ClassifyStateContractError(errs.WrapFatal(&StateContractError{`.
+- `graph/entity_predicate_contract.go:247` and `:257` both read
+  `return ClassifyStateContractError(errs.WrapFatal(&StateContractError{`.
   `WrapFatal` (`pkg/errs/errs.go:369-375`) builds a fatal `ClassifiedError` with no code. `ClassifyStateContractError`
   (`graph/state_contract.go:33-44`) finds no code and wraps again (`:43`). Result: two `ClassifiedError` layers and a
   `graph.UnmarshalEntityState: decode authoritative entity state failed:` prefix.
@@ -64,6 +90,11 @@ one named consumer that imports SemEngine's `graph`), at its working tree, witho
   classified.
 - graph-ingest wraps a third time at `mutation_runtime.go:232` and `:248`, and passes through at `query.go:97-98` and
   `:455-458`.
+- Mutation replies add another layer: `mutation_runtime.go:267-270` — `rejectFromError` returns
+  `errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired, err)` over any `*StateContractError`,
+  already classified or not. Reached after `readEntity` from reconcile (`canonical_mutations.go:321`, `:338`, `:351`),
+  delete (`:475`), create (`:278`), and from `canonicalAppendFailure` (`:524`). So reconcile, delete and append replies
+  carry the state error under two `ClassifiedError` layers even once D1 makes the decoder emit one.
 - `mutation_runtime.go:224` — `contractErr.EntityID = key` sets a field on an error after it was built.
 - The key check is written twice: `exact_entity.go:94` — `if entity.ID != entityID {`, and `mutation_runtime.go:245`.
 - No test matches the prefix text (`git grep -n -e "authoritative entity state" -e "UnmarshalEntityState:" --
@@ -94,7 +125,8 @@ one named consumer that imports SemEngine's `graph`), at its working tree, witho
 
 ### #132 item 5: verb-table fields read only by tests
 
-- `graph/query_verbs.go:11-15` declare `RequestType` and `ReplyType`. Their only reader is `graph/query_verbs_test.go:19-28`.
+- `graph/query_verbs.go:11-15` declare `RequestType` and `ReplyType`. Their only reader is
+  `graph/query_verbs_test.go:19-28`.
 - At the pin, graph-query's table carries the same strings (`processor/graph-query/query.go:36`, `:50-58`). They are
   read only by `operation_inventory_test.go:91-93`. Searched at the pin: `query.go`, `component.go`,
   `operation_inventory_test.go`.
@@ -135,7 +167,8 @@ one named consumer that imports SemEngine's `graph`), at its working tree, witho
 - **e.** `graph/query_prefix_types.go:84` `EncodeCursor` and `:90` `DecodeCursor`. One production reader:
   `processor/graph-ingest/query.go:314`, `:381`, `:384`. The type's own doc says "Consumers MUST NOT parse, construct,
   or modify cursor values" (`:24-25`).
-  `entity_predicate_contract.go:287` `UnmarshalEntityStateTrusted`: one caller, `processor/graph-ingest/entity_writes.go:327`.
+  `entity_predicate_contract.go:287` `UnmarshalEntityStateTrusted`: one caller,
+  `processor/graph-ingest/entity_writes.go:327`.
   `query_prefix_types.go:17` — `const MaxPrefixQueryLimit = DefaultPrefixQueryLimit`: both read only at
   `processor/graph-ingest/query.go:268-271`.
 - **f.** `mutation_responses.go:133` and `:142`: two field-identical response types. They are decoded separately at
@@ -155,14 +188,19 @@ one named consumer that imports SemEngine's `graph`), at its working tree, witho
 - **The stored-value rule** (decode, canonical contract, key, statement metadata): `mutation_runtime.go:219-239`;
   `entity_writes.go:79-89` (the metadata rule, also used by the write lanes through `requireStatementMetadata`, `:68`);
   `exact_entity.go:90-100` (decode and key, no metadata); `manager_test_helper_test.go:74-91` (a full copy);
-  `manager_query.go:267` (decode only). Five spellings.
+  `manager_query.go:267` (decode only); the `ValidateDecodedEntityState{,s,Pointers,IDs}` family
+  (`graph/entity_predicate_contract.go:198-238`, "Aggregate decoders must call this", `:197`), canonical contract
+  only: no key (aggregate replies have none) and no statement metadata. Six spellings. The family has no reader
+  outside the root here; at the pin, graph-query's hydration (`processor/graph-query/graphrag.go:1536`) and
+  fusionnats (`pkg/fusion/fusionnats/client.go:294`, `:344`, `:392`) call it on batch/prefix replies
+  (`notes/3.3.md:232-235`).
   The write seam runs the trusted decode plus the key check (`entity_writes.go:325-338`), as ADR-110 Decision 6 states
   (`docs/adr/110-write-seam.md:129-131`).
 - **The state-reset classification:** `state_contract.go:33-44`; `entity_predicate_contract.go:247-250`, `:257-260`;
-  `mutation_runtime.go:232`, `:248`; `component.go:1296-1300` (the sweep builds an unclassified record when a refusal is
-  not a `*StateContractError`).
-- **Mutation failure:** the classified codes (`mutation_responses.go:10-96`), the three outcomes (`:111-115`), and the
-  metric labels (`canonical_mutations.go:58-74`).
+  `mutation_runtime.go:232`, `:248`, `:267-270` (`rejectFromError`); `component.go:1296-1300` (the sweep builds an
+  unclassified record when a refusal is not a `*StateContractError`).
+- **Mutation failure:** the classified codes (`mutation_responses.go:10-96`), the three outcomes (`:111-115`), the
+  outcome labels (`canonical_mutations.go:58-74`), and the rejection labels (`mutation_runtime.go:55-61`).
 - **Cross-package error codes:** `revision_mismatch` at `mutation_responses.go:16` and `pkg/errs/errs.go:346`;
   `index_not_ready` at `mutation_responses.go:79` and `natsclient/kvspec.go:142`.
 - **The requester interface:** `exact_entity.go:28-30`, `:38-40`; `internal/graphmutation/client.go:15-17`;
@@ -175,9 +213,12 @@ one named consumer that imports SemEngine's `graph`), at its working tree, witho
 
 - Open PRs (`gh pr list --state open --json number,title,isDraft,changedFiles,files`; none over 100 files):
   - #286: this claim, 0 files.
-  - #283 (draft, PR 6a, natsclient storage report, 0 files so far). The files it plans to move
-    (`natsclient/storage_report*.go`) read `graph.BucketStorageReport`, which this change does not touch. This change
-    edits `natsclient/kvspec.go:136-142`, `:350` and `kvspec_integration_test.go:210`. Different files.
+  - #283 (draft, PR 6a, natsclient storage report; 6 files, all under
+    `openspec/changes/simplify-04a-13-natsclient-storage/`). Its design plans an edit to the natsclient row of
+    `docs/admission-ledger.yaml` (`design.md:90`), the file whose `graph` row this change edits: a different hunk.
+    The files it plans to move (`natsclient/storage_report*.go`) read `graph.BucketStorageReport`, which this change
+    does not touch; this change edits `natsclient/kvspec.go:136-142`, `:350` and `kvspec_integration_test.go:210`.
+    Both changes are numbered `04a-13`; the ids differ, so nothing collides.
   - #279 (draft, `pkg/security` docs, 16 files). It edits `docs/admission-ledger.yaml` (the security/tlsutil rows).
     This change edits the `graph` row (`:1923-1962`), a different hunk. No other shared file.
   - #242–#248: Dependabot bumps (`go.mod`, `go.sum`, `package*.json`, `ci.yml`). No overlap.
@@ -225,7 +266,8 @@ Measured with a script over the base tree (`/tmp/arch8c/counts.sh`, local only):
 `EntityState` has 10 production files. Production readers of what changes:
 
 - `UnmarshalEntityState`: `pkg/lifecycle/manager_query.go:267`, `processor/graph-ingest/mutation_runtime.go:221`.
-  20 test lines in 9 outside test files.
+  12 call lines in 9 outside test files (`git grep -n "graph\.UnmarshalEntityState(" -- '*_test.go'`), and 8 in
+  the root's tests.
 - `ClassifyStateContractError`: `mutation_runtime.go:232`, `:248`; `query.go:98`, `:458`.
 - `ExactEntityReader` / `NewExactEntityReader`: `pkg/lifecycle/manager.go:45`, `:90`;
   `pkg/projection/mutation_client.go:31`, `:60`.
@@ -258,9 +300,11 @@ calls (ADR-074 "One authoritative state codec", pin `docs/adr/074…:56-61`). Th
 graph-ingest grew the key and metadata checks beside it (§ 2).
 
 This is a reusable primitive, so an adoption sweep is owed. In this tree every adopter is in this change: the
-lifecycle watch, the lifecycle test doubles, graph-ingest, and the exact reader. Outside the tree, the `ENTITY_STATES`
+lifecycle watch, the lifecycle test doubles, graph-ingest, and the exact reader; the `ValidateDecodedEntityState`
+family is the aggregate-reply half of the same rule (§ 2). Outside the tree, the `ENTITY_STATES`
 followers that change 4 ports (graph-index, graph-embedding; the follower in #109, ADR-081 "decodes and
-contract-validates each write exactly once", pin `081…:78-85`) should adopt it.
+contract-validates each write exactly once", pin `081…:78-85`) should adopt it, and graph-query's and fusion's batch
+readers (changes 4 and 5) should call the aggregate validator.
 
 The collision table and the intent check are not triggered: no new durable, communication or coordination primitive,
 and no boundary moves.
@@ -291,7 +335,7 @@ Titles also read.
 
 ## 7. Shape sweep (current tree)
 
-1. **Second spelling:** the stored-value rule (5 spellings, § 2); the classification (§ 1 item 2); the failure
+1. **Second spelling:** the stored-value rule (6 spellings, § 2); the classification (§ 1 item 2); the failure
    vocabulary (§ 1 item 1); the two error codes (§ 2); `kvRevision` (§ 1 item 4); the responder name and request
    structs (§ 1 item 5); two field-identical responses (item f); `MaxPrefixQueryLimit = DefaultPrefixQueryLimit`
    (item e). Required where an issue item or #276 names it.
@@ -307,9 +351,9 @@ Titles also read.
      triple's `Object` and `ExpiresAt` stay shared. MEDIUM at most (#185: needs two goroutines mutating one object).
      Folded into the design's doc pass rather than filed.
    - Outside the package: `processor/graph-ingest/component.go:86` — `Help: "Graph-mutation requests rejected
-     (success=false), by subject and reason (MutationResponse ErrorCode; 'unclassified' when absent)"`. The labels
-     are the arrival lane and an authority reason (`authority_gate.go:79-81`), and `MutationResponse` no longer exists.
-     Not fixed here: filed for PR 10.
+     (success=false), by subject and reason (MutationResponse ErrorCode; 'unclassified' when absent)"`. The labels are
+     subject and reason, but the reason is the classified code or `internal` when absent (`mutation_runtime.go:55-61`),
+     never `unclassified`, and `MutationResponse` no longer exists. Not fixed here: filed for PR 10.
 
 ## Adopter seams
 

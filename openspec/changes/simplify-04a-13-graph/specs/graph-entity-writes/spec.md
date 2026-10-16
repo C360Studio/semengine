@@ -15,8 +15,13 @@
 Each refusal SHALL be exactly one classified error, with class fatal and code `graph_state_reset_required`, from which
 `errors.As` yields a `*graph.StateContractError` whose `Reason` is the refusal's reason and whose `EntityID` is `key`.
 
-graph-ingest's reads of a stored entity, `pkg/lifecycle`'s `Watch` and `WatchEvents`, and `graph.ExactEntityReader`
-SHALL apply this rule. A watch SHALL return the refusal as its error and SHALL NOT deliver the entity.
+graph-ingest's validated read of an entity (the entity, batch and prefix verbs, reconcile, append and delete), its
+boot sweep of `ENTITY_STATES`, and its re-check of a stored value after a failed read-modify-write SHALL apply this
+rule; so SHALL `pkg/lifecycle`'s `Watch` and `WatchEvents`, and `graph.ExactEntityReader`. The write seam's own read
+of the value it changes is the one exception: it decodes without the canonical contract and checks only the key
+(ADR-110 Decision 6; "The write path refuses a stored value it cannot change"), and when it refuses, the refusal
+SHALL be the one this rule gives for those bytes. A watch SHALL return the refusal as its error and SHALL NOT deliver
+the entity. A mutation reply that refuses for a stored value SHALL carry the refusal without adding a classification.
 
 #### Scenario: A watched value without a source
 
@@ -38,3 +43,9 @@ SHALL apply this rule. A watch SHALL return the refusal as its error and SHALL N
 
 - **WHEN** any refusal is returned
 - **THEN** unwrapping it yields one `*errs.ClassifiedError`, not two
+
+#### Scenario: A reconcile refused for its stored value
+
+- **WHEN** a reconcile names entity K, whose stored value holds a statement with no `Source`
+- **THEN** the error returned holds one `*errs.ClassifiedError`, with code `graph_state_reset_required` and reason
+  `missing_statement_metadata`

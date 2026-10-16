@@ -17,7 +17,8 @@ nothing reads. The exact reader is an interface with one implementation. Seven p
   does not decode, a noncanonical value, a value naming another entity, or a statement with no `Source` or no
   `Timestamp`. The refusal carries one classification. graph-ingest, the lifecycle watch, the lifecycle test doubles
   and the exact reader all call it. `ValidateStatementMetadata` is the write lanes' half of the rule.
-  `ClassifyStateContractError` goes.
+  `ClassifyStateContractError` goes, and graph-ingest's mutation replies stop adding a second classification. The
+  write seam keeps its trusted read (ADR-110 Decision 6).
 - **The exact reader is a struct.** `NewExactEntityReader` refuses a nil requester. The reader returns the entity it
   decoded without copying it.
 - **Mutation outcomes are four:** applied, unchanged, entity_not_found, failed. `graph_mutation_outcomes_total`'s
@@ -46,8 +47,8 @@ nothing reads. The exact reader is an interface with one implementation. Seven p
   `pkg/errs/errs.go:340-348`; `natsclient/kvspec.go:136-142`, `:350`; `graph/readiness/gauges.go:144`,
   `readiness_gate.go:168`; one assertion in `graph/kvcatalog/kvcatalog_test.go:165`; `graph/README.md`;
   `.agents/skills/query-pattern/SKILL.md` and its adapter; `docs/admission-ledger.yaml` (`graph` row).
-- Wire changes: `kvRevision` becomes `kv_revision`. Metric label values change: `invalid` splits into
-  `invalid_request` and `structural_invalid`, and codes that were counted as `internal` are named. The mutation reply
+- Wire changes: `kvRevision` becomes `kv_revision`. Metric label values change: `invalid` becomes
+  `invalid_request`, and four codes that were counted as `internal` are named. The mutation reply
   JSON is unchanged. No deployment migrates (deployments wipe and start fresh); no consumer runs the ported
   graph-ingest.
 - Behaviour change: the lifecycle `Watch` / `WatchEvents` return an error for a stored value that graph-ingest refuses,

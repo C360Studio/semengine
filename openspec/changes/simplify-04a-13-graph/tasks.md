@@ -2,7 +2,8 @@
 
 Each task names its outcome and the gate that proves it. Tests come first. Record each failing on the base commit in
 `notes/<task>.md`. Tests in 2.1 and 3.1 are written against the base API and fail by assertion. Only 2.2 and 4.1 count
-a compile failure as failing. Review stops (Codex) after 2.3, 3.3 and 4.2.
+a compile failure as failing. Review stops (Codex) after 2.3, 3.3 and 4.2. Each stop's task ends only when
+`task verify` passes on a clean tree at its commit (#171).
 
 ## 1. Design
 
@@ -16,28 +17,35 @@ a compile failure as failing. Review stops (Codex) after 2.3, 3.3 and 4.2.
     statement without `Source`, and a value stored under another key);
   - `TestExactEntityReaderRefusesAReplyWithoutStatementMetadata`;
   - `TestNewExactEntityReaderRefusesNilRequester`;
-  - a one-layer classification check on today's `UnmarshalEntityState` (base: two layers).
+  - a one-layer classification check on today's `UnmarshalEntityState` (base: two layers);
+  - `TestReconcileReplyForPoisonedStateHasOneClassification` (graph-ingest; base: two layers from
+    `rejectFromError`).
 
   Gate: each fails by assertion on the base commit.
 - [ ] 2.2 `TestUnmarshalEntityStateRefusesWhatGraphIngestRefuses` (one row per reason plus the two double-fault rows).
-  Every caller moves to `UnmarshalEntityState(key, data, &entity)`: the 20 test lines in 9 outside test files, the
-  root tests, and `vocabulary/export/datatype_roundtrip_test.go` with stamped statements (D1). Gate: fails to compile on
-  the base commit.
+  Every caller moves to `UnmarshalEntityState(key, data, &entity)`: the 12 call lines in 9 outside test files, the
+  8 in the root tests, and `vocabulary/export/datatype_roundtrip_test.go` with stamped statements (D1). Gate: fails
+  to compile on the base commit.
 - [ ] 2.3 Implement D1 and D2:
   - the root decoder, `ValidateStatementMetadata`, and the one constructor; `ClassifyStateContractError` removed;
-  - graph-ingest's `decodeStoredEntity`, `decodeStoredForWrite` and the sweep;
+  - graph-ingest's `decodeStoredEntity`, `decodeStoredForWrite`, the sweep, and `rejectFromError` passing a state
+    error through;
+  - the aggregate validators running steps 2 and 4 through the shared helpers (if owner question 1 keeps them);
   - `pkg/lifecycle` `watchEvent`, with `decodeStoredValue` deleted;
   - the struct reader, with lifecycle's unexported interface and `pkg/projection`'s field.
 
   Gate: 2.1 and 2.2 pass; `go test -race` of `graph`, `pkg/lifecycle`, `pkg/projection`,
-  `processor/graph-ingest/...`; `task mutate:check` with D1 step 4 removed is detected by the watch test.
+  `processor/graph-ingest/...`; `task mutate:check` with D1 step 4 removed is detected by the watch test;
+  `task verify` passes on a clean tree (review stop).
 
 ## 3. Vocabulary and wire (batch 2)
 
 - [ ] 3.1 Failing tests against the base API:
-  - `TestCanonicalMutationOutcomeLabelIsTheClassifiedCode` (structurally invalid create gives `structural_invalid`;
-    `message_type_unregistered` is not counted as `internal`) (D3);
-  - `TestExactEntityReplyCarriesKVRevision` (D4).
+  - `TestCanonicalMutationOutcomeLabelIsTheClassifiedCode`, through the real create handler: an unregistered message
+    type counts `message_type_unregistered` (base `internal`), and a nil entity counts `invalid_request` (base
+    `invalid`) (D3);
+  - `TestExactEntityReplyCarriesKVRevision` (graph-ingest): graph-ingest's real reply through the reader, JSON key
+    `kv_revision` (D4).
 
   Gate: both fail by assertion on the base commit.
 - [ ] 3.2 Implement D3:
@@ -47,13 +55,16 @@ a compile failure as failing. Review stops (Codex) after 2.3, 3.3 and 4.2.
     `kvcatalog_test.go:165` removed;
   - the error-code comment rewritten.
 
-  Gate: 3.1's label test; `task mutate:check` on a mutant mapping `structural_invalid` to `invalid` is detected.
+  Gate: 3.1's label test; `task mutate:check` on a mutant mapping `message_type_unregistered` back to `internal` is
+  detected.
 - [ ] 3.3 Implement D4 and D5:
-  - `kv_revision`; `QueryVerb{Name, Subject, Responder}`; `ResponderGraphIngest`; `EntityRequest`, `BatchRequest`;
+  - `kv_revision` written once (the reader embeds `ExactEntity`; the five literals in `graph/exact_entity_test.go`);
+    `QueryVerb{Name, Subject, Responder}`; `ResponderGraphIngest`; `EntityRequest`, `EntityBatchRequest`;
   - the cursor codec and trusted decoder moved into graph-ingest; one prefix limit; `EntityMutationResponse`;
   - `ValidateEntityPredicates` unexported; the prefix-type tests as one table.
 
-  Gate: 3.1's wire test; `task test:unit`; `task cover:check` keeps the `graph merged` floor.
+  Gate: 3.1's wire test; `task cover:check` keeps the `graph merged` floor; `task verify` passes on a clean tree
+  (review stop).
 
 ## 4. Index state and text (batch 3)
 
@@ -64,8 +75,8 @@ a compile failure as failing. Review stops (Codex) after 2.3, 3.3 and 4.2.
   - `graph/README.md`; `.agents/skills/query-pattern/SKILL.md` and `.claude/skills/query-pattern/SKILL.md`;
   - the `graph` ledger row.
 
-  Gate: `go doc ./graph` prints one package comment; `task ledger:check`, `task docs:check`, and the adapter check in
-  `task verify`.
+  Gate: `go doc ./graph` prints one package comment; `task verify` passes on a clean tree, which runs
+  `ledger:check`, `docs:check` and the adapter check (review stop).
 
 ## 5. Verify, review and close
 

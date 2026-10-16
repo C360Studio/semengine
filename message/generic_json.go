@@ -94,11 +94,17 @@ func (g *GenericJSONPayload) Schema() Type {
 	}
 }
 
-// Validate performs basic validation on the GenericJSON payload.
-// Ensures the data map is not nil.
+// Validate refuses a nil Data, and runs the shape check MarshalJSON runs: it refuses, with the
+// same invalid-data error naming the value's type and path, every value MarshalJSON refuses as not
+// JSON-shaped, not valid UTF-8 or containing itself. Validate passing does not promise encoding
+// passes: a NaN or infinite float32 or float64, and a json.Number whose text is not a JSON number,
+// pass Validate and are refused only by encoding. Decoded data never holds them.
 func (g *GenericJSONPayload) Validate() error {
 	if g.Data == nil {
 		return errs.WrapInvalid(errs.ErrInvalidData, "GenericJSONPayload", "Validate", "data cannot be nil")
+	}
+	if err := (shapeCheck{onPath: map[shapeKey]bool{}}).check(g.Data, "data"); err != nil {
+		return errs.WrapInvalid(err, "GenericJSONPayload", "Validate", "data")
 	}
 	return nil
 }

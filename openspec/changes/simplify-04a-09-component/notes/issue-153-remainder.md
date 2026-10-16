@@ -52,8 +52,7 @@ Body:
 > one list of port-and-facts pairs, with its readers updated; and `createWithSource`, `createWithRegistration` and
 > `transitionWithOutcome` return their plain values, with the two structs deleted.
 >
-> Addresses #9. Split from #153 (owner ruling 2026-10-16, recorded in
-> `openspec/changes/simplify-04a-09-component/design.md` on PR #273).
+> Addresses #9. Split from #153 (owner ruling 2026-10-16, #153 comment 6214880970).
 
 ## Comment for #196
 

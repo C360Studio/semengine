@@ -13,7 +13,7 @@ starts.
 
 ## 2. Failing tests
 
-- [ ] 2.1 `TestProductServesTLSFromDependenciesSecurity` in `pkg/security/product_test.go` (D5): a no-certificate
+- [x] 2.1 `TestProductServesTLSFromDependenciesSecurity` in `pkg/security/product_test.go` (D5): a no-certificate
   client is refused, a signed client is served 200, with `client_cert_optional` the no-certificate client is
   served, and `min_version` `"1.4"` makes `Start` fail naming `min_version`; and a first case requires the
   `deps.Security` the factory receives, from the decoded `configDocument`, to equal `wantConfig`. The product type
@@ -23,16 +23,19 @@ starts.
   Gate: passes on the base commit;
   `task mutate:check` runs on mutants A and B (D5) are recorded in `notes/2.1.md` as detected, surviving or
   inconclusive.
-- [ ] 2.2 (Q1) `TestLoadersRefuseSettingsNotApplied` in `internal/tlsutil`: `mode` `"acme"` and `"amce"`, and
+  Done: passes on `3aab575`; mutants A and B both detection at `9d7f118` (`notes/2.1.md`).
+- [x] 2.2 (Q1) `TestLoadersRefuseSettingsNotApplied` in `internal/tlsutil`: `mode` `"acme"` and `"amce"`, and
   `acme.enabled` true, are refused with an invalid-class error naming the key, for both loaders; `mode` empty and
   `"manual"` are accepted. Plus the scenario "ACME mode on the metrics server" in `metric/tls_test.go`. Gate: both
   fail on the base commit.
+  Done: both fail on the base code, recorded at `f548aeb` (`notes/2.2.md`).
 
 ## 3. Implementation
 
-- [ ] 3.1 (Q1) The two loaders refuse what 2.2 names, and the spec delta's "This requirement follows the owner's
+- [x] 3.1 (Q1) The two loaders refuse what 2.2 names, and the spec delta's "This requirement follows the owner's
   answer" paragraph is removed so it does not sync into the published spec. Gate: 2.2 passes; one
   `task mutate:check` run deleting the `mode` check fails it.
+  Done: 2.2 passes and the mutation check is a detection at `52e6c18` (`notes/3.1.md`).
 - [ ] 3.2 (Q3) The `schema` tags on `pkg/security`'s 31 fields are removed; the `json` tags are unchanged. Gate:
   `TestConfigDecodesEveryKey` and `TestConfigDocumentCoversEveryField` pass unchanged.
 - [ ] 3.3 `pkg/security/doc.go`: the ACME usage example (`:65-78`) and the `pkg/acme` link (`:130`) go; `:83`,

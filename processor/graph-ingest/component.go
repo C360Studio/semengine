@@ -674,7 +674,7 @@ func CreateGraphIngest(rawConfig json.RawMessage, deps component.Dependencies) (
 	// every birth that infers hierarchy (design D21), so the composition root
 	// learns at construction instead.
 	if config.EnableHierarchy {
-		containerType := inference.HierarchyContainerMessageType().Key()
+		containerType := inference.HierarchyContainerMessageType()
 		if _, ok := deps.PayloadRegistry.GetRegistration(containerType); !ok {
 			return nil, errs.WrapInvalid(
 				fmt.Errorf("enable_hierarchy requires %s in the payload registry (register it with inference.RegisterPayloads)", containerType),
@@ -2060,7 +2060,7 @@ func (c *Component) registeredIndexingProfile(mt message.Type) (profile string, 
 	if c.payloadRegistry == nil {
 		return vocabulary.IndexingProfileControl, false
 	}
-	floor, registered := c.payloadRegistry.IndexingProfileFor(mt.Key())
+	floor, registered := c.payloadRegistry.IndexingProfileFor(mt)
 	if !registered || floor == "" {
 		return vocabulary.IndexingProfileControl, false
 	}
@@ -2068,8 +2068,8 @@ func (c *Component) registeredIndexingProfile(mt message.Type) (profile string, 
 }
 
 // indexingProfileMetricLabel renders a message.Type as a stable, low-cardinality
-// metric label, or "unknown" for any incomplete Type. The IsValid guard (all
-// three of Domain/Category/Version present) prevents a partial Type from
+// metric label, or "unknown" for any invalid Type. The IsValid guard
+// (Type.Validate accepts it) prevents a partial Type from
 // producing a non-semantic label like ".widget.v1" or "test.widget." — a
 // malformed producer surfaces as "unknown" rather than a junk label key.
 func indexingProfileMetricLabel(mt message.Type) string {

@@ -480,11 +480,13 @@
     RegisterPredicate, IsSymmetricPredicate, HasInverse, DiscoverInversePredicates); extended in
     #234, #237, #251, and #256 with LookupByIRI, entity-type class metadata, ProjectionSpec
     (and pure ProjectionSpec.Validate), PackSpec (and pure PackSpec.Validate), W3C Turtle PN_PREFIX
-    and IRIREF validation, and strict alias_priority rejection; doc.go and README.md updated to match
+    and IRIREF validation, and strict alias_priority rejection; doc.go and README.md updated to match.
+    ParsePredicate keeps no memo; parseDomainCategory removed (#219)
   proving_tests: >-
     vocabulary/*_test.go (15 test files covering predicate syntax, registration, reverse IRI lookup,
     entity-type class metadata, projection specs, declarative JSON/YAML packs, hierarchy,
-    relationships, and namespace authority)
+    relationships, and namespace authority; FuzzParsePredicateAgreesWithGrammar in
+    predicate_parse_test.go replaces predicate_memo_test.go)
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -497,15 +499,16 @@
   contract: >-
     entity ID parsing, the 256-byte bound (MaxEntityIDBytes), pattern matching, type and domain
     authority validation as at the pin; Type.Validate also refuses a domain, category, or version
-    that is not valid UTF-8 (#9 comment 5970334875)
+    that is not valid UTF-8 (#9 comment 5970334875); Type.IsValid is Validate() == nil;
+    EntityType.IsValid removed (#219)
   dependencies_and_side_effects: >-
     pkg/errs (in-set); stdlib; pgregory.net/rapid v1.3.0 in tests only; no goroutine, no I/O
   known_risks: >-
     no context roots; README and test comments updated for SemEngine module paths and
     docs/specs/entity-id-contract.md
   proving_tests: >-
-    pkg/types/*_test.go (including Rapid properties in entity_id_prop_test.go and
-    TestTypeValidateRefusesInvalidUTF8 in type_validate_test.go)
+    pkg/types/*_test.go (including Rapid properties in entity_id_prop_test.go, and
+    TestTypeValidateRefusesInvalidUTF8 and TestTypeIsValidMatchesValidate in type_validate_test.go)
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -737,7 +740,8 @@
   destination: payloadregistry
   contract: >-
     New, Register, lookups and registration validation (projection contracts through
-    pkg/projection/contract) as at the pin
+    pkg/projection/contract) as at the pin, with one adaptation: the registry is keyed by
+    types.Type, and GetRegistration and IndexingProfileFor take a types.Type (#219)
   dependencies_and_side_effects: >-
     pkg/errs, pkg/projection/contract, pkg/types, vocabulary (in-set); stdlib; no goroutine, no I/O
   known_risks: >-
@@ -761,16 +765,18 @@
     refused); (2) BaseMessage.MarshalJSON refuses non-UTF-8 meta.source or message type components;
     (3) GenericJSONPayload.MarshalJSON accepts only JSON-shaped values (map[string]any, []any,
     string, Go numbers, json.Number, bool, nil) with valid UTF-8 and no cycles, and UnmarshalJSON
-    decodes numbers via UseNumber into a JSON object or null body
+    decodes numbers via UseNumber into a JSON object or null body; (4) BaseMessage.Validate checks
+    the message type with Type.Validate; (5) GenericJSONPayload.Validate runs the same shape check
+    as MarshalJSON; (6) message.Type and ParseEntityID are the aliases of pkg/types kept (#219)
   dependencies_and_side_effects: >-
     payloadregistry, pkg/errs, pkg/types, internal/timestamp (in-set); github.com/google/uuid v1.6.0;
     stdlib; no goroutine, no I/O
   known_risks: >-
-    no context roots. Hash() ignores a payload marshal error, as at the pin, so a refused payload
-    hashes as its type alone (tracked by #78). Dead surface removed (#72; #9 surface audit §2):
-    message/federation.go (FederationMeta family and WithFederation*) and ten unused capability
+    no context roots. Dead surface removed (#72; #9 surface audit §2; #78 and #219):
+    message/federation.go (FederationMeta family and WithFederation*), ten unused capability
     interfaces (Locatable, Timeable, Observable, Correlatable, Measurable, Deployable, Processable,
-    Traceable, Expirable, TripleGenerator); doc.go and README.md updated for NewDecoder(reg) and
+    Traceable, Expirable, TripleGenerator), Message.Hash and BaseMessage.Hash, the Keyable,
+    EntityType and EntityID aliases, and Triple.IsExpired; doc.go and README.md updated for NewDecoder(reg) and
     fallback GenericJSON
   proving_tests: >-
     message/*_test.go (including meta_wire_test.go, generic_json_shape_test.go,

@@ -36,7 +36,7 @@ transport"; `TestGraphImportsNoTransport`).
 
 ### Entity Identification
 
-All entity IDs use the 6-part federated format defined in `message.EntityID` (canonical order, ADR-102:
+All entity IDs use the 6-part federated format defined in `types.EntityID` (`pkg/types`) (canonical order, ADR-102:
 `org.platform` = the minting deployment authority, `system` = the source, `domain.type` = a delegated taxonomy):
 
 ```text

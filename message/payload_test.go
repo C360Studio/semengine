@@ -9,6 +9,7 @@ import (
 
 	"github.com/c360studio/semengine/internal/harness/semantictest"
 	"github.com/c360studio/semengine/pkg/errs"
+	"github.com/c360studio/semengine/pkg/types"
 )
 
 // SamplePayload is a simple test implementation of the Payload interface
@@ -71,8 +72,8 @@ func (p *SamplePayload) EntityID() string {
 	return p.ID
 }
 
-func (p *SamplePayload) EntityType() EntityType {
-	return EntityType{Domain: "test", Type: "test_entity"}
+func (p *SamplePayload) EntityType() types.EntityType {
+	return types.EntityType{Domain: "test", Type: "test_entity"}
 }
 
 // Location returns the sample's coordinates (only if Loc is set)
@@ -237,7 +238,7 @@ func TestSamplePayloadBehavioralInterfaces(t *testing.T) {
 	if id := payload.EntityID(); id != "test.semstreams.message.payload.sample.behavior" {
 		t.Errorf("EntityID() = %v, want canonical behavior fixture", id)
 	}
-	expectedType := EntityType{Domain: "test", Type: "test_entity"}
+	expectedType := types.EntityType{Domain: "test", Type: "test_entity"}
 	if dt := payload.EntityType(); dt != expectedType {
 		t.Errorf("EntityType() = %v, want %v", dt, expectedType)
 	}

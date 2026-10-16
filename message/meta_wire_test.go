@@ -268,9 +268,8 @@ func packageErrors(loaded []*packages.Package) []string {
 
 // TestBaseMessageRefusesTypeThatIsNotUTF8: a type component that is not valid UTF-8 would reach the
 // wire as U+FFFD with no error, so encoding the envelope refuses it (owner ruling, #9 comment
-// 5970334875). BaseMessage.Validate checks only that each component is non-empty, so the refusal
-// is at MarshalJSON, as the source's is. A valid component, U+FFFD itself included, reaches the
-// wire unchanged.
+// 5970334875). BaseMessage.Validate refuses it through Type.Validate, and MarshalJSON validates
+// first (design D2). A valid component, U+FFFD itself included, reaches the wire unchanged.
 func TestBaseMessageRefusesTypeThatIsNotUTF8(t *testing.T) {
 	payload := func() message.Payload { return message.NewGenericJSON(map[string]any{"k": "v"}) }
 	for _, mt := range []message.Type{

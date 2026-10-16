@@ -477,7 +477,7 @@ Applications should define their own domain-specific vocabularies.
 - `doc.go` - Comprehensive package documentation
 - `standards.go` - Standard vocabulary IRI constants (SKOS, Dublin Core, PROV-O)
 - `message/triple.go` - Triple structure for semantic facts
-- `message/types.go` - EntityID, EntityType, Type patterns
+- `message/types.go` - the `message.Type` alias and `ParseEntityID`; `EntityID` and `EntityType` live in `pkg/types`
 
 The vocabulary package focuses on **predicate management**, not IRI generation. For entity-level IRI needs, use the
 entity's own methods.

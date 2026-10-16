@@ -64,3 +64,44 @@ func TestTypeValidateRefusesInvalidUTF8(t *testing.T) {
 		})
 	}
 }
+
+// TestTypeIsValidMatchesValidate: IsValid reports true exactly when Validate returns nil (design
+// D1). Each row replaces one component of a well-formed type with one class of value; the
+// expected outcome comes from the class, never from either method.
+func TestTypeIsValidMatchesValidate(t *testing.T) {
+	classes := []struct {
+		name  string
+		value string
+		valid bool
+	}{
+		{"valid", "ok", true},
+		{"empty", "", false},
+		{"invalid UTF-8", "bad\xff", false},
+		{"dotted", "a.b", false},
+	}
+	for _, component := range []string{"domain", "category", "version"} {
+		for _, class := range classes {
+			t.Run(component+"/"+class.name, func(t *testing.T) {
+				mt := Type{Domain: "d", Category: "c", Version: "v1"}
+				switch component {
+				case "domain":
+					mt.Domain = class.value
+				case "category":
+					mt.Category = class.value
+				case "version":
+					mt.Version = class.value
+				}
+				if got := mt.IsValid(); got != class.valid {
+					t.Errorf("IsValid() = %t, want %t", got, class.valid)
+				}
+				err := mt.Validate()
+				if class.valid && err != nil {
+					t.Errorf("Validate() = %v, want nil", err)
+				}
+				if !class.valid && (err == nil || !strings.Contains(err.Error(), component)) {
+					t.Errorf("Validate() = %v, want an error naming %s", err, component)
+				}
+			})
+		}
+	}
+}

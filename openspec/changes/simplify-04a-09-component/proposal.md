@@ -49,5 +49,5 @@ with nothing left to hide, test code ships in production files, and the lifecycl
   consumer component loses its `Meta` method (semsource 26 lines, semconnect 2), all found by the compiler. No consumer
   calls
   `Snapshots`, `SafeUnmarshal`, `ValidateConfig`, or `ConfigSchema()` through the interface (inventory § 4).
-- Closes #153 (owner ruling 2: item 6 goes to #196, item 7's `pkg/lifecycle` structs to #272, and the storage doc
-  and `Declaration`'s parallel lists to a new issue), #189 and #197. Addresses #223.
+- Closes #153 (owner ruling 2: item 6 goes to #196; the storage doc, `Declaration`'s parallel lists and item 7's
+  `pkg/lifecycle` structs go to #280, because PR 9b merged without the structs), #189 and #197. Addresses #223.

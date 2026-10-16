@@ -1,7 +1,7 @@
 # Design: simplify-04a-09-component
 
-Status: draft, revised after review round 1 (of `7f4a02d`) and the owner's rulings of 2026-10-16 on its five
-questions (at `2d72c72`). Next: pre-owner design review of this revision. Inventory: `inventory.md` (base `0fb79ad`).
+Status: accepted with the owner's rulings of 2026-10-16 and implemented; Codex's review of record approved the whole
+PR at `bbb0c44`. Inventory: `inventory.md` (base `0fb79ad`).
 
 ## Context
 
@@ -162,8 +162,7 @@ Generated checks: not used. Each decision has a small, finite set of inputs, and
 | #197 | Retired (`Closes #197`): tasks 5.1–5.2 |
 | #153 | Retired (`Closes #153`) for items 1–5 and 7's alias: tasks 4.1–4.3, 5.3–5.4. The rest is routed by task 6.2 (owner ruling 2) |
 | #196 | Stays (change 3); gains #153 item 6 by comment (task 6.2) |
-| #272 | PR 9b; gains #153 item 7's two `pkg/lifecycle` structs by comment (task 6.2) |
-| new issue | The storage doc comment and `Declaration`'s parallel lists; text in `notes/issue-153-remainder.md` (task 6.2) |
+| #280 | New (task 6.2): the storage doc comment, `Declaration`'s parallel lists, and #153 item 7's two `pkg/lifecycle` structs (first meant for PR 9b, #272, which merged without them; `notes/issue-153-remainder.md`) |
 | #29 | Stays open, although the work is done (inventory F-4). Not ruled; closing it needs the owner's word |
 | #109, #139, #34, #110, #274 | Stay: the processor shell (change 4), graph-ingest (PR 10), `output/websocket`, temporal's port (#132), and `pkg/security`'s contract line |
 
@@ -185,7 +184,8 @@ the issues: rulings 1, 2 and 5 on #153 (comment 6214880970), rulings 3 and 4 on 
    comes from the registration (`composition/catalog.go:15-27`), and `Meta()` is read only to name a component's own
    consumer and in four debug logs (section "Options"). So the condition holds: D4 and D6.
 2. **Route the rest of #153 as proposed.** Item 6 goes to #196, item 7's `pkg/lifecycle` structs to #272, and one new
-   issue takes the storage doc comment and `Declaration`'s parallel lists (task 6.2).
+   issue takes the storage doc comment and `Declaration`'s parallel lists (task 6.2). As applied: #272 merged first,
+   so the structs joined the new issue, #280.
 3. **`int`, `float`, `bool`** (D3).
 4. **`SafeUnmarshal` refuses unknown keys, in this PR** (D2).
 5. **Delete `ValidateConfig` and `ValidationError`** (D9).

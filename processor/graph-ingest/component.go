@@ -811,7 +811,7 @@ func (c *Component) registerMetrics(registry *metric.MetricsRegistry) error {
 
 // Register registers the graph-ingest factory with the component registry
 func Register(registry *component.Registry) error {
-	return registry.RegisterFactory("graph-ingest", &component.Registration{
+	return registry.Register(component.Registration{
 		Name:        "graph-ingest",
 		Type:        "processor",
 		Protocol:    "nats",
@@ -825,18 +825,8 @@ func Register(registry *component.Registry) error {
 }
 
 // ============================================================================
-// Discoverable Interface (6 methods)
+// Discoverable Interface
 // ============================================================================
-
-// Meta returns component metadata
-func (c *Component) Meta() component.Metadata {
-	return component.Metadata{
-		Name:        "graph-ingest",
-		Type:        "processor",
-		Description: "Entity and triple ingestion processor for graph system",
-		Version:     "1.0.0",
-	}
-}
 
 // InputPorts returns input port definitions.
 // Reads directly from config so ports are available before Initialize().
@@ -854,11 +844,6 @@ func (c *Component) OutputPorts() []component.Port {
 	defer c.mu.RUnlock()
 
 	return append([]component.Port(nil), c.outputs...)
-}
-
-// ConfigSchema returns the configuration schema
-func (c *Component) ConfigSchema() component.ConfigSchema {
-	return schema
 }
 
 // Health returns current health status
@@ -1544,7 +1529,7 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 	if c.consumeStream != nil {
 		consumeStream = c.consumeStream
 	}
-	handle, err := consumeStream(ctx, natsclient.PortConsumerContext{Component: c.Meta().Name, Port: port.Name}, cfg, func(_ context.Context, msg jetstream.Msg) {
+	handle, err := consumeStream(ctx, natsclient.PortConsumerContext{Component: c.name, Port: port.Name}, cfg, func(_ context.Context, msg jetstream.Msg) {
 		// ADR-072: the consume closure decodes ONCE and submits to the keyed pool;
 		// the redelivery guard, apply, and ack move into processIngest (run on a
 		// pool lane, not this consumer goroutine). Metadata carries the stream name

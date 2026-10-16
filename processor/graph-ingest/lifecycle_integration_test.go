@@ -20,6 +20,7 @@ import (
 	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
+	"github.com/c360studio/semengine/types"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -38,7 +39,7 @@ func createTestComponentForLifecycle(t *testing.T) *Component {
 	deps := component.Dependencies{
 		NATSClient:      newFixtureClient(t, entityStream),
 		PayloadRegistry: newTestPayloadRegistry(t),
-		Platform:        component.PlatformMeta{Org: testDeploymentOrg, Platform: testDeploymentPlatform},
+		Platform:        types.PlatformMeta{Org: testDeploymentOrg, Platform: testDeploymentPlatform},
 	}
 
 	configJSON, err := json.Marshal(config)

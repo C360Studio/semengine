@@ -13,10 +13,6 @@ import (
 	"github.com/c360studio/semengine/types"
 )
 
-// PlatformMeta provides platform identity to components.
-// Type alias to avoid import cycles while maintaining compatibility.
-type PlatformMeta = types.PlatformMeta
-
 // StoreProvider is implemented by storage components that own one or more stores
 // addressable by StorageInstance name (ADR-063). For the boot-composed component
 // set, ComponentManager reads this AFTER a component Starts to populate the
@@ -47,7 +43,7 @@ type Dependencies struct {
 	NATSClient      *natsclient.Client        // NATS client for messaging
 	MetricsRegistry *metric.MetricsRegistry   // Metrics registry for Prometheus (can be nil)
 	Logger          *slog.Logger              // Structured logger (can be nil, defaults to slog.Default())
-	Platform        PlatformMeta              // Platform identity (organization and platform)
+	Platform        types.PlatformMeta        // Platform identity (organization and platform)
 	Security        security.Config           // Platform-wide security configuration
 	ModelRegistry   model.RegistryReader      // Boot-selected model registry (can be nil)
 	PayloadRegistry *payloadregistry.Registry // Shared payload registry (can be nil; components unmarshaling BaseMessage require it)

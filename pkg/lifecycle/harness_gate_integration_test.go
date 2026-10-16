@@ -20,6 +20,7 @@ import (
 	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/natsclient"
 	graphingest "github.com/c360studio/semengine/processor/graph-ingest"
+	"github.com/c360studio/semengine/types"
 )
 
 // graphIngestStopBudget bounds graph-ingest's Stop when a test ends.
@@ -99,7 +100,7 @@ func startGraphIngest(ctx context.Context, t *testing.T, client *natsclient.Clie
 		// graph-ingest refuses an absent deployment authority (ADR-102 d5) and
 		// rejects any subject outside it, so the fixture pair must match the
 		// entity IDs this file uses.
-		Platform: component.PlatformMeta{Org: "c360", Platform: "platform1"},
+		Platform: types.PlatformMeta{Org: "c360", Platform: "platform1"},
 	})
 	require.NoError(t, err)
 	ingest := created.(*graphingest.Component)

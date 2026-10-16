@@ -18,6 +18,7 @@ import (
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/payloadregistry"
 	"github.com/c360studio/semengine/pkg/errs"
+	"github.com/c360studio/semengine/types"
 )
 
 func factoryTestDeps(t *testing.T, reg *payloadregistry.Registry) component.Dependencies {
@@ -26,7 +27,7 @@ func factoryTestDeps(t *testing.T, reg *payloadregistry.Registry) component.Depe
 	require.NoError(t, err)
 	return component.Dependencies{
 		NATSClient: natsClient, PayloadRegistry: reg,
-		Platform: component.PlatformMeta{Org: "c360", Platform: "test"},
+		Platform: types.PlatformMeta{Org: "c360", Platform: "test"},
 	}
 }
 

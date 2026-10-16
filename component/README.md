@@ -11,8 +11,9 @@ import "github.com/c360studio/semengine/component"
 
 A **component** is one self-describing unit of a SemEngine process. There are five kinds: inputs (data sources),
 processors (data transformers), outputs (data sinks), storage (persistence), and gateways (query surfaces). Each one
-reports its metadata, its ports, its configuration schema, its health, and its data flow through the `Discoverable`
-interface.
+reports its ports, its health, and its data flow through the `Discoverable` interface. Its configuration schema,
+description and version are not reported by the component: they live in its factory's `Registration`, the one place a
+tool reads them (`ListFactories`).
 
 The terms this README uses:
 
@@ -31,9 +32,10 @@ The terms this README uses:
 
 ## Registration
 
-A component package exports a `Register(registry)` function instead of registering itself in `init()`. The host
-creates a `Registry`, calls each package's `Register`, and hands the registry to the component manager. The manager
-calls `CreateComponent` for each enabled instance and then `SealComposition`.
+A component package exports a `Register(registry)` function instead of registering itself in `init()`. That function
+makes one `registry.Register(component.Registration{...})` call per factory. The host creates a `Registry`, calls each
+package's `Register`, and hands the registry to the component manager. The manager calls `CreateComponent` for each
+enabled instance and then `SealComposition`.
 
 Explicit registration keeps package imports free of side effects: a test builds a registry holding only the components
 it needs, and the host decides what is registered and in which order. The cost is that a new component package must
@@ -76,7 +78,7 @@ func outputPorts(cfg Config) []component.Port {
 // declarePorts is the port declarer: no dependencies, no I/O.
 func declarePorts(raw json.RawMessage, _ string) (component.PortConfig, error) {
     var cfg Config
-    if err := json.Unmarshal(raw, &cfg); err != nil {
+    if err := component.SafeUnmarshal(raw, &cfg); err != nil {
         return component.PortConfig{}, err
     }
     return component.PortConfigFrom(nil, outputPorts(cfg)), nil
@@ -87,27 +89,24 @@ type Input struct {
     deps component.Dependencies
 }
 
-func (c *Input) Meta() component.Metadata {
-    return component.Metadata{Name: "my-input", Type: "input", Description: "Example input", Version: "1.0.0"}
-}
-func (c *Input) InputPorts() []component.Port         { return nil }
-func (c *Input) OutputPorts() []component.Port        { return outputPorts(c.cfg) }
-func (c *Input) ConfigSchema() component.ConfigSchema { return schema }
-func (c *Input) Health() component.HealthStatus       { return component.HealthStatus{Healthy: true} }
-func (c *Input) DataFlow() component.FlowMetrics      { return component.FlowMetrics{} }
+func (c *Input) InputPorts() []component.Port    { return nil }
+func (c *Input) OutputPorts() []component.Port   { return outputPorts(c.cfg) }
+func (c *Input) Health() component.HealthStatus  { return component.HealthStatus{Healthy: true} }
+func (c *Input) DataFlow() component.FlowMetrics { return component.FlowMetrics{} }
 
 // create is the factory.
 func create(raw json.RawMessage, deps component.Dependencies) (component.Discoverable, error) {
     var cfg Config
-    if err := json.Unmarshal(raw, &cfg); err != nil {
+    if err := component.SafeUnmarshal(raw, &cfg); err != nil {
         return nil, err
     }
     return &Input{cfg: cfg, deps: deps}, nil
 }
 
 // Register adds this package's factory to a registry. The host calls it.
+// The registration is the one home of the schema, description and version.
 func Register(registry *component.Registry) error {
-    return registry.RegisterWithConfig(component.RegistrationConfig{
+    return registry.Register(component.Registration{
         Name:        "my-input",
         Factory:     create,
         Ports:       declarePorts,
@@ -129,18 +128,19 @@ began. `AsLifecycleComponent` reports whether a `Discoverable` implements it.
 
 ### Discoverable Interface
 
-Every component must implement:
+Every component implements four methods:
 
 ```go
 type Discoverable interface {
-    Meta() Metadata                  // Component metadata
-    InputPorts() []Port              // Input port definitions
-    OutputPorts() []Port             // Output port definitions
-    ConfigSchema() ConfigSchema      // Configuration schema
-    Health() HealthStatus            // Current health status
-    DataFlow() FlowMetrics          // Data flow metrics
+    InputPorts() []Port    // input port definitions
+    OutputPorts() []Port   // output port definitions
+    Health() HealthStatus  // current health status
+    DataFlow() FlowMetrics // data flow metrics
 }
 ```
+
+A component's name, type, configuration schema, description and version are not methods: the name is the instance's
+and the rest is in its factory's `Registration`.
 
 ### Dependencies
 
@@ -151,7 +151,7 @@ type Dependencies struct {
     NATSClient      *natsclient.Client        // required: CreateComponent refuses a nil client
     MetricsRegistry *metric.MetricsRegistry   // may be nil
     Logger          *slog.Logger              // may be nil; GetLogger falls back to slog.Default()
-    Platform        PlatformMeta              // the deployment's organization and platform
+    Platform        types.PlatformMeta        // the deployment's organization and platform
     Security        security.Config           // platform-wide security configuration
     ModelRegistry   model.RegistryReader      // the model registry chosen at boot; may be nil
     PayloadRegistry *payloadregistry.Registry // may be nil; a component that decodes BaseMessage needs it
@@ -195,18 +195,40 @@ The other port types are `NATSRequestPort` (request and reply), `KVReadPort`, `H
 ## Registry
 
 - `NewRegistry()` returns an empty registry.
-- `RegisterWithConfig(RegistrationConfig)` registers a factory and its static metadata. It refuses an empty name, a nil
-  factory, an empty type, a nil port declarer (`Ports`), and a name already registered.
+- `Register(Registration)` registers a factory and its static metadata under `Registration.Name`, and keeps its own
+  copy: a later change to the caller's value, its schema or its dependency list changes nothing registered. The one
+  exception is a schema default (`PropertySchema.Default`) that is not a JSON value: the registry copies nil, a string,
+  a bool, a number, a `[]string`, and a `[]any` or `map[string]any` holding these at any depth; a default of any other
+  type is stored as is, so a pointer, slice or map it holds stays shared with the caller. It refuses
+  a name `ValidateComponentName` refuses, a nil factory, a nil port declarer (`Ports`), a `Type` that is not one of the
+  five `types.ComponentType` constants (`types.ComponentType.Validate`), and a name already registered.
 - `ListFactories()` returns a copy of each registration's metadata, without its factory function; it returns no live
   component.
 - `Declare(instanceName, config)` runs a factory's port declarer for one configured instance and returns its
   `Declaration`, without building the component.
-- `CreateComponent(instanceName, config, deps, prepare)`, `SealComposition()` and `Snapshots()` exist for the
-  component manager. A consumer creates and composes components through that manager; a direct call is not refused,
-  but it bypasses the manager's bookkeeping. `CreateComponent` refuses a disabled instance, a nil
+- `CreateComponent(instanceName, config, deps, prepare)`, `SealComposition()` and `Snapshots()` exist for the component
+  manager. `Snapshots()` returns a copy of every admitted `Declaration`, sorted by instance name; changing one changes
+  nothing in the registry. A consumer creates and composes components through that manager; a direct call is not
+  refused, but it bypasses the manager's bookkeeping. `CreateComponent` refuses a disabled instance, a nil
   `Dependencies.NATSClient`, a port declaration that differs from the ports the built component reports, an instance
   name already admitted, an exclusive resource another instance holds, and any call after `SealComposition`. `prepare`
   may be nil.
+
+### Decoding a configuration
+
+`SafeUnmarshal(rawConfig, target)` is offered to component factories and port declarers to decode their
+configuration. It checks, in this order, and refuses with an error of the invalid class:
+
+1. The target: nil, a nil pointer, or a value that is not a pointer.
+2. The configuration, through `ValidateFactoryConfig`: its size, nesting depth, array length, string and key length,
+   control characters, numbers a `float64` cannot hold, and anything but whitespace after the first JSON value.
+   `CreateComponent` and `Declare` run the same check before a factory or declarer sees the configuration.
+3. The decode: a key the target struct does not define (the error names the key), a value of the wrong type, or data
+   after the first value.
+
+An empty configuration returns at once: it leaves the target's defaults and does not call `Validate`, so a factory
+whose defaults need checking checks them itself. After a nonempty configuration decodes, if the target implements
+`Validatable`, its `Validate` runs last; its error is returned wrapped, keeping whatever class it carries.
 
 ### Types
 
@@ -220,12 +242,12 @@ Factory function signature for component creation.
 
 ### Errors
 
-Every refusal from `RegisterWithConfig` is a `pkg/errs` error of the invalid class:
+Every refusal from `Register` is a `pkg/errs` error of the invalid class, and its message names the factory:
 
 ```go
-err := registry.RegisterWithConfig(registration)
+err := registry.Register(registration)
 if errs.IsInvalid(err) {
-    // A required field is missing, or the name is already registered.
+    // The name, factory, port declarer or type is refused, or the name is already registered.
 }
 ```
 
@@ -235,7 +257,7 @@ if errs.IsInvalid(err) {
 
 Every `Registry` method is safe for concurrent use; one read-write mutex guards the factories, the declarations and the
 sealed flag. A factory and a port declarer run without that mutex held. Sealing stops `CreateComponent`; it does not
-stop `RegisterWithConfig`.
+stop `Register`.
 
 ## Testing
 
@@ -287,7 +309,7 @@ stop `RegisterWithConfig`.
 
 ## Related packages
 
-- [types](../types): `ComponentConfig` and `ComponentType`
+- [types](../types): `ComponentConfig`, `ComponentType` (with `Validate`) and `PlatformMeta`
 - [natsclient](../natsclient): the NATS client in `Dependencies`
 - [metric](../metric): the metrics registry in `Dependencies`
 - [payloadregistry](../payloadregistry): payload decoding for components that read `BaseMessage`

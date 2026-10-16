@@ -129,7 +129,8 @@ The `LifecycleComponent` doc lists ADR-108 Decision 3's rules as the ADR words t
   `openspec/specs/lifecycle-suite/spec.md:17-18`);
 - `Stop` before `Start` is safe;
 - `Stop` is controlled while the `Start` context is still live, and ending that context first makes it an abort;
-- a repeated `Stop` is a no-op;
+- a repeated `Stop` is a no-op once an earlier `Stop`'s cleanup succeeded; after a failed cleanup, what is left stays
+  pending for a later `Stop`;
 - a second `Start` is refused, and there is no same-instance restart, ever (ADR-094, ADR-095);
 - a failed `Start` holds nothing, or `Stop` releases what it left;
 - configuration is validated once, at construction, and `Initialize` is idempotent and does no I/O.

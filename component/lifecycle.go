@@ -51,7 +51,8 @@ func (cs State) String() string {
 //     context first makes Stop an abort: it makes what progress it can within
 //     that bound and may return the cleanup or deadline error; if the bound
 //     ends first, no complete join is promised.
-//   - A repeated Stop is a no-op.
+//   - A repeated Stop is a no-op once an earlier Stop's cleanup succeeded;
+//     after a failed cleanup, what is left stays pending for a later Stop.
 //   - A second Start is refused. An instance never restarts; a host that needs
 //     the component again creates a new one.
 //   - A failed Start holds nothing, or, when its own cleanup also fails, it

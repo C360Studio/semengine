@@ -12,14 +12,15 @@ changes the signatures; only 2.4 counts a compile failure as failing.
 
 ## 2. Failing tests
 
-- [ ] 2.1 `TestSubmitAfterRunCancelIsProcessed` and `TestRunCancelProcessesQueuedItems` in `shutdown_test.go`
+- [x] 2.1 `TestSubmitAfterRunCancelIsProcessed` and `TestRunCancelProcessesQueuedItems` in `shutdown_test.go`
   (`synctest`): an item accepted after, or queued at, the run context's end reaches `Process` with the ended context,
   in order, and `Shutdown` returns nil (D1); the queued case uses 64 items. Gate: fails by assertion on the base
-  commit.
-- [ ] 2.2 `TestKeyedPoolRunContextCancelLeavesNothingRunning` becomes
+  commit. Evidence: both fail by assertion at base `185441e` (commit `39c8d13`, `notes/2.1.md`).
+- [x] 2.2 `TestKeyedPoolRunContextCancelLeavesNothingRunning` becomes
   `TestKeyedPoolRunContextCancelThenShutdownLeavesNothingRunning`; new
   `TestShutdownAfterJoinReturnsNilUnderEndedContext` (64 calls, each nil) (D1). Gate: the second fails on the base
-  commit.
+  commit. Evidence: it fails by assertion at base `185441e`; the renamed test passes there (commit `39c8d13`,
+  `notes/2.2.md`).
 - [ ] 2.3 `TestKeyedPoolQueueDepthCountsWaitingItems` (`synctest`): one item in `Process`, three queued, no clock
   advance, gauge 3; after `Shutdown`, 0; and `TestKeyedPoolQueueDepthSumsPoolsOfOneName` (`synctest`): two pools of
   one name on one registry, both queues occupied, combined depth; one drained, the other's count stays; a replacement
@@ -35,9 +36,11 @@ changes the signatures; only 2.4 counts a compile failure as failing.
 
 ## 3. Implementation
 
-- [ ] 3.1 One stop path: lanes read their queue until `Shutdown` ends it, the constructor's context reaches only
+- [x] 3.1 One stop path: lanes read their queue until `Shutdown` ends it, the constructor's context reaches only
   `Process`, and `Shutdown` returns nil once the lanes have exited whatever its context (D1, #131). Gate: 2.1, 2.2;
-  the other `shutdown_test.go` tests and `TestKeyedPool_ShutdownSubmitRace` pass.
+  the other `shutdown_test.go` tests and `TestKeyedPool_ShutdownSubmitRace` pass. Evidence: commit `32960aa`; all pass
+  under `go test -race -count=3`; `task mutate:check` detection, lanes given back their context arm, caught by
+  `TestSubmitAfterRunCancelIsProcessed` (`notes/3.1.md`).
 - [ ] 3.2 The key argument, one config struct, and `Process` without an error; graph-ingest's `buildIngestPool` logs
   `processIngest`'s error at Debug with the entity ID, and `component.go:1610` passes `work.entityID` (D2–D4, #136
   items 2–4). Gate: 2.4; `task test:unit`.

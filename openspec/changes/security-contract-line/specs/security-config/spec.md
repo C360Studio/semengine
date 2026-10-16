@@ -5,10 +5,18 @@
 ### Requirement: A product receives the security configuration through component.Dependencies
 
 `pkg/security` SHALL offer products seven configuration types, `Config`, `TLSConfig`, `ServerTLSConfig`,
-`ClientTLSConfig`, `ServerMTLSConfig`, `ClientMTLSConfig` and `ACMEConfig`, with the JSON keys listed on the
-`pkg/security` row of `docs/admission-ledger.yaml`. A component factory SHALL receive them as the field `Security` of
-the `component.Dependencies` it is called with. The zero value SHALL leave server TLS off, and with server mTLS on
-SHALL require a client certificate unless `client_cert_optional` is true.
+`ClientTLSConfig`, `ServerMTLSConfig`, `ClientMTLSConfig` and `ACMEConfig`, with the JSON keys of the document that
+`TestConfigDecodesEveryKey` decodes (`pkg/security/config_test.go`). A component factory SHALL receive them, unchanged,
+as the field `Security` of the `component.Dependencies` it is called with. No SemEngine code fills that field yet:
+it holds what the code that builds the `Dependencies` set, and is the zero value otherwise. The zero value SHALL leave
+server TLS off, so a server built from it serves plain HTTP, and with server mTLS on SHALL require a client
+certificate unless `client_cert_optional` is true.
+
+#### Scenario: Every setting arrives unchanged
+
+- **WHEN** a product's `component.Factory` is called with a `component.Dependencies` whose `Security` was decoded from
+  the document that sets every key
+- **THEN** the `Security` the factory receives equals the value that document describes, field for field
 
 #### Scenario: A product builds a server from the configuration it was given
 
@@ -24,10 +32,10 @@ SHALL require a client certificate unless `client_cert_optional` is true.
 
 ### Requirement: The metrics server applies the server TLS block
 
-`metric.NewServer` SHALL apply `TLS.Server` of the `security.Config` it is given: with `enabled` false it SHALL serve
-plain HTTP; with `enabled` true it SHALL serve TLS from `cert_file` and `key_file` at `min_version` or above.
-`Start` SHALL refuse a `min_version` other than empty, `1.2` or `1.3`, and SHALL refuse server mTLS enabled while
-server TLS is not.
+`metric.NewServer` SHALL apply `TLS.Server` of the `security.Config` it is given. With `enabled` false it SHALL serve
+plain HTTP, SHALL refuse at `Start` server mTLS enabled, and reads no other server setting. With `enabled` true it
+SHALL serve TLS from `cert_file` and `key_file` at `min_version` or above, and `Start` SHALL refuse a `min_version`
+other than empty, `1.2` or `1.3`.
 
 #### Scenario: mTLS without TLS
 
@@ -40,6 +48,9 @@ server TLS is not.
 - **THEN** `Start` returns an error naming `min_version`, and serves nothing
 
 ### Requirement: Settings no SemEngine code applies yet are refused
+
+This requirement follows the owner's answer to design question 1 (Q1). Option 2 replaces it with a statement that
+the settings are accepted and have no effect.
 
 Until SemEngine ports its ACME loaders, the loaders that build a TLS configuration from these types SHALL refuse,
 with an invalid-class error naming the key, a `mode` other than empty or `manual` and an `acme` block with `enabled`

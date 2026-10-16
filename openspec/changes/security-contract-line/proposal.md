@@ -12,15 +12,16 @@ own schema parser, so a schema generated over these types is empty.
 ## What Changes
 
 - A new capability spec, `security-config`, is the contract line. It offers all seven types and their JSON keys to
-  products through `component.Dependencies.Security`, states the fail-closed defaults, and says which settings the
-  metrics server applies and which nothing applies yet.
+  products through `component.Dependencies.Security`, says that nothing in SemEngine fills that field yet, states the
+  fail-closed defaults, and says which settings the metrics server applies and which nothing applies yet.
 - A product-shaped test, `pkg/security/product_test.go`: a product's `component.Factory` receives a `Dependencies`
   whose `Security` was decoded from an operator's JSON, builds `metric.NewServer` from it, and a real TLS client
   checks what is served.
 - Owner question 1 (recommended): `internal/tlsutil` refuses `mode` other than empty or `manual`, and `acme.enabled:
   true`, with an invalid-class error naming the key, until the ACME loaders are ported.
 - Owner question 3 (recommended): the `schema` tags on `pkg/security` go; the `json` tags stay.
-- `pkg/security/doc.go` loses the ACME usage example and the `pkg/acme` link (#9 comment 5995807082, item 5).
+- `pkg/security/doc.go` loses the ACME usage example and the `pkg/acme` link (#9 comment 5994720412, item 5),
+  and its other ACME text and `internal/tlsutil` pointer are rewritten.
 - `metric/tls_test.go:92`'s comment stops naming `security.Config.Validate`, which does not exist.
 - Ledger rows `pkg/security` and `internal/tlsutil` name the spec and the new test.
 

@@ -14,7 +14,10 @@ starts.
 
 - [ ] 2.1 `TestProductServesTLSFromDependenciesSecurity` in `pkg/security/product_test.go` (D5): a no-certificate
   client is refused, a signed client is served 200, with `client_cert_optional` the no-certificate client is
-  served, and `min_version` `"1.4"` makes `Start` fail naming `min_version`. Gate: passes on the base commit;
+  served, and `min_version` `"1.4"` makes `Start` fail naming `min_version`; and a first case requires the
+  `deps.Security` the factory receives, from the decoded `configDocument`, to equal `wantConfig`. The product type
+  implements the `Discoverable` methods `main` has when the PR merges main (design, Merge order).
+  Gate: passes on the base commit;
   `task mutate:check` runs on mutants A and B (D5) are recorded in `notes/2.1.md` as detected, surviving or
   inconclusive.
 - [ ] 2.2 (Q1) `TestLoadersRefuseSettingsNotApplied` in `internal/tlsutil`: `mode` `"acme"` and `"amce"`, and
@@ -28,8 +31,11 @@ starts.
   `mode` check fails it.
 - [ ] 3.2 (Q3) The `schema` tags on `pkg/security`'s 31 fields are removed; the `json` tags are unchanged. Gate:
   `TestConfigDecodesEveryKey` and `TestConfigDocumentCoversEveryField` pass unchanged.
-- [ ] 3.3 `pkg/security/doc.go`: the ACME usage example and the `pkg/acme` link go; the package comment names the
-  `security-config` spec and `component.Dependencies.Security`. Gate: `task lint`, `task docs:check`.
+- [ ] 3.3 `pkg/security/doc.go`: the ACME usage example (`:65-78`) and the `pkg/acme` link (`:130`) go; `:83`,
+  `:101-106` and `:120` stop advertising ACME as working and say what the spec's requirement 3 says; `:129` stops
+  pointing products at `internal/tlsutil` and names `metric.NewServer` as the call that applies the server block;
+  the package comment names the `security-config` spec and `component.Dependencies.Security`. Gate: `task lint`,
+  `task docs:check`.
 - [ ] 3.4 `metric/tls_test.go:92`: the comment stops naming `security.Config.Validate`. Gate: `task fmt:check`.
 
 ## 4. Docs and ledger
@@ -37,9 +43,12 @@ starts.
 - [ ] 4.1 `docs/admission-ledger.yaml`, row `pkg/security`: `contract` names `openspec/specs/security-config/spec.md`
   beside the type list; `proving_tests` adds `pkg/security/product_test.go`; `known_risks` records the removed
   `schema` tags (Q3). Row `internal/tlsutil`: `contract` adds the refusal (Q1). Gate: `task ledger:check`.
-- [ ] 4.2 File the issue owner question 2 asks for (re-judge `internal/tlsutil` under #190), and the pin's ACME
+- [ ] 4.2 File the issue owner question 2 asks for (re-judge `internal/tlsutil` under #190, naming #84 so it does
+  not decide how authentication hooks onto the engine's servers); cite the `GenerateConfigSchema` silent-skip issue
+  (#281) on the PR without a closing keyword; and file the pin's ACME
   `renew_before` defect (default 8h against the documented 24h; an unparsable value silently becomes 8h, pin
-  `pkg/tlsutil/tlsutil.go:350-354`) for change 5. Gate: both issue numbers in a PR comment, read back.
+  `pkg/tlsutil/tlsutil.go:350-354`) for change 5. Gate: all three issue numbers in a PR comment, read
+  back.
 
 ## 5. Verify and archive
 

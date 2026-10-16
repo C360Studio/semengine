@@ -40,8 +40,12 @@ Issue #274: "no spec requirement and no `pkg/security` README section says what 
 - Declared: `pkg/security/config.go:5-70`, seven struct types, 31 fields, each with a `json` tag and a `schema` tag.
 - Described: `pkg/security/doc.go:1-131`. `:65-78` — an "ACME-managed certificates" usage example; `:130` —
   `//   - [github.com/c360studio/semengine/pkg/acme]: ACME client implementation`. `pkg/acme` does not exist here
-  (`ls pkg/acme`: no such directory). The owner ruled on #9 (comment 5995807082, item 5) that README sections and
-  links for packages SemEngine does not have are removed.
+  (`ls pkg/acme`: no such directory). The owner ruled on #9 (comment 5994720412, item 5) that README sections and
+  links for packages SemEngine does not have are removed; its exception, a planned import path named in a milestone,
+  does not cover `pkg/acme` (no milestone title or description names it:
+  `gh api 'repos/C360Studio/semengine/milestones?state=all'`). Further ACME text in `doc.go`: `:83` (`Mode:
+  "manual" (provide certs) or "acme" (automatic)`), `:101-106` (the `ACMEConfig` section), `:120` (`Manual mode (no
+  ACME by default)`); and `:129` points products at `internal/tlsutil`, which they cannot import.
 - Carried to products: `component/dependencies.go:51` (above).
 - Applied: `metric/handler.go:37` — `func NewServer(port int, path string, registry *MetricsRegistry, securityCfg
   security.Config) *Server {`; `:149-150` — `if s.security.TLS.Server.Enabled {` /
@@ -78,7 +82,7 @@ Open issues, by `gh issue list --state open --search "<term>" --limit 200` for `
 | --- | --- | --- |
 | #274 | yes (title, body) | retired by this PR (`Closes #274`) |
 | #84 epic, `status:needs-decision` | yes (body) | stays: the security capability (authn, authz, secret hygiene) is the owner's decision; this PR decides none of it |
-| #9 epic | yes (rulings 5953295358, 5985900154, 5995807082) | stays: epic; its rulings are inputs |
+| #9 epic | yes (rulings 5953295358, 5985900154, 5994720412) | stays: epic; its rulings are inputs |
 | #223 epic | yes (comment 6214503370, the worked case) | stays: #274 is outside the wave; no `Addresses` |
 | #161 | yes (body, as history) | stays: its check is not built; when built, its allowlist takes this PR's spec requirement as the `contract:` reason |
 
@@ -86,10 +90,15 @@ Names the word, not the package: #74 (`config`'s NATS TLS settings), #29, #38, #
 
 Open pull requests (`gh pr list --state open --json number,title,changedFiles,files`; none has more than 100 files):
 
-- #273 (draft, PR 7 of the wave, 52 files): changes `component/dependencies.go` (`Platform` field type, the line above
-  `Security`) and `component/registry.go` (`RegisterFactory` and `RegisterWithConfig` become `Register(Registration)`),
-  and adds a `component-registration` spec delta. No capability overlap with a new `security-config` capability.
-  File overlap only if this change edits `component/`.
+- #273 (draft, PR 7 of the wave, 54 files at `bbb0c447571362b16b6e33649687a521f5ce78c5`): changes
+  `component/dependencies.go` (`Platform` field type, the line above `Security`), `component/registry.go`
+  (`RegisterFactory` and `RegisterWithConfig` become `Register(Registration)`) and `component/discovery.go` (deletes
+  `type Metadata`, and removes `Meta()` and `ConfigSchema()` from `Discoverable`); edits
+  `docs/admission-ledger.yaml` (hunks at `:1872` and later); adds a `component-registration` spec delta. No
+  capability overlap with a new `security-config` capability. Two real overlaps: a product type in this change's test
+  must implement `Discoverable`, whose method set #273 changes, so whichever PR lands second edits
+  `pkg/security/product_test.go`; and both edit the ledger, far apart (`:390`, `:675` here), so a textual conflict
+  is unlikely.
 - #278 (draft claim, 0 files), #279 (this claim, 0 files), Dependabot #242-#248 (`go.mod`, `go.sum`,
   `package*.json`, a workflow): no overlap.
 

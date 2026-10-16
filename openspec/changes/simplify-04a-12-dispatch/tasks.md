@@ -6,8 +6,9 @@ changes the signatures; only 2.4 counts a compile failure as failing.
 
 ## 1. Design
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal, design and spec delta pass pre-owner review and are accepted
-  by the owner, with the design's owner question answered. Gate: `task spec:check` and `task docs:check`.
+- [x] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal, design and spec delta pass pre-owner review and are accepted
+  by the owner, with the design's owner question answered (owner 2026-10-16, design "Owner rulings" 1). Gate: `task
+  spec:check` and `task docs:check`.
 
 ## 2. Failing tests
 

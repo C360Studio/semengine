@@ -55,9 +55,14 @@ for `Shutdown`.
 
 With `KeyedConfig.MetricsRegistry` set, the gauge `dispatch_queue_depth{pool=<Name>}` SHALL equal the number of items
 accepted and not yet passed to `Process`, summed over every pool of that `Name` on the registry, whenever no submit or
-lane pickup is in progress. The pool SHALL start no goroutine besides its lanes.
+lane pickup is in progress. The pool SHALL run no metrics sampler goroutine.
 
 #### Scenario: A busy lane with items waiting
 
 - **WHEN** one item is in `Process`, three more wait in its lane's queue, and no clock time has passed
 - **THEN** the gauge reads 3, and after `Shutdown` returns nil it reads 0
+
+#### Scenario: Pools sharing a name
+
+- **WHEN** two pools of one `Name` on one registry each hold waiting items, and one of them is shut down
+- **THEN** the gauge reads their sum, then the remaining pool's count, and 0 once both are shut down

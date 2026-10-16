@@ -73,12 +73,15 @@ entity ID. `processIngest` keeps its signature, so its 25 test readers (inventor
 
 ## D5. Queue depth without a sampler (#136 item 1)
 
-`metricsUpdater` goes; the pool starts no goroutine besides its lanes. Observable: `dispatch_queue_depth` equals the
+`metricsUpdater` goes; the pool runs no metrics sampler goroutine (the shutdown coordinator
+`keyed_pool.go:325`, `:343-347` stays). Observable: `dispatch_queue_depth` equals the
 items accepted and not yet passed to `Process`, summed over pools of one `Name` on a registry. Rejected:
 `prometheus.NewGaugeFunc` as #136 proposed. `RegisterOrGet` returns the first collector for a key
 (`metric/registry.go:39-50`), so a second pool of that name, such as a new graph-ingest after a failed `Start`, would
 report the first pool's queues for the registry's lifetime. Test: `TestKeyedPoolQueueDepthCountsWaitingItems`
-(bubble; one item in `Process`, three queued, no clock advance: 3; after `Shutdown`: 0). It fails on base, which
+(bubble; one item in `Process`, three queued, no clock advance: 3; after `Shutdown`: 0), plus
+`TestKeyedPoolQueueDepthSumsPoolsOfOneName` (two pools of one name on one registry: combined depth; one drains, the
+other's count stays; then a replacement pool of that name counts alone; 0 after all drain). Both fail on base, which
 reads 0 until a tick. Dropping the gauge is not an option: queue depth is part of ADR-072's decision (pin
 `:182-188`).
 
@@ -95,7 +98,7 @@ wait must be detected by `TestKeyedPool_Backpressure`.
 `doc.go` (one stop, the key argument, no `KeyedDeps`), `errors.go:7-11`, the `KeyOf` comment at `component.go:1567`, the
 `processIngest` comment (`keyed_ingest.go:212-215`: the context also ends when `Start`'s does), the spec delta
 `keyed-dispatch`, and the ledger row (`docs/admission-ledger.yaml:2025-2032`: the D1–D5 contract; "one goroutine per
-lane, joined by Shutdown").
+lane and Shutdown's coordinator, all joined by Shutdown").
 
 ## Open issues and merge order
 

@@ -21,7 +21,9 @@ changes the signatures; only 2.4 counts a compile failure as failing.
   `TestShutdownAfterJoinReturnsNilUnderEndedContext` (64 calls, each nil) (D1). Gate: the second fails on the base
   commit.
 - [ ] 2.3 `TestKeyedPoolQueueDepthCountsWaitingItems` (`synctest`): one item in `Process`, three queued, no clock
-  advance, gauge 3; after `Shutdown`, 0 (D5). Gate: fails by assertion on the base commit.
+  advance, gauge 3; after `Shutdown`, 0; and `TestKeyedPoolQueueDepthSumsPoolsOfOneName` (`synctest`): two pools of
+  one name on one registry, both queues occupied, combined depth; one drained, the other's count stays; a replacement
+  pool of that name then counts alone; 0 after all drain (D5). Gate: both fail by assertion on the base commit.
 - [ ] 2.4 Every caller uses `SubmitBlocking(ctx, key, work)`, `NewKeyedPool(ctx, cfg)` with `Logger` and
   `MetricsRegistry` in `KeyedConfig`, and a `Process` without an error: `keyed_pool_test.go`, `shutdown_test.go`,
   `processor/graph-ingest/lifecycle_owner_test.go`, `interrupted_work_test.go`; the "nil KeyOf" case leaves

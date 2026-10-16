@@ -1,7 +1,7 @@
 # Design: simplify-04a-10-types-message-vocab
 
-Status: draft, round 2 of pre-owner design review, then the owner's answers on #219. Inventory: `inventory.md`
-(base `e8c90fb`).
+Status: accepted. Review passed at `9771bb4` (three rounds); the owner accepted questions 1–5 as recommended on #219
+(comment 6215330911). Inventory: `inventory.md` (base `e8c90fb`).
 
 ## Context
 

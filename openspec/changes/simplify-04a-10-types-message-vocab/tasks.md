@@ -85,7 +85,8 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 ## 5. Verify, review and close
 
-- [ ] 5.1 `task verify` passes on a clean tree at the implementation head.
+- [x] 5.1 `task verify` passes on a clean tree at the implementation head.
+  Done: exit 0, `verify: ok`, at `81ddde9`; the tree was clean before and after.
 - [ ] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
 - [ ] 5.3 Archive the change (`openspec archive simplify-04a-10-types-message-vocab`) as the last content commit.
   Gate: `task spec:check`.

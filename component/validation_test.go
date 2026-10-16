@@ -235,6 +235,7 @@ func TestSafeUnmarshalRefusesANilTarget(t *testing.T) {
 		{name: "empty configuration, nil target", config: nil, target: nil},
 		{name: "valid configuration, nil pointer", config: json.RawMessage(`{"port":7}`), target: nilPointer},
 		{name: "empty configuration, nil pointer", config: nil, target: nilPointer},
+		{name: "empty configuration, not a pointer", config: nil, target: unknownKeyTarget{}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

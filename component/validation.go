@@ -172,10 +172,29 @@ func ValidateFactoryConfig(rawConfig json.RawMessage) error {
 	return validator.ValidateConfig(rawConfig)
 }
 
-// SafeUnmarshal performs validated unmarshaling into a target struct
-// It validates the JSON first, then unmarshals with additional type checking
+// SafeUnmarshal decodes a component configuration into target, a non-nil
+// pointer. It checks, in order: the target (nil, a nil pointer or a
+// non-pointer is refused), the configuration (ValidateFactoryConfig), then
+// decodes strictly, refusing a key the target does not define and data after
+// the first value. Empty input leaves the target's defaults. A target that
+// implements Validatable is validated last. Every refusal but Validate's own
+// error is of the invalid class.
 func SafeUnmarshal(rawConfig json.RawMessage, target any) error {
-	// First validate the raw JSON
+	if target == nil {
+		return errs.WrapInvalid(errors.New("target is nil"),
+			"ConfigValidator", "SafeUnmarshal", "target type check")
+	}
+	targetValue := reflect.ValueOf(target)
+	if targetValue.Kind() != reflect.Ptr {
+		return errs.WrapInvalid(
+			fmt.Errorf("target must be a pointer, got %T", target),
+			"ConfigValidator", "SafeUnmarshal", "target type check")
+	}
+	if targetValue.IsNil() {
+		return errs.WrapInvalid(fmt.Errorf("target is a nil %T", target),
+			"ConfigValidator", "SafeUnmarshal", "target type check")
+	}
+
 	if err := ValidateFactoryConfig(rawConfig); err != nil {
 		return errs.Wrap(err, "ConfigValidator", "SafeUnmarshal", "config validation")
 	}
@@ -185,16 +204,7 @@ func SafeUnmarshal(rawConfig json.RawMessage, target any) error {
 		return nil
 	}
 
-	// Ensure target is a pointer to a struct
-	targetType := reflect.TypeOf(target)
-	if targetType.Kind() != reflect.Ptr {
-		return errs.WrapInvalid(
-			fmt.Errorf("target must be a pointer, got %T", target),
-			"ConfigValidator", "SafeUnmarshal", "target type check")
-	}
-
-	// Unmarshal config - ignores unknown fields (Go's default behavior)
-	if err := json.Unmarshal(rawConfig, target); err != nil {
+	if err := decodeStrict(rawConfig, target); err != nil {
 		return errs.WrapInvalid(err, "ConfigValidator", "SafeUnmarshal", "JSON unmarshaling")
 	}
 

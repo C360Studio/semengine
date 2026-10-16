@@ -208,6 +208,21 @@ The other port types are `NATSRequestPort` (request and reply), `KVReadPort`, `H
   name already admitted, an exclusive resource another instance holds, and any call after `SealComposition`. `prepare`
   may be nil.
 
+### Decoding a configuration
+
+`SafeUnmarshal(rawConfig, target)` is offered to component factories and port declarers to decode their
+configuration. It checks, in this order, and refuses with an error of the invalid class:
+
+1. The target: nil, a nil pointer, or a value that is not a pointer.
+2. The configuration, through `ValidateFactoryConfig`: its size, nesting depth, array length, string and key length,
+   control characters, numbers a `float64` cannot hold, and anything but whitespace after the first JSON value.
+   `CreateComponent` and `Declare` run the same check before a factory or declarer sees the configuration.
+3. The decode: a key the target struct does not define (the error names the key), a value of the wrong type, or data
+   after the first value.
+
+An empty configuration leaves the target's defaults. If the target implements `Validatable`, its `Validate` runs last;
+its error is returned wrapped, keeping whatever class it carries.
+
 ### Types
 
 #### `Factory`

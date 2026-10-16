@@ -41,7 +41,7 @@ func TestRegisterRejectsInvalidIndexingProfile(t *testing.T) {
 	if !strings.Contains(err.Error(), "prose") {
 		t.Fatalf("error does not name the rejected value: %v", err)
 	}
-	if _, ok := reg.GetRegistration("agentic.agent_lesson.v1"); ok {
+	if _, ok := reg.GetRegistration(types.Type{Domain: "agentic", Category: "agent_lesson", Version: "v1"}); ok {
 		t.Fatal("a rejected registration was stored")
 	}
 
@@ -70,7 +70,7 @@ func TestRegisterFillsAndChecksContractMessageType(t *testing.T) {
 	if err := reg.Register(r); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
-	got, ok := reg.GetRegistration("agentic.agent_lesson.v1")
+	got, ok := reg.GetRegistration(types.Type{Domain: "agentic", Category: "agent_lesson", Version: "v1"})
 	if !ok {
 		t.Fatal("registration missing")
 	}
@@ -91,7 +91,7 @@ func TestRegisterFillsAndChecksContractMessageType(t *testing.T) {
 				t.Errorf("error does not name %s: %v", key, err)
 			}
 		}
-		if _, ok := reg.GetRegistration("agentic.agent_lesson.v1"); ok {
+		if _, ok := reg.GetRegistration(types.Type{Domain: "agentic", Category: "agent_lesson", Version: "v1"}); ok {
 			t.Fatal("a rejected registration was stored")
 		}
 	})
@@ -119,7 +119,7 @@ func TestRegisterFillsAndChecksContractMessageType(t *testing.T) {
 }
 
 func TestGetRegistrationCopiesAttributes(t *testing.T) {
-	const key = "agentic.agent_lesson.v1"
+	key := types.Type{Domain: "agentic", Category: "agent_lesson", Version: "v1"}
 	reg := New()
 	r := attrRegistration("agentic", "agent_lesson", "v1")
 	r.IndexingProfile = vocabulary.IndexingProfileContent
@@ -143,7 +143,7 @@ func TestGetRegistrationCopiesAttributes(t *testing.T) {
 		t.Fatal("GetRegistration leaked its contract slice to the caller")
 	}
 
-	listed, ok := reg.List()[key]
+	listed, ok := reg.List()[key.Key()]
 	if !ok || listed.IndexingProfile != vocabulary.IndexingProfileContent || len(listed.Contracts) != 1 {
 		t.Fatalf("List() entry = %#v, want profile and one contract", listed)
 	}
@@ -204,20 +204,54 @@ func TestIndexingProfileFor(t *testing.T) {
 		}
 	}
 	cases := []struct {
-		key        string
+		key        types.Type
 		profile    string
 		registered bool
 	}{
-		{"agentic.request.v1", vocabulary.IndexingProfileTrace, true},
-		{"test.nofloor.v1", "", true},
+		{types.Type{Domain: "agentic", Category: "request", Version: "v1"}, vocabulary.IndexingProfileTrace, true},
+		{types.Type{Domain: "test", Category: "nofloor", Version: "v1"}, "", true},
 		// A binary that did not register graph research knows no research floor.
-		{"research.result.v1", "", false},
+		{types.Type{Domain: "research", Category: "result", Version: "v1"}, "", false},
 	}
 	for _, tc := range cases {
 		profile, registered := reg.IndexingProfileFor(tc.key)
 		if profile != tc.profile || registered != tc.registered {
 			t.Errorf("IndexingProfileFor(%q) = (%q, %v), want (%q, %v)",
 				tc.key, profile, registered, tc.profile, tc.registered)
+		}
+	}
+}
+
+// TestRegistryLooksUpByType: GetRegistration and IndexingProfileFor take the message type itself
+// (D6). A registered type is found by its value. A type differing in one component, and a dotted
+// type, whose key text has a fourth part and so equals no registered key, report not registered.
+func TestRegistryLooksUpByType(t *testing.T) {
+	reg := New()
+	r := attrRegistration("agentic", "request", "v1")
+	r.IndexingProfile = vocabulary.IndexingProfileTrace
+	if err := reg.Register(r); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	registered := types.Type{Domain: "agentic", Category: "request", Version: "v1"}
+	got, ok := reg.GetRegistration(registered)
+	if !ok || got.Domain != "agentic" || got.Category != "request" || got.Version != "v1" {
+		t.Fatalf("GetRegistration(%v) = %#v, %v; want the agentic.request.v1 registration", registered, got, ok)
+	}
+	if profile, ok := reg.IndexingProfileFor(registered); !ok || profile != vocabulary.IndexingProfileTrace {
+		t.Fatalf("IndexingProfileFor(%v) = %q, %v; want %q, true", registered, profile, ok, vocabulary.IndexingProfileTrace)
+	}
+
+	for _, other := range []types.Type{
+		{Domain: "agentic", Category: "request", Version: "v2"},
+		{Domain: "agentic.request", Category: "v1", Version: "x"},
+		{},
+	} {
+		if got, ok := reg.GetRegistration(other); ok {
+			t.Errorf("GetRegistration(%#v) = %#v, true; want not registered", other, got)
+		}
+		if profile, ok := reg.IndexingProfileFor(other); ok || profile != "" {
+			t.Errorf("IndexingProfileFor(%#v) = %q, %v; want \"\", false", other, profile, ok)
 		}
 	}
 }

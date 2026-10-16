@@ -87,6 +87,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 - [x] 5.1 `task verify` passes on a clean tree at the implementation head.
   Done: exit 0, `verify: ok`, at `81ddde9`; the tree was clean before and after.
-- [ ] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
-- [ ] 5.3 Archive the change (`openspec archive simplify-04a-10-types-message-vocab`) as the last content commit.
-  Gate: `task spec:check`.
+- [x] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
+  Done: Codex APPROVE at `a30b1da` (PR #275 comment, 2026-10-16); its one NIT (orphaned `ptrTime`) fixed in `5a8135c`.
+- [x] 5.3 Archive the change (`openspec archive simplify-04a-10-types-message-vocab`) as the last content commit.
+  Gate: `task spec:check`. Done: in the archive commit.

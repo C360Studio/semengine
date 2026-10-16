@@ -60,12 +60,15 @@ unchanged.
 
 ### Requirement: Generic JSON data is JSON-shaped
 
-`GenericJSONPayload.MarshalJSON` SHALL accept in `Data` only JSON-shaped values: `map[string]any`, `[]any`,
-`string`, a Go number (`int`, `int8` to `int64`, `uint`, `uint8` to `uint64`, `uintptr`, `float32`, `float64`),
-`json.Number`, `bool` or nil, nested to any depth. It SHALL check each value by its exact type before encoding and
-SHALL refuse any other value (a struct, `time.Time`, a pointer, a named type, or a typed map or slice such as
-`map[string]string`) with an invalid-data error that names its type and its path, and SHALL refuse a map or list that
-contains itself (#9 comments 5972117486, 5972208367).
+`GenericJSONPayload.MarshalJSON` SHALL accept in `Data` only JSON-shaped values: `map[string]any`, `[]any`, `string`, a
+Go number (`int`, `int8` to `int64`, `uint`, `uint8` to `uint64`, `uintptr`, `float32`, `float64`), `json.Number`,
+`bool` or nil, nested to any depth. It SHALL check each value by its exact type before encoding and SHALL refuse any
+other value (a struct, `time.Time`, a pointer, a named type, or a typed map or slice such as `map[string]string`) with
+an invalid-data error that names its type and its path, and SHALL refuse a map or list that contains itself (#9 comments
+5972117486, 5972208367). `GenericJSONPayload.Validate` SHALL refuse, with an invalid-data error naming the same type and
+path, every non-nil `Data` that this check refuses, including a string or map key that is not valid UTF-8. A NaN or
+infinite float passes the check and is refused only by encoding. The check SHALL refuse a `json.Number` whose text is
+not valid UTF-8; whether its text is a number literal is left to `encoding/json`.
 
 #### Scenario: A value that is not JSON-shaped
 
@@ -82,6 +85,17 @@ contains itself (#9 comments 5972117486, 5972208367).
 - **WHEN** `Data` holds only the accepted kinds, nested
 - **THEN** encoding gives the standard library's encoding of the same value, and the message decodes through
   `NewDecoder`
+
+#### Scenario: Validate runs the shape check
+
+- **WHEN** `Validate` is called on a payload whose non-nil `Data` holds a value that is not JSON-shaped, a map or
+  list that contains itself, or a string that is not valid UTF-8, at any depth
+- **THEN** `Validate` returns an invalid-data error naming the path encoding would name
+
+#### Scenario: A value only encoding refuses
+
+- **WHEN** `Data` holds a NaN or an infinite float
+- **THEN** `Validate` returns nil and encoding returns an error
 
 ### Requirement: Generic JSON is a fallback that keeps every number
 
@@ -124,3 +138,22 @@ equal in full: its ID, type, payload, source and both timestamps.
 - **WHEN** a message built through `NewBaseMessage` with a valid UTF-8 source and two millisecond timestamps is
   encoded and then decoded
 - **THEN** the decoded message equals the one encoded in ID, type, payload, source and both timestamps
+
+### Requirement: A message type is valid only when Type.Validate accepts it
+
+`types.Type.Validate` SHALL be the one check of a message type's components: each SHALL be non-empty, valid UTF-8,
+and free of `.`. `types.Type.IsValid` SHALL report true exactly when `Validate` returns nil.
+`BaseMessage.Validate`, and so `BaseMessage.MarshalJSON`, SHALL refuse with an invalid-data error a message whose type
+`Validate` refuses.
+
+#### Scenario: A dotted type component
+
+- **WHEN** a message whose category is `a.b` is validated or encoded
+- **THEN** `Type.IsValid` reports false, and `BaseMessage.Validate` and `BaseMessage.MarshalJSON` return an
+  invalid-data error
+
+#### Scenario: IsValid agrees with Validate
+
+- **WHEN** any type's domain, category or version is empty, not valid UTF-8, or contains `.`
+- **THEN** `IsValid` reports false and `Validate` returns an error naming the first such component; otherwise `IsValid`
+  reports true and `Validate` returns nil

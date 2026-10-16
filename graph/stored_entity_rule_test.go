@@ -3,19 +3,26 @@ package graph
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// classifiedLayers counts the *errs.ClassifiedError values on err's unwrap chain. A refusal of
-// stored graph state carries exactly one (graph-entity-writes, "One rule decodes a stored entity").
+// classifiedLayers counts the *errs.ClassifiedError values on err's unwrap chain above the
+// *StateContractError. A refusal of stored graph state carries exactly one (graph-entity-writes,
+// "One rule decodes a stored entity"). The walk stops at the state error: its cause is the
+// violation itself, and an entity-ID violation from pkg/types is classified on its own.
 func classifiedLayers(err error) int {
 	layers := 0
 	for ; err != nil; err = errors.Unwrap(err) {
-		if _, ok := err.(*errs.ClassifiedError); ok {
+		switch err.(type) {
+		case *errs.ClassifiedError:
 			layers++
+		case *StateContractError:
+			return layers
 		}
 	}
 	return layers
@@ -67,12 +74,106 @@ func TestNewExactEntityReaderRefusesNilRequester(t *testing.T) {
 	}
 }
 
-// A refusal of stored bytes is classified once: one fatal graph_state_reset_required layer, not a
-// classified error wrapped in another.
-func TestUnmarshalEntityStateRefusalIsClassifiedOnce(t *testing.T) {
-	var entity EntityState
-	err := UnmarshalEntityState([]byte("{"), &entity)
-	if n := classifiedLayers(err); n != 1 {
-		t.Fatalf("UnmarshalEntityState error %v carries %d ClassifiedError layers, want 1", err, n)
+// An exported struct can be declared without its constructor; that reader refuses every read
+// instead of panicking.
+func TestZeroExactEntityReaderRefusesReads(t *testing.T) {
+	var reader ExactEntityReader
+	exact, err := reader.ReadExactEntity(context.Background(), "acme.ops.robotics.gcs.drone.001")
+	if err == nil || exact != nil {
+		t.Fatalf("zero ExactEntityReader read = (%v, %v), want (nil, error)", exact, err)
+	}
+}
+
+// storedEntityBytes builds stored bytes by hand, so the test's input is not shaped by the encoder.
+// Each statement is {"subject","predicate","source","timestamp"}; an empty source or timestamp is
+// left out of the JSON, as a writer that never set it would store it.
+func storedEntityBytes(id string, statements ...[4]string) []byte {
+	triples := make([]string, 0, len(statements))
+	for _, st := range statements {
+		triple := `{"subject":"` + st[0] + `","predicate":"` + st[1] + `","object":1`
+		if st[2] != "" {
+			triple += `,"source":"` + st[2] + `"`
+		}
+		if st[3] != "" {
+			triple += `,"timestamp":"` + st[3] + `"`
+		}
+		triples = append(triples, triple+"}")
+	}
+	return []byte(`{"id":"` + id + `","triples":[` + strings.Join(triples, ",") + `]}`)
+}
+
+// TestUnmarshalEntityStateRefusesWhatGraphIngestRefuses: the one decoder for a stored entity
+// refuses in the spec's order (graph-entity-writes, "One rule decodes a stored entity"): the
+// bytes decode, the canonical contract, the key, then statement metadata. One row per reason,
+// plus the two adjacent-precedence rows; every refusal is one classified layer naming the key.
+// Generated checks are not used: four checks with a fixed precedence make the per-reason rows and
+// the adjacent pairs the whole input space (design D1).
+func TestUnmarshalEntityStateRefusesWhatGraphIngestRefuses(t *testing.T) {
+	const (
+		key   = "acme.ops.test.system.widget.001"
+		other = "acme.ops.test.system.widget.002"
+		src   = "test-producer"
+		when  = "2026-10-16T12:00:00Z"
+		good  = "test.state.value"
+		bad   = "bad.two" // predicate-audit:invalid {"kind":"stored-predicate","value":"bad.two","reason":"arity"}
+	)
+	cases := []struct {
+		name   string
+		data   []byte
+		reason StateResetReason
+	}{
+		{"bytes that do not decode", []byte("{"), GraphStateReasonUnreadableEntity},
+		{"empty bytes", []byte{}, GraphStateReasonUnreadableEntity},
+		{"noncanonical entity ID", storedEntityBytes("bad"), GraphStateReasonNoncanonicalEntityID},
+		{"noncanonical predicate", storedEntityBytes(key, [4]string{key, bad, src, when}), GraphStateReasonNoncanonicalPredicate},
+		{"another entity under the key", storedEntityBytes(other, [4]string{other, good, src, when}), GraphStateReasonNoncanonicalEntityID},
+		{"statement without a source", storedEntityBytes(key, [4]string{key, good, "", when}), GraphStateReasonMissingStatementMetadata},
+		{"statement without a timestamp", storedEntityBytes(key, [4]string{key, good, src, ""}), GraphStateReasonMissingStatementMetadata},
+		{"key checked before metadata", storedEntityBytes(other, [4]string{other, good, "", when}), GraphStateReasonNoncanonicalEntityID},
+		{"contract checked before the key", storedEntityBytes(other, [4]string{other, bad, src, when}), GraphStateReasonNoncanonicalPredicate},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var entity EntityState
+			requireStateRefusal(t, UnmarshalEntityState(key, tc.data, &entity), tc.reason, key)
+		})
+	}
+	t.Run("a value the rule accepts", func(t *testing.T) {
+		var entity EntityState
+		if err := UnmarshalEntityState(key, storedEntityBytes(key, [4]string{key, good, src, when}), &entity); err != nil {
+			t.Fatalf("UnmarshalEntityState refused a valid value: %v", err)
+		}
+		if entity.ID != key || len(entity.Triples) != 1 || entity.Triples[0].Source != src {
+			t.Fatalf("decoded %+v, want entity %s with its one statement", entity, key)
+		}
+	})
+}
+
+// The aggregate validators apply the stored-value rule's steps that need no key, statement
+// metadata included, so a batch or prefix reply is checked like a read of the bucket (design D1;
+// owner question 1). The refusal names the candidate's index and has the rule's one shape, with
+// no entity ID.
+func TestValidateDecodedEntityStatesRefuseStatementWithoutMetadata(t *testing.T) {
+	const id = "acme.ops.test.system.widget.001"
+	stamped := message.Triple{Subject: id, Predicate: "test.state.value", Object: 1, Source: "test-producer",
+		Timestamp: time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)}
+	unsourced, untimed := stamped, stamped
+	unsourced.Source = ""
+	untimed.Timestamp = time.Time{}
+	for name, triple := range map[string]message.Triple{"source": unsourced, "timestamp": untimed} {
+		t.Run("statement without a "+name, func(t *testing.T) {
+			entities := []EntityState{
+				{ID: id, Triples: []message.Triple{stamped}},
+				{ID: id, Triples: []message.Triple{stamped, triple}},
+			}
+			err := ValidateDecodedEntityStates(entities)
+			requireStateRefusal(t, err, GraphStateReasonMissingStatementMetadata, "")
+			if err != nil && !strings.HasPrefix(err.Error(), "entity[1]: ") {
+				t.Errorf("error %q does not name candidate 1", err)
+			}
+			if err := ValidateDecodedEntityStatePointers([]*EntityState{&entities[0], &entities[1]}); err == nil {
+				t.Error("ValidateDecodedEntityStatePointers accepted the candidate")
+			}
+		})
 	}
 }

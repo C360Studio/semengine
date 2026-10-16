@@ -12,7 +12,7 @@ a compile failure as failing. Review stops (Codex) after 2.3, 3.3 and 4.2. Each 
 
 ## 2. One stored-value rule and the exact reader (batch 1)
 
-- [ ] 2.1 Failing tests against the base API, D1 and D2:
+- [x] 2.1 Failing tests against the base API, D1 and D2:
   - `TestWatchRefusesAStoredValueGraphIngestRefuses` (`pkg/lifecycle`, `synctest`; `Watch` and `WatchEvents`; a
     statement without `Source`, and a value stored under another key);
   - `TestExactEntityReaderRefusesAReplyWithoutStatementMetadata`;
@@ -22,11 +22,11 @@ a compile failure as failing. Review stops (Codex) after 2.3, 3.3 and 4.2. Each 
     `rejectFromError`).
 
   Gate: each fails by assertion on the base commit.
-- [ ] 2.2 `TestUnmarshalEntityStateRefusesWhatGraphIngestRefuses` (one row per reason plus the two double-fault rows).
+- [x] 2.2 `TestUnmarshalEntityStateRefusesWhatGraphIngestRefuses` (one row per reason plus the two double-fault rows).
   Every caller moves to `UnmarshalEntityState(key, data, &entity)`: the 12 call lines in 9 outside test files, the
   8 in the root tests, and `vocabulary/export/datatype_roundtrip_test.go` with stamped statements (D1). Gate: fails
   to compile on the base commit.
-- [ ] 2.3 Implement D1 and D2:
+- [x] 2.3 Implement D1 and D2:
   - the root decoder, `ValidateStatementMetadata`, and the one constructor; `ClassifyStateContractError` removed;
   - graph-ingest's `decodeStoredEntity`, `decodeStoredForWrite`, the sweep, and `rejectFromError` passing a state
     error through;

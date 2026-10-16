@@ -981,6 +981,9 @@ func TestReconcileReplyForPoisonedStateHasOneClassification(t *testing.T) {
 	assertIngestResetRequired(t, err)
 	layers := 0
 	for e := err; e != nil; e = errors.Unwrap(e) {
+		if _, ok := e.(*graph.StateContractError); ok {
+			break // the state error's cause is the violation, not a classification of it
+		}
 		if _, ok := e.(*errs.ClassifiedError); ok {
 			layers++
 		}

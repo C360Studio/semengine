@@ -47,9 +47,16 @@ const (
 func roundTripThroughEntityStates(t *testing.T, triples []message.Triple) []message.Triple {
 	t.Helper()
 
+	// Every stored statement carries a Source and a Timestamp, which the authoritative decoder
+	// requires; the serializer reads neither.
+	stamped := append([]message.Triple(nil), triples...)
+	for i := range stamped {
+		stamped[i].Source = "roundtrip-test"
+		stamped[i].Timestamp = time.Unix(0, 0).UTC()
+	}
 	entity := &graph.EntityState{
 		ID:        roundTripEntityID,
-		Triples:   triples,
+		Triples:   stamped,
 		UpdatedAt: time.Unix(0, 0).UTC(),
 	}
 	data, err := graph.MarshalEntityState(entity)
@@ -57,7 +64,7 @@ func roundTripThroughEntityStates(t *testing.T, triples []message.Triple) []mess
 		t.Fatalf("MarshalEntityState: %v", err)
 	}
 	var decoded graph.EntityState
-	if err := graph.UnmarshalEntityState(data, &decoded); err != nil {
+	if err := graph.UnmarshalEntityState(roundTripEntityID, data, &decoded); err != nil {
 		t.Fatalf("UnmarshalEntityState: %v", err)
 	}
 	return decoded.Triples

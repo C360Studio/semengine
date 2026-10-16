@@ -88,7 +88,7 @@ func snapshotStore(t *testing.T, ctx context.Context, comp *Component) map[strin
 		entry, getErr := comp.entityBucket.Get(ctx, key)
 		require.NoError(t, getErr)
 		var stored graph.EntityState
-		require.NoError(t, graph.UnmarshalEntityState(entry.Value, &stored))
+		require.NoError(t, graph.UnmarshalEntityState(key, entry.Value, &stored))
 
 		identities := make([]string, 0, len(stored.Triples))
 		for i := range stored.Triples {
@@ -108,7 +108,7 @@ func countStoredPredicate(t *testing.T, ctx context.Context, comp *Component, id
 	entry, err := comp.entityBucket.Get(ctx, id)
 	require.NoError(t, err)
 	var stored graph.EntityState
-	require.NoError(t, graph.UnmarshalEntityState(entry.Value, &stored))
+	require.NoError(t, graph.UnmarshalEntityState(id, entry.Value, &stored))
 	count := 0
 	for _, triple := range stored.Triples {
 		if triple.Predicate == predicate {

@@ -95,7 +95,7 @@ func (c *Component) handleQueryEntityNATS(ctx context.Context, data []byte) ([]b
 				fmt.Errorf("not found: %s", req.ID))
 		}
 		if graph.IsStateContractError(err) {
-			return nil, graph.ClassifyStateContractError(err)
+			return nil, err // already the stored-value rule's one classification
 		}
 		return nil, errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal,
 			fmt.Errorf("internal error: %w", err))
@@ -453,9 +453,9 @@ func marshalFittingPrefixPage(
 
 func (c *Component) classifyEntityQueryError(err error) error {
 	if graph.IsStateContractError(err) {
-		// Already fatal/graph_state_reset_required passes through unchanged
-		// (aggregate errors arrive pre-classified naming every poisoned entity).
-		return graph.ClassifyStateContractError(err)
+		// Already fatal/graph_state_reset_required: aggregate errors arrive
+		// classified once, naming every poisoned entity.
+		return err
 	}
 	return errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal, err)
 }

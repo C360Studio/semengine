@@ -1294,11 +1294,7 @@ func (c *Component) sweepEntityStateGuardEntry(sweep map[string]entityPoisonReco
 		return
 	}
 	var contractErr *graph.StateContractError
-	if !errors.As(err, &contractErr) {
-		contractErr = &graph.StateContractError{
-			Reason: graph.GraphStateReasonUnreadableEntity, EntityID: entry.Key(), Err: err,
-		}
-	}
+	errors.As(err, &contractErr) // every refusal of the stored-value rule is a state error
 	sweep[entry.Key()] = entityPoisonRecord{contractErr: contractErr, revision: entry.Revision()}
 }
 

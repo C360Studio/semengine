@@ -13,15 +13,18 @@ import (
 // roughly the shape the semboids load generator produces per boid (gh#562):
 // a 6-part ID and ~24 triples with realistic three-part predicates — and
 // returns its MarshalEntityState bytes.
+const benchmarkEntityID = "c360.sim.robotics.swarm.boid.017"
+
 func benchmarkEntityStateBytes(b *testing.B, prototypes []message.Triple) []byte {
 	b.Helper()
-	const entityID = "c360.sim.robotics.swarm.boid.017"
+	const entityID = benchmarkEntityID
 	now := time.Date(2026, 7, 1, 12, 0, 0, 0, time.UTC)
 
 	triples := append([]message.Triple(nil), prototypes...)
 	for i := range triples {
 		triples[i].Subject = entityID
 		triples[i].Object = fmt.Sprintf("value-%d", i)
+		triples[i].Source = "bench-producer"
 		triples[i].Timestamp = now
 		triples[i].Confidence = 1.0
 	}
@@ -71,7 +74,7 @@ func BenchmarkUnmarshalEntityState(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		var state EntityState
-		if err := UnmarshalEntityState(data, &state); err != nil {
+		if err := UnmarshalEntityState(benchmarkEntityID, data, &state); err != nil {
 			b.Fatal(err)
 		}
 	}

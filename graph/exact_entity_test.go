@@ -98,7 +98,7 @@ func TestExactEntityReaderRejectsZeroRevisionAndMismatchedEntity(t *testing.T) {
 	}
 }
 
-func newTestExactEntityReader(t *testing.T, requester exactEntityRequesterFunc) ExactEntityReader {
+func newTestExactEntityReader(t *testing.T, requester exactEntityRequesterFunc) *ExactEntityReader {
 	t.Helper()
 	reader, err := NewExactEntityReader(requester, time.Second)
 	if err != nil {

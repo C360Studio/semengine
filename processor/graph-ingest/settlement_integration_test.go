@@ -214,7 +214,7 @@ func graphState(ctx context.Context, t *testing.T, entities jetstream.KeyValue) 
 		entry, err := entities.Get(ctx, key)
 		require.NoError(t, err)
 		var entity graph.EntityState
-		require.NoError(t, graph.UnmarshalEntityState(entry.Value(), &entity))
+		require.NoError(t, graph.UnmarshalEntityState(key, entry.Value(), &entity))
 		entity.UpdatedAt = time.Time{}
 		slices.SortStableFunc(entity.Triples, func(a, b message.Triple) int {
 			return cmp.Or(strings.Compare(a.Subject, b.Subject), strings.Compare(a.Predicate, b.Predicate),

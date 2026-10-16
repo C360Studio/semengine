@@ -123,9 +123,10 @@ func TestUnmarshalEntityStateTrusted_AdmitsNoncanonicalState(t *testing.T) {
 				t.Fatalf("trusted decoder rejected noncanonical state (that IS its contract): %v", err)
 			}
 
-			// Contrast pin: the validating decoder still refuses the bytes.
+			// Contrast pin: the validating decoder still refuses the bytes, under the key
+			// they name, so the canonical contract refuses them and not the key check.
 			var validated EntityState
-			if err := UnmarshalEntityState(tc.data, &validated); err == nil {
+			if err := UnmarshalEntityState(trusted.ID, tc.data, &validated); err == nil {
 				t.Fatal("validating decoder accepted noncanonical state; fixture is not poison")
 			}
 		})

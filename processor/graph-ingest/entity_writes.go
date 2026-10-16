@@ -66,24 +66,8 @@ import (
 // value's (design D23; checkpoint 3 H3); the lanes' check is the one that names the caller's
 // index.
 func requireStatementMetadata(triples []message.Triple) error {
-	if err := missingStatementMetadata(triples); err != nil {
+	if err := graph.ValidateStatementMetadata(triples); err != nil {
 		return errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeInvalidRequest, err)
-	}
-	return nil
-}
-
-// missingStatementMetadata is the statement-metadata rule itself: it names the first of triples
-// with no Source or no Timestamp, by its index and the missing field, or returns nil. Each caller
-// classifies it: requireStatementMetadata as the write's invalid_request, decodeStoredEntity as
-// stored graph state (GraphStateReasonMissingStatementMetadata).
-func missingStatementMetadata(triples []message.Triple) error {
-	for index := range triples {
-		switch {
-		case triples[index].Source == "":
-			return fmt.Errorf("triple[%d] has no source", index)
-		case triples[index].Timestamp.IsZero():
-			return fmt.Errorf("triple[%d] has no timestamp", index)
-		}
 	}
 	return nil
 }
@@ -316,18 +300,21 @@ func everySetStale(arrival []message.Triple, stale []graph.StaleSet) bool {
 	return true
 }
 
-// decodeStoredForWrite is the write seam's read check (design D23) of current, a value stored
-// under key and read at revision, which is nonzero: the trusted decode, then decodeStoredEntity's
+// decodeStoredForWrite is the write seam's read check (design D23; ADR-110 Decision 6) of current,
+// a value stored under key and read at revision, which is nonzero: the trusted decode, then the
 // key check. Absence is revision 0, so an empty value here is unreadable, never a birth or an
 // absent entity. A value it refuses is recorded in the poison inventory at revision and returned
-// as its graph-state error, which the caller returns from its callback, so nothing is written.
-// The full canonical rule is not run here: MarshalEntityState still gates every commit.
+// as its graph-state error, which the caller returns from its callback, so nothing is written. On
+// a key mismatch that error is the one the stored-value rule gives for current, so a read and a
+// write of the same bytes refuse them for the same reason. The full rule is not run on a value
+// this check accepts: MarshalEntityState still gates every commit.
 func (c *Component) decodeStoredForWrite(ctx context.Context, key string, current []byte, revision uint64) (graph.EntityState, error) {
 	var stored graph.EntityState
 	if err := graph.UnmarshalEntityStateTrusted(current, &stored); err != nil {
 		return graph.EntityState{}, c.classifyStoredStateRMWError(ctx, key, current, revision, err)
 	}
-	if err := checkStoredEntityKey(key, stored.ID); err != nil {
+	if stored.ID != key {
+		_, err := decodeStoredEntity(key, current)
 		var contractErr *graph.StateContractError
 		if errors.As(err, &contractErr) {
 			c.inventoryEntityPoison(ctx, contractErr, revision)

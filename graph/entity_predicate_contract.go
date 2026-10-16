@@ -192,12 +192,17 @@ func MarshalEntityState(entity *EntityState) ([]byte, error) {
 	return json.Marshal(entity)
 }
 
-// ValidateDecodedEntityState applies the authoritative graph-state failure
-// contract to an EntityState that was decoded as part of a larger query reply.
+// ValidateDecodedEntityState applies the stored-value rule to an EntityState
+// that was decoded as part of a larger query reply: the canonical contract and
+// statement metadata, the steps of UnmarshalEntityState that need no key.
 // Aggregate decoders must call this before exposing any candidate downstream.
+// A refusal has UnmarshalEntityState's shape, with no entity ID.
 func ValidateDecodedEntityState(entity *EntityState) error {
-	if err := ValidateEntityStateContract(entity); err != nil {
-		return classifyDecodedEntityStateError(err)
+	if reason, err := checkCanonicalState(entity); err != nil {
+		return stateRefusal("", reason, err)
+	}
+	if err := ValidateStatementMetadata(entity.Triples); err != nil {
+		return stateRefusal("", GraphStateReasonMissingStatementMetadata, err)
 	}
 	return nil
 }
@@ -238,28 +243,63 @@ func ValidateDecodedEntityIDs(entityIDs []string) error {
 	return nil
 }
 
-func classifyDecodedEntityStateError(err error) error {
-	reason := GraphStateReasonNoncanonicalEntityID
+// checkCanonicalState is the stored-value rule's canonical-contract step: the
+// reason a violation resets for, noncanonical_predicate for a predicate and
+// noncanonical_entity_id otherwise, with the contract error.
+func checkCanonicalState(entity *EntityState) (StateResetReason, error) {
+	err := ValidateEntityStateContract(entity)
+	if err == nil {
+		return "", nil
+	}
 	var predicateErr *EntityPredicateContractError
 	if errors.As(err, &predicateErr) {
-		reason = GraphStateReasonNoncanonicalPredicate
+		return GraphStateReasonNoncanonicalPredicate, err
 	}
-	return ClassifyStateContractError(errs.WrapFatal(&StateContractError{
-		Reason: reason,
-		Err:    err,
-	}, "graph", "ValidateDecodedEntityState", "validate authoritative entity state"))
+	return GraphStateReasonNoncanonicalEntityID, err
 }
 
-// UnmarshalEntityState is the authoritative decoder for ENTITY_STATES and
-// graph-view consumers. It refuses unreadable or noncanonical stored state.
-func UnmarshalEntityState(data []byte, entity *EntityState) error {
-	if err := json.Unmarshal(data, entity); err != nil {
-		return ClassifyStateContractError(errs.WrapFatal(&StateContractError{
-			Reason: GraphStateReasonUnreadableEntity,
-			Err:    err,
-		}, "graph", "UnmarshalEntityState", "decode authoritative entity state"))
+// ValidateStatementMetadata is the statement-metadata rule: every stored
+// statement carries a Source and a Timestamp (ADR-110 Decision 5). It names
+// the first of triples with neither, by its index and the missing field, or
+// returns nil. Callers classify it: UnmarshalEntityState as stored graph state
+// (missing_statement_metadata), graph-ingest's write lanes as the request's
+// invalid_request.
+func ValidateStatementMetadata(triples []message.Triple) error {
+	for index := range triples {
+		switch {
+		case triples[index].Source == "":
+			return fmt.Errorf("triple[%d] has no source", index)
+		case triples[index].Timestamp.IsZero():
+			return fmt.Errorf("triple[%d] has no timestamp", index)
+		}
 	}
-	return ValidateDecodedEntityState(entity)
+	return nil
+}
+
+// UnmarshalEntityState is the one decoder for the bytes stored under key in
+// ENTITY_STATES, for graph-ingest and every reader of the bucket or of one
+// entity's reply. It refuses, in this order: bytes that do not decode
+// (unreadable_entity_state, so an empty value is poison, never absence); an
+// entity that violates the canonical contract; an entity that is not the one
+// key names (noncanonical_entity_id); and a statement with no Source or no
+// Timestamp (missing_statement_metadata). Each refusal is one fatal
+// graph_state_reset_required classification over a *StateContractError whose
+// EntityID is key.
+func UnmarshalEntityState(key string, data []byte, entity *EntityState) error {
+	if err := json.Unmarshal(data, entity); err != nil {
+		return stateRefusal(key, GraphStateReasonUnreadableEntity, err)
+	}
+	if reason, err := checkCanonicalState(entity); err != nil {
+		return stateRefusal(key, reason, err)
+	}
+	if entity.ID != key {
+		return stateRefusal(key, GraphStateReasonNoncanonicalEntityID,
+			fmt.Errorf("authority key contains entity %q", entity.ID))
+	}
+	if err := ValidateStatementMetadata(entity.Triples); err != nil {
+		return stateRefusal(key, GraphStateReasonMissingStatementMetadata, err)
+	}
+	return nil
 }
 
 // UnmarshalEntityStateTrusted decodes stored ENTITY_STATES bytes WITHOUT

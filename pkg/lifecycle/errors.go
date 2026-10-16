@@ -149,3 +149,8 @@ var (
 	// different pattern (a caller wire-up bug: wrong workflow for the entity).
 	ErrEntityIDPatternMismatch = errors.New("lifecycle: entity_id does not match workflow EntityIDPattern")
 )
+
+// errNoNATSClient is returned by every Manager call that needs NATS when the manager was built
+// without a client. It is unclassified, so errs.Classify reads it as fatal: a wiring mistake,
+// never retried.
+var errNoNATSClient = errors.New("lifecycle: manager has no NATS client")

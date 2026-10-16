@@ -12,7 +12,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 - [x] 2.1 Emitter: a transient `internal` reply is commit-unknown and fatal for create, reconcile and delete; a
   cancelled context sends nothing and is not committed, unavailable and transient (D1). Gate: fails on the base commit.
-- [ ] 2.2 `TestManagerWithoutClientRefusesNATSWork` (D2), with every listed call on `NewManager(nil, nil)` and no
+- [x] 2.2 `TestManagerWithoutClientRefusesNATSWork` (D2), with every listed call on `NewManager(nil, nil)` and no
   injection. Gate: fails on the base commit (two messages, not one).
 - [ ] 2.3 Despawn of a malformed six-part ID is `ErrEntityIDPatternMismatch` with no delete (D4). Gate: fails on base
   on the error type only (base sends no delete either).
@@ -26,7 +26,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 - [x] 3.1 Emitter uses `ClassifyMutationError`; `lifecycleMutationOperation` removed; `ErrEmitFailed` doc (D1). Gate:
   2.1 and the existing emitter tests pass.
-- [ ] 3.2 One no-client error at the exact read and `ensureBucket`, keyed on the missing dependency; no emitter
+- [x] 3.2 One no-client error at the exact read and `ensureBucket`, keyed on the missing dependency; no emitter
   without a client; emitter refusal and dead branches removed (D2). Gate: 2.2; tests built with `newManagerForTest`
   pass unchanged.
 - [ ] 3.3 One watch loop, no Warn logs; the poison-log test becomes an error assertion (D3). Gate: watch tests pass.

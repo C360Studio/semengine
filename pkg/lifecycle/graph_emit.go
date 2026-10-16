@@ -2,14 +2,12 @@ package lifecycle
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/internal/graphmutation"
 	"github.com/c360studio/semengine/message"
-	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/projection"
 )
 
@@ -19,36 +17,17 @@ type graphEmitter interface {
 	delete(context.Context, *graph.DeleteEntityRequest) (*graph.DeleteEntityResponse, error)
 }
 
-// graphEmitterNATS sends the manager's writes through the canonical graph mutation client. With
-// no client, every write is refused with ErrEmitFailed and unavailable, the reason there is none.
+// graphEmitterNATS sends the manager's writes through the canonical graph mutation client. A
+// manager built without a NATS client holds none: every write reads first, and that read refuses
+// with errNoNATSClient.
 type graphEmitterNATS struct {
-	client      *graphmutation.Client
-	unavailable error
-}
-
-func newGraphEmitterNATS(client *natsclient.Client, timeout time.Duration) *graphEmitterNATS {
-	if timeout <= 0 {
-		timeout = 5 * time.Second
-	}
-	// A nil *natsclient.Client is not a nil requester: graphmutation.NewClient would accept it,
-	// and the first write would dereference it.
-	if client == nil {
-		return &graphEmitterNATS{unavailable: errors.New("no NATS client")}
-	}
-	mutationClient, err := graphmutation.NewClient(client, timeout)
-	if err != nil {
-		return &graphEmitterNATS{unavailable: err}
-	}
-	return &graphEmitterNATS{client: mutationClient}
+	client *graphmutation.Client
 }
 
 func (g *graphEmitterNATS) reconcile(
 	ctx context.Context,
 	request *graph.ReconcilePredicatesRequest,
 ) (*graph.ReconcilePredicatesResponse, error) {
-	if g.client == nil {
-		return nil, fmt.Errorf("%w: graph mutation client is unavailable: %w", ErrEmitFailed, g.unavailable)
-	}
 	response, err := g.client.Reconcile(ctx, *request)
 	if err != nil {
 		return nil, emitError(projection.MutationOperationReconcile, err)
@@ -60,9 +39,6 @@ func (g *graphEmitterNATS) create(
 	ctx context.Context,
 	request *graph.CreateEntityRequest,
 ) (*graph.CreateEntityResponse, error) {
-	if g.client == nil {
-		return nil, fmt.Errorf("%w: graph mutation client is unavailable: %w", ErrEmitFailed, g.unavailable)
-	}
 	response, err := g.client.Create(ctx, *request)
 	if err != nil {
 		return nil, emitError(projection.MutationOperationCreate, err)
@@ -74,9 +50,6 @@ func (g *graphEmitterNATS) delete(
 	ctx context.Context,
 	request *graph.DeleteEntityRequest,
 ) (*graph.DeleteEntityResponse, error) {
-	if g.client == nil {
-		return nil, fmt.Errorf("%w: graph mutation client is unavailable: %w", ErrEmitFailed, g.unavailable)
-	}
 	response, err := g.client.Delete(ctx, *request)
 	if err != nil {
 		return nil, emitError(projection.MutationOperationDelete, err)

@@ -14,6 +14,7 @@ import (
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/kvcatalog"
+	"github.com/c360studio/semengine/internal/graphmutation"
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
@@ -73,6 +74,10 @@ type registration struct {
 // Workflow registration happens via Manager.Register at app
 // startup; this constructor itself does not touch NATS (the
 // ENTITY_STATES bucket handle initializes lazily on first read).
+//
+// With a nil client the manager still registers workflows and answers
+// GetWorkflowDefinition, ListWorkflows, AssertRuleWritable and FieldType;
+// every call that needs NATS returns an error naming the missing client.
 func NewManager(client *natsclient.Client, logger *slog.Logger) *Manager {
 	if logger == nil {
 		logger = slog.Default()
@@ -80,7 +85,6 @@ func NewManager(client *natsclient.Client, logger *slog.Logger) *Manager {
 	manager := &Manager{
 		natsClient:    client,
 		logger:        logger,
-		emitter:       newGraphEmitterNATS(client, 5*time.Second),
 		registrations: make(map[string]*registration),
 	}
 	if client != nil {
@@ -91,6 +95,13 @@ func NewManager(client *natsclient.Client, logger *slog.Logger) *Manager {
 			panic(fmt.Sprintf("lifecycle: exact entity reader: %v", err))
 		}
 		manager.exactReader = reader
+		mutationClient, err := graphmutation.NewClient(client, 5*time.Second)
+		if err != nil {
+			// Unreachable: the constructor refuses only a nil requester or a
+			// non-positive timeout, and neither is passed here.
+			panic(fmt.Sprintf("lifecycle: graph mutation client: %v", err))
+		}
+		manager.emitter = &graphEmitterNATS{client: mutationClient}
 	}
 	return manager
 }
@@ -189,7 +200,7 @@ func (m *Manager) ensureBucket(ctx context.Context) (entityStatesReader, error) 
 		return m.entityStatesBucket, nil
 	}
 	if m.natsClient == nil {
-		return nil, fmt.Errorf("lifecycle: NATS client unavailable (test-mode Manager constructed without an ENTITY_STATES bucket)")
+		return nil, errNoNATSClient
 	}
 	bucket, err := kvcatalog.OpenCatalogReader(ctx, m.natsClient, graph.BucketEntityStates)
 	if err != nil {
@@ -204,7 +215,7 @@ func (m *Manager) ensureBucket(ctx context.Context) (entityStatesReader, error) 
 // triples at all (never created).
 func (m *Manager) getEntity(ctx context.Context, entityID string) (*graph.EntityState, uint64, error) {
 	if m.exactReader == nil {
-		return nil, 0, errors.New("lifecycle: exact entity reader unavailable")
+		return nil, 0, errNoNATSClient
 	}
 	exact, err := m.exactReader.ReadExactEntity(ctx, entityID)
 	if err != nil {

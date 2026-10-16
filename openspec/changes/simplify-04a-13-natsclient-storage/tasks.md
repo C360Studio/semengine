@@ -12,11 +12,11 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 ## 2. Failing tests
 
-- [ ] 2.1 The storage tests and `reviewer_storage_snapshot_probe_test.go` are moved with `git mv` to
+- [x] 2.1 The storage tests and `reviewer_storage_snapshot_probe_test.go` are moved with `git mv` to
   `natsclient/storagereport/`, edited only for the package clause, natsclient qualifiers and the D1 names; the
   integration test's shared fixture file is added; the storage rows of `nil_context_siblings_test.go` move (D2).
   Gate: fails to compile on the base commit (no package).
-- [ ] 2.2 `graph/kvcatalog` tests import `storagereport` (`kvcatalog_attribution_test.go`,
+- [x] 2.2 `graph/kvcatalog` tests import `storagereport` (`kvcatalog_attribution_test.go`,
   `kvcatalog_storage_report_test.go`, `storage_report_integration_test.go`) (D2). Gate: fails to compile on base.
 - [ ] 2.3 `TestReportConsumer_AccountDeleteReachesObserver` and `TestReportConsumer_ResyncRetractionReachesObserver`;
   `recordingObserver` gains `ForgetAccount`; `TestReportConsumer_AccountRetractionIsLogged` deleted (D3). Gate: fails
@@ -24,13 +24,13 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 ## 3. Implementation
 
-- [ ] 3.1 `git mv` the seven files to `natsclient/storagereport/`; package clause, qualifiers, `doc.go` with the
+- [x] 3.1 `git mv` the seven files to `natsclient/storagereport/`; package clause, qualifiers, `doc.go` with the
   package comment, private `nilContextErrorOf`, the nine renames (D1, D2). Gate: 2.1, 2.2; `task lint`.
-- [ ] 3.2 `AccountStreamLister(client)` replaces the method and resolves `JetStream()` on each call; natsclient keeps
+- [x] 3.2 `AccountStreamLister(client)` replaces the method and resolves `JetStream()` on each call; natsclient keeps
   no storage code (D2). Gate: 2.1 (the integration tests call it); `go build ./...`.
 - [ ] 3.3 `Observer.ForgetAccount`; `removeAccount` and `replaceWith` call it with the held row; the Warn log goes
   (D3, #85). Gate: 2.3.
-- [ ] 3.4 Coverage target `natsclient/storagereport merged` in `scripts/cover-check.sh` and `d11Targets` (D2). Gate:
+- [x] 3.4 Coverage target `natsclient/storagereport merged` in `scripts/cover-check.sh` and `d11Targets` (D2). Gate:
   `task cover:check`; `TestCoverCheckSensitivity`.
 - [ ] 3.5 Unexport the 22 names of the Exports table's last row; in-package tests follow; kept doc comments that
   name them state the value instead (`storage_report_consumer.go:115`, `storage_growth.go:81`, and the custom-lister

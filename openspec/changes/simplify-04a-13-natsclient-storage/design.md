@@ -81,7 +81,8 @@ Tests:
   `ForgetAccount` at the marker, none before it; an undecodable account value gives none.
 - `TestReportConsumer_AccountRetractionIsLogged` (`storage_report_resync_test.go:240`) is deleted with the log.
 
-The new tests fail to compile on the base commit: `recordingObserver` has no `ForgetAccount`.
+The held-account cases of the new tests fail on their assertions on the base commit: the consumer never calls
+`ForgetAccount` (notes/2.3.md).
 
 ## D4. Text follows the code
 

@@ -151,7 +151,7 @@ func (c *Client) request(ctx context.Context, operation Operation, request any, 
 	if err := ctx.Err(); err != nil {
 		return &TransportError{Operation: operation, Outcome: TransportDeadline, Err: err}
 	}
-	subject, err := ResolveSubject(SubjectFamily, operation)
+	subject, err := Subject(operation)
 	if err != nil {
 		return invalidRequest(err)
 	}

@@ -30,16 +30,13 @@ const (
 	DeleteEntity Operation = "entity.delete"
 )
 
-// ResolveSubject returns the exact subject for an admitted operation within
-// the canonical declared family. It rejects every other family and operation;
-// callers cannot fall back to a port name or a literal subject table.
-func ResolveSubject(family string, operation Operation) (string, error) {
-	if family != SubjectFamily {
-		return "", fmt.Errorf("graph mutation family %q is not canonical", family)
-	}
+// Subject returns the exact subject for an admitted operation within
+// SubjectFamily. It rejects every other operation; callers cannot fall back to
+// a port name or a literal subject table.
+func Subject(operation Operation) (string, error) {
 	switch operation {
 	case CreateEntity, ReconcilePredicates, AppendTriples, DeleteEntity:
-		return strings.TrimSuffix(family, ">") + string(operation), nil
+		return strings.TrimSuffix(SubjectFamily, ">") + string(operation), nil
 	default:
 		return "", fmt.Errorf("graph mutation operation %q is not admitted", operation)
 	}

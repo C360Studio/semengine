@@ -163,3 +163,95 @@ func TestSnapshotsReturnsIndependentDeclarations(t *testing.T) {
 		t.Fatalf("fact subjects after a caller's change = %v, want [events.created]", facts)
 	}
 }
+
+// schemaCopyProbe builds, on each call, a fresh schema holding every mutable
+// value a PropertySchema can carry: each default shape (generated []string and
+// JSON-decoded []any and map[string]any), port field metadata with its nested
+// maps, slices and pointers, cache field metadata, and nested properties and
+// items. Two calls share nothing, so one is the oracle for the other.
+func schemaCopyProbe() ConfigSchema {
+	minimum, maximum, cacheMin := 1, 9, 2
+	additional := false
+	return ConfigSchema{
+		Required: []string{"values"},
+		Properties: map[string]PropertySchema{
+			"values": {Type: "array", Default: []string{"a"},
+				Items: &PropertySchema{Type: "string", Default: []string{"item"}, Enum: []string{"a"}}},
+			"decoded": {Type: "object",
+				Default: map[string]any{"list": []any{"x", map[string]any{"k": "v"}}, "n": 1.5},
+				Properties: map[string]PropertySchema{
+					"inner": {Type: "array", Default: []any{"y"}, Required: []string{"z"}},
+				}},
+			"ports": {Type: "ports", PortFields: map[string]PortFieldInfo{
+				"subject": {
+					Type: "string", Minimum: &minimum, Enum: []string{"e"}, Required: []string{"r"},
+					AnyRequired:          [][]string{{"a", "b"}},
+					RequiredByDirection:  map[Direction][]string{DirectionInput: {"in"}},
+					Directions:           []Direction{DirectionInput},
+					Properties:           map[string]PortFieldInfo{"nested": {Type: "int", Enum: []string{"n"}}},
+					Variants:             map[string]PortFieldInfo{"nats": {Type: "object", Required: []string{"v"}}},
+					Items:                &PortFieldInfo{Type: "string", Enum: []string{"i"}},
+					AdditionalProperties: &additional,
+				},
+			}},
+			"cache": {Type: "cache", Maximum: &maximum, CacheFields: map[string]CacheFieldInfo{
+				"strategy": {Type: "enum", Enum: []string{"lru"}, Min: &cacheMin},
+			}},
+		},
+	}
+}
+
+// mutateSchema changes every mutable value schemaCopyProbe holds, in place.
+func mutateSchema(schema ConfigSchema) {
+	values := schema.Properties["values"]
+	values.Default.([]string)[0] = "changed"
+	values.Items.Default.([]string)[0] = "changed"
+	values.Items.Enum[0] = "changed"
+	decoded := schema.Properties["decoded"]
+	defaults := decoded.Default.(map[string]any)
+	defaults["list"].([]any)[1].(map[string]any)["k"] = "changed"
+	defaults["list"].([]any)[0] = "changed"
+	defaults["injected"] = true
+	decoded.Properties["inner"].Default.([]any)[0] = "changed"
+	decoded.Properties["inner"].Required[0] = "changed"
+	ports := schema.Properties["ports"].PortFields
+	subject := ports["subject"]
+	*subject.Minimum = 100
+	subject.Enum[0] = "changed"
+	subject.Required[0] = "changed"
+	subject.AnyRequired[0][0] = "changed"
+	subject.RequiredByDirection[DirectionInput][0] = "changed"
+	subject.RequiredByDirection[DirectionOutput] = []string{"injected"}
+	subject.Directions[0] = DirectionOutput
+	subject.Properties["nested"].Enum[0] = "changed"
+	subject.Properties["injected"] = PortFieldInfo{Type: "changed"}
+	subject.Variants["nats"].Required[0] = "changed"
+	subject.Items.Enum[0] = "changed"
+	*subject.AdditionalProperties = true
+	ports["injected"] = PortFieldInfo{Type: "changed"}
+	cache := schema.Properties["cache"]
+	*cache.Maximum = 100
+	cache.CacheFields["strategy"].Enum[0] = "changed"
+	*cache.CacheFields["strategy"].Min = 100
+	cache.CacheFields["injected"] = CacheFieldInfo{Type: "changed"}
+	schema.Properties["injected"] = PropertySchema{Type: "changed"}
+	schema.Required[0] = "changed"
+}
+
+func TestRegisterAndListingsShareNoSchemaValue(t *testing.T) {
+	registry := NewRegistry()
+	registration := Registration{
+		Name: "copy-probe", Type: "processor", Schema: schemaCopyProbe(), Factory: registerTestFactory, Ports: noPorts,
+	}
+	requireNoError(t, registry.Register(registration))
+
+	mutateSchema(registration.Schema)
+	if got := registry.ListFactories()["copy-probe"].Schema; !reflect.DeepEqual(got, schemaCopyProbe()) {
+		t.Fatalf("after the caller changed its schema, listing = %#v, want the schema as registered", got)
+	}
+
+	mutateSchema(registry.ListFactories()["copy-probe"].Schema)
+	if got := registry.ListFactories()["copy-probe"].Schema; !reflect.DeepEqual(got, schemaCopyProbe()) {
+		t.Fatalf("after a caller changed a listing, the next listing = %#v, want the schema as registered", got)
+	}
+}

@@ -2068,8 +2068,8 @@ func (c *Component) registeredIndexingProfile(mt message.Type) (profile string, 
 }
 
 // indexingProfileMetricLabel renders a message.Type as a stable, low-cardinality
-// metric label, or "unknown" for any incomplete Type. The IsValid guard (all
-// three of Domain/Category/Version present) prevents a partial Type from
+// metric label, or "unknown" for any invalid Type. The IsValid guard
+// (Type.Validate accepts it) prevents a partial Type from
 // producing a non-semantic label like ".widget.v1" or "test.widget." — a
 // malformed producer surfaces as "unknown" rather than a junk label key.
 func indexingProfileMetricLabel(mt message.Type) string {

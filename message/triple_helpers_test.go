@@ -266,11 +266,6 @@ func TestIsValidEntityID(t *testing.T) {
 	}
 }
 
-// ptrTime returns a pointer to a time.Time value for testing ExpiresAt.
-func ptrTime(t time.Time) *time.Time {
-	return &t
-}
-
 func TestTriple_ExpiresAt_JSON(t *testing.T) {
 	t.Parallel()
 

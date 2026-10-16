@@ -1549,8 +1549,8 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 		if !meta.Timestamp.IsZero() {
 			c.ingestLag.Observe(time.Since(meta.Timestamp).Seconds())
 		}
-		// Decode + extract ONCE (KeyOf reads the already-parsed entity.ID; the lane
-		// reuses the parsed entity — no double parse). A decode/validate/extract
+		// Decode + extract ONCE (the submit's key is the already-parsed entity.ID; the
+		// lane reuses the parsed entity — no double parse). A decode/validate/extract
 		// failure, a fenced payload panic included, is a poison message: counted,
 		// logged and terminated, never returned for redelivery (design D8 Q13).
 		entity, derr := c.decodeEntity(msg.Subject(), msg.Data())
@@ -1592,7 +1592,7 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 			subject:     subject,
 			importLane:  importLane,
 		}
-		if serr := pool.SubmitBlocking(submitCtx, work); serr != nil {
+		if serr := pool.SubmitBlocking(submitCtx, work.entityID, work); serr != nil {
 			if nakErr := msg.Nak(); nakErr != nil {
 				c.logger.Error("Failed to Nak after submit failure", slog.Any("error", nakErr))
 			}

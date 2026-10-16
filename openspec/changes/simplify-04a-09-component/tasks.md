@@ -12,12 +12,12 @@ in `notes/<task>.md`. A compile failure on a missing symbol counts as failing. S
 
 ## 2. Failing tests, first batch (#189)
 
-- [ ] 2.1 `TestValidateFactoryConfigRefusesDataAfterTheFirstValue`, with a `CreateComponent` row whose factory is never
+- [x] 2.1 `TestValidateFactoryConfigRefusesDataAfterTheFirstValue`, with a `CreateComponent` row whose factory is never
   called (design D1). Gate: fails on the base commit.
-- [ ] 2.2 `TestSafeUnmarshalRefusesANilTarget` (D2), with a valid-input row and an empty-input row, and
+- [x] 2.2 `TestSafeUnmarshalRefusesANilTarget` (D2), with a valid-input row and an empty-input row, and
   `TestSafeUnmarshalRefusesAnUnknownKey`, which requires the error to name the key. Gate: both fail on the base commit
   (the first row panics, the second returns nil, the unknown key is accepted).
-- [ ] 2.3 `TestGeneratedSchemaUsesOneWordPerType` (D3). Gate: fails on the base commit.
+- [x] 2.3 `TestGeneratedSchemaUsesOneWordPerType` (D3). Gate: fails on the base commit.
 
 ## 3. Implementation, first batch
 

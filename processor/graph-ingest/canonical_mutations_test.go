@@ -957,3 +957,41 @@ func assertStoredUnder(t *testing.T, bucket *mockKVBucket, want []byte, revision
 			stored.value, stored.revision, ok, want, revision)
 	}
 }
+
+// TestReconcileReplyForPoisonedStateHasOneClassification: a reconcile of an entity whose stored
+// value holds a statement with no source is refused with the stored-value rule's one
+// classification (fatal graph_state_reset_required, reason missing_statement_metadata), not that
+// classification wrapped in a second one (graph-entity-writes, "A reconcile refused for its stored
+// value").
+func TestReconcileReplyForPoisonedStateHasOneClassification(t *testing.T) {
+	c, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
+	unsourced := canonicalTriple(canonicalEntityA, "test.state.value", "stored")
+	unsourced.Source = ""
+	stored := mustCanonicalJSON(t, graph.EntityState{ID: canonicalEntityA, Triples: []message.Triple{unsourced}})
+	bucket.mu.Lock()
+	bucket.data[canonicalEntityA] = mockKVData{value: stored, revision: 1}
+	bucket.mu.Unlock()
+
+	_, err := c.handleCanonicalReconcile(context.Background(), mustCanonicalJSON(t, graph.ReconcilePredicatesRequest{
+		EntityID: canonicalEntityA, ExpectedRevision: 1, Source: "canonical-test",
+		Predicates: []string{"test.state.value"},
+		Desired:    []message.Triple{canonicalTriple(canonicalEntityA, "test.state.value", "reconciled")},
+	}))
+
+	assertIngestResetRequired(t, err)
+	layers := 0
+	for e := err; e != nil; e = errors.Unwrap(e) {
+		if _, ok := e.(*errs.ClassifiedError); ok {
+			layers++
+		}
+	}
+	if layers != 1 {
+		t.Errorf("reconcile error %v carries %d ClassifiedError layers, want 1", err, layers)
+	}
+	var contractErr *graph.StateContractError
+	if !errors.As(err, &contractErr) || contractErr.Reason != graph.GraphStateReasonMissingStatementMetadata ||
+		contractErr.EntityID != canonicalEntityA {
+		t.Fatalf("reconcile error %v, want reason %s for entity %s", err,
+			graph.GraphStateReasonMissingStatementMetadata, canonicalEntityA)
+	}
+}

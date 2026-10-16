@@ -54,7 +54,7 @@ Review stop B (tasks 4.1–4.3).
 - [x] 5.3 `SimpleMockComponent` moves into a `_test.go` file; `createSimpleMockComponent`, `attack_test.go`,
   `ValidateConfig`, `ValidationError` and their tests are deleted (D7, D9). Gate: `task build`, `task lint`,
   `task cover:check`.
-- [ ] 5.4 The `LifecycleComponent` doc lists ADR-108 Decision 3's rules as outcomes; the `component.PlatformMeta` alias
+- [x] 5.4 The `LifecycleComponent` doc lists ADR-108 Decision 3's rules as outcomes; the `component.PlatformMeta` alias
   is removed and `Dependencies.Platform` is `types.PlatformMeta` (D8). Gate: review for the doc; `task build` and
   `task test:unit` for the alias.
 

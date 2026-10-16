@@ -337,7 +337,7 @@ func TestCreateComponent(t *testing.T) {
 	deps := Dependencies{
 		NATSClient:      client,
 		MetricsRegistry: nil,
-		Platform: PlatformMeta{
+		Platform: types.PlatformMeta{
 			Org:      "test",
 			Platform: "test-platform",
 		},
@@ -428,7 +428,7 @@ func TestCreateComponentValidation(t *testing.T) {
 			deps := Dependencies{
 				NATSClient:      client,
 				MetricsRegistry: nil,
-				Platform: PlatformMeta{
+				Platform: types.PlatformMeta{
 					Org:      "test",
 					Platform: "test-platform",
 				},
@@ -480,7 +480,7 @@ func TestCreateComponentFactoryFailure(t *testing.T) {
 	deps := Dependencies{
 		NATSClient:      client,
 		MetricsRegistry: nil,
-		Platform: PlatformMeta{
+		Platform: types.PlatformMeta{
 			Org:      "test",
 			Platform: "test-platform",
 		},

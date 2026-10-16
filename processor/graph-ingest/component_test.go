@@ -21,6 +21,7 @@ import (
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
+	"github.com/c360studio/semengine/types"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -690,7 +691,7 @@ func TestCreateGraphIngest_ValidConfig(t *testing.T) {
 	deps := component.Dependencies{
 		NATSClient:      natsClient,
 		PayloadRegistry: newTestPayloadRegistry(t),
-		Platform:        component.PlatformMeta{Org: testDeploymentOrg, Platform: testDeploymentPlatform},
+		Platform:        types.PlatformMeta{Org: testDeploymentOrg, Platform: testDeploymentPlatform},
 	}
 
 	comp, err := CreateGraphIngest(configJSON, deps)
@@ -711,7 +712,7 @@ func TestCreateGraphIngest_InvalidConfig(t *testing.T) {
 	deps := component.Dependencies{
 		NATSClient:      natsClient,
 		PayloadRegistry: newTestPayloadRegistry(t),
-		Platform:        component.PlatformMeta{Org: testDeploymentOrg, Platform: testDeploymentPlatform},
+		Platform:        types.PlatformMeta{Org: testDeploymentOrg, Platform: testDeploymentPlatform},
 	}
 
 	comp, err := CreateGraphIngest(invalidJSON, deps)
@@ -729,7 +730,7 @@ func TestCreateGraphIngest_MissingDependencies(t *testing.T) {
 	deps := component.Dependencies{
 		NATSClient:      nil,
 		PayloadRegistry: newTestPayloadRegistry(t),
-		Platform:        component.PlatformMeta{Org: testDeploymentOrg, Platform: testDeploymentPlatform},
+		Platform:        types.PlatformMeta{Org: testDeploymentOrg, Platform: testDeploymentPlatform},
 	}
 
 	comp, err := CreateGraphIngest(configJSON, deps)

@@ -18,6 +18,7 @@ import (
 	"github.com/c360studio/semengine/internal/graphmutation"
 	"github.com/c360studio/semengine/internal/harness/payloadfixture"
 	"github.com/c360studio/semengine/message"
+	"github.com/c360studio/semengine/types"
 )
 
 // TestResidentUnregisteredStampIsNotPoison documents design §10 and is a
@@ -52,7 +53,7 @@ func TestResidentUnregisteredStampIsNotPoison(t *testing.T) {
 	// legacy.gone.v1.
 	comp, err := CreateGraphIngest(configJSON, component.Dependencies{
 		NATSClient: nc, PayloadRegistry: payloadfixture.NewWithSubset(t, message.RegisterPayloads, inference.RegisterPayloads),
-		Platform: component.PlatformMeta{Org: "c360", Platform: "test"},
+		Platform: types.PlatformMeta{Org: "c360", Platform: "test"},
 	})
 	require.NoError(t, err)
 	c := comp.(*Component)

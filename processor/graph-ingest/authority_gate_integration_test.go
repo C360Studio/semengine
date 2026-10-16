@@ -37,6 +37,7 @@ import (
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 	semtypes "github.com/c360studio/semengine/pkg/types"
+	"github.com/c360studio/semengine/types"
 )
 
 const (
@@ -154,7 +155,7 @@ func startAuthorityGateComponent(ctx context.Context, t *testing.T, enableHierar
 	created, err := CreateGraphIngest(configJSON, component.Dependencies{
 		NATSClient:      client,
 		PayloadRegistry: newTestPayloadRegistry(t),
-		Platform:        component.PlatformMeta{Org: authorityOrg, Platform: authorityPlatform},
+		Platform:        types.PlatformMeta{Org: authorityOrg, Platform: authorityPlatform},
 		Logger:          slog.New(logs),
 	})
 	require.NoError(t, err)

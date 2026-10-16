@@ -40,26 +40,29 @@ func (cs State) String() string {
 	}
 }
 
-// LifecycleComponent defines the portable lifecycle contract for components.
-// Initialize performs setup without runtime authority. Start accepts the context
-// that owns continuing work. Stop uses its exact caller context to bound the
-// component's terminal admission fence, cancellation, join, and cleanup; the
-// resource owner determines that sequence's protocol-specific ordering. Exact
-// resource ordering preserves admitted callback authority where native drain
-// requires it; no universal cancel-before-drain order is implied.
+// LifecycleComponent is a component its host initializes, starts and stops.
+// A caller can rely on these outcomes (ADR-108, Decision 3):
 //
-// During controlled shutdown, callers keep the accepted Start context live until
-// a separately bounded Stop drains, joins, and finalizes the owner and returns nil.
-// Ending the Start context first is abort cancellation. Stop then makes bounded
-// best-effort progress under its exact caller authority and may return accurate
-// native cleanup or deadline errors. Abort cleanup does not invent replacement
-// authority, detach cleanup, or promise a second rejoin; if the bound wins, the
-// portable contract makes no complete-join or leak-freedom claim.
+//   - Start and Stop refuse a nil context, and Start refuses a context that has
+//     already ended.
+//   - Stop before Start is safe.
+//   - Stop is controlled while the Start context is still live: it drains,
+//     joins and cleans up within its own context's bound. Ending the Start
+//     context first makes Stop an abort: it makes what progress it can within
+//     that bound and may return the cleanup or deadline error; if the bound
+//     ends first, no complete join is promised.
+//   - A repeated Stop is a no-op.
+//   - A second Start is refused. An instance never restarts; a host that needs
+//     the component again creates a new one.
+//   - A failed Start holds nothing, or, when its own cleanup also fails, it
+//     returns both errors and a later Stop releases what it left.
+//   - Configuration is validated once, at construction, and Initialize is
+//     idempotent and does no I/O.
 //
-// Nil Start and Stop contexts are rejected before action. A completed repeated
-// Stop is a no-op. Concurrent lifecycle calls, result replay, later rejoin after
-// a Stop bound wins, reinitialization, and same-instance restart are not portable
-// guarantees.
+// Concurrent lifecycle calls are not part of the contract. graph-ingest breaks
+// the last rule today: it validates its configuration in its factory and again
+// in Initialize, and the second check leaves with simplification wave PR 10 or
+// the processor shell (#109).
 type LifecycleComponent interface {
 	Discoverable
 	Initialize() error

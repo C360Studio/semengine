@@ -112,8 +112,8 @@ func startKVBackedResponders(
 			}
 			return nil, err
 		}
-		var state graph.EntityState
-		if err := graph.UnmarshalEntityState(entry.Value(), &state); err != nil {
+		state, err := decodeStoredValue(req.EntityID, entry.Value())
+		if err != nil {
 			return nil, err
 		}
 		selected := make(map[string]struct{}, len(req.Predicates))
@@ -216,8 +216,8 @@ func startExactEntityResponder(t *testing.T, client *natsclient.Client, kv jetst
 			}
 			return nil, err
 		}
-		var entity graph.EntityState
-		if err := graph.UnmarshalEntityState(entry.Value(), &entity); err != nil {
+		entity, err := decodeStoredValue(req.ID, entry.Value())
+		if err != nil {
 			return nil, err
 		}
 		return json.Marshal(graph.ExactEntity{Entity: entity.Clone(), KVRevision: entry.Revision()})
@@ -509,4 +509,54 @@ func TestIntegration_CreateFromOperator_RejectsUndeclaredInitialPhase(t *testing
 
 	_, getErr := mgr.Get(ctx, "fixture", id)
 	require.ErrorIs(t, getErr, ErrEntityNotFound, "a refused create must leave nothing behind")
+}
+
+// TestIntegration_ExactReadResponderRefusesWhatGraphIngestRefuses: the
+// integration exact-read responder refuses each stored value graph-ingest's
+// stored-value rule refuses, and the refusal reaches Get over the wire (#199).
+func TestIntegration_ExactReadResponderRefusesWhatGraphIngestRefuses(t *testing.T) {
+	client := fixtureClient(t)
+	ctx := t.Context()
+	kv := startKVBackedResponders(t, client)
+	mgr := NewManager(client, nil)
+	require.NoError(t, mgr.Register(lifecycle{}.fixtureWorkflow()))
+
+	const id = "c360.platform1.gcs.lifecycle.mission.refused-read"
+	for _, tc := range refusedStoredValues(t, id) {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := kv.Put(ctx, id, tc.value)
+			require.NoError(t, err)
+			_, err = mgr.Get(ctx, "fixture", id)
+			requireStoredValueRefused(t, err, tc.reason)
+		})
+	}
+}
+
+// TestIntegration_ReconcileResponderRefusesWhatGraphIngestRefuses: the
+// integration reconcile responder refuses to write over each stored value
+// graph-ingest's stored-value rule refuses, and leaves it unchanged (#199).
+func TestIntegration_ReconcileResponderRefusesWhatGraphIngestRefuses(t *testing.T) {
+	client := fixtureClient(t)
+	ctx := t.Context()
+	kv := startKVBackedResponders(t, client)
+	mgr := NewManager(client, nil)
+
+	const id = "c360.platform1.gcs.lifecycle.mission.refused-reconcile"
+	for _, tc := range refusedStoredValues(t, id) {
+		t.Run(tc.name, func(t *testing.T) {
+			revision, err := kv.Put(ctx, id, tc.value)
+			require.NoError(t, err)
+			_, err = mgr.emitter.reconcile(ctx, &graph.ReconcilePredicatesRequest{
+				EntityID:         id,
+				ExpectedRevision: revision,
+				Predicates:       []string{"mission.lifecycle.phase"},
+				Desired: []message.Triple{{
+					Subject: id, Predicate: "mission.lifecycle.phase", Object: "flying",
+					Source: fixtureSource, Timestamp: fixtureTime,
+				}},
+			})
+			requireStoredValueRefused(t, err, tc.reason)
+			require.Equal(t, revision, revisionOf(t, kv, id), "the refused value was written over")
+		})
+	}
 }

@@ -2,15 +2,12 @@ package lifecycle
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/internal/graphmutation"
 	"github.com/c360studio/semengine/message"
-	"github.com/c360studio/semengine/natsclient"
-	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/pkg/projection"
 )
 
@@ -20,39 +17,20 @@ type graphEmitter interface {
 	delete(context.Context, *graph.DeleteEntityRequest) (*graph.DeleteEntityResponse, error)
 }
 
-// graphEmitterNATS sends the manager's writes through the canonical graph mutation client. With
-// no client, every write is refused with ErrEmitFailed and unavailable, the reason there is none.
+// graphEmitterNATS sends the manager's writes through the canonical graph mutation client. A
+// manager built without a NATS client holds none: every write reads first, and that read refuses
+// with errNoNATSClient.
 type graphEmitterNATS struct {
-	client      *graphmutation.Client
-	unavailable error
-}
-
-func newGraphEmitterNATS(client *natsclient.Client, timeout time.Duration) *graphEmitterNATS {
-	if timeout <= 0 {
-		timeout = 5 * time.Second
-	}
-	// A nil *natsclient.Client is not a nil requester: graphmutation.NewClient would accept it,
-	// and the first write would dereference it.
-	if client == nil {
-		return &graphEmitterNATS{unavailable: errors.New("no NATS client")}
-	}
-	mutationClient, err := graphmutation.NewClient(client, timeout)
-	if err != nil {
-		return &graphEmitterNATS{unavailable: err}
-	}
-	return &graphEmitterNATS{client: mutationClient}
+	client *graphmutation.Client
 }
 
 func (g *graphEmitterNATS) reconcile(
 	ctx context.Context,
 	request *graph.ReconcilePredicatesRequest,
 ) (*graph.ReconcilePredicatesResponse, error) {
-	if g.client == nil {
-		return nil, fmt.Errorf("%w: graph mutation client is unavailable: %w", ErrEmitFailed, g.unavailable)
-	}
 	response, err := g.client.Reconcile(ctx, *request)
 	if err != nil {
-		return nil, classifyEmitError(graphmutation.ReconcilePredicates, err)
+		return nil, emitError(projection.MutationOperationReconcile, err)
 	}
 	return response, nil
 }
@@ -61,12 +39,9 @@ func (g *graphEmitterNATS) create(
 	ctx context.Context,
 	request *graph.CreateEntityRequest,
 ) (*graph.CreateEntityResponse, error) {
-	if g.client == nil {
-		return nil, fmt.Errorf("%w: graph mutation client is unavailable: %w", ErrEmitFailed, g.unavailable)
-	}
 	response, err := g.client.Create(ctx, *request)
 	if err != nil {
-		return nil, classifyEmitError(graphmutation.CreateEntity, err)
+		return nil, emitError(projection.MutationOperationCreate, err)
 	}
 	return response, nil
 }
@@ -75,56 +50,27 @@ func (g *graphEmitterNATS) delete(
 	ctx context.Context,
 	request *graph.DeleteEntityRequest,
 ) (*graph.DeleteEntityResponse, error) {
-	if g.client == nil {
-		return nil, fmt.Errorf("%w: graph mutation client is unavailable: %w", ErrEmitFailed, g.unavailable)
-	}
 	response, err := g.client.Delete(ctx, *request)
 	if err != nil {
-		return nil, classifyEmitError(graphmutation.DeleteEntity, err)
+		return nil, emitError(projection.MutationOperationDelete, err)
 	}
 	return response, nil
 }
 
-func classifyEmitError(operation graphmutation.Operation, err error) error {
-	var classified *errs.ClassifiedError
-	if errors.As(err, &classified) {
-		switch classified.Code {
-		case graph.ErrorCodeRevisionMismatch:
-			return err
+// emitError reports a write's failure through projection.ClassifyMutationError, the one mapping
+// from a mutation request's error to its commit state (projection-mutation spec). A refusal that
+// wrote nothing because the entity is missing or already exists is also the manager's sentinel.
+func emitError(operation projection.MutationOperation, err error) error {
+	mapped := projection.ClassifyMutationError(operation, err)
+	if mapped.Commit == projection.CommitNotCommitted {
+		switch mapped.Code {
 		case graph.ErrorCodeEntityNotFound:
-			return fmt.Errorf("%w: %w", ErrEntityNotFound, err)
+			return fmt.Errorf("%w: %w", ErrEntityNotFound, mapped)
 		case graph.ErrorCodeEntityExists:
-			return fmt.Errorf("%w: %w", ErrAlreadyExists, err)
-		default:
-			return fmt.Errorf("%w: %s: %w", ErrEmitFailed, operation, err)
+			return fmt.Errorf("%w: %w", ErrAlreadyExists, mapped)
 		}
 	}
-	if natsclient.IsNoResponders(err) {
-		return &projection.MutationError{
-			Operation: lifecycleMutationOperation(operation), Kind: projection.MutationUnavailable,
-			Class: errs.ErrorTransient, Commit: projection.CommitNotCommitted, Err: err,
-		}
-	}
-	// The request may have been delivered and applied, so a retry can write twice: the error is
-	// fatal, and the cause is held in a fatal *errs.ClassifiedError so errs.IsTransient and
-	// errs.Classify agree with the Class field (projection-mutation spec).
-	return &projection.MutationError{
-		Operation: lifecycleMutationOperation(operation), Kind: projection.MutationCommitUnknown,
-		Class: errs.ErrorFatal, Commit: projection.CommitUnknown, Err: errs.Classified(errs.ErrorFatal, err),
-	}
-}
-
-func lifecycleMutationOperation(operation graphmutation.Operation) projection.MutationOperation {
-	switch operation {
-	case graphmutation.CreateEntity:
-		return projection.MutationOperationCreate
-	case graphmutation.ReconcilePredicates:
-		return projection.MutationOperationReconcile
-	case graphmutation.DeleteEntity:
-		return projection.MutationOperationDelete
-	default:
-		return projection.MutationOperationAppend
-	}
+	return mapped
 }
 
 // triple is a statement the manager writes: under its own source, graph.SourceLifecycle, so a

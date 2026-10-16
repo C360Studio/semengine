@@ -142,7 +142,7 @@ func reportRow(name string, tier StorageTier, pressure PressureState) ResourceRe
 		Resource:    tieredResource(name, tier, 1<<30, 1<<20),
 		CollectedAt: time.Now().UTC(),
 		ProducedBy:  "unit-test",
-		Growth:      UnknownGrowth(GrowthUnavailableNoPriorObservation),
+		Growth:      unknownGrowth(GrowthUnavailableNoPriorObservation),
 	}
 	if pressure != "" {
 		row.Pressure = Pressure{Evaluated: true, State: pressure, RaisedBy: PressureInputHeadroom}

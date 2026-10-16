@@ -445,9 +445,9 @@ func TestNewCapacity_ThreeStatesNeverCollapse(t *testing.T) {
 	})
 
 	t.Run("headroom is projectable only when bounded", func(t *testing.T) {
-		assert.True(t, bounded.Bounded())
-		assert.False(t, unboundedZero.Bounded(), "no bound means no headroom to project")
-		assert.False(t, unknown.Bounded(), "unknown suppresses projection rather than fabricating it")
+		assert.True(t, bounded.bounded())
+		assert.False(t, unboundedZero.bounded(), "no bound means no headroom to project")
+		assert.False(t, unknown.bounded(), "unknown suppresses projection rather than fabricating it")
 	})
 
 	t.Run("the JSON encoding keeps them distinct", func(t *testing.T) {
@@ -528,7 +528,7 @@ func TestStorageInventory_UndescribableResourceIsNamedNotOmitted(t *testing.T) {
 		assert.Equal(t, TierUnknown, res.Tier)
 		assert.Equal(t, CapacityUnknown, res.Bytes.State)
 		assert.Equal(t, CapacityUnknown, res.Messages.State)
-		assert.False(t, res.Bytes.Bounded(), "no projection is fabricated for it")
+		assert.False(t, res.Bytes.bounded(), "no projection is fabricated for it")
 		assert.True(t, unknownOnEveryAxis(res))
 		assert.Equal(t, AttributionNotApplicable, res.Attribution)
 	})

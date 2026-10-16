@@ -40,8 +40,8 @@ func archivalResource(name string, used int64) StorageResource {
 
 // fillingFileTier is an account whose FILE tier is bounded and nearly full. Used
 // is stated per collection so a rate can be measured across two of them.
-func fillingFileTier(storeUsed int64) AccountTierLimits {
-	return AccountTierLimits{
+func fillingFileTier(storeUsed int64) accountTierLimits {
+	return accountTierLimits{
 		Known:      true,
 		MaxStore:   mib(1000),
 		StoreUsed:  storeUsed,
@@ -198,8 +198,8 @@ func TestUndescribableResource_IsNotRoutedThroughTheTierCeiling(t *testing.T) {
 			Kind:        natsclient.ResourceOrdinaryStream,
 			Attribution: AttributionNotApplicable,
 			Tier:        TierUnknown,
-			Bytes:       UnknownCapacity(),
-			Messages:    UnknownCapacity(),
+			Bytes:       unknownCapacity(),
+			Messages:    unknownCapacity(),
 		},
 	))
 	require.NoError(t, err)
@@ -300,7 +300,7 @@ func TestAccountTier_SeedsTheHistoryOnceForEveryTier(t *testing.T) {
 	start := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
 
 	// Both tiers bounded, so both need a baseline on the same publication.
-	limits := AccountTierLimits{
+	limits := accountTierLimits{
 		Known:    true,
 		MaxStore: mib(1000), StoreUsed: mib(800),
 		MaxMemory: mib(500), MemoryUsed: mib(100),
@@ -328,24 +328,24 @@ func TestAccountTier_SeedsTheHistoryOnceForEveryTier(t *testing.T) {
 func TestArchivalStream_WhenNoCeilingExistsAnywhere(t *testing.T) {
 	cases := []struct {
 		name   string
-		limits AccountTierLimits
+		limits accountTierLimits
 		want   string
 	}{
 		{
 			name:   "the tier limit is unbounded",
-			limits: AccountTierLimits{Known: true, MaxStore: -1, MaxMemory: -1},
+			limits: accountTierLimits{Known: true, MaxStore: -1, MaxMemory: -1},
 			want:   PressureUnavailableUnboundedNoTierCeiling,
 		},
 		{
 			name:   "the account limits could not be read",
-			limits: UnknownAccountTierLimits("account info unavailable"),
+			limits: unknownAccountTierLimits("account info unavailable"),
 			want:   PressureUnavailableUnboundedTierUnknown,
 		},
 		{
 			// A zero limit is the ambiguous tiered-JWT case storage_account.go
 			// reads as unknown rather than as a ceiling of zero bytes.
 			name:   "the tier limit is ambiguous",
-			limits: AccountTierLimits{Known: true, MaxStore: 0, MaxMemory: 0},
+			limits: accountTierLimits{Known: true, MaxStore: 0, MaxMemory: 0},
 			want:   PressureUnavailableUnboundedTierUnknown,
 		},
 	}
@@ -405,7 +405,7 @@ func TestPressureAgainstAccountTier(t *testing.T) {
 	}
 
 	t.Run("an evaluated tier verdict is inherited and relabelled", func(t *testing.T) {
-		got := PressureAgainstAccountTier(TierComparison{Tier: TierFile, Pressure: evaluated}, true)
+		got := pressureAgainstAccountTier(TierComparison{Tier: TierFile, Pressure: evaluated}, true)
 
 		assert.True(t, got.Evaluated)
 		assert.Equal(t, PressureHigh, got.State, "the state is the tier's, unscaled")
@@ -415,14 +415,14 @@ func TestPressureAgainstAccountTier(t *testing.T) {
 	})
 
 	t.Run("a resource filed under no tier reports that", func(t *testing.T) {
-		got := PressureAgainstAccountTier(TierComparison{}, false)
+		got := pressureAgainstAccountTier(TierComparison{}, false)
 
 		assert.False(t, got.Evaluated)
 		assert.Equal(t, PressureUnavailableUnboundedTierUnfiled, got.Unavailable)
 	})
 
 	t.Run("an unbounded tier limit means no ceiling anywhere", func(t *testing.T) {
-		got := PressureAgainstAccountTier(TierComparison{
+		got := pressureAgainstAccountTier(TierComparison{
 			Tier:  TierFile,
 			Limit: Capacity{State: CapacityUnbounded},
 		}, true)
@@ -432,9 +432,9 @@ func TestPressureAgainstAccountTier(t *testing.T) {
 	})
 
 	t.Run("an unknown tier limit is a gap, not a clean bill", func(t *testing.T) {
-		got := PressureAgainstAccountTier(TierComparison{
+		got := pressureAgainstAccountTier(TierComparison{
 			Tier:  TierFile,
-			Limit: UnknownCapacity(),
+			Limit: unknownCapacity(),
 		}, true)
 
 		assert.False(t, got.Evaluated)
@@ -443,7 +443,7 @@ func TestPressureAgainstAccountTier(t *testing.T) {
 
 	t.Run("a bounded tier whose own state is unavailable reports the tier's reason", func(t *testing.T) {
 		limit, used := mib(1000), mib(100)
-		got := PressureAgainstAccountTier(TierComparison{
+		got := pressureAgainstAccountTier(TierComparison{
 			Tier:     TierFile,
 			Limit:    Capacity{State: CapacityBounded, ConfiguredLimit: &limit, Used: &used},
 			Pressure: Pressure{Unavailable: "unusable pressure threshold configuration: nope"},
@@ -456,7 +456,7 @@ func TestPressureAgainstAccountTier(t *testing.T) {
 }
 
 func TestPressure_AgainstAccountTier_LeavesAnUnevaluatedStateAlone(t *testing.T) {
-	got := Pressure{Unavailable: PressureUnavailableUnknownCapacity}.AgainstAccountTier()
+	got := Pressure{Unavailable: PressureUnavailableUnknownCapacity}.againstAccountTier()
 
 	assert.False(t, got.Evaluated)
 	assert.Empty(t, got.EvaluatedAgainst,
@@ -469,8 +469,8 @@ func TestAssessPressure_StampsTheOwnBoundBasis(t *testing.T) {
 	require.NoError(t, err)
 
 	capacity := NewCapacity(mib(1000), mib(100), true)
-	projection := Project(capacity, UnknownGrowth(GrowthUnavailableNoPriorObservation), thresholds)
-	got := AssessPressure(capacity, projection, thresholds)
+	projection := project(capacity, unknownGrowth(GrowthUnavailableNoPriorObservation), thresholds)
+	got := assessPressure(capacity, projection, thresholds)
 
 	require.True(t, got.Evaluated)
 	assert.Equal(t, PressureBasisOwnBound, got.EvaluatedAgainst)
@@ -481,11 +481,11 @@ func TestAssessPressure_StampsTheOwnBoundBasis(t *testing.T) {
 // permanently if it advances.
 func TestDeriveAgainstBaseline(t *testing.T) {
 	start := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
-	current := Observation{At: start.Add(time.Minute), Bytes: mib(200)}
+	current := observation{At: start.Add(time.Minute), Bytes: mib(200)}
 
 	t.Run("a usable pair advances the baseline to the current observation", func(t *testing.T) {
 		growth, next, advance := deriveAgainstBaseline(
-			current, []Observation{{At: start, Bytes: mib(100)}}, false)
+			current, []observation{{At: start, Bytes: mib(100)}}, false)
 
 		require.Equal(t, GrowthKnown, growth.State)
 		assert.True(t, advance)
@@ -502,21 +502,21 @@ func TestDeriveAgainstBaseline(t *testing.T) {
 
 	t.Run("a too-close in-memory baseline is left exactly where it is", func(t *testing.T) {
 		// Advancing here is the bug: a process publishing faster than
-		// MinGrowthSampleInterval would reset the target every time and report an
+		// minGrowthSampleInterval would reset the target every time and report an
 		// unknown rate forever.
-		tooClose := Observation{At: current.At.Add(-time.Second), Bytes: mib(199)}
+		tooClose := observation{At: current.At.Add(-time.Second), Bytes: mib(199)}
 
-		growth, _, advance := deriveAgainstBaseline(current, []Observation{tooClose}, false)
+		growth, _, advance := deriveAgainstBaseline(current, []observation{tooClose}, false)
 
 		assert.Equal(t, GrowthUnavailableObservationsTooClose, growth.Unavailable)
 		assert.False(t, advance)
 	})
 
 	t.Run("a too-close seeded series retains the oldest usable target", func(t *testing.T) {
-		oldest := Observation{At: current.At.Add(-2 * time.Second), Bytes: mib(190)}
-		newer := Observation{At: current.At.Add(-time.Second), Bytes: mib(199)}
+		oldest := observation{At: current.At.Add(-2 * time.Second), Bytes: mib(190)}
+		newer := observation{At: current.At.Add(-time.Second), Bytes: mib(199)}
 
-		growth, next, advance := deriveAgainstBaseline(current, []Observation{newer, oldest}, true)
+		growth, next, advance := deriveAgainstBaseline(current, []observation{newer, oldest}, true)
 
 		assert.Equal(t, GrowthUnavailableObservationsTooClose, growth.Unavailable)
 		require.True(t, advance)
@@ -537,7 +537,7 @@ func TestTierGrowth_ADegradedFirstCollectionIsNotAnObservation(t *testing.T) {
 
 	// First collection: limits unreadable, so the file tier has no usage.
 	_, err := publisher.Publish(context.Background(), inventoryWithAccountAt(
-		start, UnknownAccountTierLimits("account info unavailable"),
+		start, unknownAccountTierLimits("account info unavailable"),
 		archivalResource("CAMPAIGN_LEDGER", mib(50))))
 	require.NoError(t, err)
 
@@ -586,7 +586,7 @@ func TestTierGrowth_AnExistingBaselineSurvivesABlindGap(t *testing.T) {
 	for i := 1; i <= 2; i++ {
 		_, err := publisher.Publish(context.Background(), inventoryWithAccountAt(
 			start.Add(time.Duration(i)*time.Hour),
-			UnknownAccountTierLimits("account info unavailable"),
+			unknownAccountTierLimits("account info unavailable"),
 			archivalResource("CAMPAIGN_LEDGER", mib(50))))
 		require.NoError(t, err)
 

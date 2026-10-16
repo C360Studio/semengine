@@ -60,9 +60,9 @@ func TestPublish_AccountRowCarriesTheTierComparison(t *testing.T) {
 	publisher := newTestPublisher(t, store, defaultSource())
 
 	at := time.Now().UTC().Truncate(time.Second)
-	account := DeriveAccountReport(
+	account := deriveAccountReport(
 		[]StorageResource{tieredResource("LOGS", TierFile, 900<<20, 1)},
-		AccountTierLimitsFrom(&jetstream.AccountInfo{
+		accountTierLimitsFrom(&jetstream.AccountInfo{
 			Tier: jetstream.Tier{Store: 5, Limits: jetstream.AccountLimits{MaxStore: 1 << 20, MaxMemory: -1}},
 		}))
 

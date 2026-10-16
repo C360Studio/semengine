@@ -35,9 +35,9 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// DefaultReportConsumerRetryBackoff is how long the consumer waits before
+// defaultReportConsumerRetryBackoff is how long the consumer waits before
 // re-establishing a watch that could not be created or that ended.
-const DefaultReportConsumerRetryBackoff = 5 * time.Second
+const defaultReportConsumerRetryBackoff = 5 * time.Second
 
 // ReportWatchStore is the narrow KV capability the report consumer needs.
 // jetstream.KeyValue satisfies it.
@@ -115,7 +115,7 @@ type ConsumerConfig struct {
 	Observer Observer
 
 	// RetryBackoff is the wait before re-establishing a watch. Defaults to
-	// DefaultReportConsumerRetryBackoff.
+	// 5 s.
 	RetryBackoff time.Duration
 
 	// Logger receives watch failures. Defaults to slog.Default().
@@ -162,7 +162,7 @@ func NewConsumer(
 		rows:     make(map[string]ResourceReport, 32),
 	}
 	if consumer.backoff <= 0 {
-		consumer.backoff = DefaultReportConsumerRetryBackoff
+		consumer.backoff = defaultReportConsumerRetryBackoff
 	}
 	if consumer.logger == nil {
 		consumer.logger = slog.Default()

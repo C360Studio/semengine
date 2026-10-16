@@ -8,8 +8,8 @@
 // report-producing path, so no two surfaces can disagree about what the account
 // looks like. The bucket's declaration (name, class, owner-only writes,
 // no-lifecycle retention, History depth) lives in the framework KV catalog,
-// graph/kvcatalog.go; this file holds no bucket name, which is also what keeps
-// natsclient from importing graph.
+// graph/kvcatalog/kvcatalog.go; this file holds no bucket name, which is also
+// what keeps this package from importing graph.
 //
 // Three properties are load-bearing.
 //
@@ -169,7 +169,7 @@ type Publisher struct {
 	// against. It is seeded from the bucket's own history on a key's first
 	// publication in this process, which is what makes the projection survive a
 	// restart.
-	baseline map[string]Observation
+	baseline map[string]observation
 
 	// tierBaseline is the same thing for each STORAGE TIER's account usage,
 	// seeded from the account row's history.
@@ -179,7 +179,7 @@ type Publisher struct {
 	// A synthetic tier key would be a key no listing can return, so it would sit
 	// in a map whose invariant is "every entry is a live published row" and
 	// quietly falsify it.
-	tierBaseline map[StorageTier]Observation
+	tierBaseline map[StorageTier]observation
 }
 
 // NewPublisher builds a publisher. It fails closed on a missing
@@ -207,8 +207,8 @@ func NewPublisher(store ReportStore, cfg PublisherConfig) (*Publisher, error) {
 		store:        store,
 		thresholds:   cfg.Thresholds,
 		logger:       logger,
-		baseline:     make(map[string]Observation, 32),
-		tierBaseline: make(map[StorageTier]Observation, 3),
+		baseline:     make(map[string]observation, 32),
+		tierBaseline: make(map[StorageTier]observation, 3),
 	}, nil
 }
 
@@ -361,7 +361,7 @@ func (p *Publisher) derive(
 	account AccountReport,
 	thresholds ResolvedPressureThresholds,
 	thresholdErr error,
-) (ResourceReport, *Observation) {
+) (ResourceReport, *observation) {
 	growth, staged := p.growthFor(ctx, key, resource, inv.CollectedAt)
 	row := ResourceReport{
 		Resource:    resource,
@@ -378,8 +378,8 @@ func (p *Publisher) derive(
 		row.Pressure = Pressure{Unavailable: reason}
 		return row, staged
 	}
-	row.Projection = Project(resource.Bytes, row.Growth, thresholds)
-	row.Pressure = AssessPressure(resource.Bytes, row.Projection, thresholds)
+	row.Projection = project(resource.Bytes, row.Growth, thresholds)
+	row.Pressure = assessPressure(resource.Bytes, row.Projection, thresholds)
 
 	// A resource with NO BOUND OF ITS OWN is re-evaluated against its storage
 	// tier's account ceiling, which is the only ceiling it has.
@@ -393,7 +393,7 @@ func (p *Publisher) derive(
 	// that cannot be confused for one another.
 	if resource.Bytes.State == CapacityUnbounded {
 		tier, found := account.TierFor(resource.Tier)
-		row.Pressure = PressureAgainstAccountTier(tier, found)
+		row.Pressure = pressureAgainstAccountTier(tier, found)
 	}
 	return row, staged
 }
@@ -408,11 +408,11 @@ func (p *Publisher) derive(
 // against at all, which starts the series). An observation too close to the
 // baseline to measure leaves the baseline where it is: advancing it every time
 // would keep resetting the target, and a process publishing faster than
-// MinGrowthSampleInterval would report an unknown rate forever.
+// minGrowthSampleInterval would report an unknown rate forever.
 func deriveAgainstBaseline(
-	current Observation, priors []Observation, seeded bool,
-) (growth Growth, next Observation, advance bool) {
-	growth = DeriveGrowth(current, priors)
+	current observation, priors []observation, seeded bool,
+) (growth Growth, next observation, advance bool) {
+	growth = deriveGrowth(current, priors)
 	switch {
 	case growth.State == GrowthKnown, len(priors) == 0:
 		// The pair was consumed (or there was no pair at all): the next
@@ -421,7 +421,7 @@ func deriveAgainstBaseline(
 	case !seeded:
 		// Unusable, and the baseline is already the fixed target this process
 		// has been holding. Leave it exactly where it is.
-		return growth, Observation{}, false
+		return growth, observation{}, false
 	default:
 		// Unusable, seeded from the bucket. Retain the OLDEST observation that
 		// is not newer than this one: it is the furthest from the current
@@ -444,15 +444,15 @@ func deriveAgainstBaseline(
 // the published-series design exists to prevent.
 func (p *Publisher) growthFor(
 	ctx context.Context, key string, resource StorageResource, collectedAt time.Time,
-) (Growth, *Observation) {
+) (Growth, *observation) {
 	used, ok := resource.Bytes.Usage()
 	if !ok {
 		// Nothing to difference. Distinct from "no prior sample": this resource
 		// has no readable size at all, so no number of collections will help
 		// until the server describes it again.
-		return UnknownGrowth(GrowthUnavailableUnknownUsage), nil
+		return unknownGrowth(GrowthUnavailableUnknownUsage), nil
 	}
-	current := Observation{At: collectedAt, Bytes: used}
+	current := observation{At: collectedAt, Bytes: used}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -467,7 +467,7 @@ func (p *Publisher) growthFor(
 
 // commitBaseline applies a staged resource baseline. Called ONLY after the row it
 // was derived for has been published.
-func (p *Publisher) commitBaseline(key string, staged *Observation) {
+func (p *Publisher) commitBaseline(key string, staged *observation) {
 	if staged == nil {
 		return
 	}
@@ -480,7 +480,7 @@ func (p *Publisher) commitBaseline(key string, staged *Observation) {
 // row has been published, for the same reason as commitBaseline: the account row's
 // history is the tier series, so a tier baseline advanced past a failed write is an
 // observation the bucket does not contain.
-func (p *Publisher) commitTierBaselines(staged map[StorageTier]Observation) {
+func (p *Publisher) commitTierBaselines(staged map[StorageTier]observation) {
 	if len(staged) == 0 {
 		return
 	}
@@ -499,13 +499,13 @@ func (p *Publisher) commitTierBaselines(staged map[StorageTier]Observation) {
 // same history two or three times for one collection.
 func (p *Publisher) tierGrowth(
 	ctx context.Context, inv StorageInventory,
-) (map[StorageTier]Growth, map[StorageTier]Observation) {
+) (map[StorageTier]Growth, map[StorageTier]observation) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
 	growth := make(map[StorageTier]Growth, len(inv.Account.Tiers))
-	staged := make(map[StorageTier]Observation, len(inv.Account.Tiers))
-	var seeded map[StorageTier][]Observation
+	staged := make(map[StorageTier]observation, len(inv.Account.Tiers))
+	var seeded map[StorageTier][]observation
 	didSeed := false
 
 	for _, comparison := range inv.Account.Tiers {
@@ -526,15 +526,15 @@ func (p *Publisher) tierGrowth(
 			// condition and also retains), and two growth series that treat a
 			// degraded collection differently is worse than one that treats it
 			// visibly.
-			growth[comparison.Tier] = UnknownGrowth(GrowthUnavailableUnknownUsage)
+			growth[comparison.Tier] = unknownGrowth(GrowthUnavailableUnknownUsage)
 			continue
 		}
-		current := Observation{At: inv.CollectedAt, Bytes: used}
+		current := observation{At: inv.CollectedAt, Bytes: used}
 
-		var priors []Observation
+		var priors []observation
 		fromBucket := false
 		if baseline, have := p.tierBaseline[comparison.Tier]; have {
-			priors = []Observation{baseline}
+			priors = []observation{baseline}
 		} else {
 			if !didSeed {
 				seeded = p.seedTiersFromHistory(ctx)
@@ -563,7 +563,7 @@ func (p *Publisher) deriveTiers(
 	inv StorageInventory,
 	thresholds ResolvedPressureThresholds,
 	thresholdErr error,
-) ([]TierComparison, map[StorageTier]Observation) {
+) ([]TierComparison, map[StorageTier]observation) {
 	growth, staged := p.tierGrowth(ctx, inv)
 
 	tiers := make([]TierComparison, 0, len(inv.Account.Tiers))
@@ -574,9 +574,9 @@ func (p *Publisher) deriveTiers(
 			comparison.Projection = Projection{HeadroomUnavailable: reason, TimeToThresholdUnavailable: reason}
 			comparison.Pressure = Pressure{Unavailable: reason}
 		} else {
-			comparison.Projection = Project(comparison.Limit, comparison.Growth, thresholds)
-			comparison.Pressure = AssessPressure(comparison.Limit, comparison.Projection, thresholds).
-				AgainstAccountTier()
+			comparison.Projection = project(comparison.Limit, comparison.Growth, thresholds)
+			comparison.Pressure = assessPressure(comparison.Limit, comparison.Projection, thresholds).
+				againstAccountTier()
 		}
 		tiers = append(tiers, comparison)
 	}
@@ -597,9 +597,9 @@ func unusableThresholdReason(err error) string {
 //
 // The history read happens once per key per process: after it, the baseline is
 // in memory and the steady state costs one Put per resource per collection.
-func (p *Publisher) priorsLocked(ctx context.Context, key string) ([]Observation, bool) {
+func (p *Publisher) priorsLocked(ctx context.Context, key string) ([]observation, bool) {
 	if baseline, ok := p.baseline[key]; ok {
-		return []Observation{baseline}, false
+		return []observation{baseline}, false
 	}
 	return p.seedFromHistory(ctx, key), true
 }
@@ -637,9 +637,9 @@ func (p *Publisher) retainedPuts(ctx context.Context, key string) []jetstream.Ke
 }
 
 // seedFromHistory reads the published observations retained for one resource key.
-func (p *Publisher) seedFromHistory(ctx context.Context, key string) []Observation {
+func (p *Publisher) seedFromHistory(ctx context.Context, key string) []observation {
 	entries := p.retainedPuts(ctx, key)
-	observations := make([]Observation, 0, len(entries))
+	observations := make([]observation, 0, len(entries))
 	for _, entry := range entries {
 		var row ResourceReport
 		if err := json.Unmarshal(entry.Value(), &row); err != nil {
@@ -652,7 +652,7 @@ func (p *Publisher) seedFromHistory(ctx context.Context, key string) []Observati
 		if !ok || row.CollectedAt.IsZero() {
 			continue
 		}
-		observations = append(observations, Observation{At: row.CollectedAt, Bytes: bytes})
+		observations = append(observations, observation{At: row.CollectedAt, Bytes: bytes})
 	}
 	return observations
 }
@@ -664,9 +664,9 @@ func (p *Publisher) seedFromHistory(ctx context.Context, key string) []Observati
 // account-measured usage, so the observations a tier projection needs are
 // restart-surviving on exactly the same terms as a resource's — no second sample
 // store, and no separate key per tier.
-func (p *Publisher) seedTiersFromHistory(ctx context.Context) map[StorageTier][]Observation {
+func (p *Publisher) seedTiersFromHistory(ctx context.Context) map[StorageTier][]observation {
 	entries := p.retainedPuts(ctx, StorageAccountReportKey)
-	priors := make(map[StorageTier][]Observation, 3)
+	priors := make(map[StorageTier][]observation, 3)
 	for _, entry := range entries {
 		var row AccountReport
 		if err := json.Unmarshal(entry.Value(), &row); err != nil {
@@ -682,7 +682,7 @@ func (p *Publisher) seedTiersFromHistory(ctx context.Context) map[StorageTier][]
 			if !ok {
 				continue
 			}
-			priors[tier.Tier] = append(priors[tier.Tier], Observation{At: row.CollectedAt, Bytes: used})
+			priors[tier.Tier] = append(priors[tier.Tier], observation{At: row.CollectedAt, Bytes: used})
 		}
 	}
 	return priors
@@ -780,7 +780,7 @@ func ResourceKey(resource string) (string, error) {
 // it can never be selected. An explicit future-skip on top of that would be
 // unreachable code, and a retained future baseline would wedge this key on an
 // unknown rate until wall-clock time caught up with the skew.
-func oldestUsableTarget(current Observation, priors []Observation) Observation {
+func oldestUsableTarget(current observation, priors []observation) observation {
 	target := current
 	for _, prior := range priors {
 		if !prior.At.Before(target.At) {

@@ -86,6 +86,11 @@ const (
 // reconciliation, degradation, and timeout behavior are all testable without a
 // server, while the production path still drives both real listings through an
 // integration test.
+//
+// A lister that also has the method
+// AccountInfo(ctx context.Context) (*jetstream.AccountInfo, error), as
+// jetstream.JetStream does, feeds the account tier comparison too; one without
+// it gets an inventory whose comparison is reported unknown.
 type StreamLister interface {
 	ListStreams(context.Context, ...jetstream.StreamListOpt) jetstream.StreamInfoLister
 	StreamNames(context.Context, ...jetstream.StreamListOpt) jetstream.StreamNameLister
@@ -420,7 +425,7 @@ func (c *StorageInventoryCollector) enumerate(
 	// rather than an error, so a client that cannot answer costs the
 	// over-commitment comparison and nothing else. One call per collection —
 	// the same cost bound the listings respect.
-	return resources, DeriveAccountReport(resources, readAccountTierLimits(ctx, lister)), nil
+	return resources, deriveAccountReport(resources, readAccountTierLimits(ctx, lister)), nil
 }
 
 // listNames walks the account name listing. By the read in rule 2 above (not
@@ -548,8 +553,8 @@ func (c *StorageInventoryCollector) undescribable(name string) StorageResource {
 		Attribution: attribution,
 		Owner:       owner,
 		Tier:        TierUnknown,
-		Bytes:       UnknownCapacity(),
-		Messages:    UnknownCapacity(),
+		Bytes:       unknownCapacity(),
+		Messages:    unknownCapacity(),
 	}
 }
 

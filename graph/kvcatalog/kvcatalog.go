@@ -88,8 +88,9 @@ func KVCatalog() []natsclient.BucketSpec {
 	// (natsclient.StorageReportGrowthObservations, cross-pinned by a test in
 	// this package): depth 2 covers only the benign restart. It does NOT cover
 	// the cases the design says the projection matters most in. A crash loop or
-	// deploy loop restarting faster than natsclient.MinGrowthSampleInterval
-	// publishes rows too close together to measure against, and several
+	// deploy loop restarting faster than every 5 s (the shortest interval a
+	// growth rate is measured over) publishes rows too close together to
+	// measure against, and several
 	// processes polling account-wide interleave the same way; the derivation
 	// then has to reach back PAST those rows for an observation separated by a
 	// usable interval. At depth 1 or 2 there is nothing to reach back to and

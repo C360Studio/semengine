@@ -134,8 +134,8 @@ func NewCapacity(limit, used int64, known bool) Capacity {
 	return Capacity{State: CapacityBounded, ConfiguredLimit: &limit, Used: &used}
 }
 
-// UnknownCapacity is the explicit unreadable capacity.
-func UnknownCapacity() Capacity { return Capacity{State: CapacityUnknown} }
+// unknownCapacity is the explicit unreadable capacity.
+func unknownCapacity() Capacity { return Capacity{State: CapacityUnknown} }
 
 // Limit returns the configured finite bound. ok is false unless the capacity is
 // bounded, so an unbounded or unknown resource can never yield a limit number.
@@ -154,10 +154,10 @@ func (c Capacity) Usage() (int64, bool) {
 	return *c.Used, true
 }
 
-// Bounded reports whether headroom and time-to-threshold are projectable for
+// bounded reports whether headroom and time-to-threshold are projectable for
 // this axis at all. Both an unbounded and an unknown capacity answer false, for
 // different reasons the State field keeps distinct.
-func (c Capacity) Bounded() bool { return c.State == CapacityBounded }
+func (c Capacity) bounded() bool { return c.State == CapacityBounded }
 
 // StorageResource is one account storage resource as the inventory sees it.
 type StorageResource struct {

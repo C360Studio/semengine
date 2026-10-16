@@ -449,6 +449,85 @@ func TestKeyedPoolReturnsARegistrationRefusal(t *testing.T) {
 	})
 }
 
+// blockedPool starts a one-lane pool named name on reg whose Process holds the first item until
+// release is closed, submits first and then waiting more items, and returns once those wait in
+// the lane's queue. Call inside a synctest bubble.
+func blockedPool(t *testing.T, reg *metric.MetricsRegistry, name string, waiting int, release <-chan struct{}) *KeyedPool[string] {
+	t.Helper()
+	entered := make(chan struct{})
+	p, err := NewKeyedPool(context.Background(), KeyedConfig[string]{
+		Lanes: 1, QueueDepth: waiting + 1, Name: name,
+		KeyOf: func(string) string { return "key" },
+		Process: func(_ context.Context, _ int, work string) error {
+			if work == "first" {
+				close(entered)
+				<-release
+			}
+			return nil
+		},
+	}, KeyedDeps{MetricsRegistry: reg})
+	require.NoError(t, err)
+	require.NoError(t, p.SubmitBlocking(context.Background(), "first"))
+	<-entered
+	for i := 0; i < waiting; i++ {
+		require.NoError(t, p.SubmitBlocking(context.Background(), fmt.Sprintf("waiting-%d", i)))
+	}
+	return p
+}
+
+// shutdownPool releases a blockedPool and shuts it down under a context with an hour's deadline.
+func shutdownPool(t *testing.T, p *KeyedPool[string], release chan struct{}) {
+	t.Helper()
+	close(release)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Hour)
+	defer cancel()
+	require.NoError(t, p.Shutdown(ctx))
+}
+
+// TestKeyedPoolQueueDepthCountsWaitingItems: the queue-depth gauge counts the items accepted and
+// not yet passed to Process, as soon as they are accepted, with no clock time passing; the item
+// in Process is not counted. Once Shutdown has drained the pool, the gauge reads 0.
+func TestKeyedPoolQueueDepthCountsWaitingItems(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		reg := metric.NewMetricsRegistry()
+		release := make(chan struct{})
+		p := blockedPool(t, reg, "depth", 3, release)
+
+		assert.Equal(t, float64(3), gaugeValue(t, reg, "dispatch_queue_depth", "depth"),
+			"three items wait behind the one in Process")
+		shutdownPool(t, p, release)
+		assert.Equal(t, float64(0), gaugeValue(t, reg, "dispatch_queue_depth", "depth"),
+			"nothing waits once Shutdown has drained the pool")
+	})
+}
+
+// TestKeyedPoolQueueDepthSumsPoolsOfOneName: two pools of one name on one registry share the
+// queue-depth gauge, which reads their combined waiting items; when one is drained the other's
+// count stays. A replacement pool of that name, made after both, counts only its own items: a
+// gauge that read the first pool's queues would read 0 here.
+func TestKeyedPoolQueueDepthSumsPoolsOfOneName(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		reg := metric.NewMetricsRegistry()
+		depth := func() float64 { return gaugeValue(t, reg, "dispatch_queue_depth", "shared") }
+
+		releaseA, releaseB := make(chan struct{}), make(chan struct{})
+		a := blockedPool(t, reg, "shared", 2, releaseA)
+		b := blockedPool(t, reg, "shared", 3, releaseB)
+		assert.Equal(t, float64(5), depth(), "two waiting in one pool and three in the other")
+
+		shutdownPool(t, a, releaseA)
+		assert.Equal(t, float64(3), depth(), "the remaining pool's three still wait")
+		shutdownPool(t, b, releaseB)
+		assert.Equal(t, float64(0), depth(), "both pools drained")
+
+		releaseC := make(chan struct{})
+		c := blockedPool(t, reg, "shared", 4, releaseC)
+		assert.Equal(t, float64(4), depth(), "the replacement pool counts its own waiting items")
+		shutdownPool(t, c, releaseC)
+		assert.Equal(t, float64(0), depth(), "all pools drained")
+	})
+}
+
 // findMetric gathers a single metric by name + pool label from the
 // registry's Prometheus output.
 func findMetric(t *testing.T, reg *metric.MetricsRegistry, name, pool string) *dto.Metric {

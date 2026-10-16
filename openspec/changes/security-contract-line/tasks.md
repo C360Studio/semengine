@@ -66,7 +66,8 @@ starts.
 
 ## 5. Verify and archive
 
-- [ ] 5.1 `task verify` passes on a clean tree at the PR head. Gate: `task verify`.
+- [x] 5.1 `task verify` passes on a clean tree at the PR head. Gate: `task verify`.
+  Done: exit 0, `verify: ok`, at `285fc03`; the tree was clean before and after.
 - [ ] 5.2 Another agent reviews the code PR; the body carries `implemented-by:` and `reviewed-by:`. Gate:
   `task merge:check -- 279`.
 - [ ] 5.3 Archive commit: the `security-config` spec is synced into `openspec/specs/`. Gate: `task spec:check`,

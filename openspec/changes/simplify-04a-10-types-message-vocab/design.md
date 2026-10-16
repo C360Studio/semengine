@@ -181,8 +181,8 @@ an issue names; the four packages' other exports are untouched and not audited h
 | `GenericJSONPayload.MarshalJSON` | keep | API | `message-codec` `:63`; `generic_json_shape_test.go` |
 | `Registry.GetRegistration` | keep, typed (D6) | API | `Dependencies.PayloadRegistry`; ledger "lookups"; `TestRegistry_GetRegistration`; graph-ingest `canonical_mutations.go:218`, `component.go:678` |
 | `Registry.IndexingProfileFor` | keep, typed (D6) | API | `Dependencies.PayloadRegistry`; ledger "lookups"; `TestIndexingProfileFor`; `component.go:2063` |
-| `Registry.Create` | keep | API | `Dependencies.PayloadRegistry`; ledger "lookups"; `TestRegistry_CreatePayload_Success`; `base_message.go:315`; semteams `scripts/…:572` |
-| `Registry.Build` | keep | API | `Dependencies.PayloadRegistry`; ledger "lookups"; `TestRegistry_BuildPayload_Success`; the only reader of `Registration.Builder`, which semboids fills (`internal/boidgraph/payload.go:138`, `internal/zone/payload.go:113`) |
+| `Registry.Create` | keep | Plumbing | production caller `message/base_message.go:315` (decoding); also reachable through `Dependencies.PayloadRegistry` and called by semteams `scripts/…:572`; `TestRegistry_CreatePayload_Success` |
+| `Registry.Build` | keep | Unread | no contract line (it builds a payload; the ledger's "lookups" does not name it); no caller here, at the pin or in a consumer; the only reader of `Registration.Builder`, which semboids fills (`internal/boidgraph/payload.go:138`, `internal/zone/payload.go:113`); `TestRegistry_BuildPayload_Success`; owner question 2 |
 | `Registry.List` | keep | API | ledger "lookups"; `TestRegistry_ListPayloads`; semteams `scripts/measure-agent-contract-family.go:571` |
 | `Registry.ListByDomain` | keep | API | ledger "lookups"; `TestRegistry_ListByDomain` |
 | `Registry.Contracts` | keep, re-sorted (D6) | API | doc "ordered by message-type key"; `TestContractsReturnsIndependentSortedCopies`; semconnect `cmd/cs-graph-backend/main.go:234` |
@@ -190,10 +190,10 @@ an issue names; the four packages' other exports are untouched and not audited h
 | `vocabulary.ParsePredicate` | keep, D7 | API | ledger `vocabulary` contract; spec delta (new); `TestParsePredicate`; `graph/entity_predicate_contract.go:98` |
 | `vocabulary.DcIdentifier` | keep | API | `vocabulary/README.md:300`; semconnect `parser/sensorml/predicates.go:129` |
 
-Counts (25 existing exported symbols): API 17, Plumbing 0, Unread 8 (7 removed if the owner agrees,
-`Registration.MessageType` kept), back door 0; and 1 proposed symbol not added (`EntityType.Validate`). Unexported
-code removed: `parseDomainCategory`, `validParsedPredicates`, `validParsedPredicateCount`, `maxMemoizedPredicates`,
-`memoizeParsedPredicate`.
+Counts (25 existing exported symbols): API 15, Plumbing 1 (`Create`), Unread 9 (7 removed if the owner agrees;
+`Registration.MessageType` and `Registry.Build` kept), back door 0; and 1 proposed symbol not added
+(`EntityType.Validate`). Unexported code removed: `parseDomainCategory`, `validParsedPredicates`,
+`validParsedPredicateCount`, `maxMemoizedPredicates`, `memoizeParsedPredicate`.
 
 ## Generated checks (`docs/testing.md`)
 
@@ -252,11 +252,14 @@ workflows only. PR 10 (graph-ingest, unclaimed) should start after this PR if qu
    hides a payload that fails to encode. The ledger's broad "as at the pin" line for the message envelope could be
    read to cover it, so removing it needs your word. The other answer changes it to return an error, which changes
    the message interface and keeps a method nobody uses.
-2. **Remove five unused exports and keep two others?** Recommended: yes. Nothing outside its own tests reads
+2. **Remove five unused exports and keep three others?** Recommended: yes. Nothing outside its own tests reads
    `message.Keyable`, `message.EntityType`, `message.EntityID`, `Triple.IsExpired` or `EntityType.IsValid`. The last
    one sits under the ledger's broad "type validation as at the pin" line. Kept: `message.Type`, which the four
-   consumers write 55 times in production (the epic line said to remove it), and `Registration.MessageType`, which
-   only the payload registry itself and a SemStreams example call.
+   consumers write 55 times in production (the epic line said to remove it). `Registration.MessageType` is also kept:
+   products fill in `Registration`, and this method is the one spelling of the key it registers under, which the
+   registry's `List` uses after this change; unexporting it would make a product rebuild that key by hand.
+   `Registry.Build` is kept: no contract line names it and nothing calls it, but it is the only code that reads the
+   `Builder` field semboids fills in production, so removing it would leave that field doing nothing.
 3. **Skip adding an entity-type `Validate`?** Recommended: skip it. No code would call it, and the two rules for an
    entity type already disagree (`Robotics_1` passes the entity-ID rule and fails the vocabulary rule). Adding one
    means choosing between them first.

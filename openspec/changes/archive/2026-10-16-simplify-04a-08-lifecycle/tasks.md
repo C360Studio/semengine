@@ -50,5 +50,5 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 - [x] 5.1 `task verify` passes on a clean tree at the implementation head (exit 0 at `0b409da`).
 - [x] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body (Codex APPROVE at
   `9e1a29f`, PR #272 comment, 2026-10-16).
-- [ ] 5.3 Archive the change (`openspec archive simplify-04a-08-lifecycle`) as the last content commit. Gate:
+- [x] 5.3 Archive the change (`openspec archive simplify-04a-08-lifecycle`) as the last content commit. Gate:
   `task spec:check`.

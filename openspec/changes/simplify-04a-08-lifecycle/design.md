@@ -1,6 +1,7 @@
 # Design: simplify-04a-08-lifecycle
 
-Status: draft. Inventory: `inventory.md` (base `127d4c0`), `INVENTORY PASS` with fixes applied.
+Status: accepted (owner answers on #154, comment 6214484329, 2026-10-16).
+Inventory: `inventory.md` (base `127d4c0`), `INVENTORY PASS` with fixes applied.
 
 ## Context
 
@@ -115,14 +116,13 @@ It stops reading once Offset+Limit kept children are collected. A page therefore
 Offset + Limit + (dropped) reads, one Get per child, as ADR-049 `:544-547` decides. That is Offset more reads than
 today's short page; Limit ≤ 0 reads every link, as today. A negative Offset no longer panics (inventory D-3).
 
-With owner question 3 answered yes, any other read error fails the call, as `List` does, including
-`ErrWorkflowNotRegistered` for a child workflow nobody registered (D-1). With no, those stay skipped with today's
-Warn, and D-1 is filed.
+Any other read error fails the call, as `List` does, including `ErrWorkflowNotRegistered` for a child workflow
+nobody registered (D-1; owner question 3: yes).
 
 Proving test: links a..f with b and d absent (kept = a, c, e, f). For every Offset in -1..7 and Limit in -1..7 the
 result equals the oracle: start = max(Offset, 0) capped at len(kept); end = len(kept) when Limit ≤ 0, else
 min(start+Limit, len(kept)); want kept[start:end] as a non-nil slice. The reads made are counted against the bound
-above. This is an exhaustive small-scope check; it fails on base. If question 3 is yes: a child read failing with
+above. This is an exhaustive small-scope check; it fails on base. A child read failing with
 `nats.ErrTimeout` fails the call, and so does a link to an unregistered child workflow.
 
 ### D7 Doubles refuse what graph-ingest refuses (#199)
@@ -163,6 +163,8 @@ PR #273 (draft, PR 7, `component`) has no files yet and will likely edit the `co
 first. No other open PR shares a file. #268 can land before or after this PR.
 
 ## Owner questions
+
+Answered 2026-10-16 (#154 comment 6214484329): all three yes, as recommended.
 
 1. **Keep allowing a manager with no NATS client? Recommended: yes.** The issue suggested refusing it. But semboids
    and semteams build one in three tests just to check that a workflow registers, and refusing it would change the

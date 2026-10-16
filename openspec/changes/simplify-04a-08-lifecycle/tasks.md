@@ -5,8 +5,8 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 ## 1. Design
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal, design and spec delta pass pre-owner review and are accepted
-  by the owner (owner questions 1–3). Gate: `task spec:check` and `task docs:check`.
+- [x] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal, design and spec delta pass pre-owner review and are accepted
+  by the owner (owner questions 1–3; all yes, #154 comment 6214484329, 2026-10-16). Gate: `task spec:check` and `task docs:check`.
 
 ## 2. Failing tests
 
@@ -18,8 +18,8 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
   on the error type only (base sends no delete either).
 - [ ] 2.4 `Complete` follows declared edge order (D5). Gate: fails on base.
 - [ ] 2.5 Children's exhaustive paging check (Offset and Limit -1..7, List's slice rule, non-nil empty result, read
-  count within Offset + Limit + dropped), and the read-failure and unregistered-child-workflow cases if owner
-  question 3 is yes (D6). Gate: fails on base.
+  count within Offset + Limit + dropped), and the read-failure and unregistered-child-workflow cases (owner
+  question 3: yes) (D6). Gate: fails on base.
 - [ ] 2.6 One refusal test per double (D7). Gate: fails on base.
 
 ## 3. Implementation
@@ -42,7 +42,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 - [ ] 4.1 `docs/admission-ledger.yaml` `pkg/lifecycle` contract: item (4) rewritten (owner question 1); the emitter,
   Complete and Children rules added. Merge `origin/main` first if #273 has landed its `component` row. Gate:
   `task ledger:check`, `task docs:check`.
-- [ ] 4.2 File D-2 (and D-1 if owner question 3 is no) as `status:blocked`, linked from the PR body without a closing
+- [ ] 4.2 File D-2 as `status:blocked`, linked from the PR body without a closing
   keyword. Gate: issue numbers on the PR body's follow-up line, read back.
 
 ## 5. Verify, review and close

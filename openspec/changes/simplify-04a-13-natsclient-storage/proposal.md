@@ -17,7 +17,7 @@ the account row was removed, so a metrics surface keeps the last account forever
   `ConsumerConfig`, `NewConsumer`, `Observer`, `Snapshot`, `ResourceKey`.
 - `Client.AccountStreamLister` becomes `storagereport.AccountStreamLister(client)`, which resolves the client's
   JetStream context on each call, as the method value did.
-- 24 exported names that nothing outside the package reads become unexported (design, Exports).
+- 22 exported names that nothing outside the package reads become unexported (design, Exports).
 - `Observer` gains `ForgetAccount(row AccountReport)`. The consumer calls it when the account row is deleted or
   purged, or a new watch no longer has it. The Warn log that declared the gap goes.
 
@@ -33,6 +33,6 @@ the account row was removed, so a metrics surface keeps the last account forever
   `graph/kvcatalog` (two comments, three test files: imports and names only); `scripts/cover-check.sh`,
   `internal/harness/contract/cover_test.go` (one coverage target); `docs/admission-ledger.yaml`,
   `docs/repository-map.md`.
-- Breaking at cutover (compiler-found): the import path, nine renamed and 24 unexported names, `AccountStreamLister`,
+- Breaking at cutover (compiler-found): the import path, nine renamed and 22 unexported names, `AccountStreamLister`,
   and `ForgetAccount` on any observer. No consumer imports any of them (inventory § 4).
 - Closes #85. Part a of #222; #222 stays open for 6b and 6c. Addresses #223.

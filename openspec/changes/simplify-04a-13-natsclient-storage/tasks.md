@@ -6,7 +6,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 ## 1. Design
 
 - [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal, design and spec delta pass pre-owner review and are accepted
-  by the owner with rulings on owner questions 1–4. Gate: `task spec:check` and `task docs:check`.
+  by the owner with rulings on owner questions 1–5. Gate: `task spec:check` and `task docs:check`.
 - [ ] 1.2 Merge `origin/main` into the claim branch (#278 merged as `838c1fa`). Gate: `task verify` on the merge.
 
 ## 2. Failing tests
@@ -31,8 +31,10 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
   (D3, #85). Gate: 2.3.
 - [ ] 3.4 Coverage target `natsclient/storagereport merged` in `scripts/cover-check.sh` and `d11Targets` (D2). Gate:
   `task cover:check`; `TestCoverCheckSensitivity`.
-- [ ] 3.5 Unexport the 24 names of the Exports table's last row; in-package tests follow; `kvcatalog.go:91` and
-  `storage_report.go:11` comments, `kvcatalog_storage_report_test.go:51` comment (D2, Exports). Gate: `go build
+- [ ] 3.5 Unexport the 22 names of the Exports table's last row; in-package tests follow; kept doc comments that
+  name them state the value instead (`storage_report_consumer.go:115`, `storage_growth.go:81`, and the custom-lister
+  note at `storage_account.go:69`); `kvcatalog.go:91` and `storage_report.go:11` comments,
+  `kvcatalog_storage_report_test.go:51` comment (D2, Exports). Gate: `go build
   ./...`; `task lint`; `task test:unit`.
 
 ## 4. Documentation

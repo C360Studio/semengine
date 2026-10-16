@@ -108,12 +108,12 @@ API) and none is a **back door**.
 | --- | --- | --- | --- |
 | `NewStorageInventoryCollector`, `StorageInventoryCollector` (`Collect`, `Run`, `Latest`), `StorageInventoryConfig`, `StorageInventory`, `StorageResource`, `DefaultStorageInventoryInterval`, `DefaultStorageInventoryTimeout`, `OwnerResolver`, `StreamLister`, `StreamListerSource`, `InventoryPublisher` | moved | Plumbing | `storage_observability.go:111,:115,:160,:218-220,:237,:431` |
 | `Client.AccountStreamLister` | becomes `AccountStreamLister(client)` | Plumbing | `storage_observability.go:219` |
-| `NewStorageReportPublisher`→`NewPublisher`, `StorageReportPublisher`→`Publisher` (`Publish`), `StorageReportConfig`→`PublisherConfig`, `PublishResult`, `ReportStore`, `ThresholdSource`, `StoragePressureThresholds` (`Resolve`), `ResolvedPressureThresholds` | moved, renamed | Plumbing | `storage_observability.go:96,:105,:129,:425-451` |
+| `NewStorageReportPublisher`→`NewPublisher`, `StorageReportPublisher`→`Publisher` (`Publish`), `StorageReportConfig`→`PublisherConfig`, `PublishResult`, `SkipReasonStaleInventory`, `ReportStore`, `ThresholdSource`, `StoragePressureThresholds` (`Resolve`), `ResolvedPressureThresholds` | moved, renamed | Plumbing | `storage_observability.go:96,:105,:129,:425-451` |
 | `NewStorageReportConsumer`→`NewConsumer`, `StorageReportConsumer`→`Consumer` (`Run`, `Snapshot`), `StorageReportConsumerConfig`→`ConsumerConfig`, `StorageReportSnapshot`→`Snapshot`, `ReportWatchStore` | moved, renamed | Plumbing | `storage_observability.go:161,:203-205,:405`; `_http.go:123` |
 | `StorageReportObserver`→`Observer` (+ `ForgetAccount`) | moved, renamed, one method added | Plumbing | `_metrics.go:339,:398,:413` |
 | `ResourceReport`, `AccountReport`, `TierComparison`, `StorageTier` (+3 values), `Capacity` (`Limit`, `Usage`), `CapacityState` (+3), `AttributionState` (+3), `Growth` (`Rate`), `GrowthState` (+2), `GrowthUnavailable*` (3), `Projection`, `ProjectionUnavailable*` (4), `Pressure`, `PressureState` (+4), `PressureInput` (+4), `PressureBasis` (+2), `PressureUnavailable*` (5), `OvercommitmentState` (+3), `OvercommitmentUnavailable*` (2) | moved | Plumbing (types and field values of what `service` reads) | `_metrics.go:73-106,:356-360,:413-455,:580-586`; `_http.go:55,:96` |
 | `DefaultStoragePressureThresholds`, `StorageReportGrowthObservations`, `StorageAccountReportKey`, `StorageReportKey`→`ResourceKey`, `NewCapacity`, `AccountReport.TierFor`, `StorageResource.Attributed` | moved (one renamed) | no production caller; kept by owner question 3 | read by `graph/kvcatalog` tests that check the bucket the catalog declares (inventory § 4) |
-| `DeriveGrowth`, `Observation`, `UnknownGrowth`, `MinGrowthSampleInterval`, `Project`, `AssessPressure`, `PressureAgainstAccountTier`, `Pressure.AgainstAccountTier`, `DeriveAccountReport`, `AccountTierLimits`, `AccountTierLimitsFrom`, `UnknownAccountTierLimits`, `AccountLimitReader`, `UnknownCapacity`, `Capacity.Bounded`, `Default{Warning,High,Critical}{Headroom,Horizon}` (6), `SkipReasonStaleInventory`, `DefaultReportConsumerRetryBackoff` | unexported (owner question 3) | Plumbing with no caller | none, here or at the pin (inventory § 4); `kvcatalog.go:91`'s comment is reworded |
+| `DeriveGrowth`, `Observation`, `UnknownGrowth`, `MinGrowthSampleInterval`, `Project`, `AssessPressure`, `PressureAgainstAccountTier`, `Pressure.AgainstAccountTier`, `DeriveAccountReport`, `AccountTierLimits`, `AccountTierLimitsFrom`, `UnknownAccountTierLimits`, `AccountLimitReader`, `UnknownCapacity`, `Capacity.Bounded`, `Default{Warning,High,Critical}{Headroom,Horizon}` (6), `DefaultReportConsumerRetryBackoff` | unexported (owner question 3) | Plumbing with no caller | none, here or at the pin (inventory § 4); `kvcatalog.go:91`'s comment is reworded |
 
 ## Open issues and merge order
 
@@ -131,7 +131,8 @@ API) and none is a **back door**.
 1. #85: add `ForgetAccount(row)` to the observer (D3). Recommended: yes.
 2. About 75 names are read only by `service` (ported in change 3). Your rule says no caller here means private or
    dropped; the reviewer contract says an admitted package not yet ported counts. Recommended: keep them public.
-3. 24 names nothing outside the package reads become private in this move; 7 that kvcatalog's tests read, and
-   `Resolve` with its result type, stay public. Recommended: yes.
-4. Name `natsclient/storagereport` with nine renames (D1); the pin called the capability `storage-observability`.
-   The ~3,000-line limit is for ports and this is a move. Agreed?
+3. 22 names nothing outside the package reads become private in this move. Seven that the catalog's tests check stay
+   public, including the bucket key and the growth-history depth, and so do `Resolve` with its result type.
+   Recommended: yes.
+4. Package `natsclient/storagereport`, with nine renames (D1); the pin called this `storage-observability`. OK?
+5. The ~3,000-line limit is for ports, and this only moves code. Agreed it does not apply?

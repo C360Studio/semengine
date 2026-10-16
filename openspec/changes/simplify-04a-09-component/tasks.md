@@ -31,16 +31,16 @@ Review stop A (tasks 2.1–3.3).
 
 ## 4. Registration and snapshots (#153 items 2–3)
 
-- [ ] 4.1 `TestComponentTypeValidate` (package `types`), `TestRegisterRefusesATypeOutsideTheFive`,
+- [x] 4.1 `TestComponentTypeValidate` (package `types`), `TestRegisterRefusesATypeOutsideTheFive`,
   `TestRegisterKeepsItsOwnCopy`, `TestRegisterRefusesADuplicateName` (D4), and a snapshot-independence test that
   reads `[]Declaration` (D5). Gate: fail on the base commit (no symbol, or the wrong return type).
-- [ ] 4.2 `types.ComponentType.Validate()` holds the five-type switch, and `ComponentConfig.Validate` calls it.
+- [x] 4.2 `types.ComponentType.Validate()` holds the five-type switch, and `ComponentConfig.Validate` calls it.
   `Registry.Register(Registration)` replaces `RegisterFactory`, `RegisterWithConfig` and `RegistrationConfig`, calls
   `Validate` on the type, and copies the registration with the helper `ListFactories` also uses.
   `Registration.Type` is `types.ComponentType`, and graph-ingest and every test move to the new call (D4). Gate: 4.1's
   type and registration tests pass; `task test:unit`;
   `go test -tags integration -race ./component/ ./processor/graph-ingest/`.
-- [ ] 4.3 `Snapshots() []Declaration`. `declarationSnapshot`, its revive directive, `Registry.declaration` and
+- [x] 4.3 `Snapshots() []Declaration`. `declarationSnapshot`, its revive directive, `Registry.declaration` and
   `Registry.declarationsSnapshot` are removed (D5). Gate: 4.1's snapshot test passes; `task lint`.
 
 Review stop B (tasks 4.1–4.3).

@@ -2,6 +2,7 @@ package component
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -41,32 +42,16 @@ const (
 
 // Registration holds factory and metadata for a component type
 type Registration struct {
-	Name         string       `json:"name"`         // Factory name (e.g., "udp-input")
-	Type         string       `json:"type"`         // Component type (input/processor/output/storage)
-	Protocol     string       `json:"protocol"`     // Technical protocol (udp, mavlink, websocket, etc.)
-	Domain       string       `json:"domain"`       // Business domain (robotics, semantic, network, storage)
-	Description  string       `json:"description"`  // Human-readable description
-	Version      string       `json:"version"`      // Component version
-	Schema       ConfigSchema `json:"schema"`       // Schema as static metadata (Feature 011)
-	Factory      Factory      `json:"-"`            // Factory function (not serializable)
-	Ports        PortDeclarer `json:"-"`            // Static port declaration (not serializable)
-	Dependencies []string     `json:"dependencies"` // Boot dependencies such as DepModelRegistry
-}
-
-// RegistrationConfig provides a clean API for component registration.
-// This config struct replaces the previous 7-8 parameter function signatures.
-// It maps 1:1 to Registration struct fields for simplicity.
-type RegistrationConfig struct {
-	Name         string       // Component name (e.g., "udp", "websocket", "graph-processor")
-	Factory      Factory      // Factory function to create component instances
-	Ports        PortDeclarer // Pure port declaration the constructor's ports must equal
-	Schema       ConfigSchema // Configuration schema for validation and discovery
-	Type         string       // Component type: "input", "processor", "output", "storage"
-	Protocol     string       // Technical protocol (udp, tcp, websocket, file, etc.)
-	Domain       string       // Business domain (network, storage, processing, robotics, semantic)
-	Description  string       // Human-readable description of the component
-	Version      string       // Component version (semver recommended)
-	Dependencies []string     // Runtime deps declared via constants like DepModelRegistry
+	Name         string              `json:"name"`         // Factory name (e.g., "udp-input")
+	Type         types.ComponentType `json:"type"`         // One of the five types.ComponentType constants
+	Protocol     string              `json:"protocol"`     // Technical protocol (udp, mavlink, websocket, etc.)
+	Domain       string              `json:"domain"`       // Business domain (robotics, semantic, network, storage)
+	Description  string              `json:"description"`  // Human-readable description
+	Version      string              `json:"version"`      // Component version
+	Schema       ConfigSchema        `json:"schema"`       // Schema as static metadata (Feature 011)
+	Factory      Factory             `json:"-"`            // Factory function (not serializable)
+	Ports        PortDeclarer        `json:"-"`            // Static port declaration (not serializable)
+	Dependencies []string            `json:"dependencies"` // Boot dependencies such as DepModelRegistry
 }
 
 // Declaration is the immutable port shape of one component instance: what the
@@ -92,36 +77,6 @@ type preparedComponent struct {
 	component   Discoverable
 }
 
-// declarationSnapshot is the defensive read view of one admitted component
-// declaration, returned by Snapshots for the component manager. The type is
-// unexported, so a consumer cannot name it.
-type declarationSnapshot struct {
-	record Declaration
-}
-
-func (s declarationSnapshot) Name() string { return s.record.InstanceName }
-
-func (s declarationSnapshot) Inputs() []Port {
-	return cloneResolvedPorts(s.record.InputPorts)
-}
-
-func (s declarationSnapshot) Outputs() []Port {
-	return cloneResolvedPorts(s.record.OutputPorts)
-}
-
-func (s declarationSnapshot) InputDeclarationFacts() []PortFacts {
-	return clonePortFactsSlice(s.record.InputFacts)
-}
-
-func (s declarationSnapshot) OutputDeclarationFacts() []PortFacts {
-	return clonePortFactsSlice(s.record.OutputFacts)
-}
-
-// Declaration returns a defensive clone of the admitted declaration value.
-func (s declarationSnapshot) Declaration() Declaration {
-	return cloneComponentDeclaration(s.record)
-}
-
 // Registry manages component factories and immutable admitted declarations.
 // Runtime component handles remain private to ComponentManager.
 type Registry struct {
@@ -140,36 +95,38 @@ func NewRegistry() *Registry {
 	}
 }
 
-// RegisterFactory registers a component factory with the given name
-// Returns an error if a factory with the same name is already registered.
-func (r *Registry) RegisterFactory(name string, registration *Registration) error {
-	if name == "" {
-		return errs.WrapInvalid(errs.ErrInvalidConfig, "Registry", "RegisterFactory", "factory name validation")
+// Register registers a component factory under registration.Name. It
+// refuses, with an error of the invalid class naming the factory, a name
+// ValidateComponentName refuses, a nil Factory or Ports, a Type that is not
+// one of the five types.ComponentType constants, and a name already
+// registered. The registry keeps its own copy: a later change to the caller's
+// value, its schema or its dependency list changes nothing registered.
+func (r *Registry) Register(registration Registration) error {
+	name := registration.Name
+	refuse := func(err error, action string) error {
+		return errs.WrapInvalid(fmt.Errorf("factory %q: %w", name, err), "Registry", "Register", action)
 	}
-	if registration == nil {
-		return errs.WrapInvalid(errs.ErrInvalidConfig, "Registry", "RegisterFactory", "registration validation")
+	if err := ValidateComponentName(name); err != nil {
+		return refuse(err, "factory name validation")
 	}
 	if registration.Factory == nil {
-		return errs.WrapInvalid(errs.ErrInvalidConfig, "Registry", "RegisterFactory", "factory function validation")
-	}
-	if registration.Type == "" {
-		return errs.WrapInvalid(errs.ErrInvalidConfig, "Registry", "RegisterFactory", "component type validation")
+		return refuse(errors.New("nil Factory"), "factory function validation")
 	}
 	if registration.Ports == nil {
-		return errs.WrapInvalid(
-			fmt.Errorf("factory %q declares no ports: set Registration.Ports to the pure port declarer the constructor derives its ports from", name),
-			"Registry", "RegisterFactory", "port declarer validation")
+		return refuse(errors.New("declares no ports: set Registration.Ports to the pure port declarer "+
+			"the constructor derives its ports from"), "port declarer validation")
 	}
+	if err := registration.Type.Validate(); err != nil {
+		return refuse(err, "component type validation")
+	}
+	stored := cloneRegistration(registration)
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
-
 	if _, exists := r.factories[name]; exists {
-		msg := fmt.Errorf("factory '%s' is already registered", name)
-		return errs.WrapInvalid(msg, "Registry", "RegisterFactory", "duplicate factory check")
+		return refuse(errors.New("already registered"), "duplicate factory check")
 	}
-
-	r.factories[name] = registration
+	r.factories[name] = &stored
 	return nil
 }
 
@@ -248,7 +205,7 @@ func (r *Registry) prepareComponent(
 	}
 
 	// Validate that the factory type matches the requested type
-	if registration.Type != string(config.Type) {
+	if registration.Type != config.Type {
 		msg := fmt.Errorf("component '%s' is type '%s', not '%s'",
 			config.Name, registration.Type, config.Type)
 		return preparedComponent{}, errs.WrapInvalid(msg, "Registry", operation, "type validation")
@@ -313,7 +270,7 @@ func (r *Registry) Declare(instanceName string, config types.ComponentConfig) (D
 		return Declaration{}, errs.WrapInvalid(
 			fmt.Errorf("unknown component factory '%s'", config.Name), "Registry", "Declare", "factory lookup")
 	}
-	if registration.Type != string(config.Type) {
+	if registration.Type != config.Type {
 		return Declaration{}, errs.WrapInvalid(
 			fmt.Errorf("component '%s' is type '%s', not '%s'", config.Name, registration.Type, config.Type),
 			"Registry", "Declare", "type validation")
@@ -466,23 +423,21 @@ func (r *Registry) ListFactories() map[string]*Registration {
 	// Return a copy to prevent external modification
 	result := make(map[string]*Registration, len(r.factories))
 	for name, registration := range r.factories {
-		// Create a copy of the registration without the factory function
-		// to avoid potential issues with function pointers
-		result[name] = &Registration{
-			Name:         registration.Name,
-			Type:         registration.Type,
-			Protocol:     registration.Protocol,
-			Domain:       registration.Domain,
-			Description:  registration.Description,
-			Version:      registration.Version,
-			Schema:       cloneConfigSchema(registration.Schema),
-			Ports:        registration.Ports, // pure function; no handle to leak
-			Dependencies: append([]string(nil), registration.Dependencies...),
-			// Factory is intentionally not copied for safety
-		}
+		clone := cloneRegistration(*registration)
+		clone.Factory = nil // a caller lists factories; it creates components through CreateComponent
+		result[name] = &clone
 	}
 
 	return result
+}
+
+// cloneRegistration copies a registration so that no map, slice or pointer is
+// shared with the original. Factory and Ports are functions and are kept.
+func cloneRegistration(registration Registration) Registration {
+	clone := registration
+	clone.Schema = cloneConfigSchema(registration.Schema)
+	clone.Dependencies = append([]string(nil), registration.Dependencies...)
+	return clone
 }
 
 func cloneConfigSchema(schema ConfigSchema) ConfigSchema {
@@ -531,38 +486,6 @@ func clonePropertySchema(property PropertySchema) PropertySchema {
 		}
 	}
 	return clone
-}
-
-// RegisterWithConfig registers a component using a configuration struct.
-// This is the recommended registration method that replaces the multi-parameter functions.
-//
-// Example usage:
-//
-//	registry.RegisterWithConfig(component.RegistrationConfig{
-//	    Name:        "udp",
-//	    Factory:     CreateUDPInput,
-//	    Schema:      udpSchema,
-//	    Type:        "input",
-//	    Protocol:    "udp",
-//	    Domain:      "network",
-//	    Description: "UDP input component for receiving network data",
-//	    Version:     "1.0.0",
-//	})
-func (r *Registry) RegisterWithConfig(config RegistrationConfig) error {
-	registration := &Registration{
-		Name:         config.Name,
-		Factory:      config.Factory,
-		Ports:        config.Ports,
-		Schema:       config.Schema,
-		Type:         config.Type,
-		Protocol:     config.Protocol,
-		Domain:       config.Domain,
-		Description:  config.Description,
-		Version:      config.Version,
-		Dependencies: config.Dependencies,
-	}
-
-	return r.RegisterFactory(config.Name, registration)
 }
 
 // Config validation constants - security limits
@@ -671,43 +594,14 @@ func compactStrings(values []string) []string {
 	return values[:write]
 }
 
-// declaration returns a defensive clone of one admitted component declaration.
-func (r *Registry) declaration(instanceName string) (Declaration, bool) {
+// Snapshots returns the admitted declarations, sorted by instance name. Each
+// is a copy that shares no slice with the registry. It exists for the
+// component manager (service.ComponentManager): a consumer reads admitted
+// components through that manager, and a direct call bypasses the manager's
+// bookkeeping.
+func (r *Registry) Snapshots() []Declaration {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	declaration, ok := r.declarations[instanceName]
-	if !ok {
-		return Declaration{}, false
-	}
-	return cloneComponentDeclaration(declaration), true
-}
-
-// declarationsSnapshot returns a deterministic defensive clone of the complete
-// boot admission set.
-func (r *Registry) declarationsSnapshot() []Declaration {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return r.declarationsLocked()
-}
-
-// Snapshots returns a deterministic defensive copy of the complete admission
-// set. It exists for the component manager (service.ComponentManager): a
-// consumer reads admitted components through that manager, and a direct call
-// bypasses the manager's bookkeeping.
-//
-//revive:disable:unexported-return The component manager ranges this opaque snapshot set; its record is not consumer surface.
-func (r *Registry) Snapshots() []declarationSnapshot {
-	declarations := r.declarationsSnapshot()
-	result := make([]declarationSnapshot, len(declarations))
-	for index, declaration := range declarations {
-		result[index] = declarationSnapshot{record: declaration}
-	}
-	return result
-}
-
-//revive:enable:unexported-return
-
-func (r *Registry) declarationsLocked() []Declaration {
 	names := make([]string, 0, len(r.declarations))
 	for name := range r.declarations {
 		names = append(names, name)

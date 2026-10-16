@@ -118,12 +118,18 @@ func (c ComponentConfig) Validate() error {
 		)
 	}
 
-	switch c.Type {
+	return c.Type.Validate()
+}
+
+// Validate refuses, with an error of the invalid class, a type that is not one
+// of the five ComponentType constants. The empty type is refused too.
+func (ct ComponentType) Validate() error {
+	switch ct {
 	case ComponentTypeInput, ComponentTypeProcessor, ComponentTypeOutput, ComponentTypeStorage, ComponentTypeGateway:
 		return nil
 	default:
-		return errs.WrapInvalid(errs.ErrInvalidConfig, "ComponentConfig", "Validate",
-			fmt.Sprintf("invalid component type: %s", c.Type))
+		return errs.WrapInvalid(errs.ErrInvalidConfig, "ComponentType", "Validate",
+			fmt.Sprintf("invalid component type: %q", string(ct)))
 	}
 }
 

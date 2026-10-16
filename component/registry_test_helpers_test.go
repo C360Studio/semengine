@@ -73,3 +73,14 @@ func requireNoError(t *testing.T, err error) {
 		t.Fatal(err)
 	}
 }
+
+// admittedDeclaration finds one admitted declaration through Snapshots, the
+// read a consumer's component manager makes.
+func admittedDeclaration(registry *Registry, instanceName string) (Declaration, bool) {
+	for _, declaration := range registry.Snapshots() {
+		if declaration.InstanceName == instanceName {
+			return declaration, true
+		}
+	}
+	return Declaration{}, false
+}

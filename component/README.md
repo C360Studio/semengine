@@ -107,7 +107,7 @@ func create(raw json.RawMessage, deps component.Dependencies) (component.Discove
 
 // Register adds this package's factory to a registry. The host calls it.
 func Register(registry *component.Registry) error {
-    return registry.RegisterWithConfig(component.RegistrationConfig{
+    return registry.Register(component.Registration{
         Name:        "my-input",
         Factory:     create,
         Ports:       declarePorts,
@@ -195,8 +195,10 @@ The other port types are `NATSRequestPort` (request and reply), `KVReadPort`, `H
 ## Registry
 
 - `NewRegistry()` returns an empty registry.
-- `RegisterWithConfig(RegistrationConfig)` registers a factory and its static metadata. It refuses an empty name, a nil
-  factory, an empty type, a nil port declarer (`Ports`), and a name already registered.
+- `Register(Registration)` registers a factory and its static metadata under `Registration.Name`, and keeps its own
+  copy: a later change to the caller's value, its schema or its dependency list changes nothing registered. It refuses
+  a name `ValidateComponentName` refuses, a nil factory, a nil port declarer (`Ports`), a `Type` that is not one of the
+  five `types.ComponentType` constants (`types.ComponentType.Validate`), and a name already registered.
 - `ListFactories()` returns a copy of each registration's metadata, without its factory function; it returns no live
   component.
 - `Declare(instanceName, config)` runs a factory's port declarer for one configured instance and returns its
@@ -236,12 +238,12 @@ Factory function signature for component creation.
 
 ### Errors
 
-Every refusal from `RegisterWithConfig` is a `pkg/errs` error of the invalid class:
+Every refusal from `Register` is a `pkg/errs` error of the invalid class, and its message names the factory:
 
 ```go
-err := registry.RegisterWithConfig(registration)
+err := registry.Register(registration)
 if errs.IsInvalid(err) {
-    // A required field is missing, or the name is already registered.
+    // The name, factory, port declarer or type is refused, or the name is already registered.
 }
 ```
 
@@ -251,7 +253,7 @@ if errs.IsInvalid(err) {
 
 Every `Registry` method is safe for concurrent use; one read-write mutex guards the factories, the declarations and the
 sealed flag. A factory and a port declarer run without that mutex held. Sealing stops `CreateComponent`; it does not
-stop `RegisterWithConfig`.
+stop `Register`.
 
 ## Testing
 

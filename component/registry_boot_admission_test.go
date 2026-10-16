@@ -16,7 +16,7 @@ func TestRegistryCapturesPortsOnceAndReturnsDefensiveDeclarationSnapshots(t *tes
 			Config: NetworkPort{Protocol: "tcp", Host: "127.0.0.1", Port: 8080},
 		},
 	}}
-	requireNoError(t, registry.RegisterWithConfig(RegistrationConfig{
+	requireNoError(t, registry.Register(Registration{
 		Name: "declaration-test", Type: "processor",
 		Factory: func(json.RawMessage, Dependencies) (Discoverable, error) { return created, nil },
 		Ports:   created.declarePorts,
@@ -50,27 +50,21 @@ func TestRegistryCapturesPortsOnceAndReturnsDefensiveDeclarationSnapshots(t *tes
 	}
 }
 
-func mutateDeclarationSnapshot(snapshot declarationSnapshot) {
-	outputs := snapshot.Outputs()
-	outputJetstream := outputs[0].Config.(JetStreamPort)
-	outputJetstream.Subjects[0] = "output-method.mutated"
-	facts := snapshot.OutputDeclarationFacts()
-	facts[0].natsSubjects[0] = "facts-method.mutated"
-	facts[0].stream.subjects[0] = "stream-facts-method.mutated"
-
-	jetstream := snapshot.record.OutputPorts[0].Config.(JetStreamPort)
+func mutateDeclarationSnapshot(snapshot Declaration) {
+	jetstream := snapshot.OutputPorts[0].Config.(JetStreamPort)
 	jetstream.Subjects[0] = "events.mutated"
-	snapshot.record.OutputFacts[0].natsSubjects[0] = "facts.mutated"
-	snapshot.record.OutputFacts[0].stream.subjects[0] = "stream-facts.mutated"
-	snapshot.record.ExclusiveResources[0] = "tcp:mutated:1"
+	snapshot.OutputFacts[0].natsSubjects[0] = "facts.mutated"
+	snapshot.OutputFacts[0].stream.subjects[0] = "stream-facts.mutated"
+	snapshot.ExclusiveResources[0] = "tcp:mutated:1"
 }
 
-func assertWorkerDeclarationUnchanged(t *testing.T, snapshot declarationSnapshot) {
+func assertWorkerDeclarationUnchanged(t *testing.T, snapshot Declaration) {
 	t.Helper()
-	if factory := snapshot.Declaration().FactoryIdentity; snapshot.Name() != "worker" || factory != "declaration-test" {
-		t.Fatalf("snapshot identity = %q/%q, want worker/declaration-test", snapshot.Name(), factory)
+	if snapshot.InstanceName != "worker" || snapshot.FactoryIdentity != "declaration-test" {
+		t.Fatalf("snapshot identity = %q/%q, want worker/declaration-test",
+			snapshot.InstanceName, snapshot.FactoryIdentity)
 	}
-	outputs := snapshot.Outputs()
+	outputs := snapshot.OutputPorts
 	if len(outputs) != 2 {
 		t.Fatalf("output ports = %#v, want two retained declarations", outputs)
 	}
@@ -78,7 +72,7 @@ func assertWorkerDeclarationUnchanged(t *testing.T, snapshot declarationSnapshot
 	if !reflect.DeepEqual(jetstream.Subjects, []string{"events.created"}) {
 		t.Fatalf("port subjects = %v, want events.created", jetstream.Subjects)
 	}
-	facts := snapshot.OutputDeclarationFacts()
+	facts := snapshot.OutputFacts
 	if got := facts[0].NATSSubjects(); !reflect.DeepEqual(got, []string{"events.created"}) {
 		t.Fatalf("fact subjects = %v, want events.created", got)
 	}
@@ -86,8 +80,8 @@ func assertWorkerDeclarationUnchanged(t *testing.T, snapshot declarationSnapshot
 	if !ok || !reflect.DeepEqual(stream.Subjects(), []string{"events.created"}) {
 		t.Fatalf("stream fact subjects = %v, present=%v, want events.created", stream.Subjects(), ok)
 	}
-	if !reflect.DeepEqual(snapshot.record.ExclusiveResources, []string{"tcp:127.0.0.1:8080"}) {
-		t.Fatalf("exclusive resources = %v, want tcp:127.0.0.1:8080", snapshot.record.ExclusiveResources)
+	if !reflect.DeepEqual(snapshot.ExclusiveResources, []string{"tcp:127.0.0.1:8080"}) {
+		t.Fatalf("exclusive resources = %v, want tcp:127.0.0.1:8080", snapshot.ExclusiveResources)
 	}
 }
 
@@ -105,7 +99,7 @@ func TestRegistryHasNoLiveHandleOrReplacementSurface(t *testing.T) {
 
 func TestRegistryManagedPreparationFailurePublishesNothing(t *testing.T) {
 	registry := NewRegistry()
-	requireNoError(t, registry.RegisterWithConfig(RegistrationConfig{
+	requireNoError(t, registry.Register(Registration{
 		Name: "declaration-test", Type: "processor",
 		Factory: func(json.RawMessage, Dependencies) (Discoverable, error) {
 			return &declarationTestComponent{}, nil
@@ -120,7 +114,7 @@ func TestRegistryManagedPreparationFailurePublishesNothing(t *testing.T) {
 	if !errors.Is(err, want) {
 		t.Fatalf("CreateComponent error = %v, want %v", err, want)
 	}
-	if _, ok := registry.declaration("worker"); ok {
+	if _, ok := admittedDeclaration(registry, "worker"); ok {
 		t.Fatal("failed preparation published a declaration")
 	}
 }
@@ -128,7 +122,7 @@ func TestRegistryManagedPreparationFailurePublishesNothing(t *testing.T) {
 func TestRegistrySnapshotReportsCompleteBootSetAndSealRejectsLaterAdmission(t *testing.T) {
 	registry := NewRegistry()
 	factoryCalls := 0
-	requireNoError(t, registry.RegisterWithConfig(RegistrationConfig{
+	requireNoError(t, registry.Register(Registration{
 		Name: "declaration-test", Type: "processor",
 		Factory: func(json.RawMessage, Dependencies) (Discoverable, error) {
 			factoryCalls++
@@ -145,7 +139,7 @@ func TestRegistrySnapshotReportsCompleteBootSetAndSealRejectsLaterAdmission(t *t
 	)
 	requireNoError(t, err)
 	admitted := registry.Snapshots()
-	if len(admitted) != 2 || admitted[0].Name() != "worker-a" || admitted[1].Name() != "worker-b" {
+	if len(admitted) != 2 || admitted[0].InstanceName != "worker-a" || admitted[1].InstanceName != "worker-b" {
 		t.Fatalf("boot declaration snapshot = %#v, want complete worker-a/worker-b set", admitted)
 	}
 

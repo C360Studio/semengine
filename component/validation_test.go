@@ -205,7 +205,7 @@ func TestValidateFactoryConfigRefusesDataAfterTheFirstValue(t *testing.T) {
 			called = true
 			return &declarationTestComponent{}, nil
 		}
-		requireNoError(t, registry.RegisterWithConfig(RegistrationConfig{
+		requireNoError(t, registry.Register(Registration{
 			Name: "twice", Type: "processor", Factory: factory, Ports: noPorts,
 		}))
 		_, err := registry.CreateComponent(

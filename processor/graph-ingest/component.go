@@ -811,7 +811,7 @@ func (c *Component) registerMetrics(registry *metric.MetricsRegistry) error {
 
 // Register registers the graph-ingest factory with the component registry
 func Register(registry *component.Registry) error {
-	return registry.RegisterFactory("graph-ingest", &component.Registration{
+	return registry.Register(component.Registration{
 		Name:        "graph-ingest",
 		Type:        "processor",
 		Protocol:    "nats",

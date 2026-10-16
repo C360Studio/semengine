@@ -70,12 +70,10 @@ func TestClassifyMutationErrorMapsEachOutcome(t *testing.T) {
 			projection.CommitNotCommitted, projection.MutationUnavailable, errs.ErrorTransient, ""},
 		{"deadline passed before send", transport(graphmutation.TransportDeadline, context.DeadlineExceeded),
 			projection.CommitNotCommitted, projection.MutationUnavailable, errs.ErrorTransient, ""},
-
-		// natsclient's refusals before sending stay commit-unknown until #268.
-		{"not connected, wrapped as commit unknown", transport(graphmutation.TransportCommitUnknown, natsclient.ErrNotConnected),
-			projection.CommitUnknown, projection.MutationCommitUnknown, errs.ErrorFatal, ""},
-		{"circuit open, wrapped as commit unknown", transport(graphmutation.TransportCommitUnknown, natsclient.ErrCircuitOpen),
-			projection.CommitUnknown, projection.MutationCommitUnknown, errs.ErrorFatal, ""},
+		{"not connected before send", transport(graphmutation.TransportUnavailable, natsclient.ErrNotConnected),
+			projection.CommitNotCommitted, projection.MutationUnavailable, errs.ErrorTransient, ""},
+		{"circuit open before send", transport(graphmutation.TransportUnavailable, natsclient.ErrCircuitOpen),
+			projection.CommitNotCommitted, projection.MutationUnavailable, errs.ErrorTransient, ""},
 
 		// Everything else: commit-unknown and fatal, the reply's code kept.
 		{"timeout after possible delivery", transport(graphmutation.TransportCommitUnknown, nats.ErrTimeout),

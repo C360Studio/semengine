@@ -8,7 +8,6 @@ package message
 //   - Infrastructure-agnostic: Messages contain only data, no routing or storage logic
 //   - Behavioral payloads: Payloads expose capabilities through -able interfaces
 //   - Flexible metadata: Meta interface allows different metadata implementations
-//   - Content-addressable: Hash method enables deduplication and referencing
 //
 // Example:
 //
@@ -33,10 +32,6 @@ type Message interface {
 	// Meta returns metadata about the message lifecycle and origin.
 	// Includes creation time, receipt time, and source service information.
 	Meta() Meta
-
-	// Hash returns a content-based hash for deduplication and storage.
-	// The hash is computed from the message type and payload data.
-	Hash() string
 
 	// Validate performs comprehensive validation of the message.
 	// Checks message type validity, payload presence, and payload-specific validation.

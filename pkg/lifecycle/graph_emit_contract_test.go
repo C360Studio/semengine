@@ -133,31 +133,34 @@ func TestMutationAmbiguousReplyReturnsCommitUnknownAfterOneAttempt(t *testing.T)
 }
 
 // TestNoRespondersIsTransientAndNotCommitted pins the lifecycle half of the projection-mutation
-// requirement "A request no responder took keeps the transient class": no responder took the
-// request, so nothing was written and the Class field is transient. Only the field is promised;
-// the raw nats.ErrNoResponders it wraps is unclassified.
+// requirement "One mapping from a mutation request's error to its commit state": no responder took
+// the request, or natsclient refused it before sending (design D1, #268), so nothing was written
+// and the Class field is transient. Only the field is promised; the raw error it wraps is
+// unclassified.
 func TestNoRespondersIsTransientAndNotCommitted(t *testing.T) {
-	for _, operation := range emitWriteOperations() {
-		t.Run(operation.name, func(t *testing.T) {
-			client, err := graphmutation.NewClient(&mutationFaultRequester{err: nats.ErrNoResponders}, time.Second)
-			if err != nil {
-				t.Fatalf("NewClient: %v", err)
-			}
-			err = operation.call(&graphEmitterNATS{client: client})
-			var mutationErr *projection.MutationError
-			if !errors.As(err, &mutationErr) ||
-				mutationErr.Operation != operation.operation ||
-				mutationErr.Kind != projection.MutationUnavailable ||
-				mutationErr.Commit != projection.CommitNotCommitted {
-				t.Fatalf("error = %#v, want %s unavailable and not committed", mutationErr, operation.name)
-			}
-			if mutationErr.Class != errs.ErrorTransient {
-				t.Errorf("class %q, want transient: no responder took the request", mutationErr.Class)
-			}
-			if !errors.Is(err, nats.ErrNoResponders) {
-				t.Errorf("the cause is not reachable: %v", err)
-			}
-		})
+	for _, fault := range []error{nats.ErrNoResponders, natsclient.ErrNotConnected} {
+		for _, operation := range emitWriteOperations() {
+			t.Run(operation.name+"/"+fault.Error(), func(t *testing.T) {
+				client, err := graphmutation.NewClient(&mutationFaultRequester{err: fault}, time.Second)
+				if err != nil {
+					t.Fatalf("NewClient: %v", err)
+				}
+				err = operation.call(&graphEmitterNATS{client: client})
+				var mutationErr *projection.MutationError
+				if !errors.As(err, &mutationErr) ||
+					mutationErr.Operation != operation.operation ||
+					mutationErr.Kind != projection.MutationUnavailable ||
+					mutationErr.Commit != projection.CommitNotCommitted {
+					t.Fatalf("error = %#v, want %s unavailable and not committed", mutationErr, operation.name)
+				}
+				if mutationErr.Class != errs.ErrorTransient {
+					t.Errorf("class %q, want transient: the request was not delivered", mutationErr.Class)
+				}
+				if !errors.Is(err, fault) {
+					t.Errorf("the cause is not reachable: %v", err)
+				}
+			})
+		}
 	}
 }
 

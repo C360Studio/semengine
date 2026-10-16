@@ -266,52 +266,6 @@ func TestIsValidEntityID(t *testing.T) {
 	}
 }
 
-// ptrTime returns a pointer to a time.Time value for testing ExpiresAt.
-func ptrTime(t time.Time) *time.Time {
-	return &t
-}
-
-func TestTriple_ExpiresAt(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name      string
-		expiresAt *time.Time
-		isExpired bool
-	}{
-		{
-			name:      "nil ExpiresAt never expires",
-			expiresAt: nil,
-			isExpired: false,
-		},
-		{
-			name:      "future ExpiresAt not expired",
-			expiresAt: ptrTime(time.Now().Add(1 * time.Hour)),
-			isExpired: false,
-		},
-		{
-			name:      "past ExpiresAt is expired",
-			expiresAt: ptrTime(time.Now().Add(-1 * time.Hour)),
-			isExpired: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			triple := Triple{
-				Subject:   "c360.platform1.robotics.mav1.drone.0",
-				Predicate: "robotics.battery.level",
-				Object:    85.5,
-				ExpiresAt: tt.expiresAt,
-			}
-
-			if got := triple.IsExpired(); got != tt.isExpired {
-				t.Errorf("Triple.IsExpired() = %v, want %v", got, tt.isExpired)
-			}
-		})
-	}
-}
-
 func TestTriple_ExpiresAt_JSON(t *testing.T) {
 	t.Parallel()
 

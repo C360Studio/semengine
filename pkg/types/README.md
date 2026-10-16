@@ -68,7 +68,8 @@ parsed, err := types.ParseEntityID("c360.prod.gcs1.robotics.drone.42")
 
 ## Import Pattern
 
-The `message/` package re-exports these types as aliases for backwards compatibility:
+The `message/` package aliases one of these types, `Type`, so payload code can say `message.Type`. `EntityID`,
+`EntityType` and `Keyable` are used from `pkg/types` directly:
 
 ```go
 // These are equivalent:
@@ -76,7 +77,7 @@ import "github.com/c360studio/semengine/pkg/types"
 var t types.Type
 
 import "github.com/c360studio/semengine/message"
-var t message.Type  // Alias to types.Type
+var t message.Type  // Alias of types.Type
 ```
 
 ## Why This Package Exists
@@ -93,7 +94,7 @@ Solution: Extract `Type` and related types to `pkg/types/`, which both packages 
 pkg/types/   <── component/ imports for Schema validation
      ^
      |
-message/     <── re-exports as aliases for backwards compatibility
+message/     <── aliases Type as message.Type
      |
      v
 component/   <── message/ imports for CreatePayload()

@@ -65,7 +65,8 @@ The rest of this page is about tier 0, because that is what every deployment get
   outcomes by request ID. A *commit unknown* error is classed fatal, whatever class the failed reply carried:
   `errs.IsTransient` reports false for it, so a retry loop keyed on that check does not repeat the write blindly.
   The reply's error code is kept. A request that no service answered ("no responders") is different: nothing was
-  stored, and its error is *not committed* with class transient.
+  stored, and its error is *not committed* with class transient. So is a write the client refused before sending it,
+  because the connection to NATS was reconnecting or the client had paused sending after repeated failures.
 - "The stream accepted my message" is not the same as "my data is stored". Data is stored once the entity's state is
   in the `ENTITY_STATES` KV bucket and its content is in the object store.
 

@@ -2,19 +2,21 @@ package message
 
 import (
 	"testing"
+
+	"github.com/c360studio/semengine/pkg/types"
 )
 
 func TestParseEntityID(t *testing.T) {
 	tests := []struct {
 		name    string
 		input   string
-		want    EntityID
+		want    types.EntityID
 		wantErr bool
 	}{
 		{
 			name:  "valid 6-part entity ID (org.platform.system.domain.type.instance)",
 			input: "c360.platform1.gcs1.robotics.drone.1",
-			want: EntityID{
+			want: types.EntityID{
 				Org:      "c360",
 				Platform: "platform1",
 				System:   "gcs1",
@@ -27,7 +29,7 @@ func TestParseEntityID(t *testing.T) {
 		{
 			name:  "valid with different values",
 			input: "noaa.pacific.buoy7.oceanographic.sensor.temperature",
-			want: EntityID{
+			want: types.EntityID{
 				Org:      "noaa",
 				Platform: "pacific",
 				System:   "buoy7",
@@ -40,55 +42,55 @@ func TestParseEntityID(t *testing.T) {
 		{
 			name:    "invalid: single part",
 			input:   "invalid",
-			want:    EntityID{},
+			want:    types.EntityID{},
 			wantErr: true,
 		},
 		{
 			name:    "invalid: two parts",
 			input:   "a.b",
-			want:    EntityID{},
+			want:    types.EntityID{},
 			wantErr: true,
 		},
 		{
 			name:    "invalid: five parts (missing instance)",
 			input:   "a.b.c.d.e",
-			want:    EntityID{},
+			want:    types.EntityID{},
 			wantErr: true,
 		},
 		{
 			name:    "too few parts",
 			input:   "c360.platform1.robotics.drone.1",
-			want:    EntityID{},
+			want:    types.EntityID{},
 			wantErr: true,
 		},
 		{
 			name:    "too many parts",
 			input:   "c360.platform1.robotics.gcs1.drone.1.extra",
-			want:    EntityID{},
+			want:    types.EntityID{},
 			wantErr: true,
 		},
 		{
 			name:    "empty string",
 			input:   "",
-			want:    EntityID{},
+			want:    types.EntityID{},
 			wantErr: true,
 		},
 		{
 			name:    "empty part in middle",
 			input:   "c360.platform1..gcs1.drone.1",
-			want:    EntityID{},
+			want:    types.EntityID{},
 			wantErr: true,
 		},
 		{
 			name:    "empty part at start",
 			input:   ".platform1.robotics.gcs1.drone.1",
-			want:    EntityID{},
+			want:    types.EntityID{},
 			wantErr: true,
 		},
 		{
 			name:    "empty part at end",
 			input:   "c360.platform1.robotics.gcs1.drone.",
-			want:    EntityID{},
+			want:    types.EntityID{},
 			wantErr: true,
 		},
 	}
@@ -154,7 +156,7 @@ func TestParseEntityIDValidation(t *testing.T) {
 }
 
 func TestEntityIDPrefixMethods(t *testing.T) {
-	eid := EntityID{
+	eid := types.EntityID{
 		Org:      "c360",
 		Platform: "logistics",
 		Domain:   "environmental",
@@ -203,7 +205,7 @@ func TestEntityIDPrefixMethods(t *testing.T) {
 }
 
 func TestEntityIDHasPrefix(t *testing.T) {
-	eid := EntityID{
+	eid := types.EntityID{
 		Org:      "c360",
 		Platform: "logistics",
 		Domain:   "environmental",
@@ -280,7 +282,7 @@ func TestEntityIDHasPrefix(t *testing.T) {
 }
 
 func TestEntityIDIsSibling(t *testing.T) {
-	sensor1 := EntityID{
+	sensor1 := types.EntityID{
 		Org:      "c360",
 		Platform: "logistics",
 		Domain:   "environmental",
@@ -289,7 +291,7 @@ func TestEntityIDIsSibling(t *testing.T) {
 		Instance: "cold-storage-01",
 	}
 
-	sensor2 := EntityID{
+	sensor2 := types.EntityID{
 		Org:      "c360",
 		Platform: "logistics",
 		Domain:   "environmental",
@@ -298,7 +300,7 @@ func TestEntityIDIsSibling(t *testing.T) {
 		Instance: "cold-storage-02",
 	}
 
-	humid := EntityID{
+	humid := types.EntityID{
 		Org:      "c360",
 		Platform: "logistics",
 		Domain:   "environmental",
@@ -307,7 +309,7 @@ func TestEntityIDIsSibling(t *testing.T) {
 		Instance: "zone-a",
 	}
 
-	otherOrg := EntityID{
+	otherOrg := types.EntityID{
 		Org:      "acme",
 		Platform: "logistics",
 		Domain:   "environmental",
@@ -318,8 +320,8 @@ func TestEntityIDIsSibling(t *testing.T) {
 
 	tests := []struct {
 		name string
-		a    EntityID
-		b    EntityID
+		a    types.EntityID
+		b    types.EntityID
 		want bool
 		desc string
 	}{

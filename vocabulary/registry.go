@@ -327,40 +327,6 @@ func Register(name string, opts ...Option) {
 	predicateRegistry[name] = meta
 }
 
-// parseDomainCategory extracts domain and category from dotted predicate name.
-// For "sensor.temperature.celsius", returns ("sensor", "temperature").
-func parseDomainCategory(name string) (domain, category string) {
-	// Split on dots
-	parts := []rune(name)
-	firstDot := -1
-	secondDot := -1
-
-	for i, r := range parts {
-		if r == '.' {
-			if firstDot == -1 {
-				firstDot = i
-			} else if secondDot == -1 {
-				secondDot = i
-				break
-			}
-		}
-	}
-
-	if firstDot == -1 {
-		return "", ""
-	}
-
-	domain = name[:firstDot]
-
-	if secondDot == -1 {
-		// Only two parts - invalid predicate format
-		return domain, ""
-	}
-
-	category = name[firstDot+1 : secondDot]
-	return domain, category
-}
-
 // validatePredicateMetadataLocked validates relationships between metadata
 // fields. The caller holds registryMu so an already-declared inverse can be
 // checked without racing another registration.

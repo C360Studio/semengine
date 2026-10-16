@@ -1,8 +1,6 @@
 package storagereport
 
 import (
-	"bytes"
-	"log/slog"
 	"reflect"
 	"testing"
 	"testing/synctest"
@@ -234,20 +232,109 @@ func mutableAddresses(v reflect.Value, path string, into map[uintptr]string) int
 	return count
 }
 
-// TestReportConsumer_AccountRetractionIsLogged observes the declared signal for the
-// one change Observer cannot carry: it has no method that retracts an
-// account row, so the retraction is logged.
-func TestReportConsumer_AccountRetractionIsLogged(t *testing.T) {
-	var logs bytes.Buffer
-	store := &fakeWatchStore{}
-	consumer, err := NewConsumer(store, ConsumerConfig{
-		Logger: slog.New(slog.NewTextHandler(&logs, nil)),
+// TestReportConsumer_AccountDeleteReachesObserver: a delete or purge of the account key,
+// when this process held an account row, tells the observer once, with the row it last
+// observed, and the snapshot stops reporting an account. A tombstone of an account the
+// process does not hold tells the observer nothing (#85).
+func TestReportConsumer_AccountDeleteReachesObserver(t *testing.T) {
+	t.Run("a held account", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			store := &fakeWatchStore{}
+			observer := &recordingObserver{}
+			consumer := runConsumer(t, store, observer)
+			synctest.Wait()
+
+			watcher := store.watchers[0]
+			watcher.put(StorageAccountReportKey, AccountReport{ProducedBy: "held"})
+			watcher.synced()
+			synctest.Wait()
+			_, _, observed := observer.snapshot()
+			require.Len(t, observed, 1)
+			require.Empty(t, observer.forgottenAccounts(), "nothing is forgotten before the delete")
+
+			watcher.del(StorageAccountReportKey)
+			synctest.Wait()
+			assert.False(t, consumer.Snapshot().AccountKnown)
+			assert.Equal(t, observed, observer.forgottenAccounts(),
+				"the observer forgets the account row it was given, once")
+
+			// A second tombstone finds no held account.
+			watcher.del(StorageAccountReportKey)
+			synctest.Wait()
+			assert.Len(t, observer.forgottenAccounts(), 1)
+		})
 	})
-	require.NoError(t, err)
-	consumer.putAccount(AccountReport{ProducedBy: "held"})
+	t.Run("no held account", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			store := &fakeWatchStore{}
+			observer := &recordingObserver{}
+			consumer := runConsumer(t, store, observer)
+			synctest.Wait()
 
-	consumer.remove(StorageAccountReportKey)
+			watcher := store.watchers[0]
+			watcher.synced()
+			watcher.del(StorageAccountReportKey)
+			synctest.Wait()
+			assert.True(t, consumer.Snapshot().Synced)
+			assert.Empty(t, observer.forgottenAccounts())
+		})
+	})
+}
 
-	assert.False(t, consumer.Snapshot().AccountKnown)
-	assert.Contains(t, logs.String(), "account row is gone")
+// TestReportConsumer_ResyncRetractionReachesObserver: a replacement watch whose initial
+// values lack the account key, when this process held an account row, tells the
+// observer once, at the sync marker and not before it. An undecodable account value in
+// the initial values keeps the held row and tells the observer nothing (#85).
+func TestReportConsumer_ResyncRetractionReachesObserver(t *testing.T) {
+	replace := func(t *testing.T, store *fakeWatchStore, observer *recordingObserver) (*fakeKeyWatcher, []AccountReport) {
+		t.Helper()
+		first := store.watchers[0]
+		first.put("ROW", reportRow("ROW", TierFile, PressureNormal))
+		first.put(StorageAccountReportKey, AccountReport{ProducedBy: "held"})
+		first.synced()
+		synctest.Wait()
+		_, _, observed := observer.snapshot()
+		require.Len(t, observed, 1)
+		close(first.updates)
+		eventually(t, func() bool { return store.watchCount() == 2 }, "the dropped watch is replaced")
+		store.mu.Lock()
+		defer store.mu.Unlock()
+		return store.watchers[1], observed
+	}
+
+	t.Run("account key absent", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			store := &fakeWatchStore{}
+			observer := &recordingObserver{}
+			consumer := runConsumer(t, store, observer)
+			synctest.Wait()
+			second, observed := replace(t, store, observer)
+
+			second.put("ROW", reportRow("ROW", TierFile, PressureNormal))
+			synctest.Wait()
+			assert.Empty(t, observer.forgottenAccounts(), "nothing is forgotten before the sync marker")
+
+			second.synced()
+			synctest.Wait()
+			assert.False(t, consumer.Snapshot().AccountKnown)
+			assert.Equal(t, observed, observer.forgottenAccounts(),
+				"the observer forgets the account row it was given, once, at the marker")
+		})
+	})
+	t.Run("account value undecodable", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			store := &fakeWatchStore{}
+			observer := &recordingObserver{}
+			consumer := runConsumer(t, store, observer)
+			synctest.Wait()
+			second, _ := replace(t, store, observer)
+
+			second.put("ROW", reportRow("ROW", TierFile, PressureNormal))
+			second.raw(StorageAccountReportKey, []byte("{not json"))
+			second.synced()
+			synctest.Wait()
+			assert.True(t, consumer.Snapshot().AccountKnown, "the held account row is kept")
+			assert.Empty(t, observer.forgottenAccounts())
+		})
+	})
 }

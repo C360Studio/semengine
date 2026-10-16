@@ -93,6 +93,8 @@ type recordingObserver struct {
 	observed []string
 	forgot   []string
 	accounts []AccountReport
+	// forgotAccounts holds each account row ForgetAccount was given.
+	forgotAccounts []AccountReport
 }
 
 func (o *recordingObserver) ObserveResource(row ResourceReport) {
@@ -111,6 +113,18 @@ func (o *recordingObserver) ObserveAccount(row AccountReport) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.accounts = append(o.accounts, row)
+}
+
+func (o *recordingObserver) ForgetAccount(row AccountReport) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.forgotAccounts = append(o.forgotAccounts, row)
+}
+
+func (o *recordingObserver) forgottenAccounts() []AccountReport {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return append([]AccountReport(nil), o.forgotAccounts...)
 }
 
 func (o *recordingObserver) snapshot() ([]string, []string, []AccountReport) {

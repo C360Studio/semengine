@@ -18,10 +18,12 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
   (`message/decoder_fuzz_test.go:345-348`, `:375-381`, `:410-418`): a type holding `.` is refused at marshal with
   invalid data, and the read-back branch goes. Gate: both fail on the base commit (the fuzz target on its `a.b` seed).
   Done: both fail on `cfba65a`, the fuzz target on seed #7 `a.b` (`notes/2.2.md`).
-- [ ] 2.3 `TestGenericJSONValidateRefusesWhatTheShapeCheckRefuses` and the law in `FuzzGenericJSONShapes` (D3):
+- [x] 2.3 `TestGenericJSONValidateRefusesWhatTheShapeCheckRefuses` and the law in `FuzzGenericJSONShapes` (D3):
   `Validate` refuses with invalid data exactly when the generator marked `foreign` or `badUTF8`, and returns nil for
   `nonJSON` (NaN, infinity) and valid values (owner question 5, option 1). Gate: both fail on the base commit.
-- [ ] 2.4 `TestRegistryLooksUpByType` (D6). Gate: fails on the base commit (no typed signature).
+  Done: both fail on `b840587`, the fuzz target on seeds #0, #2 and #19–#26 (`notes/2.3.md`).
+- [x] 2.4 `TestRegistryLooksUpByType` (D6). Gate: fails on the base commit (no typed signature).
+  Done: fails to compile on `ca8eb5f`, no typed signature (`notes/2.4.md`).
 - [ ] 2.5 `TestParsePredicateDoesNotAllocate`, with a fresh predicate on every run including the warm-up (D7).
   Gate: fails on the base commit.
 - [ ] 2.6 `FuzzParsePredicateAgreesWithGrammar` (D7, generated checks): a grammar oracle and a copy of the base parse;
@@ -36,19 +38,21 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
   existing non-UTF-8 type test pass; one `task mutate:check` run that deletes the new call fails that test.
   Done: 2.2 and `TestBaseMessageRefusesTypeThatIsNotUTF8` pass at `a8ace02`; mutate:check verdict detection
   (`notes/3.2.md`).
-- [ ] 3.3 `GenericJSONPayload.Validate` runs the shape check; `MarshalJSON` and its key sort unchanged; the
+- [x] 3.3 `GenericJSONPayload.Validate` runs the shape check; `MarshalJSON` and its key sort unchanged; the
   `Validate` doc names the values only encoding refuses (owner question 5). Gate: 2.3 passes.
+  Done: 2.3 passes at `ca8eb5f`; a 20 s `-fuzz` run found no failure (`notes/2.3.md`).
 - [ ] 3.4 `Hash` leaves `Message` and `BaseMessage` with its test and the "Content-addressable" doc line (owner
   question 1; under option 2, `Hash() (string, error)` and `TestHashRefusesAPayloadThatCannotEncode`). Gate:
   `task build`, `task lint`.
 - [ ] 3.5 Remove `message.Keyable`, `message.EntityType`, `message.EntityID`, `Triple.IsExpired` and
   `EntityType.IsValid` (owner question 2); `triple_identity.go`'s hazard note stops citing `IsExpired`. Gate:
   `task build`, `task lint`.
-- [ ] 3.6 Registry keyed by `types.Type`; `GetRegistration` and `IndexingProfileFor` typed; graph-ingest's three calls
+- [x] 3.6 Registry keyed by `types.Type`; `GetRegistration` and `IndexingProfileFor` typed; graph-ingest's three calls
   drop `.Key()`; `Contracts` sorts typed keys by `Key()`; `List` and `Registration.MessageType` spell the key with
   `Type.Key()` (owner question 4; otherwise D6′). Gate: 2.4, `TestContractsReturnsIndependentSortedCopies`,
   `TestRegistry_ListPayloads`, `TestRegistry_ListByDomain`, `TestRegistry_BuildPayload_Success` and the graph-ingest
   unit tests pass.
+  Done: all five and `./processor/graph-ingest/...` pass at `8cc4c63` (`notes/2.4.md`).
 - [ ] 3.7 `ParsePredicate` with `strings.Cut`; the memo and `predicate_memo_test.go` go. Gate: 2.5 and 2.6 pass;
   one `task mutate:check` run against the new `strings.Cut` code, with a mutant that checks segments before arity,
   is detected by 2.6 (on the `a..b.c` seed); before/after `go test -bench` recorded in `notes/3.7.md` as

@@ -41,9 +41,12 @@ lines today: `pkg/types` 757, `message` 2,003, `payloadregistry` 434, `vocabular
   `message/base_message.go:138` — `if data, err := m.payload.MarshalJSON(); err == nil {` (`Hash`). **What the shape
 check does not refuse:** `generic_json.go:139-143` accepts every `float32` and `float64` without reading its value,
 and `:146-147` checks a `json.Number` for UTF-8 only. `json.Marshal` (`:125`) then refuses a NaN, an infinity, or a
-`json.Number` whose text is not a JSON number. `FuzzGenericJSONShapes` already marks NaN and infinity as `nonJSON`,
-refused by encoding (`generic_json_fuzz_test.go:27`, `:110-116`, `:234-237`; NaN seed `:215`). Its generator only
-builds valid `json.Number` text (`:120`).
+`json.Number` whose text is not a JSON number. **Correction (2026-10-16, base unchanged):** empty `json.Number` text is
+an exception, which `json.Marshal` encodes as `0` (Go 1.26.9 `src/encoding/json/encode.go:615-617`). Whether the text is
+a number literal is `encoding/json`'s decision, not the shape check's; the shape check enforces UTF-8 only.
+`FuzzGenericJSONShapes` already marks NaN and infinity as `nonJSON`, refused by encoding
+(`generic_json_fuzz_test.go:27`, `:110-116`, `:234-237`; NaN seed `:215`). Its generator only builds valid `json.Number`
+text (`:120`).
 - **#219 item 3, aliases.** `message/types.go:11` — `type Keyable = types.Keyable`, `:16` — `type Type = types.Type`,
   `:20` — `type EntityType = types.EntityType`, `:24` — `type EntityID = types.EntityID`, `:27` —
   `func ParseEntityID(value string) (EntityID, error) {`. **The issue's list is wrong**: `message.Payload`,

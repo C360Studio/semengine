@@ -43,12 +43,14 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 - [x] 3.3 `GenericJSONPayload.Validate` runs the shape check; `MarshalJSON` and its key sort unchanged; the
   `Validate` doc names the values only encoding refuses (owner question 5). Gate: 2.3 passes.
   Done: 2.3 passes at `c2be504`; a 20 s `-fuzz` run found no failure (`notes/2.3.md`).
-- [ ] 3.4 `Hash` leaves `Message` and `BaseMessage` with its test and the "Content-addressable" doc line (owner
+- [x] 3.4 `Hash` leaves `Message` and `BaseMessage` with its test and the "Content-addressable" doc line (owner
   question 1; under option 2, `Hash() (string, error)` and `TestHashRefusesAPayloadThatCannotEncode`). Gate:
   `task build`, `task lint`.
-- [ ] 3.5 Remove `message.Keyable`, `message.EntityType`, `message.EntityID`, `Triple.IsExpired` and
+  Done: option 1; `task build` and `task lint` pass at `a7cd586`; `grep -rnw Hash --include='*.go'`: 0.
+- [x] 3.5 Remove `message.Keyable`, `message.EntityType`, `message.EntityID`, `Triple.IsExpired` and
   `EntityType.IsValid` (owner question 2); `triple_identity.go`'s hazard note stops citing `IsExpired`. Gate:
   `task build`, `task lint`.
+  Done: `task build` and `task lint` pass at `1ef1d60`; no Go reader of the five remains (`notes/3.5.md`).
 - [x] 3.6 Registry keyed by `types.Type`; `GetRegistration` and `IndexingProfileFor` typed; graph-ingest's three calls
   drop `.Key()`; `Contracts` sorts typed keys by `Key()`; `List` and `Registration.MessageType` spell the key with
   `Type.Key()` (owner question 4; otherwise D6′). Gate: 2.4, `TestContractsReturnsIndependentSortedCopies`,
@@ -72,10 +74,12 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
   line that offers `message.Type`. Gate: `task docs:check`.
 - [ ] 4.2 Comment on #90 with the measurement: `DcIdentifier` is `vocabulary/standards.go:47`, semconnect reads it
   (`parser/sensorml/predicates.go:129`), and `vocabulary/README.md:300` is accurate. Gate: the comment is read back.
-- [ ] 4.3 Post the `strings.Cut` allocation probe on the PR with its source, command, Go version and output (D7).
+- [x] 4.3 Post the `strings.Cut` allocation probe on the PR with its source, command, Go version and output (D7).
   Gate: the comment is read back.
-- [ ] 4.4 `docs/admission-ledger.yaml`: the four rows as the design's Ledger section says. Gate: `task ledger:check`,
+  Done: posted and read back, #275 comment 6218742351 (Go 1.26.9: `strings.Cut` 0 allocations, `strings.Split` 1).
+- [x] 4.4 `docs/admission-ledger.yaml`: the four rows as the design's Ledger section says. Gate: `task ledger:check`,
   `task docs:check`.
+  Done: `task ledger:check` and `task docs:check` pass at `b7390ac` (`notes/4.4.md`).
 
 ## 5. Verify, review and close
 

@@ -19,8 +19,10 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 - [x] 2.3 `TestClientRefusesNilContext` asserts invalid with code `invalid_request`; new
   `TestClientRefusesUnencodableAndEntitylessRequests` (NaN `Object` on Append, nil `Entity` on Create; no request
   sent) (D2). Gate: fails on the base commit.
-- [x] 2.4 Callers use `graphmutation.Subject(op)`: `protocol_test.go`, `mutation_port_contract_test.go`,
-  `pkg/lifecycle/manager_integration_test.go:101`, `:155`, `:178` (D3). Gate: fails to compile on the base commit.
+- [x] 2.4 Callers use `graphmutation.Subject(op)`: `protocol_test.go` and
+  `pkg/lifecycle/manager_integration_test.go:101`, `:155`, `:178`; `TestResolveMutationSubjectRequiresDeclaredProvider`
+  in `mutation_port_contract_test.go` is deleted (review finding 4; `notes/2.4.md`) (D3).
+  Gate: fails to compile on the base commit.
 
 ## 3. Implementation
 
@@ -43,8 +45,8 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 ## 5. Verify, review and close
 
-- [ ] 5.1 `task verify` passes on a clean tree at the implementation head; `internal/graphmutation` holds its
-  coverage floor.
+- [x] 5.1 `task verify` passes on a clean tree at the implementation head; `internal/graphmutation` holds its
+  coverage floor (exit 0 at `c58e551`; cover:check passed).
 - [ ] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
 - [ ] 5.3 Archive the change (`openspec archive simplify-04a-11-graphmutation`) as the last content commit. Gate:
   `task spec:check`.

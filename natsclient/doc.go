@@ -422,11 +422,11 @@
 //	}
 //	json.Unmarshal(data, &resp) // success body; err already handled
 //
-// FOOTGUN: plain Request() / RequestWithHeaders() do NOT inspect the X-Status
-// header — they return the error envelope body with err == nil, which a caller
-// would silently json.Unmarshal as a zero-valued success. New callers MUST use
-// RequestClassified (or run ClassifyReply on the reply when they need to send
-// custom headers). See feedback_silent_handler_error_payload_audit memory.
+// FOOTGUN: RequestWithHeaders returns the reply as received and does NOT
+// inspect the X-Status header — a handler error arrives as the error envelope
+// body with err == nil, which a caller would silently json.Unmarshal as a
+// zero-valued success. A caller of RequestWithHeaders runs ClassifyReply on the
+// reply; every other caller uses RequestClassified.
 //
 // Handler-side, return a classified error so the headers carry truth:
 //

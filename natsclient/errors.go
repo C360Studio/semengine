@@ -35,20 +35,19 @@
 // for you. HTTP semantics (404 vs 400) belong at the gateway, which reads
 // ce.Code (e.g. entity_not_found → 404) rather than substring-sniffing.
 //
-// # Footgun — plain Request() / RequestWithHeaders() still don't classify
+// # Footgun — RequestWithHeaders does not classify
 //
-// The plain Request() / RequestWithHeaders() methods return the raw reply body
-// and do NOT inspect the X-Status header. A handler error reply carries the
-// {message, detail} body with err == nil, so
+// RequestWithHeaders returns the reply as received and does NOT inspect the
+// X-Status header. A handler error reply carries the {message, detail} body
+// with err == nil, so
 //
-//	data, err := c.Request(...)
+//	msg, err := c.RequestWithHeaders(...)
 //	if err != nil { return err }
-//	json.Unmarshal(data, &resp)   // mis-decodes an error body as success
+//	json.Unmarshal(msg.Data, &resp)   // mis-decodes an error body as success
 //
-// silently mis-decodes failures. New callers MUST use RequestClassified /
-// RequestWithRetryClassified (or run ClassifyReply on the reply themselves when
-// they need to send custom headers). See
-// feedback_silent_handler_error_payload_audit.md.
+// silently mis-decodes failures. A caller of RequestWithHeaders runs
+// ClassifyReply on the reply; every other caller uses RequestClassified or
+// RequestWithRetryClassified, which do it for them.
 //
 // # Sentinel chains do not survive the wire boundary
 //
@@ -68,6 +67,7 @@ import (
 	"github.com/nats-io/nats.go"
 
 	"github.com/c360studio/semengine/pkg/errs"
+	"github.com/c360studio/semengine/pkg/retry"
 )
 
 // Header keys for the header-classified error convention. A failure reply
@@ -208,10 +208,9 @@ func ClassifyReply(msg *nats.Msg) ([]byte, error) {
 	return msg.Data, nil
 }
 
-// RequestClassified is the recommended caller-side replacement for
-// Request + body-prefix sniffing. It performs the request, then
-// runs the reply through ClassifyReply so the returned error covers
-// both transport and handler failure modes uniformly.
+// RequestClassified performs the request through RequestWithHeaders, with no
+// headers, then runs the reply through ClassifyReply so the returned error
+// covers both transport and handler failure modes uniformly.
 //
 // Transport failures are returned as the underlying error. A timeout returns
 // context.DeadlineExceeded, which classifies as ErrorTransient via
@@ -237,27 +236,24 @@ func (c *Client) RequestClassified(ctx context.Context, subject string, data []b
 	return ClassifyReply(msg)
 }
 
-// RequestWithRetryClassified is the retry-aware sibling of
-// RequestClassified. It runs RequestWithRetry's retry-on-transport-
-// failure loop and then runs the final reply through ClassifyReply
-// so the returned error covers both transport (retried away) AND
-// handler failure modes uniformly. Closes gh#192: pre-beta.93 the
-// consumer-side method matrix exposed Request / RequestClassified /
-// RequestWithRetry but had no retry+classify combination, forcing
-// mutation-path callers to either skip the classified contract or
-// wrap RequestWithRetry in a `json.Valid` pre-decode guard (the
-// shape semteams shipped in cmd/semteams/tools/addsource/executor.go
-// before this method existed).
+// RequestWithRetryClassified is the retrying sibling of RequestClassified. It
+// makes its attempts through retry.Do with cfg: MaxAttempts counts every
+// attempt, a count below one makes one attempt, and a config retry.Do refuses
+// is returned before anything is sent (its error class is not promised). Only
+// an attempt that got no reply is retried. A reply of any kind, an error reply
+// included, ends the call, and ClassifyReply runs once on it, so a handler
+// error is never retried. A failed attempt counts toward the circuit breaker
+// unless the caller's context has ended.
 //
 // Use this only where an operation-specific contract explicitly authorizes
-// redelivery after transport ambiguity. The classified contract round-trips per
-// the same rules as RequestClassified: transport failures arrive as
-// the underlying error after the retry budget exhausts, a timeout as
-// context.DeadlineExceeded (transient by pkg/errs.IsTransient, P10) and
-// no responders as nats.ErrNoResponders (class not promised, ADR-112);
-// handler failures arrive as *errs.ClassifiedError reconstructed from the
-// X-Error-Class / X-Error-Code headers + {message, detail} body.
-// Caller branches on errs.IsInvalid / IsTransient / IsFatal.
+// redelivery after transport ambiguity. Handler failures arrive as for
+// RequestClassified: a *errs.ClassifiedError reconstructed from the
+// X-Error-Class / X-Error-Code headers + {message, detail} body. After the last
+// failed attempt the transport error arrives wrapped by retry.Do and still
+// matches with errors.Is: a timeout matches context.DeadlineExceeded (transient
+// by pkg/errs.IsTransient, P10), no responders matches nats.ErrNoResponders
+// (IsNoResponders; class not promised, ADR-112). A caller's cancellation, before
+// or during an attempt, matches context.Canceled and is transient.
 //
 // Canonical graph mutations and steady-state queries use RequestClassified.
 // Retrying graph mutations can duplicate effects after a lost reply; retrying a
@@ -268,13 +264,54 @@ func (c *Client) RequestWithRetryClassified(
 	subject string,
 	data []byte,
 	timeout time.Duration,
-	retry RetryConfig,
+	cfg retry.Config,
 ) ([]byte, error) {
-	msg, err := c.requestMsgWithRetry(ctx, "RequestWithRetryClassified", subject, data, timeout, retry)
+	if ctx == nil {
+		return nil, nilContextError("RequestWithRetryClassified")
+	}
+	c.mu.RLock()
+	conn := c.conn
+	c.mu.RUnlock()
+
+	if conn == nil || !conn.IsConnected() {
+		return nil, ErrNotConnected
+	}
+	if c.Status() == StatusCircuitOpen {
+		return nil, ErrCircuitOpen
+	}
+	if timeout == 0 {
+		timeout = DefaultRequestTimeout
+	}
+	// One trace for all attempts.
+	if _, ok := TraceContextFromContext(ctx); !ok {
+		ctx = ContextWithTrace(ctx, NewTraceContext())
+	}
+
+	// Only an attempt that got no reply fails. A reply of any kind, an error reply included, ends
+	// the attempts and is classified once below, so a handler error is never retried.
+	var reply *nats.Msg
+	err := retry.Do(ctx, cfg, func() error {
+		reqCtx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		msg := nats.NewMsg(subject)
+		msg.Data = data
+		InjectTrace(ctx, msg)
+		r, err := conn.RequestMsgWithContext(reqCtx, msg)
+		if err != nil {
+			// The caller's own cancellation is not a transport failure; reqCtx's timeout still is.
+			if ctx.Err() == nil {
+				c.recordFailure()
+			}
+			return err
+		}
+		c.resetCircuit()
+		reply = r
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	return ClassifyReply(msg)
+	return ClassifyReply(reply)
 }
 
 // RequestReadyClassified is the readiness-gated read (the third bucket of the

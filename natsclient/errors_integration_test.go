@@ -15,6 +15,7 @@ import (
 
 	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/c360studio/semengine/pkg/errs"
+	"github.com/c360studio/semengine/pkg/retry"
 )
 
 // TestIntegration_RequestClassified_RoundTripPreservesClass is the
@@ -109,35 +110,6 @@ func TestIntegration_RequestClassified_RoundTripPreservesClass(t *testing.T) {
 // {message, detail} envelope + X-Status header (covered by the unit-level
 // TestRespondError_RoundTrip and the header-classified tests above).
 
-// TestIntegration_LegacyRequest_SuccessBodyUnchanged confirms a plain Request()
-// against a success handler sees exactly the bytes the handler returned —
-// SubscribeForRequests must NOT introduce headers or alter the success-path
-// payload (unchanged by ADR-060: only the FAILURE body moved to the envelope).
-func TestIntegration_LegacyRequest_SuccessBodyUnchanged(t *testing.T) {
-	ctx := context.Background()
-
-	natsURL := startFixture(t).URL()
-
-	client, err := NewClient(natsURL)
-	require.NoError(t, err)
-	require.NoError(t, client.Connect(ctx))
-	defer closeClient(t, client)
-
-	subject := "test.legacy.success.body"
-	want := []byte(`{"hello":"world","number":42}`)
-	_, err = client.SubscribeForRequests(ctx, subject, func(_ context.Context, _ []byte) ([]byte, error) {
-		return want, nil
-	})
-	require.NoError(t, err)
-	flushClient(t, client)
-
-	data, err := client.Request(ctx, subject, []byte("ping"), failureBound)
-	require.NoError(t, err)
-	if !bytes.Equal(data, want) {
-		t.Fatalf("Request success body diverged from handler bytes:\n  got  %q\n  want %q", data, want)
-	}
-}
-
 // TestIntegration_RequestClassified_SuccessPath confirms the
 // non-error path: handler returns (data, nil), caller gets the same
 // data, nil error.
@@ -211,9 +183,9 @@ func TestIntegration_RequestWithRetryClassified_RoundTripPreservesClass(t *testi
 		},
 	}
 
-	retry := DefaultRetryConfig()
-	retry.InitialBackoff = 20 * time.Millisecond
-	retry.MaxRetries = 2
+	cfg := retry.DefaultConfig()
+	cfg.InitialDelay = 20 * time.Millisecond
+	cfg.MaxAttempts = 3
 
 	for _, tc := range cases {
 		tc := tc
@@ -225,7 +197,7 @@ func TestIntegration_RequestWithRetryClassified_RoundTripPreservesClass(t *testi
 			require.NoError(t, err)
 			flushClient(t, client)
 
-			data, err := client.RequestWithRetryClassified(ctx, subject, []byte("write"), failureBound, retry)
+			data, err := client.RequestWithRetryClassified(ctx, subject, []byte("write"), failureBound, cfg)
 			if data != nil {
 				t.Errorf("data should be nil on classified error; got %q", data)
 			}
@@ -269,7 +241,7 @@ func TestIntegration_RequestWithRetryClassified_SuccessPath(t *testing.T) {
 	require.NoError(t, err)
 	flushClient(t, client)
 
-	data, err := client.RequestWithRetryClassified(ctx, subject, []byte("write"), failureBound, DefaultRetryConfig())
+	data, err := client.RequestWithRetryClassified(ctx, subject, []byte("write"), failureBound, retry.DefaultConfig())
 	require.NoError(t, err)
 	if !bytes.Equal(data, want) {
 		t.Fatalf("data = %q, want %q", data, want)
@@ -290,7 +262,7 @@ func TestIntegration_RequestWithRetryClassified_ErrorReplyIsNotRetried(t *testin
 	require.NoError(t, err)
 	flushClient(t, client)
 
-	cfg := RetryConfig{MaxRetries: 2, InitialBackoff: time.Millisecond, MaxBackoff: time.Millisecond, BackoffMultiplier: 1}
+	cfg := retry.Config{MaxAttempts: 3, InitialDelay: time.Millisecond, MaxDelay: time.Millisecond, Multiplier: 1}
 	data, err := client.RequestWithRetryClassified(t.Context(), subject, []byte("write"), failureBound, cfg)
 	require.Nil(t, data)
 	require.True(t, errs.IsInvalid(err), "want the handler's invalid error, got %v", err)
@@ -362,14 +334,15 @@ func TestIntegration_RequestWithRetryClassified_RetriesThenSucceeds(t *testing.T
 		subscribed <- err
 	}()
 
-	// Ten retries span about 5.6 s of backoff, so the late subscription lands inside the retry
-	// window on a slow host; a correct run ends at the first retry after it.
-	retry := DefaultRetryConfig()
-	retry.InitialBackoff = 50 * time.Millisecond
-	retry.MaxRetries = 10
-	retry.BackoffMultiplier = 1.5
+	// Eleven attempts (ten retries) span about 5.6 s of backoff before jitter, so the late
+	// subscription lands inside the retry window on a slow host; a correct run ends at the first
+	// retry after it.
+	cfg := retry.DefaultConfig()
+	cfg.InitialDelay = 50 * time.Millisecond
+	cfg.MaxAttempts = 11
+	cfg.Multiplier = 1.5
 
-	data, err := client.RequestWithRetryClassified(ctx, subject, []byte("write"), 2*time.Second, retry)
+	data, err := client.RequestWithRetryClassified(ctx, subject, []byte("write"), 2*time.Second, cfg)
 	require.NoError(t, <-subscribed, "late responder")
 	require.NoError(t, err, "retry+classified should succeed once late responder comes up")
 	if !bytes.Equal(data, want) {

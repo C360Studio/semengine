@@ -13,7 +13,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 - [x] 2.1 The refusal-counter tests, with `connectScripted` taking extra options (Design, Tests, D1). Gate: they fail
   on base, where no counter rises.
-- [ ] 2.2 The publish oracle, with the not-connected row (D3). Gate: passes on base; detects the mutant that drops the
+- [x] 2.2 The publish oracle, with the not-connected row (D3). Gate: passes on base; detects the mutant that drops the
   `publish_to_stream` count (`task mutate:check`, reported as detected or not).
 - [ ] 2.3 The key-listing tables over both entry points, and the empty real-bucket row (D4). Gate: the `FilteredKeys`
   rows fail on base; the empty row passes on base.

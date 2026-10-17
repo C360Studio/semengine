@@ -46,9 +46,9 @@ SHALL travel as a classified error, never as an outcome. graph-ingest SHALL coun
 #### Scenario: A create with an unregistered message type
 
 - **WHEN** a create request is refused with code `message_type_unregistered`
-- **THEN** `graph_mutation_outcomes_total{operation="create",outcome="message_type_unregistered"}` increases by one
+- **THEN** `graph_mutation_outcomes_total{operation="entity.create",outcome="message_type_unregistered"}` increases by one
 
 #### Scenario: A create refused as an invalid request
 
 - **WHEN** a create request with no entity is refused with code `invalid_request`
-- **THEN** `graph_mutation_outcomes_total{operation="create",outcome="invalid_request"}` increases by one
+- **THEN** `graph_mutation_outcomes_total{operation="entity.create",outcome="invalid_request"}` increases by one

@@ -1054,5 +1054,15 @@ func (c *Client) PublishToStreamWithAck(
 	if ctx == nil {
 		return nil, nilContextError("PublishToStreamWithAck")
 	}
-	return c.publishToStream(ctx, subject, data, "", true)
+	js, err := c.streamJetStream()
+	if err != nil {
+		return nil, err
+	}
+	ack, err := js.PublishMsg(ctx, streamMsg(ctx, subject, data, ""))
+	if err != nil {
+		c.jsMetrics.recordError("publish_to_stream")
+		return nil, errs.WrapTransient(err, "Client", "PublishToStreamWithAck",
+			"failed to publish to subject "+subject)
+	}
+	return ack, nil
 }

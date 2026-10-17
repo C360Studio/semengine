@@ -1252,7 +1252,11 @@ func (m *Client) PublishToStream(ctx context.Context, subject string, data []byt
 	if ctx == nil {
 		return nilContextError("PublishToStream")
 	}
-	_, err := m.publishToStream(ctx, subject, data, "", false)
+	js, err := m.streamJetStream()
+	if err != nil {
+		return err
+	}
+	_, err = js.PublishMsg(ctx, streamMsg(ctx, subject, data, ""))
 	return err
 }
 
@@ -1277,37 +1281,22 @@ func (m *Client) PublishToStreamWithMsgID(ctx context.Context, subject string, d
 	if ctx == nil {
 		return nilContextError("PublishToStreamWithMsgID")
 	}
-	_, err := m.publishToStream(ctx, subject, data, msgID, false)
+	js, err := m.streamJetStream()
+	if err != nil {
+		return err
+	}
+	_, err = js.PublishMsg(ctx, streamMsg(ctx, subject, data, msgID))
 	return err
 }
 
-// publishToStream is the one synchronous stream publish path, behind PublishToStream,
-// PublishToStreamWithMsgID and PublishToStreamWithAck (design D3). A non-empty msgID is stamped
-// as the Nats-Msg-Id header for server-side duplicate detection.
-//
-// Each caller keeps the errors it has always returned. The not-connected and JetStream errors come
-// back unchanged and uncounted for all of them. With classify, PublishToStreamWithAck's, a failure
-// of the publish itself is counted as publish_to_stream and classified transient; without, nats.go's
-// error comes back unchanged.
-func (m *Client) publishToStream(
-	ctx context.Context, subject string, data []byte, msgID string, classify bool,
-) (*jetstream.PubAck, error) {
+// streamJetStream makes the checks every synchronous stream publish makes before it builds its
+// message: the client is connected and has a JetStream context. Its errors come back to each
+// caller unchanged and uncounted.
+func (m *Client) streamJetStream() (jetstream.JetStream, error) {
 	if m.Status() != StatusConnected {
 		return nil, ErrNotConnected
 	}
-
-	js, err := m.JetStream()
-	if err != nil {
-		return nil, err
-	}
-
-	ack, err := js.PublishMsg(ctx, streamMsg(ctx, subject, data, msgID))
-	if err != nil && classify {
-		m.jsMetrics.recordError("publish_to_stream")
-		return nil, errs.WrapTransient(err, "Client", "PublishToStreamWithAck",
-			"failed to publish to subject "+subject)
-	}
-	return ack, err
+	return m.JetStream()
 }
 
 // streamMsg builds the message every stream publish sends, synchronous or async. It carries ctx's
@@ -1359,8 +1348,8 @@ func (m *Client) asyncPublishErrHandler(_ jetstream.JetStream, msg *nats.Msg, er
 // publishToStreamAsync is the async publish path behind PublishBatchToStream.
 // It publishes to a JetStream stream WITHOUT blocking on the PubAck, returning a
 // jetstream.PubAckFuture whose Ok()/Err() carry the eventual server
-// acknowledgement. It makes publishToStream's checks, adds a check of ctx, builds
-// the message with streamMsg, then enqueues via PublishMsgAsync.
+// acknowledgement. It makes streamJetStream's checks with a check of ctx between
+// them, builds the message with streamMsg, then enqueues via PublishMsgAsync.
 //
 // The enqueue itself is synchronous: a disconnected client returns
 // ErrNotConnected, a cancelled context returns its error, and a full in-flight

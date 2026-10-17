@@ -7,7 +7,7 @@ clean tree at its commit (#171).
 
 ## 1. Design
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass pre-owner review and are accepted by the
+- [x] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass pre-owner review and are accepted by the
   owner, with owner questions 1 and 2 answered. Gate: `task spec:check` and `task docs:check`.
 
 ## 2. Table, family check and errors (batch 1)
@@ -21,8 +21,8 @@ clean tree at its commit (#171).
   Gate: each fails by assertion on the base commit.
 - [ ] 2.2 Implement D1, D2 and D4:
   - the package-level table; `natsclient/kvspec.go:120`;
-  - `KVCatalog` removed, or, only if owner question 1 says a product needs it, kept returning `slices.Clone(catalog)`,
-    with `TestKVCatalogReturnsACopy` and a `graph/README.md` sentence;
+  - `KVCatalog` kept returning `slices.Clone(catalog)` (owner question 1: keep), with `TestKVCatalogReturnsACopy`
+    (failing first on the base commit), a `graph/README.md` sentence and a `graph` ledger contract item;
   - `nameFamilies` removed, with `TestConfigBucketFamilyResolvesEveryMember` passing unedited;
   - one resolver, component `"kvcatalog"`, and the nil-context refusal.
 

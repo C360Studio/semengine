@@ -4,7 +4,7 @@ This design rests on the inventory, which passed review (`INVENTORY PASS`, round
 numbers are at the base commit. The package changes spelling, not behaviour, except D4's nil-context refusal and its
 error text.
 
-## D1. One table, built once; `KVCatalog` goes (#133 item 1)
+## D1. One table, built once; `KVCatalog` returns a copy (#133 item 1)
 
 - The 18 rows become an unexported package-level `catalog`, built once from today's `KVCatalog` body. `SpecFor` and
   `EnsureCatalogRetentionClean` range it. A `BucketSpec` holds no slice, map or pointer (inventory § 1 item 1), so the
@@ -17,6 +17,9 @@ error text.
 - Owner question 1 asks only whether a product needs the full list. If yes, the answer is its contract line (a
   `graph/README.md` sentence): `KVCatalog` stays and returns `slices.Clone(catalog)`, with
   `TestKVCatalogReturnsACopy` (a caller's edit of the result does not change `SpecFor`).
+- **Answered 2026-10-17 (owner): keep it as public API** (#133 comment). So `KVCatalog` stays, returns
+  `slices.Clone(catalog)`, gains the README sentence and a `graph` ledger contract item, and the removal above does
+  not apply.
 - `natsclient/kvspec.go:120` names `kvcatalog.KVCatalog`; it is reworded to name the catalog.
 - Options: (a) chosen; (b) keep the per-call build (no reader needs it); (c) do nothing.
 - Tests: the existing table tests (`TestKVCatalog_EveryRowValidates`, `_DeclaredPolicies`) read `catalog`. There is no
@@ -101,8 +104,8 @@ pin in an admitted package not ported yet (6a owner ruling 2).
 - `EnsureCatalogRetentionClean`: keep, D4. Plumbing: pin `service/graph_runtime.go:25`.
 - `IsFrameworkOwnedBucket`, `FrameworkOwnedWriteRefusal`: keep, D3. Plumbing: pin `rule/actions.go:2264`,
   `kv_writer.go:87`, `config_validation.go:382`.
-- `KVCatalog`: remove, D1. Carried, no contract line, no reader in the reader set; owner question 1 can give it a
-  contract line.
+- `KVCatalog`: keep, returns a copy, D1. API (owner 2026-10-17): `graph/README.md` sentence and `graph` ledger
+  contract item.
 - `IsKVTombstone`: moves to `natsclient`, D5. Plumbing: the three callers in D5; semconnect calls it.
 
 ## Open issues and merge order
@@ -123,13 +126,13 @@ pin in an admitted package not ported yet (6a owner ruling 2).
 1. The function that lists every framework bucket (`KVCatalog`) has no caller anywhere: not in this repository, not
    in the SemStreams code we port from (only two of its own tests), not in any consumer. Your 2026-10-12 rule says an
    export like that is removed unless it is offered to products. **Does any product need the full bucket list?** If
-   not, it goes. If yes, it stays and the README says so.
+   not, it goes. If yes, it stays and the README says so. **Answered 2026-10-17: keep it as public API.**
 2. Where should the "is this KV entry a delete or a purge" check live? **Recommended: `natsclient`, beside the KV
    client.** You said `natsclient` exists to make the framework's life easier with small, plain code (#170, comment
    6109833136), and this is one two-value comparison that eleven places need; one copy stops a watcher checking delete
    and forgetting purge. The cost: semconnect's readiness conformance tool calls it from its old home today and must
    change one import when it adopts SemEngine (the compiler points to it). The alternative is writing the comparison
-   out at each place.
+   out at each place. **Answered 2026-10-17: move it to `natsclient`.**
 
 FYI, no ruling needed:
 

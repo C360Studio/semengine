@@ -11,8 +11,8 @@ context given to the retention check comes back as a retryable error.
 
 ## What Changes
 
-- **One table.** The catalog is an unexported package-level table, built once. `KVCatalog`, which nothing reads and
-  no contract line offers, is removed (#190; owner question 1 asks only whether a product needs it).
+- **One table.** The catalog is an unexported package-level table, built once. `KVCatalog` stays as
+  framework API for products (owner, 2026-10-17) and returns a copy of the table.
 - **One family check.** The one-entry `nameFamilies` map becomes a comparison.
 - **The write-guard pair stays.** `IsFrameworkOwnedBucket` and `FrameworkOwnedWriteRefusal` are read only by the
   `rule` package, ported in change 6; that port decides whether to merge them (#133 item 2 goes to a follow-up).

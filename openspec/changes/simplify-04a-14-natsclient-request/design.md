@@ -34,7 +34,8 @@ the owner's ruling (#190).
   as today; zero timeout is `DefaultRequestTimeout`; one trace for all attempts;
 - makes its attempts through `retry.Do`, with that function's rules for the config (inventory § 2). `MaxAttempts`
   counts every attempt, and zero or a negative count makes one attempt. A config `retry.Do` refuses is returned
-  before anything is sent;
+  before anything is sent; its error class is not promised (`retry.Do` refuses with a plain error, which
+  `errs.Classify` reports as fatal; the old negative-`MaxRetries` refusal was invalid-data);
 - treats only "no reply" as a failed attempt. A reply of any kind ends the call, and `ClassifyReply` runs once on it
   after the attempts, so a handler error is never retried (as today);
 - counts a failed attempt toward the circuit breaker unless the caller's context has ended (as today). A caller's
@@ -80,8 +81,9 @@ arrives as reply data" is its contract line. `errors.go:38-50` and `doc.go:425-4
 
 Tests are written first; a compile failure on base counts as failing (`notes/<task>.md`).
 
-- `TestIntegration_RequestWithRetryClassified_ErrorReplyIsNotRetried`: the handler returns an error, `MaxAttempts`
-  3. The handler runs once, and the call returns the classified error. Passes on base. It guards D2's "a reply ends
+- `TestIntegration_RequestWithRetryClassified_ErrorReplyIsNotRetried`: the handler returns an error. The handler runs
+  once, and the call returns the classified error. Written on base with `MaxRetries: 2`, where it passes; task 2.3
+  moves it to `MaxAttempts: 3`. It guards D2's "a reply ends
   the call": moving `ClassifyReply` inside the attempt makes it fail (`task mutate:check`).
 - `TestRetryRequestNegativeCountMakesOneAttempt` (replaces `TestNegativeMaxRetriesNeverDispatches` and
   `TestReviewerNegativeRequestRetryRefuses`): `MaxAttempts` 0 and -1, and the handler runs once. Fails to compile on
@@ -109,7 +111,7 @@ tested in `pkg/retry`.
 | --- | --- | --- | --- |
 | `Client.Request` | removed (Q1) | framework API by contract line, with no production reader anywhere measured | tests only (inventory § 4) |
 | `Client.RequestWithRetry` | removed (Q1) | same | tests only |
-| `RetryConfig`, `DefaultRetryConfig` | removed (Q2) | second spelling of `retry.Config` | `errors.go:271`; semteams `addsource/executor.go:183` migrates |
+| `RetryConfig`, `DefaultRetryConfig` | removed (Q2) | framework API (part of `RequestWithRetryClassified`'s signature; a second spelling of `retry.Config`) | `errors.go:271`; semteams `addsource/executor.go:183` migrates |
 | `Client.RequestWithRetryClassified` | kept; takes `retry.Config` | framework API: transport-client "A retrying request…", `AGENTS.md:93`, ADR-060 | semteams `addsource/executor.go:183` |
 | `Client.RequestWithHeaders` | kept, unchanged | framework API (ADR-060 PR-D `:73-76`; added requirement); plumbing | `errors.go:233`; semconnect ×5 |
 | `Client.RequestClassified` | kept, unchanged | plumbing | `internal/graphmutation/client.go:162`, `graph/exact_entity.go:73` |
@@ -128,11 +130,15 @@ No back door.
 - #222: part b done here (tasks 3.1–3.3). The PR body references it without a closing keyword; 6c remains.
 - #139: stays (graph-ingest). Its `request.go:396` line pin moves; a comment gives the new line (task 4.3).
 - #75, #169: stay (6d).
-- No overlapping open PR. 6c and 6d follow this one.
+- #286 (8c, `graph`) changes `natsclient/kvspec.go` and its integration test: no shared file, the same package and
+  coverage floor. Either order works; the second to land merges `origin/main` and reruns `task verify`. 6c and 6d
+  follow this one.
 
 ## Owner questions
 
-1. Remove `Request` and `RequestWithRetry` rather than make them check the error header; `RequestWithHeaders` stays
-   raw (D1). Recommended: remove.
-2. `RetryConfig` goes; `RequestWithRetryClassified` takes `retry.Config` and follows `retry.Do`'s rules, so a count
-   below one makes one attempt instead of being refused (D2). Recommended: yes.
+1. Remove `Request` and `RequestWithRetry` rather than make them check the error header (D1). Recommended: remove.
+   You listed `RequestWithHeaders` too. We recommend leaving it unchanged: semconnect reads its reply headers and
+   checks for errors itself, and changing it would make a refused graph change look like "outcome unknown".
+2. `RetryConfig` goes and `RequestWithRetryClassified` takes `retry.Config` (D2). For callers: the count now includes
+   the first try (3 retries becomes 4 tries), a zero or negative count makes one try instead of being refused, and the
+   default adds random spread and a 5 s cap. Recommended: yes.

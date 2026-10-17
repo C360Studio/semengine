@@ -7,7 +7,7 @@
 `RequestClassified`, `RequestWithRetryClassified` and `RequestReadyClassified` SHALL return a reply that carries
 `X-Status: error` as an error and no data: a `*errs.ClassifiedError` with the reply's class, code, message and detail.
 `RequestWithHeaders` SHALL return the reply message as received, headers included, with a nil error, and
-`ClassifyReply` on that message SHALL return the same classified error. No other exported call sends a request and
+`ClassifyReply` on that message SHALL return the same classified error. No other natsclient call sends a request and
 returns its reply (changed: at the pin `Request` and `RequestWithRetry` returned an error reply's body as data with a
 nil error; both are removed, #222).
 
@@ -41,15 +41,15 @@ invalid-data error before it touches client state, calls a callback or calls NAT
 ### Requirement: A retrying request refuses what it cannot attempt
 
 `RequestWithRetryClassified` SHALL take a `retry.Config` and make its attempts as `retry.Do` does: `MaxAttempts` counts
-every attempt, a count below one makes one attempt, and a config `retry.Do` refuses SHALL be returned before anything is
-sent (changed: `natsclient.RetryConfig`, whose `MaxRetries` counted the attempts after the first and was refused below
-zero, is removed, #222; at the pin a negative count returned success with no reply, Codex F31). Only an attempt that
-received no reply SHALL be retried; a reply, an error reply included, ends the call. It SHALL check the context before
-every attempt, the first included, and SHALL return a caller's cancellation as an error that matches
-`context.Canceled` and that `errs.IsTransient` reports transient, without counting it toward the circuit breaker
-(Codex F32). No request call that counts failures (`RequestWithHeaders` and `RequestClassified` through it, and the
-retrying call) SHALL count a caller's cancellation toward the circuit breaker, whether the context ended before an
-attempt or while one waited for its reply; an attempt's own timeout still counts (early check E1).
+every attempt, a count below one makes one attempt (a negative count is no longer refused), and a config `retry.Do`
+refuses SHALL be returned before anything is sent (changed: `natsclient.RetryConfig`, whose `MaxRetries` counted the
+attempts after the first and was refused below zero, is removed, #222; at the pin a negative count returned success with
+no reply, Codex F31). Only an attempt that received no reply SHALL be retried; a reply, an error reply included, ends
+the call. It SHALL check the context before every attempt, the first included, and SHALL return a caller's cancellation
+as an error that matches `context.Canceled` and that `errs.IsTransient` reports transient, without counting it toward
+the circuit breaker (Codex F32). No request call that counts failures (`RequestWithHeaders` and `RequestClassified`
+through it, and the retrying call) SHALL count a caller's cancellation toward the circuit breaker, whether the context
+ended before an attempt or while one waited for its reply; an attempt's own timeout still counts (early check E1).
 
 #### Scenario: Negative retry count
 
@@ -59,7 +59,7 @@ attempt or while one waited for its reply; an attempt's own timeout still counts
 #### Scenario: A config retry.Do refuses
 
 - **WHEN** `RequestWithRetryClassified` is called with a negative `InitialDelay`
-- **THEN** it returns an error and the responder's handler never runs
+- **THEN** it returns an error, whose class is not promised, and the responder's handler never runs
 
 #### Scenario: An error reply is not retried
 

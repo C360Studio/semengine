@@ -78,8 +78,10 @@ The fact: "a retry policy". Two spellings:
   `errors.go:212`, `:241-249` comments; `errors.go:307` cites `TestIntegration_Request_Timeout`.
 - Coverage: `scripts/cover-check.sh:29` — `"natsclient merged"`.
 - Open PRs (`gh pr list --state open`, files filtered for natsclient, ledger, transport-client, ADR-112, AGENTS.md,
-  rules-index, contracts, pkg/retry, the graph-ingest wire tests): none besides this claim (#288, no files). #286 (8c,
-  `graph`, 38 files) and Dependabot #242–#248: no overlap.
+  rules-index, contracts, pkg/retry, the graph-ingest wire tests): none besides this claim (#288, no files)
+  and #286. #286 (8c, `graph`) had 72 files at `eeed555` (2026-10-17), two in `natsclient` (`kvspec.go`, `kvspec_integration_test.go`):
+  no shared file, but the same package and its coverage floor (merge order in design.md). Dependabot #242–#248: no
+  overlap.
 - Open issues (`gh issue list --state open --search` for natsclient, RequestWithRetry, RetryConfig, RequestClassified,
   X-Status, ClassifyReply, RequestWithHeaders, request.go): #222 (this, part b). #139 cites `natsclient/request.go:396`
   (the handler timeout) as a line pin only; the line moves. #105 and #132 name the words, not this code. Name the
@@ -99,6 +101,12 @@ The fact: "a retry policy". Two spellings:
 | `ClassifyReply`, `RespondError`, `Header*`, `IsNoResponders` | `errors.go:237,:277,:298`; `request.go:450,:475`; `internal/graphmutation/client.go:170`, `pkg/projection/mutation_client.go:443,:513` | — | semconnect `ClassifyReply` ×6 |
 
 semboids: no reference to any of these names.
+
+Pin tests in admitted packages not yet ported also call the removed methods (not readers under #190; a pointer for
+their port designs): `processor/graph-query/batch_passthrough_integration_test.go:89,:153`,
+`component_integration_test.go:118`, `component_test.go:76` (`Request`; its `natsRequester` interface at
+`component.go:35` declares it); `processor/agentic-tools/tools_integration_test.go:752,:815` (`RequestWithRetry` with a
+retry config); `processor/agentic-loop/loop_integration_test.go:830` (`Request`).
 
 ## 5. Problem shape
 

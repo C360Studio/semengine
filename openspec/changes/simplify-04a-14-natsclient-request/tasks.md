@@ -15,7 +15,8 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
   replace `TestNegativeMaxRetriesNeverDispatches` and `TestReviewerNegativeRequestRetryRefuses` (D2). Gate: fail to
   compile on base.
 - [ ] 2.2 `TestIntegration_RequestWithRetryClassified_ErrorReplyIsNotRetried` and
-  `TestIntegration_RequestWithHeaders_ErrorReplyKeepsHeaders` (D2, D3). Gate: pass on base; for the first,
+  `TestIntegration_RequestWithHeaders_ErrorReplyKeepsHeaders` (D2, D3). Gate: pass on base (the first written with
+  `MaxRetries: 2`, moved in 2.3); for the first,
   `task mutate:check` with `ClassifyReply` moved inside the attempt reports a detection.
 - [ ] 2.3 Existing tests move to the new API (Design, Tests: kept, edited, deleted). Gate: fail to compile on base
   (`retry.Config` argument).

@@ -13,12 +13,12 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 ## 2. Failing tests
 
-- [ ] 2.1 `TestIntegration_FailedCallsRefuseNoOtherCall`, with `WithHealthInterval(0)` (D1). Gate: fails on base
+- [x] 2.1 `TestIntegration_FailedCallsRefuseNoOtherCall`, with `WithHealthInterval(0)` (D1). Gate: fails on base
   (call 16 returns `ErrCircuitOpen`).
-- [ ] 2.2 `TestHealthMonitorTickReturnsStatusAndClose` (D2). Gate: passes on base; with `Status()` reading under `mu`
+- [x] 2.2 `TestHealthMonitorTickReturnsStatusAndClose` (D2). Gate: passes on base; with `Status()` reading under `mu`
   it fails on its own deadline before cleanup runs (`task mutate:check`, reported as
   detected or not).
-- [ ] 2.3 The two replacement oracles: the outbound message count for `MaxAttempts` 4, and the responder that drops
+- [x] 2.3 The two replacement oracles: the outbound message count for `MaxAttempts` 4, and the responder that drops
   its first request (Design, Tests). Gate: both pass on base; each detects a mutant in which the retrying call makes one
   attempt whatever the config says (`task mutate:check`).
 - [ ] 2.4 The tests Design, Tests lists are deleted or edited; `fakeJetStream` moves to a helper file. Gate: compile

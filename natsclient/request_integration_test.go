@@ -351,6 +351,11 @@ func TestIntegration_RequestWithRetryClassified_NoResponder(t *testing.T) {
 	// Configure retry with short backoff for faster test
 	cfg := retry.Config{MaxAttempts: 4, InitialDelay: 20 * time.Millisecond, MaxDelay: 100 * time.Millisecond, Multiplier: 2}
 
+	// Every attempt publishes the request once; nats.go counts each publish in the connection's
+	// OutMsgs, an answer that comes from the connection, not from the client's own accounting. This
+	// is the probe of that count at the pinned nats.go (design simplify-04a-16, Tests).
+	before := client.GetConnection().Stats().OutMsgs
+
 	// Send request to subject with no responder
 	_, err = client.RequestWithRetryClassified(
 		ctx,
@@ -362,6 +367,8 @@ func TestIntegration_RequestWithRetryClassified_NoResponder(t *testing.T) {
 
 	require.ErrorIs(t, err, nats.ErrNoResponders)
 	require.True(t, IsNoResponders(err), "IsNoResponders: %v", err)
+	require.Equal(t, uint64(4), client.GetConnection().Stats().OutMsgs-before,
+		"requests sent for MaxAttempts 4 with no responder")
 	// Every attempt failed for want of a responder and was counted.
 	require.Equal(t, int32(4), client.Failures())
 }

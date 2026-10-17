@@ -7,10 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/nats-io/nats.go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/c360studio/semengine/pkg/retry"
 )
 
 // TestIntegration_Request tests the basic request/reply pattern
@@ -42,7 +43,7 @@ func TestIntegration_Request(t *testing.T) {
 	flushClient(t, client)
 
 	// Send request
-	response, err := client.Request(ctx, subject, []byte("ping"), failureBound)
+	response, err := client.RequestClassified(ctx, subject, []byte("ping"), failureBound)
 	require.NoError(t, err)
 	assert.Equal(t, expectedResponse, response)
 }
@@ -63,7 +64,7 @@ func TestIntegration_Request_Timeout(t *testing.T) {
 
 	// Send request to non-existent subject (no responder). natsclient returns
 	// nats.go's no-responders error unwrapped (design D5).
-	_, err = client.Request(ctx, "nonexistent.subject", []byte("test"), 100*time.Millisecond)
+	_, err = client.RequestClassified(ctx, "nonexistent.subject", []byte("test"), 100*time.Millisecond)
 	require.ErrorIs(t, err, nats.ErrNoResponders)
 }
 
@@ -86,7 +87,7 @@ func TestIntegration_Request_DefaultTimeout(t *testing.T) {
 	ctx, cancel := context.WithTimeout(ctx, 100*time.Millisecond)
 	defer cancel()
 
-	_, err = client.Request(ctx, "nonexistent.subject", []byte("test"), 0)
+	_, err = client.RequestClassified(ctx, "nonexistent.subject", []byte("test"), 0)
 	assert.Error(t, err) // Will error due to context cancellation
 }
 
@@ -131,7 +132,7 @@ func TestIntegration_Request_NotConnected(t *testing.T) {
 	require.NoError(t, err)
 
 	ctx := context.Background()
-	_, err = client.Request(ctx, "test.subject", []byte("data"), time.Second)
+	_, err = client.RequestClassified(ctx, "test.subject", []byte("data"), time.Second)
 	assert.Equal(t, ErrNotConnected, err)
 }
 
@@ -219,7 +220,7 @@ func TestIntegration_SubscribeForRequests(t *testing.T) {
 	flushClient(t, client)
 
 	// Send a request
-	response, err := client.Request(ctx, subject, []byte("request"), failureBound)
+	response, err := client.RequestClassified(ctx, subject, []byte("request"), failureBound)
 	require.NoError(t, err)
 	assert.Equal(t, []byte("response"), response)
 
@@ -273,7 +274,7 @@ func TestIntegration_SubscribeForRequests_HandlerTimeoutConfigurable(t *testing.
 	flushClient(t, client)
 
 	sent := time.Now()
-	resp, err := client.Request(ctx, subject, []byte("x"), failureBound)
+	resp, err := client.RequestClassified(ctx, subject, []byte("x"), failureBound)
 	replied := time.Now()
 	require.NoError(t, err)
 	require.Equal(t, "ok", string(resp))
@@ -332,64 +333,9 @@ func TestIntegration_SubscribeForRequests_NotConnected(t *testing.T) {
 	assert.Equal(t, ErrNotConnected, err)
 }
 
-// TestIntegration_RequestWithRetry_Success tests retry succeeds when responder starts late
-func TestIntegration_RequestWithRetry_Success(t *testing.T) {
-	ctx := context.Background()
-
-	// Start NATS container
-	natsURL := startFixture(t).URL()
-
-	// Create and connect client
-	client, err := NewClient(natsURL)
-	require.NoError(t, err)
-	err = client.Connect(ctx)
-	require.NoError(t, err)
-	defer closeClient(t, client)
-
-	subject := "test.retry"
-	expectedResponse := []byte("delayed-response")
-
-	// The responder subscribes once the first attempt has failed for want of one
-	// (the client counts the failure), so only a retry can succeed: the "not ready
-	// yet" scenario. The pin waited 150 ms instead.
-	subscribed := make(chan error, 1)
-	go func() {
-		waitCtx, cancel := context.WithTimeout(ctx, failureBound)
-		defer cancel()
-		if _, err := probe.Await(waitCtx, func(context.Context) (int32, error) { return client.Failures(), nil },
-			func(failures int32) bool { return failures >= 1 }); err != nil {
-			subscribed <- err
-			return
-		}
-		_, err := client.SubscribeForRequests(ctx, subject, func(_ context.Context, data []byte) ([]byte, error) {
-			return expectedResponse, nil
-		})
-		subscribed <- err
-	}()
-
-	// Ten retries span about 5.6 s of backoff, so the late subscription lands inside
-	// the retry window on a slow host; a correct run ends at the first retry after it.
-	config := DefaultRetryConfig()
-	config.InitialBackoff = 50 * time.Millisecond
-	config.MaxRetries = 10
-	config.BackoffMultiplier = 1.5
-
-	// Send request that should retry until responder is ready
-	response, err := client.RequestWithRetry(
-		ctx,
-		subject,
-		[]byte("request"),
-		2*time.Second,
-		config,
-	)
-
-	require.NoError(t, <-subscribed, "late responder")
-	require.NoError(t, err, "retry should succeed when responder becomes available")
-	assert.Equal(t, expectedResponse, response)
-}
-
-// TestIntegration_RequestWithRetry_NoResponder tests all retries exhausted when no responder exists
-func TestIntegration_RequestWithRetry_NoResponder(t *testing.T) {
+// TestIntegration_RequestWithRetryClassified_NoResponder tests all attempts exhausted when no
+// responder exists: the error still matches nats.go's no-responders error through retry.Do's wrap.
+func TestIntegration_RequestWithRetryClassified_NoResponder(t *testing.T) {
 	ctx := context.Background()
 
 	// Start NATS container
@@ -403,24 +349,19 @@ func TestIntegration_RequestWithRetry_NoResponder(t *testing.T) {
 	defer closeClient(t, client)
 
 	// Configure retry with short backoff for faster test
-	config := DefaultRetryConfig()
-	config.InitialBackoff = 20 * time.Millisecond
-	config.MaxRetries = 3
-	config.MaxBackoff = 100 * time.Millisecond
+	cfg := retry.Config{MaxAttempts: 4, InitialDelay: 20 * time.Millisecond, MaxDelay: 100 * time.Millisecond, Multiplier: 2}
 
 	// Send request to subject with no responder
-	_, err = client.RequestWithRetry(
+	_, err = client.RequestWithRetryClassified(
 		ctx,
 		"nonexistent.subject",
 		[]byte("request"),
 		100*time.Millisecond,
-		config,
+		cfg,
 	)
 
-	// Fails with nats.go's no-responders error, unwrapped (design D5)
 	require.ErrorIs(t, err, nats.ErrNoResponders)
-
-	// Note: NATS returns "no responders" immediately (no wait), so with retries
-	// and backoff the timing is: retry backoffs (20ms + 40ms + 60ms) ~120ms
-	// We don't assert on timing as it varies with server configuration
+	require.True(t, IsNoResponders(err), "IsNoResponders: %v", err)
+	// Every attempt failed for want of a responder and was counted.
+	require.Equal(t, int32(4), client.Failures())
 }

@@ -258,7 +258,7 @@ func TestReconnectAfterConnectContextEnded(t *testing.T) {
 	}, func(s connState) bool { return s.Reconnects > 0 && s.Connected })
 	require.NoError(t, err, "no reconnect after the server dropped the client (drop error: %v)", dropErr)
 
-	reply, err := client.Request(t.Context(), "t5.echo", []byte("ping"), lifecycleBound)
+	reply, err := client.RequestClassified(t.Context(), "t5.echo", []byte("ping"), lifecycleBound)
 	require.NoError(t, err)
 	require.Equal(t, "ping", string(reply))
 }

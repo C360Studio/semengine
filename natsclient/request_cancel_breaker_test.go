@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/require"
+
+	"github.com/c360studio/semengine/pkg/retry"
 )
 
 // A caller that cancels while a request is in flight gets context.Canceled, and that cancellation
@@ -25,15 +27,11 @@ func TestRequestCancelledInFlightRecordsNoFailure(t *testing.T) {
 	require.NoError(t, c.Connect(t.Context()))
 	closeInCleanup(t, c)
 
-	retry := RetryConfig{MaxRetries: 2, InitialBackoff: time.Millisecond, MaxBackoff: time.Millisecond, BackoffMultiplier: 1}
+	cfg := retry.Config{MaxAttempts: 3, InitialDelay: time.Millisecond, MaxDelay: time.Millisecond, Multiplier: 1}
 	for _, tc := range []struct {
 		name string
 		call func(ctx context.Context, subject string) error
 	}{
-		{"Request", func(ctx context.Context, subject string) error {
-			_, err := c.Request(ctx, subject, nil, time.Minute)
-			return err
-		}},
 		{"RequestWithHeaders", func(ctx context.Context, subject string) error {
 			_, err := c.RequestWithHeaders(ctx, subject, nil, nil, time.Minute)
 			return err
@@ -42,12 +40,8 @@ func TestRequestCancelledInFlightRecordsNoFailure(t *testing.T) {
 			_, err := c.RequestClassified(ctx, subject, nil, time.Minute)
 			return err
 		}},
-		{"RequestWithRetry", func(ctx context.Context, subject string) error {
-			_, err := c.RequestWithRetry(ctx, subject, nil, time.Minute, retry)
-			return err
-		}},
 		{"RequestWithRetryClassified", func(ctx context.Context, subject string) error {
-			_, err := c.RequestWithRetryClassified(ctx, subject, nil, time.Minute, retry)
+			_, err := c.RequestWithRetryClassified(ctx, subject, nil, time.Minute, cfg)
 			return err
 		}},
 	} {

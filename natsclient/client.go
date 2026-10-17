@@ -1863,6 +1863,18 @@ func (m *Client) handleError(nc *nats.Conn, sub *nats.Subscription, err error) {
 		}
 	}
 
+	// The refusal is counted before the line is written, so a reader of the line finds it counted.
+	// The reason comes from the error's type: nats.go reports a refused PUB and a refused SUB with
+	// the same type and no subscription, and their text is not a contract (ADR-112).
+	if m.jsMetrics != nil {
+		switch {
+		case stderrors.Is(err, nats.ErrPermissionViolation):
+			m.jsMetrics.serverRefusals.WithLabelValues("permission_violation").Inc()
+		case stderrors.Is(err, nats.ErrMaxSubscriptionsExceeded):
+			m.jsMetrics.serverRefusals.WithLabelValues("max_subscriptions_exceeded").Inc()
+		}
+	}
+
 	// Log error for debugging
 	m.logger.Error("NATS error", attrs...)
 	// Don't record failure here as it may be called for non-connection errors

@@ -11,7 +11,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 ## 2. Failing tests
 
-- [ ] 2.1 The refusal-counter tests, with `connectScripted` taking extra options (Design, Tests, D1). Gate: they fail
+- [x] 2.1 The refusal-counter tests, with `connectScripted` taking extra options (Design, Tests, D1). Gate: they fail
   on base, where no counter rises.
 - [ ] 2.2 The publish oracle, with the not-connected row (D3). Gate: passes on base; detects the mutant that drops the
   `publish_to_stream` count (`task mutate:check`, reported as detected or not).
@@ -20,7 +20,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 ## 3. Implementation
 
-- [ ] 3.1 The refusal counter is registered, and `handleError` counts the two refusals before logging (D1, as Q1 is
+- [x] 3.1 The refusal counter is registered, and `handleError` counts the two refusals before logging (D1, as Q1 is
   ruled). Gate: 2.1 passes; `task test:unit` under `-race`.
 - [ ] 3.2 One metrics owner per registry is written in the `WithMetrics` doc comment, the README and
   `processor/graph-ingest/component.go:723-725` and `processor/graph-ingest/README.md:145-146`, with no #75 reference

@@ -65,9 +65,19 @@ tarballs with a file grep only, at the same SHAs as simplify-04a-14's inventory.
   - stream capacity (`:494-512`, by error text);
   - cancellation (transport-client "A retrying request…");
   - readiness (`request.go:155-160`: "trip the shared per-client circuit breaker and fast-fail UNRELATED calls").
-- **Calls still counted:** a `CreateStream` error (`:1474`), a publish to a subject no stream captures (`stream.go:1103`
-  via `recordStreamPublishFailure`), and a consumer `Info` error (`consumer_policy.go:53`).
+- **Calls still counted, on a live connection:** a `CreateStream` error (`:1474`), a publish to a subject no stream
+  captures (`stream.go:1103` via `recordStreamPublishFailure`), and a consumer `Info` error (`consumer_policy.go:53`).
+- **Request timeouts and no-responders:**
+  - `natsclient/request.go:241` — `c.recordFailure()`. This counts every `RequestWithHeaders` failure except the
+    caller's own cancellation, and so every `RequestClassified` failure and every graphmutation write.
+  - Only readiness is exempt (`request.go:155-160`).
+- **Failed `Connect` dials, while no connection is installed (a real outage):**
+  - `natsclient/client.go:721` — `m.connectFailed()`, also `:726` — `if m.connectFailed() {` and `:757`.
+  - After 15, `Connect` returns without dialling: `:689` — `if m.Status() == StatusCircuitOpen {` and `:727` —
+    `return ErrCircuitOpen`.
 - **The pin is the same:** `natsclient/client.go:254-361`, with `CompareAndSwap` in place of `mu`.
+- **Breaker fields, seven:** `client.go:73` (`failures`), `:86-90` (`lastFailure`, `backoff`, `circuitFailures`,
+  `circuitThreshold`, `maxBackoff`), `:138` (`circuitTimer`).
 
 ## 3. Adjacent claims
 
@@ -88,10 +98,26 @@ tarballs with a file grep only, at the same SHAs as simplify-04a-14's inventory.
   - `:2028` (graphmutation row: `ErrCircuitOpen` is `TransportUnavailable`).
 - **Docs:** `natsclient/README.md:3`, `:8`, `:37-41`, `:164`, `:205`, `:231-233`, `:245`, `:271`, `:284-285`, `:346`,
   `:353`; `natsclient/doc.go:1`, `:5`, `:15-16`, `:24`, `:203-218`, `:231-232`, `:254`, `:333`, `:352-359`, `:446-451`.
+- **Comments elsewhere that cite the breaker:**
+  - `graph/exact_entity.go:43-46` — `// fail while the caller's context is live, and count against the shared` /
+    `// client's breaker.`
+  - `graph/exact_entity_test.go:112` — `// against the shared client's breaker (#151). The constructor refuses it.`
+  - `graph/kvcatalog/owned_bucket_retention.go:62-63` — `// and returns jetstream.ErrBucketNotFound for an absent
+    one (exempted from` / `// the shared circuit breaker).`
+  - `internal/graphmutation/client.go:26`, `:168`; `pkg/projection/mutation_client.go:417`.
 - **Open PRs** (`gh pr list --state open`):
-  - #286 (8c, 100 files, full list read with `gh api --paginate`) changes `internal/graphmutation/client.go`,
-    `natsclient/kvspec.go`, `processor/graph-ingest/component.go` and `docs/admission-ledger.yaml`. Its hunks hold no
-    circuit or status symbol.
+  - #286 (8c, 100 files, full list read with `gh api --paginate`) changes these files that this change also touches
+    or reads:
+    - `docs/admission-ledger.yaml`;
+    - `graph/exact_entity.go`, `graph/exact_entity_test.go`;
+    - `internal/graphmutation/client.go`, `client_test.go`;
+    - `natsclient/kvspec.go`, `kvspec_integration_test.go`;
+    - `pkg/projection/commit_ambiguity_test.go`, `conditional_reconcile_test.go`, `mutation_client.go`,
+      `mutation_client_refusals_test.go`, `mutation_client_test.go`;
+    - `processor/graph-ingest/component.go`.
+
+    No hunk holds a circuit or status symbol (`ErrCircuitOpen|Status\(\)|StatusConnected|IsHealthy|circuit` over its
+    patches: none).
   - #289 (8e) has no overlap. #290 is this claim.
   - #242-#248 are dependency bumps; none touches these files.
 - **Open issues** (`gh issue list --state open --search natsclient`, and `circuit`, `"health monitor"`):
@@ -109,17 +135,20 @@ tarballs with a file grep only, at the same SHAs as simplify-04a-14's inventory.
 | `Client.Status`, `StatusConnected` | `graph-ingest/component.go:982` | graph-query `component.go:356`; graph-gateway `:61` (excluded) | semconnect `cs-api/component.go:290-291` |
 | `StatusCircuitOpen` | natsclient only | none (doc.go only) | none; semsource test `workbench_capabilities_integration_test.go:58` |
 | `ErrCircuitOpen` | `internal/graphmutation/client.go:171` | agentic-dispatch `command_effect.go:139` (not ported) | semsource `code-context/http_error.go:69`, `internal/entitypub/classify.go:54` |
+| `pkg/errs.ErrCircuitOpen` | `pkg/errs/errs.go:169` (IsTransient list); producer: natsclient only | none (no producer) | none |
 | `Client.Failures`, `Backoff` | none (tests: 12 files) | none | none |
 | `Client.GetStatus` | none (tests) | `service/service_manager.go:1745` | none |
 | `Status.FailureCount` | none (tests) | `service/service_manager.go:1752` | none |
 | `Status.LastFailureTime` | none (`client_test.go:459`) | none | none |
 | `Status.Reconnects` | none (never written) | none | none |
 | `Client.IsHealthy` | `client.go:597` (WaitForConnection) | `service/base.go:434`, rule `processor.go:1041` | none |
-| `Client.RTT`, `Status.RTT` | none / `client.go:651` | `service_manager.go:1748` | none |
+| `Client.RTT` | none (tests `integration_test.go` ×2); README `:235` names it only as the context-free exception | none | none |
+| `Status.RTT` | `client.go:651` | `service_manager.go:1748` | none |
 | `WithHealthInterval` | none (tests) | none | semsource `cmd/semsource/run.go:451` |
 
 `service`, graph-query and rule are admitted (`docs/tier1-cross-check.md:64-65`). agentic-dispatch is not ported
-(`:97`).
+(`:97`). The pin calls `Connect` once, in `internal/bootstrapobservability/bootstrap.go:139` — `if err :=
+client.Connect(ctx); err != nil {`. `service` has none (`grep -rn '\.Connect(' service` outside tests: none).
 
 ## 5. Problem shape
 
@@ -160,7 +189,7 @@ Collision table: not triggered, because no primitive is proposed. Intent check: 
 ## Adopter seam inventory (a product calling natsclient, today)
 
 1. **What they must know:**
-   - Any caller's errors count toward one shared breaker.
+   - Any caller's errors count toward one shared breaker, timeouts and failed dials included.
    - `ErrCircuitOpen` can come from a call that never reached the server.
    - After the circuit test, a live client reports `Disconnected` and stream calls refuse until the health tick.
    - `WithHealthInterval(0)` makes that refusal last until a reconnect.

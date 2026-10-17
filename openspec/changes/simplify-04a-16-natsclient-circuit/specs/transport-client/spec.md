@@ -6,14 +6,16 @@
 
 No natsclient call SHALL refuse because other calls failed. A call that fails SHALL return its own error and SHALL
 leave `Status()` as `Connect`, the connection's events, the health monitor and `Close` set it (changed: at the pin,
-fifteen failed calls with no success between them opened a circuit breaker; until its backoff ended, JetStream, request
-and `Connect` calls returned `ErrCircuitOpen`, and the status then read `Disconnected` on a live connection until the
-health monitor's next tick; the breaker is removed, #222).
+fifteen failed calls or dials with no success between them opened a circuit breaker; until its backoff ended,
+JetStream and request calls returned `ErrCircuitOpen`, as did `Connect` while no connection was installed, and the
+status then read `Disconnected` on a live connection until the health monitor's next tick; the breaker is
+removed, #222).
 
 #### Scenario: Failures on one subject leave other calls working
 
-- **WHEN** a connected client makes twenty `PublishToStream` calls to a subject no stream captures, and each fails
-- **THEN** none of the errors matches `errs.ErrCircuitOpen`, a `PublishToStream` to a subject a stream captures then
+- **WHEN** a connected client whose health monitor is off makes twenty `PublishToStream` calls to a subject no stream
+  captures, and each fails
+- **THEN** each error is that publish's own failure, a `PublishToStream` to a subject a stream captures then
   succeeds, and `Status()` reports `Connected`
 
 ### Requirement: The not-connected refusal carries the transient class
@@ -51,10 +53,10 @@ every attempt, a count below one makes one attempt (a negative count is no longe
 refuses SHALL be returned before anything is sent (changed: `natsclient.RetryConfig`, whose `MaxRetries` counted the
 attempts after the first and was refused below zero, is removed, #222; at the pin a negative count returned success with
 no reply, Codex F31). Only an attempt that received no reply SHALL be retried; a reply, an error reply included, ends
-the call. It SHALL check the context before every attempt, the first included. `RequestWithHeaders`,
-`RequestClassified` and the retrying call SHALL return a caller's cancellation, whether the context ended before an
-attempt or while one waited for its reply, as an error that matches `context.Canceled` and that `errs.IsTransient`
-reports transient (Codex F32, early check E1).
+the call. It SHALL check the context before every attempt, the first included, and SHALL return a caller's
+cancellation as an error that matches `context.Canceled` and that `errs.IsTransient` reports transient (Codex F32).
+`RequestWithHeaders`, `RequestClassified` and the retrying call SHALL return a cancellation that arrives while an
+attempt waits for its reply as an error that matches `context.Canceled` (early check E1).
 
 #### Scenario: Negative retry count
 

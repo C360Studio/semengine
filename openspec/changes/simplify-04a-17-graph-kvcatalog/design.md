@@ -121,6 +121,15 @@ pin in an admitted package not ported yet (6a owner ruling 2).
     Whichever lands second merges `origin/main` and keeps both sentences in that row.
   - PR 10 (graph-ingest, unclaimed) inherits D5's one-line edit.
 
+## Owner rulings and where they are met
+
+Rulings: #133 comment 6233707145 (owner, 2026-10-17).
+
+| Ruling | Code | Contract | Test |
+| --- | --- | --- | --- |
+| Keep `KVCatalog` as public API | `graph/kvcatalog/kvcatalog.go:53` returns `slices.Clone` of the table | `graph/README.md:29`; `graph` ledger row contract item (14) | `TestKVCatalogReturnsACopy` (`kvcatalog_test.go:81`; mutation-detected, `notes/2.1.md`) |
+| Move `IsKVTombstone` to `natsclient` | `natsclient/kv.go:762`; callers `graph/readiness/watcher.go:304`, `pkg/lifecycle/manager_query.go:261`, `processor/graph-ingest/component.go:1285` | `natsclient/README.md:217`; `natsclient` ledger row "Changed surface, simplify-04a-17" | `TestIsKVTombstone` (`natsclient/kv_tombstone_test.go:11`; mutation-detected, `notes/3.1.md`) |
+
 ## Owner questions
 
 1. The function that lists every framework bucket (`KVCatalog`) has no caller anywhere: not in this repository, not

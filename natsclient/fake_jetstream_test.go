@@ -183,10 +183,9 @@ func (f *fakeJetStream) KeyValueStores(_ context.Context) jetstream.KeyValueList
 }
 
 // ResetConsumer was added to jetstream.JetStream in nats.go v1.49+ (present at
-// v1.52.0). This fake panics like every other unexercised method: the circuit
-// breaker under test never resets a consumer, so a call here means the test
-// drifted into a path it does not model, and a silent zero-value return would
-// hide that.
+// v1.52.0). This fake panics like every other unexercised method: no test
+// that uses it resets a consumer, so a call here means the test drifted into a
+// path it does not model, and a silent zero-value return would hide that.
 func (f *fakeJetStream) ResetConsumer(_ context.Context, _, _ string) (*jetstream.ConsumerResetResponse, error) {
 	panic("fakeJetStream: ResetConsumer not implemented")
 }

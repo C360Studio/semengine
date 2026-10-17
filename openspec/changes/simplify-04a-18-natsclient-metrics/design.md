@@ -17,8 +17,10 @@ Premises:
   operation.
 
 Change (option B, recommended): `newJetStreamMetrics` also registers a counter vector,
-`semengine_nats_server_refusals_total`, through `metric.RegisterOrGet`, with label `reason` and Help "Refusals the
-NATS server reported on the client's connection: a publish or subscribe permission, or the subscription limit".
+`semengine_nats_server_refusals_total` (Namespace `semengine`, Subsystem `nats`), through
+`metric.RegisterOrGet(registry, "nats", "server_refusals_total", …)`, with label `reason` and Help "Refusals the
+NATS server reported on the client's connection: a publish or subscribe permission, or the subscription limit". A
+registration error returns from `newJetStreamMetrics` as the existing registrations' errors do.
 When metrics are configured, `handleError` adds one with reason `permission_violation` for
 `errors.Is(err, nats.ErrPermissionViolation)` and `max_subscriptions_exceeded` for
 `nats.ErrMaxSubscriptionsExceeded`, and then logs. The existing error counter and its Help are unchanged.
@@ -42,7 +44,8 @@ Premises:
 Change: these places say it in plain words:
 
 - natsclient: the `WithMetrics` doc comment and the README;
-- graph-ingest: the comment at `processor/graph-ingest/component.go:723-725`;
+- graph-ingest: the comment at `processor/graph-ingest/component.go:723-725`, and the Metrics section of
+  `processor/graph-ingest/README.md:145-146`, which config authors read;
 - the ledger: natsclient `:990` and `:1088-1091`, graph-ingest `:2279`.
 
 What they say: a registry carries one natsclient client's JetStream series, and one graph-ingest instance's series. A

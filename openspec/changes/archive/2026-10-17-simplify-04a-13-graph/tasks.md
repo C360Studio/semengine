@@ -80,8 +80,8 @@ a compile failure as failing. Review stops (Codex) after 2.3, 3.3 and 4.2. Each 
 
 ## 5. Verify, review and close
 
-- [ ] 5.1 `task verify` passes on a clean tree at the implementation head.
-- [ ] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
-- [ ] 5.3 Comments posted: #110 (`FirstFailureAt`), #135 (item i), #105 (item g, if kept); the follow-up issues
+- [x] 5.1 `task verify` passes on a clean tree at the implementation head.
+- [x] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
+- [x] 5.3 Comments posted: #110 (`FirstFailureAt`), #135 (item i), #105 (item g, if kept); the follow-up issues
   filed; then the change is archived (`openspec archive simplify-04a-13-graph`) as the last content commit. Gate:
   `task spec:check`.

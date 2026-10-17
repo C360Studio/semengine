@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"reflect"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -493,38 +494,39 @@ func TestWatcher_RebindsAfterWatchLoss(t *testing.T) {
 	})
 }
 
+// startWait runs WaitForFirst on its own goroutine and returns its result channel.
+func startWait(ctx context.Context, w *Watcher) <-chan error {
+	done := make(chan error, 1)
+	go func() { done <- w.WaitForFirst(ctx) }()
+	return done
+}
+
+// returned reports whether the waiter has returned, after every goroutine in the
+// bubble has settled.
+func returned(done <-chan error) (bool, error) {
+	synctest.Wait()
+	select {
+	case err := <-done:
+		return true, err
+	default:
+		return false, nil
+	}
+}
+
 // TestWaitForFirst: WaitForFirst returns nil once an envelope has been decoded and held
 // (fresh or not: Read judges that), and the context's error when none arrives. A
 // tombstone or an undecodable value is not an envelope, so neither releases it.
 func TestWaitForFirst(t *testing.T) {
-	// startWait runs WaitForFirst on its own goroutine and returns its result channel.
-	startWait := func(ctx context.Context, w *Watcher) <-chan error {
-		done := make(chan error, 1)
-		go func() { done <- w.WaitForFirst(ctx) }()
-		return done
-	}
-	// returned reports whether the waiter has returned, after every goroutine in the
-	// bubble has settled.
-	returned := func(done <-chan error) (error, bool) {
-		synctest.Wait()
-		select {
-		case err := <-done:
-			return err, true
-		default:
-			return nil, false
-		}
-	}
-
 	t.Run("released by a decoded envelope", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			h := newHarness(t, DefaultHeartbeat)
 			done := startWait(t.Context(), h.watcher)
-			if err, ok := returned(done); ok {
+			if ok, err := returned(done); ok {
 				t.Fatalf("WaitForFirst = %v before any delivery, want it still waiting", err)
 			}
 
 			h.deliver(readyEntry(t))
-			err, ok := returned(done)
+			ok, err := returned(done)
 			if !ok {
 				t.Fatal("WaitForFirst still waiting after an envelope was decoded")
 			}
@@ -532,7 +534,7 @@ func TestWaitForFirst(t *testing.T) {
 				t.Errorf("WaitForFirst = %v, want nil", err)
 			}
 			// A later call answers at once: the release is latched.
-			if err, ok := returned(startWait(t.Context(), h.watcher)); !ok || err != nil {
+			if ok, err := returned(startWait(t.Context(), h.watcher)); !ok || err != nil {
 				t.Errorf("second WaitForFirst = (%v, returned %v), want (nil, true)", err, ok)
 			}
 		})
@@ -547,7 +549,7 @@ func TestWaitForFirst(t *testing.T) {
 			entry.created = time.Now().Add(-time.Hour)
 			h.deliver(entry)
 
-			err, ok := returned(done)
+			ok, err := returned(done)
 			if !ok {
 				t.Fatal("WaitForFirst still waiting after a stale-on-arrival envelope was decoded")
 			}
@@ -578,18 +580,18 @@ func TestWaitForFirst(t *testing.T) {
 			done := startWait(t.Context(), h.watcher)
 
 			h.deliver(fakeEntry{key: KeyGraphIndex, rev: 1, op: jetstream.KeyValueDelete})
-			if err, ok := returned(done); ok {
+			if ok, err := returned(done); ok {
 				t.Fatalf("WaitForFirst = %v after a tombstone, want it still waiting", err)
 			}
 			h.deliver(fakeEntry{key: KeyGraphIndex, value: []byte("{not json"), rev: 2, op: jetstream.KeyValuePut})
-			if err, ok := returned(done); ok {
+			if ok, err := returned(done); ok {
 				t.Fatalf("WaitForFirst = %v after an undecodable value, want it still waiting", err)
 			}
 
 			// Control: the same waiter is released by a decoded envelope, so the waits
 			// above are the tombstone's and the garbage's, not a waiter that never returns.
 			h.deliver(readyEntry(t))
-			if err, ok := returned(done); !ok || err != nil {
+			if ok, err := returned(done); !ok || err != nil {
 				t.Errorf("WaitForFirst = (%v, returned %v) after a decoded envelope, want (nil, true)", err, ok)
 			}
 		})
@@ -717,4 +719,44 @@ func TestFreshnessWindow(t *testing.T) {
 	if got, want := freshnessWindow(2*time.Second), 6*time.Second; got != want {
 		t.Errorf("freshnessWindow(2s) = %s, want %s (three heartbeats)", got, want)
 	}
+}
+
+// TestWaitForFirstRefusesNilContext: a nil context is refused with an error, never a
+// panic in the caller's goroutine, whether or not an envelope has already arrived
+// (readiness-nil-context D1).
+func TestWaitForFirstRefusesNilContext(t *testing.T) {
+	var nilCtx context.Context
+
+	t.Run("after_delivery", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			h := newHarness(t, DefaultHeartbeat)
+			h.deliver(readyEntry(t))
+
+			// The valid row runs first, so it is seen passing even where nil panics.
+			if ok, err := returned(startWait(t.Context(), h.watcher)); !ok || err != nil {
+				t.Errorf("WaitForFirst(t.Context()) = (%v, returned %v), want (nil, true)", err, ok)
+			}
+			ok, err := returned(startWait(nilCtx, h.watcher))
+			if !ok {
+				t.Fatal("WaitForFirst(nil) still waiting after an envelope arrived, want an error")
+			}
+			if err == nil || !strings.Contains(err.Error(), "nil context") {
+				t.Fatalf("WaitForFirst(nil) = %v, want an error naming nil context", err)
+			}
+		})
+	})
+
+	t.Run("before_delivery", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			h := newHarness(t, DefaultHeartbeat)
+
+			ok, err := returned(startWait(nilCtx, h.watcher))
+			if !ok {
+				t.Fatal("WaitForFirst(nil) blocked before any delivery, want an error at once")
+			}
+			if err == nil || !strings.Contains(err.Error(), "nil context") {
+				t.Fatalf("WaitForFirst(nil) = %v, want an error naming nil context", err)
+			}
+		})
+	})
 }

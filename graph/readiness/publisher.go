@@ -67,8 +67,12 @@ func NewPublisher(bucket StatusWriter, key string) (*Publisher, error) {
 // anything in the graph was asserted.
 //
 // The error is returned, never swallowed, so the tick loop can count and log it; the
-// loop must keep ticking regardless, because the next heartbeat is the recovery.
+// loop must keep ticking regardless, because the next heartbeat is the recovery. A nil
+// context is refused with an error before any write.
 func (p *Publisher) Publish(ctx context.Context, status graph.IndexStatusResponse) error {
+	if ctx == nil {
+		return errors.New("readiness: nil context")
+	}
 	status.PublishedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	data, err := json.Marshal(status)
 	if err != nil {

@@ -2047,7 +2047,8 @@
     freshness multiplier and window are unexported; (8) NewPublisher returns an error for a nil
     bucket or an empty key; EnsureBucket removed, producers call kvcatalog.EnsureCatalogBucket; (9)
     NewGauges takes the Prometheus subsystem; ProducerNames, MetricNames and the BucketGraphStatus
-    alias removed (simplify-04a-15-graph-readiness D1-D5)
+    alias removed (simplify-04a-15-graph-readiness D1-D5); (10) Publish and WaitForFirst return an
+    error for a nil ctx, Publish before any write (readiness-nil-context, #297)
   dependencies_and_side_effects: >-
     graph, metric, natsclient (in-set); nats.go/jetstream,
     prometheus/client_golang; KV reads/writes on GRAPH_STATUS; Watcher.Run runs on caller goroutine

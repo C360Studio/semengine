@@ -49,7 +49,8 @@ What changes:
 
 `Status()` is written by `Connect`, `handleDisconnect`, `handleReconnect`, the health monitor and `Close`, as today
 less the breaker. The status is held in a typed atomic, `atomic.Int32` holding the `ConnectionStatus`. `Status()` is
-callable with or without `mu` held: the health monitor (`client.go:2260-2263`) calls it while holding `mu`, so a `Status()` that took `mu` would hang the monitor's first tick and then `Close`.
+callable with or without `mu` held: the health monitor (`client.go:2260-2263`) calls it while holding `mu`, so a
+`Status()` that took `mu` would hang the monitor's first tick and then `Close`.
 
 Proof:
 

@@ -1,6 +1,7 @@
 package readiness
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -76,6 +77,37 @@ func TestGauges_FullyQualifiedNamesPreserveTheWireContract(t *testing.T) {
 				want, keys(emitted))
 		}
 	}
+
+	// graph-ingest's set, built as component.go builds it, exposes exactly its five
+	// families: none missing, none renamed, nothing extra.
+	t.Run("graph_ingest exposes exactly its five families", func(t *testing.T) {
+		registry := metric.NewMetricsRegistry()
+		ingest := NewGauges("graph_ingest")
+		if err := ingest.Register(registry); err != nil {
+			t.Fatalf("Register: %v", err)
+		}
+		ingest.Set(graph.IndexStatusResponse{State: graph.IndexStateReady})
+
+		families, err := registry.PrometheusRegistry().Gather()
+		if err != nil {
+			t.Fatalf("gather: %v", err)
+		}
+		got := make([]string, 0, len(families))
+		for _, f := range families {
+			got = append(got, f.GetName())
+		}
+		slices.Sort(got)
+		want := []string{
+			"semengine_graph_ingest_bootstrap_complete",
+			"semengine_graph_ingest_lag",
+			"semengine_graph_ingest_readiness",
+			"semengine_graph_ingest_readiness_state",
+			"semengine_graph_ingest_status_publish_failures_total",
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("exposed families = %q, want exactly %q", got, want)
+		}
+	})
 }
 
 func keys(m map[string]bool) []string {

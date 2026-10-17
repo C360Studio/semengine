@@ -1,6 +1,7 @@
 package readiness
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/c360studio/semengine/graph"
@@ -395,25 +396,37 @@ func TestDeferReasons_AreTheClosedSet(t *testing.T) {
 	}
 }
 
-// TestStatusReading_ZeroValueFailsClosed pins the struct's fail-direction. With the
-// Freshness parameter gone, StatusReading is the gate's ENTIRE input, so an
-// uninitialised one reaching it must withhold rather than serve. Fresh's zero value is
-// false, which is the safe direction — this test exists so a future field reordering or
-// an inverted "Stale bool" rename cannot flip it silently.
-func TestStatusReading_ZeroValueFailsClosed(t *testing.T) {
-	proceed, reason := EvaluateReadinessGate(StatusReading{})
-	if proceed {
-		t.Fatal("the zero-value StatusReading proceeded; an uninitialised reading must fail closed")
-	}
-	if reason != DeferStatusUnknown {
-		t.Errorf("reason = %q, want %q — nothing was ever received", reason, DeferStatusUnknown)
+// TestReadingZeroValueFailsClosed pins the gate's fail direction on its whole input.
+// An uninitialised Reading reaching the gate must withhold rather than serve: Fresh's
+// zero value is false, the safe direction, and this test stops a field rename (an
+// inverted "Stale bool") from flipping it silently.
+func TestReadingZeroValueFailsClosed(t *testing.T) {
+	if got := EvaluateReadinessGate(Reading{}); got != DeferStatusUnknown {
+		t.Errorf("zero Reading = %q, want %q: nothing was ever received", got, DeferStatusUnknown)
 	}
 
-	// And the deliberate in-process shape (a producer computing its own envelope, with
-	// no transport to lose) is the ONLY thing that opens it: Fresh must be set
-	// explicitly, and the envelope must still pass health on its own merits.
-	proceed, _ = EvaluateReadinessGate(StatusReading{Status: healthy(false, 250), Fresh: true})
-	if !proceed {
-		t.Error("an in-process healthy reading deferred; Fresh: true is the whole opt-in")
+	// The in-process shape (a producer computing its own envelope, with no transport to
+	// lose) sets only Status and Fresh. Fresh is the whole opt-in; Known, Age, Raw and
+	// Err are the Watcher's and the gate does not read them.
+	if got := EvaluateReadinessGate(Reading{Status: healthy(false, 250), Fresh: true}); got != DeferNone {
+		t.Errorf("in-process healthy Reading = %q, want proceed (%q)", got, DeferNone)
+	}
+}
+
+// TestDeferReasonsReturnsACopy: DeferReasons gives the four defer reasons, and a caller
+// that writes to the slice it got cannot change what the next caller gets.
+func TestDeferReasonsReturnsACopy(t *testing.T) {
+	// The oracle is the four label values the spec names, not the package's constants.
+	want := []DeferReason{"hard_stop", "status_unknown", "unrecognized_state", "bootstrap_incomplete"}
+
+	first := DeferReasons()
+	if !slices.Equal(first, want) {
+		t.Fatalf("DeferReasons() = %q, want %q", first, want)
+	}
+	for i := range first {
+		first[i] = "overwritten"
+	}
+	if second := DeferReasons(); !slices.Equal(second, want) {
+		t.Errorf("after the caller overwrote its slice, DeferReasons() = %q, want %q", second, want)
 	}
 }

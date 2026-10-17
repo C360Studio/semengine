@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -158,27 +159,41 @@ func TestPublisher_PutFailureIsReturnedNotSwallowed(t *testing.T) {
 	}
 }
 
-func TestNewPublisher_RejectsIncompleteWiring(t *testing.T) {
+// TestNewPublisherRefusesIncompleteWiring: a producer wired with no bucket or no key is
+// refused at construction, naming the cause, so its Start fails instead of publishing
+// nothing while consumers read the key as absent.
+func TestNewPublisherRefusesIncompleteWiring(t *testing.T) {
 	tests := []struct {
-		name   string
-		writer StatusWriter
-		key    string
+		name     string
+		writer   StatusWriter
+		key      string
+		wantText string
 	}{
-		{name: "nil writer", writer: nil, key: KeyGraphIndex},
-		{name: "empty key", writer: &fakeWriter{}, key: ""},
+		{name: "nil bucket", writer: nil, key: KeyGraphIndex, wantText: "bucket"},
+		{name: "empty key", writer: &fakeWriter{}, key: "", wantText: "key"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pub := NewPublisher(tt.writer, tt.key)
-			if pub != nil {
-				t.Fatalf("want nil publisher for incomplete wiring, got %+v", pub)
+			pub, err := NewPublisher(tt.writer, tt.key)
+			if err == nil {
+				t.Fatalf("NewPublisher(%v, %q) = %+v, nil; want an error", tt.writer, tt.key, pub)
 			}
-			// A nil publisher must stay a safe no-op: the tick loop guards on it, and
-			// a panic there would take down the component the status describes.
-			if err := pub.Publish(t.Context(), graph.IndexStatusResponse{}); err != nil {
-				t.Errorf("nil publisher Publish = %v, want nil", err)
+			if pub != nil {
+				t.Errorf("NewPublisher returned a publisher beside its error: %+v", pub)
+			}
+			if !strings.Contains(err.Error(), tt.wantText) {
+				t.Errorf("error %q does not name the missing %s", err, tt.wantText)
 			}
 		})
+	}
+
+	// The control: complete wiring builds a publisher for that key.
+	pub, err := NewPublisher(&fakeWriter{}, KeyGraphIngest)
+	if err != nil {
+		t.Fatalf("NewPublisher with a bucket and a key: %v", err)
+	}
+	if pub.Key() != KeyGraphIngest {
+		t.Errorf("Key() = %q, want %q", pub.Key(), KeyGraphIngest)
 	}
 }
 

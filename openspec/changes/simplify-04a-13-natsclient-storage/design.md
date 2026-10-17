@@ -84,6 +84,20 @@ Tests:
 The held-account cases of the new tests fail on their assertions on the base commit: the consumer never calls
 `ForgetAccount` (notes/2.3.md).
 
+Generated checks (`docs/testing.md`, order-dependent histories): examples suffice. The history is short and has few
+distinct orderings: the account row arrives, the sync marker arrives, then either a delete or a replacement watch
+that lacks the key. The two tests above name every case that matters:
+
+- A held account against an absent one: only the held case calls `ForgetAccount`, and with the row last observed.
+- A repeated tombstone: the second delete finds no held account and calls nothing, so the call is once only.
+- A replacement watch: nothing is forgotten while its initial values are still arriving, and the one call comes at
+  the sync marker.
+- An undecodable account value in a replacement watch: the held row is kept and nothing is forgotten.
+
+The oracle is the row the observer was given by `ObserveAccount`, not a field of the consumer. Codex's mutation
+checks on PR #283 (review record, 2026-10-17) reported that removing either `ForgetAccount` call (in `removeAccount`
+or in `replaceWith`) fails a test. That is the reviewer's report, not a run recorded in this change.
+
 ## D4. Text follows the code
 
 - Spec: the requirement moves to `storage-report`, rewritten for D3. The nil-context refusal of `Collect` and

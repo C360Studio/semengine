@@ -412,22 +412,18 @@ func TestWatcher_UndecodableValueRevokesFreshness(t *testing.T) {
 			IndexedRevision: 500, TargetRevision: 500,
 		}
 		good := fakeEntry{key: KeyGraphIndex, value: statusJSON(t, healthy), rev: 1, op: jetstream.KeyValuePut}
-		gate := func(r Reading) (bool, DeferReason) {
-			return EvaluateReadinessGate(StatusReading{Status: r.Status, Fresh: r.Fresh})
-		}
-
 		h.deliver(good)
 		// Control: the healthy envelope admits reads, so the refusal below is the garbage's.
-		if proceed, reason := gate(h.watcher.Read()); !proceed {
-			t.Fatalf("gate on the healthy envelope = (false, %q), want proceed", reason)
+		if reason := EvaluateReadinessGate(h.watcher.Read()); reason != DeferNone {
+			t.Fatalf("gate on the healthy envelope = %q, want proceed", reason)
 		}
 
 		h.deliver(fakeEntry{key: KeyGraphIndex, value: []byte("{not json"), rev: 2, op: jetstream.KeyValuePut})
 
 		r := h.watcher.Read()
-		if proceed, reason := gate(r); proceed || reason != DeferStatusUnknown {
-			t.Fatalf("gate after an undecodable update = (%v, %q), want (false, %q); Known=%v Fresh=%v Err=%v",
-				proceed, reason, DeferStatusUnknown, r.Known, r.Fresh, r.Err)
+		if reason := EvaluateReadinessGate(r); reason != DeferStatusUnknown {
+			t.Fatalf("gate after an undecodable update = %q, want %q; Known=%v Fresh=%v Err=%v",
+				reason, DeferStatusUnknown, r.Known, r.Fresh, r.Err)
 		}
 		if !r.Known {
 			t.Error("Known = false; an envelope did arrive, so the defer log must not read as no producer seen")
@@ -447,8 +443,8 @@ func TestWatcher_UndecodableValueRevokesFreshness(t *testing.T) {
 		good.rev = 3
 		h.deliver(good)
 		r = h.watcher.Read()
-		if proceed, reason := gate(r); !proceed {
-			t.Fatalf("gate after a good update following garbage = (false, %q), want proceed; Known=%v Fresh=%v Err=%v",
+		if reason := EvaluateReadinessGate(r); reason != DeferNone {
+			t.Fatalf("gate after a good update following garbage = %q, want proceed; Known=%v Fresh=%v Err=%v",
 				reason, r.Known, r.Fresh, r.Err)
 		}
 		if r.Err != nil {
@@ -712,7 +708,7 @@ func TestWatcher_RunValidatesWiring(t *testing.T) {
 // TestFreshnessWindow pins the ENVELOPE-liveness window, which is the concept that
 // survived the view-age deletion and is easy to confuse with it. It answers "can this
 // consumer still vouch for the status reading it holds", not "how far behind is the
-// index" — the former gates (StatusReading.Fresh, fail closed), the latter never does.
+// index" — the former gates (Reading.Fresh, fail closed), the latter never does.
 //
 // The satisfiability-floor rules that used to live beside it (MinBoundedStaleness,
 // ValidateStalenessBound) are gone with the tolerance they constrained: with no

@@ -81,9 +81,8 @@ func TestComputeBacklogStatus_ObservationFailureCannotReportReady(t *testing.T) 
 		t.Fatalf("State = %q, want %q — a producer that cannot read its own backlog is faulted",
 			got.State, graph.IndexStateDegraded)
 	}
-	proceed, reason := EvaluateReadinessGate(StatusReading{Status: got, Fresh: true})
-	if proceed {
-		t.Fatalf("gate proceeded on a degraded backlog envelope (reason=%v)", reason)
+	if reason := EvaluateReadinessGate(Reading{Status: got, Fresh: true}); reason != DeferHardStop {
+		t.Fatalf("gate on a degraded backlog envelope = %q, want %q", reason, DeferHardStop)
 	}
 }
 
@@ -258,18 +257,16 @@ func TestBootstrapScope_GateVerdictInvariant(t *testing.T) {
 		t.Run(base.name, func(t *testing.T) {
 			baseline := base.status
 			baseline.BootstrapScope = 0
-			wantProceed, wantReason := EvaluateReadinessGate(
-				StatusReading{Status: baseline, Fresh: base.fresh})
+			wantReason := EvaluateReadinessGate(Reading{Status: baseline, Fresh: base.fresh})
 
 			for _, scope := range scopes {
 				variant := base.status
 				variant.BootstrapScope = scope
-				proceed, reason := EvaluateReadinessGate(
-					StatusReading{Status: variant, Fresh: base.fresh})
-				if proceed != wantProceed || reason != wantReason {
-					t.Errorf("BootstrapScope=%d changed the verdict: got (%v, %v), want (%v, %v)"+
+				reason := EvaluateReadinessGate(Reading{Status: variant, Fresh: base.fresh})
+				if reason != wantReason {
+					t.Errorf("BootstrapScope=%d changed the verdict: got %q, want %q"+
 						" — the gate must never read this field",
-						scope, proceed, reason, wantProceed, wantReason)
+						scope, reason, wantReason)
 				}
 			}
 		})

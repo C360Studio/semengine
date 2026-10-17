@@ -85,7 +85,7 @@ const (
 	// "Freshness" here is about the ENVELOPE, not the view it describes — can this
 	// consumer still vouch for the status reading it is holding, or has the producer
 	// gone quiet? That is a transport-liveness question, and it is what
-	// StatusReading.Fresh answers and what the health gate fails closed on. It is NOT
+	// Reading.Fresh answers and what the health gate fails closed on. It is NOT
 	// the retired view-age concept (how far behind ENTITY_STATES the index itself is);
 	// view age is reported on IndexStatusResponse.StalenessMs and gates nothing.
 	freshnessMultiplier = 3

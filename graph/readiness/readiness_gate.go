@@ -76,11 +76,11 @@ const (
 	DeferBootstrapIncomplete DeferReason = "bootstrap_incomplete"
 )
 
-// AllDeferReasons is the closed iteration domain for the typed defer reasons a gate can
-// return. It lives next to the const block so it is the single source of truth, exactly
-// as graph.IndexStates() is for wire states: adding a reason means adding it HERE, once, and
-// every consumer that pre-initializes counter series or validates a label set picks it
-// up automatically.
+// DeferReasons returns the closed set of defer reasons a gate can return, as a new
+// slice on every call, so no caller can change what the next one reads. It lives next to
+// the const block so it is the single source of truth, as graph.IndexStates() is for wire
+// states: adding a reason means adding it HERE, once, and every consumer that
+// pre-initializes counter series or validates a label set picks it up automatically.
 //
 // The alternative — each consumer hand-maintaining its own copy — fails SILENTLY in the
 // direction that matters. A counter keyed off a private list drops any reason missing
@@ -90,31 +90,20 @@ const (
 //
 // DeferNone is deliberately absent: it is the reason attached to a PROCEED, not a defer,
 // and pre-initializing a "" series would publish a permanently-zero label.
-var AllDeferReasons = []DeferReason{
-	DeferHardStop,
-	DeferStatusUnknown,
-	DeferUnrecognizedState,
-	DeferBootstrapIncomplete,
-}
-
-// StatusReading is a consumer's local view of a producer's envelope: the envelope
-// itself plus the one fact only the consumer knows — whether it can still vouch for
-// the feed. It is a struct rather than positional arguments so a new consumer-local
-// fact can be added without breaking every adopter.
-//
-// Reading maps onto it directly; an IN-PROCESS producer that computes
-// its own envelope passes Fresh: true, having no transport to lose.
-type StatusReading struct {
-	// Status is the last envelope received from the producer.
-	Status graph.IndexStatusResponse
-	// Fresh reports that the reading is recent enough to vouch for. False means
-	// UNKNOWN, which fails closed — not "not ready".
-	Fresh bool
+func DeferReasons() []DeferReason {
+	return []DeferReason{
+		DeferHardStop,
+		DeferStatusUnknown,
+		DeferUnrecognizedState,
+		DeferBootstrapIncomplete,
+	}
 }
 
 // EvaluateReadinessGate is the single home for readiness gate semantics. It answers the
-// health question and reports whether to proceed plus the typed defer reason. How a
-// caller REACTS to a defer (error, skip a tick, serve an honest empty envelope) stays
+// health question for one Reading and returns the typed defer reason; the caller proceeds
+// when that is DeferNone. A Watcher reader passes w.Read(), so status and freshness come
+// from one read; an IN-PROCESS producer that computes its own envelope passes
+// Reading{Status: s, Fresh: true}, having no transport to lose. How a caller REACTS to a defer (error, skip a tick, serve an honest empty envelope) stays
 // with the caller.
 //
 // Evaluation order is load-bearing:
@@ -146,24 +135,24 @@ type StatusReading struct {
 // producers, because graph-index's sticky responder gate and every consumer's
 // IndexedRevision comparison still assume the two agree. graph-index maintains it in
 // latchBootstrap and on its caged early-boot branch; a new producer must do the same.
-func EvaluateReadinessGate(reading StatusReading) (proceed bool, reason DeferReason) {
-	status := reading.Status
-	if !reading.Fresh {
-		return false, DeferStatusUnknown
+func EvaluateReadinessGate(r Reading) DeferReason {
+	status := r.Status
+	if !r.Fresh {
+		return DeferStatusUnknown
 	}
 	if !recognizedState(status.State) {
 		// Allow-list, not deny-list. Checking only for degraded/reset_required would
 		// let a blank or future state proceed as healthy — fail-OPEN on exactly the
 		// field ADR-084 made load-bearing.
-		return false, DeferUnrecognizedState
+		return DeferUnrecognizedState
 	}
 	if status.State == graph.IndexStateDegraded || status.State == graph.IndexStateResetRequired {
-		return false, DeferHardStop
+		return DeferHardStop
 	}
 	if !status.BootstrapComplete {
-		return false, DeferBootstrapIncomplete
+		return DeferBootstrapIncomplete
 	}
-	return true, DeferNone
+	return DeferNone
 }
 
 // recognizedState reports whether a wire State is one this consumer understands.

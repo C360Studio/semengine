@@ -248,8 +248,11 @@ func (w *Watcher) Read() Reading {
 // a bounded context, delays only the first gated call; every later call is a local
 // read. Callers must wait AT MOST once: with no producer deployed nothing will
 // ever arrive, and a per-call wait would turn the standalone deployment into a
-// per-call stall.
+// per-call stall. A nil context returns an error, even after an envelope has arrived.
 func (w *Watcher) WaitForFirst(ctx context.Context) error {
+	if ctx == nil {
+		return errors.New("readiness: nil context")
+	}
 	select {
 	case <-w.first:
 		return nil

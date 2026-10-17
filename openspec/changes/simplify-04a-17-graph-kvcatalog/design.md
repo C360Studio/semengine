@@ -37,10 +37,10 @@ bare prefix and near misses resolve as today: `TestConfigBucketFamilyResolvesEve
     contract line; ruling 2 covered names moved from the pin, not new ones, so it needs an owner ruling first.
   - (b) Keep the bool and make the refusal return `error`: still two calls, and still a changed export with no
     caller.
-  - (c) **Chosen** (follow-up #294): leave the pair, and let the `rule` port (change 6) pick the shape with its
-    three call sites in hand. One of them, `kv_writer.go:86-88`, also asks `SpecFor` first, so the right merge is that port's to see.
-    This is the simpler choice: no new export, no owner question, no test churn here.
-- #133 item 2 goes to a follow-up issue for the `rule` port, filed before this change merges (tasks 4.3). The
+  - (c) **Chosen** (follow-up #294): leave the pair, and let the `rule` port (change 6) pick the shape with its three
+    call sites in hand. One of them, `kv_writer.go:86-88`, also asks `SpecFor` first, so the right merge is that port's
+    to see. This is the simpler choice: no new export, no owner question, no test churn here.
+- #133 item 2 continues in #294, for the `rule` port (filed at design time; task 4.3 confirms it). The
   "exactly two callers" comment is corrected in D6.
 
 ## D4. Errors name the package; a nil context is invalid (#133 item 4)

@@ -34,7 +34,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 - [x] 4.1 transport-client delta matches the code; ADR-112 lists and amendment line; `natsclient/README.md:10`, `:146`;
   `doc.go:394` (D4). Gate: `task spec:check`, `task docs:check`.
-- [ ] 4.2 Ledger natsclient row and the two contract sentences (D4). Gate: `task ledger:check`; `task verify`'s
+- [x] 4.2 Ledger natsclient row and the two contract sentences (D4). Gate: `task ledger:check`; `task verify`'s
   adapter check.
 - [ ] 4.3 Comment on #139 with the new line of the handler timeout (was `request.go:396`). Gate: the comment is read back.
 

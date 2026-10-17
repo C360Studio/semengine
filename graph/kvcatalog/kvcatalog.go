@@ -85,7 +85,7 @@ func KVCatalog() []natsclient.BucketSpec {
 	// live — restart-surviving by construction, with no separate sample store.
 	//
 	// Why 10 and not the bare floor of 2
-	// (natsclient.StorageReportGrowthObservations, cross-pinned by a test in
+	// (storagereport.StorageReportGrowthObservations, cross-pinned by a test in
 	// this package): depth 2 covers only the benign restart. It does NOT cover
 	// the cases the design says the projection matters most in. A crash loop or
 	// deploy loop restarting faster than every 5 s (the shortest interval a

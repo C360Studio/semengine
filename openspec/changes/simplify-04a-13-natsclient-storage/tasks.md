@@ -41,7 +41,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 ## 4. Documentation
 
 - [x] 4.1 Ledger natsclient row: destination note, contract D1–D3, #85 sentence removed (D4). Gate: `task ledger:check`.
-- [ ] 4.2 `docs/repository-map.md` row and target count; `graph/kvcatalog/kvcatalog.go:88,:91` comments (D4). Gate:
+- [x] 4.2 `docs/repository-map.md` row and target count; `graph/kvcatalog/kvcatalog.go:88,:91` comments (D4). Gate:
   `task docs:check`.
 - [ ] 4.3 Comment on #281 with the new path of `storage_pressure.go:82` (D4). Gate: the comment is read back.
 

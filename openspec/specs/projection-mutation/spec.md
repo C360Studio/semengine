@@ -129,9 +129,9 @@ and detail. The typed client's own refusals before sending (a client that is not
 operation not admitted, a request that does not encode as JSON, a create without an entity) SHALL be such an error, with
 class invalid and code `invalid_request`, and SHALL send no request. The error SHALL be not committed, `Kind`
 `MutationUnavailable`, class transient, in three cases: no responder took the request; natsclient refused it before
-sending (`natsclient.ErrNotConnected`, `natsclient.ErrCircuitOpen`), with `errors.Is` still reaching that error; or the
-context ended before the request was sent. Every other error SHALL be commit-unknown as the requirement "A
-commit-unknown error is never retryable" states.
+sending (`natsclient.ErrNotConnected`), with `errors.Is` still reaching that error; or the context ended before the
+request was sent. Every other error SHALL be commit-unknown as the requirement "A commit-unknown error is never
+retryable" states.
 
 #### Scenario: Context ended before the request was sent
 
@@ -141,7 +141,7 @@ commit-unknown error is never retryable" states.
 
 #### Scenario: natsclient refused the request before sending
 
-- **WHEN** a typed-client write's request is refused with `natsclient.ErrNotConnected` or `natsclient.ErrCircuitOpen`
+- **WHEN** a typed-client write's request is refused with `natsclient.ErrNotConnected`
 - **THEN** the error is not committed, `MutationUnavailable`, class transient, and `errors.Is` reaches the
   natsclient error
 

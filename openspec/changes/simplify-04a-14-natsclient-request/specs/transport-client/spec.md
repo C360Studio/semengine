@@ -82,15 +82,16 @@ ended before an attempt or while one waited for its reply; an attempt's own time
 
 nats.go takes one lock for every write on a connection. While the server is not reading and the connection's send buffer
 is full, a write holds that lock until it completes or nats.go's write timeout (one minute by default,
-`WithWriteTimeout`) ends it, and every call that needs the lock waits, whatever its context: `Publish`, `Subscribe`,
-the JetStream and key-value calls, and a consumer's setup. A call behind more than one held write waits for
-each in turn. The client does not bound these waits (ADR-112). `Close` is the exception: on a connection the client
-dialled it closes the socket when its context ends ("Close and Drain are bounded by the caller's context"), and every
-held call then returns an error. The client SHALL NOT hold its own lock while it calls into nats.go, so a call held this
-way does not hold `Close` or `Connect`. When the write timeout ends a write that was partly sent, the connection can
-stay connected and carry nothing until nats.go's stale-connection check closes it and reconnects. That check sends a
-PING every 30 s by default (`WithPingInterval`), and nats.go declares the connection stale at the third PING with no
-answer. The client does not promise when that happens, nor that the connection is usable sooner.
+`WithWriteTimeout`) ends it, and every call that needs the lock waits, whatever its context: `Publish`,
+`RequestWithHeaders` (and the classified calls through it), `Subscribe`, the JetStream and key-value calls, and a
+consumer's setup. A call behind more than one held write waits for each in turn. The client does not bound these waits
+(ADR-112). `Close` is the exception: on a connection the client dialled it closes the socket when its context ends
+("Close and Drain are bounded by the caller's context"), and every held call then returns an error. The client SHALL NOT
+hold its own lock while it calls into nats.go, so a call held this way does not hold `Close` or `Connect`. When the
+write timeout ends a write that was partly sent, the connection can stay connected and carry nothing until nats.go's
+stale-connection check closes it and reconnects. That check sends a PING every 30 s by default (`WithPingInterval`), and
+nats.go declares the connection stale at the third PING with no answer. The client does not promise when that happens,
+nor that the connection is usable sooner.
 
 #### Scenario: A held call does not hold Close
 

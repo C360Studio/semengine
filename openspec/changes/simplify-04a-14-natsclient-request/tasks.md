@@ -32,7 +32,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 ## 4. Documentation
 
-- [ ] 4.1 transport-client delta matches the code; ADR-112 lists and amendment line; `natsclient/README.md:10`, `:146`;
+- [x] 4.1 transport-client delta matches the code; ADR-112 lists and amendment line; `natsclient/README.md:10`, `:146`;
   `doc.go:394` (D4). Gate: `task spec:check`, `task docs:check`.
 - [ ] 4.2 Ledger natsclient row and the two contract sentences (D4). Gate: `task ledger:check`; `task verify`'s
   adapter check.

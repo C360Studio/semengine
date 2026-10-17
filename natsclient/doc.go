@@ -391,7 +391,7 @@
 //	parentTC, _ := natsclient.TraceContextFromContext(ctx)
 //	childTC := parentTC.NewSpan()
 //	childCtx := natsclient.ContextWithTrace(ctx, childTC)
-//	reply, err := client.Request(childCtx, "service.action", data, timeout)
+//	reply, err := client.RequestClassified(childCtx, "service.action", data, timeout)
 //
 // # The unified RPC error contract (ADR-060)
 //

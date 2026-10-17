@@ -66,7 +66,7 @@ func TestCreateRejectsMissingRequiredProvenanceBeforeRequest(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			requester := &projectionRequester{handle: func(string, []byte) ([]byte, error) {
-				return projectionJSON(t, graph.CreateEntityResponse{
+				return projectionJSON(t, graph.EntityMutationResponse{
 					Outcome: graph.MutationApplied, Entity: projectionTestState(), KVRevision: 1,
 				}), nil
 			}}
@@ -123,7 +123,7 @@ func TestCreateRejectsConflictingTimestampBeforeRequest(t *testing.T) {
 	contract := projectionTestContract(t)
 	metadataTime := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
 	requester := &projectionRequester{handle: func(string, []byte) ([]byte, error) {
-		return projectionJSON(t, graph.CreateEntityResponse{
+		return projectionJSON(t, graph.EntityMutationResponse{
 			Outcome: graph.MutationApplied, Entity: projectionTestState(), KVRevision: 1,
 		}), nil
 	}}
@@ -220,7 +220,7 @@ func TestReconcileReadsExactRevisionThenMakesOneMutation(t *testing.T) {
 			if request.ExpectedRevision != 7 {
 				t.Fatalf("expected revision = %d", request.ExpectedRevision)
 			}
-			return projectionJSON(t, graph.ReconcilePredicatesResponse{
+			return projectionJSON(t, graph.EntityMutationResponse{
 				Outcome: graph.MutationApplied, Entity: entity, KVRevision: 8,
 			}), nil
 		default:
@@ -375,7 +375,7 @@ func projectionJSON(t *testing.T, value any) []byte {
 func TestCreateFillsMessageTypeFromContract(t *testing.T) {
 	contract := projectionTestContract(t)
 	requester := &projectionRequester{handle: func(string, []byte) ([]byte, error) {
-		return projectionJSON(t, graph.CreateEntityResponse{
+		return projectionJSON(t, graph.EntityMutationResponse{
 			Outcome: graph.MutationApplied, Entity: projectionTestState(), KVRevision: 1,
 		}), nil
 	}}
@@ -473,7 +473,7 @@ func TestCreateFillsFromRegisteredContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	requester := &projectionRequester{handle: func(string, []byte) ([]byte, error) {
-		return projectionJSON(t, graph.CreateEntityResponse{
+		return projectionJSON(t, graph.EntityMutationResponse{
 			Outcome: graph.MutationApplied, Entity: projectionTestState(), KVRevision: 1,
 		}), nil
 	}}

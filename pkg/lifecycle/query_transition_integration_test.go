@@ -32,7 +32,7 @@ func appendTriples(t *testing.T, kv jetstream.KeyValue, entityID string, triples
 	entry, err := kv.Get(t.Context(), entityID)
 	require.NoError(t, err)
 	var state graph.EntityState
-	require.NoError(t, graph.UnmarshalEntityState(entry.Value(), &state))
+	require.NoError(t, graph.UnmarshalEntityState(entityID, entry.Value(), &state))
 	state.Triples = append(state.Triples, triples...)
 	body, err := graph.MarshalEntityState(&state)
 	require.NoError(t, err)
@@ -66,7 +66,7 @@ func storedObject(t *testing.T, kv jetstream.KeyValue, entityID, predicate strin
 	entry, err := kv.Get(t.Context(), entityID)
 	require.NoError(t, err)
 	var state graph.EntityState
-	require.NoError(t, graph.UnmarshalEntityState(entry.Value(), &state))
+	require.NoError(t, graph.UnmarshalEntityState(entityID, entry.Value(), &state))
 	for _, triple := range state.Triples {
 		if triple.Predicate == predicate {
 			return triple.Object

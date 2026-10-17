@@ -23,7 +23,7 @@ const (
 // read of one entity with failErr, so a test can bound Children's reads and
 // drive a child read failure.
 type countingExactReader struct {
-	inner   graph.ExactEntityReader
+	inner   exactEntityReader
 	mu      sync.Mutex
 	reads   int
 	failID  string

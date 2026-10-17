@@ -1,4 +1,3 @@
-// Package graph provides index query data types for the graph query system.
 package graph
 
 // --- Index Query Data Types ---

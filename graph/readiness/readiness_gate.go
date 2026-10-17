@@ -1,6 +1,10 @@
 package readiness
 
-import "github.com/c360studio/semengine/graph"
+import (
+	"slices"
+
+	"github.com/c360studio/semengine/graph"
+)
 
 // The canonical readiness gate. Before it, four consumers implemented four gate
 // semantics — sticky-forever, per-tick exact-unless-configured, per-call exact with no
@@ -56,7 +60,7 @@ const (
 	// mistaken for index state.
 	DeferStatusUnknown DeferReason = "status_unknown"
 	// DeferUnrecognizedState is an envelope whose State is blank or outside
-	// graph.AllIndexStates. It is NOT the same operator problem as a dead feed: the value
+	// graph.IndexStates(). It is NOT the same operator problem as a dead feed: the value
 	// arrived and decoded, so the producer is talking — it is saying something this
 	// consumer does not understand, which means version skew (a newer producer, a
 	// partially-written envelope, a hand-edited key). Failing closed on it is the
@@ -74,7 +78,7 @@ const (
 
 // AllDeferReasons is the closed iteration domain for the typed defer reasons a gate can
 // return. It lives next to the const block so it is the single source of truth, exactly
-// as graph.AllIndexStates is for wire states: adding a reason means adding it HERE, once, and
+// as graph.IndexStates() is for wire states: adding a reason means adding it HERE, once, and
 // every consumer that pre-initializes counter series or validates a label set picks it
 // up automatically.
 //
@@ -118,7 +122,7 @@ type StatusReading struct {
 //  1. Unknown status short-circuits BEFORE anything else. A dead status feed is a
 //     transport fact; nothing licenses proceeding on state the consumer cannot vouch
 //     for.
-//  2. An UNRECOGNIZED State defers. The check is an allow-list over graph.AllIndexStates,
+//  2. An UNRECOGNIZED State defers. The check is an allow-list over graph.IndexStates(),
 //     not a deny-list for degraded/reset_required: a blank or future state must not
 //     read as "not degraded, therefore healthy".
 //  3. Hard stops (degraded, reset_required) defer.
@@ -163,12 +167,7 @@ func EvaluateReadinessGate(reading StatusReading) (proceed bool, reason DeferRea
 }
 
 // recognizedState reports whether a wire State is one this consumer understands.
-// Sourced from graph.AllIndexStates so adding a state means adding it there, once.
-func recognizedState(state string) bool {
-	for _, known := range graph.AllIndexStates {
-		if state == known {
-			return true
-		}
-	}
-	return false
+// Sourced from graph.IndexStates() so adding a state means adding it there, once.
+func recognizedState(state graph.IndexState) bool {
+	return slices.Contains(graph.IndexStates(), state)
 }

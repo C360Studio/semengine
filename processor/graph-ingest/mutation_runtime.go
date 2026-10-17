@@ -209,47 +209,16 @@ func (c *Component) readEntity(ctx context.Context, entityID string) (graph.Enti
 	return state, entry.Revision, nil
 }
 
-// decodeStoredEntity is the rule for the bytes stored under one key. They must
-// decode under the canonical contract, so an empty value is unreadable poison,
-// never absence (a deleted key is already not-found at the KV), the entity
-// they hold must be the one the key names, and each of its statements must
-// carry a Source and a Timestamp, the statement-metadata rule
-// (missingStatementMetadata; ADR-110 Decision 5; checkpoint 3 H3). A refusal is
-// a graph-state error whose entity ID is the key.
+// decodeStoredEntity is the stored-value rule (graph.UnmarshalEntityState) for
+// the bytes stored under key: an empty value is unreadable poison, never
+// absence (a deleted key is already not-found at the KV). A refusal is the
+// rule's one graph-state classification, whose entity ID is the key.
 func decodeStoredEntity(key string, value []byte) (graph.EntityState, error) {
 	var state graph.EntityState
-	if err := graph.UnmarshalEntityState(value, &state); err != nil {
-		var contractErr *graph.StateContractError
-		if errors.As(err, &contractErr) {
-			contractErr.EntityID = key
-		}
+	if err := graph.UnmarshalEntityState(key, value, &state); err != nil {
 		return graph.EntityState{}, err
-	}
-	if err := checkStoredEntityKey(key, state.ID); err != nil {
-		return graph.EntityState{}, err
-	}
-	if err := missingStatementMetadata(state.Triples); err != nil {
-		return graph.EntityState{}, graph.ClassifyStateContractError(&graph.StateContractError{
-			Reason:   graph.GraphStateReasonMissingStatementMetadata,
-			EntityID: key,
-			Err:      err,
-		})
 	}
 	return state, nil
-}
-
-// checkStoredEntityKey is decodeStoredEntity's key check, which the write seam's read check
-// also runs (decodeStoredForWrite; design D23): storedID, the entity a value stored under key
-// holds, must be the one key names. A refusal is a graph-state error whose entity ID is the key.
-func checkStoredEntityKey(key, storedID string) error {
-	if storedID == key {
-		return nil
-	}
-	return graph.ClassifyStateContractError(&graph.StateContractError{
-		Reason:   graph.GraphStateReasonNoncanonicalEntityID,
-		EntityID: key,
-		Err:      fmt.Errorf("authority key contains entity %q", storedID),
-	})
 }
 
 func rejectInvalid(code string, err error) error {
@@ -264,10 +233,12 @@ func rejectInternal(err error) error {
 	return errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal, err)
 }
 
+// rejectFromError classifies a mutation's failure for its reply. A graph-state
+// refusal already carries the stored-value rule's one classification and is
+// returned unchanged.
 func rejectFromError(err error) error {
-	var stateErr *graph.StateContractError
-	if errors.As(err, &stateErr) {
-		return errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired, err)
+	if graph.IsStateContractError(err) {
+		return err
 	}
 	if errs.IsInvalid(err) {
 		return rejectInvalid(graph.ErrorCodeInvalidRequest, err)

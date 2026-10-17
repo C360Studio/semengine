@@ -278,7 +278,7 @@ func TestCreateReplyNamingAnotherEntityIsCommitUnknown(t *testing.T) {
 	other := projectionTestState()
 	other.ID = "acme.ops.test.system.widget.002"
 	requester := &projectionRequester{handle: func(string, []byte) ([]byte, error) {
-		return projectionJSON(t, graph.CreateEntityResponse{
+		return projectionJSON(t, graph.EntityMutationResponse{
 			Outcome: graph.MutationApplied, Entity: other, KVRevision: 1,
 		}), nil
 	}}

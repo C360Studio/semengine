@@ -254,7 +254,8 @@ func (m *Manager) runWatchLoop(
 
 // watchEvent decodes and projects one entry from a workflow-pattern watch. An
 // entry outside the workflow's pattern, or without its phase triple, is not
-// kept; an entry it cannot decode or project is an error, never a skip.
+// kept; an entry the stored-value rule refuses (graph.UnmarshalEntityState
+// under the entry's key), or one it cannot project, is an error, never a skip.
 func watchEvent(reg *registration, entry jetstream.KeyValueEntry) (Event, bool, error) {
 	if entry.Operation() == jetstream.KeyValueDelete || entry.Operation() == jetstream.KeyValuePurge {
 		if !matchesWorkflow(reg, entry.Key()) {
@@ -264,7 +265,7 @@ func watchEvent(reg *registration, entry jetstream.KeyValueEntry) (Event, bool, 
 	}
 
 	var state graph.EntityState
-	if err := graph.UnmarshalEntityState(entry.Value(), &state); err != nil {
+	if err := graph.UnmarshalEntityState(entry.Key(), entry.Value(), &state); err != nil {
 		return Event{}, false, err
 	}
 	if !matchesWorkflow(reg, entry.Key()) {

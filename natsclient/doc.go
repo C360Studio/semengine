@@ -1,8 +1,7 @@
-// Package natsclient provides a robust NATS client with circuit breaker protection,
-// automatic reconnection, and comprehensive JetStream/KV support for distributed edge systems.
+// Package natsclient provides a NATS client with automatic reconnection and comprehensive
+// JetStream/KV support for distributed edge systems.
 //
-// The natsclient package wraps the standard NATS Go client with additional reliability
-// features: a circuit breaker for failure protection, and nats.go's automatic
+// The natsclient package wraps the standard NATS Go client. It keeps nats.go's automatic
 // reconnection with natsclient's settings (see Connection Lifecycle below). Every call
 // that waits for the server takes a context, which ends that wait. It does not end a
 // wait behind a write the server is not reading, which lasts until the write completes
@@ -12,16 +11,12 @@
 //
 // # Core Features
 //
-// Circuit Breaker Pattern: Prevents cascading failures by failing fast after a threshold
-// of consecutive failures (default: 15). The circuit opens to prevent further attempts,
-// then gradually tests the connection with exponential backoff.
-//
 // Connection Lifecycle Management: Handles connection states automatically through the
 // lifecycle: Disconnected → Connecting → Connected → Reconnecting → Connected. The client
 // manages all transitions.
 //
 // JetStream Support: Full support for JetStream streams, consumers, and Key-Value stores
-// with proper error handling and circuit breaker integration.
+// with proper error handling.
 //
 // KVStore Abstraction: High-level abstraction over NATS KV providing automatic CAS
 // (Compare-And-Swap) retry logic, a JSON read-modify-write helper (UpdateJSON), and
@@ -200,23 +195,6 @@
 //	var config map[string]any
 //	err = json.Unmarshal(entry.Value, &config)
 //
-// # Circuit Breaker Pattern
-//
-// The circuit breaker protects against cascading failures:
-//
-//	// Circuit states:
-//	// - Closed: Normal operation, requests pass through
-//	// - Open: Failures exceeded threshold, failing fast
-//	// - Half-Open: Testing if system recovered
-//
-//	err := client.Connect(ctx)
-//	if errors.Is(err, natsclient.ErrCircuitOpen) {
-//	    // Circuit is open, wait for it to test recovery
-//	    log.Println("Circuit breaker is open, backing off...")
-//	    time.Sleep(client.Backoff())
-//	    // Retry later
-//	}
-//
 // # Connection Status and Health
 //
 // Monitoring connection health:
@@ -228,17 +206,14 @@
 //	    // Healthy and ready
 //	case natsclient.StatusReconnecting:
 //	    // Temporarily disconnected, reconnecting
-//	case natsclient.StatusCircuitOpen:
-//	    // Circuit breaker is open
 //	case natsclient.StatusDisconnected:
 //	    // Not connected
 //	}
 //
 //	// Get detailed status
 //	statusInfo := client.GetStatus()
-//	log.Printf("Status: %v, Failures: %d, RTT: %v",
+//	log.Printf("Status: %v, RTT: %v",
 //	    statusInfo.Status,
-//	    statusInfo.FailureCount,
 //	    statusInfo.RTT)
 //
 //	// Wait for connection
@@ -251,7 +226,6 @@
 // The package defines specific error types for different failure scenarios:
 //
 //	var (
-//	    ErrCircuitOpen        = errs.ErrCircuitOpen
 //	    ErrNotConnected       = fmt.Errorf("not connected to NATS: %w", errs.ErrConnectionLost)
 //	)
 //
@@ -330,7 +304,6 @@
 //   - Uses real NATS server via testcontainers (no mocks)
 //   - Tests actual behavior including connection lifecycle
 //   - Thread-safe testing with proper synchronization
-//   - Comprehensive circuit breaker scenario testing
 //
 // # Thread Safety
 //
@@ -349,14 +322,11 @@
 // subscription maintains its own message buffer. Health monitoring adds minimal overhead
 // (one goroutine with configurable interval).
 //
-// Throughput: Limited primarily by network latency and NATS server performance. Circuit
-// breaker adds negligible overhead in normal operation and fails fast when open.
+// Throughput: Limited primarily by network latency and NATS server performance.
 //
 // Connection Lifecycle: natsclient asks nats.go to wait ReconnectWait between reconnect
 // attempts: 2 s by default, natsclient's setting (WithReconnectWait). How nats.go paces
-// the attempts is not promised (ADR-112). The exponential backoff of up to one minute is
-// the circuit breaker's, not the reconnect's: while the circuit is open, Connect and
-// other calls return ErrCircuitOpen.
+// the attempts is not promised (ADR-112).
 //
 // # Distributed Tracing
 //
@@ -443,13 +413,9 @@
 //
 // Data flow:
 //
-//	Application → Client → Circuit Breaker → NATS Connection → NATS Server
+//	Application → Client → NATS Connection → NATS Server
 //
 // # Design Decisions
-//
-// Circuit Breaker over Simple Retry: Chose circuit breaker pattern to prevent cascade
-// failures in distributed systems. After threshold failures, the circuit opens to fail
-// fast rather than continuously retry, giving the system time to recover.
 //
 // Context-First API: every call that waits for the server takes a context.Context as
 // its first parameter, and the context ends that wait. It does not end a wait behind a

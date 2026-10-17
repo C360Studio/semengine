@@ -23,6 +23,10 @@ with it. Line numbers in `client_close_final_test.go` are as of `d71df33`.
 **Amendment, 2026-10-15 (#167).** Two "not promised" lines in §3 are now promised (owner ruling 4 on #167, comment
 6191970843). The original bullets stay where they are; this note replaces what they leave open.
 
+**Amendment, 2026-10-17 (simplify-04a-16-natsclient-circuit, #222).** The connection circuit breaker is removed, so
+`natsclient.ErrCircuitOpen`, the circuit-neutral stream-capacity line in §3 and the circuit refusal in the retry
+line are struck where they stand. No library statement is added.
+
 - **The unknown-error default.** `errs.Classify` returns fatal for an unclassified error: one with no
   `*errs.ClassifiedError` in its chain and none of the sentinels `errs.IsTransient`, `errs.IsFatal` or `errs.IsInvalid`
   list, whatever its text says. Those three checks stay strict and report false for it. The
@@ -161,15 +165,15 @@ Each line below names its backing. Anything not backed is not promised.
 - **Read a class with `errors.Is` and `errors.As`** (ruling N, #91 comment 6080973822).
 - **`ErrNotConnected` is transient** by `errs.IsTransient` and `errs.Classify`, because it wraps
   `errs.ErrConnectionLost` (T7).
-- **`natsclient.ErrCircuitOpen` is `errs.ErrCircuitOpen`** (T7).
+- ~~**`natsclient.ErrCircuitOpen` is `errs.ErrCircuitOpen`** (T7).~~ Removed with the circuit breaker (#222).
 - **No responders** comes back as nats.go's `nats.ErrNoResponders`, matched by `errors.Is` or `IsNoResponders`. On the
   default server configuration it comes at once (P15). Not promised:
   - its class, which waits for #93's handling of raw nats.go errors (amended 2026-10-15, #167; see Status);
   - other server configurations.
 - **`CreateKeyValueBucket`** treats `jetstream.ErrBucketExists` as "the bucket exists" (T6).
-- **A stream at its byte or message limit** does not count against the connection circuit
-  (`stream_capacity_circuit_integration_test.go:14`). nats-server names the limit only in the description of error
-  10077, so natsclient reads that text; nats.go has no code for it.
+- ~~**A stream at its byte or message limit** does not count against the connection circuit
+  (`stream_capacity_circuit_integration_test.go:14`).~~ Struck with the circuit breaker (#222). nats-server names the
+  limit only in the description of error 10077, so natsclient reads that text; nats.go has no code for it.
 - **Not promised here:** `Classify`'s default for unknown errors (#167; amended 2026-10-15, see Status), and the raw
   nats.go errors that #93's `pkg/errs` rewrite reclassifies. Both wait for #93.
 
@@ -233,8 +237,9 @@ Each alternative that needed a timeout was measured with a short one, so no prob
 
 - **A component's `Stop` that closes its client is bounded by its context.** Its other calls are not, while a server
   is not reading. A caller that needs a shorter bound sets `WithWriteTimeout` and `WithPingInterval` together.
-- **A retry keyed on `errs.IsTransient` now retries `ErrNotConnected` and a circuit refusal.** No responders is
-  unchanged. A KV write's error is commit-unknown, so re-read before retrying a write that is not compare-and-set.
+- **A retry keyed on `errs.IsTransient` now retries `ErrNotConnected`.** (It also
+  retried a circuit refusal; struck with the breaker, #222.) No responders is unchanged. A KV write's error is
+  commit-unknown, so re-read before retrying a write that is not compare-and-set.
 - **Re-check after a nats.go or nats-server upgrade.** T1 to T9 run under `task verify` and pin the library facts this
   record rests on. A probe line is re-run before an upgrade merges. #118 (nats-server v2.15.0) merged on 2026-10-11
   at 14:37Z, while this record was in review, and the re-run after it found no change (comment 6111119623). After a

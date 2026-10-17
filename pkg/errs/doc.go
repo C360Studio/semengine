@@ -179,7 +179,7 @@
 //
 // The errors package integrates with other StreamKit components:
 //
-//   - service: Services use error classification for retry and circuit breaker logic
+//   - service: Services use error classification for retry logic
 //   - component: Components wrap errors with component context for debugging
 //   - natsclient: NATS client uses standard connection error variables
 //   - retry: Retry package uses error classification for retry decisions

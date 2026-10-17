@@ -137,12 +137,11 @@ Each ruling maps to the code that carries it:
 
 | Ruling | Decision | Carried by |
 | --- | --- | --- |
-| 1(a) | The Watcher's option functions become constructor arguments | `graph/readiness/watcher.go:184` `NewWatcher(src, key, heartbeat, logger)` (task 2.2, done) |
-| 1(b) | `EnsureBucket` goes; producers call `kvcatalog.EnsureCatalogBucket` | task 3.3 (pending) |
-| 1(c) | `AllDeferReasons` becomes `DeferReasons()`, returning a copy | task 3.2 (pending) |
-| 1(d) | The gate returns one `DeferReason` (ADR-083 Decision 4's two values give way to ADR-085 Decision 1) | task 3.2 (pending) |
-| 2 | The `readiness.BucketGraphStatus` alias and `bucket_alias_test.go` are removed | task 3.3 (pending) |
+| 1(a) | The Watcher's option functions become constructor arguments | `graph/readiness/watcher.go:175` `NewWatcher(src, key, heartbeat, logger)` (task 2.2) |
+| 1(b) | `EnsureBucket` goes; producers call `kvcatalog.EnsureCatalogBucket` | `processor/graph-ingest/readiness.go:349`; `EnsureBucket` deleted from `publisher.go` (task 3.3) |
+| 1(c) | `AllDeferReasons` becomes `DeferReasons()`, returning a copy | `graph/readiness/readiness_gate.go:93` (task 3.2) |
+| 1(d) | The gate returns one `DeferReason` (ADR-083 Decision 4's two values give way to ADR-085 Decision 1) | `graph/readiness/readiness_gate.go:138` `EvaluateReadinessGate(r Reading) DeferReason` (task 3.2) |
+| 2 | The `readiness.BucketGraphStatus` alias and `bucket_alias_test.go` are removed | both deleted; callers use `graph.BucketGraphStatus` (task 3.3) |
 
 FYI, no ruling needed: `FreshnessMultiplier` and `FreshnessWindow` become private. Nothing outside the package reads
-them, here or at the pin, and ADR-109 dropped freshness from the contract. See the merge order above for
-why batches 2 and 3 wait for #286.
+them, here or at the pin, and ADR-109 dropped freshness from the contract.

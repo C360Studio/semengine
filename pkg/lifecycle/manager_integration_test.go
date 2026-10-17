@@ -112,8 +112,8 @@ func startKVBackedResponders(
 			}
 			return nil, err
 		}
-		state, err := decodeStoredValue(req.EntityID, entry.Value())
-		if err != nil {
+		var state graph.EntityState
+		if err := graph.UnmarshalEntityState(req.EntityID, entry.Value(), &state); err != nil {
 			return nil, err
 		}
 		selected := make(map[string]struct{}, len(req.Predicates))
@@ -145,7 +145,7 @@ func startKVBackedResponders(
 				}
 			}
 		}
-		return json.Marshal(graph.ReconcilePredicatesResponse{
+		return json.Marshal(graph.EntityMutationResponse{
 			Outcome: graph.MutationApplied, Entity: state.Clone(), KVRevision: revision,
 		})
 	})
@@ -169,7 +169,7 @@ func startKVBackedResponders(
 		if err != nil {
 			return nil, err
 		}
-		return json.Marshal(graph.CreateEntityResponse{
+		return json.Marshal(graph.EntityMutationResponse{
 			Outcome: graph.MutationApplied, Entity: &st, KVRevision: rev,
 		})
 	})
@@ -216,8 +216,8 @@ func startExactEntityResponder(t *testing.T, client *natsclient.Client, kv jetst
 			}
 			return nil, err
 		}
-		entity, err := decodeStoredValue(req.ID, entry.Value())
-		if err != nil {
+		var entity graph.EntityState
+		if err := graph.UnmarshalEntityState(req.ID, entry.Value(), &entity); err != nil {
 			return nil, err
 		}
 		return json.Marshal(graph.ExactEntity{Entity: entity.Clone(), KVRevision: entry.Revision()})
@@ -264,7 +264,7 @@ func TestIntegration_DespawnWith_DoesNotDeleteNewerStateAfterTerminalCommit(t *t
 			return err
 		}
 		var state graph.EntityState
-		if err := graph.UnmarshalEntityState(entry.Value(), &state); err != nil {
+		if err := graph.UnmarshalEntityState(entityID, entry.Value(), &state); err != nil {
 			return err
 		}
 		state.Triples = append(state.Triples, message.Triple{
@@ -294,7 +294,7 @@ func TestIntegration_DespawnWith_DoesNotDeleteNewerStateAfterTerminalCommit(t *t
 	require.NoError(t, err, "newer state must survive the stale conditional delete")
 	require.Equal(t, newerRevision, entry.Revision())
 	var preserved graph.EntityState
-	require.NoError(t, graph.UnmarshalEntityState(entry.Value(), &preserved))
+	require.NoError(t, graph.UnmarshalEntityState(id, entry.Value(), &preserved))
 	require.Equal(t, "newer", extractTripleScalar(preserved.Triples, id, "test.concurrent.value"))
 }
 

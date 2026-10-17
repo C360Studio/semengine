@@ -257,7 +257,7 @@ func TestEvaluateReadinessGate_CoverageNeitherLicensesNorWithholds(t *testing.T)
 // A blank State is reachable without any malice: an empty envelope, a partially written
 // key, or a consumer built against a newer producer that added a state.
 func TestEvaluateReadinessGate_UnrecognizedStateFailsClosed(t *testing.T) {
-	for _, state := range []string{"", "ready_ish", "REBUILDING", "unknown", "Ready"} {
+	for _, state := range []graph.IndexState{"", "ready_ish", "REBUILDING", "unknown", "Ready"} {
 		status := graph.IndexStatusResponse{
 			State: state, BootstrapComplete: true, TargetRevision: 100, StalenessMs: 1,
 		}
@@ -273,7 +273,7 @@ func TestEvaluateReadinessGate_UnrecognizedStateFailsClosed(t *testing.T) {
 
 	// Every state the producer can actually emit stays interpretable, so the allow-list
 	// cannot silently reject the healthy path.
-	for _, state := range graph.AllIndexStates {
+	for _, state := range graph.IndexStates() {
 		_, reason := EvaluateReadinessGate(StatusReading{
 			Status: graph.IndexStatusResponse{State: state, BootstrapComplete: true, Ready: true},
 			Fresh:  true,

@@ -158,19 +158,19 @@ func TestHandleQueryPrefix_CursorPagination(t *testing.T) {
 }
 
 // TestHandleQueryPrefix_LimitClampZero verifies that limit<=0 is clamped to
-// DefaultPrefixQueryLimit rather than returning zero or an error.
+// MaxPrefixQueryLimit rather than returning zero or an error.
 func TestHandleQueryPrefix_LimitClampZero(t *testing.T) {
 	comp := createTestComponentWithMockKV(t, withAuthority("acme", "ops"))
 	storePrefixEntity(t, comp, "acme.ops.dom.sys.type.entity-001")
 	storePrefixEntity(t, comp, "acme.ops.dom.sys.type.entity-002")
 
-	// limit=0 should default to DefaultPrefixQueryLimit (both entities returned).
+	// limit=0 should default to MaxPrefixQueryLimit (both entities returned).
 	resp := callPrefixHandler(t, comp, graph.PrefixQueryRequest{Prefix: "acme", Limit: 0})
-	assert.Len(t, resp.Entities, 2, "limit=0 must default to DefaultPrefixQueryLimit")
+	assert.Len(t, resp.Entities, 2, "limit=0 must default to MaxPrefixQueryLimit")
 
 	// limit=-1 should also default.
 	resp2 := callPrefixHandler(t, comp, graph.PrefixQueryRequest{Prefix: "acme", Limit: -1})
-	assert.Len(t, resp2.Entities, 2, "limit=-1 must default to DefaultPrefixQueryLimit")
+	assert.Len(t, resp2.Entities, 2, "limit=-1 must default to MaxPrefixQueryLimit")
 }
 
 // TestHandleQueryPrefix_LimitClampAboveMax verifies that limit > MaxPrefixQueryLimit
@@ -202,7 +202,7 @@ func TestMarshalFittingPrefixPageIncludesCursorInExactCandidate(t *testing.T) {
 
 	want := graph.PrefixQueryResponse{
 		Entities:   entities[:1],
-		NextCursor: graph.EncodeCursor(entities[0].ID),
+		NextCursor: encodeCursor(entities[0].ID),
 	}
 	wantBytes, err := json.Marshal(want)
 	require.NoError(t, err)
@@ -217,7 +217,7 @@ func TestMarshalFittingPrefixPageRejectsFirstIndivisibleEntity(t *testing.T) {
 	entities := []graph.EntityState{{ID: "a.b.c.d.e.one"}, {ID: "a.b.c.d.e.two"}}
 	firstCandidate, err := json.Marshal(graph.PrefixQueryResponse{
 		Entities:   entities[:1],
-		NextCursor: graph.EncodeCursor(entities[0].ID),
+		NextCursor: encodeCursor(entities[0].ID),
 	})
 	require.NoError(t, err)
 	maxPayload := int64(len(firstCandidate) - 1)
@@ -497,4 +497,39 @@ func TestQueryPrefix_PatternNoMatches(t *testing.T) {
 		assert.Empty(t, resp.NextCursor)
 		assert.Zero(t, gets.Load(), "pattern query must not fall back to exact-entity Get (%s)", pattern)
 	}
+}
+
+// TestCursorRoundTrip verifies that encodeCursor/decodeCursor are inverses
+// for a representative set of entity ID values.
+func TestCursorRoundTrip(t *testing.T) {
+	cases := []string{
+		"acme.ops.logistics.warehouse.robot.robot-001",
+		"c360.platform.robotics.mav1.drone.001",
+		"z",
+		"a.b.c.d.e.f",
+		// Characters that are special in standard Base64 but safe in URL-safe:
+		"org.sys-hyphen.dom_underscore.sub.type.inst",
+	}
+	for _, key := range cases {
+		t.Run(key, func(t *testing.T) {
+			decoded, err := decodeCursor(encodeCursor(key))
+			require.NoError(t, err)
+			assert.Equal(t, key, decoded, "round-trip must be identity")
+		})
+	}
+}
+
+// TestDecodeCursorEmpty verifies the first-page sentinel: empty cursor decodes
+// to empty string without error.
+func TestDecodeCursorEmpty(t *testing.T) {
+	key, err := decodeCursor("")
+	require.NoError(t, err)
+	assert.Equal(t, "", key)
+}
+
+// TestDecodeCursorInvalid verifies that a malformed cursor returns an error
+// rather than silently producing garbage.
+func TestDecodeCursorInvalid(t *testing.T) {
+	_, err := decodeCursor("!!!not-base64!!!")
+	require.Error(t, err, "malformed cursor must return error")
 }

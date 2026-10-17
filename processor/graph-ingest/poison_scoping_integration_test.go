@@ -130,7 +130,7 @@ func TestIntegration_BootSweepInventoriesResidentPoisonRealNATS(t *testing.T) {
 	assert.NotZero(t, rec.revision, "inventory record must carry the failing KV revision")
 	health := c.Health()
 	assert.False(t, health.Healthy)
-	assert.Equal(t, graph.IndexStateDegraded, health.Status)
+	assert.Equal(t, "degraded", health.Status)
 
 	// Per-entity scope on the real wire: poisoned refuses, valid serves.
 	_, err = c.handleQueryEntityNATS(ctx, []byte(`{"id":"`+poisonID+`"}`))

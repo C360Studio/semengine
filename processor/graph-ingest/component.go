@@ -867,7 +867,7 @@ func (c *Component) Health() component.HealthStatus {
 		// design D6), and the message carries count + a bounded ID/reason
 		// sample. Full enumeration rides DebugStatus.
 		if c.entityPoisonSize.Load() > 0 {
-			status = graph.IndexStateDegraded
+			status = string(graph.IndexStateDegraded)
 			lastErr = c.entityPoisonHealthMessage()
 		} else if errorCount > 0 {
 			lastErr = "errors occurred during processing"
@@ -1294,11 +1294,7 @@ func (c *Component) sweepEntityStateGuardEntry(sweep map[string]entityPoisonReco
 		return
 	}
 	var contractErr *graph.StateContractError
-	if !errors.As(err, &contractErr) {
-		contractErr = &graph.StateContractError{
-			Reason: graph.GraphStateReasonUnreadableEntity, EntityID: entry.Key(), Err: err,
-		}
-	}
+	errors.As(err, &contractErr) // every refusal of the stored-value rule is a state error
 	sweep[entry.Key()] = entityPoisonRecord{contractErr: contractErr, revision: entry.Revision()}
 }
 

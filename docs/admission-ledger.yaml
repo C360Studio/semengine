@@ -1059,6 +1059,12 @@
     comment 6112098987), one adapt item. natsclient-update-unconfirmed-write-ends: a write error other than a conflict
     or jetstream.ErrNoStreamResponse ends UpdateWithRetryRead and its three wrappers with that error; the pin reran the
     callback (8b99efe9:natsclient/kv.go:387-389 and :411-413). Consumer: the write seam (R2).
+    Changed surface, change simplify-04a-14-natsclient-request (#222, design D1-D2): Request and RequestWithRetry are
+    removed (RequestClassified and RequestWithRetryClassified replace them; RequestWithHeaders plus ClassifyReply
+    serves a caller that needs headers); RetryConfig and DefaultRetryConfig are removed; RequestWithRetryClassified
+    takes a retry.Config and runs retry.Do, so MaxAttempts counts the first attempt, a count below one makes one
+    attempt, a config retry.Do refuses is returned before anything is sent, and the error class of that refusal is not
+    promised.
   dependencies_and_side_effects: >-
     metric, pkg/errs, pkg/retry, internal/resource (in-set); github.com/nats-io/nats.go v1.54.0
     and nats.go/jetstream; prometheus/client_golang; stdlib. Test-only:
@@ -1161,7 +1167,7 @@
     dropped). Corrections to API the code does not have, wrong at the pin too (owner ruling, #9
     comment 5984291337), each an adapt item, pin lines: README.md :61-64 and doc.go:46, Subscribe
     takes a context and a handler taking a context, and returns a Subscription and an error;
-    README.md :111 and doc.go:427, Request returns the reply and an error; README.md :160, Option →
+    README.md :111 and doc.go:427, RequestClassified returns the reply and an error; README.md :160, Option →
     ClientOption; README.md :150-155, KVOptions shows its six fields and MaxRetries' default 3 → 10
     (DefaultKVOptions); README.md :182-190, the Logger interface section replaced by WithLogger's
     *slog.Logger signature; doc.go:318, WithLogger(logger Logger) → WithLogger(logger *slog.Logger);
@@ -1175,10 +1181,11 @@
     CreateOrUpdateConsumer, CreateConsumer or OrderedConsumer call, updates them in that port
     Adapt items (Codex review of record, PR #48 comment 5996819933): a nil context is refused with an
     invalid-data error by every exported context-taking, error-returning call before any state, callback or NATS
-    call (F32; commits bb23dc7, e17ecfd); RequestWithRetry and RequestWithRetryClassified refuse a negative
-    MaxRetries before sending (F31; bb23dc7) and check the context before every attempt, the first included,
-    without counting a caller's cancellation toward the circuit breaker (F32; c206229), nor does Request,
-    RequestWithHeaders or a retrying call count one that arrives while an attempt is in flight (early check E1);
+    call (F32; commits bb23dc7, e17ecfd); RequestWithRetryClassified checks the context before every attempt, the
+    first included, without counting a caller's cancellation toward the circuit breaker (F32; c206229), nor does
+    RequestWithHeaders, RequestClassified or a retrying call count one that arrives while an attempt is in flight
+    (early check E1); a negative count was refused before sending (F31; bb23dc7) until RetryConfig was removed
+    (changed surface, below);
     GetStatus reads the
     connection once under mu (F33; ff93b8e); the storage report consumer replaces its view at a watch's sync
     marker, clears AccountKnown on a delete or purge of the account key, and Snapshot shares no mutable memory
@@ -1948,8 +1955,8 @@
     graph/readiness; design D16, #101)
   contract: >-
     data model, codecs, bucket-name constants (BucketSemEngineConfig = "semengine_config", #69),
-    StateContractError, mutation/query wire types, and ExactEntityReader as at the pin, with zero
-    transport imports in the root package (TestGraphImportsNoTransport) and these adaptations:
+    StateContractError, mutation/query wire types, and the exact-entity reader as at the pin, with
+    zero transport imports in the root package (TestGraphImportsNoTransport) and these adaptations:
     (1) EntityState has no Version field (KV revision is the only fence, #100); (2) ReplaceBySource
     orders each (subject, predicate, source) set by Timestamp, and single-value reads choose the
     latest statement across sources (#98); (3) ReconcilePredicatesRequest requires a non-empty
@@ -1957,7 +1964,18 @@
     (5) IndexStatusResponse drops legacy Phase/Revision/LastSynced and adds published_at (design D16);
     (6) ExactEntityReader refuses negative timeouts and reads its subject from QueryVerbs (#106,
     #151); (7) GraphStateReasonMissingStatementMetadata added; (8) PrefixQueryRequest adds optional
-    6-position wildcard Pattern (#259)
+    6-position wildcard Pattern (#259); (9) UnmarshalEntityState takes the bucket key and is the one
+    stored-value rule (decode, canonical contract, ID equals key, statement Source and Timestamp),
+    each refusal one fatal graph_state_reset_required ClassifiedError over a StateContractError;
+    ValidateStatementMetadata is its last step alone; ClassifyStateContractError removed (#276);
+    (10) ExactEntityReader is a struct, and ExactEntity carries one kv_revision tag; EntityRequest,
+    EntityBatchRequest and ResponderGraphIngest declared here; QueryVerb is Name, Subject and
+    Responder; (11) MutationOutcome is applied, unchanged, entity_not_found and failed, and
+    ErrorCodeRevisionMismatch and ErrorCodeIndexNotReady are defined from pkg/errs (ruling L);
+    (12) EntityMutationResponse replaces CreateEntityResponse and ReconcilePredicatesResponse; the
+    cursor codec and the trusted decoder moved, unexported, into graph-ingest;
+    ValidateEntityPredicates unexported; (13) IndexStatusResponse.State is an IndexState, and
+    IndexStates() returns the closed state list as a new slice (simplify-04a-13-graph D1-D6)
   dependencies_and_side_effects: >-
     message, pkg/errs, pkg/types, vocabulary (in-set); stdlib; no NATS import in graph root;
     graph/kvcatalog imports natsclient and nats.go/jetstream
@@ -1968,11 +1986,12 @@
     carries its IndexStatus copy without the three legacy fields removed from IndexStatusResponse
     (#110, design D16). Removed: events.go (#101), UnwrapQueryResponse, TOOL_CALL_OUTCOMES,
     ENTITY_SUFFIX_INDEX (#104), and dead sentinels/types (errors.go, incoming.go, query_types.go,
-    GetPropertyValue function, MissingUnknown, ContextEntry, NameIndexEntry; #132); README updated
+    GetPropertyValue function, MissingUnknown, ContextEntry, NameIndexEntry); README updated
   proving_tests: >-
     graph/write_rules_test.go, graph/write_rules_prop_test.go, graph/exact_entity_test.go,
     graph/query_verbs_test.go, graph/query_prefix_types_test.go, graph/mutation_protocol_test.go,
-    graph/kvcatalog/*_test.go, internal/harness/contract/graphtransport_test.go
+    graph/stored_entity_rule_test.go, graph/index_status_test.go, graph/kvcatalog/*_test.go,
+    internal/harness/contract/graphtransport_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 

@@ -1,4 +1,3 @@
-// Package graph provides graph summary query data types.
 package graph
 
 // --- Graph Summary Query Types ---

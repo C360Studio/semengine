@@ -77,8 +77,8 @@ func TestBootSweepInventoriesResidentPoisonAndBoots(t *testing.T) {
 	if health.Healthy {
 		t.Fatal("Health must be unhealthy while the inventory is non-empty")
 	}
-	if health.Status != graph.IndexStateDegraded {
-		t.Fatalf("Health status = %q, want %q (NOT reset_required)", health.Status, graph.IndexStateDegraded)
+	if health.Status != "degraded" {
+		t.Fatalf("Health status = %q, want %q (NOT reset_required)", health.Status, "degraded")
 	}
 	if !containsAll(health.LastError, "1 poisoned entity", guardTestPoisonID) {
 		t.Fatalf("Health message missing count/ID sample: %q", health.LastError)

@@ -7,8 +7,9 @@ helpers for JetStream streams, consumers and key-value buckets.
 
 The natsclient package wraps the NATS Go client (nats.go) with a circuit breaker, and keeps nats.go's automatic
 reconnection with natsclient's settings: unlimited attempts (`WithMaxReconnects`) and a `ReconnectWait` of 2 s
-(`WithReconnectWait`). How soon each attempt comes is not promised. While nats.go reconnects, `Publish`, `Request` and
-`Subscribe` return `ErrNotConnected` at once, and key-value calls wait for their context (probe P15).
+(`WithReconnectWait`). How soon each attempt comes is not promised. While nats.go reconnects, `Publish`,
+`RequestClassified` and `Subscribe` return `ErrNotConnected` at once, and key-value calls wait for their
+context (probe P15).
 
 Every call that waits for the server takes a context, and the context ends that wait (P13). It does not end a call
 held behind a write the server is not reading. Such a call waits up to nats.go's write timeout for each write ahead of
@@ -143,7 +144,7 @@ err := client.Publish(ctx, "events.user", data)
 // Explicit trace context
 tc := natsclient.NewTraceContext()
 ctx = natsclient.ContextWithTrace(ctx, tc)
-reply, err := client.Request(ctx, "service.action", data, 5*time.Second)
+reply, err := client.RequestClassified(ctx, "service.action", data, 5*time.Second)
 
 // Extract trace from incoming message
 tc = natsclient.ExtractTrace(msg)

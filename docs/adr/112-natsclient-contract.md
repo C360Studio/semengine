@@ -34,6 +34,12 @@ with it. Line numbers in `client_close_final_test.go` are as of `d71df33`.
 - **Still not promised:** which other raw nats.go errors become classified sentinels. Until one does, it is
   unclassified and falls under the default above.
 
+**Amendment, 2026-10-17 (change `simplify-04a-14-natsclient-request`).** `Client.Request` is removed, so it no longer
+appears in the lists of calls a held write holds (§2) and of calls that return `ErrNotConnected` while reconnecting (§3).
+`RequestWithHeaders` takes its place in the held-write list, with the classified calls through it: P13's `request`
+case ran the removed `Request`, which made the same nats.go call (`conn.RequestMsgWithContext`) that
+`RequestWithHeaders` makes. P13 was not re-run on `RequestWithHeaders`.
+
 **How each line is backed.**
 
 - **Probe.** A probe is a program posted on PR #177 with its source, command, versions and output. Probes ran on
@@ -107,8 +113,8 @@ Each line below names its backing. Anything not backed is not promised.
   within each address family: nats.go's shuffle of them is gone, and its shuffle of separate URLs remains (read, not measured:
   `nats.go:2484-2513`, `net/dial.go:539-557`). The context
   does not bound later reconnects (T5).
-- **Every other call does not end with its context while a write is held.** This covers `Publish`, `Request`,
-  `Subscribe`, the JetStream and key-value calls, and a consumer's setup.
+- **Every other call does not end with its context while a write is held.** This covers `Publish`, `RequestWithHeaders`
+  (and the classified calls through it), `Subscribe`, the JetStream and key-value calls, and a consumer's setup.
   - The context ends their wait for the server's answer (P13 idle; tests `subscribe_registration_test.go:296`,
     `:318`), not their wait for nats.go's lock.
   - Behind a write the server is not reading, each call waits for every write ahead of it, up to the write timeout
@@ -182,7 +188,7 @@ Each line below names its backing. Anything not backed is not promised.
 
 - **natsclient keeps nats.go's automatic reconnect,** with natsclient's settings: unlimited attempts, and
   `ReconnectWait` of 2 s (`client.go:355-356`). A reconnect after `Connect`'s context has ended works (T5).
-- **While reconnecting,** `Publish`, `Request`, `RequestClassified`, `Subscribe`, `PublishToStream` and `GetStream`
+- **While reconnecting,** `Publish`, `RequestClassified`, `Subscribe`, `PublishToStream` and `GetStream`
   return `ErrNotConnected` at once (P15). KV calls wait for their context.
 - **Not promised:**
   - reconnect pacing;

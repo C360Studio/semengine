@@ -27,20 +27,12 @@ func IsStateContractError(err error) bool {
 	return errors.As(err, &classified) && classified.Code == ErrorCodeGraphStateResetRequired
 }
 
-// ClassifyStateContractError applies the one cross-component failure shape for
-// incompatible authoritative graph state. Non-contract errors pass through
-// unchanged so callers cannot accidentally promote operational failures.
-func ClassifyStateContractError(err error) error {
-	if !IsStateContractError(err) {
-		return err
-	}
-	var classified *errs.ClassifiedError
-	if errors.As(err, &classified) &&
-		classified.Class == errs.ErrorFatal &&
-		classified.Code == ErrorCodeGraphStateResetRequired {
-		return err
-	}
-	return errs.ClassifiedCode(errs.ErrorFatal, ErrorCodeGraphStateResetRequired, err)
+// stateRefusal is the one shape of a refused authoritative entity: a single
+// fatal graph_state_reset_required classification over a *StateContractError
+// with reason and entityID, which is the key when the refusing site has one.
+func stateRefusal(entityID string, reason StateResetReason, err error) error {
+	return errs.ClassifiedCode(errs.ErrorFatal, ErrorCodeGraphStateResetRequired,
+		&StateContractError{Reason: reason, EntityID: entityID, Err: err})
 }
 
 // StateResetReason is a bounded machine-readable reset cause.

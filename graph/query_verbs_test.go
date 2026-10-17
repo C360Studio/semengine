@@ -1,32 +1,18 @@
 package graph
 
 import (
-	"reflect"
 	"slices"
 	"testing"
 )
 
 // TestQueryVerbsDeclareGraphIngestVerbs holds design D20: graph-ingest answers
 // exactly entity, batch and prefix on graph.ingest.query.*, and each entry
-// names its subject, responder, request type and reply type. There is no
-// suffix verb (design D19).
+// names its subject and responder. There is no suffix verb (design D19).
 func TestQueryVerbsDeclareGraphIngestVerbs(t *testing.T) {
-	// A request without a Go type is written as its JSON fields; a named type
-	// is spelled by reflect, so renaming the type fails here.
 	want := []QueryVerb{
-		{
-			Name: "entity", Subject: "graph.ingest.query.entity", Responder: "graph-ingest",
-			RequestType: "{id:string}", ReplyType: reflect.TypeFor[ExactEntity]().String(),
-		},
-		{
-			Name: "batch", Subject: "graph.ingest.query.batch", Responder: "graph-ingest",
-			RequestType: "{ids:[]string}", ReplyType: reflect.TypeFor[EntityBatchResponse]().String(),
-		},
-		{
-			Name: "prefix", Subject: "graph.ingest.query.prefix", Responder: "graph-ingest",
-			RequestType: reflect.TypeFor[PrefixQueryRequest]().String(),
-			ReplyType:   reflect.TypeFor[PrefixQueryResponse]().String(),
-		},
+		{Name: "entity", Subject: "graph.ingest.query.entity", Responder: "graph-ingest"},
+		{Name: "batch", Subject: "graph.ingest.query.batch", Responder: "graph-ingest"},
+		{Name: "prefix", Subject: "graph.ingest.query.prefix", Responder: "graph-ingest"},
 	}
 
 	got := QueryVerbs()

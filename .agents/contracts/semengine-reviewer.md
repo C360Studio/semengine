@@ -272,10 +272,11 @@ Each is `BLOCKING`:
 Carried with `natsclient` from SemStreams' reviewer contract at the pin (§ NATS RPC error contract); the reply format
 is in `natsclient/doc.go`, "The unified RPC error contract".
 
-- A classified handler called by raw `Request` plus a JSON unmarshal can decode an error reply as a zero-valued
-  success. Require `RequestClassified` or `RequestWithRetryClassified`, and the classified error propagated intact.
-- Audit every unclassified `Request` caller in the changed seam's blast radius, including code that passes a reply
-  on.
+- A classified handler called by `RequestWithHeaders` without `ClassifyReply`, plus a JSON unmarshal, can decode an
+  error reply as a zero-valued success. Require `RequestClassified` or `RequestWithRetryClassified`, and the
+  classified error propagated intact.
+- Audit every `RequestWithHeaders` caller that skips `ClassifyReply` in the changed seam's blast radius, including
+  code that passes a reply on.
 - A handler failure arrives as the classified reply, not necessarily as the request's `err`.
 - Require `errors.Is` for JetStream sentinels, with sibling states covered: key-not-found and key-deleted;
   no-keys-found and key-not-found.

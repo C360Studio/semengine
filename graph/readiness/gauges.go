@@ -133,7 +133,7 @@ func (g *Gauges) Register(registry *metric.MetricsRegistry) error {
 // which is exactly the omission that left bootstrap_complete unexposed on two
 // independently-written producers.
 //
-// The state one-hot iterates graph.AllIndexStates rather than the states this producer
+// The state one-hot iterates graph.IndexStates() rather than the states this producer
 // happens to emit, so a new readiness state renders as an explicit 0 instead of a
 // silently absent series.
 func (g *Gauges) Set(resp graph.IndexStatusResponse) {
@@ -141,8 +141,8 @@ func (g *Gauges) Set(resp graph.IndexStatusResponse) {
 	g.lag.Set(float64(resp.Lag))
 	g.bootstrapComplete.Set(boolGauge(resp.BootstrapComplete))
 
-	for _, s := range graph.AllIndexStates {
-		g.state.WithLabelValues(s).Set(boolGauge(s == resp.State))
+	for _, s := range graph.IndexStates() {
+		g.state.WithLabelValues(string(s)).Set(boolGauge(s == resp.State))
 	}
 }
 

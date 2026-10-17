@@ -18,7 +18,7 @@ func TestComputeBacklogStatus_ReadyAndState(t *testing.T) {
 		name      string
 		in        BacklogStatusInputs
 		wantReady bool
-		wantState string
+		wantState graph.IndexState
 	}{
 		{
 			name:      "nothing outstanding and bootstrapped is ready",

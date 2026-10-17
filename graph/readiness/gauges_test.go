@@ -111,11 +111,11 @@ func TestGauges_SetProjectsTheEnvelope(t *testing.T) {
 	// not currently in renders as an explicit 0 rather than an absent series —
 	// absent reads as "no data", which is not the same as "not in this state".
 	states := labeledValues(t, reg, "semengine_t_readiness_state", "state")
-	if len(states) != len(graph.AllIndexStates) {
+	if len(states) != len(graph.IndexStates()) {
 		t.Errorf("one-hot emitted %d states, want all %d: %v",
-			len(states), len(graph.AllIndexStates), states)
+			len(states), len(graph.IndexStates()), states)
 	}
-	if states[graph.IndexStateReady] != 1 || states[graph.IndexStateDegraded] != 0 {
+	if states[string(graph.IndexStateReady)] != 1 || states[string(graph.IndexStateDegraded)] != 0 {
 		t.Errorf("one-hot wrong: %v", states)
 	}
 }
@@ -219,7 +219,7 @@ func TestGaugesWriteTheRegisteredCollector(t *testing.T) {
 	if got := gaugeValue(t, reg, "semengine_t_lag"); got != 7 {
 		t.Errorf("semengine_t_lag = %v, want 7 from the second set's write", got)
 	}
-	if states := labeledValues(t, reg, "semengine_t_readiness_state", "state"); states[graph.IndexStateDegraded] != 1 {
+	if states := labeledValues(t, reg, "semengine_t_readiness_state", "state"); states[string(graph.IndexStateDegraded)] != 1 {
 		t.Errorf("readiness_state = %v, want degraded=1 from the second set's write", states)
 	}
 	if got := counterValue(t, reg, "semengine_t_status_publish_failures_total"); got != 1 {

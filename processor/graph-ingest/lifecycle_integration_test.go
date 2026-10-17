@@ -276,7 +276,7 @@ func TestGraphIngest_FailedBootSweepFailsStart(t *testing.T) {
 				t.Fatalf("stream %s has %d consumers after a failed Start, want 0", entityStream.name, info.State.Consumers)
 			}
 			for _, verb := range graph.QueryVerbs() {
-				if verb.Responder != queryResponder {
+				if verb.Responder != graph.ResponderGraphIngest {
 					continue
 				}
 				_, err := comp.natsClient.RequestClassified(t.Context(), verb.Subject, []byte(`{}`), 5*time.Second)

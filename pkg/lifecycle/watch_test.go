@@ -2,6 +2,7 @@ package lifecycle
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync/atomic"
@@ -9,6 +10,7 @@ import (
 	"testing/synctest"
 
 	"github.com/c360studio/semengine/graph"
+	serrs "github.com/c360studio/semengine/pkg/errs"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -178,4 +180,71 @@ func TestWatchRefusesANilContext(t *testing.T) {
 			t.Errorf("%d watches opened on a nil context, want none", n)
 		}
 	})
+}
+
+// TestWatchRefusesAStoredValueGraphIngestRefuses: Watch and WatchEvents apply graph-ingest's
+// stored-value rule (graph-entity-writes, "One rule decodes a stored entity"). A value whose
+// statement has no Source, and a value under key K holding another entity, end the watch with the
+// refusal for K, and the callback is not called for them; a valid entry queued after each would be
+// delivered (and stop the watch) if the refused one were skipped.
+func TestWatchRefusesAStoredValueGraphIngestRefuses(t *testing.T) {
+	const key = "acme.ops.gcs.lifecycle.mission.refused"
+	unsourced := validLifecycleState(key)
+	unsourced.Triples[0].Source = ""
+	misfiled := validLifecycleState("acme.ops.gcs.lifecycle.mission.other")
+	values := []struct {
+		name   string
+		state  *graph.EntityState
+		reason graph.StateResetReason
+	}{
+		{"statement without a source", unsourced, graph.GraphStateReasonMissingStatementMetadata},
+		{"value stored under another key", misfiled, graph.GraphStateReasonNoncanonicalEntityID},
+	}
+	watches := []struct {
+		name string
+		run  func(*Manager, func(string) error) error
+	}{
+		{"Watch", func(mgr *Manager, call func(string) error) error {
+			return mgr.Watch(context.Background(), "fixture", func(p Participant) error { return call(p.EntityID()) })
+		}},
+		{"WatchEvents", func(mgr *Manager, call func(string) error) error {
+			return mgr.WatchEvents(context.Background(), "fixture", func(e Event) error { return call(e.EntityID) })
+		}},
+	}
+	for _, value := range values {
+		for _, watch := range watches {
+			t.Run(value.name+"/"+watch.name, func(t *testing.T) {
+				synctest.Test(t, func(t *testing.T) {
+					mgr, watcher, _ := newWatchedManager(t)
+					// json.Marshal, not graph.MarshalEntityState: the encoder does not check
+					// statement metadata or the key, and the value is one another writer could store.
+					data, err := json.Marshal(value.state)
+					if err != nil {
+						t.Fatalf("encode the stored value: %v", err)
+					}
+					watcher.updates <- &fakeKVEntry{key: key, value: data, revision: 5}
+					watcher.updates <- validLifecycleWatchEntry(t, "acme.ops.gcs.lifecycle.mission.later", 6)
+					var delivered []string
+					err = watch.run(mgr, func(id string) error {
+						delivered = append(delivered, id)
+						return errStopWatch
+					})
+					if len(delivered) != 0 {
+						t.Errorf("%s delivered %v; want nothing after the refused value", watch.name, delivered)
+					}
+					var classified *serrs.ClassifiedError
+					if !errors.As(err, &classified) || classified.Code != graph.ErrorCodeGraphStateResetRequired {
+						t.Fatalf("%s returned %v, want code %s", watch.name, err, graph.ErrorCodeGraphStateResetRequired)
+					}
+					var contractErr *graph.StateContractError
+					if !errors.As(err, &contractErr) || contractErr.Reason != value.reason || contractErr.EntityID != key {
+						t.Fatalf("%s returned %v, want reason %s for entity %s", watch.name, err, value.reason, key)
+					}
+					if !watcher.stopped.Load() {
+						t.Fatalf("%s returned with its subscription still open", watch.name)
+					}
+				})
+			})
+		}
+	}
 }

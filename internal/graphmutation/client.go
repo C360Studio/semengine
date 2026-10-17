@@ -83,11 +83,11 @@ func NewClient(requester requester, timeout time.Duration) (*Client, error) {
 
 // Create performs one atomic entity birth request. A request without an
 // entity is refused before sending.
-func (c *Client) Create(ctx context.Context, request graph.CreateEntityRequest) (*graph.CreateEntityResponse, error) {
+func (c *Client) Create(ctx context.Context, request graph.CreateEntityRequest) (*graph.EntityMutationResponse, error) {
 	if request.Entity == nil {
 		return nil, invalidRequest(errors.New("graph mutation create requires an entity"))
 	}
-	var response graph.CreateEntityResponse
+	var response graph.EntityMutationResponse
 	if err := c.request(ctx, CreateEntity, request, &response); err != nil {
 		return nil, err
 	}
@@ -102,8 +102,8 @@ func (c *Client) Create(ctx context.Context, request graph.CreateEntityRequest) 
 func (c *Client) Reconcile(
 	ctx context.Context,
 	request graph.ReconcilePredicatesRequest,
-) (*graph.ReconcilePredicatesResponse, error) {
-	var response graph.ReconcilePredicatesResponse
+) (*graph.EntityMutationResponse, error) {
+	var response graph.EntityMutationResponse
 	if err := c.request(ctx, ReconcilePredicates, request, &response); err != nil {
 		return nil, err
 	}

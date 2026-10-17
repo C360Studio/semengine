@@ -26,6 +26,13 @@ type entityStatesReader interface {
 	Watch(context.Context, string, ...jetstream.WatchOpt) (jetstream.KeyWatcher, error)
 }
 
+// exactEntityReader is the one read the manager makes of graph.ExactEntityReader: one entity and
+// its revision. Production managers hold *graph.ExactEntityReader; this package's tests hold
+// doubles over an in-memory bucket.
+type exactEntityReader interface {
+	ReadExactEntity(context.Context, string) (*graph.ExactEntity, error)
+}
+
 // Manager is the schema-and-discipline layer over ENTITY_STATES
 // (ADR-049). Workflow types register at startup via Manager.Register;
 // state changes route through graph-ingest via revision-fenced reconcile;
@@ -42,7 +49,7 @@ type Manager struct {
 	natsClient  *natsclient.Client
 	logger      *slog.Logger
 	emitter     graphEmitter
-	exactReader graph.ExactEntityReader
+	exactReader exactEntityReader
 
 	// entityStatesBucket is the catalog reader for ENTITY_STATES List and Watch
 	// operations. Exact entity reads use exactReader. Graph-ingest remains the
@@ -89,8 +96,8 @@ func NewManager(client *natsclient.Client, logger *slog.Logger) *Manager {
 	if client != nil {
 		reader, err := graph.NewExactEntityReader(client, 5*time.Second)
 		if err != nil {
-			// Unreachable: the constructor refuses only a negative timeout, and
-			// this one is a positive constant.
+			// Unreachable: the constructor refuses only a nil requester or a
+			// negative timeout, and neither is passed here.
 			panic(fmt.Sprintf("lifecycle: exact entity reader: %v", err))
 		}
 		manager.exactReader = reader

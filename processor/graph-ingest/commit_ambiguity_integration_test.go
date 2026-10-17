@@ -141,7 +141,7 @@ func TestIntegration_TypedClientPreservesCommitAmbiguity(t *testing.T) {
 	applied, err := entityStates.Get(ctx, id)
 	require.NoError(t, err)
 	assert.Greater(t, applied.Revision(), created.KVRevision, "the fault let the write stand")
-	assert.Equal(t, "unconfirmed", stateValue(t, applied.Value()))
+	assert.Equal(t, "unconfirmed", stateValue(t, id, applied.Value()))
 
 	bucket.FailAfter(natsfixture.KVUpdate, nil)
 
@@ -157,7 +157,7 @@ func TestIntegration_TypedClientPreservesCommitAmbiguity(t *testing.T) {
 	refused, err := entityStates.Get(ctx, id)
 	require.NoError(t, err)
 	assert.Equal(t, applied.Revision()+1, refused.Revision(), "only the foreign write moved the revision")
-	assert.Equal(t, "unconfirmed", stateValue(t, refused.Value()))
+	assert.Equal(t, "unconfirmed", stateValue(t, id, refused.Value()))
 
 	// Entity not found: graph-ingest refuses the delete before any write.
 	receipt, err = mutations.Delete(ctx, projection.DeleteMutation{
@@ -237,7 +237,7 @@ func TestIntegration_OversizedResponseAfterCommitIsCommitUnknown(t *testing.T) {
 	stored, getErr := entityStates.Get(ctx, id)
 	require.NoError(t, getErr)
 	require.Greater(t, stored.Revision(), created.KVRevision, "the reconcile's write stands")
-	for _, triple := range decodeEntity(t, stored.Value()).Triples {
+	for _, triple := range decodeEntity(t, id, stored.Value()).Triples {
 		require.NotEqual(t, "test.state.value", triple.Predicate, "the reconcile cleared the state statement")
 	}
 	require.Less(t, len(stored.Value()), maxPayload/2, "the echoed RequestID, not the stored value, crosses the limit")
@@ -364,7 +364,7 @@ func TestIntegration_AppendAfterUnconfirmedWriteIsCommitUnknown(t *testing.T) {
 
 			written := bucket.stored()
 			require.NotNil(t, written, "the append's update must be stored, and the other writer's change made, before the reply is lost")
-			assert.True(t, slices.ContainsFunc(decodeEntity(t, written).Triples, func(triple message.Triple) bool {
+			assert.True(t, slices.ContainsFunc(decodeEntity(t, id, written).Triples, func(triple message.Triple) bool {
 				return triple.Predicate == "test.event.seen" && triple.Object == "unconfirmed-event"
 			}), "the stored update holds the appended statement")
 
@@ -384,9 +384,9 @@ func TestIntegration_AppendAfterUnconfirmedWriteIsCommitUnknown(t *testing.T) {
 }
 
 // stateValue is the object of the one test.state.value statement in a stored entity.
-func stateValue(t *testing.T, stored []byte) any {
+func stateValue(t *testing.T, key string, stored []byte) any {
 	t.Helper()
-	entity := decodeEntity(t, stored)
+	entity := decodeEntity(t, key, stored)
 	var objects []any
 	for _, triple := range entity.Triples {
 		if triple.Predicate == "test.state.value" {

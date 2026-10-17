@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+
+	"github.com/c360studio/semengine/pkg/errs"
 )
 
 // TestStateContractError_ErrorRendering pins the rendered message with and
@@ -98,7 +100,7 @@ func TestStateContractError_EntityIDSurvivesClassification(t *testing.T) {
 		Reason:   GraphStateReasonNoncanonicalPredicate,
 		EntityID: "acme.ops.robotics.gcs.sensor.001",
 	}
-	wrapped := fmt.Errorf("unmarshal entity state: %w", ClassifyStateContractError(stamped))
+	wrapped := fmt.Errorf("unmarshal entity state: %w", errs.ClassifiedCode(errs.ErrorFatal, ErrorCodeGraphStateResetRequired, stamped))
 
 	var got *StateContractError
 	if !errors.As(wrapped, &got) {

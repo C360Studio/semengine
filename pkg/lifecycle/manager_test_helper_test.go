@@ -3,7 +3,6 @@ package lifecycle
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
@@ -17,11 +16,10 @@ import (
 
 // fixtureSource and fixtureTime stamp every statement this package's tests
 // store themselves, as another producer's write would carry them. graph-ingest's
-// stored-value reader refuses a statement with no Source or no Timestamp
-// (decodeStoredEntity, processor/graph-ingest/mutation_runtime.go) with
-// graph_state_reset_required, and so do this package's doubles
-// (decodeStoredValue), so an unstamped value is a state the real authority
-// would never answer with a success.
+// stored-value rule (graph.UnmarshalEntityState) refuses a statement with no
+// Source or no Timestamp with graph_state_reset_required, and this package's
+// doubles apply the same rule, so an unstamped value is a state the real
+// authority would never answer with a success.
 const fixtureSource = "lifecycle-test-producer"
 
 var fixtureTime = time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
@@ -30,7 +28,7 @@ var fixtureTime = time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
 // managers use, over a test requester.
 func productionExactReader(t *testing.T, requester interface {
 	RequestClassified(context.Context, string, []byte, time.Duration) ([]byte, error)
-}) graph.ExactEntityReader {
+}) *graph.ExactEntityReader {
 	t.Helper()
 	reader, err := graph.NewExactEntityReader(requester, time.Second)
 	if err != nil {
@@ -57,42 +55,11 @@ func (r bucketExactEntityReader) ReadExactEntity(ctx context.Context, entityID s
 		}
 		return nil, err
 	}
-	entity, err := decodeStoredValue(entityID, entry.Value())
-	if err != nil {
+	var entity graph.EntityState
+	if err := graph.UnmarshalEntityState(entityID, entry.Value(), &entity); err != nil {
 		return nil, err
 	}
-	return &graph.ExactEntity{Entity: entity.Clone(), KVRevision: entry.Revision()}, nil
-}
-
-// decodeStoredValue is graph-ingest's stored-value rule (decodeStoredEntity,
-// processor/graph-ingest/mutation_runtime.go), copied so this package's
-// exact-read and reconcile doubles refuse what the real authority refuses: the
-// value must decode, hold the entity its key names, and give every statement a
-// Source and a Timestamp. A refusal is fatal graph_state_reset_required with
-// graph-ingest's reason. This copy can fall behind the rule;
-// TestBootSweepInventoriesStatementWithoutMetadata in graph-ingest holds it.
-func decodeStoredValue(key string, value []byte) (graph.EntityState, error) {
-	var state graph.EntityState
-	if err := graph.UnmarshalEntityState(value, &state); err != nil {
-		return graph.EntityState{}, graph.ClassifyStateContractError(err)
-	}
-	refuse := func(reason graph.StateResetReason, err error) (graph.EntityState, error) {
-		return graph.EntityState{}, graph.ClassifyStateContractError(&graph.StateContractError{
-			Reason: reason, EntityID: key, Err: err,
-		})
-	}
-	if state.ID != key {
-		return refuse(graph.GraphStateReasonNoncanonicalEntityID, fmt.Errorf("authority key contains entity %q", state.ID))
-	}
-	for i, triple := range state.Triples {
-		switch {
-		case triple.Source == "":
-			return refuse(graph.GraphStateReasonMissingStatementMetadata, fmt.Errorf("triple[%d] has no source", i))
-		case triple.Timestamp.IsZero():
-			return refuse(graph.GraphStateReasonMissingStatementMetadata, fmt.Errorf("triple[%d] has no timestamp", i))
-		}
-	}
-	return state, nil
+	return &graph.ExactEntity{Entity: &entity, KVRevision: entry.Revision()}, nil
 }
 
 func newManagerForTest(logger *slog.Logger, emitter graphEmitter, bucket jetstream.KeyValue) *Manager {

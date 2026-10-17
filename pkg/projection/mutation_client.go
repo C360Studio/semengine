@@ -28,7 +28,7 @@ type contractBinding struct {
 // MutationClient is an immutable, concurrency-safe graph mutation client.
 type MutationClient struct {
 	wire      *graphmutation.Client
-	reader    graph.ExactEntityReader
+	reader    *graph.ExactEntityReader
 	contracts map[string]contractBinding
 }
 

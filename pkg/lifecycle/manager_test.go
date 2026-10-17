@@ -45,13 +45,13 @@ type fakeEmitter struct {
 	reconcileHook func(int, *graph.ReconcilePredicatesRequest) error
 	// afterReconcile runs after the reconcile commit and before its response.
 	// It deterministically models a newer writer racing DespawnWith.
-	afterReconcile func(*graph.ReconcilePredicatesResponse)
+	afterReconcile func(*graph.EntityMutationResponse)
 }
 
 // reconcile mirrors the canonical predicate-authority mutation: the named
 // predicates become exactly Desired at ExpectedRevision, while unrelated
 // predicates and entity metadata are preserved.
-func (f *fakeEmitter) reconcile(_ context.Context, req *graph.ReconcilePredicatesRequest) (*graph.ReconcilePredicatesResponse, error) {
+func (f *fakeEmitter) reconcile(_ context.Context, req *graph.ReconcilePredicatesRequest) (*graph.EntityMutationResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.requests = append(f.requests, req)
@@ -85,7 +85,7 @@ func (f *fakeEmitter) reconcile(_ context.Context, req *graph.ReconcilePredicate
 	state := *current
 	state.Triples = triples
 	f.bucket.put(req.EntityID, &state)
-	response := &graph.ReconcilePredicatesResponse{
+	response := &graph.EntityMutationResponse{
 		Outcome: graph.MutationApplied, Entity: &state, KVRevision: f.bucket.revOf(req.EntityID),
 	}
 	if f.afterReconcile != nil {
@@ -97,7 +97,7 @@ func (f *fakeEmitter) reconcile(_ context.Context, req *graph.ReconcilePredicate
 // create mirrors canonical entity.create — atomic
 // create-or-fail. Returns ErrAlreadyExists when the entity is already
 // present.
-func (f *fakeEmitter) create(_ context.Context, req *graph.CreateEntityRequest) (*graph.CreateEntityResponse, error) {
+func (f *fakeEmitter) create(_ context.Context, req *graph.CreateEntityRequest) (*graph.EntityMutationResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.creates = append(f.creates, req)
@@ -113,7 +113,7 @@ func (f *fakeEmitter) create(_ context.Context, req *graph.CreateEntityRequest) 
 		respState.Triples = append([]message.Triple(nil), state.Triples...)
 		f.createResponseMutator(&respState)
 	}
-	return &graph.CreateEntityResponse{
+	return &graph.EntityMutationResponse{
 		Outcome: graph.MutationApplied, Entity: &respState, KVRevision: f.bucket.revOf(req.Entity.ID),
 	}, nil
 }
@@ -1369,7 +1369,7 @@ func TestManager_DespawnWith_DoesNotDeleteNewerStateAfterTerminalCommit(t *testi
 	}
 
 	var transitionRevision uint64
-	emitter.afterReconcile = func(response *graph.ReconcilePredicatesResponse) {
+	emitter.afterReconcile = func(response *graph.EntityMutationResponse) {
 		transitionRevision = response.KVRevision
 		newer := bucket.get(id)
 		newer.Triples = append(newer.Triples, message.Triple{

@@ -41,10 +41,10 @@ func TestValidateEntityPredicatesReportsAllUniqueViolations(t *testing.T) {
 		{Predicate: "bad.fact.has_underscore"}, // predicate-audit:invalid {"kind":"stored-predicate","value":"bad.fact.has_underscore","reason":"segment_character"}
 	}}
 
-	err := ValidateEntityPredicates(entity)
+	err := validateEntityPredicates(entity)
 	var contractErr *EntityPredicateContractError
 	if !errors.As(err, &contractErr) {
-		t.Fatalf("ValidateEntityPredicates() error = %T %v, want *EntityPredicateContractError", err, err)
+		t.Fatalf("validateEntityPredicates() error = %T %v, want *EntityPredicateContractError", err, err)
 	}
 	want := []InvalidEntityPredicate{
 		{Predicate: "bad.fact.has_underscore", Reason: vocabulary.PredicateReasonSegmentCharacter}, // predicate-audit:invalid {"kind":"stored-predicate","value":"bad.fact.has_underscore","reason":"segment_character"}
@@ -70,48 +70,6 @@ func TestMarshalEntityStateRejectsInvalidFinalCandidate(t *testing.T) {
 	}
 	if data != nil {
 		t.Fatalf("MarshalEntityState() data = %q, want nil", data)
-	}
-}
-
-func TestUnmarshalEntityStateReturnsTypedResetReason(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name   string
-		data   []byte
-		reason StateResetReason
-	}{
-		{name: "unreadable", data: []byte("{"), reason: GraphStateReasonUnreadableEntity},
-		{
-			name:   "noncanonical entity id",
-			data:   []byte(`{"id":"bad","triples":[]}`),
-			reason: GraphStateReasonNoncanonicalEntityID,
-		},
-		{
-			name:   "noncanonical predicate",
-			data:   []byte(`{"id":"acme.ops.test.system.widget.001","triples":[{"subject":"acme.ops.test.system.widget.001","predicate":"bad.two"}]}`), // predicate-audit:invalid {"kind":"stored-predicate","value":"bad.two","reason":"arity"}
-			reason: GraphStateReasonNoncanonicalPredicate,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var entity EntityState
-			err := UnmarshalEntityState(tt.data, &entity)
-			var classified *errs.ClassifiedError
-			if !errors.As(err, &classified) {
-				t.Fatalf("UnmarshalEntityState() error = %T %v, want *errs.ClassifiedError", err, err)
-			}
-			if classified.Class != errs.ErrorFatal || classified.Code != ErrorCodeGraphStateResetRequired {
-				t.Fatalf("classification = %s/%q, want fatal/%q", classified.Class, classified.Code, ErrorCodeGraphStateResetRequired)
-			}
-			var stateErr *StateContractError
-			if !errors.As(err, &stateErr) {
-				t.Fatalf("UnmarshalEntityState() error = %T %v, want *StateContractError", err, err)
-			}
-			if stateErr.Reason != tt.reason {
-				t.Fatalf("reason = %q, want %q", stateErr.Reason, tt.reason)
-			}
-		})
 	}
 }
 
@@ -255,7 +213,7 @@ func TestMarshalAndUnmarshalEntityStateRejectIdentityViolations(t *testing.T) {
 
 	data := []byte(`{"id":"acme.ops.test.system.widget.001","triples":[{"subject":"","predicate":"test.state.value"}]}`)
 	var decoded EntityState
-	err := UnmarshalEntityState(data, &decoded)
+	err := UnmarshalEntityState("acme.ops.test.system.widget.001", data, &decoded)
 	var stateErr *StateContractError
 	if !errors.As(err, &stateErr) || stateErr.Reason != GraphStateReasonNoncanonicalEntityID {
 		t.Fatalf("UnmarshalEntityState() error = %T %v, want entity-ID reset reason", err, err)

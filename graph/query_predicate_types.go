@@ -1,4 +1,3 @@
-// Package graph provides predicate query data types for the graph query system.
 package graph
 
 // --- Predicate Query Types ---
@@ -19,7 +18,7 @@ type PredicateListData struct {
 // Namespace, when set, scopes the listing to one exact domain or
 // domain.category namespace (for example, "inferred.semantic" matches
 // "inferred.semantic.high"). Omitted or empty means "list every predicate"
-// (ADR-065).
+// (SemStreams ADR-065).
 type PredicateListQuery struct {
 	Namespace string `json:"namespace,omitempty"`
 }

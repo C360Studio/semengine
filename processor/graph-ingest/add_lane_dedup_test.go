@@ -55,7 +55,7 @@ func readDedupEntity(t *testing.T, comp *Component, id string) (graph.EntityStat
 	entry, err := comp.entityBucket.Get(context.Background(), id)
 	require.NoError(t, err)
 	var stored graph.EntityState
-	require.NoError(t, graph.UnmarshalEntityState(entry.Value, &stored))
+	require.NoError(t, graph.UnmarshalEntityState(id, entry.Value, &stored))
 	return stored, entry.Revision
 }
 

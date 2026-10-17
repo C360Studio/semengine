@@ -1,6 +1,3 @@
-// Package graph provides the canonical graph mutation request/reply contract.
-// Request/reply messages are identified by their typed port and operation
-// subject, so they do not use the polymorphic payload registry.
 package graph
 
 import "github.com/c360studio/semengine/message"

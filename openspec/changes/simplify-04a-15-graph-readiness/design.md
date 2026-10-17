@@ -2,7 +2,12 @@
 
 This design depends on `INVENTORY PASS` for `inventory.md`; its spec delta is `specs/graph-readiness/spec.md`, which
 names `graph.IndexStates()` from #286. Premises cite the inventory's sections; line numbers are at the base
-commit. No ADR decision is changed or dropped (inventory § 6): the gate's four conditions and their order (ADR-085 D1),
+commit. One ADR text changes shape: ADR-083 Decision 4 (`docs/adr/083-readiness-as-distributed-state.md:104-109`)
+has the evaluator take `(status, fresh, mode, config)` and return `(proceed, reason)`. ADR-085 Decision 1 (`:91`)
+already replaced that signature ("takes a reading and returns a verdict — there is no second parameter"), and the
+pin's code followed ADR-085, not ADR-083 D4 (it takes no mode or config). D1's one `DeferReason` is that verdict, so
+D1 follows ADR-085; owner question 1(d) names the change from ADR-083 D4's two values. No other ADR decision is
+changed or dropped (inventory § 6): the gate's four conditions and their order (ADR-085 D1),
 the four defer reasons (D4), one evaluator (ADR-083 D4), arrival-time freshness over three heartbeats (ADR-083 D2, kept
 in code though ADR-109 drops it from the contract), and the exposed metric names (ADR-066) stay as they are. The KV
 value is unchanged.
@@ -66,7 +71,9 @@ value is unchanged.
 - The exposed names do not change. The registry's private key changes from `graph-ingest.readiness` to
   `graph_ingest.readiness`; nothing outside `metric` reads it.
 - Test: `TestGauges_FullyQualifiedNamesPreserveTheWireContract` also asserts that a `graph_ingest` set exposes exactly
-  its five families. It fails if a name, the namespace or the subsystem changes.
+  its five families. It fails on the base only to compile (`NewGauges` takes `ProducerNames` there). After that it
+  catches a `Register` that drops a family, keys one collector under another name (so a sixth or a missing series
+  shows), or a change to a name, the namespace or the subsystem.
 
 ## D5. One bucket name (#135 item f)
 
@@ -78,8 +85,9 @@ value is unchanged.
 - The package comment states ADR-109 Decision 3: the bucket is information, the gate has one in-process reader, and
   the Watcher is kept for the ports that read it.
 - Statements the code contradicts go (inventory § 1, finding 5): the "leaf" claim, `allow_ungated_reads`,
-  "all-scalar struct", `latchBootstrap`. `gh#NNN` and unported paths are prefixed "SemStreams" or "pin". History is cut
-  to the reason a rule exists.
+  "all-scalar struct", `latchBootstrap`, and the `pkg/fusion` decoder references (`publisher.go:78-82`,
+  `watcher.go:128`), which name a package not ported. `gh#NNN` and unported paths are prefixed "SemStreams" or
+  "pin". History is cut to the reason a rule exists.
 - Item i: the four round-trip tests of `graph.IndexStatusResponse` and `graph/write_rules_test.go:241` become one table
   test in `graph/index_status_test.go`, which #286 adds.
 - The `graph/readiness` ledger row: contract adaptations (6)–(9) for D1–D5; `known_risks` drops #135; proving tests
@@ -112,24 +120,32 @@ Kinds: **Plumbing** has a production caller here, or at the pin in an admitted p
 - Also done here, closed elsewhere: #132 items b (rest) and i (8c routes them here; #132 closes with #286).
 - Stay: #110 (change 5), #183 (PR 10: `published_at` in `Publish`), #133 (8d: `IsKVTombstone`, `watcher.go:377`),
   #103 (change 4; its cite of the read-your-writes comment moves), #161 (the harness check).
-- Merge order: #286 first. It is in final review and edits six files here (inventory § 3). Batch 1 touches only
-  `watcher.go` and `watcher_test.go`, which #286 does not, so it can start on the base. Batches 2 and 3 start after
+- Merge order: #286 first. It is in final review and, since its commits of 2026-10-17 (`ac7a7f2`, `dcdd011`), edits
+  six files here (inventory § 3). The owner's reason for taking 8e ahead of 8d (#223 comment 6232804491: "8c leaves
+  `graph/readiness` alone") no longer holds for batches 2 and 3, and 8c's own design says 8e starts after 8c merges
+  (`simplify-04a-13-graph/design.md`, "Open issues and merge order"). It still holds for batch 1: `watcher.go` and
+  `watcher_test.go` are in no open PR, so batch 1 starts now on that 2026-10-17 decision. Batches 2 and 3 start after
   this branch merges `origin/main` with #286 in it. #288 has no overlap. 8d and PR 10 come after this change and
   inherit D2 and D3.
 
 ## Owner questions
 
-1. Later ports (graph-index, graph-embedding, rule, fusion, graph-clustering) call four things this design reshapes:
-   the watcher's option functions, `EnsureBucket`, the list of defer reasons, and the gate's two-value answer. Each
-   job stays, under one spelling: constructor arguments, the catalog's own bucket call, a function that returns a
-   copy, one answer. Each port then changes one line, and the compiler points to it. The 6a ruling and 8c's answer
-   kept names that nothing here reads. These names are read at the pin, and only their spelling changes.
-   **Recommended: reshape them now.** Keeping them leaves the option framework, a third layer over bucket creation,
-   a mutable list, and two values for one fact.
+1. Later ports (graph-index, graph-embedding, rule, fusion, graph-clustering) call four things this design reshapes.
+   In each, the job stays and only the spelling changes; each port then edits one call, and the compiler points to
+   it. For 6a and 8c you decided that a name read only by a package not yet ported stays public. That decision kept
+   such names; it did not say whether their spelling may change. Please answer each:
+   - (a) The watcher's option functions (`WithHeartbeat`, `WithLogger`) become plain constructor arguments.
+     **Recommended: yes.**
+   - (b) `EnsureBucket` goes; producers call the bucket catalog's own `EnsureCatalogBucket`, as graph-ingest already
+     does for its other buckets. **Recommended: yes.**
+   - (c) The shared list of defer reasons becomes a function that returns a fresh copy, so no importer can change it.
+     **Recommended: yes.**
+   - (d) The gate answers with one reason instead of a yes/no plus a reason that always agree. This departs from the
+     two-value answer in ADR-083 Decision 4; ADR-085 Decision 1 already describes "a verdict". **Recommended: yes.**
 2. semconnect's conformance tool reads `readiness.BucketGraphStatus`, an alias of `graph.BucketGraphStatus` that a
    test keeps equal. **Recommended: remove the alias.** semconnect switches the import when it adopts SemEngine.
    Keeping it keeps two names for one bucket.
 
 FYI, no ruling needed: `FreshnessMultiplier` and `FreshnessWindow` become private. Nothing outside the package reads
-them, here or at the pin, and ADR-109 dropped freshness from the contract. The owner's note of 2026-10-17 said 8c
-leaves `graph/readiness` alone. Since #286's commits of 2026-10-17 it no longer does, hence the merge order above.
+them, here or at the pin, and ADR-109 dropped freshness from the contract. See the merge order above for
+why batches 2 and 3 wait for #286.

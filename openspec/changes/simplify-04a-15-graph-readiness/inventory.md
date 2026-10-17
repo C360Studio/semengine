@@ -88,7 +88,9 @@ trees, for symbol-level readers only.
   `:44`; `watcher.go:11`, `:122`), `gh#712` (`index_status.go:27`), `gh#742` (`:38`) — SemStreams issues; ADR-055
   (`watcher.go:47`, not ported); `processor/graph-index/watermark.go:69-80` (`index_status.go:51`, `:110`, not
   ported); "framework-owned-bucket-guards F3" (`watcher.go:52`) and "the graph-index-readiness spec" (`gauges.go:53`),
-  SemStreams specs; `pkg/fusion.IndexStatus` (`watcher.go:128`, not ported).
+  SemStreams specs; `pkg/fusion.IndexStatus` (`watcher.go:128`, not ported); `publisher.go:78-82` — "the same
+  struct fusion decodes … every consumer's plain decode (graph/readiness, pkg/fusion)", naming `pkg/fusion`, not
+  ported (flagged in #135's last comment with `watcher.go:128`).
 - Statements the code contradicts (surface audit (c)):
   - `watcher.go:98-101` — "rather than importing natsclient, so this package stays a leaf", and the package comment
     `:25-26`; `publisher.go:12` imports `natsclient`.
@@ -149,7 +151,7 @@ trees, for symbol-level readers only.
 
 Read with `gh pr list --state open`; full file lists via `gh api --paginate …/pulls/<n>/files`.
 
-- **#286 (8c, `graph`), draft, 72 files at the API listing.** Its branch head `8c15e6a` (2026-10-17 06:28) adds commits
+- **#286 (8c, `graph`), draft, 98 changed files at head `8c15e6a`.** Its branch head `8c15e6a` (2026-10-17 06:28) adds commits
   `ac7a7f2` (task 4.1, D6) and `dcdd011` (task 4.2) that edit **six files here**: `graph/readiness/gauges.go`
   (`:136`, `:144-145`, `graph.IndexStates()` and `string(s)`), `readiness_gate.go` (imports `:3`; comments `:59`,
   `:77`, `:121`; `recognizedState` `:165-174` takes `graph.IndexState`, uses `slices.Contains`), `gauges_test.go`,
@@ -201,10 +203,10 @@ readers are `readiness.NewSet`/`Dump`/`WithLogger` for `Set`, which change 2 dro
 | Export | Here (production) | Pin (admitted, not ported) | Consumers |
 | --- | --- | --- | --- |
 | `BucketGraphStatus` (alias) | graph-ingest `readiness.go:340`, `:357` | 6 packages | semconnect `conformance/cmd/index-readiness/main.go:31`; semsource test |
-| `KeyGraphIngest` | `readiness.go:359` | — | — |
+| `KeyGraphIngest` | `readiness.go:359` | `test/e2e/scenarios/stages/entities.go:59` (not admitted) | — |
 | `KeyGraphIndex`, `KeyGraphEmbedding`, `KeyRule` | none | graph-index, -embedding, rule, clustering, fusionnats | semconnect `main.go:35`; semsource test |
 | `DefaultHeartbeat` | `readiness.go:17` | 4 packages | — |
-| `FreshnessMultiplier`, `FreshnessWindow` | none (own package `watcher.go:329`; graph-ingest comment `:16`) | comments only | — |
+| `FreshnessMultiplier`, `FreshnessWindow` | none (own package `watcher.go:329`; graph-ingest comment `:16`) | `FreshnessMultiplier`: comments only; `FreshnessWindow`: no hits | — |
 | `BucketSource` | none | fusionnats `client.go:132` | — |
 | `Watcher`, `NewWatcher`, `Run`, `Read`, `Reading` | none | clustering `:1509`, `:1524`; fusionnats `:139` | — |
 | `WaitForFirst` | none | fusionnats `:168` | — |

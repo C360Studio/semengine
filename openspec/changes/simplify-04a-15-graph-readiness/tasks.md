@@ -18,15 +18,18 @@ Batch 1 can start on the base; batches 2 and 3 start after this branch merges `o
   removed `firstOnce.Do`.
 - [ ] 2.2 The hooks removed; `NewWatcher(src, key, heartbeat, logger)`; `Run` refuses a non-positive heartbeat and a
   nil logger (new rows in `TestWatcher_RunValidatesWiring`, failing to compile on the base);
-  `freshnessMultiplier` and `freshnessWindow` unexported. Gate: `go test -race ./graph/readiness/`; `task cover:check`
-  holds the `graph/readiness` floor; `task verify` passes on a clean tree (review stop).
+  `freshnessMultiplier` and `freshnessWindow` unexported; `TestFreshnessWindow`'s zero and negative rows
+  (`watcher_test.go:630-635`), which test the default D2 removes, go, and its 2-second row stays. Gate: `go test
+  -race ./graph/readiness/`; `task cover:check` holds the `graph/readiness` floor; `task verify` passes on a clean
+  tree (review stop).
 
 ## 3. Gate, publisher, gauges (batch 2, D1, D3, D4, D5)
 
 - [ ] 3.1 Failing tests: `TestNewPublisherRefusesIncompleteWiring` (replaces the base test that pins the no-op),
   `TestReadingZeroValueFailsClosed`, `TestDeferReasonsReturnsACopy`, and the five-family assertion in
   `TestGauges_FullyQualifiedNamesPreserveTheWireContract`. Gate: each fails on the base (compile or assertion, named
-  in the note).
+  in the note); the five-family assertion fails on the base only to compile, so its note also records that `task
+  mutate:check` detects a `Register` that drops one family or keys one collector under another name.
 - [ ] 3.2 D1: `EvaluateReadinessGate(Reading) DeferReason`, `StatusReading` removed, `DeferReasons()`, the gate tests
   on one result column. Gate: 3.1's gate tests; `task mutate:check` detects the `!r.Fresh` check removed.
 - [ ] 3.3 D3, D4, D5: `NewPublisher` returns an error; no nil-receiver checks; the `timeout` field and `EnsureBucket`

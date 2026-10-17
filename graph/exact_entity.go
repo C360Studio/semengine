@@ -16,7 +16,12 @@ import (
 // value carries none of its own.
 type ExactEntity struct {
 	Entity     *EntityState `json:"entity"`
-	KVRevision uint64       `json:"kvRevision"`
+	KVRevision uint64       `json:"kv_revision"`
+}
+
+// EntityRequest is the entity verb's request: the ID of the one entity to read.
+type EntityRequest struct {
+	ID string `json:"id"`
 }
 
 // classifiedRequester is the request/reply operation the exact reader sends
@@ -68,9 +73,7 @@ func (r *ExactEntityReader) ReadExactEntity(ctx context.Context, entityID string
 		return nil, errs.ClassifiedCode(errs.ErrorInvalid, ErrorCodeInvalidRequest,
 			fmt.Errorf("exact entity ID: %w", err))
 	}
-	request, err := json.Marshal(struct {
-		ID string `json:"id"`
-	}{ID: entityID})
+	request, err := json.Marshal(EntityRequest{ID: entityID})
 	if err != nil {
 		return nil, fmt.Errorf("marshal exact entity request: %w", err)
 	}
@@ -78,9 +81,12 @@ func (r *ExactEntityReader) ReadExactEntity(ctx context.Context, entityID string
 	if err != nil {
 		return nil, err
 	}
+	// The reply is an ExactEntity. Entity shadows the embedded field so the stored
+	// value is decoded once, by the stored-value rule; encoding/json takes the
+	// shallower entity and the embedded kv_revision.
 	var envelope struct {
-		Entity     json.RawMessage `json:"entity"`
-		KVRevision uint64          `json:"kvRevision"`
+		ExactEntity
+		Entity json.RawMessage `json:"entity"`
 	}
 	if err := json.Unmarshal(response, &envelope); err != nil {
 		return nil, exactResponseError(fmt.Errorf("decode exact entity response: %w", err))

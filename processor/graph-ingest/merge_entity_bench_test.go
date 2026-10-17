@@ -19,10 +19,8 @@ package graphingest
 //     resident triples, 15-triple delta) — the O(resident) worst case.
 //
 // BenchmarkEntityContractValidation isolates the contract-validation share of
-// one cycle by calling the validation functions directly on the same shapes:
-// full_N is one ValidateEntityStateContract pass over an N-triple entity;
-// predicates_N is the ValidateEntityPredicates (ParsePredicate-per-triple)
-// share of that pass. Before the gh#562 write-cost fix, one merge cycle pays
+// one cycle by calling the validation directly on the same shapes: full_N is
+// one ValidateEntityStateContract pass over an N-triple entity. Before the gh#562 write-cost fix, one merge cycle pays
 // full_delta (top-of-MergeEntity pass) + full_merged (MarshalEntityState
 // write gate); the create branch pays full_candidate twice the same way.
 import (
@@ -204,9 +202,7 @@ func BenchmarkMergeEntityCycle(b *testing.B) {
 // BenchmarkEntityContractValidation isolates the contract-validation share of
 // one merge cycle. full_N = one complete ValidateEntityStateContract pass over
 // an N-triple entity (root ID + per-triple subject + per-triple reference +
-// per-triple predicate). predicates_N = the ValidateEntityPredicates
-// (ParsePredicate-per-triple) share alone; full_N minus predicates_N
-// approximates the entity-ID/subject share.
+// per-triple predicate).
 func BenchmarkEntityContractValidation(b *testing.B) {
 	entities := make(map[int]*graph.EntityState)
 	for _, n := range []int{12, 15, 24, 200} {
@@ -235,15 +231,6 @@ func BenchmarkEntityContractValidation(b *testing.B) {
 			b.ResetTimer()
 			for i := 0; i < b.N; i++ {
 				if err := graph.ValidateEntityStateContract(entity); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
-		b.Run(fmt.Sprintf("predicates_%d", n), func(b *testing.B) {
-			b.ReportAllocs()
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				if err := graph.ValidateEntityPredicates(entity); err != nil {
 					b.Fatal(err)
 				}
 			}

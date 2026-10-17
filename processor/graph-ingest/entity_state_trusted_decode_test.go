@@ -1,19 +1,20 @@
-package graph
+package graphingest
 
 import (
 	"testing"
 	"time"
 
+	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/message"
 )
 
-// trustedDecodeValidState builds a canonical EntityState and returns it with
-// its MarshalEntityState bytes (the exact bytes the ENTITY_STATES owner
+// trustedDecodeValidState builds a canonical graph.EntityState and returns it with
+// its graph.MarshalEntityState bytes (the exact bytes the ENTITY_STATES owner
 // persists).
-func trustedDecodeValidState(t *testing.T) (*EntityState, []byte) {
+func trustedDecodeValidState(t *testing.T) (*graph.EntityState, []byte) {
 	t.Helper()
 	now := time.Now().UTC().Truncate(time.Second)
-	state := &EntityState{
+	state := &graph.EntityState{
 		ID: "c360.test.graph.decode.entity.001",
 		Triples: []message.Triple{
 			{
@@ -34,9 +35,9 @@ func trustedDecodeValidState(t *testing.T) (*EntityState, []byte) {
 		MessageType: message.Type{Domain: "test", Category: "decode", Version: "v1"},
 		UpdatedAt:   now,
 	}
-	data, err := MarshalEntityState(state)
+	data, err := graph.MarshalEntityState(state)
 	if err != nil {
-		t.Fatalf("MarshalEntityState on canonical fixture: %v", err)
+		t.Fatalf("graph.MarshalEntityState on canonical fixture: %v", err)
 	}
 	return state, data
 }
@@ -46,9 +47,9 @@ func TestUnmarshalEntityStateTrusted_DecodesValidState(t *testing.T) {
 
 	want, data := trustedDecodeValidState(t)
 
-	var got EntityState
-	if err := UnmarshalEntityStateTrusted(data, &got); err != nil {
-		t.Fatalf("UnmarshalEntityStateTrusted on canonical bytes: %v", err)
+	var got graph.EntityState
+	if err := unmarshalEntityStateTrusted(data, &got); err != nil {
+		t.Fatalf("unmarshalEntityStateTrusted on canonical bytes: %v", err)
 	}
 	if got.ID != want.ID {
 		t.Errorf("ID = %q, want %q", got.ID, want.ID)
@@ -64,15 +65,15 @@ func TestUnmarshalEntityStateTrusted_DecodesValidState(t *testing.T) {
 func TestUnmarshalEntityStateTrusted_MalformedJSONReturnsPlainError(t *testing.T) {
 	t.Parallel()
 
-	var got EntityState
-	err := UnmarshalEntityStateTrusted([]byte(`{"id": "truncated`), &got)
+	var got graph.EntityState
+	err := unmarshalEntityStateTrusted([]byte(`{"id": "truncated`), &got)
 	if err == nil {
-		t.Fatal("UnmarshalEntityStateTrusted on malformed JSON returned nil error")
+		t.Fatal("unmarshalEntityStateTrusted on malformed JSON returned nil error")
 	}
 	// The trusted decoder is a plain decode: it must NOT classify malformed
 	// bytes as the graph-state-reset contract — that classification belongs to
 	// the validating decoder and the poison-detection paths that keep using it.
-	if IsStateContractError(err) {
+	if graph.IsStateContractError(err) {
 		t.Errorf("trusted decoder classified malformed JSON as state-contract error: %v", err)
 	}
 }
@@ -80,7 +81,7 @@ func TestUnmarshalEntityStateTrusted_MalformedJSONReturnsPlainError(t *testing.T
 // TestUnmarshalEntityStateTrusted_AdmitsNoncanonicalState pins the trusted
 // decoder's contract (gh#562): it performs NO canonical-contract validation.
 // Noncanonical predicates, subjects, and root IDs decode without error — the
-// MarshalEntityState write gate, not the owner's own RMW read, is the
+// graph.MarshalEntityState write gate, not the owner's own RMW read, is the
 // enforcement boundary. The validating decoder must keep rejecting the same
 // bytes.
 func TestUnmarshalEntityStateTrusted_AdmitsNoncanonicalState(t *testing.T) {
@@ -118,15 +119,15 @@ func TestUnmarshalEntityStateTrusted_AdmitsNoncanonicalState(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			var trusted EntityState
-			if err := UnmarshalEntityStateTrusted(tc.data, &trusted); err != nil {
+			var trusted graph.EntityState
+			if err := unmarshalEntityStateTrusted(tc.data, &trusted); err != nil {
 				t.Fatalf("trusted decoder rejected noncanonical state (that IS its contract): %v", err)
 			}
 
 			// Contrast pin: the validating decoder still refuses the bytes, under the key
 			// they name, so the canonical contract refuses them and not the key check.
-			var validated EntityState
-			if err := UnmarshalEntityState(trusted.ID, tc.data, &validated); err == nil {
+			var validated graph.EntityState
+			if err := graph.UnmarshalEntityState(trusted.ID, tc.data, &validated); err == nil {
 				t.Fatal("validating decoder accepted noncanonical state; fixture is not poison")
 			}
 		})

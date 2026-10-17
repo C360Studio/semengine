@@ -2,18 +2,27 @@
 // See mutation_requests.go for the full package documentation.
 package graph
 
-// Stable failure codes carried by *errs.ClassifiedError.Code on the mutation
-// error path (ADR-060). Reached caller-side via errors.As(err, &ce) → ce.Code;
-// revision_mismatch additionally matches the errs.ErrRevisionMismatch sentinel
-// via errors.Is. The set is closed — adding a value requires updating both this
-// declaration and the graph-ingest handler that emits it.
+import "github.com/c360studio/semengine/pkg/errs"
+
+// Stable failure codes carried by *errs.ClassifiedError.Code (ADR-060). A caller
+// reads one with errors.As(err, &ce) and ce.Code; revision_mismatch also matches
+// errs.ErrRevisionMismatch through errors.Is.
+//
+// Who emits them in this module: graph-ingest's mutation handlers and query verbs
+// emit revision_mismatch, entity_not_found, entity_already_exists, invalid_request,
+// structural_invalid (its stream lane only), message_type_unregistered and
+// internal; the exact reader emits invalid_request and internal; index_not_ready
+// comes from natsclient's OpenFrameworkBucket and pkg/lifecycle's queries. Nothing
+// here emits resource_exhausted or embedding_unavailable: their emitters are pin
+// packages not ported yet. graph-ingest counts each refused canonical mutation on
+// graph_mutation_outcomes_total under its code, or internal when it carries none.
 const (
 	// ErrorCodeRevisionMismatch indicates the request specified an
 	// ExpectedRevision that didn't match the entity's current KV
 	// revision at the time of write. Callers (notably
 	// pkg/lifecycle.Manager.Transition) use this to drive
 	// read-validate-retry loops.
-	ErrorCodeRevisionMismatch = "revision_mismatch"
+	ErrorCodeRevisionMismatch = errs.CodeRevisionMismatch
 
 	// ErrorCodeEntityNotFound indicates the request targeted an
 	// entity ID that does not exist in ENTITY_STATES. For
@@ -76,7 +85,7 @@ const (
 	// caller that needs "is MY write visible?" should not use this code at all: compare
 	// the kv_revision its mutation returned against the envelope's indexed_revision,
 	// which is the one sound per-entity check (ADR-084).
-	ErrorCodeIndexNotReady = "index_not_ready"
+	ErrorCodeIndexNotReady = errs.CodeIndexNotReady
 
 	// ErrorCodeEmbeddingUnavailable indicates a similarity/embedding query targeted
 	// a SOURCE entity that has no usable embedding to query FROM — the entity has no
@@ -95,7 +104,8 @@ const (
 	ErrorCodeEmbeddingUnavailable = "embedding_unavailable"
 )
 
-// MutationOutcome is the closed graph-mutation server vocabulary. Transport
+// MutationOutcome is the outcome a graph-mutation reply carries. Every other
+// failure travels as a classified error, never as an outcome. Transport
 // uncertainty is classified by the typed requester and is never asserted by a
 // server response.
 type MutationOutcome string
@@ -107,39 +117,14 @@ const (
 	MutationUnchanged MutationOutcome = "unchanged"
 	// MutationEntityNotFound reports a missing required authority entry.
 	MutationEntityNotFound MutationOutcome = "entity_not_found"
-	// MutationEntityAlreadyExists reports strict-create conflict.
-	MutationEntityAlreadyExists MutationOutcome = "entity_already_exists"
-	// MutationRevisionMismatch reports a stale expected authority revision.
-	MutationRevisionMismatch MutationOutcome = "revision_mismatch"
-	// MutationInvalid reports a structurally invalid request.
-	MutationInvalid MutationOutcome = "invalid"
 	// MutationFailed reports a classified per-subject append failure.
 	MutationFailed MutationOutcome = "failed"
 )
 
-// isServerMutationOutcome reports whether outcome belongs to the closed wire vocabulary.
-func isServerMutationOutcome(outcome MutationOutcome) bool {
-	switch outcome {
-	case MutationApplied, MutationUnchanged,
-		MutationEntityNotFound, MutationEntityAlreadyExists,
-		MutationRevisionMismatch, MutationInvalid, MutationFailed:
-		return true
-	default:
-		return false
-	}
-}
-
-// CreateEntityResponse reports one atomic birth.
-type CreateEntityResponse struct {
-	Outcome    MutationOutcome `json:"outcome"`
-	Entity     *EntityState    `json:"entity"`
-	KVRevision uint64          `json:"kv_revision"`
-	TraceID    string          `json:"trace_id,omitempty"`
-	RequestID  string          `json:"request_id,omitempty"`
-}
-
-// ReconcilePredicatesResponse reports the exact current or committed entity.
-type ReconcilePredicatesResponse struct {
+// EntityMutationResponse is the reply to a create or a reconcile: the outcome,
+// and the entity as committed (create, or a reconcile that applied) or as it
+// stands (a reconcile that changed nothing), with its KV revision.
+type EntityMutationResponse struct {
 	Outcome    MutationOutcome `json:"outcome"`
 	Entity     *EntityState    `json:"entity"`
 	KVRevision uint64          `json:"kv_revision"`

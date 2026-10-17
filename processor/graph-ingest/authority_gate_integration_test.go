@@ -299,7 +299,7 @@ func TestAuthorityGateAllowsForeignReferenceObject(t *testing.T) {
 		h.ctx, structuralCreateSubject, reqBytes, wireRequestTimeout)
 	require.NoError(t, err, "a local subject citing a foreign @id object must be accepted")
 
-	var response graph.CreateEntityResponse
+	var response graph.EntityMutationResponse
 	require.NoError(t, json.Unmarshal(respBytes, &response))
 	assert.Equal(t, graph.MutationApplied, response.Outcome)
 

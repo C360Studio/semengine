@@ -244,7 +244,7 @@ func TestClientRefusesUnencodableAndEntitylessRequests(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			// A reply that would pass every check, so only a refusal before sending fails the call.
-			fake := &fakeRequester{reply: mustJSON(t, graph.CreateEntityResponse{
+			fake := &fakeRequester{reply: mustJSON(t, graph.EntityMutationResponse{
 				Outcome: graph.MutationApplied, Entity: &graph.EntityState{ID: clientTestEntity}, KVRevision: 1,
 			})}
 			client, err := NewClient(fake, time.Second)
@@ -280,7 +280,7 @@ func TestClientClassifiesInvalidSuccessReplyAsCommitUnknown(t *testing.T) {
 		reply []byte
 	}{
 		{name: "malformed JSON", reply: []byte(`{"outcome":`)},
-		{name: "invalid success shape", reply: mustJSON(t, graph.CreateEntityResponse{Outcome: graph.MutationApplied})},
+		{name: "invalid success shape", reply: mustJSON(t, graph.EntityMutationResponse{Outcome: graph.MutationApplied})},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -403,7 +403,7 @@ func TestClientAppendRefusesMalformedResponse(t *testing.T) {
 			applied, {EntityID: other, Outcome: graph.MutationEntityNotFound, KVRevision: 4},
 		}},
 		{name: "an outcome append does not report", results: []graph.AppendSubjectResult{
-			applied, {EntityID: other, Outcome: graph.MutationRevisionMismatch, KVRevision: 4},
+			applied, {EntityID: other, Outcome: graph.MutationOutcome("revision_mismatch"), KVRevision: 4},
 		}},
 	}
 	for _, test := range tests {
@@ -447,21 +447,21 @@ func TestClientReconcileAndDeleteSendOneRequestAndReadTheReply(t *testing.T) {
 		}
 		tests := []struct {
 			name  string
-			reply graph.ReconcilePredicatesResponse
+			reply graph.EntityMutationResponse
 			valid bool
 		}{
 			{name: "applied", valid: true,
-				reply: graph.ReconcilePredicatesResponse{Outcome: graph.MutationApplied, Entity: entity, KVRevision: 8}},
+				reply: graph.EntityMutationResponse{Outcome: graph.MutationApplied, Entity: entity, KVRevision: 8}},
 			{name: "unchanged", valid: true,
-				reply: graph.ReconcilePredicatesResponse{Outcome: graph.MutationUnchanged, Entity: entity, KVRevision: 7}},
+				reply: graph.EntityMutationResponse{Outcome: graph.MutationUnchanged, Entity: entity, KVRevision: 7}},
 			{name: "another outcome",
-				reply: graph.ReconcilePredicatesResponse{Outcome: graph.MutationRevisionMismatch, Entity: entity, KVRevision: 8}},
+				reply: graph.EntityMutationResponse{Outcome: graph.MutationOutcome("revision_mismatch"), Entity: entity, KVRevision: 8}},
 			{name: "no entity",
-				reply: graph.ReconcilePredicatesResponse{Outcome: graph.MutationApplied, KVRevision: 8}},
+				reply: graph.EntityMutationResponse{Outcome: graph.MutationApplied, KVRevision: 8}},
 			{name: "another entity",
-				reply: graph.ReconcilePredicatesResponse{Outcome: graph.MutationApplied, Entity: otherEntity, KVRevision: 8}},
+				reply: graph.EntityMutationResponse{Outcome: graph.MutationApplied, Entity: otherEntity, KVRevision: 8}},
 			{name: "no revision",
-				reply: graph.ReconcilePredicatesResponse{Outcome: graph.MutationApplied, Entity: entity}},
+				reply: graph.EntityMutationResponse{Outcome: graph.MutationApplied, Entity: entity}},
 		}
 		for _, test := range tests {
 			t.Run(test.name, func(t *testing.T) {

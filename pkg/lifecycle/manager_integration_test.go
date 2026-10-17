@@ -145,7 +145,7 @@ func startKVBackedResponders(
 				}
 			}
 		}
-		return json.Marshal(graph.ReconcilePredicatesResponse{
+		return json.Marshal(graph.EntityMutationResponse{
 			Outcome: graph.MutationApplied, Entity: state.Clone(), KVRevision: revision,
 		})
 	})
@@ -169,7 +169,7 @@ func startKVBackedResponders(
 		if err != nil {
 			return nil, err
 		}
-		return json.Marshal(graph.CreateEntityResponse{
+		return json.Marshal(graph.EntityMutationResponse{
 			Outcome: graph.MutationApplied, Entity: &st, KVRevision: rev,
 		})
 	})

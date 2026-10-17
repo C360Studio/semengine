@@ -133,14 +133,6 @@ type BucketSpec struct {
 	Replicas int
 }
 
-// ErrorCodeBucketNotReady is the classified error code OpenFrameworkBucket
-// returns for an absent must-exist bucket. Its value deliberately equals
-// graph.ErrorCodeIndexNotReady (the code graph-index emits for a
-// not-sound-to-read index) so classified consumers handle "the bucket's owner
-// has not provisioned it yet" with the same retry-with-backoff posture; a
-// cross-pin test in graph asserts the two can never drift.
-const ErrorCodeBucketNotReady = "index_not_ready"
-
 // Validate fails closed on a descriptor this binary cannot enforce. EVERY
 // discriminated field is checked against its explicit allowed arms with a
 // fail-closed default: an unknown RetentionKind (a newer catalog on an older
@@ -347,7 +339,7 @@ func OpenFrameworkBucket(ctx context.Context, c *Client, spec BucketSpec) (jetst
 	bucket, err := c.GetKeyValueBucket(ctx, spec.Name)
 	if err != nil {
 		if errors.Is(err, jetstream.ErrBucketNotFound) {
-			return nil, errs.ClassifiedCode(errs.ErrorTransient, ErrorCodeBucketNotReady,
+			return nil, errs.ClassifiedCode(errs.ErrorTransient, errs.CodeIndexNotReady,
 				fmt.Errorf("framework bucket %q is not ready: its owner (%s) has not provisioned it in this deployment",
 					spec.Name, spec.Owner))
 		}

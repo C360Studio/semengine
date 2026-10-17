@@ -40,6 +40,11 @@ type MissingEntity struct {
 	Reason MissingReason `json:"reason"`
 }
 
+// EntityBatchRequest is the batch-query request: the entity IDs to read.
+type EntityBatchRequest struct {
+	IDs []string `json:"ids"`
+}
+
 // EntityBatchResponse is the batch-query reply. Entities keeps its field name and
 // shape, so a consumer reading only `entities` is unaffected; `missing` is additive and
 // omitempty, so a fully-hydrated batch is byte-identical to the pre-ADR-084 response.

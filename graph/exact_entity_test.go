@@ -46,7 +46,7 @@ func TestExactEntityReaderRefusesNilContextBeforeTransport(t *testing.T) {
 	called := false
 	requester := exactEntityRequesterFunc(func(context.Context, string, []byte, time.Duration) ([]byte, error) {
 		called = true
-		return []byte(`{"entity":{"id":"` + entityID + `","triples":[]},"kvRevision":17}`), nil
+		return []byte(`{"entity":{"id":"` + entityID + `","triples":[]},"kv_revision":17}`), nil
 	})
 	exact, err := newTestExactEntityReader(t, requester).ReadExactEntity(nilCtx, entityID)
 	if err == nil || called || exact != nil {
@@ -67,7 +67,7 @@ func TestExactEntityReaderReturnsValidatedEntityAndRevision(t *testing.T) {
 		if err := json.Unmarshal(data, &request); err != nil || request.ID != entityID {
 			t.Fatalf("request = %s, err = %v", data, err)
 		}
-		return []byte(`{"entity":{"id":"` + entityID + `","version":999,"triples":[]},"kvRevision":17}`), nil
+		return []byte(`{"entity":{"id":"` + entityID + `","version":999,"triples":[]},"kv_revision":17}`), nil
 	})
 
 	reader := newTestExactEntityReader(t, requester)
@@ -85,8 +85,8 @@ func TestExactEntityReaderReturnsValidatedEntityAndRevision(t *testing.T) {
 func TestExactEntityReaderRejectsZeroRevisionAndMismatchedEntity(t *testing.T) {
 	const entityID = "acme.ops.robotics.gcs.drone.001"
 	tests := []string{
-		`{"entity":{"id":"` + entityID + `","triples":[]},"kvRevision":0}`,
-		`{"entity":{"id":"acme.ops.robotics.gcs.drone.002","triples":[]},"kvRevision":2}`,
+		`{"entity":{"id":"` + entityID + `","triples":[]},"kv_revision":0}`,
+		`{"entity":{"id":"acme.ops.robotics.gcs.drone.002","triples":[]},"kv_revision":2}`,
 	}
 	for _, response := range tests {
 		requester := exactEntityRequesterFunc(func(context.Context, string, []byte, time.Duration) ([]byte, error) {
@@ -116,7 +116,7 @@ func TestNewExactEntityReaderRefusesNegativeTimeoutAndPassesZeroThrough(t *testi
 	var timeouts []time.Duration
 	requester := exactEntityRequesterFunc(func(_ context.Context, _ string, _ []byte, timeout time.Duration) ([]byte, error) {
 		timeouts = append(timeouts, timeout)
-		return []byte(`{"entity":{"id":"` + entityID + `","triples":[]},"kvRevision":17}`), nil
+		return []byte(`{"entity":{"id":"` + entityID + `","triples":[]},"kv_revision":17}`), nil
 	})
 
 	if reader, err := NewExactEntityReader(requester, -time.Nanosecond); err == nil || reader != nil {

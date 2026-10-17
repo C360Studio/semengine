@@ -39,7 +39,7 @@ func (s *reconcileServer) handle(subject string, payload []byte) ([]byte, error)
 				errors.New("revision mismatch"))
 		}
 		s.revision++
-		return projectionJSON(s.t, graph.ReconcilePredicatesResponse{
+		return projectionJSON(s.t, graph.EntityMutationResponse{
 			Outcome: graph.MutationApplied, Entity: projectionTestState(), KVRevision: s.revision,
 		}), nil
 	default:

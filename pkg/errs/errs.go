@@ -321,6 +321,18 @@ func ClassifiedCodeDetail(class ErrorClass, code string, detail map[string]any, 
 	return ce
 }
 
+// Codes that a package graph imports cannot spell through graph, because graph
+// imports errs. graph declares ErrorCodeRevisionMismatch and ErrorCodeIndexNotReady
+// as these constants, so each value is written once.
+const (
+	// CodeRevisionMismatch is the code ErrRevisionMismatch carries.
+	CodeRevisionMismatch = "revision_mismatch"
+	// CodeIndexNotReady is the code for a read that its serving index or bucket
+	// cannot answer yet. natsclient's OpenFrameworkBucket returns it for a
+	// must-exist bucket its owner has not provisioned.
+	CodeIndexNotReady = "index_not_ready"
+)
+
 // ErrRevisionMismatch is the ADR-060 optimistic-concurrency (CAS)
 // control-flow sentinel — the ONLY sentinel in the unified RPC error
 // contract (every other code is a plain ce.Code discriminator, reached
@@ -337,14 +349,12 @@ func ClassifiedCodeDetail(class ErrorClass, code string, detail map[string]any, 
 // ErrorInvalid (a revision mismatch is a bad-precondition write), so an
 // IsInvalid-first branch would mis-handle a retry signal as a hard 400.
 //
-// The Code literal is the string "revision_mismatch" rather than
-// graph.ErrorCodeRevisionMismatch because pkg/errs cannot import graph
-// (import cycle: graph imports errs). The graph package locks the two
-// equal with a compile-time assertion test (graph/errcode_sentinel_test.go).
+// Its Code is CodeRevisionMismatch, which graph.ErrorCodeRevisionMismatch is
+// defined as.
 var ErrRevisionMismatch = &ClassifiedError{
 	Class:   ErrorInvalid,
-	Code:    "revision_mismatch",
-	Message: "revision_mismatch",
+	Code:    CodeRevisionMismatch,
+	Message: CodeRevisionMismatch,
 }
 
 // Wrap creates a standardized error with context following the pattern:

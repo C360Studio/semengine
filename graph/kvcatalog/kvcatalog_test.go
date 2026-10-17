@@ -158,13 +158,6 @@ func TestSpecFor_UnknownNameResolvesFalse(t *testing.T) {
 	assert.Equal(t, spec.Owner, OwnerOf(graph.BucketOutgoingIndex))
 }
 
-// TestErrorCodeBucketNotReady_MatchesIndexNotReady cross-pins the classified
-// code the catalog-reader seam emits to the code graph-index emits for a
-// not-sound index, so classified consumers can never see the two drift apart.
-func TestErrorCodeBucketNotReady_MatchesIndexNotReady(t *testing.T) {
-	assert.Equal(t, graph.ErrorCodeIndexNotReady, natsclient.ErrorCodeBucketNotReady)
-}
-
 // TestConfigBucketFamilyResolvesEveryMember pins the catalog's one name
 // family (#1188): every per-deployment configuration bucket resolves to the
 // strict, owner-only descriptor under its OWN name — so acquisition creates

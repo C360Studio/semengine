@@ -81,7 +81,7 @@ func TestCanonicalCreateHasNoHierarchyOrRelationshipSideEffects(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handleCanonicalCreate: %v", err)
 	}
-	var response graph.CreateEntityResponse
+	var response graph.EntityMutationResponse
 	if err := json.Unmarshal(responseData, &response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
@@ -241,7 +241,7 @@ func TestCanonicalReconcileUnchangedDoesNotAdvanceRevision(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handleCanonicalReconcile: %v", err)
 	}
-	var response graph.ReconcilePredicatesResponse
+	var response graph.EntityMutationResponse
 	if err := json.Unmarshal(responseData, &response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
@@ -349,7 +349,7 @@ func TestCanonicalReconcileAtTheCallersRevision(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reconcile at the current revision: %v", err)
 	}
-	var applied graph.ReconcilePredicatesResponse
+	var applied graph.EntityMutationResponse
 	if err := json.Unmarshal(data, &applied); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
@@ -438,7 +438,7 @@ func TestCanonicalReconcileEmptyDesiredRemovesOnlySelectedPredicates(t *testing.
 	if err != nil {
 		t.Fatalf("handleCanonicalReconcile: %v", err)
 	}
-	var response graph.ReconcilePredicatesResponse
+	var response graph.EntityMutationResponse
 	if err := json.Unmarshal(responseData, &response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
@@ -485,7 +485,7 @@ func TestCanonicalReconcileAnnotationOnlyChangeAppliesThenExactRepeatIsUnchanged
 			if err != nil {
 				t.Fatalf("reconcile changed field: %v", err)
 			}
-			var applied graph.ReconcilePredicatesResponse
+			var applied graph.EntityMutationResponse
 			if err := json.Unmarshal(data, &applied); err != nil {
 				t.Fatalf("decode applied: %v", err)
 			}
@@ -498,7 +498,7 @@ func TestCanonicalReconcileAnnotationOnlyChangeAppliesThenExactRepeatIsUnchanged
 			if err != nil {
 				t.Fatalf("reconcile exact repeat: %v", err)
 			}
-			var unchanged graph.ReconcilePredicatesResponse
+			var unchanged graph.EntityMutationResponse
 			if err := json.Unmarshal(data, &unchanged); err != nil {
 				t.Fatalf("decode unchanged: %v", err)
 			}
@@ -792,7 +792,7 @@ func TestCanonicalMutationOutcomeMetricAndRevisionMismatchLog(t *testing.T) {
 	c.logger = slog.New(slog.NewTextHandler(&logs, nil))
 
 	operation := graphmutation.ReconcilePredicates
-	counter := c.mutationOutcomes.WithLabelValues(string(operation), string(graph.MutationRevisionMismatch))
+	counter := c.mutationOutcomes.WithLabelValues(string(operation), "revision_mismatch")
 	before := testutil.ToFloat64(counter)
 	route := canonicalMutationRoute{
 		operation: operation, subject: "graph.mutation.entity.reconcile", handler: c.handleCanonicalReconcile,
@@ -811,6 +811,56 @@ func TestCanonicalMutationOutcomeMetricAndRevisionMismatchLog(t *testing.T) {
 		if !strings.Contains(text, fragment) {
 			t.Fatalf("log %q missing %q", text, fragment)
 		}
+	}
+}
+
+// TestCanonicalMutationOutcomeLabelIsTheClassifiedCode: a refused canonical mutation is
+// counted under its classified code (ruling L, #91 comment 6062681355), driven through the
+// create route graph-ingest subscribes. The wanted labels are spelled out, not taken from
+// the constants the handler uses.
+func TestCanonicalMutationOutcomeLabelIsTheClassifiedCode(t *testing.T) {
+	c := createTestComponentWithMockKV(t, withAuthority("acme", "ops"))
+	routes, err := c.canonicalMutationRoutes()
+	if err != nil {
+		t.Fatalf("canonicalMutationRoutes: %v", err)
+	}
+	var create mutationHandler
+	for _, route := range routes {
+		if route.operation == graphmutation.CreateEntity {
+			create = c.meteredCanonicalMutation(route)
+		}
+	}
+	if create == nil {
+		t.Fatal("no create route")
+	}
+	unregistered := canonicalMutationEntity(canonicalEntityA)
+	unregistered.MessageType = message.Type{Domain: "test", Category: "unregistered", Version: "v1"}
+	for _, tc := range []struct {
+		name    string
+		request graph.CreateEntityRequest
+		want    string
+	}{
+		{"unregistered message type", graph.CreateEntityRequest{Entity: unregistered}, "message_type_unregistered"},
+		{"nil entity", graph.CreateEntityRequest{}, "invalid_request"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			before := map[string]float64{}
+			for _, label := range []string{tc.want, "internal", "invalid"} {
+				before[label] = testutil.ToFloat64(c.mutationOutcomes.WithLabelValues("entity.create", label))
+			}
+			if _, err := create(context.Background(), mustCanonicalJSON(t, tc.request)); err == nil {
+				t.Fatal("create was accepted")
+			}
+			for label, was := range before {
+				want := 0.0
+				if label == tc.want {
+					want = 1
+				}
+				if delta := testutil.ToFloat64(c.mutationOutcomes.WithLabelValues("entity.create", label)) - was; delta != want {
+					t.Errorf("outcome %q delta = %v, want %v", label, delta, want)
+				}
+			}
+		})
 	}
 }
 
@@ -858,7 +908,7 @@ func canonicalTriple(subject, predicate string, object any) message.Triple {
 	return message.Triple{Subject: subject, Predicate: predicate, Object: object, Source: "canonical-test", Timestamp: fixtureTime}
 }
 
-func createCanonicalEntity(t *testing.T, c *Component, entityID string, triples []message.Triple) graph.CreateEntityResponse {
+func createCanonicalEntity(t *testing.T, c *Component, entityID string, triples []message.Triple) graph.EntityMutationResponse {
 	t.Helper()
 	data, err := c.handleCanonicalCreate(context.Background(), mustCanonicalJSON(t, graph.CreateEntityRequest{
 		Entity: canonicalMutationEntity(entityID), Triples: triples,
@@ -866,7 +916,7 @@ func createCanonicalEntity(t *testing.T, c *Component, entityID string, triples 
 	if err != nil {
 		t.Fatalf("handleCanonicalCreate: %v", err)
 	}
-	var response graph.CreateEntityResponse
+	var response graph.EntityMutationResponse
 	if err := json.Unmarshal(data, &response); err != nil {
 		t.Fatalf("decode create response: %v", err)
 	}

@@ -118,7 +118,7 @@ func reconcileOnMutationLane(t *testing.T, c *Component, entityID, source string
 	if err != nil {
 		t.Fatalf("handleCanonicalReconcile: %v", err)
 	}
-	var response graph.ReconcilePredicatesResponse
+	var response graph.EntityMutationResponse
 	if err := json.Unmarshal(data, &response); err != nil {
 		t.Fatalf("decode reconcile response: %v", err)
 	}

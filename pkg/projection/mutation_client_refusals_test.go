@@ -20,7 +20,7 @@ func projectionAcceptingRequester(t *testing.T) *projectionRequester {
 		case "graph.ingest.query.entity":
 			return projectionJSON(t, graph.ExactEntity{Entity: projectionTestState(), KVRevision: 7}), nil
 		case "graph.mutation.entity.create":
-			return projectionJSON(t, graph.CreateEntityResponse{
+			return projectionJSON(t, graph.EntityMutationResponse{
 				Outcome: graph.MutationApplied, Entity: projectionTestState(), KVRevision: 1,
 			}), nil
 		case "graph.mutation.triple.append":
@@ -28,7 +28,7 @@ func projectionAcceptingRequester(t *testing.T) *projectionRequester {
 				EntityID: projectionTestEntity, Outcome: graph.MutationApplied, KVRevision: 2,
 			}}}), nil
 		case "graph.mutation.entity.reconcile":
-			return projectionJSON(t, graph.ReconcilePredicatesResponse{
+			return projectionJSON(t, graph.EntityMutationResponse{
 				Outcome: graph.MutationApplied, Entity: projectionTestState(), KVRevision: 8,
 			}), nil
 		default:

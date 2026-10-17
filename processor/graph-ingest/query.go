@@ -3,6 +3,7 @@ package graphingest
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -20,9 +21,6 @@ import (
 
 // defaultMaxConcurrent is the default bounded concurrency for entity fetches
 const defaultMaxConcurrent = 10
-
-// queryResponder is the responder name the verb table gives graph-ingest's verbs.
-const queryResponder = "graph-ingest"
 
 // queryHandlers maps each verb graph-ingest answers, by its name in graph.QueryVerbs, to
 // its handler.
@@ -42,7 +40,7 @@ func (c *Component) setupQueryHandlers(ctx context.Context) error {
 	handlers := c.queryHandlers()
 	var subjects []string
 	for _, verb := range graph.QueryVerbs() {
-		if verb.Responder != queryResponder {
+		if verb.Responder != graph.ResponderGraphIngest {
 			continue
 		}
 		handler, ok := handlers[verb.Name]
@@ -67,9 +65,7 @@ func (c *Component) handleQueryEntityNATS(ctx context.Context, data []byte) ([]b
 	defer cancel()
 
 	// Parse request
-	var req struct {
-		ID string `json:"id"`
-	}
+	var req graph.EntityRequest
 	if err := json.Unmarshal(data, &req); err != nil {
 		// ADR-060: invalid request → invalid class + Code invalid_request, so a
 		// consumer reads ce.Code instead of sniffing the message.
@@ -113,9 +109,7 @@ func (c *Component) handleQueryBatchNATS(ctx context.Context, data []byte) ([]by
 	defer cancel()
 
 	// Parse request
-	var req struct {
-		IDs []string `json:"ids"`
-	}
+	var req graph.EntityBatchRequest
 	if err := json.Unmarshal(data, &req); err != nil {
 		return nil, errs.Classified(errs.ErrorInvalid, fmt.Errorf("invalid request: %w", err))
 	}
@@ -262,12 +256,9 @@ func (c *Component) handleQueryPrefixWithMaxPayload(
 		}
 	}
 
-	// Clamp limit.
+	// A limit of zero or less, or over the maximum, means the maximum.
 	limit := req.Limit
-	if limit <= 0 {
-		limit = graph.DefaultPrefixQueryLimit
-	}
-	if limit > graph.MaxPrefixQueryLimit {
+	if limit <= 0 || limit > graph.MaxPrefixQueryLimit {
 		limit = graph.MaxPrefixQueryLimit
 	}
 
@@ -311,7 +302,7 @@ func (c *Component) handleQueryPrefixWithMaxPayload(
 
 	// Apply cursor: advance past keys up to and including lastKey.
 	if req.Cursor != "" {
-		lastKey, decodeErr := graph.DecodeCursor(req.Cursor)
+		lastKey, decodeErr := decodeCursor(req.Cursor)
 		if decodeErr != nil {
 			return nil, errs.Classified(errs.ErrorInvalid, fmt.Errorf("invalid cursor: %w", decodeErr))
 		}
@@ -378,10 +369,10 @@ func marshalFittingPrefixPage(
 
 	cursorFor := func(count int) string {
 		if count > 0 && count < len(entities) {
-			return graph.EncodeCursor(entities[count-1].ID)
+			return encodeCursor(entities[count-1].ID)
 		}
 		if followingBoundary != "" {
-			return graph.EncodeCursor(followingBoundary)
+			return encodeCursor(followingBoundary)
 		}
 		return ""
 	}
@@ -644,4 +635,24 @@ func aggregateEntityPoisonError(poisoned []*graph.StateContractError) error {
 	return errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeGraphStateResetRequired,
 		fmt.Errorf("read encountered %d poisoned entities: %s%s: %w",
 			len(ids), strings.Join(sample, ", "), suffix, poisoned[0]))
+}
+
+// encodeCursor encodes a raw key as the prefix verb's opaque, URL-safe cursor.
+// Only this package builds or reads cursors: PrefixQueryRequest's contract makes
+// them opaque to callers.
+func encodeCursor(key string) string {
+	return base64.RawURLEncoding.EncodeToString([]byte(key))
+}
+
+// decodeCursor decodes a cursor back to its raw key. The empty cursor, a first
+// page, decodes to the empty key without error.
+func decodeCursor(cursor string) (string, error) {
+	if cursor == "" {
+		return "", nil
+	}
+	b, err := base64.RawURLEncoding.DecodeString(cursor)
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
 }

@@ -118,7 +118,7 @@ func TestRegression_ByteTrimCursor_ScrambledFetchOrder(t *testing.T) {
 		// (the last returned entity). This is the exact property the sort fix
 		// guarantees and the bug violated by setting it on an arbitrary key.
 		if resp.NextCursor != "" {
-			decoded, err := graph.DecodeCursor(resp.NextCursor)
+			decoded, err := decodeCursor(resp.NextCursor)
 			require.NoError(t, err)
 			require.NotEmpty(t, resp.Entities, "a cursor with an empty page would loop")
 			maxID := resp.Entities[len(resp.Entities)-1].ID

@@ -12,8 +12,8 @@ import (
 )
 
 type graphEmitter interface {
-	reconcile(context.Context, *graph.ReconcilePredicatesRequest) (*graph.ReconcilePredicatesResponse, error)
-	create(context.Context, *graph.CreateEntityRequest) (*graph.CreateEntityResponse, error)
+	reconcile(context.Context, *graph.ReconcilePredicatesRequest) (*graph.EntityMutationResponse, error)
+	create(context.Context, *graph.CreateEntityRequest) (*graph.EntityMutationResponse, error)
 	delete(context.Context, *graph.DeleteEntityRequest) (*graph.DeleteEntityResponse, error)
 }
 
@@ -27,7 +27,7 @@ type graphEmitterNATS struct {
 func (g *graphEmitterNATS) reconcile(
 	ctx context.Context,
 	request *graph.ReconcilePredicatesRequest,
-) (*graph.ReconcilePredicatesResponse, error) {
+) (*graph.EntityMutationResponse, error) {
 	response, err := g.client.Reconcile(ctx, *request)
 	if err != nil {
 		return nil, emitError(projection.MutationOperationReconcile, err)
@@ -38,7 +38,7 @@ func (g *graphEmitterNATS) reconcile(
 func (g *graphEmitterNATS) create(
 	ctx context.Context,
 	request *graph.CreateEntityRequest,
-) (*graph.CreateEntityResponse, error) {
+) (*graph.EntityMutationResponse, error) {
 	response, err := g.client.Create(ctx, *request)
 	if err != nil {
 		return nil, emitError(projection.MutationOperationCreate, err)

@@ -1,18 +1,19 @@
-package graph
+package graphingest
 
 import (
 	"fmt"
 	"testing"
 	"time"
 
+	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/internal/harness/semantictest"
 	"github.com/c360studio/semengine/message"
 )
 
-// benchmarkEntityStateBytes builds a representative stored EntityState —
+// benchmarkEntityStateBytes builds a representative stored graph.EntityState —
 // roughly the shape the semboids load generator produces per boid (gh#562):
 // a 6-part ID and ~24 triples with realistic three-part predicates — and
-// returns its MarshalEntityState bytes.
+// returns its graph.MarshalEntityState bytes.
 const benchmarkEntityID = "c360.sim.robotics.swarm.boid.017"
 
 func benchmarkEntityStateBytes(b *testing.B, prototypes []message.Triple) []byte {
@@ -29,14 +30,14 @@ func benchmarkEntityStateBytes(b *testing.B, prototypes []message.Triple) []byte
 		triples[i].Confidence = 1.0
 	}
 
-	data, err := MarshalEntityState(&EntityState{
+	data, err := graph.MarshalEntityState(&graph.EntityState{
 		ID:          entityID,
 		Triples:     triples,
 		MessageType: message.Type{Domain: "boid", Category: "telemetry", Version: "v1"},
 		UpdatedAt:   now,
 	})
 	if err != nil {
-		b.Fatalf("MarshalEntityState benchmark fixture: %v", err)
+		b.Fatalf("graph.MarshalEntityState benchmark fixture: %v", err)
 	}
 	return data
 }
@@ -73,8 +74,8 @@ func BenchmarkUnmarshalEntityState(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		var state EntityState
-		if err := UnmarshalEntityState(benchmarkEntityID, data, &state); err != nil {
+		var state graph.EntityState
+		if err := graph.UnmarshalEntityState(benchmarkEntityID, data, &state); err != nil {
 			b.Fatal(err)
 		}
 	}
@@ -114,8 +115,8 @@ func BenchmarkUnmarshalEntityStateTrusted(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		var state EntityState
-		if err := UnmarshalEntityStateTrusted(data, &state); err != nil {
+		var state graph.EntityState
+		if err := unmarshalEntityStateTrusted(data, &state); err != nil {
 			b.Fatal(err)
 		}
 	}

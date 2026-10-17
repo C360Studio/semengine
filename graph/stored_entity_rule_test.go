@@ -54,7 +54,7 @@ func requireStateRefusal(t *testing.T, err error, reason StateResetReason, entit
 func TestExactEntityReaderRefusesAReplyWithoutStatementMetadata(t *testing.T) {
 	const entityID = "acme.ops.robotics.gcs.drone.001"
 	reply := `{"entity":{"id":"` + entityID + `","triples":[{"subject":"` + entityID +
-		`","predicate":"robotics.flight.armed","object":true,"timestamp":"2026-10-16T12:00:00Z"}]},"kvRevision":3}`
+		`","predicate":"robotics.flight.armed","object":true,"timestamp":"2026-10-16T12:00:00Z"}]},"kv_revision":3}`
 	requester := exactEntityRequesterFunc(func(context.Context, string, []byte, time.Duration) ([]byte, error) {
 		return []byte(reply), nil
 	})

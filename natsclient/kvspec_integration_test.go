@@ -207,7 +207,7 @@ func TestIntegration_OpenFrameworkBucket_AbsentIsNotReadyAndNeverCreates(t *test
 
 	var classified *errs.ClassifiedError
 	require.True(t, errors.As(err, &classified), "the error must be classified")
-	assert.Equal(t, ErrorCodeBucketNotReady, classified.Code, "the error must carry the not-ready code")
+	assert.Equal(t, "index_not_ready", classified.Code, "the error must carry the not-ready code")
 	assert.Equal(t, errs.ErrorTransient, classified.Class, "not-ready is transient: the owner may still boot")
 	assert.Contains(t, err.Error(), "kvspec-fixture-owner",
 		"the error must name the catalog Owner so the operator knows who provisions it")

@@ -55,35 +55,21 @@ func (c *Component) meteredCanonicalMutation(route canonicalMutationRoute) mutat
 	}
 }
 
+// canonicalErrorOutcome is the outcome label of a refused canonical mutation: the
+// error's classified code, or internal when it carries none (ruling L, #91 comment
+// 6062681355).
 func canonicalErrorOutcome(err error) string {
 	var classified *errs.ClassifiedError
-	if !errors.As(err, &classified) {
+	if !errors.As(err, &classified) || classified.Code == "" {
 		return graph.ErrorCodeInternal
 	}
-	switch classified.Code {
-	case graph.ErrorCodeEntityNotFound:
-		return string(graph.MutationEntityNotFound)
-	case graph.ErrorCodeEntityExists:
-		return string(graph.MutationEntityAlreadyExists)
-	case graph.ErrorCodeRevisionMismatch:
-		return string(graph.MutationRevisionMismatch)
-	case graph.ErrorCodeInvalidRequest, graph.ErrorCodeStructuralInvalid:
-		return string(graph.MutationInvalid)
-	default:
-		return graph.ErrorCodeInternal
-	}
+	return classified.Code
 }
 
 func (c *Component) recordCanonicalResponse(operation graphmutation.Operation, data []byte) error {
 	switch operation {
-	case graphmutation.CreateEntity:
-		var response graph.CreateEntityResponse
-		if err := json.Unmarshal(data, &response); err != nil {
-			return err
-		}
-		c.recordCanonicalOutcome(operation, string(response.Outcome))
-	case graphmutation.ReconcilePredicates:
-		var response graph.ReconcilePredicatesResponse
+	case graphmutation.CreateEntity, graphmutation.ReconcilePredicates:
+		var response graph.EntityMutationResponse
 		if err := json.Unmarshal(data, &response); err != nil {
 			return err
 		}
@@ -279,7 +265,7 @@ func (c *Component) handleCanonicalCreate(ctx context.Context, data []byte) ([]b
 	}
 
 	c.recordCanonicalEntityCommit(len(encoded))
-	return json.Marshal(graph.CreateEntityResponse{
+	return json.Marshal(graph.EntityMutationResponse{
 		Outcome: graph.MutationApplied, Entity: entity.Clone(), KVRevision: revision,
 		TraceID: request.TraceID, RequestID: request.RequestID,
 	})
@@ -328,7 +314,7 @@ func (c *Component) handleCanonicalReconcile(ctx context.Context, data []byte) (
 
 	candidate, unchanged := reconcileCandidate(&current, request.Source, request.Desired, predicates)
 	if unchanged {
-		return json.Marshal(graph.ReconcilePredicatesResponse{
+		return json.Marshal(graph.EntityMutationResponse{
 			Outcome: graph.MutationUnchanged, Entity: current.Clone(), KVRevision: revision,
 			TraceID: request.TraceID, RequestID: request.RequestID,
 		})
@@ -352,7 +338,7 @@ func (c *Component) handleCanonicalReconcile(ctx context.Context, data []byte) (
 	}
 
 	c.recordCanonicalEntityCommit(len(encoded))
-	return json.Marshal(graph.ReconcilePredicatesResponse{
+	return json.Marshal(graph.EntityMutationResponse{
 		Outcome: graph.MutationApplied, Entity: candidate, KVRevision: committedRevision,
 		TraceID: request.TraceID, RequestID: request.RequestID,
 	})

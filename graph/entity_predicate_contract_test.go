@@ -41,10 +41,10 @@ func TestValidateEntityPredicatesReportsAllUniqueViolations(t *testing.T) {
 		{Predicate: "bad.fact.has_underscore"}, // predicate-audit:invalid {"kind":"stored-predicate","value":"bad.fact.has_underscore","reason":"segment_character"}
 	}}
 
-	err := ValidateEntityPredicates(entity)
+	err := validateEntityPredicates(entity)
 	var contractErr *EntityPredicateContractError
 	if !errors.As(err, &contractErr) {
-		t.Fatalf("ValidateEntityPredicates() error = %T %v, want *EntityPredicateContractError", err, err)
+		t.Fatalf("validateEntityPredicates() error = %T %v, want *EntityPredicateContractError", err, err)
 	}
 	want := []InvalidEntityPredicate{
 		{Predicate: "bad.fact.has_underscore", Reason: vocabulary.PredicateReasonSegmentCharacter}, // predicate-audit:invalid {"kind":"stored-predicate","value":"bad.fact.has_underscore","reason":"segment_character"}

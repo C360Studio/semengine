@@ -2,6 +2,7 @@ package graphingest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -300,6 +301,33 @@ func everySetStale(arrival []message.Triple, stale []graph.StaleSet) bool {
 	return true
 }
 
+// unmarshalEntityStateTrusted decodes stored ENTITY_STATES bytes WITHOUT
+// re-validating the canonical entity-state contract (gh#562).
+//
+// It exists for graph-ingest's own read-modify-write reads — the CAS merge and
+// mutation closures — and is unexported so no other reader can reach it (SemStreams ADR-081).
+// Those bytes were validated by graph.MarshalEntityState when they were written,
+// and every RMW cycle either commits a candidate re-validated by
+// graph.MarshalEntityState or commits nothing at all (no-op cycles exit via
+// sentinel before any KV write). Resident noncanonical state therefore cannot
+// launder through a merge: it survives into the merged candidate and the write
+// gate rejects the whole write. Read-side validation on that lane is redundant
+// for enforcement — it only changes WHERE the failure is reported — while
+// sitting on the per-key-serialized RMW critical path (SemStreams ADR-072), where it
+// measurably lowers the ingest ceiling.
+//
+// Every other read keeps graph.UnmarshalEntityState: query handlers, the
+// ENTITY_STATES contract guard, and any surface exposing decoded state. This
+// decoder does NOT reject noncanonical predicates or identities — that is its
+// contract, not a gap. Malformed JSON returns a plain decode error, not the
+// graph-state-reset classification.
+func unmarshalEntityStateTrusted(data []byte, entity *graph.EntityState) error {
+	if err := json.Unmarshal(data, entity); err != nil {
+		return fmt.Errorf("decode entity state: %w", err)
+	}
+	return nil
+}
+
 // decodeStoredForWrite is the write seam's read check (design D23; ADR-110 Decision 6) of current,
 // a value stored under key and read at revision, which is nonzero: the trusted decode, then the
 // key check. Absence is revision 0, so an empty value here is unreadable, never a birth or an
@@ -310,7 +338,7 @@ func everySetStale(arrival []message.Triple, stale []graph.StaleSet) bool {
 // this check accepts: MarshalEntityState still gates every commit.
 func (c *Component) decodeStoredForWrite(ctx context.Context, key string, current []byte, revision uint64) (graph.EntityState, error) {
 	var stored graph.EntityState
-	if err := graph.UnmarshalEntityStateTrusted(current, &stored); err != nil {
+	if err := unmarshalEntityStateTrusted(current, &stored); err != nil {
 		return graph.EntityState{}, c.classifyStoredStateRMWError(ctx, key, current, revision, err)
 	}
 	if stored.ID != key {

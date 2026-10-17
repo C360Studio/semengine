@@ -6,22 +6,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// ProducerNames carries the two naming vocabularies this repo already uses for the
-// same component.
-//
-// A struct rather than two string parameters: they differ only in punctuation
-// ("graph-index" vs "graph_index"), so positional arguments are a silent-swap footgun
-// whose failure mode is renaming EVERY metric the producer emits — with no error
-// raised anywhere and dashboards simply going dark. It is also the reason this package
-// refuses to DERIVE one spelling from the other: guessing wrong fails silently, so the
-// caller states both.
-type ProducerNames struct {
-	// Service is the metrics-registry key, hyphenated: "graph-index".
-	Service string
-	// Subsystem is the Prometheus subsystem, underscored: "graph_index".
-	Subsystem string
-}
-
 // Gauges is the readiness envelope's Prometheus projection, owned ONCE for every
 // producer.
 //
@@ -34,7 +18,7 @@ type ProducerNames struct {
 // Set is the single projection site, so a field added to IndexStatusResponse cannot be
 // wired in three producers and forgotten in a fourth.
 type Gauges struct {
-	names ProducerNames
+	subsystem string
 
 	readiness         prometheus.Gauge
 	lag               prometheus.Gauge
@@ -43,84 +27,77 @@ type Gauges struct {
 	publishFailures   prometheus.Counter
 }
 
-// metricNamespace is the shared Prometheus namespace. Held as a constant so the
-// name-pinning test and the constructors cannot disagree about it.
+// metricNamespace is the shared Prometheus namespace, held as a constant so every
+// collector NewGauges builds uses the same one.
 const metricNamespace = "semengine"
 
-// NewGauges builds the readiness gauge set for one producer.
+// NewGauges builds the readiness gauge set for one producer, named by its Prometheus
+// subsystem ("graph_ingest", "graph_index"). Register keys each collector under the
+// same subsystem.
 //
 // The emitted metric NAMES are an external contract — dashboards and operator alerts
 // consume them, and the graph-index-readiness spec explicitly protects graph-index's
 // published output. They are therefore reproduced here exactly as the two hand-rolled
-// sets emitted them; MetricNames pins that, and a test compares it against the live
-// registry.
-func NewGauges(names ProducerNames) *Gauges {
+// sets emitted them; a test compares them against the live registry.
+func NewGauges(subsystem string) *Gauges {
 	return &Gauges{
-		names: names,
+		subsystem: subsystem,
 		readiness: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: metricNamespace,
-			Subsystem: names.Subsystem,
+			Subsystem: subsystem,
 			Name:      "readiness",
 			Help:      "1 when the readiness envelope is Ready (producer caught up), else 0 (ADR-066)",
 		}),
 		lag: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: metricNamespace,
-			Subsystem: names.Subsystem,
+			Subsystem: subsystem,
 			Name:      "lag",
 			Help:      "Outstanding work in the producer's OWN unit — ENTITY_STATES revisions for a revision-lag producer, messages for a backlog producer; 0 = caught up",
 		}),
 		bootstrapComplete: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace: metricNamespace,
-			Subsystem: names.Subsystem,
+			Subsystem: subsystem,
 			Name:      "bootstrap_complete",
 			Help:      "1 when the producer has finished its INITIAL build in this process lifetime, else 0. Distinguishes an index mid-format-cutover from one merely behind (gh#474, ADR-084)",
 		}),
 		state: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Namespace: metricNamespace,
-			Subsystem: names.Subsystem,
+			Subsystem: subsystem,
 			Name:      "readiness_state",
 			Help:      "Readiness state one-hot (building|ready|degraded|reset_required): current state=1, others=0, so catching-up is distinguishable from broken",
 		}, []string{"state"}),
 		publishFailures: prometheus.NewCounter(prometheus.CounterOpts{
 			Namespace: metricNamespace,
-			Subsystem: names.Subsystem,
+			Subsystem: subsystem,
 			Name:      "status_publish_failures_total",
 			Help:      "Readiness heartbeat writes to the GRAPH_STATUS KV key that failed (ADR-083): consumers go status_unknown and fail closed while this rises",
 		}),
 	}
 }
 
-// MetricNames returns the registry metric names this set emits, in registration order.
-// Exported so a producer's test can pin its external contract without reaching into
-// unexported fields.
-func (g *Gauges) MetricNames() []string {
-	return []string{"readiness", "lag", "bootstrap_complete", "readiness_state", "status_publish_failures_total"}
-}
-
 // Register registers every collector on registry through metric.RegisterOrGet and
 // keeps the collectors it returns: when another Gauges already registered a metric
-// under the same service and name, this one writes that collector, so its writes are
+// under the same subsystem and name, this one writes that collector, so its writes are
 // the ones gathered. A nil registry registers nothing: the gauges still take writes,
 // and nothing gathers them. Nothing is registered on Prometheus' global registry.
 func (g *Gauges) Register(registry *metric.MetricsRegistry) error {
 	if registry == nil {
 		return nil
 	}
-	service := g.names.Service
 	var err error
-	if g.readiness, err = metric.RegisterOrGet(registry, service, "readiness", g.readiness); err != nil {
+	if g.readiness, err = metric.RegisterOrGet(registry, g.subsystem, "readiness", g.readiness); err != nil {
 		return err
 	}
-	if g.lag, err = metric.RegisterOrGet(registry, service, "lag", g.lag); err != nil {
+	if g.lag, err = metric.RegisterOrGet(registry, g.subsystem, "lag", g.lag); err != nil {
 		return err
 	}
-	if g.bootstrapComplete, err = metric.RegisterOrGet(registry, service, "bootstrap_complete", g.bootstrapComplete); err != nil {
+	if g.bootstrapComplete, err = metric.RegisterOrGet(registry, g.subsystem, "bootstrap_complete", g.bootstrapComplete); err != nil {
 		return err
 	}
-	if g.state, err = metric.RegisterOrGet(registry, service, "readiness_state", g.state); err != nil {
+	if g.state, err = metric.RegisterOrGet(registry, g.subsystem, "readiness_state", g.state); err != nil {
 		return err
 	}
-	if g.publishFailures, err = metric.RegisterOrGet(registry, service, "status_publish_failures_total", g.publishFailures); err != nil {
+	if g.publishFailures, err = metric.RegisterOrGet(registry, g.subsystem, "status_publish_failures_total", g.publishFailures); err != nil {
 		return err
 	}
 	return nil

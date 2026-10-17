@@ -36,14 +36,14 @@ func (w *fakeWriter) Put(_ context.Context, key string, value []byte) (uint64, e
 	return uint64(w.calls), nil
 }
 
-// TestEnsureBucket_OneShapeIsTheCatalogRow: both producers (graph-index and
-// graph-embedding) route through EnsureBucket, which delegates to the ONE
-// catalog descriptor — so they structurally cannot ask for different shapes of
-// the same bucket. The test pins the descriptor both will acquire under.
-func TestEnsureBucket_OneShapeIsTheCatalogRow(t *testing.T) {
-	spec, ok := kvcatalog.SpecFor(BucketGraphStatus)
+// TestGraphStatusBucketShapeIsTheCatalogRow: every producer acquires GRAPH_STATUS with
+// kvcatalog.EnsureCatalogBucket, which reads the ONE catalog descriptor — so producers
+// structurally cannot ask for different shapes of the same bucket. The test pins the
+// descriptor they acquire under.
+func TestGraphStatusBucketShapeIsTheCatalogRow(t *testing.T) {
+	spec, ok := kvcatalog.SpecFor(graph.BucketGraphStatus)
 	if !ok {
-		t.Fatalf("catalog must declare %s", BucketGraphStatus)
+		t.Fatalf("catalog must declare %s", graph.BucketGraphStatus)
 	}
 	if spec.History != 3 {
 		t.Errorf("catalog History = %d, want 3 (enough replay to see recent transitions)", spec.History)
@@ -53,12 +53,6 @@ func TestEnsureBucket_OneShapeIsTheCatalogRow(t *testing.T) {
 	if spec.Retention.Kind != natsclient.RetentionNoLifecycle {
 		t.Errorf("catalog retention = %q, want no-lifecycle (freshness is consumer-side, ADR-083 D2)",
 			spec.Retention.Kind)
-	}
-}
-
-func TestEnsureBucket_NilClientErrors(t *testing.T) {
-	if _, err := EnsureBucket(t.Context(), nil); err == nil {
-		t.Fatal("want error for nil client, got nil")
 	}
 }
 
@@ -102,7 +96,7 @@ func TestPublisher_ValueIsPlainEnvelopeJSON(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			writer := &fakeWriter{}
-			pub := NewPublisher(writer, tt.key)
+			pub := newTestPublisher(t, writer, tt.key)
 
 			if err := pub.Publish(t.Context(), tt.status); err != nil {
 				t.Fatalf("Publish: %v", err)
@@ -148,7 +142,7 @@ func TestPublisher_ValueIsPlainEnvelopeJSON(t *testing.T) {
 func TestPublisher_PutFailureIsReturnedNotSwallowed(t *testing.T) {
 	// The tick loop must be able to count and log the failure, so it has to see it.
 	boom := errors.New("no responders")
-	pub := NewPublisher(&fakeWriter{err: boom}, KeyGraphIndex)
+	pub := newTestPublisher(t, &fakeWriter{err: boom}, KeyGraphIndex)
 
 	err := pub.Publish(t.Context(), graph.IndexStatusResponse{State: graph.IndexStateBuilding})
 	if err == nil {
@@ -197,25 +191,15 @@ func TestNewPublisherRefusesIncompleteWiring(t *testing.T) {
 	}
 }
 
-// TestPublisherKey: Key reports the key the publisher was built for, and "" for the nil
-// publisher NewPublisher returns on incomplete wiring. graph-ingest's publish-failure log
-// reads it (processor/graph-ingest/readiness.go:341).
-func TestPublisherKey(t *testing.T) {
-	tests := []struct {
-		name string
-		pub  *Publisher
-		want string
-	}{
-		{name: "nil publisher", pub: NewPublisher(nil, KeyGraphIngest), want: ""},
-		{name: "set", pub: NewPublisher(&fakeWriter{}, KeyGraphIngest), want: KeyGraphIngest},
+// newTestPublisher builds a publisher the production way and fails the test on a
+// refusal.
+func newTestPublisher(t *testing.T, writer StatusWriter, key string) *Publisher {
+	t.Helper()
+	pub, err := NewPublisher(writer, key)
+	if err != nil {
+		t.Fatalf("NewPublisher(%q): %v", key, err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.pub.Key(); got != tt.want {
-				t.Errorf("Key() = %q, want %q", got, tt.want)
-			}
-		})
-	}
+	return pub
 }
 
 // TestPublishStampsPublishedAt: every write's stored value carries published_at, the
@@ -233,7 +217,7 @@ func TestPublishStampsPublishedAt(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			writer := &fakeWriter{}
-			pub := NewPublisher(writer, KeyGraphIndex)
+			pub := newTestPublisher(t, writer, KeyGraphIndex)
 
 			before := time.Now()
 			status := graph.IndexStatusResponse{State: graph.IndexStateBuilding, PublishedAt: tt.passed}

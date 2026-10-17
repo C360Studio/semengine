@@ -37,7 +37,7 @@ type fakeEntry struct {
 	created time.Time
 }
 
-func (e fakeEntry) Bucket() string                  { return BucketGraphStatus }
+func (e fakeEntry) Bucket() string                  { return graph.BucketGraphStatus }
 func (e fakeEntry) Key() string                     { return e.key }
 func (e fakeEntry) Value() []byte                   { return e.value }
 func (e fakeEntry) Revision() uint64                { return e.rev }

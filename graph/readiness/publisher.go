@@ -8,9 +8,6 @@ import (
 	"time"
 
 	"github.com/c360studio/semengine/graph"
-	"github.com/c360studio/semengine/graph/kvcatalog"
-	"github.com/c360studio/semengine/natsclient"
-	"github.com/nats-io/nats.go/jetstream"
 )
 
 // This file is the PRODUCER side of the ADR-083 contract; watcher.go is the consumer
@@ -29,47 +26,26 @@ type StatusWriter interface {
 	Put(ctx context.Context, key string, value []byte) (uint64, error)
 }
 
-// EnsureBucket acquires the GRAPH_STATUS bucket through the catalog owner seam
-// and returns a handle. Every producer calls it at Start, EAGERLY — before any
-// consumer could bind — because a consumer that binds a watch to a
-// not-yet-existent bucket reads permanently unknown (fail-closed) until it
-// happens to rebind, and the whole point of this contract is that unknown
-// means something is wrong.
-//
-// It is IDEMPOTENT across producers and restarts: producers in one process
-// (graph-index and graph-embedding at the pin) both call it, in either order
-// and possibly concurrently; the seam's create-or-open resolves the race, and
-// an adopted bucket is RECONCILED to the catalog declaration (History,
-// no-lifecycle retention) rather than adopted config-unseen.
-func EnsureBucket(ctx context.Context, client *natsclient.Client) (jetstream.KeyValue, error) {
-	if client == nil {
-		return nil, errors.New("readiness: nil NATS client")
-	}
-	bucket, err := kvcatalog.EnsureCatalogBucket(ctx, client, BucketGraphStatus)
-	if err != nil {
-		return nil, fmt.Errorf("readiness: ensure bucket %s: %w", BucketGraphStatus, err)
-	}
-	return bucket, nil
-}
-
 // Publisher writes one producer's readiness envelope to its GRAPH_STATUS key. One
 // instance per producer; Publish is called from the status tick and is safe to call
 // from any single goroutine.
 type Publisher struct {
-	bucket  StatusWriter
-	key     string
-	timeout time.Duration
+	bucket StatusWriter
+	key    string
 }
 
 // NewPublisher builds a publisher for one producer key (KeyGraphIndex,
-// KeyGraphEmbedding). It returns nil when the wiring is incomplete, and a nil
-// *Publisher's Publish is a safe no-op: readiness reporting must never be the thing
-// that panics the component whose health it reports.
-func NewPublisher(bucket StatusWriter, key string) *Publisher {
-	if bucket == nil || key == "" {
-		return nil
+// KeyGraphEmbedding, KeyGraphIngest). It refuses a nil bucket and an empty key, so a
+// producer wired without either fails its Start instead of publishing nothing while
+// consumers read the key as absent. A typed-nil bucket is not detected.
+func NewPublisher(bucket StatusWriter, key string) (*Publisher, error) {
+	if bucket == nil {
+		return nil, errors.New("readiness: nil status bucket")
 	}
-	return &Publisher{bucket: bucket, key: key, timeout: publishTimeout}
+	if key == "" {
+		return nil, errors.New("readiness: empty producer key")
+	}
+	return &Publisher{bucket: bucket, key: key}, nil
 }
 
 // Publish writes the envelope as the KV value for this producer's key.
@@ -94,28 +70,22 @@ func NewPublisher(bucket StatusWriter, key string) *Publisher {
 // The error is returned, never swallowed, so the tick loop can count and log it; the
 // loop must keep ticking regardless, because the next heartbeat is the recovery.
 func (p *Publisher) Publish(ctx context.Context, status graph.IndexStatusResponse) error {
-	if p == nil || p.bucket == nil {
-		return nil
-	}
 	status.PublishedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	data, err := json.Marshal(status)
 	if err != nil {
 		// Unreachable (all-scalar struct) but wrapped rather than ignored: a silent
 		// marshal failure would stop the heartbeat with no evidence.
-		return fmt.Errorf("readiness: marshal status for %s/%s: %w", BucketGraphStatus, p.key, err)
+		return fmt.Errorf("readiness: marshal status for %s/%s: %w", graph.BucketGraphStatus, p.key, err)
 	}
-	putCtx, cancel := context.WithTimeout(ctx, p.timeout)
+	putCtx, cancel := context.WithTimeout(ctx, publishTimeout)
 	defer cancel()
 	if _, err := p.bucket.Put(putCtx, p.key, data); err != nil {
-		return fmt.Errorf("readiness: put %s/%s: %w", BucketGraphStatus, p.key, err)
+		return fmt.Errorf("readiness: put %s/%s: %w", graph.BucketGraphStatus, p.key, err)
 	}
 	return nil
 }
 
 // Key reports the producer key this publisher writes, for the caller's failure log.
 func (p *Publisher) Key() string {
-	if p == nil {
-		return ""
-	}
 	return p.key
 }

@@ -40,18 +40,9 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-// The GRAPH_STATUS identifiers, shared by producers and consumers.
+// The GRAPH_STATUS keys, shared by producers and consumers. The bucket's name is
+// graph.BucketGraphStatus.
 const (
-	// BucketGraphStatus is the dedicated readiness bucket. It is operational
-	// component status, NOT domain entity state: it never routes through
-	// graph-ingest, carries no ADR-055 semantic envelope, and is kept out of
-	// ENTITY_STATES so the sole-writer invariant and the graph itself stay clean.
-	//
-	// Re-exported from graph.BucketGraphStatus (the single source of truth) so
-	// this name and the framework-owned-bucket set that write-protects it against
-	// a generic rule update_kv (framework-owned-bucket-guards F3) can never drift.
-	// Producers and consumers keep referring to readiness.BucketGraphStatus.
-	BucketGraphStatus = graph.BucketGraphStatus
 	// KeyGraphIndex is graph-index's status key (one key per producer).
 	KeyGraphIndex = "graph-index"
 	// KeyGraphEmbedding is graph-embedding's status key.
@@ -184,7 +175,7 @@ type Watcher struct {
 func NewWatcher(src BucketSource, key string, heartbeat time.Duration, logger *slog.Logger) *Watcher {
 	return &Watcher{
 		src:       src,
-		bucket:    BucketGraphStatus,
+		bucket:    graph.BucketGraphStatus,
 		key:       key,
 		heartbeat: heartbeat,
 		logger:    logger,

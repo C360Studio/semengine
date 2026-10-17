@@ -25,14 +25,14 @@ Batch 1 started on the base; batches 2 and 3 started after #286 merged (`2d9ce7c
 
 ## 3. Gate, publisher, gauges (batch 2, D1, D3, D4, D5)
 
-- [ ] 3.1 Failing tests: `TestNewPublisherRefusesIncompleteWiring` (replaces the base test that pins the no-op),
+- [x] 3.1 Failing tests: `TestNewPublisherRefusesIncompleteWiring` (replaces the base test that pins the no-op),
   `TestReadingZeroValueFailsClosed`, `TestDeferReasonsReturnsACopy`, and the five-family assertion in
   `TestGauges_FullyQualifiedNamesPreserveTheWireContract`. Gate: each fails on the base (compile or assertion, named
   in the note); the five-family assertion fails on the base only to compile, so its note also records that `task
   mutate:check` detects a `Register` that drops one family or builds one collector with another subsystem.
-- [ ] 3.2 D1: `EvaluateReadinessGate(Reading) DeferReason`, `StatusReading` removed, `DeferReasons()`, the gate tests
+- [x] 3.2 D1: `EvaluateReadinessGate(Reading) DeferReason`, `StatusReading` removed, `DeferReasons()`, the gate tests
   on one result column. Gate: 3.1's gate tests; `task mutate:check` detects the `!r.Fresh` check removed.
-- [ ] 3.3 D3, D4, D5: `NewPublisher` returns an error; no nil-receiver checks; the `timeout` field and `EnsureBucket`
+- [x] 3.3 D3, D4, D5: `NewPublisher` returns an error; no nil-receiver checks; the `timeout` field and `EnsureBucket`
   removed; `NewGauges(subsystem)`, with `ProducerNames`, `MetricNames` and its test removed; the alias and
   `bucket_alias_test.go` removed (each as owner questions 1 and 2 were answered); graph-ingest's `createStatusBucket`,
   `publishReadinessStatus`, `component.go:748-750` and its integration test. Gate: `go test -race ./graph/readiness/

@@ -36,12 +36,14 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
   `doc.go:394` (D4). Gate: `task spec:check`, `task docs:check`.
 - [x] 4.2 Ledger natsclient row and the two contract sentences (D4). Gate: `task ledger:check`; `task verify`'s
   adapter check.
-- [ ] 4.3 Comment on #139 with the new line of the handler timeout (was `request.go:396`). Gate: the comment is read back.
+- [x] 4.3 Comment on #139 with the new line of the handler timeout (was `request.go:396`). Gate: the comment is read back
+  (#139 comment 6232868784).
 
 ## 5. Verify, review and close
 
-- [ ] 5.1 `task verify` passes on a clean tree at the implementation head (includes `task cover:check`, natsclient
+- [x] 5.1 `task verify` passes on a clean tree at the implementation head (exit 0 at `99c16d5`) (includes `task cover:check`, natsclient
   merged).
-- [ ] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
-- [ ] 5.3 Archive (`openspec archive simplify-04a-14-natsclient-request`) as the last content commit. Gate:
+- [x] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body (Codex APPROVE
+  at `ac7fd60`; owner directed docs, archive and merge on 2026-10-17).
+- [x] 5.3 Archive (`openspec archive simplify-04a-14-natsclient-request`) as the last content commit. Gate:
   `task spec:check`.

@@ -1252,7 +1252,8 @@ func (m *Client) PublishToStream(ctx context.Context, subject string, data []byt
 	if ctx == nil {
 		return nilContextError("PublishToStream")
 	}
-	return m.publishToStream(ctx, subject, data, "")
+	_, err := m.publishToStream(ctx, subject, data, "", false)
+	return err
 }
 
 // PublishToStreamWithMsgID publishes to a JetStream stream stamping the
@@ -1276,29 +1277,46 @@ func (m *Client) PublishToStreamWithMsgID(ctx context.Context, subject string, d
 	if ctx == nil {
 		return nilContextError("PublishToStreamWithMsgID")
 	}
-	return m.publishToStream(ctx, subject, data, msgID)
+	_, err := m.publishToStream(ctx, subject, data, msgID, false)
+	return err
 }
 
-// publishToStream is the shared publish path for PublishToStream and
-// PublishToStreamWithMsgID. A non-empty msgID is stamped as the Nats-Msg-Id
-// header for server-side duplicate detection.
-func (m *Client) publishToStream(ctx context.Context, subject string, data []byte, msgID string) error {
-
+// publishToStream is the one synchronous stream publish path, behind PublishToStream,
+// PublishToStreamWithMsgID and PublishToStreamWithAck (design D3). A non-empty msgID is stamped
+// as the Nats-Msg-Id header for server-side duplicate detection.
+//
+// Each caller keeps the errors it has always returned. The not-connected and JetStream errors come
+// back unchanged and uncounted for all of them. With classify, PublishToStreamWithAck's, a failure
+// of the publish itself is counted as publish_to_stream and classified transient; without, nats.go's
+// error comes back unchanged.
+func (m *Client) publishToStream(
+	ctx context.Context, subject string, data []byte, msgID string, classify bool,
+) (*jetstream.PubAck, error) {
 	if m.Status() != StatusConnected {
-		return ErrNotConnected
+		return nil, ErrNotConnected
 	}
 
 	js, err := m.JetStream()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// Auto-generate trace context if none exists
+	ack, err := js.PublishMsg(ctx, streamMsg(ctx, subject, data, msgID))
+	if err != nil && classify {
+		m.jsMetrics.recordError("publish_to_stream")
+		return nil, errs.WrapTransient(err, "Client", "PublishToStreamWithAck",
+			"failed to publish to subject "+subject)
+	}
+	return ack, err
+}
+
+// streamMsg builds the message every stream publish sends, synchronous or async. It carries ctx's
+// trace, or a new one when ctx has none, so every stream message can be traced, and a
+// Nats-Msg-Id header when msgID is not empty.
+func streamMsg(ctx context.Context, subject string, data []byte, msgID string) *nats.Msg {
 	if _, ok := TraceContextFromContext(ctx); !ok {
 		ctx = ContextWithTrace(ctx, NewTraceContext())
 	}
-
-	// Build message with headers for trace propagation
 	msg := &nats.Msg{
 		Subject: subject,
 		Data:    data,
@@ -1311,9 +1329,7 @@ func (m *Client) publishToStream(ctx context.Context, subject string, data []byt
 		msg.Header.Set(nats.MsgIdHdr, msgID)
 	}
 	InjectTrace(ctx, msg)
-
-	_, err = js.PublishMsg(ctx, msg)
-	return err
+	return msg
 }
 
 // asyncPublishErrHandler is the connection-level handler jetstream-go invokes for
@@ -1343,8 +1359,8 @@ func (m *Client) asyncPublishErrHandler(_ jetstream.JetStream, msg *nats.Msg, er
 // publishToStreamAsync is the async publish path behind PublishBatchToStream.
 // It publishes to a JetStream stream WITHOUT blocking on the PubAck, returning a
 // jetstream.PubAckFuture whose Ok()/Err() carry the eventual server
-// acknowledgement. It mirrors publishToStream's pre-checks and trace stamping,
-// then enqueues via PublishMsgAsync.
+// acknowledgement. It makes publishToStream's checks, adds a check of ctx, builds
+// the message with streamMsg, then enqueues via PublishMsgAsync.
 //
 // The enqueue itself is synchronous: a disconnected client returns
 // ErrNotConnected, a cancelled context returns its error, and a full in-flight
@@ -1368,19 +1384,7 @@ func (m *Client) publishToStreamAsync(ctx context.Context, subject string, data 
 		return nil, err
 	}
 
-	// Auto-generate trace context if none exists
-	if _, ok := TraceContextFromContext(ctx); !ok {
-		ctx = ContextWithTrace(ctx, NewTraceContext())
-	}
-
-	// Build message with headers for trace propagation
-	msg := &nats.Msg{
-		Subject: subject,
-		Data:    data,
-	}
-	InjectTrace(ctx, msg)
-
-	future, err := js.PublishMsgAsync(msg)
+	future, err := js.PublishMsgAsync(streamMsg(ctx, subject, data, ""))
 	if err != nil {
 		return nil, err
 	}

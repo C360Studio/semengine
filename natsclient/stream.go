@@ -1043,8 +1043,9 @@ func deriveStreamSubject(filterSubject string) string {
 }
 
 // PublishToStreamWithAck publishes a message to a JetStream subject with acknowledgment.
-// If AutoCreate is true and the stream doesn't exist, it will be created.
 // Trace context is auto-generated if not present, and propagated via NATS message headers.
+// A failure of the publish itself is counted as publish_to_stream and classified transient;
+// ErrNotConnected and a JetStream error come back unchanged.
 func (c *Client) PublishToStreamWithAck(
 	ctx context.Context,
 	subject string,
@@ -1053,34 +1054,5 @@ func (c *Client) PublishToStreamWithAck(
 	if ctx == nil {
 		return nil, nilContextError("PublishToStreamWithAck")
 	}
-
-	if c.Status() != StatusConnected {
-		return nil, ErrNotConnected
-	}
-
-	js, err := c.JetStream()
-	if err != nil {
-		return nil, err
-	}
-
-	// Auto-generate trace context if none exists
-	if _, ok := TraceContextFromContext(ctx); !ok {
-		ctx = ContextWithTrace(ctx, NewTraceContext())
-	}
-
-	// Build message with headers for trace propagation
-	msg := &nats.Msg{
-		Subject: subject,
-		Data:    data,
-	}
-	InjectTrace(ctx, msg)
-
-	ack, err := js.PublishMsg(ctx, msg)
-	if err != nil {
-		c.jsMetrics.recordError("publish_to_stream")
-		return nil, errs.WrapTransient(err, "Client", "PublishToStreamWithAck",
-			"failed to publish to subject "+subject)
-	}
-
-	return ack, nil
+	return c.publishToStream(ctx, subject, data, "", true)
 }

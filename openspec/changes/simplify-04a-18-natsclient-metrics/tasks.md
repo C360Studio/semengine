@@ -26,7 +26,7 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
   `processor/graph-ingest/component.go:723-725` and `processor/graph-ingest/README.md:145-146`, with no #75 reference
   left (D2). This task runs after #289 merges and `origin/main` is merged in. Gate:
   `git grep -nE '#75([^0-9]|$)' -- processor natsclient docs/admission-ledger.yaml` is empty; `task docs:check`.
-- [ ] 3.3 One publish path; the `AutoCreate` line goes (D3). Gate: 2.2 passes; `task test:integration`.
+- [x] 3.3 One publish path; the `AutoCreate` line goes (D3). Gate: 2.2 passes; `task test:integration`.
 - [ ] 3.4 One key listing; `collectFilteredKeys`, its tests and the dead branches go (D4). Gate: 2.3 passes;
   `go build ./...`; `task test:integration`.
 

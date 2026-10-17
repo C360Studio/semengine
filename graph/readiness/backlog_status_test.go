@@ -8,6 +8,10 @@ import (
 	"github.com/c360studio/semengine/graph"
 )
 
+// computeBase is a fixed compute instant so the staleness projection is asserted
+// exactly rather than against the wall clock.
+var computeBase = time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
+
 // TestComputeBacklogStatus_ReadyAndState pins the backlog projection's two verdicts.
 //
 // The 0/0 row is the reason this projection exists at all: graph-index's revision-lag
@@ -271,55 +275,4 @@ func TestBootstrapScope_GateVerdictInvariant(t *testing.T) {
 			}
 		})
 	}
-}
-
-// TestBootstrapScope_WireRoundTrip pins the encoding, including the omitempty that
-// keeps the field off every existing producer's envelope (this change is additive and
-// must not move a byte of graph-index's output).
-func TestBootstrapScope_WireRoundTrip(t *testing.T) {
-	t.Run("absent when zero", func(t *testing.T) {
-		raw, err := json.Marshal(graph.IndexStatusResponse{State: graph.IndexStateReady})
-		if err != nil {
-			t.Fatalf("marshal: %v", err)
-		}
-		var wire map[string]any
-		if err := json.Unmarshal(raw, &wire); err != nil {
-			t.Fatalf("unmarshal: %v", err)
-		}
-		if _, present := wire["bootstrap_scope"]; present {
-			t.Errorf("bootstrap_scope present at zero: %s", raw)
-		}
-	})
-
-	t.Run("survives a round trip", func(t *testing.T) {
-		want := graph.IndexStatusResponse{State: graph.IndexStateReady, BootstrapScope: 12345}
-		raw, err := json.Marshal(want)
-		if err != nil {
-			t.Fatalf("marshal: %v", err)
-		}
-		var got graph.IndexStatusResponse
-		if err := json.Unmarshal(raw, &got); err != nil {
-			t.Fatalf("unmarshal: %v", err)
-		}
-		if got.BootstrapScope != want.BootstrapScope {
-			t.Errorf("BootstrapScope = %d, want %d", got.BootstrapScope, want.BootstrapScope)
-		}
-	})
-
-	t.Run("authoritatively-nothing-to-do is distinguishable", func(t *testing.T) {
-		// complete && scope == 0 is the distinction the field exists for. Because
-		// scope is omitempty, an ABSENT scope on a complete envelope reads as 0 —
-		// which is the same claim. That is intended: the pre-existing producers
-		// (graph-index, graph-embedding) do not report scope, and a consumer must not
-		// read their silence as "there was work".
-		var complete graph.IndexStatusResponse
-		raw := []byte(`{"state":"ready","bootstrap_complete":true}`)
-		if err := json.Unmarshal(raw, &complete); err != nil {
-			t.Fatalf("unmarshal: %v", err)
-		}
-		if !complete.BootstrapComplete || complete.BootstrapScope != 0 {
-			t.Fatalf("got complete=%v scope=%d, want true/0",
-				complete.BootstrapComplete, complete.BootstrapScope)
-		}
-	})
 }

@@ -41,7 +41,7 @@ Batch 1 started on the base; batches 2 and 3 started after #286 merged (`2d9ce7c
 
 ## 4. Text and tests (batch 3, D6)
 
-- [ ] 4.1 #132 item i: the four `graph.IndexStatusResponse` round-trip tests and `TestIndexStatusResponseHasNoLegacyFields`
+- [x] 4.1 #132 item i: the four `graph.IndexStatusResponse` round-trip tests and `TestIndexStatusResponseHasNoLegacyFields`
   as one table test in `graph/index_status_test.go`. Gate: `go test ./graph/ ./graph/readiness/`; `task cover:check`.
 - [ ] 4.2 The package comment and the comments D6 names, including `publisher.go:19`'s cite of a
   `graph/kvcatalog.go` file that does not exist (#293); the `graph/readiness` ledger row. Gate: `go doc

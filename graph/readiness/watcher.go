@@ -38,7 +38,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semengine/graph"
-	"github.com/c360studio/semengine/graph/kvcatalog"
+	"github.com/c360studio/semengine/natsclient"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -301,7 +301,7 @@ func (w *Watcher) watchOnce(ctx context.Context) error {
 // envelope's freshness. Neither stamps an arrival time: neither is evidence the
 // producer is alive and healthy, and stamping one would make garbage read as fresh.
 func (w *Watcher) apply(entry jetstream.KeyValueEntry) {
-	if kvcatalog.IsKVTombstone(entry.Operation()) {
+	if natsclient.IsKVTombstone(entry.Operation()) {
 		w.mu.Lock()
 		w.known = false
 		w.raw = nil

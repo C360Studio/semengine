@@ -756,6 +756,13 @@ func (kv *KVStore) Watch(ctx context.Context, pattern string) (jetstream.KeyWatc
 	return watcher, nil
 }
 
+// IsKVTombstone reports whether an authoritative KV watch entry removes the
+// current value. NATS emits both DEL and PURGE tombstones with empty payloads;
+// neither is an entity document and both must drive identical cleanup paths.
+func IsKVTombstone(operation jetstream.KeyValueOp) bool {
+	return operation == jetstream.KeyValueDelete || operation == jetstream.KeyValuePurge
+}
+
 // Error detection helpers - based on Graph processor experience
 
 // IsKVNotFoundError checks if error indicates key absence — either a never-created

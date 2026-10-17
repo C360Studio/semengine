@@ -31,12 +31,11 @@ clean tree at its commit (#171).
 
 ## 3. Tombstone and text (batch 2)
 
-- [ ] 3.1 D5: `natsclient.IsKVTombstone` and `natsclient/kv_tombstone_test.go` (the moved table test); the callers in
+- [x] 3.1 D5: `natsclient.IsKVTombstone` and `natsclient/kv_tombstone_test.go` (the moved table test); the callers in
   `graph/readiness/watcher.go`, `processor/graph-ingest/component.go` and `pkg/lifecycle/manager_query.go` (`:260`, and
   its doc comment's `KeyValueDelete/KeyValuePurge` at `:167` reworded); `graph/kvcatalog/tombstone.go` and its test
   removed; the `natsclient` ledger row's "Changed surface" sentence and the `natsclient/README.md` `### Functions`
-  entry. Hold: #289 (8e) merged and this branch merged with
-  `origin/main`. Gate: `go test -race ./natsclient/ ./graph/readiness/... ./pkg/lifecycle/...
+  entry. Gate: `go test -race ./natsclient/ ./graph/readiness/... ./pkg/lifecycle/...
   ./processor/graph-ingest/...`; `git grep -n -e KeyValueDelete -e KeyValuePurge -- '*.go' ':!*_test.go'` lists only
   `natsclient/kv.go`.
 - [ ] 3.2 D6: the package comment, citations and labels; `graph/README.md:129`; the `graph` ledger row; the

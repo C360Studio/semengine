@@ -852,6 +852,7 @@
     call refuses no other call. The records below that name the breaker, its timer or its tests
     (circuit threshold, Failures(), the circuit-open rows) describe the pin and the earlier
     changes, and are history.
+    Changed surface, simplify-04a-17 (#133): IsKVTombstone, moved from graph/kvcatalog.
     Changed behavior, design D9 (task 3.7): newJetStreamMetrics registers
     all 11 collectors through metric.RegisterOrGet and keeps the collector each call returns
     (jetstream_metrics.go:128-161 at the pin, where 8 went through the removed Register* methods,

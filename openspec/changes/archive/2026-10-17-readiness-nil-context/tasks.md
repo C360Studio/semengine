@@ -5,7 +5,7 @@ Tests come first; record in `notes/<task>.md` how each fails on the base and whi
 
 ## 1. Design
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal, design and spec delta pass pre-owner review and are accepted
+- [x] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal, design and spec delta pass pre-owner review and are accepted
   by the owner. Gate: `task spec:check` and `task docs:check`.
 
 ## 2. Implementation (D1, D2, D3)
@@ -19,5 +19,5 @@ Tests come first; record in `notes/<task>.md` how each fails on the base and whi
 
 ## 3. Verify, review and close
 
-- [ ] 3.1 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
-- [ ] 3.2 Archive (`openspec archive readiness-nil-context`) as the last content commit. Gate: `task spec:check`.
+- [x] 3.1 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
+- [x] 3.2 Archive (`openspec archive readiness-nil-context`) as the last content commit. Gate: `task spec:check`.

@@ -6,47 +6,28 @@ import (
 	"github.com/c360studio/semengine/graph"
 )
 
-// The canonical readiness gate. Before it, four consumers implemented four gate
-// semantics — sticky-forever, per-tick exact-unless-configured, per-call exact with no
-// knob, and degrade-honest — and a transport failure in one of them was
-// indistinguishable in the logs from a genuine not-ready (gh#590). Semantics live HERE,
-// beside the computation that fills the envelope they interpret; the envelope type
-// itself stays in graph, so a reader of GRAPH_STATUS needs no NATS import.
+// The readiness gate. It is one function so that every consumer gates by the same
+// rules: at the SemStreams pin, four consumers once had four gates, and a transport
+// failure in one of them read in the logs like an index that was not ready (SemStreams
+// gh#590).
 //
-// ADR-084 then collapsed those four MODES into two orthogonal questions, because the
-// modes were four dressings of one conflation: readiness had been asked to answer
-// health, freshness, read-your-writes, AND authoritative absence at once, and the
-// fourth is not answerable at all — coverage says nothing about whether a source ever
-// published.
+// It asks ONE question, HEALTH (ADR-085 Decision 1): is this index sound to read from?
+// Fresh status, an interpretable state, no hard stop, initial build complete. No
+// consumer can opt out of it.
 //
-// This change finished the collapse by deleting the SECOND question too. The freshness
-// parameter (exact | within(d) | none) survived ADR-084 only because coverage-derived
-// gating had been the mechanism behind the retired ADR-066 "empty means not-found only
-// if Ready" absence license; with the license gone, the machinery was serving exactly
-// one call site — periodic community detection, which is the safest possible consumer
-// of a stale view (idempotent, whole-result re-derivation, overwritten next cycle).
-// What remains is ONE question:
+// How far behind the view is, graph.IndexStatusResponse.StalenessMs, is REPORTED, never
+// gating (ADR-085 Decision 2): it rides on the answer, and a consumer stamps it on its
+// output.
 //
-//   - HEALTH — is this index sound to read from? Fresh status, an interpretable state,
-//     no hard stop, initial build complete. Every consumer asks it; no consumer can opt
-//     out; nothing can talk past it.
-//
-// View age is REPORTED, never gating: graph.IndexStatusResponse.StalenessMs rides the answer
-// and consumers stamp it on their output (community detection's
-// staleness_at_detection_ms gauge). "Only 'still building' and 'broken' justify
-// withholding; how far behind belongs on the answer."
-//
-// Read-your-writes, the one legitimately per-entity question, is not a gate concern at
-// all: a caller that knows its own revision compares it against
-// graph.IndexStatusResponse.IndexedRevision directly. Ready does not appear in this gate —
-// it is coverage, and coverage neither licenses nor withholds.
+// Read-your-writes is not a gate question: a caller that knows its own revision
+// compares it with graph.IndexStatusResponse.IndexedRevision. Ready does not appear in
+// this gate: it is coverage, and coverage neither licenses nor withholds an answer.
 
 // DeferReason is the typed cause of a defer. Its string form is the label value of the
 // defer_total{reason} counter and of the structured defer log field, so the set is
 // CLOSED: four reasons an operator acts on differently — a broken index, an index that
 // has not finished building, a dead status feed, and an envelope this consumer cannot
-// interpret. The gh#590 investigation cost three comment cycles because the defer line
-// was a bare constant.
+// interpret.
 type DeferReason string
 
 // The closed defer-reason set.
@@ -68,11 +49,10 @@ const (
 	// coverage, so an uninterpretable State cannot be waved through as "not degraded".
 	DeferUnrecognizedState DeferReason = "unrecognized_state"
 	// DeferBootstrapIncomplete is a producer that has not finished its initial build
-	// in this process lifetime — the gh#474 cutover window, where the keyset is
-	// half-materialised and a plausible small Lag is actively misleading. It replaces
-	// the former `empty` reason, whose TargetRevision==0 proxy was wrong in both
-	// directions: false during a cutover, and true for the authoritatively empty
-	// graph it then wrongly deferred.
+	// in this process lifetime, such as an index halfway through a format cutover
+	// (SemStreams gh#474), where the keyset is half-built and a plausible small Lag
+	// is actively misleading. TargetRevision==0 cannot stand in for it: that is false
+	// during a cutover, and true for an empty graph whose build has finished.
 	DeferBootstrapIncomplete DeferReason = "bootstrap_incomplete"
 )
 
@@ -103,8 +83,8 @@ func DeferReasons() []DeferReason {
 // health question for one Reading and returns the typed defer reason; the caller proceeds
 // when that is DeferNone. A Watcher reader passes w.Read(), so status and freshness come
 // from one read; an IN-PROCESS producer that computes its own envelope passes
-// Reading{Status: s, Fresh: true}, having no transport to lose. How a caller REACTS to a defer (error, skip a tick, serve an honest empty envelope) stays
-// with the caller.
+// Reading{Status: s, Fresh: true}, having no transport to lose. How a caller REACTS to
+// a defer (error, skip a tick, serve an honest empty envelope) stays with the caller.
 //
 // Evaluation order is load-bearing:
 //
@@ -115,8 +95,9 @@ func DeferReasons() []DeferReason {
 //     not a deny-list for degraded/reset_required: a blank or future state must not
 //     read as "not degraded, therefore healthy".
 //  3. Hard stops (degraded, reset_required) defer.
-//  4. An incomplete initial build defers likewise — this is the wire-observable gh#474
-//     guard, and the reason bootstrap_complete had to leave the producer's process.
+//  4. An incomplete initial build defers likewise. This guards against reading an
+//     index halfway through a format cutover (SemStreams gh#474), and is why
+//     bootstrap_complete is on the wire.
 //  5. Everything else proceeds, however far behind the view is. Lag is not a fault; it
 //     is a property of the answer, carried on graph.IndexStatusResponse.StalenessMs for the
 //     consumer to stamp on its output.
@@ -126,15 +107,13 @@ func DeferReasons() []DeferReason {
 // withhold one a health verdict already allowed. A caller with a specific revision in
 // hand compares it against IndexedRevision itself.
 //
-// PRODUCER INVARIANT this ordering still relies on: an envelope with Ready == true must
-// also carry BootstrapComplete == true. Health is answered before coverage is consulted
-// anywhere, so a producer that published a caught-up envelope while reporting an
-// unfinished build would see every consumer defer on it forever — pointing an operator
-// at a cutover that already finished. It survived the ADR-085 collapse: deleting the
-// Ready fast path removed the gate's own READ of the field, not the obligation on
-// producers, because graph-index's sticky responder gate and every consumer's
-// IndexedRevision comparison still assume the two agree. graph-index maintains it in
-// latchBootstrap and on its caged early-boot branch; a new producer must do the same.
+// PRODUCER INVARIANT: an envelope with Ready == true must also carry
+// BootstrapComplete == true. Health is answered before coverage is consulted anywhere,
+// so a producer that published a caught-up envelope while reporting an unfinished build
+// would see every consumer defer on it forever, pointing an operator at a cutover that
+// already finished. A caller comparing its own revision with IndexedRevision also
+// assumes the two agree. Every producer keeps the invariant; ComputeBacklogStatus does
+// by construction.
 func EvaluateReadinessGate(r Reading) DeferReason {
 	status := r.Status
 	if !r.Fresh {

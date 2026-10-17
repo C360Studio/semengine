@@ -10,10 +10,10 @@ import (
 	"github.com/c360studio/semengine/graph"
 )
 
-// This file is the PRODUCER side of the ADR-083 contract; watcher.go is the consumer
+// This file is the PRODUCER side of the ADR-083 contract; watcher.go is the reading
 // side. Both live here so the key names, heartbeat, and value encoding cannot drift
-// apart across two processors and four consumers. The bucket's SHAPE (name, History,
-// retention) is declared once in the framework KV catalog (graph/kvcatalog.go).
+// apart between producers and readers. The bucket's SHAPE (name, History, retention)
+// is declared once, in the framework KV catalog (the graph/kvcatalog package).
 
 // publishTimeout bounds one heartbeat write. It is well under DefaultHeartbeat so a
 // wedged Put cannot eat the whole interval it exists to announce: the tick loop must
@@ -50,12 +50,11 @@ func NewPublisher(bucket StatusWriter, key string) (*Publisher, error) {
 
 // Publish writes the envelope as the KV value for this producer's key.
 //
-// The value is PLAIN graph.IndexStatusResponse JSON — the same struct fusion decodes,
-// with no BaseMessage wrapper. The payload registry governs polymorphic message
-// publishes on subjects, where a receiver must discriminate a type it did not choose;
-// this is a KV value on a fixed key whose type is fixed by the contract, and wrapping
-// it would break every consumer's plain decode (graph/readiness, pkg/fusion) for
-// nothing.
+// The value is PLAIN graph.IndexStatusResponse JSON, with no BaseMessage wrapper. The
+// payload registry governs polymorphic message publishes on subjects, where a receiver
+// must discriminate a type it did not choose; this is a KV value on a fixed key whose
+// type is fixed by the contract, and wrapping it would break every reader's plain
+// decode, the Watcher's included, for nothing.
 //
 // Callers publish on EVERY tick, unconditionally, without comparing to the last
 // value: the write is the liveness heartbeat that lets a consumer tell "not ready"
@@ -73,8 +72,9 @@ func (p *Publisher) Publish(ctx context.Context, status graph.IndexStatusRespons
 	status.PublishedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	data, err := json.Marshal(status)
 	if err != nil {
-		// Unreachable (all-scalar struct) but wrapped rather than ignored: a silent
-		// marshal failure would stop the heartbeat with no evidence.
+		// Unreachable (strings, numbers, bools and one map with string keys) but
+		// wrapped rather than ignored: a silent marshal failure would stop the
+		// heartbeat with no evidence.
 		return fmt.Errorf("readiness: marshal status for %s/%s: %w", graph.BucketGraphStatus, p.key, err)
 	}
 	putCtx, cancel := context.WithTimeout(ctx, publishTimeout)

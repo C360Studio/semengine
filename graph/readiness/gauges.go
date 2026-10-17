@@ -9,14 +9,10 @@ import (
 // Gauges is the readiness envelope's Prometheus projection, owned ONCE for every
 // producer.
 //
-// It exists because the duplication it replaces did not merely permit a bug, it
-// produced one twice: graph-index and graph-embedding each hand-rolled this set, and
-// both independently omitted bootstrap_complete — the field the KV envelope treats as
-// load-bearing and EvaluateReadinessGate consumes. A second producer shape (backlog)
-// would have made four copies with the same drift mode.
-//
 // Set is the single projection site, so a field added to IndexStatusResponse cannot be
-// wired in three producers and forgotten in a fourth.
+// wired in one producer and forgotten in another. At the SemStreams pin, two producers
+// each built their own set, and both left out bootstrap_complete, the field
+// EvaluateReadinessGate reads.
 type Gauges struct {
 	subsystem string
 
@@ -35,10 +31,9 @@ const metricNamespace = "semengine"
 // subsystem ("graph_ingest", "graph_index"). Register keys each collector under the
 // same subsystem.
 //
-// The emitted metric NAMES are an external contract — dashboards and operator alerts
-// consume them, and the graph-index-readiness spec explicitly protects graph-index's
-// published output. They are therefore reproduced here exactly as the two hand-rolled
-// sets emitted them; a test compares them against the live registry.
+// The emitted metric NAMES are an external contract (ADR-066): dashboards and operator
+// alerts read them. They are the names the SemStreams pin emits, and a test compares
+// them against the live registry.
 func NewGauges(subsystem string) *Gauges {
 	return &Gauges{
 		subsystem: subsystem,
@@ -106,9 +101,7 @@ func (g *Gauges) Register(registry *metric.MetricsRegistry) error {
 // Set projects one readiness envelope onto the gauges.
 //
 // THE SINGLE PROJECTION SITE. Every producer funnels through here, so adding a field
-// to IndexStatusResponse means adding it once rather than remembering four places —
-// which is exactly the omission that left bootstrap_complete unexposed on two
-// independently-written producers.
+// to IndexStatusResponse means adding it once.
 //
 // The state one-hot iterates graph.IndexStates() rather than the states this producer
 // happens to emit, so a new readiness state renders as an explicit 0 instead of a

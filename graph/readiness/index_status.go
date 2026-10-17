@@ -10,8 +10,7 @@ import (
 // readiness envelope. It is SEPARATE from the inputs of graph-index's revision-lag
 // projection on purpose: the two producer shapes have disjoint inputs (a revision
 // watermark vs. a message backlog), and merging them would make mutually-exclusive
-// fields co-resident — an invalid state made representable in the one projection
-// whose output gates authoritative-absence claims.
+// fields co-resident, an invalid state made representable.
 type BacklogStatusInputs struct {
 	// Outstanding is total un-applied work across every bound consumer, IN MESSAGES —
 	// the sum of NumPending (server-side, undelivered) and NumAckPending
@@ -24,18 +23,20 @@ type BacklogStatusInputs struct {
 	// Only the total is monotone with respect to real outstanding work. Do not
 	// "simplify" this to NumPending: that under-reports by the whole in-process lane
 	// queue (up to defaultIngestLanes(8) x ingestLaneQueueDepth(256) = 2048 messages
-	// held delivered-but-unacked), which is precisely the backlog gh#712 tripped over.
+	// held delivered-but-unacked), which is precisely the backlog SemStreams gh#712
+	// tripped over.
 	//
 	// WHY NOT THE ACK FLOOR: measured 2026-07-30 against both deployed NATS versions
 	// (2.10, 2.12), AckFloor.Stream does not advance past a MaxDeliver-exhausted
 	// message, then jumps PAST it on the next unrelated ack — reading
 	// permanently-not-caught-up while idle and falsely-covered under traffic. It never
-	// means "everything at or below this is durable". See the change's design.md D0.
+	// means "everything at or below this is durable". See the SemStreams change's
+	// design.md D0.
 	//
 	// HONESTY BOUNDARY: Outstanding == 0 means NO OUTSTANDING WORK, not EVERYTHING WAS
 	// APPLIED. A MaxDeliver-parked message leaves BOTH counters (measured), so it is
 	// invisible here. Caught-up is a backlog claim and cannot license an absence
-	// claim; operator visibility for parked messages is gh#742.
+	// claim; operator visibility for parked messages is SemStreams gh#742.
 	Outstanding uint64
 	// BootstrapComplete is the producer's own initial-build latch. It is an INPUT, not
 	// a projection: what constitutes the initial build differs per producer (a drained
@@ -48,7 +49,7 @@ type BacklogStatusInputs struct {
 	// ObservationFailed reports that the producer could not read its own backlog (a
 	// consumer.Info() failure). It projects to degraded AND forces Ready false,
 	// mirroring graph-index's precedent for a failed target read
-	// (processor/graph-index/watermark.go:69-80): a backend fault cannot honestly
+	// (pin: processor/graph-index/watermark.go:69-80): a backend fault cannot honestly
 	// confirm caught-up, and "building" would read as ordinary progress rather than a
 	// fault. See the divergence note in ComputeBacklogStatus for why this is stronger
 	// than the revision-lag projection's FailedCount handling.
@@ -75,14 +76,14 @@ type BacklogStatusInputs struct {
 //   - Ready = Outstanding == 0 && BootstrapComplete.
 //   - State = observationFailed ? "degraded" : (ready ? "ready" : "building").
 //   - Lag = Outstanding, IN MESSAGES — a different unit from the revision-lag
-//     producers' Lag, which the spec states explicitly.
+//     producers' Lag.
 //   - StalenessMs = 0 when Ready or when OldestOutstandingAt is unknown, else
 //     now-OldestOutstandingAt with a 1ms floor (shared presence encoding).
 //
 // WHY NOT the revision-lag projection: it computes Ready = target > 0 && indexed >= target,
 // which is FALSE at 0/0 — exactly the steady state of an idle backlog producer with
-// nothing to do. Bending it to accommodate that would also risk byte-drift in
-// graph-index's published output, which the current spec protects.
+// nothing to do. Bending it to accommodate that would also risk changing
+// graph-index's published output.
 //
 // IndexedRevision and TargetRevision are DELIBERATELY NOT SET, and both are omitempty
 // so they stay off the wire. Those fields are contractually in the ENTITY_STATES KV
@@ -107,7 +108,7 @@ func ComputeBacklogStatus(in BacklogStatusInputs) graph.IndexStatusResponse {
 	//     callers to stop waiting.
 	//
 	// graph-index's analogous failed-target-read path returns Ready: false with
-	// State: degraded (processor/graph-index/watermark.go:69-80); this matches it.
+	// State: degraded (pin: processor/graph-index/watermark.go:69-80); this matches it.
 	ready := in.Outstanding == 0 && in.BootstrapComplete && !in.ObservationFailed
 	state := graph.IndexStateBuilding
 	switch {

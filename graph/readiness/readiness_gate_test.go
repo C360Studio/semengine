@@ -17,8 +17,9 @@ import (
 // to influence it:
 //
 //   - each of the four defer reasons fires on its own condition, and only on it;
-//   - an unbootstrapped producer defers even when it looks merely "behind" (the gh#474
-//     cutover window, which is the reason the bit is on the wire at all);
+//   - an unbootstrapped producer defers even when it looks merely "behind" (the
+//     SemStreams gh#474 cutover window, which is the reason the bit is on the wire at
+//     all);
 //   - view age never gates anything, at any magnitude, in either encoding;
 //   - coverage (Ready) neither licenses nor withholds — it is absent from the gate.
 
@@ -70,7 +71,7 @@ func TestEvaluateReadinessGate(t *testing.T) {
 		},
 		{
 			name: "an unbootstrapped index defers",
-			// The gh#474 cutover: State=building with a plausible lag, but the keyset
+			// The SemStreams gh#474 cutover: State=building with a plausible lag, but the keyset
 			// is half-materialised. This is the one "not yet" the gate still enforces,
 			// and the reason the bit had to reach the wire.
 			reading: Reading{
@@ -81,7 +82,7 @@ func TestEvaluateReadinessGate(t *testing.T) {
 		},
 		{
 			name: "an authoritatively empty graph proceeds",
-			// 0/0 after enumeration is a COMPLETED build (gh#474 Codex #5). The
+			// 0/0 after enumeration is a COMPLETED build (SemStreams gh#474 Codex #5). The
 			// producer encodes it as Ready at TargetRevision 0; a gate that deferred
 			// on target==0 would reject every query against a fresh empty deployment
 			// forever.
@@ -173,8 +174,8 @@ func TestEvaluateReadinessGate_ViewAgeNeverGates(t *testing.T) {
 // TestEvaluateReadinessGate_UnknownStatusNeverProceeds proves the fail-closed
 // transport rule survives the collapse: a status the consumer cannot vouch for is a
 // TRANSPORT fact, evaluated before any index state, so no envelope contents however
-// healthy-looking license proceeding on it (gh#590 — a status RTT timing out behind the
-// firehose logged identically to a genuine not-ready).
+// healthy-looking license proceeding on it (SemStreams gh#590: a status RTT timing out
+// behind the firehose logged identically to a genuine not-ready).
 func TestEvaluateReadinessGate_UnknownStatusNeverProceeds(t *testing.T) {
 	for _, s := range []graph.IndexStatusResponse{
 		{Ready: true, State: graph.IndexStateReady, BootstrapComplete: true},
@@ -309,7 +310,7 @@ func TestEvaluateReadinessGate_HealthOrderIsAttributable(t *testing.T) {
 // defer_total{reason} label set is enumerated from them, and countDefer silently DROPS
 // an unrecognized value rather than leak cardinality — so a fifth reason introduced
 // without updating that list would go uncounted, which is precisely the invisible-defer
-// shape gh#590 cost three cycles on.
+// shape SemStreams gh#590 cost three cycles on.
 func TestDeferReasons_AreTheClosedSet(t *testing.T) {
 	// Sourced from DeferReasons(), NOT a literal — this is the test that proves the
 	// canonical list and the gate agree, so hand-copying the names here would let both

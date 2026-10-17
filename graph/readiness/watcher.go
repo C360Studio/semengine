@@ -1,29 +1,31 @@
-// Package readiness owns BOTH sides of the ADR-083 readiness distribution contract.
-// Producers (publisher.go) create the GRAPH_STATUS KV bucket and write their envelope
-// to their own key on every heartbeat tick; consumers (watcher.go) watch that key,
-// hold the last-known ADR-066 envelope, and answer "(status, fresh | unknown)" with no
-// per-decision NATS round-trip.
+// Package readiness writes and reads the readiness envelope a producer keeps in the
+// GRAPH_STATUS KV bucket, and holds the gate that judges one.
 //
-// It exists because per-decision request/reply died under exactly the load that
-// makes readiness interesting: in a single-binary deployment the status request
-// travels the same connection as the ENTITY_STATES firehose, so an in-process
-// requester pays the saturated stream twice per round-trip, times out, and fails
-// closed — indistinguishable in the logs from a genuine not-ready (gh#590). The KV
-// twofer inverts it: the producer pays one write per heartbeat and N consumers hold
-// state.
+// The envelope (graph.IndexStatusResponse) is a producer's own account of its
+// progress: whether it has finished its initial build, how far behind it is, and
+// whether it is broken. A producer such as graph-ingest writes it to its own key on
+// every heartbeat tick through a Publisher, and Gauges exposes the same fields to
+// Prometheus. ComputeBacklogStatus fills the envelope for a producer whose progress is
+// a message backlog, as graph-ingest's is.
 //
-// Freshness is judged by CONSUMER-LOCAL arrival time. No producer timestamp is ever
-// compared against the consumer's clock (ADR-083 D2) — arrival-time freshness needs
-// no clock agreement between processes, and cross-process skew would buy nothing.
-// The envelope's published_at, which Publisher.Publish stamps, is not read here; what
-// a reader does with it is #110's.
+// The bucket is information, not a gate (ADR-109 Decision 3). It is for operators and
+// for tools that show a producer's state to people or agents. Nothing in SemEngine
+// waits on it.
 //
-// This package holds the bucket/key identifiers for BOTH sides of the contract, so
-// producers and consumers cannot drift onto different names, with the computation
-// that fills the envelope (ComputeBacklogStatus) and the gate that interprets it
-// (EvaluateReadinessGate). The envelope type itself stays in graph. The
-// Watcher takes a BucketSource, the narrow method set *natsclient.Client already
-// satisfies, rather than the client, which keeps its unit tests free of a live NATS.
+// EvaluateReadinessGate answers one Reading with a DeferReason: proceed, or why not.
+// Its one reader in SemEngine will be graph-index, which asks it in process about the
+// status it has just computed.
+//
+// The Watcher reads one producer's key from another process and holds the last
+// envelope, so a read needs no NATS round trip. It judges freshness by when each value
+// arrived, never by comparing the producer's clock with its own (ADR-083 Decision 2);
+// the envelope's published_at is not read here. Nothing in SemEngine reads a Watcher
+// yet: it is kept for the readers at the SemStreams pin, fusion and graph-clustering,
+// when they are ported.
+//
+// The key names live here, for producers and readers both, so the two cannot drift
+// onto different names. The envelope type stays in graph, so a reader of GRAPH_STATUS
+// needs no NATS import.
 package readiness
 
 import (
@@ -48,7 +50,7 @@ const (
 	// KeyGraphEmbedding is graph-embedding's status key.
 	KeyGraphEmbedding = "graph-embedding"
 	// KeyGraphIngest is graph-ingest's status key. Its envelope is a BACKLOG
-	// envelope (graph.ComputeBacklogStatus): Lag is in MESSAGES, and the revision
+	// envelope (ComputeBacklogStatus): Lag is in MESSAGES, and the revision
 	// fields are absent because graph-ingest consumes multiple streams whose
 	// sequence spaces are independent.
 	KeyGraphIngest = "graph-ingest"
@@ -58,10 +60,9 @@ const (
 )
 
 // Declaring a key here does NOT make it mandatory. There is deliberately no
-// framework-level "all producers" list: the producer set is deployment-dependent
-// (graph-ingest appears in 11 shipped configs, graph-index in 8, rule in 8,
-// graph-embedding in 4), so a framework-declared mandatory list would break every
-// config that runs one producer without another. Each CONSUMER declares the keys it
+// framework-level "all producers" list: which producers run depends on the
+// deployment, so a framework-declared mandatory list would break every deployment
+// that runs one producer without another. Each CONSUMER declares the keys it
 // depends on and folds them client-side.
 
 const (
@@ -86,10 +87,9 @@ const (
 	rebindDelay = time.Second
 )
 
-// BucketSource opens a KV bucket by name. *natsclient.Client satisfies it via
-// GetKeyValueBucket — declared here as the narrow method set (with the EXACT
-// signature, or the structural match silently breaks) rather than importing
-// natsclient, so this package stays a leaf and tests need no live NATS.
+// BucketSource opens a KV bucket by name. *natsclient.Client satisfies it through
+// GetKeyValueBucket, whose signature this must match exactly. The Watcher takes this
+// one method rather than the client, so its tests need no live NATS.
 type BucketSource interface {
 	GetKeyValueBucket(ctx context.Context, name string) (jetstream.KeyValue, error)
 }
@@ -106,17 +106,15 @@ func freshnessWindow(heartbeat time.Duration) time.Duration {
 // Status is authoritative ONLY when Fresh. When Fresh is false the envelope is
 // last-known-and-aged, or no longer the key's current value (or the zero value if none
 // ever arrived), and is carried for DIAGNOSTICS only — a caller must fail closed, never
-// read the stale bits as index state. That distinction is the whole point: gh#590 cost
-// three investigation cycles because a transport failure wore not-ready's log line.
+// read the stale bits as index state, so a dead feed is never mistaken for an index
+// that is not ready.
 type Reading struct {
 	// Status is the last envelope decoded from the key.
 	Status graph.IndexStatusResponse
 	// Raw is the untouched wire value the Status field was decoded from, for a caller
-	// that must decode into its OWN field-identical struct (pkg/fusion.IndexStatus).
-	// Handing such a caller only the decoded graph.IndexStatusResponse would force a
-	// hand-copied field remap, which is exactly the bug that silently dropped
-	// IndexedRevision/Lag once before and read downstream as a false caught-up. Nil
-	// when !Known.
+	// that decodes into its OWN struct with the same fields. Decoding the bytes again
+	// keeps every field; copying fields across by hand can drop one, and a dropped
+	// IndexedRevision or Lag reads as caught up. Nil when !Known.
 	Raw []byte
 	// Fresh reports that the held envelope arrived within three
 	// heartbeats, was not already older than that when it arrived, and is still the
@@ -190,8 +188,7 @@ func NewWatcher(src BucketSource, key string, heartbeat time.Duration, logger *s
 // Run does NOT fail when the bucket or key is absent: a deployment running a consumer
 // without its producer is a legitimate configuration whose readiness is simply
 // UNKNOWN, and Read reports it as such (fail closed) while Run keeps trying to bind,
-// rebinding after any failure. The caller's own escape hatch (e.g.
-// allow_ungated_reads) is what covers that case — never a fabricated envelope.
+// rebinding after any failure. It never fabricates an envelope.
 // Misconfiguration is refused at the call instead: a nil context, a nil bucket source,
 // an empty key, a heartbeat of zero or less, or a nil logger returns an error before
 // any I/O.
@@ -245,13 +242,11 @@ func (w *Watcher) Read() Reading {
 // returns nil once something has arrived (fresh or not — Read is what judges that) and
 // ctx.Err() otherwise.
 //
-// It exists for lazily bound consumers such as fusion: they bind the watch on
-// their first gate decision, and without a bounded wait that first
-// decision would fail closed purely because the watch had not delivered yet — a
-// regression against the request/reply this replaces, which always got an answer or an
-// error. Waiting once at bind, bounded by the same timeout the request used, keeps the
-// worst-case latency of the first gated call unchanged while every later call becomes a
-// local read. Callers must wait AT MOST once: with no producer deployed nothing will
+// It is for a consumer that binds the watch lazily, on its first gate decision, as
+// fusion does at the SemStreams pin: without a bounded wait, that first decision would
+// fail closed only because the watch had not delivered yet. Waiting once at bind, with
+// a bounded context, delays only the first gated call; every later call is a local
+// read. Callers must wait AT MOST once: with no producer deployed nothing will
 // ever arrive, and a per-call wait would turn the standalone deployment into a
 // per-call stall.
 func (w *Watcher) WaitForFirst(ctx context.Context) error {
@@ -316,9 +311,9 @@ func (w *Watcher) apply(entry jetstream.KeyValueEntry) {
 		return
 	}
 
-	// The KV value is plain graph.IndexStatusResponse JSON — the same struct fusion
-	// decodes — not a payload-registry envelope: this is operational state written
-	// to KV, not a published message payload.
+	// The KV value is plain graph.IndexStatusResponse JSON, not a payload-registry
+	// envelope: this is operational state written to KV, not a published message
+	// payload.
 	var status graph.IndexStatusResponse
 	if err := json.Unmarshal(entry.Value(), &status); err != nil {
 		// The key's current value is now one nothing can read, so the held envelope no
@@ -341,9 +336,8 @@ func (w *Watcher) apply(entry jetstream.KeyValueEntry) {
 	// binds, so a consumer that starts while its producer is dead receives that
 	// producer's final envelope — possibly Ready=true, written an hour ago — and pure
 	// arrival-time freshness would stamp it as brand new and read it as live for a
-	// whole window. That is a fail-OPEN neither the request/reply (no responders) nor
-	// the gate it feeds ever had, and the envelope's authoritative-absence license
-	// makes it expensive. Steady-state freshness still compares no clocks (D2): once a
+	// whole window, a fail-OPEN. Steady-state freshness still compares no clocks
+	// (ADR-083 Decision 2): once a
 	// live producer's heartbeat lands, arrival time governs, and the 3x window absorbs
 	// ordinary skew, so no healthy producer is ever rejected here.
 	staleOnArrival := false

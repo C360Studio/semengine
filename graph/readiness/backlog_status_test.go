@@ -96,7 +96,7 @@ func TestComputeBacklogStatus_ObservationFailureCannotReportReady(t *testing.T) 
 func TestComputeBacklogStatus_LagIsOutstandingMessages(t *testing.T) {
 	// 2048 is the in-process lane-queue ceiling (8 lanes x 256 depth). Those messages
 	// are delivered-but-unacked, so they live in NumAckPending and are invisible to
-	// NumPending alone — the under-report gh#712 tripped over.
+	// NumPending alone — the under-report SemStreams gh#712 tripped over.
 	got := ComputeBacklogStatus(BacklogStatusInputs{Outstanding: 2048, BootstrapComplete: true})
 	if got.Lag != 2048 {
 		t.Errorf("Lag = %d, want 2048", got.Lag)

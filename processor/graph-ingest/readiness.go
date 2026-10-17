@@ -14,7 +14,7 @@ import (
 
 // statusMetricsInterval is graph-ingest's readiness heartbeat. It matches the
 // framework default so every producer's freshness window is the same constant
-// (readiness.FreshnessMultiplier heartbeats).
+// (three heartbeats, graph/readiness's freshness window).
 const statusMetricsInterval = readiness.DefaultHeartbeat
 
 // boundConsumer identifies one durable consumer this component bound, so the status

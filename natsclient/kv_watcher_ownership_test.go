@@ -67,39 +67,6 @@ func (b *ownershipBucket) WatchFiltered(_ context.Context, _ []string, _ ...jets
 	return b.watcher, nil
 }
 
-func (b *ownershipBucket) ListKeysFiltered(ctx context.Context, filters ...string) (jetstream.KeyLister, error) {
-	watcher, err := b.WatchFiltered(ctx, filters, jetstream.IgnoreDeletes(), jetstream.MetaOnly())
-	if err != nil {
-		return nil, err
-	}
-	keys := make(chan string)
-	go func() {
-		defer close(keys)
-		defer watcher.Stop()
-		// This is the native forwarder's cancellation branch: it may close
-		// Keys without consuming a pending Updates send.
-		if ctx.Err() != nil {
-			return
-		}
-		select {
-		case entry := <-watcher.Updates():
-			if entry != nil {
-				keys <- entry.Key()
-			}
-		case <-ctx.Done():
-		}
-	}()
-	return ownershipLister{keys: keys, watcher: watcher}, nil
-}
-
-type ownershipLister struct {
-	keys    <-chan string
-	watcher jetstream.KeyWatcher
-}
-
-func (l ownershipLister) Keys() <-chan string { return l.keys }
-func (l ownershipLister) Stop() error         { return l.watcher.Stop() }
-
 func (w *ownershipWatcher) Updates() <-chan jetstream.KeyValueEntry { return w.updates }
 func (w *ownershipWatcher) Stop() error {
 	w.calls.Add(1)
@@ -365,24 +332,23 @@ func TestKVStoreFilteredNoWatcherPrecedence(t *testing.T) {
 		name    string
 		watch   func(context.Context) (jetstream.KeyWatcher, error)
 		wantErr error
-		wantOK  bool
 	}{
-		{"live_direct_no_keys", func(context.Context) (jetstream.KeyWatcher, error) { return nil, jetstream.ErrNoKeysFound }, nil, true},
+		{"live_direct_no_keys", func(context.Context) (jetstream.KeyWatcher, error) { return nil, jetstream.ErrNoKeysFound }, jetstream.ErrNoKeysFound},
 		{"canceled_direct_no_keys", func(ctx context.Context) (jetstream.KeyWatcher, error) {
 			<-ctx.Done()
 			return nil, jetstream.ErrNoKeysFound
-		}, context.Canceled, false},
+		}, context.Canceled},
 		{"expired_direct_no_keys", func(ctx context.Context) (jetstream.KeyWatcher, error) {
 			<-ctx.Done()
 			return nil, jetstream.ErrNoKeysFound
-		}, context.DeadlineExceeded, false},
+		}, context.DeadlineExceeded},
 		{"wrapped_no_keys", func(context.Context) (jetstream.KeyWatcher, error) {
 			return nil, fmt.Errorf("wrapped: %w", jetstream.ErrNoKeysFound)
-		}, jetstream.ErrNoKeysFound, false},
+		}, jetstream.ErrNoKeysFound},
 		{"constructor_failure", func(context.Context) (jetstream.KeyWatcher, error) {
 			return nil, errFilteredWatcherSnapshotIncomplete
-		}, errFilteredWatcherSnapshotIncomplete, false},
-		{"missing_watcher", func(context.Context) (jetstream.KeyWatcher, error) { return nil, nil }, nil, false},
+		}, errFilteredWatcherSnapshotIncomplete},
+		{"missing_watcher", func(context.Context) (jetstream.KeyWatcher, error) { return nil, nil }, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -405,9 +371,7 @@ func TestKVStoreFilteredNoWatcherPrecedence(t *testing.T) {
 				}}
 				keys, err := (&Client{}).NewKVStore(bucket).KeysByFilter(ctx, "diag.>")
 				assert.Nil(t, keys)
-				if tt.wantOK {
-					require.NoError(t, err)
-				} else if tt.wantErr != nil {
+				if tt.wantErr != nil {
 					assert.ErrorIs(t, err, tt.wantErr)
 				} else {
 					assert.Error(t, err)

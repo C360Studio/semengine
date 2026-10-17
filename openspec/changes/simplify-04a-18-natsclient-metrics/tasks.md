@@ -15,19 +15,19 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
   on base, where no counter rises.
 - [x] 2.2 The publish oracle, with the not-connected row (D3). Gate: passes on base; detects the mutant that drops the
   `publish_to_stream` count (`task mutate:check`, reported as detected or not).
-- [ ] 2.3 The key-listing tables over both entry points, and the empty real-bucket row (D4). Gate: the `FilteredKeys`
+- [x] 2.3 The key-listing tables over both entry points, and the empty real-bucket row (D4). Gate: the `FilteredKeys`
   rows fail on base; the empty row passes on base.
 
 ## 3. Implementation
 
 - [x] 3.1 The refusal counter is registered, and `handleError` counts the two refusals before logging (D1, as Q1 is
   ruled). Gate: 2.1 passes; `task test:unit` under `-race`.
-- [ ] 3.2 One metrics owner per registry is written in the `WithMetrics` doc comment, the README and
+- [x] 3.2 One metrics owner per registry is written in the `WithMetrics` doc comment, the README and
   `processor/graph-ingest/component.go:723-725` and `processor/graph-ingest/README.md:145-146`, with no #75 reference
   left (D2). This task runs after #289 merges and `origin/main` is merged in. Gate:
   `git grep -nE '#75([^0-9]|$)' -- processor natsclient docs/admission-ledger.yaml` is empty; `task docs:check`.
 - [x] 3.3 One publish path; the `AutoCreate` line goes (D3). Gate: 2.2 passes; `task test:integration`.
-- [ ] 3.4 One key listing; `collectFilteredKeys`, its tests and the dead branches go (D4). Gate: 2.3 passes;
+- [x] 3.4 One key listing; `collectFilteredKeys`, its tests and the dead branches go (D4). Gate: 2.3 passes;
   `go build ./...`; `task test:integration`.
 
 ## 4. Documentation

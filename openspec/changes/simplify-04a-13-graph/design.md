@@ -13,7 +13,8 @@ entity. It checks, in this order:
 3. `entity.ID == key` (`noncanonical_entity_id`);
 4. every statement has a `Source` and a `Timestamp` (`missing_statement_metadata`).
 
-This is graph-ingest's order today (`mutation_runtime.go:219-239`). Each refusal is exactly one `*errs.ClassifiedError`:
+This is graph-ingest's order today (`mutation_runtime.go:219-239`). Each refusal carries exactly one `*errs.ClassifiedError`
+above its `*StateContractError` (the cause beneath keeps its own, e.g. `entity_id_invalid`):
 class fatal, code `graph_state_reset_required`, wrapping a `*StateContractError` with that `Reason` and
 `EntityID == key`. It is built by one unexported constructor and carries no attribution prefix.
 

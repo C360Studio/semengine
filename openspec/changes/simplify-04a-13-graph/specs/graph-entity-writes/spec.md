@@ -12,8 +12,10 @@
 3. an entity whose ID is not `key` (`noncanonical_entity_id`);
 4. a statement with no `Source` or no `Timestamp` (`missing_statement_metadata`).
 
-Each refusal SHALL be exactly one classified error, with class fatal and code `graph_state_reset_required`, from which
-`errors.As` yields a `*graph.StateContractError` whose `Reason` is the refusal's reason and whose `EntityID` is `key`.
+Each refusal SHALL carry exactly one classified error above its `*graph.StateContractError`, with class fatal and code
+`graph_state_reset_required`; `errors.As` yields that `*graph.StateContractError`, whose `Reason` is the refusal's reason
+and whose `EntityID` is `key`. The cause beneath it keeps its own classification, if it has one (an invalid entity ID
+keeps `entity_id_invalid`).
 
 graph-ingest's validated read of an entity (the entity, batch and prefix verbs, reconcile, append and delete), its
 boot sweep of `ENTITY_STATES`, and its re-check of a stored value after a failed read-modify-write SHALL apply this
@@ -42,10 +44,11 @@ the entity. A mutation reply that refuses for a stored value SHALL carry the ref
 #### Scenario: One classification
 
 - **WHEN** any refusal is returned
-- **THEN** unwrapping it yields one `*errs.ClassifiedError`, not two
+- **THEN** unwrapping it down to its `*graph.StateContractError` yields one `*errs.ClassifiedError`, not two
 
 #### Scenario: A reconcile refused for its stored value
 
 - **WHEN** a reconcile names entity K, whose stored value holds a statement with no `Source`
-- **THEN** the error returned holds one `*errs.ClassifiedError`, with code `graph_state_reset_required` and reason
+- **THEN** the error returned holds one `*errs.ClassifiedError` above its `*graph.StateContractError`,
+  with code `graph_state_reset_required` and reason
   `missing_statement_metadata`

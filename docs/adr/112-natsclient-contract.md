@@ -2,9 +2,9 @@
 
 ## Status
 
-**Accepted (2026-10-11); §4 amended 2026-10-12 (#184); §3 amended 2026-10-15 (#167).** The owner accepted design
-revision 3, and this record with it, on PR #177 (comment 6111038987). Drafted on PR #177,
-for #170 and #168, under the owner's rulings:
+**Accepted (2026-10-11); §4 amended 2026-10-12 (#184); §3 amended 2026-10-15 (#167); §2 amended 2026-10-17
+(#169).** The owner accepted design revision 3, and this record with it, on PR #177 (comment 6111038987). Drafted
+on PR #177, for #170 and #168, under the owner's rulings:
 
 - 2026-10-10, epic #9 comment 6098388541: a record of natsclient's contract over nats.go;
 - 2026-10-11, #170 comment 6109833136: fix natsclient so its calls do not sit for minutes, without rewriting nats.go;
@@ -26,6 +26,14 @@ with it. Line numbers in `client_close_final_test.go` are as of `d71df33`.
 **Amendment, 2026-10-17 (simplify-04a-16-natsclient-circuit, #222).** The connection circuit breaker is removed, so
 `natsclient.ErrCircuitOpen`, the circuit-neutral stream-capacity line in §3 and the circuit refusal in the retry
 line are struck where they stand. No library statement is added.
+
+**Amendment, 2026-10-17 (simplify-04a-18-natsclient-metrics, #169).** §2's `Subscribe` line is unchanged in what it
+returns: a refused SUB still returns the subscription and nil (owner ruling on #169, 2026-10-12). What is added is
+that, when the client was built with `WithMetrics`, the refusal is also counted on
+`semengine_nats_server_refusals_total{reason}`, with `permission_violation` or `max_subscriptions_exceeded`. The
+count is made before the client's `NATS error` log line. nats.go reports a refused PUB the same way, so a refused
+publish is counted too. Backed by `TestServerRefusalCountedBeforeLog` (`subscribe_registration_test.go`). It is not
+promised how soon after the call returns the count rises. Without metrics only the log line is written.
 
 - **The unknown-error default.** `errs.Classify` returns fatal for an unclassified error: one with no
   `*errs.ClassifiedError` in its chain and none of the sentinels `errs.IsTransient`, `errs.IsFatal` or `errs.IsInvalid`
@@ -147,7 +155,8 @@ Each line below names its backing. Anything not backed is not promised.
 ### 2. What a nil return means
 
 - **`Subscribe`, `SubscribeForRequests`:** the server has read the SUB, not that it accepted it. A refused SUB returns
-  the subscription and nil. Backed by the test at `subscribe_registration_test.go:240`, and by P7, P8 and #169.
+  the subscription and nil, and is counted when metrics are configured (amended 2026-10-17, see Status).
+  Backed by the test at `subscribe_registration_test.go:240`, and by P7, P8 and #169.
 - **`Publish`:** the message is in nats.go's buffer, not sent: nil came back after 1 m 59.6 s with the server never
   reading (P14). Delivery is not promised: a message still buffered when the connection closes is lost, including
   when `Close`'s context ends before its drain does.

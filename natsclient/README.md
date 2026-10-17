@@ -99,7 +99,10 @@ sub, err := client.Subscribe(ctx, "subject.*", func(msgCtx context.Context, msg 
 ```
 
 When `Subscribe` returns, the server has read the subscription, so a request from another connection finds it, unless
-the server refused it. A refusal is not returned as an error; a client that connected with `Connect` logs it.
+the server refused it. A refusal is not returned as an error. A client that connected with `Connect` logs it, and a
+client built with `WithMetrics` also counts it on `semengine_nats_server_refusals_total`, labelled `reason`
+(`permission_violation` or `max_subscriptions_exceeded`). The count can rise after `Subscribe` has returned. A
+publish the server refuses is counted the same way.
 
 ### Advanced Usage
 

@@ -852,8 +852,22 @@
     call refuses no other call. The records below that name the breaker, its timer or its tests
     (circuit threshold, Failures(), the circuit-open rows) describe the pin and the earlier
     changes, and are history.
+    Changed surface, simplify-04a-18 (#169, #222): newJetStreamMetrics also registers the counter
+    semengine_nats_server_refusals_total{reason} (12 collectors in all), and handleError adds one,
+    before it logs, for a nats.ErrPermissionViolation (reason permission_violation) or a
+    nats.ErrMaxSubscriptionsExceeded (reason max_subscriptions_exceeded) that nats.go reports; a refused
+    PUB and a refused SUB count alike, and Subscribe still returns the subscription and nil (owner ruling
+    on #169, 2026-10-12; TestServerRefusalCountedBeforeLog). The three synchronous stream publishes share
+    one connection and JetStream check and one message builder; PublishToStream and
+    PublishToStreamWithMsgID return nats.go's error unchanged, and PublishToStreamWithAck still counts
+    only a failed publish as publish_to_stream and wraps it as transient (the AutoCreate doc line is
+    removed; TestIntegration_PublishToStreamErrorsPerCall). KVStore.KeysByFilter and FilteredKeys list
+    keys through one function over WatchFiltered: FilteredKeys now takes a reader that offers
+    WatchFiltered (it took one offering ListKeysFiltered), completes as KeysByFilter does, and returns
+    nil and no error when no key matches (TestIntegration_FilteredKeyListingsNoMatch).
+    collectFilteredKeys and the ErrNoKeysFound and ErrKeyNotFound branches are removed.
     Changed behavior, design D9 (task 3.7): newJetStreamMetrics registers
-    all 11 collectors through metric.RegisterOrGet and keeps the collector each call returns
+    all 12 collectors through metric.RegisterOrGet and keeps the collector each call returns
     (jetstream_metrics.go:128-161 at the pin, where 8 went through the removed Register* methods,
     task 3.5a), so a second client on the same registry writes to the canonical collector. Changed
     behavior, design D9 (task 3.7d; owner ruling #9 comment 5969522395, item 4): the three consumer
@@ -1008,8 +1022,8 @@
     PING on the connection it subscribed on and waits for the PONG (FlushWithContext, :1373-1375); the
     wait for the PONG is bounded by the call's context and DefaultRequestTimeout, whichever ends first,
     and the waits for nats.go's connection lock are not (design L8, #168). A SUB the server refuses is
-    returned as a subscription and nil, and logged by handleError on a client that connected with
-    Connect (design L9, #169). When the round trip does not complete, or Close has begun, it
+    returned as a subscription and nil, and handleError counts it before logging it, on a client that
+    connected with Connect (design L9; counted since simplify-04a-18, #169). When the round trip does not complete, or Close has begun, it
     unsubscribes the subscription (:1390) and returns no subscription and the first error that holds
     (:1391-1407): nats.ErrConnectionClosed once Close has begun; a transient error matching
     context.Canceled or context.DeadlineExceeded when the context ended or DefaultRequestTimeout
@@ -1107,7 +1121,7 @@
     clientOwnedHandlerContext, a context.WithCancel(context.Background()) root the Client owns per
     consumer (#9 comment 5994720412, item 2), cancelled by the consumer's ownership goroutine
     (owned_delivery.go ownConsumer) when Close begins and after its last handler returns; trace.go:56, DetachContextWithTrace, left with that function in task
-    3.7a. kv.go:600 is a bounded terminal drain, context.WithTimeout(context.WithoutCancel(ctx),
+    3.7a. kv.go:700 is a bounded terminal drain, context.WithTimeout(context.WithoutCancel(ctx),
     filteredWatcherDrainTimeout), the developer contract's admitted shape, not a root. Dropped
     surface, not ported (design D8, "A test of a removed feature"): kv_temporal.go
     (TemporalResolver, 228 lines) with kv_temporal_integration_test.go and
@@ -1311,7 +1325,7 @@
     (recordFailure's AfterFunc), :351 (WaitForConnection's ticker), :644 (drainAndCloseConnection's
     timer), :773 (Subscribe's handler deadline), :1404 (armConnectionLossTimer's AfterFunc), :1463
     (startHealthMonitoring's ticker); delivery_settlement.go:353 (the heartbeat ticker);
-    jetstream_metrics.go:348 (startPoller's ticker); kv.go:71 (applyTimeout), :600 (KeysByFilter's drain
+    jetstream_metrics.go:348 (startPoller's ticker); kv.go:71 (applyTimeout), :700 (keysByFilter's drain
     window); request.go:118, :124, :151, :195, :248, :352, :498, :530; storage_inventory.go:269
     (Collect), :298 (Run's ticker); storage_report_consumer.go:195 (Run's retry backoff); stream.go:352,
     :365 (awaitStreamVisible's ticker and probe deadline), :762 (messageHandlerContext). From each

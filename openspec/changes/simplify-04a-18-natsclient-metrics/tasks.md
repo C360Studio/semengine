@@ -32,9 +32,9 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 ## 4. Documentation
 
-- [ ] 4.1 Spec delta matches the code; ADR-112 §2 amendment; README and `doc.go` (D5). Gate: `task spec:check`,
+- [x] 4.1 Spec delta matches the code; ADR-112 §2 amendment; README and `doc.go` (D5). Gate: `task spec:check`,
   `task docs:check`.
-- [ ] 4.2 Ledger natsclient and graph-ingest rows (D5). Gate: `task ledger:check`.
+- [x] 4.2 Ledger natsclient and graph-ingest rows (D5). Gate: `task ledger:check`.
 - [ ] 4.3 PR #296's title and body match Q1's ruling and declare `Closes #75 #169 #222`. Gate: read back
   `closingIssuesReferences`.
 

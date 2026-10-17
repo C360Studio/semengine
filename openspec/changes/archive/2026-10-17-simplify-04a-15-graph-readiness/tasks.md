@@ -51,7 +51,7 @@ Batch 1 started on the base; batches 2 and 3 started after #286 merged (`2d9ce7c
 ## 5. Verify, review and close
 
 - [x] 5.1 `task verify` passes on a clean tree at the implementation head.
-- [ ] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
-- [ ] 5.3 Comment on #110 for #135 (g) (`Reading.Raw` goes with fusion's port); any follow-up issues filed; then the
+- [x] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
+- [x] 5.3 Comment on #110 for #135 (g) (`Reading.Raw` goes with fusion's port); any follow-up issues filed; then the
   change is archived (`openspec archive simplify-04a-15-graph-readiness`) as the last content commit. Gate:
   `task spec:check`.

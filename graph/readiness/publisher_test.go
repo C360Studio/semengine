@@ -249,3 +249,36 @@ func TestPublishStampsPublishedAt(t *testing.T) {
 		})
 	}
 }
+
+// TestPublishRefusesNilContext: a nil context is refused with an error before any write,
+// never a panic in the tick loop (readiness-nil-context D1).
+func TestPublishRefusesNilContext(t *testing.T) {
+	var nilCtx context.Context
+	tests := []struct {
+		name      string
+		ctx       context.Context
+		wantErr   bool
+		wantCalls int
+	}{
+		{name: "nil context", ctx: nilCtx, wantErr: true, wantCalls: 0},
+		{name: "valid context", ctx: t.Context(), wantErr: false, wantCalls: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			writer := &fakeWriter{}
+			pub := newTestPublisher(t, writer, KeyGraphIndex)
+
+			err := pub.Publish(tt.ctx, graph.IndexStatusResponse{State: graph.IndexStateBuilding})
+			if tt.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "nil context") {
+					t.Errorf("Publish = %v, want an error naming nil context", err)
+				}
+			} else if err != nil {
+				t.Errorf("Publish = %v, want nil", err)
+			}
+			if writer.calls != tt.wantCalls {
+				t.Errorf("Put calls = %d, want %d", writer.calls, tt.wantCalls)
+			}
+		})
+	}
+}

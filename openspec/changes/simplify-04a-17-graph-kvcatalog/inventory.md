@@ -143,7 +143,11 @@ Inheritance from 8c: 8c's design said 8d inherits `kvcatalog_test.go:165`. 8c it
   before it acts" (`spec.md:193`) binds `natsclient` only.
 - Ledger: `graph` row `docs/admission-ledger.yaml:1953-1954` (destination names `kvcatalog.go`,
   `owned_bucket_retention.go` and `IsKVTombstone`), `:1981` (dependencies), `:1993` (proving tests
-  `graph/kvcatalog/*_test.go`). `graph/readiness` row `:2015` lists `graph/kvcatalog` as a dependency.
+  `graph/kvcatalog/*_test.go`). `graph/readiness` row `:2015` lists `graph/kvcatalog` as a dependency. `natsclient`
+  row `:828`: its `contract` records each changed surface ("Changed surface, simplify-04a-13 (#222): …"), so a name
+  added to `natsclient` belongs there; #290 (6c) also edits this row (§ 3, #290).
+- `natsclient/README.md` lists the package's KV helpers (`### KVStore Abstraction` `:48`, API Reference
+  `### Functions` `:197`).
 - Coverage floor: `graph/kvcatalog merged` (`scripts/cover-check.sh:33`); `natsclient merged` (`:29`).
 - Docs naming the surface: `graph/README.md:28-29`, `:129` ("the bucket catalog, its acquisition, the owned-bucket
   retention check and `IsKVTombstone`"); `docs/repository-map.md:64`; `.agents/rules-index.md:44`
@@ -180,7 +184,8 @@ Consumers: `grep -rn --include='*.go'` for `graph.<Name>` and `kvcatalog.` in th
   none; tests only (`test/contract/kvcatalog_literal_contract_test.go`,
   `shared_config_bucket_acquisition_contract_test.go`). Consumers: none.
 - `SpecFor`: none outside (test: `graph/readiness/publisher_test.go:42`). Pin:
-  `processor/graph-index/component.go:903`. Consumers: a semsource test.
+  `processor/graph-index/component.go:903`, `processor/rule/kv_writer.go:86` (`if _, catalogued :=
+  gtypes.SpecFor(bucketName); catalogued {`). Consumers: a semsource test.
 - `OwnerOf`: none (tests; a doc mention in `storagereport`). Pin: `service/storage_observability.go:223`,
   `graph-index/component.go:95`, `:886`. Consumers: none.
 - `IsFrameworkOwnedBucket`, `FrameworkOwnedWriteRefusal`: none. Pin: `rule/actions.go:2264`, `kv_writer.go:87`,

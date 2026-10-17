@@ -49,8 +49,7 @@ What changes:
 
 `Status()` is written by `Connect`, `handleDisconnect`, `handleReconnect`, the health monitor and `Close`, as today
 less the breaker. The status is held in a typed atomic, `atomic.Int32` holding the `ConnectionStatus`. `Status()` is
-callable with or without `mu` held: the health monitor (`client.go:2260-2263`) and `ownsStatusLocked` call it while
-holding `mu`, so a `Status()` that took `mu` would hang the monitor's first tick and then `Close`.
+callable with or without `mu` held: the health monitor (`client.go:2260-2263`) calls it while holding `mu`, so a `Status()` that took `mu` would hang the monitor's first tick and then `Close`.
 
 Proof:
 
@@ -111,7 +110,8 @@ New:
     state. That adds no production hook.
   - It awaits `Status() == Connected`, which only a tick writes on a healthy connection, through `internal/harness`
     polling with a deadline and no sleep. `Close` then returns nil within its context.
-  - It fails on a `Status()` that takes `mu`, because the tick hangs.
+  - It fails on a `Status()` that takes `mu`, because the tick hangs. It fails on its own deadline before its cleanup
+    `Close` runs, since that `Close` would hang too.
 
 Kept behaviour that only `Failures()` proved, with a new oracle:
 
@@ -164,14 +164,14 @@ Generated checks: examples suffice. With nothing counted, no input interacts wit
 | --- | --- | --- | --- |
 | `StatusCircuitOpen` | removed (Q1) | framework API, contract line README `:37-41` | semsource test only |
 | `natsclient.ErrCircuitOpen` | removed (Q1, Q3) | framework API: transport-client, ADR-112 `:164` | graphmutation `:171` (D3); semsource ×2 |
-| `pkg/errs.ErrCircuitOpen` | removed (Q3) | framework API: transport-client names it; no producer once B lands | `errs.go:169` only |
+| `pkg/errs.ErrCircuitOpen` | removed (Q3) | framework API (named by transport-client until this change); no producer once B lands | `errs.go:169` only |
 | `Client.Failures` | removed (Q1) | framework API, contract line spec `:126` | tests only |
 | `Client.Backoff` | removed (Q4) | no contract line (a `doc.go` example only): owner decides | tests only |
 | `Status.FailureCount` | removed (Q1) | plumbing for admitted, unported pin `service_manager.go:1752`; removing it changes that port | none here |
 | `Status.LastFailureTime` | removed (Q4) | no contract line: owner decides | `client_test.go:459` |
 | `Status.Reconnects` | removed | dead: never written or read | none |
 | `Client.Status`, `ConnectionStatus`, its four other constants | kept | plumbing | `graph-ingest/component.go:982` |
-| `Client.IsHealthy`, `WaitForConnection` | kept | plumbing | `client.go:597`; `graph-ingest/component.go:989` |
+| `Client.IsHealthy`, `WaitForConnection` | kept | plumbing | pin `service/base.go:434`, rule `processor.go:1041`; `graph-ingest/component.go:989` |
 | `Client.GetStatus`, `Status.Status`, `Status.RTT` | kept | plumbing for admitted pin `service_manager.go:1745-1748` | none here yet |
 | `WithHealthInterval` | kept | framework API (option list, README) | semsource `run.go:451` |
 | `Client.RTT` | kept, unchanged (Q4) | no production reader; README `:235` only names it | tests only |
@@ -194,10 +194,14 @@ No back door.
 
 ## Owner questions
 
-1. Remove the breaker (B), repair it (A), or do nothing? Recommended: B. What is lost: (a) and (b) in D1.
+1. Remove the shared circuit breaker, repair it, or leave it? Recommended: remove. What goes: after 15 failures in a
+   row on one client, every JetStream and request call on that client fails at once for 1 second up to 1 minute.
+   Without the breaker, each call waits for its own answer or timeout, and a mutation write that times out is reported
+   as "may have been written" instead of "not written". Nothing we measured relies on the fast failure.
 2. Keep the health monitor in 6c? Recommended: yes. Its remaining job without the breaker is to mark a connection
    whose ping goes unanswered as `Reconnecting`. semsource sets its interval.
 3. Only if 1 is B: remove `natsclient.ErrCircuitOpen` and `pkg/errs.ErrCircuitOpen`? Recommended: yes, both. Nothing
-   returns either.
+   returns either. semsource checks for this error in two places; those checks stop compiling at cutover and simply
+   drop the term.
 4. Exports with no contract line: remove `Backoff` and `Status.LastFailureTime` with the breaker, and keep `Client.RTT`
    unchanged? Recommended: yes.

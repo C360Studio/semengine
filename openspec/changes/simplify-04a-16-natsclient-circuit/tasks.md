@@ -38,13 +38,14 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 - [x] 4.1 Spec deltas match the code (checked, no drift); ADR-112 amendment; README and `doc.go` (D4). Gate: `task spec:check`,
   `task docs:check`.
 - [x] 4.2 Ledger natsclient, graphmutation and errs rows (D4). Gate: `task ledger:check`.
-- [ ] 4.3 #291 (graph-ingest `Start`) is linked from the PR without a closing keyword, and #222 gets a comment
-  correcting part c's premises. Gate: each is read back.
+- [x] 4.3 #291 (graph-ingest `Start`) is linked from the PR without a closing keyword, and #222 gets a comment
+  correcting part c's premises. Gate: each is read back (PR body; #222 comment 6233442838).
 
 ## 5. Verify, review and close
 
-- [ ] 5.1 `task verify` passes on a clean tree at the implementation head (includes `task cover:check`, natsclient
-  merged).
-- [ ] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
-- [ ] 5.3 Archive (`openspec archive simplify-04a-16-natsclient-circuit`) as the last content commit. Gate:
+- [x] 5.1 `task verify` passes on a clean tree at the implementation head (includes `task cover:check`, natsclient
+  merged; exit 0 at `bd7478f` and `43c88f2`).
+- [x] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body (Codex APPROVE
+  at `430eed0`; owner directed docs, archive and merge on 2026-10-17).
+- [x] 5.3 Archive (`openspec archive simplify-04a-16-natsclient-circuit`) as the last content commit. Gate:
   `task spec:check`.

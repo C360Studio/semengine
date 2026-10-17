@@ -1,6 +1,7 @@
 package readiness
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/c360studio/semengine/graph"
@@ -16,8 +17,9 @@ import (
 // to influence it:
 //
 //   - each of the four defer reasons fires on its own condition, and only on it;
-//   - an unbootstrapped producer defers even when it looks merely "behind" (the gh#474
-//     cutover window, which is the reason the bit is on the wire at all);
+//   - an unbootstrapped producer defers even when it looks merely "behind" (the
+//     SemStreams gh#474 cutover window, which is the reason the bit is on the wire at
+//     all);
 //   - view age never gates anything, at any magnitude, in either encoding;
 //   - coverage (Ready) neither licenses nor withholds — it is absent from the gate.
 
@@ -37,14 +39,12 @@ func healthy(ready bool, stalenessMs uint64) graph.IndexStatusResponse {
 func TestEvaluateReadinessGate(t *testing.T) {
 	tests := []struct {
 		name       string
-		reading    StatusReading
-		proceed    bool
+		reading    Reading
 		wantReason DeferReason
 	}{
 		{
 			name:    "caught up proceeds",
-			reading: StatusReading{Status: healthy(true, 0), Fresh: true},
-			proceed: true,
+			reading: Reading{Status: healthy(true, 0), Fresh: true},
 		},
 		{
 			// The inverse of the retired "lag defers under exact" row. Lag on a healthy,
@@ -53,14 +53,12 @@ func TestEvaluateReadinessGate(t *testing.T) {
 			// consumer that ever declared a view-age tolerance — is the safest possible
 			// reader of a stale view (periodic, idempotent, overwritten next cycle).
 			name:    "lag proceeds",
-			reading: StatusReading{Status: healthy(false, 200), Fresh: true},
-			proceed: true,
+			reading: Reading{Status: healthy(false, 200), Fresh: true},
 		},
 		{
 			// The inverse of the retired "over the bound defers" row: there is no bound.
 			name:    "a minute-old view proceeds",
-			reading: StatusReading{Status: healthy(false, 60_000), Fresh: true},
-			proceed: true,
+			reading: Reading{Status: healthy(false, 60_000), Fresh: true},
 		},
 		{
 			// The inverse of the retired "absent staleness never satisfies a bound" row.
@@ -69,78 +67,64 @@ func TestEvaluateReadinessGate(t *testing.T) {
 			// blocks anything, because nothing consults the age. It is reported, and a
 			// consumer that surfaces it carries the encoding with it.
 			name:    "an uncomputable view age proceeds",
-			reading: StatusReading{Status: healthy(false, 0), Fresh: true},
-			proceed: true,
+			reading: Reading{Status: healthy(false, 0), Fresh: true},
 		},
 		{
 			name: "an unbootstrapped index defers",
-			// The gh#474 cutover: State=building with a plausible lag, but the keyset
+			// The SemStreams gh#474 cutover: State=building with a plausible lag, but the keyset
 			// is half-materialised. This is the one "not yet" the gate still enforces,
 			// and the reason the bit had to reach the wire.
-			reading: StatusReading{
+			reading: Reading{
 				Status: graph.IndexStatusResponse{State: graph.IndexStateBuilding, TargetRevision: 500, StalenessMs: 10},
 				Fresh:  true,
 			},
-			proceed:    false,
 			wantReason: DeferBootstrapIncomplete,
 		},
 		{
 			name: "an authoritatively empty graph proceeds",
-			// 0/0 after enumeration is a COMPLETED build (gh#474 Codex #5). The
+			// 0/0 after enumeration is a COMPLETED build (SemStreams gh#474 Codex #5). The
 			// producer encodes it as Ready at TargetRevision 0; a gate that deferred
 			// on target==0 would reject every query against a fresh empty deployment
 			// forever.
-			reading: StatusReading{
+			reading: Reading{
 				Status: graph.IndexStatusResponse{Ready: true, State: graph.IndexStateReady, BootstrapComplete: true},
 				Fresh:  true,
 			},
-			proceed: true,
 		},
 		{
 			name: "degraded defers",
-			reading: StatusReading{
+			reading: Reading{
 				Status: graph.IndexStatusResponse{State: graph.IndexStateDegraded, BootstrapComplete: true},
 				Fresh:  true,
 			},
-			proceed:    false,
 			wantReason: DeferHardStop,
 		},
 		{
 			name: "reset_required defers",
-			reading: StatusReading{
+			reading: Reading{
 				Status: graph.IndexStatusResponse{State: graph.IndexStateResetRequired, BootstrapComplete: true},
 				Fresh:  true,
 			},
-			proceed:    false,
 			wantReason: DeferHardStop,
 		},
 		{
 			name:       "an unknown status defers",
-			reading:    StatusReading{Status: healthy(true, 0), Fresh: false},
-			proceed:    false,
+			reading:    Reading{Status: healthy(true, 0), Fresh: false},
 			wantReason: DeferStatusUnknown,
 		},
 		{
 			name: "an uninterpretable state defers",
-			reading: StatusReading{
+			reading: Reading{
 				Status: graph.IndexStatusResponse{State: "rebuilding", BootstrapComplete: true},
 				Fresh:  true,
 			},
-			proceed:    false,
 			wantReason: DeferUnrecognizedState,
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, reason := EvaluateReadinessGate(tt.reading)
-			if got != tt.proceed {
-				t.Errorf("proceed = %v, want %v", got, tt.proceed)
-			}
-			if reason != tt.wantReason {
+			if reason := EvaluateReadinessGate(tt.reading); reason != tt.wantReason {
 				t.Errorf("reason = %q, want %q", reason, tt.wantReason)
-			}
-			if got && reason != DeferNone {
-				t.Errorf("a proceed carried defer reason %q", reason)
 			}
 		})
 	}
@@ -161,9 +145,8 @@ func TestEvaluateReadinessGate_ViewAgeNeverGates(t *testing.T) {
 
 	t.Run("a healthy index proceeds at every view age", func(t *testing.T) {
 		for _, ms := range ages {
-			proceed, reason := EvaluateReadinessGate(
-				StatusReading{Status: healthy(false, ms), Fresh: true})
-			if !proceed {
+			reason := EvaluateReadinessGate(Reading{Status: healthy(false, ms), Fresh: true})
+			if reason != DeferNone {
 				t.Errorf("StalenessMs=%d deferred as %q; view age must never withhold an answer", ms, reason)
 			}
 		}
@@ -180,11 +163,7 @@ func TestEvaluateReadinessGate_ViewAgeNeverGates(t *testing.T) {
 		for want, status := range unhealthy {
 			for _, ms := range ages {
 				status.StalenessMs = ms
-				proceed, reason := EvaluateReadinessGate(StatusReading{Status: status, Fresh: true})
-				if proceed {
-					t.Errorf("%q proceeded at StalenessMs=%d", want, ms)
-				}
-				if reason != want {
+				if reason := EvaluateReadinessGate(Reading{Status: status, Fresh: true}); reason != want {
 					t.Errorf("StalenessMs=%d gave reason %q, want %q", ms, reason, want)
 				}
 			}
@@ -195,21 +174,17 @@ func TestEvaluateReadinessGate_ViewAgeNeverGates(t *testing.T) {
 // TestEvaluateReadinessGate_UnknownStatusNeverProceeds proves the fail-closed
 // transport rule survives the collapse: a status the consumer cannot vouch for is a
 // TRANSPORT fact, evaluated before any index state, so no envelope contents however
-// healthy-looking license proceeding on it (gh#590 — a status RTT timing out behind the
-// firehose logged identically to a genuine not-ready).
+// healthy-looking license proceeding on it (SemStreams gh#590: a status RTT timing out
+// behind the firehose logged identically to a genuine not-ready).
 func TestEvaluateReadinessGate_UnknownStatusNeverProceeds(t *testing.T) {
 	for _, s := range []graph.IndexStatusResponse{
 		{Ready: true, State: graph.IndexStateReady, BootstrapComplete: true},
 		{Ready: false, State: graph.IndexStateBuilding, BootstrapComplete: true, StalenessMs: 1},
 		{},
 	} {
-		proceed, reason := EvaluateReadinessGate(StatusReading{Status: s, Fresh: false})
-		if proceed {
-			t.Errorf("proceeded on an unknown status: %+v", s)
-		}
-		if reason != DeferStatusUnknown {
-			t.Errorf("reason = %q, want %q — an unknown feed must not read as index state",
-				reason, DeferStatusUnknown)
+		if reason := EvaluateReadinessGate(Reading{Status: s, Fresh: false}); reason != DeferStatusUnknown {
+			t.Errorf("status %+v gave reason %q, want %q — an unknown feed must not read as index state",
+				s, reason, DeferStatusUnknown)
 		}
 	}
 }
@@ -237,12 +212,12 @@ func TestEvaluateReadinessGate_CoverageNeitherLicensesNorWithholds(t *testing.T)
 			covered := tc.status
 			covered.Ready = true
 
-			gotNo, reasonNo := EvaluateReadinessGate(StatusReading{Status: notCovered, Fresh: true})
-			gotYes, reasonYes := EvaluateReadinessGate(StatusReading{Status: covered, Fresh: true})
+			reasonNo := EvaluateReadinessGate(Reading{Status: notCovered, Fresh: true})
+			reasonYes := EvaluateReadinessGate(Reading{Status: covered, Fresh: true})
 
-			if gotNo != gotYes || reasonNo != reasonYes {
-				t.Errorf("Ready changed the verdict: false→(%v,%q) true→(%v,%q); coverage must be inert",
-					gotNo, reasonNo, gotYes, reasonYes)
+			if reasonNo != reasonYes {
+				t.Errorf("Ready changed the verdict: false→%q true→%q; coverage must be inert",
+					reasonNo, reasonYes)
 			}
 		})
 	}
@@ -261,11 +236,7 @@ func TestEvaluateReadinessGate_UnrecognizedStateFailsClosed(t *testing.T) {
 		status := graph.IndexStatusResponse{
 			State: state, BootstrapComplete: true, TargetRevision: 100, StalenessMs: 1,
 		}
-		proceed, reason := EvaluateReadinessGate(StatusReading{Status: status, Fresh: true})
-		if proceed {
-			t.Errorf("State %q proceeded; an uninterpretable state must fail closed", state)
-		}
-		if reason != DeferUnrecognizedState {
+		if reason := EvaluateReadinessGate(Reading{Status: status, Fresh: true}); reason != DeferUnrecognizedState {
 			t.Errorf("State %q gave reason %q, want %q — the operator action is a version "+
 				"check, not a config tweak", state, reason, DeferUnrecognizedState)
 		}
@@ -274,7 +245,7 @@ func TestEvaluateReadinessGate_UnrecognizedStateFailsClosed(t *testing.T) {
 	// Every state the producer can actually emit stays interpretable, so the allow-list
 	// cannot silently reject the healthy path.
 	for _, state := range graph.IndexStates() {
-		_, reason := EvaluateReadinessGate(StatusReading{
+		reason := EvaluateReadinessGate(Reading{
 			Status: graph.IndexStatusResponse{State: state, BootstrapComplete: true, Ready: true},
 			Fresh:  true,
 		})
@@ -295,22 +266,22 @@ func TestEvaluateReadinessGate_HealthOrderIsAttributable(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		reading StatusReading
+		reading Reading
 		want    DeferReason
 	}{
 		{
 			name:    "a dead feed outranks everything in the envelope",
-			reading: StatusReading{Status: worst, Fresh: false},
+			reading: Reading{Status: worst, Fresh: false},
 			want:    DeferStatusUnknown,
 		},
 		{
 			name:    "an uninterpretable state outranks the hard stop it might be hiding",
-			reading: StatusReading{Status: worst, Fresh: true},
+			reading: Reading{Status: worst, Fresh: true},
 			want:    DeferUnrecognizedState,
 		},
 		{
 			name: "a hard stop outranks an incomplete build",
-			reading: StatusReading{
+			reading: Reading{
 				Status: graph.IndexStatusResponse{State: graph.IndexStateDegraded, BootstrapComplete: false},
 				Fresh:  true,
 			},
@@ -318,7 +289,7 @@ func TestEvaluateReadinessGate_HealthOrderIsAttributable(t *testing.T) {
 		},
 		{
 			name: "an incomplete build is reported once nothing more fundamental is wrong",
-			reading: StatusReading{
+			reading: Reading{
 				Status: graph.IndexStatusResponse{State: graph.IndexStateBuilding, BootstrapComplete: false},
 				Fresh:  true,
 			},
@@ -327,11 +298,7 @@ func TestEvaluateReadinessGate_HealthOrderIsAttributable(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			proceed, reason := EvaluateReadinessGate(tt.reading)
-			if proceed {
-				t.Fatal("an unhealthy index proceeded")
-			}
-			if reason != tt.want {
+			if reason := EvaluateReadinessGate(tt.reading); reason != tt.want {
 				t.Errorf("reason = %q, want %q", reason, tt.want)
 			}
 		})
@@ -343,13 +310,13 @@ func TestEvaluateReadinessGate_HealthOrderIsAttributable(t *testing.T) {
 // defer_total{reason} label set is enumerated from them, and countDefer silently DROPS
 // an unrecognized value rather than leak cardinality — so a fifth reason introduced
 // without updating that list would go uncounted, which is precisely the invisible-defer
-// shape gh#590 cost three cycles on.
+// shape SemStreams gh#590 cost three cycles on.
 func TestDeferReasons_AreTheClosedSet(t *testing.T) {
-	// Sourced from AllDeferReasons, NOT a literal — this is the test that proves the
+	// Sourced from DeferReasons(), NOT a literal — this is the test that proves the
 	// canonical list and the gate agree, so hand-copying the names here would let both
 	// drift together unnoticed. It stays a real assertion because `seen` below is built
-	// by EXECUTING the gate: a reason the gate emits but AllDeferReasons omits fails the
-	// first check, and a reason AllDeferReasons declares but no reading reaches fails the
+	// by EXECUTING the gate: a reason the gate emits but DeferReasons() omits fails the
+	// first check, and a reason DeferReasons() declares but no reading reaches fails the
 	// second.
 	//
 	// KNOWN LIMIT, verified by mutation: this cannot catch a new reason returned from a
@@ -357,13 +324,13 @@ func TestDeferReasons_AreTheClosedSet(t *testing.T) {
 	// contains what the table provokes. The readings are therefore load-bearing, not
 	// illustrative: a new gate branch needs a new row here, or its reason is unguarded.
 	closed := map[DeferReason]bool{}
-	for _, reason := range AllDeferReasons {
+	for _, reason := range DeferReasons() {
 		closed[reason] = true
 	}
 
 	// A spread of envelopes wide enough to reach every branch, including the
 	// combinations a real producer emits under load.
-	readings := []StatusReading{
+	readings := []Reading{
 		{Status: healthy(true, 0), Fresh: false},
 		{Status: healthy(false, 0), Fresh: true},
 		{Status: healthy(false, 1<<63), Fresh: true},
@@ -375,11 +342,8 @@ func TestDeferReasons_AreTheClosedSet(t *testing.T) {
 	}
 	seen := map[DeferReason]bool{}
 	for _, r := range readings {
-		proceed, reason := EvaluateReadinessGate(r)
-		if proceed {
-			if reason != DeferNone {
-				t.Errorf("proceed carried reason %q", reason)
-			}
+		reason := EvaluateReadinessGate(r)
+		if reason == DeferNone {
 			continue
 		}
 		if !closed[reason] {
@@ -395,25 +359,37 @@ func TestDeferReasons_AreTheClosedSet(t *testing.T) {
 	}
 }
 
-// TestStatusReading_ZeroValueFailsClosed pins the struct's fail-direction. With the
-// Freshness parameter gone, StatusReading is the gate's ENTIRE input, so an
-// uninitialised one reaching it must withhold rather than serve. Fresh's zero value is
-// false, which is the safe direction — this test exists so a future field reordering or
-// an inverted "Stale bool" rename cannot flip it silently.
-func TestStatusReading_ZeroValueFailsClosed(t *testing.T) {
-	proceed, reason := EvaluateReadinessGate(StatusReading{})
-	if proceed {
-		t.Fatal("the zero-value StatusReading proceeded; an uninitialised reading must fail closed")
-	}
-	if reason != DeferStatusUnknown {
-		t.Errorf("reason = %q, want %q — nothing was ever received", reason, DeferStatusUnknown)
+// TestReadingZeroValueFailsClosed pins the gate's fail direction on its whole input.
+// An uninitialised Reading reaching the gate must withhold rather than serve: Fresh's
+// zero value is false, the safe direction, and this test stops a field rename (an
+// inverted "Stale bool") from flipping it silently.
+func TestReadingZeroValueFailsClosed(t *testing.T) {
+	if got := EvaluateReadinessGate(Reading{}); got != DeferStatusUnknown {
+		t.Errorf("zero Reading = %q, want %q: nothing was ever received", got, DeferStatusUnknown)
 	}
 
-	// And the deliberate in-process shape (a producer computing its own envelope, with
-	// no transport to lose) is the ONLY thing that opens it: Fresh must be set
-	// explicitly, and the envelope must still pass health on its own merits.
-	proceed, _ = EvaluateReadinessGate(StatusReading{Status: healthy(false, 250), Fresh: true})
-	if !proceed {
-		t.Error("an in-process healthy reading deferred; Fresh: true is the whole opt-in")
+	// The in-process shape (a producer computing its own envelope, with no transport to
+	// lose) sets only Status and Fresh. Fresh is the whole opt-in; Known, Age, Raw and
+	// Err are the Watcher's and the gate does not read them.
+	if got := EvaluateReadinessGate(Reading{Status: healthy(false, 250), Fresh: true}); got != DeferNone {
+		t.Errorf("in-process healthy Reading = %q, want proceed (%q)", got, DeferNone)
+	}
+}
+
+// TestDeferReasonsReturnsACopy: DeferReasons gives the four defer reasons, and a caller
+// that writes to the slice it got cannot change what the next caller gets.
+func TestDeferReasonsReturnsACopy(t *testing.T) {
+	// The oracle is the four label values the spec names, not the package's constants.
+	want := []DeferReason{"hard_stop", "status_unknown", "unrecognized_state", "bootstrap_incomplete"}
+
+	first := DeferReasons()
+	if !slices.Equal(first, want) {
+		t.Fatalf("DeferReasons() = %q, want %q", first, want)
+	}
+	for i := range first {
+		first[i] = "overwritten"
+	}
+	if second := DeferReasons(); !slices.Equal(second, want) {
+		t.Errorf("after the caller overwrote its slice, DeferReasons() = %q, want %q", second, want)
 	}
 }

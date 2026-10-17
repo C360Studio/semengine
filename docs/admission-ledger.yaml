@@ -2013,25 +2013,31 @@
     graph/readiness (also receives graph/readiness_gate.go and ComputeBacklogStatus with
     BacklogStatusInputs from graph/index_status.go; design D16)
   contract: >-
-    Publisher, gauges, Watcher, EvaluateReadinessGate, StatusReading, and ComputeBacklogStatus as at
-    the pin, with these adaptations: (1) Watcher.Run(ctx) runs on the caller's goroutine and refuses
+    Publisher, gauges, Watcher, EvaluateReadinessGate, and ComputeBacklogStatus as at the pin, with
+    these adaptations: (1) Watcher.Run(ctx) runs on the caller's goroutine and refuses
     nil ctx, nil source, or empty key (Start/Stop removed, design D5); (2) an undecodable KV value
     revokes freshness immediately until the next valid update; (3) Publisher.Publish stamps
     published_at in UTC RFC3339Nano (design D16; ADR-109 removes it in #183); (4) BacklogStatusInputs
     drops LastSynced; (5) gauges register via metric.RegisterOrGet under the semengine namespace and a
-    nil registry is a no-op (design D4)
+    nil registry is a no-op (design D4); (6) EvaluateReadinessGate takes the Watcher's Reading and
+    returns one DeferReason, DeferNone to proceed; StatusReading removed; DeferReasons() returns a
+    new slice, replacing AllDeferReasons; (7) NewWatcher(src, key, heartbeat, logger) replaces the
+    options and test hooks; Run also refuses a heartbeat of zero or less and a nil logger; the
+    freshness multiplier and window are unexported; (8) NewPublisher returns an error for a nil
+    bucket or an empty key; EnsureBucket removed, producers call kvcatalog.EnsureCatalogBucket; (9)
+    NewGauges takes the Prometheus subsystem; ProducerNames, MetricNames and the BucketGraphStatus
+    alias removed (simplify-04a-15-graph-readiness D1-D5)
   dependencies_and_side_effects: >-
     graph, graph/kvcatalog, metric, natsclient (in-set); nats.go/jetstream,
     prometheus/client_golang; KV reads/writes on GRAPH_STATUS; Watcher.Run runs on caller goroutine
   known_risks: >-
     Set/NewSet/Dump/Verdict dropped (no starter consumer caller; ADR-109; #110 rewritten under
     ADR-109 so Health() derives from nothing in the envelope). ComputeIndexStatus and
-    WithRevisionGauges deferred to change 4 with graph-index (ruled P, design D16), which fixes
-    #135 (b) (BootstrapComplete never set); #135 items 1, 2, (c), and (g) on the kept gate and
-    Watcher stay open on #135
+    WithRevisionGauges deferred to change 4 with graph-index (ruled P, design D16). Reading.Raw
+    stays for fusion's port (#110, ADR-109)
   proving_tests: >-
     graph/readiness/watcher_test.go, publisher_test.go, gauges_test.go, readiness_gate_test.go,
-    backlog_status_test.go, index_status_test.go, bucket_alias_test.go
+    backlog_status_test.go; the envelope's JSON in graph/index_status_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 

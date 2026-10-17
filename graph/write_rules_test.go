@@ -3,7 +3,6 @@ package graph_test
 import (
 	"encoding/json"
 	"reflect"
-	"strings"
 	"testing"
 	"time"
 
@@ -234,23 +233,6 @@ func TestStoredEntityHasNoVersion(t *testing.T) {
 	}
 	if decoded.ID != subject {
 		t.Fatalf("decoded ID = %q, want %q", decoded.ID, subject)
-	}
-}
-
-// Requirement: graph-transport-boundary/The readiness envelope carries its publish time and no legacy fields
-func TestIndexStatusResponseHasNoLegacyFields(t *testing.T) {
-	typ := reflect.TypeOf(graph.IndexStatusResponse{})
-	tags := map[string]bool{}
-	for i := range typ.NumField() {
-		tags[strings.Split(typ.Field(i).Tag.Get("json"), ",")[0]] = true
-	}
-	for _, legacy := range []string{"phase", "revision", "last_synced"} {
-		if tags[legacy] {
-			t.Errorf("IndexStatusResponse carries the legacy field %q", legacy)
-		}
-	}
-	if !tags["published_at"] || !tags["indexed_revision"] {
-		t.Errorf("IndexStatusResponse fields %v lack published_at or indexed_revision", tags)
 	}
 }
 

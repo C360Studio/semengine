@@ -745,9 +745,7 @@ func (c *Component) registerMetrics(registry *metric.MetricsRegistry) error {
 	// gauges: graph-ingest is a BACKLOG producer, and the spec states such a
 	// producer SHALL NOT expose indexed_revision / target_revision and SHALL NOT
 	// synthesize a value — a fabricated revision is worse than an absent one.
-	c.readinessGauges = readiness.NewGauges(
-		readiness.ProducerNames{Service: metricService, Subsystem: "graph_ingest"},
-	)
+	c.readinessGauges = readiness.NewGauges("graph_ingest")
 	if err := c.readinessGauges.Register(registry); err != nil {
 		return err
 	}

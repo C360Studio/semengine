@@ -56,9 +56,10 @@ stays.
 
 ## D3. One publish path
 
-`publishToStream` becomes the one path, returning `(*jetstream.PubAck, error)`.
+One helper makes the connection and JetStream checks, and one function builds the message; each synchronous call
+then publishes with `js.PublishMsg` itself (orchestrator ruling, `notes/3.3.md`: no flag switches error handling).
 
-- `PublishToStream` and `PublishToStreamWithMsgID` return its error unchanged.
+- `PublishToStream` and `PublishToStreamWithMsgID` return nats.go's error unchanged.
 - `PublishToStreamWithAck` behaves as today:
   - `ErrNotConnected` and a `JetStream()` error come back bare and are not counted;
   - only a failure of the publish itself is counted as `publish_to_stream` and wrapped as transient.

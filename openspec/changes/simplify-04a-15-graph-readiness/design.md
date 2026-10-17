@@ -121,7 +121,8 @@ Kinds: **Plumbing** has a production caller here, or at the pin in an admitted p
 - Also done here, closed elsewhere: #132 items b (rest) and i (8c routes them here; #132 closes with #286).
 - Stay: #110 (change 5), #183 (PR 10: `published_at` in `Publish`), #133 (8d: `IsKVTombstone`, `watcher.go:377`),
   #103 (change 4; its cite of the read-your-writes comment moves), #161 (the harness check).
-- Merge order: #286 first. It is in final review and, since its commits of 2026-10-17 (`ac7a7f2`, `dcdd011`), edits
+- Merge order: #286 first; it merged on 2026-10-17 as `2d9ce7c`, and this branch merged `origin/main` with it in.
+  Since its commits of 2026-10-17 (`ac7a7f2`, `dcdd011`) it edited
   six files here (inventory § 3). The owner's reason for taking 8e ahead of 8d (#223 comment 6232804491: "8c leaves
   `graph/readiness` alone") no longer holds for batches 2 and 3, and 8c's own design says 8e starts after 8c merges
   (`simplify-04a-13-graph/design.md`, "Open issues and merge order"). It still holds for batch 1: `watcher.go` and
@@ -129,23 +130,18 @@ Kinds: **Plumbing** has a production caller here, or at the pin in an admitted p
   this branch merges `origin/main` with #286 in it. #288 has no overlap. 8d and PR 10 come after this change and
   inherit D2 and D3.
 
-## Owner questions
+## Owner rulings
 
-1. Later ports (graph-index, graph-embedding, rule, fusion, graph-clustering) call four things this design reshapes.
-   In each, the job stays and only the spelling changes; each port then edits one call, and the compiler points to
-   it. For 6a and 8c you decided that a name read only by a package not yet ported stays public. That decision kept
-   such names; it did not say whether their spelling may change. Please answer each:
-   - (a) The watcher's option functions (`WithHeartbeat`, `WithLogger`) become plain constructor arguments.
-     **Recommended: yes.**
-   - (b) `EnsureBucket` goes; producers call the bucket catalog's own `EnsureCatalogBucket`, as graph-ingest already
-     does for its other buckets. **Recommended: yes.**
-   - (c) The shared list of defer reasons becomes a function that returns a fresh copy, so no importer can change it.
-     **Recommended: yes.**
-   - (d) The gate answers with one reason instead of a yes/no plus a reason that always agree. This departs from the
-     two-value answer in ADR-083 Decision 4; ADR-085 Decision 1 already describes "a verdict". **Recommended: yes.**
-2. semconnect's conformance tool reads `readiness.BucketGraphStatus`, an alias of `graph.BucketGraphStatus` that a
-   test keeps equal. **Recommended: remove the alias.** semconnect switches the import when it adopts SemEngine.
-   Keeping it keeps two names for one bucket.
+The owner answered both questions on 2026-10-17 ([#135 comment 6233107973](https://github.com/C360Studio/semengine/issues/135#issuecomment-6233107973)).
+Each ruling maps to the code that carries it:
+
+| Ruling | Decision | Carried by |
+| --- | --- | --- |
+| 1(a) | The Watcher's option functions become constructor arguments | `graph/readiness/watcher.go:184` `NewWatcher(src, key, heartbeat, logger)` (task 2.2, done) |
+| 1(b) | `EnsureBucket` goes; producers call `kvcatalog.EnsureCatalogBucket` | task 3.3 (pending) |
+| 1(c) | `AllDeferReasons` becomes `DeferReasons()`, returning a copy | task 3.2 (pending) |
+| 1(d) | The gate returns one `DeferReason` (ADR-083 Decision 4's two values give way to ADR-085 Decision 1) | task 3.2 (pending) |
+| 2 | The `readiness.BucketGraphStatus` alias and `bucket_alias_test.go` are removed | task 3.3 (pending) |
 
 FYI, no ruling needed: `FreshnessMultiplier` and `FreshnessWindow` become private. Nothing outside the package reads
 them, here or at the pin, and ADR-109 dropped freshness from the contract. See the merge order above for

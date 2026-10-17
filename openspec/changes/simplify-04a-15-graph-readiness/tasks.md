@@ -3,7 +3,7 @@
 Each task names its outcome and the gate that proves it. Tests come first; record in `notes/<task>.md` how each fails
 on the base commit, or, for a refactor whose behaviour does not change, which mutant it detects. Review stops (Codex)
 after 2.2, 3.3 and 4.2. Each stop's task ends only when `task verify` passes on a clean tree at its commit (#171).
-Batch 1 can start on the base; batches 2 and 3 start after this branch merges `origin/main` with #286 in it.
+Batch 1 started on the base; batches 2 and 3 started after #286 merged (`2d9ce7c`) and this branch merged `origin/main`.
 
 ## 1. Design
 
@@ -43,7 +43,8 @@ Batch 1 can start on the base; batches 2 and 3 start after this branch merges `o
 
 - [ ] 4.1 #132 item i: the four `graph.IndexStatusResponse` round-trip tests and `TestIndexStatusResponseHasNoLegacyFields`
   as one table test in `graph/index_status_test.go`. Gate: `go test ./graph/ ./graph/readiness/`; `task cover:check`.
-- [ ] 4.2 The package comment and the comments D6 names; the `graph/readiness` ledger row. Gate: `go doc
+- [ ] 4.2 The package comment and the comments D6 names, including `publisher.go:19`'s cite of a
+  `graph/kvcatalog.go` file that does not exist (#293); the `graph/readiness` ledger row. Gate: `go doc
   ./graph/readiness` shows the ADR-109 wording; `task verify` passes on a clean tree, which runs `ledger:check` and
   `docs:check` (review stop).
 

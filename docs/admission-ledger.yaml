@@ -866,6 +866,7 @@
     WatchFiltered (it took one offering ListKeysFiltered), completes as KeysByFilter does, and returns
     nil and no error when no key matches (TestIntegration_FilteredKeyListingsNoMatch).
     collectFilteredKeys and the ErrNoKeysFound and ErrKeyNotFound branches are removed.
+    Changed surface, simplify-04a-17 (#133): IsKVTombstone, moved from graph/kvcatalog.
     Changed behavior, design D9 (task 3.7): newJetStreamMetrics registers
     all 12 collectors through metric.RegisterOrGet and keeps the collector each call returns
     (jetstream_metrics.go:128-161 at the pin, where 8 went through the removed Register* methods,
@@ -1974,8 +1975,9 @@
     codecs, mutation and query request/reply types, GRAPH_STATUS envelope); consumers import it
     (72 + 11, design D1)
   destination: >-
-    graph (the data model and wire types only; kvcatalog.go, owned_bucket_retention.go, and
-    IsKVTombstone moved to graph/kvcatalog; readiness_gate.go and ComputeBacklogStatus moved to
+    graph (the data model and wire types only; kvcatalog.go and owned_bucket_retention.go moved to
+    graph/kvcatalog, and IsKVTombstone to graph/kvcatalog, then natsclient
+    (simplify-04a-17-graph-kvcatalog D5); readiness_gate.go and ComputeBacklogStatus moved to
     graph/readiness; design D16, #101)
   contract: >-
     data model, codecs, bucket-name constants (BucketSemEngineConfig = "semengine_config", #69),
@@ -1999,7 +2001,11 @@
     (12) EntityMutationResponse replaces CreateEntityResponse and ReconcilePredicatesResponse; the
     cursor codec and the trusted decoder moved, unexported, into graph-ingest;
     ValidateEntityPredicates unexported; (13) IndexStatusResponse.State is an IndexState, and
-    IndexStates() returns the closed state list as a new slice (simplify-04a-13-graph D1-D6)
+    IndexStates() returns the closed state list as a new slice (simplify-04a-13-graph D1-D6); (14)
+    graph/kvcatalog (simplify-04a-17-graph-kvcatalog D1-D5): KVCatalog is framework API for
+    products (graph/README.md) and returns a copy of the catalog table, built once
+    (TestKVCatalogReturnsACopy); the catalog's refusals name component kvcatalog;
+    EnsureCatalogRetentionClean refuses a nil context as invalid; IsKVTombstone moved to natsclient
   dependencies_and_side_effects: >-
     message, pkg/errs, pkg/types, vocabulary (in-set); stdlib; no NATS import in graph root;
     graph/kvcatalog imports natsclient and nats.go/jetstream
@@ -2044,7 +2050,7 @@
     alias removed (simplify-04a-15-graph-readiness D1-D5); (10) Publish and WaitForFirst return an
     error for a nil ctx, Publish before any write (readiness-nil-context, #297)
   dependencies_and_side_effects: >-
-    graph, graph/kvcatalog, metric, natsclient (in-set); nats.go/jetstream,
+    graph, metric, natsclient (in-set); nats.go/jetstream,
     prometheus/client_golang; KV reads/writes on GRAPH_STATUS; Watcher.Run runs on caller goroutine
   known_risks: >-
     Set/NewSet/Dump/Verdict dropped (no starter consumer caller; ADR-109; #110 rewritten under

@@ -26,7 +26,8 @@ transport"; `TestGraphImportsNoTransport`).
   across a request and its reply, and `IsStateContractError` recognises it. Entity-ID prefixes and the predicate token
   codec sit beside them.
 - **Bucket names.** The `Bucket*` constants name the graph's buckets. The catalog that describes and acquires them is
-  `graph/kvcatalog`.
+  `graph/kvcatalog`. A product that needs the full list of framework buckets calls `kvcatalog.KVCatalog()`: it returns
+  a copy of every descriptor, so editing the result changes nothing the framework resolves.
 - **The wire types.** The query request and reply types, the mutation requests and responses
   (`ReconcilePredicatesRequest` names the one source it reconciles), `ExactEntity` and `ExactEntityReader` for the
   authority read, and `IndexStatusResponse`, the readiness envelope a producer writes to `GRAPH_STATUS`. Its state
@@ -126,7 +127,9 @@ This provides maximum flexibility while maintaining semantic clarity.
 
 ## What is elsewhere
 
-- `graph/kvcatalog`: the bucket catalog, its acquisition, the owned-bucket retention check and `IsKVTombstone`.
+- `graph/kvcatalog`: the bucket catalog, its acquisition, the owned-bucket retention check and the write-guard pair
+  (`IsFrameworkOwnedBucket`, `FrameworkOwnedWriteRefusal`) the rule engine reads once it is ported (change 6).
+- `natsclient`: `IsKVTombstone`, which reports whether a KV watch entry is a delete or a purge.
 - `graph/readiness`: the readiness computation and the GRAPH_STATUS publisher.
 - `graph/inference`: hierarchy inference (its hierarchy slice).
 

@@ -117,8 +117,9 @@ type RetentionPolicy struct {
 }
 
 // BucketSpec is one framework bucket's full declaration: identity, ownership,
-// policy, and bucket configuration. The catalog (kvcatalog.KVCatalog) is a slice
-// of these; every enforcement set the framework uses is a derived view.
+// policy, and bucket configuration. The framework KV catalog (graph/kvcatalog)
+// is a table of these; every enforcement set the framework uses is a derived
+// view.
 type BucketSpec struct {
 	Name        string
 	Owner       string // the component/subsystem that provisions and writes it

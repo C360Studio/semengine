@@ -1283,7 +1283,7 @@ func (c *Component) stopEntityStateGuardWatcher(watcher jetstream.KeyWatcher, up
 // decodeStoredEntity, the rule readEntity applies, so a value naming another
 // entity than its key is inventoried at boot, not at its first read.
 func (c *Component) sweepEntityStateGuardEntry(sweep map[string]entityPoisonRecord, entry jetstream.KeyValueEntry) {
-	if kvcatalog.IsKVTombstone(entry.Operation()) {
+	if natsclient.IsKVTombstone(entry.Operation()) {
 		delete(sweep, entry.Key()) // key deleted: nothing resident to inventory
 		return
 	}

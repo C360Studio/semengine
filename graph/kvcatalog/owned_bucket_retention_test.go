@@ -6,8 +6,8 @@ import (
 	"github.com/c360studio/semengine/graph"
 )
 
-// TestIsFrameworkOwnedBucket_IncludesOperationalBuckets pins the F2/F3
-// write-ownership fixes: GRAPH_INGEST_APPLIED_SEQ (redelivery-guard stamps, #715)
+// TestIsFrameworkOwnedBucket_IncludesOperationalBuckets pins two operational
+// buckets' write-ownership: GRAPH_INGEST_APPLIED_SEQ (redelivery-guard stamps, SemStreams #715)
 // and GRAPH_STATUS (readiness envelopes) are members of the owned set, so a
 // generic rule update_kv cannot forge a sequence stamp or readiness at either
 // guard site. Both are correctness-critical no-eviction state; the retention
@@ -23,7 +23,7 @@ func TestIsFrameworkOwnedBucket_IncludesOperationalBuckets(t *testing.T) {
 }
 
 // TestIsFrameworkOwnedBucket_NoEmbeddingsCache pins the EMBEDDINGS_CACHE
-// deletion (reopen-framework-owned-bucket-guards): the dead
+// bucket's removal from the catalog: the dead
 // created-but-never-read-or-written surface is gone from the owned set, with
 // no bucket existing solely to carry a guard exemption. One owned bucket sits
 // outside the retention backstop by design: a strict-retention row (the

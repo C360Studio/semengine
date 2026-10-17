@@ -16,6 +16,7 @@ import (
 	"sort"
 
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 	semtypes "github.com/c360studio/semengine/pkg/types"
 	"github.com/nats-io/nats.go/jetstream"
@@ -164,7 +165,7 @@ func (m *Manager) Watch(ctx context.Context, workflow string, onParticipant func
 // WatchEvents is the delete-visible sibling of Watch: it calls onEvent with
 // Events — Upserted (with projected Participant) for matching
 // creates/phase-changes, and Deleted (Participant nil) for reclaims
-// (KeyValueDelete/KeyValuePurge) whose key matches the workflow's
+// (a delete or purge) whose key matches the workflow's
 // EntityIDPattern. Bootstrap-then-live like Watch for Upserted; Deleted
 // events are normally live, but the pattern-watch bootstrap can also replay a
 // key whose latest revision is a tombstone — so a Deleted may arrive
@@ -257,7 +258,7 @@ func (m *Manager) runWatchLoop(
 // kept; an entry the stored-value rule refuses (graph.UnmarshalEntityState
 // under the entry's key), or one it cannot project, is an error, never a skip.
 func watchEvent(reg *registration, entry jetstream.KeyValueEntry) (Event, bool, error) {
-	if entry.Operation() == jetstream.KeyValueDelete || entry.Operation() == jetstream.KeyValuePurge {
+	if natsclient.IsKVTombstone(entry.Operation()) {
 		if !matchesWorkflow(reg, entry.Key()) {
 			return Event{}, false, nil
 		}

@@ -1,4 +1,4 @@
-package kvcatalog
+package natsclient
 
 import (
 	"testing"

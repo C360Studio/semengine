@@ -217,6 +217,13 @@ Creates a KVStore instance for high-level KV operations.
 
 Performs CAS update on JSON data with automatic retry on conflicts.
 
+#### `IsKVTombstone`
+
+`IsKVTombstone(operation jetstream.KeyValueOp) bool`
+
+Reports whether a KV watch entry removes its key: a delete or a purge. Both arrive with an empty value, so a
+watcher that handles a removal checks this one predicate rather than testing for a delete and forgetting the purge.
+
 ### Logging
 
 `WithLogger(logger *slog.Logger) ClientOption` sets the logger for debug output.

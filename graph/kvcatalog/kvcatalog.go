@@ -1,10 +1,20 @@
-// Package kvcatalog is the POPULATION half of the framework KV bucket catalog
-// (framework-bucket-catalog): the ONE literal table of every KV bucket whose
-// write-ownership or retention the framework guarantees, and its acquisition.
-// The mechanism half — the BucketSpec type and the Ensure/Open acquisition
-// seam — lives in natsclient/kvspec.go, name-free. The bucket names are the
-// graph package's Bucket* constants; this package holds the descriptors and
-// the NATS edge, so the graph root imports no transport.
+// Package kvcatalog holds the framework KV bucket catalog: the ONE literal
+// table of every KV bucket whose write-ownership or retention the framework
+// guarantees. Around the table it offers:
+//
+//   - KVCatalog, a copy of the whole table, and SpecFor and OwnerOf, lookups
+//     by bucket name;
+//   - EnsureCatalogBucket, which a bucket's owner calls to acquire it, and
+//     OpenCatalogReader, which readers call;
+//   - EnsureCatalogRetentionClean, the pre-start retention backstop;
+//   - IsFrameworkOwnedBucket and FrameworkOwnedWriteRefusal, the write-guard
+//     pair the rule engine's update_kv guard reads (the rule engine is ported
+//     in change 6).
+//
+// The BucketSpec type and the Ensure/Open acquisition seam live in
+// natsclient/kvspec.go and name no bucket. The bucket names are the graph
+// package's Bucket* constants; this package holds the descriptors and the NATS
+// edge, so the graph root imports no transport.
 //
 // Boundary rule (so the catalog cannot grow by accretion): a bucket belongs
 // here ONLY if the framework guarantees its write-ownership or retention.
@@ -12,9 +22,8 @@
 // stores, workflow-type Lifecycle buckets, research-graph state, ...) are
 // outside it by rule and keep plain CreateKeyValueBucket.
 //
-// Every check the framework enforces from is a DERIVED view of this table:
-// IsFrameworkOwnedBucket (the rule update_kv write guard) reads
-// Write == WriteOwnerOnly; the pre-start legacy-drift backstop
+// Every check the framework enforces is a DERIVED view of this table:
+// IsFrameworkOwnedBucket reads Write == WriteOwnerOnly; the pre-start legacy-drift backstop
 // (EnsureCatalogRetentionClean) filters Retention.Kind == RetentionNoLifecycle.
 // There is no parallel hand-maintained list to forget a member from. That no
 // other non-test file names a catalog bucket in a string literal is review
@@ -29,6 +38,7 @@ package kvcatalog
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/c360studio/semengine/graph"
@@ -37,9 +47,16 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-// KVCatalog returns the full descriptor table. The slice is rebuilt per call
-// so no caller can mutate the catalog for another.
+// KVCatalog returns every framework bucket descriptor. It is framework API for
+// products (graph/README.md). The slice is a copy: a caller's edit changes
+// neither the table SpecFor resolves from nor another caller's list.
 func KVCatalog() []natsclient.BucketSpec {
+	return slices.Clone(catalog)
+}
+
+// catalog is the descriptor table, built once. A BucketSpec holds no slice, map
+// or pointer, so a row SpecFor returns by value cannot alias it.
+var catalog = func() []natsclient.BucketSpec {
 	noLifecycle := natsclient.RetentionPolicy{Kind: natsclient.RetentionNoLifecycle}
 	owned := func(name, owner, description string, class natsclient.BucketClass) natsclient.BucketSpec {
 		return natsclient.BucketSpec{
@@ -110,15 +127,16 @@ func KVCatalog() []natsclient.BucketSpec {
 	// reminted as a second authority ADR-102 d7 forbids ever reconciling — and
 	// it is OWNER-ONLY for the same reason one level up.
 	//
-	// The row is a NAME FAMILY (see nameFamilies): each deployment's bucket is
+	// The row is a NAME FAMILY (see SpecFor): each deployment's bucket is
 	// "semengine_config_<org>_<stem>" (SemStreams #1188), and SpecFor resolves every
 	// member to this descriptor carrying the member's concrete name.
 	//
 	// Owner-only is not about who may write the bucket: config.Manager acquires
 	// it, and processor/rule's ConfigManager writes rules.* through the key
 	// family config.Manager serves it; neither consults this policy
-	// (at the pin IsFrameworkOwnedBucket has exactly two callers, both rule update_kv
-	// guards). It is about who may NOT. A generic update_kv into
+	// (at the pin IsFrameworkOwnedBucket has three call sites, all in
+	// processor/rule: load validation, the update_kv action and its writer
+	// acquisition). It is about who may NOT. A generic update_kv into
 	// platform_identity plain-Puts over the create-once record: a forged id
 	// whose org and stem match is ADOPTED on the next boot, because adoption
 	// validates grammar and byte budget and nothing else, so a rule pack could
@@ -147,7 +165,7 @@ func KVCatalog() []natsclient.BucketSpec {
 		// Authoritative domain state + graph-ingest's operational tiers.
 		entityStates,
 		owned(graph.BucketGraphIngestAppliedSeq, "graph-ingest",
-			"graph-ingest redelivery guard: (entityID/streamName) -> stream generation and last-applied sequence (ADR-072)",
+			"graph-ingest redelivery guard: (entityID/streamName) -> stream generation and last-applied sequence (SemStreams ADR-072)",
 			natsclient.ClassOperational),
 
 		// graph-index's four config-declared output indexes + the name lookup internal.
@@ -169,7 +187,7 @@ func KVCatalog() []natsclient.BucketSpec {
 		derived(graph.BucketEmbeddingDedup, "graph-embedding", "Entity embedding deduplication"),
 		derived(graph.BucketCommunityIndex, "graph-clustering", "Community detection index"),
 		derived(graph.BucketCommunitySummaries, "graph-clustering",
-			"LLM community summaries (content-addressed by membership hash, ADR-087)"),
+			"LLM community summaries (content-addressed by membership hash, SemStreams ADR-087)"),
 		derived(graph.BucketAnomalyIndex, "graph-clustering",
 			"Anomaly detection index for structural gaps and inferences"),
 
@@ -178,24 +196,21 @@ func KVCatalog() []natsclient.BucketSpec {
 		storageReport,
 		semengineConfig,
 	}
-}
-
-// nameFamilies are the catalog rows whose Name is a PREFIX rather than a
-// bucket: every "<Name>_<suffix>" with a nonempty suffix is a member and
-// resolves to the row carrying its concrete name. The bare prefix is not a
-// member. The runtime configuration bucket is the one family: its members are
-// named per deployment by config.BucketName (#1188).
-var nameFamilies = map[string]bool{graph.BucketSemEngineConfig: true}
+}()
 
 // SpecFor resolves a bucket name to its catalog descriptor. The second return
-// is false for a name outside the catalog — the F2 boot-failure signal for a
-// configuration-supplied bucket name that resolves to nothing (an operator
+// is false for a name outside the catalog, which callers turn into a boot
+// failure for a configuration-supplied bucket name that resolves to nothing (an operator
 // typo may not silently create a stray unguarded bucket). A member of a name
 // family resolves to its family's row with Name set to the member's name, so
 // acquisition creates the member and every owner-only guard refuses it.
+//
+// The runtime configuration row is the one family: its Name is a PREFIX, and
+// every "<Name>_<suffix>" with a nonempty suffix is a member, named per
+// deployment by config.BucketName (SemStreams #1188). The bare prefix is not a member.
 func SpecFor(name string) (natsclient.BucketSpec, bool) {
-	for _, spec := range KVCatalog() {
-		if nameFamilies[spec.Name] {
+	for _, spec := range catalog {
+		if spec.Name == graph.BucketSemEngineConfig {
 			if suffix, ok := strings.CutPrefix(name, spec.Name+"_"); ok && suffix != "" {
 				spec.Name = name
 				return spec, true
@@ -234,13 +249,23 @@ func OwnerOf(bucket string) string {
 // Only a bucket's declared owner calls this; readers use OpenCatalogReader.
 // A name outside the catalog is an invalid-config error naming it.
 func EnsureCatalogBucket(ctx context.Context, client *natsclient.Client, name string) (jetstream.KeyValue, error) {
-	spec, ok := SpecFor(name)
-	if !ok {
-		return nil, errs.WrapInvalid(
-			fmt.Errorf("bucket %q is not in the framework KV catalog", name),
-			"graph", "EnsureCatalogBucket", "resolve framework bucket")
+	spec, err := resolve(name, "EnsureCatalogBucket")
+	if err != nil {
+		return nil, err
 	}
 	return natsclient.EnsureFrameworkBucket(ctx, client, spec)
+}
+
+// resolve is SpecFor for the acquisition seams: a name outside the catalog is
+// an invalid-config error naming it and the calling operation.
+func resolve(name, operation string) (natsclient.BucketSpec, error) {
+	spec, ok := SpecFor(name)
+	if !ok {
+		return natsclient.BucketSpec{}, errs.WrapInvalid(
+			fmt.Errorf("bucket %q is not in the framework KV catalog", name),
+			"kvcatalog", operation, "resolve framework bucket")
+	}
+	return spec, nil
 }
 
 // CatalogReader is the read-only capability returned by OpenCatalogReader.
@@ -269,11 +294,9 @@ type catalogReader struct {
 // naming the catalog owner. A name outside the catalog is an invalid-config
 // error naming it.
 func OpenCatalogReader(ctx context.Context, client *natsclient.Client, name string) (CatalogReader, error) {
-	spec, ok := SpecFor(name)
-	if !ok {
-		return nil, errs.WrapInvalid(
-			fmt.Errorf("bucket %q is not in the framework KV catalog", name),
-			"graph", "OpenCatalogReader", "resolve framework bucket")
+	spec, err := resolve(name, "OpenCatalogReader")
+	if err != nil {
+		return nil, err
 	}
 	bucket, err := natsclient.OpenFrameworkBucket(ctx, client, spec)
 	if err != nil {

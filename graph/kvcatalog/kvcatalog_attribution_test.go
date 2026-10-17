@@ -153,8 +153,8 @@ func TestOwnerOfIsTheStorageInventoryAttributionSeam(t *testing.T) {
 
 // TestOwnerOfReportsUnattributedForRemovedCatalogRow is the spec's
 // "attribution follows the catalog rather than a copy of it" scenario expressed
-// against the real catalog function: OwnerOf resolves through KVCatalog() on
-// every call, so a row removed from the table stops resolving immediately. The
+// against the real catalog table: OwnerOf resolves through the table on every
+// call, so a row removed from it stops resolving immediately. The
 // inventory holds no mapping that could outlive the row.
 func TestOwnerOfReportsUnattributedForRemovedCatalogRow(t *testing.T) {
 	require.NotEmpty(t, OwnerOf(graph.BucketEntityStates),
@@ -166,7 +166,7 @@ func TestOwnerOfReportsUnattributedForRemovedCatalogRow(t *testing.T) {
 		"a bucket the catalog does not declare has no owner to report")
 
 	names := make(map[string]bool)
-	for _, spec := range KVCatalog() {
+	for _, spec := range catalog {
 		names[spec.Name] = true
 	}
 	assert.False(t, names["A_BUCKET_NO_CATALOG_ROW_DECLARES"])

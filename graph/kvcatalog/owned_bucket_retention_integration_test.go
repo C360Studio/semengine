@@ -4,6 +4,7 @@ package kvcatalog
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/natsclient"
+	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -157,11 +159,29 @@ func TestIntegration_EnsureCatalogRetentionClean_SkipsAbsentBuckets(t *testing.T
 	require.NoError(t, EnsureCatalogRetentionClean(ctx, client, slog.New(&recordingHandler{})))
 
 	// The backstop must NOT have created any guarded bucket.
-	for _, spec := range KVCatalog() {
+	for _, spec := range catalog {
 		_, err := client.GetKeyValueBucket(ctx, spec.Name)
 		assert.ErrorIs(t, err, jetstream.ErrBucketNotFound,
 			"backstop must not create absent bucket %s", spec.Name)
 	}
+}
+
+// TestIntegration_EnsureCatalogRetentionClean_RefusesNilContext: a nil context
+// is the caller's bug, so the refusal is invalid, not a transient fault to
+// retry. The client is connected, so the call reaches past the nil-client check.
+func TestIntegration_EnsureCatalogRetentionClean_RefusesNilContext(t *testing.T) {
+	client := fixtureClient(t)
+
+	var nilCtx context.Context
+	err := EnsureCatalogRetentionClean(nilCtx, client, slog.New(&recordingHandler{}))
+	require.Error(t, err)
+
+	var classified *errs.ClassifiedError
+	require.True(t, errors.As(err, &classified))
+	assert.Equal(t, errs.ErrorInvalid, classified.Class, "outer class: %v", err)
+	assert.Equal(t, "kvcatalog", classified.Component)
+	assert.Equal(t, "EnsureCatalogRetentionClean", classified.Operation)
+	assert.Contains(t, err.Error(), "nil context")
 }
 
 // TestIntegration_EnsureCatalogRetentionClean_StripsGraphStatusTTL_PreservesHistory

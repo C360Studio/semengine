@@ -1975,7 +1975,9 @@
     (12) EntityMutationResponse replaces CreateEntityResponse and ReconcilePredicatesResponse; the
     cursor codec and the trusted decoder moved, unexported, into graph-ingest;
     ValidateEntityPredicates unexported; (13) IndexStatusResponse.State is an IndexState, and
-    IndexStates() returns the closed state list as a new slice (simplify-04a-13-graph D1-D6)
+    IndexStates() returns the closed state list as a new slice (simplify-04a-13-graph D1-D6); (14)
+    graph/kvcatalog.KVCatalog is framework API for products (graph/README.md) and returns a copy
+    of the catalog table, built once (simplify-04a-17-graph-kvcatalog D1, TestKVCatalogReturnsACopy)
   dependencies_and_side_effects: >-
     message, pkg/errs, pkg/types, vocabulary (in-set); stdlib; no NATS import in graph root;
     graph/kvcatalog imports natsclient and nats.go/jetstream

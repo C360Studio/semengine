@@ -29,6 +29,7 @@ package kvcatalog
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/c360studio/semengine/graph"
@@ -37,9 +38,16 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-// KVCatalog returns the full descriptor table. The slice is rebuilt per call
-// so no caller can mutate the catalog for another.
+// KVCatalog returns every framework bucket descriptor. It is framework API for
+// products (graph/README.md). The slice is a copy: a caller's edit changes
+// neither the table SpecFor resolves from nor another caller's list.
 func KVCatalog() []natsclient.BucketSpec {
+	return slices.Clone(catalog)
+}
+
+// catalog is the descriptor table, built once. A BucketSpec holds no slice, map
+// or pointer, so a row SpecFor returns by value cannot alias it.
+var catalog = func() []natsclient.BucketSpec {
 	noLifecycle := natsclient.RetentionPolicy{Kind: natsclient.RetentionNoLifecycle}
 	owned := func(name, owner, description string, class natsclient.BucketClass) natsclient.BucketSpec {
 		return natsclient.BucketSpec{
@@ -110,7 +118,7 @@ func KVCatalog() []natsclient.BucketSpec {
 	// reminted as a second authority ADR-102 d7 forbids ever reconciling — and
 	// it is OWNER-ONLY for the same reason one level up.
 	//
-	// The row is a NAME FAMILY (see nameFamilies): each deployment's bucket is
+	// The row is a NAME FAMILY (see SpecFor): each deployment's bucket is
 	// "semengine_config_<org>_<stem>" (SemStreams #1188), and SpecFor resolves every
 	// member to this descriptor carrying the member's concrete name.
 	//
@@ -178,14 +186,7 @@ func KVCatalog() []natsclient.BucketSpec {
 		storageReport,
 		semengineConfig,
 	}
-}
-
-// nameFamilies are the catalog rows whose Name is a PREFIX rather than a
-// bucket: every "<Name>_<suffix>" with a nonempty suffix is a member and
-// resolves to the row carrying its concrete name. The bare prefix is not a
-// member. The runtime configuration bucket is the one family: its members are
-// named per deployment by config.BucketName (#1188).
-var nameFamilies = map[string]bool{graph.BucketSemEngineConfig: true}
+}()
 
 // SpecFor resolves a bucket name to its catalog descriptor. The second return
 // is false for a name outside the catalog — the F2 boot-failure signal for a
@@ -193,9 +194,13 @@ var nameFamilies = map[string]bool{graph.BucketSemEngineConfig: true}
 // typo may not silently create a stray unguarded bucket). A member of a name
 // family resolves to its family's row with Name set to the member's name, so
 // acquisition creates the member and every owner-only guard refuses it.
+//
+// The runtime configuration row is the one family: its Name is a PREFIX, and
+// every "<Name>_<suffix>" with a nonempty suffix is a member, named per
+// deployment by config.BucketName (#1188). The bare prefix is not a member.
 func SpecFor(name string) (natsclient.BucketSpec, bool) {
-	for _, spec := range KVCatalog() {
-		if nameFamilies[spec.Name] {
+	for _, spec := range catalog {
+		if spec.Name == graph.BucketSemEngineConfig {
 			if suffix, ok := strings.CutPrefix(name, spec.Name+"_"); ok && suffix != "" {
 				spec.Name = name
 				return spec, true
@@ -234,13 +239,23 @@ func OwnerOf(bucket string) string {
 // Only a bucket's declared owner calls this; readers use OpenCatalogReader.
 // A name outside the catalog is an invalid-config error naming it.
 func EnsureCatalogBucket(ctx context.Context, client *natsclient.Client, name string) (jetstream.KeyValue, error) {
-	spec, ok := SpecFor(name)
-	if !ok {
-		return nil, errs.WrapInvalid(
-			fmt.Errorf("bucket %q is not in the framework KV catalog", name),
-			"graph", "EnsureCatalogBucket", "resolve framework bucket")
+	spec, err := resolve(name, "EnsureCatalogBucket")
+	if err != nil {
+		return nil, err
 	}
 	return natsclient.EnsureFrameworkBucket(ctx, client, spec)
+}
+
+// resolve is SpecFor for the acquisition seams: a name outside the catalog is
+// an invalid-config error naming it and the calling operation.
+func resolve(name, operation string) (natsclient.BucketSpec, error) {
+	spec, ok := SpecFor(name)
+	if !ok {
+		return natsclient.BucketSpec{}, errs.WrapInvalid(
+			fmt.Errorf("bucket %q is not in the framework KV catalog", name),
+			"kvcatalog", operation, "resolve framework bucket")
+	}
+	return spec, nil
 }
 
 // CatalogReader is the read-only capability returned by OpenCatalogReader.
@@ -269,11 +284,9 @@ type catalogReader struct {
 // naming the catalog owner. A name outside the catalog is an invalid-config
 // error naming it.
 func OpenCatalogReader(ctx context.Context, client *natsclient.Client, name string) (CatalogReader, error) {
-	spec, ok := SpecFor(name)
-	if !ok {
-		return nil, errs.WrapInvalid(
-			fmt.Errorf("bucket %q is not in the framework KV catalog", name),
-			"graph", "OpenCatalogReader", "resolve framework bucket")
+	spec, err := resolve(name, "OpenCatalogReader")
+	if err != nil {
+		return nil, err
 	}
 	bucket, err := natsclient.OpenFrameworkBucket(ctx, client, spec)
 	if err != nil {

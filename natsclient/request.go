@@ -118,9 +118,6 @@ func (c *Client) requestMsgReady(
 	if conn == nil || !conn.IsConnected() {
 		return nil, ErrNotConnected
 	}
-	if c.Status() == StatusCircuitOpen {
-		return nil, ErrCircuitOpen
-	}
 
 	if probeTimeout <= 0 {
 		probeTimeout = DefaultReadinessProbeTimeout
@@ -148,18 +145,9 @@ func (c *Client) requestMsgReady(
 		attemptCancel()
 
 		if err == nil {
-			c.resetCircuit()
 			return reply, nil
 		}
 		lastErr = err
-		// Deliberately do NOT recordFailure() here. A readiness miss (no-responder
-		// / probe timeout) is the EXPECTED condition this primitive tolerates — the
-		// responder isn't up yet, not a connection fault. Counting it would let a
-		// single boot-time readiness-gated read burst (against briefly-absent responders)
-		// trip the shared per-client circuit breaker and fast-fail UNRELATED calls
-		// with ErrCircuitOpen. Genuine connection loss still surfaces via the
-		// up-front IsConnected check and per-attempt errors, and stays bounded by
-		// the budget.
 
 		// Wait before the next probe, bounded by the overall readiness budget.
 		select {
@@ -199,11 +187,6 @@ func (c *Client) RequestWithHeaders(
 		return nil, ErrNotConnected
 	}
 
-	// Check circuit breaker
-	if c.Status() == StatusCircuitOpen {
-		return nil, ErrCircuitOpen
-	}
-
 	// Use default timeout if not specified
 	if timeout == 0 {
 		timeout = DefaultRequestTimeout
@@ -236,14 +219,9 @@ func (c *Client) RequestWithHeaders(
 	// Perform the request
 	reply, err := conn.RequestMsgWithContext(reqCtx, msg)
 	if err != nil {
-		// The caller's own cancellation is not a transport failure; reqCtx's timeout still is.
-		if ctx.Err() == nil {
-			c.recordFailure()
-		}
 		return nil, err
 	}
 
-	c.resetCircuit()
 	return reply, nil
 }
 

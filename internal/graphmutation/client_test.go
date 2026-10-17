@@ -141,9 +141,9 @@ func clientWrites() []clientWrite {
 	}
 }
 
-// TestClientReportsRefusalBeforeSendingAsUnavailable: natsclient returns ErrNotConnected and
-// ErrCircuitOpen only before its one send (natsclient/request.go, RequestWithHeaders), so the
-// client reports either as unavailable, not committed, with the sentinel still reachable (design
+// TestClientReportsRefusalBeforeSendingAsUnavailable: natsclient returns ErrNotConnected only
+// before its one send (natsclient/request.go, RequestWithHeaders), so the client reports it as
+// unavailable, not committed, with the sentinel still reachable (design
 // D1, #268). The real never-connected natsclient.Client shows the production requester returns
 // the sentinel this way; it dials nothing.
 func TestClientReportsRefusalBeforeSendingAsUnavailable(t *testing.T) {
@@ -155,7 +155,7 @@ func TestClientReportsRefusalBeforeSendingAsUnavailable(t *testing.T) {
 			t.Fatalf("error = %#v; want a %s unavailable transport error reaching %v", err, operation, sentinel)
 		}
 	}
-	for _, sentinel := range []error{natsclient.ErrNotConnected, natsclient.ErrCircuitOpen} {
+	for _, sentinel := range []error{natsclient.ErrNotConnected} {
 		for _, write := range clientWrites() {
 			t.Run(sentinel.Error()+"/"+write.name, func(t *testing.T) {
 				fake := &fakeRequester{err: sentinel}

@@ -71,8 +71,7 @@ var (
 	ErrRateLimited       = errors.New("rate limited")
 	ErrQuotaExceeded     = errors.New("quota exceeded")
 
-	// Circuit breaker and retry errors
-	ErrCircuitOpen        = errors.New("circuit breaker open")
+	// Retry errors
 	ErrMaxRetriesExceeded = errors.New("maximum retries exceeded")
 	ErrRetryTimeout       = errors.New("retry timeout exceeded")
 )
@@ -166,7 +165,6 @@ func IsTransient(err error) bool {
 		errors.Is(err, ErrConnectionLost) ||
 		errors.Is(err, ErrStorageUnavailable) ||
 		errors.Is(err, ErrRateLimited) ||
-		errors.Is(err, ErrCircuitOpen) ||
 		errors.Is(err, context.DeadlineExceeded) ||
 		errors.Is(err, context.Canceled)
 }

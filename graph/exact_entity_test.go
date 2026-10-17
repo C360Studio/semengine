@@ -108,8 +108,8 @@ func newTestExactEntityReader(t *testing.T, requester exactEntityRequesterFunc) 
 }
 
 // A negative timeout would give every request a context that has already
-// expired, so each read would fail while the caller's context is live and count
-// against the shared client's breaker (#151). The constructor refuses it. Zero
+// expired, so each read would fail while the caller's context is live (#151).
+// The constructor refuses it. Zero
 // stays valid and reaches the requester as zero, whose own default applies (D16).
 func TestNewExactEntityReaderRefusesNegativeTimeoutAndPassesZeroThrough(t *testing.T) {
 	const entityID = "acme.ops.robotics.gcs.drone.001"

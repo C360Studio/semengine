@@ -122,21 +122,20 @@ returned.
 
 ### Requirement: Only Close changes the status once Close begins
 
-While a connection is installed and Close has not begun, a Connect that does not install its own connection SHALL
-change neither `Status()`, nor `Failures()`, nor the circuit. Once Close has begun, no writer but Close SHALL change
-`Status()`. It keeps its value through the drain and is `Disconnected` for good once Close's cleanup has finished.
+While a connection is installed and Close has not begun, a Connect that does not install its own connection SHALL NOT
+change `Status()`. Once Close has begun, no writer but Close SHALL change `Status()`. It keeps its value through the
+drain and is `Disconnected` for good once Close's cleanup has finished.
 
 #### Scenario: Only Close changes the status once Close begins
 
-- **WHEN** Close has begun and the health monitor, a connection handler, a failing operation or a Connect would
-  change the status
+- **WHEN** Close has begun and the health monitor, a connection handler or a Connect would change the status
 - **THEN** Status keeps the value it had when Close began until Close's cleanup has finished, and reports
   Disconnected from then on
 
 #### Scenario: A losing Connect leaves the winner's status
 
 - **WHEN** two Connect calls overlap, one installs its connection and the other fails or is cancelled
-- **THEN** Status, Failures and the circuit are those of the installed connection
+- **THEN** Status is that of the installed connection
 
 ### Requirement: A delivery after the recorded end is refused, and counted
 
@@ -209,11 +208,10 @@ every attempt, a count below one makes one attempt (a negative count is no longe
 refuses SHALL be returned before anything is sent (changed: `natsclient.RetryConfig`, whose `MaxRetries` counted the
 attempts after the first and was refused below zero, is removed, #222; at the pin a negative count returned success with
 no reply, Codex F31). Only an attempt that received no reply SHALL be retried; a reply, an error reply included, ends
-the call. It SHALL check the context before every attempt, the first included, and SHALL return a caller's cancellation
-as an error that matches `context.Canceled` and that `errs.IsTransient` reports transient, without counting it toward
-the circuit breaker (Codex F32). No request call that counts failures (`RequestWithHeaders` and `RequestClassified`
-through it, and the retrying call) SHALL count a caller's cancellation toward the circuit breaker, whether the context
-ended before an attempt or while one waited for its reply; an attempt's own timeout still counts (early check E1).
+the call. It SHALL check the context before every attempt, the first included, and SHALL return a caller's
+cancellation as an error that matches `context.Canceled` and that `errs.IsTransient` reports transient (Codex F32).
+`RequestWithHeaders`, `RequestClassified` and the retrying call SHALL return a cancellation that arrives while an
+attempt waits for its reply as an error that matches `context.Canceled` (early check E1).
 
 #### Scenario: Negative retry count
 
@@ -233,14 +231,13 @@ ended before an attempt or while one waited for its reply; an attempt's own time
 #### Scenario: Ended context
 
 - **WHEN** a retrying request is called with a context that has already ended
-- **THEN** it returns an error matching `context.Canceled`, the responder's handler never runs, and the client's
-  failure count is unchanged
+- **THEN** it returns an error matching `context.Canceled` and the responder's handler never runs
 
 #### Scenario: Cancelled while an attempt is in flight
 
 - **WHEN** a caller cancels `RequestWithHeaders`, `RequestClassified` or `RequestWithRetryClassified` while the
   responder holds the request
-- **THEN** the call returns an error matching `context.Canceled` and the client's failure count is unchanged
+- **THEN** the call returns an error matching `context.Canceled`
 
 ### Requirement: Subscribe returns after the server has read the SUB
 
@@ -401,21 +398,6 @@ a 30 s PING interval.
 - **WHEN** `NewClient` is called with `WithWriteTimeout(0)` or `WithPingInterval(-time.Second)`
 - **THEN** it returns an error for which `errs.IsInvalid` reports true, and no client
 
-### Requirement: The client's refusals carry the transient class
-
-`ErrNotConnected` SHALL be transient by `errs.IsTransient` and by `errs.Classify`. `natsclient.ErrCircuitOpen` SHALL be
-the sentinel `errs.ErrCircuitOpen`, so one `errors.Is` check matches it and both functions call it transient.
-
-#### Scenario: Not connected
-
-- **WHEN** a call returns `ErrNotConnected`
-- **THEN** `errs.IsTransient` reports true and `errs.Classify` returns `ErrorTransient`
-
-#### Scenario: Circuit open
-
-- **WHEN** a call returns `natsclient.ErrCircuitOpen`
-- **THEN** it matches `errs.ErrCircuitOpen` with `errors.Is`, and `errs.IsTransient` reports true
-
 ### Requirement: Close returns nil only after everything the client owns has finished
 
 `Client.Close` SHALL return nil only after every piece of work the client owns has finished: its background work,
@@ -517,3 +499,28 @@ nil error; both are removed, #222).
 - **WHEN** the same handler is called with `RequestWithHeaders`
 - **THEN** the call returns a nil error and a message whose `X-Status` header is `error`, and `ClassifyReply` on it
   returns the classified error
+
+### Requirement: A failed call refuses no other call
+
+No natsclient call SHALL refuse because other calls failed. A call that fails SHALL return its own error and SHALL
+leave `Status()` as `Connect`, the connection's events, the health monitor and `Close` set it (changed: at the pin,
+fifteen failed calls or dials with no success between them opened a circuit breaker; until its backoff ended,
+JetStream and request calls returned `ErrCircuitOpen`, as did `Connect` while no connection was installed, and the
+status then read `Disconnected` on a live connection until the health monitor's next tick; the breaker is
+removed, #222).
+
+#### Scenario: Failures on one subject leave other calls working
+
+- **WHEN** a connected client whose health monitor is off makes twenty `PublishToStream` calls to a subject no stream
+  captures, and each fails
+- **THEN** each error is that publish's own failure, a `PublishToStream` to a subject a stream captures then
+  succeeds, and `Status()` reports `Connected`
+
+### Requirement: The not-connected refusal carries the transient class
+
+`ErrNotConnected` SHALL be transient by `errs.IsTransient` and by `errs.Classify`.
+
+#### Scenario: Not connected
+
+- **WHEN** a call returns `ErrNotConnected`
+- **THEN** `errs.IsTransient` reports true and `errs.Classify` returns `ErrorTransient`

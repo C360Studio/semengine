@@ -108,8 +108,7 @@ var ErrBackingStreamNotProvisionable = errors.New(
 // The source argument names where the declaration came from — an operator
 // config key, a component port, or the calling seam — so the operator can find
 // and delete it. This function is pure and I/O-free, so it can run at config
-// validation, before any JetStream call, and before any connection or
-// circuit-breaker check.
+// validation, before any JetStream call, and before any connection check.
 func CheckOrdinaryStreamName(name, source string) error {
 	kind, bucket := ClassifyBackingStream(name)
 	switch kind {

@@ -37,8 +37,8 @@ bare prefix and near misses resolve as today: `TestConfigBucketFamilyResolvesEve
     contract line; ruling 2 covered names moved from the pin, not new ones, so it needs an owner ruling first.
   - (b) Keep the bool and make the refusal return `error`: still two calls, and still a changed export with no
     caller.
-  - (c) **Chosen:** leave the pair, and let the `rule` port (change 6) pick the shape with its three call sites in
-    hand. One of them, `kv_writer.go:86-88`, also asks `SpecFor` first, so the right merge is that port's to see.
+  - (c) **Chosen** (follow-up #294): leave the pair, and let the `rule` port (change 6) pick the shape with its
+    three call sites in hand. One of them, `kv_writer.go:86-88`, also asks `SpecFor` first, so the right merge is that port's to see.
     This is the simpler choice: no new export, no owner question, no test churn here.
 - #133 item 2 goes to a follow-up issue for the `rule` port, filed before this change merges (tasks 4.3). The
   "exactly two callers" comment is corrected in D6.
@@ -77,8 +77,8 @@ bare prefix and near misses resolve as today: `TestConfigBucketFamilyResolvesEve
 
 ## D6. Text follows the code (#133 item 5)
 
-- The package comment names what the package holds after D1–D5 and says the rule engine's `update_kv` guard calls
-  `IsFrameworkOwnedBucket` once `rule` is ported (change 6).
+- The package comment names what the package holds after D1–D5 and says the rule engine's `update_kv` guard reads
+  the write-guard pair, and that `rule` is ported in change 6.
 - ADR-068, ADR-072, ADR-087 and the `#610`, `#611`, `#715`, `#1168`, `#1188` citations are prefixed "SemStreams".
   "F2", "F2/F3", "architect-census", `reopen-framework-owned-bucket-guards`, `framework-bucket-catalog`,
   `feedback_unconditional_resource_wiring` and "the spec's … scenario" are replaced by what they stand for or removed.
@@ -107,7 +107,7 @@ pin in an admitted package not ported yet (6a owner ruling 2).
 
 ## Open issues and merge order
 
-- Retired: #133 (tasks 2.1–3.2; item 2 routed to its follow-up issue, task 4.3).
+- Retired: #133 (tasks 2.1–3.2). Item 2 continues in #294, for the `rule` port (D3).
 - Stay: #135 (8e, #289), #195 (nothing left in this package) (inventory § 3).
 - Merge order:
   - #289 (8e) merges first, per the owner's 2026-10-17 order (#223 comment 6232804491). Batch 1 touches no
@@ -134,4 +134,5 @@ pin in an admitted package not ported yet (6a owner ruling 2).
 FYI, no ruling needed:
 
 - (a) Error text changes: `graph.` becomes `kvcatalog.` in the prefix of the catalog's refusals.
-- (b) The write-guard pair is untouched; the `rule` port decides whether to merge it (D3).
+- (b) The write-guard pair is untouched; the `rule` port decides whether to merge it (D3). #133 closes with this
+  change; its item 2 continues in #294.

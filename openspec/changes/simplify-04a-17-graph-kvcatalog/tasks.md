@@ -47,6 +47,6 @@ clean tree at its commit (#171).
 
 - [ ] 4.1 `task verify` passes on a clean tree at the implementation head.
 - [ ] 4.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
-- [ ] 4.3 The follow-up issue for #133 item 2 (the `rule` port decides whether to merge the write-guard pair, D3) and
-  any other follow-up issues filed; the change is archived (`openspec archive simplify-04a-17-graph-kvcatalog`) as
+- [ ] 4.3 #294 (#133 item 2, filed at design time) is open, and any other follow-up issues are filed; the
+  change is archived (`openspec archive simplify-04a-17-graph-kvcatalog`) as
   the last content commit. Gate: `task spec:check`.

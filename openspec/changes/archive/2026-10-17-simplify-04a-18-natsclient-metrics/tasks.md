@@ -35,12 +35,12 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 - [x] 4.1 Spec delta matches the code; ADR-112 §2 amendment; README and `doc.go` (D5). Gate: `task spec:check`,
   `task docs:check`.
 - [x] 4.2 Ledger natsclient and graph-ingest rows (D5). Gate: `task ledger:check`.
-- [ ] 4.3 PR #296's title and body match Q1's ruling and declare `Closes #75 #169 #222`. Gate: read back
+- [x] 4.3 PR #296's title and body match Q1's ruling and declare `Closes #75 #169 #222`. Gate: read back
   `closingIssuesReferences`.
 
 ## 5. Verify, review and close
 
-- [ ] 5.1 `task verify` passes on a clean tree at the implementation head.
-- [ ] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
-- [ ] 5.3 Archive (`openspec archive simplify-04a-18-natsclient-metrics`) as the last content commit. Gate:
+- [x] 5.1 `task verify` passes on a clean tree at the implementation head.
+- [x] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
+- [x] 5.3 Archive (`openspec archive simplify-04a-18-natsclient-metrics`) as the last content commit. Gate:
   `task spec:check`.

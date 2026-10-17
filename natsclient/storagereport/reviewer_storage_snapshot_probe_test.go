@@ -1,4 +1,4 @@
-package natsclient
+package storagereport
 
 import (
 	"context"
@@ -32,7 +32,7 @@ func TestReviewerStorageReportResyncDropsAbsentRows(t *testing.T) {
 	first.synced()
 	close(first.updates)
 	store.next = func() *fakeKeyWatcher { return first }
-	consumer, err := NewStorageReportConsumer(store, StorageReportConsumerConfig{})
+	consumer, err := NewConsumer(store, ConsumerConfig{})
 	require.NoError(t, err)
 	consumer.watchOnce(context.Background())
 	require.Len(t, consumer.Snapshot().Resources, 1)
@@ -48,7 +48,7 @@ func TestReviewerStorageReportResyncDropsAbsentRows(t *testing.T) {
 
 func TestReviewerStorageReportSnapshotAccountIsCopy(t *testing.T) {
 	store := &fakeWatchStore{}
-	consumer, err := NewStorageReportConsumer(store, StorageReportConsumerConfig{})
+	consumer, err := NewConsumer(store, ConsumerConfig{})
 	require.NoError(t, err)
 	consumer.putAccount(AccountReport{Tiers: []TierComparison{{Tier: TierFile, State: OvercommitmentOver}}})
 	snapshot := consumer.Snapshot()

@@ -24,11 +24,11 @@
 // extrapolated from one, and unknown suppresses projection rather than
 // producing a fabricated number.
 
-package natsclient
+package storagereport
 
 import "time"
 
-// MinGrowthSampleInterval is the shortest interval between two observations
+// minGrowthSampleInterval is the shortest interval between two observations
 // that yields a rate worth publishing.
 //
 // Below it the measurement is dominated by sampling jitter rather than growth:
@@ -37,7 +37,7 @@ import "time"
 // this capability exists to remove, so a too-close pair reports UNKNOWN — and
 // the caller keeps the older baseline rather than advancing it, so the series
 // converges on a usable interval instead of resetting to "now" forever.
-const MinGrowthSampleInterval = 5 * time.Second
+const minGrowthSampleInterval = 5 * time.Second
 
 // StorageReportGrowthObservations is how many observations of a resource the
 // rate derivation needs: two, the current one and one retained prior one. It is
@@ -50,7 +50,7 @@ const MinGrowthSampleInterval = 5 * time.Second
 // baseline at any depth, including 1. Depth becomes load-bearing in the case
 // the design actually cares about — a crash loop, a deploy loop, or several
 // processes publishing account-wide, where the newest retained rows are all
-// too close together to measure against (MinGrowthSampleInterval) and the walk
+// too close together to measure against (less than 5 s apart) and the walk
 // has to reach back PAST them. At depth 1 there is nothing to reach back to and
 // the rate stays unknown for exactly as long as the loop lasts.
 //
@@ -78,7 +78,8 @@ const (
 // Reasons a growth rate is unavailable. They are distinct because they resolve
 // differently: the first resolves on the next collection, the second needs the
 // resource to become describable, and the third needs the collection interval
-// (or the publication cadence) to be wider than MinGrowthSampleInterval.
+// (or the publication cadence) to be wider than 5 s, the shortest interval a
+// rate is measured over.
 const (
 	// GrowthUnavailableNoPriorObservation means fewer than two observations of
 	// this resource exist yet — a new resource, or a fresh report bucket.
@@ -87,15 +88,15 @@ const (
 	// so there is nothing to difference.
 	GrowthUnavailableUnknownUsage = "unknown-usage"
 	// GrowthUnavailableObservationsTooClose means observations exist but none
-	// is separated from the current one by MinGrowthSampleInterval.
+	// is separated from the current one by at least 5 s.
 	GrowthUnavailableObservationsTooClose = "observations-too-close"
 )
 
-// Observation is one measurement of a resource's size at one moment. At is when
+// observation is one measurement of a resource's size at one moment. At is when
 // the size was READ from the account, not when the row was written: the write
 // happens later by the publication latency, and using it would inflate every
 // interval by that latency.
-type Observation struct {
+type observation struct {
 	At    time.Time `json:"at"`
 	Bytes int64     `json:"bytes"`
 }
@@ -129,8 +130,8 @@ type Growth struct {
 	Unavailable string `json:"unavailable,omitempty"`
 }
 
-// UnknownGrowth is the explicit unmeasured rate, naming why.
-func UnknownGrowth(reason string) Growth {
+// unknownGrowth is the explicit unmeasured rate, naming why.
+func unknownGrowth(reason string) Growth {
 	return Growth{State: GrowthUnknown, Unavailable: reason}
 }
 
@@ -143,7 +144,7 @@ func (g Growth) Rate() (float64, bool) {
 	return *g.BytesPerSecond, true
 }
 
-// DeriveGrowth measures the rate between the current observation and the most
+// deriveGrowth measures the rate between the current observation and the most
 // recent usable prior one.
 //
 // prior may be in any order and may contain observations that are unusable
@@ -151,10 +152,10 @@ func (g Growth) Rate() (float64, bool) {
 // one to measure). The NEWEST usable one is the baseline: capacity planning
 // needs the current rate, and averaging in an old sample dilutes exactly the
 // recent acceleration an operator needs to see.
-func DeriveGrowth(current Observation, prior []Observation) Growth {
+func deriveGrowth(current observation, prior []observation) Growth {
 	baseline, ok := newestUsableBaseline(current, prior)
 	if !ok {
-		return UnknownGrowth(unusableBaselineReason(current, prior))
+		return unknownGrowth(unusableBaselineReason(current, prior))
 	}
 
 	span := current.At.Sub(baseline.At)
@@ -169,12 +170,12 @@ func DeriveGrowth(current Observation, prior []Observation) Growth {
 }
 
 // newestUsableBaseline picks the most recent observation that is strictly older
-// than the current one by at least MinGrowthSampleInterval.
-func newestUsableBaseline(current Observation, prior []Observation) (Observation, bool) {
-	var best Observation
+// than the current one by at least minGrowthSampleInterval.
+func newestUsableBaseline(current observation, prior []observation) (observation, bool) {
+	var best observation
 	found := false
 	for _, candidate := range prior {
-		if current.At.Sub(candidate.At) < MinGrowthSampleInterval {
+		if current.At.Sub(candidate.At) < minGrowthSampleInterval {
 			continue
 		}
 		if found && !candidate.At.After(best.At) {
@@ -189,13 +190,13 @@ func newestUsableBaseline(current Observation, prior []Observation) (Observation
 // unusableBaselineReason distinguishes "nothing to compare against" from
 // "something to compare against, but too close to measure". They resolve
 // differently, so collapsing them would send an operator to the wrong place.
-func unusableBaselineReason(current Observation, prior []Observation) string {
+func unusableBaselineReason(current observation, prior []observation) string {
 	for _, candidate := range prior {
 		// gap == 0 counts as too close, not as absent: an identical timestamp
 		// is the same collection observed twice, which is a cadence fact rather
 		// than a missing-history one.
 		gap := current.At.Sub(candidate.At)
-		if gap >= 0 && gap < MinGrowthSampleInterval {
+		if gap >= 0 && gap < minGrowthSampleInterval {
 			return GrowthUnavailableObservationsTooClose
 		}
 	}

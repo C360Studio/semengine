@@ -1,4 +1,4 @@
-package natsclient
+package storagereport
 
 import (
 	"context"
@@ -11,6 +11,8 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/c360studio/semengine/natsclient"
 )
 
 // value returns a key's current value, or false when the key has no revisions
@@ -58,9 +60,9 @@ func TestPublish_AccountRowCarriesTheTierComparison(t *testing.T) {
 	publisher := newTestPublisher(t, store, defaultSource())
 
 	at := time.Now().UTC().Truncate(time.Second)
-	account := DeriveAccountReport(
+	account := deriveAccountReport(
 		[]StorageResource{tieredResource("LOGS", TierFile, 900<<20, 1)},
-		AccountTierLimitsFrom(&jetstream.AccountInfo{
+		accountTierLimitsFrom(&jetstream.AccountInfo{
 			Tier: jetstream.Tier{Store: 5, Limits: jetstream.AccountLimits{MaxStore: 1 << 20, MaxMemory: -1}},
 		}))
 
@@ -92,7 +94,7 @@ func TestPublish_AccountRowCarriesTheTierComparison(t *testing.T) {
 // stream name may not contain a dot, and the opaque codec emits a single token
 // too — so a key carrying a dot is unreachable from any resource name.
 func TestStorageAccountReportKey_CannotCollideWithAResourceKey(t *testing.T) {
-	require.NoError(t, ValidateKVLiteralKey(StorageAccountReportKey),
+	require.NoError(t, natsclient.ValidateKVLiteralKey(StorageAccountReportKey),
 		"the reserved key must itself be a legal KV key")
 	require.Contains(t, StorageAccountReportKey, ".",
 		"the separation rests on the dot; without it the guard is only a convention")
@@ -102,7 +104,7 @@ func TestStorageAccountReportKey_CannotCollideWithAResourceKey(t *testing.T) {
 		"_account_tiers", "x1_5f6163636f756e74", strings.Repeat("A", 200),
 		"weird$name", "plus+name", "STORAGE_REPORT",
 	} {
-		key, err := StorageReportKey(name)
+		key, err := ResourceKey(name)
 		require.NoError(t, err, name)
 		assert.NotEqual(t, StorageAccountReportKey, key,
 			"resource %q must not address the reserved account row", name)

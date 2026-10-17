@@ -1,4 +1,4 @@
-package natsclient
+package storagereport
 
 import (
 	"testing"
@@ -6,6 +6,8 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/c360studio/semengine/natsclient"
 )
 
 // tierOf finds one tier's comparison in a report. Absence is a test failure
@@ -25,7 +27,7 @@ func tierIn(t *testing.T, report AccountReport, tier StorageTier) TierComparison
 func tieredResource(name string, tier StorageTier, limit, used int64) StorageResource {
 	return StorageResource{
 		Name:        name,
-		Kind:        ResourceOrdinaryStream,
+		Kind:        natsclient.ResourceOrdinaryStream,
 		Attribution: AttributionNotApplicable,
 		Tier:        tier,
 		Bytes:       NewCapacity(limit, used, true),
@@ -40,11 +42,11 @@ func tieredUnboundedResource(name string, tier StorageTier, used int64) StorageR
 func tierlessResource(name string) StorageResource {
 	return StorageResource{
 		Name:        name,
-		Kind:        ResourceOrdinaryStream,
+		Kind:        natsclient.ResourceOrdinaryStream,
 		Attribution: AttributionNotApplicable,
 		Tier:        TierUnknown,
-		Bytes:       UnknownCapacity(),
-		Messages:    UnknownCapacity(),
+		Bytes:       unknownCapacity(),
+		Messages:    unknownCapacity(),
 	}
 }
 
@@ -52,7 +54,7 @@ func tierlessResource(name string) StorageResource {
 // makes a separate classifier necessary: AccountLimits says unlimited with -1
 // ONLY, while a stream's MaxBytes says it with 0 or -1.
 func TestAccountTierLimits_UnlimitedSentinel(t *testing.T) {
-	limits := AccountTierLimitsFrom(&jetstream.AccountInfo{
+	limits := accountTierLimitsFrom(&jetstream.AccountInfo{
 		Tier: jetstream.Tier{
 			Memory: 100,
 			Store:  200,
@@ -61,7 +63,7 @@ func TestAccountTierLimits_UnlimitedSentinel(t *testing.T) {
 	})
 	require.True(t, limits.Known)
 
-	report := DeriveAccountReport(nil, limits)
+	report := deriveAccountReport(nil, limits)
 
 	memory := tierIn(t, report, TierMemory)
 	assert.Equal(t, CapacityUnbounded, memory.Limit.State,
@@ -83,11 +85,11 @@ func TestAccountTierLimits_UnlimitedSentinel(t *testing.T) {
 // is classified would report an unlimited account as an account bounded at zero
 // bytes — every tier instantly and permanently over-committed.
 func TestAccountTierLimits_ZeroIsUnknownNotUnbounded(t *testing.T) {
-	limits := AccountTierLimitsFrom(&jetstream.AccountInfo{
+	limits := accountTierLimitsFrom(&jetstream.AccountInfo{
 		Tier: jetstream.Tier{Limits: jetstream.AccountLimits{MaxMemory: 0, MaxStore: 0}},
 	})
 
-	report := DeriveAccountReport(
+	report := deriveAccountReport(
 		[]StorageResource{tieredResource("S", TierFile, 1<<30, 0)}, limits)
 
 	file := tierIn(t, report, TierFile)
@@ -102,11 +104,11 @@ func TestAccountTierLimits_ZeroIsUnknownNotUnbounded(t *testing.T) {
 // stated as an assertion: the DEFAULT integration path (testcontainers reports
 // -1) must not read as a comparison that passed.
 func TestDeriveAccountReport_UnboundedLimitIsNotApplicableNotSatisfied(t *testing.T) {
-	limits := AccountTierLimitsFrom(&jetstream.AccountInfo{
+	limits := accountTierLimitsFrom(&jetstream.AccountInfo{
 		Tier: jetstream.Tier{Limits: jetstream.AccountLimits{MaxMemory: -1, MaxStore: -1}},
 	})
 
-	report := DeriveAccountReport([]StorageResource{
+	report := deriveAccountReport([]StorageResource{
 		tieredResource("BIG", TierFile, 1<<40, 0),
 	}, limits)
 
@@ -122,7 +124,7 @@ func TestDeriveAccountReport_UnboundedLimitIsNotApplicableNotSatisfied(t *testin
 }
 
 func TestDeriveAccountReport_OverCommitmentIsPerTier(t *testing.T) {
-	limits := AccountTierLimitsFrom(&jetstream.AccountInfo{
+	limits := accountTierLimitsFrom(&jetstream.AccountInfo{
 		Tier: jetstream.Tier{
 			Memory: 1 << 20,
 			Store:  2 << 20,
@@ -132,7 +134,7 @@ func TestDeriveAccountReport_OverCommitmentIsPerTier(t *testing.T) {
 
 	// File is over-committed on its own; memory is comfortably within. If the
 	// two tiers were summed, memory's slack would hide the file tier's problem.
-	report := DeriveAccountReport([]StorageResource{
+	report := deriveAccountReport([]StorageResource{
 		tieredResource("LOGS", TierFile, 900<<20, 10),
 		tieredResource("AUDIT", TierFile, 900<<20, 10),
 		tieredResource("HEALTH", TierMemory, 64<<20, 10),
@@ -154,11 +156,11 @@ func TestDeriveAccountReport_OverCommitmentIsPerTier(t *testing.T) {
 // from the failure direction: a file tier that is within its limit must stay
 // within it no matter how large the memory tier's declarations are.
 func TestDeriveAccountReport_TiersAreNeverSummed(t *testing.T) {
-	limits := AccountTierLimitsFrom(&jetstream.AccountInfo{
+	limits := accountTierLimitsFrom(&jetstream.AccountInfo{
 		Tier: jetstream.Tier{Limits: jetstream.AccountLimits{MaxMemory: 1 << 30, MaxStore: 1 << 30}},
 	})
 
-	report := DeriveAccountReport([]StorageResource{
+	report := deriveAccountReport([]StorageResource{
 		tieredResource("SMALL_FILE", TierFile, 1<<20, 0),
 		tieredResource("HUGE_MEMORY", TierMemory, 4<<30, 0),
 	}, limits)
@@ -173,11 +175,11 @@ func TestDeriveAccountReport_TiersAreNeverSummed(t *testing.T) {
 // not silently contribute zero either — it is counted, and the count is what
 // tells an operator the sum is a floor.
 func TestDeriveAccountReport_UnboundedResourcesAreCountedNotSummed(t *testing.T) {
-	limits := AccountTierLimitsFrom(&jetstream.AccountInfo{
+	limits := accountTierLimitsFrom(&jetstream.AccountInfo{
 		Tier: jetstream.Tier{Limits: jetstream.AccountLimits{MaxMemory: -1, MaxStore: 1 << 30}},
 	})
 
-	report := DeriveAccountReport([]StorageResource{
+	report := deriveAccountReport([]StorageResource{
 		tieredResource("BOUND", TierFile, 100<<20, 0),
 		tieredUnboundedResource("FREE", TierFile, 500<<20),
 	}, limits)
@@ -194,11 +196,11 @@ func TestDeriveAccountReport_UnboundedResourcesAreCountedNotSummed(t *testing.T)
 // tier, so it counts against neither account limit and appears in its own row
 // instead of being defaulted into one.
 func TestDeriveAccountReport_UnknownTierResourcesJoinNoAccountTier(t *testing.T) {
-	limits := AccountTierLimitsFrom(&jetstream.AccountInfo{
+	limits := accountTierLimitsFrom(&jetstream.AccountInfo{
 		Tier: jetstream.Tier{Limits: jetstream.AccountLimits{MaxMemory: 1 << 30, MaxStore: 1 << 30}},
 	})
 
-	report := DeriveAccountReport([]StorageResource{
+	report := deriveAccountReport([]StorageResource{
 		tieredResource("KNOWN", TierFile, 1<<20, 0),
 		tierlessResource("OFFLINE"),
 	}, limits)
@@ -218,9 +220,9 @@ func TestDeriveAccountReport_UnknownTierResourcesJoinNoAccountTier(t *testing.T)
 // from carrying a permanently empty row: the file and memory tiers exist on
 // every account, the unreadable one exists only when something is unreadable.
 func TestDeriveAccountReport_UnknownTierRowIsOmittedWhenEmpty(t *testing.T) {
-	report := DeriveAccountReport(
+	report := deriveAccountReport(
 		[]StorageResource{tieredResource("S", TierFile, 1<<20, 0)},
-		AccountTierLimitsFrom(&jetstream.AccountInfo{}))
+		accountTierLimitsFrom(&jetstream.AccountInfo{}))
 
 	for _, comparison := range report.Tiers {
 		assert.NotEqual(t, TierUnknown, comparison.Tier)
@@ -232,10 +234,10 @@ func TestDeriveAccountReport_UnknownTierRowIsOmittedWhenEmpty(t *testing.T) {
 // third state doing its job at the account level: a failed AccountInfo call
 // must not read as "no limit".
 func TestDeriveAccountReport_UnreadableLimitsReportUnknownNotUnbounded(t *testing.T) {
-	limits := UnknownAccountTierLimits("account info unavailable: connection refused")
+	limits := unknownAccountTierLimits("account info unavailable: connection refused")
 	require.False(t, limits.Known)
 
-	report := DeriveAccountReport(
+	report := deriveAccountReport(
 		[]StorageResource{tieredResource("S", TierFile, 1<<20, 0)}, limits)
 
 	assert.Contains(t, report.LimitsUnavailable, "connection refused")
@@ -250,7 +252,7 @@ func TestDeriveAccountReport_UnreadableLimitsReportUnknownNotUnbounded(t *testin
 // server response the client parsed into nothing must not become a zeroed
 // "bounded at zero" account.
 func TestAccountTierLimitsFrom_NilInfoIsUnknown(t *testing.T) {
-	limits := AccountTierLimitsFrom(nil)
+	limits := accountTierLimitsFrom(nil)
 	assert.False(t, limits.Known)
 	assert.NotEmpty(t, limits.Unavailable)
 }
@@ -261,14 +263,14 @@ func TestAccountTierLimitsFrom_NilInfoIsUnknown(t *testing.T) {
 // from it (replicas, per-stream overhead) and produce a headroom nobody can
 // reconcile with `nats account info`.
 func TestDeriveAccountReport_UsageComesFromTheAccountNotTheResourceSum(t *testing.T) {
-	limits := AccountTierLimitsFrom(&jetstream.AccountInfo{
+	limits := accountTierLimitsFrom(&jetstream.AccountInfo{
 		Tier: jetstream.Tier{
 			Store:  7 << 20,
 			Limits: jetstream.AccountLimits{MaxStore: 1 << 30},
 		},
 	})
 
-	report := DeriveAccountReport([]StorageResource{
+	report := deriveAccountReport([]StorageResource{
 		tieredResource("A", TierFile, 1<<20, 1),
 		tieredResource("B", TierFile, 1<<20, 2),
 	}, limits)
@@ -279,11 +281,11 @@ func TestDeriveAccountReport_UsageComesFromTheAccountNotTheResourceSum(t *testin
 }
 
 func TestDeriveAccountReport_DeclaredSumEqualToLimitIsWithin(t *testing.T) {
-	limits := AccountTierLimitsFrom(&jetstream.AccountInfo{
+	limits := accountTierLimitsFrom(&jetstream.AccountInfo{
 		Tier: jetstream.Tier{Limits: jetstream.AccountLimits{MaxStore: 2 << 20}},
 	})
 
-	report := DeriveAccountReport([]StorageResource{
+	report := deriveAccountReport([]StorageResource{
 		tieredResource("A", TierFile, 1<<20, 0),
 		tieredResource("B", TierFile, 1<<20, 0),
 	}, limits)

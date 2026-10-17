@@ -1,4 +1,4 @@
-package natsclient
+package storagereport
 
 import (
 	"context"
@@ -93,6 +93,8 @@ type recordingObserver struct {
 	observed []string
 	forgot   []string
 	accounts []AccountReport
+	// forgotAccounts holds each account row ForgetAccount was given.
+	forgotAccounts []AccountReport
 }
 
 func (o *recordingObserver) ObserveResource(row ResourceReport) {
@@ -113,6 +115,18 @@ func (o *recordingObserver) ObserveAccount(row AccountReport) {
 	o.accounts = append(o.accounts, row)
 }
 
+func (o *recordingObserver) ForgetAccount(row AccountReport) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.forgotAccounts = append(o.forgotAccounts, row)
+}
+
+func (o *recordingObserver) forgottenAccounts() []AccountReport {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return append([]AccountReport(nil), o.forgotAccounts...)
+}
+
 func (o *recordingObserver) snapshot() ([]string, []string, []AccountReport) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
@@ -128,7 +142,7 @@ func reportRow(name string, tier StorageTier, pressure PressureState) ResourceRe
 		Resource:    tieredResource(name, tier, 1<<30, 1<<20),
 		CollectedAt: time.Now().UTC(),
 		ProducedBy:  "unit-test",
-		Growth:      UnknownGrowth(GrowthUnavailableNoPriorObservation),
+		Growth:      unknownGrowth(GrowthUnavailableNoPriorObservation),
 	}
 	if pressure != "" {
 		row.Pressure = Pressure{Evaluated: true, State: pressure, RaisedBy: PressureInputHeadroom}
@@ -136,9 +150,9 @@ func reportRow(name string, tier StorageTier, pressure PressureState) ResourceRe
 	return row
 }
 
-func runConsumer(t *testing.T, store *fakeWatchStore, observer StorageReportObserver) *StorageReportConsumer {
+func runConsumer(t *testing.T, store *fakeWatchStore, observer Observer) *Consumer {
 	t.Helper()
-	consumer, err := NewStorageReportConsumer(store, StorageReportConsumerConfig{
+	consumer, err := NewConsumer(store, ConsumerConfig{
 		Observer:     observer,
 		RetryBackoff: time.Millisecond,
 	})
@@ -236,7 +250,7 @@ func TestReportConsumer_DeleteForgetsTheRowWithItsIdentity(t *testing.T) {
 	eventually(t, func() bool { return store.watchCount() == 1 }, "the watch is established")
 	watcher := store.watchers[0]
 
-	key, err := StorageReportKey("weird$stream")
+	key, err := ResourceKey("weird$stream")
 	require.NoError(t, err)
 	watcher.put(key, reportRow("weird$stream", TierFile, PressureNormal))
 	watcher.synced()

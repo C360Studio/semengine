@@ -21,7 +21,7 @@
 //
 // Nothing here rejects, throttles, or degrades anything. It returns values.
 
-package natsclient
+package storagereport
 
 import (
 	"context"
@@ -66,8 +66,10 @@ const (
 	OvercommitmentUnavailableUnknownLimit = "account-limit-unknown"
 )
 
-// AccountLimitReader is the narrow JetStream capability the account comparison
-// needs. jetstream.JetStream satisfies it.
+// accountLimitReader is the narrow JetStream capability the account comparison
+// needs. jetstream.JetStream satisfies it, and so does a caller's own
+// StreamLister that also has the method
+// AccountInfo(ctx context.Context) (*jetstream.AccountInfo, error).
 //
 // It is deliberately SEPARATE from StreamLister rather than folded into it.
 // Account limits are an optional enrichment: a collector that cannot read them
@@ -75,11 +77,11 @@ const (
 // unknown, and widening the listing interface would make every test fake and
 // every future lister implementation carry a method the inventory can do
 // without.
-type AccountLimitReader interface {
+type accountLimitReader interface {
 	AccountInfo(ctx context.Context) (*jetstream.AccountInfo, error)
 }
 
-// AccountTierLimits is the server's own per-tier accounting: the ceiling for
+// accountTierLimits is the server's own per-tier accounting: the ceiling for
 // each tier and the usage the server measures against it.
 //
 // Usage comes from the ACCOUNT rather than from summing the inventory's
@@ -87,7 +89,7 @@ type AccountLimitReader interface {
 // against, and it is the number `nats account info` shows; a sum over resources
 // drifts from it (replication, per-stream overhead) and would produce a headroom
 // an operator cannot reconcile with the server.
-type AccountTierLimits struct {
+type accountTierLimits struct {
 	// Known reports that AccountInfo was read. False means every tier's limit
 	// reports unknown — never unbounded.
 	Known bool
@@ -105,15 +107,15 @@ type AccountTierLimits struct {
 	StoreUsed  int64
 }
 
-// AccountTierLimitsFrom reads one AccountInfo response. A nil response is
+// accountTierLimitsFrom reads one AccountInfo response. A nil response is
 // UNKNOWN rather than a zero-valued account: a zeroed limit set would classify
 // as an account bounded at zero bytes and report every tier permanently
 // over-committed.
-func AccountTierLimitsFrom(info *jetstream.AccountInfo) AccountTierLimits {
+func accountTierLimitsFrom(info *jetstream.AccountInfo) accountTierLimits {
 	if info == nil {
-		return UnknownAccountTierLimits("the server returned no account information")
+		return unknownAccountTierLimits("the server returned no account information")
 	}
-	return AccountTierLimits{
+	return accountTierLimits{
 		Known:      true,
 		MaxMemory:  info.Limits.MaxMemory,
 		MaxStore:   info.Limits.MaxStore,
@@ -122,9 +124,9 @@ func AccountTierLimitsFrom(info *jetstream.AccountInfo) AccountTierLimits {
 	}
 }
 
-// UnknownAccountTierLimits is the explicit unreadable account, naming why.
-func UnknownAccountTierLimits(reason string) AccountTierLimits {
-	return AccountTierLimits{Unavailable: reason}
+// unknownAccountTierLimits is the explicit unreadable account, naming why.
+func unknownAccountTierLimits(reason string) accountTierLimits {
+	return accountTierLimits{Unavailable: reason}
 }
 
 // TierComparison is one storage tier's account-level capacity picture.
@@ -211,13 +213,13 @@ func (r AccountReport) TierFor(tier StorageTier) (TierComparison, bool) {
 	return TierComparison{}, false
 }
 
-// DeriveAccountReport compares the inventory's declared bounds against the
+// deriveAccountReport compares the inventory's declared bounds against the
 // account limits, WITHIN each tier.
 //
 // It is derived at collection time, where both inputs are in hand, so the
 // published report carries the verdict rather than leaving every operator
 // surface to recompute it from the rows and risk disagreeing.
-func DeriveAccountReport(resources []StorageResource, limits AccountTierLimits) AccountReport {
+func deriveAccountReport(resources []StorageResource, limits accountTierLimits) AccountReport {
 	tiers := map[StorageTier]*TierComparison{
 		TierFile:   {Tier: TierFile, Limit: accountTierCapacity(limits.MaxStore, limits.StoreUsed, limits.Known)},
 		TierMemory: {Tier: TierMemory, Limit: accountTierCapacity(limits.MaxMemory, limits.MemoryUsed, limits.Known)},
@@ -233,7 +235,7 @@ func DeriveAccountReport(resources []StorageResource, limits AccountTierLimits) 
 			// belong to.
 			comparison = &TierComparison{
 				Tier:  TierUnknown,
-				Limit: UnknownCapacity(),
+				Limit: unknownCapacity(),
 			}
 			if existing, seen := tiers[TierUnknown]; seen {
 				comparison = existing
@@ -316,7 +318,7 @@ func compareTier(comparison TierComparison) (OvercommitmentState, string) {
 func accountTierCapacity(limit, used int64, known bool) Capacity {
 	switch {
 	case !known:
-		return UnknownCapacity()
+		return unknownCapacity()
 	case limit < 0:
 		return Capacity{State: CapacityUnbounded, Used: &used}
 	case limit == 0:
@@ -333,15 +335,15 @@ func accountTierCapacity(limit, used int64, known bool) Capacity {
 // cost the resource inventory, which is the larger and more actionable half. A
 // monitoring surface that fails its whole collection because one enrichment call
 // failed is a worse bug than the blindness it fixes.
-func readAccountTierLimits(ctx context.Context, lister StreamLister) AccountTierLimits {
-	reader, ok := lister.(AccountLimitReader)
+func readAccountTierLimits(ctx context.Context, lister StreamLister) accountTierLimits {
+	reader, ok := lister.(accountLimitReader)
 	if !ok {
-		return UnknownAccountTierLimits(
+		return unknownAccountTierLimits(
 			"this JetStream client does not expose account limits")
 	}
 	info, err := reader.AccountInfo(ctx)
 	if err != nil {
-		return UnknownAccountTierLimits(fmt.Sprintf("account info unavailable: %v", err))
+		return unknownAccountTierLimits(fmt.Sprintf("account info unavailable: %v", err))
 	}
-	return AccountTierLimitsFrom(info)
+	return accountTierLimitsFrom(info)
 }

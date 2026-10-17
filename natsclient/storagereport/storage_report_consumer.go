@@ -19,7 +19,7 @@
 //
 // Nothing here writes, rejects, throttles, or degrades anything.
 
-package natsclient
+package storagereport
 
 import (
 	"context"
@@ -35,9 +35,9 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// DefaultReportConsumerRetryBackoff is how long the consumer waits before
+// defaultReportConsumerRetryBackoff is how long the consumer waits before
 // re-establishing a watch that could not be created or that ended.
-const DefaultReportConsumerRetryBackoff = 5 * time.Second
+const defaultReportConsumerRetryBackoff = 5 * time.Second
 
 // ReportWatchStore is the narrow KV capability the report consumer needs.
 // jetstream.KeyValue satisfies it.
@@ -51,28 +51,31 @@ type ReportWatchStore interface {
 	WatchAll(ctx context.Context, opts ...jetstream.WatchOpt) (jetstream.KeyWatcher, error)
 }
 
-// StorageReportObserver receives each change the consumer applies.
+// Observer receives each change the consumer applies.
 //
 // It exists so a metrics surface can update ONE series per event instead of
 // rebuilding every series on every tick. ForgetResource carries the whole last
 // known row rather than a key, because a resource whose name is not a legal KV
 // key is addressed by an opaque token — a bare key cannot say which label set a
-// gauge was registered under.
+// gauge was registered under. ForgetAccount likewise carries the last account
+// row the consumer held, so the surface can retract the per-tier series it
+// registered for it.
 //
 // Implementations are called from the consumer's watch goroutine and must not
 // block on it.
-type StorageReportObserver interface {
+type Observer interface {
 	ObserveResource(row ResourceReport)
 	ForgetResource(row ResourceReport)
 	ObserveAccount(row AccountReport)
+	ForgetAccount(row AccountReport)
 }
 
-// StorageReportSnapshot is the whole published report as one in-process view.
+// Snapshot is the whole published report as one in-process view.
 //
 // The counts are a TALLY of what the rows say, never a re-evaluation: pressure
 // is derived at publication, and a consumer that recomputed it would be the
 // second producer this design exists to prevent.
-type StorageReportSnapshot struct {
+type Snapshot struct {
 	// Resources is every published resource row, sorted by resource name.
 	Resources []ResourceReport
 
@@ -105,24 +108,24 @@ type StorageReportSnapshot struct {
 	WorstPressure PressureState
 }
 
-// StorageReportConsumerConfig configures the report consumer.
-type StorageReportConsumerConfig struct {
+// ConsumerConfig configures the report consumer.
+type ConsumerConfig struct {
 	// Observer receives each applied change. Optional: a consumer without one
 	// still maintains its snapshot.
-	Observer StorageReportObserver
+	Observer Observer
 
 	// RetryBackoff is the wait before re-establishing a watch. Defaults to
-	// DefaultReportConsumerRetryBackoff.
+	// 5 s.
 	RetryBackoff time.Duration
 
 	// Logger receives watch failures. Defaults to slog.Default().
 	Logger *slog.Logger
 }
 
-// StorageReportConsumer maintains the in-process view of the published report.
-type StorageReportConsumer struct {
+// Consumer maintains the in-process view of the published report.
+type Consumer struct {
 	store    ReportWatchStore
-	observer StorageReportObserver
+	observer Observer
 	backoff  time.Duration
 	logger   *slog.Logger
 
@@ -132,13 +135,13 @@ type StorageReportConsumer struct {
 	hasAcct  bool
 	synced   bool
 	updated  time.Time
-	snapshot StorageReportSnapshot
+	snapshot Snapshot
 }
 
-// NewStorageReportConsumer builds a consumer over the report bucket.
-func NewStorageReportConsumer(
-	store ReportWatchStore, cfg StorageReportConsumerConfig,
-) (*StorageReportConsumer, error) {
+// NewConsumer builds a consumer over the report bucket.
+func NewConsumer(
+	store ReportWatchStore, cfg ConsumerConfig,
+) (*Consumer, error) {
 	if store == nil {
 		return nil, errs.WrapInvalid(
 			// Seam guidance is deliberately conditional: the storage-observability
@@ -149,9 +152,9 @@ func NewStorageReportConsumer(
 			errors.New("a ReportWatchStore is required; the bucket's declared owner binds it through "+
 				"kvcatalog.EnsureCatalogBucket, any other consumer through kvcatalog.OpenCatalogReader "+
 				"(with graph.BucketStorageReport)"),
-			"StorageReportConsumer", "New", "validate configuration")
+			"Consumer", "New", "validate configuration")
 	}
-	consumer := &StorageReportConsumer{
+	consumer := &Consumer{
 		store:    store,
 		observer: cfg.Observer,
 		backoff:  cfg.RetryBackoff,
@@ -159,7 +162,7 @@ func NewStorageReportConsumer(
 		rows:     make(map[string]ResourceReport, 32),
 	}
 	if consumer.backoff <= 0 {
-		consumer.backoff = DefaultReportConsumerRetryBackoff
+		consumer.backoff = defaultReportConsumerRetryBackoff
 	}
 	if consumer.logger == nil {
 		consumer.logger = slog.Default()
@@ -176,7 +179,7 @@ func NewStorageReportConsumer(
 // previous view unchanged; at that watch's sync marker the view becomes exactly
 // the bucket's current values in one step, so a row or account row the bucket no
 // longer holds is gone even when no delete marker for it was replayed.
-func (c *StorageReportConsumer) Snapshot() StorageReportSnapshot {
+func (c *Consumer) Snapshot() Snapshot {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.snapshot.clone()
@@ -189,7 +192,7 @@ func (c *StorageReportConsumer) Snapshot() StorageReportSnapshot {
 // surface frozen on its last values, and a frozen report is indistinguishable
 // from a calm account — which is the exact failure this capability exists to
 // end. Call Run in its own goroutine.
-func (c *StorageReportConsumer) Run(ctx context.Context) {
+func (c *Consumer) Run(ctx context.Context) {
 	for {
 		if ctx.Err() != nil {
 			return
@@ -205,7 +208,7 @@ func (c *StorageReportConsumer) Run(ctx context.Context) {
 }
 
 // watchOnce establishes one watch and drains it until it ends.
-func (c *StorageReportConsumer) watchOnce(ctx context.Context) {
+func (c *Consumer) watchOnce(ctx context.Context) {
 	watcher, err := c.store.WatchAll(ctx)
 	if err != nil {
 		if ctx.Err() == nil {
@@ -264,7 +267,7 @@ func decodeReportEntry(entry jetstream.KeyValueEntry) (row ResourceReport, accou
 }
 
 // apply folds one live watch entry into the view and fans it out.
-func (c *StorageReportConsumer) apply(entry jetstream.KeyValueEntry) {
+func (c *Consumer) apply(entry jetstream.KeyValueEntry) {
 	key := entry.Key()
 
 	if entry.Operation() != jetstream.KeyValuePut {
@@ -305,7 +308,7 @@ func newReportStage() *reportStage {
 	}
 }
 
-func (s *reportStage) apply(c *StorageReportConsumer, entry jetstream.KeyValueEntry) {
+func (s *reportStage) apply(c *Consumer, entry jetstream.KeyValueEntry) {
 	key := entry.Key()
 	isAccount := key == StorageAccountReportKey
 
@@ -338,7 +341,7 @@ func (s *reportStage) apply(c *StorageReportConsumer, entry jetstream.KeyValueEn
 
 // replaceWith makes a completed watch's initial values the view, retracting
 // every held row the bucket no longer holds, and fans the changes out.
-func (c *StorageReportConsumer) replaceWith(s *reportStage) {
+func (c *Consumer) replaceWith(s *reportStage) {
 	keys := make([]string, 0, len(s.rows))
 	for key := range s.rows {
 		keys = append(keys, key)
@@ -364,6 +367,7 @@ func (c *StorageReportConsumer) replaceWith(s *reportStage) {
 	sort.Slice(forgotten, func(i, j int) bool { return forgotten[i].Resource.Name < forgotten[j].Resource.Name })
 	c.rows = s.rows
 
+	var retracted AccountReport
 	accountRetracted := false
 	switch {
 	case s.hasAcct:
@@ -371,17 +375,14 @@ func (c *StorageReportConsumer) replaceWith(s *reportStage) {
 	case s.acctUndecodable:
 		// Keep the held account row, as the live path does for an undecodable value.
 	case c.hasAcct:
+		retracted, accountRetracted = c.account, true
 		c.account, c.hasAcct = AccountReport{}, false
-		accountRetracted = true
 	}
 	c.synced = true
 	c.updated = time.Now()
 	c.rebuildLocked()
 	c.mu.Unlock()
 
-	if accountRetracted {
-		c.logAccountRetracted()
-	}
 	if c.observer == nil {
 		return
 	}
@@ -394,26 +395,19 @@ func (c *StorageReportConsumer) replaceWith(s *reportStage) {
 	if s.hasAcct {
 		c.observer.ObserveAccount(s.account)
 	}
+	if accountRetracted {
+		c.observer.ForgetAccount(retracted)
+	}
 }
 
-// logAccountRetracted declares the one change an observer cannot be told:
-// StorageReportObserver has no method that retracts an account row, so an
-// observer keeps the last account it was given while the snapshot reports
-// AccountKnown false.
-func (c *StorageReportConsumer) logAccountRetracted() {
-	c.logger.Warn("the storage report's account row is gone; the snapshot no longer reports an account, "+
-		"and observers keep the last account row they were given",
-		slog.String("key", StorageAccountReportKey))
-}
-
-func (c *StorageReportConsumer) logSkip(key string, revision uint64, err error) {
+func (c *Consumer) logSkip(key string, revision uint64, err error) {
 	c.logger.Warn("skipping an undecodable storage report row",
 		slog.String("key", key),
 		slog.Uint64("revision", revision),
 		slog.String("error", err.Error()))
 }
 
-func (c *StorageReportConsumer) putResource(key string, row ResourceReport) {
+func (c *Consumer) putResource(key string, row ResourceReport) {
 	c.mu.Lock()
 	c.rows[key] = row
 	c.updated = time.Now()
@@ -425,7 +419,7 @@ func (c *StorageReportConsumer) putResource(key string, row ResourceReport) {
 	}
 }
 
-func (c *StorageReportConsumer) putAccount(report AccountReport) {
+func (c *Consumer) putAccount(report AccountReport) {
 	c.mu.Lock()
 	c.account = report
 	c.hasAcct = true
@@ -440,8 +434,9 @@ func (c *StorageReportConsumer) putAccount(report AccountReport) {
 
 // remove drops a reclaimed row. A tombstone for a key this process never held
 // fans out NOTHING: there is no series to retract and no identity to name.
-// A delete or purge of the reserved account key retracts the account row.
-func (c *StorageReportConsumer) remove(key string) {
+// A delete or purge of the reserved account key retracts the account row and,
+// when one was held, tells the observer with ForgetAccount.
+func (c *Consumer) remove(key string) {
 	if key == StorageAccountReportKey {
 		c.removeAccount()
 		return
@@ -460,9 +455,9 @@ func (c *StorageReportConsumer) remove(key string) {
 	}
 }
 
-func (c *StorageReportConsumer) removeAccount() {
+func (c *Consumer) removeAccount() {
 	c.mu.Lock()
-	held := c.hasAcct
+	row, held := c.account, c.hasAcct
 	if held {
 		c.account, c.hasAcct = AccountReport{}, false
 		c.updated = time.Now()
@@ -470,14 +465,14 @@ func (c *StorageReportConsumer) removeAccount() {
 	}
 	c.mu.Unlock()
 
-	if held {
-		c.logAccountRetracted()
+	if held && c.observer != nil {
+		c.observer.ForgetAccount(row)
 	}
 }
 
 // rebuildLocked recomputes the published snapshot. Callers hold the write lock,
 // except the constructor, which has no concurrent readers yet.
-func (c *StorageReportConsumer) rebuildLocked() {
+func (c *Consumer) rebuildLocked() {
 	rows := make([]ResourceReport, 0, len(c.rows))
 	counts := make(map[PressureState]int, 4)
 	notEvaluated := 0
@@ -496,7 +491,7 @@ func (c *StorageReportConsumer) rebuildLocked() {
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Resource.Name < rows[j].Resource.Name })
 
-	c.snapshot = StorageReportSnapshot{
+	c.snapshot = Snapshot{
 		Resources:      rows,
 		Account:        c.account,
 		AccountKnown:   c.hasAcct,
@@ -512,7 +507,7 @@ func (c *StorageReportConsumer) rebuildLocked() {
 // row and tier slices, the count map, and every pointer field are copied, so a
 // caller editing a snapshot, through a pointer field included, cannot change
 // the consumer's state or a later snapshot.
-func (s StorageReportSnapshot) clone() StorageReportSnapshot {
+func (s Snapshot) clone() Snapshot {
 	out := s
 	out.Resources = make([]ResourceReport, len(s.Resources))
 	for i, row := range s.Resources {

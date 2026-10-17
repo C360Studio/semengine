@@ -1,4 +1,4 @@
-package natsclient
+package storagereport
 
 import (
 	"context"
@@ -13,6 +13,8 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/c360studio/semengine/natsclient"
 )
 
 // --- fakes -------------------------------------------------------------------
@@ -107,7 +109,7 @@ func (s *fakeReportStore) Put(_ context.Context, key string, value []byte) (uint
 	// A real bucket rejects an illegal key. A fake that accepts anything would
 	// let a publisher that skipped key encoding pass every test here and fail
 	// against a server.
-	if err := ValidateKVLiteralKey(key); err != nil {
+	if err := natsclient.ValidateKVLiteralKey(key); err != nil {
 		return 0, err
 	}
 	if _, ok := s.history[key]; !ok {
@@ -214,7 +216,7 @@ func (s *fakeReportStore) liveResourceKeys() []string {
 func boundedResource(name string, limit, used int64) StorageResource {
 	return StorageResource{
 		Name:        name,
-		Kind:        ResourceOrdinaryStream,
+		Kind:        natsclient.ResourceOrdinaryStream,
 		Attribution: AttributionNotApplicable,
 		Tier:        TierFile,
 		Bytes:       NewCapacity(limit, used, true),
@@ -232,25 +234,25 @@ func boundedResource(name string, limit, used int64) StorageResource {
 // rows would put every unbounded resource in these tests on a code path
 // production cannot reach.
 func inventoryAt(at time.Time, resources ...StorageResource) StorageInventory {
-	return inventoryWithAccountAt(at, AccountTierLimits{Known: true, MaxMemory: -1, MaxStore: -1}, resources...)
+	return inventoryWithAccountAt(at, accountTierLimits{Known: true, MaxMemory: -1, MaxStore: -1}, resources...)
 }
 
 // inventoryWithAccountAt is inventoryAt with the account limits stated, for the
 // cases where the tier ceiling is the thing under test.
 func inventoryWithAccountAt(
-	at time.Time, limits AccountTierLimits, resources ...StorageResource,
+	at time.Time, limits accountTierLimits, resources ...StorageResource,
 ) StorageInventory {
 	return StorageInventory{
 		ProducedBy:  "unit-test",
 		CollectedAt: at,
 		Resources:   resources,
-		Account:     DeriveAccountReport(resources, limits),
+		Account:     deriveAccountReport(resources, limits),
 	}
 }
 
-func newTestPublisher(t *testing.T, store ReportStore, source ThresholdSource) *StorageReportPublisher {
+func newTestPublisher(t *testing.T, store ReportStore, source ThresholdSource) *Publisher {
 	t.Helper()
-	publisher, err := NewStorageReportPublisher(store, StorageReportConfig{Thresholds: source})
+	publisher, err := NewPublisher(store, PublisherConfig{Thresholds: source})
 	require.NoError(t, err)
 	return publisher
 }
@@ -277,8 +279,8 @@ func TestStorageReportPublisher_OneKeyPerResource(t *testing.T) {
 		boundedResource("EVENTS", mib(1000), mib(100)),
 		boundedResource("LOGS", mib(1000), mib(900)),
 		StorageResource{
-			Name:        KVStreamPrefix + "ENTITY_STATES_FAKE",
-			Kind:        ResourceKeyValue,
+			Name:        natsclient.KVStreamPrefix + "ENTITY_STATES_FAKE",
+			Kind:        natsclient.ResourceKeyValue,
 			Bucket:      "ENTITY_STATES_FAKE",
 			Attribution: AttributionAttributed,
 			Owner:       "graph-ingest",
@@ -293,7 +295,7 @@ func TestStorageReportPublisher_OneKeyPerResource(t *testing.T) {
 	assert.False(t, result.Skipped)
 
 	assert.ElementsMatch(t,
-		[]string{"EVENTS", "LOGS", KVStreamPrefix + "ENTITY_STATES_FAKE"},
+		[]string{"EVENTS", "LOGS", natsclient.KVStreamPrefix + "ENTITY_STATES_FAKE"},
 		store.liveResourceKeys(),
 		"ranging the bucket reconstructs the whole report")
 
@@ -309,7 +311,7 @@ func TestStorageReportPublisher_OneKeyPerResource(t *testing.T) {
 
 	// The attribution the inventory resolved is carried through verbatim: the
 	// report is a view of the inventory, not a second opinion about ownership.
-	kvRow := store.liveRow(t, KVStreamPrefix+"ENTITY_STATES_FAKE")
+	kvRow := store.liveRow(t, natsclient.KVStreamPrefix+"ENTITY_STATES_FAKE")
 	assert.Equal(t, "graph-ingest", kvRow.Resource.Owner)
 	assert.Equal(t, AttributionAttributed, kvRow.Resource.Attribution)
 	// This account's tiers carry no ceiling either (a stock server), so the one
@@ -464,7 +466,7 @@ func TestStorageReportPublisher_BaselineIsNotAdvancedByAnUnusableObservation(t *
 		inventoryAt(first, boundedResource("EVENTS", mib(1000), mib(100))))
 	require.NoError(t, err)
 
-	// Three publications inside MinGrowthSampleInterval of the baseline.
+	// Three publications inside minGrowthSampleInterval of the baseline.
 	for i := 1; i <= 3; i++ {
 		_, err = publisher.Publish(context.Background(), inventoryAt(
 			first.Add(time.Duration(i)*time.Second),
@@ -604,11 +606,11 @@ func TestStorageReportPublisher_UnknownCapacityIsPublishedWithoutPressure(t *tes
 
 	undescribable := StorageResource{
 		Name:        "OFFLINE_STREAM",
-		Kind:        ResourceOrdinaryStream,
+		Kind:        natsclient.ResourceOrdinaryStream,
 		Attribution: AttributionNotApplicable,
 		Tier:        TierUnknown,
-		Bytes:       UnknownCapacity(),
-		Messages:    UnknownCapacity(),
+		Bytes:       unknownCapacity(),
+		Messages:    unknownCapacity(),
 	}
 	_, err := publisher.Publish(context.Background(), inventoryAt(first, undescribable))
 	require.NoError(t, err)
@@ -658,22 +660,22 @@ func TestStorageReportPublisher_StaleInventoryIsNotAnObservation(t *testing.T) {
 // omission the inventory exists to end, so an illegal name is addressed through
 // the repository's opaque key codec instead.
 func TestStorageReportKey_AddressesEveryLegalResourceName(t *testing.T) {
-	plain, err := StorageReportKey("KV_ENTITY_STATES")
+	plain, err := ResourceKey("KV_ENTITY_STATES")
 	require.NoError(t, err)
 	assert.Equal(t, "KV_ENTITY_STATES", plain,
 		"an ordinary name is its own key, so `nats kv get` reads naturally")
-	require.NoError(t, ValidateKVLiteralKey(plain))
+	require.NoError(t, natsclient.ValidateKVLiteralKey(plain))
 
-	odd, err := StorageReportKey("weird$stream+name")
+	odd, err := ResourceKey("weird$stream+name")
 	require.NoError(t, err)
-	require.NoError(t, ValidateKVLiteralKey(odd), "the encoded form must be a legal key")
-	decoded, err := DecodeKVOpaqueToken(odd)
+	require.NoError(t, natsclient.ValidateKVLiteralKey(odd), "the encoded form must be a legal key")
+	decoded, err := natsclient.DecodeKVOpaqueToken(odd)
 	require.NoError(t, err)
 	assert.Equal(t, "weird$stream+name", string(decoded))
 
 	// A name that IS itself a canonical opaque token must not collide with the
 	// encoding of the name it decodes to.
-	collision, err := StorageReportKey(odd)
+	collision, err := ResourceKey(odd)
 	require.NoError(t, err)
 	assert.NotEqual(t, odd, collision)
 }
@@ -719,10 +721,10 @@ func TestStorageReportPublisher_PublicationFailureIsReportedNotSwallowed(t *test
 // chose. Failing at construction beats defaulting silently, and the error names
 // the one-line way to take the defaults deliberately.
 func TestNewStorageReportPublisher_FailsClosedOnWiring(t *testing.T) {
-	_, err := NewStorageReportPublisher(nil, StorageReportConfig{Thresholds: defaultSource()})
+	_, err := NewPublisher(nil, PublisherConfig{Thresholds: defaultSource()})
 	require.Error(t, err)
 
-	_, err = NewStorageReportPublisher(newFakeReportStore(10), StorageReportConfig{})
+	_, err = NewPublisher(newFakeReportStore(10), PublisherConfig{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "DefaultStoragePressureThresholds")
 }
@@ -735,7 +737,7 @@ func TestNewStorageReportPublisher_FailsClosedOnWiring(t *testing.T) {
 //
 // The depth becomes load-bearing exactly where the design says the projection
 // matters most — a crash loop or a deploy loop. A process restarting faster
-// than MinGrowthSampleInterval publishes a row that is too close to the newest
+// than minGrowthSampleInterval publishes a row that is too close to the newest
 // retained one to measure against, and at depth 1 that row replaces the only
 // baseline that existed. Every restart repeats it, and the rate is unknown
 // forever. Retained depth is what lets the walk reach back past the too-close
@@ -761,7 +763,7 @@ func TestStorageReportPublisher_HistoryDepthSurvivesACrashLoop(t *testing.T) {
 	deep := crashLoop(10)
 	assert.Equal(t, GrowthKnown, deep.Growth.State,
 		"the declared depth keeps an older observation reachable through the loop")
-	assert.GreaterOrEqual(t, deep.Growth.ObservedOver, MinGrowthSampleInterval)
+	assert.GreaterOrEqual(t, deep.Growth.ObservedOver, minGrowthSampleInterval)
 
 	shallow := crashLoop(1)
 	assert.Equal(t, GrowthUnknown, shallow.Growth.State,
@@ -1111,12 +1113,12 @@ func TestStorageReportPublisher_RetainedBaselineIsNeverAFutureObservation(t *tes
 func TestOldestUsableTarget_NeverRetainsAFutureObservation(t *testing.T) {
 	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
 	ago := func(d time.Duration) time.Time { return now.Add(-d) }
-	current := Observation{At: now, Bytes: 500}
+	current := observation{At: now, Bytes: 500}
 
 	tests := []struct {
 		name   string
-		priors []Observation
-		want   Observation
+		priors []observation
+		want   observation
 	}{
 		{
 			name:   "no priors keeps the current observation",
@@ -1125,25 +1127,25 @@ func TestOldestUsableTarget_NeverRetainsAFutureObservation(t *testing.T) {
 		},
 		{
 			name:   "the oldest prior wins",
-			priors: []Observation{{At: ago(time.Second), Bytes: 400}, {At: ago(time.Minute), Bytes: 100}},
-			want:   Observation{At: ago(time.Minute), Bytes: 100},
+			priors: []observation{{At: ago(time.Second), Bytes: 400}, {At: ago(time.Minute), Bytes: 100}},
+			want:   observation{At: ago(time.Minute), Bytes: 100},
 		},
 		{
 			name:   "a future observation is never retained",
-			priors: []Observation{{At: now.Add(time.Hour), Bytes: 900}},
+			priors: []observation{{At: now.Add(time.Hour), Bytes: 900}},
 			want:   current,
 		},
 		{
 			name: "a future observation cannot outrank a real one",
-			priors: []Observation{
+			priors: []observation{
 				{At: now.Add(time.Hour), Bytes: 900},
 				{At: ago(time.Minute), Bytes: 100},
 			},
-			want: Observation{At: ago(time.Minute), Bytes: 100},
+			want: observation{At: ago(time.Minute), Bytes: 100},
 		},
 		{
 			name:   "an identically stamped prior does not displace the fresher read",
-			priors: []Observation{{At: now, Bytes: 111}},
+			priors: []observation{{At: now, Bytes: 111}},
 			want:   current,
 		},
 	}

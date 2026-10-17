@@ -14,6 +14,7 @@ import (
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/natsclient"
+	"github.com/c360studio/semengine/natsclient/storagereport"
 )
 
 // storageReportRows ranges the published bucket the way an operator surface
@@ -27,21 +28,21 @@ import (
 // key is always one token.
 func storageReportRows(
 	ctx context.Context, t *testing.T, bucket jetstream.KeyValue,
-) map[string]natsclient.ResourceReport {
+) map[string]storagereport.ResourceReport {
 	t.Helper()
 
 	lister, err := bucket.ListKeys(ctx)
 	require.NoError(t, err)
 	defer func() { _ = lister.Stop() }()
 
-	rows := make(map[string]natsclient.ResourceReport)
+	rows := make(map[string]storagereport.ResourceReport)
 	for key := range lister.Keys() {
-		if key == natsclient.StorageAccountReportKey {
+		if key == storagereport.StorageAccountReportKey {
 			continue
 		}
 		entry, gerr := bucket.Get(ctx, key)
 		require.NoError(t, gerr)
-		var row natsclient.ResourceReport
+		var row storagereport.ResourceReport
 		require.NoError(t, json.Unmarshal(entry.Value(), &row))
 		rows[row.Resource.Name] = row
 	}
@@ -51,12 +52,12 @@ func storageReportRows(
 // storageAccountRow decodes the reserved per-tier account row.
 func storageAccountRow(
 	ctx context.Context, t *testing.T, bucket jetstream.KeyValue,
-) natsclient.AccountReport {
+) storagereport.AccountReport {
 	t.Helper()
 
-	entry, err := bucket.Get(ctx, natsclient.StorageAccountReportKey)
+	entry, err := bucket.Get(ctx, storagereport.StorageAccountReportKey)
 	require.NoError(t, err, "the per-tier account row must be published")
-	var report natsclient.AccountReport
+	var report storagereport.AccountReport
 	require.NoError(t, json.Unmarshal(entry.Value(), &report))
 	return report
 }
@@ -92,9 +93,9 @@ func TestIntegration_StorageReport_PublishesThroughTheCatalogSeam(t *testing.T) 
 	bucket, err := EnsureCatalogBucket(ctx, client, graph.BucketStorageReport)
 	require.NoError(t, err)
 
-	collector, err := natsclient.NewStorageInventoryCollector(
-		client.AccountStreamLister,
-		natsclient.StorageInventoryConfig{
+	collector, err := storagereport.NewStorageInventoryCollector(
+		storagereport.AccountStreamLister(client),
+		storagereport.StorageInventoryConfig{
 			OwnerResolver: OwnerOf,
 			ProducedBy:    "integration-test",
 			Timeout:       20 * time.Second,
@@ -102,9 +103,9 @@ func TestIntegration_StorageReport_PublishesThroughTheCatalogSeam(t *testing.T) 
 	)
 	require.NoError(t, err)
 
-	publisher, err := natsclient.NewStorageReportPublisher(bucket, natsclient.StorageReportConfig{
-		Thresholds: func() natsclient.StoragePressureThresholds {
-			return natsclient.DefaultStoragePressureThresholds()
+	publisher, err := storagereport.NewPublisher(bucket, storagereport.PublisherConfig{
+		Thresholds: func() storagereport.StoragePressureThresholds {
+			return storagereport.DefaultStoragePressureThresholds()
 		},
 	})
 	require.NoError(t, err)
@@ -138,14 +139,14 @@ func TestIntegration_StorageReport_PublishesThroughTheCatalogSeam(t *testing.T) 
 	t.Run("a bounded resource reports real capacity and a real headroom", func(t *testing.T) {
 		row, ok := rows[disappearing]
 		require.True(t, ok, "the resource must appear in the published report")
-		require.Equal(t, natsclient.CapacityBounded, row.Resource.Bytes.State)
+		require.Equal(t, storagereport.CapacityBounded, row.Resource.Bytes.State)
 		limit, ok := row.Resource.Bytes.Limit()
 		require.True(t, ok)
 		assert.Equal(t, int64(8<<20), limit)
 		require.NotNil(t, row.Projection.HeadroomBytes)
 		assert.Positive(t, *row.Projection.HeadroomBytes)
 		assert.True(t, row.Pressure.Evaluated)
-		assert.Equal(t, natsclient.PressureNormal, row.Pressure.State)
+		assert.Equal(t, storagereport.PressureNormal, row.Pressure.State)
 		assert.Equal(t, "integration-test", row.ProducedBy)
 	})
 
@@ -156,7 +157,7 @@ func TestIntegration_StorageReport_PublishesThroughTheCatalogSeam(t *testing.T) 
 		row, ok := rows[natsclient.KVStreamPrefix+graph.BucketStorageReport]
 		require.True(t, ok, "the report bucket's own backing stream must be inventoried")
 		assert.Equal(t, natsclient.ResourceKeyValue, row.Resource.Kind)
-		assert.Equal(t, natsclient.AttributionAttributed, row.Resource.Attribution)
+		assert.Equal(t, storagereport.AttributionAttributed, row.Resource.Attribution)
 
 		declared, ok := SpecFor(graph.BucketStorageReport)
 		require.True(t, ok)
@@ -167,26 +168,26 @@ func TestIntegration_StorageReport_PublishesThroughTheCatalogSeam(t *testing.T) 
 		account := storageAccountRow(ctx, t, bucket)
 		assert.Equal(t, "integration-test", account.ProducedBy)
 
-		file, ok := account.TierFor(natsclient.TierFile)
+		file, ok := account.TierFor(storagereport.TierFile)
 		require.True(t, ok)
 		assert.GreaterOrEqual(t, file.DeclaredBytes, int64(8<<20),
 			"the bounded stream created above declared against the file tier")
 
 		// testcontainers reports -1 for both tiers, so not-applicable is the
 		// DEFAULT integration path rather than an edge case.
-		assert.Equal(t, natsclient.CapacityUnbounded, file.Limit.State)
-		assert.Equal(t, natsclient.OvercommitmentNotApplicable, file.State)
-		assert.NotEqual(t, natsclient.OvercommitmentWithin, file.State,
+		assert.Equal(t, storagereport.CapacityUnbounded, file.Limit.State)
+		assert.Equal(t, storagereport.OvercommitmentNotApplicable, file.State)
+		assert.NotEqual(t, storagereport.OvercommitmentWithin, file.State,
 			"an unbounded account limit must never read as a comparison that passed")
 
-		memory, ok := account.TierFor(natsclient.TierMemory)
+		memory, ok := account.TierFor(storagereport.TierMemory)
 		require.True(t, ok, "both tiers are always reported; they are never summed")
-		assert.Equal(t, natsclient.OvercommitmentNotApplicable, memory.State)
+		assert.Equal(t, storagereport.OvercommitmentNotApplicable, memory.State)
 	})
 
 	t.Run("the first observation of a resource projects no rate", func(t *testing.T) {
 		row := rows[disappearing]
-		assert.Equal(t, natsclient.GrowthUnknown, row.Growth.State,
+		assert.Equal(t, storagereport.GrowthUnknown, row.Growth.State,
 			"one observation extrapolates nothing")
 		assert.Nil(t, row.Projection.TimeToThreshold)
 	})
@@ -206,7 +207,7 @@ func TestIntegration_StorageReport_PublishesThroughTheCatalogSeam(t *testing.T) 
 
 		// The tombstone is a real KV delete marker, which is also what stops the
 		// growth walk from differencing across a resource's disappearance.
-		key, kerr := natsclient.StorageReportKey(disappearing)
+		key, kerr := storagereport.ResourceKey(disappearing)
 		require.NoError(t, kerr)
 		history, herr := bucket.History(ctx, key)
 		require.NoError(t, herr)
@@ -233,28 +234,28 @@ func TestIntegration_StorageReport_GrowthSurvivesRestart(t *testing.T) {
 	bucket, err := EnsureCatalogBucket(ctx, client, graph.BucketStorageReport)
 	require.NoError(t, err)
 
-	thresholds := func() natsclient.StoragePressureThresholds {
-		return natsclient.DefaultStoragePressureThresholds()
+	thresholds := func() storagereport.StoragePressureThresholds {
+		return storagereport.DefaultStoragePressureThresholds()
 	}
-	newProcess := func() *natsclient.StorageReportPublisher {
-		publisher, perr := natsclient.NewStorageReportPublisher(bucket,
-			natsclient.StorageReportConfig{Thresholds: thresholds})
+	newProcess := func() *storagereport.Publisher {
+		publisher, perr := storagereport.NewPublisher(bucket,
+			storagereport.PublisherConfig{Thresholds: thresholds})
 		require.NoError(t, perr)
 		return publisher
 	}
 
 	const resource = "REPORT_INTEGRATION_GROWING"
-	observation := func(at time.Time, used int64) natsclient.StorageInventory {
-		return natsclient.StorageInventory{
+	observation := func(at time.Time, used int64) storagereport.StorageInventory {
+		return storagereport.StorageInventory{
 			ProducedBy:  "integration-test",
 			CollectedAt: at,
-			Resources: []natsclient.StorageResource{{
+			Resources: []storagereport.StorageResource{{
 				Name:        resource,
 				Kind:        natsclient.ResourceOrdinaryStream,
-				Attribution: natsclient.AttributionNotApplicable,
-				Tier:        natsclient.TierFile,
-				Bytes:       natsclient.NewCapacity(1<<30, used, true),
-				Messages:    natsclient.NewCapacity(0, 1, true),
+				Attribution: storagereport.AttributionNotApplicable,
+				Tier:        storagereport.TierFile,
+				Bytes:       storagereport.NewCapacity(1<<30, used, true),
+				Messages:    storagereport.NewCapacity(0, 1, true),
 			}},
 		}
 	}
@@ -272,7 +273,7 @@ func TestIntegration_StorageReport_GrowthSurvivesRestart(t *testing.T) {
 	row, ok := rows[resource]
 	require.True(t, ok)
 
-	require.Equal(t, natsclient.GrowthKnown, row.Growth.State,
+	require.Equal(t, storagereport.GrowthKnown, row.Growth.State,
 		"the restarted process read its baseline out of the published report")
 	rate, ok := row.Growth.Rate()
 	require.True(t, ok)
@@ -320,14 +321,14 @@ func TestIntegration_StorageReport_StableSizeUnderChurnReportsZeroGrowth(t *test
 
 	bucket, err := EnsureCatalogBucket(ctx, client, graph.BucketStorageReport)
 	require.NoError(t, err)
-	collector, err := natsclient.NewStorageInventoryCollector(
-		client.AccountStreamLister,
-		natsclient.StorageInventoryConfig{OwnerResolver: OwnerOf, ProducedBy: "integration-test"},
+	collector, err := storagereport.NewStorageInventoryCollector(
+		storagereport.AccountStreamLister(client),
+		storagereport.StorageInventoryConfig{OwnerResolver: OwnerOf, ProducedBy: "integration-test"},
 	)
 	require.NoError(t, err)
-	publisher, err := natsclient.NewStorageReportPublisher(bucket, natsclient.StorageReportConfig{
-		Thresholds: func() natsclient.StoragePressureThresholds {
-			return natsclient.DefaultStoragePressureThresholds()
+	publisher, err := storagereport.NewPublisher(bucket, storagereport.PublisherConfig{
+		Thresholds: func() storagereport.StoragePressureThresholds {
+			return storagereport.DefaultStoragePressureThresholds()
 		},
 	})
 	require.NoError(t, err)
@@ -349,7 +350,7 @@ func TestIntegration_StorageReport_StableSizeUnderChurnReportsZeroGrowth(t *test
 	// clock. Under History 1 the bucket compacts every superseded revision, so
 	// this is what continuous replacement at a stable size looks like.
 	base := time.Now().UTC().Truncate(time.Second).Add(-10 * time.Minute)
-	stable := func(at time.Time) natsclient.StorageInventory {
+	stable := func(at time.Time) storagereport.StorageInventory {
 		inv := inventory
 		inv.CollectedAt = at
 		return inv
@@ -363,12 +364,12 @@ func TestIntegration_StorageReport_StableSizeUnderChurnReportsZeroGrowth(t *test
 	row, ok := rows[churnStream]
 	require.True(t, ok)
 
-	require.Equal(t, natsclient.GrowthKnown, row.Growth.State)
+	require.Equal(t, storagereport.GrowthKnown, row.Growth.State)
 	rate, ok := row.Growth.Rate()
 	require.True(t, ok)
 	assert.Zero(t, rate, "a resource whose size did not change between observations is not growing")
 	assert.Nil(t, row.Projection.TimeToThreshold, "and no exhaustion is projected for it")
-	assert.Equal(t, natsclient.ProjectionUnavailableNotGrowing, row.Projection.TimeToThresholdUnavailable)
+	assert.Equal(t, storagereport.ProjectionUnavailableNotGrowing, row.Projection.TimeToThresholdUnavailable)
 
 	// The falsified alternative, computed here so the contrast is explicit
 	// rather than asserted in prose: this resource's own retained span is real

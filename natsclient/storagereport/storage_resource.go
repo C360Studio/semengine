@@ -18,9 +18,13 @@
 // the same reason: an absent measurement must be ABSENT, never a zero a
 // downstream reader can mistake for one.
 
-package natsclient
+package storagereport
 
-import "time"
+import (
+	"time"
+
+	"github.com/c360studio/semengine/natsclient"
+)
 
 // StorageTier is the JetStream storage tier backing a resource. JetStream keeps
 // SEPARATE memory and file account limits and this repository's own streams
@@ -130,8 +134,8 @@ func NewCapacity(limit, used int64, known bool) Capacity {
 	return Capacity{State: CapacityBounded, ConfiguredLimit: &limit, Used: &used}
 }
 
-// UnknownCapacity is the explicit unreadable capacity.
-func UnknownCapacity() Capacity { return Capacity{State: CapacityUnknown} }
+// unknownCapacity is the explicit unreadable capacity.
+func unknownCapacity() Capacity { return Capacity{State: CapacityUnknown} }
 
 // Limit returns the configured finite bound. ok is false unless the capacity is
 // bounded, so an unbounded or unknown resource can never yield a limit number.
@@ -150,10 +154,10 @@ func (c Capacity) Usage() (int64, bool) {
 	return *c.Used, true
 }
 
-// Bounded reports whether headroom and time-to-threshold are projectable for
+// bounded reports whether headroom and time-to-threshold are projectable for
 // this axis at all. Both an unbounded and an unknown capacity answer false, for
 // different reasons the State field keeps distinct.
-func (c Capacity) Bounded() bool { return c.State == CapacityBounded }
+func (c Capacity) bounded() bool { return c.State == CapacityBounded }
 
 // StorageResource is one account storage resource as the inventory sees it.
 type StorageResource struct {
@@ -165,7 +169,7 @@ type StorageResource struct {
 	// Kind is the logical resource the physical name backs. Derived from the
 	// name alone, so it is available even for a resource the server declines to
 	// describe.
-	Kind ResourceKind `json:"kind"`
+	Kind natsclient.ResourceKind `json:"kind"`
 
 	// Bucket is the logical bucket name behind a backing stream, with exactly
 	// one reserved prefix stripped. Empty for an ordinary stream.

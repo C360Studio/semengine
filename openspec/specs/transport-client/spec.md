@@ -5,7 +5,7 @@ The transport client is `natsclient`, the package that connects to NATS and wrap
 and requests. This capability states what a caller can rely on: what a publish acknowledgement does and does not
 promise, when a consumed message is settled, that a nil context is refused before a call acts, that a handler panic
 is recovered, that `Subscribe` and `SubscribeForRequests` return a subscription only after the server has read its
-SUB, how the storage report view changes, and what the callback of a retried `KVStore` update is given and when it
+SUB, and what the callback of a retried `KVStore` update is given and when it
 runs again. `Close` stays within the caller's deadline on a connection it dialled, refuses new work once it begins,
 and returns nil only after every handler and background goroutine the client owns has returned.
 
@@ -229,32 +229,6 @@ for its reply; an attempt's own timeout still counts (early check E1).
 - **WHEN** a caller cancels `Request`, `RequestWithHeaders`, `RequestClassified`, `RequestWithRetry` or
   `RequestWithRetryClassified` while the responder holds the request
 - **THEN** the call returns an error matching `context.Canceled` and the client's failure count is unchanged
-
-### Requirement: The storage report view changes at a sync marker
-
-The storage report consumer SHALL collect a watch's initial values until the watch's sync marker and then make them
-its view in one step, so a row or account row the bucket no longer holds is gone even when no delete marker for it
-was replayed. Until that marker a `Snapshot` caller SHALL see the previous view whole; before the first watch's
-marker the view is empty and `Synced` is false. A delete or purge of the account key SHALL clear `AccountKnown`.
-`Snapshot` SHALL share no mutable memory with the consumer. `StorageReportObserver` has no method that retracts an
-account, so an observer is not told of an account retraction; the consumer SHALL log it at Warn (declared gap, issue #85;
-Codex F36, F37).
-
-#### Scenario: A replacement watch over a bucket that lost rows
-
-- **WHEN** a replacement watch's initial values lack a row the previous view held, and no delete marker for it is
-  replayed
-- **THEN** `Snapshot` returns the previous view until the sync marker, and from the marker on the row is gone
-
-#### Scenario: The account key is deleted
-
-- **WHEN** the account key is deleted or purged
-- **THEN** `Snapshot` reports `AccountKnown` false and a Warn record says observers keep the last account
-
-#### Scenario: Editing a snapshot
-
-- **WHEN** a caller edits any slice or pointer field of a returned snapshot
-- **THEN** the next `Snapshot` is unchanged
 
 ### Requirement: Subscribe returns after the server has read the SUB
 

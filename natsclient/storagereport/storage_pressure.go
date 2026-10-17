@@ -26,7 +26,7 @@
 // composition-root construction would apply a stale number successfully and
 // silently after a post-boot edit.
 
-package natsclient
+package storagereport
 
 import (
 	"fmt"
@@ -44,25 +44,25 @@ import (
 // three-day warning horizon is roughly the lead time needed to plan and apply a
 // capacity change, while 25% free is late enough that it is not noise.
 const (
-	// DefaultWarningHeadroom is the free fraction at or below which a resource
+	// defaultWarningHeadroom is the free fraction at or below which a resource
 	// reports warning.
-	DefaultWarningHeadroom = 0.25
-	// DefaultHighHeadroom is the free fraction at or below which a resource
+	defaultWarningHeadroom = 0.25
+	// defaultHighHeadroom is the free fraction at or below which a resource
 	// reports high.
-	DefaultHighHeadroom = 0.15
-	// DefaultCriticalHeadroom is the free fraction at or below which a resource
+	defaultHighHeadroom = 0.15
+	// defaultCriticalHeadroom is the free fraction at or below which a resource
 	// reports critical. It is ALSO the level the time projection targets.
-	DefaultCriticalHeadroom = 0.05
+	defaultCriticalHeadroom = 0.05
 
-	// DefaultWarningHorizon is the projected time-to-threshold at or below
+	// defaultWarningHorizon is the projected time-to-threshold at or below
 	// which a resource reports warning.
-	DefaultWarningHorizon = 72 * time.Hour
-	// DefaultHighHorizon is the projected time-to-threshold at or below which a
+	defaultWarningHorizon = 72 * time.Hour
+	// defaultHighHorizon is the projected time-to-threshold at or below which a
 	// resource reports high.
-	DefaultHighHorizon = 24 * time.Hour
-	// DefaultCriticalHorizon is the projected time-to-threshold at or below
+	defaultHighHorizon = 24 * time.Hour
+	// defaultCriticalHorizon is the projected time-to-threshold at or below
 	// which a resource reports critical.
-	DefaultCriticalHorizon = 4 * time.Hour
+	defaultCriticalHorizon = 4 * time.Hour
 )
 
 // StoragePressureThresholds is the OPERATOR-FACING pressure configuration.
@@ -108,12 +108,12 @@ type StoragePressureThresholds struct {
 // in one line rather than passing a zero value and hoping.
 func DefaultStoragePressureThresholds() StoragePressureThresholds {
 	return StoragePressureThresholds{
-		WarningHeadroom:  DefaultWarningHeadroom,
-		HighHeadroom:     DefaultHighHeadroom,
-		CriticalHeadroom: DefaultCriticalHeadroom,
-		WarningHorizon:   DefaultWarningHorizon.String(),
-		HighHorizon:      DefaultHighHorizon.String(),
-		CriticalHorizon:  DefaultCriticalHorizon.String(),
+		WarningHeadroom:  defaultWarningHeadroom,
+		HighHeadroom:     defaultHighHeadroom,
+		CriticalHeadroom: defaultCriticalHeadroom,
+		WarningHorizon:   defaultWarningHorizon.String(),
+		HighHorizon:      defaultHighHorizon.String(),
+		CriticalHorizon:  defaultCriticalHorizon.String(),
 	}
 }
 
@@ -135,19 +135,19 @@ type ResolvedPressureThresholds struct {
 // repaired threshold is a number the operator did not choose.
 func (t StoragePressureThresholds) Resolve() (ResolvedPressureThresholds, error) {
 	resolved := ResolvedPressureThresholds{
-		WarningHeadroom:  defaultFloat(t.WarningHeadroom, DefaultWarningHeadroom),
-		HighHeadroom:     defaultFloat(t.HighHeadroom, DefaultHighHeadroom),
-		CriticalHeadroom: defaultFloat(t.CriticalHeadroom, DefaultCriticalHeadroom),
+		WarningHeadroom:  defaultFloat(t.WarningHeadroom, defaultWarningHeadroom),
+		HighHeadroom:     defaultFloat(t.HighHeadroom, defaultHighHeadroom),
+		CriticalHeadroom: defaultFloat(t.CriticalHeadroom, defaultCriticalHeadroom),
 	}
 
 	var err error
-	if resolved.WarningHorizon, err = resolveHorizon(t.WarningHorizon, "warning_horizon", DefaultWarningHorizon); err != nil {
+	if resolved.WarningHorizon, err = resolveHorizon(t.WarningHorizon, "warning_horizon", defaultWarningHorizon); err != nil {
 		return ResolvedPressureThresholds{}, err
 	}
-	if resolved.HighHorizon, err = resolveHorizon(t.HighHorizon, "high_horizon", DefaultHighHorizon); err != nil {
+	if resolved.HighHorizon, err = resolveHorizon(t.HighHorizon, "high_horizon", defaultHighHorizon); err != nil {
 		return ResolvedPressureThresholds{}, err
 	}
-	if resolved.CriticalHorizon, err = resolveHorizon(t.CriticalHorizon, "critical_horizon", DefaultCriticalHorizon); err != nil {
+	if resolved.CriticalHorizon, err = resolveHorizon(t.CriticalHorizon, "critical_horizon", defaultCriticalHorizon); err != nil {
 		return ResolvedPressureThresholds{}, err
 	}
 
@@ -272,9 +272,9 @@ type Projection struct {
 	TimeToThresholdUnavailable string `json:"time_to_threshold_unavailable,omitempty"`
 }
 
-// Project derives headroom and time-to-threshold for one resource.
-func Project(capacity Capacity, growth Growth, thresholds ResolvedPressureThresholds) Projection {
-	if !capacity.Bounded() {
+// project derives headroom and time-to-threshold for one resource.
+func project(capacity Capacity, growth Growth, thresholds ResolvedPressureThresholds) Projection {
+	if !capacity.bounded() {
 		reason := ProjectionUnavailableUnbounded
 		if capacity.State == CapacityUnknown {
 			reason = ProjectionUnavailableUnknownCapacity
@@ -346,9 +346,9 @@ const maxProjectableSeconds = float64(math.MaxInt64) / float64(time.Second)
 // Every non-finite input takes that arm too. NaN and ±Inf mean the projection
 // could not be computed, and an uncomputable projection must never read as
 // "exhausted now" — that is the same false-critical this function exists to
-// prevent, arrived at from a different direction. Project filters
-// non-positive rates before calling, but Project is exported and takes an
-// arbitrary Growth, so a caller handing it a NaN rate must not get a page.
+// prevent, arrived at from a different direction. project filters
+// non-positive rates before calling, but project takes an arbitrary Growth,
+// so a caller handing it a NaN rate must not get a page.
 func projectedDuration(seconds float64) time.Duration {
 	switch {
 	case math.IsNaN(seconds), math.IsInf(seconds, 0), seconds >= maxProjectableSeconds:
@@ -400,13 +400,14 @@ const (
 	// Reporting normal here would manufacture confidence about a resource
 	// nobody can measure.
 	PressureUnavailableUnknownCapacity = "unknown-capacity"
-	// PressureUnavailableUnbounded means the capacity handed to AssessPressure
-	// declares no bound, so neither band has an input.
+	// PressureUnavailableUnbounded means the capacity the pressure was assessed
+	// against declares no bound, so neither band has an input.
 	//
-	// For a RESOURCE it is not the final word: PressureAgainstAccountTier
-	// re-evaluates it against the only ceiling it has, and the more specific
-	// unbounded-* reasons below are what a resource ends up carrying. This value
-	// survives on a TIER row — AssessPressure over an unbounded account limit —
+	// For a RESOURCE it is not the final word: the publisher re-evaluates it
+	// against the only ceiling it has, its storage tier's account limit, and the
+	// more specific unbounded-* reasons below are what a resource ends up
+	// carrying. This value
+	// survives on a TIER row — pressure assessed over an unbounded account limit —
 	// and as the fallback when a bounded tier reports no reason of its own.
 	PressureUnavailableUnbounded = "unbounded"
 	// PressureUnavailableUnboundedNoTierCeiling means the resource declares no
@@ -423,7 +424,7 @@ const (
 	// bound and could not be filed under any tier, so no account ceiling applies
 	// to it that this process can name.
 	//
-	// NOT REACHABLE from the production collector: DeriveAccountReport emits a row
+	// NOT REACHABLE from the production collector: the account report has a row
 	// for every tier any resource reports, creating the unknown-tier row on demand,
 	// so a collected resource always finds one. It exists as the fail-closed arm
 	// for a hand-built inventory, and reporting no state is the right answer there
@@ -491,13 +492,13 @@ type Pressure struct {
 	Unavailable string `json:"unavailable,omitempty"`
 }
 
-// AgainstAccountTier restates an evaluated pressure as having come from an
+// againstAccountTier restates an evaluated pressure as having come from an
 // account tier ceiling rather than a resource's own bound.
 //
 // It only relabels the basis. The bands are whatever the comparison produced, and
 // an unevaluated pressure passes through untouched: there is no state to
 // attribute to any ceiling.
-func (p Pressure) AgainstAccountTier() Pressure {
+func (p Pressure) againstAccountTier() Pressure {
 	if !p.Evaluated {
 		return p
 	}
@@ -505,7 +506,7 @@ func (p Pressure) AgainstAccountTier() Pressure {
 	return p
 }
 
-// PressureAgainstAccountTier evaluates an UNBOUNDED resource against the only
+// pressureAgainstAccountTier evaluates an UNBOUNDED resource against the only
 // ceiling it has: the account limit of the storage tier it lives in.
 //
 // This exists so that declaring a stream archival cannot remove it from the
@@ -524,12 +525,12 @@ func (p Pressure) AgainstAccountTier() Pressure {
 // found reports whether the resource could be filed under a tier at all. It is a
 // parameter rather than a zero-value check because an absent tier row and a tier
 // row with no ceiling are different findings.
-func PressureAgainstAccountTier(tier TierComparison, found bool) Pressure {
+func pressureAgainstAccountTier(tier TierComparison, found bool) Pressure {
 	if !found {
 		return Pressure{Unavailable: PressureUnavailableUnboundedTierUnfiled}
 	}
 	if tier.Pressure.Evaluated {
-		return tier.Pressure.AgainstAccountTier()
+		return tier.Pressure.againstAccountTier()
 	}
 
 	// The tier could not be evaluated either. Report why in the RESOURCE's terms:
@@ -552,15 +553,15 @@ func PressureAgainstAccountTier(tier TierComparison, found bool) Pressure {
 	}
 }
 
-// AssessPressure derives the pressure state from a resource's projection.
+// assessPressure derives the pressure state from a resource's projection.
 //
 // It returns a value and touches nothing else: no write is rejected, no
 // component is throttled, no readiness gate is failed, and no retention is
 // applied as a consequence of what it returns.
-func AssessPressure(
+func assessPressure(
 	capacity Capacity, projection Projection, thresholds ResolvedPressureThresholds,
 ) Pressure {
-	if !capacity.Bounded() {
+	if !capacity.bounded() {
 		reason := PressureUnavailableUnbounded
 		if capacity.State == CapacityUnknown {
 			reason = PressureUnavailableUnknownCapacity

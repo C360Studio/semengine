@@ -1,4 +1,4 @@
-package natsclient
+package storagereport
 
 import (
 	"encoding/json"
@@ -37,7 +37,7 @@ func TestProject_SuppressedForEveryNonBoundedCapacity(t *testing.T) {
 	thresholds := defaultResolved(t)
 	growing := knownGrowth(1024)
 
-	unknown := Project(UnknownCapacity(), growing, thresholds)
+	unknown := project(unknownCapacity(), growing, thresholds)
 	assert.Nil(t, unknown.HeadroomBytes, "an unreadable bound projects no headroom")
 	assert.Nil(t, unknown.HeadroomFraction)
 	assert.Nil(t, unknown.TimeToThreshold, "an unreadable bound projects no exhaustion")
@@ -45,7 +45,7 @@ func TestProject_SuppressedForEveryNonBoundedCapacity(t *testing.T) {
 	assert.Equal(t, ProjectionUnavailableUnknownCapacity, unknown.HeadroomUnavailable)
 	assert.Equal(t, ProjectionUnavailableUnknownCapacity, unknown.TimeToThresholdUnavailable)
 
-	unbounded := Project(NewCapacity(0, mib(900), true), growing, thresholds)
+	unbounded := project(NewCapacity(0, mib(900), true), growing, thresholds)
 	assert.Nil(t, unbounded.HeadroomBytes, "an unbounded resource is never represented as having headroom")
 	assert.Nil(t, unbounded.TimeToThreshold)
 	assert.Equal(t, ProjectionUnavailableUnbounded, unbounded.HeadroomUnavailable)
@@ -64,7 +64,7 @@ func TestProject_HeadroomAndTimeAreSuppressedIndependently(t *testing.T) {
 	capacity := NewCapacity(mib(1000), mib(400), true)
 
 	t.Run("unknown rate keeps headroom and drops the time projection", func(t *testing.T) {
-		projection := Project(capacity, UnknownGrowth(GrowthUnavailableNoPriorObservation), thresholds)
+		projection := project(capacity, unknownGrowth(GrowthUnavailableNoPriorObservation), thresholds)
 
 		require.NotNil(t, projection.HeadroomBytes)
 		assert.Equal(t, mib(600), *projection.HeadroomBytes)
@@ -80,7 +80,7 @@ func TestProject_HeadroomAndTimeAreSuppressedIndependently(t *testing.T) {
 		// The spec's churn scenario, at the projection layer: zero growth is a
 		// MEASURED fact, and it means exhaustion is never reached — which is a
 		// different report from "we could not measure the rate".
-		projection := Project(capacity, knownGrowth(0), thresholds)
+		projection := project(capacity, knownGrowth(0), thresholds)
 
 		require.NotNil(t, projection.HeadroomBytes)
 		assert.Nil(t, projection.TimeToThreshold)
@@ -89,7 +89,7 @@ func TestProject_HeadroomAndTimeAreSuppressedIndependently(t *testing.T) {
 	})
 
 	t.Run("a shrinking resource projects no exhaustion either", func(t *testing.T) {
-		projection := Project(capacity, knownGrowth(-2048), thresholds)
+		projection := project(capacity, knownGrowth(-2048), thresholds)
 		assert.Nil(t, projection.TimeToThreshold)
 		assert.Equal(t, ProjectionUnavailableNotGrowing, projection.TimeToThresholdUnavailable)
 	})
@@ -105,7 +105,7 @@ func TestProject_TimeToThresholdTargetsTheCriticalHeadroomLevel(t *testing.T) {
 	limit := int64(1000)
 	used := int64(150)
 
-	projection := Project(NewCapacity(limit, used, true), knownGrowth(1), thresholds)
+	projection := project(NewCapacity(limit, used, true), knownGrowth(1), thresholds)
 
 	require.NotNil(t, projection.ThresholdBytes)
 	assert.Equal(t, int64(950), *projection.ThresholdBytes,
@@ -119,7 +119,7 @@ func TestProject_TimeToThresholdTargetsTheCriticalHeadroomLevel(t *testing.T) {
 // critical level has no lead time left. Zero is the honest answer; a negative
 // duration would read as a time in the future to a naive consumer.
 func TestProject_UsagePastTheThresholdProjectsZero(t *testing.T) {
-	projection := Project(NewCapacity(1000, 990, true), knownGrowth(1), defaultResolved(t))
+	projection := project(NewCapacity(1000, 990, true), knownGrowth(1), defaultResolved(t))
 
 	require.NotNil(t, projection.TimeToThreshold)
 	assert.Equal(t, time.Duration(0), *projection.TimeToThreshold)
@@ -265,7 +265,7 @@ func TestAssessPressure_Transitions(t *testing.T) {
 		{
 			name:             "an unmeasured rate cannot contribute a band",
 			headroom:         0.20,
-			growth:           UnknownGrowth(GrowthUnavailableNoPriorObservation),
+			growth:           unknownGrowth(GrowthUnavailableNoPriorObservation),
 			wantState:        PressureWarning,
 			wantRaisedBy:     PressureInputHeadroom,
 			wantFromHeadroom: PressureWarning,
@@ -275,8 +275,8 @@ func TestAssessPressure_Transitions(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			capacity := NewCapacity(limit, used(tc.headroom), true)
-			projection := Project(capacity, tc.growth, thresholds)
-			pressure := AssessPressure(capacity, projection, thresholds)
+			projection := project(capacity, tc.growth, thresholds)
+			pressure := assessPressure(capacity, projection, thresholds)
 
 			require.True(t, pressure.Evaluated, "a bounded resource always has a pressure state")
 			assert.Equal(t, tc.wantState, pressure.State)
@@ -312,7 +312,7 @@ func TestAssessPressure_NoStateWithoutAKnownBound(t *testing.T) {
 	}{
 		{
 			name:       "unknown capacity",
-			capacity:   UnknownCapacity(),
+			capacity:   unknownCapacity(),
 			wantReason: PressureUnavailableUnknownCapacity,
 		},
 		{
@@ -322,8 +322,8 @@ func TestAssessPressure_NoStateWithoutAKnownBound(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			projection := Project(tc.capacity, knownGrowth(1<<20), thresholds)
-			pressure := AssessPressure(tc.capacity, projection, thresholds)
+			projection := project(tc.capacity, knownGrowth(1<<20), thresholds)
+			pressure := assessPressure(tc.capacity, projection, thresholds)
 
 			assert.False(t, pressure.Evaluated)
 			assert.Equal(t, PressureState(""), pressure.State,
@@ -450,7 +450,7 @@ func TestProject_AGlacialRateDoesNotOverflowIntoCritical(t *testing.T) {
 	thresholds := defaultResolved(t)
 	capacity := NewCapacity(2<<30, 1<<30, true) // half of 2 GiB used
 
-	projection := Project(capacity, knownGrowth(0.00001), thresholds)
+	projection := project(capacity, knownGrowth(0.00001), thresholds)
 
 	require.NotNil(t, projection.TimeToThreshold)
 	assert.Positive(t, *projection.TimeToThreshold,
@@ -458,7 +458,7 @@ func TestProject_AGlacialRateDoesNotOverflowIntoCritical(t *testing.T) {
 	assert.Greater(t, *projection.TimeToThreshold, 100*365*24*time.Hour,
 		"a rate this small cannot exhaust anything on a horizon an operator cares about")
 
-	pressure := AssessPressure(capacity, projection, thresholds)
+	pressure := assessPressure(capacity, projection, thresholds)
 	require.True(t, pressure.Evaluated)
 	assert.Equal(t, PressureNormal, pressure.State,
 		"the projection must not raise pressure for a resource that is barely moving")
@@ -528,20 +528,20 @@ func TestAssessPressure_OnTheHeadroomThresholdExactly(t *testing.T) {
 	thresholds := defaultResolved(t)
 	capacity := NewCapacity(1000, 750, true)
 
-	projection := Project(capacity, UnknownGrowth(GrowthUnavailableNoPriorObservation), thresholds)
+	projection := project(capacity, unknownGrowth(GrowthUnavailableNoPriorObservation), thresholds)
 	require.NotNil(t, projection.HeadroomFraction)
 	require.Equal(t, thresholds.WarningHeadroom, *projection.HeadroomFraction,
 		"test premise: this capacity sits exactly on the threshold")
 
-	pressure := AssessPressure(capacity, projection, thresholds)
+	pressure := assessPressure(capacity, projection, thresholds)
 	assert.Equal(t, PressureWarning, pressure.State,
 		"a resource exactly on a configured threshold is in that band, not below it")
 	assert.Equal(t, PressureInputHeadroom, pressure.RaisedBy)
 }
 
-// TestProject_ANonFiniteRateIsNotAnExhaustedResource: Project is exported and
-// takes an arbitrary Growth, so a caller can hand it a rate that is not a
-// finite positive number. Each kind resolves in its own direction, and only one
+// TestProject_ANonFiniteRateIsNotAnExhaustedResource: project takes an
+// arbitrary Growth, so a caller can hand it a rate that is not a finite
+// positive number. Each kind resolves in its own direction, and only one
 // of them is allowed to look urgent.
 func TestProject_ANonFiniteRateIsNotAnExhaustedResource(t *testing.T) {
 	thresholds := defaultResolved(t)
@@ -551,16 +551,16 @@ func TestProject_ANonFiniteRateIsNotAnExhaustedResource(t *testing.T) {
 		// NaN fails every ordered comparison, so it slips past the
 		// rate <= 0 guard and reaches the conversion. Reading it as zero time
 		// to threshold would page someone about a resource nobody measured.
-		projection := Project(capacity, knownGrowth(math.NaN()), thresholds)
+		projection := project(capacity, knownGrowth(math.NaN()), thresholds)
 		require.NotNil(t, projection.TimeToThreshold)
 		assert.Greater(t, *projection.TimeToThreshold, 100*365*24*time.Hour,
 			"an uncomputable projection saturates upward, never to zero")
-		assert.Equal(t, PressureNormal, AssessPressure(capacity, projection, thresholds).State)
+		assert.Equal(t, PressureNormal, assessPressure(capacity, projection, thresholds).State)
 	})
 
 	t.Run("a negative or negative-zero rate is not growing", func(t *testing.T) {
 		for _, rate := range []float64{math.Copysign(0, -1), math.Inf(-1)} {
-			projection := Project(capacity, knownGrowth(rate), thresholds)
+			projection := project(capacity, knownGrowth(rate), thresholds)
 			assert.Nil(t, projection.TimeToThreshold)
 			assert.Equal(t, ProjectionUnavailableNotGrowing, projection.TimeToThresholdUnavailable)
 		}
@@ -570,10 +570,10 @@ func TestProject_ANonFiniteRateIsNotAnExhaustedResource(t *testing.T) {
 		// The one direction that SHOULD look urgent: something growing
 		// infinitely fast reaches the threshold immediately. Pinned so the
 		// upward saturation above is never widened into "any odd rate is fine".
-		projection := Project(capacity, knownGrowth(math.Inf(1)), thresholds)
+		projection := project(capacity, knownGrowth(math.Inf(1)), thresholds)
 		require.NotNil(t, projection.TimeToThreshold)
 		assert.Equal(t, time.Duration(0), *projection.TimeToThreshold)
-		assert.Equal(t, PressureCritical, AssessPressure(capacity, projection, thresholds).State)
+		assert.Equal(t, PressureCritical, assessPressure(capacity, projection, thresholds).State)
 	})
 
 	t.Run("the conversion saturates upward on every non-finite input", func(t *testing.T) {

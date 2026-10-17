@@ -1,4 +1,4 @@
-package natsclient
+package storagereport
 
 import (
 	"context"

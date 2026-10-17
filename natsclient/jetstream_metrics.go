@@ -33,6 +33,10 @@ type jetstreamMetrics struct {
 	// Operation errors
 	errors *prometheus.CounterVec // JetStream operation errors
 
+	// Refusals the server reports on the connection, by reason (design D1, #169). They are not
+	// JetStream operation errors: a refused SUB or PUB on a core connection is neither.
+	serverRefusals *prometheus.CounterVec
+
 	// Tracked resources (only what we create/use)
 	mu        sync.RWMutex
 	streams   map[string]jetstream.Stream // Streams we've created/accessed
@@ -125,6 +129,14 @@ func newJetStreamMetrics(registry *metric.MetricsRegistry) (*jetstreamMetrics, e
 			Help:      "Total number of JetStream operation errors",
 		}, []string{"operation"}),
 
+		serverRefusals: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Namespace: "semengine",
+			Subsystem: "nats",
+			Name:      "server_refusals_total",
+			Help: "Refusals the NATS server reported on the client's connection: " +
+				"a publish or subscribe permission, or the subscription limit",
+		}, []string{"reason"}),
+
 		streams:   make(map[string]jetstream.Stream),
 		consumers: make(map[string]*trackedConsumer),
 		policies:  make(map[consumerPolicyKey]*consumerPolicyRecord),
@@ -167,6 +179,9 @@ func newJetStreamMetrics(registry *metric.MetricsRegistry) (*jetstreamMetrics, e
 		return nil, err
 	}
 	if m.errors, err = metric.RegisterOrGet(registry, "jetstream", "errors", m.errors); err != nil {
+		return nil, err
+	}
+	if m.serverRefusals, err = metric.RegisterOrGet(registry, "nats", "server_refusals", m.serverRefusals); err != nil {
 		return nil, err
 	}
 

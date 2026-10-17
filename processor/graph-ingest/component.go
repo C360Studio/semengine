@@ -720,9 +720,10 @@ const metricService = "graph-ingest"
 // Prometheus' process-global registry (design D4). Registration happens here, at
 // construction, so the series exist before the first message and the first status tick.
 //
-// Two instances on one registry share each collector, so the gauges set from one
-// instance's own state (the poison inventory, the readiness gauges) are overwritten by the
-// other's (#75's class, recorded on the graph-ingest row; not fixed here).
+// A registry holds one graph-ingest instance's series. A second instance on the same
+// registry shares each collector, so the gauges each sets from its own state (the poison
+// inventory, the readiness gauges) overwrite each other, and which instance's value a
+// scrape shows is not promised. No configuration we know of runs two on one registry.
 func (c *Component) registerMetrics(registry *metric.MetricsRegistry) error {
 	c.entitiesUpdated = newEntitiesUpdatedMetric()
 	c.indexingProfileDefault = newIndexingProfileDefaultMetric()

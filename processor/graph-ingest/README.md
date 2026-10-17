@@ -143,8 +143,12 @@ component is refused at construction.
 ## Metrics
 
 Every collector is registered on the `MetricsRegistry` in the component's dependencies; with none, the collectors are
-registered nowhere, and nothing is registered on Prometheus' global registry. Two components on one registry share
-each collector.
+registered nowhere, and nothing is registered on Prometheus' global registry.
+
+Give each graph-ingest its own registry. A registry holds one instance's series: gauges such as the readiness gauges
+are set from that instance's own state. A second graph-ingest on the same registry shares each collector, so the two
+overwrite each other's gauges, and which instance's value a scrape shows is not promised. No configuration we know of
+runs two on one registry.
 
 | Metric | Type | Labels |
 | --- | --- | --- |

@@ -852,8 +852,22 @@
     call refuses no other call. The records below that name the breaker, its timer or its tests
     (circuit threshold, Failures(), the circuit-open rows) describe the pin and the earlier
     changes, and are history.
+    Changed surface, simplify-04a-18 (#169, #222): newJetStreamMetrics also registers the counter
+    semengine_nats_server_refusals_total{reason} (12 collectors in all), and handleError adds one,
+    before it logs, for a nats.ErrPermissionViolation (reason permission_violation) or a
+    nats.ErrMaxSubscriptionsExceeded (reason max_subscriptions_exceeded) that nats.go reports; a refused
+    PUB and a refused SUB count alike, and Subscribe still returns the subscription and nil (owner ruling
+    on #169, 2026-10-12; TestServerRefusalCountedBeforeLog). The three synchronous stream publishes share
+    one connection and JetStream check and one message builder; PublishToStream and
+    PublishToStreamWithMsgID return nats.go's error unchanged, and PublishToStreamWithAck still counts
+    only a failed publish as publish_to_stream and wraps it as transient (the AutoCreate doc line is
+    removed; TestIntegration_PublishToStreamErrorsPerCall). KVStore.KeysByFilter and FilteredKeys list
+    keys through one function over WatchFiltered: FilteredKeys now takes a reader that offers
+    WatchFiltered (it took one offering ListKeysFiltered), completes as KeysByFilter does, and returns
+    nil and no error when no key matches (TestIntegration_FilteredKeyListingsNoMatch).
+    collectFilteredKeys and the ErrNoKeysFound and ErrKeyNotFound branches are removed.
     Changed behavior, design D9 (task 3.7): newJetStreamMetrics registers
-    all 11 collectors through metric.RegisterOrGet and keeps the collector each call returns
+    all 12 collectors through metric.RegisterOrGet and keeps the collector each call returns
     (jetstream_metrics.go:128-161 at the pin, where 8 went through the removed Register* methods,
     task 3.5a), so a second client on the same registry writes to the canonical collector. Changed
     behavior, design D9 (task 3.7d; owner ruling #9 comment 5969522395, item 4): the three consumer
@@ -987,7 +1001,7 @@
     answers again (task 3.7d sets these gauges from server state, so a value the server did not
     give is not shown, as the policy loop already did for its gauges; the pin skipped the consumer silently and kept the last values,
     jetstream_metrics.go:290-294 at the pin, :296-300 at 931d90f) (TestJetStreamConsumerMetricsDropSeriesWhenInfoFails);
-    with two clients on one registry the deletion is the shared-series case under known_risks (#75).
+    with two clients on one registry the deletion is the shared-series case under known_risks.
     (12) natsclient-consume-handler-context (owner ruling, #9 comment 5994720412, item 2): in
     ConsumeStreamWithConfig and ConsumeInternalStreamWithConfig the caller's context bounds setup
     only; handlers run under a context the Client owns per consumer, cancelled when Close begins and
@@ -1008,8 +1022,8 @@
     PING on the connection it subscribed on and waits for the PONG (FlushWithContext, :1373-1375); the
     wait for the PONG is bounded by the call's context and DefaultRequestTimeout, whichever ends first,
     and the waits for nats.go's connection lock are not (design L8, #168). A SUB the server refuses is
-    returned as a subscription and nil, and logged by handleError on a client that connected with
-    Connect (design L9, #169). When the round trip does not complete, or Close has begun, it
+    returned as a subscription and nil, and handleError counts it before logging it, on a client that
+    connected with Connect (design L9; counted since simplify-04a-18, #169). When the round trip does not complete, or Close has begun, it
     unsubscribes the subscription (:1390) and returns no subscription and the first error that holds
     (:1391-1407): nats.ErrConnectionClosed once Close has begun; a transient error matching
     context.Canceled or context.DeadlineExceeded when the context ended or DefaultRequestTimeout
@@ -1085,10 +1099,11 @@
     handlers and connection event handlers to nats.go goroutines; Close joins all of them (design
     D3, tasks 3.7c and 3.7c2)
   known_risks: >-
-    Shared-series ownership, #75, tracked and not fixed here (#9 comment 5968830525, rule 4; owner
-    ruling #9 comment 5969776736, item 5): with two clients on one registry, one client's failed
+    One client per metrics registry (WithMetrics doc comment; no known configuration runs two;
+    design simplify-04a-18 D2): with two clients on one registry, one client's failed
     stream Info sets the shared stream_state series to 0 (jetstream_metrics.go:278 at the pin → :283),
-    and forgetConsumer deletes consumer series another client still writes (:232-243 → :236-247).
+    and forgetConsumer deletes consumer series another client still writes (:232-243 → :236-247);
+    which client's write stands is not promised.
     Callers awaiting a consumer handle's native Closed() can see it close early after the
     connection was force-closed (jetstream/pull.go:822-837); Client.Close's nil is the completion
     proof, and the three Consume doc comments say so (owner answer 1, #9 comment 5980296112).
@@ -1106,7 +1121,7 @@
     clientOwnedHandlerContext, a context.WithCancel(context.Background()) root the Client owns per
     consumer (#9 comment 5994720412, item 2), cancelled by the consumer's ownership goroutine
     (owned_delivery.go ownConsumer) when Close begins and after its last handler returns; trace.go:56, DetachContextWithTrace, left with that function in task
-    3.7a. kv.go:600 is a bounded terminal drain, context.WithTimeout(context.WithoutCancel(ctx),
+    3.7a. kv.go:700 is a bounded terminal drain, context.WithTimeout(context.WithoutCancel(ctx),
     filteredWatcherDrainTimeout), the developer contract's admitted shape, not a root. Dropped
     surface, not ported (design D8, "A test of a removed feature"): kv_temporal.go
     (TemporalResolver, 228 lines) with kv_temporal_integration_test.go and
@@ -1310,7 +1325,7 @@
     (recordFailure's AfterFunc), :351 (WaitForConnection's ticker), :644 (drainAndCloseConnection's
     timer), :773 (Subscribe's handler deadline), :1404 (armConnectionLossTimer's AfterFunc), :1463
     (startHealthMonitoring's ticker); delivery_settlement.go:353 (the heartbeat ticker);
-    jetstream_metrics.go:348 (startPoller's ticker); kv.go:71 (applyTimeout), :600 (KeysByFilter's drain
+    jetstream_metrics.go:348 (startPoller's ticker); kv.go:71 (applyTimeout), :700 (keysByFilter's drain
     window); request.go:118, :124, :151, :195, :248, :352, :498, :530; storage_inventory.go:269
     (Collect), :298 (Run's ticker); storage_report_consumer.go:195 (Run's retry backoff); stream.go:352,
     :365 (awaitStreamVisible's ticker and probe deadline), :762 (messageHandlerContext). From each
@@ -2282,8 +2297,9 @@
     prometheus/client_golang; JetStream consumers, KV reads/writes, request subscriptions, keyed
     lane pool, and status loop started in Start and released by Stop
   known_risks: >-
-    ENTITY_STATES keeps History 1 (#99); two instances on one metrics registry share gauge collectors
-    (#75); a stream recreated between the pre-bind generation read and bind is a declared limitation
+    ENTITY_STATES keeps History 1 (#99); one instance per metrics registry: a second shares the gauge
+    collectors and which write stands is not promised, and no known configuration runs two; a stream
+    recreated between the pre-bind generation read and bind is a declared limitation
     (#214); follow-up #174 tracks bookkeeping after an unconfirmed append write. Removed:
     lastSyncedRFC3339, MergeEntity, TEST_DISPUTE.md, and agentic indexing_profile_registry_test.go;
     README updated to match

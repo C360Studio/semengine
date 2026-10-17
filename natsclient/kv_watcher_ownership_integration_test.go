@@ -135,3 +135,27 @@ func TestIntegration_KVStoreFilteredNativeDeliveryClosure(t *testing.T) {
 		t.Error("native Updates remained open after public return")
 	}
 }
+
+// spec: transport-client / Both filtered key listings complete the same way
+func TestIntegration_FilteredKeyListingsNoMatch(t *testing.T) {
+	testClient := newFixtureClient(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 40*time.Second)
+	defer cancel()
+	bucket, err := testClient.Client.CreateKeyValueBucket(ctx, jetstream.KeyValueConfig{Bucket: "KV_FILTER_NO_MATCH"})
+	require.NoError(t, err)
+
+	// An empty bucket first, then one whose only key the filter does not match:
+	// both listings give nil and no error on the pinned server and SDK.
+	assertNoMatch := func(state string) {
+		t.Helper()
+		for _, listing := range filteredListings {
+			keys, listErr := listing.list(ctx, bucket, "diag.>")
+			require.NoError(t, listErr, "%s on %s", listing.name, state)
+			assert.Nil(t, keys, "%s on %s", listing.name, state)
+		}
+	}
+	assertNoMatch("an empty bucket")
+	_, err = bucket.Put(ctx, "other.one", []byte("v"))
+	require.NoError(t, err)
+	assertNoMatch("a bucket with no matching key")
+}

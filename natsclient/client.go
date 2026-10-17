@@ -1252,7 +1252,12 @@ func (m *Client) PublishToStream(ctx context.Context, subject string, data []byt
 	if ctx == nil {
 		return nilContextError("PublishToStream")
 	}
-	return m.publishToStream(ctx, subject, data, "")
+	js, err := m.streamJetStream()
+	if err != nil {
+		return err
+	}
+	_, err = js.PublishMsg(ctx, streamMsg(ctx, subject, data, ""))
+	return err
 }
 
 // PublishToStreamWithMsgID publishes to a JetStream stream stamping the
@@ -1276,29 +1281,31 @@ func (m *Client) PublishToStreamWithMsgID(ctx context.Context, subject string, d
 	if ctx == nil {
 		return nilContextError("PublishToStreamWithMsgID")
 	}
-	return m.publishToStream(ctx, subject, data, msgID)
-}
-
-// publishToStream is the shared publish path for PublishToStream and
-// PublishToStreamWithMsgID. A non-empty msgID is stamped as the Nats-Msg-Id
-// header for server-side duplicate detection.
-func (m *Client) publishToStream(ctx context.Context, subject string, data []byte, msgID string) error {
-
-	if m.Status() != StatusConnected {
-		return ErrNotConnected
-	}
-
-	js, err := m.JetStream()
+	js, err := m.streamJetStream()
 	if err != nil {
 		return err
 	}
+	_, err = js.PublishMsg(ctx, streamMsg(ctx, subject, data, msgID))
+	return err
+}
 
-	// Auto-generate trace context if none exists
+// streamJetStream makes the checks every synchronous stream publish makes before it builds its
+// message: the client is connected and has a JetStream context. Its errors come back to each
+// caller unchanged and uncounted.
+func (m *Client) streamJetStream() (jetstream.JetStream, error) {
+	if m.Status() != StatusConnected {
+		return nil, ErrNotConnected
+	}
+	return m.JetStream()
+}
+
+// streamMsg builds the message every stream publish sends, synchronous or async. It carries ctx's
+// trace, or a new one when ctx has none, so every stream message can be traced, and a
+// Nats-Msg-Id header when msgID is not empty.
+func streamMsg(ctx context.Context, subject string, data []byte, msgID string) *nats.Msg {
 	if _, ok := TraceContextFromContext(ctx); !ok {
 		ctx = ContextWithTrace(ctx, NewTraceContext())
 	}
-
-	// Build message with headers for trace propagation
 	msg := &nats.Msg{
 		Subject: subject,
 		Data:    data,
@@ -1311,9 +1318,7 @@ func (m *Client) publishToStream(ctx context.Context, subject string, data []byt
 		msg.Header.Set(nats.MsgIdHdr, msgID)
 	}
 	InjectTrace(ctx, msg)
-
-	_, err = js.PublishMsg(ctx, msg)
-	return err
+	return msg
 }
 
 // asyncPublishErrHandler is the connection-level handler jetstream-go invokes for
@@ -1343,8 +1348,8 @@ func (m *Client) asyncPublishErrHandler(_ jetstream.JetStream, msg *nats.Msg, er
 // publishToStreamAsync is the async publish path behind PublishBatchToStream.
 // It publishes to a JetStream stream WITHOUT blocking on the PubAck, returning a
 // jetstream.PubAckFuture whose Ok()/Err() carry the eventual server
-// acknowledgement. It mirrors publishToStream's pre-checks and trace stamping,
-// then enqueues via PublishMsgAsync.
+// acknowledgement. It makes streamJetStream's checks with a check of ctx between
+// them, builds the message with streamMsg, then enqueues via PublishMsgAsync.
 //
 // The enqueue itself is synchronous: a disconnected client returns
 // ErrNotConnected, a cancelled context returns its error, and a full in-flight
@@ -1368,19 +1373,7 @@ func (m *Client) publishToStreamAsync(ctx context.Context, subject string, data 
 		return nil, err
 	}
 
-	// Auto-generate trace context if none exists
-	if _, ok := TraceContextFromContext(ctx); !ok {
-		ctx = ContextWithTrace(ctx, NewTraceContext())
-	}
-
-	// Build message with headers for trace propagation
-	msg := &nats.Msg{
-		Subject: subject,
-		Data:    data,
-	}
-	InjectTrace(ctx, msg)
-
-	future, err := js.PublishMsgAsync(msg)
+	future, err := js.PublishMsgAsync(streamMsg(ctx, subject, data, ""))
 	if err != nil {
 		return nil, err
 	}
@@ -1860,6 +1853,18 @@ func (m *Client) handleError(nc *nats.Conn, sub *nats.Subscription, err error) {
 			} else {
 				attrs = append(attrs, slog.Bool("dropped_available", false))
 			}
+		}
+	}
+
+	// The refusal is counted before the line is written, so a reader of the line finds it counted.
+	// The reason comes from the error's type: nats.go reports a refused PUB and a refused SUB with
+	// the same type and no subscription, and their text is not a contract (ADR-112).
+	if m.jsMetrics != nil {
+		switch {
+		case stderrors.Is(err, nats.ErrPermissionViolation):
+			m.jsMetrics.serverRefusals.WithLabelValues("permission_violation").Inc()
+		case stderrors.Is(err, nats.ErrMaxSubscriptionsExceeded):
+			m.jsMetrics.serverRefusals.WithLabelValues("max_subscriptions_exceeded").Inc()
 		}
 	}
 

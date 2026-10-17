@@ -95,7 +95,7 @@ that lacks the key. The two tests above name every case that matters:
 - An undecodable account value in a replacement watch: the held row is kept and nothing is forgotten.
 
 The oracle is the row the observer was given by `ObserveAccount`, not a field of the consumer. Codex's mutation
-checks on PR #283 (review record, 2026-10-17) reported that removing either `ForgetAccount` call (in `removeAccount`
+checks on PR #283 (review record, comment 6232229697) reported that removing either `ForgetAccount` call (in `removeAccount`
 or in `replaceWith`) fails a test. That is the reviewer's report, not a run recorded in this change.
 
 ## D4. Text follows the code

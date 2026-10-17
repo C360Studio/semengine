@@ -51,6 +51,6 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 - [x] 5.1 `task verify` passes on a clean tree at the implementation head (exit 0 at `04b63f3`).
 - [x] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body (Codex: batch 1 at
   `8ca8657`, batch 2 at `b76d564`; owner directed docs, archive and merge on 2026-10-17).
-- [ ] 5.3 Archive (`openspec archive simplify-04a-13-natsclient-storage`) as the last content commit; write the
+- [x] 5.3 Archive (`openspec archive simplify-04a-13-natsclient-storage`) as the last content commit; write the
   `storage-report` Purpose and drop "how the storage report view changes" from the `transport-client` Purpose. Gate:
   `task spec:check`.

@@ -28,8 +28,8 @@ package graph
 // this envelope is in graph/readiness, so a reader of GRAPH_STATUS needs no NATS
 // import.
 type IndexStatusResponse struct {
-	Ready bool   `json:"ready"` // target>0 && indexed_revision>=target_revision
-	State string `json:"state"` // "building" | "ready" | "degraded" | "reset_required"
+	Ready bool       `json:"ready"` // target>0 && indexed_revision>=target_revision
+	State IndexState `json:"state"` // one of IndexStates()
 	// Code and Reason carry bounded operator-actionable fatal readiness state.
 	// They are empty during ordinary building/ready/degraded operation.
 	Code   string `json:"code,omitempty"`
@@ -135,23 +135,29 @@ type IndexStatusResponse struct {
 	PublishedAt string `json:"published_at"`
 }
 
+// IndexState is the readiness envelope's state field. Its wire values are the
+// four constants below; a value outside them is a state this reader does not
+// know, and the readiness gate defers on it.
+type IndexState string
+
 // Index readiness states. Mirrors pkg/fusion.IndexState string values.
 const (
-	IndexStateBuilding      = "building"
-	IndexStateReady         = "ready"
-	IndexStateDegraded      = "degraded"
-	IndexStateResetRequired = "reset_required"
+	IndexStateBuilding      IndexState = "building"
+	IndexStateReady         IndexState = "ready"
+	IndexStateDegraded      IndexState = "degraded"
+	IndexStateResetRequired IndexState = "reset_required"
 )
 
-// AllIndexStates is the closed iteration domain for the one-hot readiness `state`
-// metric published by every producer of the envelope (graph-index, graph-embedding).
-// It lives next to the const block so it is the single source of truth: adding a new
-// readiness state means adding it HERE, and every one-hot state gauge picks it up
-// automatically — otherwise a new state would render as all-zeros (silent "no data",
-// not an alertable signal).
-var AllIndexStates = []string{
-	IndexStateBuilding,
-	IndexStateReady,
-	IndexStateDegraded,
-	IndexStateResetRequired,
+// IndexStates returns the closed set of readiness states, in a new slice on
+// every call. It is the iteration domain for the one-hot readiness `state`
+// metric and the readiness gate's allow-list: adding a state means adding it
+// here, and every one-hot state gauge picks it up, so a new state never renders
+// as all zeros (a silent "no data" rather than an alertable signal).
+func IndexStates() []IndexState {
+	return []IndexState{
+		IndexStateBuilding,
+		IndexStateReady,
+		IndexStateDegraded,
+		IndexStateResetRequired,
+	}
 }

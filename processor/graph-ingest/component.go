@@ -867,7 +867,7 @@ func (c *Component) Health() component.HealthStatus {
 		// design D6), and the message carries count + a bounded ID/reason
 		// sample. Full enumeration rides DebugStatus.
 		if c.entityPoisonSize.Load() > 0 {
-			status = graph.IndexStateDegraded
+			status = string(graph.IndexStateDegraded)
 			lastErr = c.entityPoisonHealthMessage()
 		} else if errorCount > 0 {
 			lastErr = "errors occurred during processing"

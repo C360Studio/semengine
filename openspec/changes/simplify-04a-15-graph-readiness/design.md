@@ -72,8 +72,9 @@ value is unchanged.
   `graph_ingest.readiness`; nothing outside `metric` reads it.
 - Test: `TestGauges_FullyQualifiedNamesPreserveTheWireContract` also asserts that a `graph_ingest` set exposes exactly
   its five families. It fails on the base only to compile (`NewGauges` takes `ProducerNames` there). After that it
-  catches a `Register` that drops a family, keys one collector under another name (so a sixth or a missing series
-  shows), or a change to a name, the namespace or the subsystem.
+  catches a `Register` that drops a family, one collector built with another subsystem or name, or a change to a
+  name, the namespace or the subsystem. (The registry key is private to `metric`, so keying a collector under
+  another key exposes the same families and is not caught here.)
 
 ## D5. One bucket name (#135 item f)
 

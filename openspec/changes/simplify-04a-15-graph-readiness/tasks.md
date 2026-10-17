@@ -29,7 +29,7 @@ Batch 1 can start on the base; batches 2 and 3 start after this branch merges `o
   `TestReadingZeroValueFailsClosed`, `TestDeferReasonsReturnsACopy`, and the five-family assertion in
   `TestGauges_FullyQualifiedNamesPreserveTheWireContract`. Gate: each fails on the base (compile or assertion, named
   in the note); the five-family assertion fails on the base only to compile, so its note also records that `task
-  mutate:check` detects a `Register` that drops one family or keys one collector under another name.
+  mutate:check` detects a `Register` that drops one family or builds one collector with another subsystem.
 - [ ] 3.2 D1: `EvaluateReadinessGate(Reading) DeferReason`, `StatusReading` removed, `DeferReasons()`, the gate tests
   on one result column. Gate: 3.1's gate tests; `task mutate:check` detects the `!r.Fresh` check removed.
 - [ ] 3.3 D3, D4, D5: `NewPublisher` returns an error; no nil-receiver checks; the `timeout` field and `EnsureBucket`

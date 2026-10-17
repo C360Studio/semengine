@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
@@ -53,7 +54,7 @@ func serveScripted(conn net.Conn) *scriptedServer {
 
 func (s *scriptedServer) serve() {
 	defer func() { _ = s.conn.Close() }()
-	s.write(`INFO {"server_id":"scripted","version":"2.14.0","proto":1,"max_payload":1048576}` + "\r\n")
+	s.write(`INFO {"server_id":"scripted","version":"2.14.0","proto":1,"headers":true,"max_payload":1048576}` + "\r\n")
 	r := bufio.NewReader(s.conn)
 	handshake := true
 	for {
@@ -176,13 +177,14 @@ func (d *pipeDialer) Dial(*net.Dialer, string, string) (net.Conn, error) {
 // connectScripted returns a client connected, through netDial, to a scripted server that
 // withholds every PING after the handshake. The pipe is the socket of the client's own dialer,
 // so Connect's and Close's cuts close it, as they close a TCP socket. Health monitoring is off,
-// so the only PINGs are the ones the test causes. Cleanup answers every PING and closes the
-// client.
-func connectScripted(t *testing.T) (*Client, *scriptedServer) {
+// so the only PINGs are the ones the test causes. opts apply after the defaults, so a test may
+// replace the discarding logger. Cleanup answers every PING and closes the client.
+func connectScripted(t *testing.T, opts ...ClientOption) (*Client, *scriptedServer) {
 	t.Helper()
 	cli, srv := net.Pipe()
 	server := serveScripted(srv)
-	c, err := NewClient("nats://scripted", WithHealthInterval(0), WithLogger(slog.New(slog.DiscardHandler)))
+	opts = append([]ClientOption{WithHealthInterval(0), WithLogger(slog.New(slog.DiscardHandler))}, opts...)
+	c, err := NewClient("nats://scripted", opts...)
 	require.NoError(t, err)
 	c.netDial = (&pipeDialer{conn: cli}).Dial
 	t.Cleanup(func() {
@@ -497,6 +499,114 @@ func TestSubscribeRegistrationCloseEndsConnectionDuringRoundTrip(t *testing.T) {
 	require.NotErrorIs(t, r.err, ErrNotConnected)
 	require.Nil(t, r.sub)
 	require.ErrorIs(t, closeErr, context.Canceled)
+}
+
+// refusalCounts is what a refusalCountHandler read from the registry when the client wrote its
+// "NATS error" record: the server refusal count for each reason, or the Gather error.
+type refusalCounts struct {
+	counts map[string]float64
+	err    error
+}
+
+// refusalCountHandler is a slog handler that, when the client's "NATS error" record arrives,
+// reads the server refusal counts from the registry inside Handle. What it reads is what had been
+// counted before the record was written.
+type refusalCountHandler struct {
+	registry *metric.MetricsRegistry
+	seen     chan refusalCounts
+}
+
+func newRefusalCountHandler(registry *metric.MetricsRegistry) *refusalCountHandler {
+	return &refusalCountHandler{registry: registry, seen: make(chan refusalCounts, 4)}
+}
+
+func (h *refusalCountHandler) Enabled(_ context.Context, level slog.Level) bool {
+	return level >= slog.LevelError
+}
+
+func (h *refusalCountHandler) Handle(_ context.Context, record slog.Record) error {
+	if record.Message != "NATS error" {
+		return nil
+	}
+	read := refusalCounts{counts: map[string]float64{}}
+	families, err := h.registry.PrometheusRegistry().Gather()
+	read.err = err
+	for _, family := range families {
+		if family.GetName() != "semengine_nats_server_refusals_total" {
+			continue
+		}
+		for _, m := range family.GetMetric() {
+			for _, label := range m.GetLabel() {
+				if label.GetName() == "reason" {
+					read.counts[label.GetValue()] = m.GetCounter().GetValue()
+				}
+			}
+		}
+	}
+	// Records after the first, such as Close's, are not the test's; they must not block nats.go's
+	// callback goroutine.
+	select {
+	case h.seen <- read:
+	default:
+	}
+	return nil
+}
+
+func (h *refusalCountHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+
+func (h *refusalCountHandler) WithGroup(string) slog.Handler { return h }
+
+// Design D1 (#169): the server answers a SUB or a PUB with a refusal before the PONG. Subscribe
+// still returns the subscription and nil, and when the client writes its "NATS error" record the
+// refusal has already been counted under its reason, decided by the error's type. Real time,
+// outside a bubble: the test needs no fake clock and waits only on the scripted server's signals.
+func TestServerRefusalCountedBeforeLog(t *testing.T) {
+	rows := []struct {
+		name    string
+		subject string
+		errLine string
+		publish bool
+		reason  string
+	}{
+		{"refused subscription", "refusal.sub",
+			`-ERR 'Permissions Violation for Subscription to "refusal.sub"'`, false, "permission_violation"},
+		{"subscription limit", "refusal.limit",
+			`-ERR 'maximum subscriptions exceeded'`, false, "max_subscriptions_exceeded"},
+		{"refused publish", "refusal.pub",
+			`-ERR 'Permissions Violation for Publish to "refusal.pub"'`, true, "permission_violation"},
+	}
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			registry := metric.NewMetricsRegistry()
+			logs := newRefusalCountHandler(registry)
+			c, server := connectScripted(t, WithMetrics(registry), WithLogger(slog.New(logs)))
+
+			if row.publish {
+				require.NoError(t, c.Publish(t.Context(), row.subject, nil))
+				// A flush sends the PING the server withholds, so the refusal is written after the
+				// server has the PUB, as a real server answers.
+				flushed := make(chan error, 1)
+				go func() { flushed <- c.GetConnection().FlushTimeout(lifecycleBound) }()
+				await(t, server.pinged, "the server reading the flush's PING")
+				server.write(row.errLine + "\r\n")
+				server.answerPings()
+				require.NoError(t, awaitErr(t, flushed, "the flush"))
+			} else {
+				res := subscribeAsync(t.Context(), c, row.subject, noopHandler)
+				await(t, server.pinged, "the server reading the subscription's PING")
+				server.write(row.errLine + "\r\n")
+				server.answerPings()
+				r := awaitValue(t, res, "the call returning after the PONG")
+				require.NoError(t, r.err)
+				require.NotNil(t, r.sub)
+			}
+
+			read := awaitValue(t, logs.seen, "the client's NATS error record")
+			require.NoError(t, read.err)
+			require.Equal(t, map[string]float64{row.reason: 1}, read.counts,
+				"server refusal counts read when the NATS error record was written")
+		})
+	}
 }
 
 // childTestEnv names the test a re-executed test binary runs in a bubble.

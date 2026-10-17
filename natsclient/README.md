@@ -99,7 +99,10 @@ sub, err := client.Subscribe(ctx, "subject.*", func(msgCtx context.Context, msg 
 ```
 
 When `Subscribe` returns, the server has read the subscription, so a request from another connection finds it, unless
-the server refused it. A refusal is not returned as an error; a client that connected with `Connect` logs it.
+the server refused it. A refusal is not returned as an error. A client that connected with `Connect` logs it, and a
+client built with `WithMetrics` also counts it on `semengine_nats_server_refusals_total`, labelled `reason`
+(`permission_violation` or `max_subscriptions_exceeded`). The count can rise after `Subscribe` has returned. A
+publish the server refuses is counted the same way.
 
 ### Advanced Usage
 
@@ -252,7 +255,13 @@ WithTimeout(10*time.Second)        // Connection timeout (default: 5s)
 WithWriteTimeout(10*time.Second)   // How long one write may wait for the server to read it (default: 1m, nats.go's)
 WithPingInterval(10*time.Second)   // How often nats.go sends the server a PING (default: 30s)
 WithLogger(logger)                  // Enable debug logging
+WithMetrics(registry)               // Record JetStream and server-refusal metrics on registry
 ```
+
+Give each client its own metrics registry. A registry holds one client's JetStream series: its stream and consumer
+gauges are set from what that client reads from the server. A second client on the same registry writes the same
+collectors, so the two overwrite each other's gauges, and which client's value a scrape shows is not promised. No
+configuration we know of runs two clients on one registry.
 
 Set `WithWriteTimeout` and `WithPingInterval` together. A write the timeout ends partway leaves the connection
 connected but unable to carry anything. It recovers when its PINGs go unanswered: nats.go then finds the connection

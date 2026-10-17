@@ -12,7 +12,7 @@ import (
 )
 
 // EnsureCatalogRetentionClean is the PRE-START LEGACY-DRIFT BACKSTOP for the
-// framework KV catalog's no-lifecycle buckets (ADR-068 D1). It has exactly ONE
+// framework KV catalog's no-lifecycle buckets (SemStreams ADR-068 D1). It has exactly ONE
 // honest job: a catalog bucket unused by the current composition never has its
 // acquisition seam called — e.g. an EMBEDDING_INDEX left behind by a prior
 // semantic deploy when booting a statistical configuration — so one boot-time
@@ -35,7 +35,7 @@ import (
 // a guarded bucket that does not exist cannot carry a foreign TTL, and its true
 // component creates it clean through the seam. The backstop therefore imposes no
 // bucket-creation ordering and never forces a resourceless deploy to provision
-// a bucket it does not use (feedback_unconditional_resource_wiring).
+// a bucket it does not use.
 func EnsureCatalogRetentionClean(ctx context.Context, client *natsclient.Client, logger *slog.Logger) error {
 	if ctx == nil {
 		return errs.WrapInvalid(errors.New("nil context"),

@@ -108,8 +108,8 @@ func TestKVCatalog_EveryRowValidates(t *testing.T) {
 	assert.Len(t, seen, 18, "the catalog carries the 18 retained framework-guaranteed buckets")
 }
 
-// TestKVCatalog_DeclaredPolicies pins the architect-census policy decisions
-// that enforcement derives from.
+// TestKVCatalog_DeclaredPolicies pins the per-bucket policy decisions (history
+// depth, class, owner, retention, write rule) that enforcement derives from.
 func TestKVCatalog_DeclaredPolicies(t *testing.T) {
 	spec := func(name string) natsclient.BucketSpec {
 		s, ok := SpecFor(name)
@@ -126,7 +126,7 @@ func TestKVCatalog_DeclaredPolicies(t *testing.T) {
 	assert.Equal(t, uint8(3), spec(graph.BucketGraphStatus).History)
 
 	// The shared runtime configuration bucket is catalogued for BOTH guarantees.
-	// Owner-only by owner ruling 2026-08-31 (#1168 comment 5479005060): once
+	// Owner-only by owner ruling 2026-08-31 (SemStreams #1168 comment 5479005060): once
 	// identity correctness state shares a bucket, letting a generic rule writer
 	// onto the rest of the configuration plane is the wrong boundary, and the
 	// existing owner predicate closes the whole class without a remembered-key
@@ -170,7 +170,7 @@ func TestIsFrameworkOwnedBucket_ProductionView(t *testing.T) {
 		graph.BucketGraphIngestAppliedSeq, graph.BucketGraphStatus, graph.BucketStorageReport,
 		// The configuration bucket family joined the guard set with ADR-104: a
 		// generic update_kv into platform_identity forges an authority the next
-		// boot adopts. Members are per deployment since #1188.
+		// boot adopts. Members are per deployment since SemStreams #1188.
 		graph.BucketSemEngineConfig + "_acme_dep",
 	} {
 		assert.True(t, IsFrameworkOwnedBucket(name), "%s must be framework-owned", name)
@@ -183,7 +183,7 @@ func TestIsFrameworkOwnedBucket_ProductionView(t *testing.T) {
 		"application buckets are outside the catalog by rule")
 }
 
-// TestSpecFor_UnknownNameResolvesFalse is the F2 resolution contract: a name
+// TestSpecFor_UnknownNameResolvesFalse is the resolution contract: a name
 // outside the catalog resolves to nothing, which callers turn into a boot
 // failure naming the subject.
 func TestSpecFor_UnknownNameResolvesFalse(t *testing.T) {
@@ -198,10 +198,10 @@ func TestSpecFor_UnknownNameResolvesFalse(t *testing.T) {
 }
 
 // TestConfigBucketFamilyResolvesEveryMember pins the catalog's one name
-// family (#1188): every per-deployment configuration bucket resolves to the
+// family (SemStreams #1188): every per-deployment configuration bucket resolves to the
 // strict, owner-only descriptor under its OWN name — so acquisition creates
 // that member and every update_kv guard refuses it — while the bare prefix,
-// the orphaned pre-#1188 bucket, is no longer framework state.
+// the bucket SemStreams #1188 orphaned, is no longer framework state.
 func TestConfigBucketFamilyResolvesEveryMember(t *testing.T) {
 	for _, member := range []string{
 		graph.BucketSemEngineConfig + "_acme_dep",

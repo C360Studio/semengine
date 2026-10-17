@@ -1,10 +1,20 @@
-// Package kvcatalog is the POPULATION half of the framework KV bucket catalog
-// (framework-bucket-catalog): the ONE literal table of every KV bucket whose
-// write-ownership or retention the framework guarantees, and its acquisition.
-// The mechanism half — the BucketSpec type and the Ensure/Open acquisition
-// seam — lives in natsclient/kvspec.go, name-free. The bucket names are the
-// graph package's Bucket* constants; this package holds the descriptors and
-// the NATS edge, so the graph root imports no transport.
+// Package kvcatalog holds the framework KV bucket catalog: the ONE literal
+// table of every KV bucket whose write-ownership or retention the framework
+// guarantees. Around the table it offers:
+//
+//   - KVCatalog, a copy of the whole table, and SpecFor and OwnerOf, lookups
+//     by bucket name;
+//   - EnsureCatalogBucket, which a bucket's owner calls to acquire it, and
+//     OpenCatalogReader, which readers call;
+//   - EnsureCatalogRetentionClean, the pre-start retention backstop;
+//   - IsFrameworkOwnedBucket and FrameworkOwnedWriteRefusal, the write-guard
+//     pair the rule engine's update_kv guard reads (the rule engine is ported
+//     in change 6).
+//
+// The BucketSpec type and the Ensure/Open acquisition seam live in
+// natsclient/kvspec.go and name no bucket. The bucket names are the graph
+// package's Bucket* constants; this package holds the descriptors and the NATS
+// edge, so the graph root imports no transport.
 //
 // Boundary rule (so the catalog cannot grow by accretion): a bucket belongs
 // here ONLY if the framework guarantees its write-ownership or retention.
@@ -12,9 +22,8 @@
 // stores, workflow-type Lifecycle buckets, research-graph state, ...) are
 // outside it by rule and keep plain CreateKeyValueBucket.
 //
-// Every check the framework enforces from is a DERIVED view of this table:
-// IsFrameworkOwnedBucket (the rule update_kv write guard) reads
-// Write == WriteOwnerOnly; the pre-start legacy-drift backstop
+// Every check the framework enforces is a DERIVED view of this table:
+// IsFrameworkOwnedBucket reads Write == WriteOwnerOnly; the pre-start legacy-drift backstop
 // (EnsureCatalogRetentionClean) filters Retention.Kind == RetentionNoLifecycle.
 // There is no parallel hand-maintained list to forget a member from. That no
 // other non-test file names a catalog bucket in a string literal is review
@@ -125,8 +134,9 @@ var catalog = func() []natsclient.BucketSpec {
 	// Owner-only is not about who may write the bucket: config.Manager acquires
 	// it, and processor/rule's ConfigManager writes rules.* through the key
 	// family config.Manager serves it; neither consults this policy
-	// (at the pin IsFrameworkOwnedBucket has exactly two callers, both rule update_kv
-	// guards). It is about who may NOT. A generic update_kv into
+	// (at the pin IsFrameworkOwnedBucket has three call sites, all in
+	// processor/rule: load validation, the update_kv action and its writer
+	// acquisition). It is about who may NOT. A generic update_kv into
 	// platform_identity plain-Puts over the create-once record: a forged id
 	// whose org and stem match is ADOPTED on the next boot, because adoption
 	// validates grammar and byte budget and nothing else, so a rule pack could
@@ -155,7 +165,7 @@ var catalog = func() []natsclient.BucketSpec {
 		// Authoritative domain state + graph-ingest's operational tiers.
 		entityStates,
 		owned(graph.BucketGraphIngestAppliedSeq, "graph-ingest",
-			"graph-ingest redelivery guard: (entityID/streamName) -> stream generation and last-applied sequence (ADR-072)",
+			"graph-ingest redelivery guard: (entityID/streamName) -> stream generation and last-applied sequence (SemStreams ADR-072)",
 			natsclient.ClassOperational),
 
 		// graph-index's four config-declared output indexes + the name lookup internal.
@@ -177,7 +187,7 @@ var catalog = func() []natsclient.BucketSpec {
 		derived(graph.BucketEmbeddingDedup, "graph-embedding", "Entity embedding deduplication"),
 		derived(graph.BucketCommunityIndex, "graph-clustering", "Community detection index"),
 		derived(graph.BucketCommunitySummaries, "graph-clustering",
-			"LLM community summaries (content-addressed by membership hash, ADR-087)"),
+			"LLM community summaries (content-addressed by membership hash, SemStreams ADR-087)"),
 		derived(graph.BucketAnomalyIndex, "graph-clustering",
 			"Anomaly detection index for structural gaps and inferences"),
 
@@ -189,15 +199,15 @@ var catalog = func() []natsclient.BucketSpec {
 }()
 
 // SpecFor resolves a bucket name to its catalog descriptor. The second return
-// is false for a name outside the catalog — the F2 boot-failure signal for a
-// configuration-supplied bucket name that resolves to nothing (an operator
+// is false for a name outside the catalog, which callers turn into a boot
+// failure for a configuration-supplied bucket name that resolves to nothing (an operator
 // typo may not silently create a stray unguarded bucket). A member of a name
 // family resolves to its family's row with Name set to the member's name, so
 // acquisition creates the member and every owner-only guard refuses it.
 //
 // The runtime configuration row is the one family: its Name is a PREFIX, and
 // every "<Name>_<suffix>" with a nonempty suffix is a member, named per
-// deployment by config.BucketName (#1188). The bare prefix is not a member.
+// deployment by config.BucketName (SemStreams #1188). The bare prefix is not a member.
 func SpecFor(name string) (natsclient.BucketSpec, bool) {
 	for _, spec := range catalog {
 		if spec.Name == graph.BucketSemEngineConfig {

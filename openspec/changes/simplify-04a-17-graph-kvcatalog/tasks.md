@@ -38,7 +38,7 @@ clean tree at its commit (#171).
   entry. Gate: `go test -race ./natsclient/ ./graph/readiness/... ./pkg/lifecycle/...
   ./processor/graph-ingest/...`; `git grep -n -e KeyValueDelete -e KeyValuePurge -- '*.go' ':!*_test.go'` lists only
   `natsclient/kv.go`.
-- [ ] 3.2 D6: the package comment, citations and labels; `graph/README.md:129`; the `graph` ledger row; the
+- [x] 3.2 D6: the package comment, citations and labels; `graph/README.md:129`; the `graph` ledger row; the
   `graph/readiness` row's dependency list when `go list -f '{{.Imports}}' ./graph/readiness` no longer lists
   `graph/kvcatalog`. Gate: `task verify` passes on a clean tree, which runs `ledger:check` and `docs:check` (review
   stop).

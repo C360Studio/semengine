@@ -151,9 +151,8 @@ func TestOwnerOfIsTheStorageInventoryAttributionSeam(t *testing.T) {
 	assert.Equal(t, "", objectStore.Owner)
 }
 
-// TestOwnerOfReportsUnattributedForRemovedCatalogRow is the spec's
-// "attribution follows the catalog rather than a copy of it" scenario expressed
-// against the real catalog table: OwnerOf resolves through the table on every
+// TestOwnerOfReportsUnattributedForRemovedCatalogRow shows that attribution
+// follows the catalog rather than a copy of it, against the real catalog table: OwnerOf resolves through the table on every
 // call, so a row removed from it stops resolving immediately. The
 // inventory holds no mapping that could outlive the row.
 func TestOwnerOfReportsUnattributedForRemovedCatalogRow(t *testing.T) {

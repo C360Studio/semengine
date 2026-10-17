@@ -127,7 +127,9 @@ This provides maximum flexibility while maintaining semantic clarity.
 
 ## What is elsewhere
 
-- `graph/kvcatalog`: the bucket catalog, its acquisition, the owned-bucket retention check and `IsKVTombstone`.
+- `graph/kvcatalog`: the bucket catalog, its acquisition, the owned-bucket retention check and the write-guard pair
+  (`IsFrameworkOwnedBucket`, `FrameworkOwnedWriteRefusal`) the rule engine reads once it is ported (change 6).
+- `natsclient`: `IsKVTombstone`, which reports whether a KV watch entry is a delete or a purge.
 - `graph/readiness`: the readiness computation and the GRAPH_STATUS publisher.
 - `graph/inference`: hierarchy inference (its hierarchy slice).
 

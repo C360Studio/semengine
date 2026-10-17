@@ -68,8 +68,8 @@ func storageAccountRow(
 // JetStream resources, and the publisher writes one key per resource that a
 // consumer can range and decode.
 //
-// The retention assertion is the spec scenario stated against a real bucket
-// rather than against the descriptor: a report row is reclaimed because the
+// The retention assertion is stated against a real bucket rather than against
+// the descriptor: a report row is reclaimed because the
 // collector DECIDED the resource is gone, so there must be no policy on this
 // bucket capable of expiring one behind its back.
 func TestIntegration_StorageReport_PublishesThroughTheCatalogSeam(t *testing.T) {
@@ -216,8 +216,8 @@ func TestIntegration_StorageReport_PublishesThroughTheCatalogSeam(t *testing.T) 
 	})
 }
 
-// TestIntegration_StorageReport_GrowthSurvivesRestart is the spec's restart
-// scenario against a real bucket: the growth series lives in the published
+// TestIntegration_StorageReport_GrowthSurvivesRestart checks a restart against a
+// real bucket: the growth series lives in the published
 // report, so a process that comes up holding nothing measures a rate on its
 // FIRST publication rather than after a smoothing window.
 //
@@ -286,7 +286,7 @@ func TestIntegration_StorageReport_GrowthSurvivesRestart(t *testing.T) {
 }
 
 // TestIntegration_StorageReport_StableSizeUnderChurnReportsZeroGrowth is the
-// spec's churn scenario against a real KV bucket: contents continuously
+// churn case against a real KV bucket: contents continuously
 // replaced under History 1, total size unchanged between successive
 // observations, rate exactly zero.
 //

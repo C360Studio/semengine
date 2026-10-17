@@ -22,7 +22,8 @@ clean tree at its commit (#171).
 - [x] 2.2 Implement D1, D2 and D4:
   - the package-level table; `natsclient/kvspec.go:120`;
   - `KVCatalog` kept returning `slices.Clone(catalog)` (owner question 1: keep), with `TestKVCatalogReturnsACopy`
-    (failing first on the base commit), a `graph/README.md` sentence and a `graph` ledger contract item;
+    (passes on the base, which rebuilt the slice per call; `task mutate:check` with the clone removed is
+    detected, `notes/2.1.md`), a `graph/README.md` sentence and a `graph` ledger contract item;
   - `nameFamilies` removed, with `TestConfigBucketFamilyResolvesEveryMember` passing unedited;
   - one resolver, component `"kvcatalog"`, and the nil-context refusal.
 

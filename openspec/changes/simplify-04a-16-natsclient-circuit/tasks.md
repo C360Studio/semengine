@@ -35,9 +35,9 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 ## 4. Documentation
 
-- [ ] 4.1 Spec deltas match the code; ADR-112 amendment; README and `doc.go` (D4). Gate: `task spec:check`,
+- [x] 4.1 Spec deltas match the code (checked, no drift); ADR-112 amendment; README and `doc.go` (D4). Gate: `task spec:check`,
   `task docs:check`.
-- [ ] 4.2 Ledger natsclient, graphmutation and errs rows (D4). Gate: `task ledger:check`.
+- [x] 4.2 Ledger natsclient, graphmutation and errs rows (D4). Gate: `task ledger:check`.
 - [ ] 4.3 #291 (graph-ingest `Start`) is linked from the PR without a closing keyword, and #222 gets a comment
   correcting part c's premises. Gate: each is read back.
 

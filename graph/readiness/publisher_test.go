@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/c360studio/semengine/graph"
@@ -34,14 +36,14 @@ func (w *fakeWriter) Put(_ context.Context, key string, value []byte) (uint64, e
 	return uint64(w.calls), nil
 }
 
-// TestEnsureBucket_OneShapeIsTheCatalogRow: both producers (graph-index and
-// graph-embedding) route through EnsureBucket, which delegates to the ONE
-// catalog descriptor — so they structurally cannot ask for different shapes of
-// the same bucket. The test pins the descriptor both will acquire under.
-func TestEnsureBucket_OneShapeIsTheCatalogRow(t *testing.T) {
-	spec, ok := kvcatalog.SpecFor(BucketGraphStatus)
+// TestGraphStatusBucketShapeIsTheCatalogRow: every producer acquires GRAPH_STATUS with
+// kvcatalog.EnsureCatalogBucket, which reads the ONE catalog descriptor — so producers
+// structurally cannot ask for different shapes of the same bucket. The test pins the
+// descriptor they acquire under.
+func TestGraphStatusBucketShapeIsTheCatalogRow(t *testing.T) {
+	spec, ok := kvcatalog.SpecFor(graph.BucketGraphStatus)
 	if !ok {
-		t.Fatalf("catalog must declare %s", BucketGraphStatus)
+		t.Fatalf("catalog must declare %s", graph.BucketGraphStatus)
 	}
 	if spec.History != 3 {
 		t.Errorf("catalog History = %d, want 3 (enough replay to see recent transitions)", spec.History)
@@ -51,12 +53,6 @@ func TestEnsureBucket_OneShapeIsTheCatalogRow(t *testing.T) {
 	if spec.Retention.Kind != natsclient.RetentionNoLifecycle {
 		t.Errorf("catalog retention = %q, want no-lifecycle (freshness is consumer-side, ADR-083 D2)",
 			spec.Retention.Kind)
-	}
-}
-
-func TestEnsureBucket_NilClientErrors(t *testing.T) {
-	if _, err := EnsureBucket(t.Context(), nil); err == nil {
-		t.Fatal("want error for nil client, got nil")
 	}
 }
 
@@ -100,7 +96,7 @@ func TestPublisher_ValueIsPlainEnvelopeJSON(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			writer := &fakeWriter{}
-			pub := NewPublisher(writer, tt.key)
+			pub := newTestPublisher(t, writer, tt.key)
 
 			if err := pub.Publish(t.Context(), tt.status); err != nil {
 				t.Fatalf("Publish: %v", err)
@@ -121,21 +117,24 @@ func TestPublisher_ValueIsPlainEnvelopeJSON(t *testing.T) {
 				}
 			}
 
-			// The production consumer decode path, not a local json.Unmarshal.
-			h := newHarness(t)
-			h.deliver(fakeEntry{key: tt.key, value: writer.value, rev: 1, op: jetstream.KeyValuePut})
+			// The production consumer decode path, not a local json.Unmarshal. The
+			// watcher harness runs in a synctest bubble (watcher_test.go).
+			synctest.Test(t, func(t *testing.T) {
+				h := newHarness(t, DefaultHeartbeat)
+				h.deliver(fakeEntry{key: tt.key, value: writer.value, rev: 1, op: jetstream.KeyValuePut})
 
-			got := h.watcher.Read()
-			if !got.Known {
-				t.Fatal("watcher did not accept the published value")
-			}
-			// PublishedAt is the publisher's stamp (TestPublishStampsPublishedAt);
-			// every other field is the caller's and round-trips unchanged.
-			want := tt.status
-			want.PublishedAt = got.Status.PublishedAt
-			if !reflect.DeepEqual(got.Status, want) {
-				t.Errorf("round-trip mismatch:\n got %+v\nwant %+v", got.Status, want)
-			}
+				got := h.watcher.Read()
+				if !got.Known {
+					t.Fatal("watcher did not accept the published value")
+				}
+				// PublishedAt is the publisher's stamp (TestPublishStampsPublishedAt);
+				// every other field is the caller's and round-trips unchanged.
+				want := tt.status
+				want.PublishedAt = got.Status.PublishedAt
+				if !reflect.DeepEqual(got.Status, want) {
+					t.Errorf("round-trip mismatch:\n got %+v\nwant %+v", got.Status, want)
+				}
+			})
 		})
 	}
 }
@@ -143,7 +142,7 @@ func TestPublisher_ValueIsPlainEnvelopeJSON(t *testing.T) {
 func TestPublisher_PutFailureIsReturnedNotSwallowed(t *testing.T) {
 	// The tick loop must be able to count and log the failure, so it has to see it.
 	boom := errors.New("no responders")
-	pub := NewPublisher(&fakeWriter{err: boom}, KeyGraphIndex)
+	pub := newTestPublisher(t, &fakeWriter{err: boom}, KeyGraphIndex)
 
 	err := pub.Publish(t.Context(), graph.IndexStatusResponse{State: graph.IndexStateBuilding})
 	if err == nil {
@@ -154,49 +153,53 @@ func TestPublisher_PutFailureIsReturnedNotSwallowed(t *testing.T) {
 	}
 }
 
-func TestNewPublisher_RejectsIncompleteWiring(t *testing.T) {
+// TestNewPublisherRefusesIncompleteWiring: a producer wired with no bucket or no key is
+// refused at construction, naming the cause, so its Start fails instead of publishing
+// nothing while consumers read the key as absent.
+func TestNewPublisherRefusesIncompleteWiring(t *testing.T) {
 	tests := []struct {
-		name   string
-		writer StatusWriter
-		key    string
+		name     string
+		writer   StatusWriter
+		key      string
+		wantText string
 	}{
-		{name: "nil writer", writer: nil, key: KeyGraphIndex},
-		{name: "empty key", writer: &fakeWriter{}, key: ""},
+		{name: "nil bucket", writer: nil, key: KeyGraphIndex, wantText: "bucket"},
+		{name: "empty key", writer: &fakeWriter{}, key: "", wantText: "key"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			pub := NewPublisher(tt.writer, tt.key)
-			if pub != nil {
-				t.Fatalf("want nil publisher for incomplete wiring, got %+v", pub)
+			pub, err := NewPublisher(tt.writer, tt.key)
+			if err == nil {
+				t.Fatalf("NewPublisher(%v, %q) = %+v, nil; want an error", tt.writer, tt.key, pub)
 			}
-			// A nil publisher must stay a safe no-op: the tick loop guards on it, and
-			// a panic there would take down the component the status describes.
-			if err := pub.Publish(t.Context(), graph.IndexStatusResponse{}); err != nil {
-				t.Errorf("nil publisher Publish = %v, want nil", err)
+			if pub != nil {
+				t.Errorf("NewPublisher returned a publisher beside its error: %+v", pub)
+			}
+			if !strings.Contains(err.Error(), tt.wantText) {
+				t.Errorf("error %q does not name the missing %s", err, tt.wantText)
 			}
 		})
+	}
+
+	// The control: complete wiring builds a publisher for that key.
+	pub, err := NewPublisher(&fakeWriter{}, KeyGraphIngest)
+	if err != nil {
+		t.Fatalf("NewPublisher with a bucket and a key: %v", err)
+	}
+	if pub.Key() != KeyGraphIngest {
+		t.Errorf("Key() = %q, want %q", pub.Key(), KeyGraphIngest)
 	}
 }
 
-// TestPublisherKey: Key reports the key the publisher was built for, and "" for the nil
-// publisher NewPublisher returns on incomplete wiring. graph-ingest's publish-failure log
-// reads it (processor/graph-ingest/readiness.go:341).
-func TestPublisherKey(t *testing.T) {
-	tests := []struct {
-		name string
-		pub  *Publisher
-		want string
-	}{
-		{name: "nil publisher", pub: NewPublisher(nil, KeyGraphIngest), want: ""},
-		{name: "set", pub: NewPublisher(&fakeWriter{}, KeyGraphIngest), want: KeyGraphIngest},
+// newTestPublisher builds a publisher the production way and fails the test on a
+// refusal.
+func newTestPublisher(t *testing.T, writer StatusWriter, key string) *Publisher {
+	t.Helper()
+	pub, err := NewPublisher(writer, key)
+	if err != nil {
+		t.Fatalf("NewPublisher(%q): %v", key, err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.pub.Key(); got != tt.want {
-				t.Errorf("Key() = %q, want %q", got, tt.want)
-			}
-		})
-	}
+	return pub
 }
 
 // TestPublishStampsPublishedAt: every write's stored value carries published_at, the
@@ -214,7 +217,7 @@ func TestPublishStampsPublishedAt(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			writer := &fakeWriter{}
-			pub := NewPublisher(writer, KeyGraphIndex)
+			pub := newTestPublisher(t, writer, KeyGraphIndex)
 
 			before := time.Now()
 			status := graph.IndexStatusResponse{State: graph.IndexStateBuilding, PublishedAt: tt.passed}

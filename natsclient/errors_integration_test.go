@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -273,6 +274,56 @@ func TestIntegration_RequestWithRetryClassified_SuccessPath(t *testing.T) {
 	if !bytes.Equal(data, want) {
 		t.Fatalf("data = %q, want %q", data, want)
 	}
+}
+
+// A reply ends the retrying call, an error reply included: the handler's error comes back
+// classified after one attempt and is never retried, though the config allows more attempts.
+func TestIntegration_RequestWithRetryClassified_ErrorReplyIsNotRetried(t *testing.T) {
+	client := newFixtureClient(t).Client
+
+	const subject = "test.retry_classified.error_not_retried"
+	var calls atomic.Int64
+	_, err := client.SubscribeForRequests(t.Context(), subject, func(context.Context, []byte) ([]byte, error) {
+		calls.Add(1)
+		return nil, errs.WrapInvalid(errors.New("refused write"), "Test", "Handle", "validate")
+	})
+	require.NoError(t, err)
+	flushClient(t, client)
+
+	cfg := RetryConfig{MaxRetries: 2, InitialBackoff: time.Millisecond, MaxBackoff: time.Millisecond, BackoffMultiplier: 1}
+	data, err := client.RequestWithRetryClassified(t.Context(), subject, []byte("write"), failureBound, cfg)
+	require.Nil(t, data)
+	require.True(t, errs.IsInvalid(err), "want the handler's invalid error, got %v", err)
+	require.Contains(t, err.Error(), "refused write")
+	// Every attempt the call made was answered before it returned, so the count is final here.
+	require.Equal(t, int64(1), calls.Load(), "an error reply was retried")
+}
+
+// RequestWithHeaders returns the reply as received: a handler error arrives as a reply carrying
+// X-Status: error with a nil error, and ClassifyReply on that reply returns the handler's class and
+// code.
+func TestIntegration_RequestWithHeaders_ErrorReplyKeepsHeaders(t *testing.T) {
+	client := newFixtureClient(t).Client
+
+	const subject = "test.headers.error_reply"
+	_, err := client.SubscribeForRequests(t.Context(), subject, func(context.Context, []byte) ([]byte, error) {
+		return nil, errs.ClassifiedCode(errs.ErrorInvalid, "entity_not_found", errors.New("no such entity"))
+	})
+	require.NoError(t, err)
+	flushClient(t, client)
+
+	msg, err := client.RequestWithHeaders(t.Context(), subject, []byte("write"), nil, failureBound)
+	require.NoError(t, err)
+	require.NotNil(t, msg)
+	require.Equal(t, "error", msg.Header.Get("X-Status"))
+
+	data, err := ClassifyReply(msg)
+	require.Nil(t, data)
+	require.True(t, errs.IsInvalid(err), "want an invalid error, got %v", err)
+	var ce *errs.ClassifiedError
+	require.ErrorAs(t, err, &ce)
+	require.Equal(t, "entity_not_found", ce.Code)
+	require.Contains(t, err.Error(), "no such entity")
 }
 
 // TestIntegration_RequestWithRetryClassified_RetriesThenSucceeds

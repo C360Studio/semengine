@@ -18,7 +18,7 @@ Premises:
 
 Change (option B, recommended): `newJetStreamMetrics` also registers a counter vector,
 `semengine_nats_server_refusals_total` (Namespace `semengine`, Subsystem `nats`), through
-`metric.RegisterOrGet(registry, "nats", "server_refusals_total", …)`, with label `reason` and Help "Refusals the
+`metric.RegisterOrGet(registry, "nats", "server_refusals", …)`, with label `reason` and Help "Refusals the
 NATS server reported on the client's connection: a publish or subscribe permission, or the subscription limit". A
 registration error returns from `newJetStreamMetrics` as the existing registrations' errors do.
 When metrics are configured, `handleError` adds one with reason `permission_violation` for

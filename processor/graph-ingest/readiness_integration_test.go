@@ -47,7 +47,7 @@ func tryReadEnvelope(
 	ctx context.Context, t *testing.T, client *natsclient.Client,
 ) (graph.IndexStatusResponse, []byte, bool) {
 	t.Helper()
-	bucket, err := client.GetKeyValueBucket(ctx, readiness.BucketGraphStatus)
+	bucket, err := client.GetKeyValueBucket(ctx, graph.BucketGraphStatus)
 	require.NoError(t, err, "GRAPH_STATUS bucket")
 
 	entry, err := bucket.Get(ctx, readiness.KeyGraphIngest)
@@ -428,7 +428,7 @@ func TestIntegration_ReadinessEnvelope_AbsentKeyIsNotAFailure(t *testing.T) {
 	}
 	require.NoError(t, ctx.Err(), "operation authority must remain usable after the phase fence")
 
-	bucket, err := client.GetKeyValueBucket(ctx, readiness.BucketGraphStatus)
+	bucket, err := client.GetKeyValueBucket(ctx, graph.BucketGraphStatus)
 	require.NoError(t, err)
 	require.NoError(t, bucket.Purge(ctx, readiness.KeyGraphIngest))
 

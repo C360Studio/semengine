@@ -149,7 +149,7 @@ func ValidateEntityStateContract(entity *EntityState) error {
 		// (normalizeProjection splits foreign subjects off before commit), so
 		// this removes an O(triples) ValidateEntityID pass — with a
 		// strings.Split allocation per triple — from the MarshalEntityState
-		// write gate on the per-key-serialized RMW hot path (gh#562
+		// write gate on the per-key-serialized RMW hot path (SemStreams gh#562
 		// write-cost). Strictly verdict-preserving: equality to a validated ID
 		// implies validity, and any differing subject (valid or not) takes the
 		// full check with unchanged error precedence and TripleIndex.

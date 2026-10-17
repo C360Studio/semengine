@@ -3,7 +3,7 @@ package graph
 import "encoding/hex"
 
 // EncodePredicateToken hex-encodes a predicate for use as a single key token in
-// the INCOMING / NAME / CONTEXT composite-key reverse indexes (gh#474 Codex P1a).
+// the INCOMING / NAME / CONTEXT composite-key reverse indexes (SemStreams gh#474 Codex P1a).
 //
 // Canonical predicates are validated before persistence and are NATS-key-safe,
 // but their three semantic segments contain two dots. Encoding the raw predicate

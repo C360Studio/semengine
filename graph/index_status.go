@@ -1,13 +1,13 @@
 package graph
 
-// IndexStatusResponse is the wire shape of the readiness envelope (gh#397,
+// IndexStatusResponse is the wire shape of the readiness envelope (SemStreams gh#397,
 // enriched by ADR-066, distributed as GRAPH_STATUS KV state by ADR-083): the
 // deterministic-fusion honesty envelope's readiness signal.
 //
 // Ready reports COVERAGE: every committed ENTITY_STATES revision <= the query-time
 // target has been applied (revision-lag, ADR-066), not merely "indexing started" (the
 // old sticky NAME_INDEX-non-empty signal that fired minutes before the index was
-// populated, gh#431). It guarantees revision coverage, not last-writer-wins freshness
+// populated, SemStreams gh#431). It guarantees revision coverage, not last-writer-wins freshness
 // under same-key churn (ADR-066 §1 Scope boundary).
 //
 // Ready LICENSES NOTHING ABOUT ABSENCE (ADR-084). It once carried an "only Ready
@@ -41,7 +41,7 @@ type IndexStatusResponse struct {
 	// cutover re-gates (ADR-084 D2).
 	//
 	// It exists because health is otherwise not evaluable from the wire: an index
-	// halfway through a gh#474 cutover reports State=building with a plausible Lag,
+	// halfway through a SemStreams gh#474 cutover reports State=building with a plausible Lag,
 	// indistinguishable from an index that is merely behind. Ready cannot answer it
 	// (a caught-up index is bootstrapped, but a bootstrapped index under write is not
 	// caught up) and TargetRevision==0 cannot either (it is false during a cutover and
@@ -66,7 +66,7 @@ type IndexStatusResponse struct {
 	// FailedCount / FailedReasons / FirstFailureAt are the bounded failure detail a
 	// producer that tracks per-entity failures carries on a DEGRADED envelope so an
 	// operator can tell a whole-dependency outage from a few persistently-failing
-	// entities WITHOUT any unbounded per-entity list on the watched key (#613).
+	// entities WITHOUT any unbounded per-entity list on the watched key (SemStreams #613).
 	//
 	// All three are additive and omitempty: a producer with no failures — including
 	// graph-index, which enforces the same rule caller-side via its watermark hole —
@@ -82,7 +82,7 @@ type IndexStatusResponse struct {
 	// KV commit time of the newest ENTITY_STATES revision the index has fully
 	// covered. It is the view-rate consumer's tolerance unit because it is
 	// invariant to write rate and coalesce_ms, where a revision count is not
-	// (gh#590: the correct revision bound shifted 2-4x with the coalesce dial
+	// (SemStreams gh#590: the correct revision bound shifted 2-4x with the coalesce dial
 	// alone).
 	//
 	// PRESENCE ENCODING — 0 does NOT mean "zero staleness". It means the value
@@ -114,7 +114,7 @@ type IndexStatusResponse struct {
 	// today for any producer: `BootstrapComplete && BootstrapScope == 0` is
 	// "authoritatively nothing to do" — the producer finished its initial build and
 	// the build was empty — as opposed to "finished a build that had work in it".
-	// gh#732 raises this: a consumer waiting for a bootstrap replay cannot otherwise
+	// SemStreams gh#732 raises this: a consumer waiting for a bootstrap replay cannot otherwise
 	// tell an empty-by-truth replay from one it observed too early.
 	//
 	// THE GATE MUST NOT READ IT. readiness.EvaluateReadinessGate does not look at this
@@ -140,7 +140,8 @@ type IndexStatusResponse struct {
 // know, and the readiness gate defers on it.
 type IndexState string
 
-// Index readiness states. Mirrors pkg/fusion.IndexState string values.
+// Index readiness states. The values match pkg/fusion.IndexState at the
+// SemStreams pin.
 const (
 	IndexStateBuilding      IndexState = "building"
 	IndexStateReady         IndexState = "ready"

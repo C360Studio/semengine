@@ -1948,8 +1948,8 @@
     graph/readiness; design D16, #101)
   contract: >-
     data model, codecs, bucket-name constants (BucketSemEngineConfig = "semengine_config", #69),
-    StateContractError, mutation/query wire types, and ExactEntityReader as at the pin, with zero
-    transport imports in the root package (TestGraphImportsNoTransport) and these adaptations:
+    StateContractError, mutation/query wire types, and the exact-entity reader as at the pin, with
+    zero transport imports in the root package (TestGraphImportsNoTransport) and these adaptations:
     (1) EntityState has no Version field (KV revision is the only fence, #100); (2) ReplaceBySource
     orders each (subject, predicate, source) set by Timestamp, and single-value reads choose the
     latest statement across sources (#98); (3) ReconcilePredicatesRequest requires a non-empty
@@ -1957,7 +1957,18 @@
     (5) IndexStatusResponse drops legacy Phase/Revision/LastSynced and adds published_at (design D16);
     (6) ExactEntityReader refuses negative timeouts and reads its subject from QueryVerbs (#106,
     #151); (7) GraphStateReasonMissingStatementMetadata added; (8) PrefixQueryRequest adds optional
-    6-position wildcard Pattern (#259)
+    6-position wildcard Pattern (#259); (9) UnmarshalEntityState takes the bucket key and is the one
+    stored-value rule (decode, canonical contract, ID equals key, statement Source and Timestamp),
+    each refusal one fatal graph_state_reset_required ClassifiedError over a StateContractError;
+    ValidateStatementMetadata is its last step alone; ClassifyStateContractError removed (#276);
+    (10) ExactEntityReader is a struct, and ExactEntity carries one kv_revision tag; EntityRequest,
+    EntityBatchRequest and ResponderGraphIngest declared here; QueryVerb is Name, Subject and
+    Responder; (11) MutationOutcome is applied, unchanged, entity_not_found and failed, and
+    ErrorCodeRevisionMismatch and ErrorCodeIndexNotReady are defined from pkg/errs (ruling L);
+    (12) EntityMutationResponse replaces CreateEntityResponse and ReconcilePredicatesResponse; the
+    cursor codec and the trusted decoder moved, unexported, into graph-ingest;
+    ValidateEntityPredicates unexported; (13) IndexStatusResponse.State is an IndexState, and
+    IndexStates() returns the closed state list as a new slice (simplify-04a-13-graph D1-D6)
   dependencies_and_side_effects: >-
     message, pkg/errs, pkg/types, vocabulary (in-set); stdlib; no NATS import in graph root;
     graph/kvcatalog imports natsclient and nats.go/jetstream
@@ -1968,11 +1979,12 @@
     carries its IndexStatus copy without the three legacy fields removed from IndexStatusResponse
     (#110, design D16). Removed: events.go (#101), UnwrapQueryResponse, TOOL_CALL_OUTCOMES,
     ENTITY_SUFFIX_INDEX (#104), and dead sentinels/types (errors.go, incoming.go, query_types.go,
-    GetPropertyValue function, MissingUnknown, ContextEntry, NameIndexEntry; #132); README updated
+    GetPropertyValue function, MissingUnknown, ContextEntry, NameIndexEntry); README updated
   proving_tests: >-
     graph/write_rules_test.go, graph/write_rules_prop_test.go, graph/exact_entity_test.go,
     graph/query_verbs_test.go, graph/query_prefix_types_test.go, graph/mutation_protocol_test.go,
-    graph/kvcatalog/*_test.go, internal/harness/contract/graphtransport_test.go
+    graph/stored_entity_rule_test.go, graph/index_status_test.go, graph/kvcatalog/*_test.go,
+    internal/harness/contract/graphtransport_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 

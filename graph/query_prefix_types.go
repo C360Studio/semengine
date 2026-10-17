@@ -1,5 +1,3 @@
-// Package graph defines the types and primitives for the SemStreams knowledge
-// graph engine.
 package graph
 
 // MaxPrefixQueryLimit is the maximum number of entities returned per page. A

@@ -8,7 +8,7 @@ package graph
 // entity that does not exist from one the read failed to reach, and — because the
 // list carries no correspondence to the requested order or membership — could not even
 // tell WHICH id was missing without diffing the sets itself. Nothing did. That is the
-// confirmed drop path in gh#597: a top-ranked seed vanished between resolve and
+// confirmed drop path in SemStreams gh#597: a top-ranked seed vanished between resolve and
 // hydration and the response looked like an ordinary shorter list.
 //
 // Reporting omission does NOT license the inverse inference. `missing` with reason

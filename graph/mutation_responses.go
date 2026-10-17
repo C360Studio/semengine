@@ -1,10 +1,8 @@
-// Package graph provides request/response types for the NATS mutation and query APIs.
-// See mutation_requests.go for the full package documentation.
 package graph
 
 import "github.com/c360studio/semengine/pkg/errs"
 
-// Stable failure codes carried by *errs.ClassifiedError.Code (ADR-060). A caller
+// Stable failure codes carried by *errs.ClassifiedError.Code (SemStreams ADR-060). A caller
 // reads one with errors.As(err, &ce) and ce.Code; revision_mismatch also matches
 // errs.ErrRevisionMismatch through errors.Is.
 //
@@ -49,7 +47,7 @@ const (
 
 	// ErrorCodeMessageTypeUnregistered indicates an entity.create stamped a
 	// message_type the receiving binary's payload registry does not hold
-	// (ADR-103: the registry is the single type authority). Class invalid; the
+	// (SemStreams ADR-103: the registry is the single type authority). Class invalid; the
 	// caller registers the type, it does not retry. Detail carries the key under
 	// "message_type". Emitted by graph-ingest's registered-type gate on both
 	// create paths (the RPC lane and the in-process CreateEntity).
@@ -62,22 +60,22 @@ const (
 
 	// ErrorCodeResourceExhausted indicates a query would exceed a server-side read
 	// budget — e.g. a byName lookup on a name shared by more entities than the
-	// hydration cap (gh#474 Codex P2a interim guard). The caller should narrow the
-	// query rather than retry unchanged; the full hot-key NAME redesign is gh#381.
+	// hydration cap (SemStreams gh#474 Codex P2a interim guard). The caller should narrow the
+	// query rather than retry unchanged; the full hot-key NAME redesign is SemStreams gh#381.
 	ErrorCodeResourceExhausted = "resource_exhausted"
 
 	// ErrorCodeIndexNotReady indicates a query arrived while the serving index was not
 	// SOUND to read from — the responder or its watcher is unavailable, the index is
 	// degraded by an unresolved required write, or it has not finished its initial
 	// build. The motivating case is the breaking composite-key format cutover on an
-	// in-place upgrade (gh#474 Codex P1d), where old aggregate keys are inert and the
+	// in-place upgrade (SemStreams gh#474 Codex P1d), where old aggregate keys are inert and the
 	// new keyset is still materialising: serving it would advertise a smaller graph
 	// than exists.
 	//
 	// NOT emitted for ordinary revision lag (narrowed by ADR-084). A healthy index that
 	// is merely behind SERVES, reporting its view age as staleness_ms on the readiness
 	// envelope, because coverage was never evidence of soundness and gating on it made
-	// every write burst look like a fault (#592). Probe health with
+	// every write burst look like a fault (SemStreams #592). Probe health with
 	// `nats kv get GRAPH_STATUS graph-index` and read `state` + `bootstrap_complete` —
 	// NOT the `ready` bit, which answers coverage and is false on any busy index.
 	//
@@ -99,7 +97,7 @@ const (
 	// (B2 §7) recognizes it as a definitive "this entity has no semantic neighbors"
 	// and fails open to an empty set, distinct from a malformed / unknown reply which
 	// it must count toward its coverage-threshold abort rather than cache as a hollow
-	// empty (#662 / Codex P1#2). Consumers classify by this stable code, never by the
+	// empty (SemStreams #662 / Codex P1#2). Consumers classify by this stable code, never by the
 	// message text.
 	ErrorCodeEmbeddingUnavailable = "embedding_unavailable"
 )

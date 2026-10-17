@@ -19,16 +19,19 @@ Depends on `INVENTORY PASS` for `inventory.md`; pins are at the base commit.
 
 - `TestPublishRefusesNilContext` (`publisher_test.go`): rows nil context (want an error naming `nil context`,
   `fakeWriter.calls == 0`) and `t.Context()` (want nil, one `Put`). On the base the nil row panics.
-- `TestWaitForFirstRefusesNilContext` (`watcher_test.go`, `synctest` harness): after `deliver(readyEntry(t))`, nil
-  returns an error naming `nil context` and `t.Context()` returns nil; before any delivery, nil returns an error
-  without blocking. On the base both nil rows panic.
+- `TestWaitForFirstRefusesNilContext` (`watcher_test.go`, `synctest` harness), with named subtests:
+  `after_delivery` (after `deliver(readyEntry(t))`, nil returns an error naming `nil context` and `t.Context()`
+  returns nil) and `before_delivery` (nil returns an error without blocking, observed with `synctest.Wait` and the
+  existing `returned` helper, no timeout). On the base both nil rows panic.
 - Sensitivity, `task mutate:check` with `-expect-text` on each test's failure text: the check replaced by
   `ctx = context.Background()` (the forbidden nil default) is detected by the Publish nil row (error nil, one `Put`)
-  and by the WaitForFirst after-delivery row (returns nil). A panic or deadlock reading is inconclusive, not detection.
+  and by the WaitForFirst after-delivery row (returns nil), run alone as
+  `-test TestWaitForFirstRefusesNilContext/after_delivery` because under the mutant `before_delivery` blocks and the
+  bubble's deadlock panic would hide the expected text. A panic or deadlock reading is inconclusive, not detection.
 
 ## D3. Spec and ledger
 
-- MODIFIED requirement (delta `specs/graph-readiness/spec.md`) adds both methods and one scenario.
+- MODIFIED requirement (delta `specs/graph-readiness/spec.md`) adds both methods and one scenario for each.
 - Ledger `contract` gains `(10) Publish and WaitForFirst return an error for a nil ctx, Publish before any write
   (readiness-nil-context, #297)`. Merge order with #292: either first; whichever lands second merges `origin/main`
   and resolves the adjacent-line ledger hunk and the `watcher.go` hunks (`:252` here, `:303-310` there) by hand.

@@ -24,3 +24,8 @@ substitute a default for a missing value.
 
 - **WHEN** `Publish` is called with a nil context
 - **THEN** it returns an error and the bucket receives no write
+
+#### Scenario: Waiting for the first envelope with a nil context
+
+- **WHEN** `WaitForFirst` is called with a nil context after an envelope has arrived
+- **THEN** it returns an error instead of reporting the envelope

@@ -7,7 +7,7 @@ Batch 1 can start on the base; batches 2 and 3 start after this branch merges `o
 
 ## 1. Design
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal, design and spec delta pass pre-owner review and are accepted
+- [x] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal, design and spec delta pass pre-owner review and are accepted
   by the owner, with owner questions 1 and 2 answered. Gate: `task spec:check` and `task docs:check`.
 
 ## 2. The Watcher (batch 1, D2)

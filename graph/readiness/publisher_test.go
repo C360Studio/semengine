@@ -6,6 +6,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/c360studio/semengine/graph"
@@ -121,21 +122,24 @@ func TestPublisher_ValueIsPlainEnvelopeJSON(t *testing.T) {
 				}
 			}
 
-			// The production consumer decode path, not a local json.Unmarshal.
-			h := newHarness(t)
-			h.deliver(fakeEntry{key: tt.key, value: writer.value, rev: 1, op: jetstream.KeyValuePut})
+			// The production consumer decode path, not a local json.Unmarshal. The
+			// watcher harness runs in a synctest bubble (watcher_test.go).
+			synctest.Test(t, func(t *testing.T) {
+				h := newHarness(t, DefaultHeartbeat)
+				h.deliver(fakeEntry{key: tt.key, value: writer.value, rev: 1, op: jetstream.KeyValuePut})
 
-			got := h.watcher.Read()
-			if !got.Known {
-				t.Fatal("watcher did not accept the published value")
-			}
-			// PublishedAt is the publisher's stamp (TestPublishStampsPublishedAt);
-			// every other field is the caller's and round-trips unchanged.
-			want := tt.status
-			want.PublishedAt = got.Status.PublishedAt
-			if !reflect.DeepEqual(got.Status, want) {
-				t.Errorf("round-trip mismatch:\n got %+v\nwant %+v", got.Status, want)
-			}
+				got := h.watcher.Read()
+				if !got.Known {
+					t.Fatal("watcher did not accept the published value")
+				}
+				// PublishedAt is the publisher's stamp (TestPublishStampsPublishedAt);
+				// every other field is the caller's and round-trips unchanged.
+				want := tt.status
+				want.PublishedAt = got.Status.PublishedAt
+				if !reflect.DeepEqual(got.Status, want) {
+					t.Errorf("round-trip mismatch:\n got %+v\nwant %+v", got.Status, want)
+				}
+			})
 		})
 	}
 }

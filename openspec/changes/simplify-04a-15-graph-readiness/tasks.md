@@ -12,7 +12,7 @@ Batch 1 can start on the base; batches 2 and 3 start after this branch merges `o
 
 ## 2. The Watcher (batch 1, D2)
 
-- [ ] 2.1 `watcher_test.go` rewritten in `synctest.Test` bubbles against the base production code, using none of
+- [x] 2.1 `watcher_test.go` rewritten in `synctest.Test` bubbles against the base production code, using none of
   `withClock`, `withRebindDelay`, `withAppliedHook` and no wall-clock `time.After` guard; `TestWaitForFirst` added.
   Gate: the tests pass on the base production code; `task mutate:check` detects a freshness multiplier of 4 and a
   removed `firstOnce.Do`.

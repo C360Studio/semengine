@@ -37,8 +37,9 @@ const (
 // blocks drops the mode line of a rendered profile, so profiles can be concatenated.
 func blocks(p string) string { return strings.TrimPrefix(p, "mode: atomic\n") }
 
-// d11Targets are the coverage targets setup-04a-02 design D11 adds (task 5.2d), each with the
-// profile scripts/cover-check.sh measures it from.
+// d11Targets are the coverage targets setup-04a-02 design D11 adds (task 5.2d), and those later
+// changes add (simplify-04a-13 design D2: natsclient/storagereport), each with the profile
+// scripts/cover-check.sh measures it from.
 var d11Targets = []struct{ dir, kind string }{
 	{"processor/graph-ingest", "merged"},
 	{"graph", "merged"},
@@ -50,13 +51,14 @@ var d11Targets = []struct{ dir, kind string }{
 	{"component", "merged"},
 	{"storage/storeregistry", "unit"},
 	{"pkg/lifecycle", "merged"},
+	{"natsclient/storagereport", "merged"},
 }
 
 // TestCoverCheckSensitivity: scripts/cover-check.sh (task cover:check) fails when any enforced
 // package is below 80% or missing from its profile, and passes at 80%: the three harness packages;
 // message, payloadregistry and natsclient (setup-04a-01-floor task 5.4), which lie outside
-// internal/harness; and design D11's ten targets. natsclient and D11's merged targets are measured
-// from the unit and integration profiles merged, D11's unit targets from the unit profile alone.
+// internal/harness; and the d11Targets list. natsclient and its merged targets are measured
+// from the unit and integration profiles merged, its unit targets from the unit profile alone.
 // Blocks repeated across a merged profile count once, covered if any copy was.
 func TestCoverCheckSensitivity(t *testing.T) {
 	script := filepath.Join(repoRoot(t), "scripts", "cover-check.sh")
@@ -282,7 +284,7 @@ func TestCoverCheckRefusesAnUnmeasuredTree(t *testing.T) {
 
 // TestCoverCheckUnitRunCoversUnitAndMergedTargets: in its no-argument mode scripts/cover-check.sh
 // writes the unit profile with one go test run, over every target measured from the unit profile
-// alone or merged (natsclient, and design D11's ten targets), and not over an integration-only
+// alone or merged (natsclient, and the d11Targets list), and not over an integration-only
 // target (natsfixture), whose owner tests need Docker. A fake go records its arguments and fails,
 // which ends the script there.
 func TestCoverCheckUnitRunCoversUnitAndMergedTargets(t *testing.T) {

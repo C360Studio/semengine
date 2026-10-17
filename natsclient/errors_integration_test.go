@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nats-io/nats.go"
 	"github.com/stretchr/testify/require"
 
-	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/pkg/retry"
 )
@@ -299,11 +299,11 @@ func TestIntegration_RequestWithHeaders_ErrorReplyKeepsHeaders(t *testing.T) {
 }
 
 // TestIntegration_RequestWithRetryClassified_RetriesThenSucceeds
-// pins that the retry loop actually retries — responder starts late,
-// the request retries through the responder-not-ready window, then
-// succeeds with the classified contract intact. Catches a refactor
-// that accidentally bypasses retry (e.g. delegating to
-// RequestClassified directly).
+// pins that the retry loop actually retries: the responder is subscribed
+// from the start, leaves its first request unanswered and answers the
+// second, so only a retry can succeed, and its handler count proves the
+// retry from the responder's side. Catches a refactor that accidentally
+// bypasses retry (e.g. delegating to RequestClassified directly).
 func TestIntegration_RequestWithRetryClassified_RetriesThenSucceeds(t *testing.T) {
 	ctx := context.Background()
 
@@ -314,38 +314,29 @@ func TestIntegration_RequestWithRetryClassified_RetriesThenSucceeds(t *testing.T
 	require.NoError(t, client.Connect(ctx))
 	defer closeClient(t, client)
 
-	subject := "test.retry_classified.late_responder"
-	want := []byte(`{"ack":"after-delay"}`)
+	subject := "test.retry_classified.drops_first"
+	want := []byte(`{"ack":"second-attempt"}`)
 
-	// The responder subscribes once the first attempt has failed for want of one (the client
-	// counts the failure), so only a retry can succeed. The pin waited 150 ms instead.
-	subscribed := make(chan error, 1)
-	go func() {
-		waitCtx, cancel := context.WithTimeout(ctx, failureBound)
-		defer cancel()
-		if _, err := probe.Await(waitCtx, func(context.Context) (int32, error) { return client.Failures(), nil },
-			func(failures int32) bool { return failures >= 1 }); err != nil {
-			subscribed <- err
-			return
+	var received atomic.Int32
+	sub, err := client.GetConnection().Subscribe(subject, func(msg *nats.Msg) {
+		if received.Add(1) == 1 {
+			return // the first attempt gets no reply and times out
 		}
-		_, err := client.SubscribeForRequests(ctx, subject, func(_ context.Context, _ []byte) ([]byte, error) {
-			return want, nil
-		})
-		subscribed <- err
-	}()
+		_ = msg.Respond(want) // a failed respond fails the call below
+	})
+	require.NoError(t, err)
+	defer func() { require.NoError(t, sub.Unsubscribe()) }()
+	flushClient(t, client)
 
-	// Eleven attempts (ten retries) span about 5.6 s of backoff before jitter, so the late
-	// subscription lands inside the retry window on a slow host; a correct run ends at the first
-	// retry after it.
-	cfg := retry.DefaultConfig()
-	cfg.InitialDelay = 50 * time.Millisecond
-	cfg.MaxAttempts = 11
-	cfg.Multiplier = 1.5
+	// The per-attempt timeout is what the first attempt waits; the second is answered at once.
+	// MaxAttempts 3 leaves one spare attempt, so a call that stopped retrying early fails rather
+	// than one that retried once too often passing.
+	cfg := retry.Config{MaxAttempts: 3, InitialDelay: 20 * time.Millisecond, MaxDelay: 100 * time.Millisecond, Multiplier: 2}
 
-	data, err := client.RequestWithRetryClassified(ctx, subject, []byte("write"), 2*time.Second, cfg)
-	require.NoError(t, <-subscribed, "late responder")
-	require.NoError(t, err, "retry+classified should succeed once late responder comes up")
+	data, err := client.RequestWithRetryClassified(ctx, subject, []byte("write"), time.Second, cfg)
+	require.NoError(t, err, "retry+classified should succeed on the second attempt")
 	if !bytes.Equal(data, want) {
 		t.Fatalf("data = %q, want %q", data, want)
 	}
+	require.Equal(t, int32(2), received.Load(), "requests the responder received")
 }

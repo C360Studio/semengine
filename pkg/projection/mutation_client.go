@@ -414,7 +414,7 @@ func mutationFailure(operation MutationOperation, err error) (MutationReceipt, e
 // unregistered, entity ID invalid, entity ID authority invalid, revision mismatch, entity exists,
 // entity not found, graph state reset required): the error keeps that reply's class, code and a
 // copy of its detail. Or the request was not delivered, because no responder took it, natsclient
-// refused it before sending (ErrNotConnected, ErrCircuitOpen), or the caller's context ended
+// refused it before sending (ErrNotConnected), or the caller's context ended
 // before it was sent: Kind MutationUnavailable, class transient.
 //
 // Every other error, a classified reply with any other code included, is commit-unknown and fatal,

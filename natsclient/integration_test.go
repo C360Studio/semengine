@@ -12,6 +12,7 @@ import (
 	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/c360studio/semengine/metric"
+	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 	dto "github.com/prometheus/client_model/go"
@@ -163,37 +164,22 @@ func TestIntegration_AcknowledgedIsNotDurableOnMemoryStream(t *testing.T) {
 	}
 }
 
-// TestIntegration_CircuitBreakerWithRealConnection tests circuit breaker with actual failures
-func TestIntegration_CircuitBreakerWithRealConnection(t *testing.T) {
-	ctx := context.Background()
+// TestIntegration_FailedConnectsEachDial: a Connect that cannot reach the server returns its own
+// dial failure every time, however many came before it, and leaves the status Disconnected
+// (transport-client, "A failed call refuses no other call").
+func TestIntegration_FailedConnectsEachDial(t *testing.T) {
+	ctx := t.Context()
 
-	// Try to connect to an invalid NATS server
 	manager, err := NewClient(refusedNATSURL(t))
 	require.NoError(t, err)
 
-	// Try 14 times - should not open circuit (threshold is 15)
-	for i := 0; i < 14; i++ {
+	for i := 1; i <= 20; i++ {
 		err = manager.Connect(ctx)
-		assert.Error(t, err)
-		assert.NotEqual(t, StatusCircuitOpen, manager.Status())
+		require.Error(t, err, "Connect %d to a refused port", i)
+		require.True(t, errs.IsTransient(err), "Connect %d: %v", i, err)
+		require.Contains(t, err.Error(), "establish connection", "Connect %d did not dial: %v", i, err)
+		require.Equal(t, StatusDisconnected, manager.Status(), "status after Connect %d", i)
 	}
-
-	// 15th attempt should trigger circuit breaker
-	err = manager.Connect(ctx)
-	assert.Error(t, err)
-
-	// After 15 failures, circuit should be open
-	assert.Equal(t, StatusCircuitOpen, manager.Status())
-	assert.Equal(t, int32(15), manager.Failures())
-
-	// Further attempts should fail immediately with circuit open error. "Immediately" is observed
-	// as no failed dial, where the pin asserted under 10 ms of wall time (design D8 R1b): a dial
-	// to the refused port fails, and a failed dial adds a failure even while the circuit is open.
-	err = manager.Connect(ctx)
-
-	assert.Error(t, err)
-	assert.Equal(t, ErrCircuitOpen, err)
-	assert.Equal(t, int32(15), manager.Failures(), "Connect with the circuit open dialled") // Should fail fast
 }
 
 // TestIntegration_PublishSubscribe tests basic pub/sub functionality

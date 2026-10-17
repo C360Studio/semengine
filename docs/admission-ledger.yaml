@@ -445,7 +445,8 @@
     by substring matching on error text (#146, owner ruling N); Classify returns ErrorFatal for an
     unclassified error, while IsTransient, IsFatal, and IsInvalid report false for it (#167); WrapTransient, WrapFatal, and
     WrapInvalid return nil when err == nil regardless of action (#218); duplicate RetryConfig,
-    DefaultRetryConfig, ShouldRetry, ToRetryConfig, and BackoffDelay removed (#218)
+    DefaultRetryConfig, ShouldRetry, ToRetryConfig, and BackoffDelay removed (#218). Changed surface,
+    simplify-04a-16 (#222): ErrCircuitOpen is removed with natsclient's circuit breaker
   dependencies_and_side_effects: stdlib only; no goroutine, no I/O
   known_risks: >-
     no production context roots. Classify defaults unclassified errors without a listed sentinel to
@@ -828,7 +829,7 @@
 - source_path: natsclient
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    the NATS and JetStream client: connection lifecycle with circuit breaker and health status,
+    the NATS and JetStream client: connection lifecycle and health status,
     streams, consumers with delivery settlement, KV buckets and watchers, request/reply, and
     JetStream metrics (storage inventory, pressure and reports are the sub-package natsclient/storagereport); SemSource imports it, so it stays public
     at its pin path (design D5)
@@ -843,6 +844,14 @@
     NewConsumer); Client.AccountStreamLister is the function storagereport.AccountStreamLister(client) (D2); 22
     names with no caller in this repository are unexported (D2, Exports); Observer gains ForgetAccount(row), called
     when the consumer drops a held account row, so an observer is told as it is for resources (D3, #85).
+    Changed surface, simplify-04a-16 (#222): the connection circuit breaker is removed, and the
+    connection status is a typed atomic that Status() reads without the client's lock. Removed:
+    StatusCircuitOpen, natsclient.ErrCircuitOpen (and errs.ErrCircuitOpen), Client.Failures,
+    Client.Backoff, and Status.FailureCount, LastFailureTime and Reconnects; Client.RTT and the
+    health monitor stay. Connect dials each time it is called, bounded by its context, and a failed
+    call refuses no other call. The records below that name the breaker, its timer or its tests
+    (circuit threshold, Failures(), the circuit-open rows) describe the pin and the earlier
+    changes, and are history.
     Changed behavior, design D9 (task 3.7): newJetStreamMetrics registers
     all 11 collectors through metric.RegisterOrGet and keeps the collector each call returns
     (jetstream_metrics.go:128-161 at the pin, where 8 went through the removed Register* methods,
@@ -860,9 +869,9 @@
     falls on acknowledgement (nats.go consumer_config.go:53-57). The other metric names and types and the jetstream subsystem are
     unchanged; the namespace is semengine (adapt item below, #69). Changed surface, task 3.7a: the surface audit's drops listed under
     known_risks are gone, and with them the token, TLS and compression connection options and the
-    disconnect, reconnect and health-change callbacks; pingInterval (30 s), drainTimeout (30 s),
-    circuitThreshold (15) and maxBackoff (one minute) keep their defaults (client.go:161-166 at
-    the pin → :149-154) with no setter, and requestHandlerTimeout is set only from
+    disconnect, reconnect and health-change callbacks; pingInterval (30 s) and drainTimeout (30 s)
+    keep their defaults (client.go:161-166 at the pin → :149-154) with no setter (the pin's
+    circuitThreshold and maxBackoff went with the breaker, simplify-04a-16), and requestHandlerTimeout is set only from
     SEMENGINE_NATS_REQUEST_HANDLER_TIMEOUT (request.go:37-55; renamed, adapt item below, #69). Changed
     behavior, task 3.7c (design D3), each an adapt item: natsclient-nil-context-refused, Close(nil)
     and Connect(nil) return an invalid error before any dial or close (client.go:689-691,
@@ -870,16 +879,16 @@
     natsclient-connect-refuses-second-start, a Connect on a connected client returns
     errs.ErrAlreadyStarted before it dials and changes nothing (:692-700), and a concurrent Connect
     that lost to another, by failing, by having its context end, or by dialling successfully second,
-    leaves the winner's status, failure count and circuit as they were and closes what it dialled
+    leaves the winner's status as it was (at the pin and until simplify-04a-16 also its failure count and circuit) and closes what it dialled
     (the pin
     overwrote the connection at :547 and started a second poller at :566);
     natsclient-close-joins-its-goroutines,
     the six sites (the health monitor :2151, the metrics poller :868, the claim releases of both consumer
-    APIs, now one site, owned_delivery.go:133, the connection-loss timer's body :2040 and the
-    circuit timer's body :590) start through one helper, startBackground (:223), which under mu
+    APIs, now one site, owned_delivery.go:133, the connection-loss timer's body :2040 and, until
+    simplify-04a-16 removed the breaker, the circuit timer's body :590) start through one helper, startBackground (:223), which under mu
     refuses once Close has begun and otherwise counts the work as client-owned (an owned-work
     count under mu, which the join waits to reach zero) before the goroutine starts; Connect admits the
-    monitor and the poller through it. The first Close stops the monitor, both timers and the
+    monitor and the poller through it. The first Close stops the monitor, the timer and the
     poller, drains and closes the
     connection, clears the connection and the JetStream handle, and only then sets Status to
     Disconnected (the status keeps its value through the drain), bounded by its own context. Every
@@ -922,7 +931,7 @@
     Close has begun; a Connect that returns an error has no handler of its dialled connection still
     running. natsclient-close-honours-each-context (Codex F22): a Close or Connect never waits on
     another caller's drain to observe its own context. natsclient-status-ownership (Codex F23): a
-    Connect that loses to an installed connection changes neither Status, Failures nor the circuit;
+    Connect that loses to an installed connection does not change Status (nor, until simplify-04a-16, Failures or the circuit);
     once Close has begun only Close changes Status, which keeps its value through the drain and is
     Disconnected for good once the cleanup has finished; Connect after Close refuses before dialling
     (the pin dialled). Each changed behaviour above is an adapt item with its test (design D3; task
@@ -1027,9 +1036,9 @@
     (nats.FlusherTimeout; default nats.DefaultFlusherTimeout, one minute, which nats.go used before)
     and WithPingInterval (nats.PingInterval; default 30 s, natsclient's setting before), each
     refusing a value that is not positive (TestWriteTimeoutAndPingIntervalOptions). ErrNotConnected
-    wraps errs.ErrConnectionLost, and ErrCircuitOpen is errs.ErrCircuitOpen, so both are transient
-    by errs.IsTransient (TestClientSentinelsAreTransient); before #170 both were plain errors.New
-    values. CreateKeyValueBucket recognises an existing bucket with errors.Is(err,
+    wraps errs.ErrConnectionLost, and ErrCircuitOpen was errs.ErrCircuitOpen (removed by simplify-04a-16), so both were
+    transient by errs.IsTransient (TestClientSentinelsAreTransient); before #170 both were plain
+    errors.New values. CreateKeyValueBucket recognises an existing bucket with errors.Is(err,
     jetstream.ErrBucketExists), in place of isAlreadyExistsError, which matched the error's text
     (TestCreateKeyValueOfAnExistingBucketIsErrBucketExists,
     TestCreateKeyValueBucketGetsAgainWhenItsStreamExists)
@@ -2039,7 +2048,7 @@
     transport-error classification as at the pin, with InterfaceType renamed to
     "semengine.graph.mutation" (#69) and dead IsCommitUnknown removed (design D6). Changed by
     simplify-04a-11-graphmutation: a request natsclient refuses before sending (ErrNotConnected,
-    ErrCircuitOpen) is TransportUnavailable, so not committed (D1, #268); the client's own refusals
+    and until simplify-04a-16 ErrCircuitOpen) is TransportUnavailable, so not committed (D1, #268); the client's own refusals
     (nil client, nil context, unadmitted operation, unencodable request, Create with no entity) are
     made before any request and are invalid with code invalid_request (D2); Subject(op) resolves the
     four admitted operations within SubjectFamily and takes no family argument (D3, #137)

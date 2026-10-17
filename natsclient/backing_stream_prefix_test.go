@@ -104,7 +104,7 @@ func TestCheckOrdinaryStreamName(t *testing.T) {
 // wrong subjects, which the bucket's later catalog acquisition then collides
 // with.
 //
-// The refusal must precede the connection and circuit-breaker checks: this
+// The refusal must precede the connection check: this
 // client is not connected, so an unguarded EnsureStream returns ErrNotConnected,
 // and that is the negative control below.
 func TestEnsureStream_RefusesBackingStreamName(t *testing.T) {
@@ -127,7 +127,7 @@ func TestEnsureStream_RefusesBackingStreamName(t *testing.T) {
 			require.ErrorIs(t, err, ErrBackingStreamNotProvisionable)
 			assert.True(t, errs.IsFatal(err), "a backing-stream name is unrecoverable, not transient")
 			assert.NotErrorIs(t, err, ErrNotConnected,
-				"refusal must precede the connection/circuit checks, not depend on them")
+				"refusal must precede the connection check, not depend on it")
 			assert.Contains(t, err.Error(), name)
 		})
 	}
@@ -155,7 +155,7 @@ func TestCreateStream_RefusesBackingStreamName(t *testing.T) {
 			require.ErrorIs(t, err, ErrBackingStreamNotProvisionable)
 			assert.True(t, errs.IsFatal(err))
 			assert.NotErrorIs(t, err, ErrNotConnected,
-				"refusal must precede the connection/circuit checks")
+				"refusal must precede the connection check")
 		})
 	}
 

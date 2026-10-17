@@ -63,8 +63,8 @@ func EnsureCatalogRetentionClean(ctx context.Context, client *natsclient.Client,
 		}
 		bucket := spec.Name
 		// Read-only / must-exist probe: GetKeyValueBucket never creates a bucket
-		// and returns jetstream.ErrBucketNotFound for an absent one (exempted from
-		// the shared circuit breaker). Skip-if-absent: a not-yet-provisioned
+		// and returns jetstream.ErrBucketNotFound for an absent one.
+		// Skip-if-absent: a not-yet-provisioned
 		// tier-gated bucket is passed over.
 		if _, err := client.GetKeyValueBucket(ctx, bucket); err != nil {
 			if errors.Is(err, jetstream.ErrBucketNotFound) {

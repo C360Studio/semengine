@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/c360studio/semengine/pkg/errs"
+	"github.com/c360studio/semengine/pkg/retry"
 )
 
 // The siblings of the entry points in Codex's F32 probe (reviewer_nil_context_probe_test.go): every
@@ -44,12 +45,8 @@ func TestExportedNilContextRefusedOnRequestAndBucketPaths(t *testing.T) {
 			_, err := c.RequestClassified(ctx, subject, nil, 10*time.Second)
 			return err
 		}},
-		{"RequestWithRetry", func(ctx context.Context) error {
-			_, err := c.RequestWithRetry(ctx, subject, nil, 10*time.Second, DefaultRetryConfig())
-			return err
-		}},
 		{"RequestWithRetryClassified", func(ctx context.Context) error {
-			_, err := c.RequestWithRetryClassified(ctx, subject, nil, 10*time.Second, DefaultRetryConfig())
+			_, err := c.RequestWithRetryClassified(ctx, subject, nil, 10*time.Second, retry.DefaultConfig())
 			return err
 		}},
 		{"RequestReadyClassified", func(ctx context.Context) error {
@@ -109,7 +106,7 @@ func TestExportedNilContextRefusedOnRequestAndBucketPaths(t *testing.T) {
 	require.Equal(t, int64(2), calls.Load())
 }
 
-// An already-cancelled context sends nothing from either retrying request method: each attempt,
+// An already-cancelled context sends nothing from the retrying request method: each attempt,
 // the first included, checks the context first (Codex F32), and the refusal is a transient
 // classified error that still matches context.Canceled.
 func TestRetryRequestEndedContextNeverDispatches(t *testing.T) {
@@ -129,27 +126,24 @@ func TestRetryRequestEndedContextNeverDispatches(t *testing.T) {
 	ended, cancel := context.WithCancel(t.Context())
 	cancel()
 	failuresBefore := c.GetStatus().FailureCount
-	_, err = c.RequestWithRetry(ended, subject, nil, 10*time.Second, DefaultRetryConfig())
-	require.ErrorIs(t, err, context.Canceled)
-	require.True(t, errs.IsTransient(err), "RequestWithRetry: %v", err)
-	_, err = c.RequestWithRetryClassified(ended, subject, nil, 10*time.Second, DefaultRetryConfig())
+	_, err = c.RequestWithRetryClassified(ended, subject, nil, 10*time.Second, retry.DefaultConfig())
 	require.ErrorIs(t, err, context.Canceled)
 	require.True(t, errs.IsTransient(err), "RequestWithRetryClassified: %v", err)
 	// No attempt was made, so the caller's cancellation is not a transport failure: it must not
 	// count toward the shared circuit breaker that fast-fails unrelated calls.
 	require.Equal(t, failuresBefore, c.GetStatus().FailureCount, "an ended context recorded a transport failure")
 
-	// Sent after the refused calls on the same connection, so delivered after anything they sent.
-	data, err := c.RequestWithRetryClassified(t.Context(), subject, nil, 10*time.Second, RetryConfig{})
+	// Sent after the refused call on the same connection, so delivered after anything it sent.
+	data, err := c.RequestWithRetryClassified(t.Context(), subject, nil, 10*time.Second, retry.Config{})
 	require.NoError(t, err)
 	require.Equal(t, "handled", string(data))
 	require.Equal(t, int64(1), calls.Load(), "only the request with a live context reached the handler")
 }
 
-// A negative MaxRetries is refused as invalid by both retrying request methods and sends nothing
-// (Codex F31). The probe in reviewer_full_nats_probe_test.go proves the refusal; this proves no
-// request reached the handler.
-func TestNegativeMaxRetriesNeverDispatches(t *testing.T) {
+// A retry count below one makes one attempt, as retry.Do does: the handler runs once and its
+// reply comes back (changed: at the pin a negative count returned success with no reply, Codex
+// F31; before #222 it was refused).
+func TestRetryRequestNegativeCountMakesOneAttempt(t *testing.T) {
 	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
 	require.NoError(t, err)
 	require.NoError(t, c.Connect(t.Context()))
@@ -163,14 +157,36 @@ func TestNegativeMaxRetriesNeverDispatches(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, c.GetConnection().FlushTimeout(10*time.Second))
 
-	negative := RetryConfig{MaxRetries: -1}
-	_, err = c.RequestWithRetry(t.Context(), subject, nil, 10*time.Second, negative)
-	require.True(t, errs.IsInvalid(err), "RequestWithRetry: %v", err)
-	_, err = c.RequestWithRetryClassified(t.Context(), subject, nil, 10*time.Second, negative)
-	require.True(t, errs.IsInvalid(err), "RequestWithRetryClassified: %v", err)
+	for _, attempts := range []int{0, -1} {
+		before := calls.Load()
+		data, err := c.RequestWithRetryClassified(t.Context(), subject, nil, 10*time.Second, retry.Config{MaxAttempts: attempts})
+		require.NoError(t, err, "MaxAttempts %d", attempts)
+		require.Equal(t, "handled", string(data), "MaxAttempts %d", attempts)
+		require.Equal(t, before+1, calls.Load(), "MaxAttempts %d: the handler did not run exactly once", attempts)
+	}
+}
 
-	// Sent after the refused calls on the same connection, so delivered after anything they sent.
-	data, err := c.RequestWithRetryClassified(t.Context(), subject, nil, 10*time.Second, RetryConfig{})
+// A config retry.Do refuses is returned before anything is sent: the handler never runs. The
+// error's class is not promised.
+func TestRetryRequestRefusedConfigNeverDispatches(t *testing.T) {
+	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
+	require.NoError(t, err)
+	require.NoError(t, c.Connect(t.Context()))
+	closeInCleanup(t, c)
+	const subject = "refusedretry.dispatch"
+	var calls atomic.Int64
+	_, err = c.SubscribeForRequests(t.Context(), subject, func(context.Context, []byte) ([]byte, error) {
+		calls.Add(1)
+		return []byte("handled"), nil
+	})
+	require.NoError(t, err)
+	require.NoError(t, c.GetConnection().FlushTimeout(10*time.Second))
+
+	_, err = c.RequestWithRetryClassified(t.Context(), subject, nil, 10*time.Second, retry.Config{InitialDelay: -1})
+	require.Error(t, err)
+
+	// Sent after the refused call on the same connection, so delivered after anything it sent.
+	data, err := c.RequestWithRetryClassified(t.Context(), subject, nil, 10*time.Second, retry.Config{})
 	require.NoError(t, err)
 	require.Equal(t, "handled", string(data))
 	require.Equal(t, int64(1), calls.Load(), "only the valid request reached the handler")

@@ -254,7 +254,8 @@ body or one classified error: a `SubscribeForRequests` handler's error goes back
 class and code (`natsclient/doc.go`, "The unified RPC error contract").
 
 - Call a classified handler with `RequestClassified`, or `RequestWithRetryClassified` where redelivery is
-  authorized. Raw `Request` plus a JSON unmarshal can decode an error reply as a zero-valued success.
+  authorized. `RequestWithHeaders` without `ClassifyReply`, plus a JSON unmarshal, can decode an error reply as a
+  zero-valued success.
 - Propagate a classified request error without losing its class, code or detail.
 - Use `errors.Is` for JetStream sentinels, and cover sibling states such as key-not-found and key-deleted, or
   no-keys-found and key-not-found.

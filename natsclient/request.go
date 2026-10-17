@@ -75,8 +75,9 @@ func resolveRequestHandlerTimeoutFromEnv() time.Duration {
 // per-attempt timeout is short and the total is bounded, a genuinely hung
 // responder fails within the budget rather than a full-timeout×N
 // storm — so it does NOT mask a hung responder the way retrying a full-timeout
-// query would. Distinct from Request (steady-state query: timeout = real signal,
-// no retry) and RequestWithRetry (mutation: retry-any at full timeout).
+// query would. Distinct from RequestClassified (steady-state query: timeout =
+// real signal, no retry) and RequestWithRetryClassified (an operation whose
+// contract authorizes redelivery: retry on no reply, at full timeout).
 const (
 	// DefaultReadinessProbeTimeout bounds each attempt. Short so a
 	// not-yet-subscribed responder fails fast and retries instead of consuming a
@@ -174,73 +175,12 @@ func (c *Client) requestMsgReady(
 	}
 }
 
-// Request performs a synchronous request/reply operation.
-// It publishes a message to the subject and waits for a response.
-// The timeout parameter controls how long to wait for a response (P13). If
-// timeout is 0, DefaultRequestTimeout is used. Neither the timeout nor ctx ends
-// a wait behind a write the server is not reading: such a write holds the
-// request until it completes or nats.go's write timeout (one minute by default,
-// WithWriteTimeout) ends it (P13, P14; ADR-112).
-//
-// Request is the right call for QUERIES (read paths) — failures
-// surface to the caller, who decides whether to retry, fall back, or
-// raise an error. For MUTATIONS use RequestWithRetry instead;
-// without retry, transient "no responders" errors during startup
-// races / responder restarts cause silent data loss. See SemStreams'
-// docs/operations/07-nats-request-retry.md at the pin for the full rule.
-func (c *Client) Request(ctx context.Context, subject string, data []byte, timeout time.Duration) ([]byte, error) {
-	if ctx == nil {
-		return nil, nilContextError("Request")
-	}
-	c.mu.RLock()
-	conn := c.conn
-	c.mu.RUnlock()
-
-	if conn == nil || !conn.IsConnected() {
-		return nil, ErrNotConnected
-	}
-
-	// Check circuit breaker
-	if c.Status() == StatusCircuitOpen {
-		return nil, ErrCircuitOpen
-	}
-
-	// Use default timeout if not specified
-	if timeout == 0 {
-		timeout = DefaultRequestTimeout
-	}
-
-	// Auto-generate trace if none exists
-	if _, ok := TraceContextFromContext(ctx); !ok {
-		ctx = ContextWithTrace(ctx, NewTraceContext())
-	}
-
-	// Create a context with timeout if not already set
-	reqCtx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	// Build message with trace headers
-	msg := nats.NewMsg(subject)
-	msg.Data = data
-	InjectTrace(ctx, msg)
-
-	// Perform the request using NATS request/reply
-	reply, err := conn.RequestMsgWithContext(reqCtx, msg)
-	if err != nil {
-		// The caller's own cancellation is not a transport failure; reqCtx's timeout still is.
-		if ctx.Err() == nil {
-			c.recordFailure()
-		}
-		return nil, err
-	}
-
-	c.resetCircuit()
-	return reply.Data, nil
-}
-
-// RequestWithHeaders performs a request/reply operation with custom headers.
-// Headers are passed as a map and converted to NATS message headers.
-// Returns the full NATS message to allow access to response headers.
+// RequestWithHeaders performs a request/reply operation with custom headers,
+// converted from the map to NATS message headers. It returns the reply message
+// as received, headers included, and does not classify it: a
+// SubscribeForRequests handler's error arrives as a reply whose X-Status header
+// is "error", with a nil error, not as err. Callers run ClassifyReply on the
+// reply; a caller that sends no headers uses RequestClassified, which does both.
 func (c *Client) RequestWithHeaders(
 	ctx context.Context,
 	subject string,
@@ -485,155 +425,4 @@ func (c *Client) requestCallback(
 			}
 		}
 	}
-}
-
-// RetryConfig configures retry behavior for requests.
-type RetryConfig struct {
-	MaxRetries        int           // Number of retry attempts (default: 3)
-	InitialBackoff    time.Duration // First retry delay (default: 100ms)
-	MaxBackoff        time.Duration // Cap on backoff growth (default: 2s)
-	BackoffMultiplier float64       // Exponential growth factor (default: 2.0)
-}
-
-// DefaultRetryConfig returns sensible defaults for retry configuration.
-func DefaultRetryConfig() RetryConfig {
-	return RetryConfig{
-		MaxRetries:        3,
-		InitialBackoff:    100 * time.Millisecond,
-		MaxBackoff:        2 * time.Second,
-		BackoffMultiplier: 2.0,
-	}
-}
-
-// RequestWithRetry performs a request with configurable retry on failure.
-// This is useful for handling transient "no responders" errors in NATS
-// where the subscriber may not be ready when the request arrives.
-//
-// Use this for MUTATIONS (write paths) where the responder is
-// idempotent — the retry path may re-deliver the same request if the
-// first attempt's response gets lost, so the responder must converge
-// to the same state on duplicate receives. For QUERIES use Request
-// instead; retrying on timeout masks hung responders as latency. See
-// SemStreams' docs/operations/07-nats-request-retry.md at the pin for the
-// full rule.
-//
-// Footgun: when the responder returns a Go error, SubscribeForRequests
-// replies through RespondError: an X-Status: error header, an X-Error-Class
-// header (and X-Error-Code when the error carries a code), and a
-// {message, detail} JSON body. This method returns reply.Data on transport
-// success without running it through ClassifyReply, so it returns that error body as data with a nil error,
-// and a caller that json.Unmarshals it into its success type gets a
-// zero-valued success. For mutation paths that want both retry AND
-// classified error handling, use RequestWithRetryClassified (SemStreams
-// gh#192 closed that gap).
-func (c *Client) RequestWithRetry(
-	ctx context.Context,
-	subject string,
-	data []byte,
-	timeout time.Duration,
-	retry RetryConfig,
-) ([]byte, error) {
-	msg, err := c.requestMsgWithRetry(ctx, "RequestWithRetry", subject, data, timeout, retry)
-	if err != nil {
-		return nil, err
-	}
-	return msg.Data, nil
-}
-
-// requestMsgWithRetry is the shared retry-loop helper. Returns the
-// raw *nats.Msg so callers can either extract .Data (RequestWithRetry)
-// or run the message through ClassifyReply (RequestWithRetryClassified
-// in errors.go). Keeps the two retry-aware request methods in lockstep
-// so a future retry-logic tweak doesn't silently drift between them.
-//
-// method names the exported caller in a refusal. A nil context and a negative MaxRetries are
-// refused before anything is sent: with MaxRetries below zero the loop below would run no
-// attempt and return no reply and no error (Codex F31).
-func (c *Client) requestMsgWithRetry(
-	ctx context.Context,
-	method string,
-	subject string,
-	data []byte,
-	timeout time.Duration,
-	retry RetryConfig,
-) (*nats.Msg, error) {
-	if ctx == nil {
-		return nil, nilContextError(method)
-	}
-	if retry.MaxRetries < 0 {
-		return nil, errs.WrapInvalid(fmt.Errorf("MaxRetries %d is negative; 0 means one attempt", retry.MaxRetries),
-			"Client", method, "retry config")
-	}
-	c.mu.RLock()
-	conn := c.conn
-	c.mu.RUnlock()
-
-	if conn == nil || !conn.IsConnected() {
-		return nil, ErrNotConnected
-	}
-
-	if c.Status() == StatusCircuitOpen {
-		return nil, ErrCircuitOpen
-	}
-
-	if timeout == 0 {
-		timeout = DefaultRequestTimeout
-	}
-
-	// Auto-generate trace if none exists (once for all retries)
-	if _, ok := TraceContextFromContext(ctx); !ok {
-		ctx = ContextWithTrace(ctx, NewTraceContext())
-	}
-
-	var lastErr error
-	for attempt := 0; attempt <= retry.MaxRetries; attempt++ {
-		// An ended context sends nothing, and the caller's cancellation is not counted as a
-		// transport failure toward the shared circuit breaker (Codex F32).
-		if err := ctx.Err(); err != nil {
-			return nil, errs.WrapTransient(err, "Client", method, fmt.Sprintf("request attempt %d", attempt+1))
-		}
-		reqCtx, cancel := context.WithTimeout(ctx, timeout)
-
-		// Build message with trace headers
-		msg := nats.NewMsg(subject)
-		msg.Data = data
-		InjectTrace(ctx, msg)
-
-		reply, err := conn.RequestMsgWithContext(reqCtx, msg)
-		cancel()
-
-		if err == nil {
-			c.resetCircuit()
-			return reply, nil
-		}
-
-		// A caller that cancelled while the attempt was in flight ends the call here, uncounted;
-		// reqCtx's own timeout is a real failure and is counted.
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return nil, errs.WrapTransient(ctxErr, "Client", method, fmt.Sprintf("request attempt %d", attempt+1))
-		}
-		lastErr = err
-		c.recordFailure()
-
-		// Wait before retry (if more retries remain)
-		if attempt < retry.MaxRetries {
-			// Calculate exponential backoff
-			backoff := retry.InitialBackoff
-			for i := 0; i < attempt; i++ {
-				backoff = time.Duration(float64(backoff) * retry.BackoffMultiplier)
-			}
-			if backoff > retry.MaxBackoff {
-				backoff = retry.MaxBackoff
-			}
-
-			select {
-			case <-ctx.Done():
-				return nil, errs.WrapTransient(ctx.Err(), "Client", method, fmt.Sprintf("backoff before attempt %d", attempt+2))
-			case <-time.After(backoff):
-				// Continue to next retry
-			}
-		}
-	}
-
-	return nil, lastErr
 }

@@ -245,7 +245,13 @@ WithTimeout(10*time.Second)        // Connection timeout (default: 5s)
 WithWriteTimeout(10*time.Second)   // How long one write may wait for the server to read it (default: 1m, nats.go's)
 WithPingInterval(10*time.Second)   // How often nats.go sends the server a PING (default: 30s)
 WithLogger(logger)                  // Enable debug logging
+WithMetrics(registry)               // Record JetStream and server-refusal metrics on registry
 ```
+
+Give each client its own metrics registry. A registry holds one client's JetStream series: its stream and consumer
+gauges are set from what that client reads from the server. A second client on the same registry writes the same
+collectors, so the two overwrite each other's gauges, and which client's value a scrape shows is not promised. No
+configuration we know of runs two clients on one registry.
 
 Set `WithWriteTimeout` and `WithPingInterval` together. A write the timeout ends partway leaves the connection
 connected but unable to carry anything. It recovers when its PINGs go unanswered: nats.go then finds the connection

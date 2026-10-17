@@ -987,7 +987,7 @@
     answers again (task 3.7d sets these gauges from server state, so a value the server did not
     give is not shown, as the policy loop already did for its gauges; the pin skipped the consumer silently and kept the last values,
     jetstream_metrics.go:290-294 at the pin, :296-300 at 931d90f) (TestJetStreamConsumerMetricsDropSeriesWhenInfoFails);
-    with two clients on one registry the deletion is the shared-series case under known_risks (#75).
+    with two clients on one registry the deletion is the shared-series case under known_risks.
     (12) natsclient-consume-handler-context (owner ruling, #9 comment 5994720412, item 2): in
     ConsumeStreamWithConfig and ConsumeInternalStreamWithConfig the caller's context bounds setup
     only; handlers run under a context the Client owns per consumer, cancelled when Close begins and
@@ -1085,10 +1085,11 @@
     handlers and connection event handlers to nats.go goroutines; Close joins all of them (design
     D3, tasks 3.7c and 3.7c2)
   known_risks: >-
-    Shared-series ownership, #75, tracked and not fixed here (#9 comment 5968830525, rule 4; owner
-    ruling #9 comment 5969776736, item 5): with two clients on one registry, one client's failed
+    One client per metrics registry (WithMetrics doc comment; no known configuration runs two;
+    design simplify-04a-18 D2): with two clients on one registry, one client's failed
     stream Info sets the shared stream_state series to 0 (jetstream_metrics.go:278 at the pin → :283),
-    and forgetConsumer deletes consumer series another client still writes (:232-243 → :236-247).
+    and forgetConsumer deletes consumer series another client still writes (:232-243 → :236-247);
+    which client's write stands is not promised.
     Callers awaiting a consumer handle's native Closed() can see it close early after the
     connection was force-closed (jetstream/pull.go:822-837); Client.Close's nil is the completion
     proof, and the three Consume doc comments say so (owner answer 1, #9 comment 5980296112).
@@ -2281,8 +2282,9 @@
     prometheus/client_golang; JetStream consumers, KV reads/writes, request subscriptions, keyed
     lane pool, and status loop started in Start and released by Stop
   known_risks: >-
-    ENTITY_STATES keeps History 1 (#99); two instances on one metrics registry share gauge collectors
-    (#75); a stream recreated between the pre-bind generation read and bind is a declared limitation
+    ENTITY_STATES keeps History 1 (#99); one instance per metrics registry: a second shares the gauge
+    collectors and which write stands is not promised, and no known configuration runs two; a stream
+    recreated between the pre-bind generation read and bind is a declared limitation
     (#214); follow-up #174 tracks bookkeeping after an unconfirmed append write. Removed:
     lastSyncedRFC3339, MergeEntity, TEST_DISPUTE.md, and agentic indexing_profile_registry_test.go;
     README updated to match

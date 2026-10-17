@@ -10,7 +10,7 @@ Tests come first; record in `notes/<task>.md` how each fails on the base and whi
 
 ## 2. Implementation (D1, D2, D3)
 
-- [ ] 2.1 Failing tests `TestPublishRefusesNilContext` and `TestWaitForFirstRefusesNilContext`. Gate: each nil row
+- [x] 2.1 Failing tests `TestPublishRefusesNilContext` and `TestWaitForFirstRefusesNilContext`. Gate: each nil row
   fails on the base (panic, named in the note); the valid-context rows pass on the base.
 - [ ] 2.2 D1's two checks and doc comments; D3's ledger item. Gate: `go test -race ./graph/readiness/
   ./processor/graph-ingest/`; `task mutate:check` detects the `ctx = context.Background()` mutant in each method (WaitForFirst's

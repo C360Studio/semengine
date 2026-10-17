@@ -12,14 +12,14 @@ clean tree at its commit (#171).
 
 ## 2. Table, family check and errors (batch 1)
 
-- [ ] 2.1 Failing tests against the base API (D4):
+- [x] 2.1 Failing tests against the base API (D4):
   - `TestOpenCatalogReader_InvalidNamePreservesClassification` asserts component `"kvcatalog"`, with an
     `EnsureCatalogBucket` row;
   - `TestIntegration_EnsureCatalogRetentionClean_RefusesNilContext` (outer class invalid, the error names the nil
     context).
 
   Gate: each fails by assertion on the base commit.
-- [ ] 2.2 Implement D1, D2 and D4:
+- [x] 2.2 Implement D1, D2 and D4:
   - the package-level table; `natsclient/kvspec.go:120`;
   - `KVCatalog` kept returning `slices.Clone(catalog)` (owner question 1: keep), with `TestKVCatalogReturnsACopy`
     (failing first on the base commit), a `graph/README.md` sentence and a `graph` ledger contract item;

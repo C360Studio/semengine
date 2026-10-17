@@ -93,7 +93,7 @@ func discardLogger() *slog.Logger { return slog.New(slog.DiscardHandler) }
 
 // newTestWatcher builds a watcher the way a consumer does, with a discarding logger.
 func newTestWatcher(src BucketSource, key string, heartbeat time.Duration) *Watcher {
-	return NewWatcher(src, key, WithHeartbeat(heartbeat), WithLogger(discardLogger()))
+	return NewWatcher(src, key, heartbeat, discardLogger())
 }
 
 func statusJSON(t *testing.T, s graph.IndexStatusResponse) []byte {
@@ -663,15 +663,26 @@ func TestWatcherRunReturnsContextErrorAndLeavesNothingRunning(t *testing.T) {
 func TestWatcher_RunValidatesWiring(t *testing.T) {
 	var nilCtx context.Context
 
+	withSource := func(s *fakeSource) BucketSource { return s }
 	tests := []struct {
-		name   string
-		nilCtx bool
-		src    func(*fakeSource) BucketSource
-		key    string
+		name      string
+		nilCtx    bool
+		src       func(*fakeSource) BucketSource
+		key       string
+		heartbeat time.Duration
+		logger    *slog.Logger
 	}{
-		{name: "nil context", nilCtx: true, src: func(s *fakeSource) BucketSource { return s }, key: KeyGraphIndex},
-		{name: "nil source", src: func(*fakeSource) BucketSource { return nil }, key: KeyGraphIndex},
-		{name: "empty key", src: func(s *fakeSource) BucketSource { return s }, key: ""},
+		{name: "nil context", nilCtx: true, src: withSource, key: KeyGraphIndex,
+			heartbeat: DefaultHeartbeat, logger: discardLogger()},
+		{name: "nil source", src: func(*fakeSource) BucketSource { return nil }, key: KeyGraphIndex,
+			heartbeat: DefaultHeartbeat, logger: discardLogger()},
+		{name: "empty key", src: withSource, key: "", heartbeat: DefaultHeartbeat, logger: discardLogger()},
+		// Nothing defaults: a zero heartbeat would make every envelope stale on arrival,
+		// and a nil logger would panic on the first failure.
+		{name: "zero heartbeat", src: withSource, key: KeyGraphIndex, heartbeat: 0, logger: discardLogger()},
+		{name: "negative heartbeat", src: withSource, key: KeyGraphIndex, heartbeat: -time.Second,
+			logger: discardLogger()},
+		{name: "nil logger", src: withSource, key: KeyGraphIndex, heartbeat: DefaultHeartbeat, logger: nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -679,8 +690,11 @@ func TestWatcher_RunValidatesWiring(t *testing.T) {
 				src := &fakeSource{open: func(context.Context) (jetstream.KeyValue, error) {
 					return nil, errors.New("unused")
 				}}
-				w := newTestWatcher(tt.src(src), tt.key, DefaultHeartbeat)
-				ctx := t.Context()
+				w := NewWatcher(tt.src(src), tt.key, tt.heartbeat, tt.logger)
+				// Bounded, so a Run that wrongly accepts the wiring returns (with the
+				// deadline) and the open count below names the failure.
+				ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+				defer cancel()
 				if tt.nilCtx {
 					ctx = nilCtx
 				}
@@ -704,15 +718,7 @@ func TestWatcher_RunValidatesWiring(t *testing.T) {
 // ValidateStalenessBound) are gone with the tolerance they constrained: with no
 // view-age bound to declare, there is no bound that can be unsatisfiable.
 func TestFreshnessWindow(t *testing.T) {
-	if got, want := FreshnessWindow(2*time.Second), 6*time.Second; got != want {
-		t.Errorf("FreshnessWindow(2s) = %s, want %s (%dx heartbeat)", got, want, FreshnessMultiplier)
-	}
-
-	// A consumer that never declared a heartbeat gets the real default window rather
-	// than an accidental zero, which would mark every reading stale on arrival.
-	for _, heartbeat := range []time.Duration{0, -time.Second} {
-		if got, want := FreshnessWindow(heartbeat), FreshnessMultiplier*DefaultHeartbeat; got != want {
-			t.Errorf("FreshnessWindow(%s) = %s, want the default window %s", heartbeat, got, want)
-		}
+	if got, want := freshnessWindow(2*time.Second), 6*time.Second; got != want {
+		t.Errorf("freshnessWindow(2s) = %s, want %s (three heartbeats)", got, want)
 	}
 }

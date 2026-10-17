@@ -16,7 +16,7 @@ Batch 1 can start on the base; batches 2 and 3 start after this branch merges `o
   `withClock`, `withRebindDelay`, `withAppliedHook` and no wall-clock `time.After` guard; `TestWaitForFirst` added.
   Gate: the tests pass on the base production code; `task mutate:check` detects a freshness multiplier of 4 and a
   removed `firstOnce.Do`.
-- [ ] 2.2 The hooks removed; `NewWatcher(src, key, heartbeat, logger)`; `Run` refuses a non-positive heartbeat and a
+- [x] 2.2 The hooks removed; `NewWatcher(src, key, heartbeat, logger)`; `Run` refuses a non-positive heartbeat and a
   nil logger (new rows in `TestWatcher_RunValidatesWiring`, failing to compile on the base);
   `freshnessMultiplier` and `freshnessWindow` unexported; `TestFreshnessWindow`'s zero and negative rows
   (`watcher_test.go:630-635`), which test the default D2 removes, go, and its 2-second row stays. Gate: `go test

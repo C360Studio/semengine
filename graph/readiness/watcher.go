@@ -77,7 +77,7 @@ const (
 	// DefaultHeartbeat is the producers' status tick: they publish the envelope
 	// every tick unconditionally, so the write doubles as a liveness heartbeat.
 	DefaultHeartbeat = 5 * time.Second
-	// FreshnessMultiplier is how many heartbeats a held status stays fresh. It is a
+	// freshnessMultiplier is how many heartbeats a held status stays fresh. It is a
 	// CONSTANT, not config (owner decision): 3 tolerates a lost write and a slow
 	// delivery without letting a dead feed masquerade as live, and one fewer knob
 	// is one fewer way to configure a fail-open.
@@ -88,11 +88,11 @@ const (
 	// StatusReading.Fresh answers and what the health gate fails closed on. It is NOT
 	// the retired view-age concept (how far behind ENTITY_STATES the index itself is);
 	// view age is reported on IndexStatusResponse.StalenessMs and gates nothing.
-	FreshnessMultiplier = 3
-	// defaultRebindDelay is how long the watcher waits before re-opening the bucket
+	freshnessMultiplier = 3
+	// rebindDelay is how long the watcher waits before re-opening the bucket
 	// or watch after a failure. Well under the freshness window, so a transient
 	// bucket outage that resolves quickly never surfaces as unknown.
-	defaultRebindDelay = time.Second
+	rebindDelay = time.Second
 )
 
 // BucketSource opens a KV bucket by name. *natsclient.Client satisfies it via
@@ -103,14 +103,10 @@ type BucketSource interface {
 	GetKeyValueBucket(ctx context.Context, name string) (jetstream.KeyValue, error)
 }
 
-// FreshnessWindow is how long a status value stays fresh for a producer publishing on
-// the given heartbeat. Exported so consumers and their tests express the window in one
-// vocabulary instead of re-deriving 3x from the two constants.
-func FreshnessWindow(heartbeat time.Duration) time.Duration {
-	if heartbeat <= 0 {
-		heartbeat = DefaultHeartbeat
-	}
-	return time.Duration(FreshnessMultiplier) * heartbeat
+// freshnessWindow is how long a status value stays fresh for a producer publishing on
+// the given heartbeat.
+func freshnessWindow(heartbeat time.Duration) time.Duration {
+	return time.Duration(freshnessMultiplier) * heartbeat
 }
 
 // Reading is the consumer-side answer: the last-known envelope plus everything
@@ -131,7 +127,7 @@ type Reading struct {
 	// IndexedRevision/Lag once before and read downstream as a false caught-up. Nil
 	// when !Known.
 	Raw []byte
-	// Fresh reports that the held envelope arrived within FreshnessMultiplier
+	// Fresh reports that the held envelope arrived within three
 	// heartbeats, was not already older than that when it arrived, and is still the
 	// key's current value (no undecodable value has replaced it). False means
 	// UNKNOWN — fail closed.
@@ -157,10 +153,8 @@ type Watcher struct {
 	bucket string
 	key    string
 
-	heartbeat   time.Duration
-	rebindDelay time.Duration
-	now         func() time.Time
-	logger      *slog.Logger
+	heartbeat time.Duration
+	logger    *slog.Logger
 
 	mu          sync.Mutex
 	status      graph.IndexStatusResponse
@@ -180,75 +174,22 @@ type Watcher struct {
 	// watch that has simply not delivered yet.
 	first     chan struct{}
 	firstOnce sync.Once
-
-	// applied is a test-only synchronization hook, signalled after every update is
-	// applied (or rejected). Production leaves it nil, so the send is skipped.
-	applied chan struct{}
-}
-
-// Option configures a Watcher.
-type Option func(*Watcher)
-
-// WithHeartbeat declares the producer's publish interval, which sets the freshness
-// window (FreshnessMultiplier x heartbeat). Defaults to DefaultHeartbeat.
-func WithHeartbeat(d time.Duration) Option {
-	return func(w *Watcher) {
-		if d > 0 {
-			w.heartbeat = d
-		}
-	}
-}
-
-// WithLogger sets the logger used for bind/decode failures.
-func WithLogger(l *slog.Logger) Option {
-	return func(w *Watcher) {
-		if l != nil {
-			w.logger = l
-		}
-	}
-}
-
-// withClock overrides the freshness clock so tests can advance time without
-// sleeping. Unexported: freshness must be wall-clock in production.
-func withClock(fn func() time.Time) Option {
-	return func(w *Watcher) {
-		if fn != nil {
-			w.now = fn
-		}
-	}
-}
-
-// withRebindDelay shortens the post-failure rebind wait in tests.
-func withRebindDelay(d time.Duration) Option {
-	return func(w *Watcher) {
-		if d > 0 {
-			w.rebindDelay = d
-		}
-	}
-}
-
-// withAppliedHook installs the test synchronization channel.
-func withAppliedHook(ch chan struct{}) Option {
-	return func(w *Watcher) { w.applied = ch }
 }
 
 // NewWatcher builds a watcher for one producer key (KeyGraphIndex,
-// KeyGraphEmbedding) in the GRAPH_STATUS bucket. It performs no I/O; call Run.
-func NewWatcher(src BucketSource, key string, opts ...Option) *Watcher {
-	w := &Watcher{
-		src:         src,
-		bucket:      BucketGraphStatus,
-		key:         key,
-		heartbeat:   DefaultHeartbeat,
-		rebindDelay: defaultRebindDelay,
-		now:         time.Now,
-		logger:      slog.Default(),
-		first:       make(chan struct{}),
+// KeyGraphEmbedding) in the GRAPH_STATUS bucket. heartbeat is the producer's publish
+// interval (DefaultHeartbeat for the framework's producers), which sets the freshness
+// window to three heartbeats; logger receives bind and decode failures. It performs no
+// I/O and checks nothing; Run refuses incomplete wiring.
+func NewWatcher(src BucketSource, key string, heartbeat time.Duration, logger *slog.Logger) *Watcher {
+	return &Watcher{
+		src:       src,
+		bucket:    BucketGraphStatus,
+		key:       key,
+		heartbeat: heartbeat,
+		logger:    logger,
+		first:     make(chan struct{}),
 	}
-	for _, opt := range opts {
-		opt(w)
-	}
-	return w
 }
 
 // Run watches the key until ctx ends, then returns ctx.Err(). The caller runs it on a
@@ -260,8 +201,9 @@ func NewWatcher(src BucketSource, key string, opts ...Option) *Watcher {
 // UNKNOWN, and Read reports it as such (fail closed) while Run keeps trying to bind,
 // rebinding after any failure. The caller's own escape hatch (e.g.
 // allow_ungated_reads) is what covers that case — never a fabricated envelope.
-// Misconfiguration is refused at the call instead: a nil context, a nil bucket source
-// or an empty key returns an error before any I/O.
+// Misconfiguration is refused at the call instead: a nil context, a nil bucket source,
+// an empty key, a heartbeat of zero or less, or a nil logger returns an error before
+// any I/O.
 func (w *Watcher) Run(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("readiness: nil context")
@@ -272,6 +214,12 @@ func (w *Watcher) Run(ctx context.Context) error {
 	if w.key == "" {
 		return errors.New("readiness: empty status key")
 	}
+	if w.heartbeat <= 0 {
+		return fmt.Errorf("readiness: heartbeat %s is not positive", w.heartbeat)
+	}
+	if w.logger == nil {
+		return errors.New("readiness: nil logger")
+	}
 	for {
 		if err := w.watchOnce(ctx); err != nil && ctx.Err() == nil {
 			w.recordErr(err)
@@ -281,7 +229,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(w.rebindDelay):
+		case <-time.After(rebindDelay):
 		}
 	}
 }
@@ -295,10 +243,10 @@ func (w *Watcher) Read() Reading {
 	if !w.known {
 		return r
 	}
-	r.Age = w.now().Sub(w.lastArrival)
+	r.Age = time.Now().Sub(w.lastArrival)
 	// A negative age (clock stepped backwards) is still within the window: the
 	// update did arrive, and the comparison is entirely local.
-	r.Fresh = !w.revoked && r.Age <= w.freshnessWindow()
+	r.Fresh = !w.revoked && r.Age <= freshnessWindow(w.heartbeat)
 	return r
 }
 
@@ -322,11 +270,6 @@ func (w *Watcher) WaitForFirst(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-}
-
-// freshnessWindow is how long a held status stays fresh.
-func (w *Watcher) freshnessWindow() time.Duration {
-	return FreshnessWindow(w.heartbeat)
 }
 
 // watchOnce opens the bucket and the key watch and consumes updates until the watch
@@ -372,8 +315,6 @@ func (w *Watcher) watchOnce(ctx context.Context) error {
 // envelope's freshness. Neither stamps an arrival time: neither is evidence the
 // producer is alive and healthy, and stamping one would make garbage read as fresh.
 func (w *Watcher) apply(entry jetstream.KeyValueEntry) {
-	defer w.signalApplied()
-
 	if kvcatalog.IsKVTombstone(entry.Operation()) {
 		w.mu.Lock()
 		w.known = false
@@ -402,7 +343,7 @@ func (w *Watcher) apply(entry jetstream.KeyValueEntry) {
 		return
 	}
 
-	arrival := w.now()
+	arrival := time.Now()
 
 	// THE ONE COMMIT-TIME COMPARISON, and it applies only to a value that was already
 	// old when it reached us. A watch delivers the key's CURRENT value the instant it
@@ -417,7 +358,7 @@ func (w *Watcher) apply(entry jetstream.KeyValueEntry) {
 	staleOnArrival := false
 	var staleErr error
 	if created := entry.Created(); !created.IsZero() {
-		if age := arrival.Sub(created); age > w.freshnessWindow() {
+		if age := arrival.Sub(created); age > freshnessWindow(w.heartbeat) {
 			staleOnArrival = true
 			// Attributable, because this rejection is otherwise INVISIBLE: knownness
 			// stays true and the arrival stamp is recent, so a consumer's defer log
@@ -428,7 +369,7 @@ func (w *Watcher) apply(entry jetstream.KeyValueEntry) {
 			// line that says so instead of blaming the producer.
 			staleErr = fmt.Errorf(
 				"readiness: %s/%s was already %s old on arrival (window %s) — dead producer, or consumer clock ahead of the server",
-				w.bucket, w.key, age.Round(time.Millisecond), w.freshnessWindow())
+				w.bucket, w.key, age.Round(time.Millisecond), freshnessWindow(w.heartbeat))
 		}
 	}
 
@@ -453,16 +394,4 @@ func (w *Watcher) recordErr(err error) {
 	w.mu.Lock()
 	w.lastErr = err
 	w.mu.Unlock()
-}
-
-// signalApplied notifies the test hook, if installed, without ever blocking the
-// watch goroutine.
-func (w *Watcher) signalApplied() {
-	if w.applied == nil {
-		return
-	}
-	select {
-	case w.applied <- struct{}{}:
-	default:
-	}
 }

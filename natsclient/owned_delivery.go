@@ -183,7 +183,6 @@ func (c *Client) commitConsumer(
 ) (jetstream.ConsumeContext, error) {
 	o.handle <- h
 	if !c.isClosing() {
-		c.resetCircuit()
 		return h, nil
 	}
 	h.Stop()

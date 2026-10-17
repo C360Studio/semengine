@@ -17,8 +17,7 @@ import (
 // state; only a tick writes Connected back on a healthy connection.
 //
 // Connect, the wait and both Close calls each run beside a deadline of the test's own, so a call
-// hung on mu fails the test on that deadline instead of hanging the run. Connect is among them
-// because, while the breaker exists, it too calls Status() with mu held (resetCircuitLocked).
+// hung on mu fails the test on that deadline instead of hanging the run.
 func TestHealthMonitorTickReturnsStatusAndClose(t *testing.T) {
 	url := shared.Reset(t)
 	client, err := NewClient(url,
@@ -46,7 +45,7 @@ func TestHealthMonitorTickReturnsStatusAndClose(t *testing.T) {
 		t.Fatalf("Connect: %v", err)
 	}
 
-	client.status.Store(StatusDisconnected)
+	client.status.Store(int32(StatusDisconnected))
 
 	waitCtx, cancelWait := context.WithTimeout(t.Context(), failureBound)
 	defer cancelWait()

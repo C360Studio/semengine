@@ -369,6 +369,4 @@ func TestIntegration_RequestWithRetryClassified_NoResponder(t *testing.T) {
 	require.True(t, IsNoResponders(err), "IsNoResponders: %v", err)
 	require.Equal(t, uint64(4), client.GetConnection().Stats().OutMsgs-before,
 		"requests sent for MaxAttempts 4 with no responder")
-	// Every attempt failed for want of a responder and was counted.
-	require.Equal(t, int32(4), client.Failures())
 }

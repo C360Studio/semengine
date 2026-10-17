@@ -13,7 +13,7 @@ import (
 // publishes no stream captures each return the no-stream error, and a publish a stream captures
 // then succeeds with the status still Connected (transport-client, "A failed call refuses no other
 // call"). The fixture client's health monitor is off (WithHealthInterval(0)), so nothing but the
-// calls themselves can move the status; at the pin, the sixteenth failure returned ErrCircuitOpen.
+// calls themselves can move the status.
 func TestIntegration_FailedCallsRefuseNoOtherCall(t *testing.T) {
 	tc := newFixtureClient(t)
 	tc.stream(t, "FAILEDCALLS", "failedcalls.captured")

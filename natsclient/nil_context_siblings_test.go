@@ -125,13 +125,9 @@ func TestRetryRequestEndedContextNeverDispatches(t *testing.T) {
 
 	ended, cancel := context.WithCancel(t.Context())
 	cancel()
-	failuresBefore := c.GetStatus().FailureCount
 	_, err = c.RequestWithRetryClassified(ended, subject, nil, 10*time.Second, retry.DefaultConfig())
 	require.ErrorIs(t, err, context.Canceled)
 	require.True(t, errs.IsTransient(err), "RequestWithRetryClassified: %v", err)
-	// No attempt was made, so the caller's cancellation is not a transport failure: it must not
-	// count toward the shared circuit breaker that fast-fails unrelated calls.
-	require.Equal(t, failuresBefore, c.GetStatus().FailureCount, "an ended context recorded a transport failure")
 
 	// Sent after the refused call on the same connection, so delivered after anything it sent.
 	data, err := c.RequestWithRetryClassified(t.Context(), subject, nil, 10*time.Second, retry.Config{})

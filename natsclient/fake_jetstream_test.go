@@ -1,31 +1,13 @@
 package natsclient
 
-// Tests that GetStream existence probes do not trip the circuit breaker.
-//
-// Background (gh#248): GetStream previously called recordFailure() on ANY
-// error, including the benign jetstream.ErrStreamNotFound.  An existence
-// probe that gets "stream not found" is a successful probe — the answer is
-// "not here, now" — not a transport failure.  Counting it as a failure can
-// trip the circuit breaker on deployments that routinely probe for an absent
-// stream: an optional-stream check, a diagnostic sweep, a caller deciding
-// whether to provision.  (The original exemplar, agentrun's MilestoneSubscriber
-// precondition, is gone: gh#1073 moved that decision onto the guarded consumer
-// setup, because one probe's answer is not evidence of absence.  The exemption
-// stays — it is what keeps a cheap probe cheap.)
-//
-// Fix: ErrStreamNotFound is now exempt from recordFailure(); all other errors
-// still trip the breaker.
-
 import (
 	"context"
-	"errors"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -263,71 +245,4 @@ func newConnectedClientWithFakeJS(t *testing.T, fakeJS jetstream.JetStream) *Cli
 	client.setStatus(StatusConnected)
 
 	return client
-}
-
-// TestGetStream_NotFound_DoesNotTripCircuitBreaker verifies that probing for
-// an absent stream (ErrStreamNotFound) is treated as a successful probe, not
-// a failure.  The circuit breaker failure counter must not advance.
-func TestGetStream_NotFound_DoesNotTripCircuitBreaker(t *testing.T) {
-	client := newConnectedClientWithFakeJS(t, &fakeJetStream{streamErr: jetstream.ErrStreamNotFound})
-
-	failuresBefore := client.Failures()
-
-	ctx := context.Background()
-	_, err := client.GetStream(ctx, "ABSENT_STREAM")
-
-	// The sentinel must be propagated to the caller so it can branch on it.
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, jetstream.ErrStreamNotFound),
-		"expected ErrStreamNotFound, got: %v", err)
-
-	// No failure must be recorded — the probe answered "stream not found",
-	// which is a valid, non-failure response.
-	assert.Equal(t, failuresBefore, client.Failures(),
-		"GetStream(ErrStreamNotFound) must NOT increment the failure counter")
-
-	// The circuit must remain closed.
-	assert.NotEqual(t, StatusCircuitOpen, client.Status(),
-		"circuit must stay closed on a stream-not-found probe")
-}
-
-// TestGetStream_TransportError_StillTripsCircuitBreaker verifies that genuine
-// errors (e.g. context cancellation, no-responders) still advance the failure
-// counter, preserving circuit-breaker coverage.
-func TestGetStream_TransportError_StillTripsCircuitBreaker(t *testing.T) {
-	transportErr := errors.New("nats: no responders")
-	client := newConnectedClientWithFakeJS(t, &fakeJetStream{streamErr: transportErr})
-
-	failuresBefore := client.Failures()
-
-	ctx := context.Background()
-	_, err := client.GetStream(ctx, "ANY_STREAM")
-
-	require.Error(t, err)
-	assert.False(t, errors.Is(err, jetstream.ErrStreamNotFound),
-		"transport error must not be confused with ErrStreamNotFound")
-
-	assert.Greater(t, client.Failures(), failuresBefore,
-		"a genuine transport error must increment the failure counter")
-}
-
-// TestGetStream_RepeatedNotFound_CircuitBreakersDoNotOpen confirms that
-// probing for an absent stream many times — enough to exceed the circuit
-// threshold if counted — does not open the circuit.  This is the direct
-// regression guard for gh#248: a deployment that routinely probes for an
-// absent stream (like agentrun MilestoneSubscriber on a graph-only deploy)
-// must continue to operate normally.
-func TestGetStream_RepeatedNotFound_CircuitBreakersDoNotOpen(t *testing.T) {
-	client := newConnectedClientWithFakeJS(t, &fakeJetStream{streamErr: jetstream.ErrStreamNotFound})
-
-	ctx := context.Background()
-	// circuitThreshold is 15; probe well beyond it.
-	for i := 0; i < 20; i++ {
-		_, _ = client.GetStream(ctx, "ABSENT_STREAM")
-	}
-
-	assert.NotEqual(t, StatusCircuitOpen, client.Status(),
-		"repeated ErrStreamNotFound probes must never open the circuit breaker")
-	assert.Equal(t, int32(0), client.Failures(),
-		"failure counter must remain zero after repeated not-found probes")
 }

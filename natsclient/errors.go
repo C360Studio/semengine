@@ -242,8 +242,7 @@ func (c *Client) RequestClassified(ctx context.Context, subject string, data []b
 // is returned before anything is sent (its error class is not promised). Only
 // an attempt that got no reply is retried. A reply of any kind, an error reply
 // included, ends the call, and ClassifyReply runs once on it, so a handler
-// error is never retried. A failed attempt counts toward the circuit breaker
-// unless the caller's context has ended.
+// error is never retried.
 //
 // Use this only where an operation-specific contract explicitly authorizes
 // redelivery after transport ambiguity. Handler failures arrive as for
@@ -276,9 +275,6 @@ func (c *Client) RequestWithRetryClassified(
 	if conn == nil || !conn.IsConnected() {
 		return nil, ErrNotConnected
 	}
-	if c.Status() == StatusCircuitOpen {
-		return nil, ErrCircuitOpen
-	}
 	if timeout == 0 {
 		timeout = DefaultRequestTimeout
 	}
@@ -298,13 +294,8 @@ func (c *Client) RequestWithRetryClassified(
 		InjectTrace(ctx, msg)
 		r, err := conn.RequestMsgWithContext(reqCtx, msg)
 		if err != nil {
-			// The caller's own cancellation is not a transport failure; reqCtx's timeout still is.
-			if ctx.Err() == nil {
-				c.recordFailure()
-			}
 			return err
 		}
-		c.resetCircuit()
 		reply = r
 		return nil
 	})

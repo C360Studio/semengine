@@ -21,16 +21,16 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 - [x] 2.3 The two replacement oracles: the outbound message count for `MaxAttempts` 4, and the responder that drops
   its first request (Design, Tests). Gate: both pass on base; each detects a mutant in which the retrying call makes one
   attempt whatever the config says (`task mutate:check`).
-- [ ] 2.4 The tests Design, Tests lists are deleted or edited; `fakeJetStream` moves to a helper file. Gate: compile
+- [x] 2.4 The tests Design, Tests lists are deleted or edited; `fakeJetStream` moves to a helper file. Gate: compile
   after 3.1-3.3.
 
 ## 3. Implementation
 
-- [ ] 3.1 Remove the breaker and its call sites (D1). Gate: 2.1 passes; `go build ./...`; `task test:unit`.
-- [ ] 3.2 Typed atomic status. Remove `Status.FailureCount`, `LastFailureTime`, `Reconnects`, `Client.Failures`,
+- [x] 3.1 Remove the breaker and its call sites (D1). Gate: 2.1 passes; `go build ./...`; `task test:unit`.
+- [x] 3.2 Typed atomic status. Remove `Status.FailureCount`, `LastFailureTime`, `Reconnects`, `Client.Failures`,
   `Backoff` and `connStatus` (D2; Q4). Gate: 2.2 and 2.3 pass; `task test:unit` under `-race`;
   `task test:integration`.
-- [ ] 3.3 `pkg/errs`, graphmutation and projection callers, and the comments in `graph` and `graph/kvcatalog` (D3).
+- [x] 3.3 `pkg/errs`, graphmutation and projection callers, and the comments in `graph` and `graph/kvcatalog` (D3).
   Gate: `go build ./...`; `task test:unit`.
 
 ## 4. Documentation

@@ -12,22 +12,22 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 ## 2. Failing tests
 
-- [ ] 2.1 `TestRetryRequestNegativeCountMakesOneAttempt` and `TestRetryRequestRefusedConfigNeverDispatches`
+- [x] 2.1 `TestRetryRequestNegativeCountMakesOneAttempt` and `TestRetryRequestRefusedConfigNeverDispatches`
   replace `TestNegativeMaxRetriesNeverDispatches` and `TestReviewerNegativeRequestRetryRefuses` (D2). Gate: fail to
   compile on base.
-- [ ] 2.2 `TestIntegration_RequestWithRetryClassified_ErrorReplyIsNotRetried` and
+- [x] 2.2 `TestIntegration_RequestWithRetryClassified_ErrorReplyIsNotRetried` and
   `TestIntegration_RequestWithHeaders_ErrorReplyKeepsHeaders` (D2, D3). Gate: pass on base (the first written with
   `MaxRetries: 2`, moved in 2.3); for the first,
   `task mutate:check` with `ClassifyReply` moved inside the attempt reports a detection.
-- [ ] 2.3 Existing tests move to the new API (Design, Tests: kept, edited, deleted). Gate: fail to compile on base
+- [x] 2.3 Existing tests move to the new API (Design, Tests: kept, edited, deleted). Gate: fail to compile on base
   (`retry.Config` argument).
 
 ## 3. Implementation
 
-- [ ] 3.1 Remove `Client.Request` and `Client.RequestWithRetry` (D1). Gate: `go build ./...`; `task test:unit`.
-- [ ] 3.2 Remove `RetryConfig`, `DefaultRetryConfig` and `requestMsgWithRetry`; `RequestWithRetryClassified` takes
+- [x] 3.1 Remove `Client.Request` and `Client.RequestWithRetry` (D1). Gate: `go build ./...`; `task test:unit`.
+- [x] 3.2 Remove `RetryConfig`, `DefaultRetryConfig` and `requestMsgWithRetry`; `RequestWithRetryClassified` takes
   `retry.Config` and runs `retry.Do` (D2). Gate: 2.1, 2.2, 2.3; `task test:integration`.
-- [ ] 3.3 `RequestWithHeaders` doc comment; `errors.go` package comment and `doc.go` footgun text; comments at
+- [x] 3.3 `RequestWithHeaders` doc comment; `errors.go` package comment and `doc.go` footgun text; comments at
   `request.go:69-79`, `errors.go:212`, `:241-249` (D3, D4). Gate: `task lint`.
 
 ## 4. Documentation

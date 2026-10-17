@@ -41,8 +41,8 @@ in `notes/<task>.md`; a compile failure on a missing symbol counts as failing.
 
 ## 5. Verify, review and close
 
-- [x] 5.1 `task verify` passes on a clean tree at the implementation head (exit 0 at `99c16d5`) (includes `task cover:check`, natsclient
-  merged).
+- [x] 5.1 `task verify` passes on a clean tree at the implementation head (exit 0 at `99c16d5`; includes
+  `task cover:check`, natsclient merged).
 - [x] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body (Codex APPROVE
   at `ac7fd60`; owner directed docs, archive and merge on 2026-10-17).
 - [x] 5.3 Archive (`openspec archive simplify-04a-14-natsclient-request`) as the last content commit. Gate:

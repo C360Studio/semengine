@@ -68,9 +68,9 @@ a compile failure as failing. Review stops (Codex) after 2.3, 3.3 and 4.2. Each 
 
 ## 4. Index state and text (batch 3)
 
-- [ ] 4.1 `TestIndexStatesReturnsACopy`, then D6: `IndexState`, typed constants, `IndexStates()`, and the readiness call
+- [x] 4.1 `TestIndexStatesReturnsACopy`, then D6: `IndexState`, typed constants, `IndexStates()`, and the readiness call
   sites. Gate: the test fails to compile on the base commit, then passes; `go test ./graph/readiness/...`.
-- [ ] 4.2 D7:
+- [x] 4.2 D7:
   - `graph/doc.go`, with the seven package comments removed; the SemStreams prefixes; the `Clone` doc;
   - `graph/README.md`; `.agents/skills/query-pattern/SKILL.md` and `.claude/skills/query-pattern/SKILL.md`;
   - the `graph` ledger row.

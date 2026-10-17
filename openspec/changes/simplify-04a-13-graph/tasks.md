@@ -40,7 +40,7 @@ a compile failure as failing. Review stops (Codex) after 2.3, 3.3 and 4.2. Each 
 
 ## 3. Vocabulary and wire (batch 2)
 
-- [ ] 3.1 Failing tests against the base API:
+- [x] 3.1 Failing tests against the base API:
   - `TestCanonicalMutationOutcomeLabelIsTheClassifiedCode`, through the real create handler: an unregistered message
     type counts `message_type_unregistered` (base `internal`), and a nil entity counts `invalid_request` (base
     `invalid`) (D3);
@@ -48,7 +48,7 @@ a compile failure as failing. Review stops (Codex) after 2.3, 3.3 and 4.2. Each 
     `kv_revision` (D4).
 
   Gate: both fail by assertion on the base commit.
-- [ ] 3.2 Implement D3:
+- [x] 3.2 Implement D3:
   - the four outcomes; the three outcomes, `isServerMutationOutcome` and the two tests removed;
   - the label as the classified code;
   - `errs.CodeRevisionMismatch` and `errs.CodeIndexNotReady`; `natsclient.ErrorCodeBucketNotReady` and
@@ -57,7 +57,7 @@ a compile failure as failing. Review stops (Codex) after 2.3, 3.3 and 4.2. Each 
 
   Gate: 3.1's label test; `task mutate:check` on a mutant mapping `message_type_unregistered` back to `internal` is
   detected.
-- [ ] 3.3 Implement D4 and D5:
+- [x] 3.3 Implement D4 and D5:
   - `kv_revision` written once (the reader embeds `ExactEntity`; the five literals in `graph/exact_entity_test.go`);
     `QueryVerb{Name, Subject, Responder}`; `ResponderGraphIngest`; `EntityRequest`, `EntityBatchRequest`;
   - the cursor codec and trusted decoder moved into graph-ingest; one prefix limit; `EntityMutationResponse`;

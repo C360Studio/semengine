@@ -49,8 +49,7 @@ func NewExactEntityReader(requester classifiedRequester, timeout time.Duration) 
 	}
 	// natsclient replaces only a zero timeout with its default, so a negative
 	// one would give every request an already expired context: each read would
-	// fail while the caller's context is live, and count against the shared
-	// client's breaker.
+	// fail while the caller's context is live.
 	if timeout < 0 {
 		return nil, fmt.Errorf("exact entity reader timeout must not be negative, got %s", timeout)
 	}

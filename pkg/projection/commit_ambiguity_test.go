@@ -174,9 +174,8 @@ func TestTransportOutcomesKeepTheirCommitState(t *testing.T) {
 		kind MutationErrorKind
 	}{
 		{"no responders", nil, nats.ErrNoResponders, nats.ErrNoResponders, CommitNotCommitted, MutationUnavailable},
-		// Design D1 (#268): natsclient returns these only before its one send, so nothing was written.
+		// Design D1 (#268): natsclient returns this only before its one send, so nothing was written.
 		{"not connected", nil, natsclient.ErrNotConnected, natsclient.ErrNotConnected, CommitNotCommitted, MutationUnavailable},
-		{"circuit open", nil, natsclient.ErrCircuitOpen, natsclient.ErrCircuitOpen, CommitNotCommitted, MutationUnavailable},
 		{"timeout after possible delivery", nil, nats.ErrTimeout, nats.ErrTimeout, CommitUnknown, MutationCommitUnknown},
 		// Design D1: nothing was sent, so nothing was written and a retry is safe; errors.Is still
 		// tells it apart from a missing responder. The wire's error must never be reached.

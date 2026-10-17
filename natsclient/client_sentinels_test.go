@@ -18,7 +18,6 @@ func TestClientSentinelsAreTransient(t *testing.T) {
 		matches error
 	}{
 		{"ErrNotConnected", ErrNotConnected, errs.ErrConnectionLost},
-		{"ErrCircuitOpen", ErrCircuitOpen, errs.ErrCircuitOpen},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert.True(t, errs.IsTransient(tc.err), "errs.IsTransient(%v)", tc.err)

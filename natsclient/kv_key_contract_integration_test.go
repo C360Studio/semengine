@@ -71,7 +71,7 @@ func TestKVKeyContractNormativeNATS(t *testing.T) {
 	wrapperClient.conn = recordedConn
 	wrapperClient.js = currentJS
 	wrapperClient.logger = slog.Default()
-	wrapperClient.status.Store(StatusConnected)
+	wrapperClient.status.Store(int32(StatusConnected))
 	wrapper := wrapperClient.NewKVStore(wrapperBucket)
 
 	legacyJS, err := recordedConn.JetStream()

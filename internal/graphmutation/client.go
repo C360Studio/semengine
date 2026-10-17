@@ -23,7 +23,7 @@ type TransportOutcome string
 
 const (
 	// TransportUnavailable proves that no request was sent, or no responder took it:
-	// natsclient refused it before sending (ErrNotConnected, ErrCircuitOpen), or no
+	// natsclient refused it before sending (ErrNotConnected), or no
 	// mutation responder accepted it.
 	TransportUnavailable TransportOutcome = "unavailable"
 	// TransportDeadline proves the context ended before request delivery.
@@ -165,10 +165,9 @@ func (c *Client) request(ctx context.Context, operation Operation, request any, 
 		if errors.As(err, &classified) {
 			return fmt.Errorf("graph mutation %s rejected: %w", operation, err)
 		}
-		// natsclient returns ErrNotConnected and ErrCircuitOpen only before its
-		// one send (RequestWithHeaders), so nothing reached graph-ingest.
-		if natsclient.IsNoResponders(err) || errors.Is(err, natsclient.ErrNotConnected) ||
-			errors.Is(err, natsclient.ErrCircuitOpen) {
+		// natsclient returns ErrNotConnected only before its one send
+		// (RequestWithHeaders), so nothing reached graph-ingest.
+		if natsclient.IsNoResponders(err) || errors.Is(err, natsclient.ErrNotConnected) {
 			return &TransportError{Operation: operation, Outcome: TransportUnavailable, Err: err}
 		}
 		return &TransportError{Operation: operation, Outcome: TransportCommitUnknown, Err: err}

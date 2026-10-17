@@ -41,7 +41,6 @@ func TestIsTransient(t *testing.T) {
 		{"connection lost", ErrConnectionLost, true},
 		{"storage unavailable", ErrStorageUnavailable, true},
 		{"rate limited", ErrRateLimited, true},
-		{"circuit open", ErrCircuitOpen, true},
 		{"context deadline exceeded", context.DeadlineExceeded, true},
 		{"context canceled", context.Canceled, true},
 		{"invalid data", ErrInvalidData, false},
@@ -391,7 +390,6 @@ func TestStandardErrors(t *testing.T) {
 		ErrResourceExhausted,
 		ErrRateLimited,
 		ErrQuotaExceeded,
-		ErrCircuitOpen,
 		ErrMaxRetriesExceeded,
 		ErrRetryTimeout,
 	}

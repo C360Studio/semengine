@@ -25,84 +25,6 @@ func TestNewClient(t *testing.T) {
 	assert.False(t, manager.IsHealthy())
 }
 
-// Test circuit breaker opens after failures
-func TestCircuitBreaker_OpensAfterFailures(t *testing.T) {
-	// R1a: opening the circuit arms recordFailure's time.AfterFunc(backoff, testCircuit), which
-	// moves the status off StatusCircuitOpen. On the bubble's clock it cannot fire before the
-	// assertions below, however slowly the host runs them.
-	synctest.Test(t, func(t *testing.T) {
-		manager, err := NewClient("nats://unused")
-		assert.NoError(t, err)
-
-		// Record 14 failures - should not open
-		for i := 0; i < 14; i++ {
-			manager.recordFailure()
-		}
-		assert.NotEqual(t, StatusCircuitOpen, manager.Status())
-
-		// 15th failure should open circuit
-		manager.recordFailure()
-		assert.Equal(t, StatusCircuitOpen, manager.Status())
-		assert.Equal(t, int32(15), manager.Failures())
-	})
-}
-
-// Test circuit breaker reset
-func TestCircuitBreaker_Reset(t *testing.T) {
-	// R1a: opening the circuit arms recordFailure's time.AfterFunc(backoff, testCircuit), which
-	// moves the status off StatusCircuitOpen. On the bubble's clock it cannot fire before the
-	// assertions below, however slowly the host runs them.
-	synctest.Test(t, func(t *testing.T) {
-		manager, err := NewClient("nats://unused")
-		assert.NoError(t, err)
-
-		// Record failures to open circuit (threshold is 15)
-		for i := 0; i < 15; i++ {
-			manager.recordFailure()
-		}
-		assert.Equal(t, StatusCircuitOpen, manager.Status())
-
-		// Reset circuit
-		manager.resetCircuit()
-		assert.Equal(t, int32(0), manager.Failures())
-		assert.NotEqual(t, StatusCircuitOpen, manager.Status())
-	})
-}
-
-// Test exponential backoff
-func TestCircuitBreaker_ExponentialBackoff(t *testing.T) {
-	// R1a: opening the circuit arms recordFailure's time.AfterFunc(backoff, testCircuit), which
-	// moves the status off StatusCircuitOpen. On the bubble's clock it cannot fire before the
-	// assertions below, however slowly the host runs them.
-	synctest.Test(t, func(t *testing.T) {
-		manager, err := NewClient("nats://unused")
-		assert.NoError(t, err)
-
-		// Initial backoff should be 1 second
-		assert.Equal(t, time.Second, manager.Backoff())
-
-		// Record failures and check backoff increases (threshold is 15)
-		for i := 0; i < 15; i++ {
-			manager.recordFailure()
-		}
-		assert.Equal(t, 2*time.Second, manager.Backoff())
-
-		// Another round of failures
-		for i := 0; i < 15; i++ {
-			manager.recordFailure()
-		}
-		assert.Equal(t, 4*time.Second, manager.Backoff())
-
-		// Backoff should cap at max (1 minute)
-		for i := 0; i < 20; i++ {
-			for j := 0; j < 15; j++ {
-				manager.recordFailure()
-			}
-		}
-		assert.LessOrEqual(t, manager.Backoff(), time.Minute)
-	})
-}
-
 // Test status transitions
 func TestStatus_Transitions(t *testing.T) {
 	tests := []struct {
@@ -135,32 +57,17 @@ func TestStatus_Transitions(t *testing.T) {
 			},
 			expectedStatus: StatusReconnecting,
 		},
-		{
-			name:          "any to circuit open",
-			initialStatus: StatusConnected,
-			action: func(m *Client) {
-				for i := 0; i < 15; i++ {
-					m.recordFailure()
-				}
-			},
-			expectedStatus: StatusCircuitOpen,
-		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// R1a: the circuit-open row arms recordFailure's time.AfterFunc(backoff, testCircuit),
-			// which moves the status off StatusCircuitOpen. On the bubble's clock it cannot fire
-			// before the assertion below, however slowly the host runs it.
-			synctest.Test(t, func(t *testing.T) {
-				manager, err := NewClient("nats://unused")
-				assert.NoError(t, err)
-				manager.setStatus(tt.initialStatus)
+			manager, err := NewClient("nats://unused")
+			assert.NoError(t, err)
+			manager.setStatus(tt.initialStatus)
 
-				tt.action(manager)
+			tt.action(manager)
 
-				assert.Equal(t, tt.expectedStatus, manager.Status())
-			})
+			assert.Equal(t, tt.expectedStatus, manager.Status())
 		})
 	}
 }
@@ -196,22 +103,6 @@ func TestConcurrentSafety(t *testing.T) {
 		}
 	}()
 
-	// Concurrent failure recording
-	wg.Add(2)
-	go func() {
-		defer wg.Done()
-		for i := 0; i < iterations; i++ {
-			manager.recordFailure()
-		}
-	}()
-
-	go func() {
-		defer wg.Done()
-		for i := 0; i < iterations; i++ {
-			manager.resetCircuit()
-		}
-	}()
-
 	wg.Wait()
 
 	// Should not panic and should have valid state
@@ -221,7 +112,6 @@ func TestConcurrentSafety(t *testing.T) {
 		StatusConnecting,
 		StatusConnected,
 		StatusReconnecting,
-		StatusCircuitOpen,
 	}, status)
 }
 
@@ -236,7 +126,6 @@ func TestIsHealthy(t *testing.T) {
 		{"disconnected is not healthy", StatusDisconnected, false},
 		{"connecting is not healthy", StatusConnecting, false},
 		{"reconnecting is not healthy", StatusReconnecting, false},
-		{"circuit open is not healthy", StatusCircuitOpen, false},
 	}
 
 	for _, tt := range tests {
@@ -329,37 +218,6 @@ func TestKeyValueBuckets(t *testing.T) {
 		_, err = client.ListKeyValueBuckets(ctx)
 		assert.Equal(t, ErrNotConnected, err)
 	})
-
-	t.Run("operations return error when circuit open", func(t *testing.T) {
-		// R1a: opening the circuit arms recordFailure's time.AfterFunc(backoff, testCircuit),
-		// which moves the status off StatusCircuitOpen. On the bubble's clock it cannot fire
-		// before the calls below, however slowly the host runs them.
-		synctest.Test(t, func(t *testing.T) {
-			client, err := NewClient("nats://unused")
-			assert.NoError(t, err)
-
-			// Open circuit (threshold is 15)
-			for i := 0; i < 15; i++ {
-				client.recordFailure()
-			}
-			assert.Equal(t, StatusCircuitOpen, client.Status())
-
-			ctx := context.Background()
-			cfg := jetstream.KeyValueConfig{Bucket: "test"}
-
-			_, err = client.CreateKeyValueBucket(ctx, cfg)
-			assert.Equal(t, ErrCircuitOpen, err)
-
-			_, err = client.GetKeyValueBucket(ctx, "test")
-			assert.Equal(t, ErrCircuitOpen, err)
-
-			err = client.DeleteKeyValueBucket(ctx, "test")
-			assert.Equal(t, ErrCircuitOpen, err)
-
-			_, err = client.ListKeyValueBuckets(ctx)
-			assert.Equal(t, ErrCircuitOpen, err)
-		})
-	})
 }
 
 // Test context-aware methods
@@ -446,22 +304,9 @@ func TestMetrics(t *testing.T) {
 	manager, err := NewClient("nats://unused")
 	assert.NoError(t, err)
 
-	// Record some failures
-	for i := 0; i < 3; i++ {
-		manager.recordFailure()
-	}
-
-	// Check status
 	status := manager.GetStatus()
 	assert.NotNil(t, status)
-	assert.Equal(t, int32(3), status.FailureCount)
 	assert.Equal(t, StatusDisconnected, status.Status)
-	assert.NotZero(t, status.LastFailureTime)
-
-	// Reset and check
-	manager.resetCircuit()
-	status = manager.GetStatus()
-	assert.Equal(t, int32(0), status.FailureCount)
 }
 
 // Helper function for testing - mock NATS connection
@@ -501,28 +346,10 @@ func TestManagerScenarios(t *testing.T) {
 			action: func(m *Client) {
 				m.setStatus(StatusConnecting)
 				m.setStatus(StatusConnected)
-				m.resetCircuit()
 			},
 			validate: func(t *testing.T, m *Client) {
 				assert.Equal(t, StatusConnected, m.Status())
 				assert.True(t, m.IsHealthy())
-				assert.Equal(t, int32(0), m.Failures())
-			},
-		},
-		{
-			name: "connection failure and circuit break",
-			setup: func(m *Client) {
-				m.setStatus(StatusConnecting)
-			},
-			action: func(m *Client) {
-				for i := 0; i < 15; i++ {
-					m.recordFailure()
-				}
-			},
-			validate: func(t *testing.T, m *Client) {
-				assert.Equal(t, StatusCircuitOpen, m.Status())
-				assert.False(t, m.IsHealthy())
-				assert.Equal(t, int32(15), m.Failures())
 			},
 		},
 		{
@@ -534,7 +361,6 @@ func TestManagerScenarios(t *testing.T) {
 				m.setStatus(StatusReconnecting)
 				<-time.After(10 * time.Millisecond) // the bubble's clock (R1a)
 				m.setStatus(StatusConnected)
-				m.resetCircuit()
 			},
 			validate: func(t *testing.T, m *Client) {
 				assert.Equal(t, StatusConnected, m.Status())

@@ -12,10 +12,10 @@ commit, recorded in `notes/<task>.md`, except where a task says how else the tes
 
 ## 2. Bookkeeping after a failed write (batch 1, #174)
 
-- [ ] 2.1 Failing tests (D1): `TestIntegration_UnconfirmedAppendInvalidatesCache` and
+- [x] 2.1 Failing tests (D1): `TestIntegration_UnconfirmedAppendInvalidatesCache` and
   `TestIntegration_UnconfirmedDeleteClearsPoison` (asserts the poison record is gone, not `Healthy`). Gate: each fails
   by assertion on the base.
-- [ ] 2.2 D1: the five writes run the cache invalidation and the poison re-check on an error return. Gate: 2.1 passes;
+- [x] 2.2 D1: the five writes run the cache invalidation and the poison re-check on an error return. Gate: 2.1 passes;
   `go test -race -tags integration -run 'Unconfirmed|CommitAmbiguity|CommitUnknown|Poison' ./processor/graph-ingest/`;
   `task verify` on a clean tree (review stop).
 

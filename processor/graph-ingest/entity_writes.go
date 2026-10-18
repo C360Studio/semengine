@@ -24,7 +24,9 @@ import (
 //
 // After each commit a method here does the bookkeeping every write owes: it clears
 // the key's poison record at the revision it committed, or drops it on a delete, and invalidates
-// the key's entity-query cache entry, in that order, before it returns. Callers keep their own
+// the key's entity-query cache entry, in that order, before it returns. A write that returns an
+// error may still have committed (#174), so after one a method here
+// does the bookkeeping that needs no revision instead (writeFailed). Callers keep their own
 // validation, authority checks, metrics and replies; a method here takes what its mode needs and
 // returns the revision it committed (where the caller uses it) and the bucket's error unwrapped,
 // so callers classify it as before.
@@ -122,6 +124,7 @@ func distinctStatements(triples []message.Triple) []message.Triple {
 func (c *Component) createEntity(ctx context.Context, entityID string, encoded []byte) (uint64, error) {
 	revision, err := c.entityBucket.Create(ctx, entityID, encoded)
 	if err != nil {
+		c.writeFailed(ctx, entityID)
 		return revision, err
 	}
 	c.committed(ctx, entityID, revision)
@@ -259,6 +262,7 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 		return data, nil
 	})
 	if err != nil {
+		c.writeFailed(ctx, entity.ID)
 		return revision, bytesWritten, err
 	}
 	// The write committed or was declined: the arrival is applied as far as it may be, and the
@@ -375,6 +379,7 @@ func reconcileCandidate(current *graph.EntityState, source string, desired []mes
 func (c *Component) replaceEntityAtRevision(ctx context.Context, entityID string, encoded []byte, expectedRevision uint64) (uint64, error) {
 	revision, err := c.entityBucket.Update(ctx, entityID, encoded, expectedRevision)
 	if err != nil {
+		c.writeFailed(ctx, entityID)
 		return revision, err
 	}
 	c.committed(ctx, entityID, revision)
@@ -451,6 +456,7 @@ func (c *Component) appendEntityTriples(ctx context.Context, subject string, tri
 		return c.encodeMerge(ctx, subject, current, currentRevision, &entity)
 	})
 	if err != nil {
+		c.writeFailed(ctx, subject)
 		return appendResult{}, err
 	}
 	if revision == 0 {
@@ -467,6 +473,7 @@ func (c *Component) appendEntityTriples(ctx context.Context, subject string, tri
 // caller's expected revision. The bucket's error is returned as is.
 func (c *Component) deleteEntity(ctx context.Context, entityID string, revision uint64) error {
 	if err := c.entityBucket.DeleteAtRevision(ctx, entityID, revision); err != nil {
+		c.writeFailed(ctx, entityID)
 		return err
 	}
 	// The poisoned bytes, if any, are gone with the key, up to the revision the delete removed.
@@ -480,5 +487,21 @@ func (c *Component) deleteEntity(ctx context.Context, entityID string, revision 
 // (clear path (b), D3b), and the next query must not be served the entry cached before it.
 func (c *Component) committed(ctx context.Context, entityID string, revision uint64) {
 	c.clearEntityPoisonOnCommit(ctx, entityID, revision)
+	c.invalidateEntityCacheEntry(entityID)
+}
+
+// writeFailed is the bookkeeping after a write to entityID that returned an error. The write may
+// have committed: natsclient does not promise that a write which returns an error stored nothing
+// (natsclient.KVStore.UpdateWithRetryRev), and a lost reply is one such case (#174). With no
+// revision to clear against, it invalidates the key's entity-query cache entry, so the next query
+// reads the bucket, and re-checks a poison record the key holds against the key's current bytes
+// (verifyEntityPoisonRecord), so a delete or a valid write that stood clears it. It runs after
+// every error, not only those that may have committed: an invalidation is always safe, and the
+// re-check reads the bucket only for a key already recorded (design D1). With the inventory empty
+// the re-check costs one atomic load.
+func (c *Component) writeFailed(ctx context.Context, entityID string) {
+	if c.entityPoisonSize.Load() != 0 {
+		c.verifyEntityPoisonRecord(ctx, entityID)
+	}
 	c.invalidateEntityCacheEntry(entityID)
 }

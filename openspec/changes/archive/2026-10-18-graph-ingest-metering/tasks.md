@@ -47,8 +47,10 @@ stops end batches 1–3. Each stop's task ends only when `task verify` passes on
 
 ## 5. Verify, review and close
 
-- [ ] 5.1 `task verify` passes on a clean tree at the implementation head.
-- [ ] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
-- [ ] 5.3 #300 gets a comment, posted before the merge, that section B is done by PR #307 when it merges and the
-  issue stays open. The change is archived (`openspec archive graph-ingest-metering`) as the last content commit.
-  Gate: `task spec:check`.
+- [x] 5.1 `task verify` passes on a clean tree at the implementation head. Exit 0 at `6ebd8d9` (2026-10-18).
+- [x] 5.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body. Codex, "didn't
+  find any major issues", reviewed commit `6ebd8d9` (PR #307 comment 2026-10-18T21:50Z); batch reviews at `98ef322`
+  and `33886bc` the same.
+- [x] 5.3 #300 gets a comment, posted before the merge, that section B is done by PR #307 when it merges and the
+  issue stays open (posted 2026-10-18T21:51Z). The change is archived (`openspec archive graph-ingest-metering`) as
+  the last content commit. Gate: `task spec:check`.

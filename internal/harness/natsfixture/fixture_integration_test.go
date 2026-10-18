@@ -575,7 +575,7 @@ func TestOpenClosesBeforeTheFixtureStops(t *testing.T) {
 	)
 	t.Run("open", func(t *testing.T) {
 		f = startFixture(t)
-		nc := Open(t, f, func(_ context.Context, url string) (*nats.Conn, func(context.Context) error, error) {
+		nc := Open(t, f.URL(), func(_ context.Context, url string) (*nats.Conn, func(context.Context) error, error) {
 			nc, err := nats.Connect(url, nats.MaxReconnects(0))
 			if err != nil {
 				return nil, nil, err

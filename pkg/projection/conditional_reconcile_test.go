@@ -39,7 +39,7 @@ func (s *reconcileServer) handle(subject string, payload []byte) ([]byte, error)
 				errors.New("revision mismatch"))
 		}
 		s.revision++
-		return projectionJSON(s.t, graph.ReconcilePredicatesResponse{
+		return projectionJSON(s.t, graph.EntityMutationResponse{
 			Outcome: graph.MutationApplied, Entity: projectionTestState(), KVRevision: s.revision,
 		}), nil
 	default:
@@ -85,7 +85,7 @@ func TestReconcileAtAStaleRevisionIsARevisionConflict(t *testing.T) {
 	var mutationErr *MutationError
 	if !errors.As(err, &mutationErr) || mutationErr.Kind != MutationRevisionConflict ||
 		mutationErr.Code != graph.ErrorCodeRevisionMismatch || mutationErr.Commit != CommitNotCommitted ||
-		receipt.Commit != CommitNotCommitted {
+		receipt != (MutationReceipt{}) {
 		t.Fatalf("receipt = %#v, error = %v; want a not-committed revision conflict", receipt, err)
 	}
 	if got, want := mutationErr.Detail["expected_revision"], read; got != want {
@@ -115,8 +115,8 @@ func TestReconcileAtTheCurrentRevisionIsVerifiedAtTheNewRevision(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Reconcile: %v", err)
 	}
-	if receipt.Commit != CommitVerified || receipt.KVRevision != read+1 || receipt.Entity == nil {
-		t.Fatalf("receipt = %#v; want verified at revision %d", receipt, read+1)
+	if receipt.KVRevision != read+1 || receipt.Entity == nil {
+		t.Fatalf("receipt = %#v; want the entity at revision %d", receipt, read+1)
 	}
 	if len(server.expected) != 1 || server.expected[0] != read {
 		t.Fatalf("reconciles sent at %v; want one at %d", server.expected, read)

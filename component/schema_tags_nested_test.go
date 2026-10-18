@@ -28,7 +28,7 @@ type nestedSchemaLimits struct {
 	Count   uint16            `json:"count"`                                               // inferred int, name as description
 	Ratio   float32           `json:"ratio" description:"Ratio"`                           // inferred float
 	On      *bool             `json:"on" description:"Switch"`                             // pointer: inferred bool
-	Matrix  [][]int           `json:"matrix" description:"Matrix"`                         // array of array of integer
+	Matrix  [][]int           `json:"matrix" description:"Matrix"`                         // array of array of int
 	Lookup  map[string]int    `json:"lookup"`                                              // inferred object
 	Child   nestedSchemaHost  `json:"child" description:"Child"`                           // inferred object, expanded
 	Any     any               `json:"any"`                                                 // other kinds fall back to string
@@ -97,7 +97,7 @@ func TestGenerateConfigSchemaExpandsNestedStructsAndArrays(t *testing.T) {
 				"count":  {Type: "int", Description: "count"},
 				"ratio":  {Type: "float", Description: "Ratio"},
 				"on":     {Type: "bool", Description: "Switch"},
-				"matrix": {Type: "array", Description: "Matrix", Items: &PropertySchema{Type: "array", Items: &PropertySchema{Type: "integer"}}},
+				"matrix": {Type: "array", Description: "Matrix", Items: &PropertySchema{Type: "array", Items: &PropertySchema{Type: "int"}}},
 				"lookup": {Type: "object", Description: "lookup"},
 				"child":  {Type: "object", Description: "Child", Properties: host, Required: []string{"host"}},
 				"any":    {Type: "string", Description: "any"},
@@ -111,14 +111,14 @@ func TestGenerateConfigSchemaExpandsNestedStructsAndArrays(t *testing.T) {
 					"path":    {Type: "string", Description: "Route path"},
 					"methods": {Type: "array", Description: "Methods", Items: &PropertySchema{Type: "string"}},
 					"weight":  {Type: "float", Description: "Weight"},
-					"flags":   {Type: "array", Description: "flags", Items: &PropertySchema{Type: "boolean"}},
+					"flags":   {Type: "array", Description: "flags", Items: &PropertySchema{Type: "bool"}},
 					"meta":    {Type: "object", Description: "meta"},
 					"extra":   {Type: "array", Description: "extra", Items: &PropertySchema{Type: "object"}},
 					"opaque":  {Type: "array", Description: "opaque", Items: &PropertySchema{Type: "string"}},
 				},
 			},
 		},
-		"weights": {Type: "array", Description: "Weights", Items: &PropertySchema{Type: "number"}},
+		"weights": {Type: "array", Description: "Weights", Items: &PropertySchema{Type: "float"}},
 		"cache":   {Type: "cache", Description: "Cache settings", CacheFields: wantCacheFields()},
 	}
 

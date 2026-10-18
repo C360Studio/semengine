@@ -36,7 +36,7 @@ func TestCanonicalReconcilePreservesEntityEnvelope(t *testing.T) {
 	require.NoError(t, err)
 	createBody, err := comp.handleCanonicalCreate(t.Context(), createData)
 	require.NoError(t, err)
-	var created graph.CreateEntityResponse
+	var created graph.EntityMutationResponse
 	require.NoError(t, json.Unmarshal(createBody, &created))
 	require.Equal(t, graph.MutationApplied, created.Outcome)
 
@@ -52,7 +52,7 @@ func TestCanonicalReconcilePreservesEntityEnvelope(t *testing.T) {
 	require.NoError(t, err)
 	reconcileBody, err := comp.handleCanonicalReconcile(t.Context(), reconcileData)
 	require.NoError(t, err)
-	var reconciled graph.ReconcilePredicatesResponse
+	var reconciled graph.EntityMutationResponse
 	require.NoError(t, json.Unmarshal(reconcileBody, &reconciled))
 	require.Equal(t, graph.MutationApplied, reconciled.Outcome)
 

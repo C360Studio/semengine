@@ -11,10 +11,21 @@ import (
 	"github.com/c360studio/semengine/pkg/security"
 )
 
-// LoadServerTLSConfig creates a tls.Config for HTTP/WebSocket servers from platform config
+// LoadServerTLSConfig creates a tls.Config for HTTP/WebSocket servers from platform config,
+// applying cfg.MTLS when it is enabled. Enabling mTLS while server TLS is disabled is refused
+// with errs.ErrInvalidConfig: a plain HTTP server cannot verify a client certificate, so there
+// is no config that honours both. An enabled server asking for ACME is refused too
+// (checkManualMode).
 func LoadServerTLSConfig(cfg security.ServerTLSConfig) (*tls.Config, error) {
+	if cfg.MTLS.Enabled && !cfg.Enabled {
+		return nil, errs.WrapInvalid(errs.ErrInvalidConfig, "tlsutil", "LoadServerTLSConfig",
+			"mTLS is enabled but server TLS is not")
+	}
 	if !cfg.Enabled {
 		return nil, nil
+	}
+	if err := checkManualMode(cfg.Mode, cfg.ACME, "LoadServerTLSConfig"); err != nil {
+		return nil, err
 	}
 
 	minVersion, err := parseTLSVersion(cfg.MinVersion)
@@ -32,12 +43,23 @@ func LoadServerTLSConfig(cfg security.ServerTLSConfig) (*tls.Config, error) {
 		MinVersion:   minVersion,
 	}
 
+	if cfg.MTLS.Enabled {
+		if err := applyMTLSConfig(tlsConfig, cfg.MTLS); err != nil {
+			return nil, err
+		}
+	}
+
 	return tlsConfig, nil
 }
 
-// LoadClientTLSConfig creates a tls.Config for HTTP/WebSocket clients from platform config
-// Always uses system CA bundle first, CAFiles are additional trusted CAs
+// LoadClientTLSConfig creates a tls.Config for HTTP/WebSocket clients from platform config.
+// Always uses system CA bundle first, CAFiles are additional trusted CAs. When cfg.MTLS is
+// enabled, its key pair is the client certificate. A configuration asking for ACME is refused
+// (checkManualMode).
 func LoadClientTLSConfig(cfg security.ClientTLSConfig) (*tls.Config, error) {
+	if err := checkManualMode(cfg.Mode, cfg.ACME, "LoadClientTLSConfig"); err != nil {
+		return nil, err
+	}
 	minVersion, err := parseTLSVersion(cfg.MinVersion)
 	if err != nil {
 		return nil, errs.WrapInvalid(err, "tlsutil", "LoadClientTLSConfig", "parse min_version")
@@ -55,19 +77,8 @@ func LoadClientTLSConfig(cfg security.ClientTLSConfig) (*tls.Config, error) {
 	}
 
 	// Add additional CAs from config
-	for _, caFile := range cfg.CAFiles {
-		caPEM, err := os.ReadFile(caFile)
-		if err != nil {
-			return nil, errs.WrapFatal(err, "tlsutil", "LoadClientTLSConfig", fmt.Sprintf("read CA file %s", caFile))
-		}
-		if !rootCAs.AppendCertsFromPEM(caPEM) {
-			return nil, errs.WrapFatal(
-				fmt.Errorf("invalid PEM data"),
-				"tlsutil",
-				"LoadClientTLSConfig",
-				fmt.Sprintf("parse CA certificate from %s", caFile),
-			)
-		}
+	if err := appendCAFiles(rootCAs, cfg.CAFiles, "LoadClientTLSConfig", "CA"); err != nil {
+		return nil, err
 	}
 
 	tlsConfig.RootCAs = rootCAs
@@ -78,52 +89,56 @@ func LoadClientTLSConfig(cfg security.ClientTLSConfig) (*tls.Config, error) {
 		tlsConfig.InsecureSkipVerify = true
 	}
 
+	if cfg.MTLS.Enabled {
+		clientCert, err := tls.LoadX509KeyPair(cfg.MTLS.CertFile, cfg.MTLS.KeyFile)
+		if err != nil {
+			return nil, errs.WrapFatal(err, "tlsutil", "LoadClientTLSConfig", "load client certificate")
+		}
+		tlsConfig.Certificates = []tls.Certificate{clientCert}
+	}
+
 	return tlsConfig, nil
 }
 
-// LoadServerTLSConfigWithMTLS creates a tls.Config for HTTP/WebSocket servers with optional mTLS support.
-// Enabling mTLS while server TLS is disabled is refused with errs.ErrInvalidConfig: a plain
-// HTTP server cannot verify a client certificate, so there is no config that honours both.
-func LoadServerTLSConfigWithMTLS(cfg security.ServerTLSConfig, mtlsCfg security.ServerMTLSConfig) (*tls.Config, error) {
-	if mtlsCfg.Enabled && !cfg.Enabled {
-		return nil, errs.WrapInvalid(errs.ErrInvalidConfig, "tlsutil", "LoadServerTLSConfigWithMTLS",
-			"mTLS is enabled but server TLS is not")
+// checkManualMode refuses a mode other than empty or "manual", and an enabled ACME block, with
+// errs.ErrInvalidConfig naming the key. SemEngine has no ACME loader yet, so serving the
+// certificate files instead would ignore what the operator asked for (security-config spec,
+// "Settings no SemEngine code applies yet are refused"). The other ACME settings act only
+// under acme.enabled, so refusing it covers them.
+func checkManualMode(mode string, acme security.ACMEConfig, method string) error {
+	if mode != "" && mode != "manual" {
+		return errs.WrapInvalid(errs.ErrInvalidConfig, "tlsutil", method,
+			fmt.Sprintf("mode %q is not supported (must be \"\" or \"manual\")", mode))
 	}
-
-	// Start with base server TLS config
-	tlsConfig, err := LoadServerTLSConfig(cfg)
-	if err != nil {
-		return nil, err
+	if acme.Enabled {
+		return errs.WrapInvalid(errs.ErrInvalidConfig, "tlsutil", method,
+			"acme.enabled is true but ACME is not supported")
 	}
+	return nil
+}
 
-	if !mtlsCfg.Enabled {
-		return tlsConfig, nil
+// appendCAFiles adds the PEM certificates in files to pool. A file that cannot be read or
+// holds no certificate is fatal and named; label ("CA" or "client CA") keeps each caller's text.
+func appendCAFiles(pool *x509.CertPool, files []string, method, label string) error {
+	for _, caFile := range files {
+		caPEM, err := os.ReadFile(caFile)
+		if err != nil {
+			return errs.WrapFatal(err, "tlsutil", method, fmt.Sprintf("read %s file %s", label, caFile))
+		}
+		if !pool.AppendCertsFromPEM(caPEM) {
+			return errs.WrapFatal(fmt.Errorf("invalid PEM data"), "tlsutil", method,
+				fmt.Sprintf("parse %s certificate from %s", label, caFile))
+		}
 	}
-
-	// Apply mTLS configuration
-	if err := applyMTLSConfig(tlsConfig, mtlsCfg); err != nil {
-		return nil, err
-	}
-
-	return tlsConfig, nil
+	return nil
 }
 
 // applyMTLSConfig applies mTLS settings to existing tls.Config
 func applyMTLSConfig(tlsConfig *tls.Config, mtlsCfg security.ServerMTLSConfig) error {
 	// Load client CA certificates for validation
 	clientCAs := x509.NewCertPool()
-	for _, caFile := range mtlsCfg.ClientCAFiles {
-		caPEM, err := os.ReadFile(caFile)
-		if err != nil {
-			return errs.WrapFatal(err, "tlsutil", "applyMTLSConfig",
-				fmt.Sprintf("read client CA file %s", caFile))
-		}
-		if !clientCAs.AppendCertsFromPEM(caPEM) {
-			return errs.WrapFatal(
-				fmt.Errorf("invalid PEM data"),
-				"tlsutil", "applyMTLSConfig",
-				fmt.Sprintf("parse client CA certificate from %s", caFile))
-		}
+	if err := appendCAFiles(clientCAs, mtlsCfg.ClientCAFiles, "applyMTLSConfig", "client CA"); err != nil {
+		return err
 	}
 
 	tlsConfig.ClientCAs = clientCAs
@@ -160,30 +175,6 @@ func verifyAllowedClientCN(chains [][]*x509.Certificate, allowedCNs []string) er
 
 	return fmt.Errorf("client certificate CN '%s' not in allowed list",
 		leafCert.Subject.CommonName)
-}
-
-// LoadClientTLSConfigWithMTLS creates a tls.Config for HTTP/WebSocket clients with optional mTLS support
-func LoadClientTLSConfigWithMTLS(cfg security.ClientTLSConfig, mtlsCfg security.ClientMTLSConfig) (*tls.Config, error) {
-	// Start with base client TLS config
-	tlsConfig, err := LoadClientTLSConfig(cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	if !mtlsCfg.Enabled {
-		return tlsConfig, nil
-	}
-
-	// Load client certificate
-	clientCert, err := tls.LoadX509KeyPair(mtlsCfg.CertFile, mtlsCfg.KeyFile)
-	if err != nil {
-		return nil, errs.WrapFatal(err, "tlsutil", "LoadClientTLSConfigWithMTLS",
-			"load client certificate")
-	}
-
-	tlsConfig.Certificates = []tls.Certificate{clientCert}
-
-	return tlsConfig, nil
 }
 
 // parseTLSVersion converts version string to crypto/tls constant.

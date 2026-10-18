@@ -6,6 +6,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/c360studio/semengine/pkg/types"
 )
 
 // TestPayload is a simple payload implementation for testing
@@ -97,7 +99,7 @@ func TestRegistry_RegisterPayload_Success(t *testing.T) {
 		t.Error("registry should contain exactly one registration")
 	}
 
-	stored, exists := registry.registrations["test.sample.v1"]
+	stored, exists := registry.registrations[types.Type{Domain: "test", Category: "sample", Version: "v1"}]
 	if !exists {
 		t.Error("registration was not stored with correct key")
 	}
@@ -269,7 +271,7 @@ func TestRegistry_GetRegistration(t *testing.T) {
 	}
 
 	// Test successful retrieval
-	retrieved, exists := registry.GetRegistration("test.sample.v1")
+	retrieved, exists := registry.GetRegistration(types.Type{Domain: "test", Category: "sample", Version: "v1"})
 	if !exists {
 		t.Fatal("GetRegistration() should return true for existing type")
 	}
@@ -287,7 +289,7 @@ func TestRegistry_GetRegistration(t *testing.T) {
 	}
 
 	// Test non-existent type
-	_, exists = registry.GetRegistration("nonexistent.type.v1")
+	_, exists = registry.GetRegistration(types.Type{Domain: "nonexistent", Category: "type", Version: "v1"})
 	if exists {
 		t.Error("GetRegistration() should return false for non-existent type")
 	}

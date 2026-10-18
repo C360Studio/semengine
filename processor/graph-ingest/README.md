@@ -109,6 +109,11 @@ other query subject. Replies are bare JSON, not wrapped in an envelope.
 | batch | `graph.ingest.query.batch` | `graph.EntityBatchResponse` |
 | prefix | `graph.ingest.query.prefix` | `graph.PrefixQueryResponse` |
 
+`graph.ingest.query.prefix` accepts `graph.PrefixQueryRequest`, which filters keys either by a 1–6 part literal
+`prefix` (`Prefix`) or by an exact 6-position `*` wildcard `pattern` (`Pattern`, validated by
+`pkg/types.ValidateEntityIDPattern` and evaluated via `KVStore.KeysByFilter`). `prefix` and `pattern` are mutually
+exclusive; omitting both matches all entities.
+
 ## Hierarchy inference
 
 When `enable_hierarchy` is on, the component creates container entities from the 6-part entity ID structure:
@@ -138,8 +143,12 @@ component is refused at construction.
 ## Metrics
 
 Every collector is registered on the `MetricsRegistry` in the component's dependencies; with none, the collectors are
-registered nowhere, and nothing is registered on Prometheus' global registry. Two components on one registry share
-each collector.
+registered nowhere, and nothing is registered on Prometheus' global registry.
+
+Give each graph-ingest its own registry. A registry holds one instance's series: gauges such as the readiness gauges
+are set from that instance's own state. A second graph-ingest on the same registry shares each collector, so the two
+overwrite each other's gauges, and which instance's value a scrape shows is not promised. No configuration we know of
+runs two on one registry.
 
 | Metric | Type | Labels |
 | --- | --- | --- |

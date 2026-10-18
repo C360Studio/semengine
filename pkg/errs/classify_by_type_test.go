@@ -26,7 +26,6 @@ func TestIsTransientClassifiesByClassAndSentinel(t *testing.T) {
 		{"ErrConnectionLost", ErrConnectionLost},
 		{"ErrStorageUnavailable", ErrStorageUnavailable},
 		{"ErrRateLimited", ErrRateLimited},
-		{"ErrCircuitOpen", ErrCircuitOpen},
 		{"context.DeadlineExceeded", context.DeadlineExceeded},
 		{"context.Canceled", context.Canceled},
 	}

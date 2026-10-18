@@ -55,35 +55,21 @@ func (c *Component) meteredCanonicalMutation(route canonicalMutationRoute) mutat
 	}
 }
 
+// canonicalErrorOutcome is the outcome label of a refused canonical mutation: the
+// error's classified code, or internal when it carries none (ruling L, #91 comment
+// 6062681355).
 func canonicalErrorOutcome(err error) string {
 	var classified *errs.ClassifiedError
-	if !errors.As(err, &classified) {
+	if !errors.As(err, &classified) || classified.Code == "" {
 		return graph.ErrorCodeInternal
 	}
-	switch classified.Code {
-	case graph.ErrorCodeEntityNotFound:
-		return string(graph.MutationEntityNotFound)
-	case graph.ErrorCodeEntityExists:
-		return string(graph.MutationEntityAlreadyExists)
-	case graph.ErrorCodeRevisionMismatch:
-		return string(graph.MutationRevisionMismatch)
-	case graph.ErrorCodeInvalidRequest, graph.ErrorCodeStructuralInvalid:
-		return string(graph.MutationInvalid)
-	default:
-		return graph.ErrorCodeInternal
-	}
+	return classified.Code
 }
 
 func (c *Component) recordCanonicalResponse(operation graphmutation.Operation, data []byte) error {
 	switch operation {
-	case graphmutation.CreateEntity:
-		var response graph.CreateEntityResponse
-		if err := json.Unmarshal(data, &response); err != nil {
-			return err
-		}
-		c.recordCanonicalOutcome(operation, string(response.Outcome))
-	case graphmutation.ReconcilePredicates:
-		var response graph.ReconcilePredicatesResponse
+	case graphmutation.CreateEntity, graphmutation.ReconcilePredicates:
+		var response graph.EntityMutationResponse
 		if err := json.Unmarshal(data, &response); err != nil {
 			return err
 		}
@@ -126,48 +112,38 @@ func (c *Component) recordCanonicalOutcome(operation graphmutation.Operation, ou
 }
 
 func (c *Component) canonicalMutationRoutes() ([]canonicalMutationRoute, error) {
-	provider, err := canonicalMutationProvider(c.config.Ports)
-	if err != nil {
+	if err := requireMutationProviderPort(c.config.Ports); err != nil {
 		return nil, err
 	}
-
-	operations := []struct {
-		operation graphmutation.Operation
-		handler   mutationHandler
-	}{
-		{graphmutation.CreateEntity, c.handleCanonicalCreate},
-		{graphmutation.ReconcilePredicates, c.handleCanonicalReconcile},
-		{graphmutation.AppendTriples, c.handleCanonicalAppend},
-		{graphmutation.DeleteEntity, c.handleCanonicalDelete},
+	routes := []canonicalMutationRoute{
+		{operation: graphmutation.CreateEntity, handler: c.handleCanonicalCreate},
+		{operation: graphmutation.ReconcilePredicates, handler: c.handleCanonicalReconcile},
+		{operation: graphmutation.AppendTriples, handler: c.handleCanonicalAppend},
+		{operation: graphmutation.DeleteEntity, handler: c.handleCanonicalDelete},
 	}
-	routes := make([]canonicalMutationRoute, 0, len(operations))
-	for _, operation := range operations {
-		subject, resolveErr := graphmutation.ResolveSubject(provider, operation.operation)
-		if resolveErr != nil {
-			return nil, resolveErr
+	for i := range routes {
+		subject, err := graphmutation.Subject(routes[i].operation)
+		if err != nil {
+			return nil, err
 		}
-		routes = append(routes, canonicalMutationRoute{
-			operation: operation.operation,
-			subject:   subject,
-			handler:   operation.handler,
-		})
+		routes[i].subject = subject
 	}
 	return routes, nil
 }
 
-func canonicalMutationProvider(ports *component.PortConfig) (string, error) {
+func requireMutationProviderPort(ports *component.PortConfig) error {
 	if ports == nil {
-		return "", errors.New("graph mutation provider port is required")
+		return errors.New("graph mutation provider port is required")
 	}
-	var provider *string
+	found := false
 	for _, definition := range ports.Inputs {
 		port, err := definition.Resolve(component.DirectionInput)
 		if err != nil {
-			return "", err
+			return err
 		}
 		facts, err := port.Facts()
 		if err != nil {
-			return "", err
+			return err
 		}
 		subjects := facts.NATSSubjects()
 		contract, hasContract := facts.Interface()
@@ -176,24 +152,23 @@ func canonicalMutationProvider(ports *component.PortConfig) (string, error) {
 		if !candidate {
 			continue
 		}
-		if provider != nil {
-			return "", errors.New("graph mutation provider port is ambiguous")
+		if found {
+			return errors.New("graph mutation provider port is ambiguous")
 		}
 		if facts.Kind() != component.PortKindNATSRequest || !port.Required ||
 			len(subjects) != 1 || subjects[0] != graphmutation.SubjectFamily || !hasContract ||
 			contract.Type != graphmutation.InterfaceType || contract.Version != graphmutation.InterfaceVersion {
-			return "", fmt.Errorf(
+			return fmt.Errorf(
 				"graph mutation provider must be a required %s %s nats-request input on %s",
 				graphmutation.InterfaceType, graphmutation.InterfaceVersion, graphmutation.SubjectFamily,
 			)
 		}
-		subject := subjects[0]
-		provider = &subject
+		found = true
 	}
-	if provider == nil {
-		return "", errors.New("graph mutation provider port is required")
+	if !found {
+		return errors.New("graph mutation provider port is required")
 	}
-	return *provider, nil
+	return nil
 }
 
 // requireRegisteredMessageType is the one registered-type gate for both create
@@ -215,7 +190,7 @@ func (c *Component) requireRegisteredMessageType(entity *graph.EntityState) erro
 		return rejectInternal(errors.New("graph-ingest holds no payload registry; entity.create refused"))
 	}
 	key := entity.MessageType.Key()
-	if _, ok := c.payloadRegistry.GetRegistration(key); !ok {
+	if _, ok := c.payloadRegistry.GetRegistration(entity.MessageType); !ok {
 		return rejectInvalidDetail(graph.ErrorCodeMessageTypeUnregistered,
 			map[string]any{"message_type": key},
 			fmt.Errorf("entity message_type %q is not registered in this deployment's payload registry", key))
@@ -290,7 +265,7 @@ func (c *Component) handleCanonicalCreate(ctx context.Context, data []byte) ([]b
 	}
 
 	c.recordCanonicalEntityCommit(len(encoded))
-	return json.Marshal(graph.CreateEntityResponse{
+	return json.Marshal(graph.EntityMutationResponse{
 		Outcome: graph.MutationApplied, Entity: entity.Clone(), KVRevision: revision,
 		TraceID: request.TraceID, RequestID: request.RequestID,
 	})
@@ -339,7 +314,7 @@ func (c *Component) handleCanonicalReconcile(ctx context.Context, data []byte) (
 
 	candidate, unchanged := reconcileCandidate(&current, request.Source, request.Desired, predicates)
 	if unchanged {
-		return json.Marshal(graph.ReconcilePredicatesResponse{
+		return json.Marshal(graph.EntityMutationResponse{
 			Outcome: graph.MutationUnchanged, Entity: current.Clone(), KVRevision: revision,
 			TraceID: request.TraceID, RequestID: request.RequestID,
 		})
@@ -363,7 +338,7 @@ func (c *Component) handleCanonicalReconcile(ctx context.Context, data []byte) (
 	}
 
 	c.recordCanonicalEntityCommit(len(encoded))
-	return json.Marshal(graph.ReconcilePredicatesResponse{
+	return json.Marshal(graph.EntityMutationResponse{
 		Outcome: graph.MutationApplied, Entity: candidate, KVRevision: committedRevision,
 		TraceID: request.TraceID, RequestID: request.RequestID,
 	})

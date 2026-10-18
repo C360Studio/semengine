@@ -9,7 +9,7 @@ as the underlying metrics system. It includes core platform metrics, service-spe
 metrics server for monitoring and alerting integration.
 
 The package provides a centralized metrics registry that manages both core platform metrics (service status, message
-processing, NATS connection health) and custom service-specific metrics. The HTTP server exposes metrics in Prometheus
+processing, health checks) and custom service-specific metrics. The HTTP server exposes metrics in Prometheus
 format for collection by monitoring systems.
 
 The design follows Prometheus best practices with proper metric naming, labeling, and types (counters, gauges,
@@ -36,7 +36,7 @@ register custom metrics with conflict detection and lifecycle management.
 ### Core metrics (`Metrics`)
 
 Pre-defined platform-level metrics covering service status, message processing throughput, error rates, health check
-status, and NATS connection monitoring for consistent operational visibility.
+status, and health checks for consistent operational visibility.
 
 ### Metrics Server
 
@@ -184,12 +184,6 @@ type Metrics struct {
     ErrorsTotal        *prometheus.CounterVec  // Total errors by service and type
     HealthCheckStatus  *prometheus.GaugeVec    // Health status by service (0=unhealthy, 1=healthy)
     LogEntriesTotal    *prometheus.CounterVec  // WARN+ log records by component and level (no Record method)
-
-    // NATS metrics
-    NATSConnected      prometheus.Gauge        // NATS connection status (0=disconnected, 1=connected)
-    NATSRTT            prometheus.Gauge        // NATS round-trip time in seconds
-    NATSReconnects     prometheus.Counter      // Total NATS reconnections
-    NATSCircuitBreaker prometheus.Gauge        // Circuit breaker status (0=closed, 1=open, 2=half-open)
 }
 
 // Recording methods
@@ -200,10 +194,6 @@ func (c *Metrics) RecordMessagePublished(service, subject string)
 func (c *Metrics) RecordProcessingDuration(service, operation string, duration time.Duration)
 func (c *Metrics) RecordError(service, errorType string)
 func (c *Metrics) RecordHealthStatus(service string, healthy bool)
-func (c *Metrics) RecordNATSStatus(connected bool)
-func (c *Metrics) RecordNATSRTT(rtt time.Duration)
-func (c *Metrics) RecordNATSReconnect()
-func (c *Metrics) RecordCircuitBreakerState(state int)
 ```
 
 #### `Server`

@@ -67,7 +67,7 @@ func createDrone(t *testing.T, c *Component, instance string) []message.Triple {
 		t.Fatalf("read %s back: %v", id, err)
 	}
 	var state graph.EntityState
-	if err := graph.UnmarshalEntityState(stored.Value, &state); err != nil {
+	if err := graph.UnmarshalEntityState(id, stored.Value, &state); err != nil {
 		t.Fatalf("decode %s: %v", id, err)
 	}
 	return state.Triples

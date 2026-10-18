@@ -41,6 +41,19 @@ func (p *projectionRequester) RequestClassified(
 	return p.handle(subject, payload)
 }
 
+// A nil NATS client is a construction error like every other one, not a write's refusal: no
+// operation was asked for (design D4).
+func TestNewMutationClientRefusesANilNATSClient(t *testing.T) {
+	client, err := NewMutationClient(MutationClientConfig{Contracts: []Contract{projectionTestContract(t)}})
+	if err == nil || client != nil {
+		t.Fatalf("client = %v, error = %v; want a refusal", client, err)
+	}
+	var mutationErr *MutationError
+	if errors.As(err, &mutationErr) {
+		t.Errorf("error = %#v; want a plain constructor error, not a mutation error", mutationErr)
+	}
+}
+
 func TestCreateRejectsMissingRequiredProvenanceBeforeRequest(t *testing.T) {
 	contract := projectionTestContract(t)
 	tests := []struct {
@@ -53,7 +66,7 @@ func TestCreateRejectsMissingRequiredProvenanceBeforeRequest(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			requester := &projectionRequester{handle: func(string, []byte) ([]byte, error) {
-				return projectionJSON(t, graph.CreateEntityResponse{
+				return projectionJSON(t, graph.EntityMutationResponse{
 					Outcome: graph.MutationApplied, Entity: projectionTestState(), KVRevision: 1,
 				}), nil
 			}}
@@ -110,7 +123,7 @@ func TestCreateRejectsConflictingTimestampBeforeRequest(t *testing.T) {
 	contract := projectionTestContract(t)
 	metadataTime := time.Date(2026, 8, 5, 12, 0, 0, 0, time.UTC)
 	requester := &projectionRequester{handle: func(string, []byte) ([]byte, error) {
-		return projectionJSON(t, graph.CreateEntityResponse{
+		return projectionJSON(t, graph.EntityMutationResponse{
 			Outcome: graph.MutationApplied, Entity: projectionTestState(), KVRevision: 1,
 		}), nil
 	}}
@@ -184,7 +197,7 @@ func assertProjectionRejectedBeforeRequest(
 	var mutationErr *MutationError
 	if !errors.As(err, &mutationErr) || mutationErr.Operation != operation ||
 		mutationErr.Kind != MutationInvalid || mutationErr.Class != errs.ErrorInvalid ||
-		receipt.Commit != CommitNotCommitted {
+		mutationErr.Commit != CommitNotCommitted || receipt != (MutationReceipt{}) {
 		t.Fatalf("receipt = %#v, error = %#v", receipt, mutationErr)
 	}
 	if len(requester.requests) != 0 {
@@ -207,7 +220,7 @@ func TestReconcileReadsExactRevisionThenMakesOneMutation(t *testing.T) {
 			if request.ExpectedRevision != 7 {
 				t.Fatalf("expected revision = %d", request.ExpectedRevision)
 			}
-			return projectionJSON(t, graph.ReconcilePredicatesResponse{
+			return projectionJSON(t, graph.EntityMutationResponse{
 				Outcome: graph.MutationApplied, Entity: entity, KVRevision: 8,
 			}), nil
 		default:
@@ -227,33 +240,57 @@ func TestReconcileReadsExactRevisionThenMakesOneMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if receipt.Commit != CommitVerified || receipt.KVRevision != 8 || len(requester.requests) != 2 {
+	if receipt.KVRevision != 8 || len(requester.requests) != 2 {
 		t.Fatalf("receipt = %#v, requests = %d", receipt, len(requester.requests))
 	}
 }
 
+// TestAppendDefiniteSubjectFailureIsNotCommitUnknown: a per-subject failure whose code proves the
+// write was refused is not committed, and keeps the class the response named. A class string the
+// client does not recognise reads as fatal, the answer errs.Classify gives an unclassified error.
 func TestAppendDefiniteSubjectFailureIsNotCommitUnknown(t *testing.T) {
-	contract := projectionTestContract(t)
-	requester := &projectionRequester{handle: func(subject string, _ []byte) ([]byte, error) {
-		if subject != "graph.mutation.triple.append" {
-			t.Fatalf("subject = %q", subject)
-		}
-		return projectionJSON(t, graph.AppendTriplesResponse{Results: []graph.AppendSubjectResult{{
-			EntityID: projectionTestEntity,
-			Outcome:  graph.MutationFailed,
-			Error:    &graph.MutationFailure{Class: "fatal", Code: graph.ErrorCodeGraphStateResetRequired},
-		}}}), nil
-	}}
-	client, _ := newMutationClient(requester, []Contract{contract}, time.Second)
-	receipt, err := client.Append(context.Background(), AppendMutation{
-		Contract: contract.Name, Group: "events", EntityID: projectionTestEntity,
-		Triples:  []message.Triple{{Subject: projectionTestEntity, Predicate: "test.event.seen", Object: "one"}},
-		Metadata: MutationMetadata{RequestID: "append-definite-failure", Source: "test-projector", Timestamp: projectionTestTime},
-	})
-	var mutationErr *MutationError
-	if !errors.As(err, &mutationErr) || mutationErr.Kind != MutationInternal ||
-		receipt.Commit != CommitNotCommitted || mutationErr.Commit != CommitNotCommitted {
-		t.Fatalf("receipt = %#v, error = %#v", receipt, mutationErr)
+	cases := []struct {
+		name      string
+		failure   graph.MutationFailure
+		wantKind  MutationErrorKind
+		wantClass errs.ErrorClass
+	}{
+		{"fatal reset required", graph.MutationFailure{Class: "fatal", Code: graph.ErrorCodeGraphStateResetRequired},
+			MutationInternal, errs.ErrorFatal},
+		{"unrecognised class", graph.MutationFailure{Class: "bogus", Code: graph.ErrorCodeEntityNotFound},
+			MutationNotFound, errs.ErrorFatal},
+		{"transient revision mismatch", graph.MutationFailure{Class: "transient", Code: graph.ErrorCodeRevisionMismatch},
+			MutationRevisionConflict, errs.ErrorTransient},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			contract := projectionTestContract(t)
+			requester := &projectionRequester{handle: func(subject string, _ []byte) ([]byte, error) {
+				if subject != "graph.mutation.triple.append" {
+					t.Fatalf("subject = %q", subject)
+				}
+				failure := c.failure
+				return projectionJSON(t, graph.AppendTriplesResponse{Results: []graph.AppendSubjectResult{{
+					EntityID: projectionTestEntity,
+					Outcome:  graph.MutationFailed,
+					Error:    &failure,
+				}}}), nil
+			}}
+			client, _ := newMutationClient(requester, []Contract{contract}, time.Second)
+			receipt, err := client.Append(context.Background(), AppendMutation{
+				Contract: contract.Name, Group: "events", EntityID: projectionTestEntity,
+				Triples:  []message.Triple{{Subject: projectionTestEntity, Predicate: "test.event.seen", Object: "one"}},
+				Metadata: MutationMetadata{RequestID: "append-definite-failure", Source: "test-projector", Timestamp: projectionTestTime},
+			})
+			var mutationErr *MutationError
+			if !errors.As(err, &mutationErr) || mutationErr.Kind != c.wantKind ||
+				receipt != (MutationReceipt{}) || mutationErr.Commit != CommitNotCommitted {
+				t.Fatalf("receipt = %#v, error = %#v; want %s, not committed", receipt, mutationErr, c.wantKind)
+			}
+			if mutationErr.Class != c.wantClass {
+				t.Errorf("class %q, want %q for response class %q", mutationErr.Class, c.wantClass, c.failure.Class)
+			}
+		})
 	}
 }
 
@@ -269,7 +306,7 @@ func TestAppendAmbiguousTransportFailureIsNotRetried(t *testing.T) {
 	})
 	var mutationErr *MutationError
 	if !errors.As(err, &mutationErr) || mutationErr.Kind != MutationCommitUnknown ||
-		receipt.Commit != CommitUnknown || len(requester.requests) != 1 {
+		mutationErr.Commit != CommitUnknown || receipt != (MutationReceipt{}) || len(requester.requests) != 1 {
 		t.Fatalf("receipt = %#v, error = %#v, requests = %d", receipt, mutationErr, len(requester.requests))
 	}
 }
@@ -289,7 +326,8 @@ func TestRevisionMismatchRemainsDefinite(t *testing.T) {
 		Metadata: MutationMetadata{Source: "test-projector"},
 	})
 	var mutationErr *MutationError
-	if !errors.As(err, &mutationErr) || mutationErr.Kind != MutationRevisionConflict || receipt.Commit != CommitNotCommitted {
+	if !errors.As(err, &mutationErr) || mutationErr.Kind != MutationRevisionConflict ||
+		mutationErr.Commit != CommitNotCommitted || receipt != (MutationReceipt{}) {
 		t.Fatalf("receipt = %#v, error = %#v", receipt, mutationErr)
 	}
 	if len(requester.requests) != 2 {
@@ -337,7 +375,7 @@ func projectionJSON(t *testing.T, value any) []byte {
 func TestCreateFillsMessageTypeFromContract(t *testing.T) {
 	contract := projectionTestContract(t)
 	requester := &projectionRequester{handle: func(string, []byte) ([]byte, error) {
-		return projectionJSON(t, graph.CreateEntityResponse{
+		return projectionJSON(t, graph.EntityMutationResponse{
 			Outcome: graph.MutationApplied, Entity: projectionTestState(), KVRevision: 1,
 		}), nil
 	}}
@@ -345,7 +383,7 @@ func TestCreateFillsMessageTypeFromContract(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	receipt, err := client.Create(context.Background(), CreateMutation{
+	_, err = client.Create(context.Background(), CreateMutation{
 		Contract: contract.Name,
 		Entity:   &graph.EntityState{ID: projectionTestEntity},
 		Triples: []message.Triple{{
@@ -355,9 +393,6 @@ func TestCreateFillsMessageTypeFromContract(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("Create with an empty stamp: %v", err)
-	}
-	if receipt.Commit != CommitVerified {
-		t.Fatalf("receipt = %#v, want verified commit", receipt)
 	}
 	if len(requester.requests) != 1 {
 		t.Fatalf("requests = %d, want 1", len(requester.requests))
@@ -438,7 +473,7 @@ func TestCreateFillsFromRegisteredContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	requester := &projectionRequester{handle: func(string, []byte) ([]byte, error) {
-		return projectionJSON(t, graph.CreateEntityResponse{
+		return projectionJSON(t, graph.EntityMutationResponse{
 			Outcome: graph.MutationApplied, Entity: projectionTestState(), KVRevision: 1,
 		}), nil
 	}}

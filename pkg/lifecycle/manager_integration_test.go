@@ -13,6 +13,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -26,23 +28,35 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// shared is this package's NATS server. It starts at the first reset; TestMain removes it after the tests.
+var shared natsfixture.Shared
+
+func TestMain(m *testing.M) { os.Exit(run(m)) }
+
+func run(m *testing.M) int {
+	code := m.Run()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if err := shared.Stop(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return code
+}
+
 // clientTimeout is the request timeout of the fixture client, the value the pin's NewTestClient
 // family used.
 const clientTimeout = 15 * time.Second
 
 // fixtureClient replaces the pin's natsclient.NewTestClient(t,
-// natsclient.WithKVBuckets(graph.BucketEntityStates)): one broker for t and a Client connected to
-// it, built as the pin built it (no reconnects, no health monitor), with ENTITY_STATES created in
-// the default configuration, as that option created it. natsfixture.Open bounds the connect and
-// closes the Client on t.Cleanup before the fixture stops (nats-fixture, "Connected value for a
-// package's tests").
+// natsclient.WithKVBuckets(graph.BucketEntityStates)): it resets the package's shared broker and
+// returns a Client connected to it, built as the pin built it (no reconnects, no health monitor),
+// with ENTITY_STATES created in the default configuration, as that option created it.
+// natsfixture.Open bounds the connect and closes the Client on t.Cleanup before the reset's
+// connection check runs (nats-fixture, "Connected value for a package's tests").
 func fixtureClient(t *testing.T) *natsclient.Client {
 	t.Helper()
-	f := natsfixture.New(t)
-	if err := f.Start(t.Context()); err != nil {
-		t.Fatalf("natsfixture Start: %v", err)
-	}
-	client := natsfixture.Open(t, f, openClient)
+	client := natsfixture.Open(t, shared.Reset(t), openClient)
 	if _, err := client.CreateKeyValueBucket(t.Context(), jetstream.KeyValueConfig{Bucket: graph.BucketEntityStates}); err != nil {
 		t.Fatalf("create %s: %v", graph.BucketEntityStates, err)
 	}
@@ -84,7 +98,7 @@ func startKVBackedResponders(
 	kv, err := client.GetKeyValueBucket(ctx, graph.BucketEntityStates)
 	require.NoError(t, err)
 
-	reconcileSubject, err := graphmutation.ResolveSubject(graphmutation.SubjectFamily, graphmutation.ReconcilePredicates)
+	reconcileSubject, err := graphmutation.Subject(graphmutation.ReconcilePredicates)
 	require.NoError(t, err)
 	_, err = client.SubscribeForRequests(ctx, reconcileSubject, func(requestCtx context.Context, data []byte) ([]byte, error) {
 		var req graph.ReconcilePredicatesRequest
@@ -99,7 +113,7 @@ func startKVBackedResponders(
 			return nil, err
 		}
 		var state graph.EntityState
-		if err := graph.UnmarshalEntityState(entry.Value(), &state); err != nil {
+		if err := graph.UnmarshalEntityState(req.EntityID, entry.Value(), &state); err != nil {
 			return nil, err
 		}
 		selected := make(map[string]struct{}, len(req.Predicates))
@@ -131,14 +145,14 @@ func startKVBackedResponders(
 				}
 			}
 		}
-		return json.Marshal(graph.ReconcilePredicatesResponse{
+		return json.Marshal(graph.EntityMutationResponse{
 			Outcome: graph.MutationApplied, Entity: state.Clone(), KVRevision: revision,
 		})
 	})
 	require.NoError(t, err)
 	startExactEntityResponder(t, client, kv)
 
-	createSubject, err := graphmutation.ResolveSubject(graphmutation.SubjectFamily, graphmutation.CreateEntity)
+	createSubject, err := graphmutation.Subject(graphmutation.CreateEntity)
 	require.NoError(t, err)
 	_, err = client.SubscribeForRequests(ctx, createSubject, func(_ context.Context, data []byte) ([]byte, error) {
 		var req graph.CreateEntityRequest
@@ -155,13 +169,13 @@ func startKVBackedResponders(
 		if err != nil {
 			return nil, err
 		}
-		return json.Marshal(graph.CreateEntityResponse{
+		return json.Marshal(graph.EntityMutationResponse{
 			Outcome: graph.MutationApplied, Entity: &st, KVRevision: rev,
 		})
 	})
 	require.NoError(t, err)
 
-	deleteSubject, err := graphmutation.ResolveSubject(graphmutation.SubjectFamily, graphmutation.DeleteEntity)
+	deleteSubject, err := graphmutation.Subject(graphmutation.DeleteEntity)
 	require.NoError(t, err)
 	_, err = client.SubscribeForRequests(ctx, deleteSubject, func(_ context.Context, data []byte) ([]byte, error) {
 		var req graph.DeleteEntityRequest
@@ -203,7 +217,7 @@ func startExactEntityResponder(t *testing.T, client *natsclient.Client, kv jetst
 			return nil, err
 		}
 		var entity graph.EntityState
-		if err := graph.UnmarshalEntityState(entry.Value(), &entity); err != nil {
+		if err := graph.UnmarshalEntityState(req.ID, entry.Value(), &entity); err != nil {
 			return nil, err
 		}
 		return json.Marshal(graph.ExactEntity{Entity: entity.Clone(), KVRevision: entry.Revision()})
@@ -250,7 +264,7 @@ func TestIntegration_DespawnWith_DoesNotDeleteNewerStateAfterTerminalCommit(t *t
 			return err
 		}
 		var state graph.EntityState
-		if err := graph.UnmarshalEntityState(entry.Value(), &state); err != nil {
+		if err := graph.UnmarshalEntityState(entityID, entry.Value(), &state); err != nil {
 			return err
 		}
 		state.Triples = append(state.Triples, message.Triple{
@@ -280,7 +294,7 @@ func TestIntegration_DespawnWith_DoesNotDeleteNewerStateAfterTerminalCommit(t *t
 	require.NoError(t, err, "newer state must survive the stale conditional delete")
 	require.Equal(t, newerRevision, entry.Revision())
 	var preserved graph.EntityState
-	require.NoError(t, graph.UnmarshalEntityState(entry.Value(), &preserved))
+	require.NoError(t, graph.UnmarshalEntityState(id, entry.Value(), &preserved))
 	require.Equal(t, "newer", extractTripleScalar(preserved.Triples, id, "test.concurrent.value"))
 }
 
@@ -495,4 +509,54 @@ func TestIntegration_CreateFromOperator_RejectsUndeclaredInitialPhase(t *testing
 
 	_, getErr := mgr.Get(ctx, "fixture", id)
 	require.ErrorIs(t, getErr, ErrEntityNotFound, "a refused create must leave nothing behind")
+}
+
+// TestIntegration_ExactReadResponderRefusesWhatGraphIngestRefuses: the
+// integration exact-read responder refuses each stored value graph-ingest's
+// stored-value rule refuses, and the refusal reaches Get over the wire (#199).
+func TestIntegration_ExactReadResponderRefusesWhatGraphIngestRefuses(t *testing.T) {
+	client := fixtureClient(t)
+	ctx := t.Context()
+	kv := startKVBackedResponders(t, client)
+	mgr := NewManager(client, nil)
+	require.NoError(t, mgr.Register(lifecycle{}.fixtureWorkflow()))
+
+	const id = "c360.platform1.gcs.lifecycle.mission.refused-read"
+	for _, tc := range refusedStoredValues(t, id) {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := kv.Put(ctx, id, tc.value)
+			require.NoError(t, err)
+			_, err = mgr.Get(ctx, "fixture", id)
+			requireStoredValueRefused(t, err, tc.reason)
+		})
+	}
+}
+
+// TestIntegration_ReconcileResponderRefusesWhatGraphIngestRefuses: the
+// integration reconcile responder refuses to write over each stored value
+// graph-ingest's stored-value rule refuses, and leaves it unchanged (#199).
+func TestIntegration_ReconcileResponderRefusesWhatGraphIngestRefuses(t *testing.T) {
+	client := fixtureClient(t)
+	ctx := t.Context()
+	kv := startKVBackedResponders(t, client)
+	mgr := NewManager(client, nil)
+
+	const id = "c360.platform1.gcs.lifecycle.mission.refused-reconcile"
+	for _, tc := range refusedStoredValues(t, id) {
+		t.Run(tc.name, func(t *testing.T) {
+			revision, err := kv.Put(ctx, id, tc.value)
+			require.NoError(t, err)
+			_, err = mgr.emitter.reconcile(ctx, &graph.ReconcilePredicatesRequest{
+				EntityID:         id,
+				ExpectedRevision: revision,
+				Predicates:       []string{"mission.lifecycle.phase"},
+				Desired: []message.Triple{{
+					Subject: id, Predicate: "mission.lifecycle.phase", Object: "flying",
+					Source: fixtureSource, Timestamp: fixtureTime,
+				}},
+			})
+			requireStoredValueRefused(t, err, tc.reason)
+			require.Equal(t, revision, revisionOf(t, kv, id), "the refused value was written over")
+		})
+	}
 }

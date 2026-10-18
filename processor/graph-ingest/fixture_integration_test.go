@@ -6,6 +6,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -17,6 +19,22 @@ import (
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/natsclient"
 )
+
+// shared is this package's NATS server. It starts at the first reset; TestMain removes it after the tests.
+var shared natsfixture.Shared
+
+func TestMain(m *testing.M) { os.Exit(run(m)) }
+
+func run(m *testing.M) int {
+	code := m.Run()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	if err := shared.Stop(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return code
+}
 
 // fixtureClientTimeout is the fixture client's request timeout, the value the pin's
 // NewTestClient family used.
@@ -59,21 +77,22 @@ type fixtureStream struct {
 var entityStream = fixtureStream{name: "ENTITY", subjects: []string{"entity.>"}}
 
 // newFixtureClient replaces the pin's natsclient.NewTestClient(t, WithKV(),
-// WithStreams(streams...)) (design D3): a broker of this test's own, the streams created
-// on it, and a client connected through natsfixture.Open. The fixture's Stop and the
-// client's Close run on cleanup, each under a bounded context, the Close first.
+// WithStreams(streams...)) (design D3): the package's shared broker reset for t, a client
+// connected through natsfixture.Open, and the streams created on it. The client's Close
+// runs on cleanup under a bounded context before the reset's connection check.
 func newFixtureClient(t *testing.T, streams ...fixtureStream) *natsclient.Client {
 	t.Helper()
-	f := natsfixture.New(t)
-	if err := f.Start(t.Context()); err != nil {
-		t.Fatalf("natsfixture Start: %v", err)
+	client := natsfixture.Open(t, shared.Reset(t), openFixtureClient)
+	js, err := client.JetStream()
+	if err != nil {
+		t.Fatalf("JetStream: %v", err)
 	}
 	for _, s := range streams {
-		if _, err := natsfixture.CreateStream(t.Context(), f.JetStream(), jetstream.FileStorage, s.name, s.subjects...); err != nil {
+		if _, err := natsfixture.CreateStream(t.Context(), js, jetstream.FileStorage, s.name, s.subjects...); err != nil {
 			t.Fatalf("CreateStream %s: %v", s.name, err)
 		}
 	}
-	return natsfixture.Open(t, f, openFixtureClient)
+	return client
 }
 
 // startBatchTestComponent starts graph-ingest with its default configuration on a

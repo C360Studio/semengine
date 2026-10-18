@@ -13,9 +13,10 @@ import (
 )
 
 // The typed client's half of design D11's tests for pkg/projection (task 5.2): each write sends its
-// canonical request and reads its reply, a mutation error keeps the reply's class, code and detail,
-// and a group or statement the contract does not allow is refused before any request. The wire is
-// a double that answers each request as the test names.
+// canonical request and reads its reply, a mutation error keeps the reply's code and detail (and its
+// class when the reply proves nothing was written; a commit-unknown error is fatal), and a group or
+// statement the contract does not allow is refused before any request. The wire is a double that
+// answers each request as the test names.
 
 // canonicalMetadata is the caller's provenance every write below sends.
 var canonicalMetadata = MutationMetadata{
@@ -71,25 +72,28 @@ func TestCreateSendsItsCanonicalRequestAndReadsTheReply(t *testing.T) {
 			vocabulary.IndexingProfileContent, canonicalMetadata.TraceID, canonicalMetadata.RequestID)
 	}
 	// projectionAcceptingRequester answers a create at revision 1.
-	if receipt.Commit != CommitVerified || receipt.KVRevision != 1 || receipt.Entity == nil ||
-		receipt.Entity.ID != projectionTestEntity {
-		t.Fatalf("receipt = %#v, want the reply's entity verified at revision 1", receipt)
+	if receipt.KVRevision != 1 || receipt.Entity == nil || receipt.Entity.ID != projectionTestEntity {
+		t.Fatalf("receipt = %#v, want the reply's entity at revision 1", receipt)
 	}
 }
 
 // TestAppendSendsItsCanonicalRequestAndReadsTheReply: Append sends one request on the append
 // subject carrying its statements, filled from the metadata, and the metadata's trace and request
 // IDs. An applied or unchanged reply is verified at the reply's revision; an entity-not-found
-// reply is a not-committed not-found error with that code, since nothing was written.
+// reply is a not-committed not-found error with that code, since nothing was written. A reply
+// with an outcome graph-ingest never sends proves nothing, so it is commit-unknown and fatal
+// (design D4; the wire client refuses the reply).
 func TestAppendSendsItsCanonicalRequestAndReadsTheReply(t *testing.T) {
 	contract := projectionTestContract(t)
 	tests := []struct {
 		outcome graph.MutationOutcome
 		found   bool
+		unknown bool
 	}{
-		{graph.MutationApplied, true},
-		{graph.MutationUnchanged, true},
-		{graph.MutationEntityNotFound, false},
+		{graph.MutationApplied, true, false},
+		{graph.MutationUnchanged, true, false},
+		{graph.MutationEntityNotFound, false, false},
+		{"unknown_outcome", true, true},
 	}
 	for _, test := range tests {
 		t.Run(string(test.outcome), func(t *testing.T) {
@@ -117,16 +121,25 @@ func TestAppendSendsItsCanonicalRequestAndReadsTheReply(t *testing.T) {
 			if len(requester.requests) != 1 || !reflect.DeepEqual(sent, want) {
 				t.Fatalf("requests = %d, sent %#v; want one, %#v", len(requester.requests), sent, want)
 			}
+			if test.unknown {
+				var mutationErr *MutationError
+				if !errors.As(err, &mutationErr) || receipt != (MutationReceipt{}) ||
+					mutationErr.Commit != CommitUnknown || mutationErr.Kind != MutationCommitUnknown {
+					t.Fatalf("receipt = %#v, error = %#v; want commit-unknown", receipt, err)
+				}
+				assertCommitUnknownIsFatal(t, MutationOperationAppend, err)
+				return
+			}
 			if test.found {
-				if err != nil || receipt.Commit != CommitVerified || receipt.KVRevision != 5 {
-					t.Fatalf("receipt = %#v, error = %v; want verified at revision 5", receipt, err)
+				if err != nil || receipt.KVRevision != 5 {
+					t.Fatalf("receipt = %#v, error = %v; want revision 5", receipt, err)
 				}
 				return
 			}
 			var mutationErr *MutationError
 			if !errors.As(err, &mutationErr) || mutationErr.Kind != MutationNotFound ||
 				mutationErr.Code != graph.ErrorCodeEntityNotFound || mutationErr.Class != errs.ErrorInvalid ||
-				mutationErr.Commit != CommitNotCommitted || receipt.Commit != CommitNotCommitted {
+				mutationErr.Commit != CommitNotCommitted || receipt != (MutationReceipt{}) {
 				t.Fatalf("receipt = %#v, error = %#v; want a not-committed entity-not-found", receipt, err)
 			}
 		})
@@ -163,8 +176,8 @@ func TestDeleteSendsItsCanonicalRequestAndReadsTheReply(t *testing.T) {
 	if len(requester.requests) != 1 || sent != want {
 		t.Fatalf("requests = %d, sent %#v; want one, %#v", len(requester.requests), sent, want)
 	}
-	if receipt.Commit != CommitVerified || receipt.KVRevision != fence {
-		t.Fatalf("receipt = %#v, want verified at revision %d", receipt, fence)
+	if receipt.KVRevision != fence {
+		t.Fatalf("receipt = %#v, want revision %d", receipt, fence)
 	}
 }
 
@@ -289,8 +302,8 @@ func TestGroupAndStatementCanonicalizationRefusedBeforeRequest(t *testing.T) {
 				}
 				receipt, err := op.send(client, write)
 				if test.name == "as given" {
-					if err != nil || receipt.Commit != CommitVerified {
-						t.Fatalf("receipt = %#v, error = %v; want the unchanged write verified", receipt, err)
+					if err != nil {
+						t.Fatalf("receipt = %#v, error = %v; want the unchanged write to succeed", receipt, err)
 					}
 					return
 				}

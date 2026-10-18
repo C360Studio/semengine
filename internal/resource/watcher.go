@@ -106,7 +106,13 @@ func NewWatcher(name string, checkFn func(ctx context.Context) error, cfg Config
 // WaitForStartup blocks until the resource is available or startup attempts exhausted.
 // Returns true if resource is available, false if entering fallback mode.
 // If false is returned, call Run on a goroutine you own to enable periodic re-checking.
+//
+// A nil context returns false without calling the check.
 func (w *Watcher) WaitForStartup(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+
 	for attempt := 1; attempt <= w.startupAttempts; attempt++ {
 		if err := w.checkFn(ctx); err == nil {
 			w.available.Store(true)

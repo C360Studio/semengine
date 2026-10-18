@@ -1,14 +1,15 @@
 # natsclient
 
-A NATS client for SemEngine. It wraps nats.go with a circuit breaker, keeps nats.go's automatic reconnection, and adds
+A NATS client for SemEngine. It wraps nats.go, keeps nats.go's automatic reconnection, and adds
 helpers for JetStream streams, consumers and key-value buckets.
 
 ## Overview
 
-The natsclient package wraps the NATS Go client (nats.go) with a circuit breaker, and keeps nats.go's automatic
+The natsclient package wraps the NATS Go client (nats.go) and keeps nats.go's automatic
 reconnection with natsclient's settings: unlimited attempts (`WithMaxReconnects`) and a `ReconnectWait` of 2 s
-(`WithReconnectWait`). How soon each attempt comes is not promised. While nats.go reconnects, `Publish`, `Request` and
-`Subscribe` return `ErrNotConnected` at once, and key-value calls wait for their context (probe P15).
+(`WithReconnectWait`). How soon each attempt comes is not promised. While nats.go reconnects, `Publish`,
+`RequestClassified` and `Subscribe` return `ErrNotConnected` at once, and key-value calls wait for their
+context (probe P15).
 
 Every call that waits for the server takes a context, and the context ends that wait (P13). It does not end a call
 held behind a write the server is not reading. Such a call waits up to nats.go's write timeout for each write ahead of
@@ -32,12 +33,6 @@ import "github.com/c360studio/semengine/natsclient"
 ```
 
 ## Core Concepts
-
-### Circuit Breaker Pattern
-
-The client implements a circuit breaker that prevents cascading failures by failing fast after a threshold of
-consecutive failures (default: 15). The circuit opens to prevent further attempts, then gradually tests the connection
-with exponential backoff.
 
 ### Connection Lifecycle
 
@@ -104,7 +99,10 @@ sub, err := client.Subscribe(ctx, "subject.*", func(msgCtx context.Context, msg 
 ```
 
 When `Subscribe` returns, the server has read the subscription, so a request from another connection finds it, unless
-the server refused it. A refusal is not returned as an error; a client that connected with `Connect` logs it.
+the server refused it. A refusal is not returned as an error. A client that connected with `Connect` logs it, and a
+client built with `WithMetrics` also counts it on `semengine_nats_server_refusals_total`, labelled `reason`
+(`permission_violation` or `max_subscriptions_exceeded`). The count can rise after `Subscribe` has returned. A
+publish the server refuses is counted the same way.
 
 ### Advanced Usage
 
@@ -143,7 +141,7 @@ err := client.Publish(ctx, "events.user", data)
 // Explicit trace context
 tc := natsclient.NewTraceContext()
 ctx = natsclient.ContextWithTrace(ctx, tc)
-reply, err := client.Request(ctx, "service.action", data, 5*time.Second)
+reply, err := client.RequestClassified(ctx, "service.action", data, 5*time.Second)
 
 // Extract trace from incoming message
 tc = natsclient.ExtractTrace(msg)
@@ -160,7 +158,7 @@ if tc != nil {
 
 #### `Client`
 
-Main client type providing NATS connectivity with circuit breaker protection.
+Main client type providing NATS connectivity.
 
 ```go
 type Client struct {
@@ -201,7 +199,7 @@ Creates a new NATS client with the specified server URL and options.
 
 #### `(c *Client) Connect(ctx context.Context) error`
 
-Establishes connection to NATS server with circuit breaker protection.
+Establishes connection to NATS server.
 
 #### `(c *Client) Publish(ctx context.Context, subject string, data []byte) error`
 
@@ -219,6 +217,13 @@ Creates a KVStore instance for high-level KV operations.
 
 Performs CAS update on JSON data with automatic retry on conflicts.
 
+#### `IsKVTombstone`
+
+`IsKVTombstone(operation jetstream.KeyValueOp) bool`
+
+Reports whether a KV watch entry removes its key: a delete or a purge. Both arrive with an empty value, so a
+watcher that handles a removal checks this one predicate rather than testing for a delete and forgetting the purge.
+
 ### Logging
 
 `WithLogger(logger *slog.Logger) ClientOption` sets the logger for debug output.
@@ -226,10 +231,6 @@ Performs CAS update on JSON data with automatic retry on conflicts.
 ## Architecture
 
 ### Design Decisions
-
-**Circuit Breaker over Simple Retry**: Chose circuit breaker pattern to prevent cascade failures in distributed systems.
-After threshold failures, the circuit opens to fail fast rather than continuously retry, giving the system time to
-recover.
 
 **Context-First API**: every call that waits for the server, except `RTT`, takes a `context.Context` first, and the
 context ends that wait (P13, P18). It does not end a write the server is not reading (see the overview).
@@ -241,7 +242,7 @@ across services. Centralizes revision conflict handling and retry logic.
 
 - **Dependencies**: NATS server (2.x compatible)
 - **Used By**: Code that needs NATS messaging
-- **Data Flow**: `Application → Client → Circuit Breaker → NATS Connection → Server`
+- **Data Flow**: `Application → Client → NATS Connection → Server`
 
 ## Configuration
 
@@ -254,7 +255,13 @@ WithTimeout(10*time.Second)        // Connection timeout (default: 5s)
 WithWriteTimeout(10*time.Second)   // How long one write may wait for the server to read it (default: 1m, nats.go's)
 WithPingInterval(10*time.Second)   // How often nats.go sends the server a PING (default: 30s)
 WithLogger(logger)                  // Enable debug logging
+WithMetrics(registry)               // Record JetStream and server-refusal metrics on registry
 ```
+
+Give each client its own metrics registry. A registry holds one client's JetStream series: its stream and consumer
+gauges are set from what that client reads from the server. A second client on the same registry writes the same
+collectors, so the two overwrite each other's gauges, and which client's value a scrape shows is not promised. No
+configuration we know of runs two clients on one registry.
 
 Set `WithWriteTimeout` and `WithPingInterval` together. A write the timeout ends partway leaves the connection
 connected but unable to carry anything. It recovers when its PINGs go unanswered: nats.go then finds the connection
@@ -267,7 +274,6 @@ that is not positive.
 
 ```go
 var (
-    ErrCircuitOpen        = errs.ErrCircuitOpen
     ErrNotConnected       = fmt.Errorf("not connected to NATS: %w", errs.ErrConnectionLost)
     ErrKVKeyNotFound      = errors.New("kv: key not found")
     ErrKVRevisionMismatch = errors.New("kv: revision mismatch (concurrent update)")
@@ -280,8 +286,8 @@ var (
 
 ```go
 // Check specific errors
-if errors.Is(err, natsclient.ErrCircuitOpen) {
-    // Wait for circuit to close
+if errors.Is(err, natsclient.ErrNotConnected) {
+    // The client is not connected; try again later
 }
 
 // KV conflict detection
@@ -342,14 +348,12 @@ if err == nil {
 - Uses real NATS server via testcontainers (no mocks)
 - Tests actual behavior including connection lifecycle
 - Thread-safe testing with proper synchronization
-- Comprehensive circuit breaker scenario testing
 
 ## Performance Considerations
 
 - **Concurrency**: Thread-safe for concurrent use from multiple goroutines
 - **Memory**: Scales with number of active subscriptions and consumers
 - **Throughput**: Limited by network latency and NATS server performance
-- **Circuit Breaker**: Adds minimal overhead, fails fast when open
 
 ## Examples
 

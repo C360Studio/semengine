@@ -73,10 +73,11 @@
 //
 // # Type System Hierarchy
 //
-// The message package uses three related but distinct type representations,
-// each serving a specific purpose in the semantic event mesh architecture.
-// All three implement the Keyable interface, providing consistent dotted notation
-// for NATS routing, storage keys, and entity identification.
+// Two related but distinct identifiers appear in this package. Both are defined in
+// pkg/types and produce dotted notation through a Key() method, for NATS routing,
+// storage keys, and entity identification. [Type] is an alias for types.Type, kept so
+// payload code can say message.Type. Entity identifiers are types.EntityID and are
+// not aliased here.
 //
 // ## 1. Type (Message Schema) - "domain.category.version"
 //
@@ -97,29 +98,7 @@
 //	}
 //	// Used for: NATS subject "sensors.temperature.v1"
 //
-// ## 2. EntityType (Graph Classification) - "domain.type"
-//
-// Purpose: Classifies entities in the property graph for querying and analysis.
-// Format: EntityType{Domain: "robotics", Type: "drone"} -> "robotics.drone"
-//
-// Use When:
-//   - Extracting type from EntityID: entityID.EntityType()
-//   - Querying the graph for entities by type
-//   - Classifying nodes in the knowledge graph
-//   - Building semantic relationships between entity types
-//
-// Example:
-//
-//	// EntityType is derived from EntityID
-//	entityID := EntityID{
-//	    Org: "c360", Platform: "platform1",
-//	    System: "mav1", Domain: "robotics",
-//	    Type: "drone", Instance: "1",
-//	}
-//	entityType := entityID.EntityType()  // Returns EntityType{Domain: "robotics", Type: "drone"}
-//	// Used for: Graph queries like "find all robotics.drone entities"
-//
-// ## 3. EntityID (Federated Identity) - "org.platform.system.domain.type.instance"
+// ## 2. EntityID (Federated Identity) - "org.platform.system.domain.type.instance"
 //
 // Purpose: Provides globally unique entity identifiers across federated platforms.
 // Format: EntityID with 6 parts -> "c360.platform1.mav1.robotics.drone.1"
@@ -132,7 +111,7 @@
 //
 // Example:
 //
-//	entityID := EntityID{
+//	entityID := types.EntityID{
 //	    Org:      "c360",      // Organization namespace (platform.org)
 //	    Platform: "platform1", // Minting deployment authority (platform.id)
 //	    System:   "mav1",      // Source that produced the entity
@@ -143,33 +122,15 @@
 //	// Key(): "c360.platform1.mav1.robotics.drone.1"
 //	// Used for: Federated entity resolution and deduplication
 //
-// ## Type Relationships
-//
-// These types form a hierarchy:
-//
-//	EntityID (6 parts) contains → EntityType (2 parts)
-//	  entityID.EntityType() returns EntityType{Domain: "robotics", Type: "drone"}
-//
-//	Type (3 parts) is independent → Used for message schemas, not entity identity
-//
-// All three implement Keyable:
-//
-//	type Keyable interface {
-//	    Key() string  // Returns dotted notation for NATS subjects and storage
-//	}
-//
 // ## Choosing the Right Type
 //
 // Ask yourself:
 //
 //  1. Defining a message schema? → Use Type (Schema() method)
-//  2. Providing entity identity? → Use EntityID (Storable.EntityID() method)
-//  3. Extracting entity classification? → Use EntityType (derived from EntityID)
+//  2. Providing entity identity? → Use types.EntityID (Storable.EntityID() method)
 //
 // Most payloads only need Type (for Schema()). Only implement Storable if your
 // payload represents an entity whose facts and stored data a consumer needs.
-// EntityType is typically not constructed directly - it's extracted from EntityID
-// using the EntityType() method when querying or classifying graph entities.
 //
 // # Usage Example
 //

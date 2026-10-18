@@ -2,6 +2,7 @@ package vocabulary
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 )
 
@@ -91,10 +92,11 @@ func (at AliasType) String() string {
 	return string(at)
 }
 
-// Global predicate registry
+// Global predicate and entity-type registries
 var (
-	registryMu        sync.RWMutex
-	predicateRegistry = make(map[string]PredicateMetadata)
+	registryMu         sync.RWMutex
+	predicateRegistry  = make(map[string]PredicateMetadata)
+	entityTypeRegistry = make(map[string]EntityTypeMetadata)
 )
 
 // Option is a functional option for configuring predicate registration.
@@ -309,6 +311,7 @@ func Register(name string, opts ...Option) {
 	// options amend rather than replace — a re-Register that omits a field keeps
 	// the previously-declared value instead of silently dropping it (gh#410).
 	meta := predicateRegistry[name]
+	meta.Projection = cloneProjectionSpec(meta.Projection)
 	meta.Name = name
 	meta.Domain = parts.Domain
 	meta.Category = parts.Category
@@ -324,40 +327,6 @@ func Register(name string, opts ...Option) {
 	predicateRegistry[name] = meta
 }
 
-// parseDomainCategory extracts domain and category from dotted predicate name.
-// For "sensor.temperature.celsius", returns ("sensor", "temperature").
-func parseDomainCategory(name string) (domain, category string) {
-	// Split on dots
-	parts := []rune(name)
-	firstDot := -1
-	secondDot := -1
-
-	for i, r := range parts {
-		if r == '.' {
-			if firstDot == -1 {
-				firstDot = i
-			} else if secondDot == -1 {
-				secondDot = i
-				break
-			}
-		}
-	}
-
-	if firstDot == -1 {
-		return "", ""
-	}
-
-	domain = name[:firstDot]
-
-	if secondDot == -1 {
-		// Only two parts - invalid predicate format
-		return domain, ""
-	}
-
-	category = name[firstDot+1 : secondDot]
-	return domain, category
-}
-
 // validatePredicateMetadataLocked validates relationships between metadata
 // fields. The caller holds registryMu so an already-declared inverse can be
 // checked without racing another registration.
@@ -370,7 +339,19 @@ func parseDomainCategory(name string) (domain, category string) {
 // is why it takes the metadata by value: it has no reason to reach back into
 // the caller's copy, and a pointer would invite one.
 func validatePredicateMetadataLocked(meta PredicateMetadata) error {
+	return validatePredicateMetadataIn(meta, predicateRegistry)
+}
+
+func validatePredicateMetadataIn(meta PredicateMetadata, reg map[string]PredicateMetadata) error {
 	if err := validateDataType(meta.DataType); err != nil {
+		return err
+	}
+	if meta.StandardIRI != "" {
+		if err := validateNonEmptyIRI(meta.StandardIRI, "iri"); err != nil {
+			return err
+		}
+	}
+	if err := validateProjectionSpec(meta.Projection); err != nil {
 		return err
 	}
 
@@ -390,7 +371,7 @@ func validatePredicateMetadataLocked(meta PredicateMetadata) error {
 		return fmt.Errorf("alias metadata requires IsAlias=true")
 	}
 
-	if inverse, ok := predicateRegistry[meta.InverseOf]; meta.InverseOf != "" && ok &&
+	if inverse, ok := reg[meta.InverseOf]; meta.InverseOf != "" && ok &&
 		inverse.InverseOf != "" && inverse.InverseOf != meta.Name {
 		return fmt.Errorf("inverse predicate %q points to %q, not %q",
 			meta.InverseOf, inverse.InverseOf, meta.Name)
@@ -417,10 +398,36 @@ func GetPredicateMetadata(predicate string) *PredicateMetadata {
 	if meta, exists := predicateRegistry[predicate]; exists {
 		// Return a copy to prevent external modification
 		metaCopy := meta
+		metaCopy.Projection = cloneProjectionSpec(meta.Projection)
 		return &metaCopy
 	}
 
 	return nil
+}
+
+// LookupByIRI returns a newly allocated slice of all canonical 3-part dotted
+// predicates registered with StandardIRI equal to iri, sorted in
+// lexicographical order, or nil when iri is empty or no predicate is registered
+// for iri.
+func LookupByIRI(iri string) []string {
+	if iri == "" {
+		return nil
+	}
+
+	registryMu.RLock()
+	defer registryMu.RUnlock()
+
+	var matches []string
+	for name, meta := range predicateRegistry {
+		if meta.StandardIRI == iri {
+			matches = append(matches, name)
+		}
+	}
+	if len(matches) == 0 {
+		return nil
+	}
+	sort.Strings(matches)
+	return matches
 }
 
 // ListRegisteredPredicates returns a list of all registered predicate names.
@@ -523,12 +530,13 @@ func IsRuleOpaque(predicate string) bool {
 	return meta.RuleOpaque
 }
 
-// ClearRegistry clears all registered predicates.
+// ClearRegistry clears all registered predicates and entity types.
 // This is primarily useful for testing.
 func ClearRegistry() {
 	registryMu.Lock()
 	defer registryMu.Unlock()
 	predicateRegistry = make(map[string]PredicateMetadata)
+	entityTypeRegistry = make(map[string]EntityTypeMetadata)
 }
 
 // SnapshotRegistry captures the current registry state and returns a
@@ -542,15 +550,30 @@ func ClearRegistry() {
 //	// test runs; deferred restore reverts the registry to its pre-test state.
 func SnapshotRegistry() func() {
 	registryMu.RLock()
-	saved := make(map[string]PredicateMetadata, len(predicateRegistry))
+	savedPredicates := make(map[string]PredicateMetadata, len(predicateRegistry))
 	for k, v := range predicateRegistry {
-		saved[k] = v
+		v.Projection = cloneProjectionSpec(v.Projection)
+		savedPredicates[k] = v
+	}
+	savedEntityTypes := make(map[string]EntityTypeMetadata, len(entityTypeRegistry))
+	for k, v := range entityTypeRegistry {
+		savedEntityTypes[k] = cloneEntityTypeMetadataValue(v)
 	}
 	registryMu.RUnlock()
 
 	return func() {
 		registryMu.Lock()
-		predicateRegistry = saved
+		restoredPredicates := make(map[string]PredicateMetadata, len(savedPredicates))
+		for k, v := range savedPredicates {
+			v.Projection = cloneProjectionSpec(v.Projection)
+			restoredPredicates[k] = v
+		}
+		restoredEntityTypes := make(map[string]EntityTypeMetadata, len(savedEntityTypes))
+		for k, v := range savedEntityTypes {
+			restoredEntityTypes[k] = cloneEntityTypeMetadataValue(v)
+		}
+		predicateRegistry = restoredPredicates
+		entityTypeRegistry = restoredEntityTypes
 		registryMu.Unlock()
 	}
 }

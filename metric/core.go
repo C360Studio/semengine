@@ -21,12 +21,6 @@ type Metrics struct {
 	// the component attribute. Downstream products compute windowed rates
 	// via PromQL (rate/increase) rather than in-process windowing.
 	LogEntriesTotal *prometheus.CounterVec
-
-	// NATS metrics
-	NATSConnected      prometheus.Gauge
-	NATSRTT            prometheus.Gauge
-	NATSReconnects     prometheus.Counter
-	NATSCircuitBreaker prometheus.Gauge
 }
 
 // NewMetrics creates a new Metrics instance with all platform metrics
@@ -113,43 +107,6 @@ func NewMetrics() *Metrics {
 			},
 			[]string{"component", "level"},
 		),
-
-		// NATS metrics
-		NATSConnected: prometheus.NewGauge(
-			prometheus.GaugeOpts{
-				Namespace: "semengine",
-				Subsystem: "nats",
-				Name:      "connected",
-				Help:      "NATS connection status (0=disconnected, 1=connected)",
-			},
-		),
-
-		NATSRTT: prometheus.NewGauge(
-			prometheus.GaugeOpts{
-				Namespace: "semengine",
-				Subsystem: "nats",
-				Name:      "rtt_seconds",
-				Help:      "NATS round-trip time in seconds",
-			},
-		),
-
-		NATSReconnects: prometheus.NewCounter(
-			prometheus.CounterOpts{
-				Namespace: "semengine",
-				Subsystem: "nats",
-				Name:      "reconnects_total",
-				Help:      "Total number of NATS reconnections",
-			},
-		),
-
-		NATSCircuitBreaker: prometheus.NewGauge(
-			prometheus.GaugeOpts{
-				Namespace: "semengine",
-				Subsystem: "nats",
-				Name:      "circuit_breaker",
-				Help:      "NATS circuit breaker status (0=closed, 1=open, 2=half-open)",
-			},
-		),
 	}
 }
 
@@ -190,28 +147,4 @@ func (c *Metrics) RecordHealthStatus(service string, healthy bool) {
 		value = 1.0
 	}
 	c.HealthCheckStatus.WithLabelValues(service).Set(value)
-}
-
-// RecordNATSStatus updates NATS connection status
-func (c *Metrics) RecordNATSStatus(connected bool) {
-	value := 0.0
-	if connected {
-		value = 1.0
-	}
-	c.NATSConnected.Set(value)
-}
-
-// RecordNATSRTT updates NATS round-trip time
-func (c *Metrics) RecordNATSRTT(rtt time.Duration) {
-	c.NATSRTT.Set(rtt.Seconds())
-}
-
-// RecordNATSReconnect increments reconnection counter
-func (c *Metrics) RecordNATSReconnect() {
-	c.NATSReconnects.Inc()
-}
-
-// RecordCircuitBreakerState updates circuit breaker status
-func (c *Metrics) RecordCircuitBreakerState(state int) {
-	c.NATSCircuitBreaker.Set(float64(state))
 }

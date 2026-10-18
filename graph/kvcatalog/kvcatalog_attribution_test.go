@@ -10,6 +10,7 @@ import (
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/natsclient"
+	"github.com/c360studio/semengine/natsclient/storagereport"
 )
 
 // attributionLister is a minimal account listing over a fixed set of infos, so
@@ -76,7 +77,7 @@ func attributionStream(name string) *jetstream.StreamInfo {
 //
 // It proves three things at once:
 //
-//   - OwnerOf satisfies natsclient.OwnerResolver as-is, so the inventory can be
+//   - OwnerOf satisfies storagereport.OwnerResolver as-is, so the inventory can be
 //     wired to the catalog directly with no adapter, no copy, and nothing to
 //     keep in sync. natsclient cannot import graph (graph imports natsclient),
 //     so the seam is an injected function; this is the compile-time proof that
@@ -91,7 +92,7 @@ func attributionStream(name string) *jetstream.StreamInfo {
 //     mis-attribute a foreign bucket to graph-ingest.
 func TestOwnerOfIsTheStorageInventoryAttributionSeam(t *testing.T) {
 	// Compile-time proof of the seam's shape.
-	var resolver natsclient.OwnerResolver = OwnerOf
+	var resolver storagereport.OwnerResolver = OwnerOf
 
 	lister := &attributionLister{infos: []*jetstream.StreamInfo{
 		attributionStream(natsclient.KVStreamPrefix + graph.BucketEntityStates),
@@ -100,16 +101,16 @@ func TestOwnerOfIsTheStorageInventoryAttributionSeam(t *testing.T) {
 		attributionStream(natsclient.ObjectStoreStreamPrefix + graph.BucketEntityStates),
 	}}
 
-	collector, err := natsclient.NewStorageInventoryCollector(
-		func() (natsclient.StreamLister, error) { return lister, nil },
-		natsclient.StorageInventoryConfig{OwnerResolver: resolver, ProducedBy: "unit-test"},
+	collector, err := storagereport.NewStorageInventoryCollector(
+		func() (storagereport.StreamLister, error) { return lister, nil },
+		storagereport.StorageInventoryConfig{OwnerResolver: resolver, ProducedBy: "unit-test"},
 	)
 	require.NoError(t, err)
 
 	inv, err := collector.Collect(t.Context())
 	require.NoError(t, err)
 
-	got := make(map[string]natsclient.StorageResource, len(inv.Resources))
+	got := make(map[string]storagereport.StorageResource, len(inv.Resources))
 	for _, res := range inv.Resources {
 		got[res.Name] = res
 	}
@@ -121,19 +122,19 @@ func TestOwnerOfIsTheStorageInventoryAttributionSeam(t *testing.T) {
 	entityStates := got[natsclient.KVStreamPrefix+graph.BucketEntityStates]
 	assert.Equal(t, declared.Owner, entityStates.Owner,
 		"the reported owner IS the catalog descriptor's declared owner")
-	assert.Equal(t, natsclient.AttributionAttributed, entityStates.Attribution)
+	assert.Equal(t, storagereport.AttributionAttributed, entityStates.Attribution)
 	assert.True(t, entityStates.Attributed())
 	assert.Equal(t, graph.BucketEntityStates, entityStates.Bucket)
 
 	doubled := got[natsclient.KVStreamPrefix+natsclient.KVStreamPrefix+graph.BucketEntityStates]
 	assert.Equal(t, natsclient.KVStreamPrefix+graph.BucketEntityStates, doubled.Bucket)
-	assert.Equal(t, natsclient.AttributionUnattributed, doubled.Attribution,
+	assert.Equal(t, storagereport.AttributionUnattributed, doubled.Attribution,
 		"a bucket literally named KV_ENTITY_STATES is not the catalog's ENTITY_STATES")
 	assert.Equal(t, "", doubled.Owner)
 	assert.False(t, doubled.Attributed())
 
 	outside := got[natsclient.KVStreamPrefix+"A_PRODUCT_BUCKET_OUTSIDE_THE_CATALOG"]
-	assert.Equal(t, natsclient.AttributionUnattributed, outside.Attribution)
+	assert.Equal(t, storagereport.AttributionUnattributed, outside.Attribution)
 	assert.Equal(t, "", outside.Owner)
 	assert.False(t, outside.Attributed())
 	assert.Equal(t, natsclient.ResourceKeyValue, outside.Kind,
@@ -144,16 +145,15 @@ func TestOwnerOfIsTheStorageInventoryAttributionSeam(t *testing.T) {
 	// — and ownership is NOT-APPLICABLE there, not merely undeclared.
 	objectStore := got[natsclient.ObjectStoreStreamPrefix+graph.BucketEntityStates]
 	assert.Equal(t, natsclient.ResourceObjectStore, objectStore.Kind)
-	assert.Equal(t, natsclient.AttributionNotApplicable, objectStore.Attribution)
+	assert.Equal(t, storagereport.AttributionNotApplicable, objectStore.Attribution)
 	assert.NotEqual(t, outside.Attribution, objectStore.Attribution,
 		"an escaped KV bucket is a finding; an ObjectStore having no owner concept is not")
 	assert.Equal(t, "", objectStore.Owner)
 }
 
-// TestOwnerOfReportsUnattributedForRemovedCatalogRow is the spec's
-// "attribution follows the catalog rather than a copy of it" scenario expressed
-// against the real catalog function: OwnerOf resolves through KVCatalog() on
-// every call, so a row removed from the table stops resolving immediately. The
+// TestOwnerOfReportsUnattributedForRemovedCatalogRow shows that attribution
+// follows the catalog rather than a copy of it, against the real catalog table: OwnerOf resolves through the table on every
+// call, so a row removed from it stops resolving immediately. The
 // inventory holds no mapping that could outlive the row.
 func TestOwnerOfReportsUnattributedForRemovedCatalogRow(t *testing.T) {
 	require.NotEmpty(t, OwnerOf(graph.BucketEntityStates),
@@ -165,7 +165,7 @@ func TestOwnerOfReportsUnattributedForRemovedCatalogRow(t *testing.T) {
 		"a bucket the catalog does not declare has no owner to report")
 
 	names := make(map[string]bool)
-	for _, spec := range KVCatalog() {
+	for _, spec := range catalog {
 		names[spec.Name] = true
 	}
 	assert.False(t, names["A_BUCKET_NO_CATALOG_ROW_DECLARES"])

@@ -158,19 +158,19 @@ func TestHandleQueryPrefix_CursorPagination(t *testing.T) {
 }
 
 // TestHandleQueryPrefix_LimitClampZero verifies that limit<=0 is clamped to
-// DefaultPrefixQueryLimit rather than returning zero or an error.
+// MaxPrefixQueryLimit rather than returning zero or an error.
 func TestHandleQueryPrefix_LimitClampZero(t *testing.T) {
 	comp := createTestComponentWithMockKV(t, withAuthority("acme", "ops"))
 	storePrefixEntity(t, comp, "acme.ops.dom.sys.type.entity-001")
 	storePrefixEntity(t, comp, "acme.ops.dom.sys.type.entity-002")
 
-	// limit=0 should default to DefaultPrefixQueryLimit (both entities returned).
+	// limit=0 should default to MaxPrefixQueryLimit (both entities returned).
 	resp := callPrefixHandler(t, comp, graph.PrefixQueryRequest{Prefix: "acme", Limit: 0})
-	assert.Len(t, resp.Entities, 2, "limit=0 must default to DefaultPrefixQueryLimit")
+	assert.Len(t, resp.Entities, 2, "limit=0 must default to MaxPrefixQueryLimit")
 
 	// limit=-1 should also default.
 	resp2 := callPrefixHandler(t, comp, graph.PrefixQueryRequest{Prefix: "acme", Limit: -1})
-	assert.Len(t, resp2.Entities, 2, "limit=-1 must default to DefaultPrefixQueryLimit")
+	assert.Len(t, resp2.Entities, 2, "limit=-1 must default to MaxPrefixQueryLimit")
 }
 
 // TestHandleQueryPrefix_LimitClampAboveMax verifies that limit > MaxPrefixQueryLimit
@@ -202,7 +202,7 @@ func TestMarshalFittingPrefixPageIncludesCursorInExactCandidate(t *testing.T) {
 
 	want := graph.PrefixQueryResponse{
 		Entities:   entities[:1],
-		NextCursor: graph.EncodeCursor(entities[0].ID),
+		NextCursor: encodeCursor(entities[0].ID),
 	}
 	wantBytes, err := json.Marshal(want)
 	require.NoError(t, err)
@@ -217,7 +217,7 @@ func TestMarshalFittingPrefixPageRejectsFirstIndivisibleEntity(t *testing.T) {
 	entities := []graph.EntityState{{ID: "a.b.c.d.e.one"}, {ID: "a.b.c.d.e.two"}}
 	firstCandidate, err := json.Marshal(graph.PrefixQueryResponse{
 		Entities:   entities[:1],
-		NextCursor: graph.EncodeCursor(entities[0].ID),
+		NextCursor: encodeCursor(entities[0].ID),
 	})
 	require.NoError(t, err)
 	maxPayload := int64(len(firstCandidate) - 1)
@@ -292,4 +292,244 @@ func TestHandleQueryPrefix_FirstPageRequest(t *testing.T) {
 	require.NoError(t, json.Unmarshal(respData, &resp))
 	require.Len(t, resp.Entities, 1)
 	assert.Equal(t, "c360.platform.robotics.mav1.drone.001", resp.Entities[0].ID)
+}
+
+func matchesWildcardPattern(filter, key string) bool {
+	matched, err := semtypes.MatchEntityIDPattern(filter, key)
+	return err == nil && matched
+}
+
+// TestQueryPrefix_PatternMatchesAcrossSystems verifies that a 6-position
+// wildcard pattern matches entities across multiple system segments and returns
+// them in deterministic lexicographic ID order.
+func TestQueryPrefix_PatternMatchesAcrossSystems(t *testing.T) {
+	comp := createTestComponentWithMockKV(t, withAuthority("o", "p"))
+
+	for _, id := range []string{
+		"o.p.sys2.intel.platform.uav-02",
+		"o.p.sys1.intel.platform.uav-01",
+		"o.p.sys1.intel.sensor.radar-01",
+		"o.p.sys3.other.platform.uav-03",
+		"o.p.sys0.intel.platform.uav-00",
+	} {
+		storePrefixEntity(t, comp, id)
+	}
+
+	resp := callPrefixHandler(t, comp, graph.PrefixQueryRequest{
+		Pattern: "o.p.*.intel.platform.*",
+	})
+	require.Len(t, resp.Entities, 3)
+	assert.Equal(t, "o.p.sys0.intel.platform.uav-00", resp.Entities[0].ID)
+	assert.Equal(t, "o.p.sys1.intel.platform.uav-01", resp.Entities[1].ID)
+	assert.Equal(t, "o.p.sys2.intel.platform.uav-02", resp.Entities[2].ID)
+	assert.Empty(t, resp.NextCursor)
+}
+
+// TestQueryPrefix_PatternAndPrefixMutuallyExclusive verifies that setting both
+// Prefix and Pattern on the same request is rejected before any KV I/O with a
+// classified invalid_request error.
+func TestQueryPrefix_PatternAndPrefixMutuallyExclusive(t *testing.T) {
+	comp, mock := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
+	var lists atomic.Int64
+	mock.listFilteredFunc = func(context.Context, ...string) (jetstream.KeyLister, error) {
+		lists.Add(1)
+		return nil, nil
+	}
+
+	reqData, err := json.Marshal(graph.PrefixQueryRequest{
+		Prefix:  "acme.ops",
+		Pattern: "acme.ops.*.intel.platform.*",
+	})
+	require.NoError(t, err)
+
+	_, err = comp.handleQueryPrefixWithMaxPayload(context.Background(), reqData, 1<<20)
+	require.Error(t, err)
+	assert.True(t, errs.IsInvalid(err))
+	var classified *errs.ClassifiedError
+	require.ErrorAs(t, err, &classified)
+	assert.Equal(t, graph.ErrorCodeInvalidRequest, classified.Code)
+	assert.Zero(t, lists.Load(), "mutually exclusive request must not touch KV bucket")
+}
+
+// TestQueryPrefix_PatternInvalid verifies that 5-part, 7-part, ">", and
+// malformed-segment patterns are rejected by ValidateEntityIDPattern before any
+// KV I/O.
+func TestQueryPrefix_PatternInvalid(t *testing.T) {
+	cases := []struct {
+		name    string
+		pattern string
+		reason  string
+	}{
+		{name: "five parts", pattern: "o.p.*.intel.platform", reason: semtypes.EntityIDReasonArity},
+		{name: "seven parts", pattern: "o.p.s.intel.platform.inst.extra", reason: semtypes.EntityIDReasonArity},
+		{name: "tail wildcard >", pattern: "o.p.s.intel.platform.>", reason: semtypes.EntityIDReasonFirstByte},
+		{name: "partial wildcard segment", pattern: "o.p.s.intel.plat*.inst", reason: semtypes.EntityIDReasonAlphabet},
+		{name: "empty segment", pattern: "o.p..intel.platform.*", reason: semtypes.EntityIDReasonEmptySegment},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			comp, mock := createTestComponentWithMockKVBucket(t, withAuthority("o", "p"))
+			var lists atomic.Int64
+			mock.listFilteredFunc = func(context.Context, ...string) (jetstream.KeyLister, error) {
+				lists.Add(1)
+				return nil, nil
+			}
+
+			reqData, err := json.Marshal(graph.PrefixQueryRequest{Pattern: tc.pattern})
+			require.NoError(t, err)
+
+			_, err = comp.handleQueryPrefixWithMaxPayload(context.Background(), reqData, 1<<20)
+			require.Error(t, err)
+			assert.True(t, errs.IsInvalid(err))
+			var classified *errs.ClassifiedError
+			require.ErrorAs(t, err, &classified)
+			assert.Equal(t, semtypes.ErrorCodeEntityIDPatternInvalid, classified.Code)
+			assert.Equal(t, tc.reason, classified.Detail[semtypes.EntityIDDetailReason])
+			assert.Zero(t, lists.Load(), "invalid pattern must not touch KV bucket")
+		})
+	}
+}
+
+// TestQueryPrefix_PatternCursorPaging verifies that paginating a pattern query
+// both by Limit and by max_payload byte-trimming returns sorted, disjoint pages
+// covering the exact matching set.
+func TestQueryPrefix_PatternCursorPaging(t *testing.T) {
+	comp := createTestComponentWithMockKV(t, withAuthority("o", "p"))
+
+	expected := []string{
+		"o.p.sys1.intel.platform.uav-01",
+		"o.p.sys1.intel.platform.uav-02",
+		"o.p.sys2.intel.platform.uav-03",
+		"o.p.sys3.intel.platform.uav-04",
+		"o.p.sys4.intel.platform.uav-05",
+	}
+	// Seed matching entities out of order plus non-matching entities.
+	for _, id := range []string{
+		expected[3],
+		"o.p.sys1.intel.sensor.s-01",
+		expected[0],
+		expected[4],
+		"o.p.sys2.other.platform.x-01",
+		expected[2],
+		expected[1],
+	} {
+		storePrefixEntity(t, comp, id)
+	}
+
+	t.Run("count limit pagination", func(t *testing.T) {
+		var got []string
+		var cursor string
+		for page := 0; page < 10; page++ {
+			resp := callPrefixHandler(t, comp, graph.PrefixQueryRequest{
+				Pattern: "o.p.*.intel.platform.*",
+				Limit:   2,
+				Cursor:  cursor,
+			})
+			require.NotEmpty(t, resp.Entities)
+			for _, e := range resp.Entities {
+				got = append(got, e.ID)
+			}
+			cursor = resp.NextCursor
+			if cursor == "" {
+				break
+			}
+		}
+		assert.Equal(t, expected, got)
+	})
+
+	t.Run("byte-trimmed pagination", func(t *testing.T) {
+		var got []string
+		var cursor string
+		sawTrim := false
+		for page := 0; page < 10; page++ {
+			resp := callPrefixHandlerWithMaxPayload(t, comp, graph.PrefixQueryRequest{
+				Pattern: "o.p.*.intel.platform.*",
+				Limit:   len(expected),
+				Cursor:  cursor,
+			}, 1200)
+			require.NotEmpty(t, resp.Entities)
+			if len(resp.Entities) < len(expected) {
+				sawTrim = true
+			}
+			for _, e := range resp.Entities {
+				got = append(got, e.ID)
+			}
+			cursor = resp.NextCursor
+			if cursor == "" {
+				break
+			}
+		}
+		require.True(t, sawTrim, "byte budget must trim at least one page")
+		assert.Equal(t, expected, got)
+	})
+}
+
+// TestQueryPrefix_PatternNoMatches verifies that a valid pattern matching no
+// keys returns an empty page without attempting an exact-entity Get fallback.
+func TestQueryPrefix_PatternNoMatches(t *testing.T) {
+	comp, mock := createTestComponentWithMockKVBucket(t, withAuthority("o", "p"))
+	storePrefixEntity(t, comp, "o.p.sys1.intel.sensor.radar-01")
+
+	var gets atomic.Int64
+	mock.getFunc = func(context.Context, string) (jetstream.KeyValueEntry, error) {
+		gets.Add(1)
+		return nil, jetstream.ErrKeyNotFound
+	}
+
+	// Concrete 6-part pattern with no wildcards or with wildcards must not trigger Get fallback.
+	for _, pattern := range []string{
+		"o.p.*.intel.platform.*",
+		"o.p.sys1.intel.platform.uav-01",
+	} {
+		reqData, err := json.Marshal(graph.PrefixQueryRequest{
+			Pattern: pattern,
+		})
+		require.NoError(t, err)
+
+		respData, err := comp.handleQueryPrefixWithMaxPayload(context.Background(), reqData, 1<<20)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"entities":null}`, string(respData))
+
+		var resp graph.PrefixQueryResponse
+		require.NoError(t, json.Unmarshal(respData, &resp))
+		assert.Empty(t, resp.Entities)
+		assert.Empty(t, resp.NextCursor)
+		assert.Zero(t, gets.Load(), "pattern query must not fall back to exact-entity Get (%s)", pattern)
+	}
+}
+
+// TestCursorRoundTrip verifies that encodeCursor/decodeCursor are inverses
+// for a representative set of entity ID values.
+func TestCursorRoundTrip(t *testing.T) {
+	cases := []string{
+		"acme.ops.logistics.warehouse.robot.robot-001",
+		"c360.platform.robotics.mav1.drone.001",
+		"z",
+		"a.b.c.d.e.f",
+		// Characters that are special in standard Base64 but safe in URL-safe:
+		"org.sys-hyphen.dom_underscore.sub.type.inst",
+	}
+	for _, key := range cases {
+		t.Run(key, func(t *testing.T) {
+			decoded, err := decodeCursor(encodeCursor(key))
+			require.NoError(t, err)
+			assert.Equal(t, key, decoded, "round-trip must be identity")
+		})
+	}
+}
+
+// TestDecodeCursorEmpty verifies the first-page sentinel: empty cursor decodes
+// to empty string without error.
+func TestDecodeCursorEmpty(t *testing.T) {
+	key, err := decodeCursor("")
+	require.NoError(t, err)
+	assert.Equal(t, "", key)
+}
+
+// TestDecodeCursorInvalid verifies that a malformed cursor returns an error
+// rather than silently producing garbage.
+func TestDecodeCursorInvalid(t *testing.T) {
+	_, err := decodeCursor("!!!not-base64!!!")
+	require.Error(t, err, "malformed cursor must return error")
 }

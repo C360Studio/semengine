@@ -117,8 +117,9 @@ type RetentionPolicy struct {
 }
 
 // BucketSpec is one framework bucket's full declaration: identity, ownership,
-// policy, and bucket configuration. The catalog (kvcatalog.KVCatalog) is a slice
-// of these; every enforcement set the framework uses is a derived view.
+// policy, and bucket configuration. The framework KV catalog (graph/kvcatalog)
+// is a table of these; every enforcement set the framework uses is a derived
+// view.
 type BucketSpec struct {
 	Name        string
 	Owner       string // the component/subsystem that provisions and writes it
@@ -132,14 +133,6 @@ type BucketSpec struct {
 	History  uint8 // KV history depth (stream MaxMsgsPerSubject); 0 = 1
 	Replicas int
 }
-
-// ErrorCodeBucketNotReady is the classified error code OpenFrameworkBucket
-// returns for an absent must-exist bucket. Its value deliberately equals
-// graph.ErrorCodeIndexNotReady (the code graph-index emits for a
-// not-sound-to-read index) so classified consumers handle "the bucket's owner
-// has not provisioned it yet" with the same retry-with-backoff posture; a
-// cross-pin test in graph asserts the two can never drift.
-const ErrorCodeBucketNotReady = "index_not_ready"
 
 // Validate fails closed on a descriptor this binary cannot enforce. EVERY
 // discriminated field is checked against its explicit allowed arms with a
@@ -347,7 +340,7 @@ func OpenFrameworkBucket(ctx context.Context, c *Client, spec BucketSpec) (jetst
 	bucket, err := c.GetKeyValueBucket(ctx, spec.Name)
 	if err != nil {
 		if errors.Is(err, jetstream.ErrBucketNotFound) {
-			return nil, errs.ClassifiedCode(errs.ErrorTransient, ErrorCodeBucketNotReady,
+			return nil, errs.ClassifiedCode(errs.ErrorTransient, errs.CodeIndexNotReady,
 				fmt.Errorf("framework bucket %q is not ready: its owner (%s) has not provisioned it in this deployment",
 					spec.Name, spec.Owner))
 		}

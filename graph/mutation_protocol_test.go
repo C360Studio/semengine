@@ -79,9 +79,9 @@ func TestFourMutationResponseShapesExcludeRetiredFields(t *testing.T) {
 		want     []string
 		retired  []string
 	}{
-		{name: "create", response: CreateEntityResponse{Outcome: MutationApplied, Entity: entity, KVRevision: 1},
+		{name: "create", response: EntityMutationResponse{Outcome: MutationApplied, Entity: entity, KVRevision: 1},
 			want: []string{"outcome", "entity", "kv_revision"}, retired: []string{"degraded", "deleted", "changed", "error_code"}},
-		{name: "reconcile", response: ReconcilePredicatesResponse{Outcome: MutationUnchanged, Entity: entity, KVRevision: 1},
+		{name: "reconcile", response: EntityMutationResponse{Outcome: MutationUnchanged, Entity: entity, KVRevision: 1},
 			want: []string{"outcome", "entity", "kv_revision"}, retired: []string{"degraded", "deleted", "changed", "error_code"}},
 		{name: "append", response: AppendTriplesResponse{Results: []AppendSubjectResult{{EntityID: entity.ID, Outcome: MutationUnchanged}}},
 			want: []string{"results"}, retired: []string{"degraded", "failed_subjects", "written_count", "error_code"}},
@@ -109,22 +109,5 @@ func TestFourMutationResponseShapesExcludeRetiredFields(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestMutationOutcomeVocabularyIsClosed(t *testing.T) {
-	for _, outcome := range []MutationOutcome{
-		MutationApplied, MutationUnchanged,
-		MutationEntityNotFound, MutationEntityAlreadyExists,
-		MutationRevisionMismatch, MutationInvalid, MutationFailed,
-	} {
-		if !isServerMutationOutcome(outcome) {
-			t.Fatalf("declared outcome %q rejected", outcome)
-		}
-	}
-	for _, outcome := range []MutationOutcome{"", "commit_unknown", "unavailable", "anything"} {
-		if isServerMutationOutcome(outcome) {
-			t.Fatalf("undeclared server outcome %q accepted", outcome)
-		}
 	}
 }

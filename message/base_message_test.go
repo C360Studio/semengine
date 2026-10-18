@@ -155,25 +155,6 @@ func TestBaseMessage_WithTime(t *testing.T) {
 	assert.WithinDuration(t, time.Now(), msg.Meta().ReceivedAt(), 100*time.Millisecond)
 }
 
-func TestBaseMessage_Hash(t *testing.T) {
-	msgType := Type{Domain: "test", Category: "hash", Version: "v1"}
-	payload1 := &TestPayload{Value: "data1", Valid: true}
-	payload2 := &TestPayload{Value: "data2", Valid: true}
-
-	msg1 := NewBaseMessage(msgType, payload1, "source")
-	msg2 := NewBaseMessage(msgType, payload1, "source")
-	msg3 := NewBaseMessage(msgType, payload2, "source")
-
-	// Same content should produce same hash
-	assert.Equal(t, msg1.Hash(), msg2.Hash())
-
-	// Different content should produce different hash
-	assert.NotEqual(t, msg1.Hash(), msg3.Hash())
-
-	// Hash should be hex string
-	assert.Len(t, msg1.Hash(), 64) // SHA256 produces 32 bytes = 64 hex chars
-}
-
 func TestBaseMessage_Validate(t *testing.T) {
 	// Valid message
 	validMsg := NewBaseMessage(
@@ -198,6 +179,23 @@ func TestBaseMessage_Validate(t *testing.T) {
 		"source",
 	)
 	assert.Error(t, invalidTypeMsg.Validate())
+}
+
+// TestBaseMessageValidateRefusesTypeGrammar: BaseMessage.Validate, and so MarshalJSON, refuses
+// with an invalid-data error a type that Type.Validate refuses, a dotted category included
+// (design D2; message-codec spec, "A dotted type component").
+func TestBaseMessageValidateRefusesTypeGrammar(t *testing.T) {
+	msg := NewBaseMessage(
+		Type{Domain: "test", Category: "a.b", Version: "v1"},
+		&TestPayload{Value: `{}`, Valid: true},
+		"source",
+	)
+	if err := msg.Validate(); err == nil || !errs.IsInvalid(err) {
+		t.Errorf("Validate() = %v, want an invalid-data error", err)
+	}
+	if encoded, err := msg.MarshalJSON(); err == nil || !errs.IsInvalid(err) {
+		t.Errorf("MarshalJSON() = %s, %v; want an invalid-data error", encoded, err)
+	}
 }
 
 func TestBaseMessagePreservesCodedPayloadValidationError(t *testing.T) {

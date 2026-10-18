@@ -7,9 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
-
-	"github.com/c360studio/semengine/pkg/retry"
 )
 
 // ErrorClass represents the classification of errors for handling purposes
@@ -74,8 +71,7 @@ var (
 	ErrRateLimited       = errors.New("rate limited")
 	ErrQuotaExceeded     = errors.New("quota exceeded")
 
-	// Circuit breaker and retry errors
-	ErrCircuitOpen        = errors.New("circuit breaker open")
+	// Retry errors
 	ErrMaxRetriesExceeded = errors.New("maximum retries exceeded")
 	ErrRetryTimeout       = errors.New("retry timeout exceeded")
 )
@@ -169,7 +165,6 @@ func IsTransient(err error) bool {
 		errors.Is(err, ErrConnectionLost) ||
 		errors.Is(err, ErrStorageUnavailable) ||
 		errors.Is(err, ErrRateLimited) ||
-		errors.Is(err, ErrCircuitOpen) ||
 		errors.Is(err, context.DeadlineExceeded) ||
 		errors.Is(err, context.Canceled)
 }
@@ -218,7 +213,11 @@ func IsInvalid(err error) bool {
 	return false
 }
 
-// Classify returns the error class for an error
+// Classify returns the error class for an error. An error nobody classified
+// is fatal, whatever its text says: retrying a failure no one has judged safe
+// to retry can repeat a side effect. IsTransient, IsFatal and IsInvalid stay
+// strict and report false for such an error; a caller that needs one answer
+// branches on Classify.
 func Classify(err error) ErrorClass {
 	if err == nil {
 		return ErrorTransient // Default for nil
@@ -234,8 +233,7 @@ func Classify(err error) ErrorClass {
 		return ErrorInvalid
 	}
 
-	// Default to transient for unknown errors to allow retry
-	return ErrorTransient
+	return ErrorFatal
 }
 
 // newClassified creates a new classified error
@@ -321,6 +319,18 @@ func ClassifiedCodeDetail(class ErrorClass, code string, detail map[string]any, 
 	return ce
 }
 
+// Codes that a package graph imports cannot spell through graph, because graph
+// imports errs. graph declares ErrorCodeRevisionMismatch and ErrorCodeIndexNotReady
+// as these constants, so each value is written once.
+const (
+	// CodeRevisionMismatch is the code ErrRevisionMismatch carries.
+	CodeRevisionMismatch = "revision_mismatch"
+	// CodeIndexNotReady is the code for a read that its serving index or bucket
+	// cannot answer yet. natsclient's OpenFrameworkBucket returns it for a
+	// must-exist bucket its owner has not provisioned.
+	CodeIndexNotReady = "index_not_ready"
+)
+
 // ErrRevisionMismatch is the ADR-060 optimistic-concurrency (CAS)
 // control-flow sentinel — the ONLY sentinel in the unified RPC error
 // contract (every other code is a plain ce.Code discriminator, reached
@@ -337,14 +347,12 @@ func ClassifiedCodeDetail(class ErrorClass, code string, detail map[string]any, 
 // ErrorInvalid (a revision mismatch is a bad-precondition write), so an
 // IsInvalid-first branch would mis-handle a retry signal as a hard 400.
 //
-// The Code literal is the string "revision_mismatch" rather than
-// graph.ErrorCodeRevisionMismatch because pkg/errs cannot import graph
-// (import cycle: graph imports errs). The graph package locks the two
-// equal with a compile-time assertion test (graph/errcode_sentinel_test.go).
+// Its Code is CodeRevisionMismatch, which graph.ErrorCodeRevisionMismatch is
+// defined as.
 var ErrRevisionMismatch = &ClassifiedError{
 	Class:   ErrorInvalid,
-	Code:    "revision_mismatch",
-	Message: "revision_mismatch",
+	Code:    CodeRevisionMismatch,
+	Message: CodeRevisionMismatch,
 }
 
 // Wrap creates a standardized error with context following the pattern:
@@ -356,126 +364,29 @@ func Wrap(err error, component, method, action string) error {
 	return fmt.Errorf("%s.%s: %s failed: %w", component, method, action, err)
 }
 
-// WrapTransient wraps an error as transient with context.
-// When err is nil and action is non-empty, synthesizes the error from action
-// so synchronous validation paths emit a non-nil classified error rather than
-// silently returning nil. nil+empty-action still returns nil.
+// WrapTransient wraps an error as transient with context. Returns nil when err is nil.
 func WrapTransient(err error, component, method, action string) error {
 	if err == nil {
-		if action == "" {
-			return nil
-		}
-		err = errors.New(action)
+		return nil
 	}
 	wrappedErr := Wrap(err, component, method, action)
 	return inheritMachineContract(newClassified(ErrorTransient, wrappedErr, component, method, wrappedErr.Error()), err)
 }
 
-// WrapFatal wraps an error as fatal with context.
-// When err is nil and action is non-empty, synthesizes the error from action
-// so synchronous validation paths emit a non-nil classified error rather than
-// silently returning nil. nil+empty-action still returns nil.
+// WrapFatal wraps an error as fatal with context. Returns nil when err is nil.
 func WrapFatal(err error, component, method, action string) error {
 	if err == nil {
-		if action == "" {
-			return nil
-		}
-		err = errors.New(action)
+		return nil
 	}
 	wrappedErr := Wrap(err, component, method, action)
 	return inheritMachineContract(newClassified(ErrorFatal, wrappedErr, component, method, wrappedErr.Error()), err)
 }
 
-// WrapInvalid wraps an error as invalid with context.
-// When err is nil and action is non-empty, synthesizes the error from action
-// so synchronous validation paths emit a non-nil classified error rather than
-// silently returning nil. nil+empty-action still returns nil.
+// WrapInvalid wraps an error as invalid with context. Returns nil when err is nil.
 func WrapInvalid(err error, component, method, action string) error {
 	if err == nil {
-		if action == "" {
-			return nil
-		}
-		err = errors.New(action)
+		return nil
 	}
 	wrappedErr := Wrap(err, component, method, action)
 	return inheritMachineContract(newClassified(ErrorInvalid, wrappedErr, component, method, wrappedErr.Error()), err)
-}
-
-// RetryConfig defines configuration for retry operations
-type RetryConfig struct {
-	MaxRetries      int
-	InitialDelay    time.Duration
-	MaxDelay        time.Duration
-	BackoffFactor   float64
-	RetryableErrors []error
-}
-
-// DefaultRetryConfig returns a sensible default retry configuration
-func DefaultRetryConfig() RetryConfig {
-	return RetryConfig{
-		MaxRetries:      3,
-		InitialDelay:    100 * time.Millisecond,
-		MaxDelay:        5 * time.Second,
-		BackoffFactor:   2.0,
-		RetryableErrors: nil, // Empty list means retry all transient errors
-	}
-}
-
-// ShouldRetry determines if an error should be retried based on config
-func (rc RetryConfig) ShouldRetry(err error, attempt int) bool {
-	if err == nil || attempt >= rc.MaxRetries {
-		return false
-	}
-
-	// Check if error is transient
-	if !IsTransient(err) {
-		return false
-	}
-
-	// Check specific retryable errors if configured
-	if len(rc.RetryableErrors) > 0 {
-		for _, retryableErr := range rc.RetryableErrors {
-			if errors.Is(err, retryableErr) {
-				return true
-			}
-		}
-		return false
-	}
-
-	return true
-}
-
-// ToRetryConfig converts the errors package RetryConfig to the retry framework's
-// Config type for framework consistency. This enables seamless integration with
-// the streamkit/retry package while maintaining error classification logic.
-//
-// The conversion adds 1 to MaxRetries (converting "additional attempts" to "total attempts")
-// and enables jitter by default for production resilience.
-func (rc RetryConfig) ToRetryConfig() retry.Config {
-	return retry.Config{
-		MaxAttempts:  rc.MaxRetries + 1, // MaxRetries is additional attempts beyond first
-		InitialDelay: rc.InitialDelay,
-		MaxDelay:     rc.MaxDelay,
-		Multiplier:   rc.BackoffFactor,
-		AddJitter:    true, // Enable jitter for production use
-	}
-}
-
-// BackoffDelay calculates the delay for a retry attempt using framework logic
-func (rc RetryConfig) BackoffDelay(attempt int) time.Duration {
-	if attempt <= 0 {
-		return rc.InitialDelay
-	}
-
-	// Use framework calculation for consistency
-	delay := rc.InitialDelay
-	for i := 0; i < attempt; i++ {
-		delay = time.Duration(float64(delay) * rc.BackoffFactor)
-		if delay > rc.MaxDelay {
-			delay = rc.MaxDelay
-			break
-		}
-	}
-
-	return delay
 }

@@ -2,8 +2,9 @@
 
 ## Status
 
-**Accepted (2026-10-11); §4 amended 2026-10-12 (#184).** The owner accepted design revision 3, and this record with
-it, on PR #177 (comment 6111038987). Drafted on PR #177, for #170 and #168, under the owner's rulings:
+**Accepted (2026-10-11); §4 amended 2026-10-12 (#184); §3 amended 2026-10-15 (#167); §2 amended 2026-10-17
+(#169).** The owner accepted design revision 3, and this record with it, on PR #177 (comment 6111038987). Drafted
+on PR #177, for #170 and #168, under the owner's rulings:
 
 - 2026-10-10, epic #9 comment 6098388541: a record of natsclient's contract over nats.go;
 - 2026-10-11, #170 comment 6109833136: fix natsclient so its calls do not sit for minutes, without rewriting nats.go;
@@ -18,6 +19,38 @@ the quick probes (P10, P12, P13, P15, p15b, P17, P18, P20, and P23 to P25) were 
 2026-10-12: "I have no idea why we have a setter in Go for SetConnection — this is not Java"). §4's sentence about a
 connection it replaced is struck where it stands. §2's `Close` line still cites `:1399` and `:1442`, tests removed
 with it. Line numbers in `client_close_final_test.go` are as of `d71df33`.
+
+**Amendment, 2026-10-15 (#167).** Two "not promised" lines in §3 are now promised (owner ruling 4 on #167, comment
+6191970843). The original bullets stay where they are; this note replaces what they leave open.
+
+**Amendment, 2026-10-17 (simplify-04a-16-natsclient-circuit, #222).** The connection circuit breaker is removed, so
+`natsclient.ErrCircuitOpen`, the circuit-neutral stream-capacity line in §3 and the circuit refusal in the retry
+line are struck where they stand. No library statement is added.
+
+**Amendment, 2026-10-17 (simplify-04a-18-natsclient-metrics, #169).** §2's `Subscribe` line is unchanged in what it
+returns: a refused SUB still returns the subscription and nil (owner ruling on #169, 2026-10-12). What is added is
+that, when the client was built with `WithMetrics`, the refusal is also counted on
+`semengine_nats_server_refusals_total{reason}`, with `permission_violation` or `max_subscriptions_exceeded`. The
+count is made before the client's `NATS error` log line. nats.go reports a refused PUB the same way, so a refused
+publish is counted too. Backed by `TestServerRefusalCountedBeforeLog` (`subscribe_registration_test.go`). It is not
+promised how soon after the call returns the count rises. Without metrics only the log line is written.
+
+- **The unknown-error default.** `errs.Classify` returns fatal for an unclassified error: one with no
+  `*errs.ClassifiedError` in its chain and none of the sentinels `errs.IsTransient`, `errs.IsFatal` or `errs.IsInvalid`
+  list, whatever its text says. Those three checks stay strict and report false for it. The
+  `error-classification` spec holds this. `natsclient` sends an unclassified handler error as fatal.
+- **No responders' class.** The raw `nats.ErrNoResponders` is unclassified, so `errs.Classify` returns fatal for it
+  and `errs.IsTransient` reports false. The `projection.MutationError` that `pkg/projection` and `pkg/lifecycle` return
+  for it is *not committed* and carries `Class` transient in its field; `errs.IsTransient` on that error reads through
+  to the raw error and is also false. The `projection-mutation` spec holds the field.
+- **Still not promised:** which other raw nats.go errors become classified sentinels. Until one does, it is
+  unclassified and falls under the default above.
+
+**Amendment, 2026-10-17 (change `simplify-04a-14-natsclient-request`).** `Client.Request` is removed, so it no longer
+appears in the lists of calls a held write holds (§2) and of calls that return `ErrNotConnected` while reconnecting (§3).
+`RequestWithHeaders` takes its place in the held-write list, with the classified calls through it: P13's `request`
+case ran the removed `Request`, which made the same nats.go call (`conn.RequestMsgWithContext`) that
+`RequestWithHeaders` makes. P13 was not re-run on `RequestWithHeaders`.
 
 **How each line is backed.**
 
@@ -92,8 +125,8 @@ Each line below names its backing. Anything not backed is not promised.
   within each address family: nats.go's shuffle of them is gone, and its shuffle of separate URLs remains (read, not measured:
   `nats.go:2484-2513`, `net/dial.go:539-557`). The context
   does not bound later reconnects (T5).
-- **Every other call does not end with its context while a write is held.** This covers `Publish`, `Request`,
-  `Subscribe`, the JetStream and key-value calls, and a consumer's setup.
+- **Every other call does not end with its context while a write is held.** This covers `Publish`, `RequestWithHeaders`
+  (and the classified calls through it), `Subscribe`, the JetStream and key-value calls, and a consumer's setup.
   - The context ends their wait for the server's answer (P13 idle; tests `subscribe_registration_test.go:296`,
     `:318`), not their wait for nats.go's lock.
   - Behind a write the server is not reading, each call waits for every write ahead of it, up to the write timeout
@@ -122,7 +155,8 @@ Each line below names its backing. Anything not backed is not promised.
 ### 2. What a nil return means
 
 - **`Subscribe`, `SubscribeForRequests`:** the server has read the SUB, not that it accepted it. A refused SUB returns
-  the subscription and nil. Backed by the test at `subscribe_registration_test.go:240`, and by P7, P8 and #169.
+  the subscription and nil, and is counted when metrics are configured (amended 2026-10-17, see Status).
+  Backed by the test at `subscribe_registration_test.go:240`, and by P7, P8 and #169.
 - **`Publish`:** the message is in nats.go's buffer, not sent: nil came back after 1 m 59.6 s with the server never
   reading (P14). Delivery is not promised: a message still buffered when the connection closes is lost, including
   when `Close`'s context ends before its drain does.
@@ -140,17 +174,17 @@ Each line below names its backing. Anything not backed is not promised.
 - **Read a class with `errors.Is` and `errors.As`** (ruling N, #91 comment 6080973822).
 - **`ErrNotConnected` is transient** by `errs.IsTransient` and `errs.Classify`, because it wraps
   `errs.ErrConnectionLost` (T7).
-- **`natsclient.ErrCircuitOpen` is `errs.ErrCircuitOpen`** (T7).
+- ~~**`natsclient.ErrCircuitOpen` is `errs.ErrCircuitOpen`** (T7).~~ Removed with the circuit breaker (#222).
 - **No responders** comes back as nats.go's `nats.ErrNoResponders`, matched by `errors.Is` or `IsNoResponders`. On the
   default server configuration it comes at once (P15). Not promised:
-  - its class, which waits for #93's handling of raw nats.go errors;
+  - its class, which waits for #93's handling of raw nats.go errors (amended 2026-10-15, #167; see Status);
   - other server configurations.
 - **`CreateKeyValueBucket`** treats `jetstream.ErrBucketExists` as "the bucket exists" (T6).
-- **A stream at its byte or message limit** does not count against the connection circuit
-  (`stream_capacity_circuit_integration_test.go:14`). nats-server names the limit only in the description of error
-  10077, so natsclient reads that text; nats.go has no code for it.
-- **Not promised here:** `Classify`'s default for unknown errors (#167), and the raw nats.go errors that #93's
-  `pkg/errs` rewrite reclassifies. Both wait for #93.
+- ~~**A stream at its byte or message limit** does not count against the connection circuit
+  (`stream_capacity_circuit_integration_test.go:14`).~~ Struck with the circuit breaker (#222). nats-server names the
+  limit only in the description of error 10077, so natsclient reads that text; nats.go has no code for it.
+- **Not promised here:** `Classify`'s default for unknown errors (#167; amended 2026-10-15, see Status), and the raw
+  nats.go errors that #93's `pkg/errs` rewrite reclassifies. Both wait for #93.
 
 ### 4. Ownership
 
@@ -167,7 +201,7 @@ Each line below names its backing. Anything not backed is not promised.
 
 - **natsclient keeps nats.go's automatic reconnect,** with natsclient's settings: unlimited attempts, and
   `ReconnectWait` of 2 s (`client.go:355-356`). A reconnect after `Connect`'s context has ended works (T5).
-- **While reconnecting,** `Publish`, `Request`, `RequestClassified`, `Subscribe`, `PublishToStream` and `GetStream`
+- **While reconnecting,** `Publish`, `RequestClassified`, `Subscribe`, `PublishToStream` and `GetStream`
   return `ErrNotConnected` at once (P15). KV calls wait for their context.
 - **Not promised:**
   - reconnect pacing;
@@ -212,8 +246,9 @@ Each alternative that needed a timeout was measured with a short one, so no prob
 
 - **A component's `Stop` that closes its client is bounded by its context.** Its other calls are not, while a server
   is not reading. A caller that needs a shorter bound sets `WithWriteTimeout` and `WithPingInterval` together.
-- **A retry keyed on `errs.IsTransient` now retries `ErrNotConnected` and a circuit refusal.** No responders is
-  unchanged. A KV write's error is commit-unknown, so re-read before retrying a write that is not compare-and-set.
+- **A retry keyed on `errs.IsTransient` now retries `ErrNotConnected`.** (It also
+  retried a circuit refusal; struck with the breaker, #222.) No responders is unchanged. A KV write's error is
+  commit-unknown, so re-read before retrying a write that is not compare-and-set.
 - **Re-check after a nats.go or nats-server upgrade.** T1 to T9 run under `task verify` and pin the library facts this
   record rests on. A probe line is re-run before an upgrade merges. #118 (nats-server v2.15.0) merged on 2026-10-11
   at 14:37Z, while this record was in review, and the re-run after it found no change (comment 6111119623). After a

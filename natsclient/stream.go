@@ -149,7 +149,7 @@ func (c *Client) EnsureStream(ctx context.Context, cfg jetstream.StreamConfig) (
 		return nil, nilContextError("EnsureStream")
 	}
 	// Fail closed on a KV/ObjectStore backing-stream name before anything else,
-	// so the refusal does not depend on connection or circuit state. This seam is
+	// so the refusal does not depend on connection state. This seam is
 	// operator-reachable — processor/gated-dag exposes dispatch_stream as config
 	// JSON and passes it straight through with a MaxAge — and while get-or-create
 	// cannot restamp a LIVE bucket, on a fresh deployment it would name-squat the
@@ -158,10 +158,6 @@ func (c *Client) EnsureStream(ctx context.Context, cfg jetstream.StreamConfig) (
 	if err := CheckOrdinaryStreamName(cfg.Name, "natsclient.Client.EnsureStream"); err != nil {
 		return nil, errs.WrapFatal(err, "Client", "EnsureStream",
 			"validate stream name "+cfg.Name)
-	}
-
-	if c.Status() == StatusCircuitOpen {
-		return nil, ErrCircuitOpen
 	}
 
 	if c.Status() != StatusConnected {
@@ -198,16 +194,13 @@ func (c *Client) EnsureStream(ctx context.Context, cfg jetstream.StreamConfig) (
 		}
 		stream, err = js.CreateStream(ctx, cfg)
 		if err != nil {
-			c.recordFailure()
 			c.jsMetrics.recordError("create_stream")
 			return nil, errs.WrapTransient(err, "Client", "EnsureStream", "failed to create stream "+cfg.Name)
 		}
-		c.resetCircuit()
 		c.jsMetrics.trackStream(cfg.Name, stream)
 		return stream, nil
 	}
 
-	c.recordFailure()
 	return nil, errs.WrapTransient(err, "Client", "EnsureStream", "failed to get stream "+cfg.Name)
 }
 
@@ -502,9 +495,6 @@ func (c *Client) ConsumeInternalStreamWithConfig(
 	if c.isClosing() {
 		return nil, errs.Wrap(nats.ErrConnectionClosed, "Client", "ConsumeInternalStreamWithConfig", "client closed")
 	}
-	if c.Status() == StatusCircuitOpen {
-		return nil, ErrCircuitOpen
-	}
 	if c.Status() != StatusConnected {
 		return nil, ErrNotConnected
 	}
@@ -520,7 +510,6 @@ func (c *Client) ConsumeInternalStreamWithConfig(
 	}
 	stream, err := c.awaitStreamVisible(ctx, js, cfg.StreamName)
 	if err != nil {
-		c.recordFailure()
 		return nil, errs.WrapTransient(err, "Client", "ConsumeInternalStreamWithConfig",
 			"failed to get stream "+cfg.StreamName)
 	}
@@ -541,7 +530,6 @@ func (c *Client) ConsumeInternalStreamWithConfig(
 	consumerCfg := c.buildConsumerConfig(cfg)
 	consumer, err := stream.CreateOrUpdateConsumer(ctx, consumerCfg)
 	if err != nil {
-		c.recordFailure()
 		return nil, ClassifyConsumerPolicyError(err, "ConsumeInternalStreamWithConfig")
 	}
 	guarded := &guardedConsumer{Consumer: consumer}
@@ -603,7 +591,6 @@ func (c *Client) ConsumeInternalStreamWithConfig(
 	})
 	if err != nil {
 		owned.failed()
-		c.recordFailure()
 		return nil, errs.WrapTransient(err, "Client", "ConsumeInternalStreamWithConfig",
 			"failed to start consuming from stream "+cfg.StreamName)
 	}
@@ -712,7 +699,6 @@ func (c *Client) startPortConsumer(
 	})
 	if err != nil {
 		owned.failed()
-		c.recordFailure()
 		return nil, errs.WrapTransient(err, "Client", operation,
 			"failed to start consuming from stream "+cfg.StreamName)
 	}
@@ -785,9 +771,6 @@ func (c *Client) consumePortStreamWithConfigContexts(
 	if c.isClosing() {
 		return nil, errs.Wrap(nats.ErrConnectionClosed, "Client", operation, "client closed")
 	}
-	if c.Status() == StatusCircuitOpen {
-		return nil, ErrCircuitOpen
-	}
 	if c.Status() != StatusConnected {
 		return nil, ErrNotConnected
 	}
@@ -803,7 +786,6 @@ func (c *Client) consumePortStreamWithConfigContexts(
 	}
 	stream, err := c.awaitStreamVisible(setupCtx, js, cfg.StreamName)
 	if err != nil {
-		c.recordFailure()
 		return nil, errs.WrapTransient(err, "Client", operation,
 			"failed to get stream "+cfg.StreamName)
 	}
@@ -816,7 +798,6 @@ func (c *Client) consumePortStreamWithConfigContexts(
 	consumer, err := stream.CreateOrUpdateConsumer(setupCtx, c.buildConsumerConfig(cfg))
 	if err != nil {
 		c.releaseInternalConsumer(identity, claim)
-		c.recordFailure()
 		return nil, ClassifyConsumerPolicyError(err, operation)
 	}
 	// startPortConsumer owns the claim from here.
@@ -1036,7 +1017,6 @@ func (c *Client) ensureStreamForConsumer(ctx context.Context, js jetstream.JetSt
 	// Create the stream
 	_, err = js.CreateStream(ctx, streamCfg)
 	if err != nil {
-		c.recordFailure()
 		return errs.WrapTransient(err, "Client", "ensureStreamForConsumer",
 			"failed to auto-create stream "+cfg.StreamName)
 	}
@@ -1063,8 +1043,9 @@ func deriveStreamSubject(filterSubject string) string {
 }
 
 // PublishToStreamWithAck publishes a message to a JetStream subject with acknowledgment.
-// If AutoCreate is true and the stream doesn't exist, it will be created.
 // Trace context is auto-generated if not present, and propagated via NATS message headers.
+// A failure of the publish itself is counted as publish_to_stream and classified transient;
+// ErrNotConnected and a JetStream error come back unchanged.
 func (c *Client) PublishToStreamWithAck(
 	ctx context.Context,
 	subject string,
@@ -1073,39 +1054,15 @@ func (c *Client) PublishToStreamWithAck(
 	if ctx == nil {
 		return nil, nilContextError("PublishToStreamWithAck")
 	}
-	if c.Status() == StatusCircuitOpen {
-		return nil, ErrCircuitOpen
-	}
-
-	if c.Status() != StatusConnected {
-		return nil, ErrNotConnected
-	}
-
-	js, err := c.JetStream()
+	js, err := c.streamJetStream()
 	if err != nil {
 		return nil, err
 	}
-
-	// Auto-generate trace context if none exists
-	if _, ok := TraceContextFromContext(ctx); !ok {
-		ctx = ContextWithTrace(ctx, NewTraceContext())
-	}
-
-	// Build message with headers for trace propagation
-	msg := &nats.Msg{
-		Subject: subject,
-		Data:    data,
-	}
-	InjectTrace(ctx, msg)
-
-	ack, err := js.PublishMsg(ctx, msg)
+	ack, err := js.PublishMsg(ctx, streamMsg(ctx, subject, data, ""))
 	if err != nil {
-		c.recordStreamPublishFailure(err)
 		c.jsMetrics.recordError("publish_to_stream")
 		return nil, errs.WrapTransient(err, "Client", "PublishToStreamWithAck",
 			"failed to publish to subject "+subject)
 	}
-
-	c.resetCircuit()
 	return ack, nil
 }

@@ -15,10 +15,8 @@ type declarationTestComponent struct {
 	outputCalls int
 }
 
-func (c *declarationTestComponent) Meta() Metadata             { return Metadata{Name: "declaration-test"} }
-func (c *declarationTestComponent) ConfigSchema() ConfigSchema { return ConfigSchema{} }
-func (c *declarationTestComponent) Health() HealthStatus       { return HealthStatus{} }
-func (c *declarationTestComponent) DataFlow() FlowMetrics      { return FlowMetrics{} }
+func (c *declarationTestComponent) Health() HealthStatus  { return HealthStatus{} }
+func (c *declarationTestComponent) DataFlow() FlowMetrics { return FlowMetrics{} }
 func (c *declarationTestComponent) InputPorts() []Port {
 	c.inputCalls++
 	return c.inputs
@@ -72,4 +70,15 @@ func requireNoError(t *testing.T, err error) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+// admittedDeclaration finds one admitted declaration through Snapshots, the
+// read a consumer's component manager makes.
+func admittedDeclaration(registry *Registry, instanceName string) (Declaration, bool) {
+	for _, declaration := range registry.Snapshots() {
+		if declaration.InstanceName == instanceName {
+			return declaration, true
+		}
+	}
+	return Declaration{}, false
 }

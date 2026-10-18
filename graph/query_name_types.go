@@ -1,9 +1,9 @@
 package graph
 
-// Types for deterministic name→ranked-IDs lookup (graph.query.byName, gh#376).
+// Types for deterministic name→ranked-IDs lookup (graph.query.byName, SemStreams gh#376).
 
 // NameMatch is one entity whose name/title matched a graph.query.byName lookup,
-// carrying the signals a deterministic caller needs to calibrate trust (gh#376).
+// carrying the signals a deterministic caller needs to calibrate trust (SemStreams gh#376).
 type NameMatch struct {
 	// EntityID is the matched entity (an opaque handle for the caller).
 	EntityID string `json:"entity_id"`

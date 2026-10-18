@@ -80,7 +80,7 @@ func TestIndexingProfile_Create_DefaultsToControlFloor(t *testing.T) {
 
 	respData, err := comp.handleCanonicalCreate(context.Background(), data)
 	require.NoError(t, err)
-	var resp graph.CreateEntityResponse
+	var resp graph.EntityMutationResponse
 	require.NoError(t, json.Unmarshal(respData, &resp))
 
 	es := storedEntity(t, comp, testProfileEntityID)
@@ -100,7 +100,7 @@ func TestIndexingProfile_Create_EnvelopeProfileWins(t *testing.T) {
 
 	respData, err := comp.handleCanonicalCreate(context.Background(), data)
 	require.NoError(t, err)
-	var resp graph.CreateEntityResponse
+	var resp graph.EntityMutationResponse
 	require.NoError(t, json.Unmarshal(respData, &resp))
 
 	es := storedEntity(t, comp, testProfileEntityID)

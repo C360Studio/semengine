@@ -12,13 +12,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"reflect"
 	"sort"
-	"strings"
 
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
+	semtypes "github.com/c360studio/semengine/pkg/types"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -56,7 +56,7 @@ func (m *Manager) List(ctx context.Context, workflow string, opts ListOptions) (
 
 	out := make([]Participant, 0)
 	for key := range lister.Keys() {
-		if !matchPattern(reg.workflow.EntityIDPattern, key) {
+		if !matchesWorkflow(reg, key) {
 			continue
 		}
 		participant, _, getErr := m.getWithRevision(ctx, workflow, key)
@@ -154,16 +154,18 @@ func (m *Manager) Watch(ctx context.Context, workflow string, onParticipant func
 	if err != nil {
 		return err
 	}
-	return m.runWatchLoop(ctx, reg, watcher,
-		func(_ string, p Participant) error { return onParticipant(p) },
-		nil, // upsert-only: reclaims are not delivered on this surface
-	)
+	return m.runWatchLoop(ctx, reg, watcher, func(event Event) error {
+		if event.Op != Upserted {
+			return nil // upsert-only: reclaims are not delivered on this surface
+		}
+		return onParticipant(event.Participant)
+	})
 }
 
 // WatchEvents is the delete-visible sibling of Watch: it calls onEvent with
 // Events — Upserted (with projected Participant) for matching
 // creates/phase-changes, and Deleted (Participant nil) for reclaims
-// (KeyValueDelete/KeyValuePurge) whose key matches the workflow's
+// (a delete or purge) whose key matches the workflow's
 // EntityIDPattern. Bootstrap-then-live like Watch for Upserted; Deleted
 // events are normally live, but the pattern-watch bootstrap can also replay a
 // key whose latest revision is a tombstone — so a Deleted may arrive
@@ -184,14 +186,7 @@ func (m *Manager) WatchEvents(ctx context.Context, workflow string, onEvent func
 	if err != nil {
 		return err
 	}
-	return m.runWatchLoop(ctx, reg, watcher,
-		func(entityID string, p Participant) error {
-			return onEvent(Event{Op: Upserted, EntityID: entityID, Participant: p})
-		},
-		func(entityID string) error {
-			return onEvent(Event{Op: Deleted, EntityID: entityID})
-		},
-	)
+	return m.runWatchLoop(ctx, reg, watcher, onEvent)
 }
 
 // startWatch resolves the workflow and opens one pattern subscription for that
@@ -213,20 +208,18 @@ func (m *Manager) startWatch(ctx context.Context, workflow, caller string) (*reg
 	return reg, watcher, nil
 }
 
-// runWatchLoop drives one workflow-pattern watch over ENTITY_STATES, invoking
-// onUpsert for each matching projected write and onDelete for each matching
-// reclaim, and returns when the watch ends: ctx.Err() on ctx.Done, a
+// runWatchLoop drives one workflow-pattern watch over ENTITY_STATES, calling
+// onEvent for each matching projected write (Upserted) and each matching
+// reclaim (Deleted). It returns when the watch ends: ctx.Err() on ctx.Done, a
 // callback's error, a transient index-not-ready error when the watcher closes
-// while ctx is live, or the error of an entry it cannot decode or project. It stops
-// the watcher before returning. onDelete may be nil (Watch's upsert-only
-// surface). Shared by Watch and WatchEvents so the projection/dispatch logic
-// is not duplicated.
+// while ctx is live, or the error of an entry it cannot decode or project,
+// naming the workflow, entity and revision. It logs nothing: the returned error
+// is the report. It stops the watcher before returning.
 func (m *Manager) runWatchLoop(
 	ctx context.Context,
 	reg *registration,
 	watcher jetstream.KeyWatcher,
-	onUpsert func(entityID string, p Participant) error,
-	onDelete func(entityID string) error,
+	onEvent func(Event) error,
 ) error {
 	defer watcher.Stop()
 	for {
@@ -238,10 +231,6 @@ func (m *Manager) runWatchLoop(
 				if err := ctx.Err(); err != nil {
 					return err
 				}
-				m.logger.Warn("lifecycle workflow watcher degraded",
-					slog.String("code", graph.ErrorCodeIndexNotReady),
-					slog.String("workflow", reg.workflow.Name),
-					slog.String("error", "ENTITY_STATES pattern watcher closed unexpectedly"))
 				return errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeIndexNotReady,
 					fmt.Errorf("lifecycle: pattern watch for workflow %q: ENTITY_STATES watcher closed unexpectedly",
 						reg.workflow.Name))
@@ -249,81 +238,48 @@ func (m *Manager) runWatchLoop(
 			if entry == nil {
 				continue
 			}
-
-			delivery, keep, err := m.prepareWatchEntry(reg, entry)
+			event, keep, err := watchEvent(reg, entry)
 			if err != nil {
-				var contractErr *graph.StateContractError
-				if errors.As(err, &contractErr) {
-					m.logger.Warn("lifecycle workflow watch encountered poisoned graph state; closing subscription",
-						slog.String("workflow", reg.workflow.Name),
-						slog.String("entity", entry.Key()),
-						slog.Uint64("revision", entry.Revision()),
-						slog.String("code", graph.ErrorCodeGraphStateResetRequired),
-						slog.String("reason", string(contractErr.Reason)))
-				}
 				return fmt.Errorf("lifecycle: pattern watch for workflow %q: entity %q at revision %d: %w",
 					reg.workflow.Name, entry.Key(), entry.Revision(), err)
 			}
 			if !keep {
 				continue
 			}
-			if err := m.deliverWatchEntry(delivery, onUpsert, onDelete); err != nil {
+			if err := onEvent(event); err != nil {
 				return err
 			}
 		}
 	}
 }
 
-type lifecycleWatchDelivery struct {
-	entityID    string
-	participant Participant
-	deleted     bool
-}
-
-// prepareWatchEntry decodes and projects one entry from a workflow-pattern
-// watch. Validation belongs to this subscription's matching read path. An entry
-// outside the workflow's pattern, or without its phase triple, is not kept; an
-// entry it cannot decode or project is an error, never a skip.
-func (m *Manager) prepareWatchEntry(
-	reg *registration,
-	entry jetstream.KeyValueEntry,
-) (lifecycleWatchDelivery, bool, error) {
-	if entry.Operation() == jetstream.KeyValueDelete || entry.Operation() == jetstream.KeyValuePurge {
-		if !matchPattern(reg.workflow.EntityIDPattern, entry.Key()) {
-			return lifecycleWatchDelivery{}, false, nil
+// watchEvent decodes and projects one entry from a workflow-pattern watch. An
+// entry outside the workflow's pattern, or without its phase triple, is not
+// kept; an entry the stored-value rule refuses (graph.UnmarshalEntityState
+// under the entry's key), or one it cannot project, is an error, never a skip.
+func watchEvent(reg *registration, entry jetstream.KeyValueEntry) (Event, bool, error) {
+	if natsclient.IsKVTombstone(entry.Operation()) {
+		if !matchesWorkflow(reg, entry.Key()) {
+			return Event{}, false, nil
 		}
-		return lifecycleWatchDelivery{entityID: entry.Key(), deleted: true}, true, nil
+		return Event{Op: Deleted, EntityID: entry.Key()}, true, nil
 	}
 
 	var state graph.EntityState
-	if err := graph.UnmarshalEntityState(entry.Value(), &state); err != nil {
-		return lifecycleWatchDelivery{}, false, err
+	if err := graph.UnmarshalEntityState(entry.Key(), entry.Value(), &state); err != nil {
+		return Event{}, false, err
 	}
-	if !matchPattern(reg.workflow.EntityIDPattern, entry.Key()) {
-		return lifecycleWatchDelivery{}, false, nil
+	if !matchesWorkflow(reg, entry.Key()) {
+		return Event{}, false, nil
 	}
 	if !hasTriple(state.Triples, entry.Key(), reg.workflow.PhasePredicate) {
-		return lifecycleWatchDelivery{}, false, nil // not lifecycle-managed yet
+		return Event{}, false, nil // not lifecycle-managed yet
 	}
 	participant := reflect.New(reg.meta.GoType).Interface().(Participant)
 	if err := projectTriples(reg.meta, entry.Key(), state.Triples, participant); err != nil {
-		return lifecycleWatchDelivery{}, false, err
+		return Event{}, false, err
 	}
-	return lifecycleWatchDelivery{entityID: entry.Key(), participant: participant}, true, nil
-}
-
-func (m *Manager) deliverWatchEntry(
-	delivery lifecycleWatchDelivery,
-	onUpsert func(entityID string, p Participant) error,
-	onDelete func(entityID string) error,
-) error {
-	if delivery.deleted {
-		if onDelete == nil {
-			return nil
-		}
-		return onDelete(delivery.entityID)
-	}
-	return onUpsert(delivery.entityID, delivery.participant)
+	return Event{Op: Upserted, EntityID: entry.Key(), Participant: participant}, true, nil
 }
 
 // History returns the bounded operator transition window recorded in the
@@ -358,16 +314,24 @@ func (m *Manager) History(ctx context.Context, workflow, entityID string) ([]Tra
 	return events, nil
 }
 
-// Children returns ChildResult entries for every child link
-// declared in the parent workflow's ChildWorkflows, optionally
-// narrowed by opts.Workflow + paginated by Limit/Offset.
+// Children returns the children linked from the parent through the parent
+// workflow's ChildWorkflows, optionally narrowed to one child workflow by
+// opts.Workflow.
 //
-// Cross-workflow: the parent and its children may be in different
-// workflows. Manager.Children reads the parent's triples, walks
-// each ChildSpec's LinkPredicate, and loads each linked entity via
-// the child workflow's Get. Children whose child workflow isn't
-// registered, or whose entity is gone, are skipped with a Warn log
-// — one bad child shouldn't kill the whole response.
+// Cross-workflow: the parent and its children may be in different workflows.
+// Children reads the parent, collects each ChildSpec's LinkPredicate objects,
+// sorts the links by child workflow then entity ID, and reads each linked
+// child through its own workflow, in that order. As List does, a child that
+// is gone (ErrEntityNotFound) or has no lifecycle phase
+// (ErrEntityNotLifecycleManaged) is left out, and any other read failure,
+// including ErrWorkflowNotRegistered for a child workflow nobody registered,
+// fails the call.
+//
+// Offset and Limit count the children kept, with List's rule: Offset <= 0
+// starts at the first, Limit <= 0 means no limit, and a page shorter than
+// Limit is the last. Children stops reading once Offset+Limit children are
+// kept, so a page costs at most Offset + Limit + (children left out) reads
+// (ADR-049); with no Limit it reads every link. The result is never nil.
 func (m *Manager) Children(ctx context.Context, parentEntityID string, opts ChildOptions) ([]ChildResult, error) {
 	parentState, _, err := m.getEntity(ctx, parentEntityID)
 	if err != nil {
@@ -404,28 +368,24 @@ func (m *Manager) Children(ctx context.Context, parentEntityID string, opts Chil
 		return refs[i].entityID < refs[j].entityID
 	})
 
-	if opts.Offset >= len(refs) {
-		return nil, nil
-	}
-	end := len(refs)
-	if opts.Limit > 0 && opts.Offset+opts.Limit < end {
-		end = opts.Offset + opts.Limit
-	}
-	page := refs[opts.Offset:end]
-
-	results := make([]ChildResult, 0, len(page))
-	for _, r := range page {
+	offset := max(opts.Offset, 0)
+	results := make([]ChildResult, 0)
+	kept := 0
+	for _, r := range refs {
+		if opts.Limit > 0 && kept == offset+opts.Limit {
+			break
+		}
 		child, err := m.Get(ctx, r.workflow, r.entityID)
 		if err != nil {
-			m.logger.Warn("lifecycle: Children — child load failed; skipping",
-				slog.String("parent", parentEntityID),
-				slog.String("child", r.entityID),
-				slog.String("child_workflow", r.workflow),
-				slog.String("error", err.Error()),
-			)
-			continue
+			if errors.Is(err, ErrEntityNotFound) || errors.Is(err, ErrEntityNotLifecycleManaged) {
+				continue
+			}
+			return nil, fmt.Errorf("lifecycle: Children of %q: child %q: %w", parentEntityID, r.entityID, err)
 		}
-		results = append(results, ChildResult{Workflow: r.workflow, State: child})
+		kept++
+		if kept > offset {
+			results = append(results, ChildResult{Workflow: r.workflow, State: child})
+		}
 	}
 	return results, nil
 }
@@ -483,46 +443,39 @@ func (m *Manager) LookupByEntityID(ctx context.Context, entityID string) (Partic
 
 // findRegistrationForEntity returns the registration whose
 // EntityIDPattern matches the given entityID. Returns nil when no
-// registration matches.
-//
-// Pattern matching: '*' wildcards per dot-separated segment. The
-// 6-part EntityIDPattern matches the 6-part entity_id one segment
-// at a time.
+// registration matches, or when entityID is malformed.
 func (m *Manager) findRegistrationForEntity(entityID string) *registration {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	for _, reg := range m.registrations {
-		if matchPattern(reg.workflow.EntityIDPattern, entityID) {
+		if matchesWorkflow(reg, entityID) {
 			return reg
 		}
 	}
 	return nil
 }
 
-// matchPattern compares a 6-part dotted glob pattern against a
-// concrete entity_id. '*' in a segment matches any value for that
-// segment; non-'*' segments require exact match.
-func matchPattern(pattern, id string) bool {
-	if pattern == "" {
-		return false
+// checkWorkflowEntityID returns ErrEntityIDPatternMismatch unless entityID is a
+// valid entity ID matching reg's EntityIDPattern; for a malformed ID the error
+// carries the validator's reason.
+func checkWorkflowEntityID(reg *registration, entityID string) error {
+	matched, err := semtypes.MatchEntityIDPattern(reg.workflow.EntityIDPattern, entityID)
+	if err != nil {
+		return fmt.Errorf("%w: workflow=%q entity_id=%q pattern=%q: %s",
+			ErrEntityIDPatternMismatch, reg.workflow.Name, entityID, reg.workflow.EntityIDPattern, err.Error())
 	}
-	if pattern == id || pattern == "*" {
-		return true
+	if !matched {
+		return fmt.Errorf("%w: workflow=%q entity_id=%q pattern=%q",
+			ErrEntityIDPatternMismatch, reg.workflow.Name, entityID, reg.workflow.EntityIDPattern)
 	}
-	pParts := strings.Split(pattern, ".")
-	iParts := strings.Split(id, ".")
-	if len(pParts) != len(iParts) {
-		return false
-	}
-	for i := range pParts {
-		if pParts[i] == "*" {
-			continue
-		}
-		if pParts[i] != iParts[i] {
-			return false
-		}
-	}
-	return true
+	return nil
+}
+
+// matchesWorkflow reports whether key is one of reg's workflow's entities. A
+// malformed key is not a match: only graph-ingest writes ENTITY_STATES, and it
+// validates every ID first.
+func matchesWorkflow(reg *registration, key string) bool {
+	return checkWorkflowEntityID(reg, key) == nil
 }
 
 // AssertRuleWritable returns nil when fieldJSONName is a field on

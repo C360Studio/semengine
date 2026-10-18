@@ -612,23 +612,48 @@ var (
 // KeysByFilter returns all keys matching an exact NATS subject filter. Unlike
 // KeysByPrefix, this supports fixed-position wildcards such as
 // "*.org.platform.system.domain.type.instance" (ADR-102 canonical order).
-// A returned native watcher owns delivery until its Updates channel closes
-// (TestIntegration_KVStoreFilteredNativeDeliveryClosure); cancellation must not
-// turn a partial owner snapshot into successful keys.
+// It applies the store's operation timeout, then lists as keysByFilter does.
 func (kv *KVStore) KeysByFilter(ctx context.Context, pattern string) ([]string, error) {
 	if ctx == nil {
 		return nil, nilContextErrorOf("KVStore", "KeysByFilter")
 	}
 	ctx, cancel := kv.applyTimeout(ctx)
 	defer cancel()
+	return keysByFilter(ctx, kv.bucket, pattern)
+}
 
-	watcher, constructErr := kv.bucket.WatchFiltered(ctx, []string{pattern}, jetstream.IgnoreDeletes(), jetstream.MetaOnly())
+// FilteredKeys returns keys matching a NATS wildcard pattern from a KV reader,
+// such as a jetstream.KeyValue. The pattern should be a valid NATS subject
+// filter (e.g., "0.>" for level-0 community keys). It completes the same way
+// as KVStore.KeysByFilter, bounded by the caller's context alone. It returns
+// nil and no error when no key matches (TestIntegration_FilteredKeyListingsNoMatch).
+func FilteredKeys(ctx context.Context, kv interface {
+	WatchFiltered(ctx context.Context, keys []string, opts ...jetstream.WatchOpt) (jetstream.KeyWatcher, error)
+}, pattern string) ([]string, error) {
+	if ctx == nil {
+		return nil, nilContextErrorOf("natsclient", "FilteredKeys")
+	}
+	return keysByFilter(ctx, kv, pattern)
+}
+
+// filteredWatchReader is the one method the filtered key listing reads.
+type filteredWatchReader interface {
+	WatchFiltered(ctx context.Context, keys []string, opts ...jetstream.WatchOpt) (jetstream.KeyWatcher, error)
+}
+
+// keysByFilter is the one filtered key listing behind KeysByFilter and
+// FilteredKeys. It returns the watcher's initial snapshot, ended by its nil
+// marker, or no keys and an error. A returned native watcher owns delivery
+// until its Updates channel closes
+// (TestIntegration_KVStoreFilteredNativeDeliveryClosure); cancellation must not
+// turn a partial owner snapshot into successful keys. A match set that is
+// empty arrives as the marker alone, so it needs no error mapping
+// (TestIntegration_FilteredKeyListingsNoMatch).
+func keysByFilter(ctx context.Context, reader filteredWatchReader, pattern string) ([]string, error) {
+	watcher, constructErr := reader.WatchFiltered(ctx, []string{pattern}, jetstream.IgnoreDeletes(), jetstream.MetaOnly())
 	if watcher == nil {
 		if err := ctx.Err(); err != nil {
 			return nil, fmt.Errorf("kv keys by filter %q: %w", pattern, err)
-		}
-		if constructErr == jetstream.ErrNoKeysFound {
-			return nil, nil
 		}
 		if constructErr != nil {
 			return nil, fmt.Errorf("kv keys by filter %q: %w", pattern, constructErr)
@@ -695,54 +720,6 @@ drain:
 	return keys, nil
 }
 
-// FilteredKeys returns keys matching a NATS wildcard pattern from a KV reader.
-// The pattern should be a valid NATS subject filter (e.g., "0.>" for level-0 community keys).
-// Returns nil, nil when no keys match.
-func FilteredKeys(ctx context.Context, kv interface {
-	ListKeysFiltered(ctx context.Context, filters ...string) (jetstream.KeyLister, error)
-}, pattern string) ([]string, error) {
-	if ctx == nil {
-		return nil, nilContextErrorOf("natsclient", "FilteredKeys")
-	}
-	lister, err := kv.ListKeysFiltered(ctx, pattern)
-	if err != nil {
-		if errors.Is(err, jetstream.ErrNoKeysFound) || errors.Is(err, jetstream.ErrKeyNotFound) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("kv filtered keys %q: %w", pattern, err)
-	}
-
-	keys, err := collectFilteredKeys(ctx, lister)
-	if err != nil {
-		return nil, fmt.Errorf("kv filtered keys %q: %w", pattern, err)
-	}
-	return keys, nil
-}
-
-// collectFilteredKeys drains a NATS KeyLister without ever returning a partial
-// result as success. KeyLister has no terminal Error method: cancellation is
-// represented by channel closure, so ctx must be checked both while draining and
-// after closure.
-func collectFilteredKeys(ctx context.Context, lister jetstream.KeyLister) ([]string, error) {
-	defer func() { _ = lister.Stop() }()
-
-	var keys []string
-	for {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case key, ok := <-lister.Keys():
-			if !ok {
-				if err := ctx.Err(); err != nil {
-					return nil, err
-				}
-				return keys, nil
-			}
-			keys = append(keys, key)
-		}
-	}
-}
-
 // Watch creates a watcher for key changes
 // Note: Watch does not apply timeout as it creates a long-lived watcher
 func (kv *KVStore) Watch(ctx context.Context, pattern string) (jetstream.KeyWatcher, error) {
@@ -754,6 +731,13 @@ func (kv *KVStore) Watch(ctx context.Context, pattern string) (jetstream.KeyWatc
 		return nil, fmt.Errorf("kv watch %s: %w", pattern, err)
 	}
 	return watcher, nil
+}
+
+// IsKVTombstone reports whether an authoritative KV watch entry removes the
+// current value. NATS emits both DEL and PURGE tombstones with empty payloads;
+// neither is an entity document and both must drive identical cleanup paths.
+func IsKVTombstone(operation jetstream.KeyValueOp) bool {
+	return operation == jetstream.KeyValueDelete || operation == jetstream.KeyValuePurge
 }
 
 // Error detection helpers - based on Graph processor experience

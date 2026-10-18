@@ -46,7 +46,7 @@ func TestExactEntityReaderRefusesNilContextBeforeTransport(t *testing.T) {
 	called := false
 	requester := exactEntityRequesterFunc(func(context.Context, string, []byte, time.Duration) ([]byte, error) {
 		called = true
-		return []byte(`{"entity":{"id":"` + entityID + `","triples":[]},"kvRevision":17}`), nil
+		return []byte(`{"entity":{"id":"` + entityID + `","triples":[]},"kv_revision":17}`), nil
 	})
 	exact, err := newTestExactEntityReader(t, requester).ReadExactEntity(nilCtx, entityID)
 	if err == nil || called || exact != nil {
@@ -67,7 +67,7 @@ func TestExactEntityReaderReturnsValidatedEntityAndRevision(t *testing.T) {
 		if err := json.Unmarshal(data, &request); err != nil || request.ID != entityID {
 			t.Fatalf("request = %s, err = %v", data, err)
 		}
-		return []byte(`{"entity":{"id":"` + entityID + `","version":999,"triples":[]},"kvRevision":17}`), nil
+		return []byte(`{"entity":{"id":"` + entityID + `","version":999,"triples":[]},"kv_revision":17}`), nil
 	})
 
 	reader := newTestExactEntityReader(t, requester)
@@ -85,8 +85,8 @@ func TestExactEntityReaderReturnsValidatedEntityAndRevision(t *testing.T) {
 func TestExactEntityReaderRejectsZeroRevisionAndMismatchedEntity(t *testing.T) {
 	const entityID = "acme.ops.robotics.gcs.drone.001"
 	tests := []string{
-		`{"entity":{"id":"` + entityID + `","triples":[]},"kvRevision":0}`,
-		`{"entity":{"id":"acme.ops.robotics.gcs.drone.002","triples":[]},"kvRevision":2}`,
+		`{"entity":{"id":"` + entityID + `","triples":[]},"kv_revision":0}`,
+		`{"entity":{"id":"acme.ops.robotics.gcs.drone.002","triples":[]},"kv_revision":2}`,
 	}
 	for _, response := range tests {
 		requester := exactEntityRequesterFunc(func(context.Context, string, []byte, time.Duration) ([]byte, error) {
@@ -98,7 +98,7 @@ func TestExactEntityReaderRejectsZeroRevisionAndMismatchedEntity(t *testing.T) {
 	}
 }
 
-func newTestExactEntityReader(t *testing.T, requester exactEntityRequesterFunc) ExactEntityReader {
+func newTestExactEntityReader(t *testing.T, requester exactEntityRequesterFunc) *ExactEntityReader {
 	t.Helper()
 	reader, err := NewExactEntityReader(requester, time.Second)
 	if err != nil {
@@ -108,15 +108,15 @@ func newTestExactEntityReader(t *testing.T, requester exactEntityRequesterFunc) 
 }
 
 // A negative timeout would give every request a context that has already
-// expired, so each read would fail while the caller's context is live and count
-// against the shared client's breaker (#151). The constructor refuses it. Zero
+// expired, so each read would fail while the caller's context is live (#151).
+// The constructor refuses it. Zero
 // stays valid and reaches the requester as zero, whose own default applies (D16).
 func TestNewExactEntityReaderRefusesNegativeTimeoutAndPassesZeroThrough(t *testing.T) {
 	const entityID = "acme.ops.robotics.gcs.drone.001"
 	var timeouts []time.Duration
 	requester := exactEntityRequesterFunc(func(_ context.Context, _ string, _ []byte, timeout time.Duration) ([]byte, error) {
 		timeouts = append(timeouts, timeout)
-		return []byte(`{"entity":{"id":"` + entityID + `","triples":[]},"kvRevision":17}`), nil
+		return []byte(`{"entity":{"id":"` + entityID + `","triples":[]},"kv_revision":17}`), nil
 	})
 
 	if reader, err := NewExactEntityReader(requester, -time.Nanosecond); err == nil || reader != nil {

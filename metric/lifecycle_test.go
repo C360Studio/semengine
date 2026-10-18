@@ -22,36 +22,19 @@ import (
 // through the serveDone channel until Stop has consumed its result, and the requests its handler
 // admitted and has not returned from, with the metrics collection each one runs.
 //
-// Calls counts the external operations the Server itself performs, reported through its opHook
-// seam at each call site: the bind, the serve goroutine, Shutdown, and the force-closes of the
-// http.Server and listener. A Stop that repeats one of them is visible to the suite's no-op
-// checks.
+// The adapter reports no Calls, so the suite's no-op checks compare nil with nil.
 type serverOwner struct {
-	s     *Server
-	mu    sync.Mutex
-	calls map[string]int
+	s *Server
 }
 
 func newServerOwner(s *Server) *serverOwner {
-	o := &serverOwner{s: s, calls: map[string]int{}}
-	s.opHook = func(op string) {
-		o.mu.Lock()
-		defer o.mu.Unlock()
-		o.calls[op]++
-	}
-	return o
+	return &serverOwner{s: s}
 }
 
 func (o *serverOwner) Start(ctx context.Context) error { return o.s.Start(ctx) }
 func (o *serverOwner) Stop(ctx context.Context) error  { return o.s.Stop(ctx) }
 
 func (o *serverOwner) Observe() lifecycletest.Observation {
-	o.mu.Lock()
-	calls := make(map[string]int, len(o.calls))
-	for op, n := range o.calls {
-		calls[op] = n
-	}
-	o.mu.Unlock()
 	o.s.mu.Lock()
 	defer o.s.mu.Unlock()
 	var held []string
@@ -67,7 +50,7 @@ func (o *serverOwner) Observe() lifecycletest.Observation {
 	if o.s.requests != nil && o.s.requests.pending() > 0 {
 		held = append(held, "admitted request")
 	}
-	return lifecycletest.Observation{Unresolved: held, Calls: calls}
+	return lifecycletest.Observation{Unresolved: held}
 }
 
 // newEphemeralServer returns a Server whose Start binds an ephemeral port. NewServer maps port 0 to
@@ -231,8 +214,6 @@ func TestServerRepeatedStopWaitsForAdmittedRequest(t *testing.T) {
 		"a repeated Stop must not report completion while the admitted request's collection runs")
 	observed := owner.Observe()
 	require.Equal(t, []string{"admitted request"}, observed.Unresolved)
-	require.Equal(t, map[string]int{"serve": 1, "shutdown": 1, "close server": 1, "close listener": 1}, observed.Calls,
-		"one forced Stop's operations; the repeat performed none")
 
 	stopped := make(chan error, 1)
 	go func() { stopped <- server.Stop(t.Context()) }()

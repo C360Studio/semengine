@@ -26,6 +26,7 @@ func TestImportGraphSensitivity(t *testing.T) {
 		"pkg/engine/tc.go":                   "package engine\n\nimport tc \"github.com/testcontainers/testcontainers-go/wait\"\n\nvar _ = tc.ForLog\n",
 		"pkg/engine/t.go":                    "package engine\n\nimport \"testing\"\n\nvar _ testing.TB\n",
 		"pkg/engine/y.go":                    "//go:build tools\n\npackage engine\n\nimport \"gopkg.in/yaml.v3\"\n\nvar _ = yaml.Marshal\n",
+		"vocabulary/pack.go":                 "package vocabulary\n\nimport \"gopkg.in/yaml.v3\"\n\nvar _ = yaml.Marshal\n",
 		"pkg/engine/engine_test.go":          "package engine\n\nimport \"testing\"\n",
 		"internal/harness/probe/probe.go":    "package probe\n\nimport \"testing\"\n\nvar _ testing.TB\n",
 		"pkg/clean/clean.go":                 "package clean\n\nimport \"context\"\n\nvar _ context.Context\n",
@@ -38,7 +39,7 @@ func TestImportGraphSensitivity(t *testing.T) {
 	requireViolation(t, v, "pkg/engine/y.go", "gopkg.in/yaml.v3")
 	requireViolation(t, v, "internal/harnessish/not_harness.go", `"testing"`)
 	for _, line := range v {
-		for _, allowed := range []string{"engine_test.go", "internal/harness/probe", "pkg/clean"} {
+		for _, allowed := range []string{"engine_test.go", "internal/harness/probe", "pkg/clean", "vocabulary/pack.go"} {
 			if strings.Contains(line, allowed) {
 				t.Errorf("violation reported for an allowed file: %s", line)
 			}
@@ -76,8 +77,12 @@ func TestImportGraphRejectsHarnessHelpersOutsideTheHarness(t *testing.T) {
 }
 
 // forbiddenInProduction names what a non-test file outside internal/harness may not import: the
-// harness itself and the test libraries it is built from.
-func forbiddenInProduction(path string) bool {
+// harness itself and the test libraries it is built from. vocabulary/pack.go is the one production
+// file permitted to import gopkg.in/yaml.v3 to decode declarative YAML vocabulary packs (#234).
+func forbiddenInProduction(file, path string) bool {
+	if path == "gopkg.in/yaml.v3" && file == "vocabulary/pack.go" {
+		return false
+	}
 	for _, prefix := range []string{
 		"github.com/c360studio/semengine/internal/harness",
 		"github.com/testcontainers/testcontainers-go",
@@ -109,7 +114,7 @@ func importViolations(t *testing.T, root string, files []string) []string {
 		}
 		for _, imp := range file.Imports {
 			path, _ := strconv.Unquote(imp.Path.Value)
-			if forbiddenInProduction(path) {
+			if forbiddenInProduction(name, path) {
 				violations = append(violations, fmt.Sprintf("%s:%d: production file imports %q",
 					name, fset.Position(imp.Pos()).Line, path))
 			}

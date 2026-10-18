@@ -22,7 +22,9 @@ type requester interface {
 type TransportOutcome string
 
 const (
-	// TransportUnavailable proves that no mutation responder accepted the request.
+	// TransportUnavailable proves that no request was sent, or no responder took it:
+	// natsclient refused it before sending (ErrNotConnected), or no
+	// mutation responder accepted it.
 	TransportUnavailable TransportOutcome = "unavailable"
 	// TransportDeadline proves the context ended before request delivery.
 	TransportDeadline TransportOutcome = "deadline"
@@ -53,7 +55,8 @@ func (e *TransportError) Unwrap() error {
 }
 
 // IsDefinitelyNotCommitted reports transport outcomes that prove no request
-// was delivered: no responder, or a context already done before the call.
+// was delivered: no request was sent, or no responder took it, or the context
+// was already done before the call.
 func IsDefinitelyNotCommitted(err error) bool {
 	var transport *TransportError
 	return errors.As(err, &transport) &&
@@ -78,13 +81,17 @@ func NewClient(requester requester, timeout time.Duration) (*Client, error) {
 	return &Client{requester: requester, timeout: timeout}, nil
 }
 
-// Create performs one atomic entity birth request.
-func (c *Client) Create(ctx context.Context, request graph.CreateEntityRequest) (*graph.CreateEntityResponse, error) {
-	var response graph.CreateEntityResponse
+// Create performs one atomic entity birth request. A request without an
+// entity is refused before sending.
+func (c *Client) Create(ctx context.Context, request graph.CreateEntityRequest) (*graph.EntityMutationResponse, error) {
+	if request.Entity == nil {
+		return nil, invalidRequest(errors.New("graph mutation create requires an entity"))
+	}
+	var response graph.EntityMutationResponse
 	if err := c.request(ctx, CreateEntity, request, &response); err != nil {
 		return nil, err
 	}
-	if response.Outcome != graph.MutationApplied || request.Entity == nil || response.Entity == nil ||
+	if response.Outcome != graph.MutationApplied || response.Entity == nil ||
 		response.Entity.ID != request.Entity.ID || response.KVRevision == 0 {
 		return nil, unknownReply(CreateEntity, errors.New("invalid create response"))
 	}
@@ -95,8 +102,8 @@ func (c *Client) Create(ctx context.Context, request graph.CreateEntityRequest) 
 func (c *Client) Reconcile(
 	ctx context.Context,
 	request graph.ReconcilePredicatesRequest,
-) (*graph.ReconcilePredicatesResponse, error) {
-	var response graph.ReconcilePredicatesResponse
+) (*graph.EntityMutationResponse, error) {
+	var response graph.EntityMutationResponse
 	if err := c.request(ctx, ReconcilePredicates, request, &response); err != nil {
 		return nil, err
 	}
@@ -132,23 +139,25 @@ func (c *Client) Delete(ctx context.Context, request graph.DeleteEntityRequest) 
 	return &response, nil
 }
 
+// request sends one request. Its own refusals come before sending and are
+// invalid with code invalid_request, so callers read them as not committed.
 func (c *Client) request(ctx context.Context, operation Operation, request any, response any) error {
 	if c == nil || c.requester == nil {
-		return errors.New("graph mutation client is not initialized")
+		return invalidRequest(errors.New("graph mutation client is not initialized"))
 	}
 	if ctx == nil {
-		return errors.New("graph mutation context is required")
+		return invalidRequest(errors.New("graph mutation context is required"))
 	}
 	if err := ctx.Err(); err != nil {
 		return &TransportError{Operation: operation, Outcome: TransportDeadline, Err: err}
 	}
-	subject, err := ResolveSubject(SubjectFamily, operation)
+	subject, err := Subject(operation)
 	if err != nil {
-		return err
+		return invalidRequest(err)
 	}
 	payload, err := json.Marshal(request)
 	if err != nil {
-		return fmt.Errorf("marshal graph mutation %s: %w", operation, err)
+		return invalidRequest(fmt.Errorf("marshal graph mutation %s: %w", operation, err))
 	}
 	reply, err := c.requester.RequestClassified(ctx, subject, payload, c.timeout)
 	if err != nil {
@@ -156,7 +165,9 @@ func (c *Client) request(ctx context.Context, operation Operation, request any, 
 		if errors.As(err, &classified) {
 			return fmt.Errorf("graph mutation %s rejected: %w", operation, err)
 		}
-		if natsclient.IsNoResponders(err) {
+		// natsclient returns ErrNotConnected only before its one send
+		// (RequestWithHeaders), so nothing reached graph-ingest.
+		if natsclient.IsNoResponders(err) || errors.Is(err, natsclient.ErrNotConnected) {
 			return &TransportError{Operation: operation, Outcome: TransportUnavailable, Err: err}
 		}
 		return &TransportError{Operation: operation, Outcome: TransportCommitUnknown, Err: err}
@@ -165,6 +176,10 @@ func (c *Client) request(ctx context.Context, operation Operation, request any, 
 		return unknownReply(operation, fmt.Errorf("decode response: %w", err))
 	}
 	return nil
+}
+
+func invalidRequest(err error) error {
+	return errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeInvalidRequest, err)
 }
 
 func unknownReply(operation Operation, err error) error {

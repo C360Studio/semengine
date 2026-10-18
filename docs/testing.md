@@ -85,22 +85,27 @@ start beside the tests. To see what is left on your machine:
 docker ps -a --filter label=org.c360studio.semengine.test
 ```
 
+How a package shares one NATS container across its tests, when a test takes its own server, and how container cleanup
+works are in [`docs/test-infrastructure.md`](test-infrastructure.md).
+
 ### Helper packages
 
 The packages under `internal/harness/` are test-only; a contract test refuses any import of them from production code.
 
-- `natsfixture` gives one test one disposable NATS server with JetStream in a container. `New(t)` registers cleanup;
-  `Start(ctx)` returns only once JetStream answers. Each test has its own server, so streams and buckets can take
-  plain literal names. The fixture creates streams, buckets and consumers for you and records each one. `Stop`
-  returns nil only after it has seen every owned resource, the connection and the container gone. The image is the
-  one line in `internal/harness/natsfixture/nats-image`, named by its digest; the fixture refuses a line without one.
-  To try another image, edit that line in a branch.
-- `natsfixture.Restart(ctx)` stops and starts the same container, so a file-backed stream keeps its messages and a
-  memory-backed one does not. The fixture gives Docker the host port, so `URL()` is the same after a `Restart`, but
-  every connection to the container is lost, and `JetStream()` is valid only until the next `Restart`. Stop whatever
-  you built on the fixture (a client, a consumer) before calling `Restart`, and start it again from `URL()`
-  afterwards. `Restart` first ends every consumer the fixture's `Consume` created and waits for its handlers, so
-  never call it from inside a `Consume` handler. Handles taken from the old connection are dead afterwards.
+- `natsfixture` runs a NATS server with JetStream in a container; see
+  [`docs/test-infrastructure.md`](test-infrastructure.md). Each package declares a `Shared` server and stops it in
+  `TestMain`; each test calls `shared.Reset(t)` to get the server's address on an emptied account with no leftover
+  stream, consumer, stored byte or connection, and `Open(t, url, openFn)` closes the test's value before the reset's
+  cleanup checks that no client connection remains. A test that restarts or stops the server, or needs its own server
+  setting, calls `New(t)` with a `// Own server: <reason>` line above it and starts the server with `Start(ctx)`.
+  `CreateStream(ctx, js, cfg)` creates a stream with test defaults. `Stop` closes the fixture's connection and removes
+  the container. The image is the one line in `internal/harness/natsfixture/nats-image`, named by its digest; the
+  fixture refuses a line without one. To try another image, edit that line in a branch.
+- `natsfixture.Restart(ctx)` stops and starts the same container on a fixture from `New(t)`, so a file-backed stream
+  keeps its messages and a memory-backed one does not. The fixture gives Docker the host port, so `URL()` is the same
+  after a `Restart`, but every connection to the container is lost, and `JetStream()` is valid only until the next
+  `Restart`. Stop whatever you built on the fixture before calling `Restart`, and start it again from `URL()`
+  afterwards. Handles taken from the old connection are dead afterwards.
 - `natsfixture.FaultKV` wraps a real key-value bucket so a write fails on demand. `FailBefore(op, err)` returns
   `err` without calling the server, so nothing is written. `FailAfter(op, err)` makes the real write and then returns
   `err`, the case where the server applied the write but the caller saw an error. `op` is one of `KVPut` (which
@@ -110,8 +115,11 @@ The packages under `internal/harness/` are test-only; a contract test refuses an
   test binary: register each one with `prochost.Helper(name, fn)` inside a `TestHelperProcess` function, and
   `prochost.Start(t, name)` re-runs the test binary with a marker that selects it. In a normal test run every
   `Helper` call returns at once. The child runs in its own process group, its output goes to files, and the test's
-  cleanup kills and reaps it. A helper that must stay up waits for SIGTERM (`signal.Notify`, then receive), never on
-  a bare `select {}`: Go's deadlock detector kills a process whose goroutines are all blocked.
+  cleanup kills and reaps it. A helper also ends when its test process ends without running cleanups (killed,
+  interrupted, crashed), so a killed run leaves no helper behind (#208). A helper's standard input is reserved for
+  that, so a helper function must not read it, and a helper paused with `Pause` is not promised to end until it is
+  resumed. A helper that must stay up waits for SIGTERM (`signal.Notify`, then receive) and never parks on a bare
+  `select {}`, which the repository refuses.
 - `probe` lets a test observe what a component did instead of guessing from timing. `Callback` exposes entered and
   joined channels and a `Release` method for a blocked callback; `ObservedContext` signals when code first checks
   `ctx.Done()`; `Await` polls under your context and, on timeout, reports the last value and last error it saw.
@@ -481,10 +489,12 @@ including those.
 - Bound cleanup. The test's context is already cancelled when `t.Cleanup` functions run, so cleanup needs its own
   context, and it must have a deadline: `context.WithTimeout(context.Background(), budget)`. `task cleanup-roots:check`
   fails any test that calls `Stop`, `Close` or `Terminate` with a bare `context.Background()` or `context.TODO()`.
-- Use ephemeral ports. Listen on `127.0.0.1:0` and read back the port; reach the NATS fixture through `f.URL()`.
-  `task lint` and a contract test refuse fixed `net.Listen` ports and fixed broker addresses in tests.
+- Use ephemeral ports. Listen on `127.0.0.1:0` and read back the port; reach the NATS fixture through
+  `shared.Reset(t)` or `f.URL()`. `task lint` and a contract test refuse fixed `net.Listen` ports and fixed broker
+  addresses in tests.
 - Keep tests independent. A test must not depend on another test's stream, bucket, file or goroutine, and must be
-  safe to run after a failure. Do not use `t.Parallel()` in tests that change process-wide state.
+  safe to run after a failure. Do not use `t.Parallel()` in integration-tagged files or in tests that change
+  process-wide state.
 - Check that a child process is alive before inspecting it. A test that looks at another process (with `ps`, a
   signal, or its output) first confirms the process is still running, so a child that died early fails with that
   cause named instead of a misleading error. In `internal/harness/prochost`, a helper process parked on a bare
@@ -587,10 +597,10 @@ What the repository enforces today:
 
 When a test waits on asynchronous or external state and fails, its message should name the condition, the elapsed
 time, the attempts, the last value seen and the last error. `probe.Await` reports all of those except the condition;
-name the condition yourself when you report its error. The NATS fixture writes a failed start attempt's container log
-to the test output, and a cleanup `Stop` that fails names what the fixture still held. A `prochost` helper's output
-goes to files in the test's temporary directory and is written to the test output when the test fails. A test that
-uses randomness prints its seed.
+name the condition yourself when you report its error. The NATS fixture writes a failed start's container log to the
+test output, and a cleanup `Stop` that fails reports the connection-close or container-removal error. A `prochost`
+helper's output goes to files in the test's temporary directory and is written to the test output when the test fails.
+A test that uses randomness prints its seed.
 
 ## What the pull request records
 

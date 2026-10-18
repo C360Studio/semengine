@@ -4,18 +4,21 @@
 // is built. The child runs in its own process group with stdout and stderr in files under the test's
 // temporary directory, and the test can signal, pause, resume, kill and wait for it. No helper
 // outlives its test: Start registers a cleanup that kills the group, joins the child and, when the
-// test has failed, writes the child's output to the test log. Test-only: contract test T-B1 refuses
-// any production import.
+// test has failed, writes the child's output to the test log. A helper also ends when its test
+// process ends without that cleanup (killed, interrupted, crashed); #208 is the failure this code
+// exists for (see Helper). A helper's stdin is reserved for this, and a helper stopped by Pause is
+// not promised to end until it is resumed. Test-only: contract test T-B1 refuses any production
+// import.
 //
-// A helper that must stay up parks on a signal (signal.Notify for SIGTERM, then receive), never on
-// a bare select{}. The child runs with only -test.run, so no test-timeout timer keeps the runtime
-// waiting: once every goroutine blocks, Go kills it with "all goroutines are asleep" and exit 2.
+// A helper that must stay up waits for SIGTERM (signal.Notify, then receive), never on a bare
+// select{}: the repository refuses one, and SIGTERM is how a test ends a helper cleanly.
 package prochost
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -38,10 +41,24 @@ const (
 // Helper runs fn and exits the process when the environment marker names this helper, and
 // otherwise returns at once. Call it from the test binary's TestHelperProcess, once per helper;
 // in a normal test run every call is a no-op.
+//
+// While fn runs, the helper watches its stdin, the pipe Start holds the write end of. A test
+// process that ends without its cleanups (killed, interrupted, os.Exit, a panic off the test
+// goroutine) leaves nothing to stop its helpers; the kernel closes the pipe whichever way it
+// ended, so the helper reads end-of-file, says so on stderr and exits 1 (#208). fn must not read
+// stdin.
 func Helper(name string, fn func()) {
 	if name == "" || os.Getenv(markerEnv) != name {
 		return
 	}
+	go func() {
+		how := "stdin reached end-of-file"
+		if _, err := io.Copy(io.Discard, os.Stdin); err != nil {
+			how = "reading stdin: " + err.Error()
+		}
+		fmt.Fprintf(os.Stderr, "prochost: helper %s exiting: test process ended (%s)\n", name, how)
+		os.Exit(1)
+	}()
 	fn()
 	os.Exit(0)
 }
@@ -89,6 +106,12 @@ func Start(t testing.TB, name string, env ...string) (*Process, error) {
 	cmd.Env = append(append(os.Environ(), env...), markerEnv+"="+name)
 	cmd.Stdout, cmd.Stderr = stdout, stderr // files, so Wait copies nothing
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	// The helper exits when this pipe reaches end-of-file (see Helper). cmd keeps the write end
+	// open, and the reaper holds cmd until the child has exited, so the end closes only when the
+	// helper is gone or this process is.
+	if _, err := cmd.StdinPipe(); err != nil {
+		return nil, fmt.Errorf("prochost: stdin pipe for helper %s: %w", name, err)
+	}
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("prochost: start helper %s: %w", name, err)
 	}

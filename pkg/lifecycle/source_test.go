@@ -37,6 +37,7 @@ func TestManagerWritesUnderTheLifecycleSource(t *testing.T) {
 	const attached = "c360.platform1.gcs.lifecycle.mission.source-attached"
 	bucket.put(attached, &graph.EntityState{ID: attached, Triples: []message.Triple{{
 		Subject: attached, Predicate: "mission.identity.owner-org-id", Object: "acme", Source: "another-producer",
+		Timestamp: fixtureTime,
 	}}})
 	if err := mgr.Create(ctx, &fixtureMission{ID: attached, PhaseF: "planning"}); err != nil {
 		t.Fatalf("Create on an existing entity: %v", err)

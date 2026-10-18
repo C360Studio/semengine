@@ -113,7 +113,6 @@ func TestIntegration_TypedClientPreservesCommitAmbiguity(t *testing.T) {
 		Metadata: projection.MutationMetadata{RequestID: "create-ambiguous", Source: fixtureSource, Timestamp: fixtureTime},
 	})
 	require.NoError(t, err)
-	require.Equal(t, projection.CommitVerified, created.Commit)
 
 	reconcile := func(object string, at time.Time) (projection.MutationReceipt, error) {
 		return mutations.Reconcile(ctx, projection.ReconcileMutation{
@@ -127,29 +126,29 @@ func TestIntegration_TypedClientPreservesCommitAmbiguity(t *testing.T) {
 	// sees nats.ErrTimeout in place of the bucket's reply.
 	bucket.FailAfter(natsfixture.KVUpdate, nats.ErrTimeout)
 	receipt, err := reconcile("unconfirmed", fixtureTime.Add(time.Minute))
-	require.Equal(t, projection.CommitUnknown, receipt.Commit, "receipt of an update the server did not confirm")
+	require.Equal(t, projection.MutationReceipt{}, receipt, "receipt of an update the server did not confirm")
 	var mutationErr *projection.MutationError
 	require.ErrorAs(t, err, &mutationErr)
 	assert.Equal(t, projection.MutationCommitUnknown, mutationErr.Kind)
 	assert.Equal(t, projection.CommitUnknown, mutationErr.Commit)
-	assert.Equal(t, errs.ErrorTransient, mutationErr.Class)
+	assert.Equal(t, errs.ErrorFatal, mutationErr.Class, "a write that may have committed is never retryable")
 	assert.Equal(t, graph.ErrorCodeInternal, mutationErr.Code)
 	var classified *errs.ClassifiedError
-	require.ErrorAs(t, err, &classified, "the reply's classification stays on the error")
-	assert.Equal(t, errs.ErrorTransient, classified.Class)
+	require.ErrorAs(t, err, &classified, "the error reads fatal with the reply's code")
+	assert.Equal(t, errs.ErrorFatal, classified.Class)
 	assert.Equal(t, graph.ErrorCodeInternal, classified.Code)
 	assert.Equal(t, 1, bucket.Calls()[natsfixture.KVUpdate], "the update reached the real bucket once")
 	applied, err := entityStates.Get(ctx, id)
 	require.NoError(t, err)
 	assert.Greater(t, applied.Revision(), created.KVRevision, "the fault let the write stand")
-	assert.Equal(t, "unconfirmed", stateValue(t, applied.Value()))
+	assert.Equal(t, "unconfirmed", stateValue(t, id, applied.Value()))
 
 	bucket.FailAfter(natsfixture.KVUpdate, nil)
 
 	// Revision conflict: the bucket refuses the update, so nothing of this request is stored.
 	bucket.writeAheadOfNextUpdate()
 	receipt, err = reconcile("conflicted", fixtureTime.Add(2*time.Minute))
-	assert.Equal(t, projection.CommitNotCommitted, receipt.Commit)
+	assert.Equal(t, projection.MutationReceipt{}, receipt)
 	require.ErrorAs(t, err, &mutationErr)
 	assert.Equal(t, projection.MutationRevisionConflict, mutationErr.Kind)
 	assert.Equal(t, projection.CommitNotCommitted, mutationErr.Commit)
@@ -158,14 +157,14 @@ func TestIntegration_TypedClientPreservesCommitAmbiguity(t *testing.T) {
 	refused, err := entityStates.Get(ctx, id)
 	require.NoError(t, err)
 	assert.Equal(t, applied.Revision()+1, refused.Revision(), "only the foreign write moved the revision")
-	assert.Equal(t, "unconfirmed", stateValue(t, refused.Value()))
+	assert.Equal(t, "unconfirmed", stateValue(t, id, refused.Value()))
 
 	// Entity not found: graph-ingest refuses the delete before any write.
 	receipt, err = mutations.Delete(ctx, projection.DeleteMutation{
 		EntityID: "c360.test.mutation.system.widget.absent", ExpectedRevision: 1,
 		Metadata: projection.MutationMetadata{RequestID: "delete-absent"},
 	})
-	assert.Equal(t, projection.CommitNotCommitted, receipt.Commit)
+	assert.Equal(t, projection.MutationReceipt{}, receipt)
 	require.ErrorAs(t, err, &mutationErr)
 	assert.Equal(t, projection.MutationNotFound, mutationErr.Kind)
 	assert.Equal(t, projection.CommitNotCommitted, mutationErr.Commit)
@@ -221,7 +220,6 @@ func TestIntegration_OversizedResponseAfterCommitIsCommitUnknown(t *testing.T) {
 		Metadata: projection.MutationMetadata{RequestID: "create-oversized", Source: fixtureSource, Timestamp: fixtureTime},
 	})
 	require.NoError(t, err)
-	require.Equal(t, projection.CommitVerified, created.Commit)
 
 	// The request fits under the payload limit; the response adds the stored 8 KiB identity
 	// statement to the echoed RequestID and crosses it. Desired is empty, so the reconcile clears
@@ -239,17 +237,17 @@ func TestIntegration_OversizedResponseAfterCommitIsCommitUnknown(t *testing.T) {
 	stored, getErr := entityStates.Get(ctx, id)
 	require.NoError(t, getErr)
 	require.Greater(t, stored.Revision(), created.KVRevision, "the reconcile's write stands")
-	for _, triple := range decodeEntity(t, stored.Value()).Triples {
+	for _, triple := range decodeEntity(t, id, stored.Value()).Triples {
 		require.NotEqual(t, "test.state.value", triple.Predicate, "the reconcile cleared the state statement")
 	}
 	require.Less(t, len(stored.Value()), maxPayload/2, "the echoed RequestID, not the stored value, crosses the limit")
 
 	var mutationErr *projection.MutationError
 	require.ErrorAs(t, err, &mutationErr)
-	assert.Equal(t, errs.ErrorInvalid, mutationErr.Class, "natsclient's reply in place of the oversized response")
+	assert.Equal(t, errs.ErrorFatal, mutationErr.Class, "a reconcile that committed is never retryable")
 	// natsclient's own code (errorCodeResponseTooLarge), spelled as the wire carries it.
 	assert.Equal(t, "response_too_large", mutationErr.Code)
-	assert.Equal(t, projection.CommitUnknown, receipt.Commit, "receipt of a reconcile that committed")
+	assert.Equal(t, projection.MutationReceipt{}, receipt, "receipt of a reconcile that committed")
 	assert.Equal(t, projection.CommitUnknown, mutationErr.Commit)
 	assert.Equal(t, projection.MutationCommitUnknown, mutationErr.Kind)
 }
@@ -350,13 +348,12 @@ func TestIntegration_AppendAfterUnconfirmedWriteIsCommitUnknown(t *testing.T) {
 				NATS: client, Contracts: []projection.Contract{contract}, Timeout: wireRequestTimeout,
 			})
 			require.NoError(t, err)
-			created, err := mutations.Create(ctx, projection.CreateMutation{
+			_, err = mutations.Create(ctx, projection.CreateMutation{
 				Contract: contract.Name, Entity: &graph.EntityState{ID: id},
 				Triples:  []message.Triple{{Subject: id, Predicate: "test.identity.name", Object: "widget"}},
 				Metadata: projection.MutationMetadata{RequestID: "create-unconfirmed", Source: fixtureSource, Timestamp: fixtureTime},
 			})
 			require.NoError(t, err)
-			require.Equal(t, projection.CommitVerified, created.Commit)
 
 			bucket.armed.Store(true)
 			receipt, err := mutations.Append(ctx, projection.AppendMutation{
@@ -367,29 +364,29 @@ func TestIntegration_AppendAfterUnconfirmedWriteIsCommitUnknown(t *testing.T) {
 
 			written := bucket.stored()
 			require.NotNil(t, written, "the append's update must be stored, and the other writer's change made, before the reply is lost")
-			assert.True(t, slices.ContainsFunc(decodeEntity(t, written).Triples, func(triple message.Triple) bool {
+			assert.True(t, slices.ContainsFunc(decodeEntity(t, id, written).Triples, func(triple message.Triple) bool {
 				return triple.Predicate == "test.event.seen" && triple.Object == "unconfirmed-event"
 			}), "the stored update holds the appended statement")
 
-			assert.Equal(t, projection.CommitUnknown, receipt.Commit, "receipt of an append whose write stood")
+			assert.Equal(t, projection.MutationReceipt{}, receipt, "receipt of an append whose write stood")
 			var mutationErr *projection.MutationError
 			require.ErrorAs(t, err, &mutationErr)
-			t.Logf("receipt %s; kind %s, class %s, code %q: %v",
-				receipt.Commit, mutationErr.Kind, mutationErr.Class, mutationErr.Code, err)
+			t.Logf("commit %s; kind %s, class %s, code %q: %v",
+				mutationErr.Commit, mutationErr.Kind, mutationErr.Class, mutationErr.Code, err)
 			assert.Equal(t, projection.MutationCommitUnknown, mutationErr.Kind)
 			assert.Equal(t, projection.CommitUnknown, mutationErr.Commit)
 			var classified *errs.ClassifiedError
-			require.ErrorAs(t, err, &classified, "the reply's classification stays on the error")
-			assert.Equal(t, errs.ErrorTransient, classified.Class)
+			require.ErrorAs(t, err, &classified, "the error reads fatal with the reply's code")
+			assert.Equal(t, errs.ErrorFatal, classified.Class)
 			assert.Equal(t, graph.ErrorCodeInternal, classified.Code)
 		})
 	}
 }
 
 // stateValue is the object of the one test.state.value statement in a stored entity.
-func stateValue(t *testing.T, stored []byte) any {
+func stateValue(t *testing.T, key string, stored []byte) any {
 	t.Helper()
-	entity := decodeEntity(t, stored)
+	entity := decodeEntity(t, key, stored)
 	var objects []any
 	for _, triple := range entity.Triples {
 		if triple.Predicate == "test.state.value" {

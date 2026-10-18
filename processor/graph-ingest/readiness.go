@@ -7,13 +7,14 @@ import (
 	"time"
 
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/graph/kvcatalog"
 	"github.com/c360studio/semengine/graph/readiness"
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
 // statusMetricsInterval is graph-ingest's readiness heartbeat. It matches the
 // framework default so every producer's freshness window is the same constant
-// (readiness.FreshnessMultiplier heartbeats).
+// (three heartbeats, graph/readiness's freshness window).
 const statusMetricsInterval = readiness.DefaultHeartbeat
 
 // boundConsumer identifies one durable consumer this component bound, so the status
@@ -325,9 +326,6 @@ func (c *Component) recordApplied(deliveredAt time.Time) {
 // the recovery path, and consumers already fail closed after three missed heartbeats,
 // so the correct behavior is to leave evidence and keep ticking.
 func (c *Component) publishReadinessStatus(ctx context.Context, status graph.IndexStatusResponse) {
-	if c.statusPublisher == nil {
-		return
-	}
 	if err := c.statusPublisher.Publish(ctx, status); err != nil {
 		if ctx.Err() != nil {
 			// Shutdown, not a failure: Stop cancels mid-Put on the way out.
@@ -337,7 +335,7 @@ func (c *Component) publishReadinessStatus(ctx context.Context, status graph.Ind
 			c.readinessGauges.RecordPublishFailure()
 		}
 		c.logger.Warn("readiness status publish failed",
-			slog.String("bucket", readiness.BucketGraphStatus),
+			slog.String("bucket", graph.BucketGraphStatus),
 			slog.String("key", c.statusPublisher.Key()),
 			slog.Any("error", err))
 	}
@@ -348,14 +346,18 @@ func (c *Component) publishReadinessStatus(ctx context.Context, status graph.Ind
 // would be indistinguishable on the wire from one that is merely absent, and
 // consumers would defer forever with no way to tell why.
 func (c *Component) createStatusBucket(ctx context.Context) error {
-	bucket, err := readiness.EnsureBucket(ctx, c.natsClient)
+	bucket, err := kvcatalog.EnsureCatalogBucket(ctx, c.natsClient, graph.BucketGraphStatus)
 	if err != nil {
 		if ctx.Err() != nil {
 			return errs.Wrap(ctx.Err(), "Component", "createStatusBucket", "context cancelled")
 		}
 		return errs.Wrap(err, "Component", "createStatusBucket",
-			"KV bucket: "+readiness.BucketGraphStatus)
+			"KV bucket: "+graph.BucketGraphStatus)
 	}
-	c.statusPublisher = readiness.NewPublisher(bucket, readiness.KeyGraphIngest)
+	publisher, err := readiness.NewPublisher(bucket, readiness.KeyGraphIngest)
+	if err != nil {
+		return errs.Wrap(err, "Component", "createStatusBucket", "readiness publisher")
+	}
+	c.statusPublisher = publisher
 	return nil
 }

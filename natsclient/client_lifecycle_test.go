@@ -79,9 +79,6 @@ func (o *clientOwner) Observe() lifecycletest.Observation {
 	if c.lossTimer != nil {
 		held = append(held, "connection-loss timer armed")
 	}
-	if c.circuitTimer != nil {
-		held = append(held, "circuit-test timer armed")
-	}
 	c.timersMu.Unlock()
 	c.internalClaimsMu.Lock()
 	if len(c.internalClaims) > 0 {
@@ -418,39 +415,6 @@ func TestClientCloseDropsLateDisconnect(t *testing.T) {
 		synctest.Wait()
 		require.Equal(t, int32(1), fired.Load(), "a callback ran after Close began")
 		require.Empty(t, owner.Observe().Unresolved)
-	})
-}
-
-// TestClientCloseStopsCircuitTimer: Close stops a pending circuit-test timer (design D3, the
-// timers Close closes), so testCircuit never runs once Close has returned.
-func TestClientCloseStopsCircuitTimer(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		h := newRecordingHandler("")
-		c, err := NewClient("nats://unused", WithLogger(slog.New(h)))
-		require.NoError(t, err)
-		owner := newClientOwner(c)
-		for range c.circuitThreshold {
-			c.recordFailure()
-		}
-		require.Equal(t, StatusCircuitOpen, c.Status())
-
-		require.NoError(t, c.Close(t.Context()))
-		require.Empty(t, owner.Observe().Unresolved)
-
-		// Once Close has begun, arming the circuit timer is refused, and a timer that fired is
-		// refused before its test runs; both drops are logged. (Failures recorded after Close no
-		// longer open the circuit: TestClientFailuresAfterCloseLeaveStatusDisconnected.)
-		c.armCircuitTimer(time.Second)
-		require.Empty(t, owner.Observe().Unresolved, "a circuit timer armed after Close")
-		c.circuitTimerFired(func() bool { return false })
-		require.Empty(t, owner.Observe().Unresolved, "a circuit timer that fired after Close was counted")
-		require.Len(t, h.droppedWork("circuit-test timer"), 2, "the dropped arm and timer body were not both logged")
-
-		<-time.After(time.Hour)
-		synctest.Wait()
-		require.Empty(t, h.find(func(r loggedRecord) bool {
-			return r.msg == "Testing circuit breaker - attempting to close circuit"
-		}), "the circuit test ran after Close returned")
 	})
 }
 

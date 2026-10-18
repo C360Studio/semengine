@@ -392,7 +392,7 @@ func generateTestCertWithCN(t *testing.T, cn string) (certPEM, keyPEM []byte) {
 	return certPEM, keyPEM
 }
 
-func TestLoadServerTLSConfigWithMTLS_Disabled(t *testing.T) {
+func TestLoadServerTLSConfig_MTLSDisabled(t *testing.T) {
 	certFile, keyFile, _, cleanup := setupTestFiles(t)
 	defer cleanup()
 
@@ -406,7 +406,8 @@ func TestLoadServerTLSConfigWithMTLS_Disabled(t *testing.T) {
 		Enabled: false,
 	}
 
-	tlsCfg, err := LoadServerTLSConfigWithMTLS(serverCfg, mtlsCfg)
+	serverCfg.MTLS = mtlsCfg
+	tlsCfg, err := LoadServerTLSConfig(serverCfg)
 	require.NoError(t, err)
 	require.NotNil(t, tlsCfg)
 
@@ -415,7 +416,7 @@ func TestLoadServerTLSConfigWithMTLS_Disabled(t *testing.T) {
 	assert.Nil(t, tlsCfg.ClientCAs)
 }
 
-func TestLoadServerTLSConfigWithMTLS_ClientCertRequiredByDefault(t *testing.T) {
+func TestLoadServerTLSConfig_MTLSClientCertRequiredByDefault(t *testing.T) {
 	certFile, keyFile, caFile, cleanup := setupTestFiles(t)
 	defer cleanup()
 
@@ -430,7 +431,8 @@ func TestLoadServerTLSConfigWithMTLS_ClientCertRequiredByDefault(t *testing.T) {
 		ClientCAFiles: []string{caFile},
 	}
 
-	tlsCfg, err := LoadServerTLSConfigWithMTLS(serverCfg, mtlsCfg)
+	serverCfg.MTLS = mtlsCfg
+	tlsCfg, err := LoadServerTLSConfig(serverCfg)
 	require.NoError(t, err)
 	require.NotNil(t, tlsCfg)
 
@@ -439,7 +441,7 @@ func TestLoadServerTLSConfigWithMTLS_ClientCertRequiredByDefault(t *testing.T) {
 	assert.NotNil(t, tlsCfg.ClientCAs)
 }
 
-func TestLoadServerTLSConfigWithMTLS_OptionalClientCert(t *testing.T) {
+func TestLoadServerTLSConfig_MTLSOptionalClientCert(t *testing.T) {
 	certFile, keyFile, caFile, cleanup := setupTestFiles(t)
 	defer cleanup()
 
@@ -455,7 +457,8 @@ func TestLoadServerTLSConfigWithMTLS_OptionalClientCert(t *testing.T) {
 		ClientCertOptional: true,
 	}
 
-	tlsCfg, err := LoadServerTLSConfigWithMTLS(serverCfg, mtlsCfg)
+	serverCfg.MTLS = mtlsCfg
+	tlsCfg, err := LoadServerTLSConfig(serverCfg)
 	require.NoError(t, err)
 	require.NotNil(t, tlsCfg)
 
@@ -464,7 +467,7 @@ func TestLoadServerTLSConfigWithMTLS_OptionalClientCert(t *testing.T) {
 	assert.NotNil(t, tlsCfg.ClientCAs)
 }
 
-func TestLoadServerTLSConfigWithMTLS_WithCNWhitelist(t *testing.T) {
+func TestLoadServerTLSConfig_MTLSWithCNWhitelist(t *testing.T) {
 	certFile, keyFile, caFile, cleanup := setupTestFiles(t)
 	defer cleanup()
 
@@ -480,7 +483,8 @@ func TestLoadServerTLSConfigWithMTLS_WithCNWhitelist(t *testing.T) {
 		AllowedClientCNs: []string{"allowed-client", "another-client"},
 	}
 
-	tlsCfg, err := LoadServerTLSConfigWithMTLS(serverCfg, mtlsCfg)
+	serverCfg.MTLS = mtlsCfg
+	tlsCfg, err := LoadServerTLSConfig(serverCfg)
 	require.NoError(t, err)
 	require.NotNil(t, tlsCfg)
 
@@ -488,7 +492,7 @@ func TestLoadServerTLSConfigWithMTLS_WithCNWhitelist(t *testing.T) {
 	assert.NotNil(t, tlsCfg.VerifyPeerCertificate)
 }
 
-func TestLoadServerTLSConfigWithMTLS_MissingClientCA(t *testing.T) {
+func TestLoadServerTLSConfig_MTLSMissingClientCA(t *testing.T) {
 	certFile, keyFile, _, cleanup := setupTestFiles(t)
 	defer cleanup()
 
@@ -503,7 +507,8 @@ func TestLoadServerTLSConfigWithMTLS_MissingClientCA(t *testing.T) {
 		ClientCAFiles: []string{"/nonexistent/ca.pem"},
 	}
 
-	_, err := LoadServerTLSConfigWithMTLS(serverCfg, mtlsCfg)
+	serverCfg.MTLS = mtlsCfg
+	_, err := LoadServerTLSConfig(serverCfg)
 	require.Error(t, err)
 }
 
@@ -561,7 +566,7 @@ func TestVerifyAllowedClientCN_NoChains(t *testing.T) {
 	assert.Contains(t, err.Error(), "no verified certificate chains")
 }
 
-func TestLoadClientTLSConfigWithMTLS_Disabled(t *testing.T) {
+func TestLoadClientTLSConfig_MTLSDisabled(t *testing.T) {
 	_, _, caFile, cleanup := setupTestFiles(t)
 	defer cleanup()
 
@@ -573,7 +578,8 @@ func TestLoadClientTLSConfigWithMTLS_Disabled(t *testing.T) {
 		Enabled: false,
 	}
 
-	tlsCfg, err := LoadClientTLSConfigWithMTLS(clientCfg, mtlsCfg)
+	clientCfg.MTLS = mtlsCfg
+	tlsCfg, err := LoadClientTLSConfig(clientCfg)
 	require.NoError(t, err)
 	require.NotNil(t, tlsCfg)
 
@@ -581,30 +587,29 @@ func TestLoadClientTLSConfigWithMTLS_Disabled(t *testing.T) {
 	assert.Empty(t, tlsCfg.Certificates)
 }
 
-func TestLoadClientTLSConfigWithMTLS_Enabled(t *testing.T) {
+func TestLoadClientTLSConfig_MTLSEnabled(t *testing.T) {
 	certFile, keyFile, caFile, cleanup := setupTestFiles(t)
 	defer cleanup()
 
 	clientCfg := security.ClientTLSConfig{
 		CAFiles: []string{caFile},
+		MTLS: security.ClientMTLSConfig{
+			Enabled:  true,
+			CertFile: certFile,
+			KeyFile:  keyFile,
+		},
 	}
 
-	mtlsCfg := security.ClientMTLSConfig{
-		Enabled:  true,
-		CertFile: certFile,
-		KeyFile:  keyFile,
-	}
-
-	tlsCfg, err := LoadClientTLSConfigWithMTLS(clientCfg, mtlsCfg)
+	tlsCfg, err := LoadClientTLSConfig(clientCfg)
 	require.NoError(t, err)
 	require.NotNil(t, tlsCfg)
 
 	// Should have client certificate
-	assert.Len(t, tlsCfg.Certificates, 1)
+	require.Len(t, tlsCfg.Certificates, 1)
 	assert.NotEmpty(t, tlsCfg.Certificates[0].Certificate)
 }
 
-func TestLoadClientTLSConfigWithMTLS_MissingCert(t *testing.T) {
+func TestLoadClientTLSConfig_MTLSMissingCert(t *testing.T) {
 	_, keyFile, caFile, cleanup := setupTestFiles(t)
 	defer cleanup()
 
@@ -618,11 +623,12 @@ func TestLoadClientTLSConfigWithMTLS_MissingCert(t *testing.T) {
 		KeyFile:  keyFile,
 	}
 
-	_, err := LoadClientTLSConfigWithMTLS(clientCfg, mtlsCfg)
+	clientCfg.MTLS = mtlsCfg
+	_, err := LoadClientTLSConfig(clientCfg)
 	require.Error(t, err)
 }
 
-func TestLoadClientTLSConfigWithMTLS_MissingKey(t *testing.T) {
+func TestLoadClientTLSConfig_MTLSMissingKey(t *testing.T) {
 	certFile, _, caFile, cleanup := setupTestFiles(t)
 	defer cleanup()
 
@@ -636,7 +642,8 @@ func TestLoadClientTLSConfigWithMTLS_MissingKey(t *testing.T) {
 		KeyFile:  "/nonexistent/key.pem",
 	}
 
-	_, err := LoadClientTLSConfigWithMTLS(clientCfg, mtlsCfg)
+	clientCfg.MTLS = mtlsCfg
+	_, err := LoadClientTLSConfig(clientCfg)
 	require.Error(t, err)
 }
 
@@ -655,7 +662,8 @@ func TestBackwardCompatibility_ServerWithoutMTLS(t *testing.T) {
 	// Empty mTLS config (backwards compatible)
 	mtlsCfg := security.ServerMTLSConfig{}
 
-	tlsCfg, err := LoadServerTLSConfigWithMTLS(serverCfg, mtlsCfg)
+	serverCfg.MTLS = mtlsCfg
+	tlsCfg, err := LoadServerTLSConfig(serverCfg)
 	require.NoError(t, err)
 	require.NotNil(t, tlsCfg)
 
@@ -676,7 +684,8 @@ func TestBackwardCompatibility_ClientWithoutMTLS(t *testing.T) {
 	// Empty mTLS config (backwards compatible)
 	mtlsCfg := security.ClientMTLSConfig{}
 
-	tlsCfg, err := LoadClientTLSConfigWithMTLS(clientCfg, mtlsCfg)
+	clientCfg.MTLS = mtlsCfg
+	tlsCfg, err := LoadClientTLSConfig(clientCfg)
 	require.NoError(t, err)
 	require.NotNil(t, tlsCfg)
 

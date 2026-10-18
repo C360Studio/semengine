@@ -2,120 +2,50 @@ package graph
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// TestCursorRoundTrip verifies that EncodeCursor/DecodeCursor are inverses
-// for a representative set of entity ID values.
-func TestCursorRoundTrip(t *testing.T) {
-	cases := []string{
-		"acme.ops.logistics.warehouse.robot.robot-001",
-		"c360.platform.robotics.mav1.drone.001",
-		"z",
-		"a.b.c.d.e.f",
-		// Characters that are special in standard Base64 but safe in URL-safe:
-		"org.sys-hyphen.dom_underscore.sub.type.inst",
+// TestPrefixQueryTypesRoundTrip: each prefix request and response survives a JSON
+// round trip, under the keys the wire names, and an empty optional field leaves its
+// key out (omitempty). The cursor value is opaque here: graph-ingest builds it.
+func TestPrefixQueryTypesRoundTrip(t *testing.T) {
+	const entityID = "acme.ops.logistics.warehouse.robot.robot-001"
+	cases := []struct {
+		name    string
+		value   any
+		keys    []string
+		missing []string
+	}{
+		{"first-page request", PrefixQueryRequest{Prefix: "acme", Limit: 10},
+			[]string{"prefix", "limit"}, []string{"cursor", "pattern"}},
+		{"next-page request", PrefixQueryRequest{Prefix: "acme", Limit: 10, Cursor: "opaque"},
+			[]string{"prefix", "limit", "cursor"}, []string{"pattern"}},
+		{"pattern request", PrefixQueryRequest{Pattern: "acme.ops.*.intel.platform.*", Limit: 25},
+			[]string{"prefix", "pattern", "limit"}, []string{"cursor"}},
+		{"exhausted response", PrefixQueryResponse{Entities: []EntityState{}},
+			[]string{"entities"}, []string{"next_cursor"}},
+		{"response with continuation", PrefixQueryResponse{Entities: []EntityState{{ID: entityID}}, NextCursor: "opaque"},
+			[]string{"entities", "next_cursor"}, nil},
 	}
-	for _, key := range cases {
-		t.Run(key, func(t *testing.T) {
-			encoded := EncodeCursor(key)
-			decoded, err := DecodeCursor(encoded)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := json.Marshal(tc.value)
 			require.NoError(t, err)
-			assert.Equal(t, key, decoded, "round-trip must be identity")
+			var fields map[string]json.RawMessage
+			require.NoError(t, json.Unmarshal(data, &fields))
+			for _, key := range tc.keys {
+				assert.Contains(t, fields, key, "%s", data)
+			}
+			for _, key := range tc.missing {
+				assert.NotContains(t, fields, key, "%s", data)
+			}
+			decoded := reflect.New(reflect.TypeOf(tc.value))
+			require.NoError(t, json.Unmarshal(data, decoded.Interface()))
+			assert.Equal(t, tc.value, decoded.Elem().Interface())
 		})
 	}
-}
-
-// TestDecodeCursorEmpty verifies the first-page sentinel: empty cursor decodes
-// to empty string without error.
-func TestDecodeCursorEmpty(t *testing.T) {
-	key, err := DecodeCursor("")
-	require.NoError(t, err)
-	assert.Equal(t, "", key)
-}
-
-// TestDecodeCursorInvalid verifies that a malformed cursor returns an error
-// rather than silently producing garbage.
-func TestDecodeCursorInvalid(t *testing.T) {
-	_, err := DecodeCursor("!!!not-base64!!!")
-	require.Error(t, err, "malformed cursor must return error")
-}
-
-// TestPrefixQueryResponseWithoutContinuation verifies that an exhausted page
-// decodes with an empty continuation token.
-func TestPrefixQueryResponseWithoutContinuation(t *testing.T) {
-	wire := []byte(`{"entities":[]}`)
-	var resp PrefixQueryResponse
-	require.NoError(t, json.Unmarshal(wire, &resp))
-	assert.Empty(t, resp.Entities)
-	assert.Empty(t, resp.NextCursor, "exhausted page must leave NextCursor empty")
-}
-
-// TestPrefixQueryResponseOmitsNextCursorWhenEmpty verifies that marshalling a
-// PrefixQueryResponse with an empty NextCursor does not include the field.
-func TestPrefixQueryResponseOmitsNextCursorWhenEmpty(t *testing.T) {
-	resp := PrefixQueryResponse{
-		Entities: []EntityState{},
-	}
-	b, err := json.Marshal(resp)
-	require.NoError(t, err)
-
-	var raw map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal(b, &raw))
-	_, hasNextCursor := raw["next_cursor"]
-	assert.False(t, hasNextCursor, "next_cursor must be absent when empty (omitempty)")
-}
-
-// TestPrefixQueryRequestWithoutCursor verifies first-page request decoding.
-func TestPrefixQueryRequestWithoutCursor(t *testing.T) {
-	wire := []byte(`{"prefix":"foo","limit":10}`)
-	var req PrefixQueryRequest
-	require.NoError(t, json.Unmarshal(wire, &req))
-	assert.Equal(t, "foo", req.Prefix)
-	assert.Equal(t, 10, req.Limit)
-	assert.Empty(t, req.Cursor, "first-page request must leave Cursor empty")
-}
-
-// TestPrefixQueryRequestMarshalOmitsCursorWhenEmpty verifies that a
-// PrefixQueryRequest with no Cursor omits the "cursor" key from JSON output.
-func TestPrefixQueryRequestMarshalOmitsCursorWhenEmpty(t *testing.T) {
-	req := PrefixQueryRequest{Prefix: "acme", Limit: 5}
-	b, err := json.Marshal(req)
-	require.NoError(t, err)
-
-	var raw map[string]json.RawMessage
-	require.NoError(t, json.Unmarshal(b, &raw))
-	_, hasCursor := raw["cursor"]
-	assert.False(t, hasCursor, "cursor must be absent when empty (omitempty)")
-}
-
-// TestPrefixQueryResponseWithNextCursor verifies the happy-path pagination shape:
-// a populated NextCursor survives a JSON round-trip.
-func TestPrefixQueryResponseWithNextCursor(t *testing.T) {
-	entityID := "acme.ops.logistics.warehouse.robot.robot-001"
-	cursor := EncodeCursor(entityID)
-	resp := PrefixQueryResponse{
-		Entities:   []EntityState{{ID: entityID}},
-		NextCursor: cursor,
-	}
-	b, err := json.Marshal(resp)
-	require.NoError(t, err)
-
-	var decoded PrefixQueryResponse
-	require.NoError(t, json.Unmarshal(b, &decoded))
-	assert.Equal(t, cursor, decoded.NextCursor)
-	require.Len(t, decoded.Entities, 1)
-	assert.Equal(t, entityID, decoded.Entities[0].ID)
-}
-
-// TestPrefixQueryLimitConstants verifies the published constant values so
-// downstream consumers that hard-code comparisons against them detect
-// accidental changes.
-func TestPrefixQueryLimitConstants(t *testing.T) {
-	assert.Equal(t, 1000, DefaultPrefixQueryLimit)
-	assert.Equal(t, DefaultPrefixQueryLimit, MaxPrefixQueryLimit,
-		"MaxPrefixQueryLimit must equal DefaultPrefixQueryLimit until byte-budget refinement")
 }

@@ -113,7 +113,7 @@ func TestIntegration_PublishToStreamWithMsgID_StoresAgainAfterWindow(t *testing.
 	require.NoError(t, err, "the same Nats-Msg-Id must store again after the configured window (stored %d)", stored)
 }
 
-// TestIntegration_PublishToStreamWithMsgID_NotConnected verifies the circuit
+// TestIntegration_PublishToStreamWithMsgID_NotConnected verifies the connection
 // guard mirrors PublishToStream / PublishToStreamWithAck.
 func TestIntegration_PublishToStreamWithMsgID_NotConnected(t *testing.T) {
 	client, err := NewClient("nats://unused")

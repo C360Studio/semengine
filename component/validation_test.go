@@ -167,3 +167,103 @@ func TestSafeUnmarshalValidatesBeforeDecoding(t *testing.T) {
 		}
 	})
 }
+
+// TestValidateFactoryConfigRefusesDataAfterTheFirstValue proves the
+// configuration check reads the whole input: anything but whitespace after the
+// first JSON value is refused as invalid, and CreateComponent refuses such a
+// configuration before its factory runs.
+func TestValidateFactoryConfigRefusesDataAfterTheFirstValue(t *testing.T) {
+	tests := []struct {
+		name   string
+		config string
+		refuse bool
+	}{
+		{name: "an object pasted twice", config: `{} {}`, refuse: true},
+		{name: "a bare word after the object", config: `{} x`, refuse: true},
+		{name: "a second object with fields", config: `{} {"s":"x"}`, refuse: true},
+		{name: "a closing brace after the object", config: `{} }`, refuse: true},
+		{name: "a newline after the object", config: "{}\n"},
+		{name: "spaces, tabs and newlines around the object", config: " \t{}\r\n "},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateFactoryConfig(json.RawMessage(tt.config))
+			if !tt.refuse {
+				if err != nil {
+					t.Fatalf("refused: %v", err)
+				}
+				return
+			}
+			requireInvalid(t, err)
+		})
+	}
+
+	t.Run("CreateComponent never calls the factory", func(t *testing.T) {
+		registry := NewRegistry()
+		called := false
+		factory := func(json.RawMessage, Dependencies) (Discoverable, error) {
+			called = true
+			return &declarationTestComponent{}, nil
+		}
+		requireNoError(t, registry.Register(Registration{
+			Name: "twice", Type: "processor", Factory: factory, Ports: noPorts,
+		}))
+		_, err := registry.CreateComponent(
+			"worker", declarationTestConfig("twice", `{} {"s":"x"}`), declarationTestDeps(), nil)
+		requireInvalid(t, err)
+		if called {
+			t.Fatal("factory ran on a configuration with data after the first value")
+		}
+	})
+}
+
+type unknownKeyTarget struct {
+	Port int `json:"port"`
+}
+
+// TestSafeUnmarshalRefusesANilTarget proves SafeUnmarshal checks its target
+// before anything else: a nil target, or a nil pointer, is refused as invalid
+// whether the configuration is valid or empty, and nothing panics.
+func TestSafeUnmarshalRefusesANilTarget(t *testing.T) {
+	var nilPointer *unknownKeyTarget
+	tests := []struct {
+		name   string
+		config json.RawMessage
+		target any
+	}{
+		{name: "valid configuration, nil target", config: json.RawMessage(`{"port":7}`), target: nil},
+		{name: "empty configuration, nil target", config: nil, target: nil},
+		{name: "valid configuration, nil pointer", config: json.RawMessage(`{"port":7}`), target: nilPointer},
+		{name: "empty configuration, nil pointer", config: nil, target: nilPointer},
+		{name: "empty configuration, not a pointer", config: nil, target: unknownKeyTarget{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("SafeUnmarshal panicked: %v", r)
+				}
+			}()
+			requireInvalid(t, SafeUnmarshal(tt.config, tt.target))
+		})
+	}
+}
+
+// TestSafeUnmarshalRefusesAnUnknownKey proves SafeUnmarshal decodes strictly:
+// a key the target struct does not define is refused as invalid with an error
+// naming the key, and so is data after the first JSON value.
+func TestSafeUnmarshalRefusesAnUnknownKey(t *testing.T) {
+	t.Run("a misspelled key", func(t *testing.T) {
+		var target unknownKeyTarget
+		err := SafeUnmarshal(json.RawMessage(`{"prot":7}`), &target)
+		requireInvalid(t, err)
+		if !strings.Contains(err.Error(), `"prot"`) {
+			t.Fatalf("error %q does not name the key \"prot\"", err)
+		}
+	})
+
+	t.Run("data after the first value", func(t *testing.T) {
+		var target unknownKeyTarget
+		requireInvalid(t, SafeUnmarshal(json.RawMessage(`{"port":7} {"port":8}`), &target))
+	})
+}

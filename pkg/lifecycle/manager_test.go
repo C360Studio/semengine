@@ -1,10 +1,12 @@
 package lifecycle
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"strings"
 	"sync"
@@ -43,13 +45,13 @@ type fakeEmitter struct {
 	reconcileHook func(int, *graph.ReconcilePredicatesRequest) error
 	// afterReconcile runs after the reconcile commit and before its response.
 	// It deterministically models a newer writer racing DespawnWith.
-	afterReconcile func(*graph.ReconcilePredicatesResponse)
+	afterReconcile func(*graph.EntityMutationResponse)
 }
 
 // reconcile mirrors the canonical predicate-authority mutation: the named
 // predicates become exactly Desired at ExpectedRevision, while unrelated
 // predicates and entity metadata are preserved.
-func (f *fakeEmitter) reconcile(_ context.Context, req *graph.ReconcilePredicatesRequest) (*graph.ReconcilePredicatesResponse, error) {
+func (f *fakeEmitter) reconcile(_ context.Context, req *graph.ReconcilePredicatesRequest) (*graph.EntityMutationResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.requests = append(f.requests, req)
@@ -83,7 +85,7 @@ func (f *fakeEmitter) reconcile(_ context.Context, req *graph.ReconcilePredicate
 	state := *current
 	state.Triples = triples
 	f.bucket.put(req.EntityID, &state)
-	response := &graph.ReconcilePredicatesResponse{
+	response := &graph.EntityMutationResponse{
 		Outcome: graph.MutationApplied, Entity: &state, KVRevision: f.bucket.revOf(req.EntityID),
 	}
 	if f.afterReconcile != nil {
@@ -95,7 +97,7 @@ func (f *fakeEmitter) reconcile(_ context.Context, req *graph.ReconcilePredicate
 // create mirrors canonical entity.create — atomic
 // create-or-fail. Returns ErrAlreadyExists when the entity is already
 // present.
-func (f *fakeEmitter) create(_ context.Context, req *graph.CreateEntityRequest) (*graph.CreateEntityResponse, error) {
+func (f *fakeEmitter) create(_ context.Context, req *graph.CreateEntityRequest) (*graph.EntityMutationResponse, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.creates = append(f.creates, req)
@@ -111,7 +113,7 @@ func (f *fakeEmitter) create(_ context.Context, req *graph.CreateEntityRequest) 
 		respState.Triples = append([]message.Triple(nil), state.Triples...)
 		f.createResponseMutator(&respState)
 	}
-	return &graph.CreateEntityResponse{
+	return &graph.EntityMutationResponse{
 		Outcome: graph.MutationApplied, Entity: &respState, KVRevision: f.bucket.revOf(req.Entity.ID),
 	}, nil
 }
@@ -478,6 +480,7 @@ func TestManager_ReferencesReportsSourceRelationshipWithoutTarget(t *testing.T) 
 	state := bucket.get(sourceID)
 	state.Triples = append(state.Triples, message.Triple{
 		Subject: sourceID, Predicate: "mission.assignment.drone", Object: targetID,
+		Source: fixtureSource, Timestamp: fixtureTime,
 	})
 	bucket.put(sourceID, state)
 
@@ -883,7 +886,7 @@ func TestManager_GetReturnsNotLifecycleManagedForRawEntity(t *testing.T) {
 	bucket.put(id, &graph.EntityState{
 		ID: id,
 		Triples: []message.Triple{
-			{Subject: id, Predicate: "mission.control.command", Object: "launch"},
+			{Subject: id, Predicate: "mission.control.command", Object: "launch", Source: fixtureSource, Timestamp: fixtureTime},
 		},
 	})
 	_, err := mgr.Get(ctx, "fixture", id)
@@ -957,7 +960,7 @@ func TestManager_GetRawReturnsAllTriples(t *testing.T) {
 	bucket.put(id, &graph.EntityState{
 		ID: id,
 		Triples: []message.Triple{
-			{Subject: id, Predicate: "x.y.z", Object: "literal"},
+			{Subject: id, Predicate: "x.y.z", Object: "literal", Source: fixtureSource, Timestamp: fixtureTime},
 		},
 	})
 	state, err := mgr.GetRaw(ctx, id)
@@ -1242,6 +1245,89 @@ func TestManager_Despawn_RejectsPatternMismatch(t *testing.T) {
 	}
 }
 
+// TestManager_DespawnRefusesAMalformedEntityIDAsAPatternMismatch: a six-part ID the workflow's
+// glob would accept but that is not a valid entity ID (a segment starting with '-') is refused by
+// Despawn and DespawnWith the way Create refuses it, as ErrEntityIDPatternMismatch, and no
+// delete is sent (design D4).
+func TestManager_DespawnRefusesAMalformedEntityIDAsAPatternMismatch(t *testing.T) {
+	t.Parallel()
+	const malformed = "c360.platform1.gcs.lifecycle.mission.-bad"
+	for _, tt := range []struct {
+		name    string
+		despawn func(*Manager) error
+	}{
+		{"Despawn", func(mgr *Manager) error { return mgr.Despawn(context.Background(), "fixture", malformed) }},
+		{"DespawnWith", func(mgr *Manager) error {
+			return mgr.DespawnWith(context.Background(), "fixture", malformed, TransitionSourceRule, "cull")
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			mgr, emitter, _ := newTestManager(t)
+			err := tt.despawn(mgr)
+			if !errors.Is(err, ErrEntityIDPatternMismatch) {
+				t.Errorf("%s(%q) error = %v, want ErrEntityIDPatternMismatch", tt.name, malformed, err)
+			}
+			if len(emitter.deletes) != 0 || len(emitter.requests) != 0 {
+				t.Errorf("%s(%q) sent deletes %+v and writes %+v, want none", tt.name, malformed,
+					emitter.deletes, emitter.requests)
+			}
+		})
+	}
+}
+
+// TestManager_CompleteFollowsDeclaredEdgeOrder: when several terminal phases are reachable,
+// Complete and DespawnWith pick the first one in the current phase's declared out-edges, not the
+// first by name, and still log the ambiguity (design D5, owner question 2). The fixture declares
+// "flying": {"completed", "aborted"}, so edge order says completed and name order says aborted.
+func TestManager_CompleteFollowsDeclaredEdgeOrder(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name string
+		end  func(context.Context, *Manager, string) error
+	}{
+		{"Complete", func(ctx context.Context, mgr *Manager, id string) error {
+			return mgr.Complete(ctx, "fixture", id)
+		}},
+		{"DespawnWith", func(ctx context.Context, mgr *Manager, id string) error {
+			return mgr.DespawnWith(ctx, "fixture", id, TransitionSourceRule, "cull")
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			var logs bytes.Buffer
+			bucket := newFakeBucket()
+			emitter := &fakeEmitter{bucket: bucket}
+			mgr := newManagerForTest(slog.New(slog.NewJSONHandler(&logs, nil)), emitter, bucket)
+			if err := mgr.Register(lifecycle{}.fixtureWorkflow()); err != nil {
+				t.Fatalf("Register: %v", err)
+			}
+			ctx := context.Background()
+			id := "c360.platform1.gcs.lifecycle.mission.edge-order"
+			if err := mgr.Create(ctx, &fixtureMission{ID: id, PhaseF: "flying"}); err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			if err := tt.end(ctx, mgr, id); err != nil {
+				t.Fatalf("%s: %v", tt.name, err)
+			}
+			var phases []any
+			for _, r := range emitter.requests {
+				for _, tr := range r.Desired {
+					if tr.Predicate == "mission.lifecycle.phase" {
+						phases = append(phases, tr.Object)
+					}
+				}
+			}
+			if len(phases) != 1 || phases[0] != "completed" {
+				t.Errorf("%s wrote phases %v, want [completed]", tt.name, phases)
+			}
+			if !strings.Contains(logs.String(), `"from":"flying","picked":"completed","alternatives":["aborted"]`) {
+				t.Errorf("%s logged %s, want the ambiguity Warn naming completed over aborted", tt.name, logs.String())
+			}
+		})
+	}
+}
+
 func TestManager_DespawnWith_TransitionsThenReclaims(t *testing.T) {
 	t.Parallel()
 	mgr, emitter, bucket := newTestManager(t)
@@ -1283,7 +1369,7 @@ func TestManager_DespawnWith_DoesNotDeleteNewerStateAfterTerminalCommit(t *testi
 	}
 
 	var transitionRevision uint64
-	emitter.afterReconcile = func(response *graph.ReconcilePredicatesResponse) {
+	emitter.afterReconcile = func(response *graph.EntityMutationResponse) {
 		transitionRevision = response.KVRevision
 		newer := bucket.get(id)
 		newer.Triples = append(newer.Triples, message.Triple{
@@ -1612,7 +1698,10 @@ func TestCreate_UnrelatedConcurrentUpdateIsNotADuplicateBirth(t *testing.T) {
 		ID: id,
 		// Canonical predicate, unrelated to this workflow's lifecycle: the
 		// point is an entity that moved for a reason that is not a birth.
-		Triples: []message.Triple{{Subject: id, Predicate: "mission.identity.owner-org-id", Object: "acme"}},
+		Triples: []message.Triple{{
+			Subject: id, Predicate: "mission.identity.owner-org-id", Object: "acme",
+			Source: fixtureSource, Timestamp: fixtureTime,
+		}},
 	})
 	emitter.forceRevisionMismatch = true
 
@@ -1745,6 +1834,58 @@ func TestCreateAttachRereadDecidesTheOutcome(t *testing.T) {
 			if test.want == ErrUpdateRetriesExhausted && errs.Classify(err) != errs.ErrorTransient {
 				t.Fatalf("class = %v, want transient for retryable contention", errs.Classify(err))
 			}
+			if test.want == ErrUpdateRetriesExhausted && !errs.IsTransient(err) {
+				t.Fatalf("errs.IsTransient = false, want true for retryable contention (err=%v)", err)
+			}
 		})
 	}
+}
+
+// TestUpdateRetriesExhaustedIsTransient pins design D3 of simplify-04a-04-errs-classify: an
+// exhausted CAS retry budget is retryable contention, so the error a write returns when every
+// attempt met a revision mismatch is transient by errs.Classify and errs.IsTransient. Both read
+// the class ErrUpdateRetriesExhausted carries: an unclassified error would be fatal. Create's
+// attach path is TestCreateAttachRereadDecidesTheOutcome.
+func TestUpdateRetriesExhaustedIsTransient(t *testing.T) {
+	const id = "c360.platform1.gcs.lifecycle.mission.exhausted"
+	exhaust := func(t *testing.T) map[string]error {
+		t.Helper()
+		writes := map[string]func(*Manager) error{
+			"transition": func(mgr *Manager) error {
+				return mgr.Transition(context.Background(), "fixture", id, "flying", TransitionSourceRule, "contended")
+			},
+			"operator update": func(mgr *Manager) error {
+				return mgr.UpdateFromOperator(context.Background(), "fixture", id, map[string]any{"note": "contended"})
+			},
+		}
+		results := make(map[string]error, len(writes))
+		for name, write := range writes {
+			mgr, emitter, _ := newTestManager(t)
+			if err := mgr.Create(context.Background(), &fixtureMission{ID: id, PhaseF: "planning"}); err != nil {
+				t.Fatalf("%s: Create: %v", name, err)
+			}
+			emitter.forceRevisionMismatch = true
+			err := write(mgr)
+			if !errors.Is(err, ErrUpdateRetriesExhausted) {
+				t.Fatalf("%s: err = %v, want %v", name, err, ErrUpdateRetriesExhausted)
+			}
+			results[name] = err
+		}
+		return results
+	}
+
+	t.Run("classify", func(t *testing.T) {
+		for name, err := range exhaust(t) {
+			if got := errs.Classify(err); got != errs.ErrorTransient {
+				t.Errorf("%s: errs.Classify = %v, want transient for retryable contention (err=%v)", name, got, err)
+			}
+		}
+	})
+	t.Run("is_transient", func(t *testing.T) {
+		for name, err := range exhaust(t) {
+			if !errs.IsTransient(err) {
+				t.Errorf("%s: errs.IsTransient = false, want true for retryable contention (err=%v)", name, err)
+			}
+		}
+	})
 }

@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 	"testing/synctest"
-	"time"
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/kvcatalog"
@@ -127,12 +126,9 @@ func TestPublisher_ValueIsPlainEnvelopeJSON(t *testing.T) {
 				if !got.Known {
 					t.Fatal("watcher did not accept the published value")
 				}
-				// PublishedAt is the publisher's stamp (TestPublishStampsPublishedAt);
-				// every other field is the caller's and round-trips unchanged.
-				want := tt.status
-				want.PublishedAt = got.Status.PublishedAt
-				if !reflect.DeepEqual(got.Status, want) {
-					t.Errorf("round-trip mismatch:\n got %+v\nwant %+v", got.Status, want)
+				// Every field is the caller's and round-trips unchanged.
+				if !reflect.DeepEqual(got.Status, tt.status) {
+					t.Errorf("round-trip mismatch:\n got %+v\nwant %+v", got.Status, tt.status)
 				}
 			})
 		})
@@ -200,54 +196,6 @@ func newTestPublisher(t *testing.T, writer StatusWriter, key string) *Publisher 
 		t.Fatalf("NewPublisher(%q): %v", key, err)
 	}
 	return pub
-}
-
-// TestPublishStampsPublishedAt: every write's stored value carries published_at, the
-// wall-clock time of the write in UTC, RFC 3339 with nanoseconds, whatever the caller
-// passed (design D16; graph-transport-boundary, "The readiness envelope carries its
-// publish time and no legacy fields").
-func TestPublishStampsPublishedAt(t *testing.T) {
-	tests := []struct {
-		name   string
-		passed string
-	}{
-		{name: "caller left it empty", passed: ""},
-		{name: "caller's value is replaced", passed: "2001-02-03T04:05:06Z"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			writer := &fakeWriter{}
-			pub := newTestPublisher(t, writer, KeyGraphIndex)
-
-			before := time.Now()
-			status := graph.IndexStatusResponse{State: graph.IndexStateBuilding, PublishedAt: tt.passed}
-			if err := pub.Publish(t.Context(), status); err != nil {
-				t.Fatalf("Publish: %v", err)
-			}
-			after := time.Now()
-
-			var stored struct {
-				PublishedAt *string `json:"published_at"`
-			}
-			if err := json.Unmarshal(writer.value, &stored); err != nil {
-				t.Fatalf("stored value is not JSON: %v", err)
-			}
-			if stored.PublishedAt == nil {
-				t.Fatalf("stored value has no published_at: %s", writer.value)
-			}
-			at, err := time.Parse(time.RFC3339Nano, *stored.PublishedAt)
-			if err != nil {
-				t.Fatalf("published_at = %q, not RFC 3339: %v", *stored.PublishedAt, err)
-			}
-			if want := at.UTC().Format(time.RFC3339Nano); *stored.PublishedAt != want {
-				t.Errorf("published_at = %q, want the UTC form %q", *stored.PublishedAt, want)
-			}
-			if at.Before(before) || at.After(after) {
-				t.Errorf("published_at = %s, want it between %s and %s, the clock read around Publish",
-					at.Format(time.RFC3339Nano), before.UTC().Format(time.RFC3339Nano), after.UTC().Format(time.RFC3339Nano))
-			}
-		})
-	}
 }
 
 // TestPublishRefusesNilContext: a nil context is refused with an error before any write,

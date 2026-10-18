@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/c360studio/semengine/graph"
@@ -66,15 +67,14 @@ func (c *Component) clearBoundConsumers() {
 }
 
 // statusMetricsLoop republishes the readiness envelope on the shared heartbeat.
-// Mirrors graph-index's loop (processor/graph-index/component.go:1119-1160): the
-// write doubles as a liveness heartbeat, so it is unconditional rather than
-// on-change.
+// Mirrors SemStreams graph-index's loop (not ported yet): the write doubles as a
+// liveness heartbeat, so it is unconditional rather than on-change.
 func (c *Component) statusMetricsLoop(ctx context.Context) {
 	// Publish once up front so the key is populated before the first tick rather
 	// than reading absent (which consumers correctly treat as unknown) for a whole
 	// interval after start.
 	c.refreshReadinessStatus(ctx)
-	ticker := time.NewTicker(c.statusTickInterval())
+	ticker := time.NewTicker(statusMetricsInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -86,16 +86,6 @@ func (c *Component) statusMetricsLoop(ctx context.Context) {
 	}
 }
 
-// statusTickInterval is the heartbeat period, overridable only by tests so an
-// integration test can observe successive heartbeats without sleeping through
-// production cadence.
-func (c *Component) statusTickInterval() time.Duration {
-	if c.statusInterval > 0 {
-		return c.statusInterval
-	}
-	return statusMetricsInterval
-}
-
 // refreshReadinessStatus computes the envelope ONCE and publishes it. The single
 // compute is the contract, not an optimization: two computes at slightly different
 // instants would let separate distribution channels disagree about readiness with no
@@ -105,9 +95,7 @@ func (c *Component) refreshReadinessStatus(ctx context.Context) {
 	// ONE compute feeds BOTH channels. Two computes at slightly different instants
 	// would let the scraped gauges and the watched KV key disagree about readiness,
 	// with no way for a consumer reconciling them to tell which was right.
-	if c.readinessGauges != nil {
-		c.readinessGauges.Set(status)
-	}
+	c.readinessGauges.Set(status)
 	c.publishReadinessStatus(ctx, status)
 }
 
@@ -132,6 +120,7 @@ func (c *Component) computeBacklogStatus(ctx context.Context) graph.IndexStatusR
 
 	var outstanding uint64
 	observationFailed := false
+	var failed []string
 
 	for _, bc := range consumers {
 		work, err := c.observeOutstandingWork(ctx, bc.stream, bc.name)
@@ -141,6 +130,7 @@ func (c *Component) computeBacklogStatus(ctx context.Context) graph.IndexStatusR
 				return graph.IndexStatusResponse{State: graph.IndexStateBuilding}
 			}
 			observationFailed = true
+			failed = append(failed, bc.stream+"/"+bc.name)
 			c.logger.Warn("graph-ingest readiness: outstanding-work read failed",
 				slog.String("stream", bc.stream),
 				slog.String("consumer", bc.name),
@@ -150,15 +140,25 @@ func (c *Component) computeBacklogStatus(ctx context.Context) graph.IndexStatusR
 		outstanding += work
 	}
 
-	scope, bootstrapComplete := c.latchBootstrap(outstanding, observationFailed)
+	// Recorded only for a tick that ran to here: a tick cut short by shutdown, above,
+	// records nothing. Health reads it, so Health and this envelope agree on the tick.
+	if len(failed) > 0 {
+		fault := "backlog observation failed for consumer " + strings.Join(failed, ", ")
+		c.backlogObservationFault.Store(&fault)
+	} else {
+		c.backlogObservationFault.Store(nil)
+	}
 
 	return readiness.ComputeBacklogStatus(readiness.BacklogStatusInputs{
-		Outstanding:         outstanding,
-		BootstrapComplete:   bootstrapComplete,
-		BootstrapScope:      scope,
+		Outstanding: outstanding,
+		// graph-ingest's boot work is the ENTITY_STATES sweep, which start finishes
+		// before it starts this loop, so Start returning is the bootstrap (ADR-109
+		// Decision 3). A backlog standing is Ready's to report, not this flag's.
+		BootstrapComplete:   true,
+		BootstrapScope:      c.bootstrapScope(outstanding, observationFailed),
 		ObservationFailed:   observationFailed,
 		OldestOutstandingAt: c.oldestOutstandingAt(outstanding),
-		Now:                 c.statusNow(),
+		Now:                 time.Now(),
 	})
 }
 
@@ -184,10 +184,8 @@ func (c *Component) recordBindBacklog(ctx context.Context, stream, name string) 
 		// failed consumer's backlog. If A measured zero and B held work, the producer
 		// would publish `bootstrap_complete && bootstrap_scope == 0` — the contract's
 		// "authoritatively nothing to replay" — while B had a real initial build.
-		// Poisoning the whole capture sends it to the tick fallback, which reads the
-		// TOTAL across all consumers at once. Found by the Codex review; the previous
-		// comment here claimed the capture was "left unclaimed", which was true only
-		// for a single-consumer deployment.
+		// Marking the whole capture partial hands it to the first full status tick
+		// (bootstrapScope), which reads the TOTAL across all consumers at once.
 		c.bootBacklogPartial.Store(true)
 		c.logger.Warn("graph-ingest readiness: bind-time backlog read failed; "+
 			"bootstrap scope will be captured whole at the first successful status tick",
@@ -226,61 +224,34 @@ func (c *Component) observeOutstandingWork(ctx context.Context, streamName, cons
 	return info.NumPending + uint64(info.NumAckPending), nil
 }
 
-// latchBootstrap maintains the two bootstrap facts and returns (scope, complete).
+// bootstrapScope returns BootstrapScope: the backlog this producer bound onto, summed over
+// its consumers.
 //
-// BootstrapScope is normally captured at bind (recordBindBacklog); the capture here is
-// the fallback for when every bind-time read failed. Either way it is captured once and
-// never moves, so a later burst cannot retroactively enlarge the "initial build".
+// It is normally captured at bind (recordBindBacklog). When any bind read failed, the
+// accumulated partial is discarded and replaced by the first successful FULL observation: a
+// partial scope is a false claim about the size of the initial build, and understating it can
+// reach zero, which the contract reads as "there was nothing to do". Either way it is captured
+// once and never moves, so a later burst cannot retroactively enlarge the "initial build". A
+// failed observation captures nothing: zero read off it is the absence of a measurement.
 //
-// BootstrapComplete is the boot backlog worked off — observed as outstanding reaching
-// zero at least once since binding. The boot ENTITY_STATES sweep needs no check here:
-// Start fails when the sweep cannot finish, and the status loop that calls this starts
-// after it.
-//
-// It is a LATCH, not a live read: Ready already carries "caught up right now", and a
-// bootstrap bit that flickered off under ordinary write load would make every
-// consumer defer during normal operation. It is sound because outstanding only leaves
-// the counters by being acked (applied) or parked, so reaching zero means everything
-// outstanding at bind time is no longer outstanding — which is exactly the honesty
-// boundary the envelope documents, not a completeness claim.
-//
-// A failed observation never latches anything: zero read off a failed observation is
-// the absence of a measurement.
-func (c *Component) latchBootstrap(outstanding uint64, observationFailed bool) (uint64, bool) {
-	if observationFailed {
-		return c.bootBacklog.Load(), false
+// It is the size of the backlog at bind, never a claim that it was worked off:
+// bootstrap_complete is true once Start returns (ADR-109 Decision 3), and Ready carries
+// "caught up right now".
+func (c *Component) bootstrapScope(outstanding uint64, observationFailed bool) uint64 {
+	if !observationFailed && c.bootBacklogKnown.CompareAndSwap(false, true) && c.bootBacklogPartial.Load() {
+		c.bootBacklog.Store(outstanding)
 	}
-
-	// Finalize the bind-time capture on the first successful FULL observation. If any
-	// bind read failed, the accumulated partial is discarded and replaced by this
-	// total — a partial scope is a false claim about the size of the initial build,
-	// and understating it can reach zero, which the contract reads as "there was
-	// nothing to do".
-	if c.bootBacklogKnown.CompareAndSwap(false, true) {
-		if c.bootBacklogPartial.Load() {
-			c.bootBacklog.Store(outstanding)
-		} else if c.bootBacklog.Load() == 0 && outstanding > 0 {
-			// No bind read ran at all (no consumers registered before the first
-			// tick); take this observation as the initial build.
-			c.bootBacklog.Store(outstanding)
-		}
-	}
-	if outstanding == 0 {
-		c.bootBacklogDrained.Store(true)
-	}
-
-	return c.bootBacklog.Load(), c.bootBacklogDrained.Load()
+	return c.bootBacklog.Load()
 }
 
 // oldestOutstandingAt reports the timestamp the staleness projection ages from, or the
 // zero time when there is nothing to report.
 //
-// DEVIATION FROM THE TASK TEXT, recorded deliberately. Task 3.5 says "the oldest
-// outstanding message's meta.Timestamp". Tracking that exactly means per-message
-// bookkeeping over up to 2048 in-flight messages on the ingest hot path, with
-// insertion and removal on every submit and ack. This reports the AGE OF THE VIEW
+// It does not report the oldest outstanding message's meta.Timestamp: tracking that
+// exactly means per-message bookkeeping over up to 2048 in-flight messages on the
+// ingest hot path, with insertion and removal on every submit and ack. This reports the AGE OF THE VIEW
 // instead — now minus the JetStream timestamp of the most recently APPLIED message —
-// which is graph-index's established semantic for the same field (its IndexedAt) and
+// which is SemStreams graph-index's semantic for the same field (its IndexedAt) and
 // costs one atomic store on the applied path.
 //
 // The two coincide closely because delivery is approximately stream-ordered: the
@@ -299,15 +270,6 @@ func (c *Component) oldestOutstandingAt(outstanding uint64) time.Time {
 		}
 	}
 	return time.Time{}
-}
-
-// statusNow is the compute instant, overridable by tests so staleness assertions do
-// not race the wall clock.
-func (c *Component) statusNow() time.Time {
-	if c.statusNowFn != nil {
-		return c.statusNowFn()
-	}
-	return time.Now()
 }
 
 // recordApplied stamps the JetStream timestamp of a message whose graph write is
@@ -331,9 +293,7 @@ func (c *Component) publishReadinessStatus(ctx context.Context, status graph.Ind
 			// Shutdown, not a failure: Stop cancels mid-Put on the way out.
 			return
 		}
-		if c.readinessGauges != nil {
-			c.readinessGauges.RecordPublishFailure()
-		}
+		c.readinessGauges.RecordPublishFailure()
 		c.logger.Warn("readiness status publish failed",
 			slog.String("bucket", graph.BucketGraphStatus),
 			slog.String("key", c.statusPublisher.Key()),

@@ -4,7 +4,7 @@
 // (design D1): after Start's boot snapshot sweep completes, graph-ingest holds
 // NO consumer on the ENTITY_STATES backing stream, and a post-Start entity
 // write is delivered to no graph-ingest watcher. This is the retirement of the
-// per-mutation guard fan-out semboids measured (gh#562).
+// per-mutation guard fan-out semboids measured (SemStreams gh#562).
 
 package graphingest
 

@@ -1,6 +1,6 @@
 //go:build integration
 
-// gh#713 regression: a graph-ingest restart against an existing graph must not
+// SemStreams gh#713 regression: a graph-ingest restart against an existing graph must not
 // append already-present triples or advance entity revisions when nothing in
 // the world changed.
 //
@@ -35,7 +35,7 @@ import (
 	"github.com/c360studio/semengine/vocabulary"
 )
 
-// replayEntityIDs are three entities of one type, the shape gh#713 measured on
+// replayEntityIDs are three entities of one type, the shape SemStreams gh#713 measured on
 // the model registry (containers 6->9, endpoints 4->6 / 3->5 / 2->4).
 var replayEntityIDs = []string{
 	"c360.platform.robotics.mav1.drone.replay001",
@@ -149,7 +149,7 @@ func TestComponent_HierarchyReplay_UnchangedEntitiesAdvanceNoRevision(t *testing
 	before := snapshotStore(t, ctx, replay)
 
 	// Seed sanity — WITHOUT these the comparison below could pass vacuously on
-	// an empty or degenerate store. These are the counts gh#713's arithmetic
+	// an empty or degenerate store. These are the counts SemStreams gh#713's arithmetic
 	// depends on: 3 entities + 3 containers. No container holds a `contains`
 	// edge (ruling M, #91 comment 6080973822) and no entity a sibling edge
 	// (ruling G, #91 comment 6062681355).

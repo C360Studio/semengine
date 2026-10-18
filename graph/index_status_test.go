@@ -38,7 +38,7 @@ func TestIndexStatesReturnsACopy(t *testing.T) {
 // lets a case show that keys the type does not define (the pin's legacy fields)
 // do not come back out.
 //
-// Requirement: graph-transport-boundary/The readiness envelope carries its publish time and no legacy fields
+// Requirement: graph-transport-boundary/The readiness envelope carries no legacy fields
 func TestIndexStatusResponseWire(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -135,14 +135,9 @@ func TestIndexStatusResponseWire(t *testing.T) {
 			name: "legacy fields do not come back out",
 			wire: `{"state":"ready","phase":"ready","revision":7,"last_synced":"2026-10-07T12:00:00Z",` +
 				`"indexed_revision":7,"published_at":"2026-10-07T12:00:01Z"}`,
-			want: IndexStatusResponse{
-				State: IndexStateReady, IndexedRevision: 7, PublishedAt: "2026-10-07T12:00:01Z",
-			},
-			keys: map[string]any{
-				"indexed_revision": float64(7),
-				"published_at":     "2026-10-07T12:00:01Z",
-			},
-			absent: []string{"phase", "revision", "last_synced"},
+			want:   IndexStatusResponse{State: IndexStateReady, IndexedRevision: 7},
+			keys:   map[string]any{"indexed_revision": float64(7)},
+			absent: []string{"phase", "revision", "last_synced", "published_at"},
 		},
 	}
 	for _, tt := range tests {

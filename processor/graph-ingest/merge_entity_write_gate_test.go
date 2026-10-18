@@ -1,6 +1,6 @@
 package graphingest
 
-// merge_entity_write_gate_test.go — gh#562 write-cost follow-up. MergeEntity
+// merge_entity_write_gate_test.go — SemStreams gh#562 write-cost follow-up. MergeEntity
 // no longer runs its own full contract pass over the incoming candidate; the
 // MarshalEntityState write gate inside the CAS closure is the single
 // authoritative full-contract pass per committed candidate (both branches

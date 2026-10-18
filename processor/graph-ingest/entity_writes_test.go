@@ -431,7 +431,7 @@ func TestAppendAddingNothingOverStatementWithoutMetadataIsUnchanged(t *testing.T
 // replaced and the write applies: the metadata check is of the merge's result, never of the
 // stored statements before the replace (design D23; checkpoint 3 H3). A stored set with no
 // timestamp is older than any arrival's. On an unprofiled entity the write also stamps the profile
-// (ADR-054).
+// (SemStreams ADR-054).
 func TestStreamArrivalReplacesStoredStatementWithoutTimestamp(t *testing.T) {
 	const (
 		id      = "acme.ops.test.system.widget.no-time"
@@ -502,7 +502,7 @@ func TestStreamArrivalReplacesStoredStatementWithoutTimestamp(t *testing.T) {
 // nothing (graph-entity-writes, "Every set is older"; design D23). Over a profiled entity the
 // write is declined: the value and the revision the test planted stay, and the stream lane still
 // acknowledges the arrival and counts and logs each set. Over an unprofiled entity the arrival
-// writes once, to stamp the profile (ADR-054) at the arrival's time. The arrival goes through
+// writes once, to stamp the profile (SemStreams ADR-054) at the arrival's time. The arrival goes through
 // processIngest, the stream lane's per-message handler, so its settlement is observed; the
 // stored revision is planted by the test, so "unchanged" is not read off the code under test.
 func TestStreamArrivalAllOlderWritesNothing(t *testing.T) {
@@ -636,7 +636,7 @@ func TestStreamArrivalAllOlderWritesNothing(t *testing.T) {
 }
 
 // An arrival whose only statement is the indexing profile carries nothing that can apply to a
-// profiled entity: the profile is create-time immutable (ADR-054), so the replace drops the
+// profiled entity: the profile is create-time immutable (SemStreams ADR-054), so the replace drops the
 // arrival's, and no set is left. It writes nothing (graph-entity-writes, "Timestamp orders a
 // replace": a message with at least one set, none of which applies; design D23; #150), whatever
 // its age: older and newer than the stored profile alike, the value and the revision the test

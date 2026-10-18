@@ -18,7 +18,7 @@ import (
 	"github.com/c360studio/semengine/natsclient"
 )
 
-// Add-lane deduplication (gh#697 / gh#713). These drive the PRODUCTION
+// Add-lane deduplication (SemStreams gh#697 / gh#713). These drive the PRODUCTION
 // KVStore.UpdateWithRetryRead loop over a CAS-capable mock bucket, so the
 // declined write, the revision arithmetic, and the response shape are all
 // exercised the way the NATS handlers exercise them.
@@ -287,7 +287,7 @@ func TestAddTriples_WithinRequestDuplicatesCollapsePreservingOrder(t *testing.T)
 
 // Task 3.2: a suppression counted into allAbsences misclassifies a mixed batch.
 // Here subject A is wholly duplicate (suppressed, NOT a failure) and subject B
-// is absent (a genuine ADR-055 rejection). The aggregated error must still
+// is absent (a genuine SemStreams ADR-055 rejection). The aggregated error must still
 // carry ErrKVKeyNotFound so the handler replies entity_not_found; if the
 // suppression were treated as a failure, allAbsences would flip false and the
 // classification would be lost.

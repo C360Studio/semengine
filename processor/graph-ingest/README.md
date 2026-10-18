@@ -77,11 +77,15 @@ graph.mutation.> ───────┼─►│ graph-ingest ├──► ENT
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `ports` | object | required | Input and output ports. Exactly one input must be the required `nats-request` port on `graph.mutation.>` with the `semengine.graph.mutation` v1 interface, and at least one output is required. Every output must be a `kv-write` port on `ENTITY_STATES`, the only place graph-ingest writes; any other output is refused when the component is built. |
+| `ports` | object | the default ports | Input and output ports. Without the key, the component takes the default ports: `entity_stream` (JetStream `ENTITY`, `entity.>`), `mutations` (the request port below) and `entity_states`. A `ports` block that is present is the whole port set, used as written and never merged with the defaults. Exactly one input must be the required `nats-request` port on `graph.mutation.>` with the `semengine.graph.mutation` v1 interface, and at least one output is required. Every output must be a `kv-write` port on `ENTITY_STATES`, the only place graph-ingest writes; any other output is refused when the component is built. |
 | `enable_hierarchy` | bool | `false` | Create hierarchy container entities and edges (below). |
 | `ingest_lanes` | int | `8` | Number of ingest lanes. Messages for one entity ID always use the same lane, so they apply in arrival order; different entities apply in parallel. `1` is fully serial. `0` counts as unset and takes the default of `8`; a negative value is clamped to `1`. |
 
 A configuration key not in this table is refused when the component is built, with an error naming the key.
+
+The component is also refused when its dependencies carry no NATS client, no payload registry, or no deployment
+authority (`platform.org` and `platform.id`). The registry is the type authority every create is checked against, so
+graph-ingest is never built without one, and no write path checks for a missing registry (O-15).
 
 ## Ports
 
@@ -176,6 +180,15 @@ registered on the same registry.
 
 ## Health
 
-The component reports healthy when it is running, no processing error has been counted, and no stored entity fails to
-decode (the poison inventory is empty). Running implies the boot sweep of `ENTITY_STATES` completed: `Start` fails
-when the sweep cannot reach the end of the snapshot.
+`Health()` reports stuck states, not past errors (ADR-109 Decision 2). The component is healthy when it is running, no
+stored entity fails to decode (the poison inventory is empty), and the latest readiness status tick read the backlog of
+every consumer it bound. While either of the last two fails, `Healthy` is false, `Status` is `degraded`, and
+`LastError` names each: a sample of the poisoned entities, or the consumers whose backlog could not be read. Both clear
+without a restart: a repair or a valid write clears the poison record, and the next tick that reads every backlog
+clears the other. A lost durable consumer reads unhealthy this way; graph-ingest does not bind a new one (#216).
+
+`ErrorCount` counts processing errors since start and never lowers `Healthy`.
+
+Running implies the boot sweep of `ENTITY_STATES` completed: `Start` fails when the sweep cannot reach the end of the
+snapshot. So the readiness envelope's `bootstrap_complete` is true from the first one graph-ingest publishes, whatever
+backlog stands; `ready` and `lag` report the backlog.

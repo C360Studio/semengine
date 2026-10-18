@@ -37,8 +37,13 @@ type IndexStatusResponse struct {
 	// BootstrapComplete reports whether this producer has finished its INITIAL BUILD
 	// in the current process lifetime: enumeration of ENTITY_STATES plus replay up to
 	// the enumeration-time target, including the authoritatively-empty 0/0 outcome. It
-	// latches true once and resets to false on restart, so a restart into a format
+	// stays true once set and resets to false on restart, so a restart into a format
 	// cutover re-gates (ADR-084 D2).
+	//
+	// For a backlog producer it means its boot work finished, not that the backlog it
+	// bound onto (BootstrapScope) was worked off: graph-ingest's boot work is its
+	// ENTITY_STATES sweep, which Start finishes, so it publishes true on every envelope
+	// (ADR-109 Decision 3). Whether a backlog stands is Ready's and Lag's to say.
 	//
 	// It exists because health is otherwise not evaluable from the wire: an index
 	// halfway through a SemStreams gh#474 cutover reports State=building with a plausible Lag,
@@ -103,9 +108,10 @@ type IndexStatusResponse struct {
 	// age it. Total stalls surface through the wall-clock stuck detector
 	// (State=degraded), not through this field.
 	StalenessMs uint64 `json:"staleness_ms,omitempty"`
-	// BootstrapScope is the SIZE OF THE INITIAL BUILD this producer latched
-	// BootstrapComplete against, expressed in THE PRODUCER'S OWN UNIT — entities for
-	// an enumerating producer, messages for a backlog producer, replayed values for a
+	// BootstrapScope is the SIZE OF THE INITIAL BUILD this producer started with,
+	// expressed in THE PRODUCER'S OWN UNIT — entities for an enumerating producer,
+	// messages for a backlog producer (the backlog read when it bound, which its
+	// BootstrapComplete does not claim was worked off), replayed values for a
 	// watcher producer. It is deliberately not normalized across producers; a shared
 	// unit would be a fiction, and every consumer reads it alongside the key it asked
 	// for, so it already knows whose unit it is.
@@ -124,15 +130,9 @@ type IndexStatusResponse struct {
 	// across two envelopes differing only in this field.
 	//
 	// IT LICENSES NOTHING ABOUT ABSENCE. Scope 0 says the initial build found nothing
-	// to do at the instant it latched — not that the underlying collection is empty,
+	// to do at the instant it was captured — not that the underlying collection is empty,
 	// and not that anything published later has been seen.
 	BootstrapScope uint64 `json:"bootstrap_scope,omitempty"`
-	// PublishedAt is when the producer's publisher wrote this value: UTC, RFC 3339
-	// with nanoseconds, from the wall clock. graph/readiness.Publisher.Publish sets
-	// it on every write, whatever the caller passed, so no producer can leave it
-	// out. It states when the producer wrote, not when anything in the graph was
-	// asserted.
-	PublishedAt string `json:"published_at"`
 }
 
 // IndexState is the readiness envelope's state field. Its wire values are the

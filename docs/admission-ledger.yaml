@@ -1987,7 +1987,8 @@
     orders each (subject, predicate, source) set by Timestamp, and single-value reads choose the
     latest statement across sources (#98); (3) ReconcilePredicatesRequest requires a non-empty
     matching Source (design D15); (4) reserved sources and IsReservedSource declared in sources.go;
-    (5) IndexStatusResponse drops legacy Phase/Revision/LastSynced and adds published_at (design D16);
+    (5) IndexStatusResponse drops legacy Phase/Revision/LastSynced (design D16); published_at, added
+    by D16, was removed (ADR-109; #183);
     (6) ExactEntityReader refuses negative timeouts and reads its subject from QueryVerbs (#106,
     #151); (7) GraphStateReasonMissingStatementMetadata added; (8) PrefixQueryRequest adds optional
     6-position wildcard Pattern (#259); (9) UnmarshalEntityState takes the bucket key and is the one
@@ -2037,8 +2038,8 @@
     Publisher, gauges, Watcher, EvaluateReadinessGate, and ComputeBacklogStatus as at the pin, with
     these adaptations: (1) Watcher.Run(ctx) runs on the caller's goroutine and refuses
     nil ctx, nil source, or empty key (Start/Stop removed, design D5); (2) an undecodable KV value
-    revokes freshness immediately until the next valid update; (3) Publisher.Publish stamps
-    published_at in UTC RFC3339Nano (design D16; ADR-109 removes it in #183); (4) BacklogStatusInputs
+    revokes freshness immediately until the next valid update; (3) Publisher.Publish stamps no
+    publish time: the published_at stamp D16 added was removed (ADR-109; #183); (4) BacklogStatusInputs
     drops LastSynced; (5) gauges register via metric.RegisterOrGet under the semengine namespace and a
     nil registry is a no-op (design D4); (6) EvaluateReadinessGate takes the Watcher's Reading and
     returns one DeferReason, DeferNone to proceed; StatusReading removed; DeferReasons() returns a
@@ -2189,7 +2190,8 @@
     (in-set); NATS requests on graph.mutation.> and exact-entity reads; no goroutine
   known_risks: >-
     EntityState built without Version (#100). Pre-write transient errors from graph-ingest read as
-    commit-unknown with class fatal (safe, conservative; #167); follow-up #174 tracks post-append bookkeeping.
+    commit-unknown with class fatal (safe, conservative; #167); graph-ingest runs its bookkeeping after any
+    errored write (#174).
     The five unread interfaces (EntityCreator, PredicateReconciler, TripleAppender,
     EntityDeleter, AuthoritativeReader) are removed (#138 item 1)
   proving_tests: >-
@@ -2306,9 +2308,8 @@
     ENTITY_STATES keeps History 1 (#99); one instance per metrics registry: a second shares the gauge
     collectors and which write stands is not promised, and no known configuration runs two; a stream
     recreated between the pre-bind generation read and bind is a declared limitation
-    (#214); follow-up #174 tracks bookkeeping after an unconfirmed append write. Removed:
-    lastSyncedRFC3339, MergeEntity, TEST_DISPUTE.md, and agentic indexing_profile_registry_test.go;
-    README updated to match
+    (#214). Removed: lastSyncedRFC3339, MergeEntity, TEST_DISPUTE.md, and agentic
+    indexing_profile_registry_test.go; README updated to match
   proving_tests: >-
     processor/graph-ingest/lifecycle_owner_test.go
     (TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop, proving the lifecycle-suite
@@ -2319,7 +2320,8 @@
     query_verbs_integration_test.go, query_prefix_unit_test.go, query_prefix_integration_test.go,
     entity_writes_seam_test.go, write_modes_test.go, hierarchy_birth_test.go,
     metrics_registry_test.go, config_strict_test.go, failed_start_callbacks_integration_test.go,
-    poison_scoping_test.go, commit_ambiguity_integration_test.go
+    poison_scoping_test.go, commit_ambiguity_integration_test.go,
+    unconfirmed_write_integration_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: repair-before-port
 

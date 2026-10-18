@@ -6,9 +6,9 @@ import (
 	dto "github.com/prometheus/client_model/go"
 )
 
-// TestIngestHistograms_RecordSamples verifies the gh#480 processing-duration and
+// TestIngestHistograms_RecordSamples verifies the SemStreams gh#480 processing-duration and
 // ingest-lag histograms are built with the component and record observations. The
-// consume closure (setupJetStreamConsumer) observes both around handleMessage;
+// consume closure (setupJetStreamConsumer) observes the lag and applyIngest the duration;
 // this guards the metric objects themselves (nil registry: built, registered
 // nowhere, design D4). Sample count is read via dto.Metric.Write, as at the pin.
 func TestIngestHistograms_RecordSamples(t *testing.T) {

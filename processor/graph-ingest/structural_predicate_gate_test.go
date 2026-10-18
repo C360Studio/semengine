@@ -77,12 +77,10 @@ func seedStructuralGateEntity(t *testing.T, comp *Component, entityID string) (*
 // pre-release as provably inert — the authoritative persistence seam rejects
 // unconditionally, so the hatch could only swap the caller-visible error code).
 func TestValidateTriplePredicates_FailClosed_RejectsClassified(t *testing.T) {
-	comp := createTestComponentWithMockKV(t, withAuthority("acme", "ops"))
-
 	triples := []message.Triple{
 		{Subject: structuralGateEntity, Predicate: "agent.role", Object: "researcher"}, // predicate-audit:invalid {"kind":"stored-predicate","value":"agent.role","reason":"arity"}
 	}
-	err := comp.validateTriplePredicates(triples)
+	err := validateTriplePredicates(triples)
 	require.Error(t, err, "the gate must reject a non-3-part predicate")
 	var ce *errs.ClassifiedError
 	require.ErrorAs(t, err, &ce)
@@ -91,18 +89,17 @@ func TestValidateTriplePredicates_FailClosed_RejectsClassified(t *testing.T) {
 }
 
 func TestValidateTriplePredicates_ValidPredicate_Untouched(t *testing.T) {
-	comp := createTestComponentWithMockKV(t, withAuthority("acme", "ops"))
 	// A conforming predicate must pass the fail-closed gate untouched. (Metering
 	// on rejection is the meteredMutation wrapper's job — asserted in the
 	// handler-level tests below.)
 
 	triples := []message.Triple{
 		{Subject: structuralGateEntity, Predicate: "sensor.temperature.celsius", Object: 22.5},
-		// gh#519 collision guard: a valid 3-part predicate whose last segment is
+		// SemStreams gh#519 collision guard: a valid 3-part predicate whose last segment is
 		// literally "value" MUST pass (it is a real predicate, not a suffix).
 		{Subject: structuralGateEntity, Predicate: "sensorml.capability.value", Object: "50m"},
 	}
-	err := comp.validateTriplePredicates(triples)
+	err := validateTriplePredicates(triples)
 	require.NoError(t, err, "conforming 3-part predicates pass the fail-closed gate")
 }
 
@@ -138,7 +135,7 @@ func TestHandleCanonicalAppend_InvalidPredicate_FailClosedNothingPersisted(t *te
 
 	resp, err := handler(ctx, reqBytes)
 	require.Error(t, err, "fail-closed gate must reject the mutation")
-	assert.Nil(t, resp, "a hard rejection carries no success body (ADR-060)")
+	assert.Nil(t, resp, "a hard rejection carries no success body (SemStreams ADR-060)")
 
 	var ce *errs.ClassifiedError
 	require.ErrorAs(t, err, &ce)
@@ -310,7 +307,7 @@ func TestIngestEntity_InvalidPredicate_NothingPersisted(t *testing.T) {
 // TestHandleCanonicalAppend_ValidPredicate_PersistsMergeIntact is the regression
 // guard: a fully-conforming mutation passes the structural gate and persists
 // with the existing merge semantics intact (append on the entity, KV revision
-// advanced, prior triples preserved). Includes the gh#519 collision case: a real
+// advanced, prior triples preserved). Includes the SemStreams gh#519 collision case: a real
 // 3-part predicate ending in the literal segment "value".
 func TestHandleCanonicalAppend_ValidPredicate_PersistsMergeIntact(t *testing.T) {
 	comp := createTestComponentWithMockKV(t, withAuthority("acme", "ops"))

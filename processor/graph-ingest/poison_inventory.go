@@ -65,12 +65,9 @@ func newPoisonedEntitiesMetric() prometheus.Gauge {
 }
 
 // setEntityPoisonGauge publishes the inventory size to the gauge. Callers hold
-// entityPoisonMu (len is read under the lock). Nil-guarded for hand-built test
-// components.
+// entityPoisonMu (len is read under the lock).
 func (c *Component) setEntityPoisonGauge() {
-	if c.poisonedEntities != nil {
-		c.poisonedEntities.Set(float64(len(c.entityPoison)))
-	}
+	c.poisonedEntities.Set(float64(len(c.entityPoison)))
 }
 
 // recordEntityPoison inserts or refreshes an inventory record keyed by the
@@ -111,9 +108,6 @@ func (c *Component) recordEntityPoison(contractErr *graph.StateContractError, re
 // inventory record. Kept separate from recordEntityPoison so the boot sweep
 // can apply its own log cap.
 func (c *Component) logEntityPoisonRecorded(contractErr *graph.StateContractError, revision uint64) {
-	if c.logger == nil {
-		return
-	}
 	c.logger.Error("poisoned entity inventoried; per-entity refusal until repaired (delete + recreate)",
 		slog.String("code", graph.ErrorCodeGraphStateResetRequired),
 		slog.String("entity_id", contractErr.EntityID),

@@ -72,7 +72,7 @@ func TestMutationEntityIdentityRejectionPrecedesKVIO(t *testing.T) {
 			},
 		},
 		{
-			// gh#562 write-cost: pins MergeEntity's kept entity-ID-only
+			// SemStreams gh#562 write-cost: pins MergeEntity's kept entity-ID-only
 			// preflight — the ID is the CAS key and the hierarchy-probe key,
 			// so a malformed root ID must reject before any KV I/O even
 			// though the full candidate pass moved to the write gate.

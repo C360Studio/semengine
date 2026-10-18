@@ -440,10 +440,9 @@ func TestStreamLaneRefusesEmptyArrival(t *testing.T) {
 	// the extract step the consume closure runs after decoding: its refusal is the one the
 	// closure terminates and counts above.
 	t.Run("only a storage reference", func(t *testing.T) {
-		c, _ := startStreamLane(t)
 		const entityID = "c360.test.stamp.empty.entity.003"
 		payload := &testStorablePayload{id: entityID, ref: &message.StorageReference{StorageInstance: "objectstore-primary", Key: "stamp/empty/003"}}
-		_, err := c.extractEntityFromMessage(message.NewBaseMessage(payload.Schema(), payload, "stamp-producer", message.WithTime(created)))
+		_, err := extractEntityFromMessage(message.NewBaseMessage(payload.Schema(), payload, "stamp-producer", message.WithTime(created)))
 		assertInvalidRequest(t, err, "no statement")
 		var refusal *statementRefusal
 		if !errors.As(err, &refusal) {

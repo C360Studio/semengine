@@ -36,7 +36,7 @@ func batchSeed(entityID string) *graph.EntityState {
 }
 
 // TestIntegration_AddTriples_SingleSubjectIsOneCAS pins the load-bearing
-// optimisation behind ADR-036 §Stage 2: many triples sharing one Subject
+// optimisation behind SemStreams ADR-036 §Stage 2: many triples sharing one Subject
 // commit in a single CAS round-trip. Failure shows up as multiple
 // version increments (one per triple) instead of one.
 func TestIntegration_AddTriples_SingleSubjectIsOneCAS(t *testing.T) {
@@ -48,7 +48,7 @@ func TestIntegration_AddTriples_SingleSubjectIsOneCAS(t *testing.T) {
 	const entityID = "c360.test.batch.single.loop.001"
 	now := time.Now()
 
-	// ADR-055: pre-create the entity before adding triples (must-exist).
+	// SemStreams ADR-055: pre-create the entity before adding triples (must-exist).
 	require.NoError(t, c.mergeEntityOnLane(ctx, batchSeed(entityID), false))
 
 	// Capture the KV revision immediately after pre-create so we can assert
@@ -98,7 +98,7 @@ func TestIntegration_AddTriples_MultiSubjectGroupsByEntity(t *testing.T) {
 	const idB = "c360.test.batch.multi.loop.b02"
 	now := time.Now()
 
-	// ADR-055: pre-create both entities before adding triples (must-exist).
+	// SemStreams ADR-055: pre-create both entities before adding triples (must-exist).
 	require.NoError(t, c.mergeEntityOnLane(ctx, batchSeed(idA), false))
 	require.NoError(t, c.mergeEntityOnLane(ctx, batchSeed(idB), false))
 
@@ -187,7 +187,7 @@ func TestIntegration_HandleTripleAddBatch_RoundTrip(t *testing.T) {
 	const entityID = "c360.test.batch.handler.loop.001"
 	now := time.Now()
 
-	// ADR-055: pre-create the entity before adding triples (must-exist).
+	// SemStreams ADR-055: pre-create the entity before adding triples (must-exist).
 	require.NoError(t, c.mergeEntityOnLane(ctx, batchSeed(entityID), false))
 
 	req := graph.AppendTriplesRequest{
@@ -220,7 +220,7 @@ func TestIntegration_AddTriples_PreservesInputOrderWithinSubject(t *testing.T) {
 	const entityID = "c360.test.batch.order.loop.001"
 	now := time.Now()
 
-	// ADR-055: pre-create the entity before adding triples (must-exist).
+	// SemStreams ADR-055: pre-create the entity before adding triples (must-exist).
 	require.NoError(t, c.mergeEntityOnLane(ctx, batchSeed(entityID), false))
 
 	// Emit a known sequence: A, B, C, D, E across the same subject.
@@ -275,14 +275,14 @@ func TestIntegration_HandleTripleAddBatch_InvalidJSON(t *testing.T) {
 	defer owner.finish(ctx, t)
 
 	respBytes, err := c.handleCanonicalAppend(ctx, []byte("not json"))
-	// ADR-060: a malformed envelope is a typed invalid_request reject (no body).
+	// SemStreams ADR-060: a malformed envelope is a typed invalid_request reject (no body).
 	assert.Nil(t, respBytes)
 	var classified *errs.ClassifiedError
 	require.ErrorAs(t, err, &classified)
 	assert.Equal(t, graph.ErrorCodeInvalidRequest, classified.Code)
 }
 
-// TestIntegration_HandleTripleAdd_AbsentEntityRejects verifies ADR-055
+// TestIntegration_HandleTripleAdd_AbsentEntityRejects verifies SemStreams ADR-055
 // must-exist: a triple targeting a never-created entity is rejected with
 // ErrorCodeEntityNotFound. The entity bucket must remain empty (no
 // auto-vivification).
@@ -314,10 +314,10 @@ func TestIntegration_HandleTripleAdd_AbsentEntityRejects(t *testing.T) {
 	// State must be unchanged: entity must still not exist.
 	_, getErr := c.entityBucket.Get(ctx, subject)
 	assert.True(t, natsclient.IsKVNotFoundError(getErr),
-		"entity bucket must remain empty — no auto-vivification (ADR-055)")
+		"entity bucket must remain empty — no auto-vivification (SemStreams ADR-055)")
 }
 
-// TestIntegration_HandleTripleAddBatch_AbsentEntityRejects verifies ADR-055
+// TestIntegration_HandleTripleAddBatch_AbsentEntityRejects verifies SemStreams ADR-055
 // must-exist for the batch handler: an all-absent batch is rejected with
 // ErrorCodeEntityNotFound, FailedSubjects names the subject, WrittenCount is 0,
 // and the entity bucket remains empty.
@@ -348,5 +348,5 @@ func TestIntegration_HandleTripleAddBatch_AbsentEntityRejects(t *testing.T) {
 	// State must be unchanged: entity must still not exist.
 	_, getErr := c.entityBucket.Get(ctx, subject)
 	assert.True(t, natsclient.IsKVNotFoundError(getErr),
-		"entity bucket must remain empty — no auto-vivification (ADR-055)")
+		"entity bucket must remain empty — no auto-vivification (SemStreams ADR-055)")
 }

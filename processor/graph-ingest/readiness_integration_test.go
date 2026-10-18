@@ -61,6 +61,31 @@ func tryReadEnvelope(
 	return status, entry.Value(), true
 }
 
+// envelopeRead is one read of the readiness key; ok is false while the key is absent.
+type envelopeRead struct {
+	status graph.IndexStatusResponse
+	ok     bool
+}
+
+// awaitEnvelopeAfterTick publishes a status tick now and reads the readiness key, until
+// done accepts a published envelope or within passes. Each observation runs its own tick,
+// as awaitHealthAfterTick does, so no wait depends on the heartbeat's cadence (design D5):
+// the running loop can land a compute it began earlier between the tick and the read, and
+// the next observation's tick replaces it.
+func awaitEnvelopeAfterTick(
+	ctx context.Context, t *testing.T, c *Component, client *natsclient.Client,
+	within time.Duration, done func(graph.IndexStatusResponse) bool,
+) (envelopeRead, error) {
+	t.Helper()
+	waitCtx, cancel := context.WithTimeout(ctx, within)
+	defer cancel()
+	return probe.Await(waitCtx, func(ctx context.Context) (envelopeRead, error) {
+		c.refreshReadinessStatus(ctx)
+		status, _, ok := tryReadEnvelope(ctx, t, client)
+		return envelopeRead{status: status, ok: ok}, nil
+	}, func(r envelopeRead) bool { return r.ok && done(r.status) })
+}
+
 func startIngestForReadiness(ctx context.Context, t *testing.T) (*natsclient.Client, *Component, *graphIngestTestOwner) {
 	t.Helper()
 	client := newFixtureClient(t, entityStream)
@@ -75,9 +100,6 @@ func startIngestForReadiness(ctx context.Context, t *testing.T) (*natsclient.Cli
 	c := comp.(*Component)
 	owner := newGraphIngestTestOwner(c)
 	defer owner.provisionalFinish(ctx, t)
-	// Tick fast so the test observes successive heartbeats without sleeping through
-	// production cadence.
-	c.statusInterval = 200 * time.Millisecond
 	require.NoError(t, c.Initialize())
 	// Register the test payload decoder BEFORE Start. Without it every published
 	// message fails decode and is TERMINATED as poison — the backlog "drains"
@@ -118,23 +140,19 @@ func publishEntity(ctx context.Context, t *testing.T, client *natsclient.Client,
 
 // TestIntegration_ReadinessEnvelope_PublishedAndCatchesUp drives the whole producer:
 // a real component, real consumers, a real GRAPH_STATUS bucket. It asserts the
-// envelope reaches Ready with bootstrap complete on an idle stack — the gh#712 signal
+// envelope reaches Ready with bootstrap complete on an idle stack — the SemStreams gh#712 signal
 // that did not exist.
 func TestIntegration_ReadinessEnvelope_PublishedAndCatchesUp(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancel()
 
-	client, _, owner := startIngestForReadiness(ctx, t)
+	client, c, owner := startIngestForReadiness(ctx, t)
 	defer owner.finish(ctx, t)
 
-	require.Eventually(t, func() bool {
-		status, _, ok := tryReadEnvelope(ctx, t, client)
-		if !ok {
-			return false
-		}
+	_, err := awaitEnvelopeAfterTick(ctx, t, c, client, 30*time.Second, func(status graph.IndexStatusResponse) bool {
 		return status.Ready && status.BootstrapComplete && status.State == graph.IndexStateReady
-	}, 30*time.Second, 200*time.Millisecond,
-		"an idle stack must publish a caught-up envelope")
+	})
+	require.NoError(t, err, "an idle stack must publish a caught-up envelope")
 
 	status, raw := readEnvelope(ctx, t, client)
 	require.Zero(t, status.Lag, "idle stack reports no backlog")
@@ -150,7 +168,7 @@ func TestIntegration_ReadinessEnvelope_PublishedAndCatchesUp(t *testing.T) {
 	}
 }
 
-// TestIntegration_ReadinessEnvelope_BacklogIsNotReady is the gh#712 case itself: while
+// TestIntegration_ReadinessEnvelope_BacklogIsNotReady is the SemStreams gh#712 case itself: while
 // entities are still being applied, the envelope must NOT read caught-up. Before this
 // change a consumer could only see total_entities > 0 plus green health, which is
 // exactly what read as settled while ingest was mid-flight.
@@ -175,7 +193,6 @@ func TestIntegration_ReadinessEnvelope_BacklogIsNotReady(t *testing.T) {
 	c := comp.(*Component)
 	owner := newGraphIngestTestOwner(c)
 	defer owner.finish(ctx, t)
-	c.statusInterval = 100 * time.Millisecond
 	require.NoError(t, c.Initialize())
 	registerMergeTestPayload(t, c)
 
@@ -208,8 +225,8 @@ func TestIntegration_ReadinessEnvelope_BacklogIsNotReady(t *testing.T) {
 	require.NoError(t, c.Start(owner.startContext(ctx)))
 
 	// FIRST assert the not-ready window this test is named for. Without it the test
-	// only proved eventual readiness plus a non-zero scope — the gh#732 case — while
-	// its name promised gh#712's "nonempty and healthy read as settled". An envelope
+	// only proved eventual readiness plus a non-zero scope — the SemStreams gh#732 case — while
+	// its name promised SemStreams gh#712's "nonempty and healthy read as settled". An envelope
 	// reporting caught-up while a message is held is the defect this must catch.
 	select {
 	case <-held:
@@ -222,18 +239,9 @@ func TestIntegration_ReadinessEnvelope_BacklogIsNotReady(t *testing.T) {
 	// published yet means the producer's first tick has not landed (the iteration that
 	// failed in CI): unpublished is not not-ready, it is not-yet-observed, so the wait
 	// goes on.
-	type envelopeRead struct {
-		status graph.IndexStatusResponse
-		ok     bool
-	}
-	notReadyCtx, cancelNotReady := context.WithTimeout(ctx, 10*time.Second)
-	last, waitErr := probe.Await(notReadyCtx,
-		func(ctx context.Context) (envelopeRead, error) {
-			status, _, ok := tryReadEnvelope(ctx, t, client)
-			return envelopeRead{status: status, ok: ok}, nil
-		},
-		func(r envelopeRead) bool { return r.ok && (r.status.Ready || r.status.Lag > 0) })
-	cancelNotReady()
+	last, waitErr := awaitEnvelopeAfterTick(ctx, t, c, client, 10*time.Second, func(status graph.IndexStatusResponse) bool {
+		return status.Ready || status.Lag > 0
+	})
 	sawNotReady := last.ok && last.status.Lag > 0 && !last.status.Ready
 	require.True(t, sawNotReady,
 		"producer never reported outstanding work while a message of a %d-message backlog was held (last read %+v; wait: %v)",
@@ -241,17 +249,13 @@ func TestIntegration_ReadinessEnvelope_BacklogIsNotReady(t *testing.T) {
 	releaseHeld()
 
 	// ...and it must eventually catch up.
-	require.Eventually(t, func() bool {
-		status, _, ok := tryReadEnvelope(ctx, t, client)
-		if !ok {
-			return false
-		}
+	_, err = awaitEnvelopeAfterTick(ctx, t, c, client, 60*time.Second, func(status graph.IndexStatusResponse) bool {
 		return status.Ready && status.BootstrapComplete
-	}, 60*time.Second, 100*time.Millisecond,
-		"the producer must reach caught-up after draining the backlog")
+	})
+	require.NoError(t, err, "the producer must reach caught-up after draining the backlog")
 
 	// ...and having caught up, its scope must record that there WAS an initial build.
-	// This is the distinction gh#732 raises: complete && scope == 0 means
+	// This is the distinction SemStreams gh#732 raises: complete && scope == 0 means
 	// "authoritatively nothing to do", so a non-empty boot backlog must not report 0.
 	status, _ := readEnvelope(ctx, t, client)
 	require.Positive(t, status.BootstrapScope,
@@ -285,19 +289,14 @@ func TestIntegration_ReadinessEnvelope_NoStreamingPortIsHonestlyCaughtUp(t *test
 	c := comp.(*Component)
 	owner := newGraphIngestTestOwner(c)
 	defer owner.finish(ctx, t)
-	c.statusInterval = 100 * time.Millisecond
 	require.NoError(t, c.Initialize())
 	registerMergeTestPayload(t, c)
 	require.NoError(t, c.Start(owner.startContext(ctx)))
 
-	require.Eventually(t, func() bool {
-		status, _, ok := tryReadEnvelope(ctx, t, client)
-		if !ok {
-			return false
-		}
+	_, err = awaitEnvelopeAfterTick(ctx, t, c, client, 20*time.Second, func(status graph.IndexStatusResponse) bool {
 		return status.Ready && status.BootstrapComplete
-	}, 20*time.Second, 100*time.Millisecond,
-		"a deployment with no streaming input must be honestly caught up")
+	})
+	require.NoError(t, err, "a deployment with no streaming input must be honestly caught up")
 
 	status, _ := readEnvelope(ctx, t, client)
 	require.Zero(t, status.BootstrapScope,
@@ -335,7 +334,7 @@ func itoa(n int) string {
 // outstanding work correctly returns to zero. Asserting "stays > 0" would assert
 // something false about this component. It also observes the documented honesty
 // boundary live: lag == 0 means no outstanding work, NOT that every message was
-// applied — a terminated message is simply gone (gh#742 owns that visibility).
+// applied — a terminated message is simply gone (SemStreams gh#742 owns that visibility).
 //
 // IT DELIBERATELY DOES NOT ASSERT ON THE ACK FLOOR. §D0 measured it unusable, nothing
 // here reads it, and it would pass for the wrong reason under MaxDeliver exhaustion.
@@ -364,7 +363,6 @@ func TestIntegration_ReadyImpliesTheWritesAreDurable(t *testing.T) {
 	c := comp.(*Component)
 	owner := newGraphIngestTestOwner(c)
 	defer owner.finish(ctx, t)
-	c.statusInterval = 50 * time.Millisecond
 	require.NoError(t, c.Initialize())
 	registerMergeTestPayload(t, c)
 	require.NoError(t, c.Start(owner.startContext(ctx)))
@@ -372,13 +370,10 @@ func TestIntegration_ReadyImpliesTheWritesAreDurable(t *testing.T) {
 	bucket, err := client.GetKeyValueBucket(ctx, graph.BucketEntityStates)
 	require.NoError(t, err)
 
-	require.Eventually(t, func() bool {
-		status, _, ok := tryReadEnvelope(ctx, t, client)
-		if !ok {
-			return false
-		}
+	_, err = awaitEnvelopeAfterTick(ctx, t, c, client, 60*time.Second, func(status graph.IndexStatusResponse) bool {
 		return status.Ready && status.BootstrapComplete
-	}, 60*time.Second, 50*time.Millisecond, "producer must reach caught-up")
+	})
+	require.NoError(t, err, "producer must reach caught-up")
 
 	// THE ASSERTION: caught-up was reported, so every write must already be durable.
 	// If ack ran before the write, or before a derived write, some of these are absent.
@@ -415,7 +410,7 @@ func TestIntegration_ReadinessEnvelope_AbsentKeyIsNotAFailure(t *testing.T) {
 		_, _, ok := tryReadEnvelope(ctx, t, client)
 		return ok
 	}, 30*time.Second, 100*time.Millisecond, "the producer should publish its key")
-	// Fence the producer before the fixture-admin purge. Otherwise the 200ms
+	// Fence the producer before the fixture-admin purge. Otherwise the
 	// heartbeat can legitimately republish between Purge and Get, making this a
 	// scheduler race rather than a test of the absent-key decoder branch.
 	producerDone := comp.statusDone
@@ -437,4 +432,77 @@ func TestIntegration_ReadinessEnvelope_AbsentKeyIsNotAFailure(t *testing.T) {
 	require.False(t, ok,
 		"an absent readiness key must report not-observed to a polling caller; "+
 			"failing here is what broke TestIntegration_ReadinessEnvelope_BacklogIsNotReady in CI")
+}
+
+// TestIntegration_ReadinessEnvelope_BootstrapCompleteWithBacklog is design D2 (ADR-109
+// Decision 3; #183): bootstrap_complete is true once Start returns, whatever the backlog.
+// A message of a backlog the consumer bound onto is held behind the consumeStream barrier,
+// so every envelope while it is held has work outstanding; that envelope must still say
+// bootstrap_complete, with ready false and lag above zero.
+func TestIntegration_ReadinessEnvelope_BootstrapCompleteWithBacklog(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancel()
+
+	client := newFixtureClient(t, entityStream)
+	const backlog = 3
+	for i := 0; i < backlog; i++ {
+		publishEntity(ctx, t, client, "c360.test.readiness.complete.drone.d"+itoa(i))
+	}
+
+	cfg := DefaultConfig()
+	configJSON, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	comp, err := CreateGraphIngest(configJSON, testDependencies(t, client, withAuthority("c360", "test")))
+	require.NoError(t, err)
+	c := comp.(*Component)
+	owner := newGraphIngestTestOwner(c)
+	defer owner.finish(ctx, t)
+	require.NoError(t, c.Initialize())
+	registerMergeTestPayload(t, c)
+
+	// The barrier is TestIntegration_ReadinessEnvelope_BacklogIsNotReady's: a held message is
+	// not acked, so the consumer counts it outstanding. The deferred release runs before
+	// owner.finish, so a failed assertion cannot hold Stop.
+	held := make(chan struct{})
+	release := make(chan struct{})
+	var holdOnce, releaseOnce sync.Once
+	releaseHeld := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseHeld()
+	c.consumeStream = func(
+		ctx context.Context,
+		port natsclient.PortConsumerContext,
+		cfg natsclient.StreamConsumerConfig,
+		handler func(context.Context, jetstream.Msg),
+	) (jetstream.ConsumeContext, error) {
+		return c.natsClient.ConsumeStreamWithConfig(ctx, port, cfg, func(msgCtx context.Context, msg jetstream.Msg) {
+			holdOnce.Do(func() {
+				close(held)
+				<-release
+			})
+			handler(msgCtx, msg)
+		})
+	}
+	require.NoError(t, c.Start(owner.startContext(ctx)))
+
+	select {
+	case <-held:
+	case <-ctx.Done():
+		t.Fatalf("no message reached the test barrier: %v", ctx.Err())
+	}
+
+	// Publish now, then read the key until an envelope with work outstanding is there; while
+	// the message is held, every envelope published has some.
+	c.refreshReadinessStatus(ctx)
+	waitCtx, cancelWait := context.WithTimeout(ctx, 10*time.Second)
+	defer cancelWait()
+	got, waitErr := probe.Await(waitCtx,
+		func(ctx context.Context) (envelopeRead, error) {
+			status, _, ok := tryReadEnvelope(ctx, t, client)
+			return envelopeRead{status: status, ok: ok}, nil
+		},
+		func(r envelopeRead) bool { return r.ok && r.status.Lag > 0 })
+	require.NoError(t, waitErr, "no envelope reported the held backlog")
+	require.True(t, got.status.BootstrapComplete,
+		"bootstrap_complete must be true once Start returned, with a backlog standing: %+v", got.status)
+	require.False(t, got.status.Ready, "a backlog standing is not ready: %+v", got.status)
 }

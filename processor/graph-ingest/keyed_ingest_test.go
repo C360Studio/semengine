@@ -76,7 +76,7 @@ var testConsumer = natsclient.StreamConsumerConfig{StreamName: "ENTITY", AckWait
 
 const testHeartbeat = defaultIngestAckWait / 4
 
-// --- laneGuard (in-memory guard tier, ADR-072) ---
+// --- laneGuard (in-memory guard tier, SemStreams ADR-072) ---
 
 func TestLaneGuard_GetSet(t *testing.T) {
 	g := newLaneGuard(8)
@@ -154,11 +154,8 @@ func TestGuardKey(t *testing.T) {
 // --- ingestGuardStale: in-memory tier + nil-durable (no NATS) ---
 
 func TestIngestGuardStale_MemoryTierAndFirstSeen(t *testing.T) {
-	c := withTestRegistry(t, &Component{
-		ingestGuardMem:    []*laneGuard{newLaneGuard(16)},
-		ingestGuardBucket: nil, // no durable tier in this unit test
-	})
-	require.NoError(t, c.registerMetrics(nil)) // the first-seen input is counted (design D8)
+	c := createTestComponent(t) // no durable tier in this unit test: ingestGuardBucket is nil
+	c.ingestGuardMem = []*laneGuard{newLaneGuard(16)}
 	ctx := context.Background()
 	work := ingestWork{entityID: "c360.a.b.c.d.001", stream: "SENSOR", seq: 5}
 
@@ -192,11 +189,8 @@ func TestIngestGuardStale_MemoryTierAndFirstSeen(t *testing.T) {
 // A different stream for the same entity must NOT be judged against another
 // stream's sequence (independent per-stream sequence spaces — round-2 fix).
 func TestIngestGuardStale_PerStreamIndependence(t *testing.T) {
-	c := withTestRegistry(t, &Component{
-		ingestGuardMem:    []*laneGuard{newLaneGuard(16)},
-		ingestGuardBucket: nil,
-	})
-	require.NoError(t, c.registerMetrics(nil)) // the first-seen input is counted (design D8)
+	c := createTestComponent(t)
+	c.ingestGuardMem = []*laneGuard{newLaneGuard(16)}
 	ctx := context.Background()
 	entity := "c360.a.b.c.d.001"
 

@@ -19,7 +19,7 @@ import (
 // TestIntegration_QueryHandlers tests query handlers with real NATS JetStream.
 // Only the production-wire (NATS-suffixed) handlers are exercised here;
 // the former msg-style handlers (handleQueryEntity, handleQueryBatch) were
-// deleted as part of gh#164 part 1 dead-code cleanup.
+// deleted as part of SemStreams gh#164 part 1 dead-code cleanup.
 func TestIntegration_QueryHandlers(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()

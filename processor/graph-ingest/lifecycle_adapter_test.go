@@ -63,9 +63,11 @@ func (o *suiteOwner) Observe() lifecycletest.Observation {
 	calls := maps.Clone(o.calls)
 	o.mu.Unlock()
 
+	// The suite observes after a Start or Stop has returned to it, so these reads need no
+	// lock; only a call that overran its bound is observed while it still runs, and that
+	// check has already failed.
 	c := o.c
 	var held []string
-	c.handlesMu.Lock()
 	if c.cancel != nil {
 		held = append(held, "runtime cancel")
 	}
@@ -93,7 +95,6 @@ func (o *suiteOwner) Observe() lifecycletest.Observation {
 	if c.entityCache != nil {
 		held = append(held, "entity cache")
 	}
-	c.handlesMu.Unlock()
 	if len(c.boundConsumerSnapshot()) > 0 {
 		held = append(held, "readiness bound consumers")
 	}

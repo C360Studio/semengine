@@ -38,7 +38,7 @@ func createTestComponentWithCache(t *testing.T) *Component {
 // returned as a cache HIT — and therefore FIRST — by fetchEntitiesConcurrent.
 // It reads the stored entity back out of KV rather than reconstructing it so
 // the cached value is byte-identical to the fetched one (CreateEntity stamps an
-// indexing-profile triple per ADR-054).
+// indexing-profile triple per SemStreams ADR-054).
 func prewarmCacheEntity(t *testing.T, comp *Component, id string) {
 	t.Helper()
 	storePrefixEntity(t, comp, id)

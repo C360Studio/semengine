@@ -77,12 +77,7 @@ func authorityMetricReason(err error) (string, bool) {
 // deployment's to publish, and a rejected one reaching operator logs would
 // re-publish exactly what was refused.
 func (c *Component) recordAuthorityRejection(arrival, reason string, err error) {
-	if c.mutationRejections != nil {
-		c.mutationRejections.WithLabelValues(arrival, reason).Inc()
-	}
-	if c.logger == nil {
-		return
-	}
+	c.mutationRejections.WithLabelValues(arrival, reason).Inc()
 	// arrival is the NATS subject the write came in on — the mutation operation
 	// or the fact-lane filter subject. It names WHERE, and carries no identity.
 	attrs := []any{

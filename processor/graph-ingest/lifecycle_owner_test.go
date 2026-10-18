@@ -54,19 +54,15 @@ func TestLifecycleOwnerRunningStopPreservesEffectSettlementOrder(t *testing.T) {
 
 	runCtx, runCancel := context.WithCancel(t.Context())
 	submitCtx, submitCancel := context.WithCancel(runCtx)
-	owner := withTestRegistry(t, &Component{
-		logger:             slog.Default(),
-		running:            true,
-		cancel:             runCancel,
-		ingestPool:         pool,
-		ingestPoolCancel:   poolCancel,
-		ingestSubmitCancel: submitCancel,
-		consumers: []graphIngestConsumerBinding{{
-			handle: consumer,
-		}},
-		subscriptions:  []graphIngestCoreSubscription{coreSub},
-		boundConsumers: []boundConsumer{{stream: "ENTITY", name: "graph-ingest-entity"}},
-	})
+	owner := createTestComponent(t)
+	owner.running = true
+	owner.cancel = runCancel
+	owner.ingestPool = pool
+	owner.ingestPoolCancel = poolCancel
+	owner.ingestSubmitCancel = submitCancel
+	owner.consumers = []graphIngestConsumerBinding{{handle: consumer}}
+	owner.subscriptions = []graphIngestCoreSubscription{coreSub}
+	owner.boundConsumers = []boundConsumer{{stream: "ENTITY", name: "graph-ingest-entity"}}
 	startGuardAcquiringNothing(t, owner) // the pin set lifecycleUsed: true (design D22)
 
 	stopResult := make(chan error, 1)
@@ -126,15 +122,12 @@ func TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop(t *testing.T
 		closed: make(chan struct{}), drainSeen: make(chan struct{}),
 	}
 	runCtx, runCancel := context.WithCancel(t.Context())
-	component := withTestRegistry(t, &Component{
-		logger:      slog.Default(),
-		initialized: true,                 // passed Initialize, so Start reaches the guard (design D13)
-		natsClient:  newTestNATSClient(t), // never connected
-		cancel:      runCancel,
-		consumers: []graphIngestConsumerBinding{{
-			handle: consumer,
-		}},
-	})
+	component := createTestComponent(t)            // its NATS client is never connected
+	if err := component.Initialize(); err != nil { // so Start reaches the guard (design D13)
+		t.Fatalf("Initialize: %v", err)
+	}
+	component.cancel = runCancel
+	component.consumers = []graphIngestConsumerBinding{{handle: consumer}}
 	owner := newSuiteOwner(component)
 
 	errStart := errors.New("start fails after acquiring")
@@ -185,16 +178,13 @@ func TestLifecycleOwnerRunningDeadlineKeepsCleanupWithoutReplay(t *testing.T) {
 	consumer := &graphIngestLifecycleConsumeContext{
 		closed: make(chan struct{}), drainSeen: make(chan struct{}),
 	}
-	owner := withTestRegistry(t, &Component{
-		logger:      slog.Default(),
-		initialized: true,                 // passed Initialize, so Start reaches the guard (design D13)
-		natsClient:  newTestNATSClient(t), // never connected
-		running:     true,
-		cancel:      func() {},
-		consumers: []graphIngestConsumerBinding{{
-			handle: consumer,
-		}},
-	})
+	owner := createTestComponent(t)            // its NATS client is never connected
+	if err := owner.Initialize(); err != nil { // so Start reaches the guard (design D13)
+		t.Fatalf("Initialize: %v", err)
+	}
+	owner.running = true
+	owner.cancel = func() {}
+	owner.consumers = []graphIngestConsumerBinding{{handle: consumer}}
 	startGuardAcquiringNothing(t, owner) // the pin set lifecycleUsed: true (design D22)
 	stopCtx, expire := context.WithCancel(t.Context())
 	stopResult := make(chan error, 1)
@@ -235,7 +225,11 @@ func TestLifecycleOwnerRunningDeadlineKeepsCleanupWithoutReplay(t *testing.T) {
 // Initialize, so Start reaches the guard (design D13).
 func TestLifecycleOwnerStopBeforeStartIsTerminal(t *testing.T) {
 	newOwner := func() *Component {
-		return withTestRegistry(t, &Component{initialized: true, natsClient: newTestNATSClient(t)})
+		owner := createTestComponent(t)
+		if err := owner.Initialize(); err != nil {
+			t.Fatalf("Initialize: %v", err)
+		}
+		return owner
 	}
 	canceled, cancel := context.WithCancel(t.Context())
 	cancel()

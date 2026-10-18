@@ -15,8 +15,8 @@ import (
 	"github.com/c360studio/semengine/vocabulary"
 )
 
-// ADR-060: meteredMutation wraps every graph-mutation request handler and
-// meters rejections by subject + reason. Under ADR-060, a hard rejection
+// SemStreams ADR-060: meteredMutation wraps every graph-mutation request handler and
+// meters rejections by subject + reason. Under SemStreams ADR-060, a hard rejection
 // surfaces as (nil body, *errs.ClassifiedError) on the error channel —
 // there is no longer an in-body Success/ErrorCode path for single-entity
 // mutations. Partial-batch success is still a (body, nil) reply with
@@ -27,7 +27,7 @@ func TestMeteredMutation_MetersRejectionByErrorCode(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)
 	const subj = "test.mutation.metric.errorcode"
 
-	// ADR-060: a hard rejection is (nil, *ClassifiedError); the handler
+	// SemStreams ADR-060: a hard rejection is (nil, *ClassifiedError); the handler
 	// returns the typed error, not an in-body Success=false.
 	wrapped := comp.meteredMutation(subj, func(_ context.Context, _ []byte) ([]byte, error) {
 		return nil, errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeEntityNotFound, errors.New("entity does not exist"))
@@ -52,7 +52,7 @@ func TestMeteredMutation_SuccessDoesNotMeter(t *testing.T) {
 	const subj = "test.mutation.metric.success"
 
 	wrapped := comp.meteredMutation(subj, func(_ context.Context, _ []byte) ([]byte, error) {
-		// ADR-060: any (body, nil) reply is a success body.
+		// SemStreams ADR-060: any (body, nil) reply is a success body.
 		data, _ := json.Marshal(graph.AppendTriplesResponse{Results: []graph.AppendSubjectResult{{
 			EntityID: "a.b.c.d.e.f", Outcome: graph.MutationApplied, KVRevision: 1,
 		}}})
@@ -71,7 +71,7 @@ func TestMeteredMutation_SuccessDoesNotMeter(t *testing.T) {
 
 // TestMeteredMutation_EmptyCodeIsInternal verifies that a non-nil handler error
 // with an empty ClassifiedError.Code (or a plain error) falls through to the
-// "internal" label — the ADR-060 equivalent of the retired "unclassified" path
+// "internal" label — the SemStreams ADR-060 equivalent of the retired "unclassified" path
 // (the old in-body ErrorCode="" route no longer exists).
 func TestMeteredMutation_EmptyCodeIsInternal(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)

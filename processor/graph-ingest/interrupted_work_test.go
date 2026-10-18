@@ -58,7 +58,7 @@ func entityStored(bucket *mockKVBucket, id string) bool {
 // in-progress signal could not be sent, or the delivery has no metadata), the input is left
 // unsettled, the interrupted-work count under that cause rises by one, one ERROR line names the
 // cause, and the next input on the same lane is applied and acknowledged. The interruption adds
-// nothing to the error count Health reads (#91 comment 6124130342): where it lands outside the
+// nothing to the error count Health reports (#91 comment 6124130342): where it lands outside the
 // entity's write, that count is unchanged; where it lands in the entity's write (its read inside the
 // compare-and-set, or a container's birth), the write it cut counts once, at its own site, and logs
 // its own ERROR line beside the cause's (Codex B1 on PR #93). The lane is one lane of a keyed pool
@@ -72,7 +72,7 @@ func TestInterruptedApplicationIsRedeliveredNotAStop(t *testing.T) {
 		// hierarchy turns on hierarchy inference, so the first input's birth creates its containers.
 		hierarchy bool
 		// writeFailed is set where the interruption fails the entity's write, which counts once in
-		// the error count Health reads and logs its own ERROR line, "Failed to merge entity", beside
+		// the error count Health reports and logs its own ERROR line, "Failed to merge entity", beside
 		// the one naming the cause.
 		writeFailed bool
 		// arrange interrupts the first input's application, through the applied-sequence bucket,
@@ -370,7 +370,7 @@ func refuseEntityCreate(bucket *mockKVBucket) {
 
 // TestOrdinaryLaneWriteErrorCountsOnce holds the other side of TestInterruptedApplicationIsRedeliveredNotAStop
 // (Codex B1 on PR #93; #91 comment 6124130342): an entity write that fails on the lane with no
-// interruption raises the error count Health reads by one, at the write's own site, counts nothing as
+// interruption raises the error count Health reports by one, at the write's own site, counts nothing as
 // interrupted work, and its input is negatively acknowledged.
 func TestOrdinaryLaneWriteErrorCountsOnce(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -400,7 +400,7 @@ func TestOrdinaryLaneWriteErrorCountsOnce(t *testing.T) {
 
 // TestDirectWriteErrorCountsAtOnce holds that a write called outside the delivery helper counts its
 // error once in Health's error count before it returns: ingestEntity, the synchronous entry
-// handleMessage uses, and the exported CreateEntity.
+// applyIngest uses, and the exported CreateEntity.
 func TestDirectWriteErrorCountsAtOnce(t *testing.T) {
 	t.Run("ingestEntity", func(t *testing.T) {
 		c, entities := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))

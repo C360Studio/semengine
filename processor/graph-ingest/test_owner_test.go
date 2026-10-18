@@ -3,7 +3,6 @@ package graphingest
 import (
 	"context"
 	"errors"
-	"log/slog"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -34,8 +33,9 @@ func TestGraphIngestTestOwnerControlledStopPreservesAuthority(t *testing.T) {
 		}
 		return nil
 	}}
-	component := &Component{logger: slog.Default(), running: true,
-		subscriptions: []graphIngestCoreSubscription{drain}}
+	component := createTestComponent(t)
+	component.running = true
+	component.subscriptions = []graphIngestCoreSubscription{drain}
 	startGuardAcquiringNothing(t, component) // the pin set lifecycleUsed: true (design D22)
 	owner := newGraphIngestTestOwner(component)
 	startCtx = owner.startContext(opCtx)
@@ -60,8 +60,8 @@ func TestGraphIngestTestOwnerFailedAttemptIsNotRetried(t *testing.T) {
 	defer cancelOperation()
 	want := errors.New("subscription drain failed")
 	drain := &graphIngestTestDrain{drain: func(context.Context) error { return want }}
-	component := &Component{logger: slog.Default(),
-		subscriptions: []graphIngestCoreSubscription{drain}}
+	component := createTestComponent(t)
+	component.subscriptions = []graphIngestCoreSubscription{drain}
 	leaveGuardCleanupPending(t, component) // the pin set lifecycleUsed and cleanupPending (design D22)
 	owner := newGraphIngestTestOwner(component)
 	if err := owner.stop(opCtx); !errors.Is(err, want) {
@@ -86,8 +86,9 @@ func TestGraphIngestTestOwnerCanceledOperationKeepsFreshTerminalAuthority(t *tes
 		}
 		return want
 	}}
-	component := &Component{logger: slog.Default(), running: true,
-		subscriptions: []graphIngestCoreSubscription{drain}}
+	component := createTestComponent(t)
+	component.running = true
+	component.subscriptions = []graphIngestCoreSubscription{drain}
 	startGuardAcquiringNothing(t, component) // the pin set lifecycleUsed: true (design D22)
 	owner := newGraphIngestTestOwner(component)
 	owner.startContext(operationCtx)
@@ -108,8 +109,9 @@ func TestGraphIngestTestOwnerWaitsForObservedClosure(t *testing.T) {
 	consumer := &graphIngestLifecycleConsumeContext{
 		closed: make(chan struct{}), drainSeen: make(chan struct{}),
 	}
-	component := &Component{logger: slog.Default(), running: true,
-		consumers: []graphIngestConsumerBinding{{handle: consumer}}}
+	component := createTestComponent(t)
+	component.running = true
+	component.consumers = []graphIngestConsumerBinding{{handle: consumer}}
 	startGuardAcquiringNothing(t, component) // the pin set lifecycleUsed: true (design D22)
 	owner := newGraphIngestTestOwner(component)
 	startCtx := owner.startContext(operationCtx)

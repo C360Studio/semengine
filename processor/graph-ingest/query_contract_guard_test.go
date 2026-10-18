@@ -23,7 +23,6 @@ import (
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/nats-io/nats.go/jetstream"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
@@ -48,7 +47,7 @@ func TestBootSweepInventoriesResidentPoisonAndBoots(t *testing.T) {
 	bucket.data[guardTestPoisonID] = mockKVData{value: guardTestPoisonBytes(guardTestPoisonID), revision: 3}
 	bucket.data[guardTestValidID] = mockKVData{value: guardTestValidBytes(guardTestValidID), revision: 4}
 	logs := newIngestGuardLogBuffer()
-	c := newIngestGuardTestComponent(bucket)
+	c := newIngestGuardTestComponent(t, bucket)
 	c.logger = slog.New(slog.NewTextHandler(logs, nil))
 
 	// The sweep completes: a poisoned entity does not fail it.
@@ -129,7 +128,7 @@ func TestBootSweepLastRevisionWins(t *testing.T) {
 			watcher.updates <- nil
 			bucket := newMockKVBucket()
 			bucket.watchAllFactory = func() (jetstream.KeyWatcher, error) { return watcher, nil }
-			c := newIngestGuardTestComponent(bucket)
+			c := newIngestGuardTestComponent(t, bucket)
 
 			if err := c.startEntityStateGuard(context.Background(), c.entityBucket); err != nil {
 				t.Fatalf("boot sweep: %v", err)
@@ -157,7 +156,7 @@ func bootSweep(t *testing.T, entries ...jetstream.KeyValueEntry) *Component {
 	}
 	watcher.updates <- nil
 	bucket.watchAllFactory = func() (jetstream.KeyWatcher, error) { return watcher, nil }
-	c := newIngestGuardTestComponent(bucket)
+	c := newIngestGuardTestComponent(t, bucket)
 	if err := c.startEntityStateGuard(context.Background(), c.entityBucket); err != nil {
 		t.Fatalf("boot sweep: %v", err)
 	}
@@ -197,7 +196,7 @@ func TestBootSweepInventoriesStatementWithoutMetadata(t *testing.T) {
 
 // TestBootSweepInventoriesMisKeyedValue: a value stored under one key that
 // names another entity is inventoried by the boot sweep under its key, refused
-// as the first read of the key refuses it (gh#147), and a later valid revision
+// as the first read of the key refuses it (SemStreams gh#147), and a later valid revision
 // for the key still erases it (last revision wins).
 func TestBootSweepInventoriesMisKeyedValue(t *testing.T) {
 	t.Parallel()
@@ -293,7 +292,7 @@ func TestEntityStateGuardFailureIsReturned(t *testing.T) {
 			opened := make(chan struct{})
 			bucket := newMockKVBucket()
 			bucket.watchAllFactory = func() (jetstream.KeyWatcher, error) { return tc.watch(opened, watcher) }
-			c := newIngestGuardTestComponent(bucket)
+			c := newIngestGuardTestComponent(t, bucket)
 
 			ctx, cancel := context.WithCancel(t.Context())
 			defer cancel()
@@ -340,7 +339,7 @@ func TestEntityStateGuardDeliberateStopDrainsToCloseWithoutMisclassification(t *
 	watcher.updates <- &mockKVEntry{key: guardTestValidID, revision: 3, data: guardTestValidBytes(guardTestValidID)}
 	bucket := newMockKVBucket()
 	bucket.watchAllFactory = func() (jetstream.KeyWatcher, error) { return watcher, nil }
-	c := newIngestGuardTestComponent(bucket)
+	c := newIngestGuardTestComponent(t, bucket)
 
 	done := make(chan error, 1)
 	go func() { done <- c.startEntityStateGuard(context.Background(), c.entityBucket) }()
@@ -393,7 +392,7 @@ func TestQueryDiscoveredPoisonServesConcurrentReadyResponse(t *testing.T) {
 			return nil, jetstream.ErrKeyNotFound
 		}
 	}
-	c := newIngestGuardTestComponent(bucket)
+	c := newIngestGuardTestComponent(t, bucket)
 
 	type result struct {
 		data []byte
@@ -449,7 +448,7 @@ func TestBatchBackendFailureReturnsNoPartialEntities(t *testing.T) {
 		}
 		return nil, errors.New("backend unavailable")
 	}
-	c := newIngestGuardTestComponent(bucket)
+	c := newIngestGuardTestComponent(t, bucket)
 
 	result, err := c.handleQueryBatchNATS(context.Background(), []byte(
 		`{"ids":["`+guardTestValidID+`","`+guardTestPoisonID+`"]}`,
@@ -467,17 +466,15 @@ func TestBatchBackendFailureReturnsNoPartialEntities(t *testing.T) {
 // Shared test scaffolding for the guard/poison suites.
 // ----------------------------------------------------------------------------
 
-func newIngestGuardTestComponent(bucket *mockKVBucket) *Component {
-	c := &Component{
-		entityBucket:    bucketStoreForTest(bucket),
-		payloadRegistry: mustTestPayloadRegistry(),
-		logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
-		running:         true,
-		// Fresh, unregistered gauge per component so tests can assert values
-		// without cross-test interference on the process-global metric.
-		poisonedEntities: prometheus.NewGauge(prometheus.GaugeOpts{Name: "test_poisoned_entities"}),
-	}
-	c.lastActivity.Store(time.Now())
+// newIngestGuardTestComponent builds graph-ingest through the factory, with no metrics
+// registry, so each component's poisoned-entities gauge is its own, and gives it bucket
+// as ENTITY_STATES. It is marked running so Health reads the poison inventory.
+func newIngestGuardTestComponent(t *testing.T, bucket *mockKVBucket) *Component {
+	t.Helper()
+	c := createTestComponent(t, withAuthority("acme", "ops"))
+	c.entityBucket = bucketStoreForTest(bucket)
+	c.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	c.running = true
 	return c
 }
 

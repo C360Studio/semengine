@@ -18,7 +18,7 @@ import (
 	"github.com/c360studio/semengine/vocabulary"
 )
 
-// ADR-054 Phase 1: graph-ingest stamps a single-valued entity.indexing.profile
+// SemStreams ADR-054 Phase 1: graph-ingest stamps a single-valued entity.indexing.profile
 // triple at every entity-CREATION seam (canonical create and Graphable arrival),
 // resolving via precedence envelope > Graphable
 // IndexingProfiler > fallback floor (default control). It is NEVER stamped on a
@@ -41,7 +41,7 @@ func storedEntity(t *testing.T, comp *Component, id string) *graph.EntityState {
 }
 
 // nonProfileTripleCount counts an entity's triples EXCLUDING the framework-
-// stamped entity.indexing.profile (ADR-054). Count-based assertions that
+// stamped entity.indexing.profile (SemStreams ADR-054). Count-based assertions that
 // predate the stamp use it so they stay robust to the reserved triple instead
 // of hard-coding "+1". Shared with the integration tests (same package).
 func nonProfileTripleCount(es *graph.EntityState) int {
@@ -152,7 +152,7 @@ func TestIndexingProfile_Graphable_IndexingProfilerWins(t *testing.T) {
 	}
 	msg := message.NewBaseMessage(payload.Schema(), payload, "test")
 
-	entity, err := comp.extractEntityFromMessage(msg)
+	entity, err := extractEntityFromMessage(msg)
 	require.NoError(t, err)
 	require.NoError(t, comp.mergeEntityOnLane(context.Background(), entity, false))
 
@@ -167,7 +167,7 @@ func TestIndexingProfile_Graphable_NoProfilerFallsToFloor(t *testing.T) {
 	payload := &testGraphablePayload{id: testProfileEntityID, triples: []message.Triple{{Subject: testProfileEntityID, Predicate: semantictest.Predicate(t, "test", "fixture", "value"), Object: "v", Timestamp: time.Now()}}}
 	msg := message.NewBaseMessage(payload.Schema(), payload, "test")
 
-	entity, err := comp.extractEntityFromMessage(msg)
+	entity, err := extractEntityFromMessage(msg)
 	require.NoError(t, err)
 	require.NoError(t, comp.mergeEntityOnLane(context.Background(), entity, false))
 
@@ -184,7 +184,7 @@ func TestIndexingProfile_ReArrival_DoesNotAccumulateOrReProfile(t *testing.T) {
 
 	// First arrival: declares content.
 	first := &testGraphablePayload{id: testProfileEntityID, triples: []message.Triple{{Subject: testProfileEntityID, Predicate: semantictest.Predicate(t, "doc", "body", "text"), Object: "v1", Timestamp: time.Now()}}, profile: vocabulary.IndexingProfileContent}
-	e1, err := comp.extractEntityFromMessage(message.NewBaseMessage(first.Schema(), first, "test"))
+	e1, err := extractEntityFromMessage(message.NewBaseMessage(first.Schema(), first, "test"))
 	require.NoError(t, err)
 	require.NoError(t, comp.mergeEntityOnLane(ctx, e1, false))
 
@@ -192,7 +192,7 @@ func TestIndexingProfile_ReArrival_DoesNotAccumulateOrReProfile(t *testing.T) {
 	// the profile is immutable after create, so this must NOT re-profile and
 	// must NOT add a second profile triple.
 	second := &testGraphablePayload{id: testProfileEntityID, triples: []message.Triple{{Subject: testProfileEntityID, Predicate: semantictest.Predicate(t, "doc", "body", "text"), Object: "v2", Timestamp: time.Now()}}, profile: vocabulary.IndexingProfileTrace}
-	e2, err := comp.extractEntityFromMessage(message.NewBaseMessage(second.Schema(), second, "test"))
+	e2, err := extractEntityFromMessage(message.NewBaseMessage(second.Schema(), second, "test"))
 	require.NoError(t, err)
 	require.NoError(t, comp.mergeEntityOnLane(ctx, e2, false))
 
@@ -201,7 +201,7 @@ func TestIndexingProfile_ReArrival_DoesNotAccumulateOrReProfile(t *testing.T) {
 		"re-arrival must keep the create-time profile and stay single-valued")
 }
 
-// --- ADR-054 §1 invariant: the structural graph is NEVER gated by profile ---
+// --- SemStreams ADR-054 §1 invariant: the structural graph is NEVER gated by profile ---
 
 func TestIndexingProfile_StructuralGraphNeverGated_TraceEntityStaysQueryable(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)
@@ -286,7 +286,7 @@ func TestIndexingProfile_FloorMetric_FiresExactlyOnFloor(t *testing.T) {
 	//     → keep-first, no floor → metric unchanged (immutability is not a default).
 	before = testutil.ToFloat64(counter)
 	payload := &testGraphablePayload{id: "c360.platform.metrictest.sys.widget.001", triples: []message.Triple{{Subject: testProfileEntityID, Predicate: semantictest.Predicate(t, "test", "fixture", "value"), Object: "v2", Timestamp: time.Now()}}}
-	entity, err := comp.extractEntityFromMessage(message.NewBaseMessage(mt, payload, "test"))
+	entity, err := extractEntityFromMessage(message.NewBaseMessage(mt, payload, "test"))
 	require.NoError(t, err)
 	require.NoError(t, comp.mergeEntityOnLane(ctx, entity, false))
 	assert.InDelta(t, before, testutil.ToFloat64(counter), 0.0001,
@@ -373,7 +373,7 @@ func TestIndexingProfile_RegistryFloor_RegisteredTypeNoMetric(t *testing.T) {
 // TestIndexingProfile_Append_DoesNotStamp locks the indexing invariant:
 // append is NOT a stamp seam. An entity updated via append carries no
 // additional profile triple — reconcileIndexingProfile is not on this path.
-// The entity must be pre-created (ADR-055 deleted the auto-vivify path);
+// The entity must be pre-created (SemStreams ADR-055 deleted the auto-vivify path);
 // Appending to a pre-existing entity must NOT re-stamp indexing metadata.
 func TestIndexingProfile_Append_DoesNotStamp(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)
@@ -410,7 +410,7 @@ func TestIndexingProfile_Append_DoesNotStamp(t *testing.T) {
 }
 
 // The complement: a REGISTERED type that declares no floor falls to control AND
-// fires the metric — its new meaning under ADR-103: the label names a
+// fires the metric — its new meaning under SemStreams ADR-103: the label names a
 // Registration literal whose IndexingProfile is empty.
 //
 // The pin read getIndexingProfileDefaultMetric(nil); the counter is the component's

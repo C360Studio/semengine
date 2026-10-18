@@ -63,28 +63,6 @@ func TestFactoryRejectsNilPayloadRegistry(t *testing.T) {
 	require.NoError(t, err, "with a registry the factory constructs")
 }
 
-// TestCreateSeamRejectsWhenRegistryMissing (O-15): a component that somehow
-// holds no registry refuses a create at the seam with code internal — never a
-// pass-through, never a panic.
-func TestCreateSeamRejectsWhenRegistryMissing(t *testing.T) {
-	c := &Component{}
-	const id = "c360.test.seam.system.widget.001"
-	data, err := json.Marshal(graph.CreateEntityRequest{
-		Entity: &graph.EntityState{ID: id, MessageType: message.Type{Domain: "test", Category: "widget", Version: "v1"}},
-	})
-	require.NoError(t, err)
-
-	var reply []byte
-	var handlerErr error
-	require.NotPanics(t, func() { reply, handlerErr = c.handleCanonicalCreate(context.Background(), data) })
-	require.Error(t, handlerErr)
-	assert.Nil(t, reply)
-
-	var ce *errs.ClassifiedError
-	require.ErrorAs(t, handlerErr, &ce)
-	assert.Equal(t, graph.ErrorCodeInternal, ce.Code)
-}
-
 // TestInProcessCreateRejectsUnregisteredType: Component.CreateEntity (the
 // hierarchy container lane) is gated by the same helper — the classified
 // error is returned to the caller, nothing is written, nothing is metered.

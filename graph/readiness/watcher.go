@@ -18,8 +18,8 @@
 //
 // The Watcher reads one producer's key from another process and holds the last
 // envelope, so a read needs no NATS round trip. It judges freshness by when each value
-// arrived, never by comparing the producer's clock with its own (ADR-083 Decision 2);
-// the envelope's published_at is not read here. Nothing in SemEngine reads a Watcher
+// arrived, never by comparing the producer's clock with its own (ADR-083 Decision 2).
+// Nothing in SemEngine reads a Watcher
 // yet: it is kept for the readers at the SemStreams pin, fusion and graph-clustering,
 // when they are ported.
 //

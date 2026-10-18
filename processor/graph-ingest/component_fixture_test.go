@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -24,7 +23,7 @@ import (
 )
 
 // testStampKeys are the message types this package's tests stamp on the
-// create seams (ADR-103: a stamp the registry does not hold is refused).
+// create seams (SemStreams ADR-103: a stamp the registry does not hold is refused).
 // Framework types are registered by their own RegisterPayloads;
 // these are the test-only types, registered as schema-less stubs with no floor.
 var testStampKeys = []message.Type{
@@ -98,33 +97,6 @@ func newTestPayloadRegistry(tb testing.TB) *payloadregistry.Registry {
 	reg := payloadfixture.NewWithSubset(tb, message.RegisterPayloads, inference.RegisterPayloads, lifecycle.RegisterPayloads)
 	registerTestStamps(tb, reg)
 	return reg
-}
-
-// panicTB is the panic-shaped testing.TB for helpers that have no test in
-// scope (the shared lifecycle fixture): Fatalf panics, Helper is a no-op,
-// everything else is unreachable from RegisterTestType and NewWithSubset.
-type panicTB struct{ testing.TB }
-
-func (panicTB) Helper() {}
-
-func (panicTB) Fatalf(format string, args ...any) {
-	panic(fmt.Sprintf("graph-ingest test registry: "+format, args...))
-}
-
-// mustTestPayloadRegistry is newTestPayloadRegistry for helpers that have no
-// testing.TB in scope.
-func mustTestPayloadRegistry() *payloadregistry.Registry {
-	return newTestPayloadRegistry(panicTB{})
-}
-
-// withTestRegistry gives a Component built as a literal (bypassing the
-// factory) the registry and decoder the factory would have set, so the
-// fail-closed create seam admits registered test stamps (O-15, tasks 5.4).
-func withTestRegistry(tb testing.TB, c *Component) *Component {
-	tb.Helper()
-	c.payloadRegistry = newTestPayloadRegistry(tb)
-	c.decoder = message.NewDecoder(c.payloadRegistry)
-	return c
 }
 
 // testDeploymentOrg / testDeploymentPlatform are the authority the fixtures in

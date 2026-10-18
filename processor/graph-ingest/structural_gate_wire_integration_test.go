@@ -27,7 +27,7 @@ import (
 // (X-Status/X-Error-Class/X-Error-Code headers + {message} body) →
 // ClassifyReply/RequestClassified on the caller side.
 //
-// Wire contract asserted (ADR-060):
+// Wire contract asserted (SemStreams ADR-060):
 //
 //	X-Status:      error
 //	X-Error-Class: invalid

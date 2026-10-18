@@ -72,18 +72,21 @@ func newIndexingProfileDefaultMetric() *prometheus.CounterVec {
 	return indexingProfileDefaultVec
 }
 
-// newMutationRejectionsMetric builds the counter for rejected
-// graph-mutation requests, labelled by subject + reason (the error's classified
-// code, internal when it carries none: a bounded closed set; #287). It operationalizes ADR-055 §3's "loud
-// fail-fast" observability. Append, reconcile, and delete against an absent
-// entity report entity_not_found. Other bounded classes include validation,
-// revision conflict, and strict-create conflict.
+// newMutationRejectionsMetric builds the counter for rejected graph writes:
+// mutation requests, and authority refusals on the fact lanes (their arrival
+// port's subject) and on direct writes ("direct"). The reason is a bounded set
+// (#287): authority_foreign or authority_claimed for an authority refusal
+// (authorityMetricReason), otherwise the error's classified code, or internal
+// when it carries none. It operationalizes ADR-055 §3's "loud fail-fast"
+// observability. Append, reconcile, and delete against an absent entity report
+// entity_not_found. Other bounded classes include validation, revision
+// conflict, and strict-create conflict.
 func newMutationRejectionsMetric() *prometheus.CounterVec {
 	mutationRejectionsVec := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "semengine",
 		Subsystem: "graph_ingest",
 		Name:      "mutation_rejections_total",
-		Help:      "Graph-mutation requests rejected, by subject and reason: the error's classified code, 'internal' when it carries none.",
+		Help:      "Graph writes rejected, by subject or arrival lane and reason: an authority reason (authority_foreign, authority_claimed), else the error's classified code, 'internal' when unclassified.",
 	}, []string{"subject", "reason"})
 	return mutationRejectionsVec
 }

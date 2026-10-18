@@ -111,8 +111,12 @@ ADR-109 Decision 2: stuck states, not an error count.
 
 ## D6. Help text (#287)
 
-`mutation_rejections_total`'s help becomes "Graph-mutation requests rejected, by subject and reason: the error's
-classified code, `internal` when it carries none." No test reads help text; none is added (no behaviour).
+`mutation_rejections_total`'s help becomes "Graph writes rejected, by subject or arrival lane and reason: an authority
+reason (authority_foreign, authority_claimed), else the error's classified code, 'internal' when unclassified." The
+counter takes mutation requests (by subject), and authority refusals on the fact lanes (by arrival port subject) and
+on direct writes (`direct`); `authorityMetricReason` (`authority_gate.go`) maps the authority code to its two reasons
+before the classified-code fallback (`mutation_runtime.go`, `meteredMutation`). The runtime labels do not change. No
+test reads help text; none is added (no behaviour).
 
 ## D7. #139: what this change does
 

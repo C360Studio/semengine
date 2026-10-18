@@ -553,13 +553,6 @@ func (c *Component) fetchEntitiesConcurrent(ctx context.Context, ids []string, m
 				return
 			}
 
-			// Test-only seam: deterministically inject a concurrent invalidation
-			// into the read window (between the KV Get and the repopulating Set).
-			// nil in production.
-			if c.repopulateHook != nil {
-				c.repopulateHook(entityID)
-			}
-
 			// Repopulate the read-through cache, but drop the Set if this key was
 			// invalidated during the read window (gen0 no longer current) — a slow
 			// reader must not resurrect pre-write state past a concurrent

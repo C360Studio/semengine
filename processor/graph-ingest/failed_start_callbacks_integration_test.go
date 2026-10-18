@@ -73,8 +73,8 @@ func TestFailedRegistrationRunsNoRequestWork(t *testing.T) {
 		check func(t *testing.T, c *Component)
 	}{
 		{
-			// A batch query reads the seeded entity and reaches repopulateHook (query.go)
-			// before it touches the entity cache. A not-found ID returns before the hook.
+			// The entity is seeded so a batch query that ran would succeed: only the
+			// not-started refusal returns the error the test asserts.
 			name: "query",
 			subject: func(t *testing.T, _ *Component) string {
 				for _, verb := range graph.QueryVerbs() {
@@ -144,17 +144,6 @@ func TestFailedRegistrationRunsNoRequestWork(t *testing.T) {
 			}
 			failing := tc.subject(t, comp)
 
-			hookEntered := make(chan struct{})
-			releaseHook := make(chan struct{})
-			var hookOnce sync.Once
-			comp.repopulateHook = func(string) {
-				hookOnce.Do(func() { close(hookEntered) })
-				<-releaseHook
-			}
-			var releaseOnce sync.Once
-			release := func() { releaseOnce.Do(func() { close(releaseHook) }) }
-			defer release()
-
 			registrationErr := errs.WrapTransient(context.DeadlineExceeded,
 				"test", "SubscribeForRequests", "registration round trip")
 			gReturned := make(chan struct{})
@@ -177,7 +166,6 @@ func TestFailedRegistrationRunsNoRequestWork(t *testing.T) {
 				}()
 				select {
 				case <-gReturned:
-				case <-hookEntered:
 				case <-ctx.Done():
 				}
 				return nil, registrationErr
@@ -187,16 +175,10 @@ func TestFailedRegistrationRunsNoRequestWork(t *testing.T) {
 			if !errors.Is(startErr, registrationErr) {
 				t.Fatalf("Start error = %v, want it to wrap the registration's error", startErr)
 			}
-			select {
-			case <-hookEntered:
-				t.Error("the query read the entity before Start completed: repopulateHook was entered")
-			default:
-			}
 			if held := (&suiteOwner{c: comp}).Observe().Unresolved; len(held) != 0 {
 				t.Errorf("held after the failed Start = %v, want nothing", held)
 			}
 
-			release()
 			awaitClosed(ctx, t, gReturned, "the handler returning")
 			if gPanic != nil {
 				t.Fatalf("the handler panicked: %v", gPanic)

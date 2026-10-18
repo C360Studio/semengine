@@ -73,8 +73,8 @@ func newIndexingProfileDefaultMetric() *prometheus.CounterVec {
 }
 
 // newMutationRejectionsMetric builds the counter for rejected
-// graph-mutation requests, labelled by subject + reason (the MutationResponse
-// ErrorCode — a bounded closed set). It operationalizes ADR-055 §3's "loud
+// graph-mutation requests, labelled by subject + reason (the error's classified
+// code, internal when it carries none: a bounded closed set; #287). It operationalizes ADR-055 §3's "loud
 // fail-fast" observability. Append, reconcile, and delete against an absent
 // entity report entity_not_found. Other bounded classes include validation,
 // revision conflict, and strict-create conflict.
@@ -83,7 +83,7 @@ func newMutationRejectionsMetric() *prometheus.CounterVec {
 		Namespace: "semengine",
 		Subsystem: "graph_ingest",
 		Name:      "mutation_rejections_total",
-		Help:      "Graph-mutation requests rejected (success=false), by subject and reason (MutationResponse ErrorCode; 'unclassified' when absent)",
+		Help:      "Graph-mutation requests rejected, by subject and reason: the error's classified code, 'internal' when it carries none.",
 	}, []string{"subject", "reason"})
 	return mutationRejectionsVec
 }
@@ -501,12 +501,6 @@ type Component struct {
 	// reads to keep the guarantee the counter provides.
 	cacheGenMu sync.Mutex
 	cacheGen   map[string]uint64
-
-	// repopulateHook is a test-only seam. When non-nil it is invoked by the
-	// cache-miss fetch goroutine AFTER the KV Get + generation capture and BEFORE
-	// the repopulating Set's generation re-check, so a test can deterministically
-	// inject a concurrent invalidation into the read window. Production is nil.
-	repopulateHook func(entityID string)
 
 	// org and platform are the DEPLOYMENT's own authority — positions 1-2 of
 	// every identity this deployment may mint (ADR-102 d5). Read once from

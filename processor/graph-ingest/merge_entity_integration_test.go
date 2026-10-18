@@ -2,14 +2,14 @@
 
 // Integration tests for the stream lane's merge (mergeEntityOnLane; the pin's
 // MergeEntity wrapper is gone, design D6) — the merge-not-replace semantics
-// the JetStream consumer path uses (handleMessage) to ingest
+// the JetStream consumer path uses (decodeEntity, then processIngest) to ingest
 // Graphable arrivals without clobbering pre-existing triples written
 // via the atomic create, reconcile, and append mutation handlers.
 //
 // gh#177 regression coverage: the canonical failure mode the issue
 // captures is "Manager.Create stamps phase triple; subsequent
 // mission-command Graphable arrives via jetstream; phase triple
-// vanishes." TestIntegration_MergeEntity_HandleMessageDoesNotClobber
+// vanishes." TestIntegration_StreamIngest_DoesNotClobber
 // pins that exact case.
 
 package graphingest
@@ -185,17 +185,18 @@ func TestIntegration_MergeEntity_MultiValuedPredicateFullSetReplace(t *testing.T
 		"full-set replace: the new {c,d} set replaces prior {b,c}; the prior-only member b is gone")
 }
 
-// TestIntegration_HandleMessage_DoesNotClobber is the gh#177
-// regression test driving through the actual jetstream-consumer entry
-// point. Seeds the entity via the atomic mutation handler shape
-// (analogous to Manager.Create), then drives a Graphable through
-// handleMessage and asserts the seeded triple survives.
+// TestIntegration_StreamIngest_DoesNotClobber is the gh#177
+// regression test driving through the stream lane's own steps. Seeds the
+// entity via the atomic mutation handler shape (analogous to
+// Manager.Create), then decodes a Graphable with decodeEntity and applies it
+// with processIngest, the two steps the consume closure runs, and asserts
+// the seeded triple survives.
 //
 // Why this test: TestIntegration_MergeEntity_SecondWriteMergesTriples
 // proves the helper merges; this test proves the production wire
 // actually calls the helper. The bug was specifically that the wire
 // called the wrong helper.
-func TestIntegration_HandleMessage_DoesNotClobber(t *testing.T) {
+func TestIntegration_StreamIngest_DoesNotClobber(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()
 	c, owner := startBatchTestComponent(ctx, t)
@@ -225,9 +226,16 @@ func TestIntegration_HandleMessage_DoesNotClobber(t *testing.T) {
 	data, err := json.Marshal(baseMsg)
 	require.NoError(t, err)
 
-	// Step 3: drive the message through handleMessage — the exact
-	// production entry point the JetStream consumer uses.
-	c.handleMessage(ctx, "test.subject", data)
+	// Step 3: decode the message and apply it as the consume closure does:
+	// decodeEntity, then processIngest on a test message it settles.
+	entity, err := c.decodeEntity("test.subject", data)
+	require.NoError(t, err)
+	msg := &keyedIngestTestMsg{}
+	require.NoError(t, c.processIngest(ctx, 0, ingestWork{
+		entity: entity, msg: msg, consumer: testConsumer, heartbeat: testHeartbeat,
+		entityID: entityID, stream: "ENTITY", seq: 1,
+	}))
+	require.True(t, msg.ack.Load(), "the applied input is acknowledged")
 
 	// Step 4: assert both triples are present. Pre-fix, only the
 	// second arrival's triple survived; the seeded mission.state.phase

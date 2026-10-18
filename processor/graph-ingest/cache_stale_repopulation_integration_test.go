@@ -5,14 +5,42 @@ package graphingest
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/require"
 
+	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/graph/kvcatalog"
+	"github.com/c360studio/semengine/internal/cache"
 	"github.com/c360studio/semengine/internal/harness/semantictest"
 	"github.com/c360studio/semengine/message"
 )
+
+// pausingGetBucket is ENTITY_STATES with one pause: the first Get of key returns its entry
+// only after the test closes release, and closes paused once the entry has been read. A
+// cache-miss reader captures the key's invalidation generation before its Get and
+// repopulates the cache after it, so the pause holds the reader in that window.
+type pausingGetBucket struct {
+	jetstream.KeyValue
+	key     string
+	paused  chan struct{}
+	release chan struct{}
+	// claimed is set by the one Get that pauses; every other Get, the concurrent
+	// write's included, passes straight through.
+	claimed atomic.Bool
+}
+
+func (b *pausingGetBucket) Get(ctx context.Context, key string) (jetstream.KeyValueEntry, error) {
+	entry, err := b.KeyValue.Get(ctx, key)
+	if key == b.key && b.claimed.CompareAndSwap(false, true) {
+		close(b.paused)
+		<-b.release
+	}
+	return entry, err
+}
 
 // TestIntegration_CacheStaleRepopulationRace is the deterministic regression
 // lock for the read-through-cache stale-repopulation race in the entity query
@@ -28,50 +56,51 @@ import (
 //
 // The fix establishes a per-key invalidation-generation guard: the repopulating
 // Set is dropped if the key was invalidated during the read window. This test
-// drives that window deterministically with explicit channels (no sleeps): it
-// pauses the reader between its KV Get (rev1) and its Set via a test hook,
-// commits rev2 (marker) while paused, then releases the reader. Without the guard
+// drives that window deterministically with explicit channels (no sleeps): the
+// bucket under ENTITY_STATES pauses the reader's KV Get once it has read rev1,
+// before the reader's Set; the test commits rev2 (marker) while it is paused,
+// then releases the reader. Without the guard
 // the reader's stale Set wins and the final read observes rev1 (no marker);
 // with the guard the Set is skipped and the final read observes rev2.
 func TestIntegration_CacheStaleRepopulationRace(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()
-	c, _, owner := startPrefixTestComponent(ctx, t, withAuthority("stalecache", "ops"))
-	defer owner.finish(ctx, t)
-
 	const id = "stalecache.ops.dom.sys.type.entity1"
+
+	// The component is not started: the test gives it the ENTITY_STATES store and the
+	// entity query cache Start would build, so no running goroutine reads the store
+	// it is given.
+	client := newFixtureClient(t)
+	c := createTestComponent(t, withAuthority("stalecache", "ops"))
+	c.natsClient = client
+	entityStates, err := kvcatalog.EnsureCatalogBucket(ctx, client, graph.BucketEntityStates)
+	require.NoError(t, err)
+	// The first Get of id is the reader's below: the seed creates without reading it.
+	bucket := &pausingGetBucket{
+		KeyValue: entityStates, key: id, paused: make(chan struct{}), release: make(chan struct{}),
+	}
+	c.entityBucket = client.NewKVStore(bucket)
+	entityCache, err := cache.NewSimple[graph.EntityState]()
+	require.NoError(t, err)
+	c.entityCache = entityCache
+	t.Cleanup(func() { _ = entityCache.Close() })
 
 	// rev1: create the entity WITHOUT the marker. CreateEntity invalidates the
 	// cache, so the first read below is a guaranteed cache miss.
 	seedPrefixEntity(t, ctx, c, id)
 
-	// Coordinate the racing read and write with explicit channels (no sleeps).
-	readerAtHook := make(chan struct{}) // reader paused post-Get, pre-Set
-	releaseReader := make(chan struct{})
-	var once sync.Once
 	var releaseOnce sync.Once
-	release := func() { releaseOnce.Do(func() { close(releaseReader) }) }
-	c.repopulateHook = func(hookID string) {
-		if hookID != id {
-			return
-		}
-		// Only the first read for id blocks; the final verification read (which
-		// also passes through the hook) is a no-op and does not block.
-		once.Do(func() {
-			close(readerAtHook)
-			<-releaseReader
-		})
-	}
+	release := func() { releaseOnce.Do(func() { close(bucket.release) }) }
 
-	// Reader: misses the cache, reads rev1 from KV, then blocks in the hook
-	// between the KV Get and the repopulating Set.
+	// Reader: misses the cache, reads rev1 from KV, then is paused in the Get
+	// before the repopulating Set.
 	readerDone := make(chan struct{})
 	go func() {
 		defer close(readerDone)
 		_, _, _ = c.fetchEntitiesConcurrent(ctx, []string{id}, 1)
 	}()
-	// This runs before owner.finish even if an assertion exits early. Release
-	// the hook exactly once, then give the owned reader a finite join budget.
+	// This runs even if an assertion exits early. Release the paused Get exactly
+	// once, then give the owned reader a finite join budget.
 	defer func() {
 		release()
 		// The pin's 5s join budgets are 10s here: docs/testing.md asks a failure bound
@@ -81,17 +110,17 @@ func TestIntegration_CacheStaleRepopulationRace(t *testing.T) {
 		select {
 		case <-readerDone:
 		case <-joinCtx.Done():
-			t.Errorf("cache reader did not join before fixture Stop: %v", joinCtx.Err())
+			t.Errorf("cache reader did not join: %v", joinCtx.Err())
 		}
 	}()
 
 	// Wait until the reader has read rev1 and is paused before its Set.
 	select {
-	case <-readerAtHook:
+	case <-bucket.paused:
 	case <-readerDone:
-		t.Fatal("cache reader returned before the post-Get hook; race window was not exercised")
+		t.Fatal("cache reader returned before its KV Get paused; race window was not exercised")
 	case <-ctx.Done():
-		t.Fatalf("cache reader did not reach the post-Get hook: %v", ctx.Err())
+		t.Fatalf("cache reader did not reach its KV Get: %v", ctx.Err())
 	}
 
 	// rev2: commit the marker while the reader is paused. The append commits a new

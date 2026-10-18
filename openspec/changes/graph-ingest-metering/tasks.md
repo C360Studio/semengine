@@ -6,8 +6,9 @@ stops end batches 1–3. Each stop's task ends only when `task verify` passes on
 
 ## 1. Design
 
-- [ ] 1.1 Inventory reviewed (INVENTORY PASS, round 2). Proposal and design pass pre-owner review and are accepted
+- [x] 1.1 Inventory reviewed (INVENTORY PASS, round 2). Proposal and design pass pre-owner review and are accepted
   by the owner, with owner questions 1–3 answered. Gate: `task spec:check` and `task docs:check`.
+  Answered 2026-10-18 (design.md, Owner questions; #300).
 
 ## 2. One wrapper (batch 1, #303, #300 B)
 

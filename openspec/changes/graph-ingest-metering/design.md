@@ -227,6 +227,11 @@ holds the consume callback D2 edits. Whichever merges second merges `origin/main
    graph-ingest and in two consumers. **Recommended:** yes, next to the KV codes natsclient already exports. It is
    used in two places in this repository; as a new exported name it gets the critical-stage review.
 
+**Answered 2026-10-18** (owner, Enjoy conversation "PR 299 spin-off issue triage"; recorded on #300): design accepted.
+Q1 as recommended: `DataFlow` counts input messages. Q2 as recommended: every query refusal carries a code, class
+unchanged. Q3 as recommended: `natsclient.ErrorCodeResponseTooLarge` is exported. D2 and D3 option (c) are the
+target state; the "if question n is answered yes" clauses in the proposal, tasks and spec deltas all apply.
+
 ## Spec deltas (draft text for `specs/<capability>/spec.md`)
 
 `graph-transport-boundary`: MODIFIED "Mutation replies carry four outcomes" (whole text in

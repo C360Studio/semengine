@@ -315,26 +315,25 @@ func (c *Config) Validate() error {
 	if err := requireMutationProviderPort(c.Ports); err != nil {
 		return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate", err.Error())
 	}
-	// IngestLanes < 1 clamps to serial (ADR-072). Clamp rather than reject so a
-	// mis-set negative degrades to safe-serial instead of failing boot. A 0 does
-	// not reach the clamp: the factory runs ApplyDefaults first, which reads 0 as
-	// unset and makes it the default of 8 (owner ruling, #91 comment 6059144952).
-	if c.IngestLanes < 1 {
-		c.IngestLanes = 1
-	}
 	return nil
 }
 
-// ApplyDefaults sets default values for configuration
+// ApplyDefaults sets default values for configuration. Validate only checks
+// (ruling K, #91 comment 6062681355).
 func (c *Config) ApplyDefaults() {
-	// EnableHierarchy defaults to false
+	// A configuration with no ports takes DefaultConfig's; a ports block that is
+	// present is used as written, never merged with the defaults (ruling K).
 	if c.Ports == nil {
-		c.Ports = &component.PortConfig{}
+		c.Ports = DefaultConfig().Ports
 	}
 	// Concurrent-by-default (ADR-072): 0 (unset) → 8 lanes. An explicit 1 opts
-	// back into serial and is preserved.
-	if c.IngestLanes == 0 {
+	// back into serial and is preserved. A negative count clamps to serial rather
+	// than failing boot (owner ruling, #91 comment 6059144952).
+	switch {
+	case c.IngestLanes == 0:
 		c.IngestLanes = defaultIngestLanes
+	case c.IngestLanes < 1:
+		c.IngestLanes = 1
 	}
 }
 

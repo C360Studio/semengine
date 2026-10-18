@@ -511,11 +511,11 @@ func TestConfig_IngestLanes(t *testing.T) {
 		cfg.ApplyDefaults()
 		assert.Equal(t, defaultIngestLanes, cfg.IngestLanes, "0 defaults to 8")
 	}
-	// Negative clamps to 1 in Validate (degrade to safe-serial, not boot failure).
+	// Negative clamps to 1 in ApplyDefaults (degrade to safe-serial, not boot failure).
 	{
 		cfg := DefaultConfig()
 		cfg.IngestLanes = -5
-		require.NoError(t, cfg.Validate())
+		cfg.ApplyDefaults()
 		assert.Equal(t, 1, cfg.IngestLanes, "negative ingest_lanes clamps to serial")
 	}
 	// JSON round-trip preserves an explicit value under the json tag.

@@ -2,10 +2,10 @@
 
 ## Status
 
-**Proposed.** Drafted on draft PR #304 (`Addresses #282`), its own documents-only pull request ahead of the
-implementing change, on the owner's go of 2026-10-18 (the ruling's point 3 had placed it in that change). It becomes
-Accepted when the owner accepts it on #282. It records these owner rulings and adds no decision of its own; what it adds
-is the reason, the alternatives rejected and the consequences.
+**Accepted (2026-10-18).** The owner accepted the record as written on #282 (comment 6250318494). Drafted on PR #304
+(`Addresses #282`), its own documents-only pull request ahead of the implementing change, on the owner's go of
+2026-10-18 (the ruling's point 3 had placed it in that change). It records these owner rulings and adds no decision of
+its own; what it adds is the reason, the alternatives rejected and the consequences.
 
 - 2026-10-16, #282 comment 6225878599: option 2. The context given to `Start` bounds only the `Start` call, and
   `Stop(ctx)` is the only way to stop a started component.

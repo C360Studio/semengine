@@ -139,7 +139,11 @@ tests through the factory):
   (`graph-ingest-recovery/spec.md:107-108`).
 - **Plain functions.** The four methods that never read the receiver become functions: `sweepEntityStateGuardEntry`,
   `extractEntityFromMessage`, `validateTriplePredicates`, `classifyEntityQueryError`.
-- **Test-only code.** `handleMessage` (no production caller) goes; its two tests drive `processIngest` instead.
+- **Test-only code.** `handleMessage` (no production caller) goes. Its clobber test drives `decodeEntity` then
+  `processIngest` (`TestIntegration_StreamIngest_DoesNotClobber`). Its rejection test is retired: five of its six cases
+  fail in `decodeEntity`, before `processIngest`, and `TestStreamLane_FailingPayloadIsTerminated` already drives them
+  through the real consume closure; the one assertion only the old test made (no key stored) moved there
+  (`notes/4.2.md`, case by case).
   `repopulateHook` goes: the stale-repopulation test injects its write from a test-side `jetstream.KeyValue` wrapper's
   `Get`, which runs in the same window, and the failed-start test asserts the not-started refusal it already receives.
 - **One spelling.** The indexing-profile statement uses `graph.SourceIndexingProfile` (`component.go:1964`), F7.

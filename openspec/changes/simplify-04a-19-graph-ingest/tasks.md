@@ -42,11 +42,11 @@ commit, recorded in `notes/<task>.md`, except where a task says how else the tes
   fail is shown instead by `task mutate:check` runs recorded in `notes/4.1.md`, each reported as detected or not: the
   ticker built with a wrong interval, and the first publish before the ticker removed; `statusInterval`, `statusNowFn`
   and their methods go; the five integration tests call
-  `refreshReadinessStatus`. Gate: `git grep -n -w -e statusInterval -e statusNowFn` returns nothing;
+  `refreshReadinessStatus`. Gate: `git grep -n -w -e statusInterval -e statusNowFn -- '*.go'` returns nothing;
   `go test -race -tags integration -run 'Readiness' ./processor/graph-ingest/`.
-- [x] 4.2 D7 test-only code and D6: `repopulateHook` and `handleMessage` go, their tests rewritten as D7 says; the
-  help text. Gate: `git grep -n -w -e repopulateHook -e handleMessage` returns nothing; `task verify` on a clean tree
-  (review stop).
+- [x] 4.2 D7 test-only code and D6: `repopulateHook` and `handleMessage` go, their tests rewritten or retired as D7
+  says; the help text. Gate: `git grep -n -w -e repopulateHook -e handleMessage -- '*.go'` returns nothing;
+  `task verify` on a clean tree (review stop).
 
 ## 5. Rulings and the factory (batch 4, #139 I, J, K, A)
 

@@ -107,11 +107,11 @@ owner's `Start` creates the one run context for its continuing work, keeps it on
 - **Change 3.** The ported component manager holds no per-component cancel, so the pin's two cancel orders
   (`service/component_manager.go:1033-1042`) do not come over.
 - **Rules.** The exception above is added everywhere the ban on new root contexts is stated: the developer contract
-  (`.agents/contracts/semengine-developer.md:219-221`), the reviewer contract (`semengine-reviewer.md:242-245` and
-  `:255`, where a new root and `context.WithoutCancel` are `BLOCKING`), the architect contract
-  (`semengine-architect.md:405-409`) and the `AGENTS.md` row "never invent roots" (`AGENTS.md:71`), with its row in
-  `.agents/rules-index.md`. The `LifecycleComponent` doc comment's Stop rule is rewritten to this contract in plain
-  words, as ADR-108 decision 3(e) asks.
+  (`.agents/contracts/semengine-developer.md:219-221` and `:232-233`), the reviewer contract
+  (`semengine-reviewer.md:242-245` and `:255`, where a new root and `context.WithoutCancel` are `BLOCKING`), the
+  architect contract (`semengine-architect.md:405-409`) and the `AGENTS.md` row "never invent roots" (`AGENTS.md:71`),
+  with its row in `.agents/rules-index.md`. The `LifecycleComponent` doc comment's Stop rule is rewritten to this
+  contract in plain words, as ADR-108 decision 3(e) asks.
 - **Authors outside this module.** A component written to the carried contract, whose continuing work descends from its
   Start context, stops working once the Start context it was given ends. Inside this module the changed check catches
   that. Outside it the suite is internal and only the doc comment says so, the gap ADR-108 decision 3(e) already

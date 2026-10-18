@@ -196,7 +196,7 @@ func TestBootSweepInventoriesStatementWithoutMetadata(t *testing.T) {
 
 // TestBootSweepInventoriesMisKeyedValue: a value stored under one key that
 // names another entity is inventoried by the boot sweep under its key, refused
-// as the first read of the key refuses it (gh#147), and a later valid revision
+// as the first read of the key refuses it (SemStreams gh#147), and a later valid revision
 // for the key still erases it (last revision wins).
 func TestBootSweepInventoriesMisKeyedValue(t *testing.T) {
 	t.Parallel()

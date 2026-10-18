@@ -67,7 +67,7 @@ func (c *Component) handleQueryEntityNATS(ctx context.Context, data []byte) ([]b
 	// Parse request
 	var req graph.EntityRequest
 	if err := json.Unmarshal(data, &req); err != nil {
-		// ADR-060: invalid request → invalid class + Code invalid_request, so a
+		// SemStreams ADR-060: invalid request → invalid class + Code invalid_request, so a
 		// consumer reads ce.Code instead of sniffing the message.
 		return nil, errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeInvalidRequest,
 			fmt.Errorf("invalid request: %w", err))
@@ -83,7 +83,7 @@ func (c *Component) handleQueryEntityNATS(ctx context.Context, data []byte) ([]b
 	entity, revision, err := c.readEntity(ctx, req.ID)
 	if err != nil {
 		if natsclient.IsKVNotFoundError(err) {
-			// HTTP semantics (400 vs 404) live at the gateway. ADR-060: not-found
+			// HTTP semantics (400 vs 404) live at the gateway. SemStreams ADR-060: not-found
 			// classifies as Invalid at the wire boundary and carries the stable
 			// Code entity_not_found, so a gateway routes 404 off ce.Code rather
 			// than substring-sniffing the message.
@@ -125,7 +125,7 @@ func (c *Component) handleQueryBatchNATS(ctx context.Context, data []byte) ([]by
 	// request at its QueryTimeout (default 5s) while this handler is allowed
 	// 10s, so a batch taking 5–10s is charged to the caller as an opaque
 	// "context deadline exceeded" that no server-side log records at all. That
-	// is how gh#830 presented — an intermittent e2e failure with nothing on the
+	// is how SemStreams gh#830 presented — an intermittent e2e failure with nothing on the
 	// responder side to look at. Same reasoning as reportBatchMissing below:
 	// the symptom reaches the user several hops from the fact.
 	fetchStart := time.Now()
@@ -164,7 +164,7 @@ func batchMissingReason(id string) graph.MissingReason {
 	return graph.MissingNotFound
 }
 
-// reportBatchMissing makes partial hydration observable. It is the gh#597 soak
+// reportBatchMissing makes partial hydration observable. It is the SemStreams gh#597 soak
 // instrumentation: the open question there is whether a dropped ID's KV read was
 // genuinely not-found at the moment of failure, and until now nothing recorded that a
 // batch came back short at all — the symptom reached the user as a missing search
@@ -194,7 +194,7 @@ func (c *Component) reportBatchMissing(requested, missing []string) {
 	// ranking an entity whose ENTITY_STATES write has not landed yet is ordinary
 	// operation, and warning on it would train operators to ignore the line. The
 	// COUNTER above is the alertable signal — it has a rate, which is what
-	// distinguishes normal churn from the gh#597 pathology.
+	// distinguishes normal churn from the SemStreams gh#597 pathology.
 	c.logger.Debug("batch entity query did not hydrate every requested ID",
 		"requested", len(requested),
 		"missing", len(missing),
@@ -456,7 +456,7 @@ func classifyEntityQueryError(err error) error {
 // caller cannot recover the second set from the first: the entity slice is ordered
 // cache-hits-then-misses, so it carries no correspondence to the requested order, and a
 // caller diffing the sets would have to re-derive what this function already knew. That
-// gap is the gh#597 drop path — a requested ID silently absent from a shorter list.
+// gap is the SemStreams gh#597 drop path — a requested ID silently absent from a shorter list.
 //
 // Order remains non-deterministic by contract; callers that need request order restore
 // it themselves (fusionnats.Entities does, because fusion ranks by position).
@@ -543,7 +543,7 @@ func (c *Component) fetchEntitiesConcurrent(ctx context.Context, ids []string, m
 				if natsclient.IsKVNotFoundError(err) {
 					// Not an error — this ID simply is not in the bucket. It is
 					// REPORTED rather than dropped so the caller can tell a short
-					// list from a partial one (gh#597).
+					// list from a partial one (SemStreams gh#597).
 					results[idx].notFound = true
 				} else {
 					results[idx].err = err

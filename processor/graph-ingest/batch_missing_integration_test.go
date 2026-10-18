@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestIntegration_BatchQuery_ReportsMissingIDs closes the gh#597 drop path over the
+// TestIntegration_BatchQuery_ReportsMissingIDs closes the SemStreams gh#597 drop path over the
 // production handler: a requested ID whose KV read comes back not-found used to vanish
 // from the response, leaving the caller a shorter list with no correspondence to what
 // it asked for. Nothing downstream could tell "this entity does not exist" from "this

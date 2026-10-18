@@ -23,7 +23,7 @@ import (
 )
 
 // testStampKeys are the message types this package's tests stamp on the
-// create seams (ADR-103: a stamp the registry does not hold is refused).
+// create seams (SemStreams ADR-103: a stamp the registry does not hold is refused).
 // Framework types are registered by their own RegisterPayloads;
 // these are the test-only types, registered as schema-less stubs with no floor.
 var testStampKeys = []message.Type{

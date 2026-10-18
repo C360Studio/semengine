@@ -18,7 +18,7 @@ import (
 	"github.com/c360studio/semengine/vocabulary"
 )
 
-// ADR-054 Phase 1: graph-ingest stamps a single-valued entity.indexing.profile
+// SemStreams ADR-054 Phase 1: graph-ingest stamps a single-valued entity.indexing.profile
 // triple at every entity-CREATION seam (canonical create and Graphable arrival),
 // resolving via precedence envelope > Graphable
 // IndexingProfiler > fallback floor (default control). It is NEVER stamped on a
@@ -41,7 +41,7 @@ func storedEntity(t *testing.T, comp *Component, id string) *graph.EntityState {
 }
 
 // nonProfileTripleCount counts an entity's triples EXCLUDING the framework-
-// stamped entity.indexing.profile (ADR-054). Count-based assertions that
+// stamped entity.indexing.profile (SemStreams ADR-054). Count-based assertions that
 // predate the stamp use it so they stay robust to the reserved triple instead
 // of hard-coding "+1". Shared with the integration tests (same package).
 func nonProfileTripleCount(es *graph.EntityState) int {
@@ -201,7 +201,7 @@ func TestIndexingProfile_ReArrival_DoesNotAccumulateOrReProfile(t *testing.T) {
 		"re-arrival must keep the create-time profile and stay single-valued")
 }
 
-// --- ADR-054 §1 invariant: the structural graph is NEVER gated by profile ---
+// --- SemStreams ADR-054 §1 invariant: the structural graph is NEVER gated by profile ---
 
 func TestIndexingProfile_StructuralGraphNeverGated_TraceEntityStaysQueryable(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)
@@ -373,7 +373,7 @@ func TestIndexingProfile_RegistryFloor_RegisteredTypeNoMetric(t *testing.T) {
 // TestIndexingProfile_Append_DoesNotStamp locks the indexing invariant:
 // append is NOT a stamp seam. An entity updated via append carries no
 // additional profile triple — reconcileIndexingProfile is not on this path.
-// The entity must be pre-created (ADR-055 deleted the auto-vivify path);
+// The entity must be pre-created (SemStreams ADR-055 deleted the auto-vivify path);
 // Appending to a pre-existing entity must NOT re-stamp indexing metadata.
 func TestIndexingProfile_Append_DoesNotStamp(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)
@@ -410,7 +410,7 @@ func TestIndexingProfile_Append_DoesNotStamp(t *testing.T) {
 }
 
 // The complement: a REGISTERED type that declares no floor falls to control AND
-// fires the metric — its new meaning under ADR-103: the label names a
+// fires the metric — its new meaning under SemStreams ADR-103: the label names a
 // Registration literal whose IndexingProfile is empty.
 //
 // The pin read getIndexingProfileDefaultMetric(nil); the counter is the component's

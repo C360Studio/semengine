@@ -6,7 +6,7 @@ import (
 )
 
 // TestBootstrapScope_ZeroScopeIsAuthoritativelyNothingToDo covers the distinction the
-// field exists for (gh#732): a producer whose bind reads found no backlog reports scope 0,
+// field exists for (SemStreams gh#732): a producer whose bind reads found no backlog reports scope 0,
 // which a consumer reads, with bootstrap_complete, as "there was nothing to do" rather than
 // "I might be early". A later backlog does not make it the initial build.
 func TestBootstrapScope_ZeroScopeIsAuthoritativelyNothingToDo(t *testing.T) {

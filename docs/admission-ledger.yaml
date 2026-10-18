@@ -2307,9 +2307,8 @@
     ENTITY_STATES keeps History 1 (#99); one instance per metrics registry: a second shares the gauge
     collectors and which write stands is not promised, and no known configuration runs two; a stream
     recreated between the pre-bind generation read and bind is a declared limitation
-    (#214); follow-up #174 tracks bookkeeping after an unconfirmed append write. Removed:
-    lastSyncedRFC3339, MergeEntity, TEST_DISPUTE.md, and agentic indexing_profile_registry_test.go;
-    README updated to match
+    (#214). Removed: lastSyncedRFC3339, MergeEntity, TEST_DISPUTE.md, and agentic
+    indexing_profile_registry_test.go; README updated to match
   proving_tests: >-
     processor/graph-ingest/lifecycle_owner_test.go
     (TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop, proving the lifecycle-suite
@@ -2320,7 +2319,8 @@
     query_verbs_integration_test.go, query_prefix_unit_test.go, query_prefix_integration_test.go,
     entity_writes_seam_test.go, write_modes_test.go, hierarchy_birth_test.go,
     metrics_registry_test.go, config_strict_test.go, failed_start_callbacks_integration_test.go,
-    poison_scoping_test.go, commit_ambiguity_integration_test.go
+    poison_scoping_test.go, commit_ambiguity_integration_test.go,
+    unconfirmed_write_integration_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: repair-before-port
 

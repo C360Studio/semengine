@@ -140,7 +140,7 @@ func publishEntity(ctx context.Context, t *testing.T, client *natsclient.Client,
 
 // TestIntegration_ReadinessEnvelope_PublishedAndCatchesUp drives the whole producer:
 // a real component, real consumers, a real GRAPH_STATUS bucket. It asserts the
-// envelope reaches Ready with bootstrap complete on an idle stack — the gh#712 signal
+// envelope reaches Ready with bootstrap complete on an idle stack — the SemStreams gh#712 signal
 // that did not exist.
 func TestIntegration_ReadinessEnvelope_PublishedAndCatchesUp(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
@@ -168,7 +168,7 @@ func TestIntegration_ReadinessEnvelope_PublishedAndCatchesUp(t *testing.T) {
 	}
 }
 
-// TestIntegration_ReadinessEnvelope_BacklogIsNotReady is the gh#712 case itself: while
+// TestIntegration_ReadinessEnvelope_BacklogIsNotReady is the SemStreams gh#712 case itself: while
 // entities are still being applied, the envelope must NOT read caught-up. Before this
 // change a consumer could only see total_entities > 0 plus green health, which is
 // exactly what read as settled while ingest was mid-flight.
@@ -225,8 +225,8 @@ func TestIntegration_ReadinessEnvelope_BacklogIsNotReady(t *testing.T) {
 	require.NoError(t, c.Start(owner.startContext(ctx)))
 
 	// FIRST assert the not-ready window this test is named for. Without it the test
-	// only proved eventual readiness plus a non-zero scope — the gh#732 case — while
-	// its name promised gh#712's "nonempty and healthy read as settled". An envelope
+	// only proved eventual readiness plus a non-zero scope — the SemStreams gh#732 case — while
+	// its name promised SemStreams gh#712's "nonempty and healthy read as settled". An envelope
 	// reporting caught-up while a message is held is the defect this must catch.
 	select {
 	case <-held:
@@ -255,7 +255,7 @@ func TestIntegration_ReadinessEnvelope_BacklogIsNotReady(t *testing.T) {
 	require.NoError(t, err, "the producer must reach caught-up after draining the backlog")
 
 	// ...and having caught up, its scope must record that there WAS an initial build.
-	// This is the distinction gh#732 raises: complete && scope == 0 means
+	// This is the distinction SemStreams gh#732 raises: complete && scope == 0 means
 	// "authoritatively nothing to do", so a non-empty boot backlog must not report 0.
 	status, _ := readEnvelope(ctx, t, client)
 	require.Positive(t, status.BootstrapScope,
@@ -334,7 +334,7 @@ func itoa(n int) string {
 // outstanding work correctly returns to zero. Asserting "stays > 0" would assert
 // something false about this component. It also observes the documented honesty
 // boundary live: lag == 0 means no outstanding work, NOT that every message was
-// applied — a terminated message is simply gone (gh#742 owns that visibility).
+// applied — a terminated message is simply gone (SemStreams gh#742 owns that visibility).
 //
 // IT DELIBERATELY DOES NOT ASSERT ON THE ACK FLOOR. §D0 measured it unusable, nothing
 // here reads it, and it would pass for the wrong reason under MaxDeliver exhaustion.

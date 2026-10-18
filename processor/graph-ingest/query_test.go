@@ -194,7 +194,7 @@ func TestComponent_HandleQueryPrefix_ReturnsFullEntities(t *testing.T) {
 
 	// Verify it's a full entity with all data
 	assert.Equal(t, entity.ID, resp.Entities[0].ID)
-	// 2 user triples + the ADR-054 entity.indexing.profile stamp (appended at
+	// 2 user triples + the SemStreams ADR-054 entity.indexing.profile stamp (appended at
 	// creation). No producer declared a profile here, so it defaults to the
 	// control floor; the user triples keep their original leading order.
 	assert.Len(t, resp.Entities[0].Triples, 3, "should have 2 user triples + the indexing-profile stamp")

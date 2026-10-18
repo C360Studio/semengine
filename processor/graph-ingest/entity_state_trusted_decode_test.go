@@ -79,7 +79,7 @@ func TestUnmarshalEntityStateTrusted_MalformedJSONReturnsPlainError(t *testing.T
 }
 
 // TestUnmarshalEntityStateTrusted_AdmitsNoncanonicalState pins the trusted
-// decoder's contract (gh#562): it performs NO canonical-contract validation.
+// decoder's contract (SemStreams gh#562): it performs NO canonical-contract validation.
 // Noncanonical predicates, subjects, and root IDs decode without error — the
 // graph.MarshalEntityState write gate, not the owner's own RMW read, is the
 // enforcement boundary. The validating decoder must keep rejecting the same

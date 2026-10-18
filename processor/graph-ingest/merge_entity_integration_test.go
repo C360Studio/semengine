@@ -6,7 +6,7 @@
 // Graphable arrivals without clobbering pre-existing triples written
 // via the atomic create, reconcile, and append mutation handlers.
 //
-// gh#177 regression coverage: the canonical failure mode the issue
+// SemStreams gh#177 regression coverage: the canonical failure mode the issue
 // captures is "Manager.Create stamps phase triple; subsequent
 // mission-command Graphable arrives via jetstream; phase triple
 // vanishes." TestIntegration_StreamIngest_DoesNotClobber
@@ -55,14 +55,14 @@ func TestIntegration_MergeEntity_FirstWriteCreatesAtomically(t *testing.T) {
 
 	stored, _, err := c.readEntity(ctx, entityID)
 	require.NoError(t, err)
-	assert.Equal(t, 1, nonProfileTripleCount(&stored), "ADR-054 profile stamp excluded from the seed-triple count")
+	assert.Equal(t, 1, nonProfileTripleCount(&stored), "SemStreams ADR-054 profile stamp excluded from the seed-triple count")
 	assert.Equal(t, "test.merge.kind", stored.Triples[0].Predicate)
 	assert.Equal(t, "alpha", stored.Triples[0].Object)
 }
 
 // TestIntegration_MergeEntity_SecondWriteMergesTriples pins the load-
 // bearing fix: when an entity already exists, MergeEntity MERGES the new
-// triples per (predicate, source) set (gh#466; design D15 — each set the
+// triples per (predicate, source) set (SemStreams gh#466; design D15 — each set the
 // arrival carries replaces the stored set of the same key, preserving
 // non-conflicting existing triples). Pre-fix code used Put
 // (full-replace) and would have wiped the first set of triples. This test
@@ -103,7 +103,7 @@ func TestIntegration_MergeEntity_SecondWriteMergesTriples(t *testing.T) {
 	for _, tr := range stored.Triples {
 		predicates[tr.Predicate] = tr.Object
 	}
-	assert.Equal(t, "planning", predicates["mission.state.phase"], "phase triple must survive the second arrival (gh#177)")
+	assert.Equal(t, "planning", predicates["mission.state.phase"], "phase triple must survive the second arrival (SemStreams gh#177)")
 	assert.Equal(t, "launch", predicates["mission.command.requested"], "command triple must be present after the second arrival")
 
 	// Metadata: latest-wins on MessageType. The pin asserted Version 2; design D15
@@ -114,7 +114,7 @@ func TestIntegration_MergeEntity_SecondWriteMergesTriples(t *testing.T) {
 	assert.Greater(t, storedRevision, firstRevision, "the second arrival must commit a new KV revision")
 }
 
-// TestIntegration_MergeEntity_SamePredicateReplaces is the gh#466 regression:
+// TestIntegration_MergeEntity_SamePredicateReplaces is the SemStreams gh#466 regression:
 // republishing the same (subject, predicate) must REPLACE, not accumulate. A
 // boid publishing position snapshots would otherwise grow flock.position.x
 // without bound.
@@ -141,7 +141,7 @@ func TestIntegration_MergeEntity_SamePredicateReplaces(t *testing.T) {
 			count++
 		}
 	}
-	assert.Equal(t, 1, count, "gh#466: same-predicate re-arrivals must not accumulate duplicate triples")
+	assert.Equal(t, 1, count, "SemStreams gh#466: same-predicate re-arrivals must not accumulate duplicate triples")
 
 	// Reader sees the newest value: the one statement left is the last arrival's
 	// (pre-fix append served the STALE first-written value).
@@ -153,7 +153,7 @@ func TestIntegration_MergeEntity_SamePredicateReplaces(t *testing.T) {
 // TestIntegration_MergeEntity_MultiValuedPredicateFullSetReplace pins the
 // full-set-replace contract for a multi-valued relationship predicate: a new
 // flock.relation.neighbor set replaces the prior set (not a union). Producers own
-// publishing the complete set per arrival (gh#466 design).
+// publishing the complete set per arrival (SemStreams gh#466 design).
 func TestIntegration_MergeEntity_MultiValuedPredicateFullSetReplace(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()
@@ -185,7 +185,7 @@ func TestIntegration_MergeEntity_MultiValuedPredicateFullSetReplace(t *testing.T
 		"full-set replace: the new {c,d} set replaces prior {b,c}; the prior-only member b is gone")
 }
 
-// TestIntegration_StreamIngest_DoesNotClobber is the gh#177
+// TestIntegration_StreamIngest_DoesNotClobber is the SemStreams gh#177
 // regression test driving through the stream lane's own steps. Seeds the
 // entity via the atomic mutation handler shape (analogous to
 // Manager.Create), then decodes a Graphable with decodeEntity and applies it
@@ -247,14 +247,14 @@ func TestIntegration_StreamIngest_DoesNotClobber(t *testing.T) {
 		predicates[tr.Predicate] = tr.Object
 	}
 	assert.Equal(t, "planning", predicates["mission.state.phase"],
-		"seeded phase triple must survive a subsequent jetstream-consumer arrival (gh#177)")
+		"seeded phase triple must survive a subsequent jetstream-consumer arrival (SemStreams gh#177)")
 	assert.Equal(t, "launch", predicates["mission.command.requested"],
 		"new Graphable's triple must also be present")
 }
 
 // TestIntegration_MergeEntity_HierarchyDoesNotDuplicate is the
 // targeted regression test for the go-reviewer concern 5 finding on
-// gh#177's first cut: hierarchy inference is deterministic per
+// SemStreams gh#177's first cut: hierarchy inference is deterministic per
 // entityID; running it on every merge would APPEND the same edges
 // repeatedly. The fix gates hierarchy fetch to the first-write arm
 // (probed via a KV existence check before the CAS callback, with the
@@ -329,5 +329,5 @@ func TestIntegration_MergeEntity_HierarchyDoesNotDuplicate(t *testing.T) {
 		}
 	}
 	assert.Equal(t, hierarchyTripleCount, hierarchyAfterSecond,
-		"hierarchy triples must NOT duplicate on subsequent merges (gh#177 reviewer concern 5)")
+		"hierarchy triples must NOT duplicate on subsequent merges (SemStreams gh#177 reviewer concern 5)")
 }

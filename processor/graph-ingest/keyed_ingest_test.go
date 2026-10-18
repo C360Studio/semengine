@@ -76,7 +76,7 @@ var testConsumer = natsclient.StreamConsumerConfig{StreamName: "ENTITY", AckWait
 
 const testHeartbeat = defaultIngestAckWait / 4
 
-// --- laneGuard (in-memory guard tier, ADR-072) ---
+// --- laneGuard (in-memory guard tier, SemStreams ADR-072) ---
 
 func TestLaneGuard_GetSet(t *testing.T) {
 	g := newLaneGuard(8)

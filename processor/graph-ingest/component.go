@@ -57,7 +57,7 @@ func newEntitiesUpdatedMetric() prometheus.Counter {
 // newIndexingProfileDefaultMetric builds the counter that fires
 // whenever graph-ingest falls back to the indexing-profile floor at entity
 // creation — i.e. neither a Graphable IndexingProfiler nor a mutation-envelope
-// indexing_profile field declared a profile (ADR-054 §5). Labeled by
+// indexing_profile field declared a profile (SemStreams ADR-054 §5). Labeled by
 // message_type so operators can see WHICH producers omit a declaration: a new
 // "content" type nobody declared would otherwise silently default to "control"
 // and never be embedded. message_type is the low-cardinality registry key; the
@@ -77,7 +77,7 @@ func newIndexingProfileDefaultMetric() *prometheus.CounterVec {
 // port's subject) and on direct writes ("direct"). The reason is a bounded set
 // (#287): authority_foreign or authority_claimed for an authority refusal
 // (authorityMetricReason), otherwise the error's classified code, or internal
-// when it carries none. It operationalizes ADR-055 §3's "loud fail-fast"
+// when it carries none. It operationalizes SemStreams ADR-055 §3's "loud fail-fast"
 // observability. Append, reconcile, and delete against an absent entity report
 // entity_not_found. Other bounded classes include validation, revision
 // conflict, and strict-create conflict.
@@ -122,7 +122,7 @@ func newEntityStateContractRejectionsMetric() *prometheus.CounterVec {
 }
 
 // newProcessingDurationMetric builds the histogram of per-message
-// apply time — the merge + CAS write applyIngest times (gh#480). Paired with
+// apply time — the merge + CAS write applyIngest times (SemStreams gh#480). Paired with
 // newIngestLagMetric it separates processing time from queue wait, which the
 // component previously could not distinguish (callers inferred end-to-end latency
 // downstream). Buckets span sub-ms (a warm CAS is ~1.5ms) to seconds (a stalled KV).
@@ -131,7 +131,7 @@ func newProcessingDurationMetric() prometheus.Histogram {
 		Namespace: "semengine",
 		Subsystem: "graph_ingest",
 		Name:      "processing_duration_seconds",
-		Help:      "Per-message apply time in graph-ingest (merge + CAS write). The processing half of the queue-wait-vs-processing split (gh#480).",
+		Help:      "Per-message apply time in graph-ingest (merge + CAS write). The processing half of the queue-wait-vs-processing split (SemStreams gh#480).",
 		Buckets:   []float64{0.0005, 0.001, 0.002, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5},
 	})
 	return processingDurationHistogram
@@ -140,7 +140,7 @@ func newProcessingDurationMetric() prometheus.Histogram {
 // newIngestLagMetric builds the histogram of message age at the
 // moment graph-ingest begins processing it (now − the JetStream message
 // timestamp) — i.e. how long a message waited in the stream/delivery buffer
-// before ingest reached it (gh#480 queue wait). A rising lag with flat
+// before ingest reached it (SemStreams gh#480 queue wait). A rising lag with flat
 // processing_duration is the backlog signature (consumer_pending_messages
 // climbing) the issue describes.
 func newIngestLagMetric() prometheus.Histogram {
@@ -148,14 +148,14 @@ func newIngestLagMetric() prometheus.Histogram {
 		Namespace: "semengine",
 		Subsystem: "graph_ingest",
 		Name:      "ingest_lag_seconds",
-		Help:      "Age of a message when graph-ingest starts processing it (queue/backlog wait). The queue-wait half of the split (gh#480).",
+		Help:      "Age of a message when graph-ingest starts processing it (queue/backlog wait). The queue-wait half of the split (SemStreams gh#480).",
 		Buckets:   []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 2.5, 5, 10, 30, 60},
 	})
 	return ingestLagHistogram
 }
 
 // newRedeliveriesDroppedMetric builds the counter of messages
-// dropped by the keyed-ingest redelivery guard (ADR-072 B1/B2/B3): a delayed
+// dropped by the keyed-ingest redelivery guard (SemStreams ADR-072 B1/B2/B3): a delayed
 // redelivery whose stream sequence is not newer than the last already applied
 // to that entity from the same stream. A small steady number under overload is
 // healthy; a large one means MaxAckPending/AckWait are undersized for the lane
@@ -167,7 +167,7 @@ func newRedeliveriesDroppedMetric() prometheus.Counter {
 		Namespace: "semengine",
 		Subsystem: "graph_ingest",
 		Name:      "redeliveries_dropped_total",
-		Help:      "Stale redeliveries dropped by the applied-sequence guard (ADR-072).",
+		Help:      "Stale redeliveries dropped by the applied-sequence guard (SemStreams ADR-072).",
 	})
 	return redeliveriesDroppedCounter
 }
@@ -214,7 +214,7 @@ func newWorkInterruptedMetric() *prometheus.CounterVec {
 }
 
 // newCasRetriesMetric builds the counter of CAS-conflict retries
-// during entity merge (ADR-072). Incremented each time mergeEntityOnLane's CAS
+// during entity merge (SemStreams ADR-072). Incremented each time mergeEntityOnLane's CAS
 // callback re-runs (attempt > 1) — the previous attempt's revision-checked Put
 // lost the CAS and retried. This is a **cross-entity contention-observability**
 // signal, NOT a proof of keying correctness: an entity's own key is
@@ -227,7 +227,7 @@ func newCasRetriesMetric() prometheus.Counter {
 		Namespace: "semengine",
 		Subsystem: "graph_ingest",
 		Name:      "cas_retries_total",
-		Help:      "Entity-merge CAS-conflict retries — cross-entity contention observability, NOT a keying-correctness proof (ADR-072).",
+		Help:      "Entity-merge CAS-conflict retries — cross-entity contention observability, NOT a keying-correctness proof (SemStreams ADR-072).",
 	})
 	return casRetriesCounter
 }
@@ -279,8 +279,8 @@ func newDuplicateTriplesSuppressedMetric() *prometheus.CounterVec {
 type Config struct {
 	Ports           *component.PortConfig `json:"ports" schema:"type:ports,description:Port configuration,category:basic"`
 	EnableHierarchy bool                  `json:"enable_hierarchy" schema:"type:bool,description:Enable hierarchy inference,default:false,category:advanced"`
-	// IngestLanes is the number of keyed-concurrent ingest lanes (ADR-072,
-	// gh#480). Messages are partitioned by entity ID (same entity → one lane →
+	// IngestLanes is the number of keyed-concurrent ingest lanes (SemStreams ADR-072,
+	// SemStreams gh#480). Messages are partitioned by entity ID (same entity → one lane →
 	// serial in arrival order, preserving the arrival-order merge; different
 	// entities → parallel), so ingest is no longer bound to a single serial
 	// Get+CAS round-trip chain. Default 8 (concurrent); `1` selects the prior
@@ -326,7 +326,7 @@ func (c *Config) ApplyDefaults() {
 	if c.Ports == nil {
 		c.Ports = DefaultConfig().Ports
 	}
-	// Concurrent-by-default (ADR-072): 0 (unset) → 8 lanes. An explicit 1 opts
+	// Concurrent-by-default (SemStreams ADR-072): 0 (unset) → 8 lanes. An explicit 1 opts
 	// back into serial and is preserved. A negative count clamps to serial rather
 	// than failing boot (owner ruling, #91 comment 6059144952).
 	switch {
@@ -361,7 +361,7 @@ func DefaultConfig() Config {
 	}
 }
 
-// Keyed-concurrent ingest sizing (ADR-072, gh#480).
+// Keyed-concurrent ingest sizing (SemStreams ADR-072, SemStreams gh#480).
 const (
 	// defaultIngestLanes is the default keyed-concurrent lane count. 8 overlaps
 	// the KV Get+CAS round-trips on the ~11/12-idle box the issue profiled;
@@ -376,7 +376,7 @@ const (
 
 	// ingestGuardMemMaxPerLane bounds the in-memory redelivery-guard cache per
 	// lane. This is a CACHE-SIZE knob only, not correctness: an eviction just
-	// costs a durable-tier read on the next access (ADR-072 B3). Sized to hold
+	// costs a durable-tier read on the next access (SemStreams ADR-072 B3). Sized to hold
 	// the working set of recently-active entities per lane under load.
 	ingestGuardMemMaxPerLane = 65536
 )
@@ -405,7 +405,7 @@ type Component struct {
 
 	// Dependencies
 	decoder *message.Decoder
-	// payloadRegistry is the binary's single type authority (ADR-103): the
+	// payloadRegistry is the binary's single type authority (SemStreams ADR-103): the
 	// create seams refuse a stamp it does not hold and the indexing-profile
 	// floor is read from the registered type. It is a registry, not a context.
 	payloadRegistry *payloadregistry.Registry
@@ -505,13 +505,11 @@ type Component struct {
 	cacheGenMu sync.Mutex
 	cacheGen   map[string]uint64
 
-	// org and platform are the DEPLOYMENT's own authority — positions 1-2 of
-	// every identity this deployment may mint (ADR-102 d5). Read once from
-	// deps.Platform at construction, which refuses an empty pair, so they are
-	// non-empty for the component's whole life and never re-derived from a
-	// candidate, a payload, or a subject.
-	// platform is the deployment's authority, deps.Platform as the component was
-	// built with it: the authority gate and hierarchy inference both read it.
+	// platform is the deployment's own authority, the org and platform at
+	// positions 1-2 of every identity this deployment may mint (ADR-102 d5). It is
+	// deps.Platform, read once at construction, which refuses an empty pair, and
+	// never re-derived from a candidate, a payload or a subject. The authority gate
+	// and hierarchy inference both read it.
 	platform types.PlatformMeta
 
 	// Metrics (atomic)
@@ -529,19 +527,19 @@ type Component struct {
 	batchMissing                  *prometheus.CounterVec
 	predicateContractRejections   *prometheus.CounterVec
 	entityStateContractRejections *prometheus.CounterVec
-	processingDuration            prometheus.Histogram   // gh#480 per-message apply time (processing half)
-	ingestLag                     prometheus.Histogram   // gh#480 message age at processing start (queue-wait half)
-	redeliveriesDropped           prometheus.Counter     // ADR-072 stale redeliveries dropped by the applied-sequence guard
+	processingDuration            prometheus.Histogram   // SemStreams gh#480 per-message apply time (processing half)
+	ingestLag                     prometheus.Histogram   // SemStreams gh#480 message age at processing start (queue-wait half)
+	redeliveriesDropped           prometheus.Counter     // SemStreams ADR-072 stale redeliveries dropped by the applied-sequence guard
 	guardRecordRefusals           prometheus.Counter     // inputs refused for an undecodable applied-sequence record (design D21)
 	unguardedInputs               prometheus.Counter     // inputs applied as first seen with no applied-sequence bucket (design D8)
 	workInterrupted               *prometheus.CounterVec // inputs whose application was interrupted and left unsettled, by cause (design D8)
-	casRetries                    prometheus.Counter     // ADR-072 entity-merge CAS-conflict retries (contention observability)
+	casRetries                    prometheus.Counter     // SemStreams ADR-072 entity-merge CAS-conflict retries (contention observability)
 	staleSets                     prometheus.Counter     // stream-lane sets not applied as older (design D15, #98)
 	duplicateTriplesSuppressed    *prometheus.CounterVec // append duplicates not stored, by lane (closed enum)
 	poisonedEntities              prometheus.Gauge       // per-entity poison inventory size (single gauge, no per-entity labels)
 	metricsRegistry               *metric.MetricsRegistry
 
-	// Keyed-concurrent entity ingest (ADR-072, gh#480). The pool partitions
+	// Keyed-concurrent entity ingest (SemStreams ADR-072, SemStreams gh#480). The pool partitions
 	// ingest by entity ID so same-entity updates stay ordered while different
 	// entities ingest in parallel. Built in Start BEFORE subscriptions (M3);
 	// drained in Stop after every native consumer reports Closed. The pool and
@@ -551,7 +549,7 @@ type Component struct {
 	ingestPoolCancel   context.CancelFunc
 	ingestSubmitCancel context.CancelFunc
 
-	// Redelivery guard (ADR-072 B1/B2/B3), two-tier. ingestGuardMem is the
+	// Redelivery guard (SemStreams ADR-072 B1/B2/B3), two-tier. ingestGuardMem is the
 	// in-memory fast path, one map per lane (lane-local → lock-free, since a
 	// lane's inputs are applied one at a time). ingestGuardBucket is the durable
 	// backstop `(entityID/streamName) → last-applied stream seq`; it survives
@@ -594,7 +592,7 @@ func resolveConfig(rawConfig json.RawMessage) (Config, []component.Port, []compo
 		// Strict decoding: a key Config does not define is refused, naming the key, where
 		// encoding/json would drop it and leave the component running on a default the
 		// operator meant to change (design D6, Config (b); the shape of the pin's
-		// inference.RejectUnknownKeys, ADR-054). A port definition decodes through its
+		// inference.RejectUnknownKeys, SemStreams ADR-054). A port definition decodes through its
 		// own UnmarshalJSON, which this setting does not reach.
 		decoder := json.NewDecoder(bytes.NewReader(rawConfig))
 		decoder.DisallowUnknownFields()
@@ -642,7 +640,7 @@ func CreateGraphIngest(rawConfig json.RawMessage, deps component.Dependencies) (
 	}
 	natsClient := deps.NATSClient
 	// A nil registry would make the decoder fail at the first fact-lane message
-	// and, under ADR-103, every create fail closed — so it is a boot error.
+	// and, under SemStreams ADR-103, every create fail closed — so it is a boot error.
 	if deps.PayloadRegistry == nil {
 		return nil, errs.WrapInvalid(errors.New("payload registry is required"), "CreateGraphIngest", "factory", "PayloadRegistry required")
 	}
@@ -1035,7 +1033,7 @@ func (c *Component) start(ctx context.Context) error {
 // errs.ErrNotStarted. natsclient can run a handler during a registration that then fails
 // and returns no subscription, which a failed Start's rollback cannot drain (checkpoint 3
 // B2); the check keeps that handler off what the rollback clears. The requester receives
-// the refusal as a transient error with no code (ADR-060's code set is closed). The check
+// the refusal as a transient error with no code (SemStreams ADR-060's code set is closed). The check
 // wraps the metering wrappers, so a refused mutation records no outcome or rejection.
 func (c *Component) subscribeForRequests(
 	ctx context.Context,
@@ -1180,7 +1178,7 @@ func (c *Component) initStorage(ctx context.Context) error {
 	}
 	c.entityCache = entityCache
 
-	// ADR-072 redelivery-guard durable tier: graph-ingest-owned bucket mapping
+	// SemStreams ADR-072 redelivery-guard durable tier: graph-ingest-owned bucket mapping
 	// `(entityID/streamName) → (stream generation, last-applied stream sequence)`
 	// (#15). Operational state graph-ingest owns (bucket-ownership rubric), a
 	// sixteen-byte value — no cross-repo/EntityState schema change. No TTL: a
@@ -1325,7 +1323,7 @@ func (c *Component) recordBootSweepPoison(ctx context.Context, sweep map[string]
 }
 
 // classifyStoredStateRMWError re-attributes a read-modify-write failure to
-// resident stored-state poison (gh#562). The owner's own RMW reads check only
+// resident stored-state poison (SemStreams gh#562). The owner's own RMW reads check only
 // the trusted decode and the key (decodeStoredForWrite, design D23), so a
 // noncanonical STORED statement, or one with no Source or no Timestamp
 // (checkpoint 3 H3), does not fail on the read — it surfaces either as a
@@ -1493,7 +1491,7 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 		AckPolicy:     consumerCfg.AckPolicy,
 		MaxDeliver:    consumerCfg.MaxDeliver,
 		AckWait:       ackWait,
-		MaxAckPending: consumerCfg.MaxAckPending, // gh#480: 0 leaves inherited/default/capped policy to NATS
+		MaxAckPending: consumerCfg.MaxAckPending, // SemStreams gh#480: 0 leaves inherited/default/capped policy to NATS
 		AutoCreate:    false,
 	}
 	// The pair is checked by natsclient's own rules for heartbeat delivery, once, before
@@ -1518,7 +1516,7 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 		consumeStream = c.consumeStream
 	}
 	handle, err := consumeStream(ctx, natsclient.PortConsumerContext{Component: c.name, Port: port.Name}, cfg, func(_ context.Context, msg jetstream.Msg) {
-		// ADR-072: the consume closure decodes ONCE and submits to the keyed pool;
+		// SemStreams ADR-072: the consume closure decodes ONCE and submits to the keyed pool;
 		// the redelivery guard, apply, and ack move into processIngest (run on a
 		// pool lane, not this consumer goroutine). Metadata carries the stream name
 		// + sequence the guard keys on; a message without it can't be keyed/guarded.
@@ -1532,7 +1530,7 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 			}
 			return
 		}
-		// gh#480 queue-wait (message age when we reach it). Host clock skew can make
+		// SemStreams gh#480 queue-wait (message age when we reach it). Host clock skew can make
 		// this marginally negative on a co-located deploy — harmless (skews _sum only).
 		if !meta.Timestamp.IsZero() {
 			c.ingestLag.Observe(time.Since(meta.Timestamp).Seconds())
@@ -1565,7 +1563,7 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 		}
 		// Submit on the dedicated submit ctx (NOT msgCtx — a block past AckWait would
 		// otherwise surface as an ignored error → message neither enqueued nor acked).
-		// A submit failure MUST Nak so the server redelivers (ADR-072 B1), never
+		// A submit failure MUST Nak so the server redelivers (SemStreams ADR-072 B1), never
 		// silent-drop.
 		work := ingestWork{
 			entity:      entity,
@@ -1716,7 +1714,7 @@ func (c *Component) ingestEntity(ctx context.Context, entity *graph.EntityState,
 		return err
 	}
 
-	// Store entity in KV bucket — MERGE semantics (gh#177). Earlier code
+	// Store entity in KV bucket — MERGE semantics (SemStreams gh#177). Earlier code
 	// used CreateEntity (Put = full-replace) here, which clobbered any
 	// pre-existing triples on the entity. The Graphable lane merges while the
 	// four explicit mutation operations apply their own strict semantics; the
@@ -1842,7 +1840,7 @@ func extractEntityFromMessage(msg *message.BaseMessage) (*graph.EntityState, err
 		MessageType: msg.Type(),
 	}
 
-	// ADR-055 §5 StorageRef extraction (consumer half): a Graphable payload that
+	// SemStreams ADR-055 §5 StorageRef extraction (consumer half): a Graphable payload that
 	// also implements message.Storable carries an ObjectStore reference to its
 	// offloaded content. Lift it onto the EntityState so mergeEntityOnLane persists it
 	// (the create branch marshals it verbatim; the existing-entity branch merges
@@ -1856,7 +1854,7 @@ func extractEntityFromMessage(msg *message.BaseMessage) (*graph.EntityState, err
 		}
 	}
 
-	// ADR-054 channel (a): a Graphable payload MAY also declare its indexing
+	// SemStreams ADR-054 channel (a): a Graphable payload MAY also declare its indexing
 	// profile via the optional IndexingProfiler interface. Stamp it explicitly
 	// here so it's present on entity.Triples by the time mergeEntityOnLane reaches
 	// its create seam; absence (or an invalid value) falls through to the
@@ -1870,7 +1868,7 @@ func extractEntityFromMessage(msg *message.BaseMessage) (*graph.EntityState, err
 }
 
 // hasIndexingProfileTriple reports whether the entity already carries a
-// create-time indexing profile. That profile is immutable (ADR-054), so a
+// create-time indexing profile. That profile is immutable (SemStreams ADR-054), so a
 // later Graphable arrival must not override it through the stream lane's replace.
 func hasIndexingProfileTriple(entity *graph.EntityState) bool {
 	for _, t := range entity.Triples {
@@ -1954,7 +1952,7 @@ func stampExplicitIndexingProfile(entity *graph.EntityState, profile string, at 
 	appendIndexingProfileTriple(entity, profile, at)
 }
 
-// reconcileIndexingProfile is the entity-CREATION-seam stamp (ADR-054 §5). It
+// reconcileIndexingProfile is the entity-CREATION-seam stamp (SemStreams ADR-054 §5). It
 // runs at every place an entity is born — createEntity, mergeEntityOnLane's
 // first-write branch, and the stub→real upgrade in mergeEntityOnLane's merge branch —
 // and never on a plain update of an already-profiled entity, so a profile is
@@ -1965,7 +1963,7 @@ func stampExplicitIndexingProfile(entity *graph.EntityState, profile string, at 
 //     or an incoming producer is supplying one to an existing unprofiled entity): keep the FIRST and
 //     drop any duplicates. No floor, no metric.
 //   - 0 profile triples present: apply the floor registered with the type
-//     (Registration.IndexingProfile, ADR-103) and append it; increment
+//     (Registration.IndexingProfile, SemStreams ADR-103) and append it; increment
 //     indexing_profile_default_total{message_type} ONLY when the registered type
 //     declares no floor (control is the fail-safe default). The create seams
 //     refuse an unregistered type before this runs.
@@ -1991,7 +1989,7 @@ func (c *Component) reconcileIndexingProfile(entity *graph.EntityState, at time.
 		return
 	}
 	// No explicit declaration → apply the floor registered with the type
-	// (ADR-054 channel c, ADR-103). The default-fallback metric fires ONLY when
+	// (SemStreams ADR-054 channel c, SemStreams ADR-103). The default-fallback metric fires ONLY when
 	// the registered type declares no floor and silently took the control
 	// default. A registered floor (e.g. agentic.request → trace) is a deliberate
 	// classification, not an operator gap; the label now points at a
@@ -2059,7 +2057,7 @@ func (c *Component) CreateEntity(ctx context.Context, entity *graph.EntityState)
 // design D15; the create-time indexing profile is preserved), and take the
 // arrival's MessageType and StorageRef when no set was older (UpdatedAt always).
 //
-// Closes gh#177: the prior code called CreateEntity (Put = full-
+// Closes SemStreams gh#177: the prior code called CreateEntity (Put = full-
 // replace) from the stream lane, which erased triples written through mutation
 // request/reply. The JetStream consumer
 // path was the lone outlier. Lifecycle-managed entities surfaced this
@@ -2079,7 +2077,7 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 	// Entity-ID-only preflight (cheap subset): the ID is the CAS key and the
 	// hierarchy-probe key, so reject a malformed ID before any KV I/O.
 	//
-	// gh#562 write-cost: the full ValidateEntityStateContract pass that used to
+	// SemStreams gh#562 write-cost: the full ValidateEntityStateContract pass that used to
 	// run here was redundant with the MarshalEntityState write gate inside the
 	// CAS closure — BOTH closure branches marshal a superset of the incoming
 	// candidate (create: candidate + hierarchy/profile stamps; merge: every
@@ -2089,7 +2087,7 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 	// caller-vs-resident attribution honest. The Graphable ingest lane already
 	// runs one caller-blaming full pass before side effects, so the pass here was a
 	// third full validation per mutation on the
-	// per-key-serialized hot path (ADR-072). Two narrow ergonomic changes for
+	// per-key-serialized hot path (SemStreams ADR-072). Two narrow ergonomic changes for
 	// un-preflighted direct callers: (1) an incoming entity.indexing.profile
 	// triple dropped pre-merge on an already-profiled entity, and a set older
 	// than the stored one, are not validated — they are left out, not
@@ -2122,7 +2120,7 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 	at := triggeringTime(entity)
 
 	// Hierarchy is added at birth only: the CAS callback's create branch applies the
-	// membership statements, so a merge never appends them again (gh#177). The read
+	// membership statements, so a merge never appends them again (SemStreams gh#177). The read
 	// below decides whether this arrival is a birth before the inference runs, so an
 	// update pays no inference. If another writer creates the entity between this
 	// read and the CAS, the callback's merge branch does not apply them: that
@@ -2206,7 +2204,7 @@ func (c *Component) createEntityWithReceipt(
 	if entity == nil {
 		return nil, 0, errs.WrapInvalid(errs.ErrInvalidData, "Component", "CreateEntity", "entity cannot be nil")
 	}
-	// ADR-103 d3: the in-process birth passes the same registered-type gate as
+	// SemStreams ADR-103 d3: the in-process birth passes the same registered-type gate as
 	// the RPC lane. The classified error goes back to the caller (on the hierarchy
 	// container path it fails the birth that asked for the container, design D21);
 	// it is not metered here.
@@ -2249,7 +2247,7 @@ func (c *Component) createEntityWithReceipt(
 	}
 	entity.Triples = append(entity.Triples, hierarchyTriples...)
 
-	// ADR-054: stamp the indexing profile at the creation seam — keeps an
+	// SemStreams ADR-054: stamp the indexing profile at the creation seam — keeps an
 	// explicit declaration (envelope/Graphable, already on entity.Triples) and
 	// otherwise applies the fallback floor + default metric.
 	c.reconcileIndexingProfile(entity, at)
@@ -2489,7 +2487,7 @@ func (c *Component) addTriplesLane(ctx context.Context, triples []message.Triple
 	subjectErrors := make(map[string]error)
 	unchangedSubjects := make(map[string]uint64)
 	committedRevisions := make(map[string]uint64)
-	// allAbsences tracks whether EVERY per-subject failure was an ADR-055
+	// allAbsences tracks whether EVERY per-subject failure was an SemStreams ADR-055
 	// entity-not-found rejection. When true the aggregated error wraps
 	// ErrKVKeyNotFound so the handler can set ErrorCodeEntityNotFound on the
 	// response without string-sniffing. Mixed-reason batches (allAbsences=false)
@@ -2601,7 +2599,7 @@ func (c *Component) addTriplesLane(ctx context.Context, triples []message.Triple
 //
 // It exists because partial hydration used to be invisible: an ID whose KV read came
 // back not-found was dropped from the response, and the symptom surfaced several hops
-// downstream as a missing search result (gh#597). Counting it at the source is what
+// downstream as a missing search result (SemStreams gh#597). Counting it at the source is what
 // makes "how often, and is it not-found or a fault?" answerable from a dashboard rather
 // than from a bug report.
 //
@@ -2612,7 +2610,7 @@ func newBatchMissingMetric() *prometheus.CounterVec {
 		Namespace: "semengine",
 		Subsystem: "graph_ingest",
 		Name:      "batch_query_missing_total",
-		Help:      "Requested entity IDs a batch query could not hydrate, by reason — partial hydration made visible (gh#597)",
+		Help:      "Requested entity IDs a batch query could not hydrate, by reason — partial hydration made visible (SemStreams gh#597)",
 	}, []string{"reason"})
 	// Pre-initialize the closed label set: an absent series breaks rate() alerting,
 	// so a reason that has never fired must still be scrapeable at zero. `unknown`

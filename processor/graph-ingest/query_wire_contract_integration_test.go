@@ -19,12 +19,12 @@ import (
 
 // TestIntegration_QueryEntityNATS_WireContract drives the registered
 // graph.ingest.query.entity handler end-to-end and asserts on both
-// the ADR-060 headers AND the JSON body envelope. Closes the gh#93
+// the SemStreams ADR-060 headers AND the JSON body envelope. Closes the SemStreams gh#93
 // Phase 3 reviewer B1/B2 regression class — this test asserts on
 // actual wire bytes, not synthetic fakes, so body changes are caught
 // immediately.
 //
-// ADR-060 PR-D wire contract (retired "error: " prefix):
+// SemStreams ADR-060 PR-D wire contract (retired "error: " prefix):
 //
 //	X-Status:      error
 //	X-Error-Class: invalid | transient | fatal
@@ -55,7 +55,7 @@ func TestIntegration_QueryEntityNATS_WireContract(t *testing.T) {
 	// subscribed, so nothing was being waited for.
 
 	t.Run("not_found_path", func(t *testing.T) {
-		// ADR-060 wire shape:
+		// SemStreams ADR-060 wire shape:
 		//   - X-Status: error
 		//   - X-Error-Class: invalid  (so IsInvalid(err) == true at the gateway)
 		//   - X-Error-Code: entity_not_found (stable machine code for 404 routing)
@@ -88,7 +88,7 @@ func TestIntegration_QueryEntityNATS_WireContract(t *testing.T) {
 		// 4. Body is the JSON envelope with "not found:" message text.
 		//    The entity ID must survive in the body for 404 payload context.
 		if !bytes.HasPrefix(msg.Data, []byte("{")) {
-			t.Fatalf("ADR-060: body must be JSON envelope; got %q", msg.Data)
+			t.Fatalf("SemStreams ADR-060: body must be JSON envelope; got %q", msg.Data)
 		}
 		if !bytes.Contains(msg.Data, []byte("not found:")) {
 			t.Errorf("body message must contain %q; got %q", "not found:", msg.Data)
@@ -114,7 +114,7 @@ func TestIntegration_QueryEntityNATS_WireContract(t *testing.T) {
 	})
 
 	t.Run("invalid_request_path", func(t *testing.T) {
-		// ADR-060: malformed JSON → invalid class, JSON body.
+		// SemStreams ADR-060: malformed JSON → invalid class, JSON body.
 		// Note: uses errs.Classified (no Code), so X-Error-Code is absent.
 		req := []byte("this is not valid JSON {{{")
 
@@ -128,7 +128,7 @@ func TestIntegration_QueryEntityNATS_WireContract(t *testing.T) {
 		}
 
 		if !bytes.HasPrefix(msg.Data, []byte("{")) {
-			t.Errorf("ADR-060: body must be JSON envelope; got %q", msg.Data)
+			t.Errorf("SemStreams ADR-060: body must be JSON envelope; got %q", msg.Data)
 		}
 		if !bytes.Contains(msg.Data, []byte("invalid request:")) {
 			t.Errorf("body message must contain %q; got %q", "invalid request:", msg.Data)
@@ -149,7 +149,7 @@ func TestIntegration_QueryEntityNATS_WireContract(t *testing.T) {
 		}
 
 		if !bytes.HasPrefix(msg.Data, []byte("{")) {
-			t.Errorf("ADR-060: body must be JSON envelope; got %q", msg.Data)
+			t.Errorf("SemStreams ADR-060: body must be JSON envelope; got %q", msg.Data)
 		}
 		if !bytes.Contains(msg.Data, []byte("invalid request: entity ID")) {
 			t.Errorf("body must describe entity-ID validation failure; got %q", msg.Data)

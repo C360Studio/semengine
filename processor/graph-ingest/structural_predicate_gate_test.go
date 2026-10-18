@@ -95,7 +95,7 @@ func TestValidateTriplePredicates_ValidPredicate_Untouched(t *testing.T) {
 
 	triples := []message.Triple{
 		{Subject: structuralGateEntity, Predicate: "sensor.temperature.celsius", Object: 22.5},
-		// gh#519 collision guard: a valid 3-part predicate whose last segment is
+		// SemStreams gh#519 collision guard: a valid 3-part predicate whose last segment is
 		// literally "value" MUST pass (it is a real predicate, not a suffix).
 		{Subject: structuralGateEntity, Predicate: "sensorml.capability.value", Object: "50m"},
 	}
@@ -135,7 +135,7 @@ func TestHandleCanonicalAppend_InvalidPredicate_FailClosedNothingPersisted(t *te
 
 	resp, err := handler(ctx, reqBytes)
 	require.Error(t, err, "fail-closed gate must reject the mutation")
-	assert.Nil(t, resp, "a hard rejection carries no success body (ADR-060)")
+	assert.Nil(t, resp, "a hard rejection carries no success body (SemStreams ADR-060)")
 
 	var ce *errs.ClassifiedError
 	require.ErrorAs(t, err, &ce)
@@ -307,7 +307,7 @@ func TestIngestEntity_InvalidPredicate_NothingPersisted(t *testing.T) {
 // TestHandleCanonicalAppend_ValidPredicate_PersistsMergeIntact is the regression
 // guard: a fully-conforming mutation passes the structural gate and persists
 // with the existing merge semantics intact (append on the entity, KV revision
-// advanced, prior triples preserved). Includes the gh#519 collision case: a real
+// advanced, prior triples preserved). Includes the SemStreams gh#519 collision case: a real
 // 3-part predicate ending in the literal segment "value".
 func TestHandleCanonicalAppend_ValidPredicate_PersistsMergeIntact(t *testing.T) {
 	comp := createTestComponentWithMockKV(t, withAuthority("acme", "ops"))

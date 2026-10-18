@@ -19,7 +19,7 @@ import (
 // plus the JetStream message, which only the delivery helper settles, and the
 // (stream, generation, sequence) the redelivery guard keys on. Partitioned by
 // entityID so same-entity updates serialize on one lane in arrival order
-// (ADR-072, gh#480).
+// (SemStreams ADR-072, SemStreams gh#480).
 type ingestWork struct {
 	entity *graph.EntityState
 	msg    jetstream.Msg
@@ -95,7 +95,7 @@ func (r guardRecord) covers(work ingestWork) bool {
 // before it returns, so the lane's inputs are applied one after another.
 // Bounded: past max, one arbitrary entry is evicted — a cache
 // miss just falls through to the durable tier, so which entry leaves the cache
-// never affects correctness (ADR-072 B3).
+// never affects correctness (SemStreams ADR-072 B3).
 type laneGuard struct {
 	seq      map[string]guardRecord
 	capacity int
@@ -157,7 +157,7 @@ func guardKey(entityID, stream string) string {
 }
 
 // buildIngestPool constructs the keyed-concurrent ingest pool + the in-memory
-// guard shards. Called from Start BEFORE subscriptions (ADR-072 M3). The exact
+// guard shards. Called from Start BEFORE subscriptions (SemStreams ADR-072 M3). The exact
 // Start-derived pool context is supplied lexically and never retained.
 func (c *Component) buildIngestPool(poolCtx context.Context) error {
 	lanes := c.config.IngestLanes
@@ -244,7 +244,7 @@ func (c *Component) processIngest(ctx context.Context, lane int, work ingestWork
 
 // applyIngest is one input's application, the delivery work processIngest runs. It
 // applies the redelivery guard, ingests the entity, then stamps the guard (durable
-// first, then in-memory) and ages the readiness view — the ADR-072 two-tier guard,
+// first, then in-memory) and ages the readiness view — the SemStreams ADR-072 two-tier guard,
 // updated AFTER side effects and BEFORE the ack. It settles nothing: work carries no
 // message. It returns the settlement it calls for: Terminate for an input that can
 // never apply, Retry (a plain Nak) for a failure a redelivery can outlive, Ack for a
@@ -267,7 +267,7 @@ func (c *Component) applyIngest(ctx context.Context, lane int, work ingestWork) 
 		return natsclient.DeliveryDecisionTerminate, validationErr
 	}
 
-	// Redelivery guard (ADR-072 B1/B2/B3): drop a stale re-delivery whose stream
+	// Redelivery guard (SemStreams ADR-072 B1/B2/B3): drop a stale re-delivery whose stream
 	// sequence is not newer than the last already applied to this entity from the
 	// same stream generation (#15).
 	stale, err := c.ingestGuardStale(ctx, lane, work)

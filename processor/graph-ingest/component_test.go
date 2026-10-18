@@ -480,7 +480,7 @@ func TestDefaultConfig_ReturnsValidConfig(t *testing.T) {
 	assert.Equal(t, "ENTITY", entityStream.StreamName)
 }
 
-// TestConfig_IngestLanes pins the ADR-072 lane-count knob: unset defaults to 8
+// TestConfig_IngestLanes pins the SemStreams ADR-072 lane-count knob: unset defaults to 8
 // (concurrent), an explicit 1 is preserved (serial opt-in must survive both
 // ApplyDefaults and Validate), an explicit 0 defaults to 8, and a negative
 // clamps to 1 rather than failing boot.

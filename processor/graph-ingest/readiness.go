@@ -67,9 +67,8 @@ func (c *Component) clearBoundConsumers() {
 }
 
 // statusMetricsLoop republishes the readiness envelope on the shared heartbeat.
-// Mirrors graph-index's loop (processor/graph-index/component.go:1119-1160): the
-// write doubles as a liveness heartbeat, so it is unconditional rather than
-// on-change.
+// Mirrors SemStreams graph-index's loop (not ported yet): the write doubles as a
+// liveness heartbeat, so it is unconditional rather than on-change.
 func (c *Component) statusMetricsLoop(ctx context.Context) {
 	// Publish once up front so the key is populated before the first tick rather
 	// than reading absent (which consumers correctly treat as unknown) for a whole
@@ -186,9 +185,7 @@ func (c *Component) recordBindBacklog(ctx context.Context, stream, name string) 
 		// would publish `bootstrap_complete && bootstrap_scope == 0` — the contract's
 		// "authoritatively nothing to replay" — while B had a real initial build.
 		// Marking the whole capture partial hands it to the first full status tick
-		// (bootstrapScope), which reads the TOTAL across all consumers at once. Found by the Codex review; the previous
-		// comment here claimed the capture was "left unclaimed", which was true only
-		// for a single-consumer deployment.
+		// (bootstrapScope), which reads the TOTAL across all consumers at once.
 		c.bootBacklogPartial.Store(true)
 		c.logger.Warn("graph-ingest readiness: bind-time backlog read failed; "+
 			"bootstrap scope will be captured whole at the first successful status tick",
@@ -250,12 +247,11 @@ func (c *Component) bootstrapScope(outstanding uint64, observationFailed bool) u
 // oldestOutstandingAt reports the timestamp the staleness projection ages from, or the
 // zero time when there is nothing to report.
 //
-// DEVIATION FROM THE TASK TEXT, recorded deliberately. Task 3.5 says "the oldest
-// outstanding message's meta.Timestamp". Tracking that exactly means per-message
-// bookkeeping over up to 2048 in-flight messages on the ingest hot path, with
-// insertion and removal on every submit and ack. This reports the AGE OF THE VIEW
+// It does not report the oldest outstanding message's meta.Timestamp: tracking that
+// exactly means per-message bookkeeping over up to 2048 in-flight messages on the
+// ingest hot path, with insertion and removal on every submit and ack. This reports the AGE OF THE VIEW
 // instead — now minus the JetStream timestamp of the most recently APPLIED message —
-// which is graph-index's established semantic for the same field (its IndexedAt) and
+// which is SemStreams graph-index's semantic for the same field (its IndexedAt) and
 // costs one atomic store on the applied path.
 //
 // The two coincide closely because delivery is approximately stream-ordered: the

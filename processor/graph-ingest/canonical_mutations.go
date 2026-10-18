@@ -167,7 +167,7 @@ func requireMutationProviderPort(ports *component.PortConfig) error {
 }
 
 // requireRegisteredMessageType is the one registered-type gate for both create
-// paths (ADR-103 d3): the entity.create RPC (after the structural IsValid
+// paths (SemStreams ADR-103 d3): the entity.create RPC (after the structural IsValid
 // check) and the in-process CreateEntity (the hierarchy container birth). It
 // writes nothing and yields one classified error — class invalid, closed code
 // message_type_unregistered, the key in detail "message_type" — which the RPC

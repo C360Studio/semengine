@@ -67,7 +67,7 @@ commit, recorded in `notes/<task>.md`, except where a task says how else the tes
   generated-code headers go and what revive then reports is fixed; `metrics_test.go` checks counter deltas and
   `TestComponent_DataFlow_ReturnsMetrics` checks that the rates move. Gate:
   `task lint`; `go test -race ./processor/graph-ingest/`.
-- [ ] 6.2 `doc.go`, carried citations, the `platform` comment; the ledger row's `known_risks` and `proving_tests`.
+- [x] 6.2 `doc.go`, carried citations, the `platform` comment; the ledger row's `known_risks` and `proving_tests`.
   Gate: `task verify` on a clean tree, which runs `ledger:check` and `docs:check` (review stop).
 
 ## 7. Verify, review and close

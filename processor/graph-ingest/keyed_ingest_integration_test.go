@@ -1,6 +1,6 @@
 //go:build integration
 
-// Integration tests for the ADR-072 keyed-ingest redelivery guard's DURABLE
+// Integration tests for the SemStreams ADR-072 keyed-ingest redelivery guard's DURABLE
 // tier against a real NATS KV bucket. The in-memory tier is unit-tested in
 // keyed_ingest_test.go; here we pin the property that makes the guard correct
 // across a process restart and cache eviction (round-4 findings B2/B3): the
@@ -24,7 +24,7 @@ import (
 )
 
 // TestIntegration_IngestGuardBucket_ReconcilesTTLBucketAtAcquisition pins the
-// ADR-072 B2/B3 durability guarantee at boot, in its catalog-seam form: the
+// SemStreams ADR-072 B2/B3 durability guarantee at boot, in its catalog-seam form: the
 // durable guard bucket is no-eviction correctness state, so if a stale/foreign
 // deploy pre-created GRAPH_INGEST_APPLIED_SEQ with a TTL, graph-ingest's seam
 // acquisition STRIPS the retention in place (self-heal, no stored stamp lost)

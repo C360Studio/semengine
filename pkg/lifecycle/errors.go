@@ -1,6 +1,10 @@
 package lifecycle
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/c360studio/semengine/pkg/errs"
+)
 
 // Package error sentinels. Callers compare with errors.Is.
 var (
@@ -51,11 +55,10 @@ var (
 
 	// ErrInvalidInitialState is returned by Manager.CreateFromOperator when
 	// the supplied initial state cannot be turned into a valid Participant
-	// for the named workflow: empty body, undecodable JSON, or no entity ID.
-	// Deliberately NOT a cause: a body whose Workflow() differs from the
-	// route's — that guard was removed (production Workflow() returns a
-	// constant, so only fakes could ever trip it); CreateFromOperator's doc
-	// records the same.
+	// for the named workflow: an empty body, a body that does not decode, a
+	// field the Schema does not declare, content after the first JSON value,
+	// or no entity ID. A decoded Workflow() that differs from the named
+	// workflow is not a cause.
 	//
 	// Distinct from ErrInvalidTransition (which covers an undeclared initial
 	// PHASE, validated inside Create) so a caller can tell "your payload is
@@ -119,22 +122,34 @@ var (
 	// from the framework's bounded retry can branch on
 	// errors.Is(err, lifecycle.ErrUpdateRetriesExhausted) and apply
 	// their own backoff + retry policy.
-	ErrUpdateRetriesExhausted = errors.New("lifecycle: Update retry budget exhausted (persistent CAS contention)")
+	//
+	// The sentinel carries the transient class itself, so errs.IsTransient
+	// and errs.Classify report retryable contention on every path that
+	// wraps it: an error nobody classified reads as fatal.
+	ErrUpdateRetriesExhausted error = errs.Classified(errs.ErrorTransient,
+		errors.New("lifecycle: Update retry budget exhausted (persistent CAS contention)"))
 
-	// ErrEmitFailed is returned by Manager state-change operations
-	// when the graph-ingest reconcile request fails — typically because
-	// graph-ingest is down, the request handler returns a non-CAS
-	// error, or the NATS transport itself errors. Wraps the
-	// underlying transport / handler error so callers can branch
-	// on transient-vs-permanent.
+	// ErrEmitFailed is returned by CreateFromOperator when graph-ingest
+	// reported the create as applied but its response cannot be read
+	// back: the response has no entity, or the committed entity does not
+	// project into the workflow's Schema. A write request that fails is
+	// not ErrEmitFailed: it is a *projection.MutationError naming its
+	// commit state (projection.ClassifyMutationError), wrapped in
+	// ErrEntityNotFound or ErrAlreadyExists when graph-ingest refused it
+	// for that reason.
 	ErrEmitFailed = errors.New("lifecycle: emit to graph-ingest failed")
 
 	// ErrEntityIDPatternMismatch is returned by Manager.Create (gh#814) and by
-	// Manager.Despawn / DespawnWith
-	// when the given entityID does not match the named (and registered)
-	// workflow's EntityIDPattern. Distinct from ErrWorkflowNotRegistered (the
+	// Manager.Despawn / DespawnWith when the given entityID is not a valid
+	// entity ID or does not match the named (and registered) workflow's
+	// EntityIDPattern; for a malformed ID the message carries the reason. Distinct from ErrWorkflowNotRegistered (the
 	// workflow itself is known) — this scopes a reclaim to a known workflow and
 	// refuses to emit a delete for an entity that provably belongs to a
 	// different pattern (a caller wire-up bug: wrong workflow for the entity).
 	ErrEntityIDPatternMismatch = errors.New("lifecycle: entity_id does not match workflow EntityIDPattern")
 )
+
+// errNoNATSClient is returned by every Manager call that needs NATS when the manager was built
+// without a client. It is unclassified, so errs.Classify reads it as fatal: a wiring mistake,
+// never retried.
+var errNoNATSClient = errors.New("lifecycle: manager has no NATS client")

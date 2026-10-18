@@ -4,6 +4,7 @@ package kvcatalog
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/natsclient"
+	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -63,7 +65,7 @@ func (h *recordingHandler) warnMentioning(bucket string) bool {
 }
 
 // TestIntegration_EnsureCatalogRetentionClean_StripsForeignTTL reproduces the
-// #610/#611 shape end-to-end through the real backstop: a derived catalog bucket
+// SemStreams #610/#611 shape end-to-end through the real backstop: a derived catalog bucket
 // (EMBEDDING_INDEX) is pre-created with a foreign 7-day TTL and a stored key —
 // the inactive-in-this-composition class the backstop exists for — then
 // EnsureCatalogRetentionClean strips the TTL in place, WARNs naming the bucket,
@@ -114,8 +116,8 @@ func TestIntegration_EnsureCatalogRetentionClean_StripsForeignTTL(t *testing.T) 
 }
 
 // TestIntegration_EnsureCatalogRetentionClean_IgnoresOrphanedEmbeddingsCache pins
-// the adopter-facing consequence of the EMBEDDINGS_CACHE deletion
-// (reopen-framework-owned-bucket-guards): an orphaned KV_EMBEDDINGS_CACHE
+// the adopter-facing consequence of the EMBEDDINGS_CACHE bucket's removal from
+// the catalog: an orphaned KV_EMBEDDINGS_CACHE
 // bucket left behind by a pre-deletion deployment is inert — no longer in the
 // owned set, so the backstop neither strips nor reports it, and operators may
 // delete it manually at leisure.
@@ -157,11 +159,29 @@ func TestIntegration_EnsureCatalogRetentionClean_SkipsAbsentBuckets(t *testing.T
 	require.NoError(t, EnsureCatalogRetentionClean(ctx, client, slog.New(&recordingHandler{})))
 
 	// The backstop must NOT have created any guarded bucket.
-	for _, spec := range KVCatalog() {
+	for _, spec := range catalog {
 		_, err := client.GetKeyValueBucket(ctx, spec.Name)
 		assert.ErrorIs(t, err, jetstream.ErrBucketNotFound,
 			"backstop must not create absent bucket %s", spec.Name)
 	}
+}
+
+// TestIntegration_EnsureCatalogRetentionClean_RefusesNilContext: a nil context
+// is the caller's bug, so the refusal is invalid, not a transient fault to
+// retry. The client is connected, so the call reaches past the nil-client check.
+func TestIntegration_EnsureCatalogRetentionClean_RefusesNilContext(t *testing.T) {
+	client := fixtureClient(t)
+
+	var nilCtx context.Context
+	err := EnsureCatalogRetentionClean(nilCtx, client, slog.New(&recordingHandler{}))
+	require.Error(t, err)
+
+	var classified *errs.ClassifiedError
+	require.True(t, errors.As(err, &classified))
+	assert.Equal(t, errs.ErrorInvalid, classified.Class, "outer class: %v", err)
+	assert.Equal(t, "kvcatalog", classified.Component)
+	assert.Equal(t, "EnsureCatalogRetentionClean", classified.Operation)
+	assert.Contains(t, err.Error(), "nil context")
 }
 
 // TestIntegration_EnsureCatalogRetentionClean_StripsGraphStatusTTL_PreservesHistory
@@ -252,8 +272,8 @@ func TestIntegration_OrderedCreateRace_SeamReconcilesAtAcquisition(t *testing.T)
 	assert.Equal(t, []byte("member"), entry.Value())
 }
 
-// NOTE on the "unstrippable retention fails boot fast with the bucket named"
-// scenario (tasks 4.3): a genuinely un-strippable retention state (a DENIED
+// NOTE on "an unstrippable retention fails boot fast with the bucket named": a
+// genuinely un-strippable retention state (a DENIED
 // UpdateStream leaving the config binding) is NOT deterministically reachable
 // against cooperative real NATS — the strip always takes. That fatal path is
 // therefore proven at the atom's unit level

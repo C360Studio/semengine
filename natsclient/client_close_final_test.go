@@ -621,20 +621,6 @@ func TestClientConnectAfterCloseRefusesBeforeDial(t *testing.T) {
 	require.Equal(t, StatusDisconnected, c.Status())
 }
 
-// 8. H3: failures recorded by an operation still in flight after Close leave the status
-// Disconnected and arm nothing.
-func TestClientFailuresAfterCloseLeaveStatusDisconnected(t *testing.T) {
-	c, err := NewClient("nats://unused")
-	require.NoError(t, err)
-	owner := newClientOwner(c)
-	requireLiveCloseNil(t, c, "Close")
-	for range c.circuitThreshold {
-		c.recordFailure()
-	}
-	require.Equal(t, StatusDisconnected, c.Status(), "failures after Close changed the status")
-	require.Empty(t, owner.Observe().Unresolved)
-}
-
 // 11. H6: the connection's error handler is running (held on its "NATS error" record, raised by a
 // slow consumer) when Close is called. Close must not return nil until the connection's event
 // handlers have finished.
@@ -668,20 +654,20 @@ func jsErrors(c *Client, operation string) float64 {
 }
 
 // 13. N7, M-4: once Close has begun, the async publish error handler still counts its metric and
-// logs, but records no failure and changes no status.
+// logs, and changes no status.
 func TestClientAsyncPublishErrorAfterCloseRecordsMetricOnly(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		c, err := NewClient("nats://unused", WithMetrics(metric.NewMetricsRegistry()))
 		require.NoError(t, err)
 		require.NoError(t, c.Close(t.Context()))
 		msg := &nats.Msg{Subject: "async.after.close"}
-		for range c.circuitThreshold {
+		const failedAcks = 3
+		for range failedAcks {
 			c.asyncPublishErrHandler(nil, msg, errors.New("ack failed"))
 		}
 		synctest.Wait()
-		require.Zero(t, c.Failures(), "an async ack failure after Close was counted")
 		require.Equal(t, StatusDisconnected, c.Status())
-		require.Equal(t, float64(c.circuitThreshold), jsErrors(c, "publish_async"),
+		require.Equal(t, float64(failedAcks), jsErrors(c, "publish_async"),
 			"the publish_async metric stopped counting after Close")
 	})
 }

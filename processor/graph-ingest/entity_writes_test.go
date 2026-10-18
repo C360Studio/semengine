@@ -71,10 +71,10 @@ func newRetryingStreamLane(t *testing.T, err error) (*Component, *createFailsOnc
 	return c, bucket, arrival
 }
 
-func decodeEntity(t *testing.T, data []byte) graph.EntityState {
+func decodeEntity(t *testing.T, key string, data []byte) graph.EntityState {
 	t.Helper()
 	var state graph.EntityState
-	if err := graph.UnmarshalEntityState(data, &state); err != nil {
+	if err := graph.UnmarshalEntityState(key, data, &state); err != nil {
 		t.Fatalf("decode entity: %v", err)
 	}
 	return state
@@ -170,7 +170,7 @@ func TestReplaceEntityRetryAfterLostBirthMergesOnlyTheArrival(t *testing.T) {
 
 	// The hierarchy statements this lane added to the arrival in its abandoned birth.
 	added := make(map[string]bool)
-	for _, tr := range decodeEntity(t, bucket.abandoned).Triples {
+	for _, tr := range decodeEntity(t, arrival.ID, bucket.abandoned).Triples {
 		if !arrivalPredicates[tr.Predicate] && isHierarchyPredicate(tr.Predicate) {
 			added[statementKey(tr)] = true
 		}

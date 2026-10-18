@@ -35,9 +35,6 @@ func (r *recordingTB) runCleanups() {
 	}
 }
 
-// startedAt is a fixture that reports url as started, without a broker.
-func startedAt(url string) *Fixture { return &Fixture{url: url} }
-
 // Requirement: nats-fixture/Connected value for a package's tests; Scenario: Opening fails
 func TestOpenFailureNamesURLAndRegistersNoClose(t *testing.T) {
 	const url = "fixture-url-a"
@@ -45,7 +42,7 @@ func TestOpenFailureNamesURLAndRegistersNoClose(t *testing.T) {
 	rec := &recordingTB{TB: t, ctx: t.Context()}
 	var openedWith string
 	closed := false
-	got := Open(rec, startedAt(url), func(ctx context.Context, u string) (int, func(context.Context) error, error) {
+	got := Open(rec, url, func(ctx context.Context, u string) (int, func(context.Context) error, error) {
 		openedWith = u
 		if _, ok := ctx.Deadline(); !ok {
 			t.Error("open called without a deadline")
@@ -53,7 +50,7 @@ func TestOpenFailureNamesURLAndRegistersNoClose(t *testing.T) {
 		return 7, func(context.Context) error { closed = true; return nil }, refused
 	})
 	if openedWith != url {
-		t.Fatalf("open called with %q, want the fixture's URL %q", openedWith, url)
+		t.Fatalf("open called with %q, want %q", openedWith, url)
 	}
 	if got != 0 {
 		t.Errorf("Open returned %d on failure, want the zero value", got)
@@ -75,7 +72,7 @@ func TestOpenCloseErrorIsATestError(t *testing.T) {
 	rec := &recordingTB{TB: t, ctx: t.Context()}
 	failed := errors.New("drain failed")
 	var hadDeadline bool
-	got := Open(rec, startedAt("fixture-url-b"), func(context.Context, string) (string, func(context.Context) error, error) {
+	got := Open(rec, "fixture-url-b", func(context.Context, string) (string, func(context.Context) error, error) {
 		return "value", func(ctx context.Context) error {
 			_, hadDeadline = ctx.Deadline()
 			return failed
@@ -96,16 +93,16 @@ func TestOpenCloseErrorIsATestError(t *testing.T) {
 	}
 }
 
-// A fixture that was never started has no URL to open against: the helper fails the test rather
-// than calling open with an empty address.
-func TestOpenRefusesAnUnstartedFixture(t *testing.T) {
+// An empty URL (such as an unstarted fixture's URL()) fails the test rather than calling open with
+// an empty address.
+func TestOpenRefusesAnEmptyURL(t *testing.T) {
 	rec := &recordingTB{TB: t, ctx: t.Context()}
 	called := false
-	Open(rec, startedAt(""), func(context.Context, string) (int, func(context.Context) error, error) {
+	Open(rec, "", func(context.Context, string) (int, func(context.Context) error, error) {
 		called = true
 		return 0, nil, nil
 	})
-	if called || len(rec.fatals) != 1 || !strings.Contains(rec.fatals[0], "not started") {
-		t.Fatalf("open called = %v, fatals %q; want no call and one failure naming the unstarted fixture", called, rec.fatals)
+	if called || len(rec.fatals) != 1 || !strings.Contains(rec.fatals[0], "empty URL") {
+		t.Fatalf("open called = %v, fatals %q; want no call and one failure naming the empty URL", called, rec.fatals)
 	}
 }

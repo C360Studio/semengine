@@ -5,7 +5,7 @@ The transport client is `natsclient`, the package that connects to NATS and wrap
 and requests. This capability states what a caller can rely on: what a publish acknowledgement does and does not
 promise, when a consumed message is settled, that a nil context is refused before a call acts, that a handler panic
 is recovered, that `Subscribe` and `SubscribeForRequests` return a subscription only after the server has read its
-SUB, how the storage report view changes, and what the callback of a retried `KVStore` update is given and when it
+SUB, and what the callback of a retried `KVStore` update is given and when it
 runs again. `Close` stays within the caller's deadline on a connection it dialled, refuses new work once it begins,
 and returns nil only after every handler and background goroutine the client owns has returned.
 
@@ -122,21 +122,20 @@ returned.
 
 ### Requirement: Only Close changes the status once Close begins
 
-While a connection is installed and Close has not begun, a Connect that does not install its own connection SHALL
-change neither `Status()`, nor `Failures()`, nor the circuit. Once Close has begun, no writer but Close SHALL change
-`Status()`. It keeps its value through the drain and is `Disconnected` for good once Close's cleanup has finished.
+While a connection is installed and Close has not begun, a Connect that does not install its own connection SHALL NOT
+change `Status()`. Once Close has begun, no writer but Close SHALL change `Status()`. It keeps its value through the
+drain and is `Disconnected` for good once Close's cleanup has finished.
 
 #### Scenario: Only Close changes the status once Close begins
 
-- **WHEN** Close has begun and the health monitor, a connection handler, a failing operation or a Connect would
-  change the status
+- **WHEN** Close has begun and the health monitor, a connection handler or a Connect would change the status
 - **THEN** Status keeps the value it had when Close began until Close's cleanup has finished, and reports
   Disconnected from then on
 
 #### Scenario: A losing Connect leaves the winner's status
 
 - **WHEN** two Connect calls overlap, one installs its connection and the other fails or is cancelled
-- **THEN** Status, Failures and the circuit are those of the installed connection
+- **THEN** Status is that of the installed connection
 
 ### Requirement: A delivery after the recorded end is refused, and counted
 
@@ -198,63 +197,47 @@ invalid-data error before it touches client state, calls a callback or calls NAT
 
 #### Scenario: Nil context on a request or bucket call
 
-- **WHEN** `Request`, `RequestWithHeaders`, `OpenFrameworkBucket` or any other exported context-taking,
+- **WHEN** `RequestClassified`, `RequestWithHeaders`, `OpenFrameworkBucket` or any other exported context-taking,
   error-returning call is given a nil context on a connected client
 - **THEN** it returns an invalid-data error, no handler runs and no bucket changes
 
 ### Requirement: A retrying request refuses what it cannot attempt
 
-`RequestWithRetry` and `RequestWithRetryClassified` SHALL refuse a negative `MaxRetries` with an invalid-data error
-before anything is sent; 0 means one attempt. They SHALL check the context before every attempt, the first included,
-and SHALL return a caller's cancellation as a transient error that matches `context.Canceled` without counting it
-toward the circuit breaker (changed behaviour: at the pin a negative count returned success with no reply, or
-panicked, and a cancelled context counted as a transport failure; Codex F31, F32). No request call that counts
-failures (`Request`, `RequestWithHeaders` and `RequestClassified` through it, and the two retrying calls) SHALL count
-a caller's cancellation toward the circuit breaker, whether the context ended before an attempt or while one waited
-for its reply; an attempt's own timeout still counts (early check E1).
+`RequestWithRetryClassified` SHALL take a `retry.Config` and make its attempts as `retry.Do` does: `MaxAttempts` counts
+every attempt, a count below one makes one attempt (a negative count is no longer refused), and a config `retry.Do`
+refuses SHALL be returned before anything is sent (changed: `natsclient.RetryConfig`, whose `MaxRetries` counted the
+attempts after the first and was refused below zero, is removed, #222; at the pin a negative count returned success with
+no reply, Codex F31). Only an attempt that received no reply SHALL be retried; a reply, an error reply included, ends
+the call. It SHALL check the context before every attempt, the first included, and SHALL return a caller's
+cancellation as an error that matches `context.Canceled` and that `errs.IsTransient` reports transient (Codex F32).
+`RequestWithHeaders`, `RequestClassified` and the retrying call SHALL return a cancellation that arrives while an
+attempt waits for its reply as an error that matches `context.Canceled` (early check E1).
 
 #### Scenario: Negative retry count
 
-- **WHEN** a retrying request is called with `MaxRetries` below zero
-- **THEN** it returns an invalid-data error and the responder's handler never runs
+- **WHEN** `RequestWithRetryClassified` is called with `MaxAttempts` 0 or -1 and a responder that answers
+- **THEN** the responder's handler runs once and the call returns its reply
+
+#### Scenario: A config retry.Do refuses
+
+- **WHEN** `RequestWithRetryClassified` is called with a negative `InitialDelay`
+- **THEN** it returns an error, whose class is not promised, and the responder's handler never runs
+
+#### Scenario: An error reply is not retried
+
+- **WHEN** the responder's handler returns an error and `MaxAttempts` is 3
+- **THEN** the handler runs once and the call returns the classified error
 
 #### Scenario: Ended context
 
 - **WHEN** a retrying request is called with a context that has already ended
-- **THEN** it returns an error matching `context.Canceled`, the responder's handler never runs, and the client's
-  failure count is unchanged
+- **THEN** it returns an error matching `context.Canceled` and the responder's handler never runs
 
 #### Scenario: Cancelled while an attempt is in flight
 
-- **WHEN** a caller cancels `Request`, `RequestWithHeaders`, `RequestClassified`, `RequestWithRetry` or
-  `RequestWithRetryClassified` while the responder holds the request
-- **THEN** the call returns an error matching `context.Canceled` and the client's failure count is unchanged
-
-### Requirement: The storage report view changes at a sync marker
-
-The storage report consumer SHALL collect a watch's initial values until the watch's sync marker and then make them
-its view in one step, so a row or account row the bucket no longer holds is gone even when no delete marker for it
-was replayed. Until that marker a `Snapshot` caller SHALL see the previous view whole; before the first watch's
-marker the view is empty and `Synced` is false. A delete or purge of the account key SHALL clear `AccountKnown`.
-`Snapshot` SHALL share no mutable memory with the consumer. `StorageReportObserver` has no method that retracts an
-account, so an observer is not told of an account retraction; the consumer SHALL log it at Warn (declared gap, issue #85;
-Codex F36, F37).
-
-#### Scenario: A replacement watch over a bucket that lost rows
-
-- **WHEN** a replacement watch's initial values lack a row the previous view held, and no delete marker for it is
-  replayed
-- **THEN** `Snapshot` returns the previous view until the sync marker, and from the marker on the row is gone
-
-#### Scenario: The account key is deleted
-
-- **WHEN** the account key is deleted or purged
-- **THEN** `Snapshot` reports `AccountKnown` false and a Warn record says observers keep the last account
-
-#### Scenario: Editing a snapshot
-
-- **WHEN** a caller edits any slice or pointer field of a returned snapshot
-- **THEN** the next `Snapshot` is unchanged
+- **WHEN** a caller cancels `RequestWithHeaders`, `RequestClassified` or `RequestWithRetryClassified` while the
+  responder holds the request
+- **THEN** the call returns an error matching `context.Canceled`
 
 ### Requirement: Subscribe returns after the server has read the SUB
 
@@ -377,15 +360,16 @@ context SHALL NOT bound the connection's later reconnects.
 
 nats.go takes one lock for every write on a connection. While the server is not reading and the connection's send buffer
 is full, a write holds that lock until it completes or nats.go's write timeout (one minute by default,
-`WithWriteTimeout`) ends it, and every call that needs the lock waits, whatever its context: `Publish`, `Request`,
-`Subscribe`, the JetStream and key-value calls, and a consumer's setup. A call behind more than one held write waits for
-each in turn. The client does not bound these waits (ADR-112). `Close` is the exception: on a connection the client
-dialled it closes the socket when its context ends ("Close and Drain are bounded by the caller's context"), and every
-held call then returns an error. The client SHALL NOT hold its own lock while it calls into nats.go, so a call held this
-way does not hold `Close` or `Connect`. When the write timeout ends a write that was partly sent, the connection can
-stay connected and carry nothing until nats.go's stale-connection check closes it and reconnects. That check sends a
-PING every 30 s by default (`WithPingInterval`), and nats.go declares the connection stale at the third PING with no
-answer. The client does not promise when that happens, nor that the connection is usable sooner.
+`WithWriteTimeout`) ends it, and every call that needs the lock waits, whatever its context: `Publish`,
+`RequestWithHeaders` (and the classified calls through it), `Subscribe`, the JetStream and key-value calls, and a
+consumer's setup. A call behind more than one held write waits for each in turn. The client does not bound these waits
+(ADR-112). `Close` is the exception: on a connection the client dialled it closes the socket when its context ends
+("Close and Drain are bounded by the caller's context"), and every held call then returns an error. The client SHALL NOT
+hold its own lock while it calls into nats.go, so a call held this way does not hold `Close` or `Connect`. When the
+write timeout ends a write that was partly sent, the connection can stay connected and carry nothing until nats.go's
+stale-connection check closes it and reconnects. That check sends a PING every 30 s by default (`WithPingInterval`), and
+nats.go declares the connection stale at the third PING with no answer. The client does not promise when that happens,
+nor that the connection is usable sooner.
 
 #### Scenario: A held call does not hold Close
 
@@ -413,21 +397,6 @@ a 30 s PING interval.
 
 - **WHEN** `NewClient` is called with `WithWriteTimeout(0)` or `WithPingInterval(-time.Second)`
 - **THEN** it returns an error for which `errs.IsInvalid` reports true, and no client
-
-### Requirement: The client's refusals carry the transient class
-
-`ErrNotConnected` SHALL be transient by `errs.IsTransient` and by `errs.Classify`. `natsclient.ErrCircuitOpen` SHALL be
-the sentinel `errs.ErrCircuitOpen`, so one `errors.Is` check matches it and both functions call it transient.
-
-#### Scenario: Not connected
-
-- **WHEN** a call returns `ErrNotConnected`
-- **THEN** `errs.IsTransient` reports true and `errs.Classify` returns `ErrorTransient`
-
-#### Scenario: Circuit open
-
-- **WHEN** a call returns `natsclient.ErrCircuitOpen`
-- **THEN** it matches `errs.ErrCircuitOpen` with `errors.Is`, and `errs.IsTransient` reports true
 
 ### Requirement: Close returns nil only after everything the client owns has finished
 
@@ -495,3 +464,119 @@ other error from the create or the update SHALL end the call with that error and
 
 - **WHEN** the first run's write returns `ErrNoStreamResponse` and the second run's write is stored
 - **THEN** the call returns that write's revision and no error, and the key was written once
+
+### Requirement: An unclassified handler error is sent as fatal
+
+When a `SubscribeForRequests` handler returns an unclassified error (no `*errs.ClassifiedError` in its chain and none of
+the sentinels `errs.IsTransient`, `errs.IsFatal` or `errs.IsInvalid` list), the reply SHALL carry
+`X-Error-Class: fatal`. A `RequestClassified` caller SHALL receive an error for which `errs.IsFatal` reports true and
+`errs.IsTransient` reports false.
+
+#### Scenario: A plain handler error
+
+- **WHEN** a handler returns `errors.New("marshal failed")`
+- **THEN** the reply's `X-Error-Class` is `fatal`, and the requester's error reports `errs.IsFatal` true and
+  `errs.IsTransient` false
+
+### Requirement: A handler error never arrives as reply data
+
+`RequestClassified`, `RequestWithRetryClassified` and `RequestReadyClassified` SHALL return a reply that carries
+`X-Status: error` as an error and no data: a `*errs.ClassifiedError` with the reply's class, code, message and detail.
+`RequestWithHeaders` SHALL return the reply message as received, headers included, with a nil error, and
+`ClassifyReply` on that message SHALL return the same classified error. No other natsclient call sends a request and
+returns its reply (changed: at the pin `Request` and `RequestWithRetry` returned an error reply's body as data with a
+nil error; both are removed, #222).
+
+#### Scenario: A classified call gets the handler's error
+
+- **WHEN** a `SubscribeForRequests` handler returns an error with class invalid and a code, and the caller uses
+  `RequestClassified`
+- **THEN** the call returns no data and an error for which `errs.IsInvalid` reports true and whose `Code` is the
+  handler's code
+
+#### Scenario: The raw call keeps the headers
+
+- **WHEN** the same handler is called with `RequestWithHeaders`
+- **THEN** the call returns a nil error and a message whose `X-Status` header is `error`, and `ClassifyReply` on it
+  returns the classified error
+
+### Requirement: A failed call refuses no other call
+
+No natsclient call SHALL refuse because other calls failed. A call that fails SHALL return its own error and SHALL
+leave `Status()` as `Connect`, the connection's events, the health monitor and `Close` set it (changed: at the pin,
+fifteen failed calls or dials with no success between them opened a circuit breaker; until its backoff ended,
+JetStream and request calls returned `ErrCircuitOpen`, as did `Connect` while no connection was installed, and the
+status then read `Disconnected` on a live connection until the health monitor's next tick; the breaker is
+removed, #222).
+
+#### Scenario: Failures on one subject leave other calls working
+
+- **WHEN** a connected client whose health monitor is off makes twenty `PublishToStream` calls to a subject no stream
+  captures, and each fails
+- **THEN** each error is that publish's own failure, a `PublishToStream` to a subject a stream captures then
+  succeeds, and `Status()` reports `Connected`
+
+### Requirement: The not-connected refusal carries the transient class
+
+`ErrNotConnected` SHALL be transient by `errs.IsTransient` and by `errs.Classify`.
+
+#### Scenario: Not connected
+
+- **WHEN** a call returns `ErrNotConnected`
+- **THEN** `errs.IsTransient` reports true and `errs.Classify` returns `ErrorTransient`
+
+### Requirement: A refusal the server reports is counted
+
+When the client was built with `WithMetrics`, it SHALL register a counter `semengine_nats_server_refusals_total`
+with label `reason` on that registry through `metric.RegisterOrGet`. Each refusal nats.go reports to the client's
+async error handler as `nats.ErrPermissionViolation` SHALL add one with reason `permission_violation`. Each reported
+as `nats.ErrMaxSubscriptionsExceeded` SHALL add one with reason `max_subscriptions_exceeded`. The count SHALL be made
+before the client's `NATS error` log line for that refusal is written, and SHALL be decided with `errors.Is`, never by
+the error's text, so a refused publish and a refused SUB count alike. `Subscribe` and `SubscribeForRequests` SHALL
+still return the subscription and nil for a SUB the server refused (owner ruling on #169, 2026-10-12; changed: before
+this change a refusal was only logged). This requirement does not say how soon after the call returns the counter
+rises. A client built without metrics SHALL write the log line only.
+
+#### Scenario: A refused subscription is counted
+
+- **WHEN** a client with metrics subscribes and the server answers the SUB with a permissions violation before the
+  PONG
+- **THEN** the call returns the subscription and nil, and when the refusal's `NATS error` record is written the
+  `permission_violation` count has already risen by one
+
+#### Scenario: A subscription over the server's limit is counted
+
+- **WHEN** a client with metrics subscribes and the server answers the SUB with "maximum subscriptions exceeded"
+- **THEN** the call returns the subscription and nil, and the `max_subscriptions_exceeded` count rises by one
+
+#### Scenario: A refused publish is counted the same way
+
+- **WHEN** the server answers a publish from a client with metrics with a permissions violation
+- **THEN** the `permission_violation` count rises by one
+
+### Requirement: Both filtered key listings complete the same way
+
+`KVStore.KeysByFilter` and `natsclient.FilteredKeys` SHALL list keys through one implementation over the reader's
+`WatchFiltered`. They SHALL return every key in the watcher's initial snapshot, and nil with no error when it holds
+none. When the context ends, or the watcher's update channel closes before the snapshot is complete, they SHALL
+return no keys and an error, matching the context's error when it ended. Before returning, they SHALL stop the watcher
+and wait at most 5 s, past the call's context, for its update channel to close. `KeysByFilter` also applies the
+store's operation timeout; `FilteredKeys` is bounded by its caller's context. Changed: `FilteredKeys` read through
+nats.go's `ListKeysFiltered`, took a reader offering that method, and returned the keys gathered so far when the
+lister's channel closed with the context live (#222).
+
+#### Scenario: Cancelled during the snapshot
+
+- **WHEN** either call's context is cancelled after the first key arrives and before the snapshot completes
+- **THEN** the call returns no keys and an error matching `context.Canceled`, and the watcher's update channel has
+  closed
+
+#### Scenario: The watcher closes before the snapshot completes
+
+- **WHEN** the watcher's update channel closes before the end-of-snapshot marker, with the context live
+- **THEN** either call returns no keys and an error
+
+#### Scenario: No key matches
+
+- **WHEN** no key in a bucket on a NATS server matches the filter
+- **THEN** either call returns nil and no error

@@ -29,10 +29,10 @@ import (
 //     behavior worth preserving. Producers for which confidence is
 //     identity-bearing already encode it into the predicate.
 //   - ExpiresAt is excluded, which makes a re-assert-to-extend a no-op.
-//     FORWARD HAZARD: triple TTL is currently unenforced (Triple.IsExpired has
-//     no non-test consumers). If TTL enforcement ever lands, either revisit
-//     this key or move TTL refresh onto a replace verb — do not discover this
-//     by watching extensions silently fail.
+//     FORWARD HAZARD: triple TTL is currently unenforced (no production code
+//     compares ExpiresAt with the clock). If TTL enforcement ever lands,
+//     either revisit this key or move TTL refresh onto a replace verb — do
+//     not discover this by watching extensions silently fail.
 //
 // Structured objects are NORMALIZED before keying, so a struct and the
 // map[string]any it decodes back into from ENTITY_STATES produce one key. See

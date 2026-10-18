@@ -20,7 +20,7 @@ func projectionAcceptingRequester(t *testing.T) *projectionRequester {
 		case "graph.ingest.query.entity":
 			return projectionJSON(t, graph.ExactEntity{Entity: projectionTestState(), KVRevision: 7}), nil
 		case "graph.mutation.entity.create":
-			return projectionJSON(t, graph.CreateEntityResponse{
+			return projectionJSON(t, graph.EntityMutationResponse{
 				Outcome: graph.MutationApplied, Entity: projectionTestState(), KVRevision: 1,
 			}), nil
 		case "graph.mutation.triple.append":
@@ -28,7 +28,7 @@ func projectionAcceptingRequester(t *testing.T) *projectionRequester {
 				EntityID: projectionTestEntity, Outcome: graph.MutationApplied, KVRevision: 2,
 			}}}), nil
 		case "graph.mutation.entity.reconcile":
-			return projectionJSON(t, graph.ReconcilePredicatesResponse{
+			return projectionJSON(t, graph.EntityMutationResponse{
 				Outcome: graph.MutationApplied, Entity: projectionTestState(), KVRevision: 8,
 			}), nil
 		default:
@@ -144,8 +144,8 @@ func TestMutationClientRefusesMissingTimestamp(t *testing.T) {
 						assertProjectionRejectedBeforeRequest(t, receipt, err, op.operation, requester)
 						return
 					}
-					if err != nil || receipt.Commit != CommitVerified {
-						t.Fatalf("receipt = %#v, error = %v; want verified", receipt, err)
+					if err != nil {
+						t.Fatalf("receipt = %#v, error = %v; want success", receipt, err)
 					}
 					sent := op.sent(t, requester)
 					if len(sent) != 1 || !sent[0].Timestamp.Equal(given) {
@@ -201,8 +201,8 @@ func TestMutationClientReconcileRequiresSource(t *testing.T) {
 	t.Run("the metadata's source is the request's source", func(t *testing.T) {
 		requester := projectionAcceptingRequester(t)
 		receipt, err := reconcile(t, requester, []message.Triple{statement}, "test-projector")
-		if err != nil || receipt.Commit != CommitVerified {
-			t.Fatalf("receipt = %#v, error = %v; want verified", receipt, err)
+		if err != nil {
+			t.Fatalf("receipt = %#v, error = %v; want success", receipt, err)
 		}
 		var sent graph.ReconcilePredicatesRequest
 		sentRequest(t, requester, "graph.mutation.entity.reconcile", &sent)

@@ -33,7 +33,7 @@ func TestIntegration_CanonicalMutationLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	body, err := c.handleCanonicalCreate(ctx, createData)
 	require.NoError(t, err)
-	var created graph.CreateEntityResponse
+	var created graph.EntityMutationResponse
 	require.NoError(t, json.Unmarshal(body, &created))
 	assert.Equal(t, graph.MutationApplied, created.Outcome)
 	require.NotZero(t, created.KVRevision)
@@ -52,7 +52,7 @@ func TestIntegration_CanonicalMutationLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	body, err = c.handleCanonicalReconcile(ctx, reconcileData)
 	require.NoError(t, err)
-	var reconciled graph.ReconcilePredicatesResponse
+	var reconciled graph.EntityMutationResponse
 	require.NoError(t, json.Unmarshal(body, &reconciled))
 	assert.Equal(t, graph.MutationApplied, reconciled.Outcome)
 	assert.Greater(t, reconciled.KVRevision, created.KVRevision)

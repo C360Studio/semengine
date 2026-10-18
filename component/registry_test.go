@@ -54,10 +54,10 @@ func TestListFactories_PreservesSchemaAndName(t *testing.T) {
 
 	// Mock factory function
 	mockFactory := func(_ json.RawMessage, _ Dependencies) (Discoverable, error) {
-		return &SimpleMockComponent{name: "my-instance", config: map[string]any{"type": "processor"}}, nil
+		return &SimpleMockComponent{name: "my-instance"}, nil
 	}
 
-	reg := &Registration{
+	reg := Registration{
 		Name:        "test-component",
 		Factory:     mockFactory,
 		Ports:       mockPorts(mockFactory),
@@ -69,7 +69,7 @@ func TestListFactories_PreservesSchemaAndName(t *testing.T) {
 		Schema:      schema,
 	}
 
-	err := registry.RegisterFactory("test-component", reg)
+	err := registry.Register(reg)
 	if err != nil {
 		t.Fatalf("Failed to register: %v", err)
 	}
@@ -125,7 +125,7 @@ func TestListFactories_PreservesSchemaAndName(t *testing.T) {
 
 func TestListFactories_ReturnsDefensiveMetadataClones(t *testing.T) {
 	registry := NewRegistry()
-	if err := registry.RegisterFactory("test-component", &Registration{
+	if err := registry.Register(Registration{
 		Name: "test-component", Type: "processor",
 		Factory: func(_ json.RawMessage, _ Dependencies) (Discoverable, error) {
 			return &SimpleMockComponent{name: "instance"}, nil
@@ -157,16 +157,16 @@ func TestListFactories_ReturnsDefensiveMetadataClones(t *testing.T) {
 	}
 }
 
-// TestRegisterWithConfig_DependenciesMetadata verifies that declared
+// TestRegister_DependenciesMetadata verifies that declared
 // dependencies remain discoverable as factory metadata.
-func TestRegisterWithConfig_DependenciesMetadata(t *testing.T) {
+func TestRegister_DependenciesMetadata(t *testing.T) {
 	registry := NewRegistry()
 
 	mockFactory := func(_ json.RawMessage, _ Dependencies) (Discoverable, error) {
-		return &SimpleMockComponent{name: "my-instance", config: map[string]any{"type": "processor"}}, nil
+		return &SimpleMockComponent{name: "my-instance"}, nil
 	}
 
-	err := registry.RegisterWithConfig(RegistrationConfig{
+	err := registry.Register(Registration{
 		Name:         "reg-with-deps",
 		Factory:      mockFactory,
 		Ports:        noPorts,
@@ -178,7 +178,7 @@ func TestRegisterWithConfig_DependenciesMetadata(t *testing.T) {
 		Dependencies: []string{DepModelRegistry},
 	})
 	if err != nil {
-		t.Fatalf("RegisterWithConfig: %v", err)
+		t.Fatalf("Register: %v", err)
 	}
 
 	// Registration metadata reflects the declared dependency.
@@ -193,24 +193,24 @@ func TestRegisterWithConfig_DependenciesMetadata(t *testing.T) {
 
 }
 
-// TestRegisterWithConfig_NoDependencies confirms the default (zero-value)
+// TestRegister_NoDependencies confirms the default (zero-value)
 // case. A component that doesn't declare any deps must not receive
 // spurious entries — ComponentManager would mis-route updates otherwise.
-func TestRegisterWithConfig_NoDependencies(t *testing.T) {
+func TestRegister_NoDependencies(t *testing.T) {
 	registry := NewRegistry()
 
 	mockFactory := func(_ json.RawMessage, _ Dependencies) (Discoverable, error) {
 		return nil, nil
 	}
 
-	err := registry.RegisterWithConfig(RegistrationConfig{
+	err := registry.Register(Registration{
 		Name:    "reg-no-deps",
 		Factory: mockFactory,
 		Ports:   noPorts,
 		Type:    "processor",
 	})
 	if err != nil {
-		t.Fatalf("RegisterWithConfig: %v", err)
+		t.Fatalf("Register: %v", err)
 	}
 
 	factories := registry.ListFactories()
@@ -220,12 +220,12 @@ func TestRegisterWithConfig_NoDependencies(t *testing.T) {
 	}
 }
 
-// TestRegisterFactoryRejectsNilPortDeclarer — a registration without a Ports
+// TestRegisterRejectsNilPortDeclarer — a registration without a Ports
 // declarer is refused exactly as a registration without a Factory is: a
 // classified invalid error naming the factory, and no factory left behind.
-func TestRegisterFactoryRejectsNilPortDeclarer(t *testing.T) {
+func TestRegisterRejectsNilPortDeclarer(t *testing.T) {
 	registry := NewRegistry()
-	err := registry.RegisterWithConfig(RegistrationConfig{
+	err := registry.Register(Registration{
 		Name: "undeclared", Type: "processor",
 		Factory: func(json.RawMessage, Dependencies) (Discoverable, error) {
 			return &SimpleMockComponent{name: "undeclared"}, nil
@@ -233,7 +233,7 @@ func TestRegisterFactoryRejectsNilPortDeclarer(t *testing.T) {
 		Schema: ConfigSchema{Properties: map[string]PropertySchema{"port": {Type: "int"}}},
 	})
 	if err == nil {
-		t.Fatal("RegisterWithConfig admitted a registration with a nil Ports declarer")
+		t.Fatal("Register admitted a registration with a nil Ports declarer")
 	}
 	if !errs.IsInvalid(err) {
 		t.Fatalf("nil declarer error is not classified invalid: %v", err)
@@ -259,7 +259,7 @@ func TestAdmissionRefusesPortDeclarationMismatch(t *testing.T) {
 			Config: JetStreamPort{Subjects: []string{"events.more"}},
 		},
 	}}
-	requireNoError(t, registry.RegisterWithConfig(RegistrationConfig{
+	requireNoError(t, registry.Register(Registration{
 		Name: "liar", Type: "processor",
 		Factory: func(json.RawMessage, Dependencies) (Discoverable, error) { return built, nil },
 		Ports: func(json.RawMessage, string) (PortConfig, error) {
@@ -282,7 +282,7 @@ func TestAdmissionRefusesPortDeclarationMismatch(t *testing.T) {
 			t.Errorf("parity error %q does not name %q", err.Error(), want)
 		}
 	}
-	if _, ok := registry.declaration("worker"); ok {
+	if _, ok := admittedDeclaration(registry, "worker"); ok {
 		t.Fatal("Registry retained a declaration for an instance that failed the parity check")
 	}
 
@@ -293,7 +293,7 @@ func TestAdmissionRefusesPortDeclarationMismatch(t *testing.T) {
 		Name: "feed", Direction: DirectionInput, Required: true,
 		Config: JetStreamPort{StreamName: "USER", Subjects: []string{"user.message.>"}},
 	}}}
-	requireNoError(t, registry.RegisterWithConfig(RegistrationConfig{
+	requireNoError(t, registry.Register(Registration{
 		Name: "marker-liar", Type: "processor",
 		Factory: func(json.RawMessage, Dependencies) (Discoverable, error) { return unmarked, nil },
 		Ports: func(json.RawMessage, string) (PortConfig, error) {

@@ -3,6 +3,7 @@ package retry
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -200,6 +201,94 @@ func TestRetry_ZeroAttempts(t *testing.T) {
 
 	assert.NoError(t, err)
 	assert.Equal(t, 1, attempts)
+}
+
+func TestRetry_JitterBounds(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
+		const initialDelay = 100 * time.Millisecond
+		const maxJitter = initialDelay / 4
+		cfg := Config{
+			MaxAttempts:  2,
+			InitialDelay: initialDelay,
+			MaxDelay:     time.Second,
+			Multiplier:   2.0,
+			AddJitter:    true,
+		}
+
+		sawPositiveJitter := false
+		distinctElapsed := make(map[time.Duration]struct{})
+
+		for i := range 100 {
+			start := time.Now()
+			attempts := 0
+			err := Do(ctx, cfg, func() error {
+				attempts++
+				if attempts == 1 {
+					return errors.New("transient error")
+				}
+				return nil
+			})
+			elapsed := time.Since(start)
+			if err != nil || attempts != 2 {
+				t.Fatalf("iteration %d: err=%v attempts=%d, want nil and 2", i, err, attempts)
+			}
+			if elapsed < initialDelay || elapsed >= initialDelay+maxJitter {
+				t.Fatalf("iteration %d: elapsed=%v out of bounds [%v, %v)", i, elapsed, initialDelay, initialDelay+maxJitter)
+			}
+			if elapsed > initialDelay {
+				sawPositiveJitter = true
+			}
+			distinctElapsed[elapsed] = struct{}{}
+		}
+
+		if !sawPositiveJitter || len(distinctElapsed) < 2 {
+			t.Fatalf("expected non-zero varying jitter across 100 runs; sawPositiveJitter=%v distinct=%d",
+				sawPositiveJitter, len(distinctElapsed))
+		}
+	})
+}
+
+func TestRetry_ConcurrentWithJitter(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx := context.Background()
+		cfg := Config{
+			MaxAttempts:  3,
+			InitialDelay: 20 * time.Millisecond,
+			MaxDelay:     200 * time.Millisecond,
+			Multiplier:   2.0,
+			AddJitter:    true,
+		}
+		// Base delays: 20ms + 40ms = 60ms; max jitter: <5ms + <10ms = <15ms -> [60ms, 75ms).
+		const minElapsed = 60 * time.Millisecond
+		const maxElapsed = 75 * time.Millisecond
+
+		const workers = 16
+		var wg sync.WaitGroup
+		wg.Add(workers)
+		for i := range workers {
+			go func(worker int) {
+				defer wg.Done()
+				start := time.Now()
+				attempts := 0
+				err := Do(ctx, cfg, func() error {
+					attempts++
+					if attempts < 3 {
+						return errors.New("transient error")
+					}
+					return nil
+				})
+				elapsed := time.Since(start)
+				if err != nil || attempts != 3 {
+					t.Errorf("worker %d: err=%v attempts=%d, want nil and 3", worker, err, attempts)
+				}
+				if elapsed < minElapsed || elapsed >= maxElapsed {
+					t.Errorf("worker %d: elapsed=%v out of bounds [%v, %v)", worker, elapsed, minElapsed, maxElapsed)
+				}
+			}(i)
+		}
+		wg.Wait()
+	})
 }
 
 // Benchmark to ensure performance

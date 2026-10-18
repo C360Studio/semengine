@@ -7,7 +7,6 @@ import (
 	"reflect"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestErrorClass_String(t *testing.T) {
@@ -42,13 +41,13 @@ func TestIsTransient(t *testing.T) {
 		{"connection lost", ErrConnectionLost, true},
 		{"storage unavailable", ErrStorageUnavailable, true},
 		{"rate limited", ErrRateLimited, true},
-		{"circuit open", ErrCircuitOpen, true},
 		{"context deadline exceeded", context.DeadlineExceeded, true},
 		{"context canceled", context.Canceled, true},
 		{"invalid data", ErrInvalidData, false},
 		{"fatal error", ErrResourceExhausted, false},
 		{"timeout in message only", fmt.Errorf("operation timeout occurred"), false},
 		{"network in message only", fmt.Errorf("network connection failed"), false},
+		{"bare error", errors.New("boom"), false},
 		{"classified transient", &ClassifiedError{Class: ErrorTransient, Err: fmt.Errorf("test")}, true},
 		{"classified fatal", &ClassifiedError{Class: ErrorFatal, Err: fmt.Errorf("test")}, false},
 	}
@@ -80,6 +79,7 @@ func TestIsFatal(t *testing.T) {
 		{"invalid data", ErrInvalidData, false},
 		{"fatal in message only", fmt.Errorf("fatal system error occurred"), false},
 		{"panic in message only", fmt.Errorf("panic: system failure"), false},
+		{"bare error", errors.New("boom"), false},
 		{"classified fatal", &ClassifiedError{Class: ErrorFatal, Err: fmt.Errorf("test")}, true},
 		{"classified transient", &ClassifiedError{Class: ErrorTransient, Err: fmt.Errorf("test")}, false},
 	}
@@ -108,6 +108,7 @@ func TestIsInvalid(t *testing.T) {
 		{"fatal error", ErrResourceExhausted, false},
 		{"classified invalid", &ClassifiedError{Class: ErrorInvalid, Err: fmt.Errorf("test")}, true},
 		{"classified transient", &ClassifiedError{Class: ErrorTransient, Err: fmt.Errorf("test")}, false},
+		{"bare error", errors.New("boom"), false},
 	}
 
 	for _, test := range tests {
@@ -130,12 +131,16 @@ func TestClassify(t *testing.T) {
 		{"connection timeout", ErrConnectionTimeout, ErrorTransient},
 		{"invalid config", ErrInvalidConfig, ErrorFatal},
 		{"invalid data", ErrInvalidData, ErrorInvalid},
-		{"unknown error", fmt.Errorf("unknown error"), ErrorTransient},
+		// An unclassified error is fatal (owner ruling 1, #167 comment 6191970843).
+		{"bare error", errors.New("boom"), ErrorFatal},
 		{"classified error", &ClassifiedError{Class: ErrorFatal, Err: fmt.Errorf("test")}, ErrorFatal},
 		// Text never decides the class (ruling N, #146): an unclassified error with no
-		// listed sentinel takes the default, and a wrapped sentinel decides.
-		{"fatal word in message only", fmt.Errorf("entity c360.ops.fatal.drone.001 refused"), ErrorTransient},
+		// listed sentinel takes the default, whatever its words, and a wrapped sentinel decides.
+		{"timeout and transient words in message only", errors.New("transient timeout reading c360.ops.robotics.gcs.drone.001"), ErrorFatal},
 		{"invalid sentinel beside transient words", fmt.Errorf("network timeout: %w", ErrInvalidData), ErrorInvalid},
+		// A class or sentinel in the chain keeps marking the error.
+		{"wrapped classified transient", fmt.Errorf("handler: %w", &ClassifiedError{Class: ErrorTransient, Err: errors.New("publish")}), ErrorTransient},
+		{"wrapped context deadline", fmt.Errorf("handler: %w", context.DeadlineExceeded), ErrorTransient},
 	}
 
 	for _, test := range tests {
@@ -306,46 +311,10 @@ func TestWrapClassifiedPreservesMachineContract(t *testing.T) {
 	}
 }
 
-// TestWrapClassified_NilInnerSynthesizesFromAction proves GH #94: when the
-// caller has no upstream Go error to wrap but does have a validation action
-// message ("missing polygon field"), the wrap synthesizes a non-nil
-// classified error from the action rather than collapsing to nil and
-// silently presenting invalid input as success.
-func TestWrapClassified_NilInnerSynthesizesFromAction(t *testing.T) {
-	tests := []struct {
-		name     string
-		wrapFunc func(error, string, string, string) error
-		isClass  func(error) bool
-		class    ErrorClass
-	}{
-		{"WrapTransient", WrapTransient, IsTransient, ErrorTransient},
-		{"WrapFatal", WrapFatal, IsFatal, ErrorFatal},
-		{"WrapInvalid", WrapInvalid, IsInvalid, ErrorInvalid},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			err := test.wrapFunc(nil, "Component", "method", "missing required field")
-			if err == nil {
-				t.Fatalf("%s(nil, ..., %q) returned nil — silent-success regression", test.name, "missing required field")
-			}
-			if !test.isClass(err) {
-				t.Errorf("%s: expected class %v, got %v (err=%v)", test.name, test.class, Classify(err), err)
-			}
-			if !strings.Contains(err.Error(), "missing required field") {
-				t.Errorf("%s: synthesized error should preserve the action message, got: %s", test.name, err.Error())
-			}
-			if !strings.Contains(err.Error(), "Component.method") {
-				t.Errorf("%s: synthesized error should preserve component/method context, got: %s", test.name, err.Error())
-			}
-		})
-	}
-}
-
-// TestWrapClassified_NilInnerEmptyActionReturnsNil keeps the no-signal call
-// (nothing to wrap, no action diagnostic) as a true no-op. This is the only
-// path that should still return nil.
-func TestWrapClassified_NilInnerEmptyActionReturnsNil(t *testing.T) {
+// TestWrapClassified_NilInnerAlwaysReturnsNil verifies that WrapTransient,
+// WrapFatal, and WrapInvalid return nil whenever err is nil regardless of
+// whether action is empty or non-empty (#218), matching Wrap and Classified.
+func TestWrapClassified_NilInnerAlwaysReturnsNil(t *testing.T) {
 	tests := []struct {
 		name     string
 		wrapFunc func(error, string, string, string) error
@@ -356,18 +325,18 @@ func TestWrapClassified_NilInnerEmptyActionReturnsNil(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			err := test.wrapFunc(nil, "Component", "method", "")
-			if err != nil {
-				t.Errorf("%s(nil, ..., \"\") expected nil, got %v", test.name, err)
-			}
-		})
+		for _, action := range []string{"", "missing required field"} {
+			t.Run(fmt.Sprintf("%s_action_%q", test.name, action), func(t *testing.T) {
+				if err := test.wrapFunc(nil, "Component", "method", action); err != nil {
+					t.Errorf("%s(nil, ..., %q) = %v, want nil", test.name, action, err)
+				}
+			})
+		}
 	}
 }
 
 // TestWrapClassified_NonNilInnerUnchanged confirms the existing contract
-// for the typical case (real upstream error) is not regressed by the
-// nil-inner synthesis change.
+// for the typical case (real upstream error).
 func TestWrapClassified_NonNilInnerUnchanged(t *testing.T) {
 	upstream := errors.New("upstream failure")
 	tests := []struct {
@@ -396,112 +365,6 @@ func TestWrapClassified_NonNilInnerUnchanged(t *testing.T) {
 	}
 }
 
-func TestRetryConfig_ShouldRetry(t *testing.T) {
-	config := DefaultRetryConfig()
-
-	tests := []struct {
-		name     string
-		err      error
-		attempt  int
-		expected bool
-	}{
-		{"nil error", nil, 0, false},
-		{"max retries exceeded", ErrConnectionTimeout, 3, false},
-		{"transient error within limit", ErrConnectionTimeout, 1, true},
-		{"fatal error", ErrInvalidConfig, 1, false},
-		{"invalid error", ErrInvalidData, 1, false},
-		{"transient words in message only", fmt.Errorf("connection timeout"), 1, false},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			result := config.ShouldRetry(test.err, test.attempt)
-			if result != test.expected {
-				t.Errorf("expected %v, got %v for error: %v, attempt: %d",
-					test.expected, result, test.err, test.attempt)
-			}
-		})
-	}
-}
-
-func TestRetryConfig_ShouldRetry_WithSpecificErrors(t *testing.T) {
-	config := RetryConfig{
-		MaxRetries:      3,
-		InitialDelay:    100 * time.Millisecond,
-		BackoffFactor:   2.0,
-		RetryableErrors: []error{ErrConnectionTimeout},
-	}
-
-	// Should retry connection timeout
-	if !config.ShouldRetry(ErrConnectionTimeout, 1) {
-		t.Error("should retry connection timeout")
-	}
-
-	// Should not retry other transient errors not in the list
-	if config.ShouldRetry(ErrConnectionLost, 1) {
-		t.Error("should not retry connection lost when not in retryable list")
-	}
-}
-
-func TestRetryConfig_BackoffDelay(t *testing.T) {
-	config := RetryConfig{
-		InitialDelay:  100 * time.Millisecond,
-		MaxDelay:      1 * time.Second,
-		BackoffFactor: 2.0,
-	}
-
-	tests := []struct {
-		attempt  int
-		expected time.Duration
-	}{
-		{0, 100 * time.Millisecond},
-		{1, 200 * time.Millisecond},
-		{2, 400 * time.Millisecond},
-		{3, 800 * time.Millisecond},
-		{4, 1 * time.Second}, // Capped at MaxDelay
-		{5, 1 * time.Second}, // Still capped
-	}
-
-	for _, test := range tests {
-		t.Run(fmt.Sprintf("attempt_%d", test.attempt), func(t *testing.T) {
-			result := config.BackoffDelay(test.attempt)
-			if result != test.expected {
-				t.Errorf("expected %v, got %v", test.expected, result)
-			}
-		})
-	}
-}
-
-func TestRetryConfig_ToRetryConfig(t *testing.T) {
-	// Test conversion from errors.RetryConfig to retry.Config
-	errorsConfig := RetryConfig{
-		MaxRetries:      5,
-		InitialDelay:    200 * time.Millisecond,
-		MaxDelay:        10 * time.Second,
-		BackoffFactor:   1.5,
-		RetryableErrors: nil,
-	}
-
-	retryConfig := errorsConfig.ToRetryConfig()
-
-	// Verify conversion
-	if retryConfig.MaxAttempts != 6 { // MaxRetries + 1
-		t.Errorf("expected MaxAttempts %d, got %d", 6, retryConfig.MaxAttempts)
-	}
-	if retryConfig.InitialDelay != 200*time.Millisecond {
-		t.Errorf("expected InitialDelay %v, got %v", 200*time.Millisecond, retryConfig.InitialDelay)
-	}
-	if retryConfig.MaxDelay != 10*time.Second {
-		t.Errorf("expected MaxDelay %v, got %v", 10*time.Second, retryConfig.MaxDelay)
-	}
-	if retryConfig.Multiplier != 1.5 {
-		t.Errorf("expected Multiplier %f, got %f", 1.5, retryConfig.Multiplier)
-	}
-	if !retryConfig.AddJitter {
-		t.Error("expected AddJitter to be true")
-	}
-}
-
 func TestStandardErrors(t *testing.T) {
 	// Test that standard errors are defined
 	standardErrors := []error{
@@ -527,7 +390,6 @@ func TestStandardErrors(t *testing.T) {
 		ErrResourceExhausted,
 		ErrRateLimited,
 		ErrQuotaExceeded,
-		ErrCircuitOpen,
 		ErrMaxRetriesExceeded,
 		ErrRetryTimeout,
 	}

@@ -3,6 +3,7 @@ package message_test
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"os"
 	"os/exec"
 	"reflect"
@@ -251,6 +252,49 @@ func TestGenericJSONRefusesInvalidUTF8AtDepth(t *testing.T) {
 		"quoted path key": {map[string]any{"a b": map[string]any{"c": "\xff"}}, []string{`data["a b"].c`}},
 	} {
 		t.Run(name, func(t *testing.T) { requireRefused(t, tc.data, tc.want...) })
+	}
+}
+
+// Validate refuses, with an invalid-data error naming the same path, what the encoding's shape check
+// refuses (D3; message-codec "Validate runs the shape check"): a value that is not JSON-shaped, a
+// map or list that contains itself, and a string or key that is not valid UTF-8, each at depth. A
+// NaN or an infinity passes Validate and is refused only by encoding (owner question 5).
+func TestGenericJSONValidateRefusesWhatTheShapeCheckRefuses(t *testing.T) {
+	self := map[string]any{"ok": 1}
+	self["self"] = self
+	for name, tc := range map[string]struct {
+		data map[string]any
+		want []string
+	}{
+		"not JSON-shaped at depth": {map[string]any{"a": []any{1, map[string]any{"b": time.Unix(0, 0)}}}, []string{"data.a[1].b", "time.Time"}},
+		"map contains itself":      {map[string]any{"m": self}, []string{"data.m.self", "contains itself"}},
+		"value at depth":           {map[string]any{"a": []any{map[string]any{"b": []any{nil, "x\xe2\x82"}}}}, []string{"data.a[0].b[1]", "not valid UTF-8"}},
+		"key at depth":             {map[string]any{"a": []any{map[string]any{"\xc0\xaf": true}}}, []string{"data.a[0]", `key "\xc0\xaf"`}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := message.NewGenericJSON(tc.data).Validate()
+			if !errs.IsInvalid(err) {
+				t.Fatalf("Validate() = %v, want an invalid-data error", err)
+			}
+			for _, w := range tc.want {
+				if !strings.Contains(err.Error(), w) {
+					t.Errorf("Validate() error %q does not name %q", err, w)
+				}
+			}
+			requireRefused(t, tc.data, tc.want...)
+		})
+	}
+
+	for name, v := range map[string]any{"NaN": math.NaN(), "infinity": math.Inf(1)} {
+		t.Run(name+" passes Validate and is refused by encoding", func(t *testing.T) {
+			payload := message.NewGenericJSON(map[string]any{"a": []any{v}})
+			if err := payload.Validate(); err != nil {
+				t.Fatalf("Validate() = %v, want nil", err)
+			}
+			if encoded, err := payload.MarshalJSON(); err == nil {
+				t.Fatalf("MarshalJSON() = %s, want an error", encoded)
+			}
+		})
 	}
 }
 

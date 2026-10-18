@@ -1,10 +1,11 @@
 # nats-fixture Specification
 
 ## Purpose
-The NATS fixture gives one test one disposable, real NATS server in a container, with start failures that name the
-phase, a label on every container it starts so leftovers can be found and removed, and a Stop that removes the
-container, which removes every stream, bucket and consumer in it. `natsfixture.Open` lets a package's tests open a
-value connected to that server, such as a client, and closes it under a deadline before the server stops.
+The NATS fixture runs a real NATS server in a container for integration tests: either one shared server per package
+(`natsfixture.Shared`, started on the first `Reset` and emptied between tests) or one server for a test that needs its
+own (`natsfixture.New`), with start failures that name the phase, a label on every container it starts so leftovers can
+be found and removed, and a `Stop` that removes the container. `natsfixture.Open` lets a package's tests open a value
+connected to a server URL, such as a client, and closes it under a deadline before the connection check or server stop.
 
 ## Requirements
 
@@ -52,10 +53,11 @@ expose start, connect or bucket-prefix knobs.
 - **THEN** Start returns an error satisfying `errors.Is(err, context.Canceled)`, no other container is started, and no
   container remains
 
-#### Scenario: Ports after a running fixture's own are held
+#### Scenario: Explicit host-port binding alongside held ephemeral ports
 
-- **WHEN** a fixture is running and the host ports after its own are held by listeners on all addresses
-- **THEN** a second fixture's Start returns nil, with JetStream answering on its `URL()`
+- **WHEN** ephemeral host ports are held by listeners on all addresses and two fixtures start
+- **THEN** both fixtures' Start calls return nil, Docker's inspect for each container reports its `URL()` port as the
+  explicit `HostPort` binding on `4222/tcp`, and JetStream answers on each `URL()`
 
 #### Scenario: A missing mapped port fails Start
 
@@ -132,30 +134,86 @@ SHALL apply.
 
 ### Requirement: Connected value for a package's tests
 
-`natsfixture` SHALL provide one helper that, given a test, a started fixture and an open function supplied by the
-caller (called with a context and the fixture's URL, and returning the opened value and a close function that takes a
-context), calls the open function under a bounded context and returns the value. When the open function returns an
-error, the helper SHALL fail the test with a message naming the fixture's URL and that error. On success it SHALL
-register the close function on the test's cleanup so that it runs before the fixture's own Stop, under a context with
-a deadline, and SHALL report a close error as a test error. The helper SHALL import no package of this module outside
-`internal/harness`, SHALL start no goroutine, and SHALL hold nothing after it returns beyond the cleanup it
-registered.
+`natsfixture` SHALL provide one helper that, given a test, a server URL and an open function supplied by the caller
+(called with a context and the URL, and returning the opened value and a close function that takes a context), calls
+the open function under a bounded context and returns the value. When the open function returns an error, the helper
+SHALL fail the test with a message naming the URL and that error. On success it SHALL register the close function on
+the test's cleanup, under a context with a deadline, and SHALL report a close error as a test error; registered after
+the reset or after `New`, it runs before the reset's connection check and before an own server's Stop. The helper
+SHALL import no package of this module outside `internal/harness`, SHALL start no goroutine, and SHALL hold nothing
+after it returns beyond the cleanup it registered.
 
 #### Scenario: Opening fails
 
 - **WHEN** the open function returns an error
-- **THEN** the test fails with a message naming the fixture's URL and the error, and no close is registered
+- **THEN** the test fails with a message naming the URL and the error, and no close is registered
 
 #### Scenario: Close runs first, bounded
 
 - **WHEN** a test that opened a value through the helper ends
-- **THEN** the close function runs before the fixture stops, with a context that has a deadline, and a close error is
-  reported as a test error
+- **THEN** the close function runs before the connection check or the server's Stop, with a context that has a
+  deadline, and a close error is reported as a test error
 
 #### Scenario: Import bound
 
 - **WHEN** the harness import check lists the helper's package imports
 - **THEN** no package of this module outside `internal/harness` is among them
+
+### Requirement: Shared server per package
+
+`natsfixture` SHALL provide a server shared by a package's tests. It SHALL start at the first reset in the process,
+as Start does (the phases, one container, the container log on failure), under a context bounded at
+five minutes so that a cold image pull fits (the removed runner's pull budget was 300 s), and SHALL close the
+connection its start made before the reset counts connections. A process that never resets starts no container.
+When that start fails, the reset SHALL fail its test with the start error, and every later reset in the process
+SHALL fail at once with the same error. A package's `TestMain` SHALL stop the server after
+`m.Run`; Stop SHALL remove the container when the server started, and SHALL return nil without a Docker call when it
+did not. The server SHALL return its URL only from the reset, and SHALL retain no `context.Context`.
+
+#### Scenario: A process that never resets starts nothing
+
+- **WHEN** a prochost child, or a run whose `-run` selects no test that resets, runs the package's `TestMain`
+- **THEN** no container is started and Stop returns nil
+
+#### Scenario: Container gone after the package
+
+- **WHEN** the package's tests have run and `TestMain` has stopped the server
+- **THEN** Docker lists no container with the server's container ID
+
+#### Scenario: A failed start fails later resets at once
+
+- **WHEN** the server's start fails at the first reset
+- **THEN** that test fails with the start error, and the next reset fails with the same error without a Docker call
+
+### Requirement: Reset to a verified-empty server
+
+The per-test reset SHALL, under a bounded context derived from the test's, open its own connection and: wait until
+the server's account statistics (`$SYS.REQ.ACCOUNT.PING.STATZ`) report one client connection, the reset's own,
+failing the test, when the wait ends, with a message that a connection from an earlier test is still open; delete
+every stream, which removes key-value buckets, object stores and their consumers; fail the test unless `AccountInfo`
+then reports zero streams, zero consumers, zero memory bytes and zero storage bytes; close its connection; register a
+cleanup that runs after the test's own cleanups and fails the test, naming the count, while the account reports a
+client connection besides the one asking after a bounded wait; and return the server's URL.
+
+#### Scenario: State does not cross tests
+
+- **WHEN** test A creates a stream, a key-value bucket, an object store and a durable consumer, and test B then resets
+- **THEN** B's reset passes, and the account reports zero streams, consumers, memory bytes and storage bytes
+
+#### Scenario: Fixed names in turn
+
+- **WHEN** two tests in turn each reset and create the stream `ENTITY`
+- **THEN** the second finds no message the first published
+
+#### Scenario: A leaked connection fails its own test
+
+- **WHEN** test A leaves a client connection open
+- **THEN** test A fails naming one client connection
+
+#### Scenario: A reset while a connection is open fails
+
+- **WHEN** a connection from an earlier test is still open when a test resets
+- **THEN** the reset fails the test, saying a connection from an earlier test is still open
 
 ### Requirement: Ryuk off, labelled containers and the sweep
 

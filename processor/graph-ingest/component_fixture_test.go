@@ -19,6 +19,7 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/pkg/lifecycle"
 	semtypes "github.com/c360studio/semengine/pkg/types"
+	"github.com/c360studio/semengine/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -145,7 +146,7 @@ type testComponentOption func(*component.Dependencies)
 // the test rather than buried in a shared default.
 func withAuthority(org, platform string) testComponentOption {
 	return func(deps *component.Dependencies) {
-		deps.Platform = component.PlatformMeta{Org: org, Platform: platform}
+		deps.Platform = types.PlatformMeta{Org: org, Platform: platform}
 	}
 }
 
@@ -166,7 +167,7 @@ func testDependencies(tb testing.TB, natsClient *natsclient.Client, opts ...test
 	deps := component.Dependencies{
 		NATSClient:      natsClient,
 		PayloadRegistry: newTestPayloadRegistry(tb),
-		Platform:        component.PlatformMeta{Org: testDeploymentOrg, Platform: testDeploymentPlatform},
+		Platform:        types.PlatformMeta{Org: testDeploymentOrg, Platform: testDeploymentPlatform},
 	}
 	for _, opt := range opts {
 		opt(&deps)

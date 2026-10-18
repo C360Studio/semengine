@@ -55,6 +55,9 @@ Payloads are identified by "domain.category.version" strings:
 - `robotics.mavlink.v1` - MAVLink messages (domain-specific)
 - `iot.sensor.v2` - IoT sensor data (domain-specific)
 
+In Go, a payload's `Schema()` returns `message.Type`, an alias of `types.Type` from `pkg/types`, so payload code does
+not import that package. Entity identifiers are `types.EntityID`; `message.ParseEntityID` returns one.
+
 Components declare accepted types in their configuration, and the flow engine validates compatibility before deployment.
 
 ### Behavioral Interfaces

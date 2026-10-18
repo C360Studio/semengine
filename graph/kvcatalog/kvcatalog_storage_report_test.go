@@ -8,6 +8,7 @@ import (
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/natsclient"
+	"github.com/c360studio/semengine/natsclient/storagereport"
 )
 
 // TestKVCatalog_StorageReportIsDeclaredNotImprovised pins the STORAGE_REPORT
@@ -48,13 +49,13 @@ func TestKVCatalog_StorageReportIsDeclaredNotImprovised(t *testing.T) {
 // consumes; the declared depth is well above it so a crash loop or several
 // account-wide publishers cannot fill the whole retained window with rows too
 // close together to measure against (see the row's comment, and
-// natsclient.TestStorageReportPublisher_HistoryDepthSurvivesACrashLoop for the
+// storagereport.TestStorageReportPublisher_HistoryDepthSurvivesACrashLoop for the
 // behavior a shallow row produces).
 func TestKVCatalog_StorageReportHistoryCarriesTheGrowthSeries(t *testing.T) {
 	spec, ok := SpecFor(graph.BucketStorageReport)
 	require.True(t, ok)
 
-	assert.GreaterOrEqual(t, spec.History, natsclient.StorageReportGrowthObservations,
+	assert.GreaterOrEqual(t, spec.History, storagereport.StorageReportGrowthObservations,
 		"History must retain at least the observations the growth derivation consumes")
 	assert.GreaterOrEqual(t, spec.History, uint8(4),
 		"a depth at the bare floor leaves no room to walk past too-close rows in a restart loop")

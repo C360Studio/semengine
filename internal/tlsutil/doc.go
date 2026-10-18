@@ -21,7 +21,7 @@
 //	┌─────────────────────────────────────────────────────────────────────┐
 //	│                        tlsutil                                      │
 //	│  LoadServerTLSConfig()  │  LoadClientTLSConfig()                    │
-//	│  LoadServerTLSConfigWithMTLS()  │  LoadClientTLSConfigWithMTLS()    │
+//	│  (each applies the MTLS block of its config when it is enabled)     │
 //	└─────────────────────────────────────────────────────────────────────┘
 //	                              ↓
 //	┌─────────────────────────────────────────────────────────────────────┐
@@ -49,16 +49,17 @@
 //	    TLSConfig: tlsConfig,
 //	}
 //
-// Server with mTLS (require client certificates):
+// Server with mTLS (require client certificates): set the MTLS block and call
+// the same loader. Enabling mTLS while Enabled is false is refused with an
+// invalid-configuration error, since a plain HTTP server cannot check a client
+// certificate.
 //
-//	tlsConfig, err := tlsutil.LoadServerTLSConfigWithMTLS(
-//	    cfg,
-//	    security.ServerMTLSConfig{
-//	        Enabled:           true,
-//	        ClientCAFiles:     []string{"/etc/ssl/client-ca.pem"},
-//	        AllowedClientCNs:  []string{"service-a"},
-//	    },
-//	)
+//	cfg.MTLS = security.ServerMTLSConfig{
+//	    Enabled:          true,
+//	    ClientCAFiles:    []string{"/etc/ssl/client-ca.pem"},
+//	    AllowedClientCNs: []string{"service-a"},
+//	}
+//	tlsConfig, err := tlsutil.LoadServerTLSConfig(cfg)
 //
 // Client TLS (uses system CAs plus additional):
 //
@@ -75,22 +76,21 @@
 //	    Transport: &http.Transport{TLSClientConfig: tlsConfig},
 //	}
 //
-// Client with mTLS (present client certificate):
+// Client with mTLS (present client certificate): set the MTLS block and call
+// the same loader; its key pair becomes the client certificate.
 //
-//	tlsConfig, err := tlsutil.LoadClientTLSConfigWithMTLS(
-//	    cfg,
-//	    security.ClientMTLSConfig{
-//	        Enabled:  true,
-//	        CertFile: "/etc/ssl/client.crt",
-//	        KeyFile:  "/etc/ssl/client.key",
-//	    },
-//	)
+//	cfg.MTLS = security.ClientMTLSConfig{
+//	    Enabled:  true,
+//	    CertFile: "/etc/ssl/client.crt",
+//	    KeyFile:  "/etc/ssl/client.key",
+//	}
+//	tlsConfig, err := tlsutil.LoadClientTLSConfig(cfg)
 //
 // # Client Certificate Verification
 //
 // For mTLS servers, optional CN whitelist:
 //
-//	mtlsCfg := security.ServerMTLSConfig{
+//	cfg.MTLS = security.ServerMTLSConfig{
 //	    Enabled:          true,
 //	    ClientCAFiles:    []string{"/etc/ssl/client-ca.pem"},
 //	    AllowedClientCNs: []string{"service-a", "service-b"},
@@ -111,7 +111,8 @@
 //
 // Errors are classified using the errs package:
 //   - Fatal errors: File not found, invalid PEM data
-//   - Invalid errors: a MinVersion other than "1.2", "1.3" or empty
+//   - Invalid errors: a MinVersion other than "1.2", "1.3" or empty; server
+//     mTLS enabled while server TLS is not
 //
 // # Thread Safety
 //

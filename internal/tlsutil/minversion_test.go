@@ -46,7 +46,8 @@ func TestLoadServerTLSConfigRefusesUnknownMinVersion(t *testing.T) {
 			requireVersionRefusal(t, version, got, err)
 
 			mtls := security.ServerMTLSConfig{Enabled: true, ClientCAFiles: []string{caFile}}
-			got, err = LoadServerTLSConfigWithMTLS(cfg, mtls)
+			cfg.MTLS = mtls
+			got, err = LoadServerTLSConfig(cfg)
 			requireVersionRefusal(t, version, got, err)
 		})
 	}
@@ -63,7 +64,8 @@ func TestLoadClientTLSConfigRefusesUnknownMinVersion(t *testing.T) {
 			requireVersionRefusal(t, version, got, err)
 
 			mtls := security.ClientMTLSConfig{Enabled: true, CertFile: certFile, KeyFile: keyFile}
-			got, err = LoadClientTLSConfigWithMTLS(cfg, mtls)
+			cfg.MTLS = mtls
+			got, err = LoadClientTLSConfig(cfg)
 			requireVersionRefusal(t, version, got, err)
 		})
 	}

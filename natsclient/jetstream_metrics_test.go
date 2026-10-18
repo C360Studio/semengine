@@ -17,8 +17,9 @@ import (
 )
 
 // Task 3.7d test (2), design D9: two clients' metrics on one registry share the canonical
-// collector for each of the 11 metrics, and a value written through the second is gathered. At the
-// pin the 8 registered through the removed Register* methods were orphans for the second client.
+// collector for each of the 12 metrics, and a value written through the second is gathered. At the
+// pin the 8 registered through the removed Register* methods were orphans for the second client;
+// the twelfth, the server refusal counter, came with design D1 of simplify-04a-18 (#169).
 func TestJetStreamMetricsShareCanonicalCollectorsAcrossOwners(t *testing.T) {
 	registry := metric.NewMetricsRegistry()
 	first, err := newJetStreamMetrics(registry)
@@ -83,7 +84,7 @@ func TestJetStreamMetricsShareCanonicalCollectorsAcrossOwners(t *testing.T) {
 		t.Fatalf("policy metric names = %v, want exact names %v", gotNames, wantNames)
 	}
 
-	// The other 8 collectors. Add, which gauges and counters share, writes through the second owner.
+	// The other 9 collectors. Add, which gauges and counters share, writes through the second owner.
 	others := []struct {
 		name     string
 		same     bool
@@ -106,6 +107,8 @@ func TestJetStreamMetricsShareCanonicalCollectorsAcrossOwners(t *testing.T) {
 			func() { second.consumerRedelivered.WithLabelValues("EVENTS", "worker").Add(3) }, dto.MetricType_GAUGE},
 		{"semengine_jetstream_operation_errors_total", first.errors == second.errors,
 			func() { second.errors.WithLabelValues("publish").Add(3) }, dto.MetricType_COUNTER},
+		{"semengine_nats_server_refusals_total", first.serverRefusals == second.serverRefusals,
+			func() { second.serverRefusals.WithLabelValues("permission_violation").Add(3) }, dto.MetricType_COUNTER},
 	}
 	for _, o := range others {
 		if !o.same {

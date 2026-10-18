@@ -7,7 +7,7 @@ package graph
 // them, since pkg/lifecycle writes there under its own.
 const (
 	// SourceIndexingProfile names the indexing-profile statement graph-ingest
-	// stamps at an entity's birth (ADR-054).
+	// stamps at an entity's birth (SemStreams ADR-054).
 	SourceIndexingProfile = "graph-ingest-indexing-profile"
 	// SourceHierarchy names the hierarchy statements graph-ingest derives, and
 	// the statements of the containers it creates for them.

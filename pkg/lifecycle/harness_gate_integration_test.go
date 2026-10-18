@@ -20,6 +20,7 @@ import (
 	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/natsclient"
 	graphingest "github.com/c360studio/semengine/processor/graph-ingest"
+	"github.com/c360studio/semengine/types"
 )
 
 // graphIngestStopBudget bounds graph-ingest's Stop when a test ends.
@@ -65,20 +66,21 @@ func gateWorkflow() Workflow {
 }
 
 // ingestClient replaces the pin's natsclient.NewTestClient(t, natsclient.WithKV(),
-// natsclient.WithStreams(ENTITY on entity.>)) (design D3): a broker of this test's own, the
-// ENTITY stream graph-ingest's default input port reads, and a client opened with openClient
-// through natsfixture.Open, which bounds the connect and closes the client on t.Cleanup before
-// the fixture stops. graph-ingest creates ENTITY_STATES itself.
+// natsclient.WithStreams(ENTITY on entity.>)) (design D3): the package's shared broker reset for t,
+// a client opened with openClient through natsfixture.Open (which bounds the connect and closes the
+// client on t.Cleanup before the reset's connection check), and the ENTITY stream graph-ingest's
+// default input port reads. graph-ingest creates ENTITY_STATES itself.
 func ingestClient(t *testing.T) *natsclient.Client {
 	t.Helper()
-	f := natsfixture.New(t)
-	if err := f.Start(t.Context()); err != nil {
-		t.Fatalf("natsfixture Start: %v", err)
+	client := natsfixture.Open(t, shared.Reset(t), openClient)
+	js, err := client.JetStream()
+	if err != nil {
+		t.Fatalf("JetStream: %v", err)
 	}
-	if _, err := natsfixture.CreateStream(t.Context(), f.JetStream(), jetstream.FileStorage, "ENTITY", "entity.>"); err != nil {
+	if _, err := natsfixture.CreateStream(t.Context(), js, jetstream.FileStorage, "ENTITY", "entity.>"); err != nil {
 		t.Fatalf("CreateStream ENTITY: %v", err)
 	}
-	return natsfixture.Open(t, f, openClient)
+	return client
 }
 
 // startGraphIngest starts a real graph-ingest with its default configuration on client, under
@@ -98,7 +100,7 @@ func startGraphIngest(ctx context.Context, t *testing.T, client *natsclient.Clie
 		// graph-ingest refuses an absent deployment authority (ADR-102 d5) and
 		// rejects any subject outside it, so the fixture pair must match the
 		// entity IDs this file uses.
-		Platform: component.PlatformMeta{Org: "c360", Platform: "platform1"},
+		Platform: types.PlatformMeta{Org: "c360", Platform: "platform1"},
 	})
 	require.NoError(t, err)
 	ingest := created.(*graphingest.Component)

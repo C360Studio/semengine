@@ -67,39 +67,6 @@ func (b *ownershipBucket) WatchFiltered(_ context.Context, _ []string, _ ...jets
 	return b.watcher, nil
 }
 
-func (b *ownershipBucket) ListKeysFiltered(ctx context.Context, filters ...string) (jetstream.KeyLister, error) {
-	watcher, err := b.WatchFiltered(ctx, filters, jetstream.IgnoreDeletes(), jetstream.MetaOnly())
-	if err != nil {
-		return nil, err
-	}
-	keys := make(chan string)
-	go func() {
-		defer close(keys)
-		defer watcher.Stop()
-		// This is the native forwarder's cancellation branch: it may close
-		// Keys without consuming a pending Updates send.
-		if ctx.Err() != nil {
-			return
-		}
-		select {
-		case entry := <-watcher.Updates():
-			if entry != nil {
-				keys <- entry.Key()
-			}
-		case <-ctx.Done():
-		}
-	}()
-	return ownershipLister{keys: keys, watcher: watcher}, nil
-}
-
-type ownershipLister struct {
-	keys    <-chan string
-	watcher jetstream.KeyWatcher
-}
-
-func (l ownershipLister) Keys() <-chan string { return l.keys }
-func (l ownershipLister) Stop() error         { return l.watcher.Stop() }
-
 func (w *ownershipWatcher) Updates() <-chan jetstream.KeyValueEntry { return w.updates }
 func (w *ownershipWatcher) Stop() error {
 	w.calls.Add(1)
@@ -114,9 +81,33 @@ type ownershipEntry struct {
 
 func (e ownershipEntry) Key() string { return e.key }
 
+// filteredListing is one public entry point to the filtered key listing. The
+// cancellation and snapshot tables run every row through each, because both
+// entry points must complete the same way.
+type filteredListing struct {
+	name string
+	list func(ctx context.Context, bucket jetstream.KeyValue, pattern string) ([]string, error)
+}
+
+var filteredListings = []filteredListing{
+	{"KeysByFilter", func(ctx context.Context, bucket jetstream.KeyValue, pattern string) ([]string, error) {
+		return (&Client{}).NewKVStore(bucket).KeysByFilter(ctx, pattern)
+	}},
+	{"FilteredKeys", func(ctx context.Context, bucket jetstream.KeyValue, pattern string) ([]string, error) {
+		return FilteredKeys(ctx, bucket, pattern)
+	}},
+}
+
+// spec: transport-client / Both filtered key listings complete the same way
 func TestKVStoreFilteredCancellationFinishesNativeDelivery(t *testing.T) {
-	// R1a: KeysByFilter arms the store's 5 s operation deadline (DefaultKVOptions) and the 5 s
-	// terminal drain window (filteredWatcherDrainTimeout), and the joins below carry 10 s limits.
+	for _, listing := range filteredListings {
+		t.Run(listing.name, func(t *testing.T) { testFilteredCancellationFinishesNativeDelivery(t, listing) })
+	}
+}
+
+func testFilteredCancellationFinishesNativeDelivery(t *testing.T, listing filteredListing) {
+	// R1a: the listing arms the 5 s terminal drain window (filteredWatcherDrainTimeout), KeysByFilter
+	// also the store's 5 s operation deadline (DefaultKVOptions), and the joins below carry 10 s limits.
 	// On the bubble's clock none of them can expire unless every goroutine is blocked, so a slow
 	// host cannot turn a correct listing into a timeout.
 	synctest.Test(t, func(t *testing.T) {
@@ -167,7 +158,7 @@ func TestKVStoreFilteredCancellationFinishesNativeDelivery(t *testing.T) {
 
 		go func() {
 			defer close(callDone)
-			keys, err := (&Client{}).NewKVStore(bucket).KeysByFilter(ctx, "diag.>")
+			keys, err := listing.list(ctx, bucket, "diag.>")
 			result <- struct {
 				keys []string
 				err  error
@@ -263,9 +254,16 @@ func closedOnStopWatcher(entries ...jetstream.KeyValueEntry) *scriptedWatcher {
 }
 
 // spec: nats-kv-keys / Filtered KVStore listings finalize native watcher delivery
+// spec: transport-client / Both filtered key listings complete the same way
 func TestKVStoreFilteredWatcherSnapshotAndStopErrors(t *testing.T) {
+	for _, listing := range filteredListings {
+		t.Run(listing.name, func(t *testing.T) { testFilteredWatcherSnapshotAndStopErrors(t, listing) })
+	}
+}
+
+func testFilteredWatcherSnapshotAndStopErrors(t *testing.T, listing filteredListing) {
 	t.Run("snapshot_success_discards_post_marker", func(t *testing.T) {
-		// R1a: KeysByFilter arms the store's 5 s operation deadline and the 5 s terminal drain window.
+		// R1a: the listing arms the 5 s terminal drain window, KeysByFilter also the store's 5 s deadline.
 		// On the bubble's clock neither can expire before this case's assertions, however slow the host.
 		synctest.Test(t, func(t *testing.T) {
 			watcher := closedOnStopWatcher(ownershipEntry{key: "diag.one"}, nil, ownershipEntry{key: "diag.later"})
@@ -273,14 +271,14 @@ func TestKVStoreFilteredWatcherSnapshotAndStopErrors(t *testing.T) {
 				assert.Equal(t, []string{"diag.>"}, filters)
 				return watcher, nil
 			}}
-			keys, err := (&Client{}).NewKVStore(bucket).KeysByFilter(t.Context(), "diag.>")
+			keys, err := listing.list(t.Context(), bucket, "diag.>")
 			require.NoError(t, err)
 			assert.Equal(t, []string{"diag.one"}, keys)
 			assert.EqualValues(t, 1, watcher.calls.Load())
 		})
 	})
 	t.Run("premature_close", func(t *testing.T) {
-		// R1a: KeysByFilter arms the store's 5 s operation deadline and the 5 s terminal drain window.
+		// R1a: the listing arms the 5 s terminal drain window, KeysByFilter also the store's 5 s deadline.
 		// On the bubble's clock neither can expire before this case's assertions, however slow the host.
 		synctest.Test(t, func(t *testing.T) {
 			watcher := closedOnStopWatcher(ownershipEntry{key: "partial"})
@@ -289,14 +287,14 @@ func TestKVStoreFilteredWatcherSnapshotAndStopErrors(t *testing.T) {
 			bucket := scriptedWatchBucket{watch: func(context.Context, []string) (jetstream.KeyWatcher, error) {
 				return watcher, nil
 			}}
-			keys, err := (&Client{}).NewKVStore(bucket).KeysByFilter(t.Context(), "diag.>")
+			keys, err := listing.list(t.Context(), bucket, "diag.>")
 			assert.Nil(t, keys)
 			assert.ErrorIs(t, err, errFilteredWatcherSnapshotIncomplete)
 			assert.EqualValues(t, 1, watcher.calls.Load())
 		})
 	})
 	t.Run("nonbenign_stop_after_closure", func(t *testing.T) {
-		// R1a: KeysByFilter arms the store's 5 s operation deadline and the 5 s terminal drain window.
+		// R1a: the listing arms the 5 s terminal drain window, KeysByFilter also the store's 5 s deadline.
 		// On the bubble's clock neither can expire before this case's assertions, however slow the host.
 		synctest.Test(t, func(t *testing.T) {
 			stopFailure := errors.New("native unsubscribe failed")
@@ -305,14 +303,14 @@ func TestKVStoreFilteredWatcherSnapshotAndStopErrors(t *testing.T) {
 			bucket := scriptedWatchBucket{watch: func(context.Context, []string) (jetstream.KeyWatcher, error) {
 				return watcher, nil
 			}}
-			keys, err := (&Client{}).NewKVStore(bucket).KeysByFilter(t.Context(), "diag.>")
+			keys, err := listing.list(t.Context(), bucket, "diag.>")
 			assert.Nil(t, keys)
 			assert.ErrorIs(t, err, stopFailure)
 			assert.EqualValues(t, 1, watcher.calls.Load())
 		})
 	})
 	t.Run("already_terminal_stop_requires_closure", func(t *testing.T) {
-		// R1a: KeysByFilter arms the store's 5 s operation deadline and the 5 s terminal drain window.
+		// R1a: the listing arms the 5 s terminal drain window, KeysByFilter also the store's 5 s deadline.
 		// On the bubble's clock neither can expire before this case's assertions, however slow the host.
 		synctest.Test(t, func(t *testing.T) {
 			watcher := closedOnStopWatcher(nil)
@@ -320,7 +318,7 @@ func TestKVStoreFilteredWatcherSnapshotAndStopErrors(t *testing.T) {
 			bucket := scriptedWatchBucket{watch: func(context.Context, []string) (jetstream.KeyWatcher, error) {
 				return watcher, nil
 			}}
-			keys, err := (&Client{}).NewKVStore(bucket).KeysByFilter(t.Context(), "diag.>")
+			keys, err := listing.list(t.Context(), bucket, "diag.>")
 			require.NoError(t, err)
 			assert.Nil(t, keys)
 			assert.EqualValues(t, 1, watcher.calls.Load())
@@ -334,24 +332,23 @@ func TestKVStoreFilteredNoWatcherPrecedence(t *testing.T) {
 		name    string
 		watch   func(context.Context) (jetstream.KeyWatcher, error)
 		wantErr error
-		wantOK  bool
 	}{
-		{"live_direct_no_keys", func(context.Context) (jetstream.KeyWatcher, error) { return nil, jetstream.ErrNoKeysFound }, nil, true},
+		{"live_direct_no_keys", func(context.Context) (jetstream.KeyWatcher, error) { return nil, jetstream.ErrNoKeysFound }, jetstream.ErrNoKeysFound},
 		{"canceled_direct_no_keys", func(ctx context.Context) (jetstream.KeyWatcher, error) {
 			<-ctx.Done()
 			return nil, jetstream.ErrNoKeysFound
-		}, context.Canceled, false},
+		}, context.Canceled},
 		{"expired_direct_no_keys", func(ctx context.Context) (jetstream.KeyWatcher, error) {
 			<-ctx.Done()
 			return nil, jetstream.ErrNoKeysFound
-		}, context.DeadlineExceeded, false},
+		}, context.DeadlineExceeded},
 		{"wrapped_no_keys", func(context.Context) (jetstream.KeyWatcher, error) {
 			return nil, fmt.Errorf("wrapped: %w", jetstream.ErrNoKeysFound)
-		}, jetstream.ErrNoKeysFound, false},
+		}, jetstream.ErrNoKeysFound},
 		{"constructor_failure", func(context.Context) (jetstream.KeyWatcher, error) {
 			return nil, errFilteredWatcherSnapshotIncomplete
-		}, errFilteredWatcherSnapshotIncomplete, false},
-		{"missing_watcher", func(context.Context) (jetstream.KeyWatcher, error) { return nil, nil }, nil, false},
+		}, errFilteredWatcherSnapshotIncomplete},
+		{"missing_watcher", func(context.Context) (jetstream.KeyWatcher, error) { return nil, nil }, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -374,9 +371,7 @@ func TestKVStoreFilteredNoWatcherPrecedence(t *testing.T) {
 				}}
 				keys, err := (&Client{}).NewKVStore(bucket).KeysByFilter(ctx, "diag.>")
 				assert.Nil(t, keys)
-				if tt.wantOK {
-					require.NoError(t, err)
-				} else if tt.wantErr != nil {
+				if tt.wantErr != nil {
 					assert.ErrorIs(t, err, tt.wantErr)
 				} else {
 					assert.Error(t, err)

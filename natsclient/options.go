@@ -142,6 +142,13 @@ func WithPingInterval(d time.Duration) ClientOption {
 
 // WithMetrics enables JetStream metrics collection using the provided registry.
 // Metrics will track streams and consumers created through this client.
+//
+// Give each client its own registry. A registry holds one client's JetStream
+// series: its stream and consumer gauges are set from what that client reads
+// from the server. A second client on the same registry writes the same
+// collectors, so the two overwrite each other's gauges, and which client's
+// value a scrape shows is not promised. No configuration we know of runs two
+// clients on one registry.
 func WithMetrics(registry *metric.MetricsRegistry) ClientOption {
 	return func(c *Client) error {
 		if registry == nil {

@@ -1,4 +1,4 @@
-// Package natsclient provides a client for managing NATS connections with circuit breaker pattern.
+// Package natsclient provides a client for managing NATS connections and their health status.
 package natsclient
 
 import (
@@ -27,7 +27,6 @@ const (
 	StatusConnecting
 	StatusConnected
 	StatusReconnecting
-	StatusCircuitOpen
 )
 
 // String returns the string representation of ConnectionStatus
@@ -41,8 +40,6 @@ func (s ConnectionStatus) String() string {
 		return "connected"
 	case StatusReconnecting:
 		return "reconnecting"
-	case StatusCircuitOpen:
-		return "circuit_open"
 	default:
 		return "unknown"
 	}
@@ -53,25 +50,21 @@ var (
 	// ErrNotConnected wraps errs.ErrConnectionLost, so errs.IsTransient and
 	// errs.Classify both call it transient (T7).
 	ErrNotConnected = fmt.Errorf("not connected to NATS: %w", errs.ErrConnectionLost)
-	// ErrCircuitOpen is errs.ErrCircuitOpen: one sentinel for one fact (T7).
-	ErrCircuitOpen = errs.ErrCircuitOpen
 )
 
 // Status holds runtime status information for the NATS manager
 type Status struct {
-	Status          ConnectionStatus
-	FailureCount    int32
-	LastFailureTime time.Time
-	Reconnects      int32
-	RTT             time.Duration
+	Status ConnectionStatus
+	RTT    time.Duration
 }
 
-// Client manages NATS connections with circuit breaker pattern
+// Client manages a NATS connection, its JetStream context and its health status.
 type Client struct {
-	urls     string       // comma-separated NATS server URLs for clustering support
-	status   atomic.Value // stores ConnectionStatus
-	failures atomic.Int32
-	logger   *slog.Logger
+	urls string // comma-separated NATS server URLs for clustering support
+	// status holds a ConnectionStatus. It is an atomic so Status() reads it with
+	// or without mu held: the health monitor reads it under mu.
+	status atomic.Int32
+	logger *slog.Logger
 
 	// NATS connection
 	conn *nats.Conn
@@ -81,13 +74,6 @@ type Client struct {
 	// without retaining lifecycle handles or giving Client.Close child authority.
 	internalClaimsMu sync.Mutex
 	internalClaims   map[internalConsumerIdentity]*internalConsumerClaim
-
-	// Circuit breaker
-	lastFailure      atomic.Value // stores time.Time
-	backoff          atomic.Value // stores time.Duration
-	circuitFailures  atomic.Int32 // failures in current circuit round
-	circuitThreshold int32        // failures before opening circuit
-	maxBackoff       time.Duration
 
 	// Connection options
 	maxReconnects int
@@ -134,10 +120,7 @@ type Client struct {
 	connectionLossTimeout time.Duration
 	lossTimer             *time.Timer
 
-	// circuitTimer runs the circuit test once the breaker's backoff expires.
-	circuitTimer *time.Timer
-
-	// timersMu guards lossTimer and circuitTimer. Lock order: timersMu, then mu.
+	// timersMu guards lossTimer. Lock order: timersMu, then mu.
 	timersMu sync.Mutex
 
 	// Health monitoring
@@ -200,14 +183,13 @@ type Client struct {
 	closedSignals   map[*nats.Conn]chan struct{}
 }
 
-// Kinds of background work, the six sites of design D3. Each starts through
+// Kinds of background work. Each starts through
 // startBackground; the name is what its drop log and the lifecycle adapter report.
 const (
 	workHealthMonitor  = "health monitor"
 	workMetricsPoller  = "metrics poller"
 	workClaimRelease   = "claim release"
 	workConnectionLost = "connection-loss timer"
-	workCircuitTest    = "circuit-test timer"
 
 	// Client-owned work that is not a goroutine of the client's: a core
 	// subscription until its delivery has ended, and a running invocation of
@@ -323,17 +305,15 @@ func NewClient(urls string, opts ...ClientOption) (*Client, error) {
 		urls:   urls,
 		logger: slog.Default(),
 		// Sensible defaults
-		maxReconnects:    -1, // infinite by default
-		reconnectWait:    2 * time.Second,
-		pingInterval:     30 * time.Second,
-		writeTimeout:     nats.DefaultFlusherTimeout,
-		healthInterval:   10 * time.Second,
-		circuitThreshold: 15, // Increased from 5 for resilience to transient failures
-		maxBackoff:       time.Minute,
-		timeout:          5 * time.Second,
-		drainTimeout:     30 * time.Second,
-		netDial:          (*net.Dialer).Dial,
-		metricsInterval:  30 * time.Second, // Poll JetStream stats every 30s
+		maxReconnects:   -1, // infinite by default
+		reconnectWait:   2 * time.Second,
+		pingInterval:    30 * time.Second,
+		writeTimeout:    nats.DefaultFlusherTimeout,
+		healthInterval:  10 * time.Second,
+		timeout:         5 * time.Second,
+		drainTimeout:    30 * time.Second,
+		netDial:         (*net.Dialer).Dial,
+		metricsInterval: 30 * time.Second, // Poll JetStream stats every 30s
 		// Env-resolved default (30s unless SEMENGINE_NATS_REQUEST_HANDLER_TIMEOUT
 		// overrides). No option sets it (env > framework default).
 		requestHandlerTimeout: resolveRequestHandlerTimeoutFromEnv(),
@@ -346,9 +326,7 @@ func NewClient(urls string, opts ...ClientOption) (*Client, error) {
 		}
 	}
 
-	c.status.Store(StatusDisconnected)
-	c.backoff.Store(time.Second)
-	c.lastFailure.Store(time.Time{})
+	c.setStatus(StatusDisconnected)
 
 	c.logger.Debug("Created NATS client", slog.String("urls", urls))
 
@@ -362,11 +340,7 @@ func (m *Client) URLs() string {
 
 // Status returns the current connection status
 func (m *Client) Status() ConnectionStatus {
-	val := m.status.Load()
-	if val == nil {
-		return StatusDisconnected
-	}
-	return val.(ConnectionStatus)
+	return ConnectionStatus(m.status.Load())
 }
 
 // GetConnection returns the current NATS connection
@@ -392,195 +366,12 @@ func (m *Client) MaxPayload() (int64, error) {
 // setStatus stores the connection status. Production writers hold mu and have
 // checked that they own the status (design D3, natsclient-status-ownership).
 func (m *Client) setStatus(status ConnectionStatus) {
-	m.status.Store(status)
+	m.status.Store(int32(status))
 }
 
 // IsHealthy returns true if the connection is healthy
 func (m *Client) IsHealthy() bool {
 	return m.Status() == StatusConnected
-}
-
-// Failures returns the current failure count
-func (m *Client) Failures() int32 {
-	return m.failures.Load()
-}
-
-// Backoff returns the current backoff duration
-func (m *Client) Backoff() time.Duration {
-	return m.backoff.Load().(time.Duration)
-}
-
-// recordFailure records a connection failure and manages circuit breaker. Once
-// Close has begun it records nothing: only Close changes the status then (design
-// D3, natsclient-status-ownership).
-func (m *Client) recordFailure() {
-	m.mu.Lock()
-	if m.closing {
-		m.mu.Unlock()
-		return
-	}
-	arm, backoff := m.recordFailureLocked()
-	m.mu.Unlock()
-	if arm {
-		m.armCircuitTimer(backoff)
-	}
-}
-
-// recordFailureLocked counts one failure; mu must be held. It reports whether the
-// circuit opened, and the backoff its test timer must be armed with once mu is
-// released.
-func (m *Client) recordFailureLocked() (arm bool, backoff time.Duration) {
-	// Track total failures for metrics
-	totalFailures := m.failures.Add(1)
-	m.lastFailure.Store(time.Now())
-
-	// Track circuit breaker failures separately
-	circuitFailures := m.circuitFailures.Add(1)
-
-	m.logger.Debug("Recorded failure", slog.Int64("total_failures", int64(totalFailures)), slog.Int64("circuit_failures", int64(circuitFailures)))
-
-	// Open circuit after threshold failures in this round
-	if circuitFailures >= m.circuitThreshold {
-		currentStatus := m.Status()
-
-		// We need to open or update the circuit breaker
-		if currentStatus != StatusCircuitOpen {
-			// mu is held, so this is the only status writer.
-			m.setStatus(StatusCircuitOpen)
-			currentBackoff := m.backoff.Load().(time.Duration)
-			newBackoff := currentBackoff * 2
-			if newBackoff > m.maxBackoff {
-				newBackoff = m.maxBackoff
-			}
-			m.backoff.Store(newBackoff)
-
-			m.logger.Info("Circuit breaker opened",
-				slog.Int64("circuit_failures", int64(circuitFailures)),
-				slog.Duration("backoff", currentBackoff),
-			)
-
-			// Reset circuit failures for next round
-			m.circuitFailures.Store(0)
-
-			// The caller schedules the circuit test after backoff.
-			return true, currentBackoff
-		}
-		// Circuit already open - may need to increase backoff for consecutive failures
-		// This handles the case where failures continue while circuit is open
-		currentBackoff := m.backoff.Load().(time.Duration)
-		newBackoff := currentBackoff * 2
-		if newBackoff > m.maxBackoff {
-			newBackoff = m.maxBackoff
-		}
-		m.backoff.Store(newBackoff)
-
-		m.logger.Info("Circuit breaker still open, increased backoff", slog.Duration("backoff", newBackoff))
-
-		// Reset circuit failures for next round
-		m.circuitFailures.Store(0)
-	}
-	return false, 0
-}
-
-// recordStreamPublishFailure accounts a failed JetStream publish against the
-// connection circuit unless the target stream refused it at one of its
-// configured limits: maximum bytes, messages, or messages per subject. Capacity
-// refusal is a healthy connection reporting durable-resource state, not
-// connection loss. The server sends one code, 10077, for every store failure and
-// names the limit only in the error's description, for which nats.go has no
-// code, so isCircuitNeutralStreamCapacityError reads the code and then the
-// description (TestIntegration_StreamCapacityRejectionIsCircuitNeutral). The
-// exact typed API error remains caller-visible at each publish seam.
-func (m *Client) recordStreamPublishFailure(err error) {
-	if isCircuitNeutralStreamCapacityError(err) {
-		return
-	}
-	m.recordFailure()
-}
-
-func isCircuitNeutralStreamCapacityError(err error) bool {
-	var apiErr *jetstream.APIError
-	if !stderrors.As(err, &apiErr) || apiErr == nil || apiErr.ErrorCode != jetstream.ErrorCode(10077) {
-		return false
-	}
-	switch apiErr.Description {
-	case "maximum bytes exceeded",
-		"maximum messages exceeded",
-		"maximum messages per subject exceeded":
-		return true
-	default:
-		return false
-	}
-}
-
-// resetCircuit resets the circuit breaker state. Once Close has begun it leaves
-// the status alone.
-func (m *Client) resetCircuit() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.resetCircuitLocked()
-}
-
-// resetCircuitLocked resets the circuit breaker state; mu must be held.
-func (m *Client) resetCircuitLocked() {
-	m.failures.Store(0)
-	m.circuitFailures.Store(0)
-	m.backoff.Store(time.Second)
-	m.lastFailure.Store(time.Time{})
-
-	// Don't change status if we're connected
-	if !m.closing && m.Status() == StatusCircuitOpen {
-		m.setStatus(StatusDisconnected)
-	}
-}
-
-// armCircuitTimer schedules the circuit test after backoff. Once Close has
-// begun it arms nothing, and logs the drop. A test from an earlier round that is
-// still pending is stopped: this round's backoff supersedes it, and an untracked
-// timer could outlive Close.
-func (m *Client) armCircuitTimer(backoff time.Duration) {
-	m.timersMu.Lock()
-	defer m.timersMu.Unlock()
-	if m.isClosing() {
-		m.logDropped(workCircuitTest)
-		return
-	}
-	if m.circuitTimer != nil {
-		m.circuitTimer.Stop()
-	}
-	var timer *time.Timer
-	// timer is read only under timersMu, where it was written.
-	timer = time.AfterFunc(backoff, func() { m.circuitTimerFired(func() bool { return m.circuitTimer == timer }) })
-	m.circuitTimer = timer
-}
-
-// circuitTimerFired is the circuit timer's body. It enters through
-// startBackground before doing anything, so once Close has begun the test is
-// dropped, not run. current, called under timersMu, reports whether the timer
-// that fired is still the armed one.
-func (m *Client) circuitTimerFired(current func() bool) {
-	m.startBackground(workCircuitTest, func() {
-		m.timersMu.Lock()
-		if current() {
-			m.circuitTimer = nil
-		}
-		m.timersMu.Unlock()
-		m.testCircuit()
-	})
-}
-
-// testCircuit runs when the circuit breaker's backoff expires. It only moves the
-// status from open to disconnected; it does not reconnect. The status returns to
-// connected through handleReconnect or the health monitor.
-func (m *Client) testCircuit() {
-	m.logger.Debug("Testing circuit breaker - attempting to close circuit")
-
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if !m.closing && m.Status() == StatusCircuitOpen {
-		m.logger.Debug("Circuit breaker test: moving from open to disconnected")
-		m.setStatus(StatusDisconnected)
-	}
 }
 
 // WaitForConnection waits for the connection to be established
@@ -633,13 +424,7 @@ func (m *Client) buildConnectionOptions() []nats.Option {
 
 // GetStatus returns current status information
 func (m *Client) GetStatus() *Status {
-	lastFailure := m.lastFailure.Load().(time.Time)
-
-	status := &Status{
-		Status:          m.Status(),
-		FailureCount:    m.failures.Load(),
-		LastFailureTime: lastFailure,
-	}
+	status := &Status{Status: m.Status()}
 
 	// Add RTT if connected. cleanup clears m.conn under mu, so read it once under mu and use that
 	// value; RTT is a round trip to the server, so it runs after mu is released (Codex F33).
@@ -666,8 +451,8 @@ func (m *Client) GetStatus() *Status {
 // when Close has begun before it finished; the connection it dialled is then
 // closed and nothing it would have started runs. A Connect that returns an
 // error has no event handler of the connection it dialled still running, and
-// changes neither the status, the failure count nor the circuit of a
-// connection another Connect installed (design D3).
+// does not change the status of a connection another Connect installed
+// (design D3).
 func (m *Client) Connect(ctx context.Context) error {
 	if ctx == nil {
 		return errs.WrapInvalid(stderrors.New("nil context"), "Client", "Connect", "missing context")
@@ -683,12 +468,6 @@ func (m *Client) Connect(ctx context.Context) error {
 	}
 	if err := ctx.Err(); err != nil {
 		return errs.WrapTransient(err, "Client", "Connect", "connection cancelled")
-	}
-
-	// Check circuit breaker first
-	if m.Status() == StatusCircuitOpen {
-		m.logger.Debug("Circuit breaker is open, skipping connection attempt")
-		return ErrCircuitOpen
 	}
 
 	// Connecting is a status commit like any other: written only while no
@@ -723,16 +502,13 @@ func (m *Client) Connect(ctx context.Context) error {
 	}
 	if err != nil {
 		m.discardCandidate(conn)
-		if m.connectFailed() {
-			return ErrCircuitOpen
-		}
+		m.connectFailed()
 		return errs.WrapTransient(err, "Client", "Connect", "establish connection")
 	}
 
 	// Initialize JetStream with new API. The async publish error handler
-	// bridges failed async acks into the circuit breaker so a broken ack
-	// path opens the breaker exactly as a failed synchronous publish does
-	// (see publishToStreamAsync). Keep both candidates local until admission.
+	// counts and logs failed async acks (asyncPublishErrHandler). Keep both
+	// candidates local until admission.
 	// Whether jetstream.New can fail here is not promised: a read of nats.go
 	// v1.54.0, not a test, found that it fails only when an option does, and
 	// that this option never does. The error is still returned, never dropped.
@@ -763,8 +539,8 @@ func (m *Client) Connect(ctx context.Context) error {
 		m.discardCandidate(conn)
 		return errs.Wrap(nats.ErrConnectionClosed, "Client", "Connect", "admit connection")
 	case m.conn != nil:
-		// A concurrent Connect won admission; its status, failure count and
-		// circuit stand, and this candidate's handlers are ignored
+		// A concurrent Connect won admission; its status stands, and this
+		// candidate's handlers are ignored
 		// (ownsStatusLocked) and joined before this call returns.
 		m.mu.Unlock()
 		m.discardCandidate(conn)
@@ -774,7 +550,6 @@ func (m *Client) Connect(ctx context.Context) error {
 	m.js = js
 	m.socket = socket
 	m.setStatus(StatusConnected)
-	m.resetCircuitLocked()
 	m.mu.Unlock()
 
 	m.logger.Info("Successfully connected to NATS", slog.String("urls", m.urls))
@@ -798,26 +573,16 @@ func (m *Client) Connect(ctx context.Context) error {
 	return nil
 }
 
-// connectFailed records a failed Connect as at the pin, failure and status
-// together, but only while no connection is installed and Close has not begun:
-// a Connect that lost to an installed connection, or that Close overtook, owns
-// no status. It reports whether the circuit is open afterwards.
-func (m *Client) connectFailed() bool {
+// connectFailed marks the status Disconnected after a failed Connect, but only
+// while no connection is installed and Close has not begun: a Connect that lost
+// to an installed connection, or that Close overtook, owns no status.
+func (m *Client) connectFailed() {
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.closing || m.conn != nil {
-		m.mu.Unlock()
-		return false
+		return
 	}
-	arm, backoff := m.recordFailureLocked()
-	if m.Status() != StatusCircuitOpen {
-		m.setStatus(StatusDisconnected)
-	}
-	open := m.Status() == StatusCircuitOpen
-	m.mu.Unlock()
-	if arm {
-		m.armCircuitTimer(backoff)
-	}
-	return open
+	m.setStatus(StatusDisconnected)
 }
 
 // discardCandidate closes a connection this Connect dialled and did not
@@ -1445,7 +1210,7 @@ func (m *Client) CreateStream(ctx context.Context, cfg jetstream.StreamConfig) (
 		return nil, nilContextError("CreateStream")
 	}
 	// Fail closed on a KV/ObjectStore backing-stream name before anything else,
-	// so the refusal does not depend on connection or circuit state.
+	// so the refusal does not depend on connection state.
 	if err := CheckOrdinaryStreamName(cfg.Name, "natsclient.Client.CreateStream"); err != nil {
 		return nil, errs.WrapFatal(err, "Client", "CreateStream",
 			"validate stream name "+cfg.Name)
@@ -1460,29 +1225,20 @@ func (m *Client) CreateStream(ctx context.Context, cfg jetstream.StreamConfig) (
 			"validate stream bounds for "+cfg.Name)
 	}
 
-	// Check circuit breaker first
-	if m.Status() == StatusCircuitOpen {
-		return nil, ErrCircuitOpen
-	}
-
 	if m.Status() != StatusConnected {
 		return nil, ErrNotConnected
 	}
 
 	js, err := m.JetStream()
 	if err != nil {
-		m.recordFailure()
 		return nil, err
 	}
 
 	stream, err := js.CreateStream(ctx, cfg)
 	if err != nil {
-		m.recordFailure()
 		m.jsMetrics.recordError("create_stream")
 		return nil, err
 	}
-
-	m.resetCircuit()
 
 	// Track stream for metrics collection
 	m.jsMetrics.trackStream(cfg.Name, stream)
@@ -1496,7 +1252,12 @@ func (m *Client) PublishToStream(ctx context.Context, subject string, data []byt
 	if ctx == nil {
 		return nilContextError("PublishToStream")
 	}
-	return m.publishToStream(ctx, subject, data, "")
+	js, err := m.streamJetStream()
+	if err != nil {
+		return err
+	}
+	_, err = js.PublishMsg(ctx, streamMsg(ctx, subject, data, ""))
+	return err
 }
 
 // PublishToStreamWithMsgID publishes to a JetStream stream stamping the
@@ -1520,34 +1281,31 @@ func (m *Client) PublishToStreamWithMsgID(ctx context.Context, subject string, d
 	if ctx == nil {
 		return nilContextError("PublishToStreamWithMsgID")
 	}
-	return m.publishToStream(ctx, subject, data, msgID)
-}
-
-// publishToStream is the shared publish path for PublishToStream and
-// PublishToStreamWithMsgID. A non-empty msgID is stamped as the Nats-Msg-Id
-// header for server-side duplicate detection.
-func (m *Client) publishToStream(ctx context.Context, subject string, data []byte, msgID string) error {
-	// Check circuit breaker first
-	if m.Status() == StatusCircuitOpen {
-		return ErrCircuitOpen
-	}
-
-	if m.Status() != StatusConnected {
-		return ErrNotConnected
-	}
-
-	js, err := m.JetStream()
+	js, err := m.streamJetStream()
 	if err != nil {
-		m.recordFailure()
 		return err
 	}
+	_, err = js.PublishMsg(ctx, streamMsg(ctx, subject, data, msgID))
+	return err
+}
 
-	// Auto-generate trace context if none exists
+// streamJetStream makes the checks every synchronous stream publish makes before it builds its
+// message: the client is connected and has a JetStream context. Its errors come back to each
+// caller unchanged and uncounted.
+func (m *Client) streamJetStream() (jetstream.JetStream, error) {
+	if m.Status() != StatusConnected {
+		return nil, ErrNotConnected
+	}
+	return m.JetStream()
+}
+
+// streamMsg builds the message every stream publish sends, synchronous or async. It carries ctx's
+// trace, or a new one when ctx has none, so every stream message can be traced, and a
+// Nats-Msg-Id header when msgID is not empty.
+func streamMsg(ctx context.Context, subject string, data []byte, msgID string) *nats.Msg {
 	if _, ok := TraceContextFromContext(ctx); !ok {
 		ctx = ContextWithTrace(ctx, NewTraceContext())
 	}
-
-	// Build message with headers for trace propagation
 	msg := &nats.Msg{
 		Subject: subject,
 		Data:    data,
@@ -1560,30 +1318,20 @@ func (m *Client) publishToStream(ctx context.Context, subject string, data []byt
 		msg.Header.Set(nats.MsgIdHdr, msgID)
 	}
 	InjectTrace(ctx, msg)
-
-	_, err = js.PublishMsg(ctx, msg)
-	if err != nil {
-		m.recordStreamPublishFailure(err)
-		return err
-	}
-
-	m.resetCircuit()
-	return nil
+	return msg
 }
 
 // asyncPublishErrHandler is the connection-level handler jetstream-go invokes for
-// every failed async publish ack. It applies the same failure accounting as a
-// failed synchronous publish; a typed target-stream capacity refusal remains
-// circuit-neutral. The reset side lives on the enqueue path (successful enqueue
-// = connection healthy); this handler never resets the circuit.
+// every failed async publish ack. It records the failure in the JetStream
+// metrics and logs it; the ack's own error also reaches the publisher through
+// its future.
 //
 // It runs on nats.go goroutines that have no end signal (jetstream/publish.go:408,
 // :491, :607-624; jetstream.go:1288-1307), so each invocation is client-owned work
 // that Close joins. It is never refused: its metric and log still count failed
-// acks during a drain. Only its failure accounting stops once Close has begun.
+// acks during a drain.
 func (m *Client) asyncPublishErrHandler(_ jetstream.JetStream, msg *nats.Msg, err error) {
 	defer m.admitAlways(workAsyncPublishErr)()
-	m.recordStreamPublishFailure(err)
 	if m.jsMetrics != nil {
 		m.jsMetrics.recordError("publish_async")
 	}
@@ -1600,68 +1348,35 @@ func (m *Client) asyncPublishErrHandler(_ jetstream.JetStream, msg *nats.Msg, er
 // publishToStreamAsync is the async publish path behind PublishBatchToStream.
 // It publishes to a JetStream stream WITHOUT blocking on the PubAck, returning a
 // jetstream.PubAckFuture whose Ok()/Err() carry the eventual server
-// acknowledgement. It mirrors publishToStream's pre-checks and trace stamping,
-// then enqueues via PublishMsgAsync.
+// acknowledgement. It makes streamJetStream's checks with a check of ctx between
+// them, builds the message with streamMsg, then enqueues via PublishMsgAsync.
 //
-// The enqueue itself is synchronous: an open circuit returns ErrCircuitOpen, a
-// disconnected client returns ErrNotConnected, a cancelled context returns its
-// error, and a full in-flight window past the stall wait returns jetstream's
-// ErrTooManyStalledMsgs — in all of which the returned future is nil. A
-// successful enqueue resets the circuit breaker (the connection-health signal);
-// an enqueue error records a failure. Failed acks are delivered on the future's
-// Err() channel and accounted by the connection-level async error handler; only
-// the exact classified capacity set is circuit-neutral.
+// The enqueue itself is synchronous: a disconnected client returns
+// ErrNotConnected, a cancelled context returns its error, and a full in-flight
+// window past the stall wait returns jetstream's ErrTooManyStalledMsgs — in all
+// of which the returned future is nil. Failed acks are delivered on the
+// future's Err() channel and counted by the connection-level async error
+// handler.
 func (m *Client) publishToStreamAsync(ctx context.Context, subject string, data []byte) (jetstream.PubAckFuture, error) {
-	// Check circuit breaker first (the breaker is the outermost gate, as on the
-	// sync path).
-	if m.Status() == StatusCircuitOpen {
-		return nil, ErrCircuitOpen
-	}
-
 	if m.Status() != StatusConnected {
 		return nil, ErrNotConnected
 	}
 
 	// Honor a cancelled context before enqueuing (PublishMsgAsync takes no ctx,
-	// so this is the only cancellation point on the async path). A cancelled ctx
-	// is caller intent, not a connection fault, so it does NOT record a failure.
+	// so this is the only cancellation point on the async path).
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
 
 	js, err := m.JetStream()
 	if err != nil {
-		m.recordFailure()
 		return nil, err
 	}
 
-	// Auto-generate trace context if none exists
-	if _, ok := TraceContextFromContext(ctx); !ok {
-		ctx = ContextWithTrace(ctx, NewTraceContext())
-	}
-
-	// Build message with headers for trace propagation
-	msg := &nats.Msg{
-		Subject: subject,
-		Data:    data,
-	}
-	InjectTrace(ctx, msg)
-
-	future, err := js.PublishMsgAsync(msg)
+	future, err := js.PublishMsgAsync(streamMsg(ctx, subject, data, ""))
 	if err != nil {
-		m.recordFailure()
 		return nil, err
 	}
-
-	// Enqueue succeeded: the connection is up and JetStream accepted the message
-	// onto the wire. On the async path the breaker is a CONNECTION-LIVENESS gate:
-	// a successful enqueue proves the connection is healthy, so we reset here
-	// rather than at ack time. The exact classified target-stream capacity set is
-	// surfaced through the future/batch and remains circuit-neutral. Every other
-	// ack failure still contributes through asyncPublishErrHandler; connection
-	// outage also makes subsequent enqueues fail, which trips the breaker. See
-	// the nats-streaming capability contract.
-	m.resetCircuit()
 	return future, nil
 }
 
@@ -1684,8 +1399,8 @@ func (m *Client) publishToStreamAsync(ctx context.Context, subject string, data 
 // make this batch over-wait. If ctx is cancelled before all acks arrive, it
 // returns the context error rather than hanging
 // (TestIntegration_PublishBatchToStream_CtxCancel); the already-enqueued publishes
-// still resolve in the background (and feed the circuit breaker via the async
-// error handler on a connection fault). An enqueue error stops further enqueuing
+// still resolve in the background, and a failed ack is still counted by the
+// async error handler. An enqueue error stops further enqueuing
 // but already-enqueued messages are still drained. Ack failures are accounted
 // once by asyncPublishErrHandler — this loop only collects them for the returned
 // error (accounting here too would double-count).
@@ -1766,10 +1481,6 @@ func (m *Client) GetStream(ctx context.Context, name string) (jetstream.Stream, 
 	if ctx == nil {
 		return nil, nilContextError("GetStream")
 	}
-	// Check circuit breaker first
-	if m.Status() == StatusCircuitOpen {
-		return nil, ErrCircuitOpen
-	}
 
 	if m.Status() != StatusConnected {
 		return nil, ErrNotConnected
@@ -1777,32 +1488,22 @@ func (m *Client) GetStream(ctx context.Context, name string) (jetstream.Stream, 
 
 	js, err := m.JetStream()
 	if err != nil {
-		m.recordFailure()
 		return nil, err
 	}
 
 	stream, err := js.Stream(ctx, name)
 	if err != nil {
 		// ErrStreamNotFound is a successful probe result (the stream is absent on
-		// this connection right now), not a transport or availability failure.
-		// Counting it as a failure would trip the circuit breaker on legitimate
-		// existence probes — a component checking whether an optional stream is
-		// present, a diagnostic sweep, a caller deciding whether to provision.
-		// Only genuine failures (timeout, no-responders, etc.) should move the
-		// breaker.
-		//
-		// The exemption is why this seam is deliberately NOT wired to the
-		// consumer setup path's stream-visibility wait: a cheap probe stays
-		// cheap. It is also why its answer is not evidence of absence — see the
+		// this connection right now), not a transport or availability failure, so
+		// it is not counted as an error in the metrics. This seam is deliberately
+		// NOT wired to the consumer setup path's stream-visibility wait: a cheap
+		// probe stays cheap. Its answer is not evidence of absence — see the
 		// package doc, and ErrStreamNotVisible for the answer that is.
 		if !stderrors.Is(err, jetstream.ErrStreamNotFound) {
-			m.recordFailure()
 			m.jsMetrics.recordError("get_stream")
 		}
 		return nil, err
 	}
-
-	m.resetCircuit()
 
 	// Track stream for metrics collection
 	m.jsMetrics.trackStream(name, stream)
@@ -1815,10 +1516,6 @@ func (m *Client) CreateKeyValueBucket(ctx context.Context, cfg jetstream.KeyValu
 	if ctx == nil {
 		return nil, nilContextError("CreateKeyValueBucket")
 	}
-	// Check circuit breaker first
-	if m.Status() == StatusCircuitOpen {
-		return nil, ErrCircuitOpen
-	}
 
 	if m.Status() != StatusConnected {
 		return nil, ErrNotConnected
@@ -1826,7 +1523,6 @@ func (m *Client) CreateKeyValueBucket(ctx context.Context, cfg jetstream.KeyValu
 
 	js, err := m.JetStream()
 	if err != nil {
-		m.recordFailure()
 		return nil, err
 	}
 
@@ -1835,7 +1531,6 @@ func (m *Client) CreateKeyValueBucket(ctx context.Context, cfg jetstream.KeyValu
 	if err == nil {
 		// Bucket already exists, use it
 		m.logger.Info("Using existing KV bucket", slog.String("bucket", cfg.Bucket))
-		m.resetCircuit()
 		return bucket, nil
 	}
 
@@ -1851,22 +1546,18 @@ func (m *Client) CreateKeyValueBucket(ctx context.Context, cfg jetstream.KeyValu
 			// Try to get the existing bucket
 			bucket, err = js.KeyValue(ctx, cfg.Bucket)
 			if err != nil {
-				m.recordFailure()
 				return nil, errs.Wrap(err, "Client", "CreateKeyValueBucket",
 					fmt.Sprintf("access existing bucket %s", cfg.Bucket))
 			}
 			m.logger.Info("Successfully accessed existing KV bucket", slog.String("bucket", cfg.Bucket))
-			m.resetCircuit()
 			return bucket, nil
 		}
 		// Real error, record failure
-		m.recordFailure()
 		return nil, err
 	}
 
 	// Successfully created new bucket
 	m.logger.Info("Created new KV bucket", slog.String("bucket", cfg.Bucket))
-	m.resetCircuit()
 	return bucket, nil
 }
 
@@ -1875,10 +1566,6 @@ func (m *Client) GetKeyValueBucket(ctx context.Context, name string) (jetstream.
 	if ctx == nil {
 		return nil, nilContextError("GetKeyValueBucket")
 	}
-	// Check circuit breaker first
-	if m.Status() == StatusCircuitOpen {
-		return nil, ErrCircuitOpen
-	}
 
 	if m.Status() != StatusConnected {
 		return nil, ErrNotConnected
@@ -1886,28 +1573,14 @@ func (m *Client) GetKeyValueBucket(ctx context.Context, name string) (jetstream.
 
 	js, err := m.JetStream()
 	if err != nil {
-		m.recordFailure()
 		return nil, err
 	}
 
 	bucket, err := js.KeyValue(ctx, name)
 	if err != nil {
-		// ErrBucketNotFound is a successful probe result (the bucket is absent),
-		// not a transport or availability failure — the same reasoning as
-		// GetStream above, which has exempted ErrStreamNotFound since gh#248.
-		// Counting it would trip the shared circuit breaker on legitimate
-		// existence probes, and several callers poll for a legitimately absent
-		// bucket: graph-query's resource.Watcher on COMMUNITY_INDEX rechecks
-		// every 60s on any deployment without community detection, the readiness
-		// watcher rebinds on every retry, and WaitForBucket polls at 500ms by
-		// design. At a threshold of 15 those reach it on their own.
-		if !stderrors.Is(err, jetstream.ErrBucketNotFound) {
-			m.recordFailure()
-		}
 		return nil, err
 	}
 
-	m.resetCircuit()
 	return bucket, nil
 }
 
@@ -1963,10 +1636,6 @@ func (m *Client) DeleteKeyValueBucket(ctx context.Context, name string) error {
 	if ctx == nil {
 		return nilContextError("DeleteKeyValueBucket")
 	}
-	// Check circuit breaker first
-	if m.Status() == StatusCircuitOpen {
-		return ErrCircuitOpen
-	}
 
 	if m.Status() != StatusConnected {
 		return ErrNotConnected
@@ -1974,17 +1643,14 @@ func (m *Client) DeleteKeyValueBucket(ctx context.Context, name string) error {
 
 	js, err := m.JetStream()
 	if err != nil {
-		m.recordFailure()
 		return err
 	}
 
 	err = js.DeleteKeyValue(ctx, name)
 	if err != nil {
-		m.recordFailure()
 		return err
 	}
 
-	m.resetCircuit()
 	return nil
 }
 
@@ -1993,10 +1659,6 @@ func (m *Client) ListKeyValueBuckets(ctx context.Context) ([]string, error) {
 	if ctx == nil {
 		return nil, nilContextError("ListKeyValueBuckets")
 	}
-	// Check circuit breaker first
-	if m.Status() == StatusCircuitOpen {
-		return nil, ErrCircuitOpen
-	}
 
 	if m.Status() != StatusConnected {
 		return nil, ErrNotConnected
@@ -2004,7 +1666,6 @@ func (m *Client) ListKeyValueBuckets(ctx context.Context) ([]string, error) {
 
 	js, err := m.JetStream()
 	if err != nil {
-		m.recordFailure()
 		return nil, err
 	}
 
@@ -2024,24 +1685,10 @@ func (m *Client) ListKeyValueBuckets(ctx context.Context) ([]string, error) {
 	}
 
 	if err := streamsCh.Err(); err != nil {
-		m.recordFailure()
 		return nil, err
 	}
 
-	m.resetCircuit()
 	return names, nil
-}
-
-// connStatus is the status a connection's own state implies.
-func connStatus(conn *nats.Conn) ConnectionStatus {
-	switch {
-	case conn.IsConnected():
-		return StatusConnected
-	case conn.IsReconnecting():
-		return StatusReconnecting
-	default:
-		return StatusDisconnected
-	}
 }
 
 // ownsStatusLocked reports whether an event of nc may change the status: nc is
@@ -2077,7 +1724,6 @@ func (m *Client) handleReconnect(nc *nats.Conn) {
 		return
 	}
 	m.setStatus(StatusConnected)
-	m.resetCircuitLocked()
 	m.mu.Unlock()
 	m.cancelConnectionLossTimer()
 }
@@ -2152,7 +1798,7 @@ func (m *Client) cancelConnectionLossTimer() {
 	}
 }
 
-// stopTimers stops both timers. A timer that has already fired enters
+// stopTimers stops the connection-loss timer. A timer that has already fired enters
 // startBackground, which Close has closed by then.
 func (m *Client) stopTimers() {
 	m.timersMu.Lock()
@@ -2160,10 +1806,6 @@ func (m *Client) stopTimers() {
 	if m.lossTimer != nil {
 		m.lossTimer.Stop()
 		m.lossTimer = nil
-	}
-	if m.circuitTimer != nil {
-		m.circuitTimer.Stop()
-		m.circuitTimer = nil
 	}
 }
 
@@ -2211,6 +1853,18 @@ func (m *Client) handleError(nc *nats.Conn, sub *nats.Subscription, err error) {
 			} else {
 				attrs = append(attrs, slog.Bool("dropped_available", false))
 			}
+		}
+	}
+
+	// The refusal is counted before the line is written, so a reader of the line finds it counted.
+	// The reason comes from the error's type: nats.go reports a refused PUB and a refused SUB with
+	// the same type and no subscription, and their text is not a contract (ADR-112).
+	if m.jsMetrics != nil {
+		switch {
+		case stderrors.Is(err, nats.ErrPermissionViolation):
+			m.jsMetrics.serverRefusals.WithLabelValues("permission_violation").Inc()
+		case stderrors.Is(err, nats.ErrMaxSubscriptionsExceeded):
+			m.jsMetrics.serverRefusals.WithLabelValues("max_subscriptions_exceeded").Inc()
 		}
 	}
 

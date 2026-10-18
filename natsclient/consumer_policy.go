@@ -50,7 +50,6 @@ func (c *Client) observeInternalConsumer(
 ) (internalConsumerIdentity, error) {
 	info, err := consumer.Info(ctx)
 	if err != nil {
-		c.recordFailure()
 		return internalConsumerIdentity{}, errs.WrapTransient(
 			err, "Client", "ConsumeInternalStreamWithConfig", "initial consumer observation unavailable")
 	}

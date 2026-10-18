@@ -22,21 +22,25 @@ transport"; `TestGraphImportsNoTransport`).
 - **The reserved sources.** `SourceIndexingProfile`, `SourceHierarchy` and `SourceLifecycle` are the names
   graph-ingest and `pkg/lifecycle` write their own statements under; `IsReservedSource` recognises them.
 - **The state contract.** `MarshalEntityState` is the validating encoder for stored entities and
-  `UnmarshalEntityState` the validating decoder; `StateContractError` and its classifiers carry the "graph state reset
-  required" contract across a request and its reply. Entity-ID prefixes and the predicate token codec sit beside them.
+  `UnmarshalEntityState` the validating decoder. `StateContractError` carries the "graph state reset required" failure
+  across a request and its reply, and `IsStateContractError` recognises it. Entity-ID prefixes and the predicate token
+  codec sit beside them.
 - **Bucket names.** The `Bucket*` constants name the graph's buckets. The catalog that describes and acquires them is
-  `graph/kvcatalog`.
+  `graph/kvcatalog`. A product that needs the full list of framework buckets calls `kvcatalog.KVCatalog()`: it returns
+  a copy of every descriptor, so editing the result changes nothing the framework resolves.
 - **The wire types.** The query request and reply types, the mutation requests and responses
   (`ReconcilePredicatesRequest` names the one source it reconciles), `ExactEntity` and `ExactEntityReader` for the
-  authority read, and `IndexStatusResponse`, the readiness envelope a producer writes to `GRAPH_STATUS`, with its
-  `IndexState*` constants. The computation that fills the envelope is in `graph/readiness`.
+  authority read, and `IndexStatusResponse`, the readiness envelope a producer writes to `GRAPH_STATUS`. Its state
+  field is an `IndexState`, one of the four `IndexState*` constants that `IndexStates()` lists. The computation that
+  fills the envelope is in `graph/readiness`.
 - **The query reply envelope.** Replies on `graph.ingest.query.*` are not enveloped.
 - **The verb table.** `QueryVerbs` declares the request/reply verbs graph-ingest answers (`entity`, `batch` and
-  `prefix` on `graph.ingest.query.*`), each with its subject, request type and reply type.
+  `prefix` on `graph.ingest.query.*`), each with its subject and responder; `QueryVerbs`' doc comment names each
+  verb's request and reply types.
 
 ### Entity Identification
 
-All entity IDs use the 6-part federated format defined in `message.EntityID` (canonical order, ADR-102:
+All entity IDs use the 6-part federated format defined in `types.EntityID` (`pkg/types`) (canonical order, ADR-102:
 `org.platform` = the minting deployment authority, `system` = the source, `domain.type` = a delegated taxonomy):
 
 ```text
@@ -123,7 +127,9 @@ This provides maximum flexibility while maintaining semantic clarity.
 
 ## What is elsewhere
 
-- `graph/kvcatalog`: the bucket catalog, its acquisition, the owned-bucket retention check and `IsKVTombstone`.
+- `graph/kvcatalog`: the bucket catalog, its acquisition, the owned-bucket retention check and the write-guard pair
+  (`IsFrameworkOwnedBucket`, `FrameworkOwnedWriteRefusal`) the rule engine reads once it is ported (change 6).
+- `natsclient`: `IsKVTombstone`, which reports whether a KV watch entry is a delete or a purge.
 - `graph/readiness`: the readiness computation and the GRAPH_STATUS publisher.
 - `graph/inference`: hierarchy inference (its hierarchy slice).
 

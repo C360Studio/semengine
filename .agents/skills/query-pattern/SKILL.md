@@ -17,8 +17,9 @@ Start from the reader the user names. In this tree the graph is read three ways,
 | graph-ingest's `batch` and `prefix` verbs | Several entities by ID, or a page of entities under an ID prefix | `graph.EntityBatchResponse`, `graph.PrefixQueryResponse` |
 | Direct bucket access | The bucket's declared owner, and operator diagnostics | Raw entries; no query contract |
 
-Every verb graph-ingest serves is declared once, in `graph.QueryVerbs()` (`graph/query_verbs.go`), with its subject,
-its responder and its request and reply types. graph-ingest serves exactly those verbs.
+Every verb graph-ingest serves is declared once, in `graph.QueryVerbs()` (`graph/query_verbs.go`), with its subject
+and its responder; the function's doc comment names each verb's request and reply types. graph-ingest serves exactly
+those verbs.
 
 ## Choosing
 

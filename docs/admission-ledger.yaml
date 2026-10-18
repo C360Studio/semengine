@@ -314,9 +314,9 @@
     EntityID joins six positions and Predicate three without rewriting a byte, and each returns the
     value only when pkg/types or vocabulary accepts it, failing the test otherwise, as at the pin
   dependencies_and_side_effects: >-
-    pkg/types, vocabulary (in-set; their closure adds pkg/errs and pkg/retry, neither of which
-    starts a goroutine; pkg/platform left it when vocabulary.EntityIRI was removed, task 3.6b);
-    testing; no goroutine, no I/O
+    pkg/types, vocabulary (in-set; their closure adds pkg/errs, which starts no goroutine;
+    pkg/platform left it when vocabulary.EntityIRI was removed, task 3.6b, and pkg/retry left it
+    when errs.RetryConfig was removed, #218); testing; no goroutine, no I/O
   known_risks: >-
     no context roots. Imports testing from a non-test file, which T-B1 admits only under
     internal/harness/ (TestImportGraphRejectsHarnessHelpersOutsideTheHarness). No test of a package
@@ -351,7 +351,8 @@
   destination: internal/resource
   contract: >-
     WaitForStartup retries up to StartupAttempts at StartupInterval and stops on ctx; IsAvailable,
-    Name, and Config defaults as at the pin. Changed behavior (design D7, background-work shape 1):
+    Name, and Config defaults as at the pin; WaitForStartup returns false on a nil context without
+    calling the check. Changed behavior (design D7, background-work shape 1):
     Run(ctx) error replaces StartBackgroundCheck and Stop, runs on the caller's goroutine, returns
     ctx.Err() when ctx ends, refuses a nil context, and refuses a concurrent second Run
   dependencies_and_side_effects: stdlib only; Run blocks its caller's goroutine and starts none
@@ -373,12 +374,16 @@
     Do and DoWithResult retry up to MaxAttempts with exponential backoff capped at MaxDelay,
     optional jitter, stop on ctx and on NonRetryable; DefaultConfig, Quick, Persistent as at the pin.
     Changed behavior: Do refuses a nil context before the operation runs and checks ctx before every
-    attempt; jitter() skips rand.Int63n when a quarter of the delay is under 1 ns
-  dependencies_and_side_effects: stdlib only; process-global jitter source seeded at init
+    attempt; jitter() uses math/rand/v2 and skips rand.Int64N when a quarter of the delay is under
+    1 ns (#218)
+  dependencies_and_side_effects: stdlib only (math/rand/v2 lock-free jitter); no goroutine, no I/O
   known_risks: >-
-    no context roots; timer-driven tests moved into synctest.Test bubbles; README updated for
-    SemEngine module path and markdownlint
-  proving_tests: pkg/retry/retry_test.go (synctest-based unit tests)
+    no context roots; timer-driven tests moved into synctest.Test bubbles; lock-free math/rand/v2
+    jitter replaces mutex-guarded math/rand source (#218); README updated for SemEngine module path
+    and markdownlint
+  proving_tests: >-
+    pkg/retry/retry_test.go (synctest-based unit tests, including TestRetry_JitterBounds and
+    TestRetry_ConcurrentWithJitter), pkg/retry/reviewer_retry_probe_test.go
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -389,17 +394,22 @@
     the signature rule (design D5, P22)
   destination: pkg/security
   contract: >-
-    the seven configuration types (Config, TLSConfig, ServerTLSConfig, ClientTLSConfig,
-    ServerMTLSConfig, ClientMTLSConfig, ACMEConfig) and their JSON keys as at the pin, except
-    ServerMTLSConfig.ClientCertOptional (JSON client_cert_optional, default false) replaces
-    RequireClientCert so the zero value requires a client certificate when mTLS is enabled;
-    internal/tlsutil validates configurations when building a tls.Config
+    openspec/specs/security-config/spec.md, which offers products, through
+    component.Dependencies.Security, the seven configuration types (Config, TLSConfig,
+    ServerTLSConfig, ClientTLSConfig, ServerMTLSConfig, ClientMTLSConfig, ACMEConfig) and their JSON
+    keys as at the pin, except ServerMTLSConfig.ClientCertOptional (JSON client_cert_optional,
+    default false) replaces RequireClientCert so the zero value requires a client certificate when
+    mTLS is enabled; internal/tlsutil validates configurations when building a tls.Config
   dependencies_and_side_effects: no imports; no goroutine, no I/O
   known_risks: >-
     no context roots. Dead surface removed (#9 surface audit §3): 11 unused Default* and Validate
-    functions (which performed os.Stat file I/O at the pin) removed; doc.go updated to match
+    functions (which performed os.Stat file I/O at the pin) removed; doc.go updated to match. The
+    31 schema tags are removed (owner question 3, #274): component.ParseSchemaTag refused every one,
+    so a schema generated over these types was empty, and renew_before's default:24h disagreed with
+    the pin's 8h; the json tags are unchanged
   proving_tests: >-
-    pkg/security/config_test.go (TestConfigDecodesEveryKey, TestConfigDocumentCoversEveryField) and
+    pkg/security/config_test.go (TestConfigDecodesEveryKey, TestConfigDocumentCoversEveryField),
+    pkg/security/product_test.go (TestProductServesTLSFromDependenciesSecurity), and
     internal/tlsutil's and metric's TLS tests
   owner: setup-04a-01-floor developer
   disposition: adapt
@@ -432,11 +442,17 @@
   contract: >-
     classification, wrapping, errors.Is/As behavior, and ErrAlreadyStopped as at the pin, except
     IsTransient and IsFatal classify strictly by *ClassifiedError class and known sentinels, never
-    by substring matching on error text (#146, owner ruling N)
-  dependencies_and_side_effects: pkg/retry (in-set); stdlib; no goroutine, no I/O
+    by substring matching on error text (#146, owner ruling N); Classify returns ErrorFatal for an
+    unclassified error, while IsTransient, IsFatal, and IsInvalid report false for it (#167); WrapTransient, WrapFatal, and
+    WrapInvalid return nil when err == nil regardless of action (#218); duplicate RetryConfig,
+    DefaultRetryConfig, ShouldRetry, ToRetryConfig, and BackoffDelay removed (#218). Changed surface,
+    simplify-04a-16 (#222): ErrCircuitOpen is removed with natsclient's circuit breaker
+  dependencies_and_side_effects: stdlib only; no goroutine, no I/O
   known_risks: >-
     no production context roots. Classify defaults unclassified errors without a listed sentinel to
-    ErrorTransient regardless of error text; doc.go updated to match
+    ErrorFatal regardless of error text, a change from the pin's transient default (#167); a caller
+    that retried on Classify now stops on an error it did not classify; duplicate RetryConfig removed and
+    WrapTransient/WrapFatal/WrapInvalid made nil-safe (#218); doc.go updated to match
   proving_tests: >-
     pkg/errs/errs_test.go, pkg/errs/classified_is_test.go, pkg/errs/shutdown_test.go,
     pkg/errs/classify_by_type_test.go
@@ -446,25 +462,37 @@
 - source_path: vocabulary
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    predicate vocabulary, registry, IRI mapping and the declared-predicate check; SemSource imports
-    it (20 files, design P16). Only the root package directory is ported here
+    predicate vocabulary, registry, IRI mapping, entity-type class metadata, projection specs,
+    declarative JSON/YAML pack loading, and the declared-predicate check; SemSource, semvocab, and
+    semsparql import it
   destination: vocabulary
   contract: >-
-    predicate registration and lookup, dotted-name and namespace validation, and
-    RequireDeclaredPredicate as at the pin, with SemEngineBase ("https://semengine.semanticstream.ing")
-    replacing SemStreamsBase (#69) and dead surface removed
+    predicate registration and lookup (including reverse LookupByIRI), entity-type class
+    registration and reverse lookup (ParseEntityTypeKey, RegisterEntityType,
+    LookupEntityTypesByClassIRI), reified ontology projection metadata (WithProjection,
+    ProjectionSpec.Validate), declarative JSON/YAML pack loading, pure validation, and fail-closed
+    registration (LoadPackJSON, LoadPackYAML, PackSpec.Validate, RegisterPack, PrefixSpec.Validate),
+    dotted-name and namespace validation, and RequireDeclaredPredicate as at the pin, with
+    SemEngineBase ("https://semengine.semanticstream.ing") replacing SemStreamsBase (#69, #234,
+    #237, #251, #256) and dead surface removed
   dependencies_and_side_effects: >-
-    stdlib; a process-global predicate registry mutated at registration
+    stdlib; gopkg.in/yaml.v3; pgregory.net/rapid v1.3.0 in tests; process-global predicate and
+    entity-type registries mutated at registration
   known_risks: >-
     no context roots. Dead surface removed (#72 ruling 1; #9 surface audit §1): EntityIRI,
     PredicateAuthority/NamespaceDelegation, and 162 unused predicate/IRI/registry identifiers
     (Sensor, Time, Network, Quality, unused Geo/GraphRel/OWL/SKOS/RDFS/DC/Schema.org/PROV-O/FOAF
     constants, PredicateRole/WithRole, EntityTypeIRI, RelationshipIRI, SubjectIRI,
-    RegisterPredicate, IsSymmetricPredicate, HasInverse, DiscoverInversePredicates); doc.go and
-    README.md updated to match
+    RegisterPredicate, IsSymmetricPredicate, HasInverse, DiscoverInversePredicates); extended in
+    #234, #237, #251, and #256 with LookupByIRI, entity-type class metadata, ProjectionSpec
+    (and pure ProjectionSpec.Validate), PackSpec (and pure PackSpec.Validate), W3C Turtle PN_PREFIX
+    and IRIREF validation, and strict alias_priority rejection; doc.go and README.md updated to match.
+    ParsePredicate keeps no memo; parseDomainCategory removed (#219)
   proving_tests: >-
-    vocabulary/*_test.go (11 test files covering predicate syntax, registration, hierarchy,
-    relationships, and namespace authority)
+    vocabulary/*_test.go (15 test files covering predicate syntax, registration, reverse IRI lookup,
+    entity-type class metadata, projection specs, declarative JSON/YAML packs, hierarchy,
+    relationships, and namespace authority; FuzzParsePredicateAgreesWithGrammar in
+    predicate_parse_test.go replaces predicate_memo_test.go)
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -477,15 +505,16 @@
   contract: >-
     entity ID parsing, the 256-byte bound (MaxEntityIDBytes), pattern matching, type and domain
     authority validation as at the pin; Type.Validate also refuses a domain, category, or version
-    that is not valid UTF-8 (#9 comment 5970334875)
+    that is not valid UTF-8 (#9 comment 5970334875); Type.IsValid is Validate() == nil;
+    EntityType.IsValid removed (#219)
   dependencies_and_side_effects: >-
     pkg/errs (in-set); stdlib; pgregory.net/rapid v1.3.0 in tests only; no goroutine, no I/O
   known_risks: >-
     no context roots; README and test comments updated for SemEngine module paths and
     docs/specs/entity-id-contract.md
   proving_tests: >-
-    pkg/types/*_test.go (including Rapid properties in entity_id_prop_test.go and
-    TestTypeValidateRefusesInvalidUTF8 in type_validate_test.go)
+    pkg/types/*_test.go (including Rapid properties in entity_id_prop_test.go, and
+    TestTypeValidateRefusesInvalidUTF8 and TestTypeIsValidMatchesValidate in type_validate_test.go)
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -635,15 +664,19 @@
   destination: pkg/projection/contract
   contract: >-
     Validate, ValidateShape and ValidateContracts accept and reject contracts as at the pin, every
-    rejection wrapping ErrInvalidContract
+    rejection wrapping ErrInvalidContract; Contract.Clone returns a copy that shares no slice with the
+    original
   dependencies_and_side_effects: pkg/types, vocabulary (in-set); stdlib; no goroutine, no I/O
   known_risks: >-
-    no context roots. The package doc (contract.go:1-6) names pkg/projection and ADR-103, which do not
-    exist here (pkg/projection is ported in a later change); left as the pin's text, because changing
-    it would break this row's carry check
-  proving_tests: pkg/projection/contract/contract_test.go
+    no context roots. Adapted by change simplify-04a-06-projection: Contract.Clone is added and
+    replaces the two private copies the pin kept in pkg/projection and payloadregistry (#138 item 2b);
+    validation is unchanged. The package doc (contract.go:1-6) names ADR-103, a pin decision record
+    this repository does not carry
+  proving_tests: >-
+    pkg/projection/contract/contract_test.go (TestContractCloneIsIndependent for Clone),
+    payloadregistry/registry_test.go
   owner: setup-04a-01-floor developer
-  disposition: carry
+  disposition: adapt
 
 - source_path: pkg/tlsutil
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
@@ -652,21 +685,26 @@
     (handler.go); no consumer imports it and no public signature names its types (design D5, P21, P22)
   destination: internal/tlsutil
   contract: >-
-    LoadServerTLSConfig, LoadClientTLSConfig, LoadServerTLSConfigWithMTLS, and
-    LoadClientTLSConfigWithMTLS as at the pin, except: (1) a client certificate is required under
-    server mTLS unless ServerMTLSConfig.ClientCertOptional is set; (2) LoadServerTLSConfigWithMTLS
+    LoadServerTLSConfig and LoadClientTLSConfig apply the MTLS block as at the pin, except: the two
+    WithMTLS loaders are dropped (#221); (1) a client certificate is required under
+    server mTLS unless ServerMTLSConfig.ClientCertOptional is set; (2) LoadServerTLSConfig
     refuses mTLS when server TLS is disabled (ErrInvalidConfig); (3) MinVersion values other than
     "1.2", "1.3", or empty are refused with an invalid error; (4) ACME loaders are not ported here
-    (deferred to change 5)
+    (deferred to change 5); until then both loaders refuse a mode other than empty or "manual" and
+    acme.enabled true with an invalid error naming the key, LoadServerTLSConfig only when server TLS
+    is enabled (owner question 1, #274)
   dependencies_and_side_effects: >-
     pkg/errs, pkg/security (in-set); stdlib; reads certificate and key files; no goroutine
   known_risks: >-
     no context roots; moved from pkg/tlsutil to internal/tlsutil (design D5). ACME loaders
     (LoadServerTLSConfigWithACME, LoadClientTLSConfigWithACME, initACMEClient) and pkg/acme
-    dependency dropped until change 5
+    dependency dropped until change 5. When change 5 ports LoadClientTLSConfigWithACME, its ACME
+    branch (pin tlsutil.go:286) passes a copy with MTLS cleared, so the fallback key pair is not
+    loaded first
   proving_tests: >-
     internal/tlsutil/tlsutil_test.go, internal/tlsutil/minversion_test.go,
-    internal/tlsutil/mtls_default_test.go, internal/tlsutil/mtls_integration_test.go
+    internal/tlsutil/mtls_default_test.go, internal/tlsutil/mtls_integration_test.go,
+    internal/tlsutil/notapplied_test.go
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -682,7 +720,7 @@
     one canonical collector per logical key and refusing nil candidates, type/descriptor mismatches,
     and cross-key aliases with a fatal error; a caller uses the returned collector, never its own
     candidate (AGENTS.md rule index, review only); (2) Server.Start applies server mTLS via
-    tlsutil.LoadServerTLSConfigWithMTLS and refuses mTLS when TLS is disabled; (3) Server.Stop
+    tlsutil.LoadServerTLSConfig and refuses mTLS when TLS is disabled; (3) Server.Stop
     closes admission first (refusing new requests with 503), joins the serve goroutine without a
     fixed timer, waits for admitted requests within ctx, and reports ctx.Err() whenever ctx ended
   dependencies_and_side_effects: >-
@@ -692,7 +730,10 @@
   known_risks: >-
     no production context roots. Legacy registration methods (MetricsRegistrar, RegisterCounter,
     RegisterGauge, RegisterHistogram, RegisterCounterVec, RegisterGaugeVec, RegisterHistogramVec)
-    removed in favor of RegisterOrGet[C] (design D9); doc.go and README.md updated to match
+    removed in favor of RegisterOrGet[C] (design D9); doc.go and README.md updated to match.
+    Dropped NATS collectors (NATSConnected, NATSRTT, NATSReconnects, NATSCircuitBreaker) and methods
+    (RecordNATSStatus, RecordNATSRTT, RecordNATSReconnect, RecordCircuitBreakerState), and the
+    socket probe in StartWithListener: a closed listener is no longer refused (#207, #221)
   proving_tests: >-
     metric/handler_test.go, metric/lifecycle_test.go, metric/admission_test.go, metric/tls_test.go,
     metric/registerorget_test.go, metric/registerorget_prop_test.go, metric/registry_test.go,
@@ -708,7 +749,8 @@
   destination: payloadregistry
   contract: >-
     New, Register, lookups and registration validation (projection contracts through
-    pkg/projection/contract) as at the pin
+    pkg/projection/contract) as at the pin, with one adaptation: the registry is keyed by
+    types.Type, and GetRegistration and IndexingProfileFor take a types.Type (#219)
   dependencies_and_side_effects: >-
     pkg/errs, pkg/projection/contract, pkg/types, vocabulary (in-set); stdlib; no goroutine, no I/O
   known_risks: >-
@@ -732,16 +774,18 @@
     refused); (2) BaseMessage.MarshalJSON refuses non-UTF-8 meta.source or message type components;
     (3) GenericJSONPayload.MarshalJSON accepts only JSON-shaped values (map[string]any, []any,
     string, Go numbers, json.Number, bool, nil) with valid UTF-8 and no cycles, and UnmarshalJSON
-    decodes numbers via UseNumber into a JSON object or null body
+    decodes numbers via UseNumber into a JSON object or null body; (4) BaseMessage.Validate checks
+    the message type with Type.Validate; (5) GenericJSONPayload.Validate runs the same shape check
+    as MarshalJSON; (6) message.Type and ParseEntityID are the aliases of pkg/types kept (#219)
   dependencies_and_side_effects: >-
     payloadregistry, pkg/errs, pkg/types, internal/timestamp (in-set); github.com/google/uuid v1.6.0;
     stdlib; no goroutine, no I/O
   known_risks: >-
-    no context roots. Hash() ignores a payload marshal error, as at the pin, so a refused payload
-    hashes as its type alone (tracked by #78). Dead surface removed (#72; #9 surface audit §2):
-    message/federation.go (FederationMeta family and WithFederation*) and ten unused capability
+    no context roots. Dead surface removed (#72; #9 surface audit §2; #78 and #219):
+    message/federation.go (FederationMeta family and WithFederation*), ten unused capability
     interfaces (Locatable, Timeable, Observable, Correlatable, Measurable, Deployable, Processable,
-    Traceable, Expirable, TripleGenerator); doc.go and README.md updated for NewDecoder(reg) and
+    Traceable, Expirable, TripleGenerator), Message.Hash and BaseMessage.Hash, the Keyable,
+    EntityType and EntityID aliases, and Triple.IsExpired; doc.go and README.md updated for NewDecoder(reg) and
     fallback GenericJSON
   proving_tests: >-
     message/*_test.go (including meta_wire_test.go, generic_json_shape_test.go,
@@ -785,15 +829,46 @@
 - source_path: natsclient
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    the NATS and JetStream client: connection lifecycle with circuit breaker and health status,
-    streams, consumers with delivery settlement, KV buckets and watchers, request/reply, storage
-    inventory, pressure and reports, and JetStream metrics; SemSource imports it, so it stays public
+    the NATS and JetStream client: connection lifecycle and health status,
+    streams, consumers with delivery settlement, KV buckets and watchers, request/reply, and
+    JetStream metrics (storage inventory, pressure and reports are the sub-package natsclient/storagereport); SemSource imports it, so it stays public
     at its pin path (design D5)
-  destination: natsclient
+  destination: >-
+    natsclient (storage_*.go and their tests live in natsclient/storagereport since
+    simplify-04a-13 (#222))
   contract: >-
     Client, its options and every exported operation as at the pin, less the surface named under
-    known_risks as dropped. Changed behavior, design D9 (task 3.7): newJetStreamMetrics registers
-    all 11 collectors through metric.RegisterOrGet and keeps the collector each call returns
+    known_risks as dropped. Changed surface, simplify-04a-13 (#222): the storage report code is the
+    package natsclient/storagereport (D1), with nine renames of names that began with the package name
+    (PublisherConfig, Publisher, ResourceKey, Observer, Snapshot, ConsumerConfig, Consumer, NewPublisher,
+    NewConsumer); Client.AccountStreamLister is the function storagereport.AccountStreamLister(client) (D2); 22
+    names with no caller in this repository are unexported (D2, Exports); Observer gains ForgetAccount(row), called
+    when the consumer drops a held account row, so an observer is told as it is for resources (D3, #85).
+    Changed surface, simplify-04a-16 (#222): the connection circuit breaker is removed, and the
+    connection status is a typed atomic that Status() reads without the client's lock. Removed:
+    StatusCircuitOpen, natsclient.ErrCircuitOpen (and errs.ErrCircuitOpen), Client.Failures,
+    Client.Backoff, and Status.FailureCount, LastFailureTime and Reconnects; Client.RTT and the
+    health monitor stay. Connect dials each time it is called, bounded by its context, and a failed
+    call refuses no other call. The records below that name the breaker, its timer or its tests
+    (circuit threshold, Failures(), the circuit-open rows) describe the pin and the earlier
+    changes, and are history.
+    Changed surface, simplify-04a-18 (#169, #222): newJetStreamMetrics also registers the counter
+    semengine_nats_server_refusals_total{reason} (12 collectors in all), and handleError adds one,
+    before it logs, for a nats.ErrPermissionViolation (reason permission_violation) or a
+    nats.ErrMaxSubscriptionsExceeded (reason max_subscriptions_exceeded) that nats.go reports; a refused
+    PUB and a refused SUB count alike, and Subscribe still returns the subscription and nil (owner ruling
+    on #169, 2026-10-12; TestServerRefusalCountedBeforeLog). The three synchronous stream publishes share
+    one connection and JetStream check and one message builder; PublishToStream and
+    PublishToStreamWithMsgID return nats.go's error unchanged, and PublishToStreamWithAck still counts
+    only a failed publish as publish_to_stream and wraps it as transient (the AutoCreate doc line is
+    removed; TestIntegration_PublishToStreamErrorsPerCall). KVStore.KeysByFilter and FilteredKeys list
+    keys through one function over WatchFiltered: FilteredKeys now takes a reader that offers
+    WatchFiltered (it took one offering ListKeysFiltered), completes as KeysByFilter does, and returns
+    nil and no error when no key matches (TestIntegration_FilteredKeyListingsNoMatch).
+    collectFilteredKeys and the ErrNoKeysFound and ErrKeyNotFound branches are removed.
+    Changed surface, simplify-04a-17 (#133): IsKVTombstone, moved from graph/kvcatalog.
+    Changed behavior, design D9 (task 3.7): newJetStreamMetrics registers
+    all 12 collectors through metric.RegisterOrGet and keeps the collector each call returns
     (jetstream_metrics.go:128-161 at the pin, where 8 went through the removed Register* methods,
     task 3.5a), so a second client on the same registry writes to the canonical collector. Changed
     behavior, design D9 (task 3.7d; owner ruling #9 comment 5969522395, item 4): the three consumer
@@ -809,9 +884,9 @@
     falls on acknowledgement (nats.go consumer_config.go:53-57). The other metric names and types and the jetstream subsystem are
     unchanged; the namespace is semengine (adapt item below, #69). Changed surface, task 3.7a: the surface audit's drops listed under
     known_risks are gone, and with them the token, TLS and compression connection options and the
-    disconnect, reconnect and health-change callbacks; pingInterval (30 s), drainTimeout (30 s),
-    circuitThreshold (15) and maxBackoff (one minute) keep their defaults (client.go:161-166 at
-    the pin → :149-154) with no setter, and requestHandlerTimeout is set only from
+    disconnect, reconnect and health-change callbacks; pingInterval (30 s) and drainTimeout (30 s)
+    keep their defaults (client.go:161-166 at the pin → :149-154) with no setter (the pin's
+    circuitThreshold and maxBackoff went with the breaker, simplify-04a-16), and requestHandlerTimeout is set only from
     SEMENGINE_NATS_REQUEST_HANDLER_TIMEOUT (request.go:37-55; renamed, adapt item below, #69). Changed
     behavior, task 3.7c (design D3), each an adapt item: natsclient-nil-context-refused, Close(nil)
     and Connect(nil) return an invalid error before any dial or close (client.go:689-691,
@@ -819,16 +894,16 @@
     natsclient-connect-refuses-second-start, a Connect on a connected client returns
     errs.ErrAlreadyStarted before it dials and changes nothing (:692-700), and a concurrent Connect
     that lost to another, by failing, by having its context end, or by dialling successfully second,
-    leaves the winner's status, failure count and circuit as they were and closes what it dialled
+    leaves the winner's status as it was (at the pin and until simplify-04a-16 also its failure count and circuit) and closes what it dialled
     (the pin
     overwrote the connection at :547 and started a second poller at :566);
     natsclient-close-joins-its-goroutines,
     the six sites (the health monitor :2151, the metrics poller :868, the claim releases of both consumer
-    APIs, now one site, owned_delivery.go:133, the connection-loss timer's body :2040 and the
-    circuit timer's body :590) start through one helper, startBackground (:223), which under mu
+    APIs, now one site, owned_delivery.go:133, the connection-loss timer's body :2040 and, until
+    simplify-04a-16 removed the breaker, the circuit timer's body :590) start through one helper, startBackground (:223), which under mu
     refuses once Close has begun and otherwise counts the work as client-owned (an owned-work
     count under mu, which the join waits to reach zero) before the goroutine starts; Connect admits the
-    monitor and the poller through it. The first Close stops the monitor, both timers and the
+    monitor and the poller through it. The first Close stops the monitor, the timer and the
     poller, drains and closes the
     connection, clears the connection and the JetStream handle, and only then sets Status to
     Disconnected (the status keeps its value through the drain), bounded by its own context. Every
@@ -871,7 +946,7 @@
     Close has begun; a Connect that returns an error has no handler of its dialled connection still
     running. natsclient-close-honours-each-context (Codex F22): a Close or Connect never waits on
     another caller's drain to observe its own context. natsclient-status-ownership (Codex F23): a
-    Connect that loses to an installed connection changes neither Status, Failures nor the circuit;
+    Connect that loses to an installed connection does not change Status (nor, until simplify-04a-16, Failures or the circuit);
     once Close has begun only Close changes Status, which keeps its value through the drain and is
     Disconnected for good once the cleanup has finished; Connect after Close refuses before dialling
     (the pin dialled). Each changed behaviour above is an adapt item with its test (design D3; task
@@ -927,7 +1002,7 @@
     answers again (task 3.7d sets these gauges from server state, so a value the server did not
     give is not shown, as the policy loop already did for its gauges; the pin skipped the consumer silently and kept the last values,
     jetstream_metrics.go:290-294 at the pin, :296-300 at 931d90f) (TestJetStreamConsumerMetricsDropSeriesWhenInfoFails);
-    with two clients on one registry the deletion is the shared-series case under known_risks (#75).
+    with two clients on one registry the deletion is the shared-series case under known_risks.
     (12) natsclient-consume-handler-context (owner ruling, #9 comment 5994720412, item 2): in
     ConsumeStreamWithConfig and ConsumeInternalStreamWithConfig the caller's context bounds setup
     only; handlers run under a context the Client owns per consumer, cancelled when Close begins and
@@ -948,8 +1023,8 @@
     PING on the connection it subscribed on and waits for the PONG (FlushWithContext, :1373-1375); the
     wait for the PONG is bounded by the call's context and DefaultRequestTimeout, whichever ends first,
     and the waits for nats.go's connection lock are not (design L8, #168). A SUB the server refuses is
-    returned as a subscription and nil, and logged by handleError on a client that connected with
-    Connect (design L9, #169). When the round trip does not complete, or Close has begun, it
+    returned as a subscription and nil, and handleError counts it before logging it, on a client that
+    connected with Connect (design L9; counted since simplify-04a-18, #169). When the round trip does not complete, or Close has begun, it
     unsubscribes the subscription (:1390) and returns no subscription and the first error that holds
     (:1391-1407): nats.ErrConnectionClosed once Close has begun; a transient error matching
     context.Canceled or context.DeadlineExceeded when the context ended or DefaultRequestTimeout
@@ -976,9 +1051,9 @@
     (nats.FlusherTimeout; default nats.DefaultFlusherTimeout, one minute, which nats.go used before)
     and WithPingInterval (nats.PingInterval; default 30 s, natsclient's setting before), each
     refusing a value that is not positive (TestWriteTimeoutAndPingIntervalOptions). ErrNotConnected
-    wraps errs.ErrConnectionLost, and ErrCircuitOpen is errs.ErrCircuitOpen, so both are transient
-    by errs.IsTransient (TestClientSentinelsAreTransient); before #170 both were plain errors.New
-    values. CreateKeyValueBucket recognises an existing bucket with errors.Is(err,
+    wraps errs.ErrConnectionLost, and ErrCircuitOpen was errs.ErrCircuitOpen (removed by simplify-04a-16), so both were
+    transient by errs.IsTransient (TestClientSentinelsAreTransient); before #170 both were plain
+    errors.New values. CreateKeyValueBucket recognises an existing bucket with errors.Is(err,
     jetstream.ErrBucketExists), in place of isAlreadyExistsError, which matched the error's text
     (TestCreateKeyValueOfAnExistingBucketIsErrBucketExists,
     TestCreateKeyValueBucketGetsAgainWhenItsStreamExists)
@@ -1008,6 +1083,12 @@
     comment 6112098987), one adapt item. natsclient-update-unconfirmed-write-ends: a write error other than a conflict
     or jetstream.ErrNoStreamResponse ends UpdateWithRetryRead and its three wrappers with that error; the pin reran the
     callback (8b99efe9:natsclient/kv.go:387-389 and :411-413). Consumer: the write seam (R2).
+    Changed surface, change simplify-04a-14-natsclient-request (#222, design D1-D2): Request and RequestWithRetry are
+    removed (RequestClassified and RequestWithRetryClassified replace them; RequestWithHeaders plus ClassifyReply
+    serves a caller that needs headers); RetryConfig and DefaultRetryConfig are removed; RequestWithRetryClassified
+    takes a retry.Config and runs retry.Do, so MaxAttempts counts the first attempt, a count below one makes one
+    attempt, a config retry.Do refuses is returned before anything is sent, and the error class of that refusal is not
+    promised.
   dependencies_and_side_effects: >-
     metric, pkg/errs, pkg/retry, internal/resource (in-set); github.com/nats-io/nats.go v1.54.0
     and nats.go/jetstream; prometheus/client_golang; stdlib. Test-only:
@@ -1019,10 +1100,11 @@
     handlers and connection event handlers to nats.go goroutines; Close joins all of them (design
     D3, tasks 3.7c and 3.7c2)
   known_risks: >-
-    Shared-series ownership, #75, tracked and not fixed here (#9 comment 5968830525, rule 4; owner
-    ruling #9 comment 5969776736, item 5): with two clients on one registry, one client's failed
+    One client per metrics registry (WithMetrics doc comment; no known configuration runs two;
+    design simplify-04a-18 D2): with two clients on one registry, one client's failed
     stream Info sets the shared stream_state series to 0 (jetstream_metrics.go:278 at the pin → :283),
-    and forgetConsumer deletes consumer series another client still writes (:232-243 → :236-247).
+    and forgetConsumer deletes consumer series another client still writes (:232-243 → :236-247);
+    which client's write stands is not promised.
     Callers awaiting a consumer handle's native Closed() can see it close early after the
     connection was force-closed (jetstream/pull.go:822-837); Client.Close's nil is the completion
     proof, and the three Consume doc comments say so (owner answer 1, #9 comment 5980296112).
@@ -1040,7 +1122,7 @@
     clientOwnedHandlerContext, a context.WithCancel(context.Background()) root the Client owns per
     consumer (#9 comment 5994720412, item 2), cancelled by the consumer's ownership goroutine
     (owned_delivery.go ownConsumer) when Close begins and after its last handler returns; trace.go:56, DetachContextWithTrace, left with that function in task
-    3.7a. kv.go:600 is a bounded terminal drain, context.WithTimeout(context.WithoutCancel(ctx),
+    3.7a. kv.go:700 is a bounded terminal drain, context.WithTimeout(context.WithoutCancel(ctx),
     filteredWatcherDrainTimeout), the developer contract's admitted shape, not a root. Dropped
     surface, not ported (design D8, "A test of a removed feature"): kv_temporal.go
     (TemporalResolver, 228 lines) with kv_temporal_integration_test.go and
@@ -1110,7 +1192,7 @@
     dropped). Corrections to API the code does not have, wrong at the pin too (owner ruling, #9
     comment 5984291337), each an adapt item, pin lines: README.md :61-64 and doc.go:46, Subscribe
     takes a context and a handler taking a context, and returns a Subscription and an error;
-    README.md :111 and doc.go:427, Request returns the reply and an error; README.md :160, Option →
+    README.md :111 and doc.go:427, RequestClassified returns the reply and an error; README.md :160, Option →
     ClientOption; README.md :150-155, KVOptions shows its six fields and MaxRetries' default 3 → 10
     (DefaultKVOptions); README.md :182-190, the Logger interface section replaced by WithLogger's
     *slog.Logger signature; doc.go:318, WithLogger(logger Logger) → WithLogger(logger *slog.Logger);
@@ -1124,14 +1206,15 @@
     CreateOrUpdateConsumer, CreateConsumer or OrderedConsumer call, updates them in that port
     Adapt items (Codex review of record, PR #48 comment 5996819933): a nil context is refused with an
     invalid-data error by every exported context-taking, error-returning call before any state, callback or NATS
-    call (F32; commits bb23dc7, e17ecfd); RequestWithRetry and RequestWithRetryClassified refuse a negative
-    MaxRetries before sending (F31; bb23dc7) and check the context before every attempt, the first included,
-    without counting a caller's cancellation toward the circuit breaker (F32; c206229), nor does Request,
-    RequestWithHeaders or a retrying call count one that arrives while an attempt is in flight (early check E1);
+    call (F32; commits bb23dc7, e17ecfd); RequestWithRetryClassified checks the context before every attempt, the
+    first included, without counting a caller's cancellation toward the circuit breaker (F32; c206229), nor does
+    RequestWithHeaders, RequestClassified or a retrying call count one that arrives while an attempt is in flight
+    (early check E1); a negative count was refused before sending (F31; bb23dc7) until RetryConfig was removed
+    (changed surface, below);
     GetStatus reads the
     connection once under mu (F33; ff93b8e); the storage report consumer replaces its view at a watch's sync
-    marker, clears AccountKnown on a delete or purge of the account key, logging at Warn that observers are not
-    told (issue #85), and Snapshot shares no mutable memory (F36, F37; 5464e50). The handler-deadline
+    marker, clears AccountKnown on a delete or purge of the account key, and Snapshot shares no mutable memory
+    (F36, F37; 5464e50). The handler-deadline
     integration test's wall-clock slack is replaced by TestRequestHandlerDeadlineIsTheConfiguredTimeout at the
     derivation seam and an event-bounded broker check (F40; 1642acd). Doc comments (F38; commit 5463f93), tree
     lines at that commit: doc.go :7, :23-24, :188-192, :194, :322, :428, :434-436 (no KVStore.GetJSON; handler
@@ -1243,7 +1326,7 @@
     (recordFailure's AfterFunc), :351 (WaitForConnection's ticker), :644 (drainAndCloseConnection's
     timer), :773 (Subscribe's handler deadline), :1404 (armConnectionLossTimer's AfterFunc), :1463
     (startHealthMonitoring's ticker); delivery_settlement.go:353 (the heartbeat ticker);
-    jetstream_metrics.go:348 (startPoller's ticker); kv.go:71 (applyTimeout), :600 (KeysByFilter's drain
+    jetstream_metrics.go:348 (startPoller's ticker); kv.go:71 (applyTimeout), :700 (keysByFilter's drain
     window); request.go:118, :124, :151, :195, :248, :352, :498, :530; storage_inventory.go:269
     (Collect), :298 (Run's ticker); storage_report_consumer.go:195 (Run's retry backoff); stream.go:352,
     :365 (awaitStreamVisible's ticker and probe deadline), :762 (messageHandlerContext). From each
@@ -1837,7 +1920,9 @@
   contract: >-
     ComponentConfig, ComponentType, ServiceConfig, their JSON codecs, and Validate as at the pin,
     except ComponentConfig.Equal treats trailing non-whitespace bytes after the first JSON value as
-    malformed and falls back to byte comparison (design D1)
+    malformed and falls back to byte comparison (design D1), and ComponentType.Validate holds the
+    five-type check that ComponentConfig.Validate and component.Registry.Register both call
+    (simplify-04a-09-component D4)
   dependencies_and_side_effects: pkg/errs (in-set); stdlib; no goroutine, no I/O
   known_risks: >-
     no context roots; README updated for SemEngine module path and markdownlint
@@ -1890,20 +1975,37 @@
     codecs, mutation and query request/reply types, GRAPH_STATUS envelope); consumers import it
     (72 + 11, design D1)
   destination: >-
-    graph (the data model and wire types only; kvcatalog.go, owned_bucket_retention.go, and
-    IsKVTombstone moved to graph/kvcatalog; readiness_gate.go and ComputeBacklogStatus moved to
+    graph (the data model and wire types only; kvcatalog.go and owned_bucket_retention.go moved to
+    graph/kvcatalog, and IsKVTombstone to graph/kvcatalog, then natsclient
+    (simplify-04a-17-graph-kvcatalog D5); readiness_gate.go and ComputeBacklogStatus moved to
     graph/readiness; design D16, #101)
   contract: >-
     data model, codecs, bucket-name constants (BucketSemEngineConfig = "semengine_config", #69),
-    StateContractError, mutation/query wire types, and ExactEntityReader as at the pin, with zero
-    transport imports in the root package (TestGraphImportsNoTransport) and these adaptations:
+    StateContractError, mutation/query wire types, and the exact-entity reader as at the pin, with
+    zero transport imports in the root package (TestGraphImportsNoTransport) and these adaptations:
     (1) EntityState has no Version field (KV revision is the only fence, #100); (2) ReplaceBySource
     orders each (subject, predicate, source) set by Timestamp, and single-value reads choose the
     latest statement across sources (#98); (3) ReconcilePredicatesRequest requires a non-empty
     matching Source (design D15); (4) reserved sources and IsReservedSource declared in sources.go;
     (5) IndexStatusResponse drops legacy Phase/Revision/LastSynced and adds published_at (design D16);
     (6) ExactEntityReader refuses negative timeouts and reads its subject from QueryVerbs (#106,
-    #151); (7) GraphStateReasonMissingStatementMetadata added
+    #151); (7) GraphStateReasonMissingStatementMetadata added; (8) PrefixQueryRequest adds optional
+    6-position wildcard Pattern (#259); (9) UnmarshalEntityState takes the bucket key and is the one
+    stored-value rule (decode, canonical contract, ID equals key, statement Source and Timestamp),
+    each refusal one fatal graph_state_reset_required ClassifiedError over a StateContractError;
+    ValidateStatementMetadata is its last step alone; ClassifyStateContractError removed (#276);
+    (10) ExactEntityReader is a struct, and ExactEntity carries one kv_revision tag; EntityRequest,
+    EntityBatchRequest and ResponderGraphIngest declared here; QueryVerb is Name, Subject and
+    Responder; (11) MutationOutcome is applied, unchanged, entity_not_found and failed, and
+    ErrorCodeRevisionMismatch and ErrorCodeIndexNotReady are defined from pkg/errs (ruling L);
+    (12) EntityMutationResponse replaces CreateEntityResponse and ReconcilePredicatesResponse; the
+    cursor codec and the trusted decoder moved, unexported, into graph-ingest;
+    ValidateEntityPredicates unexported; (13) IndexStatusResponse.State is an IndexState, and
+    IndexStates() returns the closed state list as a new slice (simplify-04a-13-graph D1-D6); (14)
+    graph/kvcatalog (simplify-04a-17-graph-kvcatalog D1-D5): KVCatalog is framework API for
+    products (graph/README.md) and returns a copy of the catalog table, built once
+    (TestKVCatalogReturnsACopy); the catalog's refusals name component kvcatalog;
+    EnsureCatalogRetentionClean refuses a nil context as invalid; IsKVTombstone moved to natsclient
   dependencies_and_side_effects: >-
     message, pkg/errs, pkg/types, vocabulary (in-set); stdlib; no NATS import in graph root;
     graph/kvcatalog imports natsclient and nats.go/jetstream
@@ -1914,10 +2016,11 @@
     carries its IndexStatus copy without the three legacy fields removed from IndexStatusResponse
     (#110, design D16). Removed: events.go (#101), UnwrapQueryResponse, TOOL_CALL_OUTCOMES,
     ENTITY_SUFFIX_INDEX (#104), and dead sentinels/types (errors.go, incoming.go, query_types.go,
-    GetPropertyValue function, MissingUnknown, ContextEntry, NameIndexEntry; #132); README updated
+    GetPropertyValue function, MissingUnknown, ContextEntry, NameIndexEntry); README updated
   proving_tests: >-
     graph/write_rules_test.go, graph/write_rules_prop_test.go, graph/exact_entity_test.go,
-    graph/query_verbs_test.go, graph/mutation_protocol_test.go, graph/kvcatalog/*_test.go,
+    graph/query_verbs_test.go, graph/query_prefix_types_test.go, graph/mutation_protocol_test.go,
+    graph/stored_entity_rule_test.go, graph/index_status_test.go, graph/kvcatalog/*_test.go,
     internal/harness/contract/graphtransport_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
@@ -1931,25 +2034,32 @@
     graph/readiness (also receives graph/readiness_gate.go and ComputeBacklogStatus with
     BacklogStatusInputs from graph/index_status.go; design D16)
   contract: >-
-    Publisher, gauges, Watcher, EvaluateReadinessGate, StatusReading, and ComputeBacklogStatus as at
-    the pin, with these adaptations: (1) Watcher.Run(ctx) runs on the caller's goroutine and refuses
+    Publisher, gauges, Watcher, EvaluateReadinessGate, and ComputeBacklogStatus as at the pin, with
+    these adaptations: (1) Watcher.Run(ctx) runs on the caller's goroutine and refuses
     nil ctx, nil source, or empty key (Start/Stop removed, design D5); (2) an undecodable KV value
     revokes freshness immediately until the next valid update; (3) Publisher.Publish stamps
     published_at in UTC RFC3339Nano (design D16; ADR-109 removes it in #183); (4) BacklogStatusInputs
     drops LastSynced; (5) gauges register via metric.RegisterOrGet under the semengine namespace and a
-    nil registry is a no-op (design D4)
+    nil registry is a no-op (design D4); (6) EvaluateReadinessGate takes the Watcher's Reading and
+    returns one DeferReason, DeferNone to proceed; StatusReading removed; DeferReasons() returns a
+    new slice, replacing AllDeferReasons; (7) NewWatcher(src, key, heartbeat, logger) replaces the
+    options and test hooks; Run also refuses a heartbeat of zero or less and a nil logger; the
+    freshness multiplier and window are unexported; (8) NewPublisher returns an error for a nil
+    bucket or an empty key; EnsureBucket removed, producers call kvcatalog.EnsureCatalogBucket; (9)
+    NewGauges takes the Prometheus subsystem; ProducerNames, MetricNames and the BucketGraphStatus
+    alias removed (simplify-04a-15-graph-readiness D1-D5); (10) Publish and WaitForFirst return an
+    error for a nil ctx, Publish before any write (readiness-nil-context, #297)
   dependencies_and_side_effects: >-
-    graph, graph/kvcatalog, metric, natsclient (in-set); nats.go/jetstream,
+    graph, metric, natsclient (in-set); nats.go/jetstream,
     prometheus/client_golang; KV reads/writes on GRAPH_STATUS; Watcher.Run runs on caller goroutine
   known_risks: >-
     Set/NewSet/Dump/Verdict dropped (no starter consumer caller; ADR-109; #110 rewritten under
     ADR-109 so Health() derives from nothing in the envelope). ComputeIndexStatus and
-    WithRevisionGauges deferred to change 4 with graph-index (ruled P, design D16), which fixes
-    #135 (b) (BootstrapComplete never set); #135 items 1, 2, (c), and (g) on the kept gate and
-    Watcher stay open on #135
+    WithRevisionGauges deferred to change 4 with graph-index (ruled P, design D16). Reading.Raw
+    stays for fusion's port (#110, ADR-109)
   proving_tests: >-
     graph/readiness/watcher_test.go, publisher_test.go, gauges_test.go, readiness_gate_test.go,
-    backlog_status_test.go, index_status_test.go, bucket_alias_test.go
+    backlog_status_test.go; the envelope's JSON in graph/index_status_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 
@@ -1962,15 +2072,21 @@
   contract: >-
     protocol constants, SubjectFamily (protocol.go:16; design D20), and client request/reply and
     transport-error classification as at the pin, with InterfaceType renamed to
-    "semengine.graph.mutation" (#69), dead IsCommitUnknown removed (design D6), and nil context
-    refused before any request
+    "semengine.graph.mutation" (#69) and dead IsCommitUnknown removed (design D6). Changed by
+    simplify-04a-11-graphmutation: a request natsclient refuses before sending (ErrNotConnected,
+    and until simplify-04a-16 ErrCircuitOpen) is TransportUnavailable, so not committed (D1, #268); the client's own refusals
+    (nil client, nil context, unadmitted operation, unencodable request, Create with no entity) are
+    made before any request and are invalid with code invalid_request (D2); Subject(op) resolves the
+    four admitted operations within SubjectFamily and takes no family argument (D3, #137)
   dependencies_and_side_effects: >-
     graph, natsclient, pkg/errs (in-set); stdlib; NATS requests on graph.mutation.>; no goroutine
   known_risks: >-
     consumers spelling "semstreams.graph.mutation" update to "semengine.graph.mutation" on adoption
   proving_tests: >-
-    internal/graphmutation/protocol_test.go (TestInterfaceTypeNamesSemEngine),
-    internal/graphmutation/client_test.go (TestClientRefusesNilContext and pin client tests)
+    internal/graphmutation/protocol_test.go (TestSubjectAdmitsOnlyFourCanonicalOperations,
+    TestInterfaceTypeNamesSemEngine), internal/graphmutation/client_test.go
+    (TestClientReportsRefusalBeforeSendingAsUnavailable, TestClientRefusesNilContext,
+    TestClientRefusesUnencodableAndEntitylessRequests, and pin client tests)
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 
@@ -1981,13 +2097,19 @@
     no consumer or public signature names it (design D1)
   destination: internal/dispatch
   contract: >-
-    KeyedPool per-key ordering, lanes, and SubmitBlocking as at the pin, except Stop(ctx) becomes
-    Shutdown(ctx) (waits for lane drain without a fixed default timeout, refuses nil ctx, refuses
-    post-Shutdown SubmitBlocking with internal/dispatch.ErrStopped), and NewKeyedPool registers
-    metrics via metric.RegisterOrGet and returns registration refusals (design D4, D5)
+    KeyedPool per-key ordering and lanes as at the pin, except: Stop(ctx) becomes Shutdown(ctx), the
+    only stop (waits for lane drain without a fixed default timeout and returns nil once the lanes
+    have exited even under an ended ctx, refuses nil ctx, and a SubmitBlocking that begins after it
+    returns internal/dispatch.ErrStopped); the NewKeyedPool context reaches only Process, and its end
+    stops no lane and drops no queued item (simplify-04a-12-dispatch D1); SubmitBlocking(ctx, key,
+    work) takes the key, KeyOf removed (D2); Logger and MetricsRegistry are KeyedConfig fields,
+    NewKeyedPool(ctx, cfg), KeyedDeps removed (D3); Process returns nothing (D4);
+    dispatch_queue_depth counts items accepted and not yet passed to Process, summed over pools of
+    one name (D5); NewKeyedPool registers metrics via metric.RegisterOrGet and returns registration
+    refusals (setup-04a-02-ingest-kernel design D4, D5)
   dependencies_and_side_effects: >-
-    metric (in-set); prometheus/client_golang; stdlib; one goroutine per lane and a metrics updater,
-    all joined by Shutdown
+    metric (in-set); prometheus/client_golang; stdlib; one goroutine per lane and Shutdown's
+    coordinator, all joined by Shutdown
   known_risks: >-
     dead surface removed (design D6): BoundedDispatcher, completion_watcher.go, KeyedPool.Submit,
     and KeyedPool.Stats removed along with the pkg/worker dependency (ruling E)
@@ -2052,17 +2174,27 @@
     typed mutation client surface and validation as at the pin, with repairs #19 and #20 and design
     D15: (1) classified replies read as not committed only for pre-write refusal codes; any other
     reply (including post-write update failure or response_too_large) preserves commit ambiguity
-    with class, code, and detail (#20); (2) ReconcileMutation.ExpectedRevision fences reconcile at
+    with its code and detail and class fatal, so errs.IsTransient is false (#20, #167); a request
+    no responder took is not committed with class transient (#167); (2) ReconcileMutation.ExpectedRevision fences reconcile at
     the caller's revision (#19); (3) Create, Append, and Reconcile require statement Timestamp and
-    Metadata.Source before sending and never read the clock (design D15)
+    Metadata.Source before sending and never read the clock (design D15). Adapted by change
+    simplify-04a-06-projection (#138): (4) the mapping from a mutation request's error to its commit
+    state is exported as ClassifyMutationError, and every write uses it; a request whose context
+    ended before it was sent is not committed with class transient; (5) MutationReceipt carries no
+    commit state: a failing method returns a zero receipt, and the commit state is on the
+    *MutationError; (6) every ReadAuthoritative failure, Reconcile's own read included, is not
+    committed with operation read-authoritative (#267)
   dependencies_and_side_effects: >-
     graph, internal/graphmutation, message, natsclient, pkg/errs, pkg/projection/contract, pkg/types
     (in-set); NATS requests on graph.mutation.> and exact-entity reads; no goroutine
   known_risks: >-
     EntityState built without Version (#100). Pre-write transient errors from graph-ingest read as
-    commit-unknown (safe, conservative); follow-up #174 tracks post-append bookkeeping
+    commit-unknown with class fatal (safe, conservative; #167); follow-up #174 tracks post-append bookkeeping.
+    The five unread interfaces (EntityCreator, PredicateReconciler, TripleAppender,
+    EntityDeleter, AuthoritativeReader) are removed (#138 item 1)
   proving_tests: >-
-    pkg/projection/mutation_client_refusals_test.go, commit_ambiguity_test.go,
+    pkg/projection/classify_mutation_error_test.go, mutation_client_refusals_test.go,
+    mutation_client_requests_test.go, commit_ambiguity_test.go,
     conditional_reconcile_test.go, mutation_client_test.go, contract_test.go, and
     processor/graph-ingest/commit_ambiguity_integration_test.go
   owner: setup-04a-02-ingest-kernel developer
@@ -2079,10 +2211,17 @@
     (1) Watch and WatchEvents run callback on caller's goroutine, refuse nil ctx or callback, and
     fail closed on projection/poison/premature-close errors (design D5); (2) statements and raw-wire
     reconciles carry graph.SourceLifecycle ("semengine-lifecycle", design D15); (3) created entities
-    carry no Version (#100); (4) nil NATS client returns ErrEmitFailed without panicking (#102);
-    (5) CreateFromOperator refuses trailing non-whitespace JSON (#152); (6) Create attach-reconcile
-    reread failures preserve their error chain and class; (7) ErrEntityNotFound and
-    ErrAlreadyExists mappings wrap the classified refusal
+    carry no Version (#100); (4) a manager built with no NATS client registers and describes
+    workflows, and every call that needs NATS fails at its first read with one unclassified "manager
+    has no NATS client" error, without panicking (#102, #154); (5) CreateFromOperator refuses
+    trailing non-whitespace JSON (#152); (6) Create attach-reconcile reread failures preserve their
+    error chain and class; (7) ErrEntityNotFound and ErrAlreadyExists mappings wrap the classified
+    refusal; (8) emitter create, reconcile, and delete failures report through
+    projection.ClassifyMutationError (#257); (9) Complete and DespawnWith pick the first terminal in
+    the current phase's declared out-edges (#193); (10) Children pages kept children in link order,
+    reading at most Offset + Limit + (children left out) links, leaves out only absent and
+    non-lifecycle children, and fails on any other child read error, including an unregistered child
+    workflow (#193)
   dependencies_and_side_effects: >-
     graph, graph/kvcatalog, internal/graphmutation, message, natsclient, payloadregistry, pkg/errs,
     pkg/projection, pkg/types, vocabulary (in-set); github.com/google/uuid, nats.go/jetstream
@@ -2091,7 +2230,7 @@
   proving_tests: >-
     pkg/lifecycle/source_test.go, transition_phase_integration_test.go, graph_emit_test.go,
     graph_emit_contract_test.go, watch_test.go, watch_atomic_bootstrap_test.go, manager_test.go,
-    manager_integration_test.go, harness_gate_integration_test.go
+    manager_integration_test.go, harness_gate_integration_test.go, children_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 
@@ -2107,7 +2246,18 @@
     design D17), with these adaptations: (1) Dependencies.ToolRegistry and ToolRegistryReader
     dropped (#29); (2) Dependencies.LifecycleManager dropped (#102, ruling D); (3) CreateComponent,
     SealComposition, and Snapshots take no internal/componentadmission access token (ruling C,
-    design D14)
+    design D14); and, in simplify-04a-09-component (#153, #189, #197): (4) the config check refuses
+    data after the first JSON value (D1); (5) SafeUnmarshal refuses a nil or non-pointer target and
+    decodes strictly, refusing unknown keys and trailing data (D2); (6) generated array item schemas
+    use int, float and bool (D3); (7) one Registry.Register(Registration) call replaces
+    RegisterFactory, RegisterWithConfig and RegistrationConfig, Registration.Type is
+    types.ComponentType checked by ComponentType.Validate, and the registry keeps its own copy (D4);
+    (8) Snapshots returns []Declaration (D5); (9) Discoverable has four methods (InputPorts,
+    OutputPorts, Health, DataFlow), ConfigSchema and Meta leave it and Metadata is deleted, so the
+    registration is the one home of a factory's schema, description and version (D6); (10)
+    SimpleMockComponent moves to test code and the PlatformMeta alias is removed, so
+    Dependencies.Platform is types.PlatformMeta (D7, D8); (11) ValidateConfig and ValidationError
+    are deleted (D9)
   dependencies_and_side_effects: >-
     internal/cache, metric, model, natsclient, payloadregistry, pkg/errs, pkg/security, storage,
     storage/storeregistry, types (in-set); stdlib
@@ -2120,7 +2270,8 @@
   proving_tests: >-
     internal/harness/contract/componentdeps_test.go (TestComponentReachesNoAgenticOrGraphPackage),
     component/registry_boot_admission_test.go, registry_test.go, registry_integration_test.go,
-    attack_test.go
+    register_test.go, validation_test.go, schema_words_test.go, discovery_test.go
+    (TestDiscoverableNeedsOnlyPortsHealthAndFlow)
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 
@@ -2142,8 +2293,9 @@
     (Q13); (5) hierarchy refusal names inference.RegisterPayloads (#33); (6) owner lifecycle guarded
     by internal/lifecycleguard with RollbackFailedStart (SS#1411, design D13); (7) single entity
     write seam (#100), required statement metadata and source-keyed write modes (#98), fail-closed
-    hierarchy/guard births (#111), suffix index/verb dropped (#104), strict config validation, and
-    metrics registered only on the injected registry under the semengine namespace (#69, design D4)
+    hierarchy/guard births (#111), suffix index/verb dropped (#104), strict config validation,
+    metrics registered only on the injected registry under the semengine namespace (#69, design D4),
+    and 6-position wildcard Pattern filtering on graph.ingest.query.prefix (#259)
   dependencies_and_side_effects: >-
     component, graph, graph/inference, graph/kvcatalog, graph/readiness, internal/cache,
     internal/dispatch, internal/graphmutation, internal/lifecycleguard, message, metric, natsclient,
@@ -2151,8 +2303,9 @@
     prometheus/client_golang; JetStream consumers, KV reads/writes, request subscriptions, keyed
     lane pool, and status loop started in Start and released by Stop
   known_risks: >-
-    ENTITY_STATES keeps History 1 (#99); two instances on one metrics registry share gauge collectors
-    (#75); a stream recreated between the pre-bind generation read and bind is a declared limitation
+    ENTITY_STATES keeps History 1 (#99); one instance per metrics registry: a second shares the gauge
+    collectors and which write stands is not promised, and no known configuration runs two; a stream
+    recreated between the pre-bind generation read and bind is a declared limitation
     (#214); follow-up #174 tracks bookkeeping after an unconfirmed append write. Removed:
     lastSyncedRFC3339, MergeEntity, TEST_DISPUTE.md, and agentic indexing_profile_registry_test.go;
     README updated to match
@@ -2163,10 +2316,10 @@
     (TestGraphIngestLifecycleSuite), guard_generation_integration_test.go, guard_generation_test.go,
     guard_record_test.go, settlement_integration_test.go, long_apply_integration_test.go,
     interrupted_work_test.go, fact_lane_fence_test.go, fact_lane_fence_integration_test.go,
-    query_verbs_integration_test.go, entity_writes_seam_test.go, write_modes_test.go,
-    hierarchy_birth_test.go, metrics_registry_test.go, config_strict_test.go,
-    failed_start_callbacks_integration_test.go, poison_scoping_test.go,
-    commit_ambiguity_integration_test.go
+    query_verbs_integration_test.go, query_prefix_unit_test.go, query_prefix_integration_test.go,
+    entity_writes_seam_test.go, write_modes_test.go, hierarchy_birth_test.go,
+    metrics_registry_test.go, config_strict_test.go, failed_start_callbacks_integration_test.go,
+    poison_scoping_test.go, commit_ambiguity_integration_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: repair-before-port
 
@@ -2282,3 +2435,97 @@
   proving_tests: n/a
   owner: setup-04a-02-ingest-kernel technical writer
   disposition: defer-exclude
+
+# Change vocab-export-packs (PR #235, issues #234, #237, #238, #239, #249, #250, #251):
+# vocabulary/export and ADR-107 ported ahead of change 7; vocabulary/bfo and vocabulary/cco homed
+# in sister repository semvocab.
+
+- source_path: vocabulary/export
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    RDF (N-Triples, Turtle) and JSON-LD serialization, prefix registry (Register,
+    RegisterPrefixes), and PredicateDatatype literal formatting at the export edge (ADR-107);
+    imported by semconnect, semvocab, and semsparql (#234)
+  destination: vocabulary/export
+  contract: >-
+    Serialize, SerializeToString, SubjectIRI, Format (Turtle, NTriples, JSONLD), WithBaseIRI,
+    WithSubjectIRIFunc, Register, RegisterPrefixes, and object/datatype classification as at the
+    pin, with vocabulary.SemEngineBase ("https://semengine.semanticstream.ing") as the default base
+    IRI (#69, #234), W3C Turtle PN_PREFIX and IRIREF validation and atomic batch prefix
+    registration (#237), deterministic namespace-alias compaction (#238), time.RFC3339Nano
+    fractional-second preservation on xsd:dateTime literals (#239), explicit JSON-LD @prefix term
+    definitions for non-gen-delim namespaces (#249), Turtle PN_LOCAL local-name validation before
+    compaction (#250), JSON-LD typed @value/@type preservation for explicit boolean/numeric
+    literals (#252), and exported SubjectIRI plus W3C BLANK_NODE_LABEL blank-node subject/object
+    and full http:///https:// predicate IRI pass-through (#256)
+  dependencies_and_side_effects: >-
+    message, vocabulary (in-set); graph and pgregory.net/rapid v1.3.0 in tests; stdlib;
+    mutex-guarded defaultPrefixes table mutated by Register and RegisterPrefixes; no goroutine, no
+    file or network I/O
+  known_risks: >-
+    no context roots. Adapted from vocabulary.SemStreamsBase to vocabulary.SemEngineBase in
+    export.go, prefix.go, and test expectations; added RegisterPrefixes and PN_PREFIX/IRIREF
+    validation (#237), lexicographic prefix tie-breaking for equal-length namespaces in compact
+    (#238), time.RFC3339Nano formatting in dateTimeLexical and classifyByGoType (#239), expanded
+    JSON-LD @context entries with @prefix:true for non-gen-delim namespaces (#249), PN_LOCAL
+    validation in compact (#250), JSON-LD @value/@type preservation for non-canonical explicit
+    typed literals (#252), and SubjectIRI, blank-node (_:label) subject/object serialization, and
+    unregistered http:///https:// predicate pass-through (#256); tests calling
+    vocabulary.ClearRegistry() snapshot and restore the global registry via defer
+    vocabulary.SnapshotRegistry()(); doc.go and README updated for SemEngine module path and
+    ADR-107 link
+  proving_tests: >-
+    vocabulary/export/*_test.go (8 test files, including Rapid property tests in
+    datatype_prop_test.go and ENTITY_STATES round-trip tests in datatype_roundtrip_test.go)
+  owner: vocab-export-packs developer
+  disposition: adapt
+
+- source_path: docs/adr/107-semantic-web-vocabulary-lives-at-the-export-edge.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the decision record that keeps Semantic Web datatype and IRI vocabulary at the export edge
+    (vocabulary/export) while keeping core predicate declarations pragmatic; ported with
+    vocabulary/export (#234)
+  destination: docs/adr/107-semantic-web-vocabulary-lives-at-the-export-edge.md
+  contract: the decision text as at the pin
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    port note added under the title naming SemStreams issue numbers and stating that upper and
+    domain ontologies (bfo, cco, DIEKM) live in sister repository semvocab and SPARQL query
+    execution lives in semsparql (#234)
+  proving_tests: n/a (task docs:check lints it)
+  owner: vocab-export-packs developer
+  disposition: adapt
+
+- source_path: vocabulary/bfo
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    none in semengine core: Basic Formal Ontology (BFO 2020) constants and registrations live in
+    sister repository semvocab (owner ruling, #234)
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    moved out of semengine core to semvocab so domain and upper ontologies do not couple to engine
+    releases; semvocab registers its prefixes and terms through vocabulary and vocabulary/export
+    (#234)
+  proving_tests: n/a
+  owner: vocab-export-packs developer
+  disposition: defer-exclude
+
+- source_path: vocabulary/cco
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    none in semengine core: Common Core Ontologies (CCO) constants and registrations live in sister
+    repository semvocab (owner ruling, #234)
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    moved out of semengine core to semvocab (#234). At the pin, pkg/fusion/fusionvocab/signals.go:16
+    imports vocabulary/cco for two IRI strings; when Change 5 ports pkg/fusion/fusionvocab, it will
+    use standard/local IRI constants without importing vocabulary/cco
+  proving_tests: n/a
+  owner: vocab-export-packs developer
+  disposition: defer-exclude
+

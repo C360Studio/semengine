@@ -34,22 +34,20 @@ func TestLifecycleOwnerRunningStopPreservesEffectSettlementOrder(t *testing.T) {
 	pool, err := dispatch.NewKeyedPool(poolCtx, dispatch.KeyedConfig[ingestWork]{
 		Lanes:      1,
 		QueueDepth: 1,
-		KeyOf:      func(ingestWork) string { return "entity" },
-		Process: func(ctx context.Context, _ int, _ ingestWork) error {
+		Process: func(ctx context.Context, _ int, _ ingestWork) {
 			close(processEntered)
 			select {
 			case <-releaseProcess:
 				close(processDone)
-				return nil
 			case <-ctx.Done():
-				return ctx.Err()
 			}
 		},
-	}, dispatch.KeyedDeps{Logger: slog.Default()})
+		Logger: slog.Default(),
+	})
 	if err != nil {
 		t.Fatalf("construct keyed pool: %v", err)
 	}
-	if err := pool.SubmitBlocking(t.Context(), ingestWork{}); err != nil { // Submit is gone (design D6)
+	if err := pool.SubmitBlocking(t.Context(), "entity", ingestWork{}); err != nil { // Submit is gone (design D6)
 		t.Fatalf("submit work: %v", err)
 	}
 	<-processEntered

@@ -46,10 +46,9 @@ func (mt Type) String() string {
 	return mt.Key()
 }
 
-// IsValid checks if the Type has all required fields populated
-// with non-empty values.
+// IsValid reports whether Validate accepts the Type.
 func (mt Type) IsValid() bool {
-	return mt.Domain != "" && mt.Category != "" && mt.Version != ""
+	return mt.Validate() == nil
 }
 
 // Validate reports whether the Type can round-trip through Key() and JSON:

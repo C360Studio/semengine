@@ -200,6 +200,8 @@ func sameShape(v, decoded any) bool {
 // decimal of a generated integer, parse to the same float64 or float32, or equal a generated
 // json.Number. The decode through NewDecoder must then hold the generated tree by the same
 // comparison against the generated values (Codex F30): every number keeps its exact value.
+// Validate refuses with an invalid-data error exactly when the generator built a refused kind or
+// invalid UTF-8, and returns nil for a NaN, an infinity and every other value (D3).
 //
 // Seeds reach each kind (one seed per kind byte), invalid UTF-8 in a key and in a value at
 // depth, each refused kind at depth, a NaN, and an empty map and list.
@@ -223,6 +225,15 @@ func FuzzGenericJSONShapes(f *testing.F) {
 		g := &shapeGen{in: in}
 		top := map[string]any{"v": g.value(0)}
 		payload := message.NewGenericJSON(top)
+		// Validate runs the shape check (D3): it refuses exactly what the generator marked refused,
+		// and passes a NaN or an infinity, which only encoding refuses (owner question 5).
+		if verr := payload.Validate(); g.foreign || g.badUTF8 {
+			if !errs.IsInvalid(verr) {
+				t.Fatalf("Data %#v: Validate %v; want an invalid-data error", top, verr)
+			}
+		} else if verr != nil {
+			t.Fatalf("Data %#v: Validate %v; want nil", top, verr)
+		}
 		raw, err := payload.MarshalJSON()
 		envelope, envErr := json.Marshal(message.NewBaseMessage(payload.Schema(), payload, "gw"))
 		switch {

@@ -9,7 +9,7 @@ import (
 // MatchesAnyIDPrefix reports whether a dot-delimited entity ID falls under any
 // of the given ID prefixes (OR-matched). An empty/nil prefixes slice means "no
 // filter" and matches every ID — the convention already proven by
-// graphrag.filterEntityIDsByType and the []string type-filter surfaces (ADR-071).
+// graphrag.filterEntityIDsByType and the []string type-filter surfaces (SemStreams ADR-071).
 //
 // Matching is on a dot boundary: id matches prefix p iff id == p or id has the
 // literal prefix p+"." So prefix "c360.semspec.source.doc" matches

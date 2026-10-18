@@ -13,7 +13,10 @@
 // # Error Classification
 //
 // Errors are classified by their class (a ClassifiedError) or a wrapped sentinel, never by
-// their text: an error with neither is unclassified, and Classify gives it ErrorTransient.
+// their text: an error with neither is unclassified, and Classify gives it ErrorFatal, because
+// retrying a failure no one has judged safe to retry can repeat a side effect. IsTransient, IsFatal
+// and IsInvalid stay strict: each reports only the class an error is marked with, so all three are
+// false for an unclassified error. A caller that needs one answer for every error branches on Classify.
 //
 //   - Transient: Network timeouts, connection issues, temporary unavailability (retry recommended)
 //   - Invalid: Malformed input, validation failures, bad configuration (do not retry)
@@ -40,20 +43,16 @@
 //
 // Check classification for retry logic:
 //
-//	// Make retry decisions based on error class
-//	if err := operation(); err != nil {
-//	    if errs.IsTransient(err) {
-//	        // Retry with exponential backoff
-//	        config := errs.DefaultRetryConfig()
-//	        if config.ShouldRetry(err, attempt) {
-//	            time.Sleep(config.BackoffDelay(attempt))
-//	            // retry operation
+//	// Make retry decisions based on error class with pkg/retry
+//	err := retry.Do(ctx, retry.DefaultConfig(), func() error {
+//	    if err := operation(); err != nil {
+//	        if !errs.IsTransient(err) {
+//	            return retry.NonRetryable(err)
 //	        }
-//	    } else if errs.IsFatal(err) {
-//	        // Stop processing, escalate to operator
-//	        log.Fatalf("Unrecoverable error: %v", err)
+//	        return err
 //	    }
-//	}
+//	    return nil
+//	})
 //
 // # Error Wrapping Pattern
 //
@@ -65,7 +64,7 @@
 // across the entire StreamKit platform. The Wrap family of functions automatically
 // applies this pattern while preserving error classification through the chain.
 //
-// Three wrapper functions provide classification-aware wrapping:
+// Three wrapper functions provide classification-aware wrapping (all return nil when err is nil):
 //
 //	errs.WrapTransient(err, "Component", "Method", "action")  // For retryable errors
 //	errs.WrapInvalid(err, "Component", "Method", "action")    // For validation errors
@@ -96,29 +95,6 @@
 //	if diskFull {
 //	    return errors.New("storage full")  // stdlib errors.New
 //	}
-//
-// # Retry Configuration
-//
-// The package includes built-in retry support with exponential backoff:
-//
-//	config := errs.DefaultRetryConfig()
-//
-//	for attempt := 0; attempt < config.MaxRetries; attempt++ {
-//	    if err := operation(); err != nil {
-//	        if !config.ShouldRetry(err, attempt) {
-//	            return err  // Non-retryable or max attempts reached
-//	        }
-//	        delay := config.BackoffDelay(attempt)
-//	        time.Sleep(delay)
-//	        continue
-//	    }
-//	    return nil  // Success
-//	}
-//
-// The retry configuration integrates with StreamKit's retry package:
-//
-//	retryConfig := errorConfig.ToRetryConfig()
-//	// Use with streamkit/retry framework
 //
 // # Migration from fmt.Errorf
 //
@@ -203,7 +179,7 @@
 //
 // The errors package integrates with other StreamKit components:
 //
-//   - service: Services use error classification for retry and circuit breaker logic
+//   - service: Services use error classification for retry logic
 //   - component: Components wrap errors with component context for debugging
 //   - natsclient: NATS client uses standard connection error variables
 //   - retry: Retry package uses error classification for retry decisions
@@ -230,6 +206,7 @@
 //	    "time"
 //
 //	    "github.com/c360studio/semengine/pkg/errs"
+//	    "github.com/c360studio/semengine/pkg/retry"
 //	)
 //
 //	type Service struct {
@@ -278,24 +255,24 @@
 //	}
 //
 //	func main() {
+//	    ctx := context.Background()
 //	    service := &Service{}
 //
 //	    // Retry connection with backoff
-//	    config := errs.DefaultRetryConfig()
-//	    for attempt := 0; attempt < config.MaxRetries; attempt++ {
+//	    err := retry.Do(ctx, retry.DefaultConfig(), func() error {
 //	        if err := service.Connect(); err != nil {
-//	            if errs.IsTransient(err) && config.ShouldRetry(err, attempt) {
-//	                log.Printf("Connection attempt %d failed, retrying...", attempt+1)
-//	                time.Sleep(config.BackoffDelay(attempt))
-//	                continue
+//	            if !errs.IsTransient(err) {
+//	                return retry.NonRetryable(err)
 //	            }
-//	            log.Fatalf("Connection failed: %v", err)
+//	            return err
 //	        }
-//	        break
+//	        return nil
+//	    })
+//	    if err != nil {
+//	        log.Fatalf("Connection failed: %v", err)
 //	    }
 //
 //	    // Process data with error handling
-//	    ctx := context.Background()
 //	    if err := service.Process(ctx, []byte("test data")); err != nil {
 //	        if errs.IsInvalid(err) {
 //	            log.Printf("Invalid input (do not retry): %v", err)
@@ -306,6 +283,4 @@
 //	        }
 //	    }
 //	}
-//
-// For more examples and detailed API documentation, see README.md in this directory.
 package errs

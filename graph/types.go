@@ -1,4 +1,3 @@
-// Package graph provides types for entity state storage in the graph system.
 package graph
 
 import (
@@ -104,9 +103,11 @@ type Provider interface {
 	GetEdgeWeight(ctx context.Context, fromID, toID string) (float64, error)
 }
 
-// Clone returns a deep copy of the EntityState.
-// This is used to avoid race conditions when multiple goroutines
-// process the same entity concurrently.
+// Clone returns a copy of the EntityState with its own Triples slice and its
+// own StorageRef. Each triple is copied by value, so two fields stay shared
+// with the original: Object, when it holds a map, a slice or a pointer, and the
+// ExpiresAt pointer. A caller that changes either replaces it rather than
+// writing through it.
 func (es *EntityState) Clone() *EntityState {
 	if es == nil {
 		return nil

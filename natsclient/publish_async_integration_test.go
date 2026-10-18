@@ -266,43 +266,6 @@ func TestIntegration_PublishToStreamAsync_StampsTrace(t *testing.T) {
 	assert.NotEmpty(t, hdr[TraceparentHeader], "async publish must inject a W3C traceparent header")
 }
 
-// TestIntegration_PublishToStreamAsync_EnqueueResetsCircuit verifies the documented
-// breaker semantic (design §4): a successful async enqueue resets the failure
-// count, giving a pure-async producer a reset path.
-func TestIntegration_PublishToStreamAsync_EnqueueResetsCircuit(t *testing.T) {
-	ctx := context.Background()
-
-	natsURL := startFixture(t).URL()
-
-	client, err := NewClient(natsURL)
-	require.NoError(t, err)
-	require.NoError(t, client.Connect(ctx))
-	defer closeClient(t, client)
-
-	_, err = client.EnsureStream(ctx, jetstream.StreamConfig{
-		Name:     "ASYNC_RESET_STREAM",
-		Subjects: []string{"asyncreset.>"},
-		Storage:  jetstream.MemoryStorage,
-		MaxAge:   testStreamMaxAge,
-		MaxBytes: testStreamMaxBytes,
-	})
-	require.NoError(t, err)
-
-	// Accumulate failures below the open threshold.
-	for i := 0; i < 5; i++ {
-		client.recordFailure()
-	}
-	require.Equal(t, int32(5), client.Failures())
-
-	// A successful async enqueue must reset the failure count.
-	f, err := client.publishToStreamAsync(ctx, "asyncreset.test", []byte("ok"))
-	require.NoError(t, err)
-	require.NotNil(t, f)
-	assert.Equal(t, int32(0), client.Failures(),
-		"a successful async enqueue must reset the circuit breaker failure count")
-	awaitAsyncComplete(t, client)
-}
-
 // TestIntegration_PublishBatchToStream_CtxCancel verifies a batch whose context is
 // already cancelled returns a context error rather than hanging.
 func TestIntegration_PublishBatchToStream_CtxCancel(t *testing.T) {

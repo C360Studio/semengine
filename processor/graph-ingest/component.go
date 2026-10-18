@@ -309,7 +309,7 @@ func (c *Config) Validate() error {
 				"check output port %q (graph-ingest writes only a kv-write output on %s)", definition.Name, graph.BucketEntityStates))
 		}
 	}
-	if _, err := canonicalMutationProvider(c.Ports); err != nil {
+	if err := requireMutationProviderPort(c.Ports); err != nil {
 		return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate", err.Error())
 	}
 	// IngestLanes < 1 clamps to serial (ADR-072). Clamp rather than reject so a
@@ -674,7 +674,7 @@ func CreateGraphIngest(rawConfig json.RawMessage, deps component.Dependencies) (
 	// every birth that infers hierarchy (design D21), so the composition root
 	// learns at construction instead.
 	if config.EnableHierarchy {
-		containerType := inference.HierarchyContainerMessageType().Key()
+		containerType := inference.HierarchyContainerMessageType()
 		if _, ok := deps.PayloadRegistry.GetRegistration(containerType); !ok {
 			return nil, errs.WrapInvalid(
 				fmt.Errorf("enable_hierarchy requires %s in the payload registry (register it with inference.RegisterPayloads)", containerType),
@@ -720,9 +720,10 @@ const metricService = "graph-ingest"
 // Prometheus' process-global registry (design D4). Registration happens here, at
 // construction, so the series exist before the first message and the first status tick.
 //
-// Two instances on one registry share each collector, so the gauges set from one
-// instance's own state (the poison inventory, the readiness gauges) are overwritten by the
-// other's (#75's class, recorded on the graph-ingest row; not fixed here).
+// A registry holds one graph-ingest instance's series. A second instance on the same
+// registry shares each collector, so the gauges each sets from its own state (the poison
+// inventory, the readiness gauges) overwrite each other, and which instance's value a
+// scrape shows is not promised. No configuration we know of runs two on one registry.
 func (c *Component) registerMetrics(registry *metric.MetricsRegistry) error {
 	c.entitiesUpdated = newEntitiesUpdatedMetric()
 	c.indexingProfileDefault = newIndexingProfileDefaultMetric()
@@ -745,9 +746,7 @@ func (c *Component) registerMetrics(registry *metric.MetricsRegistry) error {
 	// gauges: graph-ingest is a BACKLOG producer, and the spec states such a
 	// producer SHALL NOT expose indexed_revision / target_revision and SHALL NOT
 	// synthesize a value — a fabricated revision is worse than an absent one.
-	c.readinessGauges = readiness.NewGauges(
-		readiness.ProducerNames{Service: metricService, Subsystem: "graph_ingest"},
-	)
+	c.readinessGauges = readiness.NewGauges("graph_ingest")
 	if err := c.readinessGauges.Register(registry); err != nil {
 		return err
 	}
@@ -811,7 +810,7 @@ func (c *Component) registerMetrics(registry *metric.MetricsRegistry) error {
 
 // Register registers the graph-ingest factory with the component registry
 func Register(registry *component.Registry) error {
-	return registry.RegisterFactory("graph-ingest", &component.Registration{
+	return registry.Register(component.Registration{
 		Name:        "graph-ingest",
 		Type:        "processor",
 		Protocol:    "nats",
@@ -825,18 +824,8 @@ func Register(registry *component.Registry) error {
 }
 
 // ============================================================================
-// Discoverable Interface (6 methods)
+// Discoverable Interface
 // ============================================================================
-
-// Meta returns component metadata
-func (c *Component) Meta() component.Metadata {
-	return component.Metadata{
-		Name:        "graph-ingest",
-		Type:        "processor",
-		Description: "Entity and triple ingestion processor for graph system",
-		Version:     "1.0.0",
-	}
-}
 
 // InputPorts returns input port definitions.
 // Reads directly from config so ports are available before Initialize().
@@ -854,11 +843,6 @@ func (c *Component) OutputPorts() []component.Port {
 	defer c.mu.RUnlock()
 
 	return append([]component.Port(nil), c.outputs...)
-}
-
-// ConfigSchema returns the configuration schema
-func (c *Component) ConfigSchema() component.ConfigSchema {
-	return schema
 }
 
 // Health returns current health status
@@ -882,7 +866,7 @@ func (c *Component) Health() component.HealthStatus {
 		// design D6), and the message carries count + a bounded ID/reason
 		// sample. Full enumeration rides DebugStatus.
 		if c.entityPoisonSize.Load() > 0 {
-			status = graph.IndexStateDegraded
+			status = string(graph.IndexStateDegraded)
 			lastErr = c.entityPoisonHealthMessage()
 		} else if errorCount > 0 {
 			lastErr = "errors occurred during processing"
@@ -1299,7 +1283,7 @@ func (c *Component) stopEntityStateGuardWatcher(watcher jetstream.KeyWatcher, up
 // decodeStoredEntity, the rule readEntity applies, so a value naming another
 // entity than its key is inventoried at boot, not at its first read.
 func (c *Component) sweepEntityStateGuardEntry(sweep map[string]entityPoisonRecord, entry jetstream.KeyValueEntry) {
-	if kvcatalog.IsKVTombstone(entry.Operation()) {
+	if natsclient.IsKVTombstone(entry.Operation()) {
 		delete(sweep, entry.Key()) // key deleted: nothing resident to inventory
 		return
 	}
@@ -1309,11 +1293,7 @@ func (c *Component) sweepEntityStateGuardEntry(sweep map[string]entityPoisonReco
 		return
 	}
 	var contractErr *graph.StateContractError
-	if !errors.As(err, &contractErr) {
-		contractErr = &graph.StateContractError{
-			Reason: graph.GraphStateReasonUnreadableEntity, EntityID: entry.Key(), Err: err,
-		}
-	}
+	errors.As(err, &contractErr) // every refusal of the stored-value rule is a state error
 	sweep[entry.Key()] = entityPoisonRecord{contractErr: contractErr, revision: entry.Revision()}
 }
 
@@ -1544,7 +1524,7 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 	if c.consumeStream != nil {
 		consumeStream = c.consumeStream
 	}
-	handle, err := consumeStream(ctx, natsclient.PortConsumerContext{Component: c.Meta().Name, Port: port.Name}, cfg, func(_ context.Context, msg jetstream.Msg) {
+	handle, err := consumeStream(ctx, natsclient.PortConsumerContext{Component: c.name, Port: port.Name}, cfg, func(_ context.Context, msg jetstream.Msg) {
 		// ADR-072: the consume closure decodes ONCE and submits to the keyed pool;
 		// the redelivery guard, apply, and ack move into processIngest (run on a
 		// pool lane, not this consumer goroutine). Metadata carries the stream name
@@ -1564,8 +1544,8 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 		if !meta.Timestamp.IsZero() {
 			c.ingestLag.Observe(time.Since(meta.Timestamp).Seconds())
 		}
-		// Decode + extract ONCE (KeyOf reads the already-parsed entity.ID; the lane
-		// reuses the parsed entity — no double parse). A decode/validate/extract
+		// Decode + extract ONCE (the submit's key is the already-parsed entity.ID; the
+		// lane reuses the parsed entity — no double parse). A decode/validate/extract
 		// failure, a fenced payload panic included, is a poison message: counted,
 		// logged and terminated, never returned for redelivery (design D8 Q13).
 		entity, derr := c.decodeEntity(msg.Subject(), msg.Data())
@@ -1607,7 +1587,7 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 			subject:     subject,
 			importLane:  importLane,
 		}
-		if serr := pool.SubmitBlocking(submitCtx, work); serr != nil {
+		if serr := pool.SubmitBlocking(submitCtx, work.entityID, work); serr != nil {
 			if nakErr := msg.Nak(); nakErr != nil {
 				c.logger.Error("Failed to Nak after submit failure", slog.Any("error", nakErr))
 			}
@@ -2060,7 +2040,7 @@ func (c *Component) registeredIndexingProfile(mt message.Type) (profile string, 
 	if c.payloadRegistry == nil {
 		return vocabulary.IndexingProfileControl, false
 	}
-	floor, registered := c.payloadRegistry.IndexingProfileFor(mt.Key())
+	floor, registered := c.payloadRegistry.IndexingProfileFor(mt)
 	if !registered || floor == "" {
 		return vocabulary.IndexingProfileControl, false
 	}
@@ -2068,8 +2048,8 @@ func (c *Component) registeredIndexingProfile(mt message.Type) (profile string, 
 }
 
 // indexingProfileMetricLabel renders a message.Type as a stable, low-cardinality
-// metric label, or "unknown" for any incomplete Type. The IsValid guard (all
-// three of Domain/Category/Version present) prevents a partial Type from
+// metric label, or "unknown" for any invalid Type. The IsValid guard
+// (Type.Validate accepts it) prevents a partial Type from
 // producing a non-semantic label like ".widget.v1" or "test.widget." — a
 // malformed producer surfaces as "unknown" rather than a junk label key.
 func indexingProfileMetricLabel(mt message.Type) string {

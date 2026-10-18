@@ -34,9 +34,9 @@ func TestClassForHeader_AllClasses(t *testing.T) {
 			want: ErrorClassTransient,
 		},
 		{
-			name: "unclassified_defaults_transient",
-			err:  errors.New("plain error — pkg/errs Classify defaults to transient"),
-			want: ErrorClassTransient,
+			name: "unclassified_defaults_fatal",
+			err:  errors.New("plain error — an unclassified error is fatal"),
+			want: ErrorClassFatal,
 		},
 	}
 	for _, tc := range cases {
@@ -257,6 +257,40 @@ func TestRespondError_RoundTrip(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "revision mismatch: expected 7, current 9") {
 		t.Errorf("message must survive the wire; got %q", err.Error())
+	}
+}
+
+// TestRespondError_RoundTripUnclassifiedIsFatal: a handler error nobody
+// classified goes on the wire as fatal, so the requester reads errs.IsFatal
+// true and errs.IsTransient false (owner ruling 1, #167 comment 6191970843).
+func TestRespondError_RoundTripUnclassifiedIsFatal(t *testing.T) {
+	t.Parallel()
+	orig := errors.New("marshal failed")
+
+	// Reconstruct exactly what RespondError puts on the wire.
+	msg := &nats.Msg{
+		Header: nats.Header{
+			HeaderStatus:     []string{HeaderStatusError},
+			HeaderErrorClass: []string{classForHeader(orig)},
+		},
+		Data: marshalErrorBody(orig),
+	}
+
+	_, err := ClassifyReply(msg)
+	if err == nil {
+		t.Fatal("expected non-nil error")
+	}
+	if got := msg.Header.Get(HeaderErrorClass); got != ErrorClassFatal {
+		t.Errorf("X-Error-Class = %q, want %q", got, ErrorClassFatal)
+	}
+	if !errs.IsFatal(err) {
+		t.Errorf("IsFatal = false, want true (err=%v)", err)
+	}
+	if errs.IsTransient(err) {
+		t.Errorf("IsTransient = true, want false (err=%v)", err)
+	}
+	if err.Error() != "marshal failed" {
+		t.Errorf("err.Error() = %q, want %q", err.Error(), "marshal failed")
 	}
 }
 

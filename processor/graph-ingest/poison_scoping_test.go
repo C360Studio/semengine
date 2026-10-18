@@ -85,7 +85,7 @@ func TestPoisonRepairRecoveryWithoutRestart(t *testing.T) {
 	assert.Equal(t, float64(1), testutil.ToFloat64(c.poisonedEntities))
 	health := c.Health()
 	assert.False(t, health.Healthy)
-	assert.Equal(t, graph.IndexStateDegraded, health.Status)
+	assert.Equal(t, "degraded", health.Status)
 
 	// Canonical wire repair step 1: delete. The revision is the fence, so an older one is refused.
 	_, err = c.handleCanonicalDelete(t.Context(), mustCanonicalJSON(t, graph.DeleteEntityRequest{
@@ -682,7 +682,7 @@ func assertNewerPoisonKept(t *testing.T, c *Component, id string, revision uint6
 	assert.Equal(t, float64(1), testutil.ToFloat64(c.poisonedEntities))
 	health := c.Health()
 	assert.False(t, health.Healthy, "Health must stay degraded while poison is resident: %+v", health)
-	assert.Equal(t, graph.IndexStateDegraded, health.Status)
+	assert.Equal(t, "degraded", health.Status)
 }
 
 // TestStaleAbsenceKeepsNewerPoison (checkpoint 3 B1): a detection's verify read finds the key

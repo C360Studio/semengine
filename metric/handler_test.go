@@ -229,11 +229,6 @@ func TestServerStartWithListenerRefusesWithoutTakingOwnership(t *testing.T) {
 	require.False(t, server.used)
 	require.Error(t, server.StartWithListener(t.Context(), &invalidEndpointListener{}))
 	require.False(t, server.used)
-	closed, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-	require.NoError(t, closed.Close())
-	require.Error(t, server.StartWithListener(t.Context(), closed))
-	require.False(t, server.used)
 }
 
 type invalidEndpointListener struct{}

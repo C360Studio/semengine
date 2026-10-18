@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/stretchr/testify/assert"
@@ -145,31 +144,18 @@ func TestClientHandleErrorDoesNotMutateRuntimeStateOrCallbacks(t *testing.T) {
 	require.NoError(t, err)
 
 	client.setStatus(StatusConnected)
-	client.failures.Store(4)
-	client.circuitFailures.Store(3)
-	lastFailure := time.Date(2026, time.August, 12, 12, 0, 0, 0, time.UTC)
-	client.lastFailure.Store(lastFailure)
-	client.backoff.Store(4 * time.Second)
 
 	var callbackCalls atomic.Int32
 	client.onConnectionLost = func(error) { callbackCalls.Add(1) }
 
 	wantStatus := client.Status()
 	wantHealthy := client.IsHealthy()
-	wantFailures := client.Failures()
-	wantCircuitFailures := client.circuitFailures.Load()
-	wantLastFailure := client.lastFailure.Load().(time.Time)
-	wantBackoff := client.Backoff()
 
 	client.handleError(nil, &nats.Subscription{Subject: "agent.loop.>"}, nats.ErrSlowConsumer)
 	_ = handler.next(t)
 
 	assert.Equal(t, wantStatus, client.Status())
 	assert.Equal(t, wantHealthy, client.IsHealthy())
-	assert.Equal(t, wantFailures, client.Failures())
-	assert.Equal(t, wantCircuitFailures, client.circuitFailures.Load())
-	assert.Equal(t, wantLastFailure, client.lastFailure.Load().(time.Time))
-	assert.Equal(t, wantBackoff, client.Backoff())
 	assert.Equal(t, int32(0), callbackCalls.Load())
 }
 

@@ -37,6 +37,7 @@ import (
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 	semtypes "github.com/c360studio/semengine/pkg/types"
+	"github.com/c360studio/semengine/types"
 )
 
 const (
@@ -154,7 +155,7 @@ func startAuthorityGateComponent(ctx context.Context, t *testing.T, enableHierar
 	created, err := CreateGraphIngest(configJSON, component.Dependencies{
 		NATSClient:      client,
 		PayloadRegistry: newTestPayloadRegistry(t),
-		Platform:        component.PlatformMeta{Org: authorityOrg, Platform: authorityPlatform},
+		Platform:        types.PlatformMeta{Org: authorityOrg, Platform: authorityPlatform},
 		Logger:          slog.New(logs),
 	})
 	require.NoError(t, err)
@@ -298,7 +299,7 @@ func TestAuthorityGateAllowsForeignReferenceObject(t *testing.T) {
 		h.ctx, structuralCreateSubject, reqBytes, wireRequestTimeout)
 	require.NoError(t, err, "a local subject citing a foreign @id object must be accepted")
 
-	var response graph.CreateEntityResponse
+	var response graph.EntityMutationResponse
 	require.NoError(t, json.Unmarshal(respBytes, &response))
 	assert.Equal(t, graph.MutationApplied, response.Outcome)
 

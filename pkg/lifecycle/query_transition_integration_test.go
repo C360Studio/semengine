@@ -13,7 +13,6 @@ import (
 	"log/slog"
 	"sort"
 	"testing"
-	"time"
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/message"
@@ -26,17 +25,6 @@ const (
 	subtaskPrefix = "c360.platform1.gcs.lifecycle.subtask."
 )
 
-// fixtureSource and fixtureTime stamp every statement this package's
-// integration tests store themselves, as another producer's write would carry
-// them. graph-ingest's
-// stored-value reader refuses a statement with no Source or no Timestamp
-// (decodeStoredEntity, processor/graph-ingest/mutation_runtime.go) with
-// graph_state_reset_required, so an unstamped value is a state the real
-// authority would never answer with a success.
-const fixtureSource = "lifecycle-test-producer"
-
-var fixtureTime = time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC)
-
 // appendTriples adds triples to a stored entity at its current revision, as an
 // upstream emitter's write would: lifecycle itself writes no child link.
 func appendTriples(t *testing.T, kv jetstream.KeyValue, entityID string, triples ...message.Triple) {
@@ -44,7 +32,7 @@ func appendTriples(t *testing.T, kv jetstream.KeyValue, entityID string, triples
 	entry, err := kv.Get(t.Context(), entityID)
 	require.NoError(t, err)
 	var state graph.EntityState
-	require.NoError(t, graph.UnmarshalEntityState(entry.Value(), &state))
+	require.NoError(t, graph.UnmarshalEntityState(entityID, entry.Value(), &state))
 	state.Triples = append(state.Triples, triples...)
 	body, err := graph.MarshalEntityState(&state)
 	require.NoError(t, err)
@@ -78,7 +66,7 @@ func storedObject(t *testing.T, kv jetstream.KeyValue, entityID, predicate strin
 	entry, err := kv.Get(t.Context(), entityID)
 	require.NoError(t, err)
 	var state graph.EntityState
-	require.NoError(t, graph.UnmarshalEntityState(entry.Value(), &state))
+	require.NoError(t, graph.UnmarshalEntityState(entityID, entry.Value(), &state))
 	for _, triple := range state.Triples {
 		if triple.Predicate == predicate {
 			return triple.Object
@@ -203,17 +191,16 @@ func TestIntegration_ListFiltersAndPagesOneWorkflow(t *testing.T) {
 // follows each ChildSpec's link predicate on the parent and loads every linked
 // child through its own workflow, across workflows, sorted by workflow then
 // entity ID. A predicate that is not a declared link and a link whose object is
-// not a string are ignored; a link to an entity that is gone, or into a
-// workflow that is not registered, is skipped with a Warn naming the child
-// rather than failing the call. ChildOptions.Workflow narrows to one child
-// workflow, and Offset and Limit page the links. An unknown parent is
+// not a string are ignored; a link to an entity that is gone is left out, and a
+// link into a workflow that is not registered fails the call with
+// ErrWorkflowNotRegistered. ChildOptions.Workflow narrows to one child
+// workflow, and Offset and Limit page the children kept. An unknown parent is
 // ErrEntityNotFound, and an entity outside every registered pattern is refused.
 func TestIntegration_ChildrenLoadsLinkedChildrenAcrossWorkflows(t *testing.T) {
 	client := fixtureClient(t)
 	ctx := t.Context()
 	kv := startKVBackedResponders(t, client)
-	var logs bytes.Buffer
-	mgr := NewManager(client, slog.New(slog.NewJSONHandler(&logs, nil)))
+	mgr := NewManager(client, nil)
 	parent := lifecycle{}.fixtureWorkflow()
 	parent.ChildWorkflows = []ChildSpec{
 		{Workflow: "subtask", LinkPredicate: "mission.child.subtask"},
@@ -244,7 +231,6 @@ func TestIntegration_ChildrenLoadsLinkedChildrenAcrossWorkflows(t *testing.T) {
 		link("mission.child.subtask", subtaskPrefix+"a"),
 		link("mission.child.subtask", 42),
 		link("mission.child.submission", missionPrefix+"sub"),
-		link("mission.child.orphan", subtaskPrefix+"orphan"),
 		link("some.other.predicate", subtaskPrefix+"unlinked"),
 	)
 
@@ -265,11 +251,6 @@ func TestIntegration_ChildrenLoadsLinkedChildrenAcrossWorkflows(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []child{sub, subA, subB}, view(t, got))
 	require.Equal(t, &subtask{ID: subtaskPrefix + "a", PhaseF: "queued", Owner: "ana"}, got[1].State)
-	for _, skipped := range []string{subtaskPrefix + "gone", subtaskPrefix + "orphan"} {
-		require.Containsf(t, logs.String(), `"level":"WARN"`, "no Warn for a skipped child")
-		require.Containsf(t, logs.String(), `"parent":"`+parentID+`","child":"`+skipped+`"`,
-			"no Warn names the skipped child %s", skipped)
-	}
 
 	for _, tt := range []struct {
 		name string
@@ -279,7 +260,8 @@ func TestIntegration_ChildrenLoadsLinkedChildrenAcrossWorkflows(t *testing.T) {
 		{"one child workflow", ChildOptions{Workflow: "subtask"}, []child{subA, subB}},
 		{"the parent's own workflow", ChildOptions{Workflow: "fixture"}, []child{sub}},
 		{"a page of one", ChildOptions{Workflow: "subtask", Offset: 1, Limit: 1}, []child{subB}},
-		{"a page past the links", ChildOptions{Offset: 10}, []child{}},
+		{"a page past the gone link", ChildOptions{Workflow: "subtask", Limit: 2}, []child{subA, subB}},
+		{"a page past the links", ChildOptions{Workflow: "subtask", Offset: 10}, []child{}},
 		{"a workflow with no ChildSpec", ChildOptions{Workflow: "other"}, []child{}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -308,6 +290,13 @@ func TestIntegration_ChildrenLoadsLinkedChildrenAcrossWorkflows(t *testing.T) {
 		require.NotErrorIs(t, err, ErrEntityNotFound)
 		require.Nil(t, got)
 	})
+
+	t.Run("a link into an unregistered workflow fails the call", func(t *testing.T) {
+		appendTriples(t, kv, parentID, link("mission.child.orphan", subtaskPrefix+"orphan"))
+		got, err := mgr.Children(ctx, parentID, ChildOptions{})
+		require.ErrorIs(t, err, ErrWorkflowNotRegistered)
+		require.Nil(t, got)
+	})
 }
 
 // lastEvent returns the most recent transition History records for an entity.
@@ -321,8 +310,8 @@ func lastEvent(t *testing.T, mgr *Manager, workflow, entityID string) Transition
 
 // TestIntegration_CompleteMovesToTheReachableTerminal proves Complete moves an
 // entity to a terminal phase one transition away, recorded as a framework
-// transition: the only one when one is reachable, and the first by name when
-// several are, with a Warn naming the choice. With no terminal reachable it is
+// transition: the only one when one is reachable, and the first in the current
+// phase's declared out-edges when several are, with a Warn naming the choice. With no terminal reachable it is
 // ErrInvalidTransition; an entity already terminal is ErrTerminalPhase; an
 // absent entity is ErrEntityNotFound; one with no phase triple is
 // ErrEntityNotLifecycleManaged; an unregistered workflow is
@@ -344,7 +333,7 @@ func TestIntegration_CompleteMovesToTheReachableTerminal(t *testing.T) {
 	}
 	putRawEntity(t, kv, subtaskPrefix+"raw")
 
-	t.Run("two terminals reachable: the first by name, with a Warn", func(t *testing.T) {
+	t.Run("two terminals reachable: the first declared, with a Warn", func(t *testing.T) {
 		id := subtaskPrefix + "running"
 		require.NoError(t, mgr.Complete(ctx, "subtask", id))
 		require.Equal(t, "done", storedObject(t, kv, id, "subtask.lifecycle.phase"))

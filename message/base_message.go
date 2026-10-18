@@ -2,8 +2,6 @@ package message
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -122,36 +120,10 @@ func (m *BaseMessage) Meta() Meta {
 	return m.meta
 }
 
-// Hash returns a SHA256 hash of the message content.
-// The hash includes the message type and payload data.
-func (m *BaseMessage) Hash() string {
-	h := sha256.New()
-
-	// Include message type in hash
-	if _, err := h.Write([]byte(m.msgType.String())); err != nil {
-		// Hash.Write() implementation in crypto/sha256 never returns an error,
-		// but we handle it for interface compliance and future-proofing
-		return ""
-	}
-
-	// Include payload data
-	if data, err := m.payload.MarshalJSON(); err == nil {
-		if _, err := h.Write(data); err != nil {
-			// Hash.Write() implementation in crypto/sha256 never returns an error,
-			// but we handle it for interface compliance and future-proofing
-			return ""
-		}
-	}
-
-	return hex.EncodeToString(h.Sum(nil))
-}
-
 // Validate performs comprehensive message validation.
 func (m *BaseMessage) Validate() error {
-	// Validate message type
-	if !m.msgType.IsValid() {
-		return errs.WrapInvalid(errs.ErrInvalidData, "BaseMessage", "Validate",
-			fmt.Sprintf("invalid message type: %s", m.msgType.String()))
+	if err := m.msgType.Validate(); err != nil {
+		return errs.WrapInvalid(err, "BaseMessage", "Validate", "invalid message type")
 	}
 
 	// Validate payload
@@ -208,16 +180,6 @@ func (m *BaseMessage) MarshalJSON() ([]byte, error) {
 		return nil, errs.WrapInvalid(
 			fmt.Errorf("meta source %q is not valid UTF-8", source),
 			"BaseMessage", "MarshalJSON", "source")
-	}
-
-	// The type is refused for the same reason (owner ruling, #9 comment 5970334875). Validate
-	// above checks only that each component is non-empty.
-	for _, component := range []string{m.msgType.Domain, m.msgType.Category, m.msgType.Version} {
-		if !utf8.ValidString(component) {
-			return nil, errs.WrapInvalid(
-				fmt.Errorf("message type %q is not valid UTF-8", m.msgType.String()),
-				"BaseMessage", "MarshalJSON", "type")
-		}
 	}
 
 	// Create metadata map with int64 timestamps for consistency

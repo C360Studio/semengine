@@ -81,9 +81,6 @@ func TestConnectRefusesAnEndedContext(t *testing.T) {
 
 		require.ErrorIs(t, err, context.Canceled)
 		require.True(t, errs.IsTransient(err), "an ended context is transient: %v", err)
-		// Connect made no attempt, so it records no failure. This holds whatever
-		// the scheduling; the accept check below depends on it.
-		require.Zero(t, client.GetStatus().FailureCount, "Connect recorded a failure for an ended context")
 		select {
 		case <-accepted:
 			t.Error("Connect dialled with an ended context: the listener accepted a connection")
@@ -258,7 +255,7 @@ func TestReconnectAfterConnectContextEnded(t *testing.T) {
 	}, func(s connState) bool { return s.Reconnects > 0 && s.Connected })
 	require.NoError(t, err, "no reconnect after the server dropped the client (drop error: %v)", dropErr)
 
-	reply, err := client.Request(t.Context(), "t5.echo", []byte("ping"), lifecycleBound)
+	reply, err := client.RequestClassified(t.Context(), "t5.echo", []byte("ping"), lifecycleBound)
 	require.NoError(t, err)
 	require.Equal(t, "ping", string(reply))
 }

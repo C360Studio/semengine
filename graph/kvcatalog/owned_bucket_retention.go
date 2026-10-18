@@ -12,7 +12,7 @@ import (
 )
 
 // EnsureCatalogRetentionClean is the PRE-START LEGACY-DRIFT BACKSTOP for the
-// framework KV catalog's no-lifecycle buckets (ADR-068 D1). It has exactly ONE
+// framework KV catalog's no-lifecycle buckets (SemStreams ADR-068 D1). It has exactly ONE
 // honest job: a catalog bucket unused by the current composition never has its
 // acquisition seam called — e.g. an EMBEDDING_INDEX left behind by a prior
 // semantic deploy when booting a statistical configuration — so one boot-time
@@ -35,22 +35,26 @@ import (
 // a guarded bucket that does not exist cannot carry a foreign TTL, and its true
 // component creates it clean through the seam. The backstop therefore imposes no
 // bucket-creation ordering and never forces a resourceless deploy to provision
-// a bucket it does not use (feedback_unconditional_resource_wiring).
+// a bucket it does not use.
 func EnsureCatalogRetentionClean(ctx context.Context, client *natsclient.Client, logger *slog.Logger) error {
+	if ctx == nil {
+		return errs.WrapInvalid(errors.New("nil context"),
+			"kvcatalog", "EnsureCatalogRetentionClean", "a context is required for the catalog-retention backstop")
+	}
 	if logger == nil {
 		logger = slog.Default()
 	}
 	if client == nil {
 		return errs.WrapInvalid(errors.New("nil NATS client"),
-			"graph", "EnsureCatalogRetentionClean", "NATS client is required for the catalog-retention backstop")
+			"kvcatalog", "EnsureCatalogRetentionClean", "NATS client is required for the catalog-retention backstop")
 	}
 
 	js, err := client.JetStream()
 	if err != nil {
-		return errs.WrapTransient(err, "graph", "EnsureCatalogRetentionClean", "get JetStream context")
+		return errs.WrapTransient(err, "kvcatalog", "EnsureCatalogRetentionClean", "get JetStream context")
 	}
 
-	for _, spec := range KVCatalog() {
+	for _, spec := range catalog {
 		// The backstop covers exactly the catalog's no-lifecycle descriptors: a
 		// bounded-ttl bucket's TTL is its declared contract (never stripped),
 		// and an unmanaged bucket has no framework retention guarantee at all.
@@ -59,8 +63,8 @@ func EnsureCatalogRetentionClean(ctx context.Context, client *natsclient.Client,
 		}
 		bucket := spec.Name
 		// Read-only / must-exist probe: GetKeyValueBucket never creates a bucket
-		// and returns jetstream.ErrBucketNotFound for an absent one (exempted from
-		// the shared circuit breaker). Skip-if-absent: a not-yet-provisioned
+		// and returns jetstream.ErrBucketNotFound for an absent one.
+		// Skip-if-absent: a not-yet-provisioned
 		// tier-gated bucket is passed over.
 		if _, err := client.GetKeyValueBucket(ctx, bucket); err != nil {
 			if errors.Is(err, jetstream.ErrBucketNotFound) {
@@ -68,7 +72,7 @@ func EnsureCatalogRetentionClean(ctx context.Context, client *natsclient.Client,
 					slog.String("bucket", bucket))
 				continue
 			}
-			return errs.WrapTransient(err, "graph", "EnsureCatalogRetentionClean",
+			return errs.WrapTransient(err, "kvcatalog", "EnsureCatalogRetentionClean",
 				fmt.Sprintf("probe catalog bucket %q", bucket))
 		}
 

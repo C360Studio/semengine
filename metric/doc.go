@@ -2,7 +2,7 @@
 // for monitoring and observability.
 //
 // The package offers a centralized metrics registry managing both core platform
-// metrics (service status, message processing, NATS health) and custom
+// metrics (service status, message processing, health checks) and custom
 // service-specific metrics. It includes an HTTP server exposing metrics in
 // Prometheus format for monitoring system integration.
 //
@@ -35,7 +35,6 @@
 //	coreMetrics := registry.CoreMetrics()
 //	coreMetrics.RecordServiceStatus("my-service", 2)
 //	coreMetrics.RecordMessageProcessed("my-service", "gps.position", "success")
-//	coreMetrics.RecordNATSStatus(true)
 //
 // The metrics server will expose Prometheus-formatted metrics at http://localhost:9090/metrics
 // and a health check at http://localhost:9090/health, which answers 200 with the plain-text
@@ -56,8 +55,6 @@
 //     semengine_health_status{service}
 //   - Logging: semengine_log_entries_total{component,level}, which has no recording
 //     method; write it through the LogEntriesTotal field
-//   - NATS connectivity: semengine_nats_connected, semengine_nats_rtt_seconds,
-//     semengine_nats_reconnects_total, semengine_nats_circuit_breaker
 //
 // Record core metrics through the registry:
 //
@@ -72,12 +69,6 @@
 //	coreMetrics.RecordMessageProcessed("processor", "sensor.reading", "success")
 //	coreMetrics.RecordMessagePublished("processor", "output.subject")
 //	coreMetrics.RecordProcessingDuration("processor", "transform", 150*time.Millisecond)
-//
-//	// NATS connectivity
-//	coreMetrics.RecordNATSStatus(true)
-//	coreMetrics.RecordNATSRTT(2 * time.Millisecond)
-//	coreMetrics.RecordNATSReconnect()
-//	coreMetrics.RecordCircuitBreakerState(0) // 0 = closed
 //
 //	// Error tracking
 //	coreMetrics.RecordError("processor", "validation")
@@ -203,7 +194,6 @@
 // All core metrics use the namespace "semengine" and appropriate subsystems:
 //   - semengine_service_status{service="..."}
 //   - semengine_messages_processed_total{service="...",type="...",status="..."}
-//   - semengine_nats_connected
 //
 // Service-specific metrics use the metric name as provided during registration.
 //

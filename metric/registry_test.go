@@ -2,6 +2,7 @@ package metric
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -129,10 +130,6 @@ func TestMetricsRegistry_CoreMetricsInitialization(t *testing.T) {
 		"semengine_processing_duration_seconds",
 		"semengine_errors_total",
 		"semengine_health_status",
-		"semengine_nats_connected",
-		"semengine_nats_rtt_seconds",
-		"semengine_nats_reconnects_total",
-		"semengine_nats_circuit_breaker",
 	}
 
 	foundMetrics := make(map[string]bool)
@@ -171,6 +168,18 @@ func TestMetricsRegistry_NoCoreBusinessMetrics(t *testing.T) {
 	}
 }
 
+func TestMetricsRegistry_NoNATSCoreMetrics(t *testing.T) {
+	registry := NewMetricsRegistry()
+
+	metricFamilies, err := registry.PrometheusRegistry().Gather()
+	require.NoError(t, err)
+
+	for _, mf := range metricFamilies {
+		assert.False(t, strings.HasPrefix(mf.GetName(), "semengine_nats_"),
+			"fresh registry gathers NATS core metric %s", mf.GetName())
+	}
+}
+
 func TestMetricsRegistry_GetCoreMetrics(t *testing.T) {
 	registry := NewMetricsRegistry()
 
@@ -185,10 +194,6 @@ func TestMetricsRegistry_GetCoreMetrics(t *testing.T) {
 	assert.NotNil(t, coreMetrics.ProcessingDuration)
 	assert.NotNil(t, coreMetrics.ErrorsTotal)
 	assert.NotNil(t, coreMetrics.HealthCheckStatus)
-	assert.NotNil(t, coreMetrics.NATSConnected)
-	assert.NotNil(t, coreMetrics.NATSRTT)
-	assert.NotNil(t, coreMetrics.NATSReconnects)
-	assert.NotNil(t, coreMetrics.NATSCircuitBreaker)
 }
 
 func TestCoreMetrics_RecordMethods(t *testing.T) {
@@ -211,12 +216,6 @@ func TestCoreMetrics_RecordMethods(t *testing.T) {
 
 	// Test health status
 	coreMetrics.RecordHealthStatus("test-service", true)
-
-	// Test NATS metrics
-	coreMetrics.RecordNATSStatus(true)
-	coreMetrics.RecordNATSRTT(50 * time.Millisecond)
-	coreMetrics.RecordNATSReconnect()
-	coreMetrics.RecordCircuitBreakerState(0)
 
 	// Verify metrics have values > 0
 	metricFamilies, err := registry.PrometheusRegistry().Gather()

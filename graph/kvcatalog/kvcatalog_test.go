@@ -37,23 +37,62 @@ func TestCatalogReader_ExportedSurfaceIsReadOnly(t *testing.T) {
 }
 
 // TestOpenCatalogReader_InvalidNamePreservesClassification proves catalog
-// resolution still fails before client access and retains the canonical
-// invalid outcome shape.
+// resolution fails before client access, for both seams, with the canonical
+// invalid outcome shape naming this package.
 func TestOpenCatalogReader_InvalidNamePreservesClassification(t *testing.T) {
-	_, err := OpenCatalogReader(t.Context(), nil, "OUTGOING_INDEX_TYPO")
-	require.Error(t, err)
+	const name = "OUTGOING_INDEX_TYPO"
+	const inner = `bucket "OUTGOING_INDEX_TYPO" is not in the framework KV catalog`
+	for _, tc := range []struct {
+		operation string
+		resolve   func() error
+	}{
+		{"OpenCatalogReader", func() error {
+			_, err := OpenCatalogReader(t.Context(), nil, name)
+			return err
+		}},
+		{"EnsureCatalogBucket", func() error {
+			_, err := EnsureCatalogBucket(t.Context(), nil, name)
+			return err
+		}},
+	} {
+		t.Run(tc.operation, func(t *testing.T) {
+			err := tc.resolve()
+			require.Error(t, err)
 
-	var classified *errs.ClassifiedError
-	require.True(t, errors.As(err, &classified))
-	assert.Equal(t, errs.ErrorInvalid, classified.Class)
-	assert.Empty(t, classified.Code)
-	assert.Nil(t, classified.Detail)
-	assert.Equal(t, "graph", classified.Component)
-	assert.Equal(t, "OpenCatalogReader", classified.Operation)
-	assert.Contains(t, err.Error(), `bucket "OUTGOING_INDEX_TYPO" is not in the framework KV catalog`)
-	wrapped := errors.Unwrap(classified)
-	require.Error(t, wrapped)
-	assert.EqualError(t, errors.Unwrap(wrapped), `bucket "OUTGOING_INDEX_TYPO" is not in the framework KV catalog`)
+			var classified *errs.ClassifiedError
+			require.True(t, errors.As(err, &classified))
+			assert.Equal(t, errs.ErrorInvalid, classified.Class)
+			assert.Empty(t, classified.Code)
+			assert.Nil(t, classified.Detail)
+			assert.Equal(t, "kvcatalog", classified.Component)
+			assert.Equal(t, tc.operation, classified.Operation)
+			assert.Contains(t, err.Error(), "kvcatalog."+tc.operation+": ")
+			assert.Contains(t, err.Error(), inner)
+			wrapped := errors.Unwrap(classified)
+			require.Error(t, wrapped)
+			assert.EqualError(t, errors.Unwrap(wrapped), inner)
+		})
+	}
+}
+
+// TestKVCatalogReturnsACopy: KVCatalog is framework API (graph/README.md), and
+// a product that edits the list it got back changes nothing the framework
+// resolves, nor the next caller's list.
+func TestKVCatalogReturnsACopy(t *testing.T) {
+	got := KVCatalog()
+	require.NotEmpty(t, got)
+	for i := range got {
+		got[i].Owner = "a product's edit"
+		got[i].Write = natsclient.WriteOpen
+	}
+
+	spec, ok := SpecFor(graph.BucketEntityStates)
+	require.True(t, ok)
+	assert.Equal(t, "graph-ingest", spec.Owner)
+	assert.True(t, IsFrameworkOwnedBucket(graph.BucketEntityStates))
+	for _, s := range catalog {
+		assert.NotEqual(t, "a product's edit", s.Owner, "%s: the next caller sees the edit", s.Name)
+	}
 }
 
 // TestKVCatalog_EveryRowValidates: every shipped descriptor must pass the
@@ -61,7 +100,7 @@ func TestOpenCatalogReader_InvalidNamePreservesClassification(t *testing.T) {
 // boot-breaking typo caught here instead.
 func TestKVCatalog_EveryRowValidates(t *testing.T) {
 	seen := make(map[string]bool)
-	for _, spec := range KVCatalog() {
+	for _, spec := range catalog {
 		require.NoError(t, spec.Validate(), "catalog row %q must validate", spec.Name)
 		assert.False(t, seen[spec.Name], "catalog row %q must be declared exactly once", spec.Name)
 		seen[spec.Name] = true
@@ -69,8 +108,8 @@ func TestKVCatalog_EveryRowValidates(t *testing.T) {
 	assert.Len(t, seen, 18, "the catalog carries the 18 retained framework-guaranteed buckets")
 }
 
-// TestKVCatalog_DeclaredPolicies pins the architect-census policy decisions
-// that enforcement derives from.
+// TestKVCatalog_DeclaredPolicies pins the per-bucket policy decisions (history
+// depth, class, owner, retention, write rule) that enforcement derives from.
 func TestKVCatalog_DeclaredPolicies(t *testing.T) {
 	spec := func(name string) natsclient.BucketSpec {
 		s, ok := SpecFor(name)
@@ -87,7 +126,7 @@ func TestKVCatalog_DeclaredPolicies(t *testing.T) {
 	assert.Equal(t, uint8(3), spec(graph.BucketGraphStatus).History)
 
 	// The shared runtime configuration bucket is catalogued for BOTH guarantees.
-	// Owner-only by owner ruling 2026-08-31 (#1168 comment 5479005060): once
+	// Owner-only by owner ruling 2026-08-31 (SemStreams #1168 comment 5479005060): once
 	// identity correctness state shares a bucket, letting a generic rule writer
 	// onto the rest of the configuration plane is the wrong boundary, and the
 	// existing owner predicate closes the whole class without a remembered-key
@@ -103,14 +142,14 @@ func TestKVCatalog_DeclaredPolicies(t *testing.T) {
 	// EVERY catalog bucket is owner-only, this one included: a generic update_kv
 	// into platform_identity would plain-Put over create-once state that the
 	// next boot ADOPTS after checking only grammar and byte budget.
-	for _, s := range KVCatalog() {
+	for _, s := range catalog {
 		assert.Equal(t, natsclient.WriteOwnerOnly, s.Write, "%s must be owner-only", s.Name)
 	}
 
 	// Retention: no-lifecycle everywhere, with the shared configuration bucket
 	// the ONE strict row (verify and refuse rather than reconcile). The
 	// exception is named, not widened — a second strict row still trips this.
-	for _, s := range KVCatalog() {
+	for _, s := range catalog {
 		if s.Name == graph.BucketSemEngineConfig {
 			continue
 		}
@@ -131,7 +170,7 @@ func TestIsFrameworkOwnedBucket_ProductionView(t *testing.T) {
 		graph.BucketGraphIngestAppliedSeq, graph.BucketGraphStatus, graph.BucketStorageReport,
 		// The configuration bucket family joined the guard set with ADR-104: a
 		// generic update_kv into platform_identity forges an authority the next
-		// boot adopts. Members are per deployment since #1188.
+		// boot adopts. Members are per deployment since SemStreams #1188.
 		graph.BucketSemEngineConfig + "_acme_dep",
 	} {
 		assert.True(t, IsFrameworkOwnedBucket(name), "%s must be framework-owned", name)
@@ -144,7 +183,7 @@ func TestIsFrameworkOwnedBucket_ProductionView(t *testing.T) {
 		"application buckets are outside the catalog by rule")
 }
 
-// TestSpecFor_UnknownNameResolvesFalse is the F2 resolution contract: a name
+// TestSpecFor_UnknownNameResolvesFalse is the resolution contract: a name
 // outside the catalog resolves to nothing, which callers turn into a boot
 // failure naming the subject.
 func TestSpecFor_UnknownNameResolvesFalse(t *testing.T) {
@@ -158,18 +197,11 @@ func TestSpecFor_UnknownNameResolvesFalse(t *testing.T) {
 	assert.Equal(t, spec.Owner, OwnerOf(graph.BucketOutgoingIndex))
 }
 
-// TestErrorCodeBucketNotReady_MatchesIndexNotReady cross-pins the classified
-// code the catalog-reader seam emits to the code graph-index emits for a
-// not-sound index, so classified consumers can never see the two drift apart.
-func TestErrorCodeBucketNotReady_MatchesIndexNotReady(t *testing.T) {
-	assert.Equal(t, graph.ErrorCodeIndexNotReady, natsclient.ErrorCodeBucketNotReady)
-}
-
 // TestConfigBucketFamilyResolvesEveryMember pins the catalog's one name
-// family (#1188): every per-deployment configuration bucket resolves to the
+// family (SemStreams #1188): every per-deployment configuration bucket resolves to the
 // strict, owner-only descriptor under its OWN name — so acquisition creates
 // that member and every update_kv guard refuses it — while the bare prefix,
-// the orphaned pre-#1188 bucket, is no longer framework state.
+// the bucket SemStreams #1188 orphaned, is no longer framework state.
 func TestConfigBucketFamilyResolvesEveryMember(t *testing.T) {
 	for _, member := range []string{
 		graph.BucketSemEngineConfig + "_acme_dep",

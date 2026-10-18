@@ -475,10 +475,6 @@ type Component struct {
 	// lastAppliedAt is the JetStream timestamp of the most recently APPLIED message
 	// (stamped on the applied path, before the Ack). It ages the reported staleness.
 	lastAppliedAt atomic.Value // stores time.Time
-	// statusInterval and statusNowFn are TEST SEAMS only, so an integration test can
-	// observe successive heartbeats and assert staleness without racing the clock.
-	statusInterval time.Duration
-	statusNowFn    func() time.Time
 
 	// Per-entity poison inventory (poison-response-scoping D2/D3). Observability
 	// only — no read or write path consults it for a decision; refusal derives

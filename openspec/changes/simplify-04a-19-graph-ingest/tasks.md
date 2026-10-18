@@ -38,7 +38,7 @@ commit, recorded in `notes/<task>.md`, except where a task says how else the tes
 
 ## 4. Test-only fields and the help text (batch 3, #295, #287, #139 A)
 
-- [ ] 4.1 D5: the synctest loop test, which passes on the base too (the override is unset there); its ability to
+- [x] 4.1 D5: the synctest loop test, which passes on the base too (the override is unset there); its ability to
   fail is shown instead by `task mutate:check` runs recorded in `notes/4.1.md`, each reported as detected or not: the
   ticker built with a wrong interval, and the first publish before the ticker removed; `statusInterval`, `statusNowFn`
   and their methods go; the five integration tests call

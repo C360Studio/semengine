@@ -61,6 +61,31 @@ func tryReadEnvelope(
 	return status, entry.Value(), true
 }
 
+// envelopeRead is one read of the readiness key; ok is false while the key is absent.
+type envelopeRead struct {
+	status graph.IndexStatusResponse
+	ok     bool
+}
+
+// awaitEnvelopeAfterTick publishes a status tick now and reads the readiness key, until
+// done accepts a published envelope or within passes. Each observation runs its own tick,
+// as awaitHealthAfterTick does, so no wait depends on the heartbeat's cadence (design D5):
+// the running loop can land a compute it began earlier between the tick and the read, and
+// the next observation's tick replaces it.
+func awaitEnvelopeAfterTick(
+	ctx context.Context, t *testing.T, c *Component, client *natsclient.Client,
+	within time.Duration, done func(graph.IndexStatusResponse) bool,
+) (envelopeRead, error) {
+	t.Helper()
+	waitCtx, cancel := context.WithTimeout(ctx, within)
+	defer cancel()
+	return probe.Await(waitCtx, func(ctx context.Context) (envelopeRead, error) {
+		c.refreshReadinessStatus(ctx)
+		status, _, ok := tryReadEnvelope(ctx, t, client)
+		return envelopeRead{status: status, ok: ok}, nil
+	}, func(r envelopeRead) bool { return r.ok && done(r.status) })
+}
+
 func startIngestForReadiness(ctx context.Context, t *testing.T) (*natsclient.Client, *Component, *graphIngestTestOwner) {
 	t.Helper()
 	client := newFixtureClient(t, entityStream)
@@ -75,9 +100,6 @@ func startIngestForReadiness(ctx context.Context, t *testing.T) (*natsclient.Cli
 	c := comp.(*Component)
 	owner := newGraphIngestTestOwner(c)
 	defer owner.provisionalFinish(ctx, t)
-	// Tick fast so the test observes successive heartbeats without sleeping through
-	// production cadence.
-	c.statusInterval = 200 * time.Millisecond
 	require.NoError(t, c.Initialize())
 	// Register the test payload decoder BEFORE Start. Without it every published
 	// message fails decode and is TERMINATED as poison — the backlog "drains"
@@ -124,17 +146,13 @@ func TestIntegration_ReadinessEnvelope_PublishedAndCatchesUp(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
 	defer cancel()
 
-	client, _, owner := startIngestForReadiness(ctx, t)
+	client, c, owner := startIngestForReadiness(ctx, t)
 	defer owner.finish(ctx, t)
 
-	require.Eventually(t, func() bool {
-		status, _, ok := tryReadEnvelope(ctx, t, client)
-		if !ok {
-			return false
-		}
+	_, err := awaitEnvelopeAfterTick(ctx, t, c, client, 30*time.Second, func(status graph.IndexStatusResponse) bool {
 		return status.Ready && status.BootstrapComplete && status.State == graph.IndexStateReady
-	}, 30*time.Second, 200*time.Millisecond,
-		"an idle stack must publish a caught-up envelope")
+	})
+	require.NoError(t, err, "an idle stack must publish a caught-up envelope")
 
 	status, raw := readEnvelope(ctx, t, client)
 	require.Zero(t, status.Lag, "idle stack reports no backlog")
@@ -175,7 +193,6 @@ func TestIntegration_ReadinessEnvelope_BacklogIsNotReady(t *testing.T) {
 	c := comp.(*Component)
 	owner := newGraphIngestTestOwner(c)
 	defer owner.finish(ctx, t)
-	c.statusInterval = 100 * time.Millisecond
 	require.NoError(t, c.Initialize())
 	registerMergeTestPayload(t, c)
 
@@ -222,18 +239,9 @@ func TestIntegration_ReadinessEnvelope_BacklogIsNotReady(t *testing.T) {
 	// published yet means the producer's first tick has not landed (the iteration that
 	// failed in CI): unpublished is not not-ready, it is not-yet-observed, so the wait
 	// goes on.
-	type envelopeRead struct {
-		status graph.IndexStatusResponse
-		ok     bool
-	}
-	notReadyCtx, cancelNotReady := context.WithTimeout(ctx, 10*time.Second)
-	last, waitErr := probe.Await(notReadyCtx,
-		func(ctx context.Context) (envelopeRead, error) {
-			status, _, ok := tryReadEnvelope(ctx, t, client)
-			return envelopeRead{status: status, ok: ok}, nil
-		},
-		func(r envelopeRead) bool { return r.ok && (r.status.Ready || r.status.Lag > 0) })
-	cancelNotReady()
+	last, waitErr := awaitEnvelopeAfterTick(ctx, t, c, client, 10*time.Second, func(status graph.IndexStatusResponse) bool {
+		return status.Ready || status.Lag > 0
+	})
 	sawNotReady := last.ok && last.status.Lag > 0 && !last.status.Ready
 	require.True(t, sawNotReady,
 		"producer never reported outstanding work while a message of a %d-message backlog was held (last read %+v; wait: %v)",
@@ -241,14 +249,10 @@ func TestIntegration_ReadinessEnvelope_BacklogIsNotReady(t *testing.T) {
 	releaseHeld()
 
 	// ...and it must eventually catch up.
-	require.Eventually(t, func() bool {
-		status, _, ok := tryReadEnvelope(ctx, t, client)
-		if !ok {
-			return false
-		}
+	_, err = awaitEnvelopeAfterTick(ctx, t, c, client, 60*time.Second, func(status graph.IndexStatusResponse) bool {
 		return status.Ready && status.BootstrapComplete
-	}, 60*time.Second, 100*time.Millisecond,
-		"the producer must reach caught-up after draining the backlog")
+	})
+	require.NoError(t, err, "the producer must reach caught-up after draining the backlog")
 
 	// ...and having caught up, its scope must record that there WAS an initial build.
 	// This is the distinction gh#732 raises: complete && scope == 0 means
@@ -285,19 +289,14 @@ func TestIntegration_ReadinessEnvelope_NoStreamingPortIsHonestlyCaughtUp(t *test
 	c := comp.(*Component)
 	owner := newGraphIngestTestOwner(c)
 	defer owner.finish(ctx, t)
-	c.statusInterval = 100 * time.Millisecond
 	require.NoError(t, c.Initialize())
 	registerMergeTestPayload(t, c)
 	require.NoError(t, c.Start(owner.startContext(ctx)))
 
-	require.Eventually(t, func() bool {
-		status, _, ok := tryReadEnvelope(ctx, t, client)
-		if !ok {
-			return false
-		}
+	_, err = awaitEnvelopeAfterTick(ctx, t, c, client, 20*time.Second, func(status graph.IndexStatusResponse) bool {
 		return status.Ready && status.BootstrapComplete
-	}, 20*time.Second, 100*time.Millisecond,
-		"a deployment with no streaming input must be honestly caught up")
+	})
+	require.NoError(t, err, "a deployment with no streaming input must be honestly caught up")
 
 	status, _ := readEnvelope(ctx, t, client)
 	require.Zero(t, status.BootstrapScope,
@@ -364,7 +363,6 @@ func TestIntegration_ReadyImpliesTheWritesAreDurable(t *testing.T) {
 	c := comp.(*Component)
 	owner := newGraphIngestTestOwner(c)
 	defer owner.finish(ctx, t)
-	c.statusInterval = 50 * time.Millisecond
 	require.NoError(t, c.Initialize())
 	registerMergeTestPayload(t, c)
 	require.NoError(t, c.Start(owner.startContext(ctx)))
@@ -372,13 +370,10 @@ func TestIntegration_ReadyImpliesTheWritesAreDurable(t *testing.T) {
 	bucket, err := client.GetKeyValueBucket(ctx, graph.BucketEntityStates)
 	require.NoError(t, err)
 
-	require.Eventually(t, func() bool {
-		status, _, ok := tryReadEnvelope(ctx, t, client)
-		if !ok {
-			return false
-		}
+	_, err = awaitEnvelopeAfterTick(ctx, t, c, client, 60*time.Second, func(status graph.IndexStatusResponse) bool {
 		return status.Ready && status.BootstrapComplete
-	}, 60*time.Second, 50*time.Millisecond, "producer must reach caught-up")
+	})
+	require.NoError(t, err, "producer must reach caught-up")
 
 	// THE ASSERTION: caught-up was reported, so every write must already be durable.
 	// If ack ran before the write, or before a derived write, some of these are absent.
@@ -415,7 +410,7 @@ func TestIntegration_ReadinessEnvelope_AbsentKeyIsNotAFailure(t *testing.T) {
 		_, _, ok := tryReadEnvelope(ctx, t, client)
 		return ok
 	}, 30*time.Second, 100*time.Millisecond, "the producer should publish its key")
-	// Fence the producer before the fixture-admin purge. Otherwise the 200ms
+	// Fence the producer before the fixture-admin purge. Otherwise the
 	// heartbeat can legitimately republish between Purge and Get, making this a
 	// scheduler race rather than a test of the absent-key decoder branch.
 	producerDone := comp.statusDone
@@ -500,10 +495,6 @@ func TestIntegration_ReadinessEnvelope_BootstrapCompleteWithBacklog(t *testing.T
 	c.refreshReadinessStatus(ctx)
 	waitCtx, cancelWait := context.WithTimeout(ctx, 10*time.Second)
 	defer cancelWait()
-	type envelopeRead struct {
-		status graph.IndexStatusResponse
-		ok     bool
-	}
 	got, waitErr := probe.Await(waitCtx,
 		func(ctx context.Context) (envelopeRead, error) {
 			status, _, ok := tryReadEnvelope(ctx, t, client)

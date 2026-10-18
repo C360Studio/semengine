@@ -75,7 +75,7 @@ func (c *Component) statusMetricsLoop(ctx context.Context) {
 	// than reading absent (which consumers correctly treat as unknown) for a whole
 	// interval after start.
 	c.refreshReadinessStatus(ctx)
-	ticker := time.NewTicker(c.statusTickInterval())
+	ticker := time.NewTicker(statusMetricsInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -85,16 +85,6 @@ func (c *Component) statusMetricsLoop(ctx context.Context) {
 			c.refreshReadinessStatus(ctx)
 		}
 	}
-}
-
-// statusTickInterval is the heartbeat period, overridable only by tests so an
-// integration test can observe successive heartbeats without sleeping through
-// production cadence.
-func (c *Component) statusTickInterval() time.Duration {
-	if c.statusInterval > 0 {
-		return c.statusInterval
-	}
-	return statusMetricsInterval
 }
 
 // refreshReadinessStatus computes the envelope ONCE and publishes it. The single
@@ -171,7 +161,7 @@ func (c *Component) computeBacklogStatus(ctx context.Context) graph.IndexStatusR
 		BootstrapScope:      c.bootstrapScope(outstanding, observationFailed),
 		ObservationFailed:   observationFailed,
 		OldestOutstandingAt: c.oldestOutstandingAt(outstanding),
-		Now:                 c.statusNow(),
+		Now:                 time.Now(),
 	})
 }
 
@@ -286,15 +276,6 @@ func (c *Component) oldestOutstandingAt(outstanding uint64) time.Time {
 		}
 	}
 	return time.Time{}
-}
-
-// statusNow is the compute instant, overridable by tests so staleness assertions do
-// not race the wall clock.
-func (c *Component) statusNow() time.Time {
-	if c.statusNowFn != nil {
-		return c.statusNowFn()
-	}
-	return time.Now()
 }
 
 // recordApplied stamps the JetStream timestamp of a message whose graph write is

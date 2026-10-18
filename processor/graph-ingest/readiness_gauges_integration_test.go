@@ -54,7 +54,6 @@ func TestIntegration_ReadinessGaugesAreEmitted(t *testing.T) {
 	c := comp.(*Component)
 	owner := newGraphIngestTestOwner(c)
 	defer owner.finish(ctx, t)
-	c.statusInterval = 100 * time.Millisecond
 	require.NoError(t, c.Initialize())
 	registerMergeTestPayload(t, c)
 	require.NoError(t, c.Start(owner.startContext(ctx)))
@@ -64,10 +63,10 @@ func TestIntegration_ReadinessGaugesAreEmitted(t *testing.T) {
 	// AlreadyRegistered — so the original form could pass before Start even ran.
 	// bootstrap_complete going to 1 can only come from a real Set on a caught-up
 	// producer.
-	require.Eventually(t, func() bool {
-		return gatheredValue(t, registry.PrometheusRegistry(), "semengine_graph_ingest_bootstrap_complete") == 1
-	}, 20*time.Second, 100*time.Millisecond,
-		"bootstrap_complete must reach 1 — presence alone proves only that some "+
+	c.refreshReadinessStatus(ctx)
+	require.Equal(t, 1.0,
+		gatheredValue(t, registry.PrometheusRegistry(), "semengine_graph_ingest_bootstrap_complete"),
+		"bootstrap_complete must be 1 after a tick — presence alone proves only that some "+
 			"instance registered, not that this one projected")
 
 	fams, err := registry.PrometheusRegistry().Gather()

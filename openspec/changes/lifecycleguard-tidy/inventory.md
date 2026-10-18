@@ -4,7 +4,8 @@ base: `4c6d95f71a491fe274f6e066e2c6f25535e45b8c` (origin/main `572c0ee790818b766
 commit, which adds only `openspec/changes/lifecycleguard-tidy/`; draft PR #308). Every pin is at the base.
 
 Status: drafted together with the design at the orchestrator's direction; its `INVENTORY PASS` is the reviewer's
-(architect contract, Required workflow step 3).
+(architect contract, Required workflow step 3). Round 2 revises it after the `INVENTORY FAIL` at `9c772d5`: section 2
+now lists every stop method's handling of an ended context, and section 1e records the panicking-cleanup finding.
 
 Question: how `internal/lifecycleguard` refuses a nil or ended context, how its cleanup reaches `Start` and `Stop`,
 who reads either, and what tests the concurrent-`Stop` refusal. Scope: #196, comment of 2026-10-16 (moved from #153
@@ -23,6 +24,9 @@ graph-ingest to serve them.
 
 ## 1. The claimed gaps (#196): each confirmed
 
+The four claims are #153 item 6 (style-bar review of PR #93 at `88d0d3b`, 2026-10-09), moved to #196 on 2026-10-16.
+That item closes with "Plain shape: one refusal helper, and the cleanup given once."
+
 ### 1a. A nil context: two sentinels, two texts
 
 - `internal/lifecycleguard/guard.go:43`:
@@ -40,8 +44,12 @@ graph-ingest to serve them.
 - `guard.go:89-90`: `if err := ctx.Err(); err != nil {` / `return err`: a bare `context.Canceled` or
   `context.DeadlineExceeded`, which `errs.IsTransient` lists (`pkg/errs/errs.go:168-169`), so `errs.Classify` returns
   transient.
-- Not a refusal at entry, but the same context ending: `guard.go:108-109`, `case <-ctx.Done():` /
-  `return ctx.Err()`. This is Stop's context ending while Stop waits for a Start that is still running.
+- Not a refusal at entry, but the same context ending, also returned bare:
+  - `guard.go:108-109`, `case <-ctx.Done():` / `return ctx.Err()`: Stop's context ends while Stop waits for a Start that
+    is still running;
+  - inside the cleanup the guard's Stop runs for graph-ingest: `processor/graph-ingest/component.go:1136-1137`,
+    `case <-ctx.Done():` / `cleanupErr = errors.Join(cleanupErr, ctx.Err())`, and `:1143`,
+    `return errors.Join(cleanupErr, ctx.Err())`.
 
 ### 1c. The concurrent-Stop refusal has no test
 
@@ -84,6 +92,23 @@ graph-ingest to serve them.
   `:194`, `:238`, `:261`; `lifecycle_owner_test.go:136`; `test_owner_support_test.go:80`, `:93`, `:107`.
   `Guard.Stop` (`guard.go:85`): `component.go:1074`; tests `guard_test.go:40`, `:204`, `:216`, `:244`, `:255`.
 
+### 1e. Found in review: a cleanup that panics cannot run again
+
+- In Stop: `guard.go:116`, `g.stopping = true`; `:119`, `err := cleanup(ctx)`; `:120-121`, `g.mu.Lock()` /
+  `g.stopping, g.terminal = false, err == nil`. A panic in the cleanup skips `:120-122`, so `stopping` stays set, and
+  every later Stop is refused as concurrent at `:112-114`. The cleanup never runs again.
+- In a failed Start's rollback: the deferred function at `guard.go:58-71` calls
+  `lifecyclecleanup.RollbackFailedStart(ctx, cleanup)` at `:61`. That helper calls the rollback with no recover
+  (`pkg/lifecyclecleanup/lifecyclecleanup.go:55`, `rollbackErr := rollback(ctx)`). A panic there skips `close(done)` and
+  `g.startDone = nil` (`:69-70`), so every later Stop waits at `:103-110` until its own context ends and then returns
+  that error. The cleanup never runs again, and a later Start is refused as already used (`:49-52`).
+- A panicking `start` is handled: the rollback still runs (`committed` stays false, `:57-75`), as
+  `TestGuardRollsBackAPanickingStart` (`guard_test.go:229-250`) shows, with a rollback that succeeds. No test has a
+  cleanup that panics.
+- Real-world trigger: none today. graph-ingest's `release` (`component.go:1087-1096`) has no panic path in this
+  inventory's reading, and every cleanup in the tree is a method value. A nil cleanup would panic in Stop
+  (`guard.go:119`). By the severity rule (#185) this is MEDIUM at most.
+
 ## 2. Every current spelling of the facts
 
 ### A context is refused (nil, or already ended)
@@ -109,10 +134,31 @@ graph-ingest to serve them.
     (`openspec/changes/archive/2026-10-17-readiness-nil-context/design.md`, D1).
   - `pkg/errs.ErrInvalidConfig`: `guard.go:43` only. (`internal/dispatch/keyed_pool.go:125` uses dispatch's own
     `ErrInvalidConfig`, `internal/dispatch/errors.go:11`.)
-- An ended context refused at entry (`git grep -n -A1 "if err := ctx.Err(); err != nil {"`):
-  `metric/handler.go:73-74` (`WrapInvalid`, same words as `guard.go:46`); `natsclient/client.go:469-470`
-  (`WrapTransient`); `natsclient/stream.go:487-488` (`WrapInvalid`), `:546-547` (`WrapTransient`); others wrap with
+- An ended context at the start of work. Start and setup methods refuse it at entry
+  (`git grep -n -A1 "if err := ctx.Err(); err != nil {"`): `guard.go:45-46` (`WrapInvalid`); `metric/handler.go:73-74`
+  (`start`, `WrapInvalid`, the same words as `guard.go:46`); `natsclient/client.go:469-470` (`Connect`,
+  `WrapTransient`); `natsclient/stream.go:487-488` (`WrapInvalid`), `:546-547` (`WrapTransient`). Others wrap it with
   `fmt.Errorf` or return it bare.
+- An ended context at a stop. Every stop method in production code
+  (`git grep -n -E "\) (Stop|Close|Shutdown)\(ctx context\.Context\) error" -- '*.go' ':!*_test.go'`; the two
+  `internal/harness/natsfixture` hits are test fixtures) returns the context's error bare when the context wins. None
+  turns it into a refusal class:
+  - `metric/handler.go:194-203` (`Stop`: the nil check, then no ended check); `:248-249`,
+    `if err := ctx.Err(); err != nil {` / `stopErr = errors.Join(stopErr, err)`.
+  - `natsclient/client.go:649-652` (`Close`: the nil check only); `:688-689`, `if err := ctx.Err(); err != nil {` /
+    `return err`; `:704-705`, `case <-ctx.Done():` / `return ctx.Err()`.
+  - `internal/dispatch/keyed_pool.go:284-287` (`Shutdown`: the nil check only); `:304-307`, `case <-ctx.Done():` ...
+    `return ctx.Err()`.
+  - `internal/cache/coalescing_set.go:196-199` (`Shutdown`: the nil check only); `:213-214`, `case <-ctx.Done():` /
+    `return ctx.Err()`.
+  - graph-ingest's `Stop` runs the guard: `guard.go:89-90` checks at entry and returns the error bare, the only stop
+    in the tree that checks at entry; `:108-109`; and the cleanup's `component.go:1136-1137`, `:1143` (1b).
+  - The written rule: `openspec/specs/background-work/spec.md:20-22`, `Shutdown(ctx) error` "stops the work, waits
+    for it, and returns `ctx.Err()` when the context ends first". `docs/adr/113-start-context-bounds-start.md:54-55`:
+    `Stop(ctx)` and `Shutdown(ctx)` "make the same promise: stop, wait, return the context's error if the bound wins,
+    and let a later call try again". Owner ruling, #282 comment 6249934379 point 2, restated at ADR-113 `:61-62`:
+    "`Stop(ctx)` is the only stop: nil only after everything is released; if `ctx` ends first it returns that error and
+    a later `Stop` tries again."
 
 ### A concurrent Stop is refused
 
@@ -120,6 +166,11 @@ graph-ingest to serve them.
   in progress"),` / `"Server", "Stop", "concurrent Stop is unsupported")`. Its test,
   `metric/handler_test.go:323` (`TestServerConcurrentStopIsTypedTransientAndDoesNotHoldLifecycleLock`), polls the
   private `server.stopping` field and `TryLock`s the mutex (`:368-379`).
+
+### A cleanup or acquisition that panics
+
+- Handled for `start` only: `guard.go:57-75` (1e). Not handled for a cleanup, in Stop (`:116-121`) or in the rollback
+  (`:61` before `:69-70`). `pkg/lifecyclecleanup/lifecyclecleanup.go:55` does not recover.
 
 ### The cleanup an owner runs
 
@@ -138,6 +189,7 @@ graph-ingest to serve them.
     `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop`.
   - `error-classification` (`openspec/specs/error-classification/spec.md:11`) has one requirement (unclassified means
     fatal) and nothing on nil contexts.
+  - `background-work` (`openspec/specs/background-work/spec.md:20-22`): `Shutdown` returns `ctx.Err()` (section 2).
   - `component-registration` and `harness-boundaries` do not mention the guard.
   - The change already carries `skip_specs: true` (`openspec/changes/lifecycleguard-tidy/.openspec.yaml:3`).
 - Suite checks that read these errors: `internal/harness/lifecycletest/lifecycletest.go:136-149`
@@ -155,9 +207,10 @@ graph-ingest to serve them.
   production code calls graph-ingest's `Start` or `Stop`; the tree has no `service` package yet.
 - ADRs:
   - ADR-108 (`docs/adr/108-processor-shell.md:36`, `:56`): the guard is the lifecycle state machine; behaviour only.
-  - ADR-113 (`docs/adr/113-start-context-bounds-start.md:16`): PR 2 comes after this tidy. `:88-93`: the guard does not
-    hold the run context. `:105-106`: "the guard changes nothing, because the cancel order is the owner's". `:97-100`:
-    PR 2 changes two suite checks and the guard's test owner.
+  - ADR-113 (`docs/adr/113-start-context-bounds-start.md:16`): PR 2 comes after this tidy. `:54-55`: one promise for
+    Stop and Shutdown. `:61-62`: the Stop rule. `:88-93`: the guard does not hold the run context. `:105-106`: "the
+    guard changes nothing, because the cancel order is the owner's". `:97-100`: PR 2 changes two suite checks and the
+    guard's test owner.
 - Ledger. `internal/lifecycleguard` has no row (its own code). It is named in graph-ingest's row
   (`docs/admission-ledger.yaml:2301`, "(6) owner lifecycle guarded by internal/lifecycleguard with RollbackFailedStart
   (SS#1411, design D13)") and its dependencies (`:2308`), and in the `internal/lifecyclecleanup` row (`:1901`). None
@@ -168,6 +221,9 @@ graph-ingest to serve them.
   -- ':!*.go' ':!openspec/changes/archive'` finds nothing.
 - `component/lifecycle.go:46-47`: "Start and Stop refuse a nil context, and Start refuses a context that has already
   ended" (the `LifecycleComponent` contract; PR 2 rewrites the Stop rule beside it, `:49-53`).
+- Design D13 (`openspec/changes/archive/2026-10-12-setup-04a-02-ingest-kernel/design.md:744-753`) lists what a component
+  composing the guard observes. Its spec home is "Portable floor", "whose checks are these behaviors except that retry;
+  no delta" (`:757`). The list names no concurrent Stop, no single cleanup and no panicking cleanup.
 - Open PRs (`gh pr list --state open --json number,title,changedFiles,files`): only #308 (this claim; three files
   under `openspec/changes/lifecycleguard-tidy/`). PR 2 (#282's order) and PR 3 (#291) are unclaimed.
 - Open issues (`gh issue list --state open --search <q>` for `lifecycleguard`, `lifecycle guard`, `guard.go`,
@@ -198,7 +254,8 @@ Two shapes.
 
 - Admit-or-refuse at a seam. Closest instance: `metric.Server.start`, `metric/handler.go:70-75`, the other lifecycle
   owner under the suite. A package-local refusal helper exists in `natsclient/request.go:20-29` (`nilContextError`,
-  `nilContextErrorOf`).
+  `nilContextErrorOf`). The stop side's closest instances are the four stop methods in section 2, none of which
+  refuses an ended context at entry.
 - Record at acquisition what release needs. Closest instance: graph-ingest's own handles, `component.go:451-454`.
 - Neither establishes a new primitive. The guard itself was the establishing change (D13), and its adoption sweep is
   #196.
@@ -222,10 +279,12 @@ Not triggered: no new durable, communication or coordination primitive, and no b
 The guard is internal: its adopters are owners in this module (#196's rows), and graph-ingest is its one adopter
 today.
 
-1. What an adopter must know today: pass the same cleanup to `Start` and `Stop`. Nothing says so or enforces it.
+1. What an adopter must know today: pass the same cleanup to `Start` and `Stop`, and never let the cleanup panic.
+   Nothing says either or enforces it.
 2. If they do nothing: two values are accepted silently. The rollback and a Stop then run different functions (1d:
-   graph-ingest's Stop logs and its rollback does not; two test helpers rely on the difference).
-3. Where they find out: nowhere.
+   graph-ingest's Stop logs and its rollback does not; two test helpers rely on the difference). A cleanup that panics
+   leaves every later Stop refused or waiting (1e).
+3. Where they find out: nowhere for the first; for the second, a Stop that fails without saying why.
 4. What they should have to know: nothing.
 
 For graph-ingest's consumers: semsparql's fixtures check Start's error for nil and discard Stop's error (category 4).

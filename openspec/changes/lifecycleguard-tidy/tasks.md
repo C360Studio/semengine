@@ -9,16 +9,27 @@ at its commit (#171).
 - [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass pre-owner review and are accepted by the
   owner. Gate: `task spec:check` and `task docs:check`.
 
-## 2. Implementation (D1-D5)
+## 2. Implementation (D1-D7)
 
-- [ ] 2.1 Tests `TestGuardRefusesNilAndEndedContextsAlike` (D1) and `TestGuardRefusesAConcurrentStop` (D3) in
-  `internal/lifecycleguard/guard_test.go`. Gate: `go test -race -count=1 ./internal/lifecycleguard/`. On the base the
-  D1 test fails at its Start-nil row and its two ended-context Stop rows, named in the note; the D3 test passes, since
-  it pins behaviour that already exists, and its sensitivity is M3 in 2.3.
-- [ ] 2.2 D1's refusal helper, called first in `Start` and `Stop`; D5's refusal sentences. Gate: `go test -race
-  -count=1 ./internal/lifecycleguard/ ./internal/harness/lifecycletest/ ./processor/graph-ingest/`.
+- [ ] 2.1 Tests on the base, in `internal/lifecycleguard/guard_test.go`, written against the base's two-argument
+  `Stop`. Task 2.3 rewrites all four for the one-argument `Stop`, with the cleanup given to `Start`.
+  - `TestGuardRefusesNilAndEndedContexts` (D1).
+  - `TestGuardRefusesAConcurrentStop` (D3), with its blocking cleanup handed to Stop A, since on the base the cleanup
+    given to `Start` runs only in a rollback.
+  - `TestGuardStopSurvivesAPanickingCleanup` and `TestGuardStartSurvivesAPanickingRollback` (D7).
+
+  Gate: `go test -race -count=1 ./internal/lifecycleguard/`, with each failure on the base named in the note:
+  - the D1 test's `Start(nil)` row and its nil message check fail;
+  - each D7 test fails at its later-`Stop` line;
+  - the D1 ended rows and the D3 test pass on the base, because they pin behaviour that already exists; their
+    sensitivity is M6 and M3, checked in 2.3.
+- [ ] 2.2 D1's nil-context helper, called first in `Start` and `Stop`; D7's handling of a panicking cleanup in `Stop`
+  and in `Start`'s rollback; D5's sentences on both. Gate: `go test -race -count=1 ./internal/lifecycleguard/
+  ./internal/harness/lifecycletest/ ./processor/graph-ingest/`.
 - [ ] 2.3 D2: `Stop(ctx)` runs the cleanup the admitted `Start` recorded. Also:
-  - `TestGuardStopRunsTheCleanupStartWasGiven`, and the updated guard tests;
+  - `TestGuardStopRunsTheCleanupStartWasGiven`;
+  - the four tests of 2.1 rewritten for `Stop(ctx)`, with the cleanup given to `Start`;
+  - the existing guard tests D2 lists;
   - graph-ingest's `Stop` and the log moved into `release`;
   - the two graph-ingest helpers whose cleanup fails once and then runs `release`;
   - D5's cleanup sentences.
@@ -27,8 +38,9 @@ at its commit (#171).
   - `go test -race -count=1 ./internal/lifecycleguard/ ./internal/harness/lifecycletest/ ./processor/graph-ingest/`
   - `task test:integration -- ./processor/graph-ingest/`
   - `task test:repeat -- ./internal/lifecycleguard/ ./processor/graph-ingest/`
-  - `task mutate:check` gives `verdict: detection` for M1, M2 and M3 (design D3), each with `-pkg
-    ./internal/lifecycleguard -file internal/lifecycleguard/guard.go` and its mutant copy kept outside the repository
+  - `task mutate:check` gives `verdict: detection` for M1 to M6, each run with `-pkg ./internal/lifecycleguard -file
+    internal/lifecycleguard/guard.go`, with `-test` and `-expect-text` taken from design D4's table, and with its mutant
+    copy kept outside the repository
   - `task verify` passes on a clean tree (review stop).
 
 ## 3. Verify, review and close

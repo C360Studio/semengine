@@ -61,7 +61,7 @@ covers the nil context only. Start and Stop answer an ended context differently,
     Failure line: "Stop(%s) = %v, want the context's own error %v".
   - On the base, the `Start(nil)` row fails (it matches `ErrInvalidConfig`), and so does the nil message check
     ("context cannot be nil" against "nil context", and the sentinels' texts). The ended rows pass on the base; their
-    sensitivity is M6 (D4). Under option (a), the ended `Stop` rows would assert `errs.IsInvalid` instead, and an
+    sensitivity is M4 (D4). Under option (a), the ended `Stop` rows would assert `errs.IsInvalid` instead, and an
     ended-message check would also fail on the base.
 
 ## D2. The cleanup is given once, to Start
@@ -87,9 +87,9 @@ covers the nil context only. Start and Stop answer an ended context differently,
   - (d) `start` returns its own cleanup. A panicking `start` returns nothing, so the rollback would have nothing to run.
   - (e) Do nothing.
 - Not added: a check that `start` or `cleanup` is non-nil. The one production caller passes method values, which cannot
-  be nil. Today a nil cleanup panics in `Stop` and then leaves every later `Stop` refused as concurrent (inventory 1e).
-  After D7 the same mistake panics in each `Stop`, the cleanup stays pending, and a failed Start reports it through the
-  rollback helper (`lifecyclecleanup.go:48-49`). Nothing goes unnoticed.
+  be nil. Today a nil cleanup panics in `Stop` and then leaves every later `Stop` refused as concurrent (inventory 1e,
+  filed as #309). After this change the same mistake panics in the first `Stop` with the same result, and a failed
+  Start reports a nil rollback through the rollback helper (`lifecyclecleanup.go:48-49`). Nothing goes unnoticed.
 - graph-ingest:
   - `component.go:967` is unchanged.
   - `:1073-1081` becomes `return c.lifecycle.Stop(ctx)`, and its doc comment (`:1069-1072`) says Stop runs `release`,
@@ -153,7 +153,6 @@ covers the nil context only. Start and Stop answer an ended context differently,
   - `Stop` safe before, during and after `Start`;
   - a failed cleanup pending for the next `Stop`;
   - rollback through `pkg/lifecyclecleanup`.
-  - D7 changes only the paths where a cleanup panics, which no suite check reaches.
 - Commands:
   - `go test -race -count=1 ./internal/lifecycleguard/ ./internal/harness/lifecycletest/ ./processor/graph-ingest/`
   - `task test:integration -- ./processor/graph-ingest/`
@@ -167,9 +166,7 @@ covers the nil context only. Start and Stop answer an ended context differently,
 | M1 | the nil-context helper wraps `errs.ErrInvalidConfig` | `TestGuardRefusesNilAndEndedContexts` | `want an invalid refusal matching errs.ErrInvalidData` |
 | M2 | the cleanup is recorded before the second-Start check | `TestGuardStopRunsTheCleanupStartWasGiven` | `ran the refused Start's cleanup` |
 | M3 | the concurrent-Stop refusal returns nil | `TestGuardRefusesAConcurrentStop` | `want a transient refusal` |
-| M4 | Stop's handling of a panicking cleanup removed (today's shape) | `TestGuardStopSurvivesAPanickingCleanup` | `after a panicking cleanup` |
-| M5 | Start's handling of a panicking rollback removed (today's shape) | `TestGuardStartSurvivesAPanickingRollback` | `after a panicking rollback` |
-| M6 | Stop's ended-context check wraps the error invalid (option D1 (a)) | `TestGuardRefusesNilAndEndedContexts` | `want the context's own error` |
+| M4 | Stop's ended-context check wraps the error invalid (option D1 (a)) | `TestGuardRefusesNilAndEndedContexts` | `want the context's own error` |
 
 ## D5. Doc comments
 
@@ -179,7 +176,8 @@ covers the nil context only. Start and Stop answer an ended context differently,
   - `Start` and `Stop` refuse a nil context the same way;
   - `Start` refuses an ended context, while `Stop` returns the context's own error, as it does whenever its context ends
     first;
-  - a cleanup that panics stays pending like one that failed.
+  - a cleanup that panics leaves every later `Stop` refused (after a `Stop`) or waiting (after a rollback): the open
+    defect #309; no caller recovers a panic today.
 - `Start`'s comment adds that it records the cleanup and that a refused Start records nothing.
 - `Stop`'s comment says it runs the cleanup `Start` recorded, and what it returns for a nil and an ended context.
 - `Component.Stop`'s and `release`'s comments say where the log is printed (D2).
@@ -195,45 +193,26 @@ covers the nil context only. Start and Stop answer an ended context differently,
   - the package and method docs, for what no spec states:
     - the retry after a failed Stop, which D13 left there (archive `design.md:757`, "except that retry; no delta");
     - the concurrent-Stop refusal, stated today only in Stop's doc (`guard.go:83-84`);
-    - this change's one cleanup (D2) and panicking cleanup (D7).
+    - this change's one cleanup (D2), and what a panicking cleanup leaves behind, as #309 describes (D7).
 - A requirement now would sit on the same spec that PR 2 rewrites.
 - Ledger: the guard has no row (own code), and graph-ingest's item (6) stays true.
 - `AGENTS.md:82` and `rules-index.md:28` name the package, not its signature, so their text stands.
 
-## D7. A cleanup that panics stays pending (inventory 1e)
+## D7. A panicking cleanup: filed as #309, not fixed here (inventory 1e)
 
-- No real-world trigger today, so the severity is MEDIUM at most (#185). It is fixed here because this is the guard's
-  tidy, and because after D2 one function serves as both the rollback and Stop's cleanup, so one panicking cleanup
-  reaches both paths.
-- Behaviour, mirroring the existing handling of a panicking `start` (`guard.go:57-75`):
-  - In `Stop`: when the cleanup panics, the guard no longer counts a Stop as running, and the cleanup stays pending. The
-    panic continues to Stop's caller. A later `Stop` runs the cleanup again.
-  - In a failed `Start`'s rollback: when the cleanup panics, Start's bookkeeping still finishes. A waiting or later
-    `Stop` is no longer held, and the cleanup stays pending, as after a rollback that returned an error. The panic
-    continues to Start's caller.
+- No real-world trigger today: graph-ingest's `release` has no panic path, every cleanup in the tree is a method value,
+  and no caller recovers a panic (inventory 1e). Under the severity rule (#185) that makes it MEDIUM at most, and the
+  reviewer contract's answer to such a finding is a doc sentence or a declared degrade, never new mechanism to make a
+  promise true. So it is filed as #309 (`status:blocked` on this PR, which edits the same lines), and `Stop`'s doc
+  comment states the behaviour and cites it (D5).
 - Options:
-  - (a) both paths, chosen;
-  - (b) the `Stop` path only, with the rollback path filed as an issue (the reviewer's steer named `Stop`; the rollback
-    path is the same defect, inventory 1e);
-  - (c) neither, both filed.
-- Test `TestGuardStopSurvivesAPanickingCleanup`:
-  - The guard is started; the cleanup panics on its first call and returns nil after that, counted.
-  - The first `Stop` is called inside a recover, as in `TestGuardRollsBackAPanickingStart` (`guard_test.go:232-240`).
-    Failure line: "Stop's cleanup panic was swallowed".
-  - A later `Stop` returns nil, and the cleanup has run twice. Failure line: "Stop after a panicking cleanup = %v with
-    %d cleanup call(s), want nil and 2".
-  - A repeated `Stop` runs nothing. Failure line: "repeated Stop = %v with %d cleanup call(s), want nil and 2".
-  - On the base the later `Stop` is refused as concurrent, with one call. The base form passes the cleanup to each
-    `Stop`.
-- Test `TestGuardStartSurvivesAPanickingRollback`, in `synctest`:
-  - `start` returns an error; the cleanup panics on its first call and returns nil after that, counted.
-  - `Start` is called inside a recover. Failure line: "Start's rollback panic was swallowed".
-  - A `Stop` under a cancellable context runs in a goroutine; after `synctest.Wait()` it must have returned nil, and the
-    cleanup has run twice. Failure lines: "Stop after a panicking rollback did not return; want it to run the cleanup
-    again", then the context is cancelled to end that goroutine; "Stop after a panicking rollback = %v with %d cleanup
-    call(s), want nil and 2".
-  - On the base the `Stop` waits on the in-flight mark that is never cleared, which prints the first line.
-- Sensitivity: M4 and M5 (D4).
+  - (a) fix both paths here, mirroring the panicking-`start` handling (`guard.go:57-75`): the cleanup stays pending,
+    the panic continues to the caller, a later `Stop` runs it again; on the rollback path `Start`'s bookkeeping still
+    finishes. Two tests (`TestGuardStopSurvivesAPanickingCleanup`; `TestGuardStartSurvivesAPanickingRollback`, in
+    `synctest`) and two mutants. Rejected here under #185; the shape is recorded on #309 for whoever fixes it.
+  - (b) the `Stop` path only, with the rollback path filed: the same defect split in two, rejected for the same reason.
+  - (c) file both and state the behaviour, chosen.
+- The owner can pull (a) into this change by saying so on #308; its tests and mutants then join tasks 2.1 to 2.3.
 
 ## Merge order against PR 2
 

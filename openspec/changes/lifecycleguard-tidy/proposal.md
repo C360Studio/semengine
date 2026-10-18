@@ -13,7 +13,7 @@ from #196, as a draft and write its design"). Three problems in `internal/lifecy
 - It takes the cleanup separately in `Start` and in `Stop`, and graph-ingest passes two different values.
 - A cleanup that panics can never run again. Inside `Stop`, every later `Stop` is refused as concurrent; inside a
   failed `Start`'s rollback, every later `Stop` waits until its own context ends. Nothing triggers this today; it was
-  found in this change's review (design D7).
+  found in this change's review, filed as #309, and stated in `Stop`'s doc comment, not fixed here (design D7).
 
 This is PR 1 of the order recorded on #282 (comment 6249934379, point 5), ahead of the `Start`-context change (PR 2,
 ADR-113). Because PR 2 changes the lifecycle suite, this change keeps the guard's behaviour under today's suite exactly
@@ -34,17 +34,14 @@ as it is.
 - graph-ingest: `Stop` calls `c.lifecycle.Stop(ctx)`. The "component stopped gracefully" log moves to the end of
   `release`, so it is printed after any cleanup that succeeds. A repeated `Stop` that has nothing left to release runs
   no cleanup and prints nothing.
-- A cleanup that panics, in a `Stop` or in a failed `Start`'s rollback, stays pending like one that failed, and the
-  panic continues to the caller; a later `Stop` runs the cleanup again.
 - New guard tests:
   - the nil-context refusal in both methods, and the ended context in each;
   - the cleanup the admitted `Start` was given is the one every `Stop` runs;
-  - a concurrent `Stop` is refused with a transient error;
-  - a `Stop`, and a failed `Start`, whose cleanup panics leave that cleanup for the next `Stop`.
+  - a concurrent `Stop` is refused with a transient error.
 - Two graph-ingest test helpers now give a cleanup that fails on its first call and runs `release` after that, so
   their tests keep what they assert.
 - The guard's package and method doc comments state the one nil-context refusal, the two answers to an ended
-  context, the one cleanup and the panicking cleanup.
+  context, the one cleanup, and what a panicking cleanup leaves behind (#309).
 
 ## Capabilities
 
@@ -58,7 +55,6 @@ satisfies ("Portable floor", "Failed start whose own cleanup fails") are unchang
 - No exported signature changes outside `internal/`. What callers of graph-ingest can observe:
   - `Start(nil)` matches `ErrInvalidData`, not `ErrInvalidConfig`, with a new message.
   - The stop log also follows a failed `Start` whose rollback succeeded.
-  - A `release` that panics would no longer leave every later `Stop` refused or waiting (none panics today).
   - No test, caller or consumer in scope reads any of these.
 - No spec, ledger or rule text changes.
 - Addresses #196, which stays open as the adoption tracker.

@@ -61,11 +61,6 @@ func NewPublisher(bucket StatusWriter, key string) (*Publisher, error) {
 // from "the producer is gone", and skipping unchanged values would make a healthy
 // steady state indistinguishable from a dead one.
 //
-// Publish sets the envelope's PublishedAt to the wall-clock time of this write, in UTC,
-// RFC 3339 with nanoseconds, replacing whatever the caller passed, so no producer can
-// leave it out or carry an old one forward. It states when the producer wrote, not when
-// anything in the graph was asserted.
-//
 // The error is returned, never swallowed, so the tick loop can count and log it; the
 // loop must keep ticking regardless, because the next heartbeat is the recovery. A nil
 // context is refused with an error before any write.
@@ -73,7 +68,6 @@ func (p *Publisher) Publish(ctx context.Context, status graph.IndexStatusRespons
 	if ctx == nil {
 		return errors.New("readiness: nil context")
 	}
-	status.PublishedAt = time.Now().UTC().Format(time.RFC3339Nano)
 	data, err := json.Marshal(status)
 	if err != nil {
 		// Unreachable (strings, numbers, bools and one map with string keys) but

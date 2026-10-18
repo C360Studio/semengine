@@ -133,12 +133,6 @@ type IndexStatusResponse struct {
 	// to do at the instant it was captured — not that the underlying collection is empty,
 	// and not that anything published later has been seen.
 	BootstrapScope uint64 `json:"bootstrap_scope,omitempty"`
-	// PublishedAt is when the producer's publisher wrote this value: UTC, RFC 3339
-	// with nanoseconds, from the wall clock. graph/readiness.Publisher.Publish sets
-	// it on every write, whatever the caller passed, so no producer can leave it
-	// out. It states when the producer wrote, not when anything in the graph was
-	// asserted.
-	PublishedAt string `json:"published_at"`
 }
 
 // IndexState is the readiness envelope's state field. Its wire values are the

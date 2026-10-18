@@ -29,7 +29,7 @@ commit, recorded in `notes/<task>.md`, except where a task says how else the tes
   stay; `Health()` reads poison and the latest tick's failed observation; `graph/index_status.go`'s scope and complete
   doc comments, `README.md` § Health, and the `graph-ingest-recovery` delta. Gate: 3.1 passes; `go test -race
   ./processor/graph-ingest/ ./graph/...`.
-- [ ] 3.3 D4: `PublishedAt` leaves `graph.IndexStatusResponse` and the publisher; `TestPublishStampsPublishedAt` goes;
+- [x] 3.3 D4: `PublishedAt` leaves `graph.IndexStatusResponse` and the publisher; `TestPublishStampsPublishedAt` goes;
   `TestIndexStatusResponseWire` (`graph/index_status_test.go:41`) keeps the key in its legacy input and asserts it is
   dropped; `graph/readiness/watcher.go:22`'s comment; the `graph-transport-boundary` delta (RENAMED and MODIFIED);
   ledger rows `graph` and `graph/readiness`. Gate: `git grep -n -i 'published_at\|PublishedAt' -- '*.go'

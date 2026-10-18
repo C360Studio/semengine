@@ -18,6 +18,7 @@ import (
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/kvcatalog"
+	"github.com/c360studio/semengine/internal/cache"
 	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/pkg/errs"
@@ -85,6 +86,12 @@ func TestIntegration_TypedClientPreservesCommitAmbiguity(t *testing.T) {
 	require.NoError(t, err)
 	bucket := &foreignWriteBucket{FaultKV: natsfixture.NewFaultKV(entityStates)}
 	comp.entityBucket = client.NewKVStore(bucket)
+	// The entity query cache Start would build, so the unconfirmed update is shown to invalidate it
+	// (#174; design D1).
+	entityCache, err := cache.NewSimple[graph.EntityState]()
+	require.NoError(t, err)
+	comp.entityCache = entityCache
+	t.Cleanup(func() { _ = entityCache.Close() })
 	// The test stands in for a Start that completed, so the handlers serve (checkpoint 3 B2).
 	comp.startCompleted.Store(true)
 	require.NoError(t, comp.setupQueryHandlers(ctx))
@@ -122,6 +129,15 @@ func TestIntegration_TypedClientPreservesCommitAmbiguity(t *testing.T) {
 		})
 	}
 
+	cachedState := func() any {
+		resp := batchQuery(ctx, t, comp, id)
+		require.Len(t, resp.Entities, 1)
+		triple := resp.Entities[0].GetTriple("test.state.value")
+		require.NotNil(t, triple)
+		return triple.Object
+	}
+	require.Equal(t, "created", cachedState(), "the entity is cached before the update")
+
 	// Backend write timeout: the update reaches the bucket, which applies it, and graph-ingest
 	// sees nats.ErrTimeout in place of the bucket's reply.
 	bucket.FailAfter(natsfixture.KVUpdate, nats.ErrTimeout)
@@ -142,6 +158,8 @@ func TestIntegration_TypedClientPreservesCommitAmbiguity(t *testing.T) {
 	require.NoError(t, err)
 	assert.Greater(t, applied.Revision(), created.KVRevision, "the fault let the write stand")
 	assert.Equal(t, "unconfirmed", stateValue(t, id, applied.Value()))
+	assert.Equal(t, "unconfirmed", cachedState(),
+		"a batch query after an update that stood must not be served the entry cached before it")
 
 	bucket.FailAfter(natsfixture.KVUpdate, nil)
 

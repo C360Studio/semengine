@@ -1307,6 +1307,9 @@ nothing and a `Start` is refused", which those tests already count. Every struct
 mid-lifecycle becomes a setup step that calls the component's guard's `Start` with a start function that acquires
 nothing, or one that fails with a rollback that fails, which leaves the cleanup pending (`guard.go:58-68`). The lock in
 `lifecycle_integration_test.go:192-197` guards the component's own handles, not the guard's state, and stays.
+**Superseded 2026-10-18** by owner ruling I (#91 comment 6062681355) in change `simplify-04a-19-graph-ingest`
+(PR #299): `handlesMu` is removed, because the lifecycle guard already runs `start`, `release` and `cleanup` one at a time;
+the test now reads the handles after a returned call or a channel receive, which orders the read.
 `internal/lifecycleguard` gains no read-out; task 2.7 stands.
 
 One pin test asserts the rule D13 replaces, and is inverted when task 3.12 ports it (PR #93 comment 6039549363).

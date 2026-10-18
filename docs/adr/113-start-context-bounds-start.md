@@ -26,8 +26,9 @@ stop* stops taking new work, drains and joins what is running, and releases ever
 context given to `Stop`. The *composition root* is the code that builds and wires the process, usually `main`.
 
 The carried contract gives a started component two ways to stop. "Stop is controlled while the Start context is still
-live", and "Ending the Start context first makes Stop an abort" (`component/lifecycle.go:49-53`). Two suite checks hold
-every owner to that (`internal/harness/lifecycletest/lifecycletest.go:183-225`). #282 names two costs:
+live", and "Ending the Start context first makes Stop an abort" (`component/lifecycle.go:49-53`). Two checks of the
+lifecycle suite (`internal/harness/lifecycletest`, the checks every owner's test runs) hold every owner to that
+(`internal/harness/lifecycletest/lifecycletest.go:183-224`). #282 names two costs:
 
 - A caller cannot bound startup. A deadline on `Start`'s context also stops the component once it fires, yet
   graph-ingest's `Start` connects to NATS, sets up buckets and sweeps `ENTITY_STATES` before it returns
@@ -48,6 +49,11 @@ not parent handlers that outlive it" (`natsclient/stream.go:455-459`). The rulin
 constructor context stops nothing: "Shutdown is the only stop" (`internal/dispatch/keyed_pool.go:115-118`). The
 component contract is the one place left with two stops.
 
+Two stop verbs exist today. `Stop(ctx)` is the verb of a lifecycle owner, and the lifecycle suite runs against `Start`
+and `Stop`. `Shutdown(ctx)` is the background-work verb for a type with a constructor and no `Start` whose stop waits on
+I/O or a callback (`openspec/specs/background-work/spec.md:20-22`; the keyed pool). Both make the same promise: stop,
+wait, return the context's error if the bound wins, and let a later call try again. This record changes neither name.
+
 ## Decision
 
 **The contract, as behaviour.** `Start(ctx)` does its startup work under `ctx` and returns when the component is ready;
@@ -57,23 +63,18 @@ later `Stop` tries again. Inside `Start` the component creates the one run conte
 its cancel, and ends it inside `Stop`. The *run context* is the context that work runs under after `Start` returns; it
 does not end when the Start context ends.
 
-**Who controls the lifecycle.** The composition root cancels its context on SIGTERM and calls the component manager's
-`Stop` under a bounded stop context; the manager calls `Stop` on every component in reverse start order under that
-bound. The parent's cancel reaches a component through `Stop`, not through an inherited context. A component's run
-context ends only in `Stop`. The manager is a lifecycle owner under this same contract, so which of its calls receives
-the root context is change 3's to name.
+**Who controls the lifecycle.** The composition root cancels its context on SIGTERM. The component manager, the one
+owner that watches that context, calls `Stop` on every component in reverse start order under a bounded stop context.
+The parent's cancel reaches a component through the manager's `Stop`, not through an inherited context. A component's
+run context ends only in `Stop`. How the manager receives and watches the root context is change 3's to name.
 
 **No constructor is named.** How a component makes its run context is its own choice (the owner: "not sure we need to be
 specific about the type of run context they create"). The suite check that enforces the contract cancels the Start
 context after `Start` returns, requires the owner to keep running, then requires `Stop` to release everything. Any run
 context that dies with the Start context fails that check, whatever built it, so a named constructor would add nothing
-the check does not hold. The developer contract gains one narrow exception, worded by this behaviour: a lifecycle
+the check does not hold. The ban on new root contexts gains one narrow exception, worded by this behaviour: a lifecycle
 owner's `Start` creates the one run context for its continuing work, keeps it only as a cancel, and ends it inside
 `Stop`.
-
-**Names.** `Stop(ctx)` is the verb for an owner with a `Start` (a component or a service). `Shutdown(ctx)` is the
-background-work verb for a type with a constructor and no `Start` whose stop waits on I/O or a callback
-(`openspec/specs/background-work/spec.md:20-22`; the keyed pool). Same promise, two contracts; nothing is renamed.
 
 ## Alternatives rejected
 
@@ -82,19 +83,20 @@ background-work verb for a type with a constructor and no `Start` whose stop wai
   in a `main` wired the obvious way, startup that cannot be bounded, and two cancel orders in the manager.
 - **`Run(ctx)` for components.** The manager starts components in phases and begins the next phase only when every
   `Start` in the current one has returned (pin `service/component_manager.go:578-611`, `:670`); `Run` returns only when
-  the work ends, so it never says "ready". And `Run` stops when its context is cancelled, so the wait for its drain
-  takes no bound from the caller, which the background-work rule requires in place of a fixed timeout
-  (`openspec/specs/background-work/spec.md:49-54`).
-- **The lifecycle guard holds the run context and cancels it.** The cancel order belongs to each owner's cleanup.
-  graph-ingest cancels its run context after it drains its consumers, shuts down its pool and drains its subscriptions,
-  and before it joins its status loop (`processor/graph-ingest/component.go:1104-1143`); the setup plan says "Shutdown
-  order belongs to each resource owner; do not universally cancel before draining" (`docs/setup-plan.md:295`). A cancel
-  held by the guard picks one order for every owner: the pin manager's problem, one layer down.
+  the work ends, so it never says "ready". And once `Run` is called, the caller has no way to hand it a stop bound: the
+  drain would run under a budget the component picks, not the manager's stop context.
+- **The lifecycle guard (`internal/lifecycleguard`, the shared Start/Stop state machine) holds the run context and
+  cancels it.** The cancel order belongs to each owner's cleanup. graph-ingest cancels its run context after it drains
+  its consumers, shuts down its pool and drains its subscriptions, and before it joins its status loop
+  (`processor/graph-ingest/component.go:1104-1143`); the setup plan says "Shutdown order belongs to each resource owner;
+  do not universally cancel before draining" (`docs/setup-plan.md:295`). A cancel held by the guard picks one order for
+  every owner: the pin manager's problem, one layer down.
 
 ## Consequences
 
 - **The suite.** 2 of its 8 checks change, `ControlledStopUnderLiveStartAuthority` and `AbortStopPreservesCause`
-  (`internal/harness/lifecycletest/lifecycletest.go:97-106`, `:183-225`). The sensitivity double gains one failpoint: an
+  (`internal/harness/lifecycletest/lifecycletest.go:97-106`, `:183-224`). The suite's own test double, which can be
+  told to break one rule at a time so that each check is shown to catch its own violation, gains one such break: an
   owner whose work dies with its Start context.
 - **Adopters, in the same pull request.** Every owner whose test runs the suite is held to the changed check. The
   metrics server hands the Start context to every served request as its base (`metric/handler.go:54-55`, `:145`).
@@ -102,14 +104,17 @@ background-work verb for a type with a constructor and no `Start` whose stop wai
   splits into startup work under the Start context (connect, bucket setup, the snapshot sweep) and continuing work under
   the run context (subscriptions, handlers, pool, status loop). The third is the guard's test owner. natsclient has this
   shape already; the guard changes nothing, because the cancel order is the owner's.
-- **Change 3.** The ported component manager gives each component a bounded Start context and holds no per-component
-  cancel, so the pin's two cancel orders (`service/component_manager.go:1033-1042`) do not come over.
-- **Rules.** The developer contract gains the exception above, with its row in `AGENTS.md` and `.agents/rules-index.md`.
-  The `LifecycleComponent` doc comment's Stop rule is rewritten to this contract in plain words, as ADR-108 decision
-  3(e) asks.
+- **Change 3.** The ported component manager holds no per-component cancel, so the pin's two cancel orders
+  (`service/component_manager.go:1033-1042`) do not come over.
+- **Rules.** The exception above is added everywhere the ban on new root contexts is stated: the developer contract
+  (`.agents/contracts/semengine-developer.md:219-221`), the reviewer contract (`semengine-reviewer.md:242-245` and
+  `:255`, where a new root and `context.WithoutCancel` are `BLOCKING`), the architect contract
+  (`semengine-architect.md:405-409`) and the `AGENTS.md` row "never invent roots" (`AGENTS.md:71`), with its row in
+  `.agents/rules-index.md`. The `LifecycleComponent` doc comment's Stop rule is rewritten to this contract in plain
+  words, as ADR-108 decision 3(e) asks.
 - **Authors outside this module.** A component written to the carried contract, whose continuing work descends from its
-  Start context, stops working once the manager's bounded Start context ends. Inside this module the changed check
-  catches that. Outside it the suite is internal and only the doc comment says so, the gap ADR-108 decision 3(e) already
+  Start context, stops working once the Start context it was given ends. Inside this module the changed check catches
+  that. Outside it the suite is internal and only the doc comment says so, the gap ADR-108 decision 3(e) already
   records.
 - **Unchanged.** One `Start` per instance (pin ADR-095). A failed `Start` whose own cleanup fails keeps what it could
   not release for a later `Stop` (`lifecycle-suite`, "Failed start whose own cleanup fails"). Boot-only composition and
@@ -120,10 +125,12 @@ background-work verb for a type with a constructor and no `Start` whose stop wai
   `:101`, `:107`) reads as run-context work. The `LifecycleComponent` doc comment's Stop rule
   (`component/lifecycle.go:49-53`), since PR #273 the plain-words form of the carried sentence #282 quotes ("Start
   accepts the context that owns continuing work"). ADR-108 decision 3's "controlled and abort Stop"
-  (`docs/adr/108-processor-shell.md:75`), which now reads as this record's floor. The same carried rule is spelled in
-  `docs/setup-plan.md:293-294`, in the `lifecycletest` row of `docs/admission-ledger.yaml:176-177`, and in the context
-  rules of the developer (`:215-218`, `:235-237`), architect (`:401-404`) and reviewer (`:237-241`) contracts under
-  `.agents/contracts/`; the implementing change rewrites each to this contract.
+  (`docs/adr/108-processor-shell.md:75`), which now means this record's rules. The same carried rule is spelled in the
+  `lifecycle-suite` spec (`openspec/specs/lifecycle-suite/spec.md:19-20`, `:87-88`), in `docs/setup-plan.md:293-294`,
+  in the `lifecycletest` row of `docs/admission-ledger.yaml:176-177`, in `pkg/errs/shutdown.go:17` ("Start-owned
+  runtime completion"), in `processor/graph-ingest/keyed_ingest.go:220-221` ("when Start's context ends"), and in the
+  context rules of the developer (`:215-218`, `:235-237`), architect (`:401-404`) and reviewer (`:237-241`) contracts
+  under `.agents/contracts/`; the implementing change rewrites each to this contract.
 
 ## Related
 

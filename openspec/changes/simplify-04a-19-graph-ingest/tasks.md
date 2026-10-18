@@ -63,7 +63,7 @@ commit, recorded in `notes/<task>.md`, except where a task says how else the tes
 
 ## 6. Plain functions and text (batch 5, #139 D, F7, I, E, J)
 
-- [ ] 6.1 The four receiver-free methods become functions; `graph.SourceIndexingProfile` at the profile statement; the
+- [x] 6.1 The four receiver-free methods become functions; `graph.SourceIndexingProfile` at the profile statement; the
   generated-code headers go and what revive then reports is fixed; `metrics_test.go` checks counter deltas and
   `TestComponent_DataFlow_ReturnsMetrics` checks that the rates move. Gate:
   `task lint`; `go test -race ./processor/graph-ingest/`.

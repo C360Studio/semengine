@@ -152,7 +152,7 @@ func TestIndexingProfile_Graphable_IndexingProfilerWins(t *testing.T) {
 	}
 	msg := message.NewBaseMessage(payload.Schema(), payload, "test")
 
-	entity, err := comp.extractEntityFromMessage(msg)
+	entity, err := extractEntityFromMessage(msg)
 	require.NoError(t, err)
 	require.NoError(t, comp.mergeEntityOnLane(context.Background(), entity, false))
 
@@ -167,7 +167,7 @@ func TestIndexingProfile_Graphable_NoProfilerFallsToFloor(t *testing.T) {
 	payload := &testGraphablePayload{id: testProfileEntityID, triples: []message.Triple{{Subject: testProfileEntityID, Predicate: semantictest.Predicate(t, "test", "fixture", "value"), Object: "v", Timestamp: time.Now()}}}
 	msg := message.NewBaseMessage(payload.Schema(), payload, "test")
 
-	entity, err := comp.extractEntityFromMessage(msg)
+	entity, err := extractEntityFromMessage(msg)
 	require.NoError(t, err)
 	require.NoError(t, comp.mergeEntityOnLane(context.Background(), entity, false))
 
@@ -184,7 +184,7 @@ func TestIndexingProfile_ReArrival_DoesNotAccumulateOrReProfile(t *testing.T) {
 
 	// First arrival: declares content.
 	first := &testGraphablePayload{id: testProfileEntityID, triples: []message.Triple{{Subject: testProfileEntityID, Predicate: semantictest.Predicate(t, "doc", "body", "text"), Object: "v1", Timestamp: time.Now()}}, profile: vocabulary.IndexingProfileContent}
-	e1, err := comp.extractEntityFromMessage(message.NewBaseMessage(first.Schema(), first, "test"))
+	e1, err := extractEntityFromMessage(message.NewBaseMessage(first.Schema(), first, "test"))
 	require.NoError(t, err)
 	require.NoError(t, comp.mergeEntityOnLane(ctx, e1, false))
 
@@ -192,7 +192,7 @@ func TestIndexingProfile_ReArrival_DoesNotAccumulateOrReProfile(t *testing.T) {
 	// the profile is immutable after create, so this must NOT re-profile and
 	// must NOT add a second profile triple.
 	second := &testGraphablePayload{id: testProfileEntityID, triples: []message.Triple{{Subject: testProfileEntityID, Predicate: semantictest.Predicate(t, "doc", "body", "text"), Object: "v2", Timestamp: time.Now()}}, profile: vocabulary.IndexingProfileTrace}
-	e2, err := comp.extractEntityFromMessage(message.NewBaseMessage(second.Schema(), second, "test"))
+	e2, err := extractEntityFromMessage(message.NewBaseMessage(second.Schema(), second, "test"))
 	require.NoError(t, err)
 	require.NoError(t, comp.mergeEntityOnLane(ctx, e2, false))
 
@@ -286,7 +286,7 @@ func TestIndexingProfile_FloorMetric_FiresExactlyOnFloor(t *testing.T) {
 	//     → keep-first, no floor → metric unchanged (immutability is not a default).
 	before = testutil.ToFloat64(counter)
 	payload := &testGraphablePayload{id: "c360.platform.metrictest.sys.widget.001", triples: []message.Triple{{Subject: testProfileEntityID, Predicate: semantictest.Predicate(t, "test", "fixture", "value"), Object: "v2", Timestamp: time.Now()}}}
-	entity, err := comp.extractEntityFromMessage(message.NewBaseMessage(mt, payload, "test"))
+	entity, err := extractEntityFromMessage(message.NewBaseMessage(mt, payload, "test"))
 	require.NoError(t, err)
 	require.NoError(t, comp.mergeEntityOnLane(ctx, entity, false))
 	assert.InDelta(t, before, testutil.ToFloat64(counter), 0.0001,

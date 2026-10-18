@@ -161,7 +161,7 @@ func (c *Component) recordMutationRejection(subject, reason, detail string) {
 		slog.String("error", detail))
 }
 
-func (c *Component) validateTriplePredicates(triples []message.Triple) error {
+func validateTriplePredicates(triples []message.Triple) error {
 	for _, triple := range triples {
 		if vocabulary.IsValidPredicate(triple.Predicate) {
 			continue

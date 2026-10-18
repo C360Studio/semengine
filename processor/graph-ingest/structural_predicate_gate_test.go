@@ -77,12 +77,10 @@ func seedStructuralGateEntity(t *testing.T, comp *Component, entityID string) (*
 // pre-release as provably inert — the authoritative persistence seam rejects
 // unconditionally, so the hatch could only swap the caller-visible error code).
 func TestValidateTriplePredicates_FailClosed_RejectsClassified(t *testing.T) {
-	comp := createTestComponentWithMockKV(t, withAuthority("acme", "ops"))
-
 	triples := []message.Triple{
 		{Subject: structuralGateEntity, Predicate: "agent.role", Object: "researcher"}, // predicate-audit:invalid {"kind":"stored-predicate","value":"agent.role","reason":"arity"}
 	}
-	err := comp.validateTriplePredicates(triples)
+	err := validateTriplePredicates(triples)
 	require.Error(t, err, "the gate must reject a non-3-part predicate")
 	var ce *errs.ClassifiedError
 	require.ErrorAs(t, err, &ce)
@@ -91,7 +89,6 @@ func TestValidateTriplePredicates_FailClosed_RejectsClassified(t *testing.T) {
 }
 
 func TestValidateTriplePredicates_ValidPredicate_Untouched(t *testing.T) {
-	comp := createTestComponentWithMockKV(t, withAuthority("acme", "ops"))
 	// A conforming predicate must pass the fail-closed gate untouched. (Metering
 	// on rejection is the meteredMutation wrapper's job — asserted in the
 	// handler-level tests below.)
@@ -102,7 +99,7 @@ func TestValidateTriplePredicates_ValidPredicate_Untouched(t *testing.T) {
 		// literally "value" MUST pass (it is a real predicate, not a suffix).
 		{Subject: structuralGateEntity, Predicate: "sensorml.capability.value", Object: "50m"},
 	}
-	err := comp.validateTriplePredicates(triples)
+	err := validateTriplePredicates(triples)
 	require.NoError(t, err, "conforming 3-part predicates pass the fail-closed gate")
 }
 

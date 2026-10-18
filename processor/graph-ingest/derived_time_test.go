@@ -141,7 +141,7 @@ func TestDerivedStatementsCarryTriggeringTime(t *testing.T) {
 			profile: vocabulary.IndexingProfileContent,
 		}
 		msg := message.NewBaseMessage(payload.Schema(), payload, "derive-producer", message.WithTime(derivedEnvelopeTime))
-		entity, err := c.extractEntityFromMessage(msg)
+		entity, err := extractEntityFromMessage(msg)
 		if err != nil {
 			t.Fatalf("extractEntityFromMessage: %v", err)
 		}

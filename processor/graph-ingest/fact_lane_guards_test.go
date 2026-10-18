@@ -131,7 +131,7 @@ func TestStorageRefExtraction_ConsumerLiftsRefOntoEntity(t *testing.T) {
 	}
 	msg := message.NewBaseMessage(payload.Schema(), payload, "test")
 
-	entity, err := comp.extractEntityFromMessage(msg)
+	entity, err := extractEntityFromMessage(msg)
 	require.NoError(t, err)
 	require.NotNil(t, entity.StorageRef, "a Storable payload's ref must be lifted onto the EntityState at extract")
 	assert.Equal(t, ref.Key, entity.StorageRef.Key)
@@ -146,14 +146,13 @@ func TestStorageRefExtraction_ConsumerLiftsRefOntoEntity(t *testing.T) {
 }
 
 func TestStorageRefExtraction_NonStorablePayloadLeavesRefNil(t *testing.T) {
-	comp := createTestComponentWithMockKV(t)
 	// testGraphablePayload (indexing_profile_test.go) is Graphable but NOT Storable.
 	payload := &testGraphablePayload{id: flParentID, triples: []message.Triple{{
 		Subject: flParentID, Predicate: semantictest.Predicate(t, "test", "fixture", "value"), Object: "v", Timestamp: time.Now(),
 	}}}
 	msg := message.NewBaseMessage(payload.Schema(), payload, "test")
 
-	entity, err := comp.extractEntityFromMessage(msg)
+	entity, err := extractEntityFromMessage(msg)
 	require.NoError(t, err)
 	assert.Nil(t, entity.StorageRef, "a plain Graphable carries no StorageRef")
 }

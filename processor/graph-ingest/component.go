@@ -1246,7 +1246,7 @@ func (c *Component) startEntityStateGuard(ctx context.Context, bucket *natsclien
 				c.recordBootSweepPoison(ctx, sweep)
 				return nil
 			}
-			c.sweepEntityStateGuardEntry(sweep, entry)
+			sweepEntityStateGuardEntry(sweep, entry)
 		}
 	}
 }
@@ -1275,7 +1275,7 @@ func (c *Component) stopEntityStateGuardWatcher(watcher jetstream.KeyWatcher, up
 // an earlier poisoned one for the same key. A delivery is judged by
 // decodeStoredEntity, the rule readEntity applies, so a value naming another
 // entity than its key is inventoried at boot, not at its first read.
-func (c *Component) sweepEntityStateGuardEntry(sweep map[string]entityPoisonRecord, entry jetstream.KeyValueEntry) {
+func sweepEntityStateGuardEntry(sweep map[string]entityPoisonRecord, entry jetstream.KeyValueEntry) {
 	if natsclient.IsKVTombstone(entry.Operation()) {
 		delete(sweep, entry.Key()) // key deleted: nothing resident to inventory
 		return
@@ -1679,7 +1679,7 @@ func (c *Component) decodeEntity(subject string, data []byte) (entity *graph.Ent
 		return nil, fmt.Errorf("validate payload %s (subject %s): %w", baseMsg.Type(), subject,
 			errs.WrapInvalid(err, "graph-ingest", "decodeEntity", "payload validation failed"))
 	}
-	entity, err = c.extractEntityFromMessage(baseMsg)
+	entity, err = extractEntityFromMessage(baseMsg)
 	if err != nil {
 		return nil, fmt.Errorf("extract entity (subject %s): %w", subject, err)
 	}
@@ -1712,7 +1712,7 @@ func (c *Component) ingestEntity(ctx context.Context, entity *graph.EntityState,
 	// this lane it is a defense-in-depth backstop: prepareFactProjection above has
 	// already rejected any non-canonical predicate via the authoritative
 	// ValidateEntityStateContract, so this call cannot fire unless that seam moves.
-	if err := c.validateTriplePredicates(entity.Triples); err != nil {
+	if err := validateTriplePredicates(entity.Triples); err != nil {
 		return err
 	}
 
@@ -1800,7 +1800,7 @@ func fillFactProjectionSubjects(entityID string, triples []message.Triple) []mes
 }
 
 // extractEntityFromMessage extracts an EntityState from a BaseMessage
-func (c *Component) extractEntityFromMessage(msg *message.BaseMessage) (*graph.EntityState, error) {
+func extractEntityFromMessage(msg *message.BaseMessage) (*graph.EntityState, error) {
 	if msg == nil {
 		return nil, fmt.Errorf("nil message")
 	}
@@ -1933,7 +1933,7 @@ func appendIndexingProfileTriple(entity *graph.EntityState, profile string, at t
 		Subject:    entity.ID,
 		Predicate:  vocabulary.EntityIndexingProfile,
 		Object:     profile,
-		Source:     "graph-ingest-indexing-profile",
+		Source:     graph.SourceIndexingProfile,
 		Timestamp:  at,
 		Confidence: 1.0,
 	})

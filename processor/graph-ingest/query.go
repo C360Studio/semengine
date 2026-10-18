@@ -136,7 +136,7 @@ func (c *Component) handleQueryBatchNATS(ctx context.Context, data []byte) ([]by
 			slog.Int("requested", len(req.IDs)),
 			slog.Duration("elapsed", fetchElapsed),
 			slog.String("error", err.Error()))
-		return nil, c.classifyEntityQueryError(err)
+		return nil, classifyEntityQueryError(err)
 	}
 	c.logger.Debug("entity batch fetch",
 		slog.Int("requested", len(req.IDs)),
@@ -326,7 +326,7 @@ func (c *Component) handleQueryPrefixWithMaxPayload(
 	// key deleted mid-page is honestly not under it.
 	entities, _, err := c.fetchEntitiesConcurrent(ctx, pageKeys, defaultMaxConcurrent)
 	if err != nil {
-		return nil, c.classifyEntityQueryError(err)
+		return nil, classifyEntityQueryError(err)
 	}
 
 	// fetchEntitiesConcurrent returns cache-hits-then-misses order, NOT sorted.
@@ -440,7 +440,7 @@ func marshalFittingPrefixPage(
 	return encoded, nil
 }
 
-func (c *Component) classifyEntityQueryError(err error) error {
+func classifyEntityQueryError(err error) error {
 	if graph.IsStateContractError(err) {
 		// Already fatal/graph_state_reset_required: aggregate errors arrive
 		// classified once, naming every poisoned entity.

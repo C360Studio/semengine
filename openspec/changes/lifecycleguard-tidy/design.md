@@ -176,10 +176,10 @@ covers the nil context only. Start and Stop answer an ended context differently,
   - `Start` and `Stop` refuse a nil context the same way;
   - `Start` refuses an ended context, while `Stop` returns the context's own error, as it does whenever its context ends
     first;
-  - a cleanup that panics leaves every later `Stop` refused (after a `Stop`) or waiting (after a rollback): the open
-    defect #309; no caller recovers a panic today.
 - `Start`'s comment adds that it records the cleanup and that a refused Start records nothing.
-- `Stop`'s comment says it runs the cleanup `Start` recorded, and what it returns for a nil and an ended context.
+- `Stop`'s comment says it runs the cleanup `Start` recorded, what it returns for a nil and an ended context, and that
+  a cleanup that panics leaves every later `Stop` refused (after a `Stop`) or waiting (after a rollback): the open
+  defect #309, which no caller triggers today.
 - `Component.Stop`'s and `release`'s comments say where the log is printed (D2).
 - graph-ingest's `Start` comment (`component.go:951-956`) stays as it is; PR 2 rewrites it.
 

@@ -17,8 +17,6 @@ import (
 // DefaultRequestTimeout is the default timeout for request/reply operations.
 const DefaultRequestTimeout = 5 * time.Second
 
-const errorCodeResponseTooLarge = "response_too_large"
-
 // nilContextError is the refusal an exported Client method returns for a nil context, before any
 // client state, callback or NATS call is reached (developer contract, Context ownership; Codex F32).
 func nilContextError(method string) error {
@@ -380,7 +378,7 @@ func (c *Client) requestCallback(
 				if errors.Is(respErr, nats.ErrMaxPayload) {
 					refusal := errs.ClassifiedCodeDetail(
 						errs.ErrorInvalid,
-						errorCodeResponseTooLarge,
+						ErrorCodeResponseTooLarge,
 						map[string]any{
 							"response_bytes": int64(len(response)),
 							// This is the same connection whose publish rejected

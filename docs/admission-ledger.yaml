@@ -867,6 +867,11 @@
     nil and no error when no key matches (TestIntegration_FilteredKeyListingsNoMatch).
     collectFilteredKeys and the ErrNoKeysFound and ErrKeyNotFound branches are removed.
     Changed surface, simplify-04a-17 (#133): IsKVTombstone, moved from graph/kvcatalog.
+    Changed surface, graph-ingest-metering (#300 section B; owner answer 2026-10-18, question 3):
+    ErrorCodeResponseTooLarge exports "response_too_large", the code SubscribeForRequests answers a
+    reply too large to publish with (unexported before); graph-ingest's prefix query returns the same
+    code when no page fits (TestIntegration_SubscribeForRequestsPublishesBeforeClassifyingResponseLimit,
+    TestQueryRefusalsCarryACode).
     Changed behavior, design D9 (task 3.7): newJetStreamMetrics registers
     all 12 collectors through metric.RegisterOrGet and keeps the collector each call returns
     (jetstream_metrics.go:128-161 at the pin, where 8 went through the removed Register* methods,

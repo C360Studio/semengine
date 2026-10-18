@@ -34,8 +34,8 @@ stops end batches 1–3. Each stop's task ends only when `task verify` passes on
 
 ## 4. Query codes (batch 3, #300 B; questions 2 and 3)
 
-- [ ] 4.1 Failing test `TestQueryRefusalsCarryACode`. Gate: its uncoded rows fail on the base.
-- [ ] 4.2 D3 as the owner answered:
+- [x] 4.1 Failing test `TestQueryRefusalsCarryACode`. Gate: its uncoded rows fail on the base.
+- [x] 4.2 D3 as the owner answered:
   - every query refusal uses `rejectInvalid`/`rejectInternal`, or a fatal `internal` for the invariant failures;
   - `:118` marshals `graph.EntityBatchResponse{}`;
   - `natsclient.ErrorCodeResponseTooLarge` (if question 3 is answered yes), with the `natsclient` ledger row's

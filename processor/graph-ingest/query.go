@@ -111,11 +111,10 @@ func (c *Component) handleQueryBatchNATS(ctx context.Context, data []byte) ([]by
 	// Parse request
 	var req graph.EntityBatchRequest
 	if err := json.Unmarshal(data, &req); err != nil {
-		return nil, errs.Classified(errs.ErrorInvalid, fmt.Errorf("invalid request: %w", err))
+		return nil, rejectInvalid(graph.ErrorCodeInvalidRequest, fmt.Errorf("invalid request: %w", err))
 	}
-	// Handle empty IDs (return empty entities)
 	if len(req.IDs) == 0 {
-		return []byte(`{"entities":[]}`), nil
+		return json.Marshal(graph.EntityBatchResponse{})
 	}
 
 	// Fetch entities with bounded concurrency and cache.
@@ -220,7 +219,7 @@ const maxLoggedMissingIDs = 20
 func (c *Component) handleQueryPrefixNATS(ctx context.Context, data []byte) ([]byte, error) {
 	maxPayload, err := c.natsClient.MaxPayload()
 	if err != nil {
-		return nil, errs.Classified(errs.ErrorTransient, fmt.Errorf("observe NATS max payload: %w", err))
+		return nil, rejectInternal(fmt.Errorf("observe NATS max payload: %w", err))
 	}
 	return c.handleQueryPrefixWithMaxPayload(ctx, data, maxPayload)
 }
@@ -237,10 +236,10 @@ func (c *Component) handleQueryPrefixWithMaxPayload(
 	// Parse the typed request. An omitted cursor denotes the first page.
 	var req graph.PrefixQueryRequest
 	if err := json.Unmarshal(data, &req); err != nil {
-		return nil, errs.Classified(errs.ErrorInvalid, fmt.Errorf("invalid request: %w", err))
+		return nil, rejectInvalid(graph.ErrorCodeInvalidRequest, fmt.Errorf("invalid request: %w", err))
 	}
 	if req.Prefix != "" && req.Pattern != "" {
-		return nil, errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeInvalidRequest,
+		return nil, rejectInvalid(graph.ErrorCodeInvalidRequest,
 			errors.New("invalid request: prefix and pattern are mutually exclusive"))
 	}
 	if req.Prefix != "" {
@@ -267,7 +266,7 @@ func (c *Component) handleQueryPrefixWithMaxPayload(
 	if req.Pattern != "" {
 		keys, err = c.entityBucket.KeysByFilter(ctx, req.Pattern)
 		if err != nil {
-			return nil, errs.Classified(errs.ErrorTransient, fmt.Errorf("failed to get keys: %w", err))
+			return nil, rejectInternal(fmt.Errorf("failed to get keys: %w", err))
 		}
 	} else {
 		// Build prefix for server-side filtering.
@@ -279,7 +278,7 @@ func (c *Component) handleQueryPrefixWithMaxPayload(
 		// Use server-side prefix filtering instead of loading all keys.
 		keys, err = c.entityBucket.KeysByPrefix(ctx, prefixDot)
 		if err != nil {
-			return nil, errs.Classified(errs.ErrorTransient, fmt.Errorf("failed to get keys: %w", err))
+			return nil, rejectInternal(fmt.Errorf("failed to get keys: %w", err))
 		}
 
 		// Also check exact match for full entity ID queries (6-part IDs
@@ -288,8 +287,7 @@ func (c *Component) handleQueryPrefixWithMaxPayload(
 			if _, getErr := c.entityBucket.Get(ctx, req.Prefix); getErr == nil {
 				keys = []string{req.Prefix}
 			} else if !natsclient.IsKVNotFoundError(getErr) {
-				return nil, errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal,
-					fmt.Errorf("failed to check exact entity key: %w", getErr))
+				return nil, rejectInternal(fmt.Errorf("failed to check exact entity key: %w", getErr))
 			}
 		}
 	}
@@ -302,7 +300,7 @@ func (c *Component) handleQueryPrefixWithMaxPayload(
 	if req.Cursor != "" {
 		lastKey, decodeErr := decodeCursor(req.Cursor)
 		if decodeErr != nil {
-			return nil, errs.Classified(errs.ErrorInvalid, fmt.Errorf("invalid cursor: %w", decodeErr))
+			return nil, rejectInvalid(graph.ErrorCodeInvalidRequest, fmt.Errorf("invalid cursor: %w", decodeErr))
 		}
 		// SearchStrings finds first index where keys[i] >= lastKey.
 		idx := sort.SearchStrings(keys, lastKey)
@@ -350,7 +348,9 @@ func (c *Component) handleQueryPrefixWithMaxPayload(
 // marshalFittingPrefixPage returns the largest sorted entity prefix whose
 // complete typed response encoding fits maxPayload. Candidate measurement
 // includes the final continuation cursor; no envelope reserve or average
-// entity estimate participates in the decision.
+// entity estimate participates in the decision. A page that cannot be encoded,
+// or an encoding that breaks the fit, is an invariant failure: internal, class
+// fatal, since a retry would fail the same way.
 func marshalFittingPrefixPage(
 	entities []graph.EntityState,
 	followingBoundary string,
@@ -360,7 +360,8 @@ func marshalFittingPrefixPage(
 	for i := range entities {
 		encoded, err := json.Marshal(entities[i])
 		if err != nil {
-			return nil, fmt.Errorf("marshal prefix entity %q: %w", entities[i].ID, err)
+			return nil, errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeInternal,
+				fmt.Errorf("marshal prefix entity %q: %w", entities[i].ID, err))
 		}
 		entityBytes[i] = encoded
 	}
@@ -386,7 +387,8 @@ func marshalFittingPrefixPage(
 		if cursor != "" {
 			encodedCursor, err := json.Marshal(cursor)
 			if err != nil {
-				return 0, fmt.Errorf("marshal prefix cursor: %w", err)
+				return 0, errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeInternal,
+					fmt.Errorf("marshal prefix cursor: %w", err))
 			}
 			size += int64(len(`,"next_cursor":`) + len(encodedCursor))
 		}
@@ -415,9 +417,8 @@ func marshalFittingPrefixPage(
 	}
 
 	if bestCount < 0 {
-		return nil, errs.ClassifiedCodeDetail(
-			errs.ErrorInvalid,
-			"response_too_large",
+		return nil, rejectInvalidDetail(
+			natsclient.ErrorCodeResponseTooLarge,
 			map[string]any{
 				"response_bytes": firstCandidateBytes,
 				"max_payload":    maxPayload,
@@ -432,10 +433,12 @@ func marshalFittingPrefixPage(
 	}
 	encoded, err := json.Marshal(response)
 	if err != nil {
-		return nil, fmt.Errorf("marshal prefix response: %w", err)
+		return nil, errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeInternal,
+			fmt.Errorf("marshal prefix response: %w", err))
 	}
 	if int64(len(encoded)) > maxPayload {
-		return nil, fmt.Errorf("prefix response fitting invariant: encoded %d bytes exceeds max payload %d", len(encoded), maxPayload)
+		return nil, errs.ClassifiedCode(errs.ErrorFatal, graph.ErrorCodeInternal,
+			fmt.Errorf("prefix response fitting invariant: encoded %d bytes exceeds max payload %d", len(encoded), maxPayload))
 	}
 	return encoded, nil
 }
@@ -446,7 +449,7 @@ func classifyEntityQueryError(err error) error {
 		// classified once, naming every poisoned entity.
 		return err
 	}
-	return errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal, err)
+	return rejectInternal(err)
 }
 
 // fetchEntitiesConcurrent fetches entities by IDs using bounded concurrency with cache.

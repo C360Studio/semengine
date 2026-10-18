@@ -6,7 +6,7 @@ verbs in the `graph` package's verb table, the mutation subjects in `internal/gr
 refuses any other spelling of them. graph-ingest answers exactly those verbs and does no request work before `Start`
 completes; the `graph` package imports no NATS client; query replies are not wrapped in a message envelope, and the
 entity query's reply carries the revision it read; and the readiness status a producer writes to `GRAPH_STATUS`
-carries its publish time and no legacy fields.
+carries no legacy fields.
 
 ## Requirements
 
@@ -92,18 +92,21 @@ from a reply's content whether it is enveloped.
 - **WHEN** the entity verb's reply for entity E is a bare `graph.ExactEntity` with revision R
 - **THEN** the reply's JSON holds R under `kv_revision`, and the reader returns E and revision R
 
-### Requirement: The readiness envelope carries its publish time and no legacy fields
+### Requirement: The readiness envelope carries no legacy fields
 
-`graph.IndexStatusResponse`, the value a producer writes to its `GRAPH_STATUS` key, SHALL carry `published_at`, the
-UTC time in RFC 3339 form at which the producer's publisher wrote it, set by the publisher on every write whatever the
-caller passed. It SHALL carry no `phase`, `revision` or `last_synced` field; `indexed_revision` is the one spelling of
-the revision.
+`graph.IndexStatusResponse`, the value a producer writes to its `GRAPH_STATUS` key, SHALL carry no `published_at`,
+`phase`, `revision` or `last_synced` field; `indexed_revision` is the one spelling of the revision. graph-ingest SHALL
+publish `bootstrap_complete` true on every envelope, its boot work having finished before `Start` returned.
 
 #### Scenario: A published envelope
 
-- **WHEN** a producer publishes its status between times T1 and T2
-- **THEN** the stored JSON has `published_at` at or after T1 and at or before T2, and no `phase`, `revision` or
-  `last_synced` key
+- **WHEN** a producer publishes its status
+- **THEN** the stored JSON has no `published_at`, `phase`, `revision` or `last_synced` key
+
+#### Scenario: graph-ingest with a backlog standing
+
+- **WHEN** graph-ingest has started and messages are outstanding on its bound consumer
+- **THEN** its envelope has `bootstrap_complete` true and `ready` false
 
 ### Requirement: Prefix queries support literal prefixes and wildcard patterns
 

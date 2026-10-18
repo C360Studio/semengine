@@ -73,7 +73,8 @@ commit, recorded in `notes/<task>.md`, except where a task says how else the tes
 ## 7. Verify, review and close
 
 - [x] 7.1 `task verify` passes on a clean tree at the implementation head (`5a3c5a1`, 2026-10-18).
-- [ ] 7.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
-- [ ] 7.3 The follow-up issues D8 names are open (Q1's remainder or none, Q2's fault injector or none, and the two
+- [x] 7.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body. Codex APPROVE at
+  `a705bbd` (PR #299 comment 6252117242).
+- [x] 7.3 The follow-up issues D8 names are open (Q1's remainder or none, Q2's fault injector or none, and the two
   defects), each linked from the PR body without a closing keyword; #216 has a comment naming the test; the change is
   archived (`openspec archive simplify-04a-19-graph-ingest`) as the last content commit. Gate: `task spec:check`.

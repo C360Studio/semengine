@@ -2190,7 +2190,8 @@
     (in-set); NATS requests on graph.mutation.> and exact-entity reads; no goroutine
   known_risks: >-
     EntityState built without Version (#100). Pre-write transient errors from graph-ingest read as
-    commit-unknown with class fatal (safe, conservative; #167); follow-up #174 tracks post-append bookkeeping.
+    commit-unknown with class fatal (safe, conservative; #167); graph-ingest runs its bookkeeping after any
+    errored write (#174).
     The five unread interfaces (EntityCreator, PredicateReconciler, TripleAppender,
     EntityDeleter, AuthoritativeReader) are removed (#138 item 1)
   proving_tests: >-

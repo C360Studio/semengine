@@ -72,7 +72,7 @@ commit, recorded in `notes/<task>.md`, except where a task says how else the tes
 
 ## 7. Verify, review and close
 
-- [ ] 7.1 `task verify` passes on a clean tree at the implementation head.
+- [x] 7.1 `task verify` passes on a clean tree at the implementation head (`5a3c5a1`, 2026-10-18).
 - [ ] 7.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
 - [ ] 7.3 The follow-up issues D8 names are open (Q1's remainder or none, Q2's fault injector or none, and the two
   defects), each linked from the PR body without a closing keyword; #216 has a comment naming the test; the change is

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
@@ -14,8 +15,12 @@ import (
 	"github.com/c360studio/semengine/message"
 )
 
-// meteringEntityC is a local subject no test creates: an append to it is entity_not_found.
-const meteringEntityC = "acme.ops.robotics.gcs.drone.003"
+const (
+	// meteringEntityC is a local subject no test creates: an append to it is entity_not_found.
+	meteringEntityC = "acme.ops.robotics.gcs.drone.003"
+	// meteringEntityD is a local subject whose stored value graph-ingest refuses.
+	meteringEntityD = "acme.ops.robotics.gcs.drone.004"
+)
 
 // meteredRoute is the handler graph-ingest subscribes on subject: the route
 // canonicalMutationRoutes returns for it, wrapped as setupMutationHandlers wraps it.
@@ -59,6 +64,9 @@ func TestRefusedMutationMetersAndLogsOnce(t *testing.T) {
 		logged []string
 		// predicateReasons each rise by one on predicate_contract_rejections_total.
 		predicateReasons []string
+		// revisionDetail: the WARN line's detail carries the entity ID and the
+		// expected revision the request sent.
+		revisionDetail bool
 	}{
 		{
 			name: "reconcile revision mismatch", subject: "graph.mutation.entity.reconcile", operation: "entity.reconcile",
@@ -70,7 +78,8 @@ func TestRefusedMutationMetersAndLogsOnce(t *testing.T) {
 			},
 			reason: "revision_mismatch", outcome: "revision_mismatch",
 			logged: []string{"graph mutation rejected", "subject=graph.mutation.entity.reconcile",
-				"reason=revision_mismatch", "expected_revision"},
+				"reason=revision_mismatch"},
+			revisionDetail: true,
 		},
 		{
 			name: "delete revision mismatch", subject: "graph.mutation.entity.delete", operation: "entity.delete",
@@ -81,7 +90,8 @@ func TestRefusedMutationMetersAndLogsOnce(t *testing.T) {
 			},
 			reason: "revision_mismatch", outcome: "revision_mismatch",
 			logged: []string{"graph mutation rejected", "subject=graph.mutation.entity.delete",
-				"reason=revision_mismatch", "expected_revision"},
+				"reason=revision_mismatch"},
+			revisionDetail: true,
 		},
 		{
 			name: "create of an existing entity", subject: "graph.mutation.entity.create", operation: "entity.create",
@@ -173,7 +183,18 @@ func TestRefusedMutationMetersAndLogsOnce(t *testing.T) {
 			if warnings := strings.Count(text, "level=WARN"); warnings != 1 {
 				t.Errorf("WARN lines = %d, want 1:\n%s", warnings, text)
 			}
-			for _, fragment := range tt.logged {
+			logged := tt.logged
+			if tt.revisionDetail {
+				var sent struct {
+					EntityID         string `json:"entity_id"`
+					ExpectedRevision uint64 `json:"expected_revision"`
+				}
+				if err := json.Unmarshal(data, &sent); err != nil {
+					t.Fatalf("decode the sent request: %v", err)
+				}
+				logged = append(logged, "entity:"+sent.EntityID, fmt.Sprintf("expected_revision:%d", sent.ExpectedRevision))
+			}
+			for _, fragment := range logged {
 				if !strings.Contains(text, fragment) {
 					t.Errorf("log %q is missing %q", text, fragment)
 				}
@@ -186,7 +207,7 @@ func TestRefusedMutationMetersAndLogsOnce(t *testing.T) {
 // reply's outcome once, and an append counts once per subject (design D1). The wanted counts
 // come from the requests the test sends, and every label is spelled out.
 func TestMutationOutcomeCountedAtTheDecision(t *testing.T) {
-	c := createTestComponentWithMockKV(t, withAuthority("acme", "ops"))
+	c, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
 	ctx := context.Background()
 	call := func(subject string, request any) []byte {
 		t.Helper()
@@ -218,6 +239,7 @@ func TestMutationOutcomeCountedAtTheDecision(t *testing.T) {
 		{"triple.append", "applied", 1},
 		{"triple.append", "unchanged", 1},
 		{"triple.append", "entity_not_found", 1},
+		{"triple.append", "graph_state_reset_required", 1},
 		{"entity.delete", "applied", 1},
 	}
 	before := make([]float64, len(series))
@@ -244,11 +266,18 @@ func TestMutationOutcomeCountedAtTheDecision(t *testing.T) {
 		Desired:    []message.Triple{canonicalTriple(canonicalEntityA, "test.state.value", "changed")},
 	}, graph.MutationApplied)
 
+	// A stored value graph-ingest refuses: the append fails that subject with
+	// graph_state_reset_required (as TestCanonicalAppendPreservesCommitBeforeTypedSubjectFailure).
+	bucket.mu.Lock()
+	bucket.data[meteringEntityD] = mockKVData{value: []byte(`{"id":`), revision: 1}
+	bucket.mu.Unlock()
+
 	var appended graph.AppendTriplesResponse
 	if err := json.Unmarshal(call("graph.mutation.triple.append", graph.AppendTriplesRequest{Triples: []message.Triple{
 		canonicalTriple(canonicalEntityA, "test.evidence.value", "new"),
 		held,
 		canonicalTriple(meteringEntityC, "test.evidence.value", "absent"),
+		canonicalTriple(meteringEntityD, "test.evidence.value", "poisoned"),
 	}}), &appended); err != nil {
 		t.Fatalf("decode append reply: %v", err)
 	}
@@ -256,6 +285,7 @@ func TestMutationOutcomeCountedAtTheDecision(t *testing.T) {
 		canonicalEntityA: graph.MutationApplied,
 		canonicalEntityB: graph.MutationUnchanged,
 		meteringEntityC:  graph.MutationEntityNotFound,
+		meteringEntityD:  graph.MutationFailed,
 	}
 	if len(appended.Results) != len(wantAppend) {
 		t.Fatalf("append results = %#v", appended.Results)
@@ -263,6 +293,9 @@ func TestMutationOutcomeCountedAtTheDecision(t *testing.T) {
 	for _, result := range appended.Results {
 		if result.Outcome != wantAppend[result.EntityID] {
 			t.Fatalf("append result for %q = %q, want %q", result.EntityID, result.Outcome, wantAppend[result.EntityID])
+		}
+		if result.EntityID == meteringEntityD && (result.Error == nil || result.Error.Code != "graph_state_reset_required") {
+			t.Fatalf("append failure for %q = %#v, want code graph_state_reset_required", result.EntityID, result.Error)
 		}
 	}
 

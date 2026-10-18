@@ -119,7 +119,8 @@ func TestHandleCanonicalAppend_InvalidPredicate_FailClosedNothingPersisted(t *te
 
 	const absentID = "acme.ops.robotics.gcs.drone.404"
 	// The meteredCanonicalMutation wrapper is the SINGLE metering point: it meters the
-	// classified error by its code (reason=structural_invalid). The gate's old
+	// classified error by its code (reason=invalid_request: the complete candidate
+	// contract refuses the predicate before the structural gate). The gate's old
 	// direct-meter cell must stay untouched (double-metering regression guard).
 	counter := comp.mutationRejections.WithLabelValues(structuralAppendSubject, graph.ErrorCodeInvalidRequest)
 	before := testutil.ToFloat64(counter)

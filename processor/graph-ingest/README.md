@@ -193,7 +193,12 @@ clears the other. A lost durable consumer reads unhealthy this way; graph-ingest
 graph-ingest refuses, and each mutation request (`graph.mutation.*`) that reaches its handler. `BytesPerSecond` counts
 those messages' payload sizes. Queries, `CreateEntity` calls made inside the process, and the containers hierarchy
 inference creates are not input messages and are not counted. `ErrorRate` is `ErrorCount` divided by the input
-messages counted; an append whose writes fail for several subjects counts an error for each, so the rate can exceed 1.
+messages counted; an append counts an error for each subject it cannot write, an absent one included, so the rate can
+exceed 1.
+
+`semengine_datamanager_entities_updated_total` counts every write that changed an entry: a create, a reconcile that
+applied, a stream merge, a container born by hierarchy inference, and each subject an append applied. A delete is not
+counted; deletes show on `graph_mutation_outcomes_total{operation="entity.delete"}`.
 
 Running implies the boot sweep of `ENTITY_STATES` completed: `Start` fails when the sweep cannot reach the end of the
 snapshot. So the readiness envelope's `bootstrap_complete` is true from the first one graph-ingest publishes, whatever

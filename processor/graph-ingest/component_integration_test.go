@@ -142,9 +142,7 @@ func TestComponent_RespectsContext_Cancellation(t *testing.T) {
 	// The pin slept 100ms here to "allow time for cancellation to propagate". The test
 	// waits for it instead: the status loop Start runs under its context returns once
 	// that context is cancelled.
-	comp.handlesMu.Lock()
-	statusDone := comp.statusDone
-	comp.handlesMu.Unlock()
+	statusDone := comp.statusDone // written by Start, which has returned
 	require.NotNil(t, statusDone, "Start must establish a status producer")
 	ctx, cancel := context.WithTimeout(t.Context(), componentTestTimeout)
 	defer cancel()

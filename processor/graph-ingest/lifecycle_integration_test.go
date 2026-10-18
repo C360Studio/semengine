@@ -143,14 +143,12 @@ func TestGraphIngest_FailedStartRollbackOwnsExactConsumerAndPreservesDurable(t *
 	startResult := make(chan error, 1)
 	go func() { startResult <- comp.Start(t.Context()) }()
 	<-secondEntered
-	// The pin's lifecycleMu, now handlesMu: it guards the component's handles, not the
-	// guard's state, and stays (design D22).
-	comp.handlesMu.Lock()
+	// The pin read this under its lifecycleMu. Start appended the first handle before it
+	// asked for the second consumer, which closed secondEntered, so the read needs no lock
+	// (ruling I, #91 comment 6062681355).
 	if len(comp.consumers) != 1 || comp.consumers[0].handle != first {
-		comp.handlesMu.Unlock()
 		t.Fatal("first exact handle was not published before second acquisition")
 	}
-	comp.handlesMu.Unlock()
 
 	stopCtx := &graphIngestObservedContext{Context: t.Context(), doneSeen: make(chan struct{})}
 	stopResult := make(chan error, 1)

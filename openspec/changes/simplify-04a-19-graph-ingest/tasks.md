@@ -53,7 +53,7 @@ commit, recorded in `notes/<task>.md`, except where a task says how else the tes
 - [x] 5.1 Ruling K: failing tests first (`{}` and `{"enable_hierarchy":true}` build with the default ports; a present
   `ports` block is used as written; `Validate` leaves the config unchanged), then the change. Gate: the tests fail on
   the base and pass after.
-- [ ] 5.2 Ruling I: `handlesMu` goes; `notes/5.2.md` lists every handle access and the goroutine it runs on (D7), and
+- [x] 5.2 Ruling I: `handlesMu` goes; `notes/5.2.md` lists every handle access and the goroutine it runs on (D7), and
   records the `-race` run of the lifecycle and failed-start tests as evidence. Gate: `go test -race -count=3 -tags
   integration -run 'Lifecycle|FailedStart|Settlement'
   ./processor/graph-ingest/`.

@@ -448,9 +448,10 @@ type Component struct {
 	// one-shot (D13). Request handlers refuse until it is set (subscribeForRequests).
 	// running cannot stand in: release clears it before Stop's drain, which still serves.
 	startCompleted atomic.Bool
-	// handlesMu guards the handles Start records for release: the cancel functions,
-	// statusDone and consumers.
-	handlesMu  sync.Mutex
+	// The handles start records for release: release reads and clears them. Both run
+	// under the lifecycle guard, one at a time, so no lock is needed (ruling I, #91
+	// comment 6062681355). No other goroutine reads them: the status loop closes its own
+	// statusDone, and each consumer callback holds the pool it was built with.
 	statusDone chan struct{}
 	cancel     context.CancelFunc
 
@@ -970,11 +971,9 @@ func (c *Component) start(ctx context.Context) error {
 	runCtx, cancel := context.WithCancel(ctx)
 	poolCtx, poolCancel := context.WithCancel(runCtx)
 	submitCtx, submitCancel := context.WithCancel(runCtx)
-	c.handlesMu.Lock()
 	c.cancel = cancel
 	c.ingestPoolCancel = poolCancel
 	c.ingestSubmitCancel = submitCancel
-	c.handlesMu.Unlock()
 
 	if c.natsClient.Status() != natsclient.StatusConnected {
 		if err := c.natsClient.Connect(runCtx); err != nil {
@@ -1057,9 +1056,7 @@ func (c *Component) subscribeForRequests(
 
 func (c *Component) startStatusMetricsLoop(ctx context.Context) {
 	statusDone := make(chan struct{})
-	c.handlesMu.Lock()
 	c.statusDone = statusDone
-	c.handlesMu.Unlock()
 	go func() {
 		defer close(statusDone)
 		c.statusMetricsLoop(ctx)
@@ -1091,9 +1088,7 @@ func (c *Component) release(ctx context.Context) error {
 	if err := c.cleanup(ctx); err != nil {
 		return err
 	}
-	c.handlesMu.Lock()
 	c.clearLifecycleHandles()
-	c.handlesMu.Unlock()
 	return nil
 }
 
@@ -1594,9 +1589,7 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 	if err != nil {
 		return fmt.Errorf("consumer setup failed for stream %s: %w", streamName, err)
 	}
-	c.handlesMu.Lock()
 	c.consumers = append(c.consumers, graphIngestConsumerBinding{handle: handle})
-	c.handlesMu.Unlock()
 
 	// Record the consumer for the readiness tick ONLY after the bind committed, so
 	// the backlog sum never asks about a consumer that failed to bind (which would

@@ -99,7 +99,7 @@ func TestIntegration_KeyedIngest_PublishedEntityIngestsThroughPool(t *testing.T)
 	require.NoError(t, err)
 
 	// Publish to the ENTITY stream — the real consumer decodes, submits to the
-	// keyed pool, and processIngest applies it (no direct handleMessage call).
+	// keyed pool, and processIngest applies it.
 	require.NoError(t, natsClient.PublishToStream(ctx, "entity."+entityID, data))
 
 	// The entity must land in ENTITY_STATES via the consume→pool→ingest wire.

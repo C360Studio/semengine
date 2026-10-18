@@ -119,7 +119,7 @@ func newEntityStateContractRejectionsMetric() *prometheus.CounterVec {
 }
 
 // newProcessingDurationMetric builds the histogram of per-message
-// apply time — the merge + CAS write inside handleMessage (gh#480). Paired with
+// apply time — the merge + CAS write applyIngest times (gh#480). Paired with
 // newIngestLagMetric it separates processing time from queue wait, which the
 // component previously could not distinguish (callers inferred end-to-end latency
 // downstream). Buckets span sub-ms (a warm CAS is ~1.5ms) to seconds (a stalled KV).
@@ -1651,30 +1651,11 @@ func (c *Component) waitForStream(ctx context.Context, streamName string) (time.
 	return time.Time{}, fmt.Errorf("stream %s not available after %d retries", streamName, maxRetries)
 }
 
-// handleMessage processes an incoming message and creates/updates entity state
-func (c *Component) handleMessage(ctx context.Context, subject string, data []byte) {
-	c.logger.Debug("Received message",
-		slog.String("subject", subject),
-		slog.Int("size", len(data)))
-
-	entity, err := c.decodeEntity(subject, data)
-	if err != nil {
-		c.logger.Warn("Failed to decode/extract message",
-			slog.String("subject", subject),
-			slog.Any("error", err))
-		atomic.AddInt64(&c.errors, 1)
-		return
-	}
-
-	_ = c.ingestEntity(ctx, entity, false)
-}
-
 // decodeEntity decodes a message's bytes into an EntityState: unmarshal the
 // BaseMessage envelope, validate it, then extract the Graphable payload's
-// entity. Shared by the consume closure (decode-once, then submit to the keyed
-// pool) and handleMessage (the synchronous test/compat path); every error it
-// returns is a poison message on both (counted and logged; the stream lane also
-// terminates it).
+// entity. The consume closure decodes once, then submits to the keyed pool;
+// every error it returns is a poison message there (counted, logged and
+// terminated), except a refused statement, which is a structural rejection.
 //
 // Validate is the consumer half of BaseMessage.MarshalJSON: what a producer's
 // envelope refuses to emit, the lane refuses to ingest, before any identity
@@ -2088,7 +2069,7 @@ func (c *Component) CreateEntity(ctx context.Context, entity *graph.EntityState)
 // arrival's MessageType and StorageRef when no set was older (UpdatedAt always).
 //
 // Closes gh#177: the prior code called CreateEntity (Put = full-
-// replace) from handleMessage, which erased triples written through mutation
+// replace) from the stream lane, which erased triples written through mutation
 // request/reply. The JetStream consumer
 // path was the lone outlier. Lifecycle-managed entities surfaced this
 // most loudly: Manager.Create stamped the phase triple, then the

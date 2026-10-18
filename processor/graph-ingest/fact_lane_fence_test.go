@@ -127,18 +127,12 @@ func withFenceTestPayload(tb testing.TB, rec *fenceCallRecorder) testComponentOp
 }
 
 // newFenceTestComponent returns a component whose decoder resolves the fence
-// test type, the recorder every decoded instance reports to, and its bucket.
-func newFenceTestComponent(t *testing.T) (*Component, *fenceCallRecorder, *mockKVBucket) {
+// test type, and the recorder every decoded instance reports to.
+func newFenceTestComponent(t *testing.T) (*Component, *fenceCallRecorder) {
 	t.Helper()
 	rec := &fenceCallRecorder{}
-	comp, bucket := createTestComponentWithMockKVBucket(t, withAuthority("c360", "test"), withFenceTestPayload(t, rec))
-	return comp, rec, bucket
-}
-
-func storedKeyCount(bucket *mockKVBucket) int {
-	bucket.mu.Lock()
-	defer bucket.mu.Unlock()
-	return len(bucket.data)
+	comp, _ := createTestComponentWithMockKVBucket(t, withAuthority("c360", "test"), withFenceTestPayload(t, rec))
+	return comp, rec
 }
 
 // fenceWireJSON hand-writes the BaseMessage wire form. The invalid mode cannot
@@ -170,7 +164,7 @@ func requireInvalidClass(t *testing.T, err error) {
 }
 
 func TestDecodeEntity_ValidateFailureRejectsBeforeIdentity(t *testing.T) {
-	comp, rec, _ := newFenceTestComponent(t)
+	comp, rec := newFenceTestComponent(t)
 
 	entity, err := comp.decodeEntity(fenceSubject, fenceWireJSON(t, fenceModeInvalid))
 
@@ -201,7 +195,7 @@ func TestDecodeEntity_FencesPayloadPanics(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.mode, func(t *testing.T) {
-			comp, _, _ := newFenceTestComponent(t)
+			comp, _ := newFenceTestComponent(t)
 			data := fenceWireJSON(t, tt.mode)
 
 			var (
@@ -217,37 +211,6 @@ func TestDecodeEntity_FencesPayloadPanics(t *testing.T) {
 			assert.Contains(t, err.Error(), fenceTestType().String(), "the error names the payload type")
 			assert.Contains(t, err.Error(), fenceSubject, "the error names the subject")
 			assert.Contains(t, err.Error(), tt.recovered, "the error names the recovered value")
-		})
-	}
-}
-
-// The poison accounting is the lane's existing path: handleMessage counts the
-// rejection and returns; nothing escapes and nothing is persisted. The
-// conforming row is the control that makes "nothing persisted" observable.
-func TestHandleMessage_RejectionsLandOnPoisonAccounting(t *testing.T) {
-	tests := []struct {
-		mode       string
-		wantErrors int64
-		wantStored int
-	}{
-		{mode: fenceModeConforming, wantErrors: 0, wantStored: 1},
-		{mode: fenceModeInvalid, wantErrors: 1, wantStored: 0},
-		{mode: fenceModePanicID, wantErrors: 1, wantStored: 0},
-		{mode: fenceModePanicTriples, wantErrors: 1, wantStored: 0},
-		{mode: fenceModePanicValid, wantErrors: 1, wantStored: 0},
-		{mode: fenceModePanicDecode, wantErrors: 1, wantStored: 0},
-	}
-	for _, tt := range tests {
-		t.Run(tt.mode, func(t *testing.T) {
-			comp, _, bucket := newFenceTestComponent(t)
-			data := fenceWireJSON(t, tt.mode)
-
-			require.NotPanics(t, func() {
-				comp.handleMessage(t.Context(), fenceSubject, data)
-			})
-
-			assert.Equal(t, tt.wantErrors, atomic.LoadInt64(&comp.errors), "poison count for mode %s", tt.mode)
-			assert.Equal(t, tt.wantStored, storedKeyCount(bucket), "persisted entities for mode %s", tt.mode)
 		})
 	}
 }
@@ -281,6 +244,9 @@ func TestStreamLane_FailingPayloadIsTerminated(t *testing.T) {
 			}
 			_, _, stored := storedRevision(t, c, fenceEntityID)
 			assert.False(t, stored, "nothing is persisted for the poison message")
+			keys, err := c.entityBucket.Keys(t.Context())
+			require.NoError(t, err)
+			assert.Empty(t, keys, "the poison message stores no key at all")
 
 			assert.Equal(t, "ack", deliverStreamLane(t, handler, fenceWireJSON(t, fenceModeConforming), 2),
 				"the next message's disposition")

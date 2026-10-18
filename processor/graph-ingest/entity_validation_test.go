@@ -215,7 +215,7 @@ func TestExtractEntityFromMessage_NonGraphablePayload(t *testing.T) {
 	// so we test the error path by verifying the behavior when type assertion fails
 
 	// Instead, test with a valid BaseMessage but verify error handling
-	// The actual error will occur in handleMessage when extractEntityFromMessage is called
+	// The actual error will occur in decodeEntity when extractEntityFromMessage is called
 
 	// This test verifies the error message format
 	msg := &message.BaseMessage{} // Empty payload

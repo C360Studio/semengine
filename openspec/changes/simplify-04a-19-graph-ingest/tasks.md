@@ -44,7 +44,7 @@ commit, recorded in `notes/<task>.md`, except where a task says how else the tes
   and their methods go; the five integration tests call
   `refreshReadinessStatus`. Gate: `git grep -n -w -e statusInterval -e statusNowFn` returns nothing;
   `go test -race -tags integration -run 'Readiness' ./processor/graph-ingest/`.
-- [ ] 4.2 D7 test-only code and D6: `repopulateHook` and `handleMessage` go, their tests rewritten as D7 says; the
+- [x] 4.2 D7 test-only code and D6: `repopulateHook` and `handleMessage` go, their tests rewritten as D7 says; the
   help text. Gate: `git grep -n -w -e repopulateHook -e handleMessage` returns nothing; `task verify` on a clean tree
   (review stop).
 

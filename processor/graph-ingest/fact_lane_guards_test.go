@@ -18,7 +18,7 @@ import (
 // Fact-arrival consumer guards in graph-ingest: StorageRef extraction and the
 // single-subject Graphable boundary.
 // These drive the production extract → ingest wire (extractEntityFromMessage +
-// ingestEntity), the same orchestration handleMessage runs after decode.
+// ingestEntity), the same orchestration the stream lane runs after decode.
 
 const (
 	flParentID = "c360.platform.test.sys.widget.001"

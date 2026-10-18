@@ -400,7 +400,7 @@ func TestOrdinaryLaneWriteErrorCountsOnce(t *testing.T) {
 
 // TestDirectWriteErrorCountsAtOnce holds that a write called outside the delivery helper counts its
 // error once in Health's error count before it returns: ingestEntity, the synchronous entry
-// handleMessage uses, and the exported CreateEntity.
+// applyIngest uses, and the exported CreateEntity.
 func TestDirectWriteErrorCountsAtOnce(t *testing.T) {
 	t.Run("ingestEntity", func(t *testing.T) {
 		c, entities := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))

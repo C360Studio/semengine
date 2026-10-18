@@ -438,3 +438,80 @@ func TestIntegration_ReadinessEnvelope_AbsentKeyIsNotAFailure(t *testing.T) {
 		"an absent readiness key must report not-observed to a polling caller; "+
 			"failing here is what broke TestIntegration_ReadinessEnvelope_BacklogIsNotReady in CI")
 }
+
+// TestIntegration_ReadinessEnvelope_BootstrapCompleteWithBacklog is design D2 (ADR-109
+// Decision 3; #183): bootstrap_complete is true once Start returns, whatever the backlog.
+// A message of a backlog the consumer bound onto is held behind the consumeStream barrier,
+// so every envelope while it is held has work outstanding; that envelope must still say
+// bootstrap_complete, with ready false and lag above zero.
+func TestIntegration_ReadinessEnvelope_BootstrapCompleteWithBacklog(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancel()
+
+	client := newFixtureClient(t, entityStream)
+	const backlog = 3
+	for i := 0; i < backlog; i++ {
+		publishEntity(ctx, t, client, "c360.test.readiness.complete.drone.d"+itoa(i))
+	}
+
+	cfg := DefaultConfig()
+	configJSON, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	comp, err := CreateGraphIngest(configJSON, testDependencies(t, client, withAuthority("c360", "test")))
+	require.NoError(t, err)
+	c := comp.(*Component)
+	owner := newGraphIngestTestOwner(c)
+	defer owner.finish(ctx, t)
+	require.NoError(t, c.Initialize())
+	registerMergeTestPayload(t, c)
+
+	// The barrier is TestIntegration_ReadinessEnvelope_BacklogIsNotReady's: a held message is
+	// not acked, so the consumer counts it outstanding. The deferred release runs before
+	// owner.finish, so a failed assertion cannot hold Stop.
+	held := make(chan struct{})
+	release := make(chan struct{})
+	var holdOnce, releaseOnce sync.Once
+	releaseHeld := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseHeld()
+	c.consumeStream = func(
+		ctx context.Context,
+		port natsclient.PortConsumerContext,
+		cfg natsclient.StreamConsumerConfig,
+		handler func(context.Context, jetstream.Msg),
+	) (jetstream.ConsumeContext, error) {
+		return c.natsClient.ConsumeStreamWithConfig(ctx, port, cfg, func(msgCtx context.Context, msg jetstream.Msg) {
+			holdOnce.Do(func() {
+				close(held)
+				<-release
+			})
+			handler(msgCtx, msg)
+		})
+	}
+	require.NoError(t, c.Start(owner.startContext(ctx)))
+
+	select {
+	case <-held:
+	case <-ctx.Done():
+		t.Fatalf("no message reached the test barrier: %v", ctx.Err())
+	}
+
+	// Publish now, then read the key until an envelope with work outstanding is there; while
+	// the message is held, every envelope published has some.
+	c.refreshReadinessStatus(ctx)
+	waitCtx, cancelWait := context.WithTimeout(ctx, 10*time.Second)
+	defer cancelWait()
+	type envelopeRead struct {
+		status graph.IndexStatusResponse
+		ok     bool
+	}
+	got, waitErr := probe.Await(waitCtx,
+		func(ctx context.Context) (envelopeRead, error) {
+			status, _, ok := tryReadEnvelope(ctx, t, client)
+			return envelopeRead{status: status, ok: ok}, nil
+		},
+		func(r envelopeRead) bool { return r.ok && r.status.Lag > 0 })
+	require.NoError(t, waitErr, "no envelope reported the held backlog")
+	require.True(t, got.status.BootstrapComplete,
+		"bootstrap_complete must be true once Start returned, with a backlog standing: %+v", got.status)
+	require.False(t, got.status.Ready, "a backlog standing is not ready: %+v", got.status)
+}

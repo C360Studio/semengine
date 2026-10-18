@@ -106,13 +106,17 @@ func TestIntegration_UnconfirmedAppendInvalidatesCache(t *testing.T) {
 // TestIntegration_UnconfirmedDeleteClearsPoison is task 2.1 (#174; design D1). Entity E is
 // stored as a value graph-ingest refuses and recorded in the poison inventory; the operator's
 // repair, a delete at its revision, is stored by the bucket and answered with nats.ErrTimeout.
-// The inventory must no longer hold E, read through DebugStatus. Health is not asserted: until
-// design D3 lands, the failed delete also adds to the error count Health reads.
+// The inventory must no longer hold E, read through DebugStatus, and Health must be healthy:
+// the failed delete adds to the error count, which Health reports and does not read (design
+// D3, task 3.1).
 func TestIntegration_UnconfirmedDeleteClearsPoison(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()
 
 	c, bucket, entityStates := newUnconfirmedWriteComponent(ctx, t)
+	// Health reads running; the component is not started (the tests call the write methods
+	// directly), so the test marks it running as poisonScopingTestComponent does.
+	c.running = true
 	const id = "c360.test.unconfirmed.system.widget.poisoned"
 	revision, err := entityStates.Put(ctx, id,
 		[]byte(`{"id":"`+id+`","triples":[{"subject":"`+id+`","predicate":"legacy.predicate","object":1}]}`)) // predicate-audit:invalid {"kind":"stored-predicate","value":"legacy.predicate","reason":"arity"}
@@ -138,4 +142,6 @@ func TestIntegration_UnconfirmedDeleteClearsPoison(t *testing.T) {
 	require.True(t, natsclient.IsKVNotFoundError(err), "the fault let the delete stand: %v", err)
 
 	assert.False(t, poisoned(), "a delete that stood must clear the poison record of the key it removed")
+	health := c.Health()
+	assert.True(t, health.Healthy, "the repaired component must read healthy: %+v", health)
 }

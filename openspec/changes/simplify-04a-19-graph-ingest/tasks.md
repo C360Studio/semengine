@@ -21,7 +21,7 @@ commit, recorded in `notes/<task>.md`, except where a task says how else the tes
 
 ## 3. ADR-109's follow-up (batch 2, #183, #216 test)
 
-- [ ] 3.1 Failing tests (D2, D3): `TestIntegration_ReadinessEnvelope_BootstrapCompleteWithBacklog`,
+- [x] 3.1 Failing tests (D2, D3): `TestIntegration_ReadinessEnvelope_BootstrapCompleteWithBacklog`,
   `TestIntegration_HealthReadsLostConsumer`, `TestIntegration_HealthClearsWhenObservationSucceeds`,
   `TestIntegration_HealthIgnoresErrorCount`; `TestIntegration_UnconfirmedDeleteClearsPoison` gains its `Healthy`
   assertion. Gate: each new test or assertion fails by assertion on the base.

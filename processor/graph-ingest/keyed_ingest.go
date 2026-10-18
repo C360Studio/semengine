@@ -351,7 +351,7 @@ func (c *Component) applyIngest(ctx context.Context, lane int, work ingestWork) 
 // stop ingest. This departs from OwnerStopRequired's "must stop its lane" (design D8,
 // "Long apply"). The interruption is declared: an ERROR line and one in
 // work_interrupted_total under its cause. It adds nothing to the error count Health
-// reads (owner ruling, #91 comment 6124130342): a write the interruption cut has counted
+// reports (owner ruling, #91 comment 6124130342): a write the interruption cut has counted
 // once at its own site, and an interruption anywhere else leaves that count unchanged.
 func (c *Component) recordInterruptedWork(work ingestWork, err error) {
 	cause := interruptedWorkCause(err)

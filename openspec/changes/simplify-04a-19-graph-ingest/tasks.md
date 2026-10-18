@@ -25,7 +25,7 @@ commit, recorded in `notes/<task>.md`, except where a task says how else the tes
   `TestIntegration_HealthReadsLostConsumer`, `TestIntegration_HealthClearsWhenObservationSucceeds`,
   `TestIntegration_HealthIgnoresErrorCount`; `TestIntegration_UnconfirmedDeleteClearsPoison` gains its `Healthy`
   assertion. Gate: each new test or assertion fails by assertion on the base.
-- [ ] 3.2 D2 and D3: the latch, `bootBacklogDrained` and the fallback branch go; the latch tests go and the scope tests
+- [x] 3.2 D2 and D3: the latch, `bootBacklogDrained` and the fallback branch go; the latch tests go and the scope tests
   stay; `Health()` reads poison and the latest tick's failed observation; `graph/index_status.go`'s scope and complete
   doc comments, `README.md` § Health, and the `graph-ingest-recovery` delta. Gate: 3.1 passes; `go test -race
   ./processor/graph-ingest/ ./graph/...`.

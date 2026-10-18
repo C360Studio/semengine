@@ -176,6 +176,15 @@ registered on the same registry.
 
 ## Health
 
-The component reports healthy when it is running, no processing error has been counted, and no stored entity fails to
-decode (the poison inventory is empty). Running implies the boot sweep of `ENTITY_STATES` completed: `Start` fails
-when the sweep cannot reach the end of the snapshot.
+`Health()` reports stuck states, not past errors (ADR-109 Decision 2). The component is healthy when it is running, no
+stored entity fails to decode (the poison inventory is empty), and the latest readiness status tick read the backlog of
+every consumer it bound. While either of the last two fails, `Healthy` is false, `Status` is `degraded`, and
+`LastError` names each: a sample of the poisoned entities, or the consumers whose backlog could not be read. Both clear
+without a restart: a repair or a valid write clears the poison record, and the next tick that reads every backlog
+clears the other. A lost durable consumer reads unhealthy this way; graph-ingest does not bind a new one (#216).
+
+`ErrorCount` counts processing errors since start and never lowers `Healthy`.
+
+Running implies the boot sweep of `ENTITY_STATES` completed: `Start` fails when the sweep cannot reach the end of the
+snapshot. So the readiness envelope's `bootstrap_complete` is true from the first one graph-ingest publishes, whatever
+backlog stands; `ready` and `lag` report the backlog.

@@ -256,7 +256,7 @@ func TestHandleMessage_RejectionsLandOnPoisonAccounting(t *testing.T) {
 // for the entity_stream port (scenario "Payload panics while giving its entity
 // ID", and every other failing payload the requirement names): the message is
 // terminated, not acknowledged or returned, the poison count (the error count
-// Health reads) rises by one, the WARN line names the payload type and subject,
+// Health reports) rises by one, the WARN line names the payload type and subject,
 // and the next message on the stream is applied.
 func TestStreamLane_FailingPayloadIsTerminated(t *testing.T) {
 	for _, mode := range []string{

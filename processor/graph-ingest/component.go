@@ -199,7 +199,7 @@ func newUnguardedInputsMetric() prometheus.Counter {
 // comment 6109278240, item 1). Its cause label is a closed enum: panic (the application panicked),
 // heartbeat_failed (an in-progress signal could not be sent) or invalid (the delivery's metadata or
 // the application's decision was invalid). Each such input is also logged at ERROR, and the lane
-// keeps taking input. The interruption adds nothing to the error count Health reads (#91 comment
+// keeps taking input. The interruption adds nothing to the error count Health reports (#91 comment
 // 6124130342).
 func newWorkInterruptedMetric() *prometheus.CounterVec {
 	return prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -453,14 +453,14 @@ type Component struct {
 	cancel     context.CancelFunc
 
 	// Readiness producer state (ADR-083 envelope on the graph-ingest GRAPH_STATUS
-	// key). See readiness.go for the projection and the bootstrap latch rules.
+	// key). See readiness.go for the projection and the bootstrap scope rules.
 	statusPublisher  *readiness.Publisher
 	readinessGauges  *readiness.Gauges
 	boundConsumers   []boundConsumer
 	boundConsumersMu sync.RWMutex
-	// bootBacklog is the outstanding count at the first successful read after
-	// binding — the initial catch-up this producer latched against, published as
-	// BootstrapScope. bootBacklogKnown makes that capture once-only.
+	// bootBacklog is the outstanding count read at bind, summed over consumers —
+	// the initial catch-up, published as BootstrapScope. bootBacklogKnown makes the
+	// replacement of a partial capture once-only.
 	bootBacklog      atomic.Uint64
 	bootBacklogKnown atomic.Bool
 	// bootBacklogPartial latches when ANY bind-time read failed, so the accumulated
@@ -468,11 +468,10 @@ type Component struct {
 	// "known" flag was not enough: a success on one consumer marked the aggregate
 	// captured and permanently omitted a failed consumer's backlog.
 	bootBacklogPartial atomic.Bool
-	// bootBacklogDrained latches when outstanding first reaches zero. It is a latch
-	// rather than a live read because Ready already carries "caught up right now";
-	// a bootstrap bit that flickered under write load would defer every consumer
-	// during ordinary operation.
-	bootBacklogDrained atomic.Bool
+	// backlogObservationFault is the latest status tick's failed backlog observation,
+	// naming the consumers it could not read; nil when that tick read every one. Each
+	// tick that runs to its end replaces it (computeBacklogStatus), and Health reads it.
+	backlogObservationFault atomic.Pointer[string]
 	// lastAppliedAt is the JetStream timestamp of the most recently APPLIED message
 	// (stamped on the applied path, before the Ack). It ages the reported staleness.
 	lastAppliedAt atomic.Value // stores time.Time
@@ -855,29 +854,35 @@ func (c *Component) Health() component.HealthStatus {
 		uptime = time.Since(c.startTime)
 	}
 
-	errorCount := int(atomic.LoadInt64(&c.errors))
-	lastErr := ""
-	status := "stopped"
-
+	// Health reads stuck states, not a count of past errors (ADR-109 Decision 2): a
+	// poisoned entity, or a backlog the latest status tick could not read. ErrorCount
+	// is reported and never lowers Healthy.
+	var stuck []string
 	if c.running {
-		status = "running"
 		// A non-empty poison inventory degrades Health per-entity: status is
 		// "degraded", NOT "reset_required" (that stays a per-read error code —
 		// design D6), and the message carries count + a bounded ID/reason
 		// sample. Full enumeration rides DebugStatus.
 		if c.entityPoisonSize.Load() > 0 {
-			status = string(graph.IndexStateDegraded)
-			lastErr = c.entityPoisonHealthMessage()
-		} else if errorCount > 0 {
-			lastErr = "errors occurred during processing"
+			stuck = append(stuck, c.entityPoisonHealthMessage())
 		}
+		if fault := c.backlogObservationFault.Load(); fault != nil {
+			stuck = append(stuck, *fault)
+		}
+	}
+	status := "stopped"
+	switch {
+	case c.running && len(stuck) > 0:
+		status = string(graph.IndexStateDegraded)
+	case c.running:
+		status = "running"
 	}
 
 	return component.HealthStatus{
-		Healthy:    c.running && errorCount == 0 && c.entityPoisonSize.Load() == 0,
+		Healthy:    c.running && len(stuck) == 0,
 		LastCheck:  time.Now(),
-		ErrorCount: errorCount,
-		LastError:  lastErr,
+		ErrorCount: int(atomic.LoadInt64(&c.errors)),
+		LastError:  strings.Join(stuck, "; "),
 		Uptime:     uptime,
 		Status:     status,
 	}
@@ -2339,7 +2344,7 @@ func (c *Component) deleteEntityAtRevision(ctx context.Context, entityID string,
 	if err := c.deleteEntity(ctx, entityID, revision); err != nil {
 		// A revision mismatch is the fence refusing the caller's revision: the caller's
 		// outcome, as on the reconcile lane and CreateEntity's key-exists, not a processing
-		// error that keeps Health down until restart.
+		// error counted in ErrorCount.
 		if !errors.Is(err, natsclient.ErrKVRevisionMismatch) {
 			atomic.AddInt64(&c.errors, 1)
 		}

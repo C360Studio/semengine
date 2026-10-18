@@ -39,12 +39,14 @@ authority refusal logs no entity identity.
 
 ### Requirement: Query refusals carry a code
 
-Every refusal graph-ingest returns on `graph.ingest.query.entity`, `graph.ingest.query.batch` and
-`graph.ingest.query.prefix` SHALL carry a classified code: `invalid_request` for a malformed request, entity ID or
-cursor; `entity_not_found`; the `pkg/types` entity-ID code for a malformed prefix or pattern; `response_too_large` when
-no page fits the server's maximum payload; `graph_state_reset_required` for a refused stored value; and `internal`
-for any other failure. Giving a refusal a code SHALL NOT change its class. A batch request with no IDs SHALL be
-answered with an empty `graph.EntityBatchResponse`.
+Once `Start` has completed, every refusal graph-ingest's query handlers return on `graph.ingest.query.entity`,
+`graph.ingest.query.batch` and `graph.ingest.query.prefix` SHALL carry a classified code. A request that arrives
+before `Start` completes is answered as "graph-ingest does no request work before Start completes" says, with no
+code. The codes: `invalid_request` for a malformed request, entity ID or cursor; `entity_not_found`; the `pkg/types`
+entity-ID code for a malformed prefix or pattern; `response_too_large` when no page fits the server's maximum
+payload; `graph_state_reset_required` for a refused stored value; and `internal` for any other failure. Giving a
+refusal a code SHALL NOT change its class. A batch request with no IDs SHALL be answered with an empty
+`graph.EntityBatchResponse`.
 
 #### Scenario: A malformed batch request
 

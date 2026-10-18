@@ -38,8 +38,8 @@ const (
 	ErrorCodeKVTokenDecodeInvalid = "kv_token_decode_invalid"
 	// ErrorCodeResponseTooLarge classifies a reply refused because its encoding
 	// exceeds the server's maximum payload (class invalid). SubscribeForRequests
-	// answers with it when a handler's reply is too large to publish, and
-	// graph-ingest's prefix query returns it when no page fits.
+	// answers with it when a handler's reply is too large to publish; a handler
+	// that bounds its own pages returns the same code when no page fits.
 	ErrorCodeResponseTooLarge = "response_too_large"
 )
 

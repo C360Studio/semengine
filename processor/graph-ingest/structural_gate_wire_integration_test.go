@@ -23,7 +23,7 @@ import (
 // mutation-API callers as a CLASSIFIED error over the real NATS request/reply
 // wire — never silently decoded as a zero-valued success. These tests drive the
 // production chain end-to-end: SubscribeForRequests-registered handler →
-// meteredMutation → validateTriplePredicates → natsclient.RespondError
+// meteredCanonicalMutation → validateTriplePredicates → natsclient.RespondError
 // (X-Status/X-Error-Class/X-Error-Code headers + {message} body) →
 // ClassifyReply/RequestClassified on the caller side.
 //

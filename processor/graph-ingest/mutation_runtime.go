@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/message"
@@ -36,32 +35,6 @@ func (c *Component) setupMutationHandlers(ctx context.Context) error {
 }
 
 type mutationHandler = func(context.Context, []byte) ([]byte, error)
-
-// meteredMutation records typed rejections without altering the handler verdict.
-func (c *Component) meteredMutation(subject string, handler mutationHandler) mutationHandler {
-	return func(ctx context.Context, data []byte) ([]byte, error) {
-		response, err := handler(ctx, data)
-		if err == nil {
-			return response, nil
-		}
-		c.recordPredicateContractRejections(subject, err)
-		// An authority rejection meters under its own operator-facing reason
-		// (authority_foreign / authority_claimed) and logs WITHOUT the identity;
-		// everything else keeps metering under its classified code. Routing both
-		// through this one wrapper is what keeps "metered exactly once" true.
-		if authorityReason, isAuthority := authorityMetricReason(err); isAuthority {
-			c.recordAuthorityRejection(subject, authorityReason, err)
-			return response, err
-		}
-		reason := graph.ErrorCodeInternal
-		var classified *errs.ClassifiedError
-		if errors.As(err, &classified) && classified.Code != "" {
-			reason = classified.Code
-		}
-		c.recordMutationRejection(subject, reason, err.Error())
-		return response, err
-	}
-}
 
 func (c *Component) recordPredicateContractRejections(lane string, err error) {
 	var refusal *statementRefusal
@@ -151,14 +124,6 @@ func predicateContractReason(err error) (string, bool) {
 	default:
 		return contractReasonUnknown, true
 	}
-}
-
-func (c *Component) recordMutationRejection(subject, reason, detail string) {
-	c.mutationRejections.WithLabelValues(subject, reason).Inc()
-	c.logger.Warn("graph mutation rejected",
-		slog.String("subject", subject),
-		slog.String("reason", reason),
-		slog.String("error", detail))
 }
 
 func validateTriplePredicates(triples []message.Triple) error {

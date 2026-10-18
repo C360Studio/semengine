@@ -96,7 +96,7 @@ func newMutationOutcomesMetric() *prometheus.CounterVec {
 		Namespace: "semengine",
 		Subsystem: "graph_ingest",
 		Name:      "graph_mutation_outcomes_total",
-		Help:      "Canonical graph mutation outcomes by bounded operation and outcome",
+		Help:      "Canonical graph mutation outcomes by operation and outcome: one count per reply, and one per subject for an append",
 	}, []string{"operation", "outcome"})
 	return mutationOutcomesVec
 }

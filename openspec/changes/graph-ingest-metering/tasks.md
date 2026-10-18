@@ -12,10 +12,10 @@ stops end batches 1–3. Each stop's task ends only when `task verify` passes on
 
 ## 2. One wrapper (batch 1, #303, #300 B)
 
-- [ ] 2.1 Failing test `TestRefusedMutationMetersAndLogsOnce`, calling `meteredCanonicalMutation(route)` (the same
+- [x] 2.1 Failing test `TestRefusedMutationMetersAndLogsOnce`, calling `meteredCanonicalMutation(route)` (the same
   name and signature on the base and after 2.2). Its revision-mismatch rows fail by assertion on the base with two
   WARN lines. Also `TestMutationOutcomeCountedAtTheDecision`, which passes on the base. Gate: as stated.
-- [ ] 2.2 D1: one wrapper; outcomes counted at each handler's decision; `meteredMutation`, `recordCanonicalResponse`,
+- [x] 2.2 D1: one wrapper; outcomes counted at each handler's decision; `meteredMutation`, `recordCanonicalResponse`,
   `canonicalErrorOutcome` and WARN 2 go; the re-decode tests go; `mutation_rejection_metric_test.go` and
   `structural_predicate_gate_test.go` call the one wrapper; the two `task mutate:check` runs D1 names, recorded in
   `notes/2.2.md`. Also: the

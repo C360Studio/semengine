@@ -24,7 +24,7 @@ import (
 // non-3-part predicates at the mutation-handler boundary. It is unconditionally
 // FAIL-CLOSED — no bypass configuration exists: validateTriplePredicates returns
 // a classified ErrorCodeStructuralInvalid so the write is rejected before any
-// KV I/O. Metering happens exactly ONCE, in the meteredMutation wrapper, which
+// KV I/O. Metering happens exactly ONCE, in the meteredCanonicalMutation wrapper, which
 // meters every classified handler error by its code
 // (mutation_rejections{reason=structural_invalid}) and logs a loud Warn whose
 // detail names the predicate — the gate itself does not meter (a direct call
@@ -90,7 +90,7 @@ func TestValidateTriplePredicates_FailClosed_RejectsClassified(t *testing.T) {
 
 func TestValidateTriplePredicates_ValidPredicate_Untouched(t *testing.T) {
 	// A conforming predicate must pass the fail-closed gate untouched. (Metering
-	// on rejection is the meteredMutation wrapper's job — asserted in the
+	// on rejection is the meteredCanonicalMutation wrapper's job — asserted in the
 	// handler-level tests below.)
 
 	triples := []message.Triple{
@@ -104,7 +104,7 @@ func TestValidateTriplePredicates_ValidPredicate_Untouched(t *testing.T) {
 }
 
 // TestHandleCanonicalAppend_InvalidPredicate_FailClosedNothingPersisted drives the
-// production handler through the meteredMutation wrapper (the exact chain
+// production handler through the meteredCanonicalMutation wrapper (the exact chain
 // SubscribeForRequests registers) and pins the full fail-closed contract on the
 // append lane: classified structural_invalid error, rejection metric, loud
 // Warn naming the token, and NOTHING persisted. The target entity is absent, so
@@ -118,7 +118,7 @@ func TestHandleCanonicalAppend_InvalidPredicate_FailClosedNothingPersisted(t *te
 	comp.logger = slog.New(slog.NewTextHandler(&logBuf, nil))
 
 	const absentID = "acme.ops.robotics.gcs.drone.404"
-	// The meteredMutation wrapper is the SINGLE metering point: it meters the
+	// The meteredCanonicalMutation wrapper is the SINGLE metering point: it meters the
 	// classified error by its code (reason=structural_invalid). The gate's old
 	// direct-meter cell must stay untouched (double-metering regression guard).
 	counter := comp.mutationRejections.WithLabelValues(structuralAppendSubject, graph.ErrorCodeInvalidRequest)
@@ -126,7 +126,7 @@ func TestHandleCanonicalAppend_InvalidPredicate_FailClosedNothingPersisted(t *te
 	gateDirectCell := comp.mutationRejections.WithLabelValues(structuralAppendSubject, "structural_predicate_invalid")
 	gateDirectBefore := testutil.ToFloat64(gateDirectCell)
 
-	handler := comp.meteredMutation(structuralAppendSubject, comp.handleCanonicalAppend)
+	handler := meteredRoute(t, comp, structuralAppendSubject)
 	reqBytes, err := json.Marshal(graph.AppendTriplesRequest{Triples: []message.Triple{{
 		Subject: absentID, Predicate: "agent.role", Object: "researcher", // predicate-audit:invalid {"kind":"stored-predicate","value":"agent.role","reason":"arity"}
 		Timestamp: time.Now(), Confidence: 1.0,
@@ -171,7 +171,7 @@ func TestHandleCanonicalAppend_InvalidPredicate_WholeBatchRejected(t *testing.T)
 	baseline, baselineRevision := seedStructuralGateEntity(t, comp, structuralGateEntity)
 	now := time.Now()
 
-	handler := comp.meteredMutation(structuralAppendSubject, comp.handleCanonicalAppend)
+	handler := meteredRoute(t, comp, structuralAppendSubject)
 	reqBytes, err := json.Marshal(graph.AppendTriplesRequest{Triples: []message.Triple{
 		{Subject: structuralGateEntity, Predicate: "sensorml.capability.value", Object: "50m", Timestamp: now, Confidence: 1.0},
 		{Subject: structuralGateEntity, Predicate: "agent.role", Object: "researcher", Timestamp: now, Confidence: 1.0}, // predicate-audit:invalid {"kind":"stored-predicate","value":"agent.role","reason":"arity"}
@@ -210,7 +210,7 @@ func TestHandleCanonicalCreate_InvalidPredicate_NothingPersisted(t *testing.T) {
 	before := testutil.ToFloat64(contractCounter)
 
 	now := time.Now()
-	handler := comp.meteredMutation(structuralCreateSubject, comp.handleCanonicalCreate)
+	handler := meteredRoute(t, comp, structuralCreateSubject)
 	reqBytes, err := json.Marshal(graph.CreateEntityRequest{
 		Entity: &graph.EntityState{ID: createID, MessageType: structuralGateTestType, UpdatedAt: now},
 		Triples: withTestMetadata(
@@ -251,7 +251,7 @@ func TestHandleCanonicalReconcile_InvalidPredicate_EntityUnchanged(t *testing.T)
 
 	entry, err := comp.entityBucket.Get(ctx, structuralGateEntity)
 	require.NoError(t, err)
-	handler := comp.meteredMutation(structuralReconcileSubject, comp.handleCanonicalReconcile)
+	handler := meteredRoute(t, comp, structuralReconcileSubject)
 	reqBytes, err := json.Marshal(graph.ReconcilePredicatesRequest{
 		EntityID: structuralGateEntity, ExpectedRevision: entry.Revision, Source: fixtureSource,
 		Predicates: []string{"agent.role"},
@@ -318,7 +318,7 @@ func TestHandleCanonicalAppend_ValidPredicate_PersistsMergeIntact(t *testing.T) 
 	counter := comp.mutationRejections.WithLabelValues(structuralAppendSubject, graph.ErrorCodeStructuralInvalid)
 	before := testutil.ToFloat64(counter)
 
-	handler := comp.meteredMutation(structuralAppendSubject, comp.handleCanonicalAppend)
+	handler := meteredRoute(t, comp, structuralAppendSubject)
 	reqBytes, err := json.Marshal(graph.AppendTriplesRequest{Triples: withTestMetadata(message.Triple{
 		Subject: structuralGateEntity, Predicate: "sensorml.capability.value", Object: "50m",
 		Timestamp: time.Now(), Confidence: 1.0,

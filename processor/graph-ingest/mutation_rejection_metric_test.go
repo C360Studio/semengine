@@ -11,11 +11,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/internal/graphmutation"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/vocabulary"
 )
 
-// SemStreams ADR-060: meteredMutation wraps every graph-mutation request handler and
+// SemStreams ADR-060: meteredCanonicalMutation wraps every graph-mutation request handler and
 // meters rejections by subject + reason. Under SemStreams ADR-060, a hard rejection
 // surfaces as (nil body, *errs.ClassifiedError) on the error channel —
 // there is no longer an in-body Success/ErrorCode path for single-entity
@@ -23,14 +24,17 @@ import (
 // FailedSubjects populated. The metric is process-global, so these tests
 // use UNIQUE per-case subjects to keep their label series isolated.
 
-func TestMeteredMutation_MetersRejectionByErrorCode(t *testing.T) {
+func TestMeteredCanonicalMutation_MetersRejectionByErrorCode(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)
 	const subj = "test.mutation.metric.errorcode"
 
 	// SemStreams ADR-060: a hard rejection is (nil, *ClassifiedError); the handler
 	// returns the typed error, not an in-body Success=false.
-	wrapped := comp.meteredMutation(subj, func(_ context.Context, _ []byte) ([]byte, error) {
-		return nil, errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeEntityNotFound, errors.New("entity does not exist"))
+	wrapped := comp.meteredCanonicalMutation(canonicalMutationRoute{
+		operation: graphmutation.AppendTriples, subject: subj,
+		handler: func(_ context.Context, _ []byte) ([]byte, error) {
+			return nil, errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeEntityNotFound, errors.New("entity does not exist"))
+		},
 	})
 
 	counter := comp.mutationRejections.WithLabelValues(subj, graph.ErrorCodeEntityNotFound)
@@ -47,16 +51,19 @@ func TestMeteredMutation_MetersRejectionByErrorCode(t *testing.T) {
 		"a rejection must increment {subject, error_code} exactly once")
 }
 
-func TestMeteredMutation_SuccessDoesNotMeter(t *testing.T) {
+func TestMeteredCanonicalMutation_SuccessDoesNotMeter(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)
 	const subj = "test.mutation.metric.success"
 
-	wrapped := comp.meteredMutation(subj, func(_ context.Context, _ []byte) ([]byte, error) {
-		// SemStreams ADR-060: any (body, nil) reply is a success body.
-		data, _ := json.Marshal(graph.AppendTriplesResponse{Results: []graph.AppendSubjectResult{{
-			EntityID: "a.b.c.d.e.f", Outcome: graph.MutationApplied, KVRevision: 1,
-		}}})
-		return data, nil
+	wrapped := comp.meteredCanonicalMutation(canonicalMutationRoute{
+		operation: graphmutation.AppendTriples, subject: subj,
+		handler: func(_ context.Context, _ []byte) ([]byte, error) {
+			// SemStreams ADR-060: any (body, nil) reply is a success body.
+			data, _ := json.Marshal(graph.AppendTriplesResponse{Results: []graph.AppendSubjectResult{{
+				EntityID: "a.b.c.d.e.f", Outcome: graph.MutationApplied, KVRevision: 1,
+			}}})
+			return data, nil
+		},
 	})
 
 	// A successful response must not increment ANY reason for this subject.
@@ -73,13 +80,16 @@ func TestMeteredMutation_SuccessDoesNotMeter(t *testing.T) {
 // with an empty ClassifiedError.Code (or a plain error) falls through to the
 // "internal" label — the SemStreams ADR-060 equivalent of the retired "unclassified" path
 // (the old in-body ErrorCode="" route no longer exists).
-func TestMeteredMutation_EmptyCodeIsInternal(t *testing.T) {
+func TestMeteredCanonicalMutation_EmptyCodeIsInternal(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)
 	const subj = "test.mutation.metric.emptycode"
 
 	// A ClassifiedError with empty Code (edge case: caller omitted the code).
-	wrapped := comp.meteredMutation(subj, func(_ context.Context, _ []byte) ([]byte, error) {
-		return nil, errs.ClassifiedCode(errs.ErrorInvalid, "", errors.New("some error without code"))
+	wrapped := comp.meteredCanonicalMutation(canonicalMutationRoute{
+		operation: graphmutation.AppendTriples, subject: subj,
+		handler: func(_ context.Context, _ []byte) ([]byte, error) {
+			return nil, errs.ClassifiedCode(errs.ErrorInvalid, "", errors.New("some error without code"))
+		},
 	})
 
 	counter := comp.mutationRejections.WithLabelValues(subj, graph.ErrorCodeInternal)
@@ -90,13 +100,16 @@ func TestMeteredMutation_EmptyCodeIsInternal(t *testing.T) {
 		"a rejection with empty Code must fall through to reason='internal'")
 }
 
-func TestMeteredMutation_HandlerErrorMeteredAsInternal(t *testing.T) {
+func TestMeteredCanonicalMutation_HandlerErrorMeteredAsInternal(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)
 	const subj = "test.mutation.metric.internal"
 
 	sentinel := errors.New("handler blew up")
-	wrapped := comp.meteredMutation(subj, func(_ context.Context, _ []byte) ([]byte, error) {
-		return nil, sentinel
+	wrapped := comp.meteredCanonicalMutation(canonicalMutationRoute{
+		operation: graphmutation.AppendTriples, subject: subj,
+		handler: func(_ context.Context, _ []byte) ([]byte, error) {
+			return nil, sentinel
+		},
 	})
 
 	counter := comp.mutationRejections.WithLabelValues(subj, graph.ErrorCodeInternal)
@@ -107,7 +120,7 @@ func TestMeteredMutation_HandlerErrorMeteredAsInternal(t *testing.T) {
 		"a non-nil handler error must be metered as reason=internal")
 }
 
-func TestMeteredMutation_PredicateReasonsCountOncePerCandidate(t *testing.T) {
+func TestMeteredCanonicalMutation_PredicateReasonsCountOncePerCandidate(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)
 	const lane = "test.mutation.metric.predicate-contract"
 	contractErr := &graph.EntityPredicateContractError{Violations: []graph.InvalidEntityPredicate{
@@ -115,8 +128,11 @@ func TestMeteredMutation_PredicateReasonsCountOncePerCandidate(t *testing.T) {
 		{Predicate: "legacy.two", Reason: vocabulary.PredicateReasonArity},                // predicate-audit:invalid {"kind":"stored-predicate","value":"legacy.two","reason":"arity"}
 		{Predicate: "Legacy.valid.shape", Reason: vocabulary.PredicateReasonSegmentStart}, // predicate-audit:invalid {"kind":"stored-predicate","value":"Legacy.valid.shape","reason":"segment_start"}
 	}}
-	wrapped := comp.meteredMutation(lane, func(_ context.Context, _ []byte) ([]byte, error) {
-		return nil, errs.WrapInvalid(contractErr, "test", "predicateMetric", "reject candidate")
+	wrapped := comp.meteredCanonicalMutation(canonicalMutationRoute{
+		operation: graphmutation.AppendTriples, subject: lane,
+		handler: func(_ context.Context, _ []byte) ([]byte, error) {
+			return nil, errs.WrapInvalid(contractErr, "test", "predicateMetric", "reject candidate")
+		},
 	})
 	ary := comp.predicateContractRejections.WithLabelValues(lane, string(vocabulary.PredicateReasonArity))
 	start := comp.predicateContractRejections.WithLabelValues(lane, string(vocabulary.PredicateReasonSegmentStart))

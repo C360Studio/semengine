@@ -5,8 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log/slog"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -785,35 +783,6 @@ func TestCanonicalDeleteFenceHoldsAgainstAWriteAfterItsRead(t *testing.T) {
 	assertStoredUnder(t, bucket, other, created.KVRevision+1)
 }
 
-func TestCanonicalMutationOutcomeMetricAndRevisionMismatchLog(t *testing.T) {
-	c, _ := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
-	created := createCanonicalEntity(t, c, canonicalEntityA, []message.Triple{canonicalTriple(canonicalEntityA, "test.seed.value", "seeded")})
-	var logs bytes.Buffer
-	c.logger = slog.New(slog.NewTextHandler(&logs, nil))
-
-	operation := graphmutation.ReconcilePredicates
-	counter := c.mutationOutcomes.WithLabelValues(string(operation), "revision_mismatch")
-	before := testutil.ToFloat64(counter)
-	route := canonicalMutationRoute{
-		operation: operation, subject: "graph.mutation.entity.reconcile", handler: c.handleCanonicalReconcile,
-	}
-	request := graph.ReconcilePredicatesRequest{
-		EntityID: canonicalEntityA, ExpectedRevision: created.KVRevision + 1, Source: "canonical-test",
-		Predicates: []string{"test.state.value"}, Desired: []message.Triple{},
-	}
-	_, err := c.meteredCanonicalMutation(route)(context.Background(), mustCanonicalJSON(t, request))
-	assertCanonicalCode(t, err, graph.ErrorCodeRevisionMismatch)
-	if after := testutil.ToFloat64(counter); after != before+1 {
-		t.Fatalf("revision mismatch outcome delta = %v, want 1", after-before)
-	}
-	text := logs.String()
-	for _, fragment := range []string{"graph mutation revision mismatch", "operation=entity.reconcile", "entity_id=" + canonicalEntityA, "expected_revision="} {
-		if !strings.Contains(text, fragment) {
-			t.Fatalf("log %q missing %q", text, fragment)
-		}
-	}
-}
-
 // TestCanonicalMutationOutcomeLabelIsTheClassifiedCode: a refused canonical mutation is
 // counted under its classified code (ruling L, #91 comment 6062681355), driven through the
 // create route graph-ingest subscribes. The wanted labels are spelled out, not taken from
@@ -861,39 +830,6 @@ func TestCanonicalMutationOutcomeLabelIsTheClassifiedCode(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestCanonicalAppendOutcomeMetricCountsEachSubjectResult(t *testing.T) {
-	c := createTestComponentWithMockKV(t, withAuthority("acme", "ops"))
-	operation := graphmutation.AppendTriples
-	applied := c.mutationOutcomes.WithLabelValues(string(operation), string(graph.MutationApplied))
-	failed := c.mutationOutcomes.WithLabelValues(string(operation), graph.ErrorCodeInternal)
-	beforeApplied := testutil.ToFloat64(applied)
-	beforeFailed := testutil.ToFloat64(failed)
-	data := mustCanonicalJSON(t, graph.AppendTriplesResponse{Results: []graph.AppendSubjectResult{
-		{EntityID: canonicalEntityA, Outcome: graph.MutationApplied, KVRevision: 2},
-		{EntityID: canonicalEntityB, Outcome: graph.MutationFailed,
-			Error: &graph.MutationFailure{Class: "transient", Code: graph.ErrorCodeInternal}},
-	}})
-	if err := c.recordCanonicalResponse(operation, data); err != nil {
-		t.Fatalf("recordCanonicalResponse: %v", err)
-	}
-	if delta := testutil.ToFloat64(applied) - beforeApplied; delta != 1 {
-		t.Fatalf("applied delta = %v", delta)
-	}
-	if delta := testutil.ToFloat64(failed) - beforeFailed; delta != 1 {
-		t.Fatalf("failure delta = %v", delta)
-	}
-}
-
-func TestCanonicalAppendOutcomeMetricRejectsFailureWithoutDetail(t *testing.T) {
-	c := createTestComponentWithMockKV(t, withAuthority("acme", "ops"))
-	data := mustCanonicalJSON(t, graph.AppendTriplesResponse{Results: []graph.AppendSubjectResult{{
-		EntityID: canonicalEntityA, Outcome: graph.MutationFailed,
-	}}})
-	if err := c.recordCanonicalResponse(graphmutation.AppendTriples, data); err == nil {
-		t.Fatal("recordCanonicalResponse accepted failed append result without error detail")
 	}
 }
 

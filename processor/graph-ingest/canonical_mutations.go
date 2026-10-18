@@ -28,75 +28,46 @@ type canonicalMutationRoute struct {
 	handler   mutationHandler
 }
 
+// meteredCanonicalMutation is the one metering layer a mutation request passes
+// through. A refused request counts once on graph_mutation_outcomes_total and
+// once on mutation_rejections_total, under its classified code or internal when
+// it carries none (ruling L, #91 comment 6062681355), and logs one WARN line
+// that carries the error's detail. An authority refusal counts under its own
+// reason and logs without the identity (recordAuthorityRejection). A successful
+// request is counted by its handler once the reply is built.
 func (c *Component) meteredCanonicalMutation(route canonicalMutationRoute) mutationHandler {
-	metered := c.meteredMutation(route.subject, route.handler)
 	return func(ctx context.Context, data []byte) ([]byte, error) {
-		response, err := metered(ctx, data)
-		if err != nil {
-			outcome := canonicalErrorOutcome(err)
-			c.recordCanonicalOutcome(route.operation, outcome)
-			var classified *errs.ClassifiedError
-			if errors.As(err, &classified) && classified.Code == graph.ErrorCodeRevisionMismatch {
-				c.logger.Warn("graph mutation revision mismatch",
-					slog.String("operation", string(route.operation)),
-					slog.Any("entity_id", classified.Detail["entity"]),
-					slog.Any("expected_revision", classified.Detail["expected_revision"]))
+		response, err := route.handler(ctx, data)
+		if err == nil {
+			return response, nil
+		}
+		code := graph.ErrorCodeInternal
+		var detail map[string]any
+		var classified *errs.ClassifiedError
+		if errors.As(err, &classified) {
+			if classified.Code != "" {
+				code = classified.Code
 			}
+			detail = classified.Detail
+		}
+		c.recordCanonicalOutcome(route.operation, code)
+		c.recordPredicateContractRejections(route.subject, err)
+		if authorityReason, isAuthority := authorityMetricReason(err); isAuthority {
+			c.recordAuthorityRejection(route.subject, authorityReason, err)
 			return response, err
 		}
-		if recordErr := c.recordCanonicalResponse(route.operation, response); recordErr != nil {
-			c.recordCanonicalOutcome(route.operation, graph.ErrorCodeInternal)
-			c.logger.Warn("canonical mutation response could not be metered",
-				slog.String("operation", string(route.operation)), slog.Any("error", recordErr))
+		c.mutationRejections.WithLabelValues(route.subject, code).Inc()
+		attrs := []any{
+			slog.String("subject", route.subject),
+			slog.String("reason", code),
+			slog.String("error", err.Error()),
 		}
-		return response, nil
+		if len(detail) != 0 {
+			attrs = append(attrs, slog.Any("detail", detail))
+		}
+		c.logger.Warn("graph mutation rejected", attrs...)
+		return response, err
 	}
-}
-
-// canonicalErrorOutcome is the outcome label of a refused canonical mutation: the
-// error's classified code, or internal when it carries none (ruling L, #91 comment
-// 6062681355).
-func canonicalErrorOutcome(err error) string {
-	var classified *errs.ClassifiedError
-	if !errors.As(err, &classified) || classified.Code == "" {
-		return graph.ErrorCodeInternal
-	}
-	return classified.Code
-}
-
-func (c *Component) recordCanonicalResponse(operation graphmutation.Operation, data []byte) error {
-	switch operation {
-	case graphmutation.CreateEntity, graphmutation.ReconcilePredicates:
-		var response graph.EntityMutationResponse
-		if err := json.Unmarshal(data, &response); err != nil {
-			return err
-		}
-		c.recordCanonicalOutcome(operation, string(response.Outcome))
-	case graphmutation.AppendTriples:
-		var response graph.AppendTriplesResponse
-		if err := json.Unmarshal(data, &response); err != nil {
-			return err
-		}
-		for _, result := range response.Results {
-			outcome := string(result.Outcome)
-			if result.Outcome == graph.MutationFailed {
-				if result.Error == nil {
-					return fmt.Errorf("failed append result for %q has no error", result.EntityID)
-				}
-				outcome = result.Error.Code
-			}
-			c.recordCanonicalOutcome(operation, outcome)
-		}
-	case graphmutation.DeleteEntity:
-		var response graph.DeleteEntityResponse
-		if err := json.Unmarshal(data, &response); err != nil {
-			return err
-		}
-		c.recordCanonicalOutcome(operation, string(response.Outcome))
-	default:
-		return fmt.Errorf("unknown canonical mutation operation %q", operation)
-	}
-	return nil
 }
 
 func (c *Component) recordCanonicalOutcome(operation graphmutation.Operation, outcome string) {
@@ -171,7 +142,7 @@ func requireMutationProviderPort(ports *component.PortConfig) error {
 // check) and the in-process CreateEntity (the hierarchy container birth). It
 // writes nothing and yields one classified error — class invalid, closed code
 // message_type_unregistered, the key in detail "message_type" — which the RPC
-// lane meters and logs through meteredMutation and the in-process lane returns
+// lane meters and logs through meteredCanonicalMutation and the in-process lane returns
 // to its caller (not metered: the counter is labelled by RPC subject). The
 // registry is never nil: CreateGraphIngest refuses to build without one (O-15).
 func (c *Component) requireRegisteredMessageType(entity *graph.EntityState) error {
@@ -251,10 +222,15 @@ func (c *Component) handleCanonicalCreate(ctx context.Context, data []byte) ([]b
 	}
 
 	c.recordCanonicalEntityCommit(len(encoded))
-	return json.Marshal(graph.EntityMutationResponse{
+	reply, err := json.Marshal(graph.EntityMutationResponse{
 		Outcome: graph.MutationApplied, Entity: entity.Clone(), KVRevision: revision,
 		TraceID: request.TraceID, RequestID: request.RequestID,
 	})
+	if err != nil {
+		return nil, err
+	}
+	c.recordCanonicalOutcome(graphmutation.CreateEntity, string(graph.MutationApplied))
+	return reply, nil
 }
 
 func (c *Component) handleCanonicalReconcile(ctx context.Context, data []byte) ([]byte, error) {
@@ -300,10 +276,15 @@ func (c *Component) handleCanonicalReconcile(ctx context.Context, data []byte) (
 
 	candidate, unchanged := reconcileCandidate(&current, request.Source, request.Desired, predicates)
 	if unchanged {
-		return json.Marshal(graph.EntityMutationResponse{
+		reply, err := json.Marshal(graph.EntityMutationResponse{
 			Outcome: graph.MutationUnchanged, Entity: current.Clone(), KVRevision: revision,
 			TraceID: request.TraceID, RequestID: request.RequestID,
 		})
+		if err != nil {
+			return nil, err
+		}
+		c.recordCanonicalOutcome(graphmutation.ReconcilePredicates, string(graph.MutationUnchanged))
+		return reply, nil
 	}
 	encoded, err := graph.MarshalEntityState(candidate)
 	if err != nil {
@@ -324,10 +305,15 @@ func (c *Component) handleCanonicalReconcile(ctx context.Context, data []byte) (
 	}
 
 	c.recordCanonicalEntityCommit(len(encoded))
-	return json.Marshal(graph.EntityMutationResponse{
+	reply, err := json.Marshal(graph.EntityMutationResponse{
 		Outcome: graph.MutationApplied, Entity: candidate, KVRevision: committedRevision,
 		TraceID: request.TraceID, RequestID: request.RequestID,
 	})
+	if err != nil {
+		return nil, err
+	}
+	c.recordCanonicalOutcome(graphmutation.ReconcilePredicates, string(graph.MutationApplied))
+	return reply, nil
 }
 
 func (c *Component) handleCanonicalAppend(ctx context.Context, data []byte) ([]byte, error) {
@@ -393,7 +379,19 @@ func (c *Component) handleCanonicalAppend(ctx context.Context, data []byte) ([]b
 			EntityID: subject, Outcome: graph.MutationUnchanged, KVRevision: revision,
 		})
 	}
-	return json.Marshal(response)
+	reply, err := json.Marshal(response)
+	if err != nil {
+		return nil, err
+	}
+	// One count per subject: a failed subject counts under its failure's code.
+	for _, result := range response.Results {
+		outcome := string(result.Outcome)
+		if result.Error != nil {
+			outcome = result.Error.Code
+		}
+		c.recordCanonicalOutcome(graphmutation.AppendTriples, outcome)
+	}
+	return reply, nil
 }
 
 func validateCanonicalAppendAccounting(subjects []string, result addTriplesResult) error {
@@ -462,10 +460,15 @@ func (c *Component) handleCanonicalDelete(ctx context.Context, data []byte) ([]b
 		}
 		return nil, rejectInternal(err)
 	}
-	return json.Marshal(graph.DeleteEntityResponse{
+	reply, err := json.Marshal(graph.DeleteEntityResponse{
 		EntityID: request.EntityID, Outcome: graph.MutationApplied,
 		ExpectedRevision: request.ExpectedRevision, TraceID: request.TraceID, RequestID: request.RequestID,
 	})
+	if err != nil {
+		return nil, err
+	}
+	c.recordCanonicalOutcome(graphmutation.DeleteEntity, string(graph.MutationApplied))
+	return reply, nil
 }
 
 func decodeCanonicalMutation(data []byte, target any, requiredFields ...string) error {

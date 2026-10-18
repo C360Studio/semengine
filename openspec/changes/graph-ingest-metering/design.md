@@ -53,8 +53,10 @@ Behaviour after (c):
   - delete `applied`;
   - append once per subject: `applied`, `unchanged`, `entity_not_found`, or the failure's code from
     `canonicalAppendFailure` (`:495-502`).
-- **Reply that cannot be built.** It is returned as `internal` and counted only under `internal`. A request
-  therefore counts exactly once, and an append once per subject. The spec says "each canonical mutation", and the
+- **Reply that cannot be built.** It is metered as `internal` on both counters; the error itself is returned as on
+  the base (no code, class fatal), because this design declares no change to the wire and no request can reach the
+  path (every reply holds values decoded from JSON or a stored entity). A request therefore counts exactly once, and
+  an append once per subject. The spec says "each canonical mutation", and the
   delta states the per-subject rule (§ Spec deltas).
 - **Removed.** `meteredMutation` (the inner wrapper), `recordCanonicalResponse`, `canonicalErrorOutcome` (the wrapper
   code once and uses it for both counters) and WARN 2.

@@ -37,8 +37,7 @@ func TestComponent_MetricsUpdate_EntityOperations(t *testing.T) {
 	require.NoError(t, comp.CreateEntity(ctx, entity))
 	assert.Equal(t, before+1, testutil.ToFloat64(comp.entitiesUpdated), "a created entity counts one update")
 
-	// A second create of the same key is refused and updates nothing. (The append lane
-	// does not count updates today: notes/6.1.md.)
+	// A second create of the same key is refused and updates nothing.
 	require.Error(t, comp.CreateEntity(ctx, newTestEntity(entity.ID)))
 	assert.Equal(t, before+1, testutil.ToFloat64(comp.entitiesUpdated), "a refused create counts no update")
 }
@@ -50,9 +49,11 @@ func TestComponent_MetricsAtomic_MessageProcessing(t *testing.T) {
 	bytes := atomic.LoadInt64(&comp.bytesProcessed)
 	errorCount := atomic.LoadInt64(&comp.errors)
 
+	// An in-process create is not an input message (#302; design D2): DataFlow counts
+	// stream deliveries and mutation requests only.
 	require.NoError(t, comp.CreateEntity(ctx, newTestEntity("c360.platform.test.sys.type.001")))
-	assert.Equal(t, messages+1, atomic.LoadInt64(&comp.messagesProcessed), "one created entity counts once")
-	assert.Greater(t, atomic.LoadInt64(&comp.bytesProcessed), bytes, "the stored bytes are counted")
+	assert.Equal(t, messages, atomic.LoadInt64(&comp.messagesProcessed), "an in-process create counts no message")
+	assert.Equal(t, bytes, atomic.LoadInt64(&comp.bytesProcessed), "an in-process create counts no bytes")
 	assert.Equal(t, errorCount, atomic.LoadInt64(&comp.errors), "a successful write counts no error")
 
 	bucket.createFunc = func(context.Context, string, []byte, ...jetstream.KVCreateOpt) (uint64, error) {
@@ -60,7 +61,7 @@ func TestComponent_MetricsAtomic_MessageProcessing(t *testing.T) {
 	}
 	require.Error(t, comp.CreateEntity(ctx, newTestEntity("c360.platform.test.sys.type.002")))
 	assert.Equal(t, errorCount+1, atomic.LoadInt64(&comp.errors), "a failed write counts one error")
-	assert.Equal(t, messages+1, atomic.LoadInt64(&comp.messagesProcessed), "a failed write is not counted as processed")
+	assert.Equal(t, messages, atomic.LoadInt64(&comp.messagesProcessed), "a failed in-process write counts no message")
 }
 
 func TestComponent_MetricsRegistry_CreateComponent(t *testing.T) {

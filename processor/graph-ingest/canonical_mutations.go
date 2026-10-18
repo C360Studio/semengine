@@ -34,9 +34,13 @@ type canonicalMutationRoute struct {
 // it carries none (ruling L, #91 comment 6062681355), and logs one WARN line
 // that carries the error's detail. An authority refusal counts under its own
 // reason and logs without the identity (recordAuthorityRejection). A successful
-// request is counted by its handler once the reply is built.
+// request is counted by its handler once the reply is built. Every request that
+// reaches the handler is one input message on DataFlow.
 func (c *Component) meteredCanonicalMutation(route canonicalMutationRoute) mutationHandler {
 	return func(ctx context.Context, data []byte) ([]byte, error) {
+		atomic.AddInt64(&c.messagesProcessed, 1)
+		atomic.AddInt64(&c.bytesProcessed, int64(len(data)))
+		c.lastActivity.Store(time.Now())
 		response, err := route.handler(ctx, data)
 		if err == nil {
 			return response, nil
@@ -221,7 +225,7 @@ func (c *Component) handleCanonicalCreate(ctx context.Context, data []byte) ([]b
 		return nil, rejectFromError(err)
 	}
 
-	c.recordCanonicalEntityCommit(len(encoded))
+	c.entitiesUpdated.Inc()
 	reply, err := json.Marshal(graph.EntityMutationResponse{
 		Outcome: graph.MutationApplied, Entity: entity.Clone(), KVRevision: revision,
 		TraceID: request.TraceID, RequestID: request.RequestID,
@@ -304,7 +308,7 @@ func (c *Component) handleCanonicalReconcile(ctx context.Context, data []byte) (
 		return nil, rejectFromError(err)
 	}
 
-	c.recordCanonicalEntityCommit(len(encoded))
+	c.entitiesUpdated.Inc()
 	reply, err := json.Marshal(graph.EntityMutationResponse{
 		Outcome: graph.MutationApplied, Entity: candidate, KVRevision: committedRevision,
 		TraceID: request.TraceID, RequestID: request.RequestID,
@@ -670,12 +674,4 @@ func distinctSortedSubjects(triples []message.Triple) []string {
 	}
 	sort.Strings(subjects)
 	return subjects
-}
-
-// recordCanonicalEntityCommit meters a mutation commit; the seam has done its bookkeeping.
-func (c *Component) recordCanonicalEntityCommit(bytesWritten int) {
-	atomic.AddInt64(&c.messagesProcessed, 1)
-	atomic.AddInt64(&c.bytesProcessed, int64(bytesWritten))
-	c.lastActivity.Store(time.Now())
-	c.entitiesUpdated.Inc()
 }

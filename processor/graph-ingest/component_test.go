@@ -612,7 +612,7 @@ func TestComponent_Health_NotStarted(t *testing.T) {
 }
 
 func TestComponent_DataFlow_ReturnsMetrics(t *testing.T) {
-	comp, bucket := createTestComponentWithMockKVBucket(t)
+	comp, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
 	// DataFlow reports rates over uptime, which only a started component has; the
 	// unit test marks the component started a second ago, as poison_scoping_test.go does.
 	comp.running = true
@@ -623,18 +623,22 @@ func TestComponent_DataFlow_ReturnsMetrics(t *testing.T) {
 	assert.Zero(t, idle.MessagesPerSecond, "nothing processed yet")
 	assert.Zero(t, idle.ErrorRate, "nothing failed yet")
 
-	// The count behind the rate is writes, not messages (#302), so the test asserts
-	// only that the rate moves, never its value.
-	require.NoError(t, comp.CreateEntity(ctx, newTestEntity("c360.platform.test.sys.type.001")))
+	// One mutation request through the wrapper graph-ingest subscribes is one input
+	// message (#302). The rate is over wall-clock uptime, so only its movement is asserted.
+	_, err := meteredRoute(t, comp, "graph.mutation.entity.create")(ctx, mustCanonicalJSON(t, graph.CreateEntityRequest{
+		Entity:  canonicalMutationEntity(canonicalEntityA),
+		Triples: []message.Triple{canonicalTriple(canonicalEntityA, "test.state.value", "ready")},
+	}))
+	require.NoError(t, err)
 	processed := comp.DataFlow()
-	assert.Greater(t, processed.MessagesPerSecond, float64(0), "a processed write moves the message rate")
-	assert.Greater(t, processed.BytesPerSecond, float64(0), "a processed write moves the byte rate")
-	assert.Zero(t, processed.ErrorRate, "a successful write is no error")
+	assert.Greater(t, processed.MessagesPerSecond, float64(0), "a mutation request moves the message rate")
+	assert.Greater(t, processed.BytesPerSecond, float64(0), "a mutation request moves the byte rate")
+	assert.Zero(t, processed.ErrorRate, "a successful request is no error")
 
 	bucket.createFunc = func(context.Context, string, []byte, ...jetstream.KVCreateOpt) (uint64, error) {
 		return 0, errors.New("injected KV failure")
 	}
-	require.Error(t, comp.CreateEntity(ctx, newTestEntity("c360.platform.test.sys.type.002")))
+	require.Error(t, comp.CreateEntity(ctx, newTestEntity("acme.ops.test.sys.type.002")))
 	assert.Greater(t, comp.DataFlow().ErrorRate, float64(0), "a failed write moves the error rate")
 }
 

@@ -2321,7 +2321,9 @@
     entity_writes_seam_test.go, write_modes_test.go, hierarchy_birth_test.go,
     metrics_registry_test.go, config_strict_test.go, failed_start_callbacks_integration_test.go,
     poison_scoping_test.go, commit_ambiguity_integration_test.go,
-    unconfirmed_write_integration_test.go
+    unconfirmed_write_integration_test.go, dataflow_integration_test.go
+    (TestIntegration_DataFlowCountsInputMessages, proving the graph-ingest-recovery requirement
+    "graph-ingest's data flow counts input messages")
   owner: setup-04a-02-ingest-kernel developer
   disposition: repair-before-port
 

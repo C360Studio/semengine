@@ -25,8 +25,8 @@ stops end batches 1–3. Each stop's task ends only when `task verify` passes on
 
 ## 3. Data flow (batch 2, #302)
 
-- [ ] 3.1 Failing test `TestIntegration_DataFlowCountsInputMessages`. Gate: it fails by assertion on the base.
-- [ ] 3.2 D2: counts move to the consume callback and the D1 wrapper; the write-site message, byte and last-activity
+- [x] 3.1 Failing test `TestIntegration_DataFlowCountsInputMessages`. Gate: it fails by assertion on the base.
+- [x] 3.2 D2: counts move to the consume callback and the D1 wrapper; the write-site message, byte and last-activity
   increments go; append counts `entities_updated_total`. Also: `TestComponent_DataFlow_ReturnsMetrics` rewritten;
   README § Health gains one paragraph on `DataFlow`; the `graph-ingest-recovery` ADDED delta; the ledger row's
   `proving_tests`. Gate: 3.1 passes; `git grep -n 'messagesProcessed' -- processor/graph-ingest ':!*_test.go'` shows

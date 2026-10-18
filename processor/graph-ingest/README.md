@@ -189,6 +189,12 @@ clears the other. A lost durable consumer reads unhealthy this way; graph-ingest
 
 `ErrorCount` counts processing errors since start and never lowers `Healthy`.
 
+`DataFlow()` counts input messages since start: each delivery on a stream input, including a redelivery and a message
+graph-ingest refuses, and each mutation request (`graph.mutation.*`) that reaches its handler. `BytesPerSecond` counts
+those messages' payload sizes. Queries, `CreateEntity` calls made inside the process, and the containers hierarchy
+inference creates are not input messages and are not counted. `ErrorRate` is `ErrorCount` divided by the input
+messages counted; an append whose writes fail for several subjects counts an error for each, so the rate can exceed 1.
+
 Running implies the boot sweep of `ENTITY_STATES` completed: `Start` fails when the sweep cannot reach the end of the
 snapshot. So the readiness envelope's `bootstrap_complete` is true from the first one graph-ingest publishes, whatever
 backlog stands; `ready` and `lag` report the backlog.

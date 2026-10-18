@@ -151,10 +151,9 @@ func (c *Component) createEntity(ctx context.Context, entityID string, encoded [
 // PR #93 comment 6060120246). A profile it stamps carries at, the arrival's triggeringTime. A
 // stored value the seam's read check refuses (decodeStoredForWrite), or a merge the metadata check
 // or the write gate refuses for a statement kept from it (encodeMerge), writes nothing and is
-// recorded at the revision read (design D23). It returns the revision it committed, or 0 when it wrote nothing, and the size
-// of the value written.
-func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState, hierarchyTriples []message.Triple, readFound bool, at time.Time) (uint64, int, error) {
-	var bytesWritten int
+// recorded at the revision read (design D23). It returns the revision it committed, or 0 when it
+// wrote nothing.
+func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState, hierarchyTriples []message.Triple, readFound bool, at time.Time) (uint64, error) {
 	// stale is the last attempt's sets not applied as older: the one that committed or declined.
 	// It is assigned on each run of the callback, never accumulated, so a lost compare-and-set
 	// does not count its sets twice.
@@ -199,7 +198,6 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 				}
 				birth = data
 			}
-			bytesWritten = len(birth)
 			return birth, nil
 		}
 		// Existing entity: replace the arrival's sets, and take its message type and storage
@@ -258,12 +256,11 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 		if err != nil {
 			return nil, err
 		}
-		bytesWritten = len(data)
 		return data, nil
 	})
 	if err != nil {
 		c.writeFailed(ctx, entity.ID)
-		return revision, bytesWritten, err
+		return revision, err
 	}
 	// The write committed or was declined: the arrival is applied as far as it may be, and the
 	// stream lane acknowledges it; each set left out is declared here.
@@ -278,10 +275,10 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 		// The callback declined (UpdateWithRetryRead returns 0 only then) and nothing was
 		// written. A skip clears no poison record and invalidates no cache entry: the next
 		// valid read or commit clears a stale record (D3c).
-		return 0, 0, nil
+		return 0, nil
 	}
 	c.committed(ctx, entity.ID, revision)
-	return revision, bytesWritten, nil
+	return revision, nil
 }
 
 // everySetStale reports whether arrival carries at least one statement and each belongs to a

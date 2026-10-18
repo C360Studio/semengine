@@ -512,7 +512,8 @@ type Component struct {
 	// and hierarchy inference both read it.
 	platform types.PlatformMeta
 
-	// Metrics (atomic)
+	// Metrics (atomic). The first two count input messages, stream deliveries
+	// and mutation requests, and their payload bytes (DataFlow).
 	messagesProcessed int64
 	bytesProcessed    int64
 	errors            int64
@@ -880,7 +881,11 @@ func (c *Component) Health() component.HealthStatus {
 	}
 }
 
-// DataFlow returns current data flow metrics
+// DataFlow reports input messages since start: each delivery on a stream input,
+// redeliveries included, and each mutation request. Queries, in-process creates
+// and the containers hierarchy inference creates are not input messages.
+// ErrorRate is the processing errors counted since start (Health's ErrorCount)
+// per input message.
 func (c *Component) DataFlow() component.FlowMetrics {
 	messages := atomic.LoadInt64(&c.messagesProcessed)
 	bytes := atomic.LoadInt64(&c.bytesProcessed)
@@ -1516,6 +1521,11 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 		consumeStream = c.consumeStream
 	}
 	handle, err := consumeStream(ctx, natsclient.PortConsumerContext{Component: c.name, Port: port.Name}, cfg, func(_ context.Context, msg jetstream.Msg) {
+		// Every delivery is one input message on DataFlow, a redelivery and a message
+		// refused below included.
+		atomic.AddInt64(&c.messagesProcessed, 1)
+		atomic.AddInt64(&c.bytesProcessed, int64(len(msg.Data())))
+		c.lastActivity.Store(time.Now())
 		// SemStreams ADR-072: the consume closure decodes ONCE and submits to the keyed pool;
 		// the redelivery guard, apply, and ack move into processIngest (run on a
 		// pool lane, not this consumer goroutine). Metadata carries the stream name
@@ -2151,15 +2161,12 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 		}
 	}
 
-	revision, bytesWritten, err := c.replaceEntity(ctx, entity, hierarchyTriples, readFound, at)
+	revision, err := c.replaceEntity(ctx, entity, hierarchyTriples, readFound, at)
 	if err != nil {
 		atomic.AddInt64(&c.errors, 1)
 		return errs.Wrap(err, "Component", "mergeEntityOnLane", "CAS update")
 	}
 
-	atomic.AddInt64(&c.messagesProcessed, 1)
-	atomic.AddInt64(&c.bytesProcessed, int64(bytesWritten))
-	c.lastActivity.Store(time.Now())
 	if revision == 0 {
 		// No set applied and nothing was written (design D23): every set was older, or the only
 		// statement was the profile of a profiled entity. replaceEntity counted and logged each
@@ -2272,10 +2279,6 @@ func (c *Component) createEntityWithReceipt(
 	}
 
 	// createEntity cleared the key's poison record and invalidated its cache entry.
-	// Update metrics
-	atomic.AddInt64(&c.messagesProcessed, 1)
-	atomic.AddInt64(&c.bytesProcessed, int64(len(data)))
-	c.lastActivity.Store(time.Now())
 	c.entitiesUpdated.Inc()
 
 	c.logger.Debug("entity created",
@@ -2311,8 +2314,6 @@ func (c *Component) deleteEntityAtRevision(ctx context.Context, entityID string,
 		}
 		return err
 	}
-	atomic.AddInt64(&c.messagesProcessed, 1)
-	c.lastActivity.Store(time.Now())
 	return nil
 }
 
@@ -2552,6 +2553,7 @@ func (c *Component) addTriplesLane(ctx context.Context, triples []message.Triple
 		writtenCount += len(group) - appended.suppressed
 		// This subject COMMITTED, at exactly this revision.
 		committedRevisions[subject] = appended.revision
+		c.entitiesUpdated.Inc()
 	}
 
 	result := addTriplesResult{

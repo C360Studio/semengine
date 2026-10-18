@@ -69,15 +69,15 @@ ADR-109 Decision 2: stuck states, not an error count.
 - Tests (integration, each failing on the base):
   - `TestIntegration_HealthReadsLostConsumer` (#216, the owner's one test): with graph-ingest running, the test
     deletes its durable consumer through the JetStream API and calls `refreshReadinessStatus`; `Healthy` is false and
-    `LastError` names the backlog observation. It asserts unhealthy only. It does not recreate the consumer: by the
-    unprobed reading on #216 (comment 6249597351) a deleted consumer ends `Consume` for good, so a recreated one would
-    let graph-ingest read healthy while it consumes nothing. It does not close #216.
+    `LastError` names the backlog observation. It asserts unhealthy only. It does not recreate the consumer: graph-ingest
+    does not rebind a deleted consumer, and whether consumption resumes on a recreated one is not probed or promised
+    (#216 comment 6249597351). It does not close #216.
   - `TestIntegration_HealthClearsWhenObservationSucceeds` (build tag `integration`, NATS fixture): ADR-109's "healthy
     again when it clears", worded on the observation, not on consumption. With graph-ingest running, the test deletes
     graph-ingest's own durable consumer and calls `refreshReadinessStatus`: unhealthy. It then creates a consumer with
     the same stream, name and configuration through the JetStream API and calls `refreshReadinessStatus` again:
-    healthy. The test name and its comment say consumption is not restored
-    (#216); it proves only that `Health()` follows the observation.
+    healthy. The test name and its comment say consumption recovery is not checked or promised by this test (graph-ingest
+    does not rebind a deleted consumer, #216); it proves only that `Health()` follows the observation.
   - Reading after a direct `refreshReadinessStatus` call: the running loop can land an older compute after the test's
     call, so these tests wait with `probe.Await` (`internal/harness/probe/await.go:21`) on the condition, or assert on
     the value `computeBacklogStatus` returned to the call; never on one read of the KV key.

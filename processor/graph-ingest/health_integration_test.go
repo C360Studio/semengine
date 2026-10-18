@@ -71,13 +71,13 @@ func TestIntegration_HealthReadsLostConsumer(t *testing.T) {
 	require.Equal(t, "degraded", health.Status)
 }
 
-// TestIntegration_HealthClearsWhenObservationSucceeds is ADR-109's "healthy again when it
+// TestIntegration_HealthClearsWhenObservationSucceeds_ConsumptionNotChecked is ADR-109's "healthy again when it
 // clears", worded on the observation (design D3). graph-ingest's durable consumer is deleted:
 // unhealthy. A consumer with the same stream, name and configuration is then created through
-// the JetStream API: healthy again. Consumption is NOT restored by this (graph-ingest's
-// consume loop is not rebound, #216); the test proves only that Health follows the latest
-// tick's observation.
-func TestIntegration_HealthClearsWhenObservationSucceeds_ConsumptionNotRestored(t *testing.T) {
+// the JetStream API: healthy again. graph-ingest does not rebind a deleted consumer (#216).
+// Consumption recovery is not checked or promised by this test; it proves only that Health
+// follows the latest tick's observation.
+func TestIntegration_HealthClearsWhenObservationSucceeds_ConsumptionNotChecked(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
 

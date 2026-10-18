@@ -36,7 +36,7 @@ func batchSeed(entityID string) *graph.EntityState {
 }
 
 // TestIntegration_AddTriples_SingleSubjectIsOneCAS pins the load-bearing
-// optimisation behind ADR-036 §Stage 2: many triples sharing one Subject
+// optimisation behind SemStreams ADR-036 §Stage 2: many triples sharing one Subject
 // commit in a single CAS round-trip. Failure shows up as multiple
 // version increments (one per triple) instead of one.
 func TestIntegration_AddTriples_SingleSubjectIsOneCAS(t *testing.T) {

@@ -17,7 +17,7 @@ import (
 // integration tests in batch_integration_test.go); the validation
 // path is pure CPU and runs here in the fast unit-test bucket.
 //
-// Future ADR-036 stages may layer additional validation (predicate
+// Future SemStreams ADR-036 stages may layer additional validation (predicate
 // allowlist, entity-ID-shape) on top of the empty-Subject /
 // empty-Predicate checks. Having a unit harness here means
 // regressions surface in milliseconds instead of via integration runs.

@@ -496,12 +496,13 @@ type Component struct {
 	// key's generation is unchanged since the reader captured it (before its KV
 	// Get). This closes the stale-repopulation race: a slow reader that loaded a
 	// pre-write revision from KV cannot resurrect it into the cache after a
-	// concurrent write invalidated the entry. One uint64 per key; the map is
-	// bounded by DISTINCT ENTITY IDS EVER WRITTEN (not live ENTITY_STATES
-	// cardinality) — it is not pruned, so it grows slowly under create/delete
-	// churn. Acceptable for expected populations; a size gauge + bounded pruning
-	// are a tracked follow-up (pruning must exclude in-flight reads to preserve
-	// the ABA guarantee the counter provides).
+	// concurrent write invalidated the entry. One uint64 per key; the map holds
+	// every distinct entity ID a write was ever attempted on, successful or not
+	// (writeFailed invalidates after any errored write, so a request naming an
+	// ID that never existed adds one too). It is not pruned, so it grows with
+	// create/delete churn and with requests for made-up IDs. Removing or bounding
+	// it is #300 (the entity cache question); pruning must exclude in-flight
+	// reads to keep the guarantee the counter provides.
 	cacheGenMu sync.Mutex
 	cacheGen   map[string]uint64
 

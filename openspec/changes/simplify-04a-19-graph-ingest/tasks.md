@@ -6,9 +6,9 @@ commit, recorded in `notes/<task>.md`, except where a task says how else the tes
 
 ## 1. Design
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass pre-owner review and are accepted by the
+- [x] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass pre-owner review and are accepted by the
   owner, with owner questions 1 and 2 answered. Gate: `task spec:check` and `task docs:check`.
-  Hold: owner answers to design questions 1 and 2.
+  Answered 2026-10-18 (design.md, Owner questions).
 
 ## 2. Bookkeeping after a failed write (batch 1, #174)
 

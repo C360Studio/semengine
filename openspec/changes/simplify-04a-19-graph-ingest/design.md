@@ -215,6 +215,11 @@ message moves `MessagesPerSecond` above 0 and an error moves `ErrorRate` above 0
    alternative is removing them now and losing or rewriting about ten tests that prove failed starts clean up and
    messages settle correctly.
 
+**Answered 2026-10-18** (owner, Enjoy conversation "Simplification wave PR 10 pickup"; #223 comment 6249887011):
+design accepted. Q1 as recommended: #139 closes with this change, the optional rest is #300, and the two defects are
+filed as #302 and #303. Q2 as recommended: all four fields stay, the no-back-door rule is waived for
+`watchEntityStates` and `subscribeRequests`, and #301 tracks retiring them.
+
 FYI, no ruling needed:
 
 - (a) After this change `/readyz` (once `service` is ported) goes not ready while graph-ingest cannot read its input

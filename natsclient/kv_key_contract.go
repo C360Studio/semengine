@@ -36,6 +36,11 @@ const (
 	ErrorCodeKVTokenEncodeInvalid = "kv_token_encode_invalid"
 	// ErrorCodeKVTokenDecodeInvalid classifies invalid opaque-token encodings.
 	ErrorCodeKVTokenDecodeInvalid = "kv_token_decode_invalid"
+	// ErrorCodeResponseTooLarge classifies a reply refused because its encoding
+	// exceeds the server's maximum payload (class invalid). SubscribeForRequests
+	// answers with it when a handler's reply is too large to publish; a handler
+	// that bounds its own pages returns the same code when no page fits.
+	ErrorCodeResponseTooLarge = "response_too_large"
 )
 
 const (

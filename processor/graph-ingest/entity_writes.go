@@ -170,7 +170,7 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 	var birth []byte
 	revision, err := c.entityBucket.UpdateWithRetryRead(ctx, entity.ID, func(current []byte, read uint64) ([]byte, error) {
 		casAttempt++
-		if casAttempt > 1 && c.casRetries != nil {
+		if casAttempt > 1 {
 			c.casRetries.Inc()
 		}
 		stale = nil
@@ -268,9 +268,7 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 	// The write committed or was declined: the arrival is applied as far as it may be, and the
 	// stream lane acknowledges it; each set left out is declared here.
 	for _, set := range stale {
-		if c.staleSets != nil {
-			c.staleSets.Inc()
-		}
+		c.staleSets.Inc()
 		c.logger.Debug("statement set not applied: older than the stored set",
 			slog.String("entity_id", entity.ID),
 			slog.String("predicate", set.Predicate),

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
@@ -120,8 +119,9 @@ func TestGraphIngestOwnerChildFixture(t *testing.T) {
 		}
 		return nil
 	}}
-	component := &Component{logger: slog.Default(), running: true,
-		subscriptions: []graphIngestCoreSubscription{drain}}
+	component := createTestComponent(t)
+	component.running = true
+	component.subscriptions = []graphIngestCoreSubscription{drain}
 	startGuardAcquiringNothing(t, component) // the pin set lifecycleUsed: true (design D22)
 	owner := newGraphIngestTestOwner(component)
 	startCtx = owner.startContext(operationCtx)

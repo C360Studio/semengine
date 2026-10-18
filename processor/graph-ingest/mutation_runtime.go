@@ -64,9 +64,6 @@ func (c *Component) meteredMutation(subject string, handler mutationHandler) mut
 }
 
 func (c *Component) recordPredicateContractRejections(lane string, err error) {
-	if c.predicateContractRejections == nil {
-		return
-	}
 	var refusal *statementRefusal
 	if errors.As(err, &refusal) {
 		c.predicateContractRejections.WithLabelValues(lane, refusal.reason).Inc()
@@ -92,9 +89,6 @@ const (
 )
 
 func (c *Component) recordEntityStateContractRejection(lane string, err error) {
-	if c.entityStateContractRejections == nil {
-		return
-	}
 	field, reason, _, ok := entityStateContractRejectionLabels(err)
 	if ok {
 		c.entityStateContractRejections.WithLabelValues(lane, field, reason).Inc()
@@ -160,15 +154,11 @@ func predicateContractReason(err error) (string, bool) {
 }
 
 func (c *Component) recordMutationRejection(subject, reason, detail string) {
-	if c.mutationRejections != nil {
-		c.mutationRejections.WithLabelValues(subject, reason).Inc()
-	}
-	if c.logger != nil {
-		c.logger.Warn("graph mutation rejected",
-			slog.String("subject", subject),
-			slog.String("reason", reason),
-			slog.String("error", detail))
-	}
+	c.mutationRejections.WithLabelValues(subject, reason).Inc()
+	c.logger.Warn("graph mutation rejected",
+		slog.String("subject", subject),
+		slog.String("reason", reason),
+		slog.String("error", detail))
 }
 
 func (c *Component) validateTriplePredicates(triples []message.Triple) error {

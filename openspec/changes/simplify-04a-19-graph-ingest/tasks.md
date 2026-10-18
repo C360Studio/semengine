@@ -57,7 +57,7 @@ commit, recorded in `notes/<task>.md`, except where a task says how else the tes
   records the `-race` run of the lifecycle and failed-start tests as evidence. Gate: `go test -race -count=3 -tags
   integration -run 'Lifecycle|FailedStart|Settlement'
   ./processor/graph-ingest/`.
-- [ ] 5.3 Ruling J and row A: the 15 remaining literals build through `CreateGraphIngest`; the nil guards on
+- [x] 5.3 Ruling J and row A: the 15 remaining literals build through `CreateGraphIngest`; the nil guards on
   dependencies the factory refuses or always builds go, and `panicTB`; the nil applied-sequence-bucket branch stays.
   Gate: `grep -c '&Component{' processor/graph-ingest/*_test.go` totals 0; `task verify` on a clean tree (review stop).
 

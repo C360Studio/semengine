@@ -10,7 +10,7 @@ import (
 // which a consumer reads, with bootstrap_complete, as "there was nothing to do" rather than
 // "I might be early". A later backlog does not make it the initial build.
 func TestBootstrapScope_ZeroScopeIsAuthoritativelyNothingToDo(t *testing.T) {
-	c := withTestRegistry(t, &Component{})
+	c := createTestComponent(t)
 
 	if scope := c.bootstrapScope(0, false); scope != 0 {
 		t.Errorf("scope = %d, want 0", scope)
@@ -24,7 +24,7 @@ func TestBootstrapScope_ZeroScopeIsAuthoritativelyNothingToDo(t *testing.T) {
 // read off a FAILED observation is the absence of a measurement, not a measurement of
 // absence; it must not replace a partial bind capture.
 func TestBootstrapScope_ObservationFailureCapturesNothing(t *testing.T) {
-	c := withTestRegistry(t, &Component{})
+	c := createTestComponent(t)
 	c.bootBacklogPartial.Store(true)
 
 	if scope := c.bootstrapScope(0, true); scope != 0 {
@@ -42,7 +42,7 @@ func TestBootstrapScope_ObservationFailureCapturesNothing(t *testing.T) {
 // double-counting a consumer across a rebind, and keeps a degraded verdict naming the
 // same consumer run to run.
 func TestBoundConsumers_DedupedAndDeterministic(t *testing.T) {
-	c := withTestRegistry(t, &Component{})
+	c := createTestComponent(t)
 	c.registerBoundConsumer("SENSOR", "graph-ingest-sensor-all")
 	c.registerBoundConsumer("EVENTS", "graph-ingest-events-all")
 	c.registerBoundConsumer("SENSOR", "graph-ingest-sensor-all") // rebind
@@ -64,7 +64,7 @@ func TestOldestOutstandingAt_PresenceEncoding(t *testing.T) {
 	applied := time.Date(2026, 7, 30, 12, 0, 0, 0, time.UTC)
 
 	t.Run("caught up reports no staleness", func(t *testing.T) {
-		c := withTestRegistry(t, &Component{})
+		c := createTestComponent(t)
 		c.recordApplied(applied)
 		if got := c.oldestOutstandingAt(0); !got.IsZero() {
 			t.Errorf("got %v, want zero — caught up has no staleness to report", got)
@@ -72,7 +72,7 @@ func TestOldestOutstandingAt_PresenceEncoding(t *testing.T) {
 	})
 
 	t.Run("backlog ages from the last applied message", func(t *testing.T) {
-		c := withTestRegistry(t, &Component{})
+		c := createTestComponent(t)
 		c.recordApplied(applied)
 		if got := c.oldestOutstandingAt(5); !got.Equal(applied) {
 			t.Errorf("got %v, want %v", got, applied)
@@ -80,14 +80,14 @@ func TestOldestOutstandingAt_PresenceEncoding(t *testing.T) {
 	})
 
 	t.Run("nothing applied yet reports absent, not fresh", func(t *testing.T) {
-		c := withTestRegistry(t, &Component{})
+		c := createTestComponent(t)
 		if got := c.oldestOutstandingAt(5); !got.IsZero() {
 			t.Errorf("got %v, want zero — an unknown age must not read as 0ms fresh", got)
 		}
 	})
 
 	t.Run("a zero delivery timestamp is not recorded", func(t *testing.T) {
-		c := withTestRegistry(t, &Component{})
+		c := createTestComponent(t)
 		c.recordApplied(time.Time{})
 		if got := c.oldestOutstandingAt(5); !got.IsZero() {
 			t.Errorf("got %v, want zero", got)
@@ -107,7 +107,7 @@ func TestOldestOutstandingAt_PresenceEncoding(t *testing.T) {
 // publish `bootstrap_complete && bootstrap_scope == 0`: the contract's "authoritatively
 // nothing to replay", asserted over a real initial build.
 func TestBootstrapScope_PartialBindCaptureIsDiscarded(t *testing.T) {
-	c := withTestRegistry(t, &Component{})
+	c := createTestComponent(t)
 
 	// Consumer A binds and reads 0. Consumer B's read FAILS.
 	c.bootBacklog.Add(0)
@@ -130,7 +130,7 @@ func TestBootstrapScope_PartialBindCaptureIsDiscarded(t *testing.T) {
 // succeeded, the accumulated total is authoritative and the tick must NOT overwrite it
 // with a later, smaller observation (the backlog is draining by then).
 func TestBootstrapScope_CompleteBindCaptureIsKept(t *testing.T) {
-	c := withTestRegistry(t, &Component{})
+	c := createTestComponent(t)
 
 	// Two consumers bound cleanly, 900 total at bind.
 	c.bootBacklog.Add(400)

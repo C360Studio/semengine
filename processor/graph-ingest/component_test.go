@@ -639,18 +639,12 @@ func TestComponent_Initialize_Success(t *testing.T) {
 }
 
 func TestComponent_Initialize_InvalidConfig(t *testing.T) {
-	// Create component with invalid config (no ports)
-	natsClient, err := natsclient.NewClient("")
-	require.NoError(t, err)
+	// The factory never builds a component without ports (ruling K fills them in), so the
+	// test removes them after construction to reach Initialize's own check.
+	comp := createTestComponent(t)
+	comp.config.Ports = nil
 
-	comp := withTestRegistry(t, &Component{
-		config: Config{
-			Ports: nil, // Invalid - missing ports
-		},
-		natsClient: natsClient,
-	})
-
-	err = comp.Initialize()
+	err := comp.Initialize()
 
 	assert.Error(t, err, "Initialize should fail with invalid config")
 }

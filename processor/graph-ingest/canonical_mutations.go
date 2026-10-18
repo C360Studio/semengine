@@ -36,7 +36,7 @@ func (c *Component) meteredCanonicalMutation(route canonicalMutationRoute) mutat
 			outcome := canonicalErrorOutcome(err)
 			c.recordCanonicalOutcome(route.operation, outcome)
 			var classified *errs.ClassifiedError
-			if errors.As(err, &classified) && classified.Code == graph.ErrorCodeRevisionMismatch && c.logger != nil {
+			if errors.As(err, &classified) && classified.Code == graph.ErrorCodeRevisionMismatch {
 				c.logger.Warn("graph mutation revision mismatch",
 					slog.String("operation", string(route.operation)),
 					slog.Any("entity_id", classified.Detail["entity"]),
@@ -46,10 +46,8 @@ func (c *Component) meteredCanonicalMutation(route canonicalMutationRoute) mutat
 		}
 		if recordErr := c.recordCanonicalResponse(route.operation, response); recordErr != nil {
 			c.recordCanonicalOutcome(route.operation, graph.ErrorCodeInternal)
-			if c.logger != nil {
-				c.logger.Warn("canonical mutation response could not be metered",
-					slog.String("operation", string(route.operation)), slog.Any("error", recordErr))
-			}
+			c.logger.Warn("canonical mutation response could not be metered",
+				slog.String("operation", string(route.operation)), slog.Any("error", recordErr))
 		}
 		return response, nil
 	}
@@ -102,9 +100,6 @@ func (c *Component) recordCanonicalResponse(operation graphmutation.Operation, d
 }
 
 func (c *Component) recordCanonicalOutcome(operation graphmutation.Operation, outcome string) {
-	if c.mutationOutcomes == nil {
-		return
-	}
 	if outcome == "" {
 		outcome = graph.ErrorCodeInternal
 	}
@@ -177,18 +172,9 @@ func requireMutationProviderPort(ports *component.PortConfig) error {
 // writes nothing and yields one classified error — class invalid, closed code
 // message_type_unregistered, the key in detail "message_type" — which the RPC
 // lane meters and logs through meteredMutation and the in-process lane returns
-// to its caller (not metered: the counter is labelled by RPC subject). A
-// component that holds no registry fails CLOSED with code internal and an
-// ERROR log (O-15); a nil value never stands in for "unknown, admit".
+// to its caller (not metered: the counter is labelled by RPC subject). The
+// registry is never nil: CreateGraphIngest refuses to build without one (O-15).
 func (c *Component) requireRegisteredMessageType(entity *graph.EntityState) error {
-	if c.payloadRegistry == nil {
-		if c.logger != nil {
-			c.logger.Error("graph-ingest holds no payload registry; refusing the create",
-				slog.String("entity_id", entity.ID),
-				slog.String("message_type", entity.MessageType.Key()))
-		}
-		return rejectInternal(errors.New("graph-ingest holds no payload registry; entity.create refused"))
-	}
 	key := entity.MessageType.Key()
 	if _, ok := c.payloadRegistry.GetRegistration(entity.MessageType); !ok {
 		return rejectInvalidDetail(graph.ErrorCodeMessageTypeUnregistered,

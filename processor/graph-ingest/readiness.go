@@ -96,9 +96,7 @@ func (c *Component) refreshReadinessStatus(ctx context.Context) {
 	// ONE compute feeds BOTH channels. Two computes at slightly different instants
 	// would let the scraped gauges and the watched KV key disagree about readiness,
 	// with no way for a consumer reconciling them to tell which was right.
-	if c.readinessGauges != nil {
-		c.readinessGauges.Set(status)
-	}
+	c.readinessGauges.Set(status)
 	c.publishReadinessStatus(ctx, status)
 }
 
@@ -299,9 +297,7 @@ func (c *Component) publishReadinessStatus(ctx context.Context, status graph.Ind
 			// Shutdown, not a failure: Stop cancels mid-Put on the way out.
 			return
 		}
-		if c.readinessGauges != nil {
-			c.readinessGauges.RecordPublishFailure()
-		}
+		c.readinessGauges.RecordPublishFailure()
 		c.logger.Warn("readiness status publish failed",
 			slog.String("bucket", graph.BucketGraphStatus),
 			slog.String("key", c.statusPublisher.Key()),

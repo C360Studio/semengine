@@ -176,17 +176,15 @@ func (c *Component) reportBatchMissing(requested, missing []string) {
 	if len(missing) == 0 {
 		return
 	}
-	if c.batchMissing != nil {
-		// Counted by the SAME reason the wire reports, not a blanket not_found: the
-		// empty-ID case added alongside this counter is reported as `error`, and a
-		// metric that disagrees with the response is worse than no metric.
-		byReason := make(map[graph.MissingReason]int, 2)
-		for _, id := range missing {
-			byReason[batchMissingReason(id)]++
-		}
-		for reason, n := range byReason {
-			c.batchMissing.WithLabelValues(string(reason)).Add(float64(n))
-		}
+	// Counted by the SAME reason the wire reports, not a blanket not_found: the
+	// empty-ID case added alongside this counter is reported as `error`, and a
+	// metric that disagrees with the response is worse than no metric.
+	byReason := make(map[graph.MissingReason]int, 2)
+	for _, id := range missing {
+		byReason[batchMissingReason(id)]++
+	}
+	for reason, n := range byReason {
+		c.batchMissing.WithLabelValues(string(reason)).Add(float64(n))
 	}
 	logged := missing
 	if len(logged) > maxLoggedMissingIDs {

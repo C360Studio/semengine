@@ -83,6 +83,10 @@ graph.mutation.> ───────┼─►│ graph-ingest ├──► ENT
 
 A configuration key not in this table is refused when the component is built, with an error naming the key.
 
+The component is also refused when its dependencies carry no NATS client, no payload registry, or no deployment
+authority (`platform.org` and `platform.id`). The registry is the type authority every create is checked against, so
+graph-ingest is never built without one, and no write path checks for a missing registry (O-15).
+
 ## Ports
 
 ### Inputs

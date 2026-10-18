@@ -1998,7 +1998,7 @@ func (c *Component) reconcileIndexingProfile(entity *graph.EntityState, at time.
 	// Registration literal.
 	profile, floored := c.registeredIndexingProfile(entity.MessageType)
 	appendIndexingProfileTriple(entity, profile, at)
-	if !floored && c.indexingProfileDefault != nil {
+	if !floored {
 		c.indexingProfileDefault.WithLabelValues(indexingProfileMetricLabel(entity.MessageType)).Inc()
 	}
 }
@@ -2006,12 +2006,8 @@ func (c *Component) reconcileIndexingProfile(entity *graph.EntityState, at time.
 // registeredIndexingProfile returns the floor registered with mt and whether
 // the type declared one. A registered type with an empty floor and a type the
 // registry does not hold both fall to control (fail-safe toward keeping the
-// substrate reachable) with floored=false, which fires the default metric; a
-// component holding no registry answers the same way rather than guessing.
+// substrate reachable) with floored=false, which fires the default metric.
 func (c *Component) registeredIndexingProfile(mt message.Type) (profile string, floored bool) {
-	if c.payloadRegistry == nil {
-		return vocabulary.IndexingProfileControl, false
-	}
 	floor, registered := c.payloadRegistry.IndexingProfileFor(mt)
 	if !registered || floor == "" {
 		return vocabulary.IndexingProfileControl, false
@@ -2391,11 +2387,9 @@ func (c *Component) repopulateEntityCacheEntry(id string, entity graph.EntitySta
 }
 
 // recordSuppressedDuplicates meters triples the append path declined to store
-// because the entity already carried them. Nil-guarded so it is safe on a
-// hand-built Component (the test-construction pattern) that reaches it without
-// full metric wiring.
+// because the entity already carried them.
 func (c *Component) recordSuppressedDuplicates(lane dedupLane, suppressed int) {
-	if suppressed <= 0 || c.duplicateTriplesSuppressed == nil {
+	if suppressed <= 0 {
 		return
 	}
 	c.duplicateTriplesSuppressed.WithLabelValues(string(lane)).Add(float64(suppressed))

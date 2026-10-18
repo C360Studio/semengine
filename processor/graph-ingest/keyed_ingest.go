@@ -314,10 +314,8 @@ func (c *Component) applyIngest(ctx context.Context, lane int, work ingestWork) 
 			return natsclient.DeliveryDecisionTerminate, ingestErr
 		}
 		if errs.IsFatal(ingestErr) {
-			if c.logger != nil {
-				c.logger.Error("graph-ingest: fatal ingest failure; terminating",
-					slog.String("class", errs.ErrorFatal.String()))
-			}
+			c.logger.Error("graph-ingest: fatal ingest failure; terminating",
+				slog.String("class", errs.ErrorFatal.String()))
 			return natsclient.DeliveryDecisionTerminate, ingestErr
 		}
 		return natsclient.DeliveryDecisionRetry, ingestErr
@@ -389,9 +387,6 @@ func (c *Component) recordStructuralRejection(lane string, err error) {
 }
 
 func (c *Component) logStructuralContractRejection(lane string, err error) {
-	if c.logger == nil {
-		return
-	}
 	field, reason, tripleIndex, ok := entityStateContractRejectionLabels(err)
 	var refusal *statementRefusal
 	if !ok && errors.As(err, &refusal) {
@@ -460,9 +455,6 @@ func (c *Component) ingestGuardStale(ctx context.Context, lane int, work ingestW
 // acknowledged, so a line per input is a line per apply the guard did not check.
 func (c *Component) recordUnguardedInput(work ingestWork) {
 	c.unguardedInputs.Inc()
-	if c.logger == nil {
-		return
-	}
 	c.logger.Warn("graph-ingest: no applied-sequence bucket; applying the input as first seen",
 		slog.String("entity_id", work.entityID),
 		slog.String("stream", work.stream),
@@ -480,7 +472,7 @@ var errUndecodableGuardRecord = errors.New("applied-sequence record cannot be de
 // is. Deleting the key repairs it; the redelivery is then applied as first seen.
 func (c *Component) refuseUndecodableGuardRecord(lane int, key string, size int) {
 	c.guardRecordRefusals.Inc()
-	if !c.ingestGuardMem[lane].markRefused(key) || c.logger == nil {
+	if !c.ingestGuardMem[lane].markRefused(key) {
 		return
 	}
 	c.logger.Error("graph-ingest: applied-sequence record cannot be decoded; its inputs are refused until the key is deleted",

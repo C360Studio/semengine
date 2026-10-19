@@ -36,7 +36,7 @@ this repo's `go.mod` already requires testify.
   `ch.Status` straight through would turn `stopped` into healthy. Adjacent: #110 item 3.
 - **S3, optional.** The error sanitizer redacts by text and loses detail (`status.go:13-22`, `:83-114`). Probes:
   - `"at 12:30:45"` becomes `"at 12[PORT][PORT]"`.
-  - `"invalid key=<entity id>"` becomes `"invalid [REDACTED]"`.
+  - `"invalid key=acme.prod.sensor.device.unit.one"` becomes `"invalid [REDACTED]"`.
   - `"graph/ingest"` becomes `"graph[PATH]"`.
   - `doc.go:159` says the result is `:[PORT]`, but the code produces `[PORT]`.
 

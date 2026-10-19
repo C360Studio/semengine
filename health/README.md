@@ -83,7 +83,7 @@ Matching on text removes more than secrets:
 | `failed to bind to :8080` | `failed to bind to [PORT]` |
 | `at 12:30:45` | `at 12[PORT][PORT]` |
 | `graph/ingest` | `graph[PATH]` |
-| `invalid key=<entity id>` | `invalid [REDACTED]` |
+| `invalid key=acme.prod.sensor.device.unit.one` | `invalid [REDACTED]` |
 
 The messages given to `NewHealthy`, `NewDegraded` and `NewUnhealthy` are used as given.
 

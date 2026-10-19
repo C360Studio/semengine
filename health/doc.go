@@ -52,8 +52,9 @@
 //     [REDACTED].
 //
 // The replacement works on text and can remove more than a secret: "at 12:30:45" becomes
-// "at 12[PORT][PORT]", "graph/ingest" becomes "graph[PATH]", and "key=<entity id>" becomes
-// "[REDACTED]". The messages passed to NewHealthy, NewDegraded and NewUnhealthy are used as given.
+// "at 12[PORT][PORT]", "graph/ingest" becomes "graph[PATH]", and
+// "key=acme.prod.sensor.device.unit.one" becomes "[REDACTED]". The messages passed to
+// NewHealthy, NewDegraded and NewUnhealthy are used as given.
 //
 // # What this package does not do
 //

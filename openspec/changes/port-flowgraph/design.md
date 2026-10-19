@@ -102,8 +102,8 @@ New, in `internal/flowgraph/declarations_test.go`, oracle = literal expected edg
 - `TestValidateStreamRequirementsFlagsCoreNATSPublishers`: a JetStream input fed by two core-NATS publishers gives
   one warning naming both; fed by a JetStream output, none.
 - `TestFlowGraphOutputIsTheSameEveryRun`: three malformed mutation ports, 50 builds, one error text naming the first
-  component in name order; and a graph of two clusters gives the same `ConnectedComponents`, in name order, on
-  every one of 50 builds.
+  component in name order; and a graph of two clusters gives equal `ConnectedComponents` on every one of 50 builds
+  (each walk starts at the first unvisited name; members follow walk order).
 
 Mutants on the ported file, by pin line; the developer maps lines and runs `task mutate:check` on reached lines only
 (a mutant that deletes an import's only use does not build). Predicted detections: M1 `:264` prefix to

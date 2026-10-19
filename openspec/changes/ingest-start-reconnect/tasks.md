@@ -13,7 +13,7 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
 
 - [x] 2.1 Tests first: the relay helper, T1 and T2 (D2); the fail-first runs on today's code recorded in
   `notes/2.1.md`. Gate: both fail as D2 states; `go vet -tags integration ./processor/graph-ingest/`.
-- [ ] 2.2 The fix and the doc comment (D1); mutants M1-M3 (D3) recorded in `notes/2.2.md`. Gate: `task verify` on a
+- [x] 2.2 The fix and the doc comment (D1); mutants M1-M3 (D3) recorded in `notes/2.2.md`. Gate: `task verify` on a
   clean tree.
 - [ ] 2.3 Review stop (Codex) on 2.1-2.2; `reviewed-by:` in the PR body.
 

@@ -6,8 +6,8 @@ at its commit (#171).
 
 ## 1. Design
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass pre-owner review and are accepted by the
-  owner. Gate: `task spec:check` and `task docs:check`.
+- [x] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass pre-owner review and are accepted by the
+  owner (2026-10-18, PR #308 comment; design at `de6cde7`). Gate: `task spec:check` and `task docs:check`.
 
 ## 2. Implementation (D1-D7)
 

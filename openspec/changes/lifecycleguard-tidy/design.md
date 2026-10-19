@@ -241,5 +241,7 @@ Owner questions:
    own error, as every stop method does? Or take (a): one helper refuses it as invalid in both, at the cost of two
    classes for one event in `Stop`?
 
+Owner answers (2026-10-18, PR #308 comment): (1) keep the log in `release`; (2) option (b).
+
 (The question whether PR 2 retires #282 is settled: #282 was reopened on 2026-10-18 after #304's body closed it by
 accident, and PR 2 retires it as the order on #282 says.)

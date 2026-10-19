@@ -43,9 +43,16 @@ names the key and says it is not applied. `nats.urls`, `nats.jetstream.enabled`,
 
 The loader SHALL override `platform.id`, `platform.type`, `platform.region` and `nats.urls` from
 `SEMENGINE_PLATFORM_ID`, `SEMENGINE_PLATFORM_TYPE`, `SEMENGINE_PLATFORM_REGION` and `SEMENGINE_NATS_URLS`
-(comma-separated) when set and not empty, and SHALL read no other environment variable.
+(comma-separated) when set and not empty. Until boot applies NATS credentials, the loader SHALL refuse a load when
+`SEMENGINE_NATS_USERNAME`, `SEMENGINE_NATS_PASSWORD` or `SEMENGINE_NATS_TOKEN` is set and not empty, with an error
+naming the variable.
 
 #### Scenario: URLs from the environment
 
 - **WHEN** `SEMENGINE_NATS_URLS` is `nats://a.invalid:14222,nats://b.invalid:14222` and the document sets other URLs
 - **THEN** the loaded `NATS.URLs` are the two URLs from the environment
+
+#### Scenario: A password in the environment
+
+- **WHEN** `SEMENGINE_NATS_PASSWORD` is `x` and `LoadFile` reads a valid document
+- **THEN** it returns an error naming `SEMENGINE_NATS_PASSWORD`

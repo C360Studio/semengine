@@ -12,7 +12,15 @@ about 3,150 (#9 comment 6274501134). The drops below lower the count.
   unchanged. ADR-055 is not copied to `docs/adr`: its normative content (envelopes, verdict publishing) is implemented
   in `processor/rule` and graph-ingest, and is raised when the rule core ports (change 6).
 - ADR-100 binds `composition`, not this slice.
-- No record governs `stream_bounds.go`, `stream_drift.go` or `security.go` (inventory § 2).
+- ADR-068 (graph buckets carry no lifecycle retention) binds the backing-stream refusal in `streams.go`
+  (`:374-396`, `:588-606`). ADR-073 §1 (firehose streams take `MaxAge` plus a `MaxBytes` backstop) binds the bounds
+  rule in `stream_bounds.go` (`:482`). Both decisions are kept unchanged: `stream_bounds.go` is carried byte-equal,
+  and `streams.go` changes only by D1's drops. Neither record is copied to `docs/adr`, for three reasons. Both are
+  Proposed and design-only at the pin. Most of each (deletion, GC, the three tiers, reclamation) governs code outside
+  the port set. And `natsclient`, ported in change 1, already carries and cites the same refusal at
+  `natsclient/backing_stream_prefix.go:90`, `:121`, `:127` without them. Nothing is changed or dropped, so no owner
+  question.
+- No record governs `stream_drift.go` or `security.go` (inventory § 2).
 - ADR-113 does not apply: there is no lifecycle owner, no goroutine and no retained context.
 
 ## D1. Drop the dead surface (S1, S2, required)
@@ -22,7 +30,8 @@ about 3,150 (#9 comment 6274501134). The drops below lower the count.
     `safeWriteFile`, and `Config.String`;
   - `DeriveStreamSubjects`, `FrameworkStreamAutoCreate`;
   - `loadJSONFile`, `mergeConfigs`, `removeNilValues`, `validateEnvVar`;
-  - the `graph.<bucket>.ttl` conversion and `parseDurationWithDays`.
+  - the `graph.<bucket>.ttl` conversion: the `graph` branch of `parseDurations` and `parseBucketDurations`.
+    `parseDurationWithDays` stays, because the carried `stream_bounds.go:487` and `streams.go:485`, `:525` read it.
 
   The basis is the surface audit (architect contract, Extraction slices). Nothing reads these at the pin outside their
   own tests, in this repo, or in the four consumers (inventory § 4).
@@ -53,8 +62,10 @@ about 3,150 (#9 comment 6274501134). The drops below lower the count.
     `nats.jetstream.domain`, `nats.jetstream.retention_policy`, `nats.jetstream.replication_factor`.
   - The shape is the pin's `rejectRemovedPlatformFields` (`config.go:882`), run on each raw document in `LoadFile`
     and `LoadFromBytes`, as `security-config` does for ACME (`openspec/specs/security-config/spec.md:64`).
-  - The `_NATS_USERNAME`, `_PASSWORD` and `_TOKEN` overrides go with their fields. The custom `UnmarshalJSON`
-    (`config.go:1026-1070`) goes too, because the default decoder now does all it did.
+  - The `_NATS_USERNAME`, `_PASSWORD` and `_TOKEN` overrides lose their fields, and are refused the same way.
+    Loading fails when `SEMENGINE_NATS_USERNAME`, `SEMENGINE_NATS_PASSWORD` or `SEMENGINE_NATS_TOKEN` is set and not
+    empty, with an error naming the variable, so a set credential is never silently ignored. The custom
+    `UnmarshalJSON` (`config.go:1026-1070`) goes too, because the default decoder now does all it did.
   - This retires #74 (`Closes #74`, task 2.3). The boot PR that builds the client adds each field back with its
     wiring and a test that fails when it is ignored.
 - **Alternatives:**
@@ -79,8 +90,9 @@ about 3,150 (#9 comment 6274501134). The drops below lower the count.
 - `NewLoader` reads `SEMENGINE_PLATFORM_ID`, `_PLATFORM_TYPE`, `_PLATFORM_REGION` and `_NATS_URLS` (#69 ruling 1).
 - `doc.go` is rewritten to this PR's surface: no Manager, no layering example, no symlink claim. It says that
   absolute paths are not confined and that symlinks are followed.
-- The `security.go:85` comment is corrected. The dead `..` check at `security.go:49` stays, because it is harmless;
-  the doc stops claiming it.
+- The `security.go:85` comment is corrected. The `..` check at `security.go:49` stays as at the pin (optional, S6):
+  it catches no traversal and refuses an absolute path with `..` inside a name. No real trigger was found; changing it
+  would be a change from the pin's behaviour. The doc states the real rule.
 - `README.md` is cut to the `Config`, `Loader`, `SafeConfig` and stream sections, with a JSON example that loads. The
   Manager sections come back with PR 2.
 - `example_config.json` is carried, because `config_test.go:354` reads it. `config/rules/agentic-memory/` and
@@ -105,7 +117,8 @@ about 3,150 (#9 comment 6274501134). The drops below lower the count.
     `graph/kvcatalog`. This is #195's adoption for these files.
 - **Dropped:** `integration_test.go` (helpers, or a duplicate of `TestSafeConfig_ThreadSafety`), `example_test.go` (no
   oracle; Manager examples are PR 2's), `env_test.go`.
-- **New:** one test per refused key and env var name (D2, D4), for both `LoadFile` and `LoadFromBytes`. One test for
+- **New:** one test per refused key and per refused env var (D2), for both `LoadFile` and `LoadFromBytes`; one for
+  the `SEMENGINE_` override names (D4). One test for
   the malformed document (D3). A `LoadFromBytes` round trip, because semboids reads it as framework API.
 - **Sensitivity:** `task mutate:check` detects four mutants:
   - removing one key from the refusal table;
@@ -166,8 +179,16 @@ about 3,150 (#9 comment 6274501134). The drops below lower the count.
   disposition: carry
 ```
 
-The `processor/graph-ingest` package row plus its `component.go` file row is the precedent for a package row beside
-file rows. `docs/repository-map.md` gains a `config/` row, and its entry count goes up by three.
+How `ledger:check` reads these rows:
+
+- It compares only carry entries (`internal/harness/pindiff/main.go:86-93`), so the adapt `config` row is never
+  compared and does not hide the file rows.
+- A file entry is keyed by the empty relative path and compares that one file
+  (`internal/harness/pindiff/compare.go:83-84`), after the module-path rewrite (`rewrite.go`).
+- No existing ledger row or pindiff test uses a file-level carry row, so task 3.1 proves it: `ledger:check` fails on a
+  one-byte edit to each carried file, then passes.
+
+`docs/repository-map.md` gains a `config/` row, and its entry count goes up by three.
 
 **Issues:**
 

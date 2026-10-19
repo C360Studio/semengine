@@ -29,7 +29,9 @@ ends only when `task verify` passes on a clean tree at its commit (#171).
 
 - [ ] 3.1 `config/doc.go` and `config/README.md` per D4; the three ledger rows per D6; the `docs/repository-map.md`
   row and entry count. Gate: `go doc ./config` lists only the kept surface; `task verify` passes on a clean tree,
-  which runs `ledger:check` (the two carry rows byte-equal) and `docs:check` (review stop).
+  which runs `ledger:check` (the two carry rows byte-equal) and `docs:check`; `notes/3.1.md` shows `ledger:check`
+  failing on a one-byte edit to each of `config/stream_bounds.go` and `config/stream_drift.go`, then passing (review
+  stop).
 
 ## 4. Verify, review and close
 

@@ -27,6 +27,11 @@ integration files pass on `natsfixture` (§ 7). Coverage, merged profile: 75.3%.
 
 ## 1. Shape sweep (pin paths)
 
+- **S0, required (owner ruling, #9 comment 6274501134): three files not ported.** `helpers.go` (220 lines,
+  11 exported `Get*`/`Has*` helpers), `env.go` (56, `ExpandEnvWithDefaults`), `minimal_config.go` (72,
+  `MinimalConfig`, `CoreServicesConfig`, `LoadMinimalConfig`). That is 15 exported symbols and 348 lines. The pin
+  search (`git grep -w` over the 15 names, non-test, outside the three files) finds only a doc comment,
+  `service/doc.go:249`. The same search over the four consumer tarballs finds nothing.
 - **S1, required (surface audit a): dead exported surface.** No non-test reader at the pin outside the defining
   file, and none in the four consumers (symbol greps in § 4):
   - `config.go:33-35` `StorageModeMemory`/`KV`/`Hybrid`
@@ -78,8 +83,9 @@ integration files pass on `natsfixture` (§ 7). Coverage, merged profile: 75.3%.
     `log_level` field, so the key is dropped silently. Probed on `testdata/base.json` + `production.json`.
   - `doc.go:108` says "no symlinks". `security.go:85` comment `// Check if it's a regular file (not symlink, ...)` sits
     over `os.Stat`, which follows links. Probe: a symlink to a valid file loads.
-  - `security.go:49` `strings.Contains(filepath.ToSlash(absPath), "..")` is never true after `filepath.Abs` cleans
-    the path, so absolute paths are not checked.
+  - `security.go:49` `strings.Contains(filepath.ToSlash(absPath), "..")` does not catch traversal, because
+    `filepath.Abs` has already cleaned the path. It does refuse any absolute path with `..` inside a name, for example
+    `/etc/x/app..v2.json`, so it is a false refusal, not dead code. Absolute paths are otherwise not confined.
   - `README.md` (393 lines) documents the Manager, the `nats.username`/`token`/`tls` and `jetstream.domain` keys, and
     StreamKit-era services.
 - **S7, optional: retained.**
@@ -104,7 +110,9 @@ integration files pass on `natsfixture` (§ 7). Coverage, merged profile: 75.3%.
 All 85 pin records were searched for the six file paths, `config.Loader`, `NewLoader`, `StreamsManager`,
 `EnsureStreams`, `ValidateStreamDeclarations`, `SafeConfig`, `StreamMigrationOverride`, `ArchivalStream`,
 `VerifyJetStreamLimits`, `frameworkStreams`, `LoadFromBytes`, "ordinary stream", "archival", "backing stream",
-`GOVERNANCE_VERDICT_AUDIT` and `MAX_DELIVERY_EVENTS`. The titles were then read for config, boot, stream and authority
+"firehose", `KV_`, `OBJ_`, `GOVERNANCE_VERDICT_AUDIT` and `MAX_DELIVERY_EVENTS`. The pin spec the slice implements
+(`openspec/specs/stream-provisioning/spec.md`) was also read for the records it cites. The titles were then read for
+config, boot, stream and authority
 records.
 
 - `config.go`:
@@ -117,9 +125,21 @@ records.
 - `streams.go`: **ADR-055** §3a (`GOVERNANCE_VERDICT_AUDIT` is a framework guarantee: `streams.go:159-186`, `:285`)
   and §5 T1 (the duplicates window: `:46`, `:480`). **ADR-039** names the same stream. **ADR-070** mentions
   `EnsureStreams` in passing.
-- `stream_bounds.go`, `stream_drift.go`, `security.go`, `doc.go`: no record governs them. Their contract is the pin
-  spec `openspec/specs/stream-provisioning/spec.md` (626 lines, 11 requirements). Its readiness clauses are
-  implemented in `service` (for example `service/stream_override_expiry.go:115`).
+- `streams.go`: **ADR-068** (graph retention, deletion and GC lifecycle; status Proposed 2026-07-04, design-only,
+  amended by ADR-091). It decides that graph buckets carry no lifecycle retention, with no TTL, MaxAge or MaxBytes
+  (`068-graph-retention-deletion-lifecycle.md:95-98`). The pin spec gives the retention contract of `KV_` and `OBJ_`
+  backing streams to graph-retention, "ADR-068/073" (`stream-provisioning/spec.md:13-17`). The carried code that
+  enforces it: `streams.go:374-378` `ErrBackingStreamNotProvisionable`, `:394-396` `checkOrdinaryStream`, and the
+  guard first in `createStream` (`:588-606`). Not in `docs/adr`. In the tree, `natsclient/backing_stream_prefix.go:90`,
+  `:121`, `:127` cite ADR-068/073, and `docs/adr/112-natsclient-contract.md:264` cites ADR-068.
+- `stream_bounds.go`: **ADR-073** §1 (the graph's three-tier ingestion and retention contract; status Proposed
+  2026-07-08, design-only, pending re-review, amended by ADR-091). Firehose data lives in JetStream streams with
+  `MaxAge` plus a `MaxBytes` backstop, and on the stream tier a binding `MaxBytes` is fine
+  (`073-graph-ingestion-retention-contract.md:75-78`). That is the bounds rule `missingBounds`
+  (`stream_bounds.go:482`) enforces. It also names the backing-stream split above. Not in `docs/adr`.
+- `stream_drift.go`, `security.go`, `doc.go`: no record governs them. The contract for the stream files is the pin spec
+  `openspec/specs/stream-provisioning/spec.md` (626 lines, 11 requirements). Its readiness clauses are implemented
+  in `service` (for example `service/stream_override_expiry.go:115`).
 - ADR-058 and ADR-094 (boot phases, boot-only composition) govern `service`, not this slice.
 
 ## 3. Open issues
@@ -207,6 +227,9 @@ records.
   - `t.Parallel`: only a comment at `stream_bounds_test.go:458`.
   - No `// Own server:` is needed, because the shared server is reset.
   - Pinned revive on the scratch copy: clean.
+  - Reviewer re-run (round 1), clean: cleanup roots, retained context, bare `select {}`, public signatures naming
+    `internal/` types, process-global registration. `config` is on the authority-field exception list
+    (`internal/harness/contract/authority_test.go:224`).
 - **Testdata:** `testdata/base.json` and `testdata/production.json` are read only by `example_test.go:18-44`.
   `example_config.json` is read by `config_test.go:354`. `config/rules/agentic-memory/*.json`: no reader at the pin.
   The pin's `test/predicate_rule_authoring_test.go:20` walks `config/rules`, and an archived pin review calls the

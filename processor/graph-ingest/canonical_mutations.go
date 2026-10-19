@@ -9,7 +9,6 @@ import (
 	"io"
 	"log/slog"
 	"sort"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -115,19 +114,14 @@ func requireMutationProviderPort(ports *component.PortConfig) error {
 		if err != nil {
 			return err
 		}
-		subjects := facts.NATSSubjects()
-		contract, hasContract := facts.Interface()
-		candidate := (len(subjects) == 1 && strings.HasPrefix(subjects[0], strings.TrimSuffix(graphmutation.SubjectFamily, ">"))) ||
-			(hasContract && contract.Type == graphmutation.InterfaceType)
-		if !candidate {
+		member, valid := graphmutation.ClassifyPort(facts, port.Required)
+		if !member {
 			continue
 		}
 		if found {
 			return errors.New("graph mutation provider port is ambiguous")
 		}
-		if facts.Kind() != component.PortKindNATSRequest || !port.Required ||
-			len(subjects) != 1 || subjects[0] != graphmutation.SubjectFamily || !hasContract ||
-			contract.Type != graphmutation.InterfaceType || contract.Version != graphmutation.InterfaceVersion {
+		if !valid {
 			return fmt.Errorf(
 				"graph mutation provider must be a required %s %s nats-request input on %s",
 				graphmutation.InterfaceType, graphmutation.InterfaceVersion, graphmutation.SubjectFamily,

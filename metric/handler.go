@@ -51,8 +51,9 @@ func NewServer(port int, path string, registry *MetricsRegistry, securityCfg sec
 }
 
 // Start starts the one-shot metrics HTTP server. It binds synchronously and
-// returns only after this Server owns its listener. ctx is the exact base
-// context for served requests. Restart requires a freshly constructed Server.
+// returns only after this Server owns its listener. ctx bounds Start only;
+// ending it after Start returned stops nothing. Requests are served until Stop.
+// Restart requires a freshly constructed Server.
 func (s *Server) Start(ctx context.Context) error {
 	return s.start(ctx, nil, false, "Start")
 }
@@ -140,9 +141,8 @@ func (s *Server) start(ctx context.Context, supplied net.Listener, provided bool
 	// Create the server
 	s.requests = &admittedRequests{}
 	s.server = &http.Server{
-		Addr:        fmt.Sprintf(":%d", s.port),
-		Handler:     s.requests.wrap(mux),
-		BaseContext: func(net.Listener) context.Context { return ctx },
+		Addr:    fmt.Sprintf(":%d", s.port),
+		Handler: s.requests.wrap(mux),
 	}
 
 	// Configure TLS if enabled at platform level

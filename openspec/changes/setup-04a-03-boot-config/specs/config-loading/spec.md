@@ -18,12 +18,18 @@ relative, and a file that is not regular after following links.
 
 ### Requirement: A malformed document is refused
 
-When a document is valid JSON but one of its values does not fit the field it names, `LoadFile` and `LoadFromBytes`
-SHALL return an error naming the decode failure, and SHALL NOT return the defaults in its place.
+When a document is valid JSON but one of its values does not fit the field it names, or a strictly decoded entry
+(`services.<name>`) carries a field it refuses, `LoadFile` and `LoadFromBytes` SHALL return an error naming the decode
+failure, and SHALL NOT return the defaults in its place.
 
 #### Scenario: A URL list written as a string
 
 - **WHEN** `LoadFile` reads `{"platform":{"org":"acme","id":"p1"},"nats":{"urls":"nats://a.invalid:14222"}}`
+- **THEN** it returns an error and no `Config`
+
+#### Scenario: A service entry with an unknown field
+
+- **WHEN** `LoadFromBytes` reads `{"platform":{"org":"acme","id":"p1"},"services":{"metrics":{"name":"m","enabled":true}}}`
 - **THEN** it returns an error and no `Config`
 
 ### Requirement: NATS settings nothing applies are refused at load

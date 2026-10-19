@@ -126,8 +126,9 @@ about 3,150 (#9 comment 6274501134). The drops below lower the count.
 - **Dropped:** `integration_test.go` (helpers, or a duplicate of `TestSafeConfig_ThreadSafety`), `example_test.go` (no
   oracle; Manager examples are PR 2's), `env_test.go`.
 - **New:** one test per refused key and per refused env var (D2), for both `LoadFile` and `LoadFromBytes`; one for
-  the `SEMENGINE_` override names (D4). One test for
-  the malformed document (D3). A `LoadFromBytes` round trip, because semboids reads it as framework API.
+  the `SEMENGINE_` override names (D4). One test for each malformed document (D3: a wrong-typed value, and a
+  `services.<name>` entry with an unknown field). A `LoadFromBytes` round trip, because semboids reads it as framework
+  API.
 - **Sensitivity:** `task mutate:check` detects five mutants:
   - removing one key from the refusal table;
   - dropping one variable from the env refusal;

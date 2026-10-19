@@ -14,7 +14,7 @@ ends only when `task verify` passes on a clean tree at its commit (#171).
 - [ ] 2.1 Tests first, in `config/`:
   - the pin's in-scope test files with the module path rewritten, adapted and dropped per D5;
   - `fixture_client_integration_test.go` copied from `graph/kvcatalog`;
-  - new tests per D5 (refused keys for both loaders, the `SEMENGINE_` env names, the malformed document, the
+  - new tests per D5 (refused keys for both loaders, the `SEMENGINE_` env names, both malformed documents, the
     `LoadFromBytes` round trip);
   - `example_config.json` carried.
 

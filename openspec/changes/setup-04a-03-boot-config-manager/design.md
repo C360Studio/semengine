@@ -143,6 +143,8 @@ Manager; all three call Stop on exit already.
     rule for old buckets);
   - a stored `nats` value sets a key `config-loading` refuses: `rejectUnappliedNATSKeys` (`config/config.go:704`)
     runs on the value wrapped as `{"nats": ...}`, letter case folded.
+  - any one of the Manager's watches does not open (the pin failed only when none opened, and skipped a failed one
+    with a Debug log, so its updates never arrived; recorded under the repo's fail-closed rule, task 2.2 finding).
 
   The error names the key.
 - An unparseable stored `version` keeps the pin's rule (select the bucket, Warn), since nothing is lost by it.

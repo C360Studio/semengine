@@ -15,7 +15,7 @@ when `task verify` passes on a clean tree at its commit (#171).
   (`fixtureClient`, `semengine_config`, `Stop(ctx)`, no `Skip`, no sleeps, no fixed address, the two-boot test as
   subtests); the new tests D2, D3 and D4 name, including the lifecycle-suite adapter. Gate: the tests fail on the
   base (the symbols do not exist; note the compile error).
-- [ ] 2.2 `manager.go`, `key_family.go`, `bucket_name.go` from the pin with the module path and the four renames, D1's
+- [x] 2.2 `manager.go`, `key_family.go`, `bucket_name.go` from the pin with the module path and the four renames, D1's
   surface change, D2's lifecycle, and D3 and D4 (Q2 and Q3 ruled yes), whose tests 2.1 already wrote. Gate:
   `go test -race ./config/` and `go test -tags integration ./config/` pass, `TestManagerPassesTheLifecycleSuite`,
   `TestStopWithAModelRegistryWatcherReturnsPromptly` and `TestKVSelectionReplacesServicesAndComponents` (replacing the

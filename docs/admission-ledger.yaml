@@ -2651,3 +2651,56 @@
     store_federation_test.go; internal/harness/contract (TestReservedSubjectsDeclaredOnce)
   owner: port-flowgraph developer
   disposition: adapt
+# Change setup-04a-03-boot-config (PR #322, epic #9): config, part 1 of 2 (config.Manager is part 2),
+# under the owner's waiver of about 3,150 pin lines (#9 comment 6274501134).
+
+- source_path: config
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the boot configuration (Config, Loader, SafeConfig) and the JetStream stream declarations and provisioning
+    Config.Validate checks; read by service, composition and boot (change 3) and by semsource, semteams and semboids
+    (LoadFile, LoadFromBytes, NewStreamsManager, EnsureStreams); part 1 of 2, config.Manager is part 2
+    (#9 comment 6274501134)
+  destination: config
+  contract: >-
+    the config-loading spec; the pin's stream-provisioning spec requirements for declarations, bounds, exemptions,
+    backing-stream refusal and drift as at the pin (readiness clauses arrive with service); ADR-102 O-2/O-14 and
+    ADR-104 as at the pin
+  dependencies_and_side_effects: >-
+    model, pkg/platform, pkg/security, pkg/types, types, component, natsclient, pkg/errs (all in tree), nats.go
+    jetstream; reads files and env vars; creates and updates JetStream streams in EnsureStreams; no goroutine
+  known_risks: >-
+    dropped as unread: StorageMode*, BucketConfig, Loader.AddLayer/EnableValidation/Load, Config.SaveToFile,
+    Config.String, DeriveStreamSubjects, FrameworkStreamAutoCreate, loadJSONFile, mergeConfigs, validateEnvVar, and
+    parseDurations whole (its graph ttl branch was unread and its other branch converted the now-refused
+    nats.reconnect_wait); helpers.go, env.go, minimal_config.go not ported; doc.go and README.md rewritten to this
+    surface. Changed from the pin: NATS auth/TLS/reconnect and three JetStream keys, and the three NATS credential
+    env vars, refused until boot wires them (Q1, #74); the key refusals and the platform.instance_id refusal match
+    in any letter case, as encoding/json does; a malformed document or trailing data fails the load (Q2); numbers
+    are kept as written through the merge (json.Number), so a large integer in a raw config and a fraction in an
+    integer field are not rounded; env prefix SEMENGINE_ (#69). Retained: unknown keys elsewhere accepted,
+    gulf_mexico default region, framework streams for writers not yet ported. manager.go, key_family.go,
+    bucket_name.go follow in part 2
+  proving_tests: config/*_test.go, config/*_integration_test.go
+  owner: "setup-04a-03-boot-config developer"
+  disposition: adapt
+- source_path: config/stream_bounds.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: stream bounds, exemptions and the declaration plan, held byte-equal to the pin
+  destination: config/stream_bounds.go
+  contract: as at the pin (task ledger:check)
+  dependencies_and_side_effects: see the config row
+  known_risks: none beyond the config row
+  proving_tests: config/stream_bounds_test.go, config/stream_bounds_integration_test.go
+  owner: "setup-04a-03-boot-config developer"
+  disposition: carry
+- source_path: config/stream_drift.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: drift detection and in-place repair of ordinary streams, held byte-equal to the pin
+  destination: config/stream_drift.go
+  contract: as at the pin (task ledger:check)
+  dependencies_and_side_effects: see the config row
+  known_risks: none beyond the config row
+  proving_tests: config/stream_drift_test.go, config/stream_drift_integration_test.go
+  owner: "setup-04a-03-boot-config developer"
+  disposition: carry

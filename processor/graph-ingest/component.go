@@ -1019,13 +1019,14 @@ func (c *Component) start(ctx context.Context) error {
 		return errs.Wrap(err, "Component", "Start", "subscription setup")
 	}
 	if err := c.setupQueryHandlers(runCtx); err != nil {
-		return errs.Wrap(err, "Component", "Start", "query handler setup")
+		return errs.Wrap(errors.Join(err, ctx.Err()), "Component", "Start", "query handler setup")
 	}
 	if err := c.setupMutationHandlers(runCtx); err != nil {
-		return errs.Wrap(err, "Component", "Start", "mutation handler setup")
+		return errs.Wrap(errors.Join(err, ctx.Err()), "Component", "Start", "mutation handler setup")
 	}
-	// The request handlers register under the run context, so a ctx that ended during
-	// their registration is seen here; the guard's rollback then runs release.
+	// The request handlers register under the run context, which does not end with ctx, so
+	// start reads ctx itself: joined to a failed registration's error above, and here
+	// after the registrations succeed (ADR-113). The guard's rollback then runs release.
 	if err := ctx.Err(); err != nil {
 		return errs.Wrap(err, "Component", "Start", "context ended during startup")
 	}

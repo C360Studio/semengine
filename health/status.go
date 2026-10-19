@@ -1,4 +1,3 @@
-// Package health provides health monitoring functionality for components and systems
 package health
 
 import (

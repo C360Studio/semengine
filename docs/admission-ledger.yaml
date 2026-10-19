@@ -2539,3 +2539,26 @@
   owner: vocab-export-packs developer
   disposition: defer-exclude
 
+- source_path: health
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the health report services give (health.Status) and the roll-up and component conversion the
+    service manager builds /health, /services/health, /components/health and health.service.<name>
+    from; imported by service (change 3, setup-04a-03-boot); 03B design D4 row "carry"
+  destination: health
+  contract: >-
+    Status, Metrics, NewHealthy, NewDegraded, NewUnhealthy, Aggregate, FromComponentHealth,
+    Status.IsDegraded and Status.IsUnhealthy as at the pin, JSON unchanged; the health-status spec
+    (worst-case one-level roll-up; Healthy=false is unhealthy whatever the component's status word,
+    owner ruling #318 comment 6271450376)
+  dependencies_and_side_effects: component (in tree), regexp, strings, time; no goroutine, no I/O
+  known_risks: >-
+    dropped as unread (surface audit): Monitor, NewMonitor and its 11 methods, Status.WithMetrics,
+    Status.WithSubStatus, Status.IsHealthy, Metrics.MessagesProcessed, with their tests; doc.go and
+    README.md rewritten (S5). Retained and optional: Healthy beside Status (S1), Aggregate counts an
+    unknown word as healthy (S1b), the text sanitizer over-redacts (S3). Pin ADR-079 D3's degraded
+    signal is not carried (#110 item 3). One change from the pin (Q3, owner ruling #318 comment
+    6271710866): an unhealthy component with no error text reads "Component unhealthy".
+  proving_tests: health/helpers_test.go, health/status_test.go, health/security_test.go
+  owner: "setup-04a-03-boot-health developer"
+  disposition: adapt

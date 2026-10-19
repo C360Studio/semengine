@@ -23,7 +23,7 @@ only when `task verify` passes on a clean tree at its commit (#171).
 
 ## 3. Text and ledger (D3, D4)
 
-- [ ] 3.1 `health/doc.go` and `health/README.md` rewritten per D3; the `health` row in `docs/admission-ledger.yaml`
+- [x] 3.1 `health/doc.go` and `health/README.md` rewritten per D3; the `health` row in `docs/admission-ledger.yaml`
   per D4, its `known_risks` naming the Q3 message change. Gate: `go doc ./health` lists only the kept surface;
   `task verify` passes on a clean tree, which runs `ledger:check` and `docs:check` (review stop).
 

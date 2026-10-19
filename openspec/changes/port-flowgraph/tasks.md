@@ -16,7 +16,7 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
   `declarations_test.go` (R6, R3's test); then the pin's three `.go` files unchanged, the run recorded:
   `TestFlowGraphOutputIsTheSameEveryRun` and `TestReservedSubjectsDeclaredOnce` red. Then R1 and R3, both green.
   Gate: `go test -race ./internal/flowgraph ./internal/harness/contract` and `task lint`.
-- [ ] 2.2 Dead surface and docs: R4's removals and renames, R5's corrections (`README.md`, `doc.go`, the
+- [x] 2.2 Dead surface and docs: R4's removals and renames, R5's corrections (`README.md`, `doc.go`, the
   `component_node_test.go` comment). Gate: `task docs:check`, `go test -race ./internal/flowgraph` and `task lint`.
 - [ ] 2.3 Same behaviour, less code: R8 (`TestMatchNATSPatternIsSymmetric` first, green on the pin's matcher, then
   each caller asks once), R9 (the `events.*` case of `TestBuildFromDeclarationsConnectsDeclaredPorts` first, then

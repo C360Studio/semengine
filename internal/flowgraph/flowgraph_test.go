@@ -304,7 +304,7 @@ func TestFlowGraphAnalysis(t *testing.T) {
 //  3. findOrphanedPorts does NOT flag an HTTPClientPort input as orphaned —
 //     outbound client connections have no internal publisher by design.
 func TestHTTPClientPortFlowGraph(t *testing.T) {
-	g := &FlowGraph{nodes: make(map[string]*ComponentNode), edges: []FlowEdge{}}
+	g := &FlowGraph{nodes: make(map[string]*componentNode), edges: []FlowEdge{}}
 
 	t.Run("canonical facts classify and identify HTTP client", func(t *testing.T) {
 		infos, err := extractTestPortInfo(g, []component.Port{{
@@ -369,7 +369,7 @@ func TestHTTPClientPortFlowGraph(t *testing.T) {
 //     ("timer:<interval>") so operators can inspect it from the flowgraph,
 //     instead of the "unknown_type_*" fallthrough.
 func TestTimerPortFlowGraph(t *testing.T) {
-	g := &FlowGraph{nodes: make(map[string]*ComponentNode), edges: []FlowEdge{}}
+	g := &FlowGraph{nodes: make(map[string]*componentNode), edges: []FlowEdge{}}
 
 	t.Run("canonical facts classify component.PatternTimer", func(t *testing.T) {
 		infos, err := extractTestPortInfo(g, []component.Port{{
@@ -424,7 +424,7 @@ func TestTimerPortFlowGraph(t *testing.T) {
 	})
 
 	t.Run("TimerPort ConnectionID surfaces the interval", func(t *testing.T) {
-		// The stored PortInfo.ConnectionID must expose the polling cadence
+		// The stored portInfo.ConnectionID must expose the polling cadence
 		// ("timer:30s") so operators can inspect it from the flowgraph, rather
 		// than the "unknown_type_*" fallthrough it hit before gh#312.
 		comp := createMockComponentWithPorts("cap_poller", "input",

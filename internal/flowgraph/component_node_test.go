@@ -7,8 +7,8 @@ import (
 )
 
 // addTestComponentNode adapts standalone unit fixtures to the retained-port
-// ingestion helper. Production flowgraphs are built only from Registry
-// snapshots through BuildFromRegistry.
+// ingestion helper. Production flowgraphs are built only from component
+// declarations through BuildFromDeclarations.
 func addTestComponentNode(graph *FlowGraph, name string, comp component.Discoverable) error {
 	if comp == nil {
 		return fmt.Errorf("component cannot be nil")
@@ -26,7 +26,7 @@ func addTestComponentNode(graph *FlowGraph, name string, comp component.Discover
 	return graph.addComponentNode(name, inputs, inputFacts, outputs, outputFacts)
 }
 
-func extractTestPortInfo(graph *FlowGraph, ports []component.Port) ([]PortInfo, error) {
+func extractTestPortInfo(graph *FlowGraph, ports []component.Port) ([]portInfo, error) {
 	facts, err := testPortFacts(ports)
 	if err != nil {
 		return nil, err

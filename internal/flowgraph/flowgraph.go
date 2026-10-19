@@ -1,4 +1,3 @@
-// Package flowgraph provides flow graph analysis and validation for component connections.
 package flowgraph
 
 import (
@@ -14,19 +13,19 @@ import (
 
 // FlowGraph represents a directed graph of component connections
 type FlowGraph struct {
-	nodes map[string]*ComponentNode // componentName -> node
+	nodes map[string]*componentNode // componentName -> node
 	edges []FlowEdge                // all connections unified
 }
 
-// ComponentNode represents a component in the flow graph
-type ComponentNode struct {
+// componentNode represents a component in the flow graph
+type componentNode struct {
 	ComponentName string
-	InputPorts    []PortInfo
-	OutputPorts   []PortInfo
+	InputPorts    []portInfo
+	OutputPorts   []portInfo
 }
 
-// PortInfo contains port metadata for graph analysis
-type PortInfo struct {
+// portInfo contains port metadata for graph analysis
+type portInfo struct {
 	Name         string
 	Direction    component.Direction
 	ConnectionID string // Subject, bucket, or network address
@@ -44,7 +43,6 @@ type FlowEdge struct {
 	To           ComponentPortRef             `json:"to"`
 	Pattern      component.InteractionPattern `json:"pattern"`
 	ConnectionID string                       `json:"connection_id"` // Subject, bucket, or network addr
-	Metadata     EdgeMetadata                 `json:"metadata"`      // Pattern-specific validation data
 }
 
 // ComponentPortRef references a specific port on a component
@@ -62,57 +60,12 @@ const (
 	IssueOptionalInterfaceUnused = "optional_interface_unused"
 )
 
-// EdgeMetadata contains pattern-specific metadata
-type EdgeMetadata struct {
-	InterfaceContract *component.InterfaceContract `json:"interface_contract,omitempty"`
-	Timeout           string                       `json:"timeout,omitempty"` // Request pattern
-	Queue             string                       `json:"queue,omitempty"`   // Stream pattern
-	Keys              []string                     `json:"keys,omitempty"`    // Watch pattern
-}
-
 // NewFlowGraph creates a new empty FlowGraph
 func NewFlowGraph() *FlowGraph {
 	return &FlowGraph{
-		nodes: make(map[string]*ComponentNode),
+		nodes: make(map[string]*componentNode),
 		edges: make([]FlowEdge, 0),
 	}
-}
-
-// GetNodes returns a deep copy of component nodes to prevent external modification
-func (g *FlowGraph) GetNodes() map[string]*ComponentNode {
-	result := make(map[string]*ComponentNode, len(g.nodes))
-	for k, v := range g.nodes {
-		// Deep copy the ComponentNode
-		nodeCopy := &ComponentNode{
-			ComponentName: v.ComponentName,
-			// Deep copy port slices
-			InputPorts:  make([]PortInfo, len(v.InputPorts)),
-			OutputPorts: make([]PortInfo, len(v.OutputPorts)),
-		}
-
-		// Copy port info
-		copy(nodeCopy.InputPorts, v.InputPorts)
-		copy(nodeCopy.OutputPorts, v.OutputPorts)
-		for index := range nodeCopy.InputPorts {
-			nodeCopy.InputPorts[index].natsSubjects = append([]string(nil), v.InputPorts[index].natsSubjects...)
-			if contract := v.InputPorts[index].Interface; contract != nil {
-				copyOfContract := *contract
-				copyOfContract.Compatible = append([]string(nil), contract.Compatible...)
-				nodeCopy.InputPorts[index].Interface = &copyOfContract
-			}
-		}
-		for index := range nodeCopy.OutputPorts {
-			nodeCopy.OutputPorts[index].natsSubjects = append([]string(nil), v.OutputPorts[index].natsSubjects...)
-			if contract := v.OutputPorts[index].Interface; contract != nil {
-				copyOfContract := *contract
-				copyOfContract.Compatible = append([]string(nil), contract.Compatible...)
-				nodeCopy.OutputPorts[index].Interface = &copyOfContract
-			}
-		}
-
-		result[k] = nodeCopy
-	}
-	return result
 }
 
 // GetEdges returns the edges in the graph
@@ -172,7 +125,7 @@ func (g *FlowGraph) addComponentNode(
 	if err != nil {
 		return fmt.Errorf("component %q output ports: %w", name, err)
 	}
-	node := &ComponentNode{
+	node := &componentNode{
 		ComponentName: name,
 		InputPorts:    inputPorts,
 		OutputPorts:   outputPorts,
@@ -182,14 +135,14 @@ func (g *FlowGraph) addComponentNode(
 	return nil
 }
 
-// extractPortInfo converts component ports to PortInfo for graph analysis
+// extractPortInfo converts component ports to portInfo for graph analysis
 func (g *FlowGraph) extractPortInfo(
 	ports []component.Port, retainedFacts []component.PortFacts,
-) ([]PortInfo, error) {
+) ([]portInfo, error) {
 	if len(ports) != len(retainedFacts) {
 		return nil, fmt.Errorf("retained port/fact count mismatch: %d ports, %d facts", len(ports), len(retainedFacts))
 	}
-	result := make([]PortInfo, 0, len(ports))
+	result := make([]portInfo, 0, len(ports))
 
 	for index, port := range ports {
 		facts := retainedFacts[index]
@@ -201,7 +154,7 @@ func (g *FlowGraph) extractPortInfo(
 		if contract, ok := facts.Interface(); ok {
 			interfaceContract = &contract
 		}
-		portInfo := PortInfo{
+		info := portInfo{
 			Name:         port.Name,
 			Direction:    port.Direction,
 			ConnectionID: connections[0],
@@ -213,7 +166,7 @@ func (g *FlowGraph) extractPortInfo(
 			natsSubjects: facts.NATSSubjects(),
 		}
 
-		result = append(result, portInfo)
+		result = append(result, info)
 	}
 
 	return result, nil
@@ -262,7 +215,7 @@ func (g *FlowGraph) validateGraphMutationProviders() error {
 	mutationPrefix := strings.TrimSuffix(graphmutation.SubjectFamily, ">")
 	for _, componentName := range g.sortedNodeNames() {
 		node := g.nodes[componentName]
-		for _, port := range append(append([]PortInfo(nil), node.InputPorts...), node.OutputPorts...) {
+		for _, port := range append(append([]portInfo(nil), node.InputPorts...), node.OutputPorts...) {
 			isMutation := (port.Pattern == component.PatternRequest && strings.HasPrefix(port.ConnectionID, mutationPrefix)) ||
 				(port.Interface != nil && port.Interface.Type == graphmutation.InterfaceType)
 			if !isMutation {
@@ -560,7 +513,6 @@ func (g *FlowGraph) connectStreamPorts(publishers, subscribers map[string][]Comp
 							To:           sub,
 							Pattern:      component.PatternStream,
 							ConnectionID: connID,
-							Metadata:     EdgeMetadata{},
 						})
 					}
 				}
@@ -599,7 +551,6 @@ func (g *FlowGraph) connectStorePorts(publishers, subscribers map[string][]Compo
 						To:           sub,
 						Pattern:      component.PatternStore,
 						ConnectionID: pubConnID,
-						Metadata:     EdgeMetadata{},
 					})
 				}
 			}
@@ -640,7 +591,6 @@ func (g *FlowGraph) connectRequestPorts(publishers, subscribers map[string][]Com
 			To:           p2,
 			Pattern:      component.PatternRequest,
 			ConnectionID: connID,
-			Metadata:     EdgeMetadata{},
 		})
 	}
 
@@ -734,7 +684,6 @@ func (g *FlowGraph) connectKVPorts(publishers, subscribers map[string][]Componen
 						To:           sub,
 						Pattern:      pattern,
 						ConnectionID: connectionID,
-						Metadata:     EdgeMetadata{},
 					}
 					g.edges = append(g.edges, edge)
 				}
@@ -812,7 +761,6 @@ func (g *FlowGraph) exclusivePortRefs(candidates []ComponentPortRef, direction c
 // checking whether the operator declared it externally fed.
 func (g *FlowGraph) AnalyzeConnectivity() *FlowAnalysisResult {
 	result := &FlowAnalysisResult{
-		ConnectedEdges:      g.edges,
 		DisconnectedNodes:   []DisconnectedNode{}, // Initialize empty slice
 		ConnectedComponents: [][]string{},         // Initialize empty slice
 		OrphanedPorts:       []OrphanedPort{},     // Initialize empty slice
@@ -990,7 +938,7 @@ func (g *FlowGraph) findOrphanedPorts() []OrphanedPort {
 }
 
 // isInterfaceAlternativePort determines if a port is an optional interface-specific alternative
-func (g *FlowGraph) isInterfaceAlternativePort(port PortInfo) bool {
+func (g *FlowGraph) isInterfaceAlternativePort(port portInfo) bool {
 	// Heuristic: A port is likely an interface alternative if:
 	// 1. It has an interface contract specified
 	// 2. It's not marked as required
@@ -1026,12 +974,9 @@ func (g *FlowGraph) isInterfaceAlternativePort(port PortInfo) bool {
 	return false
 }
 
-// ValidateStreamRequirements checks that JetStream subscribers have corresponding
-// JetStream publishers. When a component subscribes via JetStream, it expects a
-// durable stream to exist. Streams are only created by components that publish
-// with JetStream output ports (via EnsureStreams). If a JetStream subscriber is
-// connected only to NATS publishers, no stream will be created and the subscriber
-// will hang waiting for a stream that never appears.
+// ValidateStreamRequirements returns one warning for each JetStream input port
+// that a plain NATS output port feeds, naming every such publisher. A JetStream
+// consumer reads from a stream, and a plain NATS publisher does not create one.
 func (g *FlowGraph) ValidateStreamRequirements() []StreamRequirementWarning {
 	var warnings []StreamRequirementWarning
 
@@ -1047,7 +992,7 @@ func (g *FlowGraph) ValidateStreamRequirements() []StreamRequirementWarning {
 			continue
 		}
 
-		var subscriberPort *PortInfo
+		var subscriberPort *portInfo
 		for i := range subscriberNode.InputPorts {
 			if subscriberNode.InputPorts[i].Name == edge.To.PortName {
 				subscriberPort = &subscriberNode.InputPorts[i]
@@ -1069,7 +1014,7 @@ func (g *FlowGraph) ValidateStreamRequirements() []StreamRequirementWarning {
 			continue
 		}
 
-		var publisherPort *PortInfo
+		var publisherPort *portInfo
 		for i := range publisherNode.OutputPorts {
 			if publisherNode.OutputPorts[i].Name == edge.From.PortName {
 				publisherPort = &publisherNode.OutputPorts[i]
@@ -1087,15 +1032,10 @@ func (g *FlowGraph) ValidateStreamRequirements() []StreamRequirementWarning {
 
 		// Publisher is NATS but subscriber expects JetStream - this is a problem!
 		warnings = append(warnings, StreamRequirementWarning{
-			Severity:       "critical",
 			SubscriberComp: edge.To.ComponentName,
 			SubscriberPort: edge.To.PortName,
 			Subjects:       append([]string(nil), subscriberPort.natsSubjects...),
 			PublisherComps: []string{edge.From.ComponentName},
-			Issue: fmt.Sprintf(
-				"JetStream subscriber expects stream for subjects %v but publisher '%s' uses NATS (no stream will be created)",
-				subscriberPort.natsSubjects, edge.From.ComponentName,
-			),
 		})
 	}
 

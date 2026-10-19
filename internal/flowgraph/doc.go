@@ -1,165 +1,59 @@
-// Package flowgraph provides flow graph analysis and validation for component connections.
+// Package flowgraph builds a graph of how components connect through their
+// declared ports and reports what that graph shows: which components are
+// connected, which have no connections, and which ports nothing matches.
 //
-// # Overview
+// # Building a graph
 //
-// The flowgraph package builds a directed graph representation of component port
-// connections, enabling static analysis to detect configuration issues before runtime.
-// It supports five interaction patterns (stream, request, watch, network, http-client) and provides:
+// [BuildFromDeclarations] builds a graph from the [component.Declaration] of
+// every component instance (the port shape the component Registry records when
+// it admits an instance, or derives offline from a configuration). It adds one
+// node per instance and connects the ports. It returns an error when the
+// declarations cannot form a valid graph: an empty or repeated instance name, a
+// port with no connection identity, more than one writer port on a KV bucket,
+// two exclusive binds on one network address, or a graph-mutation port that is
+// malformed or not served by exactly one provider.
 //
-//   - Pattern-based connection matching (NATS wildcard subject matching)
-//   - Connected component analysis (DFS-based clustering)
-//   - Orphaned port detection with severity classification
-//   - JetStream stream requirement validation
+// In SemStreams the composition package is this package's one reader; it
+// comes to SemEngine in a later change. Until then this package's tests are
+// its only callers.
 //
-// This enables early detection of misconfigurations such as missing publishers,
-// dangling subscribers, or JetStream/NATS protocol mismatches.
+// # What the graph connects
 //
-// # Architecture
+// A port's pattern (its [component.InteractionPattern]) decides how it is
+// matched.
 //
-//	┌─────────────────────────────────────────────────────────────────────────┐
-//	│                           FlowGraph                                     │
-//	├─────────────────────────────────────────────────────────────────────────┤
-//	│  ComponentNode[]          FlowEdge[]           InteractionPattern       │
-//	│  - InputPorts             - From (portref)     - stream (NATS/JS)       │
-//	│  - OutputPorts            - To (portref)       - request (req/reply)    │
-//	│  - Component ref          - Pattern            - watch (KV)             │
-//	│                           - ConnectionID       - network (external)     │
-//	│                                                - http-client (outbound) │
-//	└─────────────────────────────────────────────────────────────────────────┘
-//	                                 ↓
-//	┌─────────────────────────────────────────────────────────────────────────┐
-//	│                       FlowAnalysisResult                                │
-//	│  - ConnectedComponents: clusters of connected components               │
-//	│  - OrphanedPorts: ports with no connections                             │
-//	│  - DisconnectedNodes: components with no edges                          │
-//	└─────────────────────────────────────────────────────────────────────────┘
+//   - stream: an output joins every input on another component whose subject
+//     matches. A JetStream port also matches on each of its stream's subjects.
+//   - request: ports on different components with matching subjects join,
+//     whatever their direction.
+//   - watch and read: a watch output (a KV writer) joins every watch or read
+//     input on the same bucket, its own component's included. A bucket with
+//     more than one writer port is refused.
+//   - store: every store output joins every store input on another component.
+//   - network, http-client and timer: never joined. Two exclusive binds on one
+//     network address are refused.
 //
-// # Supported Construction Boundary
+// Subject matching is this package's own rule: `*` stands for one token and
+// `>` for one or more trailing tokens, and either side of a pair may hold the
+// wildcard. [SubjectCovers] answers the one-way question of whether a filter
+// covers every subject a pattern can name.
 //
-// Flow graphs are built from a complete [component.Declaration] set through
-// [BuildFromDeclarations], and [composition.Analyze] is that function's
-// production caller — offline from declared ports, and at boot from the
-// declarations the Registry admitted. ComponentManager no longer builds a graph
-// of its own; it retains the composition.Result Analyze produced and projects
-// it (ADR-100). Component authors declare ports for boot admission; later
-// desired-state writes apply on the next process start and do not rebuild the
-// running graph.
+// # What the analysis reports
 //
-// Direct downstream graph assembly is retired. Registry-to-node ingestion is
-// an internal framework seam so every consumer sees the same retained
-// declaration and normalized facts captured at admission.
+// [FlowGraph.AnalyzeConnectivity] reports the connected groups of components,
+// the components with no edge, and the orphaned ports: ports no edge reaches.
+// Network, http-client, store and timer ports are never orphans. Each orphan
+// carries an Issue, one of the Issue constants.
 //
-// Once the framework has built the graph, analyze connectivity:
+// The analysis reports facts and no severity. Whether an orphan or a lone
+// component is a problem is the reader's judgment.
 //
-//	// Analyze connectivity
-//	result := graph.AnalyzeConnectivity()
-//	for _, orphan := range result.OrphanedPorts {
-//	    log.Warn("orphaned port", "component", orphan.ComponentName, "port", orphan.PortName)
-//	}
+// [FlowGraph.ValidateStreamRequirements] returns one warning for each
+// JetStream input port that a plain NATS output port feeds, naming the
+// publishing components. A JetStream consumer reads from a stream, and a plain
+// NATS publisher does not create one.
 //
-// The analysis reports facts and derives no severity. What an orphan or a
-// disconnected node MEANS is composition.Analyze's judgment, which owns the one
-// findings vocabulary (ADR-100); read a status from a composition.Result, never
-// from this walk.
+// # Concurrency
 //
-// Validate JetStream requirements:
-//
-//	warnings := graph.ValidateStreamRequirements()
-//	for _, w := range warnings {
-//	    if w.Severity == "critical" {
-//	        return fmt.Errorf("JetStream mismatch: %s", w.Issue)
-//	    }
-//	}
-//
-// # Interaction Patterns
-//
-// component.PatternStream (NATS, JetStream):
-//   - Unidirectional: publishers → subscribers
-//   - Supports NATS wildcard matching (* and >)
-//   - Multiple publishers/subscribers per subject allowed
-//
-// component.PatternRequest (NATS request/reply):
-//   - Bidirectional: any port can initiate requests
-//   - All ports with same subject are connected
-//   - Used for synchronous RPC-style communication
-//
-// component.PatternWatch (KV bucket):
-//   - Unidirectional: writers → watchers
-//   - Multiple writers to same bucket generates warning
-//   - Watchers receive change notifications
-//
-// component.PatternRead (KV bucket):
-//   - Unidirectional dependency: writers → exact readers
-//   - Readers perform current-value or list access; they do not watch or replay
-//
-// component.PatternNetwork (external listener):
-//   - External boundary ports (HTTP server, UDP listener, etc.)
-//   - Exclusive binding: multiple binds to same port is an error
-//   - Not connected in graph (external endpoints)
-//
-// component.PatternHTTPClient (outbound HTTP-client/polling):
-//   - Component initiates connections to an external HTTP resource
-//   - Non-exclusive: multiple components may poll the same URL
-//   - Not connected in graph; treated like component.PatternNetwork for orphan detection
-//   - Declared via HTTPClientPort; cadence is owned by a sibling TimerPort
-//
-// component.PatternStore (ADR-063 store federation):
-//   - StoreProvidePort (a storage component owning a StorageInstance) and
-//     StoreReadPort (a content-fetch consumer)
-//   - Rendered as fan-in edges: every provider → every consumer (advisory
-//     "can read from"; the exact instance is producer-chosen per-fetch)
-//   - Non-exclusive; skipped by orphan detection like component.PatternNetwork (a store
-//     with no reader, or a federation store-read, is not an orphan)
-//
-// component.PatternTimer (cadence/scheduler boundary):
-//   - TimerPort drives a component on an interval (e.g. an HTTPClientPort
-//     poller via HTTPClientPort.TriggerPort), not a NATS stream
-//   - Not connected in graph; skipped by orphan detection like component.PatternNetwork
-//     (a legitimately unconnected timer input is a scheduler boundary, not an orphan)
-//
-// # Connection Matching
-//
-// NATS subject matching follows standard semantics:
-//   - Exact match: "graph.ingest.data" matches "graph.ingest.data"
-//   - Single wildcard: "graph.*.data" matches "graph.ingest.data"
-//   - Multi wildcard: "graph.>" matches "graph.ingest.data"
-//   - Bidirectional: either side can be the pattern
-//
-// # Analysis Results
-//
-// FlowAnalysisResult contains:
-//
-// ConnectedComponents: Clusters of interconnected components found via DFS.
-// Multiple clusters indicate isolated subgraphs.
-//
-// DisconnectedNodes: Components with zero edges. These may be misconfigured
-// or intentionally standalone.
-//
-// OrphanedPorts: Ports with no matching connections. Classified by issue type:
-//   - no_publishers: Input port has no matching output ports
-//   - no_subscribers: Output port has no matching input ports
-//   - optional_api_unused: Request ports are optional by design
-//   - optional_interface_unused: Interface-specific alternative ports
-//   - optional_index_unwatched: KV watch ports may be intentionally unused
-//
-// # JetStream Validation
-//
-// ValidateStreamRequirements detects protocol mismatches:
-//   - JetStream subscribers expect a durable stream to exist
-//   - Streams are created by JetStream output ports (via EnsureStreams)
-//   - If a JetStream subscriber connects only to NATS publishers, no stream is created
-//   - This results in the subscriber hanging indefinitely
-//
-// The validation returns critical severity warnings for such mismatches.
-//
-// # Thread Safety
-//
-// FlowGraph is NOT safe for concurrent modification. It is designed for
-// single-threaded construction and analysis during service startup.
-//
-// # See Also
-//
-// Related packages:
-//   - [github.com/c360studio/semengine/component]: Port types and component interfaces
-//   - [github.com/c360studio/semengine/service]: Uses flowgraph for flow validation
+// A FlowGraph has no locks. Build it and read it on one goroutine.
 package flowgraph

@@ -242,3 +242,55 @@ func TestRegistryAdmitsComponentsOnDistinctOrSharedResources(t *testing.T) {
 		})
 	}
 }
+
+// TestRegistryRefusesOneComponentClaimingAnAddressTwice: a socket that both
+// reads and writes is one port, so two ports of one component on one exclusive
+// address are refused, through Declare and through CreateComponent (owner
+// ruling, #324 comment 6278113073).
+func TestRegistryRefusesOneComponentClaimingAnAddressTwice(t *testing.T) {
+	const want = "resource conflict: tcp:0.0.0.0:8080 already used by another port of component 'gateway'"
+	bind := func(name string, direction Direction) Port {
+		return Port{
+			Name: name, Direction: direction, Required: true,
+			Config: NetworkPort{Protocol: "tcp", Host: "0.0.0.0", Port: 8080},
+		}
+	}
+	tests := []struct {
+		name            string
+		inputs, outputs []Port
+	}{
+		{
+			name:    "an input and an output",
+			inputs:  []Port{bind("accept", DirectionInput)},
+			outputs: []Port{bind("serve", DirectionOutput)},
+		},
+		{name: "two inputs", inputs: []Port{bind("accept", DirectionInput), bind("accept2", DirectionInput)}},
+		{name: "two outputs", outputs: []Port{bind("serve", DirectionOutput), bind("serve2", DirectionOutput)}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name+" through Declare", func(t *testing.T) {
+			registry := NewRegistry()
+			registerPortsFactory(t, registry, "gateway-factory", tt.inputs, tt.outputs)
+
+			_, err := registry.Declare("gateway", declarationTestConfig("gateway-factory", `{}`))
+
+			if err == nil || !errs.IsInvalid(err) || !strings.Contains(err.Error(), want) {
+				t.Fatalf("Declare: error = %v, want an invalid-class refusal containing %q", err, want)
+			}
+		})
+		t.Run(tt.name+" through CreateComponent", func(t *testing.T) {
+			registry := NewRegistry()
+			registerPortsFactory(t, registry, "gateway-factory", tt.inputs, tt.outputs)
+
+			_, err := registry.CreateComponent(
+				"gateway", declarationTestConfig("gateway-factory", `{}`), declarationTestDeps(), nil)
+
+			if err == nil || !errs.IsInvalid(err) || !strings.Contains(err.Error(), want) {
+				t.Fatalf("CreateComponent: error = %v, want an invalid-class refusal containing %q", err, want)
+			}
+			if got := admittedNames(registry); len(got) != 0 {
+				t.Fatalf("admitted after the refusal = %v, want none", got)
+			}
+		})
+	}
+}

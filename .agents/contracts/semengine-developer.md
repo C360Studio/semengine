@@ -225,12 +225,13 @@ BEFORE implementation.
   legitimate root with its reason, or as a defect.
 - Callers never pass nil context. Exported context-taking boundaries reject nil when able to return an error; private
   helpers rely on the caller invariant. Never default nil to `context.Background`.
-- Detach only terminal cleanup or finalization, or an already-accepted durability operation whose invariant requires
-  bounded completion after owner cancellation. `context.WithTimeout` is the immediate boundary. With a parent, use
+- Detach only terminal cleanup or finalization (a lifecycle owner's one run context is the exception stated below), or
+  an already-accepted durability operation whose invariant requires bounded completion after owner cancellation.
+  `context.WithTimeout` is the immediate boundary. With a parent, use
   `context.WithTimeout(context.WithoutCancel(parent), budget)`. A finalizer with no caller context, such as a test
   cleanup (`natsfixture/fixture.go:75-81`), may use `context.WithTimeout(context.Background(), budget)`. The budget
-  bounds the work through its context and never replaces a join: complete synchronously or join all tasks before
-  return, with no timer in place of the join. Never feed `Start`, `Run`, `Watch`, or continuing work.
+  bounds the work through its context and never replaces a join: complete synchronously or join all tasks before return,
+  with no timer in place of the join. Never feed `Start`, `Run`, `Watch`, or continuing work.
 - Do not use `context.WithoutCancel(parent)` directly or create an unbounded descendant, except as that one run
   context. Nested child cancellation is allowed beneath the bounded context only when all tasks join before the
   terminal operation returns.

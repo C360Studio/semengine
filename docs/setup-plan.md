@@ -292,11 +292,10 @@ Do not retain contexts in production structs or wrappers/providers; do not inven
 lifecycle owner's one run context: created in `Start`, kept only as a cancel, ended in `Stop` (ADR-113).
 Specify which owner admits work, stops admission, drains/finalizes, cancels, and joins each worker or resource.
 The context given to `Start` bounds only `Start`; ending it later stops nothing. `Stop(ctx)` is the only stop: it uses
-the caller's exact finite context, returns nil only once everything is released, and returns that context's error if
-it ends first, so a later `Stop` tries again (ADR-113). The callee must not replace Stop authority with its own
-timeout. An owner may create fresh finite
-authority for test cleanup. Shutdown order belongs to each resource owner; do not universally cancel before draining.
-Timeout or cancellation does not establish completed callback or worker joins.
+the caller's exact finite context, returns nil only once everything is released, and returns that context's error if it
+ends first, so a later `Stop` tries again (ADR-113). The callee must not replace Stop authority with its own timeout. An
+owner may create fresh finite authority for test cleanup. Shutdown order belongs to each resource owner; do not
+universally cancel before draining. Timeout or cancellation does not establish completed callback or worker joins.
 
 Lifecycle tests cover partial startup cleanup, cancellation during I/O, blocked callbacks, graceful finalization,
 deadline expiry, repeated Stop, and restart where promised. Check completed cleanup and retained data, not only return

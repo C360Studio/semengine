@@ -247,13 +247,13 @@ Carried with `graph`, `pkg/types`, `vocabulary` and graph-ingest from SemStreams
   only as a ledger-recorded legitimate root with its reason; one that breaks an admission gate is a repair.
 - Callers must never pass nil. Exported context-taking boundaries reject nil when able to return an error; private
   helpers rely on that invariant. Any nil-to-`context.Background` default is `BLOCKING`.
-- Detachment is allowed only for terminal cleanup or finalization, or an already-accepted durability operation whose
-  invariant requires bounded completion after owner cancellation. Require `context.WithTimeout` as the immediate
-  boundary. With a parent, require `context.WithTimeout(context.WithoutCancel(parent), budget)`. A finalizer with no
-  caller context, such as a test cleanup (`natsfixture/fixture.go:75-81`), may use
-  `context.WithTimeout(context.Background(), budget)`. The budget bounds the work through its context and never
-  replaces a join: work must complete synchronously or join before return, with no timer in place of the join, and
-  never feed `Start`, `Run`, `Watch`, or continuing work.
+- Detachment is allowed only for terminal cleanup or finalization (a lifecycle owner's one run context is the exception
+  stated below), or an already-accepted durability operation whose invariant requires bounded completion after owner
+  cancellation. Require `context.WithTimeout` as the immediate boundary. With a parent, require
+  `context.WithTimeout(context.WithoutCancel(parent), budget)`. A finalizer with no caller context, such as a test
+  cleanup (`natsfixture/fixture.go:75-81`), may use `context.WithTimeout(context.Background(), budget)`. The budget
+  bounds the work through its context and never replaces a join: work must complete synchronously or join before return,
+  with no timer in place of the join, and never feed `Start`, `Run`, `Watch`, or continuing work.
 - Direct use or any unbounded descendant of `context.WithoutCancel` is `BLOCKING`, except as that one run context.
   Nested child cancellation is allowed beneath the bounded context only when all tasks join before the terminal
   operation returns.

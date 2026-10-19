@@ -41,7 +41,8 @@ adapter) unless another test is named. As in graph-ingest's adapter
 - the subscriber map;
 - each done channel `Stop` waits on, listed while it is open.
 
-`Calls` counts the adapter's own `Start`/`Stop` calls. Watcher stops are counted on the server, through the KV
+`Calls` is left empty: the suite compares whole observations around a call (`lifecycletest.go:243-294`), so a
+count the call itself bumps would always differ (task 2.1 finding). Watcher stops are counted on the server, through the KV
 backing stream's consumer count, never through a counter, hook or field added for tests (#186, #190). This rests on
 nats.go v1.54.0 behaviour (ADR-112, #170):
 
@@ -98,7 +99,8 @@ Manager; all three call Stop on exit already.
   the pin, since `syncFromKV` replaces their set (`:1327`). `Start` checks every name in the file configuration
   before it acquires the bucket. A refused name fails Start naming the service or component, and nothing is written,
   not even the identity record. `PutComponentToKV` and `DeleteComponentFromKV` check their name before any write.
-- `pushToKV` encodes every value before its first write, so a value that cannot be encoded writes nothing.
+- `Start` encodes every value the push would write before it acquires the bucket, with the name check, so a value
+  that cannot be encoded writes nothing, not even the identity record.
 - `pushToKV` writes `version` last; the pin writes it first (`manager.go:882-894`). A push interrupted after its
   first write leaves the bucket's old `version`, or none (`0.0.0`). The next boot's newer file then wins and pushes
   again, instead of selecting a partial component set. Limit, retained: a file with no `version`, or `0.0.0`,
@@ -147,9 +149,10 @@ Manager; all three call Stop on exit already.
 - **Proof:**
   - `TestMalformedStoredServiceFailsStart` (P5);
   - `TestStoredNATSTokenFailsStart`;
-  - `TestPushEncodingFailureFailsStart`, in a first-boot case and a newer-file case. It is driven by a component
-    whose `config` is `json.RawMessage("{")`, which `encoding/json` refuses to marshal; the test is the probe. Start
-    fails naming the component, and the bucket holds no `services.*`, `components.*` or `version` key the push
+  - `TestPushEncodingFailureFailsStart`, in a first-boot case and a newer-file case. It is driven by a service
+    whose `config` is `json.RawMessage("{")`, which `encoding/json` refuses to marshal; the test is the probe. (A
+    component with that config is refused earlier, when Start validates the configuration for the identity, so it
+    never reaches the push; task 2.1 finding.) Start fails naming the service, and the bucket holds no `services.*`, `components.*` or `version` key the push
     would have written. A push failing between two writes, from a broker fault, has no deterministic driver without
     fault injection or a test-only hook. It is not tested; its recovery is `TestRecoveryFromAnInterruptedPush` (D3);
   - `TestVersionReadErrorFailsStart` is not written: it needs a mid-operation fault (#185), and the branch is one

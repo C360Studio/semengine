@@ -5,7 +5,8 @@
 
 ## Purpose & Scope
 
-**What this component does**: Manages application configuration for SemStreams with support for JSON file loading, environment variable overrides, NATS KV desired-state updates, and thread-safe configuration access.
+**What this component does**: Manages application configuration for SemStreams with support for JSON file loading,
+environment variable overrides, NATS KV desired-state updates, and thread-safe configuration access.
 
 **Key responsibilities**:
 
@@ -17,13 +18,16 @@
 - Provide channel-based updates for component and other live configuration consumers
 - Support both typed (strongly structured) and flexible (map-based) configuration formats
 
-**NOT responsible for**: Component lifecycle management, NATS connection establishment, business logic implementation, or configuration persistence (beyond JSON file writing).
+**NOT responsible for**: Component lifecycle management, NATS connection establishment, business logic implementation,
+or configuration persistence (beyond JSON file writing).
 
 ## Architecture Context
 
 ### Integration Points
 
-- **Consumes from**: JSON configuration files, environment variables, NATS KV bucket `semstreams_config_<org>_<stem>`, named from the declared `platform.org` and `platform.id` by `config.BucketName`; other writers, such as the rule manager's `rules.*`, reach it through a key family registered with `WithKeyFamily`
+- **Consumes from**: JSON configuration files, environment variables, NATS KV bucket `semstreams_config_<org>_<stem>`,
+  named from the declared `platform.org` and `platform.id` by `config.BucketName`; other writers, such as the rule
+  manager's `rules.*`, reach it through a key family registered with `WithKeyFamily`
 - **Provides to**: All components requiring configuration (processors, managers, services, input handlers)
 - **External dependencies**: NATS JetStream for KV operations, file system for JSON file I/O
 

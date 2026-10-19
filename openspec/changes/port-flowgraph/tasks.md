@@ -6,7 +6,8 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
 ## 1. Design
 
 - [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass pre-owner review and are accepted by the
-  owner, with Q1 and Q2 answered. Gate: `task spec:check` and `task docs:check`.
+  owner (accepted 2026-10-19; Q1 and Q2 answered; Q3 and Q4 answered before task 2.1). Gate: `task spec:check`
+  and `task docs:check`.
 
 ## 2. Port
 
@@ -15,12 +16,20 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
   `declarations_test.go` (R6, R3's test); then the pin's three `.go` files unchanged, the run recorded:
   `TestFlowGraphOutputIsTheSameEveryRun` and `TestReservedSubjectsDeclaredOnce` red. Then R1 and R3, both green.
   Gate: `go test -race ./internal/flowgraph ./internal/harness/contract` and `task lint`.
-- [ ] 2.2 R4's removals and renames, R5's corrections (`README.md`, `doc.go`, the `component_node_test.go`
-  comment); then the ledger row and a `docs/repository-map.md` row, now true of the code. Gate:
-  `task ledger:check`, `task docs:check`, `go test -race ./internal/flowgraph`.
-- [ ] 2.3 `task mutate:check` for M1-M7 and M9-M12 (detections; M8 recorded as not run, with its reason) in
-  `notes/2.3.md`, with any survivors and the uncovered cases; `task verify` passes on a clean tree.
-- [ ] 2.4 Cross-agent review stop (Codex); `reviewed-by:` in the PR body.
+- [ ] 2.2 Dead surface and docs: R4's removals and renames, R5's corrections (`README.md`, `doc.go`, the
+  `component_node_test.go` comment). Gate: `task docs:check`, `go test -race ./internal/flowgraph` and `task lint`.
+- [ ] 2.3 Same behaviour, less code: R8 (`TestMatchNATSPatternIsSymmetric` first, green on the pin's matcher, then
+  each caller asks once), R9 (the `events.*` case of `TestBuildFromDeclarationsConnectsDeclaredPorts` first, then
+  one port-map builder and one `concreteID`), R11 (tags removed) and R12 (constructors unexported). The pin's edge
+  tests pass unchanged except for R12's renames. Gate: `go test -race ./internal/flowgraph` and `task lint`.
+- [ ] 2.4 Owner-ruled behaviour changes: R10 (`TestUnconnectedOptionalInterfacePortReportsNoPublishers` red, then
+  the heuristic and its constant removed), R13 (the severity test and its helper removed) and R14
+  (`TestRefusalsNameNoInternalFunction` red, then plain-text refusals); then the ledger row and a
+  `docs/repository-map.md` row, now true of the code. Gate: `task ledger:check`, `task docs:check` and
+  `go test -race ./internal/flowgraph ./internal/harness/contract`.
+- [ ] 2.5 `task mutate:check` for M1-M7 and M9-M16 (detections; M8 recorded as not run, with its reason) in
+  `notes/2.5.md`, with any survivors and the uncovered cases; `task verify` passes on a clean tree.
+- [ ] 2.6 Cross-agent review stop (Codex); `reviewed-by:` in the PR body.
 
 ## 3. Close
 

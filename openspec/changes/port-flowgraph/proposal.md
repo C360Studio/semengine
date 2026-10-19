@@ -20,6 +20,11 @@ session's draft (#318); `internal/logforwarderpolicy` merged in #319.
   `PortInfo` unexported); each wrong statement in `README.md`, `doc.go` and one test comment corrected; new tests
   for `BuildFromDeclarations`, `ValidateStreamRequirements`, three unreached refusals and the non-required
   mutation provider.
+- The simple fixes the owner asked for on 2026-10-19 (design R8-R14): the subject matcher asked once per pair; one
+  port-map builder and one concrete-subject choice; the port-name heuristic for "interface alternatives" removed;
+  JSON tags nothing reads removed; `NewFlowGraph` and `ConnectComponentsByPatterns` unexported; the test that only
+  tested its own helper removed; refusals in plain words, without internal function names. Two duplicates whose
+  fix reaches other packages wait on the owner (design Q3, Q4).
 
 ## Capabilities
 
@@ -27,5 +32,6 @@ session's draft (#318); `internal/logforwarderpolicy` merged in #319.
 
 ## Impact
 
-- New package `internal/flowgraph` (fewer than the pin's 1,324 production lines after the removals), its ledger
-  row and a `docs/repository-map.md` row. No importer until `composition`.
+- New package `internal/flowgraph`: about 1,150 production lines, from the pin's 1,324 (an estimate; `doc.go`'s
+  length depends on R5), its ledger row and a `docs/repository-map.md` row. No importer until `composition`, whose
+  port drops its one `IssueOptionalInterfaceUnused` case.

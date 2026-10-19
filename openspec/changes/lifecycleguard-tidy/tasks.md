@@ -11,7 +11,7 @@ at its commit (#171).
 
 ## 2. Implementation (D1-D7)
 
-- [ ] 2.1 Tests on the base, in `internal/lifecycleguard/guard_test.go`, written against the base's two-argument
+- [x] 2.1 Tests on the base, in `internal/lifecycleguard/guard_test.go`, written against the base's two-argument
   `Stop`. Task 2.3 rewrites both for the one-argument `Stop`, with the cleanup given to `Start`.
   - `TestGuardRefusesNilAndEndedContexts` (D1).
   - `TestGuardRefusesAConcurrentStop` (D3), with its blocking cleanup handed to Stop A, since on the base the cleanup

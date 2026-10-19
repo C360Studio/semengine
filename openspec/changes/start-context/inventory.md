@@ -179,8 +179,9 @@ without being applied (`keyed_ingest.go:219-226`); the status loop returns; requ
 
 ADR-113 says natsclient "has this shape already". That holds for `Connect`, the metrics poller and consumer handlers,
 not for `SubscribeForRequests` (`natsclient/request.go:322-329`): its handlers' contexts come from the context passed
-to the subscribe call. graph-ingest's request handlers must therefore get the run context, and their setup wait is
-then capped at `DefaultRequestTimeout` (5 s, `request.go:18`) instead of by the Start context (design D11; issue 1).
+to the subscribe call. graph-ingest's request handlers must therefore get the run context, and their PONG wait is
+then capped at `DefaultRequestTimeout` (5 s, `request.go:18`) instead of by the Start context; a held connection
+write before it can last a minute or more (`request.go:294-300`) (design D11; issue 1).
 
 ## Size
 
@@ -202,8 +203,9 @@ and about 150 test lines.
    5994720412 item 2 ruled that the context that bounds setup must not parent handlers, and that this applies to "any
    other function with the same shape". `ConsumeStreamWithConfig` follows the ruling (`natsclient/stream.go:431-438`,
    `:455-461`); `SubscribeForRequests` does not (`natsclient/request.go:322-329`). A caller whose handlers outlive
-   `Start` (ADR-113) must therefore pass its run context, and the setup wait is then capped only by
-   `DefaultRequestTimeout` (5 s). graph-ingest's query and mutation subscriptions are the case today. MEDIUM.
+   `Start` (ADR-113) must therefore pass its run context, and the setup is then bounded only by
+   `DefaultRequestTimeout` (5 s) for the PONG wait, with held connection writes able to last longer.
+   graph-ingest's query and mutation subscriptions are the case today. MEDIUM.
 2. #312. graph-ingest tests cite a spec that does not exist: `processor/graph-ingest/test_owner_test.go:22`, `:57`, `:76`,
    `:105` and `test_owner_child_test.go:52` cite "spec: test-cleanup-policy / Lexical ownership of lifecycle test
    fixtures", and there is no `openspec/specs/test-cleanup-policy/`. The test owner's keeping its Start context live

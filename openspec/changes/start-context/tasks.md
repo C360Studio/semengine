@@ -36,7 +36,8 @@ Each stop's task ends only when `task verify` passes on a clean tree at its comm
   (integration included).
 - [x] 3.3 The guard's test owner and natsclient pass unchanged (D7); the run recorded in `notes/3.3.md`. Gate:
   `task verify`.
-- [ ] 3.4 Review stop B (Codex) on 3.1-3.3.
+- [ ] 3.4 Review stop B (Codex) on 3.1-3.3. Round 1 at `0faadcc`: CHANGES REQUESTED (BLOCKING #315, fixed at
+  `0eb1bf1`; MEDIUM five-second claim, corrected in notes/3.2.md, design D11 and the inventory).
 
 ## 4. Docs and rules
 

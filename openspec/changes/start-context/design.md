@@ -290,9 +290,11 @@ context).
 ## D11. Declared limits (#185: MEDIUM at most, no new mechanism)
 
 - Request subscriptions: graph-ingest's request subscriptions take the run context, because natsclient parents their
-  handlers on it (`natsclient/request.go:322-329`). A Start context that ends during their setup wait does not cut
-  that wait short; natsclient caps it at `DefaultRequestTimeout`, 5 s per subscription (`request.go:293-296`). D6's
-  check then fails Start, so the cost is a bounded late return, not a broken contract. Issue 1 tracks the natsclient
+  handlers on it (`natsclient/request.go:322-329`). A Start context that ends during their setup does not cut it
+  short. natsclient caps the PONG wait at `DefaultRequestTimeout`, 5 s per subscription, but a held connection write
+  before that wait can last a minute or more (`request.go:294-300`; ADR-112, probe P17). D6's check, and the joined
+  error on a failed registration (#315), then fail Start with its context's error, so the cost is a late return,
+  not a broken contract. Issue 1 tracks the natsclient
   shape.
 - Entity cache: no test can see which context builds it. Its expiry sweep has no observable outside `internal/cache`
   without a hook. `Get` checks expiry itself (`cache.go:133`), and Hybrid's LRU bounds size. The PR records this as an

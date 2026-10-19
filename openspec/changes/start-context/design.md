@@ -306,6 +306,16 @@ This change does not remove the reasons #301 gives, which are untouched by movin
 `consumeStream` (`lifecycle_adapter_test.go:36-48`). #301 stays open, with this answer posted there. This PR adds no
 field.
 
+## Generated checks: examples suffice
+
+This change reorders a short, fixed history: Start returns, the Start context ends, Stop runs with an ended context,
+and a later Stop runs. Every interleaving that matters is named and forced, not sampled. The failpoint matrix runs each
+check against one defect at a time inside a synctest bubble, where the fake clock settles every goroutine before an
+assertion, so each ordering is deterministic. `TestAbortStopThenFinishJoinsWorker` forces the one race the history
+has (a Stop returning before its worker exits) with an explicit probe instead of the scheduler. There is no input
+space to generate over: the owner takes no data, only the four calls in that order. So no generator is added
+(`docs/testing.md`, "Decide whether generated checks are needed").
+
 ## Mutants
 
 `task mutate:check`; the integration ones with `GOFLAGS=-tags=integration`, or by hand per `docs/testing.md:230`

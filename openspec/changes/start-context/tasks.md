@@ -22,7 +22,8 @@ Each stop's task ends only when `task verify` passes on a clean tree at its comm
   note.
 - [x] 2.2 `lifecycletest.go` (D1-D3): `CheckStartContextEndStopsNothing`, `CheckStopReturnsItsEndedContext`, the
   settle window; the spec delta matches. Mutants M1-M4. Gate: `task verify`.
-- [ ] 2.3 Review stop A (Codex) on 2.1-2.2.
+- [x] 2.3 Review stop A (Codex) on 2.1-2.2: APPROVE at `3f13c9b` (PR #310 review record, 2026-10-19), two
+  documentation corrections applied.
 
 ## 3. Adopters
 

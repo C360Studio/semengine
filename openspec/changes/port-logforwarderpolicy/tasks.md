@@ -10,7 +10,7 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
 
 ## 2. Port
 
-- [ ] 2.1 Tests first: `internal/logforwarderpolicy/policy_test.go` from the pin, unchanged (the compile failure on
+- [x] 2.1 Tests first: `internal/logforwarderpolicy/policy_test.go` from the pin, unchanged (the compile failure on
   the base noted); then `policy.go` unchanged; the ledger row; a `docs/repository-map.md` row. Gate:
   `go test -race ./internal/logforwarderpolicy` and `task ledger:check`.
 - [ ] 2.2 `task mutate:check` for M1-M7 (detections) and S1-S5 (survivors recorded) in `notes/2.2.md`; `task verify`

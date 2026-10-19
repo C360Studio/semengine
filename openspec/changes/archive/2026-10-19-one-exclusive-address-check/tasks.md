@@ -24,5 +24,5 @@ Tasks 2.1-2.6 are steps 1-6 of the design's "Change". Each task ends when its ga
 
 - [x] 3.1 Cross-agent review; `reviewed-by:` in the PR body. Codex approved at `a65ceef` (PR #327 review
   record); its two MEDIUM documentation findings are fixed in the design.
-- [ ] 3.2 Archive (`openspec archive one-exclusive-address-check`) as the last content commit. Gate:
+- [x] 3.2 Archive (`openspec archive one-exclusive-address-check`) as the last content commit. Gate:
   `task spec:check` and `task docs:check`.

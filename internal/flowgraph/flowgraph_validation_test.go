@@ -302,188 +302,69 @@ func TestFlowGraphPortValidationRefinement(t *testing.T) {
 	})
 }
 
-// TestOrphanedPortSeverity tests that we can determine severity of orphaned ports
-func TestOrphanedPortSeverity(t *testing.T) {
-	testCases := []struct {
-		name     string
-		port     OrphanedPort
-		expected string
-	}{
+// TestUnconnectedOptionalInterfacePortReportsNoPublishers holds an unconnected
+// input that is not required to no_publishers, whatever its name, subject or
+// interface contract. Beside a plain control port, each port carries an
+// interface contract and one or both of the marks the pin's heuristic read as
+// an optional alternative: a "-" in the name, or a ".graphable", ".typed" or
+// ".validated" part in the subject.
+func TestUnconnectedOptionalInterfacePortReportsNoPublishers(t *testing.T) {
+	ports := []component.Port{
 		{
-			name: "stream input without publisher is critical",
-			port: OrphanedPort{
-				Pattern: component.PatternStream,
-				Issue:   "no_publishers",
-			},
-			expected: "critical",
+			Name:      "write",
+			Direction: component.DirectionInput,
+			Config:    component.NATSPort{Subject: "storage.objectstore.write"},
 		},
 		{
-			name: "stream output without subscriber is critical",
-			port: OrphanedPort{
-				Pattern: component.PatternStream,
-				Issue:   "no_subscribers",
+			Name:      "write-graphable",
+			Direction: component.DirectionInput,
+			Config: component.NATSPort{
+				Subject:   "storage.objectstore.graphable",
+				Interface: &component.InterfaceContract{Type: "message.Graphable", Version: "v1"},
 			},
-			expected: "critical",
 		},
 		{
-			name: "request API without clients is optional",
-			port: OrphanedPort{
-				Pattern: component.PatternRequest,
-				Issue:   "optional_api_unused",
+			Name:      "input-typed",
+			Direction: component.DirectionInput,
+			Config: component.NATSPort{
+				Subject:   "processor.input.typed",
+				Interface: &component.InterfaceContract{Type: "CustomType"},
 			},
-			expected: "warning",
 		},
 		{
-			name: "KV index without watchers is optional",
-			port: OrphanedPort{
-				Pattern: component.PatternWatch,
-				Issue:   "optional_index_unwatched",
+			Name:      "data",
+			Direction: component.DirectionInput,
+			Config: component.NATSPort{
+				Subject:   "processor.data.validated",
+				Interface: &component.InterfaceContract{Type: "ValidatedData"},
 			},
-			expected: "warning",
+		},
+		{
+			Name:      "event-raw",
+			Direction: component.DirectionInput,
+			Config: component.NATSPort{
+				Subject:   "processor.events",
+				Interface: &component.InterfaceContract{Type: "RawEvent"},
+			},
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			severity := getOrphanedPortSeverity(tc.port)
-			assert.Equal(t, tc.expected, severity)
+	graph, err := BuildFromDeclarations([]component.Declaration{declaration(t, "objectstore", ports, nil)})
+	require.NoError(t, err)
+
+	want := make([]OrphanedPort, 0, len(ports))
+	for _, port := range ports {
+		want = append(want, OrphanedPort{
+			ComponentName: "objectstore",
+			PortName:      port.Name,
+			Direction:     component.DirectionInput,
+			ConnectionID:  port.Config.(component.NATSPort).Subject,
+			Pattern:       component.PatternStream,
+			Issue:         IssueNoPublishers,
+			Required:      false,
 		})
 	}
-}
-
-// Helper function to categorize orphaned port severity
-func getOrphanedPortSeverity(port OrphanedPort) string {
-	switch port.Issue {
-	case "no_publishers", "no_subscribers":
-		// Stream connections are critical for data flow
-		if port.Pattern == component.PatternStream {
-			return "critical"
-		}
-		return "warning"
-	case "optional_api_unused", "optional_index_unwatched", "optional_interface_unused":
-		// Optional ports are warnings
-		return "warning"
-	default:
-		return "info"
-	}
-}
-
-// TestFlowGraphInterfaceAlternatives tests the detection of interface-specific alternative ports
-func TestFlowGraphInterfaceAlternatives(t *testing.T) {
-	t.Run("interface-specific alternatives should be marked as optional", func(t *testing.T) {
-		graph := newFlowGraph()
-
-		// Create ObjectStore-like component with two write ports
-		storageInputPorts := []component.Port{
-			{
-				Name:      "write",
-				Direction: component.DirectionInput,
-				Required:  false,
-				Config: component.NATSPort{
-					Subject: "storage.objectstore.write",
-				},
-			},
-			{
-				Name:      "write-graphable",
-				Direction: component.DirectionInput,
-				Required:  false,
-				Config: component.NATSPort{
-					Subject: "storage.objectstore.graphable",
-					Interface: &component.InterfaceContract{
-						Type:    "message.Graphable",
-						Version: "v1",
-					},
-				},
-			},
-		}
-
-		storageComponent := createMockComponentWithPorts("objectstore", "storage", storageInputPorts, nil)
-		err := addTestComponentNode(graph, "objectstore", storageComponent)
-		require.NoError(t, err)
-
-		// Connect components by patterns
-		err = graph.connectComponentsByPatterns()
-		require.NoError(t, err)
-
-		// Analyze connectivity
-		analysis := graph.AnalyzeConnectivity()
-
-		// Find the write-graphable port in orphaned list
-		var graphablePort *OrphanedPort
-		var normalWritePort *OrphanedPort
-
-		for i, orphan := range analysis.OrphanedPorts {
-			if orphan.ComponentName == "objectstore" {
-				if orphan.PortName == "write-graphable" {
-					graphablePort = &analysis.OrphanedPorts[i]
-				} else if orphan.PortName == "write" {
-					normalWritePort = &analysis.OrphanedPorts[i]
-				}
-			}
-		}
-
-		// The regular write port should be marked as no_publishers
-		require.NotNil(t, normalWritePort, "Regular write port should be in orphaned list")
-		assert.Equal(t, "no_publishers", normalWritePort.Issue,
-			"Regular write port should be marked as no_publishers")
-
-		// The interface-specific alternative should be marked as optional
-		require.NotNil(t, graphablePort, "Interface alternative port should be in orphaned list")
-		assert.Equal(t, "optional_interface_unused", graphablePort.Issue,
-			"Interface alternative should be marked as optional_interface_unused")
-
-		// Verify severity categorization
-		assert.Equal(t, "warning", getOrphanedPortSeverity(*graphablePort),
-			"Interface alternatives should be warnings, not critical")
-	})
-
-	t.Run("interface alternatives with naming pattern should be detected", func(t *testing.T) {
-		graph := newFlowGraph()
-
-		// Test various naming patterns that suggest interface alternatives
-		testPorts := []component.Port{
-			{
-				Name:      "input-typed",
-				Direction: component.DirectionInput,
-				Required:  false,
-				Config: component.NATSPort{
-					Subject: "processor.input.typed",
-					Interface: &component.InterfaceContract{
-						Type: "CustomType",
-					},
-				},
-			},
-			{
-				Name:      "data-validated",
-				Direction: component.DirectionInput,
-				Required:  false,
-				Config: component.NATSPort{
-					Subject: "processor.data.validated",
-					Interface: &component.InterfaceContract{
-						Type: "ValidatedData",
-					},
-				},
-			},
-		}
-
-		testComponent := createMockComponentWithPorts("processor", "processor", testPorts, nil)
-		err := addTestComponentNode(graph, "processor", testComponent)
-		require.NoError(t, err)
-
-		// Connect and analyze
-		err = graph.connectComponentsByPatterns()
-		require.NoError(t, err)
-		analysis := graph.AnalyzeConnectivity()
-
-		// All interface-specific ports with naming patterns should be marked as optional
-		for _, orphan := range analysis.OrphanedPorts {
-			if orphan.ComponentName == "processor" &&
-				(orphan.PortName == "input-typed" || orphan.PortName == "data-validated") {
-				assert.Equal(t, "optional_interface_unused", orphan.Issue,
-					"Interface ports with naming patterns should be marked as optional")
-			}
-		}
-	})
+	assert.Equal(t, want, graph.AnalyzeConnectivity().OrphanedPorts)
 }
 
 // TestJetStreamSubjectMatching tests that a NATSPort subscriber can match a

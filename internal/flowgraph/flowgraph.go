@@ -53,11 +53,10 @@ type ComponentPortRef struct {
 
 // Issue type constants for orphaned port classification
 const (
-	IssueNoPublishers            = "no_publishers"
-	IssueNoSubscribers           = "no_subscribers"
-	IssueOptionalAPIUnused       = "optional_api_unused"
-	IssueOptionalIndexUnwatched  = "optional_index_unwatched"
-	IssueOptionalInterfaceUnused = "optional_interface_unused"
+	IssueNoPublishers           = "no_publishers"
+	IssueNoSubscribers          = "no_subscribers"
+	IssueOptionalAPIUnused      = "optional_api_unused"
+	IssueOptionalIndexUnwatched = "optional_index_unwatched"
 )
 
 // newFlowGraph creates a new empty FlowGraph
@@ -827,9 +826,6 @@ func (g *FlowGraph) findOrphanedPorts() []OrphanedPort {
 				issue := IssueNoPublishers
 				if port.Pattern == component.PatternRequest {
 					issue = IssueOptionalAPIUnused // Request APIs are optional
-				} else if g.isInterfaceAlternativePort(port) {
-					// Interface-specific alternatives are optional specialized paths
-					issue = IssueOptionalInterfaceUnused
 				}
 
 				orphaned = append(orphaned, OrphanedPort{
@@ -880,43 +876,6 @@ func (g *FlowGraph) findOrphanedPorts() []OrphanedPort {
 	}
 
 	return orphaned
-}
-
-// isInterfaceAlternativePort determines if a port is an optional interface-specific alternative
-func (g *FlowGraph) isInterfaceAlternativePort(port portInfo) bool {
-	// Heuristic: A port is likely an interface alternative if:
-	// 1. It has an interface contract specified
-	// 2. It's not marked as required
-	// 3. Port name suggests it's a specialized variant (contains "-" or specific suffixes)
-
-	if port.Interface == nil {
-		return false // No interface contract, not an interface alternative
-	}
-
-	if port.Required {
-		return false // Required ports are not optional alternatives
-	}
-
-	// Check for naming patterns that suggest specialized variants
-	// Examples: "write-graphable", "input-typed", "data-validated"
-	if strings.Contains(port.Name, "-") {
-		// Check if there's a base port name without the suffix
-		// e.g., "write-graphable" suggests "write" is the primary port
-		baseName := strings.Split(port.Name, "-")[0]
-		if baseName != "" && baseName != port.Name {
-			return true
-		}
-	}
-
-	// Additional heuristic: ports with strict interface contracts and
-	// subjects containing ".graphable" or similar patterns
-	if strings.Contains(port.ConnectionID, ".graphable") ||
-		strings.Contains(port.ConnectionID, ".typed") ||
-		strings.Contains(port.ConnectionID, ".validated") {
-		return true
-	}
-
-	return false
 }
 
 // ValidateStreamRequirements returns one warning for each JetStream input port

@@ -212,15 +212,17 @@ BEFORE implementation.
 - Production structs SHALL NOT retain `context.Context`. This includes embedded fields, renamed imports, type
   aliases, wrapper types, interface containers, getters, provider closures, and public knobs that hide or recover a
   stored context. Existing violations in carried code are removal work, never precedent.
-- Pass context as the first argument. An owning `Start` or `Run` may derive a lifecycle child context locally; pass
-  the exact received or derived operation context directly into goroutines, callbacks, and helpers. Lifecycle owners
-  may retain only a private `context.CancelFunc` with synchronization matching the start/stop contract. Component
-  work derives from `Start` or `Run`, and every spawned task joins `Stop`.
-- Create production root contexts only at the process composition boundary. Constructors, factories, callbacks,
-  watchers, and goroutines must not invent roots with `context.Background`, `context.TODO`, or
-  `context.WithoutCancel`. Use context-aware standard APIs for blocking or cancelable operations when available.
-  Carried code is triaged in the admission ledger: record each root as a legitimate root with its reason, or as a
-  defect.
+- Pass context as the first argument, and pass the exact received or derived context directly into goroutines,
+  callbacks, and helpers. A lifecycle owner's `Start` does its startup work under the context it is given; ending that
+  context after `Start` returns stops nothing. For its continuing work `Start` creates one run context, keeps only a
+  private `context.CancelFunc` (synchronized to match the start/stop contract), and ends it inside `Stop`; every
+  spawned task joins `Stop` (ADR-113). A `Run` owner's work derives from `Run`'s context.
+- Create production root contexts only at the process composition boundary, with one exception: a lifecycle owner's
+  `Start` creates the one run context for its continuing work, keeps it only as a cancel, and ends it inside `Stop`
+  (ADR-113). Otherwise constructors, factories, callbacks, watchers, and goroutines must not invent roots with
+  `context.Background`, `context.TODO`, or `context.WithoutCancel`. Use context-aware standard APIs for blocking or
+  cancelable operations when available. Carried code is triaged in the admission ledger: record each root as a
+  legitimate root with its reason, or as a defect.
 - Callers never pass nil context. Exported context-taking boundaries reject nil when able to return an error; private
   helpers rely on the caller invariant. Never default nil to `context.Background`.
 - Detach only terminal cleanup or finalization, or an already-accepted durability operation whose invariant requires
@@ -229,12 +231,13 @@ BEFORE implementation.
   cleanup (`natsfixture/fixture.go:75-81`), may use `context.WithTimeout(context.Background(), budget)`. The budget
   bounds the work through its context and never replaces a join: complete synchronously or join all tasks before
   return, with no timer in place of the join. Never feed `Start`, `Run`, `Watch`, or continuing work.
-- Do not use `context.WithoutCancel(parent)` directly or create an unbounded descendant. Nested child cancellation is
-  allowed beneath the bounded context only when all tasks join before the terminal operation returns.
+- Do not use `context.WithoutCancel(parent)` directly or create an unbounded descendant, except as that one run
+  context. Nested child cancellation is allowed beneath the bounded context only when all tasks join before the
+  terminal operation returns.
 - Exported lifecycle records SHALL NOT expose `context.CancelFunc`.
-- A controlled `Stop` uses the caller's exact finite context and keeps `Start` authority live until graceful
-  finalization; abort is distinct. The callee must not replace Stop authority with its own timeout. Timeout or
-  cancellation does not establish completed callback or worker joins.
+- `Stop(ctx)` is the only stop: it returns nil only once everything is released, and if `ctx` ends first it returns
+  that context's error and a later `Stop` tries again. The callee must not replace Stop's context with its own
+  timeout. Timeout or cancellation does not establish completed callback or worker joins.
 - Before changing a lifecycle or concurrency seam, inventory it for every disguised form above. If the requested
   implementation would add, preserve, or work around any violation above, stop the slice and escalate for a removal
   design; do not implement it.

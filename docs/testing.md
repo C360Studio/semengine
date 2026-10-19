@@ -570,8 +570,10 @@ SemStreams pin and in SemEngine. The repairs fall into five classes:
   `<-time.After(d)` advances a fake clock and `synctest.Wait` settles the bubble before an assertion (`t.Parallel`
   cannot be called inside a bubble). A test against a real broker waits on a channel, a callback or `probe.Await`;
   a real-clock timer is allowed only as the failure bound of that wait, taken from the test's context or at least 10
-  seconds. A real-clock interval that the behaviour itself is defined by (an ack wait, a TTL, a drain window) is
-  allowed only when its expiry can never fail a correct implementation, and only where the change's design lists it.
+  seconds. A real-clock interval that the behaviour itself is defined by (an ack wait, a TTL, a drain window), or an
+  observation window where no signal exists (the lifecycle suite's Start-context check,
+  `internal/harness/lifecycletest`), is allowed only when its expiry can never fail a correct implementation, and
+  only where the change's design lists it.
 - **Skip removed.** A test skipped because it needs a broker moves into an `//go:build integration` file instead.
 - **Old build tag removed.** A `// +build` line is deleted; the `//go:build integration` line stays.
 - **Repeat failure fixed.** A ported test that fails `task test:repeat` is fixed in the porting pull request, by

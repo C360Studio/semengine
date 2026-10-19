@@ -288,10 +288,13 @@ triple, metadata, and content-reference fixtures. Reuse proven helpers and fix i
 Synchronous fakes cannot prove asynchronous NATS behavior; aggregate goroutine counts cannot prove an owner's join.
 
 Follow [Go context guidance][go-context]: pass context first to I/O, propagate it, and call derived cancel functions.
-Do not retain contexts in production structs or wrappers/providers; do not invent background roots.
+Do not retain contexts in production structs or wrappers/providers; do not invent background roots, except a
+lifecycle owner's one run context: created in `Start`, kept only as a cancel, ended in `Stop` (ADR-113).
 Specify which owner admits work, stops admission, drains/finalizes, cancels, and joins each worker or resource.
-Controlled Stop uses the caller's exact finite context, keeping Start authority live until graceful finalization;
-abort is distinct. The callee must not replace Stop authority with its own timeout. An owner may create fresh finite
+The context given to `Start` bounds only `Start`; ending it later stops nothing. `Stop(ctx)` is the only stop: it uses
+the caller's exact finite context, returns nil only once everything is released, and returns that context's error if
+it ends first, so a later `Stop` tries again (ADR-113). The callee must not replace Stop authority with its own
+timeout. An owner may create fresh finite
 authority for test cleanup. Shutdown order belongs to each resource owner; do not universally cancel before draining.
 Timeout or cancellation does not establish completed callback or worker joins.
 

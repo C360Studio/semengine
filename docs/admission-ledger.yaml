@@ -173,8 +173,9 @@
 - source_path: component/lifecycle_test_suite.go
   source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67
   consumer_purpose: >-
-    portable lifecycle floor semantics (controlled Stop under live Start authority, abort preserves
-    cause, repeated Stop no-op, nil and pre-cancelled contexts refused, Stop before Start safe)
+    portable lifecycle floor semantics (ending the Start context after Start stops nothing and Stop then
+    releases everything; a Stop whose context has ended reports it; repeated Stop no-op; nil and
+    pre-cancelled contexts refused; Stop before Start safe; ADR-113 replaces the pin's controlled/abort pair)
   destination: >-
     internal/harness/lifecycletest (error-returning checks over Owner{Start,Stop}; stdlib testing)
   contract: as consumer_purpose; second Start refused unless restart promised, then a full second cycle
